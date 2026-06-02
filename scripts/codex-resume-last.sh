@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+# shellcheck source=scripts/codex-common.sh
+. "${SCRIPT_DIR}/codex-common.sh"
+
+REPO_ROOT="$(codex_repo_root_from_script_dir "${SCRIPT_DIR}")"
 RUNS_DIR="${REPO_ROOT}/.codex/runs"
 DEFAULT_PROMPT="${REPO_ROOT}/.codex/prompts/resume-last.md"
 
@@ -22,81 +25,14 @@ if ! command -v codex >/dev/null 2>&1; then
 fi
 
 PROMPT_ARG="${1:-${DEFAULT_PROMPT}}"
-if [[ "${PROMPT_ARG}" = /* ]]; then
-  PROMPT_FILE="${PROMPT_ARG}"
-elif [[ -f "${PWD}/${PROMPT_ARG}" ]]; then
-  PROMPT_FILE="${PWD}/${PROMPT_ARG}"
-else
-  PROMPT_FILE="${REPO_ROOT}/${PROMPT_ARG}"
-fi
-
-if [[ ! -f "${PROMPT_FILE}" ]]; then
-  echo "Error: prompt file not found: ${PROMPT_ARG}" >&2
-  exit 1
-fi
-
-PROMPT_REAL="$(realpath "${PROMPT_FILE}")"
-ROOT_REAL="$(realpath "${REPO_ROOT}")"
-case "${PROMPT_REAL}" in
-  "${ROOT_REAL}"/*) ;;
-  *)
-    echo "Error: prompt file must be inside this repository: ${PROMPT_REAL}" >&2
-    exit 1
-    ;;
-esac
-
-clear_provider_environment() {
-  local name
-  while IFS='=' read -r name _; do
-    case "${name}" in
-      VSPHERE_*|VCENTER_*|GOVC_*|ESXI_*|ILO_*|REDFISH_*|NETAPP_*|ONTAP_*|NETBOX_*|NAUTOBOT_*|AWX_*|TOWER_*|ANSIBLE_*|TF_VAR_*|KUBECONFIG|AWS_*|AZURE_*|ARM_*|GOOGLE_*|GCLOUD_*|GCP_*)
-        unset "${name}" || true
-        ;;
-    esac
-  done < <(env)
-  export PROVIDER_MODE=mock
-}
+PROMPT_REAL="$(codex_resolve_repo_file "${REPO_ROOT}" "${PROMPT_ARG}" "prompt file")"
 
 CODEX_SANDBOX_MODE="${CODEX_SANDBOX_MODE:-workspace-write}"
 CODEX_APPROVAL_POLICY="${CODEX_APPROVAL_POLICY:-never}"
 
-validate_codex_exec_safety() {
-  case "${CODEX_SANDBOX_MODE}" in
-    read-only|workspace-write|danger-full-access) ;;
-    *)
-      echo "Error: CODEX_SANDBOX_MODE must be read-only, workspace-write, or danger-full-access." >&2
-      echo "Current value: ${CODEX_SANDBOX_MODE}" >&2
-      exit 2
-      ;;
-  esac
-
-  if [[ "${CODEX_SANDBOX_MODE}" != "danger-full-access" ]]; then
-    return
-  fi
-
-  if [[ "${CODEX_DANGER_ACK:-}" != "I_UNDERSTAND" ]]; then
-    cat >&2 <<'EOF'
-Error: CODEX_SANDBOX_MODE=danger-full-access disables Codex filesystem sandboxing.
-This mode requires explicit acknowledgement:
-  CODEX_SANDBOX_MODE=danger-full-access CODEX_DANGER_ACK=I_UNDERSTAND make codex-next
-
-Use danger-full-access only on an isolated development machine with no real
-infrastructure credentials, no secrets, no production SSH keys, and no access
-to real vSphere, ESXi, iLO, NetApp, switches, DNS, IPAM, storage, or production
-networks.
-EOF
-    exit 1
-  fi
-
-  cat >&2 <<'EOF'
-Warning: running Codex with danger-full-access. Filesystem sandboxing is disabled.
-Only continue on an isolated development machine with no real infrastructure
-credentials, no secrets, no production SSH keys, and no access to real vSphere,
-ESXi, iLO, NetApp, switches, DNS, IPAM, storage, or production networks.
-EOF
-}
-
-validate_codex_exec_safety
+codex_warn_if_not_repo_root "${REPO_ROOT}"
+codex_validate_exec_safety
+cd "${REPO_ROOT}"
 mkdir -p "${RUNS_DIR}"
 
 timestamp="$(date -u +"%Y%m%dT%H%M%SZ")"
@@ -118,8 +54,7 @@ if grep -q -- '--output-last-message' <<<"${help_text}"; then
   supports_output=1
 fi
 
-clear_provider_environment
-cd "${REPO_ROOT}"
+codex_clear_provider_environment
 
 codex_config_args=(
   -c "sandbox_mode=\"${CODEX_SANDBOX_MODE}\""

@@ -6,13 +6,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 . "${SCRIPT_DIR}/codex-common.sh"
 
 REPO_ROOT="$(codex_repo_root_from_script_dir "${SCRIPT_DIR}")"
+CURRENT_DIR="$(pwd -P)"
 
-if [[ $# -ne 0 ]]; then
-  echo "Usage: $0" >&2
+if [[ "${CURRENT_DIR}" != "${REPO_ROOT}" ]]; then
+  echo "Error: Run this from ${REPO_ROOT}, not ${CURRENT_DIR}." >&2
   exit 2
 fi
-
-codex_warn_if_not_repo_root "${REPO_ROOT}"
-cd "${REPO_ROOT}"
-
-"${SCRIPT_DIR}/codex-task.sh" ".codex/tasks/000-repo-audit.md"

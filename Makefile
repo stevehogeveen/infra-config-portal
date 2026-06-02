@@ -1,32 +1,41 @@
-.PHONY: codex-audit codex-task codex-next codex-resume test dev lint
+.PHONY: check-repo-root codex-audit codex-task codex-next codex-resume test dev lint
 
+REPO_ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 TASK ?= .codex/tasks/001-backend-vm-request-lifecycle.md
+CODEX_SANDBOX_MODE ?= workspace-write
+CODEX_APPROVAL_POLICY ?= never
 
-codex-audit:
-	./scripts/codex-audit.sh
+export CODEX_SANDBOX_MODE
+export CODEX_APPROVAL_POLICY
 
-codex-task:
-	./scripts/codex-task.sh "$(TASK)"
+check-repo-root:
+	$(REPO_ROOT)/scripts/check-repo-root.sh
 
-codex-next:
-	./scripts/codex-next.sh
+codex-audit: check-repo-root
+	$(REPO_ROOT)/scripts/codex-audit.sh
 
-codex-resume:
-	./scripts/codex-resume-last.sh
+codex-task: check-repo-root
+	$(REPO_ROOT)/scripts/codex-task.sh "$(TASK)"
 
-test:
-	$(MAKE) -C app backend-test
-	cd app/frontend && npm run build
+codex-next: check-repo-root
+	$(REPO_ROOT)/scripts/codex-next.sh
 
-dev:
-	$(MAKE) -C app up
+codex-resume: check-repo-root
+	$(REPO_ROOT)/scripts/codex-resume-last.sh
 
-lint:
-	bash -n scripts/codex-task.sh scripts/codex-resume-last.sh scripts/codex-audit.sh scripts/codex-next.sh
-	python3 -c "import pathlib, tomllib; tomllib.loads(pathlib.Path('.codex/config.toml').read_text())"
-	@if [ -x app/backend/.venv/bin/ruff ]; then \
-		app/backend/.venv/bin/ruff check app/backend; \
+test: check-repo-root
+	$(MAKE) -C $(REPO_ROOT)/app backend-test
+	cd $(REPO_ROOT)/app/frontend && npm run build
+
+dev: check-repo-root
+	$(MAKE) -C $(REPO_ROOT)/app up
+
+lint: check-repo-root
+	bash -n $(REPO_ROOT)/scripts/*.sh
+	python3 -c "import pathlib, tomllib; tomllib.loads(pathlib.Path('$(REPO_ROOT)/.codex/config.toml').read_text())"
+	@if [ -x $(REPO_ROOT)/app/backend/.venv/bin/ruff ]; then \
+		$(REPO_ROOT)/app/backend/.venv/bin/ruff check $(REPO_ROOT)/app/backend; \
 	else \
 		echo "Backend lint: ruff is configured but not installed in app/backend/.venv; skipping."; \
 	fi
-	cd app/frontend && npm run build
+	cd $(REPO_ROOT)/app/frontend && npm run build

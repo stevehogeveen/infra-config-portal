@@ -19,6 +19,25 @@ infra-config-portal/
   reference/               Older notes, experiments, or adjacent ideas
 ```
 
+## Always Run From Repo Root
+
+Root automation paths such as `.codex/tasks`, `.codex/runs`, and
+`.codex/task-queue.md` live at `/home/administrator/infra-config-portal`, not
+under `app/`.
+
+Before running root `make` or Codex automation commands:
+
+```bash
+cd /home/administrator/infra-config-portal
+```
+
+If you are in `/home/administrator/infra-config-portal/app`, move up one level
+first. Running root-only targets from `app/` prints:
+
+```text
+Run this from /home/administrator/infra-config-portal, not /home/administrator/infra-config-portal/app.
+```
+
 ## Run Locally
 
 Backend:
@@ -68,6 +87,8 @@ then runs the frontend build/type check.
 This repository includes repeatable non-interactive Codex workflows under
 `.codex/`.
 
+Run these commands from `/home/administrator/infra-config-portal`.
+
 Run the audit task:
 
 ```bash
@@ -97,7 +118,9 @@ defaults: `CODEX_SANDBOX_MODE=workspace-write`,
 `CODEX_APPROVAL_POLICY=never`, and workspace-write network access disabled.
 They pass approval policy with
 `-c "approval_policy=\"${CODEX_APPROVAL_POLICY}\""` because this installed CLI
-does not accept `--ask-for-approval`.
+does not accept `--ask-for-approval`. The root `Makefile` exports those safe
+defaults for `make codex-*` commands; callers may override them explicitly in
+the command environment.
 
 If local bwrap sandboxing fails before shell execution, the explicitly
 acknowledged fallback command is:
@@ -109,7 +132,9 @@ CODEX_SANDBOX_MODE=danger-full-access CODEX_DANGER_ACK=I_UNDERSTAND make codex-n
 `danger-full-access` is never the default. Use it only on an isolated
 development machine with no real infrastructure credentials, no secrets, no
 production SSH keys, and no access to real vSphere, ESXi, iLO, NetApp,
-switches, DNS, IPAM, storage, or production networks.
+switches, DNS, IPAM, storage, or production networks. Do not export
+`CODEX_SANDBOX_MODE=danger-full-access` globally; set it only on the single
+fallback command that requires it.
 
 ## Safety Rules
 

@@ -1,14 +1,20 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+# shellcheck source=scripts/codex-common.sh
+. "${SCRIPT_DIR}/codex-common.sh"
+
+REPO_ROOT="$(codex_repo_root_from_script_dir "${SCRIPT_DIR}")"
 QUEUE_FILE="${REPO_ROOT}/.codex/task-queue.md"
 
 if [[ $# -ne 0 ]]; then
   echo "Usage: $0" >&2
   exit 2
 fi
+
+codex_warn_if_not_repo_root "${REPO_ROOT}"
+cd "${REPO_ROOT}"
 
 if [[ ! -f "${QUEUE_FILE}" ]]; then
   echo "Error: queue file not found: ${QUEUE_FILE}" >&2

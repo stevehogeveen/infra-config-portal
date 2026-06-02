@@ -20,13 +20,18 @@ The current implementation lives under `app/` and uses:
 
 ## Exec Mode Workflow
 
+- Start root automation from `/home/administrator/infra-config-portal`, not
+  `/home/administrator/infra-config-portal/app`. Root `.codex/` paths are
+  resolved from the Git repository root.
 - Prefer small task files in `.codex/tasks/` over long chat sessions.
 - Run tasks with `make codex-task TASK=.codex/tasks/<task>.md`,
   `make codex-next`, or the scripts in `scripts/`.
 - The wrappers honor `CODEX_SANDBOX_MODE` (default: `workspace-write`) and
   `CODEX_APPROVAL_POLICY` (default: `never`). Pass approval policy through
   `-c "approval_policy=\"${CODEX_APPROVAL_POLICY}\""`; do not use
-  `--ask-for-approval`.
+  `--ask-for-approval`. The root `Makefile` exports these safe defaults for
+  `make codex-*` commands and still allows explicit per-command environment
+  overrides.
 - If local bwrap sandboxing fails before shell execution, the only permitted
   fallback is:
 
@@ -37,7 +42,8 @@ The current implementation lives under `app/` and uses:
 - Use that fallback only on an isolated development machine with no real
   infrastructure credentials, no secrets, no production SSH keys, and no access
   to real vSphere, ESXi, iLO, NetApp, switches, DNS, IPAM, storage, or
-  production networks.
+  production networks. Do not export `CODEX_SANDBOX_MODE=danger-full-access`
+  globally; set it only on the single fallback command.
 - Avoid asking the user questions unless blocked by missing information that
   cannot be discovered locally and where a reasonable assumption would be risky.
 - Inspect relevant files before editing.

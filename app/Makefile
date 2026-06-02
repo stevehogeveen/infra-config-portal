@@ -4,8 +4,9 @@ FRONTEND_DIR := frontend
 VENV := $(BACKEND_DIR)/.venv
 PIP := $(VENV)/bin/pip
 PY := $(VENV)/bin/python
+REPO_ROOT := $(abspath ..)
 
-.PHONY: backend-venv backend-run backend-test frontend-install frontend-run up down
+.PHONY: backend-venv backend-run backend-test frontend-install frontend-run up down codex-audit codex-task codex-next codex-resume test dev lint
 
 backend-venv:
 	$(PYTHON) -m venv $(VENV)
@@ -29,3 +30,7 @@ up:
 
 down:
 	docker compose down
+
+codex-audit codex-task codex-next codex-resume test dev lint:
+	@echo "Error: Run this from $(REPO_ROOT), not $(CURDIR)." >&2
+	@exit 2

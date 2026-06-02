@@ -11,6 +11,19 @@ tasks with `codex exec`.
 - `runs/`: generated final responses and JSONL logs from Codex runs.
 - `task-queue.md`: recommended task order.
 
+## Always Run From Repo Root
+
+The `.codex/` directory is at `/home/administrator/infra-config-portal/.codex`.
+Run root automation from the repository root:
+
+```bash
+cd /home/administrator/infra-config-portal
+```
+
+Do not run root `make` or `git add .codex/...` commands from
+`/home/administrator/infra-config-portal/app`; that directory has its own
+Makefile and no `.codex/` folder.
+
 ## Running A Task
 
 From the repository root:
@@ -29,7 +42,9 @@ Each run defaults to `CODEX_SANDBOX_MODE=workspace-write` and
 `CODEX_APPROVAL_POLICY=never`, then writes output under `.codex/runs/`. The
 wrappers pass approval policy with
 `-c "approval_policy=\"${CODEX_APPROVAL_POLICY}\""`; this Codex CLI does not
-use `--ask-for-approval`.
+use `--ask-for-approval`. The root `Makefile` exports these safe defaults for
+`make codex-*` commands and still allows explicit per-command environment
+overrides.
 
 If local bwrap sandboxing fails before shell execution, the only approved
 fallback is an explicitly acknowledged local run:
@@ -41,7 +56,9 @@ CODEX_SANDBOX_MODE=danger-full-access CODEX_DANGER_ACK=I_UNDERSTAND make codex-n
 `danger-full-access` is never the default. It should only be used on an
 isolated development machine with no real infrastructure credentials, no
 secrets, no production SSH keys, and no access to real vSphere, ESXi, iLO,
-NetApp, switches, DNS, IPAM, storage, or production networks.
+NetApp, switches, DNS, IPAM, storage, or production networks. Do not export
+`CODEX_SANDBOX_MODE=danger-full-access` globally; set it only on the single
+fallback command that requires it.
 
 ## Resume
 
