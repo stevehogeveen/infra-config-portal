@@ -60,6 +60,12 @@ const cancellableStatuses: RequestStatus[] = [
   "planned"
 ];
 
+type StageEvent = {
+  stage: string;
+  status: string;
+  message: string;
+};
+
 function App() {
   return (
     <div className="app-shell">
@@ -70,6 +76,7 @@ function App() {
         </Link>
         <nav>
           <NavItem to="/" icon={<Gauge size={18} />} label="Dashboard" />
+          <NavItem to="/run-center" icon={<Workflow size={18} />} label="Run Center" />
           <NavItem to="/requests/new" icon={<Plus size={18} />} label="New VM Request" />
           <NavItem to="/audit-events" icon={<History size={18} />} label="Audit Events" />
           <NavItem to="/providers" icon={<Activity size={18} />} label="Provider Status" />
@@ -78,6 +85,7 @@ function App() {
       <main className="content">
         <Routes>
           <RouterRoute path="/" element={<Dashboard />} />
+          <RouterRoute path="/run-center" element={<RunCenter />} />
           <RouterRoute path="/requests/new" element={<NewRequest />} />
           <RouterRoute path="/requests/:id" element={<RequestDetail />} />
           <RouterRoute path="/workflow-runs/:id" element={<WorkflowRunDetail />} />
@@ -130,6 +138,118 @@ function Dashboard() {
       <section className="panel">
         <PanelTitle icon={<Layers size={18} />} title="Recent Requests" />
         <RequestTable requests={requests.slice(0, 10)} />
+      </section>
+    </Page>
+  );
+}
+
+function RunCenter() {
+  const [requests, setRequests] = useState<RequestRecord[]>([]);
+  const [runs, setRuns] = useState<WorkflowRun[]>([]);
+  const [selectedRunId, setSelectedRunId] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
+
+  async function load() {
+    setError("");
+    setLoading(true);
+    try {
+      const [nextRequests, nextRuns] = await Promise.all([api.requests(), api.workflowRuns()]);
+      setRequests(nextRequests);
+      setRuns(nextRuns);
+      setSelectedRunId((current) => current || nextRuns[0]?.id || "");
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    load();
+  }, []);
+
+  const pendingRequests = requests.filter((request) =>
+    ["submitted", "validating", "needs_approval", "approved"].includes(request.status)
+  );
+  const selectedRun = runs.find((run) => run.id === selectedRunId) ?? runs[0] ?? null;
+  const selectedRequest =
+    (selectedRun ? requests.find((request) => request.id === selectedRun.request_id) : null) ??
+    pendingRequests[0] ??
+    null;
+  const stageEvents = selectedRun ? stageEventsForRun(selectedRun) : [];
+  const review = selectedRun ? reviewBeforeExecute(selectedRun) : null;
+
+  return (
+    <Page
+      title="Run Center"
+      actions={
+        <>
+          <span className="mock-warning">Mock providers only</span>
+          <button onClick={load} disabled={loading}>
+            <RefreshCw size={16} />
+            Refresh
+          </button>
+        </>
+      }
+    >
+      <Feedback loading={loading} error={error} />
+      <section className="metric-grid">
+        <Metric label="Pending" value={pendingRequests.length} icon={<ClipboardList size={18} />} />
+        <Metric label="Planned" value={runs.filter((run) => run.status === "planned").length} icon={<Workflow size={18} />} />
+        <Metric label="Executing" value={runs.filter((run) => run.status === "executing").length} icon={<Play size={18} />} />
+        <Metric label="Completed" value={runs.filter((run) => run.status === "completed").length} icon={<CheckCircle2 size={18} />} />
+      </section>
+      <section className="run-center-grid">
+        <div className="panel">
+          <PanelTitle icon={<ClipboardList size={18} />} title="Pending Requests" />
+          <RequestTable requests={pendingRequests.slice(0, 8)} />
+        </div>
+        <div className="panel">
+          <PanelTitle icon={<Workflow size={18} />} title="Workflow Runs" />
+          <WorkflowRunTable onSelect={setSelectedRunId} runs={runs} selectedRunId={selectedRun?.id ?? ""} />
+        </div>
+      </section>
+      <section className="panel">
+        <PanelTitle icon={<ShieldCheck size={18} />} title="Execution Review" />
+        {selectedRequest ? (
+          <>
+            <div className="detail-grid">
+              <Info label="Selected Request" value={selectedRequest.vm_deploy.vm_name} />
+              <Info label="Request Status" value={labelize(selectedRequest.status)} />
+              <Info label="Environment" value={selectedRequest.environment} />
+              <Info label="Owner" value={selectedRequest.owner} />
+            </div>
+            <div className="action-row review-actions">
+              <Link className="button-link" to={`/requests/${selectedRequest.id}`}>
+                <ClipboardList size={16} />
+                Request
+              </Link>
+              {selectedRun && (
+                <Link className="button-link" to={`/workflow-runs/${selectedRun.id}`}>
+                  <Workflow size={16} />
+                  Run
+                </Link>
+              )}
+            </div>
+          </>
+        ) : (
+          <p className="muted">No request selected.</p>
+        )}
+        {selectedRun ? (
+          <>
+            <div className="review-banner">
+              <AlertTriangle size={18} />
+              <div>
+                <strong>{review?.status ?? "review"}</strong>
+                <p>{review?.message ?? "Review the dry-run plan before execution."}</p>
+              </div>
+            </div>
+            <StageList events={stageEvents} />
+          </>
+        ) : (
+          <p className="muted">No workflow run has been planned yet.</p>
+        )}
       </section>
     </Page>
   );
@@ -884,6 +1004,73 @@ function ProviderStatusPage() {
   );
 }
 
+function WorkflowRunTable({
+  onSelect,
+  runs,
+  selectedRunId
+}: {
+  onSelect: (id: string) => void;
+  runs: WorkflowRun[];
+  selectedRunId: string;
+}) {
+  if (!runs.length) {
+    return <p className="muted">No workflow runs yet.</p>;
+  }
+
+  return (
+    <table>
+      <thead>
+        <tr>
+          <th>Run</th>
+          <th>Status</th>
+          <th>Provider</th>
+          <th>Updated</th>
+          <th>Review</th>
+        </tr>
+      </thead>
+      <tbody>
+        {runs.map((run) => (
+          <tr className={run.id === selectedRunId ? "selected-row" : ""} key={run.id}>
+            <td>
+              <Link to={`/workflow-runs/${run.id}`}>{run.id.slice(0, 8)}</Link>
+            </td>
+            <td>
+              <StatusBadge status={run.status} />
+            </td>
+            <td>{run.provider}</td>
+            <td>{formatDateTime(run.updated_at)}</td>
+            <td>
+              <button className="small-button" onClick={() => onSelect(run.id)}>
+                Review
+              </button>
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+function StageList({ events }: { events: StageEvent[] }) {
+  if (!events.length) {
+    return <p className="muted">No stage events recorded for this run.</p>;
+  }
+
+  return (
+    <div className="stage-list">
+      {events.map((event) => (
+        <article className="stage-item" key={event.stage}>
+          <div>
+            <strong>{event.stage}</strong>
+            <StatusBadge status={event.status} />
+          </div>
+          <p>{event.message}</p>
+        </article>
+      ))}
+    </div>
+  );
+}
+
 function RequestTable({ requests }: { requests: RequestRecord[] }) {
   if (!requests.length) {
     return <p className="muted">No requests yet.</p>;
@@ -1003,6 +1190,51 @@ function ButtonLink({ to, icon, label }: { to: string; icon: ReactNode; label: s
 
 function labelize(value: string) {
   return value.replace(/_/g, " ");
+}
+
+function stageEventsForRun(run: WorkflowRun): StageEvent[] {
+  const resultEvents = extractStageEvents(run.result_json);
+  return resultEvents.length ? resultEvents : extractStageEvents(run.plan_json);
+}
+
+function extractStageEvents(payload: Record<string, unknown> | null | undefined): StageEvent[] {
+  const events = payload?.stage_events;
+  if (!Array.isArray(events)) {
+    return [];
+  }
+
+  return events.flatMap((event) => {
+    if (!isRecord(event) || typeof event.stage !== "string" || typeof event.status !== "string") {
+      return [];
+    }
+
+    return [
+      {
+        stage: event.stage,
+        status: event.status,
+        message: typeof event.message === "string" ? event.message : ""
+      }
+    ];
+  });
+}
+
+function reviewBeforeExecute(run: WorkflowRun): { status: string; message: string } | null {
+  const review = run.plan_json.review_before_execute;
+  if (!isRecord(review)) {
+    return null;
+  }
+
+  return {
+    status: typeof review.status === "string" ? review.status : "pending",
+    message:
+      typeof review.message === "string"
+        ? review.message
+        : "Review the dry-run plan before execution."
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 function formatDate(value: string) {

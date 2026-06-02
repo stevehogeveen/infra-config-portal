@@ -95,7 +95,9 @@ to `http://127.0.0.1:8001`.
 
 The request detail view shows readiness, blockers, lifecycle actions, approval,
 mock execution, cancellation, request-scoped audit events, draft editing, and
-notes updates for editable pre-execution requests.
+notes updates for editable pre-execution requests. Run Center shows pending
+requests, local workflow runs, mock stage status, and review-before-execute
+state.
 
 ## Docker Compose
 
@@ -116,7 +118,8 @@ adapters still run in mock mode only.
 5. `POST /api/v1/requests/{id}/plan`
 6. `GET /api/v1/requests/{id}/readiness`
 7. `POST /api/v1/requests/{id}/execute`
-8. `GET /api/v1/audit-events`
+8. `GET /api/v1/workflow-runs`
+9. `GET /api/v1/audit-events`
 
 The readiness endpoint is read-only. It returns readiness flags, structured
 `blockers` and `warnings` with `code`, `message`, `severity`, and `action`, a

@@ -32,6 +32,7 @@ from app.services.lifecycle import (
     execute_request,
     get_request,
     get_workflow_run,
+    list_workflow_runs,
     list_requests,
     plan_request,
     submit_request,
@@ -196,6 +197,11 @@ def read_audit_events(session: Session = Depends(get_session)) -> list[AuditEven
             select(AuditEvent).order_by(AuditEvent.created_at.desc()).limit(200)
         ).scalars()
     )
+
+
+@router.get("/workflow-runs", response_model=list[WorkflowRunRead])
+def read_workflow_runs(session: Session = Depends(get_session)) -> list[WorkflowRunRead]:
+    return list_workflow_runs(session)
 
 
 @router.get("/providers/status", response_model=list[ProviderStatusRead])

@@ -36,11 +36,31 @@ def test_vm_deploy_api_flow(client: TestClient, vm_payload: dict) -> None:
     workflow_run_id = planned.json()["id"]
     assert planned.json()["status"] == "planned"
     assert planned.json()["plan_json"]["dry_run"] is True
+    assert planned.json()["plan_json"]["mock_only"] is True
+    assert planned.json()["plan_json"]["review_before_execute"]["required"] is True
+    assert [
+        event["stage"]
+        for event in planned.json()["plan_json"]["stage_events"]
+    ] == [
+        "DISCOVER",
+        "VALIDATE",
+        "PLAN",
+        "REVIEW",
+        "EXECUTE",
+        "COMPLETE",
+        "BLOCKED",
+    ]
+
+    workflow_runs = client.get("/api/v1/workflow-runs")
+    assert workflow_runs.status_code == 200
+    assert workflow_runs.json()[0]["id"] == workflow_run_id
 
     executed = client.post(f"/api/v1/requests/{request_id}/execute")
     assert executed.status_code == 200
     assert executed.json()["status"] == "completed"
     assert executed.json()["result_json"]["mock"] is True
+    assert executed.json()["result_json"]["stage_events"][0]["stage"] == "DISCOVER"
+    assert executed.json()["result_json"]["stage_events"][0]["status"] == "completed"
 
     request_detail = client.get(f"/api/v1/requests/{request_id}")
     assert request_detail.status_code == 200

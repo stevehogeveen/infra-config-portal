@@ -372,7 +372,12 @@ def plan_request(
         event_type="request.planned",
         message="Dry-run deployment plan created.",
         workflow_run=run,
-        data={"workflow_run_id": run.id, "dry_run": True},
+        data={
+            "workflow_run_id": run.id,
+            "dry_run": True,
+            "stage": "PLAN",
+            "review_before_execute_required": True,
+        },
     )
     session.commit()
     return get_workflow_run(session, run.id)
@@ -401,7 +406,7 @@ def execute_request(
         event_type="request.execution_started",
         message="Mock workflow execution started.",
         workflow_run=run,
-        data={"workflow_run_id": run.id},
+        data={"workflow_run_id": run.id, "stage": "EXECUTE"},
     )
 
     try:
@@ -432,7 +437,7 @@ def execute_request(
         event_type="request.completed",
         message="Mock VM deployment completed.",
         workflow_run=run,
-        data={"workflow_run_id": run.id, "mock": True},
+        data={"workflow_run_id": run.id, "mock": True, "stage": "COMPLETE"},
     )
     session.commit()
     return get_workflow_run(session, run.id)
@@ -569,6 +574,14 @@ def get_workflow_run(session: Session, workflow_run_id: str) -> WorkflowRun:
     if run is None:
         raise WorkflowRunNotFoundError(workflow_run_id)
     return run
+
+
+def list_workflow_runs(session: Session) -> list[WorkflowRun]:
+    return list(
+        session.execute(
+            select(WorkflowRun).order_by(WorkflowRun.created_at.desc()).limit(200)
+        ).scalars()
+    )
 
 
 def _get_or_create_workflow(session: Session) -> Workflow:

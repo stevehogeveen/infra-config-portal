@@ -63,6 +63,7 @@ export const api = {
     apiRequest<RequestRecord>(`/api/v1/requests/${id}/cancel`, { method: "POST" }),
   execute: (id: string) =>
     apiRequest<WorkflowRun>(`/api/v1/requests/${id}/execute`, { method: "POST" }),
+  workflowRuns: () => apiRequest<WorkflowRun[]>("/api/v1/workflow-runs"),
   workflowRun: (id: string) => apiRequest<WorkflowRun>(`/api/v1/workflow-runs/${id}`),
   auditEvents: () => apiRequest<AuditEvent[]>("/api/v1/audit-events"),
   providers: () => apiRequest<ProviderStatus[]>("/api/v1/providers/status")

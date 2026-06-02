@@ -24,6 +24,67 @@ MOCK_CATALOG = {
     "storage_tiers": ["bronze", "silver", "gold"],
 }
 
+MOCK_STAGE_EVENTS = [
+    {
+        "stage": "DISCOVER",
+        "status": "completed",
+        "message": "Mock catalog and template discovery completed.",
+    },
+    {
+        "stage": "VALIDATE",
+        "status": "completed",
+        "message": "Mock request validation completed.",
+    },
+    {
+        "stage": "PLAN",
+        "status": "completed",
+        "message": "Dry-run VM deployment plan generated.",
+    },
+    {
+        "stage": "REVIEW",
+        "status": "pending",
+        "message": "Operator review is required before mock execution.",
+    },
+    {
+        "stage": "EXECUTE",
+        "status": "blocked",
+        "message": "Execution waits for explicit operator action.",
+    },
+    {
+        "stage": "COMPLETE",
+        "status": "pending",
+        "message": "Completion summary will be written after execution.",
+    },
+    {
+        "stage": "BLOCKED",
+        "status": "not_applicable",
+        "message": "No blocker has been raised for this mock plan.",
+    },
+]
+
+
+def _completed_stage_events(plan: dict) -> list[dict]:
+    stage_events = plan.get("stage_events")
+    if not isinstance(stage_events, list):
+        stage_events = MOCK_STAGE_EVENTS
+
+    completed_events: list[dict] = []
+    for event in stage_events:
+        if not isinstance(event, dict):
+            continue
+        stage = event.get("stage")
+        if stage == "BLOCKED":
+            completed_events.append(
+                {
+                    **event,
+                    "status": "not_applicable",
+                    "message": "Mock execution completed without blockers.",
+                }
+            )
+        else:
+            completed_events.append({**event, "status": "completed"})
+    return completed_events
+
 
 class MockSourceOfTruthAdapter:
     def health(self) -> ProviderStatus:
@@ -98,6 +159,13 @@ class MockVsphereAdapter:
                 f"Clone {vm.vm_name} from {vm.template} into {request.site}/{vm.cluster} "
                 f"on {storage_target}"
             ),
+            "mock_only": True,
+            "review_before_execute": {
+                "required": True,
+                "status": "pending",
+                "message": "Review the dry-run plan before launching mock execution.",
+            },
+            "stage_events": MOCK_STAGE_EVENTS,
             "steps": [
                 {"name": "resolve-template", "status": "planned", "target": vm.template},
                 {
@@ -128,6 +196,7 @@ class MockVsphereAdapter:
             "mock_task_id": f"mock-task-{request.id[:8]}",
             "mock_vm_id": f"vm-{request.id[:8]}",
             "message": "Mock VM deployment completed without contacting infrastructure.",
+            "stage_events": _completed_stage_events(plan),
             "executed_steps": [
                 {**step, "status": "completed"}
                 for step in plan.get("steps", [])

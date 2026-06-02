@@ -31,8 +31,9 @@ and execution through mocked provider adapters.
 5. Approve it with `POST /api/v1/requests/{id}/approve`.
 6. Create a dry-run plan with `POST /api/v1/requests/{id}/plan`.
 7. Execute the mock deployment with `POST /api/v1/requests/{id}/execute`.
-8. Review the run with `GET /api/v1/workflow-runs/{id}`.
-9. Review history with `GET /api/v1/audit-events`.
+8. Review local runs with `GET /api/v1/workflow-runs`.
+9. Review a run with `GET /api/v1/workflow-runs/{id}`.
+10. Review history with `GET /api/v1/audit-events`.
 
 Requests that have not started execution can be cancelled with
 `POST /api/v1/requests/{id}/cancel`.
@@ -104,6 +105,21 @@ SHA-256 checksum. The intent includes execution-affecting fields such as
 environment, site, cluster, VM name, template, CPU, memory, disk, network,
 datastore or storage tier, owner, and expiry date. Informational notes are not
 part of the execution intent.
+
+Plans also include mock stage events for `DISCOVER`, `VALIDATE`, `PLAN`,
+`REVIEW`, `EXECUTE`, `COMPLETE`, and `BLOCKED`, plus a
+`review_before_execute` marker. These fields are local workflow metadata for
+Run Center review and do not call providers.
+
+### Run Center
+
+`GET /api/v1/workflow-runs` returns the latest local workflow runs for the Run
+Center. The frontend Run Center combines this with the request list to show
+pending requests, planned runs, executing runs, completed runs, selected request
+context, stage status, and the mock-only review-before-execute warning.
+
+Run Center is still a skeleton. It does not launch new real execution paths,
+stream live logs, or contact external automation systems.
 
 ### Edits
 
