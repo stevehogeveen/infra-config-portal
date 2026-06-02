@@ -9,7 +9,8 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.core.enums import ApprovalDecision, RequestStatus, WorkflowRunStatus
 from app.models import Approval, Request, VMDeploymentRequest, Workflow, WorkflowRun
-from app.providers.mock import MockSourceOfTruthAdapter, MockVsphereAdapter
+from app.providers.base import SourceOfTruthAdapter, VsphereAdapter
+from app.providers.registry import provider_registry
 from app.schemas import ApprovalCreate, VMDeploymentCreate, VMDeploymentUpdate
 from app.services.audit import record_audit_event
 from app.services.worker import InlineWorker
@@ -224,11 +225,11 @@ def submit_request(
     request_id: str,
     *,
     actor: str,
-    source_of_truth: MockSourceOfTruthAdapter | None = None,
+    source_of_truth: SourceOfTruthAdapter | None = None,
 ) -> Request:
     request = get_request(session, request_id)
     _ensure_status(request, RequestStatus.DRAFT)
-    source_of_truth = source_of_truth or MockSourceOfTruthAdapter()
+    source_of_truth = source_of_truth or provider_registry().source_of_truth()
 
     _transition(
         session,
@@ -340,11 +341,11 @@ def plan_request(
     request_id: str,
     *,
     actor: str,
-    vsphere: MockVsphereAdapter | None = None,
+    vsphere: VsphereAdapter | None = None,
 ) -> WorkflowRun:
     request = get_request(session, request_id)
     _ensure_status(request, RequestStatus.APPROVED)
-    vsphere = vsphere or MockVsphereAdapter()
+    vsphere = vsphere or provider_registry().vsphere()
 
     workflow = _get_or_create_workflow(session)
     plan = vsphere.plan_vm_deployment(request)
@@ -388,13 +389,13 @@ def execute_request(
     request_id: str,
     *,
     actor: str,
-    vsphere: MockVsphereAdapter | None = None,
+    vsphere: VsphereAdapter | None = None,
     worker: InlineWorker | None = None,
 ) -> WorkflowRun:
     request = get_request(session, request_id)
     run = _preflight_execution_plan(session, request, actor=actor)
 
-    vsphere = vsphere or MockVsphereAdapter()
+    vsphere = vsphere or provider_registry().vsphere()
     worker = worker or InlineWorker()
 
     run.status = WorkflowRunStatus.EXECUTING.value

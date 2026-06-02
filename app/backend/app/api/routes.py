@@ -7,7 +7,8 @@ from sqlalchemy.orm import Session
 from app.auth import get_current_actor
 from app.core.database import get_session
 from app.models import AuditEvent
-from app.providers.mock import MockSourceOfTruthAdapter, provider_statuses
+from app.providers.mock import MockSourceOfTruthAdapter
+from app.providers.registry import ProviderRegistryError, provider_registry
 from app.schemas import (
     ApprovalCreate,
     AuditEventRead,
@@ -112,6 +113,8 @@ def submit(
         return submit_request(session, request_id, actor=actor)
     except RequestNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Request not found") from exc
+    except ProviderRegistryError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
     except ValidationFailureError as exc:
         raise HTTPException(status_code=422, detail={"validation_errors": exc.errors}) from exc
     except InvalidTransitionError as exc:
@@ -128,6 +131,8 @@ def approve(
         return approve_request(session, request_id, payload)
     except RequestNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Request not found") from exc
+    except ProviderRegistryError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
     except InvalidTransitionError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
@@ -173,6 +178,8 @@ def execute(
         return execute_request(session, request_id, actor=actor)
     except RequestNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Request not found") from exc
+    except ProviderRegistryError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
     except ExecutionPreflightError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except WorkflowRunNotFoundError as exc:
@@ -208,7 +215,10 @@ def read_workflow_runs(session: Session = Depends(get_session)) -> list[Workflow
 
 @router.get("/providers/status", response_model=list[ProviderStatusRead])
 def read_provider_status() -> list[ProviderStatusRead]:
-    return provider_statuses()
+    try:
+        return provider_registry().statuses()
+    except ProviderRegistryError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 @router.get("/catalog", response_model=CatalogRead)

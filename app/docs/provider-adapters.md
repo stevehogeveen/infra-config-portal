@@ -15,6 +15,11 @@ workflow lifecycle code.
 
 All adapters report mock or placeholder status. None make network calls.
 
+The backend resolves default adapters through `app.providers.registry`. The
+current registry accepts only `PROVIDER_MODE=mock`; any other mode raises a
+clear provider registry error because no real adapters are registered in the
+MVP.
+
 ## Interface Expectations
 
 Real adapters should implement small interfaces:
@@ -25,6 +30,9 @@ Real adapters should implement small interfaces:
 
 The workflow service should not know vendor API details. It should receive a
 plan and result object from adapters and persist them.
+
+Workflow lifecycle code depends on adapter protocols and accepts injected
+adapters for tests. Default local execution uses the mock registry.
 
 ## Real Adapter Requirements
 
