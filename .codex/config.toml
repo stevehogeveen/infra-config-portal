@@ -1,0 +1,36 @@
+# Project-scoped Codex defaults for infra-config-portal.
+#
+# Safety model:
+# - Codex may read and edit this Git workspace only.
+# - Codex must not request approval prompts during non-interactive runs.
+# - Codex must not use danger-full-access, --yolo, or broad filesystem access.
+# - Generated shell commands should not receive infrastructure provider secrets.
+# - Provider development remains mock-first; no real vSphere, ESXi, iLO,
+#   NetApp, switch, OVF, storage, AWX, Terraform, or source-of-truth API calls.
+
+sandbox_mode = "workspace-write"
+approval_policy = "never"
+web_search = "disabled"
+
+[sandbox_workspace_write]
+# Keep automated local repo tasks offline by default. Dependency installation
+# may require an explicit human-run setup command outside codex exec.
+network_access = false
+
+[shell_environment_policy]
+# Forward only generic local development variables to commands spawned by Codex.
+# Do not forward provider credentials, cloud credentials, tokens, hostnames, or
+# site-specific environment variables into tests or build scripts.
+include_only = [
+  "HOME",
+  "PATH",
+  "PWD",
+  "SHELL",
+  "TERM",
+  "TMPDIR",
+  "USER",
+  "LOGNAME",
+  "LANG",
+  "LC_ALL",
+  "LC_CTYPE",
+]
