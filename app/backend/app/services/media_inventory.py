@@ -52,22 +52,27 @@ def get_media_inventory(
     warnings: list[str] = []
     scanned_count = 0
 
-    for directory in configured_directories:
+    configured_directory_labels = [
+        f"configured-directory-{index}"
+        for index, _ in enumerate(configured_directories, start=1)
+    ]
+
+    for directory, source_label in zip(configured_directories, configured_directory_labels):
         path = Path(directory).expanduser()
         if not path.exists():
-            warnings.append("Configured media inventory directory does not exist.")
+            warnings.append(f"{source_label} does not exist.")
             continue
         if not path.is_dir():
-            warnings.append("Configured media inventory path is not a directory.")
+            warnings.append(f"{source_label} is not a directory.")
             continue
 
-        scanned_count += 1
         try:
             entries = sorted(path.iterdir(), key=lambda item: item.name.lower())
         except OSError:
-            warnings.append("Configured media inventory directory could not be read.")
+            warnings.append(f"{source_label} could not be read.")
             continue
 
+        scanned_count += 1
         for entry in entries:
             if len(items) >= MEDIA_INVENTORY_LIMIT:
                 warnings.append(
@@ -76,17 +81,17 @@ def get_media_inventory(
                 break
             if entry.is_symlink() or not entry.is_file():
                 continue
-            items.append(_inventory_item(entry, len(items) + 1))
+            items.append(_inventory_item(entry, len(items) + 1, source_label))
 
     return MediaInventoryRead(
         mode="local" if scanned_count else "unavailable",
-        configured_directories=["redacted" for _ in configured_directories],
+        configured_directories=configured_directory_labels,
         items=items,
         warnings=warnings,
     )
 
 
-def _inventory_item(path: Path, index: int) -> MediaInventoryItemRead:
+def _inventory_item(path: Path, index: int, source_label: str) -> MediaInventoryItemRead:
     extension = path.suffix.lower()
     category = _category_for_extension(extension)
     return MediaInventoryItemRead(
@@ -94,7 +99,7 @@ def _inventory_item(path: Path, index: int) -> MediaInventoryItemRead:
         extension=extension,
         size_bytes=path.stat().st_size,
         category=category,
-        source="configured-directory",
+        source=source_label,
         actual_name_redacted=True,
     )
 

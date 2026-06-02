@@ -1431,6 +1431,13 @@ function MediaInventoryPage() {
             <Metric label="OVF/OVA" value={items.filter((item) => ["ovf", "ova"].includes(item.category)).length} icon={<Layers size={18} />} />
             <Metric label="Firmware" value={items.filter((item) => item.category === "firmware").length} icon={<ShieldCheck size={18} />} />
           </section>
+          <section className="panel safety-note">
+            <PanelTitle icon={<ShieldCheck size={18} />} title="Metadata-Only Safety" />
+            <p>
+              Media inventory shows redacted placeholder names, extensions, sizes, categories, and source labels only.
+              It does not copy, mount, parse, deploy, or expose local media filenames.
+            </p>
+          </section>
           {inventory.warnings.length > 0 && (
             <section className="panel">
               <PanelTitle icon={<AlertTriangle size={18} />} title="Warnings" />
@@ -1458,6 +1465,7 @@ function MediaInventoryPage() {
                     <th>Extension</th>
                     <th>Size</th>
                     <th>Source</th>
+                    <th>Redacted</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1468,6 +1476,7 @@ function MediaInventoryPage() {
                       <td>{item.extension || "-"}</td>
                       <td>{formatBytes(item.size_bytes)}</td>
                       <td>{item.source}</td>
+                      <td>{yesNo(item.actual_name_redacted)}</td>
                     </tr>
                   ))}
                 </tbody>

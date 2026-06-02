@@ -147,6 +147,9 @@ was redacted.
 Media categories are `iso`, `ovf`, `ova`, `vmdk`, `firmware`, and `other`.
 The scanner does not copy files, parse media contents, mount ISOs, deploy OVFs
 or OVAs, inspect firmware, or expose real local filenames in API responses.
+Configured directory paths are returned as redacted labels such as
+`configured-directory-1`; missing or unreadable directory warnings use those
+labels and do not echo the local path.
 
 ### Edits
 
