@@ -1,0 +1,99 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+APP_DIR="${ROOT_DIR}/app"
+BACKEND_PORT="${BACKEND_PORT:-8000}"
+FRONTEND_PORT="${FRONTEND_PORT:-5173}"
+
+cd "${ROOT_DIR}"
+
+echo "== Infra Config Portal =="
+echo "Repo: ${ROOT_DIR}"
+echo
+
+if [[ ! -x "${ROOT_DIR}/scripts/check-repo-root.sh" ]]; then
+  echo "Error: scripts/check-repo-root.sh not found or not executable."
+  echo "Run this from the infra-config-portal repo root."
+  exit 1
+fi
+
+"${ROOT_DIR}/scripts/check-repo-root.sh"
+
+kill_port() {
+  local port="$1"
+  local pids=""
+
+  if command -v lsof >/dev/null 2>&1; then
+    pids="$(lsof -ti tcp:"${port}" || true)"
+  elif command -v fuser >/dev/null 2>&1; then
+    pids="$(fuser "${port}"/tcp 2>/dev/null || true)"
+  fi
+
+  if [[ -n "${pids}" ]]; then
+    echo "Stopping existing process on port ${port}: ${pids}"
+    kill ${pids} 2>/dev/null || true
+    sleep 1
+
+    # Force kill if still alive.
+    for pid in ${pids}; do
+      if kill -0 "${pid}" 2>/dev/null; then
+        echo "Force stopping PID ${pid}"
+        kill -9 "${pid}" 2>/dev/null || true
+      fi
+    done
+  fi
+}
+
+cleanup() {
+  echo
+  echo "Stopping Infra Config Portal..."
+  if [[ -n "${BACKEND_PID:-}" ]] && kill -0 "${BACKEND_PID}" 2>/dev/null; then
+    kill "${BACKEND_PID}" 2>/dev/null || true
+  fi
+  if [[ -n "${FRONTEND_PID:-}" ]] && kill -0 "${FRONTEND_PID}" 2>/dev/null; then
+    kill "${FRONTEND_PID}" 2>/dev/null || true
+  fi
+}
+
+trap cleanup EXIT INT TERM
+
+echo "Freeing ports ${BACKEND_PORT} and ${FRONTEND_PORT}..."
+kill_port "${BACKEND_PORT}"
+kill_port "${FRONTEND_PORT}"
+
+echo
+echo "Running smoke test first..."
+make smoke
+
+echo
+echo "Starting backend on port ${BACKEND_PORT}..."
+(
+  cd "${APP_DIR}"
+  BACKEND_PORT="${BACKEND_PORT}" make backend-run
+) &
+BACKEND_PID=$!
+
+sleep 2
+
+echo
+echo "Starting frontend on port ${FRONTEND_PORT}..."
+(
+  cd "${APP_DIR}"
+  FRONTEND_PORT="${FRONTEND_PORT}" make frontend-run
+) &
+FRONTEND_PID=$!
+
+echo
+echo "Started:"
+echo "  Backend PID:  ${BACKEND_PID}"
+echo "  Frontend PID: ${FRONTEND_PID}"
+echo
+echo "Open:"
+echo "  Frontend: http://localhost:${FRONTEND_PORT}"
+echo "  Backend:  http://127.0.0.1:${BACKEND_PORT}"
+echo "  API docs: http://127.0.0.1:${BACKEND_PORT}/docs"
+echo
+echo "Press Ctrl+C to stop both."
+
+wait
