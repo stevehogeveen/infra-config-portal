@@ -56,6 +56,46 @@ clear_provider_environment() {
   export PROVIDER_MODE=mock
 }
 
+CODEX_SANDBOX_MODE="${CODEX_SANDBOX_MODE:-workspace-write}"
+CODEX_APPROVAL_POLICY="${CODEX_APPROVAL_POLICY:-never}"
+
+validate_codex_exec_safety() {
+  case "${CODEX_SANDBOX_MODE}" in
+    read-only|workspace-write|danger-full-access) ;;
+    *)
+      echo "Error: CODEX_SANDBOX_MODE must be read-only, workspace-write, or danger-full-access." >&2
+      echo "Current value: ${CODEX_SANDBOX_MODE}" >&2
+      exit 2
+      ;;
+  esac
+
+  if [[ "${CODEX_SANDBOX_MODE}" != "danger-full-access" ]]; then
+    return
+  fi
+
+  if [[ "${CODEX_DANGER_ACK:-}" != "I_UNDERSTAND" ]]; then
+    cat >&2 <<'EOF'
+Error: CODEX_SANDBOX_MODE=danger-full-access disables Codex filesystem sandboxing.
+This mode requires explicit acknowledgement:
+  CODEX_SANDBOX_MODE=danger-full-access CODEX_DANGER_ACK=I_UNDERSTAND make codex-next
+
+Use danger-full-access only on an isolated development machine with no real
+infrastructure credentials, no secrets, no production SSH keys, and no access
+to real vSphere, ESXi, iLO, NetApp, switches, DNS, IPAM, storage, or production
+networks.
+EOF
+    exit 1
+  fi
+
+  cat >&2 <<'EOF'
+Warning: running Codex with danger-full-access. Filesystem sandboxing is disabled.
+Only continue on an isolated development machine with no real infrastructure
+credentials, no secrets, no production SSH keys, and no access to real vSphere,
+ESXi, iLO, NetApp, switches, DNS, IPAM, storage, or production networks.
+EOF
+}
+
+validate_codex_exec_safety
 mkdir -p "${RUNS_DIR}"
 
 timestamp="$(date -u +"%Y%m%dT%H%M%SZ")"
@@ -80,17 +120,23 @@ fi
 clear_provider_environment
 cd "${REPO_ROOT}"
 
+codex_config_args=(
+  -c "approval_policy=\"${CODEX_APPROVAL_POLICY}\""
+  -c 'sandbox_workspace_write.network_access=false'
+)
+
 echo "Running Codex task: ${TASK_REAL}" >&2
 echo "Repository root: ${REPO_ROOT}" >&2
+echo "Codex sandbox mode: ${CODEX_SANDBOX_MODE}" >&2
+echo "Codex approval policy: ${CODEX_APPROVAL_POLICY}" >&2
 echo "Final response: ${final_file}" >&2
 
 set +e
 if [[ "${supports_json}" -eq 1 && "${supports_output}" -eq 1 ]]; then
   codex exec \
     --cd "${REPO_ROOT}" \
-    --sandbox workspace-write \
-    -c 'approval_policy="never"' \
-    -c 'sandbox_workspace_write.network_access=false' \
+    --sandbox "${CODEX_SANDBOX_MODE}" \
+    "${codex_config_args[@]}" \
     --json \
     -o "${final_file}" \
     - < "${TASK_REAL}" > "${jsonl_file}"
@@ -98,18 +144,16 @@ if [[ "${supports_json}" -eq 1 && "${supports_output}" -eq 1 ]]; then
 elif [[ "${supports_output}" -eq 1 ]]; then
   codex exec \
     --cd "${REPO_ROOT}" \
-    --sandbox workspace-write \
-    -c 'approval_policy="never"' \
-    -c 'sandbox_workspace_write.network_access=false' \
+    --sandbox "${CODEX_SANDBOX_MODE}" \
+    "${codex_config_args[@]}" \
     -o "${final_file}" \
     - < "${TASK_REAL}" > "${stdout_file}"
   status=$?
 else
   codex exec \
     --cd "${REPO_ROOT}" \
-    --sandbox workspace-write \
-    -c 'approval_policy="never"' \
-    -c 'sandbox_workspace_write.network_access=false' \
+    --sandbox "${CODEX_SANDBOX_MODE}" \
+    "${codex_config_args[@]}" \
     - < "${TASK_REAL}" | tee "${final_file}"
   status=${PIPESTATUS[0]}
 fi

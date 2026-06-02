@@ -92,10 +92,24 @@ Resume the most recent exec session:
 make codex-resume
 ```
 
-The wrapper scripts run `codex exec` from the repository root with
-`--sandbox workspace-write`, `approval_policy="never"`, and workspace-write
-network access disabled. Final responses and JSONL logs are written to
-`.codex/runs/`.
+The wrapper scripts run `codex exec` from the repository root with safe
+defaults: `CODEX_SANDBOX_MODE=workspace-write`,
+`CODEX_APPROVAL_POLICY=never`, and workspace-write network access disabled.
+They pass approval policy with
+`-c "approval_policy=\"${CODEX_APPROVAL_POLICY}\""` because this installed CLI
+does not accept `--ask-for-approval`.
+
+If local bwrap sandboxing fails before shell execution, the explicitly
+acknowledged fallback command is:
+
+```bash
+CODEX_SANDBOX_MODE=danger-full-access CODEX_DANGER_ACK=I_UNDERSTAND make codex-next
+```
+
+`danger-full-access` is never the default. Use it only on an isolated
+development machine with no real infrastructure credentials, no secrets, no
+production SSH keys, and no access to real vSphere, ESXi, iLO, NetApp,
+switches, DNS, IPAM, storage, or production networks.
 
 ## Safety Rules
 
@@ -104,6 +118,8 @@ network access disabled. Final responses and JSONL logs are written to
   data.
 - Do not make real vSphere, ESXi, iLO, NetApp, switch, OVF, storage, AWX,
   Terraform, NetBox, Nautobot, or source-of-truth API calls.
-- Do not use `--yolo`, `danger-full-access`, or sandbox bypass flags.
+- Do not use `--yolo` or sandbox bypass flags.
+- Do not use `danger-full-access` by default; it is allowed only through the
+  explicit Codex wrapper environment variables and acknowledgement above.
 - Future real provider adapters must require explicit configuration, dry-run or
   planning, approval, and audit logging.

@@ -25,9 +25,23 @@ Or through `make`:
 make codex-task TASK=.codex/tasks/001-backend-vm-request-lifecycle.md
 ```
 
-Each run uses `codex exec --sandbox workspace-write` and writes output under
-`.codex/runs/`. When the installed CLI supports `--json`, the wrapper also
-saves a JSONL event log.
+Each run defaults to `CODEX_SANDBOX_MODE=workspace-write` and
+`CODEX_APPROVAL_POLICY=never`, then writes output under `.codex/runs/`. The
+wrappers pass approval policy with
+`-c "approval_policy=\"${CODEX_APPROVAL_POLICY}\""`; this Codex CLI does not
+use `--ask-for-approval`.
+
+If local bwrap sandboxing fails before shell execution, the only approved
+fallback is an explicitly acknowledged local run:
+
+```bash
+CODEX_SANDBOX_MODE=danger-full-access CODEX_DANGER_ACK=I_UNDERSTAND make codex-next
+```
+
+`danger-full-access` is never the default. It should only be used on an
+isolated development machine with no real infrastructure credentials, no
+secrets, no production SSH keys, and no access to real vSphere, ESXi, iLO,
+NetApp, switches, DNS, IPAM, storage, or production networks.
 
 ## Resume
 
@@ -45,7 +59,10 @@ Resume with a specific prompt file:
 
 ## Safety Rules
 
-- Do not use `--yolo` or `danger-full-access`.
+- Do not use `--yolo` or sandbox bypass flags.
+- Do not use `danger-full-access` by default; it requires
+  `CODEX_SANDBOX_MODE=danger-full-access` and
+  `CODEX_DANGER_ACK=I_UNDERSTAND`.
 - Do not add real credentials, IPs, hostnames, tokens, or secrets.
 - Keep `PROVIDER_MODE=mock` unless a human explicitly changes it outside an
   automated Codex task.

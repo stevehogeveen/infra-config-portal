@@ -13,7 +13,9 @@ Describe one small, concrete outcome.
 - Keep providers mocked and safe by default.
 - Do not add real credentials, IPs, hostnames, tokens, or secrets.
 - Do not make real infrastructure or storage API calls.
-- Do not use `--yolo` or `danger-full-access`.
+- Do not use `--yolo` or sandbox bypass flags.
+- Do not use `danger-full-access` by default; it is allowed only through the
+  repository wrapper scripts with `CODEX_DANGER_ACK=I_UNDERSTAND`.
 
 ## Expected Work
 

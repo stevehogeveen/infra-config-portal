@@ -3,6 +3,10 @@
 Run one task at a time. Review the resulting diff and `.codex/runs/` summary
 before marking a task complete.
 
+Product/workflow tasks should read `reference/lab-builder-reference.md` first.
+That file summarizes `/home/administrator/lab-builder`, which is the target
+behavior reference for this app.
+
 - [ ] `.codex/tasks/000-repo-audit.md`
 - [ ] `.codex/tasks/001-backend-vm-request-lifecycle.md`
 - [ ] `.codex/tasks/002-frontend-vm-request-flow.md`

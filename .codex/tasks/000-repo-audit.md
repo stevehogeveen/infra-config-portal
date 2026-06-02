@@ -11,7 +11,9 @@ exec tasks easier to run safely.
 - Do not make real provider, infrastructure, storage, switch, OVF, or
   source-of-truth API calls.
 - Do not add credentials, real IPs, real hostnames, tokens, or secrets.
-- Do not use `--yolo` or `danger-full-access`.
+- Do not use `--yolo` or sandbox bypass flags.
+- Do not use `danger-full-access` by default; it is allowed only through the
+  repository wrapper scripts with `CODEX_DANGER_ACK=I_UNDERSTAND`.
 - Keep providers mocked and safe by default.
 
 ## Expected Work

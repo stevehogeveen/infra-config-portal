@@ -6,6 +6,12 @@ This repository is an infrastructure configuration and automation portal for
 requesting, validating, approving, executing, and auditing datacenter
 automation workflows.
 
+`reference/lab-builder-reference.md` summarizes the existing
+`/home/administrator/lab-builder` app. Read it before product, workflow,
+provider-module, Run Center, artifact/reporting, or operator UX work. Treat it
+as the target behavior reference for what this app should grow toward, while
+keeping this repo mock-first and safe by default.
+
 The current implementation lives under `app/` and uses:
 
 - Backend: Python, FastAPI, Pydantic, SQLAlchemy, Alembic, pytest.
@@ -17,6 +23,21 @@ The current implementation lives under `app/` and uses:
 - Prefer small task files in `.codex/tasks/` over long chat sessions.
 - Run tasks with `make codex-task TASK=.codex/tasks/<task>.md`,
   `make codex-next`, or the scripts in `scripts/`.
+- The wrappers honor `CODEX_SANDBOX_MODE` (default: `workspace-write`) and
+  `CODEX_APPROVAL_POLICY` (default: `never`). Pass approval policy through
+  `-c "approval_policy=\"${CODEX_APPROVAL_POLICY}\""`; do not use
+  `--ask-for-approval`.
+- If local bwrap sandboxing fails before shell execution, the only permitted
+  fallback is:
+
+  ```bash
+  CODEX_SANDBOX_MODE=danger-full-access CODEX_DANGER_ACK=I_UNDERSTAND make codex-next
+  ```
+
+- Use that fallback only on an isolated development machine with no real
+  infrastructure credentials, no secrets, no production SSH keys, and no access
+  to real vSphere, ESXi, iLO, NetApp, switches, DNS, IPAM, storage, or
+  production networks.
 - Avoid asking the user questions unless blocked by missing information that
   cannot be discovered locally and where a reasonable assumption would be risky.
 - Inspect relevant files before editing.
@@ -48,8 +69,12 @@ Any real infrastructure integration must require explicit configuration outside
 automated Codex tasks and must support dry-run or plan, approval, audit logging,
 and rollback notes where practical.
 
-Never use `--yolo`, `danger-full-access`, destructive Git resets, or sandbox
-bypass flags.
+Never use `--yolo`, destructive Git resets, or sandbox bypass flags.
+
+Do not use `danger-full-access` by default. It is permitted only for the
+Codex wrapper fallback when the user explicitly sets
+`CODEX_SANDBOX_MODE=danger-full-access` and
+`CODEX_DANGER_ACK=I_UNDERSTAND`.
 
 Never allow arbitrary user-provided code execution or arbitrary Ansible
 variables from the UI without validation.
