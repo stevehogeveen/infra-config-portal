@@ -286,10 +286,13 @@ def test_execute_api_rejects_request_intent_drift(
     assert matching_events[0]["data_json"]["changed_fields"] == ["vm.memory_gb"]
 
 
-def test_provider_status_is_mock_or_placeholder(client: TestClient) -> None:
+def test_provider_status_reports_mock_and_preview_providers(client: TestClient) -> None:
     response = client.get("/api/v1/providers/status")
 
     assert response.status_code == 200
     statuses = response.json()
+    ids = {item["id"] for item in statuses}
+    assert {"mock-vsphere", "ilo-redfish", "cisco-console"}.issubset(ids)
     assert any(item["name"] == "Mock vSphere" and item["mode"] == "mock" for item in statuses)
-    assert all(item["status"] in {"ok", "not-configured"} for item in statuses)
+    assert all(item["mode"] == "mock" for item in statuses)
+    assert all("safe_actions" in item and "disabled_actions" in item for item in statuses)

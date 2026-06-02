@@ -2,10 +2,68 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+
+def _load_local_provider_env() -> None:
+    candidates: list[Path] = []
+    cwd = Path.cwd()
+    repo_root = Path(__file__).resolve().parents[4]
+    app_root = repo_root / "app"
+    backend_root = app_root / "backend"
+
+    for base in (cwd, cwd.parent, cwd.parent.parent, backend_root, app_root, repo_root):
+        env_file = base / ".env.local.providers"
+        if env_file not in candidates:
+            candidates.append(env_file)
+
+    for env_file in candidates:
+        if env_file.exists():
+            load_dotenv(env_file, override=False)
 
 
 def _split_csv(value: str) -> list[str]:
     return [item.strip() for item in value.split(",") if item.strip()]
+
+
+def _optional_env(name: str) -> str | None:
+    value = os.getenv(name)
+    if value is None:
+        return None
+    value = value.strip()
+    return value or None
+
+
+def _bool_env(name: str, default: bool) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _int_env(name: str, default: int) -> int:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    try:
+        return int(value)
+    except ValueError:
+        return default
+
+
+def _float_env(name: str, default: float) -> float:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    try:
+        return float(value)
+    except ValueError:
+        return default
+
+
+_load_local_provider_env()
 
 
 @dataclass(frozen=True)
@@ -23,6 +81,14 @@ class Settings:
     cors_origins: tuple[str, ...] = tuple(
         _split_csv(os.getenv("CORS_ORIGINS", "http://127.0.0.1:5173,http://localhost:5173"))
     )
+    ilo_test_host: str | None = _optional_env("ILO_TEST_HOST")
+    ilo_test_username: str | None = _optional_env("ILO_TEST_USERNAME")
+    ilo_test_password: str | None = _optional_env("ILO_TEST_PASSWORD")
+    ilo_test_verify_tls: bool = _bool_env("ILO_TEST_VERIFY_TLS", True)
+    ilo_test_timeout_seconds: float = _float_env("ILO_TEST_TIMEOUT_SECONDS", 3.0)
+    cisco_console_port: str | None = _optional_env("CISCO_CONSOLE_PORT")
+    cisco_console_baud: int = _int_env("CISCO_CONSOLE_BAUD", 9600)
+    cisco_console_timeout_seconds: float = _float_env("CISCO_CONSOLE_TIMEOUT_SECONDS", 2.0)
 
 
 settings = Settings()

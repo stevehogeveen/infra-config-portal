@@ -26,6 +26,20 @@ All provider adapters default to mock mode. A future real adapter must require:
 - approval before execution for production-like environments
 - audit logging around each status transition and provider task ID
 
+`PROVIDER_MODE=local-readonly` is reserved for explicit local iLO/Redfish and
+Cisco console preview probes. It must not run automatically on page load.
+
+Allowed local-readonly behavior:
+
+- dynamic Cisco console candidate discovery without opening serial ports
+- explicit Cisco console read-only probe with newline and safe `show` commands
+- explicit iLO/Redfish GET-only inventory/status probe
+
+Blocked behavior includes power actions, firmware updates, virtual media
+mounts, iLO account changes, switch configuration changes, `conf t`, `write
+memory`, `reload`, `erase startup-config`, `copy`, Terraform/OpenTofu apply,
+AWX launches, and any production-like provider action.
+
 ## Input Safety
 
 The UI and API should collect structured fields only. They must not accept:

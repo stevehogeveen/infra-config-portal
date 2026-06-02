@@ -87,13 +87,53 @@ export type RequestReadiness = {
   summary: string;
 };
 
+export type ProviderAction = {
+  id: string;
+  label: string;
+  enabled: boolean;
+  read_only: boolean;
+  reason: string;
+  method: string | null;
+  endpoint: string | null;
+};
+
+export type ConsoleCandidate = {
+  path: string;
+  stable_path: boolean;
+  exists: boolean;
+  readable: boolean | null;
+  writable: boolean | null;
+  label: string | null;
+  target_path: string | null;
+  recommendation: string;
+};
+
 export type ProviderStatus = {
+  id: string;
   name: string;
   kind: string;
   mode: string;
   status: string;
   capabilities: string[];
   message: string;
+  configuration: Record<string, unknown>;
+  discovery: Record<string, unknown> | null;
+  blockers: string[];
+  warnings: string[];
+  safe_actions: ProviderAction[];
+  disabled_actions: ProviderAction[];
+  last_probe_result: Record<string, unknown> | null;
+  last_probe_time: string | null;
+};
+
+export type ProviderProbeResult = {
+  provider_id: string;
+  status: string;
+  message: string;
+  warnings: string[];
+  blockers: string[];
+  checked_at: string | null;
+  [key: string]: unknown;
 };
 
 export type MediaInventoryItem = {

@@ -1,4 +1,4 @@
-.PHONY: check-repo-root codex-audit codex-task codex-next codex-resume test dev lint
+.PHONY: check-repo-root codex-audit codex-task codex-next codex-resume test dev lint provider-smoke
 
 REPO_ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 TASK ?= .codex/tasks/001-backend-vm-request-lifecycle.md
@@ -46,3 +46,6 @@ backend-smoke:
 	$(MAKE) -C /home/administrator/infra-config-portal/app backend-smoke
 
 smoke: backend-smoke
+
+provider-smoke: check-repo-root
+	$(MAKE) -C $(REPO_ROOT)/app provider-smoke

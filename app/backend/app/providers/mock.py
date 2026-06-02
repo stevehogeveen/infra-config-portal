@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from app.core.config import settings
 from app.models import Request
-from app.providers.base import ProviderStatus
+from app.providers.base import ProviderAction, ProviderStatus
 
 
 MOCK_CATALOG = {
@@ -87,14 +87,20 @@ def _completed_stage_events(plan: dict) -> list[dict]:
 
 
 class MockSourceOfTruthAdapter:
+    def __init__(self, provider_mode: str | None = None) -> None:
+        self.provider_mode = provider_mode or settings.provider_mode
+
     def health(self) -> ProviderStatus:
         return ProviderStatus(
+            id="mock-source-of-truth",
             name="Mock NetBox/Nautobot",
             kind="source-of-truth",
-            mode=settings.provider_mode,
+            mode=self.provider_mode,
             status="ok",
             capabilities=["catalog", "vm-request-validation"],
             message="Using in-memory mock source-of-truth data.",
+            safe_actions=[],
+            disabled_actions=_source_of_truth_disabled_actions(),
         )
 
     def catalog(self) -> dict:
@@ -136,14 +142,20 @@ class MockSourceOfTruthAdapter:
 
 
 class MockVsphereAdapter:
+    def __init__(self, provider_mode: str | None = None) -> None:
+        self.provider_mode = provider_mode or settings.provider_mode
+
     def health(self) -> ProviderStatus:
         return ProviderStatus(
+            id="mock-vsphere",
             name="Mock vSphere",
             kind="virtualization",
-            mode=settings.provider_mode,
+            mode=self.provider_mode,
             status="ok",
             capabilities=["plan-vm-deploy", "execute-vm-deploy"],
             message="Mock adapter only. No vCenter or ESXi calls are made.",
+            safe_actions=[],
+            disabled_actions=_vsphere_disabled_actions(),
         )
 
     def plan_vm_deployment(self, request: Request) -> dict:
@@ -209,43 +221,134 @@ def provider_statuses() -> list[ProviderStatus]:
         MockVsphereAdapter().health(),
         MockSourceOfTruthAdapter().health(),
         ProviderStatus(
+            id="mock-awx",
             name="Mock AWX/Ansible",
             kind="automation",
             mode=settings.provider_mode,
             status="ok",
             capabilities=["health"],
             message="Placeholder mock status. No AWX calls are made.",
+            disabled_actions=_awx_disabled_actions(),
         ),
         ProviderStatus(
+            id="mock-opentofu",
             name="Mock Terraform/OpenTofu",
             kind="iac",
             mode=settings.provider_mode,
             status="ok",
             capabilities=["health"],
             message="Placeholder mock status. No Terraform or OpenTofu commands are run.",
+            disabled_actions=_iac_disabled_actions(),
         ),
         ProviderStatus(
+            id="ilo-redfish",
             name="HPE iLO/Redfish",
             kind="hardware-management",
             mode="placeholder",
             status="not-configured",
             capabilities=["health"],
             message="Placeholder only. Real Redfish configuration is intentionally absent.",
+            disabled_actions=_ilo_placeholder_disabled_actions(),
         ),
         ProviderStatus(
-            name="NetApp ONTAP",
+            id="mock-netapp",
+            name="Mock NetApp ONTAP",
             kind="storage",
-            mode="placeholder",
-            status="not-configured",
+            mode=settings.provider_mode,
+            status="ok",
             capabilities=["health"],
-            message="Placeholder only. Real ONTAP configuration is intentionally absent.",
+            message="Mock status only. No ONTAP calls are made.",
+            disabled_actions=_netapp_disabled_actions(),
         ),
         ProviderStatus(
-            name="Network Switch",
+            id="mock-network-switch",
+            name="Mock Network Switch",
             kind="network",
-            mode="placeholder",
-            status="not-configured",
+            mode=settings.provider_mode,
+            status="ok",
             capabilities=["health"],
-            message="Placeholder only. Real switch configuration is intentionally absent.",
+            message="Mock status only. No switch API or CLI calls are made.",
+            disabled_actions=_switch_disabled_actions(),
         ),
+    ]
+
+
+def _disabled_action(id_: str, label: str, reason: str) -> ProviderAction:
+    return ProviderAction(
+        id=id_,
+        label=label,
+        enabled=False,
+        read_only=False,
+        reason=reason,
+    )
+
+
+def _vsphere_disabled_actions() -> list[ProviderAction]:
+    return [
+        _disabled_action(
+            "vsphere-real-clone",
+            "Real Clone",
+            "Real vCenter clone operations remain unavailable in mock mode.",
+        ),
+        _disabled_action(
+            "vsphere-power-action",
+            "Power Action",
+            "VM power operations are not exposed by this preview.",
+        ),
+    ]
+
+
+def _source_of_truth_disabled_actions() -> list[ProviderAction]:
+    return [
+        _disabled_action(
+            "source-of-truth-write",
+            "Write Record",
+            "Source-of-truth writes are not exposed.",
+        )
+    ]
+
+
+def _awx_disabled_actions() -> list[ProviderAction]:
+    return [
+        _disabled_action("awx-launch-job", "Launch Job", "AWX job launches are disabled.")
+    ]
+
+
+def _iac_disabled_actions() -> list[ProviderAction]:
+    return [
+        _disabled_action(
+            "iac-apply",
+            "Apply",
+            "Terraform/OpenTofu apply is not exposed.",
+        )
+    ]
+
+
+def _ilo_placeholder_disabled_actions() -> list[ProviderAction]:
+    return [
+        _disabled_action(
+            "ilo-power-action",
+            "Power Action",
+            "Power actions are disabled.",
+        )
+    ]
+
+
+def _netapp_disabled_actions() -> list[ProviderAction]:
+    return [
+        _disabled_action(
+            "netapp-provision-storage",
+            "Provision Storage",
+            "ONTAP provisioning actions are disabled.",
+        )
+    ]
+
+
+def _switch_disabled_actions() -> list[ProviderAction]:
+    return [
+        _disabled_action(
+            "switch-configure-vlan",
+            "Configure VLAN",
+            "Switch configuration changes are disabled.",
+        )
     ]

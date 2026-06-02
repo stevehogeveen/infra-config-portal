@@ -259,13 +259,42 @@ class MediaInventoryRead(BaseModel):
     warnings: list[str]
 
 
+class ProviderActionRead(BaseModel):
+    id: str
+    label: str
+    enabled: bool
+    read_only: bool
+    reason: str
+    method: str | None = None
+    endpoint: str | None = None
+
+
 class ProviderStatusRead(BaseModel):
+    id: str
     name: str
     kind: str
     mode: str
     status: str
     capabilities: list[str]
     message: str
+    configuration: dict[str, Any] = Field(default_factory=dict)
+    discovery: dict[str, Any] | None = None
+    blockers: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    safe_actions: list[ProviderActionRead] = Field(default_factory=list)
+    disabled_actions: list[ProviderActionRead] = Field(default_factory=list)
+    last_probe_result: dict[str, Any] | None = None
+    last_probe_time: str | None = None
+
+
+class ProviderProbeResultRead(BaseModel):
+    provider_id: str
+    status: str
+    message: str
+    warnings: list[str] = Field(default_factory=list)
+    blockers: list[str] = Field(default_factory=list)
+    checked_at: str | None = None
+    model_config = ConfigDict(extra="allow")
 
 
 class CatalogRead(BaseModel):

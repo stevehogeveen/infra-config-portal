@@ -27,7 +27,10 @@ import { api } from "./api";
 import type {
   AuditEvent,
   Catalog,
+  ConsoleCandidate,
   MediaInventory,
+  ProviderAction,
+  ProviderProbeResult,
   ProviderStatus,
   ReadinessIssue,
   RequestReadiness,
@@ -1244,37 +1247,374 @@ function MediaInventoryPage() {
 function ProviderStatusPage() {
   const [providers, setProviders] = useState<ProviderStatus[]>([]);
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [busyProvider, setBusyProvider] = useState("");
+  const [probeResults, setProbeResults] = useState<Record<string, ProviderProbeResult>>({});
+
+  async function load() {
+    setError("");
+    setLoading(true);
+    try {
+      setProviders(await api.providers());
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  }
 
   useEffect(() => {
-    api.providers().then(setProviders).catch((err: Error) => setError(err.message));
+    load();
   }, []);
 
+  async function runProbe(provider: ProviderStatus) {
+    setBusyProvider(provider.id);
+    setError("");
+    try {
+      const result = await api.probeProvider(provider.id);
+      setProbeResults((current) => ({ ...current, [provider.id]: result }));
+      await load();
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusyProvider("");
+    }
+  }
+
+  const orderedProviders = [...providers].sort((left, right) => {
+    return providerOrder(left.id) - providerOrder(right.id);
+  });
+
   return (
-    <Page title="Provider Status">
-      <Feedback error={error} />
-      <section className="provider-grid">
-        {providers.map((provider) => (
-          <article className="provider-card" key={provider.name}>
-            <div className="provider-head">
-              <HardDrive size={18} />
-              <div>
-                <h2>{provider.name}</h2>
-                <p>{provider.kind}</p>
-              </div>
-              <StatusBadge status={provider.status} />
-            </div>
-            <p>{provider.message}</p>
-            <div className="tag-row">
-              <span>{provider.mode}</span>
-              {provider.capabilities.map((capability) => (
-                <span key={capability}>{capability}</span>
-              ))}
-            </div>
-          </article>
+    <Page
+      title="Provider Status"
+      actions={
+        <button onClick={load} disabled={loading || Boolean(busyProvider)}>
+          <RefreshCw size={16} />
+          Refresh
+        </button>
+      }
+    >
+      <Feedback loading={loading && !providers.length} error={error} />
+      <section className="provider-status-stack">
+        {orderedProviders.map((provider) => (
+          <ProviderDetailCard
+            busy={busyProvider === provider.id}
+            key={provider.id}
+            onProbe={() => runProbe(provider)}
+            provider={provider}
+            probeResult={probeResults[provider.id] ?? null}
+          />
         ))}
       </section>
     </Page>
   );
+}
+
+function ProviderDetailCard({
+  busy,
+  onProbe,
+  probeResult,
+  provider
+}: {
+  busy: boolean;
+  onProbe: () => void;
+  probeResult: ProviderProbeResult | null;
+  provider: ProviderStatus;
+}) {
+  const lastResult = probeResult ?? provider.last_probe_result;
+
+  return (
+    <article className="provider-card provider-card-wide">
+      <div className="provider-head">
+        {providerIcon(provider)}
+        <div>
+          <h2>{provider.name}</h2>
+          <p>{provider.kind}</p>
+        </div>
+        <StatusBadge status={provider.status} />
+      </div>
+      <p>{provider.message}</p>
+      <ProviderFactGrid provider={provider} />
+      {provider.id === "cisco-console" && <CiscoConsoleDetails provider={provider} />}
+      {provider.id === "ilo-redfish" && <IloRedfishDetails provider={provider} />}
+      {!["cisco-console", "ilo-redfish"].includes(provider.id) && (
+        <MockProviderDetails provider={provider} />
+      )}
+      <ProviderIssueRows blockers={provider.blockers} warnings={provider.warnings} />
+      <ProviderActionRows
+        busy={busy}
+        disabledActions={provider.disabled_actions}
+        onProbe={onProbe}
+        safeActions={provider.safe_actions}
+      />
+      {lastResult && (
+        <div className="provider-raw-result">
+          <div className="provider-fact-grid compact">
+            <ProviderFact
+              label="Last Probe"
+              value={provider.last_probe_time ? formatDateTime(provider.last_probe_time) : "Just now"}
+            />
+            <ProviderFact label="Result" value={asString(lastResult.status) || "unknown"} />
+          </div>
+          <JsonDetails title="Raw redacted probe result" data={lastResult} />
+        </div>
+      )}
+    </article>
+  );
+}
+
+function ProviderFactGrid({ provider }: { provider: ProviderStatus }) {
+  return (
+    <div className="provider-fact-grid">
+      <ProviderFact label="Mode" value={provider.mode} />
+      <ProviderFact label="Type" value={provider.kind} />
+      <ProviderFact label="Capabilities" value={provider.capabilities.join(", ") || "-"} />
+      <ProviderFact label="Safe Next Action" value={safeNextAction(provider)} />
+    </div>
+  );
+}
+
+function ProviderFact({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
+  );
+}
+
+function CiscoConsoleDetails({ provider }: { provider: ProviderStatus }) {
+  const discovery = provider.discovery ?? {};
+  const envOverride = objectValue(discovery.env_override);
+  const candidates = consoleCandidates(discovery.candidates);
+
+  return (
+    <div className="provider-detail-section">
+      <div className="provider-fact-grid">
+        <ProviderFact
+          label="Env Override"
+          value={asBoolean(envOverride.configured) ? asString(envOverride.path) || "Configured" : "Not configured"}
+        />
+        <ProviderFact label="Recommended Path" value={asString(discovery.recommended_path) || "-"} />
+        <ProviderFact label="Effective Path" value={asString(discovery.effective_path) || "-"} />
+        <ProviderFact label="Baud" value={asString(provider.configuration.baud) || "9600"} />
+      </div>
+      <h3>Console Candidates</h3>
+      {candidates.length ? (
+        <table className="provider-candidate-table">
+          <thead>
+            <tr>
+              <th>Path</th>
+              <th>Stable</th>
+              <th>Exists</th>
+              <th>Access</th>
+              <th>Recommendation</th>
+            </tr>
+          </thead>
+          <tbody>
+            {candidates.map((candidate) => (
+              <tr key={candidate.path}>
+                <td>
+                  <strong>{candidate.path}</strong>
+                  {candidate.label && <span>{candidate.label}</span>}
+                </td>
+                <td>{yesNo(candidate.stable_path)}</td>
+                <td>{yesNo(candidate.exists)}</td>
+                <td>{accessLabel(candidate)}</td>
+                <td>{labelize(candidate.recommendation)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      ) : (
+        <p className="muted">No serial console candidates were discovered.</p>
+      )}
+    </div>
+  );
+}
+
+function IloRedfishDetails({ provider }: { provider: ProviderStatus }) {
+  const config = provider.configuration;
+
+  return (
+    <div className="provider-detail-section">
+      <div className="provider-fact-grid">
+        <ProviderFact label="Host" value={asString(config.host) || "Not configured"} />
+        <ProviderFact label="Username" value={asString(config.username) || "Not configured"} />
+        <ProviderFact
+          label="Password"
+          value={asBoolean(config.password_configured) ? "Configured" : "Missing"}
+        />
+        <ProviderFact
+          label="TLS Verify"
+          value={asBoolean(config.tls_verify) ? "Enabled" : "Disabled"}
+        />
+      </div>
+    </div>
+  );
+}
+
+function MockProviderDetails({ provider }: { provider: ProviderStatus }) {
+  return (
+    <div className="provider-detail-section">
+      <div className="provider-fact-grid compact">
+        <ProviderFact label="Provider" value={provider.name} />
+        <ProviderFact label="Status" value={labelize(provider.status)} />
+      </div>
+    </div>
+  );
+}
+
+function ProviderIssueRows({ blockers, warnings }: { blockers: string[]; warnings: string[] }) {
+  if (!blockers.length && !warnings.length) {
+    return null;
+  }
+
+  return (
+    <div className="provider-issue-rows">
+      {blockers.map((blocker) => (
+        <div className="provider-issue blocker" key={blocker}>
+          <Ban size={16} />
+          <span>{blocker}</span>
+        </div>
+      ))}
+      {warnings.map((warning) => (
+        <div className="provider-issue warning" key={warning}>
+          <AlertTriangle size={16} />
+          <span>{warning}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ProviderActionRows({
+  busy,
+  disabledActions,
+  onProbe,
+  safeActions
+}: {
+  busy: boolean;
+  disabledActions: ProviderAction[];
+  onProbe: () => void;
+  safeActions: ProviderAction[];
+}) {
+  return (
+    <div className="provider-action-layout">
+      {safeActions.length > 0 && (
+        <div>
+          <h3>Read-Only Actions</h3>
+          <div className="provider-action-row">
+            {safeActions.map((action) => (
+              <div className="provider-action-item" key={action.id}>
+                <button
+                  className={action.enabled ? "primary" : ""}
+                  disabled={!action.enabled || busy}
+                  onClick={onProbe}
+                >
+                  <Play size={16} />
+                  {busy ? "Running" : action.label}
+                </button>
+                <p>{action.reason}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      {disabledActions.length > 0 && (
+        <div>
+          <h3>Disabled Dangerous Actions</h3>
+          <div className="provider-action-row">
+            {disabledActions.map((action) => (
+              <div className="provider-action-item" key={action.id}>
+                <button disabled>
+                  <Ban size={16} />
+                  {action.label}
+                </button>
+                <p>{action.reason}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function providerIcon(provider: ProviderStatus) {
+  if (provider.id === "ilo-redfish") return <ShieldCheck size={18} />;
+  if (provider.id === "cisco-console") return <Activity size={18} />;
+  if (provider.kind === "virtualization") return <Server size={18} />;
+  return <HardDrive size={18} />;
+}
+
+function providerOrder(id: string): number {
+  const order = [
+    "ilo-redfish",
+    "cisco-console",
+    "mock-vsphere",
+    "mock-netapp",
+    "mock-network-switch",
+    "mock-opentofu",
+    "mock-awx",
+    "mock-source-of-truth"
+  ];
+  const index = order.indexOf(id);
+  return index === -1 ? order.length : index;
+}
+
+function safeNextAction(provider: ProviderStatus): string {
+  const discoveryNextAction = asString(provider.discovery?.safe_next_action);
+  if (discoveryNextAction) return discoveryNextAction;
+  const enabledAction = provider.safe_actions.find((action) => action.enabled);
+  if (enabledAction) return enabledAction.reason;
+  if (provider.blockers.length > 0) return provider.blockers[0];
+  if (provider.safe_actions.length > 0) return provider.safe_actions[0].reason;
+  return "Review status only; no runnable action is exposed.";
+}
+
+function objectValue(value: unknown): Record<string, unknown> {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    return value as Record<string, unknown>;
+  }
+  return {};
+}
+
+function consoleCandidates(value: unknown): ConsoleCandidate[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter(isConsoleCandidate);
+}
+
+function isConsoleCandidate(value: unknown): value is ConsoleCandidate {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Record<string, unknown>;
+  return (
+    typeof candidate.path === "string" &&
+    typeof candidate.stable_path === "boolean" &&
+    typeof candidate.exists === "boolean" &&
+    typeof candidate.recommendation === "string"
+  );
+}
+
+function asString(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  return "";
+}
+
+function asBoolean(value: unknown): boolean {
+  return value === true;
+}
+
+function yesNo(value: boolean): string {
+  return value ? "Yes" : "No";
+}
+
+function accessLabel(candidate: ConsoleCandidate): string {
+  const readable = candidate.readable === null ? "unknown" : yesNo(candidate.readable);
+  const writable = candidate.writable === null ? "unknown" : yesNo(candidate.writable);
+  return `read ${readable} / write ${writable}`;
 }
 
 function MockModeBanner() {
@@ -2135,7 +2475,7 @@ function stringFromUnknown(value: unknown): string {
 }
 
 function labelize(value: string) {
-  return value.replace(/_/g, " ");
+  return value.replace(/[_-]/g, " ");
 }
 
 function stageEventsForRun(run: WorkflowRun): StageEvent[] {

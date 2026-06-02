@@ -13,8 +13,10 @@ The first MVP implements one safe workflow:
 - Simulate execution through mock provider adapters
 - Record audit events for each important transition
 
-No real vCenter, ESXi, iLO, NetApp, switch, AWX, Ansible, Terraform, OpenTofu,
-NetBox, or Nautobot calls are made in this version.
+No real vCenter, ESXi, NetApp, switch API, AWX, Ansible, Terraform, OpenTofu,
+NetBox, or Nautobot calls are made in this version. HPE iLO/Redfish and Cisco
+console checks are preview-only and run only through explicit local-readonly
+probe actions.
 
 ## Project Layout
 
@@ -130,6 +132,41 @@ plans, execute workflows, write audit events, or call provider adapters.
 
 The media inventory endpoint is metadata-only. It does not copy, mount, parse,
 deploy, or execute local media files, and it redacts actual local filenames.
+
+## Provider Status Preview
+
+Provider Status shows mock provider health plus preview surfaces for HPE iLO /
+Redfish and Cisco console. Default `PROVIDER_MODE=mock` never runs real probes
+on page load. Cisco console discovery is read-only filesystem inspection of
+`/dev/serial/by-id/*`, `/dev/ttyUSB*`, and `/dev/ttyACM*`; it does not open
+serial ports or send commands during discovery.
+
+For an isolated local lab, optional settings can live in `.env.local.providers`
+at the repository root. Do not commit that file.
+
+```bash
+ILO_TEST_HOST=
+ILO_TEST_USERNAME=
+ILO_TEST_PASSWORD=
+CISCO_CONSOLE_PORT=
+CISCO_CONSOLE_BAUD=9600
+```
+
+Set `PROVIDER_MODE=local-readonly` only when manually running explicit
+read-only probes. iLO probes use GET-only Redfish calls with short timeouts and
+redacted responses. Cisco probes open the selected console only after a button
+click or manual smoke command, then send newline and safe `show` commands when
+already at an exec prompt.
+
+Optional manual smoke:
+
+```bash
+source .env.local.providers
+PROVIDER_MODE=local-readonly make provider-smoke
+```
+
+The smoke command skips missing hardware/configuration gracefully and must not
+print passwords.
 
 ## Safety Defaults
 

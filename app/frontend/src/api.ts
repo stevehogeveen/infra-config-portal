@@ -2,6 +2,7 @@ import type {
   AuditEvent,
   Catalog,
   MediaInventory,
+  ProviderProbeResult,
   ProviderStatus,
   RequestReadiness,
   RequestRecord,
@@ -68,5 +69,7 @@ export const api = {
   workflowRun: (id: string) => apiRequest<WorkflowRun>(`/api/v1/workflow-runs/${id}`),
   auditEvents: () => apiRequest<AuditEvent[]>("/api/v1/audit-events"),
   mediaInventory: () => apiRequest<MediaInventory>("/api/v1/media-inventory"),
-  providers: () => apiRequest<ProviderStatus[]>("/api/v1/providers/status")
+  providers: () => apiRequest<ProviderStatus[]>("/api/v1/providers/status"),
+  probeProvider: (id: string) =>
+    apiRequest<ProviderProbeResult>(`/api/v1/providers/${id}/probe`, { method: "POST" })
 };

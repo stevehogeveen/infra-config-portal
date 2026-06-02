@@ -6,7 +6,7 @@ PIP := $(VENV)/bin/pip
 PY := $(VENV)/bin/python
 REPO_ROOT := $(abspath ..)
 
-.PHONY: backend-venv backend-run backend-test frontend-install frontend-run up down codex-audit codex-task codex-next codex-resume test dev lint
+.PHONY: backend-venv backend-run backend-test frontend-install frontend-run up down codex-audit codex-task codex-next codex-resume test dev lint provider-smoke
 
 backend-venv:
 	$(PYTHON) -m venv $(VENV)
@@ -40,3 +40,6 @@ backend-smoke:
 	cd backend && .venv/bin/pytest -q tests/test_smoke_vm_lifecycle.py
 
 smoke: backend-smoke
+
+provider-smoke:
+	cd backend && PYTHONPATH=. $$(if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi) scripts/provider_smoke.py

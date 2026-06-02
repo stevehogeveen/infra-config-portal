@@ -4,8 +4,10 @@ Self-service infrastructure configuration portal for requesting, validating,
 approving, executing, and auditing datacenter automation workflows.
 
 The current MVP scaffold lives in `app/`. It is mock-first by design: local
-development must not call real vSphere, ESXi, iLO, NetApp, switch, OVF, storage,
-AWX, Terraform, NetBox, Nautobot, or other infrastructure provider APIs.
+development must not call real vSphere, ESXi, NetApp, switch APIs, OVF, storage,
+AWX, Terraform, NetBox, Nautobot, or other infrastructure provider APIs. HPE
+iLO/Redfish and Cisco console preview probes are allowed only when explicitly
+run in `PROVIDER_MODE=local-readonly` on an isolated local lab machine.
 
 ## Project Layout
 
@@ -68,6 +70,34 @@ docker compose up --build
 
 Compose starts local PostgreSQL, the FastAPI backend, and the Vite frontend.
 Provider adapters still run in mock mode only.
+
+## Provider Status Preview
+
+The Provider Status page shows mock provider cards plus HPE iLO/Redfish and
+Cisco console previews. Default `PROVIDER_MODE=mock` performs no real probes on
+page load. Cisco discovery dynamically inspects `/dev/serial/by-id/*`,
+`/dev/ttyUSB*`, and `/dev/ttyACM*` without opening the serial port.
+
+Optional local lab values may live in `.env.local.providers`, which is ignored
+by Git and must not be committed:
+
+```bash
+ILO_TEST_HOST=
+ILO_TEST_USERNAME=
+ILO_TEST_PASSWORD=
+CISCO_CONSOLE_PORT=
+CISCO_CONSOLE_BAUD=9600
+```
+
+Manual local-readonly smoke:
+
+```bash
+source .env.local.providers
+PROVIDER_MODE=local-readonly make provider-smoke
+```
+
+The smoke command skips missing iLO/Cisco hardware gracefully and must not print
+passwords.
 
 ## Tests And Checks
 
@@ -155,6 +185,8 @@ fallback command that requires it.
 ## Safety Rules
 
 - Keep `PROVIDER_MODE=mock` for local development and Codex exec tasks.
+- Use `PROVIDER_MODE=local-readonly` only for explicit local iLO/Cisco preview
+  probes on an isolated lab machine.
 - Do not add real credentials, IPs, hostnames, tokens, passwords, or customer
   data.
 - Do not make real vSphere, ESXi, iLO, NetApp, switch, OVF, storage, AWX,

@@ -9,22 +9,103 @@ workflow lifecycle code.
 - NetBox/Nautobot source of truth: mocked catalog validation.
 - AWX/Ansible: mocked health only.
 - Terraform/OpenTofu: mocked health only.
-- HPE iLO/Redfish: placeholder health only.
-- NetApp ONTAP: placeholder health only.
-- network switch: placeholder health only.
+- HPE iLO/Redfish: local configuration preview plus explicit GET-only probe.
+- Cisco console: dynamic local serial discovery plus explicit read-only probe.
+- NetApp ONTAP: mocked health only.
+- network switch: mocked health only.
 
-All adapters report mock or placeholder status. None make network calls.
+`PROVIDER_MODE=mock` remains the default. In mock mode, provider status may
+inspect local serial device paths for Cisco console candidates, but no network
+or serial probe is run automatically.
 
 The backend resolves default adapters through `app.providers.registry`. The
-current registry accepts only `PROVIDER_MODE=mock`; any other mode raises a
-clear provider registry error because no real adapters are registered in the
-MVP.
+current registry accepts `PROVIDER_MODE=mock` for workflow lifecycle execution.
+Provider status also supports `PROVIDER_MODE=local-readonly` so an operator can
+manually run guarded read-only iLO and Cisco probes from a local lab machine.
+Unsupported modes raise a provider registry error.
+
+## Local Read-Only Preview Mode
+
+Optional local lab settings may be placed in `.env.local.providers` at the
+repository root. This file is ignored by Git and must not be committed.
+
+Supported local variables:
+
+- `ILO_TEST_HOST`
+- `ILO_TEST_USERNAME`
+- `ILO_TEST_PASSWORD`
+- `ILO_TEST_VERIFY_TLS` (`true` by default; set `false` for lab self-signed TLS)
+- `ILO_TEST_TIMEOUT_SECONDS` (`3.0` by default)
+- `CISCO_CONSOLE_PORT`
+- `CISCO_CONSOLE_BAUD` (`9600` by default)
+- `CISCO_CONSOLE_TIMEOUT_SECONDS` (`2.0` by default)
+
+If `CISCO_CONSOLE_PORT` is not set, the backend dynamically discovers
+candidates from:
+
+- `/dev/serial/by-id/*`
+- `/dev/ttyUSB*`
+- `/dev/ttyACM*`
+
+Discovery prefers stable `/dev/serial/by-id/*` paths. If exactly one stable
+candidate exists, it is marked as the recommended default. Multiple candidates
+return `needs-selection`, and no candidates return `missing-console`.
+Discovery does not open serial ports, send commands, or require the user to run
+`ls /dev/serial/by-id` manually.
+
+`local-readonly` probes never run on page load. They run only from an explicit
+Provider Status action.
+
+## Read-Only Probe Boundaries
+
+iLO / Redfish probes may only issue GET requests for:
+
+- service root
+- manager summary
+- system summary
+- chassis summary
+- power and thermal summaries when linked by Redfish
+- firmware inventory summary when linked by Redfish
+
+The adapter uses short timeouts, configurable TLS verification, HTTP basic auth,
+and response/error redaction. Passwords are never returned in API responses.
+
+Cisco console probes may only:
+
+- open the selected serial port after explicit operator action
+- send a newline to detect the prompt
+- run these safe show commands when already at an exec prompt:
+  - `show version`
+  - `show inventory`
+  - `show interfaces status`
+  - `show ip interface brief`
+  - `show vlan brief`
+
+The Cisco adapter never sends `enable`, `conf t`, `write memory`, `reload`,
+`erase startup-config`, `copy`, or persistent configuration commands. If the
+console prompts for login, password, enable, or appears to be in config mode,
+the probe reports a blocked state instead of guessing credentials.
+
+## Optional Provider Smoke
+
+Manual local smoke:
+
+```bash
+source .env.local.providers
+PROVIDER_MODE=local-readonly make provider-smoke
+```
+
+The smoke command dynamically discovers Cisco console candidates, skips probes
+when local config or hardware is absent, and exits successfully for missing lab
+hardware. It redacts sensitive values and must not be used with production
+infrastructure credentials.
 
 ## Interface Expectations
 
 Real adapters should implement small interfaces:
 
 - `health()`
+- `probe()` for explicit read-only checks
 - `plan_*()`
 - `execute_*()`
 

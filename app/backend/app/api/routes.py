@@ -7,6 +7,8 @@ from sqlalchemy.orm import Session
 from app.auth import get_current_actor
 from app.core.database import get_session
 from app.models import AuditEvent
+from app.providers.cisco_console import CiscoConsoleAdapter
+from app.providers.ilo_redfish import IloRedfishAdapter
 from app.providers.mock import MockSourceOfTruthAdapter
 from app.providers.registry import ProviderRegistryError, provider_registry
 from app.schemas import (
@@ -14,6 +16,7 @@ from app.schemas import (
     AuditEventRead,
     CatalogRead,
     MediaInventoryRead,
+    ProviderProbeResultRead,
     ProviderStatusRead,
     RequestReadinessRead,
     RequestRead,
@@ -219,6 +222,15 @@ def read_provider_status() -> list[ProviderStatusRead]:
         return provider_registry().statuses()
     except ProviderRegistryError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@router.post("/providers/{provider_id}/probe", response_model=ProviderProbeResultRead)
+def probe_provider(provider_id: str) -> ProviderProbeResultRead:
+    if provider_id == "ilo-redfish":
+        return IloRedfishAdapter().probe()
+    if provider_id == "cisco-console":
+        return CiscoConsoleAdapter().probe()
+    raise HTTPException(status_code=404, detail="Provider probe not found")
 
 
 @router.get("/catalog", response_model=CatalogRead)
