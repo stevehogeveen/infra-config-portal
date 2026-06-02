@@ -82,6 +82,22 @@ make lint
 `make lint` runs backend Ruff only when it is installed in `app/backend/.venv`,
 then runs the frontend build/type check.
 
+The backend pytest suite includes a mock-only VM lifecycle smoke test. To run
+that smoke coverage directly:
+
+```bash
+cd /home/administrator/infra-config-portal/app/backend
+.venv/bin/pytest -q tests/test_smoke_vm_lifecycle.py
+```
+
+The smoke test uses FastAPI `TestClient`, an in-memory SQLite database, and the
+mock provider adapters. It verifies health, draft creation and patching,
+submission, approval, dry-run planning, mock execution to completion, audit
+events for major transitions, execution-before-plan rejection, stale-plan
+invalidation after an execution-affecting edit, and completed-request
+cancellation rejection. It does not start a backend server and must remain
+`PROVIDER_MODE=mock`.
+
 ## Codex Exec Mode
 
 This repository includes repeatable non-interactive Codex workflows under

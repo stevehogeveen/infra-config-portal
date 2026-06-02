@@ -47,6 +47,38 @@ API health check:
 curl http://127.0.0.1:8001/health
 ```
 
+## Tests And Smoke Coverage
+
+From the repository root:
+
+```bash
+make test
+make lint
+```
+
+`make test` runs backend pytest and the frontend TypeScript/build check.
+`make lint` runs shell syntax checks, backend Ruff when installed in
+`backend/.venv`, and the frontend build/type check.
+
+The backend pytest suite includes a local mock VM lifecycle smoke test. Run only
+that smoke test with:
+
+```bash
+cd /home/administrator/infra-config-portal/app/backend
+.venv/bin/pytest -q tests/test_smoke_vm_lifecycle.py
+```
+
+The smoke test uses FastAPI `TestClient`, an in-memory SQLite database, and mock
+provider adapters only. It covers health, VM request creation, draft patching,
+submit, approval, dry-run planning, mock execution to completed, audit events,
+execution-before-plan rejection, stale-plan invalidation after an
+execution-affecting edit, and completed-request cancellation rejection.
+
+Keep `PROVIDER_MODE=mock`. The smoke test must not call vCenter, ESXi, iLO,
+Redfish, NetApp, switches, DNS, IPAM, storage, AWX, Terraform, OpenTofu,
+NetBox, Nautobot, PowerCLI, govc, OVF Tool, or any lab/production
+infrastructure.
+
 ## Frontend Quick Start
 
 In a second terminal:
