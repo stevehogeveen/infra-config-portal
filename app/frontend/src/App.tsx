@@ -67,6 +67,74 @@ type StageEvent = {
   message: string;
 };
 
+type ReadinessMap = Record<string, RequestReadiness>;
+
+type QueueSectionId =
+  | "needs_approval"
+  | "approved_ready_to_plan"
+  | "planned_ready_to_execute"
+  | "executing"
+  | "blocked_failed"
+  | "completed";
+
+type QueueItem = {
+  key: string;
+  sectionId: QueueSectionId;
+  request: RequestRecord | null;
+  run: WorkflowRun | null;
+  title: string;
+  subtitle: string;
+  status: string;
+  actionLabel: string;
+  reason: string;
+};
+
+type QueueSection = {
+  id: QueueSectionId;
+  title: string;
+  empty: string;
+  items: QueueItem[];
+};
+
+type PlanStep = {
+  name: string;
+  status: string;
+  target: string;
+};
+
+const queueSectionMeta: Array<Omit<QueueSection, "items">> = [
+  {
+    id: "needs_approval",
+    title: "Needs Approval",
+    empty: "No requests are waiting for approval."
+  },
+  {
+    id: "approved_ready_to_plan",
+    title: "Approved Ready To Plan",
+    empty: "No approved requests are waiting for a dry-run plan."
+  },
+  {
+    id: "planned_ready_to_execute",
+    title: "Planned Ready To Execute",
+    empty: "No planned requests are ready for mock execution."
+  },
+  {
+    id: "executing",
+    title: "Executing",
+    empty: "No mock workflow is executing."
+  },
+  {
+    id: "blocked_failed",
+    title: "Blocked / Failed",
+    empty: "No blocked or failed work needs review."
+  },
+  {
+    id: "completed",
+    title: "Completed",
+    empty: "No completed runs yet."
+  }
+];
+
 function App() {
   return (
     <div className="app-shell">
@@ -85,6 +153,7 @@ function App() {
         </nav>
       </aside>
       <main className="content">
+        <MockModeBanner />
         <Routes>
           <RouterRoute path="/" element={<Dashboard />} />
           <RouterRoute path="/run-center" element={<RunCenter />} />
@@ -111,15 +180,28 @@ function NavItem({ to, icon, label }: { to: string; icon: ReactNode; label: stri
 
 function Dashboard() {
   const [requests, setRequests] = useState<RequestRecord[]>([]);
+  const [runs, setRuns] = useState<WorkflowRun[]>([]);
+  const [readinessByRequest, setReadinessByRequest] = useState<ReadinessMap>({});
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    api
-      .requests()
-      .then(setRequests)
-      .catch((err: Error) => setError(err.message))
-      .finally(() => setLoading(false));
+    async function load() {
+      setError("");
+      setLoading(true);
+      try {
+        const [nextRequests, nextRuns] = await Promise.all([api.requests(), api.workflowRuns()]);
+        setRequests(nextRequests);
+        setRuns(nextRuns);
+        setReadinessByRequest(await loadReadinessMap(nextRequests));
+      } catch (err) {
+        setError((err as Error).message);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    load();
   }, []);
 
   const counts = useMemo(() => {
@@ -129,18 +211,56 @@ function Dashboard() {
     }, {});
   }, [requests]);
 
+  const queueSections = useMemo(
+    () => buildRunCenterSections(requests, runs, readinessByRequest),
+    [requests, runs, readinessByRequest]
+  );
+  const nextActionItems = queueSections
+    .flatMap((section) => section.items)
+    .filter((item) => item.sectionId !== "completed")
+    .slice(0, 5);
+  const blockedItems = queueSections.find((section) => section.id === "blocked_failed")?.items ?? [];
+  const readyToApprove = requests.filter((request) => readinessByRequest[request.id]?.ready_for_approval).length;
+  const readyToPlan = requests.filter((request) => readinessByRequest[request.id]?.ready_for_plan).length;
+  const readyToExecute = requests.filter((request) => readinessByRequest[request.id]?.ready_for_execute).length;
+
   return (
     <Page title="Dashboard" actions={<ButtonLink to="/requests/new" icon={<Plus size={16} />} label="New VM" />}>
       <Feedback loading={loading} error={error} />
       <section className="metric-grid">
-        <Metric label="Requests" value={requests.length} icon={<ClipboardList size={18} />} />
-        <Metric label="Needs Approval" value={counts.needs_approval ?? 0} icon={<ShieldCheck size={18} />} />
-        <Metric label="Planned" value={counts.planned ?? 0} icon={<Workflow size={18} />} />
-        <Metric label="Completed" value={counts.completed ?? 0} icon={<CheckCircle2 size={18} />} />
+        <Metric label="Ready To Approve" value={readyToApprove} icon={<ShieldCheck size={18} />} />
+        <Metric label="Ready To Plan" value={readyToPlan} icon={<Workflow size={18} />} />
+        <Metric label="Ready To Execute" value={readyToExecute} icon={<Play size={18} />} />
+        <Metric label="Blocked / Failed" value={blockedItems.length} icon={<AlertTriangle size={18} />} />
+      </section>
+      <section className="dashboard-grid">
+        <div className="panel">
+          <PanelTitle icon={<Route size={18} />} title="Next Recommended Actions" />
+          <QueueItemList
+            empty="No operator action is waiting. Completed work is available in Run Center."
+            items={nextActionItems}
+          />
+        </div>
+        <div className="panel">
+          <PanelTitle icon={<Workflow size={18} />} title="Run Center Handoff" />
+          <div className="handoff-summary">
+            <Info label="Total Requests" value={String(requests.length)} />
+            <Info label="Planned" value={String(counts.planned ?? 0)} />
+            <Info label="Executing" value={String(counts.executing ?? 0)} />
+            <Info label="Completed" value={String(counts.completed ?? 0)} />
+          </div>
+          <p className="muted">
+            Use Run Center to approve, plan, execute, monitor, and review mock workflow runs.
+          </p>
+          <Link className="button-link primary" to="/run-center">
+            <Workflow size={16} />
+            Open Run Center
+          </Link>
+        </div>
       </section>
       <section className="panel">
         <PanelTitle icon={<Layers size={18} />} title="Recent Requests" />
-        <RequestTable requests={requests.slice(0, 10)} />
+        <RequestTable readinessByRequest={readinessByRequest} requests={requests.slice(0, 10)} showNextAction />
       </section>
     </Page>
   );
@@ -149,7 +269,8 @@ function Dashboard() {
 function RunCenter() {
   const [requests, setRequests] = useState<RequestRecord[]>([]);
   const [runs, setRuns] = useState<WorkflowRun[]>([]);
-  const [selectedRunId, setSelectedRunId] = useState("");
+  const [readinessByRequest, setReadinessByRequest] = useState<ReadinessMap>({});
+  const [selectedQueueKey, setSelectedQueueKey] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
 
@@ -160,7 +281,7 @@ function RunCenter() {
       const [nextRequests, nextRuns] = await Promise.all([api.requests(), api.workflowRuns()]);
       setRequests(nextRequests);
       setRuns(nextRuns);
-      setSelectedRunId((current) => current || nextRuns[0]?.id || "");
+      setReadinessByRequest(await loadReadinessMap(nextRequests));
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -172,23 +293,47 @@ function RunCenter() {
     load();
   }, []);
 
-  const pendingRequests = requests.filter((request) =>
-    ["submitted", "validating", "needs_approval", "approved"].includes(request.status)
+  const queueSections = useMemo(
+    () => buildRunCenterSections(requests, runs, readinessByRequest),
+    [requests, runs, readinessByRequest]
   );
-  const selectedRun = runs.find((run) => run.id === selectedRunId) ?? runs[0] ?? null;
-  const selectedRequest =
-    (selectedRun ? requests.find((request) => request.id === selectedRun.request_id) : null) ??
-    pendingRequests[0] ??
-    null;
+  const queueItems = queueSections.flatMap((section) => section.items);
+  const queueItemKeySignature = queueItems.map((item) => item.key).join("|");
+  const firstActionableKey =
+    queueItems.find((item) => item.sectionId !== "completed")?.key ?? queueItems[0]?.key ?? "";
+
+  useEffect(() => {
+    if (!firstActionableKey) {
+      setSelectedQueueKey("");
+      return;
+    }
+
+    setSelectedQueueKey((current) => {
+      const currentItem = queueItems.find((item) => item.key === current);
+      if (!currentItem || (currentItem.sectionId === "completed" && firstActionableKey)) {
+        return firstActionableKey;
+      }
+      return current;
+    });
+  }, [firstActionableKey, queueItemKeySignature]);
+
+  const selectedItem = queueItems.find((item) => item.key === selectedQueueKey) ?? queueItems[0] ?? null;
+  const selectedRun = selectedItem?.run ?? null;
+  const selectedRequest = selectedItem?.request ?? null;
   const stageEvents = selectedRun ? stageEventsForRun(selectedRun) : [];
-  const review = selectedRun ? reviewBeforeExecute(selectedRun) : null;
+  const review = selectedRun ? reviewStateForRun(selectedRun) : null;
+  const needsApproval = queueSections.find((section) => section.id === "needs_approval")?.items.length ?? 0;
+  const readyToPlan = queueSections.find((section) => section.id === "approved_ready_to_plan")?.items.length ?? 0;
+  const readyToExecute = queueSections.find((section) => section.id === "planned_ready_to_execute")?.items.length ?? 0;
+  const executing = queueSections.find((section) => section.id === "executing")?.items.length ?? 0;
+  const blocked = queueSections.find((section) => section.id === "blocked_failed")?.items.length ?? 0;
+  const completed = queueSections.find((section) => section.id === "completed")?.items.length ?? 0;
 
   return (
     <Page
       title="Run Center"
       actions={
         <>
-          <span className="mock-warning">Mock providers only</span>
           <button onClick={load} disabled={loading}>
             <RefreshCw size={16} />
             Refresh
@@ -197,24 +342,32 @@ function RunCenter() {
       }
     >
       <Feedback loading={loading} error={error} />
-      <section className="metric-grid">
-        <Metric label="Pending" value={pendingRequests.length} icon={<ClipboardList size={18} />} />
-        <Metric label="Planned" value={runs.filter((run) => run.status === "planned").length} icon={<Workflow size={18} />} />
-        <Metric label="Executing" value={runs.filter((run) => run.status === "executing").length} icon={<Play size={18} />} />
-        <Metric label="Completed" value={runs.filter((run) => run.status === "completed").length} icon={<CheckCircle2 size={18} />} />
+      <section className="operator-metric-grid">
+        <Metric label="Needs Approval" value={needsApproval} icon={<ShieldCheck size={18} />} />
+        <Metric label="Ready To Plan" value={readyToPlan} icon={<Workflow size={18} />} />
+        <Metric label="Ready To Execute" value={readyToExecute} icon={<Play size={18} />} />
+        <Metric label="Executing" value={executing} icon={<Activity size={18} />} />
+        <Metric label="Blocked / Failed" value={blocked} icon={<AlertTriangle size={18} />} />
+        <Metric label="Completed" value={completed} icon={<CheckCircle2 size={18} />} />
       </section>
-      <section className="run-center-grid">
-        <div className="panel">
-          <PanelTitle icon={<ClipboardList size={18} />} title="Pending Requests" />
-          <RequestTable requests={pendingRequests.slice(0, 8)} />
-        </div>
-        <div className="panel">
-          <PanelTitle icon={<Workflow size={18} />} title="Workflow Runs" />
-          <WorkflowRunTable onSelect={setSelectedRunId} runs={runs} selectedRunId={selectedRun?.id ?? ""} />
-        </div>
+      <section className="operator-queue-grid">
+        {queueSections.map((section) => (
+          <QueueSectionPanel
+            key={section.id}
+            onSelect={setSelectedQueueKey}
+            section={section}
+            selectedKey={selectedItem?.key ?? ""}
+          />
+        ))}
       </section>
       <section className="panel">
-        <PanelTitle icon={<ShieldCheck size={18} />} title="Execution Review" />
+        <PanelTitle icon={<ShieldCheck size={18} />} title="Selected Work" />
+        {selectedItem && (
+          <div className="selected-work-banner">
+            <strong>{selectedItem.actionLabel}</strong>
+            <p>{selectedItem.reason}</p>
+          </div>
+        )}
         {selectedRequest ? (
           <>
             <div className="detail-grid">
@@ -222,6 +375,8 @@ function RunCenter() {
               <Info label="Request Status" value={labelize(selectedRequest.status)} />
               <Info label="Environment" value={selectedRequest.environment} />
               <Info label="Owner" value={selectedRequest.owner} />
+              {selectedRun && <Info label="Workflow Run" value={selectedRun.id} />}
+              {selectedRun && <Info label="Run Status" value={labelize(selectedRun.status)} />}
             </div>
             <div className="action-row review-actions">
               <Link className="button-link" to={`/requests/${selectedRequest.id}`}>
@@ -242,7 +397,7 @@ function RunCenter() {
         {selectedRun ? (
           <>
             <div className="review-banner">
-              <AlertTriangle size={18} />
+              {selectedRun.status === "completed" ? <CheckCircle2 size={18} /> : <AlertTriangle size={18} />}
               <div>
                 <strong>{review?.status ?? "review"}</strong>
                 <p>{review?.message ?? "Review the dry-run plan before execution."}</p>
@@ -251,7 +406,7 @@ function RunCenter() {
             <StageList events={stageEvents} />
           </>
         ) : (
-          <p className="muted">No workflow run has been planned yet.</p>
+          <p className="muted">This queue item does not have a workflow run yet.</p>
         )}
       </section>
     </Page>
@@ -526,6 +681,58 @@ function RequestDetail() {
   const canCancel = cancellableStatuses.includes(request.status);
   const canEdit = cancellableStatuses.includes(request.status);
   const canEditIntent = request.status === "draft";
+  const lifecycleActions = [
+    lifecycleActionState({
+      action: "submit",
+      busy,
+      icon: <Send size={16} />,
+      isReady: Boolean(readiness?.ready_for_submit),
+      label: "Submit",
+      onClick: () => runAction("submit", () => api.submit(request.id)),
+      readiness,
+      request
+    }),
+    lifecycleActionState({
+      action: "plan",
+      busy,
+      icon: <Workflow size={16} />,
+      isReady: Boolean(readiness?.ready_for_plan),
+      label: "Plan",
+      onClick: () => runAction("plan", () => api.plan(request.id)),
+      readiness,
+      request
+    }),
+    lifecycleActionState({
+      action: "execute",
+      busy,
+      icon: <Play size={16} />,
+      isReady: Boolean(readiness?.ready_for_execute),
+      label: "Execute",
+      onClick: () => runAction("execute", () => api.execute(request.id)),
+      readiness,
+      request
+    }),
+    lifecycleActionState({
+      action: "cancel",
+      busy,
+      icon: <XCircle size={16} />,
+      isReady: canCancel,
+      label: "Cancel",
+      onClick: () => runAction("cancel", () => api.cancel(request.id)),
+      readiness,
+      request
+    })
+  ];
+  const approvalAction = lifecycleActionState({
+    action: "approve",
+    busy,
+    icon: <CheckCircle2 size={16} />,
+    isReady: Boolean(readiness?.ready_for_approval),
+    label: "Approve",
+    onClick: () => runAction("approve", () => api.approve(request.id, approval.approver, approval.notes)),
+    readiness,
+    request
+  });
 
   return (
     <Page
@@ -566,27 +773,17 @@ function RequestDetail() {
             </span>
           ))}
         </div>
-        <div className="action-row">
-          <button disabled={!readiness?.ready_for_submit || Boolean(busy)} onClick={() => runAction("submit", () => api.submit(request.id))}>
-            <Send size={16} />
-            Submit
-          </button>
-          <button disabled={!readiness?.ready_for_plan || Boolean(busy)} onClick={() => runAction("plan", () => api.plan(request.id))}>
-            <Workflow size={16} />
-            Plan
-          </button>
-          <button disabled={!readiness?.ready_for_execute || Boolean(busy)} onClick={() => runAction("execute", () => api.execute(request.id))}>
-            <Play size={16} />
-            Execute
-          </button>
-          <button disabled={!canCancel || Boolean(busy)} onClick={() => runAction("cancel", () => api.cancel(request.id))}>
-            <XCircle size={16} />
-            Cancel
-          </button>
-          <button onClick={load} disabled={Boolean(busy)}>
-            <RefreshCw size={16} />
-            Refresh
-          </button>
+        <div className="lifecycle-action-grid">
+          {lifecycleActions.map((action) => (
+            <LifecycleAction action={action} key={action.label} />
+          ))}
+          <div className="lifecycle-action">
+            <button onClick={load} disabled={Boolean(busy)}>
+              <RefreshCw size={16} />
+              Refresh
+            </button>
+            <p>Refresh readiness, lifecycle state, and request audit events.</p>
+          </div>
         </div>
       </section>
       <section className="panel">
@@ -596,13 +793,16 @@ function RequestDetail() {
           <input value={approval.notes} placeholder="Notes" onChange={(event) => setApproval({ ...approval, notes: event.target.value })} />
           <button
             className="primary"
-            disabled={!readiness?.ready_for_approval || Boolean(busy)}
-            onClick={() => runAction("approve", () => api.approve(request.id, approval.approver, approval.notes))}
+            disabled={approvalAction.disabled}
+            onClick={approvalAction.onClick}
           >
-            <CheckCircle2 size={16} />
-            Approve
+            {approvalAction.icon}
+            {approvalAction.label}
           </button>
         </div>
+        <p className={approvalAction.disabled ? "action-reason blocked" : "action-reason ready"}>
+          {approvalAction.reason}
+        </p>
       </section>
       <section className="panel">
         <PanelTitle icon={<Pencil size={18} />} title={canEditIntent ? "Edit Draft" : "Notes"} />
@@ -830,30 +1030,7 @@ function RequestAuditEvents({ events }: { events: AuditEvent[] }) {
     return <p className="muted">No audit events for this request.</p>;
   }
 
-  return (
-    <table>
-      <thead>
-        <tr>
-          <th>Time</th>
-          <th>Event</th>
-          <th>Actor</th>
-          <th>Status</th>
-          <th>Message</th>
-        </tr>
-      </thead>
-      <tbody>
-        {events.map((event) => (
-          <tr key={event.id}>
-            <td>{formatDateTime(event.created_at)}</td>
-            <td>{event.event_type}</td>
-            <td>{event.actor}</td>
-            <td>{`${event.from_status ?? "-"} -> ${event.to_status ?? "-"}`}</td>
-            <td>{event.message}</td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  );
+  return <AuditEventTable events={events} compact />;
 }
 
 function requestToEditForm(request: RequestRecord): VMDeploymentCreate {
@@ -904,11 +1081,25 @@ function buildUpdatePayload(request: RequestRecord, form: VMDeploymentCreate): V
 function WorkflowRunDetail() {
   const { id } = useParams();
   const [run, setRun] = useState<WorkflowRun | null>(null);
+  const [events, setEvents] = useState<AuditEvent[]>([]);
   const [error, setError] = useState("");
 
   useEffect(() => {
     if (!id) return;
-    api.workflowRun(id).then(setRun).catch((err: Error) => setError(err.message));
+    async function load() {
+      if (!id) return;
+      try {
+        const [nextRun, auditEvents] = await Promise.all([api.workflowRun(id), api.auditEvents()]);
+        setRun(nextRun);
+        setEvents(
+          auditEvents.filter((event) => event.workflow_run_id === id || event.request_id === nextRun.request_id)
+        );
+      } catch (err) {
+        setError((err as Error).message);
+      }
+    }
+
+    load();
   }, [id]);
 
   return (
@@ -924,8 +1115,7 @@ function WorkflowRunDetail() {
             <Info label="Created" value={formatDateTime(run.created_at)} />
             <Info label="Updated" value={formatDateTime(run.updated_at)} />
           </section>
-          <JsonPanel title="Plan" data={run.plan_json} />
-          {run.result_json && <JsonPanel title="Result" data={run.result_json} />}
+          <WorkflowRunStructuredView events={events} run={run} />
         </>
       )}
     </Page>
@@ -935,37 +1125,35 @@ function WorkflowRunDetail() {
 function AuditEvents() {
   const [events, setEvents] = useState<AuditEvent[]>([]);
   const [error, setError] = useState("");
+  const [filter, setFilter] = useState("all");
 
   useEffect(() => {
     api.auditEvents().then(setEvents).catch((err: Error) => setError(err.message));
   }, []);
 
+  const filteredEvents = events.filter((event) => {
+    if (filter === "all") return true;
+    if (filter === "requests") return Boolean(event.request_id);
+    if (filter === "workflow-runs") return Boolean(event.workflow_run_id);
+    return event.event_type.includes(filter);
+  });
+
   return (
-    <Page title="Audit Events">
+    <Page
+      title="Audit Events"
+      actions={
+        <select value={filter} onChange={(event) => setFilter(event.target.value)}>
+          <option value="all">All events</option>
+          <option value="requests">Request-linked</option>
+          <option value="workflow-runs">Run-linked</option>
+          <option value="request.execution">Execution events</option>
+          <option value="request.updated">Update events</option>
+        </select>
+      }
+    >
       <Feedback error={error} />
       <section className="panel">
-        <table>
-          <thead>
-            <tr>
-              <th>Time</th>
-              <th>Event</th>
-              <th>Actor</th>
-              <th>Status</th>
-              <th>Message</th>
-            </tr>
-          </thead>
-          <tbody>
-            {events.map((event) => (
-              <tr key={event.id}>
-                <td>{formatDateTime(event.created_at)}</td>
-                <td>{event.event_type}</td>
-                <td>{event.actor}</td>
-                <td>{`${event.from_status ?? "-"} -> ${event.to_status ?? "-"}`}</td>
-                <td>{event.message}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <AuditEventTable events={filteredEvents} />
       </section>
     </Page>
   );
@@ -1079,6 +1267,284 @@ function ProviderStatusPage() {
   );
 }
 
+function MockModeBanner() {
+  return (
+    <section className="mock-mode-banner" aria-label="Mock provider safety mode">
+      <ShieldCheck size={18} />
+      <div>
+        <strong>Provider mode: mock</strong>
+        <p>
+          Local UI only. No real infrastructure calls are made; real adapters require explicit future configuration.
+        </p>
+      </div>
+    </section>
+  );
+}
+
+function QueueSectionPanel({
+  onSelect,
+  section,
+  selectedKey
+}: {
+  onSelect: (key: string) => void;
+  section: QueueSection;
+  selectedKey: string;
+}) {
+  return (
+    <div className="panel queue-section">
+      <PanelTitle icon={<ClipboardList size={18} />} title={section.title} />
+      <QueueItemList
+        empty={section.empty}
+        items={section.items}
+        onSelect={onSelect}
+        selectedKey={selectedKey}
+      />
+    </div>
+  );
+}
+
+function QueueItemList({
+  empty,
+  items,
+  onSelect,
+  selectedKey
+}: {
+  empty: string;
+  items: QueueItem[];
+  onSelect?: (key: string) => void;
+  selectedKey?: string;
+}) {
+  if (!items.length) {
+    return <p className="muted">{empty}</p>;
+  }
+
+  return (
+    <div className="queue-list">
+      {items.map((item) =>
+        onSelect ? (
+          <button
+            className={item.key === selectedKey ? "queue-card selected" : "queue-card"}
+            key={item.key}
+            onClick={() => onSelect(item.key)}
+            type="button"
+          >
+            <QueueCardContent item={item} />
+          </button>
+        ) : (
+          <Link className="queue-card queue-link" key={item.key} to={queueItemLink(item)}>
+            <QueueCardContent item={item} />
+          </Link>
+        )
+      )}
+    </div>
+  );
+}
+
+function QueueCardContent({ item }: { item: QueueItem }) {
+  return (
+    <>
+      <div className="queue-card-head">
+        <strong>{item.title}</strong>
+        <StatusBadge status={item.status} />
+      </div>
+      <p>{item.subtitle}</p>
+      <span>{item.actionLabel}</span>
+    </>
+  );
+}
+
+type LifecycleActionView = {
+  disabled: boolean;
+  icon: ReactNode;
+  label: string;
+  onClick: () => void;
+  reason: string;
+};
+
+function LifecycleAction({ action }: { action: LifecycleActionView }) {
+  return (
+    <div className="lifecycle-action">
+      <button disabled={action.disabled} onClick={action.onClick}>
+        {action.icon}
+        {action.label}
+      </button>
+      <p className={action.disabled ? "action-reason blocked" : "action-reason ready"}>
+        {action.reason}
+      </p>
+    </div>
+  );
+}
+
+function WorkflowRunStructuredView({ events, run }: { events: AuditEvent[]; run: WorkflowRun }) {
+  const planSummary = planSummaryForRun(run);
+  const planSteps = planStepsForRun(run);
+  const executedSteps = executedStepsForRun(run);
+  const stageEvents = stageEventsForRun(run);
+  const review = reviewStateForRun(run);
+  const result = resultSummaryForRun(run);
+
+  return (
+    <>
+      <section className="panel safety-note">
+        <PanelTitle icon={<ShieldCheck size={18} />} title="Mock-Only Safety" />
+        <p>
+          This run uses provider <strong>{run.provider}</strong>. The plan and result are local mock data;
+          no vCenter, ESXi, AWX, Terraform, OpenTofu, Redfish, ONTAP, switch, DNS, IPAM, or storage endpoint is called.
+        </p>
+      </section>
+      <section className="panel">
+        <PanelTitle icon={<ClipboardList size={18} />} title="Plan Summary" />
+        <p className="structured-summary">{planSummary.summary}</p>
+        <div className="detail-grid">
+          <Info label="VM" value={planSummary.vmName} />
+          <Info label="Template" value={planSummary.template} />
+          <Info label="Placement" value={planSummary.placement} />
+          <Info label="Storage" value={planSummary.storage} />
+          <Info label="Network" value={planSummary.network} />
+          <Info label="Sizing" value={planSummary.sizing} />
+        </div>
+        <div className="review-banner">
+          <AlertTriangle size={18} />
+          <div>
+            <strong>{review.status}</strong>
+            <p>{review.message}</p>
+          </div>
+        </div>
+        <StepTable empty="No planned steps were recorded." steps={planSteps} />
+      </section>
+      <section className="panel">
+        <PanelTitle icon={<Route size={18} />} title="Stage Timeline" />
+        <StageList events={stageEvents} />
+      </section>
+      <section className="panel">
+        <PanelTitle icon={<Play size={18} />} title="Execution Result" />
+        <div className="detail-grid">
+          <Info label="Result" value={result.message} />
+          <Info label="Mock Task" value={result.mockTaskId} />
+          <Info label="Mock VM" value={result.mockVmId} />
+          <Info label="Provider" value={result.provider} />
+        </div>
+        <StepTable empty="Execution has not recorded completed steps yet." steps={executedSteps} />
+      </section>
+      <section className="panel">
+        <PanelTitle icon={<History size={18} />} title="Logs And Events" />
+        <AuditEventTable compact events={events} />
+      </section>
+      <section className="panel">
+        <PanelTitle icon={<HardDrive size={18} />} title="Artifacts And Reports" />
+        <div className="artifact-grid">
+          <ArtifactPlaceholder title="Dry-Run Plan" value="Available below as raw plan JSON." />
+          <ArtifactPlaceholder
+            title="Execution Report"
+            value={run.status === "completed" ? "Mock completion summary is recorded in the result." : "Will be available after mock execution."}
+          />
+          <ArtifactPlaceholder title="Debug Bundle" value="Placeholder only; no generated Lab Builder artifacts are copied." />
+          <ArtifactPlaceholder title="Audit Trail" value="Request and workflow links are shown in the event table." />
+        </div>
+      </section>
+      <section className="panel">
+        <PanelTitle icon={<ClipboardList size={18} />} title="Raw Data" />
+        <JsonDetails title="Raw plan JSON" data={run.plan_json} />
+        {run.result_json && <JsonDetails title="Raw result JSON" data={run.result_json} />}
+      </section>
+    </>
+  );
+}
+
+function StepTable({ empty, steps }: { empty: string; steps: PlanStep[] }) {
+  if (!steps.length) {
+    return <p className="muted">{empty}</p>;
+  }
+
+  return (
+    <table>
+      <thead>
+        <tr>
+          <th>Step</th>
+          <th>Status</th>
+          <th>Target</th>
+        </tr>
+      </thead>
+      <tbody>
+        {steps.map((step) => (
+          <tr key={`${step.name}-${step.target}`}>
+            <td>{step.name}</td>
+            <td>
+              <StatusBadge status={step.status} />
+            </td>
+            <td>{step.target}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+function ArtifactPlaceholder({ title, value }: { title: string; value: string }) {
+  return (
+    <article className="artifact-item">
+      <strong>{title}</strong>
+      <p>{value}</p>
+    </article>
+  );
+}
+
+function AuditEventTable({ compact, events }: { compact?: boolean; events: AuditEvent[] }) {
+  if (!events.length) {
+    return <p className="muted">No audit events found.</p>;
+  }
+
+  return (
+    <table>
+      <thead>
+        <tr>
+          <th>Time</th>
+          <th>Event</th>
+          {!compact && <th>Actor</th>}
+          <th>Links</th>
+          <th>Status</th>
+          <th>Message</th>
+        </tr>
+      </thead>
+      <tbody>
+        {events.map((event) => (
+          <tr key={event.id}>
+            <td>{formatDateTime(event.created_at)}</td>
+            <td>{event.event_type}</td>
+            {!compact && <td>{event.actor}</td>}
+            <td>
+              <div className="link-stack">
+                {event.request_id && <Link to={`/requests/${event.request_id}`}>Request {event.request_id.slice(0, 8)}</Link>}
+                {event.workflow_run_id && <Link to={`/workflow-runs/${event.workflow_run_id}`}>Run {event.workflow_run_id.slice(0, 8)}</Link>}
+                {!event.request_id && !event.workflow_run_id && <span className="muted">-</span>}
+              </div>
+            </td>
+            <td>{`${event.from_status ?? "-"} -> ${event.to_status ?? "-"}`}</td>
+            <td>
+              {event.message}
+              {Object.keys(event.data_json ?? {}).length > 0 && (
+                <details className="payload-details">
+                  <summary>Payload</summary>
+                  <pre>{JSON.stringify(event.data_json, null, 2)}</pre>
+                </details>
+              )}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+function JsonDetails({ data, title }: { data: Record<string, unknown>; title: string }) {
+  return (
+    <details className="json-details">
+      <summary>{title}</summary>
+      <pre>{JSON.stringify(data, null, 2)}</pre>
+    </details>
+  );
+}
+
 function WorkflowRunTable({
   onSelect,
   runs,
@@ -1146,7 +1612,15 @@ function StageList({ events }: { events: StageEvent[] }) {
   );
 }
 
-function RequestTable({ requests }: { requests: RequestRecord[] }) {
+function RequestTable({
+  readinessByRequest,
+  requests,
+  showNextAction
+}: {
+  readinessByRequest?: ReadinessMap;
+  requests: RequestRecord[];
+  showNextAction?: boolean;
+}) {
   if (!requests.length) {
     return <p className="muted">No requests yet.</p>;
   }
@@ -1160,6 +1634,7 @@ function RequestTable({ requests }: { requests: RequestRecord[] }) {
           <th>Environment</th>
           <th>Site</th>
           <th>Owner</th>
+          {showNextAction && <th>Next Action</th>}
           <th>Updated</th>
         </tr>
       </thead>
@@ -1175,6 +1650,9 @@ function RequestTable({ requests }: { requests: RequestRecord[] }) {
             <td>{request.environment}</td>
             <td>{request.site}</td>
             <td>{request.owner}</td>
+            {showNextAction && (
+              <td>{displayNextActionForRequest(request, readinessByRequest?.[request.id])}</td>
+            )}
             <td>{formatDateTime(request.updated_at)}</td>
           </tr>
         ))}
@@ -1263,6 +1741,355 @@ function ButtonLink({ to, icon, label }: { to: string; icon: ReactNode; label: s
   );
 }
 
+async function loadReadinessMap(requests: RequestRecord[]): Promise<ReadinessMap> {
+  const entries = await Promise.all(
+    requests.map(async (request): Promise<[string, RequestReadiness] | null> => {
+      try {
+        return [request.id, await api.readiness(request.id)];
+      } catch {
+        return null;
+      }
+    })
+  );
+
+  return entries.reduce<ReadinessMap>((acc, entry) => {
+    if (entry) {
+      acc[entry[0]] = entry[1];
+    }
+    return acc;
+  }, {});
+}
+
+function buildRunCenterSections(
+  requests: RequestRecord[],
+  runs: WorkflowRun[],
+  readinessByRequest: ReadinessMap
+): QueueSection[] {
+  const sections = new Map<QueueSectionId, QueueSection>(
+    queueSectionMeta.map((section) => [section.id, { ...section, items: [] }])
+  );
+  const latestRuns = latestRunByRequest(runs);
+  const includedRunIds = new Set<string>();
+
+  sortRequestsByUpdated(requests).forEach((request) => {
+    const readiness = readinessByRequest[request.id] ?? null;
+    const run = latestRuns.get(request.id) ?? null;
+    if (run) {
+      includedRunIds.add(run.id);
+    }
+
+    const sectionId = queueSectionForRequest(request, run, readiness);
+    if (!sectionId) return;
+    sections.get(sectionId)?.items.push(queueItemForRequest(sectionId, request, run, readiness));
+  });
+
+  runs.forEach((run) => {
+    if (includedRunIds.has(run.id)) return;
+    const sectionId = queueSectionForRun(run);
+    sections.get(sectionId)?.items.push(queueItemForRun(sectionId, run));
+  });
+
+  return queueSectionMeta.map((section) => sections.get(section.id) ?? { ...section, items: [] });
+}
+
+function latestRunByRequest(runs: WorkflowRun[]): Map<string, WorkflowRun> {
+  const latest = new Map<string, WorkflowRun>();
+  runs.forEach((run) => {
+    const current = latest.get(run.request_id);
+    if (!current || new Date(run.created_at).getTime() > new Date(current.created_at).getTime()) {
+      latest.set(run.request_id, run);
+    }
+  });
+  return latest;
+}
+
+function sortRequestsByUpdated(requests: RequestRecord[]): RequestRecord[] {
+  return [...requests].sort(
+    (left, right) => new Date(right.updated_at).getTime() - new Date(left.updated_at).getTime()
+  );
+}
+
+function queueSectionForRequest(
+  request: RequestRecord,
+  run: WorkflowRun | null,
+  readiness: RequestReadiness | null
+): QueueSectionId | null {
+  if (request.status === "needs_approval") return "needs_approval";
+  if (request.status === "approved") return readiness?.ready_for_plan === false ? "blocked_failed" : "approved_ready_to_plan";
+  if (request.status === "planned") {
+    return readiness?.ready_for_execute === false ? "blocked_failed" : "planned_ready_to_execute";
+  }
+  if (request.status === "executing" || run?.status === "executing") return "executing";
+  if (["failed", "cancelled", "rejected"].includes(request.status) || run?.status === "failed") return "blocked_failed";
+  if (request.status === "completed" || run?.status === "completed") return "completed";
+  return null;
+}
+
+function queueSectionForRun(run: WorkflowRun): QueueSectionId {
+  if (run.status === "planned") return "planned_ready_to_execute";
+  if (run.status === "executing") return "executing";
+  if (run.status === "completed") return "completed";
+  return "blocked_failed";
+}
+
+function queueItemForRequest(
+  sectionId: QueueSectionId,
+  request: RequestRecord,
+  run: WorkflowRun | null,
+  readiness: RequestReadiness | null
+): QueueItem {
+  const action = queueActionForSection(sectionId);
+  return {
+    key: `${sectionId}:${request.id}:${run?.id ?? "request"}`,
+    sectionId,
+    request,
+    run,
+    title: request.vm_deploy.vm_name,
+    subtitle: `${request.environment} / ${request.site} / ${request.owner}`,
+    status: sectionId === "completed" && run ? run.status : request.status,
+    actionLabel: action.label,
+    reason: readiness?.summary ?? action.reason
+  };
+}
+
+function queueItemForRun(sectionId: QueueSectionId, run: WorkflowRun): QueueItem {
+  const action = queueActionForSection(sectionId);
+  return {
+    key: `${sectionId}:run:${run.id}`,
+    sectionId,
+    request: null,
+    run,
+    title: `Run ${run.id.slice(0, 8)}`,
+    subtitle: `${run.workflow_slug} / ${run.provider}`,
+    status: run.status,
+    actionLabel: action.label,
+    reason: action.reason
+  };
+}
+
+function queueActionForSection(sectionId: QueueSectionId): { label: string; reason: string } {
+  if (sectionId === "needs_approval") {
+    return {
+      label: "Approve request",
+      reason: "Validation passed and an approval decision is required."
+    };
+  }
+  if (sectionId === "approved_ready_to_plan") {
+    return {
+      label: "Create dry-run plan",
+      reason: "Approval is recorded; the next safe step is mock planning."
+    };
+  }
+  if (sectionId === "planned_ready_to_execute") {
+    return {
+      label: "Launch mock execution",
+      reason: "A persisted dry-run plan is ready for explicit mock execution."
+    };
+  }
+  if (sectionId === "executing") {
+    return {
+      label: "Monitor run",
+      reason: "Mock execution is in progress; watch stages, logs, and audit events."
+    };
+  }
+  if (sectionId === "blocked_failed") {
+    return {
+      label: "Review blocker",
+      reason: "The request or workflow needs operator review before more work can continue."
+    };
+  }
+  return {
+    label: "Review report",
+    reason: "Execution is complete; inspect the result, audit trail, and report placeholders."
+  };
+}
+
+function queueItemLink(item: QueueItem): string {
+  if (item.run && (item.sectionId === "completed" || !item.request)) {
+    return `/workflow-runs/${item.run.id}`;
+  }
+  if (item.request) {
+    return `/requests/${item.request.id}`;
+  }
+  return item.run ? `/workflow-runs/${item.run.id}` : "/run-center";
+}
+
+function lifecycleActionState({
+  action,
+  busy,
+  icon,
+  isReady,
+  label,
+  onClick,
+  readiness,
+  request
+}: {
+  action: "submit" | "approve" | "plan" | "execute" | "cancel";
+  busy: string;
+  icon: ReactNode;
+  isReady: boolean;
+  label: string;
+  onClick: () => void;
+  readiness: RequestReadiness | null;
+  request: RequestRecord;
+}): LifecycleActionView {
+  const disabled = !isReady || Boolean(busy);
+  let reason = readyReasonForAction(action);
+
+  if (busy) {
+    reason = busy === action ? `${label} is running.` : `Waiting for ${labelize(busy)} to finish.`;
+  } else if (!isReady) {
+    reason = disabledReasonForAction(action, request, readiness);
+  }
+
+  return {
+    disabled,
+    icon,
+    label,
+    onClick,
+    reason
+  };
+}
+
+function readyReasonForAction(action: "submit" | "approve" | "plan" | "execute" | "cancel"): string {
+  if (action === "submit") {
+    return "Required intent fields are present; submit will run mock source-of-truth validation.";
+  }
+  if (action === "approve") {
+    return "Validation passed; approving records the decision and unlocks dry-run planning.";
+  }
+  if (action === "plan") {
+    return "Approval is recorded; planning will create a mock dry-run plan.";
+  }
+  if (action === "execute") {
+    return "A valid persisted dry-run plan exists; execution remains mock-only.";
+  }
+  return "This request can still be cancelled before execution starts.";
+}
+
+function disabledReasonForAction(
+  action: "submit" | "approve" | "plan" | "execute" | "cancel",
+  request: RequestRecord,
+  readiness: RequestReadiness | null
+): string {
+  if (!readiness) {
+    return "Readiness is loading; refresh if this state does not update.";
+  }
+
+  const blockerReason = readiness.blockers[0]
+    ? `${readiness.blockers[0].message} ${readiness.blockers[0].action}`
+    : "";
+
+  if (action === "submit") {
+    if (request.status !== "draft") {
+      return `Submit is only available for drafts. Current status is ${labelize(request.status)}.`;
+    }
+    return blockerReason || "Submit is disabled until required intent fields are complete.";
+  }
+  if (action === "approve") {
+    return `Approve is only available while the request is needs approval. Current status is ${labelize(request.status)}.`;
+  }
+  if (action === "plan") {
+    return `Plan is only available after approval and before a plan exists. Current status is ${labelize(request.status)}.`;
+  }
+  if (action === "execute") {
+    if (blockerReason) return blockerReason;
+    return "Execute is available after a valid dry-run plan is created and still matches the request.";
+  }
+  return `Cancel is available before execution starts. Current status is ${labelize(request.status)}.`;
+}
+
+function displayNextActionForRequest(
+  request: RequestRecord,
+  readiness: RequestReadiness | undefined
+): string {
+  if (readiness?.next_action && readiness.next_action !== "none") {
+    return readiness.next_action;
+  }
+  return nextActionForStatus(request.status);
+}
+
+function nextActionForStatus(status: RequestStatus): string {
+  if (status === "draft") return "submit";
+  if (status === "needs_approval") return "approve";
+  if (status === "approved") return "plan";
+  if (status === "planned") return "execute";
+  if (status === "executing") return "monitor";
+  if (status === "completed") return "review";
+  if (["failed", "cancelled", "rejected"].includes(status)) return "review_blocker";
+  return "wait";
+}
+
+function planSummaryForRun(run: WorkflowRun) {
+  const plan = run.plan_json;
+  const intent = isRecord(plan.request_intent) ? plan.request_intent : {};
+  const vm = isRecord(intent.vm) ? intent.vm : {};
+  const cpu = stringFromUnknown(vm.cpu);
+  const memory = stringFromUnknown(vm.memory_gb);
+  const disk = stringFromUnknown(vm.disk_gb);
+  const datastore = stringFromUnknown(vm.datastore);
+  const storageTier = stringFromUnknown(vm.storage_tier);
+
+  return {
+    summary: stringFromUnknown(plan.summary) || "Mock dry-run plan summary is not available.",
+    vmName: stringFromUnknown(plan.vm_name) || stringFromUnknown(vm.vm_name) || "-",
+    template: stringFromUnknown(vm.template) || "-",
+    placement: `${stringFromUnknown(intent.site) || "-"}/${stringFromUnknown(vm.cluster) || "-"}`,
+    storage: datastore || (storageTier ? `tier:${storageTier}` : "-"),
+    network: stringFromUnknown(vm.network) || "-",
+    sizing: cpu && memory && disk ? `${cpu} CPU, ${memory} GB RAM, ${disk} GB disk` : "-"
+  };
+}
+
+function planStepsForRun(run: WorkflowRun): PlanStep[] {
+  return stepsFromPayload(run.plan_json.steps);
+}
+
+function executedStepsForRun(run: WorkflowRun): PlanStep[] {
+  if (!run.result_json) return [];
+  return stepsFromPayload(run.result_json.executed_steps);
+}
+
+function stepsFromPayload(value: unknown): PlanStep[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((step) => {
+    if (!isRecord(step)) return [];
+    return [
+      {
+        name: stringFromUnknown(step.name) || "-",
+        status: stringFromUnknown(step.status) || "unknown",
+        target: stringFromUnknown(step.target) || "-"
+      }
+    ];
+  });
+}
+
+function resultSummaryForRun(run: WorkflowRun) {
+  const result = run.result_json;
+  if (!result) {
+    return {
+      message: "No execution result yet.",
+      mockTaskId: "-",
+      mockVmId: "-",
+      provider: run.provider
+    };
+  }
+
+  return {
+    message: stringFromUnknown(result.message) || "Execution result recorded.",
+    mockTaskId: stringFromUnknown(result.mock_task_id) || "-",
+    mockVmId: stringFromUnknown(result.mock_vm_id) || "-",
+    provider: stringFromUnknown(result.provider) || run.provider
+  };
+}
+
+function stringFromUnknown(value: unknown): string {
+  if (value === null || value === undefined) {
+    return "";
+  }
+  return String(value);
+}
+
 function labelize(value: string) {
   return value.replace(/_/g, " ");
 }
@@ -1306,6 +2133,39 @@ function reviewBeforeExecute(run: WorkflowRun): { status: string; message: strin
         ? review.message
         : "Review the dry-run plan before execution."
   };
+}
+
+function reviewStateForRun(run: WorkflowRun): { status: string; message: string } {
+  if (run.status === "completed") {
+    return {
+      status: "completed",
+      message: "Mock execution completed; review the result summary, audit trail, and report placeholders."
+    };
+  }
+  if (run.status === "executing") {
+    return {
+      status: "executing",
+      message: "Mock execution is in progress; monitor stage events and audit records."
+    };
+  }
+  if (run.status === "failed") {
+    return {
+      status: "failed",
+      message: run.error_message ?? "Mock execution failed; review blockers and audit details."
+    };
+  }
+  if (run.status === "cancelled") {
+    return {
+      status: "cancelled",
+      message: "This workflow run was cancelled before execution completed."
+    };
+  }
+  return (
+    reviewBeforeExecute(run) ?? {
+      status: "review",
+      message: "Review the dry-run plan before launching mock execution."
+    }
+  );
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
