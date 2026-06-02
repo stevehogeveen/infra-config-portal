@@ -1,0 +1,57 @@
+[
+  {
+    "file": "dashboard.png",
+    "path": "/",
+    "text_sample": "infra-config-portal Dashboard Run Center New VM Request Audit Events Media Inventory Provider Status  INFRASTRUCTURE CONFIGURATION  Dashboard New VM  Requests  3  Needs Approval  0  Planned  1  Completed  1 Recent Requests VM\tSTATUS\tENVIRONMENT\tSITE\tOWNER\tUPDATED ui-audit-completed-1780424258\tComple"
+  },
+  {
+    "file": "run-center.png",
+    "path": "/run-center",
+    "text_sample": "infra-config-portal Dashboard Run Center New VM Request Audit Events Media Inventory Provider Status  INFRASTRUCTURE CONFIGURATION  Run Center Mock providers only Refresh  Pending  0  Planned  1  Executing  0  Completed  1 Pending Requests  No requests yet.  Workflow Runs RUN\tSTATUS\tPROVIDER\tUPDATED"
+  },
+  {
+    "file": "new-vm-request.png",
+    "path": "/requests/new",
+    "text_sample": "infra-config-portal Dashboard Run Center New VM Request Audit Events Media Inventory Provider Status  INFRASTRUCTURE CONFIGURATION  New VM Request Requester Environment Site Cluster VM Name OS/Template CPU Memory GB Disk GB Network/VLAN Datastore Storage Tier Owner Expiry Date Notes Create Request "
+  },
+  {
+    "file": "request-detail-draft.png",
+    "path": "/requests/c9aa64ac-7478-4b64-9c32-e6ebd9e95ebe",
+    "text_sample": "infra-config-portal Dashboard Run Center New VM Request Audit Events Media Inventory Provider Status  INFRASTRUCTURE CONFIGURATION  ui-audit-draft-1780424258 Draft Readiness submit Draft  Draft request has required fields and can be submitted.  Submit Approval Plan Execute BLOCKERS  No blockers.  WA"
+  },
+  {
+    "file": "request-detail-planned.png",
+    "path": "/requests/74e75e87-406c-4787-bf05-eb3887f6e6b5",
+    "text_sample": "infra-config-portal Dashboard Run Center New VM Request Audit Events Media Inventory Provider Status  INFRASTRUCTURE CONFIGURATION  ui-audit-planned-1780424258 Planned Readiness execute Planned  Request has a valid dry-run plan and is ready for mock execution.  Submit Approval Plan Execute BLOCKERS "
+  },
+  {
+    "file": "request-detail-completed.png",
+    "path": "/requests/cbc47d7c-38fd-4d44-b041-bccbc2be3290",
+    "text_sample": "infra-config-portal Dashboard Run Center New VM Request Audit Events Media Inventory Provider Status  INFRASTRUCTURE CONFIGURATION  ui-audit-completed-1780424258 Completed Readiness none Completed  Request is complete; no further action is available.  Submit Approval Plan Execute BLOCKERS already_co"
+  },
+  {
+    "file": "workflow-run-planned.png",
+    "path": "/workflow-runs/86be86e9-5340-4b72-968b-5205079f3e1c",
+    "text_sample": "infra-config-portal Dashboard Run Center New VM Request Audit Events Media Inventory Provider Status  INFRASTRUCTURE CONFIGURATION  Workflow Run Planned RUN ID 86be86e9-5340-4b72-968b-5205079f3e1c REQUEST ID 74e75e87-406c-4787-bf05-eb3887f6e6b5 WORKFLOW vm_deploy_from_template PROVIDER vsphere.mock "
+  },
+  {
+    "file": "workflow-run-completed.png",
+    "path": "/workflow-runs/796eccdd-1a53-4ade-ab87-f6ef20197baa",
+    "text_sample": "infra-config-portal Dashboard Run Center New VM Request Audit Events Media Inventory Provider Status  INFRASTRUCTURE CONFIGURATION  Workflow Run Completed RUN ID 796eccdd-1a53-4ade-ab87-f6ef20197baa REQUEST ID cbc47d7c-38fd-4d44-b041-bccbc2be3290 WORKFLOW vm_deploy_from_template PROVIDER vsphere.moc"
+  },
+  {
+    "file": "audit-events.png",
+    "path": "/audit-events",
+    "text_sample": "infra-config-portal Dashboard Run Center New VM Request Audit Events Media Inventory Provider Status  INFRASTRUCTURE CONFIGURATION  Audit Events TIME\tEVENT\tACTOR\tSTATUS\tMESSAGE 6/2/2026, 6:17:38 PM\trequest.completed\tui-audit\texecuting -> completed\tMock VM deployment completed. 6/2/2026, 6:17:38 PM\tr"
+  },
+  {
+    "file": "media-inventory.png",
+    "path": "/media",
+    "text_sample": "infra-config-portal Dashboard Run Center New VM Request Audit Events Media Inventory Provider Status  INFRASTRUCTURE CONFIGURATION  Media Inventory Sample  Items  3  ISO  1  OVF/OVA  1  Firmware  1 Warnings media_inventory  MEDIA_INVENTORY_DIRS is not configured; returning mock sample media metadata"
+  },
+  {
+    "file": "provider-status.png",
+    "path": "/providers",
+    "text_sample": "infra-config-portal Dashboard Run Center New VM Request Audit Events Media Inventory Provider Status  INFRASTRUCTURE CONFIGURATION  Provider Status Mock vSphere  virtualization  Ok  Mock adapter only. No vCenter or ESXi calls are made.  mock plan-vm-deploy execute-vm-deploy Mock NetBox/Nautobot  sou"
+  }
+]
