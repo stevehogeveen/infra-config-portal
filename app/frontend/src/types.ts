@@ -8,7 +8,8 @@ export type RequestStatus =
   | "executing"
   | "completed"
   | "failed"
-  | "cancelled";
+  | "cancelled"
+  | "rejected";
 
 export type WorkflowRunStatus = "planned" | "executing" | "completed" | "failed" | "cancelled";
 
@@ -66,6 +67,26 @@ export type AuditEvent = {
   created_at: string;
 };
 
+export type ReadinessIssue = {
+  code: string;
+  message: string;
+  severity: "blocking" | "warning" | string;
+  action: string;
+};
+
+export type RequestReadiness = {
+  request_id: string;
+  current_status: RequestStatus;
+  ready_for_submit: boolean;
+  ready_for_approval: boolean;
+  ready_for_plan: boolean;
+  ready_for_execute: boolean;
+  next_action: string;
+  blockers: ReadinessIssue[];
+  warnings: ReadinessIssue[];
+  summary: string;
+};
+
 export type ProviderStatus = {
   name: string;
   kind: string;
@@ -102,3 +123,5 @@ export type VMDeploymentCreate = {
   expiry_date: string;
   notes?: string | null;
 };
+
+export type VMDeploymentUpdate = Partial<VMDeploymentCreate>;

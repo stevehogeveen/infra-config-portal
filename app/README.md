@@ -93,6 +93,10 @@ make frontend-run
 The Vite dev server runs at `http://127.0.0.1:5173` and proxies API requests
 to `http://127.0.0.1:8001`.
 
+The request detail view shows readiness, blockers, lifecycle actions, approval,
+mock execution, cancellation, request-scoped audit events, draft editing, and
+notes updates for editable pre-execution requests.
+
 ## Docker Compose
 
 ```bash

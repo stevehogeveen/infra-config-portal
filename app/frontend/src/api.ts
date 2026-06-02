@@ -2,8 +2,10 @@ import type {
   AuditEvent,
   Catalog,
   ProviderStatus,
+  RequestReadiness,
   RequestRecord,
   VMDeploymentCreate,
+  VMDeploymentUpdate,
   WorkflowRun
 } from "./types";
 
@@ -37,9 +39,15 @@ export const api = {
   catalog: () => apiRequest<Catalog>("/api/v1/catalog"),
   requests: () => apiRequest<RequestRecord[]>("/api/v1/requests"),
   request: (id: string) => apiRequest<RequestRecord>(`/api/v1/requests/${id}`),
+  readiness: (id: string) => apiRequest<RequestReadiness>(`/api/v1/requests/${id}/readiness`),
   createVmRequest: (payload: VMDeploymentCreate) =>
     apiRequest<RequestRecord>("/api/v1/requests/vm-deploy", {
       method: "POST",
+      body: payload
+    }),
+  updateVmRequest: (id: string, payload: VMDeploymentUpdate) =>
+    apiRequest<RequestRecord>(`/api/v1/requests/${id}`, {
+      method: "PATCH",
       body: payload
     }),
   submit: (id: string) =>
@@ -51,6 +59,8 @@ export const api = {
     }),
   plan: (id: string) =>
     apiRequest<WorkflowRun>(`/api/v1/requests/${id}/plan`, { method: "POST" }),
+  cancel: (id: string) =>
+    apiRequest<RequestRecord>(`/api/v1/requests/${id}/cancel`, { method: "POST" }),
   execute: (id: string) =>
     apiRequest<WorkflowRun>(`/api/v1/requests/${id}/execute`, { method: "POST" }),
   workflowRun: (id: string) => apiRequest<WorkflowRun>(`/api/v1/workflow-runs/${id}`),
