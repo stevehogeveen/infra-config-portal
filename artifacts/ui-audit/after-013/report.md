@@ -14,6 +14,7 @@ Method:
 - Reused the local mock-only sample data from the previous UI audit.
 - Verified `/health` reported `provider_mode: mock`.
 - Captured screenshots with Playwright Chromium after Firefox headless screenshot mode hung on temporary profiles.
+- Refreshed the dashboard, Run Center, and planned workflow-run screenshots after the final shell banner/request-link polish.
 - No real infrastructure/provider endpoints were called.
 
 ## Screenshots
@@ -35,6 +36,8 @@ Method:
 - Workflow run detail now shows structured plan summary, stage timeline, execution result summary, audit/log events, artifact/report placeholders, and raw JSON behind disclosures.
 - Request detail lifecycle buttons now include nearby enabled/disabled explanations for submit, approve, plan, execute, and cancel.
 - Every page inherits a visible mock-mode safety banner.
+- The global safety banner now verifies `/health` and warns if provider mode is not `mock`.
+- Workflow run detail now has a direct request link in the page actions for faster run-to-request correlation.
 - Audit event tables now show request/run links and expandable payload details.
 
 ## Checks Run

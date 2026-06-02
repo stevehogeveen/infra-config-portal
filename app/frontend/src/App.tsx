@@ -1103,7 +1103,17 @@ function WorkflowRunDetail() {
   }, [id]);
 
   return (
-    <Page title="Workflow Run" actions={run ? <StatusBadge status={run.status} /> : null}>
+    <Page
+      title="Workflow Run"
+      actions={
+        run ? (
+          <>
+            <ButtonLink to={`/requests/${run.request_id}`} icon={<ClipboardList size={16} />} label="Request" />
+            <StatusBadge status={run.status} />
+          </>
+        ) : null
+      }
+    >
       <Feedback loading={!run && !error} error={error} />
       {run && (
         <>
@@ -1268,17 +1278,51 @@ function ProviderStatusPage() {
 }
 
 function MockModeBanner() {
+  const [health, setHealth] = useState<{ provider_mode: string; status: string } | null>(null);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    api
+      .health()
+      .then((nextHealth) => {
+        setHealth(nextHealth);
+        setError("");
+      })
+      .catch((err: Error) => {
+        setHealth(null);
+        setError(err.message);
+      });
+  }, []);
+
+  const providerMode = health?.provider_mode ?? (error ? "unverified" : "checking");
+  const verifiedMock = health?.provider_mode === "mock";
+  const bannerClass = verifiedMock || (!health && !error) ? "mock-mode-banner" : "mock-mode-banner non-mock";
+
   return (
-    <section className="mock-mode-banner" aria-label="Mock provider safety mode">
-      <ShieldCheck size={18} />
+    <section
+      className={bannerClass}
+      aria-label="Mock provider safety mode"
+    >
+      {verifiedMock ? <ShieldCheck size={18} /> : <AlertTriangle size={18} />}
       <div>
-        <strong>Provider mode: mock</strong>
+        <strong>Provider mode: {providerMode}</strong>
         <p>
-          Local UI only. No real infrastructure calls are made; real adapters require explicit future configuration.
+          {mockModeBannerMessage(verifiedMock, Boolean(error))}
         </p>
+        {error && <p>Health check error: {error}</p>}
       </div>
     </section>
   );
+}
+
+function mockModeBannerMessage(verifiedMock: boolean, hasError: boolean): string {
+  if (verifiedMock) {
+    return "Local UI only. No real infrastructure calls are made; real adapters require explicit future configuration.";
+  }
+  if (hasError) {
+    return "Health check unavailable. This operator UI expects PROVIDER_MODE=mock; do not continue lifecycle work until backend health is verified.";
+  }
+  return "Verifying backend provider mode; local workflow pages require mock mode.";
 }
 
 function QueueSectionPanel({
