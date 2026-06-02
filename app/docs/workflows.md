@@ -56,13 +56,26 @@ Planning returns a dry-run plan with deterministic steps:
 - apply CPU, memory, and disk sizing
 - mark post-deploy checks as simulated
 
+The persisted workflow run also stores a normalized request intent snapshot and
+SHA-256 checksum. The intent includes execution-affecting fields such as
+environment, site, cluster, VM name, template, CPU, memory, disk, network,
+datastore or storage tier, owner, and expiry date. Informational notes are not
+part of the execution intent.
+
 ### Execution
 
 Execution first runs a preflight guard before the mock vSphere adapter is
 called. The request must still be `planned`, a persisted planned workflow run
 must exist, and the dry-run plan payload must include the same `request_id` as
-the request being executed. Missing or mismatched plans are rejected with an
-audit event and do not move the request to `executing`.
+the request being executed. This plan ownership guard blocks execution if a
+workflow run is missing, not planned, or attached to a different request.
+
+The execution preflight also recomputes the current request intent checksum and
+compares it with the checksum stored when the dry-run plan was created. If an
+execution-affecting request field changed after planning, execution is rejected
+with an audit event, the request remains `planned`, and the mock execution
+provider is not called. A new dry-run plan must be generated from the updated
+intent before execution can proceed.
 
 After preflight passes, execution uses the mock vSphere adapter. It returns
 mock task and VM IDs and does not connect to any infrastructure endpoint.

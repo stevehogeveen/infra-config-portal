@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import hashlib
+import json
+
 from sqlalchemy import Select, select
 from sqlalchemy.orm import Session, selectinload
 
@@ -19,6 +22,8 @@ CANCELLABLE_REQUEST_STATUSES = {
     RequestStatus.APPROVED.value,
     RequestStatus.PLANNED.value,
 }
+REQUEST_INTENT_VERSION = 1
+REQUEST_INTENT_HASH_PREFIX = "sha256:"
 
 
 class RequestNotFoundError(Exception):
@@ -191,6 +196,39 @@ def approve_request(
     return get_request(session, request.id)
 
 
+def build_request_intent(request: Request) -> dict:
+    vm = request.vm_deploy
+    return {
+        "version": REQUEST_INTENT_VERSION,
+        "request_type": request.request_type,
+        "environment": request.environment,
+        "site": request.site,
+        "owner": request.owner,
+        "expiry_date": request.expiry_date.isoformat(),
+        "vm": {
+            "cluster": vm.cluster,
+            "vm_name": vm.vm_name,
+            "template": vm.template,
+            "cpu": vm.cpu,
+            "memory_gb": vm.memory_gb,
+            "disk_gb": vm.disk_gb,
+            "network": vm.network,
+            "datastore": vm.datastore,
+            "storage_tier": vm.storage_tier,
+        },
+    }
+
+
+def build_request_intent_hash(intent: dict) -> str:
+    normalized = json.dumps(
+        intent,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=True,
+    )
+    return f"{REQUEST_INTENT_HASH_PREFIX}{hashlib.sha256(normalized.encode()).hexdigest()}"
+
+
 def plan_request(
     session: Session,
     request_id: str,
@@ -204,6 +242,12 @@ def plan_request(
 
     workflow = _get_or_create_workflow(session)
     plan = vsphere.plan_vm_deployment(request)
+    request_intent = build_request_intent(request)
+    plan = {
+        **plan,
+        "request_intent": request_intent,
+        "request_intent_hash": build_request_intent_hash(request_intent),
+    }
     run = WorkflowRun(
         request_id=request.id,
         workflow_id=workflow.id,
@@ -468,7 +512,98 @@ def _preflight_execution_plan(
         )
         raise ExecutionPreflightError(message)
 
+    _ensure_plan_intent_matches_request(session, request, run, actor=actor)
+
     return run
+
+
+def _ensure_plan_intent_matches_request(
+    session: Session,
+    request: Request,
+    run: WorkflowRun,
+    *,
+    actor: str,
+) -> None:
+    plan = run.plan_json
+    stored_intent = plan.get("request_intent")
+    stored_hash = plan.get("request_intent_hash")
+    if not isinstance(stored_intent, dict) or not isinstance(stored_hash, str):
+        message = (
+            f"Request {request.id} cannot execute because workflow run {run.id} "
+            "does not include request intent metadata."
+        )
+        _record_execution_preflight_failure(
+            session,
+            request,
+            actor=actor,
+            workflow_run=run,
+            message=message,
+            data={
+                "reason": "missing_request_intent",
+                "workflow_run_id": run.id,
+            },
+        )
+        raise ExecutionPreflightError(message)
+
+    expected_stored_hash = build_request_intent_hash(stored_intent)
+    if stored_hash != expected_stored_hash:
+        message = (
+            f"Request {request.id} cannot execute because workflow run {run.id} "
+            "contains inconsistent request intent metadata."
+        )
+        _record_execution_preflight_failure(
+            session,
+            request,
+            actor=actor,
+            workflow_run=run,
+            message=message,
+            data={
+                "reason": "request_intent_metadata_mismatch",
+                "workflow_run_id": run.id,
+                "stored_request_intent_hash": stored_hash,
+                "expected_request_intent_hash": expected_stored_hash,
+            },
+        )
+        raise ExecutionPreflightError(message)
+
+    current_intent = build_request_intent(request)
+    current_hash = build_request_intent_hash(current_intent)
+    if current_hash == stored_hash:
+        return
+
+    changed_fields = _changed_intent_fields(stored_intent, current_intent)
+    message = (
+        f"Request {request.id} cannot execute because its current intent no longer "
+        f"matches workflow run {run.id}'s dry-run plan. Create a new plan before executing."
+    )
+    _record_execution_preflight_failure(
+        session,
+        request,
+        actor=actor,
+        workflow_run=run,
+        message=message,
+        data={
+            "reason": "request_intent_mismatch",
+            "workflow_run_id": run.id,
+            "stored_request_intent_hash": stored_hash,
+            "current_request_intent_hash": current_hash,
+            "changed_fields": changed_fields,
+        },
+    )
+    raise ExecutionPreflightError(message)
+
+
+def _changed_intent_fields(stored: dict, current: dict, prefix: str = "") -> list[str]:
+    changed: list[str] = []
+    for key in sorted(stored.keys() | current.keys()):
+        path = f"{prefix}.{key}" if prefix else str(key)
+        stored_value = stored.get(key)
+        current_value = current.get(key)
+        if isinstance(stored_value, dict) and isinstance(current_value, dict):
+            changed.extend(_changed_intent_fields(stored_value, current_value, path))
+        elif stored_value != current_value:
+            changed.append(path)
+    return changed
 
 
 def _record_execution_preflight_failure(

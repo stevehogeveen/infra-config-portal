@@ -119,6 +119,36 @@ def test_mock_vm_deploy_lifecycle_records_audit_events(
     }.issubset(event_types)
 
 
+def test_plan_stores_request_intent_and_hash(
+    db_session: Session,
+    vm_payload: dict,
+) -> None:
+    request, run = _create_planned_request(db_session, vm_payload)
+
+    intent = run.plan_json["request_intent"]
+    assert run.plan_json["request_intent_hash"].startswith("sha256:")
+    assert intent == {
+        "version": 1,
+        "request_type": "vm_deploy",
+        "environment": vm_payload["environment"],
+        "site": vm_payload["site"],
+        "owner": vm_payload["owner"],
+        "expiry_date": vm_payload["expiry_date"],
+        "vm": {
+            "cluster": vm_payload["cluster"],
+            "vm_name": vm_payload["vm_name"],
+            "template": vm_payload["template"],
+            "cpu": vm_payload["cpu"],
+            "memory_gb": vm_payload["memory_gb"],
+            "disk_gb": vm_payload["disk_gb"],
+            "network": vm_payload["network"],
+            "datastore": None,
+            "storage_tier": vm_payload["storage_tier"],
+        },
+    }
+    assert run.plan_json["request_id"] == request.id
+
+
 def test_execute_succeeds_when_persisted_plan_belongs_to_request(
     db_session: Session,
     vm_payload: dict,
@@ -139,6 +169,75 @@ def test_execute_succeeds_when_persisted_plan_belongs_to_request(
     assert completed_run.plan_json["request_id"] == request.id
     assert completed_run.result_json is not None
     assert completed_run.result_json["request_id"] == request.id
+
+
+def test_execute_fails_when_request_intent_changes_after_planning(
+    db_session: Session,
+    vm_payload: dict,
+) -> None:
+    request, run = _create_planned_request(db_session, vm_payload)
+    request_id = request.id
+    run_id = run.id
+
+    persisted_request = db_session.get(Request, request_id)
+    assert persisted_request is not None
+    persisted_request.vm_deploy.cpu = vm_payload["cpu"] + 2
+    db_session.commit()
+
+    vsphere = SpyVsphereAdapter()
+    with pytest.raises(ExecutionPreflightError, match="current intent no longer matches"):
+        execute_request(
+            db_session,
+            request_id,
+            actor="local-dev-user",
+            vsphere=vsphere,
+        )
+
+    persisted_request = db_session.get(Request, request_id)
+    persisted_run = db_session.get(WorkflowRun, run_id)
+    assert persisted_request is not None
+    assert persisted_run is not None
+    assert persisted_request.status == RequestStatus.PLANNED.value
+    assert persisted_run.status == WorkflowRunStatus.PLANNED.value
+    assert vsphere.execute_calls == 0
+
+    audit_event = db_session.execute(
+        select(AuditEvent).where(
+            AuditEvent.request_id == request_id,
+            AuditEvent.event_type == "request.execution_preflight_failed",
+        )
+    ).scalar_one()
+    assert audit_event.workflow_run_id == run_id
+    assert audit_event.from_status == RequestStatus.PLANNED.value
+    assert audit_event.to_status == RequestStatus.PLANNED.value
+    assert audit_event.data_json["reason"] == "request_intent_mismatch"
+    assert audit_event.data_json["workflow_run_id"] == run_id
+    assert audit_event.data_json["changed_fields"] == ["vm.cpu"]
+
+
+def test_execute_ignores_notes_changed_after_planning(
+    db_session: Session,
+    vm_payload: dict,
+) -> None:
+    request, run = _create_planned_request(db_session, vm_payload)
+    request_id = request.id
+    vsphere = SpyVsphereAdapter()
+
+    persisted_request = db_session.get(Request, request_id)
+    assert persisted_request is not None
+    persisted_request.notes = "Operator-only note changed after planning."
+    db_session.commit()
+
+    completed_run = execute_request(
+        db_session,
+        request_id,
+        actor="local-dev-user",
+        vsphere=vsphere,
+    )
+
+    assert vsphere.execute_calls == 1
+    assert completed_run.id == run.id
+    assert completed_run.status == WorkflowRunStatus.COMPLETED.value
 
 
 def test_execute_fails_when_no_persisted_plan_exists_and_records_audit(

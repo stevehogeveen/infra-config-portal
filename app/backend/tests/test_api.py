@@ -112,6 +112,53 @@ def test_execute_api_rejects_planned_request_without_persisted_plan(
     assert "request.execution_preflight_failed" in event_types
 
 
+def test_execute_api_rejects_request_intent_drift(
+    client: TestClient,
+    db_session: Session,
+    vm_payload: dict,
+) -> None:
+    created = client.post("/api/v1/requests/vm-deploy", json=vm_payload)
+    assert created.status_code == 201
+    request_id = created.json()["id"]
+
+    submitted = client.post(f"/api/v1/requests/{request_id}/submit")
+    assert submitted.status_code == 200
+
+    approved = client.post(
+        f"/api/v1/requests/{request_id}/approve",
+        json={"approver": "change.manager", "notes": "Looks safe"},
+    )
+    assert approved.status_code == 200
+
+    planned = client.post(f"/api/v1/requests/{request_id}/plan")
+    assert planned.status_code == 200
+    assert planned.json()["plan_json"]["request_intent_hash"].startswith("sha256:")
+
+    request = db_session.get(Request, request_id)
+    assert request is not None
+    request.vm_deploy.memory_gb = vm_payload["memory_gb"] + 4
+    db_session.commit()
+
+    executed = client.post(f"/api/v1/requests/{request_id}/execute")
+
+    assert executed.status_code == 409
+    assert "current intent no longer matches" in executed.json()["detail"]
+
+    request_detail = client.get(f"/api/v1/requests/{request_id}")
+    assert request_detail.status_code == 200
+    assert request_detail.json()["status"] == "planned"
+
+    audit_events = client.get("/api/v1/audit-events")
+    assert audit_events.status_code == 200
+    matching_events = [
+        event
+        for event in audit_events.json()
+        if event["event_type"] == "request.execution_preflight_failed"
+    ]
+    assert matching_events[0]["data_json"]["reason"] == "request_intent_mismatch"
+    assert matching_events[0]["data_json"]["changed_fields"] == ["vm.memory_gb"]
+
+
 def test_provider_status_is_mock_or_placeholder(client: TestClient) -> None:
     response = client.get("/api/v1/providers/status")
 
