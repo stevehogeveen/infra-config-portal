@@ -1298,34 +1298,112 @@ function WorkflowRunDetail() {
 function AuditEvents() {
   const [events, setEvents] = useState<AuditEvent[]>([]);
   const [error, setError] = useState("");
-  const [filter, setFilter] = useState("all");
+  const [loading, setLoading] = useState(true);
+  const [linkFilter, setLinkFilter] = useState("all");
+  const [eventTypeFilter, setEventTypeFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [requestFilter, setRequestFilter] = useState("");
+  const [runFilter, setRunFilter] = useState("");
+  const [textFilter, setTextFilter] = useState("");
+
+  async function load() {
+    setError("");
+    setLoading(true);
+    try {
+      setEvents(await api.auditEvents());
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  }
 
   useEffect(() => {
-    api.auditEvents().then(setEvents).catch((err: Error) => setError(err.message));
+    load();
   }, []);
 
-  const filteredEvents = events.filter((event) => {
-    if (filter === "all") return true;
-    if (filter === "requests") return Boolean(event.request_id);
-    if (filter === "workflow-runs") return Boolean(event.workflow_run_id);
-    return event.event_type.includes(filter);
-  });
+  const eventTypeOptions = uniqueOptions(events.map((event) => event.event_type));
+  const statusOptions = uniqueOptions(
+    events.flatMap((event) => [event.from_status, event.to_status].filter(isString))
+  );
+  const filteredEvents = events.filter((event) =>
+    auditEventMatchesFilters(event, {
+      eventTypeFilter,
+      linkFilter,
+      requestFilter,
+      runFilter,
+      statusFilter,
+      textFilter
+    })
+  );
 
   return (
     <Page
       title="Audit Events"
       actions={
-        <select value={filter} onChange={(event) => setFilter(event.target.value)}>
-          <option value="all">All events</option>
-          <option value="requests">Request-linked</option>
-          <option value="workflow-runs">Run-linked</option>
-          <option value="request.execution">Execution events</option>
-          <option value="request.updated">Update events</option>
-        </select>
+        <button onClick={load} disabled={loading}>
+          <RefreshCw size={16} />
+          Refresh
+        </button>
       }
     >
-      <Feedback error={error} />
+      <Feedback loading={loading && !events.length} error={error} />
       <section className="panel">
+        <PanelTitle icon={<History size={18} />} title="Audit Filters" />
+        <div className="audit-filter-grid">
+          <Field label="Request ID">
+            <input
+              placeholder="Request UUID"
+              value={requestFilter}
+              onChange={(event) => setRequestFilter(event.target.value)}
+            />
+          </Field>
+          <Field label="Run ID">
+            <input
+              placeholder="Workflow run UUID"
+              value={runFilter}
+              onChange={(event) => setRunFilter(event.target.value)}
+            />
+          </Field>
+          <Field label="Event Type">
+            <select value={eventTypeFilter} onChange={(event) => setEventTypeFilter(event.target.value)}>
+              <option value="all">All event types</option>
+              {eventTypeOptions.map((eventType) => (
+                <option key={eventType} value={eventType}>
+                  {eventType}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Status">
+            <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+              <option value="all">All statuses</option>
+              {statusOptions.map((status) => (
+                <option key={status} value={status}>
+                  {labelize(status)}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Links">
+            <select value={linkFilter} onChange={(event) => setLinkFilter(event.target.value)}>
+              <option value="all">All links</option>
+              <option value="requests">Request-linked</option>
+              <option value="workflow-runs">Run-linked</option>
+              <option value="unlinked">Unlinked</option>
+            </select>
+          </Field>
+          <Field label="Search">
+            <input
+              placeholder="Message, actor, or payload"
+              value={textFilter}
+              onChange={(event) => setTextFilter(event.target.value)}
+            />
+          </Field>
+        </div>
+      </section>
+      <section className="panel">
+        <PanelTitle icon={<History size={18} />} title={`Events (${filteredEvents.length})`} />
         <AuditEventTable events={filteredEvents} />
       </section>
     </Page>
@@ -2446,6 +2524,62 @@ async function loadReadinessMap(requests: RequestRecord[]): Promise<ReadinessMap
 
 function uniqueOptions(values: string[]): string[] {
   return [...new Set(values)].sort((left, right) => left.localeCompare(right));
+}
+
+type AuditFilterState = {
+  eventTypeFilter: string;
+  linkFilter: string;
+  requestFilter: string;
+  runFilter: string;
+  statusFilter: string;
+  textFilter: string;
+};
+
+function auditEventMatchesFilters(event: AuditEvent, filters: AuditFilterState): boolean {
+  if (filters.linkFilter === "requests" && !event.request_id) return false;
+  if (filters.linkFilter === "workflow-runs" && !event.workflow_run_id) return false;
+  if (filters.linkFilter === "unlinked" && (event.request_id || event.workflow_run_id)) {
+    return false;
+  }
+  if (filters.eventTypeFilter !== "all" && event.event_type !== filters.eventTypeFilter) {
+    return false;
+  }
+  if (
+    filters.statusFilter !== "all" &&
+    event.from_status !== filters.statusFilter &&
+    event.to_status !== filters.statusFilter
+  ) {
+    return false;
+  }
+  if (!matchesPartialId(event.request_id, filters.requestFilter)) return false;
+  if (!matchesPartialId(event.workflow_run_id, filters.runFilter)) return false;
+
+  const search = filters.textFilter.trim().toLowerCase();
+  if (!search) return true;
+  return auditEventSearchText(event).includes(search);
+}
+
+function matchesPartialId(value: string | null, filter: string): boolean {
+  const normalizedFilter = filter.trim().toLowerCase();
+  if (!normalizedFilter) return true;
+  return Boolean(value?.toLowerCase().includes(normalizedFilter));
+}
+
+function auditEventSearchText(event: AuditEvent): string {
+  return [
+    event.actor,
+    event.event_type,
+    event.message,
+    event.from_status ?? "",
+    event.to_status ?? "",
+    JSON.stringify(event.data_json ?? {})
+  ]
+    .join(" ")
+    .toLowerCase();
+}
+
+function isString(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0;
 }
 
 function buildRunCenterSections(

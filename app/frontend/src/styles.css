@@ -459,6 +459,12 @@ textarea {
   grid-template-columns: minmax(220px, 1.4fr) repeat(4, minmax(150px, 1fr));
 }
 
+.audit-filter-grid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .request-list-link {
   margin-top: 14px;
 }
@@ -1096,7 +1102,8 @@ pre {
   .operator-metric-grid,
   .operator-queue-grid,
   .dashboard-grid,
-  .request-filter-grid {
+  .request-filter-grid,
+  .audit-filter-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -1128,6 +1135,7 @@ pre {
     .operator-queue-grid,
     .dashboard-grid,
     .request-filter-grid,
+    .audit-filter-grid,
     .stage-list,
     .lifecycle-action-grid,
     .handoff-summary,

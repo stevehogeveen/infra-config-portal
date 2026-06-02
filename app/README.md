@@ -101,8 +101,10 @@ lifecycle actions, approval, mock execution, cancellation, request-scoped audit
 events, draft editing, notes updates for editable pre-execution requests, and
 mock artifact/report cards. Run Center shows pending requests, local workflow
 runs, mock stage status, report handoff links, and review-before-execute state.
-Media Inventory shows sample metadata by default, or placeholder-only metadata
-from explicitly configured `MEDIA_INVENTORY_DIRS`.
+Audit Events can be filtered by request ID, workflow run ID, event type,
+status, link scope, and text payload. Media Inventory shows sample metadata by
+default, or placeholder-only metadata from explicitly configured
+`MEDIA_INVENTORY_DIRS`.
 
 ## Docker Compose
 
