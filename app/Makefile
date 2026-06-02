@@ -34,3 +34,9 @@ down:
 codex-audit codex-task codex-next codex-resume test dev lint:
 	@echo "Error: Run this from $(REPO_ROOT), not $(CURDIR)." >&2
 	@exit 2
+
+.PHONY: backend-smoke smoke
+backend-smoke:
+	cd backend && .venv/bin/pytest -q tests/test_smoke_vm_lifecycle.py
+
+smoke: backend-smoke

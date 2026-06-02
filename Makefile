@@ -39,3 +39,10 @@ lint: check-repo-root
 		echo "Backend lint: ruff is configured but not installed in app/backend/.venv; skipping."; \
 	fi
 	cd $(REPO_ROOT)/app/frontend && npm run build
+
+.PHONY: backend-smoke smoke
+backend-smoke:
+	/home/administrator/infra-config-portal/scripts/check-repo-root.sh
+	$(MAKE) -C /home/administrator/infra-config-portal/app backend-smoke
+
+smoke: backend-smoke
