@@ -140,6 +140,8 @@ Redfish and Cisco console. Default `PROVIDER_MODE=mock` never runs real probes
 on page load. Cisco console discovery is read-only filesystem inspection of
 `/dev/serial/by-id/*`, `/dev/ttyUSB*`, and `/dev/ttyACM*`; it does not open
 serial ports or send commands during discovery.
+iLO configuration is reported only as configured/missing flags. The API does
+not return configured iLO host, username, or password values.
 
 For an isolated local lab, optional settings can live in `.env.local.providers`
 at the repository root. Do not commit that file.

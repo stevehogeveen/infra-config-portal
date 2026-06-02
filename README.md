@@ -77,6 +77,8 @@ The Provider Status page shows mock provider cards plus HPE iLO/Redfish and
 Cisco console previews. Default `PROVIDER_MODE=mock` performs no real probes on
 page load. Cisco discovery dynamically inspects `/dev/serial/by-id/*`,
 `/dev/ttyUSB*`, and `/dev/ttyACM*` without opening the serial port.
+iLO local settings are shown only as configured/missing flags; configured
+hostnames, usernames, and passwords are not returned in provider status payloads.
 
 Optional local lab values may live in `.env.local.providers`, which is ignored
 by Git and must not be committed:

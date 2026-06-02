@@ -1357,6 +1357,10 @@ function ProviderDetailCard({
             />
             <ProviderFact label="Result" value={asString(lastResult.status) || "unknown"} />
           </div>
+          <p className="provider-redaction-note">
+            Probe payloads are shown only after an explicit action; configured endpoints, users, passwords,
+            tokens, and cookies are redacted by the backend.
+          </p>
           <JsonDetails title="Raw redacted probe result" data={lastResult} />
         </div>
       )}
@@ -1388,17 +1392,31 @@ function CiscoConsoleDetails({ provider }: { provider: ProviderStatus }) {
   const discovery = provider.discovery ?? {};
   const envOverride = objectValue(discovery.env_override);
   const candidates = consoleCandidates(discovery.candidates);
+  const candidateCounts = objectValue(discovery.candidate_counts);
+  const effectivePath = asString(discovery.effective_path);
+  const recommendedPath = asString(discovery.recommended_path);
 
   return (
     <div className="provider-detail-section">
+      <div className="provider-callout">
+        <strong>{labelize(asString(discovery.selection_source) || asString(discovery.status) || "discovery")}</strong>
+        <p>{asString(discovery.safe_next_action) || "Review local console discovery before probing."}</p>
+      </div>
       <div className="provider-fact-grid">
         <ProviderFact
           label="Env Override"
           value={asBoolean(envOverride.configured) ? asString(envOverride.path) || "Configured" : "Not configured"}
         />
-        <ProviderFact label="Recommended Path" value={asString(discovery.recommended_path) || "-"} />
-        <ProviderFact label="Effective Path" value={asString(discovery.effective_path) || "-"} />
+        <ProviderFact label="Recommended Path" value={recommendedPath || "-"} />
+        <ProviderFact label="Effective Path" value={effectivePath || "-"} />
         <ProviderFact label="Baud" value={asString(provider.configuration.baud) || "9600"} />
+      </div>
+      <div className="provider-fact-grid compact">
+        <ProviderFact label="Existing Candidates" value={`${asNumber(candidateCounts.existing, candidates.filter((candidate) => candidate.exists).length)}`} />
+        <ProviderFact
+          label="Stable / Fallback"
+          value={`${asNumber(candidateCounts.stable_existing, candidates.filter((candidate) => candidate.stable_path && candidate.exists).length)} / ${asNumber(candidateCounts.fallback_existing, candidates.filter((candidate) => !candidate.stable_path && candidate.exists).length)}`}
+        />
       </div>
       <h3>Console Candidates</h3>
       {candidates.length ? (
@@ -1414,10 +1432,14 @@ function CiscoConsoleDetails({ provider }: { provider: ProviderStatus }) {
           </thead>
           <tbody>
             {candidates.map((candidate) => (
-              <tr key={candidate.path}>
+              <tr className={candidate.path === effectivePath ? "selected-candidate-row" : ""} key={candidate.path}>
                 <td>
                   <strong>{candidate.path}</strong>
                   {candidate.label && <span>{candidate.label}</span>}
+                  <span className="candidate-tags">
+                    {candidate.path === effectivePath && <span className="candidate-tag selected">Effective</span>}
+                    {candidate.path === recommendedPath && <span className="candidate-tag recommended">Recommended</span>}
+                  </span>
                 </td>
                 <td>{yesNo(candidate.stable_path)}</td>
                 <td>{yesNo(candidate.exists)}</td>
@@ -1436,21 +1458,34 @@ function CiscoConsoleDetails({ provider }: { provider: ProviderStatus }) {
 
 function IloRedfishDetails({ provider }: { provider: ProviderStatus }) {
   const config = provider.configuration;
+  const missingFields = stringArray(config.missing_fields);
 
   return (
     <div className="provider-detail-section">
+      <div className="provider-callout">
+        <strong>{missingFields.length ? "Configuration missing" : "Configuration present"}</strong>
+        <p>
+          iLO host, username, and password values are stored only in local environment configuration and
+          are exposed here as presence flags.
+        </p>
+      </div>
       <div className="provider-fact-grid">
-        <ProviderFact label="Host" value={asString(config.host) || "Not configured"} />
-        <ProviderFact label="Username" value={asString(config.username) || "Not configured"} />
+        <ProviderFact label="Host" value={presenceLabel(config.host_configured)} />
+        <ProviderFact label="Username" value={presenceLabel(config.username_configured)} />
         <ProviderFact
           label="Password"
-          value={asBoolean(config.password_configured) ? "Configured" : "Missing"}
+          value={presenceLabel(config.password_configured)}
         />
         <ProviderFact
           label="TLS Verify"
           value={asBoolean(config.tls_verify) ? "Enabled" : "Disabled"}
         />
       </div>
+      {missingFields.length > 0 && (
+        <p className="provider-missing-fields">
+          Missing local settings: {missingFields.join(", ")}
+        </p>
+      )}
     </div>
   );
 }
@@ -1516,6 +1551,7 @@ function ProviderActionRows({
                   <Play size={16} />
                   {busy ? "Running" : action.label}
                 </button>
+                <span className="action-tag read-only">Read only</span>
                 <p>{action.reason}</p>
               </div>
             ))}
@@ -1532,6 +1568,7 @@ function ProviderActionRows({
                   <Ban size={16} />
                   {action.label}
                 </button>
+                <span className="action-tag disabled">Disabled</span>
                 <p>{action.reason}</p>
               </div>
             ))}
@@ -1605,6 +1642,19 @@ function asString(value: unknown): string {
 
 function asBoolean(value: unknown): boolean {
   return value === true;
+}
+
+function asNumber(value: unknown, fallback = 0): number {
+  return typeof value === "number" ? value : fallback;
+}
+
+function stringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === "string");
+}
+
+function presenceLabel(value: unknown): string {
+  return asBoolean(value) ? "Configured" : "Missing";
 }
 
 function yesNo(value: boolean): string {

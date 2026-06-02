@@ -32,6 +32,8 @@ def test_cisco_candidate_discovery_with_one_stable_candidate(tmp_path: Path) -> 
     assert discovery["status"] == "ready"
     assert discovery["recommended_path"] == str(stable)
     assert discovery["effective_path"] == str(stable)
+    assert discovery["selection_source"] == "single-stable-candidate"
+    assert discovery["candidate_counts"]["stable_existing"] == 1
     stable_candidates = [
         candidate for candidate in discovery["candidates"] if candidate["stable_path"]
     ]
@@ -55,6 +57,8 @@ def test_cisco_candidate_discovery_with_multiple_stable_candidates(tmp_path: Pat
     assert discovery["status"] == "needs-selection"
     assert discovery["recommended_path"] is None
     assert discovery["effective_path"] is None
+    assert discovery["selection_source"] == "multiple-stable-candidates"
+    assert discovery["candidate_counts"]["stable_existing"] == 2
     assert "Multiple stable serial console candidates" in discovery["blockers"][0]
 
 
@@ -69,6 +73,8 @@ def test_cisco_candidate_discovery_with_no_candidates(tmp_path: Path) -> None:
     assert discovery["status"] == "missing-console"
     assert discovery["candidates"] == []
     assert discovery["effective_path"] is None
+    assert discovery["selection_source"] == "missing"
+    assert discovery["candidate_counts"]["total"] == 0
     assert "No Cisco serial console candidates" in discovery["blockers"][0]
 
 
@@ -86,6 +92,7 @@ def test_cisco_env_override_path(tmp_path: Path) -> None:
     assert discovery["env_override"]["configured"] is True
     assert discovery["env_override"]["path"] == str(tty)
     assert discovery["effective_path"] == str(tty)
+    assert discovery["selection_source"] == "env-override"
     matching = [candidate for candidate in discovery["candidates"] if candidate["path"] == str(tty)]
     assert matching[0]["recommendation"] == "env-override"
 
@@ -131,19 +138,46 @@ def test_ilo_missing_config_returns_missing_config_blocker() -> None:
     assert "missing_fields" in probe
 
 
+def test_ilo_status_exposes_only_configuration_presence() -> None:
+    adapter = IloRedfishAdapter(
+        provider_mode="mock",
+        config=IloRedfishConfig(
+            host="ilo-lab-private.example.test",
+            username="local-admin",
+            password="super-secret-password",
+            verify_tls=True,
+            timeout_seconds=1.0,
+        ),
+    )
+
+    status = adapter.health()
+    encoded_configuration = json.dumps(status.configuration)
+
+    assert status.configuration["host_configured"] is True
+    assert status.configuration["username_configured"] is True
+    assert status.configuration["password_configured"] is True
+    assert "ilo-lab-private" not in encoded_configuration
+    assert "local-admin" not in encoded_configuration
+    assert "super-secret-password" not in encoded_configuration
+
+
 def test_ilo_redacts_secrets() -> None:
     secret = "super-secret-password"
+    host = "ilo-lab-private.example.test"
+    username = "local-admin"
     redacted = redact_sensitive(
         {
             "password": secret,
-            "message": f"request failed with password={secret}",
+            "message": f"request failed for {username}@{host} with password={secret}",
             "nested": {"token": "abc123"},
         },
-        [secret],
+        [secret, host, username],
     )
 
     encoded = json.dumps(redacted)
     assert secret not in encoded
+    assert host not in encoded
+    assert username not in encoded
     assert "abc123" not in encoded
     assert encoded.count("REDACTED") >= 3
 

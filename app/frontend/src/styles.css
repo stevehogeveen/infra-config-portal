@@ -845,6 +845,23 @@ pre {
   margin-top: 16px;
 }
 
+.provider-callout {
+  background: #f8fafc;
+  border: 1px solid #dfe4ea;
+  border-radius: 6px;
+  color: #334155;
+  margin-top: 14px;
+  padding: 12px;
+}
+
+.provider-callout p,
+.provider-redaction-note,
+.provider-missing-fields {
+  color: #5d6877;
+  font-size: 13px;
+  margin: 6px 0 0;
+}
+
 .provider-detail-section h3,
 .provider-action-layout h3 {
   color: #445164;
@@ -864,6 +881,43 @@ pre {
   color: #6b7686;
   font-size: 12px;
   margin-top: 4px;
+}
+
+.selected-candidate-row {
+  background: #f0faf8;
+}
+
+.candidate-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.candidate-tag,
+.action-tag {
+  border-radius: 999px;
+  display: inline-flex;
+  font-size: 11px;
+  font-weight: 800;
+  margin-top: 8px;
+  padding: 4px 7px;
+  text-transform: uppercase;
+}
+
+.candidate-tag.selected,
+.action-tag.read-only {
+  background: #e6f6ee;
+  color: #166534;
+}
+
+.candidate-tag.recommended {
+  background: #eef6ff;
+  color: #075985;
+}
+
+.action-tag.disabled {
+  background: #fdecec;
+  color: #b42318;
 }
 
 .provider-issue-rows {

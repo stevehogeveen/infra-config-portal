@@ -28,6 +28,9 @@ Unsupported modes raise a provider registry error.
 
 Optional local lab settings may be placed in `.env.local.providers` at the
 repository root. This file is ignored by Git and must not be committed.
+Provider status responses expose these iLO values only as configured/missing
+flags. Probe results redact configured endpoints, users, passwords, tokens,
+cookies, and other sensitive fields before caching or returning them.
 
 Supported local variables:
 

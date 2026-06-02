@@ -71,6 +71,7 @@ def discover_cisco_console(
     recommended_path: str | None = None
     effective_path: str | None = None
     status = "missing-console"
+    selection_source = "missing"
     safe_next_action = (
         "Connect a USB serial console cable and refresh provider status. "
         "Stable /dev/serial/by-id paths are preferred."
@@ -79,6 +80,7 @@ def discover_cisco_console(
     if env_override["configured"]:
         effective_path = str(env_override["path"])
         status = "ready"
+        selection_source = "env-override"
         safe_next_action = "Run an explicit read-only probe after confirming the console target."
         _mark_recommendation(candidates, effective_path, "env-override")
         if not env_override["exists"]:
@@ -93,6 +95,7 @@ def discover_cisco_console(
         recommended_path = existing_stable[0].path
         effective_path = recommended_path
         status = "ready"
+        selection_source = "single-stable-candidate"
         _mark_recommendation(candidates, recommended_path, "recommended-default")
         safe_next_action = "Run an explicit read-only probe against the recommended stable path."
         if not _candidate_accessible(existing_stable[0]):
@@ -101,6 +104,7 @@ def discover_cisco_console(
             safe_next_action = "Check device permissions for the backend user."
     elif len(existing_stable) > 1:
         status = "needs-selection"
+        selection_source = "multiple-stable-candidates"
         blockers.append(
             "Multiple stable serial console candidates were discovered; set "
             "CISCO_CONSOLE_PORT to the intended /dev/serial/by-id path."
@@ -108,6 +112,7 @@ def discover_cisco_console(
         safe_next_action = "Select the intended stable path in .env.local.providers."
     elif existing_candidates:
         status = "needs-selection"
+        selection_source = "fallback-candidates"
         blockers.append(
             "Only fallback /dev/ttyUSB or /dev/ttyACM candidates were discovered; set "
             "CISCO_CONSOLE_PORT to the intended path before probing."
@@ -127,6 +132,13 @@ def discover_cisco_console(
         "candidates": [asdict(candidate) for candidate in candidates],
         "recommended_path": recommended_path,
         "effective_path": effective_path,
+        "selection_source": selection_source,
+        "candidate_counts": {
+            "total": len(candidates),
+            "existing": len(existing_candidates),
+            "stable_existing": len(existing_stable),
+            "fallback_existing": len(existing_candidates) - len(existing_stable),
+        },
         "env_override": env_override,
         "blockers": blockers,
         "warnings": warnings,

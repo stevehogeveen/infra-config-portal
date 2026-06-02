@@ -89,8 +89,8 @@ class IloRedfishAdapter:
                 "the probe button performs explicit GET-only requests."
             ),
             configuration={
-                "host": self.config.host,
-                "username": self.config.username,
+                "host_configured": bool(self.config.host),
+                "username_configured": bool(self.config.username),
                 "password_configured": bool(self.config.password),
                 "tls_verify": self.config.verify_tls,
                 "timeout_seconds": self.config.timeout_seconds,
@@ -219,8 +219,16 @@ class IloRedfishAdapter:
         )
 
     def _record_result(self, result: dict[str, Any]) -> dict[str, Any]:
-        redacted = redact_sensitive(result, [self.config.password])
+        redacted = redact_sensitive(result, self._redaction_values())
         return record_probe_result(PROVIDER_ID, redacted)
+
+    def _redaction_values(self) -> list[str | None]:
+        values: list[str | None] = [self.config.password, self.config.username, self.config.host]
+        if self.config.host:
+            base_url = _base_url(self.config.host)
+            parsed = urlparse(base_url)
+            values.extend([base_url, parsed.netloc, parsed.hostname])
+        return values
 
 
 def _base_url(host: str) -> str:
@@ -232,7 +240,7 @@ def _base_url(host: str) -> str:
 
 def _redacted_base_url(base_url: str) -> str:
     parsed = urlparse(base_url)
-    return f"{parsed.scheme}://{parsed.netloc}"
+    return f"{parsed.scheme}://REDACTED"
 
 
 def _get_json(

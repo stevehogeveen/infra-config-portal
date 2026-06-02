@@ -30,8 +30,12 @@ def main() -> int:
                 {
                     "cisco_console_discovery": {
                         "status": discovery.get("status"),
+                        "selection_source": discovery.get("selection_source"),
                         "effective_path": discovery.get("effective_path"),
-                        "candidate_count": len(discovery.get("candidates", [])),
+                        "candidate_counts": discovery.get(
+                            "candidate_counts",
+                            {"total": len(discovery.get("candidates", []))},
+                        ),
                         "candidates": discovery.get("candidates", []),
                     }
                 },
@@ -73,8 +77,8 @@ def _status_summary(status: dict[str, Any]) -> dict[str, Any]:
     configuration = status.get("configuration") or {}
     if status.get("id") == "ilo-redfish":
         configuration = {
-            "host_configured": bool(configuration.get("host")),
-            "username_configured": bool(configuration.get("username")),
+            "host_configured": bool(configuration.get("host_configured")),
+            "username_configured": bool(configuration.get("username_configured")),
             "password_configured": bool(configuration.get("password_configured")),
             "tls_verify": configuration.get("tls_verify"),
             "missing_fields": configuration.get("missing_fields", []),
