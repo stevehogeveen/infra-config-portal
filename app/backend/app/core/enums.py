@@ -20,6 +20,7 @@ class RequestStatus(str, Enum):
     COMPLETED = "completed"
     FAILED = "failed"
     CANCELLED = "cancelled"
+    REJECTED = "rejected"
 
 
 class WorkflowRunStatus(str, Enum):

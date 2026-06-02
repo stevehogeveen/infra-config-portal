@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.core.enums import ApprovalDecision, RequestStatus, WorkflowRunStatus
 from app.models import Approval, Request, VMDeploymentRequest, Workflow, WorkflowRun
 from app.providers.mock import MockSourceOfTruthAdapter, MockVsphereAdapter
-from app.schemas import ApprovalCreate, VMDeploymentCreate
+from app.schemas import ApprovalCreate, VMDeploymentCreate, VMDeploymentUpdate
 from app.services.audit import record_audit_event
 from app.services.worker import InlineWorker
 
@@ -21,6 +21,41 @@ CANCELLABLE_REQUEST_STATUSES = {
     RequestStatus.NEEDS_APPROVAL.value,
     RequestStatus.APPROVED.value,
     RequestStatus.PLANNED.value,
+}
+EDITABLE_REQUEST_STATUSES = CANCELLABLE_REQUEST_STATUSES
+LOCKED_REQUEST_STATUSES = {
+    RequestStatus.EXECUTING.value,
+    RequestStatus.COMPLETED.value,
+    RequestStatus.FAILED.value,
+    RequestStatus.CANCELLED.value,
+    RequestStatus.REJECTED.value,
+}
+REQUEST_UPDATE_FIELDS = {
+    "requester",
+    "environment",
+    "site",
+    "owner",
+    "expiry_date",
+    "notes",
+}
+VM_DEPLOYMENT_UPDATE_FIELDS = {
+    "cluster",
+    "vm_name",
+    "template",
+    "cpu",
+    "memory_gb",
+    "disk_gb",
+    "network",
+    "datastore",
+    "storage_tier",
+}
+EXECUTION_AFFECTING_UPDATE_FIELDS = {
+    "requester",
+    "environment",
+    "site",
+    "owner",
+    "expiry_date",
+    *VM_DEPLOYMENT_UPDATE_FIELDS,
 }
 REQUEST_INTENT_VERSION = 1
 REQUEST_INTENT_HASH_PREFIX = "sha256:"
@@ -45,6 +80,12 @@ class InvalidTransitionError(Exception):
 class ValidationFailureError(Exception):
     def __init__(self, errors: list[str]) -> None:
         super().__init__("Request failed source-of-truth validation")
+        self.errors = errors
+
+
+class RequestUpdateValidationError(Exception):
+    def __init__(self, errors: list[str]) -> None:
+        super().__init__("Request update failed validation")
         self.errors = errors
 
 
@@ -109,6 +150,62 @@ def create_vm_deployment_request(
         request=request,
         to_status=RequestStatus.DRAFT.value,
     )
+    session.commit()
+    return get_request(session, request.id)
+
+
+def update_vm_deployment_request(
+    session: Session,
+    request_id: str,
+    payload: VMDeploymentUpdate,
+    *,
+    actor: str,
+) -> Request:
+    request = get_request(session, request_id)
+    _ensure_editable_status(request)
+    _ensure_vm_deployment_request(request)
+
+    updates = payload.model_dump(exclude_unset=True)
+    _validate_update_storage_target(request, updates)
+
+    changed_fields = _apply_update_fields(request, updates)
+    execution_affecting_changed_fields = [
+        field for field in changed_fields if _is_execution_affecting_update_field(field)
+    ]
+
+    from_status = request.status
+    invalidated_runs: list[WorkflowRun] = []
+    invalidated_approval_ids: list[str] = []
+    reset_to_draft = bool(
+        execution_affecting_changed_fields
+        and request.status != RequestStatus.DRAFT.value
+    )
+    if reset_to_draft:
+        invalidated_runs = _cancel_planned_workflow_runs_for_request(session, request.id)
+        invalidated_approval_ids = _approval_ids_for_request(session, request.id)
+        request.status = RequestStatus.DRAFT.value
+
+    message = _update_audit_message(
+        changed_fields=changed_fields,
+        reset_to_draft=reset_to_draft,
+    )
+    record_audit_event(
+        session,
+        actor=actor,
+        event_type="request.updated",
+        message=message,
+        request=request,
+        from_status=from_status,
+        to_status=request.status,
+        data={
+            "changed_fields": changed_fields,
+            "execution_affecting_fields": execution_affecting_changed_fields,
+            "reset_to_draft": reset_to_draft,
+            "invalidated_approval_ids": invalidated_approval_ids,
+            "invalidated_workflow_run_ids": [run.id for run in invalidated_runs],
+        },
+    )
+    session.flush()
     session.commit()
     return get_request(session, request.id)
 
@@ -361,6 +458,101 @@ def cancel_request(
     )
     session.commit()
     return get_request(session, request.id)
+
+
+def _ensure_vm_deployment_request(request: Request) -> None:
+    if request.request_type != "vm_deploy" or request.vm_deploy is None:
+        raise RequestUpdateValidationError(
+            ["Only VM deployment requests can be updated through this endpoint"]
+        )
+
+
+def _validate_update_storage_target(request: Request, updates: dict) -> None:
+    datastore = updates.get("datastore", request.vm_deploy.datastore)
+    storage_tier = updates.get("storage_tier", request.vm_deploy.storage_tier)
+    if not datastore and not storage_tier:
+        raise RequestUpdateValidationError(["datastore or storage_tier is required"])
+
+
+def _apply_update_fields(request: Request, updates: dict) -> list[str]:
+    changed_fields: list[str] = []
+    for field in sorted(REQUEST_UPDATE_FIELDS):
+        if field not in updates:
+            continue
+        new_value = _normalize_update_value(field, updates[field])
+        if getattr(request, field) != new_value:
+            setattr(request, field, new_value)
+            changed_fields.append(field)
+
+    for field in sorted(VM_DEPLOYMENT_UPDATE_FIELDS):
+        if field not in updates:
+            continue
+        new_value = _normalize_update_value(field, updates[field])
+        if getattr(request.vm_deploy, field) != new_value:
+            setattr(request.vm_deploy, field, new_value)
+            changed_fields.append(f"vm.{field}")
+
+    return changed_fields
+
+
+def _normalize_update_value(field: str, value: object) -> object:
+    if field == "environment" and value is not None:
+        return getattr(value, "value", value)
+    return value
+
+
+def _is_execution_affecting_update_field(field: str) -> bool:
+    if field.startswith("vm."):
+        return field.removeprefix("vm.") in EXECUTION_AFFECTING_UPDATE_FIELDS
+    return field in EXECUTION_AFFECTING_UPDATE_FIELDS
+
+
+def _cancel_planned_workflow_runs_for_request(
+    session: Session,
+    request_id: str,
+) -> list[WorkflowRun]:
+    runs = list(
+        session.execute(
+            select(WorkflowRun).where(
+                WorkflowRun.request_id == request_id,
+                WorkflowRun.status == WorkflowRunStatus.PLANNED.value,
+            )
+        ).scalars()
+    )
+    for run in runs:
+        run.status = WorkflowRunStatus.CANCELLED.value
+        plan_json = run.plan_json if isinstance(run.plan_json, dict) else {}
+        run.plan_json = {
+            **plan_json,
+            "invalidated_by_request_edit": True,
+            "invalidated_reason": "execution_affecting_request_edit",
+        }
+    return runs
+
+
+def _approval_ids_for_request(session: Session, request_id: str) -> list[str]:
+    return list(
+        session.execute(
+            select(Approval.id)
+            .where(Approval.request_id == request_id)
+            .order_by(Approval.created_at.desc())
+        ).scalars()
+    )
+
+
+def _update_audit_message(
+    *,
+    changed_fields: list[str],
+    reset_to_draft: bool,
+) -> str:
+    if not changed_fields:
+        return "Request update received; no persisted fields changed."
+    if reset_to_draft:
+        return (
+            "Request execution intent updated; approval and dry-run plan "
+            "were invalidated and the request was reset to draft."
+        )
+    return "Request updated."
 
 
 def get_workflow_run(session: Session, workflow_run_id: str) -> WorkflowRun:
@@ -639,6 +831,20 @@ def _ensure_status(request: Request, expected: RequestStatus) -> None:
 def _ensure_cancellable_status(request: Request) -> None:
     if request.status not in CANCELLABLE_REQUEST_STATUSES:
         expected = ", ".join(sorted(CANCELLABLE_REQUEST_STATUSES))
+        raise InvalidTransitionError(
+            f"Request {request.id} is {request.status}; expected one of: {expected}"
+        )
+
+
+def _ensure_editable_status(request: Request) -> None:
+    if request.status in LOCKED_REQUEST_STATUSES:
+        locked = ", ".join(sorted(LOCKED_REQUEST_STATUSES))
+        raise InvalidTransitionError(
+            f"Request {request.id} is {request.status} and is locked; "
+            f"edits are not allowed in locked states: {locked}"
+        )
+    if request.status not in EDITABLE_REQUEST_STATUSES:
+        expected = ", ".join(sorted(EDITABLE_REQUEST_STATUSES))
         raise InvalidTransitionError(
             f"Request {request.id} is {request.status}; expected one of: {expected}"
         )

@@ -15,12 +15,14 @@ from app.schemas import (
     ProviderStatusRead,
     RequestRead,
     VMDeploymentCreate,
+    VMDeploymentUpdate,
     WorkflowRunRead,
 )
 from app.services.lifecycle import (
     ExecutionPreflightError,
     InvalidTransitionError,
     RequestNotFoundError,
+    RequestUpdateValidationError,
     ValidationFailureError,
     WorkflowRunNotFoundError,
     approve_request,
@@ -32,6 +34,7 @@ from app.services.lifecycle import (
     list_requests,
     plan_request,
     submit_request,
+    update_vm_deployment_request,
 )
 
 router = APIRouter(prefix="/api/v1")
@@ -62,6 +65,24 @@ def read_request(request_id: str, session: Session = Depends(get_session)) -> Re
         return get_request(session, request_id)
     except RequestNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Request not found") from exc
+
+
+@router.patch("/requests/{request_id}", response_model=RequestRead)
+def update_request(
+    request_id: str,
+    payload: VMDeploymentUpdate,
+    fastapi_request: FastAPIRequest,
+    session: Session = Depends(get_session),
+) -> RequestRead:
+    actor = get_current_actor(fastapi_request)
+    try:
+        return update_vm_deployment_request(session, request_id, payload, actor=actor)
+    except RequestNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Request not found") from exc
+    except RequestUpdateValidationError as exc:
+        raise HTTPException(status_code=422, detail={"validation_errors": exc.errors}) from exc
+    except InvalidTransitionError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @router.post("/requests/{request_id}/submit", response_model=RequestRead)

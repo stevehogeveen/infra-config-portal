@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.core.enums import RequestStatus, WorkflowRunStatus
 from app.models import AuditEvent, Request, WorkflowRun
-from app.schemas import ApprovalCreate, VMDeploymentCreate
+from app.schemas import ApprovalCreate, VMDeploymentCreate, VMDeploymentUpdate
 from app.services.lifecycle import (
     ExecutionPreflightError,
     InvalidTransitionError,
@@ -16,6 +16,7 @@ from app.services.lifecycle import (
     execute_request,
     plan_request,
     submit_request,
+    update_vm_deployment_request,
 )
 
 
@@ -147,6 +148,226 @@ def test_plan_stores_request_intent_and_hash(
         },
     }
     assert run.plan_json["request_id"] == request.id
+
+
+def test_draft_request_notes_can_be_edited(
+    db_session: Session,
+    vm_payload: dict,
+) -> None:
+    request = create_vm_deployment_request(
+        db_session,
+        VMDeploymentCreate.model_validate(vm_payload),
+        actor="local-dev-user",
+    )
+
+    updated = update_vm_deployment_request(
+        db_session,
+        request.id,
+        VMDeploymentUpdate(notes="Updated operator note."),
+        actor="local-dev-user",
+    )
+
+    assert updated.status == RequestStatus.DRAFT.value
+    assert updated.notes == "Updated operator note."
+
+    audit_event = db_session.execute(
+        select(AuditEvent).where(AuditEvent.event_type == "request.updated")
+    ).scalar_one()
+    assert audit_event.request_id == request.id
+    assert audit_event.from_status == RequestStatus.DRAFT.value
+    assert audit_event.to_status == RequestStatus.DRAFT.value
+    assert audit_event.data_json["changed_fields"] == ["notes"]
+    assert audit_event.data_json["execution_affecting_fields"] == []
+
+
+def test_draft_execution_affecting_edit_remains_draft(
+    db_session: Session,
+    vm_payload: dict,
+) -> None:
+    request = create_vm_deployment_request(
+        db_session,
+        VMDeploymentCreate.model_validate(vm_payload),
+        actor="local-dev-user",
+    )
+
+    updated = update_vm_deployment_request(
+        db_session,
+        request.id,
+        VMDeploymentUpdate(cpu=4),
+        actor="local-dev-user",
+    )
+
+    assert updated.status == RequestStatus.DRAFT.value
+    assert updated.vm_deploy.cpu == 4
+
+    audit_event = db_session.execute(
+        select(AuditEvent).where(AuditEvent.event_type == "request.updated")
+    ).scalar_one()
+    assert audit_event.data_json["changed_fields"] == ["vm.cpu"]
+    assert audit_event.data_json["execution_affecting_fields"] == ["vm.cpu"]
+    assert audit_event.data_json["reset_to_draft"] is False
+
+
+def test_notes_edit_on_planned_request_does_not_invalidate_plan(
+    db_session: Session,
+    vm_payload: dict,
+) -> None:
+    request, run = _create_planned_request(db_session, vm_payload)
+    request_id = request.id
+    run_id = run.id
+    plan_hash = run.plan_json["request_intent_hash"]
+
+    updated = update_vm_deployment_request(
+        db_session,
+        request_id,
+        VMDeploymentUpdate(notes="Notes changed through formal edit path."),
+        actor="local-dev-user",
+    )
+
+    persisted_run = db_session.get(WorkflowRun, run_id)
+    assert persisted_run is not None
+    assert updated.status == RequestStatus.PLANNED.value
+    assert updated.notes == "Notes changed through formal edit path."
+    assert persisted_run.status == WorkflowRunStatus.PLANNED.value
+    assert persisted_run.plan_json["request_intent_hash"] == plan_hash
+    assert "invalidated_by_request_edit" not in persisted_run.plan_json
+
+    vsphere = SpyVsphereAdapter()
+    completed_run = execute_request(
+        db_session,
+        request_id,
+        actor="local-dev-user",
+        vsphere=vsphere,
+    )
+    assert completed_run.status == WorkflowRunStatus.COMPLETED.value
+    assert vsphere.execute_calls == 1
+
+
+@pytest.mark.parametrize(
+    "target_status",
+    [
+        RequestStatus.NEEDS_APPROVAL,
+        RequestStatus.APPROVED,
+        RequestStatus.PLANNED,
+    ],
+)
+def test_execution_affecting_edit_resets_pre_execution_request_to_draft(
+    db_session: Session,
+    vm_payload: dict,
+    target_status: RequestStatus,
+) -> None:
+    if target_status == RequestStatus.NEEDS_APPROVAL:
+        request = create_vm_deployment_request(
+            db_session,
+            VMDeploymentCreate.model_validate(vm_payload),
+            actor="local-dev-user",
+        )
+        request = submit_request(db_session, request.id, actor="local-dev-user")
+        run_id = None
+    elif target_status == RequestStatus.APPROVED:
+        request = _create_approved_request(db_session, vm_payload)
+        run_id = None
+    else:
+        request, run = _create_planned_request(db_session, vm_payload)
+        run_id = run.id
+
+    updated = update_vm_deployment_request(
+        db_session,
+        request.id,
+        VMDeploymentUpdate(cpu=vm_payload["cpu"] + 1),
+        actor="local-dev-user",
+    )
+
+    assert updated.status == RequestStatus.DRAFT.value
+    assert updated.vm_deploy.cpu == vm_payload["cpu"] + 1
+
+    audit_event = db_session.execute(
+        select(AuditEvent)
+        .where(
+            AuditEvent.request_id == request.id,
+            AuditEvent.event_type == "request.updated",
+        )
+        .order_by(AuditEvent.created_at.desc())
+    ).scalar_one()
+    assert audit_event.from_status == target_status.value
+    assert audit_event.to_status == RequestStatus.DRAFT.value
+    assert audit_event.data_json["changed_fields"] == ["vm.cpu"]
+    assert audit_event.data_json["execution_affecting_fields"] == ["vm.cpu"]
+    assert audit_event.data_json["reset_to_draft"] is True
+
+    if run_id is not None:
+        persisted_run = db_session.get(WorkflowRun, run_id)
+        assert persisted_run is not None
+        assert persisted_run.status == WorkflowRunStatus.CANCELLED.value
+        assert persisted_run.plan_json["invalidated_by_request_edit"] is True
+        assert audit_event.data_json["invalidated_workflow_run_ids"] == [run_id]
+
+
+def test_planned_execution_affecting_edit_leaves_no_executable_stale_plan(
+    db_session: Session,
+    vm_payload: dict,
+) -> None:
+    request, run = _create_planned_request(db_session, vm_payload)
+    request_id = request.id
+    run_id = run.id
+
+    update_vm_deployment_request(
+        db_session,
+        request_id,
+        VMDeploymentUpdate(memory_gb=vm_payload["memory_gb"] + 4),
+        actor="local-dev-user",
+    )
+
+    persisted_run = db_session.get(WorkflowRun, run_id)
+    assert persisted_run is not None
+    assert persisted_run.status == WorkflowRunStatus.CANCELLED.value
+
+    vsphere = SpyVsphereAdapter()
+    with pytest.raises(InvalidTransitionError, match="expected planned"):
+        execute_request(
+            db_session,
+            request_id,
+            actor="local-dev-user",
+            vsphere=vsphere,
+        )
+    assert vsphere.execute_calls == 0
+
+
+@pytest.mark.parametrize(
+    "locked_status",
+    [
+        RequestStatus.EXECUTING.value,
+        RequestStatus.COMPLETED.value,
+        RequestStatus.FAILED.value,
+        RequestStatus.CANCELLED.value,
+        RequestStatus.REJECTED.value,
+    ],
+)
+def test_locked_request_states_cannot_be_edited(
+    db_session: Session,
+    vm_payload: dict,
+    locked_status: str,
+) -> None:
+    request = create_vm_deployment_request(
+        db_session,
+        VMDeploymentCreate.model_validate(vm_payload),
+        actor="local-dev-user",
+    )
+    request.status = locked_status
+    db_session.commit()
+
+    with pytest.raises(InvalidTransitionError, match="locked"):
+        update_vm_deployment_request(
+            db_session,
+            request.id,
+            VMDeploymentUpdate(notes="Should not be accepted."),
+            actor="local-dev-user",
+        )
+
+    persisted_request = db_session.get(Request, request.id)
+    assert persisted_request is not None
+    assert persisted_request.status == locked_status
+    assert persisted_request.notes == vm_payload["notes"]
 
 
 def test_execute_succeeds_when_persisted_plan_belongs_to_request(

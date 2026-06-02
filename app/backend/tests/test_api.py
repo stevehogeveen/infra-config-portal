@@ -3,8 +3,8 @@ from __future__ import annotations
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from app.core.enums import RequestStatus
-from app.models import Request
+from app.core.enums import RequestStatus, WorkflowRunStatus
+from app.models import Request, WorkflowRun
 
 
 def test_health(client: TestClient) -> None:
@@ -72,6 +72,113 @@ def test_cancel_draft_request_api_flow(client: TestClient, vm_payload: dict) -> 
     assert audit_events.status_code == 200
     event_types = {event["event_type"] for event in audit_events.json()}
     assert "request.cancelled" in event_types
+
+
+def test_update_request_api_allows_draft_patch_and_records_audit(
+    client: TestClient,
+    vm_payload: dict,
+) -> None:
+    created = client.post("/api/v1/requests/vm-deploy", json=vm_payload)
+    assert created.status_code == 201
+    request_id = created.json()["id"]
+
+    updated = client.patch(
+        f"/api/v1/requests/{request_id}",
+        json={"notes": "Updated through PATCH", "cpu": 4},
+    )
+
+    assert updated.status_code == 200
+    assert updated.json()["status"] == "draft"
+    assert updated.json()["notes"] == "Updated through PATCH"
+    assert updated.json()["vm_deploy"]["cpu"] == 4
+
+    audit_events = client.get("/api/v1/audit-events")
+    assert audit_events.status_code == 200
+    matching_events = [
+        event
+        for event in audit_events.json()
+        if event["event_type"] == "request.updated"
+    ]
+    assert matching_events[0]["data_json"]["changed_fields"] == ["notes", "vm.cpu"]
+    assert matching_events[0]["data_json"]["reset_to_draft"] is False
+
+
+def test_update_request_api_resets_planned_execution_edit_and_cancels_plan(
+    client: TestClient,
+    db_session: Session,
+    vm_payload: dict,
+) -> None:
+    created = client.post("/api/v1/requests/vm-deploy", json=vm_payload)
+    assert created.status_code == 201
+    request_id = created.json()["id"]
+
+    submitted = client.post(f"/api/v1/requests/{request_id}/submit")
+    assert submitted.status_code == 200
+
+    approved = client.post(
+        f"/api/v1/requests/{request_id}/approve",
+        json={"approver": "change.manager", "notes": "Looks safe"},
+    )
+    assert approved.status_code == 200
+
+    planned = client.post(f"/api/v1/requests/{request_id}/plan")
+    assert planned.status_code == 200
+    workflow_run_id = planned.json()["id"]
+
+    updated = client.patch(
+        f"/api/v1/requests/{request_id}",
+        json={"memory_gb": vm_payload["memory_gb"] + 4},
+    )
+
+    assert updated.status_code == 200
+    assert updated.json()["status"] == "draft"
+    assert updated.json()["vm_deploy"]["memory_gb"] == vm_payload["memory_gb"] + 4
+
+    workflow_run = db_session.get(WorkflowRun, workflow_run_id)
+    assert workflow_run is not None
+    assert workflow_run.status == WorkflowRunStatus.CANCELLED.value
+    assert workflow_run.plan_json["invalidated_by_request_edit"] is True
+
+    executed = client.post(f"/api/v1/requests/{request_id}/execute")
+    assert executed.status_code == 409
+    assert "expected planned" in executed.json()["detail"]
+
+    audit_events = client.get("/api/v1/audit-events")
+    assert audit_events.status_code == 200
+    matching_events = [
+        event
+        for event in audit_events.json()
+        if event["event_type"] == "request.updated"
+    ]
+    assert matching_events[0]["data_json"]["reset_to_draft"] is True
+    assert matching_events[0]["data_json"]["invalidated_workflow_run_ids"] == [
+        workflow_run_id
+    ]
+
+
+def test_update_request_api_rejects_locked_request(
+    client: TestClient,
+    vm_payload: dict,
+) -> None:
+    created = client.post("/api/v1/requests/vm-deploy", json=vm_payload)
+    assert created.status_code == 201
+    request_id = created.json()["id"]
+
+    cancelled = client.post(f"/api/v1/requests/{request_id}/cancel")
+    assert cancelled.status_code == 200
+
+    updated = client.patch(
+        f"/api/v1/requests/{request_id}",
+        json={"notes": "Rejected because cancelled is locked."},
+    )
+
+    assert updated.status_code == 409
+    assert "locked" in updated.json()["detail"]
+
+    request_detail = client.get(f"/api/v1/requests/{request_id}")
+    assert request_detail.status_code == 200
+    assert request_detail.json()["status"] == "cancelled"
+    assert request_detail.json()["notes"] == vm_payload["notes"]
 
 
 def test_execute_api_rejects_planned_request_without_persisted_plan(

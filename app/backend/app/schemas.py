@@ -78,6 +78,79 @@ class VMDeploymentCreate(BaseModel):
         return self
 
 
+class VMDeploymentUpdate(BaseModel):
+    requester: str | None = Field(default=None, min_length=2, max_length=120)
+    environment: EnvironmentName | None = None
+    site: str | None = Field(default=None, min_length=2, max_length=80)
+    cluster: str | None = Field(default=None, min_length=2, max_length=120)
+    vm_name: str | None = Field(default=None, min_length=3, max_length=63)
+    template: str | None = Field(default=None, min_length=2, max_length=120)
+    cpu: int | None = Field(default=None, ge=1, le=64)
+    memory_gb: int | None = Field(
+        default=None,
+        ge=1,
+        le=1024,
+        validation_alias=AliasChoices("memory_gb", "memory"),
+    )
+    disk_gb: int | None = Field(
+        default=None,
+        ge=10,
+        le=65536,
+        validation_alias=AliasChoices("disk_gb", "disk_size", "disk_size_gb"),
+    )
+    network: str | None = Field(default=None, min_length=2, max_length=120)
+    datastore: str | None = Field(default=None, min_length=2, max_length=120)
+    storage_tier: str | None = Field(default=None, min_length=2, max_length=80)
+    owner: str | None = Field(default=None, min_length=2, max_length=120)
+    expiry_date: date | None = None
+    notes: str | None = Field(default=None, max_length=2000)
+
+    @field_validator("vm_name")
+    @classmethod
+    def validate_vm_name(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        if not VM_NAME_RE.match(value):
+            raise ValueError(
+                "vm_name must start with a letter and contain only letters, numbers, and hyphens"
+            )
+        if "--" in value:
+            raise ValueError("vm_name must not contain repeated hyphens")
+        return value
+
+    @field_validator(
+        "site",
+        "cluster",
+        "template",
+        "network",
+        "datastore",
+        "storage_tier",
+        "requester",
+        "owner",
+        mode="before",
+    )
+    @classmethod
+    def strip_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        return str(value).strip()
+
+    @field_validator("expiry_date")
+    @classmethod
+    def expiry_must_be_future(cls, value: date | None) -> date | None:
+        if value is None:
+            return value
+        if value <= date.today():
+            raise ValueError("expiry_date must be in the future")
+        return value
+
+    @model_validator(mode="after")
+    def require_update_field(self) -> "VMDeploymentUpdate":
+        if not self.model_fields_set:
+            raise ValueError("at least one field must be provided")
+        return self
+
+
 class VMDeploymentRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
