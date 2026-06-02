@@ -96,6 +96,22 @@ export type ProviderStatus = {
   message: string;
 };
 
+export type MediaInventoryItem = {
+  placeholder_name: string;
+  extension: string;
+  size_bytes: number;
+  category: string;
+  source: string;
+  actual_name_redacted: boolean;
+};
+
+export type MediaInventory = {
+  mode: string;
+  configured_directories: string[];
+  items: MediaInventoryItem[];
+  warnings: string[];
+};
+
 export type Catalog = {
   environments: string[];
   sites: string[];

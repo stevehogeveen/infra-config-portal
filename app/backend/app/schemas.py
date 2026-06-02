@@ -243,6 +243,22 @@ class AuditEventRead(BaseModel):
     created_at: datetime
 
 
+class MediaInventoryItemRead(BaseModel):
+    placeholder_name: str
+    extension: str
+    size_bytes: int
+    category: str
+    source: str
+    actual_name_redacted: bool
+
+
+class MediaInventoryRead(BaseModel):
+    mode: str
+    configured_directories: list[str]
+    items: list[MediaInventoryItemRead]
+    warnings: list[str]
+
+
 class ProviderStatusRead(BaseModel):
     name: str
     kind: str

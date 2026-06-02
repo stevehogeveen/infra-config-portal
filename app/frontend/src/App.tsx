@@ -27,6 +27,7 @@ import { api } from "./api";
 import type {
   AuditEvent,
   Catalog,
+  MediaInventory,
   ProviderStatus,
   ReadinessIssue,
   RequestReadiness,
@@ -79,6 +80,7 @@ function App() {
           <NavItem to="/run-center" icon={<Workflow size={18} />} label="Run Center" />
           <NavItem to="/requests/new" icon={<Plus size={18} />} label="New VM Request" />
           <NavItem to="/audit-events" icon={<History size={18} />} label="Audit Events" />
+          <NavItem to="/media" icon={<HardDrive size={18} />} label="Media Inventory" />
           <NavItem to="/providers" icon={<Activity size={18} />} label="Provider Status" />
         </nav>
       </aside>
@@ -90,6 +92,7 @@ function App() {
           <RouterRoute path="/requests/:id" element={<RequestDetail />} />
           <RouterRoute path="/workflow-runs/:id" element={<WorkflowRunDetail />} />
           <RouterRoute path="/audit-events" element={<AuditEvents />} />
+          <RouterRoute path="/media" element={<MediaInventoryPage />} />
           <RouterRoute path="/providers" element={<ProviderStatusPage />} />
         </Routes>
       </main>
@@ -968,6 +971,78 @@ function AuditEvents() {
   );
 }
 
+function MediaInventoryPage() {
+  const [inventory, setInventory] = useState<MediaInventory | null>(null);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    api.mediaInventory().then(setInventory).catch((err: Error) => setError(err.message));
+  }, []);
+
+  const items = inventory?.items ?? [];
+
+  return (
+    <Page title="Media Inventory" actions={inventory ? <StatusBadge status={inventory.mode} /> : null}>
+      <Feedback loading={!inventory && !error} error={error} />
+      {inventory && (
+        <>
+          <section className="metric-grid">
+            <Metric label="Items" value={items.length} icon={<HardDrive size={18} />} />
+            <Metric label="ISO" value={items.filter((item) => item.category === "iso").length} icon={<ClipboardList size={18} />} />
+            <Metric label="OVF/OVA" value={items.filter((item) => ["ovf", "ova"].includes(item.category)).length} icon={<Layers size={18} />} />
+            <Metric label="Firmware" value={items.filter((item) => item.category === "firmware").length} icon={<ShieldCheck size={18} />} />
+          </section>
+          {inventory.warnings.length > 0 && (
+            <section className="panel">
+              <PanelTitle icon={<AlertTriangle size={18} />} title="Warnings" />
+              <div className="issue-list">
+                {inventory.warnings.map((warning) => (
+                  <article className="issue issue-warning" key={warning}>
+                    <div>
+                      <AlertTriangle size={16} />
+                      <strong>media_inventory</strong>
+                    </div>
+                    <p>{warning}</p>
+                  </article>
+                ))}
+              </div>
+            </section>
+          )}
+          <section className="panel">
+            <PanelTitle icon={<HardDrive size={18} />} title="Local Metadata" />
+            {items.length ? (
+              <table>
+                <thead>
+                  <tr>
+                    <th>Placeholder</th>
+                    <th>Category</th>
+                    <th>Extension</th>
+                    <th>Size</th>
+                    <th>Source</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {items.map((item) => (
+                    <tr key={`${item.placeholder_name}-${item.source}`}>
+                      <td>{item.placeholder_name}</td>
+                      <td>{item.category}</td>
+                      <td>{item.extension || "-"}</td>
+                      <td>{formatBytes(item.size_bytes)}</td>
+                      <td>{item.source}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : (
+              <p className="muted">No media metadata found.</p>
+            )}
+          </section>
+        </>
+      )}
+    </Page>
+  );
+}
+
 function ProviderStatusPage() {
   const [providers, setProviders] = useState<ProviderStatus[]>([]);
   const [error, setError] = useState("");
@@ -1235,6 +1310,16 @@ function reviewBeforeExecute(run: WorkflowRun): { status: string; message: strin
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function formatBytes(value: number) {
+  if (value < 1024) {
+    return `${value} B`;
+  }
+  if (value < 1024 * 1024) {
+    return `${(value / 1024).toFixed(1)} KB`;
+  }
+  return `${(value / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 function formatDate(value: string) {

@@ -12,6 +12,7 @@ from app.schemas import (
     ApprovalCreate,
     AuditEventRead,
     CatalogRead,
+    MediaInventoryRead,
     ProviderStatusRead,
     RequestReadinessRead,
     RequestRead,
@@ -38,6 +39,7 @@ from app.services.lifecycle import (
     submit_request,
     update_vm_deployment_request,
 )
+from app.services.media_inventory import get_media_inventory
 from app.services.readiness import get_request_readiness
 
 router = APIRouter(prefix="/api/v1")
@@ -212,3 +214,8 @@ def read_provider_status() -> list[ProviderStatusRead]:
 @router.get("/catalog", response_model=CatalogRead)
 def read_catalog() -> CatalogRead:
     return MockSourceOfTruthAdapter().catalog()
+
+
+@router.get("/media-inventory", response_model=MediaInventoryRead)
+def read_media_inventory() -> MediaInventoryRead:
+    return get_media_inventory()

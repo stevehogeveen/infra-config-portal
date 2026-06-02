@@ -121,6 +121,18 @@ context, stage status, and the mock-only review-before-execute warning.
 Run Center is still a skeleton. It does not launch new real execution paths,
 stream live logs, or contact external automation systems.
 
+### Media Inventory
+
+`GET /api/v1/media-inventory` returns mock/sample media metadata unless
+`MEDIA_INVENTORY_DIRS` is explicitly configured. When configured, the scanner
+reads only directory entries from those paths and records placeholder name,
+extension, size, category, source label, and whether the actual local filename
+was redacted.
+
+Media categories are `iso`, `ovf`, `ova`, `vmdk`, `firmware`, and `other`.
+The scanner does not copy files, parse media contents, mount ISOs, deploy OVFs
+or OVAs, inspect firmware, or expose real local filenames in API responses.
+
 ### Edits
 
 VM deployment requests can be updated through `PATCH /api/v1/requests/{id}`.

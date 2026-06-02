@@ -13,6 +13,9 @@ class Settings:
     app_name: str = os.getenv("APP_NAME", "infra-config-portal")
     environment: str = os.getenv("ENVIRONMENT", "local")
     provider_mode: str = os.getenv("PROVIDER_MODE", "mock")
+    media_inventory_dirs: tuple[str, ...] = tuple(
+        _split_csv(os.getenv("MEDIA_INVENTORY_DIRS", ""))
+    )
     database_url: str = os.getenv(
         "DATABASE_URL",
         "sqlite:///./.local/infra_config_portal.db",

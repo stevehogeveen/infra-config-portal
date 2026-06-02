@@ -254,9 +254,15 @@ th {
 }
 
 .status-executing,
+.status-local,
 .status-ok {
   background: #e2f3ff;
   color: #075985;
+}
+
+.status-sample {
+  background: #fff7df;
+  color: #8a5d00;
 }
 
 .status-completed {
@@ -267,7 +273,8 @@ th {
 .status-failed,
 .status-blocked,
 .status-cancelled,
-.status-rejected {
+.status-rejected,
+.status-unavailable {
   background: #fdecec;
   color: #b42318;
 }

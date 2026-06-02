@@ -97,7 +97,8 @@ The request detail view shows readiness, blockers, lifecycle actions, approval,
 mock execution, cancellation, request-scoped audit events, draft editing, and
 notes updates for editable pre-execution requests. Run Center shows pending
 requests, local workflow runs, mock stage status, and review-before-execute
-state.
+state. Media Inventory shows sample metadata by default, or placeholder-only
+metadata from explicitly configured `MEDIA_INVENTORY_DIRS`.
 
 ## Docker Compose
 
@@ -119,12 +120,16 @@ adapters still run in mock mode only.
 6. `GET /api/v1/requests/{id}/readiness`
 7. `POST /api/v1/requests/{id}/execute`
 8. `GET /api/v1/workflow-runs`
-9. `GET /api/v1/audit-events`
+9. `GET /api/v1/media-inventory`
+10. `GET /api/v1/audit-events`
 
 The readiness endpoint is read-only. It returns readiness flags, structured
 `blockers` and `warnings` with `code`, `message`, `severity`, and `action`, a
 machine-friendly `next_action`, and a short operator summary. It does not create
 plans, execute workflows, write audit events, or call provider adapters.
+
+The media inventory endpoint is metadata-only. It does not copy, mount, parse,
+deploy, or execute local media files, and it redacts actual local filenames.
 
 ## Safety Defaults
 
