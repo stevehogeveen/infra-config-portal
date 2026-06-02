@@ -57,9 +57,6 @@ while (( $(date +%s) < stop_epoch && round <= MAX_ROUNDS )); do
   echo "Round ${round}/${MAX_ROUNDS} - $(date)"
   echo "============================================================"
 
-  before_head="$(git rev-parse --short HEAD)"
-  before_status="$(git status --short)"
-
   CODEX_SANDBOX_MODE=danger-full-access \
   CODEX_DANGER_ACK=I_UNDERSTAND \
   make codex-task TASK="${TASK}" || true
@@ -91,11 +88,16 @@ while (( $(date +%s) < stop_epoch && round <= MAX_ROUNDS )); do
     exit 1
   fi
 
-  after_head="$(git rev-parse --short HEAD)"
+  if [[ -z "$(git status --short)" ]]; then
+    recent_summary=""
+    if [[ -f .codex/runs/latest.md ]]; then
+      recent_summary="$(cat .codex/runs/latest.md)"
+    fi
 
-  if [[ "${before_head}" == "${after_head}" && -z "${before_status}" && -z "$(git status --short)" ]]; then
-    echo "No progress detected this round. Stopping to avoid credit bonfire."
-    break
+    if grep -qi "no changes\|nothing to do\|no safe progress\|blocked" <<< "${recent_summary}"; then
+      echo "Latest summary indicates no safe progress or blocked state. Stopping."
+      break
+    fi
   fi
 
   round=$((round + 1))
@@ -104,6 +106,7 @@ done
 echo
 echo "== Long run finished =="
 echo "Time: $(date)"
+echo
 echo "Latest Codex summary:"
 if [[ -f .codex/runs/latest.md ]]; then
   echo "  .codex/runs/latest.md"
