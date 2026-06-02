@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from dataclasses import dataclass
 
 from sqlalchemy import Select, select
 from sqlalchemy.orm import Session, selectinload
@@ -59,6 +60,14 @@ EXECUTION_AFFECTING_UPDATE_FIELDS = {
 }
 REQUEST_INTENT_VERSION = 1
 REQUEST_INTENT_HASH_PREFIX = "sha256:"
+
+
+@dataclass(frozen=True)
+class ExecutionPlanProblem:
+    code: str
+    message: str
+    data: dict
+    workflow_run: WorkflowRun | None = None
 
 
 class RequestNotFoundError(Exception):
@@ -595,15 +604,42 @@ def _preflight_execution_plan(
     *,
     actor: str,
 ) -> WorkflowRun:
+    run, problem = inspect_execution_plan(session, request)
+    if problem is None and run is not None:
+        return run
+
+    if problem is None:
+        message = f"Request {request.id} cannot execute because no plan inspection result exists."
+        problem = ExecutionPlanProblem(
+            code="plan_missing",
+            message=message,
+            data={"reason": "missing_workflow_run"},
+        )
+
+    _record_execution_preflight_failure(
+        session,
+        request,
+        actor=actor,
+        workflow_run=problem.workflow_run,
+        message=problem.message,
+        data=problem.data,
+    )
+    if problem.data.get("reason") == "invalid_request_status":
+        raise InvalidTransitionError(problem.message)
+    raise ExecutionPreflightError(problem.message)
+
+
+def inspect_execution_plan(
+    session: Session,
+    request: Request,
+) -> tuple[WorkflowRun | None, ExecutionPlanProblem | None]:
     if request.status != RequestStatus.PLANNED.value:
         message = (
             f"Request {request.id} is {request.status}; "
             f"expected {RequestStatus.PLANNED.value}"
         )
-        _record_execution_preflight_failure(
-            session,
-            request,
-            actor=actor,
+        return None, ExecutionPlanProblem(
+            code="request_not_planned",
             message=message,
             data={
                 "reason": "invalid_request_status",
@@ -611,33 +647,27 @@ def _preflight_execution_plan(
                 "actual_status": request.status,
             },
         )
-        raise InvalidTransitionError(message)
 
     run = _latest_run_for_request(session, request.id)
     if run is None:
         message = (
             f"Request {request.id} cannot execute because no persisted dry-run plan exists."
         )
-        _record_execution_preflight_failure(
-            session,
-            request,
-            actor=actor,
+        return None, ExecutionPlanProblem(
+            code="plan_missing",
             message=message,
             data={"reason": "missing_workflow_run"},
         )
-        raise ExecutionPreflightError(message)
 
     if run.status != WorkflowRunStatus.PLANNED.value:
         message = (
             f"Request {request.id} cannot execute because workflow run {run.id} "
             f"is {run.status}; expected {WorkflowRunStatus.PLANNED.value}."
         )
-        _record_execution_preflight_failure(
-            session,
-            request,
-            actor=actor,
-            workflow_run=run,
+        return None, ExecutionPlanProblem(
+            code="plan_not_executable",
             message=message,
+            workflow_run=run,
             data={
                 "reason": "workflow_run_not_planned",
                 "workflow_run_id": run.id,
@@ -645,19 +675,16 @@ def _preflight_execution_plan(
                 "expected_run_status": WorkflowRunStatus.PLANNED.value,
             },
         )
-        raise ExecutionPreflightError(message)
 
     if run.request_id != request.id:
         message = (
             f"Request {request.id} cannot execute because workflow run {run.id} "
             f"belongs to request {run.request_id}."
         )
-        _record_execution_preflight_failure(
-            session,
-            request,
-            actor=actor,
-            workflow_run=run,
+        return None, ExecutionPlanProblem(
+            code="plan_belongs_to_different_request",
             message=message,
+            workflow_run=run,
             data={
                 "reason": "workflow_run_request_mismatch",
                 "workflow_run_id": run.id,
@@ -665,7 +692,6 @@ def _preflight_execution_plan(
                 "expected_request_id": request.id,
             },
         )
-        raise ExecutionPreflightError(message)
 
     plan = run.plan_json
     if not isinstance(plan, dict) or not plan:
@@ -673,15 +699,12 @@ def _preflight_execution_plan(
             f"Request {request.id} cannot execute because workflow run {run.id} "
             "does not contain a persisted dry-run plan."
         )
-        _record_execution_preflight_failure(
-            session,
-            request,
-            actor=actor,
-            workflow_run=run,
+        return None, ExecutionPlanProblem(
+            code="plan_missing",
             message=message,
+            workflow_run=run,
             data={"reason": "missing_plan", "workflow_run_id": run.id},
         )
-        raise ExecutionPreflightError(message)
 
     plan_request_id = plan.get("request_id")
     if plan_request_id != request.id:
@@ -689,12 +712,10 @@ def _preflight_execution_plan(
             f"Request {request.id} cannot execute because workflow run {run.id} "
             f"contains a dry-run plan for request {plan_request_id!r}."
         )
-        _record_execution_preflight_failure(
-            session,
-            request,
-            actor=actor,
-            workflow_run=run,
+        return None, ExecutionPlanProblem(
+            code="plan_belongs_to_different_request",
             message=message,
+            workflow_run=run,
             data={
                 "reason": "plan_request_mismatch",
                 "workflow_run_id": run.id,
@@ -702,20 +723,18 @@ def _preflight_execution_plan(
                 "expected_request_id": request.id,
             },
         )
-        raise ExecutionPreflightError(message)
 
-    _ensure_plan_intent_matches_request(session, request, run, actor=actor)
+    intent_problem = _inspect_plan_intent_matches_request(request, run)
+    if intent_problem is not None:
+        return None, intent_problem
 
-    return run
+    return run, None
 
 
-def _ensure_plan_intent_matches_request(
-    session: Session,
+def _inspect_plan_intent_matches_request(
     request: Request,
     run: WorkflowRun,
-    *,
-    actor: str,
-) -> None:
+) -> ExecutionPlanProblem | None:
     plan = run.plan_json
     stored_intent = plan.get("request_intent")
     stored_hash = plan.get("request_intent_hash")
@@ -724,18 +743,15 @@ def _ensure_plan_intent_matches_request(
             f"Request {request.id} cannot execute because workflow run {run.id} "
             "does not include request intent metadata."
         )
-        _record_execution_preflight_failure(
-            session,
-            request,
-            actor=actor,
-            workflow_run=run,
+        return ExecutionPlanProblem(
+            code="request_plan_intent_drift",
             message=message,
+            workflow_run=run,
             data={
                 "reason": "missing_request_intent",
                 "workflow_run_id": run.id,
             },
         )
-        raise ExecutionPreflightError(message)
 
     expected_stored_hash = build_request_intent_hash(stored_intent)
     if stored_hash != expected_stored_hash:
@@ -743,12 +759,10 @@ def _ensure_plan_intent_matches_request(
             f"Request {request.id} cannot execute because workflow run {run.id} "
             "contains inconsistent request intent metadata."
         )
-        _record_execution_preflight_failure(
-            session,
-            request,
-            actor=actor,
-            workflow_run=run,
+        return ExecutionPlanProblem(
+            code="request_plan_intent_drift",
             message=message,
+            workflow_run=run,
             data={
                 "reason": "request_intent_metadata_mismatch",
                 "workflow_run_id": run.id,
@@ -756,24 +770,21 @@ def _ensure_plan_intent_matches_request(
                 "expected_request_intent_hash": expected_stored_hash,
             },
         )
-        raise ExecutionPreflightError(message)
 
     current_intent = build_request_intent(request)
     current_hash = build_request_intent_hash(current_intent)
     if current_hash == stored_hash:
-        return
+        return None
 
     changed_fields = _changed_intent_fields(stored_intent, current_intent)
     message = (
         f"Request {request.id} cannot execute because its current intent no longer "
         f"matches workflow run {run.id}'s dry-run plan. Create a new plan before executing."
     )
-    _record_execution_preflight_failure(
-        session,
-        request,
-        actor=actor,
-        workflow_run=run,
+    return ExecutionPlanProblem(
+        code="request_plan_intent_drift",
         message=message,
+        workflow_run=run,
         data={
             "reason": "request_intent_mismatch",
             "workflow_run_id": run.id,
@@ -782,7 +793,6 @@ def _ensure_plan_intent_matches_request(
             "changed_fields": changed_fields,
         },
     )
-    raise ExecutionPreflightError(message)
 
 
 def _changed_intent_fields(stored: dict, current: dict, prefix: str = "") -> list[str]:

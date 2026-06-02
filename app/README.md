@@ -9,6 +9,7 @@ The first MVP implements one safe workflow:
 - Store requests locally
 - Validate user input and mock source-of-truth data
 - Require approval before planning and execution
+- Report readiness, blockers, and the next safe action
 - Simulate execution through mock provider adapters
 - Record audit events for each important transition
 
@@ -71,7 +72,7 @@ cd /home/administrator/infra-config-portal/app/backend
 The smoke test uses FastAPI `TestClient`, an in-memory SQLite database, and mock
 provider adapters only. It covers health, VM request creation, draft patching,
 submit, approval, dry-run planning, mock execution to completed, audit events,
-execution-before-plan rejection, stale-plan invalidation after an
+readiness checks, execution-before-plan rejection, stale-plan invalidation after an
 execution-affecting edit, and completed-request cancellation rejection.
 
 Keep `PROVIDER_MODE=mock`. The smoke test must not call vCenter, ESXi, iLO,
@@ -105,11 +106,18 @@ adapters still run in mock mode only.
 ## MVP API Flow
 
 1. `POST /api/v1/requests/vm-deploy`
-2. `POST /api/v1/requests/{id}/submit`
-3. `POST /api/v1/requests/{id}/approve`
-4. `POST /api/v1/requests/{id}/plan`
-5. `POST /api/v1/requests/{id}/execute`
-6. `GET /api/v1/audit-events`
+2. `GET /api/v1/requests/{id}/readiness`
+3. `POST /api/v1/requests/{id}/submit`
+4. `POST /api/v1/requests/{id}/approve`
+5. `POST /api/v1/requests/{id}/plan`
+6. `GET /api/v1/requests/{id}/readiness`
+7. `POST /api/v1/requests/{id}/execute`
+8. `GET /api/v1/audit-events`
+
+The readiness endpoint is read-only. It returns readiness flags, structured
+`blockers` and `warnings` with `code`, `message`, `severity`, and `action`, a
+machine-friendly `next_action`, and a short operator summary. It does not create
+plans, execute workflows, write audit events, or call provider adapters.
 
 ## Safety Defaults
 

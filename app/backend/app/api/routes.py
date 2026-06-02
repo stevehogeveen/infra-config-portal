@@ -13,6 +13,7 @@ from app.schemas import (
     AuditEventRead,
     CatalogRead,
     ProviderStatusRead,
+    RequestReadinessRead,
     RequestRead,
     VMDeploymentCreate,
     VMDeploymentUpdate,
@@ -36,6 +37,7 @@ from app.services.lifecycle import (
     submit_request,
     update_vm_deployment_request,
 )
+from app.services.readiness import get_request_readiness
 
 router = APIRouter(prefix="/api/v1")
 
@@ -63,6 +65,17 @@ def read_requests(session: Session = Depends(get_session)) -> list[RequestRead]:
 def read_request(request_id: str, session: Session = Depends(get_session)) -> RequestRead:
     try:
         return get_request(session, request_id)
+    except RequestNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Request not found") from exc
+
+
+@router.get("/requests/{request_id}/readiness", response_model=RequestReadinessRead)
+def read_request_readiness(
+    request_id: str,
+    session: Session = Depends(get_session),
+) -> RequestReadinessRead:
+    try:
+        return get_request_readiness(session, request_id)
     except RequestNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Request not found") from exc
 

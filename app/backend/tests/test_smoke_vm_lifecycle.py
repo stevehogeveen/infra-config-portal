@@ -34,6 +34,11 @@ def test_mock_vm_lifecycle_smoke_happy_path_and_blocked_transitions(
     request_id = created.json()["id"]
     assert created.json()["status"] == "draft"
 
+    draft_readiness = client.get(f"/api/v1/requests/{request_id}/readiness")
+    assert draft_readiness.status_code == 200
+    assert draft_readiness.json()["ready_for_submit"] is True
+    assert draft_readiness.json()["next_action"] == "submit"
+
     patched = client.patch(
         f"/api/v1/requests/{request_id}",
         json={
@@ -57,6 +62,11 @@ def test_mock_vm_lifecycle_smoke_happy_path_and_blocked_transitions(
     assert approved.status_code == 200
     assert approved.json()["status"] == "approved"
 
+    approved_readiness = client.get(f"/api/v1/requests/{request_id}/readiness")
+    assert approved_readiness.status_code == 200
+    assert approved_readiness.json()["ready_for_plan"] is True
+    assert approved_readiness.json()["next_action"] == "plan"
+
     execute_before_plan = client.post(f"/api/v1/requests/{request_id}/execute")
     assert execute_before_plan.status_code == 409
     assert "expected planned" in execute_before_plan.json()["detail"]
@@ -74,6 +84,11 @@ def test_mock_vm_lifecycle_smoke_happy_path_and_blocked_transitions(
     assert planned.json()["plan_json"]["request_id"] == request_id
     assert planned.json()["plan_json"]["request_intent_hash"].startswith("sha256:")
 
+    planned_readiness = client.get(f"/api/v1/requests/{request_id}/readiness")
+    assert planned_readiness.status_code == 200
+    assert planned_readiness.json()["ready_for_execute"] is True
+    assert planned_readiness.json()["next_action"] == "execute"
+
     executed = client.post(f"/api/v1/requests/{request_id}/execute")
     assert executed.status_code == 200
     assert executed.json()["id"] == workflow_run_id
@@ -84,6 +99,11 @@ def test_mock_vm_lifecycle_smoke_happy_path_and_blocked_transitions(
     request_detail = client.get(f"/api/v1/requests/{request_id}")
     assert request_detail.status_code == 200
     assert request_detail.json()["status"] == "completed"
+
+    completed_readiness = client.get(f"/api/v1/requests/{request_id}/readiness")
+    assert completed_readiness.status_code == 200
+    assert completed_readiness.json()["ready_for_execute"] is False
+    assert completed_readiness.json()["next_action"] == "none"
 
     run_detail = client.get(f"/api/v1/workflow-runs/{workflow_run_id}")
     assert run_detail.status_code == 200
@@ -147,6 +167,11 @@ def test_mock_vm_lifecycle_smoke_stale_plan_edit_blocks_execution(
     stale_execute = client.post(f"/api/v1/requests/{request_id}/execute")
     assert stale_execute.status_code == 409
     assert "expected planned" in stale_execute.json()["detail"]
+
+    stale_readiness = client.get(f"/api/v1/requests/{request_id}/readiness")
+    assert stale_readiness.status_code == 200
+    assert stale_readiness.json()["ready_for_submit"] is True
+    assert stale_readiness.json()["next_action"] == "submit"
 
     update_events = [
         event

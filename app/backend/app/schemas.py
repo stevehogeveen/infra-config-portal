@@ -208,6 +208,26 @@ class WorkflowRunRead(BaseModel):
     updated_at: datetime
 
 
+class ReadinessIssue(BaseModel):
+    code: str
+    message: str
+    severity: str
+    action: str
+
+
+class RequestReadinessRead(BaseModel):
+    request_id: str
+    current_status: RequestStatus
+    ready_for_submit: bool
+    ready_for_approval: bool
+    ready_for_plan: bool
+    ready_for_execute: bool
+    next_action: str
+    blockers: list[ReadinessIssue]
+    warnings: list[ReadinessIssue]
+    summary: str
+
+
 class AuditEventRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

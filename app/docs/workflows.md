@@ -26,15 +26,57 @@ and execution through mocked provider adapters.
 
 1. Create draft request with `POST /api/v1/requests/vm-deploy`.
 2. Edit it, when allowed, with `PATCH /api/v1/requests/{id}`.
-3. Submit it with `POST /api/v1/requests/{id}/submit`.
-4. Approve it with `POST /api/v1/requests/{id}/approve`.
-5. Create a dry-run plan with `POST /api/v1/requests/{id}/plan`.
-6. Execute the mock deployment with `POST /api/v1/requests/{id}/execute`.
-7. Review the run with `GET /api/v1/workflow-runs/{id}`.
-8. Review history with `GET /api/v1/audit-events`.
+3. Check readiness with `GET /api/v1/requests/{id}/readiness`.
+4. Submit it with `POST /api/v1/requests/{id}/submit`.
+5. Approve it with `POST /api/v1/requests/{id}/approve`.
+6. Create a dry-run plan with `POST /api/v1/requests/{id}/plan`.
+7. Execute the mock deployment with `POST /api/v1/requests/{id}/execute`.
+8. Review the run with `GET /api/v1/workflow-runs/{id}`.
+9. Review history with `GET /api/v1/audit-events`.
 
 Requests that have not started execution can be cancelled with
 `POST /api/v1/requests/{id}/cancel`.
+
+### Readiness
+
+`GET /api/v1/requests/{id}/readiness` returns an operator-facing summary of
+the persisted request state. It does not mutate request state, create audit
+events, execute anything, create a dry-run plan, or call real or mock provider
+adapters.
+
+The response includes:
+
+- `request_id`
+- `current_status`
+- `ready_for_submit`
+- `ready_for_approval`
+- `ready_for_plan`
+- `ready_for_execute`
+- `next_action`
+- `blockers`
+- `warnings`
+- `summary`
+
+Each blocker or warning is structured as:
+
+```json
+{
+  "code": "plan_missing",
+  "message": "Request cannot execute because no persisted dry-run plan exists.",
+  "severity": "blocking",
+  "action": "Create a new dry-run plan before executing."
+}
+```
+
+`next_action` is a stable machine-friendly recommendation for the UI. Current
+values include `submit`, `approve_or_reject`, `plan`, `execute`, `replan`,
+`edit_resubmit`, `wait`, `monitor`, `edit`, and `none`.
+
+Readiness mirrors the execution preflight guard for planned requests. Missing
+plans, plans attached to another request, tampered plan metadata, and request
+intent drift are visible as blockers before an operator attempts execution.
+Intent drift means the current execution-affecting request fields no longer
+match the dry-run plan checksum. Notes are not part of the execution intent.
 
 ### Validation
 

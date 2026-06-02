@@ -92,11 +92,11 @@ cd /home/administrator/infra-config-portal/app/backend
 
 The smoke test uses FastAPI `TestClient`, an in-memory SQLite database, and the
 mock provider adapters. It verifies health, draft creation and patching,
-submission, approval, dry-run planning, mock execution to completion, audit
-events for major transitions, execution-before-plan rejection, stale-plan
-invalidation after an execution-affecting edit, and completed-request
-cancellation rejection. It does not start a backend server and must remain
-`PROVIDER_MODE=mock`.
+submission, approval, readiness summaries, dry-run planning, mock execution to
+completion, audit events for major transitions, execution-before-plan
+rejection, stale-plan invalidation after an execution-affecting edit, and
+completed-request cancellation rejection. It does not start a backend server
+and must remain `PROVIDER_MODE=mock`.
 
 ## Codex Exec Mode
 
