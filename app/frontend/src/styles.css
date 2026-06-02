@@ -291,6 +291,11 @@ th {
   color: #8a5d00;
 }
 
+.status-warning {
+  background: #fff7df;
+  color: #8a5d00;
+}
+
 .status-executing,
 .status-local,
 .status-ok,
@@ -446,6 +451,27 @@ textarea {
   gap: 10px;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   margin-bottom: 12px;
+}
+
+.request-filter-grid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: minmax(220px, 1.4fr) repeat(4, minmax(150px, 1fr));
+}
+
+.request-list-link {
+  margin-top: 14px;
+}
+
+.table-status-stack {
+  display: grid;
+  gap: 5px;
+}
+
+.table-status-stack span:last-child {
+  color: #5d6877;
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .mock-warning {
@@ -1069,7 +1095,8 @@ pre {
   .provider-grid,
   .operator-metric-grid,
   .operator-queue-grid,
-  .dashboard-grid {
+  .dashboard-grid,
+  .request-filter-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -1098,9 +1125,10 @@ pre {
   .detail-grid,
   .issue-grid,
   .run-center-grid,
-  .operator-queue-grid,
-  .dashboard-grid,
-  .stage-list,
+    .operator-queue-grid,
+    .dashboard-grid,
+    .request-filter-grid,
+    .stage-list,
     .lifecycle-action-grid,
     .handoff-summary,
     .artifact-grid,

@@ -95,12 +95,14 @@ make frontend-run
 The Vite dev server runs at `http://127.0.0.1:5173` and proxies API requests
 to `http://127.0.0.1:8001`.
 
-The request detail view shows readiness, blockers, lifecycle actions, approval,
-mock execution, cancellation, request-scoped audit events, draft editing, and
-notes updates for editable pre-execution requests. Run Center shows pending
-requests, local workflow runs, mock stage status, and review-before-execute
-state. Media Inventory shows sample metadata by default, or placeholder-only
-metadata from explicitly configured `MEDIA_INVENTORY_DIRS`.
+The VM request list shows filterable request status, ownership, readiness, and
+blocked indicators. The request detail view shows readiness, blockers,
+lifecycle actions, approval, mock execution, cancellation, request-scoped audit
+events, draft editing, notes updates for editable pre-execution requests, and
+mock artifact/report cards. Run Center shows pending requests, local workflow
+runs, mock stage status, report handoff links, and review-before-execute state.
+Media Inventory shows sample metadata by default, or placeholder-only metadata
+from explicitly configured `MEDIA_INVENTORY_DIRS`.
 
 ## Docker Compose
 

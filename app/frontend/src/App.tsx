@@ -150,6 +150,7 @@ function App() {
         <nav>
           <NavItem to="/" icon={<Gauge size={18} />} label="Dashboard" />
           <NavItem to="/run-center" icon={<Workflow size={18} />} label="Run Center" />
+          <NavItem to="/requests" icon={<ClipboardList size={18} />} label="VM Requests" />
           <NavItem to="/requests/new" icon={<Plus size={18} />} label="New VM Request" />
           <NavItem to="/audit-events" icon={<History size={18} />} label="Audit Events" />
           <NavItem to="/media" icon={<HardDrive size={18} />} label="Media Inventory" />
@@ -161,6 +162,7 @@ function App() {
         <Routes>
           <RouterRoute path="/" element={<Dashboard />} />
           <RouterRoute path="/run-center" element={<RunCenter />} />
+          <RouterRoute path="/requests" element={<RequestListPage />} />
           <RouterRoute path="/requests/new" element={<NewRequest />} />
           <RouterRoute path="/requests/:id" element={<RequestDetail />} />
           <RouterRoute path="/workflow-runs/:id" element={<WorkflowRunDetail />} />
@@ -265,6 +267,139 @@ function Dashboard() {
       <section className="panel">
         <PanelTitle icon={<Layers size={18} />} title="Recent Requests" />
         <RequestTable readinessByRequest={readinessByRequest} requests={requests.slice(0, 10)} showNextAction />
+        <Link className="button-link request-list-link" to="/requests">
+          <ClipboardList size={16} />
+          View All Requests
+        </Link>
+      </section>
+    </Page>
+  );
+}
+
+function RequestListPage() {
+  const [requests, setRequests] = useState<RequestRecord[]>([]);
+  const [readinessByRequest, setReadinessByRequest] = useState<ReadinessMap>({});
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [environmentFilter, setEnvironmentFilter] = useState("all");
+  const [siteFilter, setSiteFilter] = useState("all");
+  const [ownerFilter, setOwnerFilter] = useState("all");
+  const [search, setSearch] = useState("");
+
+  async function load() {
+    setError("");
+    setLoading(true);
+    try {
+      const nextRequests = await api.requests();
+      setRequests(nextRequests);
+      setReadinessByRequest(await loadReadinessMap(nextRequests));
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    load();
+  }, []);
+
+  const filteredRequests = useMemo(
+    () =>
+      requests.filter((request) => {
+        const normalizedSearch = search.trim().toLowerCase();
+        if (statusFilter !== "all" && request.status !== statusFilter) return false;
+        if (environmentFilter !== "all" && request.environment !== environmentFilter) return false;
+        if (siteFilter !== "all" && request.site !== siteFilter) return false;
+        if (ownerFilter !== "all" && request.owner !== ownerFilter) return false;
+        if (!normalizedSearch) return true;
+        return (
+          request.id.toLowerCase().includes(normalizedSearch) ||
+          request.vm_deploy.vm_name.toLowerCase().includes(normalizedSearch)
+        );
+      }),
+    [environmentFilter, ownerFilter, requests, search, siteFilter, statusFilter]
+  );
+  const statusOptions = uniqueOptions(requests.map((request) => request.status));
+  const environmentOptions = uniqueOptions(requests.map((request) => request.environment));
+  const siteOptions = uniqueOptions(requests.map((request) => request.site));
+  const ownerOptions = uniqueOptions(requests.map((request) => request.owner));
+
+  return (
+    <Page
+      title="VM Requests"
+      actions={
+        <>
+          <button onClick={load} disabled={loading}>
+            <RefreshCw size={16} />
+            Refresh
+          </button>
+          <ButtonLink to="/requests/new" icon={<Plus size={16} />} label="New VM" />
+        </>
+      }
+    >
+      <Feedback loading={loading && !requests.length} error={error} />
+      <section className="panel">
+        <PanelTitle icon={<ClipboardList size={18} />} title="Request Filters" />
+        <div className="request-filter-grid">
+          <Field label="Search">
+            <input
+              placeholder="VM name or request ID"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+            />
+          </Field>
+          <Field label="Status">
+            <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+              <option value="all">All statuses</option>
+              {statusOptions.map((status) => (
+                <option key={status} value={status}>
+                  {labelize(status)}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Environment">
+            <select value={environmentFilter} onChange={(event) => setEnvironmentFilter(event.target.value)}>
+              <option value="all">All environments</option>
+              {environmentOptions.map((environment) => (
+                <option key={environment} value={environment}>
+                  {environment}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Site">
+            <select value={siteFilter} onChange={(event) => setSiteFilter(event.target.value)}>
+              <option value="all">All sites</option>
+              {siteOptions.map((site) => (
+                <option key={site} value={site}>
+                  {site}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Owner">
+            <select value={ownerFilter} onChange={(event) => setOwnerFilter(event.target.value)}>
+              <option value="all">All owners</option>
+              {ownerOptions.map((owner) => (
+                <option key={owner} value={owner}>
+                  {owner}
+                </option>
+              ))}
+            </select>
+          </Field>
+        </div>
+      </section>
+      <section className="panel">
+        <PanelTitle icon={<Layers size={18} />} title={`Requests (${filteredRequests.length})`} />
+        <RequestTable
+          readinessByRequest={readinessByRequest}
+          requests={filteredRequests}
+          showBlocked
+          showNextAction
+        />
       </section>
     </Page>
   );
@@ -2133,10 +2268,12 @@ function StageList({ events }: { events: StageEvent[] }) {
 function RequestTable({
   readinessByRequest,
   requests,
+  showBlocked,
   showNextAction
 }: {
   readinessByRequest?: ReadinessMap;
   requests: RequestRecord[];
+  showBlocked?: boolean;
   showNextAction?: boolean;
 }) {
   if (!requests.length) {
@@ -2152,6 +2289,7 @@ function RequestTable({
           <th>Environment</th>
           <th>Site</th>
           <th>Owner</th>
+          {showBlocked && <th>Readiness</th>}
           {showNextAction && <th>Next Action</th>}
           <th>Updated</th>
         </tr>
@@ -2168,6 +2306,11 @@ function RequestTable({
             <td>{request.environment}</td>
             <td>{request.site}</td>
             <td>{request.owner}</td>
+            {showBlocked && (
+              <td>
+                <ReadinessStatus readiness={readinessByRequest?.[request.id]} />
+              </td>
+            )}
             {showNextAction && (
               <td>{displayNextActionForRequest(request, readinessByRequest?.[request.id])}</td>
             )}
@@ -2177,6 +2320,29 @@ function RequestTable({
       </tbody>
     </table>
   );
+}
+
+function ReadinessStatus({ readiness }: { readiness: RequestReadiness | undefined }) {
+  if (!readiness) {
+    return <StatusBadge status="pending" />;
+  }
+  if (readiness.blockers.length > 0) {
+    return (
+      <div className="table-status-stack">
+        <StatusBadge status="blocked" />
+        <span>{readiness.blockers[0].code}</span>
+      </div>
+    );
+  }
+  if (readiness.warnings.length > 0) {
+    return (
+      <div className="table-status-stack">
+        <StatusBadge status="warning" />
+        <span>{readiness.warnings[0].code}</span>
+      </div>
+    );
+  }
+  return <StatusBadge status="ready" />;
 }
 
 function Page({ title, actions, children }: { title: string; actions?: ReactNode; children: ReactNode }) {
@@ -2276,6 +2442,10 @@ async function loadReadinessMap(requests: RequestRecord[]): Promise<ReadinessMap
     }
     return acc;
   }, {});
+}
+
+function uniqueOptions(values: string[]): string[] {
+  return [...new Set(values)].sort((left, right) => left.localeCompare(right));
 }
 
 function buildRunCenterSections(
