@@ -1,6 +1,10 @@
 from __future__ import annotations
 
 from fastapi.testclient import TestClient
+from sqlalchemy.orm import Session
+
+from app.core.enums import RequestStatus
+from app.models import Request
 
 
 def test_health(client: TestClient) -> None:
@@ -68,6 +72,44 @@ def test_cancel_draft_request_api_flow(client: TestClient, vm_payload: dict) -> 
     assert audit_events.status_code == 200
     event_types = {event["event_type"] for event in audit_events.json()}
     assert "request.cancelled" in event_types
+
+
+def test_execute_api_rejects_planned_request_without_persisted_plan(
+    client: TestClient,
+    db_session: Session,
+    vm_payload: dict,
+) -> None:
+    created = client.post("/api/v1/requests/vm-deploy", json=vm_payload)
+    assert created.status_code == 201
+    request_id = created.json()["id"]
+
+    submitted = client.post(f"/api/v1/requests/{request_id}/submit")
+    assert submitted.status_code == 200
+
+    approved = client.post(
+        f"/api/v1/requests/{request_id}/approve",
+        json={"approver": "change.manager", "notes": "Looks safe"},
+    )
+    assert approved.status_code == 200
+
+    request = db_session.get(Request, request_id)
+    assert request is not None
+    request.status = RequestStatus.PLANNED.value
+    db_session.commit()
+
+    executed = client.post(f"/api/v1/requests/{request_id}/execute")
+
+    assert executed.status_code == 409
+    assert "no persisted dry-run plan exists" in executed.json()["detail"]
+
+    request_detail = client.get(f"/api/v1/requests/{request_id}")
+    assert request_detail.status_code == 200
+    assert request_detail.json()["status"] == "planned"
+
+    audit_events = client.get("/api/v1/audit-events")
+    assert audit_events.status_code == 200
+    event_types = {event["event_type"] for event in audit_events.json()}
+    assert "request.execution_preflight_failed" in event_types
 
 
 def test_provider_status_is_mock_or_placeholder(client: TestClient) -> None:

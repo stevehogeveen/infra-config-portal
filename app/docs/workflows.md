@@ -58,8 +58,14 @@ Planning returns a dry-run plan with deterministic steps:
 
 ### Execution
 
-Execution uses the mock vSphere adapter. It returns mock task and VM IDs and
-does not connect to any infrastructure endpoint.
+Execution first runs a preflight guard before the mock vSphere adapter is
+called. The request must still be `planned`, a persisted planned workflow run
+must exist, and the dry-run plan payload must include the same `request_id` as
+the request being executed. Missing or mismatched plans are rejected with an
+audit event and do not move the request to `executing`.
+
+After preflight passes, execution uses the mock vSphere adapter. It returns
+mock task and VM IDs and does not connect to any infrastructure endpoint.
 
 ### Cancellation
 
@@ -77,6 +83,7 @@ marks its planned workflow run as `cancelled`. Requests that are already
 | approve | `needs_approval` | `approved` |
 | plan | `approved` | `planned` |
 | cancel | pre-execution states | `cancelled` |
-| execute | `planned` | `completed` after `executing` audit event |
+| execute | `planned` with matching persisted plan | `completed` after `executing` audit event |
 
-Failures are recorded as `failed` with an audit event.
+Provider execution failures after preflight are recorded as `failed` with an
+audit event. Preflight failures are audited without changing the request state.

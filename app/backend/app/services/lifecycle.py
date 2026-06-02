@@ -29,6 +29,10 @@ class WorkflowRunNotFoundError(Exception):
     pass
 
 
+class ExecutionPreflightError(Exception):
+    pass
+
+
 class InvalidTransitionError(Exception):
     pass
 
@@ -233,13 +237,10 @@ def execute_request(
     worker: InlineWorker | None = None,
 ) -> WorkflowRun:
     request = get_request(session, request_id)
-    _ensure_status(request, RequestStatus.PLANNED)
+    run = _preflight_execution_plan(session, request, actor=actor)
+
     vsphere = vsphere or MockVsphereAdapter()
     worker = worker or InlineWorker()
-
-    run = _latest_run_for_request(session, request.id)
-    if run is None or run.status != WorkflowRunStatus.PLANNED.value:
-        raise WorkflowRunNotFoundError(f"No planned workflow run for request {request.id}")
 
     run.status = WorkflowRunStatus.EXECUTING.value
     _transition(
@@ -350,6 +351,147 @@ def _latest_run_for_request(session: Session, request_id: str) -> WorkflowRun | 
         .order_by(WorkflowRun.created_at.desc())
         .limit(1)
     ).scalar_one_or_none()
+
+
+def _preflight_execution_plan(
+    session: Session,
+    request: Request,
+    *,
+    actor: str,
+) -> WorkflowRun:
+    if request.status != RequestStatus.PLANNED.value:
+        message = (
+            f"Request {request.id} is {request.status}; "
+            f"expected {RequestStatus.PLANNED.value}"
+        )
+        _record_execution_preflight_failure(
+            session,
+            request,
+            actor=actor,
+            message=message,
+            data={
+                "reason": "invalid_request_status",
+                "expected_status": RequestStatus.PLANNED.value,
+                "actual_status": request.status,
+            },
+        )
+        raise InvalidTransitionError(message)
+
+    run = _latest_run_for_request(session, request.id)
+    if run is None:
+        message = (
+            f"Request {request.id} cannot execute because no persisted dry-run plan exists."
+        )
+        _record_execution_preflight_failure(
+            session,
+            request,
+            actor=actor,
+            message=message,
+            data={"reason": "missing_workflow_run"},
+        )
+        raise ExecutionPreflightError(message)
+
+    if run.status != WorkflowRunStatus.PLANNED.value:
+        message = (
+            f"Request {request.id} cannot execute because workflow run {run.id} "
+            f"is {run.status}; expected {WorkflowRunStatus.PLANNED.value}."
+        )
+        _record_execution_preflight_failure(
+            session,
+            request,
+            actor=actor,
+            workflow_run=run,
+            message=message,
+            data={
+                "reason": "workflow_run_not_planned",
+                "workflow_run_id": run.id,
+                "actual_run_status": run.status,
+                "expected_run_status": WorkflowRunStatus.PLANNED.value,
+            },
+        )
+        raise ExecutionPreflightError(message)
+
+    if run.request_id != request.id:
+        message = (
+            f"Request {request.id} cannot execute because workflow run {run.id} "
+            f"belongs to request {run.request_id}."
+        )
+        _record_execution_preflight_failure(
+            session,
+            request,
+            actor=actor,
+            workflow_run=run,
+            message=message,
+            data={
+                "reason": "workflow_run_request_mismatch",
+                "workflow_run_id": run.id,
+                "workflow_run_request_id": run.request_id,
+                "expected_request_id": request.id,
+            },
+        )
+        raise ExecutionPreflightError(message)
+
+    plan = run.plan_json
+    if not isinstance(plan, dict) or not plan:
+        message = (
+            f"Request {request.id} cannot execute because workflow run {run.id} "
+            "does not contain a persisted dry-run plan."
+        )
+        _record_execution_preflight_failure(
+            session,
+            request,
+            actor=actor,
+            workflow_run=run,
+            message=message,
+            data={"reason": "missing_plan", "workflow_run_id": run.id},
+        )
+        raise ExecutionPreflightError(message)
+
+    plan_request_id = plan.get("request_id")
+    if plan_request_id != request.id:
+        message = (
+            f"Request {request.id} cannot execute because workflow run {run.id} "
+            f"contains a dry-run plan for request {plan_request_id!r}."
+        )
+        _record_execution_preflight_failure(
+            session,
+            request,
+            actor=actor,
+            workflow_run=run,
+            message=message,
+            data={
+                "reason": "plan_request_mismatch",
+                "workflow_run_id": run.id,
+                "plan_request_id": plan_request_id,
+                "expected_request_id": request.id,
+            },
+        )
+        raise ExecutionPreflightError(message)
+
+    return run
+
+
+def _record_execution_preflight_failure(
+    session: Session,
+    request: Request,
+    *,
+    actor: str,
+    message: str,
+    workflow_run: WorkflowRun | None = None,
+    data: dict | None = None,
+) -> None:
+    record_audit_event(
+        session,
+        actor=actor,
+        event_type="request.execution_preflight_failed",
+        message=message,
+        request=request,
+        workflow_run=workflow_run,
+        from_status=request.status,
+        to_status=request.status,
+        data=data,
+    )
+    session.commit()
 
 
 def _ensure_status(request: Request, expected: RequestStatus) -> None:

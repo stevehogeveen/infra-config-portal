@@ -18,6 +18,7 @@ from app.schemas import (
     WorkflowRunRead,
 )
 from app.services.lifecycle import (
+    ExecutionPreflightError,
     InvalidTransitionError,
     RequestNotFoundError,
     ValidationFailureError,
@@ -135,6 +136,8 @@ def execute(
         return execute_request(session, request_id, actor=actor)
     except RequestNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Request not found") from exc
+    except ExecutionPreflightError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except WorkflowRunNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Workflow run not found") from exc
     except InvalidTransitionError as exc:
