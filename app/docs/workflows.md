@@ -32,6 +32,9 @@ and execution through mocked provider adapters.
 6. Review the run with `GET /api/v1/workflow-runs/{id}`.
 7. Review history with `GET /api/v1/audit-events`.
 
+Requests that have not started execution can be cancelled with
+`POST /api/v1/requests/{id}/cancel`.
+
 ### Validation
 
 Validation happens in two places:
@@ -58,6 +61,13 @@ Planning returns a dry-run plan with deterministic steps:
 Execution uses the mock vSphere adapter. It returns mock task and VM IDs and
 does not connect to any infrastructure endpoint.
 
+### Cancellation
+
+Cancellation is allowed for requests in `draft`, `submitted`, `validating`,
+`needs_approval`, `approved`, or `planned`. Cancelling a planned request also
+marks its planned workflow run as `cancelled`. Requests that are already
+`executing`, `completed`, `failed`, or `cancelled` reject cancellation.
+
 ### Status Transitions
 
 | Endpoint | Allowed From | Result |
@@ -66,6 +76,7 @@ does not connect to any infrastructure endpoint.
 | submit | `draft` | `needs_approval` after `submitted` and `validating` audit events |
 | approve | `needs_approval` | `approved` |
 | plan | `approved` | `planned` |
+| cancel | pre-execution states | `cancelled` |
 | execute | `planned` | `completed` after `executing` audit event |
 
 Failures are recorded as `failed` with an audit event.

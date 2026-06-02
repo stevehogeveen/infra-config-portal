@@ -46,7 +46,8 @@ cancelled
 
 The submit operation moves a draft through `submitted` and `validating` into
 `needs_approval` when validation passes. Planning is only allowed after
-approval. Execution is only allowed after a plan exists.
+approval. Cancellation is allowed before execution starts. Execution is only
+allowed after a plan exists.
 
 ## Database
 

@@ -11,6 +11,14 @@ from app.services.audit import record_audit_event
 from app.services.worker import InlineWorker
 
 WORKFLOW_SLUG = "vm_deploy_from_template"
+CANCELLABLE_REQUEST_STATUSES = {
+    RequestStatus.DRAFT.value,
+    RequestStatus.SUBMITTED.value,
+    RequestStatus.VALIDATING.value,
+    RequestStatus.NEEDS_APPROVAL.value,
+    RequestStatus.APPROVED.value,
+    RequestStatus.PLANNED.value,
+}
 
 
 class RequestNotFoundError(Exception):
@@ -279,6 +287,37 @@ def execute_request(
     return get_workflow_run(session, run.id)
 
 
+def cancel_request(
+    session: Session,
+    request_id: str,
+    *,
+    actor: str,
+) -> Request:
+    request = get_request(session, request_id)
+    _ensure_cancellable_status(request)
+
+    run = None
+    if request.status == RequestStatus.PLANNED.value:
+        latest_run = _latest_run_for_request(session, request.id)
+        if latest_run is not None and latest_run.status == WorkflowRunStatus.PLANNED.value:
+            run = latest_run
+            run.status = WorkflowRunStatus.CANCELLED.value
+
+    data = {"workflow_run_id": run.id} if run is not None else None
+    _transition(
+        session,
+        request,
+        RequestStatus.CANCELLED,
+        actor=actor,
+        event_type="request.cancelled",
+        message="Request cancelled before execution.",
+        workflow_run=run,
+        data=data,
+    )
+    session.commit()
+    return get_request(session, request.id)
+
+
 def get_workflow_run(session: Session, workflow_run_id: str) -> WorkflowRun:
     run = session.get(WorkflowRun, workflow_run_id)
     if run is None:
@@ -317,6 +356,14 @@ def _ensure_status(request: Request, expected: RequestStatus) -> None:
     if request.status != expected.value:
         raise InvalidTransitionError(
             f"Request {request.id} is {request.status}; expected {expected.value}"
+        )
+
+
+def _ensure_cancellable_status(request: Request) -> None:
+    if request.status not in CANCELLABLE_REQUEST_STATUSES:
+        expected = ", ".join(sorted(CANCELLABLE_REQUEST_STATUSES))
+        raise InvalidTransitionError(
+            f"Request {request.id} is {request.status}; expected one of: {expected}"
         )
 
 

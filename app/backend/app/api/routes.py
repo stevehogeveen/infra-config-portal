@@ -23,6 +23,7 @@ from app.services.lifecycle import (
     ValidationFailureError,
     WorkflowRunNotFoundError,
     approve_request,
+    cancel_request,
     create_vm_deployment_request,
     execute_request,
     get_request,
@@ -102,6 +103,21 @@ def plan(
     actor = get_current_actor(fastapi_request)
     try:
         return plan_request(session, request_id, actor=actor)
+    except RequestNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Request not found") from exc
+    except InvalidTransitionError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.post("/requests/{request_id}/cancel", response_model=RequestRead)
+def cancel(
+    request_id: str,
+    fastapi_request: FastAPIRequest,
+    session: Session = Depends(get_session),
+) -> RequestRead:
+    actor = get_current_actor(fastapi_request)
+    try:
+        return cancel_request(session, request_id, actor=actor)
     except RequestNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Request not found") from exc
     except InvalidTransitionError as exc:

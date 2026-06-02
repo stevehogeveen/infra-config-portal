@@ -52,6 +52,24 @@ def test_vm_deploy_api_flow(client: TestClient, vm_payload: dict) -> None:
     assert "request.completed" in event_types
 
 
+def test_cancel_draft_request_api_flow(client: TestClient, vm_payload: dict) -> None:
+    created = client.post("/api/v1/requests/vm-deploy", json=vm_payload)
+    assert created.status_code == 201
+    request_id = created.json()["id"]
+
+    cancelled = client.post(f"/api/v1/requests/{request_id}/cancel")
+    assert cancelled.status_code == 200
+    assert cancelled.json()["status"] == "cancelled"
+
+    submitted = client.post(f"/api/v1/requests/{request_id}/submit")
+    assert submitted.status_code == 409
+
+    audit_events = client.get("/api/v1/audit-events")
+    assert audit_events.status_code == 200
+    event_types = {event["event_type"] for event in audit_events.json()}
+    assert "request.cancelled" in event_types
+
+
 def test_provider_status_is_mock_or_placeholder(client: TestClient) -> None:
     response = client.get("/api/v1/providers/status")
 
