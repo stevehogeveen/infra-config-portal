@@ -309,6 +309,16 @@ th {
   color: #166534;
 }
 
+.status-available {
+  background: #e6f6ee;
+  color: #166534;
+}
+
+.status-placeholder {
+  background: #edf0f4;
+  color: #4b5563;
+}
+
 .status-failed,
 .status-blocked,
 .status-cancelled,
@@ -757,9 +767,46 @@ pre {
   padding: 12px;
 }
 
+.artifact-card-head {
+  align-items: flex-start;
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+}
+
 .artifact-item p {
   color: #5d6877;
   margin: 8px 0 0;
+}
+
+.artifact-meta,
+.artifact-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.artifact-meta span {
+  background: #f1f4f7;
+  border-radius: 999px;
+  color: #445164;
+  font-size: 11px;
+  font-weight: 800;
+  padding: 4px 7px;
+  text-transform: uppercase;
+}
+
+.artifact-metadata {
+  color: #445164;
+  font-size: 13px;
+  margin: 10px 0 0;
+  padding-left: 18px;
+}
+
+.artifact-links {
+  font-size: 13px;
+  font-weight: 800;
 }
 
 .json-details,

@@ -13,6 +13,7 @@ from app.providers.mock import MockSourceOfTruthAdapter
 from app.providers.registry import ProviderRegistryError, provider_registry
 from app.schemas import (
     ApprovalCreate,
+    ArtifactRead,
     AuditEventRead,
     CatalogRead,
     MediaInventoryRead,
@@ -23,6 +24,10 @@ from app.schemas import (
     VMDeploymentCreate,
     VMDeploymentUpdate,
     WorkflowRunRead,
+)
+from app.services.artifacts import (
+    list_request_artifacts,
+    list_workflow_run_artifacts,
 )
 from app.services.lifecycle import (
     ExecutionPreflightError,
@@ -83,6 +88,17 @@ def read_request_readiness(
 ) -> RequestReadinessRead:
     try:
         return get_request_readiness(session, request_id)
+    except RequestNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Request not found") from exc
+
+
+@router.get("/requests/{request_id}/artifacts", response_model=list[ArtifactRead])
+def read_request_artifacts(
+    request_id: str,
+    session: Session = Depends(get_session),
+) -> list[ArtifactRead]:
+    try:
+        return list_request_artifacts(session, request_id)
     except RequestNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Request not found") from exc
 
@@ -200,6 +216,19 @@ def read_workflow_run(
         return get_workflow_run(session, workflow_run_id)
     except WorkflowRunNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Workflow run not found") from exc
+
+
+@router.get("/workflow-runs/{workflow_run_id}/artifacts", response_model=list[ArtifactRead])
+def read_workflow_run_artifacts(
+    workflow_run_id: str,
+    session: Session = Depends(get_session),
+) -> list[ArtifactRead]:
+    try:
+        return list_workflow_run_artifacts(session, workflow_run_id)
+    except WorkflowRunNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Workflow run not found") from exc
+    except RequestNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Request not found") from exc
 
 
 @router.get("/audit-events", response_model=list[AuditEventRead])

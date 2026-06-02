@@ -76,6 +76,55 @@ def test_vm_deploy_api_flow(client: TestClient, vm_payload: dict) -> None:
     assert "request.completed" in event_types
 
 
+def test_artifact_listing_returns_mock_report_and_placeholders(
+    client: TestClient,
+    vm_payload: dict,
+) -> None:
+    created = client.post("/api/v1/requests/vm-deploy", json=vm_payload)
+    assert created.status_code == 201
+    request_id = created.json()["id"]
+
+    assert client.post(f"/api/v1/requests/{request_id}/submit").status_code == 200
+    approved = client.post(
+        f"/api/v1/requests/{request_id}/approve",
+        json={"approver": "change.manager", "notes": "Looks safe"},
+    )
+    assert approved.status_code == 200
+    planned = client.post(f"/api/v1/requests/{request_id}/plan")
+    assert planned.status_code == 200
+    workflow_run_id = planned.json()["id"]
+    executed = client.post(f"/api/v1/requests/{request_id}/execute")
+    assert executed.status_code == 200
+
+    request_artifacts = client.get(f"/api/v1/requests/{request_id}/artifacts")
+    assert request_artifacts.status_code == 200
+    request_payload = request_artifacts.json()
+    request_kinds = {artifact["kind"] for artifact in request_payload}
+    assert {
+        "audit_history",
+        "dry_run_plan",
+        "completion_report",
+        "run_history",
+        "debug_bundle",
+        "export",
+    }.issubset(request_kinds)
+    assert all(artifact["mock_only"] is True for artifact in request_payload)
+    assert all(artifact["downloadable"] is False for artifact in request_payload)
+    assert all(artifact["download_url"] is None for artifact in request_payload)
+
+    run_artifacts = client.get(f"/api/v1/workflow-runs/{workflow_run_id}/artifacts")
+    assert run_artifacts.status_code == 200
+    run_payload = run_artifacts.json()
+    report = next(artifact for artifact in run_payload if artifact["kind"] == "completion_report")
+    debug_bundle = next(artifact for artifact in run_payload if artifact["kind"] == "debug_bundle")
+
+    assert report["status"] == "available"
+    assert report["metadata"]["mock_task_id"].startswith("mock-task-")
+    assert report["metadata"]["mock_vm_id"].startswith("vm-")
+    assert debug_bundle["status"] == "placeholder"
+    assert debug_bundle["metadata"]["generated"] is False
+
+
 def test_cancel_draft_request_api_flow(client: TestClient, vm_payload: dict) -> None:
     created = client.post("/api/v1/requests/vm-deploy", json=vm_payload)
     assert created.status_code == 201

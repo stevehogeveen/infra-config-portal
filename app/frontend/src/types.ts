@@ -67,6 +67,23 @@ export type AuditEvent = {
   created_at: string;
 };
 
+export type ArtifactRecord = {
+  id: string;
+  request_id: string;
+  workflow_run_id: string | null;
+  kind: string;
+  title: string;
+  description: string;
+  status: string;
+  created_at: string;
+  updated_at: string;
+  mock_only: boolean;
+  redacted: boolean;
+  downloadable: boolean;
+  download_url: string | null;
+  metadata: Record<string, unknown>;
+};
+
 export type ReadinessIssue = {
   code: string;
   message: string;

@@ -1,4 +1,5 @@
 import type {
+  ArtifactRecord,
   AuditEvent,
   Catalog,
   MediaInventory,
@@ -67,6 +68,10 @@ export const api = {
     apiRequest<WorkflowRun>(`/api/v1/requests/${id}/execute`, { method: "POST" }),
   workflowRuns: () => apiRequest<WorkflowRun[]>("/api/v1/workflow-runs"),
   workflowRun: (id: string) => apiRequest<WorkflowRun>(`/api/v1/workflow-runs/${id}`),
+  requestArtifacts: (id: string) =>
+    apiRequest<ArtifactRecord[]>(`/api/v1/requests/${id}/artifacts`),
+  workflowRunArtifacts: (id: string) =>
+    apiRequest<ArtifactRecord[]>(`/api/v1/workflow-runs/${id}/artifacts`),
   auditEvents: () => apiRequest<AuditEvent[]>("/api/v1/audit-events"),
   mediaInventory: () => apiRequest<MediaInventory>("/api/v1/media-inventory"),
   providers: () => apiRequest<ProviderStatus[]>("/api/v1/providers/status"),

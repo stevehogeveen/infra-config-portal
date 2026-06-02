@@ -208,6 +208,23 @@ class WorkflowRunRead(BaseModel):
     updated_at: datetime
 
 
+class ArtifactRead(BaseModel):
+    id: str
+    request_id: str
+    workflow_run_id: str | None
+    kind: str
+    title: str
+    description: str
+    status: str
+    created_at: datetime
+    updated_at: datetime
+    mock_only: bool
+    redacted: bool
+    downloadable: bool
+    download_url: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
 class ReadinessIssue(BaseModel):
     code: str
     message: str

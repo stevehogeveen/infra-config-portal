@@ -25,6 +25,7 @@ import { Link, NavLink, Route as RouterRoute, Routes, useNavigate, useParams } f
 
 import { api } from "./api";
 import type {
+  ArtifactRecord,
   AuditEvent,
   Catalog,
   ConsoleCandidate,
@@ -392,6 +393,17 @@ function RunCenter() {
                   Run
                 </Link>
               )}
+              {selectedRun ? (
+                <Link className="button-link" to={`/workflow-runs/${selectedRun.id}#artifacts`}>
+                  <HardDrive size={16} />
+                  Reports
+                </Link>
+              ) : (
+                <Link className="button-link" to={`/requests/${selectedRequest.id}#artifacts`}>
+                  <HardDrive size={16} />
+                  Reports
+                </Link>
+              )}
             </div>
           </>
         ) : (
@@ -595,6 +607,7 @@ function RequestDetail() {
   const [request, setRequest] = useState<RequestRecord | null>(null);
   const [readiness, setReadiness] = useState<RequestReadiness | null>(null);
   const [events, setEvents] = useState<AuditEvent[]>([]);
+  const [artifacts, setArtifacts] = useState<ArtifactRecord[]>([]);
   const [catalog, setCatalog] = useState<Catalog | null>(null);
   const [editForm, setEditForm] = useState<VMDeploymentCreate | null>(null);
   const [error, setError] = useState("");
@@ -606,15 +619,17 @@ function RequestDetail() {
     if (!id) return;
     setError("");
     try {
-      const [nextRequest, nextReadiness, auditEvents] = await Promise.all([
+      const [nextRequest, nextReadiness, auditEvents, nextArtifacts] = await Promise.all([
         api.request(id),
         api.readiness(id),
-        api.auditEvents()
+        api.auditEvents(),
+        api.requestArtifacts(id)
       ]);
       setRequest(nextRequest);
       setReadiness(nextReadiness);
       setEditForm(requestToEditForm(nextRequest));
       setEvents(auditEvents.filter((event) => event.request_id === id).slice(0, 8));
+      setArtifacts(nextArtifacts);
     } catch (err) {
       setError((err as Error).message);
     }
@@ -820,6 +835,10 @@ function RequestDetail() {
             saving={busy === "save"}
           />
         )}
+      </section>
+      <section className="panel" id="artifacts">
+        <PanelTitle icon={<HardDrive size={18} />} title="Artifacts And Reports" />
+        <ArtifactGrid artifacts={artifacts} empty="No artifact metadata is available for this request yet." />
       </section>
       <section className="panel">
         <PanelTitle icon={<History size={18} />} title="Request Audit Events" />
@@ -1085,6 +1104,7 @@ function WorkflowRunDetail() {
   const { id } = useParams();
   const [run, setRun] = useState<WorkflowRun | null>(null);
   const [events, setEvents] = useState<AuditEvent[]>([]);
+  const [artifacts, setArtifacts] = useState<ArtifactRecord[]>([]);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -1092,11 +1112,16 @@ function WorkflowRunDetail() {
     async function load() {
       if (!id) return;
       try {
-        const [nextRun, auditEvents] = await Promise.all([api.workflowRun(id), api.auditEvents()]);
+        const [nextRun, auditEvents, nextArtifacts] = await Promise.all([
+          api.workflowRun(id),
+          api.auditEvents(),
+          api.workflowRunArtifacts(id)
+        ]);
         setRun(nextRun);
         setEvents(
           auditEvents.filter((event) => event.workflow_run_id === id || event.request_id === nextRun.request_id)
         );
+        setArtifacts(nextArtifacts);
       } catch (err) {
         setError((err as Error).message);
       }
@@ -1128,7 +1153,7 @@ function WorkflowRunDetail() {
             <Info label="Created" value={formatDateTime(run.created_at)} />
             <Info label="Updated" value={formatDateTime(run.updated_at)} />
           </section>
-          <WorkflowRunStructuredView events={events} run={run} />
+          <WorkflowRunStructuredView artifacts={artifacts} events={events} run={run} />
         </>
       )}
     </Page>
@@ -1809,7 +1834,15 @@ function LifecycleAction({ action }: { action: LifecycleActionView }) {
   );
 }
 
-function WorkflowRunStructuredView({ events, run }: { events: AuditEvent[]; run: WorkflowRun }) {
+function WorkflowRunStructuredView({
+  artifacts,
+  events,
+  run
+}: {
+  artifacts: ArtifactRecord[];
+  events: AuditEvent[];
+  run: WorkflowRun;
+}) {
   const planSummary = planSummaryForRun(run);
   const planSteps = planStepsForRun(run);
   const executedSteps = executedStepsForRun(run);
@@ -1864,17 +1897,9 @@ function WorkflowRunStructuredView({ events, run }: { events: AuditEvent[]; run:
         <PanelTitle icon={<History size={18} />} title="Logs And Events" />
         <AuditEventTable compact events={events} />
       </section>
-      <section className="panel">
+      <section className="panel" id="artifacts">
         <PanelTitle icon={<HardDrive size={18} />} title="Artifacts And Reports" />
-        <div className="artifact-grid">
-          <ArtifactPlaceholder title="Dry-Run Plan" value="Available below as raw plan JSON." />
-          <ArtifactPlaceholder
-            title="Execution Report"
-            value={run.status === "completed" ? "Mock completion summary is recorded in the result." : "Will be available after mock execution."}
-          />
-          <ArtifactPlaceholder title="Debug Bundle" value="Placeholder only; no generated Lab Builder artifacts are copied." />
-          <ArtifactPlaceholder title="Audit Trail" value="Request and workflow links are shown in the event table." />
-        </div>
+        <ArtifactGrid artifacts={artifacts} empty="No artifact metadata is available for this run yet." />
       </section>
       <section className="panel">
         <PanelTitle icon={<ClipboardList size={18} />} title="Raw Data" />
@@ -1914,13 +1939,72 @@ function StepTable({ empty, steps }: { empty: string; steps: PlanStep[] }) {
   );
 }
 
-function ArtifactPlaceholder({ title, value }: { title: string; value: string }) {
+function ArtifactGrid({ artifacts, empty }: { artifacts: ArtifactRecord[]; empty: string }) {
+  if (!artifacts.length) {
+    return <p className="muted">{empty}</p>;
+  }
+
+  return (
+    <div className="artifact-grid">
+      {artifacts.map((artifact) => (
+        <ArtifactCard artifact={artifact} key={artifact.id} />
+      ))}
+    </div>
+  );
+}
+
+function ArtifactCard({ artifact }: { artifact: ArtifactRecord }) {
+  const metadata = artifactMetadataSummary(artifact);
+
   return (
     <article className="artifact-item">
-      <strong>{title}</strong>
-      <p>{value}</p>
+      <div className="artifact-card-head">
+        <strong>{artifact.title}</strong>
+        <StatusBadge status={artifact.status} />
+      </div>
+      <p>{artifact.description}</p>
+      <div className="artifact-meta">
+        <span>{labelize(artifact.kind)}</span>
+        <span>{artifact.downloadable ? "Download available" : "No file generated"}</span>
+        {artifact.redacted && <span>Redacted</span>}
+        {artifact.mock_only && <span>Mock only</span>}
+      </div>
+      {metadata.length > 0 && (
+        <ul className="artifact-metadata">
+          {metadata.map((item) => (
+            <li key={item}>{item}</li>
+          ))}
+        </ul>
+      )}
+      <div className="artifact-links">
+        <Link to={`/requests/${artifact.request_id}`}>Request {artifact.request_id.slice(0, 8)}</Link>
+        {artifact.workflow_run_id && (
+          <Link to={`/workflow-runs/${artifact.workflow_run_id}`}>
+            Run {artifact.workflow_run_id.slice(0, 8)}
+          </Link>
+        )}
+      </div>
     </article>
   );
+}
+
+function artifactMetadataSummary(artifact: ArtifactRecord): string[] {
+  const metadata = artifact.metadata ?? {};
+  const items = [
+    metadataSummaryItem("Provider", metadata.provider),
+    metadataSummaryItem("Run status", metadata.run_status),
+    metadataSummaryItem("Mock task", metadata.mock_task_id),
+    metadataSummaryItem("Mock VM", metadata.mock_vm_id),
+    metadataSummaryItem("Events", metadata.event_count),
+    metadataSummaryItem("Steps", metadata.step_count)
+  ].filter((item): item is string => Boolean(item));
+
+  return items.slice(0, 4);
+}
+
+function metadataSummaryItem(label: string, value: unknown): string {
+  const formatted = asString(value);
+  return formatted ? `${label}: ${formatted}` : "";
 }
 
 function AuditEventTable({ compact, events }: { compact?: boolean; events: AuditEvent[] }) {

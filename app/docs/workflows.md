@@ -33,7 +33,10 @@ and execution through mocked provider adapters.
 7. Execute the mock deployment with `POST /api/v1/requests/{id}/execute`.
 8. Review local runs with `GET /api/v1/workflow-runs`.
 9. Review a run with `GET /api/v1/workflow-runs/{id}`.
-10. Review history with `GET /api/v1/audit-events`.
+10. Review mock artifact/report metadata with
+    `GET /api/v1/requests/{id}/artifacts` or
+    `GET /api/v1/workflow-runs/{id}/artifacts`.
+11. Review history with `GET /api/v1/audit-events`.
 
 Requests that have not started execution can be cancelled with
 `POST /api/v1/requests/{id}/cancel`.
@@ -120,6 +123,18 @@ context, stage status, and the mock-only review-before-execute warning.
 
 Run Center is still a skeleton. It does not launch new real execution paths,
 stream live logs, or contact external automation systems.
+
+### Artifacts And Reports
+
+Artifact APIs are mock metadata projections only. They derive dry-run plan
+metadata, completed-run report metadata, request/run history links, a redacted
+debug bundle placeholder, and an export package placeholder from existing
+workflow runs and audit events.
+
+The artifact endpoints do not generate files, collect local data, package debug
+bundles, copy provider artifacts, or expose a download URL. All returned
+records are marked `mock_only`, `redacted`, and `downloadable: false` until a
+future task adds a guarded file-generation flow.
 
 ### Media Inventory
 
