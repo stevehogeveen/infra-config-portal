@@ -1,0 +1,47 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-infra_config_portal}
+      POSTGRES_USER: ${POSTGRES_USER:-infra_config_portal}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-infra_config_portal_local_only}
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-infra_config_portal} -d ${POSTGRES_DB:-infra_config_portal}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+    environment:
+      APP_NAME: infra-config-portal
+      ENVIRONMENT: local
+      PROVIDER_MODE: mock
+      DATABASE_URL: postgresql+psycopg://infra_config_portal:infra_config_portal_local_only@postgres:5432/infra_config_portal
+      CORS_ORIGINS: http://127.0.0.1:5173,http://localhost:5173
+    ports:
+      - "8001:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  frontend:
+    image: node:24-alpine
+    working_dir: /app
+    command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
+    environment:
+      VITE_API_BASE_URL: http://127.0.0.1:8001
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+    depends_on:
+      - backend
+
+volumes:
+  postgres-data:
