@@ -402,3 +402,26 @@ def test_cisco_setup_wizard_plan_endpoint_returns_safe_unknown_preview(
     assert "enable SSH/SCP" in payload["disabled_actions"]
     assert "real config apply" in payload["disabled_actions"]
     assert "answer setup wizard yes/no prompt" in payload["not_attempted"]
+
+
+def test_cisco_bootstrap_requirements_endpoint_returns_preview_only(
+    client: TestClient,
+) -> None:
+    response = client.get("/api/v1/providers/cisco/bootstrap-requirements")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["provider_id"] == "cisco-bootstrap-requirements"
+    assert payload["apply_enabled"] is False
+    assert payload["requirements"]["planned_management_ip"]["value"] == "10.10.8.112"
+    assert payload["requirements"]["local_admin_username"]["presence_only"] is True
+    assert payload["requirements"]["ssh_scp_policy"]["planned_only"] is True
+    assert payload["requirements"]["ssh_scp_policy"]["apply_enabled"] is False
+    assert payload["requirements"]["save_behavior"]["enabled"] is False
+    assert "answer setup wizard" in payload["disabled_actions"]
+    assert "conf t" in payload["disabled_actions"]
+    assert "write memory" in payload["disabled_actions"]
+    assert "reload" in payload["disabled_actions"]
+    assert "erase/copy" in payload["disabled_actions"]
+    assert "enable SSH/SCP" in payload["disabled_actions"]
+    assert "real config apply" in payload["disabled_actions"]

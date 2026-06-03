@@ -26,6 +26,7 @@ FUTURE_GUARDED_PLAN_PREVIEW = [
         "Confirm management gateway, subnet, VLAN/default interface strategy, username policy, "
         "SSH/SCP policy, and save behavior."
     ),
+    "Validate bootstrap requirements before producing any future command or wizard-answer preview.",
     "Show exact commands or wizard answers before execution.",
     "Require explicit approval before sending any answer or entering configuration mode.",
     "Save logs, redacted prompt samples, plan summary, and operator approval record.",

@@ -28,6 +28,7 @@ import type {
   ArtifactRecord,
   AuditEvent,
   Catalog,
+  CiscoBootstrapRequirements,
   CiscoSetupReadiness,
   CiscoSetupWizardPlan,
   ConsoleCandidate,
@@ -1498,6 +1499,7 @@ function ProviderStatusPage() {
   const [providers, setProviders] = useState<ProviderStatus[]>([]);
   const [ciscoSetupReadiness, setCiscoSetupReadiness] = useState<CiscoSetupReadiness | null>(null);
   const [ciscoSetupWizardPlan, setCiscoSetupWizardPlan] = useState<CiscoSetupWizardPlan | null>(null);
+  const [ciscoBootstrapRequirements, setCiscoBootstrapRequirements] = useState<CiscoBootstrapRequirements | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [busyProvider, setBusyProvider] = useState("");
@@ -1509,14 +1511,16 @@ function ProviderStatusPage() {
     setError("");
     setLoading(true);
     try {
-      const [providerStatuses, ciscoReadiness, setupWizardPlan] = await Promise.all([
+      const [providerStatuses, ciscoReadiness, setupWizardPlan, bootstrapRequirements] = await Promise.all([
         api.providers(),
         api.ciscoSetupReadiness(),
-        api.ciscoSetupWizardPlan()
+        api.ciscoSetupWizardPlan(),
+        api.ciscoBootstrapRequirements()
       ]);
       setProviders(providerStatuses);
       setCiscoSetupReadiness(ciscoReadiness);
       setCiscoSetupWizardPlan(setupWizardPlan);
+      setCiscoBootstrapRequirements(bootstrapRequirements);
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -1573,6 +1577,7 @@ function ProviderStatusPage() {
       <Feedback loading={loading && !providers.length} error={error} />
       {ciscoSetupReadiness && (
         <CiscoSetupReadinessPanel
+          bootstrapRequirements={ciscoBootstrapRequirements}
           readiness={ciscoSetupReadiness}
           setupWizardPlan={ciscoSetupWizardPlan}
         />
@@ -1596,9 +1601,11 @@ function ProviderStatusPage() {
 }
 
 function CiscoSetupReadinessPanel({
+  bootstrapRequirements,
   readiness,
   setupWizardPlan
 }: {
+  bootstrapRequirements: CiscoBootstrapRequirements | null;
   readiness: CiscoSetupReadiness;
   setupWizardPlan: CiscoSetupWizardPlan | null;
 }) {
@@ -1664,6 +1671,9 @@ function CiscoSetupReadinessPanel({
         />
       </div>
       {setupWizardPlan && <CiscoSetupWizardPlanPanel plan={setupWizardPlan} />}
+      {bootstrapRequirements && (
+        <CiscoBootstrapRequirementsPanel requirements={bootstrapRequirements} />
+      )}
       <ProviderIssueRows blockers={readiness.blockers} warnings={readiness.warnings} />
       <div className="provider-action-layout">
         <div>
@@ -1678,6 +1688,82 @@ function CiscoSetupReadinessPanel({
         </div>
       </div>
     </section>
+  );
+}
+
+function CiscoBootstrapRequirementsPanel({
+  requirements
+}: {
+  requirements: CiscoBootstrapRequirements;
+}) {
+  const items = objectValue(requirements.requirements);
+  const managementStrategy = objectValue(items.management_vlan_interface_strategy);
+  const domainDns = objectValue(items.domain_dns);
+  const localAdmin = objectValue(items.local_admin_username);
+  const sshScpPolicy = objectValue(items.ssh_scp_policy);
+  const saveBehavior = objectValue(items.save_behavior);
+  const confirmations = objectValue(items.confirmation_requirements);
+
+  return (
+    <div className="provider-detail-section">
+      <div className="provider-callout">
+        <strong>Cisco bootstrap requirements</strong>
+        <p>{requirements.next_safe_action}</p>
+      </div>
+      <div className="provider-fact-grid compact">
+        <ProviderFact label="Status" value={labelize(requirements.status)} />
+        <ProviderFact label="Apply Enabled" value={requirements.apply_enabled ? "true" : "false"} />
+        <ProviderFact
+          label="Management Configured"
+          value={requirements.management_configured ? "true" : "false"}
+        />
+        <ProviderFact label="Save Behavior" value={asBoolean(saveBehavior.enabled) ? "Enabled" : "Disabled"} />
+      </div>
+      <div className="setup-preview-grid">
+        <SetupPreviewBlock
+          title="Management Network"
+          tag="Requirements"
+          lines={[
+            requirementLine("Management IP", objectValue(items.planned_management_ip)),
+            requirementLine("Subnet / Prefix", objectValue(items.subnet_prefix)),
+            requirementLine("Gateway", objectValue(items.gateway)),
+            `Management strategy: ${presenceLabel(managementStrategy.configured)}`,
+            `VLAN: ${asString(managementStrategy.vlan) || "Missing"}`,
+            `Interface: ${asString(managementStrategy.interface) || "Missing"}`
+          ]}
+        />
+        <SetupPreviewBlock
+          title="Identity / DNS"
+          tag="Requirements"
+          lines={[
+            requirementLine("Hostname", objectValue(items.hostname)),
+            `Domain/DNS: ${presenceLabel(domainDns.configured)}`,
+            `Domain: ${asString(domainDns.domain_name) || "Missing"}`,
+            `DNS servers: ${stringArray(domainDns.dns_servers).join(", ") || "Missing"}`,
+            `Local admin username: ${presenceLabel(localAdmin.configured)} (presence only)`
+          ]}
+        />
+        <SetupPreviewBlock
+          title="SSH/SCP And Save"
+          tag="Planned only"
+          lines={[
+            asString(sshScpPolicy.summary) || "SSH/SCP policy is planned only.",
+            asString(saveBehavior.summary) || "Save behavior is disabled for now."
+          ]}
+        />
+        <SetupPreviewBlock
+          title="Confirmations"
+          tag="Required"
+          lines={stringArray(confirmations.required)}
+        />
+      </div>
+      <SetupPreviewBlock
+        title="Not Attempted"
+        tag="Disabled"
+        lines={requirements.not_attempted}
+      />
+      <ProviderIssueRows blockers={requirements.blockers} warnings={requirements.warnings} />
+    </div>
   );
 }
 
@@ -2338,6 +2424,11 @@ function promptReadinessMessage(result: ProviderProbeResult): string {
     return "Console is at an initial setup wizard prompt; no answers or commands were sent.";
   }
   return asString(result.message) || "Prompt readiness result is redacted.";
+}
+
+function requirementLine(label: string, requirement: Record<string, unknown>): string {
+  const value = asString(requirement.value);
+  return `${label}: ${value || "Missing"}`;
 }
 
 function objectValue(value: unknown): Record<string, unknown> {

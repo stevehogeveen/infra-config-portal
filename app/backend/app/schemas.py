@@ -400,6 +400,19 @@ class CiscoSetupWizardPlanRead(BaseModel):
     next_safe_action: str
 
 
+class CiscoBootstrapRequirementsRead(BaseModel):
+    provider_id: str
+    status: str
+    apply_enabled: bool
+    management_configured: bool
+    requirements: dict[str, Any]
+    blockers: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    disabled_actions: list[str] = Field(default_factory=list)
+    not_attempted: list[str] = Field(default_factory=list)
+    next_safe_action: str
+
+
 class ProviderProbeResultRead(BaseModel):
     provider_id: str
     status: str

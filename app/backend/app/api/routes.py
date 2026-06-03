@@ -25,6 +25,7 @@ from app.schemas import (
     ArtifactRead,
     AuditEventRead,
     CatalogRead,
+    CiscoBootstrapRequirementsRead,
     CiscoSetupReadinessRead,
     CiscoSetupWizardPlanRead,
     IloUpgradeReadinessRead,
@@ -41,6 +42,7 @@ from app.services.artifacts import (
     list_request_artifacts,
     list_workflow_run_artifacts,
 )
+from app.services.cisco_bootstrap_requirements import get_cisco_bootstrap_requirements
 from app.services.lifecycle import (
     ExecutionPreflightError,
     InvalidTransitionError,
@@ -282,6 +284,14 @@ def read_cisco_setup_readiness() -> CiscoSetupReadinessRead:
 )
 def read_cisco_setup_wizard_plan() -> CiscoSetupWizardPlanRead:
     return get_cisco_setup_wizard_plan()
+
+
+@router.get(
+    "/providers/cisco/bootstrap-requirements",
+    response_model=CiscoBootstrapRequirementsRead,
+)
+def read_cisco_bootstrap_requirements() -> CiscoBootstrapRequirementsRead:
+    return get_cisco_bootstrap_requirements()
 
 
 @router.post(

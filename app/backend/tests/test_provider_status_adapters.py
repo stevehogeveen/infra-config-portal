@@ -25,6 +25,7 @@ from app.providers.lab_safety import LabSafetyState
 from app.providers.probe_cache import clear_probe_results, record_probe_result
 from app.providers.redaction import redact_sensitive
 from app.providers.registry import provider_registry
+from app.services.cisco_bootstrap_requirements import build_cisco_bootstrap_requirements
 from app.services.cisco_setup_readiness import get_cisco_setup_readiness
 from app.services.cisco_setup_wizard_plan import build_cisco_setup_wizard_plan
 
@@ -457,6 +458,60 @@ def test_cisco_setup_readiness_surfaces_setup_wizard_plan_when_cached() -> None:
     assert readiness["setup_wizard_plan"]["detected_prompt_state"] == "setup-wizard"
     assert readiness["setup_wizard_plan"]["apply_enabled"] is False
     assert readiness["next_safe_action"] == "Review setup wizard plan preview."
+
+
+def test_cisco_bootstrap_requirements_reports_missing_inputs_preview_only() -> None:
+    requirements = build_cisco_bootstrap_requirements(
+        planned_management_ip="10.10.8.112",
+        local_admin_username_configured=False,
+        management_configured=False,
+    )
+
+    assert requirements["provider_id"] == "cisco-bootstrap-requirements"
+    assert requirements["status"] == "needs-input"
+    assert requirements["apply_enabled"] is False
+    assert requirements["requirements"]["planned_management_ip"]["value"] == "10.10.8.112"
+    assert requirements["requirements"]["subnet_prefix"]["configured"] is False
+    assert requirements["requirements"]["gateway"]["configured"] is False
+    assert requirements["requirements"]["management_vlan_interface_strategy"]["configured"] is False
+    assert requirements["requirements"]["local_admin_username"]["presence_only"] is True
+    assert "Management subnet/prefix is required." in requirements["blockers"]
+    assert "Management gateway is required." in requirements["blockers"]
+    assert "Management VLAN/interface strategy is required." in requirements["blockers"]
+    assert "Local admin username presence must be confirmed." in requirements["blockers"]
+    assert "answer setup wizard" in requirements["disabled_actions"]
+    assert "conf t" in requirements["disabled_actions"]
+    assert "write memory" in requirements["disabled_actions"]
+    assert "reload" in requirements["disabled_actions"]
+    assert "erase/copy" in requirements["disabled_actions"]
+    assert "enable SSH/SCP" in requirements["disabled_actions"]
+    assert "real config apply" in requirements["disabled_actions"]
+    assert "CISCO_MGMT_CONFIGURED is false" in requirements["warnings"][0]
+
+
+def test_cisco_bootstrap_requirements_keep_username_presence_only() -> None:
+    requirements = build_cisco_bootstrap_requirements(
+        planned_management_ip="10.10.8.112",
+        subnet_prefix="/24",
+        gateway="10.10.8.1",
+        management_vlan="8",
+        management_interface="Vlan8",
+        management_strategy="SVI",
+        hostname="switch-preview",
+        domain_name="example.test",
+        dns_servers=["192.0.2.53"],
+        local_admin_username_configured=True,
+        management_configured=False,
+    )
+    encoded = json.dumps(requirements)
+
+    assert requirements["requirements"]["local_admin_username"]["configured"] is True
+    assert requirements["requirements"]["local_admin_username"]["value"] == "configured"
+    assert "switch-admin" not in encoded
+    assert requirements["requirements"]["ssh_scp_policy"]["planned_only"] is True
+    assert requirements["requirements"]["ssh_scp_policy"]["apply_enabled"] is False
+    assert requirements["requirements"]["save_behavior"]["enabled"] is False
+    assert "Explicit confirmation requirements" in " ".join(requirements["blockers"])
 
 
 def test_esxi_configured_false_returns_planned_status_and_skips_probe(monkeypatch) -> None:

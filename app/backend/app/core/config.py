@@ -116,6 +116,14 @@ class Settings:
         "ANSIBLE_CISCO_ENABLE_PASSWORD"
     )
     cisco_mgmt_configured: bool = _bool_env("CISCO_MGMT_CONFIGURED", False)
+    cisco_management_prefix: str | None = _optional_env("CISCO_MANAGEMENT_PREFIX")
+    cisco_management_gateway: str | None = _optional_env("CISCO_MANAGEMENT_GATEWAY")
+    cisco_management_vlan: str | None = _optional_env("CISCO_MANAGEMENT_VLAN")
+    cisco_management_interface: str | None = _optional_env("CISCO_MANAGEMENT_INTERFACE")
+    cisco_management_strategy: str | None = _optional_env("CISCO_MANAGEMENT_STRATEGY")
+    cisco_hostname: str | None = _optional_env("CISCO_HOSTNAME")
+    cisco_domain_name: str | None = _optional_env("CISCO_DOMAIN_NAME")
+    cisco_dns_servers: tuple[str, ...] = tuple(_split_csv(os.getenv("CISCO_DNS_SERVERS", "")))
     ansible_cisco_network_os: str = os.getenv("ANSIBLE_CISCO_NETWORK_OS", "cisco.ios.ios")
     ansible_cisco_connection: str = os.getenv(
         "ANSIBLE_CISCO_CONNECTION",

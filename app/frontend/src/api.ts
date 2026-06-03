@@ -2,6 +2,7 @@ import type {
   ArtifactRecord,
   AuditEvent,
   Catalog,
+  CiscoBootstrapRequirements,
   CiscoSetupReadiness,
   CiscoSetupWizardPlan,
   IloUpgradeReadiness,
@@ -83,6 +84,8 @@ export const api = {
     apiRequest<CiscoSetupReadiness>("/api/v1/providers/cisco/setup-readiness"),
   ciscoSetupWizardPlan: () =>
     apiRequest<CiscoSetupWizardPlan>("/api/v1/providers/cisco/setup-wizard-plan"),
+  ciscoBootstrapRequirements: () =>
+    apiRequest<CiscoBootstrapRequirements>("/api/v1/providers/cisco/bootstrap-requirements"),
   providers: () => apiRequest<ProviderStatus[]>("/api/v1/providers/status"),
   ciscoConsolePromptReadiness: () =>
     apiRequest<ProviderProbeResult>("/api/v1/providers/cisco-console/prompt-readiness", {

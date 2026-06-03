@@ -218,6 +218,19 @@ export type CiscoSetupWizardPlan = {
   next_safe_action: string;
 };
 
+export type CiscoBootstrapRequirements = {
+  provider_id: string;
+  status: string;
+  apply_enabled: boolean;
+  management_configured: boolean;
+  requirements: Record<string, unknown>;
+  blockers: string[];
+  warnings: string[];
+  disabled_actions: string[];
+  not_attempted: string[];
+  next_safe_action: string;
+};
+
 export type MediaInventoryItem = {
   placeholder_name: string;
   extension: string;

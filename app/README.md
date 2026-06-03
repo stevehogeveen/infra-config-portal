@@ -195,6 +195,13 @@ wizard handling is blocked, shows future guarded bootstrap planning steps, and
 keeps answer-wizard, configuration, save, reload, erase/copy, SSH/SCP,
 running-config backup, and real apply actions disabled.
 
+`GET /api/v1/providers/cisco/bootstrap-requirements` validates the preview-only
+inputs needed before any future guarded bootstrap design: management IP,
+subnet/prefix, gateway, management VLAN/interface strategy, hostname,
+domain/DNS, local admin username presence, SSH/SCP policy, save behavior, and
+explicit confirmation requirements. It returns blockers/warnings only and does
+not generate commands.
+
 For an isolated local lab, optional settings live in `.env.local.real-lab` at
 the repository root. Do not commit that file. Create it with:
 
