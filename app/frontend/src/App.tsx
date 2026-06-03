@@ -31,6 +31,7 @@ import type {
   ConsoleCandidate,
   IloUpgradeReadiness,
   MediaInventory,
+  NetAppPlanPreview,
   ProviderAction,
   ProviderProbeResult,
   ProviderStatus,
@@ -1952,18 +1953,51 @@ function ManagementTargetDetails({ provider }: { provider: ProviderStatus }) {
 }
 
 function NetAppOntapDetails({ provider }: { provider: ProviderStatus }) {
-  const readiness = objectValue(provider.discovery?.readiness);
+  const [planPreview, setPlanPreview] = useState<NetAppPlanPreview | null>(null);
+  const [planError, setPlanError] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .netappPlanPreview()
+      .then((payload) => {
+        if (!cancelled) {
+          setPlanPreview(payload);
+          setPlanError("");
+        }
+      })
+      .catch((err: Error) => {
+        if (!cancelled) {
+          setPlanPreview(null);
+          setPlanError(err.message);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [provider.status]);
+
+  const readiness = planPreview?.readiness_buckets ?? objectValue(provider.discovery?.readiness);
   const intent = objectValue(provider.discovery?.intent_preview);
-  const cluster = objectValue(intent.cluster);
-  const svm = objectValue(intent.svm);
+  const cluster = planPreview?.cluster_intent_preview ?? objectValue(intent.cluster);
+  const svm = planPreview?.svm_intent_preview ?? objectValue(intent.svm);
+  const lifIntent = planPreview?.lif_intent_preview ?? { iscsi_lifs: objectValue(intent).iscsi_lifs };
   const nodes = recordArray(cluster.nodes);
-  const lifs = recordArray(intent.iscsi_lifs);
-  const storageIscsiPlan = objectValue(provider.discovery?.storage_iscsi_plan_preview);
-  const apiFlags = objectValue(provider.configuration.api_configured_flags);
-  const targetAddressing = recordArray(provider.configuration.target_addressing);
-  const artifactPlaceholders = stringArray(provider.discovery?.reports_artifacts).length
-    ? stringArray(provider.discovery?.reports_artifacts)
-    : stringArray(provider.configuration.artifact_placeholders);
+  const lifs = recordArray(lifIntent.iscsi_lifs);
+  const storageIscsiPlan = planPreview?.storage_iscsi_plan_preview ?? objectValue(provider.discovery?.storage_iscsi_plan_preview);
+  const plannedTargets = objectValue(planPreview?.planned_targets);
+  const apiFlags = objectValue(plannedTargets.api_access_flags ?? provider.configuration.api_configured_flags);
+  const targetAddressing = recordArray(plannedTargets.target_addressing).length
+    ? recordArray(plannedTargets.target_addressing)
+    : recordArray(provider.configuration.target_addressing);
+  const artifactPlaceholders = planPreview?.artifact_placeholders.length
+    ? planPreview.artifact_placeholders
+    : stringArray(provider.discovery?.reports_artifacts).length
+      ? stringArray(provider.discovery?.reports_artifacts)
+      : stringArray(provider.configuration.artifact_placeholders);
+  const blockers = planPreview?.blockers ?? provider.blockers;
+  const removableWarnings = planPreview?.removable_warnings ?? provider.warnings;
+  const readinessSummary = planPreview?.readiness_summary ?? {};
 
   return (
     <div className="provider-detail-section netapp-setup">
@@ -1974,22 +2008,39 @@ function NetAppOntapDetails({ provider }: { provider: ProviderStatus }) {
           provisioning, ONTAP upgrades, controller reboots, disk wipes, and configuration apply are disabled.
         </p>
       </div>
+      <div className="provider-callout">
+        <strong>Plan-preview endpoint</strong>
+        <p>
+          {planError
+            ? `Plan preview unavailable: ${planError}`
+            : planPreview
+              ? "Loaded from /api/v1/providers/netapp-ontap/plan-preview."
+              : "Loading structured plan preview."}
+        </p>
+      </div>
       <div className="provider-fact-grid compact">
-        <ProviderFact label="NETAPP_CONFIGURED" value={asBoolean(provider.configuration.netapp_configured) ? "true" : "false"} />
+        <ProviderFact label="NETAPP_CONFIGURED" value={asBoolean(planPreview?.netapp_configured ?? provider.configuration.netapp_configured) ? "true" : "false"} />
+        <ProviderFact label="Apply Enabled" value={asBoolean(planPreview?.apply_enabled) ? "Enabled" : "Disabled"} />
         <ProviderFact label="Cluster Management" value={addressFor(targetAddressing, "Cluster management")} />
         <ProviderFact label="Node Management" value={`${addressFor(targetAddressing, "Node A management / e0M")} / ${addressFor(targetAddressing, "Node B management / e0M")}`} />
         <ProviderFact label="SVM Management" value={addressFor(targetAddressing, "SVM management")} />
         <ProviderFact label="API Endpoint" value={presenceLabel(apiFlags.endpoint_configured)} />
         <ProviderFact label="API Username" value={presenceLabel(apiFlags.username_configured)} />
-        <ProviderFact label="API Credential" value={presenceLabel(apiFlags.credential_configured)} />
+        <ProviderFact label="API Access" value={presenceLabel(apiFlags.access_configured ?? apiFlags.credential_configured)} />
         <ProviderFact label="TLS Verify" value={asBoolean(apiFlags.tls_verify) ? "Enabled" : "Disabled"} />
+      </div>
+      <div className="provider-fact-grid compact">
+        <ProviderFact label="Readiness Status" value={labelize(asString(readinessSummary.status) || provider.status)} />
+        <ProviderFact label="Buckets" value={asString(readinessSummary.bucket_count) || "-"} />
+        <ProviderFact label="Not Ready" value={asString(readinessSummary.not_ready_count) || "-"} />
+        <ProviderFact label="Next Safe Action" value={planPreview?.next_safe_action || safeNextAction(provider)} />
       </div>
       <h3>Planned Targets</h3>
       <KeyValueTable rows={targetAddressing} labelKey="label" valueKey="address" empty="No NetApp target addresses are planned." />
       <h3>Readiness Preview</h3>
       <NetAppReadinessGrid readiness={readiness} />
       <h3>Blockers / Removable Warnings</h3>
-      <NetAppIssueSummary blockers={provider.blockers} warnings={provider.warnings} />
+      <NetAppIssueSummary blockers={blockers} warnings={removableWarnings} />
       <h3>Cluster / SVM / LIF Intent</h3>
       <div className="provider-fact-grid compact">
         <ProviderFact label="Cluster Management IP" value={asString(cluster.management_ip) || "-"} />
@@ -2002,6 +2053,16 @@ function NetAppOntapDetails({ provider }: { provider: ProviderStatus }) {
         <strong>{labelize(asString(storageIscsiPlan.status) || "placeholder")}</strong>
         {stringArray(storageIscsiPlan.notes).map((note) => (
           <p key={note}>{note}</p>
+        ))}
+        {!stringArray(storageIscsiPlan.notes).length && (
+          <p>Placeholder only. No volumes, LIFs, LUNs, or igroups are created.</p>
+        )}
+      </div>
+      <h3>Upgrade Readiness Preview</h3>
+      <div className="provider-callout">
+        <strong>{labelize(asString(planPreview?.upgrade_readiness_preview.status) || "preview only")}</strong>
+        {stringArray(planPreview?.upgrade_readiness_preview.details).map((detail) => (
+          <p key={detail}>{detail}</p>
         ))}
       </div>
       <h3>Artifact / Report Placeholders</h3>

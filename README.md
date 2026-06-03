@@ -85,10 +85,12 @@ are not returned in provider status payloads.
 The `netapp-ontap` setup preview is plan-only. It displays the target addressing plan,
 console/bootstrap readiness checklist, disabled ONTAP API readiness,
 placeholder upgrade path, cluster/SVM/iSCSI LIF intent, and artifact/report
-placeholders. Keep `NETAPP_CONFIGURED=false` until a future task explicitly
-adds approved read-only discovery. The portal must not create an ONTAP cluster,
-change IPs, create SVMs or LIFs, create volumes, upgrade ONTAP, reboot
-controllers, or apply NetApp changes.
+placeholders. The structured plan preview is available at
+`GET /api/v1/providers/netapp-ontap/plan-preview`; it is generated from local
+planned values only and makes no ONTAP calls. Keep `NETAPP_CONFIGURED=false`
+until a future task explicitly adds approved read-only discovery. The portal
+must not create an ONTAP cluster, change IPs, create SVMs or LIFs, create
+volumes, upgrade ONTAP, reboot controllers, wipe disks, or apply NetApp changes.
 
 ESXi and Cisco management IPs can be recorded as planned targets without being
 treated as reachable devices. Keep `ESXI_CONFIGURED=false` until ESXi

@@ -366,6 +366,27 @@ class ProviderStatusRead(BaseModel):
     last_probe_time: str | None = None
 
 
+class NetAppPlanPreviewRead(BaseModel):
+    provider_id: str
+    mode: str
+    apply_enabled: bool = False
+    netapp_configured: bool
+    planned_targets: dict[str, Any]
+    readiness_summary: dict[str, Any]
+    readiness_buckets: dict[str, Any]
+    cluster_intent_preview: dict[str, Any]
+    svm_intent_preview: dict[str, Any]
+    lif_intent_preview: dict[str, Any]
+    storage_iscsi_plan_preview: dict[str, Any]
+    upgrade_readiness_preview: dict[str, Any]
+    blockers: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    removable_warnings: list[str] = Field(default_factory=list)
+    disabled_actions: list[ProviderActionRead] = Field(default_factory=list)
+    artifact_placeholders: list[str] = Field(default_factory=list)
+    next_safe_action: str
+
+
 class ProviderProbeResultRead(BaseModel):
     provider_id: str
     status: str

@@ -165,11 +165,13 @@ NetApp setup preview may only:
 - report `NETAPP_CONFIGURED` as a presence flag
 - show console/bootstrap, ONTAP API, and upgrade readiness placeholders
 - show cluster/SVM/LIF intent and artifact/report placeholders
+- serve `GET /api/v1/providers/netapp-ontap/plan-preview` from local planned
+  values only, for future Run Center and artifact/report handoff
 
 While `NETAPP_CONFIGURED=false`, ONTAP API readiness is disabled and no probe is
 available. The adapter does not configure ONTAP, create clusters, change IPs,
 create SVMs, create LIFs, create volumes, upload images, upgrade ONTAP, reboot
-controllers, or apply changes.
+controllers, wipe disks, or apply changes.
 
 ## Optional Provider Smoke
 

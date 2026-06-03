@@ -153,9 +153,12 @@ password values.
 `netapp-ontap` setup remains plan/preview only. The provider page displays the planned
 Controller SP, cluster management, node management, SVM management, and iSCSI
 LIF addresses, plus bootstrap/API/upgrade readiness, cluster/SVM/LIF intent,
-and artifact/report placeholders. Keep `NETAPP_CONFIGURED=false`; ONTAP API
-readiness is disabled and no NetApp Service Processor, console, SSH, ONTAP API,
-storage provisioning, LIF creation, upgrade, reboot, or apply call is made.
+storage/iSCSI intent, and artifact/report placeholders. The structured
+`GET /api/v1/providers/netapp-ontap/plan-preview` endpoint returns the same
+plan-only contract for future Run Center and report generation. Keep
+`NETAPP_CONFIGURED=false`; ONTAP API readiness is disabled and no NetApp Service
+Processor, console, SSH, ONTAP API, storage provisioning, LIF creation, upgrade,
+reboot, wipe, or apply call is made.
 
 ESXi and Cisco management IPs can be planned without being treated as reachable
 targets. Keep `ESXI_CONFIGURED=false` until ESXi management networking is

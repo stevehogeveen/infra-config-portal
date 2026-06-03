@@ -102,6 +102,85 @@ def test_netapp_ontap_status_preview_is_plan_only_and_redacted(client: TestClien
     assert not _contains_sensitive_key(netapp)
 
 
+def test_netapp_ontap_plan_preview_endpoint_is_plan_only_and_redacted(
+    client: TestClient,
+) -> None:
+    response = client.get("/api/v1/providers/netapp-ontap/plan-preview")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["provider_id"] == "netapp-ontap"
+    assert payload["mode"] == "mock"
+    assert payload["apply_enabled"] is False
+    assert payload["netapp_configured"] is False
+    assert payload["planned_targets"]["sp_ips"] == {
+        "controller_a": "10.10.8.13",
+        "controller_b": "10.10.8.14",
+    }
+    assert payload["planned_targets"]["management_ips"] == {
+        "cluster": "10.10.8.45",
+        "node_a": "10.10.8.46",
+        "node_b": "10.10.8.47",
+        "svm": "10.10.8.48",
+    }
+    assert payload["planned_targets"]["iscsi_lif_range"]["addresses"] == [
+        "10.10.8.51",
+        "10.10.8.52",
+        "10.10.8.53",
+        "10.10.8.54",
+    ]
+    assert payload["planned_targets"]["api_access_flags"] == {
+        "endpoint_configured": True,
+        "username_configured": False,
+        "access_configured": False,
+        "tls_verify": True,
+    }
+    readiness = payload["readiness_buckets"]
+    assert readiness["sp_readiness"]["status"] == "planned"
+    assert readiness["ontap_api_readiness"]["status"] == "blocked_until_configured"
+    assert readiness["storage_iscsi_plan_preview"]["status"] == "preview_only"
+    assert readiness["reports_artifacts"]["status"] == "placeholder"
+    assert payload["cluster_intent_preview"]["management_ip"] == "10.10.8.45"
+    assert payload["svm_intent_preview"]["management_ip"] == "10.10.8.48"
+    assert len(payload["lif_intent_preview"]["iscsi_lifs"]) == 4
+    assert payload["storage_iscsi_plan_preview"]["status"] == "placeholder"
+    assert payload["upgrade_readiness_preview"]["status"] == "preview_only"
+    assert {
+        "setup-plan.json",
+        "readiness-report.md",
+        "upgrade-path-preview.md",
+        "storage-iscsi-plan-preview.json",
+        "cluster-svm-lif-intent.json",
+        "post-run-report.md",
+    }.issubset(set(payload["artifact_placeholders"]))
+    disabled_actions = {action["label"]: action for action in payload["disabled_actions"]}
+    assert set(disabled_actions) >= {
+        "Create Cluster",
+        "Change IPs",
+        "Create SVM",
+        "Create LIFs",
+        "Create Volumes",
+        "Upgrade ONTAP",
+        "Reboot Controllers",
+        "Wipe Disks",
+        "Apply Configuration",
+    }
+    for label, action in disabled_actions.items():
+        if label in {
+            "Create Cluster",
+            "Change IPs",
+            "Create SVM",
+            "Create LIFs",
+            "Create Volumes",
+            "Upgrade ONTAP",
+            "Reboot Controllers",
+            "Wipe Disks",
+            "Apply Configuration",
+        }:
+            assert action["enabled"] is False
+    assert not _contains_forbidden_plan_preview_key(payload)
+
+
 def _contains_sensitive_key(value: object) -> bool:
     sensitive_fragments = ("password", "token", "secret")
     if isinstance(value, dict):
@@ -112,6 +191,26 @@ def _contains_sensitive_key(value: object) -> bool:
         )
     if isinstance(value, list):
         return any(_contains_sensitive_key(item) for item in value)
+    return False
+
+
+def _contains_forbidden_plan_preview_key(value: object) -> bool:
+    forbidden_fragments = (
+        "password",
+        "secret",
+        "token",
+        "credential",
+        "authorization",
+        "cookie",
+    )
+    if isinstance(value, dict):
+        return any(
+            any(fragment in str(key).lower() for fragment in forbidden_fragments)
+            or _contains_forbidden_plan_preview_key(child)
+            for key, child in value.items()
+        )
+    if isinstance(value, list):
+        return any(_contains_forbidden_plan_preview_key(item) for item in value)
     return False
 
 

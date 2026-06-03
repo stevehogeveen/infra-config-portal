@@ -15,6 +15,7 @@ from app.providers.cisco_console import CiscoConsoleAdapter
 from app.providers.esxi_readonly import EsxiReadonlyAdapter
 from app.providers.ilo_redfish import IloRedfishAdapter
 from app.providers.mock import MockSourceOfTruthAdapter
+from app.providers.netapp import NetAppOntapAdapter
 from app.providers.registry import (
     ProviderRegistryError,
     provider_registry,
@@ -27,6 +28,7 @@ from app.schemas import (
     CatalogRead,
     IloUpgradeReadinessRead,
     MediaInventoryRead,
+    NetAppPlanPreviewRead,
     ProviderProbeResultRead,
     ProviderStatusRead,
     RequestReadinessRead,
@@ -283,6 +285,14 @@ def probe_provider(provider_id: str) -> ProviderProbeResultRead:
 )
 def read_ilo_upgrade_readiness() -> IloUpgradeReadinessRead:
     return get_ilo_upgrade_readiness()
+
+
+@router.get(
+    "/providers/netapp-ontap/plan-preview",
+    response_model=NetAppPlanPreviewRead,
+)
+def read_netapp_plan_preview() -> NetAppPlanPreviewRead:
+    return NetAppOntapAdapter().plan_preview()
 
 
 def _run_provider_probe(provider_id: str, probe: Callable[[], dict]) -> dict:

@@ -4,6 +4,7 @@ import type {
   Catalog,
   IloUpgradeReadiness,
   MediaInventory,
+  NetAppPlanPreview,
   ProviderProbeResult,
   ProviderStatus,
   RequestReadiness,
@@ -77,6 +78,8 @@ export const api = {
   mediaInventory: () => apiRequest<MediaInventory>("/api/v1/media-inventory"),
   iloUpgradeReadiness: () =>
     apiRequest<IloUpgradeReadiness>("/api/v1/providers/ilo-redfish/upgrade-readiness"),
+  netappPlanPreview: () =>
+    apiRequest<NetAppPlanPreview>("/api/v1/providers/netapp-ontap/plan-preview"),
   providers: () => apiRequest<ProviderStatus[]>("/api/v1/providers/status"),
   probeProvider: (id: string) =>
     apiRequest<ProviderProbeResult>(`/api/v1/providers/${id}/probe`, { method: "POST" })

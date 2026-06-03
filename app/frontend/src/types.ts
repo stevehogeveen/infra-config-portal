@@ -153,6 +153,27 @@ export type ProviderProbeResult = {
   [key: string]: unknown;
 };
 
+export type NetAppPlanPreview = {
+  provider_id: string;
+  mode: string;
+  apply_enabled: boolean;
+  netapp_configured: boolean;
+  planned_targets: Record<string, unknown>;
+  readiness_summary: Record<string, unknown>;
+  readiness_buckets: Record<string, unknown>;
+  cluster_intent_preview: Record<string, unknown>;
+  svm_intent_preview: Record<string, unknown>;
+  lif_intent_preview: Record<string, unknown>;
+  storage_iscsi_plan_preview: Record<string, unknown>;
+  upgrade_readiness_preview: Record<string, unknown>;
+  blockers: string[];
+  warnings: string[];
+  removable_warnings: string[];
+  disabled_actions: ProviderAction[];
+  artifact_placeholders: string[];
+  next_safe_action: string;
+};
+
 export type MediaInventoryItem = {
   placeholder_name: string;
   extension: string;

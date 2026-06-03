@@ -46,6 +46,57 @@ class NetAppOntapAdapter:
             disabled_actions=_disabled_actions(),
         )
 
+    def plan_preview(self) -> dict:
+        status = self.health()
+        configuration = self._configuration()
+        discovery = self._discovery()
+        readiness_buckets = discovery["readiness"]
+        intent_preview = discovery["intent_preview"]
+        planned_targets = {
+            "sp_ips": configuration["planned_sp_ips"],
+            "management_ips": configuration["planned_management_ips"],
+            "iscsi_lif_range": configuration["planned_iscsi_lif_range"],
+            "target_addressing": configuration["target_addressing"],
+            "api_access_flags": {
+                "endpoint_configured": configuration["api_configured_flags"]["endpoint_configured"],
+                "username_configured": configuration["api_configured_flags"]["username_configured"],
+                "access_configured": configuration["api_configured_flags"]["credential_configured"],
+                "tls_verify": configuration["api_configured_flags"]["tls_verify"],
+            },
+        }
+        not_ready_count = sum(
+            1 for bucket in readiness_buckets.values() if bucket.get("ready") is False
+        )
+        return {
+            "provider_id": PROVIDER_ID,
+            "mode": self.provider_mode,
+            "apply_enabled": False,
+            "netapp_configured": settings.netapp_configured,
+            "planned_targets": planned_targets,
+            "readiness_summary": {
+                "status": status.status,
+                "ready": False,
+                "bucket_count": len(readiness_buckets),
+                "not_ready_count": not_ready_count,
+                "message": "Plan preview only. No ONTAP discovery, configuration, upgrade, reboot, wipe, or apply call is made.",
+            },
+            "readiness_buckets": readiness_buckets,
+            "cluster_intent_preview": intent_preview["cluster"],
+            "svm_intent_preview": intent_preview["svm"],
+            "lif_intent_preview": {"iscsi_lifs": intent_preview["iscsi_lifs"]},
+            "storage_iscsi_plan_preview": discovery["storage_iscsi_plan_preview"],
+            "upgrade_readiness_preview": readiness_buckets["upgrade_readiness_path"],
+            "blockers": status.blockers,
+            "warnings": [
+                "No ONTAP API, Service Processor, console, SSH, storage, or upgrade endpoint is contacted.",
+                "Preview output is not a validated execution plan.",
+            ],
+            "removable_warnings": status.warnings,
+            "disabled_actions": status.disabled_actions,
+            "artifact_placeholders": configuration["artifact_placeholders"],
+            "next_safe_action": configuration["safe_next_action"],
+        }
+
     def _configuration(self) -> dict:
         iscsi_lifs = list(settings.netapp_iscsi_lifs)
         return {
