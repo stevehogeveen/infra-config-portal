@@ -25,6 +25,7 @@ from app.providers.lab_safety import LabSafetyState
 from app.providers.probe_cache import clear_probe_results
 from app.providers.redaction import redact_sensitive
 from app.providers.registry import provider_registry
+from app.services.cisco_setup_readiness import get_cisco_setup_readiness
 
 
 def test_cisco_candidate_discovery_with_one_stable_candidate(tmp_path: Path) -> None:
@@ -209,6 +210,37 @@ def test_cisco_ansible_run_command_can_redact_output() -> None:
     assert result["stdout_bytes"] > 0
     assert "stdout_tail" not in result
     assert "device output" not in encoded
+
+
+def test_cisco_setup_readiness_is_plan_only_until_management_bootstrap() -> None:
+    readiness = get_cisco_setup_readiness(
+        provider_mode="mock",
+        planned_management_ip="10.10.8.112",
+        management_configured=False,
+    )
+    encoded = json.dumps(readiness)
+
+    assert readiness["provider_id"] == "cisco-setup"
+    assert readiness["phase"] == "console-bootstrap-required"
+    assert readiness["planned_management_ip"] == "10.10.8.112"
+    assert readiness["management_configured"] is False
+    assert readiness["bootstrap_preview"]["apply_enabled"] is False
+    assert readiness["bootstrap_preview"]["commands_redacted"] is True
+    assert readiness["ssh_scp_readiness"]["planned_only"] is True
+    assert readiness["ssh_scp_readiness"]["apply_enabled"] is False
+    assert readiness["ansible"]["enabled"] is False
+    assert readiness["ansible"]["status"] == "awaiting-bootstrap"
+    assert "CISCO_MGMT_CONFIGURED is false" in readiness["ansible"]["reason"]
+    assert readiness["backup_report"]["backup_enabled"] is False
+    assert readiness["next_safe_action"] == (
+        "Select a console candidate and run prompt readiness check."
+    )
+    assert "conf t" in readiness["disabled_actions"]
+    assert "write memory" in readiness["disabled_actions"]
+    assert "reload" in readiness["disabled_actions"]
+    assert "running-config backup" in readiness["disabled_actions"]
+    assert "Configure Terminal" not in encoded
+    assert "/probe" not in encoded
 
 
 def test_esxi_configured_false_returns_planned_status_and_skips_probe(monkeypatch) -> None:

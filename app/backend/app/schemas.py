@@ -366,6 +366,22 @@ class ProviderStatusRead(BaseModel):
     last_probe_time: str | None = None
 
 
+class CiscoSetupReadinessRead(BaseModel):
+    provider_id: str
+    phase: str
+    planned_management_ip: str | None = None
+    management_configured: bool
+    console: dict[str, Any]
+    bootstrap_preview: dict[str, Any]
+    ssh_scp_readiness: dict[str, Any]
+    ansible: dict[str, Any]
+    backup_report: dict[str, Any]
+    blockers: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    disabled_actions: list[str] = Field(default_factory=list)
+    next_safe_action: str
+
+
 class ProviderProbeResultRead(BaseModel):
     provider_id: str
     status: str

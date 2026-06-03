@@ -25,6 +25,7 @@ from app.schemas import (
     ArtifactRead,
     AuditEventRead,
     CatalogRead,
+    CiscoSetupReadinessRead,
     IloUpgradeReadinessRead,
     MediaInventoryRead,
     ProviderProbeResultRead,
@@ -58,6 +59,7 @@ from app.services.lifecycle import (
     submit_request,
     update_vm_deployment_request,
 )
+from app.services.cisco_setup_readiness import get_cisco_setup_readiness
 from app.services.media_inventory import get_media_inventory
 from app.services.readiness import get_request_readiness
 from app.services.upgrade_decision import get_ilo_upgrade_readiness
@@ -262,6 +264,14 @@ def read_provider_status() -> list[ProviderStatusRead]:
         return provider_registry().statuses()
     except ProviderRegistryError as exc:
         return [provider_registry_error_status(settings.provider_mode, str(exc))]
+
+
+@router.get(
+    "/providers/cisco/setup-readiness",
+    response_model=CiscoSetupReadinessRead,
+)
+def read_cisco_setup_readiness() -> CiscoSetupReadinessRead:
+    return get_cisco_setup_readiness()
 
 
 @router.post("/providers/{provider_id}/probe", response_model=ProviderProbeResultRead)

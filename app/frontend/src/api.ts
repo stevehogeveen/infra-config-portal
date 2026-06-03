@@ -2,6 +2,7 @@ import type {
   ArtifactRecord,
   AuditEvent,
   Catalog,
+  CiscoSetupReadiness,
   IloUpgradeReadiness,
   MediaInventory,
   ProviderProbeResult,
@@ -77,6 +78,8 @@ export const api = {
   mediaInventory: () => apiRequest<MediaInventory>("/api/v1/media-inventory"),
   iloUpgradeReadiness: () =>
     apiRequest<IloUpgradeReadiness>("/api/v1/providers/ilo-redfish/upgrade-readiness"),
+  ciscoSetupReadiness: () =>
+    apiRequest<CiscoSetupReadiness>("/api/v1/providers/cisco/setup-readiness"),
   providers: () => apiRequest<ProviderStatus[]>("/api/v1/providers/status"),
   probeProvider: (id: string) =>
     apiRequest<ProviderProbeResult>(`/api/v1/providers/${id}/probe`, { method: "POST" })

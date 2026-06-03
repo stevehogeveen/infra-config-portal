@@ -89,6 +89,15 @@ console bootstrap has configured Cisco management IP/SSH. Provider status and
 provider-smoke skip those network probes while the flags are false; Cisco
 console discovery still runs.
 
+The Cisco Setup Readiness panel and
+`GET /api/v1/providers/cisco/setup-readiness` compose Cisco console discovery
+and Cisco Ansible status into a bootstrap preview. It shows the planned
+management IP, console candidate counts, prompt-readiness next action,
+SSH/SCP and Ansible readiness as plan-only, backup/report placeholders, and
+disabled dangerous actions. It does not expose an apply button, open config
+mode, enable SSH/SCP, back up running-config, save config, reload, erase, copy,
+or change VLANs, interfaces, users, or passwords.
+
 Optional local real-lab values live in `.env.local.real-lab`, which is ignored
 by Git and must not be committed. Create it with:
 

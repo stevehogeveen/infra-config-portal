@@ -28,6 +28,7 @@ import type {
   ArtifactRecord,
   AuditEvent,
   Catalog,
+  CiscoSetupReadiness,
   ConsoleCandidate,
   IloUpgradeReadiness,
   MediaInventory,
@@ -1494,6 +1495,7 @@ function MediaInventoryPage() {
 
 function ProviderStatusPage() {
   const [providers, setProviders] = useState<ProviderStatus[]>([]);
+  const [ciscoSetupReadiness, setCiscoSetupReadiness] = useState<CiscoSetupReadiness | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [busyProvider, setBusyProvider] = useState("");
@@ -1503,7 +1505,12 @@ function ProviderStatusPage() {
     setError("");
     setLoading(true);
     try {
-      setProviders(await api.providers());
+      const [providerStatuses, ciscoReadiness] = await Promise.all([
+        api.providers(),
+        api.ciscoSetupReadiness()
+      ]);
+      setProviders(providerStatuses);
+      setCiscoSetupReadiness(ciscoReadiness);
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -1544,6 +1551,7 @@ function ProviderStatusPage() {
       }
     >
       <Feedback loading={loading && !providers.length} error={error} />
+      {ciscoSetupReadiness && <CiscoSetupReadinessPanel readiness={ciscoSetupReadiness} />}
       <section className="provider-status-stack">
         {orderedProviders.map((provider) => (
           <ProviderDetailCard
@@ -1556,6 +1564,96 @@ function ProviderStatusPage() {
         ))}
       </section>
     </Page>
+  );
+}
+
+function CiscoSetupReadinessPanel({ readiness }: { readiness: CiscoSetupReadiness }) {
+  return (
+    <section className="provider-card provider-card-wide cisco-setup-readiness">
+      <div className="provider-head">
+        <Route size={18} />
+        <div>
+          <h2>Cisco Setup Readiness</h2>
+          <p>Bootstrap preview and SSH/Ansible readiness plan</p>
+        </div>
+        <StatusBadge status={readiness.phase} />
+      </div>
+      <div className="provider-callout">
+        <strong>{labelize(readiness.phase)}</strong>
+        <p>{readiness.next_safe_action}</p>
+      </div>
+      <div className="provider-fact-grid">
+        <ProviderFact label="Planned Management IP" value={readiness.planned_management_ip ?? "-"} />
+        <ProviderFact
+          label="Management Configured"
+          value={readiness.management_configured ? "Enabled" : "Disabled"}
+        />
+        <ProviderFact label="Console State" value={labelize(readiness.console.status)} />
+        <ProviderFact label="Ansible Path" value={readiness.ansible.enabled ? "Enabled" : "Blocked"} />
+      </div>
+      <div className="provider-fact-grid compact">
+        <ProviderFact label="Recommended Console" value={readiness.console.recommended_path ?? "-"} />
+        <ProviderFact label="Effective Console" value={readiness.console.effective_path ?? "-"} />
+        <ProviderFact
+          label="Console Candidates"
+          value={`${readiness.console.candidate_count} total, ${readiness.console.stable_candidate_count} stable, ${readiness.console.fallback_candidate_count} fallback`}
+        />
+        <ProviderFact label="Prompt Readiness" value={readiness.console.safe_next_action} />
+      </div>
+      <div className="setup-preview-grid">
+        <SetupPreviewBlock
+          title="Bootstrap Preview"
+          tag="Plan only"
+          lines={readiness.bootstrap_preview.summary}
+        />
+        <SetupPreviewBlock
+          title="SSH/SCP Readiness"
+          tag="Disabled"
+          lines={[readiness.ssh_scp_readiness.summary]}
+        />
+        <SetupPreviewBlock title="Ansible Path" tag="Blocked" lines={[readiness.ansible.reason]} />
+        <SetupPreviewBlock
+          title="Backup / Report"
+          tag="Placeholder"
+          lines={[readiness.backup_report.summary]}
+        />
+      </div>
+      <ProviderIssueRows blockers={readiness.blockers} warnings={readiness.warnings} />
+      <div className="provider-action-layout">
+        <div>
+          <h3>Disabled Dangerous Actions</h3>
+          <div className="disabled-action-list">
+            {readiness.disabled_actions.map((action) => (
+              <span className="action-tag disabled" key={action}>
+                {action}
+              </span>
+            ))}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function SetupPreviewBlock({
+  lines,
+  tag,
+  title
+}: {
+  lines: string[];
+  tag: string;
+  title: string;
+}) {
+  return (
+    <div className="setup-preview-block">
+      <div>
+        <h3>{title}</h3>
+        <span className="action-tag disabled">{tag}</span>
+      </div>
+      {lines.map((line) => (
+        <p key={line}>{line}</p>
+      ))}
+    </div>
   );
 }
 

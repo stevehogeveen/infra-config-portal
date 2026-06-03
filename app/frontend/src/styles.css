@@ -1077,6 +1077,43 @@ pre {
   margin: 8px 0 0;
 }
 
+.cisco-setup-readiness {
+  border-color: #cfd7e3;
+}
+
+.setup-preview-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-top: 16px;
+}
+
+.setup-preview-block {
+  border-top: 1px solid #e5e9ef;
+  padding-top: 10px;
+}
+
+.setup-preview-block h3 {
+  color: #445164;
+  font-size: 12px;
+  letter-spacing: 0;
+  margin: 0;
+  text-transform: uppercase;
+}
+
+.setup-preview-block p {
+  color: #5d6877;
+  font-size: 13px;
+  line-height: 1.4;
+  margin: 8px 0 0;
+}
+
+.disabled-action-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .upgrade-readiness {
   margin-top: 16px;
 }
@@ -1159,7 +1196,8 @@ pre {
   .lifecycle-action-grid,
   .artifact-grid,
   .provider-fact-grid,
-  .provider-action-layout {
+  .provider-action-layout,
+  .setup-preview-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
@@ -1191,7 +1229,8 @@ pre {
     .artifact-grid,
     .provider-fact-grid,
     .provider-fact-grid.compact,
-    .provider-action-layout {
+    .provider-action-layout,
+    .setup-preview-grid {
     grid-template-columns: 1fr;
   }
 

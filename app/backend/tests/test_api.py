@@ -345,3 +345,26 @@ def test_provider_status_reports_mock_and_preview_providers(client: TestClient) 
     assert any(item["name"] == "Mock vSphere" and item["mode"] == "mock" for item in statuses)
     assert all(item["mode"] == "mock" for item in statuses)
     assert all("safe_actions" in item and "disabled_actions" in item for item in statuses)
+
+
+def test_cisco_setup_readiness_endpoint_is_read_only_preview(client: TestClient) -> None:
+    response = client.get("/api/v1/providers/cisco/setup-readiness")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["provider_id"] == "cisco-setup"
+    assert payload["phase"] in {"console-bootstrap-required", "ssh-management-ready"}
+    assert payload["bootstrap_preview"]["apply_enabled"] is False
+    assert payload["bootstrap_preview"]["commands_redacted"] is True
+    assert payload["ssh_scp_readiness"]["planned_only"] is True
+    assert payload["ssh_scp_readiness"]["apply_enabled"] is False
+    assert payload["ansible"]["enabled"] is False
+    assert payload["backup_report"]["backup_enabled"] is False
+    assert payload["next_safe_action"] == (
+        "Select a console candidate and run prompt readiness check."
+    )
+    assert "real config apply" in payload["disabled_actions"]
+
+    encoded = response.text
+    assert "/probe" not in encoded
+    assert "Configure Terminal" not in encoded

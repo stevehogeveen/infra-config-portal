@@ -153,6 +153,46 @@ export type ProviderProbeResult = {
   [key: string]: unknown;
 };
 
+export type CiscoSetupReadiness = {
+  provider_id: string;
+  phase: string;
+  planned_management_ip: string | null;
+  management_configured: boolean;
+  console: {
+    status: string;
+    effective_path: string | null;
+    recommended_path: string | null;
+    candidate_count: number;
+    stable_candidate_count: number;
+    fallback_candidate_count: number;
+    safe_next_action: string;
+  };
+  bootstrap_preview: {
+    apply_enabled: boolean;
+    commands_redacted: boolean;
+    summary: string[];
+  };
+  ssh_scp_readiness: {
+    planned_only: boolean;
+    apply_enabled: boolean;
+    summary: string;
+  };
+  ansible: {
+    status: string;
+    enabled: boolean;
+    reason: string;
+  };
+  backup_report: {
+    backup_enabled: boolean;
+    report_placeholder_enabled: boolean;
+    summary: string;
+  };
+  blockers: string[];
+  warnings: string[];
+  disabled_actions: string[];
+  next_safe_action: string;
+};
+
 export type MediaInventoryItem = {
   placeholder_name: string;
   extension: string;
