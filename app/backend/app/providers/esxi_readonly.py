@@ -30,6 +30,7 @@ class EsxiReadonlyConfig:
     verify_tls: bool
     timeout_seconds: float
     ssh_timeout_seconds: float
+    management_configured: bool = False
 
     @classmethod
     def from_settings(cls) -> "EsxiReadonlyConfig":
@@ -37,6 +38,7 @@ class EsxiReadonlyConfig:
             host=settings.esxi_test_host,
             username=settings.esxi_test_username,
             password=settings.esxi_test_password,
+            management_configured=settings.esxi_configured,
             verify_tls=settings.esxi_test_verify_tls,
             timeout_seconds=settings.esxi_test_timeout_seconds,
             ssh_timeout_seconds=settings.esxi_test_ssh_timeout_seconds,
@@ -60,27 +62,45 @@ class EsxiReadonlyAdapter:
         last_result, last_time = get_probe_result(PROVIDER_ID)
         missing_fields = self.config.missing_fields
         safety = current_lab_safety()
-        blockers = [
-            f"Missing local ESXi configuration: {', '.join(missing_fields)}."
-        ] if missing_fields else []
-        if self.provider_mode == "local-readonly":
+        planned_target = bool(self.config.host)
+        blockers: list[str] = []
+        if self.config.management_configured and missing_fields:
+            blockers.append(f"Missing local ESXi configuration: {', '.join(missing_fields)}.")
+        if self.config.management_configured and self.provider_mode == "local-readonly":
             blockers.extend(safety.blockers)
 
         warnings: list[str] = []
         if self.provider_mode != "local-readonly":
             warnings.append("Provider mode is not local-readonly; ESXi probes are disabled.")
+        if not self.config.management_configured:
+            warnings.append(
+                "ESXI_CONFIGURED is false; ESXi management network probes are skipped."
+            )
 
-        status = "missing-config" if missing_fields else "ready"
-        if not missing_fields and self.provider_mode != "local-readonly":
+        status = "planned-target" if planned_target else "not-configured"
+        if self.config.management_configured:
+            status = "missing-config" if missing_fields else "ready"
+        if (
+            self.config.management_configured
+            and not missing_fields
+            and self.provider_mode != "local-readonly"
+        ):
             status = "configured"
-        if not missing_fields and self.provider_mode == "local-readonly" and not safety.readonly_allowed:
+        if (
+            self.config.management_configured
+            and not missing_fields
+            and self.provider_mode == "local-readonly"
+            and not safety.readonly_allowed
+        ):
             status = "blocked"
 
         probe_enabled = (
             self.provider_mode == "local-readonly"
+            and self.config.management_configured
             and not missing_fields
             and safety.readonly_allowed
         )
+        disabled_reason = "Install/configure ESXi management network before read-only probe."
 
         return ProviderStatus(
             id=PROVIDER_ID,
@@ -95,10 +115,13 @@ class EsxiReadonlyAdapter:
                 "ssh-reachability-check",
             ],
             message=(
-                "Local ESXi configuration is checked without contacting the host; "
-                "the probe action performs HTTPS GET and TCP reachability checks only."
+                "Local ESXi target state is checked without contacting the host; "
+                "the probe action is available only after ESXI_CONFIGURED=true and performs "
+                "HTTPS GET and TCP reachability checks only."
             ),
             configuration={
+                "management_configured": self.config.management_configured,
+                "planned_target": planned_target,
                 "host_configured": bool(self.config.host),
                 "username_configured": bool(self.config.username),
                 "password_configured": bool(self.config.password),
@@ -106,6 +129,11 @@ class EsxiReadonlyAdapter:
                 "timeout_seconds": self.config.timeout_seconds,
                 "ssh_timeout_seconds": self.config.ssh_timeout_seconds,
                 "missing_fields": missing_fields,
+                "safe_next_action": (
+                    "Run HTTPS GET and TCP reachability checks."
+                    if probe_enabled
+                    else disabled_reason
+                ),
                 **_tool_availability(),
                 **safety.as_flags(),
             },
@@ -120,6 +148,8 @@ class EsxiReadonlyAdapter:
                     reason=(
                         "Run HTTPS GET and TCP reachability checks."
                         if probe_enabled
+                        else disabled_reason
+                        if not self.config.management_configured
                         else (
                             "Requires ESXI_TEST_HOST, LAB_CLOSED_LOOP_ACK=YES, "
                             "LAB_READONLY_ACK=YES, and PROVIDER_MODE=local-readonly."
@@ -138,6 +168,13 @@ class EsxiReadonlyAdapter:
         if self.provider_mode != "local-readonly":
             return self._record_blocked(
                 "Set PROVIDER_MODE=local-readonly before running ESXi probes."
+            )
+
+        if not self.config.management_configured:
+            return self._record_skipped(
+                "ESXI_CONFIGURED is false; install/configure ESXi management network before "
+                "read-only probe.",
+                planned_target=bool(self.config.host),
             )
 
         safety = current_lab_safety()
@@ -264,6 +301,23 @@ class EsxiReadonlyAdapter:
                 "message": message,
                 "warnings": [],
                 "blockers": [message],
+                **extra,
+            }
+        )
+
+    def _record_skipped(self, message: str, **extra: Any) -> dict[str, Any]:
+        return self._record_result(
+            {
+                "provider_id": PROVIDER_ID,
+                "status": "skipped",
+                "message": message,
+                "warnings": [message],
+                "blockers": [],
+                "not_attempted": [
+                    "HTTPS reachability check",
+                    "SSH reachability check",
+                    "ESXi API GET requests",
+                ],
                 **extra,
             }
         )

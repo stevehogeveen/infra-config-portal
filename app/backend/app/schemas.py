@@ -267,6 +267,9 @@ class MediaInventoryItemRead(BaseModel):
     category: str
     source: str
     actual_name_redacted: bool
+    product_hints: list[str] = Field(default_factory=list)
+    generation_hints: list[str] = Field(default_factory=list)
+    version_hint: str | None = None
 
 
 class MediaInventoryRead(BaseModel):
@@ -274,6 +277,65 @@ class MediaInventoryRead(BaseModel):
     configured_directories: list[str]
     items: list[MediaInventoryItemRead]
     warnings: list[str]
+
+
+class UpgradeSubjectRead(BaseModel):
+    provider_type: str
+    product: str | None = None
+    generation: str | None = None
+    model: str | None = None
+    serial: str | None = None
+    current_version: str | None = None
+    discovery_confidence: str
+
+
+class UpgradeCandidateRead(BaseModel):
+    id: str
+    category: str
+    product_hint: str | None = None
+    generation_hint: str | None = None
+    version: str | None = None
+    source: str
+    redacted_label: str
+    match_confidence: str
+    warnings: list[str] = Field(default_factory=list)
+
+
+class UpgradeRuleRead(BaseModel):
+    product: str | None = None
+    generation: str | None = None
+    from_constraint: str | None = None
+    to_constraint: str | None = None
+    requires_intermediate: list[str] = Field(default_factory=list)
+    blocked_reason: str | None = None
+    warning: str | None = None
+    source: str
+    confidence: str
+
+
+class UpgradeDecisionRead(BaseModel):
+    status: str
+    current_version: str | None = None
+    recommended_target: str | None = None
+    required_intermediate_versions: list[str] = Field(default_factory=list)
+    candidate_chain: list[UpgradeCandidateRead] = Field(default_factory=list)
+    blockers: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    removable_warnings: list[str] = Field(default_factory=list)
+    next_safe_action: str
+    apply_enabled: bool = False
+
+
+class IloUpgradeReadinessRead(BaseModel):
+    provider_id: str
+    subject: UpgradeSubjectRead
+    candidates: list[UpgradeCandidateRead]
+    decision: UpgradeDecisionRead
+    blockers: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    removable_warnings: list[str] = Field(default_factory=list)
+    upgrade_chain: list[UpgradeCandidateRead] = Field(default_factory=list)
+    apply_enabled: bool = False
 
 
 class ProviderActionRead(BaseModel):

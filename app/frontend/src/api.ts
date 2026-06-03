@@ -2,6 +2,7 @@ import type {
   ArtifactRecord,
   AuditEvent,
   Catalog,
+  IloUpgradeReadiness,
   MediaInventory,
   ProviderProbeResult,
   ProviderStatus,
@@ -74,6 +75,8 @@ export const api = {
     apiRequest<ArtifactRecord[]>(`/api/v1/workflow-runs/${id}/artifacts`),
   auditEvents: () => apiRequest<AuditEvent[]>("/api/v1/audit-events"),
   mediaInventory: () => apiRequest<MediaInventory>("/api/v1/media-inventory"),
+  iloUpgradeReadiness: () =>
+    apiRequest<IloUpgradeReadiness>("/api/v1/providers/ilo-redfish/upgrade-readiness"),
   providers: () => apiRequest<ProviderStatus[]>("/api/v1/providers/status"),
   probeProvider: (id: string) =>
     apiRequest<ProviderProbeResult>(`/api/v1/providers/${id}/probe`, { method: "POST" })

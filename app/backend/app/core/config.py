@@ -95,6 +95,7 @@ class Settings:
     esxi_test_host: str | None = _optional_env("ESXI_TEST_HOST")
     esxi_test_username: str | None = _optional_env("ESXI_TEST_USERNAME")
     esxi_test_password: str | None = _optional_env("ESXI_TEST_PASSWORD")
+    esxi_configured: bool = _bool_env("ESXI_CONFIGURED", False)
     esxi_test_verify_tls: bool = _bool_env("ESXI_TEST_VERIFY_TLS", True)
     esxi_test_timeout_seconds: float = _float_env("ESXI_TEST_TIMEOUT_SECONDS", 3.0)
     esxi_test_ssh_timeout_seconds: float = _float_env("ESXI_TEST_SSH_TIMEOUT_SECONDS", 3.0)
@@ -114,6 +115,7 @@ class Settings:
     cisco_enable_password: str | None = _optional_env("CISCO_ENABLE_PASSWORD") or _optional_env(
         "ANSIBLE_CISCO_ENABLE_PASSWORD"
     )
+    cisco_mgmt_configured: bool = _bool_env("CISCO_MGMT_CONFIGURED", False)
     ansible_cisco_network_os: str = os.getenv("ANSIBLE_CISCO_NETWORK_OS", "cisco.ios.ios")
     ansible_cisco_connection: str = os.getenv(
         "ANSIBLE_CISCO_CONNECTION",

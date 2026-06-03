@@ -286,6 +286,8 @@ th {
 .status-validating,
 .status-approved,
 .status-planned,
+.status-planned-target,
+.status-awaiting-bootstrap,
 .status-configured {
   background: #fff7df;
   color: #8a5d00;
@@ -326,11 +328,27 @@ th {
 
 .status-failed,
 .status-blocked,
+.status-blocked_unknown_path,
+.status-blocked_incompatible,
 .status-cancelled,
 .status-rejected,
 .status-unavailable {
   background: #fdecec;
   color: #b42318;
+}
+
+.status-discovery_incomplete,
+.status-manual_review_required,
+.status-no_candidate_found {
+  background: #fff7df;
+  color: #8a5d00;
+}
+
+.status-current,
+.status-upgrade_available,
+.status-upgrade_recommended {
+  background: #e6f6ee;
+  color: #166534;
 }
 
 .status-not_applicable {
@@ -984,14 +1002,22 @@ pre {
 }
 
 .candidate-tag.selected,
+.candidate-tag.exact,
 .action-tag.read-only {
   background: #e6f6ee;
   color: #166534;
 }
 
-.candidate-tag.recommended {
+.candidate-tag.recommended,
+.candidate-tag.likely {
   background: #eef6ff;
   color: #075985;
+}
+
+.candidate-tag.weak,
+.candidate-tag.unknown {
+  background: #fff7df;
+  color: #8a5d00;
 }
 
 .action-tag.disabled {
@@ -1049,6 +1075,29 @@ pre {
   font-size: 12px;
   line-height: 1.35;
   margin: 8px 0 0;
+}
+
+.upgrade-readiness {
+  margin-top: 16px;
+}
+
+.upgrade-readiness-callout {
+  margin-top: 0;
+}
+
+.upgrade-readiness-head {
+  align-items: flex-start;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.upgrade-candidate-table td:first-child span {
+  max-width: 520px;
+}
+
+.upgrade-action-layout {
+  grid-template-columns: minmax(220px, 320px);
 }
 
 .provider-raw-result {

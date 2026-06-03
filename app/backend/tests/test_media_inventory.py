@@ -51,3 +51,17 @@ def test_media_inventory_missing_directory_warning_is_redacted(tmp_path) -> None
     assert inventory.items == []
     assert inventory.warnings == ["configured-directory-1 does not exist."]
     assert "customer-media-private" not in repr(inventory)
+
+
+def test_media_inventory_exposes_redacted_firmware_hints_only(tmp_path) -> None:
+    (tmp_path / "customer-private-ilo5_319.fwpkg").write_bytes(b"firmware")
+
+    inventory = get_media_inventory((str(tmp_path),))
+
+    assert len(inventory.items) == 1
+    item = inventory.items[0]
+    assert item.placeholder_name == "firmware-1.fwpkg"
+    assert item.product_hints == ["hpe-ilo"]
+    assert item.generation_hints == ["ilo5"]
+    assert item.version_hint == "3.19"
+    assert "customer-private" not in repr(inventory)

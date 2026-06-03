@@ -160,6 +160,9 @@ export type MediaInventoryItem = {
   category: string;
   source: string;
   actual_name_redacted: boolean;
+  product_hints: string[];
+  generation_hints: string[];
+  version_hint: string | null;
 };
 
 export type MediaInventory = {
@@ -167,6 +170,53 @@ export type MediaInventory = {
   configured_directories: string[];
   items: MediaInventoryItem[];
   warnings: string[];
+};
+
+export type UpgradeSubject = {
+  provider_type: string;
+  product: string | null;
+  generation: string | null;
+  model: string | null;
+  serial: string | null;
+  current_version: string | null;
+  discovery_confidence: string;
+};
+
+export type UpgradeCandidate = {
+  id: string;
+  category: string;
+  product_hint: string | null;
+  generation_hint: string | null;
+  version: string | null;
+  source: string;
+  redacted_label: string;
+  match_confidence: string;
+  warnings: string[];
+};
+
+export type UpgradeDecision = {
+  status: string;
+  current_version: string | null;
+  recommended_target: string | null;
+  required_intermediate_versions: string[];
+  candidate_chain: UpgradeCandidate[];
+  blockers: string[];
+  warnings: string[];
+  removable_warnings: string[];
+  next_safe_action: string;
+  apply_enabled: boolean;
+};
+
+export type IloUpgradeReadiness = {
+  provider_id: string;
+  subject: UpgradeSubject;
+  candidates: UpgradeCandidate[];
+  decision: UpgradeDecision;
+  blockers: string[];
+  warnings: string[];
+  removable_warnings: string[];
+  upgrade_chain: UpgradeCandidate[];
+  apply_enabled: boolean;
 };
 
 export type Catalog = {

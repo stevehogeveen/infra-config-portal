@@ -25,6 +25,7 @@ from app.schemas import (
     ArtifactRead,
     AuditEventRead,
     CatalogRead,
+    IloUpgradeReadinessRead,
     MediaInventoryRead,
     ProviderProbeResultRead,
     ProviderStatusRead,
@@ -59,6 +60,7 @@ from app.services.lifecycle import (
 )
 from app.services.media_inventory import get_media_inventory
 from app.services.readiness import get_request_readiness
+from app.services.upgrade_decision import get_ilo_upgrade_readiness
 
 router = APIRouter(prefix="/api/v1")
 
@@ -273,6 +275,14 @@ def probe_provider(provider_id: str) -> ProviderProbeResultRead:
     if provider_id == "esxi-readonly":
         return _run_provider_probe(provider_id, EsxiReadonlyAdapter().probe)
     raise HTTPException(status_code=404, detail="Provider probe not found")
+
+
+@router.get(
+    "/providers/ilo-redfish/upgrade-readiness",
+    response_model=IloUpgradeReadinessRead,
+)
+def read_ilo_upgrade_readiness() -> IloUpgradeReadinessRead:
+    return get_ilo_upgrade_readiness()
 
 
 def _run_provider_probe(provider_id: str, probe: Callable[[], dict]) -> dict:

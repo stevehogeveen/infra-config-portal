@@ -27,12 +27,34 @@ read -rp "Allow destructive/rebuild lab actions? Type REBUILD_LAB or press Enter
 
 read -rp "iLO host or lab IP: " ilo_host
 
-read -rp "ESXi host or lab IP: " esxi_host
+read -rp "Planned ESXi host or lab IP (optional): " esxi_host
+read -rp "Is ESXi management configured for read-only probes? Type YES or press Enter: " esxi_ready
 
-read -rp "Cisco target management host or lab IP after bootstrap: " cisco_ip
+read -rp "Planned Cisco management host or lab IP after bootstrap (optional): " cisco_ip
+read -rp "Is Cisco management IP/SSH configured? Type YES or press Enter: " cisco_ready
 
-if [[ -z "${ilo_host}" || -z "${esxi_host}" || -z "${cisco_ip}" ]]; then
-  echo "Aborted. iLO, ESXi, and Cisco lab targets are required for real-lab settings."
+if [[ -z "${ilo_host}" ]]; then
+  echo "Aborted. iLO is the only required configured real-lab network target."
+  exit 1
+fi
+
+esxi_configured=false
+if [[ "${esxi_ready}" == "YES" ]]; then
+  esxi_configured=true
+fi
+
+cisco_mgmt_configured=false
+if [[ "${cisco_ready}" == "YES" ]]; then
+  cisco_mgmt_configured=true
+fi
+
+if [[ "${esxi_configured}" == "true" && -z "${esxi_host}" ]]; then
+  echo "Aborted. ESXi configured probes require an ESXi host or lab IP."
+  exit 1
+fi
+
+if [[ "${cisco_mgmt_configured}" == "true" && -z "${cisco_ip}" ]]; then
+  echo "Aborted. Cisco management probes require a management host or lab IP."
   exit 1
 fi
 
@@ -61,11 +83,13 @@ ILO_TEST_USERNAME=${lab_user}
 ILO_TEST_PASSWORD=${lab_password}
 ILO_TEST_VERIFY_TLS=false
 
+ESXI_CONFIGURED=${esxi_configured}
 ESXI_TEST_HOST=${esxi_host}
 ESXI_TEST_USERNAME=${lab_user}
 ESXI_TEST_PASSWORD=${lab_password}
 ESXI_TEST_VERIFY_TLS=false
 
+CISCO_MGMT_CONFIGURED=${cisco_mgmt_configured}
 CISCO_TARGET_IP=${cisco_ip}
 CISCO_TEST_USERNAME=${lab_user}
 CISCO_TEST_PASSWORD=${lab_password}
@@ -85,3 +109,5 @@ chmod 600 .env.local.real-lab
 echo
 echo "Wrote .env.local.real-lab"
 echo "Destructive/rebuild mode: ${destructive_ack:-disabled}"
+echo "ESXi configured for probes: ${esxi_configured}"
+echo "Cisco management configured for probes: ${cisco_mgmt_configured}"

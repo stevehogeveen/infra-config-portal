@@ -3,3 +3,4 @@ artifacts/real-lab/
 .env.local.real-lab
 .env.local.real-lab.*
 .local/
+artifacts/Media/

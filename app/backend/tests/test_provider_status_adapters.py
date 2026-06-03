@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import builtins
+import importlib.util
 import json
 import sys
 import types
@@ -8,6 +9,7 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
+from app.providers.base import ProviderAction, ProviderStatus
 from app.providers.cisco_console import (
     CiscoConsoleAdapter,
     CiscoConsoleConfig,
@@ -207,6 +209,316 @@ def test_cisco_ansible_run_command_can_redact_output() -> None:
     assert result["stdout_bytes"] > 0
     assert "stdout_tail" not in result
     assert "device output" not in encoded
+
+
+def test_esxi_configured_false_returns_planned_status_and_skips_probe(monkeypatch) -> None:
+    def fail_tcp(*_args, **_kwargs):  # noqa: ANN002, ANN003
+        raise AssertionError("ESXI_CONFIGURED=false must skip network probes")
+
+    monkeypatch.setattr("app.providers.esxi_readonly._tcp_connect", fail_tcp)
+    adapter = EsxiReadonlyAdapter(
+        provider_mode="local-readonly",
+        config=EsxiReadonlyConfig(
+            host="192.0.2.50",
+            username=None,
+            password=None,
+            verify_tls=False,
+            timeout_seconds=1.0,
+            ssh_timeout_seconds=1.0,
+            management_configured=False,
+        ),
+    )
+
+    status = adapter.health()
+    probe = adapter.probe()
+
+    assert status.status == "planned-target"
+    assert status.blockers == []
+    assert status.configuration["management_configured"] is False
+    assert status.configuration["planned_target"] is True
+    assert status.safe_actions[0].enabled is False
+    assert "Install/configure ESXi management network" in status.safe_actions[0].reason
+    assert probe["status"] == "skipped"
+    assert probe["blockers"] == []
+    assert "HTTPS reachability check" in probe["not_attempted"]
+
+
+def test_esxi_configured_true_runs_readonly_reachability(monkeypatch) -> None:
+    calls: list[tuple[str, int]] = []
+
+    monkeypatch.setattr(
+        "app.providers.esxi_readonly.current_lab_safety",
+        lambda: LabSafetyState(
+            closed_loop_ack=True,
+            readonly_ack=True,
+            destructive_ack=False,
+        ),
+    )
+
+    def fake_tcp(host: str, port: int, _timeout_seconds: float) -> dict[str, object]:
+        calls.append((host, port))
+        return {"reachable": False, "port": port, "attempts": []}
+
+    monkeypatch.setattr("app.providers.esxi_readonly._tcp_connect", fake_tcp)
+    adapter = EsxiReadonlyAdapter(
+        provider_mode="local-readonly",
+        config=EsxiReadonlyConfig(
+            host="192.0.2.50",
+            username=None,
+            password=None,
+            verify_tls=False,
+            timeout_seconds=1.0,
+            ssh_timeout_seconds=1.0,
+            management_configured=True,
+        ),
+    )
+
+    result = adapter.probe()
+
+    assert calls == [("192.0.2.50", 443), ("192.0.2.50", 22)]
+    assert result["status"] == "failed"
+    assert "ESXi HTTPS port is not reachable." in result["blockers"]
+
+
+def test_cisco_management_configured_false_returns_bootstrap_status_and_skips_probe(
+    monkeypatch,
+) -> None:
+    def fail_tcp(*_args, **_kwargs):  # noqa: ANN002, ANN003
+        raise AssertionError("CISCO_MGMT_CONFIGURED=false must skip SSH probes")
+
+    monkeypatch.setattr("app.providers.cisco_ansible._tcp_connect", fail_tcp)
+    adapter = CiscoAnsibleAdapter(
+        provider_mode="local-readonly",
+        config=CiscoAnsibleConfig(
+            host="192.0.2.60",
+            username=None,
+            password=None,
+            enable_password=None,
+            network_os="cisco.ios.ios",
+            connection="ansible.netcommon.network_cli",
+            timeout_seconds=1.0,
+            management_configured=False,
+        ),
+    )
+
+    status = adapter.health()
+    probe = adapter.probe()
+
+    assert status.status == "awaiting-bootstrap"
+    assert status.blockers == []
+    assert status.configuration["management_configured"] is False
+    assert status.configuration["planned_target"] is True
+    assert status.safe_actions[0].enabled is False
+    assert "Use console bootstrap before Ansible SSH" in status.safe_actions[0].reason
+    assert all("Ansible CLI" not in warning for warning in status.warnings)
+    assert probe["status"] == "skipped"
+    assert probe["blockers"] == []
+    assert "Cisco SSH reachability check" in probe["not_attempted"]
+
+
+def test_cisco_management_configured_false_without_target_returns_not_configured() -> None:
+    status = CiscoAnsibleAdapter(
+        provider_mode="local-readonly",
+        config=CiscoAnsibleConfig(
+            host=None,
+            username=None,
+            password=None,
+            enable_password=None,
+            network_os="cisco.ios.ios",
+            connection="ansible.netcommon.network_cli",
+            timeout_seconds=1.0,
+            management_configured=False,
+        ),
+    ).health()
+
+    assert status.status == "not-configured"
+    assert status.blockers == []
+    assert status.configuration["planned_target"] is False
+    assert status.configuration["safe_next_action"] == "Use console bootstrap before Ansible SSH."
+
+
+def test_cisco_management_configured_true_runs_ssh_reachability(monkeypatch) -> None:
+    calls: list[tuple[str, int]] = []
+
+    monkeypatch.setattr(
+        "app.providers.cisco_ansible.current_lab_safety",
+        lambda: LabSafetyState(
+            closed_loop_ack=True,
+            readonly_ack=True,
+            destructive_ack=False,
+        ),
+    )
+
+    def fake_tcp(host: str, port: int, _timeout_seconds: float) -> dict[str, object]:
+        calls.append((host, port))
+        return {"reachable": False, "port": port, "attempts": []}
+
+    monkeypatch.setattr("app.providers.cisco_ansible._tcp_connect", fake_tcp)
+    adapter = CiscoAnsibleAdapter(
+        provider_mode="local-readonly",
+        config=CiscoAnsibleConfig(
+            host="192.0.2.60",
+            username="switch-admin",
+            password="super-secret-password",
+            enable_password=None,
+            network_os="cisco.ios.ios",
+            connection="ansible.netcommon.network_cli",
+            timeout_seconds=1.0,
+            management_configured=True,
+        ),
+    )
+
+    result = adapter.probe()
+
+    assert calls == [("192.0.2.60", 22)]
+    assert result["status"] == "blocked"
+    assert result["blockers"] == ["Cisco SSH is not reachable."]
+
+
+def test_cisco_console_discovery_runs_when_management_is_not_configured(
+    tmp_path: Path,
+) -> None:
+    paths = _console_paths(tmp_path)
+    tty = paths["dev"] / "ttyUSB0"
+    tty.touch()
+    stable = paths["by_id"] / "usb-Cisco_console-if00-port0"
+    stable.symlink_to(tty)
+
+    ansible_status = CiscoAnsibleAdapter(
+        provider_mode="mock",
+        config=CiscoAnsibleConfig(
+            host="192.0.2.60",
+            username=None,
+            password=None,
+            enable_password=None,
+            network_os="cisco.ios.ios",
+            connection="ansible.netcommon.network_cli",
+            timeout_seconds=1.0,
+            management_configured=False,
+        ),
+    ).health()
+    console_status = CiscoConsoleAdapter(
+        provider_mode="mock",
+        config=CiscoConsoleConfig(port=None, baud=9600, timeout_seconds=1.0),
+        paths=_discovery_paths(paths),
+    ).health()
+
+    assert ansible_status.status == "awaiting-bootstrap"
+    assert console_status.status == "ready"
+    assert console_status.discovery is not None
+    assert console_status.discovery["effective_path"] == str(stable)
+
+
+def test_provider_smoke_skips_unconfigured_management_tcp_preflight(monkeypatch) -> None:
+    smoke = _load_provider_smoke_module()
+    calls: list[tuple[str, int]] = []
+    fake_settings = types.SimpleNamespace(
+        provider_mode="local-readonly",
+        ilo_test_host="192.0.2.202",
+        esxi_test_host="192.0.2.50",
+        esxi_configured=False,
+        cisco_target_ip="192.0.2.60",
+        cisco_mgmt_configured=False,
+    )
+
+    def fake_tcp(host: str, port: int) -> dict[str, object]:
+        calls.append((host, port))
+        return {"configured": True, "reachable": True, "port": port, "attempts": []}
+
+    monkeypatch.setattr(smoke, "settings", fake_settings)
+    monkeypatch.setattr(
+        smoke,
+        "current_lab_safety",
+        lambda: LabSafetyState(
+            closed_loop_ack=True,
+            readonly_ack=True,
+            destructive_ack=False,
+        ),
+    )
+    monkeypatch.setattr(smoke, "_tcp_connect", fake_tcp)
+
+    result = smoke._tcp_preflight()
+
+    assert calls == [("192.0.2.202", 443)]
+    assert result["ilo_https"]["reachable"] is True
+    assert result["esxi_https"]["skipped"] is True
+    assert result["esxi_https"]["configured"] is False
+    assert result["esxi_https"]["planned_target"] is True
+    assert "ESXI_CONFIGURED=false" in result["esxi_https"]["reason"]
+    assert result["cisco_ssh"]["skipped"] is True
+    assert result["cisco_ssh"]["configured"] is False
+    assert result["cisco_ssh"]["planned_target"] is True
+    assert "CISCO_MGMT_CONFIGURED=false" in result["cisco_ssh"]["reason"]
+
+
+def test_provider_smoke_disabled_management_probe_keeps_planned_context() -> None:
+    smoke = _load_provider_smoke_module()
+    status = ProviderStatus(
+        id="esxi-readonly",
+        name="ESXi Read-Only",
+        kind="virtualization",
+        mode="local-readonly",
+        status="planned-target",
+        capabilities=["explicit-read-only-probe"],
+        message="status only",
+        configuration={
+            "management_configured": False,
+            "planned_target": True,
+            "host_configured": True,
+            "missing_fields": [],
+            "safe_next_action": (
+                "Install/configure ESXi management network before read-only probe."
+            ),
+        },
+        warnings=["ESXI_CONFIGURED is false; ESXi management network probes are skipped."],
+        safe_actions=[
+            ProviderAction(
+                id="probe-esxi-readonly",
+                label="Read-Only Probe",
+                enabled=False,
+                read_only=True,
+                reason="Install/configure ESXi management network before read-only probe.",
+            )
+        ],
+    )
+    adapter = types.SimpleNamespace(health=lambda: status)
+
+    summary = smoke._run_optional_probe("esxi-readonly", adapter)
+    details = smoke._probe_detail_lines(summary)
+
+    assert summary["status"] == "skipped"
+    assert summary["configuration"]["planned_target"] is True
+    assert summary["configuration"]["management_configured"] is False
+    assert "HTTPS reachability check" in summary["not_attempted"]
+    assert any("skipped_reason" in line for line in details)
+    assert not any("https_reachable: False" in line for line in details)
+
+
+def test_ilo_readonly_status_is_unchanged_by_management_flags(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "app.providers.ilo_redfish.current_lab_safety",
+        lambda: LabSafetyState(
+            closed_loop_ack=True,
+            readonly_ack=True,
+            destructive_ack=False,
+        ),
+    )
+    adapter = IloRedfishAdapter(
+        provider_mode="local-readonly",
+        config=IloRedfishConfig(
+            host="192.0.2.202",
+            username="local-admin",
+            password="super-secret-password",
+            verify_tls=False,
+            timeout_seconds=1.0,
+        ),
+    )
+
+    status = adapter.health()
+
+    assert status.status == "ready"
+    assert status.safe_actions[0].enabled is True
+    assert status.safe_actions[0].reason == "Run GET-only Redfish inventory checks."
 
 
 def test_ilo_missing_config_returns_missing_config_blocker() -> None:
@@ -437,3 +749,13 @@ def _install_fake_serial(monkeypatch, outputs: list[str]) -> None:
 
     fake_serial = types.SimpleNamespace(Serial=lambda **_kwargs: FakeSerialConnection())
     monkeypatch.setitem(sys.modules, "serial", fake_serial)
+
+
+def _load_provider_smoke_module() -> types.ModuleType:
+    script_path = Path(__file__).resolve().parents[1] / "scripts" / "provider_smoke.py"
+    spec = importlib.util.spec_from_file_location("provider_smoke_under_test", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module

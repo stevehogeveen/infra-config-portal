@@ -29,6 +29,7 @@ import type {
   AuditEvent,
   Catalog,
   ConsoleCandidate,
+  IloUpgradeReadiness,
   MediaInventory,
   ProviderAction,
   ProviderProbeResult,
@@ -1585,7 +1586,10 @@ function ProviderDetailCard({
       <ProviderFactGrid provider={provider} />
       {provider.id === "cisco-console" && <CiscoConsoleDetails provider={provider} />}
       {provider.id === "ilo-redfish" && <IloRedfishDetails provider={provider} />}
-      {!["cisco-console", "ilo-redfish"].includes(provider.id) && (
+      {["cisco-ansible", "esxi-readonly"].includes(provider.id) && (
+        <ManagementTargetDetails provider={provider} />
+      )}
+      {!["cisco-console", "ilo-redfish", "cisco-ansible", "esxi-readonly"].includes(provider.id) && (
         <GenericProviderDetails provider={provider} />
       )}
       <ProviderIssueRows blockers={provider.blockers} warnings={provider.warnings} />
@@ -1704,8 +1708,31 @@ function CiscoConsoleDetails({ provider }: { provider: ProviderStatus }) {
 }
 
 function IloRedfishDetails({ provider }: { provider: ProviderStatus }) {
+  const [readiness, setReadiness] = useState<IloUpgradeReadiness | null>(null);
+  const [error, setError] = useState("");
   const config = provider.configuration;
   const missingFields = stringArray(config.missing_fields);
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .iloUpgradeReadiness()
+      .then((payload) => {
+        if (!cancelled) {
+          setReadiness(payload);
+          setError("");
+        }
+      })
+      .catch((err: Error) => {
+        if (!cancelled) {
+          setReadiness(null);
+          setError(err.message);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [provider.last_probe_time, provider.status]);
 
   return (
     <div className="provider-detail-section">
@@ -1729,6 +1756,190 @@ function IloRedfishDetails({ provider }: { provider: ProviderStatus }) {
         />
       </div>
       {missingFields.length > 0 && (
+        <p className="provider-missing-fields">
+          Missing local settings: {missingFields.join(", ")}
+        </p>
+      )}
+      <IloUpgradeDecisionPanel error={error} readiness={readiness} />
+    </div>
+  );
+}
+
+function IloUpgradeDecisionPanel({
+  error,
+  readiness
+}: {
+  error: string;
+  readiness: IloUpgradeReadiness | null;
+}) {
+  if (error) {
+    return (
+      <div className="provider-callout upgrade-readiness-callout">
+        <strong>Firmware readiness unavailable</strong>
+        <p>{error}</p>
+      </div>
+    );
+  }
+
+  if (!readiness) {
+    return (
+      <div className="provider-callout upgrade-readiness-callout">
+        <strong>Firmware readiness</strong>
+        <p>Loading planning decision.</p>
+      </div>
+    );
+  }
+
+  const { decision, subject } = readiness;
+
+  return (
+    <div className="upgrade-readiness">
+      <div className="provider-callout upgrade-readiness-callout">
+        <div className="upgrade-readiness-head">
+          <div>
+            <strong>Firmware upgrade readiness</strong>
+            <p>Plan only. No firmware upload, flash, reboot, reset, media mount, or setting change is run.</p>
+          </div>
+          <StatusBadge status={decision.status} />
+        </div>
+      </div>
+      <div className="provider-fact-grid">
+        <ProviderFact label="Current Firmware" value={subject.current_version || "Unknown"} />
+        <ProviderFact label="Generation" value={subject.generation || "Unknown"} />
+        <ProviderFact label="Server Model" value={subject.model || "Unknown"} />
+        <ProviderFact label="Match Confidence" value={labelize(subject.discovery_confidence)} />
+      </div>
+      <div className="provider-fact-grid compact">
+        <ProviderFact label="Recommended Target" value={decision.recommended_target || "None"} />
+        <ProviderFact
+          label="Intermediate Versions"
+          value={decision.required_intermediate_versions.join(", ") || "None"}
+        />
+        <ProviderFact label="Next Safe Action" value={decision.next_safe_action} />
+        <ProviderFact label="Apply / Flash" value={decision.apply_enabled ? "Enabled" : "Disabled"} />
+      </div>
+      <h3>Available Firmware Candidates</h3>
+      <UpgradeCandidateTable candidates={readiness.candidates} />
+      <h3>Upgrade Chain</h3>
+      <UpgradeCandidateTable candidates={readiness.upgrade_chain} empty="No confirmed upgrade chain is available." />
+      <UpgradeDecisionIssues readiness={readiness} />
+      <div className="provider-action-layout upgrade-action-layout">
+        <div className="provider-action-item">
+          <button disabled>
+            <Ban size={16} />
+            Flash disabled
+          </button>
+          <span className="action-tag disabled">Plan only</span>
+          <p>{decision.next_safe_action}</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function UpgradeCandidateTable({
+  candidates,
+  empty = "No firmware candidates were found."
+}: {
+  candidates: IloUpgradeReadiness["candidates"];
+  empty?: string;
+}) {
+  if (!candidates.length) {
+    return <p className="muted">{empty}</p>;
+  }
+
+  return (
+    <table className="provider-candidate-table upgrade-candidate-table">
+      <thead>
+        <tr>
+          <th>Media</th>
+          <th>Version</th>
+          <th>Product</th>
+          <th>Generation</th>
+          <th>Confidence</th>
+        </tr>
+      </thead>
+      <tbody>
+        {candidates.map((candidate) => (
+          <tr key={candidate.id}>
+            <td>
+              <strong>{candidate.redacted_label}</strong>
+              <span>{candidate.source}</span>
+              {candidate.warnings.length > 0 && (
+                <span>{candidate.warnings.join(" ")}</span>
+              )}
+            </td>
+            <td>{candidate.version || "-"}</td>
+            <td>{candidate.product_hint || "-"}</td>
+            <td>{candidate.generation_hint || "-"}</td>
+            <td>
+              <span className={`candidate-tag ${candidate.match_confidence}`}>
+                {labelize(candidate.match_confidence)}
+              </span>
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+function UpgradeDecisionIssues({ readiness }: { readiness: IloUpgradeReadiness }) {
+  if (
+    !readiness.blockers.length &&
+    !readiness.warnings.length &&
+    !readiness.removable_warnings.length
+  ) {
+    return null;
+  }
+
+  return (
+    <div className="provider-issue-rows upgrade-issue-rows">
+      {readiness.blockers.map((blocker) => (
+        <div className="provider-issue blocker" key={blocker}>
+          <Ban size={16} />
+          <span>{blocker}</span>
+        </div>
+      ))}
+      {readiness.warnings.map((warning) => (
+        <div className="provider-issue warning" key={warning}>
+          <AlertTriangle size={16} />
+          <span>{warning}</span>
+        </div>
+      ))}
+      {readiness.removable_warnings.map((warning) => (
+        <div className="provider-issue warning removable" key={warning}>
+          <AlertTriangle size={16} />
+          <span>{warning}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ManagementTargetDetails({ provider }: { provider: ProviderStatus }) {
+  const config = provider.configuration;
+  const missingFields = stringArray(config.missing_fields);
+  const managementConfigured = asBoolean(config.management_configured);
+  const plannedTarget = asBoolean(config.planned_target);
+
+  return (
+    <div className="provider-detail-section">
+      <div className="provider-callout">
+        <strong>{managementConfigured ? "Management target configured" : labelize(provider.status)}</strong>
+        <p>{asString(config.safe_next_action) || safeNextAction(provider)}</p>
+      </div>
+      <div className="provider-fact-grid compact">
+        <ProviderFact label="Management Configured" value={managementConfigured ? "Enabled" : "Disabled"} />
+        <ProviderFact label="Planned Target" value={plannedTarget ? "Present" : "Missing"} />
+        <ProviderFact label="Host" value={presenceLabel(config.host_configured)} />
+        <ProviderFact label="Username" value={presenceLabel(config.username_configured)} />
+        <ProviderFact label="Password" value={presenceLabel(config.password_configured)} />
+        {"tls_verify" in config && (
+          <ProviderFact label="TLS Verify" value={asBoolean(config.tls_verify) ? "Enabled" : "Disabled"} />
+        )}
+      </div>
+      {missingFields.length > 0 && managementConfigured && (
         <p className="provider-missing-fields">
           Missing local settings: {missingFields.join(", ")}
         </p>
@@ -1868,6 +2079,8 @@ function providerOrder(id: string): number {
 function safeNextAction(provider: ProviderStatus): string {
   const discoveryNextAction = asString(provider.discovery?.safe_next_action);
   if (discoveryNextAction) return discoveryNextAction;
+  const configuredNextAction = asString(provider.configuration.safe_next_action);
+  if (configuredNextAction) return configuredNextAction;
   const enabledAction = provider.safe_actions.find((action) => action.enabled);
   if (enabledAction) return enabledAction.reason;
   if (provider.blockers.length > 0) return provider.blockers[0];

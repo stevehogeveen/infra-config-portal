@@ -149,6 +149,13 @@ iLO, ESXi, and Cisco management configuration is reported only as
 configured/missing flags. The API does not return configured host, username, or
 password values.
 
+ESXi and Cisco management IPs can be planned without being treated as reachable
+targets. Keep `ESXI_CONFIGURED=false` until ESXi management networking is
+installed and keep `CISCO_MGMT_CONFIGURED=false` until console bootstrap has
+configured Cisco management IP/SSH. Provider status and provider-smoke skip
+those network probes while the flags are false; Cisco console discovery still
+runs.
+
 For an isolated local lab, optional settings live in `.env.local.real-lab` at
 the repository root. Do not commit that file. Create it with:
 
@@ -175,8 +182,9 @@ The backend loads local provider values from `.env.local.real-lab`, but ignores
 `PROVIDER_MODE` from that file so default app and test startup remains mock.
 Plain `make provider-smoke` runs in mock mode and skips probes. With explicit
 `PROVIDER_MODE=local-readonly`, the smoke command skips missing
-hardware/configuration gracefully, must not print passwords, and writes
-sanitized reports under ignored `artifacts/real-lab/`.
+hardware/configuration and planned but not configured ESXi/Cisco management
+targets gracefully, must not print passwords, and writes sanitized reports under
+ignored `artifacts/real-lab/`.
 
 ## Safety Defaults
 

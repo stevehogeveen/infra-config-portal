@@ -23,9 +23,11 @@ REQUIRED_ENV_NAMES = (
     "ILO_TEST_HOST",
     "ILO_TEST_USERNAME",
     "ILO_TEST_PASSWORD",
+    "ESXI_CONFIGURED",
     "ESXI_TEST_HOST",
     "ESXI_TEST_USERNAME",
     "ESXI_TEST_PASSWORD",
+    "CISCO_MGMT_CONFIGURED",
     "CISCO_TARGET_IP",
     "CISCO_TEST_USERNAME",
     "CISCO_TEST_PASSWORD",
@@ -117,13 +119,18 @@ def _run_optional_probe(provider_id: str, adapter: Any) -> dict[str, Any]:
     status = adapter.health()
     enabled_actions = [action for action in status.safe_actions if action.enabled]
     if not enabled_actions:
+        status_dict = _status_summary(_to_dict(status))
         summary = {
             "provider_id": provider_id,
             "status": "skipped",
-            "message": "No enabled read-only action.",
+            "message": _disabled_probe_reason(status),
+            "configuration": status_dict.get("configuration", {}),
             "blockers": status.blockers,
             "warnings": status.warnings,
         }
+        not_attempted = _disabled_probe_not_attempted(provider_id)
+        if not_attempted:
+            summary["not_attempted"] = not_attempted
         print(json.dumps(redact_sensitive(summary, _redaction_values()), indent=2))
         return summary
 
@@ -164,8 +171,15 @@ def _preflight_summary() -> dict[str, Any]:
         "serial_candidates": _serial_candidate_summary(),
         "targets": {
             "ilo": {"configured": bool(settings.ilo_test_host)},
-            "esxi": {"configured": bool(settings.esxi_test_host)},
-            "cisco": {"configured": bool(settings.cisco_target_ip)},
+            "esxi": {
+                "configured": settings.esxi_configured,
+                "planned_target": bool(settings.esxi_test_host),
+            },
+            "cisco": {
+                "management_configured": settings.cisco_mgmt_configured,
+                "planned_target": bool(settings.cisco_target_ip),
+                "console_discovery": "always",
+            },
         },
         "tcp_preflight": _tcp_preflight(),
     }
@@ -251,6 +265,19 @@ def _blocked_plan(plan_id: str, title: str, configured_target: str | None) -> di
 
 
 def _present(name: str) -> str:
+    if name == "ESXI_CONFIGURED":
+        return "enabled" if settings.esxi_configured else "disabled"
+    if name == "CISCO_MGMT_CONFIGURED":
+        return "enabled" if settings.cisco_mgmt_configured else "disabled"
+    if name.startswith("ESXI_") and not settings.esxi_configured:
+        if name == "ESXI_TEST_HOST" and settings.esxi_test_host:
+            return "planned"
+        return "not-required"
+    if name.startswith("CISCO_") and name != "CISCO_MGMT_CONFIGURED":
+        if not settings.cisco_mgmt_configured:
+            if name == "CISCO_TARGET_IP" and settings.cisco_target_ip:
+                return "planned"
+            return "not-required"
     value = getattr(settings, _setting_name(name), None)
     if name == "LAB_DESTRUCTIVE_ACK":
         return "enabled" if value == "REBUILD_LAB" else "disabled"
@@ -265,9 +292,11 @@ def _setting_name(env_name: str) -> str:
         "ILO_TEST_HOST": "ilo_test_host",
         "ILO_TEST_USERNAME": "ilo_test_username",
         "ILO_TEST_PASSWORD": "ilo_test_password",
+        "ESXI_CONFIGURED": "esxi_configured",
         "ESXI_TEST_HOST": "esxi_test_host",
         "ESXI_TEST_USERNAME": "esxi_test_username",
         "ESXI_TEST_PASSWORD": "esxi_test_password",
+        "CISCO_MGMT_CONFIGURED": "cisco_mgmt_configured",
         "CISCO_TARGET_IP": "cisco_target_ip",
         "CISCO_TEST_USERNAME": "cisco_test_username",
         "CISCO_TEST_PASSWORD": "cisco_test_password",
@@ -299,35 +328,85 @@ def _serial_candidate_summary() -> dict[str, Any]:
 
 def _tcp_preflight() -> dict[str, Any]:
     checks = {
-        "ilo_https": (settings.ilo_test_host, 443),
-        "esxi_https": (settings.esxi_test_host, 443),
-        "cisco_ssh": (settings.cisco_target_ip, 22),
+        "ilo_https": {
+            "host": settings.ilo_test_host,
+            "port": 443,
+            "configured": bool(settings.ilo_test_host),
+            "planned": False,
+            "skip_reason": None,
+        },
+        "esxi_https": {
+            "host": settings.esxi_test_host,
+            "port": 443,
+            "configured": settings.esxi_configured,
+            "planned": bool(settings.esxi_test_host),
+            "skip_reason": (
+                None
+                if settings.esxi_configured
+                else "ESXI_CONFIGURED=false; ESXi management network is a planned target."
+            ),
+        },
+        "cisco_ssh": {
+            "host": settings.cisco_target_ip,
+            "port": 22,
+            "configured": settings.cisco_mgmt_configured,
+            "planned": bool(settings.cisco_target_ip),
+            "skip_reason": (
+                None
+                if settings.cisco_mgmt_configured
+                else "CISCO_MGMT_CONFIGURED=false; use console bootstrap before SSH."
+            ),
+        },
     }
     if settings.provider_mode != "local-readonly":
         return {
-            label: _skipped_tcp_check(host, "PROVIDER_MODE is not local-readonly.")
-            for label, (host, _port) in checks.items()
+            label: _skipped_tcp_check(
+                check["host"],
+                "PROVIDER_MODE is not local-readonly.",
+                configured=bool(check["configured"]),
+                planned=bool(check["planned"]),
+            )
+            for label, check in checks.items()
         }
 
     safety = current_lab_safety()
     if not safety.readonly_allowed:
         return {
             label: _skipped_tcp_check(
-                host,
+                check["host"],
                 "LAB_CLOSED_LOOP_ACK=YES and LAB_READONLY_ACK=YES are required.",
+                configured=bool(check["configured"]),
+                planned=bool(check["planned"]),
             )
-            for label, (host, _port) in checks.items()
+            for label, check in checks.items()
         }
 
-    return {
-        label: _tcp_connect(host, port) if host else {"configured": False, "reachable": False}
-        for label, (host, port) in checks.items()
-    }
+    results: dict[str, Any] = {}
+    for label, check in checks.items():
+        host = check["host"]
+        if check["skip_reason"]:
+            results[label] = _skipped_tcp_check(
+                host,
+                str(check["skip_reason"]),
+                configured=False,
+                planned=bool(check["planned"]),
+            )
+        elif host:
+            results[label] = _tcp_connect(str(host), int(check["port"]))
+        else:
+            results[label] = {"configured": False, "reachable": False}
+    return results
 
 
-def _skipped_tcp_check(host: str | None, reason: str) -> dict[str, Any]:
+def _skipped_tcp_check(
+    host: str | None,
+    reason: str,
+    configured: bool | None = None,
+    planned: bool = False,
+) -> dict[str, Any]:
     return {
-        "configured": bool(host),
+        "configured": bool(host) if configured is None else configured,
+        "planned_target": planned,
         "reachable": False,
         "skipped": True,
         "reason": reason,
@@ -419,6 +498,8 @@ def _status_summary(status: dict[str, Any]) -> dict[str, Any]:
             in {
                 "tls_verify",
                 "missing_fields",
+                "planned_target",
+                "safe_next_action",
                 "closed_loop_ack",
                 "readonly_ack",
                 "destructive_ack",
@@ -493,7 +574,12 @@ def _markdown_report(report: dict[str, Any]) -> str:
     tcp = preflight.get("tcp_preflight") or {}
     for label, value in sorted(tcp.items()):
         if isinstance(value, dict):
-            lines.append(f"- {label}: reachable={value.get('reachable', False)}")
+            if value.get("skipped"):
+                lines.append(
+                    f"- {label}: skipped=true, reason={value.get('reason', 'unknown')}"
+                )
+            else:
+                lines.append(f"- {label}: reachable={value.get('reachable', False)}")
 
     lines.extend(
         [
@@ -549,6 +635,9 @@ def _provider_next_action(provider: dict[str, Any]) -> str:
     discovery = provider.get("discovery") or {}
     if isinstance(discovery, dict) and discovery.get("safe_next_action"):
         return str(discovery["safe_next_action"])
+    configuration = provider.get("configuration") or {}
+    if isinstance(configuration, dict) and configuration.get("safe_next_action"):
+        return str(configuration["safe_next_action"])
     for action in provider.get("safe_actions", []):
         if action.get("enabled"):
             return str(action.get("reason") or "read-only action enabled")
@@ -561,8 +650,45 @@ def _provider_next_action(provider: dict[str, Any]) -> str:
     return "status-only"
 
 
+def _disabled_probe_reason(status: Any) -> str:
+    if getattr(status, "safe_actions", None):
+        return str(status.safe_actions[0].reason)
+    return "No enabled read-only action."
+
+
+def _disabled_probe_not_attempted(provider_id: str) -> list[str]:
+    if provider_id == "esxi-readonly":
+        return [
+            "HTTPS reachability check",
+            "SSH reachability check",
+            "ESXi API GET requests",
+        ]
+    if provider_id == "cisco-ansible":
+        return [
+            "Cisco SSH reachability check",
+            "Ansible inventory parse",
+            "safe show commands",
+        ]
+    return []
+
+
 def _probe_detail_lines(probe: dict[str, Any]) -> list[str]:
     provider_id = probe.get("provider_id")
+    if probe.get("status") == "skipped":
+        lines = [f"  - skipped_reason: {probe.get('message', 'not attempted')}"]
+        configuration = probe.get("configuration") or {}
+        if isinstance(configuration, dict):
+            if "management_configured" in configuration:
+                lines.append(
+                    f"  - management_configured: {configuration.get('management_configured')}"
+                )
+            if "planned_target" in configuration:
+                lines.append(f"  - planned_target: {configuration.get('planned_target')}")
+        not_attempted = probe.get("not_attempted") or []
+        for item in not_attempted:
+            lines.append(f"  - not_attempted: {item}")
+        return lines
+
     if provider_id == "ilo-redfish":
         return [
             f"  - redfish_requests: {len(probe.get('requests', []))}",

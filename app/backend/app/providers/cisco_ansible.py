@@ -38,6 +38,7 @@ class CiscoAnsibleConfig:
     network_os: str
     connection: str
     timeout_seconds: float
+    management_configured: bool = False
 
     @classmethod
     def from_settings(cls) -> "CiscoAnsibleConfig":
@@ -49,6 +50,7 @@ class CiscoAnsibleConfig:
             network_os=_normalize_network_os(settings.ansible_cisco_network_os),
             connection=_normalize_connection(settings.ansible_cisco_connection),
             timeout_seconds=settings.ansible_cisco_timeout_seconds,
+            management_configured=settings.cisco_mgmt_configured,
         )
 
     @property
@@ -77,34 +79,55 @@ class CiscoAnsibleAdapter:
         missing_fields = self.config.missing_fields
         safety = current_lab_safety()
         tool_availability = _tool_availability()
-        blockers = [
-            f"Missing local Cisco Ansible configuration: {', '.join(missing_fields)}."
-        ] if missing_fields else []
-        if self.provider_mode == "local-readonly":
+        planned_target = bool(self.config.host)
+        blockers: list[str] = []
+        if self.config.management_configured and missing_fields:
+            blockers.append(
+                f"Missing local Cisco Ansible configuration: {', '.join(missing_fields)}."
+            )
+        if self.config.management_configured and self.provider_mode == "local-readonly":
             blockers.extend(safety.blockers)
 
         warnings: list[str] = []
         if self.provider_mode != "local-readonly":
             warnings.append("Provider mode is not local-readonly; Cisco Ansible probes are disabled.")
-        if not tool_availability["ansible_available"] or not tool_availability[
-            "ansible_inventory_available"
-        ]:
+        if not self.config.management_configured:
+            warnings.append(
+                "CISCO_MGMT_CONFIGURED is false; Cisco SSH and Ansible probes are skipped."
+            )
+        if self.config.management_configured and (
+            not tool_availability["ansible_available"]
+            or not tool_availability["ansible_inventory_available"]
+        ):
             warnings.append(
                 "Ansible CLI is not available; SSH reachability can be checked, "
                 "but inventory parsing and show commands will be blocked."
             )
 
-        status = "missing-config" if missing_fields else "ready"
-        if not missing_fields and self.provider_mode != "local-readonly":
+        status = "awaiting-bootstrap" if planned_target else "not-configured"
+        if self.config.management_configured:
+            status = "missing-config" if missing_fields else "ready"
+        if (
+            self.config.management_configured
+            and not missing_fields
+            and self.provider_mode != "local-readonly"
+        ):
             status = "configured"
-        if not missing_fields and self.provider_mode == "local-readonly" and not safety.readonly_allowed:
+        if (
+            self.config.management_configured
+            and not missing_fields
+            and self.provider_mode == "local-readonly"
+            and not safety.readonly_allowed
+        ):
             status = "blocked"
 
         probe_enabled = (
             self.provider_mode == "local-readonly"
+            and self.config.management_configured
             and not missing_fields
             and safety.readonly_allowed
         )
+        disabled_reason = "Use console bootstrap before Ansible SSH."
 
         return ProviderStatus(
             id=PROVIDER_ID,
@@ -120,9 +143,12 @@ class CiscoAnsibleAdapter:
             ],
             message=(
                 "Cisco management-IP automation is separated from console discovery; "
-                "the probe action checks SSH and runs fixed read-only show commands only."
+                "the probe action is available only after CISCO_MGMT_CONFIGURED=true and "
+                "checks SSH plus fixed read-only show commands only."
             ),
             configuration={
+                "management_configured": self.config.management_configured,
+                "planned_target": planned_target,
                 "host_configured": bool(self.config.host),
                 "username_configured": bool(self.config.username),
                 "password_configured": bool(self.config.password),
@@ -131,6 +157,11 @@ class CiscoAnsibleAdapter:
                 "connection": self.config.connection,
                 "timeout_seconds": self.config.timeout_seconds,
                 "missing_fields": missing_fields,
+                "safe_next_action": (
+                    "Check SSH, parse inventory, and run fixed safe show commands."
+                    if probe_enabled
+                    else disabled_reason
+                ),
                 **tool_availability,
                 **safety.as_flags(),
             },
@@ -145,6 +176,8 @@ class CiscoAnsibleAdapter:
                     reason=(
                         "Check SSH, parse inventory, and run fixed safe show commands."
                         if probe_enabled
+                        else disabled_reason
+                        if not self.config.management_configured
                         else (
                             "Requires Cisco target, credentials, LAB_CLOSED_LOOP_ACK=YES, "
                             "LAB_READONLY_ACK=YES, and PROVIDER_MODE=local-readonly."
@@ -163,6 +196,12 @@ class CiscoAnsibleAdapter:
         if self.provider_mode != "local-readonly":
             return self._record_blocked(
                 "Set PROVIDER_MODE=local-readonly before running Cisco Ansible probes."
+            )
+
+        if not self.config.management_configured:
+            return self._record_skipped(
+                "CISCO_MGMT_CONFIGURED is false; use console bootstrap before Ansible SSH.",
+                planned_target=bool(self.config.host),
             )
 
         safety = current_lab_safety()
@@ -324,6 +363,23 @@ class CiscoAnsibleAdapter:
                 "message": message,
                 "warnings": [],
                 "blockers": [message],
+                **extra,
+            }
+        )
+
+    def _record_skipped(self, message: str, **extra: Any) -> dict[str, Any]:
+        return self._record_result(
+            {
+                "provider_id": PROVIDER_ID,
+                "status": "skipped",
+                "message": message,
+                "warnings": [message],
+                "blockers": [],
+                "not_attempted": [
+                    "Cisco SSH reachability check",
+                    "Ansible inventory parse",
+                    "safe show commands",
+                ],
                 **extra,
             }
         )

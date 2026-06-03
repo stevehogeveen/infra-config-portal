@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from app.core.config import settings
@@ -94,6 +95,7 @@ def get_media_inventory(
 def _inventory_item(path: Path, index: int, source_label: str) -> MediaInventoryItemRead:
     extension = path.suffix.lower()
     category = _category_for_extension(extension)
+    hints = _safe_media_hints(path.name)
     return MediaInventoryItemRead(
         placeholder_name=f"{category}-{index}{extension}",
         extension=extension,
@@ -101,6 +103,9 @@ def _inventory_item(path: Path, index: int, source_label: str) -> MediaInventory
         category=category,
         source=source_label,
         actual_name_redacted=True,
+        product_hints=hints["product_hints"],
+        generation_hints=hints["generation_hints"],
+        version_hint=hints["version_hint"],
     )
 
 
@@ -116,3 +121,50 @@ def _category_for_extension(extension: str) -> str:
     if extension in {".bin", ".rom", ".fw", ".fwpkg", ".scexe", ".firmware"}:
         return "firmware"
     return "other"
+
+
+def _safe_media_hints(name: str) -> dict[str, list[str] | str | None]:
+    normalized = name.lower()
+    product_hints: list[str] = []
+    generation_hints: list[str] = []
+
+    if re.search(r"(?:^|[^a-z0-9])hpe(?:[^a-z0-9]|$)", normalized):
+        product_hints.append("hpe")
+    if re.search(r"(?:^|[^a-z0-9])spp(?:[^a-z0-9]|$)", normalized):
+        product_hints.append("hpe-spp")
+
+    for match in re.finditer(r"(?:^|[^a-z0-9])ilo[\s._-]?([456])(?:[^a-z0-9]|$)", normalized):
+        _append_unique(product_hints, "hpe-ilo")
+        _append_unique(generation_hints, f"ilo{match.group(1)}")
+
+    for match in re.finditer(r"(?:^|[^a-z0-9])gen[\s._-]?(\d{1,2})(?:[^a-z0-9]|$)", normalized):
+        _append_unique(generation_hints, f"gen{match.group(1)}")
+
+    return {
+        "product_hints": product_hints,
+        "generation_hints": generation_hints,
+        "version_hint": _version_hint(normalized),
+    }
+
+
+def _version_hint(normalized_name: str) -> str | None:
+    ilo_compact = re.search(
+        r"(?:^|[^a-z0-9])ilo[\s._-]?[456][\s._-]*v?(\d{1,2})(\d{2})(?:[^a-z0-9]|$)",
+        normalized_name,
+    )
+    if ilo_compact:
+        return f"{int(ilo_compact.group(1))}.{ilo_compact.group(2)}"
+
+    dotted = re.search(
+        r"(?:^|[^a-z0-9])v?(\d{1,3})[._-](\d{1,3})(?:[._-](\d{1,3}))?(?:[^a-z0-9]|$)",
+        normalized_name,
+    )
+    if not dotted:
+        return None
+    parts = [str(int(part)) for part in dotted.groups() if part is not None]
+    return ".".join(parts)
+
+
+def _append_unique(values: list[str], value: str) -> None:
+    if value not in values:
+        values.append(value)
