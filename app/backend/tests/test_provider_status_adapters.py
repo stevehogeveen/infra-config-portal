@@ -2,20 +2,24 @@ from __future__ import annotations
 
 import builtins
 import json
+import sys
+import types
 from pathlib import Path
 
 from fastapi.testclient import TestClient
 
 from app.providers.cisco_console import (
+    CiscoConsoleAdapter,
     CiscoConsoleConfig,
     ConsoleDiscoveryPaths,
     _prompt_blocker_message,
     _prompt_state,
     discover_cisco_console,
 )
-from app.providers.cisco_ansible import CiscoAnsibleAdapter, CiscoAnsibleConfig
+from app.providers.cisco_ansible import CiscoAnsibleAdapter, CiscoAnsibleConfig, _run_command
 from app.providers.esxi_readonly import EsxiReadonlyAdapter, EsxiReadonlyConfig
 from app.providers.ilo_redfish import IloRedfishAdapter, IloRedfishConfig
+from app.providers.lab_safety import LabSafetyState
 from app.providers.probe_cache import clear_probe_results
 from app.providers.redaction import redact_sensitive
 from app.providers.registry import provider_registry
@@ -126,6 +130,83 @@ def test_cisco_setup_wizard_prompt_is_blocked() -> None:
 
     assert _prompt_state(prompt) == "setup-wizard"
     assert "setup wizard" in _prompt_blocker_message("setup-wizard")
+
+
+def test_cisco_console_probe_redacts_blocked_prompt_sample(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    clear_probe_results()
+    tty = tmp_path / "ttyUSB0"
+    tty.touch()
+    _allow_readonly_lab(monkeypatch)
+    _install_fake_serial(
+        monkeypatch,
+        ["Switch01\nWould you like to enter the initial configuration dialog? [yes/no]:"],
+    )
+
+    adapter = CiscoConsoleAdapter(
+        provider_mode="local-readonly",
+        config=CiscoConsoleConfig(port=str(tty), baud=9600, timeout_seconds=1.0),
+    )
+    result = adapter.probe()
+    encoded = json.dumps(result)
+
+    assert result["status"] == "blocked"
+    assert result["prompt_state"] == "setup-wizard"
+    assert result["prompt_sample"]["raw_text_redacted"] is True
+    assert "Switch01" not in encoded
+    assert "initial configuration dialog" not in encoded
+
+
+def test_cisco_console_probe_returns_command_summaries_not_raw_output(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    clear_probe_results()
+    tty = tmp_path / "ttyUSB0"
+    tty.touch()
+    _allow_readonly_lab(monkeypatch)
+    _install_fake_serial(
+        monkeypatch,
+        [
+            "Switch01#",
+            "show version\nSwitch01 uptime is 1 day\nProcessor board ID SECRET123\nSwitch01#",
+            "show inventory\nNAME: Chassis, SN: SECRET456\nSwitch01#",
+            "show interfaces status\nGi1/0/1 connected\nSwitch01#",
+            "show ip interface brief\nVlan1 192.0.2.10 up up\nSwitch01#",
+            "show vlan brief\n1 default active\nSwitch01#",
+        ],
+    )
+
+    adapter = CiscoConsoleAdapter(
+        provider_mode="local-readonly",
+        config=CiscoConsoleConfig(port=str(tty), baud=9600, timeout_seconds=1.0),
+    )
+    result = adapter.probe()
+    encoded = json.dumps(result)
+
+    assert result["status"] == "ok"
+    assert len(result["safe_show_commands"]) == 5
+    assert all(item["raw_output_redacted"] for item in result["safe_show_commands"])
+    assert "commands" not in result
+    assert "SECRET123" not in encoded
+    assert "192.0.2.10" not in encoded
+
+
+def test_cisco_ansible_run_command_can_redact_output() -> None:
+    result = _run_command(
+        [sys.executable, "-c", "print('device output that should not be returned')"],
+        timeout_seconds=3.0,
+        include_output=False,
+    )
+    encoded = json.dumps(result)
+
+    assert result["returncode"] == 0
+    assert result["raw_output_redacted"] is True
+    assert result["stdout_bytes"] > 0
+    assert "stdout_tail" not in result
+    assert "device output" not in encoded
 
 
 def test_ilo_missing_config_returns_missing_config_blocker() -> None:
@@ -316,3 +397,43 @@ def _discovery_paths(paths: dict[str, Path]) -> ConsoleDiscoveryPaths:
         usb_glob=str(dev / "ttyUSB*"),
         acm_glob=str(dev / "ttyACM*"),
     )
+
+
+def _allow_readonly_lab(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "app.providers.cisco_console.current_lab_safety",
+        lambda: LabSafetyState(
+            closed_loop_ack=True,
+            readonly_ack=True,
+            destructive_ack=False,
+        ),
+    )
+
+
+def _install_fake_serial(monkeypatch, outputs: list[str]) -> None:
+    monkeypatch.setattr("app.providers.cisco_console.time.sleep", lambda _seconds: None)
+
+    class FakeSerialConnection:
+        def __init__(self) -> None:
+            self.outputs = [output.encode("utf-8") for output in outputs]
+            self.writes: list[bytes] = []
+
+        def __enter__(self) -> "FakeSerialConnection":
+            return self
+
+        def __exit__(self, *_args) -> None:  # noqa: ANN002
+            return None
+
+        @property
+        def in_waiting(self) -> int:
+            return 0
+
+        def write(self, value: bytes) -> int:
+            self.writes.append(value)
+            return len(value)
+
+        def read(self, _size: int) -> bytes:
+            return self.outputs.pop(0) if self.outputs else b""
+
+    fake_serial = types.SimpleNamespace(Serial=lambda **_kwargs: FakeSerialConnection())
+    monkeypatch.setitem(sys.modules, "serial", fake_serial)

@@ -105,7 +105,9 @@ The Cisco adapter never sends `enable`, `conf t`, `write memory`, `reload`,
 `erase startup-config`, `copy`, or persistent configuration commands. If the
 console prompts for login, password, setup wizard input, enable, or appears to
 be in config mode, the probe reports a blocked state instead of guessing
-credentials.
+credentials. Console probe responses summarize prompt state and command output
+byte counts; raw prompt text and raw show-command output are not cached or
+returned.
 
 Cisco Ansible probes may only:
 
@@ -121,7 +123,8 @@ Cisco Ansible probes may only:
 
 The generated inventory is local, temporary, mode `0600`, and deleted after the
 probe. The adapter never accepts arbitrary Ansible variables or free-form
-commands from the UI.
+commands from the UI. Show-command subprocess results keep return codes and
+output byte counts only; raw device output is not cached or returned.
 
 ESXi probes may only:
 

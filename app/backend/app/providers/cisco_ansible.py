@@ -265,6 +265,7 @@ class CiscoAnsibleAdapter:
                             json.dumps({"commands": [command]}),
                         ],
                         timeout_seconds=self.config.timeout_seconds,
+                        include_output=False,
                     )
                     if command_results[command]["returncode"] != 0:
                         blockers.append(f"Ansible command failed: {command}.")
@@ -402,7 +403,11 @@ def _write_temp_inventory(config: CiscoAnsibleConfig) -> Path:
     return Path(name)
 
 
-def _run_command(args: list[str], timeout_seconds: float) -> dict[str, Any]:
+def _run_command(
+    args: list[str],
+    timeout_seconds: float,
+    include_output: bool = True,
+) -> dict[str, Any]:
     started = time.monotonic()
     try:
         completed = subprocess.run(
@@ -413,23 +418,67 @@ def _run_command(args: list[str], timeout_seconds: float) -> dict[str, Any]:
             text=True,
             timeout=timeout_seconds,
         )
-        return {
+        result = {
             "returncode": completed.returncode,
-            "stdout_tail": _tail(completed.stdout),
-            "stderr_tail": _tail(completed.stderr),
             "elapsed_ms": int((time.monotonic() - started) * 1000),
         }
+        if include_output:
+            result.update(
+                {
+                    "stdout_tail": _tail(completed.stdout),
+                    "stderr_tail": _tail(completed.stderr),
+                }
+            )
+        else:
+            result.update(_redacted_output_summary(completed.stdout, completed.stderr))
+        return result
     except subprocess.TimeoutExpired as exc:
-        return {
+        result = {
             "returncode": 124,
-            "stdout_tail": _tail(exc.stdout or ""),
-            "stderr_tail": "timeout",
             "elapsed_ms": int((time.monotonic() - started) * 1000),
         }
+        if include_output:
+            result.update(
+                {
+                    "stdout_tail": _tail(_stream_text(exc.stdout)),
+                    "stderr_tail": "timeout",
+                }
+            )
+        else:
+            result.update(_redacted_output_summary(exc.stdout, exc.stderr))
+            result["stderr_summary"] = "timeout"
+        return result
 
 
 def _tail(value: str) -> str:
     return value[-12000:]
+
+
+def _stream_text(value: str | bytes | None) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+    return value
+
+
+def _stream_length(value: str | bytes | None) -> int:
+    if value is None:
+        return 0
+    if isinstance(value, bytes):
+        return len(value)
+    return len(value.encode("utf-8", errors="replace"))
+
+
+def _redacted_output_summary(
+    stdout: str | bytes | None,
+    stderr: str | bytes | None,
+) -> dict[str, Any]:
+    return {
+        "stdout_bytes": _stream_length(stdout),
+        "stderr_bytes": _stream_length(stderr),
+        "raw_output_redacted": True,
+    }
 
 
 def _ansible_env() -> dict[str, str]:

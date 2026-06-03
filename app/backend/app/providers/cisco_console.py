@@ -286,13 +286,13 @@ class CiscoConsoleAdapter:
                         _prompt_blocker_message(prompt_state),
                         discovery=discovery,
                         prompt_state=prompt_state,
-                        prompt_sample=_trim_console(prompt_text),
+                        prompt_sample=_prompt_sample_summary(prompt_text),
                     )
 
-                command_outputs: dict[str, str] = {}
+                command_summaries: list[dict[str, Any]] = []
                 for command in SAFE_SHOW_COMMANDS:
                     connection.write(f"{command}\n".encode("ascii"))
-                    command_outputs[command] = _trim_console(_read_console(connection))
+                    command_summaries.append(_command_summary(command, _read_console(connection)))
 
                 return self._record_result(
                     {
@@ -302,7 +302,7 @@ class CiscoConsoleAdapter:
                         "port": port,
                         "baud": self.config.baud,
                         "prompt_state": prompt_state,
-                        "commands": command_outputs,
+                        "safe_show_commands": command_summaries,
                         "warnings": [],
                         "blockers": [],
                     }
@@ -503,5 +503,42 @@ def _prompt_blocker_message(prompt_state: str) -> str:
     return "Console prompt could not be identified; no show commands were sent."
 
 
-def _trim_console(value: str) -> str:
-    return value[-12000:]
+def _prompt_sample_summary(prompt_text: str) -> dict[str, Any]:
+    lines = [line.strip() for line in prompt_text.splitlines() if line.strip()]
+    last_line = lines[-1] if lines else ""
+    return {
+        "captured": bool(prompt_text),
+        "line_count": len(lines),
+        "last_line": _redacted_prompt_line(last_line),
+        "raw_text_redacted": True,
+    }
+
+
+def _redacted_prompt_line(line: str) -> str:
+    lower_line = line.lower()
+    if "initial configuration dialog" in lower_line or "system configuration dialog" in lower_line:
+        return "setup wizard prompt"
+    if "[yes/no]" in lower_line:
+        return "[yes/no] prompt"
+    if "username:" in lower_line:
+        return "username prompt"
+    if "login:" in lower_line:
+        return "login prompt"
+    if "password:" in lower_line:
+        return "password prompt"
+    if line.endswith("#"):
+        return "DEVICE#"
+    if line.endswith(">"):
+        return "DEVICE>"
+    if "(config" in lower_line:
+        return "configuration prompt"
+    return "unrecognized prompt"
+
+
+def _command_summary(command: str, output: str) -> dict[str, Any]:
+    return {
+        "command": command,
+        "captured": bool(output),
+        "output_bytes": len(output.encode("utf-8", errors="replace")),
+        "raw_output_redacted": True,
+    }
