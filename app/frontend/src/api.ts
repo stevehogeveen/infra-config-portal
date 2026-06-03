@@ -81,6 +81,10 @@ export const api = {
   ciscoSetupReadiness: () =>
     apiRequest<CiscoSetupReadiness>("/api/v1/providers/cisco/setup-readiness"),
   providers: () => apiRequest<ProviderStatus[]>("/api/v1/providers/status"),
+  ciscoConsolePromptReadiness: () =>
+    apiRequest<ProviderProbeResult>("/api/v1/providers/cisco-console/prompt-readiness", {
+      method: "POST"
+    }),
   probeProvider: (id: string) =>
     apiRequest<ProviderProbeResult>(`/api/v1/providers/${id}/probe`, { method: "POST" })
 };

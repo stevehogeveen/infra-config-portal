@@ -368,3 +368,16 @@ def test_cisco_setup_readiness_endpoint_is_read_only_preview(client: TestClient)
     encoded = response.text
     assert "/probe" not in encoded
     assert "Configure Terminal" not in encoded
+
+
+def test_cisco_prompt_readiness_endpoint_blocks_in_mock_mode(client: TestClient) -> None:
+    response = client.post("/api/v1/providers/cisco-console/prompt-readiness")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["provider_id"] == "cisco-console"
+    assert payload["action"] == "prompt-readiness"
+    assert payload["status"] == "blocked"
+    assert "local-readonly" in payload["message"]
+    assert "safe show commands" in payload["not_attempted"]
+    assert payload["prompt_ready"] is False

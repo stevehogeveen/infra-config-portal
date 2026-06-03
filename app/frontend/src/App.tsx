@@ -1499,7 +1499,9 @@ function ProviderStatusPage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [busyProvider, setBusyProvider] = useState("");
+  const [busyPromptReadiness, setBusyPromptReadiness] = useState(false);
   const [probeResults, setProbeResults] = useState<Record<string, ProviderProbeResult>>({});
+  const [promptReadinessResult, setPromptReadinessResult] = useState<ProviderProbeResult | null>(null);
 
   async function load() {
     setError("");
@@ -1536,6 +1538,20 @@ function ProviderStatusPage() {
     }
   }
 
+  async function runPromptReadiness() {
+    setBusyPromptReadiness(true);
+    setError("");
+    try {
+      const result = await api.ciscoConsolePromptReadiness();
+      setPromptReadinessResult(result);
+      await load();
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusyPromptReadiness(false);
+    }
+  }
+
   const orderedProviders = [...providers].sort((left, right) => {
     return providerOrder(left.id) - providerOrder(right.id);
   });
@@ -1556,8 +1572,11 @@ function ProviderStatusPage() {
         {orderedProviders.map((provider) => (
           <ProviderDetailCard
             busy={busyProvider === provider.id}
+            busyPromptReadiness={busyPromptReadiness}
             key={provider.id}
             onProbe={() => runProbe(provider)}
+            onPromptReadiness={runPromptReadiness}
+            promptReadinessResult={promptReadinessResult}
             provider={provider}
             probeResult={probeResults[provider.id] ?? null}
           />
@@ -1586,7 +1605,7 @@ function CiscoSetupReadinessPanel({ readiness }: { readiness: CiscoSetupReadines
         <ProviderFact label="Planned Management IP" value={readiness.planned_management_ip ?? "-"} />
         <ProviderFact
           label="Management Configured"
-          value={readiness.management_configured ? "Enabled" : "Disabled"}
+          value={readiness.management_configured ? "true" : "false"}
         />
         <ProviderFact label="Console State" value={labelize(readiness.console.status)} />
         <ProviderFact label="Ansible Path" value={readiness.ansible.enabled ? "Enabled" : "Blocked"} />
@@ -1611,7 +1630,11 @@ function CiscoSetupReadinessPanel({ readiness }: { readiness: CiscoSetupReadines
           tag="Disabled"
           lines={[readiness.ssh_scp_readiness.summary]}
         />
-        <SetupPreviewBlock title="Ansible Path" tag="Blocked" lines={[readiness.ansible.reason]} />
+        <SetupPreviewBlock
+          title="Ansible Path"
+          tag="Blocked"
+          lines={[`Status: ${labelize(readiness.ansible.status)}.`, readiness.ansible.reason]}
+        />
         <SetupPreviewBlock
           title="Backup / Report"
           tag="Placeholder"
@@ -1659,13 +1682,19 @@ function SetupPreviewBlock({
 
 function ProviderDetailCard({
   busy,
+  busyPromptReadiness,
   onProbe,
+  onPromptReadiness,
   probeResult,
+  promptReadinessResult,
   provider
 }: {
   busy: boolean;
+  busyPromptReadiness: boolean;
   onProbe: () => void;
+  onPromptReadiness: () => void;
   probeResult: ProviderProbeResult | null;
+  promptReadinessResult: ProviderProbeResult | null;
   provider: ProviderStatus;
 }) {
   const lastResult = probeResult ?? provider.last_probe_result;
@@ -1682,7 +1711,14 @@ function ProviderDetailCard({
       </div>
       <p>{provider.message}</p>
       <ProviderFactGrid provider={provider} />
-      {provider.id === "cisco-console" && <CiscoConsoleDetails provider={provider} />}
+      {provider.id === "cisco-console" && (
+        <CiscoConsoleDetails
+          busyPromptReadiness={busyPromptReadiness}
+          onPromptReadiness={onPromptReadiness}
+          promptReadinessResult={promptReadinessResult}
+          provider={provider}
+        />
+      )}
       {provider.id === "ilo-redfish" && <IloRedfishDetails provider={provider} />}
       {["cisco-ansible", "esxi-readonly"].includes(provider.id) && (
         <ManagementTargetDetails provider={provider} />
@@ -1737,13 +1773,24 @@ function ProviderFact({ label, value }: { label: string; value: string }) {
   );
 }
 
-function CiscoConsoleDetails({ provider }: { provider: ProviderStatus }) {
+function CiscoConsoleDetails({
+  busyPromptReadiness,
+  onPromptReadiness,
+  promptReadinessResult,
+  provider
+}: {
+  busyPromptReadiness: boolean;
+  onPromptReadiness: () => void;
+  promptReadinessResult: ProviderProbeResult | null;
+  provider: ProviderStatus;
+}) {
   const discovery = provider.discovery ?? {};
   const envOverride = objectValue(discovery.env_override);
   const candidates = consoleCandidates(discovery.candidates);
   const candidateCounts = objectValue(discovery.candidate_counts);
   const effectivePath = asString(discovery.effective_path);
   const recommendedPath = asString(discovery.recommended_path);
+  const promptReadinessEnabled = provider.mode === "local-readonly" && provider.status === "ready";
 
   return (
     <div className="provider-detail-section">
@@ -1800,6 +1847,47 @@ function CiscoConsoleDetails({ provider }: { provider: ProviderStatus }) {
         </table>
       ) : (
         <p className="muted">No serial console candidates were discovered.</p>
+      )}
+      <div className="provider-action-layout">
+        <div>
+          <h3>Prompt Readiness</h3>
+          <div className="provider-action-row">
+            <div className="provider-action-item">
+              <button
+                className={promptReadinessEnabled ? "primary" : ""}
+                disabled={!promptReadinessEnabled || busyPromptReadiness}
+                onClick={onPromptReadiness}
+              >
+                <Play size={16} />
+                {busyPromptReadiness ? "Checking" : "Prompt Readiness"}
+              </button>
+              <span className="action-tag read-only">Newline only</span>
+              <p>
+                Sends newline only and reads the redacted prompt state. No show commands are run by this check.
+              </p>
+              {!promptReadinessEnabled && (
+                <p>
+                  Requires PROVIDER_MODE=local-readonly, lab read-only acknowledgements, and one ready console path.
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+      {promptReadinessResult && (
+        <div className="provider-raw-result">
+          <div className="provider-fact-grid compact">
+            <ProviderFact label="Prompt State" value={labelize(asString(promptReadinessResult.prompt_state) || "unknown")} />
+            <ProviderFact
+              label="Prompt Ready"
+              value={asBoolean(promptReadinessResult.prompt_ready) ? "true" : "false"}
+            />
+          </div>
+          <p className="provider-redaction-note">
+            {promptReadinessMessage(promptReadinessResult)}
+          </p>
+          <JsonDetails title="Raw redacted prompt readiness result" data={promptReadinessResult} />
+        </div>
       )}
     </div>
   );
@@ -2184,6 +2272,17 @@ function safeNextAction(provider: ProviderStatus): string {
   if (provider.blockers.length > 0) return provider.blockers[0];
   if (provider.safe_actions.length > 0) return provider.safe_actions[0].reason;
   return "Review status only; no runnable action is exposed.";
+}
+
+function promptReadinessMessage(result: ProviderProbeResult): string {
+  const promptState = asString(result.prompt_state);
+  if (promptState === "exec") {
+    return "Prompt is ready for future safe show-command checks.";
+  }
+  if (promptState === "setup-wizard") {
+    return "Console is at an initial setup wizard prompt; no answers or commands were sent.";
+  }
+  return asString(result.message) || "Prompt readiness result is redacted.";
 }
 
 function objectValue(value: unknown): Record<string, unknown> {

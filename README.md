@@ -116,6 +116,12 @@ disabled dangerous actions. It does not expose an apply button, open config
 mode, enable SSH/SCP, back up running-config, save config, reload, erase, copy,
 or change VLANs, interfaces, users, or passwords.
 
+`POST /api/v1/providers/cisco-console/prompt-readiness` is a separate
+newline-only console check for the setup workflow. It opens the selected
+console path only in explicit `PROVIDER_MODE=local-readonly` mode with lab
+read-only acknowledgements, sends newline, reads and redacts the prompt state,
+and does not run show commands or configuration commands.
+
 Optional local real-lab values live in `.env.local.real-lab`, which is ignored
 by Git and must not be committed. Create it with:
 

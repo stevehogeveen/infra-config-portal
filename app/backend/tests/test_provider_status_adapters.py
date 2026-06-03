@@ -197,6 +197,156 @@ def test_cisco_console_probe_returns_command_summaries_not_raw_output(
     assert "192.0.2.10" not in encoded
 
 
+def test_cisco_prompt_readiness_is_blocked_in_mock_mode() -> None:
+    clear_probe_results()
+    adapter = CiscoConsoleAdapter(
+        provider_mode="mock",
+        config=CiscoConsoleConfig(port="/dev/ttyUSB0", baud=9600, timeout_seconds=1.0),
+    )
+
+    result = adapter.prompt_readiness()
+
+    assert result["action"] == "prompt-readiness"
+    assert result["status"] == "blocked"
+    assert "local-readonly" in result["message"]
+    assert result["prompt_ready"] is False
+    assert "safe show commands" in result["not_attempted"]
+
+
+def test_cisco_prompt_readiness_requires_lab_safety_flags(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    clear_probe_results()
+    tty = tmp_path / "ttyUSB0"
+    tty.touch()
+    monkeypatch.setattr(
+        "app.providers.cisco_console.current_lab_safety",
+        lambda: LabSafetyState(
+            closed_loop_ack=False,
+            readonly_ack=False,
+            destructive_ack=False,
+        ),
+    )
+
+    result = CiscoConsoleAdapter(
+        provider_mode="local-readonly",
+        config=CiscoConsoleConfig(port=str(tty), baud=9600, timeout_seconds=1.0),
+    ).prompt_readiness()
+
+    assert result["status"] == "blocked"
+    assert "LAB_CLOSED_LOOP_ACK=YES" in result["message"]
+    assert result["prompt_ready"] is False
+
+
+def test_cisco_prompt_readiness_blocks_without_effective_path(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    clear_probe_results()
+    paths = _console_paths(tmp_path)
+    _allow_readonly_lab(monkeypatch)
+
+    result = CiscoConsoleAdapter(
+        provider_mode="local-readonly",
+        config=CiscoConsoleConfig(port=None, baud=9600, timeout_seconds=1.0),
+        paths=_discovery_paths(paths),
+    ).prompt_readiness()
+
+    assert result["status"] == "blocked"
+    assert "one selected readable and writable console path" in result["message"]
+    assert result["prompt_ready"] is False
+    assert result["discovery"]["status"] == "missing-console"
+
+
+def test_cisco_prompt_readiness_exec_prompt_sends_newline_only(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    result, writes = _run_prompt_readiness_with_fake_serial(tmp_path, monkeypatch, "Switch01#")
+    encoded = json.dumps(result)
+
+    assert writes == [b"\n"]
+    assert result["status"] == "ok"
+    assert result["prompt_state"] == "exec"
+    assert result["prompt_ready"] is True
+    assert result["safe_show_commands_allowed"] is True
+    assert result["prompt_sample"]["last_line"] == "DEVICE#"
+    assert "safe show commands" in result["not_attempted"]
+    assert "safe_show_commands" not in result
+    assert "Switch01" not in encoded
+
+
+def test_cisco_prompt_readiness_blocks_setup_wizard_prompt(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    result, writes = _run_prompt_readiness_with_fake_serial(
+        tmp_path,
+        monkeypatch,
+        "Switch01\nWould you like to enter the initial configuration dialog? [yes/no]:",
+    )
+    encoded = json.dumps(result)
+
+    assert writes == [b"\n"]
+    assert result["status"] == "blocked"
+    assert result["prompt_state"] == "setup-wizard"
+    assert result["prompt_ready"] is False
+    assert result["setup_wizard_detected"] is True
+    assert result["safe_show_commands_allowed"] is False
+    assert "setup wizard" in result["blockers"][0]
+    assert "initial configuration dialog" not in encoded
+
+
+def test_cisco_prompt_readiness_blocks_login_required_prompt(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    result, writes = _run_prompt_readiness_with_fake_serial(tmp_path, monkeypatch, "Username:")
+
+    assert writes == [b"\n"]
+    assert result["status"] == "blocked"
+    assert result["prompt_state"] == "login-required"
+    assert result["login_required"] is True
+    assert result["prompt_ready"] is False
+    assert result["safe_show_commands_allowed"] is False
+
+
+def test_cisco_prompt_readiness_blocks_config_mode_prompt(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    result, writes = _run_prompt_readiness_with_fake_serial(
+        tmp_path,
+        monkeypatch,
+        "Switch01(config)#",
+    )
+
+    assert writes == [b"\n"]
+    assert result["status"] == "blocked"
+    assert result["prompt_state"] == "config-mode"
+    assert result["config_mode_detected"] is True
+    assert result["prompt_ready"] is False
+    assert result["safe_show_commands_allowed"] is False
+
+
+def test_cisco_prompt_readiness_blocks_unknown_prompt(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    result, writes = _run_prompt_readiness_with_fake_serial(
+        tmp_path,
+        monkeypatch,
+        "unrecognized prompt text",
+    )
+
+    assert writes == [b"\n"]
+    assert result["status"] == "blocked"
+    assert result["prompt_state"] == "unknown"
+    assert result["prompt_ready"] is False
+    assert result["safe_show_commands_allowed"] is False
+
+
 def test_cisco_ansible_run_command_can_redact_output() -> None:
     result = _run_command(
         [sys.executable, "-c", "print('device output that should not be returned')"],
@@ -781,6 +931,54 @@ def _install_fake_serial(monkeypatch, outputs: list[str]) -> None:
 
     fake_serial = types.SimpleNamespace(Serial=lambda **_kwargs: FakeSerialConnection())
     monkeypatch.setitem(sys.modules, "serial", fake_serial)
+
+
+def _install_tracking_fake_serial(monkeypatch, outputs: list[str]) -> list[bytes]:
+    monkeypatch.setattr("app.providers.cisco_console.time.sleep", lambda _seconds: None)
+    writes: list[bytes] = []
+
+    class FakeSerialConnection:
+        def __init__(self) -> None:
+            self.outputs = [output.encode("utf-8") for output in outputs]
+
+        def __enter__(self) -> "FakeSerialConnection":
+            return self
+
+        def __exit__(self, *_args) -> None:  # noqa: ANN002
+            return None
+
+        @property
+        def in_waiting(self) -> int:
+            return 0
+
+        def write(self, value: bytes) -> int:
+            writes.append(value)
+            return len(value)
+
+        def read(self, _size: int) -> bytes:
+            return self.outputs.pop(0) if self.outputs else b""
+
+    fake_serial = types.SimpleNamespace(Serial=lambda **_kwargs: FakeSerialConnection())
+    monkeypatch.setitem(sys.modules, "serial", fake_serial)
+    return writes
+
+
+def _run_prompt_readiness_with_fake_serial(
+    tmp_path: Path,
+    monkeypatch,
+    prompt_output: str,
+) -> tuple[dict, list[bytes]]:
+    clear_probe_results()
+    tty = tmp_path / "ttyUSB0"
+    tty.touch()
+    _allow_readonly_lab(monkeypatch)
+    writes = _install_tracking_fake_serial(monkeypatch, [prompt_output])
+
+    result = CiscoConsoleAdapter(
+        provider_mode="local-readonly",
+        config=CiscoConsoleConfig(port=str(tty), baud=9600, timeout_seconds=1.0),
+    ).prompt_readiness()
+    return result, writes
 
 
 def _load_provider_smoke_module() -> types.ModuleType:

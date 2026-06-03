@@ -183,6 +183,12 @@ disabled dangerous actions. It does not expose an apply button, open config
 mode, enable SSH/SCP, back up running-config, save config, reload, erase, copy,
 or change VLANs, interfaces, users, or passwords.
 
+`POST /api/v1/providers/cisco-console/prompt-readiness` is a separate
+newline-only console check for the setup workflow. It opens the selected
+console path only in explicit `PROVIDER_MODE=local-readonly` mode with lab
+read-only acknowledgements, sends newline, reads and redacts the prompt state,
+and does not run show commands or configuration commands.
+
 For an isolated local lab, optional settings live in `.env.local.real-lab` at
 the repository root. Do not commit that file. Create it with:
 
@@ -193,11 +199,13 @@ the repository root. Do not commit that file. Create it with:
 Set `PROVIDER_MODE=local-readonly` only when manually running explicit
 read-only probes and require `LAB_CLOSED_LOOP_ACK=YES` and
 `LAB_READONLY_ACK=YES`. iLO probes use GET-only Redfish calls with short
-timeouts and redacted responses. Cisco console probes open the selected console
-only after a button click or manual smoke command, then send newline and safe
-`show` commands when already at an exec prompt. Cisco Ansible probes check SSH,
-parse a generated temporary inventory, and run only fixed safe `show` commands.
-ESXi probes use HTTPS GET and TCP reachability checks only.
+timeouts and redacted responses. Cisco prompt readiness opens the selected
+console only after a button click and sends newline only. Cisco console probes
+open the selected console only after a button click or manual smoke command,
+then send newline and safe `show` commands when already at an exec prompt.
+Cisco Ansible probes check SSH, parse a generated temporary inventory, and run
+only fixed safe `show` commands. ESXi probes use HTTPS GET and TCP reachability
+checks only.
 
 Optional manual smoke:
 

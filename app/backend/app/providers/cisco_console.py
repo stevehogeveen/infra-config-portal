@@ -21,6 +21,14 @@ SAFE_SHOW_COMMANDS = (
     "show ip interface brief",
     "show vlan brief",
 )
+PROMPT_READINESS_NOT_ATTEMPTED = [
+    "safe show commands",
+    "configure terminal",
+    "write memory",
+    "reload",
+    "copy or erase",
+    "VLAN, interface, user, password, SSH, or SCP changes",
+]
 
 
 @dataclass(frozen=True)
@@ -318,6 +326,91 @@ class CiscoConsoleAdapter:
                 }
             )
 
+    def prompt_readiness(self) -> dict[str, Any]:
+        if self.provider_mode != "local-readonly":
+            return self._record_prompt_readiness(
+                "blocked",
+                "Set PROVIDER_MODE=local-readonly before running console prompt readiness checks.",
+                blockers=[
+                    "Set PROVIDER_MODE=local-readonly before running console prompt readiness checks."
+                ],
+            )
+
+        safety = current_lab_safety()
+        if not safety.readonly_allowed:
+            return self._record_prompt_readiness(
+                "blocked",
+                "Set LAB_CLOSED_LOOP_ACK=YES and LAB_READONLY_ACK=YES before real lab prompt checks.",
+                blockers=[
+                    "Set LAB_CLOSED_LOOP_ACK=YES and LAB_READONLY_ACK=YES before real lab prompt checks."
+                ],
+                safety=safety.as_flags(),
+            )
+
+        discovery = discover_cisco_console(self.config, self.paths)
+        port = discovery.get("effective_path")
+        if discovery["status"] != "ready" or not isinstance(port, str):
+            return self._record_prompt_readiness(
+                "blocked",
+                "Console prompt readiness requires one selected readable and writable console path.",
+                blockers=[
+                    "Console prompt readiness requires one selected readable and writable console path."
+                ],
+                discovery=discovery,
+            )
+
+        try:
+            import serial  # type: ignore[import-untyped]
+        except ImportError:
+            return self._record_prompt_readiness(
+                "blocked",
+                "pyserial is not installed; install backend requirements before prompt readiness.",
+                blockers=[
+                    "pyserial is not installed; install backend requirements before prompt readiness."
+                ],
+                discovery=discovery,
+            )
+
+        try:
+            connection = serial.Serial(
+                port=port,
+                baudrate=self.config.baud,
+                timeout=self.config.timeout_seconds,
+                write_timeout=self.config.timeout_seconds,
+            )
+        except Exception as exc:  # pragma: no cover - hardware dependent
+            return self._record_prompt_readiness(
+                "failed",
+                f"Could not open selected console path: {exc}",
+                blockers=["Serial console open failed."],
+                discovery=discovery,
+            )
+
+        try:
+            with connection:
+                connection.write(b"\n")
+                prompt_text = _read_console(connection)
+                prompt_state = _prompt_state(prompt_text)
+                return self._record_prompt_readiness(
+                    _prompt_readiness_status(prompt_state),
+                    _prompt_readiness_message(prompt_state),
+                    port=port,
+                    baud=self.config.baud,
+                    prompt_state=prompt_state,
+                    prompt_sample=_prompt_sample_summary(prompt_text),
+                    blockers=(
+                        []
+                        if prompt_state == "exec"
+                        else [_prompt_blocker_message(prompt_state)]
+                    ),
+                )
+        except Exception as exc:  # pragma: no cover - hardware dependent
+            return self._record_prompt_readiness(
+                "failed",
+                f"Cisco console prompt readiness check failed: {exc}",
+                blockers=["Serial console prompt readiness check failed."],
+            )
+
     def _record_blocked(self, message: str, **extra: Any) -> dict[str, Any]:
         return self._record_result(
             {
@@ -332,6 +425,34 @@ class CiscoConsoleAdapter:
 
     def _record_result(self, result: dict[str, Any]) -> dict[str, Any]:
         return record_probe_result(PROVIDER_ID, redact_sensitive(result, [self.config.port]))
+
+    def _record_prompt_readiness(
+        self,
+        status: str,
+        message: str,
+        *,
+        blockers: list[str],
+        warnings: list[str] | None = None,
+        prompt_state: str = "unknown",
+        **extra: Any,
+    ) -> dict[str, Any]:
+        result = {
+            "provider_id": PROVIDER_ID,
+            "action": "prompt-readiness",
+            "status": status,
+            "message": message,
+            "prompt_state": prompt_state,
+            "prompt_ready": prompt_state == "exec",
+            "safe_show_commands_allowed": prompt_state == "exec",
+            "setup_wizard_detected": prompt_state == "setup-wizard",
+            "config_mode_detected": prompt_state == "config-mode",
+            "login_required": prompt_state == "login-required",
+            "not_attempted": PROMPT_READINESS_NOT_ATTEMPTED,
+            "warnings": warnings or [],
+            "blockers": blockers,
+            **extra,
+        }
+        return self._record_result(result)
 
 
 def _discover_candidates(paths: ConsoleDiscoveryPaths) -> list[ConsoleCandidate]:
@@ -501,6 +622,16 @@ def _prompt_blocker_message(prompt_state: str) -> str:
     if prompt_state == "config-mode":
         return "Console appears to be in configuration mode; no commands were sent."
     return "Console prompt could not be identified; no show commands were sent."
+
+
+def _prompt_readiness_status(prompt_state: str) -> str:
+    return "ok" if prompt_state == "exec" else "blocked"
+
+
+def _prompt_readiness_message(prompt_state: str) -> str:
+    if prompt_state == "exec":
+        return "Prompt is ready for future safe show-command checks."
+    return _prompt_blocker_message(prompt_state)
 
 
 def _prompt_sample_summary(prompt_text: str) -> dict[str, Any]:

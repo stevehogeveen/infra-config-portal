@@ -274,6 +274,14 @@ def read_cisco_setup_readiness() -> CiscoSetupReadinessRead:
     return get_cisco_setup_readiness()
 
 
+@router.post(
+    "/providers/cisco-console/prompt-readiness",
+    response_model=ProviderProbeResultRead,
+)
+def cisco_console_prompt_readiness() -> ProviderProbeResultRead:
+    return _run_provider_probe("cisco-console", CiscoConsoleAdapter().prompt_readiness)
+
+
 @router.post("/providers/{provider_id}/probe", response_model=ProviderProbeResultRead)
 def probe_provider(provider_id: str) -> ProviderProbeResultRead:
     if provider_id == "ilo-redfish":
