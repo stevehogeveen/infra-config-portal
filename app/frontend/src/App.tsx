@@ -29,7 +29,12 @@ import type {
   AuditEvent,
   Catalog,
   ConsoleCandidate,
+  IloDestructiveRebuildPreview,
+  IloReportPreview,
   IloReadinessSummary,
+  IloSetupCompareReport,
+  IloSetupIntent,
+  IloSetupPlanPreview,
   IloUpgradeReadiness,
   MediaInventory,
   ProviderAction,
@@ -1586,20 +1591,26 @@ function ProviderDetailCard({
       <p>{provider.message}</p>
       <ProviderFactGrid provider={provider} />
       {provider.id === "cisco-console" && <CiscoConsoleDetails provider={provider} />}
-      {provider.id === "ilo-redfish" && <IloRedfishDetails provider={provider} />}
+      {provider.id === "ilo-redfish" && (
+        <IloRedfishDetails busy={busy} onProbe={onProbe} provider={provider} />
+      )}
       {["cisco-ansible", "esxi-readonly"].includes(provider.id) && (
         <ManagementTargetDetails provider={provider} />
       )}
       {!["cisco-console", "ilo-redfish", "cisco-ansible", "esxi-readonly"].includes(provider.id) && (
         <GenericProviderDetails provider={provider} />
       )}
-      <ProviderIssueRows blockers={provider.blockers} warnings={provider.warnings} />
-      <ProviderActionRows
-        busy={busy}
-        disabledActions={provider.disabled_actions}
-        onProbe={onProbe}
-        safeActions={provider.safe_actions}
-      />
+      {provider.id !== "ilo-redfish" && (
+        <>
+          <ProviderIssueRows blockers={provider.blockers} warnings={provider.warnings} />
+          <ProviderActionRows
+            busy={busy}
+            disabledActions={provider.disabled_actions}
+            onProbe={onProbe}
+            safeActions={provider.safe_actions}
+          />
+        </>
+      )}
       {lastResult && (
         <div className="provider-raw-result">
           <div className="provider-fact-grid compact">
@@ -1708,23 +1719,65 @@ function CiscoConsoleDetails({ provider }: { provider: ProviderStatus }) {
   );
 }
 
-function IloRedfishDetails({ provider }: { provider: ProviderStatus }) {
+function IloRedfishDetails({
+  busy,
+  onProbe,
+  provider
+}: {
+  busy: boolean;
+  onProbe: () => void;
+  provider: ProviderStatus;
+}) {
   const [summary, setSummary] = useState<IloReadinessSummary | null>(null);
+  const [setupIntent, setSetupIntent] = useState<IloSetupIntent | null>(null);
+  const [setupPlan, setSetupPlan] = useState<IloSetupPlanPreview | null>(null);
+  const [setupCompare, setSetupCompare] = useState<IloSetupCompareReport | null>(null);
+  const [destructivePreview, setDestructivePreview] = useState<IloDestructiveRebuildPreview | null>(null);
+  const [activeTab, setActiveTab] = useState("overview");
   const [error, setError] = useState("");
+
+  async function loadIloDetails() {
+    const [nextSummary, nextSetupIntent, nextSetupPlan, nextSetupCompare, nextDestructivePreview] = await Promise.all([
+      api.iloReadinessSummary(),
+      api.iloSetupIntent(),
+      api.iloSetupPlanPreview(),
+      api.iloSetupCompare(),
+      api.iloDestructiveRebuildPreview()
+    ]);
+    setSummary(nextSummary);
+    setSetupIntent(nextSetupIntent);
+    setSetupPlan(nextSetupPlan);
+    setSetupCompare(nextSetupCompare);
+    setDestructivePreview(nextDestructivePreview);
+    setError("");
+  }
 
   useEffect(() => {
     let cancelled = false;
-    api
-      .iloReadinessSummary()
-      .then((payload) => {
+    Promise.all([
+      api.iloReadinessSummary(),
+      api.iloSetupIntent(),
+      api.iloSetupPlanPreview(),
+      api.iloSetupCompare(),
+      api.iloDestructiveRebuildPreview()
+    ])
+      .then(([nextSummary, nextSetupIntent, nextSetupPlan, nextSetupCompare, nextDestructivePreview]) => {
         if (!cancelled) {
-          setSummary(payload);
+          setSummary(nextSummary);
+          setSetupIntent(nextSetupIntent);
+          setSetupPlan(nextSetupPlan);
+          setSetupCompare(nextSetupCompare);
+          setDestructivePreview(nextDestructivePreview);
           setError("");
         }
       })
       .catch((err: Error) => {
         if (!cancelled) {
           setSummary(null);
+          setSetupIntent(null);
+          setSetupPlan(null);
+          setSetupCompare(null);
+          setDestructivePreview(null);
           setError(err.message);
         }
       });
@@ -1744,7 +1797,7 @@ function IloRedfishDetails({ provider }: { provider: ProviderStatus }) {
     );
   }
 
-  if (!summary) {
+  if (!summary || !setupIntent || !setupPlan || !setupCompare || !destructivePreview) {
     return (
       <div className="provider-detail-section">
         <div className="provider-callout">
@@ -1757,13 +1810,569 @@ function IloRedfishDetails({ provider }: { provider: ProviderStatus }) {
 
   return (
     <div className="provider-detail-section">
-      <IloConnectionPanel summary={summary} />
-      <IloCurrentStatePanel summary={summary} />
-      <IloDesiredSetupPanel summary={summary} />
-      <IloUpgradeDecisionPanel readiness={summary.firmware_readiness} />
-      <IloReportsArtifactsPanel summary={summary} />
-      <IloDangerousActionsPanel actions={summary.disabled_dangerous_actions} />
+      <IloProviderTopSummary
+        compare={setupCompare}
+        plan={setupPlan}
+        provider={provider}
+        summary={summary}
+      />
+      <div className="ilo-tab-list" role="tablist" aria-label="iLO Provider Status sections">
+        {[
+          ["overview", "Overview"],
+          ["intent", "Desired Intent"],
+          ["compare", "Compare"],
+          ["plan", "Plan Preview"],
+          ["destructive", "Destructive Rebuild"],
+          ["firmware", "Firmware"],
+          ["report", "Report Preview"],
+          ["safety", "Safety"]
+        ].map(([id, label]) => (
+          <button
+            aria-selected={activeTab === id}
+            className={activeTab === id ? "active" : ""}
+            key={id}
+            onClick={() => setActiveTab(id)}
+            role="tab"
+            type="button"
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      <div className="ilo-tab-panel" role="tabpanel">
+        {activeTab === "overview" && (
+          <>
+            <IloConnectionPanel summary={summary} />
+            <IloCurrentStatePanel summary={summary} />
+          </>
+        )}
+        {activeTab === "intent" && (
+          <IloDesiredSetupIntentPanel
+            intent={setupIntent}
+            onSaved={async () => {
+              await loadIloDetails();
+            }}
+          />
+        )}
+        {activeTab === "compare" && <IloSetupCompareReportPanel report={setupCompare} />}
+        {activeTab === "plan" && (
+          <>
+            <IloSetupPlanPreviewPanel preview={setupPlan} />
+            <IloDesiredSetupPanel summary={summary} />
+          </>
+        )}
+        {activeTab === "destructive" && (
+          <IloDestructiveRebuildPreviewPanel preview={destructivePreview} />
+        )}
+        {activeTab === "firmware" && (
+          <IloUpgradeDecisionPanel readiness={summary.firmware_readiness} />
+        )}
+        {activeTab === "report" && (
+          <>
+            <IloReportPreviewPanel />
+            <IloReportsArtifactsPanel summary={summary} />
+          </>
+        )}
+        {activeTab === "safety" && (
+          <IloSafetyPanel
+            busy={busy}
+            disabledActions={summary.disabled_dangerous_actions}
+            onProbe={onProbe}
+            safeActions={provider.safe_actions}
+          />
+        )}
+      </div>
     </div>
+  );
+}
+
+function IloProviderTopSummary({
+  compare,
+  plan,
+  provider,
+  summary
+}: {
+  compare: IloSetupCompareReport;
+  plan: IloSetupPlanPreview;
+  provider: ProviderStatus;
+  summary: IloReadinessSummary;
+}) {
+  const firstBlocker = summary.blockers[0] ?? compare.blockers[0];
+  const firstWarning =
+    summary.warnings[0] ??
+    summary.removable_warnings[0] ??
+    compare.warnings[0] ??
+    compare.removable_warnings[0];
+  const nextSafeAction = firstBlocker || firstWarning || setupPlanNextSafeAction(plan) || safeNextAction(provider);
+  const compareStatuses = compare.sections.reduce<Record<string, number>>((acc, section) => {
+    acc[section.status] = (acc[section.status] ?? 0) + 1;
+    return acc;
+  }, {});
+
+  return (
+    <section className="ilo-summary-top">
+      <div className="provider-callout">
+        <div className="upgrade-readiness-head">
+          <div>
+            <strong>Next safe action</strong>
+            <p>{nextSafeAction}</p>
+          </div>
+          <StatusBadge status={firstBlocker ? "blocked" : firstWarning ? "warning" : "read_only"} />
+        </div>
+      </div>
+      <div className="provider-fact-grid compact">
+        <ProviderFact label="Provider Mode" value={summary.connection.provider_mode} />
+        <ProviderFact label="Redfish Probe" value={summary.connection.redfish_probe_available ? "Available" : "Disabled"} />
+        <ProviderFact label="Last Probe" value={labelize(summary.current_state.last_probe_status)} />
+        <ProviderFact label="Firmware Decision" value={labelize(summary.upgrade_decision_status)} />
+        <ProviderFact label="Unknown Compare" value={String(compareStatuses.discovered_unknown ?? 0)} />
+        <ProviderFact label="Apply / Actions" value="Disabled" />
+      </div>
+      <ProviderIssueRows
+        blockers={firstBlocker ? [firstBlocker] : []}
+        warnings={firstWarning ? [firstWarning] : []}
+      />
+    </section>
+  );
+}
+
+function setupPlanNextSafeAction(plan: IloSetupPlanPreview): string {
+  const blocked = plan.sections.find((section) => section.blockers.length > 0);
+  if (blocked) return blocked.blockers[0];
+  const warning = plan.sections.find((section) => section.warnings.length > 0);
+  if (warning) return warning.warnings[0];
+  return "Review the iLO sections in read-only mode; no apply actions are available.";
+}
+
+function IloDesiredSetupIntentPanel({
+  intent,
+  onSaved
+}: {
+  intent: IloSetupIntent;
+  onSaved: () => Promise<void>;
+}) {
+  const [form, setForm] = useState<IloSetupIntent>(intent);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    setForm(intent);
+  }, [intent]);
+
+  async function save(event: FormEvent) {
+    event.preventDefault();
+    setSaving(true);
+    setError("");
+    setMessage("");
+    try {
+      const saved = await api.saveIloSetupIntent({
+        network: {
+          hostname: emptyToNull(form.network.hostname),
+          management_ip: emptyToNull(form.network.management_ip),
+          subnet_mask_or_prefix: emptyToNull(form.network.subnet_mask_or_prefix),
+          gateway: emptyToNull(form.network.gateway),
+          vlan: emptyToNull(form.network.vlan)
+        },
+        users: form.users.filter((user) => user.username_label.trim() && user.role.trim()),
+        snmp: {
+          enabled: form.snmp.enabled,
+          destinations: cleanList(form.snmp.destinations),
+          community_or_user_ref_labels: cleanList(form.snmp.community_or_user_ref_labels)
+        },
+        time: {
+          timezone: emptyToNull(form.time.timezone),
+          ntp_servers: cleanList(form.time.ntp_servers)
+        },
+        dns_domain: {
+          domain_name: emptyToNull(form.dns_domain.domain_name),
+          dns_servers: cleanList(form.dns_domain.dns_servers)
+        },
+        notes: emptyToNull(form.notes ?? "")
+      });
+      setForm(saved);
+      await onSaved();
+      setMessage("Intent saved locally. Compare and plan preview refreshed. Not applied / preview only.");
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function updateNetwork(field: keyof IloSetupIntent["network"], value: string) {
+    setForm((current) => ({
+      ...current,
+      network: { ...current.network, [field]: value }
+    }));
+  }
+
+  function updateUser(index: number, field: "username_label" | "role", value: string) {
+    setForm((current) => ({
+      ...current,
+      users: current.users.map((user, userIndex) =>
+        userIndex === index ? { ...user, [field]: value } : user
+      )
+    }));
+  }
+
+  return (
+    <section className="ilo-summary-section">
+      <div className="upgrade-readiness-head">
+        <h3>Desired Setup Intent</h3>
+        <StatusBadge status="not_applied" />
+      </div>
+      <div className="provider-callout">
+        <strong>Save only</strong>
+        <p>
+          Intent is stored locally for preview. Passwords, tokens, SNMP secrets,
+          firmware apply, power, media, boot, BIOS, and Redfish write actions are not available.
+        </p>
+      </div>
+      <form className="ilo-intent-form" onSubmit={save}>
+        <div className="form-grid">
+          <label>
+            Hostname
+            <input value={form.network.hostname ?? ""} onChange={(event) => updateNetwork("hostname", event.target.value)} />
+          </label>
+          <label>
+            Management IP
+            <input value={form.network.management_ip ?? ""} onChange={(event) => updateNetwork("management_ip", event.target.value)} />
+          </label>
+          <label>
+            Subnet Mask / Prefix
+            <input value={form.network.subnet_mask_or_prefix ?? ""} onChange={(event) => updateNetwork("subnet_mask_or_prefix", event.target.value)} />
+          </label>
+          <label>
+            Gateway
+            <input value={form.network.gateway ?? ""} onChange={(event) => updateNetwork("gateway", event.target.value)} />
+          </label>
+          <label>
+            VLAN
+            <input value={form.network.vlan ?? ""} onChange={(event) => updateNetwork("vlan", event.target.value)} />
+          </label>
+          <label>
+            Timezone
+            <input value={form.time.timezone ?? ""} onChange={(event) => setForm((current) => ({ ...current, time: { ...current.time, timezone: event.target.value } }))} />
+          </label>
+          <label>
+            NTP Server Placeholders
+            <input value={joinList(form.time.ntp_servers)} onChange={(event) => setForm((current) => ({ ...current, time: { ...current.time, ntp_servers: splitList(event.target.value) } }))} />
+          </label>
+          <label>
+            Domain Name
+            <input value={form.dns_domain.domain_name ?? ""} onChange={(event) => setForm((current) => ({ ...current, dns_domain: { ...current.dns_domain, domain_name: event.target.value } }))} />
+          </label>
+          <label>
+            DNS Server Placeholders
+            <input value={joinList(form.dns_domain.dns_servers)} onChange={(event) => setForm((current) => ({ ...current, dns_domain: { ...current.dns_domain, dns_servers: splitList(event.target.value) } }))} />
+          </label>
+          <label>
+            SNMP
+            <select value={form.snmp.enabled ? "enabled" : "disabled"} onChange={(event) => setForm((current) => ({ ...current, snmp: { ...current.snmp, enabled: event.target.value === "enabled" } }))}>
+              <option value="disabled">Disabled</option>
+              <option value="enabled">Enabled</option>
+            </select>
+          </label>
+          <label>
+            SNMP Destination Placeholders
+            <input value={joinList(form.snmp.destinations)} onChange={(event) => setForm((current) => ({ ...current, snmp: { ...current.snmp, destinations: splitList(event.target.value) } }))} />
+          </label>
+          <label>
+            SNMP Community/User Ref Labels
+            <input value={joinList(form.snmp.community_or_user_ref_labels)} onChange={(event) => setForm((current) => ({ ...current, snmp: { ...current.snmp, community_or_user_ref_labels: splitList(event.target.value) } }))} />
+          </label>
+        </div>
+        <h3>User Labels</h3>
+        <div className="ilo-user-intent-grid">
+          {[...form.users, { username_label: "", role: "" }].slice(0, 6).map((user, index) => (
+            <div className="ilo-user-intent-row" key={index}>
+              <input
+                placeholder="Username label"
+                value={user.username_label}
+                onChange={(event) => {
+                  if (index >= form.users.length) {
+                    setForm((current) => ({
+                      ...current,
+                      users: [...current.users, { username_label: event.target.value, role: "" }]
+                    }));
+                  } else {
+                    updateUser(index, "username_label", event.target.value);
+                  }
+                }}
+              />
+              <input
+                placeholder="Role / privilege intent"
+                value={user.role}
+                onChange={(event) => {
+                  if (index >= form.users.length) {
+                    setForm((current) => ({
+                      ...current,
+                      users: [...current.users, { username_label: "", role: event.target.value }]
+                    }));
+                  } else {
+                    updateUser(index, "role", event.target.value);
+                  }
+                }}
+              />
+            </div>
+          ))}
+        </div>
+        <label>
+          Notes
+          <textarea value={form.notes ?? ""} onChange={(event) => setForm((current) => ({ ...current, notes: event.target.value }))} />
+        </label>
+        <button disabled={saving} type="submit">
+          <Save size={16} />
+          Save Intent
+        </button>
+      </form>
+      <Feedback error={error} />
+      {message && <p className="provider-redaction-note">{message}</p>}
+    </section>
+  );
+}
+
+function IloSetupPlanPreviewPanel({ preview }: { preview: IloSetupPlanPreview }) {
+  return (
+    <section className="ilo-summary-section">
+      <div className="upgrade-readiness-head">
+        <h3>Setup Plan Preview</h3>
+        <StatusBadge status={preview.plan_only ? "plan_only" : "blocked"} />
+      </div>
+      <div className="provider-callout">
+        <strong>Plan preview only</strong>
+        <p>
+          Built from {preview.generated_from}. No iLO settings, users, network values,
+          firmware, virtual media, power, BIOS, or reset actions are applied.
+        </p>
+      </div>
+      <div className="provider-fact-grid compact">
+        <ProviderFact label="Mode" value={preview.mode} />
+        <ProviderFact label="Apply" value={preview.apply_enabled ? "Enabled" : "Disabled"} />
+      </div>
+      <div className="ilo-plan-section-list">
+        {preview.sections.map((section) => (
+          <article className="ilo-plan-section" key={section.id}>
+            <div className="ilo-plan-section-head">
+              <strong>{section.title}</strong>
+              <span>{labelize(section.status)}</span>
+            </div>
+            <p>{section.current_observation}</p>
+            <p>{section.planned_preview}</p>
+            {[...section.notes, ...section.blockers, ...section.warnings].length > 0 && (
+              <ul>
+                {[...section.notes, ...section.blockers, ...section.warnings].map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            )}
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function IloSetupCompareReportPanel({ report }: { report: IloSetupCompareReport }) {
+  return (
+    <section className="ilo-summary-section">
+      <div className="upgrade-readiness-head">
+        <h3>Setup Compare Report</h3>
+        <StatusBadge status={report.apply_enabled ? "apply_enabled" : "read_only"} />
+      </div>
+      <div className="provider-callout">
+        <strong>Read-only compare</strong>
+        <p>
+          Compares saved intent with cached readiness/discovery only. Unknown discovered values are
+          reported explicitly and are not treated as mismatches.
+        </p>
+      </div>
+      <div className="provider-fact-grid compact">
+        <ProviderFact label="Mode" value={report.mode} />
+        <ProviderFact label="Source" value={report.source} />
+        <ProviderFact label="Apply" value={report.apply_enabled ? "Enabled" : "Disabled"} />
+      </div>
+      <div className="ilo-compare-section-list">
+        {report.sections.map((section) => (
+          <article className="ilo-compare-section" key={section.id}>
+            <div className="ilo-plan-section-head">
+              <strong>{section.title}</strong>
+              <span className={`compare-status ${section.status}`}>{labelize(section.status)}</span>
+            </div>
+            <p>{section.next_safe_action}</p>
+            <table className="provider-candidate-table ilo-compare-table">
+              <thead>
+                <tr>
+                  <th>Field</th>
+                  <th>Desired</th>
+                  <th>Discovered</th>
+                  <th>Status</th>
+                  <th>Next Safe Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {section.rows.map((row) => (
+                  <tr key={`${row.section}-${row.field}`}>
+                    <td>{row.label}</td>
+                    <td>{row.desired}</td>
+                    <td>{row.discovered}</td>
+                    <td>
+                      <span className={`compare-status ${row.status}`}>{labelize(row.status)}</span>
+                    </td>
+                    <td>{row.next_safe_action}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function IloDestructiveRebuildPreviewPanel({
+  preview
+}: {
+  preview: IloDestructiveRebuildPreview;
+}) {
+  const confirmationPhrase = asString(preview.confirmation_requirements.operator_phrase) || "DESTROY AND REBUILD";
+
+  return (
+    <section className="ilo-summary-section">
+      <div className="upgrade-readiness-head">
+        <h3>Full Destructive Rebuild</h3>
+        <StatusBadge status={preview.status} />
+      </div>
+      <div className="provider-callout">
+        <strong>Blocked until dedicated rebuild workflow exists</strong>
+        <p>
+          No wipe, RAID, virtual media, boot, BIOS, power, or ESXi install action will run
+          from this iLO page. This panel only previews requirements and handoff state.
+        </p>
+      </div>
+      <div className="provider-fact-grid compact">
+        <ProviderFact label="Provider Mode" value={preview.provider_mode} />
+        <ProviderFact label="Destructive" value={preview.destructive_enabled ? "Enabled" : "Disabled"} />
+        <ProviderFact label="Apply" value={preview.apply_enabled ? "Enabled" : "Disabled"} />
+        <ProviderFact label="Future Phrase" value={confirmationPhrase} />
+      </div>
+      <div className="provider-callout">
+        <strong>Safe next action</strong>
+        <p>{preview.safe_next_action}</p>
+      </div>
+      <h3>Possible Future Scope</h3>
+      <div className="ilo-section-grid">
+        {preview.intended_scope.map((item) => (
+          <div className="ilo-section-item" key={item}>
+            <strong>{labelize(item)}</strong>
+            <span>Preview only</span>
+            <p>No action is available from this page.</p>
+          </div>
+        ))}
+      </div>
+      <h3>Prerequisites</h3>
+      <div className="ilo-plan-section-list">
+        {preview.required_capabilities.map((requirement) => (
+          <article className="ilo-plan-section" key={requirement.id}>
+            <div className="ilo-plan-section-head">
+              <strong>{requirement.label}</strong>
+              <span className={`compare-status ${requirement.status}`}>{labelize(requirement.status)}</span>
+            </div>
+            <p>{requirement.detail}</p>
+          </article>
+        ))}
+      </div>
+      <ProviderIssueRows blockers={preview.blockers} warnings={preview.warnings} />
+      <h3>Handoff And Artifacts</h3>
+      <div className="provider-fact-grid">
+        <ProviderFact
+          label="Target Workflow"
+          value={asString(preview.future_workflow_handoff.target_workflow) || "Dedicated rebuild workflow"}
+        />
+        <ProviderFact
+          label="iLO Role"
+          value={asString(preview.future_workflow_handoff.ilo_role) || "Readiness handoff"}
+        />
+        <ProviderFact
+          label="Dry Run"
+          value={asBoolean(preview.confirmation_requirements.dry_run_required) ? "Required" : "Not configured"}
+        />
+        <ProviderFact
+          label="Final Review"
+          value={asBoolean(preview.confirmation_requirements.final_review_required) ? "Required" : "Not configured"}
+        />
+      </div>
+      <ul className="provider-redaction-note-list">
+        {preview.artifact_requirements.map((requirement) => (
+          <li key={requirement}>{requirement}</li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function IloReportPreviewPanel() {
+  const [report, setReport] = useState<IloReportPreview | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  async function generatePreview() {
+    setLoading(true);
+    setError("");
+    try {
+      setReport(await api.iloReportPreview());
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <section className="ilo-summary-section">
+      <div className="upgrade-readiness-head">
+        <h3>Report Preview</h3>
+        <button disabled={loading} onClick={generatePreview} type="button">
+          <RefreshCw size={16} />
+          {report ? "Refresh Preview" : "Generate Preview"}
+        </button>
+      </div>
+      <div className="provider-callout">
+        <strong>Redacted preview only</strong>
+        <p>
+          Combines readiness, saved intent, compare report, setup preview, firmware readiness,
+          media metadata, blockers, warnings, and disabled actions without applying changes.
+        </p>
+      </div>
+      <Feedback loading={loading} error={error} />
+      {report && (
+        <>
+          <div className="provider-fact-grid compact">
+            <ProviderFact label="Provider Mode" value={report.provider_mode} />
+            <ProviderFact label="Generated" value={formatDateTime(report.generated_at)} />
+            <ProviderFact label="Apply" value={report.apply_enabled ? "Enabled" : "Disabled"} />
+            <ProviderFact label="Source" value={report.source} />
+          </div>
+          <div className="provider-issue-rows">
+            {report.blockers.map((blocker) => (
+              <div className="provider-issue blocker" key={blocker}>
+                <Ban size={16} />
+                <span>{blocker}</span>
+              </div>
+            ))}
+            {[...report.warnings, ...report.removable_warnings].map((warning) => (
+              <div className="provider-issue warning" key={warning}>
+                <AlertTriangle size={16} />
+                <span>{warning}</span>
+              </div>
+            ))}
+          </div>
+          <JsonDetails title="Redacted report JSON" data={report as unknown as Record<string, unknown>} />
+        </>
+      )}
+    </section>
   );
 }
 
@@ -1907,12 +2516,37 @@ function IloReportsArtifactsPanel({ summary }: { summary: IloReadinessSummary })
   );
 }
 
-function IloDangerousActionsPanel({ actions }: { actions: ProviderAction[] }) {
+function IloSafetyPanel({
+  busy,
+  disabledActions,
+  onProbe,
+  safeActions
+}: {
+  busy: boolean;
+  disabledActions: ProviderAction[];
+  onProbe: () => void;
+  safeActions: ProviderAction[];
+}) {
   return (
     <section className="ilo-summary-section">
+      <h3>Read-Only Actions</h3>
+      <div className="provider-action-layout upgrade-action-layout">
+        {safeActions.map((action) => (
+          <div className="provider-action-item" key={action.id}>
+            <button disabled={busy || !action.enabled} onClick={onProbe}>
+              <ShieldCheck size={16} />
+              {action.label}
+            </button>
+            <span className={action.enabled ? "action-tag read-only" : "action-tag disabled"}>
+              {action.enabled ? "Read only" : "Disabled"}
+            </span>
+            <p>{action.reason}</p>
+          </div>
+        ))}
+      </div>
       <h3>Dangerous Actions Disabled</h3>
       <div className="provider-action-layout upgrade-action-layout">
-        {actions.map((action) => (
+        {disabledActions.map((action) => (
           <div className="provider-action-item" key={action.id}>
             <button disabled>
               <Ban size={16} />
@@ -3340,6 +3974,26 @@ function formatDate(value: string) {
 
 function formatDateTime(value: string) {
   return new Date(value).toLocaleString();
+}
+
+function splitList(value: string): string[] {
+  return value
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function joinList(values: string[]): string {
+  return values.join(", ");
+}
+
+function cleanList(values: string[]): string[] {
+  return values.map((value) => value.trim()).filter(Boolean);
+}
+
+function emptyToNull(value: string | null | undefined): string | null {
+  const trimmed = value?.trim() ?? "";
+  return trimmed || null;
 }
 
 export default App;

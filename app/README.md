@@ -167,6 +167,13 @@ iLO, ESXi, and Cisco management configuration is reported only as
 configured/missing flags. The API does not return configured host, username, or
 password values.
 
+The iLO Provider Status page includes a blocked Full Destructive Rebuild preview
+for future bare-metal rebuild planning. It can show readiness, identity
+presence, prerequisites, blockers, handoff requirements, and the future
+confirmation phrase `DESTROY AND REBUILD`, but it does not expose or run disk
+wipe, RAID delete/create, virtual media, boot, BIOS, power, firmware, or ESXi
+install actions. Those belong in a separate guarded rebuild workflow.
+
 ESXi and Cisco management IPs can be planned without being treated as reachable
 targets. Keep `ESXI_CONFIGURED=false` until ESXi management networking is
 installed and keep `CISCO_MGMT_CONFIGURED=false` until console bootstrap has

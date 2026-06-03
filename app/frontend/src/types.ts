@@ -274,6 +274,142 @@ export type IloReadinessSummary = {
   reports_artifacts: IloReportArtifactPlaceholder[];
 };
 
+export type IloSetupPlanSection = {
+  id: string;
+  title: string;
+  status: string;
+  apply_enabled: boolean;
+  source: string;
+  current_observation: string;
+  planned_preview: string;
+  notes: string[];
+  blockers: string[];
+  warnings: string[];
+};
+
+export type IloSetupPlanPreview = {
+  provider_id: string;
+  mode: string;
+  plan_only: boolean;
+  apply_enabled: boolean;
+  generated_from: string;
+  sections: IloSetupPlanSection[];
+  firmware_readiness_handoff: Record<string, unknown>;
+  reports_artifacts: IloReportArtifactPlaceholder[];
+  disabled_dangerous_actions: ProviderAction[];
+  blockers: string[];
+  warnings: string[];
+  removable_warnings: string[];
+};
+
+export type IloSetupIntent = {
+  provider_id?: string;
+  network: {
+    hostname: string | null;
+    management_ip: string | null;
+    subnet_mask_or_prefix: string | null;
+    gateway: string | null;
+    vlan: string | null;
+  };
+  users: Array<{
+    username_label: string;
+    role: string;
+  }>;
+  snmp: {
+    enabled: boolean;
+    destinations: string[];
+    community_or_user_ref_labels: string[];
+  };
+  time: {
+    timezone: string | null;
+    ntp_servers: string[];
+  };
+  dns_domain: {
+    domain_name: string | null;
+    dns_servers: string[];
+  };
+  notes: string | null;
+  apply_enabled?: boolean;
+  created_at?: string | null;
+  updated_at?: string | null;
+};
+
+export type IloSetupCompareRow = {
+  section: string;
+  field: string;
+  label: string;
+  desired: string;
+  discovered: string;
+  status: string;
+  next_safe_action: string;
+  apply_enabled: boolean;
+};
+
+export type IloSetupCompareSection = {
+  id: string;
+  title: string;
+  status: string;
+  apply_enabled: boolean;
+  next_safe_action: string;
+  rows: IloSetupCompareRow[];
+};
+
+export type IloSetupCompareReport = {
+  provider_id: string;
+  mode: string;
+  source: string;
+  apply_enabled: boolean;
+  sections: IloSetupCompareSection[];
+  disabled_dangerous_actions: ProviderAction[];
+  blockers: string[];
+  warnings: string[];
+  removable_warnings: string[];
+};
+
+export type IloDestructiveRebuildRequirement = {
+  id: string;
+  label: string;
+  status: string;
+  detail: string;
+};
+
+export type IloDestructiveRebuildPreview = {
+  provider_id: string;
+  provider_mode: string;
+  status: string;
+  destructive_enabled: boolean;
+  apply_enabled: boolean;
+  safe_next_action: string;
+  target_identity: Record<string, unknown>;
+  discovered_state: Record<string, unknown>;
+  intended_scope: string[];
+  required_capabilities: IloDestructiveRebuildRequirement[];
+  blockers: string[];
+  warnings: string[];
+  future_workflow_handoff: Record<string, unknown>;
+  confirmation_requirements: Record<string, unknown>;
+  artifact_requirements: string[];
+};
+
+export type IloReportPreview = {
+  provider_id: string;
+  provider_mode: string;
+  generated_at: string;
+  source: string;
+  apply_enabled: boolean;
+  readiness_summary: Record<string, unknown>;
+  desired_setup_intent: Record<string, unknown>;
+  setup_compare_report: IloSetupCompareReport;
+  setup_plan_preview: Record<string, unknown>;
+  destructive_rebuild_preview: Record<string, unknown>;
+  firmware_readiness: Record<string, unknown>;
+  media_inventory_summary: Record<string, unknown>;
+  disabled_dangerous_actions: ProviderAction[];
+  blockers: string[];
+  warnings: string[];
+  removable_warnings: string[];
+};
+
 export type Catalog = {
   environments: string[];
   sites: string[];

@@ -37,6 +37,101 @@ This endpoint does not run discovery or contact iLO. It only normalizes local
 configuration presence flags, cached probe results, media metadata, and the
 plan-only upgrade decision model.
 
+`GET /api/v1/providers/ilo-redfish/setup-plan-preview` builds a plan-only setup
+preview from that readiness summary. It includes network, users, SNMP, NTP/time,
+DNS/domain, firmware readiness handoff, and report/artifact placeholder
+sections. The preview does not call iLO, does not collect media or artifacts,
+does not apply settings, and keeps all dangerous actions disabled.
+
+`GET` and `PUT /api/v1/providers/ilo-redfish/setup-intent` store desired iLO
+setup intent locally for preview only. Intent covers network labels, desired
+local usernames as labels, role intent, SNMP enabled state and reference labels,
+NTP/time placeholders, DNS/domain placeholders, and notes. It must not contain
+passwords, tokens, SNMP secrets, private keys, or real credential values. Saved
+intent feeds setup-plan-preview section status as missing intent, planned,
+blocked, warning, or already discovered when cached discovery can support that
+classification. Saving intent never applies settings and never contacts iLO.
+
+`GET /api/v1/providers/ilo-redfish/setup-compare` returns a read-only compare
+report between saved setup intent and cached readiness/discovery only. Unknown
+discovered values are reported as `discovered_unknown` and are not treated as
+mismatches. Potentially sensitive desired values such as management addressing,
+DNS, SNMP destinations, and user labels are represented as configured/missing
+rather than echoed raw. Every compare section and row has `apply_enabled=false`.
+
+`GET /api/v1/providers/ilo-redfish/report-preview` generates a redacted report
+preview from readiness summary, desired setup intent, setup compare, setup plan
+preview, destructive rebuild handoff preview, firmware readiness, media
+inventory metadata, disabled actions, blockers, and warnings. It does not run
+provider discovery or collect artifacts. The report represents host
+credentials, management addressing, SNMP labels, local media paths, serial
+values, and other sensitive data as configured, missing, counts, or placeholder
+names only. The report has `apply_enabled=false`.
+
+`GET /api/v1/providers/ilo-redfish/destructive-rebuild-preview` returns a
+blocked future workflow handoff for a full destructive server rebuild. It
+describes the future scope, including drive wipe, existing RAID/logical drive
+deletion, new RAID/logical drive creation, boot/install media preparation, ESXi
+install, and logs/reports/artifacts. It also lists prerequisites such as
+verified iLO identity, discovered model, serial presence, iLO generation,
+firmware knowledge, drive inventory, RAID plan, ESXi install media, final
+dry-run plan, destructive confirmation, and a dedicated rebuild workflow. This
+endpoint does not run discovery, does not call storage or ESXi systems, and does
+not expose a destructive action. It always returns
+`status=blocked_out_of_scope`, `destructive_enabled=false`, and
+`apply_enabled=false` until a separate guarded bare-metal rebuild workflow owns
+that lifecycle.
+
+## iLO Plan-Only Workflow Checkpoint
+
+The current iLO Provider Status workflow is a read-only, plan-only operator
+surface. It is organized around these sections:
+
+- Overview / Readiness: summarizes connection configuration flags, cached
+  Redfish discovery availability, last probe status, model/generation,
+  firmware, media inventory mode, upgrade decision, blockers, removable
+  warnings, and the next safe action. It does not probe iLO on page load.
+- Desired Intent: stores intended setup values locally for preview only. The
+  form accepts network, users, SNMP, NTP/time, DNS/domain, and notes intent,
+  but no passwords, tokens, SNMP secrets, or credential values. Saving intent
+  does not call providers or apply settings.
+- Compare: compares saved intent with cached readiness/discovery only. Unknown
+  discovered values remain explicit as unknown and are not treated as
+  mismatches. Sensitive desired values are represented as configured or missing.
+- Plan Preview: builds plan-only setup sections for network, users, SNMP,
+  NTP/time, DNS/domain, firmware readiness handoff, and report/artifact
+  placeholders. It also shows a blocked Full Destructive Rebuild handoff section
+  so operators can see that wipe, RAID, and ESXi installation belong to a future
+  dedicated workflow. All section actions remain disabled.
+- Firmware Readiness: shows readiness and handoff context only. It does not
+  upload, flash, stage, or mount firmware or media.
+- Report Preview: generates a redacted preview combining readiness, intent,
+  compare, plan preview, destructive rebuild handoff, firmware/media summaries,
+  disabled dangerous actions, blockers, warnings, provider mode, and timestamp.
+  The UI action is Generate Preview or Refresh Preview, never Apply or Run.
+- Destructive Rebuild: previews future full rebuild requirements and blockers.
+  The page may show the future confirmation phrase `DESTROY AND REBUILD`, but it
+  does not expose a clickable destructive execution button and does not run wipe,
+  RAID, virtual media, boot order, BIOS, power, or ESXi install actions.
+- Safety: lists disabled dangerous actions and keeps apply, flash, power,
+  virtual media, boot, BIOS, user, network, SNMP, NTP, and DNS/domain changes
+  unavailable.
+
+The workflow has no apply path. Every endpoint and UI section keeps
+`apply_enabled=false` and is limited to local persistence, cached discovery,
+mock data, or explicitly requested read-only discovery. Dangerous actions are
+absent or disabled by design.
+
+Testing remains mock-first. Normal backend and frontend checks should run with
+`PROVIDER_MODE=mock`. Optional `PROVIDER_MODE=local-readonly` smoke checks are
+GET-only discovery checks for a local lab and require the explicit lab
+acknowledgement variables described below; they must not be used for writes or
+production infrastructure.
+
+Operator screenshots may be saved locally under ignored paths such as
+`artifacts/debug/` or `artifacts/screenshots/`. Screenshots, generated
+artifacts, local reports, media, and real-lab files must not be committed.
+
 ## Local Read-Only Preview Mode
 
 Optional local lab settings must be placed in `.env.local.real-lab` at the
