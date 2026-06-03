@@ -140,7 +140,8 @@ deploy, or execute local media files, and it redacts actual local filenames.
 ## Provider Status Preview
 
 Provider Status shows mock provider health plus preview surfaces for HPE iLO /
-Redfish, Cisco console, Cisco Ansible SSH, and ESXi read-only checks. Default
+Redfish, Cisco console, Cisco Ansible SSH, ESXi read-only checks, and NetApp
+setup planning. Default
 `PROVIDER_MODE=mock` never runs real probes on page load. Cisco console
 discovery is read-only filesystem inspection of `/dev/serial/by-id/*`,
 `/dev/ttyUSB*`, and `/dev/ttyACM*`; it does not open serial ports or send
@@ -148,6 +149,13 @@ commands during discovery.
 iLO, ESXi, and Cisco management configuration is reported only as
 configured/missing flags. The API does not return configured host, username, or
 password values.
+
+`netapp-ontap` setup remains plan/preview only. The provider page displays the planned
+Controller SP, cluster management, node management, SVM management, and iSCSI
+LIF addresses, plus bootstrap/API/upgrade readiness, cluster/SVM/LIF intent,
+and artifact/report placeholders. Keep `NETAPP_CONFIGURED=false`; ONTAP API
+readiness is disabled and no NetApp Service Processor, console, SSH, ONTAP API,
+storage provisioning, LIF creation, upgrade, reboot, or apply call is made.
 
 ESXi and Cisco management IPs can be planned without being treated as reachable
 targets. Keep `ESXI_CONFIGURED=false` until ESXi management networking is

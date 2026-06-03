@@ -15,7 +15,9 @@ workflow lifecycle code.
   plus explicit read-only show-command probe.
 - ESXi: local target preview gated by `ESXI_CONFIGURED` plus explicit HTTPS/TCP
   read-only probe.
-- NetApp ONTAP: mocked health only.
+- NetApp ONTAP (`netapp-ontap`): setup/status preview only, with planned target addressing,
+  bootstrap/API/upgrade readiness placeholders, cluster/SVM/LIF intent, and
+  disabled dangerous actions.
 - network switch: mocked health only.
 
 `PROVIDER_MODE=mock` remains the default. In mock mode, provider status may
@@ -155,6 +157,19 @@ ESXi probes may only:
 The ESXi adapter does not reinstall, reboot, change networking, add/remove
 datastores, create/delete VMs, deploy OVFs, power VMs, change firewall settings,
 or run host configuration commands.
+
+NetApp setup preview may only:
+
+- display planned Controller SP, cluster management, node management, SVM
+  management, and iSCSI LIF addresses
+- report `NETAPP_CONFIGURED` as a presence flag
+- show console/bootstrap, ONTAP API, and upgrade readiness placeholders
+- show cluster/SVM/LIF intent and artifact/report placeholders
+
+While `NETAPP_CONFIGURED=false`, ONTAP API readiness is disabled and no probe is
+available. The adapter does not configure ONTAP, create clusters, change IPs,
+create SVMs, create LIFs, create volumes, upload images, upgrade ONTAP, reboot
+controllers, or apply changes.
 
 ## Optional Provider Smoke
 

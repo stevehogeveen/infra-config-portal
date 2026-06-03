@@ -22,9 +22,97 @@ def test_provider_status_endpoint_reports_mock_registry(client: TestClient) -> N
     assert "Mock NetBox/Nautobot" in names
     assert "HPE iLO / Redfish" in names
     assert "Cisco Console" in names
-    assert {"ilo-redfish", "cisco-console", "mock-vsphere"}.issubset(ids)
+    assert "NetApp ONTAP" in names
+    assert {"ilo-redfish", "cisco-console", "mock-vsphere", "netapp-ontap"}.issubset(ids)
     assert all(provider["mode"] == "mock" for provider in payload)
     assert all("disabled_actions" in provider for provider in payload)
+
+
+def test_netapp_ontap_status_preview_is_plan_only_and_redacted(client: TestClient) -> None:
+    response = client.get("/api/v1/providers/status")
+
+    assert response.status_code == 200
+    payload = response.json()
+    netapp = next(provider for provider in payload if provider["id"] == "netapp-ontap")
+    assert netapp["kind"] == "storage"
+    assert netapp["status"] == "blocked"
+    assert netapp["capabilities"] == [
+        "health",
+        "plan-preview",
+        "readiness-preview",
+        "upgrade-readiness-preview",
+    ]
+    assert netapp["configuration"]["netapp_configured"] is False
+    assert netapp["configuration"]["planned_sp_ips"] == {
+        "controller_a": "10.10.8.13",
+        "controller_b": "10.10.8.14",
+    }
+    assert netapp["configuration"]["planned_management_ips"] == {
+        "cluster": "10.10.8.45",
+        "node_a": "10.10.8.46",
+        "node_b": "10.10.8.47",
+        "svm": "10.10.8.48",
+    }
+    assert netapp["configuration"]["planned_iscsi_lif_range"] == {
+        "start": "10.10.8.51",
+        "end": "10.10.8.54",
+        "addresses": ["10.10.8.51", "10.10.8.52", "10.10.8.53", "10.10.8.54"],
+    }
+    assert netapp["configuration"]["api_configured_flags"] == {
+        "endpoint_configured": True,
+        "username_configured": False,
+        "credential_configured": False,
+        "tls_verify": True,
+    }
+    assert netapp["configuration"]["target_addressing"] == [
+        {"label": "Controller A SP", "address": "10.10.8.13"},
+        {"label": "Controller B SP", "address": "10.10.8.14"},
+        {"label": "Cluster management", "address": "10.10.8.45"},
+        {"label": "Node A management / e0M", "address": "10.10.8.46"},
+        {"label": "Node B management / e0M", "address": "10.10.8.47"},
+        {"label": "SVM management", "address": "10.10.8.48"},
+        {"label": "iSCSI LIFs", "address": "10.10.8.51, 10.10.8.52, 10.10.8.53, 10.10.8.54"},
+    ]
+    readiness = netapp["discovery"]["readiness"]
+    assert readiness["sp_readiness"]["status"] == "planned"
+    assert readiness["cluster_management_readiness"]["status"] == "planned"
+    assert readiness["node_management_readiness"]["status"] == "planned"
+    assert readiness["svm_readiness"]["status"] == "planned"
+    assert readiness["ontap_api_readiness"]["status"] == "blocked_until_configured"
+    assert readiness["ontap_api_readiness"]["configured"] is False
+    assert readiness["console_bootstrap_readiness"]["status"] == "manual_placeholder"
+    assert readiness["upgrade_readiness_path"]["status"] == "preview_only"
+    assert readiness["storage_iscsi_plan_preview"]["status"] == "preview_only"
+    assert readiness["reports_artifacts"]["status"] == "placeholder"
+    assert netapp["safe_actions"] == []
+    disabled_actions = {action["label"]: action for action in netapp["disabled_actions"]}
+    assert set(disabled_actions) >= {
+        "Create Cluster",
+        "Change IPs",
+        "Create SVM",
+        "Create LIFs",
+        "Create Volumes",
+        "Upgrade ONTAP",
+        "Reboot Controllers",
+        "Wipe Disks",
+        "Apply Configuration",
+    }
+    for label in ("Apply Configuration", "Change IPs", "Upgrade ONTAP", "Reboot Controllers", "Wipe Disks"):
+        assert disabled_actions[label]["enabled"] is False
+    assert not _contains_sensitive_key(netapp)
+
+
+def _contains_sensitive_key(value: object) -> bool:
+    sensitive_fragments = ("password", "token", "secret")
+    if isinstance(value, dict):
+        return any(
+            any(fragment in str(key).lower() for fragment in sensitive_fragments)
+            or _contains_sensitive_key(child)
+            for key, child in value.items()
+        )
+    if isinstance(value, list):
+        return any(_contains_sensitive_key(item) for item in value)
+    return False
 
 
 def test_provider_registry_rejects_non_mock_mode() -> None:

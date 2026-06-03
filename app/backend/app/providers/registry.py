@@ -10,6 +10,7 @@ from app.providers.cisco_console import CiscoConsoleAdapter
 from app.providers.esxi_readonly import EsxiReadonlyAdapter
 from app.providers.ilo_redfish import IloRedfishAdapter
 from app.providers.mock import MockSourceOfTruthAdapter, MockVsphereAdapter
+from app.providers.netapp import NetAppOntapAdapter
 
 
 class ProviderRegistryError(RuntimeError):
@@ -60,6 +61,7 @@ class ProviderRegistry:
             ),
             self.vsphere_adapter.health(),
             self.source_of_truth_adapter.health(),
+            NetAppOntapAdapter(self.provider_mode).health(),
             *self.placeholder_statuses,
         ]
 
@@ -165,22 +167,6 @@ def _placeholder_statuses(provider_mode: str) -> tuple[ProviderStatus, ...]:
                     "iac-apply",
                     "Apply",
                     "Terraform/OpenTofu apply is not exposed.",
-                )
-            ],
-        ),
-        ProviderStatus(
-            id="mock-netapp",
-            name="Mock NetApp ONTAP",
-            kind="storage",
-            mode=provider_mode,
-            status="ok",
-            capabilities=["health"],
-            message="Mock status only. No ONTAP calls are made.",
-            disabled_actions=[
-                _disabled_action(
-                    "netapp-provision-storage",
-                    "Provision Storage",
-                    "ONTAP provisioning actions are disabled.",
                 )
             ],
         ),

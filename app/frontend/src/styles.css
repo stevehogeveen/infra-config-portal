@@ -1100,6 +1100,34 @@ pre {
   grid-template-columns: minmax(220px, 320px);
 }
 
+.netapp-readiness-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.netapp-readiness-grid .provider-callout {
+  margin-top: 0;
+}
+
+.netapp-readiness-grid ul {
+  color: #5d6877;
+  font-size: 13px;
+  margin: 8px 0 0;
+  padding-left: 18px;
+}
+
+.netapp-intent-table + .netapp-intent-table {
+  margin-top: 10px;
+}
+
+.netapp-artifact-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
 .provider-raw-result {
   border-top: 1px solid #e5e9ef;
   margin-top: 16px;
@@ -1191,9 +1219,10 @@ pre {
     .artifact-grid,
     .provider-fact-grid,
     .provider-fact-grid.compact,
+    .netapp-readiness-grid,
     .provider-action-layout {
-    grid-template-columns: 1fr;
-  }
+      grid-template-columns: 1fr;
+    }
 
   .readiness-head {
     flex-direction: column;

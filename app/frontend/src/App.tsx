@@ -1586,13 +1586,16 @@ function ProviderDetailCard({
       <ProviderFactGrid provider={provider} />
       {provider.id === "cisco-console" && <CiscoConsoleDetails provider={provider} />}
       {provider.id === "ilo-redfish" && <IloRedfishDetails provider={provider} />}
+      {provider.id === "netapp-ontap" && <NetAppOntapDetails provider={provider} />}
       {["cisco-ansible", "esxi-readonly"].includes(provider.id) && (
         <ManagementTargetDetails provider={provider} />
       )}
-      {!["cisco-console", "ilo-redfish", "cisco-ansible", "esxi-readonly"].includes(provider.id) && (
+      {!["cisco-console", "ilo-redfish", "netapp-ontap", "cisco-ansible", "esxi-readonly"].includes(provider.id) && (
         <GenericProviderDetails provider={provider} />
       )}
-      <ProviderIssueRows blockers={provider.blockers} warnings={provider.warnings} />
+      {provider.id !== "netapp-ontap" && (
+        <ProviderIssueRows blockers={provider.blockers} warnings={provider.warnings} />
+      )}
       <ProviderActionRows
         busy={busy}
         disabledActions={provider.disabled_actions}
@@ -1948,6 +1951,172 @@ function ManagementTargetDetails({ provider }: { provider: ProviderStatus }) {
   );
 }
 
+function NetAppOntapDetails({ provider }: { provider: ProviderStatus }) {
+  const readiness = objectValue(provider.discovery?.readiness);
+  const intent = objectValue(provider.discovery?.intent_preview);
+  const cluster = objectValue(intent.cluster);
+  const svm = objectValue(intent.svm);
+  const nodes = recordArray(cluster.nodes);
+  const lifs = recordArray(intent.iscsi_lifs);
+  const storageIscsiPlan = objectValue(provider.discovery?.storage_iscsi_plan_preview);
+  const apiFlags = objectValue(provider.configuration.api_configured_flags);
+  const targetAddressing = recordArray(provider.configuration.target_addressing);
+  const artifactPlaceholders = stringArray(provider.discovery?.reports_artifacts).length
+    ? stringArray(provider.discovery?.reports_artifacts)
+    : stringArray(provider.configuration.artifact_placeholders);
+
+  return (
+    <div className="provider-detail-section netapp-setup">
+      <div className="provider-callout netapp-apply-disabled">
+        <strong>Apply disabled / preview only</strong>
+        <p>
+          Planned target display only. Cluster creation, IP changes, SVM/LIF creation, volume
+          provisioning, ONTAP upgrades, controller reboots, disk wipes, and configuration apply are disabled.
+        </p>
+      </div>
+      <div className="provider-fact-grid compact">
+        <ProviderFact label="NETAPP_CONFIGURED" value={asBoolean(provider.configuration.netapp_configured) ? "true" : "false"} />
+        <ProviderFact label="Cluster Management" value={addressFor(targetAddressing, "Cluster management")} />
+        <ProviderFact label="Node Management" value={`${addressFor(targetAddressing, "Node A management / e0M")} / ${addressFor(targetAddressing, "Node B management / e0M")}`} />
+        <ProviderFact label="SVM Management" value={addressFor(targetAddressing, "SVM management")} />
+        <ProviderFact label="API Endpoint" value={presenceLabel(apiFlags.endpoint_configured)} />
+        <ProviderFact label="API Username" value={presenceLabel(apiFlags.username_configured)} />
+        <ProviderFact label="API Credential" value={presenceLabel(apiFlags.credential_configured)} />
+        <ProviderFact label="TLS Verify" value={asBoolean(apiFlags.tls_verify) ? "Enabled" : "Disabled"} />
+      </div>
+      <h3>Planned Targets</h3>
+      <KeyValueTable rows={targetAddressing} labelKey="label" valueKey="address" empty="No NetApp target addresses are planned." />
+      <h3>Readiness Preview</h3>
+      <NetAppReadinessGrid readiness={readiness} />
+      <h3>Blockers / Removable Warnings</h3>
+      <NetAppIssueSummary blockers={provider.blockers} warnings={provider.warnings} />
+      <h3>Cluster / SVM / LIF Intent</h3>
+      <div className="provider-fact-grid compact">
+        <ProviderFact label="Cluster Management IP" value={asString(cluster.management_ip) || "-"} />
+        <ProviderFact label="SVM Management IP" value={asString(svm.management_ip) || "-"} />
+      </div>
+      <KeyValueTable rows={nodes} labelKey="name" valueKey="management_ip" empty="No node management intent is planned." />
+      <KeyValueTable rows={lifs} labelKey="name" valueKey="address" empty="No iSCSI LIF intent is planned." />
+      <h3>Storage / iSCSI Plan Preview</h3>
+      <div className="provider-callout">
+        <strong>{labelize(asString(storageIscsiPlan.status) || "placeholder")}</strong>
+        {stringArray(storageIscsiPlan.notes).map((note) => (
+          <p key={note}>{note}</p>
+        ))}
+      </div>
+      <h3>Artifact / Report Placeholders</h3>
+      {artifactPlaceholders.length ? (
+        <div className="tag-row netapp-artifact-row">
+          {artifactPlaceholders.map((artifact) => (
+            <span key={artifact}>{artifact}</span>
+          ))}
+        </div>
+      ) : (
+        <p className="muted">No NetApp artifact placeholders are defined.</p>
+      )}
+    </div>
+  );
+}
+
+function NetAppReadinessGrid({ readiness }: { readiness: Record<string, unknown> }) {
+  const rows: Array<[string, Record<string, unknown>]> = [
+    ["SP Readiness", objectValue(readiness.sp_readiness)],
+    ["Cluster Management", objectValue(readiness.cluster_management_readiness)],
+    ["Node Management", objectValue(readiness.node_management_readiness)],
+    ["SVM", objectValue(readiness.svm_readiness)],
+    ["ONTAP API", objectValue(readiness.ontap_api_readiness)],
+    ["Console / Bootstrap", objectValue(readiness.console_bootstrap_readiness)],
+    ["Upgrade Path", objectValue(readiness.upgrade_readiness_path)],
+    ["Storage / iSCSI", objectValue(readiness.storage_iscsi_plan_preview)],
+    ["Reports / Artifacts", objectValue(readiness.reports_artifacts)]
+  ];
+
+  return (
+    <div className="netapp-readiness-grid">
+      {rows.map(([label, value]) => {
+        const details = stringArray(value.details);
+        return (
+          <div className="provider-callout" key={label}>
+            <strong>{label}: {labelize(asString(value.status) || "unknown")}</strong>
+            <p>{asBoolean(value.ready) ? "Ready for read-only review." : "Not ready for execution."}</p>
+            {details.length > 0 && (
+              <ul>
+                {details.map((detail) => (
+                  <li key={detail}>{detail}</li>
+                ))}
+              </ul>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function NetAppIssueSummary({ blockers, warnings }: { blockers: string[]; warnings: string[] }) {
+  if (!blockers.length && !warnings.length) {
+    return <p className="muted">No NetApp blockers or removable warnings are reported.</p>;
+  }
+
+  return (
+    <div className="provider-issue-rows">
+      {blockers.map((blocker) => (
+        <div className="provider-issue blocker" key={blocker}>
+          <Ban size={16} />
+          <span>{blocker}</span>
+        </div>
+      ))}
+      {warnings.map((warning) => (
+        <div className="provider-issue warning removable" key={warning}>
+          <AlertTriangle size={16} />
+          <span>Removable warning: {warning}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function KeyValueTable({
+  empty,
+  labelKey,
+  rows,
+  valueKey
+}: {
+  empty: string;
+  labelKey: string;
+  rows: Array<Record<string, unknown>>;
+  valueKey: string;
+}) {
+  if (!rows.length) {
+    return <p className="muted">{empty}</p>;
+  }
+
+  return (
+    <table className="provider-candidate-table netapp-intent-table">
+      <thead>
+        <tr>
+          <th>Item</th>
+          <th>Planned Value</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((row) => {
+          const label = asString(row[labelKey]);
+          const value = asString(row[valueKey]);
+          return (
+            <tr key={`${label}-${value}`}>
+              <td>
+                <strong>{label || "-"}</strong>
+              </td>
+              <td>{value || "-"}</td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
+  );
+}
+
 function GenericProviderDetails({ provider }: { provider: ProviderStatus }) {
   const configFacts = Object.entries(provider.configuration)
     .filter(([key, value]) => key.endsWith("_configured") && typeof value === "boolean")
@@ -2066,7 +2235,7 @@ function providerOrder(id: string): number {
     "cisco-ansible",
     "esxi-readonly",
     "mock-vsphere",
-    "mock-netapp",
+    "netapp-ontap",
     "mock-network-switch",
     "mock-opentofu",
     "mock-awx",
@@ -2093,6 +2262,19 @@ function objectValue(value: unknown): Record<string, unknown> {
     return value as Record<string, unknown>;
   }
   return {};
+}
+
+function recordArray(value: unknown): Array<Record<string, unknown>> {
+  if (!Array.isArray(value)) return [];
+  return value.filter(
+    (item): item is Record<string, unknown> =>
+      Boolean(item) && typeof item === "object" && !Array.isArray(item)
+  );
+}
+
+function addressFor(rows: Array<Record<string, unknown>>, label: string): string {
+  const row = rows.find((item) => asString(item.label) === label);
+  return asString(row?.address) || "-";
 }
 
 function consoleCandidates(value: unknown): ConsoleCandidate[] {

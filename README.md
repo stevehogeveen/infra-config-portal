@@ -75,12 +75,20 @@ Provider adapters still run in mock mode only.
 ## Provider Status Preview
 
 The Provider Status page shows mock provider cards plus HPE iLO/Redfish, Cisco
-console, Cisco Ansible SSH, and ESXi read-only previews. Default
+console, Cisco Ansible SSH, ESXi read-only, and NetApp setup previews. Default
 `PROVIDER_MODE=mock` performs no real probes on page load. Cisco discovery
 dynamically inspects `/dev/serial/by-id/*`, `/dev/ttyUSB*`, and `/dev/ttyACM*`
 without opening the serial port. Local iLO, ESXi, and Cisco settings are shown
 only as configured/missing flags; configured hostnames, usernames, and passwords
 are not returned in provider status payloads.
+
+The `netapp-ontap` setup preview is plan-only. It displays the target addressing plan,
+console/bootstrap readiness checklist, disabled ONTAP API readiness,
+placeholder upgrade path, cluster/SVM/iSCSI LIF intent, and artifact/report
+placeholders. Keep `NETAPP_CONFIGURED=false` until a future task explicitly
+adds approved read-only discovery. The portal must not create an ONTAP cluster,
+change IPs, create SVMs or LIFs, create volumes, upgrade ONTAP, reboot
+controllers, or apply NetApp changes.
 
 ESXi and Cisco management IPs can be recorded as planned targets without being
 treated as reachable devices. Keep `ESXI_CONFIGURED=false` until ESXi
