@@ -29,6 +29,14 @@ manually run guarded read-only iLO, Cisco, and ESXi probes from a local lab
 machine.
 Unsupported modes raise a provider registry error.
 
+The iLO Provider Status panel also uses
+`GET /api/v1/providers/ilo-redfish/readiness-summary` for a read-only summary
+of connection readiness, cached Redfish discovery, desired setup sections,
+firmware/media readiness, report placeholders, and disabled dangerous actions.
+This endpoint does not run discovery or contact iLO. It only normalizes local
+configuration presence flags, cached probe results, media metadata, and the
+plan-only upgrade decision model.
+
 ## Local Read-Only Preview Mode
 
 Optional local lab settings must be placed in `.env.local.real-lab` at the
@@ -108,6 +116,9 @@ iLO / Redfish probes may only issue GET requests for:
 
 The adapter uses short timeouts, configurable TLS verification, HTTP basic auth,
 and response/error redaction. Passwords are never returned in API responses.
+Legacy iLO endpoints are not probed by the current readiness summary; their
+status is reported as `unknown/not_checked` until a future read-only legacy
+probe is explicitly designed and guarded.
 
 Cisco console probes may only:
 

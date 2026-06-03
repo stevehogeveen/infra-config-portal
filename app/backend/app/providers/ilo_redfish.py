@@ -393,6 +393,8 @@ def _resource_summary(payload: dict[str, Any]) -> dict[str, Any]:
         "Description",
         "Manufacturer",
         "Model",
+        "ProductName",
+        "SerialNumber",
         "FirmwareVersion",
         "PowerState",
         "Status",

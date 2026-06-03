@@ -165,3 +165,50 @@ def test_ilo_upgrade_readiness_response_includes_decision(client: TestClient) ->
     assert payload["decision"]["apply_enabled"] is False
     assert payload["apply_enabled"] is False
     clear_probe_results()
+
+
+def test_ilo_readiness_summary_normalizes_readonly_state(client: TestClient) -> None:
+    clear_probe_results()
+    record_probe_result(
+        "ilo-redfish",
+        {
+            "provider_id": "ilo-redfish",
+            "status": "ok",
+            "service_root": {"@odata.id": "/redfish/v1/"},
+            "managers": [{"Name": "HPE iLO 5", "FirmwareVersion": "2.80"}],
+            "systems": [
+                {
+                    "Model": "ProLiant DL360 Gen10",
+                    "SerialNumber": "SERIAL-REDACTED",
+                }
+            ],
+            "chassis": [],
+            "firmware": [],
+            "warnings": [],
+            "blockers": [],
+        },
+    )
+
+    response = client.get("/api/v1/providers/ilo-redfish/readiness-summary")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["provider_id"] == "ilo-redfish"
+    assert payload["connection"]["provider_mode"] == "mock"
+    assert payload["connection"]["redfish_probe_available"] is False
+    assert payload["current_state"]["last_probe_status"] == "ok"
+    assert payload["current_state"]["model"] == "ProLiant DL360 Gen10"
+    assert payload["current_state"]["serial"] == "SERIAL-REDACTED"
+    assert payload["current_state"]["current_firmware"] == "2.80"
+    assert payload["current_state"]["ilo_generation"] == "ilo5"
+    assert payload["current_state"]["redfish_endpoint_detected"] == "detected"
+    assert payload["current_state"]["legacy_endpoint_status"] == "unknown/not_checked"
+    assert payload["current_state"]["media_inventory_mode"] == "sample"
+    assert payload["upgrade_decision_status"] == payload["firmware_readiness"]["decision"]["status"]
+    assert payload["desired_setup_sections"]
+    assert all(section["status"] == "plan_only" for section in payload["desired_setup_sections"])
+    assert all(not section["apply_enabled"] for section in payload["desired_setup_sections"])
+    assert payload["reports_artifacts"]
+    assert payload["disabled_dangerous_actions"]
+    assert all(not action["enabled"] for action in payload["disabled_dangerous_actions"])
+    clear_probe_results()

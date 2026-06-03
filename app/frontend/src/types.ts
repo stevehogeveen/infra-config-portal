@@ -219,6 +219,61 @@ export type IloUpgradeReadiness = {
   apply_enabled: boolean;
 };
 
+export type IloConnectionReadiness = {
+  provider_mode: string;
+  provider_status: string;
+  host_configured: boolean;
+  username_configured: boolean;
+  password_configured: boolean;
+  tls_verify: boolean;
+  timeout_seconds: number;
+  missing_fields: string[];
+  redfish_probe_available: boolean;
+  safety_flags: Record<string, unknown>;
+};
+
+export type IloCurrentState = {
+  last_probe_status: string;
+  last_probe_time: string | null;
+  model: string | null;
+  serial: string | null;
+  current_firmware: string | null;
+  ilo_generation: string | null;
+  redfish_endpoint_detected: string;
+  legacy_endpoint_status: string;
+  legacy_endpoint_message: string;
+  media_inventory_mode: string;
+};
+
+export type IloDesiredSetupSection = {
+  id: string;
+  title: string;
+  status: string;
+  apply_enabled: boolean;
+  note: string;
+};
+
+export type IloReportArtifactPlaceholder = {
+  kind: string;
+  title: string;
+  status: string;
+  note: string;
+};
+
+export type IloReadinessSummary = {
+  provider_id: string;
+  connection: IloConnectionReadiness;
+  current_state: IloCurrentState;
+  desired_setup_sections: IloDesiredSetupSection[];
+  firmware_readiness: IloUpgradeReadiness;
+  upgrade_decision_status: string;
+  blockers: string[];
+  warnings: string[];
+  removable_warnings: string[];
+  disabled_dangerous_actions: ProviderAction[];
+  reports_artifacts: IloReportArtifactPlaceholder[];
+};
+
 export type Catalog = {
   environments: string[];
   sites: string[];

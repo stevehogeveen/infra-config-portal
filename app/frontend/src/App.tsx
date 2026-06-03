@@ -29,6 +29,7 @@ import type {
   AuditEvent,
   Catalog,
   ConsoleCandidate,
+  IloReadinessSummary,
   IloUpgradeReadiness,
   MediaInventory,
   ProviderAction,
@@ -1708,24 +1709,22 @@ function CiscoConsoleDetails({ provider }: { provider: ProviderStatus }) {
 }
 
 function IloRedfishDetails({ provider }: { provider: ProviderStatus }) {
-  const [readiness, setReadiness] = useState<IloUpgradeReadiness | null>(null);
+  const [summary, setSummary] = useState<IloReadinessSummary | null>(null);
   const [error, setError] = useState("");
-  const config = provider.configuration;
-  const missingFields = stringArray(config.missing_fields);
 
   useEffect(() => {
     let cancelled = false;
     api
-      .iloUpgradeReadiness()
+      .iloReadinessSummary()
       .then((payload) => {
         if (!cancelled) {
-          setReadiness(payload);
+          setSummary(payload);
           setError("");
         }
       })
       .catch((err: Error) => {
         if (!cancelled) {
-          setReadiness(null);
+          setSummary(null);
           setError(err.message);
         }
       });
@@ -1734,66 +1733,120 @@ function IloRedfishDetails({ provider }: { provider: ProviderStatus }) {
     };
   }, [provider.last_probe_time, provider.status]);
 
+  if (error) {
+    return (
+      <div className="provider-detail-section">
+        <div className="provider-callout">
+          <strong>iLO readiness unavailable</strong>
+          <p>{error}</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!summary) {
+    return (
+      <div className="provider-detail-section">
+        <div className="provider-callout">
+          <strong>iLO readiness</strong>
+          <p>Loading read-only summary.</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="provider-detail-section">
+      <IloConnectionPanel summary={summary} />
+      <IloCurrentStatePanel summary={summary} />
+      <IloDesiredSetupPanel summary={summary} />
+      <IloUpgradeDecisionPanel readiness={summary.firmware_readiness} />
+      <IloReportsArtifactsPanel summary={summary} />
+      <IloDangerousActionsPanel actions={summary.disabled_dangerous_actions} />
+    </div>
+  );
+}
+
+function IloConnectionPanel({ summary }: { summary: IloReadinessSummary }) {
+  const { connection } = summary;
+
+  return (
+    <section className="ilo-summary-section">
+      <h3>Connection Readiness</h3>
       <div className="provider-callout">
-        <strong>{missingFields.length ? "Configuration missing" : "Configuration present"}</strong>
+        <strong>{connection.missing_fields.length ? "Configuration missing" : "Configuration present"}</strong>
         <p>
           iLO host, username, and password values are stored only in local environment configuration and
           are exposed here as presence flags.
         </p>
       </div>
       <div className="provider-fact-grid">
-        <ProviderFact label="Host" value={presenceLabel(config.host_configured)} />
-        <ProviderFact label="Username" value={presenceLabel(config.username_configured)} />
-        <ProviderFact
-          label="Password"
-          value={presenceLabel(config.password_configured)}
-        />
-        <ProviderFact
-          label="TLS Verify"
-          value={asBoolean(config.tls_verify) ? "Enabled" : "Disabled"}
-        />
+        <ProviderFact label="Host" value={presenceLabel(connection.host_configured)} />
+        <ProviderFact label="Username" value={presenceLabel(connection.username_configured)} />
+        <ProviderFact label="Password" value={presenceLabel(connection.password_configured)} />
+        <ProviderFact label="Redfish Probe" value={connection.redfish_probe_available ? "Available" : "Disabled"} />
+        <ProviderFact label="Mode" value={connection.provider_mode} />
+        <ProviderFact label="Provider Status" value={labelize(connection.provider_status)} />
+        <ProviderFact label="TLS Verify" value={connection.tls_verify ? "Enabled" : "Disabled"} />
+        <ProviderFact label="Timeout" value={`${connection.timeout_seconds}s`} />
       </div>
-      {missingFields.length > 0 && (
+      {connection.missing_fields.length > 0 && (
         <p className="provider-missing-fields">
-          Missing local settings: {missingFields.join(", ")}
+          Missing local settings: {connection.missing_fields.join(", ")}
         </p>
       )}
-      <IloUpgradeDecisionPanel error={error} readiness={readiness} />
-    </div>
+    </section>
   );
 }
 
-function IloUpgradeDecisionPanel({
-  error,
-  readiness
-}: {
-  error: string;
-  readiness: IloUpgradeReadiness | null;
-}) {
-  if (error) {
-    return (
-      <div className="provider-callout upgrade-readiness-callout">
-        <strong>Firmware readiness unavailable</strong>
-        <p>{error}</p>
-      </div>
-    );
-  }
+function IloCurrentStatePanel({ summary }: { summary: IloReadinessSummary }) {
+  const { current_state } = summary;
 
-  if (!readiness) {
-    return (
-      <div className="provider-callout upgrade-readiness-callout">
-        <strong>Firmware readiness</strong>
-        <p>Loading planning decision.</p>
+  return (
+    <section className="ilo-summary-section">
+      <h3>Discovered Current State</h3>
+      <div className="provider-fact-grid">
+        <ProviderFact label="Last Probe" value={labelize(current_state.last_probe_status)} />
+        <ProviderFact
+          label="Probe Time"
+          value={current_state.last_probe_time ? formatDateTime(current_state.last_probe_time) : "Never"}
+        />
+        <ProviderFact label="Model" value={current_state.model || "Unknown"} />
+        <ProviderFact label="Serial" value={current_state.serial || "Unknown"} />
+        <ProviderFact label="Current Firmware" value={current_state.current_firmware || "Unknown"} />
+        <ProviderFact label="iLO Generation" value={current_state.ilo_generation || "Unknown"} />
+        <ProviderFact label="Redfish Endpoint" value={labelize(current_state.redfish_endpoint_detected)} />
+        <ProviderFact label="Legacy Endpoint" value={current_state.legacy_endpoint_status} />
+        <ProviderFact label="Media Inventory" value={labelize(current_state.media_inventory_mode)} />
       </div>
-    );
-  }
+      <p className="provider-redaction-note">{current_state.legacy_endpoint_message}</p>
+    </section>
+  );
+}
 
+function IloDesiredSetupPanel({ summary }: { summary: IloReadinessSummary }) {
+  return (
+    <section className="ilo-summary-section">
+      <h3>Desired Setup Sections</h3>
+      <div className="ilo-section-grid">
+        {summary.desired_setup_sections.map((section) => (
+          <div className="ilo-section-item" key={section.id}>
+            <strong>{section.title}</strong>
+            <span>{labelize(section.status)} / not applied</span>
+            <p>{section.note}</p>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function IloUpgradeDecisionPanel({ readiness }: { readiness: IloUpgradeReadiness }) {
   const { decision, subject } = readiness;
 
   return (
-    <div className="upgrade-readiness">
+    <section className="ilo-summary-section upgrade-readiness">
+      <h3>Firmware Readiness</h3>
       <div className="provider-callout upgrade-readiness-callout">
         <div className="upgrade-readiness-head">
           <div>
@@ -1833,7 +1886,44 @@ function IloUpgradeDecisionPanel({
           <p>{decision.next_safe_action}</p>
         </div>
       </div>
-    </div>
+    </section>
+  );
+}
+
+function IloReportsArtifactsPanel({ summary }: { summary: IloReadinessSummary }) {
+  return (
+    <section className="ilo-summary-section">
+      <h3>Reports & Artifacts</h3>
+      <div className="ilo-section-grid">
+        {summary.reports_artifacts.map((artifact) => (
+          <div className="ilo-section-item" key={artifact.kind}>
+            <strong>{artifact.title}</strong>
+            <span>{labelize(artifact.status)}</span>
+            <p>{artifact.note}</p>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function IloDangerousActionsPanel({ actions }: { actions: ProviderAction[] }) {
+  return (
+    <section className="ilo-summary-section">
+      <h3>Dangerous Actions Disabled</h3>
+      <div className="provider-action-layout upgrade-action-layout">
+        {actions.map((action) => (
+          <div className="provider-action-item" key={action.id}>
+            <button disabled>
+              <Ban size={16} />
+              {action.label}
+            </button>
+            <span className="action-tag disabled">Disabled</span>
+            <p>{action.reason}</p>
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
 

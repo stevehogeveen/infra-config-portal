@@ -69,6 +69,9 @@ def ilo_subject_from_probe(probe_result: dict[str, Any] | None) -> UpgradeSubjec
         [*systems, *chassis]
     )
     model = _first_string(systems, "Model") or _first_string(chassis, "Model")
+    serial = _first_string(systems, "SerialNumber") or _first_string(
+        chassis, "SerialNumber"
+    )
 
     discovery_confidence = "unknown"
     if current_version and generation:
@@ -81,6 +84,7 @@ def ilo_subject_from_probe(probe_result: dict[str, Any] | None) -> UpgradeSubjec
         product="hpe-ilo",
         generation=generation,
         model=model,
+        serial=serial,
         current_version=current_version,
         discovery_confidence=discovery_confidence,
     )

@@ -25,6 +25,7 @@ from app.schemas import (
     ArtifactRead,
     AuditEventRead,
     CatalogRead,
+    IloReadinessSummaryRead,
     IloUpgradeReadinessRead,
     MediaInventoryRead,
     ProviderProbeResultRead,
@@ -59,6 +60,7 @@ from app.services.lifecycle import (
     update_vm_deployment_request,
 )
 from app.services.media_inventory import get_media_inventory
+from app.services.ilo_readiness import get_ilo_readiness_summary
 from app.services.readiness import get_request_readiness
 from app.services.upgrade_decision import get_ilo_upgrade_readiness
 
@@ -283,6 +285,14 @@ def probe_provider(provider_id: str) -> ProviderProbeResultRead:
 )
 def read_ilo_upgrade_readiness() -> IloUpgradeReadinessRead:
     return get_ilo_upgrade_readiness()
+
+
+@router.get(
+    "/providers/ilo-redfish/readiness-summary",
+    response_model=IloReadinessSummaryRead,
+)
+def read_ilo_readiness_summary() -> IloReadinessSummaryRead:
+    return get_ilo_readiness_summary()
 
 
 def _run_provider_probe(provider_id: str, probe: Callable[[], dict]) -> dict:

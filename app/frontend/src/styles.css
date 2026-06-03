@@ -1081,6 +1081,42 @@ pre {
   margin-top: 16px;
 }
 
+.ilo-summary-section {
+  margin-top: 18px;
+}
+
+.ilo-section-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.ilo-section-item {
+  border-top: 1px solid #e5e9ef;
+  padding-top: 10px;
+}
+
+.ilo-section-item strong,
+.ilo-section-item span {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.ilo-section-item span {
+  color: #6b7686;
+  font-size: 12px;
+  font-weight: 800;
+  margin-top: 4px;
+  text-transform: uppercase;
+}
+
+.ilo-section-item p {
+  color: #5d6877;
+  font-size: 12px;
+  line-height: 1.35;
+  margin: 8px 0 0;
+}
+
 .upgrade-readiness-callout {
   margin-top: 0;
 }
@@ -1159,7 +1195,8 @@ pre {
   .lifecycle-action-grid,
   .artifact-grid,
   .provider-fact-grid,
-  .provider-action-layout {
+  .provider-action-layout,
+  .ilo-section-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
@@ -1191,7 +1228,8 @@ pre {
     .artifact-grid,
     .provider-fact-grid,
     .provider-fact-grid.compact,
-    .provider-action-layout {
+    .provider-action-layout,
+    .ilo-section-grid {
     grid-template-columns: 1fr;
   }
 

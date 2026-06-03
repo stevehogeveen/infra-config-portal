@@ -348,6 +348,61 @@ class ProviderActionRead(BaseModel):
     endpoint: str | None = None
 
 
+class IloConnectionReadinessRead(BaseModel):
+    provider_mode: str
+    provider_status: str
+    host_configured: bool
+    username_configured: bool
+    password_configured: bool
+    tls_verify: bool
+    timeout_seconds: float
+    missing_fields: list[str] = Field(default_factory=list)
+    redfish_probe_available: bool
+    safety_flags: dict[str, Any] = Field(default_factory=dict)
+
+
+class IloCurrentStateRead(BaseModel):
+    last_probe_status: str
+    last_probe_time: str | None = None
+    model: str | None = None
+    serial: str | None = None
+    current_firmware: str | None = None
+    ilo_generation: str | None = None
+    redfish_endpoint_detected: str
+    legacy_endpoint_status: str
+    legacy_endpoint_message: str
+    media_inventory_mode: str
+
+
+class IloDesiredSetupSectionRead(BaseModel):
+    id: str
+    title: str
+    status: str
+    apply_enabled: bool = False
+    note: str
+
+
+class IloReportArtifactPlaceholderRead(BaseModel):
+    kind: str
+    title: str
+    status: str
+    note: str
+
+
+class IloReadinessSummaryRead(BaseModel):
+    provider_id: str
+    connection: IloConnectionReadinessRead
+    current_state: IloCurrentStateRead
+    desired_setup_sections: list[IloDesiredSetupSectionRead]
+    firmware_readiness: IloUpgradeReadinessRead
+    upgrade_decision_status: str
+    blockers: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    removable_warnings: list[str] = Field(default_factory=list)
+    disabled_dangerous_actions: list[ProviderActionRead] = Field(default_factory=list)
+    reports_artifacts: list[IloReportArtifactPlaceholderRead] = Field(default_factory=list)
+
+
 class ProviderStatusRead(BaseModel):
     id: str
     name: str
