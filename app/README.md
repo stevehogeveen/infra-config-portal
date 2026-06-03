@@ -35,8 +35,26 @@ infra-config-portal/
 
 ## Backend Quick Start
 
+Safe start/stop/restart from the app directory:
+
 ```bash
-cd /home/administrator/infra-config-portal/app
+cd /home/administrator/infra-config-portal-netapp/app
+make start
+make status
+make restart
+make stop
+```
+
+These targets call the repository-root `./runit` supervisor. It writes PID files
+under `.local/run/`, logs under `.local/log/`, and only stops app-owned FastAPI
+and Vite dev server processes after validating their command lines and working
+directories. It does not kill Firefox, Chrome, Chromium, browser processes, or
+arbitrary clients connected to `5173`.
+
+Foreground backend-only development:
+
+```bash
+cd /home/administrator/infra-config-portal-netapp/app
 make backend-venv
 make backend-test
 make backend-run
@@ -67,7 +85,7 @@ The backend pytest suite includes a local mock VM lifecycle smoke test. Run only
 that smoke test with:
 
 ```bash
-cd /home/administrator/infra-config-portal/app/backend
+cd /home/administrator/infra-config-portal-netapp/app/backend
 PROVIDER_MODE=mock .venv/bin/pytest -q tests/test_smoke_vm_lifecycle.py
 ```
 
@@ -84,10 +102,10 @@ infrastructure.
 
 ## Frontend Quick Start
 
-In a second terminal:
+Foreground frontend-only development, in a second terminal:
 
 ```bash
-cd /home/administrator/infra-config-portal/app
+cd /home/administrator/infra-config-portal-netapp/app
 make frontend-install
 make frontend-run
 ```
@@ -109,7 +127,7 @@ default, or placeholder-only metadata from explicitly configured
 ## Docker Compose
 
 ```bash
-cd /home/administrator/infra-config-portal/app
+cd /home/administrator/infra-config-portal-netapp/app
 docker compose up --build
 ```
 

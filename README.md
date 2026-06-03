@@ -25,36 +25,54 @@ infra-config-portal/
 ## Always Run From Repo Root
 
 Root automation paths such as `.codex/tasks`, `.codex/runs`, and
-`.codex/task-queue.md` live at `/home/administrator/infra-config-portal`, not
+`.codex/task-queue.md` live at `/home/administrator/infra-config-portal-netapp`, not
 under `app/`.
 
 Before running root `make` or Codex automation commands:
 
 ```bash
-cd /home/administrator/infra-config-portal
+cd /home/administrator/infra-config-portal-netapp
 ```
 
-If you are in `/home/administrator/infra-config-portal/app`, move up one level
+If you are in `/home/administrator/infra-config-portal-netapp/app`, move up one level
 first. Running root-only targets from `app/` prints:
 
 ```text
-Run this from /home/administrator/infra-config-portal, not /home/administrator/infra-config-portal/app.
+Run this from /home/administrator/infra-config-portal-netapp, not /home/administrator/infra-config-portal-netapp/app.
 ```
 
 ## Run Locally
 
-Backend:
+Safe app workflow from the repository root:
 
 ```bash
-cd /home/administrator/infra-config-portal/app
+cd /home/administrator/infra-config-portal-netapp
+make app-start
+make app-status
+make app-restart
+make app-stop
+```
+
+The safe workflow is implemented by `./runit`. It records backend and frontend
+PID files under `.local/run/`, logs to `.local/log/`, and only stops processes
+whose command line and working directory match this app's FastAPI backend or
+Vite frontend. It does not kill Firefox, Chrome, Chromium, browser processes,
+or arbitrary clients connected to the frontend port.
+
+`make dev` is an alias for `make app-restart`.
+
+Foreground backend-only development:
+
+```bash
+cd /home/administrator/infra-config-portal-netapp/app
 make backend-venv
 make backend-run
 ```
 
-Frontend, in a second terminal:
+Foreground frontend-only development, in a second terminal:
 
 ```bash
-cd /home/administrator/infra-config-portal/app
+cd /home/administrator/infra-config-portal-netapp/app
 make frontend-install
 make frontend-run
 ```
@@ -65,7 +83,7 @@ The backend runs at `http://127.0.0.1:8001`. The Vite frontend runs at
 Docker Compose:
 
 ```bash
-cd /home/administrator/infra-config-portal/app
+cd /home/administrator/infra-config-portal-netapp/app
 docker compose up --build
 ```
 
@@ -127,7 +145,7 @@ The backend pytest suite includes a mock-only VM lifecycle smoke test. To run
 that smoke coverage directly:
 
 ```bash
-cd /home/administrator/infra-config-portal/app/backend
+cd /home/administrator/infra-config-portal-netapp/app/backend
 PROVIDER_MODE=mock .venv/bin/pytest -q tests/test_smoke_vm_lifecycle.py
 ```
 
@@ -144,7 +162,7 @@ and must remain `PROVIDER_MODE=mock`.
 This repository includes repeatable non-interactive Codex workflows under
 `.codex/`.
 
-Run these commands from `/home/administrator/infra-config-portal`.
+Run these commands from `/home/administrator/infra-config-portal-netapp`.
 
 Run the audit task:
 

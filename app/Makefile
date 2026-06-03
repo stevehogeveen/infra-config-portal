@@ -6,8 +6,10 @@ PIP := $(VENV)/bin/pip
 PY := $(VENV)/bin/python
 REPO_ROOT := $(abspath ..)
 PROVIDER_MODE ?= mock
+BACKEND_PORT ?= 8001
+FRONTEND_PORT ?= 5173
 
-.PHONY: backend-venv backend-run backend-test frontend-install frontend-run up down codex-audit codex-task codex-next codex-resume test dev lint provider-smoke
+.PHONY: backend-venv backend-run backend-test frontend-install frontend-run up down start stop restart status check codex-audit codex-task codex-next codex-resume test dev lint provider-smoke
 
 backend-venv:
 	$(PYTHON) -m venv $(VENV)
@@ -15,7 +17,7 @@ backend-venv:
 	$(PIP) install -r $(BACKEND_DIR)/requirements.txt
 
 backend-run:
-	cd $(BACKEND_DIR) && .venv/bin/uvicorn app.main:app --reload --host 127.0.0.1 --port 8001
+	cd $(BACKEND_DIR) && .venv/bin/uvicorn app.main:app --reload --host 127.0.0.1 --port $(BACKEND_PORT)
 
 backend-test:
 	cd $(BACKEND_DIR) && PROVIDER_MODE=mock .venv/bin/pytest -q
@@ -24,13 +26,25 @@ frontend-install:
 	cd $(FRONTEND_DIR) && npm install
 
 frontend-run:
-	cd $(FRONTEND_DIR) && npm run dev -- --host 127.0.0.1
+	cd $(FRONTEND_DIR) && npm run dev -- --host 127.0.0.1 --port $(FRONTEND_PORT)
 
 up:
 	docker compose up --build
 
 down:
 	docker compose down
+
+start:
+	$(REPO_ROOT)/runit start
+
+stop:
+	$(REPO_ROOT)/runit stop
+
+restart:
+	$(REPO_ROOT)/runit restart
+
+status check:
+	$(REPO_ROOT)/runit status
 
 codex-audit codex-task codex-next codex-resume test dev lint:
 	@echo "Error: Run this from $(REPO_ROOT), not $(CURDIR)." >&2
