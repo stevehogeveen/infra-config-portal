@@ -11,6 +11,8 @@ workflow lifecycle code.
 - Terraform/OpenTofu: mocked health only.
 - HPE iLO/Redfish: local configuration preview plus explicit GET-only probe.
 - Cisco console: dynamic local serial discovery plus explicit read-only probe.
+- Cisco Ansible SSH: management-IP readiness plus explicit read-only show-command probe.
+- ESXi: local configuration preview plus explicit HTTPS/TCP read-only probe.
 - NetApp ONTAP: mocked health only.
 - network switch: mocked health only.
 
@@ -21,16 +23,17 @@ or serial probe is run automatically.
 The backend resolves default adapters through `app.providers.registry`. The
 current registry accepts `PROVIDER_MODE=mock` for workflow lifecycle execution.
 Provider status also supports `PROVIDER_MODE=local-readonly` so an operator can
-manually run guarded read-only iLO and Cisco probes from a local lab machine.
+manually run guarded read-only iLO, Cisco, and ESXi probes from a local lab
+machine.
 Unsupported modes raise a provider registry error.
 
 ## Local Read-Only Preview Mode
 
-Optional local lab settings may be placed in `.env.local.providers` at the
-repository root. This file is ignored by Git and must not be committed.
-Provider status responses expose these iLO values only as configured/missing
-flags. Probe results redact configured endpoints, users, passwords, tokens,
-cookies, and other sensitive fields before caching or returning them.
+Optional local lab settings must be placed in `.env.local.real-lab` at the
+repository root. This file is ignored by Git and must not be committed. Provider
+status responses expose local provider values only as configured/missing flags.
+Probe results redact configured endpoints, users, passwords, tokens, cookies,
+and other sensitive fields before caching or returning them.
 
 Supported local variables:
 
@@ -39,9 +42,23 @@ Supported local variables:
 - `ILO_TEST_PASSWORD`
 - `ILO_TEST_VERIFY_TLS` (`true` by default; set `false` for lab self-signed TLS)
 - `ILO_TEST_TIMEOUT_SECONDS` (`3.0` by default)
+- `ESXI_TEST_HOST`
+- `ESXI_TEST_USERNAME`
+- `ESXI_TEST_PASSWORD`
+- `ESXI_TEST_VERIFY_TLS` (`true` by default; set `false` for lab self-signed TLS)
+- `ESXI_TEST_TIMEOUT_SECONDS` (`3.0` by default)
 - `CISCO_CONSOLE_PORT`
 - `CISCO_CONSOLE_BAUD` (`9600` by default)
 - `CISCO_CONSOLE_TIMEOUT_SECONDS` (`2.0` by default)
+- `CISCO_TARGET_IP`
+- `CISCO_TEST_USERNAME`
+- `CISCO_TEST_PASSWORD`
+- `CISCO_ENABLE_PASSWORD`
+- `ANSIBLE_CISCO_NETWORK_OS` (`cisco.ios.ios` by default)
+- `ANSIBLE_CISCO_CONNECTION` (`ansible.netcommon.network_cli` by default)
+- `LAB_CLOSED_LOOP_ACK` (`YES` required for real lab probes)
+- `LAB_READONLY_ACK` (`YES` required for real lab probes)
+- `LAB_DESTRUCTIVE_ACK` (`REBUILD_LAB` required before future destructive plans can apply)
 
 If `CISCO_CONSOLE_PORT` is not set, the backend dynamically discovers
 candidates from:
@@ -86,22 +103,54 @@ Cisco console probes may only:
 
 The Cisco adapter never sends `enable`, `conf t`, `write memory`, `reload`,
 `erase startup-config`, `copy`, or persistent configuration commands. If the
-console prompts for login, password, enable, or appears to be in config mode,
-the probe reports a blocked state instead of guessing credentials.
+console prompts for login, password, setup wizard input, enable, or appears to
+be in config mode, the probe reports a blocked state instead of guessing
+credentials.
+
+Cisco Ansible probes may only:
+
+- check TCP reachability to SSH
+- run `ansible --version`
+- parse a generated temporary inventory with `ansible-inventory --graph`
+- run fixed read-only `cisco.ios.ios_command` show commands:
+  - `show version`
+  - `show inventory`
+  - `show interfaces status`
+  - `show ip interface brief`
+  - `show vlan brief`
+
+The generated inventory is local, temporary, mode `0600`, and deleted after the
+probe. The adapter never accepts arbitrary Ansible variables or free-form
+commands from the UI.
+
+ESXi probes may only:
+
+- check TCP reachability to HTTPS and SSH
+- issue HTTPS GET requests for `/`, `/ui/`, and `/sdk/vimServiceVersions.xml`
+- summarize VIM service versions when that XML is reachable
+- report local `govc`, PowerCLI, and pyVmomi availability
+
+The ESXi adapter does not reinstall, reboot, change networking, add/remove
+datastores, create/delete VMs, deploy OVFs, power VMs, change firewall settings,
+or run host configuration commands.
 
 ## Optional Provider Smoke
 
 Manual local smoke:
 
 ```bash
-source .env.local.providers
 PROVIDER_MODE=local-readonly make provider-smoke
 ```
 
-The smoke command dynamically discovers Cisco console candidates, skips probes
-when local config or hardware is absent, and exits successfully for missing lab
-hardware. It redacts sensitive values and must not be used with production
-infrastructure credentials.
+The backend loads local provider values from `.env.local.real-lab`, but ignores
+`PROVIDER_MODE` from that file so default app and test startup remains mock.
+Plain `make provider-smoke` runs in mock mode and skips probes. With explicit
+`PROVIDER_MODE=local-readonly`, the smoke command dynamically discovers Cisco
+console candidates, performs configured read-only probes, skips probes when
+local config or hardware is absent, and exits successfully for missing lab
+hardware. It writes sanitized JSON and Markdown reports under ignored
+`artifacts/real-lab/`, redacts sensitive values, and must not be used with
+production infrastructure credentials.
 
 ## Interface Expectations
 

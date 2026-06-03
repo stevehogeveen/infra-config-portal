@@ -9,8 +9,12 @@ from fastapi.testclient import TestClient
 from app.providers.cisco_console import (
     CiscoConsoleConfig,
     ConsoleDiscoveryPaths,
+    _prompt_blocker_message,
+    _prompt_state,
     discover_cisco_console,
 )
+from app.providers.cisco_ansible import CiscoAnsibleAdapter, CiscoAnsibleConfig
+from app.providers.esxi_readonly import EsxiReadonlyAdapter, EsxiReadonlyConfig
 from app.providers.ilo_redfish import IloRedfishAdapter, IloRedfishConfig
 from app.providers.probe_cache import clear_probe_results
 from app.providers.redaction import redact_sensitive
@@ -117,6 +121,13 @@ def test_cisco_discovery_does_not_open_serial_or_send_commands(
     assert discovery["status"] == "needs-selection"
 
 
+def test_cisco_setup_wizard_prompt_is_blocked() -> None:
+    prompt = "Would you like to enter the initial configuration dialog? [yes/no]:"
+
+    assert _prompt_state(prompt) == "setup-wizard"
+    assert "setup wizard" in _prompt_blocker_message("setup-wizard")
+
+
 def test_ilo_missing_config_returns_missing_config_blocker() -> None:
     adapter = IloRedfishAdapter(
         provider_mode="local-readonly",
@@ -182,6 +193,56 @@ def test_ilo_redacts_secrets() -> None:
     assert encoded.count("REDACTED") >= 3
 
 
+def test_esxi_status_exposes_only_configuration_presence() -> None:
+    adapter = EsxiReadonlyAdapter(
+        provider_mode="mock",
+        config=EsxiReadonlyConfig(
+            host="esxi-lab-private.example.test",
+            username="root",
+            password="super-secret-password",
+            verify_tls=True,
+            timeout_seconds=1.0,
+            ssh_timeout_seconds=1.0,
+        ),
+    )
+
+    status = adapter.health()
+    encoded_configuration = json.dumps(status.configuration)
+
+    assert status.configuration["host_configured"] is True
+    assert status.configuration["username_configured"] is True
+    assert status.configuration["password_configured"] is True
+    assert "esxi-lab-private" not in encoded_configuration
+    assert "root" not in encoded_configuration
+    assert "super-secret-password" not in encoded_configuration
+
+
+def test_cisco_ansible_status_exposes_only_configuration_presence() -> None:
+    adapter = CiscoAnsibleAdapter(
+        provider_mode="mock",
+        config=CiscoAnsibleConfig(
+            host="192.0.2.10",
+            username="switch-admin",
+            password="super-secret-password",
+            enable_password="enable-secret",
+            network_os="cisco.ios.ios",
+            connection="ansible.netcommon.network_cli",
+            timeout_seconds=1.0,
+        ),
+    )
+
+    status = adapter.health()
+    encoded_configuration = json.dumps(status.configuration)
+
+    assert status.configuration["host_configured"] is True
+    assert status.configuration["username_configured"] is True
+    assert status.configuration["password_configured"] is True
+    assert "192.0.2.10" not in encoded_configuration
+    assert "switch-admin" not in encoded_configuration
+    assert "super-secret-password" not in encoded_configuration
+    assert "enable-secret" not in encoded_configuration
+
+
 def test_dangerous_actions_are_not_exposed_as_runnable() -> None:
     statuses = provider_registry("mock").statuses()
 
@@ -211,7 +272,13 @@ def test_provider_status_response_shape(client: TestClient) -> None:
     assert response.status_code == 200
     payload = response.json()
     provider_ids = {provider["id"] for provider in payload}
-    assert {"ilo-redfish", "cisco-console", "mock-vsphere"}.issubset(provider_ids)
+    assert {
+        "ilo-redfish",
+        "cisco-console",
+        "cisco-ansible",
+        "esxi-readonly",
+        "mock-vsphere",
+    }.issubset(provider_ids)
     for provider in payload:
         assert isinstance(provider["configuration"], dict)
         assert isinstance(provider["blockers"], list)
@@ -219,6 +286,19 @@ def test_provider_status_response_shape(client: TestClient) -> None:
         assert isinstance(provider["safe_actions"], list)
         assert isinstance(provider["disabled_actions"], list)
         assert all(not action["enabled"] for action in provider["disabled_actions"])
+
+
+def test_new_provider_probe_endpoints_are_explicit_and_blocked_in_mock_mode(
+    client: TestClient,
+) -> None:
+    for provider_id in ("cisco-ansible", "esxi-readonly"):
+        response = client.post(f"/api/v1/providers/{provider_id}/probe")
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["provider_id"] == provider_id
+        assert payload["status"] == "blocked"
+        assert "local-readonly" in payload["message"]
 
 
 def _console_paths(tmp_path: Path) -> dict[str, Path]:

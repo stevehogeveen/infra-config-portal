@@ -1,0 +1,502 @@
+from __future__ import annotations
+
+import json
+import os
+import socket
+import subprocess
+import tempfile
+import time
+from dataclasses import dataclass
+from pathlib import Path
+from shutil import which
+from typing import Any
+
+from app.core.config import settings
+from app.providers.base import ProviderAction, ProviderStatus
+from app.providers.lab_safety import current_lab_safety
+from app.providers.probe_cache import get_probe_result, record_probe_result
+from app.providers.redaction import redact_sensitive
+
+PROVIDER_ID = "cisco-ansible"
+MAX_ATTEMPTS = 3
+SSH_PORT = 22
+SAFE_SHOW_COMMANDS = (
+    "show version",
+    "show inventory",
+    "show interfaces status",
+    "show ip interface brief",
+    "show vlan brief",
+)
+
+
+@dataclass(frozen=True)
+class CiscoAnsibleConfig:
+    host: str | None
+    username: str | None
+    password: str | None
+    enable_password: str | None
+    network_os: str
+    connection: str
+    timeout_seconds: float
+
+    @classmethod
+    def from_settings(cls) -> "CiscoAnsibleConfig":
+        return cls(
+            host=settings.cisco_target_ip,
+            username=settings.cisco_test_username,
+            password=settings.cisco_test_password,
+            enable_password=settings.cisco_enable_password,
+            network_os=_normalize_network_os(settings.ansible_cisco_network_os),
+            connection=_normalize_connection(settings.ansible_cisco_connection),
+            timeout_seconds=settings.ansible_cisco_timeout_seconds,
+        )
+
+    @property
+    def missing_fields(self) -> list[str]:
+        missing = []
+        if not self.host:
+            missing.append("CISCO_TARGET_IP")
+        if not self.username:
+            missing.append("CISCO_TEST_USERNAME")
+        if not self.password:
+            missing.append("CISCO_TEST_PASSWORD")
+        return missing
+
+
+class CiscoAnsibleAdapter:
+    def __init__(
+        self,
+        provider_mode: str | None = None,
+        config: CiscoAnsibleConfig | None = None,
+    ) -> None:
+        self.provider_mode = provider_mode or settings.provider_mode
+        self.config = config or CiscoAnsibleConfig.from_settings()
+
+    def health(self) -> ProviderStatus:
+        last_result, last_time = get_probe_result(PROVIDER_ID)
+        missing_fields = self.config.missing_fields
+        safety = current_lab_safety()
+        tool_availability = _tool_availability()
+        blockers = [
+            f"Missing local Cisco Ansible configuration: {', '.join(missing_fields)}."
+        ] if missing_fields else []
+        if self.provider_mode == "local-readonly":
+            blockers.extend(safety.blockers)
+
+        warnings: list[str] = []
+        if self.provider_mode != "local-readonly":
+            warnings.append("Provider mode is not local-readonly; Cisco Ansible probes are disabled.")
+        if not tool_availability["ansible_available"] or not tool_availability[
+            "ansible_inventory_available"
+        ]:
+            warnings.append(
+                "Ansible CLI is not available; SSH reachability can be checked, "
+                "but inventory parsing and show commands will be blocked."
+            )
+
+        status = "missing-config" if missing_fields else "ready"
+        if not missing_fields and self.provider_mode != "local-readonly":
+            status = "configured"
+        if not missing_fields and self.provider_mode == "local-readonly" and not safety.readonly_allowed:
+            status = "blocked"
+
+        probe_enabled = (
+            self.provider_mode == "local-readonly"
+            and not missing_fields
+            and safety.readonly_allowed
+        )
+
+        return ProviderStatus(
+            id=PROVIDER_ID,
+            name="Cisco Ansible SSH",
+            kind="network-automation",
+            mode=self.provider_mode,
+            status=status,
+            capabilities=[
+                "explicit-read-only-probe",
+                "ssh-reachability-check",
+                "ansible-inventory-parse",
+                "safe-show-commands",
+            ],
+            message=(
+                "Cisco management-IP automation is separated from console discovery; "
+                "the probe action checks SSH and runs fixed read-only show commands only."
+            ),
+            configuration={
+                "host_configured": bool(self.config.host),
+                "username_configured": bool(self.config.username),
+                "password_configured": bool(self.config.password),
+                "enable_password_configured": bool(self.config.enable_password),
+                "network_os": self.config.network_os,
+                "connection": self.config.connection,
+                "timeout_seconds": self.config.timeout_seconds,
+                "missing_fields": missing_fields,
+                **tool_availability,
+                **safety.as_flags(),
+            },
+            blockers=blockers,
+            warnings=warnings,
+            safe_actions=[
+                ProviderAction(
+                    id="probe-cisco-ansible",
+                    label="Read-Only Probe",
+                    enabled=probe_enabled,
+                    read_only=True,
+                    reason=(
+                        "Check SSH, parse inventory, and run fixed safe show commands."
+                        if probe_enabled
+                        else (
+                            "Requires Cisco target, credentials, LAB_CLOSED_LOOP_ACK=YES, "
+                            "LAB_READONLY_ACK=YES, and PROVIDER_MODE=local-readonly."
+                        )
+                    ),
+                    method="POST",
+                    endpoint=f"/api/v1/providers/{PROVIDER_ID}/probe",
+                )
+            ],
+            disabled_actions=_dangerous_actions(),
+            last_probe_result=last_result,
+            last_probe_time=last_time,
+        )
+
+    def probe(self) -> dict[str, Any]:
+        if self.provider_mode != "local-readonly":
+            return self._record_blocked(
+                "Set PROVIDER_MODE=local-readonly before running Cisco Ansible probes."
+            )
+
+        safety = current_lab_safety()
+        if not safety.readonly_allowed:
+            return self._record_blocked(
+                "Set LAB_CLOSED_LOOP_ACK=YES and LAB_READONLY_ACK=YES before real lab probes.",
+                safety=safety.as_flags(),
+            )
+
+        if self.config.missing_fields:
+            return self._record_blocked(
+                f"Missing local Cisco Ansible configuration: {', '.join(self.config.missing_fields)}.",
+                missing_fields=self.config.missing_fields,
+            )
+
+        assert self.config.host is not None
+        phases = [
+            {
+                "tag": "DISCOVER",
+                "message": "Checking Cisco management SSH reachability before Ansible commands.",
+            }
+        ]
+        blockers: list[str] = []
+        warnings: list[str] = []
+        ssh_reachability = _tcp_connect(self.config.host, SSH_PORT, self.config.timeout_seconds)
+        if not ssh_reachability["reachable"]:
+            return self._record_result(
+                {
+                    "provider_id": PROVIDER_ID,
+                    "status": "blocked",
+                    "message": "Cisco SSH is not reachable; Ansible show commands were not attempted.",
+                    "phases": phases
+                    + [
+                        {
+                            "tag": "BLOCKED",
+                            "message": "SSH reachability failed.",
+                        }
+                    ],
+                    "ssh_reachability": ssh_reachability,
+                    "warnings": warnings,
+                    "blockers": ["Cisco SSH is not reachable."],
+                    "not_attempted": ["Ansible inventory parse", "safe show commands"],
+                }
+            )
+
+        ansible_bin = which("ansible")
+        inventory_bin = which("ansible-inventory")
+        if not ansible_bin or not inventory_bin:
+            return self._record_result(
+                {
+                    "provider_id": PROVIDER_ID,
+                    "status": "blocked",
+                    "message": "Ansible CLI is not available; Cisco SSH commands were not attempted.",
+                    "phases": phases
+                    + [
+                        {
+                            "tag": "BLOCKED",
+                            "message": "ansible and ansible-inventory must be installed.",
+                        }
+                    ],
+                    "ssh_reachability": ssh_reachability,
+                    "tool_availability": _tool_availability(),
+                    "warnings": warnings,
+                    "blockers": ["Ansible CLI is not available."],
+                    "not_attempted": ["Ansible inventory parse", "safe show commands"],
+                }
+            )
+
+        inventory_path = _write_temp_inventory(self.config)
+        try:
+            ansible_version = _run_command(
+                [ansible_bin, "--version"],
+                timeout_seconds=self.config.timeout_seconds,
+            )
+            inventory_parse = _run_command(
+                [inventory_bin, "-i", str(inventory_path), "--graph"],
+                timeout_seconds=self.config.timeout_seconds,
+            )
+            if inventory_parse["returncode"] != 0:
+                blockers.append("Ansible inventory parse failed.")
+
+            command_results: dict[str, Any] = {}
+            if not blockers:
+                phases.append(
+                    {
+                        "tag": "PLAN",
+                        "message": "Running fixed read-only Cisco show commands through Ansible.",
+                    }
+                )
+                for command in SAFE_SHOW_COMMANDS:
+                    command_results[command] = _run_command(
+                        [
+                            ansible_bin,
+                            "-i",
+                            str(inventory_path),
+                            "cisco_target",
+                            "-m",
+                            "cisco.ios.ios_command",
+                            "-a",
+                            json.dumps({"commands": [command]}),
+                        ],
+                        timeout_seconds=self.config.timeout_seconds,
+                    )
+                    if command_results[command]["returncode"] != 0:
+                        blockers.append(f"Ansible command failed: {command}.")
+                        break
+            else:
+                command_results = {}
+        finally:
+            inventory_path.unlink(missing_ok=True)
+
+        status = "ok" if not blockers else "failed"
+        phases.append(
+            {
+                "tag": "VERIFY" if status == "ok" else "BLOCKED",
+                "message": (
+                    "Cisco Ansible read-only probe completed."
+                    if status == "ok"
+                    else "Cisco Ansible read-only probe stopped with blockers."
+                ),
+            }
+        )
+
+        return self._record_result(
+            {
+                "provider_id": PROVIDER_ID,
+                "status": status,
+                "message": (
+                    "Read-only Cisco Ansible probe completed."
+                    if status == "ok"
+                    else "Read-only Cisco Ansible probe could not complete."
+                ),
+                "phases": phases,
+                "ssh_reachability": ssh_reachability,
+                "tool_availability": _tool_availability(),
+                "ansible_version": ansible_version,
+                "inventory_parse": inventory_parse,
+                "safe_show_commands": list(SAFE_SHOW_COMMANDS),
+                "command_results": command_results,
+                "not_attempted": [
+                    "configure terminal",
+                    "write memory",
+                    "reload",
+                    "copy or erase",
+                    "VLAN, interface, user, or firmware changes",
+                    "running-config backup",
+                ],
+                "warnings": warnings,
+                "blockers": blockers,
+            }
+        )
+
+    def _record_blocked(self, message: str, **extra: Any) -> dict[str, Any]:
+        return self._record_result(
+            {
+                "provider_id": PROVIDER_ID,
+                "status": "blocked",
+                "message": message,
+                "warnings": [],
+                "blockers": [message],
+                **extra,
+            }
+        )
+
+    def _record_result(self, result: dict[str, Any]) -> dict[str, Any]:
+        return record_probe_result(PROVIDER_ID, redact_sensitive(result, self._redaction_values()))
+
+    def _redaction_values(self) -> list[str | None]:
+        return [
+            self.config.host,
+            self.config.username,
+            self.config.password,
+            self.config.enable_password,
+        ]
+
+
+def _tcp_connect(host: str, port: int, timeout_seconds: float) -> dict[str, Any]:
+    attempts: list[dict[str, Any]] = []
+    for attempt in range(1, MAX_ATTEMPTS + 1):
+        started = time.monotonic()
+        try:
+            with socket.create_connection((host, port), timeout=timeout_seconds):
+                attempts.append(
+                    {
+                        "attempt": attempt,
+                        "status": "ok",
+                        "elapsed_ms": int((time.monotonic() - started) * 1000),
+                    }
+                )
+                return {"reachable": True, "port": port, "attempts": attempts}
+        except OSError as exc:
+            attempts.append(
+                {
+                    "attempt": attempt,
+                    "status": "failed",
+                    "error": exc.__class__.__name__,
+                    "elapsed_ms": int((time.monotonic() - started) * 1000),
+                }
+            )
+    return {"reachable": False, "port": port, "attempts": attempts}
+
+
+def _write_temp_inventory(config: CiscoAnsibleConfig) -> Path:
+    host_vars: dict[str, Any] = {
+        "ansible_host": config.host,
+        "ansible_user": config.username,
+        "ansible_password": config.password,
+        "ansible_connection": config.connection,
+        "ansible_network_os": config.network_os,
+        "ansible_command_timeout": int(config.timeout_seconds),
+        "ansible_connect_timeout": int(config.timeout_seconds),
+    }
+    if config.enable_password:
+        host_vars.update(
+            {
+                "ansible_become": True,
+                "ansible_become_method": "enable",
+                "ansible_become_password": config.enable_password,
+            }
+        )
+
+    inventory = {
+        "all": {
+            "hosts": {
+                "cisco_target": host_vars
+            }
+        }
+    }
+    fd, name = tempfile.mkstemp(prefix="infra-config-cisco-", suffix=".json")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump(inventory, handle)
+        os.chmod(name, 0o600)
+    except Exception:
+        Path(name).unlink(missing_ok=True)
+        raise
+    return Path(name)
+
+
+def _run_command(args: list[str], timeout_seconds: float) -> dict[str, Any]:
+    started = time.monotonic()
+    try:
+        completed = subprocess.run(
+            args,
+            capture_output=True,
+            check=False,
+            env=_ansible_env(),
+            text=True,
+            timeout=timeout_seconds,
+        )
+        return {
+            "returncode": completed.returncode,
+            "stdout_tail": _tail(completed.stdout),
+            "stderr_tail": _tail(completed.stderr),
+            "elapsed_ms": int((time.monotonic() - started) * 1000),
+        }
+    except subprocess.TimeoutExpired as exc:
+        return {
+            "returncode": 124,
+            "stdout_tail": _tail(exc.stdout or ""),
+            "stderr_tail": "timeout",
+            "elapsed_ms": int((time.monotonic() - started) * 1000),
+        }
+
+
+def _tail(value: str) -> str:
+    return value[-12000:]
+
+
+def _ansible_env() -> dict[str, str]:
+    env = os.environ.copy()
+    env.update(
+        {
+            "ANSIBLE_HOST_KEY_CHECKING": "False",
+            "ANSIBLE_RETRY_FILES_ENABLED": "False",
+            "ANSIBLE_LOAD_CALLBACK_PLUGINS": "False",
+        }
+    )
+    for key in (
+        "LAB_PASSWORD",
+        "ILO_TEST_PASSWORD",
+        "ESXI_TEST_PASSWORD",
+        "CISCO_TEST_PASSWORD",
+        "CISCO_ENABLE_PASSWORD",
+        "ANSIBLE_CISCO_PASSWORD",
+        "ANSIBLE_CISCO_ENABLE_PASSWORD",
+    ):
+        env.pop(key, None)
+    return env
+
+
+def _tool_availability() -> dict[str, bool]:
+    return {
+        "ansible_available": which("ansible") is not None,
+        "ansible_inventory_available": which("ansible-inventory") is not None,
+    }
+
+
+def _normalize_network_os(value: str) -> str:
+    return "cisco.ios.ios" if value == "ios" else value
+
+
+def _normalize_connection(value: str) -> str:
+    return "ansible.netcommon.network_cli" if value == "network_cli" else value
+
+
+def _dangerous_actions() -> list[ProviderAction]:
+    return [
+        ProviderAction(
+            id="cisco-configure-terminal",
+            label="Configure Terminal",
+            enabled=False,
+            read_only=False,
+            reason="Cisco configuration mode is blocked.",
+        ),
+        ProviderAction(
+            id="cisco-write-memory",
+            label="Write Memory",
+            enabled=False,
+            read_only=False,
+            reason="Saving switch configuration is disabled.",
+        ),
+        ProviderAction(
+            id="cisco-reload",
+            label="Reload",
+            enabled=False,
+            read_only=False,
+            reason="Reload and restart operations are blocked.",
+        ),
+        ProviderAction(
+            id="cisco-copy-erase",
+            label="Copy / Erase",
+            enabled=False,
+            read_only=False,
+            reason="Copy, erase, and firmware operations are blocked.",
+        ),
+    ]

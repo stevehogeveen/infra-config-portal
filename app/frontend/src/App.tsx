@@ -1586,7 +1586,7 @@ function ProviderDetailCard({
       {provider.id === "cisco-console" && <CiscoConsoleDetails provider={provider} />}
       {provider.id === "ilo-redfish" && <IloRedfishDetails provider={provider} />}
       {!["cisco-console", "ilo-redfish"].includes(provider.id) && (
-        <MockProviderDetails provider={provider} />
+        <GenericProviderDetails provider={provider} />
       )}
       <ProviderIssueRows blockers={provider.blockers} warnings={provider.warnings} />
       <ProviderActionRows
@@ -1737,12 +1737,25 @@ function IloRedfishDetails({ provider }: { provider: ProviderStatus }) {
   );
 }
 
-function MockProviderDetails({ provider }: { provider: ProviderStatus }) {
+function GenericProviderDetails({ provider }: { provider: ProviderStatus }) {
+  const configFacts = Object.entries(provider.configuration)
+    .filter(([key, value]) => key.endsWith("_configured") && typeof value === "boolean")
+    .slice(0, 6);
+  const toolFacts = Object.entries(provider.configuration)
+    .filter(([key, value]) => key.endsWith("_available") && typeof value === "boolean")
+    .slice(0, 6);
+
   return (
     <div className="provider-detail-section">
       <div className="provider-fact-grid compact">
         <ProviderFact label="Provider" value={provider.name} />
         <ProviderFact label="Status" value={labelize(provider.status)} />
+        {configFacts.map(([key, value]) => (
+          <ProviderFact key={key} label={labelize(key)} value={presenceLabel(value)} />
+        ))}
+        {toolFacts.map(([key, value]) => (
+          <ProviderFact key={key} label={labelize(key)} value={asBoolean(value) ? "Available" : "Missing"} />
+        ))}
       </div>
     </div>
   );
@@ -1829,6 +1842,8 @@ function ProviderActionRows({
 function providerIcon(provider: ProviderStatus) {
   if (provider.id === "ilo-redfish") return <ShieldCheck size={18} />;
   if (provider.id === "cisco-console") return <Activity size={18} />;
+  if (provider.id === "cisco-ansible") return <Route size={18} />;
+  if (provider.id === "esxi-readonly") return <Server size={18} />;
   if (provider.kind === "virtualization") return <Server size={18} />;
   return <HardDrive size={18} />;
 }
@@ -1837,6 +1852,8 @@ function providerOrder(id: string): number {
   const order = [
     "ilo-redfish",
     "cisco-console",
+    "cisco-ansible",
+    "esxi-readonly",
     "mock-vsphere",
     "mock-netapp",
     "mock-network-switch",
@@ -1943,21 +1960,22 @@ function MockModeBanner() {
       {verifiedMock ? <ShieldCheck size={18} /> : <AlertTriangle size={18} />}
       <div>
         <strong>Provider mode: {providerMode}</strong>
-        <p>
-          {mockModeBannerMessage(verifiedMock, Boolean(error))}
-        </p>
+        <p>{mockModeBannerMessage(providerMode, verifiedMock, Boolean(error))}</p>
         {error && <p>Health check error: {error}</p>}
       </div>
     </section>
   );
 }
 
-function mockModeBannerMessage(verifiedMock: boolean, hasError: boolean): string {
+function mockModeBannerMessage(providerMode: string, verifiedMock: boolean, hasError: boolean): string {
   if (verifiedMock) {
     return "Local UI only. No real infrastructure calls are made; real adapters require explicit future configuration.";
   }
   if (hasError) {
     return "Health check unavailable. This operator UI expects PROVIDER_MODE=mock; do not continue lifecycle work until backend health is verified.";
+  }
+  if (providerMode === "local-readonly") {
+    return "Real lab read-only mode. Lifecycle execution remains mock-only; Provider Status probes require explicit actions and local safety acknowledgements.";
   }
   return "Verifying backend provider mode; local workflow pages require mock mode.";
 }

@@ -5,6 +5,7 @@ VENV := $(BACKEND_DIR)/.venv
 PIP := $(VENV)/bin/pip
 PY := $(VENV)/bin/python
 REPO_ROOT := $(abspath ..)
+PROVIDER_MODE ?= mock
 
 .PHONY: backend-venv backend-run backend-test frontend-install frontend-run up down codex-audit codex-task codex-next codex-resume test dev lint provider-smoke
 
@@ -17,7 +18,7 @@ backend-run:
 	cd $(BACKEND_DIR) && .venv/bin/uvicorn app.main:app --reload --host 127.0.0.1 --port 8001
 
 backend-test:
-	cd $(BACKEND_DIR) && .venv/bin/pytest -q
+	cd $(BACKEND_DIR) && PROVIDER_MODE=mock .venv/bin/pytest -q
 
 frontend-install:
 	cd $(FRONTEND_DIR) && npm install
@@ -37,9 +38,9 @@ codex-audit codex-task codex-next codex-resume test dev lint:
 
 .PHONY: backend-smoke smoke
 backend-smoke:
-	cd backend && .venv/bin/pytest -q tests/test_smoke_vm_lifecycle.py
+	cd backend && PROVIDER_MODE=mock .venv/bin/pytest -q tests/test_smoke_vm_lifecycle.py
 
 smoke: backend-smoke
 
 provider-smoke:
-	cd backend && PYTHONPATH=. $$(if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi) scripts/provider_smoke.py
+	cd backend && PROVIDER_MODE="$(PROVIDER_MODE)" PYTHONPATH=. $$(if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi) scripts/provider_smoke.py

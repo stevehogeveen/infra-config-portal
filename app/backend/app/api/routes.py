@@ -1,16 +1,25 @@
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from fastapi import APIRouter, Depends, HTTPException, Request as FastAPIRequest, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.auth import get_current_actor
+from app.core.config import settings
 from app.core.database import get_session
 from app.models import AuditEvent
+from app.providers.cisco_ansible import CiscoAnsibleAdapter
 from app.providers.cisco_console import CiscoConsoleAdapter
+from app.providers.esxi_readonly import EsxiReadonlyAdapter
 from app.providers.ilo_redfish import IloRedfishAdapter
 from app.providers.mock import MockSourceOfTruthAdapter
-from app.providers.registry import ProviderRegistryError, provider_registry
+from app.providers.registry import (
+    ProviderRegistryError,
+    provider_registry,
+    provider_registry_error_status,
+)
 from app.schemas import (
     ApprovalCreate,
     ArtifactRead,
@@ -250,16 +259,33 @@ def read_provider_status() -> list[ProviderStatusRead]:
     try:
         return provider_registry().statuses()
     except ProviderRegistryError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
+        return [provider_registry_error_status(settings.provider_mode, str(exc))]
 
 
 @router.post("/providers/{provider_id}/probe", response_model=ProviderProbeResultRead)
 def probe_provider(provider_id: str) -> ProviderProbeResultRead:
     if provider_id == "ilo-redfish":
-        return IloRedfishAdapter().probe()
+        return _run_provider_probe(provider_id, IloRedfishAdapter().probe)
     if provider_id == "cisco-console":
-        return CiscoConsoleAdapter().probe()
+        return _run_provider_probe(provider_id, CiscoConsoleAdapter().probe)
+    if provider_id == "cisco-ansible":
+        return _run_provider_probe(provider_id, CiscoAnsibleAdapter().probe)
+    if provider_id == "esxi-readonly":
+        return _run_provider_probe(provider_id, EsxiReadonlyAdapter().probe)
     raise HTTPException(status_code=404, detail="Provider probe not found")
+
+
+def _run_provider_probe(provider_id: str, probe: Callable[[], dict]) -> dict:
+    try:
+        return probe()
+    except Exception as exc:
+        return {
+            "provider_id": provider_id,
+            "status": "blocked",
+            "message": "Provider probe failed before completing safely.",
+            "warnings": [],
+            "blockers": [f"Provider probe failed: {exc.__class__.__name__}."],
+        }
 
 
 @router.get("/catalog", response_model=CatalogRead)

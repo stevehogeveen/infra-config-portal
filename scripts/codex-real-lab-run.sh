@@ -15,9 +15,23 @@ if [[ ! -f .env.local.real-lab ]]; then
   exit 1
 fi
 
-set -a
-source .env.local.real-lab
-set +a
+load_real_lab_env() {
+  local line key value
+  while IFS= read -r line || [[ -n "${line}" ]]; do
+    line="${line%$'\r'}"
+    [[ -z "${line}" || "${line}" =~ ^[[:space:]]*# ]] && continue
+    key="${line%%=*}"
+    value="${line#*=}"
+    key="${key//[[:space:]]/}"
+    [[ "${key}" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || continue
+    if [[ "${value}" =~ ^\".*\"$ || "${value}" =~ ^\'.*\'$ ]]; then
+      value="${value:1:${#value}-2}"
+    fi
+    export "${key}=${value}"
+  done < .env.local.real-lab
+}
+
+load_real_lab_env
 
 if [[ "${LAB_CLOSED_LOOP_ACK:-}" != "YES" ]]; then
   echo "LAB_CLOSED_LOOP_ACK must be YES." >&2
@@ -26,16 +40,6 @@ fi
 
 if [[ "${LAB_READONLY_ACK:-}" != "YES" ]]; then
   echo "LAB_READONLY_ACK must be YES." >&2
-  exit 1
-fi
-
-if [[ "${CODEX_SANDBOX_MODE:-}" != "danger-full-access" ]]; then
-  echo "Run with CODEX_SANDBOX_MODE=danger-full-access." >&2
-  exit 1
-fi
-
-if [[ "${CODEX_DANGER_ACK:-}" != "I_UNDERSTAND" ]]; then
-  echo "Run with CODEX_DANGER_ACK=I_UNDERSTAND." >&2
   exit 1
 fi
 
@@ -50,6 +54,7 @@ echo "Task: ${TASK}"
 echo "Run minutes: ${RUN_MINUTES}"
 echo "Max rounds: ${MAX_ROUNDS}"
 echo "Stop around: $(date -d "@${stop_epoch}")"
+echo "Codex sandbox: ${CODEX_SANDBOX_MODE:-workspace-write}"
 echo "Closed loop: ${LAB_CLOSED_LOOP_ACK}"
 echo "Read-only: ${LAB_READONLY_ACK}"
 echo "Destructive/rebuild: ${LAB_DESTRUCTIVE_ACK:-disabled}"
@@ -63,22 +68,18 @@ while (( $(date +%s) < stop_epoch && round <= MAX_ROUNDS )); do
   echo "Real lab round ${round}/${MAX_ROUNDS} - $(date)"
   echo "============================================================"
 
-  set -a
-  source .env.local.real-lab
-  set +a
+  load_real_lab_env
 
-  CODEX_SANDBOX_MODE=danger-full-access \
-  CODEX_DANGER_ACK=I_UNDERSTAND \
   make codex-task TASK="${TASK}" || true
 
   echo
   echo "Running quality gates..."
   checks_ok=1
 
-  make provider-smoke || true
-  make smoke || checks_ok=0
-  make test || checks_ok=0
-  make lint || checks_ok=0
+  PROVIDER_MODE=local-readonly make provider-smoke || true
+  PROVIDER_MODE=mock make smoke || checks_ok=0
+  PROVIDER_MODE=mock make test || checks_ok=0
+  PROVIDER_MODE=mock make lint || checks_ok=0
   git diff --check || checks_ok=0
 
   echo

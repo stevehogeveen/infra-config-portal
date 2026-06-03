@@ -1,0 +1,439 @@
+from __future__ import annotations
+
+import importlib.util
+import socket
+import time
+import xml.etree.ElementTree as ET
+from dataclasses import dataclass
+from typing import Any
+from urllib.parse import urlparse
+
+import httpx
+
+from app.core.config import settings
+from app.providers.base import ProviderAction, ProviderStatus
+from app.providers.lab_safety import current_lab_safety
+from app.providers.probe_cache import get_probe_result, record_probe_result
+from app.providers.redaction import redact_sensitive
+
+PROVIDER_ID = "esxi-readonly"
+MAX_ATTEMPTS = 3
+HTTPS_PORT = 443
+SSH_PORT = 22
+
+
+@dataclass(frozen=True)
+class EsxiReadonlyConfig:
+    host: str | None
+    username: str | None
+    password: str | None
+    verify_tls: bool
+    timeout_seconds: float
+    ssh_timeout_seconds: float
+
+    @classmethod
+    def from_settings(cls) -> "EsxiReadonlyConfig":
+        return cls(
+            host=settings.esxi_test_host,
+            username=settings.esxi_test_username,
+            password=settings.esxi_test_password,
+            verify_tls=settings.esxi_test_verify_tls,
+            timeout_seconds=settings.esxi_test_timeout_seconds,
+            ssh_timeout_seconds=settings.esxi_test_ssh_timeout_seconds,
+        )
+
+    @property
+    def missing_fields(self) -> list[str]:
+        return [] if self.host else ["ESXI_TEST_HOST"]
+
+
+class EsxiReadonlyAdapter:
+    def __init__(
+        self,
+        provider_mode: str | None = None,
+        config: EsxiReadonlyConfig | None = None,
+    ) -> None:
+        self.provider_mode = provider_mode or settings.provider_mode
+        self.config = config or EsxiReadonlyConfig.from_settings()
+
+    def health(self) -> ProviderStatus:
+        last_result, last_time = get_probe_result(PROVIDER_ID)
+        missing_fields = self.config.missing_fields
+        safety = current_lab_safety()
+        blockers = [
+            f"Missing local ESXi configuration: {', '.join(missing_fields)}."
+        ] if missing_fields else []
+        if self.provider_mode == "local-readonly":
+            blockers.extend(safety.blockers)
+
+        warnings: list[str] = []
+        if self.provider_mode != "local-readonly":
+            warnings.append("Provider mode is not local-readonly; ESXi probes are disabled.")
+
+        status = "missing-config" if missing_fields else "ready"
+        if not missing_fields and self.provider_mode != "local-readonly":
+            status = "configured"
+        if not missing_fields and self.provider_mode == "local-readonly" and not safety.readonly_allowed:
+            status = "blocked"
+
+        probe_enabled = (
+            self.provider_mode == "local-readonly"
+            and not missing_fields
+            and safety.readonly_allowed
+        )
+
+        return ProviderStatus(
+            id=PROVIDER_ID,
+            name="ESXi Read-Only",
+            kind="virtualization",
+            mode=self.provider_mode,
+            status=status,
+            capabilities=[
+                "explicit-read-only-probe",
+                "https-api-reachability",
+                "vim-service-version-summary",
+                "ssh-reachability-check",
+            ],
+            message=(
+                "Local ESXi configuration is checked without contacting the host; "
+                "the probe action performs HTTPS GET and TCP reachability checks only."
+            ),
+            configuration={
+                "host_configured": bool(self.config.host),
+                "username_configured": bool(self.config.username),
+                "password_configured": bool(self.config.password),
+                "tls_verify": self.config.verify_tls,
+                "timeout_seconds": self.config.timeout_seconds,
+                "ssh_timeout_seconds": self.config.ssh_timeout_seconds,
+                "missing_fields": missing_fields,
+                **_tool_availability(),
+                **safety.as_flags(),
+            },
+            blockers=blockers,
+            warnings=warnings,
+            safe_actions=[
+                ProviderAction(
+                    id="probe-esxi-readonly",
+                    label="Read-Only Probe",
+                    enabled=probe_enabled,
+                    read_only=True,
+                    reason=(
+                        "Run HTTPS GET and TCP reachability checks."
+                        if probe_enabled
+                        else (
+                            "Requires ESXI_TEST_HOST, LAB_CLOSED_LOOP_ACK=YES, "
+                            "LAB_READONLY_ACK=YES, and PROVIDER_MODE=local-readonly."
+                        )
+                    ),
+                    method="POST",
+                    endpoint=f"/api/v1/providers/{PROVIDER_ID}/probe",
+                )
+            ],
+            disabled_actions=_dangerous_actions(),
+            last_probe_result=last_result,
+            last_probe_time=last_time,
+        )
+
+    def probe(self) -> dict[str, Any]:
+        if self.provider_mode != "local-readonly":
+            return self._record_blocked(
+                "Set PROVIDER_MODE=local-readonly before running ESXi probes."
+            )
+
+        safety = current_lab_safety()
+        if not safety.readonly_allowed:
+            return self._record_blocked(
+                "Set LAB_CLOSED_LOOP_ACK=YES and LAB_READONLY_ACK=YES before real lab probes.",
+                safety=safety.as_flags(),
+            )
+
+        if self.config.missing_fields:
+            return self._record_blocked(
+                f"Missing local ESXi configuration: {', '.join(self.config.missing_fields)}.",
+                missing_fields=self.config.missing_fields,
+            )
+
+        assert self.config.host is not None
+        base_url = _base_url(self.config.host)
+        parsed = urlparse(base_url)
+        hostname = parsed.hostname or self.config.host
+        phases: list[dict[str, Any]] = []
+        https_requests: list[dict[str, Any]] = []
+        blockers: list[str] = []
+        warnings: list[str] = []
+
+        phases.append(
+            {
+                "tag": "DISCOVER",
+                "message": "Checking ESXi HTTPS and SSH reachability with read-only methods.",
+            }
+        )
+
+        https_reachability = _tcp_connect(hostname, HTTPS_PORT, self.config.timeout_seconds)
+        ssh_reachability = _tcp_connect(hostname, SSH_PORT, self.config.ssh_timeout_seconds)
+        if not https_reachability["reachable"]:
+            blockers.append("ESXi HTTPS port is not reachable.")
+
+        vim_versions: dict[str, Any] = {"available": False, "versions": []}
+        if https_reachability["reachable"]:
+            timeout = httpx.Timeout(self.config.timeout_seconds)
+            try:
+                with httpx.Client(
+                    follow_redirects=False,
+                    timeout=timeout,
+                    trust_env=False,
+                    verify=self.config.verify_tls,
+                ) as client:
+                    for path in ("/", "/ui/", "/sdk/vimServiceVersions.xml"):
+                        response = _get_text(client, base_url, path, https_requests)
+                        if path == "/sdk/vimServiceVersions.xml" and response["ok"]:
+                            vim_versions = _parse_vim_service_versions(response["text"])
+            except httpx.HTTPError as exc:
+                blockers.append("ESXi HTTPS probe failed.")
+                phases.append(
+                    {
+                        "tag": "BLOCKED",
+                        "message": _normalized_http_error(exc),
+                    }
+                )
+        else:
+            phases.append(
+                {
+                    "tag": "BLOCKED",
+                    "message": "HTTPS reachability failed; no ESXi API GETs were attempted.",
+                }
+            )
+
+        if not ssh_reachability["reachable"]:
+            warnings.append("ESXi SSH port is not reachable or not enabled.")
+
+        if self.config.username and self.config.password:
+            warnings.append(
+                "ESXi credentials are configured, but this adapter does not run VM, datastore, "
+                "network, or host configuration operations."
+            )
+
+        result_status = "ok" if https_reachability["reachable"] and not blockers else "failed"
+        phases.append(
+            {
+                "tag": "VERIFY" if result_status == "ok" else "BLOCKED",
+                "message": (
+                    "ESXi read-only reachability checks completed."
+                    if result_status == "ok"
+                    else "ESXi read-only checks stopped with blockers."
+                ),
+            }
+        )
+
+        return self._record_result(
+            {
+                "provider_id": PROVIDER_ID,
+                "status": result_status,
+                "message": (
+                    "Read-only ESXi probe completed."
+                    if result_status == "ok"
+                    else "Read-only ESXi probe could not complete."
+                ),
+                "base_url": _redacted_base_url(base_url),
+                "tls_verify": self.config.verify_tls,
+                "timeout_seconds": self.config.timeout_seconds,
+                "max_attempts": MAX_ATTEMPTS,
+                "phases": phases,
+                "https_reachability": https_reachability,
+                "ssh_reachability": ssh_reachability,
+                "https_requests": https_requests,
+                "vim_service_versions": vim_versions,
+                "tool_availability": _tool_availability(),
+                "not_attempted": [
+                    "ESXi reinstall or reboot",
+                    "network reconfiguration",
+                    "datastore add/remove",
+                    "VM create/delete/deploy/power operations",
+                    "firewall or host configuration changes",
+                ],
+                "warnings": warnings,
+                "blockers": blockers,
+            }
+        )
+
+    def _record_blocked(self, message: str, **extra: Any) -> dict[str, Any]:
+        return self._record_result(
+            {
+                "provider_id": PROVIDER_ID,
+                "status": "blocked",
+                "message": message,
+                "warnings": [],
+                "blockers": [message],
+                **extra,
+            }
+        )
+
+    def _record_result(self, result: dict[str, Any]) -> dict[str, Any]:
+        return record_probe_result(PROVIDER_ID, redact_sensitive(result, self._redaction_values()))
+
+    def _redaction_values(self) -> list[str | None]:
+        values: list[str | None] = [
+            self.config.host,
+            self.config.username,
+            self.config.password,
+        ]
+        if self.config.host:
+            base_url = _base_url(self.config.host)
+            parsed = urlparse(base_url)
+            values.extend([base_url, parsed.netloc, parsed.hostname])
+        return values
+
+
+def _base_url(host: str) -> str:
+    host = host.strip().rstrip("/")
+    if host.startswith("http://") or host.startswith("https://"):
+        return host
+    return f"https://{host}"
+
+
+def _redacted_base_url(base_url: str) -> str:
+    parsed = urlparse(base_url)
+    return f"{parsed.scheme}://REDACTED"
+
+
+def _tcp_connect(host: str, port: int, timeout_seconds: float) -> dict[str, Any]:
+    attempts: list[dict[str, Any]] = []
+    for attempt in range(1, MAX_ATTEMPTS + 1):
+        started = time.monotonic()
+        try:
+            with socket.create_connection((host, port), timeout=timeout_seconds):
+                attempts.append(
+                    {
+                        "attempt": attempt,
+                        "status": "ok",
+                        "elapsed_ms": int((time.monotonic() - started) * 1000),
+                    }
+                )
+                return {"reachable": True, "port": port, "attempts": attempts}
+        except OSError as exc:
+            attempts.append(
+                {
+                    "attempt": attempt,
+                    "status": "failed",
+                    "error": exc.__class__.__name__,
+                    "elapsed_ms": int((time.monotonic() - started) * 1000),
+                }
+            )
+    return {"reachable": False, "port": port, "attempts": attempts}
+
+
+def _get_text(
+    client: httpx.Client,
+    base_url: str,
+    path: str,
+    requests: list[dict[str, Any]],
+) -> dict[str, Any]:
+    last_error: httpx.HTTPError | None = None
+    for attempt in range(1, MAX_ATTEMPTS + 1):
+        try:
+            response = client.get(_url(base_url, path))
+            requests.append(
+                {
+                    "path": path,
+                    "attempt": attempt,
+                    "status_code": response.status_code,
+                    "content_type": response.headers.get("content-type", ""),
+                }
+            )
+            return {
+                "ok": 200 <= response.status_code < 400,
+                "status_code": response.status_code,
+                "text": response.text,
+            }
+        except (httpx.TimeoutException, httpx.TransportError) as exc:
+            last_error = exc
+            requests.append(
+                {
+                    "path": path,
+                    "attempt": attempt,
+                    "status": "retrying" if attempt < MAX_ATTEMPTS else "failed",
+                    "error": _normalized_http_error(exc),
+                }
+            )
+            if attempt == MAX_ATTEMPTS:
+                raise
+
+    if last_error is not None:
+        raise last_error
+    raise RuntimeError("ESXi GET retry loop exited without a response.")
+
+
+def _url(base_url: str, path: str) -> str:
+    if not path.startswith("/"):
+        path = f"/{path}"
+    return f"{base_url}{path}"
+
+
+def _parse_vim_service_versions(xml_text: str) -> dict[str, Any]:
+    try:
+        root = ET.fromstring(xml_text)
+    except ET.ParseError:
+        return {"available": False, "versions": [], "error": "unparseable-xml"}
+
+    versions: list[str] = []
+    for element in root.iter():
+        if element.tag.endswith("version") and element.text:
+            version = element.text.strip()
+            if version and version not in versions:
+                versions.append(version)
+    return {"available": bool(versions), "versions": versions[:12]}
+
+
+def _normalized_http_error(exc: httpx.HTTPError) -> str:
+    if isinstance(exc, httpx.TimeoutException):
+        return "timeout"
+    if "CERTIFICATE_VERIFY_FAILED" in str(exc):
+        return "tls-verification-failed"
+    return exc.__class__.__name__
+
+
+def _tool_availability() -> dict[str, bool]:
+    return {
+        "govc_available": _which("govc"),
+        "powercli_available": _which("pwsh"),
+        "pyvmomi_available": importlib.util.find_spec("pyVim") is not None,
+    }
+
+
+def _which(name: str) -> bool:
+    from shutil import which
+
+    return which(name) is not None
+
+
+def _dangerous_actions() -> list[ProviderAction]:
+    return [
+        ProviderAction(
+            id="esxi-reboot",
+            label="Reboot Host",
+            enabled=False,
+            read_only=False,
+            reason="ESXi reboot and restart operations are blocked.",
+        ),
+        ProviderAction(
+            id="esxi-network-change",
+            label="Change Network",
+            enabled=False,
+            read_only=False,
+            reason="Management network, firewall, and vSwitch changes are disabled.",
+        ),
+        ProviderAction(
+            id="esxi-datastore-change",
+            label="Change Datastore",
+            enabled=False,
+            read_only=False,
+            reason="Datastore add, remove, rescan, and format operations are disabled.",
+        ),
+        ProviderAction(
+            id="esxi-vm-operation",
+            label="VM Operation",
+            enabled=False,
+            read_only=False,
+            reason="Create, delete, deploy, and power operations are blocked.",
+        ),
+    ]

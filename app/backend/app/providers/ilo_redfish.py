@@ -8,10 +8,12 @@ import httpx
 
 from app.core.config import settings
 from app.providers.base import ProviderAction, ProviderStatus
+from app.providers.lab_safety import current_lab_safety
 from app.providers.probe_cache import get_probe_result, record_probe_result
 from app.providers.redaction import redact_sensitive
 
 PROVIDER_ID = "ilo-redfish"
+MAX_GET_ATTEMPTS = 3
 
 
 @dataclass(frozen=True)
@@ -60,9 +62,12 @@ class IloRedfishAdapter:
     def health(self) -> ProviderStatus:
         last_result, last_time = get_probe_result(PROVIDER_ID)
         missing_fields = self.config.missing_fields
+        safety = current_lab_safety()
         blockers = [
             f"Missing local iLO configuration: {', '.join(missing_fields)}."
         ] if missing_fields else []
+        if self.provider_mode == "local-readonly":
+            blockers.extend(safety.blockers)
         warnings: list[str] = []
         if self.provider_mode != "local-readonly":
             warnings.append("Provider mode is not local-readonly; Redfish probes are disabled.")
@@ -70,6 +75,14 @@ class IloRedfishAdapter:
         status = "missing-config" if missing_fields else "ready"
         if not missing_fields and self.provider_mode != "local-readonly":
             status = "configured"
+        if not missing_fields and self.provider_mode == "local-readonly" and not safety.readonly_allowed:
+            status = "blocked"
+
+        probe_enabled = (
+            self.provider_mode == "local-readonly"
+            and not missing_fields
+            and safety.readonly_allowed
+        )
 
         return ProviderStatus(
             id=PROVIDER_ID,
@@ -95,6 +108,7 @@ class IloRedfishAdapter:
                 "tls_verify": self.config.verify_tls,
                 "timeout_seconds": self.config.timeout_seconds,
                 "missing_fields": missing_fields,
+                **safety.as_flags(),
             },
             blockers=blockers,
             warnings=warnings,
@@ -102,12 +116,15 @@ class IloRedfishAdapter:
                 ProviderAction(
                     id="probe-ilo-redfish",
                     label="Read-Only Probe",
-                    enabled=self.provider_mode == "local-readonly" and not missing_fields,
+                    enabled=probe_enabled,
                     read_only=True,
                     reason=(
                         "Run GET-only Redfish inventory checks."
-                        if self.provider_mode == "local-readonly" and not missing_fields
-                        else "Requires complete local config and PROVIDER_MODE=local-readonly."
+                        if probe_enabled
+                        else (
+                            "Requires complete local config, LAB_CLOSED_LOOP_ACK=YES, "
+                            "LAB_READONLY_ACK=YES, and PROVIDER_MODE=local-readonly."
+                        )
                     ),
                     method="POST",
                     endpoint=f"/api/v1/providers/{PROVIDER_ID}/probe",
@@ -122,6 +139,13 @@ class IloRedfishAdapter:
         if self.provider_mode != "local-readonly":
             return self._record_blocked(
                 "Set PROVIDER_MODE=local-readonly before running iLO probes."
+            )
+
+        safety = current_lab_safety()
+        if not safety.readonly_allowed:
+            return self._record_blocked(
+                "Set LAB_CLOSED_LOOP_ACK=YES and LAB_READONLY_ACK=YES before real lab probes.",
+                safety=safety.as_flags(),
             )
 
         if self.config.missing_fields:
@@ -141,6 +165,9 @@ class IloRedfishAdapter:
             "status": "ok",
             "message": "Read-only Redfish probe completed.",
             "base_url": _redacted_base_url(base_url),
+            "tls_verify": self.config.verify_tls,
+            "timeout_seconds": self.config.timeout_seconds,
+            "max_attempts": MAX_GET_ATTEMPTS,
             "requests": requests,
             "service_root": {},
             "managers": [],
@@ -249,11 +276,42 @@ def _get_json(
     path: str,
     requests: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    response = client.get(_redfish_url(base_url, path))
-    requests.append({"path": path, "status_code": response.status_code})
-    response.raise_for_status()
-    payload = response.json()
-    return payload if isinstance(payload, dict) else {"value": payload}
+    last_error: httpx.HTTPError | None = None
+    for attempt in range(1, MAX_GET_ATTEMPTS + 1):
+        try:
+            response = client.get(_redfish_url(base_url, path))
+            requests.append(
+                {
+                    "path": path,
+                    "attempt": attempt,
+                    "status_code": response.status_code,
+                }
+            )
+            response.raise_for_status()
+            payload = response.json()
+            return payload if isinstance(payload, dict) else {"value": payload}
+        except (httpx.TimeoutException, httpx.TransportError) as exc:
+            last_error = exc
+            requests.append(
+                {
+                    "path": path,
+                    "attempt": attempt,
+                    "status": "retrying" if attempt < MAX_GET_ATTEMPTS else "failed",
+                    "error": _normalized_http_error(exc),
+                }
+            )
+            if attempt == MAX_GET_ATTEMPTS:
+                raise
+
+    if last_error is not None:
+        raise last_error
+    raise RuntimeError("Redfish GET retry loop exited without a response.")
+
+
+def _normalized_http_error(exc: httpx.HTTPError) -> str:
+    if isinstance(exc, httpx.TimeoutException):
+        return "timeout"
+    return exc.__class__.__name__
 
 
 def _redfish_url(base_url: str, path: str) -> str:

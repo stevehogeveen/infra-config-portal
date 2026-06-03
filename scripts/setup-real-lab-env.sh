@@ -25,14 +25,16 @@ echo "Examples: Cisco bootstrap/config reset, ESXi rebuild/reinstall, firmware/u
 echo "Leave disabled unless you are ready for wipe/rebuild style testing."
 read -rp "Allow destructive/rebuild lab actions? Type REBUILD_LAB or press Enter to keep disabled: " destructive_ack
 
-read -rp "iLO host [192.168.1.200]: " ilo_host
-ilo_host="${ilo_host:-192.168.1.200}"
+read -rp "iLO host or lab IP: " ilo_host
 
-read -rp "ESXi host [192.168.1.210]: " esxi_host
-esxi_host="${esxi_host:-192.168.1.210}"
+read -rp "ESXi host or lab IP: " esxi_host
 
-read -rp "Cisco target management IP after bootstrap [192.168.1.220]: " cisco_ip
-cisco_ip="${cisco_ip:-192.168.1.220}"
+read -rp "Cisco target management host or lab IP after bootstrap: " cisco_ip
+
+if [[ -z "${ilo_host}" || -z "${esxi_host}" || -z "${cisco_ip}" ]]; then
+  echo "Aborted. iLO, ESXi, and Cisco lab targets are required for real-lab settings."
+  exit 1
+fi
 
 read -rp "Lab username [admin]: " lab_user
 lab_user="${lab_user:-admin}"
@@ -57,11 +59,12 @@ LAB_PASSWORD=${lab_password}
 ILO_TEST_HOST=${ilo_host}
 ILO_TEST_USERNAME=${lab_user}
 ILO_TEST_PASSWORD=${lab_password}
-ILO_REDFISH_VERIFY_TLS=false
+ILO_TEST_VERIFY_TLS=false
 
 ESXI_TEST_HOST=${esxi_host}
 ESXI_TEST_USERNAME=${lab_user}
 ESXI_TEST_PASSWORD=${lab_password}
+ESXI_TEST_VERIFY_TLS=false
 
 CISCO_TARGET_IP=${cisco_ip}
 CISCO_TEST_USERNAME=${lab_user}
@@ -73,8 +76,8 @@ ANSIBLE_CISCO_HOST=${cisco_ip}
 ANSIBLE_CISCO_USERNAME=${lab_user}
 ANSIBLE_CISCO_PASSWORD=${lab_password}
 ANSIBLE_CISCO_ENABLE_PASSWORD=${lab_password}
-ANSIBLE_CISCO_NETWORK_OS=ios
-ANSIBLE_CISCO_CONNECTION=network_cli
+ANSIBLE_CISCO_NETWORK_OS=cisco.ios.ios
+ANSIBLE_CISCO_CONNECTION=ansible.netcommon.network_cli
 ENV
 
 chmod 600 .env.local.real-lab

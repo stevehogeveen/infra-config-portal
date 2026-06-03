@@ -15,8 +15,8 @@ The first MVP implements one safe workflow:
 
 No real vCenter, ESXi, NetApp, switch API, AWX, Ansible, Terraform, OpenTofu,
 NetBox, or Nautobot calls are made in this version. HPE iLO/Redfish and Cisco
-console checks are preview-only and run only through explicit local-readonly
-probe actions.
+console, Cisco Ansible SSH, and ESXi checks are preview-only and run only
+through explicit local-readonly probe actions.
 
 ## Project Layout
 
@@ -68,7 +68,7 @@ that smoke test with:
 
 ```bash
 cd /home/administrator/infra-config-portal/app/backend
-.venv/bin/pytest -q tests/test_smoke_vm_lifecycle.py
+PROVIDER_MODE=mock .venv/bin/pytest -q tests/test_smoke_vm_lifecycle.py
 ```
 
 The smoke test uses FastAPI `TestClient`, an in-memory SQLite database, and mock
@@ -140,39 +140,43 @@ deploy, or execute local media files, and it redacts actual local filenames.
 ## Provider Status Preview
 
 Provider Status shows mock provider health plus preview surfaces for HPE iLO /
-Redfish and Cisco console. Default `PROVIDER_MODE=mock` never runs real probes
-on page load. Cisco console discovery is read-only filesystem inspection of
-`/dev/serial/by-id/*`, `/dev/ttyUSB*`, and `/dev/ttyACM*`; it does not open
-serial ports or send commands during discovery.
-iLO configuration is reported only as configured/missing flags. The API does
-not return configured iLO host, username, or password values.
+Redfish, Cisco console, Cisco Ansible SSH, and ESXi read-only checks. Default
+`PROVIDER_MODE=mock` never runs real probes on page load. Cisco console
+discovery is read-only filesystem inspection of `/dev/serial/by-id/*`,
+`/dev/ttyUSB*`, and `/dev/ttyACM*`; it does not open serial ports or send
+commands during discovery.
+iLO, ESXi, and Cisco management configuration is reported only as
+configured/missing flags. The API does not return configured host, username, or
+password values.
 
-For an isolated local lab, optional settings can live in `.env.local.providers`
-at the repository root. Do not commit that file.
+For an isolated local lab, optional settings live in `.env.local.real-lab` at
+the repository root. Do not commit that file. Create it with:
 
 ```bash
-ILO_TEST_HOST=
-ILO_TEST_USERNAME=
-ILO_TEST_PASSWORD=
-CISCO_CONSOLE_PORT=
-CISCO_CONSOLE_BAUD=9600
+./scripts/setup-real-lab-env.sh
 ```
 
 Set `PROVIDER_MODE=local-readonly` only when manually running explicit
-read-only probes. iLO probes use GET-only Redfish calls with short timeouts and
-redacted responses. Cisco probes open the selected console only after a button
-click or manual smoke command, then send newline and safe `show` commands when
-already at an exec prompt.
+read-only probes and require `LAB_CLOSED_LOOP_ACK=YES` and
+`LAB_READONLY_ACK=YES`. iLO probes use GET-only Redfish calls with short
+timeouts and redacted responses. Cisco console probes open the selected console
+only after a button click or manual smoke command, then send newline and safe
+`show` commands when already at an exec prompt. Cisco Ansible probes check SSH,
+parse a generated temporary inventory, and run only fixed safe `show` commands.
+ESXi probes use HTTPS GET and TCP reachability checks only.
 
 Optional manual smoke:
 
 ```bash
-source .env.local.providers
 PROVIDER_MODE=local-readonly make provider-smoke
 ```
 
-The smoke command skips missing hardware/configuration gracefully and must not
-print passwords.
+The backend loads local provider values from `.env.local.real-lab`, but ignores
+`PROVIDER_MODE` from that file so default app and test startup remains mock.
+Plain `make provider-smoke` runs in mock mode and skips probes. With explicit
+`PROVIDER_MODE=local-readonly`, the smoke command skips missing
+hardware/configuration gracefully, must not print passwords, and writes
+sanitized reports under ignored `artifacts/real-lab/`.
 
 ## Safety Defaults
 

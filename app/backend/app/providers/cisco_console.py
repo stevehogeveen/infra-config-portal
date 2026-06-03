@@ -9,7 +9,9 @@ from typing import Any
 
 from app.core.config import settings
 from app.providers.base import ProviderAction, ProviderStatus
+from app.providers.lab_safety import current_lab_safety
 from app.providers.probe_cache import get_probe_result, record_probe_result
+from app.providers.redaction import redact_sensitive
 
 PROVIDER_ID = "cisco-console"
 SAFE_SHOW_COMMANDS = (
@@ -109,7 +111,7 @@ def discover_cisco_console(
             "Multiple stable serial console candidates were discovered; set "
             "CISCO_CONSOLE_PORT to the intended /dev/serial/by-id path."
         )
-        safe_next_action = "Select the intended stable path in .env.local.providers."
+        safe_next_action = "Select the intended stable path in .env.local.real-lab."
     elif existing_candidates:
         status = "needs-selection"
         selection_source = "fallback-candidates"
@@ -161,23 +163,32 @@ class CiscoConsoleAdapter:
     def health(self) -> ProviderStatus:
         discovery = discover_cisco_console(self.config, self.paths)
         last_result, last_time = get_probe_result(PROVIDER_ID)
+        safety = current_lab_safety()
         probe_enabled = (
             self.provider_mode == "local-readonly"
             and discovery["status"] == "ready"
             and bool(discovery["effective_path"])
+            and safety.readonly_allowed
         )
         warnings = list(discovery["warnings"])
+        blockers = list(discovery["blockers"])
+        if self.provider_mode == "local-readonly":
+            blockers.extend(safety.blockers)
         if self.provider_mode != "local-readonly":
             warnings.append(
                 "Provider mode is not local-readonly; Cisco probe actions are disabled."
             )
+
+        status = discovery["status"]
+        if status == "ready" and self.provider_mode == "local-readonly" and not safety.readonly_allowed:
+            status = "blocked"
 
         return ProviderStatus(
             id=PROVIDER_ID,
             name="Cisco Console",
             kind="network-console",
             mode=self.provider_mode,
-            status=discovery["status"],
+            status=status,
             capabilities=[
                 "dynamic-console-discovery",
                 "explicit-read-only-probe",
@@ -189,9 +200,10 @@ class CiscoConsoleAdapter:
                 "configured_port": self.config.port,
                 "baud": self.config.baud,
                 "timeout_seconds": self.config.timeout_seconds,
+                **safety.as_flags(),
             },
             discovery=discovery,
-            blockers=list(discovery["blockers"]),
+            blockers=blockers,
             warnings=warnings,
             safe_actions=[
                 ProviderAction(
@@ -202,7 +214,10 @@ class CiscoConsoleAdapter:
                     reason=(
                         "Open the selected serial port, send newline, then run safe show commands."
                         if probe_enabled
-                        else "Requires PROVIDER_MODE=local-readonly and one effective console path."
+                        else (
+                            "Requires PROVIDER_MODE=local-readonly, LAB_CLOSED_LOOP_ACK=YES, "
+                            "LAB_READONLY_ACK=YES, and one effective console path."
+                        )
                     ),
                     method="POST",
                     endpoint=f"/api/v1/providers/{PROVIDER_ID}/probe",
@@ -217,6 +232,13 @@ class CiscoConsoleAdapter:
         if self.provider_mode != "local-readonly":
             return self._record_blocked(
                 "Set PROVIDER_MODE=local-readonly before running console probes."
+            )
+
+        safety = current_lab_safety()
+        if not safety.readonly_allowed:
+            return self._record_blocked(
+                "Set LAB_CLOSED_LOOP_ACK=YES and LAB_READONLY_ACK=YES before real lab probes.",
+                safety=safety.as_flags(),
             )
 
         discovery = discover_cisco_console(self.config, self.paths)
@@ -309,7 +331,7 @@ class CiscoConsoleAdapter:
         )
 
     def _record_result(self, result: dict[str, Any]) -> dict[str, Any]:
-        return record_probe_result(PROVIDER_ID, result)
+        return record_probe_result(PROVIDER_ID, redact_sensitive(result, [self.config.port]))
 
 
 def _discover_candidates(paths: ConsoleDiscoveryPaths) -> list[ConsoleCandidate]:
@@ -450,6 +472,13 @@ def _read_console(connection: Any) -> str:
 
 def _prompt_state(prompt_text: str) -> str:
     lower_text = prompt_text.lower()
+    if (
+        "initial configuration dialog" in lower_text
+        or "would you like to enter the initial configuration dialog" in lower_text
+        or "system configuration dialog" in lower_text
+        or "[yes/no]" in lower_text
+    ):
+        return "setup-wizard"
     if "username:" in lower_text or "login:" in lower_text or "password:" in lower_text:
         return "login-required"
     if "(config" in lower_text:
@@ -465,6 +494,8 @@ def _prompt_state(prompt_text: str) -> str:
 
 
 def _prompt_blocker_message(prompt_state: str) -> str:
+    if prompt_state == "setup-wizard":
+        return "Console is at an initial setup wizard prompt; no answers or commands were sent."
     if prompt_state == "login-required":
         return "Console requires login or password; credentials are not configured for this probe."
     if prompt_state == "config-mode":
