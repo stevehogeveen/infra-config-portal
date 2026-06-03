@@ -1,99 +1,297 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 APP_DIR="${ROOT_DIR}/app"
-BACKEND_PORT="${BACKEND_PORT:-8000}"
+BACKEND_DIR="${APP_DIR}/backend"
+FRONTEND_DIR="${APP_DIR}/frontend"
+RUN_DIR="${ROOT_DIR}/.local/run"
+LOG_DIR="${ROOT_DIR}/.local/log"
+BACKEND_PORT="${BACKEND_PORT:-8001}"
 FRONTEND_PORT="${FRONTEND_PORT:-5173}"
+BACKEND_PID_FILE="${RUN_DIR}/infra-config-portal-backend.pid"
+FRONTEND_PID_FILE="${RUN_DIR}/infra-config-portal-frontend.pid"
 
-cd "${ROOT_DIR}"
+usage() {
+  cat <<EOF
+Usage: ./runit [start|stop|restart|status|check]
 
-echo "== Infra Config Portal =="
-echo "Repo: ${ROOT_DIR}"
-echo
+Safe local app workflow:
+  ./runit start    Start backend and frontend dev servers.
+  ./runit stop     Stop only app-owned backend/frontend processes from PID files.
+  ./runit restart  Stop then start the app without touching browser processes.
+  ./runit status   Show app process status.
+  ./runit check    Alias for status.
 
-if [[ ! -x "${ROOT_DIR}/scripts/check-repo-root.sh" ]]; then
-  echo "Error: scripts/check-repo-root.sh not found or not executable."
-  echo "Run this from the infra-config-portal repo root."
+Ports:
+  Backend:  ${BACKEND_PORT}
+  Frontend: ${FRONTEND_PORT}
+EOF
+}
+
+die() {
+  echo "Error: $*" >&2
   exit 1
-fi
+}
 
-"${ROOT_DIR}/scripts/check-repo-root.sh"
+log() {
+  echo "$*"
+}
 
-kill_port() {
-  local port="$1"
-  local pids=""
+ensure_repo_root() {
+  cd "${ROOT_DIR}"
+  [[ -x "${ROOT_DIR}/scripts/check-repo-root.sh" ]] || die "scripts/check-repo-root.sh not found or not executable."
+  "${ROOT_DIR}/scripts/check-repo-root.sh"
+}
 
-  if command -v lsof >/dev/null 2>&1; then
-    pids="$(lsof -ti tcp:"${port}" || true)"
-  elif command -v fuser >/dev/null 2>&1; then
-    pids="$(fuser "${port}"/tcp 2>/dev/null || true)"
+pid_cmdline() {
+  local pid="$1"
+  tr '\0' ' ' < "/proc/${pid}/cmdline" 2>/dev/null || true
+}
+
+pid_cwd() {
+  local pid="$1"
+  readlink -f "/proc/${pid}/cwd" 2>/dev/null || true
+}
+
+pid_exists() {
+  local pid="$1"
+  [[ "${pid}" =~ ^[0-9]+$ ]] && kill -0 "${pid}" 2>/dev/null
+}
+
+is_backend_pid() {
+  local pid="$1"
+  local cmd cwd
+  pid_exists "${pid}" || return 1
+  cmd="$(pid_cmdline "${pid}")"
+  cwd="$(pid_cwd "${pid}")"
+  [[ "${cwd}" == "${BACKEND_DIR}" ]] || return 1
+  [[ "${cmd}" == *"uvicorn"* && "${cmd}" == *"app.main:app"* ]] || return 1
+}
+
+is_frontend_pid() {
+  local pid="$1"
+  local cmd cwd
+  pid_exists "${pid}" || return 1
+  cmd="$(pid_cmdline "${pid}")"
+  cwd="$(pid_cwd "${pid}")"
+  [[ "${cwd}" == "${FRONTEND_DIR}" ]] || return 1
+  [[ "${cmd}" == *"npm run dev"* || "${cmd}" == *"vite"* ]] || return 1
+}
+
+read_pid_file() {
+  local pid_file="$1"
+  [[ -f "${pid_file}" ]] || return 1
+  local pid
+  pid="$(<"${pid_file}")"
+  [[ "${pid}" =~ ^[0-9]+$ ]] || return 1
+  printf '%s\n' "${pid}"
+}
+
+process_label() {
+  local service="$1"
+  local pid="$2"
+  local cmd
+  cmd="$(pid_cmdline "${pid}")"
+  printf '%s PID %s (%s)' "${service}" "${pid}" "${cmd:-unknown command}"
+}
+
+stop_pid_file() {
+  local service="$1"
+  local pid_file="$2"
+  local validator="$3"
+  local pid
+
+  if ! pid="$(read_pid_file "${pid_file}")"; then
+    stop_discovered_service "${service}" "${validator}"
+    return 0
   fi
 
-  if [[ -n "${pids}" ]]; then
-    echo "Stopping existing process on port ${port}: ${pids}"
-    kill ${pids} 2>/dev/null || true
+  if ! pid_exists "${pid}"; then
+    log "${service}: removing stale PID file for PID ${pid}."
+    rm -f "${pid_file}"
+    return 0
+  fi
+
+  if ! "${validator}" "${pid}"; then
+    log "${service}: PID file points at PID ${pid}, but it is not this app's ${service} process."
+    log "${service}: leaving it running and removing stale/unsafe PID file."
+    rm -f "${pid_file}"
+    return 0
+  fi
+
+  log "Stopping $(process_label "${service}" "${pid}") because ${pid_file} records it as app-owned."
+  kill -TERM -- "-${pid}" 2>/dev/null || kill -TERM "${pid}" 2>/dev/null || true
+
+  for _ in 1 2 3 4 5; do
+    if ! pid_exists "${pid}"; then
+      rm -f "${pid_file}"
+      log "${service}: stopped."
+      return 0
+    fi
     sleep 1
+  done
 
-    # Force kill if still alive.
-    for pid in ${pids}; do
-      if kill -0 "${pid}" 2>/dev/null; then
-        echo "Force stopping PID ${pid}"
-        kill -9 "${pid}" 2>/dev/null || true
-      fi
-    done
+  log "${service}: still running after TERM; force stopping app-owned process group ${pid}."
+  kill -KILL -- "-${pid}" 2>/dev/null || kill -KILL "${pid}" 2>/dev/null || true
+  rm -f "${pid_file}"
+}
+
+stop_discovered_service() {
+  local service="$1"
+  local validator="$2"
+  local found=0
+  local proc pid
+
+  for proc in /proc/[0-9]*; do
+    pid="${proc##*/}"
+    if "${validator}" "${pid}"; then
+      found=1
+      log "Stopping discovered $(process_label "${service}" "${pid}") because it matches this repo's ${service} command and cwd."
+      kill -TERM -- "-${pid}" 2>/dev/null || kill -TERM "${pid}" 2>/dev/null || true
+    fi
+  done
+
+  if [[ "${found}" -eq 0 ]]; then
+    log "${service}: no PID file and no matching app-owned process found; nothing to stop."
   fi
 }
 
-cleanup() {
-  echo
-  echo "Stopping Infra Config Portal..."
-  if [[ -n "${BACKEND_PID:-}" ]] && kill -0 "${BACKEND_PID}" 2>/dev/null; then
-    kill "${BACKEND_PID}" 2>/dev/null || true
+service_status() {
+  local service="$1"
+  local pid_file="$2"
+  local validator="$3"
+  local pid
+
+  if ! pid="$(read_pid_file "${pid_file}")"; then
+    log "${service}: stopped (no PID file)."
+    return 1
   fi
-  if [[ -n "${FRONTEND_PID:-}" ]] && kill -0 "${FRONTEND_PID}" 2>/dev/null; then
-    kill "${FRONTEND_PID}" 2>/dev/null || true
+
+  if "${validator}" "${pid}"; then
+    log "${service}: running as $(process_label "${service}" "${pid}")"
+    return 0
   fi
+
+  if pid_exists "${pid}"; then
+    log "${service}: PID file points at non-app PID ${pid}; refusing to manage it."
+  else
+    log "${service}: stopped (stale PID file for PID ${pid})."
+  fi
+  return 1
 }
 
-trap cleanup EXIT INT TERM
+start_service() {
+  local service="$1"
+  local pid_file="$2"
+  local validator="$3"
+  local workdir="$4"
+  local log_file="$5"
+  shift 5
 
-echo "Freeing ports ${BACKEND_PORT} and ${FRONTEND_PORT}..."
-kill_port "${BACKEND_PORT}"
-kill_port "${FRONTEND_PORT}"
+  local pid
+  if pid="$(read_pid_file "${pid_file}")" && "${validator}" "${pid}"; then
+    log "${service}: already running as $(process_label "${service}" "${pid}")"
+    return 0
+  fi
 
-echo
-echo "Running smoke test first..."
-make smoke
+  if [[ -n "${pid:-}" && -f "${pid_file}" ]]; then
+    log "${service}: removing stale PID file ${pid_file}."
+    rm -f "${pid_file}"
+  fi
 
-echo
-echo "Starting backend on port ${BACKEND_PORT}..."
-(
-  cd "${APP_DIR}"
-  BACKEND_PORT="${BACKEND_PORT}" make backend-run
-) &
-BACKEND_PID=$!
+  log "Starting ${service} in ${workdir}; logs: ${log_file}"
+  if command -v setsid >/dev/null 2>&1; then
+    (
+      cd "${workdir}"
+      setsid "$@" > "${log_file}" 2>&1 &
+      echo $! > "${pid_file}"
+    )
+  else
+    (
+      cd "${workdir}"
+      "$@" > "${log_file}" 2>&1 &
+      echo $! > "${pid_file}"
+    )
+  fi
 
-sleep 2
+  pid="$(<"${pid_file}")"
+  sleep 1
+  if ! "${validator}" "${pid}"; then
+    log "${service}: failed to start or did not match the expected app command."
+    log "${service}: recent log output:"
+    tail -n 40 "${log_file}" 2>/dev/null || true
+    rm -f "${pid_file}"
+    return 1
+  fi
 
-echo
-echo "Starting frontend on port ${FRONTEND_PORT}..."
-(
-  cd "${APP_DIR}"
-  FRONTEND_PORT="${FRONTEND_PORT}" make frontend-run
-) &
-FRONTEND_PID=$!
+  log "${service}: started as $(process_label "${service}" "${pid}")"
+}
 
-echo
-echo "Started:"
-echo "  Backend PID:  ${BACKEND_PID}"
-echo "  Frontend PID: ${FRONTEND_PID}"
-echo
-echo "Open:"
-echo "  Frontend: http://localhost:${FRONTEND_PORT}"
-echo "  Backend:  http://127.0.0.1:${BACKEND_PORT}"
-echo "  API docs: http://127.0.0.1:${BACKEND_PORT}/docs"
-echo
-echo "Press Ctrl+C to stop both."
+run_smoke() {
+  log
+  log "Running mock smoke test before start..."
+  make smoke
+}
 
-wait
+start_app() {
+  ensure_repo_root
+  mkdir -p "${RUN_DIR}" "${LOG_DIR}"
+  run_smoke
+  start_service "backend" "${BACKEND_PID_FILE}" is_backend_pid "${BACKEND_DIR}" "${LOG_DIR}/backend.log" \
+    "${BACKEND_DIR}/.venv/bin/uvicorn" app.main:app --reload --host 127.0.0.1 --port "${BACKEND_PORT}"
+  start_service "frontend" "${FRONTEND_PID_FILE}" is_frontend_pid "${FRONTEND_DIR}" "${LOG_DIR}/frontend.log" \
+    env "VITE_API_BASE_URL=http://127.0.0.1:${BACKEND_PORT}" npm run dev -- --host 127.0.0.1 --port "${FRONTEND_PORT}"
+
+  log
+  log "Open:"
+  log "  Frontend: http://127.0.0.1:${FRONTEND_PORT}"
+  log "  Backend:  http://127.0.0.1:${BACKEND_PORT}"
+  log "  API docs: http://127.0.0.1:${BACKEND_PORT}/docs"
+}
+
+stop_app() {
+  ensure_repo_root
+  mkdir -p "${RUN_DIR}"
+  stop_pid_file "frontend" "${FRONTEND_PID_FILE}" is_frontend_pid
+  stop_pid_file "backend" "${BACKEND_PID_FILE}" is_backend_pid
+}
+
+status_app() {
+  ensure_repo_root
+  service_status "backend" "${BACKEND_PID_FILE}" is_backend_pid || true
+  service_status "frontend" "${FRONTEND_PID_FILE}" is_frontend_pid || true
+}
+
+command="${1:-restart}"
+
+case "${command}" in
+  start)
+    [[ $# -eq 1 ]] || { usage >&2; exit 2; }
+    log "== Infra Config Portal: safe start =="
+    start_app
+    ;;
+  stop)
+    [[ $# -eq 1 ]] || { usage >&2; exit 2; }
+    log "== Infra Config Portal: safe stop =="
+    stop_app
+    ;;
+  restart)
+    [[ $# -le 1 ]] || { usage >&2; exit 2; }
+    log "== Infra Config Portal: safe restart =="
+    stop_app
+    start_app
+    ;;
+  status|check)
+    [[ $# -eq 1 ]] || { usage >&2; exit 2; }
+    log "== Infra Config Portal: status =="
+    status_app
+    ;;
+  -h|--help|help)
+    usage
+    ;;
+  *)
+    usage >&2
+    exit 2
+    ;;
+esac
