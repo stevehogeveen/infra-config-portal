@@ -29,6 +29,7 @@ import type {
   AuditEvent,
   Catalog,
   CiscoSetupReadiness,
+  CiscoSetupWizardPlan,
   ConsoleCandidate,
   IloUpgradeReadiness,
   MediaInventory,
@@ -1496,6 +1497,7 @@ function MediaInventoryPage() {
 function ProviderStatusPage() {
   const [providers, setProviders] = useState<ProviderStatus[]>([]);
   const [ciscoSetupReadiness, setCiscoSetupReadiness] = useState<CiscoSetupReadiness | null>(null);
+  const [ciscoSetupWizardPlan, setCiscoSetupWizardPlan] = useState<CiscoSetupWizardPlan | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [busyProvider, setBusyProvider] = useState("");
@@ -1507,12 +1509,14 @@ function ProviderStatusPage() {
     setError("");
     setLoading(true);
     try {
-      const [providerStatuses, ciscoReadiness] = await Promise.all([
+      const [providerStatuses, ciscoReadiness, setupWizardPlan] = await Promise.all([
         api.providers(),
-        api.ciscoSetupReadiness()
+        api.ciscoSetupReadiness(),
+        api.ciscoSetupWizardPlan()
       ]);
       setProviders(providerStatuses);
       setCiscoSetupReadiness(ciscoReadiness);
+      setCiscoSetupWizardPlan(setupWizardPlan);
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -1567,7 +1571,12 @@ function ProviderStatusPage() {
       }
     >
       <Feedback loading={loading && !providers.length} error={error} />
-      {ciscoSetupReadiness && <CiscoSetupReadinessPanel readiness={ciscoSetupReadiness} />}
+      {ciscoSetupReadiness && (
+        <CiscoSetupReadinessPanel
+          readiness={ciscoSetupReadiness}
+          setupWizardPlan={ciscoSetupWizardPlan}
+        />
+      )}
       <section className="provider-status-stack">
         {orderedProviders.map((provider) => (
           <ProviderDetailCard
@@ -1586,7 +1595,20 @@ function ProviderStatusPage() {
   );
 }
 
-function CiscoSetupReadinessPanel({ readiness }: { readiness: CiscoSetupReadiness }) {
+function CiscoSetupReadinessPanel({
+  readiness,
+  setupWizardPlan
+}: {
+  readiness: CiscoSetupReadiness;
+  setupWizardPlan: CiscoSetupWizardPlan | null;
+}) {
+  const setupWizardDetected = Boolean(
+    setupWizardPlan?.setup_wizard_detected || readiness.setup_wizard_plan?.detected
+  );
+  const displayedNextAction = setupWizardDetected
+    ? "Review setup wizard plan preview."
+    : readiness.next_safe_action;
+
   return (
     <section className="provider-card provider-card-wide cisco-setup-readiness">
       <div className="provider-head">
@@ -1598,8 +1620,8 @@ function CiscoSetupReadinessPanel({ readiness }: { readiness: CiscoSetupReadines
         <StatusBadge status={readiness.phase} />
       </div>
       <div className="provider-callout">
-        <strong>{labelize(readiness.phase)}</strong>
-        <p>{readiness.next_safe_action}</p>
+        <strong>{setupWizardDetected ? "Setup wizard detected" : labelize(readiness.phase)}</strong>
+        <p>{displayedNextAction}</p>
       </div>
       <div className="provider-fact-grid">
         <ProviderFact label="Planned Management IP" value={readiness.planned_management_ip ?? "-"} />
@@ -1641,6 +1663,7 @@ function CiscoSetupReadinessPanel({ readiness }: { readiness: CiscoSetupReadines
           lines={[readiness.backup_report.summary]}
         />
       </div>
+      {setupWizardPlan && <CiscoSetupWizardPlanPanel plan={setupWizardPlan} />}
       <ProviderIssueRows blockers={readiness.blockers} warnings={readiness.warnings} />
       <div className="provider-action-layout">
         <div>
@@ -1655,6 +1678,38 @@ function CiscoSetupReadinessPanel({ readiness }: { readiness: CiscoSetupReadines
         </div>
       </div>
     </section>
+  );
+}
+
+function CiscoSetupWizardPlanPanel({ plan }: { plan: CiscoSetupWizardPlan }) {
+  return (
+    <div className="provider-detail-section">
+      <div className="provider-callout">
+        <strong>
+          {plan.setup_wizard_detected
+            ? "Setup wizard/default prompt planning"
+            : "Setup wizard/default prompt planning preview"}
+        </strong>
+        <p>{plan.message}</p>
+      </div>
+      <div className="provider-fact-grid compact">
+        <ProviderFact label="Detected Prompt State" value={labelize(plan.detected_prompt_state)} />
+        <ProviderFact label="Apply Enabled" value={plan.apply_enabled ? "true" : "false"} />
+        <ProviderFact label="Status" value={labelize(plan.status)} />
+        <ProviderFact label="Next Safe Action" value={plan.next_safe_action} />
+      </div>
+      <div className="setup-preview-grid">
+        <SetupPreviewBlock title="Why Blocked" tag="Preview only" lines={plan.why_blocked} />
+        <SetupPreviewBlock
+          title="Future Guarded Workflow"
+          tag="Preview only"
+          lines={plan.future_guarded_plan_preview}
+        />
+        <SetupPreviewBlock title="Not Attempted" tag="Disabled" lines={plan.not_attempted} />
+        <SetupPreviewBlock title="Disabled Actions" tag="Disabled" lines={plan.disabled_actions} />
+      </div>
+      <ProviderIssueRows blockers={plan.blockers} warnings={plan.warnings} />
+    </div>
   );
 }
 

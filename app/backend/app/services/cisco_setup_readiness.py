@@ -6,6 +6,7 @@ from app.core.config import settings
 from app.providers.base import ProviderStatus
 from app.providers.cisco_ansible import CiscoAnsibleAdapter
 from app.providers.cisco_console import CiscoConsoleAdapter
+from app.services.cisco_setup_wizard_plan import build_cisco_setup_wizard_plan
 
 PROVIDER_ID = "cisco-setup"
 NEXT_SAFE_ACTION = "Select a console candidate and run prompt readiness check."
@@ -51,6 +52,13 @@ def get_cisco_setup_readiness(
     }
     warnings = list(dict.fromkeys([*console.warnings, *ansible.warnings]))
     blockers = list(dict.fromkeys([*console.blockers, *ansible.blockers]))
+    setup_wizard_plan = build_cisco_setup_wizard_plan(console.last_probe_result)
+    setup_wizard_detected = bool(setup_wizard_plan["setup_wizard_detected"])
+    next_safe_action = (
+        "Review setup wizard plan preview."
+        if setup_wizard_detected
+        else NEXT_SAFE_ACTION
+    )
 
     phase = "ssh-management-ready" if mgmt_configured else "console-bootstrap-required"
     ansible_reason = (
@@ -98,10 +106,18 @@ def get_cisco_setup_readiness(
                 "disabled until SSH management exists and a future guarded workflow approves it."
             ),
         },
+        "setup_wizard_plan": {
+            "available": True,
+            "detected": setup_wizard_detected,
+            "detected_prompt_state": setup_wizard_plan["detected_prompt_state"],
+            "apply_enabled": False,
+            "next_safe_action": setup_wizard_plan["next_safe_action"],
+            "summary": setup_wizard_plan["message"],
+        },
         "blockers": blockers,
         "warnings": warnings,
         "disabled_actions": DISABLED_ACTIONS,
-        "next_safe_action": NEXT_SAFE_ACTION,
+        "next_safe_action": next_safe_action,
     }
 
 

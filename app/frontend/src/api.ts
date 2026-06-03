@@ -3,6 +3,7 @@ import type {
   AuditEvent,
   Catalog,
   CiscoSetupReadiness,
+  CiscoSetupWizardPlan,
   IloUpgradeReadiness,
   MediaInventory,
   ProviderProbeResult,
@@ -80,6 +81,8 @@ export const api = {
     apiRequest<IloUpgradeReadiness>("/api/v1/providers/ilo-redfish/upgrade-readiness"),
   ciscoSetupReadiness: () =>
     apiRequest<CiscoSetupReadiness>("/api/v1/providers/cisco/setup-readiness"),
+  ciscoSetupWizardPlan: () =>
+    apiRequest<CiscoSetupWizardPlan>("/api/v1/providers/cisco/setup-wizard-plan"),
   providers: () => apiRequest<ProviderStatus[]>("/api/v1/providers/status"),
   ciscoConsolePromptReadiness: () =>
     apiRequest<ProviderProbeResult>("/api/v1/providers/cisco-console/prompt-readiness", {

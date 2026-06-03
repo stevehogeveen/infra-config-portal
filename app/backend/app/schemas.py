@@ -376,9 +376,27 @@ class CiscoSetupReadinessRead(BaseModel):
     ssh_scp_readiness: dict[str, Any]
     ansible: dict[str, Any]
     backup_report: dict[str, Any]
+    setup_wizard_plan: dict[str, Any] | None = None
     blockers: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     disabled_actions: list[str] = Field(default_factory=list)
+    next_safe_action: str
+
+
+class CiscoSetupWizardPlanRead(BaseModel):
+    provider_id: str
+    status: str
+    apply_enabled: bool
+    planned_management_ip: str | None = None
+    detected_prompt_state: str
+    setup_wizard_detected: bool
+    message: str
+    why_blocked: list[str] = Field(default_factory=list)
+    future_guarded_plan_preview: list[str] = Field(default_factory=list)
+    not_attempted: list[str] = Field(default_factory=list)
+    disabled_actions: list[str] = Field(default_factory=list)
+    blockers: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
     next_safe_action: str
 
 

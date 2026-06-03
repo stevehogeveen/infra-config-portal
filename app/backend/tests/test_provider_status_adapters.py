@@ -22,10 +22,11 @@ from app.providers.cisco_ansible import CiscoAnsibleAdapter, CiscoAnsibleConfig,
 from app.providers.esxi_readonly import EsxiReadonlyAdapter, EsxiReadonlyConfig
 from app.providers.ilo_redfish import IloRedfishAdapter, IloRedfishConfig
 from app.providers.lab_safety import LabSafetyState
-from app.providers.probe_cache import clear_probe_results
+from app.providers.probe_cache import clear_probe_results, record_probe_result
 from app.providers.redaction import redact_sensitive
 from app.providers.registry import provider_registry
 from app.services.cisco_setup_readiness import get_cisco_setup_readiness
+from app.services.cisco_setup_wizard_plan import build_cisco_setup_wizard_plan
 
 
 def test_cisco_candidate_discovery_with_one_stable_candidate(tmp_path: Path) -> None:
@@ -391,6 +392,71 @@ def test_cisco_setup_readiness_is_plan_only_until_management_bootstrap() -> None
     assert "running-config backup" in readiness["disabled_actions"]
     assert "Configure Terminal" not in encoded
     assert "/probe" not in encoded
+
+
+def test_cisco_setup_wizard_plan_unknown_state_is_safe_preview() -> None:
+    plan = build_cisco_setup_wizard_plan()
+
+    assert plan["provider_id"] == "cisco-setup-wizard-plan"
+    assert plan["status"] == "preview"
+    assert plan["apply_enabled"] is False
+    assert plan["detected_prompt_state"] == "unknown"
+    assert plan["setup_wizard_detected"] is False
+    assert "answer setup wizard" in plan["disabled_actions"]
+    assert "conf t" in plan["disabled_actions"]
+    assert "write memory" in plan["disabled_actions"]
+    assert "reload" in plan["disabled_actions"]
+    assert "erase/copy" in plan["disabled_actions"]
+    assert "enable SSH/SCP" in plan["disabled_actions"]
+    assert "real config apply" in plan["disabled_actions"]
+    assert "answer setup wizard yes/no prompt" in plan["not_attempted"]
+
+
+def test_cisco_setup_wizard_plan_detects_setup_wizard_prompt_result() -> None:
+    plan = build_cisco_setup_wizard_plan(
+        {
+            "provider_id": "cisco-console",
+            "action": "prompt-readiness",
+            "prompt_state": "setup-wizard",
+        }
+    )
+
+    assert plan["status"] == "preview"
+    assert plan["apply_enabled"] is False
+    assert plan["detected_prompt_state"] == "setup-wizard"
+    assert plan["setup_wizard_detected"] is True
+    assert "No answers or commands were sent" in plan["message"]
+    assert plan["next_safe_action"] == (
+        "Review the setup wizard plan preview and define the future guarded bootstrap requirements."
+    )
+
+
+def test_cisco_setup_readiness_surfaces_setup_wizard_plan_when_cached() -> None:
+    clear_probe_results()
+    record_probe_result(
+        "cisco-console",
+        {
+            "provider_id": "cisco-console",
+            "action": "prompt-readiness",
+            "status": "blocked",
+            "message": "Console is at an initial setup wizard prompt.",
+            "prompt_state": "setup-wizard",
+            "warnings": [],
+            "blockers": [],
+        },
+    )
+
+    readiness = get_cisco_setup_readiness(
+        provider_mode="mock",
+        planned_management_ip="10.10.8.112",
+        management_configured=False,
+    )
+
+    assert readiness["setup_wizard_plan"]["available"] is True
+    assert readiness["setup_wizard_plan"]["detected"] is True
+    assert readiness["setup_wizard_plan"]["detected_prompt_state"] == "setup-wizard"
+    assert readiness["setup_wizard_plan"]["apply_enabled"] is False
+    assert readiness["next_safe_action"] == "Review setup wizard plan preview."
 
 
 def test_esxi_configured_false_returns_planned_status_and_skips_probe(monkeypatch) -> None:

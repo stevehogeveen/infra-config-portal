@@ -381,3 +381,24 @@ def test_cisco_prompt_readiness_endpoint_blocks_in_mock_mode(client: TestClient)
     assert "local-readonly" in payload["message"]
     assert "safe show commands" in payload["not_attempted"]
     assert payload["prompt_ready"] is False
+
+
+def test_cisco_setup_wizard_plan_endpoint_returns_safe_unknown_preview(
+    client: TestClient,
+) -> None:
+    response = client.get("/api/v1/providers/cisco/setup-wizard-plan")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["provider_id"] == "cisco-setup-wizard-plan"
+    assert payload["status"] == "preview"
+    assert payload["apply_enabled"] is False
+    assert payload["detected_prompt_state"] in {"unknown", "setup-wizard"}
+    assert "answer setup wizard" in payload["disabled_actions"]
+    assert "conf t" in payload["disabled_actions"]
+    assert "write memory" in payload["disabled_actions"]
+    assert "reload" in payload["disabled_actions"]
+    assert "erase/copy" in payload["disabled_actions"]
+    assert "enable SSH/SCP" in payload["disabled_actions"]
+    assert "real config apply" in payload["disabled_actions"]
+    assert "answer setup wizard yes/no prompt" in payload["not_attempted"]

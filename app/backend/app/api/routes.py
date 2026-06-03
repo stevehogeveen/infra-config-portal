@@ -26,6 +26,7 @@ from app.schemas import (
     AuditEventRead,
     CatalogRead,
     CiscoSetupReadinessRead,
+    CiscoSetupWizardPlanRead,
     IloUpgradeReadinessRead,
     MediaInventoryRead,
     ProviderProbeResultRead,
@@ -60,6 +61,7 @@ from app.services.lifecycle import (
     update_vm_deployment_request,
 )
 from app.services.cisco_setup_readiness import get_cisco_setup_readiness
+from app.services.cisco_setup_wizard_plan import get_cisco_setup_wizard_plan
 from app.services.media_inventory import get_media_inventory
 from app.services.readiness import get_request_readiness
 from app.services.upgrade_decision import get_ilo_upgrade_readiness
@@ -272,6 +274,14 @@ def read_provider_status() -> list[ProviderStatusRead]:
 )
 def read_cisco_setup_readiness() -> CiscoSetupReadinessRead:
     return get_cisco_setup_readiness()
+
+
+@router.get(
+    "/providers/cisco/setup-wizard-plan",
+    response_model=CiscoSetupWizardPlanRead,
+)
+def read_cisco_setup_wizard_plan() -> CiscoSetupWizardPlanRead:
+    return get_cisco_setup_wizard_plan()
 
 
 @router.post(

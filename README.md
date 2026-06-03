@@ -122,6 +122,12 @@ console path only in explicit `PROVIDER_MODE=local-readonly` mode with lab
 read-only acknowledgements, sends newline, reads and redacts the prompt state,
 and does not run show commands or configuration commands.
 
+`GET /api/v1/providers/cisco/setup-wizard-plan` is preview-only. It reports the
+latest cached prompt-readiness state when available, explains why initial setup
+wizard handling is blocked, shows future guarded bootstrap planning steps, and
+keeps answer-wizard, configuration, save, reload, erase/copy, SSH/SCP,
+running-config backup, and real apply actions disabled.
+
 Optional local real-lab values live in `.env.local.real-lab`, which is ignored
 by Git and must not be committed. Create it with:
 

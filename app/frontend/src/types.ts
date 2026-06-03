@@ -187,9 +187,34 @@ export type CiscoSetupReadiness = {
     report_placeholder_enabled: boolean;
     summary: string;
   };
+  setup_wizard_plan: {
+    available: boolean;
+    detected: boolean;
+    detected_prompt_state: string;
+    apply_enabled: boolean;
+    next_safe_action: string;
+    summary: string;
+  } | null;
   blockers: string[];
   warnings: string[];
   disabled_actions: string[];
+  next_safe_action: string;
+};
+
+export type CiscoSetupWizardPlan = {
+  provider_id: string;
+  status: string;
+  apply_enabled: boolean;
+  planned_management_ip: string | null;
+  detected_prompt_state: string;
+  setup_wizard_detected: boolean;
+  message: string;
+  why_blocked: string[];
+  future_guarded_plan_preview: string[];
+  not_attempted: string[];
+  disabled_actions: string[];
+  blockers: string[];
+  warnings: string[];
   next_safe_action: string;
 };
 
