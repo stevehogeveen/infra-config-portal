@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlparse
+from xml.etree import ElementTree
 
 import httpx
 
@@ -190,6 +191,7 @@ class IloRedfishAdapter:
             "power": [],
             "thermal": [],
             "firmware": [],
+            "legacy_identity": {},
             "endpoint_detection": {
                 "classification": "not_checked",
                 "message": "GET-only endpoint detection has not run.",
@@ -219,6 +221,7 @@ class IloRedfishAdapter:
             ) as client:
                 detection = _detect_endpoints(client, base_url)
                 result["endpoint_detection"] = detection
+                result["legacy_identity"] = detection.get("legacy_identity", {})
                 requests.extend(detection["checks"])
                 if detection["classification"] != "redfish_available":
                     result.update(
@@ -403,8 +406,21 @@ def _detect_endpoints(client: httpx.Client, base_url: str) -> dict[str, Any]:
     if redfish_check and isinstance(redfish_check.get("_json_payload"), dict):
         detection["redfish_root_payload"] = redfish_check["_json_payload"]
 
+    legacy_check = next(
+        (
+            check
+            for check in checks
+            if check["path"] == LEGACY_XML_PATH
+            and check.get("classification") == "legacy_available"
+        ),
+        None,
+    )
+    if legacy_check and isinstance(legacy_check.get("_legacy_identity"), dict):
+        detection["legacy_identity"] = legacy_check["_legacy_identity"]
+
     for check in checks:
         check.pop("_json_payload", None)
+        check.pop("_legacy_identity", None)
     return detection
 
 
@@ -431,7 +447,105 @@ def _endpoint_check(client: httpx.Client, base_url: str, path: str) -> dict[str,
                 check["_json_payload"] = payload
         except ValueError:
             check["classification"] = "redfish_http_error"
+    if response.status_code == 200 and path == LEGACY_XML_PATH:
+        identity = _legacy_xml_identity(response.text)
+        if identity:
+            check["_legacy_identity"] = identity
     return check
+
+
+def _legacy_xml_identity(xml_text: str) -> dict[str, Any]:
+    if not xml_text.strip():
+        return {}
+    try:
+        root = ElementTree.fromstring(xml_text)
+    except ElementTree.ParseError:
+        return {}
+
+    values: dict[str, str] = {}
+    for element in root.iter():
+        key = _xml_tag_name(element.tag)
+        text = (element.text or "").strip()
+        if key and text:
+            values.setdefault(key.upper(), text)
+
+    model = _first_xml_value(
+        values,
+        "SPN",
+        "PRODUCTNAME",
+        "PRODUCT_NAME",
+        "SERVERNAME",
+        "SERVER_NAME",
+        "MODEL",
+    )
+    management_product = _first_xml_value(values, "PN", "MPN", "MANAGEMENTPROCESSOR")
+    firmware = _first_xml_value(values, "FWRI", "FIRMWAREVERSION", "FIRMWARE_VERSION")
+    generation = (
+        _legacy_ilo_generation(management_product)
+        or _legacy_ilo_generation(model)
+        or _first_legacy_generation(values.values())
+    )
+    serial_present = bool(
+        _first_xml_value(values, "SBSN", "SERIALNUMBER", "SERIAL_NUMBER", "SERIAL")
+    )
+
+    identity: dict[str, Any] = {
+        "source": LEGACY_XML_PATH,
+        "serial_present": serial_present,
+    }
+    if model:
+        identity["model"] = model
+    if firmware:
+        identity["current_firmware"] = firmware
+    if generation:
+        identity["ilo_generation"] = generation
+    if management_product:
+        identity["management_product"] = management_product
+    return identity
+
+
+def _xml_tag_name(tag: str) -> str:
+    return tag.rsplit("}", 1)[-1] if "}" in tag else tag
+
+
+def _first_xml_value(values: dict[str, str], *keys: str) -> str | None:
+    for key in keys:
+        value = values.get(key.upper())
+        if value:
+            return value
+    return None
+
+
+def _legacy_ilo_generation(value: str | None) -> str | None:
+    if not value:
+        return None
+    normalized = value.lower().replace("-", " ")
+    for generation in (
+        "ilo 6",
+        "ilo6",
+        "lights out 6",
+        "ilo 5",
+        "ilo5",
+        "lights out 5",
+        "ilo 4",
+        "ilo4",
+        "lights out 4",
+        "ilo 3",
+        "ilo3",
+        "lights out 3",
+    ):
+        if generation in normalized:
+            version = generation.rsplit(" ", 1)[-1]
+            return f"ilo{version}"
+    return None
+
+
+def _first_legacy_generation(values: Any) -> str | None:
+    for value in values:
+        generation = _legacy_ilo_generation(value)
+        if generation:
+            return generation
+    return None
 
 
 def _classify_inventory_auth_failure(

@@ -61,17 +61,24 @@ def ilo_subject_from_probe(probe_result: dict[str, Any] | None) -> UpgradeSubjec
     systems = _records(probe_result.get("systems"))
     chassis = _records(probe_result.get("chassis"))
     firmware = _records(probe_result.get("firmware"))
+    legacy_identity = _legacy_identity(probe_result)
 
     current_version = _first_string(managers, "FirmwareVersion") or _first_ilo_firmware_version(
         firmware
-    )
+    ) or _string_value(legacy_identity.get("current_firmware"))
     generation = _first_generation([*managers, *firmware]) or _first_generation(
         [*systems, *chassis]
+    ) or _string_value(legacy_identity.get("ilo_generation"))
+    model = (
+        _first_string(systems, "Model")
+        or _first_string(chassis, "Model")
+        or _string_value(legacy_identity.get("model"))
     )
-    model = _first_string(systems, "Model") or _first_string(chassis, "Model")
     serial = _first_string(systems, "SerialNumber") or _first_string(
         chassis, "SerialNumber"
     )
+    if not serial and legacy_identity.get("serial_present") is True:
+        serial = "SERIAL-REDACTED"
 
     discovery_confidence = "unknown"
     if current_version and generation:
@@ -110,6 +117,20 @@ def upgrade_candidates_from_media(
         )
         candidates.append(match_candidate_to_subject(subject, candidate))
     return candidates
+
+
+def _legacy_identity(probe_result: dict[str, Any]) -> dict[str, Any]:
+    identity = probe_result.get("legacy_identity")
+    if isinstance(identity, dict):
+        return identity
+    detection = probe_result.get("endpoint_detection")
+    if isinstance(detection, dict) and isinstance(detection.get("legacy_identity"), dict):
+        return detection["legacy_identity"]
+    return {}
+
+
+def _string_value(value: Any) -> str | None:
+    return value if isinstance(value, str) and value else None
 
 
 def match_candidate_to_subject(

@@ -248,6 +248,13 @@ def test_ilo_readiness_summary_reports_inventory_collection_auth_failure(
             "systems": [],
             "chassis": [],
             "firmware": [],
+            "legacy_identity": {
+                "source": "/xmldata?item=All",
+                "serial_present": True,
+                "model": "ProLiant DL360 Gen10",
+                "current_firmware": "2.80",
+                "ilo_generation": "ilo5",
+            },
             "endpoint_detection": {
                 "classification": "redfish_inventory_auth_failed",
                 "message": "Redfish root is available, but inventory collections are unauthorized.",
@@ -314,6 +321,10 @@ def test_ilo_readiness_summary_reports_inventory_collection_auth_failure(
     current_state = payload["current_state"]
     detection = current_state["endpoint_detection"]
     assert current_state["endpoint_classification"] == "redfish_inventory_auth_failed"
+    assert current_state["model"] == "ProLiant DL360 Gen10"
+    assert current_state["serial"] == "SERIAL-REDACTED"
+    assert current_state["current_firmware"] == "2.80"
+    assert current_state["ilo_generation"] == "ilo5"
     assert current_state["redfish_root_status"] == "available"
     assert current_state["legacy_endpoint_status"] == "available"
     assert current_state["endpoint_next_safe_action"] == (

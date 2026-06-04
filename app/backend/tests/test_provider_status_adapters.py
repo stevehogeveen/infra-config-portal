@@ -625,7 +625,15 @@ def test_ilo_probe_classifies_legacy_available_redfish_not_found(monkeypatch) ->
             "/redfish/v1/": (404, "text/plain"),
             "/redfish/v1": (404, "text/plain"),
             "/": (404, "text/plain"),
-            "/xmldata?item=All": (200, "text/xml"),
+            "/xmldata?item=All": (
+                200,
+                "text/xml",
+                (
+                    b"<RIMP><HSI><SPN>ProLiant DL360 Gen10</SPN>"
+                    b"<SBSN>SECRET-SERIAL-123</SBSN></HSI>"
+                    b"<MP><PN>Integrated Lights-Out 5</PN><FWRI>2.80</FWRI></MP></RIMP>"
+                ),
+            ),
         },
     )
     adapter = IloRedfishAdapter(
@@ -695,7 +703,15 @@ def test_ilo_probe_classifies_inventory_auth_after_root_available(monkeypatch) -
             ),
             "/redfish/v1": (200, "application/json", {"@odata.id": "/redfish/v1/"}),
             "/": (200, "text/html"),
-            "/xmldata?item=All": (200, "text/xml"),
+            "/xmldata?item=All": (
+                200,
+                "text/xml",
+                (
+                    b"<RIMP><HSI><SPN>ProLiant DL360 Gen10</SPN>"
+                    b"<SBSN>SECRET-SERIAL-123</SBSN></HSI>"
+                    b"<MP><PN>Integrated Lights-Out 5</PN><FWRI>2.80</FWRI></MP></RIMP>"
+                ),
+            ),
             "/redfish/v1/Managers/": (401, "application/json"),
             "/redfish/v1/Systems/": (401, "application/json"),
             "/redfish/v1/Chassis/": (401, "application/json"),
@@ -721,6 +737,14 @@ def test_ilo_probe_classifies_inventory_auth_after_root_available(monkeypatch) -
     assert detection["redfish_status"] == "available"
     assert detection["legacy_status"] == "available"
     assert detection["web_status"] == "available"
+    assert result["legacy_identity"] == {
+        "source": "/xmldata?item=All",
+        "serial_present": True,
+        "model": "ProLiant DL360 Gen10",
+        "current_firmware": "2.80",
+        "ilo_generation": "ilo5",
+        "management_product": "Integrated Lights-Out 5",
+    }
     assert detection["checks"][0]["classification"] == "redfish_root_available"
     assert detection["inventory_collection_status"] == "unauthorized"
     assert detection["inventory_collection_classification"] == "redfish_collection_unauthorized"
@@ -757,6 +781,7 @@ def test_ilo_probe_classifies_inventory_auth_after_root_available(monkeypatch) -
     assert "inventory discovery cannot continue" in result["message"].lower()
     assert "Inventory discovery can continue" not in result["message"]
     assert all("super-secret-password" not in json.dumps(check) for check in detection["checks"])
+    assert "SECRET-SERIAL-123" not in json.dumps(result)
 
 
 def test_ilo_redacts_secrets() -> None:
