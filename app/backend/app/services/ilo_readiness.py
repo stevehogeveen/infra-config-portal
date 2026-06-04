@@ -621,8 +621,16 @@ def _section(
 
 
 def _destructive_target_identity(summary: IloReadinessSummaryRead) -> dict[str, Any]:
+    identity_verified = all(
+        (
+            summary.current_state.model,
+            summary.current_state.serial,
+            summary.current_state.ilo_generation,
+            summary.current_state.current_firmware,
+        )
+    )
     return {
-        "identity_verified": False,
+        "identity_verified": bool(identity_verified),
         "model": summary.current_state.model or None,
         "model_discovered": bool(summary.current_state.model),
         "serial_present": bool(summary.current_state.serial),
@@ -643,7 +651,7 @@ def _destructive_rebuild_requirements(
         _destructive_requirement(
             "verified_ilo_identity",
             "Verified iLO identity",
-            "blocked",
+            "satisfied" if identity["identity_verified"] else "blocked",
             "Target identity must be verified against discovered model, serial presence, and iLO data.",
         ),
         _destructive_requirement(
@@ -1042,7 +1050,7 @@ def _redacted_destructive_rebuild_preview(
         "apply_enabled": False,
         "safe_next_action": preview.safe_next_action,
         "target_identity": {
-            "identity_verified": False,
+            "identity_verified": bool(preview.target_identity.get("identity_verified")),
             "model": preview.target_identity.get("model"),
             "model_discovered": bool(preview.target_identity.get("model_discovered")),
             "serial_present": bool(preview.target_identity.get("serial_present")),

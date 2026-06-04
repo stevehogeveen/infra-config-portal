@@ -546,6 +546,7 @@ def test_ilo_destructive_rebuild_preview_is_blocked_handoff(client: TestClient) 
     assert payload["destructive_enabled"] is False
     assert payload["apply_enabled"] is False
     assert "dedicated bare-metal rebuild workflow" in payload["safe_next_action"]
+    assert payload["target_identity"]["identity_verified"] is True
     assert payload["target_identity"]["serial_present"] is True
     assert "SERIAL-REDACTED" not in response.text
     assert "wipe existing drives" in payload["intended_scope"]
@@ -555,6 +556,11 @@ def test_ilo_destructive_rebuild_preview_is_blocked_handoff(client: TestClient) 
     assert any(
         requirement["id"] == "dedicated_workflow"
         and requirement["status"] == "blocked"
+        for requirement in payload["required_capabilities"]
+    )
+    assert any(
+        requirement["id"] == "verified_ilo_identity"
+        and requirement["status"] == "satisfied"
         for requirement in payload["required_capabilities"]
     )
     assert payload["blockers"]
@@ -824,6 +830,7 @@ def test_ilo_report_preview_cached_discovery(client: TestClient) -> None:
     assert current_state["endpoint_classification"] == "redfish_available"
     assert current_state["redfish_root_status"] == "available"
     assert "SERIAL-REDACTED" not in response.text
+    assert payload["destructive_rebuild_preview"]["target_identity"]["identity_verified"] is True
     assert payload["destructive_rebuild_preview"]["target_identity"]["serial_present"] is True
     clear_probe_results()
 
