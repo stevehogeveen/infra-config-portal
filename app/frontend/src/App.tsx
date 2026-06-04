@@ -1659,6 +1659,13 @@ function CiscoSetupReadinessPanel({
   const displayedNextAction = setupWizardDetected
     ? "Review setup wizard plan preview."
     : readiness.next_safe_action;
+  const stateBoundaries = objectValue(readiness.state_boundaries);
+  const discoveredState = objectValue(stateBoundaries.discovered_current_device_state);
+  const savedPlanningState = objectValue(stateBoundaries.saved_kit_config_values);
+  const readyToApplyState = objectValue(stateBoundaries.values_ready_to_apply);
+  const lastActionState = objectValue(stateBoundaries.last_action_logs_artifacts);
+  const lastPrompt = objectValue(readiness.console.last_prompt_readiness);
+  const readTiming = objectValue(readiness.console.read_timing);
 
   return (
     <section className="provider-card provider-card-wide cisco-setup-readiness">
@@ -1685,13 +1692,66 @@ function CiscoSetupReadinessPanel({
       </div>
       <div className="provider-fact-grid compact">
         <ProviderFact label="Recommended Console" value={readiness.console.recommended_path ?? "-"} />
-        <ProviderFact label="Effective Console" value={readiness.console.effective_path ?? "-"} />
+        <ProviderFact label="Selected Console" value={readiness.console.selected_path ?? readiness.console.effective_path ?? "-"} />
+        <ProviderFact label="Baud" value={String(readiness.console.baud ?? "-")} />
+        <ProviderFact
+          label="Read Timing"
+          value={`${asString(readTiming.settle_seconds) || "-"}s settle, ${asString(readTiming.read_window_seconds) || "-"}s read`}
+        />
         <ProviderFact
           label="Console Candidates"
           value={`${readiness.console.candidate_count} total, ${readiness.console.stable_candidate_count} stable, ${readiness.console.fallback_candidate_count} fallback`}
         />
         <ProviderFact label="Prompt Readiness" value={readiness.console.safe_next_action} />
       </div>
+      <div className="setup-preview-grid">
+        <SetupPreviewBlock
+          title="Current Discovery"
+          tag="Observed"
+          lines={[
+            asString(discoveredState.summary) || "Console discovery state.",
+            `Console: ${labelize(asString(discoveredState.console_status) || readiness.console.status)}.`,
+            `Selected path: ${asString(discoveredState.selected_path) || "None"}.`,
+            `Prompt: ${labelize(asString(discoveredState.prompt_state) || "unknown")}, captured: ${presenceLabel(discoveredState.prompt_captured)}.`
+          ]}
+        />
+        <SetupPreviewBlock
+          title="Saved Planning"
+          tag="Planned"
+          lines={[
+            asString(savedPlanningState.summary) || "Saved planning values are local only.",
+            `Management IP: ${asString(savedPlanningState.planned_management_ip) || readiness.planned_management_ip || "Missing"}.`,
+            `Prefix: ${asString(savedPlanningState.planned_prefix) || "Missing"}.`,
+            "Reachability is not confirmed by planning values."
+          ]}
+        />
+        <SetupPreviewBlock
+          title="Ready To Apply"
+          tag="Blocked"
+          lines={[
+            asString(readyToApplyState.summary) || "Apply is disabled.",
+            `Ready: ${asBoolean(readyToApplyState.ready) ? "true" : "false"}.`,
+            asString(readyToApplyState.reason) || "Guarded apply remains blocked."
+          ]}
+        />
+        <SetupPreviewBlock
+          title="Last Action"
+          tag="Redacted"
+          lines={[
+            asString(lastActionState.summary) || "Last action details are redacted.",
+            `Prompt state: ${labelize(asString(lastPrompt.prompt_state) || "unknown")}.`,
+            `Captured text: ${presenceLabel(lastPrompt.captured)}.`,
+            asString(lastPrompt.message) || "Prompt readiness has not run in this backend process."
+          ]}
+        />
+      </div>
+      {stringArray(lastPrompt.troubleshooting_checklist).length > 0 && (
+        <SetupPreviewBlock
+          title="No-Output Troubleshooting"
+          tag="Read only"
+          lines={stringArray(lastPrompt.troubleshooting_checklist)}
+        />
+      )}
       <div className="setup-preview-grid">
         <SetupPreviewBlock
           title="Bootstrap Preview"

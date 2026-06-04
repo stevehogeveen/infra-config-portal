@@ -41,14 +41,20 @@ def get_cisco_setup_readiness(
     ansible = ansible_status or CiscoAnsibleAdapter(mode).health()
     console_discovery = console.discovery or {}
     candidate_counts = _dict(console_discovery.get("candidate_counts"))
+    last_prompt_readiness = _prompt_readiness_summary(console.last_probe_result)
     console_summary = {
         "status": console.status,
         "effective_path": console_discovery.get("effective_path"),
         "recommended_path": console_discovery.get("recommended_path"),
+        "selected_path": console_discovery.get("effective_path"),
+        "selection_source": console_discovery.get("selection_source"),
+        "baud": console.configuration.get("baud"),
+        "read_timing": _read_timing(console.configuration, last_prompt_readiness),
         "candidate_count": int(candidate_counts.get("existing", 0) or 0),
         "stable_candidate_count": int(candidate_counts.get("stable_existing", 0) or 0),
         "fallback_candidate_count": int(candidate_counts.get("fallback_existing", 0) or 0),
         "safe_next_action": NEXT_SAFE_ACTION,
+        "last_prompt_readiness": last_prompt_readiness,
     }
     warnings = list(dict.fromkeys([*console.warnings, *ansible.warnings]))
     blockers = list(dict.fromkeys([*console.blockers, *ansible.blockers]))
@@ -72,6 +78,32 @@ def get_cisco_setup_readiness(
         "phase": phase,
         "planned_management_ip": target_ip,
         "management_configured": mgmt_configured,
+        "state_boundaries": {
+            "discovered_current_device_state": {
+                "summary": "Console adapter discovery and latest prompt readiness only.",
+                "console_status": console.status,
+                "selected_path": console_summary["selected_path"],
+                "baud": console_summary["baud"],
+                "prompt_state": last_prompt_readiness.get("prompt_state"),
+                "prompt_captured": last_prompt_readiness.get("captured"),
+            },
+            "saved_kit_config_values": {
+                "summary": "Non-secret local planning values; not confirmed reachable.",
+                "planned_management_ip": target_ip,
+                "planned_prefix": settings.cisco_management_prefix,
+                "management_configured": mgmt_configured,
+            },
+            "values_ready_to_apply": {
+                "summary": "Apply remains disabled until all explicit gates pass.",
+                "ready": False,
+                "reason": "Console bootstrap apply scaffold is blocked by default.",
+            },
+            "last_action_logs_artifacts": {
+                "summary": "Only redacted prompt-readiness summaries are exposed here.",
+                "last_prompt_readiness": last_prompt_readiness,
+                "raw_console_log_saved": False,
+            },
+        },
         "console": console_summary,
         "bootstrap_preview": {
             "apply_enabled": False,
@@ -129,5 +161,46 @@ def _dict(value: object) -> dict[str, Any]:
 
 def _management_ip_summary(target_ip: str | None) -> str:
     if target_ip:
-        return f"Management IP is planned for {target_ip}."
+        return f"Management IP is planned for {target_ip}; reachability is not confirmed."
     return "Management IP is not configured in local settings."
+
+
+def _prompt_readiness_summary(result: dict[str, Any] | None) -> dict[str, Any]:
+    if not isinstance(result, dict) or result.get("action") != "prompt-readiness":
+        return {
+            "available": False,
+            "prompt_state": "unknown",
+            "captured": None,
+            "message": "Prompt readiness has not run in this backend process.",
+            "safe_show_commands_allowed": False,
+            "checked_at": None,
+            "troubleshooting_checklist": [],
+        }
+    prompt_sample = _dict(result.get("prompt_sample"))
+    return {
+        "available": True,
+        "status": result.get("status"),
+        "message": result.get("message"),
+        "prompt_state": result.get("prompt_state"),
+        "captured": prompt_sample.get("captured"),
+        "line_count": prompt_sample.get("line_count"),
+        "last_line": prompt_sample.get("last_line"),
+        "safe_show_commands_allowed": bool(result.get("safe_show_commands_allowed")),
+        "checked_at": result.get("checked_at"),
+        "read_timing": _dict(result.get("read_timing")),
+        "troubleshooting_checklist": result.get("troubleshooting_checklist") or [],
+    }
+
+
+def _read_timing(
+    configuration: dict[str, Any],
+    last_prompt_readiness: dict[str, Any],
+) -> dict[str, Any]:
+    last_timing = _dict(last_prompt_readiness.get("read_timing"))
+    if last_timing:
+        return last_timing
+    return {
+        "settle_seconds": configuration.get("prompt_settle_seconds"),
+        "read_window_seconds": configuration.get("prompt_read_window_seconds"),
+        "max_bytes": configuration.get("prompt_max_bytes"),
+    }

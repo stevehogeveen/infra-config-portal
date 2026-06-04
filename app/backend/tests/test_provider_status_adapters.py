@@ -493,6 +493,7 @@ def test_cisco_ansible_run_command_can_redact_output() -> None:
 
 
 def test_cisco_setup_readiness_is_plan_only_until_management_bootstrap() -> None:
+    clear_probe_results()
     readiness = get_cisco_setup_readiness(
         provider_mode="mock",
         planned_management_ip="192.168.1.220",
@@ -504,6 +505,14 @@ def test_cisco_setup_readiness_is_plan_only_until_management_bootstrap() -> None
     assert readiness["phase"] == "console-bootstrap-required"
     assert readiness["planned_management_ip"] == "192.168.1.220"
     assert readiness["management_configured"] is False
+    assert readiness["state_boundaries"]["discovered_current_device_state"]["summary"]
+    assert readiness["state_boundaries"]["saved_kit_config_values"]["planned_management_ip"] == "192.168.1.220"
+    assert readiness["state_boundaries"]["saved_kit_config_values"]["management_configured"] is False
+    assert readiness["state_boundaries"]["values_ready_to_apply"]["ready"] is False
+    assert readiness["state_boundaries"]["last_action_logs_artifacts"]["raw_console_log_saved"] is False
+    assert readiness["console"]["selected_path"] == readiness["console"]["effective_path"]
+    assert readiness["console"]["baud"] == 9600
+    assert readiness["console"]["last_prompt_readiness"]["available"] is False
     assert readiness["bootstrap_preview"]["apply_enabled"] is False
     assert readiness["bootstrap_preview"]["commands_redacted"] is True
     assert readiness["ssh_scp_readiness"]["planned_only"] is True
@@ -521,6 +530,47 @@ def test_cisco_setup_readiness_is_plan_only_until_management_bootstrap() -> None
     assert "running-config backup" in readiness["disabled_actions"]
     assert "Configure Terminal" not in encoded
     assert "/probe" not in encoded
+
+
+def test_cisco_setup_readiness_surfaces_no_output_prompt_guidance() -> None:
+    clear_probe_results()
+    record_probe_result(
+        "cisco-console",
+        {
+            "provider_id": "cisco-console",
+            "action": "prompt-readiness",
+            "status": "blocked",
+            "message": "Console port opened but no prompt text was captured.",
+            "prompt_state": "unknown",
+            "safe_show_commands_allowed": False,
+            "prompt_sample": {"captured": False, "line_count": 0, "last_line": "unrecognized prompt"},
+            "read_timing": {
+                "settle_seconds": 0.5,
+                "read_window_seconds": 1.0,
+                "max_bytes": 8192,
+            },
+            "troubleshooting_checklist": ["Try baud 9600 first, then 115200 if needed."],
+            "warnings": [],
+            "blockers": ["Console port opened but no prompt text was captured."],
+        },
+    )
+
+    readiness = get_cisco_setup_readiness(
+        provider_mode="mock",
+        planned_management_ip="192.168.1.220",
+        management_configured=False,
+    )
+
+    last_prompt = readiness["console"]["last_prompt_readiness"]
+    discovered_state = readiness["state_boundaries"]["discovered_current_device_state"]
+
+    assert last_prompt["available"] is True
+    assert last_prompt["prompt_state"] == "unknown"
+    assert last_prompt["captured"] is False
+    assert last_prompt["safe_show_commands_allowed"] is False
+    assert last_prompt["read_timing"]["read_window_seconds"] == 1.0
+    assert "115200" in last_prompt["troubleshooting_checklist"][0]
+    assert discovered_state["prompt_captured"] is False
 
 
 def test_cisco_setup_wizard_plan_unknown_state_is_safe_preview() -> None:

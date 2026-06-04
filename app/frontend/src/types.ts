@@ -158,14 +158,20 @@ export type CiscoSetupReadiness = {
   phase: string;
   planned_management_ip: string | null;
   management_configured: boolean;
+  state_boundaries: Record<string, unknown>;
   console: {
     status: string;
     effective_path: string | null;
     recommended_path: string | null;
+    selected_path: string | null;
+    selection_source: string | null;
+    baud: number | null;
+    read_timing: Record<string, unknown>;
     candidate_count: number;
     stable_candidate_count: number;
     fallback_candidate_count: number;
     safe_next_action: string;
+    last_prompt_readiness: Record<string, unknown>;
   };
   bootstrap_preview: {
     apply_enabled: boolean;

@@ -371,6 +371,7 @@ class CiscoSetupReadinessRead(BaseModel):
     phase: str
     planned_management_ip: str | None = None
     management_configured: bool
+    state_boundaries: dict[str, Any] = Field(default_factory=dict)
     console: dict[str, Any]
     bootstrap_preview: dict[str, Any]
     ssh_scp_readiness: dict[str, Any]
