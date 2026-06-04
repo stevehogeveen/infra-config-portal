@@ -31,7 +31,12 @@ import type {
   ConsoleCandidate,
   IloUpgradeReadiness,
   MediaInventory,
+  NetAppConsoleReadiness,
+  NetAppObservationUpdate,
+  NetAppProviderArtifact,
   NetAppPlanPreview,
+  NetAppReadinessComparison,
+  NetAppUpgradeReadiness,
   ProviderAction,
   ProviderProbeResult,
   ProviderStatus,
@@ -155,6 +160,7 @@ function App() {
           <NavItem to="/requests" icon={<ClipboardList size={18} />} label="VM Requests" />
           <NavItem to="/requests/new" icon={<Plus size={18} />} label="New VM Request" />
           <NavItem to="/audit-events" icon={<History size={18} />} label="Audit Events" />
+          <NavItem to="/artifacts" icon={<HardDrive size={18} />} label="Reports / Artifacts" />
           <NavItem to="/media" icon={<HardDrive size={18} />} label="Media Inventory" />
           <NavItem to="/providers" icon={<Activity size={18} />} label="Provider Status" />
         </nav>
@@ -169,6 +175,7 @@ function App() {
           <RouterRoute path="/requests/:id" element={<RequestDetail />} />
           <RouterRoute path="/workflow-runs/:id" element={<WorkflowRunDetail />} />
           <RouterRoute path="/audit-events" element={<AuditEvents />} />
+          <RouterRoute path="/artifacts" element={<ProviderArtifactsPage />} />
           <RouterRoute path="/media" element={<MediaInventoryPage />} />
           <RouterRoute path="/providers" element={<ProviderStatusPage />} />
         </Routes>
@@ -411,9 +418,16 @@ function RunCenter() {
   const [requests, setRequests] = useState<RequestRecord[]>([]);
   const [runs, setRuns] = useState<WorkflowRun[]>([]);
   const [readinessByRequest, setReadinessByRequest] = useState<ReadinessMap>({});
+  const [netappPlanPreview, setNetappPlanPreview] = useState<NetAppPlanPreview | null>(null);
+  const [netappArtifacts, setNetappArtifacts] = useState<NetAppProviderArtifact[]>([]);
+  const [netappConsoleReadiness, setNetappConsoleReadiness] = useState<NetAppConsoleReadiness | null>(null);
+  const [netappReadinessComparison, setNetappReadinessComparison] = useState<NetAppReadinessComparison | null>(null);
+  const [netappUpgradeReadiness, setNetappUpgradeReadiness] = useState<NetAppUpgradeReadiness | null>(null);
   const [selectedQueueKey, setSelectedQueueKey] = useState("");
   const [error, setError] = useState("");
+  const [netappError, setNetappError] = useState("");
   const [loading, setLoading] = useState(true);
+  const [netappLoading, setNetappLoading] = useState(true);
 
   async function load() {
     setError("");
@@ -430,8 +444,38 @@ function RunCenter() {
     }
   }
 
+  async function loadNetAppPlanPreview() {
+    setNetappError("");
+    setNetappLoading(true);
+    try {
+      const [
+        nextPreview,
+        nextConsoleReadiness,
+        nextReadinessComparison,
+        nextUpgradeReadiness,
+        nextArtifacts
+      ] = await Promise.all([
+        api.netappPlanPreview(),
+        api.netappConsoleReadiness(),
+        api.netappReadinessComparison(),
+        api.netappUpgradeReadiness(),
+        api.netappArtifacts()
+      ]);
+      setNetappPlanPreview(nextPreview);
+      setNetappConsoleReadiness(nextConsoleReadiness);
+      setNetappReadinessComparison(nextReadinessComparison);
+      setNetappUpgradeReadiness(nextUpgradeReadiness);
+      setNetappArtifacts(nextArtifacts);
+    } catch (err) {
+      setNetappError((err as Error).message);
+    } finally {
+      setNetappLoading(false);
+    }
+  }
+
   useEffect(() => {
     load();
+    loadNetAppPlanPreview();
   }, []);
 
   const queueSections = useMemo(
@@ -561,7 +605,659 @@ function RunCenter() {
           <p className="muted">This queue item does not have a workflow run yet.</p>
         )}
       </section>
+      <NetAppRunCenterPreview
+        artifacts={netappArtifacts}
+        consoleReadiness={netappConsoleReadiness}
+        error={netappError}
+        loading={netappLoading}
+        onRefresh={loadNetAppPlanPreview}
+        preview={netappPlanPreview}
+        readinessComparison={netappReadinessComparison}
+        upgradeReadiness={netappUpgradeReadiness}
+      />
     </Page>
+  );
+}
+
+function NetAppRunCenterPreview({
+  artifacts,
+  consoleReadiness,
+  error,
+  loading,
+  onRefresh,
+  preview,
+  readinessComparison,
+  upgradeReadiness
+}: {
+  artifacts: NetAppProviderArtifact[];
+  consoleReadiness: NetAppConsoleReadiness | null;
+  error: string;
+  loading: boolean;
+  onRefresh: () => void;
+  preview: NetAppPlanPreview | null;
+  readinessComparison: NetAppReadinessComparison | null;
+  upgradeReadiness: NetAppUpgradeReadiness | null;
+}) {
+  const plannedTargets = objectValue(preview?.planned_targets);
+  const currentDiscoveredTargets = objectValue(preview?.current_discovered_targets);
+  const targetAddressing = recordArray(plannedTargets.target_addressing);
+  const currentAddressing = netappCurrentAddressRows(currentDiscoveredTargets);
+  const readinessSummary = preview?.readiness_summary ?? {};
+  const setupReadiness = preview?.setup_readiness ?? {};
+  const upgradeReadinessSummary = preview?.upgrade_readiness ?? {};
+  const cluster = preview?.cluster_intent_preview ?? {};
+  const svm = preview?.svm_intent_preview ?? {};
+  const lifIntent = preview?.lif_intent_preview ?? {};
+  const storagePreview = preview?.storage_iscsi_plan_preview ?? {};
+  const upgradePreview = preview?.upgrade_readiness_preview ?? {};
+  const disabledActions = preview?.disabled_actions ?? [];
+
+  return (
+    <section className="panel netapp-run-center-preview">
+      <div className="readiness-head">
+        <PanelTitle icon={<HardDrive size={18} />} title="NetApp ONTAP Plan Preview" />
+        <button onClick={onRefresh} disabled={loading}>
+          <RefreshCw size={16} />
+          Refresh
+        </button>
+      </div>
+      <div className="provider-callout netapp-apply-disabled">
+        <strong>Preview only / Apply disabled</strong>
+        <p>
+          No ONTAP calls are made. This Run Center section has no confirmation, start,
+          execute, apply, cluster creation, SVM/LIF/volume creation, upgrade, reboot, or wipe control.
+        </p>
+      </div>
+      <Feedback loading={loading && !preview} error={error} />
+      {preview ? (
+        <>
+          <div className="provider-fact-grid compact">
+            <ProviderFact label="Provider" value={preview.provider_id} />
+            <ProviderFact label="Mode" value={preview.mode} />
+            <ProviderFact label="Apply Enabled" value={preview.apply_enabled ? "Enabled" : "Disabled"} />
+            <ProviderFact label="NETAPP_CONFIGURED" value={preview.netapp_configured ? "true" : "false"} />
+            <ProviderFact label="Readiness Status" value={labelize(asString(readinessSummary.status) || "unknown")} />
+            <ProviderFact label="Not Ready" value={asString(readinessSummary.not_ready_count) || "-"} />
+            <ProviderFact label="Buckets" value={asString(readinessSummary.bucket_count) || "-"} />
+            <ProviderFact label="Next Safe Action" value={preview.next_safe_action} />
+          </div>
+          <h3>Planned Targets</h3>
+          <KeyValueTable rows={targetAddressing} labelKey="label" valueKey="address" empty="No NetApp target addresses are planned." />
+          <h3>Current / Discovered Targets</h3>
+          <KeyValueTable rows={currentAddressing} labelKey="label" valueKey="address" empty="No NetApp current targets have been discovered." />
+          <div className="provider-callout">
+            <strong>Setup vs upgrade readiness</strong>
+            <p>Setup: {labelize(asString(setupReadiness.status) || "blocked preview only")}. Upgrade: {labelize(asString(upgradeReadinessSummary.status) || "blocked until setup ready")}.</p>
+          </div>
+          <h3>Readiness Sections</h3>
+          <NetAppReadinessGrid readiness={preview.readiness_buckets} />
+          <h3>Blockers / Warnings</h3>
+          <NetAppRunCenterIssues
+            blockers={preview.blockers}
+            removableWarnings={preview.removable_warnings}
+            warnings={preview.warnings}
+          />
+          <h3>Planned vs Observed</h3>
+          <NetAppReadinessComparisonPanel comparison={readinessComparison} />
+          <h3>Console / Bootstrap Readiness</h3>
+          <NetAppConsoleReadinessPanel onRefresh={onRefresh} readiness={consoleReadiness} />
+          <h3>Cluster / SVM / LIF Intent</h3>
+          <div className="provider-fact-grid compact">
+            <ProviderFact label="Cluster Management IP" value={asString(cluster.management_ip) || "-"} />
+            <ProviderFact label="SVM Management IP" value={asString(svm.management_ip) || "-"} />
+          </div>
+          <KeyValueTable rows={recordArray(cluster.nodes)} labelKey="name" valueKey="management_ip" empty="No node management intent is planned." />
+          <KeyValueTable rows={recordArray(lifIntent.iscsi_lifs)} labelKey="name" valueKey="address" empty="No iSCSI LIF intent is planned." />
+          <div className="run-center-preview-grid">
+            <div>
+              <h3>Storage / iSCSI Preview</h3>
+              <PreviewNoteBlock payload={storagePreview} fallback="Storage/iSCSI preview placeholder only. No volumes, LUNs, igroups, or LIFs are created." />
+            </div>
+            <div>
+              <h3>Upgrade Readiness Preview</h3>
+              <NetAppUpgradeReadinessPanel readiness={upgradeReadiness} fallbackPreview={upgradePreview} />
+            </div>
+          </div>
+          <h3>Artifact / Report Placeholders</h3>
+          <div className="tag-row netapp-artifact-row">
+            {preview.artifact_placeholders.map((artifact) => (
+              <span key={artifact}>{artifact}</span>
+            ))}
+          </div>
+          <h3>Persisted Mock Artifact Metadata</h3>
+          <NetAppProviderArtifactList artifacts={artifacts} />
+          <h3>Disabled Dangerous Actions</h3>
+          <DisabledActionList actions={disabledActions} />
+        </>
+      ) : (
+        !loading && !error && <p className="muted">No NetApp plan-preview payload is available.</p>
+      )}
+    </section>
+  );
+}
+
+function NetAppReadinessComparisonPanel({
+  comparison
+}: {
+  comparison: NetAppReadinessComparison | null;
+}) {
+  if (!comparison) {
+    return (
+      <div className="provider-callout">
+        <strong>Manual observations only</strong>
+        <p>Planned-vs-observed comparison is loading. No live NetApp discovery is run.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="netapp-comparison-preview">
+      <div className="provider-callout netapp-apply-disabled">
+        <strong>Manual observations only / No live NetApp discovery</strong>
+        <p>
+          This compares local planned targets with operator observations. Discovery,
+          probes, console access, and apply remain disabled.
+        </p>
+      </div>
+      <div className="provider-fact-grid compact">
+        <ProviderFact label="Provider" value={comparison.provider_id} />
+        <ProviderFact label="Mode" value={comparison.mode} />
+        <ProviderFact label="Comparison" value={comparison.comparison_enabled ? "Enabled" : "Disabled"} />
+        <ProviderFact label="Discovery" value={comparison.discovery_enabled ? "Enabled" : "Disabled"} />
+        <ProviderFact label="Apply" value={comparison.apply_enabled ? "Enabled" : "Disabled"} />
+        <ProviderFact label="Matched" value={`${comparison.matched_items.length} / ${comparison.comparison_items.length}`} />
+        <ProviderFact label="Unknown" value={String(comparison.unknown_items.length)} />
+        <ProviderFact label="Warnings" value={String(comparison.warning_items.length)} />
+        <ProviderFact label="Blockers" value={String(comparison.blocker_items.length)} />
+        <ProviderFact label="Console State" value={labelize(comparison.observations.observed_console_state)} />
+      </div>
+      <NetAppRunCenterIssues
+        blockers={comparison.blockers}
+        removableWarnings={comparison.removable_warnings}
+        warnings={comparison.warnings}
+      />
+      <table className="netapp-comparison-table">
+        <thead>
+          <tr>
+            <th>Item</th>
+            <th>Planned / Expected</th>
+            <th>Observed</th>
+            <th>Status</th>
+            <th>Next Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {comparison.comparison_items.map((item) => (
+            <tr key={item.id}>
+              <td>{item.label}</td>
+              <td>{item.planned}</td>
+              <td>{item.observed}</td>
+              <td>
+                <span className={`comparison-status ${item.status}`}>{labelize(item.status)}</span>
+              </td>
+              <td>{item.next_action}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <div className="provider-callout">
+        <strong>Next safe action</strong>
+        <p>{comparison.next_safe_action}</p>
+      </div>
+    </div>
+  );
+}
+
+function NetAppUpgradeReadinessPanel({
+  fallbackPreview,
+  readiness
+}: {
+  fallbackPreview: Record<string, unknown>;
+  readiness: NetAppUpgradeReadiness | null;
+}) {
+  if (!readiness) {
+    return (
+      <PreviewNoteBlock
+        payload={fallbackPreview}
+        fallback="Upgrade preview placeholder only. No ONTAP image upload, upgrade, takeover, giveback, or reboot is run."
+      />
+    );
+  }
+
+  return (
+    <div className="netapp-upgrade-preview">
+      <div className="provider-callout">
+        <strong>Offline media preview only</strong>
+        <p>No ONTAP calls are made. Upgrade and apply remain disabled.</p>
+      </div>
+      <div className="provider-fact-grid compact">
+        <ProviderFact label="Current Source" value={labelize(readiness.current_version_source)} />
+        <ProviderFact label="Current Version" value={readiness.current_version ?? "Unknown"} />
+        <ProviderFact label="Confidence" value={labelize(readiness.current_version_confidence)} />
+        <ProviderFact label="Media Inventory" value={labelize(readiness.media_inventory_mode)} />
+        <ProviderFact label="Recommended Target" value={readiness.recommended_target ?? "None"} />
+        <ProviderFact label="Upgrade Enabled" value={readiness.upgrade_enabled ? "Enabled" : "Disabled"} />
+        <ProviderFact label="Setup Ready" value={readiness.setup_ready ? "Yes" : "No"} />
+        <ProviderFact label="Scope" value={labelize(readiness.readiness_scope)} />
+      </div>
+      <NetAppRunCenterIssues
+        blockers={readiness.blockers}
+        removableWarnings={readiness.removable_warnings}
+        warnings={readiness.warnings}
+      />
+      <h3>ONTAP Media Candidates</h3>
+      <NetAppUpgradeCandidateTable candidates={readiness.candidates} />
+      <h3>Upgrade Chain</h3>
+      <NetAppUpgradeCandidateTable candidates={readiness.upgrade_chain} empty="No upgrade chain is available." />
+      <h3>Disabled Upgrade Actions</h3>
+      <DisabledActionList actions={readiness.disabled_actions} />
+    </div>
+  );
+}
+
+const netappConsoleStateOptions: Array<{ value: NetAppObservationUpdate["observed_console_state"]; label: string }> = [
+  { value: "unknown", label: "Unknown / unverified" },
+  { value: "loader_prompt", label: "LOADER prompt" },
+  { value: "boot_menu", label: "Boot menu" },
+  { value: "cluster_setup_prompt", label: "Cluster setup prompt" },
+  { value: "existing_cluster_login", label: "Existing cluster login" },
+  { value: "other", label: "Other" }
+];
+
+const netappObservationChecks: Array<{ key: keyof Omit<NetAppObservationUpdate, "observed_console_state" | "operator_notes">; label: string }> = [
+  { key: "controller_a_console_seen", label: "Controller A console seen" },
+  { key: "controller_b_console_seen", label: "Controller B console seen" },
+  { key: "controller_a_sp_cabled", label: "Controller A SP cabled" },
+  { key: "controller_b_sp_cabled", label: "Controller B SP cabled" },
+  { key: "management_network_reviewed", label: "Management network reviewed" },
+  { key: "planned_targets_reviewed", label: "Planned targets reviewed" },
+  { key: "existing_data_risk_acknowledged", label: "Existing data risk acknowledged" }
+];
+
+const forbiddenNetAppNoteFragments = [
+  "authorization",
+  "cookie",
+  "credential",
+  "password",
+  "secret",
+  "token"
+];
+
+function emptyNetAppObservationForm(): NetAppObservationUpdate {
+  return {
+    observed_console_state: "unknown",
+    controller_a_console_seen: false,
+    controller_b_console_seen: false,
+    controller_a_sp_cabled: false,
+    controller_b_sp_cabled: false,
+    management_network_reviewed: false,
+    planned_targets_reviewed: false,
+    existing_data_risk_acknowledged: false,
+    operator_notes: ""
+  };
+}
+
+function observationFormFromReadiness(readiness: NetAppConsoleReadiness | null): NetAppObservationUpdate {
+  const observations = readiness?.observations;
+  if (!observations) {
+    return emptyNetAppObservationForm();
+  }
+  return {
+    observed_console_state: observations.observed_console_state,
+    controller_a_console_seen: observations.controller_a_console_seen,
+    controller_b_console_seen: observations.controller_b_console_seen,
+    controller_a_sp_cabled: observations.controller_a_sp_cabled,
+    controller_b_sp_cabled: observations.controller_b_sp_cabled,
+    management_network_reviewed: observations.management_network_reviewed,
+    planned_targets_reviewed: observations.planned_targets_reviewed,
+    existing_data_risk_acknowledged: observations.existing_data_risk_acknowledged,
+    operator_notes: observations.operator_notes
+  };
+}
+
+function NetAppConsoleReadinessPanel({
+  onRefresh,
+  readiness
+}: {
+  onRefresh: () => Promise<void> | void;
+  readiness: NetAppConsoleReadiness | null;
+}) {
+  const [form, setForm] = useState<NetAppObservationUpdate>(() => observationFormFromReadiness(readiness));
+  const [saveError, setSaveError] = useState("");
+  const [saveMessage, setSaveMessage] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    setForm(observationFormFromReadiness(readiness));
+    setSaveError("");
+    setSaveMessage("");
+  }, [readiness?.observations?.updated_at]);
+
+  if (!readiness) {
+    return (
+      <div className="provider-callout">
+        <strong>Manual/offline preview</strong>
+        <p>Console/bootstrap readiness is loading. No serial ports are opened.</p>
+      </div>
+    );
+  }
+
+  const targets = objectValue(readiness.planned_targets);
+  const spTargets = objectValue(targets.controller_sp);
+  const managementTargets = objectValue(targets.management_ips);
+  const lifRange = objectValue(targets.iscsi_lif_range);
+  const observations = readiness.observations;
+  const observationSummary = readiness.observation_summary ?? {};
+
+  async function saveObservations(event: FormEvent) {
+    event.preventDefault();
+    setSaveError("");
+    setSaveMessage("");
+    if (hasForbiddenNetAppNoteText(form.operator_notes)) {
+      setSaveError("Operator notes must not include password, secret, token, credential, authorization, or cookie text.");
+      return;
+    }
+    setSaving(true);
+    try {
+      await api.saveNetappObservations(form);
+      await onRefresh();
+      setSaveMessage("Saved locally in the mock observation store. Nothing was sent to NetApp.");
+    } catch (err) {
+      setSaveError((err as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="netapp-console-preview">
+      <div className="provider-callout netapp-apply-disabled">
+        <strong>Manual/offline only</strong>
+        <p>No serial port is opened. No console command, boot interruption, bootstrap, or configuration action is available.</p>
+      </div>
+      <div className="provider-fact-grid compact">
+        <ProviderFact label="Bootstrap" value={readiness.bootstrap_enabled ? "Enabled" : "Disabled"} />
+        <ProviderFact label="Console Probe" value={readiness.console_probe_enabled ? "Enabled" : "Disabled"} />
+        <ProviderFact label="Apply" value={readiness.apply_enabled ? "Enabled" : "Disabled"} />
+        <ProviderFact label="NETAPP_CONFIGURED" value={readiness.netapp_configured ? "true" : "false"} />
+        <ProviderFact label="Controller A SP" value={asString(spTargets.controller_a) || "-"} />
+        <ProviderFact label="Controller B SP" value={asString(spTargets.controller_b) || "-"} />
+        <ProviderFact label="Cluster Mgmt" value={asString(managementTargets.cluster) || "-"} />
+        <ProviderFact label="iSCSI LIFs" value={`${asString(lifRange.start) || "-"} to ${asString(lifRange.end) || "-"}`} />
+      </div>
+      <h3>Prerequisites</h3>
+      <KeyValueTable rows={readiness.prerequisites} labelKey="label" valueKey="status" empty="No console prerequisites are available." />
+      <h3>Manual Steps</h3>
+      <ol className="netapp-manual-step-list">
+        {readiness.manual_steps.map((step) => (
+          <li key={step}>{step}</li>
+        ))}
+      </ol>
+      <h3>Expected Prompts / States</h3>
+      <KeyValueTable rows={readiness.expected_prompts_or_states} labelKey="label" valueKey="safe_meaning" empty="No expected console states are available." />
+      <h3>Readiness Buckets</h3>
+      <NetAppReadinessGrid readiness={readiness.readiness_buckets} />
+      <h3>Operator Observations</h3>
+      <div className="provider-callout">
+        <strong>Local/mock-only status capture</strong>
+        <p>No serial port is opened, no console command is sent, and these observations are not sent to NetApp.</p>
+      </div>
+      <div className="provider-fact-grid compact">
+        <ProviderFact label="Stored Locally" value={observations?.mock_only ? "Mock only" : "Mock only"} />
+        <ProviderFact label="Sent To NetApp" value={observations?.sent_to_netapp ? "Yes" : "No"} />
+        <ProviderFact label="Updated By" value={observations?.updated_by ?? "system"} />
+        <ProviderFact label="Updated At" value={observations?.updated_at ? formatDateTime(observations.updated_at) : "-"} />
+        <ProviderFact label="Observation Status" value={labelize(asString(observationSummary.status) || "not_recorded")} />
+        <ProviderFact label="Manual Checks" value={`${asString(observationSummary.completed_check_count) || "0"} / ${asString(observationSummary.required_check_count) || "0"}`} />
+        <ProviderFact label="Optional Checks" value={`${asString(observationSummary.completed_optional_check_count) || "0"} / ${asString(observationSummary.optional_check_count) || "0"}`} />
+      </div>
+      <form className="netapp-observation-form" onSubmit={saveObservations}>
+        <label>
+          Observed console state
+          <select
+            value={form.observed_console_state}
+            onChange={(event) =>
+              setForm((current) => ({
+                ...current,
+                observed_console_state: event.target.value as NetAppObservationUpdate["observed_console_state"]
+              }))
+            }
+          >
+            {netappConsoleStateOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <div className="netapp-observation-checks">
+          {netappObservationChecks.map((check) => (
+            <label key={check.key} className="check-row">
+              <input
+                type="checkbox"
+                checked={Boolean(form[check.key])}
+                onChange={(event) =>
+                  setForm((current) => ({
+                    ...current,
+                    [check.key]: event.target.checked
+                  }))
+                }
+              />
+              <span>{check.label}</span>
+            </label>
+          ))}
+        </div>
+        <label>
+          Operator notes
+          <textarea
+            maxLength={1200}
+            rows={4}
+            value={form.operator_notes}
+            onChange={(event) =>
+              setForm((current) => ({
+                ...current,
+                operator_notes: event.target.value
+              }))
+            }
+          />
+        </label>
+        <p className="muted">Do not paste passwords, tokens, or raw configs. Notes are local/mock-only and bounded to 1200 characters.</p>
+        {saveError && <div className="error">{saveError}</div>}
+        {saveMessage && <div className="success">{saveMessage}</div>}
+        <div className="form-actions">
+          <button type="submit" disabled={saving}>
+            <Save size={16} />
+            Save Observations
+          </button>
+          <button type="button" onClick={onRefresh} disabled={saving}>
+            <RefreshCw size={16} />
+            Refresh Observations
+          </button>
+        </div>
+      </form>
+      {readiness.observation_blockers.length > 0 && (
+        <>
+          <h3>Observation Follow-Up</h3>
+          <ul className="issue-list">
+            {readiness.observation_blockers.map((blocker) => (
+              <li key={blocker}>{blocker}</li>
+            ))}
+          </ul>
+        </>
+      )}
+      <h3>Console / Bootstrap Blockers</h3>
+      <NetAppRunCenterIssues
+        blockers={readiness.blockers}
+        removableWarnings={readiness.removable_warnings}
+        warnings={readiness.warnings}
+      />
+      <h3>Disabled Console / Bootstrap Actions</h3>
+      <DisabledActionList actions={readiness.disabled_actions} />
+      <div className="provider-callout">
+        <strong>Next safe action</strong>
+        <p>{readiness.next_safe_action}</p>
+      </div>
+    </div>
+  );
+}
+
+function hasForbiddenNetAppNoteText(value: string): boolean {
+  const lowerValue = value.toLowerCase();
+  return forbiddenNetAppNoteFragments.some((fragment) => lowerValue.includes(fragment));
+}
+
+function NetAppUpgradeCandidateTable({
+  candidates,
+  empty = "No ONTAP media candidates were found."
+}: {
+  candidates: NetAppUpgradeReadiness["candidates"];
+  empty?: string;
+}) {
+  if (!candidates.length) {
+    return <p className="muted">{empty}</p>;
+  }
+
+  return (
+    <table className="provider-candidate-table">
+      <thead>
+        <tr>
+          <th>Media</th>
+          <th>Version</th>
+          <th>Product</th>
+          <th>Confidence</th>
+        </tr>
+      </thead>
+      <tbody>
+        {candidates.map((candidate) => (
+          <tr key={candidate.id}>
+            <td>
+              <strong>{candidate.redacted_label}</strong>
+              <span>{candidate.source}</span>
+              {candidate.warnings.length > 0 && <span>{candidate.warnings.join(" ")}</span>}
+            </td>
+            <td>{candidate.version ?? "-"}</td>
+            <td>{candidate.product_hint ?? "-"}</td>
+            <td>
+              <span className={`candidate-tag ${candidate.match_confidence}`}>
+                {labelize(candidate.match_confidence)}
+              </span>
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+function NetAppProviderArtifactList({ artifacts }: { artifacts: NetAppProviderArtifact[] }) {
+  if (!artifacts.length) {
+    return <p className="muted">No provider artifact placeholders are available.</p>;
+  }
+
+  return (
+    <div className="provider-artifact-list">
+      {artifacts.map((artifact) => (
+        <article className="provider-artifact-item" key={artifact.id}>
+          <div className="provider-artifact-head">
+            <div>
+              <strong>{artifact.title}</strong>
+              <p>{artifact.description}</p>
+            </div>
+            <StatusBadge status={artifact.status} />
+          </div>
+          <div className="provider-fact-grid compact">
+            <ProviderFact label="Provider" value={artifact.provider_id} />
+            <ProviderFact label="Kind" value={artifact.kind} />
+            <ProviderFact label="Generated" value={formatDateTime(artifact.generated_at)} />
+            <ProviderFact label="Download" value={artifact.downloadable ? "Available" : "Unavailable"} />
+            <ProviderFact label="Mock Only" value={artifact.mock_only ? "true" : "false"} />
+            <ProviderFact label="Redacted" value={artifact.redacted ? "true" : "false"} />
+          </div>
+          <div className="provider-callout">
+            <strong>Non-downloadable placeholder</strong>
+            <p>
+              This metadata points to {asString(artifact.metadata.source_endpoint) || "the plan-preview endpoint"}.
+              No report file is written and no archive is available.
+            </p>
+          </div>
+          <div className="tag-row netapp-artifact-row">
+            {Object.entries(artifact.metadata).map(([key, value]) => (
+              <span key={key}>{labelize(key)}: {asString(value)}</span>
+            ))}
+          </div>
+        </article>
+      ))}
+    </div>
+  );
+}
+
+function NetAppRunCenterIssues({
+  blockers,
+  removableWarnings,
+  warnings
+}: {
+  blockers: string[];
+  removableWarnings: string[];
+  warnings: string[];
+}) {
+  if (!blockers.length && !warnings.length && !removableWarnings.length) {
+    return <p className="muted">No NetApp blockers or warnings are reported.</p>;
+  }
+
+  return (
+    <div className="provider-issue-rows">
+      {blockers.map((blocker) => (
+        <div className="provider-issue blocker" key={blocker}>
+          <Ban size={16} />
+          <span>{blocker}</span>
+        </div>
+      ))}
+      {warnings.map((warning) => (
+        <div className="provider-issue warning" key={warning}>
+          <AlertTriangle size={16} />
+          <span>{warning}</span>
+        </div>
+      ))}
+      {removableWarnings.map((warning) => (
+        <div className="provider-issue warning removable" key={warning}>
+          <AlertTriangle size={16} />
+          <span>Removable warning: {warning}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function PreviewNoteBlock({ fallback, payload }: { fallback: string; payload: Record<string, unknown> }) {
+  const notes = stringArray(payload.notes);
+  const details = stringArray(payload.details);
+  return (
+    <div className="provider-callout">
+      <strong>{labelize(asString(payload.status) || "placeholder")}</strong>
+      {(notes.length ? notes : details).map((item) => (
+        <p key={item}>{item}</p>
+      ))}
+      {!notes.length && !details.length && <p>{fallback}</p>}
+    </div>
+  );
+}
+
+function DisabledActionList({ actions }: { actions: ProviderAction[] }) {
+  if (!actions.length) {
+    return <p className="muted">No disabled NetApp actions are reported.</p>;
+  }
+
+  return (
+    <div className="disabled-action-list">
+      {actions.map((action) => (
+        <div className="disabled-action-row" key={action.id}>
+          <Ban size={16} />
+          <strong>{action.label}</strong>
+          <span>{action.enabled ? "Enabled" : "Disabled"}</span>
+          <p>{action.reason}</p>
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -1412,6 +2108,151 @@ function AuditEvents() {
   );
 }
 
+function ProviderArtifactsPage() {
+  const [artifacts, setArtifacts] = useState<NetAppProviderArtifact[]>([]);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [providerFilter, setProviderFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [kindFilter, setKindFilter] = useState("all");
+
+  async function load() {
+    setError("");
+    setLoading(true);
+    try {
+      setArtifacts(await api.providerArtifacts());
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    load();
+  }, []);
+
+  const providerOptions = uniqueOptions(artifacts.map((artifact) => artifact.provider_id));
+  const statusOptions = uniqueOptions(artifacts.map((artifact) => artifact.status));
+  const kindOptions = uniqueOptions(artifacts.map((artifact) => artifact.kind));
+  const filteredArtifacts = artifacts.filter((artifact) => {
+    return (
+      (providerFilter === "all" || artifact.provider_id === providerFilter) &&
+      (statusFilter === "all" || artifact.status === statusFilter) &&
+      (kindFilter === "all" || artifact.kind === kindFilter)
+    );
+  });
+
+  return (
+    <Page
+      title="Reports / Artifacts"
+      actions={
+        <button onClick={load} disabled={loading}>
+          <RefreshCw size={16} />
+          Refresh
+        </button>
+      }
+    >
+      <Feedback loading={loading && !artifacts.length} error={error} />
+      <section className="panel">
+        <PanelTitle icon={<HardDrive size={18} />} title="Provider Artifact Filters" />
+        <div className="artifact-filter-grid">
+          <Field label="Provider">
+            <select value={providerFilter} onChange={(event) => setProviderFilter(event.target.value)}>
+              <option value="all">All providers</option>
+              {providerOptions.map((provider) => (
+                <option key={provider} value={provider}>
+                  {provider === "netapp-ontap" ? "NetApp ONTAP" : provider}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Kind">
+            <select value={kindFilter} onChange={(event) => setKindFilter(event.target.value)}>
+              <option value="all">All kinds</option>
+              {kindOptions.map((kind) => (
+                <option key={kind} value={kind}>
+                  {labelize(kind)}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Status">
+            <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+              <option value="all">All statuses</option>
+              {statusOptions.map((status) => (
+                <option key={status} value={status}>
+                  {labelize(status)}
+                </option>
+              ))}
+            </select>
+          </Field>
+        </div>
+      </section>
+      <section className="panel">
+        <PanelTitle icon={<HardDrive size={18} />} title={`Provider Artifacts (${filteredArtifacts.length})`} />
+        <ProviderArtifactsList artifacts={filteredArtifacts} />
+      </section>
+    </Page>
+  );
+}
+
+function ProviderArtifactsList({ artifacts }: { artifacts: NetAppProviderArtifact[] }) {
+  if (!artifacts.length) {
+    return (
+      <p className="muted">
+        No provider artifact metadata matches the current filters. Provider artifacts are mock-only
+        placeholders until a future approved reporting workflow is added.
+      </p>
+    );
+  }
+
+  return (
+    <div className="provider-artifact-list">
+      {artifacts.map((artifact) => (
+        <ProviderArtifactCard artifact={artifact} key={artifact.id} />
+      ))}
+    </div>
+  );
+}
+
+function ProviderArtifactCard({ artifact }: { artifact: NetAppProviderArtifact }) {
+  return (
+    <article className="provider-artifact-item">
+      <div className="provider-artifact-head">
+        <div>
+          <strong>{artifact.title}</strong>
+          <p>{artifact.description}</p>
+        </div>
+        <StatusBadge status={artifact.status} />
+      </div>
+      <div className="provider-fact-grid compact">
+        <ProviderFact label="Provider" value={artifact.provider_id} />
+        <ProviderFact label="Kind" value={labelize(artifact.kind)} />
+        <ProviderFact label="Generated" value={formatDateTime(artifact.generated_at)} />
+        <ProviderFact label="Mock Only" value={artifact.mock_only ? "true" : "false"} />
+        <ProviderFact label="Redacted" value={artifact.redacted ? "true" : "false"} />
+        <ProviderFact label="Downloadable" value={artifact.downloadable ? "true" : "false"} />
+        <ProviderFact label="Source Endpoint" value={asString(artifact.metadata.source_endpoint) || "-"} />
+        <ProviderFact label="No ONTAP Calls" value={asBoolean(artifact.metadata.no_ontap_calls) ? "true" : "false"} />
+      </div>
+      <div className="artifact-download-row">
+        <button disabled>
+          <Ban size={16} />
+          Download unavailable
+        </button>
+        <span className="action-tag disabled">Placeholder</span>
+        <p>No file, report archive, raw config, or provider bundle is generated.</p>
+      </div>
+      <div className="tag-row netapp-artifact-row">
+        {Object.entries(artifact.metadata).map(([key, value]) => (
+          <span key={key}>{labelize(key)}: {asString(value)}</span>
+        ))}
+      </div>
+    </article>
+  );
+}
+
 function MediaInventoryPage() {
   const [inventory, setInventory] = useState<MediaInventory | null>(null);
   const [error, setError] = useState("");
@@ -1986,10 +2827,14 @@ function NetAppOntapDetails({ provider }: { provider: ProviderStatus }) {
   const lifs = recordArray(lifIntent.iscsi_lifs);
   const storageIscsiPlan = planPreview?.storage_iscsi_plan_preview ?? objectValue(provider.discovery?.storage_iscsi_plan_preview);
   const plannedTargets = objectValue(planPreview?.planned_targets);
+  const currentDiscoveredTargets = objectValue(
+    planPreview?.current_discovered_targets ?? provider.configuration.current_discovered_targets
+  );
   const apiFlags = objectValue(plannedTargets.api_access_flags ?? provider.configuration.api_configured_flags);
   const targetAddressing = recordArray(plannedTargets.target_addressing).length
     ? recordArray(plannedTargets.target_addressing)
     : recordArray(provider.configuration.target_addressing);
+  const currentAddressing = netappCurrentAddressRows(currentDiscoveredTargets);
   const artifactPlaceholders = planPreview?.artifact_placeholders.length
     ? planPreview.artifact_placeholders
     : stringArray(provider.discovery?.reports_artifacts).length
@@ -2037,6 +2882,8 @@ function NetAppOntapDetails({ provider }: { provider: ProviderStatus }) {
       </div>
       <h3>Planned Targets</h3>
       <KeyValueTable rows={targetAddressing} labelKey="label" valueKey="address" empty="No NetApp target addresses are planned." />
+      <h3>Current / Discovered Targets</h3>
+      <KeyValueTable rows={currentAddressing} labelKey="label" valueKey="address" empty="No NetApp current targets have been discovered." />
       <h3>Readiness Preview</h3>
       <NetAppReadinessGrid readiness={readiness} />
       <h3>Blockers / Removable Warnings</h3>
@@ -2085,7 +2932,10 @@ function NetAppReadinessGrid({ readiness }: { readiness: Record<string, unknown>
     ["Cluster Management", objectValue(readiness.cluster_management_readiness)],
     ["Node Management", objectValue(readiness.node_management_readiness)],
     ["SVM", objectValue(readiness.svm_readiness)],
+    ["iSCSI LIFs", objectValue(readiness.iscsi_lif_readiness)],
     ["ONTAP API", objectValue(readiness.ontap_api_readiness)],
+    ["API Access", objectValue(readiness.api_access_readiness)],
+    ["Local Readonly Ack", objectValue(readiness.local_readonly_ack_readiness)],
     ["Console / Bootstrap", objectValue(readiness.console_bootstrap_readiness)],
     ["Upgrade Path", objectValue(readiness.upgrade_readiness_path)],
     ["Storage / iSCSI", objectValue(readiness.storage_iscsi_plan_preview)],
@@ -2336,6 +3186,25 @@ function recordArray(value: unknown): Array<Record<string, unknown>> {
 function addressFor(rows: Array<Record<string, unknown>>, label: string): string {
   const row = rows.find((item) => asString(item.label) === label);
   return asString(row?.address) || "-";
+}
+
+function netappCurrentAddressRows(targets: Record<string, unknown>): Array<Record<string, unknown>> {
+  const spIps = objectValue(targets.sp_ips ?? targets.controller_sp);
+  const managementIps = objectValue(targets.management_ips);
+  const lifRange = objectValue(targets.iscsi_lif_range);
+  const lifAddresses = stringArray(lifRange.addresses);
+  return [
+    { label: "Controller A SP", address: asString(spIps.controller_a) || "Not discovered" },
+    { label: "Controller B SP", address: asString(spIps.controller_b) || "Not discovered" },
+    { label: "Cluster management", address: asString(managementIps.cluster) || "Not discovered" },
+    { label: "Node A management / e0M", address: asString(managementIps.node_a) || "Not discovered" },
+    { label: "Node B management / e0M", address: asString(managementIps.node_b) || "Not discovered" },
+    { label: "SVM management", address: asString(managementIps.svm) || "Not discovered" },
+    {
+      label: "iSCSI LIFs",
+      address: lifAddresses.length ? lifAddresses.join(", ") : "Not discovered"
+    }
+  ];
 }
 
 function consoleCandidates(value: unknown): ConsoleCandidate[] {

@@ -138,6 +138,7 @@ class Settings:
     netapp_api_username: str | None = _optional_env("NETAPP_API_USERNAME")
     netapp_api_password: str | None = _optional_env("NETAPP_API_PASSWORD")
     netapp_api_verify_tls: bool = _bool_env("NETAPP_API_VERIFY_TLS", True)
+    netapp_current_ontap_version: str | None = _optional_env("NETAPP_CURRENT_ONTAP_VERSION")
     lab_closed_loop_ack: str | None = _optional_env("LAB_CLOSED_LOOP_ACK")
     lab_readonly_ack: str | None = _optional_env("LAB_READONLY_ACK")
     lab_destructive_ack: str | None = _optional_env("LAB_DESTRUCTIVE_ACK")

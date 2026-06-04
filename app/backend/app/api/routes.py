@@ -28,7 +28,13 @@ from app.schemas import (
     CatalogRead,
     IloUpgradeReadinessRead,
     MediaInventoryRead,
+    NetAppConsoleReadinessRead,
+    NetAppObservationRead,
+    NetAppObservationUpdate,
     NetAppPlanPreviewRead,
+    NetAppReadinessComparisonRead,
+    NetAppUpgradeReadinessRead,
+    ProviderArtifactRead,
     ProviderProbeResultRead,
     ProviderStatusRead,
     RequestReadinessRead,
@@ -61,6 +67,17 @@ from app.services.lifecycle import (
     update_vm_deployment_request,
 )
 from app.services.media_inventory import get_media_inventory
+from app.services.netapp_artifacts import (
+    list_netapp_artifact_placeholders,
+    list_provider_artifact_placeholders,
+)
+from app.services.netapp_console_readiness import get_netapp_console_readiness
+from app.services.netapp_observations import (
+    get_netapp_observations,
+    save_netapp_observations,
+)
+from app.services.netapp_readiness_comparison import get_netapp_readiness_comparison
+from app.services.netapp_upgrade_readiness import get_netapp_upgrade_readiness
 from app.services.readiness import get_request_readiness
 from app.services.upgrade_decision import get_ilo_upgrade_readiness
 
@@ -293,6 +310,69 @@ def read_ilo_upgrade_readiness() -> IloUpgradeReadinessRead:
 )
 def read_netapp_plan_preview() -> NetAppPlanPreviewRead:
     return NetAppOntapAdapter().plan_preview()
+
+
+@router.get(
+    "/providers/netapp-ontap/console-readiness",
+    response_model=NetAppConsoleReadinessRead,
+)
+def read_netapp_console_readiness() -> NetAppConsoleReadinessRead:
+    return get_netapp_console_readiness()
+
+
+@router.get(
+    "/providers/netapp-ontap/observations",
+    response_model=NetAppObservationRead,
+)
+def read_netapp_observations() -> NetAppObservationRead:
+    return get_netapp_observations()
+
+
+@router.put(
+    "/providers/netapp-ontap/observations",
+    response_model=NetAppObservationRead,
+)
+def update_netapp_observations(
+    payload: NetAppObservationUpdate,
+    fastapi_request: FastAPIRequest,
+) -> NetAppObservationRead:
+    actor = get_current_actor(fastapi_request)
+    try:
+        return save_netapp_observations(payload.model_dump(), updated_by=actor)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.get(
+    "/providers/netapp-ontap/readiness-comparison",
+    response_model=NetAppReadinessComparisonRead,
+)
+def read_netapp_readiness_comparison() -> NetAppReadinessComparisonRead:
+    return get_netapp_readiness_comparison()
+
+
+@router.get(
+    "/providers/netapp-ontap/upgrade-readiness",
+    response_model=NetAppUpgradeReadinessRead,
+)
+def read_netapp_upgrade_readiness() -> NetAppUpgradeReadinessRead:
+    return get_netapp_upgrade_readiness()
+
+
+@router.get(
+    "/providers/artifacts",
+    response_model=list[ProviderArtifactRead],
+)
+def read_provider_artifacts() -> list[ProviderArtifactRead]:
+    return list_provider_artifact_placeholders()
+
+
+@router.get(
+    "/providers/netapp-ontap/artifacts",
+    response_model=list[ProviderArtifactRead],
+)
+def read_netapp_artifacts() -> list[ProviderArtifactRead]:
+    return list_netapp_artifact_placeholders()
 
 
 def _run_provider_probe(provider_id: str, probe: Callable[[], dict]) -> dict:

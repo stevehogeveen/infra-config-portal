@@ -4,7 +4,13 @@ import type {
   Catalog,
   IloUpgradeReadiness,
   MediaInventory,
+  NetAppConsoleReadiness,
+  NetAppObservationUpdate,
+  NetAppObservations,
+  NetAppProviderArtifact,
   NetAppPlanPreview,
+  NetAppReadinessComparison,
+  NetAppUpgradeReadiness,
   ProviderProbeResult,
   ProviderStatus,
   RequestReadiness,
@@ -80,6 +86,23 @@ export const api = {
     apiRequest<IloUpgradeReadiness>("/api/v1/providers/ilo-redfish/upgrade-readiness"),
   netappPlanPreview: () =>
     apiRequest<NetAppPlanPreview>("/api/v1/providers/netapp-ontap/plan-preview"),
+  netappConsoleReadiness: () =>
+    apiRequest<NetAppConsoleReadiness>("/api/v1/providers/netapp-ontap/console-readiness"),
+  netappObservations: () =>
+    apiRequest<NetAppObservations>("/api/v1/providers/netapp-ontap/observations"),
+  saveNetappObservations: (payload: NetAppObservationUpdate) =>
+    apiRequest<NetAppObservations>("/api/v1/providers/netapp-ontap/observations", {
+      method: "PUT",
+      body: payload
+    }),
+  netappReadinessComparison: () =>
+    apiRequest<NetAppReadinessComparison>("/api/v1/providers/netapp-ontap/readiness-comparison"),
+  netappUpgradeReadiness: () =>
+    apiRequest<NetAppUpgradeReadiness>("/api/v1/providers/netapp-ontap/upgrade-readiness"),
+  netappArtifacts: () =>
+    apiRequest<NetAppProviderArtifact[]>("/api/v1/providers/netapp-ontap/artifacts"),
+  providerArtifacts: () =>
+    apiRequest<NetAppProviderArtifact[]>("/api/v1/providers/artifacts"),
   providers: () => apiRequest<ProviderStatus[]>("/api/v1/providers/status"),
   probeProvider: (id: string) =>
     apiRequest<ProviderProbeResult>(`/api/v1/providers/${id}/probe`, { method: "POST" })

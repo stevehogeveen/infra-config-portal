@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import re
 from datetime import date, datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.core.enums import EnvironmentName, RequestStatus, WorkflowRunStatus
+from app.services.netapp_observations import validate_netapp_operator_notes
 
 VM_NAME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9-]{2,62}$")
 
@@ -339,6 +340,8 @@ class IloUpgradeReadinessRead(BaseModel):
 
 
 class ProviderActionRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: str
     label: str
     enabled: bool
@@ -349,6 +352,8 @@ class ProviderActionRead(BaseModel):
 
 
 class ProviderStatusRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: str
     name: str
     kind: str
@@ -372,12 +377,16 @@ class NetAppPlanPreviewRead(BaseModel):
     apply_enabled: bool = False
     netapp_configured: bool
     planned_targets: dict[str, Any]
+    current_discovered_targets: dict[str, Any] | None = None
     readiness_summary: dict[str, Any]
+    setup_readiness: dict[str, Any] | None = None
+    upgrade_readiness: dict[str, Any] | None = None
     readiness_buckets: dict[str, Any]
     cluster_intent_preview: dict[str, Any]
     svm_intent_preview: dict[str, Any]
     lif_intent_preview: dict[str, Any]
     storage_iscsi_plan_preview: dict[str, Any]
+    readiness_comparison_preview: dict[str, Any] | None = None
     upgrade_readiness_preview: dict[str, Any]
     blockers: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
@@ -385,6 +394,121 @@ class NetAppPlanPreviewRead(BaseModel):
     disabled_actions: list[ProviderActionRead] = Field(default_factory=list)
     artifact_placeholders: list[str] = Field(default_factory=list)
     next_safe_action: str
+
+
+class NetAppUpgradeReadinessRead(BaseModel):
+    provider_id: str
+    mode: str
+    apply_enabled: bool = False
+    upgrade_enabled: bool = False
+    setup_ready: bool = False
+    readiness_scope: str = "upgrade"
+    current_version_source: str
+    current_version: str | None = None
+    current_version_confidence: str
+    media_inventory_mode: str
+    candidates: list[dict[str, Any]] = Field(default_factory=list)
+    recommended_target: str | None = None
+    required_intermediate_versions: list[str] = Field(default_factory=list)
+    upgrade_chain: list[dict[str, Any]] = Field(default_factory=list)
+    blockers: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    removable_warnings: list[str] = Field(default_factory=list)
+    next_safe_action: str
+    disabled_actions: list[ProviderActionRead] = Field(default_factory=list)
+
+
+class NetAppConsoleReadinessRead(BaseModel):
+    provider_id: str
+    mode: str
+    bootstrap_enabled: bool = False
+    console_probe_enabled: bool = False
+    apply_enabled: bool = False
+    netapp_configured: bool
+    planned_targets: dict[str, Any]
+    current_discovered_targets: dict[str, Any] | None = None
+    prerequisites: list[dict[str, Any]] = Field(default_factory=list)
+    manual_steps: list[str] = Field(default_factory=list)
+    expected_prompts_or_states: list[dict[str, Any]] = Field(default_factory=list)
+    readiness_buckets: dict[str, Any]
+    observations: dict[str, Any] | None = None
+    observation_summary: dict[str, Any] | None = None
+    observation_blockers: list[str] = Field(default_factory=list)
+    blockers: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    removable_warnings: list[str] = Field(default_factory=list)
+    disabled_actions: list[ProviderActionRead] = Field(default_factory=list)
+    next_safe_action: str
+
+
+class NetAppObservationUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    observed_console_state: Literal[
+        "unknown",
+        "loader_prompt",
+        "boot_menu",
+        "cluster_setup_prompt",
+        "existing_cluster_login",
+        "other",
+    ] = "unknown"
+    controller_a_console_seen: bool = False
+    controller_b_console_seen: bool = False
+    controller_a_sp_cabled: bool = False
+    controller_b_sp_cabled: bool = False
+    management_network_reviewed: bool = False
+    planned_targets_reviewed: bool = False
+    existing_data_risk_acknowledged: bool = False
+    operator_notes: str = Field(default="", max_length=1200)
+
+    @field_validator("operator_notes", mode="before")
+    @classmethod
+    def strip_operator_notes(cls, value: str | None) -> str:
+        return validate_netapp_operator_notes(value)
+
+
+class NetAppObservationRead(NetAppObservationUpdate):
+    provider_id: str
+    updated_at: datetime
+    updated_by: str
+    mock_only: bool = True
+    sent_to_netapp: bool = False
+
+
+class NetAppReadinessComparisonRead(BaseModel):
+    provider_id: str
+    mode: str
+    comparison_enabled: bool = True
+    apply_enabled: bool = False
+    discovery_enabled: bool = False
+    planned_targets: dict[str, Any]
+    current_discovered_targets: dict[str, Any] | None = None
+    observations: dict[str, Any]
+    comparison_items: list[dict[str, Any]] = Field(default_factory=list)
+    matched_items: list[dict[str, Any]] = Field(default_factory=list)
+    unknown_items: list[dict[str, Any]] = Field(default_factory=list)
+    warning_items: list[dict[str, Any]] = Field(default_factory=list)
+    blocker_items: list[dict[str, Any]] = Field(default_factory=list)
+    blockers: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    removable_warnings: list[str] = Field(default_factory=list)
+    next_safe_action: str
+    disabled_actions: list[ProviderActionRead] = Field(default_factory=list)
+
+
+class ProviderArtifactRead(BaseModel):
+    id: str
+    provider_id: str
+    kind: str
+    title: str
+    description: str
+    status: str
+    mock_only: bool
+    redacted: bool
+    downloadable: bool
+    download_url: str | None = None
+    generated_at: datetime
+    metadata: dict[str, Any]
 
 
 class ProviderProbeResultRead(BaseModel):

@@ -483,6 +483,12 @@ textarea {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
+.artifact-filter-grid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .request-list-link {
   margin-top: 14px;
 }
@@ -1128,6 +1134,176 @@ pre {
   margin-top: 8px;
 }
 
+.netapp-run-center-preview h3 {
+  color: #445164;
+  font-size: 12px;
+  letter-spacing: 0;
+  margin: 16px 0 8px;
+  text-transform: uppercase;
+}
+
+.run-center-preview-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.netapp-comparison-table {
+  margin-top: 12px;
+  table-layout: fixed;
+}
+
+.netapp-comparison-table th,
+.netapp-comparison-table td {
+  vertical-align: top;
+}
+
+.comparison-status {
+  border-radius: 999px;
+  display: inline-flex;
+  font-size: 11px;
+  font-weight: 800;
+  padding: 4px 7px;
+  text-transform: uppercase;
+}
+
+.comparison-status.matched {
+  background: #e6f6ee;
+  color: #166534;
+}
+
+.comparison-status.unknown,
+.comparison-status.warning {
+  background: #fff7df;
+  color: #8a5d00;
+}
+
+.comparison-status.blocker {
+  background: #fff1f1;
+  color: #b42318;
+}
+
+.disabled-action-list {
+  display: grid;
+  gap: 8px;
+}
+
+.disabled-action-row {
+  align-items: flex-start;
+  background: #fff1f1;
+  border-radius: 6px;
+  color: #b42318;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: auto minmax(0, 180px) auto minmax(0, 1fr);
+  padding: 10px;
+}
+
+.disabled-action-row p {
+  color: #5d6877;
+  margin: 0;
+}
+
+.provider-artifact-list {
+  display: grid;
+  gap: 12px;
+}
+
+.provider-artifact-item {
+  border: 1px solid #dfe4ea;
+  border-radius: 6px;
+  padding: 12px;
+}
+
+.provider-artifact-head {
+  align-items: flex-start;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.provider-artifact-head p {
+  color: #5d6877;
+  margin: 6px 0 0;
+}
+
+.artifact-download-row {
+  align-items: center;
+  border-top: 1px solid #e5e9ef;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 12px;
+  padding-top: 12px;
+}
+
+.artifact-download-row p {
+  color: #5d6877;
+  font-size: 13px;
+  margin: 0;
+}
+
+.netapp-manual-step-list {
+  color: #445164;
+  display: grid;
+  gap: 6px;
+  margin: 8px 0 0;
+  padding-left: 22px;
+}
+
+.netapp-observation-form {
+  border: 1px solid #dfe4ea;
+  border-radius: 6px;
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+  padding: 12px;
+}
+
+.netapp-observation-form label {
+  color: #445164;
+  display: grid;
+  font-size: 13px;
+  font-weight: 800;
+  gap: 6px;
+}
+
+.netapp-observation-checks {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.netapp-observation-checks .check-row {
+  align-items: center;
+  border: 1px solid #e5e9ef;
+  border-radius: 6px;
+  display: flex;
+  gap: 8px;
+  padding: 8px 10px;
+}
+
+.netapp-observation-checks input {
+  min-height: auto;
+  width: auto;
+}
+
+.success {
+  background: #e6f6ee;
+  border: 1px solid #bfdfcd;
+  border-radius: 6px;
+  color: #166534;
+  padding: 10px;
+}
+
+.error {
+  background: #fff1f1;
+  border: 1px solid #ffd1d1;
+  border-radius: 6px;
+  color: #b42318;
+  padding: 10px;
+}
+
 .provider-raw-result {
   border-top: 1px solid #e5e9ef;
   margin-top: 16px;
@@ -1180,7 +1356,8 @@ pre {
   .operator-queue-grid,
   .dashboard-grid,
   .request-filter-grid,
-  .audit-filter-grid {
+  .audit-filter-grid,
+  .artifact-filter-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -1213,6 +1390,7 @@ pre {
     .dashboard-grid,
     .request-filter-grid,
     .audit-filter-grid,
+    .artifact-filter-grid,
     .stage-list,
     .lifecycle-action-grid,
     .handoff-summary,
@@ -1220,8 +1398,13 @@ pre {
     .provider-fact-grid,
     .provider-fact-grid.compact,
     .netapp-readiness-grid,
+    .run-center-preview-grid,
     .provider-action-layout {
       grid-template-columns: 1fr;
+    }
+
+    .disabled-action-row {
+      grid-template-columns: auto minmax(0, 1fr);
     }
 
   .readiness-head {

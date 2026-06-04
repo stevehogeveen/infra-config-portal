@@ -132,6 +132,8 @@ def _safe_media_hints(name: str) -> dict[str, list[str] | str | None]:
         product_hints.append("hpe")
     if re.search(r"(?:^|[^a-z0-9])spp(?:[^a-z0-9]|$)", normalized):
         product_hints.append("hpe-spp")
+    if re.search(r"(?:^|[^a-z0-9])(?:netapp|ontap)(?:[^a-z0-9]|$)", normalized):
+        product_hints.append("netapp-ontap")
 
     for match in re.finditer(r"(?:^|[^a-z0-9])ilo[\s._-]?([456])(?:[^a-z0-9]|$)", normalized):
         _append_unique(product_hints, "hpe-ilo")

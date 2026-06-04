@@ -159,12 +159,16 @@ export type NetAppPlanPreview = {
   apply_enabled: boolean;
   netapp_configured: boolean;
   planned_targets: Record<string, unknown>;
+  current_discovered_targets: Record<string, unknown> | null;
   readiness_summary: Record<string, unknown>;
+  setup_readiness: Record<string, unknown> | null;
+  upgrade_readiness: Record<string, unknown> | null;
   readiness_buckets: Record<string, unknown>;
   cluster_intent_preview: Record<string, unknown>;
   svm_intent_preview: Record<string, unknown>;
   lif_intent_preview: Record<string, unknown>;
   storage_iscsi_plan_preview: Record<string, unknown>;
+  readiness_comparison_preview: Record<string, unknown> | null;
   upgrade_readiness_preview: Record<string, unknown>;
   blockers: string[];
   warnings: string[];
@@ -172,6 +176,136 @@ export type NetAppPlanPreview = {
   disabled_actions: ProviderAction[];
   artifact_placeholders: string[];
   next_safe_action: string;
+};
+
+export type NetAppProviderArtifact = {
+  id: string;
+  provider_id: string;
+  kind: string;
+  title: string;
+  description: string;
+  status: string;
+  mock_only: boolean;
+  redacted: boolean;
+  downloadable: boolean;
+  download_url: string | null;
+  generated_at: string;
+  metadata: Record<string, unknown>;
+};
+
+export type NetAppUpgradeCandidate = {
+  id: string;
+  category: string;
+  product_hint: string | null;
+  version: string | null;
+  source: string;
+  redacted_label: string;
+  match_confidence: string;
+  warnings: string[];
+};
+
+export type NetAppUpgradeReadiness = {
+  provider_id: string;
+  mode: string;
+  apply_enabled: boolean;
+  upgrade_enabled: boolean;
+  setup_ready: boolean;
+  readiness_scope: string;
+  current_version_source: string;
+  current_version: string | null;
+  current_version_confidence: string;
+  media_inventory_mode: string;
+  candidates: NetAppUpgradeCandidate[];
+  recommended_target: string | null;
+  required_intermediate_versions: string[];
+  upgrade_chain: NetAppUpgradeCandidate[];
+  blockers: string[];
+  warnings: string[];
+  removable_warnings: string[];
+  next_safe_action: string;
+  disabled_actions: ProviderAction[];
+};
+
+export type NetAppConsoleState =
+  | "unknown"
+  | "loader_prompt"
+  | "boot_menu"
+  | "cluster_setup_prompt"
+  | "existing_cluster_login"
+  | "other";
+
+export type NetAppObservationUpdate = {
+  observed_console_state: NetAppConsoleState;
+  controller_a_console_seen: boolean;
+  controller_b_console_seen: boolean;
+  controller_a_sp_cabled: boolean;
+  controller_b_sp_cabled: boolean;
+  management_network_reviewed: boolean;
+  planned_targets_reviewed: boolean;
+  existing_data_risk_acknowledged: boolean;
+  operator_notes: string;
+};
+
+export type NetAppObservations = NetAppObservationUpdate & {
+  provider_id: string;
+  updated_at: string;
+  updated_by: string;
+  mock_only: boolean;
+  sent_to_netapp: boolean;
+};
+
+export type NetAppConsoleReadiness = {
+  provider_id: string;
+  mode: string;
+  bootstrap_enabled: boolean;
+  console_probe_enabled: boolean;
+  apply_enabled: boolean;
+  netapp_configured: boolean;
+  planned_targets: Record<string, unknown>;
+  current_discovered_targets: Record<string, unknown> | null;
+  prerequisites: Array<Record<string, unknown>>;
+  manual_steps: string[];
+  expected_prompts_or_states: Array<Record<string, unknown>>;
+  readiness_buckets: Record<string, unknown>;
+  observations: NetAppObservations | null;
+  observation_summary: Record<string, unknown> | null;
+  observation_blockers: string[];
+  blockers: string[];
+  warnings: string[];
+  removable_warnings: string[];
+  disabled_actions: ProviderAction[];
+  next_safe_action: string;
+};
+
+export type NetAppReadinessComparisonItem = {
+  id: string;
+  label: string;
+  planned: string;
+  observed: string;
+  status: "matched" | "unknown" | "blocker" | "warning" | string;
+  next_action: string;
+  source: string;
+};
+
+export type NetAppReadinessComparison = {
+  provider_id: string;
+  mode: string;
+  comparison_enabled: boolean;
+  apply_enabled: boolean;
+  discovery_enabled: boolean;
+  planned_targets: Record<string, unknown>;
+  current_discovered_targets: Record<string, unknown> | null;
+  observations: NetAppObservations;
+  comparison_items: NetAppReadinessComparisonItem[];
+  matched_items: NetAppReadinessComparisonItem[];
+  unknown_items: NetAppReadinessComparisonItem[];
+  warning_items: NetAppReadinessComparisonItem[];
+  blocker_items: NetAppReadinessComparisonItem[];
+  blockers: string[];
+  warnings: string[];
+  removable_warnings: string[];
+  next_safe_action: string;
+  disabled_actions: ProviderAction[];
 };
 
 export type MediaInventoryItem = {

@@ -105,10 +105,32 @@ console/bootstrap readiness checklist, disabled ONTAP API readiness,
 placeholder upgrade path, cluster/SVM/iSCSI LIF intent, and artifact/report
 placeholders. The structured plan preview is available at
 `GET /api/v1/providers/netapp-ontap/plan-preview`; it is generated from local
-planned values only and makes no ONTAP calls. Keep `NETAPP_CONFIGURED=false`
-until a future task explicitly adds approved read-only discovery. The portal
-must not create an ONTAP cluster, change IPs, create SVMs or LIFs, create
-volumes, upgrade ONTAP, reboot controllers, wipe disks, or apply NetApp changes.
+planned values only and makes no ONTAP calls. Run Center shows the same NetApp
+payload as a preview-only section with refresh only and no apply or execution
+control. `GET /api/v1/providers/netapp-ontap/artifacts` returns mock-only,
+non-downloadable artifact metadata for that preview; it does not write files or
+generate reports. `GET /api/v1/providers/artifacts` aggregates provider-scoped
+artifact metadata, and the Reports / Artifacts page makes the NetApp placeholder
+discoverable outside Run Center. `GET /api/v1/providers/netapp-ontap/upgrade-readiness`
+compares an unknown or locally configured placeholder ONTAP version with
+sanitized media inventory metadata only; it does not query a controller and
+keeps upgrade/apply disabled. `GET /api/v1/providers/netapp-ontap/console-readiness`
+returns manual console/bootstrap prerequisites and expected prompt/state
+guidance only; it does not open serial ports, call SP APIs, use SSH, or send
+commands. `GET /api/v1/providers/netapp-ontap/observations` and `PUT
+/api/v1/providers/netapp-ontap/observations` provide a process-local,
+mock-only place to record bounded manual readiness observations; these notes
+reject secret-shaped text, are not persisted to artifacts, and are not sent to
+any NetApp device.
+`GET /api/v1/providers/netapp-ontap/readiness-comparison` compares planned
+targets with those manual observations only; it does not discover or validate
+live device state. Missing required manual checks are reported as unknown or
+blocking rows, while optional Controller B console observation is reported as a
+warning when absent. The console readiness summary keeps required and optional
+observation counts separate. Keep `NETAPP_CONFIGURED=false` until a future task
+explicitly adds approved read-only discovery. The portal must not create an
+ONTAP cluster, change IPs, create SVMs or LIFs, create volumes, upgrade ONTAP,
+reboot controllers, wipe disks, or apply NetApp changes.
 
 ESXi and Cisco management IPs can be recorded as planned targets without being
 treated as reachable devices. Keep `ESXI_CONFIGURED=false` until ESXi
@@ -130,13 +152,21 @@ Manual local-readonly smoke:
 PROVIDER_MODE=local-readonly make provider-smoke
 ```
 
+NetApp-only real-run readiness, with no ONTAP probes or apply actions:
+
+```bash
+PROVIDER_MODE=local-readonly make netapp-real-readiness
+```
+
 The backend loads local provider values from `.env.local.real-lab`, but ignores
 `PROVIDER_MODE` from that file so default app and test startup remains mock.
 Plain `make provider-smoke` runs in mock mode and skips probes. With explicit
 `PROVIDER_MODE=local-readonly`, the smoke command writes sanitized JSON and
 Markdown summaries under ignored `artifacts/real-lab/`, skips planned but not
 configured ESXi/Cisco management targets gracefully, and must not print
-passwords.
+passwords. The NetApp-only readiness command writes `netapp-readiness-*`
+artifacts under the same ignored directory and never contacts ONTAP, SP,
+console, SSH, storage, upgrade, reboot, wipe, or apply endpoints.
 
 ## Tests And Checks
 
@@ -166,6 +196,13 @@ completion, audit events for major transitions, execution-before-plan
 rejection, stale-plan invalidation after an execution-affecting edit, and
 completed-request cancellation rejection. It does not start a backend server
 and must remain `PROVIDER_MODE=mock`.
+
+When a task changes visible frontend UI, validate the running page with
+screenshots when practical. Capture the changed page or section plus a relevant
+validation, empty, blocked, or error state when applicable. Store screenshots
+only in ignored local paths such as `artifacts/screenshots/`, and do not commit
+them unless the project explicitly introduces committed UI snapshots. If
+screenshots are skipped, document why and describe the manual UI checks.
 
 ## Codex Exec Mode
 
@@ -225,8 +262,8 @@ fallback command that requires it.
 
 - Keep `PROVIDER_MODE=mock` for local development and Codex exec tasks.
 - Use `PROVIDER_MODE=local-readonly` only for explicit local iLO, Cisco, and
-  ESXi preview probes on an isolated lab machine with
-  `LAB_CLOSED_LOOP_ACK=YES` and `LAB_READONLY_ACK=YES`.
+  ESXi preview probes, or NetApp readiness-only reporting, on an isolated lab
+  machine with `LAB_CLOSED_LOOP_ACK=YES` and `LAB_READONLY_ACK=YES`.
 - Do not add real credentials, IPs, hostnames, tokens, passwords, or customer
   data.
 - Do not make real vSphere, ESXi, iLO, NetApp, switch, OVF, storage, AWX,
