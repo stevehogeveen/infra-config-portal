@@ -22,9 +22,18 @@ from app.providers.cisco_ansible import CiscoAnsibleAdapter, CiscoAnsibleConfig,
 from app.providers.esxi_readonly import EsxiReadonlyAdapter, EsxiReadonlyConfig
 from app.providers.ilo_redfish import IloRedfishAdapter, IloRedfishConfig
 from app.providers.lab_safety import LabSafetyState
-from app.providers.probe_cache import clear_probe_results
+from app.providers.probe_cache import clear_probe_results, record_probe_result
 from app.providers.redaction import redact_sensitive
 from app.providers.registry import provider_registry
+from app.services.cisco_bootstrap_requirements import build_cisco_bootstrap_requirements
+from app.services.cisco_bootstrap_requirements import save_cisco_bootstrap_requirements
+from app.services.cisco_console_bootstrap import (
+    CONFIRMATION_PHRASE,
+    apply_cisco_console_bootstrap,
+    build_cisco_console_bootstrap_plan,
+)
+from app.services.cisco_setup_readiness import get_cisco_setup_readiness
+from app.services.cisco_setup_wizard_plan import build_cisco_setup_wizard_plan
 
 
 def test_cisco_candidate_discovery_with_one_stable_candidate(tmp_path: Path) -> None:
@@ -44,6 +53,8 @@ def test_cisco_candidate_discovery_with_one_stable_candidate(tmp_path: Path) -> 
     assert discovery["effective_path"] == str(stable)
     assert discovery["selection_source"] == "single-stable-candidate"
     assert discovery["candidate_counts"]["stable_existing"] == 1
+    assert discovery["operator_message"].startswith("Preferred console path:")
+    assert "CISCO_CONSOLE_PORT" in discovery["safe_next_action"]
     stable_candidates = [
         candidate for candidate in discovery["candidates"] if candidate["stable_path"]
     ]
@@ -85,7 +96,67 @@ def test_cisco_candidate_discovery_with_no_candidates(tmp_path: Path) -> None:
     assert discovery["effective_path"] is None
     assert discovery["selection_source"] == "missing"
     assert discovery["candidate_counts"]["total"] == 0
-    assert "No Cisco serial console candidates" in discovery["blockers"][0]
+    assert "No Cisco serial console adapter was detected" in discovery["blockers"][0]
+    assert discovery["operator_message"].startswith("No Cisco serial console adapter was detected")
+    assert "USB serial cable is plugged into this machine" in discovery["operator_checklist"][0]
+    assert "dialout/read-write access" in discovery["operator_checklist"][3]
+
+
+def test_cisco_candidate_discovery_with_fallback_candidate_warns(tmp_path: Path) -> None:
+    paths = _console_paths(tmp_path)
+    tty = paths["dev"] / "ttyUSB0"
+    tty.touch()
+
+    discovery = discover_cisco_console(
+        CiscoConsoleConfig(port=None, baud=9600, timeout_seconds=1.0),
+        _discovery_paths(paths),
+    )
+
+    assert discovery["status"] == "needs-selection"
+    assert discovery["selection_source"] == "fallback-candidates"
+    assert discovery["candidate_counts"]["fallback_existing"] == 1
+    assert any("Fallback serial adapter detected" in warning for warning in discovery["warnings"])
+    assert "Prefer a stable /dev/serial/by-id path" in discovery["safe_next_action"]
+
+
+def test_cisco_configured_port_missing_has_clear_blocker(tmp_path: Path) -> None:
+    paths = _console_paths(tmp_path)
+    missing_path = paths["dev"] / "ttyUSB9"
+
+    discovery = discover_cisco_console(
+        CiscoConsoleConfig(port=str(missing_path), baud=9600, timeout_seconds=1.0),
+        _discovery_paths(paths),
+    )
+
+    assert discovery["status"] == "blocked"
+    assert discovery["effective_path"] == str(missing_path)
+    assert "Configured CISCO_CONSOLE_PORT does not exist" in discovery["blockers"][0]
+    assert "detected stable path" in discovery["blockers"][0]
+
+
+def test_cisco_configured_port_permission_guidance(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    paths = _console_paths(tmp_path)
+    tty = paths["dev"] / "ttyUSB0"
+    tty.touch()
+
+    def unreadable(path: str, mode: int) -> bool:
+        if path == str(tty):
+            return False
+        return True
+
+    monkeypatch.setattr("app.providers.cisco_console.os.access", unreadable)
+    discovery = discover_cisco_console(
+        CiscoConsoleConfig(port=str(tty), baud=9600, timeout_seconds=1.0),
+        _discovery_paths(paths),
+    )
+
+    assert discovery["status"] == "blocked"
+    assert "not readable/writable" in discovery["blockers"][0]
+    assert "dialout group membership" in discovery["blockers"][0]
+    assert "restart the backend shell/session" in discovery["permission_guidance"]
 
 
 def test_cisco_env_override_path(tmp_path: Path) -> None:
@@ -196,6 +267,227 @@ def test_cisco_console_probe_returns_command_summaries_not_raw_output(
     assert "192.0.2.10" not in encoded
 
 
+def test_cisco_prompt_readiness_is_blocked_in_mock_mode() -> None:
+    clear_probe_results()
+    adapter = CiscoConsoleAdapter(
+        provider_mode="mock",
+        config=CiscoConsoleConfig(port="/dev/ttyUSB0", baud=9600, timeout_seconds=1.0),
+    )
+
+    result = adapter.prompt_readiness()
+
+    assert result["action"] == "prompt-readiness"
+    assert result["status"] == "blocked"
+    assert "local-readonly" in result["message"]
+    assert result["prompt_ready"] is False
+    assert "safe show commands" in result["not_attempted"]
+
+
+def test_cisco_prompt_readiness_requires_lab_safety_flags(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    clear_probe_results()
+    tty = tmp_path / "ttyUSB0"
+    tty.touch()
+    monkeypatch.setattr(
+        "app.providers.cisco_console.current_lab_safety",
+        lambda: LabSafetyState(
+            closed_loop_ack=False,
+            readonly_ack=False,
+            destructive_ack=False,
+        ),
+    )
+
+    result = CiscoConsoleAdapter(
+        provider_mode="local-readonly",
+        config=CiscoConsoleConfig(port=str(tty), baud=9600, timeout_seconds=1.0),
+    ).prompt_readiness()
+
+    assert result["status"] == "blocked"
+    assert "LAB_CLOSED_LOOP_ACK=YES" in result["message"]
+    assert result["prompt_ready"] is False
+
+
+def test_cisco_prompt_readiness_blocks_without_effective_path(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    clear_probe_results()
+    paths = _console_paths(tmp_path)
+    _allow_readonly_lab(monkeypatch)
+
+    result = CiscoConsoleAdapter(
+        provider_mode="local-readonly",
+        config=CiscoConsoleConfig(port=None, baud=9600, timeout_seconds=1.0),
+        paths=_discovery_paths(paths),
+    ).prompt_readiness()
+
+    assert result["status"] == "blocked"
+    assert "one selected readable and writable console path" in result["message"]
+    assert result["prompt_ready"] is False
+    assert result["discovery"]["status"] == "missing-console"
+
+
+def test_cisco_prompt_readiness_exec_prompt_sends_newline_only(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    result, writes = _run_prompt_readiness_with_fake_serial(tmp_path, monkeypatch, "Switch01#")
+    encoded = json.dumps(result)
+
+    assert writes == [b"\n"]
+    assert result["status"] == "ok"
+    assert result["prompt_state"] == "exec"
+    assert result["prompt_ready"] is True
+    assert result["safe_show_commands_allowed"] is False
+    assert result["future_show_command_check_eligible"] is True
+    assert result["prompt_classification"]["label"] == "Exec prompt"
+    assert result["prompt_classification"]["safe_show_commands_allowed"] is False
+    assert result["prompt_sample"]["last_line"] == "DEVICE#"
+    assert "safe show commands" in result["not_attempted"]
+    assert "safe_show_commands" not in result
+    assert "Switch01" not in encoded
+
+
+def test_cisco_prompt_readiness_blocks_setup_wizard_prompt(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    result, writes = _run_prompt_readiness_with_fake_serial(
+        tmp_path,
+        monkeypatch,
+        "Switch01\nWould you like to enter the initial configuration dialog? [yes/no]:",
+    )
+    encoded = json.dumps(result)
+
+    assert writes == [b"\n"]
+    assert result["status"] == "blocked"
+    assert result["prompt_state"] == "setup-wizard"
+    assert result["prompt_ready"] is False
+    assert result["setup_wizard_detected"] is True
+    assert result["safe_show_commands_allowed"] is False
+    assert result["future_show_command_check_eligible"] is False
+    assert result["prompt_classification"]["label"] == "Setup wizard prompt"
+    assert "setup wizard" in result["blockers"][0]
+    assert "initial configuration dialog" not in encoded
+
+
+def test_cisco_prompt_readiness_blocks_login_required_prompt(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    result, writes = _run_prompt_readiness_with_fake_serial(tmp_path, monkeypatch, "Username:")
+
+    assert writes == [b"\n"]
+    assert result["status"] == "blocked"
+    assert result["prompt_state"] == "login-required"
+    assert result["login_required"] is True
+    assert result["prompt_ready"] is False
+    assert result["safe_show_commands_allowed"] is False
+    assert result["prompt_classification"]["label"] == "Login required"
+
+
+def test_cisco_prompt_readiness_blocks_config_mode_prompt(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    result, writes = _run_prompt_readiness_with_fake_serial(
+        tmp_path,
+        monkeypatch,
+        "Switch01(config)#",
+    )
+
+    assert writes == [b"\n"]
+    assert result["status"] == "blocked"
+    assert result["prompt_state"] == "config-mode"
+    assert result["config_mode_detected"] is True
+    assert result["prompt_ready"] is False
+    assert result["safe_show_commands_allowed"] is False
+    assert result["prompt_classification"]["label"] == "Configuration mode"
+
+
+def test_cisco_prompt_readiness_blocks_unknown_prompt(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    result, writes = _run_prompt_readiness_with_fake_serial(
+        tmp_path,
+        monkeypatch,
+        "unrecognized prompt text",
+    )
+
+    assert writes == [b"\n"]
+    assert result["status"] == "blocked"
+    assert result["prompt_state"] == "unknown"
+    assert result["prompt_ready"] is False
+    assert result["safe_show_commands_allowed"] is False
+    assert result["prompt_classification"]["label"] == "Unknown prompt"
+    assert result["prompt_classification"]["no_output_captured"] is False
+
+
+def test_cisco_prompt_readiness_blocks_when_no_prompt_text_captured(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    result, writes = _run_prompt_readiness_with_fake_serial(
+        tmp_path,
+        monkeypatch,
+        "",
+    )
+
+    assert writes == [b"\n"]
+    assert result["status"] == "blocked"
+    assert result["message"].startswith("Console port opened but no prompt text was captured")
+    assert result["blockers"] == [result["message"]]
+    assert result["prompt_state"] == "unknown"
+    assert result["prompt_ready"] is False
+    assert result["safe_show_commands_allowed"] is False
+    assert result["future_show_command_check_eligible"] is False
+    assert result["prompt_sample"]["captured"] is False
+    assert result["prompt_classification"]["no_output_captured"] is True
+    assert result["troubleshooting_checklist"]
+    assert any("Cisco console port" in item for item in result["troubleshooting_checklist"])
+    assert "safe show commands" in result["not_attempted"]
+    assert "configure terminal" in result["not_attempted"]
+    assert "write memory" in result["not_attempted"]
+    assert "reload" in result["not_attempted"]
+    assert "copy or erase" in result["not_attempted"]
+    assert "safe_show_commands" not in result
+
+
+def test_cisco_prompt_readiness_reports_configured_read_timing(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    clear_probe_results()
+    tty = tmp_path / "ttyUSB0"
+    tty.touch()
+    _allow_readonly_lab(monkeypatch)
+    writes = _install_tracking_fake_serial(monkeypatch, [""])
+
+    result = CiscoConsoleAdapter(
+        provider_mode="local-readonly",
+        config=CiscoConsoleConfig(
+            port=str(tty),
+            baud=9600,
+            timeout_seconds=1.0,
+            prompt_settle_seconds=0.1,
+            prompt_read_window_seconds=0.2,
+            prompt_max_bytes=123,
+        ),
+    ).prompt_readiness()
+
+    assert writes == [b"\n"]
+    assert result["status"] == "blocked"
+    assert result["read_timing"] == {
+        "settle_seconds": 0.1,
+        "read_window_seconds": 0.2,
+        "max_bytes": 123,
+    }
+    assert result["safe_show_commands_allowed"] is False
+
+
 def test_cisco_ansible_run_command_can_redact_output() -> None:
     result = _run_command(
         [sys.executable, "-c", "print('device output that should not be returned')"],
@@ -209,6 +501,463 @@ def test_cisco_ansible_run_command_can_redact_output() -> None:
     assert result["stdout_bytes"] > 0
     assert "stdout_tail" not in result
     assert "device output" not in encoded
+
+
+def test_cisco_setup_readiness_is_plan_only_until_management_bootstrap() -> None:
+    clear_probe_results()
+    readiness = get_cisco_setup_readiness(
+        provider_mode="mock",
+        planned_management_ip="192.168.1.220",
+        management_configured=False,
+    )
+    encoded = json.dumps(readiness)
+
+    assert readiness["provider_id"] == "cisco-setup"
+    assert readiness["phase"] == "console-bootstrap-required"
+    assert readiness["planned_management_ip"] == "192.168.1.220"
+    assert readiness["management_configured"] is False
+    assert readiness["state_boundaries"]["discovered_current_device_state"]["summary"]
+    assert readiness["state_boundaries"]["saved_kit_config_values"]["planned_management_ip"] == "192.168.1.220"
+    assert readiness["state_boundaries"]["saved_kit_config_values"]["management_configured"] is False
+    assert readiness["state_boundaries"]["values_ready_to_apply"]["ready"] is False
+    assert readiness["state_boundaries"]["last_action_logs_artifacts"]["raw_console_log_saved"] is False
+    assert readiness["state_boundaries"]["last_action_logs_artifacts"]["last_action_present"] is False
+    assert readiness["console"]["selected_path"] == readiness["console"]["effective_path"]
+    assert readiness["console"]["baud"] == 9600
+    assert readiness["console"]["last_prompt_readiness"]["available"] is False
+    assert readiness["console"]["last_prompt_readiness"]["safe_show_commands_allowed"] is False
+    assert readiness["console"]["last_prompt_readiness"]["prompt_classification"]["state"] == "unknown"
+    assert readiness["bootstrap_preview"]["apply_enabled"] is False
+    assert readiness["bootstrap_preview"]["commands_redacted"] is True
+    assert readiness["bootstrap_preview"]["serial_writes_attempted"] is False
+    assert "recent prompt-readiness evidence" in readiness["bootstrap_preview"]["missing_requirements"]
+    assert readiness["bootstrap_preview"]["redacted_command_summary"]
+    assert readiness["ssh_scp_readiness"]["planned_only"] is True
+    assert readiness["ssh_scp_readiness"]["apply_enabled"] is False
+    assert readiness["ansible"]["enabled"] is False
+    assert readiness["ansible"]["status"] == "awaiting-bootstrap"
+    assert "CISCO_MGMT_CONFIGURED is false" in readiness["ansible"]["reason"]
+    assert readiness["backup_report"]["backup_enabled"] is False
+    assert readiness["next_safe_action"] == (
+        "Select a console candidate and run prompt readiness check."
+    )
+    assert "conf t" in readiness["disabled_actions"]
+    assert "write memory" in readiness["disabled_actions"]
+    assert "reload" in readiness["disabled_actions"]
+    assert "running-config backup" in readiness["disabled_actions"]
+    assert "Configure Terminal" not in encoded
+    assert "/probe" not in encoded
+
+
+def test_cisco_setup_readiness_surfaces_no_output_prompt_guidance() -> None:
+    clear_probe_results()
+    record_probe_result(
+        "cisco-console",
+        {
+            "provider_id": "cisco-console",
+            "action": "prompt-readiness",
+            "status": "blocked",
+            "message": "Console port opened but no prompt text was captured.",
+            "prompt_state": "unknown",
+            "safe_show_commands_allowed": False,
+            "prompt_sample": {"captured": False, "line_count": 0, "last_line": "unrecognized prompt"},
+            "prompt_classification": {
+                "state": "unknown",
+                "label": "Unknown prompt",
+                "summary": "Console port opened, but no prompt text was captured.",
+                "no_output_captured": True,
+                "raw_text_redacted": True,
+                "safe_show_commands_allowed": False,
+                "next_safe_action": "Verify adapter ownership and baud.",
+            },
+            "read_timing": {
+                "settle_seconds": 0.5,
+                "read_window_seconds": 1.0,
+                "max_bytes": 8192,
+            },
+            "troubleshooting_checklist": ["Try baud 9600 first, then 115200 if needed."],
+            "warnings": [],
+            "blockers": ["Console port opened but no prompt text was captured."],
+        },
+    )
+
+    readiness = get_cisco_setup_readiness(
+        provider_mode="mock",
+        planned_management_ip="192.168.1.220",
+        management_configured=False,
+    )
+
+    last_prompt = readiness["console"]["last_prompt_readiness"]
+    discovered_state = readiness["state_boundaries"]["discovered_current_device_state"]
+
+    assert last_prompt["available"] is True
+    assert last_prompt["prompt_state"] == "unknown"
+    assert last_prompt["captured"] is False
+    assert last_prompt["safe_show_commands_allowed"] is False
+    assert last_prompt["read_timing"]["read_window_seconds"] == 1.0
+    assert last_prompt["prompt_classification"]["no_output_captured"] is True
+    assert "115200" in last_prompt["troubleshooting_checklist"][0]
+    assert discovered_state["prompt_captured"] is False
+
+
+def test_cisco_setup_wizard_plan_unknown_state_is_safe_preview() -> None:
+    plan = build_cisco_setup_wizard_plan()
+
+    assert plan["provider_id"] == "cisco-setup-wizard-plan"
+    assert plan["status"] == "preview"
+    assert plan["apply_enabled"] is False
+    assert plan["detected_prompt_state"] == "unknown"
+    assert plan["setup_wizard_detected"] is False
+    assert "answer setup wizard" in plan["disabled_actions"]
+    assert "conf t" in plan["disabled_actions"]
+    assert "write memory" in plan["disabled_actions"]
+    assert "reload" in plan["disabled_actions"]
+    assert "erase/copy" in plan["disabled_actions"]
+    assert "enable SSH/SCP" in plan["disabled_actions"]
+    assert "real config apply" in plan["disabled_actions"]
+    assert "answer setup wizard yes/no prompt" in plan["not_attempted"]
+
+
+def test_cisco_setup_wizard_plan_detects_setup_wizard_prompt_result() -> None:
+    plan = build_cisco_setup_wizard_plan(
+        {
+            "provider_id": "cisco-console",
+            "action": "prompt-readiness",
+            "prompt_state": "setup-wizard",
+        }
+    )
+
+    assert plan["status"] == "preview"
+    assert plan["apply_enabled"] is False
+    assert plan["detected_prompt_state"] == "setup-wizard"
+    assert plan["setup_wizard_detected"] is True
+    assert "No answers or commands were sent" in plan["message"]
+    assert plan["next_safe_action"] == (
+        "Review the setup wizard plan preview and define the future guarded bootstrap requirements."
+    )
+
+
+def test_cisco_setup_readiness_surfaces_setup_wizard_plan_when_cached() -> None:
+    clear_probe_results()
+    record_probe_result(
+        "cisco-console",
+        {
+            "provider_id": "cisco-console",
+            "action": "prompt-readiness",
+            "status": "blocked",
+            "message": "Console is at an initial setup wizard prompt.",
+            "prompt_state": "setup-wizard",
+            "warnings": [],
+            "blockers": [],
+        },
+    )
+
+    readiness = get_cisco_setup_readiness(
+        provider_mode="mock",
+        planned_management_ip="192.168.1.220",
+        management_configured=False,
+    )
+
+    assert readiness["setup_wizard_plan"]["available"] is True
+    assert readiness["setup_wizard_plan"]["detected"] is True
+    assert readiness["setup_wizard_plan"]["detected_prompt_state"] == "setup-wizard"
+    assert readiness["setup_wizard_plan"]["apply_enabled"] is False
+    assert readiness["next_safe_action"] == "Review setup wizard plan preview."
+
+
+def test_cisco_bootstrap_requirements_reports_missing_inputs_preview_only() -> None:
+    requirements = build_cisco_bootstrap_requirements(
+        planned_management_ip="192.168.1.220",
+        local_admin_username_configured=False,
+        management_configured=False,
+    )
+
+    assert requirements["provider_id"] == "cisco-bootstrap-requirements"
+    assert requirements["status"] == "needs-input"
+    assert requirements["apply_enabled"] is False
+    assert requirements["requirements"]["planned_management_ip"]["value"] == "192.168.1.220"
+    assert requirements["requirements"]["subnet_prefix"]["configured"] is False
+    assert requirements["requirements"]["gateway"]["configured"] is False
+    assert requirements["requirements"]["management_vlan_interface_strategy"]["configured"] is False
+    assert requirements["requirements"]["local_admin_username"]["presence_only"] is True
+    assert "Management subnet/prefix is required." in requirements["blockers"]
+    assert "Management gateway is required." in requirements["blockers"]
+    assert "Management VLAN/interface strategy is required." in requirements["blockers"]
+    assert "Local admin username presence must be confirmed." in requirements["blockers"]
+    assert "answer setup wizard" in requirements["disabled_actions"]
+    assert "conf t" in requirements["disabled_actions"]
+    assert "write memory" in requirements["disabled_actions"]
+    assert "reload" in requirements["disabled_actions"]
+    assert "erase/copy" in requirements["disabled_actions"]
+    assert "enable SSH/SCP" in requirements["disabled_actions"]
+    assert "real config apply" in requirements["disabled_actions"]
+    assert "CISCO_MGMT_CONFIGURED is false" in requirements["warnings"][0]
+
+
+def test_cisco_bootstrap_requirements_keep_username_presence_only() -> None:
+    requirements = build_cisco_bootstrap_requirements(
+        planned_management_ip="192.168.1.220",
+        subnet_prefix="/24",
+        gateway="192.168.1.1",
+        management_vlan="8",
+        management_interface="Vlan8",
+        management_strategy="SVI",
+        hostname="switch-preview",
+        domain_name="example.test",
+        dns_servers=["192.0.2.53"],
+        local_admin_username_configured=True,
+        management_configured=False,
+    )
+    encoded = json.dumps(requirements)
+
+    assert requirements["requirements"]["local_admin_username"]["configured"] is True
+    assert requirements["requirements"]["local_admin_username"]["value"] == "configured"
+    assert "switch-admin" not in encoded
+    assert requirements["requirements"]["ssh_scp_policy"]["planned_only"] is True
+    assert requirements["requirements"]["ssh_scp_policy"]["apply_enabled"] is False
+    assert requirements["requirements"]["save_behavior"]["enabled"] is False
+    assert requirements["requirements"]["confirmation_requirements"]["configured"] is True
+    assert requirements["blockers"] == [
+        "Bootstrap requirements are preview-only; no answers or commands will be sent."
+    ]
+
+
+def test_cisco_bootstrap_requirements_save_non_secret_planning_state(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    state_path = tmp_path / "bootstrap-requirements.json"
+    monkeypatch.setattr("app.services.cisco_bootstrap_requirements.STATE_PATH", state_path)
+
+    requirements = save_cisco_bootstrap_requirements(_valid_bootstrap_payload())
+    encoded = json.dumps(requirements)
+
+    assert state_path.exists()
+    assert requirements["status"] == "preview"
+    assert requirements["apply_enabled"] is False
+    assert requirements["requirements"]["planned_management_ip"]["value"] == "192.168.1.220"
+    assert requirements["requirements"]["subnet_prefix"]["configured"] is True
+    assert requirements["requirements"]["gateway"]["configured"] is True
+    assert requirements["requirements"]["management_vlan_interface_strategy"]["configured"] is True
+    assert requirements["requirements"]["hostname"]["configured"] is True
+    assert requirements["requirements"]["domain_dns"]["configured"] is True
+    assert requirements["requirements"]["local_admin_username"]["value"] == "configured"
+    assert requirements["requirements"]["local_admin_username"]["reference"] == "local-env:CISCO_TEST_USERNAME"
+    assert requirements["requirements"]["ssh_scp_policy"]["apply_enabled"] is False
+    assert requirements["requirements"]["save_behavior"]["enabled"] is False
+    assert requirements["blockers"] == [
+        "Bootstrap requirements are preview-only; no answers or commands will be sent."
+    ]
+    assert "super-secret" not in encoded
+
+
+def test_cisco_console_bootstrap_plan_uses_real_lab_target(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    state_path = tmp_path / "bootstrap-requirements.json"
+    monkeypatch.setattr("app.services.cisco_bootstrap_requirements.STATE_PATH", state_path)
+    save_cisco_bootstrap_requirements(_valid_bootstrap_payload())
+    record_probe_result(
+        "cisco-console",
+        {
+            "provider_id": "cisco-console",
+            "action": "prompt-readiness",
+            "status": "ok",
+            "message": "ready",
+            "prompt_state": "exec",
+            "warnings": [],
+            "blockers": [],
+        },
+    )
+    monkeypatch.setattr(
+        "app.services.cisco_console_bootstrap.CiscoConsoleAdapter.health",
+        lambda _self: ProviderStatus(
+            id="cisco-console",
+            name="Cisco Console",
+            kind="network-console",
+            mode="local-readonly",
+            status="ready",
+            capabilities=[],
+            message="ready",
+            discovery={"effective_path": "/dev/serial/by-id/mock-cisco-console"},
+            blockers=[],
+            warnings=[],
+        ),
+    )
+
+    plan = build_cisco_console_bootstrap_plan()
+    encoded = json.dumps(plan)
+
+    assert plan["status"] == "preview"
+    assert plan["target"]["ip"] == "192.168.1.220"
+    assert plan["target"]["prefix"] == "/24"
+    assert plan["target"]["netmask"] == "255.255.255.0"
+    assert plan["flow"] == "direct-exec-config-mode-flow"
+    assert plan["confirmation_phrase"] == CONFIRMATION_PHRASE
+    assert plan["apply_enabled"] is False
+    assert plan["serial_writes_attempted"] is False
+    assert "write erase" in plan["destructive_actions_disabled"]
+    assert "erase startup-config" in plan["destructive_actions_disabled"]
+    assert "reload" in plan["destructive_actions_disabled"]
+    assert plan["redacted_command_summary"]
+    assert plan["artifact_preview"]["raw_console_log_saved"] is False
+    assert plan["blocker_summary"]["count"] == len(plan["blockers"])
+    assert "copy running-config" not in encoded
+
+
+def test_cisco_console_bootstrap_plan_blocks_no_output_prompt(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    state_path = tmp_path / "bootstrap-requirements.json"
+    monkeypatch.setattr("app.services.cisco_bootstrap_requirements.STATE_PATH", state_path)
+    save_cisco_bootstrap_requirements(_valid_bootstrap_payload())
+    _record_prompt_readiness("unknown", prompt_sample={"captured": False})
+    _mock_ready_console(monkeypatch)
+
+    plan = build_cisco_console_bootstrap_plan()
+
+    assert plan["status"] == "blocked"
+    assert plan["prompt_detail"] == "unknown-no-output"
+    assert plan["flow"] == "unknown-no-output-blocked-flow"
+    assert plan["serial_writes_attempted"] is False
+    assert plan["artifact_preview"]["raw_console_log_saved"] is False
+    assert plan["blocker_summary"]["has_prompt_blocker"] is True
+    assert any("no prompt text was captured" in blocker for blocker in plan["blockers"])
+    assert any("no prompt text was captured" in step for step in plan["intended_steps"])
+
+
+def test_cisco_console_bootstrap_plan_blocks_login_required_prompt(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    state_path = tmp_path / "bootstrap-requirements.json"
+    monkeypatch.setattr("app.services.cisco_bootstrap_requirements.STATE_PATH", state_path)
+    save_cisco_bootstrap_requirements(_valid_bootstrap_payload())
+    _record_prompt_readiness("login-required")
+    _mock_ready_console(monkeypatch)
+
+    plan = build_cisco_console_bootstrap_plan()
+
+    assert plan["status"] == "blocked"
+    assert plan["flow"] == "login-required-blocked-flow"
+    assert any("Login-required prompt is not supported" in blocker for blocker in plan["blockers"])
+
+
+def test_cisco_console_bootstrap_plan_blocks_config_mode_prompt(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    state_path = tmp_path / "bootstrap-requirements.json"
+    monkeypatch.setattr("app.services.cisco_bootstrap_requirements.STATE_PATH", state_path)
+    save_cisco_bootstrap_requirements(_valid_bootstrap_payload())
+    _record_prompt_readiness("config-mode")
+    _mock_ready_console(monkeypatch)
+
+    plan = build_cisco_console_bootstrap_plan()
+
+    assert plan["status"] == "blocked"
+    assert plan["flow"] == "config-mode-blocked-flow"
+    assert any("Configuration-mode prompt is not supported" in blocker for blocker in plan["blockers"])
+
+
+def test_cisco_console_bootstrap_apply_blocked_by_default(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    state_path = tmp_path / "bootstrap-requirements.json"
+    monkeypatch.setattr("app.services.cisco_bootstrap_requirements.STATE_PATH", state_path)
+    save_cisco_bootstrap_requirements(_valid_bootstrap_payload())
+
+    result = apply_cisco_console_bootstrap({"confirmation_phrase": CONFIRMATION_PHRASE})
+
+    assert result["status"] == "blocked"
+    assert result["serial_writes_attempted"] is False
+    assert result["commands_sent"] == []
+    assert any("PROVIDER_MODE=local-readonly" in blocker for blocker in result["blockers"])
+
+
+def test_cisco_console_bootstrap_apply_rejects_destructive_requested_actions(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    state_path = tmp_path / "bootstrap-requirements.json"
+    monkeypatch.setattr("app.services.cisco_bootstrap_requirements.STATE_PATH", state_path)
+    save_cisco_bootstrap_requirements(_valid_bootstrap_payload())
+
+    result = apply_cisco_console_bootstrap(
+        {
+            "confirmation_phrase": CONFIRMATION_PHRASE,
+            "requested_actions": ["reload"],
+        }
+    )
+
+    assert result["status"] == "blocked"
+    assert result["serial_writes_attempted"] is False
+    assert result["commands_sent"] == []
+    assert any("Destructive reset/wipe/copy/reload" in blocker for blocker in result["blockers"])
+
+
+def test_cisco_console_bootstrap_apply_requires_exact_phrase(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    state_path = tmp_path / "bootstrap-requirements.json"
+    monkeypatch.setattr("app.services.cisco_bootstrap_requirements.STATE_PATH", state_path)
+    save_cisco_bootstrap_requirements(_valid_bootstrap_payload())
+
+    result = apply_cisco_console_bootstrap({"confirmation_phrase": "APPLY"})
+
+    assert result["status"] == "blocked"
+    assert result["serial_writes_attempted"] is False
+    assert any("Exact confirmation phrase" in blocker for blocker in result["blockers"])
+
+
+def test_cisco_console_bootstrap_plan_rejects_wrong_target_or_prefix(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    state_path = tmp_path / "bootstrap-requirements.json"
+    monkeypatch.setattr("app.services.cisco_bootstrap_requirements.STATE_PATH", state_path)
+    save_cisco_bootstrap_requirements(
+        {
+            **_valid_bootstrap_payload(),
+            "planned_management_ip": "192.168.1.221",
+            "subnet_prefix": "/25",
+        }
+    )
+
+    plan = build_cisco_console_bootstrap_plan()
+
+    assert plan["status"] == "blocked"
+    assert "Planned target IP must be 192.168.1.220." in plan["blockers"]
+    assert "Planned target prefix must be /24." in plan["blockers"]
+
+
+def test_cisco_bootstrap_requirements_reject_invalid_values(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    state_path = tmp_path / "bootstrap-requirements.json"
+    monkeypatch.setattr("app.services.cisco_bootstrap_requirements.STATE_PATH", state_path)
+    payload = {
+        **_valid_bootstrap_payload(),
+        "planned_management_ip": "not-an-ip",
+        "gateway": "bad-gateway",
+        "hostname": "bad host name",
+    }
+
+    try:
+        save_cisco_bootstrap_requirements(payload)
+    except Exception as exc:
+        errors = getattr(exc, "errors", [])
+    else:  # pragma: no cover - defensive
+        raise AssertionError("invalid bootstrap requirements should fail validation")
+
+    fields = {error["field"] for error in errors}
+    assert {"planned_management_ip", "gateway", "hostname"}.issubset(fields)
+    assert not state_path.exists()
 
 
 def test_esxi_configured_false_returns_planned_status_and_skips_probe(monkeypatch) -> None:
@@ -1025,6 +1774,107 @@ def _install_fake_serial(monkeypatch, outputs: list[str]) -> None:
     monkeypatch.setitem(sys.modules, "serial", fake_serial)
 
 
+def _install_tracking_fake_serial(monkeypatch, outputs: list[str]) -> list[bytes]:
+    monkeypatch.setattr("app.providers.cisco_console.time.sleep", lambda _seconds: None)
+    writes: list[bytes] = []
+
+    class FakeSerialConnection:
+        def __init__(self) -> None:
+            self.outputs = [output.encode("utf-8") for output in outputs]
+
+        def __enter__(self) -> "FakeSerialConnection":
+            return self
+
+        def __exit__(self, *_args) -> None:  # noqa: ANN002
+            return None
+
+        @property
+        def in_waiting(self) -> int:
+            return 0
+
+        def write(self, value: bytes) -> int:
+            writes.append(value)
+            return len(value)
+
+        def read(self, _size: int) -> bytes:
+            return self.outputs.pop(0) if self.outputs else b""
+
+    fake_serial = types.SimpleNamespace(Serial=lambda **_kwargs: FakeSerialConnection())
+    monkeypatch.setitem(sys.modules, "serial", fake_serial)
+    return writes
+
+
+def _run_prompt_readiness_with_fake_serial(
+    tmp_path: Path,
+    monkeypatch,
+    prompt_output: str,
+) -> tuple[dict, list[bytes]]:
+    clear_probe_results()
+    tty = tmp_path / "ttyUSB0"
+    tty.touch()
+    _allow_readonly_lab(monkeypatch)
+    writes = _install_tracking_fake_serial(monkeypatch, [prompt_output])
+
+    result = CiscoConsoleAdapter(
+        provider_mode="local-readonly",
+        config=CiscoConsoleConfig(port=str(tty), baud=9600, timeout_seconds=1.0),
+    ).prompt_readiness()
+    return result, writes
+
+
+def _record_prompt_readiness(
+    prompt_state: str,
+    *,
+    prompt_sample: dict[str, object] | None = None,
+) -> None:
+    record_probe_result(
+        "cisco-console",
+        {
+            "provider_id": "cisco-console",
+            "action": "prompt-readiness",
+            "status": "ok" if prompt_state == "exec" else "blocked",
+            "message": "prompt readiness test fixture",
+            "prompt_state": prompt_state,
+            "prompt_sample": prompt_sample or {"captured": True},
+            "safe_show_commands_allowed": False,
+            "future_show_command_check_eligible": prompt_state == "exec",
+            "prompt_classification": {
+                "state": prompt_state,
+                "label": prompt_state,
+                "summary": "test fixture",
+                "no_output_captured": (
+                    prompt_state == "unknown"
+                    and bool(prompt_sample)
+                    and prompt_sample.get("captured") is False
+                ),
+                "raw_text_redacted": True,
+                "safe_show_commands_allowed": False,
+                "next_safe_action": "test fixture",
+            },
+            "warnings": [],
+            "blockers": [],
+        },
+    )
+
+
+def _mock_ready_console(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "app.services.cisco_console_bootstrap.CiscoConsoleAdapter.health",
+        lambda _self: ProviderStatus(
+            id="cisco-console",
+            name="Cisco Console",
+            kind="network-console",
+            mode="local-readonly",
+            status="ready",
+            capabilities=[],
+            message="ready",
+            discovery={"effective_path": "/dev/serial/by-id/mock-cisco-console"},
+            blockers=[],
+            warnings=[],
+        ),
+    )
+
+
 def _load_provider_smoke_module() -> types.ModuleType:
     script_path = Path(__file__).resolve().parents[1] / "scripts" / "provider_smoke.py"
     spec = importlib.util.spec_from_file_location("provider_smoke_under_test", script_path)
@@ -1033,3 +1883,20 @@ def _load_provider_smoke_module() -> types.ModuleType:
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+def _valid_bootstrap_payload() -> dict[str, object]:
+    return {
+        "planned_management_ip": "192.168.1.220",
+        "subnet_prefix": "/24",
+        "gateway": "192.168.1.1",
+        "management_vlan": "8",
+        "management_interface": "Vlan8",
+        "management_strategy": "SVI management interface",
+        "hostname": "cisco-lab-01",
+        "domain_name": "lab.example.test",
+        "dns_servers": ["192.168.1.1"],
+        "local_admin_username_configured": True,
+        "local_admin_username_reference": "local-env:CISCO_TEST_USERNAME",
+        "operator_notes": "Preview only. No secrets.",
+    }

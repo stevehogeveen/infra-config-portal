@@ -25,13 +25,12 @@ from app.schemas import (
     ArtifactRead,
     AuditEventRead,
     CatalogRead,
-    IloDestructiveRebuildPreviewRead,
-    IloReadinessSummaryRead,
-    IloReportPreviewRead,
-    IloSetupCompareReportRead,
-    IloSetupIntentRead,
-    IloSetupIntentWrite,
-    IloSetupPlanPreviewRead,
+    CiscoBootstrapRequirementsRead,
+    CiscoBootstrapRequirementsUpdate,
+    CiscoConsoleBootstrapApplyCreate,
+    CiscoConsoleBootstrapPlanRead,
+    CiscoSetupReadinessRead,
+    CiscoSetupWizardPlanRead,
     IloUpgradeReadinessRead,
     MediaInventoryRead,
     ProviderProbeResultRead,
@@ -45,6 +44,15 @@ from app.schemas import (
 from app.services.artifacts import (
     list_request_artifacts,
     list_workflow_run_artifacts,
+)
+from app.services.cisco_bootstrap_requirements import (
+    CiscoBootstrapRequirementsValidationError,
+    get_cisco_bootstrap_requirements,
+    save_cisco_bootstrap_requirements,
+)
+from app.services.cisco_console_bootstrap import (
+    apply_cisco_console_bootstrap,
+    build_cisco_console_bootstrap_plan,
 )
 from app.services.lifecycle import (
     ExecutionPreflightError,
@@ -65,15 +73,8 @@ from app.services.lifecycle import (
     submit_request,
     update_vm_deployment_request,
 )
-from app.services.ilo_readiness import (
-    get_ilo_destructive_rebuild_preview,
-    get_ilo_readiness_summary,
-    get_ilo_report_preview,
-    get_ilo_setup_compare,
-    get_ilo_setup_intent,
-    get_ilo_setup_plan_preview,
-    save_ilo_setup_intent,
-)
+from app.services.cisco_setup_readiness import get_cisco_setup_readiness
+from app.services.cisco_setup_wizard_plan import get_cisco_setup_wizard_plan
 from app.services.media_inventory import get_media_inventory
 from app.services.readiness import get_request_readiness
 from app.services.upgrade_decision import get_ilo_upgrade_readiness
@@ -280,6 +281,69 @@ def read_provider_status() -> list[ProviderStatusRead]:
         return [provider_registry_error_status(settings.provider_mode, str(exc))]
 
 
+@router.get(
+    "/providers/cisco/setup-readiness",
+    response_model=CiscoSetupReadinessRead,
+)
+def read_cisco_setup_readiness() -> CiscoSetupReadinessRead:
+    return get_cisco_setup_readiness()
+
+
+@router.get(
+    "/providers/cisco/setup-wizard-plan",
+    response_model=CiscoSetupWizardPlanRead,
+)
+def read_cisco_setup_wizard_plan() -> CiscoSetupWizardPlanRead:
+    return get_cisco_setup_wizard_plan()
+
+
+@router.get(
+    "/providers/cisco/bootstrap-requirements",
+    response_model=CiscoBootstrapRequirementsRead,
+)
+def read_cisco_bootstrap_requirements() -> CiscoBootstrapRequirementsRead:
+    return get_cisco_bootstrap_requirements()
+
+
+@router.put(
+    "/providers/cisco/bootstrap-requirements",
+    response_model=CiscoBootstrapRequirementsRead,
+)
+def update_cisco_bootstrap_requirements(
+    payload: CiscoBootstrapRequirementsUpdate,
+) -> CiscoBootstrapRequirementsRead:
+    try:
+        return save_cisco_bootstrap_requirements(payload.model_dump())
+    except CiscoBootstrapRequirementsValidationError as exc:
+        raise HTTPException(status_code=422, detail={"validation_errors": exc.errors}) from exc
+
+
+@router.get(
+    "/providers/cisco/console-bootstrap/plan",
+    response_model=CiscoConsoleBootstrapPlanRead,
+)
+def read_cisco_console_bootstrap_plan() -> CiscoConsoleBootstrapPlanRead:
+    return build_cisco_console_bootstrap_plan()
+
+
+@router.post(
+    "/providers/cisco/console-bootstrap/apply",
+    response_model=ProviderProbeResultRead,
+)
+def apply_cisco_console_bootstrap_route(
+    payload: CiscoConsoleBootstrapApplyCreate,
+) -> ProviderProbeResultRead:
+    return apply_cisco_console_bootstrap(payload.model_dump())
+
+
+@router.post(
+    "/providers/cisco-console/prompt-readiness",
+    response_model=ProviderProbeResultRead,
+)
+def cisco_console_prompt_readiness() -> ProviderProbeResultRead:
+    return _run_provider_probe("cisco-console", CiscoConsoleAdapter().prompt_readiness)
+
+
 @router.post("/providers/{provider_id}/probe", response_model=ProviderProbeResultRead)
 def probe_provider(provider_id: str) -> ProviderProbeResultRead:
     if provider_id == "ilo-redfish":
@@ -299,73 +363,6 @@ def probe_provider(provider_id: str) -> ProviderProbeResultRead:
 )
 def read_ilo_upgrade_readiness() -> IloUpgradeReadinessRead:
     return get_ilo_upgrade_readiness()
-
-
-@router.get(
-    "/providers/ilo-redfish/readiness-summary",
-    response_model=IloReadinessSummaryRead,
-)
-def read_ilo_readiness_summary() -> IloReadinessSummaryRead:
-    return get_ilo_readiness_summary()
-
-
-@router.get(
-    "/providers/ilo-redfish/destructive-rebuild-preview",
-    response_model=IloDestructiveRebuildPreviewRead,
-)
-def read_ilo_destructive_rebuild_preview() -> IloDestructiveRebuildPreviewRead:
-    return get_ilo_destructive_rebuild_preview()
-
-
-@router.get(
-    "/providers/ilo-redfish/setup-plan-preview",
-    response_model=IloSetupPlanPreviewRead,
-)
-def read_ilo_setup_plan_preview(
-    session: Session = Depends(get_session),
-) -> IloSetupPlanPreviewRead:
-    return get_ilo_setup_plan_preview(session)
-
-
-@router.get(
-    "/providers/ilo-redfish/setup-intent",
-    response_model=IloSetupIntentRead,
-)
-def read_ilo_setup_intent(
-    session: Session = Depends(get_session),
-) -> IloSetupIntentRead:
-    return get_ilo_setup_intent(session)
-
-
-@router.put(
-    "/providers/ilo-redfish/setup-intent",
-    response_model=IloSetupIntentRead,
-)
-def update_ilo_setup_intent(
-    payload: IloSetupIntentWrite,
-    session: Session = Depends(get_session),
-) -> IloSetupIntentRead:
-    return save_ilo_setup_intent(session, payload)
-
-
-@router.get(
-    "/providers/ilo-redfish/setup-compare",
-    response_model=IloSetupCompareReportRead,
-)
-def read_ilo_setup_compare(
-    session: Session = Depends(get_session),
-) -> IloSetupCompareReportRead:
-    return get_ilo_setup_compare(session)
-
-
-@router.get(
-    "/providers/ilo-redfish/report-preview",
-    response_model=IloReportPreviewRead,
-)
-def read_ilo_report_preview(
-    session: Session = Depends(get_session),
-) -> IloReportPreviewRead:
-    return get_ilo_report_preview(session)
 
 
 def _run_provider_probe(provider_id: str, probe: Callable[[], dict]) -> dict:

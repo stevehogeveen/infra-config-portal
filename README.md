@@ -25,20 +25,20 @@ infra-config-portal/
 ## Always Run From Repo Root
 
 Root automation paths such as `.codex/tasks`, `.codex/runs`, and
-`.codex/task-queue.md` live at `/home/administrator/infra-config-portal-netapp`, not
+`.codex/task-queue.md` live at `/home/administrator/infra-config-portal-cisco`, not
 under `app/`.
 
 Before running root `make` or Codex automation commands:
 
 ```bash
-cd /home/administrator/infra-config-portal-netapp
+cd /home/administrator/infra-config-portal-cisco
 ```
 
-If you are in `/home/administrator/infra-config-portal-netapp/app`, move up one level
+If you are in `/home/administrator/infra-config-portal-cisco/app`, move up one level
 first. Running root-only targets from `app/` prints:
 
 ```text
-Run this from /home/administrator/infra-config-portal-netapp, not /home/administrator/infra-config-portal-netapp/app.
+Run this from /home/administrator/infra-config-portal-cisco, not /home/administrator/infra-config-portal-cisco/app.
 ```
 
 ## Run Locally
@@ -46,7 +46,7 @@ Run this from /home/administrator/infra-config-portal-netapp, not /home/administ
 Safe app workflow from the repository root:
 
 ```bash
-cd /home/administrator/infra-config-portal-netapp
+cd /home/administrator/infra-config-portal-cisco
 make app-start
 make app-status
 make app-restart
@@ -64,7 +64,7 @@ or arbitrary clients connected to the frontend port.
 Foreground backend-only development:
 
 ```bash
-cd /home/administrator/infra-config-portal-netapp/app
+cd /home/administrator/infra-config-portal-cisco/app
 make backend-venv
 make backend-run
 ```
@@ -72,7 +72,7 @@ make backend-run
 Foreground frontend-only development, in a second terminal:
 
 ```bash
-cd /home/administrator/infra-config-portal-netapp/app
+cd /home/administrator/infra-config-portal-cisco/app
 make frontend-install
 make frontend-run
 ```
@@ -80,10 +80,20 @@ make frontend-run
 The backend runs at `http://127.0.0.1:8001`. The Vite frontend runs at
 `http://127.0.0.1:5173` and proxies API requests to the backend.
 
+If a local dev process is stale, run `make app-status` first. `make app-stop`
+and `make app-restart` only manage app-owned backend/frontend processes
+recorded under `.local/run/` or discovered with this repo as their working
+directory. To avoid a port conflict without stopping another process, use a
+one-off alternate port, for example:
+
+```bash
+BACKEND_PORT=8002 FRONTEND_PORT=5174 make app-restart
+```
+
 Docker Compose:
 
 ```bash
-cd /home/administrator/infra-config-portal-netapp/app
+cd /home/administrator/infra-config-portal-cisco/app
 docker compose up --build
 ```
 
@@ -107,6 +117,58 @@ console bootstrap has configured Cisco management IP/SSH. Provider status and
 provider-smoke skip those network probes while the flags are false; Cisco
 console discovery still runs.
 
+The Cisco Setup Readiness panel and
+`GET /api/v1/providers/cisco/setup-readiness` compose Cisco console discovery
+and Cisco Ansible status into a bootstrap preview. It shows the planned
+management IP, console candidate counts, prompt-readiness next action,
+state boundaries between observed console evidence and saved planning values,
+SSH/SCP and Ansible readiness as plan-only, redacted last-action/artifact
+placeholders, and disabled dangerous actions. It does not expose an apply
+button, open config mode, enable SSH/SCP, back up running-config, save config,
+reload, erase, copy, or change VLANs, interfaces, users, or passwords.
+
+`POST /api/v1/providers/cisco-console/prompt-readiness` is a separate
+newline-only console check for the setup workflow. It opens the selected
+console path only in explicit `PROVIDER_MODE=local-readonly` mode with lab
+read-only acknowledgements, sends newline, reads and redacts the prompt state,
+and does not run show commands or configuration commands.
+`safe_show_commands_allowed` remains false in this prompt-readiness result; an
+exec-looking prompt is only future readiness evidence for a separate explicit
+read-only action.
+
+`GET /api/v1/providers/cisco/setup-wizard-plan` is preview-only. It reports the
+latest cached prompt-readiness state when available, explains why initial setup
+wizard handling is blocked, shows future guarded bootstrap planning steps, and
+keeps answer-wizard, configuration, save, reload, erase/copy, SSH/SCP,
+running-config backup, and real apply actions disabled.
+
+`GET /api/v1/providers/cisco/bootstrap-requirements` validates the preview-only
+inputs needed before any future guarded bootstrap design: management IP,
+subnet/prefix, gateway, management VLAN/interface strategy, hostname,
+domain/DNS, local admin username presence, SSH/SCP policy, save behavior, and
+explicit confirmation requirements. `PUT` to the same endpoint stores
+non-secret local planning values under
+`.local/cisco/bootstrap-requirements.json`, which is ignored by Git. The
+workflow returns blockers/warnings only and does not generate commands, answer
+setup prompts, enable SSH/SCP, save configuration, or apply anything.
+
+`GET /api/v1/providers/cisco/console-bootstrap/plan` builds the guarded
+Cisco-only console bootstrap preview for this lab target:
+`192.168.1.220/24` (`255.255.255.0`). It distinguishes setup-wizard,
+direct exec/config-mode, and unsupported prompt flows, shows redacted preview
+commands, and keeps destructive reset/wipe actions separate and disabled.
+It also reports blocker categories, redacted command summaries,
+`serial_writes_attempted=false`, and placeholder artifact metadata so missing
+logs are obvious without implying an apply occurred.
+`POST /api/v1/providers/cisco/console-bootstrap/apply` is blocked by default
+and records a redacted blocked result unless all backend gates pass, including
+the exact confirmation phrase
+`APPLY CISCO CONSOLE BOOTSTRAP 192.168.1.220`. The current implementation is a
+guarded scaffold and does not perform serial writes.
+
+See `app/docs/cisco-real-lab-bootstrap-runbook.md` for the safe local-lab
+operator flow, required gates, blocked-result meanings, and evidence handling.
+
 Optional local real-lab values live in `.env.local.real-lab`, which is ignored
 by Git and must not be committed. Create it with:
 
@@ -117,7 +179,7 @@ by Git and must not be committed. Create it with:
 Manual local-readonly smoke:
 
 ```bash
-LAB_CLOSED_LOOP_ACK=YES LAB_READONLY_ACK=YES PROVIDER_MODE=local-readonly make provider-smoke
+PROVIDER_MODE=local-readonly make provider-smoke
 ```
 
 The backend loads local provider values from `.env.local.real-lab`, but ignores
@@ -127,19 +189,6 @@ Plain `make provider-smoke` runs in mock mode and skips probes. With explicit
 Markdown summaries under ignored `artifacts/real-lab/`, skips planned but not
 configured ESXi/Cisco management targets gracefully, and must not print
 passwords.
-
-iLO endpoint detection is GET-only. A result such as
-`web_available_redfish_not_found` means the web root returned HTML while
-`/redfish/v1/`, `/redfish/v1`, and legacy XML probes did not prove a supported
-API. Treat that as identity evidence only: verify the address, iLO generation,
-Redfish availability, and that the web server is actually iLO. Do not collect
-screenshots containing secrets, raw device transcripts, cookies, authorization
-headers, private keys, passwords, or `.env.local.real-lab` contents.
-
-If local dev ports are already occupied, restart app-owned processes with
-`make app-restart` or run alternate ports from `app/`: `BACKEND_PORT=8002 make
-backend-run` and `FRONTEND_PORT=5175 make frontend-run`. Do not kill unrelated
-processes just to free the default ports.
 
 ## Tests And Checks
 
@@ -158,7 +207,7 @@ The backend pytest suite includes a mock-only VM lifecycle smoke test. To run
 that smoke coverage directly:
 
 ```bash
-cd /home/administrator/infra-config-portal-ilo/app/backend
+cd /home/administrator/infra-config-portal-netapp/app/backend
 PROVIDER_MODE=mock .venv/bin/pytest -q tests/test_smoke_vm_lifecycle.py
 ```
 

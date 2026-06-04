@@ -127,7 +127,7 @@ default, or placeholder-only metadata from explicitly configured
 ## Docker Compose
 
 ```bash
-cd /home/administrator/infra-config-portal-ilo/app
+cd /home/administrator/infra-config-portal-netapp/app
 docker compose up --build
 ```
 
@@ -167,29 +167,57 @@ iLO, ESXi, and Cisco management configuration is reported only as
 configured/missing flags. The API does not return configured host, username, or
 password values.
 
-iLO Provider Status uses explicit GET-only endpoint detection for Redfish root,
-web root, and legacy XML paths. It reports classifications such as
-`redfish_available`, `legacy_available_redfish_not_found`, and
-`web_available_redfish_not_found` with the next safe action and redacted
-diagnostic hints. When the web root responds but Redfish is missing, HTTP web
-reachability is treated as identity evidence only, not Redfish readiness. The
-UI asks the operator to verify the address, legacy iLO generation, Redfish
-availability, and whether the responding portal is actually iLO. No iLO
-settings are changed by endpoint detection.
-
-The iLO Provider Status page includes a blocked Full Destructive Rebuild preview
-for future bare-metal rebuild planning. It can show readiness, identity
-presence, prerequisites, blockers, handoff requirements, and the future
-confirmation phrase `DESTROY AND REBUILD`, but it does not expose or run disk
-wipe, RAID delete/create, virtual media, boot, BIOS, power, firmware, or ESXi
-install actions. Those belong in a separate guarded rebuild workflow.
-
 ESXi and Cisco management IPs can be planned without being treated as reachable
 targets. Keep `ESXI_CONFIGURED=false` until ESXi management networking is
 installed and keep `CISCO_MGMT_CONFIGURED=false` until console bootstrap has
 configured Cisco management IP/SSH. Provider status and provider-smoke skip
 those network probes while the flags are false; Cisco console discovery still
 runs.
+
+The Cisco Setup Readiness panel and
+`GET /api/v1/providers/cisco/setup-readiness` compose Cisco console discovery
+and Cisco Ansible status into a bootstrap preview. It shows the planned
+management IP, console candidate counts, prompt-readiness next action,
+SSH/SCP and Ansible readiness as plan-only, backup/report placeholders, and
+disabled dangerous actions. It does not expose an apply button, open config
+mode, enable SSH/SCP, back up running-config, save config, reload, erase, copy,
+or change VLANs, interfaces, users, or passwords.
+
+`POST /api/v1/providers/cisco-console/prompt-readiness` is a separate
+newline-only console check for the setup workflow. It opens the selected
+console path only in explicit `PROVIDER_MODE=local-readonly` mode with lab
+read-only acknowledgements, sends newline, reads and redacts the prompt state,
+and does not run show commands or configuration commands.
+
+`GET /api/v1/providers/cisco/setup-wizard-plan` is preview-only. It reports the
+latest cached prompt-readiness state when available, explains why initial setup
+wizard handling is blocked, shows future guarded bootstrap planning steps, and
+keeps answer-wizard, configuration, save, reload, erase/copy, SSH/SCP,
+running-config backup, and real apply actions disabled.
+
+`GET /api/v1/providers/cisco/bootstrap-requirements` validates the preview-only
+inputs needed before any future guarded bootstrap design: management IP,
+subnet/prefix, gateway, management VLAN/interface strategy, hostname,
+domain/DNS, local admin username presence, SSH/SCP policy, save behavior, and
+explicit confirmation requirements. `PUT` to the same endpoint stores
+non-secret local planning values under
+`.local/cisco/bootstrap-requirements.json`, which is ignored by Git. The
+workflow returns blockers/warnings only and does not generate commands, answer
+setup prompts, enable SSH/SCP, save configuration, or apply anything.
+
+`GET /api/v1/providers/cisco/console-bootstrap/plan` builds the guarded
+Cisco-only console bootstrap preview for this lab target:
+`192.168.1.220/24` (`255.255.255.0`). It distinguishes setup-wizard,
+direct exec/config-mode, and unsupported prompt flows, shows redacted preview
+commands, and keeps destructive reset/wipe actions separate and disabled.
+`POST /api/v1/providers/cisco/console-bootstrap/apply` is blocked by default
+and records a redacted blocked result unless all backend gates pass, including
+the exact confirmation phrase
+`APPLY CISCO CONSOLE BOOTSTRAP 192.168.1.220`. The current implementation is a
+guarded scaffold and does not perform serial writes.
+
+See `app/docs/cisco-real-lab-bootstrap-runbook.md` for the safe local-lab
+operator flow, required gates, blocked-result meanings, and evidence handling.
 
 For an isolated local lab, optional settings live in `.env.local.real-lab` at
 the repository root. Do not commit that file. Create it with:
@@ -201,16 +229,18 @@ the repository root. Do not commit that file. Create it with:
 Set `PROVIDER_MODE=local-readonly` only when manually running explicit
 read-only probes and require `LAB_CLOSED_LOOP_ACK=YES` and
 `LAB_READONLY_ACK=YES`. iLO probes use GET-only Redfish calls with short
-timeouts and redacted responses. Cisco console probes open the selected console
-only after a button click or manual smoke command, then send newline and safe
-`show` commands when already at an exec prompt. Cisco Ansible probes check SSH,
-parse a generated temporary inventory, and run only fixed safe `show` commands.
-ESXi probes use HTTPS GET and TCP reachability checks only.
+timeouts and redacted responses. Cisco prompt readiness opens the selected
+console only after a button click and sends newline only. Cisco console probes
+open the selected console only after a button click or manual smoke command,
+then send newline and safe `show` commands when already at an exec prompt.
+Cisco Ansible probes check SSH, parse a generated temporary inventory, and run
+only fixed safe `show` commands. ESXi probes use HTTPS GET and TCP reachability
+checks only.
 
 Optional manual smoke:
 
 ```bash
-LAB_CLOSED_LOOP_ACK=YES LAB_READONLY_ACK=YES PROVIDER_MODE=local-readonly make provider-smoke
+PROVIDER_MODE=local-readonly make provider-smoke
 ```
 
 The backend loads local provider values from `.env.local.real-lab`, but ignores
@@ -220,18 +250,6 @@ Plain `make provider-smoke` runs in mock mode and skips probes. With explicit
 hardware/configuration and planned but not configured ESXi/Cisco management
 targets gracefully, must not print passwords, and writes sanitized reports under
 ignored `artifacts/real-lab/`.
-
-The latest expected web-only iLO evidence shape is
-`web_available_redfish_not_found`: `/` returns `200 text/html`, while
-`/redfish/v1/`, `/redfish/v1`, and `/xmldata?item=All` return no supported
-Redfish or legacy API. Do not save or commit screenshots with secrets, raw
-device transcripts, cookies, authorization headers, private keys, passwords, or
-`.env.local.real-lab` contents.
-
-If default dev ports are stale or busy, use app-owned controls first:
-`make app-status`, `make app-restart`, or alternate ports from `app/` such as
-`BACKEND_PORT=8002 make backend-run` and `FRONTEND_PORT=5175 make
-frontend-run`. Do not kill unrelated processes to free ports.
 
 ## Safety Defaults
 

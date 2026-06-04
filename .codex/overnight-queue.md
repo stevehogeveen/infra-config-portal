@@ -1,33 +1,46 @@
-# Overnight Queue: iLO Worktree
+# Overnight Queue: Cisco Worktree
 
 ## Latest Known State
 
-- Current local branch observed during setup: `work/ilo-flow`.
-- User handoff said the iLO branch was clean and committed at `4ba19ba`,
-  `Improve iLO GET-only endpoint detection`.
-- Setup inspection later found the worktree clean at `f618bd4`,
-  `Clarify iLO web endpoint detection guidance`, then committed the first
-  overnight framework at `a7f8b06`, `Add overnight Codex automation`.
-- `ILO_TEST_HOST=192.168.1.202` is configured locally in ignored
-  `.env.local.real-lab`; do not print or commit that file.
-- Latest read-only endpoint classification was
-  `web_available_redfish_not_found`.
-- `/redfish/v1/` returned `404`.
-- `/redfish/v1` returned `404`.
-- `/` returned `200 text/html`.
-- `/xmldata?item=All` returned `404`.
-- Backend was verified on alternate port `8002`.
-- Frontend was verified on alternate port `5175`.
+- Current local branch observed during setup: `work/cisco-flow`.
+- User handoff said the Cisco worktree had 9 modified files and no commit.
+- Setup inspection found commit `0527dcb`,
+  `Improve Cisco console prompt readiness handling`, already present.
+- Setup inspection found 6 currently modified files:
+  - `app/backend/app/providers/cisco_console.py`
+  - `app/backend/app/schemas.py`
+  - `app/backend/app/services/cisco_setup_readiness.py`
+  - `app/backend/tests/test_provider_status_adapters.py`
+  - `app/frontend/src/App.tsx`
+  - `app/frontend/src/types.ts`
+- Previous checks reportedly passed before the latest local state:
+  - `cd app/backend && PROVIDER_MODE=mock .venv/bin/pytest -q`, 134 passed.
+  - `cd app/frontend && PROVIDER_MODE=mock npm run build`, passed.
+  - `PROVIDER_MODE=mock make lint`, passed with backend ruff skipped.
+- Real console prompt readiness at `9600` and `115200` captured no text.
+- `safe_show_commands_allowed=false`.
+- Bootstrap plan remains blocked.
+- Actual serial executor was not implemented.
+- Real console apply was not attempted.
+- User handoff also describes an earlier 9-file dirty slice. Trust the actual
+  local git state first; if those files reappear dirty, review and handle them
+  as part of the current prompt-readiness/bootstrap-preview slice.
 
 ## Safety Constraints
 
-- Keep endpoint detection GET-only.
-- Keep all iLO apply, write, destructive, firmware, reboot, reset, erase, and
-  power-control actions blocked.
-- Do not add real iLO writes or ungated execution paths.
+- Keep no-output readiness newline-only.
+- Do not send show commands.
+- Do not answer setup wizard prompts.
+- Do not enter config mode.
+- Do not send credentials.
+- Do not write memory.
+- Do not reload.
+- Do not erase, copy, delete, or modify device files.
+- Do not implement real apply yet.
+- Keep planned management IP separate from confirmed reachable/current device
+  state.
 - Use mock tests by default.
-- Use local read-only probes only when explicitly requested by a future human
-  task; do not run live probes during this overnight queue.
+- Do not run live serial probes during this overnight queue.
 
 ## Required Checks After Each Safe Slice
 
@@ -41,68 +54,90 @@
 
 1. Capture starting state.
    - Run `git status --short --branch` and `git log -1 --oneline`.
-   - Confirm no secrets or local real-lab files are staged.
+   - Confirm no secrets, local env files, or raw console transcripts are staged.
 
-2. Improve UI/readiness clarity for `web_available_redfish_not_found`.
-   - Make the readiness state clearly distinguish reachable web UI from missing
-     Redfish root.
-   - Explain that HTTP web reachability alone does not prove supported Redfish.
-   - Keep text concise and operator-focused.
-   - Add or update focused tests.
+2. Review the current diff.
+   - Check for secrets, unrelated edits, unsafe behavior, accidental real apply,
+     show-command execution, credentials, config mode, write memory, reload,
+     copy, erase, delete, or weakened gates.
+   - If the diff is the already-requested safe slice, run all required checks.
+   - If checks pass, commit the current safe slice. Use
+     `Improve Cisco console prompt readiness handling` only if that exact commit
+     is still missing; otherwise use a focused message for the actual current
+     slice, such as `Clarify Cisco no-output readiness troubleshooting`.
+   - If checks fail, do not commit. Save the failure summary.
 
-3. Improve operator guidance for likely causes.
-   - Wrong IP: web server may be another device.
-   - Legacy iLO: older generations may not expose Redfish at `/redfish/v1`.
-   - Redfish unavailable: management UI reachable but API disabled/unavailable.
-   - Non-iLO web server: root page responds but iLO-specific probes do not.
-   - Avoid suggesting any write action as a next step.
+3. Improve no-output troubleshooting display after the current safe slice is
+   committed or explicitly found already committed.
+   - Make no-output readiness guidance clear for operators.
+   - Keep `safe_show_commands_allowed=false`.
+   - Keep prompt readiness newline-only.
+   - Keep bootstrap apply blocked.
+   - Do not add real serial writes or command execution.
+   - Add or update focused backend/frontend tests.
 
-4. Add tests for endpoint classification and readiness text.
-   - Cover `web_available_redfish_not_found`.
-   - Cover root `200 text/html` with Redfish and legacy XML probes returning
-     `404`.
-   - Verify user-facing readiness text stays read-only and does not imply
-     apply/write readiness.
+4. Preserve state boundaries.
+   - Planned management IP is local planning data only.
+   - Confirmed reachable/current device state must come only from explicit
+     read-only evidence.
+   - UI wording must not imply the planned IP is already configured or
+     reachable.
 
-5. Improve report preview and Provider Status summary clarity.
-   - Make report previews explain what evidence is current, stale, planned, or
-     unavailable.
-   - Improve empty states for missing logs/artifacts without repeated waiting
-     indicators.
-   - Align wording and layout with the Cisco Provider Status section where
-     appropriate.
+5. Improve bootstrap preview scaffolding without real apply.
+   - Improve preview shape, blockers, redacted command summaries, and missing
+     requirement explanations.
+   - Keep `serial_writes_attempted=false` for blocked previews.
+   - Do not add a real serial executor.
+   - Do not add hidden gates or bypasses.
 
-6. Improve self-healing hints for local development.
-   - Add or improve hints for stale backend/frontend processes.
-   - Mention alternate local ports such as backend `8002` and frontend `5175`
-     when port conflicts are likely.
+6. Improve readiness blockers and checklists.
+   - Add precise guidance for no-output at `9600` and `115200`.
+   - Add setup wizard, login-required, exec, config-mode, and unknown prompt
+     classifications to operator-facing summaries.
+   - Keep next safe actions non-destructive and non-configuring.
+
+7. Improve Cisco runbook with exact manual verification steps.
+   - Include adapter discovery, process ownership checks, baud checks, manual
+     console observation, and redaction guidance.
+   - Keep credentials, raw transcript capture, show commands, config mode,
+     write memory, reload, copy, erase, and delete explicitly out of scope.
+
+8. Add tests for prompt classifications.
+   - Cover no-output, setup wizard, login-required, exec, config-mode, and
+     unknown classifications.
+   - Cover `safe_show_commands_allowed=false`.
+   - Cover planned management IP remaining separate from confirmed current or
+     reachable device state.
+
+9. Improve logs/artifact display.
+   - Show redacted summaries and last-action metadata when present.
+   - Make missing logs/artifacts clear without repeated waiting indicators or
+     confusing blank space.
+   - Align structure with the iLO Provider Status section where appropriate.
+
+10. Improve local app self-healing hints.
+   - Add or improve hints for stale backend/frontend processes and alternate
+     ports.
    - Add small helper scripts only if they simplify repeated local validation.
    - Do not kill unrelated processes; app-owned temporary artifacts may be
      cleaned when safe.
 
-7. Improve docs for local-readonly iLO smoke.
-   - Document exact safe env gates, alternate ports, expected
-     `web_available_redfish_not_found` evidence, and what not to collect.
-   - Keep usernames/passwords and `.env.local.real-lab` contents out of docs,
-     logs, and commits.
-
-8. Improve backend/frontend type and schema consistency.
-   - Align readiness/detail fields between backend schemas and frontend types.
-   - Add tests for any contract shape that affects Provider Status rendering.
-
-9. Re-review iLO safety model.
-   - Search the diff for POST, PUT, PATCH, DELETE, firmware, reboot, reset,
-     power, erase, copy, write, apply, and confirmation gate changes.
+11. Re-review Cisco safety model.
+   - Search the diff for show commands, configure terminal, username/password
+     handling, enable secrets, write memory, reload, copy, erase, delete,
+     serial writes, apply execution, and confirmation gate changes.
    - If any unsafe behavior appears, revert only your own unsafe edits and
      write a blocked note.
 
-10. Commit each clean passing safe slice separately.
+12. Commit only clean passing safe slices.
+   - Commit after all required checks pass.
+   - Keep commits focused and separate from generated run logs.
    - Suggested messages include:
-     - `Clarify iLO web-only readiness guidance`
-     - `Improve iLO provider status summaries`
-     - `Document iLO local-readonly smoke flow`
-     - `Add iLO readiness classification tests`
-   - Commit only after all required checks pass.
+     - `Clarify Cisco no-output readiness troubleshooting`
+     - `Separate Cisco planned and observed state`
+     - `Improve Cisco bootstrap preview blockers`
+     - `Add Cisco prompt classification tests`
+     - `Document Cisco console manual verification`
 
-11. Write the final morning summary under `.codex/runs/` and as the final Codex
+13. Write the final morning summary under `.codex/runs/` and as the final Codex
    response.

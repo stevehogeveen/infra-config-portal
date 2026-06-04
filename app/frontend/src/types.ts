@@ -153,6 +153,133 @@ export type ProviderProbeResult = {
   [key: string]: unknown;
 };
 
+export type CiscoSetupReadiness = {
+  provider_id: string;
+  phase: string;
+  planned_management_ip: string | null;
+  management_configured: boolean;
+  state_boundaries: Record<string, unknown>;
+  console: {
+    status: string;
+    effective_path: string | null;
+    recommended_path: string | null;
+    selected_path: string | null;
+    selection_source: string | null;
+    baud: number | null;
+    read_timing: Record<string, unknown>;
+    candidate_count: number;
+    stable_candidate_count: number;
+    fallback_candidate_count: number;
+    safe_next_action: string;
+    last_prompt_readiness: Record<string, unknown>;
+  };
+  bootstrap_preview: {
+    apply_enabled: boolean;
+    commands_redacted: boolean;
+    serial_writes_attempted: boolean;
+    missing_requirements: string[];
+    redacted_command_summary: string[];
+    summary: string[];
+  };
+  ssh_scp_readiness: {
+    planned_only: boolean;
+    apply_enabled: boolean;
+    summary: string;
+  };
+  ansible: {
+    status: string;
+    enabled: boolean;
+    reason: string;
+  };
+  backup_report: {
+    backup_enabled: boolean;
+    report_placeholder_enabled: boolean;
+    summary: string;
+  };
+  setup_wizard_plan: {
+    available: boolean;
+    detected: boolean;
+    detected_prompt_state: string;
+    apply_enabled: boolean;
+    next_safe_action: string;
+    summary: string;
+  } | null;
+  blockers: string[];
+  warnings: string[];
+  disabled_actions: string[];
+  next_safe_action: string;
+};
+
+export type CiscoSetupWizardPlan = {
+  provider_id: string;
+  status: string;
+  apply_enabled: boolean;
+  planned_management_ip: string | null;
+  detected_prompt_state: string;
+  setup_wizard_detected: boolean;
+  message: string;
+  why_blocked: string[];
+  future_guarded_plan_preview: string[];
+  not_attempted: string[];
+  disabled_actions: string[];
+  blockers: string[];
+  warnings: string[];
+  next_safe_action: string;
+};
+
+export type CiscoBootstrapRequirements = {
+  provider_id: string;
+  status: string;
+  apply_enabled: boolean;
+  management_configured: boolean;
+  requirements: Record<string, unknown>;
+  blockers: string[];
+  warnings: string[];
+  disabled_actions: string[];
+  not_attempted: string[];
+  next_safe_action: string;
+};
+
+export type CiscoConsoleBootstrapPlan = {
+  provider_id: string;
+  status: string;
+  target: Record<string, unknown>;
+  apply_enabled: boolean;
+  execution_supported: boolean;
+  serial_writes_attempted: boolean;
+  flow: string;
+  prompt_state: string;
+  prompt_detail: string;
+  prompt_checked_at: string | null;
+  summary: string[];
+  intended_steps: string[];
+  command_preview: string[];
+  redacted_command_summary: string[];
+  commands_redacted: boolean;
+  blocker_summary: Record<string, unknown>;
+  artifact_preview: Record<string, unknown>;
+  destructive_actions_disabled: string[];
+  blockers: string[];
+  warnings: string[];
+  confirmation_phrase: string;
+  next_safe_action: string;
+};
+
+export type CiscoBootstrapRequirementsUpdate = {
+  planned_management_ip: string;
+  subnet_prefix: string;
+  gateway: string;
+  management_vlan: string | null;
+  management_interface: string | null;
+  management_strategy: string;
+  hostname: string;
+  domain_name: string;
+  dns_servers: string[];
+  local_admin_username_configured: boolean;
+  local_admin_username_reference: string | null;
+  operator_notes: string | null;
+};
+
 export type MediaInventoryItem = {
   placeholder_name: string;
   extension: string;

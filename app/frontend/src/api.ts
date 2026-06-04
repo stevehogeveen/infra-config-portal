@@ -2,12 +2,11 @@ import type {
   ArtifactRecord,
   AuditEvent,
   Catalog,
-  IloDestructiveRebuildPreview,
-  IloReportPreview,
-  IloReadinessSummary,
-  IloSetupCompareReport,
-  IloSetupIntent,
-  IloSetupPlanPreview,
+  CiscoBootstrapRequirements,
+  CiscoBootstrapRequirementsUpdate,
+  CiscoConsoleBootstrapPlan,
+  CiscoSetupReadiness,
+  CiscoSetupWizardPlan,
   IloUpgradeReadiness,
   MediaInventory,
   ProviderProbeResult,
@@ -83,24 +82,24 @@ export const api = {
   mediaInventory: () => apiRequest<MediaInventory>("/api/v1/media-inventory"),
   iloUpgradeReadiness: () =>
     apiRequest<IloUpgradeReadiness>("/api/v1/providers/ilo-redfish/upgrade-readiness"),
-  iloReadinessSummary: () =>
-    apiRequest<IloReadinessSummary>("/api/v1/providers/ilo-redfish/readiness-summary"),
-  iloDestructiveRebuildPreview: () =>
-    apiRequest<IloDestructiveRebuildPreview>("/api/v1/providers/ilo-redfish/destructive-rebuild-preview"),
-  iloSetupPlanPreview: () =>
-    apiRequest<IloSetupPlanPreview>("/api/v1/providers/ilo-redfish/setup-plan-preview"),
-  iloSetupIntent: () =>
-    apiRequest<IloSetupIntent>("/api/v1/providers/ilo-redfish/setup-intent"),
-  saveIloSetupIntent: (payload: IloSetupIntent) =>
-    apiRequest<IloSetupIntent>("/api/v1/providers/ilo-redfish/setup-intent", {
+  ciscoSetupReadiness: () =>
+    apiRequest<CiscoSetupReadiness>("/api/v1/providers/cisco/setup-readiness"),
+  ciscoSetupWizardPlan: () =>
+    apiRequest<CiscoSetupWizardPlan>("/api/v1/providers/cisco/setup-wizard-plan"),
+  ciscoBootstrapRequirements: () =>
+    apiRequest<CiscoBootstrapRequirements>("/api/v1/providers/cisco/bootstrap-requirements"),
+  saveCiscoBootstrapRequirements: (payload: CiscoBootstrapRequirementsUpdate) =>
+    apiRequest<CiscoBootstrapRequirements>("/api/v1/providers/cisco/bootstrap-requirements", {
       method: "PUT",
       body: payload
     }),
-  iloSetupCompare: () =>
-    apiRequest<IloSetupCompareReport>("/api/v1/providers/ilo-redfish/setup-compare"),
-  iloReportPreview: () =>
-    apiRequest<IloReportPreview>("/api/v1/providers/ilo-redfish/report-preview"),
+  ciscoConsoleBootstrapPlan: () =>
+    apiRequest<CiscoConsoleBootstrapPlan>("/api/v1/providers/cisco/console-bootstrap/plan"),
   providers: () => apiRequest<ProviderStatus[]>("/api/v1/providers/status"),
+  ciscoConsolePromptReadiness: () =>
+    apiRequest<ProviderProbeResult>("/api/v1/providers/cisco-console/prompt-readiness", {
+      method: "POST"
+    }),
   probeProvider: (id: string) =>
     apiRequest<ProviderProbeResult>(`/api/v1/providers/${id}/probe`, { method: "POST" })
 };

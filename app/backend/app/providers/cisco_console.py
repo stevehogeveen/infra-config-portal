@@ -21,6 +21,77 @@ SAFE_SHOW_COMMANDS = (
     "show ip interface brief",
     "show vlan brief",
 )
+PROMPT_READINESS_NOT_ATTEMPTED = [
+    "safe show commands",
+    "configure terminal",
+    "write memory",
+    "reload",
+    "copy or erase",
+    "VLAN, interface, user, password, SSH, or SCP changes",
+]
+NO_PROMPT_TEXT_CAPTURED_MESSAGE = (
+    "Console port opened but no prompt text was captured. Verify the console cable "
+    "is connected to the Cisco console port, confirm the switch is powered on, "
+    "confirm no other process owns the serial port, and verify the baud rate such "
+    "as 9600 or 115200."
+)
+NO_PROMPT_TEXT_CAPTURED_CHECKLIST = [
+    "Confirm the USB serial adapter is connected to this host.",
+    "Confirm the RJ45/console cable is connected to the Cisco console port, not an Ethernet data port.",
+    "Confirm the switch is powered on and booted far enough for console access.",
+    "Press Enter a few times in a manual console session.",
+    "Check no other process owns /dev/ttyUSB0 with lsof or fuser.",
+    "Try baud 9600 first, then 115200 if needed.",
+    "Prefer /dev/serial/by-id/... stable path for CISCO_CONSOLE_PORT.",
+]
+PROMPT_CLASSIFICATION_GUIDANCE = {
+    "exec": {
+        "label": "Exec prompt",
+        "summary": "Console appears to be at an exec prompt.",
+        "next_safe_action": (
+            "Keep this as readiness evidence only; run any future show-command check "
+            "through a separate explicit read-only action."
+        ),
+    },
+    "setup-wizard": {
+        "label": "Setup wizard prompt",
+        "summary": "Console appears to be waiting at the initial setup wizard.",
+        "next_safe_action": "Do not answer the wizard; review the setup wizard plan preview.",
+    },
+    "login-required": {
+        "label": "Login required",
+        "summary": "Console is requesting a username, login, or password.",
+        "next_safe_action": "Do not send credentials; confirm credential handling in a future guarded task.",
+    },
+    "config-mode": {
+        "label": "Configuration mode",
+        "summary": "Console appears to already be in configuration mode.",
+        "next_safe_action": "Stop and get human review before any further console interaction.",
+    },
+    "unknown": {
+        "label": "Unknown prompt",
+        "summary": "Console output was not enough to classify the prompt.",
+        "next_safe_action": "Use manual console observation and adapter checks before trying again.",
+    },
+}
+CONSOLE_DETECTION_CHECKLIST = [
+    "Check that the USB serial cable is plugged into this machine.",
+    "Check that the console cable is connected to the Cisco console port.",
+    "Check that the selected port matches the adapter.",
+    "Check that the backend user has dialout/read-write access.",
+]
+NO_CONSOLE_ADAPTER_MESSAGE = (
+    "No Cisco serial console adapter was detected. Connect the USB serial adapter "
+    "to this machine, connect the console cable to the Cisco console port, then "
+    "refresh Provider Status."
+)
+FALLBACK_CONSOLE_MESSAGE = (
+    "Fallback serial adapter detected. Prefer a stable /dev/serial/by-id path if available."
+)
+PERMISSION_GUIDANCE = (
+    "Configured console path exists but is not readable/writable. Check dialout group "
+    "membership and device permissions, then restart the backend shell/session."
+)
 
 
 @dataclass(frozen=True)
@@ -47,6 +118,9 @@ class CiscoConsoleConfig:
     port: str | None
     baud: int
     timeout_seconds: float
+    prompt_settle_seconds: float = 0.5
+    prompt_read_window_seconds: float = 1.0
+    prompt_max_bytes: int = 8192
 
     @classmethod
     def from_settings(cls) -> "CiscoConsoleConfig":
@@ -54,6 +128,9 @@ class CiscoConsoleConfig:
             port=settings.cisco_console_port,
             baud=settings.cisco_console_baud,
             timeout_seconds=settings.cisco_console_timeout_seconds,
+            prompt_settle_seconds=settings.cisco_console_prompt_settle_seconds,
+            prompt_read_window_seconds=settings.cisco_console_prompt_read_window_seconds,
+            prompt_max_bytes=settings.cisco_console_prompt_max_bytes,
         )
 
 
@@ -87,23 +164,36 @@ def discover_cisco_console(
         _mark_recommendation(candidates, effective_path, "env-override")
         if not env_override["exists"]:
             status = "blocked"
-            blockers.append("Configured CISCO_CONSOLE_PORT does not exist on this host.")
-            safe_next_action = "Update CISCO_CONSOLE_PORT or unplug/reconnect the console cable."
+            blockers.append(
+                "Configured CISCO_CONSOLE_PORT does not exist. Reconnect the adapter "
+                "or update CISCO_CONSOLE_PORT to the detected stable path."
+            )
+            safe_next_action = "Reconnect the adapter or update CISCO_CONSOLE_PORT."
         elif not _is_accessible(env_override):
             status = "blocked"
-            blockers.append("Configured CISCO_CONSOLE_PORT is not readable and writable.")
-            safe_next_action = "Check device permissions for the backend user."
+            blockers.append(PERMISSION_GUIDANCE)
+            safe_next_action = (
+                "Check dialout group membership and device permissions, then restart the backend shell/session."
+            )
     elif len(existing_stable) == 1:
         recommended_path = existing_stable[0].path
         effective_path = recommended_path
         status = "ready"
         selection_source = "single-stable-candidate"
         _mark_recommendation(candidates, recommended_path, "recommended-default")
-        safe_next_action = "Run an explicit read-only probe against the recommended stable path."
+        safe_next_action = (
+            f"Preferred console path: {recommended_path}. Use this stable path for "
+            "CISCO_CONSOLE_PORT instead of /dev/ttyUSB0 when possible."
+        )
         if not _candidate_accessible(existing_stable[0]):
             status = "blocked"
-            blockers.append("The recommended stable console path is not readable and writable.")
-            safe_next_action = "Check device permissions for the backend user."
+            blockers.append(
+                "Preferred stable console path exists but is not readable/writable. "
+                "Check dialout group membership and device permissions, then restart the backend shell/session."
+            )
+            safe_next_action = (
+                "Check dialout group membership and device permissions, then restart the backend shell/session."
+            )
     elif len(existing_stable) > 1:
         status = "needs-selection"
         selection_source = "multiple-stable-candidates"
@@ -111,7 +201,7 @@ def discover_cisco_console(
             "Multiple stable serial console candidates were discovered; set "
             "CISCO_CONSOLE_PORT to the intended /dev/serial/by-id path."
         )
-        safe_next_action = "Select the intended stable path in .env.local.real-lab."
+        safe_next_action = "Select the intended stable /dev/serial/by-id path in .env.local.real-lab."
     elif existing_candidates:
         status = "needs-selection"
         selection_source = "fallback-candidates"
@@ -119,15 +209,18 @@ def discover_cisco_console(
             "Only fallback /dev/ttyUSB or /dev/ttyACM candidates were discovered; set "
             "CISCO_CONSOLE_PORT to the intended path before probing."
         )
-        safe_next_action = "Prefer a stable /dev/serial/by-id path when the lab cable exposes one."
+        warnings.append(FALLBACK_CONSOLE_MESSAGE)
+        safe_next_action = FALLBACK_CONSOLE_MESSAGE
     else:
-        blockers.append(
-            "No Cisco serial console candidates were found under /dev/serial/by-id, "
-            "/dev/ttyUSB*, or /dev/ttyACM*."
-        )
+        blockers.append(NO_CONSOLE_ADAPTER_MESSAGE)
 
     if existing_candidates and not existing_stable:
         warnings.append("No stable /dev/serial/by-id console path was found.")
+    if recommended_path:
+        warnings.append(
+            f"Preferred console path: {recommended_path}. Use this stable path for "
+            "CISCO_CONSOLE_PORT instead of /dev/ttyUSB0 when possible."
+        )
 
     return {
         "status": status,
@@ -144,6 +237,9 @@ def discover_cisco_console(
         "env_override": env_override,
         "blockers": blockers,
         "warnings": warnings,
+        "operator_message": _operator_message(status, recommended_path),
+        "operator_checklist": CONSOLE_DETECTION_CHECKLIST,
+        "permission_guidance": PERMISSION_GUIDANCE,
         "safe_next_action": safe_next_action,
         "safe_show_commands": list(SAFE_SHOW_COMMANDS),
     }
@@ -200,6 +296,9 @@ class CiscoConsoleAdapter:
                 "configured_port": self.config.port,
                 "baud": self.config.baud,
                 "timeout_seconds": self.config.timeout_seconds,
+                "prompt_settle_seconds": self.config.prompt_settle_seconds,
+                "prompt_read_window_seconds": self.config.prompt_read_window_seconds,
+                "prompt_max_bytes": self.config.prompt_max_bytes,
                 **safety.as_flags(),
             },
             discovery=discovery,
@@ -279,7 +378,12 @@ class CiscoConsoleAdapter:
         try:
             with connection:
                 connection.write(b"\n")
-                prompt_text = _read_console(connection)
+                prompt_text = _read_console(
+                    connection,
+                    settle_seconds=self.config.prompt_settle_seconds,
+                    read_window_seconds=self.config.prompt_read_window_seconds,
+                    max_bytes=self.config.prompt_max_bytes,
+                )
                 prompt_state = _prompt_state(prompt_text)
                 if prompt_state != "exec":
                     return self._record_blocked(
@@ -318,6 +422,106 @@ class CiscoConsoleAdapter:
                 }
             )
 
+    def prompt_readiness(self) -> dict[str, Any]:
+        if self.provider_mode != "local-readonly":
+            return self._record_prompt_readiness(
+                "blocked",
+                "Set PROVIDER_MODE=local-readonly before running console prompt readiness checks.",
+                blockers=[
+                    "Set PROVIDER_MODE=local-readonly before running console prompt readiness checks."
+                ],
+            )
+
+        safety = current_lab_safety()
+        if not safety.readonly_allowed:
+            return self._record_prompt_readiness(
+                "blocked",
+                "Set LAB_CLOSED_LOOP_ACK=YES and LAB_READONLY_ACK=YES before real lab prompt checks.",
+                blockers=[
+                    "Set LAB_CLOSED_LOOP_ACK=YES and LAB_READONLY_ACK=YES before real lab prompt checks."
+                ],
+                safety=safety.as_flags(),
+            )
+
+        discovery = discover_cisco_console(self.config, self.paths)
+        port = discovery.get("effective_path")
+        if discovery["status"] != "ready" or not isinstance(port, str):
+            return self._record_prompt_readiness(
+                "blocked",
+                "Console prompt readiness requires one selected readable and writable console path.",
+                blockers=[
+                    "Console prompt readiness requires one selected readable and writable console path."
+                ],
+                discovery=discovery,
+            )
+
+        try:
+            import serial  # type: ignore[import-untyped]
+        except ImportError:
+            return self._record_prompt_readiness(
+                "blocked",
+                "pyserial is not installed; install backend requirements before prompt readiness.",
+                blockers=[
+                    "pyserial is not installed; install backend requirements before prompt readiness."
+                ],
+                discovery=discovery,
+            )
+
+        try:
+            connection = serial.Serial(
+                port=port,
+                baudrate=self.config.baud,
+                timeout=self.config.timeout_seconds,
+                write_timeout=self.config.timeout_seconds,
+            )
+        except Exception as exc:  # pragma: no cover - hardware dependent
+            return self._record_prompt_readiness(
+                "failed",
+                f"Could not open selected console path: {exc}",
+                blockers=["Serial console open failed."],
+                discovery=discovery,
+            )
+
+        try:
+            with connection:
+                connection.write(b"\n")
+                prompt_text = _read_console(
+                    connection,
+                    settle_seconds=self.config.prompt_settle_seconds,
+                    read_window_seconds=self.config.prompt_read_window_seconds,
+                    max_bytes=self.config.prompt_max_bytes,
+                )
+                prompt_state = _prompt_state(prompt_text)
+                prompt_sample = _prompt_sample_summary(prompt_text)
+                no_prompt_text = prompt_state == "unknown" and not prompt_sample["captured"]
+                return self._record_prompt_readiness(
+                    _prompt_readiness_status(prompt_state),
+                    _prompt_readiness_message(prompt_state, prompt_sample),
+                    port=port,
+                    baud=self.config.baud,
+                    read_timing={
+                        "settle_seconds": self.config.prompt_settle_seconds,
+                        "read_window_seconds": self.config.prompt_read_window_seconds,
+                        "max_bytes": self.config.prompt_max_bytes,
+                    },
+                    prompt_state=prompt_state,
+                    prompt_sample=prompt_sample,
+                    blockers=(
+                        []
+                        if prompt_state == "exec"
+                        else [_prompt_blocker_message(prompt_state, prompt_sample)]
+                    ),
+                    troubleshooting_checklist=(
+                        NO_PROMPT_TEXT_CAPTURED_CHECKLIST if no_prompt_text else []
+                    ),
+                )
+        except Exception as exc:  # pragma: no cover - hardware dependent
+            return self._record_prompt_readiness(
+                "failed",
+                f"Cisco console prompt readiness check failed: {exc}",
+                blockers=["Serial console prompt readiness check failed."],
+            )
+
     def _record_blocked(self, message: str, **extra: Any) -> dict[str, Any]:
         return self._record_result(
             {
@@ -332,6 +536,40 @@ class CiscoConsoleAdapter:
 
     def _record_result(self, result: dict[str, Any]) -> dict[str, Any]:
         return record_probe_result(PROVIDER_ID, redact_sensitive(result, [self.config.port]))
+
+    def _record_prompt_readiness(
+        self,
+        status: str,
+        message: str,
+        *,
+        blockers: list[str],
+        warnings: list[str] | None = None,
+        prompt_state: str = "unknown",
+        **extra: Any,
+    ) -> dict[str, Any]:
+        result = {
+            "provider_id": PROVIDER_ID,
+            "action": "prompt-readiness",
+            "status": status,
+            "message": message,
+            "prompt_state": prompt_state,
+            "prompt_ready": prompt_state == "exec",
+            "safe_show_commands_allowed": False,
+            "future_show_command_check_eligible": prompt_state == "exec",
+            "prompt_classification": _prompt_classification(
+                prompt_state,
+                extra.get("prompt_sample"),
+            ),
+            "setup_wizard_detected": prompt_state == "setup-wizard",
+            "config_mode_detected": prompt_state == "config-mode",
+            "login_required": prompt_state == "login-required",
+            "not_attempted": PROMPT_READINESS_NOT_ATTEMPTED,
+            "next_safe_action": _prompt_next_safe_action(prompt_state, extra.get("prompt_sample")),
+            "warnings": warnings or [],
+            "blockers": blockers,
+            **extra,
+        }
+        return self._record_result(result)
 
 
 def _discover_candidates(paths: ConsoleDiscoveryPaths) -> list[ConsoleCandidate]:
@@ -462,11 +700,25 @@ def _dangerous_actions() -> list[ProviderAction]:
     ]
 
 
-def _read_console(connection: Any) -> str:
-    time.sleep(0.2)
-    chunks = [connection.read(4096)]
-    while getattr(connection, "in_waiting", 0):
-        chunks.append(connection.read(4096))
+def _read_console(
+    connection: Any,
+    *,
+    settle_seconds: float = 0.2,
+    read_window_seconds: float = 0.0,
+    max_bytes: int = 4096,
+) -> str:
+    time.sleep(max(settle_seconds, 0.0))
+    byte_limit = max(max_bytes, 1)
+    chunk_size = min(4096, byte_limit)
+    chunks = [connection.read(chunk_size)]
+    captured = sum(len(chunk) for chunk in chunks)
+    deadline = time.monotonic() + max(read_window_seconds, 0.0)
+    while getattr(connection, "in_waiting", 0) and captured < byte_limit and time.monotonic() <= deadline:
+        chunk = connection.read(min(4096, byte_limit - captured))
+        if not chunk:
+            break
+        chunks.append(chunk)
+        captured += len(chunk)
     return b"".join(chunks).decode("utf-8", errors="replace")
 
 
@@ -493,7 +745,16 @@ def _prompt_state(prompt_text: str) -> str:
     return "unknown"
 
 
-def _prompt_blocker_message(prompt_state: str) -> str:
+def _prompt_blocker_message(
+    prompt_state: str,
+    prompt_sample: dict[str, Any] | None = None,
+) -> str:
+    if (
+        prompt_state == "unknown"
+        and isinstance(prompt_sample, dict)
+        and not bool(prompt_sample.get("captured"))
+    ):
+        return NO_PROMPT_TEXT_CAPTURED_MESSAGE
     if prompt_state == "setup-wizard":
         return "Console is at an initial setup wizard prompt; no answers or commands were sent."
     if prompt_state == "login-required":
@@ -501,6 +762,62 @@ def _prompt_blocker_message(prompt_state: str) -> str:
     if prompt_state == "config-mode":
         return "Console appears to be in configuration mode; no commands were sent."
     return "Console prompt could not be identified; no show commands were sent."
+
+
+def _prompt_readiness_status(prompt_state: str) -> str:
+    return "ok" if prompt_state == "exec" else "blocked"
+
+
+def _prompt_readiness_message(prompt_state: str, prompt_sample: dict[str, Any]) -> str:
+    if prompt_state == "exec":
+        return "Prompt is ready for future safe show-command checks."
+    return _prompt_blocker_message(prompt_state, prompt_sample)
+
+
+def _prompt_classification(
+    prompt_state: str,
+    prompt_sample: object,
+) -> dict[str, Any]:
+    guidance = PROMPT_CLASSIFICATION_GUIDANCE.get(
+        prompt_state,
+        PROMPT_CLASSIFICATION_GUIDANCE["unknown"],
+    )
+    no_output = (
+        prompt_state == "unknown"
+        and isinstance(prompt_sample, dict)
+        and not bool(prompt_sample.get("captured"))
+    )
+    summary = (
+        "Console port opened, but no prompt text was captured."
+        if no_output
+        else guidance["summary"]
+    )
+    return {
+        "state": prompt_state,
+        "label": guidance["label"],
+        "summary": summary,
+        "no_output_captured": no_output,
+        "raw_text_redacted": True,
+        "safe_show_commands_allowed": False,
+        "next_safe_action": _prompt_next_safe_action(prompt_state, prompt_sample),
+    }
+
+
+def _prompt_next_safe_action(prompt_state: str, prompt_sample: object) -> str:
+    if (
+        prompt_state == "unknown"
+        and isinstance(prompt_sample, dict)
+        and not bool(prompt_sample.get("captured"))
+    ):
+        return (
+            "Verify adapter ownership, cable placement, power state, and baud 9600/115200 "
+            "before running another newline-only readiness check."
+        )
+    guidance = PROMPT_CLASSIFICATION_GUIDANCE.get(
+        prompt_state,
+        PROMPT_CLASSIFICATION_GUIDANCE["unknown"],
+    )
+    return str(guidance["next_safe_action"])
 
 
 def _prompt_sample_summary(prompt_text: str) -> dict[str, Any]:
@@ -542,3 +859,14 @@ def _command_summary(command: str, output: str) -> dict[str, Any]:
         "output_bytes": len(output.encode("utf-8", errors="replace")),
         "raw_output_redacted": True,
     }
+
+
+def _operator_message(status: str, recommended_path: str | None) -> str:
+    if status == "missing-console":
+        return NO_CONSOLE_ADAPTER_MESSAGE
+    if recommended_path:
+        return (
+            f"Preferred console path: {recommended_path}. Use this stable path for "
+            "CISCO_CONSOLE_PORT instead of /dev/ttyUSB0 when possible."
+        )
+    return "Review Cisco serial console discovery before running prompt readiness."

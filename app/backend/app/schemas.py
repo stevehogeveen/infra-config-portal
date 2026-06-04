@@ -642,6 +642,100 @@ class ProviderStatusRead(BaseModel):
     last_probe_time: str | None = None
 
 
+class CiscoSetupReadinessRead(BaseModel):
+    provider_id: str
+    phase: str
+    planned_management_ip: str | None = None
+    management_configured: bool
+    state_boundaries: dict[str, Any] = Field(default_factory=dict)
+    console: dict[str, Any]
+    bootstrap_preview: dict[str, Any]
+    ssh_scp_readiness: dict[str, Any]
+    ansible: dict[str, Any]
+    backup_report: dict[str, Any]
+    setup_wizard_plan: dict[str, Any] | None = None
+    blockers: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    disabled_actions: list[str] = Field(default_factory=list)
+    next_safe_action: str
+
+
+class CiscoSetupWizardPlanRead(BaseModel):
+    provider_id: str
+    status: str
+    apply_enabled: bool
+    planned_management_ip: str | None = None
+    detected_prompt_state: str
+    setup_wizard_detected: bool
+    message: str
+    why_blocked: list[str] = Field(default_factory=list)
+    future_guarded_plan_preview: list[str] = Field(default_factory=list)
+    not_attempted: list[str] = Field(default_factory=list)
+    disabled_actions: list[str] = Field(default_factory=list)
+    blockers: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    next_safe_action: str
+
+
+class CiscoBootstrapRequirementsRead(BaseModel):
+    provider_id: str
+    status: str
+    apply_enabled: bool
+    management_configured: bool
+    requirements: dict[str, Any]
+    blockers: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    disabled_actions: list[str] = Field(default_factory=list)
+    not_attempted: list[str] = Field(default_factory=list)
+    next_safe_action: str
+
+
+class CiscoBootstrapRequirementsUpdate(BaseModel):
+    planned_management_ip: str
+    subnet_prefix: str
+    gateway: str
+    management_vlan: str | None = None
+    management_interface: str | None = None
+    management_strategy: str
+    hostname: str
+    domain_name: str
+    dns_servers: list[str] = Field(default_factory=list)
+    local_admin_username_configured: bool = False
+    local_admin_username_reference: str | None = None
+    operator_notes: str | None = None
+
+
+class CiscoConsoleBootstrapPlanRead(BaseModel):
+    provider_id: str
+    status: str
+    target: dict[str, Any]
+    apply_enabled: bool
+    execution_supported: bool
+    serial_writes_attempted: bool
+    flow: str
+    prompt_state: str
+    prompt_detail: str
+    prompt_checked_at: str | None = None
+    summary: list[str] = Field(default_factory=list)
+    intended_steps: list[str] = Field(default_factory=list)
+    command_preview: list[str] = Field(default_factory=list)
+    redacted_command_summary: list[str] = Field(default_factory=list)
+    commands_redacted: bool
+    blocker_summary: dict[str, Any] = Field(default_factory=dict)
+    artifact_preview: dict[str, Any] = Field(default_factory=dict)
+    destructive_actions_disabled: list[str] = Field(default_factory=list)
+    blockers: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    confirmation_phrase: str
+    next_safe_action: str
+
+
+class CiscoConsoleBootstrapApplyCreate(BaseModel):
+    confirmation_phrase: str
+    requested_actions: list[str] = Field(default_factory=list)
+    destructive_action_requested: bool = False
+
+
 class ProviderProbeResultRead(BaseModel):
     provider_id: str
     status: str
