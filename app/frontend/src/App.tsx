@@ -2470,6 +2470,10 @@ function IloCurrentStatePanel({ summary }: { summary: IloReadinessSummary }) {
   const { current_state } = summary;
   const checks = endpointChecks(current_state.endpoint_detection);
   const diagnosticHints = endpointDiagnosticHints(current_state.endpoint_detection);
+  const endpointDetection = objectValue(current_state.endpoint_detection);
+  const inventoryCollectionStatus = asString(endpointDetection.inventory_collection_status);
+  const inventoryCollectionClassification = asString(endpointDetection.inventory_collection_classification);
+  const isInventoryUnauthorized = current_state.endpoint_classification === "redfish_inventory_auth_failed";
 
   return (
     <section className="ilo-summary-section">
@@ -2497,8 +2501,20 @@ function IloCurrentStatePanel({ summary }: { summary: IloReadinessSummary }) {
         <ProviderFact label="Redfish Status" value={labelize(current_state.redfish_root_status)} />
         <ProviderFact label="Legacy Status" value={labelize(current_state.legacy_endpoint_status)} />
         <ProviderFact label="Web Status" value={labelize(current_state.web_endpoint_status)} />
+        {isInventoryUnauthorized && (
+          <ProviderFact
+            label="Inventory Collections"
+            value={labelize(inventoryCollectionStatus || inventoryCollectionClassification || "unauthorized")}
+          />
+        )}
         <ProviderFact label="No Settings Changed" value="Confirmed" />
       </div>
+      {isInventoryUnauthorized && (
+        <div className="provider-callout">
+          <strong>Partial discovery</strong>
+          <p>Redfish root available. Legacy endpoint available. Inventory collections unauthorized.</p>
+        </div>
+      )}
       <p className="provider-redaction-note">{current_state.endpoint_next_safe_action}</p>
       {checks.length > 0 && (
         <table className="provider-candidate-table endpoint-detection-table">
@@ -2948,6 +2964,9 @@ function safeNextAction(provider: ProviderStatus): string {
 }
 
 function endpointClassificationSummary(classification: string): string {
+  if (classification === "redfish_inventory_auth_failed") {
+    return "Partial discovery: Redfish root is available, but inventory collections are unauthorized.";
+  }
   if (classification === "web_available_redfish_not_found") {
     return "Web UI responded, but Redfish root did not. Treat the web response as identity evidence, not Redfish readiness.";
   }

@@ -234,6 +234,77 @@ def test_ilo_readiness_summary_normalizes_readonly_state(client: TestClient) -> 
     clear_probe_results()
 
 
+def test_ilo_readiness_summary_reports_inventory_collection_auth_failure(
+    client: TestClient,
+) -> None:
+    clear_probe_results()
+    record_probe_result(
+        "ilo-redfish",
+        {
+            "provider_id": "ilo-redfish",
+            "status": "failed",
+            "service_root": {"@odata.id": "/redfish/v1/"},
+            "managers": [],
+            "systems": [],
+            "chassis": [],
+            "firmware": [],
+            "endpoint_detection": {
+                "classification": "redfish_inventory_auth_failed",
+                "message": "Redfish root is available, but inventory collections are unauthorized.",
+                "checks": [
+                    {
+                        "path": "/redfish/v1/",
+                        "status_code": 200,
+                        "content_type": "application/json",
+                        "classification": "redfish_root_available",
+                    },
+                    {
+                        "path": "/xmldata?item=All",
+                        "status_code": 200,
+                        "content_type": "text/xml",
+                        "classification": "legacy_available",
+                    },
+                ],
+                "redfish_status": "available",
+                "legacy_status": "available",
+                "web_status": "available",
+                "inventory_collection_status": "unauthorized",
+                "inventory_collection_classification": "redfish_collection_unauthorized",
+                "auth_failure_classification": "basic_auth_rejected_or_insufficient_privilege",
+                "auth_recovery_hint": "session_auth_may_be_required",
+                "next_safe_action": (
+                    "Review iLO account permissions or Redfish authentication method. "
+                    "No settings were changed."
+                ),
+            },
+            "warnings": [],
+            "blockers": [
+                "Review iLO account permissions or Redfish authentication method. No settings were changed."
+            ],
+        },
+    )
+
+    response = client.get("/api/v1/providers/ilo-redfish/readiness-summary")
+
+    assert response.status_code == 200
+    payload = response.json()
+    current_state = payload["current_state"]
+    detection = current_state["endpoint_detection"]
+    assert current_state["endpoint_classification"] == "redfish_inventory_auth_failed"
+    assert current_state["redfish_root_status"] == "available"
+    assert current_state["legacy_endpoint_status"] == "available"
+    assert current_state["endpoint_next_safe_action"] == (
+        "Review iLO account permissions or Redfish authentication method. No settings were changed."
+    )
+    assert current_state["redfish_endpoint_detected"] == "redfish_inventory_auth_failed"
+    assert detection["inventory_collection_status"] == "unauthorized"
+    assert detection["inventory_collection_classification"] == "redfish_collection_unauthorized"
+    assert detection["auth_failure_classification"] == "basic_auth_rejected_or_insufficient_privilege"
+    assert detection["auth_recovery_hint"] == "session_auth_may_be_required"
+    assert current_state["endpoint_next_safe_action"] in payload["blockers"]
+    clear_probe_results()
+
+
 def test_ilo_readiness_summary_reports_web_available_redfish_not_found(
     client: TestClient,
 ) -> None:

@@ -23,6 +23,9 @@ ENDPOINT_DETECTION_PATHS = (
 REDFISH_ROOT_PATHS = {"/redfish/v1/", "/redfish/v1"}
 LEGACY_XML_PATH = "/xmldata?item=All"
 WEB_ROOT_PATH = "/"
+INVENTORY_COLLECTION_AUTH_NEXT_ACTION = (
+    "Review iLO account permissions or Redfish authentication method. No settings were changed."
+)
 
 
 @dataclass(frozen=True)
@@ -194,6 +197,10 @@ class IloRedfishAdapter:
                 "redfish_status": "not_checked",
                 "legacy_status": "not_checked",
                 "web_status": "not_checked",
+                "inventory_collection_status": "not_checked",
+                "inventory_collection_classification": "not_checked",
+                "auth_failure_classification": "not_checked",
+                "auth_recovery_hint": "not_checked",
                 "next_safe_action": "Run explicit GET-only endpoint detection.",
             },
             "warnings": [],
@@ -250,17 +257,25 @@ class IloRedfishAdapter:
                 result["thermal"] = _linked_summaries(client, base_url, chassis, "Thermal", requests)
                 result["firmware"] = _firmware_summaries(client, base_url, root, requests)
         except httpx.HTTPStatusError as exc:
-            detection = result.get("endpoint_detection")
-            endpoint_message = (
+            detection = _classify_inventory_auth_failure(
+                result.get("endpoint_detection"),
+                exc.response.status_code,
+            )
+            endpoint_message = str(
                 detection.get("message")
-                if isinstance(detection, dict) and detection.get("message")
-                else f"Redfish GET returned HTTP {exc.response.status_code}."
+                or f"Redfish GET returned HTTP {exc.response.status_code}."
             )
             result.update(
                 {
                     "status": "failed",
+                    "endpoint_detection": detection,
                     "message": endpoint_message,
-                    "blockers": [_http_status_next_safe_action(exc.response.status_code)],
+                    "blockers": [
+                        str(
+                            detection.get("next_safe_action")
+                            or _http_status_next_safe_action(exc.response.status_code)
+                        )
+                    ],
                 }
             )
         except httpx.HTTPError as exc:
@@ -277,6 +292,10 @@ class IloRedfishAdapter:
                         "redfish_status": classification,
                         "legacy_status": "not_checked",
                         "web_status": "not_checked",
+                        "inventory_collection_status": "not_checked",
+                        "inventory_collection_classification": "not_checked",
+                        "auth_failure_classification": "not_checked",
+                        "auth_recovery_hint": "not_checked",
                         "next_safe_action": _endpoint_next_safe_action(classification),
                     },
                     "blockers": [_endpoint_next_safe_action(classification)],
@@ -332,6 +351,10 @@ def _detect_endpoints(client: httpx.Client, base_url: str) -> dict[str, Any]:
         "redfish_status": _endpoint_status(checks, REDFISH_ROOT_PATHS),
         "legacy_status": _endpoint_status(checks, {LEGACY_XML_PATH}),
         "web_status": _endpoint_status(checks, {WEB_ROOT_PATH}),
+        "inventory_collection_status": "not_checked",
+        "inventory_collection_classification": "not_checked",
+        "auth_failure_classification": "not_checked",
+        "auth_recovery_hint": "not_checked",
         "next_safe_action": _endpoint_next_safe_action(classification),
         "diagnostic_hints": _endpoint_diagnostic_hints(classification),
     }
@@ -341,7 +364,7 @@ def _detect_endpoints(client: httpx.Client, base_url: str) -> dict[str, Any]:
             check
             for check in checks
             if check["path"] in REDFISH_ROOT_PATHS
-            and check.get("classification") == "redfish_available"
+            and check.get("classification") == "redfish_root_available"
         ),
         None,
     )
@@ -379,12 +402,51 @@ def _endpoint_check(client: httpx.Client, base_url: str, path: str) -> dict[str,
     return check
 
 
+def _classify_inventory_auth_failure(
+    detection_value: Any,
+    status_code: int,
+) -> dict[str, Any]:
+    if not isinstance(detection_value, dict):
+        detection: dict[str, Any] = {}
+    else:
+        detection = dict(detection_value)
+
+    if status_code not in {401, 403}:
+        detection.setdefault("classification", "redfish_http_error")
+        detection.setdefault("message", _endpoint_message(str(detection["classification"])))
+        detection.setdefault("next_safe_action", _http_status_next_safe_action(status_code))
+        detection.setdefault(
+            "diagnostic_hints",
+            _endpoint_diagnostic_hints(str(detection["classification"])),
+        )
+        return detection
+
+    detection.update(
+        {
+            "classification": "redfish_inventory_auth_failed",
+            "message": (
+                "Redfish root is available, but inventory collections returned "
+                f"HTTP {status_code}. Inventory discovery cannot continue with the current "
+                "account or authentication method."
+            ),
+            "redfish_status": detection.get("redfish_status") or "available",
+            "inventory_collection_status": "unauthorized",
+            "inventory_collection_classification": "redfish_collection_unauthorized",
+            "auth_failure_classification": "basic_auth_rejected_or_insufficient_privilege",
+            "auth_recovery_hint": "session_auth_may_be_required",
+            "next_safe_action": INVENTORY_COLLECTION_AUTH_NEXT_ACTION,
+            "diagnostic_hints": _endpoint_diagnostic_hints("redfish_inventory_auth_failed"),
+        }
+    )
+    return detection
+
+
 def _classify_endpoint_response(path: str, status_code: int) -> str:
     if status_code in {401, 403}:
         return "auth_failed"
     if path in REDFISH_ROOT_PATHS:
         if status_code == 200:
-            return "redfish_available"
+            return "redfish_root_available"
         if status_code == 404:
             return "redfish_not_found"
         return "redfish_http_error"
@@ -408,7 +470,7 @@ def _classify_endpoint_checks(checks: list[dict[str, Any]]) -> str:
         return "auth_failed"
     if any(
         check.get("path") in REDFISH_ROOT_PATHS
-        and check.get("classification") == "redfish_available"
+        and check.get("classification") == "redfish_root_available"
         for check in checks
     ):
         return "redfish_available"
@@ -461,7 +523,8 @@ def _endpoint_status(checks: list[dict[str, Any]], paths: set[str]) -> str:
     if not matching:
         return "not_checked"
     if any(
-        check.get("classification") in {"redfish_available", "legacy_available", "web_available"}
+        check.get("classification")
+        in {"redfish_available", "redfish_root_available", "legacy_available", "web_available"}
         for check in matching
     ):
         return "available"
@@ -481,6 +544,15 @@ def _endpoint_status(checks: list[dict[str, Any]], paths: set[str]) -> str:
 def _endpoint_message(classification: str) -> str:
     messages = {
         "redfish_available": "Redfish root is available. GET-only inventory discovery can continue.",
+        "redfish_root_available": "Redfish root is available.",
+        "redfish_inventory_auth_failed": (
+            "Redfish root is available, but inventory collections are unauthorized."
+        ),
+        "redfish_collection_unauthorized": "Redfish inventory collection GET returned unauthorized.",
+        "basic_auth_rejected_or_insufficient_privilege": (
+            "Basic authentication was rejected or lacks sufficient inventory privilege."
+        ),
+        "session_auth_may_be_required": "Session authentication may be required for inventory collection.",
         "redfish_http_error": "Redfish root returned an unexpected HTTP error.",
         "legacy_available": "Legacy iLO endpoint is available.",
         "legacy_available_redfish_not_found": "Legacy iLO endpoint is available, but Redfish root was not found.",
@@ -503,6 +575,11 @@ def _endpoint_message(classification: str) -> str:
 def _endpoint_next_safe_action(classification: str) -> str:
     actions = {
         "redfish_available": "Continue with GET-only Redfish inventory discovery. No settings were changed.",
+        "redfish_root_available": "Continue only after inventory collection authorization is confirmed.",
+        "redfish_inventory_auth_failed": INVENTORY_COLLECTION_AUTH_NEXT_ACTION,
+        "redfish_collection_unauthorized": INVENTORY_COLLECTION_AUTH_NEXT_ACTION,
+        "basic_auth_rejected_or_insufficient_privilege": INVENTORY_COLLECTION_AUTH_NEXT_ACTION,
+        "session_auth_may_be_required": INVENTORY_COLLECTION_AUTH_NEXT_ACTION,
         "redfish_http_error": "Review iLO Redfish support and endpoint status before retrying GET-only detection.",
         "legacy_available": "Use a dedicated read-only legacy iLO discovery path if Redfish is unavailable.",
         "legacy_available_redfish_not_found": "Use legacy read-only discovery context or verify whether this iLO supports Redfish.",
@@ -523,6 +600,11 @@ def _endpoint_next_safe_action(classification: str) -> str:
 
 def _endpoint_diagnostic_hints(classification: str) -> list[str]:
     hints = {
+        "redfish_inventory_auth_failed": [
+            "Redfish root responded, so endpoint detection is only partial.",
+            "Inventory collections require additional permission or a different Redfish authentication method.",
+            "Do not continue inventory discovery until authorization is resolved.",
+        ],
         "web_available_redfish_not_found": [
             "Wrong IP: the responding web server may be a server OS, proxy, or another device.",
             "Legacy iLO: older generations may not expose Redfish at /redfish/v1.",

@@ -375,6 +375,10 @@ class IloEndpointDetectionRead(BaseModel):
     redfish_status: str = "not_checked"
     legacy_status: str = "not_checked"
     web_status: str = "not_checked"
+    inventory_collection_status: str = "not_checked"
+    inventory_collection_classification: str = "not_checked"
+    auth_failure_classification: str = "not_checked"
+    auth_recovery_hint: str = "not_checked"
     next_safe_action: str = "Run explicit GET-only endpoint detection from Provider Status."
     diagnostic_hints: list[str] = Field(default_factory=list)
     checks: list[IloEndpointCheckRead] = Field(default_factory=list)

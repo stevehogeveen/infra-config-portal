@@ -246,6 +246,10 @@ export type IloEndpointDetection = {
   redfish_status: string;
   legacy_status: string;
   web_status: string;
+  inventory_collection_status: string;
+  inventory_collection_classification: string;
+  auth_failure_classification: string;
+  auth_recovery_hint: string;
   next_safe_action: string;
   diagnostic_hints: string[];
   checks: IloEndpointCheck[];

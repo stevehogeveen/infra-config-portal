@@ -677,6 +677,57 @@ def test_ilo_probe_classifies_redfish_auth_failed(monkeypatch) -> None:
     assert "super-secret-password" not in json.dumps(result)
 
 
+def test_ilo_probe_classifies_inventory_auth_after_root_available(monkeypatch) -> None:
+    _allow_readonly_ilo_lab(monkeypatch)
+    _install_fake_httpx_client(
+        monkeypatch,
+        {
+            "/redfish/v1/": (
+                200,
+                "application/json",
+                {
+                    "@odata.id": "/redfish/v1/",
+                    "Managers": {"@odata.id": "/redfish/v1/Managers/"},
+                },
+            ),
+            "/redfish/v1": (200, "application/json", {"@odata.id": "/redfish/v1/"}),
+            "/": (200, "text/html"),
+            "/xmldata?item=All": (200, "text/xml"),
+            "/redfish/v1/Managers/": (401, "application/json"),
+        },
+    )
+    adapter = IloRedfishAdapter(
+        provider_mode="local-readonly",
+        config=IloRedfishConfig(
+            host="192.0.2.202",
+            username="local-admin",
+            password="super-secret-password",
+            verify_tls=False,
+            timeout_seconds=1.0,
+        ),
+    )
+
+    result = adapter.probe()
+
+    assert result["status"] == "failed"
+    detection = result["endpoint_detection"]
+    assert detection["classification"] == "redfish_inventory_auth_failed"
+    assert detection["redfish_status"] == "available"
+    assert detection["legacy_status"] == "available"
+    assert detection["web_status"] == "available"
+    assert detection["checks"][0]["classification"] == "redfish_root_available"
+    assert detection["inventory_collection_status"] == "unauthorized"
+    assert detection["inventory_collection_classification"] == "redfish_collection_unauthorized"
+    assert detection["auth_failure_classification"] == "basic_auth_rejected_or_insufficient_privilege"
+    assert detection["auth_recovery_hint"] == "session_auth_may_be_required"
+    assert detection["next_safe_action"] == (
+        "Review iLO account permissions or Redfish authentication method. No settings were changed."
+    )
+    assert "inventory discovery cannot continue" in result["message"].lower()
+    assert "Inventory discovery can continue" not in result["message"]
+    assert all("super-secret-password" not in json.dumps(check) for check in detection["checks"])
+
+
 def test_ilo_redacts_secrets() -> None:
     secret = "super-secret-password"
     host = "ilo-lab-private.example.test"
@@ -847,9 +898,13 @@ def _allow_readonly_ilo_lab(monkeypatch) -> None:
 
 def _install_fake_httpx_client(
     monkeypatch,
-    responses: dict[str, tuple[int, str]],
+    responses: dict[
+        str,
+        tuple[int, str] | tuple[int, str, dict[str, object] | bytes],
+    ],
 ) -> None:
     import httpx
+    import json as json_module
 
     class FakeClient:
         def __init__(self, **_kwargs) -> None:
@@ -863,8 +918,17 @@ def _install_fake_httpx_client(
 
         def get(self, url: str) -> httpx.Response:
             path = "/" + url.split("/", 3)[3] if "/" in url.split("://", 1)[-1] else "/"
-            status_code, content_type = responses.get(path, (404, "text/plain"))
-            content = b'{"@odata.id": "/redfish/v1/"}' if content_type == "application/json" else b""
+            response_spec = responses.get(path, (404, "text/plain"))
+            status_code, content_type = response_spec[:2]
+            if len(response_spec) == 3:
+                payload = response_spec[2]
+                content = (
+                    payload
+                    if isinstance(payload, bytes)
+                    else json_module.dumps(payload).encode("utf-8")
+                )
+            else:
+                content = b'{"@odata.id": "/redfish/v1/"}' if content_type == "application/json" else b""
             request = httpx.Request("GET", url)
             return httpx.Response(
                 status_code,

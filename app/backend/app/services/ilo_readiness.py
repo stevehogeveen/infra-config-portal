@@ -791,6 +791,11 @@ def _redacted_endpoint_detection(detection: dict[str, Any]) -> dict[str, Any]:
         "redfish_status": detection.get("redfish_status") or "not_checked",
         "legacy_status": detection.get("legacy_status") or "not_checked",
         "web_status": detection.get("web_status") or "not_checked",
+        "inventory_collection_status": detection.get("inventory_collection_status") or "not_checked",
+        "inventory_collection_classification": detection.get("inventory_collection_classification")
+        or "not_checked",
+        "auth_failure_classification": detection.get("auth_failure_classification") or "not_checked",
+        "auth_recovery_hint": detection.get("auth_recovery_hint") or "not_checked",
         "next_safe_action": detection.get("next_safe_action")
         or _endpoint_next_safe_action(str(detection.get("classification") or "not_checked")),
         "diagnostic_hints": [
@@ -833,9 +838,18 @@ def _legacy_endpoint_message(classification: str) -> str:
     return _endpoint_next_safe_action(classification)
 
 
+def _inventory_auth_next_safe_action() -> str:
+    return "Review iLO account permissions or Redfish authentication method. No settings were changed."
+
+
 def _endpoint_next_safe_action(classification: str) -> str:
     actions = {
         "redfish_available": "Continue with GET-only Redfish inventory discovery. No settings were changed.",
+        "redfish_root_available": "Continue only after inventory collection authorization is confirmed.",
+        "redfish_inventory_auth_failed": _inventory_auth_next_safe_action(),
+        "redfish_collection_unauthorized": _inventory_auth_next_safe_action(),
+        "basic_auth_rejected_or_insufficient_privilege": _inventory_auth_next_safe_action(),
+        "session_auth_may_be_required": _inventory_auth_next_safe_action(),
         "redfish_http_error": "Review iLO Redfish support and endpoint status before retrying GET-only detection.",
         "legacy_available": "Use a dedicated read-only legacy iLO discovery path if Redfish is unavailable.",
         "legacy_available_redfish_not_found": "Use legacy read-only discovery context or verify whether this iLO supports Redfish.",
@@ -856,6 +870,11 @@ def _endpoint_next_safe_action(classification: str) -> str:
 
 def _endpoint_diagnostic_hints(classification: str) -> list[str]:
     hints = {
+        "redfish_inventory_auth_failed": [
+            "Redfish root responded, so endpoint detection is only partial.",
+            "Inventory collections require additional permission or a different Redfish authentication method.",
+            "Do not continue inventory discovery until authorization is resolved.",
+        ],
         "web_available_redfish_not_found": [
             "Wrong IP: the responding web server may be a server OS, proxy, or another device.",
             "Legacy iLO: older generations may not expose Redfish at /redfish/v1.",
@@ -885,7 +904,15 @@ def _endpoint_diagnostic_hints(classification: str) -> list[str]:
 
 
 def _endpoint_blockers(classification: str) -> list[str]:
-    if classification in {"auth_failed", "tls_failed", "network_unreachable", "endpoint_not_found_or_wrong_target"}:
+    if classification in {
+        "auth_failed",
+        "redfish_inventory_auth_failed",
+        "redfish_collection_unauthorized",
+        "basic_auth_rejected_or_insufficient_privilege",
+        "tls_failed",
+        "network_unreachable",
+        "endpoint_not_found_or_wrong_target",
+    }:
         return [_endpoint_next_safe_action(classification)]
     return []
 
@@ -893,6 +920,7 @@ def _endpoint_blockers(classification: str) -> list[str]:
 def _endpoint_warnings(classification: str) -> list[str]:
     if classification in {
         "redfish_http_error",
+        "redfish_inventory_auth_failed",
         "legacy_available",
         "legacy_available_redfish_not_found",
         "web_available_redfish_not_found",
@@ -1333,6 +1361,9 @@ def _redfish_endpoint_detected(probe_result: dict[str, Any] | None) -> str:
         return "detected"
     if classification in {
         "auth_failed",
+        "redfish_inventory_auth_failed",
+        "redfish_collection_unauthorized",
+        "basic_auth_rejected_or_insufficient_privilege",
         "tls_failed",
         "network_unreachable",
         "redfish_http_error",
