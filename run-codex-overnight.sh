@@ -46,6 +46,9 @@ git_head_before="$(git log -1 --oneline)"
   echo "- Worktree: $ROOT"
   echo "- Sandbox: $CODEX_SANDBOX_MODE"
   echo "- Approval policy: $CODEX_APPROVAL_POLICY"
+  echo "- Runner command: ./run-codex-overnight.sh"
+  echo "- System prompt: .codex/overnight-system-prompt.md"
+  echo "- Queue: .codex/overnight-queue.md"
   echo "- Log: $log_file"
   echo "- Final response: $final_file"
   echo
@@ -71,6 +74,8 @@ if [[ "${CODEX_OVERNIGHT_SMOKE:-}" == "1" ]]; then
     echo "## Smoke Result"
     echo
     echo "Smoke mode validated files and wrote this summary without invoking Codex."
+    echo
+    echo "This was a dry smoke invocation. No long overnight run was started."
     echo
     echo "## Git After"
     echo
@@ -114,6 +119,8 @@ set -e
   echo "- Review this summary."
   echo "- Review $final_file."
   echo "- Review $log_file if Codex stopped, failed, or left changes uncommitted."
+  echo "- Confirm whether each clean slice was tested and committed separately."
+  echo "- Confirm real hardware write/destructive actions stayed blocked."
   echo "- Run `git status --short --branch` before continuing manual work."
   echo
   echo "- Finished: $(date -Is)"

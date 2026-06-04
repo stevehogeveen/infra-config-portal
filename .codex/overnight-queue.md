@@ -5,8 +5,9 @@
 - Current local branch observed during setup: `work/ilo-flow`.
 - User handoff said the iLO branch was clean and committed at `4ba19ba`,
   `Improve iLO GET-only endpoint detection`.
-- Setup inspection found the worktree clean at `f618bd4`,
-  `Clarify iLO web endpoint detection guidance`.
+- Setup inspection later found the worktree clean at `f618bd4`,
+  `Clarify iLO web endpoint detection guidance`, then committed the first
+  overnight framework at `a7f8b06`, `Add overnight Codex automation`.
 - `ILO_TEST_HOST=192.168.1.202` is configured locally in ignored
   `.env.local.real-lab`; do not print or commit that file.
 - Latest read-only endpoint classification was
@@ -63,15 +64,45 @@
    - Verify user-facing readiness text stays read-only and does not imply
      apply/write readiness.
 
-5. Re-review iLO safety model.
+5. Improve report preview and Provider Status summary clarity.
+   - Make report previews explain what evidence is current, stale, planned, or
+     unavailable.
+   - Improve empty states for missing logs/artifacts without repeated waiting
+     indicators.
+   - Align wording and layout with the Cisco Provider Status section where
+     appropriate.
+
+6. Improve self-healing hints for local development.
+   - Add or improve hints for stale backend/frontend processes.
+   - Mention alternate local ports such as backend `8002` and frontend `5175`
+     when port conflicts are likely.
+   - Add small helper scripts only if they simplify repeated local validation.
+   - Do not kill unrelated processes; app-owned temporary artifacts may be
+     cleaned when safe.
+
+7. Improve docs for local-readonly iLO smoke.
+   - Document exact safe env gates, alternate ports, expected
+     `web_available_redfish_not_found` evidence, and what not to collect.
+   - Keep usernames/passwords and `.env.local.real-lab` contents out of docs,
+     logs, and commits.
+
+8. Improve backend/frontend type and schema consistency.
+   - Align readiness/detail fields between backend schemas and frontend types.
+   - Add tests for any contract shape that affects Provider Status rendering.
+
+9. Re-review iLO safety model.
    - Search the diff for POST, PUT, PATCH, DELETE, firmware, reboot, reset,
      power, erase, copy, write, apply, and confirmation gate changes.
    - If any unsafe behavior appears, revert only your own unsafe edits and
      write a blocked note.
 
-6. Commit only a clean passing safe slice.
-   - Suggested message: `Clarify iLO web-only readiness guidance`.
+10. Commit each clean passing safe slice separately.
+   - Suggested messages include:
+     - `Clarify iLO web-only readiness guidance`
+     - `Improve iLO provider status summaries`
+     - `Document iLO local-readonly smoke flow`
+     - `Add iLO readiness classification tests`
    - Commit only after all required checks pass.
 
-7. Write the final morning summary under `.codex/runs/` and as the final Codex
+11. Write the final morning summary under `.codex/runs/` and as the final Codex
    response.
