@@ -2,6 +2,11 @@ import type {
   ArtifactRecord,
   AuditEvent,
   Catalog,
+  CiscoBootstrapRequirements,
+  CiscoBootstrapRequirementsUpdate,
+  CiscoConsoleBootstrapPlan,
+  CiscoSetupReadiness,
+  CiscoSetupWizardPlan,
   IloUpgradeReadiness,
   MediaInventory,
   NetAppConsoleReadiness,
@@ -84,6 +89,19 @@ export const api = {
   mediaInventory: () => apiRequest<MediaInventory>("/api/v1/media-inventory"),
   iloUpgradeReadiness: () =>
     apiRequest<IloUpgradeReadiness>("/api/v1/providers/ilo-redfish/upgrade-readiness"),
+  ciscoSetupReadiness: () =>
+    apiRequest<CiscoSetupReadiness>("/api/v1/providers/cisco/setup-readiness"),
+  ciscoSetupWizardPlan: () =>
+    apiRequest<CiscoSetupWizardPlan>("/api/v1/providers/cisco/setup-wizard-plan"),
+  ciscoBootstrapRequirements: () =>
+    apiRequest<CiscoBootstrapRequirements>("/api/v1/providers/cisco/bootstrap-requirements"),
+  saveCiscoBootstrapRequirements: (payload: CiscoBootstrapRequirementsUpdate) =>
+    apiRequest<CiscoBootstrapRequirements>("/api/v1/providers/cisco/bootstrap-requirements", {
+      method: "PUT",
+      body: payload
+    }),
+  ciscoConsoleBootstrapPlan: () =>
+    apiRequest<CiscoConsoleBootstrapPlan>("/api/v1/providers/cisco/console-bootstrap/plan"),
   netappPlanPreview: () =>
     apiRequest<NetAppPlanPreview>("/api/v1/providers/netapp-ontap/plan-preview"),
   netappConsoleReadiness: () =>
@@ -104,6 +122,10 @@ export const api = {
   providerArtifacts: () =>
     apiRequest<NetAppProviderArtifact[]>("/api/v1/providers/artifacts"),
   providers: () => apiRequest<ProviderStatus[]>("/api/v1/providers/status"),
+  ciscoConsolePromptReadiness: () =>
+    apiRequest<ProviderProbeResult>("/api/v1/providers/cisco-console/prompt-readiness", {
+      method: "POST"
+    }),
   probeProvider: (id: string) =>
     apiRequest<ProviderProbeResult>(`/api/v1/providers/${id}/probe`, { method: "POST" })
 };

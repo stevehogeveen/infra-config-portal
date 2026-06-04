@@ -39,6 +39,20 @@ def _optional_env(name: str) -> str | None:
     return value or None
 
 
+def _cisco_target_ip() -> str:
+    value = _optional_env("CISCO_TARGET_IP") or _optional_env("ANSIBLE_CISCO_HOST")
+    if value == "10.10.8.112" or value is None:
+        return "192.168.1.220"
+    return value
+
+
+def _cisco_management_prefix() -> str:
+    value = _optional_env("CISCO_MANAGEMENT_PREFIX")
+    if value is None:
+        return "/24"
+    return "/24" if value == "255.255.255.0" else value
+
+
 def _bool_env(name: str, default: bool) -> bool:
     value = os.getenv(name)
     if value is None:
@@ -99,9 +113,7 @@ class Settings:
     esxi_test_verify_tls: bool = _bool_env("ESXI_TEST_VERIFY_TLS", True)
     esxi_test_timeout_seconds: float = _float_env("ESXI_TEST_TIMEOUT_SECONDS", 3.0)
     esxi_test_ssh_timeout_seconds: float = _float_env("ESXI_TEST_SSH_TIMEOUT_SECONDS", 3.0)
-    cisco_target_ip: str | None = _optional_env("CISCO_TARGET_IP") or _optional_env(
-        "ANSIBLE_CISCO_HOST"
-    )
+    cisco_target_ip: str | None = _cisco_target_ip()
     cisco_test_username: str | None = (
         _optional_env("CISCO_TEST_USERNAME")
         or _optional_env("ANSIBLE_CISCO_USERNAME")
@@ -116,6 +128,14 @@ class Settings:
         "ANSIBLE_CISCO_ENABLE_PASSWORD"
     )
     cisco_mgmt_configured: bool = _bool_env("CISCO_MGMT_CONFIGURED", False)
+    cisco_management_prefix: str | None = _cisco_management_prefix()
+    cisco_management_gateway: str | None = _optional_env("CISCO_MANAGEMENT_GATEWAY")
+    cisco_management_vlan: str | None = _optional_env("CISCO_MANAGEMENT_VLAN")
+    cisco_management_interface: str | None = _optional_env("CISCO_MANAGEMENT_INTERFACE")
+    cisco_management_strategy: str | None = _optional_env("CISCO_MANAGEMENT_STRATEGY")
+    cisco_hostname: str | None = _optional_env("CISCO_HOSTNAME")
+    cisco_domain_name: str | None = _optional_env("CISCO_DOMAIN_NAME")
+    cisco_dns_servers: tuple[str, ...] = tuple(_split_csv(os.getenv("CISCO_DNS_SERVERS", "")))
     ansible_cisco_network_os: str = os.getenv("ANSIBLE_CISCO_NETWORK_OS", "cisco.ios.ios")
     ansible_cisco_connection: str = os.getenv(
         "ANSIBLE_CISCO_CONNECTION",
@@ -125,6 +145,15 @@ class Settings:
     cisco_console_port: str | None = _optional_env("CISCO_CONSOLE_PORT")
     cisco_console_baud: int = _int_env("CISCO_CONSOLE_BAUD", 9600)
     cisco_console_timeout_seconds: float = _float_env("CISCO_CONSOLE_TIMEOUT_SECONDS", 2.0)
+    cisco_console_prompt_settle_seconds: float = _float_env(
+        "CISCO_CONSOLE_PROMPT_SETTLE_SECONDS",
+        0.5,
+    )
+    cisco_console_prompt_read_window_seconds: float = _float_env(
+        "CISCO_CONSOLE_PROMPT_READ_WINDOW_SECONDS",
+        1.0,
+    )
+    cisco_console_prompt_max_bytes: int = _int_env("CISCO_CONSOLE_PROMPT_MAX_BYTES", 8192)
     netapp_configured: bool = _bool_env("NETAPP_CONFIGURED", False)
     netapp_controller_a_sp: str = os.getenv("NETAPP_CONTROLLER_A_SP", "10.10.8.13")
     netapp_controller_b_sp: str = os.getenv("NETAPP_CONTROLLER_B_SP", "10.10.8.14")
@@ -141,6 +170,9 @@ class Settings:
     netapp_current_ontap_version: str | None = _optional_env("NETAPP_CURRENT_ONTAP_VERSION")
     lab_closed_loop_ack: str | None = _optional_env("LAB_CLOSED_LOOP_ACK")
     lab_readonly_ack: str | None = _optional_env("LAB_READONLY_ACK")
+    cisco_console_apply_enabled: bool = _bool_env("CISCO_CONSOLE_APPLY_ENABLED", False)
+    lab_apply_ack: str | None = _optional_env("LAB_APPLY_ACK")
+    lab_target_ack: str | None = _optional_env("LAB_TARGET_ACK")
     lab_destructive_ack: str | None = _optional_env("LAB_DESTRUCTIVE_ACK")
 
 
