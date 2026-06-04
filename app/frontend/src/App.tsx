@@ -29,6 +29,8 @@ import type {
   AuditEvent,
   Catalog,
   CiscoBootstrapRequirements,
+  CiscoBootstrapRequirementsUpdate,
+  CiscoConsoleBootstrapPlan,
   CiscoSetupReadiness,
   CiscoSetupWizardPlan,
   ConsoleCandidate,
@@ -1500,10 +1502,12 @@ function ProviderStatusPage() {
   const [ciscoSetupReadiness, setCiscoSetupReadiness] = useState<CiscoSetupReadiness | null>(null);
   const [ciscoSetupWizardPlan, setCiscoSetupWizardPlan] = useState<CiscoSetupWizardPlan | null>(null);
   const [ciscoBootstrapRequirements, setCiscoBootstrapRequirements] = useState<CiscoBootstrapRequirements | null>(null);
+  const [ciscoConsoleBootstrapPlan, setCiscoConsoleBootstrapPlan] = useState<CiscoConsoleBootstrapPlan | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [busyProvider, setBusyProvider] = useState("");
   const [busyPromptReadiness, setBusyPromptReadiness] = useState(false);
+  const [busyBootstrapRequirements, setBusyBootstrapRequirements] = useState(false);
   const [probeResults, setProbeResults] = useState<Record<string, ProviderProbeResult>>({});
   const [promptReadinessResult, setPromptReadinessResult] = useState<ProviderProbeResult | null>(null);
 
@@ -1511,16 +1515,24 @@ function ProviderStatusPage() {
     setError("");
     setLoading(true);
     try {
-      const [providerStatuses, ciscoReadiness, setupWizardPlan, bootstrapRequirements] = await Promise.all([
+      const [
+        providerStatuses,
+        ciscoReadiness,
+        setupWizardPlan,
+        bootstrapRequirements,
+        consoleBootstrapPlan
+      ] = await Promise.all([
         api.providers(),
         api.ciscoSetupReadiness(),
         api.ciscoSetupWizardPlan(),
-        api.ciscoBootstrapRequirements()
+        api.ciscoBootstrapRequirements(),
+        api.ciscoConsoleBootstrapPlan()
       ]);
       setProviders(providerStatuses);
       setCiscoSetupReadiness(ciscoReadiness);
       setCiscoSetupWizardPlan(setupWizardPlan);
       setCiscoBootstrapRequirements(bootstrapRequirements);
+      setCiscoConsoleBootstrapPlan(consoleBootstrapPlan);
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -1560,6 +1572,29 @@ function ProviderStatusPage() {
     }
   }
 
+  async function saveBootstrapRequirements(payload: CiscoBootstrapRequirementsUpdate) {
+    setBusyBootstrapRequirements(true);
+    setError("");
+    try {
+      const result = await api.saveCiscoBootstrapRequirements(payload);
+      setCiscoBootstrapRequirements(result);
+      const [providerStatuses, ciscoReadiness, setupWizardPlan, consoleBootstrapPlan] = await Promise.all([
+        api.providers(),
+        api.ciscoSetupReadiness(),
+        api.ciscoSetupWizardPlan(),
+        api.ciscoConsoleBootstrapPlan()
+      ]);
+      setProviders(providerStatuses);
+      setCiscoSetupReadiness(ciscoReadiness);
+      setCiscoSetupWizardPlan(setupWizardPlan);
+      setCiscoConsoleBootstrapPlan(consoleBootstrapPlan);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusyBootstrapRequirements(false);
+    }
+  }
+
   const orderedProviders = [...providers].sort((left, right) => {
     return providerOrder(left.id) - providerOrder(right.id);
   });
@@ -1578,6 +1613,9 @@ function ProviderStatusPage() {
       {ciscoSetupReadiness && (
         <CiscoSetupReadinessPanel
           bootstrapRequirements={ciscoBootstrapRequirements}
+          busyBootstrapRequirements={busyBootstrapRequirements}
+          consoleBootstrapPlan={ciscoConsoleBootstrapPlan}
+          onSaveBootstrapRequirements={saveBootstrapRequirements}
           readiness={ciscoSetupReadiness}
           setupWizardPlan={ciscoSetupWizardPlan}
         />
@@ -1602,10 +1640,16 @@ function ProviderStatusPage() {
 
 function CiscoSetupReadinessPanel({
   bootstrapRequirements,
+  busyBootstrapRequirements,
+  consoleBootstrapPlan,
+  onSaveBootstrapRequirements,
   readiness,
   setupWizardPlan
 }: {
   bootstrapRequirements: CiscoBootstrapRequirements | null;
+  busyBootstrapRequirements: boolean;
+  consoleBootstrapPlan: CiscoConsoleBootstrapPlan | null;
+  onSaveBootstrapRequirements: (payload: CiscoBootstrapRequirementsUpdate) => Promise<void>;
   readiness: CiscoSetupReadiness;
   setupWizardPlan: CiscoSetupWizardPlan | null;
 }) {
@@ -1672,8 +1716,13 @@ function CiscoSetupReadinessPanel({
       </div>
       {setupWizardPlan && <CiscoSetupWizardPlanPanel plan={setupWizardPlan} />}
       {bootstrapRequirements && (
-        <CiscoBootstrapRequirementsPanel requirements={bootstrapRequirements} />
+        <CiscoBootstrapRequirementsPanel
+          busy={busyBootstrapRequirements}
+          onSave={onSaveBootstrapRequirements}
+          requirements={bootstrapRequirements}
+        />
       )}
+      {consoleBootstrapPlan && <CiscoConsoleBootstrapPlanPanel plan={consoleBootstrapPlan} />}
       <ProviderIssueRows blockers={readiness.blockers} warnings={readiness.warnings} />
       <div className="provider-action-layout">
         <div>
@@ -1692,8 +1741,12 @@ function CiscoSetupReadinessPanel({
 }
 
 function CiscoBootstrapRequirementsPanel({
+  busy,
+  onSave,
   requirements
 }: {
+  busy: boolean;
+  onSave: (payload: CiscoBootstrapRequirementsUpdate) => Promise<void>;
   requirements: CiscoBootstrapRequirements;
 }) {
   const items = objectValue(requirements.requirements);
@@ -1703,6 +1756,32 @@ function CiscoBootstrapRequirementsPanel({
   const sshScpPolicy = objectValue(items.ssh_scp_policy);
   const saveBehavior = objectValue(items.save_behavior);
   const confirmations = objectValue(items.confirmation_requirements);
+  const [form, setForm] = useState<CiscoBootstrapRequirementsUpdate>(() =>
+    bootstrapRequirementsForm(requirements)
+  );
+
+  useEffect(() => {
+    setForm(bootstrapRequirementsForm(requirements));
+  }, [requirements]);
+
+  function update<K extends keyof CiscoBootstrapRequirementsUpdate>(
+    field: K,
+    value: CiscoBootstrapRequirementsUpdate[K],
+  ) {
+    setForm((current) => ({ ...current, [field]: value }));
+  }
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    await onSave({
+      ...form,
+      management_vlan: form.management_vlan || null,
+      management_interface: form.management_interface || null,
+      local_admin_username_reference: form.local_admin_username_reference || null,
+      operator_notes: form.operator_notes || null,
+      dns_servers: form.dns_servers.map((server) => server.trim()).filter(Boolean)
+    });
+  }
 
   return (
     <div className="provider-detail-section">
@@ -1763,6 +1842,88 @@ function CiscoBootstrapRequirementsPanel({
         lines={requirements.not_attempted}
       />
       <ProviderIssueRows blockers={requirements.blockers} warnings={requirements.warnings} />
+      <form className="form-grid bootstrap-requirements-form" onSubmit={submit}>
+        <Field label="Planned Management IP">
+          <input
+            value={form.planned_management_ip}
+            onChange={(event) => update("planned_management_ip", event.target.value)}
+          />
+        </Field>
+        <Field label="Subnet / Prefix">
+          <input
+            placeholder="/24"
+            value={form.subnet_prefix}
+            onChange={(event) => update("subnet_prefix", event.target.value)}
+          />
+        </Field>
+        <Field label="Gateway">
+          <input value={form.gateway} onChange={(event) => update("gateway", event.target.value)} />
+        </Field>
+        <Field label="Management VLAN">
+          <input
+            value={form.management_vlan ?? ""}
+            onChange={(event) => update("management_vlan", event.target.value)}
+          />
+        </Field>
+        <Field label="Management Interface">
+          <input
+            value={form.management_interface ?? ""}
+            onChange={(event) => update("management_interface", event.target.value)}
+          />
+        </Field>
+        <Field label="Management Strategy">
+          <input
+            value={form.management_strategy}
+            onChange={(event) => update("management_strategy", event.target.value)}
+          />
+        </Field>
+        <Field label="Hostname">
+          <input value={form.hostname} onChange={(event) => update("hostname", event.target.value)} />
+        </Field>
+        <Field label="Domain">
+          <input value={form.domain_name} onChange={(event) => update("domain_name", event.target.value)} />
+        </Field>
+        <Field label="DNS Servers">
+          <input
+            value={form.dns_servers.join(", ")}
+            onChange={(event) => update("dns_servers", splitCsvInput(event.target.value))}
+          />
+        </Field>
+        <Field label="Username Reference">
+          <input
+            value={form.local_admin_username_reference ?? ""}
+            onChange={(event) => update("local_admin_username_reference", event.target.value)}
+          />
+        </Field>
+        <label className="checkbox-row span-2">
+          <input
+            checked={form.local_admin_username_configured}
+            onChange={(event) => update("local_admin_username_configured", event.target.checked)}
+            type="checkbox"
+          />
+          <span>Local admin username is available as a non-secret reference. Passwords are not collected.</span>
+        </label>
+        <label className="field span-2">
+          <span>Operator Notes</span>
+          <textarea
+            value={form.operator_notes ?? ""}
+            onChange={(event) => update("operator_notes", event.target.value)}
+          />
+        </label>
+        <div className="provider-callout span-2">
+          <strong>Preview only</strong>
+          <p>
+            No commands will be generated or sent. Apply disabled. SSH/SCP planned only.
+            Save/write memory disabled.
+          </p>
+        </div>
+        <div className="form-actions span-2">
+          <button className="primary" disabled={busy} type="submit">
+            <Save size={16} />
+            {busy ? "Saving" : "Save Bootstrap Requirements"}
+          </button>
+        </div>
+      </form>
     </div>
   );
 }
@@ -1817,6 +1978,65 @@ function SetupPreviewBlock({
       {lines.map((line) => (
         <p key={line}>{line}</p>
       ))}
+    </div>
+  );
+}
+
+function CiscoConsoleBootstrapPlanPanel({ plan }: { plan: CiscoConsoleBootstrapPlan }) {
+  const target = objectValue(plan.target);
+  const [confirmation, setConfirmation] = useState("");
+  const confirmationMatches = confirmation === plan.confirmation_phrase;
+  const applyDisabled = !confirmationMatches || !plan.execution_supported || !plan.apply_enabled;
+
+  return (
+    <div className="provider-detail-section">
+      <div className="provider-callout">
+        <strong>Guarded Cisco console bootstrap preview</strong>
+        <p>{plan.next_safe_action}</p>
+      </div>
+      <div className="provider-fact-grid compact">
+        <ProviderFact
+          label="Target For This Run"
+          value={`${asString(target.required_ip) || "192.168.1.220"}${asString(target.required_prefix) || "/24"}`}
+        />
+        <ProviderFact label="Netmask" value={asString(target.netmask) || "255.255.255.0"} />
+        <ProviderFact label="Prompt State" value={labelize(plan.prompt_state)} />
+        <ProviderFact label="Flow" value={labelize(plan.flow)} />
+        <ProviderFact label="Apply Enabled" value={plan.apply_enabled ? "true" : "false"} />
+        <ProviderFact label="Execution Supported" value={plan.execution_supported ? "true" : "false"} />
+      </div>
+      <div className="setup-preview-grid">
+        <SetupPreviewBlock title="Summary" tag="Preview" lines={plan.summary} />
+        <SetupPreviewBlock title="Intended Steps" tag="Guarded" lines={plan.intended_steps} />
+        <SetupPreviewBlock title="Command Preview" tag="Not executed" lines={plan.command_preview} />
+        <SetupPreviewBlock
+          title="Destructive Actions"
+          tag="Disabled"
+          lines={plan.destructive_actions_disabled}
+        />
+      </div>
+      <ProviderIssueRows blockers={plan.blockers} warnings={plan.warnings} />
+      <div className="form-grid bootstrap-requirements-form">
+        <Field label="Exact Confirmation Phrase">
+          <input
+            value={confirmation}
+            onChange={(event) => setConfirmation(event.target.value)}
+          />
+        </Field>
+        <div className="provider-callout">
+          <strong>Real lab guarded apply</strong>
+          <p>
+            Disabled unless the exact phrase matches and backend apply support is explicitly enabled.
+            No destructive wipe/reset actions are part of this workflow.
+          </p>
+        </div>
+        <div className="form-actions span-2">
+          <button className="primary" disabled={applyDisabled} type="button">
+            <ShieldCheck size={16} />
+            Guarded Apply Disabled
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -2429,6 +2649,39 @@ function promptReadinessMessage(result: ProviderProbeResult): string {
 function requirementLine(label: string, requirement: Record<string, unknown>): string {
   const value = asString(requirement.value);
   return `${label}: ${value || "Missing"}`;
+}
+
+function bootstrapRequirementsForm(
+  requirements: CiscoBootstrapRequirements
+): CiscoBootstrapRequirementsUpdate {
+  const items = objectValue(requirements.requirements);
+  const managementStrategy = objectValue(items.management_vlan_interface_strategy);
+  const domainDns = objectValue(items.domain_dns);
+  const localAdmin = objectValue(items.local_admin_username);
+  const operatorNotes = objectValue(items.operator_notes);
+
+  return {
+    planned_management_ip:
+      asString(objectValue(items.planned_management_ip).value) || "192.168.1.220",
+    subnet_prefix: asString(objectValue(items.subnet_prefix).value),
+    gateway: asString(objectValue(items.gateway).value),
+    management_vlan: asString(managementStrategy.vlan) || null,
+    management_interface: asString(managementStrategy.interface) || null,
+    management_strategy: asString(managementStrategy.strategy),
+    hostname: asString(objectValue(items.hostname).value),
+    domain_name: asString(domainDns.domain_name),
+    dns_servers: stringArray(domainDns.dns_servers),
+    local_admin_username_configured: asBoolean(localAdmin.configured),
+    local_admin_username_reference: asString(localAdmin.reference) || null,
+    operator_notes: asString(operatorNotes.value) || null
+  };
+}
+
+function splitCsvInput(value: string): string[] {
+  return value
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
 }
 
 function objectValue(value: unknown): Record<string, unknown> {

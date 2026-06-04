@@ -413,7 +413,7 @@ def test_cisco_bootstrap_requirements_endpoint_returns_preview_only(
     payload = response.json()
     assert payload["provider_id"] == "cisco-bootstrap-requirements"
     assert payload["apply_enabled"] is False
-    assert payload["requirements"]["planned_management_ip"]["value"] == "10.10.8.112"
+    assert payload["requirements"]["planned_management_ip"]["value"] == "192.168.1.220"
     assert payload["requirements"]["local_admin_username"]["presence_only"] is True
     assert payload["requirements"]["ssh_scp_policy"]["planned_only"] is True
     assert payload["requirements"]["ssh_scp_policy"]["apply_enabled"] is False
@@ -425,3 +425,127 @@ def test_cisco_bootstrap_requirements_endpoint_returns_preview_only(
     assert "erase/copy" in payload["disabled_actions"]
     assert "enable SSH/SCP" in payload["disabled_actions"]
     assert "real config apply" in payload["disabled_actions"]
+
+
+def test_cisco_bootstrap_requirements_update_saves_preview_only(
+    client: TestClient,
+    tmp_path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        "app.services.cisco_bootstrap_requirements.STATE_PATH",
+        tmp_path / "bootstrap-requirements.json",
+    )
+
+    response = client.put(
+        "/api/v1/providers/cisco/bootstrap-requirements",
+        json={
+            "planned_management_ip": "192.168.1.220",
+            "subnet_prefix": "/24",
+            "gateway": "192.168.1.1",
+            "management_vlan": "8",
+            "management_interface": "Vlan8",
+            "management_strategy": "SVI management interface",
+            "hostname": "cisco-lab-01",
+            "domain_name": "lab.example.test",
+            "dns_servers": ["192.168.1.1"],
+            "local_admin_username_configured": True,
+            "local_admin_username_reference": "local-env:CISCO_TEST_USERNAME",
+            "operator_notes": "Preview only. No secrets.",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    encoded = response.text
+    assert payload["provider_id"] == "cisco-bootstrap-requirements"
+    assert payload["status"] == "preview"
+    assert payload["apply_enabled"] is False
+    assert payload["requirements"]["planned_management_ip"]["value"] == "192.168.1.220"
+    assert payload["requirements"]["local_admin_username"]["value"] == "configured"
+    assert payload["requirements"]["ssh_scp_policy"]["planned_only"] is True
+    assert payload["requirements"]["ssh_scp_policy"]["apply_enabled"] is False
+    assert payload["requirements"]["save_behavior"]["enabled"] is False
+    assert "write memory" in payload["disabled_actions"]
+    assert "enable SSH/SCP" in payload["disabled_actions"]
+    assert "super-secret" not in encoded.lower()
+
+
+def test_cisco_bootstrap_requirements_update_rejects_invalid_ip(
+    client: TestClient,
+    tmp_path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        "app.services.cisco_bootstrap_requirements.STATE_PATH",
+        tmp_path / "bootstrap-requirements.json",
+    )
+
+    response = client.put(
+        "/api/v1/providers/cisco/bootstrap-requirements",
+        json={
+            "planned_management_ip": "invalid",
+            "subnet_prefix": "/24",
+            "gateway": "also-invalid",
+            "management_strategy": "SVI management interface",
+            "hostname": "cisco-lab-01",
+            "domain_name": "lab.example.test",
+            "dns_servers": ["192.168.1.1"],
+            "local_admin_username_configured": True,
+        },
+    )
+
+    assert response.status_code == 422
+    fields = {error["field"] for error in response.json()["detail"]["validation_errors"]}
+    assert {"planned_management_ip", "gateway"}.issubset(fields)
+
+
+def test_cisco_console_bootstrap_plan_endpoint_is_preview_only(
+    client: TestClient,
+) -> None:
+    response = client.get("/api/v1/providers/cisco/console-bootstrap/plan")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["provider_id"] == "cisco-console-bootstrap"
+    assert payload["target"]["required_ip"] == "192.168.1.220"
+    assert payload["target"]["required_prefix"] == "/24"
+    assert payload["target"]["netmask"] == "255.255.255.0"
+    assert payload["apply_enabled"] is False
+    assert payload["execution_supported"] is False
+    assert payload["confirmation_phrase"] == "APPLY CISCO CONSOLE BOOTSTRAP 192.168.1.220"
+    assert "write erase" in payload["destructive_actions_disabled"]
+    assert "erase startup-config" in payload["destructive_actions_disabled"]
+    assert "reload" in payload["destructive_actions_disabled"]
+
+
+def test_cisco_console_bootstrap_apply_endpoint_blocked_by_default(
+    client: TestClient,
+) -> None:
+    response = client.post(
+        "/api/v1/providers/cisco/console-bootstrap/apply",
+        json={"confirmation_phrase": "APPLY CISCO CONSOLE BOOTSTRAP 192.168.1.220"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["provider_id"] == "cisco-console-bootstrap"
+    assert payload["status"] == "blocked"
+    assert payload["serial_writes_attempted"] is False
+    assert payload["commands_sent"] == []
+    assert any("PROVIDER_MODE=local-readonly" in blocker for blocker in payload["blockers"])
+
+
+def test_cisco_console_bootstrap_apply_endpoint_requires_exact_phrase(
+    client: TestClient,
+) -> None:
+    response = client.post(
+        "/api/v1/providers/cisco/console-bootstrap/apply",
+        json={"confirmation_phrase": "APPLY"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "blocked"
+    assert payload["serial_writes_attempted"] is False
+    assert any("Exact confirmation phrase" in blocker for blocker in payload["blockers"])

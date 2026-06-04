@@ -21,7 +21,7 @@ WHY_BLOCKED = [
 ]
 FUTURE_GUARDED_PLAN_PREVIEW = [
     "Confirm the selected console path.",
-    "Confirm the intended management IP is 10.10.8.112.",
+    "Confirm the intended management IP is 192.168.1.220.",
     (
         "Confirm management gateway, subnet, VLAN/default interface strategy, username policy, "
         "SSH/SCP policy, and save behavior."

@@ -39,6 +39,20 @@ def _optional_env(name: str) -> str | None:
     return value or None
 
 
+def _cisco_target_ip() -> str:
+    value = _optional_env("CISCO_TARGET_IP") or _optional_env("ANSIBLE_CISCO_HOST")
+    if value == "10.10.8.112" or value is None:
+        return "192.168.1.220"
+    return value
+
+
+def _cisco_management_prefix() -> str:
+    value = _optional_env("CISCO_MANAGEMENT_PREFIX")
+    if value is None:
+        return "/24"
+    return "/24" if value == "255.255.255.0" else value
+
+
 def _bool_env(name: str, default: bool) -> bool:
     value = os.getenv(name)
     if value is None:
@@ -99,9 +113,7 @@ class Settings:
     esxi_test_verify_tls: bool = _bool_env("ESXI_TEST_VERIFY_TLS", True)
     esxi_test_timeout_seconds: float = _float_env("ESXI_TEST_TIMEOUT_SECONDS", 3.0)
     esxi_test_ssh_timeout_seconds: float = _float_env("ESXI_TEST_SSH_TIMEOUT_SECONDS", 3.0)
-    cisco_target_ip: str | None = _optional_env("CISCO_TARGET_IP") or _optional_env(
-        "ANSIBLE_CISCO_HOST"
-    )
+    cisco_target_ip: str | None = _cisco_target_ip()
     cisco_test_username: str | None = (
         _optional_env("CISCO_TEST_USERNAME")
         or _optional_env("ANSIBLE_CISCO_USERNAME")
@@ -116,7 +128,7 @@ class Settings:
         "ANSIBLE_CISCO_ENABLE_PASSWORD"
     )
     cisco_mgmt_configured: bool = _bool_env("CISCO_MGMT_CONFIGURED", False)
-    cisco_management_prefix: str | None = _optional_env("CISCO_MANAGEMENT_PREFIX")
+    cisco_management_prefix: str | None = _cisco_management_prefix()
     cisco_management_gateway: str | None = _optional_env("CISCO_MANAGEMENT_GATEWAY")
     cisco_management_vlan: str | None = _optional_env("CISCO_MANAGEMENT_VLAN")
     cisco_management_interface: str | None = _optional_env("CISCO_MANAGEMENT_INTERFACE")
@@ -135,6 +147,9 @@ class Settings:
     cisco_console_timeout_seconds: float = _float_env("CISCO_CONSOLE_TIMEOUT_SECONDS", 2.0)
     lab_closed_loop_ack: str | None = _optional_env("LAB_CLOSED_LOOP_ACK")
     lab_readonly_ack: str | None = _optional_env("LAB_READONLY_ACK")
+    cisco_console_apply_enabled: bool = _bool_env("CISCO_CONSOLE_APPLY_ENABLED", False)
+    lab_apply_ack: str | None = _optional_env("LAB_APPLY_ACK")
+    lab_target_ack: str | None = _optional_env("LAB_TARGET_ACK")
     lab_destructive_ack: str | None = _optional_env("LAB_DESTRUCTIVE_ACK")
 
 

@@ -3,6 +3,8 @@ import type {
   AuditEvent,
   Catalog,
   CiscoBootstrapRequirements,
+  CiscoBootstrapRequirementsUpdate,
+  CiscoConsoleBootstrapPlan,
   CiscoSetupReadiness,
   CiscoSetupWizardPlan,
   IloUpgradeReadiness,
@@ -86,6 +88,13 @@ export const api = {
     apiRequest<CiscoSetupWizardPlan>("/api/v1/providers/cisco/setup-wizard-plan"),
   ciscoBootstrapRequirements: () =>
     apiRequest<CiscoBootstrapRequirements>("/api/v1/providers/cisco/bootstrap-requirements"),
+  saveCiscoBootstrapRequirements: (payload: CiscoBootstrapRequirementsUpdate) =>
+    apiRequest<CiscoBootstrapRequirements>("/api/v1/providers/cisco/bootstrap-requirements", {
+      method: "PUT",
+      body: payload
+    }),
+  ciscoConsoleBootstrapPlan: () =>
+    apiRequest<CiscoConsoleBootstrapPlan>("/api/v1/providers/cisco/console-bootstrap/plan"),
   providers: () => apiRequest<ProviderStatus[]>("/api/v1/providers/status"),
   ciscoConsolePromptReadiness: () =>
     apiRequest<ProviderProbeResult>("/api/v1/providers/cisco-console/prompt-readiness", {

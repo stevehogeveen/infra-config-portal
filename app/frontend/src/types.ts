@@ -231,6 +231,41 @@ export type CiscoBootstrapRequirements = {
   next_safe_action: string;
 };
 
+export type CiscoConsoleBootstrapPlan = {
+  provider_id: string;
+  status: string;
+  target: Record<string, unknown>;
+  apply_enabled: boolean;
+  execution_supported: boolean;
+  flow: string;
+  prompt_state: string;
+  prompt_checked_at: string | null;
+  summary: string[];
+  intended_steps: string[];
+  command_preview: string[];
+  commands_redacted: boolean;
+  destructive_actions_disabled: string[];
+  blockers: string[];
+  warnings: string[];
+  confirmation_phrase: string;
+  next_safe_action: string;
+};
+
+export type CiscoBootstrapRequirementsUpdate = {
+  planned_management_ip: string;
+  subnet_prefix: string;
+  gateway: string;
+  management_vlan: string | null;
+  management_interface: string | null;
+  management_strategy: string;
+  hostname: string;
+  domain_name: string;
+  dns_servers: string[];
+  local_admin_username_configured: boolean;
+  local_admin_username_reference: string | null;
+  operator_notes: string | null;
+};
+
 export type MediaInventoryItem = {
   placeholder_name: string;
   extension: string;

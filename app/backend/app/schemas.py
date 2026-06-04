@@ -413,6 +413,45 @@ class CiscoBootstrapRequirementsRead(BaseModel):
     next_safe_action: str
 
 
+class CiscoBootstrapRequirementsUpdate(BaseModel):
+    planned_management_ip: str
+    subnet_prefix: str
+    gateway: str
+    management_vlan: str | None = None
+    management_interface: str | None = None
+    management_strategy: str
+    hostname: str
+    domain_name: str
+    dns_servers: list[str] = Field(default_factory=list)
+    local_admin_username_configured: bool = False
+    local_admin_username_reference: str | None = None
+    operator_notes: str | None = None
+
+
+class CiscoConsoleBootstrapPlanRead(BaseModel):
+    provider_id: str
+    status: str
+    target: dict[str, Any]
+    apply_enabled: bool
+    execution_supported: bool
+    flow: str
+    prompt_state: str
+    prompt_checked_at: str | None = None
+    summary: list[str] = Field(default_factory=list)
+    intended_steps: list[str] = Field(default_factory=list)
+    command_preview: list[str] = Field(default_factory=list)
+    commands_redacted: bool
+    destructive_actions_disabled: list[str] = Field(default_factory=list)
+    blockers: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    confirmation_phrase: str
+    next_safe_action: str
+
+
+class CiscoConsoleBootstrapApplyCreate(BaseModel):
+    confirmation_phrase: str
+
+
 class ProviderProbeResultRead(BaseModel):
     provider_id: str
     status: str

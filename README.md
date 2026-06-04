@@ -132,8 +132,25 @@ running-config backup, and real apply actions disabled.
 inputs needed before any future guarded bootstrap design: management IP,
 subnet/prefix, gateway, management VLAN/interface strategy, hostname,
 domain/DNS, local admin username presence, SSH/SCP policy, save behavior, and
-explicit confirmation requirements. It returns blockers/warnings only and does
-not generate commands.
+explicit confirmation requirements. `PUT` to the same endpoint stores
+non-secret local planning values under
+`.local/cisco/bootstrap-requirements.json`, which is ignored by Git. The
+workflow returns blockers/warnings only and does not generate commands, answer
+setup prompts, enable SSH/SCP, save configuration, or apply anything.
+
+`GET /api/v1/providers/cisco/console-bootstrap/plan` builds the guarded
+Cisco-only console bootstrap preview for this lab target:
+`192.168.1.220/24` (`255.255.255.0`). It distinguishes setup-wizard,
+direct exec/config-mode, and unsupported prompt flows, shows redacted preview
+commands, and keeps destructive reset/wipe actions separate and disabled.
+`POST /api/v1/providers/cisco/console-bootstrap/apply` is blocked by default
+and records a redacted blocked result unless all backend gates pass, including
+the exact confirmation phrase
+`APPLY CISCO CONSOLE BOOTSTRAP 192.168.1.220`. The current implementation is a
+guarded scaffold and does not perform serial writes.
+
+See `app/docs/cisco-real-lab-bootstrap-runbook.md` for the safe local-lab
+operator flow, required gates, blocked-result meanings, and evidence handling.
 
 Optional local real-lab values live in `.env.local.real-lab`, which is ignored
 by Git and must not be committed. Create it with:

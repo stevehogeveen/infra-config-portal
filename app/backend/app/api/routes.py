@@ -26,6 +26,9 @@ from app.schemas import (
     AuditEventRead,
     CatalogRead,
     CiscoBootstrapRequirementsRead,
+    CiscoBootstrapRequirementsUpdate,
+    CiscoConsoleBootstrapApplyCreate,
+    CiscoConsoleBootstrapPlanRead,
     CiscoSetupReadinessRead,
     CiscoSetupWizardPlanRead,
     IloUpgradeReadinessRead,
@@ -42,7 +45,15 @@ from app.services.artifacts import (
     list_request_artifacts,
     list_workflow_run_artifacts,
 )
-from app.services.cisco_bootstrap_requirements import get_cisco_bootstrap_requirements
+from app.services.cisco_bootstrap_requirements import (
+    CiscoBootstrapRequirementsValidationError,
+    get_cisco_bootstrap_requirements,
+    save_cisco_bootstrap_requirements,
+)
+from app.services.cisco_console_bootstrap import (
+    apply_cisco_console_bootstrap,
+    build_cisco_console_bootstrap_plan,
+)
 from app.services.lifecycle import (
     ExecutionPreflightError,
     InvalidTransitionError,
@@ -292,6 +303,37 @@ def read_cisco_setup_wizard_plan() -> CiscoSetupWizardPlanRead:
 )
 def read_cisco_bootstrap_requirements() -> CiscoBootstrapRequirementsRead:
     return get_cisco_bootstrap_requirements()
+
+
+@router.put(
+    "/providers/cisco/bootstrap-requirements",
+    response_model=CiscoBootstrapRequirementsRead,
+)
+def update_cisco_bootstrap_requirements(
+    payload: CiscoBootstrapRequirementsUpdate,
+) -> CiscoBootstrapRequirementsRead:
+    try:
+        return save_cisco_bootstrap_requirements(payload.model_dump())
+    except CiscoBootstrapRequirementsValidationError as exc:
+        raise HTTPException(status_code=422, detail={"validation_errors": exc.errors}) from exc
+
+
+@router.get(
+    "/providers/cisco/console-bootstrap/plan",
+    response_model=CiscoConsoleBootstrapPlanRead,
+)
+def read_cisco_console_bootstrap_plan() -> CiscoConsoleBootstrapPlanRead:
+    return build_cisco_console_bootstrap_plan()
+
+
+@router.post(
+    "/providers/cisco/console-bootstrap/apply",
+    response_model=ProviderProbeResultRead,
+)
+def apply_cisco_console_bootstrap_route(
+    payload: CiscoConsoleBootstrapApplyCreate,
+) -> ProviderProbeResultRead:
+    return apply_cisco_console_bootstrap(payload.model_dump())
 
 
 @router.post(

@@ -26,6 +26,12 @@ from app.providers.probe_cache import clear_probe_results, record_probe_result
 from app.providers.redaction import redact_sensitive
 from app.providers.registry import provider_registry
 from app.services.cisco_bootstrap_requirements import build_cisco_bootstrap_requirements
+from app.services.cisco_bootstrap_requirements import save_cisco_bootstrap_requirements
+from app.services.cisco_console_bootstrap import (
+    CONFIRMATION_PHRASE,
+    apply_cisco_console_bootstrap,
+    build_cisco_console_bootstrap_plan,
+)
 from app.services.cisco_setup_readiness import get_cisco_setup_readiness
 from app.services.cisco_setup_wizard_plan import build_cisco_setup_wizard_plan
 
@@ -367,14 +373,14 @@ def test_cisco_ansible_run_command_can_redact_output() -> None:
 def test_cisco_setup_readiness_is_plan_only_until_management_bootstrap() -> None:
     readiness = get_cisco_setup_readiness(
         provider_mode="mock",
-        planned_management_ip="10.10.8.112",
+        planned_management_ip="192.168.1.220",
         management_configured=False,
     )
     encoded = json.dumps(readiness)
 
     assert readiness["provider_id"] == "cisco-setup"
     assert readiness["phase"] == "console-bootstrap-required"
-    assert readiness["planned_management_ip"] == "10.10.8.112"
+    assert readiness["planned_management_ip"] == "192.168.1.220"
     assert readiness["management_configured"] is False
     assert readiness["bootstrap_preview"]["apply_enabled"] is False
     assert readiness["bootstrap_preview"]["commands_redacted"] is True
@@ -449,7 +455,7 @@ def test_cisco_setup_readiness_surfaces_setup_wizard_plan_when_cached() -> None:
 
     readiness = get_cisco_setup_readiness(
         provider_mode="mock",
-        planned_management_ip="10.10.8.112",
+        planned_management_ip="192.168.1.220",
         management_configured=False,
     )
 
@@ -462,7 +468,7 @@ def test_cisco_setup_readiness_surfaces_setup_wizard_plan_when_cached() -> None:
 
 def test_cisco_bootstrap_requirements_reports_missing_inputs_preview_only() -> None:
     requirements = build_cisco_bootstrap_requirements(
-        planned_management_ip="10.10.8.112",
+        planned_management_ip="192.168.1.220",
         local_admin_username_configured=False,
         management_configured=False,
     )
@@ -470,7 +476,7 @@ def test_cisco_bootstrap_requirements_reports_missing_inputs_preview_only() -> N
     assert requirements["provider_id"] == "cisco-bootstrap-requirements"
     assert requirements["status"] == "needs-input"
     assert requirements["apply_enabled"] is False
-    assert requirements["requirements"]["planned_management_ip"]["value"] == "10.10.8.112"
+    assert requirements["requirements"]["planned_management_ip"]["value"] == "192.168.1.220"
     assert requirements["requirements"]["subnet_prefix"]["configured"] is False
     assert requirements["requirements"]["gateway"]["configured"] is False
     assert requirements["requirements"]["management_vlan_interface_strategy"]["configured"] is False
@@ -491,9 +497,9 @@ def test_cisco_bootstrap_requirements_reports_missing_inputs_preview_only() -> N
 
 def test_cisco_bootstrap_requirements_keep_username_presence_only() -> None:
     requirements = build_cisco_bootstrap_requirements(
-        planned_management_ip="10.10.8.112",
+        planned_management_ip="192.168.1.220",
         subnet_prefix="/24",
-        gateway="10.10.8.1",
+        gateway="192.168.1.1",
         management_vlan="8",
         management_interface="Vlan8",
         management_strategy="SVI",
@@ -511,7 +517,167 @@ def test_cisco_bootstrap_requirements_keep_username_presence_only() -> None:
     assert requirements["requirements"]["ssh_scp_policy"]["planned_only"] is True
     assert requirements["requirements"]["ssh_scp_policy"]["apply_enabled"] is False
     assert requirements["requirements"]["save_behavior"]["enabled"] is False
-    assert "Explicit confirmation requirements" in " ".join(requirements["blockers"])
+    assert requirements["requirements"]["confirmation_requirements"]["configured"] is True
+    assert requirements["blockers"] == [
+        "Bootstrap requirements are preview-only; no answers or commands will be sent."
+    ]
+
+
+def test_cisco_bootstrap_requirements_save_non_secret_planning_state(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    state_path = tmp_path / "bootstrap-requirements.json"
+    monkeypatch.setattr("app.services.cisco_bootstrap_requirements.STATE_PATH", state_path)
+
+    requirements = save_cisco_bootstrap_requirements(_valid_bootstrap_payload())
+    encoded = json.dumps(requirements)
+
+    assert state_path.exists()
+    assert requirements["status"] == "preview"
+    assert requirements["apply_enabled"] is False
+    assert requirements["requirements"]["planned_management_ip"]["value"] == "192.168.1.220"
+    assert requirements["requirements"]["subnet_prefix"]["configured"] is True
+    assert requirements["requirements"]["gateway"]["configured"] is True
+    assert requirements["requirements"]["management_vlan_interface_strategy"]["configured"] is True
+    assert requirements["requirements"]["hostname"]["configured"] is True
+    assert requirements["requirements"]["domain_dns"]["configured"] is True
+    assert requirements["requirements"]["local_admin_username"]["value"] == "configured"
+    assert requirements["requirements"]["local_admin_username"]["reference"] == "local-env:CISCO_TEST_USERNAME"
+    assert requirements["requirements"]["ssh_scp_policy"]["apply_enabled"] is False
+    assert requirements["requirements"]["save_behavior"]["enabled"] is False
+    assert requirements["blockers"] == [
+        "Bootstrap requirements are preview-only; no answers or commands will be sent."
+    ]
+    assert "super-secret" not in encoded
+
+
+def test_cisco_console_bootstrap_plan_uses_real_lab_target(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    state_path = tmp_path / "bootstrap-requirements.json"
+    monkeypatch.setattr("app.services.cisco_bootstrap_requirements.STATE_PATH", state_path)
+    save_cisco_bootstrap_requirements(_valid_bootstrap_payload())
+    record_probe_result(
+        "cisco-console",
+        {
+            "provider_id": "cisco-console",
+            "action": "prompt-readiness",
+            "status": "ok",
+            "message": "ready",
+            "prompt_state": "exec",
+            "warnings": [],
+            "blockers": [],
+        },
+    )
+    monkeypatch.setattr(
+        "app.services.cisco_console_bootstrap.CiscoConsoleAdapter.health",
+        lambda _self: ProviderStatus(
+            id="cisco-console",
+            name="Cisco Console",
+            kind="network-console",
+            mode="local-readonly",
+            status="ready",
+            capabilities=[],
+            message="ready",
+            discovery={"effective_path": "/dev/serial/by-id/mock-cisco-console"},
+            blockers=[],
+            warnings=[],
+        ),
+    )
+
+    plan = build_cisco_console_bootstrap_plan()
+    encoded = json.dumps(plan)
+
+    assert plan["status"] == "preview"
+    assert plan["target"]["ip"] == "192.168.1.220"
+    assert plan["target"]["prefix"] == "/24"
+    assert plan["target"]["netmask"] == "255.255.255.0"
+    assert plan["flow"] == "direct-exec-config-mode-flow"
+    assert plan["confirmation_phrase"] == CONFIRMATION_PHRASE
+    assert plan["apply_enabled"] is False
+    assert "write erase" in plan["destructive_actions_disabled"]
+    assert "erase startup-config" in plan["destructive_actions_disabled"]
+    assert "reload" in plan["destructive_actions_disabled"]
+    assert "copy running-config" not in encoded
+
+
+def test_cisco_console_bootstrap_apply_blocked_by_default(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    state_path = tmp_path / "bootstrap-requirements.json"
+    monkeypatch.setattr("app.services.cisco_bootstrap_requirements.STATE_PATH", state_path)
+    save_cisco_bootstrap_requirements(_valid_bootstrap_payload())
+
+    result = apply_cisco_console_bootstrap({"confirmation_phrase": CONFIRMATION_PHRASE})
+
+    assert result["status"] == "blocked"
+    assert result["serial_writes_attempted"] is False
+    assert result["commands_sent"] == []
+    assert any("PROVIDER_MODE=local-readonly" in blocker for blocker in result["blockers"])
+
+
+def test_cisco_console_bootstrap_apply_requires_exact_phrase(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    state_path = tmp_path / "bootstrap-requirements.json"
+    monkeypatch.setattr("app.services.cisco_bootstrap_requirements.STATE_PATH", state_path)
+    save_cisco_bootstrap_requirements(_valid_bootstrap_payload())
+
+    result = apply_cisco_console_bootstrap({"confirmation_phrase": "APPLY"})
+
+    assert result["status"] == "blocked"
+    assert result["serial_writes_attempted"] is False
+    assert any("Exact confirmation phrase" in blocker for blocker in result["blockers"])
+
+
+def test_cisco_console_bootstrap_plan_rejects_wrong_target_or_prefix(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    state_path = tmp_path / "bootstrap-requirements.json"
+    monkeypatch.setattr("app.services.cisco_bootstrap_requirements.STATE_PATH", state_path)
+    save_cisco_bootstrap_requirements(
+        {
+            **_valid_bootstrap_payload(),
+            "planned_management_ip": "192.168.1.221",
+            "subnet_prefix": "/25",
+        }
+    )
+
+    plan = build_cisco_console_bootstrap_plan()
+
+    assert plan["status"] == "blocked"
+    assert "Planned target IP must be 192.168.1.220." in plan["blockers"]
+    assert "Planned target prefix must be /24." in plan["blockers"]
+
+
+def test_cisco_bootstrap_requirements_reject_invalid_values(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    state_path = tmp_path / "bootstrap-requirements.json"
+    monkeypatch.setattr("app.services.cisco_bootstrap_requirements.STATE_PATH", state_path)
+    payload = {
+        **_valid_bootstrap_payload(),
+        "planned_management_ip": "not-an-ip",
+        "gateway": "bad-gateway",
+        "hostname": "bad host name",
+    }
+
+    try:
+        save_cisco_bootstrap_requirements(payload)
+    except Exception as exc:
+        errors = getattr(exc, "errors", [])
+    else:  # pragma: no cover - defensive
+        raise AssertionError("invalid bootstrap requirements should fail validation")
+
+    fields = {error["field"] for error in errors}
+    assert {"planned_management_ip", "gateway", "hostname"}.issubset(fields)
+    assert not state_path.exists()
 
 
 def test_esxi_configured_false_returns_planned_status_and_skips_probe(monkeypatch) -> None:
@@ -1110,3 +1276,20 @@ def _load_provider_smoke_module() -> types.ModuleType:
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+def _valid_bootstrap_payload() -> dict[str, object]:
+    return {
+        "planned_management_ip": "192.168.1.220",
+        "subnet_prefix": "/24",
+        "gateway": "192.168.1.1",
+        "management_vlan": "8",
+        "management_interface": "Vlan8",
+        "management_strategy": "SVI management interface",
+        "hostname": "cisco-lab-01",
+        "domain_name": "lab.example.test",
+        "dns_servers": ["192.168.1.1"],
+        "local_admin_username_configured": True,
+        "local_admin_username_reference": "local-env:CISCO_TEST_USERNAME",
+        "operator_notes": "Preview only. No secrets.",
+    }
