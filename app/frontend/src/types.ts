@@ -403,6 +403,16 @@ export type IloDestructiveRebuildRequirement = {
   detail: string;
 };
 
+export type IloRealChangeLane = {
+  id: string;
+  label: string;
+  status: string;
+  execution_enabled: boolean;
+  next_safe_action: string;
+  required_gates: string[];
+  blocked_actions: string[];
+};
+
 export type IloDestructiveRebuildPreview = {
   provider_id: string;
   provider_mode: string;
@@ -414,6 +424,7 @@ export type IloDestructiveRebuildPreview = {
   discovered_state: Record<string, unknown>;
   intended_scope: string[];
   required_capabilities: IloDestructiveRebuildRequirement[];
+  real_change_lanes: IloRealChangeLane[];
   blockers: string[];
   warnings: string[];
   future_workflow_handoff: Record<string, unknown>;

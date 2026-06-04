@@ -16,6 +16,7 @@ from app.schemas import (
     IloDestructiveRebuildRequirementRead,
     IloDesiredSetupSectionRead,
     IloReadinessSummaryRead,
+    IloRealChangeLaneRead,
     IloReportArtifactPlaceholderRead,
     IloReportPreviewRead,
     IloSetupCompareReportRead,
@@ -330,6 +331,7 @@ def get_ilo_destructive_rebuild_preview() -> IloDestructiveRebuildPreviewRead:
     summary = get_ilo_readiness_summary()
     identity = _destructive_target_identity(summary)
     requirements = _destructive_rebuild_requirements(summary, identity)
+    real_change_lanes = _real_change_lanes(identity)
     blockers = _unique(
         [
             requirement.detail
@@ -362,6 +364,7 @@ def get_ilo_destructive_rebuild_preview() -> IloDestructiveRebuildPreviewRead:
         },
         intended_scope=DESTRUCTIVE_REBUILD_SCOPE,
         required_capabilities=requirements,
+        real_change_lanes=real_change_lanes,
         blockers=blockers,
         warnings=[
             "No wipe, RAID, virtual media, boot order, BIOS, power, or ESXi install action is exposed here.",
@@ -394,6 +397,115 @@ def get_ilo_destructive_rebuild_preview() -> IloDestructiveRebuildPreviewRead:
             "ESXi install preparation and result summary",
             "redacted logs and audit events",
         ],
+    )
+
+
+def _real_change_lanes(identity: dict[str, Any]) -> list[IloRealChangeLaneRead]:
+    identity_gate = (
+        "Verified target identity from current live discovery"
+        if identity.get("identity_verified")
+        else "Live target identity discovery with model, serial presence, iLO generation, and firmware"
+    )
+    return [
+        _real_change_lane(
+            "authenticated_inventory_reads",
+            "Authenticated inventory reads",
+            "blocked" if not identity.get("identity_verified") else "ready_to_plan",
+            "Add an explicitly approved read-only session-auth diagnostic if Basic auth cannot read inventory collections.",
+            [
+                identity_gate,
+                "No tokens, cookies, credentials, or raw serials in logs, UI, or reports",
+                "GET-only readback report stored under ignored local artifacts",
+            ],
+            [
+                "Redfish session creation",
+                "token/cookie persistence",
+                "inventory collection traversal beyond approved read-only discovery",
+            ],
+        ),
+        _real_change_lane(
+            "ilo_settings_writes",
+            "iLO settings writes",
+            "blocked",
+            "Design a dedicated iLO setup apply workflow with compare, dry-run, final review, and readback verification.",
+            [
+                identity_gate,
+                "Saved desired iLO setup intent with secret references only",
+                "Field-level compare against live readback",
+                "LAB_DESTRUCTIVE_ACK=YES or a narrower explicit write acknowledgement",
+                "Operator confirmation and rollback notes",
+            ],
+            [
+                "users",
+                "network",
+                "SNMP/NTP/DNS",
+                "BIOS/boot",
+                "power/reset",
+            ],
+        ),
+        _real_change_lane(
+            "firmware_updates",
+            "Firmware updates",
+            "blocked",
+            "Build firmware upload/flash as a separate guarded workflow after firmware media and upgrade path are proven.",
+            [
+                identity_gate,
+                "Sourced firmware catalog and compatible upgrade path",
+                "Firmware media checksum and product/generation match",
+                "Maintenance-window and power-risk confirmation",
+                "Post-update readback and artifact bundle",
+            ],
+            ["firmware upload", "firmware flash", "iLO reset/reboot"],
+        ),
+        _real_change_lane(
+            "storage_raid_changes",
+            "Storage and RAID changes",
+            "blocked",
+            "Hand off to a storage/RAID module that owns drive discovery, controller capability detection, plan, apply, and readback.",
+            [
+                identity_gate,
+                "Physical drive inventory",
+                "Controller capability detection from current host",
+                "RAID delete/create dry-run plan",
+                "Exact destructive confirmation phrase",
+                "Post-apply volume and drive readback",
+            ],
+            ["drive wipe", "logical drive delete", "RAID create", "storage controller writes"],
+        ),
+        _real_change_lane(
+            "esxi_install",
+            "ESXi install",
+            "blocked",
+            "Hand off to an ESXi install workflow after storage is planned and install media is validated.",
+            [
+                identity_gate,
+                "Validated ESXi ISO/kickstart media",
+                "Virtual media URL preflight reachable by iLO",
+                "Boot/virtual media plan and readback",
+                "Storage handoff receipt",
+                "Run Center final review and artifacts",
+            ],
+            ["virtual media mount/eject", "boot override", "power cycle", "ESXi install"],
+        ),
+    ]
+
+
+def _real_change_lane(
+    lane_id: str,
+    label: str,
+    status: str,
+    next_safe_action: str,
+    required_gates: list[str],
+    blocked_actions: list[str],
+) -> IloRealChangeLaneRead:
+    return IloRealChangeLaneRead(
+        id=lane_id,
+        label=label,
+        status=status,
+        execution_enabled=False,
+        next_safe_action=next_safe_action,
+        required_gates=required_gates,
+        blocked_actions=blocked_actions,
     )
 
 
@@ -1071,6 +1183,7 @@ def _redacted_destructive_rebuild_preview(
         "required_capabilities": [
             requirement.model_dump() for requirement in preview.required_capabilities
         ],
+        "real_change_lanes": [lane.model_dump() for lane in preview.real_change_lanes],
         "blockers": preview.blockers,
         "warnings": preview.warnings,
         "future_workflow_handoff": preview.future_workflow_handoff,

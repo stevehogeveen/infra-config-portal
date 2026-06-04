@@ -557,6 +557,16 @@ class IloDestructiveRebuildRequirementRead(BaseModel):
     detail: str
 
 
+class IloRealChangeLaneRead(BaseModel):
+    id: str
+    label: str
+    status: str
+    execution_enabled: bool = False
+    next_safe_action: str
+    required_gates: list[str] = Field(default_factory=list)
+    blocked_actions: list[str] = Field(default_factory=list)
+
+
 class IloDestructiveRebuildPreviewRead(BaseModel):
     provider_id: str
     provider_mode: str
@@ -568,6 +578,7 @@ class IloDestructiveRebuildPreviewRead(BaseModel):
     discovered_state: dict[str, Any] = Field(default_factory=dict)
     intended_scope: list[str] = Field(default_factory=list)
     required_capabilities: list[IloDestructiveRebuildRequirementRead] = Field(default_factory=list)
+    real_change_lanes: list[IloRealChangeLaneRead] = Field(default_factory=list)
     blockers: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     future_workflow_handoff: dict[str, Any] = Field(default_factory=dict)

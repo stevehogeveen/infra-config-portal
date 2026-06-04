@@ -563,6 +563,20 @@ def test_ilo_destructive_rebuild_preview_is_blocked_handoff(client: TestClient) 
         and requirement["status"] == "satisfied"
         for requirement in payload["required_capabilities"]
     )
+    lanes = {lane["id"]: lane for lane in payload["real_change_lanes"]}
+    assert set(lanes) == {
+        "authenticated_inventory_reads",
+        "ilo_settings_writes",
+        "firmware_updates",
+        "storage_raid_changes",
+        "esxi_install",
+    }
+    assert all(lane["execution_enabled"] is False for lane in lanes.values())
+    assert lanes["authenticated_inventory_reads"]["status"] == "ready_to_plan"
+    assert lanes["ilo_settings_writes"]["status"] == "blocked"
+    assert "users" in lanes["ilo_settings_writes"]["blocked_actions"]
+    assert "drive wipe" in lanes["storage_raid_changes"]["blocked_actions"]
+    assert "ESXi install" in lanes["esxi_install"]["blocked_actions"]
     assert payload["blockers"]
     clear_probe_results()
 
@@ -832,6 +846,10 @@ def test_ilo_report_preview_cached_discovery(client: TestClient) -> None:
     assert "SERIAL-REDACTED" not in response.text
     assert payload["destructive_rebuild_preview"]["target_identity"]["identity_verified"] is True
     assert payload["destructive_rebuild_preview"]["target_identity"]["serial_present"] is True
+    assert all(
+        lane["execution_enabled"] is False
+        for lane in payload["destructive_rebuild_preview"]["real_change_lanes"]
+    )
     clear_probe_results()
 
 

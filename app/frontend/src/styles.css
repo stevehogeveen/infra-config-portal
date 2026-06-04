@@ -1161,6 +1161,16 @@ pre {
   margin-top: 12px;
 }
 
+.provider-inline-list {
+  color: #5d6877;
+  margin: 10px 0 0;
+  padding-left: 18px;
+}
+
+.provider-inline-list li + li {
+  margin-top: 4px;
+}
+
 .ilo-compare-section-list {
   display: grid;
   gap: 14px;

@@ -2309,6 +2309,33 @@ function IloDestructiveRebuildPreviewPanel({
           </article>
         ))}
       </div>
+      {preview.real_change_lanes.length > 0 && (
+        <>
+          <h3>Real Change Readiness</h3>
+          <div className="ilo-plan-section-list">
+            {preview.real_change_lanes.map((lane) => (
+              <article className="ilo-plan-section" key={lane.id}>
+                <div className="ilo-plan-section-head">
+                  <strong>{lane.label}</strong>
+                  <span className={`compare-status ${lane.status}`}>{labelize(lane.status)}</span>
+                </div>
+                <div className="provider-fact-grid compact">
+                  <ProviderFact label="Execution" value={lane.execution_enabled ? "Enabled" : "Disabled"} />
+                  <ProviderFact label="Blocked Actions" value={lane.blocked_actions.join(", ") || "None"} />
+                </div>
+                <p>{lane.next_safe_action}</p>
+                {lane.required_gates.length > 0 && (
+                  <ul className="provider-inline-list">
+                    {lane.required_gates.map((gate) => (
+                      <li key={gate}>{gate}</li>
+                    ))}
+                  </ul>
+                )}
+              </article>
+            ))}
+          </div>
+        </>
+      )}
       <ProviderIssueRows blockers={preview.blockers} warnings={preview.warnings} />
       <h3>Handoff And Artifacts</h3>
       <div className="provider-fact-grid">
