@@ -31,11 +31,12 @@ Unsupported modes raise a provider registry error.
 
 The iLO Provider Status panel also uses
 `GET /api/v1/providers/ilo-redfish/readiness-summary` for a read-only summary
-of connection readiness, cached Redfish discovery, desired setup sections,
-firmware/media readiness, report placeholders, and disabled dangerous actions.
+of connection readiness, cached GET-only endpoint detection, cached Redfish
+discovery, desired setup sections, firmware/media readiness, report
+placeholders, and disabled dangerous actions.
 This endpoint does not run discovery or contact iLO. It only normalizes local
-configuration presence flags, cached probe results, media metadata, and the
-plan-only upgrade decision model.
+configuration presence flags, cached probe results, endpoint classification,
+media metadata, and the plan-only upgrade decision model.
 
 `GET /api/v1/providers/ilo-redfish/setup-plan-preview` builds a plan-only setup
 preview from that readiness summary. It includes network, users, SNMP, NTP/time,
@@ -88,9 +89,11 @@ The current iLO Provider Status workflow is a read-only, plan-only operator
 surface. It is organized around these sections:
 
 - Overview / Readiness: summarizes connection configuration flags, cached
-  Redfish discovery availability, last probe status, model/generation,
-  firmware, media inventory mode, upgrade decision, blockers, removable
-  warnings, and the next safe action. It does not probe iLO on page load.
+  GET-only endpoint classification, Redfish root status, legacy endpoint
+  status, web endpoint status, Redfish discovery availability, last probe
+  status, model/generation, firmware, media inventory mode, upgrade decision,
+  blockers, removable warnings, and the next safe action. It does not probe iLO
+  on page load.
 - Desired Intent: stores intended setup values locally for preview only. The
   form accepts network, users, SNMP, NTP/time, DNS/domain, and notes intent,
   but no passwords, tokens, SNMP secrets, or credential values. Saving intent
@@ -202,6 +205,11 @@ Provider Status action.
 
 iLO / Redfish probes may only issue GET requests for:
 
+- endpoint detection paths:
+  - `/redfish/v1/`
+  - `/redfish/v1`
+  - `/`
+  - `/xmldata?item=All`
 - service root
 - manager summary
 - system summary
@@ -211,9 +219,29 @@ iLO / Redfish probes may only issue GET requests for:
 
 The adapter uses short timeouts, configurable TLS verification, HTTP basic auth,
 and response/error redaction. Passwords are never returned in API responses.
-Legacy iLO endpoints are not probed by the current readiness summary; their
-status is reported as `unknown/not_checked` until a future read-only legacy
-probe is explicitly designed and guarded.
+The endpoint detection matrix records only path, HTTP status code, content
+type, sanitized error class, and classification. It does not return response
+bodies, credentials, auth headers, cookies, or raw device inventory values.
+
+iLO endpoint classifications include:
+
+- `redfish_available`
+- `redfish_http_error`
+- `legacy_available`
+- `legacy_available_redfish_not_found`
+- `web_available_redfish_not_found`
+- `endpoint_not_found_or_wrong_target`
+- `auth_failed`
+- `tls_failed`
+- `network_unreachable`
+- `not_checked`
+- `unknown_endpoint_state`
+
+When `/redfish/v1/` returns 404 and `/xmldata?item=All` returns 200, the
+operator message is: "Legacy iLO endpoint is available, but Redfish root was not
+found." When `/redfish/v1/` returns 404 and `/` returns 200, the operator
+message is: "iLO web endpoint is reachable, but Redfish root was not found."
+Both states remain read-only and do not enable any setting change.
 
 Cisco console probes may only:
 

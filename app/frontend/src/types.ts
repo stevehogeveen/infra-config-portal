@@ -239,9 +239,14 @@ export type IloCurrentState = {
   serial: string | null;
   current_firmware: string | null;
   ilo_generation: string | null;
+  endpoint_classification: string;
+  endpoint_next_safe_action: string;
+  redfish_root_status: string;
   redfish_endpoint_detected: string;
   legacy_endpoint_status: string;
   legacy_endpoint_message: string;
+  web_endpoint_status: string;
+  endpoint_detection: Record<string, unknown>;
   media_inventory_mode: string;
 };
 

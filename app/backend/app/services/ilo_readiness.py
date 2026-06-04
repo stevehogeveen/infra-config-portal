@@ -97,6 +97,8 @@ def get_ilo_readiness_summary() -> IloReadinessSummaryRead:
     media_inventory = get_media_inventory()
     firmware_readiness = get_ilo_upgrade_readiness()
     config = status.configuration
+    endpoint_detection = _endpoint_detection(probe_result)
+    endpoint_classification = str(endpoint_detection.get("classification") or "not_checked")
 
     return IloReadinessSummaryRead(
         provider_id=PROVIDER_ID,
@@ -126,12 +128,17 @@ def get_ilo_readiness_summary() -> IloReadinessSummaryRead:
             serial=firmware_readiness.subject.serial,
             current_firmware=firmware_readiness.subject.current_version,
             ilo_generation=firmware_readiness.subject.generation,
-            redfish_endpoint_detected=_redfish_endpoint_detected(probe_result),
-            legacy_endpoint_status="unknown/not_checked",
-            legacy_endpoint_message=(
-                "No legacy iLO endpoint probe has been run; legacy endpoints are not "
-                "contacted by this preview."
+            endpoint_classification=endpoint_classification,
+            endpoint_next_safe_action=str(
+                endpoint_detection.get("next_safe_action")
+                or _endpoint_next_safe_action(endpoint_classification)
             ),
+            redfish_root_status=str(endpoint_detection.get("redfish_status") or "not_checked"),
+            redfish_endpoint_detected=_redfish_endpoint_detected(probe_result),
+            legacy_endpoint_status=str(endpoint_detection.get("legacy_status") or "not_checked"),
+            legacy_endpoint_message=_legacy_endpoint_message(endpoint_classification),
+            web_endpoint_status=str(endpoint_detection.get("web_status") or "not_checked"),
+            endpoint_detection=_redacted_endpoint_detection(endpoint_detection),
             media_inventory_mode=media_inventory.mode,
         ),
         desired_setup_sections=[
@@ -146,8 +153,12 @@ def get_ilo_readiness_summary() -> IloReadinessSummaryRead:
         ],
         firmware_readiness=firmware_readiness,
         upgrade_decision_status=firmware_readiness.decision.status,
-        blockers=_unique([*status.blockers, *firmware_readiness.blockers]),
-        warnings=_unique([*status.warnings, *firmware_readiness.warnings]),
+        blockers=_unique(
+            [*status.blockers, *firmware_readiness.blockers, *_endpoint_blockers(endpoint_classification)]
+        ),
+        warnings=_unique(
+            [*status.warnings, *firmware_readiness.warnings, *_endpoint_warnings(endpoint_classification)]
+        ),
         removable_warnings=firmware_readiness.removable_warnings,
         disabled_dangerous_actions=[asdict(action) for action in status.disabled_actions],
         reports_artifacts=[
@@ -190,13 +201,16 @@ def get_ilo_setup_plan_preview(session: Session | None = None) -> IloSetupPlanPr
                 "Network",
                 status=_network_status(intent, summary),
                 current_observation=(
-                    f"Redfish endpoint {summary.current_state.redfish_endpoint_detected}; "
-                    f"legacy endpoint {summary.current_state.legacy_endpoint_status}."
+                    f"Endpoint classification {summary.current_state.endpoint_classification}; "
+                    f"Redfish {summary.current_state.redfish_root_status}; "
+                    f"legacy {summary.current_state.legacy_endpoint_status}; "
+                    f"web {summary.current_state.web_endpoint_status}."
                 ),
                 planned_preview=_network_preview(intent),
                 notes=[
-                    "Uses cached Redfish discovery status only.",
+                    "Uses cached GET-only endpoint detection and readiness status only.",
                     summary.current_state.legacy_endpoint_message,
+                    summary.current_state.endpoint_next_safe_action,
                 ],
                 warnings=_network_warnings(intent),
             ),
@@ -606,6 +620,7 @@ def _destructive_target_identity(summary: IloReadinessSummaryRead) -> dict[str, 
         "ilo_generation_discovered": bool(summary.current_state.ilo_generation),
         "firmware_known": bool(summary.current_state.current_firmware),
         "redfish_endpoint_detected": summary.current_state.redfish_endpoint_detected,
+        "endpoint_classification": summary.current_state.endpoint_classification,
     }
 
 
@@ -716,12 +731,115 @@ def _redacted_readiness_summary(summary: IloReadinessSummaryRead) -> dict[str, A
             "current_firmware": summary.current_state.current_firmware,
             "ilo_generation": summary.current_state.ilo_generation,
             "redfish_endpoint_detected": summary.current_state.redfish_endpoint_detected,
+            "endpoint_classification": summary.current_state.endpoint_classification,
+            "endpoint_next_safe_action": summary.current_state.endpoint_next_safe_action,
+            "redfish_root_status": summary.current_state.redfish_root_status,
             "legacy_endpoint_status": summary.current_state.legacy_endpoint_status,
+            "legacy_endpoint_message": summary.current_state.legacy_endpoint_message,
+            "web_endpoint_status": summary.current_state.web_endpoint_status,
+            "endpoint_detection": summary.current_state.endpoint_detection,
             "media_inventory_mode": summary.current_state.media_inventory_mode,
         },
         "upgrade_decision_status": summary.upgrade_decision_status,
         "apply_enabled": False,
     }
+
+
+def _endpoint_detection(probe_result: dict[str, Any] | None) -> dict[str, Any]:
+    if not probe_result:
+        return {
+            "classification": "not_checked",
+            "message": "GET-only endpoint detection has not run.",
+            "checks": [],
+            "redfish_status": "not_checked",
+            "legacy_status": "not_checked",
+            "web_status": "not_checked",
+            "next_safe_action": "Run explicit GET-only endpoint detection.",
+        }
+    detection = probe_result.get("endpoint_detection")
+    if isinstance(detection, dict):
+        return detection
+    classification = "redfish_available" if probe_result.get("status") == "ok" else "unknown_endpoint_state"
+    return {
+        "classification": classification,
+        "message": "Endpoint detection was not recorded by this cached probe.",
+        "checks": [],
+        "redfish_status": "available" if probe_result.get("status") == "ok" else "unknown_endpoint_state",
+        "legacy_status": "not_checked",
+        "web_status": "not_checked",
+        "next_safe_action": _endpoint_next_safe_action(classification),
+    }
+
+
+def _redacted_endpoint_detection(detection: dict[str, Any]) -> dict[str, Any]:
+    checks = detection.get("checks") if isinstance(detection.get("checks"), list) else []
+    return {
+        "classification": detection.get("classification") or "not_checked",
+        "message": detection.get("message") or "GET-only endpoint detection has not run.",
+        "redfish_status": detection.get("redfish_status") or "not_checked",
+        "legacy_status": detection.get("legacy_status") or "not_checked",
+        "web_status": detection.get("web_status") or "not_checked",
+        "next_safe_action": detection.get("next_safe_action")
+        or _endpoint_next_safe_action(str(detection.get("classification") or "not_checked")),
+        "checks": [
+            {
+                "path": check.get("path"),
+                "status_code": check.get("status_code"),
+                "content_type": check.get("content_type"),
+                "error_class": check.get("error_class"),
+                "classification": check.get("classification"),
+            }
+            for check in checks
+            if isinstance(check, dict)
+        ],
+    }
+
+
+def _legacy_endpoint_message(classification: str) -> str:
+    if classification == "legacy_available_redfish_not_found":
+        return "Legacy iLO endpoint is available, but Redfish root was not found."
+    if classification == "legacy_available":
+        return "Legacy endpoint detected by GET-only endpoint detection."
+    if classification == "web_available_redfish_not_found":
+        return "iLO web endpoint is reachable, but Redfish root was not found."
+    if classification == "not_checked":
+        return "Legacy endpoint has not been checked; run explicit GET-only endpoint detection."
+    return _endpoint_next_safe_action(classification)
+
+
+def _endpoint_next_safe_action(classification: str) -> str:
+    actions = {
+        "redfish_available": "Continue with GET-only Redfish inventory discovery. No settings were changed.",
+        "redfish_http_error": "Review iLO Redfish support and endpoint status before retrying GET-only detection.",
+        "legacy_available": "Use a dedicated read-only legacy iLO discovery path if Redfish is unavailable.",
+        "legacy_available_redfish_not_found": "Use legacy read-only discovery context or verify whether this iLO supports Redfish.",
+        "web_available_redfish_not_found": "Verify iLO generation, firmware, and Redfish support for this target.",
+        "endpoint_not_found_or_wrong_target": "Verify target identity/address and retry GET-only endpoint detection.",
+        "auth_failed": "Review credentials or iLO permissions locally, without printing secrets.",
+        "tls_failed": "For lab/self-signed iLO, set ILO_TEST_VERIFY_TLS=false locally and retry.",
+        "network_unreachable": "Check network reachability, routing, firewall, and target power/network state.",
+        "not_checked": "Run explicit GET-only endpoint detection from Provider Status.",
+        "unknown_endpoint_state": "Review sanitized endpoint matrix and retry GET-only detection.",
+    }
+    return actions.get(classification, actions["unknown_endpoint_state"])
+
+
+def _endpoint_blockers(classification: str) -> list[str]:
+    if classification in {"auth_failed", "tls_failed", "network_unreachable", "endpoint_not_found_or_wrong_target"}:
+        return [_endpoint_next_safe_action(classification)]
+    return []
+
+
+def _endpoint_warnings(classification: str) -> list[str]:
+    if classification in {
+        "redfish_http_error",
+        "legacy_available",
+        "legacy_available_redfish_not_found",
+        "web_available_redfish_not_found",
+        "unknown_endpoint_state",
+    }:
+        return [_legacy_endpoint_message(classification)]
+    return []
 
 
 def _redacted_intent_summary(intent: IloSetupIntentRead) -> dict[str, Any]:
@@ -828,6 +946,9 @@ def _redacted_destructive_rebuild_preview(
             "firmware_known": bool(preview.target_identity.get("firmware_known")),
             "redfish_endpoint_detected": preview.target_identity.get(
                 "redfish_endpoint_detected"
+            ),
+            "endpoint_classification": preview.target_identity.get(
+                "endpoint_classification"
             ),
         },
         "intended_scope": preview.intended_scope,
@@ -1147,6 +1268,20 @@ def _last_probe_status(probe_result: dict[str, Any] | None) -> str:
 def _redfish_endpoint_detected(probe_result: dict[str, Any] | None) -> str:
     if not probe_result:
         return "no_probe"
+    classification = str(_endpoint_detection(probe_result).get("classification") or "")
+    if classification == "redfish_available":
+        return "detected"
+    if classification in {
+        "auth_failed",
+        "tls_failed",
+        "network_unreachable",
+        "redfish_http_error",
+        "legacy_available_redfish_not_found",
+        "web_available_redfish_not_found",
+        "endpoint_not_found_or_wrong_target",
+        "unknown_endpoint_state",
+    }:
+        return classification
     if probe_result.get("status") != "ok":
         return "not_detected"
     service_root = probe_result.get("service_root")

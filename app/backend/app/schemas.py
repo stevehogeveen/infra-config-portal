@@ -368,9 +368,14 @@ class IloCurrentStateRead(BaseModel):
     serial: str | None = None
     current_firmware: str | None = None
     ilo_generation: str | None = None
+    endpoint_classification: str = "not_checked"
+    endpoint_next_safe_action: str = "Run explicit GET-only endpoint detection."
+    redfish_root_status: str = "not_checked"
     redfish_endpoint_detected: str
     legacy_endpoint_status: str
     legacy_endpoint_message: str
+    web_endpoint_status: str = "not_checked"
+    endpoint_detection: dict[str, Any] = Field(default_factory=dict)
     media_inventory_mode: str
 
 

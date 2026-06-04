@@ -150,6 +150,22 @@ def test_ilo_upgrade_readiness_response_includes_decision(client: TestClient) ->
             "systems": [{"Model": "ProLiant DL360 Gen10"}],
             "chassis": [],
             "firmware": [],
+            "endpoint_detection": {
+                "classification": "redfish_available",
+                "message": "Redfish root is available. GET-only inventory discovery can continue.",
+                "checks": [
+                    {
+                        "path": "/redfish/v1/",
+                        "status_code": 200,
+                        "content_type": "application/json",
+                        "classification": "redfish_available",
+                    }
+                ],
+                "redfish_status": "available",
+                "legacy_status": "not_checked",
+                "web_status": "not_checked",
+                "next_safe_action": "Continue with GET-only Redfish inventory discovery. No settings were changed.",
+            },
             "warnings": [],
             "blockers": [],
         },
@@ -202,8 +218,11 @@ def test_ilo_readiness_summary_normalizes_readonly_state(client: TestClient) -> 
     assert payload["current_state"]["serial"] == "SERIAL-REDACTED"
     assert payload["current_state"]["current_firmware"] == "2.80"
     assert payload["current_state"]["ilo_generation"] == "ilo5"
+    assert payload["current_state"]["endpoint_classification"] == "redfish_available"
+    assert payload["current_state"]["redfish_root_status"] == "available"
+    assert payload["current_state"]["endpoint_next_safe_action"].endswith("No settings were changed.")
     assert payload["current_state"]["redfish_endpoint_detected"] == "detected"
-    assert payload["current_state"]["legacy_endpoint_status"] == "unknown/not_checked"
+    assert payload["current_state"]["legacy_endpoint_status"] == "not_checked"
     assert payload["current_state"]["media_inventory_mode"] == "sample"
     assert payload["upgrade_decision_status"] == payload["firmware_readiness"]["decision"]["status"]
     assert payload["desired_setup_sections"]
@@ -212,6 +231,64 @@ def test_ilo_readiness_summary_normalizes_readonly_state(client: TestClient) -> 
     assert payload["reports_artifacts"]
     assert payload["disabled_dangerous_actions"]
     assert all(not action["enabled"] for action in payload["disabled_dangerous_actions"])
+    clear_probe_results()
+
+
+def test_ilo_readiness_summary_reports_web_available_redfish_not_found(
+    client: TestClient,
+) -> None:
+    clear_probe_results()
+    record_probe_result(
+        "ilo-redfish",
+        {
+            "provider_id": "ilo-redfish",
+            "status": "failed",
+            "service_root": {},
+            "managers": [],
+            "systems": [],
+            "chassis": [],
+            "firmware": [],
+            "endpoint_detection": {
+                "classification": "web_available_redfish_not_found",
+                "message": "iLO web endpoint is reachable, but Redfish root was not found.",
+                "checks": [
+                    {
+                        "path": "/redfish/v1/",
+                        "status_code": 404,
+                        "content_type": "text/plain",
+                        "classification": "redfish_not_found",
+                    },
+                    {
+                        "path": "/",
+                        "status_code": 200,
+                        "content_type": "text/html",
+                        "classification": "web_available",
+                    },
+                ],
+                "redfish_status": "not_found",
+                "legacy_status": "not_found",
+                "web_status": "available",
+                "next_safe_action": "Verify iLO generation, firmware, and Redfish support for this target.",
+            },
+            "warnings": [],
+            "blockers": ["Verify iLO generation, firmware, and Redfish support for this target."],
+        },
+    )
+
+    response = client.get("/api/v1/providers/ilo-redfish/readiness-summary")
+
+    assert response.status_code == 200
+    payload = response.json()
+    current_state = payload["current_state"]
+    assert current_state["endpoint_classification"] == "web_available_redfish_not_found"
+    assert current_state["redfish_root_status"] == "not_found"
+    assert current_state["legacy_endpoint_status"] == "not_found"
+    assert current_state["web_endpoint_status"] == "available"
+    assert current_state["legacy_endpoint_message"] == (
+        "iLO web endpoint is reachable, but Redfish root was not found."
+    )
+    assert "Verify iLO generation" in current_state["endpoint_next_safe_action"]
+    assert current_state["endpoint_detection"]["checks"][0]["path"] == "/redfish/v1/"
     clear_probe_results()
 
 
@@ -227,6 +304,15 @@ def test_ilo_setup_plan_preview_is_plan_only(client: TestClient) -> None:
             "systems": [{"Model": "ProLiant DL360 Gen10"}],
             "chassis": [],
             "firmware": [],
+            "endpoint_detection": {
+                "classification": "redfish_available",
+                "message": "Redfish root is available. GET-only inventory discovery can continue.",
+                "checks": [],
+                "redfish_status": "available",
+                "legacy_status": "not_checked",
+                "web_status": "not_checked",
+                "next_safe_action": "Continue with GET-only Redfish inventory discovery. No settings were changed.",
+            },
             "warnings": [],
             "blockers": [],
         },
@@ -277,6 +363,15 @@ def test_ilo_destructive_rebuild_preview_is_blocked_handoff(client: TestClient) 
             ],
             "chassis": [],
             "firmware": [],
+            "endpoint_detection": {
+                "classification": "redfish_available",
+                "message": "Redfish root is available. GET-only inventory discovery can continue.",
+                "checks": [],
+                "redfish_status": "available",
+                "legacy_status": "not_checked",
+                "web_status": "not_checked",
+                "next_safe_action": "Continue with GET-only Redfish inventory discovery. No settings were changed.",
+            },
             "warnings": [],
             "blockers": [],
         },
@@ -565,6 +660,8 @@ def test_ilo_report_preview_cached_discovery(client: TestClient) -> None:
     assert current_state["current_firmware"] == "2.80"
     assert current_state["ilo_generation"] == "ilo5"
     assert current_state["serial_present"] is True
+    assert current_state["endpoint_classification"] == "redfish_available"
+    assert current_state["redfish_root_status"] == "available"
     assert "SERIAL-REDACTED" not in response.text
     assert payload["destructive_rebuild_preview"]["target_identity"]["serial_present"] is True
     clear_probe_results()

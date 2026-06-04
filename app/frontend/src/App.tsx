@@ -1879,6 +1879,7 @@ function IloRedfishDetails({
             disabledActions={summary.disabled_dangerous_actions}
             onProbe={onProbe}
             safeActions={provider.safe_actions}
+            summary={summary}
           />
         )}
       </div>
@@ -1927,6 +1928,12 @@ function IloProviderTopSummary({
         <ProviderFact label="Firmware Decision" value={labelize(summary.upgrade_decision_status)} />
         <ProviderFact label="Unknown Compare" value={String(compareStatuses.discovered_unknown ?? 0)} />
         <ProviderFact label="Apply / Actions" value="Disabled" />
+      </div>
+      <div className="provider-fact-grid compact">
+        <ProviderFact label="Endpoint Classification" value={labelize(summary.current_state.endpoint_classification)} />
+        <ProviderFact label="Redfish Status" value={labelize(summary.current_state.redfish_root_status)} />
+        <ProviderFact label="Legacy Status" value={labelize(summary.current_state.legacy_endpoint_status)} />
+        <ProviderFact label="Web Status" value={labelize(summary.current_state.web_endpoint_status)} />
       </div>
       <ProviderIssueRows
         blockers={firstBlocker ? [firstBlocker] : []}
@@ -2355,6 +2362,7 @@ function IloReportPreviewPanel() {
             <ProviderFact label="Apply" value={report.apply_enabled ? "Enabled" : "Disabled"} />
             <ProviderFact label="Source" value={report.source} />
           </div>
+          <IloReportEndpointFacts report={report} />
           <div className="provider-issue-rows">
             {report.blockers.map((blocker) => (
               <div className="provider-issue blocker" key={blocker}>
@@ -2373,6 +2381,39 @@ function IloReportPreviewPanel() {
         </>
       )}
     </section>
+  );
+}
+
+function IloReportEndpointFacts({ report }: { report: IloReportPreview }) {
+  const readiness = objectValue(report.readiness_summary);
+  const currentState = objectValue(readiness.current_state);
+  if (!Object.keys(currentState).length) return null;
+
+  return (
+    <>
+      <h3>GET-Only Endpoint Detection</h3>
+      <div className="provider-fact-grid compact">
+        <ProviderFact
+          label="Classification"
+          value={labelize(asString(currentState.endpoint_classification) || "not_checked")}
+        />
+        <ProviderFact
+          label="Redfish Status"
+          value={labelize(asString(currentState.redfish_root_status) || "not_checked")}
+        />
+        <ProviderFact
+          label="Legacy Status"
+          value={labelize(asString(currentState.legacy_endpoint_status) || "not_checked")}
+        />
+        <ProviderFact
+          label="Web Status"
+          value={labelize(asString(currentState.web_endpoint_status) || "not_checked")}
+        />
+      </div>
+      <p className="provider-redaction-note">
+        {asString(currentState.endpoint_next_safe_action) || "No settings were changed."}
+      </p>
+    </>
   );
 }
 
@@ -2410,6 +2451,7 @@ function IloConnectionPanel({ summary }: { summary: IloReadinessSummary }) {
 
 function IloCurrentStatePanel({ summary }: { summary: IloReadinessSummary }) {
   const { current_state } = summary;
+  const checks = endpointChecks(current_state.endpoint_detection);
 
   return (
     <section className="ilo-summary-section">
@@ -2428,6 +2470,39 @@ function IloCurrentStatePanel({ summary }: { summary: IloReadinessSummary }) {
         <ProviderFact label="Legacy Endpoint" value={current_state.legacy_endpoint_status} />
         <ProviderFact label="Media Inventory" value={labelize(current_state.media_inventory_mode)} />
       </div>
+      <h3>GET-Only Endpoint Detection</h3>
+      <div className="provider-callout">
+        <strong>{labelize(current_state.endpoint_classification)}</strong>
+        <p>{current_state.endpoint_next_safe_action}</p>
+      </div>
+      <div className="provider-fact-grid compact">
+        <ProviderFact label="Redfish Status" value={labelize(current_state.redfish_root_status)} />
+        <ProviderFact label="Legacy Status" value={labelize(current_state.legacy_endpoint_status)} />
+        <ProviderFact label="Web Status" value={labelize(current_state.web_endpoint_status)} />
+        <ProviderFact label="No Settings Changed" value="Confirmed" />
+      </div>
+      {checks.length > 0 && (
+        <table className="provider-candidate-table endpoint-detection-table">
+          <thead>
+            <tr>
+              <th>Path</th>
+              <th>Status</th>
+              <th>Content Type</th>
+              <th>Classification</th>
+            </tr>
+          </thead>
+          <tbody>
+            {checks.map((check) => (
+              <tr key={check.path}>
+                <td>{check.path}</td>
+                <td>{check.status}</td>
+                <td>{check.contentType}</td>
+                <td>{labelize(check.classification)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
       <p className="provider-redaction-note">{current_state.legacy_endpoint_message}</p>
     </section>
   );
@@ -2520,15 +2595,23 @@ function IloSafetyPanel({
   busy,
   disabledActions,
   onProbe,
-  safeActions
+  safeActions,
+  summary
 }: {
   busy: boolean;
   disabledActions: ProviderAction[];
   onProbe: () => void;
   safeActions: ProviderAction[];
+  summary: IloReadinessSummary;
 }) {
   return (
     <section className="ilo-summary-section">
+      <div className="provider-callout">
+        <strong>GET-only endpoint detection</strong>
+        <p>
+          {labelize(summary.current_state.endpoint_classification)}. {summary.current_state.endpoint_next_safe_action}
+        </p>
+      </div>
       <h3>Read-Only Actions</h3>
       <div className="provider-action-layout upgrade-action-layout">
         {safeActions.map((action) => (
@@ -2822,6 +2905,25 @@ function objectValue(value: unknown): Record<string, unknown> {
 function consoleCandidates(value: unknown): ConsoleCandidate[] {
   if (!Array.isArray(value)) return [];
   return value.filter(isConsoleCandidate);
+}
+
+function endpointChecks(value: unknown): Array<{
+  path: string;
+  status: string;
+  contentType: string;
+  classification: string;
+}> {
+  const detection = objectValue(value);
+  const checks = detection.checks;
+  if (!Array.isArray(checks)) return [];
+  return checks
+    .map((item) => objectValue(item))
+    .map((item) => ({
+      path: asString(item.path) || "-",
+      status: item.status_code ? `HTTP ${asString(item.status_code)}` : asString(item.error_class) || "-",
+      contentType: asString(item.content_type) || "-",
+      classification: asString(item.classification) || "unknown_endpoint_state"
+    }));
 }
 
 function isConsoleCandidate(value: unknown): value is ConsoleCandidate {
