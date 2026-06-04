@@ -192,7 +192,7 @@ def update_vm_deployment_request(
     )
     if reset_to_draft:
         invalidated_runs = _cancel_planned_workflow_runs_for_request(session, request.id)
-        invalidated_approval_ids = _approval_ids_for_request(session, request.id)
+        invalidated_approval_ids = _invalidate_approvals_for_request(session, request.id)
         request.status = RequestStatus.DRAFT.value
 
     message = _update_audit_message(
@@ -545,14 +545,17 @@ def _cancel_planned_workflow_runs_for_request(
     return runs
 
 
-def _approval_ids_for_request(session: Session, request_id: str) -> list[str]:
-    return list(
+def _invalidate_approvals_for_request(session: Session, request_id: str) -> list[str]:
+    approvals = list(
         session.execute(
-            select(Approval.id)
+            select(Approval)
             .where(Approval.request_id == request_id)
             .order_by(Approval.created_at.desc())
         ).scalars()
     )
+    for approval in approvals:
+        approval.decision = ApprovalDecision.INVALIDATED.value
+    return [approval.id for approval in approvals]
 
 
 def _update_audit_message(

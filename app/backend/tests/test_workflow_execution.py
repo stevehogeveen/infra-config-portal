@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.enums import RequestStatus, WorkflowRunStatus
-from app.models import AuditEvent, Request, WorkflowRun
+from app.models import Approval, AuditEvent, Request, WorkflowRun
 from app.schemas import ApprovalCreate, VMDeploymentCreate, VMDeploymentUpdate
 from app.services.lifecycle import (
     ExecutionPreflightError,
@@ -331,6 +331,37 @@ def test_planned_execution_affecting_edit_leaves_no_executable_stale_plan(
             vsphere=vsphere,
         )
     assert vsphere.execute_calls == 0
+
+
+def test_execution_affecting_edit_invalidates_existing_approval(
+    db_session: Session,
+    vm_payload: dict,
+) -> None:
+    request = _create_approved_request(db_session, vm_payload)
+    approval = db_session.execute(
+        select(Approval).where(Approval.request_id == request.id)
+    ).scalar_one()
+    assert approval.decision == "approved"
+
+    updated = update_vm_deployment_request(
+        db_session,
+        request.id,
+        VMDeploymentUpdate(template="ubuntu-24.04-template"),
+        actor="local-dev-user",
+    )
+
+    persisted_approval = db_session.get(Approval, approval.id)
+    assert persisted_approval is not None
+    assert updated.status == RequestStatus.DRAFT.value
+    assert persisted_approval.decision == "invalidated"
+
+    audit_event = db_session.execute(
+        select(AuditEvent).where(
+            AuditEvent.request_id == request.id,
+            AuditEvent.event_type == "request.updated",
+        )
+    ).scalar_one()
+    assert audit_event.data_json["invalidated_approval_ids"] == [approval.id]
 
 
 @pytest.mark.parametrize(
