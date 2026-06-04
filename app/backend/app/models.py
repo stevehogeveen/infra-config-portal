@@ -148,6 +148,19 @@ class VMDeploymentRequest(Base):
     request: Mapped[Request] = relationship(back_populates="vm_deploy")
 
 
+class IloSetupIntent(Base):
+    __tablename__ = "ilo_setup_intents"
+
+    provider_id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    intent_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utcnow,
+        onupdate=utcnow,
+    )
+
+
 class WorkflowRun(Base):
     __tablename__ = "workflow_runs"
 

@@ -953,10 +953,15 @@ pre {
 
 .provider-callout p,
 .provider-redaction-note,
-.provider-missing-fields {
+.provider-missing-fields,
+.provider-redaction-note-list {
   color: #5d6877;
   font-size: 13px;
   margin: 6px 0 0;
+}
+
+.provider-redaction-note-list {
+  padding-left: 18px;
 }
 
 .provider-detail-section h3,
@@ -1081,6 +1086,201 @@ pre {
   margin-top: 16px;
 }
 
+.ilo-summary-section {
+  margin-top: 18px;
+}
+
+.ilo-summary-top {
+  display: grid;
+  gap: 12px;
+}
+
+.ilo-tab-list {
+  border-bottom: 1px solid #dfe4ea;
+  display: flex;
+  gap: 6px;
+  margin-top: 18px;
+  overflow-x: auto;
+}
+
+.ilo-tab-list button {
+  background: transparent;
+  border: 0;
+  border-bottom: 3px solid transparent;
+  border-radius: 0;
+  color: #5d6877;
+  flex: 0 0 auto;
+  padding: 10px 12px;
+}
+
+.ilo-tab-list button.active,
+.ilo-tab-list button[aria-selected="true"] {
+  border-bottom-color: #2563eb;
+  color: #1e3a8a;
+}
+
+.ilo-tab-panel {
+  padding-top: 2px;
+}
+
+.ilo-section-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.ilo-section-item {
+  border-top: 1px solid #e5e9ef;
+  padding-top: 10px;
+}
+
+.ilo-section-item strong,
+.ilo-section-item span {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.ilo-section-item span {
+  color: #6b7686;
+  font-size: 12px;
+  font-weight: 800;
+  margin-top: 4px;
+  text-transform: uppercase;
+}
+
+.ilo-section-item p {
+  color: #5d6877;
+  font-size: 12px;
+  line-height: 1.35;
+  margin: 8px 0 0;
+}
+
+.ilo-plan-section-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.provider-inline-list {
+  color: #5d6877;
+  margin: 10px 0 0;
+  padding-left: 18px;
+}
+
+.provider-inline-list li + li {
+  margin-top: 4px;
+}
+
+.ilo-compare-section-list {
+  display: grid;
+  gap: 14px;
+  margin-top: 12px;
+}
+
+.ilo-plan-section {
+  border: 1px solid #e5e9ef;
+  border-radius: 6px;
+  padding: 12px;
+}
+
+.ilo-compare-section {
+  border: 1px solid #e5e9ef;
+  border-radius: 6px;
+  overflow: hidden;
+  padding: 12px;
+}
+
+.ilo-plan-section-head {
+  align-items: flex-start;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+}
+
+.ilo-plan-section-head strong,
+.ilo-plan-section-head span {
+  overflow-wrap: anywhere;
+}
+
+.ilo-plan-section-head span {
+  color: #6b7686;
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.ilo-plan-section p,
+.ilo-plan-section li {
+  color: #5d6877;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.ilo-plan-section p {
+  margin: 8px 0 0;
+}
+
+.ilo-plan-section ul {
+  margin: 8px 0 0;
+  padding-left: 18px;
+}
+
+.ilo-compare-table {
+  margin-top: 10px;
+}
+
+.compare-status {
+  border-radius: 999px;
+  display: inline-flex;
+  font-size: 11px;
+  font-weight: 800;
+  padding: 4px 7px;
+  text-transform: uppercase;
+}
+
+.compare-status.match {
+  background: #e6f6ee;
+  color: #166534;
+}
+
+.compare-status.mismatch,
+.compare-status.blocked,
+.compare-status.blocked_out_of_scope {
+  background: #fdecec;
+  color: #b42318;
+}
+
+.compare-status.desired_missing,
+.compare-status.discovered_unknown,
+.compare-status.not_comparable,
+.compare-status.missing,
+.compare-status.required {
+  background: #fff7df;
+  color: #8a5d00;
+}
+
+.compare-status.satisfied {
+  background: #e6f6ee;
+  color: #166534;
+}
+
+.ilo-intent-form {
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.ilo-user-intent-grid {
+  display: grid;
+  gap: 8px;
+}
+
+.ilo-user-intent-row {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .upgrade-readiness-callout {
   margin-top: 0;
 }
@@ -1159,7 +1359,8 @@ pre {
   .lifecycle-action-grid,
   .artifact-grid,
   .provider-fact-grid,
-  .provider-action-layout {
+  .provider-action-layout,
+  .ilo-section-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
@@ -1191,7 +1392,9 @@ pre {
     .artifact-grid,
     .provider-fact-grid,
     .provider-fact-grid.compact,
-    .provider-action-layout {
+    .provider-action-layout,
+    .ilo-section-grid,
+    .ilo-user-intent-row {
     grid-template-columns: 1fr;
   }
 

@@ -25,6 +25,13 @@ from app.schemas import (
     ArtifactRead,
     AuditEventRead,
     CatalogRead,
+    IloDestructiveRebuildPreviewRead,
+    IloReadinessSummaryRead,
+    IloReportPreviewRead,
+    IloSetupCompareReportRead,
+    IloSetupIntentRead,
+    IloSetupIntentWrite,
+    IloSetupPlanPreviewRead,
     IloUpgradeReadinessRead,
     MediaInventoryRead,
     ProviderProbeResultRead,
@@ -57,6 +64,15 @@ from app.services.lifecycle import (
     plan_request,
     submit_request,
     update_vm_deployment_request,
+)
+from app.services.ilo_readiness import (
+    get_ilo_destructive_rebuild_preview,
+    get_ilo_readiness_summary,
+    get_ilo_report_preview,
+    get_ilo_setup_compare,
+    get_ilo_setup_intent,
+    get_ilo_setup_plan_preview,
+    save_ilo_setup_intent,
 )
 from app.services.media_inventory import get_media_inventory
 from app.services.readiness import get_request_readiness
@@ -283,6 +299,73 @@ def probe_provider(provider_id: str) -> ProviderProbeResultRead:
 )
 def read_ilo_upgrade_readiness() -> IloUpgradeReadinessRead:
     return get_ilo_upgrade_readiness()
+
+
+@router.get(
+    "/providers/ilo-redfish/readiness-summary",
+    response_model=IloReadinessSummaryRead,
+)
+def read_ilo_readiness_summary() -> IloReadinessSummaryRead:
+    return get_ilo_readiness_summary()
+
+
+@router.get(
+    "/providers/ilo-redfish/destructive-rebuild-preview",
+    response_model=IloDestructiveRebuildPreviewRead,
+)
+def read_ilo_destructive_rebuild_preview() -> IloDestructiveRebuildPreviewRead:
+    return get_ilo_destructive_rebuild_preview()
+
+
+@router.get(
+    "/providers/ilo-redfish/setup-plan-preview",
+    response_model=IloSetupPlanPreviewRead,
+)
+def read_ilo_setup_plan_preview(
+    session: Session = Depends(get_session),
+) -> IloSetupPlanPreviewRead:
+    return get_ilo_setup_plan_preview(session)
+
+
+@router.get(
+    "/providers/ilo-redfish/setup-intent",
+    response_model=IloSetupIntentRead,
+)
+def read_ilo_setup_intent(
+    session: Session = Depends(get_session),
+) -> IloSetupIntentRead:
+    return get_ilo_setup_intent(session)
+
+
+@router.put(
+    "/providers/ilo-redfish/setup-intent",
+    response_model=IloSetupIntentRead,
+)
+def update_ilo_setup_intent(
+    payload: IloSetupIntentWrite,
+    session: Session = Depends(get_session),
+) -> IloSetupIntentRead:
+    return save_ilo_setup_intent(session, payload)
+
+
+@router.get(
+    "/providers/ilo-redfish/setup-compare",
+    response_model=IloSetupCompareReportRead,
+)
+def read_ilo_setup_compare(
+    session: Session = Depends(get_session),
+) -> IloSetupCompareReportRead:
+    return get_ilo_setup_compare(session)
+
+
+@router.get(
+    "/providers/ilo-redfish/report-preview",
+    response_model=IloReportPreviewRead,
+)
+def read_ilo_report_preview(
+    session: Session = Depends(get_session),
+) -> IloReportPreviewRead:
+    return get_ilo_report_preview(session)
 
 
 def _run_provider_probe(provider_id: str, probe: Callable[[], dict]) -> dict:

@@ -348,6 +348,282 @@ class ProviderActionRead(BaseModel):
     endpoint: str | None = None
 
 
+class IloConnectionReadinessRead(BaseModel):
+    provider_mode: str
+    provider_status: str
+    host_configured: bool
+    username_configured: bool
+    password_configured: bool
+    tls_verify: bool
+    timeout_seconds: float
+    missing_fields: list[str] = Field(default_factory=list)
+    redfish_probe_available: bool
+    safety_flags: dict[str, Any] = Field(default_factory=dict)
+
+
+class IloEndpointCheckRead(BaseModel):
+    name: str | None = None
+    path: str | None = None
+    status_code: int | None = None
+    content_type: str | None = None
+    error_class: str | None = None
+    classification: str | None = None
+
+
+class IloEndpointDetectionRead(BaseModel):
+    classification: str = "not_checked"
+    message: str = "GET-only endpoint detection has not run."
+    redfish_status: str = "not_checked"
+    legacy_status: str = "not_checked"
+    web_status: str = "not_checked"
+    inventory_collection_status: str = "not_checked"
+    inventory_collection_classification: str = "not_checked"
+    inventory_collection_checks: list[IloEndpointCheckRead] = Field(default_factory=list)
+    auth_failure_classification: str = "not_checked"
+    auth_recovery_hint: str = "not_checked"
+    next_safe_action: str = "Run explicit GET-only endpoint detection from Provider Status."
+    diagnostic_hints: list[str] = Field(default_factory=list)
+    checks: list[IloEndpointCheckRead] = Field(default_factory=list)
+
+
+class IloCurrentStateRead(BaseModel):
+    last_probe_status: str
+    last_probe_time: str | None = None
+    model: str | None = None
+    serial: str | None = None
+    current_firmware: str | None = None
+    ilo_generation: str | None = None
+    endpoint_classification: str = "not_checked"
+    endpoint_next_safe_action: str = "Run explicit GET-only endpoint detection."
+    redfish_root_status: str = "not_checked"
+    redfish_endpoint_detected: str
+    legacy_endpoint_status: str
+    legacy_endpoint_message: str
+    web_endpoint_status: str = "not_checked"
+    endpoint_detection: IloEndpointDetectionRead = Field(default_factory=IloEndpointDetectionRead)
+    media_inventory_mode: str
+
+
+class IloDesiredSetupSectionRead(BaseModel):
+    id: str
+    title: str
+    status: str
+    apply_enabled: bool = False
+    note: str
+
+
+class IloReportArtifactPlaceholderRead(BaseModel):
+    kind: str
+    title: str
+    status: str
+    note: str
+
+
+class IloReadinessSummaryRead(BaseModel):
+    provider_id: str
+    connection: IloConnectionReadinessRead
+    current_state: IloCurrentStateRead
+    desired_setup_sections: list[IloDesiredSetupSectionRead]
+    firmware_readiness: IloUpgradeReadinessRead
+    upgrade_decision_status: str
+    blockers: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    removable_warnings: list[str] = Field(default_factory=list)
+    disabled_dangerous_actions: list[ProviderActionRead] = Field(default_factory=list)
+    reports_artifacts: list[IloReportArtifactPlaceholderRead] = Field(default_factory=list)
+
+
+SECRET_VALUE_RE = re.compile(
+    r"(password\s*=|token\s*=|secret\s*=|bearer\s+|-----begin|private[_ -]?key)",
+    re.IGNORECASE,
+)
+
+
+class IloNetworkIntent(BaseModel):
+    hostname: str | None = Field(default=None, max_length=120)
+    management_ip: str | None = Field(default=None, max_length=80)
+    subnet_mask_or_prefix: str | None = Field(default=None, max_length=80)
+    gateway: str | None = Field(default=None, max_length=80)
+    vlan: str | None = Field(default=None, max_length=80)
+
+
+class IloUserIntent(BaseModel):
+    username_label: str = Field(min_length=1, max_length=120)
+    role: str = Field(min_length=1, max_length=120)
+
+
+class IloSnmpIntent(BaseModel):
+    enabled: bool = False
+    destinations: list[str] = Field(default_factory=list, max_length=10)
+    community_or_user_ref_labels: list[str] = Field(default_factory=list, max_length=10)
+
+
+class IloTimeIntent(BaseModel):
+    timezone: str | None = Field(default=None, max_length=120)
+    ntp_servers: list[str] = Field(default_factory=list, max_length=10)
+
+
+class IloDnsDomainIntent(BaseModel):
+    domain_name: str | None = Field(default=None, max_length=180)
+    dns_servers: list[str] = Field(default_factory=list, max_length=10)
+
+
+class IloSetupIntentWrite(BaseModel):
+    network: IloNetworkIntent = Field(default_factory=IloNetworkIntent)
+    users: list[IloUserIntent] = Field(default_factory=list, max_length=20)
+    snmp: IloSnmpIntent = Field(default_factory=IloSnmpIntent)
+    time: IloTimeIntent = Field(default_factory=IloTimeIntent)
+    dns_domain: IloDnsDomainIntent = Field(default_factory=IloDnsDomainIntent)
+    notes: str | None = Field(default=None, max_length=2000)
+
+    @field_validator("*", mode="after")
+    @classmethod
+    def reject_secret_values(cls, value: Any) -> Any:
+        _reject_secret_values(value)
+        return value
+
+
+class IloSetupIntentRead(IloSetupIntentWrite):
+    provider_id: str
+    apply_enabled: bool = False
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class IloSetupPlanSectionRead(BaseModel):
+    id: str
+    title: str
+    status: str
+    apply_enabled: bool = False
+    source: str
+    current_observation: str
+    planned_preview: str
+    notes: list[str] = Field(default_factory=list)
+    blockers: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
+class IloSetupPlanPreviewRead(BaseModel):
+    provider_id: str
+    mode: str
+    plan_only: bool = True
+    apply_enabled: bool = False
+    generated_from: str
+    sections: list[IloSetupPlanSectionRead]
+    firmware_readiness_handoff: dict[str, Any] = Field(default_factory=dict)
+    reports_artifacts: list[IloReportArtifactPlaceholderRead] = Field(default_factory=list)
+    disabled_dangerous_actions: list[ProviderActionRead] = Field(default_factory=list)
+    blockers: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    removable_warnings: list[str] = Field(default_factory=list)
+
+
+class IloSetupCompareRowRead(BaseModel):
+    section: str
+    field: str
+    label: str
+    desired: str
+    discovered: str
+    status: str
+    next_safe_action: str
+    apply_enabled: bool = False
+
+
+class IloSetupCompareSectionRead(BaseModel):
+    id: str
+    title: str
+    status: str
+    apply_enabled: bool = False
+    next_safe_action: str
+    rows: list[IloSetupCompareRowRead]
+
+
+class IloSetupCompareReportRead(BaseModel):
+    provider_id: str
+    mode: str
+    source: str
+    apply_enabled: bool = False
+    sections: list[IloSetupCompareSectionRead]
+    disabled_dangerous_actions: list[ProviderActionRead] = Field(default_factory=list)
+    blockers: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    removable_warnings: list[str] = Field(default_factory=list)
+
+
+class IloDestructiveRebuildRequirementRead(BaseModel):
+    id: str
+    label: str
+    status: str
+    detail: str
+
+
+class IloRealChangeLaneRead(BaseModel):
+    id: str
+    label: str
+    status: str
+    execution_enabled: bool = False
+    next_safe_action: str
+    required_gates: list[str] = Field(default_factory=list)
+    blocked_actions: list[str] = Field(default_factory=list)
+
+
+class IloDestructiveRebuildPreviewRead(BaseModel):
+    provider_id: str
+    provider_mode: str
+    status: str
+    destructive_enabled: bool = False
+    apply_enabled: bool = False
+    safe_next_action: str
+    target_identity: dict[str, Any] = Field(default_factory=dict)
+    discovered_state: dict[str, Any] = Field(default_factory=dict)
+    intended_scope: list[str] = Field(default_factory=list)
+    required_capabilities: list[IloDestructiveRebuildRequirementRead] = Field(default_factory=list)
+    real_change_lanes: list[IloRealChangeLaneRead] = Field(default_factory=list)
+    blockers: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    future_workflow_handoff: dict[str, Any] = Field(default_factory=dict)
+    confirmation_requirements: dict[str, Any] = Field(default_factory=dict)
+    artifact_requirements: list[str] = Field(default_factory=list)
+
+
+class IloReportPreviewRead(BaseModel):
+    provider_id: str
+    provider_mode: str
+    generated_at: datetime
+    source: str
+    apply_enabled: bool = False
+    readiness_summary: dict[str, Any] = Field(default_factory=dict)
+    desired_setup_intent: dict[str, Any] = Field(default_factory=dict)
+    setup_compare_report: IloSetupCompareReportRead
+    setup_plan_preview: dict[str, Any] = Field(default_factory=dict)
+    destructive_rebuild_preview: dict[str, Any] = Field(default_factory=dict)
+    firmware_readiness: dict[str, Any] = Field(default_factory=dict)
+    media_inventory_summary: dict[str, Any] = Field(default_factory=dict)
+    disabled_dangerous_actions: list[ProviderActionRead] = Field(default_factory=list)
+    blockers: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    removable_warnings: list[str] = Field(default_factory=list)
+
+
+def _reject_secret_values(value: Any) -> None:
+    if isinstance(value, str):
+        if SECRET_VALUE_RE.search(value):
+            raise ValueError(
+                "iLO setup intent stores labels/placeholders only; secret-looking values are not allowed"
+            )
+        return
+    if isinstance(value, BaseModel):
+        _reject_secret_values(value.model_dump())
+        return
+    if isinstance(value, dict):
+        for nested in value.values():
+            _reject_secret_values(nested)
+        return
+    if isinstance(value, list):
+        for nested in value:
+            _reject_secret_values(nested)
+
+
 class ProviderStatusRead(BaseModel):
     id: str
     name: str

@@ -518,7 +518,7 @@ def test_ilo_readonly_status_is_unchanged_by_management_flags(monkeypatch) -> No
 
     assert status.status == "ready"
     assert status.safe_actions[0].enabled is True
-    assert status.safe_actions[0].reason == "Run GET-only Redfish inventory checks."
+    assert status.safe_actions[0].reason == "Run GET-only endpoint detection and Redfish inventory checks."
 
 
 def test_ilo_missing_config_returns_missing_config_blocker() -> None:
@@ -563,6 +563,225 @@ def test_ilo_status_exposes_only_configuration_presence() -> None:
     assert "ilo-lab-private" not in encoded_configuration
     assert "local-admin" not in encoded_configuration
     assert "super-secret-password" not in encoded_configuration
+
+
+def test_ilo_probe_classifies_web_available_redfish_not_found(monkeypatch) -> None:
+    _allow_readonly_ilo_lab(monkeypatch)
+    _install_fake_httpx_client(
+        monkeypatch,
+        {
+            "/redfish/v1/": (404, "text/plain; charset=utf-8"),
+            "/redfish/v1": (404, "text/plain; charset=utf-8"),
+            "/": (200, "text/html"),
+            "/xmldata?item=All": (404, "text/plain; charset=utf-8"),
+        },
+    )
+    adapter = IloRedfishAdapter(
+        provider_mode="local-readonly",
+        config=IloRedfishConfig(
+            host="192.0.2.202",
+            username="local-admin",
+            password="super-secret-password",
+            verify_tls=False,
+            timeout_seconds=1.0,
+        ),
+    )
+
+    result = adapter.probe()
+
+    assert result["status"] == "failed"
+    detection = result["endpoint_detection"]
+    assert detection["classification"] == "web_available_redfish_not_found"
+    assert detection["redfish_status"] == "not_found"
+    assert detection["web_status"] == "available"
+    assert detection["legacy_status"] == "not_found"
+    assert "The web root responded, but Redfish root was not found." in result["message"]
+    assert "HTTP web reachability alone does not prove" in result["message"]
+    assert "legacy iLO generation" in result["message"]
+    assert "unrelated web server" in result["message"]
+    assert "No settings were changed." in detection["next_safe_action"]
+    assert all(token not in detection["next_safe_action"].lower() for token in ("apply", "write"))
+    assert detection["diagnostic_hints"] == [
+        "Wrong IP: the responding web server may be a server OS, proxy, or another device.",
+        "Legacy iLO: older generations may not expose Redfish at /redfish/v1.",
+        "Redfish unavailable: the management UI may be reachable while the API is disabled or unsupported.",
+        "Non-iLO web server: the root page responds, but iLO-specific probes did not.",
+        "Keep using GET-only endpoint detection until target identity and Redfish support are confirmed.",
+    ]
+    matrix = {check["path"]: check for check in detection["checks"]}
+    assert matrix["/redfish/v1/"]["status_code"] == 404
+    assert matrix["/redfish/v1"]["status_code"] == 404
+    assert matrix["/"]["status_code"] == 200
+    assert matrix["/"]["content_type"] == "text/html"
+    assert matrix["/xmldata?item=All"]["status_code"] == 404
+    assert all("super-secret-password" not in json.dumps(check) for check in detection["checks"])
+
+
+def test_ilo_probe_classifies_legacy_available_redfish_not_found(monkeypatch) -> None:
+    _allow_readonly_ilo_lab(monkeypatch)
+    _install_fake_httpx_client(
+        monkeypatch,
+        {
+            "/redfish/v1/": (404, "text/plain"),
+            "/redfish/v1": (404, "text/plain"),
+            "/": (404, "text/plain"),
+            "/xmldata?item=All": (
+                200,
+                "text/xml",
+                (
+                    b"<RIMP><HSI><SPN>ProLiant DL360 Gen10</SPN>"
+                    b"<SBSN>SECRET-SERIAL-123</SBSN></HSI>"
+                    b"<MP><PN>Integrated Lights-Out 5</PN><FWRI>2.80</FWRI></MP></RIMP>"
+                ),
+            ),
+        },
+    )
+    adapter = IloRedfishAdapter(
+        provider_mode="local-readonly",
+        config=IloRedfishConfig(
+            host="192.0.2.202",
+            username="local-admin",
+            password="super-secret-password",
+            verify_tls=False,
+            timeout_seconds=1.0,
+        ),
+    )
+
+    result = adapter.probe()
+
+    assert result["status"] == "failed"
+    assert result["endpoint_detection"]["classification"] == "legacy_available_redfish_not_found"
+    assert result["endpoint_detection"]["legacy_status"] == "available"
+    assert result["message"] == "Legacy iLO endpoint is available, but Redfish root was not found."
+
+
+def test_ilo_probe_classifies_redfish_auth_failed(monkeypatch) -> None:
+    _allow_readonly_ilo_lab(monkeypatch)
+    _install_fake_httpx_client(
+        monkeypatch,
+        {
+            "/redfish/v1/": (401, "application/json"),
+            "/redfish/v1": (401, "application/json"),
+            "/": (200, "text/html"),
+            "/xmldata?item=All": (401, "text/plain"),
+        },
+    )
+    adapter = IloRedfishAdapter(
+        provider_mode="local-readonly",
+        config=IloRedfishConfig(
+            host="192.0.2.202",
+            username="local-admin",
+            password="super-secret-password",
+            verify_tls=False,
+            timeout_seconds=1.0,
+        ),
+    )
+
+    result = adapter.probe()
+
+    assert result["status"] == "failed"
+    assert result["endpoint_detection"]["classification"] == "auth_failed"
+    assert "credentials" in result["message"].lower()
+    assert "super-secret-password" not in json.dumps(result)
+
+
+def test_ilo_probe_classifies_inventory_auth_after_root_available(monkeypatch) -> None:
+    _allow_readonly_ilo_lab(monkeypatch)
+    _install_fake_httpx_client(
+        monkeypatch,
+        {
+            "/redfish/v1/": (
+                200,
+                "application/json",
+                {
+                    "@odata.id": "/redfish/v1/",
+                    "Managers": {"@odata.id": "/redfish/v1/Managers/"},
+                    "Systems": {"@odata.id": "/redfish/v1/Systems/"},
+                    "Chassis": {"@odata.id": "/redfish/v1/Chassis/"},
+                    "UpdateService": {"@odata.id": "/redfish/v1/UpdateService/"},
+                },
+            ),
+            "/redfish/v1": (200, "application/json", {"@odata.id": "/redfish/v1/"}),
+            "/": (200, "text/html"),
+            "/xmldata?item=All": (
+                200,
+                "text/xml",
+                (
+                    b"<RIMP><HSI><SPN>ProLiant DL360 Gen10</SPN>"
+                    b"<SBSN>SECRET-SERIAL-123</SBSN></HSI>"
+                    b"<MP><PN>Integrated Lights-Out 5</PN><FWRI>2.80</FWRI></MP></RIMP>"
+                ),
+            ),
+            "/redfish/v1/Managers/": (401, "application/json"),
+            "/redfish/v1/Systems/": (401, "application/json"),
+            "/redfish/v1/Chassis/": (401, "application/json"),
+            "/redfish/v1/UpdateService/": (401, "application/json"),
+        },
+    )
+    adapter = IloRedfishAdapter(
+        provider_mode="local-readonly",
+        config=IloRedfishConfig(
+            host="192.0.2.202",
+            username="local-admin",
+            password="super-secret-password",
+            verify_tls=False,
+            timeout_seconds=1.0,
+        ),
+    )
+
+    result = adapter.probe()
+
+    assert result["status"] == "failed"
+    detection = result["endpoint_detection"]
+    assert detection["classification"] == "redfish_inventory_auth_failed"
+    assert detection["redfish_status"] == "available"
+    assert detection["legacy_status"] == "available"
+    assert detection["web_status"] == "available"
+    assert result["legacy_identity"] == {
+        "source": "/xmldata?item=All",
+        "serial_present": True,
+        "model": "ProLiant DL360 Gen10",
+        "current_firmware": "2.80",
+        "ilo_generation": "ilo5",
+        "management_product": "Integrated Lights-Out 5",
+    }
+    assert detection["checks"][0]["classification"] == "redfish_root_available"
+    assert detection["inventory_collection_status"] == "unauthorized"
+    assert detection["inventory_collection_classification"] == "redfish_collection_unauthorized"
+    assert {
+        check["name"]: (check["path"], check["status_code"], check["classification"])
+        for check in detection["inventory_collection_checks"]
+    } == {
+        "Managers": (
+            "/redfish/v1/Managers/",
+            401,
+            "redfish_collection_unauthorized",
+        ),
+        "Systems": (
+            "/redfish/v1/Systems/",
+            401,
+            "redfish_collection_unauthorized",
+        ),
+        "Chassis": (
+            "/redfish/v1/Chassis/",
+            401,
+            "redfish_collection_unauthorized",
+        ),
+        "UpdateService": (
+            "/redfish/v1/UpdateService/",
+            401,
+            "redfish_collection_unauthorized",
+        ),
+    }
+    assert detection["auth_failure_classification"] == "basic_auth_rejected_or_insufficient_privilege"
+    assert detection["auth_recovery_hint"] == "session_auth_may_be_required"
+    assert detection["next_safe_action"] == (
+        "Review iLO account permissions or Redfish authentication method. No settings were changed."
+    )
+    assert "inventory discovery cannot continue" in result["message"].lower()
+    assert "Inventory discovery can continue" not in result["message"]
+    assert all("super-secret-password" not in json.dumps(check) for check in detection["checks"])
+    assert "SECRET-SERIAL-123" not in json.dumps(result)
 
 
 def test_ilo_redacts_secrets() -> None:
@@ -720,6 +939,61 @@ def _allow_readonly_lab(monkeypatch) -> None:
             destructive_ack=False,
         ),
     )
+
+
+def _allow_readonly_ilo_lab(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "app.providers.ilo_redfish.current_lab_safety",
+        lambda: LabSafetyState(
+            closed_loop_ack=True,
+            readonly_ack=True,
+            destructive_ack=False,
+        ),
+    )
+
+
+def _install_fake_httpx_client(
+    monkeypatch,
+    responses: dict[
+        str,
+        tuple[int, str] | tuple[int, str, dict[str, object] | bytes],
+    ],
+) -> None:
+    import httpx
+    import json as json_module
+
+    class FakeClient:
+        def __init__(self, **_kwargs) -> None:
+            pass
+
+        def __enter__(self) -> "FakeClient":
+            return self
+
+        def __exit__(self, *_args) -> None:
+            pass
+
+        def get(self, url: str) -> httpx.Response:
+            path = "/" + url.split("/", 3)[3] if "/" in url.split("://", 1)[-1] else "/"
+            response_spec = responses.get(path, (404, "text/plain"))
+            status_code, content_type = response_spec[:2]
+            if len(response_spec) == 3:
+                payload = response_spec[2]
+                content = (
+                    payload
+                    if isinstance(payload, bytes)
+                    else json_module.dumps(payload).encode("utf-8")
+                )
+            else:
+                content = b'{"@odata.id": "/redfish/v1/"}' if content_type == "application/json" else b""
+            request = httpx.Request("GET", url)
+            return httpx.Response(
+                status_code,
+                headers={"content-type": content_type},
+                content=content,
+                request=request,
+            )
+
+    monkeypatch.setattr("app.providers.ilo_redfish.httpx.Client", FakeClient)
 
 
 def _install_fake_serial(monkeypatch, outputs: list[str]) -> None:

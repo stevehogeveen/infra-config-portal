@@ -2,6 +2,12 @@ import type {
   ArtifactRecord,
   AuditEvent,
   Catalog,
+  IloDestructiveRebuildPreview,
+  IloReportPreview,
+  IloReadinessSummary,
+  IloSetupCompareReport,
+  IloSetupIntent,
+  IloSetupPlanPreview,
   IloUpgradeReadiness,
   MediaInventory,
   ProviderProbeResult,
@@ -77,6 +83,23 @@ export const api = {
   mediaInventory: () => apiRequest<MediaInventory>("/api/v1/media-inventory"),
   iloUpgradeReadiness: () =>
     apiRequest<IloUpgradeReadiness>("/api/v1/providers/ilo-redfish/upgrade-readiness"),
+  iloReadinessSummary: () =>
+    apiRequest<IloReadinessSummary>("/api/v1/providers/ilo-redfish/readiness-summary"),
+  iloDestructiveRebuildPreview: () =>
+    apiRequest<IloDestructiveRebuildPreview>("/api/v1/providers/ilo-redfish/destructive-rebuild-preview"),
+  iloSetupPlanPreview: () =>
+    apiRequest<IloSetupPlanPreview>("/api/v1/providers/ilo-redfish/setup-plan-preview"),
+  iloSetupIntent: () =>
+    apiRequest<IloSetupIntent>("/api/v1/providers/ilo-redfish/setup-intent"),
+  saveIloSetupIntent: (payload: IloSetupIntent) =>
+    apiRequest<IloSetupIntent>("/api/v1/providers/ilo-redfish/setup-intent", {
+      method: "PUT",
+      body: payload
+    }),
+  iloSetupCompare: () =>
+    apiRequest<IloSetupCompareReport>("/api/v1/providers/ilo-redfish/setup-compare"),
+  iloReportPreview: () =>
+    apiRequest<IloReportPreview>("/api/v1/providers/ilo-redfish/report-preview"),
   providers: () => apiRequest<ProviderStatus[]>("/api/v1/providers/status"),
   probeProvider: (id: string) =>
     apiRequest<ProviderProbeResult>(`/api/v1/providers/${id}/probe`, { method: "POST" })

@@ -33,4 +33,5 @@ class WorkflowRunStatus(str, Enum):
 
 class ApprovalDecision(str, Enum):
     APPROVED = "approved"
+    INVALIDATED = "invalidated"
     REJECTED = "rejected"
