@@ -145,6 +145,15 @@ class Settings:
     cisco_console_port: str | None = _optional_env("CISCO_CONSOLE_PORT")
     cisco_console_baud: int = _int_env("CISCO_CONSOLE_BAUD", 9600)
     cisco_console_timeout_seconds: float = _float_env("CISCO_CONSOLE_TIMEOUT_SECONDS", 2.0)
+    cisco_console_prompt_settle_seconds: float = _float_env(
+        "CISCO_CONSOLE_PROMPT_SETTLE_SECONDS",
+        0.5,
+    )
+    cisco_console_prompt_read_window_seconds: float = _float_env(
+        "CISCO_CONSOLE_PROMPT_READ_WINDOW_SECONDS",
+        1.0,
+    )
+    cisco_console_prompt_max_bytes: int = _int_env("CISCO_CONSOLE_PROMPT_MAX_BYTES", 8192)
     lab_closed_loop_ack: str | None = _optional_env("LAB_CLOSED_LOOP_ACK")
     lab_readonly_ack: str | None = _optional_env("LAB_READONLY_ACK")
     cisco_console_apply_enabled: bool = _bool_env("CISCO_CONSOLE_APPLY_ENABLED", False)

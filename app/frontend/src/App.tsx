@@ -2001,6 +2001,7 @@ function CiscoConsoleBootstrapPlanPanel({ plan }: { plan: CiscoConsoleBootstrapP
         />
         <ProviderFact label="Netmask" value={asString(target.netmask) || "255.255.255.0"} />
         <ProviderFact label="Prompt State" value={labelize(plan.prompt_state)} />
+        <ProviderFact label="Prompt Detail" value={labelize(plan.prompt_detail)} />
         <ProviderFact label="Flow" value={labelize(plan.flow)} />
         <ProviderFact label="Apply Enabled" value={plan.apply_enabled ? "true" : "false"} />
         <ProviderFact label="Execution Supported" value={plan.execution_supported ? "true" : "false"} />
@@ -2151,14 +2152,48 @@ function CiscoConsoleDetails({
   const candidateCounts = objectValue(discovery.candidate_counts);
   const effectivePath = asString(discovery.effective_path);
   const recommendedPath = asString(discovery.recommended_path);
+  const operatorMessage = asString(discovery.operator_message);
+  const operatorChecklist = stringArray(discovery.operator_checklist);
+  const permissionGuidance = asString(discovery.permission_guidance);
+  const missingConsole = candidates.length === 0 || asString(discovery.status) === "missing-console";
+  const stableCandidates = candidates.filter((candidate) => candidate.stable_path && candidate.exists);
+  const fallbackCandidates = candidates.filter((candidate) => !candidate.stable_path && candidate.exists);
+  const hasPermissionIssue = candidates.some(
+    (candidate) => candidate.exists && (candidate.readable === false || candidate.writable === false)
+  );
   const promptReadinessEnabled = provider.mode === "local-readonly" && provider.status === "ready";
 
   return (
     <div className="provider-detail-section">
       <div className="provider-callout">
         <strong>{labelize(asString(discovery.selection_source) || asString(discovery.status) || "discovery")}</strong>
-        <p>{asString(discovery.safe_next_action) || "Review local console discovery before probing."}</p>
+        <p>{operatorMessage || asString(discovery.safe_next_action) || "Review local console discovery before probing."}</p>
       </div>
+      {missingConsole && operatorChecklist.length > 0 && (
+        <SetupPreviewBlock
+          title="No serial console adapter detected"
+          tag="Checklist"
+          lines={operatorChecklist}
+        />
+      )}
+      {recommendedPath && (
+        <div className="provider-callout">
+          <strong>Stable path recommendation</strong>
+          <p>Preferred console path: {recommendedPath}. Use this stable path for CISCO_CONSOLE_PORT instead of /dev/ttyUSB0 when possible.</p>
+        </div>
+      )}
+      {!stableCandidates.length && fallbackCandidates.length > 0 && (
+        <div className="provider-callout">
+          <strong>Fallback serial adapter detected</strong>
+          <p>Prefer a stable /dev/serial/by-id path if available. If only fallback paths exist, select the intended adapter before probing.</p>
+        </div>
+      )}
+      {hasPermissionIssue && (
+        <div className="provider-callout">
+          <strong>Console path permissions</strong>
+          <p>{permissionGuidance || "Check dialout group membership and device permissions, then restart the backend shell/session."}</p>
+        </div>
+      )}
       <div className="provider-fact-grid">
         <ProviderFact
           label="Env Override"
@@ -2207,7 +2242,7 @@ function CiscoConsoleDetails({
           </tbody>
         </table>
       ) : (
-        <p className="muted">No serial console candidates were discovered.</p>
+        <p className="muted">No serial console adapter detected. Connect the USB serial adapter and refresh Provider Status.</p>
       )}
       <div className="provider-action-layout">
         <div>
@@ -2247,6 +2282,13 @@ function CiscoConsoleDetails({
           <p className="provider-redaction-note">
             {promptReadinessMessage(promptReadinessResult)}
           </p>
+          {stringArray(promptReadinessResult.troubleshooting_checklist).length > 0 && (
+            <SetupPreviewBlock
+              title="Console port opened, but no prompt text was captured"
+              tag="Troubleshooting"
+              lines={stringArray(promptReadinessResult.troubleshooting_checklist)}
+            />
+          )}
           <JsonDetails title="Raw redacted prompt readiness result" data={promptReadinessResult} />
         </div>
       )}
@@ -2637,6 +2679,10 @@ function safeNextAction(provider: ProviderStatus): string {
 
 function promptReadinessMessage(result: ProviderProbeResult): string {
   const promptState = asString(result.prompt_state);
+  const promptSample = objectValue(result.prompt_sample);
+  if (promptState === "unknown" && !asBoolean(promptSample.captured)) {
+    return "Console port opened, but no prompt text was captured.";
+  }
   if (promptState === "exec") {
     return "Prompt is ready for future safe show-command checks.";
   }

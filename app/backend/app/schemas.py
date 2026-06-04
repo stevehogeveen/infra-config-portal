@@ -436,6 +436,7 @@ class CiscoConsoleBootstrapPlanRead(BaseModel):
     execution_supported: bool
     flow: str
     prompt_state: str
+    prompt_detail: str
     prompt_checked_at: str | None = None
     summary: list[str] = Field(default_factory=list)
     intended_steps: list[str] = Field(default_factory=list)
@@ -450,6 +451,8 @@ class CiscoConsoleBootstrapPlanRead(BaseModel):
 
 class CiscoConsoleBootstrapApplyCreate(BaseModel):
     confirmation_phrase: str
+    requested_actions: list[str] = Field(default_factory=list)
+    destructive_action_requested: bool = False
 
 
 class ProviderProbeResultRead(BaseModel):

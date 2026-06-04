@@ -239,6 +239,7 @@ export type CiscoConsoleBootstrapPlan = {
   execution_supported: boolean;
   flow: string;
   prompt_state: string;
+  prompt_detail: string;
   prompt_checked_at: string | null;
   summary: string[];
   intended_steps: string[];

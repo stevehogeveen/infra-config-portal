@@ -53,6 +53,8 @@ def test_cisco_candidate_discovery_with_one_stable_candidate(tmp_path: Path) -> 
     assert discovery["effective_path"] == str(stable)
     assert discovery["selection_source"] == "single-stable-candidate"
     assert discovery["candidate_counts"]["stable_existing"] == 1
+    assert discovery["operator_message"].startswith("Preferred console path:")
+    assert "CISCO_CONSOLE_PORT" in discovery["safe_next_action"]
     stable_candidates = [
         candidate for candidate in discovery["candidates"] if candidate["stable_path"]
     ]
@@ -94,7 +96,67 @@ def test_cisco_candidate_discovery_with_no_candidates(tmp_path: Path) -> None:
     assert discovery["effective_path"] is None
     assert discovery["selection_source"] == "missing"
     assert discovery["candidate_counts"]["total"] == 0
-    assert "No Cisco serial console candidates" in discovery["blockers"][0]
+    assert "No Cisco serial console adapter was detected" in discovery["blockers"][0]
+    assert discovery["operator_message"].startswith("No Cisco serial console adapter was detected")
+    assert "USB serial cable is plugged into this machine" in discovery["operator_checklist"][0]
+    assert "dialout/read-write access" in discovery["operator_checklist"][3]
+
+
+def test_cisco_candidate_discovery_with_fallback_candidate_warns(tmp_path: Path) -> None:
+    paths = _console_paths(tmp_path)
+    tty = paths["dev"] / "ttyUSB0"
+    tty.touch()
+
+    discovery = discover_cisco_console(
+        CiscoConsoleConfig(port=None, baud=9600, timeout_seconds=1.0),
+        _discovery_paths(paths),
+    )
+
+    assert discovery["status"] == "needs-selection"
+    assert discovery["selection_source"] == "fallback-candidates"
+    assert discovery["candidate_counts"]["fallback_existing"] == 1
+    assert any("Fallback serial adapter detected" in warning for warning in discovery["warnings"])
+    assert "Prefer a stable /dev/serial/by-id path" in discovery["safe_next_action"]
+
+
+def test_cisco_configured_port_missing_has_clear_blocker(tmp_path: Path) -> None:
+    paths = _console_paths(tmp_path)
+    missing_path = paths["dev"] / "ttyUSB9"
+
+    discovery = discover_cisco_console(
+        CiscoConsoleConfig(port=str(missing_path), baud=9600, timeout_seconds=1.0),
+        _discovery_paths(paths),
+    )
+
+    assert discovery["status"] == "blocked"
+    assert discovery["effective_path"] == str(missing_path)
+    assert "Configured CISCO_CONSOLE_PORT does not exist" in discovery["blockers"][0]
+    assert "detected stable path" in discovery["blockers"][0]
+
+
+def test_cisco_configured_port_permission_guidance(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    paths = _console_paths(tmp_path)
+    tty = paths["dev"] / "ttyUSB0"
+    tty.touch()
+
+    def unreadable(path: str, mode: int) -> bool:
+        if path == str(tty):
+            return False
+        return True
+
+    monkeypatch.setattr("app.providers.cisco_console.os.access", unreadable)
+    discovery = discover_cisco_console(
+        CiscoConsoleConfig(port=str(tty), baud=9600, timeout_seconds=1.0),
+        _discovery_paths(paths),
+    )
+
+    assert discovery["status"] == "blocked"
+    assert "not readable/writable" in discovery["blockers"][0]
+    assert "dialout group membership" in discovery["blockers"][0]
+    assert "restart the backend shell/session" in discovery["permission_guidance"]
 
 
 def test_cisco_env_override_path(tmp_path: Path) -> None:
@@ -355,6 +417,66 @@ def test_cisco_prompt_readiness_blocks_unknown_prompt(
     assert result["safe_show_commands_allowed"] is False
 
 
+def test_cisco_prompt_readiness_blocks_when_no_prompt_text_captured(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    result, writes = _run_prompt_readiness_with_fake_serial(
+        tmp_path,
+        monkeypatch,
+        "",
+    )
+
+    assert writes == [b"\n"]
+    assert result["status"] == "blocked"
+    assert result["message"].startswith("Console port opened but no prompt text was captured")
+    assert result["blockers"] == [result["message"]]
+    assert result["prompt_state"] == "unknown"
+    assert result["prompt_ready"] is False
+    assert result["safe_show_commands_allowed"] is False
+    assert result["prompt_sample"]["captured"] is False
+    assert result["troubleshooting_checklist"]
+    assert any("Cisco console port" in item for item in result["troubleshooting_checklist"])
+    assert "safe show commands" in result["not_attempted"]
+    assert "configure terminal" in result["not_attempted"]
+    assert "write memory" in result["not_attempted"]
+    assert "reload" in result["not_attempted"]
+    assert "copy or erase" in result["not_attempted"]
+    assert "safe_show_commands" not in result
+
+
+def test_cisco_prompt_readiness_reports_configured_read_timing(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    clear_probe_results()
+    tty = tmp_path / "ttyUSB0"
+    tty.touch()
+    _allow_readonly_lab(monkeypatch)
+    writes = _install_tracking_fake_serial(monkeypatch, [""])
+
+    result = CiscoConsoleAdapter(
+        provider_mode="local-readonly",
+        config=CiscoConsoleConfig(
+            port=str(tty),
+            baud=9600,
+            timeout_seconds=1.0,
+            prompt_settle_seconds=0.1,
+            prompt_read_window_seconds=0.2,
+            prompt_max_bytes=123,
+        ),
+    ).prompt_readiness()
+
+    assert writes == [b"\n"]
+    assert result["status"] == "blocked"
+    assert result["read_timing"] == {
+        "settle_seconds": 0.1,
+        "read_window_seconds": 0.2,
+        "max_bytes": 123,
+    }
+    assert result["safe_show_commands_allowed"] is False
+
+
 def test_cisco_ansible_run_command_can_redact_output() -> None:
     result = _run_command(
         [sys.executable, "-c", "print('device output that should not be returned')"],
@@ -603,6 +725,59 @@ def test_cisco_console_bootstrap_plan_uses_real_lab_target(
     assert "copy running-config" not in encoded
 
 
+def test_cisco_console_bootstrap_plan_blocks_no_output_prompt(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    state_path = tmp_path / "bootstrap-requirements.json"
+    monkeypatch.setattr("app.services.cisco_bootstrap_requirements.STATE_PATH", state_path)
+    save_cisco_bootstrap_requirements(_valid_bootstrap_payload())
+    _record_prompt_readiness("unknown", prompt_sample={"captured": False})
+    _mock_ready_console(monkeypatch)
+
+    plan = build_cisco_console_bootstrap_plan()
+
+    assert plan["status"] == "blocked"
+    assert plan["prompt_detail"] == "unknown-no-output"
+    assert plan["flow"] == "unknown-no-output-blocked-flow"
+    assert any("no prompt text was captured" in blocker for blocker in plan["blockers"])
+    assert any("no prompt text was captured" in step for step in plan["intended_steps"])
+
+
+def test_cisco_console_bootstrap_plan_blocks_login_required_prompt(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    state_path = tmp_path / "bootstrap-requirements.json"
+    monkeypatch.setattr("app.services.cisco_bootstrap_requirements.STATE_PATH", state_path)
+    save_cisco_bootstrap_requirements(_valid_bootstrap_payload())
+    _record_prompt_readiness("login-required")
+    _mock_ready_console(monkeypatch)
+
+    plan = build_cisco_console_bootstrap_plan()
+
+    assert plan["status"] == "blocked"
+    assert plan["flow"] == "login-required-blocked-flow"
+    assert any("Login-required prompt is not supported" in blocker for blocker in plan["blockers"])
+
+
+def test_cisco_console_bootstrap_plan_blocks_config_mode_prompt(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    state_path = tmp_path / "bootstrap-requirements.json"
+    monkeypatch.setattr("app.services.cisco_bootstrap_requirements.STATE_PATH", state_path)
+    save_cisco_bootstrap_requirements(_valid_bootstrap_payload())
+    _record_prompt_readiness("config-mode")
+    _mock_ready_console(monkeypatch)
+
+    plan = build_cisco_console_bootstrap_plan()
+
+    assert plan["status"] == "blocked"
+    assert plan["flow"] == "config-mode-blocked-flow"
+    assert any("Configuration-mode prompt is not supported" in blocker for blocker in plan["blockers"])
+
+
 def test_cisco_console_bootstrap_apply_blocked_by_default(
     tmp_path: Path,
     monkeypatch,
@@ -617,6 +792,27 @@ def test_cisco_console_bootstrap_apply_blocked_by_default(
     assert result["serial_writes_attempted"] is False
     assert result["commands_sent"] == []
     assert any("PROVIDER_MODE=local-readonly" in blocker for blocker in result["blockers"])
+
+
+def test_cisco_console_bootstrap_apply_rejects_destructive_requested_actions(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    state_path = tmp_path / "bootstrap-requirements.json"
+    monkeypatch.setattr("app.services.cisco_bootstrap_requirements.STATE_PATH", state_path)
+    save_cisco_bootstrap_requirements(_valid_bootstrap_payload())
+
+    result = apply_cisco_console_bootstrap(
+        {
+            "confirmation_phrase": CONFIRMATION_PHRASE,
+            "requested_actions": ["reload"],
+        }
+    )
+
+    assert result["status"] == "blocked"
+    assert result["serial_writes_attempted"] is False
+    assert result["commands_sent"] == []
+    assert any("Destructive reset/wipe/copy/reload" in blocker for blocker in result["blockers"])
 
 
 def test_cisco_console_bootstrap_apply_requires_exact_phrase(
@@ -1266,6 +1462,44 @@ def _run_prompt_readiness_with_fake_serial(
         config=CiscoConsoleConfig(port=str(tty), baud=9600, timeout_seconds=1.0),
     ).prompt_readiness()
     return result, writes
+
+
+def _record_prompt_readiness(
+    prompt_state: str,
+    *,
+    prompt_sample: dict[str, object] | None = None,
+) -> None:
+    record_probe_result(
+        "cisco-console",
+        {
+            "provider_id": "cisco-console",
+            "action": "prompt-readiness",
+            "status": "ok" if prompt_state == "exec" else "blocked",
+            "message": "prompt readiness test fixture",
+            "prompt_state": prompt_state,
+            "prompt_sample": prompt_sample or {"captured": True},
+            "warnings": [],
+            "blockers": [],
+        },
+    )
+
+
+def _mock_ready_console(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "app.services.cisco_console_bootstrap.CiscoConsoleAdapter.health",
+        lambda _self: ProviderStatus(
+            id="cisco-console",
+            name="Cisco Console",
+            kind="network-console",
+            mode="local-readonly",
+            status="ready",
+            capabilities=[],
+            message="ready",
+            discovery={"effective_path": "/dev/serial/by-id/mock-cisco-console"},
+            blockers=[],
+            warnings=[],
+        ),
+    )
 
 
 def _load_provider_smoke_module() -> types.ModuleType:

@@ -29,8 +29,9 @@ def build_cisco_console_bootstrap_plan() -> dict[str, Any]:
     requirements = get_cisco_bootstrap_requirements()
     prompt_result, prompt_checked_at = get_probe_result("cisco-console")
     prompt_state = _prompt_state(prompt_result)
-    flow = _flow(prompt_state)
-    blockers = _plan_blockers(requirements, prompt_state)
+    prompt_detail = _prompt_detail(prompt_result, prompt_state)
+    flow = _flow(prompt_state, prompt_detail)
+    blockers = _plan_blockers(requirements, prompt_state, prompt_detail)
     command_preview = _command_preview(requirements)
     return {
         "provider_id": PROVIDER_ID,
@@ -46,6 +47,7 @@ def build_cisco_console_bootstrap_plan() -> dict[str, Any]:
         "execution_supported": False,
         "flow": flow,
         "prompt_state": prompt_state,
+        "prompt_detail": prompt_detail,
         "prompt_checked_at": prompt_checked_at,
         "summary": [
             f"Target for this run is {TARGET_IP}{TARGET_PREFIX}.",
@@ -70,7 +72,7 @@ def build_cisco_console_bootstrap_plan() -> dict[str, Any]:
 def apply_cisco_console_bootstrap(payload: dict[str, Any]) -> dict[str, Any]:
     confirmation_phrase = payload.get("confirmation_phrase")
     plan = build_cisco_console_bootstrap_plan()
-    gate_blockers = _apply_gate_blockers(plan, confirmation_phrase)
+    gate_blockers = _apply_gate_blockers(plan, confirmation_phrase, payload)
     status = "blocked"
     message = "Cisco console bootstrap apply was blocked; no console commands were sent."
     if not gate_blockers:
@@ -98,8 +100,19 @@ def apply_cisco_console_bootstrap(payload: dict[str, Any]) -> dict[str, Any]:
     return record_probe_result(PROVIDER_ID, redact_sensitive(result))
 
 
-def _apply_gate_blockers(plan: dict[str, Any], confirmation_phrase: object) -> list[str]:
+def _apply_gate_blockers(
+    plan: dict[str, Any],
+    confirmation_phrase: object,
+    payload: dict[str, Any] | None = None,
+) -> list[str]:
     blockers = list(plan["blockers"])
+    payload = payload or {}
+    requested_actions = payload.get("requested_actions")
+    destructive_requested = bool(payload.get("destructive_action_requested"))
+    if destructive_requested or _requests_destructive_action(requested_actions):
+        blockers.append(
+            "Destructive reset/wipe/copy/reload actions are not allowed by console bootstrap."
+        )
     if settings.provider_mode != "local-readonly":
         blockers.append("PROVIDER_MODE=local-readonly is required for guarded console apply.")
     if not settings.cisco_console_apply_enabled:
@@ -113,7 +126,11 @@ def _apply_gate_blockers(plan: dict[str, Any], confirmation_phrase: object) -> l
     return list(dict.fromkeys(blockers))
 
 
-def _plan_blockers(requirements: dict[str, Any], prompt_state: str) -> list[str]:
+def _plan_blockers(
+    requirements: dict[str, Any],
+    prompt_state: str,
+    prompt_detail: str,
+) -> list[str]:
     blockers = [
         blocker for blocker in requirements["blockers"]
         if not blocker.startswith("Bootstrap requirements are preview-only")
@@ -131,7 +148,14 @@ def _plan_blockers(requirements: dict[str, Any], prompt_state: str) -> list[str]
     if not _prompt_recent():
         blockers.append(f"Prompt readiness must be recent, within {MAX_PROMPT_AGE_MINUTES} minutes.")
     if prompt_state not in {"exec", "setup-wizard"}:
-        blockers.append("Prompt state must be exec or setup-wizard for bootstrap planning.")
+        if prompt_detail == "unknown-no-output":
+            blockers.append("Console port opened but no prompt text was captured; bootstrap apply is blocked.")
+        elif prompt_state == "login-required":
+            blockers.append("Login-required prompt is not supported by console bootstrap planning.")
+        elif prompt_state == "config-mode":
+            blockers.append("Configuration-mode prompt is not supported by console bootstrap planning.")
+        else:
+            blockers.append("Prompt state must be exec or setup-wizard for bootstrap planning.")
     return list(dict.fromkeys(blockers))
 
 
@@ -150,11 +174,17 @@ def _prompt_recent() -> bool:
     return datetime.now(UTC) - checked <= timedelta(minutes=MAX_PROMPT_AGE_MINUTES)
 
 
-def _flow(prompt_state: str) -> str:
+def _flow(prompt_state: str, prompt_detail: str) -> str:
     if prompt_state == "setup-wizard":
         return "setup-wizard-answer-flow"
     if prompt_state == "exec":
         return "direct-exec-config-mode-flow"
+    if prompt_state == "login-required":
+        return "login-required-blocked-flow"
+    if prompt_state == "config-mode":
+        return "config-mode-blocked-flow"
+    if prompt_detail == "unknown-no-output":
+        return "unknown-no-output-blocked-flow"
     return "unsupported-unknown-prompt-flow"
 
 
@@ -163,6 +193,15 @@ def _prompt_state(prompt_result: dict[str, Any] | None) -> str:
         return "unknown"
     value = prompt_result.get("prompt_state")
     return value if isinstance(value, str) and value else "unknown"
+
+
+def _prompt_detail(prompt_result: dict[str, Any] | None, prompt_state: str) -> str:
+    if prompt_state != "unknown" or not isinstance(prompt_result, dict):
+        return prompt_state
+    prompt_sample = prompt_result.get("prompt_sample")
+    if isinstance(prompt_sample, dict) and prompt_sample.get("captured") is False:
+        return "unknown-no-output"
+    return "unknown-unrecognized-output"
 
 
 def _intended_steps(flow: str) -> list[str]:
@@ -174,6 +213,15 @@ def _intended_steps(flow: str) -> list[str]:
         steps.append("Plan setup wizard response path; do not answer unless apply gates pass.")
     elif flow == "direct-exec-config-mode-flow":
         steps.append("Plan entry from exec prompt into the minimal management configuration flow.")
+    elif flow == "login-required-blocked-flow":
+        steps.append("Block because credential entry is not part of this read-only planning flow.")
+    elif flow == "config-mode-blocked-flow":
+        steps.append(
+            "Block because the console is already in configuration mode and this workflow "
+            "does not continue from config mode."
+        )
+    elif flow == "unknown-no-output-blocked-flow":
+        steps.append("Block because the serial port opened but no prompt text was captured.")
     else:
         steps.append("Block because prompt state is unsupported or unknown.")
     steps.extend(
@@ -216,3 +264,13 @@ def _object_requirement(requirements: dict[str, Any], key: str) -> dict[str, Any
         return {}
     item = items.get(key)
     return item if isinstance(item, dict) else {}
+
+
+def _requests_destructive_action(value: object) -> bool:
+    if not isinstance(value, list):
+        return False
+    destructive_terms = ("erase", "reload", "delete", "copy", "wipe", "write erase")
+    for item in value:
+        if isinstance(item, str) and any(term in item.lower() for term in destructive_terms):
+            return True
+    return False
