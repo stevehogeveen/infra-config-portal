@@ -1,9 +1,16 @@
 # Overnight Codex Runs
 
-This worktree has a repeatable overnight runner for small, safe Codex tasks.
-The runner combines `.codex/overnight-system-prompt.md` with
-`.codex/overnight-queue.md`, runs `codex exec`, captures logs, and writes a
-morning summary under `.codex/runs/`.
+This worktree has a repeatable overnight runner for aggressive but safe Codex
+self-improvement tasks. The runner combines
+`.codex/overnight-system-prompt.md` with `.codex/overnight-queue.md`, runs
+`codex exec`, captures logs, and writes a morning summary under `.codex/runs/`.
+
+The overnight queue is intentionally greedy about app code, tests, UI cleanup,
+schemas, docs, local scripts, self-healing hints, bootstrap-preview scaffolding,
+and clean commits. It remains strict about real infrastructure: no secrets, no
+show commands, no setup wizard answers, no credentials, no config mode, no write
+memory, no reload, no copy/erase/delete, no real Cisco apply, and no hidden
+bypasses around safety gates.
 
 ## Manual Run
 
@@ -106,6 +113,10 @@ git log --oneline -5
 Review the final response and log for blocked items, failed tests, commits, and
 any uncommitted changes. Do not continue manual work until `git status` is
 understood.
+
+The morning summary is suitable to paste into ChatGPT/Nova. It records the
+worktree, sandbox mode, prompt and queue files, git status before and after,
+recent commits, and where to find the full log/final response.
 
 ## Stop The Runner
 
