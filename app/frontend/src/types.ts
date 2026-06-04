@@ -233,6 +233,7 @@ export type IloConnectionReadiness = {
 };
 
 export type IloEndpointCheck = {
+  name?: string | null;
   path: string | null;
   status_code: number | null;
   content_type: string | null;
@@ -248,6 +249,7 @@ export type IloEndpointDetection = {
   web_status: string;
   inventory_collection_status: string;
   inventory_collection_classification: string;
+  inventory_collection_checks: IloEndpointCheck[];
   auth_failure_classification: string;
   auth_recovery_hint: string;
   next_safe_action: string;

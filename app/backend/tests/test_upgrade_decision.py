@@ -270,6 +270,29 @@ def test_ilo_readiness_summary_reports_inventory_collection_auth_failure(
                 "web_status": "available",
                 "inventory_collection_status": "unauthorized",
                 "inventory_collection_classification": "redfish_collection_unauthorized",
+                "inventory_collection_checks": [
+                    {
+                        "name": "Managers",
+                        "path": "/redfish/v1/Managers/",
+                        "status_code": 401,
+                        "content_type": "application/json",
+                        "classification": "redfish_collection_unauthorized",
+                    },
+                    {
+                        "name": "Systems",
+                        "path": "/redfish/v1/Systems/",
+                        "status_code": 401,
+                        "content_type": "application/json",
+                        "classification": "redfish_collection_unauthorized",
+                    },
+                    {
+                        "name": "Chassis",
+                        "path": "/redfish/v1/Chassis/",
+                        "status_code": 401,
+                        "content_type": "application/json",
+                        "classification": "redfish_collection_unauthorized",
+                    },
+                ],
                 "auth_failure_classification": "basic_auth_rejected_or_insufficient_privilege",
                 "auth_recovery_hint": "session_auth_may_be_required",
                 "next_safe_action": (
@@ -299,6 +322,11 @@ def test_ilo_readiness_summary_reports_inventory_collection_auth_failure(
     assert current_state["redfish_endpoint_detected"] == "redfish_inventory_auth_failed"
     assert detection["inventory_collection_status"] == "unauthorized"
     assert detection["inventory_collection_classification"] == "redfish_collection_unauthorized"
+    assert [check["name"] for check in detection["inventory_collection_checks"]] == [
+        "Managers",
+        "Systems",
+        "Chassis",
+    ]
     assert detection["auth_failure_classification"] == "basic_auth_rejected_or_insufficient_privilege"
     assert detection["auth_recovery_hint"] == "session_auth_may_be_required"
     assert current_state["endpoint_next_safe_action"] in payload["blockers"]

@@ -628,6 +628,7 @@ def _destructive_target_identity(summary: IloReadinessSummaryRead) -> dict[str, 
         "serial_present": bool(summary.current_state.serial),
         "ilo_generation": summary.current_state.ilo_generation or None,
         "ilo_generation_discovered": bool(summary.current_state.ilo_generation),
+        "current_firmware": summary.current_state.current_firmware or None,
         "firmware_known": bool(summary.current_state.current_firmware),
         "redfish_endpoint_detected": summary.current_state.redfish_endpoint_detected,
         "endpoint_classification": summary.current_state.endpoint_classification,
@@ -794,6 +795,22 @@ def _redacted_endpoint_detection(detection: dict[str, Any]) -> dict[str, Any]:
         "inventory_collection_status": detection.get("inventory_collection_status") or "not_checked",
         "inventory_collection_classification": detection.get("inventory_collection_classification")
         or "not_checked",
+        "inventory_collection_checks": [
+            {
+                "name": check.get("name"),
+                "path": check.get("path"),
+                "status_code": check.get("status_code"),
+                "content_type": check.get("content_type"),
+                "error_class": check.get("error_class"),
+                "classification": check.get("classification"),
+            }
+            for check in (
+                detection.get("inventory_collection_checks")
+                if isinstance(detection.get("inventory_collection_checks"), list)
+                else []
+            )
+            if isinstance(check, dict)
+        ],
         "auth_failure_classification": detection.get("auth_failure_classification") or "not_checked",
         "auth_recovery_hint": detection.get("auth_recovery_hint") or "not_checked",
         "next_safe_action": detection.get("next_safe_action")
@@ -1026,11 +1043,14 @@ def _redacted_destructive_rebuild_preview(
         "safe_next_action": preview.safe_next_action,
         "target_identity": {
             "identity_verified": False,
+            "model": preview.target_identity.get("model"),
             "model_discovered": bool(preview.target_identity.get("model_discovered")),
             "serial_present": bool(preview.target_identity.get("serial_present")),
+            "ilo_generation": preview.target_identity.get("ilo_generation"),
             "ilo_generation_discovered": bool(
                 preview.target_identity.get("ilo_generation_discovered")
             ),
+            "current_firmware": preview.target_identity.get("current_firmware"),
             "firmware_known": bool(preview.target_identity.get("firmware_known")),
             "redfish_endpoint_detected": preview.target_identity.get(
                 "redfish_endpoint_detected"

@@ -688,12 +688,18 @@ def test_ilo_probe_classifies_inventory_auth_after_root_available(monkeypatch) -
                 {
                     "@odata.id": "/redfish/v1/",
                     "Managers": {"@odata.id": "/redfish/v1/Managers/"},
+                    "Systems": {"@odata.id": "/redfish/v1/Systems/"},
+                    "Chassis": {"@odata.id": "/redfish/v1/Chassis/"},
+                    "UpdateService": {"@odata.id": "/redfish/v1/UpdateService/"},
                 },
             ),
             "/redfish/v1": (200, "application/json", {"@odata.id": "/redfish/v1/"}),
             "/": (200, "text/html"),
             "/xmldata?item=All": (200, "text/xml"),
             "/redfish/v1/Managers/": (401, "application/json"),
+            "/redfish/v1/Systems/": (401, "application/json"),
+            "/redfish/v1/Chassis/": (401, "application/json"),
+            "/redfish/v1/UpdateService/": (401, "application/json"),
         },
     )
     adapter = IloRedfishAdapter(
@@ -718,6 +724,31 @@ def test_ilo_probe_classifies_inventory_auth_after_root_available(monkeypatch) -
     assert detection["checks"][0]["classification"] == "redfish_root_available"
     assert detection["inventory_collection_status"] == "unauthorized"
     assert detection["inventory_collection_classification"] == "redfish_collection_unauthorized"
+    assert {
+        check["name"]: (check["path"], check["status_code"], check["classification"])
+        for check in detection["inventory_collection_checks"]
+    } == {
+        "Managers": (
+            "/redfish/v1/Managers/",
+            401,
+            "redfish_collection_unauthorized",
+        ),
+        "Systems": (
+            "/redfish/v1/Systems/",
+            401,
+            "redfish_collection_unauthorized",
+        ),
+        "Chassis": (
+            "/redfish/v1/Chassis/",
+            401,
+            "redfish_collection_unauthorized",
+        ),
+        "UpdateService": (
+            "/redfish/v1/UpdateService/",
+            401,
+            "redfish_collection_unauthorized",
+        ),
+    }
     assert detection["auth_failure_classification"] == "basic_auth_rejected_or_insufficient_privilege"
     assert detection["auth_recovery_hint"] == "session_auth_may_be_required"
     assert detection["next_safe_action"] == (

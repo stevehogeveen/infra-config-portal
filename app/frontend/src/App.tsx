@@ -2250,6 +2250,7 @@ function IloDestructiveRebuildPreviewPanel({
   preview: IloDestructiveRebuildPreview;
 }) {
   const confirmationPhrase = asString(preview.confirmation_requirements.operator_phrase) || "DESTROY AND REBUILD";
+  const targetIdentity = objectValue(preview.target_identity);
 
   return (
     <section className="ilo-summary-section">
@@ -2273,6 +2274,18 @@ function IloDestructiveRebuildPreviewPanel({
       <div className="provider-callout">
         <strong>Safe next action</strong>
         <p>{preview.safe_next_action}</p>
+      </div>
+      <h3>Target Identity Evidence</h3>
+      <div className="provider-fact-grid compact">
+        <ProviderFact label="Verified" value={asBoolean(targetIdentity.identity_verified) ? "Yes" : "No"} />
+        <ProviderFact label="Model" value={asString(targetIdentity.model) || "Unknown"} />
+        <ProviderFact label="Serial" value={asBoolean(targetIdentity.serial_present) ? "Present" : "Not verified"} />
+        <ProviderFact label="iLO Generation" value={asString(targetIdentity.ilo_generation) || "Unknown"} />
+        <ProviderFact label="Firmware" value={asString(targetIdentity.current_firmware) || "Unknown"} />
+        <ProviderFact
+          label="Endpoint"
+          value={labelize(asString(targetIdentity.endpoint_classification) || "not_checked")}
+        />
       </div>
       <h3>Possible Future Scope</h3>
       <div className="ilo-section-grid">
@@ -2469,6 +2482,7 @@ function IloConnectionPanel({ summary }: { summary: IloReadinessSummary }) {
 function IloCurrentStatePanel({ summary }: { summary: IloReadinessSummary }) {
   const { current_state } = summary;
   const checks = endpointChecks(current_state.endpoint_detection);
+  const collectionChecks = endpointCollectionChecks(current_state.endpoint_detection);
   const diagnosticHints = endpointDiagnosticHints(current_state.endpoint_detection);
   const endpointDetection = objectValue(current_state.endpoint_detection);
   const inventoryCollectionStatus = asString(endpointDetection.inventory_collection_status);
@@ -2512,7 +2526,12 @@ function IloCurrentStatePanel({ summary }: { summary: IloReadinessSummary }) {
       {isInventoryUnauthorized && (
         <div className="provider-callout">
           <strong>Partial discovery</strong>
-          <p>Redfish root available. Legacy endpoint available. Inventory collections unauthorized.</p>
+          <p>
+            Redfish root {labelize(current_state.redfish_root_status)}. Legacy endpoint{" "}
+            {labelize(current_state.legacy_endpoint_status)}. Inventory collections{" "}
+            {labelize(inventoryCollectionStatus || inventoryCollectionClassification || "unauthorized")}.
+          </p>
+          <p>{current_state.endpoint_next_safe_action}</p>
         </div>
       )}
       <p className="provider-redaction-note">{current_state.endpoint_next_safe_action}</p>
@@ -2537,6 +2556,31 @@ function IloCurrentStatePanel({ summary }: { summary: IloReadinessSummary }) {
             ))}
           </tbody>
         </table>
+      )}
+      {collectionChecks.length > 0 && (
+        <>
+          <h4>Inventory Collection Authorization</h4>
+          <table className="provider-candidate-table endpoint-detection-table">
+            <thead>
+              <tr>
+                <th>Collection</th>
+                <th>Path</th>
+                <th>Status</th>
+                <th>Classification</th>
+              </tr>
+            </thead>
+            <tbody>
+              {collectionChecks.map((check) => (
+                <tr key={`${check.name}-${check.path}`}>
+                  <td>{check.name}</td>
+                  <td>{check.path}</td>
+                  <td>{check.status}</td>
+                  <td>{labelize(check.classification)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
       )}
       <p className="provider-redaction-note">{current_state.legacy_endpoint_message}</p>
       {diagnosticHints.length > 0 && (
@@ -3009,6 +3053,25 @@ function endpointChecks(value: unknown): Array<{
       path: asString(item.path) || "-",
       status: item.status_code ? `HTTP ${asString(item.status_code)}` : asString(item.error_class) || "-",
       contentType: asString(item.content_type) || "-",
+      classification: asString(item.classification) || "unknown_endpoint_state"
+    }));
+}
+
+function endpointCollectionChecks(value: unknown): Array<{
+  name: string;
+  path: string;
+  status: string;
+  classification: string;
+}> {
+  const detection = objectValue(value);
+  const checks = detection.inventory_collection_checks;
+  if (!Array.isArray(checks)) return [];
+  return checks
+    .map((item) => objectValue(item))
+    .map((item) => ({
+      name: asString(item.name) || "-",
+      path: asString(item.path) || "-",
+      status: item.status_code ? `HTTP ${asString(item.status_code)}` : asString(item.error_class) || "-",
       classification: asString(item.classification) || "unknown_endpoint_state"
     }));
 }

@@ -362,6 +362,7 @@ class IloConnectionReadinessRead(BaseModel):
 
 
 class IloEndpointCheckRead(BaseModel):
+    name: str | None = None
     path: str | None = None
     status_code: int | None = None
     content_type: str | None = None
@@ -377,6 +378,7 @@ class IloEndpointDetectionRead(BaseModel):
     web_status: str = "not_checked"
     inventory_collection_status: str = "not_checked"
     inventory_collection_classification: str = "not_checked"
+    inventory_collection_checks: list[IloEndpointCheckRead] = Field(default_factory=list)
     auth_failure_classification: str = "not_checked"
     auth_recovery_hint: str = "not_checked"
     next_safe_action: str = "Run explicit GET-only endpoint detection from Provider Status."

@@ -199,6 +199,7 @@ class IloRedfishAdapter:
                 "web_status": "not_checked",
                 "inventory_collection_status": "not_checked",
                 "inventory_collection_classification": "not_checked",
+                "inventory_collection_checks": [],
                 "auth_failure_classification": "not_checked",
                 "auth_recovery_hint": "not_checked",
                 "next_safe_action": "Run explicit GET-only endpoint detection.",
@@ -232,6 +233,35 @@ class IloRedfishAdapter:
                 root = detection.get("redfish_root_payload")
                 if not isinstance(root, dict):
                     root = _get_json(client, base_url, "/redfish/v1/", requests)
+                collection_checks = _inventory_collection_access_checks(
+                    client,
+                    base_url,
+                    root,
+                    requests,
+                )
+                unauthorized_collection = next(
+                    (
+                        check
+                        for check in collection_checks
+                        if check.get("status_code") in {401, 403}
+                    ),
+                    None,
+                )
+                if unauthorized_collection is not None:
+                    detection = _classify_inventory_auth_failure(
+                        detection,
+                        int(unauthorized_collection["status_code"]),
+                        collection_checks=collection_checks,
+                    )
+                    result.update(
+                        {
+                            "status": "failed",
+                            "endpoint_detection": detection,
+                            "message": detection["message"],
+                            "blockers": [detection["next_safe_action"]],
+                        }
+                    )
+                    return self._record_result(result)
                 result["service_root"] = _resource_summary(root)
                 result["managers"] = _collection_summaries(
                     client,
@@ -294,6 +324,7 @@ class IloRedfishAdapter:
                         "web_status": "not_checked",
                         "inventory_collection_status": "not_checked",
                         "inventory_collection_classification": "not_checked",
+                        "inventory_collection_checks": [],
                         "auth_failure_classification": "not_checked",
                         "auth_recovery_hint": "not_checked",
                         "next_safe_action": _endpoint_next_safe_action(classification),
@@ -353,6 +384,7 @@ def _detect_endpoints(client: httpx.Client, base_url: str) -> dict[str, Any]:
         "web_status": _endpoint_status(checks, {WEB_ROOT_PATH}),
         "inventory_collection_status": "not_checked",
         "inventory_collection_classification": "not_checked",
+        "inventory_collection_checks": [],
         "auth_failure_classification": "not_checked",
         "auth_recovery_hint": "not_checked",
         "next_safe_action": _endpoint_next_safe_action(classification),
@@ -405,6 +437,8 @@ def _endpoint_check(client: httpx.Client, base_url: str, path: str) -> dict[str,
 def _classify_inventory_auth_failure(
     detection_value: Any,
     status_code: int,
+    *,
+    collection_checks: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     if not isinstance(detection_value, dict):
         detection: dict[str, Any] = {}
@@ -432,6 +466,9 @@ def _classify_inventory_auth_failure(
             "redfish_status": detection.get("redfish_status") or "available",
             "inventory_collection_status": "unauthorized",
             "inventory_collection_classification": "redfish_collection_unauthorized",
+            "inventory_collection_checks": collection_checks
+            if collection_checks is not None
+            else detection.get("inventory_collection_checks", []),
             "auth_failure_classification": "basic_auth_rejected_or_insufficient_privilege",
             "auth_recovery_hint": "session_auth_may_be_required",
             "next_safe_action": INVENTORY_COLLECTION_AUTH_NEXT_ACTION,
@@ -439,6 +476,71 @@ def _classify_inventory_auth_failure(
         }
     )
     return detection
+
+
+def _inventory_collection_access_checks(
+    client: httpx.Client,
+    base_url: str,
+    root: dict[str, Any],
+    requests: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    checks: list[dict[str, Any]] = []
+    for name, path in _inventory_collection_paths(root):
+        check = _collection_access_check(client, base_url, name, path)
+        checks.append(check)
+        requests.append(
+            {
+                "path": path,
+                "status_code": check.get("status_code"),
+                "error": check.get("error_class"),
+                "classification": check.get("classification"),
+            }
+        )
+    return checks
+
+
+def _inventory_collection_paths(root: dict[str, Any]) -> list[tuple[str, str]]:
+    paths: list[tuple[str, str]] = []
+    for name in ("Managers", "Systems", "Chassis", "UpdateService"):
+        path = _odata_id(root.get(name))
+        if path:
+            paths.append((name, path))
+    return paths
+
+
+def _collection_access_check(
+    client: httpx.Client,
+    base_url: str,
+    name: str,
+    path: str,
+) -> dict[str, Any]:
+    try:
+        response = client.get(_redfish_url(base_url, path))
+    except httpx.HTTPError as exc:
+        return {
+            "name": name,
+            "path": path,
+            "error_class": exc.__class__.__name__,
+            "classification": _classify_http_error(exc),
+        }
+
+    return {
+        "name": name,
+        "path": path,
+        "status_code": response.status_code,
+        "content_type": response.headers.get("content-type", "-"),
+        "classification": _classify_collection_access_response(response.status_code),
+    }
+
+
+def _classify_collection_access_response(status_code: int) -> str:
+    if status_code in {401, 403}:
+        return "redfish_collection_unauthorized"
+    if status_code == 200:
+        return "redfish_collection_available"
+    if status_code == 404:
+        return "redfish_collection_not_found"
+    return "redfish_http_error"
 
 
 def _classify_endpoint_response(path: str, status_code: int) -> str:
