@@ -340,7 +340,10 @@ def test_cisco_prompt_readiness_exec_prompt_sends_newline_only(
     assert result["status"] == "ok"
     assert result["prompt_state"] == "exec"
     assert result["prompt_ready"] is True
-    assert result["safe_show_commands_allowed"] is True
+    assert result["safe_show_commands_allowed"] is False
+    assert result["future_show_command_check_eligible"] is True
+    assert result["prompt_classification"]["label"] == "Exec prompt"
+    assert result["prompt_classification"]["safe_show_commands_allowed"] is False
     assert result["prompt_sample"]["last_line"] == "DEVICE#"
     assert "safe show commands" in result["not_attempted"]
     assert "safe_show_commands" not in result
@@ -364,6 +367,8 @@ def test_cisco_prompt_readiness_blocks_setup_wizard_prompt(
     assert result["prompt_ready"] is False
     assert result["setup_wizard_detected"] is True
     assert result["safe_show_commands_allowed"] is False
+    assert result["future_show_command_check_eligible"] is False
+    assert result["prompt_classification"]["label"] == "Setup wizard prompt"
     assert "setup wizard" in result["blockers"][0]
     assert "initial configuration dialog" not in encoded
 
@@ -380,6 +385,7 @@ def test_cisco_prompt_readiness_blocks_login_required_prompt(
     assert result["login_required"] is True
     assert result["prompt_ready"] is False
     assert result["safe_show_commands_allowed"] is False
+    assert result["prompt_classification"]["label"] == "Login required"
 
 
 def test_cisco_prompt_readiness_blocks_config_mode_prompt(
@@ -398,6 +404,7 @@ def test_cisco_prompt_readiness_blocks_config_mode_prompt(
     assert result["config_mode_detected"] is True
     assert result["prompt_ready"] is False
     assert result["safe_show_commands_allowed"] is False
+    assert result["prompt_classification"]["label"] == "Configuration mode"
 
 
 def test_cisco_prompt_readiness_blocks_unknown_prompt(
@@ -415,6 +422,8 @@ def test_cisco_prompt_readiness_blocks_unknown_prompt(
     assert result["prompt_state"] == "unknown"
     assert result["prompt_ready"] is False
     assert result["safe_show_commands_allowed"] is False
+    assert result["prompt_classification"]["label"] == "Unknown prompt"
+    assert result["prompt_classification"]["no_output_captured"] is False
 
 
 def test_cisco_prompt_readiness_blocks_when_no_prompt_text_captured(
@@ -434,7 +443,9 @@ def test_cisco_prompt_readiness_blocks_when_no_prompt_text_captured(
     assert result["prompt_state"] == "unknown"
     assert result["prompt_ready"] is False
     assert result["safe_show_commands_allowed"] is False
+    assert result["future_show_command_check_eligible"] is False
     assert result["prompt_sample"]["captured"] is False
+    assert result["prompt_classification"]["no_output_captured"] is True
     assert result["troubleshooting_checklist"]
     assert any("Cisco console port" in item for item in result["troubleshooting_checklist"])
     assert "safe show commands" in result["not_attempted"]
@@ -510,11 +521,17 @@ def test_cisco_setup_readiness_is_plan_only_until_management_bootstrap() -> None
     assert readiness["state_boundaries"]["saved_kit_config_values"]["management_configured"] is False
     assert readiness["state_boundaries"]["values_ready_to_apply"]["ready"] is False
     assert readiness["state_boundaries"]["last_action_logs_artifacts"]["raw_console_log_saved"] is False
+    assert readiness["state_boundaries"]["last_action_logs_artifacts"]["last_action_present"] is False
     assert readiness["console"]["selected_path"] == readiness["console"]["effective_path"]
     assert readiness["console"]["baud"] == 9600
     assert readiness["console"]["last_prompt_readiness"]["available"] is False
+    assert readiness["console"]["last_prompt_readiness"]["safe_show_commands_allowed"] is False
+    assert readiness["console"]["last_prompt_readiness"]["prompt_classification"]["state"] == "unknown"
     assert readiness["bootstrap_preview"]["apply_enabled"] is False
     assert readiness["bootstrap_preview"]["commands_redacted"] is True
+    assert readiness["bootstrap_preview"]["serial_writes_attempted"] is False
+    assert "recent prompt-readiness evidence" in readiness["bootstrap_preview"]["missing_requirements"]
+    assert readiness["bootstrap_preview"]["redacted_command_summary"]
     assert readiness["ssh_scp_readiness"]["planned_only"] is True
     assert readiness["ssh_scp_readiness"]["apply_enabled"] is False
     assert readiness["ansible"]["enabled"] is False
@@ -544,6 +561,15 @@ def test_cisco_setup_readiness_surfaces_no_output_prompt_guidance() -> None:
             "prompt_state": "unknown",
             "safe_show_commands_allowed": False,
             "prompt_sample": {"captured": False, "line_count": 0, "last_line": "unrecognized prompt"},
+            "prompt_classification": {
+                "state": "unknown",
+                "label": "Unknown prompt",
+                "summary": "Console port opened, but no prompt text was captured.",
+                "no_output_captured": True,
+                "raw_text_redacted": True,
+                "safe_show_commands_allowed": False,
+                "next_safe_action": "Verify adapter ownership and baud.",
+            },
             "read_timing": {
                 "settle_seconds": 0.5,
                 "read_window_seconds": 1.0,
@@ -569,6 +595,7 @@ def test_cisco_setup_readiness_surfaces_no_output_prompt_guidance() -> None:
     assert last_prompt["captured"] is False
     assert last_prompt["safe_show_commands_allowed"] is False
     assert last_prompt["read_timing"]["read_window_seconds"] == 1.0
+    assert last_prompt["prompt_classification"]["no_output_captured"] is True
     assert "115200" in last_prompt["troubleshooting_checklist"][0]
     assert discovered_state["prompt_captured"] is False
 
@@ -769,9 +796,13 @@ def test_cisco_console_bootstrap_plan_uses_real_lab_target(
     assert plan["flow"] == "direct-exec-config-mode-flow"
     assert plan["confirmation_phrase"] == CONFIRMATION_PHRASE
     assert plan["apply_enabled"] is False
+    assert plan["serial_writes_attempted"] is False
     assert "write erase" in plan["destructive_actions_disabled"]
     assert "erase startup-config" in plan["destructive_actions_disabled"]
     assert "reload" in plan["destructive_actions_disabled"]
+    assert plan["redacted_command_summary"]
+    assert plan["artifact_preview"]["raw_console_log_saved"] is False
+    assert plan["blocker_summary"]["count"] == len(plan["blockers"])
     assert "copy running-config" not in encoded
 
 
@@ -790,6 +821,9 @@ def test_cisco_console_bootstrap_plan_blocks_no_output_prompt(
     assert plan["status"] == "blocked"
     assert plan["prompt_detail"] == "unknown-no-output"
     assert plan["flow"] == "unknown-no-output-blocked-flow"
+    assert plan["serial_writes_attempted"] is False
+    assert plan["artifact_preview"]["raw_console_log_saved"] is False
+    assert plan["blocker_summary"]["has_prompt_blocker"] is True
     assert any("no prompt text was captured" in blocker for blocker in plan["blockers"])
     assert any("no prompt text was captured" in step for step in plan["intended_steps"])
 
@@ -1528,6 +1562,21 @@ def _record_prompt_readiness(
             "message": "prompt readiness test fixture",
             "prompt_state": prompt_state,
             "prompt_sample": prompt_sample or {"captured": True},
+            "safe_show_commands_allowed": False,
+            "future_show_command_check_eligible": prompt_state == "exec",
+            "prompt_classification": {
+                "state": prompt_state,
+                "label": prompt_state,
+                "summary": "test fixture",
+                "no_output_captured": (
+                    prompt_state == "unknown"
+                    and bool(prompt_sample)
+                    and prompt_sample.get("captured") is False
+                ),
+                "raw_text_redacted": True,
+                "safe_show_commands_allowed": False,
+                "next_safe_action": "test fixture",
+            },
             "warnings": [],
             "blockers": [],
         },

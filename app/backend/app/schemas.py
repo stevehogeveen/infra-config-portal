@@ -435,6 +435,7 @@ class CiscoConsoleBootstrapPlanRead(BaseModel):
     target: dict[str, Any]
     apply_enabled: bool
     execution_supported: bool
+    serial_writes_attempted: bool
     flow: str
     prompt_state: str
     prompt_detail: str
@@ -442,7 +443,10 @@ class CiscoConsoleBootstrapPlanRead(BaseModel):
     summary: list[str] = Field(default_factory=list)
     intended_steps: list[str] = Field(default_factory=list)
     command_preview: list[str] = Field(default_factory=list)
+    redacted_command_summary: list[str] = Field(default_factory=list)
     commands_redacted: bool
+    blocker_summary: dict[str, Any] = Field(default_factory=dict)
+    artifact_preview: dict[str, Any] = Field(default_factory=dict)
     destructive_actions_disabled: list[str] = Field(default_factory=list)
     blockers: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)

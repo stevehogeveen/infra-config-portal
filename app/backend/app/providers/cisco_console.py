@@ -44,6 +44,36 @@ NO_PROMPT_TEXT_CAPTURED_CHECKLIST = [
     "Try baud 9600 first, then 115200 if needed.",
     "Prefer /dev/serial/by-id/... stable path for CISCO_CONSOLE_PORT.",
 ]
+PROMPT_CLASSIFICATION_GUIDANCE = {
+    "exec": {
+        "label": "Exec prompt",
+        "summary": "Console appears to be at an exec prompt.",
+        "next_safe_action": (
+            "Keep this as readiness evidence only; run any future show-command check "
+            "through a separate explicit read-only action."
+        ),
+    },
+    "setup-wizard": {
+        "label": "Setup wizard prompt",
+        "summary": "Console appears to be waiting at the initial setup wizard.",
+        "next_safe_action": "Do not answer the wizard; review the setup wizard plan preview.",
+    },
+    "login-required": {
+        "label": "Login required",
+        "summary": "Console is requesting a username, login, or password.",
+        "next_safe_action": "Do not send credentials; confirm credential handling in a future guarded task.",
+    },
+    "config-mode": {
+        "label": "Configuration mode",
+        "summary": "Console appears to already be in configuration mode.",
+        "next_safe_action": "Stop and get human review before any further console interaction.",
+    },
+    "unknown": {
+        "label": "Unknown prompt",
+        "summary": "Console output was not enough to classify the prompt.",
+        "next_safe_action": "Use manual console observation and adapter checks before trying again.",
+    },
+}
 CONSOLE_DETECTION_CHECKLIST = [
     "Check that the USB serial cable is plugged into this machine.",
     "Check that the console cable is connected to the Cisco console port.",
@@ -524,11 +554,17 @@ class CiscoConsoleAdapter:
             "message": message,
             "prompt_state": prompt_state,
             "prompt_ready": prompt_state == "exec",
-            "safe_show_commands_allowed": prompt_state == "exec",
+            "safe_show_commands_allowed": False,
+            "future_show_command_check_eligible": prompt_state == "exec",
+            "prompt_classification": _prompt_classification(
+                prompt_state,
+                extra.get("prompt_sample"),
+            ),
             "setup_wizard_detected": prompt_state == "setup-wizard",
             "config_mode_detected": prompt_state == "config-mode",
             "login_required": prompt_state == "login-required",
             "not_attempted": PROMPT_READINESS_NOT_ATTEMPTED,
+            "next_safe_action": _prompt_next_safe_action(prompt_state, extra.get("prompt_sample")),
             "warnings": warnings or [],
             "blockers": blockers,
             **extra,
@@ -736,6 +772,52 @@ def _prompt_readiness_message(prompt_state: str, prompt_sample: dict[str, Any]) 
     if prompt_state == "exec":
         return "Prompt is ready for future safe show-command checks."
     return _prompt_blocker_message(prompt_state, prompt_sample)
+
+
+def _prompt_classification(
+    prompt_state: str,
+    prompt_sample: object,
+) -> dict[str, Any]:
+    guidance = PROMPT_CLASSIFICATION_GUIDANCE.get(
+        prompt_state,
+        PROMPT_CLASSIFICATION_GUIDANCE["unknown"],
+    )
+    no_output = (
+        prompt_state == "unknown"
+        and isinstance(prompt_sample, dict)
+        and not bool(prompt_sample.get("captured"))
+    )
+    summary = (
+        "Console port opened, but no prompt text was captured."
+        if no_output
+        else guidance["summary"]
+    )
+    return {
+        "state": prompt_state,
+        "label": guidance["label"],
+        "summary": summary,
+        "no_output_captured": no_output,
+        "raw_text_redacted": True,
+        "safe_show_commands_allowed": False,
+        "next_safe_action": _prompt_next_safe_action(prompt_state, prompt_sample),
+    }
+
+
+def _prompt_next_safe_action(prompt_state: str, prompt_sample: object) -> str:
+    if (
+        prompt_state == "unknown"
+        and isinstance(prompt_sample, dict)
+        and not bool(prompt_sample.get("captured"))
+    ):
+        return (
+            "Verify adapter ownership, cable placement, power state, and baud 9600/115200 "
+            "before running another newline-only readiness check."
+        )
+    guidance = PROMPT_CLASSIFICATION_GUIDANCE.get(
+        prompt_state,
+        PROMPT_CLASSIFICATION_GUIDANCE["unknown"],
+    )
+    return str(guidance["next_safe_action"])
 
 
 def _prompt_sample_summary(prompt_text: str) -> dict[str, Any]:

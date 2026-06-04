@@ -86,6 +86,7 @@ def get_cisco_setup_readiness(
                 "baud": console_summary["baud"],
                 "prompt_state": last_prompt_readiness.get("prompt_state"),
                 "prompt_captured": last_prompt_readiness.get("captured"),
+                "prompt_classification": last_prompt_readiness.get("prompt_classification"),
             },
             "saved_kit_config_values": {
                 "summary": "Non-secret local planning values; not confirmed reachable.",
@@ -100,7 +101,10 @@ def get_cisco_setup_readiness(
             },
             "last_action_logs_artifacts": {
                 "summary": "Only redacted prompt-readiness summaries are exposed here.",
+                "last_action_present": bool(last_prompt_readiness.get("available")),
+                "checked_at": last_prompt_readiness.get("checked_at"),
                 "last_prompt_readiness": last_prompt_readiness,
+                "redacted_summary": last_prompt_readiness.get("message"),
                 "raw_console_log_saved": False,
             },
         },
@@ -108,6 +112,13 @@ def get_cisco_setup_readiness(
         "bootstrap_preview": {
             "apply_enabled": False,
             "commands_redacted": True,
+            "serial_writes_attempted": False,
+            "missing_requirements": _bootstrap_missing_requirements(target_ip),
+            "redacted_command_summary": [
+                "Future command preview stays plan-only and redacted in readiness.",
+                "Console bootstrap plan endpoint provides the separate guarded preview.",
+                "No setup wizard answers or configuration commands are sent.",
+            ],
             "summary": [
                 _management_ip_summary(target_ip),
                 "SSH/SCP readiness is planned only and will not be enabled.",
@@ -174,6 +185,17 @@ def _prompt_readiness_summary(result: dict[str, Any] | None) -> dict[str, Any]:
             "message": "Prompt readiness has not run in this backend process.",
             "safe_show_commands_allowed": False,
             "checked_at": None,
+            "next_safe_action": "Run an explicit newline-only prompt readiness check when safe.",
+            "future_show_command_check_eligible": False,
+            "prompt_classification": {
+                "state": "unknown",
+                "label": "Unknown prompt",
+                "summary": "No prompt-readiness result is cached.",
+                "no_output_captured": False,
+                "raw_text_redacted": True,
+                "safe_show_commands_allowed": False,
+                "next_safe_action": "Run an explicit newline-only prompt readiness check when safe.",
+            },
             "troubleshooting_checklist": [],
         }
     prompt_sample = _dict(result.get("prompt_sample"))
@@ -186,8 +208,11 @@ def _prompt_readiness_summary(result: dict[str, Any] | None) -> dict[str, Any]:
         "line_count": prompt_sample.get("line_count"),
         "last_line": prompt_sample.get("last_line"),
         "safe_show_commands_allowed": bool(result.get("safe_show_commands_allowed")),
+        "future_show_command_check_eligible": bool(result.get("future_show_command_check_eligible")),
         "checked_at": result.get("checked_at"),
         "read_timing": _dict(result.get("read_timing")),
+        "next_safe_action": result.get("next_safe_action"),
+        "prompt_classification": _dict(result.get("prompt_classification")),
         "troubleshooting_checklist": result.get("troubleshooting_checklist") or [],
     }
 
@@ -204,3 +229,21 @@ def _read_timing(
         "read_window_seconds": configuration.get("prompt_read_window_seconds"),
         "max_bytes": configuration.get("prompt_max_bytes"),
     }
+
+
+def _bootstrap_missing_requirements(target_ip: str | None) -> list[str]:
+    missing = []
+    if not target_ip:
+        missing.append("planned management IP")
+    if not settings.cisco_management_prefix:
+        missing.append("management prefix")
+    missing.extend(
+        [
+            "gateway",
+            "management VLAN or interface strategy",
+            "hostname and DNS/domain planning",
+            "local admin username presence reference",
+            "recent prompt-readiness evidence",
+        ]
+    )
+    return missing

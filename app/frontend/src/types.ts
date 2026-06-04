@@ -176,6 +176,9 @@ export type CiscoSetupReadiness = {
   bootstrap_preview: {
     apply_enabled: boolean;
     commands_redacted: boolean;
+    serial_writes_attempted: boolean;
+    missing_requirements: string[];
+    redacted_command_summary: string[];
     summary: string[];
   };
   ssh_scp_readiness: {
@@ -243,6 +246,7 @@ export type CiscoConsoleBootstrapPlan = {
   target: Record<string, unknown>;
   apply_enabled: boolean;
   execution_supported: boolean;
+  serial_writes_attempted: boolean;
   flow: string;
   prompt_state: string;
   prompt_detail: string;
@@ -250,7 +254,10 @@ export type CiscoConsoleBootstrapPlan = {
   summary: string[];
   intended_steps: string[];
   command_preview: string[];
+  redacted_command_summary: string[];
   commands_redacted: boolean;
+  blocker_summary: Record<string, unknown>;
+  artifact_preview: Record<string, unknown>;
   destructive_actions_disabled: string[];
   blockers: string[];
   warnings: string[];

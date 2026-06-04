@@ -25,20 +25,20 @@ infra-config-portal/
 ## Always Run From Repo Root
 
 Root automation paths such as `.codex/tasks`, `.codex/runs`, and
-`.codex/task-queue.md` live at `/home/administrator/infra-config-portal-netapp`, not
+`.codex/task-queue.md` live at `/home/administrator/infra-config-portal-cisco`, not
 under `app/`.
 
 Before running root `make` or Codex automation commands:
 
 ```bash
-cd /home/administrator/infra-config-portal-netapp
+cd /home/administrator/infra-config-portal-cisco
 ```
 
-If you are in `/home/administrator/infra-config-portal-netapp/app`, move up one level
+If you are in `/home/administrator/infra-config-portal-cisco/app`, move up one level
 first. Running root-only targets from `app/` prints:
 
 ```text
-Run this from /home/administrator/infra-config-portal-netapp, not /home/administrator/infra-config-portal-netapp/app.
+Run this from /home/administrator/infra-config-portal-cisco, not /home/administrator/infra-config-portal-cisco/app.
 ```
 
 ## Run Locally
@@ -46,7 +46,7 @@ Run this from /home/administrator/infra-config-portal-netapp, not /home/administ
 Safe app workflow from the repository root:
 
 ```bash
-cd /home/administrator/infra-config-portal-netapp
+cd /home/administrator/infra-config-portal-cisco
 make app-start
 make app-status
 make app-restart
@@ -64,7 +64,7 @@ or arbitrary clients connected to the frontend port.
 Foreground backend-only development:
 
 ```bash
-cd /home/administrator/infra-config-portal-netapp/app
+cd /home/administrator/infra-config-portal-cisco/app
 make backend-venv
 make backend-run
 ```
@@ -72,7 +72,7 @@ make backend-run
 Foreground frontend-only development, in a second terminal:
 
 ```bash
-cd /home/administrator/infra-config-portal-netapp/app
+cd /home/administrator/infra-config-portal-cisco/app
 make frontend-install
 make frontend-run
 ```
@@ -80,10 +80,20 @@ make frontend-run
 The backend runs at `http://127.0.0.1:8001`. The Vite frontend runs at
 `http://127.0.0.1:5173` and proxies API requests to the backend.
 
+If a local dev process is stale, run `make app-status` first. `make app-stop`
+and `make app-restart` only manage app-owned backend/frontend processes
+recorded under `.local/run/` or discovered with this repo as their working
+directory. To avoid a port conflict without stopping another process, use a
+one-off alternate port, for example:
+
+```bash
+BACKEND_PORT=8002 FRONTEND_PORT=5174 make app-restart
+```
+
 Docker Compose:
 
 ```bash
-cd /home/administrator/infra-config-portal-netapp/app
+cd /home/administrator/infra-config-portal-cisco/app
 docker compose up --build
 ```
 
@@ -111,16 +121,20 @@ The Cisco Setup Readiness panel and
 `GET /api/v1/providers/cisco/setup-readiness` compose Cisco console discovery
 and Cisco Ansible status into a bootstrap preview. It shows the planned
 management IP, console candidate counts, prompt-readiness next action,
-SSH/SCP and Ansible readiness as plan-only, backup/report placeholders, and
-disabled dangerous actions. It does not expose an apply button, open config
-mode, enable SSH/SCP, back up running-config, save config, reload, erase, copy,
-or change VLANs, interfaces, users, or passwords.
+state boundaries between observed console evidence and saved planning values,
+SSH/SCP and Ansible readiness as plan-only, redacted last-action/artifact
+placeholders, and disabled dangerous actions. It does not expose an apply
+button, open config mode, enable SSH/SCP, back up running-config, save config,
+reload, erase, copy, or change VLANs, interfaces, users, or passwords.
 
 `POST /api/v1/providers/cisco-console/prompt-readiness` is a separate
 newline-only console check for the setup workflow. It opens the selected
 console path only in explicit `PROVIDER_MODE=local-readonly` mode with lab
 read-only acknowledgements, sends newline, reads and redacts the prompt state,
 and does not run show commands or configuration commands.
+`safe_show_commands_allowed` remains false in this prompt-readiness result; an
+exec-looking prompt is only future readiness evidence for a separate explicit
+read-only action.
 
 `GET /api/v1/providers/cisco/setup-wizard-plan` is preview-only. It reports the
 latest cached prompt-readiness state when available, explains why initial setup
@@ -143,6 +157,9 @@ Cisco-only console bootstrap preview for this lab target:
 `192.168.1.220/24` (`255.255.255.0`). It distinguishes setup-wizard,
 direct exec/config-mode, and unsupported prompt flows, shows redacted preview
 commands, and keeps destructive reset/wipe actions separate and disabled.
+It also reports blocker categories, redacted command summaries,
+`serial_writes_attempted=false`, and placeholder artifact metadata so missing
+logs are obvious without implying an apply occurred.
 `POST /api/v1/providers/cisco/console-bootstrap/apply` is blocked by default
 and records a redacted blocked result unless all backend gates pass, including
 the exact confirmation phrase

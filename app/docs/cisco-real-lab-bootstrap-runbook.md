@@ -82,6 +82,21 @@ for p in 8000 8001 8002 8003; do
 done
 ```
 
+If local dev servers are stale, inspect before stopping anything:
+
+```bash
+make app-status
+ls -l .local/run/ .local/log/ 2>/dev/null || true
+```
+
+Use `make app-restart` only for app-owned backend/frontend processes. To avoid
+touching another process on the default ports, start this app on alternate local
+ports:
+
+```bash
+BACKEND_PORT=8002 FRONTEND_PORT=5174 make app-restart
+```
+
 Discovery meanings:
 
 - No candidates: connect the USB serial adapter to this machine, connect the
@@ -115,6 +130,11 @@ picocom -b 115200 /dev/ttyUSB0
 
 Exit `picocom` with `Ctrl+A`, then `Ctrl+X`.
 
+When observing manually, press Enter only. Do not paste commands, do not answer
+prompts, and do not save raw terminal transcripts. Record only sanitized facts:
+adapter path, baud tried, whether text appeared, prompt classification, and
+whether any other process owned the serial port.
+
 Manual console troubleshooting:
 
 - Confirm the RJ45/console cable is connected to the Cisco console port, not
@@ -128,6 +148,17 @@ Manual console troubleshooting:
 
 Expected prompt types are setup wizard, `Switch>`, `Switch#`, `Username:`,
 `Password:`, or no output.
+
+Prompt classifications used by the app:
+
+- `setup-wizard`: stop; do not answer yes/no prompts.
+- `login-required`: stop; do not send usernames or passwords.
+- `exec`: readiness evidence only; prompt-readiness still does not run show
+  commands and reports `safe_show_commands_allowed=false`.
+- `config-mode`: stop; get human review before further interaction.
+- `unknown`: keep blocked until manual observation explains the prompt.
+- `unknown-no-output`: keep blocked; re-check adapter ownership, cable, power,
+  and baud `9600` then `115200`.
 
 If the app reports `unknown-no-output`, keep bootstrap apply blocked and use
 the manual checks above before changing baud or cabling.
@@ -179,6 +210,8 @@ Collect sanitized evidence only:
 - screenshots of `/providers`
 - redacted API summaries
 - sanitized smoke reports under ignored artifact paths
+- prompt classification, checked time, baud, adapter path, blocker summaries,
+  and placeholder artifact metadata
 
 Do not collect raw running-config, passwords, tokens, cookies, authorization
 headers, raw console transcripts, or local real-lab env files.

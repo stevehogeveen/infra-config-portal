@@ -45,6 +45,7 @@ def build_cisco_console_bootstrap_plan() -> dict[str, Any]:
         },
         "apply_enabled": False,
         "execution_supported": False,
+        "serial_writes_attempted": False,
         "flow": flow,
         "prompt_state": prompt_state,
         "prompt_detail": prompt_detail,
@@ -57,7 +58,16 @@ def build_cisco_console_bootstrap_plan() -> dict[str, Any]:
         ],
         "intended_steps": _intended_steps(flow),
         "command_preview": command_preview,
+        "redacted_command_summary": _redacted_command_summary(flow),
         "commands_redacted": True,
+        "blocker_summary": _blocker_summary(blockers),
+        "artifact_preview": {
+            "redacted": True,
+            "raw_console_log_saved": False,
+            "post_apply_report": "placeholder",
+            "last_action_metadata": "Blocked previews record status, blockers, prompt state, and checked time only.",
+            "missing_artifacts_message": "No apply artifacts exist because serial writes are not implemented.",
+        },
         "destructive_actions_disabled": DISABLED_DESTRUCTIVE_ACTIONS,
         "blockers": blockers,
         "warnings": [
@@ -232,6 +242,33 @@ def _intended_steps(flow: str) -> list[str]:
         ]
     )
     return steps
+
+
+def _redacted_command_summary(flow: str) -> list[str]:
+    if flow == "setup-wizard-answer-flow":
+        return [
+            "Setup wizard answer path would be previewed separately before any future apply.",
+            "No wizard answers are included in this scaffold response.",
+        ]
+    if flow == "direct-exec-config-mode-flow":
+        return [
+            "Future guarded flow would enter the minimal management configuration path.",
+            "Preview content is plan-only and requires separate exact confirmation before execution.",
+        ]
+    return [
+        "No command preview is actionable for this prompt state.",
+        "Resolve blockers before any future guarded preview can be considered.",
+    ]
+
+
+def _blocker_summary(blockers: list[str]) -> dict[str, Any]:
+    return {
+        "count": len(blockers),
+        "has_prompt_blocker": any("Prompt" in blocker or "prompt" in blocker for blocker in blockers),
+        "has_target_blocker": any("target" in blocker or "prefix" in blocker for blocker in blockers),
+        "has_requirement_blocker": any("required" in blocker.lower() for blocker in blockers),
+        "has_apply_gate_blocker": False,
+    }
 
 
 def _command_preview(requirements: dict[str, Any]) -> list[str]:

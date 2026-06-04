@@ -1665,6 +1665,7 @@ function CiscoSetupReadinessPanel({
   const readyToApplyState = objectValue(stateBoundaries.values_ready_to_apply);
   const lastActionState = objectValue(stateBoundaries.last_action_logs_artifacts);
   const lastPrompt = objectValue(readiness.console.last_prompt_readiness);
+  const promptClassification = objectValue(lastPrompt.prompt_classification);
   const readTiming = objectValue(readiness.console.read_timing);
 
   return (
@@ -1712,7 +1713,8 @@ function CiscoSetupReadinessPanel({
             asString(discoveredState.summary) || "Console discovery state.",
             `Console: ${labelize(asString(discoveredState.console_status) || readiness.console.status)}.`,
             `Selected path: ${asString(discoveredState.selected_path) || "None"}.`,
-            `Prompt: ${labelize(asString(discoveredState.prompt_state) || "unknown")}, captured: ${presenceLabel(discoveredState.prompt_captured)}.`
+            `Prompt: ${labelize(asString(discoveredState.prompt_state) || "unknown")}, captured: ${presenceLabel(discoveredState.prompt_captured)}.`,
+            `Classification: ${asString(promptClassification.label) || "Unknown prompt"}.`
           ]}
         />
         <SetupPreviewBlock
@@ -1739,9 +1741,11 @@ function CiscoSetupReadinessPanel({
           tag="Redacted"
           lines={[
             asString(lastActionState.summary) || "Last action details are redacted.",
+            `Last action present: ${presenceLabel(lastActionState.last_action_present)}.`,
+            `Checked at: ${asString(lastActionState.checked_at) || "Not recorded"}.`,
             `Prompt state: ${labelize(asString(lastPrompt.prompt_state) || "unknown")}.`,
             `Captured text: ${presenceLabel(lastPrompt.captured)}.`,
-            asString(lastPrompt.message) || "Prompt readiness has not run in this backend process."
+            asString(lastPrompt.next_safe_action) || "Prompt readiness has not run in this backend process."
           ]}
         />
       </div>
@@ -1757,6 +1761,16 @@ function CiscoSetupReadinessPanel({
           title="Bootstrap Preview"
           tag="Plan only"
           lines={readiness.bootstrap_preview.summary}
+        />
+        <SetupPreviewBlock
+          title="Missing Requirements"
+          tag="Blocked"
+          lines={readiness.bootstrap_preview.missing_requirements}
+        />
+        <SetupPreviewBlock
+          title="Redacted Command Summary"
+          tag="Preview"
+          lines={readiness.bootstrap_preview.redacted_command_summary}
         />
         <SetupPreviewBlock
           title="SSH/SCP Readiness"
@@ -2029,21 +2043,28 @@ function SetupPreviewBlock({
   tag: string;
   title: string;
 }) {
+  const visibleLines = lines.filter((line) => line.trim().length > 0);
   return (
     <div className="setup-preview-block">
       <div>
         <h3>{title}</h3>
         <span className="action-tag disabled">{tag}</span>
       </div>
-      {lines.map((line) => (
-        <p key={line}>{line}</p>
-      ))}
+      {visibleLines.length > 0 ? (
+        visibleLines.map((line) => (
+          <p key={line}>{line}</p>
+        ))
+      ) : (
+        <p>No items recorded.</p>
+      )}
     </div>
   );
 }
 
 function CiscoConsoleBootstrapPlanPanel({ plan }: { plan: CiscoConsoleBootstrapPlan }) {
   const target = objectValue(plan.target);
+  const blockerSummary = objectValue(plan.blocker_summary);
+  const artifactPreview = objectValue(plan.artifact_preview);
   const [confirmation, setConfirmation] = useState("");
   const confirmationMatches = confirmation === plan.confirmation_phrase;
   const applyDisabled = !confirmationMatches || !plan.execution_supported || !plan.apply_enabled;
@@ -2065,10 +2086,32 @@ function CiscoConsoleBootstrapPlanPanel({ plan }: { plan: CiscoConsoleBootstrapP
         <ProviderFact label="Flow" value={labelize(plan.flow)} />
         <ProviderFact label="Apply Enabled" value={plan.apply_enabled ? "true" : "false"} />
         <ProviderFact label="Execution Supported" value={plan.execution_supported ? "true" : "false"} />
+        <ProviderFact label="Serial Writes" value={plan.serial_writes_attempted ? "attempted" : "not attempted"} />
       </div>
       <div className="setup-preview-grid">
         <SetupPreviewBlock title="Summary" tag="Preview" lines={plan.summary} />
         <SetupPreviewBlock title="Intended Steps" tag="Guarded" lines={plan.intended_steps} />
+        <SetupPreviewBlock title="Redacted Command Summary" tag="Redacted" lines={plan.redacted_command_summary} />
+        <SetupPreviewBlock
+          title="Blocker Summary"
+          tag="Review"
+          lines={[
+            `Count: ${asString(blockerSummary.count) || "0"}.`,
+            `Prompt blocker: ${presenceLabel(blockerSummary.has_prompt_blocker)}.`,
+            `Target blocker: ${presenceLabel(blockerSummary.has_target_blocker)}.`,
+            `Requirement blocker: ${presenceLabel(blockerSummary.has_requirement_blocker)}.`
+          ]}
+        />
+        <SetupPreviewBlock
+          title="Artifacts"
+          tag="Placeholder"
+          lines={[
+            `Redacted: ${presenceLabel(artifactPreview.redacted)}.`,
+            `Raw console log saved: ${presenceLabel(artifactPreview.raw_console_log_saved)}.`,
+            asString(artifactPreview.last_action_metadata) || "",
+            asString(artifactPreview.missing_artifacts_message) || ""
+          ]}
+        />
         <SetupPreviewBlock title="Command Preview" tag="Not executed" lines={plan.command_preview} />
         <SetupPreviewBlock
           title="Destructive Actions"
@@ -2337,6 +2380,10 @@ function CiscoConsoleDetails({
             <ProviderFact
               label="Prompt Ready"
               value={asBoolean(promptReadinessResult.prompt_ready) ? "true" : "false"}
+            />
+            <ProviderFact
+              label="Show Commands Allowed"
+              value={asBoolean(promptReadinessResult.safe_show_commands_allowed) ? "true" : "false"}
             />
           </div>
           <p className="provider-redaction-note">
