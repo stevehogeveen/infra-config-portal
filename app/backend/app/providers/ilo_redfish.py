@@ -485,10 +485,10 @@ def _endpoint_message(classification: str) -> str:
         "legacy_available": "Legacy iLO endpoint is available.",
         "legacy_available_redfish_not_found": "Legacy iLO endpoint is available, but Redfish root was not found.",
         "web_available_redfish_not_found": (
-            "A web endpoint responded, but Redfish root was not found. "
-            "Confirm this is the iLO management address, check whether this is an older "
-            "or legacy iLO, verify Redfish support is enabled or available, and confirm "
-            "the responding web portal is actually iLO."
+            "The web root responded, but Redfish root was not found. HTTP web "
+            "reachability alone does not prove this target supports Redfish. Verify "
+            "the address is iLO, check for a legacy iLO generation, confirm Redfish is "
+            "available, and rule out an unrelated web server."
         ),
         "endpoint_not_found_or_wrong_target": "All checked iLO endpoint paths returned 404; verify the target address.",
         "auth_failed": "iLO authentication failed; review configured credentials or iLO permissions.",
@@ -507,9 +507,9 @@ def _endpoint_next_safe_action(classification: str) -> str:
         "legacy_available": "Use a dedicated read-only legacy iLO discovery path if Redfish is unavailable.",
         "legacy_available_redfish_not_found": "Use legacy read-only discovery context or verify whether this iLO supports Redfish.",
         "web_available_redfish_not_found": (
-            "Verify target identity in trusted records or the web portal, confirm iLO "
-            "generation, firmware, and Redfish support, then retry GET-only endpoint "
-            "detection. No settings were changed."
+            "Verify target identity in trusted records or the web UI, confirm iLO "
+            "generation and Redfish support, then retry GET-only endpoint detection. "
+            "No settings were changed."
         ),
         "endpoint_not_found_or_wrong_target": "Verify target identity/address and retry GET-only endpoint detection.",
         "auth_failed": "Review credentials or iLO permissions locally, without printing secrets.",
@@ -524,10 +524,10 @@ def _endpoint_next_safe_action(classification: str) -> str:
 def _endpoint_diagnostic_hints(classification: str) -> list[str]:
     hints = {
         "web_available_redfish_not_found": [
-            "Confirm the configured address is the iLO management interface, not a server OS, proxy, or unrelated web host.",
-            "Check whether the target is an older or legacy iLO generation where Redfish is unavailable.",
-            "Verify Redfish support is enabled or available for the iLO generation and firmware level.",
-            "If a login page appears at the web root, confirm the portal branding and identity are actually iLO.",
+            "Wrong IP: the responding web server may be a server OS, proxy, or another device.",
+            "Legacy iLO: older generations may not expose Redfish at /redfish/v1.",
+            "Redfish unavailable: the management UI may be reachable while the API is disabled or unsupported.",
+            "Non-iLO web server: the root page responds, but iLO-specific probes did not.",
             "Keep using GET-only endpoint detection until target identity and Redfish support are confirmed.",
         ],
         "legacy_available_redfish_not_found": [

@@ -1935,6 +1935,11 @@ function IloProviderTopSummary({
         <ProviderFact label="Legacy Status" value={labelize(summary.current_state.legacy_endpoint_status)} />
         <ProviderFact label="Web Status" value={labelize(summary.current_state.web_endpoint_status)} />
       </div>
+      {summary.current_state.endpoint_classification === "web_available_redfish_not_found" && (
+        <p className="provider-redaction-note">
+          Web reachability is current evidence only. It does not prove Redfish readiness or enable apply actions.
+        </p>
+      )}
       <ProviderIssueRows
         blockers={firstBlocker ? [firstBlocker] : []}
         warnings={firstWarning ? [firstWarning] : []}
@@ -2486,7 +2491,7 @@ function IloCurrentStatePanel({ summary }: { summary: IloReadinessSummary }) {
       <h3>GET-Only Endpoint Detection</h3>
       <div className="provider-callout">
         <strong>{labelize(current_state.endpoint_classification)}</strong>
-        <p>{current_state.endpoint_next_safe_action}</p>
+        <p>{endpointClassificationSummary(current_state.endpoint_classification)}</p>
       </div>
       <div className="provider-fact-grid compact">
         <ProviderFact label="Redfish Status" value={labelize(current_state.redfish_root_status)} />
@@ -2494,6 +2499,7 @@ function IloCurrentStatePanel({ summary }: { summary: IloReadinessSummary }) {
         <ProviderFact label="Web Status" value={labelize(current_state.web_endpoint_status)} />
         <ProviderFact label="No Settings Changed" value="Confirmed" />
       </div>
+      <p className="provider-redaction-note">{current_state.endpoint_next_safe_action}</p>
       {checks.length > 0 && (
         <table className="provider-candidate-table endpoint-detection-table">
           <thead>
@@ -2601,14 +2607,25 @@ function IloReportsArtifactsPanel({ summary }: { summary: IloReadinessSummary })
   return (
     <section className="ilo-summary-section">
       <h3>Reports & Artifacts</h3>
+      <div className="provider-callout">
+        <strong>Preview inventory</strong>
+        <p>
+          These entries describe available, planned, stale, or unavailable report evidence. They do not mean a
+          live collection job is running.
+        </p>
+      </div>
       <div className="ilo-section-grid">
-        {summary.reports_artifacts.map((artifact) => (
-          <div className="ilo-section-item" key={artifact.kind}>
-            <strong>{artifact.title}</strong>
-            <span>{labelize(artifact.status)}</span>
-            <p>{artifact.note}</p>
-          </div>
-        ))}
+        {summary.reports_artifacts.length > 0 ? (
+          summary.reports_artifacts.map((artifact) => (
+            <div className="ilo-section-item" key={artifact.kind}>
+              <strong>{artifact.title}</strong>
+              <span>{labelize(artifact.status)}</span>
+              <p>{artifact.note}</p>
+            </div>
+          ))
+        ) : (
+          <p className="muted">No report placeholders are available for this iLO summary.</p>
+        )}
       </div>
     </section>
   );
@@ -2928,6 +2945,22 @@ function safeNextAction(provider: ProviderStatus): string {
   if (provider.blockers.length > 0) return provider.blockers[0];
   if (provider.safe_actions.length > 0) return provider.safe_actions[0].reason;
   return "Review status only; no runnable action is exposed.";
+}
+
+function endpointClassificationSummary(classification: string): string {
+  if (classification === "web_available_redfish_not_found") {
+    return "Web UI responded, but Redfish root did not. Treat the web response as identity evidence, not Redfish readiness.";
+  }
+  if (classification === "legacy_available_redfish_not_found") {
+    return "Legacy iLO responded, but Redfish root did not. Continue only with read-only legacy context.";
+  }
+  if (classification === "redfish_available") {
+    return "Redfish root responded to GET-only detection. Inventory discovery can stay read-only.";
+  }
+  if (classification === "not_checked") {
+    return "Endpoint detection has not run in this session.";
+  }
+  return "Review the sanitized endpoint matrix before choosing the next read-only check.";
 }
 
 function objectValue(value: unknown): Record<string, unknown> {

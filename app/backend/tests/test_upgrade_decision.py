@@ -251,14 +251,20 @@ def test_ilo_readiness_summary_reports_web_available_redfish_not_found(
             "endpoint_detection": {
                 "classification": "web_available_redfish_not_found",
                 "message": (
-                    "A web endpoint responded, but Redfish root was not found. Confirm this is "
-                    "the iLO management address, check whether this is an older or legacy iLO, "
-                    "verify Redfish support is enabled or available, and confirm the responding "
-                    "web portal is actually iLO."
+                    "The web root responded, but Redfish root was not found. HTTP web "
+                    "reachability alone does not prove this target supports Redfish. Verify "
+                    "the address is iLO, check for a legacy iLO generation, confirm Redfish is "
+                    "available, and rule out an unrelated web server."
                 ),
                 "checks": [
                     {
                         "path": "/redfish/v1/",
+                        "status_code": 404,
+                        "content_type": "text/plain",
+                        "classification": "redfish_not_found",
+                    },
+                    {
+                        "path": "/redfish/v1",
                         "status_code": 404,
                         "content_type": "text/plain",
                         "classification": "redfish_not_found",
@@ -269,28 +275,34 @@ def test_ilo_readiness_summary_reports_web_available_redfish_not_found(
                         "content_type": "text/html",
                         "classification": "web_available",
                     },
+                    {
+                        "path": "/xmldata?item=All",
+                        "status_code": 404,
+                        "content_type": "text/plain",
+                        "classification": "legacy_not_found",
+                    },
                 ],
                 "redfish_status": "not_found",
                 "legacy_status": "not_found",
                 "web_status": "available",
                 "next_safe_action": (
-                    "Verify target identity in trusted records or the web portal, confirm iLO "
-                    "generation, firmware, and Redfish support, then retry GET-only endpoint "
-                    "detection. No settings were changed."
+                    "Verify target identity in trusted records or the web UI, confirm iLO "
+                    "generation and Redfish support, then retry GET-only endpoint detection. "
+                    "No settings were changed."
                 ),
                 "diagnostic_hints": [
-                    "Confirm the configured address is the iLO management interface, not a server OS, proxy, or unrelated web host.",
-                    "Check whether the target is an older or legacy iLO generation where Redfish is unavailable.",
-                    "Verify Redfish support is enabled or available for the iLO generation and firmware level.",
-                    "If a login page appears at the web root, confirm the portal branding and identity are actually iLO.",
+                    "Wrong IP: the responding web server may be a server OS, proxy, or another device.",
+                    "Legacy iLO: older generations may not expose Redfish at /redfish/v1.",
+                    "Redfish unavailable: the management UI may be reachable while the API is disabled or unsupported.",
+                    "Non-iLO web server: the root page responds, but iLO-specific probes did not.",
                     "Keep using GET-only endpoint detection until target identity and Redfish support are confirmed.",
                 ],
             },
             "warnings": [],
             "blockers": [
-                "Verify target identity in trusted records or the web portal, confirm iLO "
-                "generation, firmware, and Redfish support, then retry GET-only endpoint "
-                "detection. No settings were changed."
+                "Verify target identity in trusted records or the web UI, confirm iLO "
+                "generation and Redfish support, then retry GET-only endpoint detection. "
+                "No settings were changed."
             ],
         },
     )
@@ -305,16 +317,29 @@ def test_ilo_readiness_summary_reports_web_available_redfish_not_found(
     assert current_state["legacy_endpoint_status"] == "not_found"
     assert current_state["web_endpoint_status"] == "available"
     assert current_state["legacy_endpoint_message"] == (
-        "A web endpoint responded, but Redfish root was not found. Confirm this is "
-        "the iLO management address, check whether this is an older or legacy iLO, "
-        "verify Redfish support is enabled or available, and confirm the responding "
-        "web portal is actually iLO."
+        "The web root responded, but Redfish root was not found. HTTP web "
+        "reachability alone does not prove this target supports Redfish. Verify "
+        "the address is iLO, check for a legacy iLO generation, confirm Redfish is "
+        "available, and rule out an unrelated web server."
     )
     assert "Verify target identity" in current_state["endpoint_next_safe_action"]
     assert "No settings were changed." in current_state["endpoint_next_safe_action"]
-    assert "older or legacy iLO" in current_state["endpoint_detection"]["diagnostic_hints"][1]
-    assert "web root" in current_state["endpoint_detection"]["diagnostic_hints"][3]
+    assert all(
+        token not in current_state["endpoint_next_safe_action"].lower()
+        for token in ("apply", "write")
+    )
+    assert "Legacy iLO" in current_state["endpoint_detection"]["diagnostic_hints"][1]
+    assert "Non-iLO web server" in current_state["endpoint_detection"]["diagnostic_hints"][3]
     assert current_state["endpoint_detection"]["checks"][0]["path"] == "/redfish/v1/"
+    assert current_state["endpoint_detection"]["checks"][1]["path"] == "/redfish/v1"
+    assert current_state["endpoint_detection"]["checks"][2]["content_type"] == "text/html"
+    assert current_state["endpoint_detection"]["checks"][3]["path"] == "/xmldata?item=All"
+    report_statuses = {
+        artifact["kind"]: artifact["status"]
+        for artifact in payload["reports_artifacts"]
+    }
+    assert report_statuses["readiness-report"] == "current"
+    assert report_statuses["preview-plan"] == "planned"
     clear_probe_results()
 
 

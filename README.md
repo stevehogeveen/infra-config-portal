@@ -117,7 +117,7 @@ by Git and must not be committed. Create it with:
 Manual local-readonly smoke:
 
 ```bash
-PROVIDER_MODE=local-readonly make provider-smoke
+LAB_CLOSED_LOOP_ACK=YES LAB_READONLY_ACK=YES PROVIDER_MODE=local-readonly make provider-smoke
 ```
 
 The backend loads local provider values from `.env.local.real-lab`, but ignores
@@ -127,6 +127,19 @@ Plain `make provider-smoke` runs in mock mode and skips probes. With explicit
 Markdown summaries under ignored `artifacts/real-lab/`, skips planned but not
 configured ESXi/Cisco management targets gracefully, and must not print
 passwords.
+
+iLO endpoint detection is GET-only. A result such as
+`web_available_redfish_not_found` means the web root returned HTML while
+`/redfish/v1/`, `/redfish/v1`, and legacy XML probes did not prove a supported
+API. Treat that as identity evidence only: verify the address, iLO generation,
+Redfish availability, and that the web server is actually iLO. Do not collect
+screenshots containing secrets, raw device transcripts, cookies, authorization
+headers, private keys, passwords, or `.env.local.real-lab` contents.
+
+If local dev ports are already occupied, restart app-owned processes with
+`make app-restart` or run alternate ports from `app/`: `BACKEND_PORT=8002 make
+backend-run` and `FRONTEND_PORT=5175 make frontend-run`. Do not kill unrelated
+processes just to free the default ports.
 
 ## Tests And Checks
 
@@ -145,7 +158,7 @@ The backend pytest suite includes a mock-only VM lifecycle smoke test. To run
 that smoke coverage directly:
 
 ```bash
-cd /home/administrator/infra-config-portal-netapp/app/backend
+cd /home/administrator/infra-config-portal-ilo/app/backend
 PROVIDER_MODE=mock .venv/bin/pytest -q tests/test_smoke_vm_lifecycle.py
 ```
 

@@ -361,6 +361,25 @@ class IloConnectionReadinessRead(BaseModel):
     safety_flags: dict[str, Any] = Field(default_factory=dict)
 
 
+class IloEndpointCheckRead(BaseModel):
+    path: str | None = None
+    status_code: int | None = None
+    content_type: str | None = None
+    error_class: str | None = None
+    classification: str | None = None
+
+
+class IloEndpointDetectionRead(BaseModel):
+    classification: str = "not_checked"
+    message: str = "GET-only endpoint detection has not run."
+    redfish_status: str = "not_checked"
+    legacy_status: str = "not_checked"
+    web_status: str = "not_checked"
+    next_safe_action: str = "Run explicit GET-only endpoint detection from Provider Status."
+    diagnostic_hints: list[str] = Field(default_factory=list)
+    checks: list[IloEndpointCheckRead] = Field(default_factory=list)
+
+
 class IloCurrentStateRead(BaseModel):
     last_probe_status: str
     last_probe_time: str | None = None
@@ -375,7 +394,7 @@ class IloCurrentStateRead(BaseModel):
     legacy_endpoint_status: str
     legacy_endpoint_message: str
     web_endpoint_status: str = "not_checked"
-    endpoint_detection: dict[str, Any] = Field(default_factory=dict)
+    endpoint_detection: IloEndpointDetectionRead = Field(default_factory=IloEndpointDetectionRead)
     media_inventory_mode: str
 
 

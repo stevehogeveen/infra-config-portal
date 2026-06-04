@@ -232,6 +232,25 @@ export type IloConnectionReadiness = {
   safety_flags: Record<string, unknown>;
 };
 
+export type IloEndpointCheck = {
+  path: string | null;
+  status_code: number | null;
+  content_type: string | null;
+  error_class: string | null;
+  classification: string | null;
+};
+
+export type IloEndpointDetection = {
+  classification: string;
+  message: string;
+  redfish_status: string;
+  legacy_status: string;
+  web_status: string;
+  next_safe_action: string;
+  diagnostic_hints: string[];
+  checks: IloEndpointCheck[];
+};
+
 export type IloCurrentState = {
   last_probe_status: string;
   last_probe_time: string | null;
@@ -246,7 +265,7 @@ export type IloCurrentState = {
   legacy_endpoint_status: string;
   legacy_endpoint_message: string;
   web_endpoint_status: string;
-  endpoint_detection: Record<string, unknown>;
+  endpoint_detection: IloEndpointDetection;
   media_inventory_mode: string;
 };
 

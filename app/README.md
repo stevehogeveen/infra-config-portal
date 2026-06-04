@@ -127,7 +127,7 @@ default, or placeholder-only metadata from explicitly configured
 ## Docker Compose
 
 ```bash
-cd /home/administrator/infra-config-portal-netapp/app
+cd /home/administrator/infra-config-portal-ilo/app
 docker compose up --build
 ```
 
@@ -171,10 +171,11 @@ iLO Provider Status uses explicit GET-only endpoint detection for Redfish root,
 web root, and legacy XML paths. It reports classifications such as
 `redfish_available`, `legacy_available_redfish_not_found`, and
 `web_available_redfish_not_found` with the next safe action and redacted
-diagnostic hints. When the web root responds but Redfish is missing, the UI asks
-the operator to verify target identity, legacy iLO generation, Redfish support,
-and whether the responding portal is actually iLO. No iLO settings are changed
-by endpoint detection.
+diagnostic hints. When the web root responds but Redfish is missing, HTTP web
+reachability is treated as identity evidence only, not Redfish readiness. The
+UI asks the operator to verify the address, legacy iLO generation, Redfish
+availability, and whether the responding portal is actually iLO. No iLO
+settings are changed by endpoint detection.
 
 The iLO Provider Status page includes a blocked Full Destructive Rebuild preview
 for future bare-metal rebuild planning. It can show readiness, identity
@@ -209,7 +210,7 @@ ESXi probes use HTTPS GET and TCP reachability checks only.
 Optional manual smoke:
 
 ```bash
-PROVIDER_MODE=local-readonly make provider-smoke
+LAB_CLOSED_LOOP_ACK=YES LAB_READONLY_ACK=YES PROVIDER_MODE=local-readonly make provider-smoke
 ```
 
 The backend loads local provider values from `.env.local.real-lab`, but ignores
@@ -219,6 +220,18 @@ Plain `make provider-smoke` runs in mock mode and skips probes. With explicit
 hardware/configuration and planned but not configured ESXi/Cisco management
 targets gracefully, must not print passwords, and writes sanitized reports under
 ignored `artifacts/real-lab/`.
+
+The latest expected web-only iLO evidence shape is
+`web_available_redfish_not_found`: `/` returns `200 text/html`, while
+`/redfish/v1/`, `/redfish/v1`, and `/xmldata?item=All` return no supported
+Redfish or legacy API. Do not save or commit screenshots with secrets, raw
+device transcripts, cookies, authorization headers, private keys, passwords, or
+`.env.local.real-lab` contents.
+
+If default dev ports are stale or busy, use app-owned controls first:
+`make app-status`, `make app-restart`, or alternate ports from `app/` such as
+`BACKEND_PORT=8002 make backend-run` and `FRONTEND_PORT=5175 make
+frontend-run`. Do not kill unrelated processes to free ports.
 
 ## Safety Defaults
 
