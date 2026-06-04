@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import re
 from datetime import date, datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.core.enums import EnvironmentName, RequestStatus, WorkflowRunStatus
+from app.services.netapp_observations import validate_netapp_operator_notes
 
 VM_NAME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9-]{2,62}$")
 
@@ -339,6 +340,8 @@ class IloUpgradeReadinessRead(BaseModel):
 
 
 class ProviderActionRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: str
     label: str
     enabled: bool
@@ -348,283 +351,9 @@ class ProviderActionRead(BaseModel):
     endpoint: str | None = None
 
 
-class IloConnectionReadinessRead(BaseModel):
-    provider_mode: str
-    provider_status: str
-    host_configured: bool
-    username_configured: bool
-    password_configured: bool
-    tls_verify: bool
-    timeout_seconds: float
-    missing_fields: list[str] = Field(default_factory=list)
-    redfish_probe_available: bool
-    safety_flags: dict[str, Any] = Field(default_factory=dict)
-
-
-class IloEndpointCheckRead(BaseModel):
-    name: str | None = None
-    path: str | None = None
-    status_code: int | None = None
-    content_type: str | None = None
-    error_class: str | None = None
-    classification: str | None = None
-
-
-class IloEndpointDetectionRead(BaseModel):
-    classification: str = "not_checked"
-    message: str = "GET-only endpoint detection has not run."
-    redfish_status: str = "not_checked"
-    legacy_status: str = "not_checked"
-    web_status: str = "not_checked"
-    inventory_collection_status: str = "not_checked"
-    inventory_collection_classification: str = "not_checked"
-    inventory_collection_checks: list[IloEndpointCheckRead] = Field(default_factory=list)
-    auth_failure_classification: str = "not_checked"
-    auth_recovery_hint: str = "not_checked"
-    next_safe_action: str = "Run explicit GET-only endpoint detection from Provider Status."
-    diagnostic_hints: list[str] = Field(default_factory=list)
-    checks: list[IloEndpointCheckRead] = Field(default_factory=list)
-
-
-class IloCurrentStateRead(BaseModel):
-    last_probe_status: str
-    last_probe_time: str | None = None
-    model: str | None = None
-    serial: str | None = None
-    current_firmware: str | None = None
-    ilo_generation: str | None = None
-    endpoint_classification: str = "not_checked"
-    endpoint_next_safe_action: str = "Run explicit GET-only endpoint detection."
-    redfish_root_status: str = "not_checked"
-    redfish_endpoint_detected: str
-    legacy_endpoint_status: str
-    legacy_endpoint_message: str
-    web_endpoint_status: str = "not_checked"
-    endpoint_detection: IloEndpointDetectionRead = Field(default_factory=IloEndpointDetectionRead)
-    media_inventory_mode: str
-
-
-class IloDesiredSetupSectionRead(BaseModel):
-    id: str
-    title: str
-    status: str
-    apply_enabled: bool = False
-    note: str
-
-
-class IloReportArtifactPlaceholderRead(BaseModel):
-    kind: str
-    title: str
-    status: str
-    note: str
-
-
-class IloReadinessSummaryRead(BaseModel):
-    provider_id: str
-    connection: IloConnectionReadinessRead
-    current_state: IloCurrentStateRead
-    desired_setup_sections: list[IloDesiredSetupSectionRead]
-    firmware_readiness: IloUpgradeReadinessRead
-    upgrade_decision_status: str
-    blockers: list[str] = Field(default_factory=list)
-    warnings: list[str] = Field(default_factory=list)
-    removable_warnings: list[str] = Field(default_factory=list)
-    disabled_dangerous_actions: list[ProviderActionRead] = Field(default_factory=list)
-    reports_artifacts: list[IloReportArtifactPlaceholderRead] = Field(default_factory=list)
-
-
-SECRET_VALUE_RE = re.compile(
-    r"(password\s*=|token\s*=|secret\s*=|bearer\s+|-----begin|private[_ -]?key)",
-    re.IGNORECASE,
-)
-
-
-class IloNetworkIntent(BaseModel):
-    hostname: str | None = Field(default=None, max_length=120)
-    management_ip: str | None = Field(default=None, max_length=80)
-    subnet_mask_or_prefix: str | None = Field(default=None, max_length=80)
-    gateway: str | None = Field(default=None, max_length=80)
-    vlan: str | None = Field(default=None, max_length=80)
-
-
-class IloUserIntent(BaseModel):
-    username_label: str = Field(min_length=1, max_length=120)
-    role: str = Field(min_length=1, max_length=120)
-
-
-class IloSnmpIntent(BaseModel):
-    enabled: bool = False
-    destinations: list[str] = Field(default_factory=list, max_length=10)
-    community_or_user_ref_labels: list[str] = Field(default_factory=list, max_length=10)
-
-
-class IloTimeIntent(BaseModel):
-    timezone: str | None = Field(default=None, max_length=120)
-    ntp_servers: list[str] = Field(default_factory=list, max_length=10)
-
-
-class IloDnsDomainIntent(BaseModel):
-    domain_name: str | None = Field(default=None, max_length=180)
-    dns_servers: list[str] = Field(default_factory=list, max_length=10)
-
-
-class IloSetupIntentWrite(BaseModel):
-    network: IloNetworkIntent = Field(default_factory=IloNetworkIntent)
-    users: list[IloUserIntent] = Field(default_factory=list, max_length=20)
-    snmp: IloSnmpIntent = Field(default_factory=IloSnmpIntent)
-    time: IloTimeIntent = Field(default_factory=IloTimeIntent)
-    dns_domain: IloDnsDomainIntent = Field(default_factory=IloDnsDomainIntent)
-    notes: str | None = Field(default=None, max_length=2000)
-
-    @field_validator("*", mode="after")
-    @classmethod
-    def reject_secret_values(cls, value: Any) -> Any:
-        _reject_secret_values(value)
-        return value
-
-
-class IloSetupIntentRead(IloSetupIntentWrite):
-    provider_id: str
-    apply_enabled: bool = False
-    created_at: datetime | None = None
-    updated_at: datetime | None = None
-
-
-class IloSetupPlanSectionRead(BaseModel):
-    id: str
-    title: str
-    status: str
-    apply_enabled: bool = False
-    source: str
-    current_observation: str
-    planned_preview: str
-    notes: list[str] = Field(default_factory=list)
-    blockers: list[str] = Field(default_factory=list)
-    warnings: list[str] = Field(default_factory=list)
-
-
-class IloSetupPlanPreviewRead(BaseModel):
-    provider_id: str
-    mode: str
-    plan_only: bool = True
-    apply_enabled: bool = False
-    generated_from: str
-    sections: list[IloSetupPlanSectionRead]
-    firmware_readiness_handoff: dict[str, Any] = Field(default_factory=dict)
-    reports_artifacts: list[IloReportArtifactPlaceholderRead] = Field(default_factory=list)
-    disabled_dangerous_actions: list[ProviderActionRead] = Field(default_factory=list)
-    blockers: list[str] = Field(default_factory=list)
-    warnings: list[str] = Field(default_factory=list)
-    removable_warnings: list[str] = Field(default_factory=list)
-
-
-class IloSetupCompareRowRead(BaseModel):
-    section: str
-    field: str
-    label: str
-    desired: str
-    discovered: str
-    status: str
-    next_safe_action: str
-    apply_enabled: bool = False
-
-
-class IloSetupCompareSectionRead(BaseModel):
-    id: str
-    title: str
-    status: str
-    apply_enabled: bool = False
-    next_safe_action: str
-    rows: list[IloSetupCompareRowRead]
-
-
-class IloSetupCompareReportRead(BaseModel):
-    provider_id: str
-    mode: str
-    source: str
-    apply_enabled: bool = False
-    sections: list[IloSetupCompareSectionRead]
-    disabled_dangerous_actions: list[ProviderActionRead] = Field(default_factory=list)
-    blockers: list[str] = Field(default_factory=list)
-    warnings: list[str] = Field(default_factory=list)
-    removable_warnings: list[str] = Field(default_factory=list)
-
-
-class IloDestructiveRebuildRequirementRead(BaseModel):
-    id: str
-    label: str
-    status: str
-    detail: str
-
-
-class IloRealChangeLaneRead(BaseModel):
-    id: str
-    label: str
-    status: str
-    execution_enabled: bool = False
-    next_safe_action: str
-    required_gates: list[str] = Field(default_factory=list)
-    blocked_actions: list[str] = Field(default_factory=list)
-
-
-class IloDestructiveRebuildPreviewRead(BaseModel):
-    provider_id: str
-    provider_mode: str
-    status: str
-    destructive_enabled: bool = False
-    apply_enabled: bool = False
-    safe_next_action: str
-    target_identity: dict[str, Any] = Field(default_factory=dict)
-    discovered_state: dict[str, Any] = Field(default_factory=dict)
-    intended_scope: list[str] = Field(default_factory=list)
-    required_capabilities: list[IloDestructiveRebuildRequirementRead] = Field(default_factory=list)
-    real_change_lanes: list[IloRealChangeLaneRead] = Field(default_factory=list)
-    blockers: list[str] = Field(default_factory=list)
-    warnings: list[str] = Field(default_factory=list)
-    future_workflow_handoff: dict[str, Any] = Field(default_factory=dict)
-    confirmation_requirements: dict[str, Any] = Field(default_factory=dict)
-    artifact_requirements: list[str] = Field(default_factory=list)
-
-
-class IloReportPreviewRead(BaseModel):
-    provider_id: str
-    provider_mode: str
-    generated_at: datetime
-    source: str
-    apply_enabled: bool = False
-    readiness_summary: dict[str, Any] = Field(default_factory=dict)
-    desired_setup_intent: dict[str, Any] = Field(default_factory=dict)
-    setup_compare_report: IloSetupCompareReportRead
-    setup_plan_preview: dict[str, Any] = Field(default_factory=dict)
-    destructive_rebuild_preview: dict[str, Any] = Field(default_factory=dict)
-    firmware_readiness: dict[str, Any] = Field(default_factory=dict)
-    media_inventory_summary: dict[str, Any] = Field(default_factory=dict)
-    disabled_dangerous_actions: list[ProviderActionRead] = Field(default_factory=list)
-    blockers: list[str] = Field(default_factory=list)
-    warnings: list[str] = Field(default_factory=list)
-    removable_warnings: list[str] = Field(default_factory=list)
-
-
-def _reject_secret_values(value: Any) -> None:
-    if isinstance(value, str):
-        if SECRET_VALUE_RE.search(value):
-            raise ValueError(
-                "iLO setup intent stores labels/placeholders only; secret-looking values are not allowed"
-            )
-        return
-    if isinstance(value, BaseModel):
-        _reject_secret_values(value.model_dump())
-        return
-    if isinstance(value, dict):
-        for nested in value.values():
-            _reject_secret_values(nested)
-        return
-    if isinstance(value, list):
-        for nested in value:
-            _reject_secret_values(nested)
-
-
 class ProviderStatusRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: str
     name: str
     kind: str
@@ -642,98 +371,144 @@ class ProviderStatusRead(BaseModel):
     last_probe_time: str | None = None
 
 
-class CiscoSetupReadinessRead(BaseModel):
+class NetAppPlanPreviewRead(BaseModel):
     provider_id: str
-    phase: str
-    planned_management_ip: str | None = None
-    management_configured: bool
-    state_boundaries: dict[str, Any] = Field(default_factory=dict)
-    console: dict[str, Any]
-    bootstrap_preview: dict[str, Any]
-    ssh_scp_readiness: dict[str, Any]
-    ansible: dict[str, Any]
-    backup_report: dict[str, Any]
-    setup_wizard_plan: dict[str, Any] | None = None
+    mode: str
+    apply_enabled: bool = False
+    netapp_configured: bool
+    planned_targets: dict[str, Any]
+    current_discovered_targets: dict[str, Any] | None = None
+    readiness_summary: dict[str, Any]
+    setup_readiness: dict[str, Any] | None = None
+    upgrade_readiness: dict[str, Any] | None = None
+    readiness_buckets: dict[str, Any]
+    cluster_intent_preview: dict[str, Any]
+    svm_intent_preview: dict[str, Any]
+    lif_intent_preview: dict[str, Any]
+    storage_iscsi_plan_preview: dict[str, Any]
+    readiness_comparison_preview: dict[str, Any] | None = None
+    upgrade_readiness_preview: dict[str, Any]
     blockers: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
-    disabled_actions: list[str] = Field(default_factory=list)
+    removable_warnings: list[str] = Field(default_factory=list)
+    disabled_actions: list[ProviderActionRead] = Field(default_factory=list)
+    artifact_placeholders: list[str] = Field(default_factory=list)
     next_safe_action: str
 
 
-class CiscoSetupWizardPlanRead(BaseModel):
+class NetAppUpgradeReadinessRead(BaseModel):
     provider_id: str
+    mode: str
+    apply_enabled: bool = False
+    upgrade_enabled: bool = False
+    setup_ready: bool = False
+    readiness_scope: str = "upgrade"
+    current_version_source: str
+    current_version: str | None = None
+    current_version_confidence: str
+    media_inventory_mode: str
+    candidates: list[dict[str, Any]] = Field(default_factory=list)
+    recommended_target: str | None = None
+    required_intermediate_versions: list[str] = Field(default_factory=list)
+    upgrade_chain: list[dict[str, Any]] = Field(default_factory=list)
+    blockers: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    removable_warnings: list[str] = Field(default_factory=list)
+    next_safe_action: str
+    disabled_actions: list[ProviderActionRead] = Field(default_factory=list)
+
+
+class NetAppConsoleReadinessRead(BaseModel):
+    provider_id: str
+    mode: str
+    bootstrap_enabled: bool = False
+    console_probe_enabled: bool = False
+    apply_enabled: bool = False
+    netapp_configured: bool
+    planned_targets: dict[str, Any]
+    current_discovered_targets: dict[str, Any] | None = None
+    prerequisites: list[dict[str, Any]] = Field(default_factory=list)
+    manual_steps: list[str] = Field(default_factory=list)
+    expected_prompts_or_states: list[dict[str, Any]] = Field(default_factory=list)
+    readiness_buckets: dict[str, Any]
+    observations: dict[str, Any] | None = None
+    observation_summary: dict[str, Any] | None = None
+    observation_blockers: list[str] = Field(default_factory=list)
+    blockers: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    removable_warnings: list[str] = Field(default_factory=list)
+    disabled_actions: list[ProviderActionRead] = Field(default_factory=list)
+    next_safe_action: str
+
+
+class NetAppObservationUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    observed_console_state: Literal[
+        "unknown",
+        "loader_prompt",
+        "boot_menu",
+        "cluster_setup_prompt",
+        "existing_cluster_login",
+        "other",
+    ] = "unknown"
+    controller_a_console_seen: bool = False
+    controller_b_console_seen: bool = False
+    controller_a_sp_cabled: bool = False
+    controller_b_sp_cabled: bool = False
+    management_network_reviewed: bool = False
+    planned_targets_reviewed: bool = False
+    existing_data_risk_acknowledged: bool = False
+    operator_notes: str = Field(default="", max_length=1200)
+
+    @field_validator("operator_notes", mode="before")
+    @classmethod
+    def strip_operator_notes(cls, value: str | None) -> str:
+        return validate_netapp_operator_notes(value)
+
+
+class NetAppObservationRead(NetAppObservationUpdate):
+    provider_id: str
+    updated_at: datetime
+    updated_by: str
+    mock_only: bool = True
+    sent_to_netapp: bool = False
+
+
+class NetAppReadinessComparisonRead(BaseModel):
+    provider_id: str
+    mode: str
+    comparison_enabled: bool = True
+    apply_enabled: bool = False
+    discovery_enabled: bool = False
+    planned_targets: dict[str, Any]
+    current_discovered_targets: dict[str, Any] | None = None
+    observations: dict[str, Any]
+    comparison_items: list[dict[str, Any]] = Field(default_factory=list)
+    matched_items: list[dict[str, Any]] = Field(default_factory=list)
+    unknown_items: list[dict[str, Any]] = Field(default_factory=list)
+    warning_items: list[dict[str, Any]] = Field(default_factory=list)
+    blocker_items: list[dict[str, Any]] = Field(default_factory=list)
+    blockers: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    removable_warnings: list[str] = Field(default_factory=list)
+    next_safe_action: str
+    disabled_actions: list[ProviderActionRead] = Field(default_factory=list)
+
+
+class ProviderArtifactRead(BaseModel):
+    id: str
+    provider_id: str
+    kind: str
+    title: str
+    description: str
     status: str
-    apply_enabled: bool
-    planned_management_ip: str | None = None
-    detected_prompt_state: str
-    setup_wizard_detected: bool
-    message: str
-    why_blocked: list[str] = Field(default_factory=list)
-    future_guarded_plan_preview: list[str] = Field(default_factory=list)
-    not_attempted: list[str] = Field(default_factory=list)
-    disabled_actions: list[str] = Field(default_factory=list)
-    blockers: list[str] = Field(default_factory=list)
-    warnings: list[str] = Field(default_factory=list)
-    next_safe_action: str
-
-
-class CiscoBootstrapRequirementsRead(BaseModel):
-    provider_id: str
-    status: str
-    apply_enabled: bool
-    management_configured: bool
-    requirements: dict[str, Any]
-    blockers: list[str] = Field(default_factory=list)
-    warnings: list[str] = Field(default_factory=list)
-    disabled_actions: list[str] = Field(default_factory=list)
-    not_attempted: list[str] = Field(default_factory=list)
-    next_safe_action: str
-
-
-class CiscoBootstrapRequirementsUpdate(BaseModel):
-    planned_management_ip: str
-    subnet_prefix: str
-    gateway: str
-    management_vlan: str | None = None
-    management_interface: str | None = None
-    management_strategy: str
-    hostname: str
-    domain_name: str
-    dns_servers: list[str] = Field(default_factory=list)
-    local_admin_username_configured: bool = False
-    local_admin_username_reference: str | None = None
-    operator_notes: str | None = None
-
-
-class CiscoConsoleBootstrapPlanRead(BaseModel):
-    provider_id: str
-    status: str
-    target: dict[str, Any]
-    apply_enabled: bool
-    execution_supported: bool
-    serial_writes_attempted: bool
-    flow: str
-    prompt_state: str
-    prompt_detail: str
-    prompt_checked_at: str | None = None
-    summary: list[str] = Field(default_factory=list)
-    intended_steps: list[str] = Field(default_factory=list)
-    command_preview: list[str] = Field(default_factory=list)
-    redacted_command_summary: list[str] = Field(default_factory=list)
-    commands_redacted: bool
-    blocker_summary: dict[str, Any] = Field(default_factory=dict)
-    artifact_preview: dict[str, Any] = Field(default_factory=dict)
-    destructive_actions_disabled: list[str] = Field(default_factory=list)
-    blockers: list[str] = Field(default_factory=list)
-    warnings: list[str] = Field(default_factory=list)
-    confirmation_phrase: str
-    next_safe_action: str
-
-
-class CiscoConsoleBootstrapApplyCreate(BaseModel):
-    confirmation_phrase: str
-    requested_actions: list[str] = Field(default_factory=list)
-    destructive_action_requested: bool = False
+    mock_only: bool
+    redacted: bool
+    downloadable: bool
+    download_url: str | None = None
+    generated_at: datetime
+    metadata: dict[str, Any]
 
 
 class ProviderProbeResultRead(BaseModel):

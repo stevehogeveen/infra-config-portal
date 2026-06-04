@@ -1,4 +1,5 @@
 artifacts/real-lab/
+artifacts/screenshots/
 .env.local.providers
 .env.local.real-lab
 .env.local.real-lab.*

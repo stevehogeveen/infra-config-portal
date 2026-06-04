@@ -65,3 +65,16 @@ def test_media_inventory_exposes_redacted_firmware_hints_only(tmp_path) -> None:
     assert item.generation_hints == ["ilo5"]
     assert item.version_hint == "3.19"
     assert "customer-private" not in repr(inventory)
+
+
+def test_media_inventory_exposes_redacted_ontap_hints_only(tmp_path) -> None:
+    (tmp_path / "customer-private-netapp-ontap-9.14.1.tgz").write_bytes(b"ontap")
+
+    inventory = get_media_inventory((str(tmp_path),))
+
+    assert len(inventory.items) == 1
+    item = inventory.items[0]
+    assert item.placeholder_name == "other-1.tgz"
+    assert item.product_hints == ["netapp-ontap"]
+    assert item.version_hint == "9.14.1"
+    assert "customer-private" not in repr(inventory)

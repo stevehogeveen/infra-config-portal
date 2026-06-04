@@ -28,6 +28,12 @@ Describe one small, concrete outcome.
 
 List the specific local commands Codex should run.
 
+For tasks that change visible frontend UI, include local screenshot validation
+when practical. Screenshots should cover the changed page or section and at
+least one relevant validation, empty, blocked, or error state when applicable.
+Save them only under ignored local paths such as `artifacts/screenshots/`, and
+state why plus manual UI checks if screenshots are skipped.
+
 ## Completion
 
 End with files changed, tests run, any limitations, and recommended next steps.

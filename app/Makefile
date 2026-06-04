@@ -9,7 +9,7 @@ PROVIDER_MODE ?= mock
 BACKEND_PORT ?= 8001
 FRONTEND_PORT ?= 5173
 
-.PHONY: backend-venv backend-run backend-test frontend-install frontend-run up down start stop restart status check codex-audit codex-task codex-next codex-resume test dev lint provider-smoke
+.PHONY: backend-venv backend-run backend-test frontend-install frontend-run up down start stop restart status check codex-audit codex-task codex-next codex-resume test dev lint provider-smoke netapp-real-readiness
 
 backend-venv:
 	$(PYTHON) -m venv $(VENV)
@@ -58,3 +58,6 @@ smoke: backend-smoke
 
 provider-smoke:
 	cd backend && PROVIDER_MODE="$(PROVIDER_MODE)" PYTHONPATH=. $$(if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi) scripts/provider_smoke.py
+
+netapp-real-readiness:
+	cd backend && PROVIDER_MODE="$(PROVIDER_MODE)" PYTHONPATH=. $$(if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi) scripts/netapp_real_run_readiness.py

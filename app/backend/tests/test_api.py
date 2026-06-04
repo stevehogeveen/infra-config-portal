@@ -341,7 +341,7 @@ def test_provider_status_reports_mock_and_preview_providers(client: TestClient) 
     assert response.status_code == 200
     statuses = response.json()
     ids = {item["id"] for item in statuses}
-    assert {"mock-vsphere", "ilo-redfish", "cisco-console"}.issubset(ids)
+    assert {"mock-vsphere", "ilo-redfish", "cisco-console", "netapp-ontap"}.issubset(ids)
     assert any(item["name"] == "Mock vSphere" and item["mode"] == "mock" for item in statuses)
     assert all(item["mode"] == "mock" for item in statuses)
     assert all("safe_actions" in item and "disabled_actions" in item for item in statuses)

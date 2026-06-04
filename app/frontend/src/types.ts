@@ -153,131 +153,159 @@ export type ProviderProbeResult = {
   [key: string]: unknown;
 };
 
-export type CiscoSetupReadiness = {
+export type NetAppPlanPreview = {
   provider_id: string;
-  phase: string;
-  planned_management_ip: string | null;
-  management_configured: boolean;
-  state_boundaries: Record<string, unknown>;
-  console: {
-    status: string;
-    effective_path: string | null;
-    recommended_path: string | null;
-    selected_path: string | null;
-    selection_source: string | null;
-    baud: number | null;
-    read_timing: Record<string, unknown>;
-    candidate_count: number;
-    stable_candidate_count: number;
-    fallback_candidate_count: number;
-    safe_next_action: string;
-    last_prompt_readiness: Record<string, unknown>;
-  };
-  bootstrap_preview: {
-    apply_enabled: boolean;
-    commands_redacted: boolean;
-    serial_writes_attempted: boolean;
-    missing_requirements: string[];
-    redacted_command_summary: string[];
-    summary: string[];
-  };
-  ssh_scp_readiness: {
-    planned_only: boolean;
-    apply_enabled: boolean;
-    summary: string;
-  };
-  ansible: {
-    status: string;
-    enabled: boolean;
-    reason: string;
-  };
-  backup_report: {
-    backup_enabled: boolean;
-    report_placeholder_enabled: boolean;
-    summary: string;
-  };
-  setup_wizard_plan: {
-    available: boolean;
-    detected: boolean;
-    detected_prompt_state: string;
-    apply_enabled: boolean;
-    next_safe_action: string;
-    summary: string;
-  } | null;
-  blockers: string[];
-  warnings: string[];
-  disabled_actions: string[];
-  next_safe_action: string;
-};
-
-export type CiscoSetupWizardPlan = {
-  provider_id: string;
-  status: string;
+  mode: string;
   apply_enabled: boolean;
-  planned_management_ip: string | null;
-  detected_prompt_state: string;
-  setup_wizard_detected: boolean;
-  message: string;
-  why_blocked: string[];
-  future_guarded_plan_preview: string[];
-  not_attempted: string[];
-  disabled_actions: string[];
+  netapp_configured: boolean;
+  planned_targets: Record<string, unknown>;
+  current_discovered_targets: Record<string, unknown> | null;
+  readiness_summary: Record<string, unknown>;
+  setup_readiness: Record<string, unknown> | null;
+  upgrade_readiness: Record<string, unknown> | null;
+  readiness_buckets: Record<string, unknown>;
+  cluster_intent_preview: Record<string, unknown>;
+  svm_intent_preview: Record<string, unknown>;
+  lif_intent_preview: Record<string, unknown>;
+  storage_iscsi_plan_preview: Record<string, unknown>;
+  readiness_comparison_preview: Record<string, unknown> | null;
+  upgrade_readiness_preview: Record<string, unknown>;
   blockers: string[];
   warnings: string[];
+  removable_warnings: string[];
+  disabled_actions: ProviderAction[];
+  artifact_placeholders: string[];
   next_safe_action: string;
 };
 
-export type CiscoBootstrapRequirements = {
+export type NetAppProviderArtifact = {
+  id: string;
   provider_id: string;
+  kind: string;
+  title: string;
+  description: string;
   status: string;
-  apply_enabled: boolean;
-  management_configured: boolean;
-  requirements: Record<string, unknown>;
-  blockers: string[];
-  warnings: string[];
-  disabled_actions: string[];
-  not_attempted: string[];
-  next_safe_action: string;
+  mock_only: boolean;
+  redacted: boolean;
+  downloadable: boolean;
+  download_url: string | null;
+  generated_at: string;
+  metadata: Record<string, unknown>;
 };
 
-export type CiscoConsoleBootstrapPlan = {
+export type NetAppUpgradeCandidate = {
+  id: string;
+  category: string;
+  product_hint: string | null;
+  version: string | null;
+  source: string;
+  redacted_label: string;
+  match_confidence: string;
+  warnings: string[];
+};
+
+export type NetAppUpgradeReadiness = {
   provider_id: string;
-  status: string;
-  target: Record<string, unknown>;
+  mode: string;
   apply_enabled: boolean;
-  execution_supported: boolean;
-  serial_writes_attempted: boolean;
-  flow: string;
-  prompt_state: string;
-  prompt_detail: string;
-  prompt_checked_at: string | null;
-  summary: string[];
-  intended_steps: string[];
-  command_preview: string[];
-  redacted_command_summary: string[];
-  commands_redacted: boolean;
-  blocker_summary: Record<string, unknown>;
-  artifact_preview: Record<string, unknown>;
-  destructive_actions_disabled: string[];
+  upgrade_enabled: boolean;
+  setup_ready: boolean;
+  readiness_scope: string;
+  current_version_source: string;
+  current_version: string | null;
+  current_version_confidence: string;
+  media_inventory_mode: string;
+  candidates: NetAppUpgradeCandidate[];
+  recommended_target: string | null;
+  required_intermediate_versions: string[];
+  upgrade_chain: NetAppUpgradeCandidate[];
   blockers: string[];
   warnings: string[];
-  confirmation_phrase: string;
+  removable_warnings: string[];
+  next_safe_action: string;
+  disabled_actions: ProviderAction[];
+};
+
+export type NetAppConsoleState =
+  | "unknown"
+  | "loader_prompt"
+  | "boot_menu"
+  | "cluster_setup_prompt"
+  | "existing_cluster_login"
+  | "other";
+
+export type NetAppObservationUpdate = {
+  observed_console_state: NetAppConsoleState;
+  controller_a_console_seen: boolean;
+  controller_b_console_seen: boolean;
+  controller_a_sp_cabled: boolean;
+  controller_b_sp_cabled: boolean;
+  management_network_reviewed: boolean;
+  planned_targets_reviewed: boolean;
+  existing_data_risk_acknowledged: boolean;
+  operator_notes: string;
+};
+
+export type NetAppObservations = NetAppObservationUpdate & {
+  provider_id: string;
+  updated_at: string;
+  updated_by: string;
+  mock_only: boolean;
+  sent_to_netapp: boolean;
+};
+
+export type NetAppConsoleReadiness = {
+  provider_id: string;
+  mode: string;
+  bootstrap_enabled: boolean;
+  console_probe_enabled: boolean;
+  apply_enabled: boolean;
+  netapp_configured: boolean;
+  planned_targets: Record<string, unknown>;
+  current_discovered_targets: Record<string, unknown> | null;
+  prerequisites: Array<Record<string, unknown>>;
+  manual_steps: string[];
+  expected_prompts_or_states: Array<Record<string, unknown>>;
+  readiness_buckets: Record<string, unknown>;
+  observations: NetAppObservations | null;
+  observation_summary: Record<string, unknown> | null;
+  observation_blockers: string[];
+  blockers: string[];
+  warnings: string[];
+  removable_warnings: string[];
+  disabled_actions: ProviderAction[];
   next_safe_action: string;
 };
 
-export type CiscoBootstrapRequirementsUpdate = {
-  planned_management_ip: string;
-  subnet_prefix: string;
-  gateway: string;
-  management_vlan: string | null;
-  management_interface: string | null;
-  management_strategy: string;
-  hostname: string;
-  domain_name: string;
-  dns_servers: string[];
-  local_admin_username_configured: boolean;
-  local_admin_username_reference: string | null;
-  operator_notes: string | null;
+export type NetAppReadinessComparisonItem = {
+  id: string;
+  label: string;
+  planned: string;
+  observed: string;
+  status: "matched" | "unknown" | "blocker" | "warning" | string;
+  next_action: string;
+  source: string;
+};
+
+export type NetAppReadinessComparison = {
+  provider_id: string;
+  mode: string;
+  comparison_enabled: boolean;
+  apply_enabled: boolean;
+  discovery_enabled: boolean;
+  planned_targets: Record<string, unknown>;
+  current_discovered_targets: Record<string, unknown> | null;
+  observations: NetAppObservations;
+  comparison_items: NetAppReadinessComparisonItem[];
+  matched_items: NetAppReadinessComparisonItem[];
+  unknown_items: NetAppReadinessComparisonItem[];
+  warning_items: NetAppReadinessComparisonItem[];
+  blocker_items: NetAppReadinessComparisonItem[];
+  blockers: string[];
+  warnings: string[];
+  removable_warnings: string[];
+  next_safe_action: string;
+  disabled_actions: ProviderAction[];
 };
 
 export type MediaInventoryItem = {
@@ -344,238 +372,6 @@ export type IloUpgradeReadiness = {
   removable_warnings: string[];
   upgrade_chain: UpgradeCandidate[];
   apply_enabled: boolean;
-};
-
-export type IloConnectionReadiness = {
-  provider_mode: string;
-  provider_status: string;
-  host_configured: boolean;
-  username_configured: boolean;
-  password_configured: boolean;
-  tls_verify: boolean;
-  timeout_seconds: number;
-  missing_fields: string[];
-  redfish_probe_available: boolean;
-  safety_flags: Record<string, unknown>;
-};
-
-export type IloEndpointCheck = {
-  name?: string | null;
-  path: string | null;
-  status_code: number | null;
-  content_type: string | null;
-  error_class: string | null;
-  classification: string | null;
-};
-
-export type IloEndpointDetection = {
-  classification: string;
-  message: string;
-  redfish_status: string;
-  legacy_status: string;
-  web_status: string;
-  inventory_collection_status: string;
-  inventory_collection_classification: string;
-  inventory_collection_checks: IloEndpointCheck[];
-  auth_failure_classification: string;
-  auth_recovery_hint: string;
-  next_safe_action: string;
-  diagnostic_hints: string[];
-  checks: IloEndpointCheck[];
-};
-
-export type IloCurrentState = {
-  last_probe_status: string;
-  last_probe_time: string | null;
-  model: string | null;
-  serial: string | null;
-  current_firmware: string | null;
-  ilo_generation: string | null;
-  endpoint_classification: string;
-  endpoint_next_safe_action: string;
-  redfish_root_status: string;
-  redfish_endpoint_detected: string;
-  legacy_endpoint_status: string;
-  legacy_endpoint_message: string;
-  web_endpoint_status: string;
-  endpoint_detection: IloEndpointDetection;
-  media_inventory_mode: string;
-};
-
-export type IloDesiredSetupSection = {
-  id: string;
-  title: string;
-  status: string;
-  apply_enabled: boolean;
-  note: string;
-};
-
-export type IloReportArtifactPlaceholder = {
-  kind: string;
-  title: string;
-  status: string;
-  note: string;
-};
-
-export type IloReadinessSummary = {
-  provider_id: string;
-  connection: IloConnectionReadiness;
-  current_state: IloCurrentState;
-  desired_setup_sections: IloDesiredSetupSection[];
-  firmware_readiness: IloUpgradeReadiness;
-  upgrade_decision_status: string;
-  blockers: string[];
-  warnings: string[];
-  removable_warnings: string[];
-  disabled_dangerous_actions: ProviderAction[];
-  reports_artifacts: IloReportArtifactPlaceholder[];
-};
-
-export type IloSetupPlanSection = {
-  id: string;
-  title: string;
-  status: string;
-  apply_enabled: boolean;
-  source: string;
-  current_observation: string;
-  planned_preview: string;
-  notes: string[];
-  blockers: string[];
-  warnings: string[];
-};
-
-export type IloSetupPlanPreview = {
-  provider_id: string;
-  mode: string;
-  plan_only: boolean;
-  apply_enabled: boolean;
-  generated_from: string;
-  sections: IloSetupPlanSection[];
-  firmware_readiness_handoff: Record<string, unknown>;
-  reports_artifacts: IloReportArtifactPlaceholder[];
-  disabled_dangerous_actions: ProviderAction[];
-  blockers: string[];
-  warnings: string[];
-  removable_warnings: string[];
-};
-
-export type IloSetupIntent = {
-  provider_id?: string;
-  network: {
-    hostname: string | null;
-    management_ip: string | null;
-    subnet_mask_or_prefix: string | null;
-    gateway: string | null;
-    vlan: string | null;
-  };
-  users: Array<{
-    username_label: string;
-    role: string;
-  }>;
-  snmp: {
-    enabled: boolean;
-    destinations: string[];
-    community_or_user_ref_labels: string[];
-  };
-  time: {
-    timezone: string | null;
-    ntp_servers: string[];
-  };
-  dns_domain: {
-    domain_name: string | null;
-    dns_servers: string[];
-  };
-  notes: string | null;
-  apply_enabled?: boolean;
-  created_at?: string | null;
-  updated_at?: string | null;
-};
-
-export type IloSetupCompareRow = {
-  section: string;
-  field: string;
-  label: string;
-  desired: string;
-  discovered: string;
-  status: string;
-  next_safe_action: string;
-  apply_enabled: boolean;
-};
-
-export type IloSetupCompareSection = {
-  id: string;
-  title: string;
-  status: string;
-  apply_enabled: boolean;
-  next_safe_action: string;
-  rows: IloSetupCompareRow[];
-};
-
-export type IloSetupCompareReport = {
-  provider_id: string;
-  mode: string;
-  source: string;
-  apply_enabled: boolean;
-  sections: IloSetupCompareSection[];
-  disabled_dangerous_actions: ProviderAction[];
-  blockers: string[];
-  warnings: string[];
-  removable_warnings: string[];
-};
-
-export type IloDestructiveRebuildRequirement = {
-  id: string;
-  label: string;
-  status: string;
-  detail: string;
-};
-
-export type IloRealChangeLane = {
-  id: string;
-  label: string;
-  status: string;
-  execution_enabled: boolean;
-  next_safe_action: string;
-  required_gates: string[];
-  blocked_actions: string[];
-};
-
-export type IloDestructiveRebuildPreview = {
-  provider_id: string;
-  provider_mode: string;
-  status: string;
-  destructive_enabled: boolean;
-  apply_enabled: boolean;
-  safe_next_action: string;
-  target_identity: Record<string, unknown>;
-  discovered_state: Record<string, unknown>;
-  intended_scope: string[];
-  required_capabilities: IloDestructiveRebuildRequirement[];
-  real_change_lanes: IloRealChangeLane[];
-  blockers: string[];
-  warnings: string[];
-  future_workflow_handoff: Record<string, unknown>;
-  confirmation_requirements: Record<string, unknown>;
-  artifact_requirements: string[];
-};
-
-export type IloReportPreview = {
-  provider_id: string;
-  provider_mode: string;
-  generated_at: string;
-  source: string;
-  apply_enabled: boolean;
-  readiness_summary: Record<string, unknown>;
-  desired_setup_intent: Record<string, unknown>;
-  setup_compare_report: IloSetupCompareReport;
-  setup_plan_preview: Record<string, unknown>;
-  destructive_rebuild_preview: Record<string, unknown>;
-  firmware_readiness: Record<string, unknown>;
-  media_inventory_summary: Record<string, unknown>;
-  disabled_dangerous_actions: ProviderAction[];
-  blockers: string[];
-  warnings: string[];
-  removable_warnings: string[];
 };
 
 export type Catalog = {

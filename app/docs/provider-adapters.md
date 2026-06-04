@@ -15,7 +15,9 @@ workflow lifecycle code.
   plus explicit read-only show-command probe.
 - ESXi: local target preview gated by `ESXI_CONFIGURED` plus explicit HTTPS/TCP
   read-only probe.
-- NetApp ONTAP: mocked health only.
+- NetApp ONTAP (`netapp-ontap`): setup/status preview only, with planned target addressing,
+  bootstrap/API/upgrade readiness placeholders, cluster/SVM/LIF intent, and
+  disabled dangerous actions.
 - network switch: mocked health only.
 
 `PROVIDER_MODE=mock` remains the default. In mock mode, provider status may
@@ -294,6 +296,36 @@ ESXi probes may only:
 The ESXi adapter does not reinstall, reboot, change networking, add/remove
 datastores, create/delete VMs, deploy OVFs, power VMs, change firewall settings,
 or run host configuration commands.
+
+NetApp setup preview may only:
+
+- display planned Controller SP, cluster management, node management, SVM
+  management, and iSCSI LIF addresses
+- report `NETAPP_CONFIGURED` as a presence flag
+- show console/bootstrap, ONTAP API, and upgrade readiness placeholders
+- show cluster/SVM/LIF intent and artifact/report placeholders
+- serve `GET /api/v1/providers/netapp-ontap/plan-preview` from local planned
+  values only, for future Run Center and artifact/report handoff
+- serve `GET /api/v1/providers/netapp-ontap/artifacts` as mock-only,
+  non-downloadable metadata without writing report files
+- contribute provider-scoped metadata to `GET /api/v1/providers/artifacts`
+- serve `GET /api/v1/providers/netapp-ontap/upgrade-readiness` as an offline
+  media-readiness preview using sanitized media inventory metadata only
+- serve `GET /api/v1/providers/netapp-ontap/console-readiness` as manual
+  console/bootstrap guidance without opening serial ports or sending commands
+- serve `GET` and `PUT /api/v1/providers/netapp-ontap/observations` as
+  process-local, mock-only operator readiness notes that are bounded, redacted,
+  reject secret-shaped note text, and are never sent to NetApp
+- serve `GET /api/v1/providers/netapp-ontap/readiness-comparison` as a
+  planned-vs-observed comparison of local target intent and manual observations
+  only, without live discovery; missing required manual checks remain unknown
+  or blocking, optional Controller B console observation is a warning, and
+  console readiness reports required and optional observation counts separately
+
+While `NETAPP_CONFIGURED=false`, ONTAP API readiness is disabled and no probe is
+available. The adapter does not configure ONTAP, create clusters, change IPs,
+create SVMs, create LIFs, create volumes, upload images, upgrade ONTAP, reboot
+controllers, wipe disks, or apply changes.
 
 ## Optional Provider Smoke
 

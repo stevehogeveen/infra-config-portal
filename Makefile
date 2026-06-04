@@ -1,4 +1,4 @@
-.PHONY: check-repo-root codex-audit codex-task codex-next codex-resume test dev lint provider-smoke app-start app-stop app-restart app-status app-check
+.PHONY: check-repo-root codex-audit codex-task codex-next codex-resume test dev lint provider-smoke netapp-real-readiness app-start app-stop app-restart app-status app-check
 
 REPO_ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 TASK ?= .codex/tasks/001-backend-vm-request-lifecycle.md
@@ -63,3 +63,6 @@ smoke: backend-smoke
 
 provider-smoke: check-repo-root
 	$(MAKE) -C $(REPO_ROOT)/app provider-smoke PROVIDER_MODE="$(PROVIDER_MODE)"
+
+netapp-real-readiness: check-repo-root
+	$(MAKE) -C $(REPO_ROOT)/app netapp-real-readiness PROVIDER_MODE="$(PROVIDER_MODE)"

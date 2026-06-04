@@ -100,6 +100,13 @@ Redfish, NetApp, switches, DNS, IPAM, storage, AWX, Terraform, OpenTofu,
 NetBox, Nautobot, PowerCLI, govc, OVF Tool, or any lab/production
 infrastructure.
 
+For changes to visible frontend pages, run the app locally and capture
+screenshots when practical. Include the changed page or section and a relevant
+validation, empty, blocked, or error state when applicable. Save screenshots
+only under ignored local paths such as `artifacts/screenshots/`; do not commit
+them unless the project explicitly expects committed UI snapshots. If
+screenshots are skipped, note why and describe the manual UI checks performed.
+
 ## Frontend Quick Start
 
 Foreground frontend-only development, in a second terminal:
@@ -158,7 +165,8 @@ deploy, or execute local media files, and it redacts actual local filenames.
 ## Provider Status Preview
 
 Provider Status shows mock provider health plus preview surfaces for HPE iLO /
-Redfish, Cisco console, Cisco Ansible SSH, and ESXi read-only checks. Default
+Redfish, Cisco console, Cisco Ansible SSH, ESXi read-only checks, and NetApp
+setup planning. Default
 `PROVIDER_MODE=mock` never runs real probes on page load. Cisco console
 discovery is read-only filesystem inspection of `/dev/serial/by-id/*`,
 `/dev/ttyUSB*`, and `/dev/ttyACM*`; it does not open serial ports or send
@@ -166,6 +174,48 @@ commands during discovery.
 iLO, ESXi, and Cisco management configuration is reported only as
 configured/missing flags. The API does not return configured host, username, or
 password values.
+
+`netapp-ontap` setup remains plan/preview only. The provider page displays the
+planned Controller SP, cluster management, node management, SVM management, and
+iSCSI LIF addresses separately from current/discovered targets. When
+`NETAPP_CONFIGURED=false`, current/discovered targets stay empty and cluster
+management is not treated as reachable just because a planned address exists.
+The page also shows separate setup and upgrade readiness, bootstrap/API/upgrade
+readiness, cluster/SVM/LIF intent, storage/iSCSI intent, and artifact/report
+placeholders. The structured
+`GET /api/v1/providers/netapp-ontap/plan-preview` endpoint returns the same
+plan-only contract for Run Center and future report generation. Run Center
+renders it as a preview-only section with refresh only; it has no NetApp apply,
+confirm, start, execution, upgrade, reboot, wipe, create, or configuration
+control. `GET /api/v1/providers/netapp-ontap/artifacts` returns mock-only,
+non-downloadable artifact metadata for the plan preview without writing files or
+generating archives. `GET /api/v1/providers/artifacts` aggregates provider
+artifact metadata, and the Reports / Artifacts page exposes the NetApp
+placeholder outside Run Center with provider/kind/status filters.
+`GET /api/v1/providers/netapp-ontap/upgrade-readiness` is offline-only: it uses
+an unknown or locally configured placeholder current ONTAP version and sanitized
+media inventory metadata to preview candidate media and upgrade path shape.
+`GET /api/v1/providers/netapp-ontap/console-readiness` is manual/offline only:
+it lists prerequisites, manual operator steps, expected prompts/states, and
+disabled bootstrap actions without opening serial ports or sending commands.
+`GET /api/v1/providers/netapp-ontap/observations` and `PUT
+/api/v1/providers/netapp-ontap/observations` capture bounded operator
+readiness observations in a process-local mock store only and reject
+secret-shaped note text. Run Center shows the same local notes in the
+console/bootstrap section and warns operators not to paste passwords, tokens,
+or raw configs.
+`GET /api/v1/providers/netapp-ontap/readiness-comparison` compares planned
+targets with those operator observations only and reports matched, unknown,
+warning, and blocked manual readiness rows without live discovery. Optional Controller B
+console observation is surfaced as a warning when it has not been recorded, and
+the console readiness summary separates required and optional observation
+counts. Cluster management not configured, node management not configured, SVM
+management planned but not live, iSCSI LIF range planned but not live, missing
+credentials, and missing `LAB_READONLY_ACK=YES` are reported as setup/upgrade
+readiness blockers where applicable.
+Keep `NETAPP_CONFIGURED=false`; ONTAP API readiness is disabled and no NetApp
+Service Processor, console, SSH, ONTAP API, storage provisioning, LIF creation,
+upgrade, reboot, wipe, or apply call is made.
 
 ESXi and Cisco management IPs can be planned without being treated as reachable
 targets. Keep `ESXI_CONFIGURED=false` until ESXi management networking is
@@ -243,13 +293,22 @@ Optional manual smoke:
 PROVIDER_MODE=local-readonly make provider-smoke
 ```
 
+NetApp-only real-run readiness, with no ONTAP probes or apply actions:
+
+```bash
+PROVIDER_MODE=local-readonly make netapp-real-readiness
+```
+
 The backend loads local provider values from `.env.local.real-lab`, but ignores
 `PROVIDER_MODE` from that file so default app and test startup remains mock.
 Plain `make provider-smoke` runs in mock mode and skips probes. With explicit
 `PROVIDER_MODE=local-readonly`, the smoke command skips missing
 hardware/configuration and planned but not configured ESXi/Cisco management
 targets gracefully, must not print passwords, and writes sanitized reports under
-ignored `artifacts/real-lab/`.
+ignored `artifacts/real-lab/`. The NetApp-only readiness command writes
+`netapp-readiness-*` artifacts under the same ignored directory and never
+contacts ONTAP, SP, console, SSH, storage, upgrade, reboot, wipe, or apply
+endpoints.
 
 ## Safety Defaults
 

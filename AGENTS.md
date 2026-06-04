@@ -151,6 +151,16 @@ Add or update tests for request validation, lifecycle transitions, audit event
 creation, mock VM deployment execution, API endpoint behavior, provider adapter
 contracts, and changed frontend behavior where tooling exists.
 
+## UI Screenshot Validation
+
+When a Codex task changes visible frontend UI, launch the app locally and
+capture screenshots when practical. Cover the changed page or section and at
+least one relevant validation, empty, blocked, or error state when applicable.
+Save screenshots only under ignored local artifact/debug paths such as
+`artifacts/screenshots/`; do not commit screenshots unless the project
+explicitly expects committed UI snapshots. If screenshots cannot be captured,
+the final response must say why and describe the manual UI checks performed.
+
 ## Done Means
 
 A task is not done until:

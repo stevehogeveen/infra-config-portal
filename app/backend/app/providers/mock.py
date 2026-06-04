@@ -3,6 +3,7 @@ from __future__ import annotations
 from app.core.config import settings
 from app.models import Request
 from app.providers.base import ProviderAction, ProviderStatus
+from app.providers.netapp import NetAppOntapAdapter
 
 
 MOCK_CATALOG = {
@@ -250,16 +251,7 @@ def provider_statuses() -> list[ProviderStatus]:
             message="Placeholder only. Real Redfish configuration is intentionally absent.",
             disabled_actions=_ilo_placeholder_disabled_actions(),
         ),
-        ProviderStatus(
-            id="mock-netapp",
-            name="Mock NetApp ONTAP",
-            kind="storage",
-            mode=settings.provider_mode,
-            status="ok",
-            capabilities=["health"],
-            message="Mock status only. No ONTAP calls are made.",
-            disabled_actions=_netapp_disabled_actions(),
-        ),
+        NetAppOntapAdapter(settings.provider_mode).health(),
         ProviderStatus(
             id="mock-network-switch",
             name="Mock Network Switch",

@@ -1,17 +1,19 @@
 from __future__ import annotations
 
 import asyncio
+import functools
+import threading
 from collections.abc import Generator
-from contextlib import asynccontextmanager
+from concurrent.futures import Future
 from datetime import date, timedelta
 from typing import Any
 
+import anyio.to_thread
+import fastapi.routing
 import httpx
 import pytest
-import fastapi.concurrency
-import fastapi.dependencies.utils
-import fastapi.routing
 import starlette.concurrency
+from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -21,61 +23,52 @@ from app.core.database import Base, get_session
 from app.main import app
 
 
-async def _run_sync_inline(func: Any, *args: Any, **kwargs: Any) -> Any:
-    return func(*args, **kwargs)
+async def _run_sync_with_asyncio_executor(
+    func: Any,
+    *args: Any,
+    abandon_on_cancel: bool = False,
+    cancellable: bool | None = None,
+    limiter: Any = None,
+) -> Any:
+    del abandon_on_cancel, cancellable, limiter
+    future: Future[Any] = Future()
 
-
-@asynccontextmanager
-async def _contextmanager_inline(cm: Any) -> Any:
-    try:
-        value = cm.__enter__()
-    except AttributeError:
-        value = next(cm)
-    try:
-        yield value
-    except Exception as exc:
-        if hasattr(cm, "__exit__"):
-            suppress = bool(cm.__exit__(type(exc), exc, exc.__traceback__))
+    def run() -> None:
+        try:
+            result = func(*args)
+        except BaseException as exc:
+            future.set_exception(exc)
         else:
-            suppress = False
-            try:
-                cm.throw(type(exc), exc, exc.__traceback__)
-            except StopIteration:
-                suppress = True
-        if not suppress:
-            raise
-    else:
-        if hasattr(cm, "__exit__"):
-            cm.__exit__(None, None, None)
-        else:
-            try:
-                next(cm)
-            except StopIteration:
-                pass
+            future.set_result(result)
+
+    thread = threading.Thread(target=run, daemon=True)
+    thread.start()
+    try:
+        while not future.done():
+            await asyncio.sleep(0.001)
+        return future.result()
+    finally:
+        thread.join(timeout=1)
 
 
-fastapi.routing.run_in_threadpool = _run_sync_inline
-fastapi.routing.contextmanager_in_threadpool = _contextmanager_inline
-fastapi.concurrency.contextmanager_in_threadpool = _contextmanager_inline
-fastapi.dependencies.utils.contextmanager_in_threadpool = _contextmanager_inline
-starlette.concurrency.run_in_threadpool = _run_sync_inline
+anyio.to_thread.run_sync = _run_sync_with_asyncio_executor
 
 
-class ASGITestClient:
-    def __init__(self, app_: Any) -> None:
-        self.app = app_
-        self.base_url = "http://testserver"
+async def _run_in_threadpool(func: Any, *args: Any, **kwargs: Any) -> Any:
+    return await _run_sync_with_asyncio_executor(
+        functools.partial(func, **kwargs),
+        *args,
+    )
 
-    def request(self, method: str, url: str, **kwargs: Any) -> httpx.Response:
-        async def send() -> httpx.Response:
-            transport = httpx.ASGITransport(app=self.app, raise_app_exceptions=True)
-            async with httpx.AsyncClient(
-                transport=transport,
-                base_url=self.base_url,
-            ) as client:
-                return await client.request(method, url, **kwargs)
 
-        return asyncio.run(send())
+fastapi.routing.run_in_threadpool = _run_in_threadpool
+starlette.concurrency.run_in_threadpool = _run_in_threadpool
+
+
+class SyncASGITestClient:
+    def __init__(self) -> None:
+        self._transport = httpx.ASGITransport(app=app)
+        self._base_url = "http://testserver"
 
     def get(self, url: str, **kwargs: Any) -> httpx.Response:
         return self.request("GET", url, **kwargs)
@@ -89,8 +82,18 @@ class ASGITestClient:
     def patch(self, url: str, **kwargs: Any) -> httpx.Response:
         return self.request("PATCH", url, **kwargs)
 
-    def close(self) -> None:
-        return None
+    def delete(self, url: str, **kwargs: Any) -> httpx.Response:
+        return self.request("DELETE", url, **kwargs)
+
+    def request(self, method: str, url: str, **kwargs: Any) -> httpx.Response:
+        async def send() -> httpx.Response:
+            async with httpx.AsyncClient(
+                transport=self._transport,
+                base_url=self._base_url,
+            ) as client:
+                return await client.request(method, url, **kwargs)
+
+        return anyio.run(send)
 
 
 @pytest.fixture()
@@ -112,17 +115,13 @@ def db_session() -> Generator[Session, None, None]:
 
 
 @pytest.fixture()
-def client(db_session: Session) -> Generator[ASGITestClient, None, None]:
+def client(db_session: Session) -> Generator[TestClient, None, None]:
     def override_session() -> Generator[Session, None, None]:
         yield db_session
 
     app.dependency_overrides[get_session] = override_session
-    test_client = ASGITestClient(app)
-    try:
-        yield test_client
-    finally:
-        test_client.close()
-        app.dependency_overrides.clear()
+    yield SyncASGITestClient()  # type: ignore[misc]
+    app.dependency_overrides.clear()
 
 
 @pytest.fixture()

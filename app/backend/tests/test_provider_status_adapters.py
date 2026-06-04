@@ -1638,6 +1638,7 @@ def test_provider_status_response_shape(client: TestClient) -> None:
         "cisco-console",
         "cisco-ansible",
         "esxi-readonly",
+        "netapp-ontap",
         "mock-vsphere",
     }.issubset(provider_ids)
     for provider in payload:
