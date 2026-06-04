@@ -170,8 +170,11 @@ password values.
 iLO Provider Status uses explicit GET-only endpoint detection for Redfish root,
 web root, and legacy XML paths. It reports classifications such as
 `redfish_available`, `legacy_available_redfish_not_found`, and
-`web_available_redfish_not_found` with the next safe action. No iLO settings are
-changed by endpoint detection.
+`web_available_redfish_not_found` with the next safe action and redacted
+diagnostic hints. When the web root responds but Redfish is missing, the UI asks
+the operator to verify target identity, legacy iLO generation, Redfish support,
+and whether the responding portal is actually iLO. No iLO settings are changed
+by endpoint detection.
 
 The iLO Provider Status page includes a blocked Full Destructive Rebuild preview
 for future bare-metal rebuild planning. It can show readiness, identity

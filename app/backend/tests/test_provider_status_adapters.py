@@ -595,7 +595,19 @@ def test_ilo_probe_classifies_web_available_redfish_not_found(monkeypatch) -> No
     assert detection["redfish_status"] == "not_found"
     assert detection["web_status"] == "available"
     assert detection["legacy_status"] == "not_found"
-    assert "iLO web endpoint is reachable, but Redfish root was not found." in result["message"]
+    assert "A web endpoint responded, but Redfish root was not found." in result["message"]
+    assert "iLO management address" in result["message"]
+    assert "older or legacy iLO" in result["message"]
+    assert "Redfish support is enabled or available" in result["message"]
+    assert "web portal is actually iLO" in result["message"]
+    assert "No settings were changed." in detection["next_safe_action"]
+    assert detection["diagnostic_hints"] == [
+        "Confirm the configured address is the iLO management interface, not a server OS, proxy, or unrelated web host.",
+        "Check whether the target is an older or legacy iLO generation where Redfish is unavailable.",
+        "Verify Redfish support is enabled or available for the iLO generation and firmware level.",
+        "If a login page appears at the web root, confirm the portal branding and identity are actually iLO.",
+        "Keep using GET-only endpoint detection until target identity and Redfish support are confirmed.",
+    ]
     assert all("super-secret-password" not in json.dumps(check) for check in detection["checks"])
 
 

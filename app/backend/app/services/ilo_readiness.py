@@ -755,6 +755,7 @@ def _endpoint_detection(probe_result: dict[str, Any] | None) -> dict[str, Any]:
             "legacy_status": "not_checked",
             "web_status": "not_checked",
             "next_safe_action": "Run explicit GET-only endpoint detection.",
+            "diagnostic_hints": [],
         }
     detection = probe_result.get("endpoint_detection")
     if isinstance(detection, dict):
@@ -768,6 +769,7 @@ def _endpoint_detection(probe_result: dict[str, Any] | None) -> dict[str, Any]:
         "legacy_status": "not_checked",
         "web_status": "not_checked",
         "next_safe_action": _endpoint_next_safe_action(classification),
+        "diagnostic_hints": _endpoint_diagnostic_hints(classification),
     }
 
 
@@ -781,6 +783,15 @@ def _redacted_endpoint_detection(detection: dict[str, Any]) -> dict[str, Any]:
         "web_status": detection.get("web_status") or "not_checked",
         "next_safe_action": detection.get("next_safe_action")
         or _endpoint_next_safe_action(str(detection.get("classification") or "not_checked")),
+        "diagnostic_hints": [
+            str(hint)
+            for hint in (
+                detection.get("diagnostic_hints")
+                if isinstance(detection.get("diagnostic_hints"), list)
+                else _endpoint_diagnostic_hints(str(detection.get("classification") or "not_checked"))
+            )
+            if isinstance(hint, str)
+        ],
         "checks": [
             {
                 "path": check.get("path"),
@@ -801,7 +812,12 @@ def _legacy_endpoint_message(classification: str) -> str:
     if classification == "legacy_available":
         return "Legacy endpoint detected by GET-only endpoint detection."
     if classification == "web_available_redfish_not_found":
-        return "iLO web endpoint is reachable, but Redfish root was not found."
+        return (
+            "A web endpoint responded, but Redfish root was not found. Confirm this is "
+            "the iLO management address, check whether this is an older or legacy iLO, "
+            "verify Redfish support is enabled or available, and confirm the responding "
+            "web portal is actually iLO."
+        )
     if classification == "not_checked":
         return "Legacy endpoint has not been checked; run explicit GET-only endpoint detection."
     return _endpoint_next_safe_action(classification)
@@ -813,7 +829,11 @@ def _endpoint_next_safe_action(classification: str) -> str:
         "redfish_http_error": "Review iLO Redfish support and endpoint status before retrying GET-only detection.",
         "legacy_available": "Use a dedicated read-only legacy iLO discovery path if Redfish is unavailable.",
         "legacy_available_redfish_not_found": "Use legacy read-only discovery context or verify whether this iLO supports Redfish.",
-        "web_available_redfish_not_found": "Verify iLO generation, firmware, and Redfish support for this target.",
+        "web_available_redfish_not_found": (
+            "Verify target identity in trusted records or the web portal, confirm iLO "
+            "generation, firmware, and Redfish support, then retry GET-only endpoint "
+            "detection. No settings were changed."
+        ),
         "endpoint_not_found_or_wrong_target": "Verify target identity/address and retry GET-only endpoint detection.",
         "auth_failed": "Review credentials or iLO permissions locally, without printing secrets.",
         "tls_failed": "For lab/self-signed iLO, set ILO_TEST_VERIFY_TLS=false locally and retry.",
@@ -822,6 +842,36 @@ def _endpoint_next_safe_action(classification: str) -> str:
         "unknown_endpoint_state": "Review sanitized endpoint matrix and retry GET-only detection.",
     }
     return actions.get(classification, actions["unknown_endpoint_state"])
+
+
+def _endpoint_diagnostic_hints(classification: str) -> list[str]:
+    hints = {
+        "web_available_redfish_not_found": [
+            "Confirm the configured address is the iLO management interface, not a server OS, proxy, or unrelated web host.",
+            "Check whether the target is an older or legacy iLO generation where Redfish is unavailable.",
+            "Verify Redfish support is enabled or available for the iLO generation and firmware level.",
+            "If a login page appears at the web root, confirm the portal branding and identity are actually iLO.",
+            "Keep using GET-only endpoint detection until target identity and Redfish support are confirmed.",
+        ],
+        "legacy_available_redfish_not_found": [
+            "Legacy iLO XML responded, so use read-only legacy discovery context if Redfish is unavailable.",
+            "Verify whether this iLO generation and firmware level support Redfish before planning Redfish inventory.",
+        ],
+        "endpoint_not_found_or_wrong_target": [
+            "Verify the configured address is the iLO management interface.",
+            "Confirm the device is reachable on HTTPS and retry GET-only endpoint detection.",
+        ],
+        "auth_failed": [
+            "Review the configured credentials or iLO permissions locally without printing secrets.",
+        ],
+        "tls_failed": [
+            "For lab or self-signed iLO certificates, disable TLS verification only in local configuration.",
+        ],
+        "network_unreachable": [
+            "Check routing, firewall, target power, and iLO network connectivity.",
+        ],
+    }
+    return hints.get(classification, [])
 
 
 def _endpoint_blockers(classification: str) -> list[str]:

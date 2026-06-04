@@ -250,7 +250,12 @@ def test_ilo_readiness_summary_reports_web_available_redfish_not_found(
             "firmware": [],
             "endpoint_detection": {
                 "classification": "web_available_redfish_not_found",
-                "message": "iLO web endpoint is reachable, but Redfish root was not found.",
+                "message": (
+                    "A web endpoint responded, but Redfish root was not found. Confirm this is "
+                    "the iLO management address, check whether this is an older or legacy iLO, "
+                    "verify Redfish support is enabled or available, and confirm the responding "
+                    "web portal is actually iLO."
+                ),
                 "checks": [
                     {
                         "path": "/redfish/v1/",
@@ -268,10 +273,25 @@ def test_ilo_readiness_summary_reports_web_available_redfish_not_found(
                 "redfish_status": "not_found",
                 "legacy_status": "not_found",
                 "web_status": "available",
-                "next_safe_action": "Verify iLO generation, firmware, and Redfish support for this target.",
+                "next_safe_action": (
+                    "Verify target identity in trusted records or the web portal, confirm iLO "
+                    "generation, firmware, and Redfish support, then retry GET-only endpoint "
+                    "detection. No settings were changed."
+                ),
+                "diagnostic_hints": [
+                    "Confirm the configured address is the iLO management interface, not a server OS, proxy, or unrelated web host.",
+                    "Check whether the target is an older or legacy iLO generation where Redfish is unavailable.",
+                    "Verify Redfish support is enabled or available for the iLO generation and firmware level.",
+                    "If a login page appears at the web root, confirm the portal branding and identity are actually iLO.",
+                    "Keep using GET-only endpoint detection until target identity and Redfish support are confirmed.",
+                ],
             },
             "warnings": [],
-            "blockers": ["Verify iLO generation, firmware, and Redfish support for this target."],
+            "blockers": [
+                "Verify target identity in trusted records or the web portal, confirm iLO "
+                "generation, firmware, and Redfish support, then retry GET-only endpoint "
+                "detection. No settings were changed."
+            ],
         },
     )
 
@@ -285,9 +305,15 @@ def test_ilo_readiness_summary_reports_web_available_redfish_not_found(
     assert current_state["legacy_endpoint_status"] == "not_found"
     assert current_state["web_endpoint_status"] == "available"
     assert current_state["legacy_endpoint_message"] == (
-        "iLO web endpoint is reachable, but Redfish root was not found."
+        "A web endpoint responded, but Redfish root was not found. Confirm this is "
+        "the iLO management address, check whether this is an older or legacy iLO, "
+        "verify Redfish support is enabled or available, and confirm the responding "
+        "web portal is actually iLO."
     )
-    assert "Verify iLO generation" in current_state["endpoint_next_safe_action"]
+    assert "Verify target identity" in current_state["endpoint_next_safe_action"]
+    assert "No settings were changed." in current_state["endpoint_next_safe_action"]
+    assert "older or legacy iLO" in current_state["endpoint_detection"]["diagnostic_hints"][1]
+    assert "web root" in current_state["endpoint_detection"]["diagnostic_hints"][3]
     assert current_state["endpoint_detection"]["checks"][0]["path"] == "/redfish/v1/"
     clear_probe_results()
 

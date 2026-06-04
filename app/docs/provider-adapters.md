@@ -240,8 +240,13 @@ iLO endpoint classifications include:
 When `/redfish/v1/` returns 404 and `/xmldata?item=All` returns 200, the
 operator message is: "Legacy iLO endpoint is available, but Redfish root was not
 found." When `/redfish/v1/` returns 404 and `/` returns 200, the operator
-message is: "iLO web endpoint is reachable, but Redfish root was not found."
-Both states remain read-only and do not enable any setting change.
+message explains that a web endpoint responded but Redfish was not found, then
+asks the operator to verify the configured address, older or legacy iLO
+generation, Redfish support, and whether the responding portal is actually iLO.
+Both states remain read-only and do not enable any setting change. The redacted
+readiness and report-preview payloads may include diagnostic hints for these
+checks, but they do not include response bodies, credentials, auth headers, or
+raw inventory values.
 
 Cisco console probes may only:
 

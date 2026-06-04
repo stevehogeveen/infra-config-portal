@@ -2387,6 +2387,8 @@ function IloReportPreviewPanel() {
 function IloReportEndpointFacts({ report }: { report: IloReportPreview }) {
   const readiness = objectValue(report.readiness_summary);
   const currentState = objectValue(readiness.current_state);
+  const endpointDetection = objectValue(currentState.endpoint_detection);
+  const diagnosticHints = stringArray(endpointDetection.diagnostic_hints);
   if (!Object.keys(currentState).length) return null;
 
   return (
@@ -2413,6 +2415,16 @@ function IloReportEndpointFacts({ report }: { report: IloReportPreview }) {
       <p className="provider-redaction-note">
         {asString(currentState.endpoint_next_safe_action) || "No settings were changed."}
       </p>
+      {diagnosticHints.length > 0 && (
+        <>
+          <h4>Next Safe Action Checks</h4>
+          <ul className="provider-redaction-note-list">
+            {diagnosticHints.map((hint) => (
+              <li key={hint}>{hint}</li>
+            ))}
+          </ul>
+        </>
+      )}
     </>
   );
 }
@@ -2452,6 +2464,7 @@ function IloConnectionPanel({ summary }: { summary: IloReadinessSummary }) {
 function IloCurrentStatePanel({ summary }: { summary: IloReadinessSummary }) {
   const { current_state } = summary;
   const checks = endpointChecks(current_state.endpoint_detection);
+  const diagnosticHints = endpointDiagnosticHints(current_state.endpoint_detection);
 
   return (
     <section className="ilo-summary-section">
@@ -2504,6 +2517,16 @@ function IloCurrentStatePanel({ summary }: { summary: IloReadinessSummary }) {
         </table>
       )}
       <p className="provider-redaction-note">{current_state.legacy_endpoint_message}</p>
+      {diagnosticHints.length > 0 && (
+        <>
+          <h4>Next Safe Action Checks</h4>
+          <ul className="provider-redaction-note-list">
+            {diagnosticHints.map((hint) => (
+              <li key={hint}>{hint}</li>
+            ))}
+          </ul>
+        </>
+      )}
     </section>
   );
 }
@@ -2604,6 +2627,8 @@ function IloSafetyPanel({
   safeActions: ProviderAction[];
   summary: IloReadinessSummary;
 }) {
+  const diagnosticHints = endpointDiagnosticHints(summary.current_state.endpoint_detection);
+
   return (
     <section className="ilo-summary-section">
       <div className="provider-callout">
@@ -2612,6 +2637,16 @@ function IloSafetyPanel({
           {labelize(summary.current_state.endpoint_classification)}. {summary.current_state.endpoint_next_safe_action}
         </p>
       </div>
+      {diagnosticHints.length > 0 && (
+        <>
+          <h3>Next Safe Action Checks</h3>
+          <ul className="provider-redaction-note-list">
+            {diagnosticHints.map((hint) => (
+              <li key={hint}>{hint}</li>
+            ))}
+          </ul>
+        </>
+      )}
       <h3>Read-Only Actions</h3>
       <div className="provider-action-layout upgrade-action-layout">
         {safeActions.map((action) => (
@@ -2924,6 +2959,10 @@ function endpointChecks(value: unknown): Array<{
       contentType: asString(item.content_type) || "-",
       classification: asString(item.classification) || "unknown_endpoint_state"
     }));
+}
+
+function endpointDiagnosticHints(value: unknown): string[] {
+  return stringArray(objectValue(value).diagnostic_hints);
 }
 
 function isConsoleCandidate(value: unknown): value is ConsoleCandidate {
