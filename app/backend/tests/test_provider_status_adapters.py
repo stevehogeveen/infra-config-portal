@@ -34,6 +34,12 @@ from app.services.cisco_console_bootstrap import (
 )
 from app.services.cisco_setup_readiness import get_cisco_setup_readiness
 from app.services.cisco_setup_wizard_plan import build_cisco_setup_wizard_plan
+from app.services.ilo_readiness import save_ilo_setup_intent
+from app.services.ilo_setup_apply import (
+    CONFIRMATION_PHRASE as ILO_SETUP_CONFIRMATION_PHRASE,
+    apply_ilo_setup,
+)
+from app.schemas import IloNetworkIntent, IloSetupApplyCreate, IloSetupIntentWrite
 
 
 def test_cisco_candidate_discovery_with_one_stable_candidate(tmp_path: Path) -> None:
@@ -1270,6 +1276,109 @@ def test_ilo_readonly_status_is_unchanged_by_management_flags(monkeypatch) -> No
     assert status.safe_actions[0].reason == "Run GET-only endpoint detection and Redfish inventory checks."
 
 
+def test_ilo_setup_apply_sends_hostname_patch_when_all_gates_pass(
+    db_session,
+    monkeypatch,
+) -> None:
+    fake_settings = types.SimpleNamespace(
+        provider_mode="local-readonly",
+        ilo_setup_apply_enabled=True,
+        lab_apply_ack="YES",
+        lab_target_ack="ilo.lab.local",
+        ilo_test_host="ilo.lab.local",
+        ilo_test_username="local-admin",
+        ilo_test_password="local-password",
+        ilo_test_verify_tls=False,
+        ilo_test_timeout_seconds=3.0,
+    )
+    monkeypatch.setattr("app.services.ilo_setup_apply.settings", fake_settings)
+    monkeypatch.setattr("app.providers.ilo_redfish.settings", fake_settings)
+    monkeypatch.setattr(
+        "app.services.ilo_setup_apply.current_lab_safety",
+        lambda: LabSafetyState(
+            closed_loop_ack=True,
+            readonly_ack=True,
+            destructive_ack=False,
+        ),
+    )
+    patch_bodies: list[dict[str, object]] = []
+    _install_fake_ilo_setup_apply_httpx_client(
+        monkeypatch,
+        before_hostname="old-ilo-name",
+        after_hostname="lab-ilo-host",
+        patch_bodies=patch_bodies,
+    )
+    save_ilo_setup_intent(
+        db_session,
+        IloSetupIntentWrite(network=IloNetworkIntent(hostname="lab-ilo-host")),
+    )
+
+    result = apply_ilo_setup(
+        db_session,
+        IloSetupApplyCreate(confirmation_phrase=ILO_SETUP_CONFIRMATION_PHRASE),
+    )
+
+    assert result["status"] == "ok"
+    assert result["patch_attempted"] is True
+    assert result["patch_count"] == 1
+    assert patch_bodies == [{"HostName": "lab-ilo-host"}]
+    assert result["operations"][0]["verified"] is True
+    assert "lab-ilo-host" not in str(result)
+
+
+def test_ilo_setup_apply_blocks_ip_changes_and_does_not_patch(
+    db_session,
+    monkeypatch,
+) -> None:
+    fake_settings = types.SimpleNamespace(
+        provider_mode="local-readonly",
+        ilo_setup_apply_enabled=True,
+        lab_apply_ack="YES",
+        lab_target_ack="ilo.lab.local",
+        ilo_test_host="ilo.lab.local",
+        ilo_test_username="local-admin",
+        ilo_test_password="local-password",
+        ilo_test_verify_tls=False,
+        ilo_test_timeout_seconds=3.0,
+    )
+    monkeypatch.setattr("app.services.ilo_setup_apply.settings", fake_settings)
+    monkeypatch.setattr("app.providers.ilo_redfish.settings", fake_settings)
+    monkeypatch.setattr(
+        "app.services.ilo_setup_apply.current_lab_safety",
+        lambda: LabSafetyState(
+            closed_loop_ack=True,
+            readonly_ack=True,
+            destructive_ack=False,
+        ),
+    )
+    patch_bodies: list[dict[str, object]] = []
+    _install_fake_ilo_setup_apply_httpx_client(
+        monkeypatch,
+        before_hostname="old-ilo-name",
+        after_hostname="lab-ilo-host",
+        patch_bodies=patch_bodies,
+    )
+    save_ilo_setup_intent(
+        db_session,
+        IloSetupIntentWrite(
+            network=IloNetworkIntent(
+                hostname="lab-ilo-host",
+                management_ip="192.0.2.25",
+            )
+        ),
+    )
+
+    result = apply_ilo_setup(
+        db_session,
+        IloSetupApplyCreate(confirmation_phrase=ILO_SETUP_CONFIRMATION_PHRASE),
+    )
+
+    assert result["status"] == "blocked"
+    assert result["patch_attempted"] is False
+    assert patch_bodies == []
+    assert any("IP" in blocker for blocker in result["blockers"])
+
+
 def test_ilo_missing_config_returns_missing_config_blocker() -> None:
     adapter = IloRedfishAdapter(
         provider_mode="local-readonly",
@@ -1533,6 +1642,118 @@ def test_ilo_probe_classifies_inventory_auth_after_root_available(monkeypatch) -
     assert "SECRET-SERIAL-123" not in json.dumps(result)
 
 
+def test_ilo_probe_for_lab_target_192_168_1_202_is_get_only_and_redacted(monkeypatch) -> None:
+    clear_probe_results()
+    requested_urls: list[str] = []
+    _allow_readonly_ilo_lab(monkeypatch)
+    _install_fake_httpx_client(
+        monkeypatch,
+        {
+            "/redfish/v1/": (
+                200,
+                "application/json",
+                {
+                    "@odata.id": "/redfish/v1/",
+                    "Managers": {"@odata.id": "/redfish/v1/Managers/"},
+                    "Systems": {"@odata.id": "/redfish/v1/Systems/"},
+                    "Chassis": {"@odata.id": "/redfish/v1/Chassis/"},
+                },
+            ),
+            "/redfish/v1": (200, "application/json", {"@odata.id": "/redfish/v1/"}),
+            "/": (200, "text/html"),
+            "/xmldata?item=All": (404, "text/plain"),
+            "/redfish/v1/Managers/": (
+                200,
+                "application/json",
+                {
+                    "Members": [
+                        {"@odata.id": "/redfish/v1/Managers/1"},
+                    ]
+                },
+            ),
+            "/redfish/v1/Managers/1": (
+                200,
+                "application/json",
+                {
+                    "Id": "1",
+                    "Name": "Manager",
+                    "ManagerType": "BMC",
+                    "FirmwareVersion": "2.80",
+                    "Model": "iLO 5",
+                },
+            ),
+            "/redfish/v1/Systems/": (
+                200,
+                "application/json",
+                {
+                    "Members": [
+                        {"@odata.id": "/redfish/v1/Systems/1"},
+                    ]
+                },
+            ),
+            "/redfish/v1/Systems/1": (
+                200,
+                "application/json",
+                {
+                    "Id": "1",
+                    "Name": "Server",
+                    "Model": "ProLiant DL360 Gen10",
+                    "PowerState": "On",
+                },
+            ),
+            "/redfish/v1/Chassis/": (
+                200,
+                "application/json",
+                {
+                    "Members": [
+                        {"@odata.id": "/redfish/v1/Chassis/1"},
+                    ]
+                },
+            ),
+            "/redfish/v1/Chassis/1": (
+                200,
+                "application/json",
+                {
+                    "Id": "1",
+                    "Name": "Chassis",
+                    "ChassisType": "RackMount",
+                    "Power": {"@odata.id": "/redfish/v1/Chassis/1/Power"},
+                    "Thermal": {"@odata.id": "/redfish/v1/Chassis/1/Thermal"},
+                },
+            ),
+            "/redfish/v1/Chassis/1/Power": (200, "application/json", {"Id": "Power"}),
+            "/redfish/v1/Chassis/1/Thermal": (200, "application/json", {"Id": "Thermal"}),
+        },
+        requested_urls=requested_urls,
+    )
+    adapter = IloRedfishAdapter(
+        provider_mode="local-readonly",
+        config=IloRedfishConfig(
+            host="192.168.1.202",
+            username="Administrator",
+            password="super-secret-password",
+            verify_tls=False,
+            timeout_seconds=1.0,
+        ),
+    )
+
+    result = adapter.probe()
+    encoded = json.dumps(result)
+
+    assert result["status"] == "ok"
+    assert result["base_url"] == "https://REDACTED"
+    assert result["tls_verify"] is False
+    assert result["endpoint_detection"]["classification"] == "redfish_available"
+    assert requested_urls
+    assert all(url.startswith("https://192.168.1.202/") for url in requested_urls)
+    assert {request["path"] for request in result["requests"]}.issuperset(
+        {"/redfish/v1/", "/redfish/v1", "/", "/xmldata?item=All"}
+    )
+    assert "192.168.1.202" not in encoded
+    assert "Administrator" not in encoded
+    assert "super-secret-password" not in encoded
+
+
 def test_ilo_redacts_secrets() -> None:
     secret = "super-secret-password"
     host = "ilo-lab-private.example.test"
@@ -1708,6 +1929,8 @@ def _install_fake_httpx_client(
         str,
         tuple[int, str] | tuple[int, str, dict[str, object] | bytes],
     ],
+    *,
+    requested_urls: list[str] | None = None,
 ) -> None:
     import httpx
     import json as json_module
@@ -1723,6 +1946,8 @@ def _install_fake_httpx_client(
             pass
 
         def get(self, url: str) -> httpx.Response:
+            if requested_urls is not None:
+                requested_urls.append(url)
             path = "/" + url.split("/", 3)[3] if "/" in url.split("://", 1)[-1] else "/"
             response_spec = responses.get(path, (404, "text/plain"))
             status_code, content_type = response_spec[:2]
@@ -1744,6 +1969,66 @@ def _install_fake_httpx_client(
             )
 
     monkeypatch.setattr("app.providers.ilo_redfish.httpx.Client", FakeClient)
+
+
+def _install_fake_ilo_setup_apply_httpx_client(
+    monkeypatch,
+    *,
+    before_hostname: str,
+    after_hostname: str,
+    patch_bodies: list[dict[str, object]],
+) -> None:
+    import httpx
+    import json as json_module
+
+    state = {"hostname": before_hostname}
+
+    class FakeClient:
+        def __init__(self, **_kwargs) -> None:
+            pass
+
+        def __enter__(self) -> "FakeClient":
+            return self
+
+        def __exit__(self, *_args) -> None:
+            pass
+
+        def get(self, url: str) -> httpx.Response:
+            path = "/" + url.split("/", 3)[3] if "/" in url.split("://", 1)[-1] else "/"
+            payloads = {
+                "/redfish/v1/": {"Managers": {"@odata.id": "/redfish/v1/Managers/"}},
+                "/redfish/v1/Managers/": {
+                    "Members": [{"@odata.id": "/redfish/v1/Managers/1"}]
+                },
+                "/redfish/v1/Managers/1": {
+                    "NetworkProtocol": {
+                        "@odata.id": "/redfish/v1/Managers/1/NetworkProtocol"
+                    }
+                },
+                "/redfish/v1/Managers/1/NetworkProtocol": {
+                    "HostName": state["hostname"]
+                },
+            }
+            request = httpx.Request("GET", url)
+            return httpx.Response(
+                200 if path in payloads else 404,
+                headers={"content-type": "application/json"},
+                content=json_module.dumps(payloads.get(path, {})).encode("utf-8"),
+                request=request,
+            )
+
+        def patch(self, url: str, json: dict[str, object]) -> httpx.Response:
+            patch_bodies.append(json)
+            state["hostname"] = after_hostname
+            request = httpx.Request("PATCH", url)
+            return httpx.Response(
+                200,
+                headers={"content-type": "application/json"},
+                content=b"{}",
+                request=request,
+            )
+
+    monkeypatch.setattr("app.services.ilo_setup_apply.httpx.Client", FakeClient)
 
 
 def _install_fake_serial(monkeypatch, outputs: list[str]) -> None:

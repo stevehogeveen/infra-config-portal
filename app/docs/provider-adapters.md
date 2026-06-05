@@ -46,6 +46,30 @@ DNS/domain, firmware readiness handoff, and report/artifact placeholder
 sections. The preview does not call iLO, does not collect media or artifacts,
 does not apply settings, and keeps all dangerous actions disabled.
 
+`GET /api/v1/providers/ilo-redfish/setup-apply-plan` builds the only current
+iLO live-write plan. It is limited to an idempotent Redfish
+`ManagerNetworkProtocol.HostName` update discovered from
+`/redfish/v1/Managers`. It does not run on page load and does not send PATCH.
+The plan reports required gates, blocked actions, and the exact confirmation
+phrase.
+
+`POST /api/v1/providers/ilo-redfish/setup-apply` can send a real Redfish PATCH
+only when all of these are true:
+
+- saved iLO setup intent contains `network.hostname`
+- `PROVIDER_MODE=local-readonly`
+- `LAB_CLOSED_LOOP_ACK=YES`
+- `LAB_READONLY_ACK=YES`
+- `ILO_SETUP_APPLY_ENABLED=true`
+- `LAB_APPLY_ACK=YES`
+- `LAB_TARGET_ACK` exactly matches the configured `ILO_TEST_HOST`
+- request body contains `confirmation_phrase=APPLY ILO HOSTNAME SETUP`
+
+The apply path does GET-before, PATCH, then GET-after readback verification.
+It redacts the configured target, credentials, and desired hostname from the
+recorded result. It blocks iLO IP, subnet/prefix, gateway, VLAN, user, SNMP,
+NTP, DNS, firmware, virtual media, boot, power, and reset actions.
+
 `GET` and `PUT /api/v1/providers/ilo-redfish/setup-intent` store desired iLO
 setup intent locally for preview only. Intent covers network labels, desired
 local usernames as labels, role intent, SNMP enabled state and reference labels,
@@ -118,20 +142,25 @@ surface. It is organized around these sections:
   The page may show the future confirmation phrase `DESTROY AND REBUILD`, but it
   does not expose a clickable destructive execution button and does not run wipe,
   RAID, virtual media, boot order, BIOS, power, or ESXi install actions.
-- Safety: lists disabled dangerous actions and keeps apply, flash, power,
-  virtual media, boot, BIOS, user, network, SNMP, NTP, and DNS/domain changes
-  unavailable.
+- HostName Apply: exposes a backend-only guarded Redfish PATCH lane for
+  `ManagerNetworkProtocol.HostName`. It requires saved hostname intent,
+  local-lab acknowledgement gates, target acknowledgement, and an exact
+  confirmation phrase. It verifies by readback and redacts the desired value.
+- Safety: lists disabled dangerous actions and keeps flash, power, virtual
+  media, boot, BIOS, user, IP/subnet/gateway/VLAN, SNMP, NTP, and DNS/domain
+  changes unavailable.
 
-The workflow has no apply path. Every endpoint and UI section keeps
-`apply_enabled=false` and is limited to local persistence, cached discovery,
-mock data, or explicitly requested read-only discovery. Dangerous actions are
-absent or disabled by design.
+Except for the explicit HostName apply lane, every iLO endpoint and UI section
+keeps `apply_enabled=false` and is limited to local persistence, cached
+discovery, mock data, or explicitly requested read-only discovery. Dangerous
+actions are absent or disabled by design.
 
 Testing remains mock-first. Normal backend and frontend checks should run with
 `PROVIDER_MODE=mock`. Optional `PROVIDER_MODE=local-readonly` smoke checks are
 GET-only discovery checks for a local lab and require the explicit lab
-acknowledgement variables described below; they must not be used for writes or
-production infrastructure.
+acknowledgement variables described below. The HostName apply lane is a
+separate guarded local-lab write path and must not be used for production
+infrastructure.
 
 Operator screenshots may be saved locally under ignored paths such as
 `artifacts/debug/` or `artifacts/screenshots/`. Screenshots, generated
@@ -144,6 +173,19 @@ repository root. This file is ignored by Git and must not be committed. Provider
 status responses expose local provider values only as configured/missing flags.
 Probe results redact configured endpoints, users, passwords, tokens, cookies,
 and other sensitive fields before caching or returning them.
+
+For a local iLO at `192.168.1.202`, use the setup helper or create a private
+`.env.local.real-lab` with `ILO_TEST_HOST=192.168.1.202`,
+`PROVIDER_MODE=local-readonly`, `LAB_CLOSED_LOOP_ACK=YES`, and
+`LAB_READONLY_ACK=YES`. Then run:
+
+```bash
+PROVIDER_MODE=local-readonly make provider-smoke
+```
+
+That command runs explicit GET-only iLO endpoint detection and inventory
+discovery through the guarded provider-smoke path. Normal tests still run with
+`PROVIDER_MODE=mock` and do not contact `192.168.1.202`.
 
 ESXi and Cisco management targets distinguish planned addressing from a
 configured, reachable management network:
@@ -185,6 +227,9 @@ Supported local variables:
 - `ANSIBLE_CISCO_CONNECTION` (`ansible.netcommon.network_cli` by default)
 - `LAB_CLOSED_LOOP_ACK` (`YES` required for real lab probes)
 - `LAB_READONLY_ACK` (`YES` required for real lab probes)
+- `ILO_SETUP_APPLY_ENABLED` (`true` required for guarded iLO HostName apply)
+- `LAB_APPLY_ACK` (`YES` required for guarded apply paths)
+- `LAB_TARGET_ACK` (must match the configured target for guarded apply paths)
 - `LAB_DESTRUCTIVE_ACK` (`REBUILD_LAB` required before future destructive plans can apply)
 
 If `CISCO_CONSOLE_PORT` is not set, the backend dynamically discovers
