@@ -109,6 +109,24 @@ def get_cisco_setup_readiness(
             },
         },
         "console": console_summary,
+        "ethernet_readiness": {
+            "management_configured": mgmt_configured,
+            "planned_management_ip": target_ip,
+            "planned_prefix": settings.cisco_management_prefix,
+            "planned_gateway": bool(settings.cisco_management_gateway),
+            "management_vlan": settings.cisco_management_vlan,
+            "management_interface": settings.cisco_management_interface,
+            "management_strategy": settings.cisco_management_strategy,
+            "ssh_probe_status": "skipped" if not mgmt_configured else ansible.status,
+            "ssh_probe_reason": ansible_reason,
+            "bootstrap_required": not mgmt_configured,
+            "ready": bool(mgmt_configured and ansible.status == "ready"),
+            "next_safe_action": (
+                "Use console bootstrap to establish management VLAN/IP/SSH/SCP readiness."
+                if not mgmt_configured
+                else "Run explicit read-only SSH/Ansible probe before any configuration workflow."
+            ),
+        },
         "bootstrap_preview": {
             "apply_enabled": False,
             "commands_redacted": True,

@@ -38,7 +38,7 @@ infra-config-portal/
 Safe start/stop/restart from the app directory:
 
 ```bash
-cd /home/administrator/infra-config-portal-netapp/app
+cd /home/administrator/infra-config-portal/app
 make start
 make status
 make restart
@@ -54,7 +54,7 @@ arbitrary clients connected to `5173`.
 Foreground backend-only development:
 
 ```bash
-cd /home/administrator/infra-config-portal-netapp/app
+cd /home/administrator/infra-config-portal/app
 make backend-venv
 make backend-test
 make backend-run
@@ -85,15 +85,16 @@ The backend pytest suite includes a local mock VM lifecycle smoke test. Run only
 that smoke test with:
 
 ```bash
-cd /home/administrator/infra-config-portal-netapp/app/backend
+cd /home/administrator/infra-config-portal/app/backend
 PROVIDER_MODE=mock .venv/bin/pytest -q tests/test_smoke_vm_lifecycle.py
 ```
 
 The smoke test uses FastAPI `TestClient`, an in-memory SQLite database, and mock
 provider adapters only. It covers health, VM request creation, draft patching,
 submit, approval, dry-run planning, mock execution to completed, audit events,
-readiness checks, execution-before-plan rejection, stale-plan invalidation after an
-execution-affecting edit, and completed-request cancellation rejection.
+readiness checks, request rejection, execution-before-plan rejection, stale-plan
+invalidation after an execution-affecting edit, and completed-request
+cancellation rejection.
 
 Keep `PROVIDER_MODE=mock`. The smoke test must not call vCenter, ESXi, iLO,
 Redfish, NetApp, switches, DNS, IPAM, storage, AWX, Terraform, OpenTofu,
@@ -112,7 +113,7 @@ screenshots are skipped, note why and describe the manual UI checks performed.
 Foreground frontend-only development, in a second terminal:
 
 ```bash
-cd /home/administrator/infra-config-portal-netapp/app
+cd /home/administrator/infra-config-portal/app
 make frontend-install
 make frontend-run
 ```
@@ -134,7 +135,7 @@ default, or placeholder-only metadata from explicitly configured
 ## Docker Compose
 
 ```bash
-cd /home/administrator/infra-config-portal-netapp/app
+cd /home/administrator/infra-config-portal/app
 docker compose up --build
 ```
 
@@ -266,7 +267,7 @@ the exact confirmation phrase
 `APPLY CISCO CONSOLE BOOTSTRAP 192.168.1.220`. The current implementation is a
 guarded scaffold and does not perform serial writes.
 
-See `app/docs/cisco-real-lab-bootstrap-runbook.md` for the safe local-lab
+See `app/docs/cisco-real-lab-bootstrap-runbook.md` for the safe local-lab-readwrite
 operator flow, required gates, blocked-result meanings, and evidence handling.
 
 For an isolated local lab, optional settings live in `.env.local.real-lab` at
@@ -293,6 +294,24 @@ Optional manual smoke:
 PROVIDER_MODE=local-readonly make provider-smoke
 ```
 
+iLO-only manual smoke:
+
+```bash
+PROVIDER_MODE=local-readonly PROVIDER_SMOKE_PROVIDERS=ilo-redfish make provider-smoke
+```
+
+iLO-only local-lab-readwrite smoke:
+
+```bash
+make provider-lab-ilo-reachability
+make provider-lab-ilo-authentication
+make provider-lab-ilo-readiness
+make provider-lab-ilo-inventory
+make provider-lab-hpe-storage-discovery
+make provider-lab-hpe-raid-discovery
+make provider-lab-hpe-raid-plan
+```
+
 NetApp-only real-run readiness, with no ONTAP probes or apply actions:
 
 ```bash
@@ -305,10 +324,75 @@ Plain `make provider-smoke` runs in mock mode and skips probes. With explicit
 `PROVIDER_MODE=local-readonly`, the smoke command skips missing
 hardware/configuration and planned but not configured ESXi/Cisco management
 targets gracefully, must not print passwords, and writes sanitized reports under
-ignored `artifacts/real-lab/`. The NetApp-only readiness command writes
-`netapp-readiness-*` artifacts under the same ignored directory and never
-contacts ONTAP, SP, console, SSH, storage, upgrade, reboot, wipe, or apply
-endpoints.
+ignored `artifacts/real-lab/`. `LAB_CLOSED_LOOP_ACK=YES` and
+`LAB_READONLY_ACK=YES` are required for real read-only probes. Set
+`PROVIDER_SMOKE_PROVIDERS=ilo-redfish` to run only the iLO GET-only Redfish
+smoke without Cisco or ESXi probes.
+
+`PROVIDER_MODE=local-lab-readwrite` is separate from mock and local-readonly.
+It requires `LAB_ENVIRONMENT=isolated-real-lab`,
+`LAB_ACKNOWLEDGE_REAL_HARDWARE=true`,
+`LAB_ACKNOWLEDGE_DEVICE_RECONFIGURATION=true`,
+`LAB_ACKNOWLEDGE_DATA_LOSS_RISK=true`, and
+`LAB_ACKNOWLEDGE_LAB_ONLY=true` in `.env.local.real-lab`. Allowlisted lab
+workflow categories can run only through explicit workflow steps. Power,
+firmware update, and factory reset categories remain blocked unless their
+specific `LAB_ALLOW_*` flags are enabled.
+
+`make provider-lab-hpe-storage-discovery`,
+`make provider-lab-hpe-raid-discovery`, and
+`make provider-lab-hpe-raid-plan` use real iLO Redfish inventory in
+`local-lab-readwrite` mode, report HPE Smart Array/controller, drive, and
+logical drive details when Redfish exposes them, and write/update
+`artifacts/codex-runs/hpe-raid-discovery-report.md` and
+`artifacts/codex-runs/hpe-raid-plan-report.md`. The RAID plan target saves a
+default ESXi layout only when no RAID intent exists: RAID1 for ESXi OS on the
+first two discovered bays and RAID6 for the remaining bays.
+
+The real HPE RAID apply path uses Redfish SmartStorageConfig settings because
+`ssacli`/`hpssacli` is not required on the app host. It remains gated by
+`PROVIDER_MODE=local-lab-readwrite`, the real-lab acknowledgement flags, a saved
+destructive RAID intent, `HPE_RAID_ALLOW_DESTRUCTIVE=true`, and the exact
+confirmation phrase. The apply target records before/after state and writes
+`artifacts/codex-runs/hpe-raid-apply-report.md`.
+
+```bash
+HPE_RAID_ALLOW_DESTRUCTIVE=true \
+HPE_RAID_APPLY_CONFIRM="APPLY HPE RAID PLAN" \
+make provider-lab-hpe-raid-apply
+```
+
+The Provider Status iLO section includes an HPE Storage / RAID setup panel for
+cached Smart Array inventory, desired RAID intent, and current-vs-planned ESXi
+layout impact. It shows RAID apply availability and last real apply state;
+destructive execution still runs through the explicit terminal target above.
+
+After RAID validation succeeds, the ESXi boot workflow can serve an ISO from
+`MEDIA_INVENTORY_DIRS`, insert it through iLO VirtualMedia, set one-time boot,
+and run the controlled reset. The default ISO selection prefers HPE ESXi 8.0.3
+when present. These targets write reports under `artifacts/codex-runs/`:
+
+```bash
+make provider-lab-esxi-install-readiness
+make provider-lab-esxi-media-url
+make provider-lab-esxi-insert-virtual-media
+make provider-lab-esxi-one-time-boot
+make provider-lab-esxi-reset-installer-boot
+make provider-lab-esxi-detect-installer
+```
+
+Cisco console and Ethernet bootstrap readiness remains separate from ESXi. It
+detects a serial console adapter, performs newline-only prompt readiness, and
+reports management Ethernet/SSH/SCP bootstrap state without sending
+configuration commands:
+
+```bash
+make provider-lab-cisco-console-ethernet-readiness
+```
+
+The NetApp-only readiness command writes `netapp-readiness-*` artifacts under
+the same ignored directory and never contacts ONTAP, SP, console, SSH, storage,
+upgrade, reboot, wipe, or apply endpoints.
 
 ## Safety Defaults
 

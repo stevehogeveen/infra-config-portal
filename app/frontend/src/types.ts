@@ -173,6 +173,7 @@ export type CiscoSetupReadiness = {
     safe_next_action: string;
     last_prompt_readiness: Record<string, unknown>;
   };
+  ethernet_readiness: Record<string, unknown>;
   bootstrap_preview: {
     apply_enabled: boolean;
     commands_redacted: boolean;
@@ -499,6 +500,125 @@ export type IloUpgradeReadiness = {
   removable_warnings: string[];
   upgrade_chain: UpgradeCandidate[];
   apply_enabled: boolean;
+};
+
+export type IloSetupIntent = {
+  provider_id?: string;
+  apply_enabled?: boolean;
+  created_at?: string | null;
+  updated_at?: string | null;
+  network: {
+    hostname: string | null;
+    management_ip: string | null;
+    subnet_mask_or_prefix: string | null;
+    gateway: string | null;
+    vlan: string | null;
+  };
+  users: Array<{
+    username_label: string;
+    role: string;
+  }>;
+  snmp: {
+    enabled: boolean;
+    destinations: string[];
+    community_or_user_ref_labels: string[];
+  };
+  time: {
+    timezone: string | null;
+    ntp_servers: string[];
+  };
+  dns_domain: {
+    domain_name: string | null;
+    dns_servers: string[];
+  };
+  notes: string | null;
+};
+
+export type IloSetupIntentWrite = Omit<
+  IloSetupIntent,
+  "provider_id" | "apply_enabled" | "created_at" | "updated_at"
+>;
+
+export type IloSetupPlanSection = {
+  id: string;
+  title: string;
+  status: string;
+  apply_enabled: boolean;
+  source: string;
+  current_observation: string;
+  planned_preview: string;
+  notes: string[];
+  blockers: string[];
+  warnings: string[];
+};
+
+export type IloSetupPlanPreview = {
+  provider_id: string;
+  mode: string;
+  plan_only: boolean;
+  apply_enabled: boolean;
+  generated_from: string;
+  sections: IloSetupPlanSection[];
+  blockers: string[];
+  warnings: string[];
+  removable_warnings: string[];
+};
+
+export type HpeRaidVolumeIntent = {
+  name: string;
+  purpose: string;
+  raid_level: string;
+  drive_bays: string[];
+  spare_bays: string[];
+  spare_rebuild_mode: string | null;
+  size_policy: string;
+  bootable: boolean;
+};
+
+export type HpeRaidIntent = {
+  provider_id?: string;
+  apply_enabled?: boolean;
+  created_at?: string | null;
+  updated_at?: string | null;
+  controller_ref: string | null;
+  wipe_existing_logical_drives: boolean;
+  volumes: HpeRaidVolumeIntent[];
+  notes: string | null;
+};
+
+export type HpeRaidIntentWrite = Omit<
+  HpeRaidIntent,
+  "provider_id" | "apply_enabled" | "created_at" | "updated_at"
+>;
+
+export type HpeStorageDiscovery = {
+  provider_id: string;
+  source: string;
+  last_probe_time: string | null;
+  storage_inventory_available: boolean;
+  server: Record<string, unknown>;
+  controllers: Array<Record<string, unknown>>;
+  physical_drives: Array<Record<string, unknown>>;
+  logical_drives: Array<Record<string, unknown>>;
+  warnings: string[];
+  blockers: string[];
+  next_safe_action: string;
+};
+
+export type HpeRaidPlanPreview = {
+  provider_id: string;
+  status: string;
+  apply_enabled: boolean;
+  destructive_actions_requested: boolean;
+  destructive_actions_enabled: boolean;
+  current_layout: HpeStorageDiscovery;
+  desired_intent: HpeRaidIntent;
+  planned_layout: Record<string, unknown>;
+  impact: Record<string, unknown>;
+  blockers: string[];
+  warnings: string[];
+  disabled_actions: string[];
+  next_safe_action: string;
 };
 
 export type Catalog = {

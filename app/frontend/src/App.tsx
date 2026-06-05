@@ -34,6 +34,14 @@ import type {
   CiscoSetupReadiness,
   CiscoSetupWizardPlan,
   ConsoleCandidate,
+  HpeRaidIntent,
+  HpeRaidIntentWrite,
+  HpeRaidPlanPreview,
+  HpeRaidVolumeIntent,
+  HpeStorageDiscovery,
+  IloSetupIntent,
+  IloSetupIntentWrite,
+  IloSetupPlanPreview,
   IloUpgradeReadiness,
   MediaInventory,
   NetAppConsoleReadiness,
@@ -81,6 +89,13 @@ type StageEvent = {
   stage: string;
   status: string;
   message: string;
+};
+
+type ProviderSection = {
+  id: string;
+  label: string;
+  providerIds: string[];
+  status: string;
 };
 
 type ReadinessMap = Record<string, RequestReadiness>;
@@ -2440,6 +2455,22 @@ function ProviderStatusPage() {
   const orderedProviders = [...providers].sort((left, right) => {
     return providerOrder(left.id) - providerOrder(right.id);
   });
+  const providerSections = useMemo(
+    () => buildProviderSections(orderedProviders),
+    [orderedProviders]
+  );
+  const [activeSectionId, setActiveSectionId] = useState("ilo");
+  const activeSection = providerSections.find((section) => section.id === activeSectionId) ?? providerSections[0];
+  const activeProviders = activeSection
+    ? orderedProviders.filter((provider) => activeSection.providerIds.includes(provider.id))
+    : [];
+
+  useEffect(() => {
+    if (!providerSections.length) return;
+    if (!providerSections.some((section) => section.id === activeSectionId)) {
+      setActiveSectionId(providerSections[0].id);
+    }
+  }, [activeSectionId, providerSections]);
 
   return (
     <Page
@@ -2452,18 +2483,26 @@ function ProviderStatusPage() {
       }
     >
       <Feedback loading={loading && !providers.length} error={error} />
-      {ciscoSetupReadiness && (
-        <CiscoSetupReadinessPanel
-          bootstrapRequirements={ciscoBootstrapRequirements}
-          busyBootstrapRequirements={busyBootstrapRequirements}
-          consoleBootstrapPlan={ciscoConsoleBootstrapPlan}
-          onSaveBootstrapRequirements={saveBootstrapRequirements}
-          readiness={ciscoSetupReadiness}
-          setupWizardPlan={ciscoSetupWizardPlan}
+      {providerSections.length > 0 && (
+        <ProviderSectionTabs
+          activeSectionId={activeSection?.id ?? ""}
+          busy={Boolean(busyProvider) || busyPromptReadiness || busyBootstrapRequirements}
+          onSelect={setActiveSectionId}
+          sections={providerSections}
         />
       )}
       <section className="provider-status-stack">
-        {orderedProviders.map((provider) => (
+        {activeSection?.id === "cisco" && ciscoSetupReadiness && (
+          <CiscoSetupReadinessPanel
+            bootstrapRequirements={ciscoBootstrapRequirements}
+            busyBootstrapRequirements={busyBootstrapRequirements}
+            consoleBootstrapPlan={ciscoConsoleBootstrapPlan}
+            onSaveBootstrapRequirements={saveBootstrapRequirements}
+            readiness={ciscoSetupReadiness}
+            setupWizardPlan={ciscoSetupWizardPlan}
+          />
+        )}
+        {activeProviders.map((provider) => (
           <ProviderDetailCard
             busy={busyProvider === provider.id}
             busyPromptReadiness={busyPromptReadiness}
@@ -2475,8 +2514,51 @@ function ProviderStatusPage() {
             probeResult={probeResults[provider.id] ?? null}
           />
         ))}
+        {!loading && activeSection && activeProviders.length === 0 && (
+          <section className="provider-card provider-card-wide">
+            <div className="provider-head">
+              <HardDrive size={18} />
+              <div>
+                <h2>{activeSection.label}</h2>
+                <p>No provider status is available for this section.</p>
+              </div>
+              <StatusBadge status="missing-config" />
+            </div>
+          </section>
+        )}
       </section>
     </Page>
+  );
+}
+
+function ProviderSectionTabs({
+  activeSectionId,
+  busy,
+  onSelect,
+  sections
+}: {
+  activeSectionId: string;
+  busy: boolean;
+  onSelect: (sectionId: string) => void;
+  sections: ProviderSection[];
+}) {
+  return (
+    <div className="provider-section-tabs" role="tablist" aria-label="Provider sections">
+      {sections.map((section) => (
+        <button
+          aria-selected={section.id === activeSectionId}
+          className={section.id === activeSectionId ? "active" : ""}
+          disabled={busy}
+          key={section.id}
+          onClick={() => onSelect(section.id)}
+          role="tab"
+          type="button"
+        >
+          <span>{section.label}</span>
+          <StatusBadge status={section.status} />
+        </button>
+      ))}
+    </div>
   );
 }
 
@@ -2509,6 +2591,7 @@ function CiscoSetupReadinessPanel({
   const lastPrompt = objectValue(readiness.console.last_prompt_readiness);
   const promptClassification = objectValue(lastPrompt.prompt_classification);
   const readTiming = objectValue(readiness.console.read_timing);
+  const ethernetReadiness = objectValue(readiness.ethernet_readiness);
 
   return (
     <section className="provider-card provider-card-wide cisco-setup-readiness">
@@ -2531,6 +2614,10 @@ function CiscoSetupReadinessPanel({
           value={readiness.management_configured ? "true" : "false"}
         />
         <ProviderFact label="Console State" value={labelize(readiness.console.status)} />
+        <ProviderFact
+          label="Prompt Captured"
+          value={presenceLabel(lastPrompt.captured ?? discoveredState.prompt_captured)}
+        />
         <ProviderFact label="Ansible Path" value={readiness.ansible.enabled ? "Enabled" : "Blocked"} />
       </div>
       <div className="provider-fact-grid compact">
@@ -2616,8 +2703,18 @@ function CiscoSetupReadinessPanel({
         />
         <SetupPreviewBlock
           title="SSH/SCP Readiness"
-          tag="Disabled"
-          lines={[readiness.ssh_scp_readiness.summary]}
+          tag={asBoolean(ethernetReadiness.ready) ? "Ready" : "Blocked"}
+          lines={[
+            readiness.ssh_scp_readiness.summary,
+            `Management configured: ${presenceLabel(ethernetReadiness.management_configured)}.`,
+            `Planned IP: ${asString(ethernetReadiness.planned_management_ip) || readiness.planned_management_ip || "Missing"}.`,
+            `Prefix: ${asString(ethernetReadiness.planned_prefix) || "Missing"}.`,
+            `Gateway configured: ${presenceLabel(ethernetReadiness.planned_gateway)}.`,
+            `VLAN: ${asString(ethernetReadiness.management_vlan) || "Missing"}.`,
+            `Interface: ${asString(ethernetReadiness.management_interface) || "Missing"}.`,
+            `SSH probe: ${labelize(asString(ethernetReadiness.ssh_probe_status) || "skipped")}.`,
+            asString(ethernetReadiness.next_safe_action) || "Use console bootstrap before SSH."
+          ]}
         />
         <SetupPreviewBlock
           title="Ansible Path"
@@ -3250,23 +3347,60 @@ function CiscoConsoleDetails({
 
 function IloRedfishDetails({ provider }: { provider: ProviderStatus }) {
   const [readiness, setReadiness] = useState<IloUpgradeReadiness | null>(null);
+  const [setupIntent, setSetupIntent] = useState<IloSetupIntent | null>(null);
+  const [setupPlan, setSetupPlan] = useState<IloSetupPlanPreview | null>(null);
+  const [raidDiscovery, setRaidDiscovery] = useState<HpeStorageDiscovery | null>(null);
+  const [raidIntent, setRaidIntent] = useState<HpeRaidIntent | null>(null);
+  const [raidPlan, setRaidPlan] = useState<HpeRaidPlanPreview | null>(null);
+  const [raidApplyPlan, setRaidApplyPlan] = useState<ProviderProbeResult | null>(null);
+  const [raidPending, setRaidPending] = useState<ProviderProbeResult | null>(null);
+  const [raidResetPlan, setRaidResetPlan] = useState<ProviderProbeResult | null>(null);
+  const [raidAfterResetValidation, setRaidAfterResetValidation] = useState<ProviderProbeResult | null>(null);
+  const [esxiInstallReadiness, setEsxiInstallReadiness] = useState<ProviderProbeResult | null>(null);
   const [error, setError] = useState("");
+  const [setupError, setSetupError] = useState("");
+  const [setupSavedMessage, setSetupSavedMessage] = useState("");
+  const [setupBusy, setSetupBusy] = useState(false);
+  const [raidError, setRaidError] = useState("");
+  const [raidSavedMessage, setRaidSavedMessage] = useState("");
+  const [raidBusy, setRaidBusy] = useState(false);
+  const [raidPostApplyBusy, setRaidPostApplyBusy] = useState(false);
   const config = provider.configuration;
   const missingFields = stringArray(config.missing_fields);
 
   useEffect(() => {
     let cancelled = false;
-    api
-      .iloUpgradeReadiness()
-      .then((payload) => {
+    Promise.all([
+      api.iloUpgradeReadiness(),
+      api.iloSetupIntent(),
+      api.iloSetupPlanPreview(),
+      api.hpeStorageDiscovery(),
+      api.hpeRaidIntent(),
+      api.hpeRaidPlanPreview(),
+      api.hpeRaidApplyPlan(),
+      api.hpeRaidPending(),
+      api.hpeRaidResetPlan(),
+      api.esxiInstallReadiness()
+    ])
+      .then(([readinessPayload, intentPayload, planPayload, storagePayload, raidIntentPayload, raidPlanPayload, raidApplyPayload, raidPendingPayload, raidResetPayload, esxiInstallPayload]) => {
         if (!cancelled) {
-          setReadiness(payload);
+          setReadiness(readinessPayload);
+          setSetupIntent(intentPayload);
+          setSetupPlan(planPayload);
+          setRaidDiscovery(storagePayload);
+          setRaidIntent(raidIntentPayload);
+          setRaidPlan(raidPlanPayload);
+          setRaidApplyPlan(raidApplyPayload);
+          setRaidPending(raidPendingPayload);
+          setRaidResetPlan(raidResetPayload);
+          setEsxiInstallReadiness(esxiInstallPayload);
           setError("");
+          setSetupError("");
+          setRaidError("");
         }
       })
       .catch((err: Error) => {
         if (!cancelled) {
-          setReadiness(null);
           setError(err.message);
         }
       });
@@ -3274,6 +3408,102 @@ function IloRedfishDetails({ provider }: { provider: ProviderStatus }) {
       cancelled = true;
     };
   }, [provider.last_probe_time, provider.status]);
+
+  async function saveSetupIntent(payload: IloSetupIntentWrite) {
+    setSetupBusy(true);
+    setSetupError("");
+    setSetupSavedMessage("");
+    try {
+      const saved = await api.saveIloSetupIntent(payload);
+      const plan = await api.iloSetupPlanPreview();
+      setSetupIntent(saved);
+      setSetupPlan(plan);
+      setSetupSavedMessage("Saved desired iLO setup intent. Apply remains disabled.");
+    } catch (err) {
+      setSetupError((err as Error).message);
+    } finally {
+      setSetupBusy(false);
+    }
+  }
+
+  async function saveRaidIntent(payload: HpeRaidIntentWrite) {
+    setRaidBusy(true);
+    setRaidError("");
+    setRaidSavedMessage("");
+    try {
+      const saved = await api.saveHpeRaidIntent(payload);
+      const [discovery, plan] = await Promise.all([
+        api.hpeStorageDiscovery(),
+        api.hpeRaidPlanPreview()
+      ]);
+      const applyPlan = await api.hpeRaidApplyPlan();
+      const [pending, resetPlan] = await Promise.all([
+        api.hpeRaidPending(),
+        api.hpeRaidResetPlan()
+      ]);
+      setRaidIntent(saved);
+      setRaidDiscovery(discovery);
+      setRaidPlan(plan);
+      setRaidApplyPlan(applyPlan);
+      setRaidPending(pending);
+      setRaidResetPlan(resetPlan);
+      setRaidSavedMessage("Saved desired RAID layout. Wipe and RAID apply remain disabled.");
+    } catch (err) {
+      setRaidError((err as Error).message);
+    } finally {
+      setRaidBusy(false);
+    }
+  }
+
+  async function refreshRaidPostApply() {
+    setRaidPostApplyBusy(true);
+    setRaidError("");
+    try {
+      const [pending, resetPlan] = await Promise.all([
+        api.hpeRaidPending(),
+        api.hpeRaidResetPlan()
+      ]);
+      setRaidPending(pending);
+      setRaidResetPlan(resetPlan);
+    } catch (err) {
+      setRaidError((err as Error).message);
+    } finally {
+      setRaidPostApplyBusy(false);
+    }
+  }
+
+  async function validateRaidAfterReset() {
+    setRaidPostApplyBusy(true);
+    setRaidError("");
+    try {
+      const validation = await api.validateHpeRaidAfterReset();
+      const [discovery, pending, esxiReadiness] = await Promise.all([
+        api.hpeStorageDiscovery(),
+        api.hpeRaidPending(),
+        api.esxiInstallReadiness()
+      ]);
+      setRaidAfterResetValidation(validation);
+      setRaidDiscovery(discovery);
+      setRaidPending(pending);
+      setEsxiInstallReadiness(esxiReadiness);
+    } catch (err) {
+      setRaidError((err as Error).message);
+    } finally {
+      setRaidPostApplyBusy(false);
+    }
+  }
+
+  async function refreshEsxiInstallReadiness() {
+    setRaidPostApplyBusy(true);
+    setRaidError("");
+    try {
+      setEsxiInstallReadiness(await api.esxiInstallReadiness());
+    } catch (err) {
+      setRaidError((err as Error).message);
+    } finally {
+      setRaidPostApplyBusy(false);
+    }
+  }
 
   return (
     <div className="provider-detail-section">
@@ -3301,8 +3531,1100 @@ function IloRedfishDetails({ provider }: { provider: ProviderStatus }) {
           Missing local settings: {missingFields.join(", ")}
         </p>
       )}
+      <IloSetupIntentPanel
+        busy={setupBusy}
+        error={setupError}
+        intent={setupIntent}
+        onSave={saveSetupIntent}
+        plan={setupPlan}
+        savedMessage={setupSavedMessage}
+      />
+      <HpeRaidSetupPanel
+        busy={raidBusy}
+        applyPlan={raidApplyPlan}
+        afterResetValidation={raidAfterResetValidation}
+        discovery={raidDiscovery}
+        error={raidError}
+        intent={raidIntent}
+        onSave={saveRaidIntent}
+        onRefreshPostApply={refreshRaidPostApply}
+        onValidateAfterReset={validateRaidAfterReset}
+        pending={raidPending}
+        plan={raidPlan}
+        postApplyBusy={raidPostApplyBusy}
+        resetPlan={raidResetPlan}
+        savedMessage={raidSavedMessage}
+      />
+      <EsxiInstallReadinessPanel
+        busy={raidPostApplyBusy}
+        onRefresh={refreshEsxiInstallReadiness}
+        readiness={esxiInstallReadiness}
+      />
       <IloUpgradeDecisionPanel error={error} readiness={readiness} />
     </div>
+  );
+}
+
+function IloSetupIntentPanel({
+  busy,
+  error,
+  intent,
+  onSave,
+  plan,
+  savedMessage
+}: {
+  busy: boolean;
+  error: string;
+  intent: IloSetupIntent | null;
+  onSave: (payload: IloSetupIntentWrite) => Promise<void>;
+  plan: IloSetupPlanPreview | null;
+  savedMessage: string;
+}) {
+  const [form, setForm] = useState<IloSetupIntentWrite>(() => iloSetupIntentForm(intent));
+
+  useEffect(() => {
+    setForm(iloSetupIntentForm(intent));
+  }, [intent]);
+
+  function updateNetwork<K extends keyof IloSetupIntentWrite["network"]>(
+    field: K,
+    value: IloSetupIntentWrite["network"][K],
+  ) {
+    setForm((current) => ({
+      ...current,
+      network: { ...current.network, [field]: value }
+    }));
+  }
+
+  function updateSnmp<K extends keyof IloSetupIntentWrite["snmp"]>(
+    field: K,
+    value: IloSetupIntentWrite["snmp"][K],
+  ) {
+    setForm((current) => ({
+      ...current,
+      snmp: { ...current.snmp, [field]: value }
+    }));
+  }
+
+  function updateTime<K extends keyof IloSetupIntentWrite["time"]>(
+    field: K,
+    value: IloSetupIntentWrite["time"][K],
+  ) {
+    setForm((current) => ({
+      ...current,
+      time: { ...current.time, [field]: value }
+    }));
+  }
+
+  function updateDns<K extends keyof IloSetupIntentWrite["dns_domain"]>(
+    field: K,
+    value: IloSetupIntentWrite["dns_domain"][K],
+  ) {
+    setForm((current) => ({
+      ...current,
+      dns_domain: { ...current.dns_domain, [field]: value }
+    }));
+  }
+
+  function updateUser(index: number, field: "username_label" | "role", value: string) {
+    setForm((current) => ({
+      ...current,
+      users: current.users.map((user, userIndex) =>
+        userIndex === index ? { ...user, [field]: value } : user
+      )
+    }));
+  }
+
+  function addUser() {
+    setForm((current) => ({
+      ...current,
+      users: [...current.users, { username_label: "", role: "Administrator" }]
+    }));
+  }
+
+  function removeUser(index: number) {
+    setForm((current) => ({
+      ...current,
+      users: current.users.filter((_, userIndex) => userIndex !== index)
+    }));
+  }
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    await onSave(cleanIloSetupIntent(form));
+  }
+
+  return (
+    <div className="provider-detail-section ilo-setup-intent">
+      <div className="provider-callout">
+        <strong>iLO setup intent</strong>
+        <p>
+          Desired IP, DNS, NTP, SNMP, and user-reference values are saved locally for planning.
+          Password changes use references only; no plaintext password is stored here.
+        </p>
+      </div>
+      <div className="provider-fact-grid compact">
+        <ProviderFact label="Saved" value={intent?.updated_at ? formatDateTime(intent.updated_at) : "Not saved"} />
+        <ProviderFact label="Apply" value={plan?.apply_enabled ? "Enabled" : "Disabled"} />
+        <ProviderFact label="Plan Mode" value={plan?.plan_only ? "Plan only" : "Unknown"} />
+        <ProviderFact label="Sections" value={String(plan?.sections.length ?? 0)} />
+      </div>
+      {savedMessage && <p className="provider-redaction-note">{savedMessage}</p>}
+      {error && (
+        <div className="provider-issue-rows">
+          <div className="provider-issue blocker">
+            <Ban size={16} />
+            <span>{error}</span>
+          </div>
+        </div>
+      )}
+      <form className="form-grid ilo-setup-form" onSubmit={submit}>
+        <Field label="iLO Hostname">
+          <input
+            value={form.network.hostname ?? ""}
+            onChange={(event) => updateNetwork("hostname", event.target.value)}
+          />
+        </Field>
+        <Field label="Management IP">
+          <input
+            value={form.network.management_ip ?? ""}
+            onChange={(event) => updateNetwork("management_ip", event.target.value)}
+          />
+        </Field>
+        <Field label="Subnet / Prefix">
+          <input
+            value={form.network.subnet_mask_or_prefix ?? ""}
+            onChange={(event) => updateNetwork("subnet_mask_or_prefix", event.target.value)}
+          />
+        </Field>
+        <Field label="Gateway">
+          <input
+            value={form.network.gateway ?? ""}
+            onChange={(event) => updateNetwork("gateway", event.target.value)}
+          />
+        </Field>
+        <Field label="Management VLAN">
+          <input
+            value={form.network.vlan ?? ""}
+            onChange={(event) => updateNetwork("vlan", event.target.value)}
+          />
+        </Field>
+        <Field label="DNS Domain">
+          <input
+            value={form.dns_domain.domain_name ?? ""}
+            onChange={(event) => updateDns("domain_name", event.target.value)}
+          />
+        </Field>
+        <Field label="DNS Servers">
+          <input
+            value={form.dns_domain.dns_servers.join(", ")}
+            onChange={(event) => updateDns("dns_servers", splitCsvInput(event.target.value))}
+          />
+        </Field>
+        <Field label="Timezone">
+          <input
+            value={form.time.timezone ?? ""}
+            onChange={(event) => updateTime("timezone", event.target.value)}
+          />
+        </Field>
+        <Field label="NTP Servers">
+          <input
+            value={form.time.ntp_servers.join(", ")}
+            onChange={(event) => updateTime("ntp_servers", splitCsvInput(event.target.value))}
+          />
+        </Field>
+        <label className="checkbox-row ilo-checkbox-row">
+          <input
+            checked={form.snmp.enabled}
+            onChange={(event) => updateSnmp("enabled", event.target.checked)}
+            type="checkbox"
+          />
+          <span>SNMP enabled in desired state</span>
+        </label>
+        <Field label="SNMP Destinations">
+          <input
+            value={form.snmp.destinations.join(", ")}
+            onChange={(event) => updateSnmp("destinations", splitCsvInput(event.target.value))}
+          />
+        </Field>
+        <Field label="SNMP Community/User References">
+          <input
+            value={form.snmp.community_or_user_ref_labels.join(", ")}
+            onChange={(event) =>
+              updateSnmp("community_or_user_ref_labels", splitCsvInput(event.target.value))
+            }
+          />
+        </Field>
+        <div className="span-2 ilo-user-intent-list">
+          <div className="ilo-user-intent-head">
+            <h3>Local User References</h3>
+            <button onClick={addUser} type="button">
+              <Plus size={16} />
+              Add User Reference
+            </button>
+          </div>
+          {form.users.length === 0 && <p className="muted">No user references saved.</p>}
+          {form.users.map((user, index) => (
+            <div className="ilo-user-intent-row" key={`${index}-${user.username_label}`}>
+              <Field label="Username Label">
+                <input
+                  value={user.username_label}
+                  onChange={(event) => updateUser(index, "username_label", event.target.value)}
+                />
+              </Field>
+              <Field label="Role">
+                <input
+                  value={user.role}
+                  onChange={(event) => updateUser(index, "role", event.target.value)}
+                />
+              </Field>
+              <button onClick={() => removeUser(index)} type="button">
+                <XCircle size={16} />
+                Remove
+              </button>
+            </div>
+          ))}
+        </div>
+        <label className="field span-2">
+          <span>Notes</span>
+          <textarea
+            value={form.notes ?? ""}
+            onChange={(event) => setForm((current) => ({ ...current, notes: event.target.value }))}
+          />
+        </label>
+        <div className="provider-callout span-2">
+          <strong>Connection credentials</strong>
+          <p>
+            Current iLO address, username, and login password are read from .env.local.real-lab.
+            Desired password rotation belongs in an external secret store and can be named here only as a reference.
+          </p>
+        </div>
+        <div className="form-actions span-2">
+          <button className="primary" disabled={busy} type="submit">
+            <Save size={16} />
+            {busy ? "Saving" : "Save iLO Intent"}
+          </button>
+        </div>
+      </form>
+      {plan && (
+        <div className="setup-preview-grid ilo-plan-preview-grid">
+          {plan.sections.slice(0, 6).map((section) => (
+            <SetupPreviewBlock
+              key={section.id}
+              title={section.title}
+              tag={labelize(section.status)}
+              lines={[
+                section.planned_preview,
+                ...section.warnings,
+                ...section.blockers
+              ]}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function HpeRaidSetupPanel({
+  applyPlan,
+  afterResetValidation,
+  busy,
+  discovery,
+  error,
+  intent,
+  onSave,
+  onRefreshPostApply,
+  onValidateAfterReset,
+  pending,
+  plan,
+  postApplyBusy,
+  resetPlan,
+  savedMessage
+}: {
+  applyPlan: ProviderProbeResult | null;
+  afterResetValidation: ProviderProbeResult | null;
+  busy: boolean;
+  discovery: HpeStorageDiscovery | null;
+  error: string;
+  intent: HpeRaidIntent | null;
+  onSave: (payload: HpeRaidIntentWrite) => Promise<void>;
+  onRefreshPostApply: () => Promise<void>;
+  onValidateAfterReset: () => Promise<void>;
+  pending: ProviderProbeResult | null;
+  plan: HpeRaidPlanPreview | null;
+  postApplyBusy: boolean;
+  resetPlan: ProviderProbeResult | null;
+  savedMessage: string;
+}) {
+  const [form, setForm] = useState<HpeRaidIntentWrite>(() => hpeRaidIntentForm(intent));
+  const drives = discovery?.physical_drives ?? [];
+  const controllers = discovery?.controllers ?? [];
+  const logicalDrives = discovery?.logical_drives ?? [];
+  const plannedVolumes = recordArray(plan?.planned_layout.volumes);
+  const impact = plan?.impact ?? {};
+  const lastApply = objectValue(applyPlan?.last_apply);
+  const applyAvailable = asBoolean(applyPlan?.apply_enabled);
+  const applyBlockers = stringArray(applyPlan?.blockers);
+  const pendingState = objectValue(pending?.pending);
+  const resetRequired = asBoolean(pendingState.reset_required);
+  const pendingConfigExists = asBoolean(pendingState.pending_config_exists);
+  const liveMatchesExpected = asBoolean(pendingState.live_matches_expected);
+  const validationState = objectValue(afterResetValidation?.validation);
+  const validationMatches = asBoolean(validationState.matches);
+  const resetCommand = asString(resetPlan?.command);
+
+  useEffect(() => {
+    setForm(hpeRaidIntentForm(intent));
+  }, [intent]);
+
+  function update<K extends keyof HpeRaidIntentWrite>(field: K, value: HpeRaidIntentWrite[K]) {
+    setForm((current) => ({ ...current, [field]: value }));
+  }
+
+  function updateVolume(index: number, next: HpeRaidVolumeIntent) {
+    setForm((current) => ({
+      ...current,
+      volumes: current.volumes.map((volume, volumeIndex) =>
+        volumeIndex === index ? next : volume
+      )
+    }));
+  }
+
+  function addVolume() {
+    setForm((current) => ({
+      ...current,
+      volumes: [
+        ...current.volumes,
+        {
+          name: `Logical-${current.volumes.length + 1}`,
+          purpose: "VM datastore",
+          raid_level: "RAID6",
+          drive_bays: [],
+          spare_bays: [],
+          spare_rebuild_mode: null,
+          size_policy: "max",
+          bootable: false
+        }
+      ]
+    }));
+  }
+
+  function removeVolume(index: number) {
+    setForm((current) => ({
+      ...current,
+      volumes: current.volumes.filter((_, volumeIndex) => volumeIndex !== index)
+    }));
+  }
+
+  function useEsxiLayout() {
+    const bays = drives.map((drive) => asString(drive.bay_id)).filter(Boolean);
+    const bootBays = bays.slice(0, 2);
+    const datastoreBays = bays.slice(2);
+    const volumes: HpeRaidVolumeIntent[] = [];
+    if (bootBays.length) {
+      volumes.push({
+        name: "ESXi-OS",
+        purpose: "ESXi install",
+        raid_level: "RAID1",
+        drive_bays: bootBays,
+        spare_bays: [],
+        spare_rebuild_mode: null,
+        size_policy: "max",
+        bootable: true
+      });
+    }
+    if (datastoreBays.length) {
+      const raid6WithSpare = datastoreBays.length > 5;
+      volumes.push({
+        name: "VM-Datastore",
+        purpose: "VM datastore",
+        raid_level: datastoreBays.length >= 4 ? "RAID6" : "RAID5",
+        drive_bays: raid6WithSpare ? datastoreBays.slice(0, 5) : datastoreBays,
+        spare_bays: raid6WithSpare ? datastoreBays.slice(5) : [],
+        spare_rebuild_mode: raid6WithSpare ? "Dedicated" : null,
+        size_policy: "max",
+        bootable: false
+      });
+    }
+    setForm((current) => ({
+      ...current,
+      controller_ref: current.controller_ref || controllerValue(controllers[0]),
+      volumes
+    }));
+  }
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    await onSave(cleanHpeRaidIntent(form));
+  }
+
+  return (
+    <div className="provider-detail-section hpe-raid-setup">
+      <div className="provider-callout">
+        <strong>HPE Storage / RAID setup</strong>
+        <p>
+          Select the Smart Array controller, drive bays, and desired RAID layout for ESXi.
+          Discovery and planning are enabled here; destructive apply requires the explicit terminal confirmation path.
+        </p>
+      </div>
+      <div className="provider-fact-grid compact">
+        <ProviderFact label="Real Hardware Discovery" value={discovery?.storage_inventory_available ? "Enabled" : "Unavailable"} />
+        <ProviderFact label="Plan Preview" value={plan ? "Enabled" : "Unavailable"} />
+        <ProviderFact label="RAID Apply" value={applyAvailable ? "Available" : "Not available"} />
+        <ProviderFact label="Last Real Apply" value={labelize(asString(lastApply.status) || "never")} />
+        <ProviderFact label="Controller Count" value={String(controllers.length)} />
+        <ProviderFact label="Physical Drives" value={String(drives.length)} />
+        <ProviderFact label="Logical Drives" value={String(logicalDrives.length)} />
+        <ProviderFact label="Apply Mechanism" value={asString(applyPlan?.apply_mechanism) || "Redfish pending"} />
+      </div>
+      {savedMessage && <p className="provider-redaction-note">{savedMessage}</p>}
+      {error && (
+        <div className="provider-issue-rows">
+          <div className="provider-issue blocker">
+            <Ban size={16} />
+            <span>{error}</span>
+          </div>
+        </div>
+      )}
+      <ProviderIssueRows blockers={plan?.blockers ?? discovery?.blockers ?? []} warnings={plan?.warnings ?? discovery?.warnings ?? []} />
+      <div className="setup-preview-grid">
+        <SetupPreviewBlock
+          title="Plan Status"
+          tag={labelize(plan?.status ?? "not loaded")}
+          lines={[
+            plan?.next_safe_action ?? discovery?.next_safe_action ?? "Storage discovery has not loaded.",
+            `Destructive requested: ${presenceLabel(plan?.destructive_actions_requested)}.`,
+            `Destructive enabled: ${presenceLabel(plan?.destructive_actions_enabled)}.`
+          ]}
+        />
+        <SetupPreviewBlock
+          title="Impact Preview"
+          tag="No apply"
+          lines={[
+            `Existing logical drives to delete: ${asString(impact.logical_drives_to_delete) || "0"}.`,
+            `Selected bays: ${stringArray(impact.physical_drives_selected).join(", ") || "None"}.`,
+            `Unselected bays: ${stringArray(impact.physical_drives_not_selected).join(", ") || "None"}.`,
+            `No storage write will run: ${presenceLabel(impact.no_storage_write_will_run)}.`
+          ]}
+        />
+        <SetupPreviewBlock
+          title="Apply Path"
+          tag={applyAvailable ? "Available" : "Blocked"}
+          lines={[
+            asString(applyPlan?.message) || "Apply plan has not loaded.",
+            `Confirmation: ${asString(applyPlan?.confirmation_phrase) || "not available"}.`,
+            `Last apply report: ${asString(lastApply.report) || "not recorded"}.`,
+            ...applyBlockers.slice(0, 4)
+          ]}
+        />
+        <SetupPreviewBlock
+          title="Pending Reset"
+          tag={resetRequired ? "Reset required" : "No pending reset"}
+          lines={[
+            asString(pending?.message) || "Pending RAID state has not loaded.",
+            `Pending config exists: ${presenceLabel(pendingConfigExists)}.`,
+            `Live matches saved intent: ${presenceLabel(liveMatchesExpected)}.`,
+            `Report: ${asString((pending as Record<string, unknown> | null)?.report) || "artifacts/codex-runs/hpe-raid-pending-report.md"}.`
+          ]}
+        />
+        <SetupPreviewBlock
+          title="Reset Command"
+          tag={asBoolean(resetPlan?.apply_enabled) ? "Available" : "Gated"}
+          lines={[
+            asString(resetPlan?.message) || "Reset plan has not loaded.",
+            resetCommand || "HPE_RAID_ALLOW_RESET=true LAB_ALLOW_POWER_ACTIONS=true HPE_RAID_RESET_CONFIRM=\"RESET SERVER FOR HPE RAID APPLY\" make -C app provider-lab-server-reset-for-raid",
+            ...stringArray(resetPlan?.blockers).slice(0, 3)
+          ]}
+        />
+        <SetupPreviewBlock
+          title="After Reset Validation"
+          tag={afterResetValidation ? labelize(asString(afterResetValidation.status)) : "Not run"}
+          lines={[
+            asString(afterResetValidation?.message) || "Run validation after iLO/server returns.",
+            `Matches saved intent: ${afterResetValidation ? presenceLabel(validationMatches) : "Unknown"}.`,
+            `Report: artifacts/codex-runs/hpe-raid-after-reset-validation-report.md.`
+          ]}
+        />
+      </div>
+      <div className="form-actions provider-inline-actions">
+        <button disabled={postApplyBusy} onClick={onRefreshPostApply} type="button">
+          <RefreshCw size={16} />
+          {postApplyBusy ? "Refreshing" : "Refresh Pending State"}
+        </button>
+        <button
+          className="primary"
+          disabled={postApplyBusy}
+          onClick={onValidateAfterReset}
+          type="button"
+        >
+          <ShieldCheck size={16} />
+          {postApplyBusy ? "Validating" : "Validate After Reset"}
+        </button>
+      </div>
+      <h3>Current Controllers</h3>
+      <HpeControllerTable controllers={controllers} />
+      <h3>Current Physical Drives</h3>
+      <HpeDriveTable drives={drives} />
+      <h3>Current Logical Drives</h3>
+      <HpeLogicalDriveTable logicalDrives={logicalDrives} />
+      <Dl360RaidProfileEditor
+        drives={drives}
+        onChange={(volumes) => update("volumes", volumes)}
+        volumes={form.volumes}
+      />
+      <form className="form-grid hpe-raid-form" onSubmit={submit}>
+        <Field label="Smart Array Controller">
+          <select
+            value={form.controller_ref ?? ""}
+            onChange={(event) => update("controller_ref", event.target.value || null)}
+          >
+            <option value="">Auto / single discovered controller</option>
+            {controllers.map((controller) => (
+              <option key={controllerValue(controller)} value={controllerValue(controller)}>
+                {controllerLabel(controller)}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <label className="checkbox-row hpe-wipe-row">
+          <input
+            checked={form.wipe_existing_logical_drives}
+            onChange={(event) => update("wipe_existing_logical_drives", event.target.checked)}
+            type="checkbox"
+          />
+          <span>Plan deleting existing logical drives before creating this layout</span>
+        </label>
+        <div className="form-actions span-2">
+          <button disabled={!drives.length} onClick={useEsxiLayout} type="button">
+            <HardDrive size={16} />
+            Use ESXi Layout
+          </button>
+          <button onClick={addVolume} type="button">
+            <Plus size={16} />
+            Add RAID Volume
+          </button>
+        </div>
+        <div className="span-2 hpe-raid-volume-list">
+          {form.volumes.length === 0 && <p className="muted">No RAID volumes planned.</p>}
+          {form.volumes.map((volume, index) => (
+            <HpeRaidVolumeEditor
+              drives={drives}
+              key={`${index}-${volume.name}`}
+              onChange={(next) => updateVolume(index, next)}
+              onRemove={() => removeVolume(index)}
+              volume={volume}
+            />
+          ))}
+        </div>
+        <label className="field span-2">
+          <span>RAID Planning Notes</span>
+          <textarea
+            value={form.notes ?? ""}
+            onChange={(event) => update("notes", event.target.value)}
+          />
+        </label>
+        <div className="provider-callout span-2">
+          <strong>{applyAvailable ? "Destructive apply available from terminal" : "Destructive apply gated"}</strong>
+          <p>
+            {asString(applyPlan?.next_safe_action) ||
+              "Save layout intent and review blockers before running the terminal apply target."}
+          </p>
+        </div>
+        <div className="form-actions span-2">
+          <button disabled type="button">
+            <ShieldCheck size={16} />
+            {applyAvailable ? "Use Terminal Apply" : "Apply RAID Plan Blocked"}
+          </button>
+          <button className="primary" disabled={busy} type="submit">
+            <Save size={16} />
+            {busy ? "Saving" : "Save RAID Intent"}
+          </button>
+        </div>
+      </form>
+      {plannedVolumes.length > 0 && (
+        <>
+          <h3>Planned Volumes</h3>
+          <table className="provider-candidate-table hpe-raid-table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>RAID</th>
+                <th>Purpose</th>
+                <th>Bays</th>
+                <th>Est. Usable</th>
+              </tr>
+            </thead>
+            <tbody>
+              {plannedVolumes.map((volume) => (
+                <tr key={`${asString(volume.name)}-${asString(volume.raid_level)}`}>
+                  <td>{asString(volume.name) || "-"}</td>
+                  <td>{asString(volume.raid_level) || "-"}</td>
+                  <td>{asString(volume.purpose) || "-"}</td>
+                  <td>{stringArray(volume.drive_bays).join(", ") || "-"}</td>
+                  <td>{formatBytes(asNumber(volume.estimated_usable_capacity_bytes, 0))}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      )}
+    </div>
+  );
+}
+
+function HpeRaidVolumeEditor({
+  drives,
+  onChange,
+  onRemove,
+  volume
+}: {
+  drives: Array<Record<string, unknown>>;
+  onChange: (volume: HpeRaidVolumeIntent) => void;
+  onRemove: () => void;
+  volume: HpeRaidVolumeIntent;
+}) {
+  function update<K extends keyof HpeRaidVolumeIntent>(field: K, value: HpeRaidVolumeIntent[K]) {
+    onChange({ ...volume, [field]: value });
+  }
+
+  function toggleBay(bay: string) {
+    const nextBays = volume.drive_bays.includes(bay)
+      ? volume.drive_bays.filter((item) => item !== bay)
+      : [...volume.drive_bays, bay];
+    update("drive_bays", nextBays);
+  }
+
+  return (
+    <div className="hpe-raid-volume-editor">
+      <div className="hpe-raid-volume-grid">
+        <Field label="Volume Name">
+          <input value={volume.name} onChange={(event) => update("name", event.target.value)} />
+        </Field>
+        <Field label="Purpose">
+          <input value={volume.purpose} onChange={(event) => update("purpose", event.target.value)} />
+        </Field>
+        <Field label="RAID Level">
+          <select value={volume.raid_level} onChange={(event) => update("raid_level", event.target.value)}>
+            <option value="RAID1">RAID1</option>
+            <option value="RAID5">RAID5</option>
+            <option value="RAID6">RAID6</option>
+            <option value="RAID10">RAID10</option>
+            <option value="RAID0">RAID0</option>
+          </select>
+        </Field>
+        <Field label="Size Policy">
+          <input value={volume.size_policy} onChange={(event) => update("size_policy", event.target.value)} />
+        </Field>
+        <label className="checkbox-row">
+          <input
+            checked={volume.bootable}
+            onChange={(event) => update("bootable", event.target.checked)}
+            type="checkbox"
+          />
+          <span>Bootable volume</span>
+        </label>
+        <button onClick={onRemove} type="button">
+          <XCircle size={16} />
+          Remove Volume
+        </button>
+      </div>
+      <div className="hpe-drive-selector">
+        {drives.map((drive) => {
+          const bay = asString(drive.bay_id);
+          return (
+            <label className="hpe-drive-choice" key={bay || asString(drive.display_label)}>
+              <input
+                checked={Boolean(bay && volume.drive_bays.includes(bay))}
+                disabled={!bay}
+                onChange={() => toggleBay(bay)}
+                type="checkbox"
+              />
+              <span>
+                <strong>{asString(drive.display_label) || "Drive"}</strong>
+                {asString(drive.capacity_label)} {asString(drive.media_type)} {labelize(asString(drive.health) || "unknown")}
+              </span>
+            </label>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+type Dl360BayRole = "unused" | "os" | "datastore" | "spare";
+
+function Dl360RaidProfileEditor({
+  drives,
+  onChange,
+  volumes
+}: {
+  drives: Array<Record<string, unknown>>;
+  onChange: (volumes: HpeRaidVolumeIntent[]) => void;
+  volumes: HpeRaidVolumeIntent[];
+}) {
+  const bays = drives.map((drive) => asString(drive.bay_id)).filter(Boolean);
+  const osVolume = volumes.find((volume) => volume.name === "ESXi-OS") ?? volumes.find((volume) => volume.bootable);
+  const datastoreVolume =
+    volumes.find((volume) => volume.name === "VM-Datastore") ??
+    volumes.find((volume) => !volume.bootable && volume.purpose.toLowerCase().includes("datastore"));
+  const osBays = new Set(osVolume?.drive_bays ?? []);
+  const datastoreBays = new Set(datastoreVolume?.drive_bays ?? []);
+  const spareBays = new Set(datastoreVolume?.spare_bays ?? []);
+  const datastoreRaid = datastoreVolume?.raid_level || "RAID6";
+
+  function bayRole(bay: string): Dl360BayRole {
+    if (osBays.has(bay)) return "os";
+    if (datastoreBays.has(bay)) return "datastore";
+    if (spareBays.has(bay)) return "spare";
+    return "unused";
+  }
+
+  function setBayRole(bay: string, role: Dl360BayRole) {
+    const nextOs = new Set(osBays);
+    const nextDatastore = new Set(datastoreBays);
+    const nextSpare = new Set(spareBays);
+    nextOs.delete(bay);
+    nextDatastore.delete(bay);
+    nextSpare.delete(bay);
+    if (role === "os") nextOs.add(bay);
+    if (role === "datastore") nextDatastore.add(bay);
+    if (role === "spare") {
+      nextSpare.clear();
+      nextSpare.add(bay);
+    }
+    onChange(dl360ProfileVolumes([...nextOs], datastoreRaid, [...nextDatastore], [...nextSpare]));
+  }
+
+  function setDatastoreRaid(raidLevel: string) {
+    onChange(dl360ProfileVolumes([...osBays], raidLevel, [...datastoreBays], [...spareBays]));
+  }
+
+  function useRecommended() {
+    const nextOs = bays.slice(0, 2);
+    const data = bays.slice(2, 7);
+    const spare = bays.slice(7, 8);
+    onChange(dl360ProfileVolumes(nextOs, "RAID6", data, spare));
+  }
+
+  return (
+    <div className="provider-callout hpe-raid-profile">
+      <strong>DL360 RAID profile</strong>
+      <p>Choose the OS RAID drives, datastore RAID level, datastore drives, and one dedicated spare.</p>
+      <div className="form-actions">
+        <button disabled={bays.length < 2} onClick={useRecommended} type="button">
+          <HardDrive size={16} />
+          DL360 ESXi Profile
+        </button>
+        <Field label="Datastore RAID">
+          <select value={datastoreRaid} onChange={(event) => setDatastoreRaid(event.target.value)}>
+            <option value="RAID5">RAID5</option>
+            <option value="RAID6">RAID6</option>
+            <option value="RAID10">RAID10</option>
+            <option value="RAID1">RAID1</option>
+            <option value="RAID0">RAID0</option>
+          </select>
+        </Field>
+      </div>
+      <table className="provider-candidate-table hpe-raid-table">
+        <thead>
+          <tr>
+            <th>Bay</th>
+            <th>Capacity</th>
+            <th>Media</th>
+            <th>Assignment</th>
+          </tr>
+        </thead>
+        <tbody>
+          {drives.map((drive) => {
+            const bay = asString(drive.bay_id);
+            return (
+              <tr key={bay || asString(drive.display_label)}>
+                <td>{asString(drive.display_label) || bay || "-"}</td>
+                <td>{asString(drive.capacity_label) || "-"}</td>
+                <td>{asString(drive.media_type) || "-"}</td>
+                <td>
+                  <select
+                    disabled={!bay}
+                    value={bay ? bayRole(bay) : "unused"}
+                    onChange={(event) => setBayRole(bay, event.target.value as Dl360BayRole)}
+                  >
+                    <option value="unused">Unused</option>
+                    <option value="os">OS RAID</option>
+                    <option value="datastore">Datastore</option>
+                    <option value="spare">Dedicated spare</option>
+                  </select>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      <p className="provider-redaction-note">
+        OS bays: {[...osBays].join(", ") || "none"}; datastore bays: {[...datastoreBays].join(", ") || "none"}; spare: {[...spareBays].join(", ") || "none"}.
+      </p>
+    </div>
+  );
+}
+
+function dl360ProfileVolumes(
+  osBays: string[],
+  datastoreRaid: string,
+  datastoreBays: string[],
+  spareBays: string[],
+): HpeRaidVolumeIntent[] {
+  const volumes: HpeRaidVolumeIntent[] = [];
+  if (osBays.length) {
+    volumes.push({
+      name: "ESXi-OS",
+      purpose: "ESXi install",
+      raid_level: "RAID1",
+      drive_bays: osBays,
+      spare_bays: [],
+      spare_rebuild_mode: null,
+      size_policy: "max",
+      bootable: true
+    });
+  }
+  if (datastoreBays.length) {
+    volumes.push({
+      name: "VM-Datastore",
+      purpose: "VM datastore",
+      raid_level: datastoreRaid,
+      drive_bays: datastoreBays,
+      spare_bays: spareBays,
+      spare_rebuild_mode: spareBays.length ? "Dedicated" : null,
+      size_policy: "max",
+      bootable: false
+    });
+  }
+  return volumes;
+}
+
+function EsxiInstallReadinessPanel({
+  busy,
+  onRefresh,
+  readiness
+}: {
+  busy: boolean;
+  onRefresh: () => Promise<void>;
+  readiness: ProviderProbeResult | null;
+}) {
+  const inventory = objectValue(readiness?.inventory);
+  const virtualMedia = objectValue(readiness?.virtual_media);
+  const boot = objectValue(readiness?.boot_control);
+  const bios = objectValue(readiness?.bios);
+  const iso = objectValue(readiness?.iso);
+  const raidValidation = objectValue(readiness?.raid_validation);
+  const bootWorkflow = objectValue(readiness?.boot_workflow);
+  const mediaUrlWorkflow = objectValue(bootWorkflow.media_url);
+  const virtualMediaWorkflow = objectValue(bootWorkflow.virtual_media);
+  const oneTimeBootWorkflow = objectValue(bootWorkflow.one_time_boot);
+  const resetBootWorkflow = objectValue(bootWorkflow.reset_boot);
+  const milestones = recordArray(readiness?.milestones);
+
+  return (
+    <div className="provider-detail-section esxi-install-readiness">
+      <div className="provider-callout">
+        <strong>iLO build readiness for ESXi</strong>
+        <p>
+          Inventory, virtual media, one-time boot, BIOS discovery, and ISO readiness are checked before any install workflow.
+        </p>
+      </div>
+      <div className="provider-fact-grid compact">
+        <ProviderFact label="Status" value={labelize(asString(readiness?.status) || "not loaded")} />
+        <ProviderFact label="Server Model" value={asString(inventory.model) || "Unknown"} />
+        <ProviderFact label="Power State" value={asString(inventory.power_state) || "Unknown"} />
+        <ProviderFact label="RAID Validated" value={presenceLabel(objectValue(raidValidation).matches_saved_intent)} />
+        <ProviderFact label="Virtual Media" value={presenceLabel(virtualMedia.supported)} />
+        <ProviderFact label="One-Time Boot" value={presenceLabel(boot.one_time_boot_supported)} />
+        <ProviderFact label="BIOS Settings" value={presenceLabel(bios.settings_available)} />
+        <ProviderFact label="ESXi ISO" value={presenceLabel(iso.ready)} />
+        <ProviderFact label="Media URL" value={labelize(asString(mediaUrlWorkflow.status) || "not run")} />
+        <ProviderFact label="Virtual Media Insert" value={labelize(asString(virtualMediaWorkflow.status) || "not run")} />
+        <ProviderFact label="One-Time Boot Set" value={labelize(asString(oneTimeBootWorkflow.status) || "not run")} />
+        <ProviderFact label="Installer Boot" value={labelize(asString(resetBootWorkflow.status) || "not run")} />
+      </div>
+      <ProviderIssueRows blockers={stringArray(readiness?.blockers)} warnings={stringArray(readiness?.warnings)} />
+      <div className="setup-preview-grid">
+        <SetupPreviewBlock
+          title="Virtual Media"
+          tag={asBoolean(virtualMedia.supported) ? "Detected" : "Missing"}
+          lines={[
+            `ISO capable: ${presenceLabel(virtualMedia.iso_capable)}.`,
+            `Device count: ${String(recordArray(virtualMedia.devices).length)}.`,
+            `Collection status: ${asString(virtualMedia.collection_status) || "unknown"}.`
+          ]}
+        />
+        <SetupPreviewBlock
+          title="Boot Control"
+          tag={asBoolean(boot.one_time_boot_supported) ? "Detected" : "Missing"}
+          lines={[
+            `Current target: ${asString(boot.boot_source_override_target) || "unknown"}.`,
+            `Current override: ${asString(boot.boot_source_override_enabled) || "unknown"}.`,
+            `Evidence: ${asString(boot.one_time_boot_evidence) || "unknown"}.`,
+            `Allowed targets: ${stringArray(boot.target_allowable_values).join(", ") || "unknown"}.`
+          ]}
+        />
+        <SetupPreviewBlock
+          title="ISO Readiness"
+          tag={asBoolean(iso.ready) ? "Ready" : "Missing"}
+          lines={[
+            `Media inventory mode: ${asString(iso.media_inventory_mode) || "unknown"}.`,
+            `ISO count: ${asString(iso.iso_count) || "0"}.`,
+            `Selected placeholder: ${asString(iso.selected_placeholder) || "none"}.`
+          ]}
+        />
+        <SetupPreviewBlock
+          title="Media URL"
+          tag={labelize(asString(mediaUrlWorkflow.status) || "Not run")}
+          lines={[
+            asString(mediaUrlWorkflow.message) || "Media URL validation has not run.",
+            `Report: ${asString(mediaUrlWorkflow.report) || "artifacts/codex-runs/esxi-media-url-report.md"}`
+          ]}
+        />
+        <SetupPreviewBlock
+          title="Inserted Media"
+          tag={labelize(asString(virtualMediaWorkflow.status) || "Not run")}
+          lines={[
+            asString(virtualMediaWorkflow.message) || "Virtual media insert has not run.",
+            `Report: ${asString(virtualMediaWorkflow.report) || "artifacts/codex-runs/esxi-virtual-media-report.md"}`
+          ]}
+        />
+        <SetupPreviewBlock
+          title="Boot And Installer"
+          tag={labelize(asString(resetBootWorkflow.status) || asString(oneTimeBootWorkflow.status) || "Not run")}
+          lines={[
+            `One-time boot: ${labelize(asString(oneTimeBootWorkflow.status) || "not run")}.`,
+            asString(oneTimeBootWorkflow.message) || "One-time boot target has not run.",
+            `Reset/boot: ${labelize(asString(resetBootWorkflow.status) || "not run")}.`,
+            asString(resetBootWorkflow.message) || "Reset/installer detection has not run.",
+            `Report: ${asString(resetBootWorkflow.report) || "artifacts/codex-runs/esxi-installer-boot-report.md"}`
+          ]}
+        />
+        <SetupPreviewBlock
+          title="BIOS / Boot Settings"
+          tag={asBoolean(bios.settings_available) ? "Readable" : "Unavailable"}
+          lines={[
+            `BIOS version: ${asString(bios.bios_version) || "unknown"}.`,
+            `BIOS status: ${asString(bios.bios_status) || "unknown"}.`,
+            `Attribute count: ${asString(bios.attribute_count) || "0"}.`
+          ]}
+        />
+      </div>
+      {milestones.length > 0 && (
+        <>
+          <h3>Build Milestones</h3>
+          <div className="setup-preview-grid">
+            {milestones.map((milestone) => (
+              <SetupPreviewBlock
+                key={asString(milestone.id) || asString(milestone.label)}
+                title={asString(milestone.label) || "Milestone"}
+                tag={labelize(asString(milestone.status) || "unknown")}
+                lines={[asString(milestone.id) || ""]}
+              />
+            ))}
+          </div>
+        </>
+      )}
+      <div className="form-actions provider-inline-actions">
+        <button disabled={busy} onClick={onRefresh} type="button">
+          <RefreshCw size={16} />
+          {busy ? "Checking" : "Refresh ESXi Readiness"}
+        </button>
+      </div>
+      <p className="provider-redaction-note">
+        Report: {asString(readiness?.report) || "artifacts/codex-runs/esxi-install-readiness-report.md"}
+      </p>
+    </div>
+  );
+}
+
+function HpeControllerTable({ controllers }: { controllers: Array<Record<string, unknown>> }) {
+  if (!controllers.length) {
+    return <p className="muted">No Smart Array controller inventory is cached yet.</p>;
+  }
+  return (
+    <table className="provider-candidate-table hpe-raid-table">
+      <thead>
+        <tr>
+          <th>Controller</th>
+          <th>Mode</th>
+          <th>Cache</th>
+          <th>Health</th>
+        </tr>
+      </thead>
+      <tbody>
+        {controllers.map((controller) => (
+          <tr key={controllerValue(controller)}>
+            <td>{controllerLabel(controller)}</td>
+            <td>{asString(controller.CurrentOperatingMode) || "-"}</td>
+            <td>{asString(controller.CacheMemorySizeMiB) || "-"}</td>
+            <td>{statusHealth(controller)}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+function HpeDriveTable({ drives }: { drives: Array<Record<string, unknown>> }) {
+  if (!drives.length) {
+    return <p className="muted">No physical drive inventory is cached yet.</p>;
+  }
+  return (
+    <table className="provider-candidate-table hpe-raid-table">
+      <thead>
+        <tr>
+          <th>Bay</th>
+          <th>Capacity</th>
+          <th>Media</th>
+          <th>Interface</th>
+          <th>Health</th>
+        </tr>
+      </thead>
+      <tbody>
+        {drives.map((drive) => (
+          <tr key={asString(drive.bay_id) || asString(drive.display_label)}>
+            <td>{asString(drive.display_label) || "-"}</td>
+            <td>{asString(drive.capacity_label) || "-"}</td>
+            <td>{asString(drive.media_type) || asString(drive.MediaType) || "-"}</td>
+            <td>{asString(drive.InterfaceType) || asString(drive.Protocol) || "-"}</td>
+            <td>{asString(drive.health) || statusHealth(drive)}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+function HpeLogicalDriveTable({ logicalDrives }: { logicalDrives: Array<Record<string, unknown>> }) {
+  if (!logicalDrives.length) {
+    return <p className="muted">No existing logical drives are cached yet.</p>;
+  }
+  return (
+    <table className="provider-candidate-table hpe-raid-table">
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>RAID</th>
+          <th>Capacity</th>
+          <th>Bootable</th>
+          <th>Health</th>
+        </tr>
+      </thead>
+      <tbody>
+        {logicalDrives.map((logicalDrive) => (
+          <tr key={asString(logicalDrive.display_label)}>
+            <td>{asString(logicalDrive.display_label) || "-"}</td>
+            <td>{asString(logicalDrive.raid_level) || "-"}</td>
+            <td>{asString(logicalDrive.capacity_label) || "-"}</td>
+            <td>{presenceLabel(logicalDrive.Bootable)}</td>
+            <td>{asString(logicalDrive.health) || statusHealth(logicalDrive)}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
   );
 }
 
@@ -3835,6 +5157,52 @@ function providerIcon(provider: ProviderStatus) {
   return <HardDrive size={18} />;
 }
 
+function buildProviderSections(providers: ProviderStatus[]): ProviderSection[] {
+  const sectionDefinitions: Array<Omit<ProviderSection, "providerIds" | "status"> & { ids: string[] }> = [
+    { id: "ilo", label: "iLO", ids: ["ilo-redfish"] },
+    { id: "cisco", label: "Cisco", ids: ["cisco-console", "cisco-ansible"] },
+    { id: "esxi", label: "ESXi", ids: ["esxi-readonly"] },
+    { id: "netapp", label: "NetApp", ids: ["netapp-ontap"] }
+  ];
+  const assignedIds = new Set(sectionDefinitions.flatMap((section) => section.ids));
+  const sections = sectionDefinitions
+    .map((section) => {
+      const sectionProviders = providers.filter((provider) => section.ids.includes(provider.id));
+      return {
+        id: section.id,
+        label: section.label,
+        providerIds: sectionProviders.map((provider) => provider.id),
+        status: providerSectionStatus(sectionProviders)
+      };
+    })
+    .filter((section) => section.providerIds.length > 0);
+  const otherProviders = providers.filter((provider) => !assignedIds.has(provider.id));
+  if (otherProviders.length > 0) {
+    sections.push({
+      id: "other",
+      label: "Other",
+      providerIds: otherProviders.map((provider) => provider.id),
+      status: providerSectionStatus(otherProviders)
+    });
+  }
+  return sections;
+}
+
+function providerSectionStatus(providers: ProviderStatus[]): string {
+  if (!providers.length) return "missing-config";
+  const statuses = providers.map((provider) => provider.status);
+  if (statuses.some((status) => ["failed", "blocked", "unavailable"].includes(status))) {
+    return statuses.find((status) => ["failed", "blocked", "unavailable"].includes(status)) ?? "blocked";
+  }
+  if (statuses.some((status) => ["missing-config", "missing-console", "needs-selection", "planned-target", "awaiting-bootstrap"].includes(status))) {
+    return statuses.find((status) => ["missing-config", "missing-console", "needs-selection", "planned-target", "awaiting-bootstrap"].includes(status)) ?? "warning";
+  }
+  if (statuses.some((status) => status === "ready" || status === "ok" || status === "available")) {
+    return "ready";
+  }
+  return statuses[0] ?? "configured";
+}
+
 function providerOrder(id: string): number {
   const order = [
     "ilo-redfish",
@@ -3908,6 +5276,142 @@ function bootstrapRequirementsForm(
     local_admin_username_reference: asString(localAdmin.reference) || null,
     operator_notes: asString(operatorNotes.value) || null
   };
+}
+
+function iloSetupIntentForm(intent: IloSetupIntent | null): IloSetupIntentWrite {
+  return {
+    network: {
+      hostname: intent?.network.hostname ?? "",
+      management_ip: intent?.network.management_ip ?? "",
+      subnet_mask_or_prefix: intent?.network.subnet_mask_or_prefix ?? "",
+      gateway: intent?.network.gateway ?? "",
+      vlan: intent?.network.vlan ?? ""
+    },
+    users: intent?.users.length
+      ? intent.users.map((user) => ({
+          username_label: user.username_label,
+          role: user.role
+        }))
+      : [],
+    snmp: {
+      enabled: intent?.snmp.enabled ?? false,
+      destinations: intent?.snmp.destinations ?? [],
+      community_or_user_ref_labels: intent?.snmp.community_or_user_ref_labels ?? []
+    },
+    time: {
+      timezone: intent?.time.timezone ?? "",
+      ntp_servers: intent?.time.ntp_servers ?? []
+    },
+    dns_domain: {
+      domain_name: intent?.dns_domain.domain_name ?? "",
+      dns_servers: intent?.dns_domain.dns_servers ?? []
+    },
+    notes: intent?.notes ?? ""
+  };
+}
+
+function cleanIloSetupIntent(form: IloSetupIntentWrite): IloSetupIntentWrite {
+  return {
+    network: {
+      hostname: blankToNull(form.network.hostname),
+      management_ip: blankToNull(form.network.management_ip),
+      subnet_mask_or_prefix: blankToNull(form.network.subnet_mask_or_prefix),
+      gateway: blankToNull(form.network.gateway),
+      vlan: blankToNull(form.network.vlan)
+    },
+    users: form.users
+      .map((user) => ({
+        username_label: user.username_label.trim(),
+        role: user.role.trim()
+      }))
+      .filter((user) => user.username_label && user.role),
+    snmp: {
+      enabled: form.snmp.enabled,
+      destinations: form.snmp.destinations.map((item) => item.trim()).filter(Boolean),
+      community_or_user_ref_labels: form.snmp.community_or_user_ref_labels
+        .map((item) => item.trim())
+        .filter(Boolean)
+    },
+    time: {
+      timezone: blankToNull(form.time.timezone),
+      ntp_servers: form.time.ntp_servers.map((item) => item.trim()).filter(Boolean)
+    },
+    dns_domain: {
+      domain_name: blankToNull(form.dns_domain.domain_name),
+      dns_servers: form.dns_domain.dns_servers.map((item) => item.trim()).filter(Boolean)
+    },
+    notes: blankToNull(form.notes)
+  };
+}
+
+function hpeRaidIntentForm(intent: HpeRaidIntent | null): HpeRaidIntentWrite {
+  return {
+    controller_ref: intent?.controller_ref ?? "",
+    wipe_existing_logical_drives: intent?.wipe_existing_logical_drives ?? false,
+    volumes: intent?.volumes.length
+      ? intent.volumes.map((volume) => ({
+          name: volume.name,
+          purpose: volume.purpose,
+          raid_level: volume.raid_level,
+          drive_bays: volume.drive_bays,
+          spare_bays: volume.spare_bays ?? [],
+          spare_rebuild_mode: volume.spare_rebuild_mode ?? null,
+          size_policy: volume.size_policy,
+          bootable: volume.bootable
+        }))
+      : [],
+    notes: intent?.notes ?? ""
+  };
+}
+
+function cleanHpeRaidIntent(form: HpeRaidIntentWrite): HpeRaidIntentWrite {
+  return {
+    controller_ref: blankToNull(form.controller_ref),
+    wipe_existing_logical_drives: form.wipe_existing_logical_drives,
+    volumes: form.volumes
+      .map((volume) => ({
+        name: volume.name.trim(),
+        purpose: volume.purpose.trim(),
+        raid_level: volume.raid_level.trim(),
+        drive_bays: volume.drive_bays.map((bay) => bay.trim()).filter(Boolean),
+        spare_bays: (volume.spare_bays ?? []).map((bay) => bay.trim()).filter(Boolean),
+        spare_rebuild_mode: blankToNull(volume.spare_rebuild_mode),
+        size_policy: volume.size_policy.trim() || "max",
+        bootable: volume.bootable
+      }))
+      .filter((volume) => volume.name && volume.purpose && volume.raid_level),
+    notes: blankToNull(form.notes)
+  };
+}
+
+function controllerValue(controller: Record<string, unknown> | undefined): string {
+  if (!controller) return "";
+  return (
+    asString(controller["@odata.id"]) ||
+    asString(controller.Id) ||
+    asString(controller.Name) ||
+    controllerLabel(controller)
+  );
+}
+
+function controllerLabel(controller: Record<string, unknown> | undefined): string {
+  if (!controller) return "Controller";
+  return (
+    asString(controller.Name) ||
+    asString(controller.Model) ||
+    asString(controller.Id) ||
+    "Controller"
+  );
+}
+
+function statusHealth(item: Record<string, unknown>): string {
+  const status = objectValue(item.Status);
+  return asString(status.Health) || asString(status.State) || asString(item.health) || "unknown";
+}
+
+function blankToNull(value: string | null): string | null {
+  const trimmed = (value ?? "").trim();
+  return trimmed ? trimmed : null;
 }
 
 function splitCsvInput(value: string): string[] {
@@ -4050,6 +5554,9 @@ function mockModeBannerMessage(providerMode: string, verifiedMock: boolean, hasE
   }
   if (providerMode === "local-readonly") {
     return "Real lab read-only mode. Lifecycle execution remains mock-only; Provider Status probes require explicit actions and local safety acknowledgements.";
+  }
+  if (providerMode === "local-lab-readwrite") {
+    return "Real lab read/write mode. Discovery, planning, and explicitly gated apply workflows are available only through local-lab controls and confirmation gates.";
   }
   return "Verifying backend provider mode; local workflow pages require mock mode.";
 }

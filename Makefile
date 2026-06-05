@@ -1,4 +1,4 @@
-.PHONY: check-repo-root codex-audit codex-task codex-next codex-resume test dev lint provider-smoke netapp-real-readiness app-start app-stop app-restart app-status app-check
+.PHONY: check-repo-root codex-audit codex-task codex-next codex-resume test dev lint provider-smoke provider-smoke-ilo-readonly provider-smoke-ilo-local-lab provider-inventory-ilo-local-lab provider-lab-ilo-reachability provider-lab-ilo-authentication provider-lab-ilo-inventory provider-lab-ilo-readiness provider-lab-hpe-storage-discovery provider-lab-hpe-raid-discovery provider-lab-hpe-raid-plan provider-lab-hpe-raid-apply provider-lab-hpe-raid-validate-after-reset provider-lab-esxi-install-readiness provider-lab-esxi-media-url provider-lab-esxi-insert-virtual-media provider-lab-esxi-one-time-boot provider-lab-esxi-reset-installer-boot provider-lab-esxi-detect-installer provider-lab-cisco-console-ethernet-readiness netapp-real-readiness app-start app-stop app-restart app-status app-check
 
 REPO_ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 TASK ?= .codex/tasks/001-backend-vm-request-lifecycle.md
@@ -63,6 +63,62 @@ smoke: backend-smoke
 
 provider-smoke: check-repo-root
 	$(MAKE) -C $(REPO_ROOT)/app provider-smoke PROVIDER_MODE="$(PROVIDER_MODE)"
+
+provider-smoke-ilo-readonly: check-repo-root
+	$(MAKE) -C $(REPO_ROOT)/app provider-smoke PROVIDER_MODE=local-readonly PROVIDER_SMOKE_PROVIDERS=ilo-redfish
+
+provider-smoke-ilo-local-lab: check-repo-root
+	$(MAKE) -C $(REPO_ROOT)/app provider-smoke PROVIDER_MODE=local-lab-readwrite PROVIDER_SMOKE_PROVIDERS=ilo-redfish
+
+provider-inventory-ilo-local-lab: provider-smoke-ilo-local-lab
+
+provider-lab-ilo-reachability: check-repo-root
+	$(MAKE) -C $(REPO_ROOT)/app provider-lab-ilo-reachability
+
+provider-lab-ilo-authentication: check-repo-root
+	$(MAKE) -C $(REPO_ROOT)/app provider-lab-ilo-authentication
+
+provider-lab-ilo-inventory: check-repo-root
+	$(MAKE) -C $(REPO_ROOT)/app provider-lab-ilo-inventory
+
+provider-lab-ilo-readiness: check-repo-root
+	$(MAKE) -C $(REPO_ROOT)/app provider-lab-ilo-readiness
+
+provider-lab-hpe-storage-discovery: check-repo-root
+	$(MAKE) -C $(REPO_ROOT)/app provider-lab-hpe-storage-discovery
+
+provider-lab-hpe-raid-discovery: check-repo-root
+	$(MAKE) -C $(REPO_ROOT)/app provider-lab-hpe-raid-discovery
+
+provider-lab-hpe-raid-plan: check-repo-root
+	$(MAKE) -C $(REPO_ROOT)/app provider-lab-hpe-raid-plan
+
+provider-lab-hpe-raid-apply: check-repo-root
+	$(MAKE) -C $(REPO_ROOT)/app provider-lab-hpe-raid-apply
+
+provider-lab-hpe-raid-validate-after-reset: check-repo-root
+	$(MAKE) -C $(REPO_ROOT)/app provider-lab-hpe-raid-validate-after-reset
+
+provider-lab-esxi-install-readiness: check-repo-root
+	$(MAKE) -C $(REPO_ROOT)/app provider-lab-esxi-install-readiness
+
+provider-lab-esxi-media-url: check-repo-root
+	$(MAKE) -C $(REPO_ROOT)/app provider-lab-esxi-media-url
+
+provider-lab-esxi-insert-virtual-media: check-repo-root
+	$(MAKE) -C $(REPO_ROOT)/app provider-lab-esxi-insert-virtual-media
+
+provider-lab-esxi-one-time-boot: check-repo-root
+	$(MAKE) -C $(REPO_ROOT)/app provider-lab-esxi-one-time-boot
+
+provider-lab-esxi-reset-installer-boot: check-repo-root
+	$(MAKE) -C $(REPO_ROOT)/app provider-lab-esxi-reset-installer-boot
+
+provider-lab-esxi-detect-installer: check-repo-root
+	$(MAKE) -C $(REPO_ROOT)/app provider-lab-esxi-detect-installer
+
+provider-lab-cisco-console-ethernet-readiness: check-repo-root
+	$(MAKE) -C $(REPO_ROOT)/app provider-lab-cisco-console-ethernet-readiness
 
 netapp-real-readiness: check-repo-root
 	$(MAKE) -C $(REPO_ROOT)/app netapp-real-readiness PROVIDER_MODE="$(PROVIDER_MODE)"
