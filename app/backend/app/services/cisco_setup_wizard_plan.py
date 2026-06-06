@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.core.config import settings
+from app.core.config import LAB_CISCO_MANAGEMENT_IP, settings
 from app.providers.cisco_console import PROVIDER_ID as CISCO_CONSOLE_PROVIDER_ID
 from app.providers.probe_cache import get_probe_result
 
@@ -21,7 +21,7 @@ WHY_BLOCKED = [
 ]
 FUTURE_GUARDED_PLAN_PREVIEW = [
     "Confirm the selected console path.",
-    "Confirm the intended management IP is 192.168.1.220.",
+    f"Confirm the intended management IP is {LAB_CISCO_MANAGEMENT_IP}.",
     (
         "Confirm management gateway, subnet, VLAN/default interface strategy, username policy, "
         "SSH/SCP policy, and save behavior."

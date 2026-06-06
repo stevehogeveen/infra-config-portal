@@ -14,6 +14,14 @@ def test_health(client: TestClient) -> None:
     assert response.json()["status"] == "ok"
 
 
+def test_build_verification_endpoint_returns_status(client: TestClient) -> None:
+    response = client.get("/api/v1/lab/build-verification")
+
+    assert response.status_code == 200
+    assert response.json()["provider_id"] == "build-verification"
+    assert "status" in response.json()
+
+
 def test_vm_deploy_api_flow(client: TestClient, vm_payload: dict) -> None:
     created = client.post("/api/v1/requests/vm-deploy", json=vm_payload)
     assert created.status_code == 201
@@ -141,6 +149,34 @@ def test_cancel_draft_request_api_flow(client: TestClient, vm_payload: dict) -> 
     assert audit_events.status_code == 200
     event_types = {event["event_type"] for event in audit_events.json()}
     assert "request.cancelled" in event_types
+
+
+def test_reject_request_api_flow(client: TestClient, vm_payload: dict) -> None:
+    created = client.post("/api/v1/requests/vm-deploy", json=vm_payload)
+    assert created.status_code == 201
+    request_id = created.json()["id"]
+
+    submitted = client.post(f"/api/v1/requests/{request_id}/submit")
+    assert submitted.status_code == 200
+    assert submitted.json()["status"] == "needs_approval"
+
+    rejected = client.post(
+        f"/api/v1/requests/{request_id}/reject",
+        json={"approver": "change.manager", "notes": "Rejected in API test"},
+    )
+    assert rejected.status_code == 200
+    assert rejected.json()["status"] == "rejected"
+
+    approved = client.post(
+        f"/api/v1/requests/{request_id}/approve",
+        json={"approver": "change.manager", "notes": "Too late"},
+    )
+    assert approved.status_code == 409
+
+    audit_events = client.get("/api/v1/audit-events")
+    assert audit_events.status_code == 200
+    event_types = {event["event_type"] for event in audit_events.json()}
+    assert "request.rejected" in event_types
 
 
 def test_update_request_api_allows_draft_patch_and_records_audit(
@@ -347,6 +383,100 @@ def test_provider_status_reports_mock_and_preview_providers(client: TestClient) 
     assert all("safe_actions" in item and "disabled_actions" in item for item in statuses)
 
 
+def test_merged_provider_preview_endpoints_smoke_in_mock_mode(client: TestClient) -> None:
+    endpoint_expectations = [
+        (
+            "/api/v1/providers/ilo-redfish/upgrade-readiness",
+            "ilo-redfish",
+            ["apply_enabled", "blockers", "warnings"],
+        ),
+        (
+            "/api/v1/providers/ilo-redfish/readiness-summary",
+            "ilo-redfish",
+            ["desired_setup_sections", "blockers", "warnings", "disabled_dangerous_actions"],
+        ),
+        (
+            "/api/v1/providers/ilo-redfish/setup-plan-preview",
+            "ilo-redfish",
+            ["apply_enabled", "sections", "blockers", "warnings", "disabled_dangerous_actions"],
+        ),
+        (
+            "/api/v1/providers/ilo-redfish/report-preview",
+            "ilo-redfish",
+            ["apply_enabled", "setup_compare_report", "blockers", "warnings"],
+        ),
+        (
+            "/api/v1/providers/ilo-redfish/setup-apply-plan",
+            "ilo-redfish-setup-apply",
+            ["apply_enabled", "operations", "blockers", "confirmation_phrase"],
+        ),
+        (
+            "/api/v1/providers/cisco/setup-readiness",
+            "cisco-setup",
+            ["blockers", "warnings", "disabled_actions", "next_safe_action"],
+        ),
+        (
+            "/api/v1/providers/cisco/setup-wizard-plan",
+            "cisco-setup-wizard-plan",
+            ["apply_enabled", "blockers", "warnings", "disabled_actions"],
+        ),
+        (
+            "/api/v1/providers/cisco/bootstrap-requirements",
+            "cisco-bootstrap-requirements",
+            ["apply_enabled", "blockers", "warnings", "disabled_actions"],
+        ),
+        (
+            "/api/v1/providers/cisco/console-bootstrap/plan",
+            "cisco-console-bootstrap",
+            ["apply_enabled", "blockers", "warnings", "destructive_actions_disabled"],
+        ),
+        (
+            "/api/v1/providers/netapp-ontap/plan-preview",
+            "netapp-ontap",
+            ["apply_enabled", "blockers", "warnings", "disabled_actions"],
+        ),
+        (
+            "/api/v1/providers/netapp-ontap/console-readiness",
+            "netapp-ontap",
+            ["apply_enabled", "blockers", "warnings", "disabled_actions"],
+        ),
+        (
+            "/api/v1/providers/netapp-ontap/readiness-comparison",
+            "netapp-ontap",
+            ["apply_enabled", "blockers", "warnings", "disabled_actions"],
+        ),
+        (
+            "/api/v1/providers/netapp-ontap/upgrade-readiness",
+            "netapp-ontap",
+            ["apply_enabled", "blockers", "warnings", "disabled_actions"],
+        ),
+    ]
+
+    for path, provider_id, required_keys in endpoint_expectations:
+        response = client.get(path)
+
+        assert response.status_code == 200, path
+        payload = response.json()
+        assert payload["provider_id"] == provider_id
+        for key in required_keys:
+            assert key in payload, f"{path} missing {key}"
+
+
+def test_ilo_setup_apply_endpoint_blocked_by_default(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/providers/ilo-redfish/setup-apply",
+        json={"confirmation_phrase": "APPLY ILO HOSTNAME SETUP"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["provider_id"] == "ilo-redfish-setup-apply"
+    assert payload["status"] == "blocked"
+    assert payload["patch_attempted"] is False
+    assert payload["patch_count"] == 0
+    assert any("PROVIDER_MODE=local-lab-readwrite" in blocker for blocker in payload["blockers"])
+
+
 def test_cisco_setup_readiness_endpoint_is_read_only_preview(client: TestClient) -> None:
     response = client.get("/api/v1/providers/cisco/setup-readiness")
 
@@ -413,7 +543,7 @@ def test_cisco_bootstrap_requirements_endpoint_returns_preview_only(
     payload = response.json()
     assert payload["provider_id"] == "cisco-bootstrap-requirements"
     assert payload["apply_enabled"] is False
-    assert payload["requirements"]["planned_management_ip"]["value"] == "192.168.1.220"
+    assert payload["requirements"]["planned_management_ip"]["value"] == "192.168.1.204"
     assert payload["requirements"]["local_admin_username"]["presence_only"] is True
     assert payload["requirements"]["ssh_scp_policy"]["planned_only"] is True
     assert payload["requirements"]["ssh_scp_policy"]["apply_enabled"] is False
@@ -440,7 +570,7 @@ def test_cisco_bootstrap_requirements_update_saves_preview_only(
     response = client.put(
         "/api/v1/providers/cisco/bootstrap-requirements",
         json={
-            "planned_management_ip": "192.168.1.220",
+            "planned_management_ip": "192.168.1.204",
             "subnet_prefix": "/24",
             "gateway": "192.168.1.1",
             "management_vlan": "8",
@@ -461,7 +591,7 @@ def test_cisco_bootstrap_requirements_update_saves_preview_only(
     assert payload["provider_id"] == "cisco-bootstrap-requirements"
     assert payload["status"] == "preview"
     assert payload["apply_enabled"] is False
-    assert payload["requirements"]["planned_management_ip"]["value"] == "192.168.1.220"
+    assert payload["requirements"]["planned_management_ip"]["value"] == "192.168.1.204"
     assert payload["requirements"]["local_admin_username"]["value"] == "configured"
     assert payload["requirements"]["ssh_scp_policy"]["planned_only"] is True
     assert payload["requirements"]["ssh_scp_policy"]["apply_enabled"] is False
@@ -508,12 +638,12 @@ def test_cisco_console_bootstrap_plan_endpoint_is_preview_only(
     assert response.status_code == 200
     payload = response.json()
     assert payload["provider_id"] == "cisco-console-bootstrap"
-    assert payload["target"]["required_ip"] == "192.168.1.220"
+    assert payload["target"]["required_ip"] == "192.168.1.204"
     assert payload["target"]["required_prefix"] == "/24"
     assert payload["target"]["netmask"] == "255.255.255.0"
     assert payload["apply_enabled"] is False
     assert payload["execution_supported"] is False
-    assert payload["confirmation_phrase"] == "APPLY CISCO CONSOLE BOOTSTRAP 192.168.1.220"
+    assert payload["confirmation_phrase"] == "APPLY CISCO CONSOLE BOOTSTRAP 192.168.1.204"
     assert "write erase" in payload["destructive_actions_disabled"]
     assert "erase startup-config" in payload["destructive_actions_disabled"]
     assert "reload" in payload["destructive_actions_disabled"]
@@ -524,7 +654,7 @@ def test_cisco_console_bootstrap_apply_endpoint_blocked_by_default(
 ) -> None:
     response = client.post(
         "/api/v1/providers/cisco/console-bootstrap/apply",
-        json={"confirmation_phrase": "APPLY CISCO CONSOLE BOOTSTRAP 192.168.1.220"},
+        json={"confirmation_phrase": "APPLY CISCO CONSOLE BOOTSTRAP 192.168.1.204"},
     )
 
     assert response.status_code == 200

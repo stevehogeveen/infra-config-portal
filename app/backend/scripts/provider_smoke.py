@@ -16,21 +16,12 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 REAL_LAB_ENV = REPO_ROOT / ".env.local.real-lab"
 REPORT_DIR = REPO_ROOT / "artifacts" / "real-lab"
 CONNECT_TIMEOUT_SECONDS = 3.0
-REQUIRED_ENV_NAMES = (
-    "LAB_CLOSED_LOOP_ACK",
-    "LAB_READONLY_ACK",
-    "LAB_DESTRUCTIVE_ACK",
-    "ILO_TEST_HOST",
-    "ILO_TEST_USERNAME",
-    "ILO_TEST_PASSWORD",
-    "ESXI_CONFIGURED",
-    "ESXI_TEST_HOST",
-    "ESXI_TEST_USERNAME",
-    "ESXI_TEST_PASSWORD",
-    "CISCO_MGMT_CONFIGURED",
-    "CISCO_TARGET_IP",
-    "CISCO_TEST_USERNAME",
-    "CISCO_TEST_PASSWORD",
+PROVIDER_SMOKE_PROVIDERS_ENV = "PROVIDER_SMOKE_PROVIDERS"
+PROVIDER_IDS = (
+    "ilo-redfish",
+    "cisco-console",
+    "cisco-ansible",
+    "esxi-readonly",
 )
 
 if REAL_LAB_ENV.exists():
@@ -40,6 +31,7 @@ if REAL_LAB_ENV.exists():
         os.environ[key] = value
 
 from app.core.config import settings
+from app.providers.action_policy import LOCAL_LAB_MODE, LOCAL_READONLY_MODE, current_lab_action_policy
 from app.providers.cisco_ansible import CiscoAnsibleAdapter
 from app.providers.cisco_console import CiscoConsoleAdapter
 from app.providers.esxi_readonly import EsxiReadonlyAdapter
@@ -50,11 +42,14 @@ from app.providers.registry import ProviderRegistryError, provider_registry
 
 
 def main() -> int:
+    selected_provider_ids = _selected_provider_ids()
+    real_probe_modes = {LOCAL_READONLY_MODE, LOCAL_LAB_MODE}
     print(f"provider_mode={settings.provider_mode}")
     report: dict[str, Any] = {
         "checked_at": datetime.now(UTC).isoformat(),
         "provider_mode": settings.provider_mode,
-        "preflight": _preflight_summary(),
+        "selected_providers": selected_provider_ids,
+        "preflight": _preflight_summary(selected_provider_ids),
         "guarded_rebuild_planning": _guarded_rebuild_planning(),
         "provider_status": [],
         "probes": [],
@@ -65,13 +60,19 @@ def main() -> int:
     }
     print(json.dumps(redact_sensitive(report["preflight"], _redaction_values()), indent=2))
 
-    try:
-        statuses = provider_registry().statuses()
-    except ProviderRegistryError as exc:
-        print(f"provider_status=blocked message={exc}")
-        report["provider_status_error"] = str(exc)
-        _write_report(report)
-        return 0
+    if set(selected_provider_ids) == set(PROVIDER_IDS):
+        try:
+            statuses = provider_registry().statuses()
+        except ProviderRegistryError as exc:
+            print(f"provider_status=blocked message={exc}")
+            report["provider_status_error"] = str(exc)
+            _write_report(report)
+            return 0
+    else:
+        statuses = [
+            _provider_adapter(provider_id).health()
+            for provider_id in selected_provider_ids
+        ]
 
     status_payload = [_status_summary(_to_dict(status)) for status in statuses]
     report["provider_status"] = status_payload
@@ -98,21 +99,44 @@ def main() -> int:
             )
         )
 
-    if settings.provider_mode != "local-readonly":
-        print("probes=skipped reason=PROVIDER_MODE is not local-readonly")
+    if settings.provider_mode not in real_probe_modes:
+        print("probes=skipped reason=PROVIDER_MODE is not local-readonly or local-lab-readwrite")
         _write_report(report)
         return 0
 
-    for provider_id, adapter in (
-        ("ilo-redfish", IloRedfishAdapter()),
-        ("cisco-console", CiscoConsoleAdapter()),
-        ("cisco-ansible", CiscoAnsibleAdapter()),
-        ("esxi-readonly", EsxiReadonlyAdapter()),
-    ):
-        report["probes"].append(_run_optional_probe(provider_id, adapter))
+    for provider_id in selected_provider_ids:
+        report["probes"].append(_run_optional_probe(provider_id, _provider_adapter(provider_id)))
 
     _write_report(report)
     return 0
+
+
+def _selected_provider_ids() -> list[str]:
+    requested = os.getenv(PROVIDER_SMOKE_PROVIDERS_ENV)
+    if not requested:
+        return list(PROVIDER_IDS)
+
+    provider_ids = [item.strip() for item in requested.split(",") if item.strip()]
+    unknown = sorted(set(provider_ids) - set(PROVIDER_IDS))
+    if unknown:
+        valid = ", ".join(PROVIDER_IDS)
+        raise SystemExit(
+            f"Unknown {PROVIDER_SMOKE_PROVIDERS_ENV} value(s): {', '.join(unknown)}. "
+            f"Valid values: {valid}."
+        )
+    return provider_ids
+
+
+def _provider_adapter(provider_id: str) -> Any:
+    if provider_id == "ilo-redfish":
+        return IloRedfishAdapter()
+    if provider_id == "cisco-console":
+        return CiscoConsoleAdapter()
+    if provider_id == "cisco-ansible":
+        return CiscoAnsibleAdapter()
+    if provider_id == "esxi-readonly":
+        return EsxiReadonlyAdapter()
+    raise ValueError(f"Unknown provider id: {provider_id}")
 
 
 def _run_optional_probe(provider_id: str, adapter: Any) -> dict[str, Any]:
@@ -152,41 +176,109 @@ def _run_optional_probe(provider_id: str, adapter: Any) -> dict[str, Any]:
     return summary
 
 
-def _preflight_summary() -> dict[str, Any]:
+def _preflight_summary(provider_ids: list[str] | None = None) -> dict[str, Any]:
+    provider_ids = provider_ids or list(PROVIDER_IDS)
     safety = current_lab_safety()
-    return {
+    action_policy = current_lab_action_policy()
+    summary = {
         "env_file": {
             "path": ".env.local.real-lab",
             "exists": REAL_LAB_ENV.exists(),
             "mode": _file_mode(REAL_LAB_ENV),
         },
-        "required_env": _required_env_summary(),
-        "safety": safety.as_flags(),
+        "required_env": _required_env_summary(provider_ids),
+        "safety": _legacy_safety_summary(safety),
+        "action_policy": action_policy.status_summary(),
         "dangerous_mode": "enabled" if safety.destructive_allowed else "disabled",
-        "tool_availability": {
-            "ansible": shutil.which("ansible") is not None,
-            "ansible-inventory": shutil.which("ansible-inventory") is not None,
-            "python": shutil.which("python3") is not None,
-        },
-        "serial_candidates": _serial_candidate_summary(),
-        "targets": {
-            "ilo": {"configured": bool(settings.ilo_test_host)},
-            "esxi": {
-                "configured": settings.esxi_configured,
-                "planned_target": bool(settings.esxi_test_host),
-            },
-            "cisco": {
-                "management_configured": settings.cisco_mgmt_configured,
-                "planned_target": bool(settings.cisco_target_ip),
-                "console_discovery": "always",
-            },
-        },
-        "tcp_preflight": _tcp_preflight(),
+        "tool_availability": _tool_availability(provider_ids),
+        "targets": _target_summary(provider_ids),
+        "tcp_preflight": _tcp_preflight(provider_ids),
+    }
+    if "cisco-console" in provider_ids:
+        summary["serial_candidates"] = _serial_candidate_summary()
+    return summary
+
+
+def _required_env_summary(provider_ids: list[str] | None = None) -> list[dict[str, str]]:
+    provider_ids = provider_ids or list(PROVIDER_IDS)
+    if settings.provider_mode == LOCAL_LAB_MODE:
+        names = [
+            "LAB_ENVIRONMENT",
+            "LAB_ACKNOWLEDGE_REAL_HARDWARE",
+            "LAB_ACKNOWLEDGE_DEVICE_RECONFIGURATION",
+            "LAB_ACKNOWLEDGE_DATA_LOSS_RISK",
+            "LAB_ACKNOWLEDGE_LAB_ONLY",
+            "LAB_ALLOW_POWER_ACTIONS",
+            "LAB_ALLOW_FIRMWARE_UPDATES",
+            "LAB_ALLOW_FACTORY_RESET",
+        ]
+    else:
+        names = [
+            "LAB_CLOSED_LOOP_ACK",
+            "LAB_READONLY_ACK",
+            "LAB_DESTRUCTIVE_ACK",
+        ]
+    if "ilo-redfish" in provider_ids:
+        names.extend(["ILO_TEST_HOST", "ILO_TEST_USERNAME", "ILO_TEST_PASSWORD"])
+    if "esxi-readonly" in provider_ids:
+        names.extend(
+            [
+                "ESXI_CONFIGURED",
+                "ESXI_TEST_HOST",
+                "ESXI_TEST_USERNAME",
+                "ESXI_TEST_PASSWORD",
+            ]
+        )
+    if any(provider_id in provider_ids for provider_id in ("cisco-console", "cisco-ansible")):
+        names.extend(
+            [
+                "CISCO_MGMT_CONFIGURED",
+                "CISCO_TARGET_IP",
+                "CISCO_TEST_USERNAME",
+                "CISCO_TEST_PASSWORD",
+            ]
+        )
+    return [{"name": name, "status": _present(name)} for name in names]
+
+
+def _legacy_safety_summary(safety: Any) -> dict[str, str]:
+    return {
+        "LAB_CLOSED_LOOP_ACK": "present" if safety.closed_loop_ack else "missing",
+        "LAB_READONLY_ACK": "present" if safety.readonly_ack else "missing",
+        "LAB_DESTRUCTIVE_ACK": "enabled" if safety.destructive_ack else "disabled",
+        "local_readonly": "allowed" if safety.readonly_allowed else "blocked",
+        "destructive": "allowed" if safety.destructive_allowed else "blocked",
     }
 
 
-def _required_env_summary() -> list[dict[str, str]]:
-    return [{"name": name, "status": _present(name)} for name in REQUIRED_ENV_NAMES]
+def _tool_availability(provider_ids: list[str]) -> dict[str, bool]:
+    tools = {"python": shutil.which("python3") is not None}
+    if "cisco-ansible" in provider_ids:
+        tools.update(
+            {
+                "ansible": shutil.which("ansible") is not None,
+                "ansible-inventory": shutil.which("ansible-inventory") is not None,
+            }
+        )
+    return tools
+
+
+def _target_summary(provider_ids: list[str]) -> dict[str, Any]:
+    targets: dict[str, Any] = {}
+    if "ilo-redfish" in provider_ids:
+        targets["ilo"] = {"configured": bool(settings.ilo_test_host)}
+    if "esxi-readonly" in provider_ids:
+        targets["esxi"] = {
+            "configured": settings.esxi_configured,
+            "planned_target": bool(settings.esxi_test_host),
+        }
+    if any(provider_id in provider_ids for provider_id in ("cisco-console", "cisco-ansible")):
+        targets["cisco"] = {
+            "management_configured": settings.cisco_mgmt_configured,
+            "planned_target": bool(settings.cisco_target_ip),
+            "console_discovery": "always",
+        }
+    return targets
 
 
 def _guarded_rebuild_planning() -> dict[str, Any]:
@@ -265,6 +357,13 @@ def _blocked_plan(plan_id: str, title: str, configured_target: str | None) -> di
 
 
 def _present(name: str) -> str:
+    if name == "LAB_ENVIRONMENT":
+        if settings.lab_environment == "isolated-real-lab":
+            return "present"
+        return "missing" if settings.lab_environment is None else "invalid"
+    if name.startswith("LAB_ALLOW_") or name.startswith("LAB_ACKNOWLEDGE_"):
+        value = getattr(settings, _setting_name(name), False)
+        return "enabled" if value else "disabled"
     if name == "ESXI_CONFIGURED":
         return "enabled" if settings.esxi_configured else "disabled"
     if name == "CISCO_MGMT_CONFIGURED":
@@ -289,6 +388,14 @@ def _setting_name(env_name: str) -> str:
         "LAB_CLOSED_LOOP_ACK": "lab_closed_loop_ack",
         "LAB_READONLY_ACK": "lab_readonly_ack",
         "LAB_DESTRUCTIVE_ACK": "lab_destructive_ack",
+        "LAB_ENVIRONMENT": "lab_environment",
+        "LAB_ACKNOWLEDGE_REAL_HARDWARE": "lab_acknowledge_real_hardware",
+        "LAB_ACKNOWLEDGE_DEVICE_RECONFIGURATION": "lab_acknowledge_device_reconfiguration",
+        "LAB_ACKNOWLEDGE_DATA_LOSS_RISK": "lab_acknowledge_data_loss_risk",
+        "LAB_ACKNOWLEDGE_LAB_ONLY": "lab_acknowledge_lab_only",
+        "LAB_ALLOW_POWER_ACTIONS": "lab_allow_power_actions",
+        "LAB_ALLOW_FIRMWARE_UPDATES": "lab_allow_firmware_updates",
+        "LAB_ALLOW_FACTORY_RESET": "lab_allow_factory_reset",
         "ILO_TEST_HOST": "ilo_test_host",
         "ILO_TEST_USERNAME": "ilo_test_username",
         "ILO_TEST_PASSWORD": "ilo_test_password",
@@ -326,10 +433,13 @@ def _serial_candidate_summary() -> dict[str, Any]:
     }
 
 
-def _tcp_preflight() -> dict[str, Any]:
+def _tcp_preflight(provider_ids: list[str] | None = None) -> dict[str, Any]:
+    provider_ids = provider_ids or list(PROVIDER_IDS)
+    action_policy = current_lab_action_policy()
     checks = {
         "ilo_https": {
             "host": settings.ilo_test_host,
+            "provider_id": "ilo-redfish",
             "port": 443,
             "configured": bool(settings.ilo_test_host),
             "planned": False,
@@ -337,6 +447,7 @@ def _tcp_preflight() -> dict[str, Any]:
         },
         "esxi_https": {
             "host": settings.esxi_test_host,
+            "provider_id": "esxi-readonly",
             "port": 443,
             "configured": settings.esxi_configured,
             "planned": bool(settings.esxi_test_host),
@@ -348,6 +459,7 @@ def _tcp_preflight() -> dict[str, Any]:
         },
         "cisco_ssh": {
             "host": settings.cisco_target_ip,
+            "provider_id": "cisco-ansible",
             "port": 22,
             "configured": settings.cisco_mgmt_configured,
             "planned": bool(settings.cisco_target_ip),
@@ -358,19 +470,37 @@ def _tcp_preflight() -> dict[str, Any]:
             ),
         },
     }
-    if settings.provider_mode != "local-readonly":
+    checks = {
+        label: check
+        for label, check in checks.items()
+        if check["provider_id"] in provider_ids
+    }
+    if settings.provider_mode not in {LOCAL_READONLY_MODE, LOCAL_LAB_MODE}:
         return {
             label: _skipped_tcp_check(
                 check["host"],
-                "PROVIDER_MODE is not local-readonly.",
+                "PROVIDER_MODE is not local-readonly or local-lab-readwrite.",
                 configured=bool(check["configured"]),
                 planned=bool(check["planned"]),
             )
             for label, check in checks.items()
         }
 
+    if settings.provider_mode == LOCAL_LAB_MODE:
+        policy_blockers = action_policy.readonly_blockers()
+        if policy_blockers:
+            return {
+                label: _skipped_tcp_check(
+                    check["host"],
+                    "; ".join(policy_blockers),
+                    configured=bool(check["configured"]),
+                    planned=bool(check["planned"]),
+                )
+                for label, check in checks.items()
+            }
+
     safety = current_lab_safety()
-    if not safety.readonly_allowed:
+    if settings.provider_mode == LOCAL_READONLY_MODE and not safety.readonly_allowed:
         return {
             label: _skipped_tcp_check(
                 check["host"],
@@ -461,6 +591,8 @@ def _probe_summary(result: dict[str, Any]) -> dict[str, Any]:
         "power",
         "thermal",
         "firmware",
+        "network_adapters",
+        "storage",
         "discovery",
         "prompt_state",
         "prompt_sample",
@@ -697,7 +829,11 @@ def _probe_detail_lines(probe: dict[str, Any]) -> list[str]:
                 f"managers={len(probe.get('managers', []))}, "
                 f"systems={len(probe.get('systems', []))}, "
                 f"chassis={len(probe.get('chassis', []))}, "
-                f"firmware={len(probe.get('firmware', []))}"
+                f"firmware={len(probe.get('firmware', []))}, "
+                f"nics={len(probe.get('network_adapters', []))}, "
+                f"storage_controllers={len((probe.get('storage') or {}).get('controllers', []))}, "
+                f"physical_drives={len((probe.get('storage') or {}).get('physical_drives', []))}, "
+                f"logical_drives={len((probe.get('storage') or {}).get('logical_drives', []))}"
             ),
         ]
     if provider_id == "cisco-console":

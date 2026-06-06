@@ -7,7 +7,14 @@ import type {
   CiscoConsoleBootstrapPlan,
   CiscoSetupReadiness,
   CiscoSetupWizardPlan,
+  HpeRaidIntent,
+  HpeRaidIntentWrite,
+  HpeRaidPlanPreview,
+  HpeStorageDiscovery,
   IloUpgradeReadiness,
+  IloSetupIntent,
+  IloSetupIntentWrite,
+  IloSetupPlanPreview,
   MediaInventory,
   NetAppConsoleReadiness,
   NetAppObservationUpdate,
@@ -89,6 +96,47 @@ export const api = {
   mediaInventory: () => apiRequest<MediaInventory>("/api/v1/media-inventory"),
   iloUpgradeReadiness: () =>
     apiRequest<IloUpgradeReadiness>("/api/v1/providers/ilo-redfish/upgrade-readiness"),
+  iloSetupIntent: () =>
+    apiRequest<IloSetupIntent>("/api/v1/providers/ilo-redfish/setup-intent"),
+  saveIloSetupIntent: (payload: IloSetupIntentWrite) =>
+    apiRequest<IloSetupIntent>("/api/v1/providers/ilo-redfish/setup-intent", {
+      method: "PUT",
+      body: payload
+    }),
+  iloSetupPlanPreview: () =>
+    apiRequest<IloSetupPlanPreview>("/api/v1/providers/ilo-redfish/setup-plan-preview"),
+  hpeStorageDiscovery: () =>
+    apiRequest<HpeStorageDiscovery>("/api/v1/providers/ilo-redfish/hpe-storage-discovery"),
+  hpeRaidIntent: () =>
+    apiRequest<HpeRaidIntent>("/api/v1/providers/ilo-redfish/hpe-raid-intent"),
+  saveHpeRaidIntent: (payload: HpeRaidIntentWrite) =>
+    apiRequest<HpeRaidIntent>("/api/v1/providers/ilo-redfish/hpe-raid-intent", {
+      method: "PUT",
+      body: payload
+    }),
+  hpeRaidPlanPreview: () =>
+    apiRequest<HpeRaidPlanPreview>("/api/v1/providers/ilo-redfish/hpe-raid-plan-preview"),
+  hpeRaidApplyPlan: () =>
+    apiRequest<ProviderProbeResult>("/api/v1/providers/ilo-redfish/hpe-raid-apply-plan"),
+  applyHpeRaidPlan: (confirmation_phrase: string) =>
+    apiRequest<ProviderProbeResult>("/api/v1/providers/ilo-redfish/hpe-raid-apply", {
+      method: "POST",
+      body: { confirmation_phrase }
+    }),
+  hpeRaidPending: () =>
+    apiRequest<ProviderProbeResult>("/api/v1/providers/ilo-redfish/hpe-raid-pending"),
+  hpeRaidResetPlan: () =>
+    apiRequest<ProviderProbeResult>("/api/v1/providers/ilo-redfish/hpe-raid-reset-plan"),
+  resetHpeRaidServer: () =>
+    apiRequest<ProviderProbeResult>("/api/v1/providers/ilo-redfish/hpe-raid-reset", {
+      method: "POST"
+    }),
+  validateHpeRaidAfterReset: () =>
+    apiRequest<ProviderProbeResult>("/api/v1/providers/ilo-redfish/hpe-raid-validate-after-reset", {
+      method: "POST"
+    }),
+  esxiInstallReadiness: () =>
+    apiRequest<ProviderProbeResult>("/api/v1/providers/ilo-redfish/esxi-install-readiness"),
   ciscoSetupReadiness: () =>
     apiRequest<CiscoSetupReadiness>("/api/v1/providers/cisco/setup-readiness"),
   ciscoSetupWizardPlan: () =>
@@ -122,6 +170,10 @@ export const api = {
   providerArtifacts: () =>
     apiRequest<NetAppProviderArtifact[]>("/api/v1/providers/artifacts"),
   providers: () => apiRequest<ProviderStatus[]>("/api/v1/providers/status"),
+  fullRebuildSummary: () =>
+    apiRequest<ProviderProbeResult>("/api/v1/lab/full-rebuild-summary"),
+  buildVerification: () =>
+    apiRequest<ProviderProbeResult>("/api/v1/lab/build-verification"),
   ciscoConsolePromptReadiness: () =>
     apiRequest<ProviderProbeResult>("/api/v1/providers/cisco-console/prompt-readiness", {
       method: "POST"

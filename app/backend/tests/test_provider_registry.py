@@ -695,6 +695,17 @@ def test_provider_registry_rejects_non_mock_mode() -> None:
         registry.statuses()
 
 
+def test_provider_registry_allows_local_lab_status_but_not_lifecycle() -> None:
+    registry = provider_registry("local-lab-readwrite")
+
+    statuses = registry.statuses()
+
+    assert statuses
+    assert {status.mode for status in statuses} == {"local-lab-readwrite"}
+    with pytest.raises(ProviderRegistryError, match="VM request lifecycle execution"):
+        registry.vsphere()
+
+
 def test_local_real_lab_file_does_not_set_provider_mode(tmp_path: Path) -> None:
     (tmp_path / ".env.local.real-lab").write_text(
         "PROVIDER_MODE=local-readonly\nILO_TEST_HOST=example.invalid\n",

@@ -303,6 +303,35 @@ def approve_request(
     return get_request(session, request.id)
 
 
+def reject_request(
+    session: Session,
+    request_id: str,
+    payload: ApprovalCreate,
+) -> Request:
+    request = get_request(session, request_id)
+    _ensure_status(request, RequestStatus.NEEDS_APPROVAL)
+
+    approval = Approval(
+        request_id=request.id,
+        approver=payload.approver,
+        decision=ApprovalDecision.REJECTED.value,
+        notes=payload.notes,
+    )
+    session.add(approval)
+    session.flush()
+    _transition(
+        session,
+        request,
+        RequestStatus.REJECTED,
+        actor=payload.approver,
+        event_type="request.rejected",
+        message="Request rejected.",
+        data={"approval_id": approval.id},
+    )
+    session.commit()
+    return get_request(session, request.id)
+
+
 def build_request_intent(request: Request) -> dict:
     vm = request.vm_deploy
     return {

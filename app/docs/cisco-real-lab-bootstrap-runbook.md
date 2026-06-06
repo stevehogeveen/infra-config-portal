@@ -1,10 +1,13 @@
 # Cisco Real-Lab Console Bootstrap Runbook
 
-Target for this run: `192.168.1.220/24` (`255.255.255.0`).
+Target for this run: `192.168.1.204/24` (`255.255.255.0`).
 
 Default behavior is safe. `PROVIDER_MODE=mock` performs no real console apply.
 Keep `CISCO_MGMT_CONFIGURED=false` until console bootstrap has configured
 management networking and SSH is intentionally enabled by a guarded workflow.
+Cisco first contact/bootstrap is still console. Ansible starts only after
+management SSH is configured at `192.168.1.204`, and is then used for show
+commands, backup, validation, drift checks, and future repeatable config.
 
 ## Backend Startup Modes
 
@@ -166,7 +169,7 @@ the manual checks above before changing baud or cabling.
 ## Operator Flow
 
 1. Open `/providers`.
-2. Confirm Cisco Setup Readiness shows target `192.168.1.220/24`.
+2. Confirm Cisco Setup Readiness shows target `192.168.1.204/24`.
 3. Confirm `Management Configured` is `false`.
 4. Review console discovery and select one effective console path.
 5. Run Prompt Readiness only when `PROVIDER_MODE=local-readonly`,
@@ -177,7 +180,7 @@ the manual checks above before changing baud or cabling.
 9. Do not apply unless every backend gate passes and the operator enters:
 
 ```text
-APPLY CISCO CONSOLE BOOTSTRAP 192.168.1.220
+APPLY CISCO CONSOLE BOOTSTRAP 192.168.1.204
 ```
 
 ## Guarded Apply Gates
@@ -187,13 +190,13 @@ Backend apply must block unless all of these are true:
 - `PROVIDER_MODE=local-readonly`
 - `CISCO_CONSOLE_APPLY_ENABLED=true`
 - `LAB_APPLY_ACK=YES`
-- `LAB_TARGET_ACK=192.168.1.220`
+- `LAB_TARGET_ACK=192.168.1.204`
 - exact confirmation phrase matches
 - selected console path is ready
 - prompt readiness is recent
 - prompt state is `exec` or `setup-wizard`
 - bootstrap requirements are complete
-- planned IP is `192.168.1.220`
+- planned IP is `192.168.1.204`
 - planned prefix is `/24`
 
 The current apply endpoint is a scaffold and records no serial writes. A blocked

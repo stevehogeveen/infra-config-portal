@@ -40,6 +40,23 @@ Allowed local-readonly behavior:
   safe `show` commands
 - explicit ESXi HTTPS GET and TCP reachability checks
 
+`PROVIDER_MODE=local-lab-readwrite` is separate from both `mock` and `local-readonly`.
+It is for isolated lab equipment only and requires all of:
+
+- `LAB_ENVIRONMENT=isolated-real-lab`
+- `LAB_ACKNOWLEDGE_REAL_HARDWARE=true`
+- `LAB_ACKNOWLEDGE_DEVICE_RECONFIGURATION=true`
+- `LAB_ACKNOWLEDGE_DATA_LOSS_RISK=true`
+- `LAB_ACKNOWLEDGE_LAB_ONLY=true`
+
+Allowed local-lab-readwrite behavior is category-gated by
+`app.providers.action_policy`: readonly discovery, app-side state updates,
+network/storage/BIOS/boot/virtual-media/OS-install/VM-deploy workflows, and
+only explicit allowlisted workflow steps. Power actions require
+`LAB_ALLOW_POWER_ACTIONS=true`; firmware updates require
+`LAB_ALLOW_FIRMWARE_UPDATES=true`; factory reset requires
+`LAB_ALLOW_FACTORY_RESET=true`.
+
 Blocked behavior includes power actions, firmware updates, virtual media
 mounts, iLO account changes, switch configuration changes, `conf t`, `write
 memory`, `reload`, `erase startup-config`, `copy`, arbitrary Ansible variables,

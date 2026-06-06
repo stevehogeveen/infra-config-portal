@@ -646,6 +646,154 @@ def test_ilo_setup_intent_rejects_secret_like_values(client: TestClient) -> None
     assert response.status_code == 422
 
 
+def test_hpe_storage_discovery_without_cached_probe_is_blocked(
+    client: TestClient,
+) -> None:
+    clear_probe_results()
+
+    response = client.get("/api/v1/providers/ilo-redfish/hpe-storage-discovery")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["storage_inventory_available"] is False
+    assert payload["controllers"] == []
+    assert payload["blockers"]
+    assert "GET-only probe" in payload["next_safe_action"]
+
+
+def test_hpe_raid_intent_feeds_plan_preview(client: TestClient) -> None:
+    clear_probe_results()
+    record_probe_result(
+        "ilo-redfish",
+        {
+            "provider_id": "ilo-redfish",
+            "status": "ok",
+            "systems": [
+                {
+                    "Model": "ProLiant DL360 Gen10",
+                    "PowerState": "On",
+                    "Status": {"Health": "Warning"},
+                    "serial_number_present": True,
+                }
+            ],
+            "storage": {
+                "status": "ok",
+                "controllers": [
+                    {
+                        "Id": "controller-1",
+                        "Name": "HPE Smart Array P408i-a SR Gen10",
+                        "Status": {"Health": "OK"},
+                    }
+                ],
+                "physical_drives": [
+                    {
+                        "Id": f"drive-{bay}",
+                        "Name": f"Drive {bay}",
+                        "Bay": bay,
+                        "CapacityBytes": 1200 * 1000 * 1000 * 1000,
+                        "MediaType": "HDD",
+                        "InterfaceType": "SAS",
+                        "Status": {"Health": "OK"},
+                    }
+                    for bay in range(1, 9)
+                ],
+                "logical_drives": [
+                    {
+                        "Id": "logical-1",
+                        "LogicalDriveName": "OS",
+                        "LogicalDriveNumber": 1,
+                        "RAIDType": "RAID1",
+                        "CapacityMiB": 1140000,
+                        "Status": {"Health": "OK"},
+                    }
+                ],
+                "warnings": [],
+            },
+            "warnings": [],
+            "blockers": [],
+        },
+    )
+
+    save_response = client.put(
+        "/api/v1/providers/ilo-redfish/hpe-raid-intent",
+        json={
+            "controller_ref": "controller-1",
+            "wipe_existing_logical_drives": True,
+            "volumes": [
+                {
+                    "name": "ESXi-OS",
+                    "purpose": "ESXi install",
+                    "raid_level": "RAID1",
+                    "drive_bays": ["1", "2"],
+                    "size_policy": "max",
+                    "bootable": True,
+                },
+                {
+                    "name": "VM-Datastore",
+                    "purpose": "VM datastore",
+                    "raid_level": "RAID6",
+                    "drive_bays": ["3", "4", "5", "6", "7", "8"],
+                    "size_policy": "max",
+                    "bootable": False,
+                },
+            ],
+            "notes": "plan only",
+        },
+    )
+
+    assert save_response.status_code == 200
+    intent = save_response.json()
+    assert intent["apply_enabled"] is False
+    assert intent["volumes"][0]["drive_bays"] == ["1", "2"]
+
+    discovery_response = client.get("/api/v1/providers/ilo-redfish/hpe-storage-discovery")
+    assert discovery_response.status_code == 200
+    discovery = discovery_response.json()
+    assert discovery["storage_inventory_available"] is True
+    assert discovery["physical_drives"][0]["bay_id"] == "1"
+
+    preview_response = client.get("/api/v1/providers/ilo-redfish/hpe-raid-plan-preview")
+    assert preview_response.status_code == 200
+    preview = preview_response.json()
+    assert preview["apply_enabled"] is False
+    assert preview["destructive_actions_requested"] is True
+    assert preview["destructive_actions_enabled"] is False
+    assert preview["impact"]["logical_drives_to_delete"] == 1
+    assert preview["planned_layout"]["volume_count"] == 2
+    assert any("RAID" in action for action in preview["disabled_actions"])
+
+
+def test_hpe_raid_apply_plan_is_gated(client: TestClient) -> None:
+    response = client.get("/api/v1/providers/ilo-redfish/hpe-raid-apply-plan")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["apply_enabled"] is False
+    assert payload["confirmation_phrase"] == "APPLY HPE RAID PLAN"
+    assert payload["apply_mechanism"] == "redfish-smartstorageconfig-settings"
+    assert payload["last_apply"]["status"] in {"never", "blocked", "failed", "succeeded"}
+    assert payload["blockers"]
+
+
+def test_hpe_raid_intent_rejects_secret_like_values(client: TestClient) -> None:
+    response = client.put(
+        "/api/v1/providers/ilo-redfish/hpe-raid-intent",
+        json={
+            "controller_ref": "controller-1",
+            "volumes": [
+                {
+                    "name": "password=not-allowed",
+                    "purpose": "ESXi install",
+                    "raid_level": "RAID1",
+                    "drive_bays": ["1", "2"],
+                }
+            ],
+        },
+    )
+
+    assert response.status_code == 422
+
+
 def test_ilo_setup_compare_empty_intent_reports_missing_and_unknown(
     client: TestClient,
 ) -> None:

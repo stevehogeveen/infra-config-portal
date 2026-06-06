@@ -8,8 +8,14 @@ from xml.etree import ElementTree
 import httpx
 
 from app.core.config import settings
+from app.providers.action_policy import (
+    ActionCategory,
+    LOCAL_LAB_MODE,
+    LOCAL_READONLY_MODE,
+    REAL_CONTACT_MODES,
+    current_lab_action_policy,
+)
 from app.providers.base import ProviderAction, ProviderStatus
-from app.providers.lab_safety import current_lab_safety
 from app.providers.probe_cache import get_probe_result, record_probe_result
 from app.providers.redaction import redact_sensitive
 
@@ -75,27 +81,34 @@ class IloRedfishAdapter:
     def health(self) -> ProviderStatus:
         last_result, last_time = get_probe_result(PROVIDER_ID)
         missing_fields = self.config.missing_fields
-        safety = current_lab_safety()
+        policy = current_lab_action_policy(self.provider_mode)
         blockers = [
             f"Missing local iLO configuration: {', '.join(missing_fields)}."
         ] if missing_fields else []
-        if self.provider_mode == "local-readonly":
-            blockers.extend(safety.blockers)
+        if self.provider_mode in REAL_CONTACT_MODES:
+            blockers.extend(policy.readonly_blockers())
         warnings: list[str] = []
-        if self.provider_mode != "local-readonly":
-            warnings.append("Provider mode is not local-readonly; Redfish probes are disabled.")
+        if self.provider_mode not in REAL_CONTACT_MODES:
+            warnings.append(
+                "Provider mode is not local-readonly or local-lab-readwrite; Redfish probes are disabled."
+            )
+        if self.provider_mode == LOCAL_LAB_MODE:
+            warnings.append(
+                "local-lab-readwrite permits explicitly allowlisted real-lab workflow categories only."
+            )
 
         status = "missing-config" if missing_fields else "ready"
-        if not missing_fields and self.provider_mode != "local-readonly":
+        if not missing_fields and self.provider_mode not in REAL_CONTACT_MODES:
             status = "configured"
-        if not missing_fields and self.provider_mode == "local-readonly" and not safety.readonly_allowed:
+        if not missing_fields and self.provider_mode in REAL_CONTACT_MODES and blockers:
             status = "blocked"
 
         probe_enabled = (
-            self.provider_mode == "local-readonly"
+            self.provider_mode in REAL_CONTACT_MODES
             and not missing_fields
-            and safety.readonly_allowed
+            and not policy.readonly_blockers()
         )
+        requirement_reason = _probe_requirement_reason(self.provider_mode)
 
         return ProviderStatus(
             id=PROVIDER_ID,
@@ -123,7 +136,7 @@ class IloRedfishAdapter:
                 "tls_verify": self.config.verify_tls,
                 "timeout_seconds": self.config.timeout_seconds,
                 "missing_fields": missing_fields,
-                **safety.as_flags(),
+                "lab_policy": policy.status_summary(),
             },
             blockers=blockers,
             warnings=warnings,
@@ -136,31 +149,30 @@ class IloRedfishAdapter:
                     reason=(
                         "Run GET-only endpoint detection and Redfish inventory checks."
                         if probe_enabled
-                        else (
-                            "Requires complete local config, LAB_CLOSED_LOOP_ACK=YES, "
-                            "LAB_READONLY_ACK=YES, and PROVIDER_MODE=local-readonly."
-                        )
+                        else requirement_reason
                     ),
                     method="POST",
                     endpoint=f"/api/v1/providers/{PROVIDER_ID}/probe",
                 )
             ],
-            disabled_actions=_dangerous_actions(),
+            disabled_actions=_dangerous_actions(policy),
             last_probe_result=last_result,
             last_probe_time=last_time,
         )
 
     def probe(self) -> dict[str, Any]:
-        if self.provider_mode != "local-readonly":
+        if self.provider_mode not in REAL_CONTACT_MODES:
             return self._record_blocked(
-                "Set PROVIDER_MODE=local-readonly before running iLO probes."
+                "Set PROVIDER_MODE=local-readonly or PROVIDER_MODE=local-lab-readwrite before running iLO probes."
             )
 
-        safety = current_lab_safety()
-        if not safety.readonly_allowed:
+        policy = current_lab_action_policy(self.provider_mode)
+        policy_blockers = policy.readonly_blockers()
+        if policy_blockers:
             return self._record_blocked(
-                "Set LAB_CLOSED_LOOP_ACK=YES and LAB_READONLY_ACK=YES before real lab probes.",
-                safety=safety.as_flags(),
+                "iLO read-only probe is blocked by lab acknowledgement policy.",
+                blockers=policy_blockers,
+                action_policy=policy.status_summary(),
             )
 
         if self.config.missing_fields:
@@ -191,6 +203,14 @@ class IloRedfishAdapter:
             "power": [],
             "thermal": [],
             "firmware": [],
+            "network_adapters": [],
+            "storage": {
+                "status": "not_checked",
+                "controllers": [],
+                "physical_drives": [],
+                "logical_drives": [],
+                "warnings": [],
+            },
             "legacy_identity": {},
             "endpoint_detection": {
                 "classification": "not_checked",
@@ -208,6 +228,13 @@ class IloRedfishAdapter:
             },
             "warnings": [],
             "blockers": [],
+            "action_policy": {
+                "provider_mode": self.provider_mode,
+                "readonly": "allowed" if policy.readonly_allowed else "blocked",
+                "local_state_write": _local_state_write_status(policy, self.provider_mode),
+                "device_writes": "policy-gated",
+            },
+            "not_attempted": _not_attempted_actions(),
         }
 
         try:
@@ -289,6 +316,18 @@ class IloRedfishAdapter:
                 result["power"] = _linked_summaries(client, base_url, chassis, "Power", requests)
                 result["thermal"] = _linked_summaries(client, base_url, chassis, "Thermal", requests)
                 result["firmware"] = _firmware_summaries(client, base_url, root, requests)
+                result["network_adapters"] = _network_adapter_summaries(
+                    client,
+                    base_url,
+                    result["systems"],
+                    requests,
+                )
+                result["storage"] = _storage_discovery(
+                    client,
+                    base_url,
+                    result["systems"],
+                    requests,
+                )
         except httpx.HTTPStatusError as exc:
             detection = _classify_inventory_auth_failure(
                 result.get("endpoint_detection"),
@@ -676,8 +715,6 @@ def _classify_endpoint_response(path: str, status_code: int) -> str:
 def _classify_endpoint_checks(checks: list[dict[str, Any]]) -> str:
     if any(check.get("classification") == "tls_failed" for check in checks):
         return "tls_failed"
-    if any(check.get("classification") == "network_unreachable" for check in checks):
-        return "network_unreachable"
     if any(
         check.get("path") in REDFISH_ROOT_PATHS
         and check.get("status_code") in {401, 403}
@@ -690,6 +727,8 @@ def _classify_endpoint_checks(checks: list[dict[str, Any]]) -> str:
         for check in checks
     ):
         return "redfish_available"
+    if any(check.get("classification") == "network_unreachable" for check in checks):
+        return "network_unreachable"
 
     redfish_404 = any(
         check.get("path") in REDFISH_ROOT_PATHS and check.get("status_code") == 404
@@ -936,6 +975,7 @@ def _collection_summaries(
             continue
         payload = _get_json(client, base_url, path, requests)
         summary = _resource_summary(payload)
+        summary.setdefault("@odata.id", path)
         if include_links:
             summary["_links"] = payload
         summaries.append(summary)
@@ -972,6 +1012,407 @@ def _firmware_summaries(
     return _collection_summaries(client, base_url, firmware_path, requests)
 
 
+def _network_adapter_summaries(
+    client: httpx.Client,
+    base_url: str,
+    systems: list[dict[str, Any]],
+    requests: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    adapters: list[dict[str, Any]] = []
+    for system in systems:
+        system_path = system.get("@odata.id")
+        if not isinstance(system_path, str):
+            continue
+        system_payload = _get_json(client, base_url, system_path, requests)
+        paths = _network_collection_paths(system_payload, system_path)
+        for path in paths:
+            adapters.extend(_network_collection_members(client, base_url, path, requests))
+    return adapters
+
+
+def _network_collection_paths(system_payload: dict[str, Any], system_path: str) -> list[str]:
+    paths: list[str] = []
+    for key in ("NetworkAdapters", "EthernetInterfaces"):
+        path = _odata_id(system_payload.get(key))
+        if path:
+            paths.append(path)
+    for suffix in ("NetworkAdapters", "EthernetInterfaces"):
+        fallback = f"{system_path.rstrip('/')}/{suffix}/"
+        if fallback not in paths:
+            paths.append(fallback)
+    return paths
+
+
+def _network_collection_members(
+    client: httpx.Client,
+    base_url: str,
+    path: str,
+    requests: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    try:
+        collection = _get_json(client, base_url, path, requests)
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code == 404:
+            return []
+        raise
+    members = collection.get("Members", [])
+    if not isinstance(members, list):
+        return []
+    results: list[dict[str, Any]] = []
+    for member in members[:16]:
+        member_path = _odata_id(member)
+        if not member_path:
+            continue
+        payload = _get_json(client, base_url, member_path, requests)
+        results.append(_network_summary(payload))
+    return results
+
+
+def _network_summary(payload: dict[str, Any]) -> dict[str, Any]:
+    summary = _resource_summary(payload)
+    summary["mac_address_present"] = bool(
+        payload.get("MACAddress") or payload.get("PermanentMACAddress")
+    )
+    for key in (
+        "SpeedMbps",
+        "FullDuplex",
+        "LinkStatus",
+        "InterfaceEnabled",
+        "PhysicalPortNumber",
+    ):
+        if key in payload:
+            summary[key] = payload[key]
+    ports = payload.get("NetworkPorts") or payload.get("Ports")
+    port_path = _odata_id(ports)
+    if port_path:
+        summary["ports_path"] = port_path
+    return summary
+
+
+def _storage_discovery(
+    client: httpx.Client,
+    base_url: str,
+    systems: list[dict[str, Any]],
+    requests: list[dict[str, Any]],
+) -> dict[str, Any]:
+    discovery: dict[str, Any] = {
+        "status": "not_available",
+        "controllers": [],
+        "physical_drives": [],
+        "logical_drives": [],
+        "warnings": [],
+    }
+    for system in systems:
+        system_path = system.get("@odata.id")
+        if not isinstance(system_path, str):
+            continue
+        system_payload = _get_json(client, base_url, system_path, requests)
+        for path in _storage_collection_paths(system_payload, system_path):
+            _merge_storage_discovery(
+                discovery,
+                _discover_storage_path(client, base_url, path, requests),
+            )
+
+    if discovery["controllers"] or discovery["physical_drives"] or discovery["logical_drives"]:
+        discovery["status"] = "available"
+    return discovery
+
+
+def _storage_collection_paths(system_payload: dict[str, Any], system_path: str) -> list[str]:
+    paths: list[str] = []
+    storage_path = _odata_id(system_payload.get("Storage"))
+    if storage_path:
+        paths.append(storage_path)
+    smart_storage = _odata_id(system_payload.get("SmartStorage"))
+    if smart_storage:
+        paths.append(smart_storage)
+    for suffix in ("Storage", "SmartStorage"):
+        fallback = f"{system_path.rstrip('/')}/{suffix}/"
+        if fallback not in paths:
+            paths.append(fallback)
+    return paths
+
+
+def _discover_storage_path(
+    client: httpx.Client,
+    base_url: str,
+    path: str,
+    requests: list[dict[str, Any]],
+) -> dict[str, Any]:
+    discovery = {
+        "controllers": [],
+        "physical_drives": [],
+        "logical_drives": [],
+        "warnings": [],
+    }
+    try:
+        payload = _get_json(client, base_url, path, requests)
+    except httpx.HTTPStatusError as exc:
+        if 400 <= exc.response.status_code < 500:
+            discovery["warnings"].append(
+                f"Storage path returned HTTP {exc.response.status_code}: {path}"
+            )
+            return discovery
+        raise
+
+    members = payload.get("Members")
+    if isinstance(members, list):
+        for member in members[:16]:
+            member_path = _odata_id(member)
+            if member_path:
+                _merge_storage_discovery(
+                    discovery,
+                    _discover_storage_member(client, base_url, member_path, requests),
+                )
+        return discovery
+
+    _merge_storage_discovery(
+        discovery,
+        _discover_storage_member(client, base_url, path, requests, payload=payload),
+    )
+    return discovery
+
+
+def _discover_storage_member(
+    client: httpx.Client,
+    base_url: str,
+    path: str,
+    requests: list[dict[str, Any]],
+    *,
+    payload: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    payload = payload or _get_json(client, base_url, path, requests)
+    discovery = {
+        "controllers": [],
+        "physical_drives": [],
+        "logical_drives": [],
+        "warnings": [],
+    }
+    controller_collections = _storage_controller_collection_paths(payload)
+    for collection_path in controller_collections:
+        for controller in _storage_controller_collection(
+            client,
+            base_url,
+            collection_path,
+            requests,
+        ):
+            _merge_storage_discovery(discovery, controller)
+
+    if _looks_like_storage_controller(payload) or not controller_collections:
+        discovery["controllers"].append(_storage_controller_summary(payload))
+
+    links = payload.get("Links") if isinstance(payload.get("Links"), dict) else {}
+
+    for key in ("Drives", "DiskDrives", "PhysicalDrives", "UnconfiguredDrives"):
+        drives = payload.get(key) or links.get(key)
+        if isinstance(drives, list):
+            for drive in drives[:64]:
+                drive_path = _odata_id(drive)
+                if drive_path:
+                    discovery["physical_drives"].append(
+                        _drive_summary(_get_json(client, base_url, drive_path, requests))
+                    )
+                elif isinstance(drive, dict):
+                    discovery["physical_drives"].append(_drive_summary(drive))
+        else:
+            collection_path = _odata_id(drives)
+            if collection_path:
+                discovery["physical_drives"].extend(
+                    _storage_collection_summaries(
+                        client,
+                        base_url,
+                        collection_path,
+                        requests,
+                        _drive_summary,
+                    )
+                )
+
+    for key in ("Volumes", "LogicalDrives"):
+        collection_path = _odata_id(payload.get(key)) or _odata_id(links.get(key))
+        if collection_path:
+            discovery["logical_drives"].extend(
+                _storage_collection_summaries(
+                    client,
+                    base_url,
+                    collection_path,
+                    requests,
+                    _logical_drive_summary,
+                )
+            )
+    return discovery
+
+
+def _storage_controller_collection_paths(payload: dict[str, Any]) -> list[str]:
+    paths = []
+    links = payload.get("Links") if isinstance(payload.get("Links"), dict) else {}
+    for key in ("ArrayControllers", "StorageControllers", "Controllers"):
+        path = _odata_id(payload.get(key))
+        if not path:
+            path = _odata_id(links.get(key))
+        if path:
+            paths.append(path)
+    return paths
+
+
+def _storage_controller_collection(
+    client: httpx.Client,
+    base_url: str,
+    collection_path: str,
+    requests: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    try:
+        collection = _get_json(client, base_url, collection_path, requests)
+    except httpx.HTTPStatusError as exc:
+        if 400 <= exc.response.status_code < 500:
+            return []
+        raise
+    members = collection.get("Members", [])
+    if not isinstance(members, list):
+        return []
+    controllers = []
+    for member in members[:16]:
+        member_path = _odata_id(member)
+        if not member_path:
+            continue
+        controllers.append(_discover_storage_member(client, base_url, member_path, requests))
+    return controllers
+
+
+def _looks_like_storage_controller(payload: dict[str, Any]) -> bool:
+    text = " ".join(
+        str(payload.get(key) or "")
+        for key in ("Id", "Name", "Description", "Model", "@odata.type")
+    ).lower()
+    if "smartstorage" in text and "arraycontroller" not in text:
+        return False
+    return any(
+        token in text
+        for token in (
+            "array controller",
+            "arraycontroller",
+            "smart array",
+            "storage controller",
+            "raid",
+        )
+    )
+
+
+def _storage_collection_summaries(
+    client: httpx.Client,
+    base_url: str,
+    collection_path: str,
+    requests: list[dict[str, Any]],
+    summarizer: Any,
+) -> list[dict[str, Any]]:
+    try:
+        collection = _get_json(client, base_url, collection_path, requests)
+    except httpx.HTTPStatusError as exc:
+        if 400 <= exc.response.status_code < 500:
+            return []
+        raise
+    members = collection.get("Members", [])
+    if not isinstance(members, list):
+        return []
+    summaries = []
+    for member in members[:64]:
+        member_path = _odata_id(member)
+        if not member_path:
+            continue
+        summaries.append(summarizer(_get_json(client, base_url, member_path, requests)))
+    return summaries
+
+
+def _storage_controller_summary(payload: dict[str, Any]) -> dict[str, Any]:
+    summary = _resource_summary(payload)
+    for key in (
+        "ControllerProtocol",
+        "AdapterType",
+        "CurrentOperatingMode",
+        "BackupPowerSourceStatus",
+        "CacheMemorySizeMiB",
+        "PartNumber",
+        "ControllerPartNumber",
+        "SKU",
+        "Location",
+        "SupportedRAIDTypes",
+        "Identifiers",
+    ):
+        if key in payload:
+            summary[key] = payload[key]
+    return summary
+
+
+def _drive_summary(payload: dict[str, Any]) -> dict[str, Any]:
+    summary = _resource_summary(payload)
+    for key in (
+        "Bay",
+        "Location",
+        "LocationFormat",
+        "CapacityBytes",
+        "CapacityGB",
+        "CapacityMiB",
+        "MediaType",
+        "InterfaceType",
+        "Protocol",
+        "FirmwareVersion",
+        "Status",
+        "BlockSizeBytes",
+        "PredictedMediaLifeLeftPercent",
+    ):
+        if key in payload:
+            summary[key] = payload[key]
+    summary["serial_number_present"] = bool(payload.get("SerialNumber"))
+    if "CapacityBytes" not in summary:
+        capacity = payload.get("CapacityMiB")
+        if isinstance(capacity, int):
+            summary["CapacityBytes"] = capacity * 1024 * 1024
+    return summary
+
+
+def _logical_drive_summary(payload: dict[str, Any]) -> dict[str, Any]:
+    summary = _resource_summary(payload)
+    for key in (
+        "RAIDType",
+        "Raid",
+        "VolumeType",
+        "CapacityBytes",
+        "CapacityGB",
+        "CapacityMiB",
+        "Encrypted",
+        "LogicalDriveEncryption",
+        "OptimumIOSizeBytes",
+        "StripeSizeBytes",
+        "Bootable",
+        "LogicalDriveName",
+        "LogicalDriveNumber",
+        "LogicalDriveType",
+        "InterfaceType",
+        "MediaType",
+        "DataDrives",
+        "Status",
+        "Links",
+    ):
+        if key in payload:
+            summary[key] = payload[key]
+    if "RAIDType" not in summary and payload.get("Raid"):
+        summary["RAIDType"] = f"RAID{payload['Raid']}"
+    if "RAIDType" not in summary and "VolumeType" in summary:
+        summary["RAIDType"] = payload["VolumeType"]
+    if "CapacityBytes" not in summary:
+        capacity = payload.get("CapacityMiB")
+        if isinstance(capacity, int):
+            summary["CapacityBytes"] = capacity * 1024 * 1024
+    return summary
+
+
+def _merge_storage_discovery(target: dict[str, Any], source: dict[str, Any]) -> None:
+    for key in ("controllers", "physical_drives", "logical_drives", "warnings"):
+        existing = target.setdefault(key, [])
+        for item in source.get(key, []):
+            if item not in existing:
+                existing.append(item)
+
+
 def _resource_summary(payload: dict[str, Any]) -> dict[str, Any]:
     keys = (
         "@odata.id",
@@ -981,46 +1422,122 @@ def _resource_summary(payload: dict[str, Any]) -> dict[str, Any]:
         "Manufacturer",
         "Model",
         "ProductName",
-        "SerialNumber",
         "FirmwareVersion",
+        "BiosVersion",
+        "BIOSVersion",
+        "ManagerType",
         "PowerState",
         "Status",
     )
-    return {key: payload[key] for key in keys if key in payload}
+    summary = {key: payload[key] for key in keys if key in payload}
+    if "SerialNumber" in payload:
+        summary["serial_number_present"] = bool(payload["SerialNumber"])
+    return summary
 
 
 def _strip_links(summary: dict[str, Any]) -> dict[str, Any]:
     return {key: value for key, value in summary.items() if key != "_links"}
 
 
-def _dangerous_actions() -> list[ProviderAction]:
+def _probe_requirement_reason(provider_mode: str) -> str:
+    if provider_mode == LOCAL_READONLY_MODE:
+        return (
+            "Requires complete local config, LAB_CLOSED_LOOP_ACK=YES, "
+            "LAB_READONLY_ACK=YES, and PROVIDER_MODE=local-readonly."
+        )
+    if provider_mode == LOCAL_LAB_MODE:
+        return (
+            "Requires complete local config, PROVIDER_MODE=local-lab-readwrite, "
+            "LAB_ENVIRONMENT=isolated-real-lab, LAB_ACKNOWLEDGE_REAL_HARDWARE=true, "
+            "LAB_ACKNOWLEDGE_DEVICE_RECONFIGURATION=true, "
+            "LAB_ACKNOWLEDGE_DATA_LOSS_RISK=true, and LAB_ACKNOWLEDGE_LAB_ONLY=true."
+        )
+    return "Requires PROVIDER_MODE=local-readonly or PROVIDER_MODE=local-lab-readwrite."
+
+
+def _not_attempted_actions() -> list[str]:
+    return [
+        "firmware update",
+        "power on/off/reset",
+        "virtual media mount",
+        "boot order change",
+        "BIOS change",
+        "user/password change",
+        "iLO network change",
+        "factory reset",
+        "device POST/PATCH/PUT/DELETE",
+    ]
+
+
+def _local_state_write_status(policy: Any, provider_mode: str) -> str:
+    if provider_mode != LOCAL_LAB_MODE:
+        return "allowed"
+    return (
+        "allowed"
+        if not policy.action_blockers(
+            "ilo-redfish.record-readonly-inventory",
+            ActionCategory.APP_STATE_WRITE,
+        )
+        else "blocked"
+    )
+
+
+def _dangerous_actions(policy: Any) -> list[ProviderAction]:
     return [
         ProviderAction(
             id="ilo-power-action",
             label="Power Action",
             enabled=False,
             read_only=False,
-            reason="Power on, power off, and reset actions are disabled.",
+            reason=policy.dangerous_action_reason("ilo-power-action"),
         ),
         ProviderAction(
             id="ilo-virtual-media",
             label="Virtual Media",
             enabled=False,
             read_only=False,
-            reason="Mounting or ejecting virtual media is not exposed.",
+            reason=policy.dangerous_action_reason("ilo-virtual-media"),
         ),
         ProviderAction(
             id="ilo-firmware-update",
             label="Firmware Update",
             enabled=False,
             read_only=False,
-            reason="Firmware update actions are blocked in this preview.",
+            reason=policy.dangerous_action_reason("ilo-firmware-update"),
         ),
         ProviderAction(
             id="ilo-user-change",
             label="User Changes",
             enabled=False,
             read_only=False,
-            reason="iLO account changes are blocked.",
+            reason=policy.dangerous_action_reason("ilo-user-change"),
+        ),
+        ProviderAction(
+            id="ilo-boot-order-change",
+            label="Boot Order Change",
+            enabled=False,
+            read_only=False,
+            reason=policy.dangerous_action_reason("ilo-boot-order-change"),
+        ),
+        ProviderAction(
+            id="ilo-bios-change",
+            label="BIOS Change",
+            enabled=False,
+            read_only=False,
+            reason=policy.dangerous_action_reason("ilo-bios-change"),
+        ),
+        ProviderAction(
+            id="ilo-network-change",
+            label="iLO Network Change",
+            enabled=False,
+            read_only=False,
+            reason=policy.dangerous_action_reason("ilo-network-change"),
+        ),
+        ProviderAction(
+            id="ilo-factory-reset",
+            label="Factory Reset",
+            enabled=False,
+            read_only=False,
+            reason=policy.dangerous_action_reason("ilo-factory-reset"),
         ),
     ]

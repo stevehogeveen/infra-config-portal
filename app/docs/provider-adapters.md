@@ -46,29 +46,17 @@ DNS/domain, firmware readiness handoff, and report/artifact placeholder
 sections. The preview does not call iLO, does not collect media or artifacts,
 does not apply settings, and keeps all dangerous actions disabled.
 
-`GET /api/v1/providers/ilo-redfish/setup-apply-plan` builds the only current
-iLO live-write plan. It is limited to an idempotent Redfish
-`ManagerNetworkProtocol.HostName` update discovered from
-`/redfish/v1/Managers`. It does not run on page load and does not send PATCH.
-The plan reports required gates, blocked actions, and the exact confirmation
-phrase.
+`GET /api/v1/providers/ilo-redfish/setup-apply-plan` is currently a blocked
+or ready write preview depending on provider mode and acknowledgement flags. It
+can describe a possible `ManagerNetworkProtocol.HostName` operation from saved
+intent. `local-readonly` is read-only; `local-lab-readwrite` can allow this
+specific network-config workflow step when all lab acknowledgements and apply
+confirmation gates are satisfied.
 
-`POST /api/v1/providers/ilo-redfish/setup-apply` can send a real Redfish PATCH
-only when all of these are true:
-
-- saved iLO setup intent contains `network.hostname`
-- `PROVIDER_MODE=local-readonly`
-- `LAB_CLOSED_LOOP_ACK=YES`
-- `LAB_READONLY_ACK=YES`
-- `ILO_SETUP_APPLY_ENABLED=true`
-- `LAB_APPLY_ACK=YES`
-- `LAB_TARGET_ACK` exactly matches the configured `ILO_TEST_HOST`
-- request body contains `confirmation_phrase=APPLY ILO HOSTNAME SETUP`
-
-The apply path does GET-before, PATCH, then GET-after readback verification.
-It redacts the configured target, credentials, and desired hostname from the
-recorded result. It blocks iLO IP, subnet/prefix, gateway, VLAN, user, SNMP,
-NTP, DNS, firmware, virtual media, boot, power, and reset actions.
+`POST /api/v1/providers/ilo-redfish/setup-apply` is limited to the explicit iLO
+HostName workflow step. iLO IP, subnet/prefix, gateway, VLAN, user, SNMP, NTP,
+DNS, firmware, virtual media, boot, power, BIOS, reset, and arbitrary
+POST/PATCH/PUT/DELETE actions remain blocked.
 
 `GET` and `PUT /api/v1/providers/ilo-redfish/setup-intent` store desired iLO
 setup intent locally for preview only. Intent covers network labels, desired
@@ -142,29 +130,28 @@ surface. It is organized around these sections:
   The page may show the future confirmation phrase `DESTROY AND REBUILD`, but it
   does not expose a clickable destructive execution button and does not run wipe,
   RAID, virtual media, boot order, BIOS, power, or ESXi install actions.
-- HostName Apply: exposes a backend-only guarded Redfish PATCH lane for
-  `ManagerNetworkProtocol.HostName`. It requires saved hostname intent,
-  local-lab acknowledgement gates, target acknowledgement, and an exact
-  confirmation phrase. It verifies by readback and redacts the desired value.
+- HostName Apply: remains a blocked future write lane for
+  `ManagerNetworkProtocol.HostName`. It does not send device writes until a
+  future explicit allowlist and tests are added.
 - Safety: lists disabled dangerous actions and keeps flash, power, virtual
   media, boot, BIOS, user, IP/subnet/gateway/VLAN, SNMP, NTP, and DNS/domain
   changes unavailable.
 
-Except for the explicit HostName apply lane, every iLO endpoint and UI section
-keeps `apply_enabled=false` and is limited to local persistence, cached
-discovery, mock data, or explicitly requested read-only discovery. Dangerous
-actions are absent or disabled by design.
+Every iLO endpoint and UI section keeps `apply_enabled=false` for device writes
+and is limited to local persistence, cached discovery, mock data, or explicitly
+requested read-only discovery. Dangerous actions are absent or disabled by
+design.
 
 Testing remains mock-first. Normal backend and frontend checks should run with
 `PROVIDER_MODE=mock`. Optional `PROVIDER_MODE=local-readonly` smoke checks are
 GET-only discovery checks for a local lab and require the explicit lab
-acknowledgement variables described below. The HostName apply lane is a
-separate guarded local-lab write path and must not be used for production
-infrastructure.
+acknowledgement variables described below. `PROVIDER_MODE=local-lab-readwrite`
+is a separate isolated lab mode for allowlisted workflow categories and
+explicit workflow steps only. It is not a production mode.
 
 Operator screenshots may be saved locally under ignored paths such as
 `artifacts/debug/` or `artifacts/screenshots/`. Screenshots, generated
-artifacts, local reports, media, and real-lab files must not be committed.
+artifacts, local reports, media, and isolated-real-lab files must not be committed.
 
 ## Local Read-Only Preview Mode
 
@@ -174,8 +161,8 @@ status responses expose local provider values only as configured/missing flags.
 Probe results redact configured endpoints, users, passwords, tokens, cookies,
 and other sensitive fields before caching or returning them.
 
-For a local iLO at `192.168.1.202`, use the setup helper or create a private
-`.env.local.real-lab` with `ILO_TEST_HOST=192.168.1.202`,
+For a local iLO at `192.168.1.201`, use the setup helper or create a private
+`.env.local.real-lab` with `ILO_TEST_HOST=192.168.1.201`,
 `PROVIDER_MODE=local-readonly`, `LAB_CLOSED_LOOP_ACK=YES`, and
 `LAB_READONLY_ACK=YES`. Then run:
 
@@ -183,12 +170,30 @@ For a local iLO at `192.168.1.202`, use the setup helper or create a private
 PROVIDER_MODE=local-readonly make provider-smoke
 ```
 
-That command runs explicit GET-only iLO endpoint detection and inventory
+To run only iLO and skip Cisco/ESXi probes:
+
+```bash
+PROVIDER_MODE=local-readonly PROVIDER_SMOKE_PROVIDERS=ilo-redfish make provider-smoke
+```
+
+For iLO-only local-lab-readwrite inventory:
+
+```bash
+make provider-lab-ilo-readiness
+make provider-lab-ilo-inventory
+```
+
+Those commands run explicit GET-only iLO endpoint detection and inventory
 discovery through the guarded provider-smoke path. Normal tests still run with
-`PROVIDER_MODE=mock` and do not contact `192.168.1.202`.
+`PROVIDER_MODE=mock` and do not contact `192.168.1.201`.
 
 ESXi and Cisco management targets distinguish planned addressing from a
 configured, reachable management network:
+
+- Real-lab IP profile: iLO `192.168.1.201`, server embedded NIC
+  `192.168.1.202`, ESXi management `192.168.1.203`, Cisco management
+  `192.168.1.204`, Ansible/control host `192.168.1.205`, subnet
+  `192.168.1.0/24`.
 
 - `ESXI_CONFIGURED=false` means `ESXI_TEST_HOST` may be a planned management IP,
   but ESXi HTTPS/SSH probes are skipped and the status is reported as
@@ -199,6 +204,10 @@ configured, reachable management network:
 - Cisco console discovery remains active regardless of
   `CISCO_MGMT_CONFIGURED`; if no serial device is found the console status
   reports `missing-console` with cable, USB path, and permissions guidance.
+- Ansible is not the initial Cisco bootstrap path. It starts after console
+  bootstrap configures Cisco management SSH at `192.168.1.204`, and is for
+  show commands, backup, validation, drift checks, and future repeatable
+  configuration.
 
 Supported local variables:
 
@@ -223,13 +232,24 @@ Supported local variables:
 - `CISCO_TEST_USERNAME`
 - `CISCO_TEST_PASSWORD`
 - `CISCO_ENABLE_PASSWORD`
+- `ANSIBLE_CISCO_HOST` (optional legacy/inventory alias for the Cisco device;
+  use `192.168.1.204`, not the control host)
+- `ANSIBLE_CONTROL_HOST` (`192.168.1.205` in the current isolated lab)
 - `ANSIBLE_CISCO_NETWORK_OS` (`cisco.ios.ios` by default)
 - `ANSIBLE_CISCO_CONNECTION` (`ansible.netcommon.network_cli` by default)
 - `LAB_CLOSED_LOOP_ACK` (`YES` required for real lab probes)
 - `LAB_READONLY_ACK` (`YES` required for real lab probes)
-- `ILO_SETUP_APPLY_ENABLED` (`true` required for guarded iLO HostName apply)
-- `LAB_APPLY_ACK` (`YES` required for guarded apply paths)
-- `LAB_TARGET_ACK` (must match the configured target for guarded apply paths)
+- `LAB_ENVIRONMENT` (`isolated-real-lab` required for `PROVIDER_MODE=local-lab-readwrite`)
+- `LAB_ACKNOWLEDGE_REAL_HARDWARE` (`true` required for `local-lab-readwrite`)
+- `LAB_ACKNOWLEDGE_DEVICE_RECONFIGURATION` (`true` required for `local-lab-readwrite`)
+- `LAB_ACKNOWLEDGE_DATA_LOSS_RISK` (`true` required for `local-lab-readwrite`)
+- `LAB_ACKNOWLEDGE_LAB_ONLY` (`true` required for `local-lab-readwrite`)
+- `LAB_ALLOW_POWER_ACTIONS` (`false` by default; power actions remain blocked)
+- `LAB_ALLOW_FIRMWARE_UPDATES` (`false` by default; firmware updates remain blocked)
+- `LAB_ALLOW_FACTORY_RESET` (`false` by default; factory reset remains blocked)
+- `ILO_SETUP_APPLY_ENABLED` (`true` required for the guarded iLO HostName apply lane)
+- `LAB_APPLY_ACK` (`YES` required for the guarded iLO HostName apply lane)
+- `LAB_TARGET_ACK` (legacy flag; no iLO PATCH is allowlisted in this implementation)
 - `LAB_DESTRUCTIVE_ACK` (`REBUILD_LAB` required before future destructive plans can apply)
 
 If `CISCO_CONSOLE_PORT` is not set, the backend dynamically discovers
@@ -389,7 +409,10 @@ management network checks while their configured flags are false, skips probes
 when local config or hardware is absent, and exits successfully for missing lab
 hardware. It writes sanitized JSON and Markdown reports under ignored
 `artifacts/real-lab/`, redacts sensitive values, and must not be used with
-production infrastructure credentials.
+production infrastructure credentials. Set `PROVIDER_SMOKE_PROVIDERS` to a
+comma-separated subset of `ilo-redfish`, `cisco-console`, `cisco-ansible`, and
+`esxi-readonly` to limit smoke status, TCP preflight, and probe execution to
+specific providers.
 
 ## Interface Expectations
 

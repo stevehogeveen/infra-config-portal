@@ -3,17 +3,17 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from app.core.config import settings
+from app.core.config import LAB_CISCO_MANAGEMENT_IP, settings
 from app.providers.cisco_console import CiscoConsoleAdapter
 from app.providers.probe_cache import get_probe_result, record_probe_result
 from app.providers.redaction import redact_sensitive
 from app.services.cisco_bootstrap_requirements import get_cisco_bootstrap_requirements
 
 PROVIDER_ID = "cisco-console-bootstrap"
-TARGET_IP = "192.168.1.220"
+TARGET_IP = LAB_CISCO_MANAGEMENT_IP
 TARGET_PREFIX = "/24"
 TARGET_NETMASK = "255.255.255.0"
-CONFIRMATION_PHRASE = "APPLY CISCO CONSOLE BOOTSTRAP 192.168.1.220"
+CONFIRMATION_PHRASE = f"APPLY CISCO CONSOLE BOOTSTRAP {TARGET_IP}"
 MAX_PROMPT_AGE_MINUTES = 15
 DISABLED_DESTRUCTIVE_ACTIONS = [
     "write erase",

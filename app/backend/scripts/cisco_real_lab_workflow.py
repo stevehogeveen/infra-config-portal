@@ -24,6 +24,8 @@ from app.providers.redaction import redact_sensitive
 from app.services.hpe_raid import REPO_ROOT
 
 REPORT = REPO_ROOT / "artifacts" / "codex-runs" / "cisco-4h-lab-run-report.md"
+FIX_REPORT = REPO_ROOT / "artifacts" / "codex-runs" / "cisco-privileged-exec-fix-report.md"
+PRIVILEGE_HARDENING_REPORT = REPO_ROOT / "artifacts" / "codex-runs" / "cisco-privilege-hardening-report.md"
 DETAILS = REPO_ROOT / "artifacts" / "codex-runs" / "cisco-4h-lab-run-details-redacted.json"
 SAMPLES = REPO_ROOT / "artifacts" / "codex-runs" / "cisco-console-samples-redacted.json"
 COMMANDS = REPO_ROOT / "artifacts" / "codex-runs" / "cisco-bootstrap-commands-redacted.json"
@@ -37,6 +39,7 @@ WAKE_SEQUENCES = (
 )
 SHOW_COMMANDS = (
     "terminal length 0",
+    "show privilege",
     "show version",
     "show inventory",
     "show interfaces status",
@@ -52,6 +55,12 @@ class Prompt:
     state: str
     text: str
     privileged: bool
+
+
+@dataclass(frozen=True)
+class PrivilegeResult:
+    prompt: Prompt
+    debug: dict[str, Any]
 
 
 def main() -> int:
@@ -72,6 +81,8 @@ def main() -> int:
         "warnings": [],
         "artifacts": {
             "report": str(REPORT.relative_to(REPO_ROOT)),
+            "privileged_exec_fix_report": str(FIX_REPORT.relative_to(REPO_ROOT)),
+            "privilege_hardening_report": str(PRIVILEGE_HARDENING_REPORT.relative_to(REPO_ROOT)),
             "details": str(DETAILS.relative_to(REPO_ROOT)),
             "samples": str(SAMPLES.relative_to(REPO_ROOT)),
             "commands": str(COMMANDS.relative_to(REPO_ROOT)),
@@ -104,7 +115,7 @@ def main() -> int:
     payload["warnings"].extend(discovery.get("warnings") or [])
     payload["blockers"].extend(discovery.get("blockers") or [])
     if ownership["owned"]:
-        payload["blockers"].append("Selected serial console is owned by another process.")
+        payload["blockers"].append("Serial console is owned by another process.")
 
     port = discovery.get("effective_path")
     if discovery["status"] != "ready" or not isinstance(port, str) or policy_blockers or ownership["owned"]:
@@ -131,10 +142,20 @@ def main() -> int:
     ethernet: dict[str, Any] = {"status": "not-attempted", "reason": "Bootstrap apply did not run."}
 
     with serial.Serial(port=port, baudrate=baud, timeout=1.0, write_timeout=1.0) as conn:
-        privilege_prompt = _ensure_privileged(conn, prompt)
+        privilege_result = _ensure_privileged(conn, prompt)
+        privilege_prompt = privilege_result.prompt
+        privilege_debug = privilege_result.debug
+        if privilege_prompt.state in {"exec", "privileged-exec"}:
+            privilege_debug["privilege_level"] = _read_privilege_level(conn)
         payload["stages"]["privilege_escalation"] = {
             "status": "ready" if privilege_prompt.state == "privileged-exec" else "blocked",
+            "initial_prompt_state": privilege_debug["initial_prompt_state"],
+            "enable_command_sent": privilege_debug["enable_command_sent"],
+            "password_prompt_seen": privilege_debug["password_prompt_seen"],
             "prompt_state": privilege_prompt.state,
+            "final_prompt_state": privilege_prompt.state,
+            "privilege_level": privilege_debug["privilege_level"],
+            "debug": privilege_debug,
             "blockers": []
             if privilege_prompt.state == "privileged-exec"
             else ["Configured console credentials did not reach a privileged exec prompt."],
@@ -242,18 +263,43 @@ def _baud_order(first_baud: int | None) -> tuple[int, ...]:
     return tuple(dict.fromkeys(int(value) for value in values if value))
 
 
-def _ensure_privileged(conn: Any, prompt: Prompt) -> Prompt:
+def _ensure_privileged(conn: Any, prompt: Prompt) -> PrivilegeResult:
     current = prompt
+    debug: dict[str, Any] = {
+        "initial_prompt_state": prompt.state,
+        "setup_wizard_answered_no": False,
+        "login_exchange_attempted": False,
+        "enable_command_sent": False,
+        "enable_commands_attempted": [],
+        "password_prompt_seen": False,
+        "enable_password_sources_configured": _enable_password_sources_configured(),
+        "enable_password_sources_tried": [],
+        "final_prompt_state": prompt.state,
+        "privilege_level": None,
+    }
     if current.state == "setup-wizard":
         _send(conn, "no")
+        debug["setup_wizard_answered_no"] = True
         current = _classify_prompt(_read(conn, window=2.0))
 
     for _ in range(4):
         if current.state == "privileged-exec":
-            return current
+            debug["final_prompt_state"] = current.state
+            return PrivilegeResult(current, debug)
         if current.state == "exec":
-            return _enter_enable(conn)
+            result = _enter_enable(conn)
+            debug.update(
+                {
+                    "enable_command_sent": result.debug["enable_command_sent"],
+                    "enable_commands_attempted": result.debug["enable_commands_attempted"],
+                    "password_prompt_seen": result.debug["password_prompt_seen"],
+                    "enable_password_sources_tried": result.debug["enable_password_sources_tried"],
+                    "final_prompt_state": result.prompt.state,
+                }
+            )
+            return PrivilegeResult(result.prompt, debug)
         if current.state == "login-required":
+            debug["login_exchange_attempted"] = True
             current = _credential_exchange(conn)
             continue
         if current.state == "unknown":
@@ -262,37 +308,107 @@ def _ensure_privileged(conn: Any, prompt: Prompt) -> Prompt:
             if current.state != "unknown":
                 continue
         break
-    return current
+    debug["final_prompt_state"] = current.state
+    return PrivilegeResult(current, debug)
 
 
-def _enter_enable(conn: Any) -> Prompt:
-    passwords = [
-        value
-        for value in (
-            os.getenv("CISCO_ENABLE_PASSWORD"),
-            os.getenv("ANSIBLE_CISCO_ENABLE_PASSWORD"),
-            settings.cisco_enable_password,
-            settings.cisco_test_password,
-        )
-        if value
-    ]
-    deduped_passwords = list(dict.fromkeys(passwords))
-    for password in deduped_passwords or [None]:
-        _send(conn, "enable")
-        text = _read(conn, window=1.0)
+def _enter_enable(conn: Any) -> PrivilegeResult:
+    password_candidates = _enable_password_candidates()
+    debug: dict[str, Any] = {
+        "enable_command_sent": False,
+        "enable_commands_attempted": [],
+        "password_prompt_seen": False,
+        "enable_password_sources_tried": [],
+    }
+    parsed = Prompt("unknown", "", False)
+    for enable_command in ("enable", "enable 15"):
+        _send(conn, enable_command)
+        debug["enable_command_sent"] = True
+        debug["enable_commands_attempted"].append(enable_command)
+        text = _read(conn, window=1.5)
         parsed = _classify_prompt(text)
         if parsed.state == "privileged-exec":
-            return parsed
-        if parsed.state == "login-required" and password:
+            return PrivilegeResult(parsed, debug)
+        if parsed.state == "login-required":
+            debug["password_prompt_seen"] = debug["password_prompt_seen"] or _contains_password_prompt(text)
+            for candidate in password_candidates:
+                debug["enable_password_sources_tried"].append(candidate["sources"])
+                challenge = _answer_enable_challenge(conn, text, candidate["value"])
+                parsed = challenge.prompt
+                debug["password_prompt_seen"] = debug["password_prompt_seen"] or challenge.password_prompt_seen
+                if parsed.state == "privileged-exec":
+                    return PrivilegeResult(parsed, debug)
+                if parsed.state == "exec":
+                    break
+                text = _read(conn, window=0.5)
+        if parsed.state == "exec":
+            continue
+    _send(conn, "")
+    parsed = _classify_prompt(_read(conn, window=1.0))
+    return PrivilegeResult(parsed, debug)
+
+
+@dataclass(frozen=True)
+class EnableChallengeResult:
+    prompt: Prompt
+    password_prompt_seen: bool
+
+
+def _answer_enable_challenge(conn: Any, text: str, password: str) -> EnableChallengeResult:
+    current = text
+    password_prompt_seen = False
+    for _ in range(3):
+        lower = current.lower()
+        if "username:" in lower or "login:" in lower:
+            if not settings.cisco_test_username:
+                return EnableChallengeResult(Prompt("login-required", "username prompt", False), password_prompt_seen)
+            _send(conn, settings.cisco_test_username, secret=True)
+            current = _read(conn, window=1.0)
+            continue
+        if "password:" in lower:
+            password_prompt_seen = True
             _send(conn, password, secret=True)
-            parsed = _classify_prompt(_read(conn, window=1.2))
+            parsed = _classify_prompt(_read(conn, window=1.8))
             if parsed.state == "unknown":
                 _send(conn, "")
                 parsed = _classify_prompt(_read(conn, window=1.0))
-            if parsed.state == "privileged-exec":
-                return parsed
-    _send(conn, "")
-    return _classify_prompt(_read(conn, window=1.0))
+            return EnableChallengeResult(parsed, password_prompt_seen)
+        parsed = _classify_prompt(current)
+        if parsed.state != "unknown":
+            return EnableChallengeResult(parsed, password_prompt_seen)
+        _send(conn, "")
+        current = _read(conn, window=1.0)
+    return EnableChallengeResult(_classify_prompt(current), password_prompt_seen)
+
+
+def _contains_password_prompt(text: str) -> bool:
+    return "password:" in text.lower()
+
+
+def _enable_password_sources_configured() -> dict[str, bool]:
+    return {
+        "CISCO_ENABLE_PASSWORD": bool(os.getenv("CISCO_ENABLE_PASSWORD")),
+        "ANSIBLE_CISCO_ENABLE_PASSWORD": bool(os.getenv("ANSIBLE_CISCO_ENABLE_PASSWORD")),
+        "settings.cisco_enable_password": bool(settings.cisco_enable_password),
+        "settings.cisco_test_password": bool(settings.cisco_test_password),
+    }
+
+
+def _enable_password_candidates() -> list[dict[str, Any]]:
+    raw_candidates = (
+        ("CISCO_ENABLE_PASSWORD", os.getenv("CISCO_ENABLE_PASSWORD")),
+        ("ANSIBLE_CISCO_ENABLE_PASSWORD", os.getenv("ANSIBLE_CISCO_ENABLE_PASSWORD")),
+        ("settings.cisco_enable_password", settings.cisco_enable_password),
+        ("settings.cisco_test_password", settings.cisco_test_password),
+    )
+    candidates_by_value: dict[str, list[str]] = {}
+    for source, value in raw_candidates:
+        if value:
+            candidates_by_value.setdefault(value, []).append(source)
+    return [
+        {"value": value, "sources": sources}
+        for value, sources in candidates_by_value.items()
+    ]
 
 
 def _credential_exchange(conn: Any) -> Prompt:
@@ -350,6 +466,20 @@ def _capture_identity(conn: Any) -> dict[str, Any]:
     return {"status": "captured", "commands": outputs}
 
 
+def _read_privilege_level(conn: Any) -> int | None:
+    _send(conn, "show privilege")
+    output = _read(conn, window=1.5)
+    match = re.search(r"(?im)\bCurrent privilege level is\s+(\d+)\b", output)
+    if not match:
+        match = re.search(r"(?im)\bprivilege level is\s+(\d+)\b", output)
+    if not match:
+        return None
+    try:
+        return int(match.group(1))
+    except ValueError:
+        return None
+
+
 def _bootstrap_plan() -> dict[str, Any]:
     hostname = settings.cisco_hostname or "lab-cisco-switch"
     target_ip = settings.cisco_target_ip
@@ -395,7 +525,7 @@ def _bootstrap_plan() -> dict[str, Any]:
     )
     blockers = []
     if not target_ip:
-        blockers.append("CISCO_TARGET_IP or ANSIBLE_CISCO_HOST is required for management IP.")
+        blockers.append("CISCO_TARGET_IP or ANSIBLE_CISCO_HOST is required for Cisco management IP.")
     if not netmask:
         blockers.append("CISCO_MANAGEMENT_PREFIX must be a valid prefix or netmask.")
     if not username or not settings.cisco_test_password:
@@ -406,6 +536,11 @@ def _bootstrap_plan() -> dict[str, Any]:
         "management_interface": interface,
         "management_vlan": vlan,
         "management_ip_configured": bool(target_ip),
+        "ansible_role": (
+            "console first-contact/bootstrap first; Ansible starts after Cisco management SSH "
+            "is configured for show commands, backup, validation, drift checks, and future repeatable config"
+        ),
+        "ansible_control_host": settings.ansible_control_host,
         "gateway_configured": bool(settings.cisco_management_gateway),
         "domain_configured": bool(settings.cisco_domain_name),
         "dns_server_count": len(settings.cisco_dns_servers),
@@ -469,6 +604,15 @@ def _serial_ownership(discovery: dict[str, Any]) -> dict[str, Any]:
         resolved = os.path.realpath(effective)
         if resolved != effective:
             paths.append(resolved)
+    if not paths:
+        for candidate in discovery.get("candidates") or []:
+            path = candidate.get("path") if isinstance(candidate, dict) else None
+            if isinstance(path, str):
+                paths.append(path)
+                resolved = os.path.realpath(path)
+                if resolved != path:
+                    paths.append(resolved)
+    paths = list(dict.fromkeys(paths))
     owners = []
     for path in paths:
         result = subprocess.run(["fuser", "-v", path], capture_output=True, text=True, check=False)
@@ -594,6 +738,11 @@ def _finish(payload: dict[str, Any]) -> int:
     sanitized = _sanitize(payload)
     _write_json(DETAILS, sanitized)
     REPORT.write_text(_markdown(sanitized), encoding="utf-8")
+    FIX_REPORT.write_text(_markdown(sanitized, title="Cisco Privileged Exec Fix Report"), encoding="utf-8")
+    PRIVILEGE_HARDENING_REPORT.write_text(
+        _markdown(sanitized, title="Cisco Privilege Hardening Report"),
+        encoding="utf-8",
+    )
     print(json.dumps(_summary(sanitized), indent=2))
     return 0 if payload["status"] in {"completed", "blocked"} else 1
 
@@ -609,21 +758,22 @@ def _summary(payload: dict[str, Any]) -> dict[str, Any]:
         "prompt_detected": prompt.get("prompt_detected"),
         "selected_baud": prompt.get("selected_baud"),
         "blockers": payload.get("blockers") or [],
-        "report": str(REPORT.relative_to(REPO_ROOT)),
+        "report": str(FIX_REPORT.relative_to(REPO_ROOT)),
         "details": str(DETAILS.relative_to(REPO_ROOT)),
     }
 
 
-def _markdown(payload: dict[str, Any]) -> str:
+def _markdown(payload: dict[str, Any], *, title: str = "Cisco 4h Lab Run Report") -> str:
     stages = payload.get("stages", {})
     adapter = stages.get("adapter_discovery", {})
     prompt = stages.get("console_prompt_detection", {})
+    privilege = stages.get("privilege_escalation", {})
     identity = stages.get("switch_identification", {})
     plan = stages.get("bootstrap_plan", {})
     apply = stages.get("apply", {})
     ethernet = stages.get("ethernet_management_validation", {})
     lines = [
-        "# Cisco 4h Lab Run Report",
+        f"# {title}",
         "",
         "## Summary",
         "",
@@ -648,11 +798,27 @@ def _markdown(payload: dict[str, Any]) -> str:
     lines.extend(
         [
             "",
+            "## Code Inspection",
+            "",
+            "- Enable from exec prompt: `yes`; `_ensure_privileged` calls `_enter_enable` when prompt state is `exec`.",
+            "- Enable commands attempted: `enable`, then `enable 15`.",
+            "- Password prompt after enable handled: `yes`; `_answer_enable_challenge` responds to `Password:` without logging the value.",
+            "- Enable password aliases tried: `CISCO_ENABLE_PASSWORD`, `ANSIBLE_CISCO_ENABLE_PASSWORD`, `settings.cisco_enable_password`, then login-password fallback.",
+            "- Configuration apply: `not run` unless `--apply` is passed.",
+            "",
             "## Stage Evidence",
             "",
             f"- Adapter discovery: `{adapter.get('status')}`; source `{adapter.get('selection_source')}`.",
             f"- Port ownership: `{adapter.get('ownership', {}).get('owned')}`.",
             f"- Console prompt detection: tried `{prompt.get('bauds_tried')}` and wake sequences `{prompt.get('wake_sequences_tried')}`.",
+            f"- Privilege initial prompt state: `{privilege.get('initial_prompt_state')}`.",
+            f"- Enable command sent: `{privilege.get('enable_command_sent')}`.",
+            f"- Enable password prompt seen: `{privilege.get('password_prompt_seen')}`.",
+            f"- Privilege final prompt state: `{privilege.get('final_prompt_state')}`.",
+            f"- Readable privilege level: `{privilege.get('privilege_level')}`.",
+            f"- Enable password rejected: `{_enable_password_rejected(privilege)}`.",
+            f"- Password recovery/factory reset required: `{_password_recovery_required(privilege)}`.",
+            f"- Operator next action: {_privilege_next_action(privilege)}",
             f"- Bootstrap commands redacted artifact: `{COMMANDS.relative_to(REPO_ROOT)}`.",
             f"- Console samples redacted artifact: `{SAMPLES.relative_to(REPO_ROOT)}`.",
             f"- Details artifact: `{DETAILS.relative_to(REPO_ROOT)}`.",
@@ -666,6 +832,36 @@ def _markdown(payload: dict[str, Any]) -> str:
         ]
     )
     return "\n".join(lines)
+
+
+def _enable_password_rejected(privilege: dict[str, Any]) -> bool:
+    if privilege.get("final_prompt_state") == "privileged-exec":
+        return False
+    debug = privilege.get("debug") if isinstance(privilege.get("debug"), dict) else {}
+    return bool(debug.get("enable_command_sent") and debug.get("password_prompt_seen"))
+
+
+def _password_recovery_required(privilege: dict[str, Any]) -> str:
+    if privilege.get("final_prompt_state") == "privileged-exec":
+        return "false"
+    if _enable_password_rejected(privilege):
+        return "operator-confirm-password-recovery-or-factory-reset"
+    if privilege.get("initial_prompt_state") == "exec" and not privilege.get("enable_command_sent"):
+        return "unknown-enable-not-sent"
+    return "unknown"
+
+
+def _privilege_next_action(privilege: dict[str, Any]) -> str:
+    if privilege.get("final_prompt_state") == "privileged-exec":
+        return "Privilege is confirmed; continue Cisco management network validation."
+    if _enable_password_rejected(privilege):
+        return (
+            "Confirm the enable credential out of band. If no valid enable credential exists, "
+            "perform the documented password recovery or factory reset procedure, then rerun Cisco bootstrap."
+        )
+    if privilege.get("initial_prompt_state") == "exec":
+        return "Rerun the Cisco privilege workflow and verify whether enable sends a Password: challenge."
+    return "Restore a user exec or privileged exec prompt before retrying Cisco bootstrap."
 
 
 def _sanitize(payload: Any) -> Any:

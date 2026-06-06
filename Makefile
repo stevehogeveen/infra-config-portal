@@ -1,4 +1,4 @@
-.PHONY: check-repo-root codex-audit codex-task codex-next codex-resume test dev lint provider-smoke provider-smoke-ilo-readonly provider-smoke-ilo-local-lab provider-inventory-ilo-local-lab provider-lab-ilo-reachability provider-lab-ilo-authentication provider-lab-ilo-inventory provider-lab-ilo-readiness provider-lab-hpe-storage-discovery provider-lab-hpe-raid-discovery provider-lab-hpe-raid-plan provider-lab-hpe-raid-apply provider-lab-hpe-raid-validate-after-reset provider-lab-esxi-install-readiness provider-lab-esxi-media-url provider-lab-esxi-insert-virtual-media provider-lab-esxi-one-time-boot provider-lab-esxi-reset-installer-boot provider-lab-esxi-detect-installer provider-lab-cisco-console-ethernet-readiness netapp-real-readiness app-start app-stop app-restart app-status app-check
+.PHONY: check-repo-root codex-audit codex-task codex-next codex-resume test dev lint provider-smoke provider-smoke-ilo-readonly provider-smoke-ilo-local-lab provider-inventory-ilo-local-lab provider-lab-ilo-reachability provider-lab-ilo-authentication provider-lab-ilo-inventory provider-lab-ilo-readiness provider-lab-hpe-storage-discovery provider-lab-hpe-raid-discovery provider-lab-hpe-raid-plan provider-lab-hpe-raid-apply provider-lab-hpe-raid-validate-after-reset provider-lab-esxi-install-readiness provider-lab-esxi-media-url provider-lab-esxi-insert-virtual-media provider-lab-esxi-one-time-boot provider-lab-esxi-reset-installer-boot provider-lab-esxi-detect-installer provider-lab-cisco-console-ethernet-readiness provider-lab-full-rebuild-summary provider-lab-full-rebuild provider-lab-build-verification netapp-real-readiness app-start app-stop app-restart app-status app-check
 
 REPO_ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 TASK ?= .codex/tasks/001-backend-vm-request-lifecycle.md
@@ -119,6 +119,15 @@ provider-lab-esxi-detect-installer: check-repo-root
 
 provider-lab-cisco-console-ethernet-readiness: check-repo-root
 	$(MAKE) -C $(REPO_ROOT)/app provider-lab-cisco-console-ethernet-readiness
+
+provider-lab-full-rebuild-summary: check-repo-root
+	$(MAKE) -C $(REPO_ROOT)/app provider-lab-full-rebuild-summary
+
+provider-lab-full-rebuild: check-repo-root
+	$(MAKE) -C $(REPO_ROOT)/app provider-lab-full-rebuild
+
+provider-lab-build-verification: check-repo-root
+	$(MAKE) -C $(REPO_ROOT)/app provider-lab-build-verification
 
 netapp-real-readiness: check-repo-root
 	$(MAKE) -C $(REPO_ROOT)/app netapp-real-readiness PROVIDER_MODE="$(PROVIDER_MODE)"

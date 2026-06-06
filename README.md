@@ -248,6 +248,25 @@ configuration commands:
 make provider-lab-cisco-console-ethernet-readiness
 ```
 
+Full lab rebuild has separate report-only and real execution paths:
+
+```bash
+make provider-lab-full-rebuild-summary
+make provider-lab-full-rebuild
+make provider-lab-build-verification
+```
+
+`provider-lab-full-rebuild-summary` refreshes dashboard summaries without live
+device calls. `provider-lab-full-rebuild` runs the live local lab path with
+`PROVIDER_MODE=local-lab-readwrite` and `.env.local.real-lab`; it calls Cisco,
+iLO, RAID, and ESXi stages and records real blockers. Build verification writes
+`artifacts/codex-runs/build-verification-report.md` with credential, MTU,
+protocol, port, checklist, failure-classification, and next-action checks.
+Build verification stages unresolved work as `blocked_by_prior_stage`,
+`not_configured_yet`, `stale_config`, `operator_action_required`, `warning`,
+`hard_fail`, or `passed`, and also writes classification, lab-IP hardening, and
+failure-case hardening reports under `artifacts/codex-runs/`.
+
 The NetApp-only readiness command writes `netapp-readiness-*` artifacts under
 the same ignored directory and never contacts ONTAP, SP, console, SSH, storage,
 upgrade, reboot, wipe, or apply endpoints.

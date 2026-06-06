@@ -73,10 +73,10 @@ class ProviderRegistry:
             )
 
     def _ensure_status_mode(self) -> None:
-        if self.provider_mode not in {"mock", "local-readonly"}:
+        if self.provider_mode not in {"mock", "local-readonly", "local-lab-readwrite"}:
             raise ProviderRegistryError(
                 f"Provider mode {self.provider_mode!r} is not available. "
-                "Provider status supports only mock and local-readonly modes."
+                "Provider status supports only mock, local-readonly, and local-lab-readwrite modes."
             )
 
     def _safe_status(

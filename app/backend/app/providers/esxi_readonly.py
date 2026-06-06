@@ -11,6 +11,7 @@ from urllib.parse import urlparse
 import httpx
 
 from app.core.config import settings
+from app.providers.action_policy import REAL_CONTACT_MODES, current_lab_action_policy
 from app.providers.base import ProviderAction, ProviderStatus
 from app.providers.lab_safety import current_lab_safety
 from app.providers.probe_cache import get_probe_result, record_probe_result
@@ -62,16 +63,19 @@ class EsxiReadonlyAdapter:
         last_result, last_time = get_probe_result(PROVIDER_ID)
         missing_fields = self.config.missing_fields
         safety = current_lab_safety()
+        policy = current_lab_action_policy(self.provider_mode)
         planned_target = bool(self.config.host)
         blockers: list[str] = []
         if self.config.management_configured and missing_fields:
             blockers.append(f"Missing local ESXi configuration: {', '.join(missing_fields)}.")
-        if self.config.management_configured and self.provider_mode == "local-readonly":
-            blockers.extend(safety.blockers)
+        if self.config.management_configured and self.provider_mode in REAL_CONTACT_MODES:
+            blockers.extend(policy.readonly_blockers())
 
         warnings: list[str] = []
-        if self.provider_mode != "local-readonly":
-            warnings.append("Provider mode is not local-readonly; ESXi probes are disabled.")
+        if self.provider_mode not in REAL_CONTACT_MODES:
+            warnings.append(
+                "Provider mode is not local-readonly or local-lab-readwrite; ESXi probes are disabled."
+            )
         if not self.config.management_configured:
             warnings.append(
                 "ESXI_CONFIGURED is false; ESXi management network probes are skipped."
@@ -83,22 +87,22 @@ class EsxiReadonlyAdapter:
         if (
             self.config.management_configured
             and not missing_fields
-            and self.provider_mode != "local-readonly"
+            and self.provider_mode not in REAL_CONTACT_MODES
         ):
             status = "configured"
         if (
             self.config.management_configured
             and not missing_fields
-            and self.provider_mode == "local-readonly"
-            and not safety.readonly_allowed
+            and self.provider_mode in REAL_CONTACT_MODES
+            and not policy.readonly_allowed
         ):
             status = "blocked"
 
         probe_enabled = (
-            self.provider_mode == "local-readonly"
+            self.provider_mode in REAL_CONTACT_MODES
             and self.config.management_configured
             and not missing_fields
-            and safety.readonly_allowed
+            and policy.readonly_allowed
         )
         disabled_reason = "Install/configure ESXi management network before read-only probe."
 
@@ -152,7 +156,8 @@ class EsxiReadonlyAdapter:
                         if not self.config.management_configured
                         else (
                             "Requires ESXI_TEST_HOST, LAB_CLOSED_LOOP_ACK=YES, "
-                            "LAB_READONLY_ACK=YES, and PROVIDER_MODE=local-readonly."
+                            "LAB_READONLY_ACK=YES, and PROVIDER_MODE=local-readonly; or "
+                            "complete local-lab-readwrite acknowledgements."
                         )
                     ),
                     method="POST",
@@ -165,9 +170,9 @@ class EsxiReadonlyAdapter:
         )
 
     def probe(self) -> dict[str, Any]:
-        if self.provider_mode != "local-readonly":
+        if self.provider_mode not in REAL_CONTACT_MODES:
             return self._record_blocked(
-                "Set PROVIDER_MODE=local-readonly before running ESXi probes."
+                "Set PROVIDER_MODE=local-readonly or PROVIDER_MODE=local-lab-readwrite before running ESXi probes."
             )
 
         if not self.config.management_configured:
@@ -177,11 +182,11 @@ class EsxiReadonlyAdapter:
                 planned_target=bool(self.config.host),
             )
 
-        safety = current_lab_safety()
-        if not safety.readonly_allowed:
+        policy = current_lab_action_policy(self.provider_mode)
+        if not policy.readonly_allowed:
             return self._record_blocked(
-                "Set LAB_CLOSED_LOOP_ACK=YES and LAB_READONLY_ACK=YES before real lab probes.",
-                safety=safety.as_flags(),
+                "Required lab acknowledgement flags are missing before real lab probes.",
+                action_policy=policy.as_flags(),
             )
 
         if self.config.missing_fields:

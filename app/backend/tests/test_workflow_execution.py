@@ -15,6 +15,7 @@ from app.services.lifecycle import (
     create_vm_deployment_request,
     execute_request,
     plan_request,
+    reject_request,
     submit_request,
     update_vm_deployment_request,
 )
@@ -362,6 +363,48 @@ def test_execution_affecting_edit_invalidates_existing_approval(
         )
     ).scalar_one()
     assert audit_event.data_json["invalidated_approval_ids"] == [approval.id]
+
+
+def test_reject_request_records_decision_and_locks_request(
+    db_session: Session,
+    vm_payload: dict,
+) -> None:
+    request = create_vm_deployment_request(
+        db_session,
+        VMDeploymentCreate.model_validate(vm_payload),
+        actor="local-dev-user",
+    )
+    request = submit_request(db_session, request.id, actor="local-dev-user")
+
+    rejected = reject_request(
+        db_session,
+        request.id,
+        ApprovalCreate(approver="change.manager", notes="Rejected for lifecycle test"),
+    )
+
+    assert rejected.status == RequestStatus.REJECTED.value
+
+    approval = db_session.execute(
+        select(Approval).where(Approval.request_id == request.id)
+    ).scalar_one()
+    assert approval.decision == "rejected"
+    assert approval.notes == "Rejected for lifecycle test"
+
+    audit_event = db_session.execute(
+        select(AuditEvent).where(AuditEvent.event_type == "request.rejected")
+    ).scalar_one()
+    assert audit_event.request_id == request.id
+    assert audit_event.from_status == RequestStatus.NEEDS_APPROVAL.value
+    assert audit_event.to_status == RequestStatus.REJECTED.value
+    assert audit_event.data_json == {"approval_id": approval.id}
+
+    with pytest.raises(InvalidTransitionError, match="locked"):
+        update_vm_deployment_request(
+            db_session,
+            request.id,
+            VMDeploymentUpdate(notes="Rejected requests are locked."),
+            actor="local-dev-user",
+        )
 
 
 @pytest.mark.parametrize(

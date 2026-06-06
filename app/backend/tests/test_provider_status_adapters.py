@@ -19,7 +19,12 @@ from app.providers.cisco_console import (
     _prompt_state,
     discover_cisco_console,
 )
-from app.providers.cisco_ansible import CiscoAnsibleAdapter, CiscoAnsibleConfig, _run_command
+from app.providers.cisco_ansible import (
+    CiscoAnsibleAdapter,
+    CiscoAnsibleConfig,
+    _run_command,
+    _write_temp_inventory,
+)
 from app.providers.esxi_readonly import EsxiReadonlyAdapter, EsxiReadonlyConfig
 from app.providers.ilo_redfish import IloRedfishAdapter, IloRedfishConfig
 from app.providers.lab_safety import LabSafetyState
@@ -513,21 +518,44 @@ def test_cisco_ansible_run_command_can_redact_output() -> None:
     assert "device output" not in encoded
 
 
+def test_cisco_ansible_inventory_targets_switch_not_control_host() -> None:
+    config = CiscoAnsibleConfig(
+        host="192.168.1.204",
+        username="switch-admin",
+        password="super-secret-password",
+        enable_password="enable-secret",
+        network_os="cisco.ios.ios",
+        connection="ansible.netcommon.network_cli",
+        timeout_seconds=1.0,
+        control_host="192.168.1.205",
+    )
+
+    inventory_path = _write_temp_inventory(config)
+    try:
+        inventory = json.loads(inventory_path.read_text(encoding="utf-8"))
+    finally:
+        inventory_path.unlink(missing_ok=True)
+
+    host_vars = inventory["all"]["hosts"]["cisco_target"]
+    assert host_vars["ansible_host"] == "192.168.1.204"
+    assert "192.168.1.205" not in json.dumps(inventory)
+
+
 def test_cisco_setup_readiness_is_plan_only_until_management_bootstrap() -> None:
     clear_probe_results()
     readiness = get_cisco_setup_readiness(
         provider_mode="mock",
-        planned_management_ip="192.168.1.220",
+        planned_management_ip="192.168.1.204",
         management_configured=False,
     )
     encoded = json.dumps(readiness)
 
     assert readiness["provider_id"] == "cisco-setup"
     assert readiness["phase"] == "console-bootstrap-required"
-    assert readiness["planned_management_ip"] == "192.168.1.220"
+    assert readiness["planned_management_ip"] == "192.168.1.204"
     assert readiness["management_configured"] is False
     assert readiness["state_boundaries"]["discovered_current_device_state"]["summary"]
-    assert readiness["state_boundaries"]["saved_kit_config_values"]["planned_management_ip"] == "192.168.1.220"
+    assert readiness["state_boundaries"]["saved_kit_config_values"]["planned_management_ip"] == "192.168.1.204"
     assert readiness["state_boundaries"]["saved_kit_config_values"]["management_configured"] is False
     assert readiness["state_boundaries"]["values_ready_to_apply"]["ready"] is False
     assert readiness["state_boundaries"]["last_action_logs_artifacts"]["raw_console_log_saved"] is False
@@ -593,7 +621,7 @@ def test_cisco_setup_readiness_surfaces_no_output_prompt_guidance() -> None:
 
     readiness = get_cisco_setup_readiness(
         provider_mode="mock",
-        planned_management_ip="192.168.1.220",
+        planned_management_ip="192.168.1.204",
         management_configured=False,
     )
 
@@ -664,7 +692,7 @@ def test_cisco_setup_readiness_surfaces_setup_wizard_plan_when_cached() -> None:
 
     readiness = get_cisco_setup_readiness(
         provider_mode="mock",
-        planned_management_ip="192.168.1.220",
+        planned_management_ip="192.168.1.204",
         management_configured=False,
     )
 
@@ -677,7 +705,7 @@ def test_cisco_setup_readiness_surfaces_setup_wizard_plan_when_cached() -> None:
 
 def test_cisco_bootstrap_requirements_reports_missing_inputs_preview_only() -> None:
     requirements = build_cisco_bootstrap_requirements(
-        planned_management_ip="192.168.1.220",
+        planned_management_ip="192.168.1.204",
         local_admin_username_configured=False,
         management_configured=False,
     )
@@ -685,7 +713,7 @@ def test_cisco_bootstrap_requirements_reports_missing_inputs_preview_only() -> N
     assert requirements["provider_id"] == "cisco-bootstrap-requirements"
     assert requirements["status"] == "needs-input"
     assert requirements["apply_enabled"] is False
-    assert requirements["requirements"]["planned_management_ip"]["value"] == "192.168.1.220"
+    assert requirements["requirements"]["planned_management_ip"]["value"] == "192.168.1.204"
     assert requirements["requirements"]["subnet_prefix"]["configured"] is False
     assert requirements["requirements"]["gateway"]["configured"] is False
     assert requirements["requirements"]["management_vlan_interface_strategy"]["configured"] is False
@@ -706,7 +734,7 @@ def test_cisco_bootstrap_requirements_reports_missing_inputs_preview_only() -> N
 
 def test_cisco_bootstrap_requirements_keep_username_presence_only() -> None:
     requirements = build_cisco_bootstrap_requirements(
-        planned_management_ip="192.168.1.220",
+        planned_management_ip="192.168.1.204",
         subnet_prefix="/24",
         gateway="192.168.1.1",
         management_vlan="8",
@@ -745,7 +773,7 @@ def test_cisco_bootstrap_requirements_save_non_secret_planning_state(
     assert state_path.exists()
     assert requirements["status"] == "preview"
     assert requirements["apply_enabled"] is False
-    assert requirements["requirements"]["planned_management_ip"]["value"] == "192.168.1.220"
+    assert requirements["requirements"]["planned_management_ip"]["value"] == "192.168.1.204"
     assert requirements["requirements"]["subnet_prefix"]["configured"] is True
     assert requirements["requirements"]["gateway"]["configured"] is True
     assert requirements["requirements"]["management_vlan_interface_strategy"]["configured"] is True
@@ -800,7 +828,7 @@ def test_cisco_console_bootstrap_plan_uses_real_lab_target(
     encoded = json.dumps(plan)
 
     assert plan["status"] == "preview"
-    assert plan["target"]["ip"] == "192.168.1.220"
+    assert plan["target"]["ip"] == "192.168.1.204"
     assert plan["target"]["prefix"] == "/24"
     assert plan["target"]["netmask"] == "255.255.255.0"
     assert plan["flow"] == "direct-exec-config-mode-flow"
@@ -941,7 +969,7 @@ def test_cisco_console_bootstrap_plan_rejects_wrong_target_or_prefix(
     plan = build_cisco_console_bootstrap_plan()
 
     assert plan["status"] == "blocked"
-    assert "Planned target IP must be 192.168.1.220." in plan["blockers"]
+    assert "Planned target IP must be 192.168.1.204." in plan["blockers"]
     assert "Planned target prefix must be /24." in plan["blockers"]
 
 
@@ -2697,7 +2725,7 @@ def _load_hpe_raid_plan_module() -> types.ModuleType:
 
 def _valid_bootstrap_payload() -> dict[str, object]:
     return {
-        "planned_management_ip": "192.168.1.220",
+        "planned_management_ip": "192.168.1.204",
         "subnet_prefix": "/24",
         "gateway": "192.168.1.1",
         "management_vlan": "8",

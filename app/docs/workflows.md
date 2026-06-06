@@ -28,7 +28,8 @@ and execution through mocked provider adapters.
 2. Edit it, when allowed, with `PATCH /api/v1/requests/{id}`.
 3. Check readiness with `GET /api/v1/requests/{id}/readiness`.
 4. Submit it with `POST /api/v1/requests/{id}/submit`.
-5. Approve it with `POST /api/v1/requests/{id}/approve`.
+5. Approve it with `POST /api/v1/requests/{id}/approve`, or reject it with
+   `POST /api/v1/requests/{id}/reject`.
 6. Create a dry-run plan with `POST /api/v1/requests/{id}/plan`.
 7. Execute the mock deployment with `POST /api/v1/requests/{id}/execute`.
 8. Review local runs with `GET /api/v1/workflow-runs`.
@@ -151,6 +152,48 @@ Configured directory paths are returned as redacted labels such as
 `configured-directory-1`; missing or unreadable directory warnings use those
 labels and do not echo the local path.
 
+## Full Lab Rebuild
+
+The full rebuild workflow is split into separate report-only and real execution
+targets:
+
+```bash
+make provider-lab-full-rebuild-summary
+make provider-lab-full-rebuild
+make provider-lab-build-verification
+```
+
+`make provider-lab-full-rebuild-summary` only refreshes dashboard/report
+summaries from repository state and existing redacted artifacts. It does not
+open serial consoles, contact iLO, configure RAID, insert ESXi media, reset
+servers, or make network calls to lab devices.
+
+`make provider-lab-full-rebuild` is the real local lab execution path. It runs
+with `PROVIDER_MODE=local-lab-readwrite`, loads `.env.local.real-lab`, and calls
+the live Cisco console/bootstrap, iLO reachability/inventory, HPE RAID, and
+ESXi media/boot workflow stages. It does not block merely because the caller is
+Codex or `codex exec`; it records real physical/configuration blockers in the
+stage reports under `artifacts/codex-runs/`.
+
+`make provider-lab-build-verification` writes
+`artifacts/codex-runs/build-verification-report.md` and a redacted JSON summary.
+It checks credential compatibility and escaping, MTU consistency, protocol and
+port readiness, post-build checklist status, failure classification, and exact
+next actions.
+The report uses staged classifications: `passed`, `hard_fail`,
+`blocked_by_prior_stage`, `not_configured_yet`, `stale_config`,
+`operator_action_required`, and `warning`. Cisco SSH/SCP before confirmed
+console bootstrap, ESXi API/SSH before install/config, and unconfigured NetApp
+readiness are staged instead of reported as generic port failures. Additional
+artifacts are written to
+`artifacts/codex-runs/build-verification-classification-report.md`,
+`artifacts/codex-runs/lab-ip-profile-hardening-report.md`, and
+`artifacts/codex-runs/failure-case-hardening-report.md`.
+
+The Provider Status page reads `GET /api/v1/lab/full-rebuild-summary` and
+`GET /api/v1/lab/build-verification` to show real execution state, report-only
+summary state, Cisco, iLO, RAID, ESXi, and product certification status.
+
 ### Edits
 
 VM deployment requests can be updated through `PATCH /api/v1/requests/{id}`.
@@ -197,7 +240,8 @@ mock task and VM IDs and does not connect to any infrastructure endpoint.
 Cancellation is allowed for requests in `draft`, `submitted`, `validating`,
 `needs_approval`, `approved`, or `planned`. Cancelling a planned request also
 marks its planned workflow run as `cancelled`. Requests that are already
-`executing`, `completed`, `failed`, or `cancelled` reject cancellation.
+`executing`, `completed`, `failed`, `cancelled`, or `rejected` reject
+cancellation.
 
 ### Status Transitions
 
@@ -209,6 +253,7 @@ marks its planned workflow run as `cancelled`. Requests that are already
 | edit execution-affecting fields | `submitted`, `validating`, `needs_approval`, `approved`, `planned` | `draft`; planned workflow runs are cancelled |
 | submit | `draft` | `needs_approval` after `submitted` and `validating` audit events |
 | approve | `needs_approval` | `approved` |
+| reject | `needs_approval` | `rejected` |
 | plan | `approved` | `planned` |
 | cancel | pre-execution states | `cancelled` |
 | execute | `planned` with matching persisted plan | `completed` after `executing` audit event |

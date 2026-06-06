@@ -6,6 +6,13 @@ from pathlib import Path
 
 from dotenv import dotenv_values
 
+LAB_SUBNET_CIDR = "192.168.1.0/24"
+LAB_ILO_IP = "192.168.1.201"
+LAB_SERVER_EMBEDDED_NIC_IP = "192.168.1.202"
+LAB_ESXI_MANAGEMENT_IP = "192.168.1.203"
+LAB_CISCO_MANAGEMENT_IP = "192.168.1.204"
+LAB_ANSIBLE_CONTROL_HOST_IP = "192.168.1.205"
+
 
 def _load_local_real_lab_env() -> None:
     candidates: list[Path] = []
@@ -22,7 +29,12 @@ def _load_local_real_lab_env() -> None:
     for env_file in candidates:
         if env_file.exists():
             for key, value in dotenv_values(env_file).items():
-                if key == "PROVIDER_MODE" or value is None or key in os.environ:
+                if key == "PROVIDER_MODE" or value is None:
+                    continue
+                existing = os.environ.get(key)
+                if existing is not None:
+                    if _is_stale_lab_ip(existing) and not _is_stale_lab_ip(value):
+                        os.environ[key] = value
                     continue
                 os.environ[key] = value
 
@@ -39,10 +51,16 @@ def _optional_env(name: str) -> str | None:
     return value or None
 
 
+def _is_stale_lab_ip(value: str | None) -> bool:
+    return bool(value and value.startswith("10.10.8."))
+
+
 def _cisco_target_ip() -> str:
     value = _optional_env("CISCO_TARGET_IP") or _optional_env("ANSIBLE_CISCO_HOST")
-    if value == "10.10.8.112" or value is None:
-        return "192.168.1.220"
+    if _is_stale_lab_ip(value):
+        return LAB_CISCO_MANAGEMENT_IP
+    if value is None:
+        return LAB_CISCO_MANAGEMENT_IP
     return value
 
 
@@ -83,14 +101,18 @@ def _float_env(name: str, default: float) -> float:
 _load_local_real_lab_env()
 
 
+def _media_inventory_dirs() -> tuple[str, ...]:
+    if os.getenv("PROVIDER_MODE", "mock") == "mock":
+        return ()
+    return tuple(_split_csv(os.getenv("MEDIA_INVENTORY_DIRS", "")))
+
+
 @dataclass(frozen=True)
 class Settings:
     app_name: str = os.getenv("APP_NAME", "infra-config-portal")
     environment: str = os.getenv("ENVIRONMENT", "local")
     provider_mode: str = os.getenv("PROVIDER_MODE", "mock")
-    media_inventory_dirs: tuple[str, ...] = tuple(
-        _split_csv(os.getenv("MEDIA_INVENTORY_DIRS", ""))
-    )
+    media_inventory_dirs: tuple[str, ...] = _media_inventory_dirs()
     database_url: str = os.getenv(
         "DATABASE_URL",
         "sqlite:///./.local/infra_config_portal.db",
@@ -113,6 +135,9 @@ class Settings:
     esxi_test_verify_tls: bool = _bool_env("ESXI_TEST_VERIFY_TLS", True)
     esxi_test_timeout_seconds: float = _float_env("ESXI_TEST_TIMEOUT_SECONDS", 3.0)
     esxi_test_ssh_timeout_seconds: float = _float_env("ESXI_TEST_SSH_TIMEOUT_SECONDS", 3.0)
+    lab_subnet_cidr: str = os.getenv("LAB_SUBNET_CIDR", LAB_SUBNET_CIDR)
+    server_embedded_nic_ip: str = os.getenv("SERVER_EMBEDDED_NIC_IP", LAB_SERVER_EMBEDDED_NIC_IP)
+    ansible_control_host: str | None = _optional_env("ANSIBLE_CONTROL_HOST")
     cisco_target_ip: str | None = _cisco_target_ip()
     cisco_test_username: str | None = (
         _optional_env("CISCO_TEST_USERNAME")
@@ -170,6 +195,18 @@ class Settings:
     netapp_current_ontap_version: str | None = _optional_env("NETAPP_CURRENT_ONTAP_VERSION")
     lab_closed_loop_ack: str | None = _optional_env("LAB_CLOSED_LOOP_ACK")
     lab_readonly_ack: str | None = _optional_env("LAB_READONLY_ACK")
+    lab_environment: str | None = _optional_env("LAB_ENVIRONMENT")
+    lab_acknowledge_real_hardware: bool = _bool_env("LAB_ACKNOWLEDGE_REAL_HARDWARE", False)
+    lab_acknowledge_device_reconfiguration: bool = _bool_env(
+        "LAB_ACKNOWLEDGE_DEVICE_RECONFIGURATION",
+        False,
+    )
+    lab_acknowledge_data_loss_risk: bool = _bool_env("LAB_ACKNOWLEDGE_DATA_LOSS_RISK", False)
+    lab_acknowledge_lab_only: bool = _bool_env("LAB_ACKNOWLEDGE_LAB_ONLY", False)
+    lab_allow_power_actions: bool = _bool_env("LAB_ALLOW_POWER_ACTIONS", False)
+    lab_allow_firmware_updates: bool = _bool_env("LAB_ALLOW_FIRMWARE_UPDATES", False)
+    lab_allow_factory_reset: bool = _bool_env("LAB_ALLOW_FACTORY_RESET", False)
+    ilo_setup_apply_enabled: bool = _bool_env("ILO_SETUP_APPLY_ENABLED", False)
     cisco_console_apply_enabled: bool = _bool_env("CISCO_CONSOLE_APPLY_ENABLED", False)
     lab_apply_ack: str | None = _optional_env("LAB_APPLY_ACK")
     lab_target_ack: str | None = _optional_env("LAB_TARGET_ACK")

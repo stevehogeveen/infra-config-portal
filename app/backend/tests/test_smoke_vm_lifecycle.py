@@ -191,3 +191,44 @@ def test_mock_vm_lifecycle_smoke_stale_plan_edit_blocks_execution(
     ]
 
     assert "request.completed" not in _audit_event_types(client, request_id)
+
+
+def test_mock_vm_lifecycle_smoke_rejection_locks_request(
+    client: TestClient,
+    vm_payload: dict,
+) -> None:
+    created = client.post("/api/v1/requests/vm-deploy", json=vm_payload)
+    assert created.status_code == 201
+    request_id = created.json()["id"]
+
+    submitted = client.post(f"/api/v1/requests/{request_id}/submit")
+    assert submitted.status_code == 200
+    assert submitted.json()["status"] == "needs_approval"
+
+    rejected = client.post(
+        f"/api/v1/requests/{request_id}/reject",
+        json={"approver": "change.manager", "notes": "Rejected for smoke test"},
+    )
+    assert rejected.status_code == 200
+    assert rejected.json()["status"] == "rejected"
+
+    readiness = client.get(f"/api/v1/requests/{request_id}/readiness")
+    assert readiness.status_code == 200
+    assert readiness.json()["next_action"] == "none"
+    assert readiness.json()["blockers"][0]["code"] == "rejected_request"
+
+    approve_after_reject = client.post(
+        f"/api/v1/requests/{request_id}/approve",
+        json={"approver": "change.manager", "notes": "Too late"},
+    )
+    assert approve_after_reject.status_code == 409
+    assert "rejected" in approve_after_reject.json()["detail"]
+
+    edit_after_reject = client.patch(
+        f"/api/v1/requests/{request_id}",
+        json={"notes": "Rejected requests are locked."},
+    )
+    assert edit_after_reject.status_code == 409
+    assert "locked" in edit_after_reject.json()["detail"]
+
+    assert "request.rejected" in _audit_event_types(client, request_id)

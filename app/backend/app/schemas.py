@@ -493,6 +493,71 @@ class IloSetupIntentRead(IloSetupIntentWrite):
     updated_at: datetime | None = None
 
 
+class HpeRaidVolumeIntent(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    purpose: str = Field(min_length=1, max_length=80)
+    raid_level: str = Field(min_length=2, max_length=40)
+    drive_bays: list[str] = Field(default_factory=list, max_length=32)
+    spare_bays: list[str] = Field(default_factory=list, max_length=32)
+    spare_rebuild_mode: str | None = Field(default=None, max_length=80)
+    size_policy: str = Field(default="max", min_length=1, max_length=80)
+    bootable: bool = False
+
+
+class HpeRaidIntentWrite(BaseModel):
+    controller_ref: str | None = Field(default=None, max_length=240)
+    wipe_existing_logical_drives: bool = False
+    volumes: list[HpeRaidVolumeIntent] = Field(default_factory=list, max_length=16)
+    notes: str | None = Field(default=None, max_length=2000)
+
+    @field_validator("*", mode="after")
+    @classmethod
+    def reject_secret_values(cls, value: Any) -> Any:
+        _reject_secret_values(value)
+        return value
+
+
+class HpeRaidIntentRead(HpeRaidIntentWrite):
+    provider_id: str
+    apply_enabled: bool = False
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class HpeStorageDiscoveryRead(BaseModel):
+    provider_id: str
+    source: str
+    last_probe_time: str | None = None
+    storage_inventory_available: bool = False
+    server: dict[str, Any] = Field(default_factory=dict)
+    controllers: list[dict[str, Any]] = Field(default_factory=list)
+    physical_drives: list[dict[str, Any]] = Field(default_factory=list)
+    logical_drives: list[dict[str, Any]] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    blockers: list[str] = Field(default_factory=list)
+    next_safe_action: str
+
+
+class HpeRaidPlanPreviewRead(BaseModel):
+    provider_id: str
+    status: str
+    apply_enabled: bool = False
+    destructive_actions_requested: bool = False
+    destructive_actions_enabled: bool = False
+    current_layout: HpeStorageDiscoveryRead
+    desired_intent: HpeRaidIntentRead
+    planned_layout: dict[str, Any] = Field(default_factory=dict)
+    impact: dict[str, Any] = Field(default_factory=dict)
+    blockers: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    disabled_actions: list[str] = Field(default_factory=list)
+    next_safe_action: str
+
+
+class HpeRaidApplyCreate(BaseModel):
+    confirmation_phrase: str
+
+
 class IloSetupPlanSectionRead(BaseModel):
     id: str
     title: str
@@ -519,6 +584,12 @@ class IloSetupPlanPreviewRead(BaseModel):
     blockers: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     removable_warnings: list[str] = Field(default_factory=list)
+
+
+class IloSetupApplyCreate(BaseModel):
+    confirmation_phrase: str
+    requested_actions: list[str] = Field(default_factory=list)
+    destructive_action_requested: bool = False
 
 
 class IloSetupCompareRowRead(BaseModel):
@@ -654,6 +725,8 @@ class CiscoSetupReadinessRead(BaseModel):
     management_configured: bool
     state_boundaries: dict[str, Any] = Field(default_factory=dict)
     console: dict[str, Any]
+    ethernet_readiness: dict[str, Any] = Field(default_factory=dict)
+    real_lab_run: dict[str, Any] = Field(default_factory=dict)
     bootstrap_preview: dict[str, Any]
     ssh_scp_readiness: dict[str, Any]
     ansible: dict[str, Any]

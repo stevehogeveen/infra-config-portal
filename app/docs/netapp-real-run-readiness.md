@@ -22,7 +22,14 @@ This is a readiness pass, not an ONTAP setup or upgrade pass.
 - Do not print or commit secrets.
 - Do not commit `.env.local.real-lab` or anything under `artifacts/real-lab/`.
 
-## Real-Lab Convention
+## Legacy Address Note
+
+The `10.10.8.x` addresses below are legacy NetApp planning assumptions and are
+stale for the current DL360/Cisco/ESXi real-lab IP profile. Do not use them for
+active build verification unless a separate NetApp profile is explicitly
+confirmed. Current DL360/Cisco/ESXi lab devices should use `192.168.1.200+`.
+
+## Legacy NetApp Planning Convention
 
 - Controller A SP: `10.10.8.13`
 - Controller B SP: `10.10.8.14`

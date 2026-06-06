@@ -32,9 +32,15 @@ from app.schemas import (
     CiscoConsoleBootstrapPlanRead,
     CiscoSetupReadinessRead,
     CiscoSetupWizardPlanRead,
+    HpeRaidApplyCreate,
+    HpeRaidIntentRead,
+    HpeRaidIntentWrite,
+    HpeRaidPlanPreviewRead,
+    HpeStorageDiscoveryRead,
     IloDestructiveRebuildPreviewRead,
     IloReadinessSummaryRead,
     IloReportPreviewRead,
+    IloSetupApplyCreate,
     IloSetupCompareReportRead,
     IloSetupIntentRead,
     IloSetupIntentWrite,
@@ -85,11 +91,13 @@ from app.services.lifecycle import (
     list_workflow_runs,
     list_requests,
     plan_request,
+    reject_request,
     submit_request,
     update_vm_deployment_request,
 )
 from app.services.cisco_setup_readiness import get_cisco_setup_readiness
 from app.services.cisco_setup_wizard_plan import get_cisco_setup_wizard_plan
+from app.services.build_verification import get_lab_build_verification
 from app.services.ilo_readiness import (
     get_ilo_destructive_rebuild_preview,
     get_ilo_readiness_summary,
@@ -99,6 +107,24 @@ from app.services.ilo_readiness import (
     get_ilo_setup_plan_preview,
     save_ilo_setup_intent,
 )
+from app.services.ilo_setup_apply import (
+    apply_ilo_setup,
+    build_ilo_setup_apply_plan,
+)
+from app.services.hpe_raid import (
+    apply_hpe_raid_plan,
+    build_hpe_raid_apply_plan,
+    build_hpe_raid_reset_plan,
+    get_hpe_raid_intent,
+    get_hpe_raid_plan_preview,
+    get_hpe_storage_discovery,
+    reset_server_for_raid,
+    save_hpe_raid_intent,
+    validate_hpe_raid_after_reset,
+    write_hpe_raid_pending_report,
+)
+from app.services.esxi_install_readiness import get_esxi_install_readiness
+from app.services.full_rebuild_run import get_full_rebuild_summary
 from app.services.media_inventory import get_media_inventory
 from app.services.netapp_artifacts import (
     list_netapp_artifact_placeholders,
@@ -219,6 +245,20 @@ def approve(
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
+@router.post("/requests/{request_id}/reject", response_model=RequestRead)
+def reject(
+    request_id: str,
+    payload: ApprovalCreate,
+    session: Session = Depends(get_session),
+) -> RequestRead:
+    try:
+        return reject_request(session, request_id, payload)
+    except RequestNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Request not found") from exc
+    except InvalidTransitionError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
 @router.post("/requests/{request_id}/plan", response_model=WorkflowRunRead)
 def plan(
     request_id: str,
@@ -314,6 +354,16 @@ def read_provider_status() -> list[ProviderStatusRead]:
         return provider_registry().statuses()
     except ProviderRegistryError as exc:
         return [provider_registry_error_status(settings.provider_mode, str(exc))]
+
+
+@router.get("/lab/full-rebuild-summary", response_model=ProviderProbeResultRead)
+def read_full_rebuild_summary() -> ProviderProbeResultRead:
+    return get_full_rebuild_summary()
+
+
+@router.get("/lab/build-verification", response_model=ProviderProbeResultRead)
+def read_lab_build_verification() -> ProviderProbeResultRead:
+    return get_lab_build_verification()
 
 
 @router.get(
@@ -465,6 +515,133 @@ def read_ilo_report_preview(
     session: Session = Depends(get_session),
 ) -> IloReportPreviewRead:
     return get_ilo_report_preview(session)
+
+
+@router.get(
+    "/providers/ilo-redfish/setup-apply-plan",
+    response_model=ProviderProbeResultRead,
+)
+def read_ilo_setup_apply_plan(
+    session: Session = Depends(get_session),
+) -> ProviderProbeResultRead:
+    return build_ilo_setup_apply_plan(session)
+
+
+@router.post(
+    "/providers/ilo-redfish/setup-apply",
+    response_model=ProviderProbeResultRead,
+)
+def apply_ilo_setup_route(
+    payload: IloSetupApplyCreate,
+    session: Session = Depends(get_session),
+) -> ProviderProbeResultRead:
+    return apply_ilo_setup(session, payload)
+
+
+@router.get(
+    "/providers/ilo-redfish/hpe-storage-discovery",
+    response_model=HpeStorageDiscoveryRead,
+)
+def read_hpe_storage_discovery() -> HpeStorageDiscoveryRead:
+    return get_hpe_storage_discovery()
+
+
+@router.get(
+    "/providers/ilo-redfish/hpe-raid-intent",
+    response_model=HpeRaidIntentRead,
+)
+def read_hpe_raid_intent(
+    session: Session = Depends(get_session),
+) -> HpeRaidIntentRead:
+    return get_hpe_raid_intent(session)
+
+
+@router.put(
+    "/providers/ilo-redfish/hpe-raid-intent",
+    response_model=HpeRaidIntentRead,
+)
+def update_hpe_raid_intent(
+    payload: HpeRaidIntentWrite,
+    session: Session = Depends(get_session),
+) -> HpeRaidIntentRead:
+    return save_hpe_raid_intent(session, payload)
+
+
+@router.get(
+    "/providers/ilo-redfish/hpe-raid-plan-preview",
+    response_model=HpeRaidPlanPreviewRead,
+)
+def read_hpe_raid_plan_preview(
+    session: Session = Depends(get_session),
+) -> HpeRaidPlanPreviewRead:
+    return get_hpe_raid_plan_preview(session)
+
+
+@router.get(
+    "/providers/ilo-redfish/hpe-raid-apply-plan",
+    response_model=ProviderProbeResultRead,
+)
+def read_hpe_raid_apply_plan(
+    session: Session = Depends(get_session),
+) -> ProviderProbeResultRead:
+    return build_hpe_raid_apply_plan(session)
+
+
+@router.post(
+    "/providers/ilo-redfish/hpe-raid-apply",
+    response_model=ProviderProbeResultRead,
+)
+def apply_hpe_raid_route(
+    payload: HpeRaidApplyCreate,
+    session: Session = Depends(get_session),
+) -> ProviderProbeResultRead:
+    return apply_hpe_raid_plan(session, payload)
+
+
+@router.get(
+    "/providers/ilo-redfish/hpe-raid-pending",
+    response_model=ProviderProbeResultRead,
+)
+def read_hpe_raid_pending(
+    session: Session = Depends(get_session),
+) -> ProviderProbeResultRead:
+    return write_hpe_raid_pending_report(session)
+
+
+@router.get(
+    "/providers/ilo-redfish/hpe-raid-reset-plan",
+    response_model=ProviderProbeResultRead,
+)
+def read_hpe_raid_reset_plan() -> ProviderProbeResultRead:
+    return build_hpe_raid_reset_plan()
+
+
+@router.post(
+    "/providers/ilo-redfish/hpe-raid-reset",
+    response_model=ProviderProbeResultRead,
+)
+def reset_hpe_raid_server_route() -> ProviderProbeResultRead:
+    return reset_server_for_raid()
+
+
+@router.post(
+    "/providers/ilo-redfish/hpe-raid-validate-after-reset",
+    response_model=ProviderProbeResultRead,
+)
+def validate_hpe_raid_after_reset_route(
+    session: Session = Depends(get_session),
+) -> ProviderProbeResultRead:
+    return validate_hpe_raid_after_reset(session)
+
+
+@router.get(
+    "/providers/ilo-redfish/esxi-install-readiness",
+    response_model=ProviderProbeResultRead,
+)
+def read_esxi_install_readiness(
+    session: Session = Depends(get_session),
+) -> ProviderProbeResultRead:
+    return get_esxi_install_readiness(session)
 
 
 @router.get(
