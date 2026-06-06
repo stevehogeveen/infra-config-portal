@@ -21,7 +21,7 @@ import {
   XCircle
 } from "lucide-react";
 import { FormEvent, ReactNode, useEffect, useMemo, useState } from "react";
-import { Link, NavLink, Route as RouterRoute, Routes, useNavigate, useParams } from "react-router-dom";
+import { Link, NavLink, Route as RouterRoute, Routes, useLocation, useNavigate, useParams } from "react-router-dom";
 
 import { api } from "./api";
 import type {
@@ -98,6 +98,11 @@ type ProviderSection = {
   status: string;
 };
 
+type WorkflowSummaryItem = {
+  label: string;
+  value: string;
+};
+
 type ReadinessMap = Record<string, RequestReadiness>;
 
 type QueueSectionId =
@@ -131,6 +136,47 @@ type PlanStep = {
   name: string;
   status: string;
   target: string;
+};
+
+type RunCenterView = "choose" | "queue" | "selected" | "netapp";
+
+type RunChoice = {
+  id: string;
+  title: string;
+  category: string;
+  status: string;
+  description: string;
+  blockers: string[];
+  primaryLabel: string;
+  primaryTo?: string;
+  onPrimary?: () => void;
+  secondaryLabel?: string;
+  secondaryTo?: string;
+  command?: string;
+  icon: ReactNode;
+};
+
+type BuildStage = {
+  id: string;
+  title: string;
+  step: string;
+  status: string;
+  message: string;
+  nextAction: string;
+  metricLabel: string;
+  metricValue: string;
+  blocker: string;
+  detailSummary: string;
+  details: ReactNode;
+};
+
+type BuildOverview = {
+  overallState: string;
+  currentPhase: string;
+  nextAction: string;
+  topBlocker: string;
+  lastMilestone: string;
+  mode: string;
 };
 
 const queueSectionMeta: Array<Omit<QueueSection, "items">> = [
@@ -437,25 +483,34 @@ function RequestListPage() {
 function RunCenter() {
   const [requests, setRequests] = useState<RequestRecord[]>([]);
   const [runs, setRuns] = useState<WorkflowRun[]>([]);
+  const [providers, setProviders] = useState<ProviderStatus[]>([]);
   const [readinessByRequest, setReadinessByRequest] = useState<ReadinessMap>({});
   const [netappPlanPreview, setNetappPlanPreview] = useState<NetAppPlanPreview | null>(null);
   const [netappArtifacts, setNetappArtifacts] = useState<NetAppProviderArtifact[]>([]);
   const [netappConsoleReadiness, setNetappConsoleReadiness] = useState<NetAppConsoleReadiness | null>(null);
   const [netappReadinessComparison, setNetappReadinessComparison] = useState<NetAppReadinessComparison | null>(null);
   const [netappUpgradeReadiness, setNetappUpgradeReadiness] = useState<NetAppUpgradeReadiness | null>(null);
+  const [activeView, setActiveView] = useState<RunCenterView>("choose");
+  const [activeQueueSection, setActiveQueueSection] = useState<QueueSectionId>("needs_approval");
+  const [selectedRunChoiceIds, setSelectedRunChoiceIds] = useState<string[]>(["ilo", "storage", "esxi", "cisco", "verification"]);
   const [selectedQueueKey, setSelectedQueueKey] = useState("");
   const [error, setError] = useState("");
   const [netappError, setNetappError] = useState("");
   const [loading, setLoading] = useState(true);
-  const [netappLoading, setNetappLoading] = useState(true);
+  const [netappLoading, setNetappLoading] = useState(false);
 
   async function load() {
     setError("");
     setLoading(true);
     try {
-      const [nextRequests, nextRuns] = await Promise.all([api.requests(), api.workflowRuns()]);
+      const [nextRequests, nextRuns, nextProviders] = await Promise.all([
+        api.requests(),
+        api.workflowRuns(),
+        api.providers()
+      ]);
       setRequests(nextRequests);
       setRuns(nextRuns);
+      setProviders(nextProviders);
       setReadinessByRequest(await loadReadinessMap(nextRequests));
     } catch (err) {
       setError((err as Error).message);
@@ -495,8 +550,13 @@ function RunCenter() {
 
   useEffect(() => {
     load();
-    loadNetAppPlanPreview();
   }, []);
+
+  useEffect(() => {
+    if (activeView === "netapp" && !netappPlanPreview && !netappLoading) {
+      loadNetAppPlanPreview();
+    }
+  }, [activeView, netappPlanPreview, netappLoading]);
 
   const queueSections = useMemo(
     () => buildRunCenterSections(requests, runs, readinessByRequest),
@@ -520,9 +580,14 @@ function RunCenter() {
       }
       return current;
     });
+    const preferredItem = queueItems.find((item) => item.key === firstActionableKey);
+    if (preferredItem) {
+      setActiveQueueSection(preferredItem.sectionId);
+    }
   }, [firstActionableKey, queueItemKeySignature]);
 
   const selectedItem = queueItems.find((item) => item.key === selectedQueueKey) ?? queueItems[0] ?? null;
+  const selectedQueueSection = selectedItem?.sectionId ?? "needs_approval";
   const selectedRun = selectedItem?.run ?? null;
   const selectedRequest = selectedItem?.request ?? null;
   const stageEvents = selectedRun ? stageEventsForRun(selectedRun) : [];
@@ -533,13 +598,14 @@ function RunCenter() {
   const executing = queueSections.find((section) => section.id === "executing")?.items.length ?? 0;
   const blocked = queueSections.find((section) => section.id === "blocked_failed")?.items.length ?? 0;
   const completed = queueSections.find((section) => section.id === "completed")?.items.length ?? 0;
+  const activeQueue = queueSections.find((section) => section.id === activeQueueSection) ?? queueSections[0];
 
   return (
     <Page
       title="Run Center"
       actions={
         <>
-          <button onClick={load} disabled={loading}>
+          <button onClick={activeView === "netapp" ? loadNetAppPlanPreview : load} disabled={activeView === "netapp" ? netappLoading : loading}>
             <RefreshCw size={16} />
             Refresh
           </button>
@@ -547,96 +613,412 @@ function RunCenter() {
       }
     >
       <Feedback loading={loading} error={error} />
-      <section className="operator-metric-grid">
-        <Metric label="Needs Approval" value={needsApproval} icon={<ShieldCheck size={18} />} />
-        <Metric label="Ready To Plan" value={readyToPlan} icon={<Workflow size={18} />} />
-        <Metric label="Ready To Execute" value={readyToExecute} icon={<Play size={18} />} />
-        <Metric label="Executing" value={executing} icon={<Activity size={18} />} />
-        <Metric label="Blocked / Failed" value={blocked} icon={<AlertTriangle size={18} />} />
-        <Metric label="Completed" value={completed} icon={<CheckCircle2 size={18} />} />
-      </section>
-      <section className="operator-queue-grid">
-        {queueSections.map((section) => (
-          <QueueSectionPanel
-            key={section.id}
-            onSelect={setSelectedQueueKey}
-            section={section}
-            selectedKey={selectedItem?.key ?? ""}
-          />
-        ))}
-      </section>
-      <section className="panel">
-        <PanelTitle icon={<ShieldCheck size={18} />} title="Selected Work" />
-        {selectedItem && (
-          <div className="selected-work-banner">
-            <strong>{selectedItem.actionLabel}</strong>
-            <p>{selectedItem.reason}</p>
-          </div>
-        )}
-        {selectedRequest ? (
-          <>
-            <div className="detail-grid">
-              <Info label="Selected Request" value={selectedRequest.vm_deploy.vm_name} />
-              <Info label="Request Status" value={labelize(selectedRequest.status)} />
-              <Info label="Environment" value={selectedRequest.environment} />
-              <Info label="Owner" value={selectedRequest.owner} />
-              {selectedRun && <Info label="Workflow Run" value={selectedRun.id} />}
-              {selectedRun && <Info label="Run Status" value={labelize(selectedRun.status)} />}
-            </div>
-            <div className="action-row review-actions">
-              <Link className="button-link" to={`/requests/${selectedRequest.id}`}>
-                <ClipboardList size={16} />
-                Request
-              </Link>
-              {selectedRun && (
-                <Link className="button-link" to={`/workflow-runs/${selectedRun.id}`}>
-                  <Workflow size={16} />
-                  Run
-                </Link>
-              )}
-              {selectedRun ? (
-                <Link className="button-link" to={`/workflow-runs/${selectedRun.id}#artifacts`}>
-                  <HardDrive size={16} />
-                  Reports
-                </Link>
-              ) : (
-                <Link className="button-link" to={`/requests/${selectedRequest.id}#artifacts`}>
-                  <HardDrive size={16} />
-                  Reports
-                </Link>
-              )}
-            </div>
-          </>
-        ) : (
-          <p className="muted">No request selected.</p>
-        )}
-        {selectedRun ? (
-          <>
-            <div className="review-banner">
-              {selectedRun.status === "completed" ? <CheckCircle2 size={18} /> : <AlertTriangle size={18} />}
-              <div>
-                <strong>{review?.status ?? "review"}</strong>
-                <p>{review?.message ?? "Review the dry-run plan before execution."}</p>
-              </div>
-            </div>
-            <StageList events={stageEvents} />
-          </>
-        ) : (
-          <p className="muted">This queue item does not have a workflow run yet.</p>
-        )}
-      </section>
-      <NetAppRunCenterPreview
-        artifacts={netappArtifacts}
-        consoleReadiness={netappConsoleReadiness}
-        error={netappError}
-        loading={netappLoading}
-        onRefresh={loadNetAppPlanPreview}
-        preview={netappPlanPreview}
-        readinessComparison={netappReadinessComparison}
-        upgradeReadiness={netappUpgradeReadiness}
+      <RunCenterTabs
+        activeView={activeView}
+        netappIssueCount={
+          (netappPlanPreview?.blockers.length ?? 0) +
+          (netappPlanPreview?.warnings.length ?? 0) +
+          (netappPlanPreview?.removable_warnings.length ?? 0)
+        }
+        onChange={setActiveView}
+        selectedLabel={selectedItem?.title ?? "None"}
+        totalWork={needsApproval + readyToPlan + readyToExecute + executing + blocked}
       />
+      {activeView === "choose" && (
+        <RunCenterRunChooser
+          onOpenQueue={() => setActiveView("queue")}
+          onOpenSelected={() => setActiveView("selected")}
+          providers={providers}
+          selectedItem={selectedItem}
+          selectedRunChoiceIds={selectedRunChoiceIds}
+          setSelectedRunChoiceIds={setSelectedRunChoiceIds}
+          totalWork={needsApproval + readyToPlan + readyToExecute + executing + blocked}
+        />
+      )}
+      {activeView === "queue" && (
+        <>
+          <section className="run-center-pipeline">
+            {queueSections.map((section) => (
+              <button
+                className={section.id === activeQueueSection ? "active" : ""}
+                key={section.id}
+                onClick={() => setActiveQueueSection(section.id)}
+                type="button"
+              >
+                <span>{section.title}</span>
+                <strong>{section.items.length}</strong>
+              </button>
+            ))}
+          </section>
+          <section className="panel run-center-focus-panel">
+            <div className="readiness-head">
+              <PanelTitle icon={<ClipboardList size={18} />} title={activeQueue.title} />
+              <span className="muted">{activeQueue.items.length} item{activeQueue.items.length === 1 ? "" : "s"}</span>
+            </div>
+            <QueueItemList
+              empty={activeQueue.empty}
+              items={activeQueue.items}
+              onSelect={(key) => {
+                setSelectedQueueKey(key);
+                setActiveView("selected");
+              }}
+              selectedKey={selectedItem?.key ?? ""}
+            />
+          </section>
+          {selectedItem && (
+            <section className="panel selected-work-summary">
+              <PanelTitle icon={<ShieldCheck size={18} />} title="Current Selection" />
+              <div className="selected-work-banner compact">
+                <strong>{selectedItem.actionLabel}</strong>
+                <p>{selectedItem.title} · {labelize(selectedQueueSection)}</p>
+              </div>
+              <div className="action-row">
+                <button onClick={() => setActiveView("selected")} type="button">
+                  <Workflow size={16} />
+                  Review Details
+                </button>
+                <Link className="button-link" to={queueItemLink(selectedItem)}>
+                  <ClipboardList size={16} />
+                  Open
+                </Link>
+              </div>
+            </section>
+          )}
+        </>
+      )}
+      {activeView === "selected" && (
+        <RunCenterSelectedWork
+          review={review}
+          selectedItem={selectedItem}
+          selectedRequest={selectedRequest}
+          selectedRun={selectedRun}
+          stageEvents={stageEvents}
+        />
+      )}
+      {activeView === "netapp" && (
+        <NetAppRunCenterPreview
+          artifacts={netappArtifacts}
+          consoleReadiness={netappConsoleReadiness}
+          error={netappError}
+          loading={netappLoading}
+          onRefresh={loadNetAppPlanPreview}
+          preview={netappPlanPreview}
+          readinessComparison={netappReadinessComparison}
+          upgradeReadiness={netappUpgradeReadiness}
+        />
+      )}
     </Page>
   );
+}
+
+function RunCenterTabs({
+  activeView,
+  netappIssueCount,
+  onChange,
+  selectedLabel,
+  totalWork
+}: {
+  activeView: RunCenterView;
+  netappIssueCount: number;
+  onChange: (view: RunCenterView) => void;
+  selectedLabel: string;
+  totalWork: number;
+}) {
+  const tabs: Array<{ id: RunCenterView; label: string; detail: string; icon: ReactNode }> = [
+    { id: "choose", label: "Choose Run", detail: "Start here", icon: <Route size={16} /> },
+    { id: "queue", label: "Work Queue", detail: `${totalWork} active`, icon: <ClipboardList size={16} /> },
+    { id: "selected", label: "Selected Work", detail: selectedLabel, icon: <ShieldCheck size={16} /> },
+    { id: "netapp", label: "NetApp Preview", detail: `${netappIssueCount} issues`, icon: <HardDrive size={16} /> }
+  ];
+
+  return (
+    <section className="run-center-tabs">
+      {tabs.map((tab) => (
+        <button
+          className={tab.id === activeView ? "active" : ""}
+          key={tab.id}
+          onClick={() => onChange(tab.id)}
+          type="button"
+        >
+          {tab.icon}
+          <span>{tab.label}</span>
+          <small>{tab.detail}</small>
+        </button>
+      ))}
+    </section>
+  );
+}
+
+function RunCenterRunChooser({
+  onOpenQueue,
+  onOpenSelected,
+  providers,
+  selectedItem,
+  selectedRunChoiceIds,
+  setSelectedRunChoiceIds,
+  totalWork
+}: {
+  onOpenQueue: () => void;
+  onOpenSelected: () => void;
+  providers: ProviderStatus[];
+  selectedItem: QueueItem | null;
+  selectedRunChoiceIds: string[];
+  setSelectedRunChoiceIds: (ids: string[]) => void;
+  totalWork: number;
+}) {
+  const choices: RunChoice[] = [
+    {
+      id: "ilo",
+      title: "iLO Server Config",
+      category: "Hardware setup",
+      status: "real_lab_gated",
+      description: "Inventory, firmware, BIOS/boot discovery, and iLO setup readiness.",
+      blockers: providerBlockers(providers, ["ilo-redfish"]),
+      primaryLabel: "Open iLO Controls",
+      primaryTo: "/providers?section=ilo",
+      command: "make provider-lab-ilo-inventory",
+      icon: <Server size={18} />
+    },
+    {
+      id: "storage",
+      title: "Storage / RAID Config",
+      category: "Disk layout",
+      status: "apply_capable",
+      description: "Drive discovery, RAID layout selection, apply plan, reset, and validation.",
+      blockers: providerBlockers(providers, ["ilo-redfish"]),
+      primaryLabel: "Open RAID Controls",
+      primaryTo: "/providers?section=ilo",
+      command: "make provider-lab-hpe-raid-plan",
+      icon: <HardDrive size={18} />
+    },
+    {
+      id: "esxi",
+      title: "ESXi Install",
+      category: "OS install",
+      status: "readiness_workflow",
+      description: "ISO readiness, virtual media, one-time boot, reset, and installer detection.",
+      blockers: providerBlockers(providers, ["ilo-redfish"]),
+      primaryLabel: "Open ESXi Controls",
+      primaryTo: "/providers?section=ilo",
+      command: "make provider-lab-esxi-install-readiness",
+      icon: <Play size={18} />
+    },
+    {
+      id: "cisco",
+      title: "Cisco Bootstrap",
+      category: "Network setup",
+      status: "console_first",
+      description: "Console discovery, prompt readiness, bootstrap requirements, and SSH validation.",
+      blockers: providerBlockers(providers, ["cisco-console", "cisco-ansible"]),
+      primaryLabel: "Open Cisco Controls",
+      primaryTo: "/providers?section=cisco",
+      command: "make provider-lab-cisco-console-ethernet-readiness",
+      icon: <Activity size={18} />
+    },
+    {
+      id: "verification",
+      title: "Build Verification",
+      category: "Validation",
+      status: "report_only",
+      description: "Lab IP profile, readiness checks, post-build checklist, and redacted report.",
+      blockers: [],
+      primaryLabel: "Open Provider Evidence",
+      primaryTo: "/providers?section=all",
+      command: "make provider-lab-build-verification",
+      icon: <ShieldCheck size={18} />
+    },
+    {
+      id: "vm",
+      title: "VM Mock Lifecycle",
+      category: "Portal workflow",
+      status: `${totalWork} active`,
+      description: "Request approval, dry-run plan, mock execution, audit events, and reports.",
+      blockers: [],
+      primaryLabel: "Open Work Queue",
+      onPrimary: onOpenQueue,
+      secondaryLabel: selectedItem ? "Review Selected" : undefined,
+      icon: <Workflow size={18} />
+    }
+  ];
+  const selectedChoices = choices.filter((choice) => selectedRunChoiceIds.includes(choice.id));
+  const selectedBlockers = selectedChoices.flatMap((choice) =>
+    choice.blockers.map((blocker) => `${choice.title}: ${blocker}`)
+  );
+
+  function toggleChoice(choiceId: string) {
+    setSelectedRunChoiceIds(
+      selectedRunChoiceIds.includes(choiceId)
+        ? selectedRunChoiceIds.filter((id) => id !== choiceId)
+        : [...selectedRunChoiceIds, choiceId]
+    );
+  }
+
+  return (
+    <>
+      <section className="panel run-build-summary">
+        <PanelTitle icon={<Route size={18} />} title="Run Builder" />
+        <div className="run-build-layout">
+          <div>
+            <strong>{selectedChoices.length ? `${selectedChoices.length} step${selectedChoices.length === 1 ? "" : "s"} selected` : "No steps selected"}</strong>
+            <p>{selectedChoices.map((choice) => choice.title).join(" -> ") || "Select the parts of the run you want to include."}</p>
+          </div>
+          <div className="action-row">
+            <button onClick={() => setSelectedRunChoiceIds(choices.map((choice) => choice.id))} type="button">
+              Select All
+            </button>
+            <button onClick={() => setSelectedRunChoiceIds([])} type="button">
+              Clear
+            </button>
+          </div>
+        </div>
+        {selectedBlockers.length > 0 && (
+          <div className="run-blocker-box">
+            <strong>{selectedBlockers.length} blocker{selectedBlockers.length === 1 ? "" : "s"}</strong>
+            <ul>
+              {selectedBlockers.slice(0, 5).map((blocker) => (
+                <li key={blocker}>{blocker}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </section>
+      <section className="run-choice-list">
+        {choices.map((choice) => {
+          const selected = selectedRunChoiceIds.includes(choice.id);
+          return (
+            <article className={selected ? "run-choice-card selected" : "run-choice-card"} key={choice.id}>
+              <label className="run-choice-select">
+                <input
+                  checked={selected}
+                  onChange={() => toggleChoice(choice.id)}
+                  type="checkbox"
+                />
+                <span className="run-choice-icon">{choice.icon}</span>
+                <span>
+                  <small>{choice.category}</small>
+                  <strong>{choice.title}</strong>
+                </span>
+              </label>
+              <StatusBadge status={choice.blockers.length ? "blocked" : choice.status} />
+              <p>{choice.description}</p>
+              {choice.blockers.length > 0 && (
+                <div className="run-choice-blockers">
+                  <strong>{choice.blockers.length} blocker{choice.blockers.length === 1 ? "" : "s"}</strong>
+                  <ul>
+                    {choice.blockers.slice(0, 3).map((blocker) => (
+                      <li key={blocker}>{blocker}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              <div className="action-row">
+                {choice.primaryTo ? (
+                  <Link className="button-link" to={choice.primaryTo}>
+                    {choice.icon}
+                    {choice.primaryLabel}
+                  </Link>
+                ) : (
+                  <button onClick={choice.onPrimary} type="button">
+                    {choice.icon}
+                    {choice.primaryLabel}
+                  </button>
+                )}
+                {choice.secondaryLabel && (
+                  <button onClick={onOpenSelected} type="button">
+                    <ShieldCheck size={16} />
+                    {choice.secondaryLabel}
+                  </button>
+                )}
+              </div>
+            </article>
+          );
+        })}
+      </section>
+    </>
+  );
+}
+
+function RunCenterSelectedWork({
+  review,
+  selectedItem,
+  selectedRequest,
+  selectedRun,
+  stageEvents
+}: {
+  review: { status: string; message: string } | null;
+  selectedItem: QueueItem | null;
+  selectedRequest: RequestRecord | null;
+  selectedRun: WorkflowRun | null;
+  stageEvents: StageEvent[];
+}) {
+  return (
+    <section className="panel">
+      <PanelTitle icon={<ShieldCheck size={18} />} title="Selected Work" />
+      {selectedItem && (
+        <div className="selected-work-banner">
+          <strong>{selectedItem.actionLabel}</strong>
+          <p>{selectedItem.reason}</p>
+        </div>
+      )}
+      {selectedRequest ? (
+        <>
+          <div className="detail-grid">
+            <Info label="Selected Request" value={selectedRequest.vm_deploy.vm_name} />
+            <Info label="Request Status" value={labelize(selectedRequest.status)} />
+            <Info label="Environment" value={selectedRequest.environment} />
+            <Info label="Owner" value={selectedRequest.owner} />
+            {selectedRun && <Info label="Workflow Run" value={selectedRun.id} />}
+            {selectedRun && <Info label="Run Status" value={labelize(selectedRun.status)} />}
+          </div>
+          <div className="action-row review-actions">
+            <Link className="button-link" to={`/requests/${selectedRequest.id}`}>
+              <ClipboardList size={16} />
+              Request
+            </Link>
+            {selectedRun && (
+              <Link className="button-link" to={`/workflow-runs/${selectedRun.id}`}>
+                <Workflow size={16} />
+                Run
+              </Link>
+            )}
+            {selectedRun ? (
+              <Link className="button-link" to={`/workflow-runs/${selectedRun.id}#artifacts`}>
+                <HardDrive size={16} />
+                Reports
+              </Link>
+            ) : (
+              <Link className="button-link" to={`/requests/${selectedRequest.id}#artifacts`}>
+                <HardDrive size={16} />
+                Reports
+              </Link>
+            )}
+          </div>
+        </>
+      ) : (
+        <p className="muted">No request selected.</p>
+      )}
+      {selectedRun ? (
+        <>
+          <div className="review-banner">
+            {selectedRun.status === "completed" ? <CheckCircle2 size={18} /> : <AlertTriangle size={18} />}
+            <div>
+              <strong>{review?.status ?? "review"}</strong>
+              <p>{review?.message ?? "Review the dry-run plan before execution."}</p>
+            </div>
+          </div>
+          <StageList events={stageEvents} />
+        </>
+      ) : (
+        <p className="muted">This queue item does not have a workflow run yet.</p>
+      )}
+    </section>
+  );
+}
+
+function providerBlockers(providers: ProviderStatus[], providerIds: string[]): string[] {
+  return providers
+    .filter((provider) => providerIds.includes(provider.id))
+    .flatMap((provider) => provider.blockers.map((blocker) => `${provider.name}: ${blocker}`));
 }
 
 function NetAppRunCenterPreview({
@@ -2367,6 +2749,8 @@ function ProviderStatusPage() {
   const [busyBootstrapRequirements, setBusyBootstrapRequirements] = useState(false);
   const [probeResults, setProbeResults] = useState<Record<string, ProviderProbeResult>>({});
   const [promptReadinessResult, setPromptReadinessResult] = useState<ProviderProbeResult | null>(null);
+  const [fullRebuildSummary, setFullRebuildSummary] = useState<ProviderProbeResult | null>(null);
+  const [buildVerification, setBuildVerification] = useState<ProviderProbeResult | null>(null);
 
   async function load() {
     setError("");
@@ -2377,19 +2761,25 @@ function ProviderStatusPage() {
         ciscoReadiness,
         setupWizardPlan,
         bootstrapRequirements,
-        consoleBootstrapPlan
+        consoleBootstrapPlan,
+        fullRebuild,
+        certification
       ] = await Promise.all([
         api.providers(),
         api.ciscoSetupReadiness(),
         api.ciscoSetupWizardPlan(),
         api.ciscoBootstrapRequirements(),
-        api.ciscoConsoleBootstrapPlan()
+        api.ciscoConsoleBootstrapPlan(),
+        api.fullRebuildSummary(),
+        api.buildVerification()
       ]);
       setProviders(providerStatuses);
       setCiscoSetupReadiness(ciscoReadiness);
       setCiscoSetupWizardPlan(setupWizardPlan);
       setCiscoBootstrapRequirements(bootstrapRequirements);
       setCiscoConsoleBootstrapPlan(consoleBootstrapPlan);
+      setFullRebuildSummary(fullRebuild);
+      setBuildVerification(certification);
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -2455,79 +2845,565 @@ function ProviderStatusPage() {
   const orderedProviders = [...providers].sort((left, right) => {
     return providerOrder(left.id) - providerOrder(right.id);
   });
-  const providerSections = useMemo(
-    () => buildProviderSections(orderedProviders),
-    [orderedProviders]
+  const ciscoProviders = orderedProviders.filter((provider) =>
+    ["cisco-console", "cisco-ansible"].includes(provider.id)
   );
-  const [activeSectionId, setActiveSectionId] = useState("ilo");
-  const activeSection = providerSections.find((section) => section.id === activeSectionId) ?? providerSections[0];
-  const activeProviders = activeSection
-    ? orderedProviders.filter((provider) => activeSection.providerIds.includes(provider.id))
-    : [];
-
-  useEffect(() => {
-    if (!providerSections.length) return;
-    if (!providerSections.some((section) => section.id === activeSectionId)) {
-      setActiveSectionId(providerSections[0].id);
-    }
-  }, [activeSectionId, providerSections]);
+  const iloProvider = orderedProviders.find((provider) => provider.id === "ilo-redfish") ?? null;
+  const esxiProvider = orderedProviders.find((provider) => provider.id === "esxi-readonly") ?? null;
+  const netappProvider = orderedProviders.find((provider) => provider.id === "netapp-ontap") ?? null;
+  const buildStages = useMemo(
+    () =>
+      buildLabBuildStages({
+        buildVerification,
+        ciscoBootstrapRequirements,
+        ciscoProviders,
+        ciscoSetupReadiness,
+        esxiProvider,
+        fullRebuildSummary,
+        iloProvider,
+        netappProvider
+      }),
+    [
+      buildVerification,
+      ciscoBootstrapRequirements,
+      ciscoProviders,
+      ciscoSetupReadiness,
+      esxiProvider,
+      fullRebuildSummary,
+      iloProvider,
+      netappProvider
+    ]
+  );
+  const buildOverview = useMemo(
+    () => buildLabOverview(buildStages, buildVerification, providers),
+    [buildStages, buildVerification, providers]
+  );
 
   return (
     <Page
-      title="Provider Status"
+      title="Lab Builder"
       actions={
         <button onClick={load} disabled={loading || Boolean(busyProvider)}>
           <RefreshCw size={16} />
-          Refresh
+          Refresh Status
         </button>
       }
     >
       <Feedback loading={loading && !providers.length} error={error} />
-      {providerSections.length > 0 && (
-        <ProviderSectionTabs
-          activeSectionId={activeSection?.id ?? ""}
-          busy={Boolean(busyProvider) || busyPromptReadiness || busyBootstrapRequirements}
-          onSelect={setActiveSectionId}
-          sections={providerSections}
-        />
-      )}
-      <section className="provider-status-stack">
-        {activeSection?.id === "cisco" && ciscoSetupReadiness && (
-          <CiscoSetupReadinessPanel
-            bootstrapRequirements={ciscoBootstrapRequirements}
-            busyBootstrapRequirements={busyBootstrapRequirements}
-            consoleBootstrapPlan={ciscoConsoleBootstrapPlan}
-            onSaveBootstrapRequirements={saveBootstrapRequirements}
-            readiness={ciscoSetupReadiness}
-            setupWizardPlan={ciscoSetupWizardPlan}
-          />
-        )}
-        {activeProviders.map((provider) => (
-          <ProviderDetailCard
-            busy={busyProvider === provider.id}
-            busyPromptReadiness={busyPromptReadiness}
-            key={provider.id}
-            onProbe={() => runProbe(provider)}
-            onPromptReadiness={runPromptReadiness}
-            promptReadinessResult={promptReadinessResult}
-            provider={provider}
-            probeResult={probeResults[provider.id] ?? null}
-          />
-        ))}
-        {!loading && activeSection && activeProviders.length === 0 && (
-          <section className="provider-card provider-card-wide">
-            <div className="provider-head">
-              <HardDrive size={18} />
-              <div>
-                <h2>{activeSection.label}</h2>
-                <p>No provider status is available for this section.</p>
-              </div>
-              <StatusBadge status="missing-config" />
-            </div>
-          </section>
-        )}
+      <section className="lab-builder-surface">
+        <BuildOverviewCard overview={buildOverview} />
+        <GuidedWorkflowLane stages={buildStages} />
+        <section className="build-stage-grid" aria-label="Build stages">
+          {buildStages.map((stage) => (
+            <BuildStageCard key={stage.id} stage={stage} />
+          ))}
+        </section>
+        <AdvancedDetails
+          className="provider-global-evidence advanced-diagnostics"
+          summary="Raw reports, provider evidence, protected actions, command text, and redacted payloads"
+          title="Advanced diagnostics"
+        >
+          <FullRebuildSummaryPanel summary={fullRebuildSummary} />
+          <BuildVerificationPanel verification={buildVerification} />
+          {ciscoSetupReadiness && (
+            <CiscoSetupReadinessPanel
+              bootstrapRequirements={ciscoBootstrapRequirements}
+              busyBootstrapRequirements={busyBootstrapRequirements}
+              consoleBootstrapPlan={ciscoConsoleBootstrapPlan}
+              onSaveBootstrapRequirements={saveBootstrapRequirements}
+              readiness={ciscoSetupReadiness}
+              setupWizardPlan={ciscoSetupWizardPlan}
+            />
+          )}
+          {orderedProviders.map((provider) => (
+            <ProviderDetailCard
+              busy={busyProvider === provider.id}
+              busyPromptReadiness={busyPromptReadiness}
+              key={provider.id}
+              onProbe={() => runProbe(provider)}
+              onPromptReadiness={runPromptReadiness}
+              promptReadinessResult={promptReadinessResult}
+              provider={provider}
+              probeResult={probeResults[provider.id] ?? null}
+            />
+          ))}
+        </AdvancedDetails>
       </section>
     </Page>
+  );
+}
+
+function BuildOverviewCard({ overview }: { overview: BuildOverview }) {
+  return (
+    <section className="build-overview-card" aria-labelledby="build-overview-title">
+      <div className="build-overview-main">
+        <div>
+          <p className="eyebrow">Build Overview</p>
+          <h2 id="build-overview-title">{displayStatusLabel(overview.overallState)}</h2>
+          <p>{overview.currentPhase}</p>
+        </div>
+        <StatusPill status={overview.overallState} />
+      </div>
+      <div className="build-overview-grid">
+        <NextActionPanel title="Next action" value={overview.nextAction} />
+        <NextActionPanel title="Needs attention" value={overview.topBlocker} muted={overview.topBlocker === "No blocker reported."} />
+        <NextActionPanel title="Last milestone" value={overview.lastMilestone} />
+        <NextActionPanel title="Operating mode" value={overview.mode} />
+      </div>
+    </section>
+  );
+}
+
+function NextActionPanel({
+  muted = false,
+  title,
+  value
+}: {
+  muted?: boolean;
+  title: string;
+  value: string;
+}) {
+  return (
+    <div className={muted ? "next-action-panel muted-panel" : "next-action-panel"}>
+      <span>{title}</span>
+      <strong>{value}</strong>
+    </div>
+  );
+}
+
+function GuidedWorkflowLane({ stages }: { stages: BuildStage[] }) {
+  return (
+    <nav className="guided-workflow-lane" aria-label="Guided build workflow">
+      {stages.map((stage, index) => (
+        <a className="workflow-step" href={`#stage-${stage.id}`} key={stage.id}>
+          <span>{index + 1}</span>
+          <strong>{stage.step}</strong>
+          <StatusPill status={stage.status} />
+        </a>
+      ))}
+    </nav>
+  );
+}
+
+function BuildStageCard({ stage }: { stage: BuildStage }) {
+  return (
+    <article className="build-stage-card" id={`stage-${stage.id}`}>
+      <div className="build-stage-head">
+        <div>
+          <p className="summary-kicker">{stage.step}</p>
+          <h2>{stage.title}</h2>
+        </div>
+        <StatusPill status={stage.status} />
+      </div>
+      <p className="stage-message">{stage.message}</p>
+      <div className="stage-card-grid">
+        <NextActionPanel title="Next action" value={stage.nextAction} />
+        <NextActionPanel title={stage.metricLabel} value={stage.metricValue} />
+      </div>
+      <div className={stage.blocker === "No blocker reported." ? "stage-blocker is-clear" : "stage-blocker"}>
+        <strong>{stage.blocker === "No blocker reported." ? "Ready signal" : "Highest-priority blocker"}</strong>
+        <p>{stage.blocker}</p>
+      </div>
+      <details className="stage-details">
+        <summary>View details</summary>
+        <div>{stage.details}</div>
+      </details>
+    </article>
+  );
+}
+
+function StatusPill({ status }: { status: string }) {
+  return <span className={`status-pillow ${statusTone(status)}`}>{displayStatusLabel(status)}</span>;
+}
+
+function buildLabOverview(
+  stages: BuildStage[],
+  verification: ProviderProbeResult | null,
+  providers: ProviderStatus[]
+): BuildOverview {
+  const firstBlocked = stages.find((stage) => isAttentionStatus(stage.status));
+  const firstWaiting = stages.find((stage) => isWaitingStatus(stage.status));
+  const currentStage = firstBlocked ?? firstWaiting ?? stages.find((stage) => !isReadyStatus(stage.status)) ?? stages[stages.length - 1];
+  const readyStages = stages.filter((stage) => isReadyStatus(stage.status));
+  const mode = displayModeLabel(
+    asString(verification?.provider_mode) || providers.find((provider) => provider.mode)?.mode || "unknown"
+  );
+
+  return {
+    overallState: firstBlocked ? "needs-attention" : firstWaiting ? "waiting" : "ready",
+    currentPhase: currentStage ? currentStage.title : "No build stages are loaded yet.",
+    nextAction: currentStage?.nextAction || "Refresh status to load the build workflow.",
+    topBlocker:
+      currentStage?.blocker && currentStage.blocker !== "No blocker reported."
+        ? currentStage.blocker
+        : currentStage && !isReadyStatus(currentStage.status)
+          ? `${currentStage.title} is waiting for its next prerequisite.`
+          : "No blocker reported.",
+    lastMilestone: readyStages.length ? readyStages[readyStages.length - 1].title : "No completed milestone reported yet.",
+    mode
+  };
+}
+
+function buildLabBuildStages({
+  buildVerification,
+  ciscoBootstrapRequirements,
+  ciscoProviders,
+  ciscoSetupReadiness,
+  esxiProvider,
+  fullRebuildSummary,
+  iloProvider,
+  netappProvider
+}: {
+  buildVerification: ProviderProbeResult | null;
+  ciscoBootstrapRequirements: CiscoBootstrapRequirements | null;
+  ciscoProviders: ProviderStatus[];
+  ciscoSetupReadiness: CiscoSetupReadiness | null;
+  esxiProvider: ProviderStatus | null;
+  fullRebuildSummary: ProviderProbeResult | null;
+  iloProvider: ProviderStatus | null;
+  netappProvider: ProviderStatus | null;
+}): BuildStage[] {
+  const labProfile = objectValue(buildVerification?.lab_ip_profile);
+  const expectedProfile = objectValue(labProfile.expected);
+  const staleArtifacts = Array.isArray(labProfile.stale_artifact_evidence) ? labProfile.stale_artifact_evidence : [];
+  const stages = objectValue(fullRebuildSummary?.stages);
+  const raidStage = objectValue(stages.raid || stages.hpe_raid || stages.storage);
+  const esxiStage = objectValue(stages.esxi || stages.esxi_install);
+  const verificationBlocker = stringArray(buildVerification?.blockers)[0];
+  const ciscoBlockers = [
+    ...(ciscoSetupReadiness?.blockers ?? []),
+    ...ciscoProviders.flatMap((provider) => provider.blockers)
+  ];
+  const ciscoWarnings = [
+    ...(ciscoSetupReadiness?.warnings ?? []),
+    ...ciscoProviders.flatMap((provider) => provider.warnings)
+  ];
+  const ciscoStatus = ciscoSetupReadiness?.phase || providerSectionStatus(ciscoProviders);
+  const netappConfigured = asBoolean(netappProvider?.configuration.netapp_configured);
+
+  return [
+    {
+      id: "lab-profile",
+      title: "Lab Profile",
+      step: "Step 1: Confirm lab profile",
+      status: asString(labProfile.status) || asString(labProfile.classification) || "not-configured",
+      message: "Confirms the active lab address plan and whether old report evidence is still present.",
+      nextAction: humanizeAction(asString(labProfile.next_action) || "Confirm the lab profile before running provider stages."),
+      metricLabel: "Profile",
+      metricValue: asString(expectedProfile.subnet) ? "Loaded" : "Not loaded",
+      blocker: staleArtifacts.length ? "Old report evidence exists. Refresh reports after confirming the lab profile." : "No blocker reported.",
+      detailSummary: "Lab profile, stale report evidence, and address plan",
+      details: (
+        <div className="stage-detail-grid">
+          <ProviderFact label="Lab Profile" value={labelize(asString(labProfile.status) || "unknown")} />
+          <ProviderFact label="Expected Subnet" value={asString(expectedProfile.subnet) || "Not loaded"} />
+          <ProviderFact label="Old Reports" value={staleArtifacts.length ? String(staleArtifacts.length) : "None detected"} />
+          <ProviderFact label="Next Action" value={humanizeAction(asString(labProfile.next_action) || "Confirm the lab profile.")} />
+          <JsonDetails title="Advanced lab profile evidence" data={labProfile} />
+        </div>
+      )
+    },
+    {
+      id: "cisco",
+      title: "Cisco Network",
+      step: "Step 2: Recover/configure Cisco",
+      status: ciscoStatus,
+      message: ciscoSetupReadiness
+        ? "Console, bootstrap, and management readiness are grouped here."
+        : "Cisco readiness has not loaded yet.",
+      nextAction: humanizeAction(
+        ciscoSetupReadiness?.next_safe_action ||
+          (ciscoProviders[0] ? safeNextAction(ciscoProviders[0]) : "Load Cisco readiness.")
+      ),
+      metricLabel: "Console",
+      metricValue: ciscoSetupReadiness ? displayStatusLabel(ciscoSetupReadiness.console.status) : "Not loaded",
+      blocker: humanizeBlocker(ciscoBlockers[0] || ciscoWarnings[0] || "No blocker reported."),
+      detailSummary: "Cisco readiness, bootstrap requirements, and provider evidence",
+      details: (
+        <StageSummaryDetails
+          rows={[
+            ["Management", ciscoSetupReadiness?.management_configured ? "Configured" : "Not configured yet"],
+            ["Planned IP", ciscoSetupReadiness?.planned_management_ip ?? "Not set"],
+            ["Bootstrap Requirements", ciscoBootstrapRequirements ? displayStatusLabel(ciscoBootstrapRequirements.status) : "Not loaded"]
+          ]}
+        />
+      )
+    },
+    {
+      id: "hpe-server",
+      title: "HPE Server",
+      step: "Step 3: Validate iLO/server",
+      status: iloProvider?.status || "not-configured",
+      message: "Shows whether the server management path is ready before storage and install checks.",
+      nextAction: humanizeAction(iloProvider ? safeNextAction(iloProvider) : "Configure the iLO provider settings."),
+      metricLabel: "Connection",
+      metricValue: iloProvider ? presenceLabel(iloProvider.configuration.host_configured) : "Not loaded",
+      blocker: humanizeBlocker(iloProvider?.blockers[0] || iloProvider?.warnings[0] || "No blocker reported."),
+      detailSummary: "iLO configuration presence and server readiness",
+      details: (
+        <StageSummaryDetails
+          rows={[
+            ["Host", presenceLabel(iloProvider?.configuration.host_configured)],
+            ["Username", presenceLabel(iloProvider?.configuration.username_configured)],
+            ["Password", presenceLabel(iloProvider?.configuration.password_configured)],
+            ["Mode", displayModeLabel(iloProvider?.mode || "unknown")]
+          ]}
+        />
+      )
+    },
+    {
+      id: "raid",
+      title: "RAID / Storage",
+      step: "Step 4: Validate RAID",
+      status: asString(raidStage.status) || stageStatusFromVerification(buildVerification, "RAID"),
+      message: "Keeps storage layout and reset evidence behind details until the operator needs it.",
+      nextAction: humanizeAction(asString(raidStage.next_action) || asString(raidStage.message) || "Review RAID readiness after server validation."),
+      metricLabel: "Result",
+      metricValue: displayStatusLabel(asString(raidStage.status) || "Not loaded"),
+      blocker: humanizeBlocker(stringArray(raidStage.blockers)[0] || "No blocker reported."),
+      detailSummary: "RAID plan, drive inventory, reset state, and validation evidence",
+      details: (
+        <StageSummaryDetails
+          rows={[
+            ["Stage", displayStatusLabel(asString(raidStage.status) || "Not loaded")],
+            ["Message", humanizeAction(asString(raidStage.message) || "No RAID summary loaded.")],
+            ["Blockers", stringArray(raidStage.blockers).length ? String(stringArray(raidStage.blockers).length) : "None reported"]
+          ]}
+        />
+      )
+    },
+    {
+      id: "esxi",
+      title: "ESXi Install",
+      step: "Step 5: Boot/install ESXi",
+      status: asString(esxiStage.status) || esxiProvider?.status || stageStatusFromVerification(buildVerification, "ESXi"),
+      message: "Shows install readiness without exposing virtual media and boot internals by default.",
+      nextAction: humanizeAction(asString(esxiStage.next_action) || (esxiProvider ? safeNextAction(esxiProvider) : "Review ESXi install readiness.")),
+      metricLabel: "Target",
+      metricValue: displayStatusLabel(esxiProvider?.status || asString(esxiStage.status) || "Not loaded"),
+      blocker: humanizeBlocker(
+        stringArray(esxiStage.blockers)[0] ||
+          esxiProvider?.blockers[0] ||
+          (isWaitingStatus(asString(esxiStage.status) || esxiProvider?.status || "")
+            ? "ESXi management is not configured yet."
+            : "No blocker reported.")
+      ),
+      detailSummary: "ESXi target, media, virtual media, and boot readiness evidence",
+      details: (
+        <StageSummaryDetails
+          rows={[
+            ["Stage", displayStatusLabel(asString(esxiStage.status) || esxiProvider?.status || "Not loaded")],
+            ["Provider", esxiProvider?.name || "ESXi provider not loaded"],
+            ["Message", humanizeAction(asString(esxiStage.message) || esxiProvider?.message || "No ESXi summary loaded.")]
+          ]}
+        />
+      )
+    },
+    {
+      id: "netapp",
+      title: "NetApp",
+      step: "Step 6: Configure NetApp",
+      status: netappConfigured ? netappProvider?.status || "ready" : "not-configured",
+      message: netappConfigured
+        ? "NetApp setup and upgrade readiness can be reviewed."
+        : "NetApp is not configured yet. This is expected until its setup values are provided.",
+      nextAction: humanizeAction(netappProvider ? safeNextAction(netappProvider) : "Add NetApp setup values when this stage is in scope."),
+      metricLabel: "Setup",
+      metricValue: netappConfigured ? "Configured" : "Not configured yet",
+      blocker: humanizeBlocker(
+        netappConfigured
+          ? netappProvider?.blockers[0] || "No blocker reported."
+          : "Waiting for NetApp setup values."
+      ),
+      detailSummary: "NetApp planned targets, readiness buckets, and artifact evidence",
+      details: (
+        <StageSummaryDetails
+          rows={[
+            ["Configured", netappConfigured ? "Yes" : "Not configured yet"],
+            ["Status", displayStatusLabel(netappProvider?.status || "not-configured")],
+            ["Next Action", humanizeAction(netappProvider ? safeNextAction(netappProvider) : "Add NetApp setup values.")]
+          ]}
+        />
+      )
+    },
+    {
+      id: "verification",
+      title: "Build Verification",
+      step: "Step 7: Run Build Verification",
+      status: asString(buildVerification?.certification_state) || buildVerification?.status || "not-run",
+      message: "Final certification waits for earlier stages and shows only the top blocker here.",
+      nextAction: verificationBlocker
+        ? "Resolve the earlier stage blocker, then run Build Verification again."
+        : "Run Build Verification after all build stages are ready.",
+      metricLabel: "Certification",
+      metricValue: displayStatusLabel(asString(buildVerification?.certification_state) || buildVerification?.status || "Not run"),
+      blocker: humanizeBlocker(verificationBlocker || "No blocker reported."),
+      detailSummary: "Certification result, blockers, checklist, and redacted report evidence",
+      details: (
+        <StageSummaryDetails
+          rows={[
+            ["Certification", displayStatusLabel(asString(buildVerification?.certification_state) || buildVerification?.status || "Not run")],
+            ["Checked", buildVerification?.checked_at ? formatDateTime(buildVerification.checked_at) : "Not run"],
+            ["Blockers", verificationBlocker ? String(stringArray(buildVerification?.blockers).length) : "None reported"]
+          ]}
+        />
+      )
+    }
+  ];
+}
+
+function StageSummaryDetails({ rows }: { rows: Array<[string, string]> }) {
+  return (
+    <div className="stage-detail-grid">
+      {rows.map(([label, value]) => (
+        <ProviderFact key={label} label={label} value={value} />
+      ))}
+      <p className="provider-redaction-note span-2">
+        More raw reports, payloads, protected actions, and command details are available in Advanced diagnostics.
+      </p>
+    </div>
+  );
+}
+
+function FullRebuildSummaryPanel({ summary }: { summary: ProviderProbeResult | null }) {
+  const stages = objectValue(summary?.stages);
+  const artifacts = objectValue(summary?.artifacts);
+  const stageEntries = Object.entries(stages).filter(([, value]) => typeof value === "object" && value !== null);
+  return (
+    <section className="provider-card provider-card-wide full-rebuild-summary">
+      <div className="provider-head">
+        <Workflow size={18} />
+        <div>
+          <h2>Full Lab Rebuild Run</h2>
+          <p>{asString(summary?.message) || "No full rebuild summary has been generated yet."}</p>
+        </div>
+        <StatusBadge status={summary?.status ?? "not-run"} />
+      </div>
+      <div className="provider-fact-grid compact">
+        <ProviderFact label="Provider Mode" value={asString(summary?.provider_mode) || "Unknown"} />
+        <ProviderFact label="Checked" value={summary?.checked_at ? formatDateTime(summary.checked_at) : "Not run"} />
+        <ProviderFact label="Mock Results" value={asBoolean(summary?.mock_results_used) ? "Used" : "Not used"} />
+        <ProviderFact label="Final Report" value={asString(artifacts.final) || "artifacts/codex-runs/full-device-rebuild-4h-report.md"} />
+      </div>
+      <ProviderIssueRows blockers={stringArray(summary?.blockers)} warnings={stringArray(summary?.warnings)} />
+      {stageEntries.length > 0 && (
+        <div className="setup-preview-grid">
+          {stageEntries.map(([key, value]) => {
+            const stage = objectValue(value);
+            return (
+              <SetupPreviewBlock
+                key={key}
+                title={labelize(key)}
+                tag={labelize(asString(stage.status) || "unknown")}
+                lines={[
+                  asString(stage.message) || "No stage message recorded.",
+                  ...stringArray(stage.blockers).slice(0, 2)
+                ]}
+              />
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function BuildVerificationPanel({ verification }: { verification: ProviderProbeResult | null }) {
+  const artifacts = objectValue(verification?.artifacts);
+  const failures = Array.isArray(verification?.failures) ? verification.failures : [];
+  const checklist = Array.isArray(verification?.post_build_checklist) ? verification.post_build_checklist : [];
+  const labProfile = objectValue(verification?.lab_ip_profile);
+  const expectedProfile = objectValue(labProfile.expected);
+  const staleValues = Array.isArray(labProfile.stale_10_10_8_values) ? labProfile.stale_10_10_8_values : [];
+  const staleArtifacts = Array.isArray(labProfile.stale_artifact_evidence) ? labProfile.stale_artifact_evidence : [];
+  const credentialChecks = recordArray(objectValue(verification?.credentials).checks);
+  const mtu = objectValue(verification?.mtu);
+  const protocolChecks = recordArray(objectValue(verification?.protocols).checks);
+  return (
+    <section className="provider-card provider-card-wide full-rebuild-summary">
+      <div className="provider-head">
+        <ShieldCheck size={18} />
+        <div>
+          <h2>Build Verification / Product Certification</h2>
+          <p>{asString(verification?.message) || "No build verification report has been generated yet."}</p>
+        </div>
+        <StatusBadge status={verification?.status ?? "not-run"} />
+      </div>
+      <div className="provider-fact-grid compact">
+        <ProviderFact label="Provider Mode" value={asString(verification?.provider_mode) || "Unknown"} />
+        <ProviderFact label="Checked" value={verification?.checked_at ? formatDateTime(verification.checked_at) : "Not run"} />
+        <ProviderFact label="Mock Results" value={asBoolean(verification?.mock_results_used) ? "Used" : "Not used"} />
+        <ProviderFact label="Certification" value={labelize(asString(verification?.certification_state) || asString(verification?.status) || "not run")} />
+        <ProviderFact label="Report" value={asString(artifacts.report) || "artifacts/codex-runs/build-verification-report.md"} />
+      </div>
+      <div className="provider-fact-grid compact">
+        <ProviderFact label="Lab Subnet" value={asString(expectedProfile.subnet) || "192.168.1.0/24"} />
+        <ProviderFact label="iLO" value={asString(expectedProfile.ilo) || "192.168.1.201"} />
+        <ProviderFact label="ESXi" value={asString(expectedProfile.esxi_management) || "192.168.1.203"} />
+        <ProviderFact label="Cisco" value={asString(expectedProfile.cisco_management) || "192.168.1.204"} />
+        <ProviderFact label="Control Host" value={asString(expectedProfile.ansible_control_host) || "192.168.1.205"} />
+        <ProviderFact
+          label="Stale IPs"
+          value={staleValues.length || staleArtifacts.length ? `${staleValues.length} active, ${staleArtifacts.length} reports` : "None detected"}
+        />
+      </div>
+      <ProviderIssueRows blockers={stringArray(verification?.blockers)} warnings={stringArray(verification?.warnings)} />
+      {(failures.length > 0 || checklist.length > 0) && (
+        <div className="setup-preview-grid">
+          {failures.slice(0, 8).map((item, index) => {
+            const failure = objectValue(item);
+            return (
+              <SetupPreviewBlock
+                key={`failure-${index}`}
+                title={labelize(asString(failure.category) || "failure")}
+                tag={labelize(asString(failure.classification) || "blocked")}
+                lines={[
+                  asString(failure.ui_message) || "Review certification failure.",
+                  asString(failure.report_detail) || "",
+                  asString(failure.next_action) || ""
+                ].filter(Boolean)}
+              />
+            );
+          })}
+          <SetupPreviewBlock
+            title="Credential compatibility"
+            tag={labelize(asString(objectValue(verification?.credentials).classification) || "unknown")}
+            lines={credentialChecks.slice(0, 5).map((item) => {
+              const check = objectValue(item);
+              return `${asString(check.field) || asString(check.name) || "credential"}: ${labelize(asString(check.classification) || asString(check.status) || "unknown")}`;
+            })}
+          />
+          <SetupPreviewBlock
+            title="MTU consistency"
+            tag={labelize(asString(mtu.classification) || asString(mtu.status) || "unknown")}
+            lines={[
+              `Invalid values: ${Object.keys(objectValue(mtu.invalid)).length}`,
+              `Path mismatches: ${Array.isArray(mtu.mismatches) ? mtu.mismatches.length : 0}`,
+              asString(mtu.next_action) || "Review MTU consistency."
+            ]}
+          />
+          <SetupPreviewBlock
+            title="Protocol readiness"
+            tag={labelize(asString(objectValue(verification?.protocols).classification) || "unknown")}
+            lines={protocolChecks.slice(0, 6).map((item) => {
+              const check = objectValue(item);
+              return `${asString(check.protocol) || "protocol"}: ${labelize(asString(check.classification) || asString(check.status) || "unknown")}`;
+            })}
+          />
+          {checklist.slice(0, 4).map((item, index) => {
+            const check = objectValue(item);
+            return (
+              <SetupPreviewBlock
+                key={`check-${index}`}
+                title={asString(check.item) || "Checklist item"}
+                tag={labelize(asString(check.status) || "unknown")}
+                lines={["Product certification checklist item."]}
+              />
+            );
+          })}
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -2621,6 +3497,11 @@ function CiscoSetupReadinessPanel({
         />
         <ProviderFact label="Ansible Path" value={readiness.ansible.enabled ? "Enabled" : "Blocked"} />
       </div>
+      <AdvancedDetails
+        className="provider-workflow-details"
+        summary="Console discovery, bootstrap requirements, command previews, and protected actions"
+        title="Cisco workflow details"
+      >
       <div className="provider-fact-grid compact">
         <ProviderFact label="Recommended Console" value={readiness.console.recommended_path ?? "-"} />
         <ProviderFact label="Selected Console" value={readiness.console.selected_path ?? readiness.console.effective_path ?? "-"} />
@@ -2767,6 +3648,7 @@ function CiscoSetupReadinessPanel({
           </div>
         </div>
       </div>
+      </AdvancedDetails>
     </section>
   );
 }
@@ -3119,7 +4001,8 @@ function ProviderDetailCard({
   promptReadinessResult: ProviderProbeResult | null;
   provider: ProviderStatus;
 }) {
-  const lastResult = probeResult ?? provider.last_probe_result;
+  const lastResult = (probeResult ?? provider.last_probe_result ?? null) as ProviderProbeResult | null;
+  const summary = providerWorkflowSummary(provider, lastResult);
 
   return (
     <article className="provider-card provider-card-wide">
@@ -3131,8 +4014,13 @@ function ProviderDetailCard({
         </div>
         <StatusBadge status={provider.status} />
       </div>
-      <p>{provider.message}</p>
-      <ProviderFactGrid provider={provider} />
+      <WorkflowSummary
+        items={summary.items}
+        message={summary.message}
+        nextAction={summary.nextAction}
+        status={provider.status}
+        title={summary.title}
+      />
       {provider.id === "cisco-console" && (
         <CiscoConsoleDetails
           busyPromptReadiness={busyPromptReadiness}
@@ -3149,33 +4037,182 @@ function ProviderDetailCard({
       {!["cisco-console", "ilo-redfish", "netapp-ontap", "cisco-ansible", "esxi-readonly"].includes(provider.id) && (
         <GenericProviderDetails provider={provider} />
       )}
-      {provider.id !== "netapp-ontap" && (
-        <ProviderIssueRows blockers={provider.blockers} warnings={provider.warnings} />
-      )}
       <ProviderActionRows
         busy={busy}
         disabledActions={provider.disabled_actions}
         onProbe={onProbe}
         safeActions={provider.safe_actions}
       />
-      {lastResult && (
-        <div className="provider-raw-result">
-          <div className="provider-fact-grid compact">
-            <ProviderFact
-              label="Last Probe"
-              value={provider.last_probe_time ? formatDateTime(provider.last_probe_time) : "Just now"}
-            />
-            <ProviderFact label="Result" value={asString(lastResult.status) || "unknown"} />
+      <AdvancedDetails
+        className="provider-evidence-panel"
+        summary="Configuration facts, blockers, warnings, disabled actions, and raw redacted probe payloads"
+        title="Advanced provider evidence"
+      >
+        <ProviderFactGrid provider={provider} />
+        {provider.id !== "netapp-ontap" && (
+          <ProviderIssueRows blockers={provider.blockers} warnings={provider.warnings} />
+        )}
+        {lastResult && (
+          <div className="provider-raw-result">
+            <div className="provider-fact-grid compact">
+              <ProviderFact
+                label="Last Probe"
+                value={provider.last_probe_time ? formatDateTime(provider.last_probe_time) : "Just now"}
+              />
+              <ProviderFact label="Result" value={asString(lastResult.status) || "unknown"} />
+            </div>
+            <p className="provider-redaction-note">
+              Probe payloads are shown only after an explicit action; configured endpoints, users, passwords,
+              tokens, and cookies are redacted by the backend.
+            </p>
+            <JsonDetails title="Raw redacted probe result" data={lastResult} />
           </div>
-          <p className="provider-redaction-note">
-            Probe payloads are shown only after an explicit action; configured endpoints, users, passwords,
-            tokens, and cookies are redacted by the backend.
-          </p>
-          <JsonDetails title="Raw redacted probe result" data={lastResult} />
-        </div>
-      )}
+        )}
+      </AdvancedDetails>
     </article>
   );
+}
+
+function WorkflowSummary({
+  items,
+  message,
+  nextAction,
+  status,
+  title
+}: {
+  items: WorkflowSummaryItem[];
+  message: string;
+  nextAction: string;
+  status: string;
+  title: string;
+}) {
+  return (
+    <section className="workflow-summary">
+      <div className="workflow-summary-main">
+        <div>
+          <span className="summary-kicker">Current step</span>
+          <h3>{title}</h3>
+          <p>{message}</p>
+        </div>
+        <StatusBadge status={status} />
+      </div>
+      <div className="workflow-summary-grid">
+        {items.map((item) => (
+          <ProviderFact key={`${item.label}-${item.value}`} label={item.label} value={item.value} />
+        ))}
+      </div>
+      <div className="workflow-next-action">
+        <strong>Next recommended action</strong>
+        <p>{nextAction}</p>
+      </div>
+    </section>
+  );
+}
+
+function AdvancedDetails({
+  children,
+  className = "",
+  summary,
+  title
+}: {
+  children: ReactNode;
+  className?: string;
+  summary: string;
+  title: string;
+}) {
+  return (
+    <details className={`advanced-details ${className}`.trim()}>
+      <summary>
+        <span>{title}</span>
+        <small>{summary}</small>
+      </summary>
+      <div className="advanced-details-body">{children}</div>
+    </details>
+  );
+}
+
+function providerWorkflowSummary(
+  provider: ProviderStatus,
+  lastResult: ProviderProbeResult | null,
+): {
+  items: WorkflowSummaryItem[];
+  message: string;
+  nextAction: string;
+  title: string;
+} {
+  const blocker = provider.blockers[0];
+  const warning = provider.warnings[0];
+  const lastResultStatus = asString(lastResult?.status);
+  const config = provider.configuration;
+  const discovery = provider.discovery ?? {};
+  const items: WorkflowSummaryItem[] = [
+    { label: "Mode", value: labelize(provider.mode) },
+    { label: "Status", value: labelize(provider.status) },
+    { label: "Last Check", value: lastResultStatus ? labelize(lastResultStatus) : "Not run" },
+    { label: "Issue", value: blocker ? "Blocked" : warning ? "Warning" : "None" }
+  ];
+
+  if (provider.id === "ilo-redfish") {
+    items.push(
+      { label: "Connection", value: presenceLabel(config.host_configured) },
+      { label: "Hardware", value: asString(discovery.server_model) || asString(discovery.model) || "Not loaded" }
+    );
+    return {
+      items: items.slice(0, 6),
+      message: "Use this workflow to confirm iLO, RAID, and ESXi install readiness.",
+      nextAction: safeNextAction(provider),
+      title: providerSummaryTitle(provider.status, "Server setup workflow is ready to review.")
+    };
+  }
+
+  if (provider.id === "cisco-console") {
+    const counts = objectValue(discovery.candidate_counts);
+    items.push(
+      { label: "Console", value: asString(discovery.effective_path) ? "Detected" : "Missing" },
+      { label: "Candidates", value: asString(counts.total) || "0" }
+    );
+    return {
+      items: items.slice(0, 6),
+      message: "Use this workflow to find the console, classify the prompt, and prepare bootstrap safely.",
+      nextAction: safeNextAction(provider),
+      title: providerSummaryTitle(provider.status, "Cisco console is ready for the next check.")
+    };
+  }
+
+  if (provider.id === "esxi-readonly") {
+    return {
+      items,
+      message: "Use this workflow to confirm ESXi target readiness without changing the host.",
+      nextAction: safeNextAction(provider),
+      title: providerSummaryTitle(provider.status, "ESXi checks are available.")
+    };
+  }
+
+  if (provider.id === "netapp-ontap") {
+    return {
+      items,
+      message: "Use this workflow to review NetApp intent, readiness, and report evidence.",
+      nextAction: safeNextAction(provider),
+      title: providerSummaryTitle(provider.status, "NetApp readiness can be reviewed.")
+    };
+  }
+
+  return {
+    items,
+    message: provider.message,
+    nextAction: safeNextAction(provider),
+    title: providerSummaryTitle(provider.status, "Provider is ready to review.")
+  };
+}
+
+function providerSummaryTitle(status: string, readyTitle: string): string {
+  if (["blocked", "failed", "unavailable"].includes(status)) {
+    return "Needs attention before the next action.";
+  }
+  if (["missing-config", "missing-console", "needs-selection", "planned-target", "awaiting-bootstrap"].includes(status)) {
+    return "Setup is incomplete.";
+  }
+  return readyTitle;
 }
 
 function ProviderFactGrid({ provider }: { provider: ProviderStatus }) {
@@ -3288,40 +4325,6 @@ function CiscoConsoleDetails({
           value={`${asNumber(candidateCounts.stable_existing, candidates.filter((candidate) => candidate.stable_path && candidate.exists).length)} / ${asNumber(candidateCounts.fallback_existing, candidates.filter((candidate) => !candidate.stable_path && candidate.exists).length)}`}
         />
       </div>
-      <h3>Console Candidates</h3>
-      {candidates.length ? (
-        <table className="provider-candidate-table">
-          <thead>
-            <tr>
-              <th>Path</th>
-              <th>Stable</th>
-              <th>Exists</th>
-              <th>Access</th>
-              <th>Recommendation</th>
-            </tr>
-          </thead>
-          <tbody>
-            {candidates.map((candidate) => (
-              <tr className={candidate.path === effectivePath ? "selected-candidate-row" : ""} key={candidate.path}>
-                <td>
-                  <strong>{candidate.path}</strong>
-                  {candidate.label && <span>{candidate.label}</span>}
-                  <span className="candidate-tags">
-                    {candidate.path === effectivePath && <span className="candidate-tag selected">Effective</span>}
-                    {candidate.path === recommendedPath && <span className="candidate-tag recommended">Recommended</span>}
-                  </span>
-                </td>
-                <td>{yesNo(candidate.stable_path)}</td>
-                <td>{yesNo(candidate.exists)}</td>
-                <td>{accessLabel(candidate)}</td>
-                <td>{labelize(candidate.recommendation)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      ) : (
-        <p className="muted">No serial console adapter detected. Connect the USB serial adapter and refresh Provider Status.</p>
-      )}
       <div className="provider-action-layout">
         <div>
           <h3>Prompt Readiness</h3>
@@ -3348,6 +4351,45 @@ function CiscoConsoleDetails({
           </div>
         </div>
       </div>
+      <AdvancedDetails
+        className="provider-workflow-details"
+        summary="Discovered adapters, selection ranking, and redacted prompt-readiness payload"
+        title="Console evidence"
+      >
+        <h3>Console Candidates</h3>
+        {candidates.length ? (
+          <table className="provider-candidate-table">
+            <thead>
+              <tr>
+                <th>Path</th>
+                <th>Stable</th>
+                <th>Exists</th>
+                <th>Access</th>
+                <th>Recommendation</th>
+              </tr>
+            </thead>
+            <tbody>
+              {candidates.map((candidate) => (
+                <tr className={candidate.path === effectivePath ? "selected-candidate-row" : ""} key={candidate.path}>
+                  <td>
+                    <strong>{candidate.path}</strong>
+                    {candidate.label && <span>{candidate.label}</span>}
+                    <span className="candidate-tags">
+                      {candidate.path === effectivePath && <span className="candidate-tag selected">Effective</span>}
+                      {candidate.path === recommendedPath && <span className="candidate-tag recommended">Recommended</span>}
+                    </span>
+                  </td>
+                  <td>{yesNo(candidate.stable_path)}</td>
+                  <td>{yesNo(candidate.exists)}</td>
+                  <td>{accessLabel(candidate)}</td>
+                  <td>{labelize(candidate.recommendation)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : (
+          <p className="muted">No serial console adapter detected. Connect the USB serial adapter and refresh Provider Status.</p>
+        )}
       {promptReadinessResult && (
         <div className="provider-raw-result">
           <div className="provider-fact-grid compact">
@@ -3383,6 +4425,7 @@ function CiscoConsoleDetails({
           <JsonDetails title="Raw redacted prompt readiness result" data={promptReadinessResult} />
         </div>
       )}
+      </AdvancedDetails>
     </div>
   );
 }
@@ -3409,6 +4452,11 @@ function IloRedfishDetails({ provider }: { provider: ProviderStatus }) {
   const [raidPostApplyBusy, setRaidPostApplyBusy] = useState(false);
   const config = provider.configuration;
   const missingFields = stringArray(config.missing_fields);
+  const raidPendingState = objectValue(raidPending?.pending);
+  const esxiInventory = objectValue(esxiInstallReadiness?.inventory);
+  const esxiIso = objectValue(esxiInstallReadiness?.iso);
+  const esxiVirtualMedia = objectValue(esxiInstallReadiness?.virtual_media);
+  const esxiBoot = objectValue(esxiInstallReadiness?.boot_control);
 
   useEffect(() => {
     let cancelled = false;
@@ -3573,6 +4621,40 @@ function IloRedfishDetails({ provider }: { provider: ProviderStatus }) {
           Missing local settings: {missingFields.join(", ")}
         </p>
       )}
+      <div className="beginner-checklist">
+        <SetupPreviewBlock
+          title="Server"
+          tag={provider.status === "ready" ? "Detected" : labelize(provider.status)}
+          lines={[
+            `Model: ${asString(esxiInventory.model) || "Checking through iLO"}.`,
+            `Power: ${asString(esxiInventory.power_state) || "Unknown"}.`,
+            `Connection settings: ${missingFields.length ? "missing fields" : "present"}.`
+          ]}
+        />
+        <SetupPreviewBlock
+          title="RAID"
+          tag={labelize(asString(raidPlan?.status) || "not loaded")}
+          lines={[
+            `Drives: ${String(raidDiscovery?.physical_drives.length ?? 0)}.`,
+            `Logical drives: ${String(raidDiscovery?.logical_drives.length ?? 0)}.`,
+            `Pending reset: ${presenceLabel(raidPendingState.reset_required)}.`
+          ]}
+        />
+        <SetupPreviewBlock
+          title="ESXi Install"
+          tag={labelize(asString(esxiInstallReadiness?.status) || "not loaded")}
+          lines={[
+            `ISO ready: ${presenceLabel(esxiIso.ready)}.`,
+            `Virtual media: ${presenceLabel(esxiVirtualMedia.supported)}.`,
+            `One-time boot: ${presenceLabel(esxiBoot.one_time_boot_supported)}.`
+          ]}
+        />
+      </div>
+      <AdvancedDetails
+        className="provider-workflow-details"
+        summary="Desired iLO hostname, IP, DNS, NTP, SNMP, and local user references"
+        title="iLO settings"
+      >
       <IloSetupIntentPanel
         busy={setupBusy}
         error={setupError}
@@ -3581,6 +4663,12 @@ function IloRedfishDetails({ provider }: { provider: ProviderStatus }) {
         plan={setupPlan}
         savedMessage={setupSavedMessage}
       />
+      </AdvancedDetails>
+      <AdvancedDetails
+        className="provider-workflow-details"
+        summary="Current drives, desired RAID layout, pending reset, and validation after reset"
+        title="HPE Storage / RAID"
+      >
       <HpeRaidSetupPanel
         busy={raidBusy}
         applyPlan={raidApplyPlan}
@@ -3597,12 +4685,25 @@ function IloRedfishDetails({ provider }: { provider: ProviderStatus }) {
         resetPlan={raidResetPlan}
         savedMessage={raidSavedMessage}
       />
+      </AdvancedDetails>
+      <AdvancedDetails
+        className="provider-workflow-details"
+        summary="Virtual media, ISO, one-time boot, BIOS, and installer readiness"
+        title="ESXi install readiness"
+      >
       <EsxiInstallReadinessPanel
         busy={raidPostApplyBusy}
         onRefresh={refreshEsxiInstallReadiness}
         readiness={esxiInstallReadiness}
       />
+      </AdvancedDetails>
+      <AdvancedDetails
+        className="provider-workflow-details"
+        summary="Firmware, upgrade readiness, and protected iLO actions"
+        title="Firmware and advanced iLO checks"
+      >
       <IloUpgradeDecisionPanel error={error} readiness={readiness} />
+      </AdvancedDetails>
     </div>
   );
 }
@@ -4940,6 +6041,11 @@ function NetAppOntapDetails({ provider }: { provider: ProviderStatus }) {
         <ProviderFact label="Not Ready" value={asString(readinessSummary.not_ready_count) || "-"} />
         <ProviderFact label="Next Safe Action" value={planPreview?.next_safe_action || safeNextAction(provider)} />
       </div>
+      <AdvancedDetails
+        className="provider-workflow-details"
+        summary="Planned targets, readiness buckets, storage preview, upgrade preview, and artifacts"
+        title="NetApp plan evidence"
+      >
       <h3>Planned Targets</h3>
       <KeyValueTable rows={targetAddressing} labelKey="label" valueKey="address" empty="No NetApp target addresses are planned." />
       <h3>Current / Discovered Targets</h3>
@@ -4982,6 +6088,7 @@ function NetAppOntapDetails({ provider }: { provider: ProviderStatus }) {
       ) : (
         <p className="muted">No NetApp artifact placeholders are defined.</p>
       )}
+      </AdvancedDetails>
     </div>
   );
 }
@@ -5170,8 +6277,11 @@ function ProviderActionRows({
         </div>
       )}
       {disabledActions.length > 0 && (
-        <div>
-          <h3>Disabled Dangerous Actions</h3>
+        <AdvancedDetails
+          className="disabled-actions-details"
+          summary={`${disabledActions.length} protected action${disabledActions.length === 1 ? "" : "s"} remain unavailable`}
+          title="Protected actions"
+        >
           <div className="provider-action-row">
             {disabledActions.map((action) => (
               <div className="provider-action-item" key={action.id}>
@@ -5184,7 +6294,7 @@ function ProviderActionRows({
               </div>
             ))}
           </div>
-        </div>
+        </AdvancedDetails>
       )}
     </div>
   );
@@ -5243,6 +6353,101 @@ function providerSectionStatus(providers: ProviderStatus[]): string {
     return "ready";
   }
   return statuses[0] ?? "configured";
+}
+
+function isReadyStatus(status: string): boolean {
+  return ["ready", "ok", "available", "completed", "passed"].includes(status);
+}
+
+function isAttentionStatus(status: string): boolean {
+  return ["blocked", "failed", "unavailable", "needs-attention", "error"].includes(status);
+}
+
+function isWaitingStatus(status: string): boolean {
+  return [
+    "awaiting-bootstrap",
+    "blocked_by_prior_stage",
+    "missing-config",
+    "missing-console",
+    "needs-selection",
+    "not-configured",
+    "planned-target",
+    "pending",
+    "waiting"
+  ].includes(status);
+}
+
+function statusTone(status: string): string {
+  if (isReadyStatus(status)) return "tone-ready";
+  if (isAttentionStatus(status)) return "tone-attention";
+  if (isWaitingStatus(status)) return "tone-waiting";
+  return "tone-neutral";
+}
+
+function displayStatusLabel(status: string): string {
+  const normalized = status || "unknown";
+  const labels: Record<string, string> = {
+    "awaiting-bootstrap": "Waiting",
+    "blocked_by_prior_stage": "Waiting on earlier step",
+    blocked: "Needs attention",
+    "console bootstrap required": "Console bootstrap required",
+    "console_bootstrap_required": "Console bootstrap required",
+    completed: "Ready",
+    failed: "Needs attention",
+    "local-lab-readwrite": "Real Lab Mode",
+    "missing-config": "Not configured yet",
+    "missing-console": "Console not found",
+    "needs-attention": "Needs attention",
+    "needs-selection": "Needs selection",
+    "not-configured": "Not configured yet",
+    "not-run": "Not run",
+    ok: "Ready",
+    passed: "Ready",
+    "planned-target": "Planned",
+    ready: "Ready",
+    unavailable: "Not available",
+    waiting: "Waiting"
+  };
+  return labels[normalized] ?? labelize(normalized);
+}
+
+function displayModeLabel(mode: string): string {
+  if (mode === "local-lab-readwrite") return "Real Lab Mode";
+  if (mode === "local-readonly") return "Read-only Lab Mode";
+  if (mode === "mock") return "Mock Mode";
+  return displayStatusLabel(mode);
+}
+
+function humanizeAction(value: string): string {
+  if (!value) return "Review this stage.";
+  return [
+    ["provider-lab-build-verification", "Run Build Verification"],
+    ["blocked_by_prior_stage", "waiting on earlier step"],
+    ["stale_config", "old lab IP detected"],
+    ["operator_action_required", "needs your action"],
+    ["local-lab-readwrite", "Real Lab Mode"],
+    ["NETAPP_CONFIGURED=false", "NetApp is not configured yet"],
+    ["Redfish PATCH accepted", "iLO accepted the storage change"],
+    ["GET-only", "read-only"],
+    ["GET-Only", "Read-only"]
+  ].reduce((current, [from, to]) => current.split(from).join(to), value);
+}
+
+function humanizeBlocker(value: string): string {
+  if (!value || value === "No blocker reported.") return "No blocker reported.";
+  return humanizeAction(value)
+    .replace("Complete or confirm Cisco console bootstrap", "Finish Cisco console bootstrap")
+    .replace("Install/configure ESXi management", "Install or configure ESXi management");
+}
+
+function stageStatusFromVerification(
+  verification: ProviderProbeResult | null,
+  keyword: string
+): string {
+  const blocker = stringArray(verification?.blockers).find((item) =>
+    item.toLowerCase().includes(keyword.toLowerCase())
+  );
+  return blocker ? "blocked_by_prior_stage" : "not-run";
 }
 
 function providerOrder(id: string): number {
