@@ -10,6 +10,7 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from app.providers.base import ProviderAction, ProviderStatus
+from app.providers.action_policy import ActionCategory, LabActionPolicy
 from app.providers.cisco_console import (
     CiscoConsoleAdapter,
     CiscoConsoleConfig,
@@ -57,14 +58,14 @@ def test_cisco_candidate_discovery_with_one_stable_candidate(tmp_path: Path) -> 
     assert discovery["status"] == "ready"
     assert discovery["recommended_path"] == str(stable)
     assert discovery["effective_path"] == str(stable)
-    assert discovery["selection_source"] == "single-stable-candidate"
+    assert discovery["selection_source"] == "auto-stable-candidate"
     assert discovery["candidate_counts"]["stable_existing"] == 1
     assert discovery["operator_message"].startswith("Preferred console path:")
-    assert "CISCO_CONSOLE_PORT" in discovery["safe_next_action"]
+    assert "prompt readiness" in discovery["safe_next_action"]
     stable_candidates = [
         candidate for candidate in discovery["candidates"] if candidate["stable_path"]
     ]
-    assert stable_candidates[0]["recommendation"] == "recommended-default"
+    assert stable_candidates[0]["recommendation"] == "selected-auto"
 
 
 def test_cisco_candidate_discovery_with_multiple_stable_candidates(tmp_path: Path) -> None:
@@ -81,12 +82,12 @@ def test_cisco_candidate_discovery_with_multiple_stable_candidates(tmp_path: Pat
         _discovery_paths(paths),
     )
 
-    assert discovery["status"] == "needs-selection"
-    assert discovery["recommended_path"] is None
-    assert discovery["effective_path"] is None
-    assert discovery["selection_source"] == "multiple-stable-candidates"
+    assert discovery["status"] == "ready"
+    assert discovery["recommended_path"] is not None
+    assert discovery["effective_path"] is not None
+    assert discovery["selection_source"] == "auto-stable-candidate"
     assert discovery["candidate_counts"]["stable_existing"] == 2
-    assert "Multiple stable serial console candidates" in discovery["blockers"][0]
+    assert discovery["blockers"] == []
 
 
 def test_cisco_candidate_discovery_with_no_candidates(tmp_path: Path) -> None:
@@ -118,11 +119,12 @@ def test_cisco_candidate_discovery_with_fallback_candidate_warns(tmp_path: Path)
         _discovery_paths(paths),
     )
 
-    assert discovery["status"] == "needs-selection"
-    assert discovery["selection_source"] == "fallback-candidates"
+    assert discovery["status"] == "ready"
+    assert discovery["selection_source"] == "auto-fallback-candidate"
+    assert discovery["effective_path"] == str(tty)
     assert discovery["candidate_counts"]["fallback_existing"] == 1
     assert any("Fallback serial adapter detected" in warning for warning in discovery["warnings"])
-    assert "Prefer a stable /dev/serial/by-id path" in discovery["safe_next_action"]
+    assert "prompt readiness" in discovery["safe_next_action"]
 
 
 def test_cisco_configured_port_missing_has_clear_blocker(tmp_path: Path) -> None:
@@ -134,10 +136,9 @@ def test_cisco_configured_port_missing_has_clear_blocker(tmp_path: Path) -> None
         _discovery_paths(paths),
     )
 
-    assert discovery["status"] == "blocked"
-    assert discovery["effective_path"] == str(missing_path)
+    assert discovery["status"] == "missing-console"
+    assert discovery["effective_path"] is None
     assert "Configured CISCO_CONSOLE_PORT does not exist" in discovery["blockers"][0]
-    assert "detected stable path" in discovery["blockers"][0]
 
 
 def test_cisco_configured_port_permission_guidance(
@@ -179,9 +180,9 @@ def test_cisco_env_override_path(tmp_path: Path) -> None:
     assert discovery["env_override"]["configured"] is True
     assert discovery["env_override"]["path"] == str(tty)
     assert discovery["effective_path"] == str(tty)
-    assert discovery["selection_source"] == "env-override"
+    assert discovery["selection_source"] == "configured-port-hint"
     matching = [candidate for candidate in discovery["candidates"] if candidate["path"] == str(tty)]
-    assert matching[0]["recommendation"] == "env-override"
+    assert matching[0]["recommendation"] == "selected-auto"
 
 
 def test_cisco_discovery_does_not_open_serial_or_send_commands(
@@ -201,7 +202,7 @@ def test_cisco_discovery_does_not_open_serial_or_send_commands(
         _discovery_paths(paths),
     )
 
-    assert discovery["status"] == "needs-selection"
+    assert discovery["status"] == "ready"
 
 
 def test_cisco_setup_wizard_prompt_is_blocked() -> None:
@@ -216,7 +217,8 @@ def test_cisco_console_probe_redacts_blocked_prompt_sample(
     monkeypatch,
 ) -> None:
     clear_probe_results()
-    tty = tmp_path / "ttyUSB0"
+    paths = _console_paths(tmp_path)
+    tty = paths["dev"] / "ttyUSB0"
     tty.touch()
     _allow_readonly_lab(monkeypatch)
     _install_fake_serial(
@@ -423,7 +425,7 @@ def test_cisco_prompt_readiness_blocks_unknown_prompt(
         "unrecognized prompt text",
     )
 
-    assert writes == [b"\n"]
+    assert writes == [b"\n", b"\r", b"\x03", b"\x1a"] * 5
     assert result["status"] == "blocked"
     assert result["prompt_state"] == "unknown"
     assert result["prompt_ready"] is False
@@ -442,7 +444,7 @@ def test_cisco_prompt_readiness_blocks_when_no_prompt_text_captured(
         "",
     )
 
-    assert writes == [b"\n"]
+    assert writes == [b"\n", b"\r", b"\x03", b"\x1a"] * 5
     assert result["status"] == "blocked"
     assert result["message"].startswith("Console port opened but no prompt text was captured")
     assert result["blockers"] == [result["message"]]
@@ -467,7 +469,8 @@ def test_cisco_prompt_readiness_reports_configured_read_timing(
     monkeypatch,
 ) -> None:
     clear_probe_results()
-    tty = tmp_path / "ttyUSB0"
+    paths = _console_paths(tmp_path)
+    tty = paths["dev"] / "ttyUSB0"
     tty.touch()
     _allow_readonly_lab(monkeypatch)
     writes = _install_tracking_fake_serial(monkeypatch, [""])
@@ -482,9 +485,10 @@ def test_cisco_prompt_readiness_reports_configured_read_timing(
             prompt_read_window_seconds=0.2,
             prompt_max_bytes=123,
         ),
+        paths=_discovery_paths(paths),
     ).prompt_readiness()
 
-    assert writes == [b"\n"]
+    assert writes == [b"\n", b"\r", b"\x03", b"\x1a"] * 5
     assert result["status"] == "blocked"
     assert result["read_timing"] == {
         "settle_seconds": 0.1,
@@ -1206,6 +1210,77 @@ def test_provider_smoke_skips_unconfigured_management_tcp_preflight(monkeypatch)
     assert "CISCO_MGMT_CONFIGURED=false" in result["cisco_ssh"]["reason"]
 
 
+def test_provider_smoke_provider_filter_limits_tcp_preflight(monkeypatch) -> None:
+    smoke = _load_provider_smoke_module()
+    calls: list[tuple[str, int]] = []
+    fake_settings = types.SimpleNamespace(
+        provider_mode="local-readonly",
+        ilo_test_host="192.0.2.202",
+        esxi_test_host="192.0.2.50",
+        esxi_configured=True,
+        cisco_target_ip="192.0.2.60",
+        cisco_mgmt_configured=True,
+    )
+
+    def fake_tcp(host: str, port: int) -> dict[str, object]:
+        calls.append((host, port))
+        return {"configured": True, "reachable": True, "port": port, "attempts": []}
+
+    monkeypatch.setattr(smoke, "settings", fake_settings)
+    monkeypatch.setattr(
+        smoke,
+        "current_lab_safety",
+        lambda: LabSafetyState(
+            closed_loop_ack=True,
+            readonly_ack=True,
+            destructive_ack=False,
+        ),
+    )
+    monkeypatch.setattr(smoke, "_tcp_connect", fake_tcp)
+
+    result = smoke._tcp_preflight(["ilo-redfish"])
+
+    assert calls == [("192.0.2.202", 443)]
+    assert set(result) == {"ilo_https"}
+    assert result["ilo_https"]["reachable"] is True
+
+
+def test_provider_smoke_provider_filter_reads_env(monkeypatch) -> None:
+    smoke = _load_provider_smoke_module()
+
+    monkeypatch.setenv("PROVIDER_SMOKE_PROVIDERS", "ilo-redfish, esxi-readonly")
+
+    assert smoke._selected_provider_ids() == ["ilo-redfish", "esxi-readonly"]
+
+
+def test_provider_smoke_provider_filter_skips_serial_preflight(monkeypatch) -> None:
+    smoke = _load_provider_smoke_module()
+    fake_settings = types.SimpleNamespace(
+        provider_mode="mock",
+        ilo_test_host="192.0.2.202",
+        esxi_test_host=None,
+        esxi_configured=False,
+        cisco_target_ip=None,
+        cisco_mgmt_configured=False,
+    )
+
+    monkeypatch.setattr(smoke, "settings", fake_settings)
+
+    result = smoke._preflight_summary(["ilo-redfish"])
+
+    assert "serial_candidates" not in result
+    assert set(result["targets"]) == {"ilo"}
+    assert set(result["tcp_preflight"]) == {"ilo_https"}
+    assert [item["name"] for item in result["required_env"]] == [
+        "LAB_CLOSED_LOOP_ACK",
+        "LAB_READONLY_ACK",
+        "LAB_DESTRUCTIVE_ACK",
+        "ILO_TEST_HOST",
+        "ILO_TEST_USERNAME",
+        "ILO_TEST_PASSWORD",
+    ]
+
+
 def test_provider_smoke_disabled_management_probe_keeps_planned_context() -> None:
     smoke = _load_provider_smoke_module()
     status = ProviderStatus(
@@ -1249,15 +1324,47 @@ def test_provider_smoke_disabled_management_probe_keeps_planned_context() -> Non
     assert not any("https_reachable: False" in line for line in details)
 
 
-def test_ilo_readonly_status_is_unchanged_by_management_flags(monkeypatch) -> None:
-    monkeypatch.setattr(
-        "app.providers.ilo_redfish.current_lab_safety",
-        lambda: LabSafetyState(
-            closed_loop_ack=True,
-            readonly_ack=True,
-            destructive_ack=False,
-        ),
+def test_hpe_raid_plan_preserves_existing_esxi_layout() -> None:
+    raid = _load_hpe_raid_plan_module()
+
+    plan = raid._raid_plan(
+        {"server_model": "ProLiant DL360 Gen10"},
+        {
+            "controllers": [{"Model": "HPE Smart Array P408i-a SR Gen10"}],
+            "physical_drives": [{"Id": str(index)} for index in range(8)],
+            "logical_drives": [
+                {
+                    "LogicalDriveName": "OS RAID 1 logical drive",
+                    "LogicalDriveNumber": 1,
+                    "RAIDType": "RAID1",
+                    "CapacityMiB": 512000,
+                    "Status": {"Health": "OK"},
+                },
+                {
+                    "LogicalDriveName": "Data RAID 6 logical drive",
+                    "LogicalDriveNumber": 2,
+                    "RAIDType": "RAID6",
+                    "CapacityMiB": 3433827,
+                    "Status": {"Health": "OK"},
+                },
+            ],
+        },
     )
+
+    assert plan["status"] == "preview_only"
+    assert plan["apply_allowed"] is False
+    assert plan["planned_layout"]["recommendation"] == (
+        "preserve existing OS and data logical drives for ESXi preview"
+    )
+    assert plan["planned_layout"]["boot_volume"]["source"] == "existing-logical-drive"
+    assert plan["planned_layout"]["boot_volume"]["raid"] == "RAID1"
+    assert plan["planned_layout"]["datastore_volume"]["source"] == "existing-logical-drive"
+    assert plan["planned_layout"]["datastore_volume"]["raid"] == "RAID6"
+    assert "RAID create/delete/update" in plan["not_attempted"]
+
+
+def test_ilo_readonly_status_is_unchanged_by_management_flags(monkeypatch) -> None:
+    _allow_readonly_ilo_lab(monkeypatch)
     adapter = IloRedfishAdapter(
         provider_mode="local-readonly",
         config=IloRedfishConfig(
@@ -1276,7 +1383,7 @@ def test_ilo_readonly_status_is_unchanged_by_management_flags(monkeypatch) -> No
     assert status.safe_actions[0].reason == "Run GET-only endpoint detection and Redfish inventory checks."
 
 
-def test_ilo_setup_apply_sends_hostname_patch_when_all_gates_pass(
+def test_ilo_setup_apply_blocks_hostname_patch_in_local_readonly(
     db_session,
     monkeypatch,
 ) -> None:
@@ -1318,11 +1425,11 @@ def test_ilo_setup_apply_sends_hostname_patch_when_all_gates_pass(
         IloSetupApplyCreate(confirmation_phrase=ILO_SETUP_CONFIRMATION_PHRASE),
     )
 
-    assert result["status"] == "ok"
-    assert result["patch_attempted"] is True
-    assert result["patch_count"] == 1
-    assert patch_bodies == [{"HostName": "lab-ilo-host"}]
-    assert result["operations"][0]["verified"] is True
+    assert result["status"] == "blocked"
+    assert result["patch_attempted"] is False
+    assert result["patch_count"] == 0
+    assert patch_bodies == []
+    assert any("local-readonly is read-only" in blocker for blocker in result["blockers"])
     assert "lab-ilo-host" not in str(result)
 
 
@@ -1421,6 +1528,377 @@ def test_ilo_status_exposes_only_configuration_presence() -> None:
     assert "ilo-lab-private" not in encoded_configuration
     assert "local-admin" not in encoded_configuration
     assert "super-secret-password" not in encoded_configuration
+
+
+def test_ilo_probe_in_mock_mode_does_not_create_http_client(monkeypatch) -> None:
+    def fail_client(**_kwargs):  # noqa: ANN003
+        raise AssertionError("mock mode must not create an HTTP client")
+
+    monkeypatch.setattr("app.providers.ilo_redfish.httpx.Client", fail_client)
+    adapter = IloRedfishAdapter(
+        provider_mode="mock",
+        config=IloRedfishConfig(
+            host="192.0.2.202",
+            username="local-admin",
+            password="super-secret-password",
+            verify_tls=False,
+            timeout_seconds=1.0,
+        ),
+    )
+
+    result = adapter.probe()
+
+    assert result["status"] == "blocked"
+    assert "local-readonly or PROVIDER_MODE=local-lab-readwrite" in result["message"]
+
+
+def test_ilo_local_lab_requires_acknowledgement_flags(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "app.providers.ilo_redfish.current_lab_action_policy",
+        lambda provider_mode=None: _lab_action_policy(
+            provider_mode or "local-lab-readwrite",
+            lab_environment=None,
+            acknowledge_real_hardware=False,
+            acknowledge_device_reconfiguration=False,
+            acknowledge_data_loss_risk=False,
+            acknowledge_lab_only=False,
+        ),
+    )
+    adapter = IloRedfishAdapter(
+        provider_mode="local-lab-readwrite",
+        config=IloRedfishConfig(
+            host="192.0.2.202",
+            username="local-admin",
+            password="super-secret-password",
+            verify_tls=False,
+            timeout_seconds=1.0,
+        ),
+    )
+
+    status = adapter.health()
+    result = adapter.probe()
+
+    assert status.status == "blocked"
+    assert status.safe_actions[0].enabled is False
+    assert result["status"] == "blocked"
+    assert any("LAB_ENVIRONMENT=isolated-real-lab" in item for item in result["blockers"])
+    assert any("LAB_ACKNOWLEDGE_REAL_HARDWARE=true" in item for item in result["blockers"])
+    assert any("LAB_ACKNOWLEDGE_DEVICE_RECONFIGURATION=true" in item for item in result["blockers"])
+    assert any("LAB_ACKNOWLEDGE_DATA_LOSS_RISK=true" in item for item in result["blockers"])
+    assert any("LAB_ACKNOWLEDGE_LAB_ONLY=true" in item for item in result["blockers"])
+    assert "super-secret-password" not in json.dumps(result)
+
+
+def test_ilo_local_lab_allows_get_only_inventory_and_local_recording(monkeypatch) -> None:
+    clear_probe_results()
+    requested_urls: list[str] = []
+    _allow_local_lab_ilo(monkeypatch)
+    _install_fake_httpx_client(
+        monkeypatch,
+        {
+            "/redfish/v1/": (
+                200,
+                "application/json",
+                {
+                    "@odata.id": "/redfish/v1/",
+                    "Managers": {"@odata.id": "/redfish/v1/Managers/"},
+                    "Systems": {"@odata.id": "/redfish/v1/Systems/"},
+                    "Chassis": {"@odata.id": "/redfish/v1/Chassis/"},
+                },
+            ),
+            "/redfish/v1": (200, "application/json", {"@odata.id": "/redfish/v1/"}),
+            "/": (200, "text/html"),
+            "/xmldata?item=All": (404, "text/plain"),
+            "/redfish/v1/Managers/": (
+                200,
+                "application/json",
+                {"Members": [{"@odata.id": "/redfish/v1/Managers/1"}]},
+            ),
+            "/redfish/v1/Managers/1": (
+                200,
+                "application/json",
+                {
+                    "Id": "1",
+                    "Name": "Manager",
+                    "Model": "iLO 5",
+                    "FirmwareVersion": "3.19",
+                },
+            ),
+            "/redfish/v1/Systems/": (
+                200,
+                "application/json",
+                {"Members": [{"@odata.id": "/redfish/v1/Systems/1"}]},
+            ),
+            "/redfish/v1/Systems/1": (
+                200,
+                "application/json",
+                {
+                    "Id": "1",
+                    "Name": "Server",
+                    "Model": "ProLiant DL360 Gen10",
+                    "SerialNumber": "SECRET-SERIAL-123",
+                    "BiosVersion": "U32 v2.78",
+                    "PowerState": "On",
+                    "Status": {"Health": "OK"},
+                    "NetworkAdapters": {"@odata.id": "/redfish/v1/Systems/1/NetworkAdapters/"},
+                    "Storage": {"@odata.id": "/redfish/v1/Systems/1/Storage/"},
+                    "SmartStorage": {"@odata.id": "/redfish/v1/Systems/1/SmartStorage/"},
+                },
+            ),
+            "/redfish/v1/Systems/1/NetworkAdapters/": (
+                200,
+                "application/json",
+                {"Members": [{"@odata.id": "/redfish/v1/Systems/1/NetworkAdapters/1"}]},
+            ),
+            "/redfish/v1/Systems/1/NetworkAdapters/1": (
+                200,
+                "application/json",
+                {
+                    "Id": "1",
+                    "Name": "Embedded LOM",
+                    "Model": "HPE Ethernet 1Gb 4-port 331i Adapter",
+                    "Status": {"Health": "OK"},
+                },
+            ),
+            "/redfish/v1/Systems/1/Storage/": (
+                200,
+                "application/json",
+                {"Members": [{"@odata.id": "/redfish/v1/Systems/1/Storage/1"}]},
+            ),
+            "/redfish/v1/Systems/1/Storage/1": (
+                200,
+                "application/json",
+                {
+                    "Id": "1",
+                    "Name": "Smart Array P408i-a SR Gen10",
+                    "Model": "Smart Array P408i-a SR Gen10",
+                    "Drives": [
+                        {"@odata.id": "/redfish/v1/Systems/1/Storage/1/Drives/1"},
+                        {"@odata.id": "/redfish/v1/Systems/1/Storage/1/Drives/2"},
+                    ],
+                    "Volumes": {"@odata.id": "/redfish/v1/Systems/1/Storage/1/Volumes/"},
+                },
+            ),
+            "/redfish/v1/Systems/1/Storage/1/Drives/1": (
+                200,
+                "application/json",
+                {
+                    "Id": "1",
+                    "Name": "Drive Bay 1",
+                    "Bay": 1,
+                    "CapacityBytes": 480103981056,
+                    "MediaType": "SSD",
+                    "Status": {"Health": "OK"},
+                },
+            ),
+            "/redfish/v1/Systems/1/Storage/1/Drives/2": (
+                200,
+                "application/json",
+                {
+                    "Id": "2",
+                    "Name": "Drive Bay 2",
+                    "Bay": 2,
+                    "CapacityBytes": 480103981056,
+                    "MediaType": "SSD",
+                    "Status": {"Health": "OK"},
+                },
+            ),
+            "/redfish/v1/Systems/1/Storage/1/Volumes/": (
+                200,
+                "application/json",
+                {"Members": [{"@odata.id": "/redfish/v1/Systems/1/Storage/1/Volumes/1"}]},
+            ),
+            "/redfish/v1/Systems/1/Storage/1/Volumes/1": (
+                200,
+                "application/json",
+                {
+                    "Id": "1",
+                    "Name": "Logical Drive 1",
+                    "RAIDType": "RAID1",
+                    "CapacityBytes": 480103981056,
+                    "Status": {"Health": "OK"},
+                },
+            ),
+            "/redfish/v1/Systems/1/SmartStorage/": (
+                200,
+                "application/json",
+                {"Members": []},
+            ),
+            "/redfish/v1/Chassis/": (
+                200,
+                "application/json",
+                {"Members": [{"@odata.id": "/redfish/v1/Chassis/1"}]},
+            ),
+            "/redfish/v1/Chassis/1": (
+                200,
+                "application/json",
+                {"Id": "1", "Name": "Chassis"},
+            ),
+        },
+        requested_urls=requested_urls,
+    )
+    adapter = IloRedfishAdapter(
+        provider_mode="local-lab-readwrite",
+        config=IloRedfishConfig(
+            host="192.0.2.202",
+            username="local-admin",
+            password="super-secret-password",
+            verify_tls=False,
+            timeout_seconds=1.0,
+        ),
+    )
+
+    result = adapter.probe()
+    encoded = json.dumps(result)
+
+    assert result["status"] == "ok"
+    assert result["action_policy"]["provider_mode"] == "local-lab-readwrite"
+    assert result["action_policy"]["local_state_write"] == "allowed"
+    assert result["action_policy"]["device_writes"] == "policy-gated"
+    assert result["endpoint_detection"]["classification"] == "redfish_available"
+    assert result["systems"][0]["Model"] == "ProLiant DL360 Gen10"
+    assert result["systems"][0]["serial_number_present"] is True
+    assert result["systems"][0]["BiosVersion"] == "U32 v2.78"
+    assert result["managers"][0]["Model"] == "iLO 5"
+    assert result["managers"][0]["FirmwareVersion"] == "3.19"
+    assert result["network_adapters"][0]["Model"] == "HPE Ethernet 1Gb 4-port 331i Adapter"
+    assert result["network_adapters"][0]["mac_address_present"] is False
+    assert result["storage"]["status"] == "available"
+    assert result["storage"]["controllers"][0]["Model"] == "Smart Array P408i-a SR Gen10"
+    assert result["storage"]["physical_drives"][0]["Bay"] == 1
+    assert result["storage"]["physical_drives"][0]["MediaType"] == "SSD"
+    assert result["storage"]["logical_drives"][0]["RAIDType"] == "RAID1"
+    assert requested_urls
+    assert all(url.startswith("https://192.0.2.202/") for url in requested_urls)
+    assert all("/redfish/" in url or url.endswith("/") or "xmldata" in url for url in requested_urls)
+    assert "192.0.2.202" not in encoded
+    assert "local-admin" not in encoded
+    assert "super-secret-password" not in encoded
+    assert "SECRET-SERIAL-123" not in encoded
+
+
+def test_ilo_local_lab_dangerous_actions_remain_blocked(monkeypatch) -> None:
+    _allow_local_lab_ilo(monkeypatch)
+    adapter = IloRedfishAdapter(
+        provider_mode="local-lab-readwrite",
+        config=IloRedfishConfig(
+            host="192.0.2.202",
+            username="local-admin",
+            password="super-secret-password",
+            verify_tls=False,
+            timeout_seconds=1.0,
+        ),
+    )
+
+    status = adapter.health()
+    disabled_actions = {action.id: action for action in status.disabled_actions}
+
+    assert status.status == "ready"
+    assert status.safe_actions[0].enabled is True
+    assert {
+        "ilo-power-action",
+        "ilo-firmware-update",
+        "ilo-virtual-media",
+        "ilo-boot-order-change",
+        "ilo-bios-change",
+        "ilo-user-change",
+        "ilo-network-change",
+        "ilo-factory-reset",
+    }.issubset(disabled_actions)
+    assert all(not action.enabled for action in disabled_actions.values())
+    assert "LAB_ALLOW_POWER_ACTIONS=true" in disabled_actions["ilo-power-action"].reason
+    assert "LAB_ALLOW_FIRMWARE_UPDATES=true" in disabled_actions["ilo-firmware-update"].reason
+    assert "LAB_ALLOW_FACTORY_RESET=true" in disabled_actions["ilo-factory-reset"].reason
+
+
+def test_ilo_setup_apply_allows_hostname_patch_in_local_lab_readwrite(
+    db_session,
+    monkeypatch,
+) -> None:
+    fake_settings = types.SimpleNamespace(
+        provider_mode="local-lab-readwrite",
+        ilo_setup_apply_enabled=True,
+        lab_apply_ack="YES",
+        lab_target_ack="ilo.lab.local",
+        ilo_test_host="ilo.lab.local",
+        ilo_test_username="local-admin",
+        ilo_test_password="local-password",
+        ilo_test_verify_tls=False,
+        ilo_test_timeout_seconds=3.0,
+    )
+    monkeypatch.setattr("app.services.ilo_setup_apply.settings", fake_settings)
+    monkeypatch.setattr("app.providers.ilo_redfish.settings", fake_settings)
+    monkeypatch.setattr(
+        "app.services.ilo_setup_apply.current_lab_action_policy",
+        lambda provider_mode=None: _lab_action_policy(provider_mode or "local-lab-readwrite"),
+    )
+    patch_bodies: list[dict[str, object]] = []
+    _install_fake_ilo_setup_apply_httpx_client(
+        monkeypatch,
+        before_hostname="old-ilo-name",
+        after_hostname="lab-ilo-host",
+        patch_bodies=patch_bodies,
+    )
+    save_ilo_setup_intent(
+        db_session,
+        IloSetupIntentWrite(network=IloNetworkIntent(hostname="lab-ilo-host")),
+    )
+
+    result = apply_ilo_setup(
+        db_session,
+        IloSetupApplyCreate(confirmation_phrase=ILO_SETUP_CONFIRMATION_PHRASE),
+    )
+
+    assert result["status"] == "ok"
+    assert result["patch_attempted"] is True
+    assert patch_bodies == [{"HostName": "lab-ilo-host"}]
+    assert result["blockers"] == []
+    assert "lab-ilo-host" not in str(result)
+
+
+def test_local_lab_readwrite_allows_allowlisted_lab_action_categories() -> None:
+    policy = _lab_action_policy("local-lab-readwrite")
+
+    assert policy.action_allowed("ilo-redfish.record-readonly-inventory", ActionCategory.APP_STATE_WRITE)
+    assert policy.action_allowed(
+        "ilo-redfish.manager-network-protocol-hostname",
+        ActionCategory.NETWORK_CONFIG,
+    )
+    assert policy.action_allowed("netapp.svm-lif-iscsi", ActionCategory.STORAGE_CONFIG)
+    assert policy.action_allowed("ilo.bios-settings", ActionCategory.BIOS_CONFIG)
+    assert policy.action_allowed("ilo.boot-settings", ActionCategory.BOOT_CONFIG)
+    assert policy.action_allowed("ilo.virtual-media", ActionCategory.VIRTUAL_MEDIA)
+    assert policy.action_allowed("esxi.install-config", ActionCategory.OS_INSTALL)
+    assert policy.action_allowed("vm.deploy-ovf", ActionCategory.VM_DEPLOY)
+
+
+def test_local_lab_readwrite_blocks_unrepresented_actions() -> None:
+    policy = _lab_action_policy("local-lab-readwrite")
+
+    blockers = policy.action_blockers("shell.freeform-command", ActionCategory.NETWORK_CONFIG)
+
+    assert any("explicit allowlisted workflow step" in blocker for blocker in blockers)
+
+
+def test_firmware_and_factory_reset_require_explicit_flags() -> None:
+    policy = _lab_action_policy("local-lab-readwrite")
+
+    assert any(
+        "LAB_ALLOW_FIRMWARE_UPDATES=true" in blocker
+        for blocker in policy.action_blockers("ilo.firmware-update", ActionCategory.FIRMWARE_UPDATE)
+    )
+    assert any(
+        "LAB_ALLOW_FACTORY_RESET=true" in blocker
+        for blocker in policy.action_blockers("lab.factory-reset", ActionCategory.FACTORY_RESET)
+    )
+
+    enabled_policy = _lab_action_policy(
+        "local-lab-readwrite",
+        allow_firmware_updates=True,
+        allow_factory_reset=True,
+    )
+    assert enabled_policy.action_allowed("ilo.firmware-update", ActionCategory.FIRMWARE_UPDATE)
+    assert enabled_policy.action_allowed("lab.factory-reset", ActionCategory.FACTORY_RESET)
 
 
 def test_ilo_probe_classifies_web_available_redfish_not_found(monkeypatch) -> None:
@@ -1729,7 +2207,7 @@ def test_ilo_probe_for_lab_target_192_168_1_202_is_get_only_and_redacted(monkeyp
     adapter = IloRedfishAdapter(
         provider_mode="local-readonly",
         config=IloRedfishConfig(
-            host="192.168.1.202",
+            host="192.168.1.201",
             username="Administrator",
             password="super-secret-password",
             verify_tls=False,
@@ -1745,11 +2223,11 @@ def test_ilo_probe_for_lab_target_192_168_1_202_is_get_only_and_redacted(monkeyp
     assert result["tls_verify"] is False
     assert result["endpoint_detection"]["classification"] == "redfish_available"
     assert requested_urls
-    assert all(url.startswith("https://192.168.1.202/") for url in requested_urls)
+    assert all(url.startswith("https://192.168.1.201/") for url in requested_urls)
     assert {request["path"] for request in result["requests"]}.issuperset(
         {"/redfish/v1/", "/redfish/v1", "/", "/xmldata?item=All"}
     )
-    assert "192.168.1.202" not in encoded
+    assert "192.168.1.201" not in encoded
     assert "Administrator" not in encoded
     assert "super-secret-password" not in encoded
 
@@ -1914,12 +2392,46 @@ def _allow_readonly_lab(monkeypatch) -> None:
 
 def _allow_readonly_ilo_lab(monkeypatch) -> None:
     monkeypatch.setattr(
-        "app.providers.ilo_redfish.current_lab_safety",
-        lambda: LabSafetyState(
-            closed_loop_ack=True,
-            readonly_ack=True,
-            destructive_ack=False,
-        ),
+        "app.providers.ilo_redfish.current_lab_action_policy",
+        lambda provider_mode=None: _lab_action_policy(provider_mode or "local-readonly"),
+    )
+
+
+def _allow_local_lab_ilo(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "app.providers.ilo_redfish.current_lab_action_policy",
+        lambda provider_mode=None: _lab_action_policy(provider_mode or "local-lab-readwrite"),
+    )
+
+
+def _lab_action_policy(
+    provider_mode: str,
+    *,
+    lab_environment: str | None = "isolated-real-lab",
+    acknowledge_real_hardware: bool = True,
+    acknowledge_device_reconfiguration: bool = True,
+    acknowledge_data_loss_risk: bool = True,
+    acknowledge_lab_only: bool = True,
+    allow_power_actions: bool = False,
+    allow_firmware_updates: bool = False,
+    allow_factory_reset: bool = False,
+    legacy_closed_loop_ack: bool = True,
+    legacy_readonly_ack: bool = True,
+    legacy_destructive_ack: bool = False,
+) -> LabActionPolicy:
+    return LabActionPolicy(
+        provider_mode=provider_mode,
+        lab_environment=lab_environment,
+        acknowledge_real_hardware=acknowledge_real_hardware,
+        acknowledge_device_reconfiguration=acknowledge_device_reconfiguration,
+        acknowledge_data_loss_risk=acknowledge_data_loss_risk,
+        acknowledge_lab_only=acknowledge_lab_only,
+        allow_power_actions=allow_power_actions,
+        allow_firmware_updates=allow_firmware_updates,
+        allow_factory_reset=allow_factory_reset,
+        legacy_closed_loop_ack=legacy_closed_loop_ack,
+        legacy_readonly_ack=legacy_readonly_ack,
+        legacy_destructive_ack=legacy_destructive_ack,
     )
 
 
@@ -2096,7 +2608,8 @@ def _run_prompt_readiness_with_fake_serial(
     prompt_output: str,
 ) -> tuple[dict, list[bytes]]:
     clear_probe_results()
-    tty = tmp_path / "ttyUSB0"
+    paths = _console_paths(tmp_path)
+    tty = paths["dev"] / "ttyUSB0"
     tty.touch()
     _allow_readonly_lab(monkeypatch)
     writes = _install_tracking_fake_serial(monkeypatch, [prompt_output])
@@ -2104,6 +2617,7 @@ def _run_prompt_readiness_with_fake_serial(
     result = CiscoConsoleAdapter(
         provider_mode="local-readonly",
         config=CiscoConsoleConfig(port=str(tty), baud=9600, timeout_seconds=1.0),
+        paths=_discovery_paths(paths),
     ).prompt_readiness()
     return result, writes
 
@@ -2164,6 +2678,16 @@ def _mock_ready_console(monkeypatch) -> None:
 def _load_provider_smoke_module() -> types.ModuleType:
     script_path = Path(__file__).resolve().parents[1] / "scripts" / "provider_smoke.py"
     spec = importlib.util.spec_from_file_location("provider_smoke_under_test", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _load_hpe_raid_plan_module() -> types.ModuleType:
+    script_path = Path(__file__).resolve().parents[1] / "scripts" / "hpe_raid_plan.py"
+    spec = importlib.util.spec_from_file_location("hpe_raid_plan_under_test", script_path)
     assert spec is not None
     assert spec.loader is not None
     module = importlib.util.module_from_spec(spec)

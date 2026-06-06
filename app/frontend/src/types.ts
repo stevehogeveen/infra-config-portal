@@ -122,6 +122,8 @@ export type ConsoleCandidate = {
   writable: boolean | null;
   label: string | null;
   target_path: string | null;
+  in_use: boolean;
+  rank: number;
   recommendation: string;
 };
 
@@ -174,6 +176,7 @@ export type CiscoSetupReadiness = {
     last_prompt_readiness: Record<string, unknown>;
   };
   ethernet_readiness: Record<string, unknown>;
+  real_lab_run: Record<string, unknown>;
   bootstrap_preview: {
     apply_enabled: boolean;
     commands_redacted: boolean;

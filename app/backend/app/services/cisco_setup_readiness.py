@@ -1,14 +1,17 @@
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from app.core.config import settings
 from app.providers.base import ProviderStatus
 from app.providers.cisco_ansible import CiscoAnsibleAdapter
 from app.providers.cisco_console import CiscoConsoleAdapter
+from app.services.hpe_raid import REPO_ROOT
 from app.services.cisco_setup_wizard_plan import build_cisco_setup_wizard_plan
 
 PROVIDER_ID = "cisco-setup"
+REAL_LAB_DETAILS = REPO_ROOT / "artifacts" / "codex-runs" / "cisco-4h-lab-run-details-redacted.json"
 NEXT_SAFE_ACTION = "Select a console candidate and run prompt readiness check."
 DISABLED_ACTIONS = [
     "conf t",
@@ -154,6 +157,7 @@ def get_cisco_setup_readiness(
                 "but will not be enabled by this task."
             ),
         },
+        "real_lab_run": _real_lab_run_summary(),
         "ansible": {
             "status": ansible.status if mgmt_configured else "awaiting-bootstrap",
             "enabled": False,
@@ -265,3 +269,68 @@ def _bootstrap_missing_requirements(target_ip: str | None) -> list[str]:
         ]
     )
     return missing
+
+
+def _real_lab_run_summary() -> dict[str, Any]:
+    if not REAL_LAB_DETAILS.exists():
+        return {
+            "available": False,
+            "status": "not-run",
+            "last_blocker": "No Cisco 4h real-lab run artifact has been recorded.",
+        }
+    try:
+        payload = json.loads(REAL_LAB_DETAILS.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {
+            "available": False,
+            "status": "unreadable",
+            "last_blocker": "Cisco 4h real-lab run artifact could not be read.",
+        }
+    stages = _dict(payload.get("stages"))
+    adapter = _dict(stages.get("adapter_discovery"))
+    prompt = _dict(stages.get("console_prompt_detection"))
+    identity = _dict(stages.get("switch_identification"))
+    plan = _dict(stages.get("bootstrap_plan"))
+    apply = _dict(stages.get("apply"))
+    ethernet = _dict(stages.get("ethernet_management_validation"))
+    privilege = _dict(stages.get("privilege_escalation"))
+    blockers = payload.get("blockers") if isinstance(payload.get("blockers"), list) else []
+    last_blocker = next((item for item in blockers if isinstance(item, str)), None)
+    if not last_blocker:
+        privilege_blockers = privilege.get("blockers")
+        if isinstance(privilege_blockers, list):
+            last_blocker = next((item for item in privilege_blockers if isinstance(item, str)), None)
+    return {
+        "available": True,
+        "checked_at": payload.get("checked_at"),
+        "status": payload.get("status"),
+        "console_adapter_detected": bool(adapter.get("effective_path")),
+        "console_adapter": adapter.get("effective_path"),
+        "prompt_detected": bool(prompt.get("prompt_detected")),
+        "prompt_state": prompt.get("prompt_state"),
+        "selected_baud": prompt.get("selected_baud"),
+        "switch_identity_status": identity.get("status"),
+        "switch_identity_privileged": identity.get("privileged"),
+        "bootstrap_plan_status": plan.get("status"),
+        "bootstrap_hostname": plan.get("hostname"),
+        "bootstrap_management_interface": plan.get("management_interface"),
+        "apply_status": apply.get("status"),
+        "save_reload_status": _save_reload_status(apply),
+        "ethernet_management_status": ethernet.get("status"),
+        "ssh_status": _dict(ethernet.get("ssh")).get("reachable"),
+        "scp_status": _dict(ethernet.get("scp")).get("status"),
+        "last_blocker": last_blocker or "No blocker recorded.",
+        "artifacts": payload.get("artifacts") if isinstance(payload.get("artifacts"), dict) else {},
+    }
+
+
+def _save_reload_status(apply: dict[str, Any]) -> str:
+    if not apply:
+        return "not-attempted"
+    reload_status = _dict(apply.get("reload"))
+    if reload_status:
+        return (
+            f"save={apply.get('save_status') or 'unknown'}; "
+            f"reload_attempted={bool(reload_status.get('attempted'))}"
+        )
+    return str(apply.get("save_status") or "not-attempted")

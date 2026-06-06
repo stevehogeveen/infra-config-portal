@@ -2,18 +2,22 @@ from __future__ import annotations
 
 import glob
 import os
+import subprocess
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
 from app.core.config import settings
+from app.providers.action_policy import REAL_CONTACT_MODES, current_lab_action_policy
 from app.providers.base import ProviderAction, ProviderStatus
 from app.providers.lab_safety import current_lab_safety
 from app.providers.probe_cache import get_probe_result, record_probe_result
 from app.providers.redaction import redact_sensitive
 
 PROVIDER_ID = "cisco-console"
+REPO_ROOT = Path(__file__).resolve().parents[4]
+CISCO_CONSOLE_DISCOVERY_REPORT = REPO_ROOT / "artifacts" / "codex-runs" / "cisco-console-discovery-report.md"
 SAFE_SHOW_COMMANDS = (
     "show version",
     "show inventory",
@@ -85,6 +89,15 @@ NO_CONSOLE_ADAPTER_MESSAGE = (
     "to this machine, connect the console cable to the Cisco console port, then "
     "refresh Provider Status."
 )
+USB_SERIAL_NAME_HINTS = ("Cisco", "FTDI", "Prolific", "Silicon_Labs", "CP210", "USB-Serial")
+COMMON_CISCO_CONSOLE_BAUDS = (9600, 19200, 38400, 57600, 115200)
+CONSOLE_WAKE_SEQUENCES = (
+    ("newline", b"\n"),
+    ("enter", b"\r"),
+    ("ctrl-c", b"\x03"),
+    ("ctrl-z", b"\x1a"),
+)
+VALID_PROMPT_STATES = {"exec", "setup-wizard", "login-required"}
 FALLBACK_CONSOLE_MESSAGE = (
     "Fallback serial adapter detected. Prefer a stable /dev/serial/by-id path if available."
 )
@@ -103,6 +116,8 @@ class ConsoleCandidate:
     writable: bool | None
     label: str | None
     target_path: str | None
+    in_use: bool
+    rank: int
     recommendation: str
 
 
@@ -141,10 +156,18 @@ def discover_cisco_console(
     config = config or CiscoConsoleConfig.from_settings()
     paths = paths or ConsoleDiscoveryPaths()
     candidates = _discover_candidates(paths)
+    if config.port and not any(candidate.path == config.port for candidate in candidates):
+        candidates.append(
+            _candidate(
+                config.port,
+                stable_path=config.port.startswith("/dev/serial/by-id/"),
+            )
+        )
     env_override = _env_override(config.port, candidates)
+    ranked_candidates = _rank_candidates(candidates, configured_port=config.port)
 
-    existing_stable = [candidate for candidate in candidates if candidate.stable_path and candidate.exists]
-    existing_candidates = [candidate for candidate in candidates if candidate.exists]
+    existing_stable = [candidate for candidate in ranked_candidates if candidate.stable_path and candidate.exists]
+    existing_candidates = [candidate for candidate in ranked_candidates if candidate.exists]
     blockers: list[str] = []
     warnings: list[str] = []
     recommended_path: str | None = None
@@ -156,61 +179,47 @@ def discover_cisco_console(
         "Stable /dev/serial/by-id paths are preferred."
     )
 
-    if env_override["configured"]:
-        effective_path = str(env_override["path"])
-        status = "ready"
-        selection_source = "env-override"
-        safe_next_action = "Run an explicit read-only probe after confirming the console target."
-        _mark_recommendation(candidates, effective_path, "env-override")
-        if not env_override["exists"]:
-            status = "blocked"
-            blockers.append(
-                "Configured CISCO_CONSOLE_PORT does not exist. Reconnect the adapter "
-                "or update CISCO_CONSOLE_PORT to the detected stable path."
-            )
-            safe_next_action = "Reconnect the adapter or update CISCO_CONSOLE_PORT."
-        elif not _is_accessible(env_override):
-            status = "blocked"
-            blockers.append(PERMISSION_GUIDANCE)
-            safe_next_action = (
-                "Check dialout group membership and device permissions, then restart the backend shell/session."
-            )
-    elif len(existing_stable) == 1:
-        recommended_path = existing_stable[0].path
-        effective_path = recommended_path
-        status = "ready"
-        selection_source = "single-stable-candidate"
-        _mark_recommendation(candidates, recommended_path, "recommended-default")
-        safe_next_action = (
-            f"Preferred console path: {recommended_path}. Use this stable path for "
-            "CISCO_CONSOLE_PORT instead of /dev/ttyUSB0 when possible."
+    selected_candidate = _first_selectable_candidate(ranked_candidates)
+    if selected_candidate:
+        effective_path = selected_candidate.path
+        recommended_path = next(
+            (candidate.path for candidate in ranked_candidates if candidate.stable_path and _candidate_accessible(candidate)),
+            None,
         )
-        if not _candidate_accessible(existing_stable[0]):
-            status = "blocked"
-            blockers.append(
-                "Preferred stable console path exists but is not readable/writable. "
-                "Check dialout group membership and device permissions, then restart the backend shell/session."
+        status = "ready"
+        selection_source = (
+            "configured-port-hint"
+            if config.port and selected_candidate.path == config.port
+            else (
+                "auto-stable-candidate"
+                if selected_candidate.stable_path
+                else "auto-fallback-candidate"
             )
-            safe_next_action = (
-                "Check dialout group membership and device permissions, then restart the backend shell/session."
+        )
+        _mark_recommendation(candidates, effective_path, "selected-auto")
+        safe_next_action = "Run prompt readiness; auto-discovery will confirm prompt and baud."
+        if not selected_candidate.stable_path:
+            warnings.append(FALLBACK_CONSOLE_MESSAGE)
+        if config.port and selected_candidate.path != config.port:
+            warnings.append(
+                "Configured CISCO_CONSOLE_PORT was treated as a hint; auto-discovery selected another usable adapter."
             )
-    elif len(existing_stable) > 1:
-        status = "needs-selection"
-        selection_source = "multiple-stable-candidates"
+    elif env_override["configured"] and not env_override["exists"]:
         blockers.append(
-            "Multiple stable serial console candidates were discovered; set "
-            "CISCO_CONSOLE_PORT to the intended /dev/serial/by-id path."
+            "Configured CISCO_CONSOLE_PORT does not exist; auto-discovery did not find another selectable adapter."
         )
-        safe_next_action = "Select the intended stable /dev/serial/by-id path in .env.local.real-lab."
+        safe_next_action = "Reconnect the adapter or leave CISCO_CONSOLE_PORT unset and retry auto-discovery."
     elif existing_candidates:
-        status = "needs-selection"
-        selection_source = "fallback-candidates"
-        blockers.append(
-            "Only fallback /dev/ttyUSB or /dev/ttyACM candidates were discovered; set "
-            "CISCO_CONSOLE_PORT to the intended path before probing."
-        )
-        warnings.append(FALLBACK_CONSOLE_MESSAGE)
-        safe_next_action = FALLBACK_CONSOLE_MESSAGE
+        status = "blocked"
+        selection_source = "no-accessible-candidates"
+        if any(candidate.readable is False or candidate.writable is False for candidate in existing_candidates):
+            blockers.append(
+                "Serial console candidates were discovered but at least one is not readable/writable. "
+                "Check dialout group membership and device permissions, then restart the backend shell/session."
+            )
+        else:
+            blockers.append("Serial console candidates were discovered but none are selectable.")
+        safe_next_action = "Check port ownership and permissions, then retry prompt readiness."
     else:
         blockers.append(NO_CONSOLE_ADAPTER_MESSAGE)
 
@@ -224,9 +233,11 @@ def discover_cisco_console(
 
     return {
         "status": status,
-        "candidates": [asdict(candidate) for candidate in candidates],
+        "configured_port_hint": config.port,
+        "candidates": [asdict(candidate) for candidate in _rank_candidates(candidates, configured_port=config.port)],
         "recommended_path": recommended_path,
         "effective_path": effective_path,
+        "selected_path": effective_path,
         "selection_source": selection_source,
         "candidate_counts": {
             "total": len(candidates),
@@ -236,6 +247,7 @@ def discover_cisco_console(
         },
         "env_override": env_override,
         "blockers": blockers,
+        "last_console_blocker": blockers[-1] if blockers else None,
         "warnings": warnings,
         "operator_message": _operator_message(status, recommended_path),
         "operator_checklist": CONSOLE_DETECTION_CHECKLIST,
@@ -260,23 +272,27 @@ class CiscoConsoleAdapter:
         discovery = discover_cisco_console(self.config, self.paths)
         last_result, last_time = get_probe_result(PROVIDER_ID)
         safety = current_lab_safety()
+        policy = current_lab_action_policy(self.provider_mode)
+        readonly_allowed = (
+            safety.readonly_allowed if self.provider_mode == "local-readonly" else policy.readonly_allowed
+        )
         probe_enabled = (
-            self.provider_mode == "local-readonly"
+            self.provider_mode in REAL_CONTACT_MODES
             and discovery["status"] == "ready"
             and bool(discovery["effective_path"])
-            and safety.readonly_allowed
+            and readonly_allowed
         )
         warnings = list(discovery["warnings"])
         blockers = list(discovery["blockers"])
-        if self.provider_mode == "local-readonly":
-            blockers.extend(safety.blockers)
-        if self.provider_mode != "local-readonly":
+        if self.provider_mode in REAL_CONTACT_MODES:
+            blockers.extend(policy.readonly_blockers())
+        if self.provider_mode not in REAL_CONTACT_MODES:
             warnings.append(
-                "Provider mode is not local-readonly; Cisco probe actions are disabled."
+                "Provider mode is not local-readonly or local-lab-readwrite; Cisco probe actions are disabled."
             )
 
         status = discovery["status"]
-        if status == "ready" and self.provider_mode == "local-readonly" and not safety.readonly_allowed:
+        if status == "ready" and self.provider_mode in REAL_CONTACT_MODES and not readonly_allowed:
             status = "blocked"
 
         return ProviderStatus(
@@ -315,7 +331,8 @@ class CiscoConsoleAdapter:
                         if probe_enabled
                         else (
                             "Requires PROVIDER_MODE=local-readonly, LAB_CLOSED_LOOP_ACK=YES, "
-                            "LAB_READONLY_ACK=YES, and one effective console path."
+                            "LAB_READONLY_ACK=YES, and one effective console path; or complete "
+                            "local-lab-readwrite acknowledgements."
                         )
                     ),
                     method="POST",
@@ -328,16 +345,26 @@ class CiscoConsoleAdapter:
         )
 
     def probe(self) -> dict[str, Any]:
-        if self.provider_mode != "local-readonly":
+        if self.provider_mode not in REAL_CONTACT_MODES:
             return self._record_blocked(
-                "Set PROVIDER_MODE=local-readonly before running console probes."
+                "Set PROVIDER_MODE=local-readonly or PROVIDER_MODE=local-lab-readwrite before running console probes."
             )
 
         safety = current_lab_safety()
-        if not safety.readonly_allowed:
+        policy = current_lab_action_policy(self.provider_mode)
+        readonly_allowed = (
+            safety.readonly_allowed if self.provider_mode == "local-readonly" else policy.readonly_allowed
+        )
+        if not readonly_allowed:
+            message = (
+                "Set LAB_CLOSED_LOOP_ACK=YES and LAB_READONLY_ACK=YES before real lab probes."
+                if self.provider_mode == "local-readonly"
+                else "Required lab acknowledgement flags are missing before real lab probes."
+            )
             return self._record_blocked(
-                "Set LAB_CLOSED_LOOP_ACK=YES and LAB_READONLY_ACK=YES before real lab probes.",
-                safety=safety.as_flags(),
+                message,
+                safety=safety.as_flags() if self.provider_mode == "local-readonly" else None,
+                action_policy=policy.as_flags() if self.provider_mode != "local-readonly" else None,
             )
 
         discovery = discover_cisco_console(self.config, self.paths)
@@ -423,29 +450,37 @@ class CiscoConsoleAdapter:
             )
 
     def prompt_readiness(self) -> dict[str, Any]:
-        if self.provider_mode != "local-readonly":
+        if self.provider_mode not in REAL_CONTACT_MODES:
             return self._record_prompt_readiness(
                 "blocked",
-                "Set PROVIDER_MODE=local-readonly before running console prompt readiness checks.",
+                "Set PROVIDER_MODE=local-readonly or PROVIDER_MODE=local-lab-readwrite before running console prompt readiness checks.",
                 blockers=[
-                    "Set PROVIDER_MODE=local-readonly before running console prompt readiness checks."
+                    "Set PROVIDER_MODE=local-readonly or PROVIDER_MODE=local-lab-readwrite before running console prompt readiness checks."
                 ],
             )
 
         safety = current_lab_safety()
-        if not safety.readonly_allowed:
+        policy = current_lab_action_policy(self.provider_mode)
+        readonly_allowed = (
+            safety.readonly_allowed if self.provider_mode == "local-readonly" else policy.readonly_allowed
+        )
+        if not readonly_allowed:
+            message = (
+                "Set LAB_CLOSED_LOOP_ACK=YES and LAB_READONLY_ACK=YES before real lab prompt checks."
+                if self.provider_mode == "local-readonly"
+                else "Required lab acknowledgement flags are missing before real lab prompt checks."
+            )
             return self._record_prompt_readiness(
                 "blocked",
-                "Set LAB_CLOSED_LOOP_ACK=YES and LAB_READONLY_ACK=YES before real lab prompt checks.",
-                blockers=[
-                    "Set LAB_CLOSED_LOOP_ACK=YES and LAB_READONLY_ACK=YES before real lab prompt checks."
-                ],
-                safety=safety.as_flags(),
+                message,
+                blockers=[message],
+                safety=safety.as_flags() if self.provider_mode == "local-readonly" else None,
+                action_policy=policy.as_flags() if self.provider_mode != "local-readonly" else None,
             )
 
         discovery = discover_cisco_console(self.config, self.paths)
-        port = discovery.get("effective_path")
-        if discovery["status"] != "ready" or not isinstance(port, str):
+        scan_candidates = _scan_candidates(discovery)
+        if not scan_candidates:
             return self._record_prompt_readiness(
                 "blocked",
                 "Console prompt readiness requires one selected readable and writable console path.",
@@ -453,6 +488,7 @@ class CiscoConsoleAdapter:
                     "Console prompt readiness requires one selected readable and writable console path."
                 ],
                 discovery=discovery,
+                candidate_count=_candidate_count(discovery),
             )
 
         try:
@@ -467,60 +503,128 @@ class CiscoConsoleAdapter:
                 discovery=discovery,
             )
 
-        try:
-            connection = serial.Serial(
-                port=port,
-                baudrate=self.config.baud,
-                timeout=self.config.timeout_seconds,
-                write_timeout=self.config.timeout_seconds,
-            )
-        except Exception as exc:  # pragma: no cover - hardware dependent
-            return self._record_prompt_readiness(
-                "failed",
-                f"Could not open selected console path: {exc}",
-                blockers=["Serial console open failed."],
-                discovery=discovery,
-            )
+        attempts: list[dict[str, Any]] = []
+        last_blocker = "No Cisco prompt or login flow was detected on discovered console candidates."
+        best_prompt_sample: dict[str, Any] | None = None
+        baud_rates = _baud_scan_order(self.config.baud)
+        read_timing = {
+            "settle_seconds": self.config.prompt_settle_seconds,
+            "read_window_seconds": self.config.prompt_read_window_seconds,
+            "max_bytes": self.config.prompt_max_bytes,
+        }
+        for candidate in scan_candidates:
+            port = str(candidate["path"])
+            for baud in baud_rates:
+                try:
+                    connection = serial.Serial(
+                        port=port,
+                        baudrate=baud,
+                        timeout=self.config.timeout_seconds,
+                        write_timeout=self.config.timeout_seconds,
+                    )
+                except Exception as exc:  # pragma: no cover - hardware dependent
+                    last_blocker = f"Serial console open failed for {port} at {baud}: {exc}"
+                    attempts.append(
+                        {
+                            "port": port,
+                            "baud": baud,
+                            "sequence": "open",
+                            "status": "failed",
+                            "error": str(exc),
+                            "prompt_state": "unknown",
+                        }
+                    )
+                    continue
 
-        try:
-            with connection:
-                connection.write(b"\n")
-                prompt_text = _read_console(
-                    connection,
-                    settle_seconds=self.config.prompt_settle_seconds,
-                    read_window_seconds=self.config.prompt_read_window_seconds,
-                    max_bytes=self.config.prompt_max_bytes,
-                )
-                prompt_state = _prompt_state(prompt_text)
-                prompt_sample = _prompt_sample_summary(prompt_text)
-                no_prompt_text = prompt_state == "unknown" and not prompt_sample["captured"]
-                return self._record_prompt_readiness(
-                    _prompt_readiness_status(prompt_state),
-                    _prompt_readiness_message(prompt_state, prompt_sample),
-                    port=port,
-                    baud=self.config.baud,
-                    read_timing={
-                        "settle_seconds": self.config.prompt_settle_seconds,
-                        "read_window_seconds": self.config.prompt_read_window_seconds,
-                        "max_bytes": self.config.prompt_max_bytes,
-                    },
-                    prompt_state=prompt_state,
-                    prompt_sample=prompt_sample,
-                    blockers=(
-                        []
-                        if prompt_state == "exec"
-                        else [_prompt_blocker_message(prompt_state, prompt_sample)]
-                    ),
-                    troubleshooting_checklist=(
-                        NO_PROMPT_TEXT_CAPTURED_CHECKLIST if no_prompt_text else []
-                    ),
-                )
-        except Exception as exc:  # pragma: no cover - hardware dependent
-            return self._record_prompt_readiness(
-                "failed",
-                f"Cisco console prompt readiness check failed: {exc}",
-                blockers=["Serial console prompt readiness check failed."],
-            )
+                try:
+                    with connection:
+                        if hasattr(connection, "reset_input_buffer"):
+                            connection.reset_input_buffer()
+                        for sequence_name, sequence_bytes in CONSOLE_WAKE_SEQUENCES:
+                            connection.write(sequence_bytes)
+                            prompt_text = _read_console(
+                                connection,
+                                settle_seconds=self.config.prompt_settle_seconds,
+                                read_window_seconds=self.config.prompt_read_window_seconds,
+                                max_bytes=self.config.prompt_max_bytes,
+                            )
+                            prompt_state = _prompt_state(prompt_text)
+                            prompt_sample = _prompt_sample_summary(prompt_text)
+                            if prompt_sample["captured"]:
+                                best_prompt_sample = prompt_sample
+                            attempts.append(
+                                {
+                                    "port": port,
+                                    "baud": baud,
+                                    "sequence": sequence_name,
+                                    "status": "checked",
+                                    "prompt_state": prompt_state,
+                                    "captured": prompt_sample["captured"],
+                                    "last_line": prompt_sample["last_line"],
+                                }
+                            )
+                            if prompt_state in VALID_PROMPT_STATES or prompt_state == "config-mode":
+                                no_prompt_text = prompt_state == "unknown" and not prompt_sample["captured"]
+                                return self._record_prompt_readiness(
+                                    _prompt_readiness_status(prompt_state),
+                                    _prompt_readiness_message(prompt_state, prompt_sample),
+                                    port=port,
+                                    baud=baud,
+                                    selected_path=port,
+                                    selected_baud=baud,
+                                    selected_sequence=sequence_name,
+                                    candidate_count=_candidate_count(discovery),
+                                    configured_port_hint=self.config.port,
+                                    discovery=discovery,
+                                    attempts=attempts,
+                                    read_timing=read_timing,
+                                    prompt_state=prompt_state,
+                                    prompt_sample=prompt_sample,
+                                    blockers=(
+                                        []
+                                        if prompt_state == "exec"
+                                        else [_prompt_blocker_message(prompt_state, prompt_sample)]
+                                    ),
+                                    troubleshooting_checklist=(
+                                        NO_PROMPT_TEXT_CAPTURED_CHECKLIST if no_prompt_text else []
+                                    ),
+                                )
+                            last_blocker = _prompt_blocker_message(prompt_state, prompt_sample)
+                except Exception as exc:  # pragma: no cover - hardware dependent
+                    last_blocker = f"Cisco console prompt readiness check failed for {port} at {baud}: {exc}"
+                    attempts.append(
+                        {
+                            "port": port,
+                            "baud": baud,
+                            "sequence": "read",
+                            "status": "failed",
+                            "error": str(exc),
+                            "prompt_state": "unknown",
+                        }
+                    )
+
+        final_prompt_sample = best_prompt_sample or {
+            "captured": False,
+            "line_count": 0,
+            "last_line": "",
+            "raw_text_redacted": True,
+        }
+        return self._record_prompt_readiness(
+            "blocked",
+            last_blocker,
+            blockers=[last_blocker],
+            discovery=discovery,
+            attempts=attempts,
+            configured_port_hint=self.config.port,
+            selected_path=None,
+            selected_baud=None,
+            candidate_count=_candidate_count(discovery),
+            read_timing=read_timing,
+            prompt_sample=final_prompt_sample,
+            troubleshooting_checklist=(
+                [] if final_prompt_sample["captured"] else NO_PROMPT_TEXT_CAPTURED_CHECKLIST
+            ),
+        )
 
     def _record_blocked(self, message: str, **extra: Any) -> dict[str, Any]:
         return self._record_result(
@@ -569,7 +673,9 @@ class CiscoConsoleAdapter:
             "blockers": blockers,
             **extra,
         }
-        return self._record_result(result)
+        recorded = self._record_result(result)
+        _write_console_discovery_report(recorded)
+        return recorded
 
 
 def _discover_candidates(paths: ConsoleDiscoveryPaths) -> list[ConsoleCandidate]:
@@ -591,15 +697,127 @@ def _candidate(path: str, stable_path: bool) -> ConsoleCandidate:
     readable = os.access(path, os.R_OK) if exists else None
     writable = os.access(path, os.W_OK) if exists else None
     target_path = os.path.realpath(path) if stable_path and os.path.islink(path) else None
+    label = _candidate_label(path, target_path)
+    in_use = _path_in_use(path) if exists else False
+    rank = _candidate_rank(
+        path=path,
+        label=label,
+        stable_path=stable_path,
+        exists=exists,
+        readable=readable,
+        writable=writable,
+        in_use=in_use,
+        configured_port=None,
+    )
     return ConsoleCandidate(
         path=path,
         stable_path=stable_path,
         exists=exists,
         readable=readable,
         writable=writable,
-        label=_candidate_label(path, target_path),
+        label=label,
         target_path=target_path,
+        in_use=in_use,
+        rank=rank,
         recommendation="stable-candidate" if stable_path else "fallback-candidate",
+    )
+
+
+def _rank_candidates(
+    candidates: list[ConsoleCandidate],
+    *,
+    configured_port: str | None,
+) -> list[ConsoleCandidate]:
+    ranked = [
+        ConsoleCandidate(
+            **{
+                **asdict(candidate),
+                "rank": _candidate_rank(
+                    path=candidate.path,
+                    label=candidate.label,
+                    stable_path=candidate.stable_path,
+                    exists=candidate.exists,
+                    readable=candidate.readable,
+                    writable=candidate.writable,
+                    in_use=candidate.in_use,
+                    configured_port=configured_port,
+                ),
+                "recommendation": _ranked_recommendation(candidate, configured_port),
+            }
+        )
+        for candidate in candidates
+    ]
+    return sorted(ranked, key=lambda candidate: (candidate.rank, candidate.path))
+
+
+def _candidate_rank(
+    *,
+    path: str,
+    label: str | None,
+    stable_path: bool,
+    exists: bool,
+    readable: bool | None,
+    writable: bool | None,
+    in_use: bool,
+    configured_port: str | None,
+) -> int:
+    rank = 0 if stable_path else 100
+    if configured_port and path == configured_port:
+        rank -= 200
+    if _preferred_usb_name(path, label):
+        rank -= 25
+    if not exists:
+        rank += 2000
+    if not readable or not writable:
+        rank += 1000
+    if in_use:
+        rank += 500
+    return rank
+
+
+def _ranked_recommendation(candidate: ConsoleCandidate, configured_port: str | None) -> str:
+    if candidate.recommendation == "selected-auto":
+        return "selected-auto"
+    if configured_port and candidate.path == configured_port:
+        return "configured-port-hint"
+    if not candidate.exists:
+        return "unavailable"
+    if not _candidate_accessible(candidate):
+        return "permission-blocked"
+    if candidate.in_use:
+        return "in-use-deprioritized"
+    if candidate.stable_path:
+        return "stable-auto-candidate"
+    return "fallback-auto-candidate"
+
+
+def _preferred_usb_name(path: str, label: str | None) -> bool:
+    haystack = f"{path} {label or ''}".lower().replace("-", "_")
+    return any(hint.lower().replace("-", "_") in haystack for hint in USB_SERIAL_NAME_HINTS)
+
+
+def _path_in_use(path: str) -> bool:
+    try:
+        result = subprocess.run(
+            ["fuser", path],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=0.5,
+            check=False,
+        )
+    except (FileNotFoundError, PermissionError, subprocess.TimeoutExpired):
+        return False
+    return result.returncode == 0
+
+
+def _first_selectable_candidate(candidates: list[ConsoleCandidate]) -> ConsoleCandidate | None:
+    return next(
+        (
+            candidate
+            for candidate in candidates
+            if candidate.exists and _candidate_accessible(candidate) and not candidate.in_use
+        ),
+        None,
     )
 
 
@@ -665,6 +883,90 @@ def _is_accessible(candidate: dict[str, Any]) -> bool:
 
 def _candidate_accessible(candidate: ConsoleCandidate) -> bool:
     return bool(candidate.readable) and bool(candidate.writable)
+
+
+def _scan_candidates(discovery: dict[str, Any]) -> list[dict[str, Any]]:
+    candidates = [
+        candidate
+        for candidate in discovery.get("candidates", [])
+        if isinstance(candidate, dict)
+        and candidate.get("exists") is True
+        and candidate.get("readable") is True
+        and candidate.get("writable") is True
+        and candidate.get("in_use") is not True
+        and isinstance(candidate.get("path"), str)
+    ]
+    effective_path = discovery.get("effective_path")
+    if isinstance(effective_path, str):
+        candidates = sorted(
+            candidates,
+            key=lambda candidate: (
+                0 if candidate.get("path") == effective_path else 1,
+                int(candidate.get("rank") or 0),
+                str(candidate.get("path")),
+            ),
+        )
+    return candidates
+
+
+def _candidate_count(discovery: dict[str, Any]) -> int:
+    counts = discovery.get("candidate_counts")
+    if isinstance(counts, dict) and isinstance(counts.get("total"), int):
+        return int(counts["total"])
+    candidates = discovery.get("candidates")
+    return len(candidates) if isinstance(candidates, list) else 0
+
+
+def _baud_scan_order(configured_baud: int) -> list[int]:
+    return list(dict.fromkeys([configured_baud, *COMMON_CISCO_CONSOLE_BAUDS]))
+
+
+def _write_console_discovery_report(result: dict[str, Any]) -> None:
+    CISCO_CONSOLE_DISCOVERY_REPORT.parent.mkdir(parents=True, exist_ok=True)
+    discovery = result.get("discovery") if isinstance(result.get("discovery"), dict) else {}
+    candidate_count = result.get("candidate_count")
+    if candidate_count is None and discovery:
+        candidate_count = _candidate_count(discovery)
+    blockers = result.get("blockers") if isinstance(result.get("blockers"), list) else []
+    last_blocker = blockers[-1] if blockers else discovery.get("last_console_blocker") if discovery else None
+    attempts = result.get("attempts") if isinstance(result.get("attempts"), list) else []
+    lines = [
+        "# Cisco Console Discovery",
+        "",
+        f"- Status: {result.get('status', 'unknown')}",
+        f"- Prompt state: {result.get('prompt_state', 'unknown')}",
+        f"- Configured port hint: {result.get('configured_port_hint') or discovery.get('configured_port_hint') or 'not set'}",
+        f"- Auto-discovered selected port: {result.get('selected_path') or discovery.get('effective_path') or 'not selected'}",
+        f"- Selected baud: {result.get('selected_baud') or result.get('baud') or 'not selected'}",
+        f"- Candidate count: {candidate_count if candidate_count is not None else 0}",
+        f"- Last console blocker: {last_blocker or 'none'}",
+        "",
+        "## Candidate Summary",
+    ]
+    for candidate in discovery.get("candidates", []) if discovery else []:
+        if not isinstance(candidate, dict):
+            continue
+        lines.append(
+            "- "
+            f"{candidate.get('path')} | stable={candidate.get('stable_path')} | "
+            f"exists={candidate.get('exists')} | readable={candidate.get('readable')} | "
+            f"writable={candidate.get('writable')} | in_use={candidate.get('in_use')} | "
+            f"rank={candidate.get('rank')} | recommendation={candidate.get('recommendation')}"
+        )
+    lines.extend(["", "## Attempts"])
+    for attempt in attempts[-40:]:
+        if not isinstance(attempt, dict):
+            continue
+        lines.append(
+            "- "
+            f"{attempt.get('port')} @ {attempt.get('baud')} via {attempt.get('sequence')}: "
+            f"{attempt.get('status')} prompt={attempt.get('prompt_state')} "
+            f"captured={attempt.get('captured')}"
+        )
+    if not attempts:
+        lines.append("- No serial prompt attempts were run.")
+    lines.append("")
+    CISCO_CONSOLE_DISCOVERY_REPORT.write_text("\n".join(lines), encoding="utf-8")
 
 
 def _dangerous_actions() -> list[ProviderAction]:

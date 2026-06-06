@@ -2592,6 +2592,7 @@ function CiscoSetupReadinessPanel({
   const promptClassification = objectValue(lastPrompt.prompt_classification);
   const readTiming = objectValue(readiness.console.read_timing);
   const ethernetReadiness = objectValue(readiness.ethernet_readiness);
+  const realLabRun = objectValue(readiness.real_lab_run);
 
   return (
     <section className="provider-card provider-card-wide cisco-setup-readiness">
@@ -2634,6 +2635,23 @@ function CiscoSetupReadinessPanel({
         />
         <ProviderFact label="Prompt Readiness" value={readiness.console.safe_next_action} />
       </div>
+      <SetupPreviewBlock
+        title="Cisco Real-Lab Run"
+        tag={labelize(asString(realLabRun.status) || "not-run")}
+        lines={[
+          `Console adapter detected: ${presenceLabel(realLabRun.console_adapter_detected)}.`,
+          `Adapter: ${asString(realLabRun.console_adapter) || "Missing"}.`,
+          `Prompt: ${labelize(asString(realLabRun.prompt_state) || "unknown")}, detected: ${presenceLabel(realLabRun.prompt_detected)}.`,
+          `Selected baud: ${asString(realLabRun.selected_baud) || "Missing"}.`,
+          `Switch identity: ${labelize(asString(realLabRun.switch_identity_status) || "not-captured")}.`,
+          `Bootstrap plan: ${labelize(asString(realLabRun.bootstrap_plan_status) || "not-built")}.`,
+          `Apply: ${labelize(asString(realLabRun.apply_status) || "not-attempted")}.`,
+          `Save/reload: ${asString(realLabRun.save_reload_status) || "not-attempted"}.`,
+          `Ethernet management: ${labelize(asString(realLabRun.ethernet_management_status) || "not-attempted")}.`,
+          `SSH: ${presenceLabel(realLabRun.ssh_status)}; SCP: ${labelize(asString(realLabRun.scp_status) || "not-attempted")}.`,
+          `Last blocker: ${asString(realLabRun.last_blocker) || "None"}.`
+        ]}
+      />
       <div className="setup-preview-grid">
         <SetupPreviewBlock
           title="Current Discovery"
@@ -3195,8 +3213,19 @@ function CiscoConsoleDetails({
   const envOverride = objectValue(discovery.env_override);
   const candidates = consoleCandidates(discovery.candidates);
   const candidateCounts = objectValue(discovery.candidate_counts);
+  const configuredPortHint = asString(discovery.configured_port_hint) || asString(envOverride.path);
   const effectivePath = asString(discovery.effective_path);
+  const selectedPath = asString(promptReadinessResult?.selected_path) || effectivePath;
+  const selectedBaud =
+    asString(promptReadinessResult?.selected_baud) ||
+    asString(promptReadinessResult?.baud) ||
+    asString(provider.configuration.baud) ||
+    "9600";
   const recommendedPath = asString(discovery.recommended_path);
+  const lastConsoleBlocker =
+    stringArray(promptReadinessResult?.blockers).slice(-1)[0] ||
+    asString(discovery.last_console_blocker) ||
+    stringArray(discovery.blockers).slice(-1)[0];
   const operatorMessage = asString(discovery.operator_message);
   const operatorChecklist = stringArray(discovery.operator_checklist);
   const permissionGuidance = asString(discovery.permission_guidance);
@@ -3206,7 +3235,9 @@ function CiscoConsoleDetails({
   const hasPermissionIssue = candidates.some(
     (candidate) => candidate.exists && (candidate.readable === false || candidate.writable === false)
   );
-  const promptReadinessEnabled = provider.mode === "local-readonly" && provider.status === "ready";
+  const promptReadinessEnabled =
+    (provider.mode === "local-readonly" || provider.mode === "local-lab-readwrite") &&
+    provider.status === "ready";
 
   return (
     <div className="provider-detail-section">
@@ -3241,12 +3272,14 @@ function CiscoConsoleDetails({
       )}
       <div className="provider-fact-grid">
         <ProviderFact
-          label="Env Override"
-          value={asBoolean(envOverride.configured) ? asString(envOverride.path) || "Configured" : "Not configured"}
+          label="Configured Port Hint"
+          value={configuredPortHint || "Not configured"}
         />
+        <ProviderFact label="Auto Selected Port" value={selectedPath || "-"} />
+        <ProviderFact label="Selected Baud" value={selectedBaud} />
+        <ProviderFact label="Candidate Count" value={`${asNumber(candidateCounts.total, candidates.length)}`} />
+        <ProviderFact label="Last Console Blocker" value={lastConsoleBlocker || "None"} />
         <ProviderFact label="Recommended Path" value={recommendedPath || "-"} />
-        <ProviderFact label="Effective Path" value={effectivePath || "-"} />
-        <ProviderFact label="Baud" value={asString(provider.configuration.baud) || "9600"} />
       </div>
       <div className="provider-fact-grid compact">
         <ProviderFact label="Existing Candidates" value={`${asNumber(candidateCounts.existing, candidates.filter((candidate) => candidate.exists).length)}`} />
@@ -3302,13 +3335,13 @@ function CiscoConsoleDetails({
                 <Play size={16} />
                 {busyPromptReadiness ? "Checking" : "Prompt Readiness"}
               </button>
-              <span className="action-tag read-only">Newline only</span>
+              <span className="action-tag read-only">Wake + classify only</span>
               <p>
-                Sends newline only and reads the redacted prompt state. No show commands are run by this check.
+                Tries discovered console adapters and common Cisco baud rates, then reads the redacted prompt state. No show commands are run by this check.
               </p>
               {!promptReadinessEnabled && (
                 <p>
-                  Requires PROVIDER_MODE=local-readonly, lab read-only acknowledgements, and one ready console path.
+                  Requires PROVIDER_MODE=local-readonly or local-lab-readwrite, lab acknowledgements, and one ready console path.
                 </p>
               )}
             </div>
@@ -3326,6 +3359,15 @@ function CiscoConsoleDetails({
             <ProviderFact
               label="Show Commands Allowed"
               value={asBoolean(promptReadinessResult.safe_show_commands_allowed) ? "true" : "false"}
+            />
+            <ProviderFact label="Selected Port" value={asString(promptReadinessResult.selected_path) || "-"} />
+            <ProviderFact
+              label="Selected Baud"
+              value={asString(promptReadinessResult.selected_baud) || asString(promptReadinessResult.baud) || "-"}
+            />
+            <ProviderFact
+              label="Candidates"
+              value={asString(promptReadinessResult.candidate_count) || `${asNumber(candidateCounts.total, candidates.length)}`}
             />
           </div>
           <p className="provider-redaction-note">
@@ -5506,7 +5548,7 @@ function yesNo(value: boolean): string {
 function accessLabel(candidate: ConsoleCandidate): string {
   const readable = candidate.readable === null ? "unknown" : yesNo(candidate.readable);
   const writable = candidate.writable === null ? "unknown" : yesNo(candidate.writable);
-  return `read ${readable} / write ${writable}`;
+  return `read ${readable} / write ${writable} / in use ${yesNo(candidate.in_use)}`;
 }
 
 function MockModeBanner() {
