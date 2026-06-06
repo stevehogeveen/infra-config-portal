@@ -8,6 +8,7 @@ from app.providers.cisco_console import CiscoConsoleAdapter
 from app.providers.probe_cache import get_probe_result, record_probe_result
 from app.providers.redaction import redact_sensitive
 from app.services.cisco_bootstrap_requirements import get_cisco_bootstrap_requirements
+from app.services.firmware_compliance import firmware_gate_blockers
 
 PROVIDER_ID = "cisco-console-bootstrap"
 TARGET_IP = LAB_CISCO_MANAGEMENT_IP
@@ -123,6 +124,7 @@ def _apply_gate_blockers(
         blockers.append(
             "Destructive reset/wipe/copy/reload actions are not allowed by console bootstrap."
         )
+    blockers.extend(firmware_gate_blockers("Cisco bootstrap apply"))
     if settings.provider_mode != "local-readonly":
         blockers.append("PROVIDER_MODE=local-readonly is required for guarded console apply.")
     if not settings.cisco_console_apply_enabled:

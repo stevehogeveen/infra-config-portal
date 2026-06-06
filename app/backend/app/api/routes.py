@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from fastapi import APIRouter, Depends, HTTPException, Request as FastAPIRequest, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request as FastAPIRequest, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -124,6 +124,11 @@ from app.services.hpe_raid import (
     write_hpe_raid_pending_report,
 )
 from app.services.esxi_install_readiness import get_esxi_install_readiness
+from app.services.firmware_compliance import (
+    get_firmware_compliance,
+    get_firmware_inventory,
+    write_waiver_report,
+)
 from app.services.full_rebuild_run import get_full_rebuild_summary
 from app.services.media_inventory import get_media_inventory
 from app.services.netapp_artifacts import (
@@ -354,6 +359,21 @@ def read_provider_status() -> list[ProviderStatusRead]:
         return provider_registry().statuses()
     except ProviderRegistryError as exc:
         return [provider_registry_error_status(settings.provider_mode, str(exc))]
+
+
+@router.get("/lab/firmware-inventory", response_model=ProviderProbeResultRead)
+def read_firmware_inventory() -> dict:
+    return get_firmware_inventory(refresh_live=False)
+
+
+@router.get("/lab/firmware-compliance", response_model=ProviderProbeResultRead)
+def read_firmware_compliance(scope: str = Query("full", pattern="^(hpe|cisco|netapp|full)$")) -> dict:
+    return get_firmware_compliance(refresh_live=False, scope=scope)
+
+
+@router.get("/lab/firmware-waiver-check", response_model=ProviderProbeResultRead)
+def read_firmware_waiver_check() -> dict:
+    return write_waiver_report()
 
 
 @router.get("/lab/full-rebuild-summary", response_model=ProviderProbeResultRead)

@@ -4,6 +4,7 @@ from app.core.config import settings
 from app.providers.base import ProviderAction, ProviderStatus
 from app.services.netapp_console_readiness import get_netapp_console_readiness
 from app.services.netapp_disabled_actions import disabled_netapp_actions
+from app.services.firmware_compliance import firmware_gate_blockers
 from app.services.netapp_readiness_comparison import get_netapp_readiness_comparison
 from app.services.netapp_upgrade_readiness import get_netapp_upgrade_readiness
 
@@ -147,7 +148,7 @@ class NetAppOntapAdapter:
                     "Use the upgrade-readiness endpoint for full sanitized candidate details.",
                 ],
             },
-            "blockers": status.blockers,
+            "blockers": [*status.blockers, *firmware_gate_blockers("NetApp setup workflow")],
             "warnings": [
                 "No ONTAP API, Service Processor, console, SSH, storage, or upgrade endpoint is contacted.",
                 "Preview output is not a validated execution plan.",

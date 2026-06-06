@@ -339,6 +339,29 @@ workflow categories can run only through explicit workflow steps. Power,
 firmware update, and factory reset categories remain blocked unless their
 specific `LAB_ALLOW_*` flags are enabled.
 
+The firmware compliance gate runs before major configuration workflows. It
+loads the baseline from `config/firmware-baselines/real-lab.yml`, collects
+available iLO/Cisco/NetApp firmware and OS evidence, scans local media metadata
+from `artifacts/Media` and `MEDIA_INVENTORY_DIRS`, and writes redacted reports
+under `artifacts/codex-runs/`. It does not upload, flash, reboot for firmware,
+or update firmware.
+
+```bash
+make provider-lab-firmware-inventory
+make provider-lab-firmware-compliance
+make provider-lab-firmware-waiver-check
+```
+
+When the gate is blocked, Cisco bootstrap/apply, HPE RAID apply/reset, ESXi
+boot workflow actions, NetApp setup workflow previews, and full rebuild
+execution surface the firmware blocker before continuing. A local waiver can be
+supplied with `FIRMWARE_WAIVER_CONFIRM=WAIVE FIRMWARE COMPLIANCE`,
+`FIRMWARE_WAIVER_REASON`, `FIRMWARE_WAIVER_EXPIRES`, and
+`FIRMWARE_WAIVER_SCOPE`, or by writing the same fields to the ignored local
+artifact `artifacts/codex-runs/firmware-waiver.json`. Active waivers are
+recorded in `artifacts/codex-runs/firmware-waiver-report.md` and shown on the
+Lab Builder Firmware Compliance stage.
+
 `make provider-lab-hpe-storage-discovery`,
 `make provider-lab-hpe-raid-discovery`, and
 `make provider-lab-hpe-raid-plan` use real iLO Redfish inventory in

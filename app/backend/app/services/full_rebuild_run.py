@@ -33,6 +33,7 @@ REQUESTED_REPORTS = {
 }
 
 SOURCE_REPORTS = {
+    "firmware_compliance": CODEX_RUN_DIR / "firmware-compliance-report.md",
     "cisco_console": CODEX_RUN_DIR / "cisco-4h-lab-run-report.md",
     "cisco_privilege": CISCO_PRIVILEGE_REPORT,
     "cisco_bootstrap_apply": CODEX_RUN_DIR / "cisco-bootstrap-apply-report.md",
@@ -128,6 +129,11 @@ def run_full_rebuild_execution() -> dict[str, Any]:
     stages: dict[str, Any] = {
         "baseline": _stage("completed", "Baseline captured before live stages."),
     }
+    firmware_report = SOURCE_REPORTS.get("firmware_compliance", CODEX_RUN_DIR / "firmware-compliance-report.md")
+    stages["firmware_compliance"] = _run_live_stage(
+        ["scripts/firmware_compliance.py", "compliance"],
+        firmware_report,
+    )
 
     stage_specs = [
         ("cisco_console_bootstrap", ["scripts/cisco_real_lab_workflow.py", "--apply"], SOURCE_REPORTS["cisco_console"]),
@@ -146,8 +152,16 @@ def run_full_rebuild_execution() -> dict[str, Any]:
             ("esxi_reset_installer_boot", ["scripts/esxi_boot_workflow.py", "reset-installer-boot"], SOURCE_REPORTS["esxi_installer_boot"]),
         )
 
-    for key, command, report in stage_specs:
-        stages[key] = _run_live_stage(command, report)
+    if stages["firmware_compliance"].get("status") == "blocked":
+        for key, _command, report in stage_specs:
+            stages[key] = _stage(
+                "blocked",
+                "Stage was not run because firmware compliance blocked the full rebuild.",
+                [f"Resolve firmware compliance first; inspect `{_display_path(report)}` after rerun."],
+            )
+    else:
+        for key, command, report in stage_specs:
+            stages[key] = _run_live_stage(command, report)
     stages["cisco_bootstrap"] = stages["cisco_console_bootstrap"]
     stages["hpe_ilo"] = stages["ilo_reachability_inventory"]
     stages["hpe_raid"] = _combined_stage(

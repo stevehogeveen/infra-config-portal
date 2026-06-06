@@ -2,7 +2,7 @@
 
 ## Summary
 
-- checked_at: 2026-06-05T19:35:48.283126+00:00
+- checked_at: 2026-06-06T02:48:52.518206+00:00
 - status: set
 - message: One-time boot target set to Cd.
 - report: artifacts/codex-runs/esxi-one-time-boot-report.md
@@ -22,6 +22,7 @@
 {
   "after": {
     "boot_source_override_enabled": "Once",
+    "boot_source_override_mode": "UEFI",
     "boot_source_override_target": "Cd",
     "enabled_allowable_values": [],
     "power_state": "On",
@@ -43,6 +44,7 @@
   },
   "before": {
     "boot_source_override_enabled": "Once",
+    "boot_source_override_mode": "UEFI",
     "boot_source_override_target": "Cd",
     "enabled_allowable_values": [],
     "power_state": "On",
@@ -63,7 +65,7 @@
     ]
   },
   "blockers": [],
-  "checked_at": "2026-06-05T19:35:48.283126+00:00",
+  "checked_at": "2026-06-06T02:48:52.518206+00:00",
   "message": "One-time boot target set to Cd.",
   "next_safe_action": "Run controlled server reset to boot the ESXi installer.",
   "patch": {

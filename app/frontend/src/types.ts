@@ -177,6 +177,7 @@ export type CiscoSetupReadiness = {
   };
   ethernet_readiness: Record<string, unknown>;
   real_lab_run: Record<string, unknown>;
+  password_recovery: Record<string, unknown>;
   bootstrap_preview: {
     apply_enabled: boolean;
     commands_redacted: boolean;

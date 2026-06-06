@@ -1,0 +1,409 @@
+{
+  "provider_id": "build-verification",
+  "checked_at": "2026-06-06T18:52:38.681419+00:00",
+  "status": "blocked",
+  "certification_state": "stale_config",
+  "message": "Build Verification / Product Certification completed with redacted findings.",
+  "provider_mode": "mock",
+  "mock_results_used": false,
+  "lab_ip_profile": {
+    "status": "blocked",
+    "classification": "stale_config",
+    "expected": {
+      "subnet": "192.168.1.0/24",
+      "ilo": "192.168.1.201",
+      "server_embedded_nic": "192.168.1.202",
+      "esxi_management": "192.168.1.203",
+      "cisco_management": "192.168.1.204",
+      "ansible_control_host": "192.168.1.205"
+    },
+    "configured": {
+      "subnet": "192.168.1.0/24",
+      "ilo": "192.168.1.201",
+      "server_embedded_nic": "192.168.1.202",
+      "esxi_management": "10.10.8.203",
+      "cisco_management": "10.10.8.112",
+      "ansible_cisco_inventory_target": "10.10.8.112",
+      "ansible_control_host": "192.168.1.205",
+      "cisco_target_ip_env": "192.168.1.204",
+      "ansible_cisco_host_env": "192.168.1.204"
+    },
+    "mismatches": [
+      {
+        "field": "esxi_management",
+        "expected": "192.168.1.203",
+        "configured": "10.10.8.203"
+      },
+      {
+        "field": "cisco_management",
+        "expected": "192.168.1.204",
+        "configured": "10.10.8.112"
+      }
+    ],
+    "stale_10_10_8_values": [
+      {
+        "field": "esxi_management",
+        "value": "10.10.8.203"
+      },
+      {
+        "field": "cisco_management",
+        "value": "10.10.8.112"
+      },
+      {
+        "field": "ansible_cisco_inventory_target",
+        "value": "10.10.8.112"
+      }
+    ],
+    "stale_artifact_evidence": [
+      {
+        "artifact": "artifacts/codex-runs/overnight-lab-builder-final-report.md",
+        "classification": "stale_config",
+        "next_action": "Regenerate this report after confirming the 192.168.1.0/24 lab profile."
+      }
+    ],
+    "next_action": "Update active lab inputs to 192.168.1.201-.205 and remove stale 10.10.8.x values before certification.",
+    "ansible_role": {
+      "first_contact": "Cisco console bootstrap",
+      "starts_after": "Cisco management SSH is configured at 192.168.1.204",
+      "uses": [
+        "show commands",
+        "backup",
+        "validation",
+        "drift checks",
+        "future repeatable config"
+      ],
+      "not_initial_bootstrap_path": true
+    }
+  },
+  "credentials": {
+    "status": "ready",
+    "classification": "passed",
+    "checks": [
+      {
+        "name": "ilo",
+        "configured": true,
+        "status": "ready",
+        "classification": "passed",
+        "field": "ILO_TEST_PASSWORD",
+        "length": 8,
+        "special_characters_present": true,
+        "shell": {
+          "safe_with_quoting": true,
+          "quoted_length": 8
+        },
+        "json": {
+          "serializable": true
+        },
+        "yaml": {
+          "quote_required": true,
+          "safe_when_quoted": true
+        },
+        "ansible": {
+          "use_no_log": true,
+          "pass_as_structured_var": true
+        },
+        "issues": [],
+        "next_action": "Credential compatibility passed with redacted value handling."
+      },
+      {
+        "name": "cisco",
+        "configured": true,
+        "status": "ready",
+        "classification": "passed",
+        "field": "CISCO_TEST_PASSWORD",
+        "length": 8,
+        "special_characters_present": true,
+        "shell": {
+          "safe_with_quoting": true,
+          "quoted_length": 8
+        },
+        "json": {
+          "serializable": true
+        },
+        "yaml": {
+          "quote_required": true,
+          "safe_when_quoted": true
+        },
+        "ansible": {
+          "use_no_log": true,
+          "pass_as_structured_var": true
+        },
+        "issues": [],
+        "next_action": "Credential compatibility passed with redacted value handling."
+      },
+      {
+        "name": "cisco_enable",
+        "configured": true,
+        "status": "ready",
+        "classification": "passed",
+        "field": "CISCO_ENABLE_PASSWORD or ANSIBLE_CISCO_ENABLE_PASSWORD",
+        "length": 8,
+        "special_characters_present": true,
+        "shell": {
+          "safe_with_quoting": true,
+          "quoted_length": 8
+        },
+        "json": {
+          "serializable": true
+        },
+        "yaml": {
+          "quote_required": true,
+          "safe_when_quoted": true
+        },
+        "ansible": {
+          "use_no_log": true,
+          "pass_as_structured_var": true
+        },
+        "issues": [],
+        "next_action": "Credential compatibility passed with redacted value handling."
+      },
+      {
+        "name": "esxi",
+        "configured": true,
+        "status": "ready",
+        "classification": "passed",
+        "field": "ESXI_TEST_PASSWORD",
+        "length": 8,
+        "special_characters_present": true,
+        "shell": {
+          "safe_with_quoting": true,
+          "quoted_length": 8
+        },
+        "json": {
+          "serializable": true
+        },
+        "yaml": {
+          "quote_required": true,
+          "safe_when_quoted": true
+        },
+        "ansible": {
+          "use_no_log": true,
+          "pass_as_structured_var": true
+        },
+        "issues": [],
+        "next_action": "Credential compatibility passed with redacted value handling."
+      }
+    ]
+  },
+  "mtu": {
+    "status": "ready",
+    "classification": "passed",
+    "configured": {},
+    "invalid": {},
+    "mismatches": [],
+    "next_action": "MTU consistency passed for configured paths."
+  },
+  "protocols": {
+    "status": "blocked",
+    "classification": "operator_action_required",
+    "checks": [
+      {
+        "protocol": "iLO Redfish",
+        "configured": true,
+        "reachable": null,
+        "required": true,
+        "status": "unknown",
+        "classification": "warning",
+        "blockers": [],
+        "next_action": "Review iLO Redfish readiness."
+      },
+      {
+        "protocol": "iLO XML fallback",
+        "configured": true,
+        "reachable": null,
+        "required": true,
+        "status": "unknown",
+        "classification": "warning",
+        "blockers": [],
+        "next_action": "Review iLO XML fallback readiness."
+      },
+      {
+        "protocol": "Cisco console",
+        "configured": true,
+        "reachable": null,
+        "required": true,
+        "status": "unknown",
+        "classification": "operator_action_required",
+        "blockers": [],
+        "next_action": "Connect the Cisco console adapter and rerun prompt detection at 9600."
+      },
+      {
+        "protocol": "Cisco SSH/SCP",
+        "configured": true,
+        "reachable": null,
+        "required": true,
+        "status": "unknown",
+        "classification": "blocked_by_prior_stage",
+        "blockers": [],
+        "next_action": "Complete or confirm Cisco console bootstrap, then set CISCO_MGMT_CONFIGURED=true before treating SSH/SCP as a port failure."
+      },
+      {
+        "protocol": "ESXi API",
+        "configured": true,
+        "reachable": null,
+        "required": true,
+        "status": "unknown",
+        "classification": "blocked_by_prior_stage",
+        "blockers": [],
+        "next_action": "Install/configure ESXi management at 192.168.1.203, then set ESXI_CONFIGURED=true before API certification."
+      },
+      {
+        "protocol": "ESXi SSH",
+        "configured": true,
+        "reachable": null,
+        "required": true,
+        "status": "unknown",
+        "classification": "blocked_by_prior_stage",
+        "blockers": [],
+        "next_action": "Install/configure ESXi management and enable/confirm SSH before ESXi SSH certification."
+      },
+      {
+        "protocol": "NetApp REST",
+        "configured": false,
+        "reachable": null,
+        "required": false,
+        "status": "skipped",
+        "classification": "not_configured_yet",
+        "blockers": [],
+        "next_action": "Leave NetApp REST as not_configured_yet until the NetApp stage is explicitly configured."
+      },
+      {
+        "protocol": "NetApp SSH",
+        "configured": false,
+        "reachable": null,
+        "required": false,
+        "status": "skipped",
+        "classification": "not_configured_yet",
+        "blockers": [],
+        "next_action": "Leave NetApp SSH as not_configured_yet until the NetApp stage is explicitly configured."
+      },
+      {
+        "protocol": "ESXi ISO media inventory",
+        "configured": false,
+        "reachable": null,
+        "required": true,
+        "status": "blocked",
+        "classification": "operator_action_required",
+        "blockers": [
+          "ESXi ISO media inventory is not configured."
+        ],
+        "next_action": "Place the ESXi ISO under MEDIA_INVENTORY_DIRS or set ESXI_INSTALL_ISO/ESXI_ISO_PATH before ESXi boot verification."
+      }
+    ]
+  },
+  "post_build_checklist": [
+    {
+      "item": "Cisco management IP responds and SSH/SCP are ready",
+      "status": "unknown"
+    },
+    {
+      "item": "iLO inventory, health, power, and Redfish are reachable",
+      "status": "unknown"
+    },
+    {
+      "item": "RAID layout matches saved intent after reset/validation",
+      "status": "manual-review"
+    },
+    {
+      "item": "ESXi media is inserted or host installer state is detected",
+      "status": "unknown"
+    },
+    {
+      "item": "NetApp REST/SSH paths are reachable when configured",
+      "status": "skipped"
+    }
+  ],
+  "failures": [
+    {
+      "category": "lab-ip-profile",
+      "classification": "stale_config",
+      "ui_message": "Active lab IP profile contains stale or mismatched target values.",
+      "report_detail": "3 stale active values; 2 active profile mismatches.",
+      "next_action": "Update active lab inputs to 192.168.1.201-.205 and remove stale 10.10.8.x values before certification."
+    },
+    {
+      "category": "protocol",
+      "classification": "operator_action_required",
+      "ui_message": "Cisco console is operator_action_required.",
+      "report_detail": "Connect the Cisco console adapter and rerun prompt detection at 9600.",
+      "next_action": "Connect the Cisco console adapter and rerun prompt detection at 9600."
+    },
+    {
+      "category": "protocol",
+      "classification": "operator_action_required",
+      "ui_message": "ESXi ISO media inventory is operator_action_required.",
+      "report_detail": "ESXi ISO media inventory is not configured.",
+      "next_action": "Place the ESXi ISO under MEDIA_INVENTORY_DIRS or set ESXI_INSTALL_ISO/ESXI_ISO_PATH before ESXi boot verification."
+    },
+    {
+      "category": "protocol",
+      "classification": "blocked_by_prior_stage",
+      "ui_message": "Cisco SSH/SCP is blocked_by_prior_stage.",
+      "report_detail": "Complete or confirm Cisco console bootstrap, then set CISCO_MGMT_CONFIGURED=true before treating SSH/SCP as a port failure.",
+      "next_action": "Complete or confirm Cisco console bootstrap, then set CISCO_MGMT_CONFIGURED=true before treating SSH/SCP as a port failure."
+    },
+    {
+      "category": "protocol",
+      "classification": "blocked_by_prior_stage",
+      "ui_message": "ESXi API is blocked_by_prior_stage.",
+      "report_detail": "Install/configure ESXi management at 192.168.1.203, then set ESXI_CONFIGURED=true before API certification.",
+      "next_action": "Install/configure ESXi management at 192.168.1.203, then set ESXI_CONFIGURED=true before API certification."
+    },
+    {
+      "category": "protocol",
+      "classification": "blocked_by_prior_stage",
+      "ui_message": "ESXi SSH is blocked_by_prior_stage.",
+      "report_detail": "Install/configure ESXi management and enable/confirm SSH before ESXi SSH certification.",
+      "next_action": "Install/configure ESXi management and enable/confirm SSH before ESXi SSH certification."
+    },
+    {
+      "category": "protocol",
+      "classification": "not_configured_yet",
+      "ui_message": "NetApp REST is not_configured_yet.",
+      "report_detail": "Leave NetApp REST as not_configured_yet until the NetApp stage is explicitly configured.",
+      "next_action": "Leave NetApp REST as not_configured_yet until the NetApp stage is explicitly configured."
+    },
+    {
+      "category": "protocol",
+      "classification": "not_configured_yet",
+      "ui_message": "NetApp SSH is not_configured_yet.",
+      "report_detail": "Leave NetApp SSH as not_configured_yet until the NetApp stage is explicitly configured.",
+      "next_action": "Leave NetApp SSH as not_configured_yet until the NetApp stage is explicitly configured."
+    },
+    {
+      "category": "protocol",
+      "classification": "warning",
+      "ui_message": "iLO Redfish is warning.",
+      "report_detail": "Review iLO Redfish readiness.",
+      "next_action": "Review iLO Redfish readiness."
+    },
+    {
+      "category": "protocol",
+      "classification": "warning",
+      "ui_message": "iLO XML fallback is warning.",
+      "report_detail": "Review iLO XML fallback readiness.",
+      "next_action": "Review iLO XML fallback readiness."
+    }
+  ],
+  "blockers": [
+    "Update active lab inputs to 192.168.1.201-.205 and remove stale 10.10.8.x values before certification.",
+    "Connect the Cisco console adapter and rerun prompt detection at 9600.",
+    "Place the ESXi ISO under MEDIA_INVENTORY_DIRS or set ESXI_INSTALL_ISO/ESXI_ISO_PATH before ESXi boot verification.",
+    "Complete or confirm Cisco console bootstrap, then set CISCO_MGMT_CONFIGURED=true before treating SSH/SCP as a port failure.",
+    "Install/configure ESXi management at 192.168.1.203, then set ESXI_CONFIGURED=true before API certification.",
+    "Install/configure ESXi management and enable/confirm SSH before ESXi SSH certification."
+  ],
+  "warnings": [
+    "Review iLO Redfish readiness.",
+    "Review iLO XML fallback readiness."
+  ],
+  "artifacts": {
+    "report": "artifacts/codex-runs/build-verification-report.md",
+    "summary_json": "artifacts/codex-runs/build-verification-summary-redacted.json",
+    "lab_ip_profile_report": "artifacts/codex-runs/lab-ip-profile-update-report.md",
+    "lab_ip_profile_hardening_report": "artifacts/codex-runs/lab-ip-profile-hardening-report.md",
+    "classification_report": "artifacts/codex-runs/build-verification-classification-report.md",
+    "failure_case_report": "artifacts/codex-runs/failure-case-hardening-report.md"
+  },
+  "next_safe_action": "Update active lab inputs to 192.168.1.201-.205 and remove stale 10.10.8.x values before certification."
+}

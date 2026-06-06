@@ -165,6 +165,7 @@ type BuildStage = {
   nextAction: string;
   metricLabel: string;
   metricValue: string;
+  quickFacts?: Array<[string, string]>;
   blocker: string;
   detailSummary: string;
   details: ReactNode;
@@ -2749,6 +2750,7 @@ function ProviderStatusPage() {
   const [busyBootstrapRequirements, setBusyBootstrapRequirements] = useState(false);
   const [probeResults, setProbeResults] = useState<Record<string, ProviderProbeResult>>({});
   const [promptReadinessResult, setPromptReadinessResult] = useState<ProviderProbeResult | null>(null);
+  const [firmwareCompliance, setFirmwareCompliance] = useState<ProviderProbeResult | null>(null);
   const [fullRebuildSummary, setFullRebuildSummary] = useState<ProviderProbeResult | null>(null);
   const [buildVerification, setBuildVerification] = useState<ProviderProbeResult | null>(null);
 
@@ -2762,6 +2764,7 @@ function ProviderStatusPage() {
         setupWizardPlan,
         bootstrapRequirements,
         consoleBootstrapPlan,
+        firmwareGate,
         fullRebuild,
         certification
       ] = await Promise.all([
@@ -2770,6 +2773,7 @@ function ProviderStatusPage() {
         api.ciscoSetupWizardPlan(),
         api.ciscoBootstrapRequirements(),
         api.ciscoConsoleBootstrapPlan(),
+        api.firmwareCompliance(),
         api.fullRebuildSummary(),
         api.buildVerification()
       ]);
@@ -2778,6 +2782,7 @@ function ProviderStatusPage() {
       setCiscoSetupWizardPlan(setupWizardPlan);
       setCiscoBootstrapRequirements(bootstrapRequirements);
       setCiscoConsoleBootstrapPlan(consoleBootstrapPlan);
+      setFirmwareCompliance(firmwareGate);
       setFullRebuildSummary(fullRebuild);
       setBuildVerification(certification);
     } catch (err) {
@@ -2859,6 +2864,7 @@ function ProviderStatusPage() {
         ciscoProviders,
         ciscoSetupReadiness,
         esxiProvider,
+        firmwareCompliance,
         fullRebuildSummary,
         iloProvider,
         netappProvider
@@ -2869,6 +2875,7 @@ function ProviderStatusPage() {
       ciscoProviders,
       ciscoSetupReadiness,
       esxiProvider,
+      firmwareCompliance,
       fullRebuildSummary,
       iloProvider,
       netappProvider
@@ -3000,6 +3007,13 @@ function BuildStageCard({ stage }: { stage: BuildStage }) {
         <NextActionPanel title="Next action" value={stage.nextAction} />
         <NextActionPanel title={stage.metricLabel} value={stage.metricValue} />
       </div>
+      {stage.quickFacts && stage.quickFacts.length > 0 && (
+        <div className="provider-fact-grid compact">
+          {stage.quickFacts.map(([label, value]) => (
+            <ProviderFact key={label} label={label} value={value} />
+          ))}
+        </div>
+      )}
       <div className={stage.blocker === "No blocker reported." ? "stage-blocker is-clear" : "stage-blocker"}>
         <strong>{stage.blocker === "No blocker reported." ? "Ready signal" : "Highest-priority blocker"}</strong>
         <p>{stage.blocker}</p>
@@ -3050,6 +3064,7 @@ function buildLabBuildStages({
   ciscoProviders,
   ciscoSetupReadiness,
   esxiProvider,
+  firmwareCompliance,
   fullRebuildSummary,
   iloProvider,
   netappProvider
@@ -3059,6 +3074,7 @@ function buildLabBuildStages({
   ciscoProviders: ProviderStatus[];
   ciscoSetupReadiness: CiscoSetupReadiness | null;
   esxiProvider: ProviderStatus | null;
+  firmwareCompliance: ProviderProbeResult | null;
   fullRebuildSummary: ProviderProbeResult | null;
   iloProvider: ProviderStatus | null;
   netappProvider: ProviderStatus | null;
@@ -3067,6 +3083,13 @@ function buildLabBuildStages({
   const expectedProfile = objectValue(labProfile.expected);
   const staleArtifacts = Array.isArray(labProfile.stale_artifact_evidence) ? labProfile.stale_artifact_evidence : [];
   const stages = objectValue(fullRebuildSummary?.stages);
+  const firmwareDevices = objectValue(firmwareCompliance?.devices);
+  const firmwareComponents = recordArray(firmwareCompliance?.components);
+  const firmwareWaiver = objectValue(firmwareCompliance?.waiver);
+  const firmwareInventory = objectValue(firmwareCompliance?.inventory);
+  const firmwareLiveInventory = objectValue(firmwareInventory.live_inventory);
+  const firmwareCiscoInventory = objectValue(firmwareLiveInventory.cisco);
+  const firmwareScope = asString(firmwareCompliance?.scope) || "full";
   const raidStage = objectValue(stages.raid || stages.hpe_raid || stages.storage);
   const esxiStage = objectValue(stages.esxi || stages.esxi_install);
   const verificationBlocker = stringArray(buildVerification?.blockers)[0];
@@ -3079,6 +3102,15 @@ function buildLabBuildStages({
     ...ciscoProviders.flatMap((provider) => provider.warnings)
   ];
   const ciscoStatus = ciscoSetupReadiness?.phase || providerSectionStatus(ciscoProviders);
+  const ciscoConsole = objectValue(ciscoSetupReadiness?.console);
+  const ciscoLastPrompt = objectValue(ciscoConsole.last_prompt_readiness);
+  const ciscoPromptClassification = objectValue(ciscoLastPrompt.prompt_classification);
+  const ciscoPasswordRecovery = objectValue(ciscoSetupReadiness?.password_recovery);
+  const ciscoPromptState = asString(ciscoLastPrompt.prompt_state) || asString(ciscoSetupReadiness?.real_lab_run?.prompt_state) || "unknown";
+  const ciscoLastClassification =
+    asString(ciscoPromptClassification.classification) ||
+    asString(ciscoSetupReadiness?.real_lab_run?.prompt_classification) ||
+    "unknown";
   const netappConfigured = asBoolean(netappProvider?.configuration.netapp_configured);
 
   return [
@@ -3104,9 +3136,56 @@ function buildLabBuildStages({
       )
     },
     {
+      id: "firmware-compliance",
+      title: "Firmware Compliance",
+      step: "Step 2: Validate firmware gate",
+      status: firmwareCompliance?.status || "not-run",
+      message: asString(firmwareCompliance?.message) || "Firmware gate status has not loaded yet.",
+      nextAction: humanizeAction(asString(firmwareCompliance?.next_safe_action) || "Run firmware compliance before configuration workflows."),
+      metricLabel: "Gate",
+      metricValue: displayStatusLabel(firmwareCompliance?.status || "Not run"),
+      blocker: humanizeBlocker(stringArray(firmwareCompliance?.blockers)[0] || stringArray(firmwareCompliance?.warnings)[0] || "No blocker reported."),
+      detailSummary: "iLO, Cisco, NetApp firmware/OS compliance, waiver, and local media evidence",
+      details: (
+        <div className="stage-detail-grid">
+          <ProviderFact label="iLO" value={displayStatusLabel(asString(objectValue(firmwareDevices.ilo).status) || "unknown")} />
+          <ProviderFact label="Cisco" value={displayStatusLabel(asString(objectValue(firmwareDevices.cisco).status) || "unknown")} />
+          <ProviderFact label="Cisco Source" value={asString(firmwareCiscoInventory.source) || "unknown"} />
+          <ProviderFact label="NetApp" value={displayStatusLabel(asString(objectValue(firmwareDevices.netapp).status) || "unknown")} />
+          <ProviderFact label="Scope" value={displayStatusLabel(firmwareScope)} />
+          <ProviderFact label="Waiver" value={asBoolean(firmwareWaiver.active) ? "Active" : asBoolean(firmwareWaiver.configured) ? "Invalid" : "None"} />
+          <table className="provider-candidate-table span-2">
+            <thead>
+              <tr>
+                <th>Device</th>
+                <th>Component</th>
+                <th>Status</th>
+                <th>Current</th>
+                <th>Required</th>
+                <th>Next Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {firmwareComponents.slice(0, 9).map((item) => (
+                <tr key={asString(item.id)}>
+                  <td>{asString(item.device) || "-"}</td>
+                  <td>{asString(item.label) || asString(item.id) || "-"}</td>
+                  <td>{displayStatusLabel(asString(item.status) || "unknown")}</td>
+                  <td>{asString(item.current_version) || "Unknown"}</td>
+                  <td>{asString(item.required_version) || stringArray(item.approved_versions).join(", ") || "Manual"}</td>
+                  <td>{humanizeAction(asString(item.next_action) || "Review firmware baseline.")}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <JsonDetails title="Advanced firmware gate details" data={firmwareCompliance ?? {}} />
+        </div>
+      )
+    },
+    {
       id: "cisco",
       title: "Cisco Network",
-      step: "Step 2: Recover/configure Cisco",
+      step: "Step 3: Recover/configure Cisco",
       status: ciscoStatus,
       message: ciscoSetupReadiness
         ? "Console, bootstrap, and management readiness are grouped here."
@@ -3117,11 +3196,24 @@ function buildLabBuildStages({
       ),
       metricLabel: "Console",
       metricValue: ciscoSetupReadiness ? displayStatusLabel(ciscoSetupReadiness.console.status) : "Not loaded",
+      quickFacts: [
+        ["Console Port", asString(ciscoConsole.selected_path) || asString(ciscoConsole.effective_path) || "Not selected"],
+        ["Baud", asString(ciscoConsole.baud) || "Not selected"],
+        ["Prompt State", labelize(ciscoPromptState)],
+        ["Classification", labelize(ciscoLastClassification)],
+        ["Password Recovery", asBoolean(ciscoPasswordRecovery.needed) ? "Needed" : "Not indicated"]
+      ],
       blocker: humanizeBlocker(ciscoBlockers[0] || ciscoWarnings[0] || "No blocker reported."),
       detailSummary: "Cisco readiness, bootstrap requirements, and provider evidence",
       details: (
         <StageSummaryDetails
           rows={[
+            ["Console Port", asString(ciscoConsole.selected_path) || asString(ciscoConsole.effective_path) || "Not selected"],
+            ["Baud", asString(ciscoConsole.baud) || "Not selected"],
+            ["Prompt State", labelize(ciscoPromptState)],
+            ["Classification", labelize(ciscoLastClassification)],
+            ["Password Recovery", asBoolean(ciscoPasswordRecovery.needed) ? "Needed" : "Not indicated"],
+            ["Next Action", humanizeAction(asString(ciscoPasswordRecovery.next_action) || ciscoSetupReadiness?.next_safe_action || "Load Cisco readiness.")],
             ["Management", ciscoSetupReadiness?.management_configured ? "Configured" : "Not configured yet"],
             ["Planned IP", ciscoSetupReadiness?.planned_management_ip ?? "Not set"],
             ["Bootstrap Requirements", ciscoBootstrapRequirements ? displayStatusLabel(ciscoBootstrapRequirements.status) : "Not loaded"]
@@ -3132,7 +3224,7 @@ function buildLabBuildStages({
     {
       id: "hpe-server",
       title: "HPE Server",
-      step: "Step 3: Validate iLO/server",
+      step: "Step 4: Validate iLO/server",
       status: iloProvider?.status || "not-configured",
       message: "Shows whether the server management path is ready before storage and install checks.",
       nextAction: humanizeAction(iloProvider ? safeNextAction(iloProvider) : "Configure the iLO provider settings."),
@@ -3154,7 +3246,7 @@ function buildLabBuildStages({
     {
       id: "raid",
       title: "RAID / Storage",
-      step: "Step 4: Validate RAID",
+      step: "Step 5: Validate RAID",
       status: asString(raidStage.status) || stageStatusFromVerification(buildVerification, "RAID"),
       message: "Keeps storage layout and reset evidence behind details until the operator needs it.",
       nextAction: humanizeAction(asString(raidStage.next_action) || asString(raidStage.message) || "Review RAID readiness after server validation."),
@@ -3175,7 +3267,7 @@ function buildLabBuildStages({
     {
       id: "esxi",
       title: "ESXi Install",
-      step: "Step 5: Boot/install ESXi",
+      step: "Step 6: Boot/install ESXi",
       status: asString(esxiStage.status) || esxiProvider?.status || stageStatusFromVerification(buildVerification, "ESXi"),
       message: "Shows install readiness without exposing virtual media and boot internals by default.",
       nextAction: humanizeAction(asString(esxiStage.next_action) || (esxiProvider ? safeNextAction(esxiProvider) : "Review ESXi install readiness.")),
@@ -3202,7 +3294,7 @@ function buildLabBuildStages({
     {
       id: "netapp",
       title: "NetApp",
-      step: "Step 6: Configure NetApp",
+      step: "Step 7: Configure NetApp",
       status: netappConfigured ? netappProvider?.status || "ready" : "not-configured",
       message: netappConfigured
         ? "NetApp setup and upgrade readiness can be reviewed."
@@ -3229,7 +3321,7 @@ function buildLabBuildStages({
     {
       id: "verification",
       title: "Build Verification",
-      step: "Step 7: Run Build Verification",
+      step: "Step 8: Run Build Verification",
       status: asString(buildVerification?.certification_state) || buildVerification?.status || "not-run",
       message: "Final certification waits for earlier stages and shows only the top blocker here.",
       nextAction: verificationBlocker
@@ -3319,6 +3411,9 @@ function BuildVerificationPanel({ verification }: { verification: ProviderProbeR
   const credentialChecks = recordArray(objectValue(verification?.credentials).checks);
   const mtu = objectValue(verification?.mtu);
   const protocolChecks = recordArray(objectValue(verification?.protocols).checks);
+  const stagedBlockers = protocolChecks.filter((item) =>
+    ["blocked_by_prior_stage", "not_configured_yet", "operator_action_required"].includes(asString(item.classification))
+  );
   return (
     <section className="provider-card provider-card-wide full-rebuild-summary">
       <div className="provider-head">
@@ -3348,6 +3443,15 @@ function BuildVerificationPanel({ verification }: { verification: ProviderProbeR
         />
       </div>
       <ProviderIssueRows blockers={stringArray(verification?.blockers)} warnings={stringArray(verification?.warnings)} />
+      {stagedBlockers.length > 0 && (
+        <SetupPreviewBlock
+          title="Staged Blockers"
+          tag="Ordered"
+          lines={stagedBlockers.slice(0, 6).map((item) =>
+            `${asString(item.protocol) || "Protocol"}: ${humanizeAction(asString(item.next_action) || asString(item.classification) || "Review stage.")}`
+          )}
+        />
+      )}
       {(failures.length > 0 || checklist.length > 0) && (
         <div className="setup-preview-grid">
           {failures.slice(0, 8).map((item, index) => {
@@ -3469,6 +3573,9 @@ function CiscoSetupReadinessPanel({
   const readTiming = objectValue(readiness.console.read_timing);
   const ethernetReadiness = objectValue(readiness.ethernet_readiness);
   const realLabRun = objectValue(readiness.real_lab_run);
+  const ciscoRecoveryAction = needsCiscoPasswordRecoveryAction(realLabRun)
+    ? "Recover Cisco password from console."
+    : "";
 
   return (
     <section className="provider-card provider-card-wide cisco-setup-readiness">
@@ -3530,8 +3637,9 @@ function CiscoSetupReadinessPanel({
           `Save/reload: ${asString(realLabRun.save_reload_status) || "not-attempted"}.`,
           `Ethernet management: ${labelize(asString(realLabRun.ethernet_management_status) || "not-attempted")}.`,
           `SSH: ${presenceLabel(realLabRun.ssh_status)}; SCP: ${labelize(asString(realLabRun.scp_status) || "not-attempted")}.`,
-          `Last blocker: ${asString(realLabRun.last_blocker) || "None"}.`
-        ]}
+          `Last blocker: ${asString(realLabRun.last_blocker) || "None"}.`,
+          ciscoRecoveryAction ? `Next action: ${ciscoRecoveryAction}` : ""
+        ].filter(Boolean)}
       />
       <div className="setup-preview-grid">
         <SetupPreviewBlock
@@ -6438,6 +6546,15 @@ function humanizeBlocker(value: string): string {
   return humanizeAction(value)
     .replace("Complete or confirm Cisco console bootstrap", "Finish Cisco console bootstrap")
     .replace("Install/configure ESXi management", "Install or configure ESXi management");
+}
+
+function needsCiscoPasswordRecoveryAction(realLabRun: Record<string, unknown>): boolean {
+  const promptState = asString(realLabRun.prompt_state);
+  const lastBlocker = asString(realLabRun.last_blocker).toLowerCase();
+  return (
+    ["login-required", "exec", "rommon-bootloader", "password-recovery-ready"].includes(promptState) &&
+    lastBlocker.includes("privileged exec")
+  ) || lastBlocker.includes("password recovery");
 }
 
 function stageStatusFromVerification(

@@ -1,0 +1,62 @@
+[
+  {
+    "baud": 9600,
+    "captured": false,
+    "classification": "port_in_use",
+    "error": "serial port appears to be in use",
+    "prompt": {
+      "privileged": false,
+      "state": "port-in-use",
+      "text": ""
+    },
+    "sequence": "open"
+  },
+  {
+    "baud": 19200,
+    "captured": false,
+    "classification": "port_in_use",
+    "error": "serial port appears to be in use",
+    "prompt": {
+      "privileged": false,
+      "state": "port-in-use",
+      "text": ""
+    },
+    "sequence": "open"
+  },
+  {
+    "baud": 38400,
+    "captured": false,
+    "classification": "port_in_use",
+    "error": "serial port appears to be in use",
+    "prompt": {
+      "privileged": false,
+      "state": "port-in-use",
+      "text": ""
+    },
+    "sequence": "open"
+  },
+  {
+    "baud": 57600,
+    "captured": false,
+    "classification": "port_in_use",
+    "error": "serial port appears to be in use",
+    "prompt": {
+      "privileged": false,
+      "state": "port-in-use",
+      "text": ""
+    },
+    "sequence": "open"
+  },
+  {
+    "baud": 115200,
+    "captured": false,
+    "classification": "port_in_use",
+    "error": "serial port appears to be in use",
+    "prompt": {
+      "privileged": false,
+      "state": "port-in-use",
+      "text": ""
+    },
+    "sequence": "open"
+  }
+]

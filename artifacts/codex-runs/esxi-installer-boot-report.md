@@ -2,7 +2,7 @@
 
 ## Summary
 
-- checked_at: 2026-06-05T19:37:15.313686+00:00
+- checked_at: 2026-06-06T02:48:58.602889+00:00
 - status: boot_requested
 - message: ESXi installer or installed ESXi boot state is visible through iLO Redfish.
 - report: artifacts/codex-runs/esxi-installer-boot-report.md
@@ -21,13 +21,13 @@
 ```json
 {
   "blockers": [],
-  "checked_at": "2026-06-05T19:37:15.313686+00:00",
+  "checked_at": "2026-06-06T02:48:58.602889+00:00",
   "installer_detection": {
     "evidence": {
       "boot": {
-        "boot_source_override_enabled": "Disabled",
+        "boot_source_override_enabled": "Once",
         "boot_source_override_mode": "UEFI",
-        "boot_source_override_target": "None",
+        "boot_source_override_target": "Cd",
         "enabled_allowable_values": [],
         "power_state": "On",
         "status_code": 200,
@@ -57,7 +57,7 @@
         "AMSDeviceDiscovery": "NoAMS",
         "DeviceDiscovery": "Busy",
         "ServerFirmwareInventoryComplete": false,
-        "SmartArrayDiscovery": "Cached"
+        "SmartArrayDiscovery": "Complete"
       },
       "hpe_post_state": "InPost",
       "power_state": "On",
@@ -72,9 +72,9 @@
   "message": "ESXi installer or installed ESXi boot state is visible through iLO Redfish.",
   "next_safe_action": "Continue with Cisco console and Ethernet bootstrap readiness.",
   "post_system": {
-    "boot_source_override_enabled": "Disabled",
+    "boot_source_override_enabled": "Once",
     "boot_source_override_mode": "UEFI",
-    "boot_source_override_target": "None",
+    "boot_source_override_target": "Cd",
     "enabled_allowable_values": [],
     "power_state": "On",
     "status_code": 200,

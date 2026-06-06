@@ -280,6 +280,38 @@ def test_cisco_console_probe_returns_command_summaries_not_raw_output(
     assert "192.0.2.10" not in encoded
 
 
+def test_cisco_console_firmware_inventory_parses_ios_xe_from_user_exec(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    clear_probe_results()
+    tty = tmp_path / "ttyUSB0"
+    tty.touch()
+    _allow_readonly_lab(monkeypatch)
+    writes = _install_tracking_fake_serial(
+        monkeypatch,
+        [
+            "Switch01>",
+            "show version\nCisco IOS XE Software, Version 17.15.05\nSwitch01>",
+        ],
+    )
+
+    adapter = CiscoConsoleAdapter(
+        provider_mode="local-readonly",
+        config=CiscoConsoleConfig(port=str(tty), baud=9600, timeout_seconds=1.0),
+    )
+    result = adapter.firmware_inventory()
+    encoded = json.dumps(result)
+
+    assert result["status"] == "ok"
+    assert result["prompt_state"] == "exec"
+    assert result["ios_xe_version"] == "17.15.05"
+    assert result["safe_show_commands"][0]["version_hint"] == "17.15.05"
+    assert b"show version\n" in writes
+    assert b"enable\n" not in writes
+    assert "Cisco IOS XE Software" not in encoded
+
+
 def test_cisco_prompt_readiness_is_blocked_in_mock_mode() -> None:
     clear_probe_results()
     adapter = CiscoConsoleAdapter(
@@ -351,11 +383,11 @@ def test_cisco_prompt_readiness_exec_prompt_sends_newline_only(
 
     assert writes == [b"\n"]
     assert result["status"] == "ok"
-    assert result["prompt_state"] == "exec"
+    assert result["prompt_state"] == "privileged-exec"
     assert result["prompt_ready"] is True
     assert result["safe_show_commands_allowed"] is False
     assert result["future_show_command_check_eligible"] is True
-    assert result["prompt_classification"]["label"] == "Exec prompt"
+    assert result["prompt_classification"]["label"] == "Privileged exec prompt"
     assert result["prompt_classification"]["safe_show_commands_allowed"] is False
     assert result["prompt_sample"]["last_line"] == "DEVICE#"
     assert "safe show commands" in result["not_attempted"]
@@ -399,6 +431,19 @@ def test_cisco_prompt_readiness_blocks_login_required_prompt(
     assert result["prompt_ready"] is False
     assert result["safe_show_commands_allowed"] is False
     assert result["prompt_classification"]["label"] == "Login required"
+    assert result["prompt_classification"]["classification"] == "login_prompt"
+
+
+def test_cisco_prompt_readiness_classifies_password_prompt(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    result, writes = _run_prompt_readiness_with_fake_serial(tmp_path, monkeypatch, "Password:")
+
+    assert writes == [b"\n"]
+    assert result["status"] == "blocked"
+    assert result["prompt_state"] == "password-required"
+    assert result["prompt_classification"]["classification"] == "password_prompt"
 
 
 def test_cisco_prompt_readiness_blocks_config_mode_prompt(
@@ -459,6 +504,7 @@ def test_cisco_prompt_readiness_blocks_when_no_prompt_text_captured(
     assert result["future_show_command_check_eligible"] is False
     assert result["prompt_sample"]["captured"] is False
     assert result["prompt_classification"]["no_output_captured"] is True
+    assert result["prompt_classification"]["classification"] == "no_bytes_read"
     assert result["troubleshooting_checklist"]
     assert any("Cisco console port" in item for item in result["troubleshooting_checklist"])
     assert "safe show commands" in result["not_attempted"]
@@ -495,12 +541,51 @@ def test_cisco_prompt_readiness_reports_configured_read_timing(
 
     assert writes == [b"\n", b"\r", b"\x03", b"\x1a"] * 5
     assert result["status"] == "blocked"
-    assert result["read_timing"] == {
-        "settle_seconds": 0.1,
-        "read_window_seconds": 0.2,
-        "max_bytes": 123,
-    }
+    assert result["read_timing"]["settle_seconds"] == 0.1
+    assert result["read_timing"]["read_window_seconds"] == 0.2
+    assert result["read_timing"]["read_windows"] == [0.2, 0.8, 1.5]
+    assert result["read_timing"]["max_bytes"] == 123
+    assert result["read_timing"]["dtr_rts_toggle"] == "attempted when supported"
     assert result["safe_show_commands_allowed"] is False
+
+
+def test_cisco_prompt_readiness_classifies_wrong_baud_gibberish(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    result, writes = _run_prompt_readiness_with_fake_serial(
+        tmp_path,
+        monkeypatch,
+        "\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd",
+    )
+
+    assert writes == [b"\n", b"\r", b"\x03", b"\x1a"] * 5
+    assert result["status"] == "blocked"
+    assert result["prompt_state"] == "unreadable"
+    assert result["prompt_classification"]["classification"] == "unreadable_gibberish"
+
+
+def test_cisco_prompt_readiness_classifies_port_in_use(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    result = _run_prompt_readiness_with_serial_open_error(tmp_path, monkeypatch, OSError("Device or resource busy"))
+
+    assert result["status"] == "blocked"
+    assert result["prompt_state"] == "unknown"
+    assert result["attempts"][0]["prompt_state"] == "port-in-use"
+    assert result["attempts"][0]["classification"] == "port_in_use"
+
+
+def test_cisco_prompt_readiness_classifies_permission_denied(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    result = _run_prompt_readiness_with_serial_open_error(tmp_path, monkeypatch, PermissionError("Permission denied"))
+
+    assert result["status"] == "blocked"
+    assert result["attempts"][0]["prompt_state"] == "permission-denied"
+    assert result["attempts"][0]["classification"] == "permission_denied"
 
 
 def test_cisco_ansible_run_command_can_redact_output() -> None:
@@ -636,6 +721,42 @@ def test_cisco_setup_readiness_surfaces_no_output_prompt_guidance() -> None:
     assert last_prompt["prompt_classification"]["no_output_captured"] is True
     assert "115200" in last_prompt["troubleshooting_checklist"][0]
     assert discovered_state["prompt_captured"] is False
+
+
+def test_cisco_setup_readiness_surfaces_password_recovery_summary(tmp_path: Path, monkeypatch) -> None:
+    details_path = tmp_path / "cisco-details.json"
+    details_path.write_text(
+        json.dumps(
+            {
+                "status": "blocked",
+                "checked_at": "2026-06-06T00:00:00Z",
+                "stages": {
+                    "adapter_discovery": {"effective_path": "/dev/ttyUSB0"},
+                    "console_prompt_detection": {"prompt_detected": True, "prompt_state": "exec", "selected_baud": 9600},
+                    "privilege_escalation": {
+                        "initial_prompt_state": "exec",
+                        "enable_command_sent": True,
+                        "password_prompt_seen": True,
+                        "final_prompt_state": "exec",
+                        "debug": {"enable_command_sent": True, "password_prompt_seen": True},
+                        "blockers": ["Configured console credentials did not reach a privileged exec prompt."],
+                    },
+                },
+                "blockers": ["Privileged exec prompt is required for bootstrap apply."],
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("app.services.cisco_setup_readiness.REAL_LAB_DETAILS", details_path)
+
+    readiness = get_cisco_setup_readiness(provider_mode="mock", management_configured=False)
+
+    assert readiness["password_recovery"]["needed"] is True
+    assert readiness["password_recovery"]["enable_command_sent"] is True
+    assert readiness["password_recovery"]["password_prompt_seen"] is True
+    assert readiness["password_recovery"]["enable_rejected"] == "yes"
+    assert readiness["password_recovery"]["final_prompt_state"] == "exec"
+    assert "password recovery" in readiness["password_recovery"]["next_action"].lower()
 
 
 def test_cisco_setup_wizard_plan_unknown_state_is_safe_preview() -> None:
@@ -2281,6 +2402,31 @@ def test_ilo_redacts_secrets() -> None:
     assert encoded.count("REDACTED") >= 3
 
 
+def test_redaction_keeps_cisco_privilege_evidence_without_secret_values() -> None:
+    secret = "super-secret-password"
+    redacted = redact_sensitive(
+        {
+            "password": secret,
+            "password_prompt_seen": True,
+            "enable_password_sources_configured": {
+                "CISCO_ENABLE_PASSWORD": True,
+                "ANSIBLE_CISCO_ENABLE_PASSWORD": False,
+            },
+            "enable_password_sources_tried": [["CISCO_ENABLE_PASSWORD"]],
+            "message": f"enable password={secret} rejected",
+        },
+        [secret],
+    )
+
+    encoded = json.dumps(redacted)
+    assert redacted["password"] == "REDACTED"
+    assert redacted["password_prompt_seen"] is True
+    assert redacted["enable_password_sources_configured"]["CISCO_ENABLE_PASSWORD"] is True
+    assert redacted["enable_password_sources_tried"] == [["CISCO_ENABLE_PASSWORD"]]
+    assert "CISCO_ENABLE_PASSWORD" in encoded
+    assert secret not in encoded
+
+
 def test_esxi_status_exposes_only_configuration_presence() -> None:
     adapter = EsxiReadonlyAdapter(
         provider_mode="mock",
@@ -2648,6 +2794,29 @@ def _run_prompt_readiness_with_fake_serial(
         paths=_discovery_paths(paths),
     ).prompt_readiness()
     return result, writes
+
+
+def _run_prompt_readiness_with_serial_open_error(
+    tmp_path: Path,
+    monkeypatch,
+    error: BaseException,
+) -> dict:
+    clear_probe_results()
+    paths = _console_paths(tmp_path)
+    tty = paths["dev"] / "ttyUSB0"
+    tty.touch()
+    _allow_readonly_lab(monkeypatch)
+    monkeypatch.setattr("app.providers.cisco_console.time.sleep", lambda _seconds: None)
+
+    def fail_serial(**_kwargs):
+        raise error
+
+    monkeypatch.setitem(sys.modules, "serial", types.SimpleNamespace(Serial=fail_serial))
+    return CiscoConsoleAdapter(
+        provider_mode="local-readonly",
+        config=CiscoConsoleConfig(port=str(tty), baud=9600, timeout_seconds=1.0),
+        paths=_discovery_paths(paths),
+    ).prompt_readiness()
 
 
 def _record_prompt_readiness(

@@ -1,0 +1,371 @@
+{
+  "blockers": [
+    "Console port opened but no prompt text was captured. Verify the console cable is connected to the Cisco console port, confirm the switch is powered on, confirm no other process owns the serial port, and verify the baud rate such as 9600 or 115200.",
+    "Cisco Ethernet management is not configured; SSH/SCP readiness requires console bootstrap."
+  ],
+  "checked_at": "2026-06-05T19:51:46.578735+00:00",
+  "console_bootstrap_plan": {
+    "apply_enabled": false,
+    "artifact_preview": {
+      "last_action_metadata": "Blocked previews record status, blockers, prompt state, and checked time only.",
+      "missing_artifacts_message": "No apply artifacts exist because serial writes are not implemented.",
+      "post_apply_report": "placeholder",
+      "raw_console_log_saved": false,
+      "redacted": true
+    },
+    "blocker_summary": {
+      "count": 6,
+      "has_apply_gate_blocker": false,
+      "has_prompt_blocker": true,
+      "has_requirement_blocker": true,
+      "has_target_blocker": false
+    },
+    "blockers": [
+      "Management gateway is required.",
+      "Management VLAN/interface strategy is required.",
+      "Hostname is required.",
+      "Domain and DNS server requirements are required.",
+      "Explicit confirmation requirements must be defined before execution.",
+      "Console port opened but no prompt text was captured; bootstrap apply is blocked."
+    ],
+    "command_preview": [
+      "! preview only - not executed",
+      "! target REDACTED/24 netmask 255.255.255.0",
+      "terminal length 0",
+      "configure terminal",
+      "hostname <hostname>",
+      "interface <management-interface>",
+      " ip address REDACTED 255.255.255.0",
+      " no shutdown",
+      "end",
+      "! configuration save is disabled unless a separate future approval enables it"
+    ],
+    "commands_redacted": true,
+    "confirmation_phrase": "APPLY CISCO CONSOLE BOOTSTRAP REDACTED",
+    "destructive_actions_disabled": [
+      "write erase",
+      "erase startup-config",
+      "delete flash:*config*",
+      "reload",
+      "copy",
+      "wipe running-config"
+    ],
+    "execution_supported": false,
+    "flow": "unknown-no-output-blocked-flow",
+    "intended_steps": [
+      "Confirm the selected console path and target REDACTED/24.",
+      "Confirm requirements are complete and non-secret.",
+      "Block because the serial port opened but no prompt text was captured.",
+      "Configure the planned management interface/IP shape only after approval.",
+      "Leave SSH/SCP and save behavior disabled unless requirements and a future approval explicitly enable them.",
+      "Write a redacted post-apply status/report placeholder."
+    ],
+    "next_safe_action": "Review the preview, run prompt readiness, and keep apply disabled unless all gates pass.",
+    "prompt_checked_at": "2026-06-05T19:51:46.305153+00:00",
+    "prompt_detail": "unknown-no-output",
+    "prompt_state": "unknown",
+    "provider_id": "cisco-console-bootstrap",
+    "redacted_command_summary": [
+      "No command preview is actionable for this prompt state.",
+      "Resolve blockers before any future guarded preview can be considered."
+    ],
+    "serial_writes_attempted": false,
+    "status": "blocked",
+    "summary": [
+      "Target for this run is REDACTED/24.",
+      "Preview only by default; no console answers or commands are sent by this plan.",
+      "Real apply requires environment gates, exact confirmation phrase, recent prompt readiness, and complete requirements.",
+      "Destructive wipe/reset is separate and disabled."
+    ],
+    "target": {
+      "ip": "REDACTED",
+      "netmask": "255.255.255.0",
+      "prefix": "/24",
+      "required_ip": "REDACTED",
+      "required_prefix": "/24"
+    },
+    "warnings": [
+      "This scaffold does not execute serial writes yet; a future executor must keep the same gates.",
+      "No write memory, reload, erase, copy, raw config backup, firmware, or destructive operation is included."
+    ]
+  },
+  "console_prompt_readiness": {
+    "action": "prompt-readiness",
+    "baud": 9600,
+    "blockers": [
+      "Console port opened but no prompt text was captured. Verify the console cable is connected to the Cisco console port, confirm the switch is powered on, confirm no other process owns the serial port, and verify the baud rate such as 9600 or 115200."
+    ],
+    "checked_at": "2026-06-05T19:51:46.305153+00:00",
+    "config_mode_detected": false,
+    "future_show_command_check_eligible": false,
+    "login_required": false,
+    "message": "Console port opened but no prompt text was captured. Verify the console cable is connected to the Cisco console port, confirm the switch is powered on, confirm no other process owns the serial port, and verify the baud rate such as 9600 or 115200.",
+    "next_safe_action": "Verify adapter ownership, cable placement, power state, and baud 9600/115200 before running another newline-only readiness check.",
+    "not_attempted": [
+      "safe show commands",
+      "configure terminal",
+      "write memory",
+      "reload",
+      "copy or erase",
+      "VLAN, interface, user, password, SSH, or SCP changes"
+    ],
+    "port": "/dev/serial/by-id/usb-Prolific_Technology_Inc._USB-Serial_Controller_D-if00-port0",
+    "prompt_classification": {
+      "label": "Unknown prompt",
+      "next_safe_action": "Verify adapter ownership, cable placement, power state, and baud 9600/115200 before running another newline-only readiness check.",
+      "no_output_captured": true,
+      "raw_text_redacted": true,
+      "safe_show_commands_allowed": false,
+      "state": "unknown",
+      "summary": "Console port opened, but no prompt text was captured."
+    },
+    "prompt_ready": false,
+    "prompt_sample": {
+      "captured": false,
+      "last_line": "unrecognized prompt",
+      "line_count": 0,
+      "raw_text_redacted": true
+    },
+    "prompt_state": "unknown",
+    "provider_id": "cisco-console",
+    "read_timing": {
+      "max_bytes": 8192,
+      "read_window_seconds": 1.0,
+      "settle_seconds": 0.5
+    },
+    "safe_show_commands_allowed": false,
+    "setup_wizard_detected": false,
+    "status": "blocked",
+    "troubleshooting_checklist": [
+      "Confirm the USB serial adapter is connected to this host.",
+      "Confirm the RJ45/console cable is connected to the Cisco console port, not an Ethernet data port.",
+      "Confirm the switch is powered on and booted far enough for console access.",
+      "Press Enter a few times in a manual console session.",
+      "Check no other process owns /dev/ttyUSB0 with lsof or fuser.",
+      "Try baud 9600 first, then 115200 if needed.",
+      "Prefer /dev/serial/by-id/... stable path for CISCO_CONSOLE_PORT."
+    ],
+    "warnings": []
+  },
+  "not_attempted": [
+    "configuration mode",
+    "write memory",
+    "reload",
+    "copy or erase",
+    "VLAN/interface/user/password changes",
+    "SSH/SCP enablement",
+    "running-config backup"
+  ],
+  "setup_readiness": {
+    "ansible": {
+      "enabled": false,
+      "reason": "CISCO_MGMT_CONFIGURED is false; use console bootstrap before Ansible SSH.",
+      "status": "awaiting-bootstrap"
+    },
+    "backup_report": {
+      "backup_enabled": false,
+      "report_placeholder_enabled": true,
+      "summary": "Backup/report placeholders are visible only. Running-config backup is disabled until SSH management exists and a future guarded workflow approves it."
+    },
+    "blockers": [],
+    "bootstrap_preview": {
+      "apply_enabled": false,
+      "commands_redacted": true,
+      "missing_requirements": [
+        "gateway",
+        "management VLAN or interface strategy",
+        "hostname and DNS/domain planning",
+        "local REDACTED username presence reference",
+        "recent prompt-readiness evidence"
+      ],
+      "redacted_command_summary": [
+        "Future command preview stays plan-only and redacted in readiness.",
+        "Console bootstrap plan endpoint provides the separate guarded preview.",
+        "No setup wizard answers or configuration commands are sent."
+      ],
+      "serial_writes_attempted": false,
+      "summary": [
+        "Management IP is planned for REDACTED; reachability is not confirmed.",
+        "SSH/SCP readiness is planned only and will not be enabled.",
+        "No VLAN, interface, user, password, write memory, reload, erase, or copy action is allowed."
+      ]
+    },
+    "console": {
+      "baud": 9600,
+      "candidate_count": 2,
+      "effective_path": "/dev/serial/by-id/usb-Prolific_Technology_Inc._USB-Serial_Controller_D-if00-port0",
+      "fallback_candidate_count": 1,
+      "last_prompt_readiness": {
+        "available": true,
+        "captured": false,
+        "checked_at": "2026-06-05T19:51:46.305153+00:00",
+        "future_show_command_check_eligible": false,
+        "last_line": "unrecognized prompt",
+        "line_count": 0,
+        "message": "Console port opened but no prompt text was captured. Verify the console cable is connected to the Cisco console port, confirm the switch is powered on, confirm no other process owns the serial port, and verify the baud rate such as 9600 or 115200.",
+        "next_safe_action": "Verify adapter ownership, cable placement, power state, and baud 9600/115200 before running another newline-only readiness check.",
+        "prompt_classification": {
+          "label": "Unknown prompt",
+          "next_safe_action": "Verify adapter ownership, cable placement, power state, and baud 9600/115200 before running another newline-only readiness check.",
+          "no_output_captured": true,
+          "raw_text_redacted": true,
+          "safe_show_commands_allowed": false,
+          "state": "unknown",
+          "summary": "Console port opened, but no prompt text was captured."
+        },
+        "prompt_state": "unknown",
+        "read_timing": {
+          "max_bytes": 8192,
+          "read_window_seconds": 1.0,
+          "settle_seconds": 0.5
+        },
+        "safe_show_commands_allowed": false,
+        "status": "blocked",
+        "troubleshooting_checklist": [
+          "Confirm the USB serial adapter is connected to this host.",
+          "Confirm the RJ45/console cable is connected to the Cisco console port, not an Ethernet data port.",
+          "Confirm the switch is powered on and booted far enough for console access.",
+          "Press Enter a few times in a manual console session.",
+          "Check no other process owns /dev/ttyUSB0 with lsof or fuser.",
+          "Try baud 9600 first, then 115200 if needed.",
+          "Prefer /dev/serial/by-id/... stable path for CISCO_CONSOLE_PORT."
+        ]
+      },
+      "read_timing": {
+        "max_bytes": 8192,
+        "read_window_seconds": 1.0,
+        "settle_seconds": 0.5
+      },
+      "recommended_path": "/dev/serial/by-id/usb-Prolific_Technology_Inc._USB-Serial_Controller_D-if00-port0",
+      "safe_next_action": "Select a console candidate and run prompt readiness check.",
+      "selected_path": "/dev/serial/by-id/usb-Prolific_Technology_Inc._USB-Serial_Controller_D-if00-port0",
+      "selection_source": "single-stable-candidate",
+      "stable_candidate_count": 1,
+      "status": "ready"
+    },
+    "disabled_actions": [
+      "conf t",
+      "write memory",
+      "reload",
+      "erase/copy",
+      "VLAN/interface/user/password changes",
+      "enable SSH/SCP",
+      "real config apply",
+      "running-config backup"
+    ],
+    "ethernet_readiness": {
+      "bootstrap_required": true,
+      "management_configured": false,
+      "management_interface": null,
+      "management_strategy": null,
+      "management_vlan": null,
+      "next_safe_action": "Use console bootstrap to establish management VLAN/IP/SSH/SCP readiness.",
+      "planned_gateway": false,
+      "planned_management_ip": "REDACTED",
+      "planned_prefix": "/24",
+      "ready": false,
+      "ssh_probe_reason": "CISCO_MGMT_CONFIGURED is false; use console bootstrap before Ansible SSH.",
+      "ssh_probe_status": "skipped"
+    },
+    "management_configured": false,
+    "next_safe_action": "Select a console candidate and run prompt readiness check.",
+    "phase": "console-bootstrap-required",
+    "planned_management_ip": "REDACTED",
+    "provider_id": "cisco-setup",
+    "setup_wizard_plan": {
+      "apply_enabled": false,
+      "available": true,
+      "detected": false,
+      "detected_prompt_state": "unknown",
+      "next_safe_action": "Review the setup wizard plan preview and define the future guarded bootstrap requirements.",
+      "summary": "Setup wizard planning preview is available. No answers or commands were sent."
+    },
+    "ssh_scp_readiness": {
+      "apply_enabled": false,
+      "planned_only": true,
+      "summary": "SSH/SCP readiness can be planned after console bootstrap design, but will not be enabled by this task."
+    },
+    "state_boundaries": {
+      "discovered_current_device_state": {
+        "baud": 9600,
+        "console_status": "ready",
+        "prompt_captured": false,
+        "prompt_classification": {
+          "label": "Unknown prompt",
+          "next_safe_action": "Verify adapter ownership, cable placement, power state, and baud 9600/115200 before running another newline-only readiness check.",
+          "no_output_captured": true,
+          "raw_text_redacted": true,
+          "safe_show_commands_allowed": false,
+          "state": "unknown",
+          "summary": "Console port opened, but no prompt text was captured."
+        },
+        "prompt_state": "unknown",
+        "selected_path": "/dev/serial/by-id/usb-Prolific_Technology_Inc._USB-Serial_Controller_D-if00-port0",
+        "summary": "Console adapter discovery and latest prompt readiness only."
+      },
+      "last_action_logs_artifacts": {
+        "checked_at": "2026-06-05T19:51:46.305153+00:00",
+        "last_action_present": true,
+        "last_prompt_readiness": {
+          "available": true,
+          "captured": false,
+          "checked_at": "2026-06-05T19:51:46.305153+00:00",
+          "future_show_command_check_eligible": false,
+          "last_line": "unrecognized prompt",
+          "line_count": 0,
+          "message": "Console port opened but no prompt text was captured. Verify the console cable is connected to the Cisco console port, confirm the switch is powered on, confirm no other process owns the serial port, and verify the baud rate such as 9600 or 115200.",
+          "next_safe_action": "Verify adapter ownership, cable placement, power state, and baud 9600/115200 before running another newline-only readiness check.",
+          "prompt_classification": {
+            "label": "Unknown prompt",
+            "next_safe_action": "Verify adapter ownership, cable placement, power state, and baud 9600/115200 before running another newline-only readiness check.",
+            "no_output_captured": true,
+            "raw_text_redacted": true,
+            "safe_show_commands_allowed": false,
+            "state": "unknown",
+            "summary": "Console port opened, but no prompt text was captured."
+          },
+          "prompt_state": "unknown",
+          "read_timing": {
+            "max_bytes": 8192,
+            "read_window_seconds": 1.0,
+            "settle_seconds": 0.5
+          },
+          "safe_show_commands_allowed": false,
+          "status": "blocked",
+          "troubleshooting_checklist": [
+            "Confirm the USB serial adapter is connected to this host.",
+            "Confirm the RJ45/console cable is connected to the Cisco console port, not an Ethernet data port.",
+            "Confirm the switch is powered on and booted far enough for console access.",
+            "Press Enter a few times in a manual console session.",
+            "Check no other process owns /dev/ttyUSB0 with lsof or fuser.",
+            "Try baud 9600 first, then 115200 if needed.",
+            "Prefer /dev/serial/by-id/... stable path for CISCO_CONSOLE_PORT."
+          ]
+        },
+        "raw_console_log_saved": false,
+        "redacted_summary": "Console port opened but no prompt text was captured. Verify the console cable is connected to the Cisco console port, confirm the switch is powered on, confirm no other process owns the serial port, and verify the baud rate such as 9600 or 115200.",
+        "summary": "Only redacted prompt-readiness summaries are exposed here."
+      },
+      "saved_kit_config_values": {
+        "management_configured": false,
+        "planned_management_ip": "REDACTED",
+        "planned_prefix": "/24",
+        "summary": "Non-secret local planning values; not confirmed reachable."
+      },
+      "values_ready_to_apply": {
+        "ready": false,
+        "reason": "Console bootstrap apply scaffold is blocked by default.",
+        "summary": "Apply remains disabled until all explicit gates pass."
+      }
+    },
+    "warnings": [
+      "Preferred console path: /dev/serial/by-id/usb-Prolific_Technology_Inc._USB-Serial_Controller_D-if00-port0. Use this stable path for CISCO_CONSOLE_PORT instead of /dev/ttyUSB0 when possible.",
+      "CISCO_MGMT_CONFIGURED is false; Cisco SSH and Ansible probes are skipped."
+    ]
+  },
+  "status": "blocked",
+  "warnings": [
+    "Preferred console path: /dev/serial/by-id/usb-Prolific_Technology_Inc._USB-Serial_Controller_D-if00-port0. Use this stable path for CISCO_CONSOLE_PORT instead of /dev/ttyUSB0 when possible.",
+    "CISCO_MGMT_CONFIGURED is false; Cisco SSH and Ansible probes are skipped."
+  ]
+}

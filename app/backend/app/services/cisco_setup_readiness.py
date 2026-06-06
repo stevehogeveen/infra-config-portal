@@ -63,9 +63,13 @@ def get_cisco_setup_readiness(
     blockers = list(dict.fromkeys([*console.blockers, *ansible.blockers]))
     setup_wizard_plan = build_cisco_setup_wizard_plan(console.last_probe_result)
     setup_wizard_detected = bool(setup_wizard_plan["setup_wizard_detected"])
+    real_lab_run = _real_lab_run_summary()
+    real_lab_recovery_available = mode in {"local-readonly", "local-lab-readwrite"}
     next_safe_action = (
         "Review setup wizard plan preview."
         if setup_wizard_detected
+        else "Recover Cisco password from console."
+        if real_lab_recovery_available and _needs_password_recovery_action(real_lab_run)
         else NEXT_SAFE_ACTION
     )
 
@@ -112,6 +116,21 @@ def get_cisco_setup_readiness(
             },
         },
         "console": console_summary,
+        "password_recovery": {
+            "needed": _needs_password_recovery_action(real_lab_run),
+            "enable_command_sent": real_lab_run.get("enable_command_sent"),
+            "password_prompt_seen": real_lab_run.get("password_prompt_seen"),
+            "enable_rejected": real_lab_run.get("enable_rejected"),
+            "final_prompt_state": real_lab_run.get("privilege_final_prompt_state") or real_lab_run.get("prompt_state"),
+            "next_action": real_lab_run.get("privilege_next_action") or next_safe_action,
+            "runbook": [
+                "Connect console and confirm selected serial port/baud.",
+                "Interrupt boot if the platform password recovery procedure requires it.",
+                "Ignore startup configuration only when supported by the platform procedure.",
+                "Boot, set new local admin and enable credentials, and save manually.",
+                "Update .env.local.real-lab locally with the new credential values.",
+            ],
+        },
         "ethernet_readiness": {
             "management_configured": mgmt_configured,
             "planned_management_ip": target_ip,
@@ -157,7 +176,7 @@ def get_cisco_setup_readiness(
                 "but will not be enabled by this task."
             ),
         },
-        "real_lab_run": _real_lab_run_summary(),
+        "real_lab_run": real_lab_run,
         "ansible": {
             "status": ansible.status if mgmt_configured else "awaiting-bootstrap",
             "enabled": False,
@@ -308,7 +327,13 @@ def _real_lab_run_summary() -> dict[str, Any]:
         "console_adapter": adapter.get("effective_path"),
         "prompt_detected": bool(prompt.get("prompt_detected")),
         "prompt_state": prompt.get("prompt_state"),
+        "prompt_classification": prompt.get("classification"),
         "selected_baud": prompt.get("selected_baud"),
+        "enable_command_sent": privilege.get("enable_command_sent"),
+        "password_prompt_seen": privilege.get("password_prompt_seen"),
+        "enable_rejected": _enable_rejected_label(privilege),
+        "privilege_final_prompt_state": privilege.get("final_prompt_state"),
+        "privilege_next_action": _privilege_next_action(privilege),
         "switch_identity_status": identity.get("status"),
         "switch_identity_privileged": identity.get("privileged"),
         "bootstrap_plan_status": plan.get("status"),
@@ -334,3 +359,43 @@ def _save_reload_status(apply: dict[str, Any]) -> str:
             f"reload_attempted={bool(reload_status.get('attempted'))}"
         )
     return str(apply.get("save_status") or "not-attempted")
+
+
+def _needs_password_recovery_action(real_lab_run: dict[str, Any]) -> bool:
+    prompt_state = str(real_lab_run.get("prompt_state") or "")
+    last_blocker = str(real_lab_run.get("last_blocker") or "").lower()
+    if real_lab_run.get("status") == "blocked" and prompt_state in {
+        "login-required",
+        "rommon-bootloader",
+        "password-recovery-ready",
+    }:
+        return True
+    return (
+        prompt_state in {"login-required", "exec", "rommon-bootloader", "password-recovery-ready"}
+        and "privileged exec" in last_blocker
+    ) or "password recovery" in last_blocker
+
+
+def _enable_rejected_label(privilege: dict[str, Any]) -> str:
+    if privilege.get("final_prompt_state") == "privileged-exec":
+        return "no"
+    debug = privilege.get("debug") if isinstance(privilege.get("debug"), dict) else {}
+    if debug.get("enable_command_sent") and debug.get("password_prompt_seen"):
+        return "yes"
+    if debug.get("enable_command_sent"):
+        return "unknown"
+    return "unknown"
+
+
+def _privilege_next_action(privilege: dict[str, Any]) -> str:
+    final_state = privilege.get("final_prompt_state")
+    initial_state = privilege.get("initial_prompt_state")
+    if final_state == "privileged-exec":
+        return "Privilege is confirmed; continue Cisco management network validation."
+    if final_state in {"password-recovery-ready", "rommon-bootloader"}:
+        return "Use Cisco password recovery from the physical console before rerunning bootstrap."
+    if _enable_rejected_label(privilege) == "yes":
+        return "Try the correct enable secret; if none is available, perform Cisco password recovery."
+    if initial_state in {"login-required", "password-required"}:
+        return "Recover Cisco password from console or provide valid console login credentials."
+    return "Confirm console cable and power if no prompt is visible, then rerun recovery."

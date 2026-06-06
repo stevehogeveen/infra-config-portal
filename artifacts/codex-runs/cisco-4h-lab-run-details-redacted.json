@@ -1,0 +1,82 @@
+{
+  "artifacts": {
+    "bootstrap_apply_report": "artifacts/codex-runs/cisco-bootstrap-apply-report.md",
+    "commands": "artifacts/codex-runs/cisco-bootstrap-commands-redacted.json",
+    "details": "artifacts/codex-runs/cisco-4h-lab-run-details-redacted.json",
+    "password_recovery_guidance_report": "artifacts/codex-runs/cisco-password-recovery-guidance-report.md",
+    "privilege_diagnosis_report": "artifacts/codex-runs/cisco-privilege-diagnosis-report.md",
+    "privilege_hardening_report": "artifacts/codex-runs/cisco-privilege-hardening-report.md",
+    "privileged_exec_fix_report": "artifacts/codex-runs/cisco-privileged-exec-fix-report.md",
+    "report": "artifacts/codex-runs/cisco-4h-lab-run-report.md",
+    "samples": "artifacts/codex-runs/cisco-console-samples-redacted.json"
+  },
+  "blockers": [
+    "Console adapter opened across common baud rates, but no supported Cisco prompt was detected."
+  ],
+  "checked_at": "2026-06-06T18:23:26.407780+00:00",
+  "provider_mode": "local-lab-readwrite",
+  "stages": {
+    "adapter_discovery": {
+      "blockers": [],
+      "candidate_counts": {
+        "existing": 2,
+        "fallback_existing": 1,
+        "stable_existing": 1,
+        "total": 2
+      },
+      "effective_path": "/dev/serial/by-id/usb-Prolific_Technology_Inc._USB-Serial_Controller_D-if00-port0",
+      "ownership": {
+        "checked_paths": [
+          "/dev/serial/by-id/usb-Prolific_Technology_Inc._USB-Serial_Controller_D-if00-port0",
+          "/dev/ttyUSB0"
+        ],
+        "owned": false,
+        "owners": []
+      },
+      "recommended_path": "/dev/serial/by-id/usb-Prolific_Technology_Inc._USB-Serial_Controller_D-if00-port0",
+      "selection_source": "auto-stable-candidate",
+      "status": "ready",
+      "warnings": [
+        "Preferred console path: /dev/serial/by-id/usb-Prolific_Technology_Inc._USB-Serial_Controller_D-if00-port0. Use this stable path for CISCO_CONSOLE_PORT instead of /dev/ttyUSB0 when possible."
+      ]
+    },
+    "console_prompt_detection": {
+      "bauds_tried": [
+        9600,
+        19200,
+        38400,
+        57600,
+        115200
+      ],
+      "classification": "no_bytes_read",
+      "prompt_detected": false,
+      "prompt_state": "unknown-no-output",
+      "recovery_attempts": [
+        "newline",
+        "carriage return",
+        "Ctrl+C",
+        "Ctrl+Z",
+        "break",
+        "DTR/RTS toggle when supported"
+      ],
+      "selected_baud": null,
+      "selected_port": null,
+      "status": "blocked",
+      "wake_sequences_tried": [
+        "newline",
+        "enter",
+        "ctrl-c",
+        "ctrl-z",
+        "break"
+      ]
+    },
+    "policy": {
+      "blockers": [],
+      "status": "ready"
+    }
+  },
+  "status": "blocked",
+  "warnings": [
+    "Preferred console path: /dev/serial/by-id/usb-Prolific_Technology_Inc._USB-Serial_Controller_D-if00-port0. Use this stable path for CISCO_CONSOLE_PORT instead of /dev/ttyUSB0 when possible."
+  ]
+}

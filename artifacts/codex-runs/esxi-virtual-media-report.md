@@ -2,7 +2,7 @@
 
 ## Summary
 
-- checked_at: 2026-06-05T19:35:45.809797+00:00
+- checked_at: 2026-06-06T02:48:50.151057+00:00
 - status: inserted
 - message: ESXi ISO is inserted through iLO VirtualMedia.
 - report: artifacts/codex-runs/esxi-virtual-media-report.md
@@ -53,7 +53,7 @@
     "status_code": 200
   },
   "blockers": [],
-  "checked_at": "2026-06-05T19:35:45.809797+00:00",
+  "checked_at": "2026-06-06T02:48:50.151057+00:00",
   "connected_via": "URI",
   "device": {
     "id": "2",

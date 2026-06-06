@@ -727,6 +727,7 @@ class CiscoSetupReadinessRead(BaseModel):
     console: dict[str, Any]
     ethernet_readiness: dict[str, Any] = Field(default_factory=dict)
     real_lab_run: dict[str, Any] = Field(default_factory=dict)
+    password_recovery: dict[str, Any] = Field(default_factory=dict)
     bootstrap_preview: dict[str, Any]
     ssh_scp_readiness: dict[str, Any]
     ansible: dict[str, Any]

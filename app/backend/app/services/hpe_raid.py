@@ -17,6 +17,7 @@ from app.providers.ilo_redfish import PROVIDER_ID
 from app.providers.ilo_redfish import IloRedfishAdapter, _base_url
 from app.providers.probe_cache import get_probe_result
 from app.providers.redaction import redact_sensitive
+from app.services.firmware_compliance import firmware_gate_blockers
 from app.schemas import (
     HpeRaidApplyCreate,
     HpeRaidIntentRead,
@@ -490,6 +491,7 @@ def _apply_blockers(
     blockers = []
     policy = current_lab_action_policy(settings.provider_mode)
     blockers.extend(policy.action_blockers(APPLY_ACTION_ID, ActionCategory.STORAGE_CONFIG))
+    blockers.extend(firmware_gate_blockers("HPE RAID apply"))
     if confirmation_phrase != CONFIRMATION_PHRASE:
         blockers.append(f"Exact confirmation phrase is required: {CONFIRMATION_PHRASE}")
     if os.getenv("HPE_RAID_ALLOW_DESTRUCTIVE", "").lower() != "true":
@@ -509,6 +511,7 @@ def _reset_blockers() -> list[str]:
     blockers = []
     policy = current_lab_action_policy(settings.provider_mode)
     blockers.extend(policy.action_blockers(RESET_ACTION_ID, ActionCategory.POWER_ACTION))
+    blockers.extend(firmware_gate_blockers("HPE RAID reset"))
     if os.getenv("HPE_RAID_ALLOW_RESET", "").lower() != "true":
         blockers.append("HPE_RAID_ALLOW_RESET=true is required for server reset.")
     if os.getenv("HPE_RAID_RESET_CONFIRM", "") != RESET_CONFIRMATION_PHRASE:

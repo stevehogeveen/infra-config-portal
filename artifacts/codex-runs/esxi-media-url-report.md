@@ -2,7 +2,7 @@
 
 ## Summary
 
-- checked_at: 2026-06-05T19:35:42.166914+00:00
+- checked_at: 2026-06-06T02:48:46.529418+00:00
 - status: ready
 - message: Selected ESXi ISO media URL is ready.
 - report: artifacts/codex-runs/esxi-media-url-report.md
@@ -21,7 +21,7 @@
 ```json
 {
   "blockers": [],
-  "checked_at": "2026-06-05T19:35:42.166914+00:00",
+  "checked_at": "2026-06-06T02:48:46.529418+00:00",
   "media_url": "http://192.168.1.19:8088/VMware-ESXi-8.0.3-24859861-HPE-803.0.0.12.2.0.9-oct2025.iso",
   "message": "Selected ESXi ISO media URL is ready.",
   "next_safe_action": "Insert the selected ISO through iLO VirtualMedia.",

@@ -159,12 +159,50 @@ Prompt classifications used by the app:
 - `exec`: readiness evidence only; prompt-readiness still does not run show
   commands and reports `safe_show_commands_allowed=false`.
 - `config-mode`: stop; get human review before further interaction.
+- `rommon-bootloader`: stop; use the physical-console ROMMON/bootloader
+  recovery path before normal bootstrap.
+- `password-recovery-ready`: stop; the bootloader recovery prompt is present
+  and credential recovery must be completed from the console before bootstrap.
 - `unknown`: keep blocked until manual observation explains the prompt.
 - `unknown-no-output`: keep blocked; re-check adapter ownership, cable, power,
   and baud `9600` then `115200`.
 
 If the app reports `unknown-no-output`, keep bootstrap apply blocked and use
 the manual checks above before changing baud or cabling.
+
+## Password Recovery From Console
+
+Use this path only when the switch is reachable by console but privileged exec
+cannot be confirmed. Common triggers are:
+
+- `user exec only`: the prompt is `DEVICE>` and `enable` does not reach
+  `DEVICE#`.
+- `enable password rejected`: automation sent `enable`, saw a password
+  challenge, and the final prompt did not become privileged exec.
+- `login-required`: the console shows `Username:`, `Login:`, or `Password:`
+  and configured login credentials do not reach an exec prompt.
+- `setup-wizard`: the device is at initial configuration dialog; do not answer
+  prompts until an operator confirms the intended recovery/reset path.
+- `rommon-bootloader` or `password-recovery-ready`: use the vendor documented
+  physical-console recovery procedure before returning to bootstrap.
+
+Automation must not fake privileged exec, enter configuration mode, save
+configuration, reload, erase/copy files, or set passwords during diagnosis.
+The UI next action for this state is `Recover Cisco password from console.`
+
+Operator-safe recovery evidence is limited to prompt classification, whether
+`enable` was sent, whether a password prompt was seen, final prompt state, and
+readable privilege level if available. Do not store raw transcripts,
+usernames, passwords, secrets, or running-config.
+
+After recovery, rerun:
+
+```bash
+PROVIDER_MODE=local-lab-readwrite make provider-lab-cisco-console-ethernet-readiness
+```
+
+Then rerun the guarded Cisco real-lab workflow. Bootstrap apply still requires
+confirmed privileged exec before any configuration commands are sent.
 
 ## Operator Flow
 

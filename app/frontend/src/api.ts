@@ -170,6 +170,12 @@ export const api = {
   providerArtifacts: () =>
     apiRequest<NetAppProviderArtifact[]>("/api/v1/providers/artifacts"),
   providers: () => apiRequest<ProviderStatus[]>("/api/v1/providers/status"),
+  firmwareInventory: () =>
+    apiRequest<ProviderProbeResult>("/api/v1/lab/firmware-inventory"),
+  firmwareCompliance: (scope = "full") =>
+    apiRequest<ProviderProbeResult>(`/api/v1/lab/firmware-compliance?scope=${encodeURIComponent(scope)}`),
+  firmwareWaiverCheck: () =>
+    apiRequest<ProviderProbeResult>("/api/v1/lab/firmware-waiver-check"),
   fullRebuildSummary: () =>
     apiRequest<ProviderProbeResult>("/api/v1/lab/full-rebuild-summary"),
   buildVerification: () =>

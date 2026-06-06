@@ -1,0 +1,41 @@
+{
+  "provider_id": "firmware-compliance",
+  "status": "blocked",
+  "checked_at": "2026-06-06T18:00:05.340391+00:00",
+  "devices": {
+    "ilo": {
+      "status": "warning",
+      "component_count": 3
+    },
+    "cisco": {
+      "status": "blocked",
+      "component_count": 2
+    },
+    "netapp": {
+      "status": "not_configured_yet",
+      "component_count": 4
+    }
+  },
+  "blockers": [
+    "Cisco Cisco IOS XE version: current unknown, required 17.9; Current firmware or OS version is unknown. Next action: Run Cisco firmware inventory from console."
+  ],
+  "warnings": [
+    "Cisco Cisco bootloader/ROMMON: current unknown, required manual approval; Current firmware or OS version is unknown. Next action: Collect Cisco boot variable and ROMMON details from read-only show commands."
+  ],
+  "waiver": {
+    "configured": false,
+    "active": false,
+    "source": "env",
+    "scope": null,
+    "reason": null,
+    "expires": null,
+    "errors": [],
+    "report": null
+  },
+  "reports": {
+    "inventory": "artifacts/codex-runs/firmware-inventory-report.md",
+    "compliance": "artifacts/codex-runs/firmware-compliance-report.md",
+    "summary": "artifacts/codex-runs/firmware-compliance-summary-redacted.json",
+    "waiver": null
+  }
+}

@@ -1,17 +1,19 @@
 # Cisco Console Discovery
 
-- Status: ok
-- Prompt state: exec
-- Configured port hint: not set
-- Auto-discovered selected port: /dev/serial/by-id/usb-Prolific_Technology_Inc._USB-Serial_Controller_D-if00-port0
-- Selected baud: 9600
-- Candidate count: 2
-- Last console blocker: none
+- Status: blocked
+- Prompt state: unknown
+- Configured port hint: REDACTED
+- Auto-discovered selected port: REDACTED
+- Selected baud: not selected
+- Candidate count: 1
+- Last console blocker: Serial console port permission was denied for the backend user.
 
 ## Candidate Summary
-- /dev/serial/by-id/usb-Prolific_Technology_Inc._USB-Serial_Controller_D-if00-port0 | stable=True | exists=True | readable=True | writable=True | in_use=False | rank=-25 | recommendation=selected-auto
-- /dev/ttyUSB0 | stable=False | exists=True | readable=True | writable=True | in_use=False | rank=100 | recommendation=fallback-auto-candidate
+- REDACTED | stable=False | exists=True | readable=True | writable=True | in_use=False | rank=-125 | recommendation=selected-auto
 
 ## Attempts
-- /dev/serial/by-id/usb-Prolific_Technology_Inc._USB-Serial_Controller_D-if00-port0 @ 9600 via newline: checked prompt=unknown captured=False
-- /dev/serial/by-id/usb-Prolific_Technology_Inc._USB-Serial_Controller_D-if00-port0 @ 9600 via enter: checked prompt=exec captured=True
+- REDACTED @ 9600 via open: failed prompt=permission-denied captured=None
+- REDACTED @ 19200 via open: failed prompt=permission-denied captured=None
+- REDACTED @ 38400 via open: failed prompt=permission-denied captured=None
+- REDACTED @ 57600 via open: failed prompt=permission-denied captured=None
+- REDACTED @ 115200 via open: failed prompt=permission-denied captured=None

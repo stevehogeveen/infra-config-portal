@@ -1,0 +1,81 @@
+{
+  "status": "inserted",
+  "message": "ESXi ISO is inserted through iLO VirtualMedia.",
+  "checked_at": "2026-06-06T02:48:50.151057+00:00",
+  "selected_iso": {
+    "name": "VMware-ESXi-8.0.3-24859861-HPE-803.0.0.12.2.0.9-oct2025.iso",
+    "directory": "/home/REDACTED/infra-config-portal/artifacts/Media",
+    "size_bytes": 767496192,
+    "selection": "preferred-esxi-8"
+  },
+  "media_url": "http://192.168.1.19:8088/VMware-ESXi-8.0.3-24859861-HPE-803.0.0.12.2.0.9-oct2025.iso",
+  "device": {
+    "path": "/redfish/v1/Managers/1/VirtualMedia/2/",
+    "id": "2",
+    "name": "VirtualMedia",
+    "media_types": [
+      "CD",
+      "DVD"
+    ],
+    "insert_target": "/redfish/v1/Managers/1/VirtualMedia/2/Actions/VirtualMedia.InsertMedia/"
+  },
+  "before": {
+    "status_code": 200,
+    "id": "2",
+    "name": "VirtualMedia",
+    "media_types": [
+      "CD",
+      "DVD"
+    ],
+    "connected_via": "URI",
+    "inserted": true,
+    "image_present": true,
+    "actions": [
+      "#VirtualMedia.EjectMedia",
+      "#VirtualMedia.InsertMedia"
+    ]
+  },
+  "insert_request": {
+    "method": "POST",
+    "path": "/redfish/v1/Managers/1/VirtualMedia/2/Actions/VirtualMedia.InsertMedia/",
+    "status_code": 400,
+    "request": {
+      "Image": "http://192.168.1.19:8088/VMware-ESXi-8.0.3-24859861-HPE-803.0.0.12.2.0.9-oct2025.iso",
+      "Inserted": true,
+      "TransferProtocolType": "HTTP"
+    },
+    "response": {
+      "error": {
+        "code": "iLO.0.10.ExtendedInfo",
+        "message": "See @Message.ExtendedInfo for more information.",
+        "@Message.ExtendedInfo": [
+          {
+            "MessageId": "iLO.2.25.MaxVirtualMediaConnectionEstablished"
+          }
+        ]
+      }
+    }
+  },
+  "after": {
+    "status_code": 200,
+    "id": "2",
+    "name": "VirtualMedia",
+    "media_types": [
+      "CD",
+      "DVD"
+    ],
+    "connected_via": "URI",
+    "inserted": true,
+    "image_present": true,
+    "actions": [
+      "#VirtualMedia.EjectMedia",
+      "#VirtualMedia.InsertMedia"
+    ]
+  },
+  "connected_via": "URI",
+  "inserted": true,
+  "blockers": [],
+  "warnings": [],
+  "report": "artifacts/codex-runs/esxi-virtual-media-report.md",
+  "next_safe_action": "Set one-time boot target to virtual CD/DVD."
+}

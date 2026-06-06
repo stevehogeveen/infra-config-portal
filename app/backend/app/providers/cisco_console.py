@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import glob
 import os
+import re
 import subprocess
 import time
 from dataclasses import asdict, dataclass
@@ -18,6 +19,7 @@ from app.providers.redaction import redact_sensitive
 PROVIDER_ID = "cisco-console"
 REPO_ROOT = Path(__file__).resolve().parents[4]
 CISCO_CONSOLE_DISCOVERY_REPORT = REPO_ROOT / "artifacts" / "codex-runs" / "cisco-console-discovery-report.md"
+CISCO_FIRMWARE_INVENTORY_REPORT = REPO_ROOT / "artifacts" / "codex-runs" / "cisco-firmware-inventory-report.md"
 SAFE_SHOW_COMMANDS = (
     "show version",
     "show inventory",
@@ -50,12 +52,17 @@ NO_PROMPT_TEXT_CAPTURED_CHECKLIST = [
 ]
 PROMPT_CLASSIFICATION_GUIDANCE = {
     "exec": {
-        "label": "Exec prompt",
-        "summary": "Console appears to be at an exec prompt.",
+        "label": "User exec prompt",
+        "summary": "Console appears to be at a user exec prompt.",
         "next_safe_action": (
             "Keep this as readiness evidence only; run any future show-command check "
             "through a separate explicit read-only action."
         ),
+    },
+    "privileged-exec": {
+        "label": "Privileged exec prompt",
+        "summary": "Console appears to be at a privileged exec prompt.",
+        "next_safe_action": "Privileged exec is confirmed; keep configuration apply behind explicit guarded workflows.",
     },
     "setup-wizard": {
         "label": "Setup wizard prompt",
@@ -67,6 +74,11 @@ PROMPT_CLASSIFICATION_GUIDANCE = {
         "summary": "Console is requesting a username, login, or password.",
         "next_safe_action": "Do not send credentials; confirm credential handling in a future guarded task.",
     },
+    "password-required": {
+        "label": "Password required",
+        "summary": "Console is requesting a password.",
+        "next_safe_action": "Do not print or store the password; confirm credentials out of band.",
+    },
     "config-mode": {
         "label": "Configuration mode",
         "summary": "Console appears to already be in configuration mode.",
@@ -76,6 +88,26 @@ PROMPT_CLASSIFICATION_GUIDANCE = {
         "label": "Unknown prompt",
         "summary": "Console output was not enough to classify the prompt.",
         "next_safe_action": "Use manual console observation and adapter checks before trying again.",
+    },
+    "unreadable": {
+        "label": "Unreadable console text",
+        "summary": "Console returned bytes that look like wrong-baud or unreadable text.",
+        "next_safe_action": "Retry with common Cisco baud rates, starting with the configured baud then 9600 and 115200.",
+    },
+    "rommon-bootloader": {
+        "label": "ROMMON or bootloader",
+        "summary": "Console appears to be at a ROMMON or bootloader prompt.",
+        "next_safe_action": "Use a manual Cisco recovery runbook before normal bootstrap.",
+    },
+    "port-in-use": {
+        "label": "Port in use",
+        "summary": "The serial port appears to be owned by another process.",
+        "next_safe_action": "Close the other console session or service, then retry.",
+    },
+    "permission-denied": {
+        "label": "Permission denied",
+        "summary": "The backend user cannot open the serial port.",
+        "next_safe_action": "Fix dialout/device permissions and restart the shell or backend session.",
     },
 }
 CONSOLE_DETECTION_CHECKLIST = [
@@ -96,8 +128,22 @@ CONSOLE_WAKE_SEQUENCES = (
     ("enter", b"\r"),
     ("ctrl-c", b"\x03"),
     ("ctrl-z", b"\x1a"),
+    ("break", b""),
 )
-VALID_PROMPT_STATES = {"exec", "setup-wizard", "login-required"}
+VALID_PROMPT_STATES = {"exec", "privileged-exec", "setup-wizard", "login-required", "password-required", "rommon-bootloader"}
+PROMPT_STATE_CLASSIFICATIONS = {
+    "unknown": "no_bytes_read",
+    "unreadable": "unreadable_gibberish",
+    "login-required": "login_prompt",
+    "password-required": "password_prompt",
+    "exec": "user_exec",
+    "privileged-exec": "privileged_exec",
+    "config-mode": "config_mode",
+    "setup-wizard": "setup_wizard",
+    "rommon-bootloader": "rommon_or_bootloader",
+    "port-in-use": "port_in_use",
+    "permission-denied": "permission_denied",
+}
 FALLBACK_CONSOLE_MESSAGE = (
     "Fallback serial adapter detected. Prefer a stable /dev/serial/by-id path if available."
 )
@@ -412,7 +458,7 @@ class CiscoConsoleAdapter:
                     max_bytes=self.config.prompt_max_bytes,
                 )
                 prompt_state = _prompt_state(prompt_text)
-                if prompt_state != "exec":
+                if prompt_state not in {"exec", "privileged-exec"}:
                     return self._record_blocked(
                         _prompt_blocker_message(prompt_state),
                         discovery=discovery,
@@ -448,6 +494,188 @@ class CiscoConsoleAdapter:
                     "blockers": ["Serial console read-only probe failed."],
                 }
             )
+
+    def firmware_inventory(self) -> dict[str, Any]:
+        if self.provider_mode not in REAL_CONTACT_MODES:
+            return self._record_blocked(
+                "Set PROVIDER_MODE=local-readonly or PROVIDER_MODE=local-lab-readwrite before running Cisco firmware inventory."
+            )
+
+        safety = current_lab_safety()
+        policy = current_lab_action_policy(self.provider_mode)
+        readonly_allowed = (
+            safety.readonly_allowed if self.provider_mode == "local-readonly" else policy.readonly_allowed
+        )
+        if not readonly_allowed:
+            message = (
+                "Set LAB_CLOSED_LOOP_ACK=YES and LAB_READONLY_ACK=YES before real lab Cisco firmware inventory."
+                if self.provider_mode == "local-readonly"
+                else "Required lab acknowledgement flags are missing before real lab Cisco firmware inventory."
+            )
+            return self._record_cisco_firmware_result(
+                {
+                    "provider_id": PROVIDER_ID,
+                    "action": "firmware-inventory",
+                    "status": "blocked",
+                    "message": message,
+                    "warnings": [],
+                    "blockers": [message],
+                    "safety": safety.as_flags() if self.provider_mode == "local-readonly" else None,
+                    "action_policy": policy.as_flags() if self.provider_mode != "local-readonly" else None,
+                }
+            )
+
+        discovery = discover_cisco_console(self.config, self.paths)
+        scan_candidates = _scan_candidates(discovery)
+        if not scan_candidates:
+            return self._record_cisco_firmware_result(
+                {
+                    "provider_id": PROVIDER_ID,
+                    "action": "firmware-inventory",
+                    "status": "blocked",
+                    "message": "Cisco firmware inventory requires one selected readable and writable console path.",
+                    "discovery": discovery,
+                    "warnings": [],
+                    "blockers": ["Cisco firmware inventory requires one selected readable and writable console path."],
+                }
+            )
+
+        try:
+            import serial  # type: ignore[import-untyped]
+        except ImportError:
+            return self._record_cisco_firmware_result(
+                {
+                    "provider_id": PROVIDER_ID,
+                    "action": "firmware-inventory",
+                    "status": "blocked",
+                    "message": "pyserial is not installed; install backend requirements before Cisco firmware inventory.",
+                    "discovery": discovery,
+                    "warnings": [],
+                    "blockers": ["pyserial is not installed; install backend requirements before Cisco firmware inventory."],
+                }
+            )
+
+        attempts: list[dict[str, Any]] = []
+        last_blocker = "No Cisco exec prompt was detected on discovered console candidates."
+        for candidate in scan_candidates:
+            port = str(candidate["path"])
+            for baud in _baud_scan_order(self.config.baud):
+                try:
+                    connection = serial.Serial(
+                        port=port,
+                        baudrate=baud,
+                        timeout=self.config.timeout_seconds,
+                        write_timeout=self.config.timeout_seconds,
+                    )
+                except Exception as exc:  # pragma: no cover - hardware dependent
+                    prompt_state = _serial_open_prompt_state(exc)
+                    last_blocker = _prompt_blocker_message(prompt_state)
+                    attempts.append(
+                        {
+                            "port": port,
+                            "baud": baud,
+                            "sequence": "open",
+                            "status": "failed",
+                            "error": _serial_error_summary(exc),
+                            "prompt_state": prompt_state,
+                            "classification": _classification_for_state(prompt_state, {"captured": False}),
+                        }
+                    )
+                    continue
+
+                try:
+                    with connection:
+                        if hasattr(connection, "reset_input_buffer"):
+                            connection.reset_input_buffer()
+                        _toggle_dtr_rts(connection)
+                        for sequence_name, sequence_bytes in CONSOLE_WAKE_SEQUENCES:
+                            if sequence_name == "break":
+                                _send_break(connection)
+                            else:
+                                connection.write(sequence_bytes)
+                            prompt_text = _read_console(
+                                connection,
+                                settle_seconds=self.config.prompt_settle_seconds,
+                                read_window_seconds=self.config.prompt_read_window_seconds,
+                                max_bytes=self.config.prompt_max_bytes,
+                            )
+                            prompt_state = _prompt_state(prompt_text)
+                            prompt_sample = _prompt_sample_summary(prompt_text)
+                            attempts.append(
+                                {
+                                    "port": port,
+                                    "baud": baud,
+                                    "sequence": sequence_name,
+                                    "status": "checked",
+                                    "prompt_state": prompt_state,
+                                    "classification": _classification_for_state(prompt_state, prompt_sample),
+                                    "captured": bool(prompt_text),
+                                }
+                            )
+                            if prompt_state not in {"exec", "privileged-exec"}:
+                                last_blocker = _prompt_blocker_message(prompt_state, prompt_sample)
+                                continue
+
+                            connection.write(b"show version\n")
+                            output = _read_console(
+                                connection,
+                                settle_seconds=self.config.prompt_settle_seconds,
+                                read_window_seconds=max(self.config.prompt_read_window_seconds, 1.0),
+                                max_bytes=self.config.prompt_max_bytes,
+                            )
+                            command_summary = _command_summary("show version", output)
+                            ios_xe_version = _ios_xe_version(output)
+                            status = "ok" if ios_xe_version else "blocked"
+                            result = {
+                                "provider_id": PROVIDER_ID,
+                                "action": "firmware-inventory",
+                                "status": status,
+                                "message": (
+                                    "Cisco IOS XE firmware inventory completed from console user exec."
+                                    if ios_xe_version
+                                    else "Cisco show version ran from console user exec, but IOS XE version was not parsed."
+                                ),
+                                "source": "console-user-exec-show-version",
+                                "prompt_state": prompt_state,
+                                "selected_path": port,
+                                "selected_baud": baud,
+                                "selected_sequence": sequence_name,
+                                "discovery": discovery,
+                                "attempts": attempts,
+                                "safe_show_commands": [command_summary],
+                                "ios_xe_version": ios_xe_version,
+                                "bootloader_rommon": _bootloader_rommon_version(output),
+                                "warnings": [],
+                                "blockers": [] if ios_xe_version else ["Cisco IOS XE version was not parsed from show version output."],
+                            }
+                            return self._record_cisco_firmware_result(result)
+                except Exception as exc:  # pragma: no cover - hardware dependent
+                    prompt_state = _serial_open_prompt_state(exc)
+                    last_blocker = _prompt_blocker_message(prompt_state)
+                    attempts.append(
+                        {
+                            "port": port,
+                            "baud": baud,
+                            "status": "failed",
+                            "error": _serial_error_summary(exc),
+                            "prompt_state": prompt_state,
+                            "classification": _classification_for_state(prompt_state, {"captured": False}),
+                        }
+                    )
+
+        return self._record_cisco_firmware_result(
+            {
+                "provider_id": PROVIDER_ID,
+                "action": "firmware-inventory",
+                "status": "blocked",
+                "message": last_blocker,
+                "discovery": discovery,
+                "attempts": attempts,
+                "warnings": [],
+                "blockers": [last_blocker],
+                "next_safe_action": "Run Cisco firmware inventory from console.",
+            }
+        )
 
     def prompt_readiness(self) -> dict[str, Any]:
         if self.provider_mode not in REAL_CONTACT_MODES:
@@ -510,7 +738,9 @@ class CiscoConsoleAdapter:
         read_timing = {
             "settle_seconds": self.config.prompt_settle_seconds,
             "read_window_seconds": self.config.prompt_read_window_seconds,
+            "read_windows": _read_windows(self.config.prompt_read_window_seconds),
             "max_bytes": self.config.prompt_max_bytes,
+            "dtr_rts_toggle": "attempted when supported",
         }
         for candidate in scan_candidates:
             port = str(candidate["path"])
@@ -523,15 +753,17 @@ class CiscoConsoleAdapter:
                         write_timeout=self.config.timeout_seconds,
                     )
                 except Exception as exc:  # pragma: no cover - hardware dependent
-                    last_blocker = f"Serial console open failed for {port} at {baud}: {exc}"
+                    open_state = _serial_open_prompt_state(exc)
+                    last_blocker = _prompt_blocker_message(open_state)
                     attempts.append(
                         {
                             "port": port,
                             "baud": baud,
                             "sequence": "open",
                             "status": "failed",
-                            "error": str(exc),
-                            "prompt_state": "unknown",
+                            "error": _serial_error_summary(exc),
+                            "prompt_state": open_state,
+                            "classification": _classification_for_state(open_state, {"captured": False}),
                         }
                     )
                     continue
@@ -540,8 +772,12 @@ class CiscoConsoleAdapter:
                     with connection:
                         if hasattr(connection, "reset_input_buffer"):
                             connection.reset_input_buffer()
+                        _toggle_dtr_rts(connection)
                         for sequence_name, sequence_bytes in CONSOLE_WAKE_SEQUENCES:
-                            connection.write(sequence_bytes)
+                            if sequence_name == "break":
+                                _send_break(connection)
+                            else:
+                                connection.write(sequence_bytes)
                             prompt_text = _read_console(
                                 connection,
                                 settle_seconds=self.config.prompt_settle_seconds,
@@ -559,6 +795,7 @@ class CiscoConsoleAdapter:
                                     "sequence": sequence_name,
                                     "status": "checked",
                                     "prompt_state": prompt_state,
+                                    "classification": _classification_for_state(prompt_state, prompt_sample),
                                     "captured": prompt_sample["captured"],
                                     "last_line": prompt_sample["last_line"],
                                 }
@@ -591,15 +828,17 @@ class CiscoConsoleAdapter:
                                 )
                             last_blocker = _prompt_blocker_message(prompt_state, prompt_sample)
                 except Exception as exc:  # pragma: no cover - hardware dependent
-                    last_blocker = f"Cisco console prompt readiness check failed for {port} at {baud}: {exc}"
+                    read_state = _serial_open_prompt_state(exc)
+                    last_blocker = _prompt_blocker_message(read_state)
                     attempts.append(
                         {
                             "port": port,
                             "baud": baud,
                             "sequence": "read",
                             "status": "failed",
-                            "error": str(exc),
-                            "prompt_state": "unknown",
+                            "error": _serial_error_summary(exc),
+                            "prompt_state": read_state,
+                            "classification": _classification_for_state(read_state, {"captured": False}),
                         }
                     )
 
@@ -620,6 +859,7 @@ class CiscoConsoleAdapter:
             selected_baud=None,
             candidate_count=_candidate_count(discovery),
             read_timing=read_timing,
+            prompt_state=_final_prompt_state(final_prompt_sample),
             prompt_sample=final_prompt_sample,
             troubleshooting_checklist=(
                 [] if final_prompt_sample["captured"] else NO_PROMPT_TEXT_CAPTURED_CHECKLIST
@@ -641,6 +881,11 @@ class CiscoConsoleAdapter:
     def _record_result(self, result: dict[str, Any]) -> dict[str, Any]:
         return record_probe_result(PROVIDER_ID, redact_sensitive(result, [self.config.port]))
 
+    def _record_cisco_firmware_result(self, result: dict[str, Any]) -> dict[str, Any]:
+        recorded = self._record_result(result)
+        _write_cisco_firmware_inventory_report(recorded)
+        return recorded
+
     def _record_prompt_readiness(
         self,
         status: str,
@@ -657,9 +902,9 @@ class CiscoConsoleAdapter:
             "status": status,
             "message": message,
             "prompt_state": prompt_state,
-            "prompt_ready": prompt_state == "exec",
+            "prompt_ready": prompt_state in {"exec", "privileged-exec"},
             "safe_show_commands_allowed": False,
-            "future_show_command_check_eligible": prompt_state == "exec",
+            "future_show_command_check_eligible": prompt_state in {"exec", "privileged-exec"},
             "prompt_classification": _prompt_classification(
                 prompt_state,
                 extra.get("prompt_sample"),
@@ -1012,20 +1257,100 @@ def _read_console(
     time.sleep(max(settle_seconds, 0.0))
     byte_limit = max(max_bytes, 1)
     chunk_size = min(4096, byte_limit)
-    chunks = [connection.read(chunk_size)]
-    captured = sum(len(chunk) for chunk in chunks)
-    deadline = time.monotonic() + max(read_window_seconds, 0.0)
-    while getattr(connection, "in_waiting", 0) and captured < byte_limit and time.monotonic() <= deadline:
-        chunk = connection.read(min(4096, byte_limit - captured))
-        if not chunk:
-            break
-        chunks.append(chunk)
-        captured += len(chunk)
+    chunks: list[bytes] = []
+    captured = 0
+    for window in _read_windows(read_window_seconds):
+        deadline = time.monotonic() + window
+        while captured < byte_limit and time.monotonic() <= deadline:
+            waiting = int(getattr(connection, "in_waiting", 0) or 0)
+            chunk = connection.read(min(chunk_size if waiting <= 0 else waiting, byte_limit - captured))
+            if not chunk:
+                time.sleep(0.05)
+                if not waiting:
+                    break
+                continue
+            chunks.append(chunk)
+            captured += len(chunk)
+            if not waiting:
+                break
+        if captured:
+            if not int(getattr(connection, "in_waiting", 0) or 0):
+                break
+            time.sleep(0.1)
+            continue
     return b"".join(chunks).decode("utf-8", errors="replace")
+
+
+def _read_windows(read_window_seconds: float) -> list[float]:
+    base = max(read_window_seconds, 0.2)
+    return [base, max(base, 0.8), max(base, 1.5)]
+
+
+def _toggle_dtr_rts(connection: Any) -> None:
+    for attr in ("dtr", "rts"):
+        if not hasattr(connection, attr):
+            continue
+        try:
+            setattr(connection, attr, False)
+            time.sleep(0.05)
+            setattr(connection, attr, True)
+        except Exception:
+            continue
+
+
+def _send_break(connection: Any) -> None:
+    try:
+        if hasattr(connection, "send_break"):
+            connection.send_break(duration=0.25)
+    except TypeError:
+        connection.send_break()
+    except Exception:
+        return
+
+
+def _serial_open_prompt_state(exc: BaseException) -> str:
+    text = str(exc).lower()
+    if "permission" in text or "access denied" in text:
+        return "permission-denied"
+    if "busy" in text or "in use" in text or "resource temporarily unavailable" in text:
+        return "port-in-use"
+    return "unknown"
+
+
+def _serial_error_summary(exc: BaseException) -> str:
+    state = _serial_open_prompt_state(exc)
+    if state == "permission-denied":
+        return "permission denied opening serial port"
+    if state == "port-in-use":
+        return "serial port appears to be in use"
+    detail = str(exc).strip()
+    if detail:
+        return f"{exc.__class__.__name__}: {detail}"
+    return exc.__class__.__name__
+
+
+def _final_prompt_state(prompt_sample: dict[str, Any]) -> str:
+    if not bool(prompt_sample.get("captured")):
+        return "unknown"
+    if prompt_sample.get("last_line") == "unreadable console text":
+        return "unreadable"
+    return "unknown"
+
+
+def _classification_for_state(prompt_state: str, prompt_sample: object) -> str:
+    if (
+        prompt_state == "unknown"
+        and isinstance(prompt_sample, dict)
+        and not bool(prompt_sample.get("captured"))
+    ):
+        return "no_bytes_read"
+    return PROMPT_STATE_CLASSIFICATIONS.get(prompt_state, "no_bytes_read")
 
 
 def _prompt_state(prompt_text: str) -> str:
     lower_text = prompt_text.lower()
+    if not prompt_text:
+        return "unknown"
     if (
         "initial configuration dialog" in lower_text
         or "would you like to enter the initial configuration dialog" in lower_text
@@ -1033,18 +1358,39 @@ def _prompt_state(prompt_text: str) -> str:
         or "[yes/no]" in lower_text
     ):
         return "setup-wizard"
-    if "username:" in lower_text or "login:" in lower_text or "password:" in lower_text:
+    if re.search(r"(?im)(?:^|\r|\n)\s*rommon(?:\s+\d+)?\s*>\s*$", prompt_text) or re.search(
+        r"(?im)(?:^|\r|\n)\s*switch:\s*$",
+        prompt_text,
+    ):
+        return "rommon-bootloader"
+    if "password:" in lower_text:
+        return "password-required"
+    if "username:" in lower_text or "login:" in lower_text:
         return "login-required"
     if "(config" in lower_text:
         return "config-mode"
+    if _looks_unreadable(prompt_text):
+        return "unreadable"
 
     lines = [line.strip() for line in prompt_text.splitlines() if line.strip()]
     if not lines:
         return "unknown"
     last_line = lines[-1]
-    if last_line.endswith("#") or last_line.endswith(">"):
+    if last_line.endswith("#"):
+        return "privileged-exec"
+    if last_line.endswith(">"):
         return "exec"
     return "unknown"
+
+
+def _looks_unreadable(prompt_text: str) -> bool:
+    if not prompt_text:
+        return False
+    replacement_count = prompt_text.count("\ufffd")
+    control_count = sum(1 for char in prompt_text if ord(char) < 32 and char not in "\r\n\t")
+    visible_count = sum(1 for char in prompt_text if char.isprintable() and not char.isspace())
+    total = max(len(prompt_text), 1)
+    return (replacement_count + control_count) / total > 0.2 or (total >= 8 and visible_count == 0)
 
 
 def _prompt_blocker_message(
@@ -1061,17 +1407,29 @@ def _prompt_blocker_message(
         return "Console is at an initial setup wizard prompt; no answers or commands were sent."
     if prompt_state == "login-required":
         return "Console requires login or password; credentials are not configured for this probe."
+    if prompt_state == "password-required":
+        return "Console is requesting a password; credentials are not printed or sent by prompt readiness."
+    if prompt_state == "privileged-exec":
+        return "Privileged exec prompt was detected; no configuration commands were sent."
     if prompt_state == "config-mode":
         return "Console appears to be in configuration mode; no commands were sent."
+    if prompt_state == "unreadable":
+        return "Console returned unreadable text; this usually indicates the wrong baud rate or line settings."
+    if prompt_state == "rommon-bootloader":
+        return "Console appears to be at ROMMON or a bootloader prompt; use manual recovery guidance."
+    if prompt_state == "port-in-use":
+        return "Serial console port is already in use by another process."
+    if prompt_state == "permission-denied":
+        return "Serial console port permission was denied for the backend user."
     return "Console prompt could not be identified; no show commands were sent."
 
 
 def _prompt_readiness_status(prompt_state: str) -> str:
-    return "ok" if prompt_state == "exec" else "blocked"
+    return "ok" if prompt_state in {"exec", "privileged-exec"} else "blocked"
 
 
 def _prompt_readiness_message(prompt_state: str, prompt_sample: dict[str, Any]) -> str:
-    if prompt_state == "exec":
+    if prompt_state in {"exec", "privileged-exec"}:
         return "Prompt is ready for future safe show-command checks."
     return _prompt_blocker_message(prompt_state, prompt_sample)
 
@@ -1096,6 +1454,7 @@ def _prompt_classification(
     )
     return {
         "state": prompt_state,
+        "classification": _classification_for_state(prompt_state, prompt_sample),
         "label": guidance["label"],
         "summary": summary,
         "no_output_captured": no_output,
@@ -1145,6 +1504,8 @@ def _redacted_prompt_line(line: str) -> str:
         return "login prompt"
     if "password:" in lower_line:
         return "password prompt"
+    if _looks_unreadable(line):
+        return "unreadable console text"
     if line.endswith("#"):
         return "DEVICE#"
     if line.endswith(">"):
@@ -1155,12 +1516,98 @@ def _redacted_prompt_line(line: str) -> str:
 
 
 def _command_summary(command: str, output: str) -> dict[str, Any]:
-    return {
+    summary: dict[str, Any] = {
         "command": command,
         "captured": bool(output),
         "output_bytes": len(output.encode("utf-8", errors="replace")),
         "raw_output_redacted": True,
     }
+    if command == "show version":
+        summary["version_hint"] = _ios_xe_version(output)
+        summary["bootloader_rommon_hint"] = _bootloader_rommon_version(output)
+    return summary
+
+
+def _ios_xe_version(output: str) -> str | None:
+    patterns = (
+        r"Cisco IOS XE Software[^,\n]*,\s*Version\s+([^,\s]+)",
+        r"Cisco IOS Software[^,\n]*,\s*Version\s+([^,\s]+)",
+        r"\bVersion\s+(\d+(?:\.\d+)+)\b",
+    )
+    for pattern in patterns:
+        match = re.search(pattern, output, re.IGNORECASE)
+        if match:
+            return match.group(1)
+    return None
+
+
+def _bootloader_rommon_version(output: str) -> str | None:
+    match = re.search(r"(?:ROMMON|BOOTLDR|BOOT LOADER)[^0-9]*(\d+(?:\.\d+)+)", output, re.IGNORECASE)
+    return match.group(1) if match else None
+
+
+def _write_cisco_firmware_inventory_report(result: dict[str, Any]) -> None:
+    CISCO_FIRMWARE_INVENTORY_REPORT.parent.mkdir(parents=True, exist_ok=True)
+    commands = result.get("safe_show_commands") if isinstance(result.get("safe_show_commands"), list) else []
+    lines = [
+        "# Cisco Firmware Inventory Report",
+        "",
+        f"- Status: {result.get('status', 'unknown')}",
+        f"- Source: {result.get('source') or 'console'}",
+        f"- Prompt state: {result.get('prompt_state', 'unknown')}",
+        f"- Console classification: {_classification_for_state(str(result.get('prompt_state') or 'unknown'), result.get('prompt_sample') or {'captured': False})}",
+        f"- Selected baud: {result.get('selected_baud') or 'not selected'}",
+        f"- IOS XE version: {result.get('ios_xe_version') or 'unknown'}",
+        f"- Bootloader/ROMMON: {result.get('bootloader_rommon') or 'unknown'}",
+        f"- Next physical/operator action: {result.get('next_safe_action') or _prompt_next_safe_action(str(result.get('prompt_state') or 'unknown'), result.get('prompt_sample') or {'captured': False})}",
+        "",
+        "## Command Evidence",
+    ]
+    if commands:
+        for command in commands:
+            if not isinstance(command, dict):
+                continue
+            lines.append(
+                "- "
+                f"{command.get('command')}: captured={command.get('captured')} "
+                f"version_hint={command.get('version_hint') or 'unknown'} "
+                f"raw_output_redacted={command.get('raw_output_redacted')}"
+            )
+    else:
+        lines.append("- No show-command evidence was captured.")
+    historical = result.get("historical_evidence") if isinstance(result.get("historical_evidence"), dict) else None
+    lines.extend(["", "## Historical Evidence"])
+    if historical:
+        lines.extend(
+            [
+                f"- Source: {historical.get('source') or 'unknown'}",
+                f"- Checked at: {historical.get('checked_at') or 'unknown'}",
+                f"- IOS XE version: {historical.get('ios_xe_version') or 'unknown'}",
+                f"- Bootloader/ROMMON: {historical.get('bootloader_rommon') or 'unknown'}",
+                "- Marked historical: true",
+            ]
+        )
+    else:
+        lines.append("- none")
+    blockers = result.get("blockers") if isinstance(result.get("blockers"), list) else []
+    warnings = result.get("warnings") if isinstance(result.get("warnings"), list) else []
+    lines.extend(["", "## Blockers", *(f"- {item}" for item in blockers), ""])
+    if not blockers:
+        lines.insert(-1, "- none")
+    lines.extend(["## Warnings", *(f"- {item}" for item in warnings), ""])
+    if not warnings:
+        lines.insert(-1, "- none")
+    lines.extend(
+        [
+            "## Safety",
+            "- Read-only console path only.",
+            "- No privileged exec requirement was used for show version.",
+            "- No firmware update commands were run.",
+            "- Raw console output was not saved.",
+            "",
+        ]
+    )
+    CISCO_FIRMWARE_INVENTORY_REPORT.write_text("\n".join(lines), encoding="utf-8")
 
 
 def _operator_message(status: str, recommended_path: str | None) -> str:

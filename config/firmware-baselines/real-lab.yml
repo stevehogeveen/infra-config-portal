@@ -1,0 +1,66 @@
+baseline_id: real-lab
+description: Firmware and OS compliance baseline for the isolated real lab.
+components:
+  - id: hpe_ilo_firmware
+    device: iLO
+    label: HPE iLO firmware
+    minimum: "3.19"
+    approved: ["3.19"]
+    unknown_policy: blocked
+    next_action: "Inventory iLO through Redfish, then stage an approved HPE iLO firmware package if the version is below baseline."
+  - id: hpe_bios_version
+    device: HPE Server
+    label: HPE BIOS version
+    minimum: null
+    approved: []
+    unknown_policy: warning
+    next_action: "Confirm BIOS version from iLO Redfish system inventory or the server console before configuration."
+  - id: hpe_smart_array_firmware
+    device: HPE Smart Array
+    label: HPE Smart Array controller firmware
+    minimum: null
+    approved: []
+    unknown_policy: warning
+    next_action: "Run HPE storage discovery and compare controller firmware with the approved SPP for this host."
+  - id: cisco_ios_xe_version
+    device: Cisco
+    label: Cisco IOS XE version
+    minimum: "17.9"
+    approved: []
+    unknown_policy: blocked
+    next_action: "Run Cisco read-only show version collection before bootstrap/apply."
+  - id: cisco_bootloader_rommon
+    device: Cisco
+    label: Cisco bootloader/ROMMON
+    minimum: null
+    approved: []
+    unknown_policy: warning
+    next_action: "Collect Cisco boot variable and ROMMON details from read-only show commands."
+  - id: netapp_ontap_version
+    device: NetApp
+    label: ONTAP version
+    minimum: "9.14"
+    approved: []
+    unknown_policy: blocked
+    next_action: "Set NETAPP_CURRENT_ONTAP_VERSION from verified ONTAP read-only discovery before setup."
+  - id: netapp_disk_firmware
+    device: NetApp
+    label: NetApp disk firmware
+    minimum: null
+    approved: []
+    unknown_policy: warning
+    next_action: "Collect disk firmware inventory through an approved read-only NetApp workflow."
+  - id: netapp_shelf_firmware
+    device: NetApp
+    label: NetApp shelf firmware
+    minimum: null
+    approved: []
+    unknown_policy: warning
+    next_action: "Collect shelf firmware inventory through an approved read-only NetApp workflow."
+  - id: netapp_sp_bmc_firmware
+    device: NetApp
+    label: NetApp SP/BMC firmware
+    minimum: null
+    approved: []
+    unknown_policy: warning
+    next_action: "Collect SP/BMC firmware inventory through an approved read-only NetApp workflow."

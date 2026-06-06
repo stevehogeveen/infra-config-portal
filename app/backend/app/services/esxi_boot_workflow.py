@@ -15,6 +15,7 @@ import httpx
 from app.core.config import settings
 from app.providers.action_policy import ActionCategory, current_lab_action_policy
 from app.providers.redaction import redact_sensitive
+from app.services.firmware_compliance import firmware_gate_blockers
 from app.services.hpe_raid import (
     REPO_ROOT,
     SYSTEM_PATH,
@@ -41,6 +42,19 @@ RESET_TYPE = "ForceRestart"
 
 
 def prepare_esxi_media_url() -> dict[str, Any]:
+    gate_blockers = firmware_gate_blockers("ESXi install media preparation")
+    if gate_blockers:
+        return _write_report(
+            MEDIA_URL_REPORT,
+            "ESXi Media URL Report",
+            {
+                "status": "blocked",
+                "message": "ESXi media preparation is blocked by firmware compliance.",
+                "checked_at": _now(),
+                "blockers": gate_blockers,
+                "warnings": [],
+            },
+        )
     CODEX_RUN_DIR.mkdir(parents=True, exist_ok=True)
     selected = _select_esxi_iso()
     bind_host = os.getenv("ESXI_MEDIA_HTTP_BIND", "0.0.0.0")
@@ -79,6 +93,7 @@ def prepare_esxi_media_url() -> dict[str, Any]:
 
 def insert_esxi_virtual_media() -> dict[str, Any]:
     policy_blockers = _action_blockers("ilo.virtual-media", ActionCategory.VIRTUAL_MEDIA)
+    policy_blockers.extend(firmware_gate_blockers("ESXi virtual media insert"))
     if policy_blockers:
         return _write_report(
             VIRTUAL_MEDIA_REPORT,
@@ -139,6 +154,7 @@ def insert_esxi_virtual_media() -> dict[str, Any]:
 
 def set_esxi_one_time_boot() -> dict[str, Any]:
     policy_blockers = _action_blockers("ilo.boot-settings", ActionCategory.BOOT_CONFIG)
+    policy_blockers.extend(firmware_gate_blockers("ESXi one-time boot"))
     if policy_blockers:
         return _write_report(
             ONE_TIME_BOOT_REPORT,
@@ -196,6 +212,7 @@ def set_esxi_one_time_boot() -> dict[str, Any]:
 
 def reset_for_esxi_installer_boot() -> dict[str, Any]:
     policy_blockers = _action_blockers("ilo.power-action", ActionCategory.POWER_ACTION)
+    policy_blockers.extend(firmware_gate_blockers("ESXi installer reset"))
     if policy_blockers:
         return _write_report(
             INSTALLER_BOOT_REPORT,

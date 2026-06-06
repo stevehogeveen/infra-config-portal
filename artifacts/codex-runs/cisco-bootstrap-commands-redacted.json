@@ -1,0 +1,26 @@
+{
+  "commands": [
+    "terminal length 0",
+    "configure terminal",
+    "hostname lab-cisco-switch",
+    "lldp run",
+    "no ip http server",
+    "no ip http secure-server",
+    "interface Vlan1",
+    " ip address REDACTED 255.255.255.0",
+    " no shutdown",
+    " exit",
+    "username REDACTED privilege 15 secret <redacted>",
+    "ip ssh version 2",
+    "ip scp server enable",
+    "line console 0",
+    " login local",
+    " exit",
+    "line vty 0 15",
+    " login local",
+    " transport input ssh",
+    " exit",
+    "end",
+    "write memory"
+  ]
+}
