@@ -1,9 +1,9 @@
 # Lab IP Profile Hardening Report
 
-- Checked at: `2026-06-07T00:19:51.925794+00:00`
-- Classification: `stale_config`
-- Status: `blocked`
-- Provider mode: `mock`
+- Checked at: `2026-06-07T01:16:49.658689+00:00`
+- Classification: `passed`
+- Status: `ready`
+- Provider mode: `local-lab-readwrite`
 
 ## Current Profile
 
@@ -16,11 +16,9 @@
 
 ## Stale Detection
 
-- Active field `esxi_management` contains stale `10.10.8.203`.
-- Active field `cisco_management` contains stale `10.10.8.112`.
-- Active field `ansible_cisco_inventory_target` contains stale `10.10.8.112`.
+- No active Build Verification input contains `10.10.8.x`.
 - Stale report evidence: `artifacts/codex-runs/overnight-lab-builder-final-report.md` should be regenerated.
 
 ## Next Action
 
-- Update active lab inputs to 192.168.1.201-.205 and remove stale 10.10.8.x values before certification.
+- Active lab IP profile matches 192.168.1.0/24 with devices at 192.168.1.200+.

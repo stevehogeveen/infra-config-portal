@@ -1,8 +1,8 @@
 # Build Verification Classification Report
 
-- Checked at: `2026-06-07T00:19:51.925794+00:00`
-- Overall certification state: `stale_config`
-- Provider mode: `mock`
+- Checked at: `2026-06-07T01:16:49.658689+00:00`
+- Overall certification state: `blocked_by_prior_stage`
+- Provider mode: `local-lab-readwrite`
 - Mock results used as substitutes for real lab evidence: `false`
 
 ## Classification Vocabulary
@@ -16,18 +16,6 @@
 - `warning`: informational or indeterminate condition that does not certify readiness.
 
 ## Findings
-
-### lab-ip-profile - stale_config
-
-- UI message: Active lab IP profile contains stale or mismatched target values.
-- Report detail: 3 stale active values; 2 active profile mismatches.
-- Next action: Update active lab inputs to 192.168.1.201-.205 and remove stale 10.10.8.x values before certification.
-
-### protocol - operator_action_required
-
-- UI message: ESXi ISO media inventory is operator_action_required.
-- Report detail: ESXi ISO media inventory is not configured.
-- Next action: Place the ESXi ISO under MEDIA_INVENTORY_DIRS or set ESXI_INSTALL_ISO/ESXI_ISO_PATH before ESXi boot verification.
 
 ### protocol - blocked_by_prior_stage
 
@@ -58,15 +46,3 @@
 - UI message: NetApp SSH is not_configured_yet.
 - Report detail: Leave NetApp SSH as not_configured_yet until the NetApp stage is explicitly configured.
 - Next action: Leave NetApp SSH as not_configured_yet until the NetApp stage is explicitly configured.
-
-### protocol - warning
-
-- UI message: iLO Redfish is warning.
-- Report detail: Review iLO Redfish readiness.
-- Next action: Review iLO Redfish readiness.
-
-### protocol - warning
-
-- UI message: iLO XML fallback is warning.
-- Report detail: Review iLO XML fallback readiness.
-- Next action: Review iLO XML fallback readiness.

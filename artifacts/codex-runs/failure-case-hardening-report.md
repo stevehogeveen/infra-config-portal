@@ -1,22 +1,22 @@
 # Failure Case Hardening Report
 
-- Checked at: `2026-06-07T00:19:51.925794+00:00`
-- Provider mode: `mock`
+- Checked at: `2026-06-07T01:16:49.658689+00:00`
+- Provider mode: `local-lab-readwrite`
 - Credential values, tokens, and secrets are redacted.
 
 ## wrong iLO IP
 
-- Classification: `stale_config`
+- Classification: `passed`
 - UI message: iLO target must be 192.168.1.201 for this lab.
-- Report artifact detail: 3 stale active values; 2 active profile mismatches.
-- Exact next action: Update active lab inputs to 192.168.1.201-.205 and remove stale 10.10.8.x values before certification.
+- Report artifact detail: 0 stale active values; 0 active profile mismatches.
+- Exact next action: Active lab IP profile matches 192.168.1.0/24 with devices at 192.168.1.200+.
 
 ## missing ESXi ISO
 
-- Classification: `operator_action_required`
-- UI message: ESXi ISO media inventory is operator_action_required.
-- Report artifact detail: ESXi ISO media inventory is not configured.
-- Exact next action: Place the ESXi ISO under MEDIA_INVENTORY_DIRS or set ESXI_INSTALL_ISO/ESXI_ISO_PATH before ESXi boot verification.
+- Classification: `passed`
+- UI message: ESXi ISO media inventory is passed.
+- Report artifact detail: ESXi ISO media inventory is ready.
+- Exact next action: ESXi ISO media inventory is ready.
 
 ## iLO cannot reach media URL
 
@@ -62,10 +62,10 @@
 
 ## stale Cisco/ESXi/NetApp IPs
 
-- Classification: `stale_config`
+- Classification: `passed`
 - UI message: Old 10.10.8.x values are stale for this lab unless explicitly overridden.
-- Report artifact detail: 3 stale active values; 2 active profile mismatches.
-- Exact next action: Update active lab inputs to 192.168.1.201-.205 and remove stale 10.10.8.x values before certification.
+- Report artifact detail: 0 stale active values; 0 active profile mismatches.
+- Exact next action: Active lab IP profile matches 192.168.1.0/24 with devices at 192.168.1.200+.
 
 ## MTU mismatch across paths
 

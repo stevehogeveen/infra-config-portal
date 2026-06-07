@@ -1,20 +1,15 @@
 [
   {
     "baud": 9600,
-    "bytes": 42,
+    "bytes": 38,
     "captured": true,
     "classification": "privileged_exec",
     "final_prompt": "DEVICE#",
-    "first_bytes_printable_preview": "\\r\\n\\r\\nUser Access Verification\\r\\n\\r\\nUsername: ",
-    "last_line": "username prompt",
+    "first_bytes_printable_preview": "\\r\\nlab-cisco-switch#\\r\\nlab-cisco-switch#",
+    "last_line": "DEVICE#",
     "line_count": 2,
-    "login_state_transitions": [
-      "username_prompt_seen",
-      "username_sent",
-      "password_prompt_seen",
-      "password_sent"
-    ],
-    "password_prompt_seen": true,
+    "login_state_transitions": [],
+    "password_prompt_seen": false,
     "prompt": {
       "privileged": true,
       "state": "privileged-exec",
@@ -22,7 +17,7 @@
     },
     "prompt_regex_matched": "hostname_exec_prompt",
     "sequence": "crlf",
-    "user_access_verification_seen": true,
-    "username_prompt_seen": true
+    "user_access_verification_seen": false,
+    "username_prompt_seen": false
   }
 ]

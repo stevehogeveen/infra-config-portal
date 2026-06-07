@@ -1,6 +1,6 @@
 # Cisco Password Recovery Guidance Report
 
-- Checked at: `2026-06-06T23:41:45.014535+00:00`
+- Checked at: `2026-06-07T11:53:57.930892+00:00`
 - Provider mode: `local-lab-readwrite`
 - Initial prompt state: `privileged-exec`
 - Enable command sent: `False`
@@ -31,9 +31,7 @@
 
 ## Blockers
 
-- Ping to Cisco management IP failed.
-- SSH TCP/22 to Cisco management IP failed.
-- SCP readiness over TCP/22 to Cisco management IP failed.
+- none
 
 ## Safety
 

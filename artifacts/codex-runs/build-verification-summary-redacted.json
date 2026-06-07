@@ -1,14 +1,14 @@
 {
   "provider_id": "build-verification",
-  "checked_at": "2026-06-07T00:19:51.925794+00:00",
+  "checked_at": "2026-06-07T01:16:49.658689+00:00",
   "status": "blocked",
-  "certification_state": "stale_config",
+  "certification_state": "blocked_by_prior_stage",
   "message": "Build Verification / Product Certification completed with redacted findings.",
-  "provider_mode": "mock",
+  "provider_mode": "local-lab-readwrite",
   "mock_results_used": false,
   "lab_ip_profile": {
-    "status": "blocked",
-    "classification": "stale_config",
+    "status": "ready",
+    "classification": "passed",
     "expected": {
       "subnet": "192.168.1.0/24",
       "ilo": "192.168.1.201",
@@ -21,39 +21,15 @@
       "subnet": "192.168.1.0/24",
       "ilo": "192.168.1.201",
       "server_embedded_nic": "192.168.1.202",
-      "esxi_management": "10.10.8.203",
-      "cisco_management": "10.10.8.112",
-      "ansible_cisco_inventory_target": "10.10.8.112",
+      "esxi_management": "192.168.1.203",
+      "cisco_management": "192.168.1.204",
+      "ansible_cisco_inventory_target": "192.168.1.204",
       "ansible_control_host": "192.168.1.205",
       "cisco_target_ip_env": "192.168.1.204",
       "ansible_cisco_host_env": "192.168.1.204"
     },
-    "mismatches": [
-      {
-        "field": "esxi_management",
-        "expected": "192.168.1.203",
-        "configured": "10.10.8.203"
-      },
-      {
-        "field": "cisco_management",
-        "expected": "192.168.1.204",
-        "configured": "10.10.8.112"
-      }
-    ],
-    "stale_10_10_8_values": [
-      {
-        "field": "esxi_management",
-        "value": "10.10.8.203"
-      },
-      {
-        "field": "cisco_management",
-        "value": "10.10.8.112"
-      },
-      {
-        "field": "ansible_cisco_inventory_target",
-        "value": "10.10.8.112"
-      }
-    ],
+    "mismatches": [],
+    "stale_10_10_8_values": [],
     "stale_artifact_evidence": [
       {
         "artifact": "artifacts/codex-runs/overnight-lab-builder-final-report.md",
@@ -61,7 +37,7 @@
         "next_action": "Regenerate this report after confirming the 192.168.1.0/24 lab profile."
       }
     ],
-    "next_action": "Update active lab inputs to 192.168.1.201-.205 and remove stale 10.10.8.x values before certification.",
+    "next_action": "Active lab IP profile matches 192.168.1.0/24 with devices at 192.168.1.200+.",
     "ansible_role": {
       "first_contact": "Cisco console bootstrap",
       "starts_after": "Cisco management SSH is configured at 192.168.1.204",
@@ -195,27 +171,27 @@
   },
   "protocols": {
     "status": "blocked",
-    "classification": "operator_action_required",
+    "classification": "blocked_by_prior_stage",
     "checks": [
       {
         "protocol": "iLO Redfish",
         "configured": true,
-        "reachable": null,
+        "reachable": true,
         "required": true,
-        "status": "unknown",
-        "classification": "warning",
+        "status": "ready",
+        "classification": "passed",
         "blockers": [],
-        "next_action": "Review iLO Redfish readiness."
+        "next_action": "iLO Redfish readiness passed."
       },
       {
         "protocol": "iLO XML fallback",
         "configured": true,
-        "reachable": null,
+        "reachable": true,
         "required": true,
-        "status": "unknown",
-        "classification": "warning",
+        "status": "ready",
+        "classification": "passed",
         "blockers": [],
-        "next_action": "Review iLO XML fallback readiness."
+        "next_action": "iLO XML fallback readiness passed."
       },
       {
         "protocol": "Cisco console",
@@ -281,23 +257,22 @@
       },
       {
         "protocol": "ESXi ISO media inventory",
-        "configured": false,
+        "configured": true,
         "reachable": null,
         "required": true,
-        "status": "blocked",
-        "classification": "operator_action_required",
-        "blockers": [
-          "ESXi ISO media inventory is not configured."
-        ],
-        "next_action": "Place the ESXi ISO under MEDIA_INVENTORY_DIRS or set ESXI_INSTALL_ISO/ESXI_ISO_PATH before ESXi boot verification."
+        "status": "ready",
+        "classification": "passed",
+        "blockers": [],
+        "iso_count": 3,
+        "next_action": "ESXi ISO media inventory is ready."
       }
     ]
   },
   "toolchain": {
     "provider_id": "toolchain-readiness",
-    "checked_at": "2026-06-07T00:19:51.925319+00:00",
+    "checked_at": "2026-06-07T01:16:49.658180+00:00",
     "status": "warning",
-    "provider_mode": "mock",
+    "provider_mode": "local-lab-readwrite",
     "tools": [
       {
         "name": "pyserial",
@@ -480,7 +455,7 @@
     },
     {
       "item": "iLO inventory, health, power, and Redfish are reachable",
-      "status": "unknown"
+      "status": "ready"
     },
     {
       "item": "RAID layout matches saved intent after reset/validation",
@@ -496,20 +471,6 @@
     }
   ],
   "failures": [
-    {
-      "category": "lab-ip-profile",
-      "classification": "stale_config",
-      "ui_message": "Active lab IP profile contains stale or mismatched target values.",
-      "report_detail": "3 stale active values; 2 active profile mismatches.",
-      "next_action": "Update active lab inputs to 192.168.1.201-.205 and remove stale 10.10.8.x values before certification."
-    },
-    {
-      "category": "protocol",
-      "classification": "operator_action_required",
-      "ui_message": "ESXi ISO media inventory is operator_action_required.",
-      "report_detail": "ESXi ISO media inventory is not configured.",
-      "next_action": "Place the ESXi ISO under MEDIA_INVENTORY_DIRS or set ESXI_INSTALL_ISO/ESXI_ISO_PATH before ESXi boot verification."
-    },
     {
       "category": "protocol",
       "classification": "blocked_by_prior_stage",
@@ -544,33 +505,14 @@
       "ui_message": "NetApp SSH is not_configured_yet.",
       "report_detail": "Leave NetApp SSH as not_configured_yet until the NetApp stage is explicitly configured.",
       "next_action": "Leave NetApp SSH as not_configured_yet until the NetApp stage is explicitly configured."
-    },
-    {
-      "category": "protocol",
-      "classification": "warning",
-      "ui_message": "iLO Redfish is warning.",
-      "report_detail": "Review iLO Redfish readiness.",
-      "next_action": "Review iLO Redfish readiness."
-    },
-    {
-      "category": "protocol",
-      "classification": "warning",
-      "ui_message": "iLO XML fallback is warning.",
-      "report_detail": "Review iLO XML fallback readiness.",
-      "next_action": "Review iLO XML fallback readiness."
     }
   ],
   "blockers": [
-    "Update active lab inputs to 192.168.1.201-.205 and remove stale 10.10.8.x values before certification.",
-    "Place the ESXi ISO under MEDIA_INVENTORY_DIRS or set ESXI_INSTALL_ISO/ESXI_ISO_PATH before ESXi boot verification.",
     "Complete or confirm Cisco console bootstrap, then set CISCO_MGMT_CONFIGURED=true before treating SSH/SCP as a port failure.",
     "Install/configure ESXi management at 192.168.1.203, then set ESXI_CONFIGURED=true before API certification.",
     "Install/configure ESXi management and enable/confirm SSH before ESXi SSH certification."
   ],
-  "warnings": [
-    "Review iLO Redfish readiness.",
-    "Review iLO XML fallback readiness."
-  ],
+  "warnings": [],
   "artifacts": {
     "report": "artifacts/codex-runs/build-verification-report.md",
     "summary_json": "artifacts/codex-runs/build-verification-summary-redacted.json",
@@ -580,5 +522,5 @@
     "failure_case_report": "artifacts/codex-runs/failure-case-hardening-report.md",
     "toolchain_availability_report": "artifacts/codex-runs/toolchain-availability-report.md"
   },
-  "next_safe_action": "Update active lab inputs to 192.168.1.201-.205 and remove stale 10.10.8.x values before certification."
+  "next_safe_action": "Complete or confirm Cisco console bootstrap, then set CISCO_MGMT_CONFIGURED=true before treating SSH/SCP as a port failure."
 }

@@ -14,7 +14,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from app.core.config import settings
+from app.core.config import LAB_CISCO_MANAGEMENT_IP, settings
 from app.providers.action_policy import ActionCategory, current_lab_action_policy
 from app.providers.cisco_console import (
     CiscoConsoleAdapter,
@@ -30,6 +30,7 @@ PRIVILEGE_HARDENING_REPORT = REPO_ROOT / "artifacts" / "codex-runs" / "cisco-pri
 PRIVILEGE_DIAGNOSIS_REPORT = REPO_ROOT / "artifacts" / "codex-runs" / "cisco-privilege-diagnosis-report.md"
 PASSWORD_RECOVERY_REPORT = REPO_ROOT / "artifacts" / "codex-runs" / "cisco-password-recovery-guidance-report.md"
 BOOTSTRAP_APPLY_REPORT = REPO_ROOT / "artifacts" / "codex-runs" / "cisco-bootstrap-apply-report.md"
+VLAN10_BOOTSTRAP_FIX_REPORT = REPO_ROOT / "artifacts" / "codex-runs" / "cisco-vlan10-bootstrap-fix-report.md"
 LOGIN_BOOTSTRAP_FIX_REPORT = REPO_ROOT / "artifacts" / "codex-runs" / "cisco-login-bootstrap-fix-report.md"
 COMMANDER_MODE_REPORT = REPO_ROOT / "artifacts" / "codex-runs" / "cisco-console-commander-mode-report.md"
 DETAILS = REPO_ROOT / "artifacts" / "codex-runs" / "cisco-4h-lab-run-details-redacted.json"
@@ -57,6 +58,7 @@ SHOW_COMMANDS = (
 )
 PROMPT_RE = re.compile(r"(?m)(?:^|\r|\n)([A-Za-z0-9_.:/()-]+(?:\(config[^\)]*\))?[#>])\s*$")
 RECLAIMABLE_CONSOLE_COMMANDS = ("screen", "picocom", "minicom", "python")
+CISCO_DEFAULT_DOMAIN_NAME = "lab.local"
 
 
 @dataclass(frozen=True)
@@ -95,6 +97,7 @@ def main() -> int:
             "privilege_diagnosis_report": str(PRIVILEGE_DIAGNOSIS_REPORT.relative_to(REPO_ROOT)),
             "password_recovery_guidance_report": str(PASSWORD_RECOVERY_REPORT.relative_to(REPO_ROOT)),
             "bootstrap_apply_report": str(BOOTSTRAP_APPLY_REPORT.relative_to(REPO_ROOT)),
+            "vlan10_bootstrap_fix_report": str(VLAN10_BOOTSTRAP_FIX_REPORT.relative_to(REPO_ROOT)),
             "login_bootstrap_fix_report": str(LOGIN_BOOTSTRAP_FIX_REPORT.relative_to(REPO_ROOT)),
             "commander_mode_report": str(COMMANDER_MODE_REPORT.relative_to(REPO_ROOT)),
             "details": str(DETAILS.relative_to(REPO_ROOT)),
@@ -168,6 +171,7 @@ def main() -> int:
         "reason": "Privileged exec was not confirmed yet.",
     }
     ethernet: dict[str, Any] = {"status": "not-attempted", "reason": "Bootstrap apply did not run."}
+    post_apply_validation_requested = False
 
     with serial.Serial(port=port, baudrate=baud, timeout=1.0, write_timeout=1.0) as conn:
         privilege_result = _ensure_privileged(conn, prompt)
@@ -197,7 +201,7 @@ def main() -> int:
         else:
             payload["blockers"].append(f"Exec prompt is required for identity capture; got {capture_prompt.state}.")
 
-        plan = _bootstrap_plan()
+        plan = _bootstrap_plan(identity)
         payload["stages"]["switch_identification"] = identity or {"status": "blocked"}
         payload["stages"]["bootstrap_plan"] = plan
         _write_json(COMMANDS, _sanitize({"commands": plan["redacted_commands"]}))
@@ -209,19 +213,36 @@ def main() -> int:
         if should_apply and not payload["blockers"]:
             apply_result = _apply_bootstrap(conn, plan)
             if apply_result["status"] == "completed":
-                ethernet = _ethernet_readiness()
-                if ethernet.get("status") != "ready":
-                    payload["blockers"].extend(ethernet.get("blockers") or ["Cisco management validation failed."])
+                post_apply_validation_requested = True
             else:
                 payload["blockers"].extend(apply_result.get("blockers") or [])
         elif not args.apply:
+            switch_validation = _post_bootstrap_switch_validation(conn, plan)
+            payload["stages"]["vlan10_switch_validation"] = switch_validation
+            ethernet = _ethernet_readiness()
             apply_result = {
                 "status": "not-attempted",
                 "reason": "Bootstrap plan was built but not applied because --apply was not set.",
             }
+            ethernet["failure_classification"] = _classify_vlan10_failure(apply_result, switch_validation, ethernet)
             payload["warnings"].append("Bootstrap plan was built but not applied because --apply was not set.")
 
+    if post_apply_validation_requested:
+        switch_validation = _post_apply_reconnect_switch_validation(serial, port, baud, plan)
+        payload["stages"]["vlan10_switch_validation"] = switch_validation
+        ethernet = _ethernet_readiness()
+        ethernet["failure_classification"] = _classify_vlan10_failure(apply_result, switch_validation, ethernet)
+        if ethernet.get("status") != "ready":
+            payload["blockers"].extend(ethernet.get("blockers") or ["Cisco management validation failed."])
+
     payload["stages"]["apply"] = apply_result
+    payload["stages"].setdefault("vlan10_switch_validation", _empty_switch_validation(apply_result))
+    if "failure_classification" not in ethernet:
+        ethernet["failure_classification"] = _classify_vlan10_failure(
+            apply_result,
+            payload["stages"]["vlan10_switch_validation"],
+            ethernet,
+        )
     payload["stages"]["ethernet_management_validation"] = ethernet
     return _finish(payload)
 
@@ -620,9 +641,12 @@ def _recover_to_exec(conn: Any) -> Prompt:
 
 def _capture_identity(conn: Any) -> dict[str, Any]:
     outputs = []
+    detected_access_ports: list[str] = []
     for command in SHOW_COMMANDS:
         _send(conn, command)
         output = _read(conn, window=2.0)
+        if command == "show interfaces status":
+            detected_access_ports = _detect_access_ports_from_interfaces_status(output)
         outputs.append(
             {
                 "command": command,
@@ -632,7 +656,12 @@ def _capture_identity(conn: Any) -> dict[str, Any]:
                 "raw_output_redacted": True,
             }
         )
-    return {"status": "captured", "commands": outputs}
+    return {
+        "status": "captured",
+        "commands": outputs,
+        "detected_access_ports": detected_access_ports,
+        "detected_access_port_count": len(detected_access_ports),
+    }
 
 
 def _read_privilege_level(conn: Any) -> int | None:
@@ -649,42 +678,53 @@ def _read_privilege_level(conn: Any) -> int | None:
         return None
 
 
-def _bootstrap_plan() -> dict[str, Any]:
+def _bootstrap_plan(identity: dict[str, Any] | None = None) -> dict[str, Any]:
     hostname = settings.cisco_hostname or "lab-cisco-switch"
-    target_ip = settings.cisco_target_ip
+    target_ip = settings.cisco_target_ip or LAB_CISCO_MANAGEMENT_IP
     prefix = settings.cisco_management_prefix or "/24"
     netmask = _netmask(prefix)
-    vlan = settings.cisco_management_vlan
-    interface = settings.cisco_management_interface or (f"Vlan{vlan}" if vlan else "Vlan1")
+    vlan = str(settings.cisco_management_vlan or "10")
+    interface = settings.cisco_management_interface or f"Vlan{vlan}"
+    domain_name = settings.cisco_domain_name or CISCO_DEFAULT_DOMAIN_NAME
     username = settings.cisco_test_username
+    access_ports = _selected_or_detected_access_ports(identity or {})
     commands = [
         "terminal length 0",
         "configure terminal",
         f"hostname {hostname}",
+        f"ip domain-name {domain_name}",
     ]
-    if settings.cisco_domain_name:
-        commands.append(f"ip domain-name {settings.cisco_domain_name}")
     for dns_server in settings.cisco_dns_servers:
         commands.append(f"ip name-server {dns_server}")
     commands.extend(["lldp run", "no ip http server", "no ip http secure-server"])
-    if vlan and interface.lower() != f"vlan{vlan}".lower():
-        commands.extend([f"vlan {vlan}", f" name LAB-MGMT"])
+    commands.extend([f"vlan {vlan}", " name LAB-MGMT"])
     commands.append(f"interface {interface}")
     if target_ip and netmask:
         commands.append(f" ip address {target_ip} {netmask}")
     commands.extend([" no shutdown", " exit"])
+    if access_ports:
+        commands.extend(
+            [
+                f"interface range {','.join(access_ports)}",
+                " switchport mode access",
+                f" switchport access vlan {vlan}",
+                " no shutdown",
+                " exit",
+            ]
+        )
     if settings.cisco_management_gateway:
         commands.append(f"ip default-gateway {settings.cisco_management_gateway}")
     if username and settings.cisco_test_password:
         commands.append(f"username {username} privilege 15 secret <redacted>")
     commands.extend(
         [
+            "crypto key generate rsa modulus 2048",
             "ip ssh version 2",
             "ip scp server enable",
             "line console 0",
             " login local",
             " exit",
-            "line vty 0 15",
+            "line vty 0 31",
             " login local",
             " transport input ssh",
             " exit",
@@ -693,6 +733,12 @@ def _bootstrap_plan() -> dict[str, Any]:
         ]
     )
     blockers = []
+    if target_ip != LAB_CISCO_MANAGEMENT_IP:
+        blockers.append(f"Cisco VLAN 10 bootstrap target must be {LAB_CISCO_MANAGEMENT_IP}.")
+    if prefix not in {"/24", "255.255.255.0"}:
+        blockers.append("Cisco VLAN 10 bootstrap requires a /24 management prefix.")
+    if interface.lower() != "vlan10":
+        blockers.append("Cisco VLAN 10 bootstrap requires interface Vlan10.")
     if not target_ip:
         blockers.append("CISCO_TARGET_IP or ANSIBLE_CISCO_HOST is required for Cisco management IP.")
     if not netmask:
@@ -705,14 +751,21 @@ def _bootstrap_plan() -> dict[str, Any]:
         "management_interface": interface,
         "management_vlan": vlan,
         "management_ip_configured": bool(target_ip),
+        "management_ip": target_ip,
+        "management_prefix": prefix,
+        "management_netmask": netmask,
+        "selected_or_detected_access_ports": access_ports,
+        "access_port_source": _access_port_source(identity or {}),
         "ansible_role": (
             "console first-contact/bootstrap first; Ansible starts after Cisco management SSH "
             "is configured for show commands, backup, validation, drift checks, and future repeatable config"
         ),
         "ansible_control_host": settings.ansible_control_host,
         "gateway_configured": bool(settings.cisco_management_gateway),
-        "domain_configured": bool(settings.cisco_domain_name),
+        "domain_configured": bool(domain_name),
+        "domain_source": "env" if settings.cisco_domain_name else "default",
         "dns_server_count": len(settings.cisco_dns_servers),
+        "ssh_key_generation": "rsa modulus 2048",
         "ssh_version": "2",
         "scp_enabled": True,
         "http_https_disabled": True,
@@ -721,6 +774,34 @@ def _bootstrap_plan() -> dict[str, Any]:
         "redacted_commands": commands,
         "blockers": blockers,
     }
+
+
+def _selected_or_detected_access_ports(identity: dict[str, Any]) -> list[str]:
+    configured = _configured_access_ports()
+    if configured:
+        return configured
+    detected = identity.get("detected_access_ports")
+    if isinstance(detected, list):
+        return [str(item) for item in detected if str(item).strip()]
+    return []
+
+
+def _configured_access_ports() -> list[str]:
+    raw = (
+        os.getenv("CISCO_LAB_ACCESS_PORTS")
+        or os.getenv("CISCO_ACCESS_PORTS")
+        or os.getenv("CISCO_LAB_PORTS")
+        or ""
+    )
+    return [item.strip() for item in raw.split(",") if item.strip()]
+
+
+def _access_port_source(identity: dict[str, Any]) -> str:
+    if _configured_access_ports():
+        return "configured-env"
+    if identity.get("detected_access_ports"):
+        return "detected-show-interfaces-status"
+    return "none"
 
 
 def _apply_bootstrap(conn: Any, plan: dict[str, Any]) -> dict[str, Any]:
@@ -738,7 +819,7 @@ def _apply_bootstrap(conn: Any, plan: dict[str, Any]) -> dict[str, Any]:
             actual = f"username {settings.cisco_test_username} privilege 15 secret {settings.cisco_test_password}"
         _send(conn, actual, secret=" secret " in actual)
         sent.append(command)
-        _read(conn, window=0.5)
+        _read(conn, window=_bootstrap_command_wait_seconds(command))
     return {
         "status": "completed",
         "serial_writes_attempted": True,
@@ -748,15 +829,96 @@ def _apply_bootstrap(conn: Any, plan: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _bootstrap_command_wait_seconds(command: str) -> float:
+    if command.startswith("crypto key generate") or command == "write memory":
+        return 8.0
+    return 2.0
+
+
+def _post_apply_reconnect_switch_validation(
+    serial_module: Any,
+    port: str,
+    baud: int,
+    plan: dict[str, Any],
+) -> dict[str, Any]:
+    time.sleep(2.0)
+    try:
+        with serial_module.Serial(port=port, baudrate=baud, timeout=1.0, write_timeout=1.0) as conn:
+            _send(conn, "")
+            _read(conn, window=1.0)
+            validation = _post_bootstrap_switch_validation(conn, plan)
+    except Exception as exc:
+        validation = _empty_switch_validation({"status": "completed"})
+        validation["status"] = "blocked"
+        validation["reason"] = "Post-apply serial reconnect validation failed."
+        validation["reconnect_error"] = str(exc)
+    validation["connection_strategy"] = "serial-reconnect-after-apply"
+    return validation
+
+
+def _post_bootstrap_switch_validation(conn: Any, plan: dict[str, Any]) -> dict[str, Any]:
+    commands = {
+        "vlan10_interface": "show ip interface brief | include Vlan10",
+        "vlan10_membership": "show vlan brief | include ^10",
+        "interfaces_status": "show interfaces status",
+    }
+    outputs: dict[str, str] = {}
+    summaries: dict[str, Any] = {}
+    for key, command in commands.items():
+        _send(conn, command)
+        output = _read(conn, window=2.0)
+        outputs[key] = output
+        summaries[key] = {
+            "command": command,
+            "captured": bool(output),
+            "bytes": len(output.encode("utf-8", errors="replace")),
+            "raw_output_redacted": True,
+        }
+    vlan10_state = _parse_vlan10_interface_state(outputs["vlan10_interface"])
+    vlan10_ports = _parse_vlan10_ports(outputs["vlan10_membership"], outputs["interfaces_status"])
+    configured_ports = plan.get("selected_or_detected_access_ports") or []
+    return {
+        "status": "ready"
+        if vlan10_state["configured"] and vlan10_state["line_status"] == "up" and vlan10_state["protocol_status"] == "up"
+        else "blocked",
+        "commands": summaries,
+        "vlan10_state": vlan10_state,
+        "ports_assigned_vlan10": vlan10_ports,
+        "configured_or_detected_access_ports": configured_ports,
+        "all_configured_ports_assigned_vlan10": all(port in vlan10_ports for port in configured_ports)
+        if configured_ports
+        else None,
+    }
+
+
+def _empty_switch_validation(apply_result: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "status": "not-attempted",
+        "reason": "Post-bootstrap switch validation requires completed bootstrap apply."
+        if apply_result.get("status") != "completed"
+        else "Post-bootstrap switch validation was not available.",
+        "vlan10_state": {
+            "configured": None,
+            "line_status": None,
+            "protocol_status": None,
+            "ip": None,
+        },
+        "ports_assigned_vlan10": [],
+    }
+
+
 def _ethernet_readiness() -> dict[str, Any]:
     host = settings.cisco_target_ip
     if not host:
         return {"status": "blocked", "blockers": ["Cisco target IP is missing."]}
+    host_route = _host_route_to(host)
     ping = subprocess.run(["ping", "-c", "2", "-W", "2", host], capture_output=True, text=True, check=False)
     ssh = _tcp_connect(host, 22, timeout=4.0)
     scp = _scp_validation(host)
     status = "ready" if ping.returncode == 0 and ssh["reachable"] and scp["reachable"] else "blocked"
     blockers = []
+    if host_route["status"] != "ready":
+        blockers.append("Ubuntu host route to Cisco management IP failed.")
     if ping.returncode != 0:
         blockers.append("Ping to Cisco management IP failed.")
     if not ssh["reachable"]:
@@ -765,6 +927,7 @@ def _ethernet_readiness() -> dict[str, Any]:
         blockers.append("SCP readiness over TCP/22 to Cisco management IP failed.")
     return {
         "status": status,
+        "host_route": host_route,
         "ping": {"status": "ok" if ping.returncode == 0 else "failed", "returncode": ping.returncode},
         "ssh": ssh,
         "scp": scp,
@@ -1192,6 +1355,66 @@ def _summarize_show(command: str, output: str) -> dict[str, Any]:
     return {"captured": bool(output)}
 
 
+def _detect_access_ports_from_interfaces_status(output: str) -> list[str]:
+    ports = []
+    for line in output.splitlines():
+        parts = line.split()
+        if len(parts) < 4:
+            continue
+        port = parts[0]
+        vlan = parts[-4] if len(parts) >= 6 else parts[2]
+        if not _looks_like_switchport(port):
+            continue
+        if vlan.lower() in {"trunk", "routed", "disabled", "unassigned"}:
+            continue
+        if vlan.isdigit():
+            ports.append(port)
+    return list(dict.fromkeys(ports))
+
+
+def _looks_like_switchport(value: str) -> bool:
+    return bool(re.match(r"(?i)^(?:gi|gig|gigabitethernet|te|tengigabitethernet|fa|fastethernet|eth|ethernet)\S+", value))
+
+
+def _parse_vlan10_interface_state(output: str) -> dict[str, Any]:
+    for line in output.splitlines():
+        if not re.search(r"(?i)^vlan10\s+", line.strip()):
+            continue
+        parts = line.split()
+        if len(parts) >= 6:
+            return {
+                "configured": True,
+                "interface": parts[0],
+                "ip": parts[1],
+                "line_status": parts[-2].lower(),
+                "protocol_status": parts[-1].lower(),
+            }
+        return {"configured": True, "interface": parts[0], "ip": None, "line_status": "unknown", "protocol_status": "unknown"}
+    return {"configured": False, "interface": "Vlan10", "ip": None, "line_status": None, "protocol_status": None}
+
+
+def _parse_vlan10_ports(vlan_output: str, interfaces_output: str) -> list[str]:
+    ports: list[str] = []
+    for line in vlan_output.splitlines():
+        if not re.match(r"^\s*10\s+", line):
+            continue
+        tokens = re.split(r"[\s,]+", line.strip())
+        for token in tokens[2:]:
+            if _looks_like_switchport(token):
+                ports.append(token)
+    if ports:
+        return list(dict.fromkeys(ports))
+    for line in interfaces_output.splitlines():
+        parts = line.split()
+        if len(parts) < 4:
+            continue
+        port = parts[0]
+        vlan = parts[-4] if len(parts) >= 6 else parts[2]
+        if _looks_like_switchport(port) and vlan == "10":
+            ports.append(port)
+    return list(dict.fromkeys(ports))
+
+
 def _netmask(prefix: str) -> str | None:
     value = prefix.strip()
     if value.startswith("/"):
@@ -1218,6 +1441,57 @@ def _tcp_connect(host: str, port: int, *, timeout: float) -> dict[str, Any]:
             "elapsed_seconds": round(time.monotonic() - started, 3),
             "error": str(exc),
         }
+
+
+def _host_route_to(host: str) -> dict[str, Any]:
+    result = subprocess.run(["ip", "route", "get", host], capture_output=True, text=True, check=False)
+    route = " ".join((result.stdout or result.stderr or "").split())
+    return {
+        "status": "ready" if result.returncode == 0 else "blocked",
+        "returncode": result.returncode,
+        "route": route,
+        "dev": _route_token(route, "dev"),
+        "src": _route_token(route, "src"),
+        "error": None if result.returncode == 0 else route,
+    }
+
+
+def _route_token(route: str, token: str) -> str | None:
+    parts = route.split()
+    try:
+        index = parts.index(token)
+    except ValueError:
+        return None
+    if index + 1 >= len(parts):
+        return None
+    return parts[index + 1]
+
+
+def _classify_vlan10_failure(
+    apply_result: dict[str, Any],
+    switch_validation: dict[str, Any],
+    ethernet: dict[str, Any],
+) -> str:
+    if apply_result.get("status") not in {"completed", None, "not-attempted"}:
+        return "config"
+    if apply_result.get("status") == "not-attempted" and switch_validation.get("status") == "not-attempted":
+        return "not-applied"
+    vlan10_state = switch_validation.get("vlan10_state") if isinstance(switch_validation, dict) else {}
+    if not vlan10_state or vlan10_state.get("configured") is False:
+        return "config"
+    if vlan10_state.get("ip") != LAB_CISCO_MANAGEMENT_IP:
+        return "config"
+    if vlan10_state.get("line_status") != "up" or vlan10_state.get("protocol_status") != "up":
+        return "svi_down"
+    ports = switch_validation.get("ports_assigned_vlan10") or []
+    if not ports:
+        return "port_down"
+    route = ethernet.get("host_route") if isinstance(ethernet, dict) else {}
+    if not route or route.get("status") != "ready":
+        return "host_routing"
+    if ethernet.get("status") != "ready":
+        return "host_routing"
+    return "passed"
 
 
 def _redact_process_text(text: str) -> str:
@@ -1252,9 +1526,16 @@ def _finish(payload: dict[str, Any]) -> int:
         encoding="utf-8",
     )
     PASSWORD_RECOVERY_REPORT.write_text(_password_recovery_markdown(sanitized), encoding="utf-8")
-    BOOTSTRAP_APPLY_REPORT.write_text(_bootstrap_apply_markdown(sanitized), encoding="utf-8")
+    if _should_write_bootstrap_apply_report(sanitized):
+        BOOTSTRAP_APPLY_REPORT.write_text(_bootstrap_apply_markdown(sanitized), encoding="utf-8")
+    VLAN10_BOOTSTRAP_FIX_REPORT.write_text(_vlan10_bootstrap_fix_markdown(sanitized), encoding="utf-8")
     print(json.dumps(_summary(sanitized), indent=2))
     return 0 if payload["status"] in {"completed", "blocked"} else 1
+
+
+def _should_write_bootstrap_apply_report(payload: dict[str, Any]) -> bool:
+    apply = dict(dict(payload.get("stages") or {}).get("apply") or {})
+    return apply.get("status") != "not-attempted"
 
 
 def _summary(payload: dict[str, Any]) -> dict[str, Any]:
@@ -1269,6 +1550,7 @@ def _summary(payload: dict[str, Any]) -> dict[str, Any]:
         "selected_baud": prompt.get("selected_baud"),
         "blockers": payload.get("blockers") or [],
         "report": str(FIX_REPORT.relative_to(REPO_ROOT)),
+        "vlan10_bootstrap_fix_report": str(VLAN10_BOOTSTRAP_FIX_REPORT.relative_to(REPO_ROOT)),
         "login_bootstrap_fix_report": str(LOGIN_BOOTSTRAP_FIX_REPORT.relative_to(REPO_ROOT)),
         "commander_mode_report": str(COMMANDER_MODE_REPORT.relative_to(REPO_ROOT)),
         "details": str(DETAILS.relative_to(REPO_ROOT)),
@@ -1498,12 +1780,106 @@ def _bootstrap_apply_markdown(payload: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def _vlan10_bootstrap_fix_markdown(payload: dict[str, Any]) -> str:
+    stages = payload.get("stages", {})
+    plan = stages.get("bootstrap_plan", {})
+    apply = stages.get("apply", {})
+    switch = stages.get("vlan10_switch_validation", {})
+    ethernet = stages.get("ethernet_management_validation", {})
+    route = ethernet.get("host_route") if isinstance(ethernet.get("host_route"), dict) else {}
+    vlan10 = switch.get("vlan10_state") if isinstance(switch.get("vlan10_state"), dict) else {}
+    commands_sent = apply.get("commands_sent_redacted") or []
+    planned_commands = plan.get("redacted_commands") or []
+    ports = switch.get("ports_assigned_vlan10") or []
+    configured_ports = plan.get("selected_or_detected_access_ports") or []
+    lines = [
+        "# Cisco VLAN 10 Bootstrap Fix Report",
+        "",
+        "## Summary",
+        "",
+        f"- Checked at: `{payload.get('checked_at')}`",
+        f"- Provider mode: `{payload.get('provider_mode')}`",
+        f"- Overall status: `{payload.get('status')}`",
+        f"- Management VLAN: `{plan.get('management_vlan') or '10'}`",
+        f"- Management interface: `{plan.get('management_interface') or 'Vlan10'}`",
+        f"- Management IP: `{plan.get('management_ip') or LAB_CISCO_MANAGEMENT_IP}`",
+        f"- Management prefix: `{plan.get('management_prefix') or '/24'}`",
+        f"- Bootstrap apply status: `{apply.get('status') or 'not-attempted'}`",
+        f"- Serial writes attempted: `{bool(apply.get('serial_writes_attempted'))}`",
+        f"- Failure classification: `{ethernet.get('failure_classification') or 'unknown'}`",
+        "",
+        "## Commands Sent",
+        "",
+    ]
+    if commands_sent:
+        lines.extend(f"- `{command}`" for command in commands_sent)
+    else:
+        lines.append("- none")
+        lines.append("")
+        lines.append("## Planned Commands")
+        lines.append("")
+        lines.extend(f"- `{command}`" for command in planned_commands)
+    lines.extend(
+        [
+            "",
+            "## Switch Validation",
+            "",
+            f"- Vlan10 configured: `{vlan10.get('configured')}`",
+            f"- Vlan10 IP: `{vlan10.get('ip')}`",
+            f"- Vlan10 line state: `{vlan10.get('line_status')}`",
+            f"- Vlan10 protocol state: `{vlan10.get('protocol_status')}`",
+            f"- Access port source: `{plan.get('access_port_source')}`",
+            f"- Configured/detected lab ports: `{configured_ports}`",
+            f"- Ports assigned to VLAN 10: `{ports}`",
+            f"- All configured/detected ports assigned to VLAN 10: `{switch.get('all_configured_ports_assigned_vlan10')}`",
+            "",
+            "## Ubuntu Route To Cisco",
+            "",
+            f"- Route status: `{route.get('status')}`",
+            f"- Route: `{route.get('route')}`",
+            f"- Interface: `{route.get('dev')}`",
+            f"- Source IP: `{route.get('src')}`",
+            "",
+            "## Network Reachability",
+            "",
+            f"- Ping: `{(ethernet.get('ping') or {}).get('status')}`",
+            f"- SSH TCP/22 reachable: `{(ethernet.get('ssh') or {}).get('reachable')}`",
+            f"- SCP TCP/22 readiness: `{(ethernet.get('scp') or {}).get('reachable')}`",
+            "",
+            "## Failure Classification Guide",
+            "",
+            "- `config`: expected VLAN 10, SVI, local admin, SSH/SCP, or line login config was not confirmed.",
+            "- `config` also includes `interface Vlan10` using an IP other than `192.168.1.204`.",
+            "- `svi_down`: `interface Vlan10` exists but line/protocol is not up/up.",
+            "- `port_down`: no selected/detected access port is confirmed in VLAN 10.",
+            "- `host_routing`: switch-side validation looks usable, but Ubuntu cannot route/reach `192.168.1.204`.",
+            "- `passed`: switch-side validation and Ubuntu reachability passed.",
+            "",
+            "## Blockers",
+            "",
+        ]
+    )
+    lines.extend([f"- {item}" for item in payload.get("blockers") or []] or ["- none"])
+    lines.extend(
+        [
+            "",
+            "## Safety",
+            "",
+            "- Local admin secret values are redacted.",
+            "- Raw console output and raw running-config are not saved.",
+            "- `write memory` is only sent by the guarded apply path.",
+            "",
+        ]
+    )
+    return "\n".join(lines)
+
+
 def _sanitize(payload: Any) -> Any:
     return redact_sensitive(
         payload,
         [
             settings.cisco_console_port,
-            settings.cisco_target_ip,
+            None if settings.cisco_target_ip == LAB_CISCO_MANAGEMENT_IP else settings.cisco_target_ip,
             settings.cisco_test_username,
             settings.cisco_test_password,
             settings.cisco_enable_password,

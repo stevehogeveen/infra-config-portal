@@ -1,14 +1,14 @@
 # Build Verification / Product Certification
 
-- Checked at: `2026-06-07T00:19:51.925794+00:00`
+- Checked at: `2026-06-07T01:16:49.658689+00:00`
 - Status: `blocked`
-- Certification state: `stale_config`
-- Provider mode: `mock`
+- Certification state: `blocked_by_prior_stage`
+- Provider mode: `local-lab-readwrite`
 - Mock results used: `False`
 
 ## Lab IP Profile
 
-- Status: `blocked`
+- Status: `ready`
 - iLO: `192.168.1.201`
 - Server embedded NIC: `192.168.1.202`
 - ESXi management: `192.168.1.203`
@@ -17,15 +17,11 @@
 
 ## Failure Classification
 
-- `stale_config` `lab-ip-profile`: Active lab IP profile contains stale or mismatched target values. Next action: Update active lab inputs to 192.168.1.201-.205 and remove stale 10.10.8.x values before certification.
-- `operator_action_required` `protocol`: ESXi ISO media inventory is operator_action_required. Next action: Place the ESXi ISO under MEDIA_INVENTORY_DIRS or set ESXI_INSTALL_ISO/ESXI_ISO_PATH before ESXi boot verification.
 - `blocked_by_prior_stage` `protocol`: Cisco SSH/SCP is blocked_by_prior_stage. Next action: Complete or confirm Cisco console bootstrap, then set CISCO_MGMT_CONFIGURED=true before treating SSH/SCP as a port failure.
 - `blocked_by_prior_stage` `protocol`: ESXi API is blocked_by_prior_stage. Next action: Install/configure ESXi management at 192.168.1.203, then set ESXI_CONFIGURED=true before API certification.
 - `blocked_by_prior_stage` `protocol`: ESXi SSH is blocked_by_prior_stage. Next action: Install/configure ESXi management and enable/confirm SSH before ESXi SSH certification.
 - `not_configured_yet` `protocol`: NetApp REST is not_configured_yet. Next action: Leave NetApp REST as not_configured_yet until the NetApp stage is explicitly configured.
 - `not_configured_yet` `protocol`: NetApp SSH is not_configured_yet. Next action: Leave NetApp SSH as not_configured_yet until the NetApp stage is explicitly configured.
-- `warning` `protocol`: iLO Redfish is warning. Next action: Review iLO Redfish readiness.
-- `warning` `protocol`: iLO XML fallback is warning. Next action: Review iLO XML fallback readiness.
 
 ## Credential Compatibility
 
@@ -42,15 +38,15 @@
 
 ## Protocol Readiness
 
-- `warning` `iLO Redfish`: Review iLO Redfish readiness.
-- `warning` `iLO XML fallback`: Review iLO XML fallback readiness.
+- `passed` `iLO Redfish`: iLO Redfish readiness passed.
+- `passed` `iLO XML fallback`: iLO XML fallback readiness passed.
 - `passed` `Cisco console`: Cisco console discovery and prompt detection passed.
 - `blocked_by_prior_stage` `Cisco SSH/SCP`: Complete or confirm Cisco console bootstrap, then set CISCO_MGMT_CONFIGURED=true before treating SSH/SCP as a port failure.
 - `blocked_by_prior_stage` `ESXi API`: Install/configure ESXi management at 192.168.1.203, then set ESXI_CONFIGURED=true before API certification.
 - `blocked_by_prior_stage` `ESXi SSH`: Install/configure ESXi management and enable/confirm SSH before ESXi SSH certification.
 - `not_configured_yet` `NetApp REST`: Leave NetApp REST as not_configured_yet until the NetApp stage is explicitly configured.
 - `not_configured_yet` `NetApp SSH`: Leave NetApp SSH as not_configured_yet until the NetApp stage is explicitly configured.
-- `operator_action_required` `ESXi ISO media inventory`: Place the ESXi ISO under MEDIA_INVENTORY_DIRS or set ESXI_INSTALL_ISO/ESXI_ISO_PATH before ESXi boot verification.
+- `passed` `ESXi ISO media inventory`: ESXi ISO media inventory is ready.
 
 ## Toolchain Readiness
 
@@ -69,7 +65,7 @@
 ## Post-Build Checklist
 
 - `unknown` Cisco management IP responds and SSH/SCP are ready
-- `unknown` iLO inventory, health, power, and Redfish are reachable
+- `ready` iLO inventory, health, power, and Redfish are reachable
 - `manual-review` RAID layout matches saved intent after reset/validation
 - `unknown` ESXi media is inserted or host installer state is detected
 - `skipped` NetApp REST/SSH paths are reachable when configured

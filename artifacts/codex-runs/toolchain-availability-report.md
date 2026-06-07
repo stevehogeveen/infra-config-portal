@@ -1,8 +1,8 @@
 # Toolchain Availability Report
 
-- Checked at: `2026-06-07T00:19:51.928436+00:00`
+- Checked at: `2026-06-07T01:16:49.658180+00:00`
 - Status: `warning`
-- Provider mode: `mock`
+- Provider mode: `local-lab-readwrite`
 - Next safe action: Use available tools only through staged readiness, preview, approval, and audit gates.
 
 ## Local Tool Checks
