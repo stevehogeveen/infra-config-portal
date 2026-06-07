@@ -1,6 +1,6 @@
 # Build Verification Classification Report
 
-- Checked at: `2026-06-06T18:52:38.681419+00:00`
+- Checked at: `2026-06-07T00:19:51.925794+00:00`
 - Overall certification state: `stale_config`
 - Provider mode: `mock`
 - Mock results used as substitutes for real lab evidence: `false`
@@ -22,12 +22,6 @@
 - UI message: Active lab IP profile contains stale or mismatched target values.
 - Report detail: 3 stale active values; 2 active profile mismatches.
 - Next action: Update active lab inputs to 192.168.1.201-.205 and remove stale 10.10.8.x values before certification.
-
-### protocol - operator_action_required
-
-- UI message: Cisco console is operator_action_required.
-- Report detail: Connect the Cisco console adapter and rerun prompt detection at 9600.
-- Next action: Connect the Cisco console adapter and rerun prompt detection at 9600.
 
 ### protocol - operator_action_required
 

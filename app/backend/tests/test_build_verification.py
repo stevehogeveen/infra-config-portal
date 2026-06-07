@@ -4,6 +4,7 @@ from dataclasses import replace
 
 from app.core.config import settings
 from app.services.build_verification import (
+    build_toolchain_availability,
     build_lab_build_verification,
     find_stale_lab_ip_assumptions,
     protocol_readiness,
@@ -99,6 +100,8 @@ def test_build_verification_failure_reporting(monkeypatch) -> None:
     assert result["artifacts"]["report"] == "artifacts/codex-runs/build-verification-report.md"
     assert result["artifacts"]["lab_ip_profile_report"] == "artifacts/codex-runs/lab-ip-profile-update-report.md"
     assert result["artifacts"]["lab_ip_profile_hardening_report"] == "artifacts/codex-runs/lab-ip-profile-hardening-report.md"
+    assert result["artifacts"]["toolchain_availability_report"] == "artifacts/codex-runs/toolchain-availability-report.md"
+    assert result["toolchain"]["provider_id"] == "toolchain-readiness"
     assert {item["classification"] for item in result["failures"]} & {
         "hard_fail",
         "blocked_by_prior_stage",
@@ -135,3 +138,31 @@ def test_build_verification_marks_stale_active_ip(monkeypatch) -> None:
     assert result["lab_ip_profile"]["classification"] == "stale_config"
     stale_fields = {item["field"] for item in result["lab_ip_profile"]["stale_10_10_8_values"]}
     assert {"cisco_management", "esxi_management"} <= stale_fields
+
+
+def test_toolchain_availability_reports_local_checks() -> None:
+    result = build_toolchain_availability()
+    tool_names = {tool["name"] for tool in result["tools"]}
+
+    assert result["provider_id"] == "toolchain-readiness"
+    assert "pyserial" in tool_names
+    assert "netmiko" in tool_names
+    assert "ansible" in tool_names
+    assert "govc" in tool_names
+    assert "pyATS/Genie" in tool_names
+    assert "NAPALM" not in tool_names
+    assert result["artifacts"]["report"] == "artifacts/codex-runs/toolchain-availability-report.md"
+    assert "cisco" in result["managed_state"]
+    assert result["managed_state"]["cisco"]["primary_tools"] == [
+        "local_serial",
+        "tcp_console/ser2net",
+        "Ansible cisco.ios",
+        "Netmiko",
+    ]
+    assert result["managed_state"]["cisco"]["optional_tools"] == ["pyATS/Genie"]
+    assert result["managed_state"]["hpe_ilo"]["primary_tools"] == ["Redfish direct", "HPE iLOrest"]
+    assert result["managed_state"]["esxi_vsphere"]["primary_tools"] == ["Kickstart", "govc"]
+    assert result["managed_state"]["netapp"]["primary_tools"] == [
+        "netapp-ontap Python client",
+        "ONTAP REST",
+    ]

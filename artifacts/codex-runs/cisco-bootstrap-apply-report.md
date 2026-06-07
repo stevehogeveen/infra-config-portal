@@ -1,17 +1,19 @@
 # Cisco Bootstrap Apply Report
 
-- Checked at: `2026-06-06T18:23:26.407780+00:00`
+- Checked at: `2026-06-06T23:41:45.014535+00:00`
 - Provider mode: `local-lab-readwrite`
 - Management IP requested: `192.168.1.204`
-- Privileged exec reached: `False`
-- Privilege level readback: `None`
-- Bootstrap apply status: `not-attempted`
-- Serial writes attempted: `False`
-- Ethernet management validation: `not-attempted`
+- Privileged exec reached: `True`
+- Privilege level readback: `15`
+- Bootstrap apply status: `completed`
+- Serial writes attempted: `True`
+- Ethernet management validation: `blocked`
 
 ## Blockers
 
-- Console adapter opened across common baud rates, but no supported Cisco prompt was detected.
+- Ping to Cisco management IP failed.
+- SSH TCP/22 to Cisco management IP failed.
+- SCP readiness over TCP/22 to Cisco management IP failed.
 
 ## Safety
 

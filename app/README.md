@@ -413,6 +413,14 @@ configuration commands:
 make provider-lab-cisco-console-ethernet-readiness
 ```
 
+Toolchain readiness checks local package and CLI availability for Cisco,
+HPE/iLO, ESXi/vSphere, NetApp, and firmware planning without contacting real
+devices:
+
+```bash
+make provider-lab-toolchain-check
+```
+
 The NetApp-only readiness command writes `netapp-readiness-*` artifacts under
 the same ignored directory and never contacts ONTAP, SP, console, SSH, storage,
 upgrade, reboot, wipe, or apply endpoints.

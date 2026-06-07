@@ -1,62 +1,28 @@
 [
   {
     "baud": 9600,
-    "captured": false,
-    "classification": "port_in_use",
-    "error": "serial port appears to be in use",
+    "bytes": 42,
+    "captured": true,
+    "classification": "privileged_exec",
+    "final_prompt": "DEVICE#",
+    "first_bytes_printable_preview": "\\r\\n\\r\\nUser Access Verification\\r\\n\\r\\nUsername: ",
+    "last_line": "username prompt",
+    "line_count": 2,
+    "login_state_transitions": [
+      "username_prompt_seen",
+      "username_sent",
+      "password_prompt_seen",
+      "password_sent"
+    ],
+    "password_prompt_seen": true,
     "prompt": {
-      "privileged": false,
-      "state": "port-in-use",
-      "text": ""
+      "privileged": true,
+      "state": "privileged-exec",
+      "text": "DEVICE#"
     },
-    "sequence": "open"
-  },
-  {
-    "baud": 19200,
-    "captured": false,
-    "classification": "port_in_use",
-    "error": "serial port appears to be in use",
-    "prompt": {
-      "privileged": false,
-      "state": "port-in-use",
-      "text": ""
-    },
-    "sequence": "open"
-  },
-  {
-    "baud": 38400,
-    "captured": false,
-    "classification": "port_in_use",
-    "error": "serial port appears to be in use",
-    "prompt": {
-      "privileged": false,
-      "state": "port-in-use",
-      "text": ""
-    },
-    "sequence": "open"
-  },
-  {
-    "baud": 57600,
-    "captured": false,
-    "classification": "port_in_use",
-    "error": "serial port appears to be in use",
-    "prompt": {
-      "privileged": false,
-      "state": "port-in-use",
-      "text": ""
-    },
-    "sequence": "open"
-  },
-  {
-    "baud": 115200,
-    "captured": false,
-    "classification": "port_in_use",
-    "error": "serial port appears to be in use",
-    "prompt": {
-      "privileged": false,
-      "state": "port-in-use",
-      "text": ""
-    },
-    "sequence": "open"
+    "prompt_regex_matched": "hostname_exec_prompt",
+    "sequence": "crlf",
+    "user_access_verification_seen": true,
+    "username_prompt_seen": true
   }
 ]

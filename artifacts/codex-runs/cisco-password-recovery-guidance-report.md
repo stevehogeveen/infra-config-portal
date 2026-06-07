@@ -1,15 +1,15 @@
 # Cisco Password Recovery Guidance Report
 
-- Checked at: `2026-06-06T18:23:26.407780+00:00`
+- Checked at: `2026-06-06T23:41:45.014535+00:00`
 - Provider mode: `local-lab-readwrite`
-- Initial prompt state: `unknown-no-output`
-- Enable command sent: `None`
-- Password prompt seen: `None`
-- Enable rejected: `unknown`
-- Final prompt state: `None`
-- Privilege level: `None`
-- Password recovery status: `unknown`
-- Next action: Restore a user exec or privileged exec prompt before retrying Cisco bootstrap.
+- Initial prompt state: `privileged-exec`
+- Enable command sent: `False`
+- Password prompt seen: `False`
+- Enable rejected: `no`
+- Final prompt state: `privileged-exec`
+- Privilege level: `15`
+- Password recovery status: `false`
+- Next action: Privilege is confirmed; continue Cisco management network validation.
 
 ## Detection Text
 
@@ -31,7 +31,9 @@
 
 ## Blockers
 
-- Console adapter opened across common baud rates, but no supported Cisco prompt was detected.
+- Ping to Cisco management IP failed.
+- SSH TCP/22 to Cisco management IP failed.
+- SCP readiness over TCP/22 to Cisco management IP failed.
 
 ## Safety
 

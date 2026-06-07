@@ -20,6 +20,21 @@ workflow lifecycle code.
   disabled dangerous actions.
 - network switch: mocked health only.
 
+## Canonical Real-Lab Toolchain
+
+Provider adapters should converge on this tool map:
+
+- Cisco first contact: app console workflow over local serial, ser2net, or
+  Opengear-style console access. This remains the bootstrap path.
+- Cisco normal management: Ansible `cisco.ios`, Netmiko, and pyATS/Genie
+  parsing after management SSH is configured. Ansible is not the initial
+  bootstrap path.
+- HPE/iLO: Redfish direct plus HPE iLOrest.
+- ESXi: Kickstart plus `govc`.
+- NetApp: `netapp-ontap` Python client plus ONTAP REST.
+- Verification: Build Verification consumes these tool outputs and produces
+  readiness, blocker, stale-config, and failure classifications.
+
 `PROVIDER_MODE=mock` remains the default. In mock mode, provider status may
 inspect local serial device paths for Cisco console candidates, but no network
 or serial probe is run automatically.
@@ -356,7 +371,7 @@ ESXi probes may only:
 - check TCP reachability to HTTPS and SSH
 - issue HTTPS GET requests for `/`, `/ui/`, and `/sdk/vimServiceVersions.xml`
 - summarize VIM service versions when that XML is reachable
-- report local `govc`, PowerCLI, and pyVmomi availability
+- report local `govc` availability
 
 The ESXi adapter does not reinstall, reboot, change networking, add/remove
 datastores, create/delete VMs, deploy OVFs, power VMs, change firewall settings,

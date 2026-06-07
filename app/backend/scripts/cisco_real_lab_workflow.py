@@ -5,6 +5,7 @@ import ipaddress
 import json
 import os
 import re
+import signal
 import socket
 import subprocess
 import time
@@ -29,12 +30,15 @@ PRIVILEGE_HARDENING_REPORT = REPO_ROOT / "artifacts" / "codex-runs" / "cisco-pri
 PRIVILEGE_DIAGNOSIS_REPORT = REPO_ROOT / "artifacts" / "codex-runs" / "cisco-privilege-diagnosis-report.md"
 PASSWORD_RECOVERY_REPORT = REPO_ROOT / "artifacts" / "codex-runs" / "cisco-password-recovery-guidance-report.md"
 BOOTSTRAP_APPLY_REPORT = REPO_ROOT / "artifacts" / "codex-runs" / "cisco-bootstrap-apply-report.md"
+LOGIN_BOOTSTRAP_FIX_REPORT = REPO_ROOT / "artifacts" / "codex-runs" / "cisco-login-bootstrap-fix-report.md"
+COMMANDER_MODE_REPORT = REPO_ROOT / "artifacts" / "codex-runs" / "cisco-console-commander-mode-report.md"
 DETAILS = REPO_ROOT / "artifacts" / "codex-runs" / "cisco-4h-lab-run-details-redacted.json"
 SAMPLES = REPO_ROOT / "artifacts" / "codex-runs" / "cisco-console-samples-redacted.json"
 COMMANDS = REPO_ROOT / "artifacts" / "codex-runs" / "cisco-bootstrap-commands-redacted.json"
 
 BAUD_RATES = (9600, 19200, 38400, 57600, 115200)
 WAKE_SEQUENCES = (
+    {"name": "crlf", "bytes": b"\r\n"},
     {"name": "newline", "bytes": b"\n"},
     {"name": "enter", "bytes": b"\r"},
     {"name": "ctrl-c", "bytes": b"\x03"},
@@ -44,7 +48,7 @@ WAKE_SEQUENCES = (
 SHOW_COMMANDS = (
     "terminal length 0",
     "show privilege",
-    "show version",
+    "show version | include Cisco IOS|uptime|System image|processor|bytes of memory",
     "show inventory",
     "show interfaces status",
     "show ip interface brief",
@@ -52,6 +56,7 @@ SHOW_COMMANDS = (
     "show running-config | include ^hostname|^ip domain-name|^ip ssh|^ip scp|^ip http|^username|^interface Vlan|^ip default-gateway|^lldp run",
 )
 PROMPT_RE = re.compile(r"(?m)(?:^|\r|\n)([A-Za-z0-9_.:/()-]+(?:\(config[^\)]*\))?[#>])\s*$")
+RECLAIMABLE_CONSOLE_COMMANDS = ("screen", "picocom", "minicom", "python")
 
 
 @dataclass(frozen=True)
@@ -90,6 +95,8 @@ def main() -> int:
             "privilege_diagnosis_report": str(PRIVILEGE_DIAGNOSIS_REPORT.relative_to(REPO_ROOT)),
             "password_recovery_guidance_report": str(PASSWORD_RECOVERY_REPORT.relative_to(REPO_ROOT)),
             "bootstrap_apply_report": str(BOOTSTRAP_APPLY_REPORT.relative_to(REPO_ROOT)),
+            "login_bootstrap_fix_report": str(LOGIN_BOOTSTRAP_FIX_REPORT.relative_to(REPO_ROOT)),
+            "commander_mode_report": str(COMMANDER_MODE_REPORT.relative_to(REPO_ROOT)),
             "details": str(DETAILS.relative_to(REPO_ROOT)),
             "samples": str(SAMPLES.relative_to(REPO_ROOT)),
             "commands": str(COMMANDS.relative_to(REPO_ROOT)),
@@ -108,7 +115,14 @@ def main() -> int:
         payload["blockers"].extend(policy_blockers)
 
     discovery = discover_cisco_console(CiscoConsoleConfig.from_settings())
-    ownership = _serial_ownership(discovery)
+    claim = _claim_cisco_console(
+        discovery,
+        provider_mode=settings.provider_mode,
+        reclaim_enabled=_env_flag("CISCO_CONSOLE_RECLAIM"),
+    )
+    if isinstance(claim.get("post_discovery"), dict):
+        discovery = claim["post_discovery"]
+    ownership = claim["post_ownership"]
     payload["stages"]["adapter_discovery"] = {
         "status": discovery["status"],
         "effective_path": discovery.get("effective_path"),
@@ -119,8 +133,12 @@ def main() -> int:
         "blockers": discovery.get("blockers") or [],
         "warnings": discovery.get("warnings") or [],
     }
+    payload["stages"]["console_preflight_claim"] = claim
     payload["warnings"].extend(discovery.get("warnings") or [])
     payload["blockers"].extend(discovery.get("blockers") or [])
+    payload["blockers"].extend(claim.get("blockers") or [])
+    if claim.get("reclaimed"):
+        payload["warnings"].append("Cisco console preflight reclaimed the selected serial port before opening it.")
     if ownership["owned"]:
         payload["blockers"].append("Serial console is owned by another process.")
 
@@ -145,7 +163,10 @@ def main() -> int:
     prompt = Prompt(**selected["prompt"])
     baud = int(selected["baud"])
     identity: dict[str, Any] = {}
-    apply_result: dict[str, Any] = {"status": "not-attempted", "reason": "Run with --apply after prompt detection succeeds."}
+    apply_result: dict[str, Any] = {
+        "status": "not-attempted",
+        "reason": "Privileged exec was not confirmed yet.",
+    }
     ethernet: dict[str, Any] = {"status": "not-attempted", "reason": "Bootstrap apply did not run."}
 
     with serial.Serial(port=port, baudrate=baud, timeout=1.0, write_timeout=1.0) as conn:
@@ -184,13 +205,20 @@ def main() -> int:
         if privilege_prompt.state != "privileged-exec":
             payload["blockers"].append("Privileged exec prompt is required for bootstrap apply.")
 
-        if args.apply and not payload["blockers"]:
+        should_apply = _bootstrap_apply_requested(args)
+        if should_apply and not payload["blockers"]:
             apply_result = _apply_bootstrap(conn, plan)
             if apply_result["status"] == "completed":
                 ethernet = _ethernet_readiness()
+                if ethernet.get("status") != "ready":
+                    payload["blockers"].extend(ethernet.get("blockers") or ["Cisco management validation failed."])
             else:
                 payload["blockers"].extend(apply_result.get("blockers") or [])
         elif not args.apply:
+            apply_result = {
+                "status": "not-attempted",
+                "reason": "Bootstrap plan was built but not applied because --apply was not set.",
+            }
             payload["warnings"].append("Bootstrap plan was built but not applied because --apply was not set.")
 
     payload["stages"]["apply"] = apply_result
@@ -211,14 +239,24 @@ def _detect_console(serial_module: Any, port: str, *, first_baud: int | None = N
                         _send_break(conn)
                     else:
                         conn.write(sequence["bytes"])
-                    text = _read(conn, window=1.6)
+                    text = _read(conn, window=3.0)
                     prompt = _classify_prompt(text)
+                    login_result = _complete_login_flow(conn, prompt, text)
+                    prompt = login_result.prompt
+                    debug = login_result.debug
                     sample = {
                         "baud": baud,
                         "sequence": sequence["name"],
                         "captured": bool(text),
                         "classification": _console_classification(prompt.state, text),
                         "bytes": len(text.encode("utf-8", errors="replace")),
+                        "first_bytes_printable_preview": _printable_preview(text),
+                        "prompt_regex_matched": debug["prompt_regex_matched"],
+                        "login_state_transitions": debug["login_state_transitions"],
+                        "user_access_verification_seen": debug["user_access_verification_seen"],
+                        "username_prompt_seen": debug["username_prompt_seen"],
+                        "password_prompt_seen": debug["password_prompt_seen"],
+                        "final_prompt": prompt.text,
                         "line_count": len([line for line in text.splitlines() if line.strip()]),
                         "last_line": _redact_line(_last_line(text)),
                         "prompt": prompt.__dict__,
@@ -228,7 +266,6 @@ def _detect_console(serial_module: Any, port: str, *, first_baud: int | None = N
                         "exec",
                         "privileged-exec",
                         "setup-wizard",
-                        "login-required",
                         "rommon-bootloader",
                         "password-recovery-ready",
                     }:
@@ -242,10 +279,42 @@ def _detect_console(serial_module: Any, port: str, *, first_baud: int | None = N
                                 "selected_sequence": sequence["name"],
                                 "prompt_state": prompt.state,
                                 "prompt_detected": True,
+                                "first_bytes_printable_preview": sample["first_bytes_printable_preview"],
+                                "prompt_regex_matched": sample["prompt_regex_matched"],
+                                "login_state_transitions": sample["login_state_transitions"],
+                                "user_access_verification_seen": sample["user_access_verification_seen"],
+                                "username_prompt_seen": sample["username_prompt_seen"],
+                                "password_prompt_seen": sample["password_prompt_seen"],
+                                "final_prompt": sample["final_prompt"],
                                 "bauds_tried": list(baud_rates),
                                 "wake_sequences_tried": [item["name"] for item in WAKE_SEQUENCES],
                             },
                             "blockers": [],
+                        }
+                    if prompt.state in {"login-required", "password-required"}:
+                        return {
+                            "selected": None,
+                            "samples": samples,
+                            "summary": {
+                                "status": "blocked",
+                                "selected_port": port,
+                                "selected_baud": baud,
+                                "selected_sequence": sequence["name"],
+                                "prompt_state": prompt.state,
+                                "prompt_detected": True,
+                                "first_bytes_printable_preview": sample["first_bytes_printable_preview"],
+                                "prompt_regex_matched": sample["prompt_regex_matched"],
+                                "login_state_transitions": sample["login_state_transitions"],
+                                "user_access_verification_seen": sample["user_access_verification_seen"],
+                                "username_prompt_seen": sample["username_prompt_seen"],
+                                "password_prompt_seen": sample["password_prompt_seen"],
+                                "final_prompt": sample["final_prompt"],
+                                "bauds_tried": list(baud_rates),
+                                "wake_sequences_tried": [item["name"] for item in WAKE_SEQUENCES],
+                            },
+                            "blockers": [
+                                "Console login prompt was detected, but configured credentials did not reach exec."
+                            ],
                         }
         except Exception as exc:  # pragma: no cover - hardware dependent
             state = _serial_open_prompt_state(exc)
@@ -269,6 +338,13 @@ def _detect_console(serial_module: Any, port: str, *, first_baud: int | None = N
             "prompt_state": _final_console_prompt_state(samples),
             "classification": "no_bytes_read" if not any(sample.get("captured") for sample in samples) else "unreadable_gibberish",
             "prompt_detected": False,
+            "first_bytes_printable_preview": _first_sample_preview(samples),
+            "prompt_regex_matched": None,
+            "login_state_transitions": [],
+            "user_access_verification_seen": False,
+            "username_prompt_seen": False,
+            "password_prompt_seen": False,
+            "final_prompt": None,
             "bauds_tried": list(baud_rates),
             "wake_sequences_tried": [item["name"] for item in WAKE_SEQUENCES],
             "recovery_attempts": ["newline", "carriage return", "Ctrl+C", "Ctrl+Z", "break", "DTR/RTS toggle when supported"],
@@ -277,6 +353,10 @@ def _detect_console(serial_module: Any, port: str, *, first_baud: int | None = N
             "Console adapter opened across common baud rates, but no supported Cisco prompt was detected."
         ],
     }
+
+
+def _bootstrap_apply_requested(args: argparse.Namespace) -> bool:
+    return bool(args.apply)
 
 
 def _baud_order(first_baud: int | None) -> tuple[int, ...]:
@@ -290,6 +370,8 @@ def _ensure_privileged(conn: Any, prompt: Prompt) -> PrivilegeResult:
         "initial_prompt_state": prompt.state,
         "setup_wizard_answered_no": False,
         "login_exchange_attempted": False,
+        "login_state_transitions": [],
+        "username_prompt_seen": False,
         "enable_command_sent": False,
         "enable_commands_attempted": [],
         "password_prompt_seen": False,
@@ -321,7 +403,11 @@ def _ensure_privileged(conn: Any, prompt: Prompt) -> PrivilegeResult:
             return PrivilegeResult(result.prompt, debug)
         if current.state in {"login-required", "password-required"}:
             debug["login_exchange_attempted"] = True
-            current = _credential_exchange(conn)
+            credential_result = _credential_exchange(conn)
+            current = credential_result.prompt
+            debug["login_state_transitions"] = credential_result.debug["login_state_transitions"]
+            debug["username_prompt_seen"] = credential_result.debug["username_prompt_seen"]
+            debug["password_prompt_seen"] = credential_result.debug["password_prompt_seen"] or debug["password_prompt_seen"]
             continue
         if current.state == "unknown":
             _send(conn, "")
@@ -381,9 +467,10 @@ def _answer_enable_challenge(conn: Any, text: str, password: str) -> EnableChall
     for _ in range(3):
         lower = current.lower()
         if "username:" in lower or "login:" in lower:
-            if not settings.cisco_test_username:
+            username = _login_username()
+            if not username:
                 return EnableChallengeResult(Prompt("login-required", "username prompt", False), password_prompt_seen)
-            _send(conn, settings.cisco_test_username, secret=True)
+            _send(conn, username, secret=True)
             current = _read(conn, window=1.0)
             continue
         if "password:" in lower:
@@ -432,29 +519,90 @@ def _enable_password_candidates() -> list[dict[str, Any]]:
     ]
 
 
-def _credential_exchange(conn: Any) -> Prompt:
-    text = _read(conn, window=0.3)
-    lower = text.lower()
-    if "username:" in lower or "login:" in lower:
-        if not settings.cisco_test_username:
-            return Prompt("login-required", "username prompt", False)
-        _send(conn, settings.cisco_test_username, secret=True)
-        text = _read(conn, window=0.8)
+@dataclass(frozen=True)
+class CredentialExchangeResult:
+    prompt: Prompt
+    debug: dict[str, Any]
+
+
+def _credential_exchange(conn: Any, initial_text: str = "") -> CredentialExchangeResult:
+    text = initial_text or _read(conn, window=0.8)
+    parsed = _classify_prompt(text)
+    debug: dict[str, Any] = {
+        "login_state_transitions": [],
+        "user_access_verification_seen": "user access verification" in text.lower(),
+        "username_prompt_seen": "username:" in text.lower() or "login:" in text.lower(),
+        "password_prompt_seen": "password:" in text.lower(),
+        "prompt_regex_matched": _prompt_match_label(text, parsed),
+    }
+    for _ in range(6):
         lower = text.lower()
-    if "password:" in lower:
-        password = settings.cisco_test_password
-        if not password:
-            return Prompt("password-required", "password prompt", False)
-        _send(conn, password, secret=True)
-        text = _read(conn, window=1.2)
+        if parsed.state in {"exec", "privileged-exec", "setup-wizard", "rommon-bootloader", "password-recovery-ready"}:
+            debug["prompt_regex_matched"] = _prompt_match_label(text, parsed)
+            return CredentialExchangeResult(parsed, debug)
+        if "username:" in lower or "login:" in lower:
+            debug["username_prompt_seen"] = True
+            debug["login_state_transitions"].append("username_prompt_seen")
+            username = _login_username()
+            if not username:
+                return CredentialExchangeResult(Prompt("login-required", "username prompt", False), debug)
+            _send(conn, username, secret=True)
+            debug["login_state_transitions"].append("username_sent")
+            text = _read(conn, window=2.0)
+            parsed = _classify_prompt(text)
+            continue
+        if "password:" in lower:
+            debug["password_prompt_seen"] = True
+            debug["login_state_transitions"].append("password_prompt_seen")
+            password = _login_password()
+            if not password:
+                return CredentialExchangeResult(Prompt("password-required", "password prompt", False), debug)
+            _send(conn, password, secret=True)
+            debug["login_state_transitions"].append("password_sent")
+            text = _read(conn, window=2.5)
+            parsed = _classify_prompt(text)
+            if parsed.state == "unknown":
+                _send(conn, "")
+                debug["login_state_transitions"].append("prompt_refresh_sent")
+                text = _read(conn, window=1.5)
+                parsed = _classify_prompt(text)
+            continue
+        _send(conn, "")
+        debug["login_state_transitions"].append("prompt_refresh_sent")
+        text = _read(conn, window=1.5)
         parsed = _classify_prompt(text)
-        if parsed.state == "unknown":
-            _send(conn, "")
-            parsed = _classify_prompt(_read(conn, window=1.0))
-        if parsed.state != "login-required":
-            return parsed
-        return parsed
-    return _classify_prompt(text)
+    debug["prompt_regex_matched"] = _prompt_match_label(text, parsed)
+    return CredentialExchangeResult(parsed, debug)
+
+
+@dataclass(frozen=True)
+class LoginFlowResult:
+    prompt: Prompt
+    debug: dict[str, Any]
+
+
+def _complete_login_flow(conn: Any, prompt: Prompt, text: str) -> LoginFlowResult:
+    if prompt.state not in {"login-required", "password-required", "unknown"}:
+        return LoginFlowResult(
+            prompt,
+            {
+                "login_state_transitions": [],
+                "user_access_verification_seen": "user access verification" in text.lower(),
+                "username_prompt_seen": "username:" in text.lower() or "login:" in text.lower(),
+                "password_prompt_seen": "password:" in text.lower(),
+                "prompt_regex_matched": _prompt_match_label(text, prompt),
+            },
+        )
+    result = _credential_exchange(conn, text)
+    return LoginFlowResult(result.prompt, result.debug)
+
+
+def _login_username() -> str | None:
+    return os.getenv("CISCO_TEST_USERNAME") or os.getenv("ANSIBLE_CISCO_USERNAME") or settings.cisco_test_username
+
+
+def _login_password() -> str | None:
+    return os.getenv("CISCO_TEST_PASSWORD") or os.getenv("ANSIBLE_CISCO_PASSWORD") or settings.cisco_test_password
 
 
 def _recover_to_exec(conn: Any) -> Prompt:
@@ -606,18 +754,112 @@ def _ethernet_readiness() -> dict[str, Any]:
         return {"status": "blocked", "blockers": ["Cisco target IP is missing."]}
     ping = subprocess.run(["ping", "-c", "2", "-W", "2", host], capture_output=True, text=True, check=False)
     ssh = _tcp_connect(host, 22, timeout=4.0)
+    scp = _scp_validation(host)
+    status = "ready" if ping.returncode == 0 and ssh["reachable"] and scp["reachable"] else "blocked"
+    blockers = []
+    if ping.returncode != 0:
+        blockers.append("Ping to Cisco management IP failed.")
+    if not ssh["reachable"]:
+        blockers.append("SSH TCP/22 to Cisco management IP failed.")
+    if not scp["reachable"]:
+        blockers.append("SCP readiness over TCP/22 to Cisco management IP failed.")
     return {
-        "status": "ready" if ping.returncode == 0 and ssh["reachable"] else "blocked",
+        "status": status,
         "ping": {"status": "ok" if ping.returncode == 0 else "failed", "returncode": ping.returncode},
         "ssh": ssh,
-        "scp": {
-            "status": "ready" if ssh["reachable"] else "blocked",
-            "method": "TCP/22 readiness plus bootstrap command `ip scp server enable`.",
-        },
+        "scp": scp,
+        "blockers": blockers,
     }
 
 
+def _scp_validation(host: str) -> dict[str, Any]:
+    ssh = _tcp_connect(host, 22, timeout=4.0)
+    return {
+        "status": "ready" if ssh["reachable"] else "blocked",
+        "reachable": ssh["reachable"],
+        "port": 22,
+        "method": "TCP/22 readiness plus bootstrap command `ip scp server enable`.",
+        "error": ssh.get("error"),
+    }
+
+
+def _claim_cisco_console(
+    discovery: dict[str, Any],
+    *,
+    provider_mode: str,
+    reclaim_enabled: bool,
+    lock_dirs: tuple[Path, ...] = (Path("/var/lock"), Path("/run/lock")),
+) -> dict[str, Any]:
+    ownership = _serial_ownership(discovery)
+    can_reclaim = provider_mode == "local-lab-readwrite" and reclaim_enabled
+    result: dict[str, Any] = {
+        "status": "ready",
+        "provider_mode": provider_mode,
+        "reclaim_requested": reclaim_enabled,
+        "reclaim_allowed": can_reclaim,
+        "selected_paths": ownership["checked_paths"],
+        "initial_ownership": ownership,
+        "terminated_processes": [],
+        "skipped_processes": [],
+        "lock_files_removed": [],
+        "lock_file_errors": [],
+        "reclaimed": False,
+        "blockers": [],
+        "post_ownership": ownership,
+    }
+    if ownership["owned"] and not can_reclaim:
+        result["status"] = "blocked"
+        result["blockers"].append(
+            "Serial console is owned by another process; set CISCO_CONSOLE_RECLAIM=true in local-lab-readwrite mode to reclaim allowed console holders."
+        )
+        return result
+    if can_reclaim:
+        for owner in ownership["owners"]:
+            if _is_reclaimable_console_owner(owner):
+                termination = _terminate_process(int(owner["pid"]))
+                result["terminated_processes"].append({**owner, **termination})
+                result["reclaimed"] = True
+            else:
+                result["skipped_processes"].append({**owner, "reason": "process command is not an allowed console holder"})
+        lock_cleanup = _clear_console_lock_files(ownership["checked_paths"], lock_dirs=lock_dirs)
+        result["lock_files_removed"] = lock_cleanup["removed"]
+        result["lock_file_errors"] = lock_cleanup["errors"]
+        if lock_cleanup["removed"]:
+            result["reclaimed"] = True
+    if result["skipped_processes"]:
+        result["status"] = "blocked"
+        result["blockers"].append("Serial console owner is not an allowed reclaim target.")
+    if result["lock_file_errors"]:
+        result["status"] = "blocked"
+        result["blockers"].append("One or more stale serial lock files could not be removed.")
+    if can_reclaim:
+        post_discovery = discover_cisco_console(CiscoConsoleConfig.from_settings())
+        post_ownership = _serial_ownership(post_discovery)
+        result["post_discovery"] = post_discovery
+        result["post_ownership"] = post_ownership
+        if post_ownership["owned"]:
+            result["status"] = "blocked"
+            result["blockers"].append("Serial console is still owned after reclaim.")
+    return result
+
+
 def _serial_ownership(discovery: dict[str, Any]) -> dict[str, Any]:
+    paths = _console_ownership_paths(discovery)
+    owners_by_pid: dict[int, dict[str, Any]] = {}
+    for path in paths:
+        for pid in _pids_using_path(path):
+            owner = owners_by_pid.setdefault(pid, _process_info(pid))
+            owner.setdefault("paths", [])
+            owner["paths"].append(path)
+    owners = []
+    for owner in owners_by_pid.values():
+        owner["paths"] = list(dict.fromkeys(owner.get("paths") or []))
+        owner["summary"] = _owner_summary(owner)
+        owners.append(owner)
+    return {"checked_paths": paths, "owned": bool(owners), "owners": owners}
+
+
+def _console_ownership_paths(discovery: dict[str, Any]) -> list[str]:
     paths = []
     effective = discovery.get("effective_path")
     if isinstance(effective, str):
@@ -633,14 +875,97 @@ def _serial_ownership(discovery: dict[str, Any]) -> dict[str, Any]:
                 resolved = os.path.realpath(path)
                 if resolved != path:
                     paths.append(resolved)
-    paths = list(dict.fromkeys(paths))
-    owners = []
+    return list(dict.fromkeys(paths))
+
+
+def _pids_using_path(path: str) -> list[int]:
+    result = subprocess.run(["fuser", path], capture_output=True, text=True, check=False)
+    if result.returncode != 0:
+        return []
+    pids = []
+    for token in result.stdout.split():
+        if token.isdigit():
+            pids.append(int(token))
+    return list(dict.fromkeys(pids))
+
+
+def _process_info(pid: int) -> dict[str, Any]:
+    result = subprocess.run(
+        ["ps", "-p", str(pid), "-o", "pid=", "-o", "comm=", "-o", "args="],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    line = result.stdout.strip()
+    if result.returncode != 0 or not line:
+        return {"pid": pid, "command": "unknown", "args": ""}
+    parts = line.split(maxsplit=2)
+    command = parts[1] if len(parts) > 1 else "unknown"
+    args = parts[2] if len(parts) > 2 else ""
+    return {"pid": pid, "command": command, "args": _redact_process_text(args)}
+
+
+def _owner_summary(owner: dict[str, Any]) -> str:
+    paths = ", ".join(owner.get("paths") or [])
+    return f"pid={owner.get('pid')} command={owner.get('command')} paths={paths}"
+
+
+def _is_reclaimable_console_owner(owner: dict[str, Any]) -> bool:
+    command = Path(str(owner.get("command") or "")).name.lower()
+    return any(
+        command == allowed or command.startswith(f"{allowed}.") or (allowed == "python" and command.startswith("python"))
+        for allowed in RECLAIMABLE_CONSOLE_COMMANDS
+    )
+
+
+def _terminate_process(pid: int) -> dict[str, Any]:
+    if pid == os.getpid():
+        return {"termination": "skipped", "reason": "refusing to terminate current process"}
+    try:
+        os.kill(pid, signal.SIGTERM)
+    except ProcessLookupError:
+        return {"termination": "already-exited", "signal": "SIGTERM"}
+    except PermissionError:
+        return {"termination": "failed", "signal": "SIGTERM", "error": "permission denied"}
+    time.sleep(0.5)
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return {"termination": "terminated", "signal": "SIGTERM"}
+    try:
+        os.kill(pid, signal.SIGKILL)
+    except ProcessLookupError:
+        return {"termination": "terminated", "signal": "SIGTERM"}
+    except PermissionError:
+        return {"termination": "failed", "signal": "SIGKILL", "error": "permission denied"}
+    return {"termination": "terminated", "signal": "SIGKILL"}
+
+
+def _clear_console_lock_files(paths: list[str], *, lock_dirs: tuple[Path, ...]) -> dict[str, Any]:
+    removed = []
+    errors = []
+    for lock_path in _console_lock_paths(paths, lock_dirs=lock_dirs):
+        if not lock_path.exists():
+            continue
+        try:
+            lock_path.unlink()
+            removed.append(str(lock_path))
+        except OSError as exc:
+            errors.append({"path": str(lock_path), "error": str(exc)})
+    return {"removed": removed, "errors": errors}
+
+
+def _console_lock_paths(paths: list[str], *, lock_dirs: tuple[Path, ...]) -> list[Path]:
+    names = []
     for path in paths:
-        result = subprocess.run(["fuser", "-v", path], capture_output=True, text=True, check=False)
-        text = (result.stdout + result.stderr).strip()
-        if result.returncode == 0 and text:
-            owners.append({"path": path, "summary": _redact_process_text(text)})
-    return {"checked_paths": paths, "owned": bool(owners), "owners": owners}
+        basename = Path(path).name
+        if basename.startswith("tty"):
+            names.append(f"LCK..{basename}")
+    return list(dict.fromkeys(lock_dir / name for lock_dir in lock_dirs for name in names))
+
+
+def _env_flag(name: str) -> bool:
+    return (os.getenv(name) or "").strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _send(conn: Any, command: str, *, secret: bool = False) -> None:
@@ -711,6 +1036,52 @@ def _classify_prompt(text: str) -> Prompt:
     if _looks_unreadable(text):
         return Prompt("unreadable", "unreadable console text", False)
     return Prompt("unknown", _redact_line(_last_line(text)), False)
+
+
+def _prompt_match_label(text: str, prompt: Prompt) -> str | None:
+    if prompt.state == "login-required":
+        return "username_or_login_prompt"
+    if prompt.state == "password-required":
+        return "password_prompt"
+    if "user access verification" in text.lower():
+        return "user_access_verification"
+    if PROMPT_RE.search(text):
+        return "hostname_exec_prompt"
+    if prompt.state in {"setup-wizard", "rommon-bootloader", "password-recovery-ready", "unreadable"}:
+        return prompt.state
+    return None
+
+
+def _printable_preview(text: str, *, limit: int = 160) -> str:
+    preview = "".join(char if char.isprintable() or char in "\r\n\t" else "." for char in text[:limit])
+    preview = preview.replace("\r", "\\r").replace("\n", "\\n")
+    return _redact_preview(preview)
+
+
+def _redact_preview(text: str) -> str:
+    redacted = text
+    for value in (
+        settings.cisco_console_port,
+        settings.cisco_target_ip,
+        _login_username(),
+        _login_password(),
+        settings.cisco_enable_password,
+        os.getenv("CISCO_ENABLE_PASSWORD"),
+        os.getenv("ANSIBLE_CISCO_ENABLE_PASSWORD"),
+    ):
+        if value:
+            redacted = redacted.replace(value, "<redacted>")
+    redacted = re.sub(r"(?i)(username:\s*)\S+", r"\1<redacted>", redacted)
+    redacted = re.sub(r"(?i)(password:\s*)\S+", r"\1<redacted>", redacted)
+    return redacted
+
+
+def _first_sample_preview(samples: list[dict[str, Any]]) -> str:
+    for sample in samples:
+        preview = sample.get("first_bytes_printable_preview")
+        if isinstance(preview, str) and preview:
+            return preview
+    return ""
 
 
 def _looks_unreadable(text: str) -> bool:
@@ -796,7 +1167,7 @@ def _redact_line(line: str) -> str:
 
 
 def _summarize_show(command: str, output: str) -> dict[str, Any]:
-    if command == "show version":
+    if command.startswith("show version"):
         model = re.search(r"(?im)^cisco\s+(\S+).+processor", output)
         version = re.search(r"(?im)^Cisco IOS(?: XE)? Software.+Version\s+([^,\s]+)", output)
         uptime = re.search(r"(?im)^(.+ uptime is .+)$", output)
@@ -809,6 +1180,15 @@ def _summarize_show(command: str, output: str) -> dict[str, Any]:
         return {"vlan_lines": len(re.findall(r"(?im)^vlan\d+\s+", output))}
     if command == "show vlan brief":
         return {"vlan_count_hint": len(re.findall(r"(?im)^\d+\s+\S+", output))}
+    if command.startswith("show running-config"):
+        return {
+            "hostname_present": bool(re.search(r"(?im)^hostname\s+", output)),
+            "ssh_present": bool(re.search(r"(?im)^ip ssh\s+", output)),
+            "scp_present": bool(re.search(r"(?im)^ip scp\s+", output)),
+            "username_lines_redacted": len(re.findall(r"(?im)^username\s+", output)),
+            "vlan_interface_lines": len(re.findall(r"(?im)^interface Vlan", output)),
+            "raw_running_config_redacted": True,
+        }
     return {"captured": bool(output)}
 
 
@@ -855,6 +1235,14 @@ def _finish(payload: dict[str, Any]) -> int:
     _write_json(DETAILS, sanitized)
     REPORT.write_text(_markdown(sanitized), encoding="utf-8")
     FIX_REPORT.write_text(_markdown(sanitized, title="Cisco Privileged Exec Fix Report"), encoding="utf-8")
+    LOGIN_BOOTSTRAP_FIX_REPORT.write_text(
+        _markdown(sanitized, title="Cisco Login Bootstrap Fix Report"),
+        encoding="utf-8",
+    )
+    COMMANDER_MODE_REPORT.write_text(
+        _markdown(sanitized, title="Cisco Console Commander Mode Report"),
+        encoding="utf-8",
+    )
     PRIVILEGE_HARDENING_REPORT.write_text(
         _markdown(sanitized, title="Cisco Privilege Hardening Report"),
         encoding="utf-8",
@@ -881,6 +1269,8 @@ def _summary(payload: dict[str, Any]) -> dict[str, Any]:
         "selected_baud": prompt.get("selected_baud"),
         "blockers": payload.get("blockers") or [],
         "report": str(FIX_REPORT.relative_to(REPO_ROOT)),
+        "login_bootstrap_fix_report": str(LOGIN_BOOTSTRAP_FIX_REPORT.relative_to(REPO_ROOT)),
+        "commander_mode_report": str(COMMANDER_MODE_REPORT.relative_to(REPO_ROOT)),
         "details": str(DETAILS.relative_to(REPO_ROOT)),
     }
 
@@ -888,6 +1278,7 @@ def _summary(payload: dict[str, Any]) -> dict[str, Any]:
 def _markdown(payload: dict[str, Any], *, title: str = "Cisco 4h Lab Run Report") -> str:
     stages = payload.get("stages", {})
     adapter = stages.get("adapter_discovery", {})
+    claim = stages.get("console_preflight_claim", {})
     prompt = stages.get("console_prompt_detection", {})
     privilege = stages.get("privilege_escalation", {})
     identity = stages.get("switch_identification", {})
@@ -926,13 +1317,26 @@ def _markdown(payload: dict[str, Any], *, title: str = "Cisco 4h Lab Run Report"
             "- Enable commands attempted: `enable`, then `enable 15`.",
             "- Password prompt after enable handled: `yes`; `_answer_enable_challenge` responds to `Password:` without logging the value.",
             "- Enable password aliases tried: `CISCO_ENABLE_PASSWORD`, `ANSIBLE_CISCO_ENABLE_PASSWORD`, `settings.cisco_enable_password`, then login-password fallback.",
-            "- Configuration apply: `not run` unless `--apply` is passed.",
+            "- Configuration apply: `not run unless --apply is passed`.",
             "",
             "## Stage Evidence",
             "",
             f"- Adapter discovery: `{adapter.get('status')}`; source `{adapter.get('selection_source')}`.",
             f"- Port ownership: `{adapter.get('ownership', {}).get('owned')}`.",
+            f"- Console claim requested: `{claim.get('reclaim_requested')}`.",
+            f"- Console claim allowed: `{claim.get('reclaim_allowed')}`.",
+            f"- Console claim reclaimed: `{claim.get('reclaimed')}`.",
+            f"- Console claim terminated processes: `{len(claim.get('terminated_processes') or [])}`.",
+            f"- Console claim skipped processes: `{len(claim.get('skipped_processes') or [])}`.",
+            f"- Console stale lock files removed: `{claim.get('lock_files_removed') or []}`.",
             f"- Console prompt detection: tried `{prompt.get('bauds_tried')}` and wake sequences `{prompt.get('wake_sequences_tried')}`.",
+            f"- First bytes printable preview: `{prompt.get('first_bytes_printable_preview')}`.",
+            f"- Prompt regex matched: `{prompt.get('prompt_regex_matched')}`.",
+            f"- Login state transitions: `{prompt.get('login_state_transitions')}`.",
+            f"- User Access Verification seen: `{prompt.get('user_access_verification_seen')}`.",
+            f"- Username prompt seen: `{prompt.get('username_prompt_seen')}`.",
+            f"- Password prompt seen: `{prompt.get('password_prompt_seen')}`.",
+            f"- Final prompt: `{prompt.get('final_prompt')}`.",
             f"- Privilege initial prompt state: `{privilege.get('initial_prompt_state')}`.",
             f"- Enable command sent: `{privilege.get('enable_command_sent')}`.",
             f"- Enable password prompt seen: `{privilege.get('password_prompt_seen')}`.",

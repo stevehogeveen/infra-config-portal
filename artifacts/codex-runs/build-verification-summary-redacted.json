@@ -1,6 +1,6 @@
 {
   "provider_id": "build-verification",
-  "checked_at": "2026-06-06T18:52:38.681419+00:00",
+  "checked_at": "2026-06-07T00:19:51.925794+00:00",
   "status": "blocked",
   "certification_state": "stale_config",
   "message": "Build Verification / Product Certification completed with redacted findings.",
@@ -222,10 +222,12 @@
         "configured": true,
         "reachable": null,
         "required": true,
-        "status": "unknown",
-        "classification": "operator_action_required",
+        "status": "ready",
+        "classification": "passed",
         "blockers": [],
-        "next_action": "Connect the Cisco console adapter and rerun prompt detection at 9600."
+        "prompt_state": "privileged-exec",
+        "selected_baud": 9600,
+        "next_action": "Cisco console discovery and prompt detection passed."
       },
       {
         "protocol": "Cisco SSH/SCP",
@@ -291,6 +293,186 @@
       }
     ]
   },
+  "toolchain": {
+    "provider_id": "toolchain-readiness",
+    "checked_at": "2026-06-07T00:19:51.925319+00:00",
+    "status": "warning",
+    "provider_mode": "mock",
+    "tools": [
+      {
+        "name": "pyserial",
+        "type": "python-package",
+        "module": "serial",
+        "available": true,
+        "required": true,
+        "version": "3.5",
+        "purpose": "Cisco local serial console first contact.",
+        "check": "import serial"
+      },
+      {
+        "name": "netmiko",
+        "type": "python-package",
+        "module": "netmiko",
+        "available": false,
+        "required": false,
+        "version": null,
+        "purpose": "Cisco SSH command execution after console bootstrap enables management SSH.",
+        "check": "import netmiko"
+      },
+      {
+        "name": "ansible",
+        "type": "cli",
+        "command": "ansible",
+        "available": false,
+        "required": false,
+        "path": null,
+        "version": null,
+        "purpose": "Cisco, NetApp, and future workflow orchestration after safe inventory is available.",
+        "check": "ansible --version"
+      },
+      {
+        "name": "cisco.ios collection",
+        "type": "ansible-collection",
+        "collection": "cisco.ios",
+        "available": false,
+        "required": false,
+        "version": null,
+        "purpose": "Cisco IOS managed-state modules after SSH is enabled.",
+        "check": "ansible-galaxy collection list cisco.ios"
+      },
+      {
+        "name": "govc",
+        "type": "cli",
+        "command": "govc",
+        "available": false,
+        "required": false,
+        "path": null,
+        "version": null,
+        "purpose": "ESXi/vSphere post-install validation and deployment operations.",
+        "check": "govc --version"
+      },
+      {
+        "name": "ilorest",
+        "type": "cli",
+        "command": "ilorest",
+        "available": false,
+        "required": false,
+        "path": null,
+        "version": null,
+        "purpose": "HPE iLO inventory, settings, firmware, and Redfish-backed operations.",
+        "check": "ilorest --version"
+      },
+      {
+        "name": "netapp-ontap",
+        "type": "python-package",
+        "module": "netapp_ontap",
+        "available": false,
+        "required": false,
+        "version": null,
+        "purpose": "NetApp ONTAP REST client for managed-state setup and upgrade validation.",
+        "check": "import netapp_ontap"
+      },
+      {
+        "name": "pyATS/Genie",
+        "type": "python-package-family",
+        "modules": [
+          {
+            "module": "pyats",
+            "available": false,
+            "version": null
+          },
+          {
+            "module": "genie",
+            "available": false,
+            "version": null
+          }
+        ],
+        "available": false,
+        "required": false,
+        "purpose": "Cisco parsing, learning, and validation when installed.",
+        "check": "import pyats and import genie"
+      }
+    ],
+    "required_missing": [],
+    "optional_missing": [
+      "netmiko",
+      "ansible",
+      "cisco.ios collection",
+      "govc",
+      "ilorest",
+      "netapp-ontap",
+      "pyATS/Genie"
+    ],
+    "managed_state": {
+      "cisco": {
+        "sequence": [
+          "Use console bootstrap first via local_serial or tcp_console/ser2net.",
+          "Enable management SSH only through an explicit guarded bootstrap workflow.",
+          "Use Ansible cisco.ios, Netmiko, and pyATS/Genie parsing for read-only validation and later managed state after SSH is enabled."
+        ],
+        "primary_tools": [
+          "local_serial",
+          "tcp_console/ser2net",
+          "Ansible cisco.ios",
+          "Netmiko"
+        ],
+        "optional_tools": [
+          "pyATS/Genie"
+        ],
+        "safety": "No configure, write memory, reload, copy, erase, or SSH changes run from this check."
+      },
+      "hpe_ilo": {
+        "sequence": [
+          "Use Redfish direct as the default API path.",
+          "Use HPE iLOrest when vendor tooling provides better coverage for iLO settings, firmware, or inventory.",
+          "Keep all iLO write lanes behind explicit local-lab-readwrite acknowledgements."
+        ],
+        "primary_tools": [
+          "Redfish direct",
+          "HPE iLOrest"
+        ],
+        "safety": "Availability checks do not contact iLO."
+      },
+      "esxi_vsphere": {
+        "sequence": [
+          "Install ESXi through iLO virtual media and Kickstart readiness gates.",
+          "Use govc after the management network is configured.",
+          "Reserve deployment operations for approved post-install workflows."
+        ],
+        "primary_tools": [
+          "Kickstart",
+          "govc"
+        ],
+        "safety": "This run checks local tools only and does not deploy or reconfigure hosts."
+      },
+      "netapp": {
+        "sequence": [
+          "Use netapp-ontap Python client or ONTAP REST as the primary managed-state path.",
+          "Use ONTAP REST direct where simple GET/compare logic is enough.",
+          "Keep write/apply workflows behind explicit NetApp stage gates."
+        ],
+        "primary_tools": [
+          "netapp-ontap Python client",
+          "ONTAP REST"
+        ],
+        "safety": "NetApp remains preview-only until an explicit read-only discovery lane is added."
+      }
+    },
+    "firmware_strategy": {
+      "baseline_source": "config/firmware-baselines/real-lab.yml",
+      "inventory_sources": [
+        "Cisco show version from console or SSH after readiness gates",
+        "HPE iLO Redfish/iLOrest inventory",
+        "ESXi/vSphere version from govc after install",
+        "NetApp ONTAP REST/system version after read-only discovery is approved"
+      ],
+      "rule": "Compare local baseline manifest to vendor package inventory before any firmware apply lane is enabled."
+    },
+    "artifacts": {
+      "report": "artifacts/codex-runs/toolchain-availability-report.md"
+    },
+    "next_safe_action": "Use available tools only through staged readiness, preview, approval, and audit gates."
+  },
   "post_build_checklist": [
     {
       "item": "Cisco management IP responds and SSH/SCP are ready",
@@ -320,13 +502,6 @@
       "ui_message": "Active lab IP profile contains stale or mismatched target values.",
       "report_detail": "3 stale active values; 2 active profile mismatches.",
       "next_action": "Update active lab inputs to 192.168.1.201-.205 and remove stale 10.10.8.x values before certification."
-    },
-    {
-      "category": "protocol",
-      "classification": "operator_action_required",
-      "ui_message": "Cisco console is operator_action_required.",
-      "report_detail": "Connect the Cisco console adapter and rerun prompt detection at 9600.",
-      "next_action": "Connect the Cisco console adapter and rerun prompt detection at 9600."
     },
     {
       "category": "protocol",
@@ -387,7 +562,6 @@
   ],
   "blockers": [
     "Update active lab inputs to 192.168.1.201-.205 and remove stale 10.10.8.x values before certification.",
-    "Connect the Cisco console adapter and rerun prompt detection at 9600.",
     "Place the ESXi ISO under MEDIA_INVENTORY_DIRS or set ESXI_INSTALL_ISO/ESXI_ISO_PATH before ESXi boot verification.",
     "Complete or confirm Cisco console bootstrap, then set CISCO_MGMT_CONFIGURED=true before treating SSH/SCP as a port failure.",
     "Install/configure ESXi management at 192.168.1.203, then set ESXI_CONFIGURED=true before API certification.",
@@ -403,7 +577,8 @@
     "lab_ip_profile_report": "artifacts/codex-runs/lab-ip-profile-update-report.md",
     "lab_ip_profile_hardening_report": "artifacts/codex-runs/lab-ip-profile-hardening-report.md",
     "classification_report": "artifacts/codex-runs/build-verification-classification-report.md",
-    "failure_case_report": "artifacts/codex-runs/failure-case-hardening-report.md"
+    "failure_case_report": "artifacts/codex-runs/failure-case-hardening-report.md",
+    "toolchain_availability_report": "artifacts/codex-runs/toolchain-availability-report.md"
   },
   "next_safe_action": "Update active lab inputs to 192.168.1.201-.205 and remove stale 10.10.8.x values before certification."
 }

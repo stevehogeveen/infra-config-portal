@@ -3,6 +3,7 @@ from __future__ import annotations
 import glob
 import os
 import re
+import socket
 import subprocess
 import time
 from dataclasses import asdict, dataclass
@@ -179,6 +180,9 @@ class CiscoConsoleConfig:
     port: str | None
     baud: int
     timeout_seconds: float
+    transport: str = "local_serial"
+    tcp_host: str | None = None
+    tcp_port: int = 2001
     prompt_settle_seconds: float = 0.5
     prompt_read_window_seconds: float = 1.0
     prompt_max_bytes: int = 8192
@@ -189,6 +193,9 @@ class CiscoConsoleConfig:
             port=settings.cisco_console_port,
             baud=settings.cisco_console_baud,
             timeout_seconds=settings.cisco_console_timeout_seconds,
+            transport=_normalize_console_transport(settings.cisco_console_transport),
+            tcp_host=settings.cisco_console_tcp_host,
+            tcp_port=settings.cisco_console_tcp_port,
             prompt_settle_seconds=settings.cisco_console_prompt_settle_seconds,
             prompt_read_window_seconds=settings.cisco_console_prompt_read_window_seconds,
             prompt_max_bytes=settings.cisco_console_prompt_max_bytes,
@@ -201,6 +208,62 @@ def discover_cisco_console(
 ) -> dict[str, Any]:
     config = config or CiscoConsoleConfig.from_settings()
     paths = paths or ConsoleDiscoveryPaths()
+    if config.transport == "tcp_console":
+        configured = bool(config.tcp_host and config.tcp_port)
+        return {
+            "status": "ready" if configured else "missing-config",
+            "transport": config.transport,
+            "tcp_console": {
+                "host_configured": bool(config.tcp_host),
+                "port_configured": bool(config.tcp_port),
+                "host": config.tcp_host,
+                "port": config.tcp_port,
+                "ser2net_compatible": True,
+            },
+            "configured_port_hint": config.port,
+            "candidates": [],
+            "recommended_path": None,
+            "effective_path": f"tcp://{config.tcp_host}:{config.tcp_port}" if configured else None,
+            "selected_path": f"tcp://{config.tcp_host}:{config.tcp_port}" if configured else None,
+            "selection_source": "configured-tcp-console" if configured else "missing-tcp-console-config",
+            "candidate_counts": {
+                "total": 1 if configured else 0,
+                "existing": 1 if configured else 0,
+                "stable_existing": 0,
+                "fallback_existing": 0,
+            },
+            "env_override": {
+                "configured": configured,
+                "path": f"tcp://{config.tcp_host}:{config.tcp_port}" if configured else None,
+                "exists": configured,
+                "readable": None,
+                "writable": None,
+                "stable_path": False,
+                "matches_discovered_candidate": False,
+            },
+            "blockers": [] if configured else ["Set CISCO_CONSOLE_TCP_HOST and CISCO_CONSOLE_TCP_PORT for TCP console mode."],
+            "last_console_blocker": None if configured else "Set CISCO_CONSOLE_TCP_HOST and CISCO_CONSOLE_TCP_PORT for TCP console mode.",
+            "warnings": [
+                "TCP console mode assumes a trusted local ser2net or console-server endpoint; no credentials are sent by discovery."
+            ],
+            "operator_message": (
+                "TCP console endpoint is configured for ser2net-compatible console access."
+                if configured
+                else "TCP console mode needs host and port configuration before prompt readiness."
+            ),
+            "operator_checklist": [
+                "Confirm ser2net or the console server maps this TCP endpoint to the Cisco console port.",
+                "Confirm only the intended operator session owns the console.",
+                "Keep bootstrap/apply behind explicit guarded workflows.",
+            ],
+            "permission_guidance": "",
+            "safe_next_action": (
+                "Run prompt readiness against the TCP console endpoint."
+                if configured
+                else "Set CISCO_CONSOLE_TCP_HOST and CISCO_CONSOLE_TCP_PORT, then refresh Provider Status."
+            ),
+            "safe_show_commands": list(SAFE_SHOW_COMMANDS),
+        }
     candidates = _discover_candidates(paths)
     if config.port and not any(candidate.path == config.port for candidate in candidates):
         candidates.append(
@@ -349,13 +412,20 @@ class CiscoConsoleAdapter:
             status=status,
             capabilities=[
                 "dynamic-console-discovery",
+                "local-serial-console",
+                "tcp-console-ser2net",
                 "explicit-read-only-probe",
                 "safe-show-commands",
             ],
             message="Serial console discovery is read-only; probes require explicit operator action.",
             configuration={
                 "port_configured": bool(self.config.port),
+                "transport": self.config.transport,
                 "configured_port": self.config.port,
+                "tcp_host_configured": bool(self.config.tcp_host),
+                "tcp_port_configured": bool(self.config.tcp_port),
+                "tcp_host": self.config.tcp_host,
+                "tcp_port": self.config.tcp_port,
                 "baud": self.config.baud,
                 "timeout_seconds": self.config.timeout_seconds,
                 "prompt_settle_seconds": self.config.prompt_settle_seconds,
@@ -421,21 +491,14 @@ class CiscoConsoleAdapter:
                 discovery=discovery,
             )
 
-        try:
-            import serial  # type: ignore[import-untyped]
-        except ImportError:
+        if self.config.transport == "local_serial" and not _serial_available():
             return self._record_blocked(
                 "pyserial is not installed; install backend requirements before probing.",
                 discovery=discovery,
             )
 
         try:
-            connection = serial.Serial(
-                port=port,
-                baudrate=self.config.baud,
-                timeout=self.config.timeout_seconds,
-                write_timeout=self.config.timeout_seconds,
-            )
+            connection = _open_console_connection(self.config, port)
         except Exception as exc:  # pragma: no cover - hardware dependent
             return self._record_result(
                 {
@@ -540,9 +603,7 @@ class CiscoConsoleAdapter:
                 }
             )
 
-        try:
-            import serial  # type: ignore[import-untyped]
-        except ImportError:
+        if self.config.transport == "local_serial" and not _serial_available():
             return self._record_cisco_firmware_result(
                 {
                     "provider_id": PROVIDER_ID,
@@ -561,12 +622,7 @@ class CiscoConsoleAdapter:
             port = str(candidate["path"])
             for baud in _baud_scan_order(self.config.baud):
                 try:
-                    connection = serial.Serial(
-                        port=port,
-                        baudrate=baud,
-                        timeout=self.config.timeout_seconds,
-                        write_timeout=self.config.timeout_seconds,
-                    )
+                    connection = _open_console_connection(self.config, port, baud=baud)
                 except Exception as exc:  # pragma: no cover - hardware dependent
                     prompt_state = _serial_open_prompt_state(exc)
                     last_blocker = _prompt_blocker_message(prompt_state)
@@ -719,9 +775,7 @@ class CiscoConsoleAdapter:
                 candidate_count=_candidate_count(discovery),
             )
 
-        try:
-            import serial  # type: ignore[import-untyped]
-        except ImportError:
+        if self.config.transport == "local_serial" and not _serial_available():
             return self._record_prompt_readiness(
                 "blocked",
                 "pyserial is not installed; install backend requirements before prompt readiness.",
@@ -746,12 +800,7 @@ class CiscoConsoleAdapter:
             port = str(candidate["path"])
             for baud in baud_rates:
                 try:
-                    connection = serial.Serial(
-                        port=port,
-                        baudrate=baud,
-                        timeout=self.config.timeout_seconds,
-                        write_timeout=self.config.timeout_seconds,
-                    )
+                    connection = _open_console_connection(self.config, port, baud=baud)
                 except Exception as exc:  # pragma: no cover - hardware dependent
                     open_state = _serial_open_prompt_state(exc)
                     last_blocker = _prompt_blocker_message(open_state)
@@ -1131,6 +1180,22 @@ def _candidate_accessible(candidate: ConsoleCandidate) -> bool:
 
 
 def _scan_candidates(discovery: dict[str, Any]) -> list[dict[str, Any]]:
+    if discovery.get("transport") == "tcp_console" and isinstance(discovery.get("effective_path"), str):
+        tcp_console = discovery.get("tcp_console") if isinstance(discovery.get("tcp_console"), dict) else {}
+        return [
+            {
+                "path": discovery["effective_path"],
+                "stable_path": False,
+                "exists": True,
+                "readable": True,
+                "writable": True,
+                "in_use": False,
+                "rank": 0,
+                "recommendation": "configured-tcp-console",
+                "host": tcp_console.get("host"),
+                "port": tcp_console.get("port"),
+            }
+        ]
     candidates = [
         candidate
         for candidate in discovery.get("candidates", [])
@@ -1164,6 +1229,79 @@ def _candidate_count(discovery: dict[str, Any]) -> int:
 
 def _baud_scan_order(configured_baud: int) -> list[int]:
     return list(dict.fromkeys([configured_baud, *COMMON_CISCO_CONSOLE_BAUDS]))
+
+
+def _normalize_console_transport(value: str | None) -> str:
+    normalized = (value or "local_serial").strip().lower().replace("-", "_")
+    if normalized in {"tcp", "tcp_console", "ser2net"}:
+        return "tcp_console"
+    return "local_serial"
+
+
+def _serial_available() -> bool:
+    try:
+        import serial  # type: ignore[import-untyped]  # noqa: F401
+    except ImportError:
+        return False
+    return True
+
+
+class TcpConsoleConnection:
+    def __init__(self, host: str, port: int, timeout_seconds: float) -> None:
+        self.host = host
+        self.port = port
+        self.timeout_seconds = timeout_seconds
+        self._socket: socket.socket | None = None
+
+    def __enter__(self) -> "TcpConsoleConnection":
+        self._socket = socket.create_connection((self.host, self.port), timeout=self.timeout_seconds)
+        self._socket.settimeout(0.05)
+        return self
+
+    def __exit__(self, exc_type: object, exc: object, traceback: object) -> None:
+        if self._socket is not None:
+            self._socket.close()
+            self._socket = None
+
+    @property
+    def in_waiting(self) -> int:
+        return 0
+
+    def write(self, payload: bytes) -> int:
+        if self._socket is None:
+            raise RuntimeError("TCP console connection is not open.")
+        self._socket.sendall(payload)
+        return len(payload)
+
+    def read(self, size: int) -> bytes:
+        if self._socket is None:
+            raise RuntimeError("TCP console connection is not open.")
+        try:
+            return self._socket.recv(size)
+        except TimeoutError:
+            return b""
+        except socket.timeout:
+            return b""
+
+
+def _open_console_connection(
+    config: CiscoConsoleConfig,
+    port: str,
+    *,
+    baud: int | None = None,
+) -> Any:
+    if config.transport == "tcp_console":
+        if not config.tcp_host or not config.tcp_port:
+            raise RuntimeError("TCP console host and port are required.")
+        return TcpConsoleConnection(config.tcp_host, config.tcp_port, config.timeout_seconds)
+    import serial  # type: ignore[import-untyped]
+
+    return serial.Serial(
+        port=port,
+        baudrate=baud or config.baud,
+        timeout=config.timeout_seconds,
+        write_timeout=config.timeout_seconds,
+    )
 
 
 def _write_console_discovery_report(result: dict[str, Any]) -> None:

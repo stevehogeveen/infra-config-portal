@@ -17,6 +17,7 @@ import {
   Server,
   ShieldCheck,
   Send,
+  Wrench,
   Workflow,
   XCircle
 } from "lucide-react";
@@ -3411,6 +3412,7 @@ function BuildVerificationPanel({ verification }: { verification: ProviderProbeR
   const credentialChecks = recordArray(objectValue(verification?.credentials).checks);
   const mtu = objectValue(verification?.mtu);
   const protocolChecks = recordArray(objectValue(verification?.protocols).checks);
+  const toolchain = objectValue(verification?.toolchain);
   const stagedBlockers = protocolChecks.filter((item) =>
     ["blocked_by_prior_stage", "not_configured_yet", "operator_action_required"].includes(asString(item.classification))
   );
@@ -3443,6 +3445,7 @@ function BuildVerificationPanel({ verification }: { verification: ProviderProbeR
         />
       </div>
       <ProviderIssueRows blockers={stringArray(verification?.blockers)} warnings={stringArray(verification?.warnings)} />
+      <ToolchainReadinessPanel toolchain={toolchain} />
       {stagedBlockers.length > 0 && (
         <SetupPreviewBlock
           title="Staged Blockers"
@@ -3508,6 +3511,84 @@ function BuildVerificationPanel({ verification }: { verification: ProviderProbeR
         </div>
       )}
     </section>
+  );
+}
+
+function ToolchainReadinessPanel({ toolchain }: { toolchain: Record<string, unknown> }) {
+  const tools = recordArray(toolchain.tools);
+  const managedState = objectValue(toolchain.managed_state);
+  const ciscoPlan = objectValue(managedState.cisco);
+  const esxiPlan = objectValue(managedState.esxi_vsphere);
+  const netappPlan = objectValue(managedState.netapp);
+  const hpePlan = objectValue(managedState.hpe_ilo);
+  return (
+    <div className="toolchain-readiness-panel">
+      <div className="provider-head compact-head">
+        <Wrench size={18} />
+        <div>
+          <h3>Toolchain Readiness</h3>
+          <p>{asString(toolchain.next_safe_action) || "Run provider-lab-toolchain-check to generate local tool availability."}</p>
+        </div>
+        <StatusBadge status={asString(toolchain.status) || "not-run"} />
+      </div>
+      <div className="provider-fact-grid compact">
+        <ProviderFact label="Required Missing" value={stringArray(toolchain.required_missing).join(", ") || "None"} />
+        <ProviderFact label="Optional Missing" value={stringArray(toolchain.optional_missing).join(", ") || "None"} />
+        <ProviderFact label="Report" value={asString(objectValue(toolchain.artifacts).report) || "artifacts/codex-runs/toolchain-availability-report.md"} />
+      </div>
+      <div className="setup-preview-grid">
+        <SetupPreviewBlock
+          title="Cisco managed state"
+          tag="Console first"
+          lines={stringArray(ciscoPlan.sequence).slice(0, 4)}
+        />
+        <SetupPreviewBlock
+          title="HPE / iLO managed state"
+          tag="Redfish first"
+          lines={stringArray(hpePlan.sequence).slice(0, 4)}
+        />
+        <SetupPreviewBlock
+          title="ESXi managed state"
+          tag="Kickstart then govc"
+          lines={stringArray(esxiPlan.sequence).slice(0, 4)}
+        />
+        <SetupPreviewBlock
+          title="NetApp managed state"
+          tag="REST primary"
+          lines={stringArray(netappPlan.sequence).slice(0, 4)}
+        />
+      </div>
+      <AdvancedDetails
+        className="provider-workflow-details"
+        summary="Local tool availability"
+        title="Tool availability"
+      >
+        {tools.length ? (
+          <table>
+            <thead>
+              <tr>
+                <th>Tool</th>
+                <th>Status</th>
+                <th>Required</th>
+                <th>Check</th>
+              </tr>
+            </thead>
+            <tbody>
+              {tools.map((tool) => (
+                <tr key={asString(tool.name)}>
+                  <td>{asString(tool.name)}</td>
+                  <td>{asBoolean(tool.available) ? "Available" : "Missing"}</td>
+                  <td>{asBoolean(tool.required) ? "Yes" : "No"}</td>
+                  <td>{asString(tool.check)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : (
+          <p className="muted">No toolchain report has been generated yet.</p>
+        )}
+      </AdvancedDetails>
+    </div>
   );
 }
 

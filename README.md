@@ -100,6 +100,18 @@ without opening the serial port. Local iLO, ESXi, and Cisco settings are shown
 only as configured/missing flags; configured hostnames, usernames, and passwords
 are not returned in provider status payloads.
 
+Canonical real-lab tooling is:
+
+- Cisco first contact: ser2net/Opengear or local serial through the app console
+  workflow.
+- Cisco normal management: Ansible `cisco.ios`, Netmiko, and pyATS/Genie
+  parsing after console bootstrap configures management SSH.
+- HPE/iLO: Redfish plus HPE iLOrest.
+- ESXi: Kickstart plus `govc`.
+- NetApp: `netapp-ontap` Python client plus ONTAP REST.
+- Verification: Build Verification consumes those outputs and classifies
+  readiness, blockers, stale configuration, and failures.
+
 The `netapp-ontap` setup preview is plan-only. It displays the target addressing plan,
 console/bootstrap readiness checklist, disabled ONTAP API readiness,
 placeholder upgrade path, cluster/SVM/iSCSI LIF intent, and artifact/report
@@ -248,12 +260,22 @@ configuration commands:
 make provider-lab-cisco-console-ethernet-readiness
 ```
 
+The Cisco real-lab console workflow performs a preflight claim before opening
+the selected adapter. It checks the configured `/dev/serial/by-id/...` path and
+the resolved `/dev/ttyUSB*` path for owning processes, and reports ownership in
+the run artifacts. In `PROVIDER_MODE=local-lab-readwrite`, setting
+`CISCO_CONSOLE_RECLAIM=true` allows the workflow to terminate stale
+`screen`, `picocom`, `minicom`, and `python*` serial holders for the selected
+console and remove stale `LCK..tty*` lock files before reopening the port.
+Configuration apply still requires the explicit `--apply` argument.
+
 Full lab rebuild has separate report-only and real execution paths:
 
 ```bash
 make provider-lab-full-rebuild-summary
 make provider-lab-full-rebuild
 make provider-lab-build-verification
+make provider-lab-toolchain-check
 ```
 
 `provider-lab-full-rebuild-summary` refreshes dashboard summaries without live
@@ -262,6 +284,8 @@ device calls. `provider-lab-full-rebuild` runs the live local lab path with
 iLO, RAID, and ESXi stages and records real blockers. Build verification writes
 `artifacts/codex-runs/build-verification-report.md` with credential, MTU,
 protocol, port, checklist, failure-classification, and next-action checks.
+Toolchain check writes `artifacts/codex-runs/toolchain-availability-report.md`
+with local package and CLI availability only; it does not contact real devices.
 Build verification stages unresolved work as `blocked_by_prior_stage`,
 `not_configured_yet`, `stale_config`, `operator_action_required`, `warning`,
 `hard_fail`, or `passed`, and also writes classification, lab-IP hardening, and

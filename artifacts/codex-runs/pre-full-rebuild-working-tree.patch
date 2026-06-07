@@ -1,0 +1,4642 @@
+diff --git a/.codex/task-queue.md b/.codex/task-queue.md
+index b83db6a..077aa02 100644
+--- a/.codex/task-queue.md
++++ b/.codex/task-queue.md
+@@ -8,7 +8,7 @@ That file summarizes `/home/administrator/lab-builder`, which is the target
+ behavior reference for this app.
+ 
+ - [x] `.codex/tasks/000-repo-audit.md`
+-- [ ] `.codex/tasks/001-backend-vm-request-lifecycle.md`
++- [x] `.codex/tasks/001-backend-vm-request-lifecycle.md`
+ - [ ] `.codex/tasks/002-frontend-vm-request-flow.md`
+ - [ ] `.codex/tasks/003-docker-compose-local-dev.md`
+ - [ ] `.codex/tasks/004-tests-and-quality-gates.md`
+diff --git a/app/.env.example b/app/.env.example
+index f845eda..126b47a 100644
+--- a/app/.env.example
++++ b/app/.env.example
+@@ -10,10 +10,25 @@ CORS_ORIGINS=http://127.0.0.1:5173,http://localhost:5173
+ # not in committed env files. Keep PROVIDER_MODE=mock unless manually running
+ # explicit local-readonly iLO/Cisco/ESXi probes on an isolated lab machine.
+ # Generate that file with ./scripts/setup-real-lab-env.sh from the repo root.
++# local-lab-readwrite mode is separate from mock and local-readonly. It requires these
++# private .env.local.real-lab flags before contacting real lab hardware:
++# LAB_ENVIRONMENT=isolated-real-lab
++# LAB_ACKNOWLEDGE_REAL_HARDWARE=true
++# LAB_ACKNOWLEDGE_DEVICE_RECONFIGURATION=true
++# LAB_ACKNOWLEDGE_DATA_LOSS_RISK=true
++# LAB_ACKNOWLEDGE_LAB_ONLY=true
++# High-risk local-lab-readwrite actions default to false unless explicitly enabled:
++# LAB_ALLOW_POWER_ACTIONS=false
++# LAB_ALLOW_FIRMWARE_UPDATES=false
++# LAB_ALLOW_FACTORY_RESET=false
+ # ILO_TEST_HOST=
+ # ILO_TEST_USERNAME=
+ # ILO_TEST_PASSWORD=
+ # ILO_TEST_VERIFY_TLS=true
++# Guarded real-lab iLO HostName setup apply is blocked unless all gates are
++# set explicitly outside normal mock tests. It does not allow IP, gateway,
++# VLAN, user, SNMP, NTP, DNS, firmware, virtual media, boot, power, or reset.
++# ILO_SETUP_APPLY_ENABLED=false
+ # ESXI_CONFIGURED=false
+ # Set ESXI_CONFIGURED=true only after the ESXi management network is installed
+ # and ready for read-only HTTPS/SSH probes. ESXI_TEST_HOST may be a planned IP
+diff --git a/app/backend/app/api/routes.py b/app/backend/app/api/routes.py
+index 542e3d7..75aa5f3 100644
+--- a/app/backend/app/api/routes.py
++++ b/app/backend/app/api/routes.py
+@@ -32,9 +32,15 @@ from app.schemas import (
+     CiscoConsoleBootstrapPlanRead,
+     CiscoSetupReadinessRead,
+     CiscoSetupWizardPlanRead,
++    HpeRaidApplyCreate,
++    HpeRaidIntentRead,
++    HpeRaidIntentWrite,
++    HpeRaidPlanPreviewRead,
++    HpeStorageDiscoveryRead,
+     IloDestructiveRebuildPreviewRead,
+     IloReadinessSummaryRead,
+     IloReportPreviewRead,
++    IloSetupApplyCreate,
+     IloSetupCompareReportRead,
+     IloSetupIntentRead,
+     IloSetupIntentWrite,
+@@ -85,6 +91,7 @@ from app.services.lifecycle import (
+     list_workflow_runs,
+     list_requests,
+     plan_request,
++    reject_request,
+     submit_request,
+     update_vm_deployment_request,
+ )
+@@ -99,6 +106,23 @@ from app.services.ilo_readiness import (
+     get_ilo_setup_plan_preview,
+     save_ilo_setup_intent,
+ )
++from app.services.ilo_setup_apply import (
++    apply_ilo_setup,
++    build_ilo_setup_apply_plan,
++)
++from app.services.hpe_raid import (
++    apply_hpe_raid_plan,
++    build_hpe_raid_apply_plan,
++    build_hpe_raid_reset_plan,
++    get_hpe_raid_intent,
++    get_hpe_raid_plan_preview,
++    get_hpe_storage_discovery,
++    reset_server_for_raid,
++    save_hpe_raid_intent,
++    validate_hpe_raid_after_reset,
++    write_hpe_raid_pending_report,
++)
++from app.services.esxi_install_readiness import get_esxi_install_readiness
+ from app.services.media_inventory import get_media_inventory
+ from app.services.netapp_artifacts import (
+     list_netapp_artifact_placeholders,
+@@ -219,6 +243,20 @@ def approve(
+         raise HTTPException(status_code=409, detail=str(exc)) from exc
+ 
+ 
++@router.post("/requests/{request_id}/reject", response_model=RequestRead)
++def reject(
++    request_id: str,
++    payload: ApprovalCreate,
++    session: Session = Depends(get_session),
++) -> RequestRead:
++    try:
++        return reject_request(session, request_id, payload)
++    except RequestNotFoundError as exc:
++        raise HTTPException(status_code=404, detail="Request not found") from exc
++    except InvalidTransitionError as exc:
++        raise HTTPException(status_code=409, detail=str(exc)) from exc
++
++
+ @router.post("/requests/{request_id}/plan", response_model=WorkflowRunRead)
+ def plan(
+     request_id: str,
+@@ -467,6 +505,133 @@ def read_ilo_report_preview(
+     return get_ilo_report_preview(session)
+ 
+ 
++@router.get(
++    "/providers/ilo-redfish/setup-apply-plan",
++    response_model=ProviderProbeResultRead,
++)
++def read_ilo_setup_apply_plan(
++    session: Session = Depends(get_session),
++) -> ProviderProbeResultRead:
++    return build_ilo_setup_apply_plan(session)
++
++
++@router.post(
++    "/providers/ilo-redfish/setup-apply",
++    response_model=ProviderProbeResultRead,
++)
++def apply_ilo_setup_route(
++    payload: IloSetupApplyCreate,
++    session: Session = Depends(get_session),
++) -> ProviderProbeResultRead:
++    return apply_ilo_setup(session, payload)
++
++
++@router.get(
++    "/providers/ilo-redfish/hpe-storage-discovery",
++    response_model=HpeStorageDiscoveryRead,
++)
++def read_hpe_storage_discovery() -> HpeStorageDiscoveryRead:
++    return get_hpe_storage_discovery()
++
++
++@router.get(
++    "/providers/ilo-redfish/hpe-raid-intent",
++    response_model=HpeRaidIntentRead,
++)
++def read_hpe_raid_intent(
++    session: Session = Depends(get_session),
++) -> HpeRaidIntentRead:
++    return get_hpe_raid_intent(session)
++
++
++@router.put(
++    "/providers/ilo-redfish/hpe-raid-intent",
++    response_model=HpeRaidIntentRead,
++)
++def update_hpe_raid_intent(
++    payload: HpeRaidIntentWrite,
++    session: Session = Depends(get_session),
++) -> HpeRaidIntentRead:
++    return save_hpe_raid_intent(session, payload)
++
++
++@router.get(
++    "/providers/ilo-redfish/hpe-raid-plan-preview",
++    response_model=HpeRaidPlanPreviewRead,
++)
++def read_hpe_raid_plan_preview(
++    session: Session = Depends(get_session),
++) -> HpeRaidPlanPreviewRead:
++    return get_hpe_raid_plan_preview(session)
++
++
++@router.get(
++    "/providers/ilo-redfish/hpe-raid-apply-plan",
++    response_model=ProviderProbeResultRead,
++)
++def read_hpe_raid_apply_plan(
++    session: Session = Depends(get_session),
++) -> ProviderProbeResultRead:
++    return build_hpe_raid_apply_plan(session)
++
++
++@router.post(
++    "/providers/ilo-redfish/hpe-raid-apply",
++    response_model=ProviderProbeResultRead,
++)
++def apply_hpe_raid_route(
++    payload: HpeRaidApplyCreate,
++    session: Session = Depends(get_session),
++) -> ProviderProbeResultRead:
++    return apply_hpe_raid_plan(session, payload)
++
++
++@router.get(
++    "/providers/ilo-redfish/hpe-raid-pending",
++    response_model=ProviderProbeResultRead,
++)
++def read_hpe_raid_pending(
++    session: Session = Depends(get_session),
++) -> ProviderProbeResultRead:
++    return write_hpe_raid_pending_report(session)
++
++
++@router.get(
++    "/providers/ilo-redfish/hpe-raid-reset-plan",
++    response_model=ProviderProbeResultRead,
++)
++def read_hpe_raid_reset_plan() -> ProviderProbeResultRead:
++    return build_hpe_raid_reset_plan()
++
++
++@router.post(
++    "/providers/ilo-redfish/hpe-raid-reset",
++    response_model=ProviderProbeResultRead,
++)
++def reset_hpe_raid_server_route() -> ProviderProbeResultRead:
++    return reset_server_for_raid()
++
++
++@router.post(
++    "/providers/ilo-redfish/hpe-raid-validate-after-reset",
++    response_model=ProviderProbeResultRead,
++)
++def validate_hpe_raid_after_reset_route(
++    session: Session = Depends(get_session),
++) -> ProviderProbeResultRead:
++    return validate_hpe_raid_after_reset(session)
++
++
++@router.get(
++    "/providers/ilo-redfish/esxi-install-readiness",
++    response_model=ProviderProbeResultRead,
++)
++def read_esxi_install_readiness(
++    session: Session = Depends(get_session),
++) -> ProviderProbeResultRead:
++    return get_esxi_install_readiness(session)
++
++
+ @router.get(
+     "/providers/netapp-ontap/plan-preview",
+     response_model=NetAppPlanPreviewRead,
+diff --git a/app/backend/app/core/config.py b/app/backend/app/core/config.py
+index c8516ab..9c88983 100644
+--- a/app/backend/app/core/config.py
++++ b/app/backend/app/core/config.py
+@@ -83,14 +83,18 @@ def _float_env(name: str, default: float) -> float:
+ _load_local_real_lab_env()
+ 
+ 
++def _media_inventory_dirs() -> tuple[str, ...]:
++    if os.getenv("PROVIDER_MODE", "mock") == "mock":
++        return ()
++    return tuple(_split_csv(os.getenv("MEDIA_INVENTORY_DIRS", "")))
++
++
+ @dataclass(frozen=True)
+ class Settings:
+     app_name: str = os.getenv("APP_NAME", "infra-config-portal")
+     environment: str = os.getenv("ENVIRONMENT", "local")
+     provider_mode: str = os.getenv("PROVIDER_MODE", "mock")
+-    media_inventory_dirs: tuple[str, ...] = tuple(
+-        _split_csv(os.getenv("MEDIA_INVENTORY_DIRS", ""))
+-    )
++    media_inventory_dirs: tuple[str, ...] = _media_inventory_dirs()
+     database_url: str = os.getenv(
+         "DATABASE_URL",
+         "sqlite:///./.local/infra_config_portal.db",
+@@ -170,6 +174,18 @@ class Settings:
+     netapp_current_ontap_version: str | None = _optional_env("NETAPP_CURRENT_ONTAP_VERSION")
+     lab_closed_loop_ack: str | None = _optional_env("LAB_CLOSED_LOOP_ACK")
+     lab_readonly_ack: str | None = _optional_env("LAB_READONLY_ACK")
++    lab_environment: str | None = _optional_env("LAB_ENVIRONMENT")
++    lab_acknowledge_real_hardware: bool = _bool_env("LAB_ACKNOWLEDGE_REAL_HARDWARE", False)
++    lab_acknowledge_device_reconfiguration: bool = _bool_env(
++        "LAB_ACKNOWLEDGE_DEVICE_RECONFIGURATION",
++        False,
++    )
++    lab_acknowledge_data_loss_risk: bool = _bool_env("LAB_ACKNOWLEDGE_DATA_LOSS_RISK", False)
++    lab_acknowledge_lab_only: bool = _bool_env("LAB_ACKNOWLEDGE_LAB_ONLY", False)
++    lab_allow_power_actions: bool = _bool_env("LAB_ALLOW_POWER_ACTIONS", False)
++    lab_allow_firmware_updates: bool = _bool_env("LAB_ALLOW_FIRMWARE_UPDATES", False)
++    lab_allow_factory_reset: bool = _bool_env("LAB_ALLOW_FACTORY_RESET", False)
++    ilo_setup_apply_enabled: bool = _bool_env("ILO_SETUP_APPLY_ENABLED", False)
+     cisco_console_apply_enabled: bool = _bool_env("CISCO_CONSOLE_APPLY_ENABLED", False)
+     lab_apply_ack: str | None = _optional_env("LAB_APPLY_ACK")
+     lab_target_ack: str | None = _optional_env("LAB_TARGET_ACK")
+diff --git a/app/backend/app/models.py b/app/backend/app/models.py
+index 9431904..3acd3bf 100644
+--- a/app/backend/app/models.py
++++ b/app/backend/app/models.py
+@@ -161,6 +161,19 @@ class IloSetupIntent(Base):
+     )
+ 
+ 
++class HpeRaidIntent(Base):
++    __tablename__ = "hpe_raid_intents"
++
++    provider_id: Mapped[str] = mapped_column(String(80), primary_key=True)
++    intent_json: Mapped[dict] = mapped_column(JSON, default=dict)
++    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
++    updated_at: Mapped[datetime] = mapped_column(
++        DateTime(timezone=True),
++        default=utcnow,
++        onupdate=utcnow,
++    )
++
++
+ class WorkflowRun(Base):
+     __tablename__ = "workflow_runs"
+ 
+diff --git a/app/backend/app/providers/cisco_ansible.py b/app/backend/app/providers/cisco_ansible.py
+index 6e2826d..f8add14 100644
+--- a/app/backend/app/providers/cisco_ansible.py
++++ b/app/backend/app/providers/cisco_ansible.py
+@@ -12,6 +12,7 @@ from shutil import which
+ from typing import Any
+ 
+ from app.core.config import settings
++from app.providers.action_policy import REAL_CONTACT_MODES, current_lab_action_policy
+ from app.providers.base import ProviderAction, ProviderStatus
+ from app.providers.lab_safety import current_lab_safety
+ from app.providers.probe_cache import get_probe_result, record_probe_result
+@@ -78,6 +79,7 @@ class CiscoAnsibleAdapter:
+         last_result, last_time = get_probe_result(PROVIDER_ID)
+         missing_fields = self.config.missing_fields
+         safety = current_lab_safety()
++        policy = current_lab_action_policy(self.provider_mode)
+         tool_availability = _tool_availability()
+         planned_target = bool(self.config.host)
+         blockers: list[str] = []
+@@ -85,12 +87,14 @@ class CiscoAnsibleAdapter:
+             blockers.append(
+                 f"Missing local Cisco Ansible configuration: {', '.join(missing_fields)}."
+             )
+-        if self.config.management_configured and self.provider_mode == "local-readonly":
+-            blockers.extend(safety.blockers)
++        if self.config.management_configured and self.provider_mode in REAL_CONTACT_MODES:
++            blockers.extend(policy.readonly_blockers())
+ 
+         warnings: list[str] = []
+-        if self.provider_mode != "local-readonly":
+-            warnings.append("Provider mode is not local-readonly; Cisco Ansible probes are disabled.")
++        if self.provider_mode not in REAL_CONTACT_MODES:
++            warnings.append(
++                "Provider mode is not local-readonly or local-lab-readwrite; Cisco Ansible probes are disabled."
++            )
+         if not self.config.management_configured:
+             warnings.append(
+                 "CISCO_MGMT_CONFIGURED is false; Cisco SSH and Ansible probes are skipped."
+@@ -110,22 +114,22 @@ class CiscoAnsibleAdapter:
+         if (
+             self.config.management_configured
+             and not missing_fields
+-            and self.provider_mode != "local-readonly"
++            and self.provider_mode not in REAL_CONTACT_MODES
+         ):
+             status = "configured"
+         if (
+             self.config.management_configured
+             and not missing_fields
+-            and self.provider_mode == "local-readonly"
+-            and not safety.readonly_allowed
++            and self.provider_mode in REAL_CONTACT_MODES
++            and not policy.readonly_allowed
+         ):
+             status = "blocked"
+ 
+         probe_enabled = (
+-            self.provider_mode == "local-readonly"
++            self.provider_mode in REAL_CONTACT_MODES
+             and self.config.management_configured
+             and not missing_fields
+-            and safety.readonly_allowed
++            and policy.readonly_allowed
+         )
+         disabled_reason = "Use console bootstrap before Ansible SSH."
+ 
+@@ -180,7 +184,8 @@ class CiscoAnsibleAdapter:
+                         if not self.config.management_configured
+                         else (
+                             "Requires Cisco target, credentials, LAB_CLOSED_LOOP_ACK=YES, "
+-                            "LAB_READONLY_ACK=YES, and PROVIDER_MODE=local-readonly."
++                            "LAB_READONLY_ACK=YES, and PROVIDER_MODE=local-readonly; or "
++                            "complete local-lab-readwrite acknowledgements."
+                         )
+                     ),
+                     method="POST",
+@@ -193,9 +198,9 @@ class CiscoAnsibleAdapter:
+         )
+ 
+     def probe(self) -> dict[str, Any]:
+-        if self.provider_mode != "local-readonly":
++        if self.provider_mode not in REAL_CONTACT_MODES:
+             return self._record_blocked(
+-                "Set PROVIDER_MODE=local-readonly before running Cisco Ansible probes."
++                "Set PROVIDER_MODE=local-readonly or PROVIDER_MODE=local-lab-readwrite before running Cisco Ansible probes."
+             )
+ 
+         if not self.config.management_configured:
+@@ -204,11 +209,11 @@ class CiscoAnsibleAdapter:
+                 planned_target=bool(self.config.host),
+             )
+ 
+-        safety = current_lab_safety()
+-        if not safety.readonly_allowed:
++        policy = current_lab_action_policy(self.provider_mode)
++        if not policy.readonly_allowed:
+             return self._record_blocked(
+-                "Set LAB_CLOSED_LOOP_ACK=YES and LAB_READONLY_ACK=YES before real lab probes.",
+-                safety=safety.as_flags(),
++                "Required lab acknowledgement flags are missing before real lab probes.",
++                action_policy=policy.as_flags(),
+             )
+ 
+         if self.config.missing_fields:
+diff --git a/app/backend/app/providers/cisco_console.py b/app/backend/app/providers/cisco_console.py
+index 334017d..dbddbab 100644
+--- a/app/backend/app/providers/cisco_console.py
++++ b/app/backend/app/providers/cisco_console.py
+@@ -2,18 +2,22 @@ from __future__ import annotations
+ 
+ import glob
+ import os
++import subprocess
+ import time
+ from dataclasses import asdict, dataclass
+ from pathlib import Path
+ from typing import Any
+ 
+ from app.core.config import settings
++from app.providers.action_policy import REAL_CONTACT_MODES, current_lab_action_policy
+ from app.providers.base import ProviderAction, ProviderStatus
+ from app.providers.lab_safety import current_lab_safety
+ from app.providers.probe_cache import get_probe_result, record_probe_result
+ from app.providers.redaction import redact_sensitive
+ 
+ PROVIDER_ID = "cisco-console"
++REPO_ROOT = Path(__file__).resolve().parents[4]
++CISCO_CONSOLE_DISCOVERY_REPORT = REPO_ROOT / "artifacts" / "codex-runs" / "cisco-console-discovery-report.md"
+ SAFE_SHOW_COMMANDS = (
+     "show version",
+     "show inventory",
+@@ -85,6 +89,15 @@ NO_CONSOLE_ADAPTER_MESSAGE = (
+     "to this machine, connect the console cable to the Cisco console port, then "
+     "refresh Provider Status."
+ )
++USB_SERIAL_NAME_HINTS = ("Cisco", "FTDI", "Prolific", "Silicon_Labs", "CP210", "USB-Serial")
++COMMON_CISCO_CONSOLE_BAUDS = (9600, 19200, 38400, 57600, 115200)
++CONSOLE_WAKE_SEQUENCES = (
++    ("newline", b"\n"),
++    ("enter", b"\r"),
++    ("ctrl-c", b"\x03"),
++    ("ctrl-z", b"\x1a"),
++)
++VALID_PROMPT_STATES = {"exec", "setup-wizard", "login-required"}
+ FALLBACK_CONSOLE_MESSAGE = (
+     "Fallback serial adapter detected. Prefer a stable /dev/serial/by-id path if available."
+ )
+@@ -103,6 +116,8 @@ class ConsoleCandidate:
+     writable: bool | None
+     label: str | None
+     target_path: str | None
++    in_use: bool
++    rank: int
+     recommendation: str
+ 
+ 
+@@ -141,10 +156,18 @@ def discover_cisco_console(
+     config = config or CiscoConsoleConfig.from_settings()
+     paths = paths or ConsoleDiscoveryPaths()
+     candidates = _discover_candidates(paths)
++    if config.port and not any(candidate.path == config.port for candidate in candidates):
++        candidates.append(
++            _candidate(
++                config.port,
++                stable_path=config.port.startswith("/dev/serial/by-id/"),
++            )
++        )
+     env_override = _env_override(config.port, candidates)
++    ranked_candidates = _rank_candidates(candidates, configured_port=config.port)
+ 
+-    existing_stable = [candidate for candidate in candidates if candidate.stable_path and candidate.exists]
+-    existing_candidates = [candidate for candidate in candidates if candidate.exists]
++    existing_stable = [candidate for candidate in ranked_candidates if candidate.stable_path and candidate.exists]
++    existing_candidates = [candidate for candidate in ranked_candidates if candidate.exists]
+     blockers: list[str] = []
+     warnings: list[str] = []
+     recommended_path: str | None = None
+@@ -156,61 +179,47 @@ def discover_cisco_console(
+         "Stable /dev/serial/by-id paths are preferred."
+     )
+ 
+-    if env_override["configured"]:
+-        effective_path = str(env_override["path"])
++    selected_candidate = _first_selectable_candidate(ranked_candidates)
++    if selected_candidate:
++        effective_path = selected_candidate.path
++        recommended_path = next(
++            (candidate.path for candidate in ranked_candidates if candidate.stable_path and _candidate_accessible(candidate)),
++            None,
++        )
+         status = "ready"
+-        selection_source = "env-override"
+-        safe_next_action = "Run an explicit read-only probe after confirming the console target."
+-        _mark_recommendation(candidates, effective_path, "env-override")
+-        if not env_override["exists"]:
+-            status = "blocked"
+-            blockers.append(
+-                "Configured CISCO_CONSOLE_PORT does not exist. Reconnect the adapter "
+-                "or update CISCO_CONSOLE_PORT to the detected stable path."
++        selection_source = (
++            "configured-port-hint"
++            if config.port and selected_candidate.path == config.port
++            else (
++                "auto-stable-candidate"
++                if selected_candidate.stable_path
++                else "auto-fallback-candidate"
+             )
+-            safe_next_action = "Reconnect the adapter or update CISCO_CONSOLE_PORT."
+-        elif not _is_accessible(env_override):
+-            status = "blocked"
+-            blockers.append(PERMISSION_GUIDANCE)
+-            safe_next_action = (
+-                "Check dialout group membership and device permissions, then restart the backend shell/session."
+-            )
+-    elif len(existing_stable) == 1:
+-        recommended_path = existing_stable[0].path
+-        effective_path = recommended_path
+-        status = "ready"
+-        selection_source = "single-stable-candidate"
+-        _mark_recommendation(candidates, recommended_path, "recommended-default")
+-        safe_next_action = (
+-            f"Preferred console path: {recommended_path}. Use this stable path for "
+-            "CISCO_CONSOLE_PORT instead of /dev/ttyUSB0 when possible."
+         )
+-        if not _candidate_accessible(existing_stable[0]):
+-            status = "blocked"
+-            blockers.append(
+-                "Preferred stable console path exists but is not readable/writable. "
+-                "Check dialout group membership and device permissions, then restart the backend shell/session."
+-            )
+-            safe_next_action = (
+-                "Check dialout group membership and device permissions, then restart the backend shell/session."
++        _mark_recommendation(candidates, effective_path, "selected-auto")
++        safe_next_action = "Run prompt readiness; auto-discovery will confirm prompt and baud."
++        if not selected_candidate.stable_path:
++            warnings.append(FALLBACK_CONSOLE_MESSAGE)
++        if config.port and selected_candidate.path != config.port:
++            warnings.append(
++                "Configured CISCO_CONSOLE_PORT was treated as a hint; auto-discovery selected another usable adapter."
+             )
+-    elif len(existing_stable) > 1:
+-        status = "needs-selection"
+-        selection_source = "multiple-stable-candidates"
++    elif env_override["configured"] and not env_override["exists"]:
+         blockers.append(
+-            "Multiple stable serial console candidates were discovered; set "
+-            "CISCO_CONSOLE_PORT to the intended /dev/serial/by-id path."
++            "Configured CISCO_CONSOLE_PORT does not exist; auto-discovery did not find another selectable adapter."
+         )
+-        safe_next_action = "Select the intended stable /dev/serial/by-id path in .env.local.real-lab."
++        safe_next_action = "Reconnect the adapter or leave CISCO_CONSOLE_PORT unset and retry auto-discovery."
+     elif existing_candidates:
+-        status = "needs-selection"
+-        selection_source = "fallback-candidates"
+-        blockers.append(
+-            "Only fallback /dev/ttyUSB or /dev/ttyACM candidates were discovered; set "
+-            "CISCO_CONSOLE_PORT to the intended path before probing."
+-        )
+-        warnings.append(FALLBACK_CONSOLE_MESSAGE)
+-        safe_next_action = FALLBACK_CONSOLE_MESSAGE
++        status = "blocked"
++        selection_source = "no-accessible-candidates"
++        if any(candidate.readable is False or candidate.writable is False for candidate in existing_candidates):
++            blockers.append(
++                "Serial console candidates were discovered but at least one is not readable/writable. "
++                "Check dialout group membership and device permissions, then restart the backend shell/session."
++            )
++        else:
++            blockers.append("Serial console candidates were discovered but none are selectable.")
++        safe_next_action = "Check port ownership and permissions, then retry prompt readiness."
+     else:
+         blockers.append(NO_CONSOLE_ADAPTER_MESSAGE)
+ 
+@@ -224,9 +233,11 @@ def discover_cisco_console(
+ 
+     return {
+         "status": status,
+-        "candidates": [asdict(candidate) for candidate in candidates],
++        "configured_port_hint": config.port,
++        "candidates": [asdict(candidate) for candidate in _rank_candidates(candidates, configured_port=config.port)],
+         "recommended_path": recommended_path,
+         "effective_path": effective_path,
++        "selected_path": effective_path,
+         "selection_source": selection_source,
+         "candidate_counts": {
+             "total": len(candidates),
+@@ -236,6 +247,7 @@ def discover_cisco_console(
+         },
+         "env_override": env_override,
+         "blockers": blockers,
++        "last_console_blocker": blockers[-1] if blockers else None,
+         "warnings": warnings,
+         "operator_message": _operator_message(status, recommended_path),
+         "operator_checklist": CONSOLE_DETECTION_CHECKLIST,
+@@ -260,23 +272,27 @@ class CiscoConsoleAdapter:
+         discovery = discover_cisco_console(self.config, self.paths)
+         last_result, last_time = get_probe_result(PROVIDER_ID)
+         safety = current_lab_safety()
++        policy = current_lab_action_policy(self.provider_mode)
++        readonly_allowed = (
++            safety.readonly_allowed if self.provider_mode == "local-readonly" else policy.readonly_allowed
++        )
+         probe_enabled = (
+-            self.provider_mode == "local-readonly"
++            self.provider_mode in REAL_CONTACT_MODES
+             and discovery["status"] == "ready"
+             and bool(discovery["effective_path"])
+-            and safety.readonly_allowed
++            and readonly_allowed
+         )
+         warnings = list(discovery["warnings"])
+         blockers = list(discovery["blockers"])
+-        if self.provider_mode == "local-readonly":
+-            blockers.extend(safety.blockers)
+-        if self.provider_mode != "local-readonly":
++        if self.provider_mode in REAL_CONTACT_MODES:
++            blockers.extend(policy.readonly_blockers())
++        if self.provider_mode not in REAL_CONTACT_MODES:
+             warnings.append(
+-                "Provider mode is not local-readonly; Cisco probe actions are disabled."
++                "Provider mode is not local-readonly or local-lab-readwrite; Cisco probe actions are disabled."
+             )
+ 
+         status = discovery["status"]
+-        if status == "ready" and self.provider_mode == "local-readonly" and not safety.readonly_allowed:
++        if status == "ready" and self.provider_mode in REAL_CONTACT_MODES and not readonly_allowed:
+             status = "blocked"
+ 
+         return ProviderStatus(
+@@ -315,7 +331,8 @@ class CiscoConsoleAdapter:
+                         if probe_enabled
+                         else (
+                             "Requires PROVIDER_MODE=local-readonly, LAB_CLOSED_LOOP_ACK=YES, "
+-                            "LAB_READONLY_ACK=YES, and one effective console path."
++                            "LAB_READONLY_ACK=YES, and one effective console path; or complete "
++                            "local-lab-readwrite acknowledgements."
+                         )
+                     ),
+                     method="POST",
+@@ -328,16 +345,26 @@ class CiscoConsoleAdapter:
+         )
+ 
+     def probe(self) -> dict[str, Any]:
+-        if self.provider_mode != "local-readonly":
++        if self.provider_mode not in REAL_CONTACT_MODES:
+             return self._record_blocked(
+-                "Set PROVIDER_MODE=local-readonly before running console probes."
++                "Set PROVIDER_MODE=local-readonly or PROVIDER_MODE=local-lab-readwrite before running console probes."
+             )
+ 
+         safety = current_lab_safety()
+-        if not safety.readonly_allowed:
++        policy = current_lab_action_policy(self.provider_mode)
++        readonly_allowed = (
++            safety.readonly_allowed if self.provider_mode == "local-readonly" else policy.readonly_allowed
++        )
++        if not readonly_allowed:
++            message = (
++                "Set LAB_CLOSED_LOOP_ACK=YES and LAB_READONLY_ACK=YES before real lab probes."
++                if self.provider_mode == "local-readonly"
++                else "Required lab acknowledgement flags are missing before real lab probes."
++            )
+             return self._record_blocked(
+-                "Set LAB_CLOSED_LOOP_ACK=YES and LAB_READONLY_ACK=YES before real lab probes.",
+-                safety=safety.as_flags(),
++                message,
++                safety=safety.as_flags() if self.provider_mode == "local-readonly" else None,
++                action_policy=policy.as_flags() if self.provider_mode != "local-readonly" else None,
+             )
+ 
+         discovery = discover_cisco_console(self.config, self.paths)
+@@ -423,29 +450,37 @@ class CiscoConsoleAdapter:
+             )
+ 
+     def prompt_readiness(self) -> dict[str, Any]:
+-        if self.provider_mode != "local-readonly":
++        if self.provider_mode not in REAL_CONTACT_MODES:
+             return self._record_prompt_readiness(
+                 "blocked",
+-                "Set PROVIDER_MODE=local-readonly before running console prompt readiness checks.",
++                "Set PROVIDER_MODE=local-readonly or PROVIDER_MODE=local-lab-readwrite before running console prompt readiness checks.",
+                 blockers=[
+-                    "Set PROVIDER_MODE=local-readonly before running console prompt readiness checks."
++                    "Set PROVIDER_MODE=local-readonly or PROVIDER_MODE=local-lab-readwrite before running console prompt readiness checks."
+                 ],
+             )
+ 
+         safety = current_lab_safety()
+-        if not safety.readonly_allowed:
++        policy = current_lab_action_policy(self.provider_mode)
++        readonly_allowed = (
++            safety.readonly_allowed if self.provider_mode == "local-readonly" else policy.readonly_allowed
++        )
++        if not readonly_allowed:
++            message = (
++                "Set LAB_CLOSED_LOOP_ACK=YES and LAB_READONLY_ACK=YES before real lab prompt checks."
++                if self.provider_mode == "local-readonly"
++                else "Required lab acknowledgement flags are missing before real lab prompt checks."
++            )
+             return self._record_prompt_readiness(
+                 "blocked",
+-                "Set LAB_CLOSED_LOOP_ACK=YES and LAB_READONLY_ACK=YES before real lab prompt checks.",
+-                blockers=[
+-                    "Set LAB_CLOSED_LOOP_ACK=YES and LAB_READONLY_ACK=YES before real lab prompt checks."
+-                ],
+-                safety=safety.as_flags(),
++                message,
++                blockers=[message],
++                safety=safety.as_flags() if self.provider_mode == "local-readonly" else None,
++                action_policy=policy.as_flags() if self.provider_mode != "local-readonly" else None,
+             )
+ 
+         discovery = discover_cisco_console(self.config, self.paths)
+-        port = discovery.get("effective_path")
+-        if discovery["status"] != "ready" or not isinstance(port, str):
++        scan_candidates = _scan_candidates(discovery)
++        if not scan_candidates:
+             return self._record_prompt_readiness(
+                 "blocked",
+                 "Console prompt readiness requires one selected readable and writable console path.",
+@@ -453,6 +488,7 @@ class CiscoConsoleAdapter:
+                     "Console prompt readiness requires one selected readable and writable console path."
+                 ],
+                 discovery=discovery,
++                candidate_count=_candidate_count(discovery),
+             )
+ 
+         try:
+@@ -467,60 +503,128 @@ class CiscoConsoleAdapter:
+                 discovery=discovery,
+             )
+ 
+-        try:
+-            connection = serial.Serial(
+-                port=port,
+-                baudrate=self.config.baud,
+-                timeout=self.config.timeout_seconds,
+-                write_timeout=self.config.timeout_seconds,
+-            )
+-        except Exception as exc:  # pragma: no cover - hardware dependent
+-            return self._record_prompt_readiness(
+-                "failed",
+-                f"Could not open selected console path: {exc}",
+-                blockers=["Serial console open failed."],
+-                discovery=discovery,
+-            )
++        attempts: list[dict[str, Any]] = []
++        last_blocker = "No Cisco prompt or login flow was detected on discovered console candidates."
++        best_prompt_sample: dict[str, Any] | None = None
++        baud_rates = _baud_scan_order(self.config.baud)
++        read_timing = {
++            "settle_seconds": self.config.prompt_settle_seconds,
++            "read_window_seconds": self.config.prompt_read_window_seconds,
++            "max_bytes": self.config.prompt_max_bytes,
++        }
++        for candidate in scan_candidates:
++            port = str(candidate["path"])
++            for baud in baud_rates:
++                try:
++                    connection = serial.Serial(
++                        port=port,
++                        baudrate=baud,
++                        timeout=self.config.timeout_seconds,
++                        write_timeout=self.config.timeout_seconds,
++                    )
++                except Exception as exc:  # pragma: no cover - hardware dependent
++                    last_blocker = f"Serial console open failed for {port} at {baud}: {exc}"
++                    attempts.append(
++                        {
++                            "port": port,
++                            "baud": baud,
++                            "sequence": "open",
++                            "status": "failed",
++                            "error": str(exc),
++                            "prompt_state": "unknown",
++                        }
++                    )
++                    continue
++
++                try:
++                    with connection:
++                        if hasattr(connection, "reset_input_buffer"):
++                            connection.reset_input_buffer()
++                        for sequence_name, sequence_bytes in CONSOLE_WAKE_SEQUENCES:
++                            connection.write(sequence_bytes)
++                            prompt_text = _read_console(
++                                connection,
++                                settle_seconds=self.config.prompt_settle_seconds,
++                                read_window_seconds=self.config.prompt_read_window_seconds,
++                                max_bytes=self.config.prompt_max_bytes,
++                            )
++                            prompt_state = _prompt_state(prompt_text)
++                            prompt_sample = _prompt_sample_summary(prompt_text)
++                            if prompt_sample["captured"]:
++                                best_prompt_sample = prompt_sample
++                            attempts.append(
++                                {
++                                    "port": port,
++                                    "baud": baud,
++                                    "sequence": sequence_name,
++                                    "status": "checked",
++                                    "prompt_state": prompt_state,
++                                    "captured": prompt_sample["captured"],
++                                    "last_line": prompt_sample["last_line"],
++                                }
++                            )
++                            if prompt_state in VALID_PROMPT_STATES or prompt_state == "config-mode":
++                                no_prompt_text = prompt_state == "unknown" and not prompt_sample["captured"]
++                                return self._record_prompt_readiness(
++                                    _prompt_readiness_status(prompt_state),
++                                    _prompt_readiness_message(prompt_state, prompt_sample),
++                                    port=port,
++                                    baud=baud,
++                                    selected_path=port,
++                                    selected_baud=baud,
++                                    selected_sequence=sequence_name,
++                                    candidate_count=_candidate_count(discovery),
++                                    configured_port_hint=self.config.port,
++                                    discovery=discovery,
++                                    attempts=attempts,
++                                    read_timing=read_timing,
++                                    prompt_state=prompt_state,
++                                    prompt_sample=prompt_sample,
++                                    blockers=(
++                                        []
++                                        if prompt_state == "exec"
++                                        else [_prompt_blocker_message(prompt_state, prompt_sample)]
++                                    ),
++                                    troubleshooting_checklist=(
++                                        NO_PROMPT_TEXT_CAPTURED_CHECKLIST if no_prompt_text else []
++                                    ),
++                                )
++                            last_blocker = _prompt_blocker_message(prompt_state, prompt_sample)
++                except Exception as exc:  # pragma: no cover - hardware dependent
++                    last_blocker = f"Cisco console prompt readiness check failed for {port} at {baud}: {exc}"
++                    attempts.append(
++                        {
++                            "port": port,
++                            "baud": baud,
++                            "sequence": "read",
++                            "status": "failed",
++                            "error": str(exc),
++                            "prompt_state": "unknown",
++                        }
++                    )
+ 
+-        try:
+-            with connection:
+-                connection.write(b"\n")
+-                prompt_text = _read_console(
+-                    connection,
+-                    settle_seconds=self.config.prompt_settle_seconds,
+-                    read_window_seconds=self.config.prompt_read_window_seconds,
+-                    max_bytes=self.config.prompt_max_bytes,
+-                )
+-                prompt_state = _prompt_state(prompt_text)
+-                prompt_sample = _prompt_sample_summary(prompt_text)
+-                no_prompt_text = prompt_state == "unknown" and not prompt_sample["captured"]
+-                return self._record_prompt_readiness(
+-                    _prompt_readiness_status(prompt_state),
+-                    _prompt_readiness_message(prompt_state, prompt_sample),
+-                    port=port,
+-                    baud=self.config.baud,
+-                    read_timing={
+-                        "settle_seconds": self.config.prompt_settle_seconds,
+-                        "read_window_seconds": self.config.prompt_read_window_seconds,
+-                        "max_bytes": self.config.prompt_max_bytes,
+-                    },
+-                    prompt_state=prompt_state,
+-                    prompt_sample=prompt_sample,
+-                    blockers=(
+-                        []
+-                        if prompt_state == "exec"
+-                        else [_prompt_blocker_message(prompt_state, prompt_sample)]
+-                    ),
+-                    troubleshooting_checklist=(
+-                        NO_PROMPT_TEXT_CAPTURED_CHECKLIST if no_prompt_text else []
+-                    ),
+-                )
+-        except Exception as exc:  # pragma: no cover - hardware dependent
+-            return self._record_prompt_readiness(
+-                "failed",
+-                f"Cisco console prompt readiness check failed: {exc}",
+-                blockers=["Serial console prompt readiness check failed."],
+-            )
++        final_prompt_sample = best_prompt_sample or {
++            "captured": False,
++            "line_count": 0,
++            "last_line": "",
++            "raw_text_redacted": True,
++        }
++        return self._record_prompt_readiness(
++            "blocked",
++            last_blocker,
++            blockers=[last_blocker],
++            discovery=discovery,
++            attempts=attempts,
++            configured_port_hint=self.config.port,
++            selected_path=None,
++            selected_baud=None,
++            candidate_count=_candidate_count(discovery),
++            read_timing=read_timing,
++            prompt_sample=final_prompt_sample,
++            troubleshooting_checklist=(
++                [] if final_prompt_sample["captured"] else NO_PROMPT_TEXT_CAPTURED_CHECKLIST
++            ),
++        )
+ 
+     def _record_blocked(self, message: str, **extra: Any) -> dict[str, Any]:
+         return self._record_result(
+@@ -569,7 +673,9 @@ class CiscoConsoleAdapter:
+             "blockers": blockers,
+             **extra,
+         }
+-        return self._record_result(result)
++        recorded = self._record_result(result)
++        _write_console_discovery_report(recorded)
++        return recorded
+ 
+ 
+ def _discover_candidates(paths: ConsoleDiscoveryPaths) -> list[ConsoleCandidate]:
+@@ -591,18 +697,130 @@ def _candidate(path: str, stable_path: bool) -> ConsoleCandidate:
+     readable = os.access(path, os.R_OK) if exists else None
+     writable = os.access(path, os.W_OK) if exists else None
+     target_path = os.path.realpath(path) if stable_path and os.path.islink(path) else None
++    label = _candidate_label(path, target_path)
++    in_use = _path_in_use(path) if exists else False
++    rank = _candidate_rank(
++        path=path,
++        label=label,
++        stable_path=stable_path,
++        exists=exists,
++        readable=readable,
++        writable=writable,
++        in_use=in_use,
++        configured_port=None,
++    )
+     return ConsoleCandidate(
+         path=path,
+         stable_path=stable_path,
+         exists=exists,
+         readable=readable,
+         writable=writable,
+-        label=_candidate_label(path, target_path),
++        label=label,
+         target_path=target_path,
++        in_use=in_use,
++        rank=rank,
+         recommendation="stable-candidate" if stable_path else "fallback-candidate",
+     )
+ 
+ 
++def _rank_candidates(
++    candidates: list[ConsoleCandidate],
++    *,
++    configured_port: str | None,
++) -> list[ConsoleCandidate]:
++    ranked = [
++        ConsoleCandidate(
++            **{
++                **asdict(candidate),
++                "rank": _candidate_rank(
++                    path=candidate.path,
++                    label=candidate.label,
++                    stable_path=candidate.stable_path,
++                    exists=candidate.exists,
++                    readable=candidate.readable,
++                    writable=candidate.writable,
++                    in_use=candidate.in_use,
++                    configured_port=configured_port,
++                ),
++                "recommendation": _ranked_recommendation(candidate, configured_port),
++            }
++        )
++        for candidate in candidates
++    ]
++    return sorted(ranked, key=lambda candidate: (candidate.rank, candidate.path))
++
++
++def _candidate_rank(
++    *,
++    path: str,
++    label: str | None,
++    stable_path: bool,
++    exists: bool,
++    readable: bool | None,
++    writable: bool | None,
++    in_use: bool,
++    configured_port: str | None,
++) -> int:
++    rank = 0 if stable_path else 100
++    if configured_port and path == configured_port:
++        rank -= 200
++    if _preferred_usb_name(path, label):
++        rank -= 25
++    if not exists:
++        rank += 2000
++    if not readable or not writable:
++        rank += 1000
++    if in_use:
++        rank += 500
++    return rank
++
++
++def _ranked_recommendation(candidate: ConsoleCandidate, configured_port: str | None) -> str:
++    if candidate.recommendation == "selected-auto":
++        return "selected-auto"
++    if configured_port and candidate.path == configured_port:
++        return "configured-port-hint"
++    if not candidate.exists:
++        return "unavailable"
++    if not _candidate_accessible(candidate):
++        return "permission-blocked"
++    if candidate.in_use:
++        return "in-use-deprioritized"
++    if candidate.stable_path:
++        return "stable-auto-candidate"
++    return "fallback-auto-candidate"
++
++
++def _preferred_usb_name(path: str, label: str | None) -> bool:
++    haystack = f"{path} {label or ''}".lower().replace("-", "_")
++    return any(hint.lower().replace("-", "_") in haystack for hint in USB_SERIAL_NAME_HINTS)
++
++
++def _path_in_use(path: str) -> bool:
++    try:
++        result = subprocess.run(
++            ["fuser", path],
++            stdout=subprocess.DEVNULL,
++            stderr=subprocess.DEVNULL,
++            timeout=0.5,
++            check=False,
++        )
++    except (FileNotFoundError, PermissionError, subprocess.TimeoutExpired):
++        return False
++    return result.returncode == 0
++
++
++def _first_selectable_candidate(candidates: list[ConsoleCandidate]) -> ConsoleCandidate | None:
++    return next(
++        (
++            candidate
++            for candidate in candidates
++            if candidate.exists and _candidate_accessible(candidate) and not candidate.in_use
++        ),
++        None,
++    )
++
++
+ def _candidate_label(path: str, target_path: str | None) -> str:
+     label = Path(path).name.replace("_", " ")
+     if target_path:
+@@ -667,6 +885,90 @@ def _candidate_accessible(candidate: ConsoleCandidate) -> bool:
+     return bool(candidate.readable) and bool(candidate.writable)
+ 
+ 
++def _scan_candidates(discovery: dict[str, Any]) -> list[dict[str, Any]]:
++    candidates = [
++        candidate
++        for candidate in discovery.get("candidates", [])
++        if isinstance(candidate, dict)
++        and candidate.get("exists") is True
++        and candidate.get("readable") is True
++        and candidate.get("writable") is True
++        and candidate.get("in_use") is not True
++        and isinstance(candidate.get("path"), str)
++    ]
++    effective_path = discovery.get("effective_path")
++    if isinstance(effective_path, str):
++        candidates = sorted(
++            candidates,
++            key=lambda candidate: (
++                0 if candidate.get("path") == effective_path else 1,
++                int(candidate.get("rank") or 0),
++                str(candidate.get("path")),
++            ),
++        )
++    return candidates
++
++
++def _candidate_count(discovery: dict[str, Any]) -> int:
++    counts = discovery.get("candidate_counts")
++    if isinstance(counts, dict) and isinstance(counts.get("total"), int):
++        return int(counts["total"])
++    candidates = discovery.get("candidates")
++    return len(candidates) if isinstance(candidates, list) else 0
++
++
++def _baud_scan_order(configured_baud: int) -> list[int]:
++    return list(dict.fromkeys([configured_baud, *COMMON_CISCO_CONSOLE_BAUDS]))
++
++
++def _write_console_discovery_report(result: dict[str, Any]) -> None:
++    CISCO_CONSOLE_DISCOVERY_REPORT.parent.mkdir(parents=True, exist_ok=True)
++    discovery = result.get("discovery") if isinstance(result.get("discovery"), dict) else {}
++    candidate_count = result.get("candidate_count")
++    if candidate_count is None and discovery:
++        candidate_count = _candidate_count(discovery)
++    blockers = result.get("blockers") if isinstance(result.get("blockers"), list) else []
++    last_blocker = blockers[-1] if blockers else discovery.get("last_console_blocker") if discovery else None
++    attempts = result.get("attempts") if isinstance(result.get("attempts"), list) else []
++    lines = [
++        "# Cisco Console Discovery",
++        "",
++        f"- Status: {result.get('status', 'unknown')}",
++        f"- Prompt state: {result.get('prompt_state', 'unknown')}",
++        f"- Configured port hint: {result.get('configured_port_hint') or discovery.get('configured_port_hint') or 'not set'}",
++        f"- Auto-discovered selected port: {result.get('selected_path') or discovery.get('effective_path') or 'not selected'}",
++        f"- Selected baud: {result.get('selected_baud') or result.get('baud') or 'not selected'}",
++        f"- Candidate count: {candidate_count if candidate_count is not None else 0}",
++        f"- Last console blocker: {last_blocker or 'none'}",
++        "",
++        "## Candidate Summary",
++    ]
++    for candidate in discovery.get("candidates", []) if discovery else []:
++        if not isinstance(candidate, dict):
++            continue
++        lines.append(
++            "- "
++            f"{candidate.get('path')} | stable={candidate.get('stable_path')} | "
++            f"exists={candidate.get('exists')} | readable={candidate.get('readable')} | "
++            f"writable={candidate.get('writable')} | in_use={candidate.get('in_use')} | "
++            f"rank={candidate.get('rank')} | recommendation={candidate.get('recommendation')}"
++        )
++    lines.extend(["", "## Attempts"])
++    for attempt in attempts[-40:]:
++        if not isinstance(attempt, dict):
++            continue
++        lines.append(
++            "- "
++            f"{attempt.get('port')} @ {attempt.get('baud')} via {attempt.get('sequence')}: "
++            f"{attempt.get('status')} prompt={attempt.get('prompt_state')} "
++            f"captured={attempt.get('captured')}"
++        )
++    if not attempts:
++        lines.append("- No serial prompt attempts were run.")
++    lines.append("")
++    CISCO_CONSOLE_DISCOVERY_REPORT.write_text("\n".join(lines), encoding="utf-8")
++
++
+ def _dangerous_actions() -> list[ProviderAction]:
+     return [
+         ProviderAction(
+diff --git a/app/backend/app/providers/esxi_readonly.py b/app/backend/app/providers/esxi_readonly.py
+index 5b4ba1d..9cc7987 100644
+--- a/app/backend/app/providers/esxi_readonly.py
++++ b/app/backend/app/providers/esxi_readonly.py
+@@ -11,6 +11,7 @@ from urllib.parse import urlparse
+ import httpx
+ 
+ from app.core.config import settings
++from app.providers.action_policy import REAL_CONTACT_MODES, current_lab_action_policy
+ from app.providers.base import ProviderAction, ProviderStatus
+ from app.providers.lab_safety import current_lab_safety
+ from app.providers.probe_cache import get_probe_result, record_probe_result
+@@ -62,16 +63,19 @@ class EsxiReadonlyAdapter:
+         last_result, last_time = get_probe_result(PROVIDER_ID)
+         missing_fields = self.config.missing_fields
+         safety = current_lab_safety()
++        policy = current_lab_action_policy(self.provider_mode)
+         planned_target = bool(self.config.host)
+         blockers: list[str] = []
+         if self.config.management_configured and missing_fields:
+             blockers.append(f"Missing local ESXi configuration: {', '.join(missing_fields)}.")
+-        if self.config.management_configured and self.provider_mode == "local-readonly":
+-            blockers.extend(safety.blockers)
++        if self.config.management_configured and self.provider_mode in REAL_CONTACT_MODES:
++            blockers.extend(policy.readonly_blockers())
+ 
+         warnings: list[str] = []
+-        if self.provider_mode != "local-readonly":
+-            warnings.append("Provider mode is not local-readonly; ESXi probes are disabled.")
++        if self.provider_mode not in REAL_CONTACT_MODES:
++            warnings.append(
++                "Provider mode is not local-readonly or local-lab-readwrite; ESXi probes are disabled."
++            )
+         if not self.config.management_configured:
+             warnings.append(
+                 "ESXI_CONFIGURED is false; ESXi management network probes are skipped."
+@@ -83,22 +87,22 @@ class EsxiReadonlyAdapter:
+         if (
+             self.config.management_configured
+             and not missing_fields
+-            and self.provider_mode != "local-readonly"
++            and self.provider_mode not in REAL_CONTACT_MODES
+         ):
+             status = "configured"
+         if (
+             self.config.management_configured
+             and not missing_fields
+-            and self.provider_mode == "local-readonly"
+-            and not safety.readonly_allowed
++            and self.provider_mode in REAL_CONTACT_MODES
++            and not policy.readonly_allowed
+         ):
+             status = "blocked"
+ 
+         probe_enabled = (
+-            self.provider_mode == "local-readonly"
++            self.provider_mode in REAL_CONTACT_MODES
+             and self.config.management_configured
+             and not missing_fields
+-            and safety.readonly_allowed
++            and policy.readonly_allowed
+         )
+         disabled_reason = "Install/configure ESXi management network before read-only probe."
+ 
+@@ -152,7 +156,8 @@ class EsxiReadonlyAdapter:
+                         if not self.config.management_configured
+                         else (
+                             "Requires ESXI_TEST_HOST, LAB_CLOSED_LOOP_ACK=YES, "
+-                            "LAB_READONLY_ACK=YES, and PROVIDER_MODE=local-readonly."
++                            "LAB_READONLY_ACK=YES, and PROVIDER_MODE=local-readonly; or "
++                            "complete local-lab-readwrite acknowledgements."
+                         )
+                     ),
+                     method="POST",
+@@ -165,9 +170,9 @@ class EsxiReadonlyAdapter:
+         )
+ 
+     def probe(self) -> dict[str, Any]:
+-        if self.provider_mode != "local-readonly":
++        if self.provider_mode not in REAL_CONTACT_MODES:
+             return self._record_blocked(
+-                "Set PROVIDER_MODE=local-readonly before running ESXi probes."
++                "Set PROVIDER_MODE=local-readonly or PROVIDER_MODE=local-lab-readwrite before running ESXi probes."
+             )
+ 
+         if not self.config.management_configured:
+@@ -177,11 +182,11 @@ class EsxiReadonlyAdapter:
+                 planned_target=bool(self.config.host),
+             )
+ 
+-        safety = current_lab_safety()
+-        if not safety.readonly_allowed:
++        policy = current_lab_action_policy(self.provider_mode)
++        if not policy.readonly_allowed:
+             return self._record_blocked(
+-                "Set LAB_CLOSED_LOOP_ACK=YES and LAB_READONLY_ACK=YES before real lab probes.",
+-                safety=safety.as_flags(),
++                "Required lab acknowledgement flags are missing before real lab probes.",
++                action_policy=policy.as_flags(),
+             )
+ 
+         if self.config.missing_fields:
+diff --git a/app/backend/app/providers/ilo_redfish.py b/app/backend/app/providers/ilo_redfish.py
+index 491bcba..624ff47 100644
+--- a/app/backend/app/providers/ilo_redfish.py
++++ b/app/backend/app/providers/ilo_redfish.py
+@@ -8,8 +8,14 @@ from xml.etree import ElementTree
+ import httpx
+ 
+ from app.core.config import settings
++from app.providers.action_policy import (
++    ActionCategory,
++    LOCAL_LAB_MODE,
++    LOCAL_READONLY_MODE,
++    REAL_CONTACT_MODES,
++    current_lab_action_policy,
++)
+ from app.providers.base import ProviderAction, ProviderStatus
+-from app.providers.lab_safety import current_lab_safety
+ from app.providers.probe_cache import get_probe_result, record_probe_result
+ from app.providers.redaction import redact_sensitive
+ 
+@@ -75,27 +81,34 @@ class IloRedfishAdapter:
+     def health(self) -> ProviderStatus:
+         last_result, last_time = get_probe_result(PROVIDER_ID)
+         missing_fields = self.config.missing_fields
+-        safety = current_lab_safety()
++        policy = current_lab_action_policy(self.provider_mode)
+         blockers = [
+             f"Missing local iLO configuration: {', '.join(missing_fields)}."
+         ] if missing_fields else []
+-        if self.provider_mode == "local-readonly":
+-            blockers.extend(safety.blockers)
++        if self.provider_mode in REAL_CONTACT_MODES:
++            blockers.extend(policy.readonly_blockers())
+         warnings: list[str] = []
+-        if self.provider_mode != "local-readonly":
+-            warnings.append("Provider mode is not local-readonly; Redfish probes are disabled.")
++        if self.provider_mode not in REAL_CONTACT_MODES:
++            warnings.append(
++                "Provider mode is not local-readonly or local-lab-readwrite; Redfish probes are disabled."
++            )
++        if self.provider_mode == LOCAL_LAB_MODE:
++            warnings.append(
++                "local-lab-readwrite permits explicitly allowlisted real-lab workflow categories only."
++            )
+ 
+         status = "missing-config" if missing_fields else "ready"
+-        if not missing_fields and self.provider_mode != "local-readonly":
++        if not missing_fields and self.provider_mode not in REAL_CONTACT_MODES:
+             status = "configured"
+-        if not missing_fields and self.provider_mode == "local-readonly" and not safety.readonly_allowed:
++        if not missing_fields and self.provider_mode in REAL_CONTACT_MODES and blockers:
+             status = "blocked"
+ 
+         probe_enabled = (
+-            self.provider_mode == "local-readonly"
++            self.provider_mode in REAL_CONTACT_MODES
+             and not missing_fields
+-            and safety.readonly_allowed
++            and not policy.readonly_blockers()
+         )
++        requirement_reason = _probe_requirement_reason(self.provider_mode)
+ 
+         return ProviderStatus(
+             id=PROVIDER_ID,
+@@ -123,7 +136,7 @@ class IloRedfishAdapter:
+                 "tls_verify": self.config.verify_tls,
+                 "timeout_seconds": self.config.timeout_seconds,
+                 "missing_fields": missing_fields,
+-                **safety.as_flags(),
++                "lab_policy": policy.status_summary(),
+             },
+             blockers=blockers,
+             warnings=warnings,
+@@ -136,31 +149,30 @@ class IloRedfishAdapter:
+                     reason=(
+                         "Run GET-only endpoint detection and Redfish inventory checks."
+                         if probe_enabled
+-                        else (
+-                            "Requires complete local config, LAB_CLOSED_LOOP_ACK=YES, "
+-                            "LAB_READONLY_ACK=YES, and PROVIDER_MODE=local-readonly."
+-                        )
++                        else requirement_reason
+                     ),
+                     method="POST",
+                     endpoint=f"/api/v1/providers/{PROVIDER_ID}/probe",
+                 )
+             ],
+-            disabled_actions=_dangerous_actions(),
++            disabled_actions=_dangerous_actions(policy),
+             last_probe_result=last_result,
+             last_probe_time=last_time,
+         )
+ 
+     def probe(self) -> dict[str, Any]:
+-        if self.provider_mode != "local-readonly":
++        if self.provider_mode not in REAL_CONTACT_MODES:
+             return self._record_blocked(
+-                "Set PROVIDER_MODE=local-readonly before running iLO probes."
++                "Set PROVIDER_MODE=local-readonly or PROVIDER_MODE=local-lab-readwrite before running iLO probes."
+             )
+ 
+-        safety = current_lab_safety()
+-        if not safety.readonly_allowed:
++        policy = current_lab_action_policy(self.provider_mode)
++        policy_blockers = policy.readonly_blockers()
++        if policy_blockers:
+             return self._record_blocked(
+-                "Set LAB_CLOSED_LOOP_ACK=YES and LAB_READONLY_ACK=YES before real lab probes.",
+-                safety=safety.as_flags(),
++                "iLO read-only probe is blocked by lab acknowledgement policy.",
++                blockers=policy_blockers,
++                action_policy=policy.status_summary(),
+             )
+ 
+         if self.config.missing_fields:
+@@ -191,6 +203,14 @@ class IloRedfishAdapter:
+             "power": [],
+             "thermal": [],
+             "firmware": [],
++            "network_adapters": [],
++            "storage": {
++                "status": "not_checked",
++                "controllers": [],
++                "physical_drives": [],
++                "logical_drives": [],
++                "warnings": [],
++            },
+             "legacy_identity": {},
+             "endpoint_detection": {
+                 "classification": "not_checked",
+@@ -208,6 +228,13 @@ class IloRedfishAdapter:
+             },
+             "warnings": [],
+             "blockers": [],
++            "action_policy": {
++                "provider_mode": self.provider_mode,
++                "readonly": "allowed" if policy.readonly_allowed else "blocked",
++                "local_state_write": _local_state_write_status(policy, self.provider_mode),
++                "device_writes": "policy-gated",
++            },
++            "not_attempted": _not_attempted_actions(),
+         }
+ 
+         try:
+@@ -289,6 +316,18 @@ class IloRedfishAdapter:
+                 result["power"] = _linked_summaries(client, base_url, chassis, "Power", requests)
+                 result["thermal"] = _linked_summaries(client, base_url, chassis, "Thermal", requests)
+                 result["firmware"] = _firmware_summaries(client, base_url, root, requests)
++                result["network_adapters"] = _network_adapter_summaries(
++                    client,
++                    base_url,
++                    result["systems"],
++                    requests,
++                )
++                result["storage"] = _storage_discovery(
++                    client,
++                    base_url,
++                    result["systems"],
++                    requests,
++                )
+         except httpx.HTTPStatusError as exc:
+             detection = _classify_inventory_auth_failure(
+                 result.get("endpoint_detection"),
+@@ -676,8 +715,6 @@ def _classify_endpoint_response(path: str, status_code: int) -> str:
+ def _classify_endpoint_checks(checks: list[dict[str, Any]]) -> str:
+     if any(check.get("classification") == "tls_failed" for check in checks):
+         return "tls_failed"
+-    if any(check.get("classification") == "network_unreachable" for check in checks):
+-        return "network_unreachable"
+     if any(
+         check.get("path") in REDFISH_ROOT_PATHS
+         and check.get("status_code") in {401, 403}
+@@ -690,6 +727,8 @@ def _classify_endpoint_checks(checks: list[dict[str, Any]]) -> str:
+         for check in checks
+     ):
+         return "redfish_available"
++    if any(check.get("classification") == "network_unreachable" for check in checks):
++        return "network_unreachable"
+ 
+     redfish_404 = any(
+         check.get("path") in REDFISH_ROOT_PATHS and check.get("status_code") == 404
+@@ -936,6 +975,7 @@ def _collection_summaries(
+             continue
+         payload = _get_json(client, base_url, path, requests)
+         summary = _resource_summary(payload)
++        summary.setdefault("@odata.id", path)
+         if include_links:
+             summary["_links"] = payload
+         summaries.append(summary)
+@@ -972,6 +1012,407 @@ def _firmware_summaries(
+     return _collection_summaries(client, base_url, firmware_path, requests)
+ 
+ 
++def _network_adapter_summaries(
++    client: httpx.Client,
++    base_url: str,
++    systems: list[dict[str, Any]],
++    requests: list[dict[str, Any]],
++) -> list[dict[str, Any]]:
++    adapters: list[dict[str, Any]] = []
++    for system in systems:
++        system_path = system.get("@odata.id")
++        if not isinstance(system_path, str):
++            continue
++        system_payload = _get_json(client, base_url, system_path, requests)
++        paths = _network_collection_paths(system_payload, system_path)
++        for path in paths:
++            adapters.extend(_network_collection_members(client, base_url, path, requests))
++    return adapters
++
++
++def _network_collection_paths(system_payload: dict[str, Any], system_path: str) -> list[str]:
++    paths: list[str] = []
++    for key in ("NetworkAdapters", "EthernetInterfaces"):
++        path = _odata_id(system_payload.get(key))
++        if path:
++            paths.append(path)
++    for suffix in ("NetworkAdapters", "EthernetInterfaces"):
++        fallback = f"{system_path.rstrip('/')}/{suffix}/"
++        if fallback not in paths:
++            paths.append(fallback)
++    return paths
++
++
++def _network_collection_members(
++    client: httpx.Client,
++    base_url: str,
++    path: str,
++    requests: list[dict[str, Any]],
++) -> list[dict[str, Any]]:
++    try:
++        collection = _get_json(client, base_url, path, requests)
++    except httpx.HTTPStatusError as exc:
++        if exc.response.status_code == 404:
++            return []
++        raise
++    members = collection.get("Members", [])
++    if not isinstance(members, list):
++        return []
++    results: list[dict[str, Any]] = []
++    for member in members[:16]:
++        member_path = _odata_id(member)
++        if not member_path:
++            continue
++        payload = _get_json(client, base_url, member_path, requests)
++        results.append(_network_summary(payload))
++    return results
++
++
++def _network_summary(payload: dict[str, Any]) -> dict[str, Any]:
++    summary = _resource_summary(payload)
++    summary["mac_address_present"] = bool(
++        payload.get("MACAddress") or payload.get("PermanentMACAddress")
++    )
++    for key in (
++        "SpeedMbps",
++        "FullDuplex",
++        "LinkStatus",
++        "InterfaceEnabled",
++        "PhysicalPortNumber",
++    ):
++        if key in payload:
++            summary[key] = payload[key]
++    ports = payload.get("NetworkPorts") or payload.get("Ports")
++    port_path = _odata_id(ports)
++    if port_path:
++        summary["ports_path"] = port_path
++    return summary
++
++
++def _storage_discovery(
++    client: httpx.Client,
++    base_url: str,
++    systems: list[dict[str, Any]],
++    requests: list[dict[str, Any]],
++) -> dict[str, Any]:
++    discovery: dict[str, Any] = {
++        "status": "not_available",
++        "controllers": [],
++        "physical_drives": [],
++        "logical_drives": [],
++        "warnings": [],
++    }
++    for system in systems:
++        system_path = system.get("@odata.id")
++        if not isinstance(system_path, str):
++            continue
++        system_payload = _get_json(client, base_url, system_path, requests)
++        for path in _storage_collection_paths(system_payload, system_path):
++            _merge_storage_discovery(
++                discovery,
++                _discover_storage_path(client, base_url, path, requests),
++            )
++
++    if discovery["controllers"] or discovery["physical_drives"] or discovery["logical_drives"]:
++        discovery["status"] = "available"
++    return discovery
++
++
++def _storage_collection_paths(system_payload: dict[str, Any], system_path: str) -> list[str]:
++    paths: list[str] = []
++    storage_path = _odata_id(system_payload.get("Storage"))
++    if storage_path:
++        paths.append(storage_path)
++    smart_storage = _odata_id(system_payload.get("SmartStorage"))
++    if smart_storage:
++        paths.append(smart_storage)
++    for suffix in ("Storage", "SmartStorage"):
++        fallback = f"{system_path.rstrip('/')}/{suffix}/"
++        if fallback not in paths:
++            paths.append(fallback)
++    return paths
++
++
++def _discover_storage_path(
++    client: httpx.Client,
++    base_url: str,
++    path: str,
++    requests: list[dict[str, Any]],
++) -> dict[str, Any]:
++    discovery = {
++        "controllers": [],
++        "physical_drives": [],
++        "logical_drives": [],
++        "warnings": [],
++    }
++    try:
++        payload = _get_json(client, base_url, path, requests)
++    except httpx.HTTPStatusError as exc:
++        if 400 <= exc.response.status_code < 500:
++            discovery["warnings"].append(
++                f"Storage path returned HTTP {exc.response.status_code}: {path}"
++            )
++            return discovery
++        raise
++
++    members = payload.get("Members")
++    if isinstance(members, list):
++        for member in members[:16]:
++            member_path = _odata_id(member)
++            if member_path:
++                _merge_storage_discovery(
++                    discovery,
++                    _discover_storage_member(client, base_url, member_path, requests),
++                )
++        return discovery
++
++    _merge_storage_discovery(
++        discovery,
++        _discover_storage_member(client, base_url, path, requests, payload=payload),
++    )
++    return discovery
++
++
++def _discover_storage_member(
++    client: httpx.Client,
++    base_url: str,
++    path: str,
++    requests: list[dict[str, Any]],
++    *,
++    payload: dict[str, Any] | None = None,
++) -> dict[str, Any]:
++    payload = payload or _get_json(client, base_url, path, requests)
++    discovery = {
++        "controllers": [],
++        "physical_drives": [],
++        "logical_drives": [],
++        "warnings": [],
++    }
++    controller_collections = _storage_controller_collection_paths(payload)
++    for collection_path in controller_collections:
++        for controller in _storage_controller_collection(
++            client,
++            base_url,
++            collection_path,
++            requests,
++        ):
++            _merge_storage_discovery(discovery, controller)
++
++    if _looks_like_storage_controller(payload) or not controller_collections:
++        discovery["controllers"].append(_storage_controller_summary(payload))
++
++    links = payload.get("Links") if isinstance(payload.get("Links"), dict) else {}
++
++    for key in ("Drives", "DiskDrives", "PhysicalDrives", "UnconfiguredDrives"):
++        drives = payload.get(key) or links.get(key)
++        if isinstance(drives, list):
++            for drive in drives[:64]:
++                drive_path = _odata_id(drive)
++                if drive_path:
++                    discovery["physical_drives"].append(
++                        _drive_summary(_get_json(client, base_url, drive_path, requests))
++                    )
++                elif isinstance(drive, dict):
++                    discovery["physical_drives"].append(_drive_summary(drive))
++        else:
++            collection_path = _odata_id(drives)
++            if collection_path:
++                discovery["physical_drives"].extend(
++                    _storage_collection_summaries(
++                        client,
++                        base_url,
++                        collection_path,
++                        requests,
++                        _drive_summary,
++                    )
++                )
++
++    for key in ("Volumes", "LogicalDrives"):
++        collection_path = _odata_id(payload.get(key)) or _odata_id(links.get(key))
++        if collection_path:
++            discovery["logical_drives"].extend(
++                _storage_collection_summaries(
++                    client,
++                    base_url,
++                    collection_path,
++                    requests,
++                    _logical_drive_summary,
++                )
++            )
++    return discovery
++
++
++def _storage_controller_collection_paths(payload: dict[str, Any]) -> list[str]:
++    paths = []
++    links = payload.get("Links") if isinstance(payload.get("Links"), dict) else {}
++    for key in ("ArrayControllers", "StorageControllers", "Controllers"):
++        path = _odata_id(payload.get(key))
++        if not path:
++            path = _odata_id(links.get(key))
++        if path:
++            paths.append(path)
++    return paths
++
++
++def _storage_controller_collection(
++    client: httpx.Client,
++    base_url: str,
++    collection_path: str,
++    requests: list[dict[str, Any]],
++) -> list[dict[str, Any]]:
++    try:
++        collection = _get_json(client, base_url, collection_path, requests)
++    except httpx.HTTPStatusError as exc:
++        if 400 <= exc.response.status_code < 500:
++            return []
++        raise
++    members = collection.get("Members", [])
++    if not isinstance(members, list):
++        return []
++    controllers = []
++    for member in members[:16]:
++        member_path = _odata_id(member)
++        if not member_path:
++            continue
++        controllers.append(_discover_storage_member(client, base_url, member_path, requests))
++    return controllers
++
++
++def _looks_like_storage_controller(payload: dict[str, Any]) -> bool:
++    text = " ".join(
++        str(payload.get(key) or "")
++        for key in ("Id", "Name", "Description", "Model", "@odata.type")
++    ).lower()
++    if "smartstorage" in text and "arraycontroller" not in text:
++        return False
++    return any(
++        token in text
++        for token in (
++            "array controller",
++            "arraycontroller",
++            "smart array",
++            "storage controller",
++            "raid",
++        )
++    )
++
++
++def _storage_collection_summaries(
++    client: httpx.Client,
++    base_url: str,
++    collection_path: str,
++    requests: list[dict[str, Any]],
++    summarizer: Any,
++) -> list[dict[str, Any]]:
++    try:
++        collection = _get_json(client, base_url, collection_path, requests)
++    except httpx.HTTPStatusError as exc:
++        if 400 <= exc.response.status_code < 500:
++            return []
++        raise
++    members = collection.get("Members", [])
++    if not isinstance(members, list):
++        return []
++    summaries = []
++    for member in members[:64]:
++        member_path = _odata_id(member)
++        if not member_path:
++            continue
++        summaries.append(summarizer(_get_json(client, base_url, member_path, requests)))
++    return summaries
++
++
++def _storage_controller_summary(payload: dict[str, Any]) -> dict[str, Any]:
++    summary = _resource_summary(payload)
++    for key in (
++        "ControllerProtocol",
++        "AdapterType",
++        "CurrentOperatingMode",
++        "BackupPowerSourceStatus",
++        "CacheMemorySizeMiB",
++        "PartNumber",
++        "ControllerPartNumber",
++        "SKU",
++        "Location",
++        "SupportedRAIDTypes",
++        "Identifiers",
++    ):
++        if key in payload:
++            summary[key] = payload[key]
++    return summary
++
++
++def _drive_summary(payload: dict[str, Any]) -> dict[str, Any]:
++    summary = _resource_summary(payload)
++    for key in (
++        "Bay",
++        "Location",
++        "LocationFormat",
++        "CapacityBytes",
++        "CapacityGB",
++        "CapacityMiB",
++        "MediaType",
++        "InterfaceType",
++        "Protocol",
++        "FirmwareVersion",
++        "Status",
++        "BlockSizeBytes",
++        "PredictedMediaLifeLeftPercent",
++    ):
++        if key in payload:
++            summary[key] = payload[key]
++    summary["serial_number_present"] = bool(payload.get("SerialNumber"))
++    if "CapacityBytes" not in summary:
++        capacity = payload.get("CapacityMiB")
++        if isinstance(capacity, int):
++            summary["CapacityBytes"] = capacity * 1024 * 1024
++    return summary
++
++
++def _logical_drive_summary(payload: dict[str, Any]) -> dict[str, Any]:
++    summary = _resource_summary(payload)
++    for key in (
++        "RAIDType",
++        "Raid",
++        "VolumeType",
++        "CapacityBytes",
++        "CapacityGB",
++        "CapacityMiB",
++        "Encrypted",
++        "LogicalDriveEncryption",
++        "OptimumIOSizeBytes",
++        "StripeSizeBytes",
++        "Bootable",
++        "LogicalDriveName",
++        "LogicalDriveNumber",
++        "LogicalDriveType",
++        "InterfaceType",
++        "MediaType",
++        "DataDrives",
++        "Status",
++        "Links",
++    ):
++        if key in payload:
++            summary[key] = payload[key]
++    if "RAIDType" not in summary and payload.get("Raid"):
++        summary["RAIDType"] = f"RAID{payload['Raid']}"
++    if "RAIDType" not in summary and "VolumeType" in summary:
++        summary["RAIDType"] = payload["VolumeType"]
++    if "CapacityBytes" not in summary:
++        capacity = payload.get("CapacityMiB")
++        if isinstance(capacity, int):
++            summary["CapacityBytes"] = capacity * 1024 * 1024
++    return summary
++
++
++def _merge_storage_discovery(target: dict[str, Any], source: dict[str, Any]) -> None:
++    for key in ("controllers", "physical_drives", "logical_drives", "warnings"):
++        existing = target.setdefault(key, [])
++        for item in source.get(key, []):
++            if item not in existing:
++                existing.append(item)
++
++
+ def _resource_summary(payload: dict[str, Any]) -> dict[str, Any]:
+     keys = (
+         "@odata.id",
+@@ -981,46 +1422,122 @@ def _resource_summary(payload: dict[str, Any]) -> dict[str, Any]:
+         "Manufacturer",
+         "Model",
+         "ProductName",
+-        "SerialNumber",
+         "FirmwareVersion",
++        "BiosVersion",
++        "BIOSVersion",
++        "ManagerType",
+         "PowerState",
+         "Status",
+     )
+-    return {key: payload[key] for key in keys if key in payload}
++    summary = {key: payload[key] for key in keys if key in payload}
++    if "SerialNumber" in payload:
++        summary["serial_number_present"] = bool(payload["SerialNumber"])
++    return summary
+ 
+ 
+ def _strip_links(summary: dict[str, Any]) -> dict[str, Any]:
+     return {key: value for key, value in summary.items() if key != "_links"}
+ 
+ 
+-def _dangerous_actions() -> list[ProviderAction]:
++def _probe_requirement_reason(provider_mode: str) -> str:
++    if provider_mode == LOCAL_READONLY_MODE:
++        return (
++            "Requires complete local config, LAB_CLOSED_LOOP_ACK=YES, "
++            "LAB_READONLY_ACK=YES, and PROVIDER_MODE=local-readonly."
++        )
++    if provider_mode == LOCAL_LAB_MODE:
++        return (
++            "Requires complete local config, PROVIDER_MODE=local-lab-readwrite, "
++            "LAB_ENVIRONMENT=isolated-real-lab, LAB_ACKNOWLEDGE_REAL_HARDWARE=true, "
++            "LAB_ACKNOWLEDGE_DEVICE_RECONFIGURATION=true, "
++            "LAB_ACKNOWLEDGE_DATA_LOSS_RISK=true, and LAB_ACKNOWLEDGE_LAB_ONLY=true."
++        )
++    return "Requires PROVIDER_MODE=local-readonly or PROVIDER_MODE=local-lab-readwrite."
++
++
++def _not_attempted_actions() -> list[str]:
++    return [
++        "firmware update",
++        "power on/off/reset",
++        "virtual media mount",
++        "boot order change",
++        "BIOS change",
++        "user/password change",
++        "iLO network change",
++        "factory reset",
++        "device POST/PATCH/PUT/DELETE",
++    ]
++
++
++def _local_state_write_status(policy: Any, provider_mode: str) -> str:
++    if provider_mode != LOCAL_LAB_MODE:
++        return "allowed"
++    return (
++        "allowed"
++        if not policy.action_blockers(
++            "ilo-redfish.record-readonly-inventory",
++            ActionCategory.APP_STATE_WRITE,
++        )
++        else "blocked"
++    )
++
++
++def _dangerous_actions(policy: Any) -> list[ProviderAction]:
+     return [
+         ProviderAction(
+             id="ilo-power-action",
+             label="Power Action",
+             enabled=False,
+             read_only=False,
+-            reason="Power on, power off, and reset actions are disabled.",
++            reason=policy.dangerous_action_reason("ilo-power-action"),
+         ),
+         ProviderAction(
+             id="ilo-virtual-media",
+             label="Virtual Media",
+             enabled=False,
+             read_only=False,
+-            reason="Mounting or ejecting virtual media is not exposed.",
++            reason=policy.dangerous_action_reason("ilo-virtual-media"),
+         ),
+         ProviderAction(
+             id="ilo-firmware-update",
+             label="Firmware Update",
+             enabled=False,
+             read_only=False,
+-            reason="Firmware update actions are blocked in this preview.",
++            reason=policy.dangerous_action_reason("ilo-firmware-update"),
+         ),
+         ProviderAction(
+             id="ilo-user-change",
+             label="User Changes",
+             enabled=False,
+             read_only=False,
+-            reason="iLO account changes are blocked.",
++            reason=policy.dangerous_action_reason("ilo-user-change"),
++        ),
++        ProviderAction(
++            id="ilo-boot-order-change",
++            label="Boot Order Change",
++            enabled=False,
++            read_only=False,
++            reason=policy.dangerous_action_reason("ilo-boot-order-change"),
++        ),
++        ProviderAction(
++            id="ilo-bios-change",
++            label="BIOS Change",
++            enabled=False,
++            read_only=False,
++            reason=policy.dangerous_action_reason("ilo-bios-change"),
++        ),
++        ProviderAction(
++            id="ilo-network-change",
++            label="iLO Network Change",
++            enabled=False,
++            read_only=False,
++            reason=policy.dangerous_action_reason("ilo-network-change"),
++        ),
++        ProviderAction(
++            id="ilo-factory-reset",
++            label="Factory Reset",
++            enabled=False,
++            read_only=False,
++            reason=policy.dangerous_action_reason("ilo-factory-reset"),
+         ),
+     ]
+diff --git a/app/backend/app/providers/registry.py b/app/backend/app/providers/registry.py
+index 60a3003..f915136 100644
+--- a/app/backend/app/providers/registry.py
++++ b/app/backend/app/providers/registry.py
+@@ -73,10 +73,10 @@ class ProviderRegistry:
+             )
+ 
+     def _ensure_status_mode(self) -> None:
+-        if self.provider_mode not in {"mock", "local-readonly"}:
++        if self.provider_mode not in {"mock", "local-readonly", "local-lab-readwrite"}:
+             raise ProviderRegistryError(
+                 f"Provider mode {self.provider_mode!r} is not available. "
+-                "Provider status supports only mock and local-readonly modes."
++                "Provider status supports only mock, local-readonly, and local-lab-readwrite modes."
+             )
+ 
+     def _safe_status(
+diff --git a/app/backend/app/schemas.py b/app/backend/app/schemas.py
+index 0381bd0..acddf27 100644
+--- a/app/backend/app/schemas.py
++++ b/app/backend/app/schemas.py
+@@ -493,6 +493,71 @@ class IloSetupIntentRead(IloSetupIntentWrite):
+     updated_at: datetime | None = None
+ 
+ 
++class HpeRaidVolumeIntent(BaseModel):
++    name: str = Field(min_length=1, max_length=120)
++    purpose: str = Field(min_length=1, max_length=80)
++    raid_level: str = Field(min_length=2, max_length=40)
++    drive_bays: list[str] = Field(default_factory=list, max_length=32)
++    spare_bays: list[str] = Field(default_factory=list, max_length=32)
++    spare_rebuild_mode: str | None = Field(default=None, max_length=80)
++    size_policy: str = Field(default="max", min_length=1, max_length=80)
++    bootable: bool = False
++
++
++class HpeRaidIntentWrite(BaseModel):
++    controller_ref: str | None = Field(default=None, max_length=240)
++    wipe_existing_logical_drives: bool = False
++    volumes: list[HpeRaidVolumeIntent] = Field(default_factory=list, max_length=16)
++    notes: str | None = Field(default=None, max_length=2000)
++
++    @field_validator("*", mode="after")
++    @classmethod
++    def reject_secret_values(cls, value: Any) -> Any:
++        _reject_secret_values(value)
++        return value
++
++
++class HpeRaidIntentRead(HpeRaidIntentWrite):
++    provider_id: str
++    apply_enabled: bool = False
++    created_at: datetime | None = None
++    updated_at: datetime | None = None
++
++
++class HpeStorageDiscoveryRead(BaseModel):
++    provider_id: str
++    source: str
++    last_probe_time: str | None = None
++    storage_inventory_available: bool = False
++    server: dict[str, Any] = Field(default_factory=dict)
++    controllers: list[dict[str, Any]] = Field(default_factory=list)
++    physical_drives: list[dict[str, Any]] = Field(default_factory=list)
++    logical_drives: list[dict[str, Any]] = Field(default_factory=list)
++    warnings: list[str] = Field(default_factory=list)
++    blockers: list[str] = Field(default_factory=list)
++    next_safe_action: str
++
++
++class HpeRaidPlanPreviewRead(BaseModel):
++    provider_id: str
++    status: str
++    apply_enabled: bool = False
++    destructive_actions_requested: bool = False
++    destructive_actions_enabled: bool = False
++    current_layout: HpeStorageDiscoveryRead
++    desired_intent: HpeRaidIntentRead
++    planned_layout: dict[str, Any] = Field(default_factory=dict)
++    impact: dict[str, Any] = Field(default_factory=dict)
++    blockers: list[str] = Field(default_factory=list)
++    warnings: list[str] = Field(default_factory=list)
++    disabled_actions: list[str] = Field(default_factory=list)
++    next_safe_action: str
++
++
++class HpeRaidApplyCreate(BaseModel):
++    confirmation_phrase: str
++
++
+ class IloSetupPlanSectionRead(BaseModel):
+     id: str
+     title: str
+@@ -521,6 +586,12 @@ class IloSetupPlanPreviewRead(BaseModel):
+     removable_warnings: list[str] = Field(default_factory=list)
+ 
+ 
++class IloSetupApplyCreate(BaseModel):
++    confirmation_phrase: str
++    requested_actions: list[str] = Field(default_factory=list)
++    destructive_action_requested: bool = False
++
++
+ class IloSetupCompareRowRead(BaseModel):
+     section: str
+     field: str
+@@ -654,6 +725,8 @@ class CiscoSetupReadinessRead(BaseModel):
+     management_configured: bool
+     state_boundaries: dict[str, Any] = Field(default_factory=dict)
+     console: dict[str, Any]
++    ethernet_readiness: dict[str, Any] = Field(default_factory=dict)
++    real_lab_run: dict[str, Any] = Field(default_factory=dict)
+     bootstrap_preview: dict[str, Any]
+     ssh_scp_readiness: dict[str, Any]
+     ansible: dict[str, Any]
+diff --git a/app/backend/app/services/cisco_setup_readiness.py b/app/backend/app/services/cisco_setup_readiness.py
+index 7fcd767..d704b46 100644
+--- a/app/backend/app/services/cisco_setup_readiness.py
++++ b/app/backend/app/services/cisco_setup_readiness.py
+@@ -1,14 +1,17 @@
+ from __future__ import annotations
+ 
++import json
+ from typing import Any
+ 
+ from app.core.config import settings
+ from app.providers.base import ProviderStatus
+ from app.providers.cisco_ansible import CiscoAnsibleAdapter
+ from app.providers.cisco_console import CiscoConsoleAdapter
++from app.services.hpe_raid import REPO_ROOT
+ from app.services.cisco_setup_wizard_plan import build_cisco_setup_wizard_plan
+ 
+ PROVIDER_ID = "cisco-setup"
++REAL_LAB_DETAILS = REPO_ROOT / "artifacts" / "codex-runs" / "cisco-4h-lab-run-details-redacted.json"
+ NEXT_SAFE_ACTION = "Select a console candidate and run prompt readiness check."
+ DISABLED_ACTIONS = [
+     "conf t",
+@@ -154,6 +157,7 @@ def get_cisco_setup_readiness(
+                 "but will not be enabled by this task."
+             ),
+         },
++        "real_lab_run": _real_lab_run_summary(),
+         "ansible": {
+             "status": ansible.status if mgmt_configured else "awaiting-bootstrap",
+             "enabled": False,
+@@ -265,3 +269,68 @@ def _bootstrap_missing_requirements(target_ip: str | None) -> list[str]:
+         ]
+     )
+     return missing
++
++
++def _real_lab_run_summary() -> dict[str, Any]:
++    if not REAL_LAB_DETAILS.exists():
++        return {
++            "available": False,
++            "status": "not-run",
++            "last_blocker": "No Cisco 4h real-lab run artifact has been recorded.",
++        }
++    try:
++        payload = json.loads(REAL_LAB_DETAILS.read_text(encoding="utf-8"))
++    except (OSError, json.JSONDecodeError):
++        return {
++            "available": False,
++            "status": "unreadable",
++            "last_blocker": "Cisco 4h real-lab run artifact could not be read.",
++        }
++    stages = _dict(payload.get("stages"))
++    adapter = _dict(stages.get("adapter_discovery"))
++    prompt = _dict(stages.get("console_prompt_detection"))
++    identity = _dict(stages.get("switch_identification"))
++    plan = _dict(stages.get("bootstrap_plan"))
++    apply = _dict(stages.get("apply"))
++    ethernet = _dict(stages.get("ethernet_management_validation"))
++    privilege = _dict(stages.get("privilege_escalation"))
++    blockers = payload.get("blockers") if isinstance(payload.get("blockers"), list) else []
++    last_blocker = next((item for item in blockers if isinstance(item, str)), None)
++    if not last_blocker:
++        privilege_blockers = privilege.get("blockers")
++        if isinstance(privilege_blockers, list):
++            last_blocker = next((item for item in privilege_blockers if isinstance(item, str)), None)
++    return {
++        "available": True,
++        "checked_at": payload.get("checked_at"),
++        "status": payload.get("status"),
++        "console_adapter_detected": bool(adapter.get("effective_path")),
++        "console_adapter": adapter.get("effective_path"),
++        "prompt_detected": bool(prompt.get("prompt_detected")),
++        "prompt_state": prompt.get("prompt_state"),
++        "selected_baud": prompt.get("selected_baud"),
++        "switch_identity_status": identity.get("status"),
++        "switch_identity_privileged": identity.get("privileged"),
++        "bootstrap_plan_status": plan.get("status"),
++        "bootstrap_hostname": plan.get("hostname"),
++        "bootstrap_management_interface": plan.get("management_interface"),
++        "apply_status": apply.get("status"),
++        "save_reload_status": _save_reload_status(apply),
++        "ethernet_management_status": ethernet.get("status"),
++        "ssh_status": _dict(ethernet.get("ssh")).get("reachable"),
++        "scp_status": _dict(ethernet.get("scp")).get("status"),
++        "last_blocker": last_blocker or "No blocker recorded.",
++        "artifacts": payload.get("artifacts") if isinstance(payload.get("artifacts"), dict) else {},
++    }
++
++
++def _save_reload_status(apply: dict[str, Any]) -> str:
++    if not apply:
++        return "not-attempted"
++    reload_status = _dict(apply.get("reload"))
++    if reload_status:
++        return (
++            f"save={apply.get('save_status') or 'unknown'}; "
++            f"reload_attempted={bool(reload_status.get('attempted'))}"
++        )
++    return str(apply.get("save_status") or "not-attempted")
+diff --git a/app/backend/app/services/lifecycle.py b/app/backend/app/services/lifecycle.py
+index 14a0503..f71b74e 100644
+--- a/app/backend/app/services/lifecycle.py
++++ b/app/backend/app/services/lifecycle.py
+@@ -303,6 +303,35 @@ def approve_request(
+     return get_request(session, request.id)
+ 
+ 
++def reject_request(
++    session: Session,
++    request_id: str,
++    payload: ApprovalCreate,
++) -> Request:
++    request = get_request(session, request_id)
++    _ensure_status(request, RequestStatus.NEEDS_APPROVAL)
++
++    approval = Approval(
++        request_id=request.id,
++        approver=payload.approver,
++        decision=ApprovalDecision.REJECTED.value,
++        notes=payload.notes,
++    )
++    session.add(approval)
++    session.flush()
++    _transition(
++        session,
++        request,
++        RequestStatus.REJECTED,
++        actor=payload.approver,
++        event_type="request.rejected",
++        message="Request rejected.",
++        data={"approval_id": approval.id},
++    )
++    session.commit()
++    return get_request(session, request.id)
++
++
+ def build_request_intent(request: Request) -> dict:
+     vm = request.vm_deploy
+     return {
+diff --git a/app/backend/app/services/media_inventory.py b/app/backend/app/services/media_inventory.py
+index 4d9bda1..ec1b638 100644
+--- a/app/backend/app/services/media_inventory.py
++++ b/app/backend/app/services/media_inventory.py
+@@ -134,6 +134,8 @@ def _safe_media_hints(name: str) -> dict[str, list[str] | str | None]:
+         product_hints.append("hpe-spp")
+     if re.search(r"(?:^|[^a-z0-9])(?:netapp|ontap)(?:[^a-z0-9]|$)", normalized):
+         product_hints.append("netapp-ontap")
++    if re.search(r"(?:^|[^a-z0-9])(?:vmware|esxi)(?:[^a-z0-9]|$)", normalized):
++        product_hints.append("vmware-esxi")
+ 
+     for match in re.finditer(r"(?:^|[^a-z0-9])ilo[\s._-]?([456])(?:[^a-z0-9]|$)", normalized):
+         _append_unique(product_hints, "hpe-ilo")
+diff --git a/app/backend/scripts/provider_smoke.py b/app/backend/scripts/provider_smoke.py
+index 6671460..df6cb2a 100644
+--- a/app/backend/scripts/provider_smoke.py
++++ b/app/backend/scripts/provider_smoke.py
+@@ -16,21 +16,12 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
+ REAL_LAB_ENV = REPO_ROOT / ".env.local.real-lab"
+ REPORT_DIR = REPO_ROOT / "artifacts" / "real-lab"
+ CONNECT_TIMEOUT_SECONDS = 3.0
+-REQUIRED_ENV_NAMES = (
+-    "LAB_CLOSED_LOOP_ACK",
+-    "LAB_READONLY_ACK",
+-    "LAB_DESTRUCTIVE_ACK",
+-    "ILO_TEST_HOST",
+-    "ILO_TEST_USERNAME",
+-    "ILO_TEST_PASSWORD",
+-    "ESXI_CONFIGURED",
+-    "ESXI_TEST_HOST",
+-    "ESXI_TEST_USERNAME",
+-    "ESXI_TEST_PASSWORD",
+-    "CISCO_MGMT_CONFIGURED",
+-    "CISCO_TARGET_IP",
+-    "CISCO_TEST_USERNAME",
+-    "CISCO_TEST_PASSWORD",
++PROVIDER_SMOKE_PROVIDERS_ENV = "PROVIDER_SMOKE_PROVIDERS"
++PROVIDER_IDS = (
++    "ilo-redfish",
++    "cisco-console",
++    "cisco-ansible",
++    "esxi-readonly",
+ )
+ 
+ if REAL_LAB_ENV.exists():
+@@ -40,6 +31,7 @@ if REAL_LAB_ENV.exists():
+         os.environ[key] = value
+ 
+ from app.core.config import settings
++from app.providers.action_policy import LOCAL_LAB_MODE, LOCAL_READONLY_MODE, current_lab_action_policy
+ from app.providers.cisco_ansible import CiscoAnsibleAdapter
+ from app.providers.cisco_console import CiscoConsoleAdapter
+ from app.providers.esxi_readonly import EsxiReadonlyAdapter
+@@ -50,11 +42,14 @@ from app.providers.registry import ProviderRegistryError, provider_registry
+ 
+ 
+ def main() -> int:
++    selected_provider_ids = _selected_provider_ids()
++    real_probe_modes = {LOCAL_READONLY_MODE, LOCAL_LAB_MODE}
+     print(f"provider_mode={settings.provider_mode}")
+     report: dict[str, Any] = {
+         "checked_at": datetime.now(UTC).isoformat(),
+         "provider_mode": settings.provider_mode,
+-        "preflight": _preflight_summary(),
++        "selected_providers": selected_provider_ids,
++        "preflight": _preflight_summary(selected_provider_ids),
+         "guarded_rebuild_planning": _guarded_rebuild_planning(),
+         "provider_status": [],
+         "probes": [],
+@@ -65,13 +60,19 @@ def main() -> int:
+     }
+     print(json.dumps(redact_sensitive(report["preflight"], _redaction_values()), indent=2))
+ 
+-    try:
+-        statuses = provider_registry().statuses()
+-    except ProviderRegistryError as exc:
+-        print(f"provider_status=blocked message={exc}")
+-        report["provider_status_error"] = str(exc)
+-        _write_report(report)
+-        return 0
++    if set(selected_provider_ids) == set(PROVIDER_IDS):
++        try:
++            statuses = provider_registry().statuses()
++        except ProviderRegistryError as exc:
++            print(f"provider_status=blocked message={exc}")
++            report["provider_status_error"] = str(exc)
++            _write_report(report)
++            return 0
++    else:
++        statuses = [
++            _provider_adapter(provider_id).health()
++            for provider_id in selected_provider_ids
++        ]
+ 
+     status_payload = [_status_summary(_to_dict(status)) for status in statuses]
+     report["provider_status"] = status_payload
+@@ -98,23 +99,46 @@ def main() -> int:
+             )
+         )
+ 
+-    if settings.provider_mode != "local-readonly":
+-        print("probes=skipped reason=PROVIDER_MODE is not local-readonly")
++    if settings.provider_mode not in real_probe_modes:
++        print("probes=skipped reason=PROVIDER_MODE is not local-readonly or local-lab-readwrite")
+         _write_report(report)
+         return 0
+ 
+-    for provider_id, adapter in (
+-        ("ilo-redfish", IloRedfishAdapter()),
+-        ("cisco-console", CiscoConsoleAdapter()),
+-        ("cisco-ansible", CiscoAnsibleAdapter()),
+-        ("esxi-readonly", EsxiReadonlyAdapter()),
+-    ):
+-        report["probes"].append(_run_optional_probe(provider_id, adapter))
++    for provider_id in selected_provider_ids:
++        report["probes"].append(_run_optional_probe(provider_id, _provider_adapter(provider_id)))
+ 
+     _write_report(report)
+     return 0
+ 
+ 
++def _selected_provider_ids() -> list[str]:
++    requested = os.getenv(PROVIDER_SMOKE_PROVIDERS_ENV)
++    if not requested:
++        return list(PROVIDER_IDS)
++
++    provider_ids = [item.strip() for item in requested.split(",") if item.strip()]
++    unknown = sorted(set(provider_ids) - set(PROVIDER_IDS))
++    if unknown:
++        valid = ", ".join(PROVIDER_IDS)
++        raise SystemExit(
++            f"Unknown {PROVIDER_SMOKE_PROVIDERS_ENV} value(s): {', '.join(unknown)}. "
++            f"Valid values: {valid}."
++        )
++    return provider_ids
++
++
++def _provider_adapter(provider_id: str) -> Any:
++    if provider_id == "ilo-redfish":
++        return IloRedfishAdapter()
++    if provider_id == "cisco-console":
++        return CiscoConsoleAdapter()
++    if provider_id == "cisco-ansible":
++        return CiscoAnsibleAdapter()
++    if provider_id == "esxi-readonly":
++        return EsxiReadonlyAdapter()
++    raise ValueError(f"Unknown provider id: {provider_id}")
++
++
+ def _run_optional_probe(provider_id: str, adapter: Any) -> dict[str, Any]:
+     status = adapter.health()
+     enabled_actions = [action for action in status.safe_actions if action.enabled]
+@@ -152,41 +176,109 @@ def _run_optional_probe(provider_id: str, adapter: Any) -> dict[str, Any]:
+     return summary
+ 
+ 
+-def _preflight_summary() -> dict[str, Any]:
++def _preflight_summary(provider_ids: list[str] | None = None) -> dict[str, Any]:
++    provider_ids = provider_ids or list(PROVIDER_IDS)
+     safety = current_lab_safety()
+-    return {
++    action_policy = current_lab_action_policy()
++    summary = {
+         "env_file": {
+             "path": ".env.local.real-lab",
+             "exists": REAL_LAB_ENV.exists(),
+             "mode": _file_mode(REAL_LAB_ENV),
+         },
+-        "required_env": _required_env_summary(),
+-        "safety": safety.as_flags(),
++        "required_env": _required_env_summary(provider_ids),
++        "safety": _legacy_safety_summary(safety),
++        "action_policy": action_policy.status_summary(),
+         "dangerous_mode": "enabled" if safety.destructive_allowed else "disabled",
+-        "tool_availability": {
+-            "ansible": shutil.which("ansible") is not None,
+-            "ansible-inventory": shutil.which("ansible-inventory") is not None,
+-            "python": shutil.which("python3") is not None,
+-        },
+-        "serial_candidates": _serial_candidate_summary(),
+-        "targets": {
+-            "ilo": {"configured": bool(settings.ilo_test_host)},
+-            "esxi": {
+-                "configured": settings.esxi_configured,
+-                "planned_target": bool(settings.esxi_test_host),
+-            },
+-            "cisco": {
+-                "management_configured": settings.cisco_mgmt_configured,
+-                "planned_target": bool(settings.cisco_target_ip),
+-                "console_discovery": "always",
+-            },
+-        },
+-        "tcp_preflight": _tcp_preflight(),
++        "tool_availability": _tool_availability(provider_ids),
++        "targets": _target_summary(provider_ids),
++        "tcp_preflight": _tcp_preflight(provider_ids),
+     }
++    if "cisco-console" in provider_ids:
++        summary["serial_candidates"] = _serial_candidate_summary()
++    return summary
+ 
+ 
+-def _required_env_summary() -> list[dict[str, str]]:
+-    return [{"name": name, "status": _present(name)} for name in REQUIRED_ENV_NAMES]
++def _required_env_summary(provider_ids: list[str] | None = None) -> list[dict[str, str]]:
++    provider_ids = provider_ids or list(PROVIDER_IDS)
++    if settings.provider_mode == LOCAL_LAB_MODE:
++        names = [
++            "LAB_ENVIRONMENT",
++            "LAB_ACKNOWLEDGE_REAL_HARDWARE",
++            "LAB_ACKNOWLEDGE_DEVICE_RECONFIGURATION",
++            "LAB_ACKNOWLEDGE_DATA_LOSS_RISK",
++            "LAB_ACKNOWLEDGE_LAB_ONLY",
++            "LAB_ALLOW_POWER_ACTIONS",
++            "LAB_ALLOW_FIRMWARE_UPDATES",
++            "LAB_ALLOW_FACTORY_RESET",
++        ]
++    else:
++        names = [
++            "LAB_CLOSED_LOOP_ACK",
++            "LAB_READONLY_ACK",
++            "LAB_DESTRUCTIVE_ACK",
++        ]
++    if "ilo-redfish" in provider_ids:
++        names.extend(["ILO_TEST_HOST", "ILO_TEST_USERNAME", "ILO_TEST_PASSWORD"])
++    if "esxi-readonly" in provider_ids:
++        names.extend(
++            [
++                "ESXI_CONFIGURED",
++                "ESXI_TEST_HOST",
++                "ESXI_TEST_USERNAME",
++                "ESXI_TEST_PASSWORD",
++            ]
++        )
++    if any(provider_id in provider_ids for provider_id in ("cisco-console", "cisco-ansible")):
++        names.extend(
++            [
++                "CISCO_MGMT_CONFIGURED",
++                "CISCO_TARGET_IP",
++                "CISCO_TEST_USERNAME",
++                "CISCO_TEST_PASSWORD",
++            ]
++        )
++    return [{"name": name, "status": _present(name)} for name in names]
++
++
++def _legacy_safety_summary(safety: Any) -> dict[str, str]:
++    return {
++        "LAB_CLOSED_LOOP_ACK": "present" if safety.closed_loop_ack else "missing",
++        "LAB_READONLY_ACK": "present" if safety.readonly_ack else "missing",
++        "LAB_DESTRUCTIVE_ACK": "enabled" if safety.destructive_ack else "disabled",
++        "local_readonly": "allowed" if safety.readonly_allowed else "blocked",
++        "destructive": "allowed" if safety.destructive_allowed else "blocked",
++    }
++
++
++def _tool_availability(provider_ids: list[str]) -> dict[str, bool]:
++    tools = {"python": shutil.which("python3") is not None}
++    if "cisco-ansible" in provider_ids:
++        tools.update(
++            {
++                "ansible": shutil.which("ansible") is not None,
++                "ansible-inventory": shutil.which("ansible-inventory") is not None,
++            }
++        )
++    return tools
++
++
++def _target_summary(provider_ids: list[str]) -> dict[str, Any]:
++    targets: dict[str, Any] = {}
++    if "ilo-redfish" in provider_ids:
++        targets["ilo"] = {"configured": bool(settings.ilo_test_host)}
++    if "esxi-readonly" in provider_ids:
++        targets["esxi"] = {
++            "configured": settings.esxi_configured,
++            "planned_target": bool(settings.esxi_test_host),
++        }
++    if any(provider_id in provider_ids for provider_id in ("cisco-console", "cisco-ansible")):
++        targets["cisco"] = {
++            "management_configured": settings.cisco_mgmt_configured,
++            "planned_target": bool(settings.cisco_target_ip),
++            "console_discovery": "always",
++        }
++    return targets
+ 
+ 
+ def _guarded_rebuild_planning() -> dict[str, Any]:
+@@ -265,6 +357,13 @@ def _blocked_plan(plan_id: str, title: str, configured_target: str | None) -> di
+ 
+ 
+ def _present(name: str) -> str:
++    if name == "LAB_ENVIRONMENT":
++        if settings.lab_environment == "isolated-real-lab":
++            return "present"
++        return "missing" if settings.lab_environment is None else "invalid"
++    if name.startswith("LAB_ALLOW_") or name.startswith("LAB_ACKNOWLEDGE_"):
++        value = getattr(settings, _setting_name(name), False)
++        return "enabled" if value else "disabled"
+     if name == "ESXI_CONFIGURED":
+         return "enabled" if settings.esxi_configured else "disabled"
+     if name == "CISCO_MGMT_CONFIGURED":
+@@ -289,6 +388,14 @@ def _setting_name(env_name: str) -> str:
+         "LAB_CLOSED_LOOP_ACK": "lab_closed_loop_ack",
+         "LAB_READONLY_ACK": "lab_readonly_ack",
+         "LAB_DESTRUCTIVE_ACK": "lab_destructive_ack",
++        "LAB_ENVIRONMENT": "lab_environment",
++        "LAB_ACKNOWLEDGE_REAL_HARDWARE": "lab_acknowledge_real_hardware",
++        "LAB_ACKNOWLEDGE_DEVICE_RECONFIGURATION": "lab_acknowledge_device_reconfiguration",
++        "LAB_ACKNOWLEDGE_DATA_LOSS_RISK": "lab_acknowledge_data_loss_risk",
++        "LAB_ACKNOWLEDGE_LAB_ONLY": "lab_acknowledge_lab_only",
++        "LAB_ALLOW_POWER_ACTIONS": "lab_allow_power_actions",
++        "LAB_ALLOW_FIRMWARE_UPDATES": "lab_allow_firmware_updates",
++        "LAB_ALLOW_FACTORY_RESET": "lab_allow_factory_reset",
+         "ILO_TEST_HOST": "ilo_test_host",
+         "ILO_TEST_USERNAME": "ilo_test_username",
+         "ILO_TEST_PASSWORD": "ilo_test_password",
+@@ -326,10 +433,13 @@ def _serial_candidate_summary() -> dict[str, Any]:
+     }
+ 
+ 
+-def _tcp_preflight() -> dict[str, Any]:
++def _tcp_preflight(provider_ids: list[str] | None = None) -> dict[str, Any]:
++    provider_ids = provider_ids or list(PROVIDER_IDS)
++    action_policy = current_lab_action_policy()
+     checks = {
+         "ilo_https": {
+             "host": settings.ilo_test_host,
++            "provider_id": "ilo-redfish",
+             "port": 443,
+             "configured": bool(settings.ilo_test_host),
+             "planned": False,
+@@ -337,6 +447,7 @@ def _tcp_preflight() -> dict[str, Any]:
+         },
+         "esxi_https": {
+             "host": settings.esxi_test_host,
++            "provider_id": "esxi-readonly",
+             "port": 443,
+             "configured": settings.esxi_configured,
+             "planned": bool(settings.esxi_test_host),
+@@ -348,6 +459,7 @@ def _tcp_preflight() -> dict[str, Any]:
+         },
+         "cisco_ssh": {
+             "host": settings.cisco_target_ip,
++            "provider_id": "cisco-ansible",
+             "port": 22,
+             "configured": settings.cisco_mgmt_configured,
+             "planned": bool(settings.cisco_target_ip),
+@@ -358,19 +470,37 @@ def _tcp_preflight() -> dict[str, Any]:
+             ),
+         },
+     }
+-    if settings.provider_mode != "local-readonly":
++    checks = {
++        label: check
++        for label, check in checks.items()
++        if check["provider_id"] in provider_ids
++    }
++    if settings.provider_mode not in {LOCAL_READONLY_MODE, LOCAL_LAB_MODE}:
+         return {
+             label: _skipped_tcp_check(
+                 check["host"],
+-                "PROVIDER_MODE is not local-readonly.",
++                "PROVIDER_MODE is not local-readonly or local-lab-readwrite.",
+                 configured=bool(check["configured"]),
+                 planned=bool(check["planned"]),
+             )
+             for label, check in checks.items()
+         }
+ 
++    if settings.provider_mode == LOCAL_LAB_MODE:
++        policy_blockers = action_policy.readonly_blockers()
++        if policy_blockers:
++            return {
++                label: _skipped_tcp_check(
++                    check["host"],
++                    "; ".join(policy_blockers),
++                    configured=bool(check["configured"]),
++                    planned=bool(check["planned"]),
++                )
++                for label, check in checks.items()
++            }
++
+     safety = current_lab_safety()
+-    if not safety.readonly_allowed:
++    if settings.provider_mode == LOCAL_READONLY_MODE and not safety.readonly_allowed:
+         return {
+             label: _skipped_tcp_check(
+                 check["host"],
+@@ -461,6 +591,8 @@ def _probe_summary(result: dict[str, Any]) -> dict[str, Any]:
+         "power",
+         "thermal",
+         "firmware",
++        "network_adapters",
++        "storage",
+         "discovery",
+         "prompt_state",
+         "prompt_sample",
+@@ -697,7 +829,11 @@ def _probe_detail_lines(probe: dict[str, Any]) -> list[str]:
+                 f"managers={len(probe.get('managers', []))}, "
+                 f"systems={len(probe.get('systems', []))}, "
+                 f"chassis={len(probe.get('chassis', []))}, "
+-                f"firmware={len(probe.get('firmware', []))}"
++                f"firmware={len(probe.get('firmware', []))}, "
++                f"nics={len(probe.get('network_adapters', []))}, "
++                f"storage_controllers={len((probe.get('storage') or {}).get('controllers', []))}, "
++                f"physical_drives={len((probe.get('storage') or {}).get('physical_drives', []))}, "
++                f"logical_drives={len((probe.get('storage') or {}).get('logical_drives', []))}"
+             ),
+         ]
+     if provider_id == "cisco-console":
+diff --git a/app/backend/tests/test_api.py b/app/backend/tests/test_api.py
+index 0ca4cc5..728674e 100644
+--- a/app/backend/tests/test_api.py
++++ b/app/backend/tests/test_api.py
+@@ -143,6 +143,34 @@ def test_cancel_draft_request_api_flow(client: TestClient, vm_payload: dict) ->
+     assert "request.cancelled" in event_types
+ 
+ 
++def test_reject_request_api_flow(client: TestClient, vm_payload: dict) -> None:
++    created = client.post("/api/v1/requests/vm-deploy", json=vm_payload)
++    assert created.status_code == 201
++    request_id = created.json()["id"]
++
++    submitted = client.post(f"/api/v1/requests/{request_id}/submit")
++    assert submitted.status_code == 200
++    assert submitted.json()["status"] == "needs_approval"
++
++    rejected = client.post(
++        f"/api/v1/requests/{request_id}/reject",
++        json={"approver": "change.manager", "notes": "Rejected in API test"},
++    )
++    assert rejected.status_code == 200
++    assert rejected.json()["status"] == "rejected"
++
++    approved = client.post(
++        f"/api/v1/requests/{request_id}/approve",
++        json={"approver": "change.manager", "notes": "Too late"},
++    )
++    assert approved.status_code == 409
++
++    audit_events = client.get("/api/v1/audit-events")
++    assert audit_events.status_code == 200
++    event_types = {event["event_type"] for event in audit_events.json()}
++    assert "request.rejected" in event_types
++
++
+ def test_update_request_api_allows_draft_patch_and_records_audit(
+     client: TestClient,
+     vm_payload: dict,
+@@ -347,6 +375,100 @@ def test_provider_status_reports_mock_and_preview_providers(client: TestClient)
+     assert all("safe_actions" in item and "disabled_actions" in item for item in statuses)
+ 
+ 
++def test_merged_provider_preview_endpoints_smoke_in_mock_mode(client: TestClient) -> None:
++    endpoint_expectations = [
++        (
++            "/api/v1/providers/ilo-redfish/upgrade-readiness",
++            "ilo-redfish",
++            ["apply_enabled", "blockers", "warnings"],
++        ),
++        (
++            "/api/v1/providers/ilo-redfish/readiness-summary",
++            "ilo-redfish",
++            ["desired_setup_sections", "blockers", "warnings", "disabled_dangerous_actions"],
++        ),
++        (
++            "/api/v1/providers/ilo-redfish/setup-plan-preview",
++            "ilo-redfish",
++            ["apply_enabled", "sections", "blockers", "warnings", "disabled_dangerous_actions"],
++        ),
++        (
++            "/api/v1/providers/ilo-redfish/report-preview",
++            "ilo-redfish",
++            ["apply_enabled", "setup_compare_report", "blockers", "warnings"],
++        ),
++        (
++            "/api/v1/providers/ilo-redfish/setup-apply-plan",
++            "ilo-redfish-setup-apply",
++            ["apply_enabled", "operations", "blockers", "confirmation_phrase"],
++        ),
++        (
++            "/api/v1/providers/cisco/setup-readiness",
++            "cisco-setup",
++            ["blockers", "warnings", "disabled_actions", "next_safe_action"],
++        ),
++        (
++            "/api/v1/providers/cisco/setup-wizard-plan",
++            "cisco-setup-wizard-plan",
++            ["apply_enabled", "blockers", "warnings", "disabled_actions"],
++        ),
++        (
++            "/api/v1/providers/cisco/bootstrap-requirements",
++            "cisco-bootstrap-requirements",
++            ["apply_enabled", "blockers", "warnings", "disabled_actions"],
++        ),
++        (
++            "/api/v1/providers/cisco/console-bootstrap/plan",
++            "cisco-console-bootstrap",
++            ["apply_enabled", "blockers", "warnings", "destructive_actions_disabled"],
++        ),
++        (
++            "/api/v1/providers/netapp-ontap/plan-preview",
++            "netapp-ontap",
++            ["apply_enabled", "blockers", "warnings", "disabled_actions"],
++        ),
++        (
++            "/api/v1/providers/netapp-ontap/console-readiness",
++            "netapp-ontap",
++            ["apply_enabled", "blockers", "warnings", "disabled_actions"],
++        ),
++        (
++            "/api/v1/providers/netapp-ontap/readiness-comparison",
++            "netapp-ontap",
++            ["apply_enabled", "blockers", "warnings", "disabled_actions"],
++        ),
++        (
++            "/api/v1/providers/netapp-ontap/upgrade-readiness",
++            "netapp-ontap",
++            ["apply_enabled", "blockers", "warnings", "disabled_actions"],
++        ),
++    ]
++
++    for path, provider_id, required_keys in endpoint_expectations:
++        response = client.get(path)
++
++        assert response.status_code == 200, path
++        payload = response.json()
++        assert payload["provider_id"] == provider_id
++        for key in required_keys:
++            assert key in payload, f"{path} missing {key}"
++
++
++def test_ilo_setup_apply_endpoint_blocked_by_default(client: TestClient) -> None:
++    response = client.post(
++        "/api/v1/providers/ilo-redfish/setup-apply",
++        json={"confirmation_phrase": "APPLY ILO HOSTNAME SETUP"},
++    )
++
++    assert response.status_code == 200
++    payload = response.json()
++    assert payload["provider_id"] == "ilo-redfish-setup-apply"
++    assert payload["status"] == "blocked"
++    assert payload["patch_attempted"] is False
++    assert payload["patch_count"] == 0
++    assert any("PROVIDER_MODE=local-lab-readwrite" in blocker for blocker in payload["blockers"])
++
++
+ def test_cisco_setup_readiness_endpoint_is_read_only_preview(client: TestClient) -> None:
+     response = client.get("/api/v1/providers/cisco/setup-readiness")
+ 
+diff --git a/app/backend/tests/test_provider_registry.py b/app/backend/tests/test_provider_registry.py
+index cba4643..814afee 100644
+--- a/app/backend/tests/test_provider_registry.py
++++ b/app/backend/tests/test_provider_registry.py
+@@ -695,6 +695,17 @@ def test_provider_registry_rejects_non_mock_mode() -> None:
+         registry.statuses()
+ 
+ 
++def test_provider_registry_allows_local_lab_status_but_not_lifecycle() -> None:
++    registry = provider_registry("local-lab-readwrite")
++
++    statuses = registry.statuses()
++
++    assert statuses
++    assert {status.mode for status in statuses} == {"local-lab-readwrite"}
++    with pytest.raises(ProviderRegistryError, match="VM request lifecycle execution"):
++        registry.vsphere()
++
++
+ def test_local_real_lab_file_does_not_set_provider_mode(tmp_path: Path) -> None:
+     (tmp_path / ".env.local.real-lab").write_text(
+         "PROVIDER_MODE=local-readonly\nILO_TEST_HOST=example.invalid\n",
+diff --git a/app/backend/tests/test_provider_status_adapters.py b/app/backend/tests/test_provider_status_adapters.py
+index 1879139..f38d909 100644
+--- a/app/backend/tests/test_provider_status_adapters.py
++++ b/app/backend/tests/test_provider_status_adapters.py
+@@ -10,6 +10,7 @@ from pathlib import Path
+ from fastapi.testclient import TestClient
+ 
+ from app.providers.base import ProviderAction, ProviderStatus
++from app.providers.action_policy import ActionCategory, LabActionPolicy
+ from app.providers.cisco_console import (
+     CiscoConsoleAdapter,
+     CiscoConsoleConfig,
+@@ -57,14 +58,14 @@ def test_cisco_candidate_discovery_with_one_stable_candidate(tmp_path: Path) ->
+     assert discovery["status"] == "ready"
+     assert discovery["recommended_path"] == str(stable)
+     assert discovery["effective_path"] == str(stable)
+-    assert discovery["selection_source"] == "single-stable-candidate"
++    assert discovery["selection_source"] == "auto-stable-candidate"
+     assert discovery["candidate_counts"]["stable_existing"] == 1
+     assert discovery["operator_message"].startswith("Preferred console path:")
+-    assert "CISCO_CONSOLE_PORT" in discovery["safe_next_action"]
++    assert "prompt readiness" in discovery["safe_next_action"]
+     stable_candidates = [
+         candidate for candidate in discovery["candidates"] if candidate["stable_path"]
+     ]
+-    assert stable_candidates[0]["recommendation"] == "recommended-default"
++    assert stable_candidates[0]["recommendation"] == "selected-auto"
+ 
+ 
+ def test_cisco_candidate_discovery_with_multiple_stable_candidates(tmp_path: Path) -> None:
+@@ -81,12 +82,12 @@ def test_cisco_candidate_discovery_with_multiple_stable_candidates(tmp_path: Pat
+         _discovery_paths(paths),
+     )
+ 
+-    assert discovery["status"] == "needs-selection"
+-    assert discovery["recommended_path"] is None
+-    assert discovery["effective_path"] is None
+-    assert discovery["selection_source"] == "multiple-stable-candidates"
++    assert discovery["status"] == "ready"
++    assert discovery["recommended_path"] is not None
++    assert discovery["effective_path"] is not None
++    assert discovery["selection_source"] == "auto-stable-candidate"
+     assert discovery["candidate_counts"]["stable_existing"] == 2
+-    assert "Multiple stable serial console candidates" in discovery["blockers"][0]
++    assert discovery["blockers"] == []
+ 
+ 
+ def test_cisco_candidate_discovery_with_no_candidates(tmp_path: Path) -> None:
+@@ -118,11 +119,12 @@ def test_cisco_candidate_discovery_with_fallback_candidate_warns(tmp_path: Path)
+         _discovery_paths(paths),
+     )
+ 
+-    assert discovery["status"] == "needs-selection"
+-    assert discovery["selection_source"] == "fallback-candidates"
++    assert discovery["status"] == "ready"
++    assert discovery["selection_source"] == "auto-fallback-candidate"
++    assert discovery["effective_path"] == str(tty)
+     assert discovery["candidate_counts"]["fallback_existing"] == 1
+     assert any("Fallback serial adapter detected" in warning for warning in discovery["warnings"])
+-    assert "Prefer a stable /dev/serial/by-id path" in discovery["safe_next_action"]
++    assert "prompt readiness" in discovery["safe_next_action"]
+ 
+ 
+ def test_cisco_configured_port_missing_has_clear_blocker(tmp_path: Path) -> None:
+@@ -134,10 +136,9 @@ def test_cisco_configured_port_missing_has_clear_blocker(tmp_path: Path) -> None
+         _discovery_paths(paths),
+     )
+ 
+-    assert discovery["status"] == "blocked"
+-    assert discovery["effective_path"] == str(missing_path)
++    assert discovery["status"] == "missing-console"
++    assert discovery["effective_path"] is None
+     assert "Configured CISCO_CONSOLE_PORT does not exist" in discovery["blockers"][0]
+-    assert "detected stable path" in discovery["blockers"][0]
+ 
+ 
+ def test_cisco_configured_port_permission_guidance(
+@@ -179,9 +180,9 @@ def test_cisco_env_override_path(tmp_path: Path) -> None:
+     assert discovery["env_override"]["configured"] is True
+     assert discovery["env_override"]["path"] == str(tty)
+     assert discovery["effective_path"] == str(tty)
+-    assert discovery["selection_source"] == "env-override"
++    assert discovery["selection_source"] == "configured-port-hint"
+     matching = [candidate for candidate in discovery["candidates"] if candidate["path"] == str(tty)]
+-    assert matching[0]["recommendation"] == "env-override"
++    assert matching[0]["recommendation"] == "selected-auto"
+ 
+ 
+ def test_cisco_discovery_does_not_open_serial_or_send_commands(
+@@ -201,7 +202,7 @@ def test_cisco_discovery_does_not_open_serial_or_send_commands(
+         _discovery_paths(paths),
+     )
+ 
+-    assert discovery["status"] == "needs-selection"
++    assert discovery["status"] == "ready"
+ 
+ 
+ def test_cisco_setup_wizard_prompt_is_blocked() -> None:
+@@ -216,7 +217,8 @@ def test_cisco_console_probe_redacts_blocked_prompt_sample(
+     monkeypatch,
+ ) -> None:
+     clear_probe_results()
+-    tty = tmp_path / "ttyUSB0"
++    paths = _console_paths(tmp_path)
++    tty = paths["dev"] / "ttyUSB0"
+     tty.touch()
+     _allow_readonly_lab(monkeypatch)
+     _install_fake_serial(
+@@ -423,7 +425,7 @@ def test_cisco_prompt_readiness_blocks_unknown_prompt(
+         "unrecognized prompt text",
+     )
+ 
+-    assert writes == [b"\n"]
++    assert writes == [b"\n", b"\r", b"\x03", b"\x1a"] * 5
+     assert result["status"] == "blocked"
+     assert result["prompt_state"] == "unknown"
+     assert result["prompt_ready"] is False
+@@ -442,7 +444,7 @@ def test_cisco_prompt_readiness_blocks_when_no_prompt_text_captured(
+         "",
+     )
+ 
+-    assert writes == [b"\n"]
++    assert writes == [b"\n", b"\r", b"\x03", b"\x1a"] * 5
+     assert result["status"] == "blocked"
+     assert result["message"].startswith("Console port opened but no prompt text was captured")
+     assert result["blockers"] == [result["message"]]
+@@ -467,7 +469,8 @@ def test_cisco_prompt_readiness_reports_configured_read_timing(
+     monkeypatch,
+ ) -> None:
+     clear_probe_results()
+-    tty = tmp_path / "ttyUSB0"
++    paths = _console_paths(tmp_path)
++    tty = paths["dev"] / "ttyUSB0"
+     tty.touch()
+     _allow_readonly_lab(monkeypatch)
+     writes = _install_tracking_fake_serial(monkeypatch, [""])
+@@ -482,9 +485,10 @@ def test_cisco_prompt_readiness_reports_configured_read_timing(
+             prompt_read_window_seconds=0.2,
+             prompt_max_bytes=123,
+         ),
++        paths=_discovery_paths(paths),
+     ).prompt_readiness()
+ 
+-    assert writes == [b"\n"]
++    assert writes == [b"\n", b"\r", b"\x03", b"\x1a"] * 5
+     assert result["status"] == "blocked"
+     assert result["read_timing"] == {
+         "settle_seconds": 0.1,
+@@ -1206,6 +1210,77 @@ def test_provider_smoke_skips_unconfigured_management_tcp_preflight(monkeypatch)
+     assert "CISCO_MGMT_CONFIGURED=false" in result["cisco_ssh"]["reason"]
+ 
+ 
++def test_provider_smoke_provider_filter_limits_tcp_preflight(monkeypatch) -> None:
++    smoke = _load_provider_smoke_module()
++    calls: list[tuple[str, int]] = []
++    fake_settings = types.SimpleNamespace(
++        provider_mode="local-readonly",
++        ilo_test_host="192.0.2.202",
++        esxi_test_host="192.0.2.50",
++        esxi_configured=True,
++        cisco_target_ip="192.0.2.60",
++        cisco_mgmt_configured=True,
++    )
++
++    def fake_tcp(host: str, port: int) -> dict[str, object]:
++        calls.append((host, port))
++        return {"configured": True, "reachable": True, "port": port, "attempts": []}
++
++    monkeypatch.setattr(smoke, "settings", fake_settings)
++    monkeypatch.setattr(
++        smoke,
++        "current_lab_safety",
++        lambda: LabSafetyState(
++            closed_loop_ack=True,
++            readonly_ack=True,
++            destructive_ack=False,
++        ),
++    )
++    monkeypatch.setattr(smoke, "_tcp_connect", fake_tcp)
++
++    result = smoke._tcp_preflight(["ilo-redfish"])
++
++    assert calls == [("192.0.2.202", 443)]
++    assert set(result) == {"ilo_https"}
++    assert result["ilo_https"]["reachable"] is True
++
++
++def test_provider_smoke_provider_filter_reads_env(monkeypatch) -> None:
++    smoke = _load_provider_smoke_module()
++
++    monkeypatch.setenv("PROVIDER_SMOKE_PROVIDERS", "ilo-redfish, esxi-readonly")
++
++    assert smoke._selected_provider_ids() == ["ilo-redfish", "esxi-readonly"]
++
++
++def test_provider_smoke_provider_filter_skips_serial_preflight(monkeypatch) -> None:
++    smoke = _load_provider_smoke_module()
++    fake_settings = types.SimpleNamespace(
++        provider_mode="mock",
++        ilo_test_host="192.0.2.202",
++        esxi_test_host=None,
++        esxi_configured=False,
++        cisco_target_ip=None,
++        cisco_mgmt_configured=False,
++    )
++
++    monkeypatch.setattr(smoke, "settings", fake_settings)
++
++    result = smoke._preflight_summary(["ilo-redfish"])
++
++    assert "serial_candidates" not in result
++    assert set(result["targets"]) == {"ilo"}
++    assert set(result["tcp_preflight"]) == {"ilo_https"}
++    assert [item["name"] for item in result["required_env"]] == [
++        "LAB_CLOSED_LOOP_ACK",
++        "LAB_READONLY_ACK",
++        "LAB_DESTRUCTIVE_ACK",
++        "ILO_TEST_HOST",
++        "ILO_TEST_USERNAME",
++        "ILO_TEST_PASSWORD",
++    ]
++
++
+ def test_provider_smoke_disabled_management_probe_keeps_planned_context() -> None:
+     smoke = _load_provider_smoke_module()
+     status = ProviderStatus(
+@@ -1249,15 +1324,47 @@ def test_provider_smoke_disabled_management_probe_keeps_planned_context() -> Non
+     assert not any("https_reachable: False" in line for line in details)
+ 
+ 
+-def test_ilo_readonly_status_is_unchanged_by_management_flags(monkeypatch) -> None:
+-    monkeypatch.setattr(
+-        "app.providers.ilo_redfish.current_lab_safety",
+-        lambda: LabSafetyState(
+-            closed_loop_ack=True,
+-            readonly_ack=True,
+-            destructive_ack=False,
+-        ),
++def test_hpe_raid_plan_preserves_existing_esxi_layout() -> None:
++    raid = _load_hpe_raid_plan_module()
++
++    plan = raid._raid_plan(
++        {"server_model": "ProLiant DL360 Gen10"},
++        {
++            "controllers": [{"Model": "HPE Smart Array P408i-a SR Gen10"}],
++            "physical_drives": [{"Id": str(index)} for index in range(8)],
++            "logical_drives": [
++                {
++                    "LogicalDriveName": "OS RAID 1 logical drive",
++                    "LogicalDriveNumber": 1,
++                    "RAIDType": "RAID1",
++                    "CapacityMiB": 512000,
++                    "Status": {"Health": "OK"},
++                },
++                {
++                    "LogicalDriveName": "Data RAID 6 logical drive",
++                    "LogicalDriveNumber": 2,
++                    "RAIDType": "RAID6",
++                    "CapacityMiB": 3433827,
++                    "Status": {"Health": "OK"},
++                },
++            ],
++        },
+     )
++
++    assert plan["status"] == "preview_only"
++    assert plan["apply_allowed"] is False
++    assert plan["planned_layout"]["recommendation"] == (
++        "preserve existing OS and data logical drives for ESXi preview"
++    )
++    assert plan["planned_layout"]["boot_volume"]["source"] == "existing-logical-drive"
++    assert plan["planned_layout"]["boot_volume"]["raid"] == "RAID1"
++    assert plan["planned_layout"]["datastore_volume"]["source"] == "existing-logical-drive"
++    assert plan["planned_layout"]["datastore_volume"]["raid"] == "RAID6"
++    assert "RAID create/delete/update" in plan["not_attempted"]
++
++
++def test_ilo_readonly_status_is_unchanged_by_management_flags(monkeypatch) -> None:
++    _allow_readonly_ilo_lab(monkeypatch)
+     adapter = IloRedfishAdapter(
+         provider_mode="local-readonly",
+         config=IloRedfishConfig(
+@@ -1276,7 +1383,7 @@ def test_ilo_readonly_status_is_unchanged_by_management_flags(monkeypatch) -> No
+     assert status.safe_actions[0].reason == "Run GET-only endpoint detection and Redfish inventory checks."
+ 
+ 
+-def test_ilo_setup_apply_sends_hostname_patch_when_all_gates_pass(
++def test_ilo_setup_apply_blocks_hostname_patch_in_local_readonly(
+     db_session,
+     monkeypatch,
+ ) -> None:
+@@ -1318,11 +1425,11 @@ def test_ilo_setup_apply_sends_hostname_patch_when_all_gates_pass(
+         IloSetupApplyCreate(confirmation_phrase=ILO_SETUP_CONFIRMATION_PHRASE),
+     )
+ 
+-    assert result["status"] == "ok"
+-    assert result["patch_attempted"] is True
+-    assert result["patch_count"] == 1
+-    assert patch_bodies == [{"HostName": "lab-ilo-host"}]
+-    assert result["operations"][0]["verified"] is True
++    assert result["status"] == "blocked"
++    assert result["patch_attempted"] is False
++    assert result["patch_count"] == 0
++    assert patch_bodies == []
++    assert any("local-readonly is read-only" in blocker for blocker in result["blockers"])
+     assert "lab-ilo-host" not in str(result)
+ 
+ 
+@@ -1423,6 +1530,377 @@ def test_ilo_status_exposes_only_configuration_presence() -> None:
+     assert "super-secret-password" not in encoded_configuration
+ 
+ 
++def test_ilo_probe_in_mock_mode_does_not_create_http_client(monkeypatch) -> None:
++    def fail_client(**_kwargs):  # noqa: ANN003
++        raise AssertionError("mock mode must not create an HTTP client")
++
++    monkeypatch.setattr("app.providers.ilo_redfish.httpx.Client", fail_client)
++    adapter = IloRedfishAdapter(
++        provider_mode="mock",
++        config=IloRedfishConfig(
++            host="192.0.2.202",
++            username="local-admin",
++            password="super-secret-password",
++            verify_tls=False,
++            timeout_seconds=1.0,
++        ),
++    )
++
++    result = adapter.probe()
++
++    assert result["status"] == "blocked"
++    assert "local-readonly or PROVIDER_MODE=local-lab-readwrite" in result["message"]
++
++
++def test_ilo_local_lab_requires_acknowledgement_flags(monkeypatch) -> None:
++    monkeypatch.setattr(
++        "app.providers.ilo_redfish.current_lab_action_policy",
++        lambda provider_mode=None: _lab_action_policy(
++            provider_mode or "local-lab-readwrite",
++            lab_environment=None,
++            acknowledge_real_hardware=False,
++            acknowledge_device_reconfiguration=False,
++            acknowledge_data_loss_risk=False,
++            acknowledge_lab_only=False,
++        ),
++    )
++    adapter = IloRedfishAdapter(
++        provider_mode="local-lab-readwrite",
++        config=IloRedfishConfig(
++            host="192.0.2.202",
++            username="local-admin",
++            password="super-secret-password",
++            verify_tls=False,
++            timeout_seconds=1.0,
++        ),
++    )
++
++    status = adapter.health()
++    result = adapter.probe()
++
++    assert status.status == "blocked"
++    assert status.safe_actions[0].enabled is False
++    assert result["status"] == "blocked"
++    assert any("LAB_ENVIRONMENT=isolated-real-lab" in item for item in result["blockers"])
++    assert any("LAB_ACKNOWLEDGE_REAL_HARDWARE=true" in item for item in result["blockers"])
++    assert any("LAB_ACKNOWLEDGE_DEVICE_RECONFIGURATION=true" in item for item in result["blockers"])
++    assert any("LAB_ACKNOWLEDGE_DATA_LOSS_RISK=true" in item for item in result["blockers"])
++    assert any("LAB_ACKNOWLEDGE_LAB_ONLY=true" in item for item in result["blockers"])
++    assert "super-secret-password" not in json.dumps(result)
++
++
++def test_ilo_local_lab_allows_get_only_inventory_and_local_recording(monkeypatch) -> None:
++    clear_probe_results()
++    requested_urls: list[str] = []
++    _allow_local_lab_ilo(monkeypatch)
++    _install_fake_httpx_client(
++        monkeypatch,
++        {
++            "/redfish/v1/": (
++                200,
++                "application/json",
++                {
++                    "@odata.id": "/redfish/v1/",
++                    "Managers": {"@odata.id": "/redfish/v1/Managers/"},
++                    "Systems": {"@odata.id": "/redfish/v1/Systems/"},
++                    "Chassis": {"@odata.id": "/redfish/v1/Chassis/"},
++                },
++            ),
++            "/redfish/v1": (200, "application/json", {"@odata.id": "/redfish/v1/"}),
++            "/": (200, "text/html"),
++            "/xmldata?item=All": (404, "text/plain"),
++            "/redfish/v1/Managers/": (
++                200,
++                "application/json",
++                {"Members": [{"@odata.id": "/redfish/v1/Managers/1"}]},
++            ),
++            "/redfish/v1/Managers/1": (
++                200,
++                "application/json",
++                {
++                    "Id": "1",
++                    "Name": "Manager",
++                    "Model": "iLO 5",
++                    "FirmwareVersion": "3.19",
++                },
++            ),
++            "/redfish/v1/Systems/": (
++                200,
++                "application/json",
++                {"Members": [{"@odata.id": "/redfish/v1/Systems/1"}]},
++            ),
++            "/redfish/v1/Systems/1": (
++                200,
++                "application/json",
++                {
++                    "Id": "1",
++                    "Name": "Server",
++                    "Model": "ProLiant DL360 Gen10",
++                    "SerialNumber": "SECRET-SERIAL-123",
++                    "BiosVersion": "U32 v2.78",
++                    "PowerState": "On",
++                    "Status": {"Health": "OK"},
++                    "NetworkAdapters": {"@odata.id": "/redfish/v1/Systems/1/NetworkAdapters/"},
++                    "Storage": {"@odata.id": "/redfish/v1/Systems/1/Storage/"},
++                    "SmartStorage": {"@odata.id": "/redfish/v1/Systems/1/SmartStorage/"},
++                },
++            ),
++            "/redfish/v1/Systems/1/NetworkAdapters/": (
++                200,
++                "application/json",
++                {"Members": [{"@odata.id": "/redfish/v1/Systems/1/NetworkAdapters/1"}]},
++            ),
++            "/redfish/v1/Systems/1/NetworkAdapters/1": (
++                200,
++                "application/json",
++                {
++                    "Id": "1",
++                    "Name": "Embedded LOM",
++                    "Model": "HPE Ethernet 1Gb 4-port 331i Adapter",
++                    "Status": {"Health": "OK"},
++                },
++            ),
++            "/redfish/v1/Systems/1/Storage/": (
++                200,
++                "application/json",
++                {"Members": [{"@odata.id": "/redfish/v1/Systems/1/Storage/1"}]},
++            ),
++            "/redfish/v1/Systems/1/Storage/1": (
++                200,
++                "application/json",
++                {
++                    "Id": "1",
++                    "Name": "Smart Array P408i-a SR Gen10",
++                    "Model": "Smart Array P408i-a SR Gen10",
++                    "Drives": [
++                        {"@odata.id": "/redfish/v1/Systems/1/Storage/1/Drives/1"},
++                        {"@odata.id": "/redfish/v1/Systems/1/Storage/1/Drives/2"},
++                    ],
++                    "Volumes": {"@odata.id": "/redfish/v1/Systems/1/Storage/1/Volumes/"},
++                },
++            ),
++            "/redfish/v1/Systems/1/Storage/1/Drives/1": (
++                200,
++                "application/json",
++                {
++                    "Id": "1",
++                    "Name": "Drive Bay 1",
++                    "Bay": 1,
++                    "CapacityBytes": 480103981056,
++                    "MediaType": "SSD",
++                    "Status": {"Health": "OK"},
++                },
++            ),
++            "/redfish/v1/Systems/1/Storage/1/Drives/2": (
++                200,
++                "application/json",
++                {
++                    "Id": "2",
++                    "Name": "Drive Bay 2",
++                    "Bay": 2,
++                    "CapacityBytes": 480103981056,
++                    "MediaType": "SSD",
++                    "Status": {"Health": "OK"},
++                },
++            ),
++            "/redfish/v1/Systems/1/Storage/1/Volumes/": (
++                200,
++                "application/json",
++                {"Members": [{"@odata.id": "/redfish/v1/Systems/1/Storage/1/Volumes/1"}]},
++            ),
++            "/redfish/v1/Systems/1/Storage/1/Volumes/1": (
++                200,
++                "application/json",
++                {
++                    "Id": "1",
++                    "Name": "Logical Drive 1",
++                    "RAIDType": "RAID1",
++                    "CapacityBytes": 480103981056,
++                    "Status": {"Health": "OK"},
++                },
++            ),
++            "/redfish/v1/Systems/1/SmartStorage/": (
++                200,
++                "application/json",
++                {"Members": []},
++            ),
++            "/redfish/v1/Chassis/": (
++                200,
++                "application/json",
++                {"Members": [{"@odata.id": "/redfish/v1/Chassis/1"}]},
++            ),
++            "/redfish/v1/Chassis/1": (
++                200,
++                "application/json",
++                {"Id": "1", "Name": "Chassis"},
++            ),
++        },
++        requested_urls=requested_urls,
++    )
++    adapter = IloRedfishAdapter(
++        provider_mode="local-lab-readwrite",
++        config=IloRedfishConfig(
++            host="192.0.2.202",
++            username="local-admin",
++            password="super-secret-password",
++            verify_tls=False,
++            timeout_seconds=1.0,
++        ),
++    )
++
++    result = adapter.probe()
++    encoded = json.dumps(result)
++
++    assert result["status"] == "ok"
++    assert result["action_policy"]["provider_mode"] == "local-lab-readwrite"
++    assert result["action_policy"]["local_state_write"] == "allowed"
++    assert result["action_policy"]["device_writes"] == "policy-gated"
++    assert result["endpoint_detection"]["classification"] == "redfish_available"
++    assert result["systems"][0]["Model"] == "ProLiant DL360 Gen10"
++    assert result["systems"][0]["serial_number_present"] is True
++    assert result["systems"][0]["BiosVersion"] == "U32 v2.78"
++    assert result["managers"][0]["Model"] == "iLO 5"
++    assert result["managers"][0]["FirmwareVersion"] == "3.19"
++    assert result["network_adapters"][0]["Model"] == "HPE Ethernet 1Gb 4-port 331i Adapter"
++    assert result["network_adapters"][0]["mac_address_present"] is False
++    assert result["storage"]["status"] == "available"
++    assert result["storage"]["controllers"][0]["Model"] == "Smart Array P408i-a SR Gen10"
++    assert result["storage"]["physical_drives"][0]["Bay"] == 1
++    assert result["storage"]["physical_drives"][0]["MediaType"] == "SSD"
++    assert result["storage"]["logical_drives"][0]["RAIDType"] == "RAID1"
++    assert requested_urls
++    assert all(url.startswith("https://192.0.2.202/") for url in requested_urls)
++    assert all("/redfish/" in url or url.endswith("/") or "xmldata" in url for url in requested_urls)
++    assert "192.0.2.202" not in encoded
++    assert "local-admin" not in encoded
++    assert "super-secret-password" not in encoded
++    assert "SECRET-SERIAL-123" not in encoded
++
++
++def test_ilo_local_lab_dangerous_actions_remain_blocked(monkeypatch) -> None:
++    _allow_local_lab_ilo(monkeypatch)
++    adapter = IloRedfishAdapter(
++        provider_mode="local-lab-readwrite",
++        config=IloRedfishConfig(
++            host="192.0.2.202",
++            username="local-admin",
++            password="super-secret-password",
++            verify_tls=False,
++            timeout_seconds=1.0,
++        ),
++    )
++
++    status = adapter.health()
++    disabled_actions = {action.id: action for action in status.disabled_actions}
++
++    assert status.status == "ready"
++    assert status.safe_actions[0].enabled is True
++    assert {
++        "ilo-power-action",
++        "ilo-firmware-update",
++        "ilo-virtual-media",
++        "ilo-boot-order-change",
++        "ilo-bios-change",
++        "ilo-user-change",
++        "ilo-network-change",
++        "ilo-factory-reset",
++    }.issubset(disabled_actions)
++    assert all(not action.enabled for action in disabled_actions.values())
++    assert "LAB_ALLOW_POWER_ACTIONS=true" in disabled_actions["ilo-power-action"].reason
++    assert "LAB_ALLOW_FIRMWARE_UPDATES=true" in disabled_actions["ilo-firmware-update"].reason
++    assert "LAB_ALLOW_FACTORY_RESET=true" in disabled_actions["ilo-factory-reset"].reason
++
++
++def test_ilo_setup_apply_allows_hostname_patch_in_local_lab_readwrite(
++    db_session,
++    monkeypatch,
++) -> None:
++    fake_settings = types.SimpleNamespace(
++        provider_mode="local-lab-readwrite",
++        ilo_setup_apply_enabled=True,
++        lab_apply_ack="YES",
++        lab_target_ack="ilo.lab.local",
++        ilo_test_host="ilo.lab.local",
++        ilo_test_username="local-admin",
++        ilo_test_password="local-password",
++        ilo_test_verify_tls=False,
++        ilo_test_timeout_seconds=3.0,
++    )
++    monkeypatch.setattr("app.services.ilo_setup_apply.settings", fake_settings)
++    monkeypatch.setattr("app.providers.ilo_redfish.settings", fake_settings)
++    monkeypatch.setattr(
++        "app.services.ilo_setup_apply.current_lab_action_policy",
++        lambda provider_mode=None: _lab_action_policy(provider_mode or "local-lab-readwrite"),
++    )
++    patch_bodies: list[dict[str, object]] = []
++    _install_fake_ilo_setup_apply_httpx_client(
++        monkeypatch,
++        before_hostname="old-ilo-name",
++        after_hostname="lab-ilo-host",
++        patch_bodies=patch_bodies,
++    )
++    save_ilo_setup_intent(
++        db_session,
++        IloSetupIntentWrite(network=IloNetworkIntent(hostname="lab-ilo-host")),
++    )
++
++    result = apply_ilo_setup(
++        db_session,
++        IloSetupApplyCreate(confirmation_phrase=ILO_SETUP_CONFIRMATION_PHRASE),
++    )
++
++    assert result["status"] == "ok"
++    assert result["patch_attempted"] is True
++    assert patch_bodies == [{"HostName": "lab-ilo-host"}]
++    assert result["blockers"] == []
++    assert "lab-ilo-host" not in str(result)
++
++
++def test_local_lab_readwrite_allows_allowlisted_lab_action_categories() -> None:
++    policy = _lab_action_policy("local-lab-readwrite")
++
++    assert policy.action_allowed("ilo-redfish.record-readonly-inventory", ActionCategory.APP_STATE_WRITE)
++    assert policy.action_allowed(
++        "ilo-redfish.manager-network-protocol-hostname",
++        ActionCategory.NETWORK_CONFIG,
++    )
++    assert policy.action_allowed("netapp.svm-lif-iscsi", ActionCategory.STORAGE_CONFIG)
++    assert policy.action_allowed("ilo.bios-settings", ActionCategory.BIOS_CONFIG)
++    assert policy.action_allowed("ilo.boot-settings", ActionCategory.BOOT_CONFIG)
++    assert policy.action_allowed("ilo.virtual-media", ActionCategory.VIRTUAL_MEDIA)
++    assert policy.action_allowed("esxi.install-config", ActionCategory.OS_INSTALL)
++    assert policy.action_allowed("vm.deploy-ovf", ActionCategory.VM_DEPLOY)
++
++
++def test_local_lab_readwrite_blocks_unrepresented_actions() -> None:
++    policy = _lab_action_policy("local-lab-readwrite")
++
++    blockers = policy.action_blockers("shell.freeform-command", ActionCategory.NETWORK_CONFIG)
++
++    assert any("explicit allowlisted workflow step" in blocker for blocker in blockers)
++
++
++def test_firmware_and_factory_reset_require_explicit_flags() -> None:
++    policy = _lab_action_policy("local-lab-readwrite")
++
++    assert any(
++        "LAB_ALLOW_FIRMWARE_UPDATES=true" in blocker
++        for blocker in policy.action_blockers("ilo.firmware-update", ActionCategory.FIRMWARE_UPDATE)
++    )
++    assert any(
++        "LAB_ALLOW_FACTORY_RESET=true" in blocker
++        for blocker in policy.action_blockers("lab.factory-reset", ActionCategory.FACTORY_RESET)
++    )
++
++    enabled_policy = _lab_action_policy(
++        "local-lab-readwrite",
++        allow_firmware_updates=True,
++        allow_factory_reset=True,
++    )
++    assert enabled_policy.action_allowed("ilo.firmware-update", ActionCategory.FIRMWARE_UPDATE)
++    assert enabled_policy.action_allowed("lab.factory-reset", ActionCategory.FACTORY_RESET)
++
++
+ def test_ilo_probe_classifies_web_available_redfish_not_found(monkeypatch) -> None:
+     _allow_readonly_ilo_lab(monkeypatch)
+     _install_fake_httpx_client(
+@@ -1729,7 +2207,7 @@ def test_ilo_probe_for_lab_target_192_168_1_202_is_get_only_and_redacted(monkeyp
+     adapter = IloRedfishAdapter(
+         provider_mode="local-readonly",
+         config=IloRedfishConfig(
+-            host="192.168.1.202",
++            host="192.168.1.201",
+             username="Administrator",
+             password="super-secret-password",
+             verify_tls=False,
+@@ -1745,11 +2223,11 @@ def test_ilo_probe_for_lab_target_192_168_1_202_is_get_only_and_redacted(monkeyp
+     assert result["tls_verify"] is False
+     assert result["endpoint_detection"]["classification"] == "redfish_available"
+     assert requested_urls
+-    assert all(url.startswith("https://192.168.1.202/") for url in requested_urls)
++    assert all(url.startswith("https://192.168.1.201/") for url in requested_urls)
+     assert {request["path"] for request in result["requests"]}.issuperset(
+         {"/redfish/v1/", "/redfish/v1", "/", "/xmldata?item=All"}
+     )
+-    assert "192.168.1.202" not in encoded
++    assert "192.168.1.201" not in encoded
+     assert "Administrator" not in encoded
+     assert "super-secret-password" not in encoded
+ 
+@@ -1914,12 +2392,46 @@ def _allow_readonly_lab(monkeypatch) -> None:
+ 
+ def _allow_readonly_ilo_lab(monkeypatch) -> None:
+     monkeypatch.setattr(
+-        "app.providers.ilo_redfish.current_lab_safety",
+-        lambda: LabSafetyState(
+-            closed_loop_ack=True,
+-            readonly_ack=True,
+-            destructive_ack=False,
+-        ),
++        "app.providers.ilo_redfish.current_lab_action_policy",
++        lambda provider_mode=None: _lab_action_policy(provider_mode or "local-readonly"),
++    )
++
++
++def _allow_local_lab_ilo(monkeypatch) -> None:
++    monkeypatch.setattr(
++        "app.providers.ilo_redfish.current_lab_action_policy",
++        lambda provider_mode=None: _lab_action_policy(provider_mode or "local-lab-readwrite"),
++    )
++
++
++def _lab_action_policy(
++    provider_mode: str,
++    *,
++    lab_environment: str | None = "isolated-real-lab",
++    acknowledge_real_hardware: bool = True,
++    acknowledge_device_reconfiguration: bool = True,
++    acknowledge_data_loss_risk: bool = True,
++    acknowledge_lab_only: bool = True,
++    allow_power_actions: bool = False,
++    allow_firmware_updates: bool = False,
++    allow_factory_reset: bool = False,
++    legacy_closed_loop_ack: bool = True,
++    legacy_readonly_ack: bool = True,
++    legacy_destructive_ack: bool = False,
++) -> LabActionPolicy:
++    return LabActionPolicy(
++        provider_mode=provider_mode,
++        lab_environment=lab_environment,
++        acknowledge_real_hardware=acknowledge_real_hardware,
++        acknowledge_device_reconfiguration=acknowledge_device_reconfiguration,
++        acknowledge_data_loss_risk=acknowledge_data_loss_risk,
++        acknowledge_lab_only=acknowledge_lab_only,
++        allow_power_actions=allow_power_actions,
++        allow_firmware_updates=allow_firmware_updates,
++        allow_factory_reset=allow_factory_reset,
++        legacy_closed_loop_ack=legacy_closed_loop_ack,
++        legacy_readonly_ack=legacy_readonly_ack,
++        legacy_destructive_ack=legacy_destructive_ack,
+     )
+ 
+ 
+@@ -2096,7 +2608,8 @@ def _run_prompt_readiness_with_fake_serial(
+     prompt_output: str,
+ ) -> tuple[dict, list[bytes]]:
+     clear_probe_results()
+-    tty = tmp_path / "ttyUSB0"
++    paths = _console_paths(tmp_path)
++    tty = paths["dev"] / "ttyUSB0"
+     tty.touch()
+     _allow_readonly_lab(monkeypatch)
+     writes = _install_tracking_fake_serial(monkeypatch, [prompt_output])
+@@ -2104,6 +2617,7 @@ def _run_prompt_readiness_with_fake_serial(
+     result = CiscoConsoleAdapter(
+         provider_mode="local-readonly",
+         config=CiscoConsoleConfig(port=str(tty), baud=9600, timeout_seconds=1.0),
++        paths=_discovery_paths(paths),
+     ).prompt_readiness()
+     return result, writes
+ 
+@@ -2171,6 +2685,16 @@ def _load_provider_smoke_module() -> types.ModuleType:
+     return module
+ 
+ 
++def _load_hpe_raid_plan_module() -> types.ModuleType:
++    script_path = Path(__file__).resolve().parents[1] / "scripts" / "hpe_raid_plan.py"
++    spec = importlib.util.spec_from_file_location("hpe_raid_plan_under_test", script_path)
++    assert spec is not None
++    assert spec.loader is not None
++    module = importlib.util.module_from_spec(spec)
++    spec.loader.exec_module(module)
++    return module
++
++
+ def _valid_bootstrap_payload() -> dict[str, object]:
+     return {
+         "planned_management_ip": "192.168.1.220",
+diff --git a/app/backend/tests/test_smoke_vm_lifecycle.py b/app/backend/tests/test_smoke_vm_lifecycle.py
+index fe6bbc7..c2c78f5 100644
+--- a/app/backend/tests/test_smoke_vm_lifecycle.py
++++ b/app/backend/tests/test_smoke_vm_lifecycle.py
+@@ -191,3 +191,44 @@ def test_mock_vm_lifecycle_smoke_stale_plan_edit_blocks_execution(
+     ]
+ 
+     assert "request.completed" not in _audit_event_types(client, request_id)
++
++
++def test_mock_vm_lifecycle_smoke_rejection_locks_request(
++    client: TestClient,
++    vm_payload: dict,
++) -> None:
++    created = client.post("/api/v1/requests/vm-deploy", json=vm_payload)
++    assert created.status_code == 201
++    request_id = created.json()["id"]
++
++    submitted = client.post(f"/api/v1/requests/{request_id}/submit")
++    assert submitted.status_code == 200
++    assert submitted.json()["status"] == "needs_approval"
++
++    rejected = client.post(
++        f"/api/v1/requests/{request_id}/reject",
++        json={"approver": "change.manager", "notes": "Rejected for smoke test"},
++    )
++    assert rejected.status_code == 200
++    assert rejected.json()["status"] == "rejected"
++
++    readiness = client.get(f"/api/v1/requests/{request_id}/readiness")
++    assert readiness.status_code == 200
++    assert readiness.json()["next_action"] == "none"
++    assert readiness.json()["blockers"][0]["code"] == "rejected_request"
++
++    approve_after_reject = client.post(
++        f"/api/v1/requests/{request_id}/approve",
++        json={"approver": "change.manager", "notes": "Too late"},
++    )
++    assert approve_after_reject.status_code == 409
++    assert "rejected" in approve_after_reject.json()["detail"]
++
++    edit_after_reject = client.patch(
++        f"/api/v1/requests/{request_id}",
++        json={"notes": "Rejected requests are locked."},
++    )
++    assert edit_after_reject.status_code == 409
++    assert "locked" in edit_after_reject.json()["detail"]
++
++    assert "request.rejected" in _audit_event_types(client, request_id)
+diff --git a/app/backend/tests/test_upgrade_decision.py b/app/backend/tests/test_upgrade_decision.py
+index 51329df..33847a6 100644
+--- a/app/backend/tests/test_upgrade_decision.py
++++ b/app/backend/tests/test_upgrade_decision.py
+@@ -646,6 +646,154 @@ def test_ilo_setup_intent_rejects_secret_like_values(client: TestClient) -> None
+     assert response.status_code == 422
+ 
+ 
++def test_hpe_storage_discovery_without_cached_probe_is_blocked(
++    client: TestClient,
++) -> None:
++    clear_probe_results()
++
++    response = client.get("/api/v1/providers/ilo-redfish/hpe-storage-discovery")
++
++    assert response.status_code == 200
++    payload = response.json()
++    assert payload["storage_inventory_available"] is False
++    assert payload["controllers"] == []
++    assert payload["blockers"]
++    assert "GET-only probe" in payload["next_safe_action"]
++
++
++def test_hpe_raid_intent_feeds_plan_preview(client: TestClient) -> None:
++    clear_probe_results()
++    record_probe_result(
++        "ilo-redfish",
++        {
++            "provider_id": "ilo-redfish",
++            "status": "ok",
++            "systems": [
++                {
++                    "Model": "ProLiant DL360 Gen10",
++                    "PowerState": "On",
++                    "Status": {"Health": "Warning"},
++                    "serial_number_present": True,
++                }
++            ],
++            "storage": {
++                "status": "ok",
++                "controllers": [
++                    {
++                        "Id": "controller-1",
++                        "Name": "HPE Smart Array P408i-a SR Gen10",
++                        "Status": {"Health": "OK"},
++                    }
++                ],
++                "physical_drives": [
++                    {
++                        "Id": f"drive-{bay}",
++                        "Name": f"Drive {bay}",
++                        "Bay": bay,
++                        "CapacityBytes": 1200 * 1000 * 1000 * 1000,
++                        "MediaType": "HDD",
++                        "InterfaceType": "SAS",
++                        "Status": {"Health": "OK"},
++                    }
++                    for bay in range(1, 9)
++                ],
++                "logical_drives": [
++                    {
++                        "Id": "logical-1",
++                        "LogicalDriveName": "OS",
++                        "LogicalDriveNumber": 1,
++                        "RAIDType": "RAID1",
++                        "CapacityMiB": 1140000,
++                        "Status": {"Health": "OK"},
++                    }
++                ],
++                "warnings": [],
++            },
++            "warnings": [],
++            "blockers": [],
++        },
++    )
++
++    save_response = client.put(
++        "/api/v1/providers/ilo-redfish/hpe-raid-intent",
++        json={
++            "controller_ref": "controller-1",
++            "wipe_existing_logical_drives": True,
++            "volumes": [
++                {
++                    "name": "ESXi-OS",
++                    "purpose": "ESXi install",
++                    "raid_level": "RAID1",
++                    "drive_bays": ["1", "2"],
++                    "size_policy": "max",
++                    "bootable": True,
++                },
++                {
++                    "name": "VM-Datastore",
++                    "purpose": "VM datastore",
++                    "raid_level": "RAID6",
++                    "drive_bays": ["3", "4", "5", "6", "7", "8"],
++                    "size_policy": "max",
++                    "bootable": False,
++                },
++            ],
++            "notes": "plan only",
++        },
++    )
++
++    assert save_response.status_code == 200
++    intent = save_response.json()
++    assert intent["apply_enabled"] is False
++    assert intent["volumes"][0]["drive_bays"] == ["1", "2"]
++
++    discovery_response = client.get("/api/v1/providers/ilo-redfish/hpe-storage-discovery")
++    assert discovery_response.status_code == 200
++    discovery = discovery_response.json()
++    assert discovery["storage_inventory_available"] is True
++    assert discovery["physical_drives"][0]["bay_id"] == "1"
++
++    preview_response = client.get("/api/v1/providers/ilo-redfish/hpe-raid-plan-preview")
++    assert preview_response.status_code == 200
++    preview = preview_response.json()
++    assert preview["apply_enabled"] is False
++    assert preview["destructive_actions_requested"] is True
++    assert preview["destructive_actions_enabled"] is False
++    assert preview["impact"]["logical_drives_to_delete"] == 1
++    assert preview["planned_layout"]["volume_count"] == 2
++    assert any("RAID" in action for action in preview["disabled_actions"])
++
++
++def test_hpe_raid_apply_plan_is_gated(client: TestClient) -> None:
++    response = client.get("/api/v1/providers/ilo-redfish/hpe-raid-apply-plan")
++
++    assert response.status_code == 200
++    payload = response.json()
++    assert payload["apply_enabled"] is False
++    assert payload["confirmation_phrase"] == "APPLY HPE RAID PLAN"
++    assert payload["apply_mechanism"] == "redfish-smartstorageconfig-settings"
++    assert payload["last_apply"]["status"] in {"never", "blocked", "failed", "succeeded"}
++    assert payload["blockers"]
++
++
++def test_hpe_raid_intent_rejects_secret_like_values(client: TestClient) -> None:
++    response = client.put(
++        "/api/v1/providers/ilo-redfish/hpe-raid-intent",
++        json={
++            "controller_ref": "controller-1",
++            "volumes": [
++                {
++                    "name": "password=not-allowed",
++                    "purpose": "ESXi install",
++                    "raid_level": "RAID1",
++                    "drive_bays": ["1", "2"],
++                }
++            ],
++        },
++    )
++
++    assert response.status_code == 422
++
++
+ def test_ilo_setup_compare_empty_intent_reports_missing_and_unknown(
+     client: TestClient,
+ ) -> None:
+diff --git a/app/backend/tests/test_workflow_execution.py b/app/backend/tests/test_workflow_execution.py
+index 142dbe2..4b60b78 100644
+--- a/app/backend/tests/test_workflow_execution.py
++++ b/app/backend/tests/test_workflow_execution.py
+@@ -15,6 +15,7 @@ from app.services.lifecycle import (
+     create_vm_deployment_request,
+     execute_request,
+     plan_request,
++    reject_request,
+     submit_request,
+     update_vm_deployment_request,
+ )
+@@ -364,6 +365,48 @@ def test_execution_affecting_edit_invalidates_existing_approval(
+     assert audit_event.data_json["invalidated_approval_ids"] == [approval.id]
+ 
+ 
++def test_reject_request_records_decision_and_locks_request(
++    db_session: Session,
++    vm_payload: dict,
++) -> None:
++    request = create_vm_deployment_request(
++        db_session,
++        VMDeploymentCreate.model_validate(vm_payload),
++        actor="local-dev-user",
++    )
++    request = submit_request(db_session, request.id, actor="local-dev-user")
++
++    rejected = reject_request(
++        db_session,
++        request.id,
++        ApprovalCreate(approver="change.manager", notes="Rejected for lifecycle test"),
++    )
++
++    assert rejected.status == RequestStatus.REJECTED.value
++
++    approval = db_session.execute(
++        select(Approval).where(Approval.request_id == request.id)
++    ).scalar_one()
++    assert approval.decision == "rejected"
++    assert approval.notes == "Rejected for lifecycle test"
++
++    audit_event = db_session.execute(
++        select(AuditEvent).where(AuditEvent.event_type == "request.rejected")
++    ).scalar_one()
++    assert audit_event.request_id == request.id
++    assert audit_event.from_status == RequestStatus.NEEDS_APPROVAL.value
++    assert audit_event.to_status == RequestStatus.REJECTED.value
++    assert audit_event.data_json == {"approval_id": approval.id}
++
++    with pytest.raises(InvalidTransitionError, match="locked"):
++        update_vm_deployment_request(
++            db_session,
++            request.id,
++            VMDeploymentUpdate(notes="Rejected requests are locked."),
++            actor="local-dev-user",
++        )
++
++
+ @pytest.mark.parametrize(
+     "locked_status",
+     [
+diff --git a/app/docs/provider-adapters.md b/app/docs/provider-adapters.md
+index 6fadc98..c168bf5 100644
+--- a/app/docs/provider-adapters.md
++++ b/app/docs/provider-adapters.md
+@@ -46,29 +46,17 @@ DNS/domain, firmware readiness handoff, and report/artifact placeholder
+ sections. The preview does not call iLO, does not collect media or artifacts,
+ does not apply settings, and keeps all dangerous actions disabled.
+ 
+-`GET /api/v1/providers/ilo-redfish/setup-apply-plan` builds the only current
+-iLO live-write plan. It is limited to an idempotent Redfish
+-`ManagerNetworkProtocol.HostName` update discovered from
+-`/redfish/v1/Managers`. It does not run on page load and does not send PATCH.
+-The plan reports required gates, blocked actions, and the exact confirmation
+-phrase.
+-
+-`POST /api/v1/providers/ilo-redfish/setup-apply` can send a real Redfish PATCH
+-only when all of these are true:
+-
+-- saved iLO setup intent contains `network.hostname`
+-- `PROVIDER_MODE=local-readonly`
+-- `LAB_CLOSED_LOOP_ACK=YES`
+-- `LAB_READONLY_ACK=YES`
+-- `ILO_SETUP_APPLY_ENABLED=true`
+-- `LAB_APPLY_ACK=YES`
+-- `LAB_TARGET_ACK` exactly matches the configured `ILO_TEST_HOST`
+-- request body contains `confirmation_phrase=APPLY ILO HOSTNAME SETUP`
+-
+-The apply path does GET-before, PATCH, then GET-after readback verification.
+-It redacts the configured target, credentials, and desired hostname from the
+-recorded result. It blocks iLO IP, subnet/prefix, gateway, VLAN, user, SNMP,
+-NTP, DNS, firmware, virtual media, boot, power, and reset actions.
++`GET /api/v1/providers/ilo-redfish/setup-apply-plan` is currently a blocked
++or ready write preview depending on provider mode and acknowledgement flags. It
++can describe a possible `ManagerNetworkProtocol.HostName` operation from saved
++intent. `local-readonly` is read-only; `local-lab-readwrite` can allow this
++specific network-config workflow step when all lab acknowledgements and apply
++confirmation gates are satisfied.
++
++`POST /api/v1/providers/ilo-redfish/setup-apply` is limited to the explicit iLO
++HostName workflow step. iLO IP, subnet/prefix, gateway, VLAN, user, SNMP, NTP,
++DNS, firmware, virtual media, boot, power, BIOS, reset, and arbitrary
++POST/PATCH/PUT/DELETE actions remain blocked.
+ 
+ `GET` and `PUT /api/v1/providers/ilo-redfish/setup-intent` store desired iLO
+ setup intent locally for preview only. Intent covers network labels, desired
+@@ -142,29 +130,28 @@ surface. It is organized around these sections:
+   The page may show the future confirmation phrase `DESTROY AND REBUILD`, but it
+   does not expose a clickable destructive execution button and does not run wipe,
+   RAID, virtual media, boot order, BIOS, power, or ESXi install actions.
+-- HostName Apply: exposes a backend-only guarded Redfish PATCH lane for
+-  `ManagerNetworkProtocol.HostName`. It requires saved hostname intent,
+-  local-lab acknowledgement gates, target acknowledgement, and an exact
+-  confirmation phrase. It verifies by readback and redacts the desired value.
++- HostName Apply: remains a blocked future write lane for
++  `ManagerNetworkProtocol.HostName`. It does not send device writes until a
++  future explicit allowlist and tests are added.
+ - Safety: lists disabled dangerous actions and keeps flash, power, virtual
+   media, boot, BIOS, user, IP/subnet/gateway/VLAN, SNMP, NTP, and DNS/domain
+   changes unavailable.
+ 
+-Except for the explicit HostName apply lane, every iLO endpoint and UI section
+-keeps `apply_enabled=false` and is limited to local persistence, cached
+-discovery, mock data, or explicitly requested read-only discovery. Dangerous
+-actions are absent or disabled by design.
++Every iLO endpoint and UI section keeps `apply_enabled=false` for device writes
++and is limited to local persistence, cached discovery, mock data, or explicitly
++requested read-only discovery. Dangerous actions are absent or disabled by
++design.
+ 
+ Testing remains mock-first. Normal backend and frontend checks should run with
+ `PROVIDER_MODE=mock`. Optional `PROVIDER_MODE=local-readonly` smoke checks are
+ GET-only discovery checks for a local lab and require the explicit lab
+-acknowledgement variables described below. The HostName apply lane is a
+-separate guarded local-lab write path and must not be used for production
+-infrastructure.
++acknowledgement variables described below. `PROVIDER_MODE=local-lab-readwrite`
++is a separate isolated lab mode for allowlisted workflow categories and
++explicit workflow steps only. It is not a production mode.
+ 
+ Operator screenshots may be saved locally under ignored paths such as
+ `artifacts/debug/` or `artifacts/screenshots/`. Screenshots, generated
+-artifacts, local reports, media, and real-lab files must not be committed.
++artifacts, local reports, media, and isolated-real-lab files must not be committed.
+ 
+ ## Local Read-Only Preview Mode
+ 
+@@ -174,8 +161,8 @@ status responses expose local provider values only as configured/missing flags.
+ Probe results redact configured endpoints, users, passwords, tokens, cookies,
+ and other sensitive fields before caching or returning them.
+ 
+-For a local iLO at `192.168.1.202`, use the setup helper or create a private
+-`.env.local.real-lab` with `ILO_TEST_HOST=192.168.1.202`,
++For a local iLO at `192.168.1.201`, use the setup helper or create a private
++`.env.local.real-lab` with `ILO_TEST_HOST=192.168.1.201`,
+ `PROVIDER_MODE=local-readonly`, `LAB_CLOSED_LOOP_ACK=YES`, and
+ `LAB_READONLY_ACK=YES`. Then run:
+ 
+@@ -183,9 +170,22 @@ For a local iLO at `192.168.1.202`, use the setup helper or create a private
+ PROVIDER_MODE=local-readonly make provider-smoke
+ ```
+ 
+-That command runs explicit GET-only iLO endpoint detection and inventory
++To run only iLO and skip Cisco/ESXi probes:
++
++```bash
++PROVIDER_MODE=local-readonly PROVIDER_SMOKE_PROVIDERS=ilo-redfish make provider-smoke
++```
++
++For iLO-only local-lab-readwrite inventory:
++
++```bash
++make provider-lab-ilo-readiness
++make provider-lab-ilo-inventory
++```
++
++Those commands run explicit GET-only iLO endpoint detection and inventory
+ discovery through the guarded provider-smoke path. Normal tests still run with
+-`PROVIDER_MODE=mock` and do not contact `192.168.1.202`.
++`PROVIDER_MODE=mock` and do not contact `192.168.1.201`.
+ 
+ ESXi and Cisco management targets distinguish planned addressing from a
+ configured, reachable management network:
+@@ -227,9 +227,17 @@ Supported local variables:
+ - `ANSIBLE_CISCO_CONNECTION` (`ansible.netcommon.network_cli` by default)
+ - `LAB_CLOSED_LOOP_ACK` (`YES` required for real lab probes)
+ - `LAB_READONLY_ACK` (`YES` required for real lab probes)
+-- `ILO_SETUP_APPLY_ENABLED` (`true` required for guarded iLO HostName apply)
+-- `LAB_APPLY_ACK` (`YES` required for guarded apply paths)
+-- `LAB_TARGET_ACK` (must match the configured target for guarded apply paths)
++- `LAB_ENVIRONMENT` (`isolated-real-lab` required for `PROVIDER_MODE=local-lab-readwrite`)
++- `LAB_ACKNOWLEDGE_REAL_HARDWARE` (`true` required for `local-lab-readwrite`)
++- `LAB_ACKNOWLEDGE_DEVICE_RECONFIGURATION` (`true` required for `local-lab-readwrite`)
++- `LAB_ACKNOWLEDGE_DATA_LOSS_RISK` (`true` required for `local-lab-readwrite`)
++- `LAB_ACKNOWLEDGE_LAB_ONLY` (`true` required for `local-lab-readwrite`)
++- `LAB_ALLOW_POWER_ACTIONS` (`false` by default; power actions remain blocked)
++- `LAB_ALLOW_FIRMWARE_UPDATES` (`false` by default; firmware updates remain blocked)
++- `LAB_ALLOW_FACTORY_RESET` (`false` by default; factory reset remains blocked)
++- `ILO_SETUP_APPLY_ENABLED` (`true` required for the guarded iLO HostName apply lane)
++- `LAB_APPLY_ACK` (`YES` required for the guarded iLO HostName apply lane)
++- `LAB_TARGET_ACK` (legacy flag; no iLO PATCH is allowlisted in this implementation)
+ - `LAB_DESTRUCTIVE_ACK` (`REBUILD_LAB` required before future destructive plans can apply)
+ 
+ If `CISCO_CONSOLE_PORT` is not set, the backend dynamically discovers
+@@ -389,7 +397,10 @@ management network checks while their configured flags are false, skips probes
+ when local config or hardware is absent, and exits successfully for missing lab
+ hardware. It writes sanitized JSON and Markdown reports under ignored
+ `artifacts/real-lab/`, redacts sensitive values, and must not be used with
+-production infrastructure credentials.
++production infrastructure credentials. Set `PROVIDER_SMOKE_PROVIDERS` to a
++comma-separated subset of `ilo-redfish`, `cisco-console`, `cisco-ansible`, and
++`esxi-readonly` to limit smoke status, TCP preflight, and probe execution to
++specific providers.
+ 
+ ## Interface Expectations
+ 
+diff --git a/app/docs/security.md b/app/docs/security.md
+index 1ffbcbc..d30fd2f 100644
+--- a/app/docs/security.md
++++ b/app/docs/security.md
+@@ -40,6 +40,23 @@ Allowed local-readonly behavior:
+   safe `show` commands
+ - explicit ESXi HTTPS GET and TCP reachability checks
+ 
++`PROVIDER_MODE=local-lab-readwrite` is separate from both `mock` and `local-readonly`.
++It is for isolated lab equipment only and requires all of:
++
++- `LAB_ENVIRONMENT=isolated-real-lab`
++- `LAB_ACKNOWLEDGE_REAL_HARDWARE=true`
++- `LAB_ACKNOWLEDGE_DEVICE_RECONFIGURATION=true`
++- `LAB_ACKNOWLEDGE_DATA_LOSS_RISK=true`
++- `LAB_ACKNOWLEDGE_LAB_ONLY=true`
++
++Allowed local-lab-readwrite behavior is category-gated by
++`app.providers.action_policy`: readonly discovery, app-side state updates,
++network/storage/BIOS/boot/virtual-media/OS-install/VM-deploy workflows, and
++only explicit allowlisted workflow steps. Power actions require
++`LAB_ALLOW_POWER_ACTIONS=true`; firmware updates require
++`LAB_ALLOW_FIRMWARE_UPDATES=true`; factory reset requires
++`LAB_ALLOW_FACTORY_RESET=true`.
++
+ Blocked behavior includes power actions, firmware updates, virtual media
+ mounts, iLO account changes, switch configuration changes, `conf t`, `write
+ memory`, `reload`, `erase startup-config`, `copy`, arbitrary Ansible variables,
+diff --git a/app/docs/workflows.md b/app/docs/workflows.md
+index 606e96a..2d79c02 100644
+--- a/app/docs/workflows.md
++++ b/app/docs/workflows.md
+@@ -28,7 +28,8 @@ and execution through mocked provider adapters.
+ 2. Edit it, when allowed, with `PATCH /api/v1/requests/{id}`.
+ 3. Check readiness with `GET /api/v1/requests/{id}/readiness`.
+ 4. Submit it with `POST /api/v1/requests/{id}/submit`.
+-5. Approve it with `POST /api/v1/requests/{id}/approve`.
++5. Approve it with `POST /api/v1/requests/{id}/approve`, or reject it with
++   `POST /api/v1/requests/{id}/reject`.
+ 6. Create a dry-run plan with `POST /api/v1/requests/{id}/plan`.
+ 7. Execute the mock deployment with `POST /api/v1/requests/{id}/execute`.
+ 8. Review local runs with `GET /api/v1/workflow-runs`.
+@@ -197,7 +198,8 @@ mock task and VM IDs and does not connect to any infrastructure endpoint.
+ Cancellation is allowed for requests in `draft`, `submitted`, `validating`,
+ `needs_approval`, `approved`, or `planned`. Cancelling a planned request also
+ marks its planned workflow run as `cancelled`. Requests that are already
+-`executing`, `completed`, `failed`, or `cancelled` reject cancellation.
++`executing`, `completed`, `failed`, `cancelled`, or `rejected` reject
++cancellation.
+ 
+ ### Status Transitions
+ 
+@@ -209,6 +211,7 @@ marks its planned workflow run as `cancelled`. Requests that are already
+ | edit execution-affecting fields | `submitted`, `validating`, `needs_approval`, `approved`, `planned` | `draft`; planned workflow runs are cancelled |
+ | submit | `draft` | `needs_approval` after `submitted` and `validating` audit events |
+ | approve | `needs_approval` | `approved` |
++| reject | `needs_approval` | `rejected` |
+ | plan | `approved` | `planned` |
+ | cancel | pre-execution states | `cancelled` |
+ | execute | `planned` with matching persisted plan | `completed` after `executing` audit event |
+diff --git a/app/frontend/src/App.tsx b/app/frontend/src/App.tsx
+index 064fc08..ba81608 100644
+--- a/app/frontend/src/App.tsx
++++ b/app/frontend/src/App.tsx
+@@ -2592,6 +2592,7 @@ function CiscoSetupReadinessPanel({
+   const promptClassification = objectValue(lastPrompt.prompt_classification);
+   const readTiming = objectValue(readiness.console.read_timing);
+   const ethernetReadiness = objectValue(readiness.ethernet_readiness);
++  const realLabRun = objectValue(readiness.real_lab_run);
+ 
+   return (
+     <section className="provider-card provider-card-wide cisco-setup-readiness">
+@@ -2634,6 +2635,23 @@ function CiscoSetupReadinessPanel({
+         />
+         <ProviderFact label="Prompt Readiness" value={readiness.console.safe_next_action} />
+       </div>
++      <SetupPreviewBlock
++        title="Cisco Real-Lab Run"
++        tag={labelize(asString(realLabRun.status) || "not-run")}
++        lines={[
++          `Console adapter detected: ${presenceLabel(realLabRun.console_adapter_detected)}.`,
++          `Adapter: ${asString(realLabRun.console_adapter) || "Missing"}.`,
++          `Prompt: ${labelize(asString(realLabRun.prompt_state) || "unknown")}, detected: ${presenceLabel(realLabRun.prompt_detected)}.`,
++          `Selected baud: ${asString(realLabRun.selected_baud) || "Missing"}.`,
++          `Switch identity: ${labelize(asString(realLabRun.switch_identity_status) || "not-captured")}.`,
++          `Bootstrap plan: ${labelize(asString(realLabRun.bootstrap_plan_status) || "not-built")}.`,
++          `Apply: ${labelize(asString(realLabRun.apply_status) || "not-attempted")}.`,
++          `Save/reload: ${asString(realLabRun.save_reload_status) || "not-attempted"}.`,
++          `Ethernet management: ${labelize(asString(realLabRun.ethernet_management_status) || "not-attempted")}.`,
++          `SSH: ${presenceLabel(realLabRun.ssh_status)}; SCP: ${labelize(asString(realLabRun.scp_status) || "not-attempted")}.`,
++          `Last blocker: ${asString(realLabRun.last_blocker) || "None"}.`
++        ]}
++      />
+       <div className="setup-preview-grid">
+         <SetupPreviewBlock
+           title="Current Discovery"
+@@ -3195,8 +3213,19 @@ function CiscoConsoleDetails({
+   const envOverride = objectValue(discovery.env_override);
+   const candidates = consoleCandidates(discovery.candidates);
+   const candidateCounts = objectValue(discovery.candidate_counts);
++  const configuredPortHint = asString(discovery.configured_port_hint) || asString(envOverride.path);
+   const effectivePath = asString(discovery.effective_path);
++  const selectedPath = asString(promptReadinessResult?.selected_path) || effectivePath;
++  const selectedBaud =
++    asString(promptReadinessResult?.selected_baud) ||
++    asString(promptReadinessResult?.baud) ||
++    asString(provider.configuration.baud) ||
++    "9600";
+   const recommendedPath = asString(discovery.recommended_path);
++  const lastConsoleBlocker =
++    stringArray(promptReadinessResult?.blockers).slice(-1)[0] ||
++    asString(discovery.last_console_blocker) ||
++    stringArray(discovery.blockers).slice(-1)[0];
+   const operatorMessage = asString(discovery.operator_message);
+   const operatorChecklist = stringArray(discovery.operator_checklist);
+   const permissionGuidance = asString(discovery.permission_guidance);
+@@ -3206,7 +3235,9 @@ function CiscoConsoleDetails({
+   const hasPermissionIssue = candidates.some(
+     (candidate) => candidate.exists && (candidate.readable === false || candidate.writable === false)
+   );
+-  const promptReadinessEnabled = provider.mode === "local-readonly" && provider.status === "ready";
++  const promptReadinessEnabled =
++    (provider.mode === "local-readonly" || provider.mode === "local-lab-readwrite") &&
++    provider.status === "ready";
+ 
+   return (
+     <div className="provider-detail-section">
+@@ -3241,12 +3272,14 @@ function CiscoConsoleDetails({
+       )}
+       <div className="provider-fact-grid">
+         <ProviderFact
+-          label="Env Override"
+-          value={asBoolean(envOverride.configured) ? asString(envOverride.path) || "Configured" : "Not configured"}
++          label="Configured Port Hint"
++          value={configuredPortHint || "Not configured"}
+         />
++        <ProviderFact label="Auto Selected Port" value={selectedPath || "-"} />
++        <ProviderFact label="Selected Baud" value={selectedBaud} />
++        <ProviderFact label="Candidate Count" value={`${asNumber(candidateCounts.total, candidates.length)}`} />
++        <ProviderFact label="Last Console Blocker" value={lastConsoleBlocker || "None"} />
+         <ProviderFact label="Recommended Path" value={recommendedPath || "-"} />
+-        <ProviderFact label="Effective Path" value={effectivePath || "-"} />
+-        <ProviderFact label="Baud" value={asString(provider.configuration.baud) || "9600"} />
+       </div>
+       <div className="provider-fact-grid compact">
+         <ProviderFact label="Existing Candidates" value={`${asNumber(candidateCounts.existing, candidates.filter((candidate) => candidate.exists).length)}`} />
+@@ -3302,13 +3335,13 @@ function CiscoConsoleDetails({
+                 <Play size={16} />
+                 {busyPromptReadiness ? "Checking" : "Prompt Readiness"}
+               </button>
+-              <span className="action-tag read-only">Newline only</span>
++              <span className="action-tag read-only">Wake + classify only</span>
+               <p>
+-                Sends newline only and reads the redacted prompt state. No show commands are run by this check.
++                Tries discovered console adapters and common Cisco baud rates, then reads the redacted prompt state. No show commands are run by this check.
+               </p>
+               {!promptReadinessEnabled && (
+                 <p>
+-                  Requires PROVIDER_MODE=local-readonly, lab read-only acknowledgements, and one ready console path.
++                  Requires PROVIDER_MODE=local-readonly or local-lab-readwrite, lab acknowledgements, and one ready console path.
+                 </p>
+               )}
+             </div>
+@@ -3327,6 +3360,15 @@ function CiscoConsoleDetails({
+               label="Show Commands Allowed"
+               value={asBoolean(promptReadinessResult.safe_show_commands_allowed) ? "true" : "false"}
+             />
++            <ProviderFact label="Selected Port" value={asString(promptReadinessResult.selected_path) || "-"} />
++            <ProviderFact
++              label="Selected Baud"
++              value={asString(promptReadinessResult.selected_baud) || asString(promptReadinessResult.baud) || "-"}
++            />
++            <ProviderFact
++              label="Candidates"
++              value={asString(promptReadinessResult.candidate_count) || `${asNumber(candidateCounts.total, candidates.length)}`}
++            />
+           </div>
+           <p className="provider-redaction-note">
+             {promptReadinessMessage(promptReadinessResult)}
+@@ -5506,7 +5548,7 @@ function yesNo(value: boolean): string {
+ function accessLabel(candidate: ConsoleCandidate): string {
+   const readable = candidate.readable === null ? "unknown" : yesNo(candidate.readable);
+   const writable = candidate.writable === null ? "unknown" : yesNo(candidate.writable);
+-  return `read ${readable} / write ${writable}`;
++  return `read ${readable} / write ${writable} / in use ${yesNo(candidate.in_use)}`;
+ }
+ 
+ function MockModeBanner() {
+diff --git a/app/frontend/src/api.ts b/app/frontend/src/api.ts
+index 1fdb230..ab7278a 100644
+--- a/app/frontend/src/api.ts
++++ b/app/frontend/src/api.ts
+@@ -7,7 +7,14 @@ import type {
+   CiscoConsoleBootstrapPlan,
+   CiscoSetupReadiness,
+   CiscoSetupWizardPlan,
++  HpeRaidIntent,
++  HpeRaidIntentWrite,
++  HpeRaidPlanPreview,
++  HpeStorageDiscovery,
+   IloUpgradeReadiness,
++  IloSetupIntent,
++  IloSetupIntentWrite,
++  IloSetupPlanPreview,
+   MediaInventory,
+   NetAppConsoleReadiness,
+   NetAppObservationUpdate,
+@@ -89,6 +96,47 @@ export const api = {
+   mediaInventory: () => apiRequest<MediaInventory>("/api/v1/media-inventory"),
+   iloUpgradeReadiness: () =>
+     apiRequest<IloUpgradeReadiness>("/api/v1/providers/ilo-redfish/upgrade-readiness"),
++  iloSetupIntent: () =>
++    apiRequest<IloSetupIntent>("/api/v1/providers/ilo-redfish/setup-intent"),
++  saveIloSetupIntent: (payload: IloSetupIntentWrite) =>
++    apiRequest<IloSetupIntent>("/api/v1/providers/ilo-redfish/setup-intent", {
++      method: "PUT",
++      body: payload
++    }),
++  iloSetupPlanPreview: () =>
++    apiRequest<IloSetupPlanPreview>("/api/v1/providers/ilo-redfish/setup-plan-preview"),
++  hpeStorageDiscovery: () =>
++    apiRequest<HpeStorageDiscovery>("/api/v1/providers/ilo-redfish/hpe-storage-discovery"),
++  hpeRaidIntent: () =>
++    apiRequest<HpeRaidIntent>("/api/v1/providers/ilo-redfish/hpe-raid-intent"),
++  saveHpeRaidIntent: (payload: HpeRaidIntentWrite) =>
++    apiRequest<HpeRaidIntent>("/api/v1/providers/ilo-redfish/hpe-raid-intent", {
++      method: "PUT",
++      body: payload
++    }),
++  hpeRaidPlanPreview: () =>
++    apiRequest<HpeRaidPlanPreview>("/api/v1/providers/ilo-redfish/hpe-raid-plan-preview"),
++  hpeRaidApplyPlan: () =>
++    apiRequest<ProviderProbeResult>("/api/v1/providers/ilo-redfish/hpe-raid-apply-plan"),
++  applyHpeRaidPlan: (confirmation_phrase: string) =>
++    apiRequest<ProviderProbeResult>("/api/v1/providers/ilo-redfish/hpe-raid-apply", {
++      method: "POST",
++      body: { confirmation_phrase }
++    }),
++  hpeRaidPending: () =>
++    apiRequest<ProviderProbeResult>("/api/v1/providers/ilo-redfish/hpe-raid-pending"),
++  hpeRaidResetPlan: () =>
++    apiRequest<ProviderProbeResult>("/api/v1/providers/ilo-redfish/hpe-raid-reset-plan"),
++  resetHpeRaidServer: () =>
++    apiRequest<ProviderProbeResult>("/api/v1/providers/ilo-redfish/hpe-raid-reset", {
++      method: "POST"
++    }),
++  validateHpeRaidAfterReset: () =>
++    apiRequest<ProviderProbeResult>("/api/v1/providers/ilo-redfish/hpe-raid-validate-after-reset", {
++      method: "POST"
++    }),
++  esxiInstallReadiness: () =>
++    apiRequest<ProviderProbeResult>("/api/v1/providers/ilo-redfish/esxi-install-readiness"),
+   ciscoSetupReadiness: () =>
+     apiRequest<CiscoSetupReadiness>("/api/v1/providers/cisco/setup-readiness"),
+   ciscoSetupWizardPlan: () =>
+diff --git a/app/frontend/src/styles.css b/app/frontend/src/styles.css
+index bd35860..2272572 100644
+--- a/app/frontend/src/styles.css
++++ b/app/frontend/src/styles.css
+@@ -895,6 +895,56 @@ pre {
+   gap: 16px;
+ }
+ 
++.provider-section-tabs {
++  align-items: center;
++  background: #f4f6f9;
++  border: 1px solid #c8d1dc;
++  border-radius: 8px;
++  box-shadow: inset 0 0 0 1px #ffffff;
++  display: flex;
++  gap: 8px;
++  margin-bottom: 16px;
++  overflow-x: auto;
++  padding: 8px;
++}
++
++.provider-section-tabs button {
++  align-items: center;
++  background: #ffffff;
++  border: 1px solid #c8d1dc;
++  border-radius: 6px;
++  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
++  color: #334155;
++  display: inline-flex;
++  flex: 0 0 auto;
++  gap: 8px;
++  min-height: 44px;
++  padding: 9px 12px;
++  white-space: nowrap;
++}
++
++.provider-section-tabs button:hover:not(:disabled) {
++  background: #f8fafc;
++  border-color: #94a3b8;
++}
++
++.provider-section-tabs button.active {
++  background: #e7f2ff;
++  border-color: #4f8edb;
++  box-shadow: 0 0 0 2px rgba(79, 142, 219, 0.18);
++  color: #0f172a;
++}
++
++.provider-section-tabs button:disabled {
++  cursor: wait;
++  opacity: 0.7;
++}
++
++.provider-section-tabs .status {
++  font-size: 11px;
++  padding: 3px 7px;
++}
++
+ .provider-card {
+   padding: 16px;
+ }
+@@ -1083,6 +1133,168 @@ pre {
+   margin: 8px 0 0;
+ }
+ 
++.setup-preview-grid {
++  display: grid;
++  gap: 12px;
++  grid-template-columns: repeat(2, minmax(0, 1fr));
++  margin-top: 14px;
++}
++
++.setup-preview-block {
++  background: #ffffff;
++  border: 1px solid #dfe4ea;
++  border-radius: 6px;
++  padding: 12px;
++}
++
++.setup-preview-block > div {
++  align-items: flex-start;
++  display: flex;
++  gap: 10px;
++  justify-content: space-between;
++}
++
++.setup-preview-block h3 {
++  color: #445164;
++  font-size: 12px;
++  letter-spacing: 0;
++  margin: 0;
++  text-transform: uppercase;
++}
++
++.setup-preview-block p {
++  color: #5d6877;
++  font-size: 13px;
++  margin: 8px 0 0;
++}
++
++.checkbox-row {
++  align-items: center;
++  background: #ffffff;
++  border: 1px solid #dfe4ea;
++  border-radius: 6px;
++  color: #445164;
++  display: flex;
++  gap: 10px;
++  min-height: 40px;
++  padding: 9px 10px;
++}
++
++.checkbox-row input {
++  min-height: auto;
++  width: auto;
++}
++
++.ilo-setup-form {
++  margin-top: 14px;
++}
++
++.ilo-checkbox-row {
++  align-self: end;
++}
++
++.ilo-user-intent-list {
++  border-top: 1px solid #e5e9ef;
++  display: grid;
++  gap: 10px;
++  padding-top: 12px;
++}
++
++.ilo-user-intent-head,
++.ilo-user-intent-row {
++  align-items: end;
++  display: grid;
++  gap: 10px;
++  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
++}
++
++.ilo-user-intent-head h3 {
++  grid-column: span 2;
++  margin: 0;
++}
++
++.ilo-user-intent-row button {
++  min-height: 40px;
++}
++
++.hpe-raid-form {
++  margin-top: 14px;
++}
++
++.hpe-wipe-row {
++  align-self: end;
++}
++
++.hpe-raid-table {
++  table-layout: fixed;
++}
++
++.hpe-raid-volume-list {
++  display: grid;
++  gap: 12px;
++}
++
++.hpe-raid-volume-editor {
++  background: #f8fafc;
++  border: 1px solid #dfe4ea;
++  border-radius: 6px;
++  display: grid;
++  gap: 12px;
++  padding: 12px;
++}
++
++.hpe-raid-volume-grid {
++  align-items: end;
++  display: grid;
++  gap: 10px;
++  grid-template-columns: repeat(2, minmax(0, 1fr)) auto;
++}
++
++.hpe-raid-volume-grid button {
++  min-height: 40px;
++}
++
++.hpe-drive-selector {
++  display: grid;
++  gap: 8px;
++  grid-template-columns: repeat(4, minmax(0, 1fr));
++}
++
++.hpe-drive-choice {
++  align-items: flex-start;
++  background: #ffffff;
++  border: 1px solid #dfe4ea;
++  border-radius: 6px;
++  display: flex;
++  gap: 8px;
++  min-height: 70px;
++  padding: 10px;
++}
++
++.hpe-drive-choice input {
++  margin-top: 3px;
++  min-height: auto;
++  width: auto;
++}
++
++.hpe-drive-choice span,
++.hpe-drive-choice strong {
++  display: block;
++  overflow-wrap: anywhere;
++}
++
++.hpe-drive-choice span {
++  color: #5d6877;
++  font-size: 12px;
++  line-height: 1.35;
++}
++
++.hpe-drive-choice strong {
++  color: #18212f;
++  font-size: 13px;
++  margin-bottom: 4px;
++}
++
+ .upgrade-readiness {
+   margin-top: 16px;
+ }
+@@ -1399,10 +1611,25 @@ pre {
+     .provider-fact-grid.compact,
+     .netapp-readiness-grid,
+     .run-center-preview-grid,
++    .setup-preview-grid,
+     .provider-action-layout {
+       grid-template-columns: 1fr;
+     }
+ 
++    .ilo-user-intent-head,
++    .ilo-user-intent-row {
++      grid-template-columns: 1fr;
++    }
++
++    .ilo-user-intent-head h3 {
++      grid-column: auto;
++    }
++
++    .hpe-raid-volume-grid,
++    .hpe-drive-selector {
++      grid-template-columns: 1fr;
++    }
++
+     .disabled-action-row {
+       grid-template-columns: auto minmax(0, 1fr);
+     }
+diff --git a/app/frontend/src/types.ts b/app/frontend/src/types.ts
+index 6fac0fb..0e1bfd5 100644
+--- a/app/frontend/src/types.ts
++++ b/app/frontend/src/types.ts
+@@ -122,6 +122,8 @@ export type ConsoleCandidate = {
+   writable: boolean | null;
+   label: string | null;
+   target_path: string | null;
++  in_use: boolean;
++  rank: number;
+   recommendation: string;
+ };
+ 
+@@ -174,6 +176,7 @@ export type CiscoSetupReadiness = {
+     last_prompt_readiness: Record<string, unknown>;
+   };
+   ethernet_readiness: Record<string, unknown>;
++  real_lab_run: Record<string, unknown>;
+   bootstrap_preview: {
+     apply_enabled: boolean;
+     commands_redacted: boolean;
+diff --git a/artifacts/codex-runs/cisco-console-ethernet-readiness-report.md b/artifacts/codex-runs/cisco-console-ethernet-readiness-report.md
+index 87674e0..402fb77 100644
+--- a/artifacts/codex-runs/cisco-console-ethernet-readiness-report.md
++++ b/artifacts/codex-runs/cisco-console-ethernet-readiness-report.md
+@@ -2,7 +2,7 @@
+ 
+ ## Summary
+ 
+-- checked_at: 2026-06-05T19:40:30.658552+00:00
++- checked_at: 2026-06-05T19:51:46.578735+00:00
+ - status: blocked
+ - console_status: ready
+ - selected_console: /dev/serial/by-id/usb-Prolific_Technology_Inc._USB-Serial_Controller_D-if00-port0
+diff --git a/scripts/setup-real-lab-env.sh b/scripts/setup-real-lab-env.sh
+index 8f3cd59..8e2729b 100755
+--- a/scripts/setup-real-lab-env.sh
++++ b/scripts/setup-real-lab-env.sh
+@@ -25,6 +25,13 @@ echo "Examples: Cisco bootstrap/config reset, ESXi rebuild/reinstall, firmware/u
+ echo "Leave disabled unless you are ready for wipe/rebuild style testing."
+ read -rp "Allow destructive/rebuild lab actions? Type REBUILD_LAB or press Enter to keep disabled: " destructive_ack
+ 
++echo
++echo "local-lab-readwrite mode can contact and reconfigure isolated real lab equipment."
++read -rp "Acknowledge real hardware? Type YES: " ack_real_hardware
++read -rp "Acknowledge device reconfiguration? Type YES: " ack_device_reconfiguration
++read -rp "Acknowledge data loss risk? Type YES: " ack_data_loss
++read -rp "Acknowledge lab-only use? Type YES: " ack_lab_only
++
+ read -rp "iLO host or lab IP: " ilo_host
+ 
+ read -rp "Planned ESXi host or lab IP (optional): " esxi_host
+@@ -69,12 +76,21 @@ cisco_baud="${cisco_baud:-9600}"
+ 
+ cat > .env.local.real-lab <<ENV
+ # Local real-lab settings. Do not commit.
+-PROVIDER_MODE=local-readonly
++PROVIDER_MODE=local-lab-readwrite
+ 
+ LAB_CLOSED_LOOP_ACK=YES
+ LAB_READONLY_ACK=YES
+ LAB_DESTRUCTIVE_ACK=${destructive_ack}
+ 
++LAB_ENVIRONMENT=isolated-real-lab
++LAB_ACKNOWLEDGE_REAL_HARDWARE=$([[ "${ack_real_hardware}" == "YES" ]] && echo true || echo false)
++LAB_ACKNOWLEDGE_DEVICE_RECONFIGURATION=$([[ "${ack_device_reconfiguration}" == "YES" ]] && echo true || echo false)
++LAB_ACKNOWLEDGE_DATA_LOSS_RISK=$([[ "${ack_data_loss}" == "YES" ]] && echo true || echo false)
++LAB_ACKNOWLEDGE_LAB_ONLY=$([[ "${ack_lab_only}" == "YES" ]] && echo true || echo false)
++LAB_ALLOW_POWER_ACTIONS=false
++LAB_ALLOW_FIRMWARE_UPDATES=false
++LAB_ALLOW_FACTORY_RESET=false
++
+ LAB_USERNAME=${lab_user}
+ LAB_PASSWORD=${lab_password}
+ 
+@@ -82,6 +98,7 @@ ILO_TEST_HOST=${ilo_host}
+ ILO_TEST_USERNAME=${lab_user}
+ ILO_TEST_PASSWORD=${lab_password}
+ ILO_TEST_VERIFY_TLS=false
++ILO_SETUP_APPLY_ENABLED=false
+ 
+ ESXI_CONFIGURED=${esxi_configured}
+ ESXI_TEST_HOST=${esxi_host}
+@@ -108,6 +125,7 @@ chmod 600 .env.local.real-lab
+ 
+ echo
+ echo "Wrote .env.local.real-lab"
++echo "Provider mode: local-lab-readwrite"
+ echo "Destructive/rebuild mode: ${destructive_ack:-disabled}"
+ echo "ESXi configured for probes: ${esxi_configured}"
+ echo "Cisco management configured for probes: ${cisco_mgmt_configured}"

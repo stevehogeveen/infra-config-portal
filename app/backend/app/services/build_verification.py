@@ -4,8 +4,11 @@ import json
 import os
 import shlex
 import socket
+import subprocess
+from importlib import util as importlib_util
 from datetime import UTC, datetime
 from pathlib import Path
+from shutil import which
 from typing import Any
 
 from app.core.config import (
@@ -27,6 +30,7 @@ LAB_IP_REPORT = CODEX_RUN_DIR / "lab-ip-profile-update-report.md"
 LAB_IP_HARDENING_REPORT = CODEX_RUN_DIR / "lab-ip-profile-hardening-report.md"
 CLASSIFICATION_REPORT = CODEX_RUN_DIR / "build-verification-classification-report.md"
 FAILURE_CASE_REPORT = CODEX_RUN_DIR / "failure-case-hardening-report.md"
+TOOLCHAIN_AVAILABILITY_REPORT = CODEX_RUN_DIR / "toolchain-availability-report.md"
 CLASSIFICATION_ORDER = {
     "hard_fail": 0,
     "stale_config": 1,
@@ -44,6 +48,7 @@ def build_lab_build_verification(*, check_ports: bool = True) -> dict[str, Any]:
     lab_ip_profile = _lab_ip_profile_checks()
     mtu = _mtu_checks()
     protocols = _protocol_checks(check_ports=check_ports)
+    toolchain = build_toolchain_availability()
     checklist = _post_build_checklist(protocols)
     failures = _failure_classification(credentials, lab_ip_profile, mtu, protocols)
     blockers = [
@@ -66,6 +71,7 @@ def build_lab_build_verification(*, check_ports: bool = True) -> dict[str, Any]:
         "credentials": credentials,
         "mtu": mtu,
         "protocols": protocols,
+        "toolchain": toolchain,
         "post_build_checklist": checklist,
         "failures": failures,
         "blockers": blockers,
@@ -77,6 +83,7 @@ def build_lab_build_verification(*, check_ports: bool = True) -> dict[str, Any]:
             "lab_ip_profile_hardening_report": str(LAB_IP_HARDENING_REPORT.relative_to(REPO_ROOT)),
             "classification_report": str(CLASSIFICATION_REPORT.relative_to(REPO_ROOT)),
             "failure_case_report": str(FAILURE_CASE_REPORT.relative_to(REPO_ROOT)),
+            "toolchain_availability_report": str(TOOLCHAIN_AVAILABILITY_REPORT.relative_to(REPO_ROOT)),
         },
         "next_safe_action": blockers[0] if blockers else "Review warnings, then continue product certification.",
     }
@@ -87,6 +94,83 @@ def build_lab_build_verification(*, check_ports: bool = True) -> dict[str, Any]:
     CLASSIFICATION_REPORT.write_text(_classification_markdown(sanitized), encoding="utf-8")
     FAILURE_CASE_REPORT.write_text(_failure_case_markdown(sanitized), encoding="utf-8")
     SUMMARY.write_text(json.dumps(sanitized, indent=2), encoding="utf-8")
+    return sanitized
+
+
+def build_toolchain_availability() -> dict[str, Any]:
+    CODEX_RUN_DIR.mkdir(parents=True, exist_ok=True)
+    tools = [
+        _python_tool(
+            "pyserial",
+            "serial",
+            "Cisco local serial console first contact.",
+            required=True,
+        ),
+        _python_tool(
+            "netmiko",
+            "netmiko",
+            "Cisco SSH command execution after console bootstrap enables management SSH.",
+            required=False,
+        ),
+        _cli_tool(
+            "ansible",
+            "ansible",
+            "Cisco, NetApp, and future workflow orchestration after safe inventory is available.",
+            required=False,
+        ),
+        _ansible_collection_tool(
+            "cisco.ios collection",
+            "cisco.ios",
+            "Cisco IOS managed-state modules after SSH is enabled.",
+            required=False,
+        ),
+        _cli_tool(
+            "govc",
+            "govc",
+            "ESXi/vSphere post-install validation and deployment operations.",
+            required=False,
+        ),
+        _cli_tool(
+            "ilorest",
+            "ilorest",
+            "HPE iLO inventory, settings, firmware, and Redfish-backed operations.",
+            required=False,
+        ),
+        _python_tool(
+            "netapp-ontap",
+            "netapp_ontap",
+            "NetApp ONTAP REST client for managed-state setup and upgrade validation.",
+            required=False,
+        ),
+        _optional_python_family_tool(
+            "pyATS/Genie",
+            ("pyats", "genie"),
+            "Cisco parsing, learning, and validation when installed.",
+        ),
+    ]
+    required_missing = [tool["name"] for tool in tools if tool["required"] and not tool["available"]]
+    optional_missing = [tool["name"] for tool in tools if not tool["required"] and not tool["available"]]
+    payload = {
+        "provider_id": "toolchain-readiness",
+        "checked_at": datetime.now(UTC).isoformat(),
+        "status": "blocked" if required_missing else "warning" if optional_missing else "ready",
+        "provider_mode": settings.provider_mode,
+        "tools": tools,
+        "required_missing": required_missing,
+        "optional_missing": optional_missing,
+        "managed_state": _managed_state_plan(),
+        "firmware_strategy": _firmware_toolchain_strategy(),
+        "artifacts": {
+            "report": str(TOOLCHAIN_AVAILABILITY_REPORT.relative_to(REPO_ROOT)),
+        },
+        "next_safe_action": (
+            "Install missing required local packages before console-first lab workflows."
+            if required_missing
+            else "Use available tools only through staged readiness, preview, approval, and audit gates."
+        ),
+    }
+    sanitized = _sanitize(payload)
+    TOOLCHAIN_AVAILABILITY_REPORT.write_text(_toolchain_markdown(sanitized), encoding="utf-8")
     return sanitized
 
 
@@ -658,6 +742,178 @@ def _reachable(host: str | None, port: int, check_ports: bool) -> bool | None:
         return False
 
 
+def _python_tool(name: str, module: str, purpose: str, *, required: bool) -> dict[str, Any]:
+    spec = importlib_util.find_spec(module)
+    return {
+        "name": name,
+        "type": "python-package",
+        "module": module,
+        "available": spec is not None,
+        "required": required,
+        "version": _python_module_version(module) if spec else None,
+        "purpose": purpose,
+        "check": f"import {module}",
+    }
+
+
+def _optional_python_family_tool(name: str, modules: tuple[str, ...], purpose: str) -> dict[str, Any]:
+    checks = [
+        {
+            "module": module,
+            "available": importlib_util.find_spec(module) is not None,
+            "version": _python_module_version(module),
+        }
+        for module in modules
+    ]
+    return {
+        "name": name,
+        "type": "python-package-family",
+        "modules": checks,
+        "available": all(item["available"] for item in checks),
+        "required": False,
+        "purpose": purpose,
+        "check": " and ".join(f"import {module}" for module in modules),
+    }
+
+
+def _python_module_version(module: str) -> str | None:
+    try:
+        package_name = {
+            "serial": "pyserial",
+            "netapp_ontap": "netapp-ontap",
+        }.get(module, module)
+        from importlib import metadata
+
+        return metadata.version(package_name)
+    except Exception:
+        return None
+
+
+def _cli_tool(name: str, command: str, purpose: str, *, required: bool) -> dict[str, Any]:
+    path = which(command)
+    return {
+        "name": name,
+        "type": "cli",
+        "command": command,
+        "available": path is not None,
+        "required": required,
+        "path": path,
+        "version": _cli_version(command) if path else None,
+        "purpose": purpose,
+        "check": f"{command} --version",
+    }
+
+
+def _cli_version(command: str) -> str | None:
+    version_args = {
+        "ansible": ["ansible", "--version"],
+        "govc": ["govc", "version"],
+        "ilorest": ["ilorest", "--version"],
+    }.get(command, [command, "--version"])
+    try:
+        result = subprocess.run(
+            version_args,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            timeout=3.0,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    first_line = (result.stdout or "").splitlines()[0:1]
+    return first_line[0].strip() if first_line else None
+
+
+def _ansible_collection_tool(name: str, collection: str, purpose: str, *, required: bool) -> dict[str, Any]:
+    ansible_galaxy = which("ansible-galaxy")
+    available = False
+    version = None
+    if ansible_galaxy:
+        try:
+            result = subprocess.run(
+                [ansible_galaxy, "collection", "list", collection],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                timeout=5.0,
+                check=False,
+            )
+            available = result.returncode == 0 and collection in (result.stdout or "")
+            for line in (result.stdout or "").splitlines():
+                if line.strip().startswith(collection):
+                    parts = line.split()
+                    version = parts[1] if len(parts) > 1 else None
+                    break
+        except (OSError, subprocess.TimeoutExpired):
+            available = False
+    return {
+        "name": name,
+        "type": "ansible-collection",
+        "collection": collection,
+        "available": available,
+        "required": required,
+        "version": version,
+        "purpose": purpose,
+        "check": f"ansible-galaxy collection list {collection}",
+    }
+
+
+def _managed_state_plan() -> dict[str, Any]:
+    return {
+        "cisco": {
+            "sequence": [
+                "Use console bootstrap first via local_serial or tcp_console/ser2net.",
+                "Enable management SSH only through an explicit guarded bootstrap workflow.",
+                "Use Ansible cisco.ios, Netmiko, and pyATS/Genie parsing for read-only validation and later managed state after SSH is enabled.",
+            ],
+            "primary_tools": ["local_serial", "tcp_console/ser2net", "Ansible cisco.ios", "Netmiko"],
+            "optional_tools": ["pyATS/Genie"],
+            "safety": "No configure, write memory, reload, copy, erase, or SSH changes run from this check.",
+        },
+        "hpe_ilo": {
+            "sequence": [
+                "Use Redfish direct as the default API path.",
+                "Use HPE iLOrest when vendor tooling provides better coverage for iLO settings, firmware, or inventory.",
+                "Keep all iLO write lanes behind explicit local-lab-readwrite acknowledgements.",
+            ],
+            "primary_tools": ["Redfish direct", "HPE iLOrest"],
+            "safety": "Availability checks do not contact iLO.",
+        },
+        "esxi_vsphere": {
+            "sequence": [
+                "Install ESXi through iLO virtual media and Kickstart readiness gates.",
+                "Use govc after the management network is configured.",
+                "Reserve deployment operations for approved post-install workflows.",
+            ],
+            "primary_tools": ["Kickstart", "govc"],
+            "safety": "This run checks local tools only and does not deploy or reconfigure hosts.",
+        },
+        "netapp": {
+            "sequence": [
+                "Use netapp-ontap Python client or ONTAP REST as the primary managed-state path.",
+                "Use ONTAP REST direct where simple GET/compare logic is enough.",
+                "Keep write/apply workflows behind explicit NetApp stage gates.",
+            ],
+            "primary_tools": ["netapp-ontap Python client", "ONTAP REST"],
+            "safety": "NetApp remains preview-only until an explicit read-only discovery lane is added.",
+        },
+    }
+
+
+def _firmware_toolchain_strategy() -> dict[str, Any]:
+    return {
+        "baseline_source": "config/firmware-baselines/real-lab.yml",
+        "inventory_sources": [
+            "Cisco show version from console or SSH after readiness gates",
+            "HPE iLO Redfish/iLOrest inventory",
+            "ESXi/vSphere version from govc after install",
+            "NetApp ONTAP REST/system version after read-only discovery is approved",
+        ],
+        "rule": "Compare local baseline manifest to vendor package inventory before any firmware apply lane is enabled.",
+    }
+
+
 def _protocol_status(protocols: dict[str, Any], name: str) -> str:
     for item in protocols["checks"]:
         if item["protocol"] == name:
@@ -720,9 +976,79 @@ def _markdown(payload: dict[str, Any]) -> str:
         lines.append(
             f"- `{item['classification']}` `{item['protocol']}`: {item['next_action']}"
         )
+    toolchain = payload.get("toolchain") or {}
+    lines.extend(["", "## Toolchain Readiness", ""])
+    lines.append(f"- Status: `{toolchain.get('status', 'unknown')}`")
+    lines.append(
+        "- Missing required: "
+        + (", ".join(f"`{item}`" for item in toolchain.get("required_missing") or []) or "none")
+    )
+    lines.append(
+        "- Missing optional: "
+        + (", ".join(f"`{item}`" for item in toolchain.get("optional_missing") or []) or "none")
+    )
+    for item in toolchain.get("tools") or []:
+        lines.append(
+            f"- `{'available' if item.get('available') else 'missing'}` `{item.get('name')}`: {item.get('purpose')}"
+        )
     lines.extend(["", "## Post-Build Checklist", ""])
     lines.extend(f"- `{item['status']}` {item['item']}" for item in payload.get("post_build_checklist") or [])
     lines.extend(["", "## Safety", "", "- Credential values, tokens, and secrets are redacted.", ""])
+    return "\n".join(lines)
+
+
+def _toolchain_markdown(payload: dict[str, Any]) -> str:
+    lines = [
+        "# Toolchain Availability Report",
+        "",
+        f"- Checked at: `{payload['checked_at']}`",
+        f"- Status: `{payload['status']}`",
+        f"- Provider mode: `{payload['provider_mode']}`",
+        f"- Next safe action: {payload['next_safe_action']}",
+        "",
+        "## Local Tool Checks",
+        "",
+    ]
+    for tool in payload.get("tools") or []:
+        version = tool.get("version")
+        lines.append(
+            f"- `{'available' if tool.get('available') else 'missing'}` `{tool.get('name')}` "
+            f"required=`{tool.get('required')}` check=`{tool.get('check')}`"
+            + (f" version=`{version}`" if version else "")
+        )
+        lines.append(f"  - Purpose: {tool.get('purpose')}")
+    lines.extend(
+        [
+            "",
+            "## Managed-State Plan",
+            "",
+            "### Cisco",
+        ]
+    )
+    for line in payload["managed_state"]["cisco"]["sequence"]:
+        lines.append(f"- {line}")
+    lines.extend(["", "### HPE / iLO"])
+    for line in payload["managed_state"]["hpe_ilo"]["sequence"]:
+        lines.append(f"- {line}")
+    lines.extend(["", "### ESXi / vSphere"])
+    for line in payload["managed_state"]["esxi_vsphere"]["sequence"]:
+        lines.append(f"- {line}")
+    lines.extend(["", "### NetApp"])
+    for line in payload["managed_state"]["netapp"]["sequence"]:
+        lines.append(f"- {line}")
+    firmware = payload.get("firmware_strategy") or {}
+    lines.extend(
+        [
+            "",
+            "## Firmware Strategy",
+            "",
+            f"- Baseline source: `{firmware.get('baseline_source')}`",
+            f"- Rule: {firmware.get('rule')}",
+        ]
+    )
+    for source in firmware.get("inventory_sources") or []:
+        lines.append(f"- Inventory source: {source}")
+    lines.extend(["", "## Safety", "", "- This check does not contact real infrastructure or run destructive workflows.", ""])
     return "\n".join(lines)
 
 

@@ -65,6 +65,26 @@ The current worker abstraction executes mock work synchronously. It is shaped so
 Celery, RQ, Dramatiq, Argo Workflows, or Temporal can replace it later without
 rewriting API routes.
 
+## Real-Lab Toolchain Direction
+
+The portal remains the control plane. Vendor-specific tools are provider
+capabilities behind guarded adapters and Build Verification, not arbitrary UI
+commands.
+
+- Cisco first contact: ser2net/Opengear or local USB serial through the app's
+  console workflow.
+- Cisco normal management: Ansible `cisco.ios`, Netmiko, and pyATS/Genie
+  parsing after console bootstrap enables management SSH.
+- HPE/iLO: Redfish direct plus HPE iLOrest for vendor-supported coverage gaps.
+- ESXi: Kickstart for install automation, then `govc` after management
+  networking exists.
+- NetApp: `netapp-ontap` Python client plus ONTAP REST.
+- Verification: the Build Verification engine consumes outputs from those
+  tools and classifies readiness, blockers, stale configuration, and failures.
+
+Every real-lab tool path must still pass through staged readiness, plan,
+approval, audit logging, redaction, and provider-mode gates.
+
 ## Future Real Provider Flow
 
 Future real adapters should follow this sequence:

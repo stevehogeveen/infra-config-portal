@@ -3,6 +3,7 @@
     "bootstrap_apply_report": "artifacts/codex-runs/cisco-bootstrap-apply-report.md",
     "commands": "artifacts/codex-runs/cisco-bootstrap-commands-redacted.json",
     "details": "artifacts/codex-runs/cisco-4h-lab-run-details-redacted.json",
+    "login_bootstrap_fix_report": "artifacts/codex-runs/cisco-login-bootstrap-fix-report.md",
     "password_recovery_guidance_report": "artifacts/codex-runs/cisco-password-recovery-guidance-report.md",
     "privilege_diagnosis_report": "artifacts/codex-runs/cisco-privilege-diagnosis-report.md",
     "privilege_hardening_report": "artifacts/codex-runs/cisco-privilege-hardening-report.md",
@@ -11,9 +12,11 @@
     "samples": "artifacts/codex-runs/cisco-console-samples-redacted.json"
   },
   "blockers": [
-    "Console adapter opened across common baud rates, but no supported Cisco prompt was detected."
+    "Ping to Cisco management IP failed.",
+    "SSH TCP/22 to Cisco management IP failed.",
+    "SCP readiness over TCP/22 to Cisco management IP failed."
   ],
-  "checked_at": "2026-06-06T18:23:26.407780+00:00",
+  "checked_at": "2026-06-06T23:41:45.014535+00:00",
   "provider_mode": "local-lab-readwrite",
   "stages": {
     "adapter_discovery": {
@@ -40,6 +43,81 @@
         "Preferred console path: /dev/serial/by-id/usb-Prolific_Technology_Inc._USB-Serial_Controller_D-if00-port0. Use this stable path for CISCO_CONSOLE_PORT instead of /dev/ttyUSB0 when possible."
       ]
     },
+    "apply": {
+      "commands_sent_redacted": [
+        "terminal length 0",
+        "configure terminal",
+        "hostname lab-cisco-switch",
+        "lldp run",
+        "no ip http server",
+        "no ip http secure-server",
+        "interface Vlan1",
+        " ip address REDACTED 255.255.255.0",
+        " no shutdown",
+        " exit",
+        "username REDACTED privilege 15 secret <redacted>",
+        "ip ssh version 2",
+        "ip scp server enable",
+        "line console 0",
+        " login local",
+        " exit",
+        "line vty 0 15",
+        " login local",
+        " transport input ssh",
+        " exit",
+        "end",
+        "write memory"
+      ],
+      "reload": {
+        "attempted": false,
+        "reason": "Bootstrap plan does not require reload."
+      },
+      "save_status": "write memory command sent",
+      "serial_writes_attempted": true,
+      "status": "completed"
+    },
+    "bootstrap_plan": {
+      "ansible_control_host": "192.168.1.205",
+      "ansible_role": "console first-contact/bootstrap first; Ansible starts after Cisco management SSH is configured for show commands, backup, validation, drift checks, and future repeatable config",
+      "blockers": [],
+      "dns_server_count": 0,
+      "domain_configured": false,
+      "gateway_configured": false,
+      "hostname": "lab-cisco-switch",
+      "http_https_disabled": true,
+      "management_interface": "Vlan1",
+      "management_ip_configured": true,
+      "management_vlan": null,
+      "redacted_commands": [
+        "terminal length 0",
+        "configure terminal",
+        "hostname lab-cisco-switch",
+        "lldp run",
+        "no ip http server",
+        "no ip http secure-server",
+        "interface Vlan1",
+        " ip address REDACTED 255.255.255.0",
+        " no shutdown",
+        " exit",
+        "username REDACTED privilege 15 secret <redacted>",
+        "ip ssh version 2",
+        "ip scp server enable",
+        "line console 0",
+        " login local",
+        " exit",
+        "line vty 0 15",
+        " login local",
+        " transport input ssh",
+        " exit",
+        "end",
+        "write memory"
+      ],
+      "reload_required": false,
+      "save_startup_config": true,
+      "scp_enabled": true,
+      "ssh_version": "2",
+      "status": "ready"
+    },
     "console_prompt_detection": {
       "bauds_tried": [
         9600,
@@ -48,21 +126,26 @@
         57600,
         115200
       ],
-      "classification": "no_bytes_read",
-      "prompt_detected": false,
-      "prompt_state": "unknown-no-output",
-      "recovery_attempts": [
-        "newline",
-        "carriage return",
-        "Ctrl+C",
-        "Ctrl+Z",
-        "break",
-        "DTR/RTS toggle when supported"
+      "final_prompt": "DEVICE#",
+      "first_bytes_printable_preview": "\\r\\n\\r\\nUser Access Verification\\r\\n\\r\\nUsername: ",
+      "login_state_transitions": [
+        "username_prompt_seen",
+        "username_sent",
+        "password_prompt_seen",
+        "password_sent"
       ],
-      "selected_baud": null,
-      "selected_port": null,
-      "status": "blocked",
+      "password_prompt_seen": true,
+      "prompt_detected": true,
+      "prompt_regex_matched": "hostname_exec_prompt",
+      "prompt_state": "privileged-exec",
+      "selected_baud": 9600,
+      "selected_port": "/dev/serial/by-id/usb-Prolific_Technology_Inc._USB-Serial_Controller_D-if00-port0",
+      "selected_sequence": "crlf",
+      "status": "ready",
+      "user_access_verification_seen": true,
+      "username_prompt_seen": true,
       "wake_sequences_tried": [
+        "crlf",
         "newline",
         "enter",
         "ctrl-c",
@@ -70,9 +153,148 @@
         "break"
       ]
     },
+    "ethernet_management_validation": {
+      "blockers": [
+        "Ping to Cisco management IP failed.",
+        "SSH TCP/22 to Cisco management IP failed.",
+        "SCP readiness over TCP/22 to Cisco management IP failed."
+      ],
+      "ping": {
+        "returncode": 1,
+        "status": "failed"
+      },
+      "scp": {
+        "error": "[Errno 113] No route to host",
+        "method": "TCP/22 readiness plus bootstrap command `ip scp server enable`.",
+        "port": 22,
+        "reachable": false,
+        "status": "blocked"
+      },
+      "ssh": {
+        "elapsed_seconds": 0.048,
+        "error": "[Errno 113] No route to host",
+        "port": 22,
+        "reachable": false
+      },
+      "status": "blocked"
+    },
     "policy": {
       "blockers": [],
       "status": "ready"
+    },
+    "privilege_escalation": {
+      "blockers": [],
+      "debug": {
+        "enable_command_sent": false,
+        "enable_commands_attempted": [],
+        "enable_password_sources_configured": {
+          "ANSIBLE_CISCO_ENABLE_PASSWORD": true,
+          "CISCO_ENABLE_PASSWORD": true,
+          "settings.cisco_enable_password": true,
+          "settings.cisco_test_password": true
+        },
+        "enable_password_sources_tried": [],
+        "final_prompt_state": "privileged-exec",
+        "initial_prompt_state": "privileged-exec",
+        "login_exchange_attempted": false,
+        "login_state_transitions": [],
+        "password_prompt_seen": false,
+        "privilege_level": 15,
+        "setup_wizard_answered_no": false,
+        "username_prompt_seen": false
+      },
+      "enable_command_sent": false,
+      "final_prompt_state": "privileged-exec",
+      "initial_prompt_state": "privileged-exec",
+      "password_prompt_seen": false,
+      "privilege_level": 15,
+      "prompt_state": "privileged-exec",
+      "status": "ready"
+    },
+    "switch_identification": {
+      "commands": [
+        {
+          "bytes": 55,
+          "captured": true,
+          "command": "terminal length 0",
+          "raw_output_redacted": true,
+          "summary": {
+            "captured": true
+          }
+        },
+        {
+          "bytes": 83,
+          "captured": true,
+          "command": "show privilege",
+          "raw_output_redacted": true,
+          "summary": {
+            "captured": true
+          }
+        },
+        {
+          "bytes": 887,
+          "captured": true,
+          "command": "show version | include Cisco IOS|uptime|System image|processor|bytes of memory",
+          "raw_output_redacted": true,
+          "summary": {
+            "model_hint": "C9300-24T",
+            "uptime_present": true,
+            "version_hint": "17.15.05"
+          }
+        },
+        {
+          "bytes": 374,
+          "captured": true,
+          "command": "show inventory",
+          "raw_output_redacted": true,
+          "summary": {
+            "captured": true
+          }
+        },
+        {
+          "bytes": 2048,
+          "captured": true,
+          "command": "show interfaces status",
+          "raw_output_redacted": true,
+          "summary": {
+            "captured": true
+          }
+        },
+        {
+          "bytes": 2048,
+          "captured": true,
+          "command": "show ip interface brief",
+          "raw_output_redacted": true,
+          "summary": {
+            "vlan_lines": 2
+          }
+        },
+        {
+          "bytes": 2048,
+          "captured": true,
+          "command": "show vlan brief",
+          "raw_output_redacted": true,
+          "summary": {
+            "vlan_count_hint": 0
+          }
+        },
+        {
+          "bytes": 2048,
+          "captured": true,
+          "command": "show running-config | include ^hostname|^ip domain-name|^ip ssh|^ip scp|^ip http|^username|^interface Vlan|^ip default-gateway|^lldp run",
+          "raw_output_redacted": true,
+          "summary": {
+            "hostname_present": false,
+            "raw_running_config_redacted": true,
+            "scp_present": false,
+            "ssh_present": false,
+            "username_lines_redacted": 0,
+            "vlan_interface_lines": 0
+          }
+        }
+      ],
+      "privileged": true,
+      "status": "captured"
     }
   },
   "status": "blocked",

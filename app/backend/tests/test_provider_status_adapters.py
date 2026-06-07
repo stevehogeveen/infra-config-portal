@@ -114,6 +114,24 @@ def test_cisco_candidate_discovery_with_no_candidates(tmp_path: Path) -> None:
     assert "dialout/read-write access" in discovery["operator_checklist"][3]
 
 
+def test_cisco_candidate_discovery_supports_tcp_console_transport() -> None:
+    discovery = discover_cisco_console(
+        CiscoConsoleConfig(
+            port=None,
+            baud=9600,
+            timeout_seconds=1.0,
+            transport="tcp_console",
+            tcp_host="127.0.0.1",
+            tcp_port=2001,
+        )
+    )
+
+    assert discovery["status"] == "ready"
+    assert discovery["transport"] == "tcp_console"
+    assert discovery["effective_path"] == "tcp://127.0.0.1:2001"
+    assert discovery["tcp_console"]["ser2net_compatible"] is True
+
+
 def test_cisco_candidate_discovery_with_fallback_candidate_warns(tmp_path: Path) -> None:
     paths = _console_paths(tmp_path)
     tty = paths["dev"] / "ttyUSB0"

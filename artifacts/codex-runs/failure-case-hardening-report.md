@@ -1,6 +1,6 @@
 # Failure Case Hardening Report
 
-- Checked at: `2026-06-06T18:52:38.681419+00:00`
+- Checked at: `2026-06-07T00:19:51.925794+00:00`
 - Provider mode: `mock`
 - Credential values, tokens, and secrets are redacted.
 

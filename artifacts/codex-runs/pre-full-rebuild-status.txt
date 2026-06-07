@@ -1,0 +1,73 @@
+ M .codex/task-queue.md
+ M app/.env.example
+ M app/backend/app/api/routes.py
+ M app/backend/app/core/config.py
+ M app/backend/app/models.py
+ M app/backend/app/providers/cisco_ansible.py
+ M app/backend/app/providers/cisco_console.py
+ M app/backend/app/providers/esxi_readonly.py
+ M app/backend/app/providers/ilo_redfish.py
+ M app/backend/app/providers/registry.py
+ M app/backend/app/schemas.py
+ M app/backend/app/services/cisco_setup_readiness.py
+ M app/backend/app/services/lifecycle.py
+ M app/backend/app/services/media_inventory.py
+ M app/backend/scripts/provider_smoke.py
+ M app/backend/tests/test_api.py
+ M app/backend/tests/test_provider_registry.py
+ M app/backend/tests/test_provider_status_adapters.py
+ M app/backend/tests/test_smoke_vm_lifecycle.py
+ M app/backend/tests/test_upgrade_decision.py
+ M app/backend/tests/test_workflow_execution.py
+ M app/docs/provider-adapters.md
+ M app/docs/security.md
+ M app/docs/workflows.md
+ M app/frontend/src/App.tsx
+ M app/frontend/src/api.ts
+ M app/frontend/src/styles.css
+ M app/frontend/src/types.ts
+ M artifacts/codex-runs/cisco-console-ethernet-readiness-report.md
+ M scripts/setup-real-lab-env.sh
+?? app/backend/alembic/versions/0003_hpe_raid_intent.py
+?? app/backend/app/providers/action_policy.py
+?? app/backend/app/services/hpe_raid.py
+?? app/backend/app/services/ilo_setup_apply.py
+?? app/backend/scripts/cisco_real_lab_workflow.py
+?? app/backend/scripts/esxi_install_workflow.py
+?? app/backend/scripts/hpe_raid_plan.py
+?? app/backend/scripts/hpe_raid_workflow.py
+?? app/backend/scripts/ilo_real_reachability.py
+?? app/frontend/artifacts/
+?? artifacts/codex-runs/cisco-4h-lab-run-details-redacted.json
+?? artifacts/codex-runs/cisco-4h-lab-run-report.md
+?? artifacts/codex-runs/cisco-4h-lab-run-terminal.log
+?? artifacts/codex-runs/cisco-bootstrap-apply-report.md
+?? artifacts/codex-runs/cisco-bootstrap-commands-redacted.json
+?? artifacts/codex-runs/cisco-console-discovery-report.md
+?? artifacts/codex-runs/cisco-console-ethernet-readiness-redacted.json
+?? artifacts/codex-runs/cisco-console-samples-redacted.json
+?? artifacts/codex-runs/cisco-privilege-check-report.md
+?? artifacts/codex-runs/esxi-cisco-lab-run-terminal.log
+?? artifacts/codex-runs/esxi-install-readiness-report.md
+?? artifacts/codex-runs/esxi-media-http-server.log
+?? artifacts/codex-runs/esxi-media-http-server.pid
+?? artifacts/codex-runs/esxi-one-time-boot-after.json
+?? artifacts/codex-runs/esxi-one-time-boot-before.json
+?? artifacts/codex-runs/esxi-virtual-media-state.json
+?? artifacts/codex-runs/hpe-raid-after-reset-validation-report.md
+?? artifacts/codex-runs/hpe-raid-apply-payload-redacted.json
+?? artifacts/codex-runs/hpe-raid-apply-report.md
+?? artifacts/codex-runs/hpe-raid-apply-state.json
+?? artifacts/codex-runs/hpe-raid-discovery-report.md
+?? artifacts/codex-runs/hpe-raid-pending-report.md
+?? artifacts/codex-runs/hpe-raid-plan-report.md
+?? artifacts/codex-runs/hpe-raid-redfish-debug-report.md
+?? artifacts/codex-runs/hpe-raid-reset-report.md
+?? artifacts/codex-runs/hpe-smartstorage-current.json
+?? artifacts/codex-runs/hpe-smartstorage-settings.json
+?? artifacts/codex-runs/ilo-local-lab-test-report.md
+?? artifacts/codex-runs/ilo-local-readonly-smoke-report.md
+?? artifacts/codex-runs/ilo-real-run-report.md
+?? artifacts/codex-runs/local-lab-mode-design.md
+?? artifacts/codex-runs/local-lab-readwrite-mode-report.md
+?? artifacts/codex-runs/pre-full-rebuild-status.txt

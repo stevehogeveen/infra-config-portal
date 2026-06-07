@@ -1,6 +1,6 @@
 # ESXi Install Readiness Report
 
-Date: 2026-06-06T18:25:21.869644+00:00
+Date: 2026-06-07T00:03:28.079268+00:00
 Mode: `local-lab-readwrite`
 Status: ready
 Message: Server is ready to plan ESXi ISO virtual-media boot.

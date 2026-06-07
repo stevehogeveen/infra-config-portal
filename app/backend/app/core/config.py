@@ -168,6 +168,9 @@ class Settings:
     )
     ansible_cisco_timeout_seconds: float = _float_env("ANSIBLE_CISCO_TIMEOUT_SECONDS", 8.0)
     cisco_console_port: str | None = _optional_env("CISCO_CONSOLE_PORT")
+    cisco_console_transport: str = os.getenv("CISCO_CONSOLE_TRANSPORT", "local_serial")
+    cisco_console_tcp_host: str | None = _optional_env("CISCO_CONSOLE_TCP_HOST")
+    cisco_console_tcp_port: int = _int_env("CISCO_CONSOLE_TCP_PORT", 2001)
     cisco_console_baud: int = _int_env("CISCO_CONSOLE_BAUD", 9600)
     cisco_console_timeout_seconds: float = _float_env("CISCO_CONSOLE_TIMEOUT_SECONDS", 2.0)
     cisco_console_prompt_settle_seconds: float = _float_env(
