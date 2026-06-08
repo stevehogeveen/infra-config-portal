@@ -1,8 +1,8 @@
 # Lab IP Profile Update
 
-- Checked at: `2026-06-07T01:16:49.658689+00:00`
-- Status: `ready`
-- Provider mode: `local-lab-readwrite`
+- Checked at: `2026-06-08T14:47:17.555667+00:00`
+- Status: `blocked`
+- Provider mode: `mock`
 
 ## Expected Profile
 
@@ -12,6 +12,13 @@
 - esxi_management: `192.168.1.203`
 - cisco_management: `192.168.1.204`
 - ansible_control_host: `192.168.1.205`
+- netapp_controller_a_sp: `192.168.1.206`
+- netapp_controller_b_sp: `192.168.1.207`
+- netapp_cluster_mgmt: `192.168.1.208`
+- netapp_node_a_mgmt: `192.168.1.209`
+- netapp_node_b_mgmt: `192.168.1.210`
+- netapp_svm_mgmt: `192.168.1.211`
+- netapp_iscsi_lifs: `192.168.1.212,192.168.1.213,192.168.1.214,192.168.1.215`
 
 ## Configured Values
 
@@ -24,10 +31,18 @@
 - ansible_control_host: `192.168.1.205`
 - cisco_target_ip_env: `192.168.1.204`
 - ansible_cisco_host_env: `192.168.1.204`
+- netapp_controller_a_sp: `192.168.1.206`
+- netapp_controller_b_sp: `192.168.1.207`
+- netapp_cluster_mgmt: `192.168.1.208`
+- netapp_node_a_mgmt: `192.168.1.209`
+- netapp_node_b_mgmt: `192.168.1.210`
+- netapp_svm_mgmt: `192.168.1.211`
+- netapp_iscsi_lifs: `192.168.1.212,192.168.1.213,192.168.1.214,192.168.1.215`
+- netapp_cluster_mgmt_ip_env: `10.10.8.45`
 
 ## Stale Assumptions
 
-- No active build-verification inputs contain `10.10.8.x`.
+- `netapp_cluster_mgmt_ip_env` still contains stale `10.10.8.45`
 
 ## Stale Report Evidence
 

@@ -2,21 +2,21 @@
 
 ## Summary
 
-- checked_at: 2026-06-06T18:58:44.807573+00:00
+- checked_at: 2026-06-07T13:01:53.915434+00:00
 - status: blocked
 - console_status: ready
 - selected_console: /dev/serial/by-id/usb-Prolific_Technology_Inc._USB-Serial_Controller_D-if00-port0
-- prompt_state: unknown
-- prompt_captured: False
+- prompt_state: privileged-exec
+- prompt_captured: True
 - ethernet_ready: False
 - management_configured: False
-- blockers: ['Serial console port is already in use by another process.', 'Cisco Ethernet management is not configured; SSH/SCP readiness requires console bootstrap.']
+- blockers: ['Privileged exec prompt was detected; no configuration commands were sent.', 'Cisco Ethernet management is not configured; SSH/SCP readiness requires console bootstrap.']
 - report: artifacts/codex-runs/cisco-console-ethernet-readiness-report.md
 - details: artifacts/codex-runs/cisco-console-ethernet-readiness-redacted.json
 
 ## Blockers
 
-- Serial console port is already in use by another process.
+- Privileged exec prompt was detected; no configuration commands were sent.
 - Cisco Ethernet management is not configured; SSH/SCP readiness requires console bootstrap.
 
 ## Warnings

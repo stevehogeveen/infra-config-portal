@@ -147,6 +147,62 @@ button:disabled {
   color: #b42318;
 }
 
+.active-lab-strip {
+  align-items: center;
+  background: #ffffff;
+  border: 1px solid #dfe4ea;
+  border-radius: 8px;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(220px, 1fr) minmax(260px, auto) minmax(220px, 0.8fr);
+  margin-bottom: 18px;
+  padding: 12px 14px;
+}
+
+.active-lab-main {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+  min-width: 0;
+}
+
+.active-lab-main span,
+.active-lab-meta span {
+  color: #6b7686;
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.active-lab-main strong {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.active-lab-controls,
+.active-lab-meta {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.active-lab-meta {
+  justify-content: flex-end;
+}
+
+.active-lab-controls select {
+  min-width: 220px;
+}
+
+.active-lab-error {
+  color: #b42318;
+  font-size: 13px;
+  font-weight: 700;
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
 .page-header {
   align-items: flex-end;
   display: flex;
@@ -506,6 +562,69 @@ textarea {
 }
 
 .request-list-link {
+  margin-top: 14px;
+}
+
+.lab-profile-layout {
+  display: grid;
+  gap: 20px;
+  grid-template-columns: minmax(300px, 0.8fr) minmax(0, 1.2fr);
+}
+
+.lab-profile-list {
+  display: grid;
+  gap: 10px;
+}
+
+.lab-profile-row {
+  align-items: center;
+  border: 1px solid #e5e9ef;
+  border-radius: 8px;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding: 12px;
+}
+
+.lab-profile-row.selected {
+  border-color: #0f766e;
+  box-shadow: inset 3px 0 0 #0f766e;
+}
+
+.lab-profile-row strong,
+.lab-profile-row span {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.lab-profile-row span {
+  color: #6b7686;
+  font-size: 13px;
+}
+
+.lab-profile-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  grid-column: 1 / -1;
+}
+
+.lab-profile-form {
+  display: grid;
+  gap: 14px;
+}
+
+.lab-profile-form-grid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.lab-profile-form-grid .field:nth-child(2) {
+  grid-column: 1 / -1;
+}
+
+.lab-address-summary {
   margin-top: 14px;
 }
 
@@ -2202,9 +2321,12 @@ pre {
   .guided-workflow-lane,
   .run-center-focus-panel .queue-list,
   .dashboard-grid,
+  .lab-profile-layout,
+  .lab-profile-form-grid,
   .request-filter-grid,
   .audit-filter-grid,
-  .artifact-filter-grid {
+  .artifact-filter-grid,
+  .active-lab-strip {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -2261,9 +2383,12 @@ pre {
     .operator-queue-grid,
     .run-center-focus-panel .queue-list,
     .dashboard-grid,
+    .lab-profile-layout,
+    .lab-profile-form-grid,
     .request-filter-grid,
     .audit-filter-grid,
     .artifact-filter-grid,
+    .active-lab-strip,
     .stage-list,
     .lifecycle-action-grid,
     .handoff-summary,
@@ -2282,6 +2407,10 @@ pre {
     .beginner-checklist,
     .provider-action-layout {
       grid-template-columns: 1fr;
+    }
+
+    .active-lab-meta {
+      justify-content: flex-start;
     }
 
     .run-build-layout {

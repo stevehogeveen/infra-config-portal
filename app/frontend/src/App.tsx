@@ -44,6 +44,10 @@ import type {
   IloSetupIntentWrite,
   IloSetupPlanPreview,
   IloUpgradeReadiness,
+  LabAddressPlan,
+  LabProfile,
+  LabProfileList,
+  LabProfileWrite,
   MediaInventory,
   NetAppConsoleReadiness,
   NetAppObservationUpdate,
@@ -181,6 +185,30 @@ type BuildOverview = {
   mode: string;
 };
 
+type LabAddressScalarKey = Exclude<keyof LabAddressPlan, "netapp_iscsi_lifs">;
+
+type LabProfileFormState = {
+  name: string;
+  description: string;
+  addresses: Record<LabAddressScalarKey, string>;
+  netappIscsiLifs: string;
+};
+
+const labAddressFields: Array<{ key: LabAddressScalarKey; label: string }> = [
+  { key: "subnet", label: "Subnet CIDR" },
+  { key: "ilo", label: "iLO" },
+  { key: "server_embedded_nic", label: "Server NIC" },
+  { key: "esxi_management", label: "ESXi Management" },
+  { key: "cisco_management", label: "Cisco Management" },
+  { key: "ansible_control_host", label: "Control Host" },
+  { key: "netapp_controller_a_sp", label: "NetApp Controller A SP" },
+  { key: "netapp_controller_b_sp", label: "NetApp Controller B SP" },
+  { key: "netapp_cluster_mgmt", label: "NetApp Cluster Mgmt" },
+  { key: "netapp_node_a_mgmt", label: "NetApp Node A Mgmt" },
+  { key: "netapp_node_b_mgmt", label: "NetApp Node B Mgmt" },
+  { key: "netapp_svm_mgmt", label: "NetApp SVM Mgmt" }
+];
+
 const queueSectionMeta: Array<Omit<QueueSection, "items">> = [
   {
     id: "needs_approval",
@@ -215,6 +243,38 @@ const queueSectionMeta: Array<Omit<QueueSection, "items">> = [
 ];
 
 function App() {
+  const [labProfileState, setLabProfileState] = useState<LabProfileList | null>(null);
+  const [labProfileError, setLabProfileError] = useState("");
+  const [labProfileLoading, setLabProfileLoading] = useState(true);
+
+  async function loadLabProfileState() {
+    setLabProfileError("");
+    setLabProfileLoading(true);
+    try {
+      setLabProfileState(await api.labProfiles());
+    } catch (err) {
+      setLabProfileError((err as Error).message);
+    } finally {
+      setLabProfileLoading(false);
+    }
+  }
+
+  async function activateLabProfile(profileId: string) {
+    setLabProfileError("");
+    setLabProfileLoading(true);
+    try {
+      setLabProfileState(await api.activateLabProfile(profileId));
+    } catch (err) {
+      setLabProfileError((err as Error).message);
+    } finally {
+      setLabProfileLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    loadLabProfileState();
+  }, []);
+
   return (
     <div className="app-shell">
       <aside className="sidebar">
@@ -227,6 +287,7 @@ function App() {
           <NavItem to="/run-center" icon={<Workflow size={18} />} label="Run Center" />
           <NavItem to="/requests" icon={<ClipboardList size={18} />} label="VM Requests" />
           <NavItem to="/requests/new" icon={<Plus size={18} />} label="New VM Request" />
+          <NavItem to="/lab-profiles" icon={<Layers size={18} />} label="Lab Profiles" />
           <NavItem to="/audit-events" icon={<History size={18} />} label="Audit Events" />
           <NavItem to="/artifacts" icon={<HardDrive size={18} />} label="Reports / Artifacts" />
           <NavItem to="/media" icon={<HardDrive size={18} />} label="Media Inventory" />
@@ -235,6 +296,12 @@ function App() {
       </aside>
       <main className="content">
         <MockModeBanner />
+        <ActiveLabSelector
+          error={labProfileError}
+          loading={labProfileLoading}
+          onActivate={activateLabProfile}
+          state={labProfileState}
+        />
         <Routes>
           <RouterRoute path="/" element={<Dashboard />} />
           <RouterRoute path="/run-center" element={<RunCenter />} />
@@ -242,6 +309,18 @@ function App() {
           <RouterRoute path="/requests/new" element={<NewRequest />} />
           <RouterRoute path="/requests/:id" element={<RequestDetail />} />
           <RouterRoute path="/workflow-runs/:id" element={<WorkflowRunDetail />} />
+          <RouterRoute
+            path="/lab-profiles"
+            element={
+              <LabProfilesPage
+                error={labProfileError}
+                loading={labProfileLoading}
+                onReload={loadLabProfileState}
+                onStateChange={setLabProfileState}
+                state={labProfileState}
+              />
+            }
+          />
           <RouterRoute path="/audit-events" element={<AuditEvents />} />
           <RouterRoute path="/artifacts" element={<ProviderArtifactsPage />} />
           <RouterRoute path="/media" element={<MediaInventoryPage />} />
@@ -258,6 +337,59 @@ function NavItem({ to, icon, label }: { to: string; icon: ReactNode; label: stri
       {icon}
       <span>{label}</span>
     </NavLink>
+  );
+}
+
+function ActiveLabSelector({
+  error,
+  loading,
+  onActivate,
+  state
+}: {
+  error: string;
+  loading: boolean;
+  onActivate: (profileId: string) => Promise<void>;
+  state: LabProfileList | null;
+}) {
+  const activeProfile = state?.active_profile ?? null;
+  const options = state ? [state.runtime_profile, ...state.profiles] : [];
+
+  return (
+    <section className="active-lab-strip" aria-label="Active lab profile">
+      <div className="active-lab-main">
+        <Layers size={18} />
+        <div>
+          <span>Active Lab</span>
+          <strong>{activeProfile?.name ?? (loading ? "Loading" : "Unavailable")}</strong>
+        </div>
+      </div>
+      <div className="active-lab-controls">
+        <select
+          aria-label="Active lab profile"
+          disabled={loading || !state}
+          onChange={(event) => onActivate(event.target.value)}
+          value={activeProfile?.id ?? "runtime"}
+        >
+          {options.map((profile) => (
+            <option key={profile.id} value={profile.id}>
+              {profile.name}{profile.source === "runtime_env" ? " (runtime)" : ` v${profile.version}`}
+            </option>
+          ))}
+        </select>
+        <Link className="button-link" to="/lab-profiles">
+          <Pencil size={16} />
+          Manage
+        </Link>
+      </div>
+      {activeProfile && (
+        <div className="active-lab-meta">
+          <span>{labelize(activeProfile.source)}</span>
+          <span>{displayAddress(activeProfile.address_plan.subnet)}</span>
+          <span>{state?.profiles.length ?? 0} saved</span>
+        </div>
+      )}
+      {error && <p className="active-lab-error">{error}</p>}
+    </section>
   );
 }
 
@@ -490,11 +622,22 @@ function RunCenter() {
   const [netappPlanPreview, setNetappPlanPreview] = useState<NetAppPlanPreview | null>(null);
   const [netappArtifacts, setNetappArtifacts] = useState<NetAppProviderArtifact[]>([]);
   const [netappConsoleReadiness, setNetappConsoleReadiness] = useState<NetAppConsoleReadiness | null>(null);
+  const [netappConsoleDiscovery, setNetappConsoleDiscovery] = useState<ProviderProbeResult | null>(null);
+  const [netappConsoleState, setNetappConsoleState] = useState<ProviderProbeResult | null>(null);
+  const [netappNfsVcenterReadiness, setNetappNfsVcenterReadiness] = useState<ProviderProbeResult | null>(null);
   const [netappReadinessComparison, setNetappReadinessComparison] = useState<NetAppReadinessComparison | null>(null);
   const [netappUpgradeReadiness, setNetappUpgradeReadiness] = useState<NetAppUpgradeReadiness | null>(null);
+  const [netappAction, setNetappAction] = useState<string>("");
   const [activeView, setActiveView] = useState<RunCenterView>("choose");
   const [activeQueueSection, setActiveQueueSection] = useState<QueueSectionId>("needs_approval");
-  const [selectedRunChoiceIds, setSelectedRunChoiceIds] = useState<string[]>(["ilo", "storage", "esxi", "cisco", "verification"]);
+  const [selectedRunChoiceIds, setSelectedRunChoiceIds] = useState<string[]>([
+    "ilo",
+    "storage",
+    "esxi",
+    "cisco",
+    "netapp",
+    "verification"
+  ]);
   const [selectedQueueKey, setSelectedQueueKey] = useState("");
   const [error, setError] = useState("");
   const [netappError, setNetappError] = useState("");
@@ -528,18 +671,27 @@ function RunCenter() {
       const [
         nextPreview,
         nextConsoleReadiness,
+        nextConsoleDiscovery,
+        nextConsoleState,
+        nextNfsVcenterReadiness,
         nextReadinessComparison,
         nextUpgradeReadiness,
         nextArtifacts
       ] = await Promise.all([
         api.netappPlanPreview(),
         api.netappConsoleReadiness(),
+        api.netappConsoleDiscovery(),
+        api.netappConsoleReadState(),
+        api.netappNfsVcenterReadiness(),
         api.netappReadinessComparison(),
         api.netappUpgradeReadiness(),
         api.netappArtifacts()
       ]);
       setNetappPlanPreview(nextPreview);
       setNetappConsoleReadiness(nextConsoleReadiness);
+      setNetappConsoleDiscovery(nextConsoleDiscovery);
+      setNetappConsoleState(nextConsoleState);
+      setNetappNfsVcenterReadiness(nextNfsVcenterReadiness);
       setNetappReadinessComparison(nextReadinessComparison);
       setNetappUpgradeReadiness(nextUpgradeReadiness);
       setNetappArtifacts(nextArtifacts);
@@ -547,6 +699,34 @@ function RunCenter() {
       setNetappError((err as Error).message);
     } finally {
       setNetappLoading(false);
+    }
+  }
+
+  async function runNetAppConsoleDiscovery() {
+    setNetappError("");
+    setNetappAction("console-discovery");
+    try {
+      const result = await api.runNetappConsoleDiscovery();
+      setNetappConsoleDiscovery(result);
+      await loadNetAppPlanPreview();
+    } catch (err) {
+      setNetappError((err as Error).message);
+    } finally {
+      setNetappAction("");
+    }
+  }
+
+  async function runNetAppConsoleReadState() {
+    setNetappError("");
+    setNetappAction("console-read-state");
+    try {
+      const result = await api.runNetappConsoleReadState();
+      setNetappConsoleState(result);
+      await loadNetAppPlanPreview();
+    } catch (err) {
+      setNetappError((err as Error).message);
+    } finally {
+      setNetappAction("");
     }
   }
 
@@ -620,7 +800,10 @@ function RunCenter() {
         netappIssueCount={
           (netappPlanPreview?.blockers.length ?? 0) +
           (netappPlanPreview?.warnings.length ?? 0) +
-          (netappPlanPreview?.removable_warnings.length ?? 0)
+          (netappPlanPreview?.removable_warnings.length ?? 0) +
+          (netappConsoleDiscovery?.blockers.length ?? 0) +
+          (netappConsoleState?.blockers.length ?? 0) +
+          (netappNfsVcenterReadiness?.blockers.length ?? 0)
         }
         onChange={setActiveView}
         selectedLabel={selectedItem?.title ?? "None"}
@@ -629,6 +812,7 @@ function RunCenter() {
       {activeView === "choose" && (
         <RunCenterRunChooser
           onOpenQueue={() => setActiveView("queue")}
+          onOpenNetapp={() => setActiveView("netapp")}
           onOpenSelected={() => setActiveView("selected")}
           providers={providers}
           selectedItem={selectedItem}
@@ -700,9 +884,15 @@ function RunCenter() {
       {activeView === "netapp" && (
         <NetAppRunCenterPreview
           artifacts={netappArtifacts}
+          consoleDiscovery={netappConsoleDiscovery}
           consoleReadiness={netappConsoleReadiness}
+          consoleState={netappConsoleState}
           error={netappError}
           loading={netappLoading}
+          nfsVcenterReadiness={netappNfsVcenterReadiness}
+          netappAction={netappAction}
+          onRunConsoleDiscovery={runNetAppConsoleDiscovery}
+          onRunConsoleReadState={runNetAppConsoleReadState}
           onRefresh={loadNetAppPlanPreview}
           preview={netappPlanPreview}
           readinessComparison={netappReadinessComparison}
@@ -753,6 +943,7 @@ function RunCenterTabs({
 
 function RunCenterRunChooser({
   onOpenQueue,
+  onOpenNetapp,
   onOpenSelected,
   providers,
   selectedItem,
@@ -761,6 +952,7 @@ function RunCenterRunChooser({
   totalWork
 }: {
   onOpenQueue: () => void;
+  onOpenNetapp: () => void;
   onOpenSelected: () => void;
   providers: ProviderStatus[];
   selectedItem: QueueItem | null;
@@ -816,6 +1008,18 @@ function RunCenterRunChooser({
       primaryTo: "/providers?section=cisco",
       command: "make provider-lab-cisco-console-ethernet-readiness",
       icon: <Activity size={18} />
+    },
+    {
+      id: "netapp",
+      title: "NetApp ONTAP Preview",
+      category: "Shared storage",
+      status: "preview_only",
+      description: "Planned SP, cluster, node, SVM, iSCSI LIF, console readiness, and upgrade preview.",
+      blockers: providerBlockers(providers, ["netapp-ontap"]),
+      primaryLabel: "Open NetApp Preview",
+      onPrimary: onOpenNetapp,
+      command: "make netapp-real-readiness",
+      icon: <HardDrive size={18} />
     },
     {
       id: "verification",
@@ -1025,18 +1229,30 @@ function providerBlockers(providers: ProviderStatus[], providerIds: string[]): s
 
 function NetAppRunCenterPreview({
   artifacts,
+  consoleDiscovery,
   consoleReadiness,
+  consoleState,
   error,
   loading,
+  nfsVcenterReadiness,
+  netappAction,
+  onRunConsoleDiscovery,
+  onRunConsoleReadState,
   onRefresh,
   preview,
   readinessComparison,
   upgradeReadiness
 }: {
   artifacts: NetAppProviderArtifact[];
+  consoleDiscovery: ProviderProbeResult | null;
   consoleReadiness: NetAppConsoleReadiness | null;
+  consoleState: ProviderProbeResult | null;
   error: string;
   loading: boolean;
+  nfsVcenterReadiness: ProviderProbeResult | null;
+  netappAction: string;
+  onRunConsoleDiscovery: () => void;
+  onRunConsoleReadState: () => void;
   onRefresh: () => void;
   preview: NetAppPlanPreview | null;
   readinessComparison: NetAppReadinessComparison | null;
@@ -1102,16 +1318,35 @@ function NetAppRunCenterPreview({
             warnings={preview.warnings}
           />
           <h3>Planned vs Observed</h3>
-          <NetAppReadinessComparisonPanel comparison={readinessComparison} />
+          <details className="stage-details">
+            <summary>Manual planned-vs-observed comparison</summary>
+            <NetAppReadinessComparisonPanel comparison={readinessComparison} />
+          </details>
           <h3>Console / Bootstrap Readiness</h3>
-          <NetAppConsoleReadinessPanel onRefresh={onRefresh} readiness={consoleReadiness} />
-          <h3>Cluster / SVM / LIF Intent</h3>
-          <div className="provider-fact-grid compact">
-            <ProviderFact label="Cluster Management IP" value={asString(cluster.management_ip) || "-"} />
-            <ProviderFact label="SVM Management IP" value={asString(svm.management_ip) || "-"} />
-          </div>
-          <KeyValueTable rows={recordArray(cluster.nodes)} labelKey="name" valueKey="management_ip" empty="No node management intent is planned." />
-          <KeyValueTable rows={recordArray(lifIntent.iscsi_lifs)} labelKey="name" valueKey="address" empty="No iSCSI LIF intent is planned." />
+          <NetAppRealLabPanel
+            consoleDiscovery={consoleDiscovery}
+            consoleReadiness={consoleReadiness}
+            consoleState={consoleState}
+            loading={loading}
+            netappAction={netappAction}
+            nfsVcenterReadiness={nfsVcenterReadiness}
+            onRefresh={onRefresh}
+            onRunConsoleDiscovery={onRunConsoleDiscovery}
+            onRunConsoleReadState={onRunConsoleReadState}
+          />
+          <details className="stage-details">
+            <summary>Manual readiness checklist and local observations</summary>
+            <NetAppConsoleReadinessPanel onRefresh={onRefresh} readiness={consoleReadiness} />
+          </details>
+          <details className="stage-details">
+            <summary>Cluster, SVM, and LIF intent</summary>
+            <div className="provider-fact-grid compact">
+              <ProviderFact label="Cluster Management IP" value={asString(cluster.management_ip) || "-"} />
+              <ProviderFact label="SVM Management IP" value={asString(svm.management_ip) || "-"} />
+            </div>
+            <KeyValueTable rows={recordArray(cluster.nodes)} labelKey="name" valueKey="management_ip" empty="No node management intent is planned." />
+            <KeyValueTable rows={recordArray(lifIntent.iscsi_lifs)} labelKey="name" valueKey="address" empty="No iSCSI LIF intent is planned." />
+          </details>
           <div className="run-center-preview-grid">
             <div>
               <h3>Storage / iSCSI Preview</h3>
@@ -1130,8 +1365,10 @@ function NetAppRunCenterPreview({
           </div>
           <h3>Persisted Mock Artifact Metadata</h3>
           <NetAppProviderArtifactList artifacts={artifacts} />
-          <h3>Disabled Dangerous Actions</h3>
-          <DisabledActionList actions={disabledActions} />
+          <details className="stage-details">
+            <summary>Disabled dangerous actions</summary>
+            <DisabledActionList actions={disabledActions} />
+          </details>
         </>
       ) : (
         !loading && !error && <p className="muted">No NetApp plan-preview payload is available.</p>
@@ -1317,6 +1554,207 @@ function observationFormFromReadiness(readiness: NetAppConsoleReadiness | null):
     existing_data_risk_acknowledged: observations.existing_data_risk_acknowledged,
     operator_notes: observations.operator_notes
   };
+}
+
+function NetAppRealLabPanel({
+  consoleDiscovery,
+  consoleReadiness,
+  consoleState,
+  loading,
+  netappAction,
+  nfsVcenterReadiness,
+  onRefresh,
+  onRunConsoleDiscovery,
+  onRunConsoleReadState
+}: {
+  consoleDiscovery: ProviderProbeResult | null;
+  consoleReadiness: NetAppConsoleReadiness | null;
+  consoleState: ProviderProbeResult | null;
+  loading: boolean;
+  netappAction: string;
+  nfsVcenterReadiness: ProviderProbeResult | null;
+  onRefresh: () => void;
+  onRunConsoleDiscovery: () => void;
+  onRunConsoleReadState: () => void;
+}) {
+  const probeEnabled = asBoolean(consoleReadiness?.console_probe_enabled);
+  const discoveryArtifacts = objectValue(consoleDiscovery?.artifacts);
+  const stateArtifacts = objectValue(consoleState?.artifacts);
+  const nfsArtifacts = objectValue(nfsVcenterReadiness?.artifacts);
+  const nfsTopology = objectValue(nfsVcenterReadiness?.management_topology);
+  const nfsTargets = objectValue(nfsVcenterReadiness?.targets);
+  const plannedNfs = objectValue(nfsVcenterReadiness?.planned_nfs);
+  const connectedPorts = stringArray(nfsTopology.connected_management_ports);
+  const nfsLifs = stringArray(plannedNfs.nfs_lifs);
+  const busy = Boolean(netappAction);
+  const discoveryCandidateCounts = objectValue(consoleDiscovery?.candidate_counts);
+  const discoveryCandidates = recordArray(consoleDiscovery?.candidates);
+  const selectedPort = asString(consoleState?.selected_port) || asString(consoleDiscovery?.selected_port);
+  const selectedBaud = asString(consoleState?.selected_baud) || asString(consoleDiscovery?.selected_baud);
+  const selectedPromptState =
+    asString(consoleState?.selected_prompt_state) || asString(consoleDiscovery?.selected_prompt_state);
+  const selectionConfidence =
+    asString(consoleState?.selection_confidence) || asString(consoleDiscovery?.selection_confidence);
+  const selectionReason =
+    asString(consoleState?.selection_reason) || asString(consoleDiscovery?.selection_reason);
+  const promptDetected =
+    asString(consoleState?.prompt_detected) || asString(consoleDiscovery?.prompt_detected);
+  const nextConsoleAction =
+    asString(consoleState?.next_safe_action) || asString(consoleDiscovery?.next_safe_action);
+  const consoleCandidateCount =
+    asString(consoleDiscovery?.candidate_count) || asString(discoveryCandidateCounts.total) || "0";
+  const probedCandidateCount =
+    asString(consoleState?.probed_candidate_count) || asString(consoleDiscovery?.probed_candidate_count) || "0";
+  const skippedCandidateCount =
+    asString(consoleState?.skipped_candidate_count) || asString(consoleDiscovery?.skipped_candidate_count) || "0";
+  const consoleAttemptCount =
+    asString(consoleState?.attempt_count) || asString(consoleDiscovery?.attempt_count) || "0";
+
+  return (
+    <div className="netapp-real-lab-panel">
+      <div className="provider-callout">
+        <strong>Real-lab read-only path</strong>
+        <p>Console discovery is newline-only. NFS/vCenter remains readiness preview with no apply control.</p>
+      </div>
+      <div className="provider-fact-grid compact">
+        <ProviderFact label="Console Probe" value={probeEnabled ? "Available" : "Blocked"} />
+        <ProviderFact label="Configured Port Hint" value={asString(consoleDiscovery?.configured_port_hint) || "Auto-discover"} />
+        <ProviderFact label="Selected Port" value={selectedPort || "Not selected"} />
+        <ProviderFact label="Selected Baud" value={selectedBaud || "Not selected"} />
+        <ProviderFact label="Prompt State" value={labelize(selectedPromptState || "not run")} />
+        <ProviderFact label="Prompt Detected" value={promptDetected || "false"} />
+        <ProviderFact label="Confidence" value={labelize(selectionConfidence || "none")} />
+        <ProviderFact label="Candidates" value={consoleCandidateCount} />
+        <ProviderFact label="Probed / Skipped" value={`${probedCandidateCount} / ${skippedCandidateCount}`} />
+        <ProviderFact label="Probe Attempts" value={consoleAttemptCount} />
+        <ProviderFact label="Why Selected" value={selectionReason || "No selection evidence yet."} />
+        <ProviderFact label="Next Console Action" value={nextConsoleAction || "Run console autodiscovery."} />
+        <ProviderFact label="Last Console Blocker" value={asString(consoleState?.last_console_blocker) || asString(consoleDiscovery?.last_console_blocker) || "None"} />
+        <ProviderFact label="Management Ports" value={connectedPorts.length ? connectedPorts.join(", ") : "One connected path expected"} />
+        <ProviderFact label="NFS Preview" value={labelize(asString(nfsVcenterReadiness?.status) || "not run")} />
+        <ProviderFact label="NFS LIFs" value={nfsLifs.length ? nfsLifs.join(", ") : "Not planned"} />
+        <ProviderFact label="Datastore" value={asString(plannedNfs.datastore_name) || "Not planned"} />
+        <ProviderFact label="vCenter" value={asBoolean(nfsTargets.vcenter_configured) ? "Configured" : "Not configured"} />
+        <ProviderFact label="govc" value={asBoolean(nfsTargets.govc_available) ? "Available" : "Missing"} />
+      </div>
+      {promptDetected !== "true" && (
+        <div className="provider-callout">
+          <strong>{selectedPort ? "No NetApp prompt confirmed" : "No selected console candidate"}</strong>
+          <p>{nextConsoleAction || "Check cable placement, adapter ownership, permissions, power state, and baud before rerunning discovery."}</p>
+        </div>
+      )}
+      <div className="action-row">
+        <button onClick={onRunConsoleDiscovery} disabled={!probeEnabled || busy || loading} type="button">
+          <RefreshCw size={16} />
+          {netappAction === "console-discovery" ? "Discovering" : "Run Console Discovery"}
+        </button>
+        <button onClick={onRunConsoleReadState} disabled={!probeEnabled || busy || loading} type="button">
+          <Activity size={16} />
+          {netappAction === "console-read-state" ? "Reading" : "Read Console State"}
+        </button>
+        <button onClick={onRefresh} disabled={busy || loading} type="button">
+          <RefreshCw size={16} />
+          Refresh Readiness
+        </button>
+      </div>
+      <div className="run-center-preview-grid">
+        <NetAppEvidenceTile
+          lines={[
+            asString(consoleDiscovery?.message) || "Console discovery has not run.",
+            `Report: ${asString(discoveryArtifacts.report) || "artifacts/codex-runs/netapp-console-autodiscovery-report.md"}`,
+            `Candidate count: ${asString(consoleDiscovery?.candidate_count) || "0"}.`,
+            `Probed/skipped: ${asString(consoleDiscovery?.probed_candidate_count) || "0"}/${asString(consoleDiscovery?.skipped_candidate_count) || "0"}.`
+          ]}
+          tag={labelize(asString(consoleDiscovery?.status) || "not run")}
+          title="Console discovery"
+        />
+        <NetAppEvidenceTile
+          lines={[
+            asString(consoleState?.message) || "Console state has not been read.",
+            `Report: ${asString(stateArtifacts.report) || "artifacts/codex-runs/netapp-console-state-report.md"}`,
+            `Selected baud: ${asString(consoleState?.selected_baud) || "not selected"}.`
+          ]}
+          tag={labelize(asString(consoleState?.status) || "not run")}
+          title="Console state"
+        />
+        <NetAppEvidenceTile
+          lines={[
+            asString(nfsVcenterReadiness?.message) || "NFS/vCenter readiness has not loaded.",
+            `Report: ${asString(nfsArtifacts.report) || "artifacts/codex-runs/netapp-nfs-vcenter-readiness-report.md"}`,
+            asString(nfsTopology.note) || "Only one management path is expected right now."
+          ]}
+          tag={labelize(asString(nfsVcenterReadiness?.status) || "not run")}
+          title="NFS / vCenter"
+        />
+      </div>
+      <NetAppRunCenterIssues
+        blockers={[
+          ...(consoleDiscovery?.blockers ?? []),
+          ...(consoleState?.blockers ?? []),
+          ...(nfsVcenterReadiness?.blockers ?? [])
+        ]}
+        removableWarnings={[]}
+        warnings={[
+          ...(consoleDiscovery?.warnings ?? []),
+          ...(consoleState?.warnings ?? []),
+          ...(nfsVcenterReadiness?.warnings ?? [])
+        ]}
+      />
+      <AdvancedDetails
+        className="provider-workflow-details"
+        summary="Serial candidates, ranking evidence, and redacted probe payload"
+        title="Raw console discovery details"
+      >
+        <h3>Serial Candidates</h3>
+        {discoveryCandidates.length ? (
+          <table className="provider-candidate-table">
+            <thead>
+              <tr>
+                <th>Path</th>
+                <th>Type</th>
+                <th>Access</th>
+                <th>In Use</th>
+                <th>Rank</th>
+                <th>Confidence</th>
+                <th>Reason</th>
+              </tr>
+            </thead>
+            <tbody>
+              {discoveryCandidates.map((candidate) => {
+                const path = asString(candidate.display_path) || asString(candidate.path) || "unknown";
+                return (
+                  <tr className={path === selectedPort ? "selected-candidate-row" : ""} key={path}>
+                    <td>{path}</td>
+                    <td>{asString(candidate.path_type) || "-"}</td>
+                    <td>{`${asString(candidate.readable) || "false"} / ${asString(candidate.writable) || "false"}`}</td>
+                    <td>{asString(candidate.in_use) || "false"}</td>
+                    <td>{asString(candidate.rank) || "-"}</td>
+                    <td>{labelize(asString(candidate.confidence) || "none")}</td>
+                    <td>{stringArray(candidate.selection_reasons).join("; ") || asString(candidate.recommendation) || "-"}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        ) : (
+          <p className="muted">No serial candidates are available in the latest discovery payload.</p>
+        )}
+        {consoleDiscovery && <JsonDetails title="Raw redacted console discovery result" data={consoleDiscovery} />}
+        {consoleState && <JsonDetails title="Raw redacted console state result" data={consoleState} />}
+      </AdvancedDetails>
+    </div>
+  );
+}
+
+function NetAppEvidenceTile({ lines, tag, title }: { lines: string[]; tag: string; title: string }) {
+  return (
+    <div className="provider-callout">
+      <strong>{title}: {tag}</strong>
+      {lines.map((line) => (
+        <p key={line}>{line}</p>
+      ))}
+    </div>
+  );
 }
 
 function NetAppConsoleReadinessPanel({
@@ -2735,6 +3173,348 @@ function MediaInventoryPage() {
         </>
       )}
     </Page>
+  );
+}
+
+function LabProfilesPage({
+  error,
+  loading,
+  onReload,
+  onStateChange,
+  state
+}: {
+  error: string;
+  loading: boolean;
+  onReload: () => Promise<void>;
+  onStateChange: (state: LabProfileList) => void;
+  state: LabProfileList | null;
+}) {
+  const [selectedProfileId, setSelectedProfileId] = useState("");
+  const [formInitialized, setFormInitialized] = useState(false);
+  const [form, setForm] = useState<LabProfileFormState>(() => blankLabProfileForm());
+  const [saveError, setSaveError] = useState("");
+  const [busyAction, setBusyAction] = useState("");
+  const activeProfile = state?.active_profile ?? null;
+  const selectedProfile =
+    state?.profiles.find((profile) => profile.id === selectedProfileId) ?? null;
+
+  useEffect(() => {
+    if (!state || formInitialized) return;
+    const initialProfile =
+      state.active_profile.source === "saved" ? state.active_profile : state.profiles[0] ?? null;
+    if (initialProfile) {
+      setSelectedProfileId(initialProfile.id);
+      setForm(labProfileFormFrom(initialProfile));
+    }
+    setFormInitialized(true);
+  }, [formInitialized, state]);
+
+  function startNewProfile() {
+    setSelectedProfileId("");
+    setForm(blankLabProfileForm());
+    setFormInitialized(true);
+    setSaveError("");
+  }
+
+  function loadProfile(profile: LabProfile) {
+    setSelectedProfileId(profile.id);
+    setForm(labProfileFormFrom(profile));
+    setFormInitialized(true);
+    setSaveError("");
+  }
+
+  function loadRuntimeProfile() {
+    if (!state) return;
+    setSelectedProfileId("");
+    setForm(labProfileFormFrom(state.runtime_profile));
+    setFormInitialized(true);
+    setSaveError("");
+  }
+
+  async function saveProfile(event: FormEvent) {
+    event.preventDefault();
+    setSaveError("");
+    const action = selectedProfile ? "update" : "create";
+    setBusyAction(action);
+    try {
+      const payload = labProfilePayload(form);
+      const saved = selectedProfile
+        ? await api.updateLabProfile(selectedProfile.id, payload)
+        : await api.createLabProfile(payload);
+      setSelectedProfileId(saved.id);
+      setForm(labProfileFormFrom(saved));
+      setFormInitialized(true);
+      await onReload();
+    } catch (err) {
+      setSaveError((err as Error).message);
+    } finally {
+      setBusyAction("");
+    }
+  }
+
+  async function saveAsNew() {
+    setSaveError("");
+    setBusyAction("create");
+    try {
+      const saved = await api.createLabProfile(labProfilePayload(form));
+      setSelectedProfileId(saved.id);
+      setForm(labProfileFormFrom(saved));
+      setFormInitialized(true);
+      await onReload();
+    } catch (err) {
+      setSaveError((err as Error).message);
+    } finally {
+      setBusyAction("");
+    }
+  }
+
+  async function activateProfile(profileId: string) {
+    setSaveError("");
+    setBusyAction(`activate-${profileId}`);
+    try {
+      onStateChange(await api.activateLabProfile(profileId));
+    } catch (err) {
+      setSaveError((err as Error).message);
+    } finally {
+      setBusyAction("");
+    }
+  }
+
+  return (
+    <Page
+      title="Lab Profiles"
+      actions={
+        <>
+          <button onClick={onReload} disabled={loading}>
+            <RefreshCw size={16} />
+            Refresh
+          </button>
+          <button onClick={startNewProfile} type="button">
+            <Plus size={16} />
+            New Lab
+          </button>
+        </>
+      }
+    >
+      <Feedback loading={loading && !state} error={error} />
+      {state && activeProfile && (
+        <>
+          <section className="metric-grid lab-profile-metrics">
+            <Metric label="Saved Labs" value={state.profiles.length} icon={<Layers size={18} />} />
+            <Metric
+              label="Active Version"
+              value={activeProfile.version}
+              icon={<History size={18} />}
+            />
+            <Metric
+              label="Active History"
+              value={activeProfile.history.length}
+              icon={<ClipboardList size={18} />}
+            />
+            <Metric
+              label="Address Fields"
+              value={labAddressFields.length + 1}
+              icon={<Route size={18} />}
+            />
+          </section>
+
+          <section className="panel active-lab-panel">
+            <div className="readiness-head">
+              <PanelTitle icon={<Layers size={18} />} title="Active Lab" />
+              <StatusBadge status={activeProfile.source === "runtime_env" ? "local" : "current"} />
+            </div>
+            <div className="provider-fact-grid compact">
+              <ProviderFact label="Name" value={activeProfile.name} />
+              <ProviderFact label="Source" value={labelize(activeProfile.source)} />
+              <ProviderFact label="Version" value={`v${activeProfile.version}`} />
+              <ProviderFact label="Store" value={state.store_path} />
+            </div>
+            <LabAddressSummary profile={activeProfile} />
+            <div className="action-row">
+              <button
+                disabled={busyAction === "activate-runtime" || activeProfile.id === "runtime"}
+                onClick={() => activateProfile("runtime")}
+                type="button"
+              >
+                <Server size={16} />
+                Runtime
+              </button>
+              <button onClick={loadRuntimeProfile} type="button">
+                <Pencil size={16} />
+                Load Runtime
+              </button>
+            </div>
+          </section>
+
+          <div className="lab-profile-layout">
+            <section className="panel">
+              <PanelTitle icon={<Layers size={18} />} title="Saved Labs" />
+              {state.profiles.length ? (
+                <div className="lab-profile-list">
+                  {state.profiles.map((profile) => (
+                    <article
+                      className={
+                        profile.id === selectedProfileId
+                          ? "lab-profile-row selected"
+                          : "lab-profile-row"
+                      }
+                      key={profile.id}
+                    >
+                      <div>
+                        <strong>{profile.name}</strong>
+                        <span>{displayAddress(profile.address_plan.subnet)}</span>
+                      </div>
+                      <StatusBadge status={profile.active ? "current" : "available"} />
+                      <div className="lab-profile-row-actions">
+                        <button onClick={() => loadProfile(profile)} type="button">
+                          <Pencil size={16} />
+                          Edit
+                        </button>
+                        <button
+                          disabled={profile.active || busyAction === `activate-${profile.id}`}
+                          onClick={() => activateProfile(profile.id)}
+                          type="button"
+                        >
+                          <CheckCircle2 size={16} />
+                          Activate
+                        </button>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              ) : (
+                <p className="muted">No saved lab profiles.</p>
+              )}
+            </section>
+
+            <section className="panel">
+              <PanelTitle
+                icon={<Save size={18} />}
+                title={selectedProfile ? `Edit ${selectedProfile.name}` : "Create Lab"}
+              />
+              <form className="lab-profile-form" onSubmit={saveProfile}>
+                <div className="lab-profile-form-grid">
+                  <Field label="Name">
+                    <input
+                      minLength={2}
+                      onChange={(event) => setForm({ ...form, name: event.target.value })}
+                      required
+                      value={form.name}
+                    />
+                  </Field>
+                  <Field label="Description">
+                    <textarea
+                      onChange={(event) =>
+                        setForm({ ...form, description: event.target.value })
+                      }
+                      value={form.description}
+                    />
+                  </Field>
+                  {labAddressFields.map((field) => (
+                    <Field key={field.key} label={field.label}>
+                      <input
+                        inputMode="decimal"
+                        onChange={(event) =>
+                          setForm({
+                            ...form,
+                            addresses: {
+                              ...form.addresses,
+                              [field.key]: event.target.value
+                            }
+                          })
+                        }
+                        value={form.addresses[field.key]}
+                      />
+                    </Field>
+                  ))}
+                  <Field label="NetApp iSCSI LIFs">
+                    <input
+                      onChange={(event) =>
+                        setForm({ ...form, netappIscsiLifs: event.target.value })
+                      }
+                      value={form.netappIscsiLifs}
+                    />
+                  </Field>
+                </div>
+                <Feedback error={saveError} />
+                <div className="form-actions">
+                  {selectedProfile && (
+                    <button
+                      disabled={Boolean(busyAction)}
+                      onClick={saveAsNew}
+                      type="button"
+                    >
+                      <Plus size={16} />
+                      Save New
+                    </button>
+                  )}
+                  <button className="primary" disabled={Boolean(busyAction)} type="submit">
+                    <Save size={16} />
+                    {selectedProfile ? "Update Profile" : "Create Profile"}
+                  </button>
+                </div>
+              </form>
+            </section>
+          </div>
+
+          <section className="panel">
+            <PanelTitle icon={<History size={18} />} title="Version History" />
+            {selectedProfile && selectedProfile.history.length ? (
+              <table>
+                <thead>
+                  <tr>
+                    <th>Version</th>
+                    <th>Saved</th>
+                    <th>Name</th>
+                    <th>Subnet</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {selectedProfile.history.map((revision) => (
+                    <tr key={`${selectedProfile.id}-${revision.version}-${revision.saved_at}`}>
+                      <td>v{revision.version}</td>
+                      <td>{formatDateTime(revision.saved_at)}</td>
+                      <td>{revision.name}</td>
+                      <td>{displayAddress(revision.address_plan.subnet)}</td>
+                      <td>
+                        <button
+                          className="small-button"
+                          onClick={() => setForm(labProfileFormFrom(revision))}
+                          type="button"
+                        >
+                          Load
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : (
+              <p className="muted">No previous versions for the selected saved lab.</p>
+            )}
+          </section>
+        </>
+      )}
+    </Page>
+  );
+}
+
+function LabAddressSummary({ profile }: { profile: LabProfile }) {
+  return (
+    <div className="provider-fact-grid compact lab-address-summary">
+      {labAddressFields.map((field) => (
+        <ProviderFact
+          key={field.key}
+          label={field.label}
+          value={displayAddress(profile.address_plan[field.key])}
+        />
+      ))}
+      <ProviderFact
+        label="NetApp iSCSI LIFs"
+        value={profile.address_plan.netapp_iscsi_lifs.join(", ") || "Not set"}
+      />
+    </div>
   );
 }
 
@@ -7967,6 +8747,79 @@ function stringFromUnknown(value: unknown): string {
 
 function labelize(value: string) {
   return value.replace(/[_-]/g, " ");
+}
+
+function blankLabProfileForm(): LabProfileFormState {
+  const addresses = {} as Record<LabAddressScalarKey, string>;
+  labAddressFields.forEach((field) => {
+    addresses[field.key] = "";
+  });
+  return {
+    name: "",
+    description: "",
+    addresses,
+    netappIscsiLifs: ""
+  };
+}
+
+function labProfileFormFrom(profile: {
+  name: string;
+  description: string | null;
+  address_plan: LabAddressPlan;
+}): LabProfileFormState {
+  const addresses = {} as Record<LabAddressScalarKey, string>;
+  labAddressFields.forEach((field) => {
+    addresses[field.key] = profile.address_plan[field.key] ?? "";
+  });
+  return {
+    name: profile.name,
+    description: profile.description ?? "",
+    addresses,
+    netappIscsiLifs: profile.address_plan.netapp_iscsi_lifs.join(", ")
+  };
+}
+
+function labProfilePayload(form: LabProfileFormState): LabProfileWrite {
+  const addressPlan = blankLabAddressPlan();
+  labAddressFields.forEach((field) => {
+    addressPlan[field.key] = cleanNullable(form.addresses[field.key]);
+  });
+  addressPlan.netapp_iscsi_lifs = form.netappIscsiLifs
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+  return {
+    name: form.name.trim(),
+    description: cleanNullable(form.description),
+    address_plan: addressPlan
+  };
+}
+
+function blankLabAddressPlan(): LabAddressPlan {
+  return {
+    subnet: null,
+    ilo: null,
+    server_embedded_nic: null,
+    esxi_management: null,
+    cisco_management: null,
+    ansible_control_host: null,
+    netapp_controller_a_sp: null,
+    netapp_controller_b_sp: null,
+    netapp_cluster_mgmt: null,
+    netapp_node_a_mgmt: null,
+    netapp_node_b_mgmt: null,
+    netapp_svm_mgmt: null,
+    netapp_iscsi_lifs: []
+  };
+}
+
+function cleanNullable(value: string): string | null {
+  const trimmed = value.trim();
+  return trimmed || null;
+}
+
+function displayAddress(value: string | null | undefined): string {
+  return value?.trim() || "Not set";
 }
 
 function stageEventsForRun(run: WorkflowRun): StageEvent[] {

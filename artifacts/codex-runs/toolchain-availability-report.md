@@ -1,8 +1,8 @@
 # Toolchain Availability Report
 
-- Checked at: `2026-06-07T01:16:49.658180+00:00`
+- Checked at: `2026-06-08T14:47:17.558252+00:00`
 - Status: `warning`
-- Provider mode: `local-lab-readwrite`
+- Provider mode: `mock`
 - Next safe action: Use available tools only through staged readiness, preview, approval, and audit gates.
 
 ## Local Tool Checks
@@ -42,9 +42,10 @@
 - Reserve deployment operations for approved post-install workflows.
 
 ### NetApp
+- Use local serial console discovery/read-state first for physical/controller state evidence.
 - Use netapp-ontap Python client or ONTAP REST as the primary managed-state path.
-- Use ONTAP REST direct where simple GET/compare logic is enough.
-- Keep write/apply workflows behind explicit NetApp stage gates.
+- Use ONTAP REST direct where simple GET/compare logic is enough after cluster management is configured.
+- Keep NFS/vCenter datastore apply and all ONTAP writes behind explicit NetApp stage gates.
 
 ## Firmware Strategy
 

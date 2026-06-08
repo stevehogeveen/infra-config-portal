@@ -1,0 +1,55 @@
+{
+  "provider_id": "netapp-ontap",
+  "action": "console-discovery",
+  "checked_at": "2026-06-07T14:36:28.183730+00:00",
+  "status": "blocked",
+  "message": "NetApp console discovery did not identify a usable prompt/state.",
+  "mode": "local-lab-readwrite",
+  "configured_port_hint": null,
+  "selected_port": null,
+  "selected_baud": null,
+  "selected_prompt_state": null,
+  "selected_prompt_label": null,
+  "selection_source": null,
+  "candidate_count": 0,
+  "candidates": [],
+  "bauds_tried": [
+    115200,
+    9600,
+    19200,
+    38400,
+    57600
+  ],
+  "attempt_count": 0,
+  "attempts": [],
+  "last_console_blocker": "No OS-visible NetApp USB serial adapters were found at /dev/serial/by-id/*, /dev/ttyUSB*, or /dev/ttyACM*. If this is a non-USB serial path such as /dev/ttyS4, set NETAPP_CONSOLE_PORT explicitly.",
+  "serial_import_error": null,
+  "management_topology": {
+    "connected_management_ports": [
+      "cluster_mgmt"
+    ],
+    "note": "Only one NetApp management port is connected at the moment."
+  },
+  "artifacts": {
+    "report": "artifacts/codex-runs/netapp-console-discovery-report.md",
+    "json": "artifacts/codex-runs/netapp-console-discovery-redacted.json"
+  },
+  "warnings": [
+    "Only newline/enter wake bytes are allowed for this NetApp console probe.",
+    "No NetApp credentials, commands, boot interrupts, or configuration actions are sent.",
+    "Only one NetApp management port is connected at the moment."
+  ],
+  "blockers": [
+    "No OS-visible NetApp USB serial adapters were found at /dev/serial/by-id/*, /dev/ttyUSB*, or /dev/ttyACM*. If this is a non-USB serial path such as /dev/ttyS4, set NETAPP_CONSOLE_PORT explicitly."
+  ],
+  "not_attempted": [
+    "Ctrl+C, Ctrl+Z, break, or boot interruption",
+    "username or password entry",
+    "cluster setup commands",
+    "SP, node, SVM, LIF, volume, export, or datastore creation",
+    "ONTAP API write",
+    "vCenter or ESXi datastore mount",
+    "controller reboot, takeover/giveback, wipe, or upgrade"
+  ],
+  "next_safe_action": "Check console cable, adapter ownership, backend device permissions, and baud, then rerun discovery."
+}

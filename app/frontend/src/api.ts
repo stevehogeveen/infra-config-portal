@@ -11,10 +11,13 @@ import type {
   HpeRaidIntentWrite,
   HpeRaidPlanPreview,
   HpeStorageDiscovery,
-  IloUpgradeReadiness,
   IloSetupIntent,
   IloSetupIntentWrite,
   IloSetupPlanPreview,
+  IloUpgradeReadiness,
+  LabProfile,
+  LabProfileList,
+  LabProfileWrite,
   MediaInventory,
   NetAppConsoleReadiness,
   NetAppObservationUpdate,
@@ -51,10 +54,33 @@ async function apiRequest<T>(path: string, options: RequestOptions = {}): Promis
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ detail: response.statusText }));
-    throw new Error(typeof error.detail === "string" ? error.detail : JSON.stringify(error.detail));
+    throw new Error(apiErrorMessage(error.detail ?? response.statusText));
   }
 
   return response.json() as Promise<T>;
+}
+
+function apiErrorMessage(detail: unknown): string {
+  if (typeof detail === "string") {
+    return detail;
+  }
+  if (Array.isArray(detail)) {
+    return detail
+      .map((item) => {
+        if (!item || typeof item !== "object") {
+          return "";
+        }
+        const record = item as Record<string, unknown>;
+        const location = Array.isArray(record.loc)
+          ? record.loc.filter((part) => part !== "body").join(".")
+          : "";
+        const message = typeof record.msg === "string" ? record.msg : "Invalid value";
+        return location ? `${location}: ${message}` : message;
+      })
+      .filter(Boolean)
+      .join("; ");
+  }
+  return JSON.stringify(detail);
 }
 
 export const api = {
@@ -154,6 +180,20 @@ export const api = {
     apiRequest<NetAppPlanPreview>("/api/v1/providers/netapp-ontap/plan-preview"),
   netappConsoleReadiness: () =>
     apiRequest<NetAppConsoleReadiness>("/api/v1/providers/netapp-ontap/console-readiness"),
+  netappConsoleDiscovery: () =>
+    apiRequest<ProviderProbeResult>("/api/v1/providers/netapp-ontap/console-discovery"),
+  runNetappConsoleDiscovery: () =>
+    apiRequest<ProviderProbeResult>("/api/v1/providers/netapp-ontap/console-discovery", {
+      method: "POST"
+    }),
+  netappConsoleReadState: () =>
+    apiRequest<ProviderProbeResult>("/api/v1/providers/netapp-ontap/console-read-state"),
+  runNetappConsoleReadState: () =>
+    apiRequest<ProviderProbeResult>("/api/v1/providers/netapp-ontap/console-read-state", {
+      method: "POST"
+    }),
+  netappNfsVcenterReadiness: () =>
+    apiRequest<ProviderProbeResult>("/api/v1/providers/netapp-ontap/nfs-vcenter-readiness"),
   netappObservations: () =>
     apiRequest<NetAppObservations>("/api/v1/providers/netapp-ontap/observations"),
   saveNetappObservations: (payload: NetAppObservationUpdate) =>
@@ -180,6 +220,21 @@ export const api = {
     apiRequest<ProviderProbeResult>("/api/v1/lab/full-rebuild-summary"),
   buildVerification: () =>
     apiRequest<ProviderProbeResult>("/api/v1/lab/build-verification"),
+  labProfiles: () => apiRequest<LabProfileList>("/api/v1/lab/profiles"),
+  createLabProfile: (payload: LabProfileWrite) =>
+    apiRequest<LabProfile>("/api/v1/lab/profiles", {
+      method: "POST",
+      body: payload
+    }),
+  updateLabProfile: (id: string, payload: LabProfileWrite) =>
+    apiRequest<LabProfile>(`/api/v1/lab/profiles/${id}`, {
+      method: "PUT",
+      body: payload
+    }),
+  activateLabProfile: (id: string) =>
+    apiRequest<LabProfileList>(`/api/v1/lab/profiles/${id}/activate`, {
+      method: "POST"
+    }),
   ciscoConsolePromptReadiness: () =>
     apiRequest<ProviderProbeResult>("/api/v1/providers/cisco-console/prompt-readiness", {
       method: "POST"

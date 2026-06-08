@@ -1,6 +1,6 @@
 # Cisco Password Recovery Guidance Report
 
-- Checked at: `2026-06-07T11:53:57.930892+00:00`
+- Checked at: `2026-06-07T12:55:44.526936+00:00`
 - Provider mode: `local-lab-readwrite`
 - Initial prompt state: `privileged-exec`
 - Enable command sent: `False`

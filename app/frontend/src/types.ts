@@ -155,6 +155,59 @@ export type ProviderProbeResult = {
   [key: string]: unknown;
 };
 
+export type LabAddressPlan = {
+  subnet: string | null;
+  ilo: string | null;
+  server_embedded_nic: string | null;
+  esxi_management: string | null;
+  cisco_management: string | null;
+  ansible_control_host: string | null;
+  netapp_controller_a_sp: string | null;
+  netapp_controller_b_sp: string | null;
+  netapp_cluster_mgmt: string | null;
+  netapp_node_a_mgmt: string | null;
+  netapp_node_b_mgmt: string | null;
+  netapp_svm_mgmt: string | null;
+  netapp_iscsi_lifs: string[];
+};
+
+export type LabProfileRevision = {
+  version: number;
+  saved_at: string;
+  name: string;
+  description: string;
+  address_plan: LabAddressPlan;
+};
+
+export type LabProfile = {
+  id: string;
+  name: string;
+  description: string;
+  address_plan: LabAddressPlan;
+  source: string;
+  version: number;
+  active: boolean;
+  created_at: string;
+  updated_at: string;
+  last_selected_at: string | null;
+  history: LabProfileRevision[];
+};
+
+export type LabProfileWrite = {
+  name: string;
+  description?: string | null;
+  address_plan: LabAddressPlan;
+};
+
+export type LabProfileList = {
+  active_profile: LabProfile;
+  runtime_profile: LabProfile;
+  profiles: LabProfile[];
+  store_path: string;
+  mock_only: boolean;
+  next_safe_action: string;
+};
+
 export type CiscoSetupReadiness = {
   provider_id: string;
   phase: string;
@@ -300,6 +353,7 @@ export type NetAppPlanPreview = {
   svm_intent_preview: Record<string, unknown>;
   lif_intent_preview: Record<string, unknown>;
   storage_iscsi_plan_preview: Record<string, unknown>;
+  storage_nfs_vcenter_preview: Record<string, unknown> | null;
   readiness_comparison_preview: Record<string, unknown> | null;
   upgrade_readiness_preview: Record<string, unknown>;
   blockers: string[];

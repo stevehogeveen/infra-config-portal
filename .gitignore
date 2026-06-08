@@ -1,5 +1,7 @@
 artifacts/real-lab/
 artifacts/screenshots/
+artifacts/codex-runs/provider-probe-cache/
+artifacts/codex-runs/*-terminal.log
 .env.local.providers
 .env.local.real-lab
 .env.local.real-lab.*

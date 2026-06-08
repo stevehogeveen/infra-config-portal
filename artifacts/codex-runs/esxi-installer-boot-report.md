@@ -2,9 +2,9 @@
 
 ## Summary
 
-- checked_at: 2026-06-06T02:48:58.602889+00:00
-- status: boot_requested
-- message: ESXi installer or installed ESXi boot state is visible through iLO Redfish.
+- checked_at: 2026-06-07T13:31:03.142574+00:00
+- status: installed_esxi
+- message: Installed ESXi is running and no installer boot override is queued.
 - report: artifacts/codex-runs/esxi-installer-boot-report.md
 - next_safe_action: Continue with Cisco console and Ethernet bootstrap readiness.
 
@@ -21,13 +21,13 @@
 ```json
 {
   "blockers": [],
-  "checked_at": "2026-06-06T02:48:58.602889+00:00",
+  "checked_at": "2026-06-07T13:31:03.142574+00:00",
   "installer_detection": {
     "evidence": {
       "boot": {
-        "boot_source_override_enabled": "Once",
+        "boot_source_override_enabled": "Disabled",
         "boot_source_override_mode": "UEFI",
-        "boot_source_override_target": "Cd",
+        "boot_source_override_target": "None",
         "enabled_allowable_values": [],
         "power_state": "On",
         "status_code": 200,
@@ -54,27 +54,27 @@
         "version": "8.0.3 Build-24859861 Update 3 Patch 79"
       },
       "hpe_device_discovery": {
-        "AMSDeviceDiscovery": "NoAMS",
-        "DeviceDiscovery": "Busy",
-        "ServerFirmwareInventoryComplete": false,
+        "AMSDeviceDiscovery": "Complete",
+        "DeviceDiscovery": "vMainDeviceDiscoveryComplete",
+        "ServerFirmwareInventoryComplete": true,
         "SmartArrayDiscovery": "Complete"
       },
-      "hpe_post_state": "InPost",
+      "hpe_post_state": "FinishedPost",
       "power_state": "On",
-      "virtual_media_connected_via": "URI",
-      "virtual_media_image_present": true,
-      "virtual_media_inserted": true
+      "virtual_media_connected_via": "NotConnected",
+      "virtual_media_image_present": false,
+      "virtual_media_inserted": false
     },
     "method": "redfish-state",
-    "status": "detected",
+    "status": "installed_esxi",
     "warnings": []
   },
-  "message": "ESXi installer or installed ESXi boot state is visible through iLO Redfish.",
+  "message": "Installed ESXi is running and no installer boot override is queued.",
   "next_safe_action": "Continue with Cisco console and Ethernet bootstrap readiness.",
   "post_system": {
-    "boot_source_override_enabled": "Once",
+    "boot_source_override_enabled": "Disabled",
     "boot_source_override_mode": "UEFI",
-    "boot_source_override_target": "Cd",
+    "boot_source_override_target": "None",
     "enabled_allowable_values": [],
     "power_state": "On",
     "status_code": 200,
@@ -94,16 +94,16 @@
     ]
   },
   "report": "artifacts/codex-runs/esxi-installer-boot-report.md",
-  "status": "boot_requested",
+  "status": "installed_esxi",
   "virtual_media_after_reset": {
     "actions": [
       "#VirtualMedia.EjectMedia",
       "#VirtualMedia.InsertMedia"
     ],
-    "connected_via": "URI",
+    "connected_via": "NotConnected",
     "id": "2",
-    "image_present": true,
-    "inserted": true,
+    "image_present": false,
+    "inserted": false,
     "media_types": [
       "CD",
       "DVD"

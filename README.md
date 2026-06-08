@@ -90,13 +90,34 @@ docker compose up --build
 Compose starts local PostgreSQL, the FastAPI backend, and the Vite frontend.
 Provider adapters still run in mock mode only.
 
+## Saved Lab Profiles
+
+Lab Profiles let an operator save named lab address plans, activate a previous
+lab, create a new lab, and review prior profile versions. The frontend exposes
+the active lab selector in the app shell and a `Lab Profiles` page for editing
+the local address plan.
+
+Profile state is stored locally under `.local/lab-profiles.json` by default
+and is ignored by Git. It stores non-secret address intent only. Selecting a lab
+profile does not call providers, does not mutate `.env.local.real-lab`, and does
+not enable apply actions; provider environment values still have to match the
+selected profile before lab certification can pass.
+
+The API surface is:
+
+- `GET /api/v1/lab/profiles`
+- `POST /api/v1/lab/profiles`
+- `PUT /api/v1/lab/profiles/{profile_id}`
+- `POST /api/v1/lab/profiles/{profile_id}/activate`
+
 ## Provider Status Preview
 
 The Provider Status page shows mock provider cards plus HPE iLO/Redfish, Cisco
 console, Cisco Ansible SSH, ESXi read-only, and NetApp setup previews. Default
-`PROVIDER_MODE=mock` performs no real probes on page load. Cisco discovery
-dynamically inspects `/dev/serial/by-id/*`, `/dev/ttyUSB*`, and `/dev/ttyACM*`
-without opening the serial port. Local iLO, ESXi, and Cisco settings are shown
+`PROVIDER_MODE=mock` performs no real probes on page load. Shared serial
+console discovery dynamically inspects `/dev/serial/by-id/*`, `/dev/ttyUSB*`,
+`/dev/ttyACM*`, and `/dev/ttyS*` without opening the serial port during status
+refresh. Local iLO, ESXi, and Cisco settings are shown
 only as configured/missing flags; configured hostnames, usernames, and passwords
 are not returned in provider status payloads.
 
@@ -112,14 +133,14 @@ Canonical real-lab tooling is:
 - Verification: Build Verification consumes those outputs and classifies
   readiness, blockers, stale configuration, and failures.
 
-The `netapp-ontap` setup preview is plan-only. It displays the target addressing plan,
+The `netapp-ontap` setup preview displays the target addressing plan,
 console/bootstrap readiness checklist, disabled ONTAP API readiness,
-placeholder upgrade path, cluster/SVM/iSCSI LIF intent, and artifact/report
+placeholder upgrade path, cluster/SVM/iSCSI/NFS intent, and artifact/report
 placeholders. The structured plan preview is available at
 `GET /api/v1/providers/netapp-ontap/plan-preview`; it is generated from local
-planned values only and makes no ONTAP calls. Run Center shows the same NetApp
-payload as a preview-only section with refresh only and no apply or execution
-control. `GET /api/v1/providers/netapp-ontap/artifacts` returns mock-only,
+planned values and makes no ONTAP write calls. Run Center shows the same NetApp
+payload with explicit read-only console discovery/read-state controls when
+real-lab mode and acknowledgements are active. `GET /api/v1/providers/netapp-ontap/artifacts` returns mock-only,
 non-downloadable artifact metadata for that preview; it does not write files or
 generate reports. `GET /api/v1/providers/artifacts` aggregates provider-scoped
 artifact metadata, and the Reports / Artifacts page makes the NetApp placeholder
@@ -127,9 +148,16 @@ discoverable outside Run Center. `GET /api/v1/providers/netapp-ontap/upgrade-rea
 compares an unknown or locally configured placeholder ONTAP version with
 sanitized media inventory metadata only; it does not query a controller and
 keeps upgrade/apply disabled. `GET /api/v1/providers/netapp-ontap/console-readiness`
-returns manual console/bootstrap prerequisites and expected prompt/state
-guidance only; it does not open serial ports, call SP APIs, use SSH, or send
-commands. `GET /api/v1/providers/netapp-ontap/observations` and `PUT
+returns console/bootstrap prerequisites and expected prompt/state guidance.
+`GET`/`POST /api/v1/providers/netapp-ontap/console-discovery` and
+`GET`/`POST /api/v1/providers/netapp-ontap/console-read-state` support the
+real-lab serial path; the POST actions open ranked local console candidates and
+send newline, carriage return, and Ctrl+C wake bytes only. They do not send
+credentials, commands, Ctrl+Z, break, boot menu selections, boot interruption,
+SP APIs, SSH, or ONTAP API calls.
+`GET /api/v1/providers/netapp-ontap/nfs-vcenter-readiness` writes a
+preview-only NFS/vCenter readiness report with no ONTAP, vCenter, or ESXi
+apply action. `GET /api/v1/providers/netapp-ontap/observations` and `PUT
 /api/v1/providers/netapp-ontap/observations` provide a process-local,
 mock-only place to record bounded manual readiness observations; these notes
 reject secret-shaped text, are not persisted to artifacts, and are not sent to
@@ -139,8 +167,9 @@ targets with those manual observations only; it does not discover or validate
 live device state. Missing required manual checks are reported as unknown or
 blocking rows, while optional Controller B console observation is reported as a
 warning when absent. The console readiness summary keeps required and optional
-observation counts separate. Keep `NETAPP_CONFIGURED=false` until a future task
-explicitly adds approved read-only discovery. The portal must not create an
+observation counts separate. Keep `NETAPP_CONFIGURED=false` until ONTAP
+cluster management/API is actually configured. Local serial console discovery
+does not require `NETAPP_CONFIGURED=true`. The portal must not create an
 ONTAP cluster, change IPs, create SVMs or LIFs, create volumes, upgrade ONTAP,
 reboot controllers, wipe disks, or apply NetApp changes.
 
@@ -187,6 +216,25 @@ NetApp-only real-run readiness, with no ONTAP probes or apply actions:
 ```bash
 PROVIDER_MODE=local-readonly make netapp-real-readiness
 ```
+
+NetApp real-lab console/NFS readiness targets, still with no ONTAP/vCenter/ESXi
+apply actions:
+
+```bash
+make provider-lab-serial-console-discovery
+make provider-lab-netapp-console-autodiscovery
+make provider-lab-netapp-console-discovery
+make provider-lab-netapp-console-read-state
+make provider-lab-netapp-nfs-vcenter-readiness
+```
+
+The console targets write redacted reports under `artifacts/codex-runs/` and
+use a configured `NETAPP_CONSOLE_PORT` as a ranking hint when set, then
+auto-discover `/dev/serial/by-id/*`, `/dev/ttyUSB*`, `/dev/ttyACM*`, and
+`/dev/ttyS*`. The current lab can
+run with only one NetApp management port connected; that is enough for initial
+console/API bring-up, but full HA/SP/node/SVM/NFS validation remains blocked
+until the remaining management/data paths are connected and configured.
 
 The backend loads local provider values from `.env.local.real-lab`, but ignores
 `PROVIDER_MODE` from that file so default app and test startup remains mock.

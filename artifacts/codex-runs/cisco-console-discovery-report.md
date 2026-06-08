@@ -9,7 +9,7 @@
 - Last console blocker: Serial console port permission was denied for the backend user.
 
 ## Candidate Summary
-- REDACTED | stable=False | exists=True | readable=True | writable=True | in_use=False | rank=-125 | recommendation=selected-auto
+- REDACTED | stable=False | exists=True | readable=True | writable=True | in_use=False | rank=25 | recommendation=selected-auto
 
 ## Attempts
 - REDACTED @ 9600 via open: failed prompt=permission-denied captured=None

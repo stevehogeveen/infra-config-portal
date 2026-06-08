@@ -2,7 +2,7 @@
 
 ## Summary
 
-- Checked at: `2026-06-07T11:53:57.930892+00:00`
+- Checked at: `2026-06-07T12:55:44.526936+00:00`
 - Provider mode: `local-lab-readwrite`
 - Overall status: `completed`
 - Management VLAN: `10`
@@ -11,7 +11,7 @@
 - Management prefix: `/24`
 - Bootstrap apply status: `not-attempted`
 - Serial writes attempted: `False`
-- Failure classification: `host_routing`
+- Failure classification: `passed`
 
 ## Commands Sent
 
@@ -32,7 +32,7 @@
 - ` ip address 192.168.1.204 255.255.255.0`
 - ` no shutdown`
 - ` exit`
-- `interface range Gi1/0/2,Gi1/0/3,Gi1/0/4,Gi1/0/5,Gi1/0/6,Gi1/0/7,Gi1/0/8,Gi1/0/9,Gi1/0/10,Gi1/0/11,Gi1/0/12,Gi1/0/13,Gi1/0/14,Gi1/0/15,Gi1/0/16,Gi1/0/17,Gi1/0/18,Gi1/0/19,Gi1/0/20,Gi1/0/21,Gi1/0/22`
+- `interface range Gi1/0/1,Gi1/0/2,Gi1/0/3,Gi1/0/4,Gi1/0/5,Gi1/0/6,Gi1/0/7,Gi1/0/8,Gi1/0/9,Gi1/0/10,Gi1/0/11,Gi1/0/12,Gi1/0/13,Gi1/0/14,Gi1/0/15,Gi1/0/16,Gi1/0/17,Gi1/0/18,Gi1/0/19,Gi1/0/20,Gi1/0/21,Gi1/0/22`
 - ` switchport mode access`
 - ` switchport access vlan 10`
 - ` no shutdown`
@@ -57,23 +57,24 @@
 - Vlan10 IP: `192.168.1.204`
 - Vlan10 line state: `up`
 - Vlan10 protocol state: `up`
-- Access port source: `detected-show-interfaces-status`
-- Configured/detected lab ports: `['Gi1/0/2', 'Gi1/0/3', 'Gi1/0/4', 'Gi1/0/5', 'Gi1/0/6', 'Gi1/0/7', 'Gi1/0/8', 'Gi1/0/9', 'Gi1/0/10', 'Gi1/0/11', 'Gi1/0/12', 'Gi1/0/13', 'Gi1/0/14', 'Gi1/0/15', 'Gi1/0/16', 'Gi1/0/17', 'Gi1/0/18', 'Gi1/0/19', 'Gi1/0/20', 'Gi1/0/21', 'Gi1/0/22']`
-- Ports assigned to VLAN 10: `['Gi1/0/2', 'Gi1/0/3', 'Gi1/0/4']`
+- Always-access lab ports: `['Gi1/0/1']`
+- Access port source: `always-access-plus-detected-show-interfaces-status`
+- Configured/detected lab ports: `['Gi1/0/1', 'Gi1/0/2', 'Gi1/0/3', 'Gi1/0/4', 'Gi1/0/5', 'Gi1/0/6', 'Gi1/0/7', 'Gi1/0/8', 'Gi1/0/9', 'Gi1/0/10', 'Gi1/0/11', 'Gi1/0/12', 'Gi1/0/13', 'Gi1/0/14', 'Gi1/0/15', 'Gi1/0/16', 'Gi1/0/17', 'Gi1/0/18', 'Gi1/0/19', 'Gi1/0/20', 'Gi1/0/21', 'Gi1/0/22']`
+- Ports assigned to VLAN 10: `['Gi1/0/1', 'Gi1/0/2', 'Gi1/0/3']`
 - All configured/detected ports assigned to VLAN 10: `False`
 
 ## Ubuntu Route To Cisco
 
 - Route status: `ready`
-- Route: `192.168.1.204 dev wlp0s20f3 src 192.168.1.19 uid 1000 cache`
-- Interface: `wlp0s20f3`
-- Source IP: `192.168.1.19`
+- Route: `192.168.1.204 dev enx607d09047834 src 192.168.1.30 uid 1000 cache`
+- Interface: `enx607d09047834`
+- Source IP: `192.168.1.30`
 
 ## Network Reachability
 
-- Ping: `failed`
-- SSH TCP/22 reachable: `False`
-- SCP TCP/22 readiness: `False`
+- Ping: `ok`
+- SSH TCP/22 reachable: `True`
+- SCP TCP/22 readiness: `True`
 
 ## Failure Classification Guide
 

@@ -2,7 +2,7 @@
 
 ## Summary
 
-- Checked at: 2026-06-07T11:53:57.930892+00:00
+- Checked at: 2026-06-07T12:55:44.526936+00:00
 - Provider mode: `local-lab-readwrite`
 - Overall status: `completed`
 - Console adapter detected: `/dev/serial/by-id/usb-Prolific_Technology_Inc._USB-Serial_Controller_D-if00-port0`
@@ -12,7 +12,7 @@
 - Switch identity status: `captured`
 - Bootstrap plan status: `ready`
 - Apply status: `not-attempted`
-- Ethernet management status: `blocked`
+- Ethernet management status: `ready`
 
 ## Blockers
 
@@ -42,7 +42,7 @@
 - Console claim skipped processes: `0`.
 - Console stale lock files removed: `[]`.
 - Console prompt detection: tried `[9600, 19200, 38400, 57600, 115200]` and wake sequences `['crlf', 'newline', 'enter', 'ctrl-c', 'ctrl-z', 'break']`.
-- First bytes printable preview: `\r\nlab-cisco-switch#\r\nlab-cisco-switch#`.
+- First bytes printable preview: `\r\nlab-cisco-switch#\r\n*Jun  7 13:01:08.546: %SYS-5-CONFIG_I: Configured from console by <redacted> on console`.
 - Prompt regex matched: `hostname_exec_prompt`.
 - Login state transitions: `[]`.
 - User Access Verification seen: `False`.

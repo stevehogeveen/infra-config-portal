@@ -1,9 +1,9 @@
 {
   "blockers": [
-    "Serial console port is already in use by another process.",
+    "Privileged exec prompt was detected; no configuration commands were sent.",
     "Cisco Ethernet management is not configured; SSH/SCP readiness requires console bootstrap."
   ],
-  "checked_at": "2026-06-06T18:58:44.807573+00:00",
+  "checked_at": "2026-06-07T13:01:53.915434+00:00",
   "console_bootstrap_plan": {
     "apply_enabled": false,
     "artifact_preview": {
@@ -26,7 +26,7 @@
       "Hostname is required.",
       "Domain and DNS server requirements are required.",
       "Explicit confirmation requirements must be defined before execution.",
-      "Console port opened but no prompt text was captured; bootstrap apply is blocked."
+      "Prompt state must be exec or setup-wizard for bootstrap planning."
     ],
     "command_preview": [
       "! preview only - not executed",
@@ -51,19 +51,19 @@
       "wipe running-config"
     ],
     "execution_supported": false,
-    "flow": "unknown-no-output-blocked-flow",
+    "flow": "unsupported-unknown-prompt-flow",
     "intended_steps": [
       "Confirm the selected console path and target REDACTED/24.",
       "Confirm requirements are complete and non-secret.",
-      "Block because the serial port opened but no prompt text was captured.",
+      "Block because prompt state is unsupported or unknown.",
       "Configure the planned management interface/IP shape only after approval.",
       "Leave SSH/SCP and save behavior disabled unless requirements and a future approval explicitly enable them.",
       "Write a redacted post-apply status/report placeholder."
     ],
     "next_safe_action": "Review the preview, run prompt readiness, and keep apply disabled unless all gates pass.",
-    "prompt_checked_at": "2026-06-06T18:58:44.548098+00:00",
-    "prompt_detail": "unknown-no-output",
-    "prompt_state": "unknown",
+    "prompt_checked_at": "2026-06-07T13:01:53.383735+00:00",
+    "prompt_detail": "privileged-exec",
+    "prompt_state": "privileged-exec",
     "provider_id": "cisco-console-bootstrap",
     "redacted_command_summary": [
       "No command preview is actionable for this prompt state.",
@@ -94,100 +94,21 @@
     "attempts": [
       {
         "baud": 9600,
-        "classification": "port_in_use",
-        "error": "serial port appears to be in use",
+        "captured": true,
+        "classification": "privileged_exec",
+        "last_line": "DEVICE#",
         "port": "/dev/serial/by-id/usb-Prolific_Technology_Inc._USB-Serial_Controller_D-if00-port0",
-        "prompt_state": "port-in-use",
-        "sequence": "open",
-        "status": "failed"
-      },
-      {
-        "baud": 19200,
-        "classification": "port_in_use",
-        "error": "serial port appears to be in use",
-        "port": "/dev/serial/by-id/usb-Prolific_Technology_Inc._USB-Serial_Controller_D-if00-port0",
-        "prompt_state": "port-in-use",
-        "sequence": "open",
-        "status": "failed"
-      },
-      {
-        "baud": 38400,
-        "classification": "port_in_use",
-        "error": "serial port appears to be in use",
-        "port": "/dev/serial/by-id/usb-Prolific_Technology_Inc._USB-Serial_Controller_D-if00-port0",
-        "prompt_state": "port-in-use",
-        "sequence": "open",
-        "status": "failed"
-      },
-      {
-        "baud": 57600,
-        "classification": "port_in_use",
-        "error": "serial port appears to be in use",
-        "port": "/dev/serial/by-id/usb-Prolific_Technology_Inc._USB-Serial_Controller_D-if00-port0",
-        "prompt_state": "port-in-use",
-        "sequence": "open",
-        "status": "failed"
-      },
-      {
-        "baud": 115200,
-        "classification": "port_in_use",
-        "error": "serial port appears to be in use",
-        "port": "/dev/serial/by-id/usb-Prolific_Technology_Inc._USB-Serial_Controller_D-if00-port0",
-        "prompt_state": "port-in-use",
-        "sequence": "open",
-        "status": "failed"
-      },
-      {
-        "baud": 9600,
-        "classification": "port_in_use",
-        "error": "serial port appears to be in use",
-        "port": "/dev/ttyUSB0",
-        "prompt_state": "port-in-use",
-        "sequence": "open",
-        "status": "failed"
-      },
-      {
-        "baud": 19200,
-        "classification": "port_in_use",
-        "error": "serial port appears to be in use",
-        "port": "/dev/ttyUSB0",
-        "prompt_state": "port-in-use",
-        "sequence": "open",
-        "status": "failed"
-      },
-      {
-        "baud": 38400,
-        "classification": "port_in_use",
-        "error": "serial port appears to be in use",
-        "port": "/dev/ttyUSB0",
-        "prompt_state": "port-in-use",
-        "sequence": "open",
-        "status": "failed"
-      },
-      {
-        "baud": 57600,
-        "classification": "port_in_use",
-        "error": "serial port appears to be in use",
-        "port": "/dev/ttyUSB0",
-        "prompt_state": "port-in-use",
-        "sequence": "open",
-        "status": "failed"
-      },
-      {
-        "baud": 115200,
-        "classification": "port_in_use",
-        "error": "serial port appears to be in use",
-        "port": "/dev/ttyUSB0",
-        "prompt_state": "port-in-use",
-        "sequence": "open",
-        "status": "failed"
+        "prompt_state": "privileged-exec",
+        "sequence": "newline",
+        "status": "checked"
       }
     ],
+    "baud": 9600,
     "blockers": [
-      "Serial console port is already in use by another process."
+      "Privileged exec prompt was detected; no configuration commands were sent."
     ],
     "candidate_count": 2,
-    "checked_at": "2026-06-06T18:58:44.548098+00:00",
+    "checked_at": "2026-06-07T13:01:53.383735+00:00",
     "config_mode_detected": false,
     "configured_port_hint": null,
     "discovery": {
@@ -260,10 +181,10 @@
         "Preferred console path: /dev/serial/by-id/usb-Prolific_Technology_Inc._USB-Serial_Controller_D-if00-port0. Use this stable path for CISCO_CONSOLE_PORT instead of /dev/ttyUSB0 when possible."
       ]
     },
-    "future_show_command_check_eligible": false,
+    "future_show_command_check_eligible": true,
     "login_required": false,
-    "message": "Serial console port is already in use by another process.",
-    "next_safe_action": "Verify adapter ownership, cable placement, power state, and baud 9600/115200 before running another newline-only readiness check.",
+    "message": "Prompt is ready for future safe show-command checks.",
+    "next_safe_action": "Privileged exec is confirmed; keep configuration apply behind explicit guarded workflows.",
     "not_attempted": [
       "safe show commands",
       "configure terminal",
@@ -272,24 +193,25 @@
       "copy or erase",
       "VLAN, interface, user, password, SSH, or SCP changes"
     ],
+    "port": "/dev/serial/by-id/usb-Prolific_Technology_Inc._USB-Serial_Controller_D-if00-port0",
     "prompt_classification": {
-      "classification": "no_bytes_read",
-      "label": "Unknown prompt",
-      "next_safe_action": "Verify adapter ownership, cable placement, power state, and baud 9600/115200 before running another newline-only readiness check.",
-      "no_output_captured": true,
+      "classification": "privileged_exec",
+      "label": "Privileged exec prompt",
+      "next_safe_action": "Privileged exec is confirmed; keep configuration apply behind explicit guarded workflows.",
+      "no_output_captured": false,
       "raw_text_redacted": true,
       "safe_show_commands_allowed": false,
-      "state": "unknown",
-      "summary": "Console port opened, but no prompt text was captured."
+      "state": "privileged-exec",
+      "summary": "Console appears to be at a privileged exec prompt."
     },
-    "prompt_ready": false,
+    "prompt_ready": true,
     "prompt_sample": {
-      "captured": false,
-      "last_line": "",
-      "line_count": 0,
+      "captured": true,
+      "last_line": "DEVICE#",
+      "line_count": 1,
       "raw_text_redacted": true
     },
-    "prompt_state": "unknown",
+    "prompt_state": "privileged-exec",
     "provider_id": "cisco-console",
     "read_timing": {
       "dtr_rts_toggle": "attempted when supported",
@@ -303,19 +225,12 @@
       "settle_seconds": 0.5
     },
     "safe_show_commands_allowed": false,
-    "selected_baud": null,
-    "selected_path": null,
+    "selected_baud": 9600,
+    "selected_path": "/dev/serial/by-id/usb-Prolific_Technology_Inc._USB-Serial_Controller_D-if00-port0",
+    "selected_sequence": "newline",
     "setup_wizard_detected": false,
-    "status": "blocked",
-    "troubleshooting_checklist": [
-      "Confirm the USB serial adapter is connected to this host.",
-      "Confirm the RJ45/console cable is connected to the Cisco console port, not an Ethernet data port.",
-      "Confirm the switch is powered on and booted far enough for console access.",
-      "Press Enter a few times in a manual console session.",
-      "Check no other process owns /dev/ttyUSB0 with lsof or fuser.",
-      "Try baud 9600 first, then 115200 if needed.",
-      "Prefer /dev/serial/by-id/... stable path for CISCO_CONSOLE_PORT."
-    ],
+    "status": "ok",
+    "troubleshooting_checklist": [],
     "warnings": []
   },
   "not_attempted": [
@@ -368,24 +283,24 @@
       "fallback_candidate_count": 1,
       "last_prompt_readiness": {
         "available": true,
-        "captured": false,
-        "checked_at": "2026-06-06T18:58:44.548098+00:00",
-        "future_show_command_check_eligible": false,
-        "last_line": "",
-        "line_count": 0,
-        "message": "Serial console port is already in use by another process.",
-        "next_safe_action": "Verify adapter ownership, cable placement, power state, and baud 9600/115200 before running another newline-only readiness check.",
+        "captured": true,
+        "checked_at": "2026-06-07T13:01:53.383735+00:00",
+        "future_show_command_check_eligible": true,
+        "last_line": "DEVICE#",
+        "line_count": 1,
+        "message": "Prompt is ready for future safe show-command checks.",
+        "next_safe_action": "Privileged exec is confirmed; keep configuration apply behind explicit guarded workflows.",
         "prompt_classification": {
-          "classification": "no_bytes_read",
-          "label": "Unknown prompt",
-          "next_safe_action": "Verify adapter ownership, cable placement, power state, and baud 9600/115200 before running another newline-only readiness check.",
-          "no_output_captured": true,
+          "classification": "privileged_exec",
+          "label": "Privileged exec prompt",
+          "next_safe_action": "Privileged exec is confirmed; keep configuration apply behind explicit guarded workflows.",
+          "no_output_captured": false,
           "raw_text_redacted": true,
           "safe_show_commands_allowed": false,
-          "state": "unknown",
-          "summary": "Console port opened, but no prompt text was captured."
+          "state": "privileged-exec",
+          "summary": "Console appears to be at a privileged exec prompt."
         },
-        "prompt_state": "unknown",
+        "prompt_state": "privileged-exec",
         "read_timing": {
           "dtr_rts_toggle": "attempted when supported",
           "max_bytes": 8192,
@@ -398,16 +313,8 @@
           "settle_seconds": 0.5
         },
         "safe_show_commands_allowed": false,
-        "status": "blocked",
-        "troubleshooting_checklist": [
-          "Confirm the USB serial adapter is connected to this host.",
-          "Confirm the RJ45/console cable is connected to the Cisco console port, not an Ethernet data port.",
-          "Confirm the switch is powered on and booted far enough for console access.",
-          "Press Enter a few times in a manual console session.",
-          "Check no other process owns /dev/ttyUSB0 with lsof or fuser.",
-          "Try baud 9600 first, then 115200 if needed.",
-          "Prefer /dev/serial/by-id/... stable path for CISCO_CONSOLE_PORT."
-        ]
+        "status": "ok",
+        "troubleshooting_checklist": []
       },
       "read_timing": {
         "dtr_rts_toggle": "attempted when supported",
@@ -458,48 +365,51 @@
     "planned_management_ip": "REDACTED",
     "provider_id": "cisco-setup",
     "real_lab_run": {
-      "apply_status": null,
+      "apply_status": "not-attempted",
       "artifacts": {
         "bootstrap_apply_report": "artifacts/codex-runs/cisco-bootstrap-apply-report.md",
+        "commander_mode_report": "artifacts/codex-runs/cisco-console-commander-mode-report.md",
         "commands": "artifacts/codex-runs/cisco-bootstrap-commands-redacted.json",
         "details": "artifacts/codex-runs/cisco-4h-lab-run-details-redacted.json",
+        "login_bootstrap_fix_report": "artifacts/codex-runs/cisco-login-bootstrap-fix-report.md",
         "password_recovery_guidance_report": "artifacts/codex-runs/cisco-password-recovery-guidance-report.md",
         "privilege_diagnosis_report": "artifacts/codex-runs/cisco-privilege-diagnosis-report.md",
         "privilege_hardening_report": "artifacts/codex-runs/cisco-privilege-hardening-report.md",
         "privileged_exec_fix_report": "artifacts/codex-runs/cisco-privileged-exec-fix-report.md",
         "report": "artifacts/codex-runs/cisco-4h-lab-run-report.md",
-        "samples": "artifacts/codex-runs/cisco-console-samples-redacted.json"
+        "samples": "artifacts/codex-runs/cisco-console-samples-redacted.json",
+        "vlan10_bootstrap_fix_report": "artifacts/codex-runs/cisco-vlan10-bootstrap-fix-report.md"
       },
       "available": true,
-      "bootstrap_hostname": null,
-      "bootstrap_management_interface": null,
-      "bootstrap_plan_status": null,
-      "checked_at": "2026-06-06T18:58:34.289149+00:00",
+      "bootstrap_hostname": "lab-cisco-switch",
+      "bootstrap_management_interface": "Vlan10",
+      "bootstrap_plan_status": "ready",
+      "checked_at": "2026-06-07T12:55:44.526936+00:00",
       "console_adapter": "/dev/serial/by-id/usb-Prolific_Technology_Inc._USB-Serial_Controller_D-if00-port0",
       "console_adapter_detected": true,
-      "enable_command_sent": null,
-      "enable_rejected": "unknown",
-      "ethernet_management_status": null,
-      "last_blocker": "Console adapter opened across common baud rates, but no supported Cisco prompt was detected.",
-      "password_prompt_seen": null,
-      "privilege_final_prompt_state": null,
-      "privilege_next_action": "Confirm console cable and power if no prompt is visible, then rerun recovery.",
-      "prompt_classification": "no_bytes_read",
-      "prompt_detected": false,
-      "prompt_state": "unknown-no-output",
+      "enable_command_sent": false,
+      "enable_rejected": "no",
+      "ethernet_management_status": "ready",
+      "last_blocker": "No blocker recorded.",
+      "password_prompt_seen": false,
+      "privilege_final_prompt_state": "privileged-exec",
+      "privilege_next_action": "Privilege is confirmed; continue Cisco management network validation.",
+      "prompt_classification": null,
+      "prompt_detected": true,
+      "prompt_state": "privileged-exec",
       "save_reload_status": "not-attempted",
-      "scp_status": null,
-      "selected_baud": null,
-      "ssh_status": null,
-      "status": "blocked",
-      "switch_identity_privileged": null,
-      "switch_identity_status": null
+      "scp_status": "ready",
+      "selected_baud": 9600,
+      "ssh_status": true,
+      "status": "completed",
+      "switch_identity_privileged": true,
+      "switch_identity_status": "captured"
     },
     "setup_wizard_plan": {
       "apply_enabled": false,
       "available": true,
       "detected": false,
-      "detected_prompt_state": "unknown",
+      "detected_prompt_state": "privileged-exec",
       "next_safe_action": "Review the setup wizard plan preview and define the future guarded bootstrap requirements.",
       "summary": "Setup wizard planning preview is available. No answers or commands were sent."
     },
@@ -512,44 +422,44 @@
       "discovered_current_device_state": {
         "baud": 9600,
         "console_status": "ready",
-        "prompt_captured": false,
+        "prompt_captured": true,
         "prompt_classification": {
-          "classification": "no_bytes_read",
-          "label": "Unknown prompt",
-          "next_safe_action": "Verify adapter ownership, cable placement, power state, and baud 9600/115200 before running another newline-only readiness check.",
-          "no_output_captured": true,
+          "classification": "privileged_exec",
+          "label": "Privileged exec prompt",
+          "next_safe_action": "Privileged exec is confirmed; keep configuration apply behind explicit guarded workflows.",
+          "no_output_captured": false,
           "raw_text_redacted": true,
           "safe_show_commands_allowed": false,
-          "state": "unknown",
-          "summary": "Console port opened, but no prompt text was captured."
+          "state": "privileged-exec",
+          "summary": "Console appears to be at a privileged exec prompt."
         },
-        "prompt_state": "unknown",
+        "prompt_state": "privileged-exec",
         "selected_path": "/dev/serial/by-id/usb-Prolific_Technology_Inc._USB-Serial_Controller_D-if00-port0",
         "summary": "Console adapter discovery and latest prompt readiness only."
       },
       "last_action_logs_artifacts": {
-        "checked_at": "2026-06-06T18:58:44.548098+00:00",
+        "checked_at": "2026-06-07T13:01:53.383735+00:00",
         "last_action_present": true,
         "last_prompt_readiness": {
           "available": true,
-          "captured": false,
-          "checked_at": "2026-06-06T18:58:44.548098+00:00",
-          "future_show_command_check_eligible": false,
-          "last_line": "",
-          "line_count": 0,
-          "message": "Serial console port is already in use by another process.",
-          "next_safe_action": "Verify adapter ownership, cable placement, power state, and baud 9600/115200 before running another newline-only readiness check.",
+          "captured": true,
+          "checked_at": "2026-06-07T13:01:53.383735+00:00",
+          "future_show_command_check_eligible": true,
+          "last_line": "DEVICE#",
+          "line_count": 1,
+          "message": "Prompt is ready for future safe show-command checks.",
+          "next_safe_action": "Privileged exec is confirmed; keep configuration apply behind explicit guarded workflows.",
           "prompt_classification": {
-            "classification": "no_bytes_read",
-            "label": "Unknown prompt",
-            "next_safe_action": "Verify adapter ownership, cable placement, power state, and baud 9600/115200 before running another newline-only readiness check.",
-            "no_output_captured": true,
+            "classification": "privileged_exec",
+            "label": "Privileged exec prompt",
+            "next_safe_action": "Privileged exec is confirmed; keep configuration apply behind explicit guarded workflows.",
+            "no_output_captured": false,
             "raw_text_redacted": true,
             "safe_show_commands_allowed": false,
-            "state": "unknown",
-            "summary": "Console port opened, but no prompt text was captured."
+            "state": "privileged-exec",
+            "summary": "Console appears to be at a privileged exec prompt."
           },
-          "prompt_state": "unknown",
+          "prompt_state": "privileged-exec",
           "read_timing": {
             "dtr_rts_toggle": "attempted when supported",
             "max_bytes": 8192,
@@ -562,19 +472,11 @@
             "settle_seconds": 0.5
           },
           "safe_show_commands_allowed": false,
-          "status": "blocked",
-          "troubleshooting_checklist": [
-            "Confirm the USB serial adapter is connected to this host.",
-            "Confirm the RJ45/console cable is connected to the Cisco console port, not an Ethernet data port.",
-            "Confirm the switch is powered on and booted far enough for console access.",
-            "Press Enter a few times in a manual console session.",
-            "Check no other process owns /dev/ttyUSB0 with lsof or fuser.",
-            "Try baud 9600 first, then 115200 if needed.",
-            "Prefer /dev/serial/by-id/... stable path for CISCO_CONSOLE_PORT."
-          ]
+          "status": "ok",
+          "troubleshooting_checklist": []
         },
         "raw_console_log_saved": false,
-        "redacted_summary": "Serial console port is already in use by another process.",
+        "redacted_summary": "Prompt is ready for future safe show-command checks.",
         "summary": "Only redacted prompt-readiness summaries are exposed here."
       },
       "saved_kit_config_values": {

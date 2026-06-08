@@ -1,5 +1,24 @@
 # Workflows
 
+## Saved Lab Profile Selection
+
+Lab profile selection mirrors the Lab Builder kit pattern at a smaller scope:
+an operator can load the runtime profile, save a named lab address plan, activate
+a previous lab, edit a saved profile, and inspect prior profile versions.
+
+The current API surface is:
+
+1. List profiles and the active profile with `GET /api/v1/lab/profiles`.
+2. Create and activate a new profile with `POST /api/v1/lab/profiles`.
+3. Save a new version with `PUT /api/v1/lab/profiles/{profile_id}`.
+4. Activate a saved profile, or return to runtime environment values, with
+   `POST /api/v1/lab/profiles/{profile_id}/activate`.
+
+Profiles persist in ignored local runtime state under `.local/lab-profiles.json`
+by default. The address plan is intent only. Activating a profile does not probe
+devices, does not update provider environment variables, does not rewrite local
+env files, and does not enable any real apply lane.
+
 ## MVP: Deploy VM From vSphere Template
 
 The MVP workflow accepts a request for a VM deployment and simulates planning

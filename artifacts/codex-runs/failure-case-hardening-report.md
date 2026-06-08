@@ -1,22 +1,22 @@
 # Failure Case Hardening Report
 
-- Checked at: `2026-06-07T01:16:49.658689+00:00`
-- Provider mode: `local-lab-readwrite`
+- Checked at: `2026-06-08T14:47:17.555667+00:00`
+- Provider mode: `mock`
 - Credential values, tokens, and secrets are redacted.
 
 ## wrong iLO IP
 
-- Classification: `passed`
+- Classification: `stale_config`
 - UI message: iLO target must be 192.168.1.201 for this lab.
-- Report artifact detail: 0 stale active values; 0 active profile mismatches.
-- Exact next action: Active lab IP profile matches 192.168.1.0/24 with devices at 192.168.1.200+.
+- Report artifact detail: 1 stale active values; 0 active profile mismatches.
+- Exact next action: Update provider environment inputs to match `Runtime environment` and remove stale 10.10.8.x values before certification.
 
 ## missing ESXi ISO
 
-- Classification: `passed`
-- UI message: ESXi ISO media inventory is passed.
-- Report artifact detail: ESXi ISO media inventory is ready.
-- Exact next action: ESXi ISO media inventory is ready.
+- Classification: `operator_action_required`
+- UI message: ESXi ISO media inventory is operator_action_required.
+- Report artifact detail: ESXi ISO media inventory is not configured.
+- Exact next action: Place the ESXi ISO under MEDIA_INVENTORY_DIRS or set ESXI_INSTALL_ISO/ESXI_ISO_PATH before ESXi boot verification.
 
 ## iLO cannot reach media URL
 
@@ -55,17 +55,17 @@
 
 ## ESXi API/SSH unreachable before install/config
 
-- Classification: `blocked_by_prior_stage`
-- UI message: ESXi API is blocked_by_prior_stage.
-- Report artifact detail: Install/configure ESXi management at 192.168.1.203, then set ESXI_CONFIGURED=true before API certification.
-- Exact next action: Install/configure ESXi management at 192.168.1.203, then set ESXI_CONFIGURED=true before API certification.
+- Classification: `warning`
+- UI message: ESXi API is warning.
+- Report artifact detail: Review ESXi API readiness.
+- Exact next action: Review ESXi API readiness.
 
 ## stale Cisco/ESXi/NetApp IPs
 
-- Classification: `passed`
+- Classification: `stale_config`
 - UI message: Old 10.10.8.x values are stale for this lab unless explicitly overridden.
-- Report artifact detail: 0 stale active values; 0 active profile mismatches.
-- Exact next action: Active lab IP profile matches 192.168.1.0/24 with devices at 192.168.1.200+.
+- Report artifact detail: 1 stale active values; 0 active profile mismatches.
+- Exact next action: Update provider environment inputs to match `Runtime environment` and remove stale 10.10.8.x values before certification.
 
 ## MTU mismatch across paths
 

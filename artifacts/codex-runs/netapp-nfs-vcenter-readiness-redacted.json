@@ -1,0 +1,132 @@
+{
+  "provider_id": "netapp-ontap",
+  "action": "nfs-vcenter-readiness",
+  "checked_at": "2026-06-07T17:44:30.600531+00:00",
+  "status": "blocked",
+  "message": "NetApp NFS/vCenter readiness generated. Preview only; no changes were made.",
+  "mode": "local-lab-readwrite",
+  "apply_enabled": false,
+  "ontap_apply_enabled": false,
+  "vcenter_apply_enabled": false,
+  "esxi_apply_enabled": false,
+  "single_management_port_mode": true,
+  "management_topology": {
+    "connected_management_ports": [
+      "cluster_mgmt"
+    ],
+    "note": "Only one NetApp management port is connected at the moment.",
+    "initial_bringup_ok": true,
+    "full_ha_validation_ready": false
+  },
+  "planned_nfs": {
+    "storage_protocol": "nfs",
+    "svm_management_ip": "192.168.1.211",
+    "nfs_lifs": [
+      "192.168.1.212",
+      "192.168.1.213"
+    ],
+    "volume": "esxi_datastore_01",
+    "export_policy": "esxi_nfs_policy",
+    "mount_path": "/esxi_datastore_01",
+    "datastore_name": "netapp_nfs_ds01",
+    "client_match": "192.168.1.0/24"
+  },
+  "targets": {
+    "netapp_cluster_mgmt_ip": "192.168.1.208",
+    "esxi_management_ip": "192.168.1.203",
+    "vcenter_host_configured": false,
+    "vcenter_configured": false,
+    "govc_available": false
+  },
+  "connectivity": {
+    "netapp_cluster_rest_443": {
+      "host": "192.168.1.208",
+      "port": 443,
+      "enabled": false,
+      "reachable": null,
+      "status": "not-probed",
+      "reason": "NETAPP_CONFIGURED=false; cluster management REST is planned but not live."
+    },
+    "netapp_cluster_ssh_22": {
+      "host": "192.168.1.208",
+      "port": 22,
+      "enabled": false,
+      "reachable": null,
+      "status": "not-probed",
+      "reason": "NETAPP_CONFIGURED=false; cluster management SSH is planned but not live."
+    },
+    "vcenter_443": {
+      "host": null,
+      "port": 443,
+      "enabled": false,
+      "reachable": null,
+      "status": "missing-host",
+      "reason": "Host is not configured."
+    },
+    "esxi_api_443": {
+      "host": "192.168.1.203",
+      "port": 443,
+      "enabled": true,
+      "reachable": true,
+      "status": "ready"
+    },
+    "planned_nfs_lifs_2049": [
+      {
+        "host": "192.168.1.212",
+        "port": 2049,
+        "enabled": false,
+        "reachable": null,
+        "status": "not-probed",
+        "reason": "NFS LIFs are planned only until NetApp setup creates/confirms data LIFs."
+      },
+      {
+        "host": "192.168.1.213",
+        "port": 2049,
+        "enabled": false,
+        "reachable": null,
+        "status": "not-probed",
+        "reason": "NFS LIFs are planned only until NetApp setup creates/confirms data LIFs."
+      }
+    ]
+  },
+  "plan_preview": {
+    "ontap_steps": [
+      "Confirm cluster management REST is reachable.",
+      "Confirm or create the target SVM.",
+      "Confirm or create NFS data LIFs on the connected data path.",
+      "Enable or confirm NFS service on the SVM.",
+      "Confirm or create the ESXi datastore volume.",
+      "Confirm or create export policy and rule for the ESXi management/client network."
+    ],
+    "vcenter_steps": [
+      "Use govc after vCenter is reachable and credentials are configured.",
+      "Add or confirm the NFS datastore against the intended ESXi host or cluster.",
+      "Validate datastore visibility from ESXi/vCenter."
+    ],
+    "govc_preview": "govc datastore.create -type nfs -name netapp_nfs_ds01 -remote-host 192.168.1.212 -remote-path /esxi_datastore_01",
+    "esxi_fallback_preview": "esxcli storage nfs add -H 192.168.1.212 -s /esxi_datastore_01 -v netapp_nfs_ds01"
+  },
+  "artifacts": {
+    "report": "artifacts/codex-runs/netapp-nfs-vcenter-readiness-report.md",
+    "json": "artifacts/codex-runs/netapp-nfs-vcenter-readiness-redacted.json"
+  },
+  "warnings": [
+    "Only one NetApp management path is connected; this is acceptable for initial console/API bring-up but not full HA validation.",
+    "NFS/vCenter readiness is preview-only. No ONTAP, vCenter, ESXi, or storage apply action is run."
+  ],
+  "blockers": [
+    "NETAPP_CONFIGURED=false; ONTAP REST/NFS setup is not ready for live validation.",
+    "NetApp API credentials are missing; values must stay in .env.local.real-lab when ready.",
+    "vCenter/govc target is not configured yet; vCenter datastore validation is blocked."
+  ],
+  "not_attempted": [
+    "Ctrl+Z, break, boot menu selection, or boot interruption beyond the generic Ctrl+C wake byte",
+    "username or password entry",
+    "cluster setup commands",
+    "SP, node, SVM, LIF, volume, export, or datastore creation",
+    "ONTAP API write",
+    "vCenter or ESXi datastore mount",
+    "controller reboot, takeover/giveback, wipe, or upgrade"
+  ],
+  "next_safe_action": "Use console/API read-only discovery to identify the NetApp state, then configure vCenter/govc before NFS datastore apply is implemented."
+}

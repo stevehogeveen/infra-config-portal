@@ -16,6 +16,18 @@ reviewed, and tested.
 - Future secret retrieval should go through a dedicated secret provider service
   with audit logging.
 
+## Local Lab Profiles
+
+Saved lab profiles are local operator state, stored under
+`.local/lab-profiles.json` by default. They may contain address plans, profile
+names, and notes, but must not contain credentials, tokens, hostnames, customer
+data, or secret manager payloads.
+
+The lab profile API validates IP/CIDR-shaped address fields and rejects
+secret-shaped text. Activating a profile only changes the portal's selected
+lab context. It does not make provider calls, write `.env.local.real-lab`,
+change provider mode, or enable real apply actions.
+
 ## Provider Execution Controls
 
 All provider adapters default to mock mode. A future real adapter must require:

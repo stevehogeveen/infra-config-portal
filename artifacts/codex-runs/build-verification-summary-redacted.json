@@ -1,21 +1,36 @@
 {
   "provider_id": "build-verification",
-  "checked_at": "2026-06-07T01:16:49.658689+00:00",
+  "checked_at": "2026-06-08T14:47:17.555667+00:00",
   "status": "blocked",
-  "certification_state": "blocked_by_prior_stage",
+  "certification_state": "stale_config",
   "message": "Build Verification / Product Certification completed with redacted findings.",
-  "provider_mode": "local-lab-readwrite",
+  "provider_mode": "mock",
   "mock_results_used": false,
   "lab_ip_profile": {
-    "status": "ready",
-    "classification": "passed",
+    "status": "blocked",
+    "classification": "stale_config",
+    "active_lab_profile": {
+      "id": "runtime",
+      "name": "Runtime environment",
+      "source": "runtime_env",
+      "version": 1,
+      "selected_for_portal": true,
+      "provider_env_overrides_required": false
+    },
     "expected": {
       "subnet": "192.168.1.0/24",
       "ilo": "192.168.1.201",
       "server_embedded_nic": "192.168.1.202",
       "esxi_management": "192.168.1.203",
       "cisco_management": "192.168.1.204",
-      "ansible_control_host": "192.168.1.205"
+      "ansible_control_host": "192.168.1.205",
+      "netapp_controller_a_sp": "192.168.1.206",
+      "netapp_controller_b_sp": "192.168.1.207",
+      "netapp_cluster_mgmt": "192.168.1.208",
+      "netapp_node_a_mgmt": "192.168.1.209",
+      "netapp_node_b_mgmt": "192.168.1.210",
+      "netapp_svm_mgmt": "192.168.1.211",
+      "netapp_iscsi_lifs": "192.168.1.212,192.168.1.213,192.168.1.214,192.168.1.215"
     },
     "configured": {
       "subnet": "192.168.1.0/24",
@@ -26,10 +41,29 @@
       "ansible_cisco_inventory_target": "192.168.1.204",
       "ansible_control_host": "192.168.1.205",
       "cisco_target_ip_env": "192.168.1.204",
-      "ansible_cisco_host_env": "192.168.1.204"
+      "ansible_cisco_host_env": "192.168.1.204",
+      "netapp_controller_a_sp": "192.168.1.206",
+      "netapp_controller_b_sp": "192.168.1.207",
+      "netapp_cluster_mgmt": "192.168.1.208",
+      "netapp_node_a_mgmt": "192.168.1.209",
+      "netapp_node_b_mgmt": "192.168.1.210",
+      "netapp_svm_mgmt": "192.168.1.211",
+      "netapp_iscsi_lifs": "192.168.1.212,192.168.1.213,192.168.1.214,192.168.1.215",
+      "netapp_controller_a_sp_env": null,
+      "netapp_controller_b_sp_env": null,
+      "netapp_cluster_mgmt_ip_env": "10.10.8.45",
+      "netapp_node_a_mgmt_ip_env": null,
+      "netapp_node_b_mgmt_ip_env": null,
+      "netapp_svm_mgmt_ip_env": null,
+      "netapp_iscsi_lifs_env": null
     },
     "mismatches": [],
-    "stale_10_10_8_values": [],
+    "stale_10_10_8_values": [
+      {
+        "field": "netapp_cluster_mgmt_ip_env",
+        "value": "10.10.8.45"
+      }
+    ],
     "stale_artifact_evidence": [
       {
         "artifact": "artifacts/codex-runs/overnight-lab-builder-final-report.md",
@@ -37,7 +71,7 @@
         "next_action": "Regenerate this report after confirming the 192.168.1.0/24 lab profile."
       }
     ],
-    "next_action": "Active lab IP profile matches 192.168.1.0/24 with devices at 192.168.1.200+.",
+    "next_action": "Update provider environment inputs to match `Runtime environment` and remove stale 10.10.8.x values before certification.",
     "ansible_role": {
       "first_contact": "Cisco console bootstrap",
       "starts_after": "Cisco management SSH is configured at 192.168.1.204",
@@ -171,27 +205,27 @@
   },
   "protocols": {
     "status": "blocked",
-    "classification": "blocked_by_prior_stage",
+    "classification": "operator_action_required",
     "checks": [
       {
         "protocol": "iLO Redfish",
         "configured": true,
-        "reachable": true,
+        "reachable": null,
         "required": true,
-        "status": "ready",
-        "classification": "passed",
+        "status": "unknown",
+        "classification": "warning",
         "blockers": [],
-        "next_action": "iLO Redfish readiness passed."
+        "next_action": "Review iLO Redfish readiness."
       },
       {
         "protocol": "iLO XML fallback",
         "configured": true,
-        "reachable": true,
+        "reachable": null,
         "required": true,
-        "status": "ready",
-        "classification": "passed",
+        "status": "unknown",
+        "classification": "warning",
         "blockers": [],
-        "next_action": "iLO XML fallback readiness passed."
+        "next_action": "Review iLO XML fallback readiness."
       },
       {
         "protocol": "Cisco console",
@@ -211,9 +245,9 @@
         "reachable": null,
         "required": true,
         "status": "unknown",
-        "classification": "blocked_by_prior_stage",
+        "classification": "warning",
         "blockers": [],
-        "next_action": "Complete or confirm Cisco console bootstrap, then set CISCO_MGMT_CONFIGURED=true before treating SSH/SCP as a port failure."
+        "next_action": "Review Cisco SSH/SCP readiness."
       },
       {
         "protocol": "ESXi API",
@@ -221,9 +255,9 @@
         "reachable": null,
         "required": true,
         "status": "unknown",
-        "classification": "blocked_by_prior_stage",
+        "classification": "warning",
         "blockers": [],
-        "next_action": "Install/configure ESXi management at 192.168.1.203, then set ESXI_CONFIGURED=true before API certification."
+        "next_action": "Review ESXi API readiness."
       },
       {
         "protocol": "ESXi SSH",
@@ -231,9 +265,9 @@
         "reachable": null,
         "required": true,
         "status": "unknown",
-        "classification": "blocked_by_prior_stage",
+        "classification": "warning",
         "blockers": [],
-        "next_action": "Install/configure ESXi management and enable/confirm SSH before ESXi SSH certification."
+        "next_action": "Review ESXi SSH readiness."
       },
       {
         "protocol": "NetApp REST",
@@ -256,23 +290,44 @@
         "next_action": "Leave NetApp SSH as not_configured_yet until the NetApp stage is explicitly configured."
       },
       {
-        "protocol": "ESXi ISO media inventory",
+        "protocol": "NetApp console",
         "configured": true,
         "reachable": null,
         "required": true,
-        "status": "ready",
-        "classification": "passed",
+        "status": "unknown",
+        "classification": "operator_action_required",
         "blockers": [],
-        "iso_count": 3,
-        "next_action": "ESXi ISO media inventory is ready."
+        "next_action": "Use the selected candidate as the next physical console check, then verify cable placement, adapter ownership, power state, and baud before rerunning discovery."
+      },
+      {
+        "protocol": "NetApp NFS/vCenter",
+        "configured": true,
+        "reachable": null,
+        "required": true,
+        "status": "unknown",
+        "classification": "blocked_by_prior_stage",
+        "blockers": [],
+        "next_action": "Use console/API read-only discovery to identify the NetApp state, then configure vCenter/govc before NFS datastore apply is implemented."
+      },
+      {
+        "protocol": "ESXi ISO media inventory",
+        "configured": false,
+        "reachable": null,
+        "required": true,
+        "status": "blocked",
+        "classification": "operator_action_required",
+        "blockers": [
+          "ESXi ISO media inventory is not configured."
+        ],
+        "next_action": "Place the ESXi ISO under MEDIA_INVENTORY_DIRS or set ESXI_INSTALL_ISO/ESXI_ISO_PATH before ESXi boot verification."
       }
     ]
   },
   "toolchain": {
     "provider_id": "toolchain-readiness",
-    "checked_at": "2026-06-07T01:16:49.658180+00:00",
+    "checked_at": "2026-06-08T14:47:17.555317+00:00",
     "status": "warning",
-    "provider_mode": "local-lab-readwrite",
+    "provider_mode": "mock",
     "tools": [
       {
         "name": "pyserial",
@@ -422,15 +477,18 @@
       },
       "netapp": {
         "sequence": [
+          "Use local serial console discovery/read-state first for physical/controller state evidence.",
           "Use netapp-ontap Python client or ONTAP REST as the primary managed-state path.",
-          "Use ONTAP REST direct where simple GET/compare logic is enough.",
-          "Keep write/apply workflows behind explicit NetApp stage gates."
+          "Use ONTAP REST direct where simple GET/compare logic is enough after cluster management is configured.",
+          "Keep NFS/vCenter datastore apply and all ONTAP writes behind explicit NetApp stage gates."
         ],
         "primary_tools": [
+          "local serial console",
           "netapp-ontap Python client",
-          "ONTAP REST"
+          "ONTAP REST",
+          "govc"
         ],
-        "safety": "NetApp remains preview-only until an explicit read-only discovery lane is added."
+        "safety": "NetApp console discovery is newline-only; ONTAP/NFS/vCenter apply remains disabled."
       }
     },
     "firmware_strategy": {
@@ -455,7 +513,7 @@
     },
     {
       "item": "iLO inventory, health, power, and Redfish are reachable",
-      "status": "ready"
+      "status": "unknown"
     },
     {
       "item": "RAID layout matches saved intent after reset/validation",
@@ -468,29 +526,44 @@
     {
       "item": "NetApp REST/SSH paths are reachable when configured",
       "status": "skipped"
+    },
+    {
+      "item": "NetApp console discovery/read-state evidence exists",
+      "status": "unknown"
+    },
+    {
+      "item": "NetApp NFS/vCenter readiness has been reviewed",
+      "status": "unknown"
     }
   ],
   "failures": [
     {
+      "category": "lab-ip-profile",
+      "classification": "stale_config",
+      "ui_message": "Active lab IP profile contains stale or mismatched target values.",
+      "report_detail": "1 stale active values; 0 active profile mismatches.",
+      "next_action": "Update provider environment inputs to match `Runtime environment` and remove stale 10.10.8.x values before certification."
+    },
+    {
       "category": "protocol",
-      "classification": "blocked_by_prior_stage",
-      "ui_message": "Cisco SSH/SCP is blocked_by_prior_stage.",
-      "report_detail": "Complete or confirm Cisco console bootstrap, then set CISCO_MGMT_CONFIGURED=true before treating SSH/SCP as a port failure.",
-      "next_action": "Complete or confirm Cisco console bootstrap, then set CISCO_MGMT_CONFIGURED=true before treating SSH/SCP as a port failure."
+      "classification": "operator_action_required",
+      "ui_message": "NetApp console is operator_action_required.",
+      "report_detail": "Use the selected candidate as the next physical console check, then verify cable placement, adapter ownership, power state, and baud before rerunning discovery.",
+      "next_action": "Use the selected candidate as the next physical console check, then verify cable placement, adapter ownership, power state, and baud before rerunning discovery."
+    },
+    {
+      "category": "protocol",
+      "classification": "operator_action_required",
+      "ui_message": "ESXi ISO media inventory is operator_action_required.",
+      "report_detail": "ESXi ISO media inventory is not configured.",
+      "next_action": "Place the ESXi ISO under MEDIA_INVENTORY_DIRS or set ESXI_INSTALL_ISO/ESXI_ISO_PATH before ESXi boot verification."
     },
     {
       "category": "protocol",
       "classification": "blocked_by_prior_stage",
-      "ui_message": "ESXi API is blocked_by_prior_stage.",
-      "report_detail": "Install/configure ESXi management at 192.168.1.203, then set ESXI_CONFIGURED=true before API certification.",
-      "next_action": "Install/configure ESXi management at 192.168.1.203, then set ESXI_CONFIGURED=true before API certification."
-    },
-    {
-      "category": "protocol",
-      "classification": "blocked_by_prior_stage",
-      "ui_message": "ESXi SSH is blocked_by_prior_stage.",
-      "report_detail": "Install/configure ESXi management and enable/confirm SSH before ESXi SSH certification.",
-      "next_action": "Install/configure ESXi management and enable/confirm SSH before ESXi SSH certification."
+      "ui_message": "NetApp NFS/vCenter is blocked_by_prior_stage.",
+      "report_detail": "Use console/API read-only discovery to identify the NetApp state, then configure vCenter/govc before NFS datastore apply is implemented.",
+      "next_action": "Use console/API read-only discovery to identify the NetApp state, then configure vCenter/govc before NFS datastore apply is implemented."
     },
     {
       "category": "protocol",
@@ -505,14 +578,56 @@
       "ui_message": "NetApp SSH is not_configured_yet.",
       "report_detail": "Leave NetApp SSH as not_configured_yet until the NetApp stage is explicitly configured.",
       "next_action": "Leave NetApp SSH as not_configured_yet until the NetApp stage is explicitly configured."
+    },
+    {
+      "category": "protocol",
+      "classification": "warning",
+      "ui_message": "iLO Redfish is warning.",
+      "report_detail": "Review iLO Redfish readiness.",
+      "next_action": "Review iLO Redfish readiness."
+    },
+    {
+      "category": "protocol",
+      "classification": "warning",
+      "ui_message": "iLO XML fallback is warning.",
+      "report_detail": "Review iLO XML fallback readiness.",
+      "next_action": "Review iLO XML fallback readiness."
+    },
+    {
+      "category": "protocol",
+      "classification": "warning",
+      "ui_message": "Cisco SSH/SCP is warning.",
+      "report_detail": "Review Cisco SSH/SCP readiness.",
+      "next_action": "Review Cisco SSH/SCP readiness."
+    },
+    {
+      "category": "protocol",
+      "classification": "warning",
+      "ui_message": "ESXi API is warning.",
+      "report_detail": "Review ESXi API readiness.",
+      "next_action": "Review ESXi API readiness."
+    },
+    {
+      "category": "protocol",
+      "classification": "warning",
+      "ui_message": "ESXi SSH is warning.",
+      "report_detail": "Review ESXi SSH readiness.",
+      "next_action": "Review ESXi SSH readiness."
     }
   ],
   "blockers": [
-    "Complete or confirm Cisco console bootstrap, then set CISCO_MGMT_CONFIGURED=true before treating SSH/SCP as a port failure.",
-    "Install/configure ESXi management at 192.168.1.203, then set ESXI_CONFIGURED=true before API certification.",
-    "Install/configure ESXi management and enable/confirm SSH before ESXi SSH certification."
+    "Update provider environment inputs to match `Runtime environment` and remove stale 10.10.8.x values before certification.",
+    "Use the selected candidate as the next physical console check, then verify cable placement, adapter ownership, power state, and baud before rerunning discovery.",
+    "Place the ESXi ISO under MEDIA_INVENTORY_DIRS or set ESXI_INSTALL_ISO/ESXI_ISO_PATH before ESXi boot verification.",
+    "Use console/API read-only discovery to identify the NetApp state, then configure vCenter/govc before NFS datastore apply is implemented."
   ],
-  "warnings": [],
+  "warnings": [
+    "Review iLO Redfish readiness.",
+    "Review iLO XML fallback readiness.",
+    "Review Cisco SSH/SCP readiness.",
+    "Review ESXi API readiness.",
+    "Review ESXi SSH readiness."
+  ],
   "artifacts": {
     "report": "artifacts/codex-runs/build-verification-report.md",
     "summary_json": "artifacts/codex-runs/build-verification-summary-redacted.json",
@@ -522,5 +637,5 @@
     "failure_case_report": "artifacts/codex-runs/failure-case-hardening-report.md",
     "toolchain_availability_report": "artifacts/codex-runs/toolchain-availability-report.md"
   },
-  "next_safe_action": "Complete or confirm Cisco console bootstrap, then set CISCO_MGMT_CONFIGURED=true before treating SSH/SCP as a port failure."
+  "next_safe_action": "Update provider environment inputs to match `Runtime environment` and remove stale 10.10.8.x values before certification."
 }

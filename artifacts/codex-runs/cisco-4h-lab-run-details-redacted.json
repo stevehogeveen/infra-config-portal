@@ -14,7 +14,7 @@
     "vlan10_bootstrap_fix_report": "artifacts/codex-runs/cisco-vlan10-bootstrap-fix-report.md"
   },
   "blockers": [],
-  "checked_at": "2026-06-07T11:53:57.930892+00:00",
+  "checked_at": "2026-06-07T12:55:44.526936+00:00",
   "provider_mode": "local-lab-readwrite",
   "stages": {
     "adapter_discovery": {
@@ -46,7 +46,10 @@
       "status": "not-attempted"
     },
     "bootstrap_plan": {
-      "access_port_source": "detected-show-interfaces-status",
+      "access_port_source": "always-access-plus-detected-show-interfaces-status",
+      "always_access_ports": [
+        "Gi1/0/1"
+      ],
       "ansible_control_host": "192.168.1.205",
       "ansible_role": "console first-contact/bootstrap first; Ansible starts after Cisco management SSH is configured for show commands, backup, validation, drift checks, and future repeatable config",
       "blockers": [],
@@ -76,7 +79,7 @@
         " ip address 192.168.1.204 255.255.255.0",
         " no shutdown",
         " exit",
-        "interface range Gi1/0/2,Gi1/0/3,Gi1/0/4,Gi1/0/5,Gi1/0/6,Gi1/0/7,Gi1/0/8,Gi1/0/9,Gi1/0/10,Gi1/0/11,Gi1/0/12,Gi1/0/13,Gi1/0/14,Gi1/0/15,Gi1/0/16,Gi1/0/17,Gi1/0/18,Gi1/0/19,Gi1/0/20,Gi1/0/21,Gi1/0/22",
+        "interface range Gi1/0/1,Gi1/0/2,Gi1/0/3,Gi1/0/4,Gi1/0/5,Gi1/0/6,Gi1/0/7,Gi1/0/8,Gi1/0/9,Gi1/0/10,Gi1/0/11,Gi1/0/12,Gi1/0/13,Gi1/0/14,Gi1/0/15,Gi1/0/16,Gi1/0/17,Gi1/0/18,Gi1/0/19,Gi1/0/20,Gi1/0/21,Gi1/0/22",
         " switchport mode access",
         " switchport access vlan 10",
         " no shutdown",
@@ -99,6 +102,7 @@
       "save_startup_config": true,
       "scp_enabled": true,
       "selected_or_detected_access_ports": [
+        "Gi1/0/1",
         "Gi1/0/2",
         "Gi1/0/3",
         "Gi1/0/4",
@@ -166,7 +170,7 @@
         115200
       ],
       "final_prompt": "DEVICE#",
-      "first_bytes_printable_preview": "\\r\\nlab-cisco-switch#\\r\\nlab-cisco-switch#",
+      "first_bytes_printable_preview": "\\r\\nlab-cisco-switch#\\r\\n*Jun  7 13:01:08.546: %SYS-5-CONFIG_I: Configured from console by <redacted> on console",
       "login_state_transitions": [],
       "password_prompt_seen": false,
       "prompt_detected": true,
@@ -174,7 +178,7 @@
       "prompt_state": "privileged-exec",
       "selected_baud": 9600,
       "selected_port": "/dev/serial/by-id/usb-Prolific_Technology_Inc._USB-Serial_Controller_D-if00-port0",
-      "selected_sequence": "crlf",
+      "selected_sequence": "ctrl-c",
       "status": "ready",
       "user_access_verification_seen": false,
       "username_prompt_seen": false,
@@ -188,38 +192,33 @@
       ]
     },
     "ethernet_management_validation": {
-      "blockers": [
-        "Ping to Cisco management IP failed.",
-        "SSH TCP/22 to Cisco management IP failed.",
-        "SCP readiness over TCP/22 to Cisco management IP failed."
-      ],
-      "failure_classification": "host_routing",
+      "blockers": [],
+      "failure_classification": "passed",
       "host_route": {
-        "dev": "wlp0s20f3",
+        "dev": "enx607d09047834",
         "error": null,
         "returncode": 0,
-        "route": "192.168.1.204 dev wlp0s20f3 src 192.168.1.19 uid 1000 cache",
-        "src": "192.168.1.19",
+        "route": "192.168.1.204 dev enx607d09047834 src 192.168.1.30 uid 1000 cache",
+        "src": "192.168.1.30",
         "status": "ready"
       },
       "ping": {
-        "returncode": 1,
-        "status": "failed"
+        "returncode": 0,
+        "status": "ok"
       },
       "scp": {
-        "error": "[Errno 113] No route to host",
+        "error": null,
         "method": "TCP/22 readiness plus bootstrap command `ip scp server enable`.",
         "port": 22,
-        "reachable": false,
-        "status": "blocked"
+        "reachable": true,
+        "status": "ready"
       },
       "ssh": {
-        "elapsed_seconds": 0.048,
-        "error": "[Errno 113] No route to host",
+        "elapsed_seconds": 0.006,
         "port": 22,
-        "reachable": false
+        "reachable": true
       },
-      "status": "blocked"
+      "status": "ready"
     },
     "policy": {
       "blockers": [],
@@ -275,7 +274,7 @@
           }
         },
         {
-          "bytes": 885,
+          "bytes": 878,
           "captured": true,
           "command": "show version | include Cisco IOS|uptime|System image|processor|bytes of memory",
           "raw_output_redacted": true,
@@ -336,8 +335,9 @@
           }
         }
       ],
-      "detected_access_port_count": 21,
+      "detected_access_port_count": 22,
       "detected_access_ports": [
+        "Gi1/0/1",
         "Gi1/0/2",
         "Gi1/0/3",
         "Gi1/0/4",
@@ -373,7 +373,7 @@
           "raw_output_redacted": true
         },
         "vlan10_interface": {
-          "bytes": 639,
+          "bytes": 648,
           "captured": true,
           "command": "show ip interface brief | include Vlan10",
           "raw_output_redacted": true
@@ -386,6 +386,7 @@
         }
       },
       "configured_or_detected_access_ports": [
+        "Gi1/0/1",
         "Gi1/0/2",
         "Gi1/0/3",
         "Gi1/0/4",
@@ -409,9 +410,9 @@
         "Gi1/0/22"
       ],
       "ports_assigned_vlan10": [
+        "Gi1/0/1",
         "Gi1/0/2",
-        "Gi1/0/3",
-        "Gi1/0/4"
+        "Gi1/0/3"
       ],
       "status": "ready",
       "vlan10_state": {
