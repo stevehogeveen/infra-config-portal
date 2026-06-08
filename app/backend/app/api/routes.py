@@ -46,6 +46,9 @@ from app.schemas import (
     IloSetupIntentWrite,
     IloSetupPlanPreviewRead,
     IloUpgradeReadinessRead,
+    LabProfileListRead,
+    LabProfileRead,
+    LabProfileWrite,
     MediaInventoryRead,
     NetAppConsoleReadinessRead,
     NetAppObservationRead,
@@ -111,6 +114,13 @@ from app.services.ilo_setup_apply import (
     apply_ilo_setup,
     build_ilo_setup_apply_plan,
 )
+from app.services.lab_profiles import (
+    LabProfileNotFoundError,
+    activate_lab_profile,
+    create_lab_profile,
+    list_lab_profiles,
+    update_lab_profile,
+)
 from app.services.hpe_raid import (
     apply_hpe_raid_plan,
     build_hpe_raid_apply_plan,
@@ -141,6 +151,13 @@ from app.services.netapp_observations import (
     save_netapp_observations,
 )
 from app.services.netapp_readiness_comparison import get_netapp_readiness_comparison
+from app.services.netapp_real_lab import (
+    get_latest_netapp_console_discovery,
+    get_latest_netapp_console_state,
+    get_netapp_nfs_vcenter_readiness,
+    run_netapp_console_discovery,
+    run_netapp_console_read_state,
+)
 from app.services.netapp_upgrade_readiness import get_netapp_upgrade_readiness
 from app.services.readiness import get_request_readiness
 from app.services.upgrade_decision import get_ilo_upgrade_readiness
@@ -384,6 +401,36 @@ def read_full_rebuild_summary() -> ProviderProbeResultRead:
 @router.get("/lab/build-verification", response_model=ProviderProbeResultRead)
 def read_lab_build_verification() -> ProviderProbeResultRead:
     return get_lab_build_verification()
+
+
+@router.get("/lab/profiles", response_model=LabProfileListRead)
+def read_lab_profiles() -> LabProfileListRead:
+    return list_lab_profiles()
+
+
+@router.post(
+    "/lab/profiles",
+    response_model=LabProfileRead,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_lab_profile_route(payload: LabProfileWrite) -> LabProfileRead:
+    return create_lab_profile(payload.model_dump())
+
+
+@router.put("/lab/profiles/{profile_id}", response_model=LabProfileRead)
+def update_lab_profile_route(profile_id: str, payload: LabProfileWrite) -> LabProfileRead:
+    try:
+        return update_lab_profile(profile_id, payload.model_dump())
+    except LabProfileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Lab profile not found") from exc
+
+
+@router.post("/lab/profiles/{profile_id}/activate", response_model=LabProfileListRead)
+def activate_lab_profile_route(profile_id: str) -> LabProfileListRead:
+    try:
+        return activate_lab_profile(profile_id)
+    except LabProfileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Lab profile not found") from exc
 
 
 @router.get(
@@ -678,6 +725,46 @@ def read_netapp_plan_preview() -> NetAppPlanPreviewRead:
 )
 def read_netapp_console_readiness() -> NetAppConsoleReadinessRead:
     return get_netapp_console_readiness()
+
+
+@router.get(
+    "/providers/netapp-ontap/console-discovery",
+    response_model=ProviderProbeResultRead,
+)
+def read_netapp_console_discovery() -> ProviderProbeResultRead:
+    return get_latest_netapp_console_discovery()
+
+
+@router.post(
+    "/providers/netapp-ontap/console-discovery",
+    response_model=ProviderProbeResultRead,
+)
+def run_netapp_console_discovery_route() -> ProviderProbeResultRead:
+    return run_netapp_console_discovery()
+
+
+@router.get(
+    "/providers/netapp-ontap/console-read-state",
+    response_model=ProviderProbeResultRead,
+)
+def read_netapp_console_state() -> ProviderProbeResultRead:
+    return get_latest_netapp_console_state()
+
+
+@router.post(
+    "/providers/netapp-ontap/console-read-state",
+    response_model=ProviderProbeResultRead,
+)
+def run_netapp_console_state_route() -> ProviderProbeResultRead:
+    return run_netapp_console_read_state()
+
+
+@router.get(
+    "/providers/netapp-ontap/nfs-vcenter-readiness",
+    response_model=ProviderProbeResultRead,
+)
+def read_netapp_nfs_vcenter_readiness() -> ProviderProbeResultRead:
+    return get_netapp_nfs_vcenter_readiness()
 
 
 @router.get(

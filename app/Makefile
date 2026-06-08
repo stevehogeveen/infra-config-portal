@@ -10,7 +10,7 @@ PROVIDER_SMOKE_PROVIDERS ?=
 BACKEND_PORT ?= 8001
 FRONTEND_PORT ?= 5173
 
-.PHONY: backend-venv backend-run backend-test frontend-install frontend-run up down start stop restart status check codex-audit codex-task codex-next codex-resume test dev lint provider-smoke provider-smoke-ilo-readonly provider-smoke-ilo-local-lab provider-inventory-ilo-local-lab provider-lab-ilo-reachability provider-lab-ilo-authentication provider-lab-ilo-inventory provider-lab-ilo-readiness provider-lab-firmware-inventory provider-lab-firmware-cisco-inventory provider-lab-cisco-firmware-cisco-inventory provider-lab-firmware-compliance provider-lab-firmware-compliance-scope-cisco provider-lab-firmware-compliance-scope-hpe provider-lab-firmware-compliance-scope-full provider-lab-firmware-waiver-check provider-lab-hpe-storage-discovery provider-lab-hpe-raid-discovery provider-lab-hpe-raid-plan provider-lab-hpe-raid-debug provider-lab-hpe-raid-pending provider-lab-server-reset-for-raid provider-lab-hpe-raid-validate-after-reset provider-lab-esxi-install-readiness provider-lab-esxi-media-url provider-lab-esxi-insert-virtual-media provider-lab-esxi-one-time-boot provider-lab-esxi-reset-installer-boot provider-lab-esxi-detect-installer provider-lab-cisco-console-ethernet-readiness provider-lab-cisco-console-recovery provider-lab-cisco-privilege-check provider-lab-cisco-vlan10-bootstrap-fix provider-lab-cisco-vlan10-bootstrap-apply provider-lab-full-rebuild-summary provider-lab-full-rebuild provider-lab-build-verification provider-lab-toolchain-check provider-lab-hpe-raid-apply netapp-real-readiness
+.PHONY: backend-venv backend-run backend-test frontend-install frontend-run up down start stop restart status check codex-audit codex-task codex-next codex-resume test dev lint provider-smoke provider-smoke-ilo-readonly provider-smoke-ilo-local-lab provider-inventory-ilo-local-lab provider-lab-ilo-reachability provider-lab-ilo-authentication provider-lab-ilo-inventory provider-lab-ilo-readiness provider-lab-firmware-inventory provider-lab-firmware-cisco-inventory provider-lab-cisco-firmware-cisco-inventory provider-lab-firmware-compliance provider-lab-firmware-compliance-scope-cisco provider-lab-firmware-compliance-scope-hpe provider-lab-firmware-compliance-scope-full provider-lab-firmware-waiver-check provider-lab-hpe-storage-discovery provider-lab-hpe-raid-discovery provider-lab-hpe-raid-plan provider-lab-hpe-raid-debug provider-lab-hpe-raid-pending provider-lab-server-reset-for-raid provider-lab-hpe-raid-validate-after-reset provider-lab-esxi-install-readiness provider-lab-esxi-media-url provider-lab-esxi-insert-virtual-media provider-lab-esxi-eject-virtual-media provider-lab-esxi-one-time-boot provider-lab-esxi-reset-installer-boot provider-lab-esxi-detect-installer provider-lab-cisco-console-ethernet-readiness provider-lab-cisco-console-recovery provider-lab-cisco-privilege-check provider-lab-cisco-vlan10-bootstrap-fix provider-lab-cisco-vlan10-bootstrap-apply provider-lab-full-rebuild-summary provider-lab-full-rebuild provider-lab-build-verification provider-lab-toolchain-check provider-lab-hpe-raid-apply provider-lab-serial-console-discovery provider-lab-netapp-console-autodiscovery provider-lab-netapp-console-discovery provider-lab-netapp-console-read-state provider-lab-netapp-nfs-vcenter-readiness netapp-real-readiness
 
 backend-venv:
 	$(PYTHON) -m venv $(VENV)
@@ -133,6 +133,9 @@ provider-lab-esxi-media-url:
 provider-lab-esxi-insert-virtual-media:
 	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $$(if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi) scripts/esxi_boot_workflow.py insert-virtual-media
 
+provider-lab-esxi-eject-virtual-media:
+	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $$(if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi) scripts/esxi_boot_workflow.py eject-virtual-media
+
 provider-lab-esxi-one-time-boot:
 	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $$(if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi) scripts/esxi_boot_workflow.py one-time-boot
 
@@ -171,6 +174,21 @@ provider-lab-toolchain-check:
 
 provider-lab-hpe-raid-apply:
 	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. HPE_RAID_ALLOW_DESTRUCTIVE="$${HPE_RAID_ALLOW_DESTRUCTIVE:-}" HPE_RAID_APPLY_CONFIRM="$${HPE_RAID_APPLY_CONFIRM:-}" $$(if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi) scripts/hpe_raid_workflow.py apply
+
+provider-lab-serial-console-discovery:
+	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $$(if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi) scripts/serial_console_discovery.py
+
+provider-lab-netapp-console-autodiscovery:
+	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $$(if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi) scripts/netapp_real_lab_workflow.py console-autodiscovery
+
+provider-lab-netapp-console-discovery:
+	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $$(if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi) scripts/netapp_real_lab_workflow.py console-autodiscovery
+
+provider-lab-netapp-console-read-state:
+	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $$(if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi) scripts/netapp_real_lab_workflow.py console-read-state
+
+provider-lab-netapp-nfs-vcenter-readiness:
+	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $$(if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi) scripts/netapp_real_lab_workflow.py nfs-vcenter-readiness
 
 netapp-real-readiness:
 	cd backend && PROVIDER_MODE="$(PROVIDER_MODE)" PYTHONPATH=. $$(if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi) scripts/netapp_real_run_readiness.py

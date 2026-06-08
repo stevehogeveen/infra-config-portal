@@ -16,12 +16,20 @@ from app.core.config import (
     LAB_CISCO_MANAGEMENT_IP,
     LAB_ESXI_MANAGEMENT_IP,
     LAB_ILO_IP,
+    LAB_NETAPP_CLUSTER_MGMT_IP,
+    LAB_NETAPP_CONTROLLER_A_SP_IP,
+    LAB_NETAPP_CONTROLLER_B_SP_IP,
+    LAB_NETAPP_ISCSI_LIF_IPS,
+    LAB_NETAPP_NODE_A_MGMT_IP,
+    LAB_NETAPP_NODE_B_MGMT_IP,
+    LAB_NETAPP_SVM_MGMT_IP,
     LAB_SERVER_EMBEDDED_NIC_IP,
     LAB_SUBNET_CIDR,
     settings,
 )
 from app.providers.redaction import redact_sensitive
 from app.services.hpe_raid import REPO_ROOT
+from app.services.lab_profiles import active_lab_profile_for_report
 
 CODEX_RUN_DIR = REPO_ROOT / "artifacts" / "codex-runs"
 REPORT = CODEX_RUN_DIR / "build-verification-report.md"
@@ -315,13 +323,37 @@ def find_stale_lab_ip_assumptions(values: dict[str, Any]) -> list[dict[str, str]
 
 
 def _lab_ip_profile_checks() -> dict[str, Any]:
+    active_lab_profile = active_lab_profile_for_report()
+    active_plan = (
+        active_lab_profile.get("address_plan", {})
+        if active_lab_profile.get("source") == "saved"
+        else {}
+    )
+    expected_netapp_iscsi_lifs = ",".join(
+        active_plan.get("netapp_iscsi_lifs") or list(LAB_NETAPP_ISCSI_LIF_IPS)
+    )
+    configured_netapp_iscsi_lifs = ",".join(settings.netapp_iscsi_lifs)
     expected = {
-        "subnet": LAB_SUBNET_CIDR,
-        "ilo": LAB_ILO_IP,
-        "server_embedded_nic": LAB_SERVER_EMBEDDED_NIC_IP,
-        "esxi_management": LAB_ESXI_MANAGEMENT_IP,
-        "cisco_management": LAB_CISCO_MANAGEMENT_IP,
-        "ansible_control_host": LAB_ANSIBLE_CONTROL_HOST_IP,
+        "subnet": active_plan.get("subnet") or LAB_SUBNET_CIDR,
+        "ilo": active_plan.get("ilo") or LAB_ILO_IP,
+        "server_embedded_nic": active_plan.get("server_embedded_nic")
+        or LAB_SERVER_EMBEDDED_NIC_IP,
+        "esxi_management": active_plan.get("esxi_management") or LAB_ESXI_MANAGEMENT_IP,
+        "cisco_management": active_plan.get("cisco_management") or LAB_CISCO_MANAGEMENT_IP,
+        "ansible_control_host": active_plan.get("ansible_control_host")
+        or LAB_ANSIBLE_CONTROL_HOST_IP,
+        "netapp_controller_a_sp": active_plan.get("netapp_controller_a_sp")
+        or LAB_NETAPP_CONTROLLER_A_SP_IP,
+        "netapp_controller_b_sp": active_plan.get("netapp_controller_b_sp")
+        or LAB_NETAPP_CONTROLLER_B_SP_IP,
+        "netapp_cluster_mgmt": active_plan.get("netapp_cluster_mgmt")
+        or LAB_NETAPP_CLUSTER_MGMT_IP,
+        "netapp_node_a_mgmt": active_plan.get("netapp_node_a_mgmt")
+        or LAB_NETAPP_NODE_A_MGMT_IP,
+        "netapp_node_b_mgmt": active_plan.get("netapp_node_b_mgmt")
+        or LAB_NETAPP_NODE_B_MGMT_IP,
+        "netapp_svm_mgmt": active_plan.get("netapp_svm_mgmt") or LAB_NETAPP_SVM_MGMT_IP,
+        "netapp_iscsi_lifs": expected_netapp_iscsi_lifs,
     }
     configured = {
         "subnet": settings.lab_subnet_cidr,
@@ -333,18 +365,21 @@ def _lab_ip_profile_checks() -> dict[str, Any]:
         "ansible_control_host": settings.ansible_control_host,
         "cisco_target_ip_env": os.getenv("CISCO_TARGET_IP"),
         "ansible_cisco_host_env": os.getenv("ANSIBLE_CISCO_HOST"),
+        "netapp_controller_a_sp": settings.netapp_controller_a_sp,
+        "netapp_controller_b_sp": settings.netapp_controller_b_sp,
+        "netapp_cluster_mgmt": settings.netapp_cluster_mgmt_ip,
+        "netapp_node_a_mgmt": settings.netapp_node_a_mgmt_ip,
+        "netapp_node_b_mgmt": settings.netapp_node_b_mgmt_ip,
+        "netapp_svm_mgmt": settings.netapp_svm_mgmt_ip,
+        "netapp_iscsi_lifs": configured_netapp_iscsi_lifs,
+        "netapp_controller_a_sp_env": os.getenv("NETAPP_CONTROLLER_A_SP"),
+        "netapp_controller_b_sp_env": os.getenv("NETAPP_CONTROLLER_B_SP"),
+        "netapp_cluster_mgmt_ip_env": os.getenv("NETAPP_CLUSTER_MGMT_IP"),
+        "netapp_node_a_mgmt_ip_env": os.getenv("NETAPP_NODE_A_MGMT_IP"),
+        "netapp_node_b_mgmt_ip_env": os.getenv("NETAPP_NODE_B_MGMT_IP"),
+        "netapp_svm_mgmt_ip_env": os.getenv("NETAPP_SVM_MGMT_IP"),
+        "netapp_iscsi_lifs_env": os.getenv("NETAPP_ISCSI_LIFS"),
     }
-    for key in (
-        "NETAPP_CONTROLLER_A_SP",
-        "NETAPP_CONTROLLER_B_SP",
-        "NETAPP_CLUSTER_MGMT_IP",
-        "NETAPP_NODE_A_MGMT_IP",
-        "NETAPP_NODE_B_MGMT_IP",
-        "NETAPP_SVM_MGMT_IP",
-        "NETAPP_ISCSI_LIFS",
-    ):
-        if settings.netapp_configured or os.getenv(key):
-            configured[key.lower()] = os.getenv(key) or getattr(settings, key.lower())
     mismatches = []
     for key, expected_value in expected.items():
         configured_value = configured.get(key)
@@ -357,33 +392,43 @@ def _lab_ip_profile_checks() -> dict[str, Any]:
                 }
             )
     ansible_cisco_host = configured.get("ansible_cisco_host_env")
-    if ansible_cisco_host and ansible_cisco_host != LAB_CISCO_MANAGEMENT_IP:
+    if ansible_cisco_host and ansible_cisco_host != expected["cisco_management"]:
         mismatches.append(
             {
                 "field": "ansible_cisco_host_env",
-                "expected": LAB_CISCO_MANAGEMENT_IP,
+                "expected": expected["cisco_management"],
                 "configured": ansible_cisco_host,
                 "reason": "ANSIBLE_CISCO_HOST is the Cisco device inventory target, not the control host.",
             }
         )
     stale_values = find_stale_lab_ip_assumptions(configured)
     stale_artifacts = _stale_artifact_evidence()
+    selected_profile_name = active_lab_profile.get("name") or "Runtime environment"
     return {
         "status": "blocked" if mismatches or stale_values else "ready",
         "classification": "stale_config" if mismatches or stale_values else "passed",
+        "active_lab_profile": {
+            "id": active_lab_profile.get("id"),
+            "name": selected_profile_name,
+            "source": active_lab_profile.get("source"),
+            "version": active_lab_profile.get("version"),
+            "selected_for_portal": True,
+            "provider_env_overrides_required": active_lab_profile.get("source") == "saved",
+        },
         "expected": expected,
         "configured": configured,
         "mismatches": mismatches,
         "stale_10_10_8_values": stale_values,
         "stale_artifact_evidence": stale_artifacts,
         "next_action": (
-            "Update active lab inputs to 192.168.1.201-.205 and remove stale 10.10.8.x values before certification."
+            f"Update provider environment inputs to match `{selected_profile_name}` and remove stale "
+            "10.10.8.x values before certification."
             if mismatches or stale_values
-            else "Active lab IP profile matches 192.168.1.0/24 with devices at 192.168.1.200+."
+            else f"Active lab IP profile matches `{selected_profile_name}`."
         ),
         "ansible_role": {
             "first_contact": "Cisco console bootstrap",
-            "starts_after": f"Cisco management SSH is configured at {LAB_CISCO_MANAGEMENT_IP}",
+            "starts_after": f"Cisco management SSH is configured at {expected['cisco_management']}",
             "uses": [
                 "show commands",
                 "backup",
@@ -515,6 +560,8 @@ def _protocol_checks(*, check_ports: bool) -> dict[str, Any]:
                 else None
             ),
         ),
+        _netapp_console_readiness(),
+        _netapp_nfs_vcenter_readiness(),
         _iso_media_readiness(),
     ]
     return {
@@ -531,6 +578,8 @@ def _post_build_checklist(protocols: dict[str, Any]) -> list[dict[str, Any]]:
         {"item": "RAID layout matches saved intent after reset/validation", "status": "manual-review"},
         {"item": "ESXi media is inserted or host installer state is detected", "status": _protocol_status(protocols, "ESXi API")},
         {"item": "NetApp REST/SSH paths are reachable when configured", "status": _protocol_status(protocols, "NetApp REST")},
+        {"item": "NetApp console discovery/read-state evidence exists", "status": _protocol_status(protocols, "NetApp console")},
+        {"item": "NetApp NFS/vCenter readiness has been reviewed", "status": _protocol_status(protocols, "NetApp NFS/vCenter")},
     ]
 
 
@@ -695,6 +744,101 @@ def _cisco_console_readiness() -> dict[str, Any]:
         classification="operator_action_required",
         next_action="Connect the Cisco console adapter and rerun prompt detection at 9600.",
     )
+
+
+def _netapp_console_readiness() -> dict[str, Any]:
+    discovery = CODEX_RUN_DIR / "netapp-console-autodiscovery-redacted.json"
+    legacy_discovery = CODEX_RUN_DIR / "netapp-console-discovery-redacted.json"
+    state = CODEX_RUN_DIR / "netapp-console-state-redacted.json"
+    discovery_artifact = discovery if discovery.exists() else legacy_discovery
+    if not discovery_artifact.exists():
+        return protocol_readiness(
+            "NetApp console",
+            configured=True,
+            reachable=None,
+            classification="operator_action_required",
+            next_action="Run NetApp console discovery now that console cables are connected.",
+        )
+    payload = _read_json_artifact(state if state.exists() else discovery_artifact)
+    if not payload:
+        return protocol_readiness(
+            "NetApp console",
+            configured=True,
+            reachable=None,
+            classification="operator_action_required",
+            next_action="Regenerate NetApp console discovery; the current redacted artifact is unreadable.",
+        )
+    if payload.get("status") == "ready" and payload.get("selected_port"):
+        return {
+            "protocol": "NetApp console",
+            "configured": True,
+            "reachable": None,
+            "required": True,
+            "status": "ready",
+            "classification": "passed",
+            "blockers": [],
+            "selected_port": payload.get("selected_port"),
+            "selected_baud": payload.get("selected_baud"),
+            "prompt_state": payload.get("selected_prompt_state"),
+            "next_action": "NetApp console discovery/read-state has usable adapter and prompt evidence.",
+        }
+    return protocol_readiness(
+        "NetApp console",
+        configured=True,
+        reachable=None,
+        classification="operator_action_required",
+        next_action=payload.get("next_safe_action")
+        or "Fix NetApp console cable, adapter ownership, permissions, or baud, then rerun discovery.",
+    )
+
+
+def _netapp_nfs_vcenter_readiness() -> dict[str, Any]:
+    path = CODEX_RUN_DIR / "netapp-nfs-vcenter-readiness-redacted.json"
+    if not path.exists():
+        return protocol_readiness(
+            "NetApp NFS/vCenter",
+            configured=True,
+            reachable=None,
+            classification="operator_action_required",
+            next_action="Run NetApp NFS/vCenter readiness before datastore planning.",
+        )
+    payload = _read_json_artifact(path)
+    if not payload:
+        return protocol_readiness(
+            "NetApp NFS/vCenter",
+            configured=True,
+            reachable=None,
+            classification="operator_action_required",
+            next_action="Regenerate NetApp NFS/vCenter readiness; the current redacted artifact is unreadable.",
+        )
+    if payload.get("status") == "ready":
+        return {
+            "protocol": "NetApp NFS/vCenter",
+            "configured": True,
+            "reachable": None,
+            "required": True,
+            "status": "ready",
+            "classification": "passed",
+            "blockers": [],
+            "single_management_port_mode": payload.get("single_management_port_mode"),
+            "next_action": "NetApp NFS/vCenter readiness preview is clear; apply remains a separate future workflow.",
+        }
+    return protocol_readiness(
+        "NetApp NFS/vCenter",
+        configured=True,
+        reachable=None,
+        classification="blocked_by_prior_stage",
+        next_action=payload.get("next_safe_action")
+        or "Complete NetApp API, ESXi, and vCenter prerequisites before NFS datastore apply.",
+    )
+
+
+def _read_json_artifact(path: Path) -> dict[str, Any] | None:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return payload if isinstance(payload, dict) else None
 
 
 def _stale_artifact_evidence() -> list[dict[str, str]]:
@@ -891,12 +1035,13 @@ def _managed_state_plan() -> dict[str, Any]:
         },
         "netapp": {
             "sequence": [
+                "Use local serial console discovery/read-state first for physical/controller state evidence.",
                 "Use netapp-ontap Python client or ONTAP REST as the primary managed-state path.",
-                "Use ONTAP REST direct where simple GET/compare logic is enough.",
-                "Keep write/apply workflows behind explicit NetApp stage gates.",
+                "Use ONTAP REST direct where simple GET/compare logic is enough after cluster management is configured.",
+                "Keep NFS/vCenter datastore apply and all ONTAP writes behind explicit NetApp stage gates.",
             ],
-            "primary_tools": ["netapp-ontap Python client", "ONTAP REST"],
-            "safety": "NetApp remains preview-only until an explicit read-only discovery lane is added.",
+            "primary_tools": ["local serial console", "netapp-ontap Python client", "ONTAP REST", "govc"],
+            "safety": "NetApp console discovery is newline-only; ONTAP/NFS/vCenter apply remains disabled.",
         },
     }
 
@@ -949,6 +1094,12 @@ def _markdown(payload: dict[str, Any]) -> str:
         f"- ESXi management: `{payload['lab_ip_profile']['expected']['esxi_management']}`",
         f"- Cisco management: `{payload['lab_ip_profile']['expected']['cisco_management']}`",
         f"- Ansible/control host: `{payload['lab_ip_profile']['expected']['ansible_control_host']}`",
+        f"- NetApp Controller A SP: `{payload['lab_ip_profile']['expected']['netapp_controller_a_sp']}`",
+        f"- NetApp Controller B SP: `{payload['lab_ip_profile']['expected']['netapp_controller_b_sp']}`",
+        f"- NetApp cluster management: `{payload['lab_ip_profile']['expected']['netapp_cluster_mgmt']}`",
+        f"- NetApp node management: `{payload['lab_ip_profile']['expected']['netapp_node_a_mgmt']}` / `{payload['lab_ip_profile']['expected']['netapp_node_b_mgmt']}`",
+        f"- NetApp SVM management: `{payload['lab_ip_profile']['expected']['netapp_svm_mgmt']}`",
+        f"- NetApp iSCSI LIFs: `{payload['lab_ip_profile']['expected']['netapp_iscsi_lifs']}`",
         "",
         "## Failure Classification",
         "",
@@ -1138,6 +1289,13 @@ def _lab_ip_hardening_markdown(payload: dict[str, Any]) -> str:
         f"- ESXi management: `{profile['expected']['esxi_management']}`",
         f"- Cisco management: `{profile['expected']['cisco_management']}`",
         f"- Ansible/control host: `{profile['expected']['ansible_control_host']}`",
+        f"- NetApp Controller A SP: `{profile['expected']['netapp_controller_a_sp']}`",
+        f"- NetApp Controller B SP: `{profile['expected']['netapp_controller_b_sp']}`",
+        f"- NetApp cluster management: `{profile['expected']['netapp_cluster_mgmt']}`",
+        f"- NetApp Node A management/e0M: `{profile['expected']['netapp_node_a_mgmt']}`",
+        f"- NetApp Node B management/e0M: `{profile['expected']['netapp_node_b_mgmt']}`",
+        f"- NetApp SVM management: `{profile['expected']['netapp_svm_mgmt']}`",
+        f"- NetApp iSCSI LIFs: `{profile['expected']['netapp_iscsi_lifs']}`",
         "",
         "## Stale Detection",
         "",
@@ -1268,7 +1426,7 @@ def _failure_case_markdown(payload: dict[str, Any]) -> str:
             "classification": lab_profile.get("classification", "unknown"),
             "ui_message": "Old 10.10.8.x values are stale for this lab unless explicitly overridden.",
             "detail": _profile_report_detail(lab_profile),
-            "next_action": lab_profile.get("next_action", "Use 192.168.1.201-.205 lab targets."),
+            "next_action": lab_profile.get("next_action", "Use 192.168.1.201-.215 lab targets."),
         },
         {
             "case": "MTU mismatch across paths",

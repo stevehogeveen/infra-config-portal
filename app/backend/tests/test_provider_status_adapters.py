@@ -2568,6 +2568,7 @@ def _discovery_paths(paths: dict[str, Path]) -> ConsoleDiscoveryPaths:
         stable_glob=str(by_id / "*"),
         usb_glob=str(dev / "ttyUSB*"),
         acm_glob=str(dev / "ttyACM*"),
+        ttys_glob=str(dev / "ttyS*"),
     )
 
 

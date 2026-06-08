@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import glob
 import os
 import re
 import socket
@@ -16,6 +15,12 @@ from app.providers.base import ProviderAction, ProviderStatus
 from app.providers.lab_safety import current_lab_safety
 from app.providers.probe_cache import get_probe_result, record_probe_result
 from app.providers.redaction import redact_sensitive
+from app.services.serial_console_discovery import (
+    SerialConsoleDiscoveryPaths as SharedSerialConsoleDiscoveryPaths,
+    discover_serial_console_candidates,
+    inspect_serial_console_candidate,
+    rank_serial_console_candidates,
+)
 
 PROVIDER_ID = "cisco-console"
 REPO_ROOT = Path(__file__).resolve().parents[4]
@@ -173,6 +178,7 @@ class ConsoleDiscoveryPaths:
     stable_glob: str = "/dev/serial/by-id/*"
     usb_glob: str = "/dev/ttyUSB*"
     acm_glob: str = "/dev/ttyACM*"
+    ttys_glob: str = "/dev/ttyS*"
 
 
 @dataclass(frozen=True)
@@ -973,47 +979,30 @@ class CiscoConsoleAdapter:
 
 
 def _discover_candidates(paths: ConsoleDiscoveryPaths) -> list[ConsoleCandidate]:
-    stable_paths = sorted(glob.glob(paths.stable_glob))
-    fallback_paths = sorted(glob.glob(paths.usb_glob)) + sorted(glob.glob(paths.acm_glob))
-    candidates = [_candidate(path, stable_path=True) for path in stable_paths]
-    seen_paths = {candidate.path for candidate in candidates}
-
-    for path in fallback_paths:
-        if path not in seen_paths:
-            candidates.append(_candidate(path, stable_path=False))
-            seen_paths.add(path)
-
-    return candidates
+    shared_paths = SharedSerialConsoleDiscoveryPaths(
+        by_id_glob=paths.stable_glob,
+        usb_glob=paths.usb_glob,
+        acm_glob=paths.acm_glob,
+        ttys_glob=paths.ttys_glob,
+    )
+    return [
+        _console_candidate_from_shared(candidate)
+        for candidate in discover_serial_console_candidates(
+            paths=shared_paths,
+            collect_details=False,
+            device_hint="cisco",
+        )
+    ]
 
 
 def _candidate(path: str, stable_path: bool) -> ConsoleCandidate:
-    exists = os.path.exists(path)
-    readable = os.access(path, os.R_OK) if exists else None
-    writable = os.access(path, os.W_OK) if exists else None
-    target_path = os.path.realpath(path) if stable_path and os.path.islink(path) else None
-    label = _candidate_label(path, target_path)
-    in_use = _path_in_use(path) if exists else False
-    rank = _candidate_rank(
-        path=path,
-        label=label,
-        stable_path=stable_path,
-        exists=exists,
-        readable=readable,
-        writable=writable,
-        in_use=in_use,
-        configured_port=None,
-    )
-    return ConsoleCandidate(
-        path=path,
-        stable_path=stable_path,
-        exists=exists,
-        readable=readable,
-        writable=writable,
-        label=label,
-        target_path=target_path,
-        in_use=in_use,
-        rank=rank,
-        recommendation="stable-candidate" if stable_path else "fallback-candidate",
+    return _console_candidate_from_shared(
+        inspect_serial_console_candidate(
+            path,
+            path_type="by-id" if stable_path else None,
+            collect_details=False,
+            device_hint="cisco",
+        )
     )
 
 
@@ -1022,26 +1011,74 @@ def _rank_candidates(
     *,
     configured_port: str | None,
 ) -> list[ConsoleCandidate]:
-    ranked = [
-        ConsoleCandidate(
-            **{
-                **asdict(candidate),
-                "rank": _candidate_rank(
-                    path=candidate.path,
-                    label=candidate.label,
-                    stable_path=candidate.stable_path,
-                    exists=candidate.exists,
-                    readable=candidate.readable,
-                    writable=candidate.writable,
-                    in_use=candidate.in_use,
-                    configured_port=configured_port,
-                ),
-                "recommendation": _ranked_recommendation(candidate, configured_port),
-            }
-        )
+    selected_auto_paths = {
+        candidate.path for candidate in candidates if candidate.recommendation == "selected-auto"
+    }
+    shared_candidates = [
+        {
+            **asdict(candidate),
+            "display_path": candidate.path,
+            "resolved_path": candidate.target_path,
+            "path_type": _path_type_for_candidate(candidate),
+        }
         for candidate in candidates
     ]
-    return sorted(ranked, key=lambda candidate: (candidate.rank, candidate.path))
+    return [
+        _console_candidate_from_shared(candidate)
+        for candidate in _with_selected_auto_recommendations(
+            rank_serial_console_candidates(
+                shared_candidates,
+                configured_hint=configured_port,
+                device_hint="cisco",
+            ),
+            selected_auto_paths,
+        )
+    ]
+
+
+def _with_selected_auto_recommendations(
+    candidates: list[dict[str, Any]],
+    selected_auto_paths: set[str],
+) -> list[dict[str, Any]]:
+    return [
+        {
+            **candidate,
+            "recommendation": "selected-auto"
+            if str(candidate.get("display_path") or candidate.get("path") or "") in selected_auto_paths
+            else candidate.get("recommendation"),
+        }
+        for candidate in candidates
+    ]
+
+
+def _console_candidate_from_shared(candidate: dict[str, Any]) -> ConsoleCandidate:
+    return ConsoleCandidate(
+        path=str(candidate.get("display_path") or candidate.get("path") or ""),
+        stable_path=bool(candidate.get("stable_path")),
+        exists=bool(candidate.get("exists")),
+        readable=bool(candidate.get("readable")) if candidate.get("exists") else None,
+        writable=bool(candidate.get("writable")) if candidate.get("exists") else None,
+        label=str(candidate.get("label") or candidate.get("display_path") or ""),
+        target_path=str(candidate.get("resolved_path") or candidate.get("target_path") or "")
+        if candidate.get("resolved_path") or candidate.get("target_path")
+        else None,
+        in_use=bool(candidate.get("in_use")),
+        rank=int(candidate.get("rank") or 0),
+        recommendation=str(candidate.get("recommendation") or "serial-candidate"),
+    )
+
+
+def _path_type_for_candidate(candidate: ConsoleCandidate) -> str:
+    if candidate.stable_path:
+        return "by-id"
+    name = Path(candidate.path).name
+    if name.startswith("ttyUSB"):
+        return "ttyUSB"
+    if name.startswith("ttyACM"):
+        return "ttyACM"
+    if name.startswith("ttyS"):
+        return "ttyS"
+    return "other"
 
 
 def _candidate_rank(

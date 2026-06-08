@@ -2,10 +2,16 @@ from __future__ import annotations
 
 from app.core.config import settings
 from app.providers.base import ProviderAction, ProviderStatus
+from app.providers.action_policy import REAL_CONTACT_MODES, current_lab_action_policy
 from app.services.netapp_console_readiness import get_netapp_console_readiness
 from app.services.netapp_disabled_actions import disabled_netapp_actions
 from app.services.firmware_compliance import firmware_gate_blockers
 from app.services.netapp_readiness_comparison import get_netapp_readiness_comparison
+from app.services.netapp_real_lab import (
+    get_latest_netapp_console_discovery,
+    get_latest_netapp_console_state,
+    get_netapp_nfs_vcenter_readiness,
+)
 from app.services.netapp_upgrade_readiness import get_netapp_upgrade_readiness
 
 
@@ -18,6 +24,11 @@ class NetAppOntapAdapter:
 
     def health(self) -> ProviderStatus:
         configured = settings.netapp_configured
+        policy = current_lab_action_policy(self.provider_mode)
+        readonly_enabled = self.provider_mode in REAL_CONTACT_MODES and policy.readonly_allowed
+        latest_console_discovery = get_latest_netapp_console_discovery()
+        latest_console_state = get_latest_netapp_console_state()
+        nfs_vcenter_readiness = get_netapp_nfs_vcenter_readiness(check_ports=False, write_report=False)
         return ProviderStatus(
             id=PROVIDER_ID,
             name="NetApp ONTAP",
@@ -30,25 +41,61 @@ class NetAppOntapAdapter:
                 "readiness-preview",
                 "readiness-comparison-preview",
                 "upgrade-readiness-preview",
+                "console-discovery-readonly",
+                "console-read-state-readonly",
+                "nfs-vcenter-readiness-preview",
             ],
             message=(
-                "Plan-only NetApp ONTAP preview. No ONTAP API, Service Processor, "
-                "console, SSH, storage, LIF, volume, reboot, wipe, upgrade, or apply call is made."
+                "NetApp ONTAP preview with explicit read-only console discovery available in real-lab modes. "
+                "Storage/NFS/vCenter apply remains disabled."
             ),
             configuration=self._configuration(),
-            discovery=self._discovery(),
+            discovery={
+                **self._discovery(),
+                "latest_console_discovery": latest_console_discovery,
+                "latest_console_state": latest_console_state,
+                "nfs_vcenter_readiness": nfs_vcenter_readiness,
+            },
             blockers=[
                 "NETAPP_CONFIGURED=false; live ONTAP readiness and discovery are blocked.",
-                "No live ONTAP apply operation is permitted from this portal.",
+                "No live ONTAP storage/NFS/vCenter apply operation is permitted from this portal.",
             ]
             if not configured
-            else ["No live ONTAP apply operation is permitted from this portal."],
+            else ["No live ONTAP storage/NFS/vCenter apply operation is permitted from this portal."],
             warnings=[
                 "Planned NetApp targets have not been discovered or compared to live hardware.",
-                "Console/bootstrap readiness is a manual placeholder.",
-                "Upgrade path is a preview placeholder until read-only discovery and media inventory are added.",
+                "Console discovery is newline-only and does not send credentials, setup commands, or boot interrupts.",
+                settings.netapp_management_topology_note,
+                "Upgrade path is a preview placeholder until read-only ONTAP discovery and media inventory are complete.",
             ],
-            safe_actions=[],
+            safe_actions=[
+                ProviderAction(
+                    id="netapp-console-discovery",
+                    label="Console Discovery",
+                    enabled=readonly_enabled,
+                    read_only=True,
+                    reason=(
+                        "Open ranked serial candidates and send newline/enter only."
+                        if readonly_enabled
+                        else "Requires local-readonly/local-lab-readwrite mode with real-lab acknowledgements."
+                    ),
+                    method="POST",
+                    endpoint="/api/v1/providers/netapp-ontap/console-discovery",
+                ),
+                ProviderAction(
+                    id="netapp-console-read-state",
+                    label="Read Console State",
+                    enabled=readonly_enabled,
+                    read_only=True,
+                    reason=(
+                        "Read current NetApp console prompt/state without credentials or commands."
+                        if readonly_enabled
+                        else "Requires local-readonly/local-lab-readwrite mode with real-lab acknowledgements."
+                    ),
+                    method="POST",
+                    endpoint="/api/v1/providers/netapp-ontap/console-read-state",
+                ),
+            ],
             disabled_actions=_disabled_actions(),
         )
 
@@ -78,6 +125,7 @@ class NetAppOntapAdapter:
         current_discovered_targets = configuration["current_discovered_targets"]
         setup_readiness = _setup_readiness_summary(readiness_buckets)
         upgrade_readiness_summary = _upgrade_readiness_summary(upgrade_readiness)
+        nfs_vcenter_readiness = get_netapp_nfs_vcenter_readiness(check_ports=False, write_report=False)
         not_ready_count = sum(
             1 for bucket in readiness_buckets.values() if bucket.get("ready") is False
         )
@@ -104,6 +152,19 @@ class NetAppOntapAdapter:
             "svm_intent_preview": intent_preview["svm"],
             "lif_intent_preview": {"iscsi_lifs": intent_preview["iscsi_lifs"]},
             "storage_iscsi_plan_preview": discovery["storage_iscsi_plan_preview"],
+            "storage_nfs_vcenter_preview": {
+                "endpoint": "/api/v1/providers/netapp-ontap/nfs-vcenter-readiness",
+                "apply_enabled": nfs_vcenter_readiness["apply_enabled"],
+                "status": nfs_vcenter_readiness["status"],
+                "single_management_port_mode": nfs_vcenter_readiness["single_management_port_mode"],
+                "planned_nfs": nfs_vcenter_readiness["planned_nfs"],
+                "target_summary": nfs_vcenter_readiness["targets"],
+                "blocker_count": len(nfs_vcenter_readiness["blockers"]),
+                "details": [
+                    "NFS/vCenter workflow is readiness preview only.",
+                    settings.netapp_management_topology_note,
+                ],
+            },
             "console_bootstrap_preview": {
                 "endpoint": "/api/v1/providers/netapp-ontap/console-readiness",
                 "bootstrap_enabled": console_readiness["bootstrap_enabled"],
@@ -113,8 +174,8 @@ class NetAppOntapAdapter:
                 "readiness_bucket_count": len(console_readiness["readiness_buckets"]),
                 "status": "manual_offline_preview",
                 "details": [
-                    "Manual console/bootstrap readiness preview only.",
-                    "No serial ports are opened and no console commands are sent.",
+                    "Manual readiness plus explicit read-only console discovery endpoints.",
+                    "Console discovery sends newline/enter only and does not send credentials or commands.",
                 ],
             },
             "readiness_comparison_preview": {
@@ -189,9 +250,31 @@ class NetAppOntapAdapter:
                 "credential_configured": settings.netapp_api_password is not None,
                 "tls_verify": settings.netapp_api_verify_tls,
             },
+            "console": {
+                "configured_port_hint": settings.netapp_console_port,
+                "baud": settings.netapp_console_baud,
+                "timeout_seconds": settings.netapp_console_timeout_seconds,
+                "connected_management_ports": list(settings.netapp_connected_management_ports),
+                "management_topology_note": settings.netapp_management_topology_note,
+            },
+            "planned_nfs": {
+                "storage_protocol": settings.netapp_storage_protocol,
+                "nfs_lifs": list(settings.netapp_nfs_lifs),
+                "volume": settings.netapp_nfs_volume,
+                "export_policy": settings.netapp_nfs_export_policy,
+                "mount_path": settings.netapp_nfs_mount_path,
+                "datastore_name": settings.netapp_nfs_datastore_name,
+                "client_match": settings.netapp_nfs_client_match,
+            },
+            "vcenter": {
+                "configured": settings.vcenter_configured,
+                "host_configured": bool(settings.vcenter_host),
+                "username_configured": bool(settings.vcenter_username),
+                "credential_configured": bool(settings.vcenter_password),
+                "tls_verify": settings.vcenter_verify_tls,
+            },
             "safe_next_action": (
-                "Review planned targets and readiness placeholders; keep NetApp apply paths "
-                "disabled until a future explicit read-only discovery task is approved."
+                "Run NetApp console discovery/read-state, then review NFS/vCenter readiness; keep apply paths disabled."
             ),
             "target_addressing": [
                 {"label": "Controller A SP", "address": settings.netapp_controller_a_sp},
@@ -207,6 +290,9 @@ class NetAppOntapAdapter:
                 "readiness-report.md",
                 "upgrade-path-preview.md",
                 "storage-iscsi-plan-preview.json",
+                "netapp-console-autodiscovery-report.md",
+                "netapp-console-state-report.md",
+                "netapp-nfs-vcenter-readiness-report.md",
                 "cluster-svm-lif-intent.json",
                 "post-run-report.md",
             ],
@@ -298,10 +384,13 @@ class NetAppOntapAdapter:
                     ],
                 },
                 "console_bootstrap_readiness": {
-                    "status": "manual_placeholder",
+                    "status": "readonly_probe_available"
+                    if self.provider_mode in REAL_CONTACT_MODES
+                    else "manual_placeholder",
                     "ready": False,
                     "details": [
-                        "Console/bootstrap readiness is a manual operator placeholder.",
+                        "Console discovery can open ranked local serial candidates in real-lab modes.",
+                        "Only newline/enter wake bytes are sent.",
                         "No cluster create or controller IP change is run.",
                     ],
                 },

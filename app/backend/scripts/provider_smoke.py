@@ -30,15 +30,20 @@ if REAL_LAB_ENV.exists():
             continue
         os.environ[key] = value
 
-from app.core.config import settings
-from app.providers.action_policy import LOCAL_LAB_MODE, LOCAL_READONLY_MODE, current_lab_action_policy
-from app.providers.cisco_ansible import CiscoAnsibleAdapter
-from app.providers.cisco_console import CiscoConsoleAdapter
-from app.providers.esxi_readonly import EsxiReadonlyAdapter
-from app.providers.ilo_redfish import IloRedfishAdapter
-from app.providers.lab_safety import current_lab_safety
-from app.providers.redaction import redact_sensitive
-from app.providers.registry import ProviderRegistryError, provider_registry
+# Load local lab env before app imports; settings reads env at import time.
+from app.core.config import settings  # noqa: E402
+from app.providers.action_policy import (  # noqa: E402
+    LOCAL_LAB_MODE,
+    LOCAL_READONLY_MODE,
+    current_lab_action_policy,
+)
+from app.providers.cisco_ansible import CiscoAnsibleAdapter  # noqa: E402
+from app.providers.cisco_console import CiscoConsoleAdapter  # noqa: E402
+from app.providers.esxi_readonly import EsxiReadonlyAdapter  # noqa: E402
+from app.providers.ilo_redfish import IloRedfishAdapter  # noqa: E402
+from app.providers.lab_safety import current_lab_safety  # noqa: E402
+from app.providers.redaction import redact_sensitive  # noqa: E402
+from app.providers.registry import ProviderRegistryError, provider_registry  # noqa: E402
 
 
 def main() -> int:

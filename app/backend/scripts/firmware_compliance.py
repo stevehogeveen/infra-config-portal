@@ -4,7 +4,6 @@ import argparse
 import json
 
 from app.services.firmware_compliance import (
-    get_firmware_compliance,
     get_firmware_inventory,
     write_firmware_reports,
     write_waiver_report,

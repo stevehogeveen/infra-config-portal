@@ -15,7 +15,6 @@ from app.schemas import HpeRaidApplyCreate, HpeRaidIntentWrite, HpeRaidVolumeInt
 from app.services.hpe_raid import (
     AFTER_RESET_VALIDATION_REPORT,
     APPLY_REPORT,
-    CONFIRMATION_PHRASE,
     PENDING_REPORT,
     RESET_REPORT,
     apply_hpe_raid_plan,

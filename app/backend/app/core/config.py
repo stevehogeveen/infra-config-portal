@@ -12,6 +12,18 @@ LAB_SERVER_EMBEDDED_NIC_IP = "192.168.1.202"
 LAB_ESXI_MANAGEMENT_IP = "192.168.1.203"
 LAB_CISCO_MANAGEMENT_IP = "192.168.1.204"
 LAB_ANSIBLE_CONTROL_HOST_IP = "192.168.1.205"
+LAB_NETAPP_CONTROLLER_A_SP_IP = "192.168.1.206"
+LAB_NETAPP_CONTROLLER_B_SP_IP = "192.168.1.207"
+LAB_NETAPP_CLUSTER_MGMT_IP = "192.168.1.208"
+LAB_NETAPP_NODE_A_MGMT_IP = "192.168.1.209"
+LAB_NETAPP_NODE_B_MGMT_IP = "192.168.1.210"
+LAB_NETAPP_SVM_MGMT_IP = "192.168.1.211"
+LAB_NETAPP_ISCSI_LIF_IPS = (
+    "192.168.1.212",
+    "192.168.1.213",
+    "192.168.1.214",
+    "192.168.1.215",
+)
 
 
 def _load_local_real_lab_env() -> None:
@@ -28,8 +40,13 @@ def _load_local_real_lab_env() -> None:
 
     for env_file in candidates:
         if env_file.exists():
-            for key, value in dotenv_values(env_file).items():
+            values = dotenv_values(env_file)
+            authoritative_real_lab = values.get("LAB_ENVIRONMENT") == "isolated-real-lab"
+            for key, value in values.items():
                 if key == "PROVIDER_MODE" or value is None:
+                    continue
+                if authoritative_real_lab:
+                    os.environ[key] = value
                     continue
                 existing = os.environ.get(key)
                 if existing is not None:
@@ -62,6 +79,20 @@ def _cisco_target_ip() -> str:
     if value is None:
         return LAB_CISCO_MANAGEMENT_IP
     return value
+
+
+def _lab_default_env(name: str, default: str) -> str:
+    value = _optional_env(name)
+    if value is None or _is_stale_lab_ip(value):
+        return default
+    return value
+
+
+def _lab_default_csv_env(name: str, default: tuple[str, ...]) -> tuple[str, ...]:
+    value = _optional_env(name)
+    if value is None or _is_stale_lab_ip(value):
+        return default
+    return tuple(_split_csv(value))
 
 
 def _cisco_management_prefix() -> str:
@@ -183,19 +214,63 @@ class Settings:
     )
     cisco_console_prompt_max_bytes: int = _int_env("CISCO_CONSOLE_PROMPT_MAX_BYTES", 8192)
     netapp_configured: bool = _bool_env("NETAPP_CONFIGURED", False)
-    netapp_controller_a_sp: str = os.getenv("NETAPP_CONTROLLER_A_SP", "10.10.8.13")
-    netapp_controller_b_sp: str = os.getenv("NETAPP_CONTROLLER_B_SP", "10.10.8.14")
-    netapp_cluster_mgmt_ip: str = os.getenv("NETAPP_CLUSTER_MGMT_IP", "10.10.8.45")
-    netapp_node_a_mgmt_ip: str = os.getenv("NETAPP_NODE_A_MGMT_IP", "10.10.8.46")
-    netapp_node_b_mgmt_ip: str = os.getenv("NETAPP_NODE_B_MGMT_IP", "10.10.8.47")
-    netapp_svm_mgmt_ip: str = os.getenv("NETAPP_SVM_MGMT_IP", "10.10.8.48")
-    netapp_iscsi_lifs: tuple[str, ...] = tuple(
-        _split_csv(os.getenv("NETAPP_ISCSI_LIFS", "10.10.8.51,10.10.8.52,10.10.8.53,10.10.8.54"))
+    netapp_controller_a_sp: str = _lab_default_env(
+        "NETAPP_CONTROLLER_A_SP",
+        LAB_NETAPP_CONTROLLER_A_SP_IP,
+    )
+    netapp_controller_b_sp: str = _lab_default_env(
+        "NETAPP_CONTROLLER_B_SP",
+        LAB_NETAPP_CONTROLLER_B_SP_IP,
+    )
+    netapp_cluster_mgmt_ip: str = _lab_default_env(
+        "NETAPP_CLUSTER_MGMT_IP",
+        LAB_NETAPP_CLUSTER_MGMT_IP,
+    )
+    netapp_node_a_mgmt_ip: str = _lab_default_env(
+        "NETAPP_NODE_A_MGMT_IP",
+        LAB_NETAPP_NODE_A_MGMT_IP,
+    )
+    netapp_node_b_mgmt_ip: str = _lab_default_env(
+        "NETAPP_NODE_B_MGMT_IP",
+        LAB_NETAPP_NODE_B_MGMT_IP,
+    )
+    netapp_svm_mgmt_ip: str = _lab_default_env(
+        "NETAPP_SVM_MGMT_IP",
+        LAB_NETAPP_SVM_MGMT_IP,
+    )
+    netapp_iscsi_lifs: tuple[str, ...] = _lab_default_csv_env(
+        "NETAPP_ISCSI_LIFS",
+        LAB_NETAPP_ISCSI_LIF_IPS,
     )
     netapp_api_username: str | None = _optional_env("NETAPP_API_USERNAME")
     netapp_api_password: str | None = _optional_env("NETAPP_API_PASSWORD")
     netapp_api_verify_tls: bool = _bool_env("NETAPP_API_VERIFY_TLS", True)
     netapp_current_ontap_version: str | None = _optional_env("NETAPP_CURRENT_ONTAP_VERSION")
+    netapp_console_port: str | None = _optional_env("NETAPP_CONSOLE_PORT")
+    netapp_console_baud: int = _int_env("NETAPP_CONSOLE_BAUD", 115200)
+    netapp_console_timeout_seconds: float = _float_env("NETAPP_CONSOLE_TIMEOUT_SECONDS", 2.0)
+    netapp_connected_management_ports: tuple[str, ...] = tuple(
+        _split_csv(os.getenv("NETAPP_CONNECTED_MANAGEMENT_PORTS", "cluster_mgmt"))
+    )
+    netapp_management_topology_note: str = os.getenv(
+        "NETAPP_MANAGEMENT_TOPOLOGY_NOTE",
+        "Only one NetApp management port is connected at the moment.",
+    )
+    netapp_storage_protocol: str = os.getenv("NETAPP_STORAGE_PROTOCOL", "nfs")
+    netapp_nfs_lifs: tuple[str, ...] = _lab_default_csv_env(
+        "NETAPP_NFS_LIFS",
+        LAB_NETAPP_ISCSI_LIF_IPS[:2],
+    )
+    netapp_nfs_volume: str = os.getenv("NETAPP_NFS_VOLUME", "esxi_datastore_01")
+    netapp_nfs_export_policy: str = os.getenv("NETAPP_NFS_EXPORT_POLICY", "esxi_nfs_policy")
+    netapp_nfs_mount_path: str = os.getenv("NETAPP_NFS_MOUNT_PATH", "/esxi_datastore_01")
+    netapp_nfs_datastore_name: str = os.getenv("NETAPP_NFS_DATASTORE_NAME", "netapp_nfs_ds01")
+    netapp_nfs_client_match: str = os.getenv("NETAPP_NFS_CLIENT_MATCH", LAB_SUBNET_CIDR)
+    vcenter_configured: bool = _bool_env("VCENTER_CONFIGURED", False)
+    vcenter_host: str | None = _optional_env("VCENTER_HOST") or _optional_env("GOVC_URL")
+    vcenter_username: str | None = _optional_env("VCENTER_USERNAME") or _optional_env("GOVC_USERNAME")
+    vcenter_password: str | None = _optional_env("VCENTER_PASSWORD") or _optional_env("GOVC_PASSWORD")
+    vcenter_verify_tls: bool = _bool_env("VCENTER_VERIFY_TLS", _bool_env("GOVC_TLS_VERIFY", True))
     lab_closed_loop_ack: str | None = _optional_env("LAB_CLOSED_LOOP_ACK")
     lab_readonly_ack: str | None = _optional_env("LAB_READONLY_ACK")
     lab_environment: str | None = _optional_env("LAB_ENVIRONMENT")

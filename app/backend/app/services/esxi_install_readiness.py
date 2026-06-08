@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import json
 from datetime import UTC, datetime
-from pathlib import Path
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -15,7 +13,6 @@ from app.services.hpe_raid import (
     REPO_ROOT,
     SYSTEM_PATH,
     _get_redfish_resource,
-    _resource_body_or_error,
     _response_summary,
     validate_hpe_raid_after_reset,
 )
@@ -260,6 +257,8 @@ def _milestones(
     raid_ready = raid_validation.get("status") == "succeeded"
     one_time_boot_status = (boot_workflow.get("one_time_boot") or {}).get("status")
     installer_boot_status = (boot_workflow.get("reset_boot") or {}).get("status")
+    if installer_boot_status == "installed_esxi" and boot.get("boot_source_override_enabled") == "Disabled":
+        one_time_boot_status = "ready_to_run" if boot.get("one_time_boot_supported") else "blocked"
     return [
         {"id": "raid-reset-validate", "label": "RAID reset/validate works", "status": "complete" if raid_ready else "blocked"},
         {"id": "virtual-media-check", "label": "Virtual media check works", "status": "complete" if virtual_media.get("supported") else "blocked"},
@@ -273,6 +272,8 @@ def _next_safe_action(status: str, boot_workflow: dict[str, Any]) -> str:
     if status != "ready":
         return "Resolve blockers, then rerun provider-lab-esxi-install-readiness."
     reset_status = (boot_workflow.get("reset_boot") or {}).get("status")
+    if reset_status == "installed_esxi":
+        return "Installed ESXi is running; no installer boot override is queued."
     if reset_status == "boot_requested":
         return "Continue with Cisco console and Ethernet bootstrap readiness."
     virtual_media_status = (boot_workflow.get("virtual_media") or {}).get("status")

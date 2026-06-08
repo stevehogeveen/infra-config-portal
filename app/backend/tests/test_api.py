@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
@@ -20,6 +21,96 @@ def test_build_verification_endpoint_returns_status(client: TestClient) -> None:
     assert response.status_code == 200
     assert response.json()["provider_id"] == "build-verification"
     assert "status" in response.json()
+
+
+def test_lab_profile_api_saves_selects_and_versions_profiles(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    monkeypatch.setenv("LAB_PROFILE_STORE", str(tmp_path / "lab-profiles.json"))
+
+    empty = client.get("/api/v1/lab/profiles")
+    assert empty.status_code == 200
+    assert empty.json()["active_profile"]["id"] == "runtime"
+    assert empty.json()["profiles"] == []
+
+    created = client.post(
+        "/api/v1/lab/profiles",
+        json={
+            "name": "Bench Lab A",
+            "description": "Primary saved lab address plan.",
+            "address_plan": {
+                "subnet": "192.0.2.0/24",
+                "ilo": "192.0.2.10",
+                "server_embedded_nic": "192.0.2.11",
+                "esxi_management": "192.0.2.12",
+                "cisco_management": "192.0.2.13",
+                "ansible_control_host": "192.0.2.14",
+                "netapp_controller_a_sp": "192.0.2.15",
+                "netapp_controller_b_sp": "192.0.2.16",
+                "netapp_cluster_mgmt": "192.0.2.17",
+                "netapp_node_a_mgmt": "192.0.2.18",
+                "netapp_node_b_mgmt": "192.0.2.19",
+                "netapp_svm_mgmt": "192.0.2.20",
+                "netapp_iscsi_lifs": ["192.0.2.21", "192.0.2.22"],
+            },
+        },
+    )
+    assert created.status_code == 201
+    profile_id = created.json()["id"]
+    assert created.json()["active"] is True
+    assert created.json()["version"] == 1
+
+    updated = client.put(
+        f"/api/v1/lab/profiles/{profile_id}",
+        json={
+            "name": "Bench Lab A",
+            "description": "Updated saved lab address plan.",
+            "address_plan": {
+                "subnet": "198.51.100.0/24",
+                "ilo": "198.51.100.10",
+                "server_embedded_nic": "198.51.100.11",
+                "esxi_management": "198.51.100.12",
+                "cisco_management": "198.51.100.13",
+                "ansible_control_host": "198.51.100.14",
+                "netapp_iscsi_lifs": "198.51.100.21,198.51.100.22",
+            },
+        },
+    )
+    assert updated.status_code == 200
+    assert updated.json()["version"] == 2
+    assert updated.json()["history"][0]["version"] == 1
+    assert updated.json()["address_plan"]["netapp_iscsi_lifs"] == [
+        "198.51.100.21",
+        "198.51.100.22",
+    ]
+
+    runtime = client.post("/api/v1/lab/profiles/runtime/activate")
+    assert runtime.status_code == 200
+    assert runtime.json()["active_profile"]["id"] == "runtime"
+
+    activated = client.post(f"/api/v1/lab/profiles/{profile_id}/activate")
+    assert activated.status_code == 200
+    assert activated.json()["active_profile"]["id"] == profile_id
+
+
+def test_lab_profile_api_rejects_secret_shaped_values(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    monkeypatch.setenv("LAB_PROFILE_STORE", str(tmp_path / "lab-profiles.json"))
+
+    response = client.post(
+        "/api/v1/lab/profiles",
+        json={
+            "name": "Lab with password=bad",
+            "address_plan": {"subnet": "192.0.2.0/24"},
+        },
+    )
+
+    assert response.status_code == 422
 
 
 def test_vm_deploy_api_flow(client: TestClient, vm_payload: dict) -> None:

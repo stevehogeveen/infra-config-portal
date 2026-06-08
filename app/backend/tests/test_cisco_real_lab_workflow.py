@@ -129,6 +129,7 @@ def test_vlan10_bootstrap_plan_configures_required_lab_network(monkeypatch) -> N
     assert " no shutdown" in commands
     assert "interface range Gi1/0/1,Gi1/0/2" in commands
     assert " switchport access vlan 10" in commands
+    assert " switchport mode trunk" not in commands
     assert "ip domain-name lab.local" in commands
     assert "crypto key generate rsa modulus 2048" in commands
     assert "ip ssh version 2" in commands
@@ -158,8 +159,32 @@ def test_vlan10_bootstrap_plan_uses_detected_access_ports(monkeypatch) -> None:
 
     plan = workflow._bootstrap_plan({"detected_access_ports": ["Gi1/0/7"]})
 
-    assert plan["access_port_source"] == "detected-show-interfaces-status"
-    assert "interface range Gi1/0/7" in plan["redacted_commands"]
+    assert plan["access_port_source"] == "always-access-plus-detected-show-interfaces-status"
+    assert plan["always_access_ports"] == ["Gi1/0/1"]
+    assert "interface range Gi1/0/1,Gi1/0/7" in plan["redacted_commands"]
+
+
+def test_vlan10_bootstrap_plan_keeps_first_port_access_even_when_detection_skips_it(monkeypatch) -> None:
+    monkeypatch.delenv("CISCO_LAB_ACCESS_PORTS", raising=False)
+    monkeypatch.delenv("CISCO_ACCESS_PORTS", raising=False)
+    monkeypatch.delenv("CISCO_LAB_PORTS", raising=False)
+    monkeypatch.setattr(
+        workflow,
+        "settings",
+        workflow.settings.__class__(
+            provider_mode="local-lab-readwrite",
+            cisco_target_ip="192.168.1.204",
+            cisco_management_prefix="/24",
+            cisco_test_username="admin",
+            cisco_test_password="secret",
+        ),
+    )
+
+    plan = workflow._bootstrap_plan({"detected_access_ports": ["Gi1/0/2", "Gi1/0/3"]})
+
+    assert "interface range Gi1/0/1,Gi1/0/2,Gi1/0/3" in plan["redacted_commands"]
+    assert " switchport mode access" in plan["redacted_commands"]
+    assert " switchport mode trunk" not in plan["redacted_commands"]
 
 
 def test_bootstrap_apply_waits_longer_for_keygen_and_save() -> None:

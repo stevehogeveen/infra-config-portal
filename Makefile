@@ -1,4 +1,4 @@
-.PHONY: check-repo-root codex-audit codex-task codex-next codex-resume test dev lint provider-smoke provider-smoke-ilo-readonly provider-smoke-ilo-local-lab provider-inventory-ilo-local-lab provider-lab-ilo-reachability provider-lab-ilo-authentication provider-lab-ilo-inventory provider-lab-ilo-readiness provider-lab-firmware-inventory provider-lab-firmware-cisco-inventory provider-lab-cisco-firmware-cisco-inventory provider-lab-firmware-compliance provider-lab-firmware-compliance-scope-cisco provider-lab-firmware-compliance-scope-hpe provider-lab-firmware-compliance-scope-full provider-lab-firmware-waiver-check provider-lab-hpe-storage-discovery provider-lab-hpe-raid-discovery provider-lab-hpe-raid-plan provider-lab-hpe-raid-apply provider-lab-hpe-raid-validate-after-reset provider-lab-esxi-install-readiness provider-lab-esxi-media-url provider-lab-esxi-insert-virtual-media provider-lab-esxi-one-time-boot provider-lab-esxi-reset-installer-boot provider-lab-esxi-detect-installer provider-lab-cisco-console-ethernet-readiness provider-lab-cisco-console-recovery provider-lab-cisco-privilege-check provider-lab-cisco-vlan10-bootstrap-fix provider-lab-cisco-vlan10-bootstrap-apply provider-lab-full-rebuild-summary provider-lab-full-rebuild provider-lab-build-verification provider-lab-toolchain-check netapp-real-readiness app-start app-stop app-restart app-status app-check
+.PHONY: check-repo-root codex-audit codex-task codex-next codex-resume test dev lint provider-smoke provider-smoke-ilo-readonly provider-smoke-ilo-local-lab provider-inventory-ilo-local-lab provider-lab-ilo-reachability provider-lab-ilo-authentication provider-lab-ilo-inventory provider-lab-ilo-readiness provider-lab-firmware-inventory provider-lab-firmware-cisco-inventory provider-lab-cisco-firmware-cisco-inventory provider-lab-firmware-compliance provider-lab-firmware-compliance-scope-cisco provider-lab-firmware-compliance-scope-hpe provider-lab-firmware-compliance-scope-full provider-lab-firmware-waiver-check provider-lab-hpe-storage-discovery provider-lab-hpe-raid-discovery provider-lab-hpe-raid-plan provider-lab-hpe-raid-apply provider-lab-hpe-raid-validate-after-reset provider-lab-esxi-install-readiness provider-lab-esxi-media-url provider-lab-esxi-insert-virtual-media provider-lab-esxi-eject-virtual-media provider-lab-esxi-one-time-boot provider-lab-esxi-reset-installer-boot provider-lab-esxi-detect-installer provider-lab-cisco-console-ethernet-readiness provider-lab-cisco-console-recovery provider-lab-cisco-privilege-check provider-lab-cisco-vlan10-bootstrap-fix provider-lab-cisco-vlan10-bootstrap-apply provider-lab-full-rebuild-summary provider-lab-full-rebuild provider-lab-build-verification provider-lab-toolchain-check provider-lab-serial-console-discovery provider-lab-netapp-console-autodiscovery provider-lab-netapp-console-discovery provider-lab-netapp-console-read-state provider-lab-netapp-nfs-vcenter-readiness netapp-real-readiness app-start app-stop app-restart app-status app-check
 
 REPO_ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 TASK ?= .codex/tasks/001-backend-vm-request-lifecycle.md
@@ -132,6 +132,9 @@ provider-lab-esxi-media-url: check-repo-root
 provider-lab-esxi-insert-virtual-media: check-repo-root
 	$(MAKE) -C $(REPO_ROOT)/app provider-lab-esxi-insert-virtual-media
 
+provider-lab-esxi-eject-virtual-media: check-repo-root
+	$(MAKE) -C $(REPO_ROOT)/app provider-lab-esxi-eject-virtual-media
+
 provider-lab-esxi-one-time-boot: check-repo-root
 	$(MAKE) -C $(REPO_ROOT)/app provider-lab-esxi-one-time-boot
 
@@ -167,6 +170,21 @@ provider-lab-build-verification: check-repo-root
 
 provider-lab-toolchain-check: check-repo-root
 	$(MAKE) -C $(REPO_ROOT)/app provider-lab-toolchain-check
+
+provider-lab-serial-console-discovery: check-repo-root
+	$(MAKE) -C $(REPO_ROOT)/app provider-lab-serial-console-discovery
+
+provider-lab-netapp-console-autodiscovery: check-repo-root
+	$(MAKE) -C $(REPO_ROOT)/app provider-lab-netapp-console-autodiscovery
+
+provider-lab-netapp-console-discovery: check-repo-root
+	$(MAKE) -C $(REPO_ROOT)/app provider-lab-netapp-console-discovery
+
+provider-lab-netapp-console-read-state: check-repo-root
+	$(MAKE) -C $(REPO_ROOT)/app provider-lab-netapp-console-read-state
+
+provider-lab-netapp-nfs-vcenter-readiness: check-repo-root
+	$(MAKE) -C $(REPO_ROOT)/app provider-lab-netapp-nfs-vcenter-readiness
 
 netapp-real-readiness: check-repo-root
 	$(MAKE) -C $(REPO_ROOT)/app netapp-real-readiness PROVIDER_MODE="$(PROVIDER_MODE)"

@@ -22,12 +22,12 @@ from app.services.hpe_raid import (
     _base_url,
     _get_redfish_resource,
     _post_system_reset,
-    _response_summary,
 )
 
 CODEX_RUN_DIR = REPO_ROOT / "artifacts" / "codex-runs"
 MEDIA_URL_REPORT = CODEX_RUN_DIR / "esxi-media-url-report.md"
 VIRTUAL_MEDIA_REPORT = CODEX_RUN_DIR / "esxi-virtual-media-report.md"
+VIRTUAL_MEDIA_EJECT_REPORT = CODEX_RUN_DIR / "esxi-virtual-media-eject-report.md"
 ONE_TIME_BOOT_REPORT = CODEX_RUN_DIR / "esxi-one-time-boot-report.md"
 INSTALLER_BOOT_REPORT = CODEX_RUN_DIR / "esxi-installer-boot-report.md"
 MEDIA_SERVER_PID = CODEX_RUN_DIR / "esxi-media-http-server.pid"
@@ -150,6 +150,110 @@ def insert_esxi_virtual_media() -> dict[str, Any]:
     }
     VIRTUAL_MEDIA_STATE.write_text(json.dumps(_sanitize(result), indent=2), encoding="utf-8")
     return _write_report(VIRTUAL_MEDIA_REPORT, "ESXi Virtual Media Report", result)
+
+
+def eject_esxi_virtual_media() -> dict[str, Any]:
+    policy_blockers = _action_blockers("ilo.virtual-media", ActionCategory.VIRTUAL_MEDIA)
+    policy_blockers.extend(firmware_gate_blockers("ESXi virtual media eject"))
+    if policy_blockers:
+        return _write_report(
+            VIRTUAL_MEDIA_EJECT_REPORT,
+            "ESXi Virtual Media Eject Report",
+            {
+                "status": "blocked",
+                "message": "Virtual media eject is blocked by lab action policy.",
+                "checked_at": _now(),
+                "blockers": policy_blockers,
+                "warnings": [],
+            },
+        )
+
+    media_path = _latest_virtual_media_path()
+    device = {"path": media_path} if media_path else _select_virtual_media_device()
+    before = _safe_get(str(device["path"]))
+    if not before.get("status_code"):
+        return _write_report(
+            VIRTUAL_MEDIA_EJECT_REPORT,
+            "ESXi Virtual Media Eject Report",
+            {
+                "status": "blocked",
+                "message": "Virtual media eject could not read the current iLO VirtualMedia state.",
+                "checked_at": _now(),
+                "device": {"path": device["path"]},
+                "before": before,
+                "blockers": ["iLO VirtualMedia state was not reachable before eject."],
+                "warnings": [],
+            },
+        )
+    before_body = _body(before)
+    before_inserted = bool(before_body.get("Inserted"))
+    before_image_present = bool(before_body.get("Image"))
+    eject_target = _virtual_media_action_target(before_body, str(device["path"]), "EjectMedia")
+
+    eject: dict[str, Any] | None = None
+    if before_inserted or before_image_present:
+        eject = _safe_post_redfish(eject_target, {})
+        if not eject.get("status_code"):
+            return _write_report(
+                VIRTUAL_MEDIA_EJECT_REPORT,
+                "ESXi Virtual Media Eject Report",
+                {
+                    "status": "blocked",
+                    "message": "Virtual media eject request did not reach iLO.",
+                    "checked_at": _now(),
+                    "device": {"path": device["path"]},
+                    "before": _virtual_media_summary(before),
+                    "eject_request": eject,
+                    "blockers": ["iLO VirtualMedia eject action was not reachable."],
+                    "warnings": [],
+                },
+            )
+
+    after = _safe_get(str(device["path"]))
+    if not after.get("status_code"):
+        return _write_report(
+            VIRTUAL_MEDIA_EJECT_REPORT,
+            "ESXi Virtual Media Eject Report",
+            {
+                "status": "blocked",
+                "message": "Virtual media eject could not verify the post-eject iLO state.",
+                "checked_at": _now(),
+                "device": {"path": device["path"]},
+                "before": _virtual_media_summary(before),
+                "eject_request": eject,
+                "after": after,
+                "blockers": ["iLO VirtualMedia state was not reachable after eject."],
+                "warnings": [],
+            },
+        )
+    after_summary = _virtual_media_summary(after)
+    after_inserted = bool(after_summary.get("inserted"))
+    after_image_present = bool(after_summary.get("image_present"))
+    status = "ejected" if not after_inserted and not after_image_present else "blocked"
+    if not before_inserted and not before_image_present and status == "ejected":
+        status = "already_ejected"
+    result = {
+        "status": status,
+        "message": (
+            "ESXi ISO virtual media is ejected."
+            if status == "ejected"
+            else "ESXi ISO virtual media was already ejected."
+            if status == "already_ejected"
+            else "iLO VirtualMedia eject did not clear inserted media."
+        ),
+        "checked_at": _now(),
+        "device": {"path": device["path"]},
+        "before": _virtual_media_summary(before),
+        "eject_request": eject,
+        "after": after_summary,
+        "ejected": status in {"ejected", "already_ejected"},
+        "blockers": [] if status in {"ejected", "already_ejected"} else ["Virtual media state still shows inserted media after eject action."],
+        "warnings": [],
+        "report": str(VIRTUAL_MEDIA_EJECT_REPORT.relative_to(REPO_ROOT)),
+        "next_safe_action": "Confirm ESXi is running from installed boot media and rerun ESXi readiness.",
+    }
+    VIRTUAL_MEDIA_STATE.write_text(json.dumps(_sanitize(result), indent=2), encoding="utf-8")
+    return _write_report(VIRTUAL_MEDIA_EJECT_REPORT, "ESXi Virtual Media Eject Report", result)
 
 
 def set_esxi_one_time_boot() -> dict[str, Any]:
@@ -282,7 +386,14 @@ def detect_esxi_installer_boot_status() -> dict[str, Any]:
     media_path = _latest_virtual_media_path()
     vm_state = _safe_get(media_path or "")
     detection = _installer_detection(post_system, vm_state)
-    status = "detected" if detection.get("status") == "detected" else "indeterminate"
+    detection_status = detection.get("status")
+    status = (
+        "boot_requested"
+        if detection_status == "detected"
+        else "installed_esxi"
+        if detection_status == "installed_esxi"
+        else "indeterminate"
+    )
     warnings = detection.get("warnings") or []
     if status == "indeterminate":
         warnings.append("iLO Redfish did not expose a definitive ESXi installer console/boot signal.")
@@ -290,8 +401,14 @@ def detect_esxi_installer_boot_status() -> dict[str, Any]:
         INSTALLER_BOOT_REPORT,
         "ESXi Installer Boot Report",
         {
-            "status": "boot_requested" if status == "detected" else "indeterminate",
-            "message": "ESXi installer or installed ESXi boot state is visible through iLO Redfish." if status == "detected" else "ESXi boot was requested, but installer state is not definitive through Redfish.",
+            "status": status,
+            "message": (
+                "ESXi installer or installed ESXi boot state is visible through iLO Redfish."
+                if status == "boot_requested"
+                else "Installed ESXi is running and no installer boot override is queued."
+                if status == "installed_esxi"
+                else "ESXi boot was requested, but installer state is not definitive through Redfish."
+            ),
             "checked_at": _now(),
             "post_system": _boot_summary(post_system) if post_system.get("status_code") else post_system,
             "virtual_media_after_reset": _virtual_media_summary(vm_state) if vm_state.get("status_code") else vm_state,
@@ -299,7 +416,11 @@ def detect_esxi_installer_boot_status() -> dict[str, Any]:
             "blockers": [],
             "warnings": warnings,
             "report": str(INSTALLER_BOOT_REPORT.relative_to(REPO_ROOT)),
-            "next_safe_action": "Continue with Cisco console and Ethernet bootstrap readiness.",
+            "next_safe_action": (
+                "Continue with Cisco console and Ethernet bootstrap readiness."
+                if status in {"boot_requested", "installed_esxi"}
+                else "Check iLO console or manual KVM for ESXi boot state."
+            ),
         },
     )
 
@@ -307,7 +428,8 @@ def detect_esxi_installer_boot_status() -> dict[str, Any]:
 def esxi_boot_workflow_summary() -> dict[str, Any]:
     return {
         "media_url": _report_summary(MEDIA_URL_REPORT),
-        "virtual_media": _report_summary(VIRTUAL_MEDIA_REPORT),
+        "virtual_media": _latest_report_summary(VIRTUAL_MEDIA_REPORT, VIRTUAL_MEDIA_EJECT_REPORT),
+        "virtual_media_eject": _report_summary(VIRTUAL_MEDIA_EJECT_REPORT),
         "one_time_boot": _report_summary(ONE_TIME_BOOT_REPORT),
         "reset_boot": _report_summary(INSTALLER_BOOT_REPORT),
     }
@@ -429,6 +551,13 @@ def _post_redfish(path: str, payload: dict[str, Any]) -> dict[str, Any]:
     return _sanitize({"method": "POST", "path": path, "status_code": response.status_code, "request": payload, "response": body})
 
 
+def _safe_post_redfish(path: str, payload: dict[str, Any]) -> dict[str, Any]:
+    try:
+        return _post_redfish(path, payload)
+    except Exception as exc:
+        return {"method": "POST", "path": path, "status_code": None, "error_class": type(exc).__name__, "error": str(exc)}
+
+
 def _patch_system_boot(payload: dict[str, Any]) -> dict[str, Any]:
     system = _get_redfish_resource(SYSTEM_PATH)
     etag = system.get("etag") or "*"
@@ -491,6 +620,22 @@ def _installer_detection(system: dict[str, Any], virtual_media: dict[str, Any]) 
         "virtual_media_image_present": bool(vm_body.get("Image")),
     }
     text = json.dumps(evidence, default=str).lower()
+    boot = evidence["boot"]
+    host_os = evidence["host_os"]
+    installed_esxi_running = any(
+        marker in str(value).lower()
+        for value in host_os.values()
+        if value is not None
+        for marker in ("esxi", "vmware")
+    )
+    installer_media_absent = (
+        boot.get("boot_source_override_enabled") == "Disabled"
+        and boot.get("boot_source_override_target") in {None, "None"}
+        and not evidence["virtual_media_inserted"]
+        and not evidence["virtual_media_image_present"]
+    )
+    if installed_esxi_running and installer_media_absent:
+        return {"status": "installed_esxi", "method": "redfish-state", "evidence": _sanitize(evidence), "warnings": []}
     detected = any(marker in text for marker in ("esxi", "vmware", "installer"))
     if detected:
         return {"status": "detected", "method": "redfish-state", "evidence": _sanitize(evidence), "warnings": []}
@@ -554,6 +699,23 @@ def _report_summary(path: Path) -> dict[str, Any]:
         if line.startswith("- message:"):
             message = line.split(":", 1)[1].strip()
     return {"status": status, "message": message, "report": str(path.relative_to(REPO_ROOT))}
+
+
+def _latest_report_summary(*paths: Path) -> dict[str, Any]:
+    existing = [path for path in paths if path.exists()]
+    if not existing:
+        return _report_summary(paths[0])
+    latest = max(existing, key=lambda path: path.stat().st_mtime)
+    return _report_summary(latest)
+
+
+def _virtual_media_action_target(body: dict[str, Any], path: str, action: str) -> str:
+    actions = body.get("Actions") if isinstance(body.get("Actions"), dict) else {}
+    for key in (f"#VirtualMedia.{action}", f"VirtualMedia.{action}"):
+        action_body = actions.get(key)
+        if isinstance(action_body, dict) and isinstance(action_body.get("target"), str):
+            return action_body["target"]
+    return f"{path.rstrip('/')}/Actions/VirtualMedia.{action}/"
 
 
 def _latest_virtual_media_path() -> str | None:

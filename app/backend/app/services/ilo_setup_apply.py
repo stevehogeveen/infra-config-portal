@@ -16,7 +16,6 @@ from app.providers.action_policy import (
 )
 from app.providers.ilo_redfish import (
     IloRedfishConfig,
-    PROVIDER_ID,
     _base_url,
     _get_json,
     _odata_id,

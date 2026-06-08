@@ -17,7 +17,6 @@ from typing import Any
 from app.core.config import LAB_CISCO_MANAGEMENT_IP, settings
 from app.providers.action_policy import ActionCategory, current_lab_action_policy
 from app.providers.cisco_console import (
-    CiscoConsoleAdapter,
     CiscoConsoleConfig,
     discover_cisco_console,
 )
@@ -59,6 +58,7 @@ SHOW_COMMANDS = (
 PROMPT_RE = re.compile(r"(?m)(?:^|\r|\n)([A-Za-z0-9_.:/()-]+(?:\(config[^\)]*\))?[#>])\s*$")
 RECLAIMABLE_CONSOLE_COMMANDS = ("screen", "picocom", "minicom", "python")
 CISCO_DEFAULT_DOMAIN_NAME = "lab.local"
+CISCO_ALWAYS_ACCESS_PORTS = ("Gi1/0/1",)
 
 
 @dataclass(frozen=True)
@@ -754,6 +754,7 @@ def _bootstrap_plan(identity: dict[str, Any] | None = None) -> dict[str, Any]:
         "management_ip": target_ip,
         "management_prefix": prefix,
         "management_netmask": netmask,
+        "always_access_ports": list(CISCO_ALWAYS_ACCESS_PORTS),
         "selected_or_detected_access_ports": access_ports,
         "access_port_source": _access_port_source(identity or {}),
         "ansible_role": (
@@ -779,11 +780,15 @@ def _bootstrap_plan(identity: dict[str, Any] | None = None) -> dict[str, Any]:
 def _selected_or_detected_access_ports(identity: dict[str, Any]) -> list[str]:
     configured = _configured_access_ports()
     if configured:
-        return configured
+        return _unique_ports([*CISCO_ALWAYS_ACCESS_PORTS, *configured])
     detected = identity.get("detected_access_ports")
     if isinstance(detected, list):
-        return [str(item) for item in detected if str(item).strip()]
-    return []
+        return _unique_ports([*CISCO_ALWAYS_ACCESS_PORTS, *[str(item) for item in detected if str(item).strip()]])
+    return list(CISCO_ALWAYS_ACCESS_PORTS)
+
+
+def _unique_ports(ports: list[str]) -> list[str]:
+    return list(dict.fromkeys(port.strip() for port in ports if port.strip()))
 
 
 def _configured_access_ports() -> list[str]:
@@ -798,10 +803,10 @@ def _configured_access_ports() -> list[str]:
 
 def _access_port_source(identity: dict[str, Any]) -> str:
     if _configured_access_ports():
-        return "configured-env"
+        return "always-access-plus-configured-env"
     if identity.get("detected_access_ports"):
-        return "detected-show-interfaces-status"
-    return "none"
+        return "always-access-plus-detected-show-interfaces-status"
+    return "always-access-default"
 
 
 def _apply_bootstrap(conn: Any, plan: dict[str, Any]) -> dict[str, Any]:
@@ -1828,6 +1833,7 @@ def _vlan10_bootstrap_fix_markdown(payload: dict[str, Any]) -> str:
             f"- Vlan10 IP: `{vlan10.get('ip')}`",
             f"- Vlan10 line state: `{vlan10.get('line_status')}`",
             f"- Vlan10 protocol state: `{vlan10.get('protocol_status')}`",
+            f"- Always-access lab ports: `{plan.get('always_access_ports') or []}`",
             f"- Access port source: `{plan.get('access_port_source')}`",
             f"- Configured/detected lab ports: `{configured_ports}`",
             f"- Ports assigned to VLAN 10: `{ports}`",

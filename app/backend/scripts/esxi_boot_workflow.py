@@ -7,6 +7,7 @@ from app.providers.redaction import redact_sensitive
 from app.core.config import settings
 from app.services.esxi_boot_workflow import (
     detect_esxi_installer_boot_status,
+    eject_esxi_virtual_media,
     insert_esxi_virtual_media,
     prepare_esxi_media_url,
     reset_for_esxi_installer_boot,
@@ -21,6 +22,7 @@ def main() -> int:
         choices=(
             "media-url",
             "insert-virtual-media",
+            "eject-virtual-media",
             "one-time-boot",
             "reset-installer-boot",
             "detect-installer",
@@ -31,6 +33,7 @@ def main() -> int:
     result = {
         "media-url": prepare_esxi_media_url,
         "insert-virtual-media": insert_esxi_virtual_media,
+        "eject-virtual-media": eject_esxi_virtual_media,
         "one-time-boot": set_esxi_one_time_boot,
         "reset-installer-boot": reset_for_esxi_installer_boot,
         "detect-installer": detect_esxi_installer_boot_status,
@@ -48,6 +51,7 @@ def _summary(result: dict) -> dict:
             "selected_iso": result.get("selected_iso"),
             "media_url": result.get("media_url"),
             "inserted": result.get("inserted"),
+            "ejected": result.get("ejected"),
             "target": result.get("target"),
             "installer_detection": result.get("installer_detection"),
             "blockers": result.get("blockers") or [],

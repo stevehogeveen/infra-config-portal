@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 
-from app.services.full_rebuild_run import build_full_rebuild_reports
 from app.services.full_rebuild_run import run_full_rebuild_execution
 
 

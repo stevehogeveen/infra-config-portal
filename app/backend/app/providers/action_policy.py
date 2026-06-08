@@ -201,7 +201,7 @@ class LabActionPolicy:
         }[flag_name]
         if flag_enabled:
             return (
-                f"Blocked until an explicit local-lab-readwrite workflow step invokes this action safely."
+                "Blocked until an explicit local-lab-readwrite workflow step invokes this action safely."
             )
         return f"Blocked in local-lab-readwrite: {flag_name}=true and an explicit workflow step are required."
 

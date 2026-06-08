@@ -9,6 +9,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.providers.registry import ProviderRegistryError, provider_registry
+from app.services import netapp_real_lab
 from app.services.netapp_observations import (
     reset_netapp_observations,
     save_netapp_observations,
@@ -46,22 +47,25 @@ def test_netapp_ontap_status_preview_is_plan_only_and_redacted(client: TestClien
         "readiness-preview",
         "readiness-comparison-preview",
         "upgrade-readiness-preview",
+        "console-discovery-readonly",
+        "console-read-state-readonly",
+        "nfs-vcenter-readiness-preview",
     ]
     assert netapp["configuration"]["netapp_configured"] is False
     assert netapp["configuration"]["planned_sp_ips"] == {
-        "controller_a": "10.10.8.13",
-        "controller_b": "10.10.8.14",
+        "controller_a": "192.168.1.206",
+        "controller_b": "192.168.1.207",
     }
     assert netapp["configuration"]["planned_management_ips"] == {
-        "cluster": "10.10.8.45",
-        "node_a": "10.10.8.46",
-        "node_b": "10.10.8.47",
-        "svm": "10.10.8.48",
+        "cluster": "192.168.1.208",
+        "node_a": "192.168.1.209",
+        "node_b": "192.168.1.210",
+        "svm": "192.168.1.211",
     }
     assert netapp["configuration"]["planned_iscsi_lif_range"] == {
-        "start": "10.10.8.51",
-        "end": "10.10.8.54",
-        "addresses": ["10.10.8.51", "10.10.8.52", "10.10.8.53", "10.10.8.54"],
+        "start": "192.168.1.212",
+        "end": "192.168.1.215",
+        "addresses": ["192.168.1.212", "192.168.1.213", "192.168.1.214", "192.168.1.215"],
     }
     assert netapp["configuration"]["api_configured_flags"] == {
         "endpoint_configured": False,
@@ -79,13 +83,13 @@ def test_netapp_ontap_status_preview_is_plan_only_and_redacted(client: TestClien
         "svm": None,
     }
     assert netapp["configuration"]["target_addressing"] == [
-        {"label": "Controller A SP", "address": "10.10.8.13"},
-        {"label": "Controller B SP", "address": "10.10.8.14"},
-        {"label": "Cluster management", "address": "10.10.8.45"},
-        {"label": "Node A management / e0M", "address": "10.10.8.46"},
-        {"label": "Node B management / e0M", "address": "10.10.8.47"},
-        {"label": "SVM management", "address": "10.10.8.48"},
-        {"label": "iSCSI LIFs", "address": "10.10.8.51, 10.10.8.52, 10.10.8.53, 10.10.8.54"},
+        {"label": "Controller A SP", "address": "192.168.1.206"},
+        {"label": "Controller B SP", "address": "192.168.1.207"},
+        {"label": "Cluster management", "address": "192.168.1.208"},
+        {"label": "Node A management / e0M", "address": "192.168.1.209"},
+        {"label": "Node B management / e0M", "address": "192.168.1.210"},
+        {"label": "SVM management", "address": "192.168.1.211"},
+        {"label": "iSCSI LIFs", "address": "192.168.1.212, 192.168.1.213, 192.168.1.214, 192.168.1.215"},
     ]
     readiness = netapp["discovery"]["readiness"]
     assert readiness["sp_readiness"]["status"] == "planned_not_live"
@@ -102,7 +106,28 @@ def test_netapp_ontap_status_preview_is_plan_only_and_redacted(client: TestClien
     assert readiness["upgrade_readiness_path"]["status"] == "blocked_until_setup_ready"
     assert readiness["storage_iscsi_plan_preview"]["status"] == "preview_only"
     assert readiness["reports_artifacts"]["status"] == "placeholder"
-    assert netapp["safe_actions"] == []
+    assert netapp["configuration"]["console"]["baud"] == 115200
+    assert netapp["configuration"]["console"]["connected_management_ports"] == ["cluster_mgmt"]
+    assert netapp["configuration"]["planned_nfs"] == {
+        "storage_protocol": "nfs",
+        "nfs_lifs": ["192.168.1.212", "192.168.1.213"],
+        "volume": "esxi_datastore_01",
+        "export_policy": "esxi_nfs_policy",
+        "mount_path": "/esxi_datastore_01",
+        "datastore_name": "netapp_nfs_ds01",
+        "client_match": "192.168.1.0/24",
+    }
+    assert netapp["configuration"]["vcenter"] == {
+        "configured": False,
+        "host_configured": False,
+        "username_configured": False,
+        "credential_configured": False,
+        "tls_verify": True,
+    }
+    safe_actions = {action["label"]: action for action in netapp["safe_actions"]}
+    assert set(safe_actions) == {"Console Discovery", "Read Console State"}
+    assert all(action["read_only"] is True for action in safe_actions.values())
+    assert all(action["enabled"] is False for action in safe_actions.values())
     disabled_actions = {action["label"]: action for action in netapp["disabled_actions"]}
     assert set(disabled_actions) >= {
         "Create Cluster",
@@ -133,20 +158,20 @@ def test_netapp_ontap_plan_preview_endpoint_is_plan_only_and_redacted(
     assert payload["apply_enabled"] is False
     assert payload["netapp_configured"] is False
     assert payload["planned_targets"]["sp_ips"] == {
-        "controller_a": "10.10.8.13",
-        "controller_b": "10.10.8.14",
+        "controller_a": "192.168.1.206",
+        "controller_b": "192.168.1.207",
     }
     assert payload["planned_targets"]["management_ips"] == {
-        "cluster": "10.10.8.45",
-        "node_a": "10.10.8.46",
-        "node_b": "10.10.8.47",
-        "svm": "10.10.8.48",
+        "cluster": "192.168.1.208",
+        "node_a": "192.168.1.209",
+        "node_b": "192.168.1.210",
+        "svm": "192.168.1.211",
     }
     assert payload["planned_targets"]["iscsi_lif_range"]["addresses"] == [
-        "10.10.8.51",
-        "10.10.8.52",
-        "10.10.8.53",
-        "10.10.8.54",
+        "192.168.1.212",
+        "192.168.1.213",
+        "192.168.1.214",
+        "192.168.1.215",
     ]
     assert payload["planned_targets"]["api_access_flags"] == {
         "endpoint_configured": False,
@@ -170,8 +195,8 @@ def test_netapp_ontap_plan_preview_endpoint_is_plan_only_and_redacted(
     assert readiness["iscsi_lif_readiness"]["status"] == "planned_not_live"
     assert readiness["storage_iscsi_plan_preview"]["status"] == "preview_only"
     assert readiness["reports_artifacts"]["status"] == "placeholder"
-    assert payload["cluster_intent_preview"]["management_ip"] == "10.10.8.45"
-    assert payload["svm_intent_preview"]["management_ip"] == "10.10.8.48"
+    assert payload["cluster_intent_preview"]["management_ip"] == "192.168.1.208"
+    assert payload["svm_intent_preview"]["management_ip"] == "192.168.1.211"
     assert len(payload["lif_intent_preview"]["iscsi_lifs"]) == 4
     assert payload["storage_iscsi_plan_preview"]["status"] == "placeholder"
     assert payload["readiness_comparison_preview"]["endpoint"] == (
@@ -271,20 +296,20 @@ def test_netapp_ontap_console_readiness_is_manual_offline_and_redacted(
     assert payload["apply_enabled"] is False
     assert payload["netapp_configured"] is False
     assert payload["planned_targets"]["controller_sp"] == {
-        "controller_a": "10.10.8.13",
-        "controller_b": "10.10.8.14",
+        "controller_a": "192.168.1.206",
+        "controller_b": "192.168.1.207",
     }
     assert payload["planned_targets"]["management_ips"] == {
-        "cluster": "10.10.8.45",
-        "node_a": "10.10.8.46",
-        "node_b": "10.10.8.47",
-        "svm": "10.10.8.48",
+        "cluster": "192.168.1.208",
+        "node_a": "192.168.1.209",
+        "node_b": "192.168.1.210",
+        "svm": "192.168.1.211",
     }
     assert payload["planned_targets"]["iscsi_lif_range"]["addresses"] == [
-        "10.10.8.51",
-        "10.10.8.52",
-        "10.10.8.53",
-        "10.10.8.54",
+        "192.168.1.212",
+        "192.168.1.213",
+        "192.168.1.214",
+        "192.168.1.215",
     ]
     assert payload["current_discovered_targets"]["management_ips"]["cluster"] is None
     assert payload["current_discovered_targets"]["iscsi_lif_range"]["addresses"] == []
@@ -337,6 +362,73 @@ def test_netapp_ontap_console_readiness_is_manual_offline_and_redacted(
     }
     assert all(action["enabled"] is False for action in disabled_actions.values())
     assert not _contains_forbidden_plan_preview_key(payload)
+
+
+def test_netapp_console_discovery_latest_reports_not_run_when_no_artifact(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(netapp_real_lab, "CONSOLE_DISCOVERY_JSON", tmp_path / "missing.json")
+    monkeypatch.setattr(netapp_real_lab, "CONSOLE_DISCOVERY_REPORT", tmp_path / "missing.md")
+
+    response = client.get("/api/v1/providers/netapp-ontap/console-discovery")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["provider_id"] == "netapp-ontap"
+    assert payload["action"] == "console-discovery"
+    assert payload["status"] == "not_run"
+    assert payload["selected_port"] is None
+    assert payload["candidate_count"] == 0
+    assert not _contains_sensitive_key(payload)
+
+
+def test_netapp_console_discovery_post_is_blocked_in_mock_without_serial_write(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(netapp_real_lab, "CONSOLE_DISCOVERY_JSON", tmp_path / "discovery.json")
+    monkeypatch.setattr(netapp_real_lab, "CONSOLE_DISCOVERY_REPORT", tmp_path / "discovery.md")
+
+    response = client.post("/api/v1/providers/netapp-ontap/console-discovery")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["provider_id"] == "netapp-ontap"
+    assert payload["status"] == "blocked"
+    assert payload["attempt_count"] == 0
+    assert any("PROVIDER_MODE=local-readonly" in blocker for blocker in payload["blockers"])
+    assert (tmp_path / "discovery.json").exists()
+    assert (tmp_path / "discovery.md").exists()
+    assert not _contains_sensitive_key(payload)
+
+
+def test_netapp_nfs_vcenter_readiness_is_preview_only_and_single_port_aware(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(netapp_real_lab, "NFS_VCENTER_READINESS_JSON", tmp_path / "nfs.json")
+    monkeypatch.setattr(netapp_real_lab, "NFS_VCENTER_READINESS_REPORT", tmp_path / "nfs.md")
+
+    response = client.get("/api/v1/providers/netapp-ontap/nfs-vcenter-readiness")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["provider_id"] == "netapp-ontap"
+    assert payload["action"] == "nfs-vcenter-readiness"
+    assert payload["apply_enabled"] is False
+    assert payload["ontap_apply_enabled"] is False
+    assert payload["vcenter_apply_enabled"] is False
+    assert payload["single_management_port_mode"] is True
+    assert payload["planned_nfs"]["nfs_lifs"] == ["192.168.1.212", "192.168.1.213"]
+    assert payload["planned_nfs"]["datastore_name"] == "netapp_nfs_ds01"
+    assert any("NETAPP_CONFIGURED=false" in blocker for blocker in payload["blockers"])
+    assert (tmp_path / "nfs.json").exists()
+    assert (tmp_path / "nfs.md").exists()
+    assert not _contains_sensitive_key(payload)
 
 
 def test_netapp_observations_default_state_is_mock_only_and_redacted(
@@ -483,20 +575,20 @@ def test_netapp_readiness_comparison_defaults_to_manual_unknowns_and_redacts(
     assert payload["apply_enabled"] is False
     assert payload["discovery_enabled"] is False
     assert payload["planned_targets"]["sp_ips"] == {
-        "controller_a": "10.10.8.13",
-        "controller_b": "10.10.8.14",
+        "controller_a": "192.168.1.206",
+        "controller_b": "192.168.1.207",
     }
     assert payload["planned_targets"]["management_ips"] == {
-        "cluster": "10.10.8.45",
-        "node_a": "10.10.8.46",
-        "node_b": "10.10.8.47",
-        "svm": "10.10.8.48",
+        "cluster": "192.168.1.208",
+        "node_a": "192.168.1.209",
+        "node_b": "192.168.1.210",
+        "svm": "192.168.1.211",
     }
     assert payload["planned_targets"]["iscsi_lif_range"]["addresses"] == [
-        "10.10.8.51",
-        "10.10.8.52",
-        "10.10.8.53",
-        "10.10.8.54",
+        "192.168.1.212",
+        "192.168.1.213",
+        "192.168.1.214",
+        "192.168.1.215",
     ]
     assert payload["current_discovered_targets"]["discovery_enabled"] is False
     assert payload["current_discovered_targets"]["management_ips"]["cluster"] is None
@@ -735,6 +827,42 @@ def test_local_real_lab_file_does_not_set_provider_mode(tmp_path: Path) -> None:
     )
 
     assert completed.stdout.splitlines() == ["mock", "True"]
+
+
+def test_local_real_lab_file_overrides_inherited_real_lab_values(tmp_path: Path) -> None:
+    (tmp_path / ".env.local.real-lab").write_text(
+        "LAB_ENVIRONMENT=isolated-real-lab\n"
+        "PROVIDER_MODE=mock\n"
+        "ESXI_CONFIGURED=true\n"
+        "ESXI_TEST_HOST=192.168.1.203\n",
+        encoding="utf-8",
+    )
+    backend_dir = Path(__file__).resolve().parents[1]
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(backend_dir)
+    env["PROVIDER_MODE"] = "local-lab-readwrite"
+    env["ESXI_CONFIGURED"] = "false"
+    env["ESXI_TEST_HOST"] = "192.168.1.202"
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            (
+                "from app.core.config import settings; "
+                "print(settings.provider_mode); "
+                "print(settings.esxi_configured); "
+                "print(settings.esxi_test_host)"
+            ),
+        ],
+        cwd=tmp_path,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+
+    assert completed.stdout.splitlines() == ["local-lab-readwrite", "True", "192.168.1.203"]
 
 
 def test_explicit_provider_mode_env_wins_over_mock_default(tmp_path: Path) -> None:

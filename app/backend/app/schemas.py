@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from datetime import date, datetime
+from ipaddress import ip_address, ip_network
 from typing import Any, Literal
 
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -244,6 +245,150 @@ class RequestReadinessRead(BaseModel):
     blockers: list[ReadinessIssue]
     warnings: list[ReadinessIssue]
     summary: str
+
+
+class LabAddressPlan(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    subnet: str | None = Field(default=None, max_length=80)
+    ilo: str | None = Field(default=None, max_length=80)
+    server_embedded_nic: str | None = Field(default=None, max_length=80)
+    esxi_management: str | None = Field(default=None, max_length=80)
+    cisco_management: str | None = Field(default=None, max_length=80)
+    ansible_control_host: str | None = Field(default=None, max_length=80)
+    netapp_controller_a_sp: str | None = Field(default=None, max_length=80)
+    netapp_controller_b_sp: str | None = Field(default=None, max_length=80)
+    netapp_cluster_mgmt: str | None = Field(default=None, max_length=80)
+    netapp_node_a_mgmt: str | None = Field(default=None, max_length=80)
+    netapp_node_b_mgmt: str | None = Field(default=None, max_length=80)
+    netapp_svm_mgmt: str | None = Field(default=None, max_length=80)
+    netapp_iscsi_lifs: list[str] = Field(default_factory=list, max_length=16)
+
+    @field_validator(
+        "subnet",
+        "ilo",
+        "server_embedded_nic",
+        "esxi_management",
+        "cisco_management",
+        "ansible_control_host",
+        "netapp_controller_a_sp",
+        "netapp_controller_b_sp",
+        "netapp_cluster_mgmt",
+        "netapp_node_a_mgmt",
+        "netapp_node_b_mgmt",
+        "netapp_svm_mgmt",
+        mode="before",
+    )
+    @classmethod
+    def strip_address(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        text = str(value).strip()
+        return text or None
+
+    @field_validator("netapp_iscsi_lifs", mode="before")
+    @classmethod
+    def split_iscsi_lifs(cls, value: Any) -> list[str]:
+        if value is None:
+            return []
+        if isinstance(value, str):
+            return [item.strip() for item in value.split(",") if item.strip()]
+        return value
+
+    @field_validator("subnet")
+    @classmethod
+    def validate_subnet(cls, value: str | None) -> str | None:
+        if value is not None:
+            try:
+                ip_network(value, strict=False)
+            except ValueError as exc:
+                raise ValueError("subnet must be an IPv4 or IPv6 CIDR") from exc
+        return value
+
+    @field_validator(
+        "ilo",
+        "server_embedded_nic",
+        "esxi_management",
+        "cisco_management",
+        "ansible_control_host",
+        "netapp_controller_a_sp",
+        "netapp_controller_b_sp",
+        "netapp_cluster_mgmt",
+        "netapp_node_a_mgmt",
+        "netapp_node_b_mgmt",
+        "netapp_svm_mgmt",
+    )
+    @classmethod
+    def validate_ip_address(cls, value: str | None) -> str | None:
+        if value is not None:
+            try:
+                ip_address(value)
+            except ValueError as exc:
+                raise ValueError("address must be an IPv4 or IPv6 address") from exc
+        return value
+
+    @field_validator("netapp_iscsi_lifs")
+    @classmethod
+    def validate_iscsi_lifs(cls, value: list[str]) -> list[str]:
+        cleaned = [item.strip() for item in value if item.strip()]
+        for item in cleaned:
+            try:
+                ip_address(item)
+            except ValueError as exc:
+                raise ValueError("NetApp iSCSI LIFs must be IPv4 or IPv6 addresses") from exc
+        return cleaned
+
+
+class LabProfileWrite(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(min_length=2, max_length=120)
+    description: str | None = Field(default=None, max_length=1200)
+    address_plan: LabAddressPlan = Field(default_factory=LabAddressPlan)
+
+    @field_validator("name", "description", mode="before")
+    @classmethod
+    def strip_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return str(value).strip()
+
+    @field_validator("*", mode="after")
+    @classmethod
+    def reject_secret_values(cls, value: Any) -> Any:
+        _reject_secret_values(value)
+        return value
+
+
+class LabProfileRevisionRead(BaseModel):
+    version: int
+    saved_at: datetime
+    name: str
+    description: str
+    address_plan: LabAddressPlan
+
+
+class LabProfileRead(BaseModel):
+    id: str
+    name: str
+    description: str
+    address_plan: LabAddressPlan
+    source: str
+    version: int
+    active: bool
+    created_at: datetime
+    updated_at: datetime
+    last_selected_at: datetime | None = None
+    history: list[LabProfileRevisionRead] = Field(default_factory=list)
+
+
+class LabProfileListRead(BaseModel):
+    active_profile: LabProfileRead
+    runtime_profile: LabProfileRead
+    profiles: list[LabProfileRead]
+    store_path: str
+    mock_only: bool = True
+    next_safe_action: str
 
 
 class AuditEventRead(BaseModel):
@@ -830,6 +975,7 @@ class NetAppPlanPreviewRead(BaseModel):
     svm_intent_preview: dict[str, Any]
     lif_intent_preview: dict[str, Any]
     storage_iscsi_plan_preview: dict[str, Any]
+    storage_nfs_vcenter_preview: dict[str, Any] | None = None
     readiness_comparison_preview: dict[str, Any] | None = None
     upgrade_readiness_preview: dict[str, Any]
     blockers: list[str] = Field(default_factory=list)

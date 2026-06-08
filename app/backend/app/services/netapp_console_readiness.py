@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from app.core.config import settings
+from app.providers.action_policy import REAL_CONTACT_MODES, current_lab_action_policy
 from app.providers.base import ProviderAction
 from app.services.netapp_disabled_actions import disabled_netapp_actions
 from app.services.netapp_observations import (
@@ -25,11 +26,14 @@ def get_netapp_console_readiness() -> dict[str, Any]:
     observation_blockers = netapp_observation_blockers(observations)
     credentials_present = bool(settings.netapp_api_username and settings.netapp_api_password)
     readonly_ack = settings.lab_readonly_ack == "YES"
+    policy = current_lab_action_policy(settings.provider_mode)
+    real_lab_probe_available = settings.provider_mode in REAL_CONTACT_MODES and policy.readonly_allowed
+    policy_blockers = policy.readonly_blockers() if settings.provider_mode in REAL_CONTACT_MODES else []
     return {
         "provider_id": PROVIDER_ID,
         "mode": settings.provider_mode,
         "bootstrap_enabled": False,
-        "console_probe_enabled": False,
+        "console_probe_enabled": real_lab_probe_available,
         "apply_enabled": False,
         "netapp_configured": settings.netapp_configured,
         "planned_targets": planned_targets,
@@ -55,9 +59,9 @@ def get_netapp_console_readiness() -> dict[str, Any]:
         "observation_summary": observation_summary,
         "observation_blockers": observation_blockers,
         "blockers": [
-            "Console/bootstrap readiness is manual-only; this portal does not open serial ports.",
+            *policy_blockers,
             "Bootstrap and configuration actions are disabled.",
-            "NETAPP_CONFIGURED=false; future read-only discovery is blocked until explicitly approved.",
+            "NETAPP_CONFIGURED=false; ONTAP API/storage discovery is blocked until cluster management is configured.",
             "Cluster management is planned but not configured or treated as reachable.",
             "Node management is planned but not configured.",
             "SVM management and iSCSI LIFs are planned but not live.",
@@ -66,6 +70,8 @@ def get_netapp_console_readiness() -> dict[str, Any]:
         ],
         "warnings": [
             "This preview does not verify physical cabling, power state, SP reachability, or existing data.",
+            "Explicit real-lab console discovery sends newline/enter only and never sends credentials or setup commands.",
+            settings.netapp_management_topology_note,
             "Operator must confirm whether the system is new/factory or already configured before any future workflow.",
         ],
         "removable_warnings": [
@@ -75,8 +81,8 @@ def get_netapp_console_readiness() -> dict[str, Any]:
         ],
         "disabled_actions": _disabled_console_actions(),
         "next_safe_action": (
-            "Manually verify console access and observed boot/setup state, then keep all NetApp "
-            "bootstrap actions disabled until a future approved read-only discovery task exists."
+            "Run NetApp console discovery/read-state for newline-only evidence, then keep all NetApp "
+            "bootstrap actions disabled until a future approved setup workflow exists."
         ),
     }
 
@@ -122,7 +128,9 @@ def _prerequisites() -> list[dict[str, str]]:
         {
             "id": "controller-a-console",
             "label": "Serial/console access available to controller A",
-            "status": "manual_check_required",
+            "status": "read_only_probe_available"
+            if settings.provider_mode in REAL_CONTACT_MODES
+            else "manual_check_required",
         },
         {
             "id": "sp-network",
@@ -167,9 +175,14 @@ def _readiness_buckets() -> dict[str, dict[str, Any]]:
             "details": ["Power, cabling, rack access, and controller identity are not verified by this app."],
         },
         "console_access_readiness": {
-            "status": "manual_check_required",
+            "status": "read_only_probe_available"
+            if settings.provider_mode in REAL_CONTACT_MODES
+            else "manual_check_required",
             "ready": False,
-            "details": ["Serial console access must be verified manually; this app does not open ports."],
+            "details": [
+                "Serial console access can be checked with newline-only discovery in real-lab modes.",
+                "No credentials, boot interrupts, or setup commands are sent.",
+            ],
         },
         "sp_network_readiness": {
             "status": "planned_not_probed",

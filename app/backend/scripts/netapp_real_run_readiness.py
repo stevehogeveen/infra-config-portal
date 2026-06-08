@@ -18,13 +18,16 @@ if REAL_LAB_ENV.exists():
             continue
         os.environ[key] = value
 
-from app.core.config import settings
-from app.providers.netapp import NetAppOntapAdapter
-from app.providers.redaction import redact_sensitive
-from app.services.netapp_artifacts import list_netapp_artifact_placeholders
-from app.services.netapp_console_readiness import get_netapp_console_readiness
-from app.services.netapp_readiness_comparison import get_netapp_readiness_comparison
-from app.services.netapp_upgrade_readiness import get_netapp_upgrade_readiness
+# Load local lab env before app imports; settings reads env at import time.
+from app.core.config import settings  # noqa: E402
+from app.providers.netapp import NetAppOntapAdapter  # noqa: E402
+from app.providers.redaction import redact_sensitive  # noqa: E402
+from app.services.netapp_artifacts import list_netapp_artifact_placeholders  # noqa: E402
+from app.services.netapp_console_readiness import get_netapp_console_readiness  # noqa: E402
+from app.services.netapp_readiness_comparison import (  # noqa: E402
+    get_netapp_readiness_comparison,
+)
+from app.services.netapp_upgrade_readiness import get_netapp_upgrade_readiness  # noqa: E402
 
 
 def main() -> int:

@@ -97,6 +97,11 @@ def test_build_verification_failure_reporting(monkeypatch) -> None:
     assert "failures" in result
     assert result["lab_ip_profile"]["expected"]["cisco_management"] == "192.168.1.204"
     assert result["lab_ip_profile"]["expected"]["ansible_control_host"] == "192.168.1.205"
+    assert result["lab_ip_profile"]["expected"]["netapp_controller_a_sp"] == "192.168.1.206"
+    assert result["lab_ip_profile"]["expected"]["netapp_cluster_mgmt"] == "192.168.1.208"
+    assert result["lab_ip_profile"]["expected"]["netapp_iscsi_lifs"] == (
+        "192.168.1.212,192.168.1.213,192.168.1.214,192.168.1.215"
+    )
     assert result["artifacts"]["report"] == "artifacts/codex-runs/build-verification-report.md"
     assert result["artifacts"]["lab_ip_profile_report"] == "artifacts/codex-runs/lab-ip-profile-update-report.md"
     assert result["artifacts"]["lab_ip_profile_hardening_report"] == "artifacts/codex-runs/lab-ip-profile-hardening-report.md"
@@ -140,6 +145,20 @@ def test_build_verification_marks_stale_active_ip(monkeypatch) -> None:
     assert {"cisco_management", "esxi_management"} <= stale_fields
 
 
+def test_build_verification_flags_stale_netapp_raw_env(monkeypatch) -> None:
+    monkeypatch.setenv("NETAPP_CLUSTER_MGMT_IP", "10.10.8.45")
+    monkeypatch.setattr(
+        "app.services.build_verification.settings",
+        replace(settings, netapp_cluster_mgmt_ip="192.168.1.208"),
+    )
+
+    result = build_lab_build_verification(check_ports=False)
+
+    assert result["lab_ip_profile"]["configured"]["netapp_cluster_mgmt"] == "192.168.1.208"
+    stale_fields = {item["field"] for item in result["lab_ip_profile"]["stale_10_10_8_values"]}
+    assert "netapp_cluster_mgmt_ip_env" in stale_fields
+
+
 def test_toolchain_availability_reports_local_checks() -> None:
     result = build_toolchain_availability()
     tool_names = {tool["name"] for tool in result["tools"]}
@@ -163,6 +182,8 @@ def test_toolchain_availability_reports_local_checks() -> None:
     assert result["managed_state"]["hpe_ilo"]["primary_tools"] == ["Redfish direct", "HPE iLOrest"]
     assert result["managed_state"]["esxi_vsphere"]["primary_tools"] == ["Kickstart", "govc"]
     assert result["managed_state"]["netapp"]["primary_tools"] == [
+        "local serial console",
         "netapp-ontap Python client",
         "ONTAP REST",
+        "govc",
     ]
