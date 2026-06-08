@@ -171,11 +171,32 @@ export type LabAddressPlan = {
   netapp_iscsi_lifs: string[];
 };
 
+export type LabGlobalSettings = {
+  subnet_prefix: number;
+  gateway: string | null;
+  domain_name: string | null;
+  dns_servers: string[];
+  ntp_servers: string[];
+  timezone: string | null;
+  netapp_enabled: boolean;
+  netapp_disabled_reason: string | null;
+};
+
+export type LabSubnetOption = {
+  prefix: number;
+  cidr_suffix: string;
+  label: string;
+  usable_hosts: number;
+  netapp_supported: boolean;
+  netapp_disabled_reason: string | null;
+};
+
 export type LabProfileRevision = {
   version: number;
   saved_at: string;
   name: string;
   description: string;
+  global_settings: LabGlobalSettings;
   address_plan: LabAddressPlan;
 };
 
@@ -183,6 +204,7 @@ export type LabProfile = {
   id: string;
   name: string;
   description: string;
+  global_settings: LabGlobalSettings;
   address_plan: LabAddressPlan;
   source: string;
   version: number;
@@ -196,6 +218,7 @@ export type LabProfile = {
 export type LabProfileWrite = {
   name: string;
   description?: string | null;
+  global_settings: LabGlobalSettings;
   address_plan: LabAddressPlan;
 };
 
@@ -203,9 +226,137 @@ export type LabProfileList = {
   active_profile: LabProfile;
   runtime_profile: LabProfile;
   profiles: LabProfile[];
+  subnet_options: LabSubnetOption[];
   store_path: string;
   mock_only: boolean;
   next_safe_action: string;
+};
+
+export type ControlActionClassification = "read-only" | "write" | "destructive" | "upgrade";
+
+export type ControlActionInput = {
+  name: string;
+  label: string;
+  required: boolean;
+  secret: boolean;
+  description: string;
+};
+
+export type ControlStateItem = {
+  label: string;
+  value: string;
+  status: string | null;
+  detail: string | null;
+};
+
+export type ControlPlanDiffItem = {
+  label: string;
+  current: string;
+  desired: string;
+  status: string;
+  note: string | null;
+};
+
+export type ControlReportLink = {
+  label: string;
+  path: string;
+  status: string;
+};
+
+export type ControlAction = {
+  id: string;
+  label: string;
+  section_id: string;
+  device_stage: string;
+  description: string;
+  classification: ControlActionClassification;
+  required_inputs: ControlActionInput[];
+  required_flags: string[];
+  required_confirmations: string[];
+  availability: string;
+  blocker: string | null;
+  last_run_status: string;
+  last_run_at: string | null;
+  last_report: string | null;
+  suggested_command: string | null;
+  method: string | null;
+  api_endpoint: string | null;
+  plan_endpoint: string;
+  run_endpoint: string;
+  direct_run_supported: boolean;
+  diagnostics: string[];
+};
+
+export type ControlSectionRecord = {
+  id: string;
+  title: string;
+  stage: string;
+  description: string;
+  status: string;
+  current_state: ControlStateItem[];
+  desired_state: ControlStateItem[];
+  plan_diff: ControlPlanDiffItem[];
+  actions: ControlAction[];
+  primary_actions: ControlAction[];
+  destructive_actions: ControlAction[];
+  upgrade_actions: ControlAction[];
+  last_result: Record<string, unknown>;
+  report_links: ControlReportLink[];
+  advanced_diagnostics: Record<string, unknown>;
+};
+
+export type ControlLabProfile = {
+  active_profile_name: string;
+  source: string;
+  version: number;
+  global_settings: LabGlobalSettings;
+  address_plan: LabAddressPlan;
+  known_lab_profile: Record<string, unknown>;
+  network: Record<string, unknown>;
+  configured_flags: Record<string, boolean>;
+  edit_profile_path: string;
+  env_update_command: string;
+  stale_or_invalid_values: string[];
+};
+
+export type ControlActionCatalog = {
+  generated_at: string;
+  provider_mode: string;
+  summary: Record<string, unknown>;
+  lab_profile: ControlLabProfile;
+  sections: ControlSectionRecord[];
+  actions: ControlAction[];
+};
+
+export type ControlActionPlanStep = {
+  label: string;
+  status: string;
+  detail: string;
+};
+
+export type ControlActionPlan = {
+  action: ControlAction;
+  status: string;
+  message: string;
+  plan_steps: ControlActionPlanStep[];
+  suggested_command: string | null;
+  api_endpoint: string | null;
+  method: string | null;
+  direct_run_enabled: boolean;
+  warnings: string[];
+  blockers: string[];
+};
+
+export type ControlActionRun = {
+  action: ControlAction;
+  status: string;
+  message: string;
+  executed: boolean;
+  suggested_command: string | null;
+  api_endpoint: string | null;
+  method: string | null;
+  warnings: string[];
+  blockers: string[];
 };
 
 export type CiscoSetupReadiness = {

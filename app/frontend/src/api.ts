@@ -7,6 +7,9 @@ import type {
   CiscoConsoleBootstrapPlan,
   CiscoSetupReadiness,
   CiscoSetupWizardPlan,
+  ControlActionCatalog,
+  ControlActionPlan,
+  ControlActionRun,
   HpeRaidIntent,
   HpeRaidIntentWrite,
   HpeRaidPlanPreview,
@@ -210,6 +213,15 @@ export const api = {
   providerArtifacts: () =>
     apiRequest<NetAppProviderArtifact[]>("/api/v1/providers/artifacts"),
   providers: () => apiRequest<ProviderStatus[]>("/api/v1/providers/status"),
+  controlActions: () => apiRequest<ControlActionCatalog>("/api/v1/control/actions"),
+  planControlAction: (id: string) =>
+    apiRequest<ControlActionPlan>(`/api/v1/control/actions/${encodeURIComponent(id)}/plan`, {
+      method: "POST"
+    }),
+  runControlAction: (id: string) =>
+    apiRequest<ControlActionRun>(`/api/v1/control/actions/${encodeURIComponent(id)}/run`, {
+      method: "POST"
+    }),
   firmwareInventory: () =>
     apiRequest<ProviderProbeResult>("/api/v1/lab/firmware-inventory"),
   firmwareCompliance: (scope = "full") =>

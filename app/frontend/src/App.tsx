@@ -4,6 +4,7 @@ import {
   Ban,
   CheckCircle2,
   ClipboardList,
+  Copy,
   Pencil,
   Gauge,
   HardDrive,
@@ -35,6 +36,13 @@ import type {
   CiscoSetupReadiness,
   CiscoSetupWizardPlan,
   ConsoleCandidate,
+  ControlAction,
+  ControlActionCatalog,
+  ControlActionPlan,
+  ControlLabProfile,
+  ControlPlanDiffItem,
+  ControlSectionRecord,
+  ControlStateItem,
   HpeRaidIntent,
   HpeRaidIntentWrite,
   HpeRaidPlanPreview,
@@ -45,9 +53,11 @@ import type {
   IloSetupPlanPreview,
   IloUpgradeReadiness,
   LabAddressPlan,
+  LabGlobalSettings,
   LabProfile,
   LabProfileList,
   LabProfileWrite,
+  LabSubnetOption,
   MediaInventory,
   NetAppConsoleReadiness,
   NetAppObservationUpdate,
@@ -186,21 +196,35 @@ type BuildOverview = {
 };
 
 type LabAddressScalarKey = Exclude<keyof LabAddressPlan, "netapp_iscsi_lifs">;
+type LabAddressInputKey = Exclude<LabAddressScalarKey, "subnet">;
+type LabGlobalSettingsFormState = {
+  subnetPrefix: string;
+  gateway: string;
+  domainName: string;
+  dnsServers: string;
+  ntpServers: string;
+  timezone: string;
+};
 
 type LabProfileFormState = {
   name: string;
   description: string;
   addresses: Record<LabAddressScalarKey, string>;
+  globalSettings: LabGlobalSettingsFormState;
   netappIscsiLifs: string;
 };
 
-const labAddressFields: Array<{ key: LabAddressScalarKey; label: string }> = [
-  { key: "subnet", label: "Subnet CIDR" },
+const labSubnetField: { key: "subnet"; label: string } = { key: "subnet", label: "Subnet CIDR" };
+
+const labCoreAddressFields: Array<{ key: LabAddressInputKey; label: string }> = [
   { key: "ilo", label: "iLO" },
   { key: "server_embedded_nic", label: "Server NIC" },
   { key: "esxi_management", label: "ESXi Management" },
   { key: "cisco_management", label: "Cisco Management" },
-  { key: "ansible_control_host", label: "Control Host" },
+  { key: "ansible_control_host", label: "Control Host" }
+];
+
+const labNetAppAddressFields: Array<{ key: LabAddressInputKey; label: string }> = [
   { key: "netapp_controller_a_sp", label: "NetApp Controller A SP" },
   { key: "netapp_controller_b_sp", label: "NetApp Controller B SP" },
   { key: "netapp_cluster_mgmt", label: "NetApp Cluster Mgmt" },
@@ -208,6 +232,39 @@ const labAddressFields: Array<{ key: LabAddressScalarKey; label: string }> = [
   { key: "netapp_node_b_mgmt", label: "NetApp Node B Mgmt" },
   { key: "netapp_svm_mgmt", label: "NetApp SVM Mgmt" }
 ];
+
+const labAddressFields: Array<{ key: LabAddressScalarKey; label: string }> = [
+  { key: "subnet", label: "Subnet CIDR" },
+  ...labCoreAddressFields,
+  ...labNetAppAddressFields
+];
+
+const defaultLabSubnet = "192.168.1.0/24";
+const netappDisabledForSubnetReason =
+  "NetApp capabilities require a /24 or larger lab subnet. They are disabled for /25 through /29 lab profiles.";
+const labBuilderCoreOffsets: Partial<Record<LabAddressInputKey, number>> = {
+  cisco_management: 2,
+  ansible_control_host: 5,
+  ilo: 200,
+  server_embedded_nic: 201,
+  esxi_management: 202
+};
+const compactCoreOffsets: Partial<Record<LabAddressInputKey, number>> = {
+  cisco_management: 2,
+  ilo: 3,
+  server_embedded_nic: 4,
+  esxi_management: 5,
+  ansible_control_host: 6
+};
+const labBuilderNetAppOffsets: Partial<Record<LabAddressInputKey, number>> = {
+  netapp_controller_a_sp: 13,
+  netapp_controller_b_sp: 14,
+  netapp_cluster_mgmt: 45,
+  netapp_node_a_mgmt: 46,
+  netapp_node_b_mgmt: 47,
+  netapp_svm_mgmt: 48
+};
+const labBuilderNetAppIscsiOffsets = [49, 50, 51, 52];
 
 const queueSectionMeta: Array<Omit<QueueSection, "items">> = [
   {
@@ -285,6 +342,7 @@ function App() {
         <nav>
           <NavItem to="/" icon={<Gauge size={18} />} label="Dashboard" />
           <NavItem to="/run-center" icon={<Workflow size={18} />} label="Run Center" />
+          <NavItem to="/control-center" icon={<Wrench size={18} />} label="Control Center" />
           <NavItem to="/requests" icon={<ClipboardList size={18} />} label="VM Requests" />
           <NavItem to="/requests/new" icon={<Plus size={18} />} label="New VM Request" />
           <NavItem to="/lab-profiles" icon={<Layers size={18} />} label="Lab Profiles" />
@@ -305,6 +363,7 @@ function App() {
         <Routes>
           <RouterRoute path="/" element={<Dashboard />} />
           <RouterRoute path="/run-center" element={<RunCenter />} />
+          <RouterRoute path="/control-center" element={<ControlCenterPage />} />
           <RouterRoute path="/requests" element={<RequestListPage />} />
           <RouterRoute path="/requests/new" element={<NewRequest />} />
           <RouterRoute path="/requests/:id" element={<RequestDetail />} />
@@ -3197,6 +3256,16 @@ function LabProfilesPage({
   const activeProfile = state?.active_profile ?? null;
   const selectedProfile =
     state?.profiles.find((profile) => profile.id === selectedProfileId) ?? null;
+  const subnetOptions = state?.subnet_options.length
+    ? state.subnet_options
+    : defaultLabSubnetOptions();
+  const selectedSubnetPrefix = parseSubnetPrefix(form.globalSettings.subnetPrefix);
+  const selectedSubnetOption =
+    subnetOptions.find((option) => option.prefix === selectedSubnetPrefix) ?? null;
+  const netappSupported = labNetAppSupported(selectedSubnetPrefix);
+  const netappDisabledReason =
+    selectedSubnetOption?.netapp_disabled_reason ??
+    "NetApp capabilities are disabled for this subnet size.";
 
   useEffect(() => {
     if (!state || formInitialized) return;
@@ -3229,6 +3298,34 @@ function LabProfilesPage({
     setForm(labProfileFormFrom(state.runtime_profile));
     setFormInitialized(true);
     setSaveError("");
+  }
+
+  function updateSubnetPrefix(prefix: string) {
+    setForm((current) => applyLabSubnetChoice(current, current.addresses.subnet, prefix));
+  }
+
+  function updateSubnetNetwork(subnet: string) {
+    setForm((current) => applyLabSubnetChoice(current, subnet, current.globalSettings.subnetPrefix));
+  }
+
+  function updateGlobalSetting(key: keyof LabGlobalSettingsFormState, value: string) {
+    setForm((current) => ({
+      ...current,
+      globalSettings: {
+        ...current.globalSettings,
+        [key]: value
+      }
+    }));
+  }
+
+  function updateAddress(key: LabAddressInputKey, value: string) {
+    setForm((current) => ({
+      ...current,
+      addresses: {
+        ...current.addresses,
+        [key]: value
+      }
+    }));
   }
 
   async function saveProfile(event: FormEvent) {
@@ -3316,6 +3413,7 @@ function LabProfilesPage({
               value={labAddressFields.length + 1}
               icon={<Route size={18} />}
             />
+            <Metric label="Subnet Sizes" value={subnetOptions.length} icon={<Route size={18} />} />
           </section>
 
           <section className="panel active-lab-panel">
@@ -3393,49 +3491,140 @@ function LabProfilesPage({
                 title={selectedProfile ? `Edit ${selectedProfile.name}` : "Create Lab"}
               />
               <form className="lab-profile-form" onSubmit={saveProfile}>
-                <div className="lab-profile-form-grid">
-                  <Field label="Name">
-                    <input
-                      minLength={2}
-                      onChange={(event) => setForm({ ...form, name: event.target.value })}
-                      required
-                      value={form.name}
-                    />
-                  </Field>
-                  <Field label="Description">
-                    <textarea
-                      onChange={(event) =>
-                        setForm({ ...form, description: event.target.value })
-                      }
-                      value={form.description}
-                    />
-                  </Field>
-                  {labAddressFields.map((field) => (
-                    <Field key={field.key} label={field.label}>
+                <section className="lab-profile-form-section">
+                  <div className="lab-profile-form-grid">
+                    <Field label="Name">
                       <input
-                        inputMode="decimal"
-                        onChange={(event) =>
-                          setForm({
-                            ...form,
-                            addresses: {
-                              ...form.addresses,
-                              [field.key]: event.target.value
-                            }
-                          })
-                        }
-                        value={form.addresses[field.key]}
+                        minLength={2}
+                        onChange={(event) => setForm({ ...form, name: event.target.value })}
+                        required
+                        value={form.name}
                       />
                     </Field>
-                  ))}
-                  <Field label="NetApp iSCSI LIFs">
-                    <input
-                      onChange={(event) =>
-                        setForm({ ...form, netappIscsiLifs: event.target.value })
-                      }
-                      value={form.netappIscsiLifs}
-                    />
-                  </Field>
-                </div>
+                    <Field label="Description">
+                      <textarea
+                        onChange={(event) =>
+                          setForm({ ...form, description: event.target.value })
+                        }
+                        value={form.description}
+                      />
+                    </Field>
+                  </div>
+                </section>
+
+                <section className="lab-profile-form-section">
+                  <div className="readiness-head compact-head">
+                    <strong>Global Settings</strong>
+                    <StatusBadge status={netappSupported ? "available" : "blocked"} />
+                  </div>
+                  <div className="lab-profile-form-grid">
+                    <Field label="Subnet Size">
+                      <select
+                        onChange={(event) => updateSubnetPrefix(event.target.value)}
+                        value={form.globalSettings.subnetPrefix}
+                      >
+                        {subnetOptions.map((option) => (
+                          <option key={option.prefix} value={option.prefix}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </Field>
+                    <Field label={labSubnetField.label}>
+                      <input
+                        inputMode="decimal"
+                        onChange={(event) => updateSubnetNetwork(event.target.value)}
+                        value={form.addresses.subnet}
+                      />
+                    </Field>
+                    <Field label="Gateway">
+                      <input
+                        inputMode="decimal"
+                        onChange={(event) => updateGlobalSetting("gateway", event.target.value)}
+                        value={form.globalSettings.gateway}
+                      />
+                    </Field>
+                    <Field label="Domain">
+                      <input
+                        onChange={(event) => updateGlobalSetting("domainName", event.target.value)}
+                        value={form.globalSettings.domainName}
+                      />
+                    </Field>
+                    <Field label="DNS Servers">
+                      <input
+                        inputMode="decimal"
+                        onChange={(event) => updateGlobalSetting("dnsServers", event.target.value)}
+                        value={form.globalSettings.dnsServers}
+                      />
+                    </Field>
+                    <Field label="NTP Servers">
+                      <input
+                        inputMode="decimal"
+                        onChange={(event) => updateGlobalSetting("ntpServers", event.target.value)}
+                        value={form.globalSettings.ntpServers}
+                      />
+                    </Field>
+                    <Field label="Timezone">
+                      <input
+                        onChange={(event) => updateGlobalSetting("timezone", event.target.value)}
+                        value={form.globalSettings.timezone}
+                      />
+                    </Field>
+                  </div>
+                </section>
+
+                <section className="lab-profile-form-section">
+                  <div className="readiness-head compact-head">
+                    <strong>Core Addresses</strong>
+                    <StatusBadge status="intent_only" />
+                  </div>
+                  <div className="lab-profile-form-grid">
+                    {labCoreAddressFields.map((field) => (
+                      <Field key={field.key} label={field.label}>
+                        <input
+                          inputMode="decimal"
+                          onChange={(event) => updateAddress(field.key, event.target.value)}
+                          value={form.addresses[field.key]}
+                        />
+                      </Field>
+                    ))}
+                  </div>
+                </section>
+
+                <section className="lab-profile-form-section">
+                  <div className="readiness-head compact-head">
+                    <strong>NetApp Capabilities</strong>
+                    <StatusBadge status={netappSupported ? "available" : "blocked"} />
+                  </div>
+                  {netappSupported ? (
+                    <div className="lab-profile-form-grid">
+                      {labNetAppAddressFields.map((field) => (
+                        <Field key={field.key} label={field.label}>
+                          <input
+                            inputMode="decimal"
+                            onChange={(event) => updateAddress(field.key, event.target.value)}
+                            value={form.addresses[field.key]}
+                          />
+                        </Field>
+                      ))}
+                      <Field label="NetApp iSCSI LIFs">
+                        <input
+                          inputMode="decimal"
+                          onChange={(event) =>
+                            setForm({ ...form, netappIscsiLifs: event.target.value })
+                          }
+                          value={form.netappIscsiLifs}
+                        />
+                      </Field>
+                    </div>
+                  ) : (
+                    <div className="provider-callout netapp-capability-disabled">
+                      <StatusBadge status="blocked" />
+                      <strong>NetApp unavailable for /{form.globalSettings.subnetPrefix}</strong>
+                      <p>{netappDisabledReason}</p>
+                    </div>
+                  )}
+                </section>
                 <Feedback error={saveError} />
                 <div className="form-actions">
                   {selectedProfile && (
@@ -3503,6 +3692,16 @@ function LabProfilesPage({
 function LabAddressSummary({ profile }: { profile: LabProfile }) {
   return (
     <div className="provider-fact-grid compact lab-address-summary">
+      <ProviderFact label="Subnet Size" value={`/${profile.global_settings.subnet_prefix}`} />
+      <ProviderFact label="Gateway" value={displayAddress(profile.global_settings.gateway)} />
+      <ProviderFact
+        label="NetApp Capability"
+        value={
+          profile.global_settings.netapp_enabled
+            ? "Available"
+            : profile.global_settings.netapp_disabled_reason ?? "Disabled"
+        }
+      />
       {labAddressFields.map((field) => (
         <ProviderFact
           key={field.key}
@@ -3516,6 +3715,727 @@ function LabAddressSummary({ profile }: { profile: LabProfile }) {
       />
     </div>
   );
+}
+
+function ControlCenterPage() {
+  const [catalog, setCatalog] = useState<ControlActionCatalog | null>(null);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [busyAction, setBusyAction] = useState("");
+  const [planResult, setPlanResult] = useState<ControlActionPlan | null>(null);
+  const [copyMessage, setCopyMessage] = useState("");
+
+  async function load() {
+    setError("");
+    setLoading(true);
+    try {
+      setCatalog(await api.controlActions());
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    load();
+  }, []);
+
+  async function planAction(action: ControlAction) {
+    setBusyAction(action.id);
+    setError("");
+    try {
+      setPlanResult(await api.planControlAction(action.id));
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusyAction("");
+    }
+  }
+
+  async function copyText(text: string, label: string) {
+    setCopyMessage("");
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopyMessage(`${label} copied.`);
+    } catch {
+      setCopyMessage("Copy is unavailable in this browser session.");
+    }
+  }
+
+  function copyAction(action: ControlAction) {
+    const text =
+      action.suggested_command ||
+      (action.api_endpoint ? `${action.method ?? "GET"} ${action.api_endpoint}` : action.plan_endpoint);
+    copyText(text, action.label);
+  }
+
+  const sections = catalog?.sections ?? [];
+  const actions = catalog?.actions ?? [];
+  const blockedActions = actions.filter((action) => action.availability === "blocked").length;
+  const upgradeActions = actions.filter((action) => action.classification === "upgrade").length;
+  const commanderActions = actions.filter((action) => action.id.startsWith("commander."));
+
+  return (
+    <Page
+      title="Control Center"
+      actions={
+        <>
+          <button disabled={loading} onClick={load} type="button">
+            <RefreshCw size={16} />
+            Refresh
+          </button>
+          <Link className="button-link" to="/run-center">
+            <Workflow size={16} />
+            Guided View
+          </Link>
+        </>
+      }
+    >
+      <Feedback loading={loading && !catalog} error={error} />
+      {catalog && (
+        <section className="control-center-surface">
+          <section className="metric-grid control-metrics">
+            <Metric label="Sections" value={sections.length} icon={<Layers size={18} />} />
+            <Metric label="Actions" value={actions.length} icon={<Workflow size={18} />} />
+            <Metric label="Blocked" value={blockedActions} icon={<Ban size={18} />} />
+            <Metric label="Upgrade" value={upgradeActions} icon={<ShieldCheck size={18} />} />
+          </section>
+
+          <section className="control-command-strip">
+            <div>
+              <p className="eyebrow">Command Surface</p>
+              <strong>Direct run disabled</strong>
+              <p>{asString(catalog.summary.safety)}</p>
+            </div>
+            <div>
+              <span>Mode</span>
+              <StatusBadge status={catalog.provider_mode} />
+            </div>
+            <div>
+              <span>Generated</span>
+              <strong>{formatDateTime(catalog.generated_at)}</strong>
+            </div>
+          </section>
+
+          {copyMessage && <div className="feedback">{copyMessage}</div>}
+
+          <CommanderModePanel
+            actions={commanderActions}
+            busyAction={busyAction}
+            onCopy={copyAction}
+            onPlan={planAction}
+          />
+
+          <nav className="control-section-nav" aria-label="Control Center sections">
+            {sections.map((section) => (
+              <a href={`#control-${section.id}`} key={section.id}>
+                <span>{section.stage}</span>
+                <strong>{section.title}</strong>
+                <StatusPill status={section.status} />
+              </a>
+            ))}
+          </nav>
+
+          {sections.map((section) => (
+            <ControlSection
+              busyAction={busyAction}
+              copyMessage={copyMessage}
+              key={section.id}
+              onCopy={copyAction}
+              onCopyText={copyText}
+              onPlan={planAction}
+              planResult={planResult?.action.section_id === section.id ? planResult : null}
+              section={section}
+            >
+              {section.id === "lab-profile" && (
+                <ControlLabProfilePanel onCopyText={copyText} profile={catalog.lab_profile} />
+              )}
+              {section.id === "firmware-upgrade" && <FirmwareUpgradeCenter section={section} />}
+              {section.id === "reports" && <ActionHistoryReportsPanel actions={actions} />}
+            </ControlSection>
+          ))}
+
+          <ActionCatalogTable
+            actions={actions}
+            busyAction={busyAction}
+            onCopy={copyAction}
+            onPlan={planAction}
+          />
+        </section>
+      )}
+    </Page>
+  );
+}
+
+function CommanderModePanel({
+  actions,
+  busyAction,
+  onCopy,
+  onPlan
+}: {
+  actions: ControlAction[];
+  busyAction: string;
+  onCopy: (action: ControlAction) => void;
+  onPlan: (action: ControlAction) => void;
+}) {
+  if (!actions.length) {
+    return null;
+  }
+
+  return (
+    <section className="panel commander-panel">
+      <div className="readiness-head">
+        <PanelTitle icon={<Wrench size={18} />} title="Commander Mode" />
+        <StatusBadge status="manual_command_required" />
+      </div>
+      <ActionButtonRow
+        actions={actions}
+        busyAction={busyAction}
+        onCopy={onCopy}
+        onPlan={onPlan}
+      />
+    </section>
+  );
+}
+
+function ControlSection({
+  busyAction,
+  children,
+  onCopy,
+  onCopyText,
+  onPlan,
+  planResult,
+  section
+}: {
+  busyAction: string;
+  children?: ReactNode;
+  copyMessage: string;
+  onCopy: (action: ControlAction) => void;
+  onCopyText: (text: string, label: string) => void;
+  onPlan: (action: ControlAction) => void;
+  planResult: ControlActionPlan | null;
+  section: ControlSectionRecord;
+}) {
+  const resultStatus = asString(section.last_result.status) || "not_run";
+  const resultLabel = asString(section.last_result.label) || "No result";
+  const resultReport = asString(section.last_result.report);
+
+  return (
+    <section className="control-section" id={`control-${section.id}`}>
+      <div className="control-section-head">
+        <div>
+          <p className="summary-kicker">{section.stage}</p>
+          <h2>{section.title}</h2>
+          <p>{section.description}</p>
+        </div>
+        <StatusPill status={section.status} />
+      </div>
+      <div className="control-state-grid">
+        <CurrentStateBlock items={section.current_state} />
+        <DesiredStateBlock items={section.desired_state} />
+        <PlanDiffBlock items={section.plan_diff} />
+      </div>
+      {children}
+      {section.actions.length > 0 && (
+        <ActionButtonRow
+          actions={section.actions}
+          busyAction={busyAction}
+          onCopy={onCopy}
+          onPlan={onPlan}
+        />
+      )}
+      {planResult && <ControlPlanResult plan={planResult} />}
+      <div className="control-result-grid">
+        <div>
+          <span>Last result</span>
+          <strong>{displayStatusLabel(resultStatus)}</strong>
+          <p>{resultLabel}</p>
+        </div>
+        <div>
+          <span>Report</span>
+          <strong>{resultReport || "No report yet"}</strong>
+          {resultReport && (
+            <button
+              className="small-button"
+              onClick={() => onCopyText(resultReport, "Report path")}
+              type="button"
+            >
+              <Copy size={14} />
+              Copy
+            </button>
+          )}
+        </div>
+      </div>
+      {section.report_links.length > 0 && (
+        <div className="control-report-list">
+          {section.report_links.slice(0, 8).map((report) => (
+            <div key={`${section.id}-${report.label}-${report.path}`}>
+              <StatusBadge status={report.status} />
+              <span>{report.label}</span>
+              <code>{report.path}</code>
+              <button
+                className="small-button"
+                onClick={() => onCopyText(report.path, report.label)}
+                type="button"
+              >
+                <Copy size={14} />
+                Copy
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+      <AdvancedDetails
+        className="control-diagnostics"
+        summary="Raw catalog state, provider diagnostics, blockers, reports, and generated command metadata"
+        title="Advanced diagnostics"
+      >
+        <JsonDetails title={`${section.title} diagnostics`} data={section.advanced_diagnostics} />
+      </AdvancedDetails>
+    </section>
+  );
+}
+
+function CurrentStateBlock({ items }: { items: ControlStateItem[] }) {
+  return <ControlStateBlock icon={<Activity size={17} />} items={items} title="Current State" />;
+}
+
+function DesiredStateBlock({ items }: { items: ControlStateItem[] }) {
+  return <ControlStateBlock icon={<ShieldCheck size={17} />} items={items} title="Desired State" />;
+}
+
+function ControlStateBlock({
+  icon,
+  items,
+  title
+}: {
+  icon: ReactNode;
+  items: ControlStateItem[];
+  title: string;
+}) {
+  return (
+    <section className="control-state-block">
+      <div className="control-block-title">
+        {icon}
+        <h3>{title}</h3>
+      </div>
+      {items.length ? (
+        <dl>
+          {items.map((item) => (
+            <div key={`${title}-${item.label}`}>
+              <dt>{item.label}</dt>
+              <dd>
+                <strong>{item.value}</strong>
+                {item.status && <StatusBadge status={item.status} />}
+              </dd>
+            </div>
+          ))}
+        </dl>
+      ) : (
+        <p className="muted">No state values are exposed yet.</p>
+      )}
+    </section>
+  );
+}
+
+function PlanDiffBlock({ items }: { items: ControlPlanDiffItem[] }) {
+  return (
+    <section className="control-state-block plan-diff-block">
+      <div className="control-block-title">
+        <Route size={17} />
+        <h3>Plan / Diff</h3>
+      </div>
+      {items.length ? (
+        <table>
+          <thead>
+            <tr>
+              <th>Item</th>
+              <th>Current</th>
+              <th>Desired</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((item) => (
+              <tr key={`${item.label}-${item.current}-${item.desired}`}>
+                <td>{item.label}</td>
+                <td>{item.current}</td>
+                <td>{item.desired}</td>
+                <td>
+                  <StatusBadge status={item.status} />
+                  {item.note && <p className="control-table-note">{item.note}</p>}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      ) : (
+        <p className="muted">No diff is available for this section.</p>
+      )}
+    </section>
+  );
+}
+
+function ActionButtonRow({
+  actions,
+  busyAction,
+  onCopy,
+  onPlan
+}: {
+  actions: ControlAction[];
+  busyAction: string;
+  onCopy: (action: ControlAction) => void;
+  onPlan: (action: ControlAction) => void;
+}) {
+  return (
+    <div className="control-action-list">
+      {actions.map((action) => (
+        <article className={`control-action ${action.classification}`} key={action.id}>
+          <div className="control-action-head">
+            <div>
+              <strong>{action.label}</strong>
+              <span>{action.device_stage}</span>
+            </div>
+            <div className="classification-tags">
+              <span className={`classification-tag ${action.classification}`}>
+                {classificationLabel(action.classification)}
+              </span>
+              <StatusBadge status={action.availability} />
+            </div>
+          </div>
+          <p>{action.description}</p>
+          {action.blocker && <p className="control-action-blocker">{action.blocker}</p>}
+          <ControlRequirementList action={action} />
+          <div className="action-row">
+            <button disabled={busyAction === action.id} onClick={() => onPlan(action)} type="button">
+              <Route size={16} />
+              {busyAction === action.id ? "Planning" : "Plan"}
+            </button>
+            <button onClick={() => onCopy(action)} type="button">
+              <Copy size={16} />
+              Copy
+            </button>
+            <button disabled title="Direct run is disabled in this pass." type="button">
+              <Ban size={16} />
+              Run
+            </button>
+          </div>
+          <code>{action.suggested_command || action.api_endpoint || action.plan_endpoint}</code>
+        </article>
+      ))}
+    </div>
+  );
+}
+
+function ControlRequirementList({ action }: { action: ControlAction }) {
+  const items = [
+    ...action.required_inputs.map((input) => `${input.label}${input.required ? " required" : ""}`),
+    ...action.required_flags,
+    ...action.required_confirmations.map((confirmation) => `Confirm: ${confirmation}`)
+  ];
+  if (!items.length) {
+    return null;
+  }
+  return (
+    <ul className="control-requirements">
+      {items.slice(0, 5).map((item) => (
+        <li key={`${action.id}-${item}`}>{item}</li>
+      ))}
+    </ul>
+  );
+}
+
+function ControlPlanResult({ plan }: { plan: ControlActionPlan }) {
+  return (
+    <section className="control-plan-result">
+      <div className="readiness-head">
+        <div>
+          <strong>{plan.action.label} plan</strong>
+          <p>{plan.message}</p>
+        </div>
+        <StatusBadge status={plan.status} />
+      </div>
+      <div className="stage-list control-plan-steps">
+        {plan.plan_steps.map((step) => (
+          <div className="stage-item" key={`${plan.action.id}-${step.label}`}>
+            <div>
+              <strong>{step.label}</strong>
+              <StatusBadge status={step.status} />
+            </div>
+            <p>{step.detail}</p>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function ControlLabProfilePanel({
+  onCopyText,
+  profile
+}: {
+  onCopyText: (text: string, label: string) => void;
+  profile: ControlLabProfile;
+}) {
+  const networkEntries = Object.entries(profile.network);
+  const flagEntries = Object.entries(profile.configured_flags);
+
+  return (
+    <section className="control-extra-panel lab-profile-control-panel">
+      <div className="readiness-head">
+        <div>
+          <strong>{profile.active_profile_name}</strong>
+          <p>{labelize(profile.source)} v{profile.version}</p>
+        </div>
+        <Link className="button-link" to={profile.edit_profile_path}>
+          <Pencil size={16} />
+          Edit Profile
+        </Link>
+      </div>
+      <div className="provider-fact-grid compact">
+        <ProviderFact label="Subnet Size" value={`/${profile.global_settings.subnet_prefix}`} />
+        <ProviderFact
+          label="NetApp Capability"
+          value={
+            profile.global_settings.netapp_enabled
+              ? "Available"
+              : profile.global_settings.netapp_disabled_reason ?? "Disabled"
+          }
+        />
+        {labAddressFields.map((field) => (
+          <ProviderFact
+            key={`control-profile-${field.key}`}
+            label={field.label}
+            value={displayAddress(profile.address_plan[field.key])}
+          />
+        ))}
+        <ProviderFact
+          label="NetApp iSCSI LIFs"
+          value={profile.address_plan.netapp_iscsi_lifs.join(", ") || "Not set"}
+        />
+      </div>
+      <div className="control-profile-grid">
+        <div>
+          <h3>Network</h3>
+          {networkEntries.map(([key, value]) => (
+            <ProviderFact key={`network-${key}`} label={labelize(key)} value={asString(value)} />
+          ))}
+        </div>
+        <div>
+          <h3>Configured Flags</h3>
+          {flagEntries.map(([key, value]) => (
+            <ProviderFact key={key} label={key} value={value ? "true" : "false"} />
+          ))}
+        </div>
+      </div>
+      {profile.stale_or_invalid_values.length > 0 ? (
+        <div className="provider-issue-rows">
+          {profile.stale_or_invalid_values.map((issue) => (
+            <div className="provider-issue warning" key={issue}>
+              <AlertTriangle size={16} />
+              <span>{issue}</span>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="success">No stale or invalid core lab profile values are reported.</p>
+      )}
+      <div className="control-command-box">
+        <div className="readiness-head">
+          <strong>Env update command</strong>
+          <button
+            className="small-button"
+            onClick={() => onCopyText(profile.env_update_command, "Env update command")}
+            type="button"
+          >
+            <Copy size={14} />
+            Copy
+          </button>
+        </div>
+        <pre>{profile.env_update_command}</pre>
+      </div>
+    </section>
+  );
+}
+
+function FirmwareUpgradeCenter({ section }: { section: ControlSectionRecord }) {
+  return (
+    <section className="control-extra-panel upgrade-center-panel">
+      <div className="readiness-head">
+        <div>
+          <strong>Upgrade Center</strong>
+          <p>Inventory and compliance are visible here; upgrade execution remains gated.</p>
+        </div>
+        <StatusBadge status={section.status} />
+      </div>
+      <table className="provider-candidate-table">
+        <thead>
+          <tr>
+            <th>Component</th>
+            <th>Current</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {section.current_state.map((item) => (
+            <tr key={`upgrade-${item.label}`}>
+              <td>{item.label}</td>
+              <td>{item.value}</td>
+              <td>{item.status ? <StatusBadge status={item.status} /> : "Unknown"}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </section>
+  );
+}
+
+function ActionHistoryReportsPanel({ actions }: { actions: ControlAction[] }) {
+  const reportActions = actions.filter((action) => action.last_report);
+  return (
+    <section className="control-extra-panel">
+      <div className="readiness-head">
+        <div>
+          <strong>Action History / Reports</strong>
+          <p>{reportActions.length} actions have report paths.</p>
+        </div>
+        <StatusBadge status="report_available" />
+      </div>
+      <table className="provider-candidate-table control-report-table">
+        <thead>
+          <tr>
+            <th>Action</th>
+            <th>Status</th>
+            <th>Report</th>
+          </tr>
+        </thead>
+        <tbody>
+          {reportActions.slice(0, 20).map((action) => (
+            <tr key={`history-${action.id}`}>
+              <td>{action.label}</td>
+              <td><StatusBadge status={action.last_run_status} /></td>
+              <td><code>{action.last_report}</code></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </section>
+  );
+}
+
+function ActionCatalogTable({
+  actions,
+  busyAction,
+  onCopy,
+  onPlan
+}: {
+  actions: ControlAction[];
+  busyAction: string;
+  onCopy: (action: ControlAction) => void;
+  onPlan: (action: ControlAction) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const [classification, setClassification] = useState("all");
+  const [stage, setStage] = useState("all");
+  const stages = Array.from(new Set(actions.map((action) => action.device_stage))).sort();
+  const filtered = actions.filter((action) => {
+    const text = `${action.id} ${action.label} ${action.device_stage}`.toLowerCase();
+    const queryMatch = !query || text.includes(query.toLowerCase());
+    const classificationMatch =
+      classification === "all" || action.classification === classification;
+    const stageMatch = stage === "all" || action.device_stage === stage;
+    return queryMatch && classificationMatch && stageMatch;
+  });
+
+  return (
+    <section className="panel action-catalog-panel">
+      <div className="readiness-head">
+        <PanelTitle icon={<ClipboardList size={18} />} title="Action Catalog" />
+        <span className="muted">{filtered.length} of {actions.length}</span>
+      </div>
+      <div className="control-catalog-filters">
+        <Field label="Search">
+          <input value={query} onChange={(event) => setQuery(event.target.value)} />
+        </Field>
+        <Field label="Class">
+          <select value={classification} onChange={(event) => setClassification(event.target.value)}>
+            <option value="all">All</option>
+            <option value="read-only">Read only</option>
+            <option value="write">Write</option>
+            <option value="destructive">Destructive</option>
+            <option value="upgrade">Upgrade</option>
+          </select>
+        </Field>
+        <Field label="Stage">
+          <select value={stage} onChange={(event) => setStage(event.target.value)}>
+            <option value="all">All</option>
+            {stages.map((item) => (
+              <option key={item} value={item}>{item}</option>
+            ))}
+          </select>
+        </Field>
+      </div>
+      <table className="provider-candidate-table action-catalog-table">
+        <thead>
+          <tr>
+            <th>Action</th>
+            <th>Stage</th>
+            <th>Class</th>
+            <th>Availability</th>
+            <th>Last Report</th>
+            <th>Controls</th>
+          </tr>
+        </thead>
+        <tbody>
+          {filtered.map((action) => (
+            <tr key={`catalog-${action.id}`}>
+              <td>
+                <strong>{action.label}</strong>
+                <span>{action.id}</span>
+              </td>
+              <td>{action.device_stage}</td>
+              <td>
+                <span className={`classification-tag ${action.classification}`}>
+                  {classificationLabel(action.classification)}
+                </span>
+              </td>
+              <td>
+                <StatusBadge status={action.availability} />
+                {action.blocker && <p className="control-table-note">{action.blocker}</p>}
+              </td>
+              <td>
+                <StatusBadge status={action.last_run_status} />
+                {action.last_report && <code>{action.last_report}</code>}
+              </td>
+              <td>
+                <div className="action-row">
+                  <button
+                    className="small-button"
+                    disabled={busyAction === action.id}
+                    onClick={() => onPlan(action)}
+                    type="button"
+                  >
+                    <Route size={14} />
+                    Plan
+                  </button>
+                  <button className="small-button" onClick={() => onCopy(action)} type="button">
+                    <Copy size={14} />
+                    Copy
+                  </button>
+                </div>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </section>
+  );
+}
+
+function classificationLabel(value: ControlAction["classification"]): string {
+  if (value === "read-only") return "Read only";
+  return labelize(value);
 }
 
 function ProviderStatusPage() {
@@ -8754,43 +9674,62 @@ function blankLabProfileForm(): LabProfileFormState {
   labAddressFields.forEach((field) => {
     addresses[field.key] = "";
   });
-  return {
+  const form = {
     name: "",
     description: "",
     addresses,
+    globalSettings: blankLabGlobalSettings(24),
     netappIscsiLifs: ""
   };
+  return applyLabSubnetChoice(form, defaultLabSubnet, "24");
 }
 
 function labProfileFormFrom(profile: {
   name: string;
   description: string | null;
+  global_settings?: LabGlobalSettings;
   address_plan: LabAddressPlan;
 }): LabProfileFormState {
   const addresses = {} as Record<LabAddressScalarKey, string>;
   labAddressFields.forEach((field) => {
     addresses[field.key] = profile.address_plan[field.key] ?? "";
   });
+  const prefix =
+    profile.global_settings?.subnet_prefix ??
+    prefixFromCidr(profile.address_plan.subnet) ??
+    24;
   return {
     name: profile.name,
     description: profile.description ?? "",
     addresses,
+    globalSettings: labGlobalSettingsFormFrom(profile.global_settings, profile.address_plan, prefix),
     netappIscsiLifs: profile.address_plan.netapp_iscsi_lifs.join(", ")
   };
 }
 
 function labProfilePayload(form: LabProfileFormState): LabProfileWrite {
   const addressPlan = blankLabAddressPlan();
+  const subnetPrefix = parseSubnetPrefix(form.globalSettings.subnetPrefix);
+  const netappEnabled = labNetAppSupported(subnetPrefix);
   labAddressFields.forEach((field) => {
-    addressPlan[field.key] = cleanNullable(form.addresses[field.key]);
+    const isNetAppField = field.key.startsWith("netapp_");
+    addressPlan[field.key] =
+      isNetAppField && !netappEnabled ? null : cleanNullable(form.addresses[field.key]);
   });
-  addressPlan.netapp_iscsi_lifs = form.netappIscsiLifs
-    .split(",")
-    .map((item) => item.trim())
-    .filter(Boolean);
+  addressPlan.netapp_iscsi_lifs = netappEnabled ? splitCsv(form.netappIscsiLifs) : [];
   return {
     name: form.name.trim(),
     description: cleanNullable(form.description),
+    global_settings: {
+      subnet_prefix: subnetPrefix,
+      gateway: cleanNullable(form.globalSettings.gateway),
+      domain_name: cleanNullable(form.globalSettings.domainName),
+      dns_servers: splitCsv(form.globalSettings.dnsServers),
+      ntp_servers: splitCsv(form.globalSettings.ntpServers),
+      timezone: cleanNullable(form.globalSettings.timezone),
+      netapp_enabled: netappEnabled,
+      netapp_disabled_reason: netappEnabled ? null : netappDisabledForSubnetReason
+    },
     address_plan: addressPlan
   };
 }
@@ -8816,6 +9755,201 @@ function blankLabAddressPlan(): LabAddressPlan {
 function cleanNullable(value: string): string | null {
   const trimmed = value.trim();
   return trimmed || null;
+}
+
+function splitCsv(value: string): string[] {
+  return value
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function blankLabGlobalSettings(prefix: number): LabGlobalSettingsFormState {
+  return {
+    subnetPrefix: String(prefix),
+    gateway: "",
+    domainName: "",
+    dnsServers: "",
+    ntpServers: "",
+    timezone: ""
+  };
+}
+
+function labGlobalSettingsFormFrom(
+  settings: LabGlobalSettings | undefined,
+  addressPlan: LabAddressPlan,
+  prefix: number
+): LabGlobalSettingsFormState {
+  const generated = generateLabAddressPlan(addressPlan.subnet ?? defaultLabSubnet, prefix);
+  return {
+    subnetPrefix: String(prefix),
+    gateway: settings?.gateway ?? generated.gateway ?? "",
+    domainName: settings?.domain_name ?? "",
+    dnsServers: settings?.dns_servers.join(", ") ?? "",
+    ntpServers: settings?.ntp_servers.join(", ") ?? "",
+    timezone: settings?.timezone ?? ""
+  };
+}
+
+function applyLabSubnetChoice(
+  form: LabProfileFormState,
+  subnetValue: string,
+  prefixValue: string
+): LabProfileFormState {
+  const prefix = parseSubnetPrefix(prefixValue);
+  const normalizedSubnet = normalizeIpv4Subnet(subnetValue || defaultLabSubnet, prefix);
+  const addresses = {
+    ...form.addresses,
+    subnet: normalizedSubnet ?? subnetValue
+  };
+  const nextForm = {
+    ...form,
+    addresses,
+    globalSettings: {
+      ...form.globalSettings,
+      subnetPrefix: String(prefix)
+    }
+  };
+  if (!normalizedSubnet) {
+    return labNetAppSupported(prefix) ? nextForm : clearNetAppAddresses(nextForm);
+  }
+
+  const generated = generateLabAddressPlan(normalizedSubnet, prefix);
+  labCoreAddressFields.forEach((field) => {
+    addresses[field.key] = generated.addresses[field.key] ?? "";
+  });
+  nextForm.globalSettings.gateway = generated.gateway ?? nextForm.globalSettings.gateway;
+
+  if (!labNetAppSupported(prefix)) {
+    return clearNetAppAddresses(nextForm);
+  }
+
+  labNetAppAddressFields.forEach((field) => {
+    addresses[field.key] = generated.addresses[field.key] ?? "";
+  });
+  nextForm.netappIscsiLifs = generated.netappIscsiLifs.join(", ");
+  return nextForm;
+}
+
+function clearNetAppAddresses(form: LabProfileFormState): LabProfileFormState {
+  const addresses = { ...form.addresses };
+  labNetAppAddressFields.forEach((field) => {
+    addresses[field.key] = "";
+  });
+  return {
+    ...form,
+    addresses,
+    netappIscsiLifs: ""
+  };
+}
+
+function generateLabAddressPlan(subnet: string, prefix: number) {
+  const normalizedSubnet = normalizeIpv4Subnet(subnet, prefix);
+  const network = normalizedSubnet ? networkBaseFromCidr(normalizedSubnet) : null;
+  const addresses: Partial<Record<LabAddressInputKey, string>> = {};
+  const coreOffsets = labNetAppSupported(prefix) ? labBuilderCoreOffsets : compactCoreOffsets;
+  if (network === null) {
+    return { addresses, gateway: "", netappIscsiLifs: [] };
+  }
+
+  Object.entries(coreOffsets).forEach(([key, offset]) => {
+    const address = addressAtOffset(network, prefix, offset);
+    if (address) {
+      addresses[key as LabAddressInputKey] = address;
+    }
+  });
+
+  if (!labNetAppSupported(prefix)) {
+    return { addresses, gateway: addressAtOffset(network, prefix, 1) ?? "", netappIscsiLifs: [] };
+  }
+
+  Object.entries(labBuilderNetAppOffsets).forEach(([key, offset]) => {
+    const address = addressAtOffset(network, prefix, offset);
+    if (address) {
+      addresses[key as LabAddressInputKey] = address;
+    }
+  });
+  return {
+    addresses,
+    gateway: addressAtOffset(network, prefix, 1) ?? "",
+    netappIscsiLifs: labBuilderNetAppIscsiOffsets.flatMap((offset) => {
+      const address = addressAtOffset(network, prefix, offset);
+      return address ? [address] : [];
+    })
+  };
+}
+
+function defaultLabSubnetOptions(): LabSubnetOption[] {
+  return [29, 28, 27, 26, 25, 24, 23].map((prefix) => ({
+    prefix,
+    cidr_suffix: `/${prefix}`,
+    label: `/${prefix} (${usableHostsForPrefix(prefix)} usable IPs)`,
+    usable_hosts: usableHostsForPrefix(prefix),
+    netapp_supported: labNetAppSupported(prefix),
+    netapp_disabled_reason: labNetAppSupported(prefix) ? null : netappDisabledForSubnetReason
+  }));
+}
+
+function parseSubnetPrefix(value: string | number): number {
+  const parsed = Number(String(value).replace("/", ""));
+  return parsed >= 23 && parsed <= 29 ? parsed : 24;
+}
+
+function prefixFromCidr(value: string | null): number | null {
+  if (!value?.includes("/")) return null;
+  return parseSubnetPrefix(value.split("/").pop() ?? "24");
+}
+
+function labNetAppSupported(prefix: number): boolean {
+  return prefix <= 24;
+}
+
+function normalizeIpv4Subnet(value: string, prefix: number): string | null {
+  const address = value.trim().split("/", 1)[0];
+  const addressInt = ipv4ToInt(address);
+  if (addressInt === null) return null;
+  const mask = (0xffffffff << (32 - prefix)) >>> 0;
+  const network = (addressInt & mask) >>> 0;
+  return `${intToIpv4(network)}/${prefix}`;
+}
+
+function networkBaseFromCidr(value: string): number | null {
+  return ipv4ToInt(value.split("/", 1)[0]);
+}
+
+function addressAtOffset(network: number, prefix: number, offset: number): string | null {
+  if (offset < 1 || offset > usableHostsForPrefix(prefix)) return null;
+  return intToIpv4(network + offset);
+}
+
+function usableHostsForPrefix(prefix: number): number {
+  return Math.max(2 ** (32 - prefix) - 2, 0);
+}
+
+function ipv4ToInt(value: string): number | null {
+  const parts = value.split(".");
+  if (parts.length !== 4) return null;
+  const octets = parts.map((part) => Number(part));
+  if (octets.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) {
+    return null;
+  }
+  return (
+    ((octets[0] * 256 ** 3) +
+      (octets[1] * 256 ** 2) +
+      (octets[2] * 256) +
+      octets[3]) >>>
+    0
+  );
+}
+
+function intToIpv4(value: number): string {
+  const normalized = value >>> 0;
+  return [
+    Math.floor(normalized / 256 ** 3) % 256,
+    Math.floor(normalized / 256 ** 2) % 256,
+    Math.floor(normalized / 256) % 256,
+    normalized % 256
+  ].join(".");
 }
 
 function displayAddress(value: string | null | undefined): string {

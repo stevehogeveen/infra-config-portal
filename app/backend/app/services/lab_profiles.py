@@ -4,6 +4,7 @@ import json
 import os
 from copy import deepcopy
 from datetime import UTC, datetime
+from ipaddress import IPv4Network, ip_network
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -28,6 +29,37 @@ from app.providers.redaction import redact_sensitive
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 RUNTIME_PROFILE_ID = "runtime"
+SUBNET_PREFIX_OPTIONS = tuple(range(29, 22, -1))
+NETAPP_MINIMUM_PREFIX = 24
+NETAPP_DISABLED_REASON = (
+    "NetApp capabilities require a /24 or larger lab subnet. "
+    "They are disabled for /25 through /29 lab profiles."
+)
+LAB_BUILDER_CORE_OFFSETS = {
+    "gateway": 1,
+    "cisco_management": 2,
+    "ansible_control_host": 5,
+    "ilo": 200,
+    "server_embedded_nic": 201,
+    "esxi_management": 202,
+}
+COMPACT_CORE_OFFSETS = {
+    "gateway": 1,
+    "cisco_management": 2,
+    "ilo": 3,
+    "server_embedded_nic": 4,
+    "esxi_management": 5,
+    "ansible_control_host": 6,
+}
+LAB_BUILDER_NETAPP_OFFSETS = {
+    "netapp_controller_a_sp": 13,
+    "netapp_controller_b_sp": 14,
+    "netapp_cluster_mgmt": 45,
+    "netapp_node_a_mgmt": 46,
+    "netapp_node_b_mgmt": 47,
+    "netapp_svm_mgmt": 48,
+}
+LAB_BUILDER_NETAPP_ISCSI_OFFSETS = (49, 50, 51, 52)
 
 
 class LabProfileError(Exception):
@@ -46,6 +78,7 @@ def list_lab_profiles() -> dict[str, Any]:
         "active_profile": active_profile,
         "runtime_profile": _runtime_profile(active=active_profile["id"] == RUNTIME_PROFILE_ID),
         "profiles": profiles,
+        "subnet_options": lab_subnet_options(),
         "store_path": _store_path_label(),
         "mock_only": True,
         "next_safe_action": (
@@ -57,11 +90,13 @@ def list_lab_profiles() -> dict[str, Any]:
 def create_lab_profile(payload: dict[str, Any]) -> dict[str, Any]:
     store = _read_store()
     now = _now()
+    global_settings, address_plan = _normalize_profile_components(payload)
     profile = {
         "id": f"lab-{uuid4().hex[:12]}",
         "name": payload["name"],
         "description": payload.get("description") or "",
-        "address_plan": _normalize_address_plan(payload.get("address_plan") or {}),
+        "global_settings": global_settings,
+        "address_plan": address_plan,
         "source": "saved",
         "version": 1,
         "created_at": now,
@@ -85,12 +120,15 @@ def update_lab_profile(profile_id: str, payload: dict[str, Any]) -> dict[str, An
             "saved_at": profile.get("updated_at") or now,
             "name": profile.get("name", ""),
             "description": profile.get("description", ""),
+            "global_settings": deepcopy(profile.get("global_settings") or {}),
             "address_plan": deepcopy(profile.get("address_plan") or {}),
         }
     )
+    global_settings, address_plan = _normalize_profile_components(payload)
     profile["name"] = payload["name"]
     profile["description"] = payload.get("description") or ""
-    profile["address_plan"] = _normalize_address_plan(payload.get("address_plan") or {})
+    profile["global_settings"] = global_settings
+    profile["address_plan"] = address_plan
     profile["version"] = int(profile.get("version", 1)) + 1
     profile["updated_at"] = now
     _write_store(store)
@@ -126,6 +164,20 @@ def active_lab_profile_for_report() -> dict[str, Any]:
     if active:
         return active
     return _runtime_profile(active=True)
+
+
+def lab_subnet_options() -> list[dict[str, Any]]:
+    return [
+        {
+            "prefix": prefix,
+            "cidr_suffix": f"/{prefix}",
+            "label": f"/{prefix} ({_usable_hosts(prefix)} usable IPs)",
+            "usable_hosts": _usable_hosts(prefix),
+            "netapp_supported": _netapp_supported(prefix),
+            "netapp_disabled_reason": None if _netapp_supported(prefix) else NETAPP_DISABLED_REASON,
+        }
+        for prefix in SUBNET_PREFIX_OPTIONS
+    ]
 
 
 def _store_path() -> Path:
@@ -197,33 +249,42 @@ def _active_profile(store: dict[str, Any], profiles: list[dict[str, Any]]) -> di
 
 
 def _profile_read(profile: dict[str, Any], *, active: bool) -> dict[str, Any]:
+    global_settings, address_plan = _normalize_profile_components(profile)
+    history = []
+    for item in profile.get("history", []):
+        if not isinstance(item, dict):
+            continue
+        revision_global_settings, revision_address_plan = _normalize_profile_components(item)
+        history.append(
+            {
+                "version": int(item.get("version") or 1),
+                "saved_at": item.get("saved_at") or _now(),
+                "name": str(item.get("name") or ""),
+                "description": str(item.get("description") or ""),
+                "global_settings": revision_global_settings,
+                "address_plan": revision_address_plan,
+            }
+        )
     return {
         "id": str(profile.get("id") or ""),
         "name": str(profile.get("name") or "Unnamed lab"),
         "description": str(profile.get("description") or ""),
-        "address_plan": _normalize_address_plan(profile.get("address_plan") or {}),
+        "global_settings": global_settings,
+        "address_plan": address_plan,
         "source": str(profile.get("source") or "saved"),
         "version": int(profile.get("version") or 1),
         "active": active,
         "created_at": profile.get("created_at") or _now(),
         "updated_at": profile.get("updated_at") or _now(),
         "last_selected_at": profile.get("last_selected_at"),
-        "history": [
-            {
-                "version": int(item.get("version") or 1),
-                "saved_at": item.get("saved_at") or _now(),
-                "name": str(item.get("name") or ""),
-                "description": str(item.get("description") or ""),
-                "address_plan": _normalize_address_plan(item.get("address_plan") or {}),
-            }
-            for item in profile.get("history", [])
-            if isinstance(item, dict)
-        ],
+        "history": history,
     }
 
 
 def _runtime_profile(*, active: bool) -> dict[str, Any]:
     now = _now()
+    address_plan = _runtime_address_plan()
+    global_settings = _normalize_global_settings({}, address_plan)
     return {
         "id": RUNTIME_PROFILE_ID,
         "name": "Runtime environment",
@@ -231,7 +292,8 @@ def _runtime_profile(*, active: bool) -> dict[str, Any]:
             "Unsaved targets currently loaded from environment and safe defaults. "
             "Use a saved lab profile for repeatable lab selection."
         ),
-        "address_plan": _runtime_address_plan(),
+        "global_settings": global_settings,
+        "address_plan": address_plan,
         "source": "runtime_env",
         "version": 1,
         "active": active,
@@ -264,6 +326,33 @@ def _runtime_address_plan() -> dict[str, Any]:
     )
 
 
+def _normalize_profile_components(payload: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+    address_plan = _normalize_address_plan(payload.get("address_plan") or {})
+    global_settings = _normalize_global_settings(payload.get("global_settings") or {}, address_plan)
+    address_plan = _apply_subnet_schema(address_plan, global_settings)
+    global_settings = _normalize_global_settings(global_settings, address_plan)
+    return global_settings, address_plan
+
+
+def _normalize_global_settings(
+    value: dict[str, Any], address_plan: dict[str, Any]
+) -> dict[str, Any]:
+    prefix = _subnet_prefix(value.get("subnet_prefix"), address_plan.get("subnet"))
+    network = _network_for_subnet(address_plan.get("subnet"), prefix)
+    gateway = _clean_string(value.get("gateway")) or _host_address(network, 1)
+    netapp_supported = _netapp_supported(prefix)
+    return {
+        "subnet_prefix": prefix,
+        "gateway": gateway,
+        "domain_name": _clean_string(value.get("domain_name")),
+        "dns_servers": _clean_string_list(value.get("dns_servers")),
+        "ntp_servers": _clean_string_list(value.get("ntp_servers")),
+        "timezone": _clean_string(value.get("timezone")),
+        "netapp_enabled": netapp_supported and bool(value.get("netapp_enabled", True)),
+        "netapp_disabled_reason": None if netapp_supported else NETAPP_DISABLED_REASON,
+    }
+
+
 def _normalize_address_plan(value: dict[str, Any]) -> dict[str, Any]:
     string_fields = [
         "subnet",
@@ -287,6 +376,92 @@ def _normalize_address_plan(value: dict[str, Any]) -> dict[str, Any]:
         item for item in (_clean_string(item) for item in raw_lifs) if item
     ]
     return normalized
+
+
+def _apply_subnet_schema(
+    address_plan: dict[str, Any], global_settings: dict[str, Any]
+) -> dict[str, Any]:
+    prefix = int(global_settings["subnet_prefix"])
+    network = _network_for_subnet(address_plan.get("subnet"), prefix)
+    normalized = dict(address_plan)
+    normalized["subnet"] = str(network)
+
+    core_offsets = LAB_BUILDER_CORE_OFFSETS if prefix <= NETAPP_MINIMUM_PREFIX else COMPACT_CORE_OFFSETS
+    for key, offset in core_offsets.items():
+        if key == "gateway":
+            continue
+        if not normalized.get(key):
+            normalized[key] = _host_address(network, offset)
+
+    if not _netapp_supported(prefix):
+        for key in LAB_BUILDER_NETAPP_OFFSETS:
+            normalized[key] = None
+        normalized["netapp_iscsi_lifs"] = []
+        return normalized
+
+    for key, offset in LAB_BUILDER_NETAPP_OFFSETS.items():
+        if not normalized.get(key):
+            normalized[key] = _host_address(network, offset)
+    if not normalized.get("netapp_iscsi_lifs"):
+        normalized["netapp_iscsi_lifs"] = [
+            address
+            for address in (_host_address(network, offset) for offset in LAB_BUILDER_NETAPP_ISCSI_OFFSETS)
+            if address
+        ]
+    return normalized
+
+
+def _network_for_subnet(value: str | None, prefix: int) -> IPv4Network:
+    source = value or LAB_SUBNET_CIDR
+    address = str(source).split("/", maxsplit=1)[0]
+    try:
+        return ip_network(f"{address}/{prefix}", strict=False)
+    except ValueError:
+        return ip_network(LAB_SUBNET_CIDR, strict=False)
+
+
+def _subnet_prefix(raw_prefix: Any, subnet: str | None) -> int:
+    try:
+        prefix = int(str(raw_prefix).strip().lstrip("/")) if raw_prefix is not None else None
+    except (TypeError, ValueError):
+        prefix = None
+    if prefix in SUBNET_PREFIX_OPTIONS:
+        return int(prefix)
+    if subnet:
+        try:
+            network = ip_network(str(subnet), strict=False)
+        except ValueError:
+            network = None
+        if isinstance(network, IPv4Network) and network.prefixlen in SUBNET_PREFIX_OPTIONS:
+            return int(network.prefixlen)
+    return 24
+
+
+def _host_address(network: IPv4Network, host_offset: int) -> str | None:
+    usable_hosts = max(network.num_addresses - 2, 0)
+    if host_offset < 1 or host_offset > usable_hosts:
+        return None
+    return str(network.network_address + host_offset)
+
+
+def _usable_hosts(prefix: int) -> int:
+    return max((2 ** (32 - prefix)) - 2, 0)
+
+
+def _netapp_supported(prefix: int) -> bool:
+    return prefix <= NETAPP_MINIMUM_PREFIX
+
+
+def _clean_string_list(value: Any) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        candidates = value.split(",")
+    elif isinstance(value, (list, tuple)):
+        candidates = value
+    else:
+        candidates = [value]
+    return [item for item in (_clean_string(candidate) for candidate in candidates) if item]
 
 
 def _clean_string(value: Any) -> str | None:

@@ -23,6 +23,117 @@ def test_build_verification_endpoint_returns_status(client: TestClient) -> None:
     assert "status" in response.json()
 
 
+def test_control_action_catalog_exposes_device_actions_without_direct_runs(
+    client: TestClient,
+) -> None:
+    response = client.get("/api/v1/control/actions")
+
+    assert response.status_code == 200
+    payload = response.json()
+    action_ids = {action["id"] for action in payload["actions"]}
+    section_ids = {section["id"] for section in payload["sections"]}
+
+    assert {
+        "lab-profile",
+        "cisco",
+        "ilo",
+        "raid",
+        "esxi",
+        "netapp",
+        "firmware-upgrade",
+        "verification",
+        "reports",
+    }.issubset(section_ids)
+    assert {
+        "cisco.discover-console",
+        "cisco.reclaim-console",
+        "ilo.inventory",
+        "raid.apply",
+        "esxi.rebuild-install",
+        "netapp.setup-preview",
+        "firmware.upgrade-apply-placeholder",
+        "build-verification.run-full",
+    }.issubset(action_ids)
+
+    cisco = next(action for action in payload["actions"] if action["id"] == "cisco.discover-console")
+    assert cisco["classification"] == "read-only"
+    assert cisco["plan_endpoint"] == "/api/v1/control/actions/cisco.discover-console/plan"
+    assert cisco["run_endpoint"] == "/api/v1/control/actions/cisco.discover-console/run"
+    assert cisco["direct_run_supported"] is False
+
+    upgrade = next(
+        action
+        for action in payload["actions"]
+        if action["id"] == "firmware.upgrade-apply-placeholder"
+    )
+    assert upgrade["classification"] == "upgrade"
+    assert "LAB_ALLOW_FIRMWARE_UPDATES=true" in upgrade["required_flags"]
+    assert upgrade["availability"] == "blocked"
+    assert "executed" not in upgrade
+
+    lab_profile = payload["lab_profile"]
+    assert lab_profile["known_lab_profile"]["ilo"] == "192.168.1.201"
+    assert lab_profile["known_lab_profile"]["server_embedded_nic"] == "192.168.1.202"
+    assert lab_profile["known_lab_profile"]["esxi_management"] == "192.168.1.203"
+    assert lab_profile["known_lab_profile"]["cisco_management"] == "192.168.1.204"
+    assert lab_profile["known_lab_profile"]["ansible_control_host"] == "192.168.1.205"
+    assert "ILO_TEST_HOST=192.168.1.201" in lab_profile["env_update_command"]
+    assert "PASSWORD" not in lab_profile["env_update_command"].upper()
+
+
+def test_control_action_plan_and_run_are_safe_placeholders(client: TestClient) -> None:
+    planned = client.post("/api/v1/control/actions/ilo.inventory/plan")
+
+    assert planned.status_code == 200
+    plan_payload = planned.json()
+    assert plan_payload["action"]["id"] == "ilo.inventory"
+    assert plan_payload["direct_run_enabled"] is False
+    assert plan_payload["plan_steps"][-1]["status"] == "manual_command_required"
+
+    run = client.post("/api/v1/control/actions/ilo.inventory/run")
+
+    assert run.status_code == 200
+    run_payload = run.json()
+    assert run_payload["action"]["id"] == "ilo.inventory"
+    assert run_payload["executed"] is False
+    assert "No provider call" in run_payload["message"]
+    assert any("Direct Control Center run is not implemented" in item for item in run_payload["blockers"])
+
+
+def test_control_action_unknown_returns_404(client: TestClient) -> None:
+    response = client.post("/api/v1/control/actions/not-a-real-action/plan")
+
+    assert response.status_code == 404
+
+
+def test_control_action_catalog_blocks_netapp_when_lab_profile_disables_it(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    monkeypatch.setenv("LAB_PROFILE_STORE", str(tmp_path / "lab-profiles.json"))
+    created = client.post(
+        "/api/v1/lab/profiles",
+        json={
+            "name": "Small Subnet Lab",
+            "global_settings": {"subnet_prefix": 25},
+            "address_plan": {"subnet": "198.51.100.0/25"},
+        },
+    )
+    assert created.status_code == 201
+
+    response = client.get("/api/v1/control/actions")
+
+    assert response.status_code == 200
+    payload = response.json()
+    setup_preview = next(
+        action for action in payload["actions"] if action["id"] == "netapp.setup-preview"
+    )
+    assert setup_preview["availability"] == "blocked"
+    assert "NetApp capabilities require a /24" in setup_preview["blocker"]
+    assert payload["lab_profile"]["global_settings"]["netapp_enabled"] is False
+
+
 def test_lab_profile_api_saves_selects_and_versions_profiles(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
@@ -93,6 +204,96 @@ def test_lab_profile_api_saves_selects_and_versions_profiles(
     activated = client.post(f"/api/v1/lab/profiles/{profile_id}/activate")
     assert activated.status_code == 200
     assert activated.json()["active_profile"]["id"] == profile_id
+
+
+def test_lab_profile_subnet_options_include_netapp_capability_boundary(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    monkeypatch.setenv("LAB_PROFILE_STORE", str(tmp_path / "lab-profiles.json"))
+
+    response = client.get("/api/v1/lab/profiles")
+
+    assert response.status_code == 200
+    options = {item["prefix"]: item for item in response.json()["subnet_options"]}
+    assert set(options) == {23, 24, 25, 26, 27, 28, 29}
+    assert options[24]["netapp_supported"] is True
+    assert options[25]["netapp_supported"] is False
+    assert "NetApp capabilities require a /24" in options[25]["netapp_disabled_reason"]
+
+
+def test_lab_profile_uses_lab_builder_schema_for_24_when_addresses_are_blank(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    monkeypatch.setenv("LAB_PROFILE_STORE", str(tmp_path / "lab-profiles.json"))
+
+    response = client.post(
+        "/api/v1/lab/profiles",
+        json={
+            "name": "Schema Lab",
+            "global_settings": {"subnet_prefix": 24},
+            "address_plan": {"subnet": "192.0.2.0/24"},
+        },
+    )
+
+    assert response.status_code == 201
+    payload = response.json()
+    assert payload["global_settings"]["gateway"] == "192.0.2.1"
+    assert payload["global_settings"]["netapp_enabled"] is True
+    assert payload["address_plan"]["subnet"] == "192.0.2.0/24"
+    assert payload["address_plan"]["cisco_management"] == "192.0.2.2"
+    assert payload["address_plan"]["ilo"] == "192.0.2.200"
+    assert payload["address_plan"]["esxi_management"] == "192.0.2.202"
+    assert payload["address_plan"]["netapp_controller_a_sp"] == "192.0.2.13"
+    assert payload["address_plan"]["netapp_cluster_mgmt"] == "192.0.2.45"
+    assert payload["address_plan"]["netapp_svm_mgmt"] == "192.0.2.48"
+    assert payload["address_plan"]["netapp_iscsi_lifs"] == [
+        "192.0.2.49",
+        "192.0.2.50",
+        "192.0.2.51",
+        "192.0.2.52",
+    ]
+
+
+def test_lab_profile_25_and_smaller_subnets_clear_netapp_capabilities(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    monkeypatch.setenv("LAB_PROFILE_STORE", str(tmp_path / "lab-profiles.json"))
+
+    response = client.post(
+        "/api/v1/lab/profiles",
+        json={
+            "name": "Small Subnet Lab",
+            "global_settings": {
+                "subnet_prefix": 25,
+                "gateway": "198.51.100.1",
+                "dns_servers": ["198.51.100.2"],
+            },
+            "address_plan": {
+                "subnet": "198.51.100.0/24",
+                "netapp_controller_a_sp": "198.51.100.13",
+                "netapp_cluster_mgmt": "198.51.100.45",
+                "netapp_iscsi_lifs": ["198.51.100.49"],
+            },
+        },
+    )
+
+    assert response.status_code == 201
+    payload = response.json()
+    assert payload["address_plan"]["subnet"] == "198.51.100.0/25"
+    assert payload["global_settings"]["subnet_prefix"] == 25
+    assert payload["global_settings"]["gateway"] == "198.51.100.1"
+    assert payload["global_settings"]["dns_servers"] == ["198.51.100.2"]
+    assert payload["global_settings"]["netapp_enabled"] is False
+    assert "NetApp capabilities require a /24" in payload["global_settings"]["netapp_disabled_reason"]
+    assert payload["address_plan"]["netapp_controller_a_sp"] is None
+    assert payload["address_plan"]["netapp_cluster_mgmt"] is None
+    assert payload["address_plan"]["netapp_iscsi_lifs"] == []
 
 
 def test_lab_profile_api_rejects_secret_shaped_values(

@@ -339,11 +339,72 @@ class LabAddressPlan(BaseModel):
         return cleaned
 
 
+class LabGlobalSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    subnet_prefix: int = Field(default=24, ge=23, le=29)
+    gateway: str | None = Field(default=None, max_length=80)
+    domain_name: str | None = Field(default=None, max_length=160)
+    dns_servers: list[str] = Field(default_factory=list, max_length=8)
+    ntp_servers: list[str] = Field(default_factory=list, max_length=8)
+    timezone: str | None = Field(default=None, max_length=80)
+    netapp_enabled: bool = True
+    netapp_disabled_reason: str | None = Field(default=None, max_length=300)
+
+    @field_validator("gateway", "domain_name", "timezone", "netapp_disabled_reason", mode="before")
+    @classmethod
+    def strip_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        text = str(value).strip()
+        return text or None
+
+    @field_validator("dns_servers", "ntp_servers", mode="before")
+    @classmethod
+    def split_server_list(cls, value: Any) -> list[str]:
+        if value is None:
+            return []
+        if isinstance(value, str):
+            return [item.strip() for item in value.split(",") if item.strip()]
+        return value
+
+    @field_validator("gateway")
+    @classmethod
+    def validate_gateway(cls, value: str | None) -> str | None:
+        if value is not None:
+            try:
+                ip_address(value)
+            except ValueError as exc:
+                raise ValueError("gateway must be an IPv4 or IPv6 address") from exc
+        return value
+
+    @field_validator("dns_servers", "ntp_servers")
+    @classmethod
+    def validate_server_list(cls, value: list[str]) -> list[str]:
+        cleaned = [item.strip() for item in value if item.strip()]
+        for item in cleaned:
+            try:
+                ip_address(item)
+            except ValueError as exc:
+                raise ValueError("server values must be IPv4 or IPv6 addresses") from exc
+        return cleaned
+
+
+class LabSubnetOptionRead(BaseModel):
+    prefix: int
+    cidr_suffix: str
+    label: str
+    usable_hosts: int
+    netapp_supported: bool
+    netapp_disabled_reason: str | None = None
+
+
 class LabProfileWrite(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     name: str = Field(min_length=2, max_length=120)
     description: str | None = Field(default=None, max_length=1200)
+    global_settings: LabGlobalSettings = Field(default_factory=LabGlobalSettings)
     address_plan: LabAddressPlan = Field(default_factory=LabAddressPlan)
 
     @field_validator("name", "description", mode="before")
@@ -365,6 +426,7 @@ class LabProfileRevisionRead(BaseModel):
     saved_at: datetime
     name: str
     description: str
+    global_settings: LabGlobalSettings
     address_plan: LabAddressPlan
 
 
@@ -372,6 +434,7 @@ class LabProfileRead(BaseModel):
     id: str
     name: str
     description: str
+    global_settings: LabGlobalSettings
     address_plan: LabAddressPlan
     source: str
     version: int
@@ -386,6 +449,7 @@ class LabProfileListRead(BaseModel):
     active_profile: LabProfileRead
     runtime_profile: LabProfileRead
     profiles: list[LabProfileRead]
+    subnet_options: list[LabSubnetOptionRead] = Field(default_factory=list)
     store_path: str
     mock_only: bool = True
     next_safe_action: str
@@ -1109,6 +1173,131 @@ class ProviderProbeResultRead(BaseModel):
     blockers: list[str] = Field(default_factory=list)
     checked_at: str | None = None
     model_config = ConfigDict(extra="allow")
+
+
+class ControlActionInputRead(BaseModel):
+    name: str
+    label: str
+    required: bool = False
+    secret: bool = False
+    description: str = ""
+
+
+class ControlStateItemRead(BaseModel):
+    label: str
+    value: str
+    status: str | None = None
+    detail: str | None = None
+
+
+class ControlPlanDiffItemRead(BaseModel):
+    label: str
+    current: str
+    desired: str
+    status: str
+    note: str | None = None
+
+
+class ControlReportLinkRead(BaseModel):
+    label: str
+    path: str
+    status: str
+
+
+class ControlActionRead(BaseModel):
+    id: str
+    label: str
+    section_id: str
+    device_stage: str
+    description: str
+    classification: Literal["read-only", "write", "destructive", "upgrade"]
+    required_inputs: list[ControlActionInputRead] = Field(default_factory=list)
+    required_flags: list[str] = Field(default_factory=list)
+    required_confirmations: list[str] = Field(default_factory=list)
+    availability: str
+    blocker: str | None = None
+    last_run_status: str
+    last_run_at: str | None = None
+    last_report: str | None = None
+    suggested_command: str | None = None
+    method: str | None = None
+    api_endpoint: str | None = None
+    plan_endpoint: str
+    run_endpoint: str
+    direct_run_supported: bool = False
+    diagnostics: list[str] = Field(default_factory=list)
+
+
+class ControlSectionRead(BaseModel):
+    id: str
+    title: str
+    stage: str
+    description: str
+    status: str
+    current_state: list[ControlStateItemRead] = Field(default_factory=list)
+    desired_state: list[ControlStateItemRead] = Field(default_factory=list)
+    plan_diff: list[ControlPlanDiffItemRead] = Field(default_factory=list)
+    actions: list[ControlActionRead] = Field(default_factory=list)
+    primary_actions: list[ControlActionRead] = Field(default_factory=list)
+    destructive_actions: list[ControlActionRead] = Field(default_factory=list)
+    upgrade_actions: list[ControlActionRead] = Field(default_factory=list)
+    last_result: dict[str, Any] = Field(default_factory=dict)
+    report_links: list[ControlReportLinkRead] = Field(default_factory=list)
+    advanced_diagnostics: dict[str, Any] = Field(default_factory=dict)
+
+
+class ControlLabProfileRead(BaseModel):
+    active_profile_name: str
+    source: str
+    version: int
+    global_settings: LabGlobalSettings
+    address_plan: LabAddressPlan
+    known_lab_profile: dict[str, Any]
+    network: dict[str, Any]
+    configured_flags: dict[str, bool]
+    edit_profile_path: str
+    env_update_command: str
+    stale_or_invalid_values: list[str] = Field(default_factory=list)
+
+
+class ControlActionCatalogRead(BaseModel):
+    generated_at: datetime
+    provider_mode: str
+    summary: dict[str, Any]
+    lab_profile: ControlLabProfileRead
+    sections: list[ControlSectionRead]
+    actions: list[ControlActionRead]
+
+
+class ControlActionPlanStepRead(BaseModel):
+    label: str
+    status: str
+    detail: str
+
+
+class ControlActionPlanRead(BaseModel):
+    action: ControlActionRead
+    status: str
+    message: str
+    plan_steps: list[ControlActionPlanStepRead] = Field(default_factory=list)
+    suggested_command: str | None = None
+    api_endpoint: str | None = None
+    method: str | None = None
+    direct_run_enabled: bool = False
+    warnings: list[str] = Field(default_factory=list)
+    blockers: list[str] = Field(default_factory=list)
+
+
+class ControlActionRunRead(BaseModel):
+    action: ControlActionRead
+    status: str
+    message: str
+    executed: bool = False
+    suggested_command: str | None = None
+    api_endpoint: str | None = None
+    method: str | None = None
+    warnings: list[str] = Field(default_factory=list)
+    blockers: list[str] = Field(default_factory=list)
 
 
 class CatalogRead(BaseModel):

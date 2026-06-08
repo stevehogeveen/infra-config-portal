@@ -19,6 +19,52 @@ by default. The address plan is intent only. Activating a profile does not probe
 devices, does not update provider environment variables, does not rewrite local
 env files, and does not enable any real apply lane.
 
+Lab creation includes global settings for subnet size, gateway, domain, DNS,
+NTP, and timezone. The subnet size selector offers `/29` through `/23`.
+Profiles using `/24` or `/23` can carry NetApp address intent. Profiles using
+`/25`, `/26`, `/27`, `/28`, or `/29` automatically disable NetApp capability
+and clear NetApp address fields because the Lab Builder NetApp allocation needs
+a `/24` or larger subnet.
+
+When an operator starts from a blank `/24` profile, missing addresses are filled
+from the Lab Builder-style allocation: gateway at host offset `1`, switch/Cisco
+management at `2`, iLO/ESXi at the high host offsets, NetApp SPs at `13` and
+`14`, NetApp cluster/node/SVM management at `45` through `48`, and iSCSI LIFs
+at `49` through `52`. Smaller subnet profiles use compact core-device offsets
+and keep NetApp unavailable.
+
+## Control Center / Action Catalog
+
+The Control Center at `/control-center` is the power-user counterpart to the
+simplified Lab Builder / Guided View. It exposes the full device and action
+surface without making real infrastructure changes from the page.
+
+The current API surface is:
+
+1. List sections, lab profile metadata, current/desired/diff summaries, and the
+   action catalog with `GET /api/v1/control/actions`.
+2. Build a safe action plan with
+   `POST /api/v1/control/actions/{action_id}/plan`.
+3. Request a run placeholder with
+   `POST /api/v1/control/actions/{action_id}/run`.
+
+`run` is intentionally a safe placeholder in this pass. It returns the action,
+blockers, and suggested command/API endpoint, but does not execute commands,
+call providers, perform serial writes, apply configuration, reset devices,
+install ESXi, provision storage, or run firmware updates.
+
+Each action includes its device/stage, classification (`read-only`, `write`,
+`destructive`, or `upgrade`), required inputs, required flags, required
+confirmations, current availability, blocker, last report path, and suggested
+command/API endpoint. The catalog includes Cisco, iLO, RAID, ESXi, NetApp,
+firmware/upgrade, commander mode, and build verification controls.
+
+The Lab Profile panel displays the active address plan, the known lab profile,
+configured flags, VLAN/MTU/DNS/gateway/NTP metadata when present, stale/invalid
+value warnings, a link to the Lab Profiles editor, and a copyable non-secret env
+update command. Credential values remain environment-only and are represented
+only as configured/missing elsewhere in the app.
+
 ## MVP: Deploy VM From vSphere Template
 
 The MVP workflow accepts a request for a VM deployment and simulates planning

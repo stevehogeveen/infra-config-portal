@@ -32,6 +32,9 @@ from app.schemas import (
     CiscoConsoleBootstrapPlanRead,
     CiscoSetupReadinessRead,
     CiscoSetupWizardPlanRead,
+    ControlActionCatalogRead,
+    ControlActionPlanRead,
+    ControlActionRunRead,
     HpeRaidApplyCreate,
     HpeRaidIntentRead,
     HpeRaidIntentWrite,
@@ -101,6 +104,12 @@ from app.services.lifecycle import (
 from app.services.cisco_setup_readiness import get_cisco_setup_readiness
 from app.services.cisco_setup_wizard_plan import get_cisco_setup_wizard_plan
 from app.services.build_verification import get_lab_build_verification
+from app.services.control_actions import (
+    ControlActionNotFoundError,
+    get_control_action_catalog,
+    plan_control_action,
+    run_control_action,
+)
 from app.services.ilo_readiness import (
     get_ilo_destructive_rebuild_preview,
     get_ilo_readiness_summary,
@@ -376,6 +385,27 @@ def read_provider_status() -> list[ProviderStatusRead]:
         return provider_registry().statuses()
     except ProviderRegistryError as exc:
         return [provider_registry_error_status(settings.provider_mode, str(exc))]
+
+
+@router.get("/control/actions", response_model=ControlActionCatalogRead)
+def read_control_actions() -> ControlActionCatalogRead:
+    return get_control_action_catalog()
+
+
+@router.post("/control/actions/{action_id}/plan", response_model=ControlActionPlanRead)
+def plan_control_action_route(action_id: str) -> ControlActionPlanRead:
+    try:
+        return plan_control_action(action_id)
+    except ControlActionNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Control action not found") from exc
+
+
+@router.post("/control/actions/{action_id}/run", response_model=ControlActionRunRead)
+def run_control_action_route(action_id: str) -> ControlActionRunRead:
+    try:
+        return run_control_action(action_id)
+    except ControlActionNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Control action not found") from exc
 
 
 @router.get("/lab/firmware-inventory", response_model=ProviderProbeResultRead)
