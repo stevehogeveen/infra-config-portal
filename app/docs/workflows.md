@@ -33,6 +33,19 @@ management at `2`, iLO/ESXi at the high host offsets, NetApp SPs at `13` and
 at `49` through `52`. Smaller subnet profiles use compact core-device offsets
 and keep NetApp unavailable.
 
+## Operational Mode
+
+The Settings page opens on an Operational Mode panel so the operator can choose
+between `Simulation`, `Local Read-only Lab`, and `Local Lab Read/write`.
+`Simulation` is the committed safe default and maps to `PROVIDER_MODE=mock`
+internally. The local lab choices write ignored runtime state to
+`.local/provider-mode-settings.json` and `.local/app-mode.env`; the app must be
+restarted before the selected mode becomes active.
+
+The mode selector does not store secrets, does not call providers, and does not
+grant apply permissions by itself. Explicit shell `PROVIDER_MODE=...` values
+remain higher priority than `.local/app-mode.env`.
+
 ## Control Center / Action Catalog
 
 The Control Center at `/control-center` is the power-user counterpart to the
@@ -64,6 +77,15 @@ configured flags, VLAN/MTU/DNS/gateway/NTP metadata when present, stale/invalid
 value warnings, a link to the Lab Profiles editor, and a copyable non-secret env
 update command. Credential values remain environment-only and are represented
 only as configured/missing elsewhere in the app.
+
+Each device-oriented Control Center section surfaces an `Access & IP Config`
+tile before current/desired/diff state. This mirrors the Lab Builder first-pass
+shape: capture the original DHCP or current-access IP, record the access
+username reference, confirm that the password is available from the local
+credential path, then review the desired final IP/config values from the active
+lab profile. The tile is first-time configuration metadata only; it writes local
+ignored state under `.local/control-access.json`, does not store plaintext
+passwords, does not call providers, and does not enable direct run/apply paths.
 
 ## MVP: Deploy VM From vSphere Template
 

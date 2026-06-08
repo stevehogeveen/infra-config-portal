@@ -7,6 +7,8 @@ import type {
   CiscoConsoleBootstrapPlan,
   CiscoSetupReadiness,
   CiscoSetupWizardPlan,
+  ControlAccessConfig,
+  ControlAccessConfigWrite,
   ControlActionCatalog,
   ControlActionPlan,
   ControlActionRun,
@@ -29,6 +31,8 @@ import type {
   NetAppPlanPreview,
   NetAppReadinessComparison,
   NetAppUpgradeReadiness,
+  ProviderModeSettings,
+  ProviderModeSettingsWrite,
   ProviderProbeResult,
   ProviderStatus,
   RequestReadiness,
@@ -213,7 +217,19 @@ export const api = {
   providerArtifacts: () =>
     apiRequest<NetAppProviderArtifact[]>("/api/v1/providers/artifacts"),
   providers: () => apiRequest<ProviderStatus[]>("/api/v1/providers/status"),
+  providerModeSettings: () =>
+    apiRequest<ProviderModeSettings>("/api/v1/settings/provider-mode"),
+  updateProviderModeSettings: (payload: ProviderModeSettingsWrite) =>
+    apiRequest<ProviderModeSettings>("/api/v1/settings/provider-mode", {
+      method: "PUT",
+      body: payload
+    }),
   controlActions: () => apiRequest<ControlActionCatalog>("/api/v1/control/actions"),
+  updateControlAccessConfig: (sectionId: string, payload: ControlAccessConfigWrite) =>
+    apiRequest<ControlAccessConfig>(`/api/v1/control/access/${encodeURIComponent(sectionId)}`, {
+      method: "PUT",
+      body: payload
+    }),
   planControlAction: (id: string) =>
     apiRequest<ControlActionPlan>(`/api/v1/control/actions/${encodeURIComponent(id)}/plan`, {
       method: "POST"

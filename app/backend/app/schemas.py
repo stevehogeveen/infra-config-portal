@@ -927,6 +927,33 @@ class ProviderStatusRead(BaseModel):
     last_probe_time: str | None = None
 
 
+class ProviderModeOptionRead(BaseModel):
+    mode: str
+    label: str
+    status: str
+    description: str
+    restart_command: str
+    requirements: list[str] = Field(default_factory=list)
+
+
+class ProviderModeSettingsRead(BaseModel):
+    current_mode: str
+    desired_mode: str
+    pending_restart: bool
+    options: list[ProviderModeOptionRead]
+    restart_command: str
+    mode_env_path: str
+    store_path: str
+    updated_at: datetime | None = None
+    next_safe_action: str
+
+
+class ProviderModeSettingsWrite(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    desired_mode: Literal["mock", "local-readonly", "local-lab-readwrite"]
+
+
 class CiscoSetupReadinessRead(BaseModel):
     provider_id: str
     phase: str
@@ -1204,6 +1231,68 @@ class ControlReportLinkRead(BaseModel):
     status: str
 
 
+class ControlEditableConfigFieldRead(BaseModel):
+    label: str
+    value: str
+    source: str
+
+
+class ControlAccessConfigWrite(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    first_time_configuring: bool = True
+    original_dhcp_ip: str | None = Field(default=None, max_length=80)
+    username_reference: str | None = Field(default=None, max_length=120)
+    password_configured: bool = False
+    password_reference_label: str | None = Field(default=None, max_length=120)
+
+    @field_validator(
+        "original_dhcp_ip",
+        "username_reference",
+        "password_reference_label",
+        mode="before",
+    )
+    @classmethod
+    def strip_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        text = str(value).strip()
+        return text or None
+
+    @field_validator("original_dhcp_ip")
+    @classmethod
+    def validate_original_dhcp_ip(cls, value: str | None) -> str | None:
+        if value is not None:
+            try:
+                ip_address(value)
+            except ValueError as exc:
+                raise ValueError("original DHCP/current access IP must be an IPv4 or IPv6 address") from exc
+        return value
+
+    @field_validator("*", mode="after")
+    @classmethod
+    def reject_secret_values(cls, value: Any) -> Any:
+        _reject_secret_values(value)
+        return value
+
+
+class ControlAccessConfigRead(BaseModel):
+    section_id: str
+    title: str
+    access_method: str
+    first_time_configuring: bool
+    first_time_note: str
+    original_dhcp_ip: str | None = None
+    desired_management_ip: str | None = None
+    desired_address_label: str
+    username_reference: str | None = None
+    password_configured: bool
+    password_reference_label: str | None = None
+    editable_fields: list[ControlEditableConfigFieldRead] = Field(default_factory=list)
+    blockers: list[str] = Field(default_factory=list)
+    updated_at: datetime | None = None
+
+
 class ControlActionRead(BaseModel):
     id: str
     label: str
@@ -1237,6 +1326,7 @@ class ControlSectionRead(BaseModel):
     current_state: list[ControlStateItemRead] = Field(default_factory=list)
     desired_state: list[ControlStateItemRead] = Field(default_factory=list)
     plan_diff: list[ControlPlanDiffItemRead] = Field(default_factory=list)
+    access_config: ControlAccessConfigRead | None = None
     actions: list[ControlActionRead] = Field(default_factory=list)
     primary_actions: list[ControlActionRead] = Field(default_factory=list)
     destructive_actions: list[ControlActionRead] = Field(default_factory=list)

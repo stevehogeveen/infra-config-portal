@@ -20,6 +20,7 @@ from app.providers.action_policy import ActionCategory, current_lab_action_polic
 from app.providers.base import ProviderStatus
 from app.providers.registry import ProviderRegistryError, provider_registry
 from app.services.build_verification import get_lab_build_verification
+from app.services.control_access import control_access_configs
 from app.services.firmware_compliance import get_firmware_compliance
 from app.services.lab_profiles import active_lab_profile_for_report
 
@@ -79,10 +80,19 @@ def get_control_action_catalog() -> dict[str, Any]:
     firmware = get_firmware_compliance(refresh_live=False, scope="full")
     verification = get_lab_build_verification()
     lab_profile = _control_lab_profile()
+    access_configs = control_access_configs(lab_profile)
     actions = [_action_read(action, providers, policy, lab_profile) for action in ACTIONS]
     action_by_id = {action["id"]: action for action in actions}
     sections = [
-        _section_read(section, action_by_id, providers, firmware, verification, lab_profile)
+        _section_read(
+            section,
+            action_by_id,
+            providers,
+            firmware,
+            verification,
+            lab_profile,
+            access_configs,
+        )
         for section in SECTIONS
     ]
     return {
@@ -263,6 +273,7 @@ def _section_read(
     firmware: dict[str, Any],
     verification: dict[str, Any],
     lab_profile: dict[str, Any],
+    access_configs: dict[str, dict[str, Any]],
 ) -> dict[str, Any]:
     current, desired, diff, diagnostics = _section_state(section.id, providers, firmware, verification, lab_profile)
     actions = [action_by_id[action_id] for action_id in section.action_ids if action_id in action_by_id]
@@ -287,6 +298,7 @@ def _section_read(
         "current_state": current,
         "desired_state": desired,
         "plan_diff": diff,
+        "access_config": access_configs.get(section.id),
         "actions": actions,
         "primary_actions": [action for action in actions if action["classification"] == "read-only"][:4],
         "destructive_actions": destructive_actions,

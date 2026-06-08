@@ -145,6 +145,31 @@ export type ProviderStatus = {
   last_probe_time: string | null;
 };
 
+export type ProviderModeOption = {
+  mode: "mock" | "local-readonly" | "local-lab-readwrite";
+  label: string;
+  status: string;
+  description: string;
+  restart_command: string;
+  requirements: string[];
+};
+
+export type ProviderModeSettings = {
+  current_mode: string;
+  desired_mode: ProviderModeOption["mode"];
+  pending_restart: boolean;
+  options: ProviderModeOption[];
+  restart_command: string;
+  mode_env_path: string;
+  store_path: string;
+  updated_at: string | null;
+  next_safe_action: string;
+};
+
+export type ProviderModeSettingsWrite = {
+  desired_mode: ProviderModeOption["mode"];
+};
+
 export type ProviderProbeResult = {
   provider_id: string;
   status: string;
@@ -263,6 +288,37 @@ export type ControlReportLink = {
   status: string;
 };
 
+export type ControlEditableConfigField = {
+  label: string;
+  value: string;
+  source: string;
+};
+
+export type ControlAccessConfig = {
+  section_id: string;
+  title: string;
+  access_method: string;
+  first_time_configuring: boolean;
+  first_time_note: string;
+  original_dhcp_ip: string | null;
+  desired_management_ip: string | null;
+  desired_address_label: string;
+  username_reference: string | null;
+  password_configured: boolean;
+  password_reference_label: string | null;
+  editable_fields: ControlEditableConfigField[];
+  blockers: string[];
+  updated_at: string | null;
+};
+
+export type ControlAccessConfigWrite = {
+  first_time_configuring: boolean;
+  original_dhcp_ip: string | null;
+  username_reference: string | null;
+  password_configured: boolean;
+  password_reference_label: string | null;
+};
+
 export type ControlAction = {
   id: string;
   label: string;
@@ -296,6 +352,7 @@ export type ControlSectionRecord = {
   current_state: ControlStateItem[];
   desired_state: ControlStateItem[];
   plan_diff: ControlPlanDiffItem[];
+  access_config: ControlAccessConfig | null;
   actions: ControlAction[];
   primary_actions: ControlAction[];
   destructive_actions: ControlAction[];

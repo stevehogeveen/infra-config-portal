@@ -11,6 +11,7 @@ BACKEND_PORT="${BACKEND_PORT:-8001}"
 FRONTEND_PORT="${FRONTEND_PORT:-5173}"
 BACKEND_PID_FILE="${RUN_DIR}/infra-config-portal-backend.pid"
 FRONTEND_PID_FILE="${RUN_DIR}/infra-config-portal-frontend.pid"
+APP_MODE_ENV_FILE="${APP_MODE_ENV_FILE:-${ROOT_DIR}/.local/app-mode.env}"
 
 usage() {
   cat <<EOF
@@ -36,6 +37,29 @@ die() {
 
 log() {
   echo "$*"
+}
+
+load_provider_mode_config() {
+  if [[ -n "${PROVIDER_MODE:-}" ]]; then
+    return 0
+  fi
+  [[ -f "${APP_MODE_ENV_FILE}" ]] || return 0
+
+  local mode
+  mode="$(
+    awk -F= '$1 == "PROVIDER_MODE" {print $2; exit}' "${APP_MODE_ENV_FILE}" 2>/dev/null \
+      | tr -d '[:space:]'
+  )"
+  case "${mode}" in
+    mock|local-readonly|local-lab-readwrite)
+      export PROVIDER_MODE="${mode}"
+      ;;
+    "")
+      ;;
+    *)
+      log "Ignoring unsupported PROVIDER_MODE in ${APP_MODE_ENV_FILE}: ${mode}"
+      ;;
+  esac
 }
 
 ensure_repo_root() {
@@ -236,8 +260,10 @@ run_smoke() {
 
 start_app() {
   ensure_repo_root
+  load_provider_mode_config
   mkdir -p "${RUN_DIR}" "${LOG_DIR}"
   run_smoke
+  log "Starting backend with PROVIDER_MODE=${PROVIDER_MODE:-mock}"
   start_service "backend" "${BACKEND_PID_FILE}" is_backend_pid "${BACKEND_DIR}" "${LOG_DIR}/backend.log" \
     "${BACKEND_DIR}/.venv/bin/uvicorn" app.main:app --reload --host 127.0.0.1 --port "${BACKEND_PORT}"
   start_service "frontend" "${FRONTEND_PID_FILE}" is_frontend_pid "${FRONTEND_DIR}" "${LOG_DIR}/frontend.log" \
@@ -259,6 +285,8 @@ stop_app() {
 
 status_app() {
   ensure_repo_root
+  load_provider_mode_config
+  log "configured provider mode: ${PROVIDER_MODE:-mock}"
   service_status "backend" "${BACKEND_PID_FILE}" is_backend_pid || true
   service_status "frontend" "${FRONTEND_PID_FILE}" is_frontend_pid || true
 }

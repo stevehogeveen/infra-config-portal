@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
@@ -104,6 +106,134 @@ def test_control_action_unknown_returns_404(client: TestClient) -> None:
     response = client.post("/api/v1/control/actions/not-a-real-action/plan")
 
     assert response.status_code == 404
+
+
+def test_provider_mode_settings_exposes_simulation_and_lab_options(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    monkeypatch.setenv("PROVIDER_MODE_SETTINGS_STORE", str(tmp_path / "provider-mode.json"))
+    monkeypatch.setenv("APP_MODE_ENV_FILE", str(tmp_path / "app-mode.env"))
+
+    response = client.get("/api/v1/settings/provider-mode")
+
+    assert response.status_code == 200
+    payload = response.json()
+    labels = {option["mode"]: option["label"] for option in payload["options"]}
+    assert labels["mock"] == "Simulation"
+    assert labels["local-readonly"] == "Local Read-only Lab"
+    assert labels["local-lab-readwrite"] == "Local Lab Read/write"
+    assert payload["desired_mode"] == payload["current_mode"]
+    assert payload["pending_restart"] is False
+    assert payload["mode_env_path"].endswith("app-mode.env")
+
+
+def test_provider_mode_settings_save_writes_ignored_local_restart_config(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    store_path = tmp_path / "provider-mode.json"
+    env_path = tmp_path / "app-mode.env"
+    monkeypatch.setenv("PROVIDER_MODE_SETTINGS_STORE", str(store_path))
+    monkeypatch.setenv("APP_MODE_ENV_FILE", str(env_path))
+
+    current = client.get("/api/v1/settings/provider-mode").json()["current_mode"]
+    desired = "local-readonly" if current != "local-readonly" else "local-lab-readwrite"
+    response = client.put(
+        "/api/v1/settings/provider-mode",
+        json={"desired_mode": desired},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["desired_mode"] == desired
+    assert payload["current_mode"] == current
+    assert payload["pending_restart"] is (desired != current)
+    assert payload["restart_command"]
+    assert env_path.read_text(encoding="utf-8") == f"PROVIDER_MODE={desired}\n"
+
+    stored = json.loads(store_path.read_text(encoding="utf-8"))
+    assert stored["desired_mode"] == desired
+    assert stored["mock_default_preserved"] is True
+    assert "password" not in stored
+
+
+def test_control_action_catalog_includes_first_time_access_config(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    monkeypatch.setenv("CONTROL_ACCESS_STORE", str(tmp_path / "control-access.json"))
+    monkeypatch.setenv("LAB_PROFILE_STORE", str(tmp_path / "lab-profiles.json"))
+
+    response = client.get("/api/v1/control/actions")
+
+    assert response.status_code == 200
+    payload = response.json()
+    cisco = next(section for section in payload["sections"] if section["id"] == "cisco")
+    access_config = cisco["access_config"]
+    assert access_config["title"] == "Cisco first-time access"
+    assert access_config["desired_address_label"] == "Cisco management IP"
+    assert access_config["desired_management_ip"] == "192.168.1.204"
+    assert access_config["first_time_configuring"] is True
+    assert any("Original DHCP/current-access IP" in item for item in access_config["blockers"])
+    assert any(item["label"] == "Management IP" for item in access_config["editable_fields"])
+
+
+def test_control_access_config_saves_original_dhcp_and_presence_only_credentials(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    monkeypatch.setenv("CONTROL_ACCESS_STORE", str(tmp_path / "control-access.json"))
+    monkeypatch.setenv("LAB_PROFILE_STORE", str(tmp_path / "lab-profiles.json"))
+
+    saved = client.put(
+        "/api/v1/control/access/ilo",
+        json={
+            "first_time_configuring": True,
+            "original_dhcp_ip": "192.0.2.55",
+            "username_reference": "local-admin",
+            "password_configured": True,
+            "password_reference_label": "local env reference",
+        },
+    )
+
+    assert saved.status_code == 200
+    payload = saved.json()
+    assert payload["section_id"] == "ilo"
+    assert payload["original_dhcp_ip"] == "192.0.2.55"
+    assert payload["username_reference"] == "local-admin"
+    assert payload["password_configured"] is True
+    assert payload["password_reference_label"] == "local env reference"
+    assert payload["blockers"] == []
+
+    catalog = client.get("/api/v1/control/actions").json()
+    ilo = next(section for section in catalog["sections"] if section["id"] == "ilo")
+    assert ilo["access_config"]["original_dhcp_ip"] == "192.0.2.55"
+    assert ilo["access_config"]["password_configured"] is True
+
+
+def test_control_access_config_rejects_secret_shaped_values(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    monkeypatch.setenv("CONTROL_ACCESS_STORE", str(tmp_path / "control-access.json"))
+
+    response = client.put(
+        "/api/v1/control/access/cisco",
+        json={
+            "first_time_configuring": True,
+            "original_dhcp_ip": "192.0.2.10",
+            "username_reference": "password=bad",
+            "password_configured": True,
+        },
+    )
+
+    assert response.status_code == 422
 
 
 def test_control_action_catalog_blocks_netapp_when_lab_profile_disables_it(

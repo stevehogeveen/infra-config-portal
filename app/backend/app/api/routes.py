@@ -32,6 +32,8 @@ from app.schemas import (
     CiscoConsoleBootstrapPlanRead,
     CiscoSetupReadinessRead,
     CiscoSetupWizardPlanRead,
+    ControlAccessConfigRead,
+    ControlAccessConfigWrite,
     ControlActionCatalogRead,
     ControlActionPlanRead,
     ControlActionRunRead,
@@ -60,6 +62,8 @@ from app.schemas import (
     NetAppReadinessComparisonRead,
     NetAppUpgradeReadinessRead,
     ProviderArtifactRead,
+    ProviderModeSettingsRead,
+    ProviderModeSettingsWrite,
     ProviderProbeResultRead,
     ProviderStatusRead,
     RequestReadinessRead,
@@ -110,6 +114,10 @@ from app.services.control_actions import (
     plan_control_action,
     run_control_action,
 )
+from app.services.control_access import (
+    ControlAccessConfigNotFoundError,
+    update_control_access_config,
+)
 from app.services.ilo_readiness import (
     get_ilo_destructive_rebuild_preview,
     get_ilo_readiness_summary,
@@ -122,6 +130,11 @@ from app.services.ilo_readiness import (
 from app.services.ilo_setup_apply import (
     apply_ilo_setup,
     build_ilo_setup_apply_plan,
+)
+from app.services.provider_mode_settings import (
+    ProviderModeSettingsError,
+    read_provider_mode_settings,
+    update_provider_mode_settings,
 )
 from app.services.lab_profiles import (
     LabProfileNotFoundError,
@@ -387,9 +400,35 @@ def read_provider_status() -> list[ProviderStatusRead]:
         return [provider_registry_error_status(settings.provider_mode, str(exc))]
 
 
+@router.get("/settings/provider-mode", response_model=ProviderModeSettingsRead)
+def read_provider_mode_settings_route() -> ProviderModeSettingsRead:
+    return read_provider_mode_settings()
+
+
+@router.put("/settings/provider-mode", response_model=ProviderModeSettingsRead)
+def update_provider_mode_settings_route(
+    payload: ProviderModeSettingsWrite,
+) -> ProviderModeSettingsRead:
+    try:
+        return update_provider_mode_settings(payload.model_dump())
+    except ProviderModeSettingsError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
 @router.get("/control/actions", response_model=ControlActionCatalogRead)
 def read_control_actions() -> ControlActionCatalogRead:
     return get_control_action_catalog()
+
+
+@router.put("/control/access/{section_id}", response_model=ControlAccessConfigRead)
+def update_control_access_route(
+    section_id: str,
+    payload: ControlAccessConfigWrite,
+) -> ControlAccessConfigRead:
+    try:
+        return update_control_access_config(section_id, payload.model_dump())
+    except ControlAccessConfigNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Control access section not found") from exc
 
 
 @router.post("/control/actions/{action_id}/plan", response_model=ControlActionPlanRead)

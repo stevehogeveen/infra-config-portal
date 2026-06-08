@@ -88,7 +88,8 @@ def test_stale_lab_ip_assumptions_are_flagged() -> None:
     assert result == [{"field": "cisco_management", "value": "10.10.8.112"}]
 
 
-def test_build_verification_failure_reporting(monkeypatch) -> None:
+def test_build_verification_failure_reporting(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("LAB_PROFILE_STORE", str(tmp_path / "lab-profiles.json"))
     monkeypatch.setattr("app.services.build_verification._reachable", lambda host, port, check_ports: False if host else None)
     result = build_lab_build_verification(check_ports=True)
 

@@ -80,6 +80,19 @@ make frontend-run
 The backend runs at `http://127.0.0.1:8001`. The Vite frontend runs at
 `http://127.0.0.1:5173` and proxies API requests to the backend.
 
+### Operational Mode
+
+The Settings page includes an Operational Mode panel. The safe default is shown
+as `Simulation`; it maps to `PROVIDER_MODE=mock` internally and does not contact
+real infrastructure. Selecting `Local Read-only Lab` or `Local Lab Read/write`
+writes ignored local state under `.local/provider-mode-settings.json` and
+`.local/app-mode.env`. Restart the app with `make app-restart` or the command
+shown in the panel for the selected mode to take effect.
+
+An explicit shell `PROVIDER_MODE=...` still overrides the local mode file. The
+mode selector does not store credentials, does not call providers, and does not
+enable workflow-specific apply paths by itself.
+
 Docker Compose:
 
 ```bash
@@ -88,7 +101,7 @@ docker compose up --build
 ```
 
 Compose starts local PostgreSQL, the FastAPI backend, and the Vite frontend.
-Provider adapters still run in mock mode only.
+Provider adapters still start in Simulation by default.
 
 ## Saved Lab Profiles
 
