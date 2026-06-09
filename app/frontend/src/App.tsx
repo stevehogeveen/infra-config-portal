@@ -26,7 +26,7 @@ import {
   X,
   XCircle
 } from "lucide-react";
-import { FormEvent, ReactNode, useEffect, useMemo, useState } from "react";
+import { createContext, FormEvent, ReactNode, useContext, useEffect, useMemo, useState } from "react";
 import { Link, Navigate, NavLink, Route as RouterRoute, Routes, useLocation, useNavigate, useParams } from "react-router-dom";
 
 import { api } from "./api";
@@ -77,12 +77,18 @@ import type {
   ProviderProbeResult,
   ProviderStatus,
   ReadinessIssue,
+  ReportCenter,
+  ReportIssue,
+  ReportSourceSummary,
+  ReportPageBadge,
   RequestReadiness,
   RequestRecord,
   RequestStatus,
   VMDeploymentCreate,
   VMDeploymentUpdate,
-  WorkflowRun
+  WorkflowAction,
+  WorkflowRun,
+  WorkflowStage
 } from "./types";
 
 const statusOrder: RequestStatus[] = [
@@ -175,14 +181,23 @@ type VerificationSectionId =
   | "mtu-protocols"
   | "certification-report";
 type ReportsSectionId =
-  | "latest"
+  | "all"
+  | "critical"
+  | "warnings"
+  | "stale_config"
   | "cisco"
-  | "ilo"
-  | "raid"
   | "esxi"
   | "netapp"
   | "firmware"
-  | "verification";
+  | "lab_profile";
+type ReportIssueAreaId =
+  | "dashboard"
+  | "run-center"
+  | "control-center"
+  | "firmware"
+  | "verification"
+  | "reports"
+  | "settings";
 type SettingsSectionId =
   | "mode"
   | "ip-profile"
@@ -195,6 +210,9 @@ type SettingsSectionId =
 type HealthStatus = {
   app?: string;
   provider_mode: string;
+  operator_runtime_mode?: string;
+  expected_runtime_mode?: string;
+  dev_test_banner?: string | null;
   status: string;
 };
 
@@ -217,6 +235,16 @@ type ReportLink = {
   path: string;
   status?: string;
 };
+
+type LegacyReportSectionId =
+  | "latest"
+  | "cisco"
+  | "ilo"
+  | "raid"
+  | "esxi"
+  | "netapp"
+  | "firmware"
+  | "verification";
 
 type RunChoice = {
   id: string;
@@ -343,12 +371,12 @@ const queueSectionMeta: Array<Omit<QueueSection, "items">> = [
   {
     id: "planned_ready_to_execute",
     title: "Planned Ready To Execute",
-    empty: "No planned requests are ready for mock execution."
+    empty: "No planned requests are ready to execute."
   },
   {
     id: "executing",
     title: "Executing",
-    empty: "No mock workflow is executing."
+    empty: "No workflow is executing."
   },
   {
     id: "blocked_failed",
@@ -362,12 +390,33 @@ const queueSectionMeta: Array<Omit<QueueSection, "items">> = [
   }
 ];
 
+type ReportIssuesContextValue = {
+  reportIssues: ReportCenter | null;
+  reportIssuesError: string;
+  reportIssuesLoading: boolean;
+  reloadReportIssues: () => Promise<void>;
+};
+
+const ReportIssuesContext = createContext<ReportIssuesContextValue>({
+  reportIssues: null,
+  reportIssuesError: "",
+  reportIssuesLoading: false,
+  reloadReportIssues: async () => {}
+});
+
+function useReportIssues() {
+  return useContext(ReportIssuesContext);
+}
+
 function App() {
   const [labProfileState, setLabProfileState] = useState<LabProfileList | null>(null);
   const [labProfileError, setLabProfileError] = useState("");
   const [labProfileLoading, setLabProfileLoading] = useState(true);
   const [health, setHealth] = useState<HealthStatus | null>(null);
   const [healthError, setHealthError] = useState("");
+  const [reportIssues, setReportIssues] = useState<ReportCenter | null>(null);
+  const [reportIssuesError, setReportIssuesError] = useState("");
+  const [reportIssuesLoading, setReportIssuesLoading] = useState(true);
 
   async function loadLabProfileState() {
     setLabProfileError("");
@@ -393,8 +442,22 @@ function App() {
     }
   }
 
+  async function loadReportIssues() {
+    setReportIssuesError("");
+    setReportIssuesLoading(true);
+    try {
+      setReportIssues(await api.reportIssues());
+    } catch (err) {
+      setReportIssues(null);
+      setReportIssuesError((err as Error).message);
+    } finally {
+      setReportIssuesLoading(false);
+    }
+  }
+
   useEffect(() => {
     loadLabProfileState();
+    loadReportIssues();
   }, []);
 
   useEffect(() => {
@@ -411,13 +474,16 @@ function App() {
   }, []);
 
   return (
-    <AppShell
-      health={health}
-      healthError={healthError}
-      labProfileError={labProfileError}
-      labProfileLoading={labProfileLoading}
-      labProfileState={labProfileState}
+    <ReportIssuesContext.Provider
+      value={{ reportIssues, reportIssuesError, reportIssuesLoading, reloadReportIssues: loadReportIssues }}
     >
+      <AppShell
+        health={health}
+        healthError={healthError}
+        labProfileError={labProfileError}
+        labProfileLoading={labProfileLoading}
+        labProfileState={labProfileState}
+      >
         <Routes>
           <RouterRoute path="/" element={<Navigate to="/dashboard" replace />} />
           <RouterRoute path="/dashboard" element={<Dashboard />} />
@@ -459,7 +525,8 @@ function App() {
           <RouterRoute path="/media" element={<MediaInventoryPage />} />
           <RouterRoute path="/providers" element={<Navigate to="/verification" replace />} />
         </Routes>
-    </AppShell>
+      </AppShell>
+    </ReportIssuesContext.Provider>
   );
 }
 
@@ -505,9 +572,22 @@ function AppShell({
           </button>
           <span>Lab Builder</span>
         </div>
+        {health?.dev_test_banner && <DevTestBanner message={health.dev_test_banner} />}
         {children}
       </main>
     </div>
+  );
+}
+
+function DevTestBanner({ message }: { message: string }) {
+  return (
+    <section className="dev-test-banner" aria-label="Development test mode warning">
+      <AlertTriangle size={18} />
+      <div>
+        <strong>Dev/Test Mode</strong>
+        <p>{message}</p>
+      </div>
+    </section>
   );
 }
 
@@ -531,7 +611,9 @@ function SidebarNav({
   const activeProfile = labProfileState?.active_profile ?? null;
   const providerMode = health?.provider_mode ?? (healthError ? "unverified" : "checking");
   const modeLabel = displayModeLabel(providerMode);
-  const modeStatus = providerMode === "mock" ? "safe_default" : healthError ? "unavailable" : providerMode;
+  const modeStatus = providerMode === "mock" ? "test_fixture" : healthError ? "unavailable" : providerMode;
+  const { reportIssues } = useReportIssues();
+  const pageBadges = reportIssues?.page_badges ?? {};
 
   return (
     <aside className={drawerOpen ? "sidebar open" : "sidebar"} aria-label="Primary navigation">
@@ -548,13 +630,13 @@ function SidebarNav({
         </button>
       </div>
       <nav>
-        <NavItem to="/dashboard" icon={<Gauge size={18} />} label="Dashboard" />
-        <NavItem to="/run-center" icon={<Workflow size={18} />} label="Run Center" />
-        <NavItem to="/control-center" icon={<Wrench size={18} />} label="Control" />
-        <NavItem to="/firmware" icon={<ShieldCheck size={18} />} label="Firmware" />
-        <NavItem to="/verification" icon={<CheckCircle2 size={18} />} label="Verification" />
-        <NavItem to="/reports" icon={<FileText size={18} />} label="Reports" />
-        <NavItem to="/settings" icon={<Settings size={18} />} label="Settings" />
+        <NavItem to="/dashboard" icon={<Gauge size={18} />} label="Dashboard" issueBadge={pageBadges.dashboard} />
+        <NavItem to="/run-center" icon={<Workflow size={18} />} label="Run Center" issueBadge={pageBadges["run-center"]} />
+        <NavItem to="/control-center" icon={<Wrench size={18} />} label="Control" issueBadge={pageBadges["control-center"]} />
+        <NavItem to="/firmware" icon={<ShieldCheck size={18} />} label="Firmware" issueBadge={pageBadges.firmware} />
+        <NavItem to="/verification" icon={<CheckCircle2 size={18} />} label="Verification" issueBadge={pageBadges.verification} />
+        <NavItem to="/reports" icon={<FileText size={18} />} label="Reports" issueBadge={pageBadges.reports} />
+        <NavItem to="/settings" icon={<Settings size={18} />} label="Settings" issueBadge={pageBadges.settings} />
       </nav>
       <div className="sidebar-profile">
         <div className="sidebar-profile-head">
@@ -580,13 +662,40 @@ function SidebarNav({
   );
 }
 
-function NavItem({ to, icon, label }: { to: string; icon: ReactNode; label: string }) {
+function NavItem({
+  to,
+  icon,
+  label,
+  issueBadge
+}: {
+  to: string;
+  icon: ReactNode;
+  label: string;
+  issueBadge?: ReportPageBadge;
+}) {
   return (
     <NavLink to={to} className={({ isActive }) => (isActive ? "nav-item active" : "nav-item")}>
       {icon}
-      <span>{label}</span>
+      <span className="nav-item-label">{label}</span>
+      <IssueNavBadge badge={issueBadge} />
     </NavLink>
   );
+}
+
+function IssueNavBadge({ badge }: { badge?: ReportPageBadge }) {
+  if (!badge) return null;
+  const className = `issue-nav-badge issue-tone-${badge.status}`;
+  const label =
+    badge.status === "critical"
+      ? `Blocked ${badge.critical || badge.count}`
+      : badge.status === "warning"
+        ? `Review ${badge.warning || badge.count}`
+        : badge.status === "success"
+          ? "Ready"
+          : badge.status === "not_configured_yet"
+            ? "Not configured"
+            : badge.label;
+  return <span className={className}>{label}</span>;
 }
 
 function ActiveLabSelector({
@@ -699,7 +808,8 @@ function Dashboard() {
   return (
     <Page
       activeSection={activeSection}
-      description="A quiet operating summary for the current lab and mock workflow queue."
+      description="A quiet operating summary for the current lab and workflow queue."
+      issueArea="dashboard"
       onSectionChange={(sectionId) => setActiveSection(sectionId as DashboardSectionId)}
       primaryAction={{ icon: <Workflow size={16} />, label: "Open Run Center", to: "/run-center" }}
       sections={dashboardSections}
@@ -762,7 +872,7 @@ function Dashboard() {
               <NextActionCard detail={reviewStateForRun(latestRun).message} to={`/workflow-runs/${latestRun.id}`} />
             </>
           ) : (
-            <EmptyState title="No run history" detail="Mock workflow runs will appear here after a request is planned or executed." />
+            <EmptyState title="No run history" detail="Workflow runs will appear here after a request is planned or executed." />
           )}
         </section>
       )}
@@ -921,12 +1031,14 @@ function RunCenter() {
   const [requests, setRequests] = useState<RequestRecord[]>([]);
   const [runs, setRuns] = useState<WorkflowRun[]>([]);
   const [providers, setProviders] = useState<ProviderStatus[]>([]);
+  const [workflowStages, setWorkflowStages] = useState<WorkflowStage[]>([]);
   const [readinessByRequest, setReadinessByRequest] = useState<ReadinessMap>({});
   const [netappPlanPreview, setNetappPlanPreview] = useState<NetAppPlanPreview | null>(null);
   const [netappArtifacts, setNetappArtifacts] = useState<NetAppProviderArtifact[]>([]);
   const [netappConsoleReadiness, setNetappConsoleReadiness] = useState<NetAppConsoleReadiness | null>(null);
   const [netappConsoleDiscovery, setNetappConsoleDiscovery] = useState<ProviderProbeResult | null>(null);
   const [netappConsoleState, setNetappConsoleState] = useState<ProviderProbeResult | null>(null);
+  const [netappLiveState, setNetappLiveState] = useState<ProviderProbeResult | null>(null);
   const [netappNfsVcenterReadiness, setNetappNfsVcenterReadiness] = useState<ProviderProbeResult | null>(null);
   const [netappReadinessComparison, setNetappReadinessComparison] = useState<NetAppReadinessComparison | null>(null);
   const [netappUpgradeReadiness, setNetappUpgradeReadiness] = useState<NetAppUpgradeReadiness | null>(null);
@@ -951,14 +1063,18 @@ function RunCenter() {
     setError("");
     setLoading(true);
     try {
-      const [nextRequests, nextRuns, nextProviders] = await Promise.all([
+      const [nextRequests, nextRuns, nextWorkflowStages] = await Promise.all([
         api.requests(),
         api.workflowRuns(),
-        api.providers()
+        api.workflowStages()
       ]);
       setRequests(nextRequests);
       setRuns(nextRuns);
-      setProviders(nextProviders);
+      setWorkflowStages(nextWorkflowStages);
+      setLoading(false);
+      api.providers()
+        .then(setProviders)
+        .catch((err: Error) => setError((current) => current || err.message));
       setReadinessByRequest(await loadReadinessMap(nextRequests));
     } catch (err) {
       setError((err as Error).message);
@@ -976,6 +1092,7 @@ function RunCenter() {
         nextConsoleReadiness,
         nextConsoleDiscovery,
         nextConsoleState,
+        nextLiveState,
         nextNfsVcenterReadiness,
         nextReadinessComparison,
         nextUpgradeReadiness,
@@ -985,6 +1102,7 @@ function RunCenter() {
         api.netappConsoleReadiness(),
         api.netappConsoleDiscovery(),
         api.netappConsoleReadState(),
+        api.netappLiveState(),
         api.netappNfsVcenterReadiness(),
         api.netappReadinessComparison(),
         api.netappUpgradeReadiness(),
@@ -994,6 +1112,7 @@ function RunCenter() {
       setNetappConsoleReadiness(nextConsoleReadiness);
       setNetappConsoleDiscovery(nextConsoleDiscovery);
       setNetappConsoleState(nextConsoleState);
+      setNetappLiveState(nextLiveState);
       setNetappNfsVcenterReadiness(nextNfsVcenterReadiness);
       setNetappReadinessComparison(nextReadinessComparison);
       setNetappUpgradeReadiness(nextUpgradeReadiness);
@@ -1025,6 +1144,34 @@ function RunCenter() {
     try {
       const result = await api.runNetappConsoleReadState();
       setNetappConsoleState(result);
+      await loadNetAppPlanPreview();
+    } catch (err) {
+      setNetappError((err as Error).message);
+    } finally {
+      setNetappAction("");
+    }
+  }
+
+  async function runNetAppLiveState() {
+    setNetappError("");
+    setNetappAction("live-state");
+    try {
+      const result = await api.runNetappLiveState();
+      setNetappLiveState(result);
+      await loadNetAppPlanPreview();
+    } catch (err) {
+      setNetappError((err as Error).message);
+    } finally {
+      setNetappAction("");
+    }
+  }
+
+  async function validateNetAppSetup() {
+    setNetappError("");
+    setNetappAction("validate-setup");
+    try {
+      const result = await api.validateNetappSetup();
+      setNetappLiveState(result);
       await loadNetAppPlanPreview();
     } catch (err) {
       setNetappError((err as Error).message);
@@ -1093,6 +1240,7 @@ function RunCenter() {
     selectedItem,
     totalWork: totalActiveWork
   });
+  const stageById = new Map(workflowStages.map((stage) => [stage.stage_id, stage]));
   const selectedChoices = runChoices.filter((choice) => selectedRunChoiceIds.includes(choice.id));
   const selectedBlockers = selectedChoices.flatMap((choice) =>
     choice.blockers.map((blocker) => `${choice.title}: ${blocker}`)
@@ -1104,26 +1252,35 @@ function RunCenter() {
     esxi: runChoices.find((choice) => choice.id === "esxi"),
     netapp: runChoices.find((choice) => choice.id === "netapp")
   };
+  const registryStageBySection: Partial<Record<RunCenterSectionId, WorkflowStage | undefined>> = {
+    cisco: stageById.get("cisco"),
+    ilo: stageById.get("ilo"),
+    raid: stageById.get("raid"),
+    esxi: stageById.get("esxi"),
+    netapp: stageById.get("netapp")
+  };
   const runCenterSections: SectionOption<RunCenterSectionId>[] = [
     { id: "guided", label: "Guided Build", status: totalActiveWork ? "ready" : "not_run" },
-    { id: "cisco", label: "Cisco", status: focusChoiceBySection.cisco?.blockers.length ? "blocked" : "ready" },
-    { id: "ilo", label: "HPE / iLO", status: focusChoiceBySection.ilo?.blockers.length ? "blocked" : "ready" },
-    { id: "raid", label: "RAID", status: focusChoiceBySection.raid?.blockers.length ? "blocked" : "ready" },
-    { id: "esxi", label: "ESXi", status: focusChoiceBySection.esxi?.blockers.length ? "blocked" : "ready" },
+    { id: "cisco", label: "Cisco", status: registryStageBySection.cisco?.current_state ?? (focusChoiceBySection.cisco?.blockers.length ? "blocked" : "ready") },
+    { id: "ilo", label: "HPE / iLO", status: registryStageBySection.ilo?.current_state ?? (focusChoiceBySection.ilo?.blockers.length ? "blocked" : "ready") },
+    { id: "raid", label: "RAID", status: registryStageBySection.raid?.current_state ?? (focusChoiceBySection.raid?.blockers.length ? "blocked" : "ready") },
+    { id: "esxi", label: "ESXi", status: registryStageBySection.esxi?.current_state ?? (focusChoiceBySection.esxi?.blockers.length ? "blocked" : "ready") },
     {
       id: "netapp",
       label: "NetApp",
       status:
-        (netappPlanPreview?.blockers.length ?? 0) > 0 || (focusChoiceBySection.netapp?.blockers.length ?? 0) > 0
+        registryStageBySection.netapp?.current_state ??
+        ((netappPlanPreview?.blockers.length ?? 0) > 0 || (focusChoiceBySection.netapp?.blockers.length ?? 0) > 0
           ? "blocked"
-          : "preview_only"
+          : "ready")
     }
   ];
 
   return (
     <Page
       activeSection={activeSection}
-      description="A guided mock-first run surface. Provider-specific detail is available by section."
+      description="A guided live-lab run surface. Provider-specific detail is available by section."
+      issueArea="run-center"
       onSectionChange={(sectionId) => setActiveSection(sectionId as RunCenterSectionId)}
       primaryAction={{ icon: <Route size={16} />, label: selectedItem?.actionLabel ?? "Review Guided Build", onClick: () => setActiveSection("guided") }}
       sections={runCenterSections}
@@ -1153,11 +1310,20 @@ function RunCenter() {
               ]}
             />
             <NextActionCard
-              detail={selectedItem?.actionLabel ?? "Choose build stages or create a mock VM request."}
+              detail={selectedItem?.actionLabel ?? "Choose build stages or create a VM request."}
               to={selectedItem ? queueItemLink(selectedItem) : "/requests/new"}
             />
             <BlockerSummary blockers={selectedBlockers} />
           </div>
+          <WorkflowStageList
+            onSelect={(stageId) => {
+              const nextSection = stageId === "ilo" ? "ilo" : stageId;
+              if (["cisco", "ilo", "raid", "esxi", "netapp"].includes(nextSection)) {
+                setActiveSection(nextSection as RunCenterSectionId);
+              }
+            }}
+            stages={workflowStages}
+          />
           <AdvancedDetails
             className="section-details"
             summary="Stage picker, work queue, and selected request detail"
@@ -1209,15 +1375,25 @@ function RunCenter() {
         </>
       )}
       {["cisco", "ilo", "raid", "esxi"].includes(activeSection) && (
-        <RunCenterSectionFocus choice={focusChoiceBySection[activeSection]} />
+        <>
+          <RunCenterSectionFocus choice={focusChoiceBySection[activeSection]} />
+          <StageDetailPanel
+            onCopy={copyWorkflowActionToClipboard}
+            stage={registryStageBySection[activeSection]}
+          />
+        </>
       )}
       {activeSection === "netapp" && (
         <>
           <RunCenterSectionFocus choice={focusChoiceBySection.netapp} />
+          <StageDetailPanel
+            onCopy={copyWorkflowActionToClipboard}
+            stage={registryStageBySection.netapp}
+          />
           <AdvancedDetails
             className="section-details"
-            summary="NetApp planned targets, readiness comparison, console preview, and artifacts"
-            title="NetApp preview details"
+            summary="NetApp planned targets, live readiness comparison, console result, and artifacts"
+            title="NetApp live readiness details"
           >
             <NetAppRunCenterPreview
               artifacts={netappArtifacts}
@@ -1226,10 +1402,13 @@ function RunCenter() {
               consoleState={netappConsoleState}
               error={netappError}
               loading={netappLoading}
+              liveState={netappLiveState}
               nfsVcenterReadiness={netappNfsVcenterReadiness}
               netappAction={netappAction}
               onRunConsoleDiscovery={runNetAppConsoleDiscovery}
               onRunConsoleReadState={runNetAppConsoleReadState}
+              onRunLiveState={runNetAppLiveState}
+              onValidateSetup={validateNetAppSetup}
               onRefresh={loadNetAppPlanPreview}
               preview={netappPlanPreview}
               readinessComparison={netappReadinessComparison}
@@ -1239,6 +1418,276 @@ function RunCenter() {
         </>
       )}
     </Page>
+  );
+}
+
+function WorkflowStageList({
+  onSelect,
+  stages
+}: {
+  onSelect: (stageId: string) => void;
+  stages: WorkflowStage[];
+}) {
+  return (
+    <section className="panel workflow-stage-list">
+      <div className="readiness-head">
+        <PanelTitle icon={<Workflow size={18} />} title="Workflow Stages" />
+        <span className="muted">{stages.length} registry stages</span>
+      </div>
+      {stages.length ? (
+        <table className="provider-candidate-table workflow-registry-table">
+          <thead>
+            <tr>
+              <th>Stage</th>
+              <th>State</th>
+              <th>Actions</th>
+              <th>Reports</th>
+              <th>Next</th>
+            </tr>
+          </thead>
+          <tbody>
+            {stages.map((stage) => (
+              <tr key={stage.stage_id}>
+                <td>
+                  <strong>{stage.label}</strong>
+                  <span>{stage.stage_id}</span>
+                </td>
+                <td><StatusBadge status={stage.current_state} /></td>
+                <td>{stage.action_count}</td>
+                <td>{stage.report_count}</td>
+                <td>
+                  <button className="small-button" onClick={() => onSelect(stage.stage_id)} type="button">
+                    <Route size={14} />
+                    Open
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      ) : (
+        <EmptyState title="No workflow registry data" detail="Refresh Run Center after the backend registry endpoint is available." />
+      )}
+    </section>
+  );
+}
+
+function StageDetailPanel({
+  onCopy,
+  stage
+}: {
+  onCopy: (action: WorkflowAction) => void;
+  stage: WorkflowStage | undefined;
+}) {
+  const [selectedActionId, setSelectedActionId] = useState("");
+
+  useEffect(() => {
+    if (!stage) {
+      setSelectedActionId("");
+      return;
+    }
+    setSelectedActionId((current) =>
+      stage.actions.some((action) => action.action_id === current)
+        ? current
+        : stage.primary_action ?? stage.actions[0]?.action_id ?? ""
+    );
+  }, [stage]);
+
+  if (!stage) {
+    return (
+      <section className="panel">
+        <EmptyState title="No registry stage" detail="This section has no workflow registry stage yet." />
+      </section>
+    );
+  }
+
+  const selectedAction =
+    stage.actions.find((action) => action.action_id === selectedActionId) ?? stage.actions[0] ?? null;
+
+  return (
+    <section className="panel stage-detail-panel">
+      <div className="readiness-head">
+        <div>
+          <PanelTitle icon={<Route size={18} />} title={`${stage.label} Registry`} />
+          <p>{stage.desired_state}</p>
+        </div>
+        <StatusBadge status={stage.current_state} />
+      </div>
+      <div className="provider-fact-grid compact">
+        <ProviderFact label="Actions" value={String(stage.action_count)} />
+        <ProviderFact label="Blocked" value={String(stage.blocked_count)} />
+        <ProviderFact label="Reports" value={String(stage.report_count)} />
+        <ProviderFact label="Primary" value={stage.primary_action ?? "Not set"} />
+      </div>
+      <WorkflowActionList
+        actions={stage.actions}
+        onCopy={onCopy}
+        onSelect={setSelectedActionId}
+        selectedActionId={selectedAction?.action_id ?? ""}
+      />
+      {selectedAction && <WorkflowActionDetail action={selectedAction} onCopy={onCopy} />}
+    </section>
+  );
+}
+
+function WorkflowActionList({
+  actions,
+  onCopy,
+  onSelect,
+  selectedActionId
+}: {
+  actions: WorkflowAction[];
+  onCopy: (action: WorkflowAction) => void;
+  onSelect: (actionId: string) => void;
+  selectedActionId: string;
+}) {
+  if (!actions.length) {
+    return <EmptyState title="No actions" detail="No registry actions are defined for this stage." />;
+  }
+  return (
+    <table className="provider-candidate-table workflow-action-table">
+      <thead>
+        <tr>
+          <th>Action</th>
+          <th>Category</th>
+          <th>Mode</th>
+          <th>Availability</th>
+          <th>Controls</th>
+        </tr>
+      </thead>
+      <tbody>
+        {actions.map((action) => (
+          <tr className={action.action_id === selectedActionId ? "selected-row" : ""} key={action.action_id}>
+            <td>
+              <strong>{action.label}</strong>
+              <span>{action.action_id}</span>
+            </td>
+            <td>{labelize(action.category)}</td>
+            <td><span className={`classification-tag ${workflowModeClass(action.mode)}`}>{workflowModeLabel(action.mode)}</span></td>
+            <td>
+              <StatusBadge status={action.current_availability} />
+              {action.blockers[0] && <p className="control-table-note">{action.blockers[0]}</p>}
+            </td>
+            <td>
+              <div className="action-row">
+                <button className="small-button" onClick={() => onSelect(action.action_id)} type="button">
+                  <Route size={14} />
+                  Detail
+                </button>
+                <button className="small-button" onClick={() => onCopy(action)} type="button">
+                  <Copy size={14} />
+                  Copy
+                </button>
+              </div>
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+function WorkflowActionDetail({
+  action,
+  onCopy
+}: {
+  action: WorkflowAction;
+  onCopy: (action: WorkflowAction) => void;
+}) {
+  return (
+    <AdvancedDetails
+      className="section-details workflow-action-detail"
+      summary={`${action.category} / ${action.mode} / ${action.source_type}`}
+      title={action.label}
+    >
+      <div className="workflow-action-detail-grid">
+        <div>
+          <h3>Definition</h3>
+          <dl className="issue-meta-grid">
+            <div>
+              <dt>Action ID</dt>
+              <dd>{action.action_id}</dd>
+            </div>
+            <div>
+              <dt>Provider</dt>
+              <dd>{labelize(action.provider)}</dd>
+            </div>
+            <div>
+              <dt>Required mode</dt>
+              <dd>{action.required_mode}</dd>
+            </div>
+            <div>
+              <dt>Source</dt>
+              <dd>{labelize(action.source_type)}</dd>
+            </div>
+          </dl>
+          <p>{action.description}</p>
+          <div className="action-row">
+            <button className="small-button" onClick={() => onCopy(action)} type="button">
+              <Copy size={14} />
+              Copy command
+            </button>
+          </div>
+          <code>{workflowActionCopyText(action)}</code>
+        </div>
+        <RunTraceSummary trace={action.last_run_trace} />
+      </div>
+      <RequirementList title="Required gates" items={action.required_gates} />
+      <RequirementList title="Confirmations" items={action.required_confirmations} />
+      <RequirementList title="Reports" items={action.reports} code />
+      <RequirementList title="Safety notes" items={action.safety_notes} />
+    </AdvancedDetails>
+  );
+}
+
+function RunTraceSummary({ trace }: { trace: WorkflowAction["last_run_trace"] }) {
+  return (
+    <section className="run-trace-summary">
+      <div className="readiness-head">
+        <strong>Run Trace</strong>
+        <StatusBadge status={trace.status} />
+      </div>
+      <dl>
+        <div>
+          <dt>Source</dt>
+          <dd>{labelize(trace.source_type)}</dd>
+        </div>
+        <div>
+          <dt>Freshness</dt>
+          <dd>{labelize(trace.freshness)}</dd>
+        </div>
+        <div>
+          <dt>Finished</dt>
+          <dd>{trace.finished_at ? formatDateTime(trace.finished_at) : "Not checked"}</dd>
+        </div>
+      </dl>
+      <p>{trace.summary}</p>
+      {trace.warnings.length > 0 && <BlockerSummary blockers={[]} warnings={trace.warnings} />}
+    </section>
+  );
+}
+
+function RequirementList({
+  code = false,
+  items,
+  title
+}: {
+  code?: boolean;
+  items: string[];
+  title: string;
+}) {
+  if (!items.length) {
+    return null;
+  }
+  return (
+    <div className="workflow-requirement-list">
+      <strong>{title}</strong>
+      <ul>
+        {items.map((item) => (
+          <li key={`${title}-${item}`}>{code ? <code>{item}</code> : item}</li>
+        ))}
+      </ul>
+    </div>
   );
 }
 
@@ -1259,7 +1708,7 @@ function RunCenterTabs({
     { id: "choose", label: "Choose Run", detail: "Start here", icon: <Route size={16} /> },
     { id: "queue", label: "Work Queue", detail: `${totalWork} active`, icon: <ClipboardList size={16} /> },
     { id: "selected", label: "Selected Work", detail: selectedLabel, icon: <ShieldCheck size={16} /> },
-    { id: "netapp", label: "NetApp Preview", detail: `${netappIssueCount} issues`, icon: <HardDrive size={16} /> }
+    { id: "netapp", label: "NetApp", detail: `${netappIssueCount} issues`, icon: <HardDrive size={16} /> }
   ];
 
   return (
@@ -1346,14 +1795,14 @@ function buildRunChoices({
     },
     {
       id: "netapp",
-      title: "NetApp ONTAP Preview",
+      title: "NetApp ONTAP",
       category: "Shared storage",
-      status: "preview_only",
-      description: "Planned SP, cluster, node, SVM, iSCSI LIF, console readiness, and upgrade preview.",
+      status: "live_readiness",
+      description: "Live/cached console state, planned SP, cluster, node, SVM, iSCSI LIF, and upgrade readiness.",
       blockers: providerBlockers(providers, ["netapp-ontap"]),
-      primaryLabel: "Open NetApp Preview",
+      primaryLabel: "Open NetApp",
       onPrimary: onOpenNetapp,
-      command: "make netapp-real-readiness",
+      command: "make provider-lab-refresh-live-state",
       icon: <HardDrive size={18} />
     },
     {
@@ -1365,15 +1814,15 @@ function buildRunChoices({
       blockers: [],
       primaryLabel: "Open Verification",
       primaryTo: "/verification",
-      command: "make provider-lab-build-verification",
+      command: "make provider-lab-build-verification-live",
       icon: <ShieldCheck size={18} />
     },
     {
       id: "vm",
-      title: "VM Mock Lifecycle",
+      title: "VM Request Lifecycle",
       category: "Portal workflow",
       status: `${totalWork} active`,
-      description: "Request approval, dry-run plan, mock execution, audit events, and reports.",
+      description: "Request approval, dry-run plan, audit events, and reports.",
       blockers: [],
       primaryLabel: "Open Work Queue",
       onPrimary: onOpenQueue,
@@ -1626,10 +2075,13 @@ function NetAppRunCenterPreview({
   consoleState,
   error,
   loading,
+  liveState,
   nfsVcenterReadiness,
   netappAction,
   onRunConsoleDiscovery,
   onRunConsoleReadState,
+  onRunLiveState,
+  onValidateSetup,
   onRefresh,
   preview,
   readinessComparison,
@@ -1641,10 +2093,13 @@ function NetAppRunCenterPreview({
   consoleState: ProviderProbeResult | null;
   error: string;
   loading: boolean;
+  liveState: ProviderProbeResult | null;
   nfsVcenterReadiness: ProviderProbeResult | null;
   netappAction: string;
   onRunConsoleDiscovery: () => void;
   onRunConsoleReadState: () => void;
+  onRunLiveState: () => void;
+  onValidateSetup: () => void;
   onRefresh: () => void;
   preview: NetAppPlanPreview | null;
   readinessComparison: NetAppReadinessComparison | null;
@@ -1667,17 +2122,17 @@ function NetAppRunCenterPreview({
   return (
     <section className="panel netapp-run-center-preview">
       <div className="readiness-head">
-        <PanelTitle icon={<HardDrive size={18} />} title="NetApp ONTAP Plan Preview" />
+        <PanelTitle icon={<HardDrive size={18} />} title="NetApp ONTAP Live Readiness" />
         <button onClick={onRefresh} disabled={loading}>
           <RefreshCw size={16} />
           Refresh
         </button>
       </div>
       <div className="provider-callout netapp-apply-disabled">
-        <strong>Preview only / Apply disabled</strong>
+        <strong>Live readiness / Apply disabled</strong>
         <p>
-          No ONTAP calls are made. This Run Center section has no confirmation, start,
-          execute, apply, cluster creation, SVM/LIF/volume creation, upgrade, reboot, or wipe control.
+          Current and cached evidence is shown for the lab. ONTAP write actions,
+          cluster creation, SVM/LIF/volume creation, upgrade, reboot, and wipe controls are disabled.
         </p>
       </div>
       <Feedback loading={loading && !preview} error={error} />
@@ -1685,9 +2140,10 @@ function NetAppRunCenterPreview({
         <>
           <div className="provider-fact-grid compact">
             <ProviderFact label="Provider" value={preview.provider_id} />
-            <ProviderFact label="Mode" value={preview.mode} />
+            <ProviderFact label="Runtime" value={displayModeLabel(preview.mode)} />
             <ProviderFact label="Apply Enabled" value={preview.apply_enabled ? "Enabled" : "Disabled"} />
-            <ProviderFact label="NETAPP_CONFIGURED" value={preview.netapp_configured ? "true" : "false"} />
+            <ProviderFact label="Configured State" value={preview.netapp_configured ? "Verified by live check" : "Not verified"} />
+            <ProviderFact label="Manual Env Flag" value="Not required" />
             <ProviderFact label="Readiness Status" value={labelize(asString(readinessSummary.status) || "unknown")} />
             <ProviderFact label="Not Ready" value={asString(readinessSummary.not_ready_count) || "-"} />
             <ProviderFact label="Buckets" value={asString(readinessSummary.bucket_count) || "-"} />
@@ -1699,7 +2155,7 @@ function NetAppRunCenterPreview({
           <KeyValueTable rows={currentAddressing} labelKey="label" valueKey="address" empty="No NetApp current targets have been discovered." />
           <div className="provider-callout">
             <strong>Setup vs upgrade readiness</strong>
-            <p>Setup: {labelize(asString(setupReadiness.status) || "blocked preview only")}. Upgrade: {labelize(asString(upgradeReadinessSummary.status) || "blocked until setup ready")}.</p>
+            <p>Setup: {operatorReadinessLabel(asString(setupReadiness.status) || "blocked_until_live_setup_ready")}. Upgrade: {operatorReadinessLabel(asString(upgradeReadinessSummary.status) || "blocked_until_setup_ready")}.</p>
           </div>
           <h3>Readiness Sections</h3>
           <NetAppReadinessGrid readiness={preview.readiness_buckets} />
@@ -1719,12 +2175,15 @@ function NetAppRunCenterPreview({
             consoleDiscovery={consoleDiscovery}
             consoleReadiness={consoleReadiness}
             consoleState={consoleState}
+            liveState={liveState}
             loading={loading}
             netappAction={netappAction}
             nfsVcenterReadiness={nfsVcenterReadiness}
             onRefresh={onRefresh}
             onRunConsoleDiscovery={onRunConsoleDiscovery}
             onRunConsoleReadState={onRunConsoleReadState}
+            onRunLiveState={onRunLiveState}
+            onValidateSetup={onValidateSetup}
           />
           <details className="stage-details">
             <summary>Manual readiness checklist and local observations</summary>
@@ -1741,11 +2200,11 @@ function NetAppRunCenterPreview({
           </details>
           <div className="run-center-preview-grid">
             <div>
-              <h3>Storage / iSCSI Preview</h3>
-              <PreviewNoteBlock payload={storagePreview} fallback="Storage/iSCSI preview placeholder only. No volumes, LUNs, igroups, or LIFs are created." />
+              <h3>Storage / iSCSI Readiness</h3>
+              <PreviewNoteBlock payload={storagePreview} fallback="Storage/iSCSI readiness is not checked yet. No volumes, LUNs, igroups, or LIFs are created." />
             </div>
             <div>
-              <h3>Upgrade Readiness Preview</h3>
+              <h3>Upgrade Readiness</h3>
               <NetAppUpgradeReadinessPanel readiness={upgradeReadiness} fallbackPreview={upgradePreview} />
             </div>
           </div>
@@ -1755,7 +2214,7 @@ function NetAppRunCenterPreview({
               <span key={artifact}>{artifact}</span>
             ))}
           </div>
-          <h3>Persisted Mock Artifact Metadata</h3>
+          <h3>Historical Artifact Metadata</h3>
           <NetAppProviderArtifactList artifacts={artifacts} />
           <details className="stage-details">
             <summary>Disabled dangerous actions</summary>
@@ -1860,8 +2319,8 @@ function NetAppUpgradeReadinessPanel({
   return (
     <div className="netapp-upgrade-preview">
       <div className="provider-callout">
-        <strong>Offline media preview only</strong>
-        <p>No ONTAP calls are made. Upgrade and apply remain disabled.</p>
+        <strong>Offline media readiness / Apply disabled</strong>
+        <p>No ONTAP write calls are made. Upgrade and apply remain disabled.</p>
       </div>
       <div className="provider-fact-grid compact">
         <ProviderFact label="Current Source" value={labelize(readiness.current_version_source)} />
@@ -1952,26 +2411,33 @@ function NetAppRealLabPanel({
   consoleDiscovery,
   consoleReadiness,
   consoleState,
+  liveState,
   loading,
   netappAction,
   nfsVcenterReadiness,
   onRefresh,
   onRunConsoleDiscovery,
-  onRunConsoleReadState
+  onRunConsoleReadState,
+  onRunLiveState,
+  onValidateSetup
 }: {
   consoleDiscovery: ProviderProbeResult | null;
   consoleReadiness: NetAppConsoleReadiness | null;
   consoleState: ProviderProbeResult | null;
+  liveState: ProviderProbeResult | null;
   loading: boolean;
   netappAction: string;
   nfsVcenterReadiness: ProviderProbeResult | null;
   onRefresh: () => void;
   onRunConsoleDiscovery: () => void;
   onRunConsoleReadState: () => void;
+  onRunLiveState: () => void;
+  onValidateSetup: () => void;
 }) {
   const probeEnabled = asBoolean(consoleReadiness?.console_probe_enabled);
   const discoveryArtifacts = objectValue(consoleDiscovery?.artifacts);
   const stateArtifacts = objectValue(consoleState?.artifacts);
+  const liveArtifacts = objectValue(liveState?.artifacts);
   const nfsArtifacts = objectValue(nfsVcenterReadiness?.artifacts);
   const nfsTopology = objectValue(nfsVcenterReadiness?.management_topology);
   const nfsTargets = objectValue(nfsVcenterReadiness?.targets);
@@ -1981,12 +2447,27 @@ function NetAppRealLabPanel({
   const busy = Boolean(netappAction);
   const discoveryCandidateCounts = objectValue(consoleDiscovery?.candidate_counts);
   const discoveryCandidates = recordArray(consoleDiscovery?.candidates);
-  const selectedPort = asString(consoleState?.selected_port) || asString(consoleDiscovery?.selected_port);
-  const selectedBaud = asString(consoleState?.selected_baud) || asString(consoleDiscovery?.selected_baud);
+  const runtimeState = objectValue(
+    liveState?.runtime_state ?? consoleState?.runtime_state ?? consoleDiscovery?.runtime_state ?? consoleReadiness?.runtime_state
+  );
+  const runtimeConsole = objectValue(runtimeState.console);
+  const selectedPort =
+    asString(runtimeConsole.discovered_port) || asString(consoleState?.selected_port) || asString(consoleDiscovery?.selected_port);
+  const selectedBaud =
+    asString(runtimeConsole.baud) || asString(consoleState?.selected_baud) || asString(consoleDiscovery?.selected_baud);
   const selectedPromptState =
-    asString(consoleState?.selected_prompt_state) || asString(consoleDiscovery?.selected_prompt_state);
+    asString(runtimeConsole.prompt_state) ||
+    asString(consoleState?.selected_prompt_state) ||
+    asString(consoleDiscovery?.selected_prompt_state);
   const selectionConfidence =
-    asString(consoleState?.selection_confidence) || asString(consoleDiscovery?.selection_confidence);
+    asString(runtimeConsole.confidence) ||
+    asString(consoleState?.selection_confidence) ||
+    asString(consoleDiscovery?.selection_confidence);
+  const selectionSource =
+    asString(runtimeConsole.source) ||
+    asString(consoleState?.selection_origin) ||
+    asString(consoleDiscovery?.selection_origin);
+  const lastSeen = asString(runtimeConsole.last_seen) || asString(liveState?.last_successful_probe_at);
   const selectionReason =
     asString(consoleState?.selection_reason) || asString(consoleDiscovery?.selection_reason);
   const promptDetected =
@@ -2001,6 +2482,9 @@ function NetAppRealLabPanel({
     asString(consoleState?.skipped_candidate_count) || asString(consoleDiscovery?.skipped_candidate_count) || "0";
   const consoleAttemptCount =
     asString(consoleState?.attempt_count) || asString(consoleDiscovery?.attempt_count) || "0";
+  const configuredState = asString(liveState?.configured_state ?? runtimeState.configured_state) || "not_detected";
+  const configuredByLiveCheck = asBoolean(liveState?.configured ?? runtimeState.configured);
+  const legacyEnv = objectValue(liveState?.legacy_env ?? runtimeState.legacy_env);
 
   return (
     <div className="netapp-real-lab-panel">
@@ -2010,12 +2494,18 @@ function NetAppRealLabPanel({
       </div>
       <div className="provider-fact-grid compact">
         <ProviderFact label="Console Probe" value={probeEnabled ? "Available" : "Blocked"} />
-        <ProviderFact label="Configured Port Hint" value={asString(consoleDiscovery?.configured_port_hint) || "Auto-discover"} />
-        <ProviderFact label="Selected Port" value={selectedPort || "Not selected"} />
-        <ProviderFact label="Selected Baud" value={selectedBaud || "Not selected"} />
+        <ProviderFact label="Port Hint" value={asString(consoleDiscovery?.configured_port_hint) || "Not set"} />
+        <ProviderFact label="Detected Automatically" value={selectedPort ? "Yes" : "Not yet"} />
+        <ProviderFact label="Discovered Port" value={selectedPort || "Not selected"} />
+        <ProviderFact label="Baud" value={selectedBaud || "Not selected"} />
+        <ProviderFact label="Source" value={labelize(selectionSource || "none")} />
+        <ProviderFact label="Last Seen" value={lastSeen ? formatDateTime(lastSeen) : "Not seen"} />
         <ProviderFact label="Prompt State" value={labelize(selectedPromptState || "not run")} />
         <ProviderFact label="Prompt Detected" value={promptDetected || "false"} />
         <ProviderFact label="Confidence" value={labelize(selectionConfidence || "none")} />
+        <ProviderFact label="Configured State" value={configuredByLiveCheck ? "Verified by live check" : labelize(configuredState)} />
+        <ProviderFact label="Manual Env Flag" value="Not required" />
+        <ProviderFact label="Legacy Env" value={asBoolean(legacyEnv.netapp_configured_env) ? "Set true" : "Not authoritative"} />
         <ProviderFact label="Candidates" value={consoleCandidateCount} />
         <ProviderFact label="Probed / Skipped" value={`${probedCandidateCount} / ${skippedCandidateCount}`} />
         <ProviderFact label="Probe Attempts" value={consoleAttemptCount} />
@@ -2023,7 +2513,7 @@ function NetAppRealLabPanel({
         <ProviderFact label="Next Console Action" value={nextConsoleAction || "Run console autodiscovery."} />
         <ProviderFact label="Last Console Blocker" value={asString(consoleState?.last_console_blocker) || asString(consoleDiscovery?.last_console_blocker) || "None"} />
         <ProviderFact label="Management Ports" value={connectedPorts.length ? connectedPorts.join(", ") : "One connected path expected"} />
-        <ProviderFact label="NFS Preview" value={labelize(asString(nfsVcenterReadiness?.status) || "not run")} />
+        <ProviderFact label="NFS Readiness" value={operatorReadinessLabel(asString(nfsVcenterReadiness?.status) || "not run")} />
         <ProviderFact label="NFS LIFs" value={nfsLifs.length ? nfsLifs.join(", ") : "Not planned"} />
         <ProviderFact label="Datastore" value={asString(plannedNfs.datastore_name) || "Not planned"} />
         <ProviderFact label="vCenter" value={asBoolean(nfsTargets.vcenter_configured) ? "Configured" : "Not configured"} />
@@ -2038,7 +2528,15 @@ function NetAppRealLabPanel({
       <div className="action-row">
         <button onClick={onRunConsoleDiscovery} disabled={!probeEnabled || busy || loading} type="button">
           <RefreshCw size={16} />
-          {netappAction === "console-discovery" ? "Discovering" : "Run Console Discovery"}
+          {netappAction === "console-discovery" ? "Discovering" : "Discover NetApp Console"}
+        </button>
+        <button onClick={onRunLiveState} disabled={!probeEnabled || busy || loading} type="button">
+          <Activity size={16} />
+          {netappAction === "live-state" ? "Reading" : "Read NetApp State"}
+        </button>
+        <button onClick={onValidateSetup} disabled={!probeEnabled || busy || loading} type="button">
+          <ShieldCheck size={16} />
+          {netappAction === "validate-setup" ? "Validating" : "Validate NetApp Setup"}
         </button>
         <button onClick={onRunConsoleReadState} disabled={!probeEnabled || busy || loading} type="button">
           <Activity size={16} />
@@ -2071,6 +2569,16 @@ function NetAppRealLabPanel({
         />
         <NetAppEvidenceTile
           lines={[
+            asString(liveState?.message) || "NetApp live state has not been read.",
+            `Report: ${asString(liveArtifacts.state_report) || asString(liveArtifacts.report) || "artifacts/codex-runs/netapp-live-state-report.md"}`,
+            `Configured state: ${labelize(configuredState)}.`,
+            "Manual env flag not required."
+          ]}
+          tag={labelize(asString(liveState?.status) || "not run")}
+          title="Live state"
+        />
+        <NetAppEvidenceTile
+          lines={[
             asString(nfsVcenterReadiness?.message) || "NFS/vCenter readiness has not loaded.",
             `Report: ${asString(nfsArtifacts.report) || "artifacts/codex-runs/netapp-nfs-vcenter-readiness-report.md"}`,
             asString(nfsTopology.note) || "Only one management path is expected right now."
@@ -2083,12 +2591,14 @@ function NetAppRealLabPanel({
         blockers={[
           ...(consoleDiscovery?.blockers ?? []),
           ...(consoleState?.blockers ?? []),
+          ...(liveState?.blockers ?? []),
           ...(nfsVcenterReadiness?.blockers ?? [])
         ]}
         removableWarnings={[]}
         warnings={[
           ...(consoleDiscovery?.warnings ?? []),
           ...(consoleState?.warnings ?? []),
+          ...(liveState?.warnings ?? []),
           ...(nfsVcenterReadiness?.warnings ?? [])
         ]}
       />
@@ -2133,6 +2643,7 @@ function NetAppRealLabPanel({
         )}
         {consoleDiscovery && <JsonDetails title="Raw redacted console discovery result" data={consoleDiscovery} />}
         {consoleState && <JsonDetails title="Raw redacted console state result" data={consoleState} />}
+        {liveState && <JsonDetails title="Raw redacted NetApp live state" data={liveState} />}
       </AdvancedDetails>
     </div>
   );
@@ -2195,7 +2706,7 @@ function NetAppConsoleReadinessPanel({
     try {
       await api.saveNetappObservations(form);
       await onRefresh();
-      setSaveMessage("Saved locally in the mock observation store. Nothing was sent to NetApp.");
+      setSaveMessage("Saved locally as operator evidence. Nothing was sent to NetApp.");
     } catch (err) {
       setSaveError((err as Error).message);
     } finally {
@@ -2213,7 +2724,8 @@ function NetAppConsoleReadinessPanel({
         <ProviderFact label="Bootstrap" value={readiness.bootstrap_enabled ? "Enabled" : "Disabled"} />
         <ProviderFact label="Console Probe" value={readiness.console_probe_enabled ? "Enabled" : "Disabled"} />
         <ProviderFact label="Apply" value={readiness.apply_enabled ? "Enabled" : "Disabled"} />
-        <ProviderFact label="NETAPP_CONFIGURED" value={readiness.netapp_configured ? "true" : "false"} />
+        <ProviderFact label="Configured State" value={readiness.netapp_configured ? "Verified by live check" : "Not verified"} />
+        <ProviderFact label="Manual Env Flag" value="Not required" />
         <ProviderFact label="Controller A SP" value={asString(spTargets.controller_a) || "-"} />
         <ProviderFact label="Controller B SP" value={asString(spTargets.controller_b) || "-"} />
         <ProviderFact label="Cluster Mgmt" value={asString(managementTargets.cluster) || "-"} />
@@ -2233,11 +2745,11 @@ function NetAppConsoleReadinessPanel({
       <NetAppReadinessGrid readiness={readiness.readiness_buckets} />
       <h3>Operator Observations</h3>
       <div className="provider-callout">
-        <strong>Local/mock-only status capture</strong>
+        <strong>Local evidence capture</strong>
         <p>No serial port is opened, no console command is sent, and these observations are not sent to NetApp.</p>
       </div>
       <div className="provider-fact-grid compact">
-        <ProviderFact label="Stored Locally" value={observations?.mock_only ? "Mock only" : "Mock only"} />
+        <ProviderFact label="Stored Locally" value={observations?.mock_only ? "Test fixture store" : "Local evidence"} />
         <ProviderFact label="Sent To NetApp" value={observations?.sent_to_netapp ? "Yes" : "No"} />
         <ProviderFact label="Updated By" value={observations?.updated_by ?? "system"} />
         <ProviderFact label="Updated At" value={observations?.updated_at ? formatDateTime(observations.updated_at) : "-"} />
@@ -2295,7 +2807,7 @@ function NetAppConsoleReadinessPanel({
             }
           />
         </label>
-        <p className="muted">Do not paste passwords, tokens, or raw configs. Notes are local/mock-only and bounded to 1200 characters.</p>
+        <p className="muted">Do not paste passwords, tokens, or raw configs. Notes are local evidence only and bounded to 1200 characters.</p>
         {saveError && <div className="error">{saveError}</div>}
         {saveMessage && <div className="success">{saveMessage}</div>}
         <div className="form-actions">
@@ -2404,7 +2916,7 @@ function NetAppProviderArtifactList({ artifacts }: { artifacts: NetAppProviderAr
             <ProviderFact label="Kind" value={artifact.kind} />
             <ProviderFact label="Generated" value={formatDateTime(artifact.generated_at)} />
             <ProviderFact label="Download" value={artifact.downloadable ? "Available" : "Unavailable"} />
-            <ProviderFact label="Mock Only" value={artifact.mock_only ? "true" : "false"} />
+            <ProviderFact label="Source" value={artifact.mock_only ? "Test fixture" : "Historical evidence"} />
             <ProviderFact label="Redacted" value={artifact.redacted ? "true" : "false"} />
           </div>
           <div className="provider-callout">
@@ -3435,8 +3947,7 @@ function ProviderArtifactsList({ artifacts }: { artifacts: NetAppProviderArtifac
   if (!artifacts.length) {
     return (
       <p className="muted">
-        No provider artifact metadata matches the current filters. Provider artifacts are mock-only
-        placeholders until a future approved reporting workflow is added.
+        No provider artifact metadata matches the current filters. Historical provider evidence appears here when a report records artifact metadata.
       </p>
     );
   }
@@ -3464,7 +3975,7 @@ function ProviderArtifactCard({ artifact }: { artifact: NetAppProviderArtifact }
         <ProviderFact label="Provider" value={artifact.provider_id} />
         <ProviderFact label="Kind" value={labelize(artifact.kind)} />
         <ProviderFact label="Generated" value={formatDateTime(artifact.generated_at)} />
-        <ProviderFact label="Mock Only" value={artifact.mock_only ? "true" : "false"} />
+        <ProviderFact label="Source" value={artifact.mock_only ? "Test fixture" : "Historical evidence"} />
         <ProviderFact label="Redacted" value={artifact.redacted ? "true" : "false"} />
         <ProviderFact label="Downloadable" value={artifact.downloadable ? "true" : "false"} />
         <ProviderFact label="Source Endpoint" value={asString(artifact.metadata.source_endpoint) || "-"} />
@@ -4052,6 +4563,7 @@ function LabAddressSummary({ profile }: { profile: LabProfile }) {
 
 function ControlCenterPage() {
   const [catalog, setCatalog] = useState<ControlActionCatalog | null>(null);
+  const [workflowActions, setWorkflowActions] = useState<WorkflowAction[]>([]);
   const [activeSectionId, setActiveSectionId] = useState<ControlCenterSectionId>("lab-profile");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
@@ -4059,6 +4571,7 @@ function ControlCenterPage() {
   const [busyAccessSection, setBusyAccessSection] = useState("");
   const [accessError, setAccessError] = useState("");
   const [planResult, setPlanResult] = useState<ControlActionPlan | null>(null);
+  const [selectedWorkflowActionId, setSelectedWorkflowActionId] = useState("");
   const [copyMessage, setCopyMessage] = useState("");
   const location = useLocation();
 
@@ -4066,7 +4579,12 @@ function ControlCenterPage() {
     setError("");
     setLoading(true);
     try {
-      setCatalog(await api.controlActions());
+      const nextWorkflowActions = await api.workflowActions();
+      setWorkflowActions(nextWorkflowActions);
+      setLoading(false);
+      api.controlActions()
+        .then(setCatalog)
+        .catch((err: Error) => setError((current) => current || err.message));
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -4083,6 +4601,10 @@ function ControlCenterPage() {
     const allowed: ControlCenterSectionId[] = ["lab-profile", "cisco", "ilo", "raid", "esxi", "netapp", "action-catalog"];
     if (querySection && allowed.includes(querySection as ControlCenterSectionId)) {
       setActiveSectionId(querySection as ControlCenterSectionId);
+    }
+    const queryAction = new URLSearchParams(location.search).get("action");
+    if (queryAction) {
+      setSelectedWorkflowActionId(queryAction);
     }
   }, [location.search]);
 
@@ -4115,6 +4637,10 @@ function ControlCenterPage() {
     copyText(text, action.label);
   }
 
+  function copyWorkflowAction(action: WorkflowAction) {
+    copyText(workflowActionCopyText(action), action.label);
+  }
+
   async function saveAccessConfig(sectionId: string, payload: ControlAccessConfigWrite) {
     setBusyAccessSection(sectionId);
     setAccessError("");
@@ -4138,8 +4664,9 @@ function ControlCenterPage() {
 
   const sections = catalog?.sections ?? [];
   const actions = catalog?.actions ?? [];
-  const blockedActions = actions.filter((action) => action.availability === "blocked").length;
+  const registryBlockedActions = workflowActions.filter((action) => action.current_availability === "blocked").length;
   const upgradeActions = actions.filter((action) => action.classification === "upgrade").length;
+  const registryUpgradeActions = workflowActions.filter((action) => action.mode === "upgrade").length;
   const commanderActions = actions.filter((action) => action.id.startsWith("commander."));
   const visibleSections: ControlCenterSectionId[] = ["lab-profile", "cisco", "ilo", "raid", "esxi", "netapp", "action-catalog"];
   const selectedSection =
@@ -4148,9 +4675,18 @@ function ControlCenterPage() {
       : sections.find((section) => section.id === activeSectionId) ?? sections[0] ?? null;
   const selectedActions = selectedSection?.actions ?? actions;
   const selectedBlockers = selectedActions.flatMap((action) => (action.blocker ? [action.blocker] : []));
+  const selectedWorkflowAction =
+    workflowActions.find((action) => action.action_id === selectedWorkflowActionId) ??
+    workflowActions[0] ??
+    null;
+  const selectedCatalogBlockers =
+    activeSectionId === "action-catalog"
+      ? workflowActions.flatMap((action) => action.blockers.slice(0, 1))
+      : selectedBlockers;
+  const generatedLabel = catalog?.generated_at ? formatDateTime(catalog.generated_at) : "Registry";
   const controlSectionOptions: SectionOption<ControlCenterSectionId>[] = visibleSections.map((sectionId) => {
     if (sectionId === "action-catalog") {
-      return { id: sectionId, label: "Action Catalog", status: blockedActions ? "blocked" : "ready" };
+      return { id: sectionId, label: "Action Catalog", status: registryBlockedActions ? "blocked" : "ready" };
     }
     const section = sections.find((item) => item.id === sectionId);
     const label =
@@ -4170,6 +4706,7 @@ function ControlCenterPage() {
     <Page
       activeSection={activeSectionId}
       description="Plan, copy, and inspect safe control actions without exposing every provider detail at once."
+      issueArea="control-center"
       onSectionChange={(sectionId) => setActiveSectionId(sectionId as ControlCenterSectionId)}
       primaryAction={{ icon: <Workflow size={16} />, label: "Guided View", to: "/run-center" }}
       sections={controlSectionOptions}
@@ -4183,32 +4720,33 @@ function ControlCenterPage() {
         </>
       }
     >
-      <Feedback loading={loading && !catalog} error={error} />
-      {catalog && (
+      <Feedback loading={loading && !catalog && !workflowActions.length} error={error} />
+      {(catalog || activeSectionId === "action-catalog") && (
         <section className="control-center-surface">
           <div className="calm-section-grid">
             <StatusSummaryCard
               message={
                 selectedSection
                   ? selectedSection.description
-                  : `${actions.length} actions across ${sections.length} catalog section${sections.length === 1 ? "" : "s"}.`
+                  : `${workflowActions.length} registry actions across shared workflow stages.`
               }
-              status={selectedSection?.status ?? (blockedActions ? "blocked" : "ready")}
+              status={selectedSection?.status ?? (registryBlockedActions ? "blocked" : "ready")}
               title={selectedSection?.title ?? "Action Catalog"}
               items={[
-                { label: "Actions", value: String(selectedActions.length) },
-                { label: "Blocked", value: String(selectedBlockers.length) },
-                { label: "Upgrade", value: String(upgradeActions) },
-                { label: "Generated", value: formatDateTime(catalog.generated_at) }
+                { label: "Actions", value: String(activeSectionId === "action-catalog" ? workflowActions.length : selectedActions.length) },
+                { label: "Blocked", value: String(activeSectionId === "action-catalog" ? registryBlockedActions : selectedBlockers.length) },
+                { label: "Upgrade", value: String(activeSectionId === "action-catalog" ? registryUpgradeActions : upgradeActions) },
+                { label: "Generated", value: generatedLabel }
               ]}
             />
             <NextActionCard
               detail={
                 selectedSection?.actions[0]?.label ??
-                "Use Plan or Copy from the action catalog. Direct run remains disabled."
+                selectedWorkflowAction?.next_action ??
+                "Use Detail or Copy from the registry-backed action catalog."
               }
             />
-            <BlockerSummary blockers={selectedBlockers} />
+            <BlockerSummary blockers={selectedCatalogBlockers} />
           </div>
           {copyMessage && <div className="feedback">{copyMessage}</div>}
 
@@ -4240,7 +4778,7 @@ function ControlCenterPage() {
                 section={selectedSection}
                 showAccessConfig={false}
               >
-                {selectedSection.id === "lab-profile" && (
+                {selectedSection.id === "lab-profile" && catalog && (
                   <ControlLabProfilePanel onCopyText={copyText} profile={catalog.lab_profile} />
                 )}
                 {selectedSection.id === "firmware-upgrade" && <FirmwareUpgradeCenter section={selectedSection} />}
@@ -4264,11 +4802,14 @@ function ControlCenterPage() {
                 />
               </AdvancedDetails>
               <ActionCatalogTable
-                actions={actions}
-                busyAction={busyAction}
-                onCopy={copyAction}
-                onPlan={planAction}
+                actions={workflowActions}
+                onCopy={copyWorkflowAction}
+                onSelect={setSelectedWorkflowActionId}
+                selectedActionId={selectedWorkflowAction?.action_id ?? ""}
               />
+              {selectedWorkflowAction && (
+                <WorkflowActionDetail action={selectedWorkflowAction} onCopy={copyWorkflowAction} />
+              )}
             </>
           )}
         </section>
@@ -4890,26 +5431,25 @@ function ActionHistoryReportsPanel({ actions }: { actions: ControlAction[] }) {
 
 function ActionCatalogTable({
   actions,
-  busyAction,
   onCopy,
-  onPlan
+  onSelect,
+  selectedActionId
 }: {
-  actions: ControlAction[];
-  busyAction: string;
-  onCopy: (action: ControlAction) => void;
-  onPlan: (action: ControlAction) => void;
+  actions: WorkflowAction[];
+  onCopy: (action: WorkflowAction) => void;
+  onSelect: (actionId: string) => void;
+  selectedActionId: string;
 }) {
   const [query, setQuery] = useState("");
-  const [classification, setClassification] = useState("all");
+  const [mode, setMode] = useState("all");
   const [stage, setStage] = useState("all");
-  const stages = Array.from(new Set(actions.map((action) => action.device_stage))).sort();
+  const stages = Array.from(new Set(actions.map((action) => action.stage_label))).sort();
   const filtered = actions.filter((action) => {
-    const text = `${action.id} ${action.label} ${action.device_stage}`.toLowerCase();
+    const text = `${action.action_id} ${action.label} ${action.stage_label} ${action.category}`.toLowerCase();
     const queryMatch = !query || text.includes(query.toLowerCase());
-    const classificationMatch =
-      classification === "all" || action.classification === classification;
-    const stageMatch = stage === "all" || action.device_stage === stage;
-    return queryMatch && classificationMatch && stageMatch;
+    const modeMatch = mode === "all" || action.mode === mode;
+    const stageMatch = stage === "all" || action.stage_label === stage;
+    return queryMatch && modeMatch && stageMatch;
   });
 
   return (
@@ -4922,10 +5462,11 @@ function ActionCatalogTable({
         <Field label="Search">
           <input value={query} onChange={(event) => setQuery(event.target.value)} />
         </Field>
-        <Field label="Class">
-          <select value={classification} onChange={(event) => setClassification(event.target.value)}>
+        <Field label="Mode">
+          <select value={mode} onChange={(event) => setMode(event.target.value)}>
             <option value="all">All</option>
-            <option value="read-only">Read only</option>
+            <option value="read_only">Read only</option>
+            <option value="report_only">Report only</option>
             <option value="write">Write</option>
             <option value="destructive">Destructive</option>
             <option value="upgrade">Upgrade</option>
@@ -4945,7 +5486,7 @@ function ActionCatalogTable({
           <tr>
             <th>Action</th>
             <th>Stage</th>
-            <th>Class</th>
+            <th>Mode</th>
             <th>Availability</th>
             <th>Last Report</th>
             <th>Controls</th>
@@ -4953,35 +5494,34 @@ function ActionCatalogTable({
         </thead>
         <tbody>
           {filtered.map((action) => (
-            <tr key={`catalog-${action.id}`}>
+            <tr className={action.action_id === selectedActionId ? "selected-row" : ""} key={`catalog-${action.action_id}`}>
               <td>
                 <strong>{action.label}</strong>
-                <span>{action.id}</span>
+                <span>{action.action_id}</span>
               </td>
-              <td>{action.device_stage}</td>
+              <td>{action.stage_label}</td>
               <td>
-                <span className={`classification-tag ${action.classification}`}>
-                  {classificationLabel(action.classification)}
+                <span className={`classification-tag ${workflowModeClass(action.mode)}`}>
+                  {workflowModeLabel(action.mode)}
                 </span>
               </td>
               <td>
-                <StatusBadge status={action.availability} />
-                {action.blocker && <p className="control-table-note">{action.blocker}</p>}
+                <StatusBadge status={action.current_availability} />
+                {action.blockers[0] && <p className="control-table-note">{action.blockers[0]}</p>}
               </td>
               <td>
                 <StatusBadge status={action.last_run_status} />
-                {action.last_report && <code>{action.last_report}</code>}
+                {action.last_run_report && <code>{action.last_run_report}</code>}
               </td>
               <td>
                 <div className="action-row">
                   <button
                     className="small-button"
-                    disabled={busyAction === action.id}
-                    onClick={() => onPlan(action)}
+                    onClick={() => onSelect(action.action_id)}
                     type="button"
                   >
                     <Route size={14} />
-                    Plan
+                    Detail
                   </button>
                   <button className="small-button" onClick={() => onCopy(action)} type="button">
                     <Copy size={14} />
@@ -5058,6 +5598,7 @@ function FirmwarePage() {
     <Page
       activeSection={activeSection}
       description="Firmware compliance, inventory, waivers, and upgrade planning without exposing execution controls."
+      issueArea="firmware"
       onSectionChange={(sectionId) => setActiveSection(sectionId as FirmwareSectionId)}
       primaryAction={{ icon: <RefreshCw size={16} />, label: "Refresh", onClick: load, disabled: loading }}
       sections={sections}
@@ -5233,6 +5774,7 @@ function BuildVerificationPage() {
     <Page
       activeSection={activeSection}
       description="Build verification is split into product certification sections with diagnostics collapsed."
+      issueArea="verification"
       onSectionChange={(sectionId) => setActiveSection(sectionId as VerificationSectionId)}
       primaryAction={{ icon: <RefreshCw size={16} />, label: "Refresh", onClick: load, disabled: loading }}
       sections={sections}
@@ -5269,7 +5811,7 @@ function BuildVerificationPage() {
               { label: "Cisco", value: displayAddress(asString(expectedProfile.cisco_management)) }
             ]}
           />
-          <AdvancedDetails className="section-details" summary="Expected profile and stale report evidence" title="Network details">
+          <AdvancedDetails className="section-details" summary="Expected profile and historical evidence" title="Network details">
             <JsonDetails title="Lab IP profile" data={labProfile} />
           </AdvancedDetails>
         </section>
@@ -5373,86 +5915,472 @@ function VerificationSimpleSection({
 }
 
 function ReportsPage() {
-  const [activeSection, setActiveSection] = useState<ReportsSectionId>("latest");
-  const [artifacts, setArtifacts] = useState<NetAppProviderArtifact[]>([]);
-  const [catalog, setCatalog] = useState<ControlActionCatalog | null>(null);
-  const [runs, setRuns] = useState<WorkflowRun[]>([]);
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(true);
-
-  async function load() {
-    setError("");
-    setLoading(true);
-    try {
-      const [nextArtifacts, nextCatalog, nextRuns] = await Promise.all([
-        api.providerArtifacts(),
-        api.controlActions(),
-        api.workflowRuns()
-      ]);
-      setArtifacts(nextArtifacts);
-      setCatalog(nextCatalog);
-      setRuns(nextRuns);
-    } catch (err) {
-      setError((err as Error).message);
-    } finally {
-      setLoading(false);
-    }
-  }
+  const location = useLocation();
+  const navigate = useNavigate();
+  const { reportIssues, reportIssuesError, reportIssuesLoading, reloadReportIssues } = useReportIssues();
+  const [activeSection, setActiveSection] = useState<ReportsSectionId>("all");
 
   useEffect(() => {
-    load();
-  }, []);
+    const filter = new URLSearchParams(location.search).get("filter");
+    const allowed: ReportsSectionId[] = [
+      "all",
+      "critical",
+      "warnings",
+      "stale_config",
+      "cisco",
+      "esxi",
+      "netapp",
+      "firmware",
+      "lab_profile"
+    ];
+    if (filter && allowed.includes(filter as ReportsSectionId)) {
+      setActiveSection(filter as ReportsSectionId);
+    } else if (!filter) {
+      setActiveSection("all");
+    }
+  }, [location.search]);
 
-  const actions = catalog?.actions ?? [];
-  const reportLinks = reportLinksFromActions(actions);
+  function setReportFilter(sectionId: string) {
+    const nextSection = sectionId as ReportsSectionId;
+    setActiveSection(nextSection);
+    navigate(nextSection === "all" ? "/reports" : `/reports?filter=${encodeURIComponent(nextSection)}`);
+  }
+
+  const issues = reportIssues?.issues ?? [];
+  const filteredIssues = filterReportIssuesForSection(activeSection, issues);
+  const criticalCount = reportIssues?.counts.critical ?? 0;
+  const warningCount = reportIssues?.counts.warning ?? 0;
+  const notConfiguredCount = reportIssues?.classification_counts.not_configured_yet ?? 0;
+  const passedCount = reportIssues?.counts.success ?? 0;
   const sections: SectionOption<ReportsSectionId>[] = [
-    { id: "latest", label: "Latest", status: reportLinks.length || artifacts.length ? "report_available" : "not_run" },
-    { id: "cisco", label: "Cisco" },
-    { id: "ilo", label: "HPE / iLO" },
-    { id: "raid", label: "RAID" },
-    { id: "esxi", label: "ESXi" },
-    { id: "netapp", label: "NetApp" },
-    { id: "firmware", label: "Firmware" },
-    { id: "verification", label: "Verification" }
+    { id: "all", label: "All", status: reportIssues?.overall_status ?? "not_run" },
+    { id: "critical", label: "Critical", status: criticalCount ? "critical" : "passed" },
+    { id: "warnings", label: "Warnings", status: warningCount ? "warning" : "passed" },
+    { id: "stale_config", label: "Stale Config", status: filteredStatusForClass(issues, "stale_config") },
+    { id: "cisco", label: "Cisco", status: filteredStatusForSource(issues, "cisco") },
+    { id: "esxi", label: "ESXi", status: filteredStatusForSource(issues, "esxi") },
+    { id: "netapp", label: "NetApp", status: filteredStatusForSource(issues, "netapp") },
+    { id: "firmware", label: "Firmware", status: filteredStatusForSource(issues, "firmware") },
+    { id: "lab_profile", label: "Lab Profile", status: filteredStatusForSource(issues, "lab_profile") }
   ];
-  const filteredLinks = filterReportLinks(activeSection, reportLinks);
-  const filteredArtifacts = filterProviderArtifacts(activeSection, artifacts);
-  const latestRun = [...runs].sort((left, right) => right.updated_at.localeCompare(left.updated_at))[0] ?? null;
 
   return (
     <Page
       activeSection={activeSection}
-      description="Report paths and placeholder artifacts are grouped by operator destination."
-      onSectionChange={(sectionId) => setActiveSection(sectionId as ReportsSectionId)}
-      primaryAction={{ icon: <RefreshCw size={16} />, label: "Refresh", onClick: load, disabled: loading }}
+      description="One report center for blocked, review, not-configured, and ready findings across lab workflows."
+      issueArea="reports"
+      onSectionChange={setReportFilter}
+      primaryAction={{ icon: <RefreshCw size={16} />, label: "Refresh", onClick: reloadReportIssues, disabled: reportIssuesLoading }}
       sections={sections}
-      title="Reports"
+      title="Reports & Issues"
     >
-      <Feedback loading={loading && !catalog} error={error} />
-      <div className="calm-section-grid">
-        <StatusSummaryCard
-          message={activeSection === "latest" ? "Latest reports and mock artifact metadata." : `${sections.find((section) => section.id === activeSection)?.label} report links.`}
-          status={filteredLinks.length || filteredArtifacts.length ? "report_available" : "not_run"}
-          title={activeSection === "latest" ? "Latest reports" : `${sections.find((section) => section.id === activeSection)?.label} reports`}
-          items={[
-            { label: "Report Links", value: String(filteredLinks.length) },
-            { label: "Artifacts", value: String(filteredArtifacts.length) },
-            { label: "Runs", value: String(runs.length) },
-            { label: "Last Run", value: latestRun ? labelize(latestRun.status) : "None" }
-          ]}
-        />
-        <NextActionCard detail={filteredLinks[0]?.label ?? "Generate a mock plan or verification report to populate this section."} />
-        <BlockerSummary blockers={[]} empty="No report-specific blocker is reported." />
-      </div>
-      <section className="panel">
-        <PanelTitle icon={<FileText size={18} />} title="Report Links" />
-        <ReportLinkList reports={filteredLinks} />
-      </section>
-      <AdvancedDetails className="section-details" summary="Provider artifact metadata placeholders" title="Provider artifacts">
-        <ProviderArtifactsList artifacts={filteredArtifacts} />
-      </AdvancedDetails>
+      <Feedback loading={reportIssuesLoading && !reportIssues} error={reportIssuesError} />
+      {reportIssues && (
+        <>
+          <section className="issue-summary-grid" aria-label="Report center summary counts">
+            <IssueSummaryTile
+              icon={<XCircle size={18} />}
+              label="Live Blockers"
+              status="critical"
+              value={criticalCount}
+            />
+            <IssueSummaryTile
+              icon={<AlertTriangle size={18} />}
+              label="Stale / Review"
+              status="warning"
+              value={warningCount}
+            />
+            <IssueSummaryTile
+              icon={<Activity size={18} />}
+              label="Not Configured Yet"
+              status="not_configured_yet"
+              value={notConfiguredCount}
+            />
+            <IssueSummaryTile
+              icon={<CheckCircle2 size={18} />}
+              label="Passed"
+              status="success"
+              value={passedCount}
+            />
+          </section>
+
+          <TopFixesPanel issues={reportIssues.top_issues.slice(0, 3)} />
+
+          <section className="panel issue-list-panel">
+            <div className="issue-list-head">
+              <PanelTitle icon={<ClipboardList size={18} />} title="Issue List" />
+              <span>{filteredIssues.length} shown</span>
+            </div>
+            {filteredIssues.length ? (
+              <div className="issue-card-grid">
+                {filteredIssues.map((issue) => (
+                  <ReportIssueCard issue={issue} key={issue.id} />
+                ))}
+              </div>
+            ) : (
+              <EmptyState
+                title="No issues for this filter"
+                detail="This filter has no open, review, not-configured, or passed findings in the current report snapshot."
+              />
+            )}
+          </section>
+
+          <ReportActionGroups issues={issues} />
+          <ReportEvidenceGroups reportCenter={reportIssues} />
+        </>
+      )}
     </Page>
   );
+}
+
+function IssueSummaryTile({
+  icon,
+  label,
+  status,
+  value
+}: {
+  icon: ReactNode;
+  label: string;
+  status: string;
+  value: number;
+}) {
+  return (
+    <article className={`issue-summary-tile issue-tone-${status}`}>
+      <div>
+        {icon}
+        <span>{label}</span>
+      </div>
+      <strong>{value}</strong>
+    </article>
+  );
+}
+
+function TopFixesPanel({ issues }: { issues: ReportIssue[] }) {
+  return (
+    <section className="top-fixes-panel" aria-labelledby="top-fixes-title">
+      <div className="top-fixes-head">
+        <div>
+          <p className="eyebrow">What To Fix Next</p>
+          <h2 id="top-fixes-title">Top Fixes</h2>
+        </div>
+        <StatusBadge status={issues.length ? issues[0].severity : "passed"} />
+      </div>
+      {issues.length ? (
+        <div className="top-fix-list">
+          {issues.map((issue, index) => (
+            <article className={`top-fix-item issue-tone-${issue.severity}`} key={issue.id}>
+              <span>{index + 1}</span>
+              <div>
+                <strong>{issue.title}</strong>
+                <p>{issue.next_action}</p>
+                <Link to={issue.linked_page || "/reports"}>Open source page</Link>
+              </div>
+            </article>
+          ))}
+        </div>
+      ) : (
+        <EmptyState title="No critical fixes" detail="No critical or warning issues are open in the current report snapshot." />
+      )}
+    </section>
+  );
+}
+
+function ReportIssueCard({ issue }: { issue: ReportIssue }) {
+  return (
+    <article className={`report-issue-card issue-tone-${issue.severity}`} id={issue.id}>
+      <div className="report-issue-head">
+        <IssueSeverityLabel issue={issue} />
+        <StatusBadge status={issue.classification} />
+      </div>
+      <h3>{issue.title}</h3>
+      <p>{issue.problem || issue.summary}</p>
+      <div className="issue-next-action">
+        <span>Next action</span>
+        <strong>{issue.next_action}</strong>
+      </div>
+      {issue.classification === "stale_config" && <StaleConfigDetails issue={issue} />}
+      <dl className="issue-meta-grid">
+        <div>
+          <dt>Source</dt>
+          <dd>{issueSourceLabel(issue)}</dd>
+        </div>
+        <div>
+          <dt>Source stage</dt>
+          <dd>{issue.source_stage_label || issue.source_stage}</dd>
+        </div>
+        <div>
+          <dt>Source action</dt>
+          <dd>
+            {issue.source_action_link ? (
+              <Link to={issue.source_action_link}>{issue.source_action_label || issue.source_action_id}</Link>
+            ) : (
+              issue.source_action_label || "Not linked"
+            )}
+          </dd>
+        </div>
+        <div>
+          <dt>Last checked</dt>
+          <dd>{issue.last_checked ? formatDateTime(issue.last_checked) : "Not checked"}</dd>
+        </div>
+        <div>
+          <dt>Freshness</dt>
+          <dd>{labelize(issue.freshness || "unknown")}</dd>
+        </div>
+        <div>
+          <dt>Recheck command</dt>
+          <dd>
+            <code>{issue.recheck_command || "Refresh report center"}</code>
+          </dd>
+        </div>
+        <div>
+          <dt>Source page</dt>
+          <dd>
+            <Link to={issue.linked_page || "/reports"}>Open page</Link>
+          </dd>
+        </div>
+      </dl>
+      <IssueEvidenceDetails issue={issue} />
+    </article>
+  );
+}
+
+function IssueSeverityLabel({ issue }: { issue: ReportIssue }) {
+  const label =
+    issue.severity === "critical"
+      ? "Live blocker"
+      : issue.severity === "warning"
+        ? issueSourceLabel(issue) === "stale" ? "Stale evidence" : "Needs review"
+        : issue.severity === "success"
+          ? "Live check passed"
+          : issue.classification === "not_configured_yet"
+            ? "Not configured yet"
+            : issueSourceLabel(issue) === "not checked" ? "Not checked" : "Info";
+  const icon =
+    issue.severity === "critical" ? (
+      <XCircle size={16} />
+    ) : issue.severity === "warning" ? (
+      <AlertTriangle size={16} />
+    ) : issue.severity === "success" ? (
+      <CheckCircle2 size={16} />
+    ) : (
+      <Activity size={16} />
+    );
+  return (
+    <span className={`issue-severity-label issue-tone-${issue.severity}`}>
+      {icon}
+      {label}
+    </span>
+  );
+}
+
+function issueSourceLabel(issue: ReportIssue): string {
+  if (issue.source_type === "test_fixture") return "test";
+  if (issue.source_type === "not_checked") return "not checked";
+  if (issue.source_type === "historical_artifact" || issue.freshness === "stale" || !issue.is_current) return "stale";
+  if (issue.source_type === "live_probe" || issue.source_type === "live_cached") return "live";
+  return labelize(issue.source_type || issue.freshness || "unknown").toLowerCase();
+}
+
+function StaleConfigDetails({ issue }: { issue: ReportIssue }) {
+  const details = objectValue(issue.details);
+  const rows = [
+    ["Field", asString(details.field)],
+    ["Current value", asString(details.current_value)],
+    ["Expected value", asString(details.expected_value)],
+    ["Came from", asString(details.where_it_came_from) || asString(details.source)],
+    ["Fix in", asString(details.where_to_fix)],
+    ["Suggested patch", asString(details.suggested_patch)],
+    ["Copy command", asString(details.suggested_copy_command)]
+  ].filter(([, value]) => value);
+  return (
+    <div className="stale-config-details">
+      <strong>Stale config details</strong>
+      <dl>
+        {rows.map(([label, value]) => (
+          <div key={label}>
+            <dt>{label}</dt>
+            <dd>
+              <code>{value}</code>
+            </dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  );
+}
+
+function IssueEvidenceDetails({ issue }: { issue: ReportIssue }) {
+  const evidence = [
+    ...(issue.source_report ? [issue.source_report] : []),
+    ...issue.evidence_artifacts
+  ].filter(Boolean);
+  return (
+    <AdvancedDetails
+      className="issue-evidence-details"
+      summary={`${evidence.length} evidence artifact${evidence.length === 1 ? "" : "s"}`}
+      title="Evidence"
+    >
+      {evidence.length ? (
+        <ul className="issue-evidence-list">
+          {evidence.map((artifact) => (
+            <li key={artifact}>
+              <code>{artifact}</code>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <EmptyState title="No evidence path" detail="This issue was generated from the current API payload." />
+      )}
+    </AdvancedDetails>
+  );
+}
+
+function ReportEvidenceGroups({ reportCenter }: { reportCenter: ReportCenter }) {
+  const artifactSet = new Set(reportCenter.evidence_artifacts);
+  Object.values(reportCenter.last_reports).forEach((path) => {
+    if (path) artifactSet.add(path);
+  });
+  const allArtifacts = Array.from(artifactSet);
+  return (
+    <AdvancedDetails
+      className="section-details report-evidence-details"
+      summary={`${allArtifacts.length} raw report link${allArtifacts.length === 1 ? "" : "s"} grouped under Evidence`}
+      title="Evidence"
+    >
+      <div className="report-evidence-groups">
+        {reportCenter.sources.map((source) => (
+          <article key={source.id}>
+            <div>
+              <strong>{source.label}</strong>
+              <StatusBadge status={source.status} />
+            </div>
+            <dl>
+              <div>
+                <dt>Source</dt>
+                <dd>{sourceSummaryLabel(source)}</dd>
+              </div>
+              <div>
+                <dt>Last checked</dt>
+                <dd>{source.checked_at ? formatDateTime(source.checked_at) : "Not checked"}</dd>
+              </div>
+              <div>
+                <dt>Recheck</dt>
+                <dd>
+                  <code>{source.recheck_command || "Refresh report center"}</code>
+                </dd>
+              </div>
+              <div>
+                <dt>Last report</dt>
+                <dd>{source.last_report ? <code>{source.last_report}</code> : "Not run"}</dd>
+              </div>
+              <div>
+                <dt>Source page</dt>
+                <dd>
+                  <Link to={source.linked_page || "/reports"}>Open page</Link>
+                </dd>
+              </div>
+            </dl>
+          </article>
+        ))}
+      </div>
+    </AdvancedDetails>
+  );
+}
+
+function ReportActionGroups({ issues }: { issues: ReportIssue[] }) {
+  const grouped = new Map<string, { actionLabel: string; stageLabel: string; issues: ReportIssue[]; link: string | null }>();
+  issues.forEach((issue) => {
+    const key = issue.source_action_id || `${issue.source}:${issue.source_stage}`;
+    const current = grouped.get(key) ?? {
+      actionLabel: issue.source_action_label || issue.source_action_id || "Unlinked issue source",
+      stageLabel: issue.source_stage_label || issue.source_stage,
+      issues: [],
+      link: issue.source_action_link
+    };
+    current.issues.push(issue);
+    grouped.set(key, current);
+  });
+  const rows = Array.from(grouped.entries()).sort((left, right) => left[1].stageLabel.localeCompare(right[1].stageLabel));
+
+  return (
+    <section className="panel report-action-groups">
+      <div className="readiness-head">
+        <PanelTitle icon={<Route size={18} />} title="Action Links" />
+        <span className="muted">{rows.length} source groups</span>
+      </div>
+      {rows.length ? (
+        <table className="provider-candidate-table workflow-registry-table">
+          <thead>
+            <tr>
+              <th>Stage</th>
+              <th>Action</th>
+              <th>Issues</th>
+              <th>Open</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(([key, row]) => (
+              <tr key={key}>
+                <td>{row.stageLabel}</td>
+                <td>{row.actionLabel}</td>
+                <td>{row.issues.length}</td>
+                <td>
+                  {row.link ? <Link to={row.link}>Open action</Link> : <span className="muted">No action link</span>}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      ) : (
+        <EmptyState title="No action links" detail="Report issues have not been linked to registry actions yet." />
+      )}
+    </section>
+  );
+}
+
+function sourceSummaryLabel(source: ReportSourceSummary): string {
+  if (source.source_type === "test_fixture") return "test";
+  if (source.source_type === "not_checked") return "not checked";
+  if (source.source_type === "historical_artifact" || source.freshness === "stale" || !source.is_current) return "stale";
+  if (source.source_type === "live_probe" || source.source_type === "live_cached") return "live";
+  return labelize(source.source_type || source.freshness || "unknown").toLowerCase();
+}
+
+function filterReportIssuesForSection(section: ReportsSectionId, issues: ReportIssue[]): ReportIssue[] {
+  if (section === "all") return issues;
+  if (section === "critical") return issues.filter((issue) => issue.severity === "critical");
+  if (section === "warnings") return issues.filter((issue) => issue.severity === "warning");
+  if (section === "stale_config") return issues.filter((issue) => issue.classification === "stale_config");
+  return issues.filter((issue) => reportIssueMatchesSource(issue, section));
+}
+
+function filteredStatusForClass(issues: ReportIssue[], classification: string): string {
+  return aggregateIssueStatus(issues.filter((issue) => issue.classification === classification));
+}
+
+function filteredStatusForSource(issues: ReportIssue[], source: ReportsSectionId): string {
+  return aggregateIssueStatus(issues.filter((issue) => reportIssueMatchesSource(issue, source)));
+}
+
+function aggregateIssueStatus(issues: ReportIssue[]): string {
+  if (!issues.length) return "not_configured_yet";
+  if (issues.some((issue) => issue.severity === "critical")) return "critical";
+  if (issues.some((issue) => issue.severity === "warning")) return "warning";
+  if (issues.some((issue) => issue.classification === "not_configured_yet")) return "not_configured_yet";
+  if (issues.some((issue) => issue.severity === "success")) return "passed";
+  return "info";
+}
+
+function reportIssueMatchesSource(issue: ReportIssue, source: ReportsSectionId): boolean {
+  const text = `${issue.source} ${issue.source_stage} ${issue.title}`.toLowerCase();
+  const tokensBySource: Partial<Record<ReportsSectionId, string[]>> = {
+    cisco: ["cisco"],
+    esxi: ["esxi"],
+    netapp: ["netapp", "ontap"],
+    firmware: ["firmware"],
+    lab_profile: ["lab-profile", "lab_profile", "lab profile", "toolchain", "serial"]
+  };
+  return (tokensBySource[source] ?? []).some((token) => text.includes(token));
 }
 
 function SettingsPage({
@@ -5547,6 +6475,7 @@ function SettingsPage({
     <Page
       activeSection={activeSection}
       description="Lab profile, local settings, and safety metadata without repeating provider diagnostics."
+      issueArea="settings"
       onSectionChange={(sectionId) => setActiveSection(sectionId as SettingsSectionId)}
       primaryAction={{ icon: <Pencil size={16} />, label: "Manage Profile", to: "/lab-profiles" }}
       sections={sections}
@@ -5649,7 +6578,7 @@ function SettingsPage({
             items={[
               { label: "Flags", value: String(flags.length) },
               { label: "Enabled", value: String(flags.filter(([, value]) => value).length) },
-              { label: "Provider Mode", value: catalog?.provider_mode ?? health?.provider_mode ?? "unknown" }
+              { label: "Runtime", value: health?.operator_runtime_mode ? labelize(health.operator_runtime_mode) : "unknown" }
             ]}
           />
           <AdvancedDetails className="section-details" summary="Configured flag values" title="Feature flag details">
@@ -5863,6 +6792,31 @@ function MediaInventoryCompact({ inventory }: { inventory: MediaInventory }) {
 function classificationLabel(value: ControlAction["classification"]): string {
   if (value === "read-only") return "Read only";
   return labelize(value);
+}
+
+function workflowModeLabel(value: WorkflowAction["mode"]): string {
+  if (value === "read_only") return "Read only";
+  if (value === "report_only") return "Report only";
+  return labelize(value);
+}
+
+function workflowModeClass(value: WorkflowAction["mode"]): string {
+  if (value === "read_only" || value === "report_only") return "read-only";
+  return value;
+}
+
+function workflowActionCopyText(action: WorkflowAction): string {
+  if (action.command) return action.command;
+  if (action.api_endpoint) return `${action.api_method ?? "GET"} ${action.api_endpoint}`;
+  return action.next_action;
+}
+
+async function copyWorkflowActionToClipboard(action: WorkflowAction) {
+  try {
+    await navigator.clipboard.writeText(workflowActionCopyText(action));
+  } catch {
+    // Copy support depends on browser permissions; the visible command remains available.
+  }
 }
 
 function ProviderStatusPage() {
@@ -6083,7 +7037,7 @@ function BuildOverviewCard({ overview }: { overview: BuildOverview }) {
         <NextActionPanel title="Next action" value={overview.nextAction} />
         <NextActionPanel title="Needs attention" value={overview.topBlocker} muted={overview.topBlocker === "No blocker reported."} />
         <NextActionPanel title="Last milestone" value={overview.lastMilestone} />
-        <NextActionPanel title="Operating mode" value={overview.mode} />
+        <NextActionPanel title="Source" value={overview.mode} />
       </div>
     </section>
   );
@@ -6167,9 +7121,7 @@ function buildLabOverview(
   const firstWaiting = stages.find((stage) => isWaitingStatus(stage.status));
   const currentStage = firstBlocked ?? firstWaiting ?? stages.find((stage) => !isReadyStatus(stage.status)) ?? stages[stages.length - 1];
   const readyStages = stages.filter((stage) => isReadyStatus(stage.status));
-  const mode = displayModeLabel(
-    asString(verification?.provider_mode) || providers.find((provider) => provider.mode)?.mode || "unknown"
-  );
+  const mode = verification ? resultSourceLabel(verification) : providerSourceOverview(providers);
 
   return {
     overallState: firstBlocked ? "needs-attention" : firstWaiting ? "waiting" : "ready",
@@ -6240,6 +7192,14 @@ function buildLabBuildStages({
     asString(ciscoSetupReadiness?.real_lab_run?.prompt_classification) ||
     "unknown";
   const netappConfigured = asBoolean(netappProvider?.configuration.netapp_configured);
+  const netappRuntimeState = objectValue(netappProvider?.configuration.runtime_state);
+  const netappRuntimeConsole = objectValue(netappRuntimeState.console);
+  const labProfileClassification = asString(labProfile.classification);
+  const labProfileCurrentBlocker =
+    asBoolean(labProfile.is_current) &&
+    ["hard_fail", "stale_config", "operator_action_required"].includes(labProfileClassification)
+      ? humanizeAction(asString(labProfile.next_action) || labProfileClassification)
+      : "No blocker reported.";
 
   return [
     {
@@ -6247,17 +7207,18 @@ function buildLabBuildStages({
       title: "Lab Profile",
       step: "Step 1: Confirm lab profile",
       status: asString(labProfile.status) || asString(labProfile.classification) || "not-configured",
-      message: "Confirms the active lab address plan and whether old report evidence is still present.",
+      message: "Confirms the active lab address plan and groups older report references as evidence.",
       nextAction: humanizeAction(asString(labProfile.next_action) || "Confirm the lab profile before running provider stages."),
-      metricLabel: "Profile",
-      metricValue: asString(expectedProfile.subnet) ? "Loaded" : "Not loaded",
-      blocker: staleArtifacts.length ? "Old report evidence exists. Refresh reports after confirming the lab profile." : "No blocker reported.",
-      detailSummary: "Lab profile, stale report evidence, and address plan",
+      metricLabel: "Evidence",
+      metricValue: staleArtifacts.length ? "Stale evidence" : "Current profile",
+      blocker: labProfileCurrentBlocker,
+      detailSummary: "Lab profile, historical evidence, and address plan",
       details: (
         <div className="stage-detail-grid">
           <ProviderFact label="Lab Profile" value={labelize(asString(labProfile.status) || "unknown")} />
           <ProviderFact label="Expected Subnet" value={asString(expectedProfile.subnet) || "Not loaded"} />
-          <ProviderFact label="Old Reports" value={staleArtifacts.length ? String(staleArtifacts.length) : "None detected"} />
+          <ProviderFact label="Historical Evidence" value={staleArtifacts.length ? String(staleArtifacts.length) : "None detected"} />
+          <ProviderFact label="Source" value={resultSourceLabel(labProfile)} />
           <ProviderFact label="Next Action" value={humanizeAction(asString(labProfile.next_action) || "Confirm the lab profile.")} />
           <JsonDetails title="Advanced lab profile evidence" data={labProfile} />
         </div>
@@ -6425,23 +7386,26 @@ function buildLabBuildStages({
       step: "Step 7: Configure NetApp",
       status: netappConfigured ? netappProvider?.status || "ready" : "not-configured",
       message: netappConfigured
-        ? "NetApp setup and upgrade readiness can be reviewed."
-        : "NetApp is not configured yet. This is expected until its setup values are provided.",
-      nextAction: humanizeAction(netappProvider ? safeNextAction(netappProvider) : "Add NetApp setup values when this stage is in scope."),
+        ? "NetApp configured state is verified by live check."
+        : "NetApp is not verified yet. Discover the console, read state, then validate setup.",
+      nextAction: humanizeAction(netappProvider ? safeNextAction(netappProvider) : "Run NetApp console discovery when this stage is in scope."),
       metricLabel: "Setup",
-      metricValue: netappConfigured ? "Configured" : "Not configured yet",
+      metricValue: netappConfigured ? "Verified" : labelize(asString(netappRuntimeState.configured_state) || "Not verified"),
       blocker: humanizeBlocker(
         netappConfigured
           ? netappProvider?.blockers[0] || "No blocker reported."
-          : "Waiting for NetApp setup values."
+          : netappProvider?.blockers[0] || "Waiting for NetApp live verification."
       ),
       detailSummary: "NetApp planned targets, readiness buckets, and artifact evidence",
       details: (
         <StageSummaryDetails
           rows={[
             ["Configured", netappConfigured ? "Yes" : "Not configured yet"],
+            ["Source", asString(netappProvider?.configuration.netapp_configured_source) || "none"],
+            ["Console", asString(netappRuntimeConsole.discovered_port) || "Not detected"],
+            ["Manual Env Flag", "Not required"],
             ["Status", displayStatusLabel(netappProvider?.status || "not-configured")],
-            ["Next Action", humanizeAction(netappProvider ? safeNextAction(netappProvider) : "Add NetApp setup values.")]
+            ["Next Action", humanizeAction(netappProvider ? safeNextAction(netappProvider) : "Run NetApp console discovery.")]
           ]}
         />
       )
@@ -6500,9 +7464,9 @@ function FullRebuildSummaryPanel({ summary }: { summary: ProviderProbeResult | n
         <StatusBadge status={summary?.status ?? "not-run"} />
       </div>
       <div className="provider-fact-grid compact">
-        <ProviderFact label="Provider Mode" value={asString(summary?.provider_mode) || "Unknown"} />
+        <ProviderFact label="Source" value={resultSourceLabel(summary)} />
+        <ProviderFact label="Freshness" value={resultFreshnessLabel(summary)} />
         <ProviderFact label="Checked" value={summary?.checked_at ? formatDateTime(summary.checked_at) : "Not run"} />
-        <ProviderFact label="Mock Results" value={asBoolean(summary?.mock_results_used) ? "Used" : "Not used"} />
         <ProviderFact label="Final Report" value={asString(artifacts.final) || "artifacts/codex-runs/full-device-rebuild-4h-report.md"} />
       </div>
       <ProviderIssueRows blockers={stringArray(summary?.blockers)} warnings={stringArray(summary?.warnings)} />
@@ -6554,11 +7518,12 @@ function BuildVerificationPanel({ verification }: { verification: ProviderProbeR
         <StatusBadge status={verification?.status ?? "not-run"} />
       </div>
       <div className="provider-fact-grid compact">
-        <ProviderFact label="Provider Mode" value={asString(verification?.provider_mode) || "Unknown"} />
+        <ProviderFact label="Source" value={resultSourceLabel(verification)} />
+        <ProviderFact label="Freshness" value={resultFreshnessLabel(verification)} />
         <ProviderFact label="Checked" value={verification?.checked_at ? formatDateTime(verification.checked_at) : "Not run"} />
-        <ProviderFact label="Mock Results" value={asBoolean(verification?.mock_results_used) ? "Used" : "Not used"} />
         <ProviderFact label="Certification" value={labelize(asString(verification?.certification_state) || asString(verification?.status) || "not run")} />
-        <ProviderFact label="Report" value={asString(artifacts.report) || "artifacts/codex-runs/build-verification-report.md"} />
+        <ProviderFact label="Current Report" value={asString(artifacts.current_state_report) || "artifacts/codex-runs/build-verification-current-state-report.md"} />
+        <ProviderFact label="Evidence Report" value={asString(artifacts.evidence_report) || "artifacts/codex-runs/build-verification-evidence-report.md"} />
       </div>
       <div className="provider-fact-grid compact">
         <ProviderFact label="Lab Subnet" value={asString(expectedProfile.subnet) || "192.168.1.0/24"} />
@@ -6567,8 +7532,8 @@ function BuildVerificationPanel({ verification }: { verification: ProviderProbeR
         <ProviderFact label="Cisco" value={asString(expectedProfile.cisco_management) || "192.168.1.204"} />
         <ProviderFact label="Control Host" value={asString(expectedProfile.ansible_control_host) || "192.168.1.205"} />
         <ProviderFact
-          label="Stale IPs"
-          value={staleValues.length || staleArtifacts.length ? `${staleValues.length} active, ${staleArtifacts.length} reports` : "None detected"}
+          label="Stale Evidence"
+          value={staleValues.length || staleArtifacts.length ? `${staleValues.length} live, ${staleArtifacts.length} evidence` : "None detected"}
         />
       </div>
       <ProviderIssueRows blockers={stringArray(verification?.blockers)} warnings={stringArray(verification?.warnings)} />
@@ -6769,7 +7734,7 @@ function CiscoSetupReadinessPanel({
     setupWizardPlan?.setup_wizard_detected || readiness.setup_wizard_plan?.detected
   );
   const displayedNextAction = setupWizardDetected
-    ? "Review setup wizard plan preview."
+    ? "Review setup wizard readiness plan."
     : readiness.next_safe_action;
   const stateBoundaries = objectValue(readiness.state_boundaries);
   const discoveredState = objectValue(stateBoundaries.discovered_current_device_state);
@@ -7140,7 +8105,7 @@ function CiscoBootstrapRequirementsPanel({
           />
         </label>
         <div className="provider-callout span-2">
-          <strong>Preview only</strong>
+          <strong>Apply disabled</strong>
           <p>
             No commands will be generated or sent. Apply disabled. SSH/SCP planned only.
             Save/write memory disabled.
@@ -7164,7 +8129,7 @@ function CiscoSetupWizardPlanPanel({ plan }: { plan: CiscoSetupWizardPlan }) {
         <strong>
           {plan.setup_wizard_detected
             ? "Setup wizard/default prompt planning"
-            : "Setup wizard/default prompt planning preview"}
+            : "Setup wizard/default prompt readiness plan"}
         </strong>
         <p>{plan.message}</p>
       </div>
@@ -7175,10 +8140,10 @@ function CiscoSetupWizardPlanPanel({ plan }: { plan: CiscoSetupWizardPlan }) {
         <ProviderFact label="Next Safe Action" value={plan.next_safe_action} />
       </div>
       <div className="setup-preview-grid">
-        <SetupPreviewBlock title="Why Blocked" tag="Preview only" lines={plan.why_blocked} />
+        <SetupPreviewBlock title="Why Blocked" tag="Apply disabled" lines={plan.why_blocked} />
         <SetupPreviewBlock
           title="Future Guarded Workflow"
-          tag="Preview only"
+          tag="Readiness plan"
           lines={plan.future_guarded_plan_preview}
         />
         <SetupPreviewBlock title="Not Attempted" tag="Disabled" lines={plan.not_attempted} />
@@ -9320,28 +10285,34 @@ function NetAppOntapDetails({ provider }: { provider: ProviderStatus }) {
   const blockers = planPreview?.blockers ?? provider.blockers;
   const removableWarnings = planPreview?.removable_warnings ?? provider.warnings;
   const readinessSummary = planPreview?.readiness_summary ?? {};
+  const runtimeState = objectValue(planPreview?.runtime_state ?? provider.configuration.runtime_state);
+  const runtimeConsole = objectValue(runtimeState.console);
 
   return (
     <div className="provider-detail-section netapp-setup">
       <div className="provider-callout netapp-apply-disabled">
-        <strong>Apply disabled / preview only</strong>
+        <strong>Live readiness / Apply disabled</strong>
         <p>
-          Planned target display only. Cluster creation, IP changes, SVM/LIF creation, volume
-          provisioning, ONTAP upgrades, controller reboots, disk wipes, and configuration apply are disabled.
+          Current and planned target evidence is shown for the lab. Cluster creation, IP changes,
+          SVM/LIF creation, volume provisioning, ONTAP upgrades, controller reboots, disk wipes,
+          and configuration apply are disabled.
         </p>
       </div>
       <div className="provider-callout">
-        <strong>Plan-preview endpoint</strong>
+        <strong>Readiness endpoint</strong>
         <p>
           {planError
-            ? `Plan preview unavailable: ${planError}`
+            ? `Readiness endpoint unavailable: ${planError}`
             : planPreview
-              ? "Loaded from /api/v1/providers/netapp-ontap/plan-preview."
-              : "Loading structured plan preview."}
+              ? "Loaded from NetApp live readiness data."
+              : "Loading structured readiness."}
         </p>
       </div>
       <div className="provider-fact-grid compact">
-        <ProviderFact label="NETAPP_CONFIGURED" value={asBoolean(planPreview?.netapp_configured ?? provider.configuration.netapp_configured) ? "true" : "false"} />
+        <ProviderFact label="Configured State" value={asBoolean(planPreview?.netapp_configured ?? provider.configuration.netapp_configured) ? "Verified by live check" : labelize(asString(runtimeState.configured_state) || "not verified")} />
+        <ProviderFact label="Manual Env Flag" value="Not required" />
+        <ProviderFact label="Console" value={asString(runtimeConsole.discovered_port) || "Not detected"} />
+        <ProviderFact label="Console Source" value={labelize(asString(runtimeConsole.source) || "none")} />
         <ProviderFact label="Apply Enabled" value={asBoolean(planPreview?.apply_enabled) ? "Enabled" : "Disabled"} />
         <ProviderFact label="Cluster Management" value={addressFor(targetAddressing, "Cluster management")} />
         <ProviderFact label="Node Management" value={`${addressFor(targetAddressing, "Node A management / e0M")} / ${addressFor(targetAddressing, "Node B management / e0M")}`} />
@@ -9359,14 +10330,14 @@ function NetAppOntapDetails({ provider }: { provider: ProviderStatus }) {
       </div>
       <AdvancedDetails
         className="provider-workflow-details"
-        summary="Planned targets, readiness buckets, storage preview, upgrade preview, and artifacts"
-        title="NetApp plan evidence"
+        summary="Planned targets, readiness buckets, storage readiness, upgrade readiness, and artifacts"
+        title="NetApp live evidence"
       >
       <h3>Planned Targets</h3>
       <KeyValueTable rows={targetAddressing} labelKey="label" valueKey="address" empty="No NetApp target addresses are planned." />
       <h3>Current / Discovered Targets</h3>
       <KeyValueTable rows={currentAddressing} labelKey="label" valueKey="address" empty="No NetApp current targets have been discovered." />
-      <h3>Readiness Preview</h3>
+      <h3>Readiness Buckets</h3>
       <NetAppReadinessGrid readiness={readiness} />
       <h3>Blockers / Removable Warnings</h3>
       <NetAppIssueSummary blockers={blockers} warnings={removableWarnings} />
@@ -9377,7 +10348,7 @@ function NetAppOntapDetails({ provider }: { provider: ProviderStatus }) {
       </div>
       <KeyValueTable rows={nodes} labelKey="name" valueKey="management_ip" empty="No node management intent is planned." />
       <KeyValueTable rows={lifs} labelKey="name" valueKey="address" empty="No iSCSI LIF intent is planned." />
-      <h3>Storage / iSCSI Plan Preview</h3>
+      <h3>Storage / iSCSI Readiness</h3>
       <div className="provider-callout">
         <strong>{labelize(asString(storageIscsiPlan.status) || "placeholder")}</strong>
         {stringArray(storageIscsiPlan.notes).map((note) => (
@@ -9387,9 +10358,9 @@ function NetAppOntapDetails({ provider }: { provider: ProviderStatus }) {
           <p>Placeholder only. No volumes, LIFs, LUNs, or igroups are created.</p>
         )}
       </div>
-      <h3>Upgrade Readiness Preview</h3>
+      <h3>Upgrade Readiness</h3>
       <div className="provider-callout">
-        <strong>{labelize(asString(planPreview?.upgrade_readiness_preview.status) || "preview only")}</strong>
+        <strong>{operatorReadinessLabel(asString(planPreview?.upgrade_readiness_preview.status) || "not_checked")}</strong>
         {stringArray(planPreview?.upgrade_readiness_preview.details).map((detail) => (
           <p key={detail}>{detail}</p>
         ))}
@@ -9710,24 +10681,32 @@ function displayStatusLabel(status: string): string {
     "console bootstrap required": "Console bootstrap required",
     "console_bootstrap_required": "Console bootstrap required",
     completed: "Ready",
+    critical: "Blocked",
     failed: "Needs attention",
     "guarded_write": "Guarded write",
+    hard_fail: "Blocked",
+    info: "Info",
     "local-lab-readwrite": "Real Lab Mode",
     "local-readonly": "Read-only Lab Mode",
     "missing-config": "Not configured yet",
     "missing-console": "Console not found",
-    mock: "Simulation",
+    mock: "Test Mode",
     "needs-attention": "Needs attention",
     "needs-selection": "Needs selection",
+    not_configured_yet: "Not configured yet",
     "not-configured": "Not configured yet",
     "not-run": "Not run",
     ok: "Ready",
+    operator_action_required: "Needs action",
     passed: "Ready",
     "pending_restart": "Restart required",
     "planned-target": "Planned",
     ready: "Ready",
     "read_only": "Read only",
     "safe_default": "Safe default",
+    stale: "Stale",
+    stale_config: "Blocked",
+    success: "Ready",
     unverified: "Unverified",
     unavailable: "Not available",
     waiting: "Waiting"
@@ -9738,8 +10717,39 @@ function displayStatusLabel(status: string): string {
 function displayModeLabel(mode: string): string {
   if (mode === "local-lab-readwrite") return "Real Lab Mode";
   if (mode === "local-readonly") return "Read-only Lab Mode";
-  if (mode === "mock") return "Simulation";
+  if (mode === "mock") return "Test Mode";
   return displayStatusLabel(mode);
+}
+
+function resultSourceLabel(payload: unknown): string {
+  if (!payload) return "not checked";
+  const item = objectValue(payload);
+  const sourceType = asString(item.source_type);
+  const freshness = asString(item.freshness);
+  const checkedAt = asString(item.checked_at);
+  if (sourceType === "test_fixture" || asString(item.provider_mode) === "mock") return "test";
+  if (sourceType === "not_checked" || (!sourceType && !checkedAt)) return "not checked";
+  if (sourceType === "historical_artifact" || freshness === "stale" || (sourceType && !asBoolean(item.is_current))) {
+    return "stale";
+  }
+  if (sourceType === "live_probe") return "live check";
+  if (sourceType === "live_cached" || checkedAt) return "last live result";
+  return labelize(sourceType || freshness || "unknown").toLowerCase();
+}
+
+function resultFreshnessLabel(payload: unknown): string {
+  const item = objectValue(payload);
+  return labelize(asString(item.freshness) || (asString(item.checked_at) ? "current" : "unknown"));
+}
+
+function providerSourceOverview(providers: ProviderStatus[]): string {
+  if (!providers.length) return "not checked";
+  if (providers.some((provider) => provider.source_type === "test_fixture")) return "test";
+  if (providers.some((provider) => provider.is_current && ["live_probe", "live_cached"].includes(provider.source_type))) {
+    return "last live result";
+  }
+  if (providers.some((provider) => provider.source_type === "not_checked")) return "not checked";
+  return "stale";
 }
 
 function humanizeAction(value: string): string {
@@ -9750,7 +10760,8 @@ function humanizeAction(value: string): string {
     ["stale_config", "old lab IP detected"],
     ["operator_action_required", "needs your action"],
     ["local-lab-readwrite", "Real Lab Mode"],
-    ["NETAPP_CONFIGURED=false", "NetApp is not configured yet"],
+    ["NETAPP_CONFIGURED=false", "NetApp is not verified by live check yet"],
+    ["NETAPP_CONFIGURED=true", "legacy NetApp env flag"],
     ["Redfish PATCH accepted", "iLO accepted the storage change"],
     ["GET-only", "read-only"],
     ["GET-Only", "Read-only"]
@@ -9785,9 +10796,9 @@ function reportLinksFromActions(actions: ControlAction[]): ReportLink[] {
     }));
 }
 
-function filterReportLinks(section: ReportsSectionId, reports: ReportLink[]): ReportLink[] {
+function filterReportLinks(section: LegacyReportSectionId, reports: ReportLink[]): ReportLink[] {
   if (section === "latest") return reports.slice(0, 16);
-  const tokensBySection: Record<ReportsSectionId, string[]> = {
+  const tokensBySection: Record<LegacyReportSectionId, string[]> = {
     latest: [],
     cisco: ["cisco"],
     ilo: ["ilo", "hpe", "redfish", "server"],
@@ -9804,9 +10815,9 @@ function filterReportLinks(section: ReportsSectionId, reports: ReportLink[]): Re
   });
 }
 
-function filterProviderArtifacts(section: ReportsSectionId, artifacts: NetAppProviderArtifact[]): NetAppProviderArtifact[] {
+function filterProviderArtifacts(section: LegacyReportSectionId, artifacts: NetAppProviderArtifact[]): NetAppProviderArtifact[] {
   if (section === "latest") return artifacts.slice(0, 8);
-  const tokensBySection: Record<ReportsSectionId, string[]> = {
+  const tokensBySection: Record<LegacyReportSectionId, string[]> = {
     latest: [],
     cisco: ["cisco"],
     ilo: ["ilo", "hpe"],
@@ -10261,9 +11272,9 @@ function WorkflowRunStructuredView({
   return (
     <>
       <section className="panel safety-note">
-        <PanelTitle icon={<ShieldCheck size={18} />} title="Mock-Only Safety" />
+        <PanelTitle icon={<ShieldCheck size={18} />} title="Local Dry-Run Safety" />
         <p>
-          This run uses provider <strong>{run.provider}</strong>. The plan and result are local mock data;
+          This run uses provider <strong>{run.provider}</strong>. The plan and result are local dry-run data;
           no vCenter, ESXi, AWX, Terraform, OpenTofu, Redfish, ONTAP, switch, DNS, IPAM, or storage endpoint is called.
         </p>
       </section>
@@ -10295,8 +11306,8 @@ function WorkflowRunStructuredView({
         <PanelTitle icon={<Play size={18} />} title="Execution Result" />
         <div className="detail-grid">
           <Info label="Result" value={result.message} />
-          <Info label="Mock Task" value={result.mockTaskId} />
-          <Info label="Mock VM" value={result.mockVmId} />
+          <Info label="Dry-Run Task" value={result.mockTaskId} />
+          <Info label="Dry-Run VM" value={result.mockVmId} />
           <Info label="Provider" value={result.provider} />
         </div>
         <StepTable empty="Execution has not recorded completed steps yet." steps={executedSteps} />
@@ -10375,7 +11386,7 @@ function ArtifactCard({ artifact }: { artifact: ArtifactRecord }) {
         <span>{labelize(artifact.kind)}</span>
         <span>{artifact.downloadable ? "Download available" : "No file generated"}</span>
         {artifact.redacted && <span>Redacted</span>}
-        {artifact.mock_only && <span>Mock only</span>}
+        {artifact.mock_only && <span>Test fixture</span>}
       </div>
       {metadata.length > 0 && (
         <ul className="artifact-metadata">
@@ -10401,8 +11412,8 @@ function artifactMetadataSummary(artifact: ArtifactRecord): string[] {
   const items = [
     metadataSummaryItem("Provider", metadata.provider),
     metadataSummaryItem("Run status", metadata.run_status),
-    metadataSummaryItem("Mock task", metadata.mock_task_id),
-    metadataSummaryItem("Mock VM", metadata.mock_vm_id),
+    metadataSummaryItem("Dry-run task", metadata.mock_task_id),
+    metadataSummaryItem("Dry-run VM", metadata.mock_vm_id),
     metadataSummaryItem("Events", metadata.event_count),
     metadataSummaryItem("Steps", metadata.step_count)
   ].filter((item): item is string => Boolean(item));
@@ -10623,6 +11634,7 @@ function Page({
   activeSection,
   children,
   description,
+  issueArea,
   onSectionChange,
   primaryAction,
   sections,
@@ -10632,6 +11644,7 @@ function Page({
   activeSection?: string;
   children: ReactNode;
   description?: string;
+  issueArea?: ReportIssueAreaId;
   onSectionChange?: (sectionId: string) => void;
   primaryAction?: PrimaryAction;
   sections?: SectionOption[];
@@ -10642,6 +11655,7 @@ function Page({
       <PageHeader
         actions={actions}
         description={description}
+        issueArea={issueArea}
         primaryAction={primaryAction}
         title={title}
       />
@@ -10656,14 +11670,18 @@ function Page({
 function PageHeader({
   actions,
   description,
+  issueArea,
   primaryAction,
   title
 }: {
   actions?: ReactNode;
   description?: string;
+  issueArea?: ReportIssueAreaId;
   primaryAction?: PrimaryAction;
   title: string;
 }) {
+  const { reportIssues } = useReportIssues();
+  const issueBadge = issueArea ? reportIssues?.page_badges[issueArea] : undefined;
   const primary = primaryAction?.to ? (
     <Link className="button-link primary" to={primaryAction.to}>
       {primaryAction.icon}
@@ -10687,12 +11705,52 @@ function PageHeader({
         <p className="eyebrow">Lab Builder</p>
         <h1>{title}</h1>
         {description && <p>{description}</p>}
+        {issueArea && <PageIssueIndicator badge={issueBadge} />}
       </div>
       <div className="page-actions">
         {primary}
         {actions}
       </div>
     </header>
+  );
+}
+
+function PageIssueIndicator({ badge }: { badge?: ReportPageBadge }) {
+  if (!badge) {
+    return (
+      <div className="page-issue-indicator issue-tone-neutral">
+        <Activity size={16} />
+        <strong>Report status loading</strong>
+        <span>Issue counts will appear when the report center is available.</span>
+      </div>
+    );
+  }
+  const label =
+    badge.status === "critical"
+      ? `Blocked: ${badge.critical || badge.count} critical`
+      : badge.status === "warning"
+        ? `Needs review: ${badge.warning || badge.count} warning`
+        : badge.status === "success"
+          ? "Ready: no open issues"
+          : badge.status === "not_configured_yet"
+            ? `Not configured yet: ${badge.not_configured_yet || badge.count}`
+            : badge.label;
+  const icon =
+    badge.status === "critical" ? (
+      <XCircle size={16} />
+    ) : badge.status === "warning" ? (
+      <AlertTriangle size={16} />
+    ) : badge.status === "success" ? (
+      <CheckCircle2 size={16} />
+    ) : (
+      <Activity size={16} />
+    );
+  return (
+    <div className={`page-issue-indicator issue-tone-${badge.status}`}>
+      {icon}
+      <strong>{label}</strong>
+      <Link to={`/reports?filter=${encodeURIComponent(badge.default_filter || "all")}`}>View issue</Link>
+    </div>
   );
 }
 
@@ -10834,7 +11892,7 @@ function BlockerSummary({
 
 function ReportLinkList({ reports }: { reports: ReportLink[] }) {
   if (!reports.length) {
-    return <EmptyState title="No reports yet" detail="Report links will appear after the mock planning or verification endpoints produce artifact metadata." />;
+    return <EmptyState title="No reports yet" detail="Report links will appear after live checks or verification endpoints produce artifact metadata." />;
   }
 
   return (
@@ -11123,19 +12181,19 @@ function queueActionForSection(sectionId: QueueSectionId): { label: string; reas
   if (sectionId === "approved_ready_to_plan") {
     return {
       label: "Create dry-run plan",
-      reason: "Approval is recorded; the next safe step is mock planning."
+      reason: "Approval is recorded; the next safe step is dry-run planning."
     };
   }
   if (sectionId === "planned_ready_to_execute") {
     return {
-      label: "Launch mock execution",
-      reason: "A persisted dry-run plan is ready for explicit mock execution."
+      label: "Launch dry-run execution",
+      reason: "A persisted dry-run plan is ready for explicit local execution."
     };
   }
   if (sectionId === "executing") {
     return {
       label: "Monitor run",
-      reason: "Mock execution is in progress; watch stages, logs, and audit events."
+      reason: "Dry-run execution is in progress; watch stages, logs, and audit events."
     };
   }
   if (sectionId === "blocked_failed") {
@@ -11199,16 +12257,16 @@ function lifecycleActionState({
 
 function readyReasonForAction(action: "submit" | "approve" | "plan" | "execute" | "cancel"): string {
   if (action === "submit") {
-    return "Required intent fields are present; submit will run mock source-of-truth validation.";
+    return "Required intent fields are present; submit will run request validation.";
   }
   if (action === "approve") {
     return "Validation passed; approving records the decision and unlocks dry-run planning.";
   }
   if (action === "plan") {
-    return "Approval is recorded; planning will create a mock dry-run plan.";
+    return "Approval is recorded; planning will create a dry-run plan.";
   }
   if (action === "execute") {
-    return "A valid persisted dry-run plan exists; execution remains mock-only.";
+    return "A valid persisted dry-run plan exists; execution remains local dry-run only.";
   }
   return "This request can still be cancelled before execution starts.";
 }
@@ -11338,6 +12396,12 @@ function stringFromUnknown(value: unknown): string {
 
 function labelize(value: string) {
   return value.replace(/[_-]/g, " ");
+}
+
+function operatorReadinessLabel(value: string) {
+  return labelize(value)
+    .replace(/preview only/g, "apply disabled")
+    .replace(/preview/g, "readiness");
 }
 
 function blankLabProfileForm(): LabProfileFormState {
@@ -11672,19 +12736,19 @@ function reviewStateForRun(run: WorkflowRun): { status: string; message: string 
   if (run.status === "completed") {
     return {
       status: "completed",
-      message: "Mock execution completed; review the result summary, audit trail, and report placeholders."
+      message: "Dry-run execution completed; review the result summary, audit trail, and report placeholders."
     };
   }
   if (run.status === "executing") {
     return {
       status: "executing",
-      message: "Mock execution is in progress; monitor stage events and audit records."
+      message: "Dry-run execution is in progress; monitor stage events and audit records."
     };
   }
   if (run.status === "failed") {
     return {
       status: "failed",
-      message: run.error_message ?? "Mock execution failed; review blockers and audit details."
+      message: run.error_message ?? "Dry-run execution failed; review blockers and audit details."
     };
   }
   if (run.status === "cancelled") {
@@ -11696,7 +12760,7 @@ function reviewStateForRun(run: WorkflowRun): { status: string; message: string 
   return (
     reviewBeforeExecute(run) ?? {
       status: "review",
-      message: "Review the dry-run plan before launching mock execution."
+      message: "Review the dry-run plan before launching local execution."
     }
   );
 }

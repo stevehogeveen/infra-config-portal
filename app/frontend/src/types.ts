@@ -135,6 +135,15 @@ export type ProviderStatus = {
   status: string;
   capabilities: string[];
   message: string;
+  source_type: string;
+  checked_at: string | null;
+  freshness: string;
+  ttl_seconds: number | null;
+  stale_after_seconds: number | null;
+  is_current: boolean;
+  is_operator_visible: boolean;
+  recheck_command: string | null;
+  evidence_artifacts: string[];
   configuration: Record<string, unknown>;
   discovery: Record<string, unknown> | null;
   blockers: string[];
@@ -146,7 +155,7 @@ export type ProviderStatus = {
 };
 
 export type ProviderModeOption = {
-  mode: "mock" | "local-readonly" | "local-lab-readwrite";
+  mode: "local-readonly" | "local-lab-readwrite";
   label: string;
   status: string;
   description: string;
@@ -160,6 +169,8 @@ export type ProviderModeSettings = {
   pending_restart: boolean;
   options: ProviderModeOption[];
   restart_command: string;
+  expected_runtime_mode: string;
+  dev_test_banner: string | null;
   mode_env_path: string;
   store_path: string;
   updated_at: string | null;
@@ -178,6 +189,97 @@ export type ProviderProbeResult = {
   blockers: string[];
   checked_at: string | null;
   [key: string]: unknown;
+};
+
+export type ReportIssueSeverity = "critical" | "warning" | "info" | "success" | string;
+
+export type ReportIssueClassification =
+  | "hard_fail"
+  | "stale_config"
+  | "operator_action_required"
+  | "blocked_by_prior_stage"
+  | "not_configured_yet"
+  | "warning"
+  | "passed"
+  | string;
+
+export type ReportIssueStatus = "open" | "blocked" | "stale" | "reviewed" | "resolved" | string;
+
+export type ReportIssue = {
+  id: string;
+  source: string;
+  source_stage: string;
+  source_stage_id: string | null;
+  source_stage_label: string | null;
+  source_action_id: string | null;
+  source_action_label: string | null;
+  source_action_link: string | null;
+  severity: ReportIssueSeverity;
+  classification: ReportIssueClassification;
+  status: ReportIssueStatus;
+  source_type: string;
+  freshness: string;
+  ttl_seconds: number | null;
+  stale_after_seconds: number | null;
+  is_current: boolean;
+  is_operator_visible: boolean;
+  title: string;
+  summary: string;
+  problem: string;
+  next_action: string;
+  recheck_command: string;
+  source_report: string | null;
+  evidence_artifacts: string[];
+  linked_page: string;
+  last_checked: string | null;
+  can_auto_fix: boolean;
+  auto_fix_action_id: string | null;
+  details: Record<string, unknown>;
+};
+
+export type ReportSourceSummary = {
+  id: string;
+  label: string;
+  status: string;
+  critical: number;
+  warning: number;
+  info: number;
+  success: number;
+  issue_count: number;
+  source_type: string;
+  freshness: string;
+  checked_at: string | null;
+  is_current: boolean;
+  is_operator_visible: boolean;
+  linked_page: string;
+  recheck_command: string | null;
+  last_report: string | null;
+};
+
+export type ReportPageBadge = {
+  page: string;
+  status: string;
+  label: string;
+  count: number;
+  critical: number;
+  warning: number;
+  not_configured_yet: number;
+  success: number;
+  sources: string[];
+  default_filter: string;
+};
+
+export type ReportCenter = {
+  checked_at: string;
+  overall_status: string;
+  counts: Record<string, number>;
+  classification_counts: Record<string, number>;
+  top_issues: ReportIssue[];
+  issues: ReportIssue[];
+  sources: ReportSourceSummary[];
+  evidence_artifacts: string[];
+  last_reports: Record<string, string | null>;
+  page_badges: Record<string, ReportPageBadge>;
 };
 
 export type LabAddressPlan = {
@@ -416,6 +518,94 @@ export type ControlActionRun = {
   blockers: string[];
 };
 
+export type WorkflowActionCategory =
+  | "discover"
+  | "inventory"
+  | "plan"
+  | "apply"
+  | "verify"
+  | "report"
+  | "reset"
+  | "upgrade"
+  | "waive"
+  | "reclaim";
+
+export type WorkflowActionMode = "read_only" | "write" | "destructive" | "upgrade" | "report_only";
+
+export type WorkflowActionSourceType = "make_target" | "backend_script" | "api_endpoint" | "manual_guidance";
+
+export type WorkflowActionInput = {
+  name: string;
+  label: string;
+  required: boolean;
+  secret: boolean;
+  description: string;
+};
+
+export type WorkflowRunTrace = {
+  run_id: string;
+  action_id: string;
+  stage_id: string;
+  started_at: string | null;
+  finished_at: string | null;
+  status: string;
+  source_type: "live_probe" | "live_cached" | "historical_artifact" | "test_fixture" | "not_checked" | string;
+  freshness: string;
+  command: string | null;
+  report_artifacts: string[];
+  summary: string;
+  blockers: string[];
+  warnings: string[];
+  next_action: string;
+};
+
+export type WorkflowAction = {
+  action_id: string;
+  label: string;
+  stage: string;
+  stage_label: string;
+  provider: string;
+  category: WorkflowActionCategory;
+  mode: WorkflowActionMode;
+  description: string;
+  source_type: WorkflowActionSourceType;
+  command: string | null;
+  api_endpoint: string | null;
+  api_method: string | null;
+  required_mode: string;
+  required_gates: string[];
+  required_confirmations: string[];
+  required_credentials: string[];
+  safety_notes: string[];
+  inputs: WorkflowActionInput[];
+  outputs: string[];
+  reports: string[];
+  last_run_report: string | null;
+  last_run_status: string;
+  current_availability: string;
+  blockers: string[];
+  next_action: string;
+  evidence_artifacts: string[];
+  stale_after_seconds: number;
+  last_run_trace: WorkflowRunTrace;
+};
+
+export type WorkflowStage = {
+  stage_id: string;
+  label: string;
+  order: number;
+  current_state: string;
+  desired_state: string;
+  primary_action: string | null;
+  secondary_actions: string[];
+  dependencies: string[];
+  reports: string[];
+  action_count: number;
+  blocked_count: number;
+  report_count: number;
+  actions: WorkflowAction[];
+};
+
 export type CiscoSetupReadiness = {
   provider_id: string;
   phase: string;
@@ -551,6 +741,9 @@ export type NetAppPlanPreview = {
   mode: string;
   apply_enabled: boolean;
   netapp_configured: boolean;
+  netapp_configured_source: string | null;
+  manual_env_flag_required: boolean;
+  runtime_state: Record<string, unknown> | null;
   planned_targets: Record<string, unknown>;
   current_discovered_targets: Record<string, unknown> | null;
   readiness_summary: Record<string, unknown>;
@@ -655,6 +848,10 @@ export type NetAppConsoleReadiness = {
   console_probe_enabled: boolean;
   apply_enabled: boolean;
   netapp_configured: boolean;
+  netapp_configured_source: string | null;
+  legacy_netapp_configured_env: boolean | null;
+  manual_env_flag_required: boolean;
+  runtime_state: Record<string, unknown> | null;
   planned_targets: Record<string, unknown>;
   current_discovered_targets: Record<string, unknown> | null;
   prerequisites: Array<Record<string, unknown>>;

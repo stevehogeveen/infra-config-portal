@@ -917,6 +917,15 @@ class ProviderStatusRead(BaseModel):
     status: str
     capabilities: list[str]
     message: str
+    source_type: str = "not_checked"
+    checked_at: str | None = None
+    freshness: str = "unknown"
+    ttl_seconds: int | None = None
+    stale_after_seconds: int | None = None
+    is_current: bool = False
+    is_operator_visible: bool = True
+    recheck_command: str | None = None
+    evidence_artifacts: list[str] = Field(default_factory=list)
     configuration: dict[str, Any] = Field(default_factory=dict)
     discovery: dict[str, Any] | None = None
     blockers: list[str] = Field(default_factory=list)
@@ -942,6 +951,8 @@ class ProviderModeSettingsRead(BaseModel):
     pending_restart: bool
     options: list[ProviderModeOptionRead]
     restart_command: str
+    expected_runtime_mode: str = "local-lab-readwrite"
+    dev_test_banner: str | None = None
     mode_env_path: str
     store_path: str
     updated_at: datetime | None = None
@@ -951,7 +962,7 @@ class ProviderModeSettingsRead(BaseModel):
 class ProviderModeSettingsWrite(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    desired_mode: Literal["mock", "local-readonly", "local-lab-readwrite"]
+    desired_mode: Literal["local-readonly", "local-lab-readwrite"]
 
 
 class CiscoSetupReadinessRead(BaseModel):
@@ -1056,6 +1067,9 @@ class NetAppPlanPreviewRead(BaseModel):
     mode: str
     apply_enabled: bool = False
     netapp_configured: bool
+    netapp_configured_source: str | None = None
+    manual_env_flag_required: bool = False
+    runtime_state: dict[str, Any] | None = None
     planned_targets: dict[str, Any]
     current_discovered_targets: dict[str, Any] | None = None
     readiness_summary: dict[str, Any]
@@ -1106,6 +1120,10 @@ class NetAppConsoleReadinessRead(BaseModel):
     console_probe_enabled: bool = False
     apply_enabled: bool = False
     netapp_configured: bool
+    netapp_configured_source: str | None = None
+    legacy_netapp_configured_env: bool | None = None
+    manual_env_flag_required: bool = False
+    runtime_state: dict[str, Any] | None = None
     planned_targets: dict[str, Any]
     current_discovered_targets: dict[str, Any] | None = None
     prerequisites: list[dict[str, Any]] = Field(default_factory=list)
@@ -1200,6 +1218,101 @@ class ProviderProbeResultRead(BaseModel):
     blockers: list[str] = Field(default_factory=list)
     checked_at: str | None = None
     model_config = ConfigDict(extra="allow")
+
+
+class ReportIssueRead(BaseModel):
+    id: str
+    source: str
+    source_stage: str
+    source_stage_id: str | None = None
+    source_stage_label: str | None = None
+    source_action_id: str | None = None
+    source_action_label: str | None = None
+    source_action_link: str | None = None
+    severity: Literal["critical", "warning", "info", "success"] | str
+    classification: Literal[
+        "hard_fail",
+        "stale_config",
+        "operator_action_required",
+        "blocked_by_prior_stage",
+        "not_configured_yet",
+        "warning",
+        "passed",
+    ] | str
+    status: Literal["open", "blocked", "stale", "reviewed", "resolved"] | str
+    source_type: str = "not_checked"
+    freshness: str = "unknown"
+    ttl_seconds: int | None = None
+    stale_after_seconds: int | None = None
+    is_current: bool = False
+    is_operator_visible: bool = True
+    title: str
+    summary: str
+    problem: str
+    next_action: str
+    recheck_command: str
+    source_report: str | None = None
+    evidence_artifacts: list[str] = Field(default_factory=list)
+    linked_page: str
+    last_checked: str | None = None
+    can_auto_fix: bool = False
+    auto_fix_action_id: str | None = None
+    details: dict[str, Any] = Field(default_factory=dict)
+
+
+class ReportSourceSummaryRead(BaseModel):
+    id: str
+    label: str
+    status: str
+    critical: int = 0
+    warning: int = 0
+    info: int = 0
+    success: int = 0
+    issue_count: int = 0
+    source_type: str = "not_checked"
+    freshness: str = "unknown"
+    checked_at: str | None = None
+    is_current: bool = False
+    is_operator_visible: bool = True
+    linked_page: str
+    recheck_command: str | None = None
+    last_report: str | None = None
+
+
+class ReportPageBadgeRead(BaseModel):
+    page: str
+    status: str
+    label: str
+    count: int = 0
+    critical: int = 0
+    warning: int = 0
+    not_configured_yet: int = 0
+    success: int = 0
+    sources: list[str] = Field(default_factory=list)
+    default_filter: str = "all"
+
+
+class ReportCenterRead(BaseModel):
+    checked_at: str
+    overall_status: str
+    counts: dict[str, int]
+    classification_counts: dict[str, int] = Field(default_factory=dict)
+    top_issues: list[ReportIssueRead] = Field(default_factory=list)
+    issues: list[ReportIssueRead] = Field(default_factory=list)
+    sources: list[ReportSourceSummaryRead] = Field(default_factory=list)
+    evidence_artifacts: list[str] = Field(default_factory=list)
+    last_reports: dict[str, str | None] = Field(default_factory=dict)
+    page_badges: dict[str, ReportPageBadgeRead] = Field(default_factory=dict)
+
+
+class ReportCenterSummaryRead(BaseModel):
+    checked_at: str
+    overall_status: str
+    counts: dict[str, int]
+    classification_counts: dict[str, int] = Field(default_factory=dict)
+    top_issues: list[ReportIssueRead] = Field(default_factory=list)
+    sources: list[ReportSourceSummaryRead] = Field(default_factory=list)
+    page_badges: dict[str, ReportPageBadgeRead] = Field(default_factory=dict)
 
 
 class ControlActionInputRead(BaseModel):
@@ -1388,6 +1501,89 @@ class ControlActionRunRead(BaseModel):
     method: str | None = None
     warnings: list[str] = Field(default_factory=list)
     blockers: list[str] = Field(default_factory=list)
+
+
+class WorkflowActionInputRead(BaseModel):
+    name: str
+    label: str
+    required: bool = False
+    secret: bool = False
+    description: str = ""
+
+
+class WorkflowRunTraceRead(BaseModel):
+    run_id: str
+    action_id: str
+    stage_id: str
+    started_at: str | None = None
+    finished_at: str | None = None
+    status: str
+    source_type: Literal["live_probe", "live_cached", "historical_artifact", "test_fixture", "not_checked"] | str
+    freshness: str
+    command: str | None = None
+    report_artifacts: list[str] = Field(default_factory=list)
+    summary: str
+    blockers: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    next_action: str
+
+
+class WorkflowActionRead(BaseModel):
+    action_id: str
+    label: str
+    stage: str
+    stage_label: str
+    provider: str
+    category: Literal[
+        "discover",
+        "inventory",
+        "plan",
+        "apply",
+        "verify",
+        "report",
+        "reset",
+        "upgrade",
+        "waive",
+        "reclaim",
+    ]
+    mode: Literal["read_only", "write", "destructive", "upgrade", "report_only"]
+    description: str
+    source_type: Literal["make_target", "backend_script", "api_endpoint", "manual_guidance"]
+    command: str | None = None
+    api_endpoint: str | None = None
+    api_method: str | None = None
+    required_mode: str
+    required_gates: list[str] = Field(default_factory=list)
+    required_confirmations: list[str] = Field(default_factory=list)
+    required_credentials: list[str] = Field(default_factory=list)
+    safety_notes: list[str] = Field(default_factory=list)
+    inputs: list[WorkflowActionInputRead] = Field(default_factory=list)
+    outputs: list[str] = Field(default_factory=list)
+    reports: list[str] = Field(default_factory=list)
+    last_run_report: str | None = None
+    last_run_status: str
+    current_availability: str
+    blockers: list[str] = Field(default_factory=list)
+    next_action: str
+    evidence_artifacts: list[str] = Field(default_factory=list)
+    stale_after_seconds: int
+    last_run_trace: WorkflowRunTraceRead
+
+
+class WorkflowStageRead(BaseModel):
+    stage_id: str
+    label: str
+    order: int
+    current_state: str
+    desired_state: str
+    primary_action: str | None = None
+    secondary_actions: list[str] = Field(default_factory=list)
+    dependencies: list[str] = Field(default_factory=list)
+    reports: list[str] = Field(default_factory=list)
+    action_count: int = 0
+    blocked_count: int = 0
+    report_count: int = 0
+    actions: list[WorkflowActionRead] = Field(default_factory=list)
 
 
 class CatalogRead(BaseModel):

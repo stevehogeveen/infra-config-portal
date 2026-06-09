@@ -35,11 +35,14 @@ import type {
   ProviderModeSettingsWrite,
   ProviderProbeResult,
   ProviderStatus,
+  ReportCenter,
   RequestReadiness,
   RequestRecord,
   VMDeploymentCreate,
   VMDeploymentUpdate,
-  WorkflowRun
+  WorkflowAction,
+  WorkflowRun,
+  WorkflowStage
 } from "./types";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "";
@@ -91,7 +94,14 @@ function apiErrorMessage(detail: unknown): string {
 }
 
 export const api = {
-  health: () => apiRequest<{ status: string; app: string; provider_mode: string }>("/health"),
+  health: () => apiRequest<{
+    status: string;
+    app: string;
+    provider_mode: string;
+    operator_runtime_mode: string;
+    expected_runtime_mode: string;
+    dev_test_banner: string | null;
+  }>("/health"),
   catalog: () => apiRequest<Catalog>("/api/v1/catalog"),
   requests: () => apiRequest<RequestRecord[]>("/api/v1/requests"),
   request: (id: string) => apiRequest<RequestRecord>(`/api/v1/requests/${id}`),
@@ -121,6 +131,12 @@ export const api = {
     apiRequest<WorkflowRun>(`/api/v1/requests/${id}/execute`, { method: "POST" }),
   workflowRuns: () => apiRequest<WorkflowRun[]>("/api/v1/workflow-runs"),
   workflowRun: (id: string) => apiRequest<WorkflowRun>(`/api/v1/workflow-runs/${id}`),
+  workflowStages: () => apiRequest<WorkflowStage[]>("/api/v1/workflows/stages"),
+  workflowStage: (id: string) =>
+    apiRequest<WorkflowStage>(`/api/v1/workflows/stages/${encodeURIComponent(id)}`),
+  workflowActions: () => apiRequest<WorkflowAction[]>("/api/v1/workflows/actions"),
+  workflowAction: (id: string) =>
+    apiRequest<WorkflowAction>(`/api/v1/workflows/actions/${encodeURIComponent(id)}`),
   requestArtifacts: (id: string) =>
     apiRequest<ArtifactRecord[]>(`/api/v1/requests/${id}/artifacts`),
   workflowRunArtifacts: (id: string) =>
@@ -199,6 +215,16 @@ export const api = {
     apiRequest<ProviderProbeResult>("/api/v1/providers/netapp-ontap/console-read-state", {
       method: "POST"
     }),
+  netappLiveState: () =>
+    apiRequest<ProviderProbeResult>("/api/v1/providers/netapp-ontap/live-state"),
+  runNetappLiveState: () =>
+    apiRequest<ProviderProbeResult>("/api/v1/providers/netapp-ontap/live-state", {
+      method: "POST"
+    }),
+  validateNetappSetup: () =>
+    apiRequest<ProviderProbeResult>("/api/v1/providers/netapp-ontap/validate-setup", {
+      method: "POST"
+    }),
   netappNfsVcenterReadiness: () =>
     apiRequest<ProviderProbeResult>("/api/v1/providers/netapp-ontap/nfs-vcenter-readiness"),
   netappObservations: () =>
@@ -248,6 +274,10 @@ export const api = {
     apiRequest<ProviderProbeResult>("/api/v1/lab/full-rebuild-summary"),
   buildVerification: () =>
     apiRequest<ProviderProbeResult>("/api/v1/lab/build-verification"),
+  reportIssues: () =>
+    apiRequest<ReportCenter>("/api/v1/reports/issues"),
+  reportSummary: () =>
+    apiRequest<ReportCenter>("/api/v1/reports/summary"),
   labProfiles: () => apiRequest<LabProfileList>("/api/v1/lab/profiles"),
   createLabProfile: (payload: LabProfileWrite) =>
     apiRequest<LabProfile>("/api/v1/lab/profiles", {

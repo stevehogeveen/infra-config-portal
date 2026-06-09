@@ -1,0 +1,133 @@
+from __future__ import annotations
+
+from fastapi.testclient import TestClient
+
+from app.services.workflow_registry import (
+    get_workflow_action,
+    list_workflow_actions,
+    list_workflow_stages,
+)
+
+
+def test_registry_contains_expected_stage_ids_in_stable_order() -> None:
+    stages = list_workflow_stages()
+
+    assert [stage["stage_id"] for stage in stages] == [
+        "lab-profile",
+        "firmware",
+        "cisco",
+        "ilo",
+        "raid",
+        "esxi",
+        "netapp",
+        "build-verification",
+        "reports",
+    ]
+    assert [stage["order"] for stage in stages] == sorted(stage["order"] for stage in stages)
+
+
+def test_registry_contains_expected_provider_actions() -> None:
+    action_ids = {action["action_id"] for action in list_workflow_actions()}
+
+    assert {
+        "lab-profile.view-active",
+        "lab-profile.validate-ip-profile",
+        "firmware.inventory",
+        "firmware.compliance-check",
+        "firmware.waiver-check",
+        "cisco.discover-console",
+        "cisco.reclaim-console",
+        "cisco.privilege-check",
+        "cisco.apply-bootstrap",
+        "cisco.validate-ssh-scp",
+        "cisco.firmware-inventory",
+        "ilo.reachability",
+        "ilo.auth",
+        "ilo.inventory",
+        "ilo.virtual-media-insert",
+        "ilo.one-time-boot",
+        "ilo.reset-server",
+        "raid.discovery",
+        "raid.plan",
+        "raid.debug",
+        "raid.apply",
+        "raid.pending-check",
+        "raid.reset-commit",
+        "raid.validate",
+        "esxi.readiness",
+        "esxi.iso-media-check",
+        "esxi.virtual-media-insert",
+        "esxi.one-time-boot",
+        "esxi.installer-boot-detection",
+        "esxi.management-readiness",
+        "netapp.serial-console-discovery",
+        "netapp.console-autodiscovery",
+        "netapp.console-read-state",
+        "netapp.nfs-vcenter-readiness",
+        "netapp.setup-preview",
+        "build-verification.live-status",
+        "build-verification.run-full",
+        "build-verification.toolchain-check",
+        "reports.issue-center",
+    }.issubset(action_ids)
+
+
+def test_destructive_actions_are_marked_correctly() -> None:
+    actions = {action["action_id"]: action for action in list_workflow_actions()}
+
+    assert actions["raid.apply"]["mode"] == "destructive"
+    assert actions["raid.reset-commit"]["mode"] == "destructive"
+    assert actions["ilo.reset-server"]["mode"] == "destructive"
+    assert actions["esxi.rebuild-install"]["mode"] == "destructive"
+    assert "LAB_ALLOW_POWER_ACTIONS=true" in actions["raid.reset-commit"]["required_gates"]
+
+
+def test_action_reports_are_linked_to_actions_and_traces() -> None:
+    action = get_workflow_action("netapp.console-read-state")
+
+    assert "artifacts/codex-runs/netapp-console-state-report.md" in action["reports"]
+    assert action["last_run_trace"]["action_id"] == "netapp.console-read-state"
+    assert set(action["last_run_trace"]["report_artifacts"]).issubset(set(action["reports"]))
+
+
+def test_registry_does_not_treat_mock_or_test_state_as_real_current_state() -> None:
+    actions = list_workflow_actions()
+
+    assert actions
+    for action in actions:
+        trace = action["last_run_trace"]
+        assert trace["source_type"] in {"historical_artifact", "not_checked"}
+        assert trace["freshness"] in {"historical", "not_checked"}
+
+
+def test_workflow_registry_api_endpoints(client: TestClient) -> None:
+    stages_response = client.get("/api/v1/workflows/stages")
+    actions_response = client.get("/api/v1/workflows/actions")
+    action_response = client.get("/api/v1/workflows/actions/raid.apply")
+    stage_response = client.get("/api/v1/workflows/stages/raid")
+
+    assert stages_response.status_code == 200
+    assert actions_response.status_code == 200
+    assert action_response.status_code == 200
+    assert stage_response.status_code == 200
+    assert action_response.json()["mode"] == "destructive"
+    assert any(action["action_id"] == "raid.apply" for action in stage_response.json()["actions"])
+
+
+def test_unknown_workflow_registry_items_return_404(client: TestClient) -> None:
+    assert client.get("/api/v1/workflows/actions/not-real").status_code == 404
+    assert client.get("/api/v1/workflows/stages/not-real").status_code == 404
+
+
+def test_report_center_issues_include_workflow_link_fields(client: TestClient) -> None:
+    response = client.get("/api/v1/reports/issues")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["issues"]
+    issue = payload["issues"][0]
+    assert "source_stage_id" in issue
+    assert "source_stage_label" in issue
+    assert "source_action_id" in issue
+    assert "source_action_label" in issue
+    assert "source_action_link" in issue

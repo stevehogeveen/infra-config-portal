@@ -66,11 +66,15 @@ from app.schemas import (
     ProviderModeSettingsWrite,
     ProviderProbeResultRead,
     ProviderStatusRead,
+    ReportCenterRead,
+    ReportCenterSummaryRead,
     RequestReadinessRead,
     RequestRead,
     VMDeploymentCreate,
     VMDeploymentUpdate,
+    WorkflowActionRead,
     WorkflowRunRead,
+    WorkflowStageRead,
 )
 from app.services.artifacts import (
     list_request_artifacts,
@@ -174,15 +178,26 @@ from app.services.netapp_observations import (
 )
 from app.services.netapp_readiness_comparison import get_netapp_readiness_comparison
 from app.services.netapp_real_lab import (
+    get_netapp_live_state,
     get_latest_netapp_console_discovery,
     get_latest_netapp_console_state,
     get_netapp_nfs_vcenter_readiness,
+    run_netapp_live_state,
+    run_netapp_setup_validation,
     run_netapp_console_discovery,
     run_netapp_console_read_state,
 )
 from app.services.netapp_upgrade_readiness import get_netapp_upgrade_readiness
 from app.services.readiness import get_request_readiness
+from app.services.report_center import get_report_center, get_report_summary
 from app.services.upgrade_decision import get_ilo_upgrade_readiness
+from app.services.workflow_registry import (
+    WorkflowRegistryNotFoundError,
+    get_workflow_action,
+    get_workflow_stage,
+    list_workflow_actions,
+    list_workflow_stages,
+)
 
 router = APIRouter(prefix="/api/v1")
 
@@ -392,6 +407,32 @@ def read_workflow_runs(session: Session = Depends(get_session)) -> list[Workflow
     return list_workflow_runs(session)
 
 
+@router.get("/workflows/stages", response_model=list[WorkflowStageRead])
+def read_workflow_stages() -> list[WorkflowStageRead]:
+    return list_workflow_stages()
+
+
+@router.get("/workflows/actions", response_model=list[WorkflowActionRead])
+def read_workflow_actions() -> list[WorkflowActionRead]:
+    return list_workflow_actions()
+
+
+@router.get("/workflows/actions/{action_id}", response_model=WorkflowActionRead)
+def read_workflow_action(action_id: str) -> WorkflowActionRead:
+    try:
+        return get_workflow_action(action_id)
+    except WorkflowRegistryNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Workflow action not found") from exc
+
+
+@router.get("/workflows/stages/{stage_id}", response_model=WorkflowStageRead)
+def read_workflow_stage(stage_id: str) -> WorkflowStageRead:
+    try:
+        return get_workflow_stage(stage_id)
+    except WorkflowRegistryNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Workflow stage not found") from exc
+
+
 @router.get("/providers/status", response_model=list[ProviderStatusRead])
 def read_provider_status() -> list[ProviderStatusRead]:
     try:
@@ -470,6 +511,16 @@ def read_full_rebuild_summary() -> ProviderProbeResultRead:
 @router.get("/lab/build-verification", response_model=ProviderProbeResultRead)
 def read_lab_build_verification() -> ProviderProbeResultRead:
     return get_lab_build_verification()
+
+
+@router.get("/reports/issues", response_model=ReportCenterRead)
+def read_report_issues(session: Session = Depends(get_session)) -> ReportCenterRead:
+    return get_report_center(session)
+
+
+@router.get("/reports/summary", response_model=ReportCenterSummaryRead)
+def read_report_summary(session: Session = Depends(get_session)) -> ReportCenterSummaryRead:
+    return get_report_summary(session)
 
 
 @router.get("/lab/profiles", response_model=LabProfileListRead)
@@ -826,6 +877,30 @@ def read_netapp_console_state() -> ProviderProbeResultRead:
 )
 def run_netapp_console_state_route() -> ProviderProbeResultRead:
     return run_netapp_console_read_state()
+
+
+@router.get(
+    "/providers/netapp-ontap/live-state",
+    response_model=ProviderProbeResultRead,
+)
+def read_netapp_live_state() -> ProviderProbeResultRead:
+    return get_netapp_live_state()
+
+
+@router.post(
+    "/providers/netapp-ontap/live-state",
+    response_model=ProviderProbeResultRead,
+)
+def run_netapp_live_state_route() -> ProviderProbeResultRead:
+    return run_netapp_live_state()
+
+
+@router.post(
+    "/providers/netapp-ontap/validate-setup",
+    response_model=ProviderProbeResultRead,
+)
+def run_netapp_setup_validation_route() -> ProviderProbeResultRead:
+    return run_netapp_setup_validation()
 
 
 @router.get(
