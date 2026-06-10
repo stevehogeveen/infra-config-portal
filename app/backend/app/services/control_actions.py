@@ -7,22 +7,14 @@ from ipaddress import ip_address, ip_network
 from pathlib import Path
 from typing import Any, Literal
 
-from app.core.config import (
-    LAB_ANSIBLE_CONTROL_HOST_IP,
-    LAB_CISCO_MANAGEMENT_IP,
-    LAB_ESXI_MANAGEMENT_IP,
-    LAB_ILO_IP,
-    LAB_SERVER_EMBEDDED_NIC_IP,
-    LAB_SUBNET_CIDR,
-    settings,
-)
+from app.core.config import settings
 from app.providers.action_policy import ActionCategory, current_lab_action_policy
 from app.providers.base import ProviderStatus
 from app.providers.registry import ProviderRegistryError, provider_registry
 from app.services.build_verification import get_lab_build_verification
 from app.services.control_access import control_access_configs
 from app.services.firmware_compliance import get_firmware_compliance
-from app.services.lab_profiles import active_lab_profile_for_report
+from app.services.lab_profiles import active_lab_profile_context
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 
@@ -278,6 +270,7 @@ def _section_read(
     current, desired, diff, diagnostics = _section_state(section.id, providers, firmware, verification, lab_profile)
     actions = [action_by_id[action_id] for action_id in section.action_ids if action_id in action_by_id]
     blocked_actions = [action for action in actions if action["availability"] == "blocked"]
+    not_in_scope = _section_not_in_scope(section.id, lab_profile)
     upgrade_actions = [action for action in actions if action["classification"] == "upgrade"]
     destructive_actions = [action for action in actions if action["classification"] == "destructive"]
     report_links = [
@@ -294,7 +287,7 @@ def _section_read(
         "title": section.title,
         "stage": section.stage,
         "description": section.description,
-        "status": "blocked" if blocked_actions else "ready",
+        "status": "not_in_scope" if not_in_scope else "blocked" if blocked_actions else "ready",
         "current_state": current,
         "desired_state": desired,
         "plan_diff": diff,
@@ -318,6 +311,7 @@ def _section_state(
 ) -> tuple[list[dict[str, str | None]], list[dict[str, str | None]], list[dict[str, str | None]], dict[str, Any]]:
     profile = lab_profile["address_plan"]
     known = lab_profile["known_lab_profile"]
+    features = lab_profile.get("features") or {}
     firmware_components = {
         component.get("id"): component
         for component in firmware.get("components", [])
@@ -358,11 +352,11 @@ def _section_state(
             _firmware_item("Cisco ROMMON", firmware_components, "cisco_bootloader_rommon"),
         ]
         desired = [
-            _item("Management IP", LAB_CISCO_MANAGEMENT_IP),
+            _item("Management IP", known["cisco_management"]),
             _item("Console mode", "console-first discovery and bootstrap"),
             _item("SSH/SCP", "validate only after CISCO_MGMT_CONFIGURED=true"),
         ]
-        diff = [_diff("Cisco management IP", _display(settings.cisco_target_ip), LAB_CISCO_MANAGEMENT_IP)]
+        diff = [_diff("Cisco management IP", _display(settings.cisco_target_ip), known["cisco_management"])]
         return current, desired, diff, _provider_diagnostics([console, ansible])
 
     if section_id == "ilo":
@@ -379,11 +373,11 @@ def _section_state(
             _firmware_item("BIOS", firmware_components, "hpe_bios_version"),
         ]
         desired = [
-            _item("iLO IP", LAB_ILO_IP),
+            _item("iLO IP", known["ilo"]),
             _item("Inventory", "authenticated inventory available before apply paths"),
             _item("Virtual media", "gated and planned before ESXi install"),
         ]
-        diff = [_diff("iLO IP", _display(profile.get("ilo")), LAB_ILO_IP)]
+        diff = [_diff("iLO IP", _display(profile.get("ilo")), known["ilo"])]
         return current, desired, diff, _provider_diagnostics([provider])
 
     if section_id == "raid":
@@ -407,20 +401,28 @@ def _section_state(
         current = [
             _item("Provider status", provider.status if provider else "not_loaded"),
             _item("ESXI_CONFIGURED", _bool_text(settings.esxi_configured)),
-            _item("Target IP", _display(settings.esxi_test_host or LAB_ESXI_MANAGEMENT_IP)),
+            _item("Target IP", _display(settings.esxi_test_host or known["esxi_management"])),
             _item("Install readiness", _report_status("artifacts/codex-runs/esxi-install-readiness-report.md")),
             _item("Virtual media", _report_status("artifacts/codex-runs/esxi-virtual-media-report.md")),
             _item("Installer boot", _report_status("artifacts/codex-runs/esxi-installer-boot-report.md")),
         ]
         desired = [
-            _item("ESXi IP", LAB_ESXI_MANAGEMENT_IP),
+            _item("ESXi IP", known["esxi_management"]),
             _item("Media", "ESXi ISO selected and served through guarded workflow"),
             _item("Management", "HTTPS/SSH checks after ESXI_CONFIGURED=true"),
         ]
-        diff = [_diff("ESXi IP", _display(profile.get("esxi_management")), LAB_ESXI_MANAGEMENT_IP)]
+        diff = [_diff("ESXi IP", _display(profile.get("esxi_management")), known["esxi_management"])]
         return current, desired, diff, _provider_diagnostics([provider])
 
     if section_id == "netapp":
+        if not features.get("netapp_enabled"):
+            current = [
+                _item("Profile scope", "not_in_scope"),
+                _item("Reason", (features.get("netapp_disabled_reason") or "NetApp disabled by active profile")),
+            ]
+            desired = [_item("NetApp", "Enable in active profile only when this lab includes NetApp.")]
+            diff = [_diff("NetApp scope", "not_in_scope", "disabled by active profile")]
+            return current, desired, diff, {"not_in_scope": True, "features": features}
         provider = providers.get("netapp-ontap")
         config = provider.configuration if provider else {}
         current_targets = config.get("current_discovered_targets")
@@ -466,11 +468,16 @@ def _section_state(
             _firmware_item("Cisco IOS XE", firmware_components, "cisco_ios_xe_version"),
             _firmware_item("Cisco ROMMON", firmware_components, "cisco_bootloader_rommon"),
             _item("ESXi ISO/version", "Review media inventory"),
-            _firmware_item("ONTAP", firmware_components, "netapp_ontap_version"),
-            _firmware_item("NetApp disk firmware", firmware_components, "netapp_disk_firmware"),
-            _firmware_item("NetApp shelf firmware", firmware_components, "netapp_shelf_firmware"),
-            _firmware_item("NetApp SP/BMC firmware", firmware_components, "netapp_sp_bmc_firmware"),
         ]
+        if features.get("netapp_enabled"):
+            current.extend(
+                [
+                    _firmware_item("ONTAP", firmware_components, "netapp_ontap_version"),
+                    _firmware_item("NetApp disk firmware", firmware_components, "netapp_disk_firmware"),
+                    _firmware_item("NetApp shelf firmware", firmware_components, "netapp_shelf_firmware"),
+                    _firmware_item("NetApp SP/BMC firmware", firmware_components, "netapp_sp_bmc_firmware"),
+                ]
+            )
         desired = [
             _item("Compliance", firmware.get("status", "unknown")),
             _item("Baseline", _display((firmware.get("baseline") or {}).get("path"))),
@@ -513,28 +520,20 @@ def _section_state(
 
 
 def _control_lab_profile() -> dict[str, Any]:
-    active = active_lab_profile_for_report()
-    address_plan = active["address_plan"]
+    context = active_lab_profile_context()
+    active = context["active_profile"]
+    address_plan = context["resolved_address_plan"]
     global_settings = active.get("global_settings") or {}
-    known = {
-        "subnet": LAB_SUBNET_CIDR,
-        "ilo": LAB_ILO_IP,
-        "server_embedded_nic": LAB_SERVER_EMBEDDED_NIC_IP,
-        "esxi_management": LAB_ESXI_MANAGEMENT_IP,
-        "cisco_management": LAB_CISCO_MANAGEMENT_IP,
-        "ansible_control_host": LAB_ANSIBLE_CONTROL_HOST_IP,
-        "netapp_controller_a_sp": settings.netapp_controller_a_sp,
-        "netapp_controller_b_sp": settings.netapp_controller_b_sp,
-        "netapp_cluster_mgmt": settings.netapp_cluster_mgmt_ip,
-        "netapp_node_a_mgmt": settings.netapp_node_a_mgmt_ip,
-        "netapp_node_b_mgmt": settings.netapp_node_b_mgmt_ip,
-        "netapp_svm_mgmt": settings.netapp_svm_mgmt_ip,
-        "netapp_iscsi_lifs": list(settings.netapp_iscsi_lifs),
-    }
+    known = dict(address_plan)
     return {
         "active_profile_name": active["name"],
         "source": active["source"],
         "version": active["version"],
+        "topology": context["topology"],
+        "features": context.get("enabled_features") or {},
+        "not_in_scope_stages": context.get("not_in_scope_stages") or [],
+        "mismatch_warnings": context.get("mismatch_warnings") or [],
+        "fix_guidance": context.get("fix_guidance") or [],
         "global_settings": global_settings,
         "address_plan": address_plan,
         "known_lab_profile": known,
@@ -565,15 +564,25 @@ def _control_lab_profile() -> dict[str, Any]:
         },
         "edit_profile_path": "/lab-profiles",
         "env_update_command": _env_update_command(known),
-        "stale_or_invalid_values": _profile_issues(address_plan, known),
+        "stale_or_invalid_values": [
+            str(item.get("recommended_action") or item)
+            for item in context.get("mismatch_warnings") or []
+        ] or _profile_issues(address_plan, known),
     }
 
 
+def _section_not_in_scope(section_id: str, lab_profile: dict[str, Any]) -> bool:
+    features = lab_profile.get("features") or {}
+    if section_id == "netapp":
+        return not bool(features.get("netapp_enabled"))
+    return False
+
+
 def _lab_profile_netapp_blocker(lab_profile: dict[str, Any]) -> str | None:
-    global_settings = lab_profile.get("global_settings") or {}
-    if global_settings.get("netapp_enabled", True):
+    features = lab_profile.get("features") or {}
+    if features.get("netapp_enabled", True):
         return None
-    return global_settings.get("netapp_disabled_reason") or "NetApp is disabled for the active lab profile."
+    return features.get("netapp_disabled_reason") or "NetApp is disabled for the active lab profile."
 
 
 def _env_update_command(known: dict[str, Any]) -> str:
@@ -581,21 +590,25 @@ def _env_update_command(known: dict[str, Any]) -> str:
         "cat <<'EOF' >> app/.env.local.real-lab",
         f"LAB_SUBNET_CIDR={known['subnet']}",
         f"ILO_TEST_HOST={known['ilo']}",
-        f"SERVER_EMBEDDED_NIC_IP={known['server_embedded_nic']}",
         f"ESXI_TEST_HOST={known['esxi_management']}",
         f"CISCO_TARGET_IP={known['cisco_management']}",
         f"ANSIBLE_CONTROL_HOST={known['ansible_control_host']}",
-        f"NETAPP_CONTROLLER_A_SP={known['netapp_controller_a_sp']}",
-        f"NETAPP_CONTROLLER_B_SP={known['netapp_controller_b_sp']}",
-        f"NETAPP_CLUSTER_MGMT_IP={known['netapp_cluster_mgmt']}",
-        f"NETAPP_NODE_A_MGMT_IP={known['netapp_node_a_mgmt']}",
-        f"NETAPP_NODE_B_MGMT_IP={known['netapp_node_b_mgmt']}",
-        f"NETAPP_SVM_MGMT_IP={known['netapp_svm_mgmt']}",
-        f"NETAPP_ISCSI_LIFS={','.join(known['netapp_iscsi_lifs'])}",
         "CISCO_MGMT_CONFIGURED=false",
         "ESXI_CONFIGURED=false",
         "EOF",
     ]
+    if known.get("server_embedded_nic"):
+        lines.insert(3, f"SERVER_EMBEDDED_NIC_IP={known['server_embedded_nic']}")
+    if known.get("netapp_cluster_mgmt"):
+        lines[1:1] = []
+        lines.insert(-3, f"NETAPP_CONTROLLER_A_SP={known.get('netapp_controller_a_sp')}")
+        lines.insert(-3, f"NETAPP_CONTROLLER_B_SP={known.get('netapp_controller_b_sp')}")
+        lines.insert(-3, f"NETAPP_CLUSTER_MGMT_IP={known.get('netapp_cluster_mgmt')}")
+        lines.insert(-3, f"NETAPP_NODE_A_MGMT_IP={known.get('netapp_node_a_mgmt')}")
+        lines.insert(-3, f"NETAPP_NODE_B_MGMT_IP={known.get('netapp_node_b_mgmt')}")
+        lines.insert(-3, f"NETAPP_SVM_MGMT_IP={known.get('netapp_svm_mgmt')}")
+        lines.insert(-3, f"NETAPP_NFS_LIFS={','.join(known.get('netapp_nfs_lifs') or [])}")
+        lines.insert(-3, f"NETAPP_ISCSI_LIFS={','.join(known.get('netapp_iscsi_lifs') or [])}")
     return "\n".join(lines)
 
 
@@ -603,9 +616,9 @@ def _profile_issues(address_plan: dict[str, Any], known: dict[str, Any]) -> list
     issues: list[str] = []
     for key, desired in known.items():
         current = address_plan.get(key)
-        if key == "netapp_iscsi_lifs":
+        if key in {"netapp_iscsi_lifs", "netapp_nfs_lifs"}:
             continue
-        if current in {None, ""}:
+        if current is None or current == "":
             issues.append(f"{key} is not set.")
             continue
         if str(current).startswith("10.10.8."):
@@ -961,6 +974,17 @@ ACTIONS: tuple[ActionDefinition, ...] = (
         method="GET",
         endpoint="/api/v1/providers/ilo-redfish/readiness-summary",
         report="artifacts/codex-runs/ilo-real-run-report.md",
+        provider_ids=("ilo-redfish",),
+    ),
+    _action(
+        "ilo.baseline-preview",
+        "Baseline Preview",
+        "ilo",
+        "HPE / iLO Control",
+        "Preview the standard iLO baseline from the active kit profile without applying settings.",
+        "read-only",
+        method="GET",
+        endpoint="/api/v1/providers/hpe-ilo/baseline-preview",
         provider_ids=("ilo-redfish",),
     ),
     _action(
@@ -1565,6 +1589,7 @@ SECTIONS: tuple[SectionDefinition, ...] = (
             "ilo.reachability",
             "ilo.auth",
             "ilo.inventory",
+            "ilo.baseline-preview",
             "ilo.virtual-media-insert",
             "ilo.one-time-boot",
             "ilo.reset-server",

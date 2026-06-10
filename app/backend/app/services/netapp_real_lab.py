@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.providers.action_policy import REAL_CONTACT_MODES, current_lab_action_policy
 from app.providers.redaction import redact_sensitive
+from app.services.lab_profiles import active_lab_profile_context
 from app.services.serial_console_discovery import (
     SerialConsoleDiscoveryPaths,
     SerialConsoleProbeOptions,
@@ -286,6 +287,70 @@ def get_netapp_nfs_vcenter_readiness(*, check_ports: bool | None = None, write_r
         check_ports = settings.provider_mode in REAL_CONTACT_MODES
     CODEX_RUN_DIR.mkdir(parents=True, exist_ok=True)
     checked_at = _now()
+    profile_context = active_lab_profile_context()
+    features = profile_context.get("enabled_features") or {}
+    plan = profile_context.get("resolved_address_plan") or {}
+    if not features.get("netapp_enabled") or not features.get("vcenter_enabled"):
+        payload = {
+            "provider_id": PROVIDER_ID,
+            "action": "nfs-vcenter-readiness",
+            "checked_at": checked_at,
+            "status": "not_in_scope",
+            "message": "NetApp NFS/vCenter readiness is not in scope for the active lab profile.",
+            "mode": settings.provider_mode,
+            "apply_enabled": False,
+            "ontap_apply_enabled": False,
+            "vcenter_apply_enabled": False,
+            "esxi_apply_enabled": False,
+            "manual_env_flag_required": False,
+            "live_state": {"configured": False, "configured_state": "not_in_scope"},
+            "single_management_port_mode": None,
+            "management_topology": {
+                "connected_management_ports": [],
+                "note": "NetApp is not in scope for the active lab profile.",
+            },
+            "planned_nfs": {
+                "storage_protocol": features.get("storage_protocol") or "none",
+                "svm_management_ip": None,
+                "nfs_lifs": [],
+                "volume": None,
+                "export_policy": None,
+                "mount_path": None,
+                "datastore_name": settings.netapp_nfs_datastore_name,
+                "client_match": plan.get("subnet"),
+            },
+            "targets": {
+                "netapp_cluster_mgmt_ip": None,
+                "netapp_configured_source": "not_in_scope",
+                "legacy_netapp_configured_env": False,
+                "esxi_management_ip": plan.get("esxi_management"),
+                "vcenter_host_configured": False,
+                "vcenter_configured": False,
+                "govc_available": False,
+            },
+            "connectivity": {},
+            "plan_preview": {
+                "ontap_steps": [],
+                "vcenter_steps": [],
+                "govc_preview": "not_in_scope",
+                "esxi_fallback_preview": "not_in_scope",
+            },
+            "artifacts": {
+                "report": _rel(NFS_VCENTER_READINESS_REPORT),
+                "json": _rel(NFS_VCENTER_READINESS_JSON),
+            },
+            "warnings": [
+                "NetApp or vCenter is disabled by the active lab profile; this is not a blocker.",
+            ],
+            "blockers": [],
+            "not_attempted": NOT_ATTEMPTED,
+            "next_safe_action": "Enable NetApp and vCenter in the active lab profile when this readiness lane is intentionally in scope.",
+        }
+        sanitized = _sanitize(payload)
+        if write_report:
+            _write_json(NFS_VCENTER_READINESS_JSON, sanitized)
+            NFS_VCENTER_READINESS_REPORT.write_text(_nfs_vcenter_markdown(sanitized), encoding="utf-8")
+        return sanitized
     netapp_live_state = (
         read_netapp_live_state(check_ports=check_ports, write_report=False)
         if check_ports

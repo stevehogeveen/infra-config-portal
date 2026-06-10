@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
+from app.services.lab_profiles import create_lab_profile
 from app.services.workflow_registry import (
     get_workflow_action,
     list_workflow_actions,
@@ -44,6 +45,7 @@ def test_registry_contains_expected_provider_actions() -> None:
         "ilo.reachability",
         "ilo.auth",
         "ilo.inventory",
+        "ilo.baseline-preview",
         "ilo.virtual-media-insert",
         "ilo.one-time-boot",
         "ilo.reset-server",
@@ -116,6 +118,30 @@ def test_safe_read_only_registry_actions_are_ui_runnable() -> None:
         "/workflows/actions/build-verification.run-full/run"
     )
     assert actions["reports.summary"]["ui_run_supported"] is True
+    assert actions["ilo.baseline-preview"]["ui_run_supported"] is True
+    assert actions["ilo.baseline-preview"]["api_endpoint"] == "/api/v1/providers/hpe-ilo/baseline-preview"
+
+
+def test_compact_profile_marks_netapp_registry_actions_not_in_scope(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    monkeypatch.setenv("LAB_PROFILE_STORE", str(tmp_path / "lab-profiles.json"))
+    create_lab_profile(
+        {
+            "name": "Compact Edge Lab",
+            "subnet_cidr": "10.10.5.0/26",
+            "address_plan": {"subnet": "10.10.5.0/26"},
+        }
+    )
+
+    actions = {action["action_id"]: action for action in list_workflow_actions()}
+    stages = {stage["stage_id"]: stage for stage in list_workflow_stages()}
+
+    assert actions["netapp.setup-preview"]["current_availability"] == "not_in_scope"
+    assert "active lab profile" in actions["netapp.setup-preview"]["not_in_scope_reason"]
+    assert actions["vcenter-netapp.readiness"]["current_availability"] == "not_in_scope"
+    assert stages["netapp"]["current_state"] == "not_in_scope"
 
 
 def test_write_destructive_and_unallowlisted_actions_are_not_ui_runnable() -> None:

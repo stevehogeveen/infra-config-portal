@@ -19,19 +19,25 @@ by default. The address plan is intent only. Activating a profile does not probe
 devices, does not update provider environment variables, does not rewrite local
 env files, and does not enable any real apply lane.
 
-Lab creation includes global settings for subnet size, gateway, domain, DNS,
-NTP, and timezone. The subnet size selector offers `/29` through `/23`.
-Profiles using `/24` or `/23` can carry NetApp address intent. Profiles using
-`/25`, `/26`, `/27`, `/28`, or `/29` automatically disable NetApp capability
-and clear NetApp address fields because the Lab Builder NetApp allocation needs
-a `/24` or larger subnet.
+Lab creation includes topology, subnet CIDR, gateway, domain, DNS, NTP, VLAN,
+MTU, device addresses, and feature flags. The subnet size selector offers `/29`
+through `/23`, but the supported default layouts are:
 
-When an operator starts from a blank `/24` profile, missing addresses are filled
-from the Lab Builder-style allocation: gateway at host offset `1`, switch/Cisco
-management at `2`, iLO/ESXi at the high host offsets, NetApp SPs at `13` and
-`14`, NetApp cluster/node/SVM management at `45` through `48`, and iSCSI LIFs
-at `49` through `52`. Smaller subnet profiles use compact core-device offsets
-and keep NetApp unavailable.
+- `/24` high-address profiles: iLO `.201`, server NIC `.202`, ESXi `.203`,
+  Cisco `.204`, Ansible/control `.205`, NetApp SPs `.210/.211`, cluster/node/SVM
+  management `.220` through `.223`, NFS LIFs `.230/.231`, and iSCSI LIFs
+  `.240` through `.243`.
+- `/26` compact edge profiles: gateway `+1`, switch `+2/+3`, reserved `+4`
+  through `+6`, UPS `+7`, backup storage `+8`, utility VM `+9`, ESXi `+10`,
+  and iLO `+11`.
+
+Compact profiles disable NetApp and vCenter by default. Those stages are
+reported as `not_in_scope`, not as blockers. Profile-derived values drive
+Dashboard, Lab Setup, Control Center, Firmware Upgrades, Validation & Reports,
+NetApp setup/upgrade, vCenter-NetApp readiness, Build Verification, and workflow
+registry action defaults. Stale `.env.local.real-lab` values produce exact
+remediation guidance with the mismatched field and the active profile value.
+See `app/docs/lab-profile-examples.md` for concrete `/24` and `/26` examples.
 
 ## Operational Mode
 
@@ -130,6 +136,12 @@ firmware. Existing report artifacts are surfaced as `historical_artifact`
 evidence only. A newly saved workflow action run trace overrides older
 historical artifact status for that action. Missing traces are `not_checked`.
 Mock and test state must not be treated as current real-lab state.
+
+The iLO stage includes `ilo.baseline-preview` as a read-only API action for
+`GET /api/v1/providers/hpe-ilo/baseline-preview`. It produces Kit Profile,
+Discovery, Connection Readiness, Expected Baseline, Compare / Preview Plan, and
+reset-handling data with `apply_enabled=false`; it does not apply settings or
+reset hardware.
 
 The first stage order is:
 

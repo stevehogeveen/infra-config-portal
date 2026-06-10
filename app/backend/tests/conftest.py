@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import functools
+import os
 import threading
 from collections.abc import Generator
 from concurrent.futures import Future
@@ -21,6 +22,14 @@ from sqlalchemy.pool import StaticPool
 from app import models  # noqa: F401
 from app.core.database import Base, get_session
 from app.main import app
+
+
+@pytest.fixture(autouse=True)
+def isolate_local_lab_state(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+    if "LAB_PROFILE_STORE" not in os.environ:
+        monkeypatch.setenv("LAB_PROFILE_STORE", str(tmp_path / "lab-profiles.json"))
+    if "CONTROL_ACCESS_STORE" not in os.environ:
+        monkeypatch.setenv("CONTROL_ACCESS_STORE", str(tmp_path / "control-access.json"))
 
 
 async def _run_sync_with_asyncio_executor(

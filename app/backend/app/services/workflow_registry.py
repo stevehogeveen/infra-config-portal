@@ -6,6 +6,7 @@ from typing import Any, Literal
 
 from app.providers.action_policy import ActionCategory, current_lab_action_policy
 from app.services.control_actions import ACTIONS, ActionDefinition, REPO_ROOT
+from app.services.lab_profiles import active_lab_profile_context
 from app.services.workflow_action_allowlist import workflow_action_run_blockers
 from app.services.workflow_action_run_store import (
     latest_workflow_action_run_trace,
@@ -187,6 +188,7 @@ CATEGORY_BY_CONTROL_ACTION = {
     "ilo.reachability": "discover",
     "ilo.auth": "verify",
     "ilo.inventory": "inventory",
+    "ilo.baseline-preview": "plan",
     "ilo.virtual-media-insert": "apply",
     "ilo.one-time-boot": "apply",
     "ilo.reset-server": "reset",
@@ -594,6 +596,7 @@ def _seed_from_control_action(action: ActionDefinition) -> WorkflowActionSeed:
 
 def _action_read(seed: WorkflowActionSeed) -> dict[str, Any]:
     blockers = _blockers_for_seed(seed)
+    not_in_scope_reason = _not_in_scope_reason_for_seed(seed)
     reports = list(seed.reports)
     existing_reports = [report for report in reports if (REPO_ROOT / report).exists()]
     latest_run = latest_workflow_action_run_trace(seed.action_id)
@@ -612,7 +615,15 @@ def _action_read(seed: WorkflowActionSeed) -> dict[str, Any]:
     runner_action = _runner_action_probe(seed)
     ui_run_blockers = workflow_action_run_blockers(runner_action)
     ui_run_supported = not ui_run_blockers
-    availability = "blocked" if blockers else "available" if ui_run_supported else _availability_for_seed(seed)
+    availability = (
+        "not_in_scope"
+        if not_in_scope_reason
+        else "blocked"
+        if blockers
+        else "available"
+        if ui_run_supported
+        else _availability_for_seed(seed)
+    )
     trace = _run_trace(seed, last_report, blockers, availability, latest_run)
     evidence_artifacts = _unique(
         [
@@ -646,6 +657,7 @@ def _action_read(seed: WorkflowActionSeed) -> dict[str, Any]:
         "last_run_status": last_status,
         "current_availability": availability,
         "blockers": blockers,
+        "not_in_scope_reason": not_in_scope_reason,
         "next_action": _next_action(seed, blockers, availability),
         "evidence_artifacts": evidence_artifacts,
         "stale_after_seconds": seed.stale_after_seconds,
@@ -661,7 +673,9 @@ def _stage_read(stage: WorkflowStageSeed, actions: list[dict[str, Any]]) -> dict
     stage_actions = [action for action in actions if action["stage"] == stage.stage_id]
     blocked = [action for action in stage_actions if action["current_availability"] == "blocked"]
     reports = _unique([*stage.reports, *(report for action in stage_actions for report in action["reports"])])
-    if blocked:
+    if stage_actions and all(action["current_availability"] == "not_in_scope" for action in stage_actions):
+        state = "not_in_scope"
+    elif blocked:
         state = "blocked"
     elif any(action["last_run_status"] == "report_available" for action in stage_actions):
         state = "historical"
@@ -744,6 +758,17 @@ def _blockers_for_seed(seed: WorkflowActionSeed) -> list[str]:
     return _unique(blockers)
 
 
+def _not_in_scope_reason_for_seed(seed: WorkflowActionSeed) -> str | None:
+    features = active_lab_profile_context().get("enabled_features") or {}
+    if (seed.stage == "netapp" or "netapp" in seed.provider or seed.action_id.startswith("netapp.")) and not features.get("netapp_enabled"):
+        return "NetApp is disabled by the active lab profile."
+    if ("vcenter" in seed.provider or seed.action_id.startswith("vcenter-netapp.")) and (
+        not features.get("netapp_enabled") or not features.get("vcenter_enabled")
+    ):
+        return "NetApp or vCenter is disabled by the active lab profile."
+    return None
+
+
 def _availability_for_seed(seed: WorkflowActionSeed) -> str:
     if seed.mode == "report_only" and seed.api_endpoint:
         return "manual_command_required"
@@ -764,6 +789,8 @@ def _runner_action_probe(seed: WorkflowActionSeed) -> dict[str, Any]:
 
 
 def _next_action(seed: WorkflowActionSeed, blockers: list[str], availability: str) -> str:
+    if availability == "not_in_scope":
+        return "This action is not in scope for the active lab profile."
     if blockers:
         return blockers[0]
     if availability == "available" and seed.api_endpoint:

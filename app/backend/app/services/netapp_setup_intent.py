@@ -12,6 +12,7 @@ from typing import Any
 from app.core.config import settings
 from app.providers.action_policy import LOCAL_LAB_READWRITE_MODE, current_lab_action_policy
 from app.providers.redaction import redact_sensitive
+from app.services.lab_profiles import active_lab_profile_context
 from app.services.netapp_state import get_netapp_runtime_state, validate_netapp_setup
 
 PROVIDER_ID = "netapp-ontap"
@@ -42,6 +43,8 @@ SETUP_ENV_FIELDS = {
 
 
 def get_netapp_setup_intent() -> dict[str, Any]:
+    if not _netapp_in_scope():
+        return _not_in_scope_payload("setup-intent")
     access_state = _admin_access_state()
     intent = {
         "cluster_name": settings.netapp_cluster_name,
@@ -75,6 +78,12 @@ def get_netapp_setup_intent() -> dict[str, Any]:
 
 
 def build_netapp_setup_baseline(*, run_address_scan: bool = False, write_report: bool = True) -> dict[str, Any]:
+    if not _netapp_in_scope():
+        payload = _not_in_scope_payload("setup-upgrade-baseline", report_path=BASELINE_REPORT)
+        if write_report:
+            CODEX_RUN_DIR.mkdir(parents=True, exist_ok=True)
+            BASELINE_REPORT.write_text(_baseline_markdown(payload), encoding="utf-8")
+        return payload
     checked_at = _now()
     runtime_state = get_netapp_runtime_state()
     detected_state = _detected_setup_state(runtime_state)
@@ -136,6 +145,17 @@ def build_netapp_setup_preview(*, run_address_scan: bool = False, write_report: 
 
 
 def apply_netapp_setup(*, write_report: bool = True) -> dict[str, Any]:
+    if not _netapp_in_scope():
+        payload = _not_in_scope_payload(
+            "setup-apply",
+            report_path=SETUP_APPLY_REPORT,
+            json_path=SETUP_APPLY_JSON,
+        )
+        if write_report:
+            CODEX_RUN_DIR.mkdir(parents=True, exist_ok=True)
+            SETUP_APPLY_JSON.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+            SETUP_APPLY_REPORT.write_text(_setup_apply_markdown(payload), encoding="utf-8")
+        return payload
     checked_at = _now()
     runtime_state = get_netapp_runtime_state()
     detected_state = _detected_setup_state(runtime_state)
@@ -211,6 +231,17 @@ def apply_netapp_setup(*, write_report: bool = True) -> dict[str, Any]:
 
 
 def run_netapp_post_setup_validation(*, write_report: bool = True) -> dict[str, Any]:
+    if not _netapp_in_scope():
+        payload = _not_in_scope_payload(
+            "post-setup-validation",
+            report_path=POST_SETUP_VALIDATION_REPORT,
+            json_path=POST_SETUP_VALIDATION_JSON,
+        )
+        if write_report:
+            CODEX_RUN_DIR.mkdir(parents=True, exist_ok=True)
+            POST_SETUP_VALIDATION_JSON.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+            POST_SETUP_VALIDATION_REPORT.write_text(_post_setup_validation_markdown(payload), encoding="utf-8")
+        return payload
     validation = validate_netapp_setup(check_ports=True, write_report=True)
     payload = {
         **validation,
@@ -230,6 +261,18 @@ def run_netapp_post_setup_validation(*, write_report: bool = True) -> dict[str, 
 
 
 def scan_planned_netapp_addresses(*, enabled: bool) -> dict[str, Any]:
+    if not _netapp_in_scope():
+        return {
+            "status": "not_in_scope",
+            "checked_at": None,
+            "required_before_apply": False,
+            "targets": [],
+            "results": [],
+            "free": False,
+            "conflicts": [],
+            "message": "NetApp is disabled by the active lab profile.",
+            "recheck_command": "make provider-lab-validation",
+        }
     checked_at = _now()
     targets = _address_targets()
     if not enabled:
@@ -271,6 +314,14 @@ def _build_setup_preview(
     write_report: bool,
     json_path: Path | None = None,
 ) -> dict[str, Any]:
+    if not _netapp_in_scope():
+        payload = _not_in_scope_payload(action, report_path=report_path, json_path=json_path)
+        if write_report:
+            CODEX_RUN_DIR.mkdir(parents=True, exist_ok=True)
+            if json_path is not None:
+                json_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+            report_path.write_text(_setup_preview_markdown(payload), encoding="utf-8")
+        return payload
     checked_at = _now()
     runtime_state = get_netapp_runtime_state()
     detected_state = _detected_setup_state(runtime_state)
@@ -609,6 +660,63 @@ def _not_attempted() -> list[str]:
         "SVM, LIF, volume, export, datastore, or iSCSI creation",
         "controller reboot, takeover/giveback, wipe, or ONTAP upgrade",
     ]
+
+
+def _netapp_in_scope() -> bool:
+    features = active_lab_profile_context().get("enabled_features") or {}
+    return bool(features.get("netapp_enabled"))
+
+
+def _not_in_scope_payload(
+    action: str,
+    *,
+    report_path: Path | None = None,
+    json_path: Path | None = None,
+) -> dict[str, Any]:
+    checked_at = _now()
+    artifacts = {}
+    if report_path is not None:
+        artifacts["report"] = _rel(report_path)
+    if json_path is not None:
+        artifacts["json"] = _rel(json_path)
+    return {
+        "provider_id": PROVIDER_ID,
+        "action": action,
+        "checked_at": checked_at,
+        "status": "not_in_scope",
+        "message": "NetApp is disabled by the active lab profile.",
+        "mode": settings.provider_mode,
+        "apply_enabled": False,
+        "detected_state": "not_in_scope",
+        "console": {},
+        "setup_intent": {},
+        "complete": True,
+        "missing_fields": [],
+        "remediation_items": [],
+        "planned_targets": {},
+        "address_conflict_scan": {
+            "status": "not_in_scope",
+            "checked_at": None,
+            "required_before_apply": False,
+            "targets": [],
+            "results": [],
+            "free": False,
+            "conflicts": [],
+            "message": "NetApp is disabled by the active lab profile.",
+        },
+        "exact_changes": [],
+        "apply": {
+            "serial_writes_attempted": False,
+            "ontap_writes_attempted": False,
+            "transcript_summary": ["NetApp is not in scope for the active lab profile."],
+        },
+        "required_flags": [],
+        "blockers": [],
+        "warnings": ["NetApp is not in scope for the active lab profile; this is not a blocker."],
+        "not_attempted": _not_attempted(),
+        "artifacts": artifacts,
+        "next_safe_action": "Enable NetApp in the active lab profile when this workflow is intentionally in scope.",
+    }
 
 
 def _baseline_markdown(payload: dict[str, Any]) -> str:

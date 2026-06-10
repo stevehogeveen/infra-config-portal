@@ -119,6 +119,14 @@ profile does not call providers, does not mutate `.env.local.real-lab`, and does
 not enable apply actions; provider environment values still have to match the
 selected profile before lab certification can pass.
 
+The active profile drives default values across Dashboard, Lab Setup, Control
+Center, Firmware Upgrades, Validation & Reports, Build Verification, NetApp
+setup/upgrade, vCenter-NetApp readiness, and workflow registry actions. `/24`
+profiles use the high-address layout (`.201` through NetApp `.240-.243`) unless
+overridden. `/26` compact profiles use offset defaults from the subnet network
+address and keep NetApp/vCenter `not_in_scope` by default. See
+`app/docs/lab-profile-examples.md`.
+
 The API surface is:
 
 - `GET /api/v1/lab/profiles`
@@ -149,6 +157,16 @@ Canonical real-lab tooling is:
 - NetApp: `netapp-ontap` Python client plus ONTAP REST.
 - Verification: Build Verification consumes those outputs and classifies
   readiness, blockers, stale configuration, and failures.
+
+The HPE iLO Baseline Configuration preview is available at
+`GET /api/v1/providers/hpe-ilo/baseline-preview`, with connection-focused
+readiness at `GET /api/v1/providers/hpe-ilo/readiness`. These endpoints derive
+KitID, SupportUnit, subnet mask, gateway, DomDC, discovery `.21` through `.29`,
+expected users, license status, SNMP/SNMPv3, alert destinations, dedicated-port
+IPv6, SNTP/time, and reset handling from the active lab profile and cached
+read-only iLO evidence only. They do not run Redfish, apply configuration, write
+users/SNMP/time settings, expose secret values, or reset hardware; `apply_enabled`
+is always false in this first preview pass.
 
 The `netapp-ontap` setup preview displays the target addressing plan,
 console/bootstrap readiness checklist, disabled ONTAP API readiness,

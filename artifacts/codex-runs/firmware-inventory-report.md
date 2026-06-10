@@ -1,13 +1,13 @@
 # Firmware Inventory Report
 
-Checked: 2026-06-06T18:00:05.339175+00:00
+Checked: 2026-06-09T16:04:12.051651+00:00
 Provider mode: local-lab-readwrite
 
 ## Live Inventory
 
-- iLO firmware: iLO 5 v3.19
-- HPE BIOS: U32 v3.30 (07/31/2024)
-- HPE Smart Array: 1.98
+- iLO firmware: unknown
+- HPE BIOS: unknown
+- HPE Smart Array: unknown
 - Cisco IOS XE: unknown
 - Cisco bootloader/ROMMON: unknown
 - ONTAP: unknown

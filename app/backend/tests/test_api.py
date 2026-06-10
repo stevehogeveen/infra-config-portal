@@ -339,13 +339,14 @@ def test_lab_profile_api_saves_selects_and_versions_profiles(
     assert activated.json()["active_profile"]["id"] == profile_id
 
 
-def test_lab_profile_api_uses_runtime_profile_for_stale_saved_real_lab_profile(
+def test_lab_profile_api_keeps_saved_profile_active_and_reports_runtime_mismatch(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
     tmp_path,
 ) -> None:
     monkeypatch.setenv("PROVIDER_MODE", "local-lab-readwrite")
     monkeypatch.setenv("LAB_PROFILE_STORE", str(tmp_path / "lab-profiles.json"))
+    monkeypatch.setenv("CISCO_TARGET_IP", "192.168.1.204")
 
     created = client.post(
         "/api/v1/lab/profiles",
@@ -368,12 +369,80 @@ def test_lab_profile_api_uses_runtime_profile_for_stale_saved_real_lab_profile(
     assert response.status_code == 200
     payload = response.json()
     assert payload["mock_only"] is False
-    assert payload["active_profile"]["id"] == "runtime"
-    assert payload["active_profile"]["address_plan"]["subnet"] == "192.168.1.0/24"
-    assert payload["active_profile"]["address_plan"]["ilo"] == "192.168.1.201"
-    assert payload["runtime_profile"]["active"] is True
-    assert payload["profiles"][0]["active"] is False
+    assert payload["active_profile"]["id"] == created.json()["id"]
+    assert payload["active_profile"]["address_plan"]["subnet"] == "10.10.8.0/24"
+    assert payload["active_context"]["topology"] == "high_address_lab"
+    assert payload["active_context"]["resolved_address_plan"]["cisco_management"] == "10.10.8.2"
+    mismatches = {item["env_field"]: item for item in payload["active_context"]["mismatch_warnings"]}
+    assert mismatches["CISCO_TARGET_IP"]["expected_value"] == "10.10.8.2"
+    assert payload["runtime_profile"]["active"] is False
+    assert payload["profiles"][0]["active"] is True
     assert "provider-lab-live-status" in payload["next_safe_action"]
+
+
+def test_lab_profile_api_returns_compact_topology_context(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    monkeypatch.setenv("LAB_PROFILE_STORE", str(tmp_path / "lab-profiles.json"))
+
+    created = client.post(
+        "/api/v1/lab/profiles",
+        json={
+            "name": "Compact Edge Lab",
+            "subnet_cidr": "10.10.5.0/26",
+            "address_plan": {"subnet": "10.10.5.0/26"},
+        },
+    )
+
+    assert created.status_code == 201
+    payload = created.json()
+    assert payload["profile_topology"] == "compact_edge_lab"
+    assert payload["resolved_address_plan"]["esxi_management"] == "10.10.5.10"
+    assert payload["resolved_address_plan"]["ilo"] == "10.10.5.11"
+    assert payload["features"]["netapp_enabled"] is False
+    assert payload["features"]["vcenter_enabled"] is False
+    assert payload["devices"]["switch_primary"] == "10.10.5.2"
+    assert payload["devices"]["switch_secondary"] == "10.10.5.3"
+    assert "netapp" in payload["not_in_scope_stages"]
+
+    listing = client.get("/api/v1/lab/profiles")
+    assert listing.status_code == 200
+    active_context = listing.json()["active_context"]
+    assert active_context["topology"] == "compact_edge_lab"
+    assert active_context["resolved_address_plan"]["ilo"] == "10.10.5.11"
+    assert "netapp" in active_context["disabled_features"]
+
+
+def test_lab_profile_api_rejects_invalid_topology_overrides(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    monkeypatch.setenv("LAB_PROFILE_STORE", str(tmp_path / "lab-profiles.json"))
+
+    duplicate = client.post(
+        "/api/v1/lab/profiles",
+        json={
+            "name": "Duplicate Compact Lab",
+            "subnet_cidr": "10.10.5.0/26",
+            "address_plan": {"ilo": "10.10.5.10"},
+        },
+    )
+    out_of_subnet = client.post(
+        "/api/v1/lab/profiles",
+        json={
+            "name": "Invalid Compact Lab",
+            "subnet_cidr": "10.10.5.0/26",
+            "address_plan": {"ilo": "10.10.6.11"},
+        },
+    )
+
+    assert duplicate.status_code == 422
+    assert "duplicates" in duplicate.json()["detail"]
+    assert out_of_subnet.status_code == 422
+    assert "outside active subnet" in out_of_subnet.json()["detail"]
 
 
 def test_lab_profile_subnet_options_include_netapp_capability_boundary(
@@ -390,7 +459,9 @@ def test_lab_profile_subnet_options_include_netapp_capability_boundary(
     assert set(options) == {23, 24, 25, 26, 27, 28, 29}
     assert options[24]["netapp_supported"] is True
     assert options[25]["netapp_supported"] is False
-    assert "NetApp capabilities require a /24" in options[25]["netapp_disabled_reason"]
+    assert options[24]["default_topology"] == "high_address_lab"
+    assert options[26]["default_topology"] == "compact_edge_lab"
+    assert "NetApp" in options[25]["netapp_disabled_reason"]
 
 
 def test_lab_profile_uses_lab_builder_schema_for_24_when_addresses_are_blank(
@@ -426,6 +497,108 @@ def test_lab_profile_uses_lab_builder_schema_for_24_when_addresses_are_blank(
         "192.0.2.242",
         "192.0.2.243",
     ]
+
+
+def test_hpe_ilo_baseline_preview_uses_active_profile_and_stays_preview_only(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    monkeypatch.setenv("LAB_PROFILE_STORE", str(tmp_path / "lab-profiles.json"))
+
+    created = client.post(
+        "/api/v1/lab/profiles",
+        json={
+            "name": "Kit 42",
+            "global_settings": {
+                "gateway": "192.0.2.1",
+                "support_unit": "Support Alpha",
+                "dom_dc": "192.0.2.53",
+                "dns_servers": ["192.0.2.53"],
+                "timezone": "Eastern",
+            },
+            "address_plan": {"subnet": "192.0.2.0/24"},
+        },
+    )
+    assert created.status_code == 201
+
+    response = client.get("/api/v1/providers/hpe-ilo/baseline-preview")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["provider_id"] == "hpe-ilo"
+    assert payload["source_provider_id"] == "ilo-redfish"
+    assert payload["apply_enabled"] is False
+    assert "Preview/readiness only" in payload["apply_reason"]
+    assert payload["kit_profile"]["kit_id"] == "Kit_42"
+    assert payload["kit_profile"]["support_unit"] == "Support Alpha"
+    assert payload["kit_profile"]["subnet_mask"] == "255.255.255.0"
+    assert payload["kit_profile"]["gateway"] == "192.0.2.1"
+    assert payload["kit_profile"]["dom_dc"] == "192.0.2.53"
+    assert payload["kit_profile"]["derived_subnet"] == "192.0.2.0/24"
+    assert payload["discovery_range"]["addresses"] == [
+        "192.0.2.21",
+        "192.0.2.22",
+        "192.0.2.23",
+        "192.0.2.24",
+        "192.0.2.25",
+        "192.0.2.26",
+        "192.0.2.27",
+        "192.0.2.28",
+        "192.0.2.29",
+    ]
+    assert payload["reset_required"] is False
+    sections = {section["id"]: section for section in payload["expected_baseline_sections"]}
+    assert {
+        "users",
+        "license",
+        "snmp",
+        "snmpv3",
+        "alert_destinations",
+        "ipv6_dedicated",
+        "sntp_time",
+        "reset_handling",
+    } == set(sections)
+    assert sections["users"]["items"]["admin_account"] == "Kit_42_Admin"
+    assert sections["users"]["items"]["operator_account"] == "Kit_42_OA"
+    assert sections["snmp"]["items"]["read_community"] == "secret-ref:ilo-snmp-read-community"
+    assert sections["snmpv3"]["items"]["auth_protocol"] == "SHA"
+    assert sections["snmpv3"]["items"]["privacy_protocol"] == "AES"
+    assert sections["alert_destinations"]["items"]["desired_destinations"] == ["192.0.2.53"]
+    assert sections["alert_destinations"]["items"]["alert_protocol"] == "SNMPv3Inform"
+    assert sections["ipv6_dedicated"]["items"]["dhcpv6_stateful_mode"] == "disabled"
+    assert sections["ipv6_dedicated"]["items"]["dhcpv6_stateless_mode"] == "disabled"
+    assert sections["sntp_time"]["items"]["sntp_server"] == "192.0.2.1"
+    assert sections["sntp_time"]["items"]["timezone"] == "Eastern"
+    rows = {(row["section"], row["item"]): row for row in payload["comparison_rows"]}
+    assert rows[("License Check", "License status")]["action"] == "check"
+    assert rows[("License Check", "License status")]["severity"] == "warning"
+    assert rows[("Reset Handling", "Reset after baseline")]["action"] == "requires_confirmation"
+    assert rows[("SNMP Alert Destinations", "Alert destination reconcile")]["action"] == "update"
+    encoded = response.text.lower()
+    assert "csni" not in encoded
+    assert "dwan" not in encoded
+    assert "password=" not in encoded
+    assert "secret-ref:" in encoded
+
+
+def test_hpe_ilo_baseline_readiness_is_read_only_and_redacted(client: TestClient) -> None:
+    response = client.get("/api/v1/providers/hpe-ilo/readiness")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["provider_id"] == "hpe-ilo"
+    assert "expected_baseline_sections" not in payload
+    assert payload["apply_enabled"] is False
+    assert payload["current_state"]["login_status"] == "redacted"
+    check_names = {check["name"] for check in payload["connection_readiness"]}
+    assert {
+        "Target configured",
+        "Credential references",
+        "Ping reachability",
+        "HTTPS / 443",
+        "Redfish root",
+    } <= check_names
 
 
 def test_lab_profile_25_and_smaller_subnets_clear_netapp_capabilities(
@@ -871,6 +1044,16 @@ def test_merged_provider_preview_endpoints_smoke_in_mock_mode(client: TestClient
             "/api/v1/providers/ilo-redfish/setup-apply-plan",
             "ilo-redfish-setup-apply",
             ["apply_enabled", "operations", "blockers", "confirmation_phrase"],
+        ),
+        (
+            "/api/v1/providers/hpe-ilo/baseline-preview",
+            "hpe-ilo",
+            ["apply_enabled", "kit_profile", "discovery_range", "comparison_rows"],
+        ),
+        (
+            "/api/v1/providers/hpe-ilo/readiness",
+            "hpe-ilo",
+            ["apply_enabled", "connection_readiness", "current_state", "comparison_rows"],
         ),
         (
             "/api/v1/providers/cisco/setup-readiness",

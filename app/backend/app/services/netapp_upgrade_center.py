@@ -11,6 +11,7 @@ from app.providers.action_policy import LOCAL_LAB_READWRITE_MODE, current_lab_ac
 from app.providers.base import ProviderAction
 from app.providers.redaction import redact_sensitive
 from app.schemas import MediaInventoryItemRead
+from app.services.lab_profiles import active_lab_profile_context
 from app.services.media_inventory import get_media_inventory
 from app.services.netapp_disabled_actions import disabled_netapp_actions
 from app.services.netapp_setup_intent import get_netapp_setup_intent
@@ -34,6 +35,16 @@ UPGRADE_WAIVER_CONFIRM_PHRASE = "WAIVE ONTAP VALIDATION"
 
 
 def build_netapp_upgrade_inventory(*, write_report: bool = True) -> dict[str, Any]:
+    if not _netapp_in_scope():
+        payload = _not_in_scope_payload(
+            "ontap-upgrade-inventory",
+            report_path=UPGRADE_INVENTORY_REPORT,
+            json_path=UPGRADE_INVENTORY_JSON,
+        )
+        if write_report:
+            _write_json(UPGRADE_INVENTORY_JSON, payload)
+            UPGRADE_INVENTORY_REPORT.write_text(_inventory_markdown(payload), encoding="utf-8")
+        return payload
     checked_at = _now()
     runtime_state = get_netapp_runtime_state()
     configured = bool(runtime_state.get("configured"))
@@ -104,6 +115,16 @@ def build_netapp_upgrade_inventory(*, write_report: bool = True) -> dict[str, An
 
 
 def build_netapp_upgrade_plan(*, write_report: bool = True) -> dict[str, Any]:
+    if not _netapp_in_scope():
+        payload = _not_in_scope_payload(
+            "ontap-upgrade-plan",
+            report_path=UPGRADE_PLAN_REPORT,
+            json_path=UPGRADE_PLAN_JSON,
+        )
+        if write_report:
+            _write_json(UPGRADE_PLAN_JSON, payload)
+            UPGRADE_PLAN_REPORT.write_text(_plan_markdown(payload), encoding="utf-8")
+        return payload
     inventory = build_netapp_upgrade_inventory(write_report=False)
     target_version = settings.netapp_target_ontap_version or _recommended_target(
         inventory.get("current_ontap_version"),
@@ -163,6 +184,16 @@ def build_netapp_upgrade_plan(*, write_report: bool = True) -> dict[str, Any]:
 
 
 def validate_netapp_upgrade(*, write_report: bool = True) -> dict[str, Any]:
+    if not _netapp_in_scope():
+        payload = _not_in_scope_payload(
+            "ontap-upgrade-validate",
+            report_path=UPGRADE_VALIDATION_REPORT,
+            json_path=UPGRADE_VALIDATION_JSON,
+        )
+        if write_report:
+            _write_json(UPGRADE_VALIDATION_JSON, payload)
+            UPGRADE_VALIDATION_REPORT.write_text(_validation_markdown(payload), encoding="utf-8")
+        return payload
     inventory = build_netapp_upgrade_inventory(write_report=False)
     target_version = settings.netapp_target_ontap_version or _recommended_target(
         inventory.get("current_ontap_version"),
@@ -221,6 +252,16 @@ def validate_netapp_upgrade(*, write_report: bool = True) -> dict[str, Any]:
 
 
 def apply_netapp_upgrade(*, write_report: bool = True) -> dict[str, Any]:
+    if not _netapp_in_scope():
+        payload = _not_in_scope_payload(
+            "ontap-upgrade-apply",
+            report_path=UPGRADE_APPLY_REPORT,
+            json_path=UPGRADE_APPLY_JSON,
+        )
+        if write_report:
+            _write_json(UPGRADE_APPLY_JSON, payload)
+            UPGRADE_APPLY_REPORT.write_text(_apply_markdown(payload), encoding="utf-8")
+        return payload
     plan = build_netapp_upgrade_plan(write_report=False)
     validation = _latest_validation()
     waiver = _upgrade_validation_waiver()
@@ -581,6 +622,48 @@ def _disabled_upgrade_actions() -> list[ProviderAction]:
         "reboot-controller",
         "apply-upgrade",
     )
+
+
+def _netapp_in_scope() -> bool:
+    features = active_lab_profile_context().get("enabled_features") or {}
+    return bool(features.get("netapp_enabled"))
+
+
+def _not_in_scope_payload(
+    action: str,
+    *,
+    report_path: Path,
+    json_path: Path,
+) -> dict[str, Any]:
+    return {
+        "provider_id": PROVIDER_ID,
+        "action": action,
+        "checked_at": _now(),
+        "status": "not_in_scope",
+        "message": "NetApp ONTAP upgrade is disabled by the active lab profile.",
+        "mode": settings.provider_mode,
+        "cluster_management_configured": False,
+        "access_configured": False,
+        "current_ontap_version": None,
+        "current_version": None,
+        "target_version": None,
+        "selected_package": None,
+        "package_loaded": False,
+        "validation_passed": False,
+        "supported_path_state": "not_in_scope",
+        "button_state": "not_in_scope",
+        "apply_enabled": False,
+        "upgrade_writes_attempted": False,
+        "local_image_packages": [],
+        "checks": [],
+        "blockers": [],
+        "warnings": ["NetApp is not in scope for the active lab profile; this is not a blocker."],
+        "expected_commands_or_api_calls": [],
+        "required_flags": [],
+        "not_attempted": _upgrade_not_attempted(),
+        "artifacts": {"report": _rel(report_path), "json": _rel(json_path)},
+        "next_safe_action": "Enable NetApp in the active lab profile when ONTAP upgrade is intentionally in scope.",
+    }
 
 
 def _write_json(path: Path, payload: dict[str, Any]) -> None:

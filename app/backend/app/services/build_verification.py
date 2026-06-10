@@ -11,25 +11,11 @@ from pathlib import Path
 from shutil import which
 from typing import Any
 
-from app.core.config import (
-    LAB_ANSIBLE_CONTROL_HOST_IP,
-    LAB_CISCO_MANAGEMENT_IP,
-    LAB_ESXI_MANAGEMENT_IP,
-    LAB_ILO_IP,
-    LAB_NETAPP_CLUSTER_MGMT_IP,
-    LAB_NETAPP_CONTROLLER_A_SP_IP,
-    LAB_NETAPP_CONTROLLER_B_SP_IP,
-    LAB_NETAPP_ISCSI_LIF_IPS,
-    LAB_NETAPP_NODE_A_MGMT_IP,
-    LAB_NETAPP_NODE_B_MGMT_IP,
-    LAB_NETAPP_SVM_MGMT_IP,
-    LAB_SERVER_EMBEDDED_NIC_IP,
-    LAB_SUBNET_CIDR,
-    settings,
-)
+from app.core.config import settings
 from app.providers.redaction import redact_sensitive
 from app.services.hpe_raid import REPO_ROOT
-from app.services.lab_profiles import active_lab_profile_for_report
+from app.services.lab_profiles import active_lab_profile_context
+from app.services.lab_topology import configured_runtime_values
 from app.services.netapp_state import get_netapp_runtime_state, read_netapp_live_state
 from app.services.status_source import attach_status_source, status_source_metadata
 
@@ -51,17 +37,26 @@ CLASSIFICATION_ORDER = {
     "not_configured_yet": 4,
     "warning": 5,
     "passed": 6,
+    "not_in_scope": 7,
 }
 
 
 def build_lab_build_verification(*, check_ports: bool = True) -> dict[str, Any]:
     CODEX_RUN_DIR.mkdir(parents=True, exist_ok=True)
     checked_at = datetime.now(UTC).isoformat()
-    netapp_live_state = _netapp_state_for_verification(check_ports=check_ports)
-    credentials = _credential_checks(netapp_live_state)
-    lab_ip_profile = _lab_ip_profile_checks()
-    mtu = _mtu_checks()
-    protocols = _protocol_checks(check_ports=check_ports, netapp_live_state=netapp_live_state)
+    profile_context = active_lab_profile_context()
+    netapp_live_state = _netapp_state_for_verification(
+        check_ports=check_ports,
+        profile_context=profile_context,
+    )
+    credentials = _credential_checks(netapp_live_state, profile_context=profile_context)
+    lab_ip_profile = _lab_ip_profile_checks(profile_context=profile_context)
+    mtu = _mtu_checks(profile_context=profile_context)
+    protocols = _protocol_checks(
+        check_ports=check_ports,
+        netapp_live_state=netapp_live_state,
+        profile_context=profile_context,
+    )
     toolchain = build_toolchain_availability()
     checklist = _post_build_checklist(protocols)
     failures = _failure_classification(credentials, lab_ip_profile, mtu, protocols)
@@ -99,6 +94,7 @@ def build_lab_build_verification(*, check_ports: bool = True) -> dict[str, Any]:
             else None
         ),
         "lab_ip_profile": lab_ip_profile,
+        "active_profile_context": profile_context,
         "credentials": credentials,
         "mtu": mtu,
         "protocols": protocols,
@@ -400,12 +396,10 @@ def protocol_readiness(
         if reachable is True
         else "warning"
     )
-    status = {
-        "protocol": protocol,
-        "configured": configured,
-        "reachable": reachable,
-        "required": required,
-        "status": (
+    if final_classification == "not_in_scope":
+        status_value = "not_in_scope"
+    else:
+        status_value = (
             "blocked"
             if blockers
             else "skipped"
@@ -413,7 +407,13 @@ def protocol_readiness(
             else "ready"
             if reachable is not None
             else "unknown"
-        ),
+        )
+    status = {
+        "protocol": protocol,
+        "configured": configured,
+        "reachable": reachable,
+        "required": required,
+        "status": status_value,
         "classification": final_classification,
         "blockers": blockers,
         "next_action": next_action or _protocol_next_action(protocol, final_classification, blockers),
@@ -430,6 +430,17 @@ def protocol_readiness(
     }
 
 
+def _not_in_scope_protocol(protocol: str, reason: str) -> dict[str, Any]:
+    return protocol_readiness(
+        protocol,
+        configured=False,
+        reachable=None,
+        required=False,
+        classification="not_in_scope",
+        next_action=reason,
+    )
+
+
 def find_stale_lab_ip_assumptions(values: dict[str, Any]) -> list[dict[str, str]]:
     return [
         {"field": key, "value": value}
@@ -438,93 +449,71 @@ def find_stale_lab_ip_assumptions(values: dict[str, Any]) -> list[dict[str, str]
     ]
 
 
-def _lab_ip_profile_checks() -> dict[str, Any]:
-    active_lab_profile = active_lab_profile_for_report()
-    saved_profile_ignored = _saved_profile_is_stale_for_real_lab(active_lab_profile)
-    active_plan = (
-        active_lab_profile.get("address_plan", {})
-        if active_lab_profile.get("source") == "saved" and not saved_profile_ignored
-        else {}
+def _lab_ip_profile_checks(*, profile_context: dict[str, Any] | None = None) -> dict[str, Any]:
+    profile_context = profile_context or active_lab_profile_context()
+    active_lab_profile = profile_context["active_profile"]
+    active_plan = dict(profile_context.get("resolved_address_plan") or {})
+    features = profile_context.get("enabled_features") or {}
+    netapp_enabled = bool(features.get("netapp_enabled"))
+    expected_netapp_iscsi_lifs = (
+        ",".join(active_plan.get("netapp_iscsi_lifs") or [])
+        if netapp_enabled
+        else "not_in_scope"
     )
-    expected_netapp_iscsi_lifs = ",".join(
-        active_plan.get("netapp_iscsi_lifs") or list(LAB_NETAPP_ISCSI_LIF_IPS)
+    expected_netapp_nfs_lifs = (
+        ",".join(active_plan.get("netapp_nfs_lifs") or [])
+        if netapp_enabled
+        else "not_in_scope"
     )
-    configured_netapp_iscsi_lifs = ",".join(settings.netapp_iscsi_lifs)
     expected = {
-        "subnet": active_plan.get("subnet") or LAB_SUBNET_CIDR,
-        "ilo": active_plan.get("ilo") or LAB_ILO_IP,
-        "server_embedded_nic": active_plan.get("server_embedded_nic")
-        or LAB_SERVER_EMBEDDED_NIC_IP,
-        "esxi_management": active_plan.get("esxi_management") or LAB_ESXI_MANAGEMENT_IP,
-        "cisco_management": active_plan.get("cisco_management") or LAB_CISCO_MANAGEMENT_IP,
-        "ansible_control_host": active_plan.get("ansible_control_host")
-        or LAB_ANSIBLE_CONTROL_HOST_IP,
-        "netapp_controller_a_sp": active_plan.get("netapp_controller_a_sp")
-        or LAB_NETAPP_CONTROLLER_A_SP_IP,
-        "netapp_controller_b_sp": active_plan.get("netapp_controller_b_sp")
-        or LAB_NETAPP_CONTROLLER_B_SP_IP,
-        "netapp_cluster_mgmt": active_plan.get("netapp_cluster_mgmt")
-        or LAB_NETAPP_CLUSTER_MGMT_IP,
-        "netapp_node_a_mgmt": active_plan.get("netapp_node_a_mgmt")
-        or LAB_NETAPP_NODE_A_MGMT_IP,
-        "netapp_node_b_mgmt": active_plan.get("netapp_node_b_mgmt")
-        or LAB_NETAPP_NODE_B_MGMT_IP,
-        "netapp_svm_mgmt": active_plan.get("netapp_svm_mgmt") or LAB_NETAPP_SVM_MGMT_IP,
+        "subnet": active_plan.get("subnet"),
+        "ilo": active_plan.get("ilo"),
+        "server_embedded_nic": active_plan.get("server_embedded_nic"),
+        "esxi_management": active_plan.get("esxi_management"),
+        "cisco_management": active_plan.get("cisco_management"),
+        "ansible_control_host": active_plan.get("ansible_control_host"),
+        "netapp_controller_a_sp": active_plan.get("netapp_controller_a_sp") if netapp_enabled else "not_in_scope",
+        "netapp_controller_b_sp": active_plan.get("netapp_controller_b_sp") if netapp_enabled else "not_in_scope",
+        "netapp_cluster_mgmt": active_plan.get("netapp_cluster_mgmt") if netapp_enabled else "not_in_scope",
+        "netapp_node_a_mgmt": active_plan.get("netapp_node_a_mgmt") if netapp_enabled else "not_in_scope",
+        "netapp_node_b_mgmt": active_plan.get("netapp_node_b_mgmt") if netapp_enabled else "not_in_scope",
+        "netapp_svm_mgmt": active_plan.get("netapp_svm_mgmt") if netapp_enabled else "not_in_scope",
+        "netapp_nfs_lifs": expected_netapp_nfs_lifs,
         "netapp_iscsi_lifs": expected_netapp_iscsi_lifs,
     }
-    configured = {
-        "subnet": settings.lab_subnet_cidr,
-        "ilo": settings.ilo_test_host,
-        "server_embedded_nic": settings.server_embedded_nic_ip,
-        "esxi_management": settings.esxi_test_host,
-        "cisco_management": settings.cisco_target_ip,
-        "ansible_cisco_inventory_target": settings.cisco_target_ip,
-        "ansible_control_host": settings.ansible_control_host,
+    configured = configured_runtime_values()
+    configured.update(
+        {
+            "runtime_subnet_default": settings.lab_subnet_cidr,
+            "runtime_provider_mode": settings.provider_mode,
+        }
+    )
+    raw_env = {
         "cisco_target_ip_env": os.getenv("CISCO_TARGET_IP"),
         "ansible_cisco_host_env": os.getenv("ANSIBLE_CISCO_HOST"),
-        "netapp_controller_a_sp": settings.netapp_controller_a_sp,
-        "netapp_controller_b_sp": settings.netapp_controller_b_sp,
-        "netapp_cluster_mgmt": settings.netapp_cluster_mgmt_ip,
-        "netapp_node_a_mgmt": settings.netapp_node_a_mgmt_ip,
-        "netapp_node_b_mgmt": settings.netapp_node_b_mgmt_ip,
-        "netapp_svm_mgmt": settings.netapp_svm_mgmt_ip,
-        "netapp_iscsi_lifs": configured_netapp_iscsi_lifs,
         "netapp_controller_a_sp_env": os.getenv("NETAPP_CONTROLLER_A_SP"),
         "netapp_controller_b_sp_env": os.getenv("NETAPP_CONTROLLER_B_SP"),
         "netapp_cluster_mgmt_ip_env": os.getenv("NETAPP_CLUSTER_MGMT_IP"),
         "netapp_node_a_mgmt_ip_env": os.getenv("NETAPP_NODE_A_MGMT_IP"),
         "netapp_node_b_mgmt_ip_env": os.getenv("NETAPP_NODE_B_MGMT_IP"),
         "netapp_svm_mgmt_ip_env": os.getenv("NETAPP_SVM_MGMT_IP"),
+        "netapp_nfs_lifs_env": os.getenv("NETAPP_NFS_LIFS"),
         "netapp_iscsi_lifs_env": os.getenv("NETAPP_ISCSI_LIFS"),
     }
-    mismatches = []
-    for key, expected_value in expected.items():
-        configured_value = configured.get(key)
-        if configured_value and configured_value != expected_value:
-            mismatches.append(
-                {
-                    "field": key,
-                    "expected": expected_value,
-                    "configured": configured_value,
-                }
-            )
-    ansible_cisco_host = configured.get("ansible_cisco_host_env")
-    if ansible_cisco_host and ansible_cisco_host != expected["cisco_management"]:
-        mismatches.append(
-            {
-                "field": "ansible_cisco_host_env",
-                "expected": expected["cisco_management"],
-                "configured": ansible_cisco_host,
-                "reason": "ANSIBLE_CISCO_HOST is the Cisco device inventory target, not the control host.",
-            }
-        )
+    configured.update(raw_env)
+    mismatches = [
+        {
+            "field": item.get("field"),
+            "expected": item.get("expected_value"),
+            "configured": item.get("current_value"),
+            "env_field": item.get("env_field"),
+            "recommended_action": item.get("recommended_action"),
+        }
+        for item in profile_context.get("mismatch_warnings") or []
+    ]
     stale_values = find_stale_lab_ip_assumptions(configured)
     stale_artifacts = _stale_artifact_evidence()
-    selected_profile_name = (
-        "Runtime environment"
-        if saved_profile_ignored
-        else active_lab_profile.get("name") or "Runtime environment"
-    )
+    selected_profile_name = active_lab_profile.get("name") or "Runtime environment"
     return {
         "status": "blocked" if mismatches or stale_values else "ready",
         "classification": "stale_config" if mismatches or stale_values else "passed",
@@ -533,28 +522,25 @@ def _lab_ip_profile_checks() -> dict[str, Any]:
             "name": active_lab_profile.get("name") or selected_profile_name,
             "source": active_lab_profile.get("source"),
             "version": active_lab_profile.get("version"),
-            "selected_for_portal": not saved_profile_ignored,
-            "provider_env_overrides_required": active_lab_profile.get("source") == "saved"
-            and not saved_profile_ignored,
-            "ignored_for_current_runtime": saved_profile_ignored,
+            "topology": profile_context.get("topology"),
+            "selected_for_portal": True,
+            "provider_env_overrides_required": bool(mismatches),
+            "ignored_for_current_runtime": False,
         },
         "effective_profile": {
             "name": selected_profile_name,
-            "source": "runtime_env" if saved_profile_ignored else active_lab_profile.get("source"),
-            "reason": (
-                "Saved profile contains stale 10.10.8.x targets; runtime real-lab targets are current."
-                if saved_profile_ignored
-                else "Active profile selected for current checks."
-            ),
+            "source": active_lab_profile.get("source"),
+            "reason": "Active profile selected for current checks.",
         },
+        "features": features,
+        "not_in_scope_stages": list(profile_context.get("not_in_scope_stages") or []),
         "expected": expected,
         "configured": configured,
         "mismatches": mismatches,
         "stale_10_10_8_values": stale_values,
         "stale_artifact_evidence": stale_artifacts,
         "next_action": (
-            f"Update provider environment inputs to match `{selected_profile_name}` and remove stale "
-            "10.10.8.x values before certification."
+            f"Update provider environment inputs to match `{selected_profile_name}` or remove out-of-scope overrides before certification."
             if mismatches or stale_values
             else f"Active lab IP profile matches `{selected_profile_name}`."
         ),
@@ -573,24 +559,31 @@ def _lab_ip_profile_checks() -> dict[str, Any]:
     }
 
 
-def _saved_profile_is_stale_for_real_lab(active_lab_profile: dict[str, Any]) -> bool:
-    if active_lab_profile.get("source") != "saved":
-        return False
-    if settings.lab_subnet_cidr != LAB_SUBNET_CIDR:
-        return False
-    address_plan = active_lab_profile.get("address_plan")
-    if not isinstance(address_plan, dict):
-        return False
-    values: list[Any] = []
-    for value in address_plan.values():
-        if isinstance(value, list):
-            values.extend(value)
-        else:
-            values.append(value)
-    return any(isinstance(value, str) and "10.10.8." in value for value in values)
-
-
-def _netapp_state_for_verification(*, check_ports: bool) -> dict[str, Any]:
+def _netapp_state_for_verification(
+    *,
+    check_ports: bool,
+    profile_context: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    profile_context = profile_context or active_lab_profile_context()
+    features = profile_context.get("enabled_features") or {}
+    if not features.get("netapp_enabled"):
+        return {
+            "provider_id": "netapp-ontap",
+            "device_role": "storage-controller",
+            "status": "not_in_scope",
+            "configured": False,
+            "configured_state": "not_in_scope",
+            "source": "active_lab_profile",
+            "source_type": "not_checked",
+            "freshness": "not_checked",
+            "manual_env_flag_required": False,
+            "console": {},
+            "management": {},
+            "api": {},
+            "storage": {},
+            "blockers": [],
+            "next_safe_action": "NetApp is disabled by the active lab profile.",
+        }
     try:
         cached = get_netapp_runtime_state()
         if (
@@ -624,14 +617,20 @@ def _netapp_state_for_verification(*, check_ports: bool) -> dict[str, Any]:
         }
 
 
-def _credential_checks(netapp_live_state: dict[str, Any]) -> dict[str, Any]:
+def _credential_checks(
+    netapp_live_state: dict[str, Any],
+    *,
+    profile_context: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    profile_context = profile_context or active_lab_profile_context()
+    features = profile_context.get("enabled_features") or {}
     checks = [
         validate_credential_compatibility("ilo", settings.ilo_test_password),
         validate_credential_compatibility("cisco", settings.cisco_test_password),
         validate_credential_compatibility("cisco_enable", settings.cisco_enable_password),
         validate_credential_compatibility("esxi", settings.esxi_test_password),
     ]
-    if settings.netapp_configured or netapp_live_state.get("configured"):
+    if features.get("netapp_enabled") and (settings.netapp_configured or netapp_live_state.get("configured")):
         checks.append(validate_credential_compatibility("netapp", settings.netapp_api_password))
     return {
         "status": "blocked" if any(item["status"] == "blocked" for item in checks) else "ready",
@@ -640,45 +639,64 @@ def _credential_checks(netapp_live_state: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _mtu_checks() -> dict[str, Any]:
+def _mtu_checks(*, profile_context: dict[str, Any] | None = None) -> dict[str, Any]:
+    profile_context = profile_context or active_lab_profile_context()
+    features = profile_context.get("enabled_features") or {}
+    netapp_enabled = bool(features.get("netapp_enabled"))
     values = {
         "cisco_management": _int_env("CISCO_MANAGEMENT_MTU"),
         "esxi_management": _int_env("ESXI_MANAGEMENT_MTU"),
-        "netapp_management": _int_env("NETAPP_MANAGEMENT_MTU"),
         "cisco_iscsi": _int_env("CISCO_ISCSI_MTU"),
         "esxi_iscsi": _int_env("ESXI_ISCSI_MTU"),
-        "netapp_iscsi": _int_env("NETAPP_ISCSI_MTU"),
         "cisco_vmotion": _int_env("CISCO_VMOTION_MTU"),
         "esxi_vmotion": _int_env("ESXI_VMOTION_MTU"),
         "cisco_backup": _int_env("CISCO_BACKUP_MTU"),
-        "netapp_backup": _int_env("NETAPP_BACKUP_MTU"),
     }
+    if netapp_enabled:
+        values.update(
+            {
+                "netapp_management": _int_env("NETAPP_MANAGEMENT_MTU"),
+                "netapp_iscsi": _int_env("NETAPP_ISCSI_MTU"),
+                "netapp_backup": _int_env("NETAPP_BACKUP_MTU"),
+            }
+        )
     return validate_mtu_consistency(values)
 
 
-def _protocol_checks(*, check_ports: bool, netapp_live_state: dict[str, Any]) -> dict[str, Any]:
+def _protocol_checks(
+    *,
+    check_ports: bool,
+    netapp_live_state: dict[str, Any],
+    profile_context: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    profile_context = profile_context or active_lab_profile_context()
+    plan = profile_context.get("resolved_address_plan") or {}
+    features = profile_context.get("enabled_features") or {}
+    ilo_host = plan.get("ilo") or settings.ilo_test_host
+    cisco_host = plan.get("cisco_management") or settings.cisco_target_ip
+    esxi_host = plan.get("esxi_management") or settings.esxi_test_host
     cisco_ssh_reachable = (
-        _reachable(settings.cisco_target_ip, 22, check_ports)
+        _reachable(cisco_host, 22, check_ports)
         if settings.cisco_mgmt_configured
         else None
     )
     esxi_api_reachable = (
-        _reachable(settings.esxi_test_host, 443, check_ports)
+        _reachable(esxi_host, 443, check_ports)
         if settings.esxi_configured
         else None
     )
     esxi_ssh_reachable = (
-        _reachable(settings.esxi_test_host, 22, check_ports)
+        _reachable(esxi_host, 22, check_ports)
         if settings.esxi_configured
         else None
     )
     checks = [
-        protocol_readiness("iLO Redfish", configured=bool(settings.ilo_test_host), reachable=_reachable(settings.ilo_test_host, 443, check_ports)),
-        protocol_readiness("iLO XML fallback", configured=bool(settings.ilo_test_host), reachable=_reachable(settings.ilo_test_host, 443, check_ports)),
+        protocol_readiness("iLO Redfish", configured=bool(ilo_host), reachable=_reachable(ilo_host, 443, check_ports)),
+        protocol_readiness("iLO XML fallback", configured=bool(ilo_host), reachable=_reachable(ilo_host, 443, check_ports)),
         _cisco_console_readiness(),
         protocol_readiness(
             "Cisco SSH/SCP",
-            configured=bool(settings.cisco_target_ip),
+            configured=bool(cisco_host),
             reachable=cisco_ssh_reachable,
             classification="blocked_by_prior_stage" if not settings.cisco_mgmt_configured else None,
             next_action=(
@@ -689,11 +707,11 @@ def _protocol_checks(*, check_ports: bool, netapp_live_state: dict[str, Any]) ->
         ),
         protocol_readiness(
             "ESXi API",
-            configured=bool(settings.esxi_test_host),
+            configured=bool(esxi_host),
             reachable=esxi_api_reachable,
             classification="blocked_by_prior_stage" if not settings.esxi_configured else None,
             next_action=(
-                "Install/configure ESXi management at 192.168.1.203, then set ESXI_CONFIGURED=true before API certification."
+                f"Install/configure ESXi management at {esxi_host or 'the active profile ESXi IP'}, then set ESXI_CONFIGURED=true before API certification."
                 if not settings.esxi_configured
                 else None
             ),
@@ -709,12 +727,33 @@ def _protocol_checks(*, check_ports: bool, netapp_live_state: dict[str, Any]) ->
                 else None
             ),
         ),
-        _netapp_protocol_readiness("NetApp REST", netapp_live_state, "rest_443_reachable"),
-        _netapp_protocol_readiness("NetApp SSH", netapp_live_state, "ssh_22_reachable"),
-        _netapp_console_readiness(),
-        _netapp_nfs_vcenter_readiness(),
         _iso_media_readiness(),
     ]
+    if features.get("netapp_enabled"):
+        checks.extend(
+            [
+                _netapp_protocol_readiness("NetApp REST", netapp_live_state, "rest_443_reachable"),
+                _netapp_protocol_readiness("NetApp SSH", netapp_live_state, "ssh_22_reachable"),
+                _netapp_console_readiness(profile_context=profile_context),
+            ]
+        )
+    else:
+        checks.extend(
+            [
+                _not_in_scope_protocol("NetApp REST", "NetApp is disabled by the active lab profile."),
+                _not_in_scope_protocol("NetApp SSH", "NetApp is disabled by the active lab profile."),
+                _not_in_scope_protocol("NetApp console", "NetApp is disabled by the active lab profile."),
+            ]
+        )
+    if features.get("netapp_enabled") and features.get("vcenter_enabled"):
+        checks.append(_netapp_nfs_vcenter_readiness(profile_context=profile_context))
+    else:
+        checks.append(
+            _not_in_scope_protocol(
+                "NetApp NFS/vCenter",
+                "NetApp or vCenter is disabled by the active lab profile.",
+            )
+        )
     return {
         "status": "blocked" if any(item["classification"] in {"hard_fail", "blocked_by_prior_stage"} for item in checks) else "ready",
         "classification": _worst_classification(item["classification"] for item in checks),
@@ -758,7 +797,7 @@ def _failure_classification(
             }
         )
     for check in credentials["checks"]:
-        if check["classification"] != "passed":
+        if check["classification"] not in {"passed", "not_in_scope"}:
             failures.append(
                 {
                     "category": "credential",
@@ -791,7 +830,7 @@ def _failure_classification(
             }
         )
     for check in protocols["checks"]:
-        if check["classification"] != "passed":
+        if check["classification"] not in {"passed", "not_in_scope"}:
             failures.append(
                 {
                     "category": "protocol",
@@ -884,6 +923,8 @@ def _protocol_next_action(protocol: str, classification: str, blockers: list[str
         return f"{protocol} readiness passed."
     if classification == "not_configured_yet":
         return f"Configure {protocol} only when that provider stage is in scope."
+    if classification == "not_in_scope":
+        return f"{protocol} is not in scope for the active lab profile."
     if classification == "blocked_by_prior_stage":
         return f"Complete the prior workflow stage before certifying {protocol}."
     if blockers:
@@ -1060,7 +1101,11 @@ def _cisco_console_readiness() -> dict[str, Any]:
     )
 
 
-def _netapp_console_readiness() -> dict[str, Any]:
+def _netapp_console_readiness(*, profile_context: dict[str, Any] | None = None) -> dict[str, Any]:
+    profile_context = profile_context or active_lab_profile_context()
+    features = profile_context.get("enabled_features") or {}
+    if not features.get("netapp_enabled"):
+        return _not_in_scope_protocol("NetApp console", "NetApp is disabled by the active lab profile.")
     runtime_state = get_netapp_runtime_state()
     console = runtime_state.get("console") if isinstance(runtime_state.get("console"), dict) else {}
     if console.get("discovered_port"):
@@ -1133,7 +1178,14 @@ def _netapp_console_readiness() -> dict[str, Any]:
     )
 
 
-def _netapp_nfs_vcenter_readiness() -> dict[str, Any]:
+def _netapp_nfs_vcenter_readiness(*, profile_context: dict[str, Any] | None = None) -> dict[str, Any]:
+    profile_context = profile_context or active_lab_profile_context()
+    features = profile_context.get("enabled_features") or {}
+    if not features.get("netapp_enabled") or not features.get("vcenter_enabled"):
+        return _not_in_scope_protocol(
+            "NetApp NFS/vCenter",
+            "NetApp or vCenter is disabled by the active lab profile.",
+        )
     runtime_state = get_netapp_runtime_state()
     if runtime_state.get("configured"):
         storage = runtime_state.get("storage") if isinstance(runtime_state.get("storage"), dict) else {}
@@ -1456,6 +1508,9 @@ def _markdown(payload: dict[str, Any]) -> str:
         "## Lab IP Profile",
         "",
         f"- Status: `{payload['lab_ip_profile']['status']}`",
+        f"- Profile: `{payload['lab_ip_profile']['effective_profile']['name']}`",
+        f"- Topology: `{payload['lab_ip_profile']['active_lab_profile'].get('topology')}`",
+        f"- Not in scope: `{', '.join(payload['lab_ip_profile'].get('not_in_scope_stages') or []) or 'none'}`",
         f"- iLO: `{payload['lab_ip_profile']['expected']['ilo']}`",
         f"- Server embedded NIC: `{payload['lab_ip_profile']['expected']['server_embedded_nic']}`",
         f"- ESXi management: `{payload['lab_ip_profile']['expected']['esxi_management']}`",
@@ -1466,6 +1521,7 @@ def _markdown(payload: dict[str, Any]) -> str:
         f"- NetApp cluster management: `{payload['lab_ip_profile']['expected']['netapp_cluster_mgmt']}`",
         f"- NetApp node management: `{payload['lab_ip_profile']['expected']['netapp_node_a_mgmt']}` / `{payload['lab_ip_profile']['expected']['netapp_node_b_mgmt']}`",
         f"- NetApp SVM management: `{payload['lab_ip_profile']['expected']['netapp_svm_mgmt']}`",
+        f"- NetApp NFS LIFs: `{payload['lab_ip_profile']['expected']['netapp_nfs_lifs']}`",
         f"- NetApp iSCSI LIFs: `{payload['lab_ip_profile']['expected']['netapp_iscsi_lifs']}`",
         "",
         "## Failure Classification",
@@ -1704,7 +1760,7 @@ def _lab_ip_markdown(payload: dict[str, Any]) -> str:
             "## Ansible Role",
             "",
             "- Cisco first contact/bootstrap remains console.",
-            f"- Ansible starts after Cisco management SSH is configured at `{LAB_CISCO_MANAGEMENT_IP}`.",
+            f"- Ansible starts after Cisco management SSH is configured at `{profile['expected']['cisco_management']}`.",
             "- Ansible is for show commands, backup, validation, drift checks, and future repeatable config.",
             "- Ansible is not the initial Cisco bootstrap path.",
             "",
@@ -1742,6 +1798,7 @@ def _lab_ip_hardening_markdown(payload: dict[str, Any]) -> str:
         f"- NetApp Node A management/e0M: `{profile['expected']['netapp_node_a_mgmt']}`",
         f"- NetApp Node B management/e0M: `{profile['expected']['netapp_node_b_mgmt']}`",
         f"- NetApp SVM management: `{profile['expected']['netapp_svm_mgmt']}`",
+        f"- NetApp NFS LIFs: `{profile['expected']['netapp_nfs_lifs']}`",
         f"- NetApp iSCSI LIFs: `{profile['expected']['netapp_iscsi_lifs']}`",
         "",
         "## Stale Detection",

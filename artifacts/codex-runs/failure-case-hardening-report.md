@@ -1,6 +1,6 @@
 # Failure Case Hardening Report
 
-- Checked at: `2026-06-08T14:47:17.555667+00:00`
+- Checked at: `2026-06-10T15:39:22.887875+00:00`
 - Provider mode: `mock`
 - Credential values, tokens, and secrets are redacted.
 
@@ -8,8 +8,8 @@
 
 - Classification: `stale_config`
 - UI message: iLO target must be 192.168.1.201 for this lab.
-- Report artifact detail: 1 stale active values; 0 active profile mismatches.
-- Exact next action: Update provider environment inputs to match `Runtime environment` and remove stale 10.10.8.x values before certification.
+- Report artifact detail: 2 stale active values; 1 active profile mismatches.
+- Exact next action: Update provider environment inputs to match `Runtime environment` or remove out-of-scope overrides before certification.
 
 ## missing ESXi ISO
 
@@ -64,8 +64,8 @@
 
 - Classification: `stale_config`
 - UI message: Old 10.10.8.x values are stale for this lab unless explicitly overridden.
-- Report artifact detail: 1 stale active values; 0 active profile mismatches.
-- Exact next action: Update provider environment inputs to match `Runtime environment` and remove stale 10.10.8.x values before certification.
+- Report artifact detail: 2 stale active values; 1 active profile mismatches.
+- Exact next action: Update provider environment inputs to match `Runtime environment` or remove out-of-scope overrides before certification.
 
 ## MTU mismatch across paths
 

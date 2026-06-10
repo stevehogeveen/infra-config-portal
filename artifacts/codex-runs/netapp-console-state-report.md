@@ -1,88 +1,76 @@
 # NetApp Console Discovery
 
-Checked at: 2026-06-07T21:12:44.588005+00:00
+Checked at: 2026-06-10T00:35:43.149970+00:00
 Action: `console-read-state`
-Status: `blocked`
+Status: `ready`
 Provider mode: `local-lab-readwrite`
 
 ## Selection
 - Configured port hint: `not set`
-- Selected port: `/dev/ttyS5`
+- Hint role: `optional_hint_only`
+- Autodiscovery enabled: `True`
+- Manual env update required: `False`
+- Selected port: `/dev/serial/by-id/usb-Microchip_Technology_Inc._MCP2221_USB-I2C_UART_Combo-if00`
 - Selected baud: `115200`
-- Prompt/state: `No console output`
-- Prompt detected: `False`
-- Selection confidence: `medium`
-- Selection source: `auto-ttys-candidate`
-- Selection reason: ttyS device has a recent modified timestamp
-- Candidate count: `32`
-- Selectable candidates: `32`
+- Prompt/state: `NetApp cluster setup wizard`
+- Prompt detected: `True`
+- Selection confidence: `high`
+- Selection source: `prompt-evidence`
+- Selection origin: `autodiscovery`
+- Selection reason: cluster setup
+- Candidate count: `35`
+- Selectable candidates: `35`
 - Probed candidates: `4`
-- Skipped candidates: `28`
-- Attempt count: `20`
-- Last console blocker: `Serial candidates were discovered, but no valid NetApp prompt, boot state, or login flow was detected.`
+- Skipped candidates: `31`
+- Attempt count: `1`
+- Last console blocker: `none`
 
 ## Candidate Summary
-- `/dev/ttyS5` | type=`ttyS` | exists=`True` | rw=`True/True` | in_use=`False` | mtime=`2026-06-07T21:12:00+00:00` | rank=`235` | confidence=`medium` | reason=ttyS device has a recent modified timestamp
-- `/dev/ttyS4` | type=`ttyS` | exists=`True` | rw=`True/True` | in_use=`False` | mtime=`2026-06-07T21:12:08+00:00` | rank=`236` | confidence=`medium` | reason=ttyS device has a recent modified timestamp
-- `/dev/ttyS1` | type=`ttyS` | exists=`True` | rw=`True/True` | in_use=`False` | mtime=`2026-06-07T21:12:26+00:00` | rank=`239` | confidence=`medium` | reason=ttyS device has a recent modified timestamp
-- `/dev/ttyS0` | type=`ttyS` | exists=`True` | rw=`True/True` | in_use=`False` | mtime=`2026-06-05T14:15:54.896845+00:00` | rank=`650` | confidence=`low` | reason=older ttyS serial candidate
-- `/dev/ttyS10` | type=`ttyS` | exists=`True` | rw=`True/True` | in_use=`False` | mtime=`2026-06-05T14:15:54.895450+00:00` | rank=`650` | confidence=`low` | reason=older ttyS serial candidate
-- `/dev/ttyS11` | type=`ttyS` | exists=`True` | rw=`True/True` | in_use=`False` | mtime=`2026-06-05T14:15:54.895263+00:00` | rank=`650` | confidence=`low` | reason=older ttyS serial candidate
-- `/dev/ttyS12` | type=`ttyS` | exists=`True` | rw=`True/True` | in_use=`False` | mtime=`2026-06-05T14:15:54.895088+00:00` | rank=`650` | confidence=`low` | reason=older ttyS serial candidate
-- `/dev/ttyS13` | type=`ttyS` | exists=`True` | rw=`True/True` | in_use=`False` | mtime=`2026-06-05T14:15:54.894000+00:00` | rank=`650` | confidence=`low` | reason=older ttyS serial candidate
-- `/dev/ttyS14` | type=`ttyS` | exists=`True` | rw=`True/True` | in_use=`False` | mtime=`2026-06-05T14:15:54.895331+00:00` | rank=`650` | confidence=`low` | reason=older ttyS serial candidate
-- `/dev/ttyS15` | type=`ttyS` | exists=`True` | rw=`True/True` | in_use=`False` | mtime=`2026-06-05T14:15:54.898171+00:00` | rank=`650` | confidence=`low` | reason=older ttyS serial candidate
-- `/dev/ttyS16` | type=`ttyS` | exists=`True` | rw=`True/True` | in_use=`False` | mtime=`2026-06-05T14:15:54.899888+00:00` | rank=`650` | confidence=`low` | reason=older ttyS serial candidate
-- `/dev/ttyS17` | type=`ttyS` | exists=`True` | rw=`True/True` | in_use=`False` | mtime=`2026-06-05T14:15:54.896268+00:00` | rank=`650` | confidence=`low` | reason=older ttyS serial candidate
-- `/dev/ttyS18` | type=`ttyS` | exists=`True` | rw=`True/True` | in_use=`False` | mtime=`2026-06-05T14:15:54.896027+00:00` | rank=`650` | confidence=`low` | reason=older ttyS serial candidate
-- `/dev/ttyS19` | type=`ttyS` | exists=`True` | rw=`True/True` | in_use=`False` | mtime=`2026-06-05T14:15:54.896268+00:00` | rank=`650` | confidence=`low` | reason=older ttyS serial candidate
-- `/dev/ttyS2` | type=`ttyS` | exists=`True` | rw=`True/True` | in_use=`False` | mtime=`2026-06-05T14:15:54.896791+00:00` | rank=`650` | confidence=`low` | reason=older ttyS serial candidate
-- `/dev/ttyS20` | type=`ttyS` | exists=`True` | rw=`True/True` | in_use=`False` | mtime=`2026-06-05T14:15:54.898078+00:00` | rank=`650` | confidence=`low` | reason=older ttyS serial candidate
-- `/dev/ttyS21` | type=`ttyS` | exists=`True` | rw=`True/True` | in_use=`False` | mtime=`2026-06-05T14:15:54.897604+00:00` | rank=`650` | confidence=`low` | reason=older ttyS serial candidate
-- `/dev/ttyS22` | type=`ttyS` | exists=`True` | rw=`True/True` | in_use=`False` | mtime=`2026-06-05T14:15:54.900873+00:00` | rank=`650` | confidence=`low` | reason=older ttyS serial candidate
-- `/dev/ttyS23` | type=`ttyS` | exists=`True` | rw=`True/True` | in_use=`False` | mtime=`2026-06-05T14:15:54.899778+00:00` | rank=`650` | confidence=`low` | reason=older ttyS serial candidate
-- `/dev/ttyS24` | type=`ttyS` | exists=`True` | rw=`True/True` | in_use=`False` | mtime=`2026-06-05T14:15:54.901995+00:00` | rank=`650` | confidence=`low` | reason=older ttyS serial candidate
-- `/dev/ttyS25` | type=`ttyS` | exists=`True` | rw=`True/True` | in_use=`False` | mtime=`2026-06-05T14:15:54.901578+00:00` | rank=`650` | confidence=`low` | reason=older ttyS serial candidate
-- `/dev/ttyS26` | type=`ttyS` | exists=`True` | rw=`True/True` | in_use=`False` | mtime=`2026-06-05T14:15:54.898883+00:00` | rank=`650` | confidence=`low` | reason=older ttyS serial candidate
-- `/dev/ttyS27` | type=`ttyS` | exists=`True` | rw=`True/True` | in_use=`False` | mtime=`2026-06-05T14:15:54.902396+00:00` | rank=`650` | confidence=`low` | reason=older ttyS serial candidate
-- `/dev/ttyS28` | type=`ttyS` | exists=`True` | rw=`True/True` | in_use=`False` | mtime=`2026-06-05T14:15:54.896725+00:00` | rank=`650` | confidence=`low` | reason=older ttyS serial candidate
-- `/dev/ttyS29` | type=`ttyS` | exists=`True` | rw=`True/True` | in_use=`False` | mtime=`2026-06-05T14:15:54.899888+00:00` | rank=`650` | confidence=`low` | reason=older ttyS serial candidate
-- `/dev/ttyS3` | type=`ttyS` | exists=`True` | rw=`True/True` | in_use=`False` | mtime=`2026-06-05T14:15:54.896725+00:00` | rank=`650` | confidence=`low` | reason=older ttyS serial candidate
-- `/dev/ttyS30` | type=`ttyS` | exists=`True` | rw=`True/True` | in_use=`False` | mtime=`2026-06-05T14:15:54.896524+00:00` | rank=`650` | confidence=`low` | reason=older ttyS serial candidate
-- `/dev/ttyS31` | type=`ttyS` | exists=`True` | rw=`True/True` | in_use=`False` | mtime=`2026-06-05T14:15:54.901406+00:00` | rank=`650` | confidence=`low` | reason=older ttyS serial candidate
-- `/dev/ttyS6` | type=`ttyS` | exists=`True` | rw=`True/True` | in_use=`False` | mtime=`2026-06-05T14:15:54.903352+00:00` | rank=`650` | confidence=`low` | reason=older ttyS serial candidate
-- `/dev/ttyS7` | type=`ttyS` | exists=`True` | rw=`True/True` | in_use=`False` | mtime=`2026-06-05T14:15:54.901488+00:00` | rank=`650` | confidence=`low` | reason=older ttyS serial candidate
-- `/dev/ttyS8` | type=`ttyS` | exists=`True` | rw=`True/True` | in_use=`False` | mtime=`2026-06-05T14:15:54.902485+00:00` | rank=`650` | confidence=`low` | reason=older ttyS serial candidate
-- `/dev/ttyS9` | type=`ttyS` | exists=`True` | rw=`True/True` | in_use=`False` | mtime=`2026-06-05T14:15:54.901825+00:00` | rank=`650` | confidence=`low` | reason=older ttyS serial candidate
+- `/dev/serial/by-id/usb-Microchip_Technology_Inc._MCP2221_USB-I2C_UART_Combo-if00` | type=`by-id` | exists=`True` | rw=`True/True` | in_use=`False` | mtime=`2026-06-09T22:26:16+00:00` | rank=`-35` | confidence=`high` | reason=stable /dev/serial/by-id path; candidate name matches NetApp serial hint
+- `/dev/ttyACM0` | type=`ttyACM` | exists=`True` | rw=`True/True` | in_use=`False` | mtime=`2026-06-09T22:26:16+00:00` | rank=`65` | confidence=`medium` | reason=ttyACM USB serial fallback; candidate name matches NetApp serial hint
+- `/dev/ttyACM1` | type=`ttyACM` | exists=`True` | rw=`True/True` | in_use=`False` | mtime=`2026-06-09T20:56:20.595289+00:00` | rank=`65` | confidence=`medium` | reason=ttyACM USB serial fallback; candidate name matches NetApp serial hint
+- `/dev/ttyS20` | type=`ttyS` | exists=`True` | rw=`True/True` | in_use=`False` | mtime=`2026-06-09T20:33:13.921228+00:00` | rank=`220` | confidence=`medium` | reason=ttyS device has a recent modified timestamp
+- `/dev/ttyS21` | type=`ttyS` | exists=`True` | rw=`True/True` | in_use=`False` | mtime=`2026-06-09T20:33:13.921554+00:00` | rank=`220` | confidence=`medium` | reason=ttyS device has a recent modified timestamp
+- `/dev/ttyS22` | type=`ttyS` | exists=`True` | rw=`True/True` | in_use=`False` | mtime=`2026-06-09T20:33:13.922104+00:00` | rank=`220` | confidence=`medium` | reason=ttyS device has a recent modified timestamp
+- `/dev/ttyS23` | type=`ttyS` | exists=`True` | rw=`True/True` | in_use=`False` | mtime=`2026-06-09T20:33:13.923676+00:00` | rank=`220` | confidence=`medium` | reason=ttyS device has a recent modified timestamp
+- `/dev/ttyS24` | type=`ttyS` | exists=`True` | rw=`True/True` | in_use=`False` | mtime=`2026-06-09T20:33:13.919990+00:00` | rank=`220` | confidence=`medium` | reason=ttyS device has a recent modified timestamp
+- `/dev/ttyS25` | type=`ttyS` | exists=`True` | rw=`True/True` | in_use=`False` | mtime=`2026-06-09T20:33:13.921206+00:00` | rank=`220` | confidence=`medium` | reason=ttyS device has a recent modified timestamp
+- `/dev/ttyS26` | type=`ttyS` | exists=`True` | rw=`True/True` | in_use=`False` | mtime=`2026-06-09T20:33:13.924195+00:00` | rank=`220` | confidence=`medium` | reason=ttyS device has a recent modified timestamp
+- `/dev/ttyS27` | type=`ttyS` | exists=`True` | rw=`True/True` | in_use=`False` | mtime=`2026-06-09T20:33:13.921412+00:00` | rank=`220` | confidence=`medium` | reason=ttyS device has a recent modified timestamp
+- `/dev/ttyS28` | type=`ttyS` | exists=`True` | rw=`True/True` | in_use=`False` | mtime=`2026-06-09T20:33:13.924195+00:00` | rank=`220` | confidence=`medium` | reason=ttyS device has a recent modified timestamp
+- `/dev/ttyS29` | type=`ttyS` | exists=`True` | rw=`True/True` | in_use=`False` | mtime=`2026-06-09T20:33:13.923992+00:00` | rank=`220` | confidence=`medium` | reason=ttyS device has a recent modified timestamp
+- `/dev/ttyS30` | type=`ttyS` | exists=`True` | rw=`True/True` | in_use=`False` | mtime=`2026-06-09T20:33:13.925251+00:00` | rank=`220` | confidence=`medium` | reason=ttyS device has a recent modified timestamp
+- `/dev/ttyS31` | type=`ttyS` | exists=`True` | rw=`True/True` | in_use=`False` | mtime=`2026-06-09T20:33:13.922912+00:00` | rank=`220` | confidence=`medium` | reason=ttyS device has a recent modified timestamp
+- `/dev/ttyS19` | type=`ttyS` | exists=`True` | rw=`True/True` | in_use=`False` | mtime=`2026-06-09T20:33:13.920460+00:00` | rank=`221` | confidence=`medium` | reason=ttyS device has a recent modified timestamp
+- `/dev/ttyS18` | type=`ttyS` | exists=`True` | rw=`True/True` | in_use=`False` | mtime=`2026-06-09T20:33:13.920927+00:00` | rank=`222` | confidence=`medium` | reason=ttyS device has a recent modified timestamp
+- `/dev/ttyS17` | type=`ttyS` | exists=`True` | rw=`True/True` | in_use=`False` | mtime=`2026-06-09T20:33:13.919384+00:00` | rank=`223` | confidence=`medium` | reason=ttyS device has a recent modified timestamp
+- `/dev/ttyS16` | type=`ttyS` | exists=`True` | rw=`True/True` | in_use=`False` | mtime=`2026-06-09T20:33:13.920927+00:00` | rank=`224` | confidence=`medium` | reason=ttyS device has a recent modified timestamp
+- `/dev/ttyS15` | type=`ttyS` | exists=`True` | rw=`True/True` | in_use=`False` | mtime=`2026-06-09T20:33:13.921175+00:00` | rank=`225` | confidence=`medium` | reason=ttyS device has a recent modified timestamp
+- `/dev/ttyS14` | type=`ttyS` | exists=`True` | rw=`True/True` | in_use=`False` | mtime=`2026-06-09T20:33:13.921035+00:00` | rank=`226` | confidence=`medium` | reason=ttyS device has a recent modified timestamp
+- `/dev/ttyS13` | type=`ttyS` | exists=`True` | rw=`True/True` | in_use=`False` | mtime=`2026-06-09T20:33:13.921412+00:00` | rank=`227` | confidence=`medium` | reason=ttyS device has a recent modified timestamp
+- `/dev/ttyS12` | type=`ttyS` | exists=`True` | rw=`True/True` | in_use=`False` | mtime=`2026-06-09T20:33:13.922841+00:00` | rank=`228` | confidence=`medium` | reason=ttyS device has a recent modified timestamp
+- `/dev/ttyS11` | type=`ttyS` | exists=`True` | rw=`True/True` | in_use=`False` | mtime=`2026-06-09T20:33:13.919288+00:00` | rank=`229` | confidence=`medium` | reason=ttyS device has a recent modified timestamp
+- `/dev/ttyS10` | type=`ttyS` | exists=`True` | rw=`True/True` | in_use=`False` | mtime=`2026-06-09T20:33:13.918000+00:00` | rank=`230` | confidence=`medium` | reason=ttyS device has a recent modified timestamp
+- `/dev/ttyS9` | type=`ttyS` | exists=`True` | rw=`True/True` | in_use=`False` | mtime=`2026-06-09T20:33:13.922576+00:00` | rank=`231` | confidence=`medium` | reason=ttyS device has a recent modified timestamp
+- `/dev/ttyS8` | type=`ttyS` | exists=`True` | rw=`True/True` | in_use=`False` | mtime=`2026-06-09T20:33:13.926330+00:00` | rank=`232` | confidence=`medium` | reason=ttyS device has a recent modified timestamp
+- `/dev/ttyS7` | type=`ttyS` | exists=`True` | rw=`True/True` | in_use=`False` | mtime=`2026-06-09T20:33:13.928310+00:00` | rank=`233` | confidence=`medium` | reason=ttyS device has a recent modified timestamp
+- `/dev/ttyS6` | type=`ttyS` | exists=`True` | rw=`True/True` | in_use=`False` | mtime=`2026-06-09T20:33:13.924254+00:00` | rank=`234` | confidence=`medium` | reason=ttyS device has a recent modified timestamp
+- `/dev/ttyS5` | type=`ttyS` | exists=`True` | rw=`True/True` | in_use=`False` | mtime=`2026-06-09T20:33:13.943403+00:00` | rank=`235` | confidence=`medium` | reason=ttyS device has a recent modified timestamp
+- `/dev/ttyS4` | type=`ttyS` | exists=`True` | rw=`True/True` | in_use=`False` | mtime=`2026-06-09T20:33:30+00:00` | rank=`236` | confidence=`medium` | reason=ttyS device has a recent modified timestamp
+- `/dev/ttyS3` | type=`ttyS` | exists=`True` | rw=`True/True` | in_use=`False` | mtime=`2026-06-09T20:33:13.922313+00:00` | rank=`237` | confidence=`medium` | reason=ttyS device has a recent modified timestamp
+- `/dev/ttyS2` | type=`ttyS` | exists=`True` | rw=`True/True` | in_use=`False` | mtime=`2026-06-09T20:33:13.920408+00:00` | rank=`238` | confidence=`medium` | reason=ttyS device has a recent modified timestamp
+- `/dev/ttyS1` | type=`ttyS` | exists=`True` | rw=`True/True` | in_use=`False` | mtime=`2026-06-09T20:33:13.921035+00:00` | rank=`239` | confidence=`medium` | reason=ttyS device has a recent modified timestamp
+- `/dev/ttyS0` | type=`ttyS` | exists=`True` | rw=`True/True` | in_use=`False` | mtime=`2026-06-09T20:33:13.920927+00:00` | rank=`240` | confidence=`medium` | reason=ttyS device has a recent modified timestamp
 
 ## Management Topology
 - Connected management ports: `cluster_mgmt`
 - Note: Only one NetApp management port is connected at the moment.
 
 ## Attempts
-- `/dev/ttyS5` @ `115200`: No console output (checked)
-- `/dev/ttyS5` @ `9600`: No console output (checked)
-- `/dev/ttyS5` @ `19200`: No console output (checked)
-- `/dev/ttyS5` @ `38400`: No console output (checked)
-- `/dev/ttyS5` @ `57600`: No console output (checked)
-- `/dev/ttyS4` @ `115200`: No console output (checked)
-- `/dev/ttyS4` @ `9600`: No console output (checked)
-- `/dev/ttyS4` @ `19200`: No console output (checked)
-- `/dev/ttyS4` @ `38400`: No console output (checked)
-- `/dev/ttyS4` @ `57600`: No console output (checked)
-- `/dev/ttyS1` @ `115200`: Serial open failed (blocked)
-- `/dev/ttyS1` @ `9600`: Serial open failed (blocked)
-- `/dev/ttyS1` @ `19200`: Serial open failed (blocked)
-- `/dev/ttyS1` @ `38400`: Serial open failed (blocked)
-- `/dev/ttyS1` @ `57600`: Serial open failed (blocked)
-- `/dev/ttyS0` @ `115200`: Serial open failed (blocked)
-- `/dev/ttyS0` @ `9600`: Serial open failed (blocked)
-- `/dev/ttyS0` @ `19200`: Serial open failed (blocked)
-- `/dev/ttyS0` @ `38400`: Serial open failed (blocked)
-- `/dev/ttyS0` @ `57600`: Serial open failed (blocked)
+- `/dev/serial/by-id/usb-Microchip_Technology_Inc._MCP2221_USB-I2C_UART_Combo-if00` @ `115200`: NetApp cluster setup wizard (checked)
 
 ## Blockers
-- Serial candidates were discovered, but no valid NetApp prompt, boot state, or login flow was detected.
+- None
 
 ## Warnings
 - Only newline and carriage return wake bytes are allowed for this NetApp console probe.

@@ -10,6 +10,7 @@ from urllib.parse import urlsplit, urlunsplit
 
 from app.core.config import LAB_ESXI_MANAGEMENT_IP, settings
 from app.providers.redaction import redact_sensitive
+from app.services.lab_profiles import active_lab_profile_context
 from app.services.netapp_state import get_netapp_runtime_state
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
@@ -27,6 +28,71 @@ def get_vcenter_netapp_readiness(
     write_report: bool = False,
 ) -> dict[str, Any]:
     generated_at = _now()
+    profile_context = active_lab_profile_context()
+    features = profile_context.get("enabled_features") or {}
+    plan = profile_context.get("resolved_address_plan") or {}
+    if not features.get("netapp_enabled") or not features.get("vcenter_enabled"):
+        payload = {
+            "provider_id": "vcenter-netapp",
+            "action": "vcenter-netapp-readiness",
+            "checked_at": generated_at,
+            "generated_at": generated_at,
+            "status": "not_in_scope",
+            "message": "vCenter-NetApp readiness is not in scope for the active lab profile.",
+            "mode": settings.provider_mode,
+            "apply_enabled": False,
+            "source_type": "not_checked",
+            "freshness": "not_checked",
+            "netapp_stage": "not_in_scope",
+            "targets": {
+                "vcenter": None,
+                "esxi_management": plan.get("esxi_management"),
+                "netapp_cluster_management": None,
+                "netapp_nfs_lif": None,
+                "datastore_name": settings.netapp_nfs_datastore_name,
+            },
+            "credential_state": {
+                "vcenter_host_configured": False,
+                "vcenter_credentials_configured": False,
+                "netapp_credentials_configured": False,
+                "missing_fields": [],
+            },
+            "tooling": {
+                "govc_available": False,
+                "govc_path": "not_in_scope",
+            },
+            "planned_nfs": {
+                "planned": False,
+                "missing_fields": [],
+                "nfs_lifs": [],
+            },
+            "checks": {},
+            "datastore_add_preview": {},
+            "blockers": [],
+            "warnings": [
+                "NetApp or vCenter is disabled by the active lab profile; this is not a validation blocker.",
+            ],
+            "not_attempted": [
+                "ONTAP volume/export creation",
+                "vCenter datastore mount",
+                "ESXi datastore mount",
+                "govc datastore.create execution",
+                "ONTAP API write",
+            ],
+            "artifacts": {
+                "readiness_report": _rel(READINESS_REPORT),
+                "datastore_plan_report": _rel(PLAN_REPORT),
+                "readiness_json": _rel(READINESS_JSON),
+            },
+            "next_safe_action": "Enable NetApp and vCenter in the active lab profile when this datastore workflow is intentionally in scope.",
+        }
+        sanitized = redact_sensitive(payload)
+        if write_report:
+            CODEX_RUN_DIR.mkdir(parents=True, exist_ok=True)
+            READINESS_JSON.write_text(json.dumps(sanitized, indent=2), encoding="utf-8")
+            READINESS_REPORT.write_text(_readiness_markdown(sanitized), encoding="utf-8")
+            PLAN_REPORT.write_text(_plan_markdown(sanitized), encoding="utf-8")
+        return sanitized
     netapp_state = get_netapp_runtime_state()
     netapp_stage = _netapp_stage(netapp_state)
     vcenter_target = _redacted_url(settings.vcenter_host)

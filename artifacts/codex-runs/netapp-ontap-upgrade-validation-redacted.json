@@ -1,0 +1,80 @@
+{
+  "provider_id": "netapp-ontap",
+  "action": "ontap-upgrade-validate",
+  "checked_at": "2026-06-10T00:37:06.217111+00:00",
+  "status": "blocked",
+  "message": "NetApp ONTAP pre-upgrade validation completed without running upgrade commands.",
+  "mode": "local-lab-readwrite",
+  "validation_passed": false,
+  "validation_waiver": {
+    "active": false,
+    "required_flags": [
+      "NETAPP_ONTAP_UPGRADE_VALIDATION_WAIVER=true",
+      "NETAPP_ONTAP_UPGRADE_WAIVER_CONFIRM=\"WAIVE ONTAP VALIDATION\""
+    ],
+    "reason": "no waiver"
+  },
+  "current_version": null,
+  "target_version": null,
+  "selected_package": null,
+  "checks": [
+    {
+      "id": "cluster_management",
+      "status": "blocked",
+      "description": "Cluster management configured and reachable."
+    },
+    {
+      "id": "access",
+      "status": "blocked",
+      "description": "NetApp API access values configured."
+    },
+    {
+      "id": "current_version",
+      "status": "blocked",
+      "description": "Current ONTAP version discovered."
+    },
+    {
+      "id": "target_package",
+      "status": "blocked",
+      "description": "Local ONTAP image/package selected."
+    },
+    {
+      "id": "supported_path",
+      "status": "blocked",
+      "description": "Upgrade path is confirmed."
+    },
+    {
+      "id": "setup_intent",
+      "status": "blocked",
+      "description": "Setup intent complete."
+    }
+  ],
+  "blockers": [
+    "NetApp cluster management is not configured/reachable yet.",
+    "NetApp API access values are missing; keep values in .env.local.real-lab.",
+    "Current ONTAP version is unknown until ONTAP/API/CLI discovery can run.",
+    "No local ONTAP image package is available from MEDIA_INVENTORY_DIRS or artifacts/Media.",
+    "NetApp setup intent is incomplete.",
+    "No target ONTAP version is selected.",
+    "No ONTAP image/package is selected.",
+    "Supported ONTAP upgrade path is not confirmed."
+  ],
+  "warnings": [
+    "Pre-upgrade validation is blocked until the cluster is configured and a local image/package is selected.",
+    "No package upload, image validation, or upgrade command was run."
+  ],
+  "not_attempted": [
+    "ONTAP image package upload/load",
+    "ONTAP image validate",
+    "ONTAP image update",
+    "SP/BMC reboot",
+    "takeover/giveback",
+    "controller reboot",
+    "disk or shelf firmware update"
+  ],
+  "artifacts": {
+    "report": "artifacts/codex-runs/netapp-ontap-upgrade-validation-report.md",
+    "json": "artifacts/codex-runs/netapp-ontap-upgrade-validation-redacted.json"
+  },
+  "next_safe_action": "Resolve validation blockers before the Upgrade button can become ready."
+}

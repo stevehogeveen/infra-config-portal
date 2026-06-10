@@ -225,7 +225,7 @@ export type LabValidationItem = {
   label: string;
   category: string;
   stage: string;
-  status: "ready" | "partial" | "blocked" | "not_configured" | "not_checked" | "warning";
+  status: "ready" | "partial" | "blocked" | "not_configured" | "not_checked" | "warning" | "not_in_scope";
   current_state: string;
   desired_state: string;
   setup_summary: string;
@@ -376,18 +376,24 @@ export type LabAddressPlan = {
   netapp_node_a_mgmt: string | null;
   netapp_node_b_mgmt: string | null;
   netapp_svm_mgmt: string | null;
+  netapp_nfs_lifs: string[];
   netapp_iscsi_lifs: string[];
 };
 
 export type LabGlobalSettings = {
   subnet_prefix: number;
   gateway: string | null;
+  support_unit?: string | null;
   domain_name: string | null;
+  dom_dc?: string | null;
   dns_servers: string[];
   ntp_servers: string[];
   timezone: string | null;
   netapp_enabled: boolean;
   netapp_disabled_reason: string | null;
+  vcenter_enabled: boolean;
+  vlan_id: string | null;
+  mtu: number | null;
 };
 
 export type LabSubnetOption = {
@@ -397,6 +403,36 @@ export type LabSubnetOption = {
   usable_hosts: number;
   netapp_supported: boolean;
   netapp_disabled_reason: string | null;
+  default_topology?: string | null;
+};
+
+export type LabProfileDevices = {
+  gateway?: string | null;
+  switch_primary?: string | null;
+  switch_secondary?: string | null;
+  reserved?: string[];
+  ups?: string | null;
+  backup_storage?: string | null;
+  utility_vm?: string | null;
+  esxi?: string | null;
+  ilo?: string | null;
+  cisco?: string | null;
+  netapp?: Record<string, unknown> | null;
+  vcenter?: string | null;
+};
+
+export type LabProfileFeatures = {
+  netapp_enabled: boolean;
+  vcenter_enabled: boolean;
+  firmware_gate_enabled: boolean;
+  build_verification_enabled: boolean;
+  storage_protocol: string;
+  disable_ipv6: boolean;
+  enable_snmp: boolean;
+  enable_ntp: boolean;
+  enable_dns: boolean;
+  netapp_disabled_reason: string | null;
+  vcenter_disabled_reason: string | null;
 };
 
 export type LabProfileRevision = {
@@ -404,6 +440,15 @@ export type LabProfileRevision = {
   saved_at: string;
   name: string;
   description: string;
+  profile_topology: string;
+  subnet_cidr: string | null;
+  gateway: string | null;
+  dns: string[];
+  ntp: string[];
+  vlan_id: string | null;
+  mtu: number | null;
+  devices: LabProfileDevices;
+  features: LabProfileFeatures;
   global_settings: LabGlobalSettings;
   address_plan: LabAddressPlan;
 };
@@ -412,8 +457,21 @@ export type LabProfile = {
   id: string;
   name: string;
   description: string;
+  profile_topology: string;
+  subnet_cidr: string | null;
+  gateway: string | null;
+  dns: string[];
+  ntp: string[];
+  vlan_id: string | null;
+  mtu: number | null;
+  devices: LabProfileDevices;
+  features: LabProfileFeatures;
   global_settings: LabGlobalSettings;
   address_plan: LabAddressPlan;
+  resolved_address_plan: LabAddressPlan;
+  not_in_scope_stages: string[];
+  mismatch_warnings: Array<Record<string, unknown>>;
+  fix_guidance: Array<Record<string, unknown>>;
   source: string;
   version: number;
   active: boolean;
@@ -426,12 +484,33 @@ export type LabProfile = {
 export type LabProfileWrite = {
   name: string;
   description?: string | null;
+  profile_topology?: string | null;
+  subnet_cidr?: string | null;
+  gateway?: string | null;
+  dns?: string[];
+  ntp?: string[];
+  vlan_id?: string | null;
+  mtu?: number | null;
+  devices?: LabProfileDevices;
+  features?: LabProfileFeatures;
   global_settings: LabGlobalSettings;
   address_plan: LabAddressPlan;
 };
 
+export type LabProfileContext = {
+  active_profile: LabProfile;
+  topology: string;
+  resolved_address_plan: LabAddressPlan;
+  enabled_features: LabProfileFeatures;
+  disabled_features: Record<string, string>;
+  not_in_scope_stages: string[];
+  mismatch_warnings: Array<Record<string, unknown>>;
+  fix_guidance: Array<Record<string, unknown>>;
+};
+
 export type LabProfileList = {
   active_profile: LabProfile;
+  active_context: LabProfileContext;
   runtime_profile: LabProfile;
   profiles: LabProfile[];
   subnet_options: LabSubnetOption[];
@@ -549,6 +628,11 @@ export type ControlLabProfile = {
   active_profile_name: string;
   source: string;
   version: number;
+  topology: string | null;
+  features: Record<string, unknown>;
+  not_in_scope_stages: string[];
+  mismatch_warnings: Array<Record<string, unknown>>;
+  fix_guidance: Array<Record<string, unknown>>;
   global_settings: LabGlobalSettings;
   address_plan: LabAddressPlan;
   known_lab_profile: Record<string, unknown>;
@@ -1137,6 +1221,106 @@ export type IloSetupPlanPreview = {
   blockers: string[];
   warnings: string[];
   removable_warnings: string[];
+};
+
+export type IloBaselineKitProfile = {
+  kit_id: string;
+  support_unit: string;
+  subnet_mask: string;
+  gateway: string;
+  dom_dc: string;
+  derived_subnet: string;
+  source_type: string;
+  checked_at: string | null;
+  freshness: string;
+  recheck_command: string;
+};
+
+export type IloBaselineDiscoveryRange = {
+  source_subnet: string;
+  default_start_host: string;
+  default_end_host: string;
+  addresses: string[];
+  override_supported: boolean;
+  override_active: boolean;
+  source_type: string;
+  checked_at: string | null;
+  freshness: string;
+  recheck_command: string;
+};
+
+export type IloBaselineReadinessCheck = {
+  name: string;
+  status: string;
+  current: string;
+  desired: string;
+  source_type: string;
+  checked_at: string | null;
+  freshness: string;
+  message: string;
+  next_action: string;
+};
+
+export type IloBaselineSection = {
+  id: string;
+  title: string;
+  status: string;
+  items: Record<string, unknown>;
+  secret_refs: string[];
+  notes: string[];
+};
+
+export type IloBaselinePlanRow = {
+  section: string;
+  item: string;
+  current: unknown;
+  desired: unknown;
+  action: string;
+  severity: string;
+  message: string;
+};
+
+export type IloBaselineBlocker = {
+  problem: string;
+  source: string;
+  current_value: string;
+  expected_value: string;
+  where_to_fix: string;
+  recommended_action: string;
+  copyable_command: string | null;
+  recheck_command: string;
+  evidence_links: string[];
+};
+
+export type IloBaselineReadiness = {
+  provider_id: string;
+  source_provider_id: string;
+  provider_mode: string;
+  generated_at: string;
+  source_type: string;
+  checked_at: string | null;
+  freshness: string;
+  kit_profile: IloBaselineKitProfile;
+  discovery_range: IloBaselineDiscoveryRange;
+  connection_readiness: IloBaselineReadinessCheck[];
+  current_state: Record<string, unknown>;
+  comparison_rows: IloBaselinePlanRow[];
+  reset_required: boolean;
+  apply_enabled: boolean;
+  apply_reason: string;
+  blockers: IloBaselineBlocker[];
+  warnings: string[];
+  next_action: string;
+};
+
+export type IloBaselinePreview = IloBaselineReadiness & {
+  expected_baseline_sections: IloBaselineSection[];
+  reports_artifacts: Array<{
+    kind: string;
+    title: string;
+    status: string;
+    note: string;
+  }>;
 };
 
 export type HpeRaidVolumeIntent = {

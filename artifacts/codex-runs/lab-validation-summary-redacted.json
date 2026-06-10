@@ -1,0 +1,859 @@
+{
+  "overall_status": "blocked",
+  "progress_counts": {
+    "ready": 2,
+    "partial": 4,
+    "blocked": 4,
+    "not_configured": 1,
+    "not_checked": 1,
+    "warning": 1
+  },
+  "top_blocker": {
+    "problem": "NetApp ONTAP cluster setup has not been applied yet.",
+    "source": "NetApp console/runtime state",
+    "current_value": "cluster_setup_wizard",
+    "expected_value": "ONTAP cluster configured with management access",
+    "where_to_fix": "Run Center / NetApp",
+    "recommended_action": "Complete guarded NetApp setup planning before any vCenter datastore work.",
+    "copyable_command": "make provider-lab-netapp-validate-setup",
+    "recheck_command": "make provider-lab-netapp-validate-setup",
+    "evidence_links": [
+      "artifacts/codex-runs/netapp-live-state-report.md",
+      "artifacts/codex-runs/netapp-setup-plan-report.md",
+      "artifacts/codex-runs/netapp-setup-preview-report.md"
+    ],
+    "component_id": "netapp-ontap-cluster",
+    "component_label": "NetApp ONTAP / Cluster"
+  },
+  "validation_items": [
+    {
+      "id": "lab-profile",
+      "label": "Lab Profile",
+      "category": "Profile",
+      "stage": "Profile",
+      "status": "warning",
+      "current_state": "Runtime lab profile uses subnet 192.168.1.0/24.",
+      "desired_state": "Lab profile contains iLO, server NIC, ESXi, Cisco, Ansible, and NetApp targets.",
+      "setup_summary": "Known runtime lab addressing is loaded.",
+      "next_action": "Refresh the saved active Lab Profile if it should replace the runtime profile.",
+      "login_hint": "No login target; profile defines addresses only.",
+      "management_url": null,
+      "ssh_target": null,
+      "proof_points": [
+        "Lab subnet: 192.168.1.0/24",
+        "iLO: 192.168.1.201",
+        "Server NIC: 192.168.1.202",
+        "ESXi: 192.168.1.203",
+        "Cisco: 192.168.1.204",
+        "Ansible/control host: 192.168.1.205",
+        "NetApp controller A SP: 192.168.1.210",
+        "NetApp controller B SP: 192.168.1.211",
+        "NetApp cluster: 192.168.1.220",
+        "NetApp node A: 192.168.1.221",
+        "NetApp node B: 192.168.1.222",
+        "NetApp SVM: 192.168.1.223",
+        "NetApp NFS LIFs: 192.168.1.230, 192.168.1.231",
+        "Saved profile `TDC-LAB` remains historical context only until refreshed."
+      ],
+      "evidence_artifacts": [
+        "artifacts/codex-runs/lab-ip-profile-update-report.md",
+        "artifacts/codex-runs/lab-ip-profile-hardening-report.md"
+      ],
+      "evidence_collapsed_by_default": true,
+      "last_checked": "2026-06-10T00:37:36.522496+00:00",
+      "source_type": "live_cached",
+      "freshness": "current",
+      "blockers": [],
+      "warnings": [
+        "Active saved profile `TDC-LAB` uses subnet 10.10.8.0/24; validation uses runtime lab subnet 192.168.1.0/24."
+      ],
+      "recheck_command": "make provider-lab-validation",
+      "linked_workflow_action": {
+        "action_id": "lab-profile.view-active",
+        "label": "View Active Profile",
+        "stage": "lab-profile",
+        "command": null,
+        "run_endpoint": "/api/v1/workflows/actions/lab-profile.view-active/run",
+        "ui_run_supported": true
+      }
+    },
+    {
+      "id": "firmware-compliance",
+      "label": "Firmware Compliance",
+      "category": "Preflight",
+      "stage": "Preflight",
+      "status": "partial",
+      "current_state": "Historical firmware compliance evidence is available.",
+      "desired_state": "Firmware inventory and compliance are refreshed before handoff.",
+      "setup_summary": "Firmware reports are available as supporting evidence.",
+      "next_action": "Refresh firmware compliance when certification is in scope.",
+      "login_hint": "No direct login; use firmware workflow evidence.",
+      "management_url": null,
+      "ssh_target": null,
+      "proof_points": [
+        "Compliance evidence belongs in the evidence drawer."
+      ],
+      "evidence_artifacts": [
+        "artifacts/codex-runs/firmware-compliance-report.md",
+        "artifacts/codex-runs/firmware-compliance-summary-redacted.json",
+        "artifacts/codex-runs/toolchain-availability-report.md"
+      ],
+      "evidence_collapsed_by_default": true,
+      "last_checked": "2026-06-09T23:22:04.027273+00:00",
+      "source_type": "historical_artifact",
+      "freshness": "historical",
+      "blockers": [],
+      "warnings": [
+        "Firmware evidence is historical until rerun."
+      ],
+      "recheck_command": "make provider-lab-firmware-compliance",
+      "linked_workflow_action": {
+        "action_id": "firmware.compliance-check",
+        "label": "Check Compliance",
+        "stage": "firmware",
+        "command": "make provider-lab-firmware-compliance",
+        "run_endpoint": "/api/v1/workflows/actions/firmware.compliance-check/run",
+        "ui_run_supported": true
+      }
+    },
+    {
+      "id": "cisco-network",
+      "label": "Cisco Network",
+      "category": "Network",
+      "stage": "Network",
+      "status": "ready",
+      "current_state": "Management SSH is configured.",
+      "desired_state": "Cisco management reachable at 192.168.1.204.",
+      "setup_summary": "Cisco management is ready for SSH validation.",
+      "next_action": "Validate SSH/SCP from Run Center.",
+      "login_hint": "ssh admin@192.168.1.204",
+      "management_url": null,
+      "ssh_target": "admin@192.168.1.204",
+      "proof_points": [
+        "Cisco login hint uses a username label only and does not expose credentials.",
+        "Console-first evidence stays in the evidence drawer."
+      ],
+      "evidence_artifacts": [
+        "artifacts/codex-runs/serial-console-discovery-report.md",
+        "artifacts/codex-runs/cisco-console-ethernet-readiness-report.md",
+        "artifacts/codex-runs/cisco-bootstrap-apply-report.md"
+      ],
+      "evidence_collapsed_by_default": true,
+      "last_checked": "2026-06-09T22:26:02.022895+00:00",
+      "source_type": "live_cached",
+      "freshness": "current",
+      "blockers": [],
+      "warnings": [],
+      "recheck_command": "make provider-lab-cisco-console-ethernet-readiness",
+      "linked_workflow_action": {
+        "action_id": "cisco.validate-ssh-scp",
+        "label": "Validate SSH/SCP",
+        "stage": "cisco",
+        "command": "make provider-lab-cisco-console-ethernet-readiness",
+        "run_endpoint": "/api/v1/workflows/actions/cisco.validate-ssh-scp/run",
+        "ui_run_supported": true
+      }
+    },
+    {
+      "id": "hpe-ilo",
+      "label": "HPE / iLO",
+      "category": "Management",
+      "stage": "Management",
+      "status": "partial",
+      "current_state": "iLO target is known; live inventory evidence must be refreshed for handoff.",
+      "desired_state": "iLO reachable and authenticated at 192.168.1.201.",
+      "setup_summary": "iLO management target is known; credentials are reported by field presence only.",
+      "next_action": "Run iLO reachability before auth or inventory.",
+      "login_hint": "https://192.168.1.201",
+      "management_url": "https://192.168.1.201",
+      "ssh_target": null,
+      "proof_points": [
+        "Use GET-only/reachability evidence before inventory or write-capable actions."
+      ],
+      "evidence_artifacts": [
+        "artifacts/codex-runs/ilo-real-run-report.md",
+        "artifacts/codex-runs/ilo-local-readonly-smoke-report.md"
+      ],
+      "evidence_collapsed_by_default": true,
+      "last_checked": "2026-06-05T16:32:55.791731+00:00",
+      "source_type": "historical_artifact",
+      "freshness": "historical",
+      "blockers": [],
+      "warnings": [],
+      "recheck_command": "make provider-lab-ilo-reachability",
+      "linked_workflow_action": {
+        "action_id": "ilo.reachability",
+        "label": "Reachability",
+        "stage": "ilo",
+        "command": "make provider-lab-ilo-reachability",
+        "run_endpoint": "/api/v1/workflows/actions/ilo.reachability/run",
+        "ui_run_supported": true
+      }
+    },
+    {
+      "id": "raid-storage",
+      "label": "RAID / Storage",
+      "category": "Server",
+      "stage": "Server",
+      "status": "partial",
+      "current_state": "RAID evidence exists as supporting proof.",
+      "desired_state": "Server storage layout planned and validated before ESXi handoff.",
+      "setup_summary": "RAID/storage evidence is supporting proof, not a primary blocker.",
+      "next_action": "Refresh RAID plan/pending state before ESXi install work.",
+      "login_hint": "No separate login; use iLO/Smart Array workflow.",
+      "management_url": null,
+      "ssh_target": null,
+      "proof_points": [
+        "RAID apply remains destructive and gated outside this page."
+      ],
+      "evidence_artifacts": [
+        "artifacts/codex-runs/hpe-raid-plan-report.md",
+        "artifacts/codex-runs/hpe-raid-pending-report.md"
+      ],
+      "evidence_collapsed_by_default": true,
+      "last_checked": "2026-06-07T00:03:30.945947+00:00",
+      "source_type": "historical_artifact",
+      "freshness": "historical",
+      "blockers": [],
+      "warnings": [
+        "RAID evidence is historical until refreshed."
+      ],
+      "recheck_command": "make provider-lab-hpe-raid-plan",
+      "linked_workflow_action": {
+        "action_id": "raid.plan",
+        "label": "Plan",
+        "stage": "raid",
+        "command": "make provider-lab-hpe-raid-plan",
+        "run_endpoint": "/api/v1/workflows/actions/raid.plan/run",
+        "ui_run_supported": false
+      }
+    },
+    {
+      "id": "esxi-host",
+      "label": "ESXi Host",
+      "category": "Compute",
+      "stage": "Compute",
+      "status": "partial",
+      "current_state": "ESXi management target is known; readiness proof needs refresh.",
+      "desired_state": "ESXi management reachable at 192.168.1.203.",
+      "setup_summary": "ESXi management is planned/configured enough to show the validation target.",
+      "next_action": "Refresh ESXi install/management readiness.",
+      "login_hint": "https://192.168.1.203",
+      "management_url": "https://192.168.1.203",
+      "ssh_target": "root@192.168.1.203",
+      "proof_points": [
+        "ESXi evidence should be refreshed before datastore handoff."
+      ],
+      "evidence_artifacts": [
+        "artifacts/codex-runs/esxi-install-readiness-report.md",
+        "artifacts/codex-runs/esxi-installer-boot-report.md"
+      ],
+      "evidence_collapsed_by_default": true,
+      "last_checked": "2026-06-08T16:45:39.076584+00:00",
+      "source_type": "historical_artifact",
+      "freshness": "historical",
+      "blockers": [],
+      "warnings": [],
+      "recheck_command": "make provider-lab-esxi-install-readiness",
+      "linked_workflow_action": {
+        "action_id": "esxi.readiness",
+        "label": "Readiness",
+        "stage": "esxi",
+        "command": "make provider-lab-esxi-install-readiness",
+        "run_endpoint": "/api/v1/workflows/actions/esxi.readiness/run",
+        "ui_run_supported": true
+      }
+    },
+    {
+      "id": "vcenter",
+      "label": "vCenter",
+      "category": "Compute",
+      "stage": "Compute",
+      "status": "not_configured",
+      "current_state": "vCenter target is not configured yet.",
+      "desired_state": "vCenter/govc target and credentials configured for datastore validation.",
+      "setup_summary": "vCenter/govc is not configured yet.",
+      "next_action": "Configure vCenter/govc fields, then rerun vCenter-NetApp readiness.",
+      "login_hint": "VCENTER_HOST / GOVC_URL not configured; credentials not configured: VCENTER_HOST/GOVC_URL, VCENTER_USERNAME/GOVC_USERNAME, VCENTER_PASSWORD/GOVC_PASSWORD",
+      "management_url": null,
+      "ssh_target": null,
+      "proof_points": [
+        "vCenter credentials are shown by field presence only."
+      ],
+      "evidence_artifacts": [],
+      "evidence_collapsed_by_default": true,
+      "last_checked": null,
+      "source_type": "not_checked",
+      "freshness": "not_checked",
+      "blockers": [],
+      "warnings": [
+        "Credentials not configured: VCENTER_HOST/GOVC_URL, VCENTER_USERNAME/GOVC_USERNAME, VCENTER_PASSWORD/GOVC_PASSWORD"
+      ],
+      "recheck_command": "make provider-lab-vcenter-netapp-readiness",
+      "linked_workflow_action": {
+        "action_id": "vcenter-netapp.readiness",
+        "label": "vCenter-NetApp Readiness",
+        "stage": "netapp",
+        "command": "make provider-lab-vcenter-netapp-readiness",
+        "run_endpoint": "/api/v1/workflows/actions/vcenter-netapp.readiness/run",
+        "ui_run_supported": true
+      }
+    },
+    {
+      "id": "netapp-console",
+      "label": "NetApp Console",
+      "category": "Storage",
+      "stage": "Storage",
+      "status": "ready",
+      "current_state": "cluster_setup_wizard",
+      "desired_state": "Console autodiscovery and safe state read are available before setup.",
+      "setup_summary": "Console autodiscovery works; NetApp setup has not been applied yet.",
+      "next_action": "Review setup plan; do not enter setup commands without a guarded apply workflow.",
+      "login_hint": "/dev/serial/by-id/usb-Microchip_Technology_Inc._MCP2221_USB-I2C_UART_Combo-if00 @ 115200",
+      "management_url": null,
+      "ssh_target": null,
+      "proof_points": [
+        "Console port is the MCP2221 USB serial adapter when discovered.",
+        "No NetApp setup, storage, reboot, wipe, or upgrade command is part of validation."
+      ],
+      "evidence_artifacts": [
+        "artifacts/codex-runs/netapp-console-autodiscovery-report.md",
+        "artifacts/codex-runs/netapp-console-state-report.md",
+        "artifacts/codex-runs/netapp-console-login-state-report.md"
+      ],
+      "evidence_collapsed_by_default": true,
+      "last_checked": "2026-06-10T00:35:51.104787+00:00",
+      "source_type": "historical_artifact",
+      "freshness": "historical",
+      "blockers": [],
+      "warnings": [
+        "Console evidence is supporting proof; rerun read-state for fresh handoff."
+      ],
+      "recheck_command": "make provider-lab-netapp-console-read-state",
+      "linked_workflow_action": {
+        "action_id": "netapp.console-read-state",
+        "label": "Console Watch / Read State",
+        "stage": "netapp",
+        "command": "make provider-lab-netapp-console-read-state",
+        "run_endpoint": "/api/v1/workflows/actions/netapp.console-read-state/run",
+        "ui_run_supported": true
+      }
+    },
+    {
+      "id": "netapp-ontap-cluster",
+      "label": "NetApp ONTAP / Cluster",
+      "category": "Storage",
+      "stage": "Storage",
+      "status": "blocked",
+      "current_state": "cluster_setup_wizard",
+      "desired_state": "ONTAP cluster management reachable at 192.168.1.220.",
+      "setup_summary": "ONTAP cluster is still in setup wizard.",
+      "next_action": "Run NetApp setup preview and resolve missing intent before REST/SSH/NFS readiness.",
+      "login_hint": "https://192.168.1.220; credentials not configured: NETAPP_API_USERNAME, NETAPP_API_PASSWORD",
+      "management_url": "https://192.168.1.220",
+      "ssh_target": "admin@192.168.1.220",
+      "proof_points": [
+        "NetApp REST/SSH are not configured until ONTAP setup completes.",
+        "After setup, log in at https://192.168.1.220 or SSH to admin@192.168.1.220."
+      ],
+      "evidence_artifacts": [
+        "artifacts/codex-runs/netapp-live-state-report.md",
+        "artifacts/codex-runs/netapp-setup-plan-report.md",
+        "artifacts/codex-runs/netapp-setup-preview-report.md"
+      ],
+      "evidence_collapsed_by_default": true,
+      "last_checked": "2026-06-10T00:36:52.676283+00:00",
+      "source_type": "live_cached",
+      "freshness": "current",
+      "blockers": [
+        {
+          "problem": "NetApp ONTAP cluster setup has not been applied yet.",
+          "source": "NetApp console/runtime state",
+          "current_value": "cluster_setup_wizard",
+          "expected_value": "ONTAP cluster configured with management access",
+          "where_to_fix": "Run Center / NetApp",
+          "recommended_action": "Complete guarded NetApp setup planning before any vCenter datastore work.",
+          "copyable_command": "make provider-lab-netapp-validate-setup",
+          "recheck_command": "make provider-lab-netapp-validate-setup",
+          "evidence_links": [
+            "artifacts/codex-runs/netapp-live-state-report.md",
+            "artifacts/codex-runs/netapp-setup-plan-report.md",
+            "artifacts/codex-runs/netapp-setup-preview-report.md"
+          ]
+        }
+      ],
+      "warnings": [],
+      "recheck_command": "make provider-lab-netapp-validate-setup",
+      "linked_workflow_action": {
+        "action_id": "netapp.validate-setup",
+        "label": "Validate NetApp Setup",
+        "stage": "netapp",
+        "command": "make provider-lab-netapp-validate-setup",
+        "run_endpoint": "/api/v1/workflows/actions/netapp.validate-setup/run",
+        "ui_run_supported": false
+      }
+    },
+    {
+      "id": "netapp-ontap-upgrade",
+      "label": "NetApp ONTAP Upgrade",
+      "category": "Storage",
+      "stage": "Storage",
+      "status": "blocked",
+      "current_state": "Disabled: NetApp not configured",
+      "desired_state": "ONTAP upgrade inventory, image/package, validation, and guarded apply gates are ready.",
+      "setup_summary": "Current ONTAP version `unknown`; target `not selected`.",
+      "next_action": "Resolve blockers, run validation, and keep upgrade apply disabled until all gates pass.",
+      "login_hint": "After setup: https://192.168.1.220 and admin@192.168.1.220; values stay redacted.",
+      "management_url": "https://192.168.1.220",
+      "ssh_target": "admin@192.168.1.220",
+      "proof_points": [
+        "Current ONTAP version: unknown",
+        "Upgrade target: not selected",
+        "Upgrade button state: Disabled: NetApp not configured",
+        "Upgrade apply requires explicit flags and pre-upgrade validation."
+      ],
+      "evidence_artifacts": [
+        "artifacts/codex-runs/netapp-upgrade-inventory-report.md",
+        "artifacts/codex-runs/netapp-ontap-upgrade-plan-report.md",
+        "artifacts/codex-runs/netapp-ontap-upgrade-validation-report.md"
+      ],
+      "evidence_collapsed_by_default": true,
+      "last_checked": "2026-06-10T00:37:11.765050+00:00",
+      "source_type": "historical_artifact",
+      "freshness": "historical",
+      "blockers": [
+        {
+          "problem": "NetApp cluster management is not configured/reachable yet.",
+          "source": "NetApp ONTAP Upgrade Center",
+          "current_value": "Disabled: NetApp not configured",
+          "expected_value": "Upgrade button state Ready to upgrade",
+          "where_to_fix": "Run Center / NetApp / Upgrade Center",
+          "recommended_action": "Run ONTAP upgrade inventory, plan, and validation after NetApp setup completes.",
+          "copyable_command": "make provider-lab-netapp-ontap-upgrade-validate",
+          "recheck_command": "make provider-lab-netapp-ontap-upgrade-validate",
+          "evidence_links": [
+            "artifacts/codex-runs/netapp-upgrade-inventory-report.md",
+            "artifacts/codex-runs/netapp-ontap-upgrade-plan-report.md",
+            "artifacts/codex-runs/netapp-ontap-upgrade-validation-report.md"
+          ]
+        },
+        {
+          "problem": "NetApp API access values are missing; keep values in .env.local.real-lab.",
+          "source": "NetApp ONTAP Upgrade Center",
+          "current_value": "Disabled: NetApp not configured",
+          "expected_value": "Upgrade button state Ready to upgrade",
+          "where_to_fix": "Run Center / NetApp / Upgrade Center",
+          "recommended_action": "Run ONTAP upgrade inventory, plan, and validation after NetApp setup completes.",
+          "copyable_command": "make provider-lab-netapp-ontap-upgrade-validate",
+          "recheck_command": "make provider-lab-netapp-ontap-upgrade-validate",
+          "evidence_links": [
+            "artifacts/codex-runs/netapp-upgrade-inventory-report.md",
+            "artifacts/codex-runs/netapp-ontap-upgrade-plan-report.md",
+            "artifacts/codex-runs/netapp-ontap-upgrade-validation-report.md"
+          ]
+        },
+        {
+          "problem": "Current ONTAP version is unknown until ONTAP/API/CLI discovery can run.",
+          "source": "NetApp ONTAP Upgrade Center",
+          "current_value": "Disabled: NetApp not configured",
+          "expected_value": "Upgrade button state Ready to upgrade",
+          "where_to_fix": "Run Center / NetApp / Upgrade Center",
+          "recommended_action": "Run ONTAP upgrade inventory, plan, and validation after NetApp setup completes.",
+          "copyable_command": "make provider-lab-netapp-ontap-upgrade-validate",
+          "recheck_command": "make provider-lab-netapp-ontap-upgrade-validate",
+          "evidence_links": [
+            "artifacts/codex-runs/netapp-upgrade-inventory-report.md",
+            "artifacts/codex-runs/netapp-ontap-upgrade-plan-report.md",
+            "artifacts/codex-runs/netapp-ontap-upgrade-validation-report.md"
+          ]
+        },
+        {
+          "problem": "No local ONTAP image package is available from MEDIA_INVENTORY_DIRS or artifacts/Media.",
+          "source": "NetApp ONTAP Upgrade Center",
+          "current_value": "Disabled: NetApp not configured",
+          "expected_value": "Upgrade button state Ready to upgrade",
+          "where_to_fix": "Run Center / NetApp / Upgrade Center",
+          "recommended_action": "Run ONTAP upgrade inventory, plan, and validation after NetApp setup completes.",
+          "copyable_command": "make provider-lab-netapp-ontap-upgrade-validate",
+          "recheck_command": "make provider-lab-netapp-ontap-upgrade-validate",
+          "evidence_links": [
+            "artifacts/codex-runs/netapp-upgrade-inventory-report.md",
+            "artifacts/codex-runs/netapp-ontap-upgrade-plan-report.md",
+            "artifacts/codex-runs/netapp-ontap-upgrade-validation-report.md"
+          ]
+        },
+        {
+          "problem": "No target ONTAP version is selected.",
+          "source": "NetApp ONTAP Upgrade Center",
+          "current_value": "Disabled: NetApp not configured",
+          "expected_value": "Upgrade button state Ready to upgrade",
+          "where_to_fix": "Run Center / NetApp / Upgrade Center",
+          "recommended_action": "Run ONTAP upgrade inventory, plan, and validation after NetApp setup completes.",
+          "copyable_command": "make provider-lab-netapp-ontap-upgrade-validate",
+          "recheck_command": "make provider-lab-netapp-ontap-upgrade-validate",
+          "evidence_links": [
+            "artifacts/codex-runs/netapp-upgrade-inventory-report.md",
+            "artifacts/codex-runs/netapp-ontap-upgrade-plan-report.md",
+            "artifacts/codex-runs/netapp-ontap-upgrade-validation-report.md"
+          ]
+        },
+        {
+          "problem": "No local ONTAP image/package is selected.",
+          "source": "NetApp ONTAP Upgrade Center",
+          "current_value": "Disabled: NetApp not configured",
+          "expected_value": "Upgrade button state Ready to upgrade",
+          "where_to_fix": "Run Center / NetApp / Upgrade Center",
+          "recommended_action": "Run ONTAP upgrade inventory, plan, and validation after NetApp setup completes.",
+          "copyable_command": "make provider-lab-netapp-ontap-upgrade-validate",
+          "recheck_command": "make provider-lab-netapp-ontap-upgrade-validate",
+          "evidence_links": [
+            "artifacts/codex-runs/netapp-upgrade-inventory-report.md",
+            "artifacts/codex-runs/netapp-ontap-upgrade-plan-report.md",
+            "artifacts/codex-runs/netapp-ontap-upgrade-validation-report.md"
+          ]
+        },
+        {
+          "problem": "Pre-upgrade validation has not passed.",
+          "source": "NetApp ONTAP Upgrade Center",
+          "current_value": "Disabled: NetApp not configured",
+          "expected_value": "Upgrade button state Ready to upgrade",
+          "where_to_fix": "Run Center / NetApp / Upgrade Center",
+          "recommended_action": "Run ONTAP upgrade inventory, plan, and validation after NetApp setup completes.",
+          "copyable_command": "make provider-lab-netapp-ontap-upgrade-validate",
+          "recheck_command": "make provider-lab-netapp-ontap-upgrade-validate",
+          "evidence_links": [
+            "artifacts/codex-runs/netapp-upgrade-inventory-report.md",
+            "artifacts/codex-runs/netapp-ontap-upgrade-plan-report.md",
+            "artifacts/codex-runs/netapp-ontap-upgrade-validation-report.md"
+          ]
+        },
+        {
+          "problem": "Manual Upgrade Advisor/Health Checker plan is not attached.",
+          "source": "NetApp ONTAP Upgrade Center",
+          "current_value": "Disabled: NetApp not configured",
+          "expected_value": "Upgrade button state Ready to upgrade",
+          "where_to_fix": "Run Center / NetApp / Upgrade Center",
+          "recommended_action": "Run ONTAP upgrade inventory, plan, and validation after NetApp setup completes.",
+          "copyable_command": "make provider-lab-netapp-ontap-upgrade-validate",
+          "recheck_command": "make provider-lab-netapp-ontap-upgrade-validate",
+          "evidence_links": [
+            "artifacts/codex-runs/netapp-upgrade-inventory-report.md",
+            "artifacts/codex-runs/netapp-ontap-upgrade-plan-report.md",
+            "artifacts/codex-runs/netapp-ontap-upgrade-validation-report.md"
+          ]
+        }
+      ],
+      "warnings": [
+        "Expected ONTAP commands/API calls are shown for review only.",
+        "Use NetApp Upgrade Advisor/Health Checker output before applying a real upgrade."
+      ],
+      "recheck_command": "make provider-lab-netapp-ontap-upgrade-validate",
+      "linked_workflow_action": {
+        "action_id": "netapp.ontap-upgrade-validate",
+        "label": "Validate ONTAP Upgrade",
+        "stage": "netapp",
+        "command": "make provider-lab-netapp-ontap-upgrade-validate",
+        "run_endpoint": "/api/v1/workflows/actions/netapp.ontap-upgrade-validate/run",
+        "ui_run_supported": false
+      }
+    },
+    {
+      "id": "netapp-nfs",
+      "label": "NetApp NFS",
+      "category": "Storage",
+      "stage": "Storage",
+      "status": "blocked",
+      "current_state": "NFS volume/export not created yet.",
+      "desired_state": "NFS LIFs 192.168.1.230, 192.168.1.231 export /esxi_datastore_01.",
+      "setup_summary": "Planned datastore backing volume `esxi_datastore_01` is not live yet.",
+      "next_action": "Create/validate NFS after ONTAP setup completes.",
+      "login_hint": "Datastore backing target: netapp_nfs_ds01 via 192.168.1.230",
+      "management_url": null,
+      "ssh_target": null,
+      "proof_points": [
+        "NFS datastore is planned only until ONTAP/NFS proof exists."
+      ],
+      "evidence_artifacts": [
+        "artifacts/codex-runs/netapp-nfs-vcenter-readiness-report.md"
+      ],
+      "evidence_collapsed_by_default": true,
+      "last_checked": "2026-06-09T22:40:16.732826+00:00",
+      "source_type": "historical_artifact",
+      "freshness": "historical",
+      "blockers": [
+        {
+          "problem": "NetApp NFS datastore backing volume/export is not created yet.",
+          "source": "NetApp NFS validation",
+          "current_value": "not created",
+          "expected_value": "NFS volume/export for datastore netapp_nfs_ds01",
+          "where_to_fix": "Run Center / NetApp",
+          "recommended_action": "Finish NetApp ONTAP setup and NFS planning first.",
+          "copyable_command": "make provider-lab-vcenter-netapp-readiness",
+          "recheck_command": "make provider-lab-vcenter-netapp-readiness",
+          "evidence_links": [
+            "artifacts/codex-runs/netapp-nfs-vcenter-readiness-report.md"
+          ]
+        }
+      ],
+      "warnings": [],
+      "recheck_command": "make provider-lab-vcenter-netapp-readiness",
+      "linked_workflow_action": {
+        "action_id": "vcenter-netapp.readiness",
+        "label": "vCenter-NetApp Readiness",
+        "stage": "netapp",
+        "command": "make provider-lab-vcenter-netapp-readiness",
+        "run_endpoint": "/api/v1/workflows/actions/vcenter-netapp.readiness/run",
+        "ui_run_supported": true
+      }
+    },
+    {
+      "id": "vcenter-netapp-datastore",
+      "label": "vCenter-NetApp Datastore",
+      "category": "Storage",
+      "stage": "Storage",
+      "status": "blocked",
+      "current_state": "blocked_by_prior_stage",
+      "desired_state": "Datastore `netapp_nfs_ds01` mounted through vCenter/ESXi.",
+      "setup_summary": "vCenter-NetApp readiness is blocked by prior NetApp/ONTAP/NFS setup.",
+      "next_action": "Complete NetApp ONTAP setup and NFS readiness before vCenter datastore work.",
+      "login_hint": "vCenter: VCENTER_HOST / GOVC_URL not configured; datastore: netapp_nfs_ds01",
+      "management_url": null,
+      "ssh_target": null,
+      "proof_points": [
+        "Datastore add command preview is available in the detail panel.",
+        "Future apply is write-capable and intentionally disabled."
+      ],
+      "evidence_artifacts": [
+        "artifacts/codex-runs/vcenter-netapp-readiness-report.md",
+        "artifacts/codex-runs/vcenter-netapp-datastore-plan-report.md"
+      ],
+      "evidence_collapsed_by_default": true,
+      "last_checked": "2026-06-10T00:37:36.542482+00:00",
+      "source_type": "live_cached",
+      "freshness": "not_checked",
+      "blockers": [
+        {
+          "problem": "NetApp is still at cluster_setup_wizard; ONTAP, NFS, and datastore readiness are blocked by prior setup.",
+          "source": "vCenter-NetApp readiness",
+          "current_value": "cluster_setup_wizard",
+          "expected_value": "vCenter, ESXi, ONTAP, and NFS datastore prerequisites ready",
+          "where_to_fix": "Run Center / NetApp",
+          "recommended_action": "Complete NetApp ONTAP setup and NFS readiness before vCenter datastore work.",
+          "copyable_command": "make provider-lab-vcenter-netapp-readiness",
+          "recheck_command": "make provider-lab-vcenter-netapp-readiness",
+          "evidence_links": [
+            "artifacts/codex-runs/vcenter-netapp-readiness-report.md",
+            "artifacts/codex-runs/vcenter-netapp-datastore-plan-report.md"
+          ]
+        }
+      ],
+      "warnings": [
+        "Preview only. No ONTAP, vCenter, ESXi, NFS, datastore, or storage write action is run.",
+        "NetApp API credential fields are missing: NETAPP_API_USERNAME, NETAPP_API_PASSWORD.",
+        "Reachability checks were not run for this API/readiness read; use the make target to refresh port checks."
+      ],
+      "recheck_command": "make provider-lab-vcenter-netapp-readiness",
+      "linked_workflow_action": {
+        "action_id": "vcenter-netapp.readiness",
+        "label": "vCenter-NetApp Readiness",
+        "stage": "netapp",
+        "command": "make provider-lab-vcenter-netapp-readiness",
+        "run_endpoint": "/api/v1/workflows/actions/vcenter-netapp.readiness/run",
+        "ui_run_supported": true
+      }
+    },
+    {
+      "id": "build-verification",
+      "label": "Build Verification",
+      "category": "Certification",
+      "stage": "Certification",
+      "status": "not_checked",
+      "current_state": "not_run",
+      "desired_state": "Build Verification has current redacted certification evidence.",
+      "setup_summary": "Current live Build Verification has not run in this runtime. The cached test-fixture summary is historical evidence only.",
+      "next_action": "Run `make provider-lab-build-verification-live`.",
+      "login_hint": "No login target; use proof/evidence reports.",
+      "management_url": null,
+      "ssh_target": null,
+      "proof_points": [
+        "Build Verification evidence is redacted and collapsed by default."
+      ],
+      "evidence_artifacts": [
+        "artifacts/codex-runs/build-verification-report.md",
+        "artifacts/codex-runs/build-verification-summary-redacted.json",
+        "artifacts/codex-runs/build-verification-evidence-report.md"
+      ],
+      "evidence_collapsed_by_default": true,
+      "last_checked": "2026-06-09T23:22:04.025908+00:00",
+      "source_type": "not_checked",
+      "freshness": "unknown",
+      "blockers": [],
+      "warnings": [],
+      "recheck_command": "make provider-lab-build-verification",
+      "linked_workflow_action": {
+        "action_id": "build-verification.run-full",
+        "label": "Run Full Verification",
+        "stage": "build-verification",
+        "command": "make provider-lab-build-verification",
+        "run_endpoint": "/api/v1/workflows/actions/build-verification.run-full/run",
+        "ui_run_supported": true
+      }
+    }
+  ],
+  "proof_links": [
+    {
+      "component_id": "lab-profile",
+      "component_label": "Lab Profile",
+      "path": "artifacts/codex-runs/lab-ip-profile-update-report.md"
+    },
+    {
+      "component_id": "lab-profile",
+      "component_label": "Lab Profile",
+      "path": "artifacts/codex-runs/lab-ip-profile-hardening-report.md"
+    },
+    {
+      "component_id": "firmware-compliance",
+      "component_label": "Firmware Compliance",
+      "path": "artifacts/codex-runs/firmware-compliance-report.md"
+    },
+    {
+      "component_id": "firmware-compliance",
+      "component_label": "Firmware Compliance",
+      "path": "artifacts/codex-runs/firmware-compliance-summary-redacted.json"
+    },
+    {
+      "component_id": "firmware-compliance",
+      "component_label": "Firmware Compliance",
+      "path": "artifacts/codex-runs/toolchain-availability-report.md"
+    },
+    {
+      "component_id": "cisco-network",
+      "component_label": "Cisco Network",
+      "path": "artifacts/codex-runs/serial-console-discovery-report.md"
+    },
+    {
+      "component_id": "cisco-network",
+      "component_label": "Cisco Network",
+      "path": "artifacts/codex-runs/cisco-console-ethernet-readiness-report.md"
+    },
+    {
+      "component_id": "cisco-network",
+      "component_label": "Cisco Network",
+      "path": "artifacts/codex-runs/cisco-bootstrap-apply-report.md"
+    },
+    {
+      "component_id": "hpe-ilo",
+      "component_label": "HPE / iLO",
+      "path": "artifacts/codex-runs/ilo-real-run-report.md"
+    },
+    {
+      "component_id": "hpe-ilo",
+      "component_label": "HPE / iLO",
+      "path": "artifacts/codex-runs/ilo-local-readonly-smoke-report.md"
+    },
+    {
+      "component_id": "raid-storage",
+      "component_label": "RAID / Storage",
+      "path": "artifacts/codex-runs/hpe-raid-plan-report.md"
+    },
+    {
+      "component_id": "raid-storage",
+      "component_label": "RAID / Storage",
+      "path": "artifacts/codex-runs/hpe-raid-pending-report.md"
+    },
+    {
+      "component_id": "esxi-host",
+      "component_label": "ESXi Host",
+      "path": "artifacts/codex-runs/esxi-install-readiness-report.md"
+    },
+    {
+      "component_id": "esxi-host",
+      "component_label": "ESXi Host",
+      "path": "artifacts/codex-runs/esxi-installer-boot-report.md"
+    },
+    {
+      "component_id": "netapp-console",
+      "component_label": "NetApp Console",
+      "path": "artifacts/codex-runs/netapp-console-autodiscovery-report.md"
+    },
+    {
+      "component_id": "netapp-console",
+      "component_label": "NetApp Console",
+      "path": "artifacts/codex-runs/netapp-console-state-report.md"
+    },
+    {
+      "component_id": "netapp-console",
+      "component_label": "NetApp Console",
+      "path": "artifacts/codex-runs/netapp-console-login-state-report.md"
+    },
+    {
+      "component_id": "netapp-ontap-cluster",
+      "component_label": "NetApp ONTAP / Cluster",
+      "path": "artifacts/codex-runs/netapp-live-state-report.md"
+    },
+    {
+      "component_id": "netapp-ontap-cluster",
+      "component_label": "NetApp ONTAP / Cluster",
+      "path": "artifacts/codex-runs/netapp-setup-plan-report.md"
+    },
+    {
+      "component_id": "netapp-ontap-cluster",
+      "component_label": "NetApp ONTAP / Cluster",
+      "path": "artifacts/codex-runs/netapp-setup-preview-report.md"
+    },
+    {
+      "component_id": "netapp-ontap-upgrade",
+      "component_label": "NetApp ONTAP Upgrade",
+      "path": "artifacts/codex-runs/netapp-upgrade-inventory-report.md"
+    },
+    {
+      "component_id": "netapp-ontap-upgrade",
+      "component_label": "NetApp ONTAP Upgrade",
+      "path": "artifacts/codex-runs/netapp-ontap-upgrade-plan-report.md"
+    },
+    {
+      "component_id": "netapp-ontap-upgrade",
+      "component_label": "NetApp ONTAP Upgrade",
+      "path": "artifacts/codex-runs/netapp-ontap-upgrade-validation-report.md"
+    },
+    {
+      "component_id": "netapp-nfs",
+      "component_label": "NetApp NFS",
+      "path": "artifacts/codex-runs/netapp-nfs-vcenter-readiness-report.md"
+    },
+    {
+      "component_id": "vcenter-netapp-datastore",
+      "component_label": "vCenter-NetApp Datastore",
+      "path": "artifacts/codex-runs/vcenter-netapp-readiness-report.md"
+    },
+    {
+      "component_id": "vcenter-netapp-datastore",
+      "component_label": "vCenter-NetApp Datastore",
+      "path": "artifacts/codex-runs/vcenter-netapp-datastore-plan-report.md"
+    },
+    {
+      "component_id": "build-verification",
+      "component_label": "Build Verification",
+      "path": "artifacts/codex-runs/build-verification-report.md"
+    },
+    {
+      "component_id": "build-verification",
+      "component_label": "Build Verification",
+      "path": "artifacts/codex-runs/build-verification-summary-redacted.json"
+    },
+    {
+      "component_id": "build-verification",
+      "component_label": "Build Verification",
+      "path": "artifacts/codex-runs/build-verification-evidence-report.md"
+    }
+  ],
+  "generated_at": "2026-06-10T00:37:36.522496+00:00",
+  "next_action": "Complete guarded NetApp setup planning before any vCenter datastore work.",
+  "source_type": "live_cached",
+  "freshness": "current",
+  "handoff_report": "artifacts/codex-runs/lab-validation-handoff-report.md",
+  "warnings": [
+    "Historical artifacts are evidence only; rerun the listed command to refresh current state.",
+    "No secrets are included. Credential state is shown as configured or missing by field name only."
+  ]
+}

@@ -1,9 +1,10 @@
 # Build Verification Classification Report
 
-- Checked at: `2026-06-08T14:47:17.555667+00:00`
-- Overall certification state: `stale_config`
-- Provider mode: `mock`
-- Mock results used as substitutes for real lab evidence: `false`
+- Checked at: `2026-06-10T15:39:22.887875+00:00`
+- Overall certification state: `test_fixture`
+- Source: `test_fixture`
+- Freshness: `unknown`
+- Current: `False`
 
 ## Classification Vocabulary
 
@@ -17,41 +18,35 @@
 
 ## Findings
 
+### runtime-mode - operator_action_required
+
+- UI message: Build Verification is running in test/mock mode.
+- Report detail: Test fixtures cannot produce real lab certification.
+- Next action: Run `make provider-lab-build-verification-live` with PROVIDER_MODE=local-lab-readwrite.
+
+### protocol - hard_fail
+
+- UI message: NetApp REST is hard_fail.
+- Report detail: NetApp cluster management REST is not reachable.; NetApp API access values are missing; keep any values local and redacted.
+- Next action: NetApp cluster management REST is not reachable.
+
+### protocol - hard_fail
+
+- UI message: NetApp SSH is hard_fail.
+- Report detail: NetApp cluster management REST is not reachable.; NetApp API access values are missing; keep any values local and redacted.
+- Next action: NetApp cluster management REST is not reachable.
+
 ### lab-ip-profile - stale_config
 
 - UI message: Active lab IP profile contains stale or mismatched target values.
-- Report detail: 1 stale active values; 0 active profile mismatches.
-- Next action: Update provider environment inputs to match `Runtime environment` and remove stale 10.10.8.x values before certification.
-
-### protocol - operator_action_required
-
-- UI message: NetApp console is operator_action_required.
-- Report detail: Use the selected candidate as the next physical console check, then verify cable placement, adapter ownership, power state, and baud before rerunning discovery.
-- Next action: Use the selected candidate as the next physical console check, then verify cable placement, adapter ownership, power state, and baud before rerunning discovery.
+- Report detail: 2 stale active values; 1 active profile mismatches.
+- Next action: Update provider environment inputs to match `Runtime environment` or remove out-of-scope overrides before certification.
 
 ### protocol - operator_action_required
 
 - UI message: ESXi ISO media inventory is operator_action_required.
 - Report detail: ESXi ISO media inventory is not configured.
 - Next action: Place the ESXi ISO under MEDIA_INVENTORY_DIRS or set ESXI_INSTALL_ISO/ESXI_ISO_PATH before ESXi boot verification.
-
-### protocol - blocked_by_prior_stage
-
-- UI message: NetApp NFS/vCenter is blocked_by_prior_stage.
-- Report detail: Use console/API read-only discovery to identify the NetApp state, then configure vCenter/govc before NFS datastore apply is implemented.
-- Next action: Use console/API read-only discovery to identify the NetApp state, then configure vCenter/govc before NFS datastore apply is implemented.
-
-### protocol - not_configured_yet
-
-- UI message: NetApp REST is not_configured_yet.
-- Report detail: Leave NetApp REST as not_configured_yet until the NetApp stage is explicitly configured.
-- Next action: Leave NetApp REST as not_configured_yet until the NetApp stage is explicitly configured.
-
-### protocol - not_configured_yet
-
-- UI message: NetApp SSH is not_configured_yet.
-- Report detail: Leave NetApp SSH as not_configured_yet until the NetApp stage is explicitly configured.
-- Next action: Leave NetApp SSH as not_configured_yet until the NetApp stage is explicitly configured.
 
 ### protocol - warning
 

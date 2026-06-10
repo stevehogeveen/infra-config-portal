@@ -42,6 +42,8 @@ from app.schemas import (
     HpeRaidIntentWrite,
     HpeRaidPlanPreviewRead,
     HpeStorageDiscoveryRead,
+    IloBaselinePreviewRead,
+    IloBaselineReadinessRead,
     IloDestructiveRebuildPreviewRead,
     IloReadinessSummaryRead,
     IloReportPreviewRead,
@@ -124,6 +126,10 @@ from app.services.control_access import (
     ControlAccessConfigNotFoundError,
     update_control_access_config,
 )
+from app.services.ilo_baseline import (
+    get_ilo_baseline_preview,
+    get_ilo_baseline_readiness,
+)
 from app.services.ilo_readiness import (
     get_ilo_destructive_rebuild_preview,
     get_ilo_readiness_summary,
@@ -143,6 +149,7 @@ from app.services.provider_mode_settings import (
     update_provider_mode_settings,
 )
 from app.services.lab_profiles import (
+    LabProfileError,
     LabProfileNotFoundError,
     activate_lab_profile,
     create_lab_profile,
@@ -600,15 +607,20 @@ def read_lab_profiles() -> LabProfileListRead:
     status_code=status.HTTP_201_CREATED,
 )
 def create_lab_profile_route(payload: LabProfileWrite) -> LabProfileRead:
-    return create_lab_profile(payload.model_dump())
+    try:
+        return create_lab_profile(payload.model_dump(exclude_unset=True))
+    except LabProfileError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.put("/lab/profiles/{profile_id}", response_model=LabProfileRead)
 def update_lab_profile_route(profile_id: str, payload: LabProfileWrite) -> LabProfileRead:
     try:
-        return update_lab_profile(profile_id, payload.model_dump())
+        return update_lab_profile(profile_id, payload.model_dump(exclude_unset=True))
     except LabProfileNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Lab profile not found") from exc
+    except LabProfileError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.post("/lab/profiles/{profile_id}/activate", response_model=LabProfileListRead)
@@ -701,6 +713,22 @@ def probe_provider(provider_id: str) -> ProviderProbeResultRead:
 )
 def read_ilo_upgrade_readiness() -> IloUpgradeReadinessRead:
     return get_ilo_upgrade_readiness()
+
+
+@router.get(
+    "/providers/hpe-ilo/baseline-preview",
+    response_model=IloBaselinePreviewRead,
+)
+def read_hpe_ilo_baseline_preview() -> IloBaselinePreviewRead:
+    return get_ilo_baseline_preview()
+
+
+@router.get(
+    "/providers/hpe-ilo/readiness",
+    response_model=IloBaselineReadinessRead,
+)
+def read_hpe_ilo_readiness() -> IloBaselineReadinessRead:
+    return get_ilo_baseline_readiness()
 
 
 @router.get(

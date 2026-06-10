@@ -1,8 +1,9 @@
 # Lab IP Profile Update
 
-- Checked at: `2026-06-08T14:47:17.555667+00:00`
+- Checked at: `2026-06-10T15:39:22.887875+00:00`
 - Status: `blocked`
-- Provider mode: `mock`
+- Source: `test_fixture`
+- Freshness: `unknown`
 
 ## Expected Profile
 
@@ -12,13 +13,14 @@
 - esxi_management: `192.168.1.203`
 - cisco_management: `192.168.1.204`
 - ansible_control_host: `192.168.1.205`
-- netapp_controller_a_sp: `192.168.1.206`
-- netapp_controller_b_sp: `192.168.1.207`
-- netapp_cluster_mgmt: `192.168.1.208`
-- netapp_node_a_mgmt: `192.168.1.209`
-- netapp_node_b_mgmt: `192.168.1.210`
-- netapp_svm_mgmt: `192.168.1.211`
-- netapp_iscsi_lifs: `192.168.1.212,192.168.1.213,192.168.1.214,192.168.1.215`
+- netapp_controller_a_sp: `192.168.1.210`
+- netapp_controller_b_sp: `192.168.1.211`
+- netapp_cluster_mgmt: `192.168.1.220`
+- netapp_node_a_mgmt: `192.168.1.221`
+- netapp_node_b_mgmt: `192.168.1.222`
+- netapp_svm_mgmt: `192.168.1.223`
+- netapp_nfs_lifs: `192.168.1.230,192.168.1.231`
+- netapp_iscsi_lifs: `192.168.1.240,192.168.1.241,192.168.1.242,192.168.1.243`
 
 ## Configured Values
 
@@ -29,19 +31,16 @@
 - cisco_management: `192.168.1.204`
 - ansible_cisco_inventory_target: `192.168.1.204`
 - ansible_control_host: `192.168.1.205`
+- netapp_cluster_mgmt: `10.10.8.45`
+- runtime_subnet_default: `192.168.1.0/24`
+- runtime_provider_mode: `mock`
 - cisco_target_ip_env: `192.168.1.204`
 - ansible_cisco_host_env: `192.168.1.204`
-- netapp_controller_a_sp: `192.168.1.206`
-- netapp_controller_b_sp: `192.168.1.207`
-- netapp_cluster_mgmt: `192.168.1.208`
-- netapp_node_a_mgmt: `192.168.1.209`
-- netapp_node_b_mgmt: `192.168.1.210`
-- netapp_svm_mgmt: `192.168.1.211`
-- netapp_iscsi_lifs: `192.168.1.212,192.168.1.213,192.168.1.214,192.168.1.215`
 - netapp_cluster_mgmt_ip_env: `10.10.8.45`
 
 ## Stale Assumptions
 
+- `netapp_cluster_mgmt` still contains stale `10.10.8.45`
 - `netapp_cluster_mgmt_ip_env` still contains stale `10.10.8.45`
 
 ## Stale Report Evidence
@@ -50,7 +49,7 @@
 
 ## Mismatches
 
-- No lab IP profile mismatches.
+- `netapp_cluster_mgmt` expected `192.168.1.220`, configured `10.10.8.45`
 
 ## Ansible Role
 

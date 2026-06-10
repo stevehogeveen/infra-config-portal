@@ -1,36 +1,1608 @@
 {
   "provider_id": "netapp-ontap",
   "action": "console-discovery",
-  "checked_at": "2026-06-07T21:11:51.348161+00:00",
-  "status": "blocked",
-  "message": "NetApp console autodiscovery selected a serial candidate, but no usable NetApp prompt/state was detected.",
+  "checked_at": "2026-06-09T22:26:02.225527+00:00",
+  "status": "ready",
+  "message": "NetApp console discovery completed. NetApp console produced NetApp cluster setup wizard.",
   "mode": "local-lab-readwrite",
   "configured_port_hint": null,
-  "selected_port": "/dev/ttyS5",
+  "configured_port_hint_role": "optional_hint_only",
+  "autodiscovery_enabled": true,
+  "manual_env_update_required": false,
+  "selected_port": "/dev/serial/by-id/usb-Microchip_Technology_Inc._MCP2221_USB-I2C_UART_Combo-if00",
   "selected_baud": 115200,
-  "selected_prompt_state": "no_output",
-  "selected_prompt_label": "No console output",
-  "selection_source": "auto-ttys-candidate",
-  "selection_confidence": "medium",
-  "selection_reason": "ttyS device has a recent modified timestamp",
-  "selected_device_type": "unknown",
-  "selected_classification": "no_bytes_read",
-  "prompt_detected": false,
-  "candidate_count": 32,
-  "selectable_candidate_count": 32,
+  "selected_prompt_state": "cluster_setup_prompt",
+  "selected_prompt_label": "NetApp cluster setup wizard",
+  "selection_source": "prompt-evidence",
+  "selection_origin": "autodiscovery",
+  "detected_automatically": true,
+  "selection_confidence": "high",
+  "selection_reason": "cluster setup",
+  "selected_device_type": "netapp",
+  "selected_classification": "prompt_detected",
+  "prompt_detected": true,
+  "candidate_count": 35,
+  "selectable_candidate_count": 35,
   "probed_candidate_count": 4,
-  "skipped_candidate_count": 28,
+  "skipped_candidate_count": 31,
   "candidate_counts": {
-    "total": 32,
-    "existing": 32,
-    "selectable": 32,
-    "stable_existing": 0,
-    "usb_existing": 0,
+    "total": 35,
+    "existing": 35,
+    "selectable": 35,
+    "stable_existing": 1,
+    "usb_existing": 3,
     "ttys_existing": 32,
     "in_use": 0,
     "inaccessible": 0
   },
   "candidates": [
+    {
+      "display_path": "/dev/serial/by-id/usb-Microchip_Technology_Inc._MCP2221_USB-I2C_UART_Combo-if00",
+      "path": "/dev/serial/by-id/usb-Microchip_Technology_Inc._MCP2221_USB-I2C_UART_Combo-if00",
+      "resolved_path": "/dev/ttyACM0",
+      "target_path": "/dev/ttyACM0",
+      "exists": true,
+      "readable": true,
+      "writable": true,
+      "owner": "root",
+      "group": "dialout",
+      "mode": "crw-rw----",
+      "modified_time": "2026-06-09T20:56:20.595289+00:00",
+      "modified_age_seconds": 5381,
+      "stable_path": true,
+      "path_type": "by-id",
+      "label": "usb-Microchip Technology Inc. MCP2221 USB-I2C UART Combo-if00 -> /dev/ttyACM0",
+      "in_use": false,
+      "in_use_state": {
+        "state": "not_in_use",
+        "checked_with": [
+          "fuser",
+          "lsof"
+        ],
+        "unavailable_tools": [],
+        "pids": []
+      },
+      "udevadm": {
+        "available": true,
+        "status": "ok",
+        "properties": {
+          "DEVPATH": "/devices/pci0000:00/0000:00:14.0/usb3/3-6/3-6:1.0/tty/ttyACM0",
+          "DEVNAME": "/dev/ttyACM0",
+          "SUBSYSTEM": "tty",
+          "ID_BUS": "usb",
+          "ID_MODEL": "MCP2221_USB-I2C_UART_Combo",
+          "ID_MODEL_ID": "00dd",
+          "ID_VENDOR": "Microchip_Technology_Inc.",
+          "ID_VENDOR_ID": "04d8",
+          "ID_REVISION": "0100",
+          "ID_TYPE": "generic",
+          "ID_USB_DRIVER": "cdc_acm",
+          "ID_PATH": "pci-0000:00:14.0-usb-0:6:1.0"
+        },
+        "raw_redacted": true
+      },
+      "setserial": {
+        "available": false,
+        "status": "unavailable",
+        "reason": "setserial-not-found"
+      },
+      "dmesg": {
+        "available": true,
+        "status": "unavailable",
+        "reason": "dmesg: read kernel buffer failed: Operation not permitted"
+      },
+      "rank": -35,
+      "recommendation": "preferred-stable-path",
+      "confidence": "high",
+      "selection_reasons": [
+        "stable /dev/serial/by-id path",
+        "candidate name matches NetApp serial hint"
+      ]
+    },
+    {
+      "display_path": "/dev/ttyACM0",
+      "path": "/dev/ttyACM0",
+      "resolved_path": "/dev/ttyACM0",
+      "target_path": "/dev/ttyACM0",
+      "exists": true,
+      "readable": true,
+      "writable": true,
+      "owner": "root",
+      "group": "dialout",
+      "mode": "crw-rw----",
+      "modified_time": "2026-06-09T20:56:20.595289+00:00",
+      "modified_age_seconds": 5381,
+      "stable_path": false,
+      "path_type": "ttyACM",
+      "label": "ttyACM0",
+      "in_use": false,
+      "in_use_state": {
+        "state": "not_in_use",
+        "checked_with": [
+          "fuser",
+          "lsof"
+        ],
+        "unavailable_tools": [],
+        "pids": []
+      },
+      "udevadm": {
+        "available": true,
+        "status": "ok",
+        "properties": {
+          "DEVPATH": "/devices/pci0000:00/0000:00:14.0/usb3/3-6/3-6:1.0/tty/ttyACM0",
+          "DEVNAME": "/dev/ttyACM0",
+          "SUBSYSTEM": "tty",
+          "ID_BUS": "usb",
+          "ID_MODEL": "MCP2221_USB-I2C_UART_Combo",
+          "ID_MODEL_ID": "00dd",
+          "ID_VENDOR": "Microchip_Technology_Inc.",
+          "ID_VENDOR_ID": "04d8",
+          "ID_REVISION": "0100",
+          "ID_TYPE": "generic",
+          "ID_USB_DRIVER": "cdc_acm",
+          "ID_PATH": "pci-0000:00:14.0-usb-0:6:1.0"
+        },
+        "raw_redacted": true
+      },
+      "setserial": {
+        "available": false,
+        "status": "unavailable",
+        "reason": "setserial-not-found"
+      },
+      "dmesg": {
+        "available": true,
+        "status": "unavailable",
+        "reason": "dmesg: read kernel buffer failed: Operation not permitted"
+      },
+      "rank": 65,
+      "recommendation": "usb-serial-candidate",
+      "confidence": "medium",
+      "selection_reasons": [
+        "ttyACM USB serial fallback",
+        "candidate name matches NetApp serial hint"
+      ]
+    },
+    {
+      "display_path": "/dev/ttyACM1",
+      "path": "/dev/ttyACM1",
+      "resolved_path": "/dev/ttyACM1",
+      "target_path": "/dev/ttyACM1",
+      "exists": true,
+      "readable": true,
+      "writable": true,
+      "owner": "root",
+      "group": "dialout",
+      "mode": "crw-rw----",
+      "modified_time": "2026-06-09T20:56:20.595289+00:00",
+      "modified_age_seconds": 5381,
+      "stable_path": false,
+      "path_type": "ttyACM",
+      "label": "ttyACM1",
+      "in_use": false,
+      "in_use_state": {
+        "state": "not_in_use",
+        "checked_with": [
+          "fuser",
+          "lsof"
+        ],
+        "unavailable_tools": [],
+        "pids": []
+      },
+      "udevadm": {
+        "available": true,
+        "status": "ok",
+        "properties": {
+          "DEVPATH": "/devices/pci0000:00/0000:00:14.0/usb3/3-9/3-9:1.0/tty/ttyACM1",
+          "DEVNAME": "/dev/ttyACM1",
+          "SUBSYSTEM": "tty",
+          "ID_BUS": "usb",
+          "ID_MODEL": "MCP2221_USB-I2C_UART_Combo",
+          "ID_MODEL_ID": "00dd",
+          "ID_VENDOR": "Microchip_Technology_Inc.",
+          "ID_VENDOR_ID": "04d8",
+          "ID_REVISION": "0100",
+          "ID_TYPE": "generic",
+          "ID_USB_DRIVER": "cdc_acm",
+          "ID_PATH": "pci-0000:00:14.0-usb-0:9:1.0"
+        },
+        "raw_redacted": true
+      },
+      "setserial": {
+        "available": false,
+        "status": "unavailable",
+        "reason": "setserial-not-found"
+      },
+      "dmesg": {
+        "available": true,
+        "status": "unavailable",
+        "reason": "dmesg: read kernel buffer failed: Operation not permitted"
+      },
+      "rank": 65,
+      "recommendation": "usb-serial-candidate",
+      "confidence": "medium",
+      "selection_reasons": [
+        "ttyACM USB serial fallback",
+        "candidate name matches NetApp serial hint"
+      ]
+    },
+    {
+      "display_path": "/dev/ttyS20",
+      "path": "/dev/ttyS20",
+      "resolved_path": "/dev/ttyS20",
+      "target_path": "/dev/ttyS20",
+      "exists": true,
+      "readable": true,
+      "writable": true,
+      "owner": "root",
+      "group": "dialout",
+      "mode": "crw-rw----",
+      "modified_time": "2026-06-09T20:33:13.921228+00:00",
+      "modified_age_seconds": 6768,
+      "stable_path": false,
+      "path_type": "ttyS",
+      "label": "ttyS20",
+      "in_use": false,
+      "in_use_state": {
+        "state": "not_in_use",
+        "checked_with": [
+          "fuser",
+          "lsof"
+        ],
+        "unavailable_tools": [],
+        "pids": []
+      },
+      "udevadm": {
+        "available": true,
+        "status": "ok",
+        "properties": {
+          "DEVPATH": "/devices/platform/serial8250/serial8250:0/serial8250:0.20/tty/ttyS20",
+          "DEVNAME": "/dev/ttyS20",
+          "SUBSYSTEM": "tty"
+        },
+        "raw_redacted": true
+      },
+      "setserial": {
+        "available": false,
+        "status": "unavailable",
+        "reason": "setserial-not-found"
+      },
+      "dmesg": {
+        "available": true,
+        "status": "unavailable",
+        "reason": "dmesg: read kernel buffer failed: Operation not permitted"
+      },
+      "rank": 220,
+      "recommendation": "local-ttyS-candidate",
+      "confidence": "medium",
+      "selection_reasons": [
+        "ttyS device has a recent modified timestamp"
+      ]
+    },
+    {
+      "display_path": "/dev/ttyS21",
+      "path": "/dev/ttyS21",
+      "resolved_path": "/dev/ttyS21",
+      "target_path": "/dev/ttyS21",
+      "exists": true,
+      "readable": true,
+      "writable": true,
+      "owner": "root",
+      "group": "dialout",
+      "mode": "crw-rw----",
+      "modified_time": "2026-06-09T20:33:13.921554+00:00",
+      "modified_age_seconds": 6768,
+      "stable_path": false,
+      "path_type": "ttyS",
+      "label": "ttyS21",
+      "in_use": false,
+      "in_use_state": {
+        "state": "not_in_use",
+        "checked_with": [
+          "fuser",
+          "lsof"
+        ],
+        "unavailable_tools": [],
+        "pids": []
+      },
+      "udevadm": {
+        "available": true,
+        "status": "ok",
+        "properties": {
+          "DEVPATH": "/devices/platform/serial8250/serial8250:0/serial8250:0.21/tty/ttyS21",
+          "DEVNAME": "/dev/ttyS21",
+          "SUBSYSTEM": "tty"
+        },
+        "raw_redacted": true
+      },
+      "setserial": {
+        "available": false,
+        "status": "unavailable",
+        "reason": "setserial-not-found"
+      },
+      "dmesg": {
+        "available": true,
+        "status": "unavailable",
+        "reason": "dmesg: read kernel buffer failed: Operation not permitted"
+      },
+      "rank": 220,
+      "recommendation": "local-ttyS-candidate",
+      "confidence": "medium",
+      "selection_reasons": [
+        "ttyS device has a recent modified timestamp"
+      ]
+    },
+    {
+      "display_path": "/dev/ttyS22",
+      "path": "/dev/ttyS22",
+      "resolved_path": "/dev/ttyS22",
+      "target_path": "/dev/ttyS22",
+      "exists": true,
+      "readable": true,
+      "writable": true,
+      "owner": "root",
+      "group": "dialout",
+      "mode": "crw-rw----",
+      "modified_time": "2026-06-09T20:33:13.922104+00:00",
+      "modified_age_seconds": 6768,
+      "stable_path": false,
+      "path_type": "ttyS",
+      "label": "ttyS22",
+      "in_use": false,
+      "in_use_state": {
+        "state": "not_in_use",
+        "checked_with": [
+          "fuser",
+          "lsof"
+        ],
+        "unavailable_tools": [],
+        "pids": []
+      },
+      "udevadm": {
+        "available": true,
+        "status": "ok",
+        "properties": {
+          "DEVPATH": "/devices/platform/serial8250/serial8250:0/serial8250:0.22/tty/ttyS22",
+          "DEVNAME": "/dev/ttyS22",
+          "SUBSYSTEM": "tty"
+        },
+        "raw_redacted": true
+      },
+      "setserial": {
+        "available": false,
+        "status": "unavailable",
+        "reason": "setserial-not-found"
+      },
+      "dmesg": {
+        "available": true,
+        "status": "unavailable",
+        "reason": "dmesg: read kernel buffer failed: Operation not permitted"
+      },
+      "rank": 220,
+      "recommendation": "local-ttyS-candidate",
+      "confidence": "medium",
+      "selection_reasons": [
+        "ttyS device has a recent modified timestamp"
+      ]
+    },
+    {
+      "display_path": "/dev/ttyS23",
+      "path": "/dev/ttyS23",
+      "resolved_path": "/dev/ttyS23",
+      "target_path": "/dev/ttyS23",
+      "exists": true,
+      "readable": true,
+      "writable": true,
+      "owner": "root",
+      "group": "dialout",
+      "mode": "crw-rw----",
+      "modified_time": "2026-06-09T20:33:13.923676+00:00",
+      "modified_age_seconds": 6768,
+      "stable_path": false,
+      "path_type": "ttyS",
+      "label": "ttyS23",
+      "in_use": false,
+      "in_use_state": {
+        "state": "not_in_use",
+        "checked_with": [
+          "fuser",
+          "lsof"
+        ],
+        "unavailable_tools": [],
+        "pids": []
+      },
+      "udevadm": {
+        "available": true,
+        "status": "ok",
+        "properties": {
+          "DEVPATH": "/devices/platform/serial8250/serial8250:0/serial8250:0.23/tty/ttyS23",
+          "DEVNAME": "/dev/ttyS23",
+          "SUBSYSTEM": "tty"
+        },
+        "raw_redacted": true
+      },
+      "setserial": {
+        "available": false,
+        "status": "unavailable",
+        "reason": "setserial-not-found"
+      },
+      "dmesg": {
+        "available": true,
+        "status": "unavailable",
+        "reason": "dmesg: read kernel buffer failed: Operation not permitted"
+      },
+      "rank": 220,
+      "recommendation": "local-ttyS-candidate",
+      "confidence": "medium",
+      "selection_reasons": [
+        "ttyS device has a recent modified timestamp"
+      ]
+    },
+    {
+      "display_path": "/dev/ttyS24",
+      "path": "/dev/ttyS24",
+      "resolved_path": "/dev/ttyS24",
+      "target_path": "/dev/ttyS24",
+      "exists": true,
+      "readable": true,
+      "writable": true,
+      "owner": "root",
+      "group": "dialout",
+      "mode": "crw-rw----",
+      "modified_time": "2026-06-09T20:33:13.919990+00:00",
+      "modified_age_seconds": 6768,
+      "stable_path": false,
+      "path_type": "ttyS",
+      "label": "ttyS24",
+      "in_use": false,
+      "in_use_state": {
+        "state": "not_in_use",
+        "checked_with": [
+          "fuser",
+          "lsof"
+        ],
+        "unavailable_tools": [],
+        "pids": []
+      },
+      "udevadm": {
+        "available": true,
+        "status": "ok",
+        "properties": {
+          "DEVPATH": "/devices/platform/serial8250/serial8250:0/serial8250:0.24/tty/ttyS24",
+          "DEVNAME": "/dev/ttyS24",
+          "SUBSYSTEM": "tty"
+        },
+        "raw_redacted": true
+      },
+      "setserial": {
+        "available": false,
+        "status": "unavailable",
+        "reason": "setserial-not-found"
+      },
+      "dmesg": {
+        "available": true,
+        "status": "unavailable",
+        "reason": "dmesg: read kernel buffer failed: Operation not permitted"
+      },
+      "rank": 220,
+      "recommendation": "local-ttyS-candidate",
+      "confidence": "medium",
+      "selection_reasons": [
+        "ttyS device has a recent modified timestamp"
+      ]
+    },
+    {
+      "display_path": "/dev/ttyS25",
+      "path": "/dev/ttyS25",
+      "resolved_path": "/dev/ttyS25",
+      "target_path": "/dev/ttyS25",
+      "exists": true,
+      "readable": true,
+      "writable": true,
+      "owner": "root",
+      "group": "dialout",
+      "mode": "crw-rw----",
+      "modified_time": "2026-06-09T20:33:13.921206+00:00",
+      "modified_age_seconds": 6768,
+      "stable_path": false,
+      "path_type": "ttyS",
+      "label": "ttyS25",
+      "in_use": false,
+      "in_use_state": {
+        "state": "not_in_use",
+        "checked_with": [
+          "fuser",
+          "lsof"
+        ],
+        "unavailable_tools": [],
+        "pids": []
+      },
+      "udevadm": {
+        "available": true,
+        "status": "ok",
+        "properties": {
+          "DEVPATH": "/devices/platform/serial8250/serial8250:0/serial8250:0.25/tty/ttyS25",
+          "DEVNAME": "/dev/ttyS25",
+          "SUBSYSTEM": "tty"
+        },
+        "raw_redacted": true
+      },
+      "setserial": {
+        "available": false,
+        "status": "unavailable",
+        "reason": "setserial-not-found"
+      },
+      "dmesg": {
+        "available": true,
+        "status": "unavailable",
+        "reason": "dmesg: read kernel buffer failed: Operation not permitted"
+      },
+      "rank": 220,
+      "recommendation": "local-ttyS-candidate",
+      "confidence": "medium",
+      "selection_reasons": [
+        "ttyS device has a recent modified timestamp"
+      ]
+    },
+    {
+      "display_path": "/dev/ttyS26",
+      "path": "/dev/ttyS26",
+      "resolved_path": "/dev/ttyS26",
+      "target_path": "/dev/ttyS26",
+      "exists": true,
+      "readable": true,
+      "writable": true,
+      "owner": "root",
+      "group": "dialout",
+      "mode": "crw-rw----",
+      "modified_time": "2026-06-09T20:33:13.924195+00:00",
+      "modified_age_seconds": 6768,
+      "stable_path": false,
+      "path_type": "ttyS",
+      "label": "ttyS26",
+      "in_use": false,
+      "in_use_state": {
+        "state": "not_in_use",
+        "checked_with": [
+          "fuser",
+          "lsof"
+        ],
+        "unavailable_tools": [],
+        "pids": []
+      },
+      "udevadm": {
+        "available": true,
+        "status": "ok",
+        "properties": {
+          "DEVPATH": "/devices/platform/serial8250/serial8250:0/serial8250:0.26/tty/ttyS26",
+          "DEVNAME": "/dev/ttyS26",
+          "SUBSYSTEM": "tty"
+        },
+        "raw_redacted": true
+      },
+      "setserial": {
+        "available": false,
+        "status": "unavailable",
+        "reason": "setserial-not-found"
+      },
+      "dmesg": {
+        "available": true,
+        "status": "unavailable",
+        "reason": "dmesg: read kernel buffer failed: Operation not permitted"
+      },
+      "rank": 220,
+      "recommendation": "local-ttyS-candidate",
+      "confidence": "medium",
+      "selection_reasons": [
+        "ttyS device has a recent modified timestamp"
+      ]
+    },
+    {
+      "display_path": "/dev/ttyS27",
+      "path": "/dev/ttyS27",
+      "resolved_path": "/dev/ttyS27",
+      "target_path": "/dev/ttyS27",
+      "exists": true,
+      "readable": true,
+      "writable": true,
+      "owner": "root",
+      "group": "dialout",
+      "mode": "crw-rw----",
+      "modified_time": "2026-06-09T20:33:13.921412+00:00",
+      "modified_age_seconds": 6768,
+      "stable_path": false,
+      "path_type": "ttyS",
+      "label": "ttyS27",
+      "in_use": false,
+      "in_use_state": {
+        "state": "not_in_use",
+        "checked_with": [
+          "fuser",
+          "lsof"
+        ],
+        "unavailable_tools": [],
+        "pids": []
+      },
+      "udevadm": {
+        "available": true,
+        "status": "ok",
+        "properties": {
+          "DEVPATH": "/devices/platform/serial8250/serial8250:0/serial8250:0.27/tty/ttyS27",
+          "DEVNAME": "/dev/ttyS27",
+          "SUBSYSTEM": "tty"
+        },
+        "raw_redacted": true
+      },
+      "setserial": {
+        "available": false,
+        "status": "unavailable",
+        "reason": "setserial-not-found"
+      },
+      "dmesg": {
+        "available": true,
+        "status": "unavailable",
+        "reason": "dmesg: read kernel buffer failed: Operation not permitted"
+      },
+      "rank": 220,
+      "recommendation": "local-ttyS-candidate",
+      "confidence": "medium",
+      "selection_reasons": [
+        "ttyS device has a recent modified timestamp"
+      ]
+    },
+    {
+      "display_path": "/dev/ttyS28",
+      "path": "/dev/ttyS28",
+      "resolved_path": "/dev/ttyS28",
+      "target_path": "/dev/ttyS28",
+      "exists": true,
+      "readable": true,
+      "writable": true,
+      "owner": "root",
+      "group": "dialout",
+      "mode": "crw-rw----",
+      "modified_time": "2026-06-09T20:33:13.924195+00:00",
+      "modified_age_seconds": 6768,
+      "stable_path": false,
+      "path_type": "ttyS",
+      "label": "ttyS28",
+      "in_use": false,
+      "in_use_state": {
+        "state": "not_in_use",
+        "checked_with": [
+          "fuser",
+          "lsof"
+        ],
+        "unavailable_tools": [],
+        "pids": []
+      },
+      "udevadm": {
+        "available": true,
+        "status": "ok",
+        "properties": {
+          "DEVPATH": "/devices/platform/serial8250/serial8250:0/serial8250:0.28/tty/ttyS28",
+          "DEVNAME": "/dev/ttyS28",
+          "SUBSYSTEM": "tty"
+        },
+        "raw_redacted": true
+      },
+      "setserial": {
+        "available": false,
+        "status": "unavailable",
+        "reason": "setserial-not-found"
+      },
+      "dmesg": {
+        "available": true,
+        "status": "unavailable",
+        "reason": "dmesg: read kernel buffer failed: Operation not permitted"
+      },
+      "rank": 220,
+      "recommendation": "local-ttyS-candidate",
+      "confidence": "medium",
+      "selection_reasons": [
+        "ttyS device has a recent modified timestamp"
+      ]
+    },
+    {
+      "display_path": "/dev/ttyS29",
+      "path": "/dev/ttyS29",
+      "resolved_path": "/dev/ttyS29",
+      "target_path": "/dev/ttyS29",
+      "exists": true,
+      "readable": true,
+      "writable": true,
+      "owner": "root",
+      "group": "dialout",
+      "mode": "crw-rw----",
+      "modified_time": "2026-06-09T20:33:13.923992+00:00",
+      "modified_age_seconds": 6768,
+      "stable_path": false,
+      "path_type": "ttyS",
+      "label": "ttyS29",
+      "in_use": false,
+      "in_use_state": {
+        "state": "not_in_use",
+        "checked_with": [
+          "fuser",
+          "lsof"
+        ],
+        "unavailable_tools": [],
+        "pids": []
+      },
+      "udevadm": {
+        "available": true,
+        "status": "ok",
+        "properties": {
+          "DEVPATH": "/devices/platform/serial8250/serial8250:0/serial8250:0.29/tty/ttyS29",
+          "DEVNAME": "/dev/ttyS29",
+          "SUBSYSTEM": "tty"
+        },
+        "raw_redacted": true
+      },
+      "setserial": {
+        "available": false,
+        "status": "unavailable",
+        "reason": "setserial-not-found"
+      },
+      "dmesg": {
+        "available": true,
+        "status": "unavailable",
+        "reason": "dmesg: read kernel buffer failed: Operation not permitted"
+      },
+      "rank": 220,
+      "recommendation": "local-ttyS-candidate",
+      "confidence": "medium",
+      "selection_reasons": [
+        "ttyS device has a recent modified timestamp"
+      ]
+    },
+    {
+      "display_path": "/dev/ttyS30",
+      "path": "/dev/ttyS30",
+      "resolved_path": "/dev/ttyS30",
+      "target_path": "/dev/ttyS30",
+      "exists": true,
+      "readable": true,
+      "writable": true,
+      "owner": "root",
+      "group": "dialout",
+      "mode": "crw-rw----",
+      "modified_time": "2026-06-09T20:33:13.925251+00:00",
+      "modified_age_seconds": 6768,
+      "stable_path": false,
+      "path_type": "ttyS",
+      "label": "ttyS30",
+      "in_use": false,
+      "in_use_state": {
+        "state": "not_in_use",
+        "checked_with": [
+          "fuser",
+          "lsof"
+        ],
+        "unavailable_tools": [],
+        "pids": []
+      },
+      "udevadm": {
+        "available": true,
+        "status": "ok",
+        "properties": {
+          "DEVPATH": "/devices/platform/serial8250/serial8250:0/serial8250:0.30/tty/ttyS30",
+          "DEVNAME": "/dev/ttyS30",
+          "SUBSYSTEM": "tty"
+        },
+        "raw_redacted": true
+      },
+      "setserial": {
+        "available": false,
+        "status": "unavailable",
+        "reason": "setserial-not-found"
+      },
+      "dmesg": {
+        "available": true,
+        "status": "unavailable",
+        "reason": "dmesg: read kernel buffer failed: Operation not permitted"
+      },
+      "rank": 220,
+      "recommendation": "local-ttyS-candidate",
+      "confidence": "medium",
+      "selection_reasons": [
+        "ttyS device has a recent modified timestamp"
+      ]
+    },
+    {
+      "display_path": "/dev/ttyS31",
+      "path": "/dev/ttyS31",
+      "resolved_path": "/dev/ttyS31",
+      "target_path": "/dev/ttyS31",
+      "exists": true,
+      "readable": true,
+      "writable": true,
+      "owner": "root",
+      "group": "dialout",
+      "mode": "crw-rw----",
+      "modified_time": "2026-06-09T20:33:13.922912+00:00",
+      "modified_age_seconds": 6768,
+      "stable_path": false,
+      "path_type": "ttyS",
+      "label": "ttyS31",
+      "in_use": false,
+      "in_use_state": {
+        "state": "not_in_use",
+        "checked_with": [
+          "fuser",
+          "lsof"
+        ],
+        "unavailable_tools": [],
+        "pids": []
+      },
+      "udevadm": {
+        "available": true,
+        "status": "ok",
+        "properties": {
+          "DEVPATH": "/devices/platform/serial8250/serial8250:0/serial8250:0.31/tty/ttyS31",
+          "DEVNAME": "/dev/ttyS31",
+          "SUBSYSTEM": "tty"
+        },
+        "raw_redacted": true
+      },
+      "setserial": {
+        "available": false,
+        "status": "unavailable",
+        "reason": "setserial-not-found"
+      },
+      "dmesg": {
+        "available": true,
+        "status": "unavailable",
+        "reason": "dmesg: read kernel buffer failed: Operation not permitted"
+      },
+      "rank": 220,
+      "recommendation": "local-ttyS-candidate",
+      "confidence": "medium",
+      "selection_reasons": [
+        "ttyS device has a recent modified timestamp"
+      ]
+    },
+    {
+      "display_path": "/dev/ttyS19",
+      "path": "/dev/ttyS19",
+      "resolved_path": "/dev/ttyS19",
+      "target_path": "/dev/ttyS19",
+      "exists": true,
+      "readable": true,
+      "writable": true,
+      "owner": "root",
+      "group": "dialout",
+      "mode": "crw-rw----",
+      "modified_time": "2026-06-09T20:33:13.920460+00:00",
+      "modified_age_seconds": 6768,
+      "stable_path": false,
+      "path_type": "ttyS",
+      "label": "ttyS19",
+      "in_use": false,
+      "in_use_state": {
+        "state": "not_in_use",
+        "checked_with": [
+          "fuser",
+          "lsof"
+        ],
+        "unavailable_tools": [],
+        "pids": []
+      },
+      "udevadm": {
+        "available": true,
+        "status": "ok",
+        "properties": {
+          "DEVPATH": "/devices/platform/serial8250/serial8250:0/serial8250:0.19/tty/ttyS19",
+          "DEVNAME": "/dev/ttyS19",
+          "SUBSYSTEM": "tty"
+        },
+        "raw_redacted": true
+      },
+      "setserial": {
+        "available": false,
+        "status": "unavailable",
+        "reason": "setserial-not-found"
+      },
+      "dmesg": {
+        "available": true,
+        "status": "unavailable",
+        "reason": "dmesg: read kernel buffer failed: Operation not permitted"
+      },
+      "rank": 221,
+      "recommendation": "local-ttyS-candidate",
+      "confidence": "medium",
+      "selection_reasons": [
+        "ttyS device has a recent modified timestamp"
+      ]
+    },
+    {
+      "display_path": "/dev/ttyS18",
+      "path": "/dev/ttyS18",
+      "resolved_path": "/dev/ttyS18",
+      "target_path": "/dev/ttyS18",
+      "exists": true,
+      "readable": true,
+      "writable": true,
+      "owner": "root",
+      "group": "dialout",
+      "mode": "crw-rw----",
+      "modified_time": "2026-06-09T20:33:13.920927+00:00",
+      "modified_age_seconds": 6768,
+      "stable_path": false,
+      "path_type": "ttyS",
+      "label": "ttyS18",
+      "in_use": false,
+      "in_use_state": {
+        "state": "not_in_use",
+        "checked_with": [
+          "fuser",
+          "lsof"
+        ],
+        "unavailable_tools": [],
+        "pids": []
+      },
+      "udevadm": {
+        "available": true,
+        "status": "ok",
+        "properties": {
+          "DEVPATH": "/devices/platform/serial8250/serial8250:0/serial8250:0.18/tty/ttyS18",
+          "DEVNAME": "/dev/ttyS18",
+          "SUBSYSTEM": "tty"
+        },
+        "raw_redacted": true
+      },
+      "setserial": {
+        "available": false,
+        "status": "unavailable",
+        "reason": "setserial-not-found"
+      },
+      "dmesg": {
+        "available": true,
+        "status": "unavailable",
+        "reason": "dmesg: read kernel buffer failed: Operation not permitted"
+      },
+      "rank": 222,
+      "recommendation": "local-ttyS-candidate",
+      "confidence": "medium",
+      "selection_reasons": [
+        "ttyS device has a recent modified timestamp"
+      ]
+    },
+    {
+      "display_path": "/dev/ttyS17",
+      "path": "/dev/ttyS17",
+      "resolved_path": "/dev/ttyS17",
+      "target_path": "/dev/ttyS17",
+      "exists": true,
+      "readable": true,
+      "writable": true,
+      "owner": "root",
+      "group": "dialout",
+      "mode": "crw-rw----",
+      "modified_time": "2026-06-09T20:33:13.919384+00:00",
+      "modified_age_seconds": 6768,
+      "stable_path": false,
+      "path_type": "ttyS",
+      "label": "ttyS17",
+      "in_use": false,
+      "in_use_state": {
+        "state": "not_in_use",
+        "checked_with": [
+          "fuser",
+          "lsof"
+        ],
+        "unavailable_tools": [],
+        "pids": []
+      },
+      "udevadm": {
+        "available": true,
+        "status": "ok",
+        "properties": {
+          "DEVPATH": "/devices/platform/serial8250/serial8250:0/serial8250:0.17/tty/ttyS17",
+          "DEVNAME": "/dev/ttyS17",
+          "SUBSYSTEM": "tty"
+        },
+        "raw_redacted": true
+      },
+      "setserial": {
+        "available": false,
+        "status": "unavailable",
+        "reason": "setserial-not-found"
+      },
+      "dmesg": {
+        "available": true,
+        "status": "unavailable",
+        "reason": "dmesg: read kernel buffer failed: Operation not permitted"
+      },
+      "rank": 223,
+      "recommendation": "local-ttyS-candidate",
+      "confidence": "medium",
+      "selection_reasons": [
+        "ttyS device has a recent modified timestamp"
+      ]
+    },
+    {
+      "display_path": "/dev/ttyS16",
+      "path": "/dev/ttyS16",
+      "resolved_path": "/dev/ttyS16",
+      "target_path": "/dev/ttyS16",
+      "exists": true,
+      "readable": true,
+      "writable": true,
+      "owner": "root",
+      "group": "dialout",
+      "mode": "crw-rw----",
+      "modified_time": "2026-06-09T20:33:13.920927+00:00",
+      "modified_age_seconds": 6768,
+      "stable_path": false,
+      "path_type": "ttyS",
+      "label": "ttyS16",
+      "in_use": false,
+      "in_use_state": {
+        "state": "not_in_use",
+        "checked_with": [
+          "fuser",
+          "lsof"
+        ],
+        "unavailable_tools": [],
+        "pids": []
+      },
+      "udevadm": {
+        "available": true,
+        "status": "ok",
+        "properties": {
+          "DEVPATH": "/devices/platform/serial8250/serial8250:0/serial8250:0.16/tty/ttyS16",
+          "DEVNAME": "/dev/ttyS16",
+          "SUBSYSTEM": "tty"
+        },
+        "raw_redacted": true
+      },
+      "setserial": {
+        "available": false,
+        "status": "unavailable",
+        "reason": "setserial-not-found"
+      },
+      "dmesg": {
+        "available": true,
+        "status": "unavailable",
+        "reason": "dmesg: read kernel buffer failed: Operation not permitted"
+      },
+      "rank": 224,
+      "recommendation": "local-ttyS-candidate",
+      "confidence": "medium",
+      "selection_reasons": [
+        "ttyS device has a recent modified timestamp"
+      ]
+    },
+    {
+      "display_path": "/dev/ttyS15",
+      "path": "/dev/ttyS15",
+      "resolved_path": "/dev/ttyS15",
+      "target_path": "/dev/ttyS15",
+      "exists": true,
+      "readable": true,
+      "writable": true,
+      "owner": "root",
+      "group": "dialout",
+      "mode": "crw-rw----",
+      "modified_time": "2026-06-09T20:33:13.921175+00:00",
+      "modified_age_seconds": 6768,
+      "stable_path": false,
+      "path_type": "ttyS",
+      "label": "ttyS15",
+      "in_use": false,
+      "in_use_state": {
+        "state": "not_in_use",
+        "checked_with": [
+          "fuser",
+          "lsof"
+        ],
+        "unavailable_tools": [],
+        "pids": []
+      },
+      "udevadm": {
+        "available": true,
+        "status": "ok",
+        "properties": {
+          "DEVPATH": "/devices/platform/serial8250/serial8250:0/serial8250:0.15/tty/ttyS15",
+          "DEVNAME": "/dev/ttyS15",
+          "SUBSYSTEM": "tty"
+        },
+        "raw_redacted": true
+      },
+      "setserial": {
+        "available": false,
+        "status": "unavailable",
+        "reason": "setserial-not-found"
+      },
+      "dmesg": {
+        "available": true,
+        "status": "unavailable",
+        "reason": "dmesg: read kernel buffer failed: Operation not permitted"
+      },
+      "rank": 225,
+      "recommendation": "local-ttyS-candidate",
+      "confidence": "medium",
+      "selection_reasons": [
+        "ttyS device has a recent modified timestamp"
+      ]
+    },
+    {
+      "display_path": "/dev/ttyS14",
+      "path": "/dev/ttyS14",
+      "resolved_path": "/dev/ttyS14",
+      "target_path": "/dev/ttyS14",
+      "exists": true,
+      "readable": true,
+      "writable": true,
+      "owner": "root",
+      "group": "dialout",
+      "mode": "crw-rw----",
+      "modified_time": "2026-06-09T20:33:13.921035+00:00",
+      "modified_age_seconds": 6768,
+      "stable_path": false,
+      "path_type": "ttyS",
+      "label": "ttyS14",
+      "in_use": false,
+      "in_use_state": {
+        "state": "not_in_use",
+        "checked_with": [
+          "fuser",
+          "lsof"
+        ],
+        "unavailable_tools": [],
+        "pids": []
+      },
+      "udevadm": {
+        "available": true,
+        "status": "ok",
+        "properties": {
+          "DEVPATH": "/devices/platform/serial8250/serial8250:0/serial8250:0.14/tty/ttyS14",
+          "DEVNAME": "/dev/ttyS14",
+          "SUBSYSTEM": "tty"
+        },
+        "raw_redacted": true
+      },
+      "setserial": {
+        "available": false,
+        "status": "unavailable",
+        "reason": "setserial-not-found"
+      },
+      "dmesg": {
+        "available": true,
+        "status": "unavailable",
+        "reason": "dmesg: read kernel buffer failed: Operation not permitted"
+      },
+      "rank": 226,
+      "recommendation": "local-ttyS-candidate",
+      "confidence": "medium",
+      "selection_reasons": [
+        "ttyS device has a recent modified timestamp"
+      ]
+    },
+    {
+      "display_path": "/dev/ttyS13",
+      "path": "/dev/ttyS13",
+      "resolved_path": "/dev/ttyS13",
+      "target_path": "/dev/ttyS13",
+      "exists": true,
+      "readable": true,
+      "writable": true,
+      "owner": "root",
+      "group": "dialout",
+      "mode": "crw-rw----",
+      "modified_time": "2026-06-09T20:33:13.921412+00:00",
+      "modified_age_seconds": 6768,
+      "stable_path": false,
+      "path_type": "ttyS",
+      "label": "ttyS13",
+      "in_use": false,
+      "in_use_state": {
+        "state": "not_in_use",
+        "checked_with": [
+          "fuser",
+          "lsof"
+        ],
+        "unavailable_tools": [],
+        "pids": []
+      },
+      "udevadm": {
+        "available": true,
+        "status": "ok",
+        "properties": {
+          "DEVPATH": "/devices/platform/serial8250/serial8250:0/serial8250:0.13/tty/ttyS13",
+          "DEVNAME": "/dev/ttyS13",
+          "SUBSYSTEM": "tty"
+        },
+        "raw_redacted": true
+      },
+      "setserial": {
+        "available": false,
+        "status": "unavailable",
+        "reason": "setserial-not-found"
+      },
+      "dmesg": {
+        "available": true,
+        "status": "unavailable",
+        "reason": "dmesg: read kernel buffer failed: Operation not permitted"
+      },
+      "rank": 227,
+      "recommendation": "local-ttyS-candidate",
+      "confidence": "medium",
+      "selection_reasons": [
+        "ttyS device has a recent modified timestamp"
+      ]
+    },
+    {
+      "display_path": "/dev/ttyS12",
+      "path": "/dev/ttyS12",
+      "resolved_path": "/dev/ttyS12",
+      "target_path": "/dev/ttyS12",
+      "exists": true,
+      "readable": true,
+      "writable": true,
+      "owner": "root",
+      "group": "dialout",
+      "mode": "crw-rw----",
+      "modified_time": "2026-06-09T20:33:13.922841+00:00",
+      "modified_age_seconds": 6768,
+      "stable_path": false,
+      "path_type": "ttyS",
+      "label": "ttyS12",
+      "in_use": false,
+      "in_use_state": {
+        "state": "not_in_use",
+        "checked_with": [
+          "fuser",
+          "lsof"
+        ],
+        "unavailable_tools": [],
+        "pids": []
+      },
+      "udevadm": {
+        "available": true,
+        "status": "ok",
+        "properties": {
+          "DEVPATH": "/devices/platform/serial8250/serial8250:0/serial8250:0.12/tty/ttyS12",
+          "DEVNAME": "/dev/ttyS12",
+          "SUBSYSTEM": "tty"
+        },
+        "raw_redacted": true
+      },
+      "setserial": {
+        "available": false,
+        "status": "unavailable",
+        "reason": "setserial-not-found"
+      },
+      "dmesg": {
+        "available": true,
+        "status": "unavailable",
+        "reason": "dmesg: read kernel buffer failed: Operation not permitted"
+      },
+      "rank": 228,
+      "recommendation": "local-ttyS-candidate",
+      "confidence": "medium",
+      "selection_reasons": [
+        "ttyS device has a recent modified timestamp"
+      ]
+    },
+    {
+      "display_path": "/dev/ttyS11",
+      "path": "/dev/ttyS11",
+      "resolved_path": "/dev/ttyS11",
+      "target_path": "/dev/ttyS11",
+      "exists": true,
+      "readable": true,
+      "writable": true,
+      "owner": "root",
+      "group": "dialout",
+      "mode": "crw-rw----",
+      "modified_time": "2026-06-09T20:33:13.919288+00:00",
+      "modified_age_seconds": 6768,
+      "stable_path": false,
+      "path_type": "ttyS",
+      "label": "ttyS11",
+      "in_use": false,
+      "in_use_state": {
+        "state": "not_in_use",
+        "checked_with": [
+          "fuser",
+          "lsof"
+        ],
+        "unavailable_tools": [],
+        "pids": []
+      },
+      "udevadm": {
+        "available": true,
+        "status": "ok",
+        "properties": {
+          "DEVPATH": "/devices/platform/serial8250/serial8250:0/serial8250:0.11/tty/ttyS11",
+          "DEVNAME": "/dev/ttyS11",
+          "SUBSYSTEM": "tty"
+        },
+        "raw_redacted": true
+      },
+      "setserial": {
+        "available": false,
+        "status": "unavailable",
+        "reason": "setserial-not-found"
+      },
+      "dmesg": {
+        "available": true,
+        "status": "unavailable",
+        "reason": "dmesg: read kernel buffer failed: Operation not permitted"
+      },
+      "rank": 229,
+      "recommendation": "local-ttyS-candidate",
+      "confidence": "medium",
+      "selection_reasons": [
+        "ttyS device has a recent modified timestamp"
+      ]
+    },
+    {
+      "display_path": "/dev/ttyS10",
+      "path": "/dev/ttyS10",
+      "resolved_path": "/dev/ttyS10",
+      "target_path": "/dev/ttyS10",
+      "exists": true,
+      "readable": true,
+      "writable": true,
+      "owner": "root",
+      "group": "dialout",
+      "mode": "crw-rw----",
+      "modified_time": "2026-06-09T20:33:13.918000+00:00",
+      "modified_age_seconds": 6768,
+      "stable_path": false,
+      "path_type": "ttyS",
+      "label": "ttyS10",
+      "in_use": false,
+      "in_use_state": {
+        "state": "not_in_use",
+        "checked_with": [
+          "fuser",
+          "lsof"
+        ],
+        "unavailable_tools": [],
+        "pids": []
+      },
+      "udevadm": {
+        "available": true,
+        "status": "ok",
+        "properties": {
+          "DEVPATH": "/devices/platform/serial8250/serial8250:0/serial8250:0.10/tty/ttyS10",
+          "DEVNAME": "/dev/ttyS10",
+          "SUBSYSTEM": "tty"
+        },
+        "raw_redacted": true
+      },
+      "setserial": {
+        "available": false,
+        "status": "unavailable",
+        "reason": "setserial-not-found"
+      },
+      "dmesg": {
+        "available": true,
+        "status": "unavailable",
+        "reason": "dmesg: read kernel buffer failed: Operation not permitted"
+      },
+      "rank": 230,
+      "recommendation": "local-ttyS-candidate",
+      "confidence": "medium",
+      "selection_reasons": [
+        "ttyS device has a recent modified timestamp"
+      ]
+    },
+    {
+      "display_path": "/dev/ttyS9",
+      "path": "/dev/ttyS9",
+      "resolved_path": "/dev/ttyS9",
+      "target_path": "/dev/ttyS9",
+      "exists": true,
+      "readable": true,
+      "writable": true,
+      "owner": "root",
+      "group": "dialout",
+      "mode": "crw-rw----",
+      "modified_time": "2026-06-09T20:33:13.922576+00:00",
+      "modified_age_seconds": 6768,
+      "stable_path": false,
+      "path_type": "ttyS",
+      "label": "ttyS9",
+      "in_use": false,
+      "in_use_state": {
+        "state": "not_in_use",
+        "checked_with": [
+          "fuser",
+          "lsof"
+        ],
+        "unavailable_tools": [],
+        "pids": []
+      },
+      "udevadm": {
+        "available": true,
+        "status": "ok",
+        "properties": {
+          "DEVPATH": "/devices/platform/serial8250/serial8250:0/serial8250:0.9/tty/ttyS9",
+          "DEVNAME": "/dev/ttyS9",
+          "SUBSYSTEM": "tty"
+        },
+        "raw_redacted": true
+      },
+      "setserial": {
+        "available": false,
+        "status": "unavailable",
+        "reason": "setserial-not-found"
+      },
+      "dmesg": {
+        "available": true,
+        "status": "unavailable",
+        "reason": "dmesg: read kernel buffer failed: Operation not permitted"
+      },
+      "rank": 231,
+      "recommendation": "local-ttyS-candidate",
+      "confidence": "medium",
+      "selection_reasons": [
+        "ttyS device has a recent modified timestamp"
+      ]
+    },
+    {
+      "display_path": "/dev/ttyS8",
+      "path": "/dev/ttyS8",
+      "resolved_path": "/dev/ttyS8",
+      "target_path": "/dev/ttyS8",
+      "exists": true,
+      "readable": true,
+      "writable": true,
+      "owner": "root",
+      "group": "dialout",
+      "mode": "crw-rw----",
+      "modified_time": "2026-06-09T20:33:13.926330+00:00",
+      "modified_age_seconds": 6768,
+      "stable_path": false,
+      "path_type": "ttyS",
+      "label": "ttyS8",
+      "in_use": false,
+      "in_use_state": {
+        "state": "not_in_use",
+        "checked_with": [
+          "fuser",
+          "lsof"
+        ],
+        "unavailable_tools": [],
+        "pids": []
+      },
+      "udevadm": {
+        "available": true,
+        "status": "ok",
+        "properties": {
+          "DEVPATH": "/devices/platform/serial8250/serial8250:0/serial8250:0.8/tty/ttyS8",
+          "DEVNAME": "/dev/ttyS8",
+          "SUBSYSTEM": "tty"
+        },
+        "raw_redacted": true
+      },
+      "setserial": {
+        "available": false,
+        "status": "unavailable",
+        "reason": "setserial-not-found"
+      },
+      "dmesg": {
+        "available": true,
+        "status": "unavailable",
+        "reason": "dmesg: read kernel buffer failed: Operation not permitted"
+      },
+      "rank": 232,
+      "recommendation": "local-ttyS-candidate",
+      "confidence": "medium",
+      "selection_reasons": [
+        "ttyS device has a recent modified timestamp"
+      ]
+    },
+    {
+      "display_path": "/dev/ttyS7",
+      "path": "/dev/ttyS7",
+      "resolved_path": "/dev/ttyS7",
+      "target_path": "/dev/ttyS7",
+      "exists": true,
+      "readable": true,
+      "writable": true,
+      "owner": "root",
+      "group": "dialout",
+      "mode": "crw-rw----",
+      "modified_time": "2026-06-09T20:33:13.928310+00:00",
+      "modified_age_seconds": 6768,
+      "stable_path": false,
+      "path_type": "ttyS",
+      "label": "ttyS7",
+      "in_use": false,
+      "in_use_state": {
+        "state": "not_in_use",
+        "checked_with": [
+          "fuser",
+          "lsof"
+        ],
+        "unavailable_tools": [],
+        "pids": []
+      },
+      "udevadm": {
+        "available": true,
+        "status": "ok",
+        "properties": {
+          "DEVPATH": "/devices/platform/serial8250/serial8250:0/serial8250:0.7/tty/ttyS7",
+          "DEVNAME": "/dev/ttyS7",
+          "SUBSYSTEM": "tty"
+        },
+        "raw_redacted": true
+      },
+      "setserial": {
+        "available": false,
+        "status": "unavailable",
+        "reason": "setserial-not-found"
+      },
+      "dmesg": {
+        "available": true,
+        "status": "unavailable",
+        "reason": "dmesg: read kernel buffer failed: Operation not permitted"
+      },
+      "rank": 233,
+      "recommendation": "local-ttyS-candidate",
+      "confidence": "medium",
+      "selection_reasons": [
+        "ttyS device has a recent modified timestamp"
+      ]
+    },
+    {
+      "display_path": "/dev/ttyS6",
+      "path": "/dev/ttyS6",
+      "resolved_path": "/dev/ttyS6",
+      "target_path": "/dev/ttyS6",
+      "exists": true,
+      "readable": true,
+      "writable": true,
+      "owner": "root",
+      "group": "dialout",
+      "mode": "crw-rw----",
+      "modified_time": "2026-06-09T20:33:13.924254+00:00",
+      "modified_age_seconds": 6768,
+      "stable_path": false,
+      "path_type": "ttyS",
+      "label": "ttyS6",
+      "in_use": false,
+      "in_use_state": {
+        "state": "not_in_use",
+        "checked_with": [
+          "fuser",
+          "lsof"
+        ],
+        "unavailable_tools": [],
+        "pids": []
+      },
+      "udevadm": {
+        "available": true,
+        "status": "ok",
+        "properties": {
+          "DEVPATH": "/devices/platform/serial8250/serial8250:0/serial8250:0.6/tty/ttyS6",
+          "DEVNAME": "/dev/ttyS6",
+          "SUBSYSTEM": "tty"
+        },
+        "raw_redacted": true
+      },
+      "setserial": {
+        "available": false,
+        "status": "unavailable",
+        "reason": "setserial-not-found"
+      },
+      "dmesg": {
+        "available": true,
+        "status": "unavailable",
+        "reason": "dmesg: read kernel buffer failed: Operation not permitted"
+      },
+      "rank": 234,
+      "recommendation": "local-ttyS-candidate",
+      "confidence": "medium",
+      "selection_reasons": [
+        "ttyS device has a recent modified timestamp"
+      ]
+    },
     {
       "display_path": "/dev/ttyS5",
       "path": "/dev/ttyS5",
@@ -42,8 +1614,8 @@
       "owner": "root",
       "group": "dialout",
       "mode": "crw-rw----",
-      "modified_time": "2026-06-07T21:06:32+00:00",
-      "modified_age_seconds": 319,
+      "modified_time": "2026-06-09T20:33:13.943403+00:00",
+      "modified_age_seconds": 6768,
       "stable_path": false,
       "path_type": "ttyS",
       "label": "ttyS5",
@@ -98,8 +1670,8 @@
       "owner": "root",
       "group": "dialout",
       "mode": "crw-rw----",
-      "modified_time": "2026-06-07T21:06:09+00:00",
-      "modified_age_seconds": 342,
+      "modified_time": "2026-06-09T20:33:30+00:00",
+      "modified_age_seconds": 6752,
       "stable_path": false,
       "path_type": "ttyS",
       "label": "ttyS4",
@@ -144,6 +1716,112 @@
       ]
     },
     {
+      "display_path": "/dev/ttyS3",
+      "path": "/dev/ttyS3",
+      "resolved_path": "/dev/ttyS3",
+      "target_path": "/dev/ttyS3",
+      "exists": true,
+      "readable": true,
+      "writable": true,
+      "owner": "root",
+      "group": "dialout",
+      "mode": "crw-rw----",
+      "modified_time": "2026-06-09T20:33:13.922313+00:00",
+      "modified_age_seconds": 6768,
+      "stable_path": false,
+      "path_type": "ttyS",
+      "label": "ttyS3",
+      "in_use": false,
+      "in_use_state": {
+        "state": "not_in_use",
+        "checked_with": [
+          "fuser",
+          "lsof"
+        ],
+        "unavailable_tools": [],
+        "pids": []
+      },
+      "udevadm": {
+        "available": true,
+        "status": "ok",
+        "properties": {
+          "DEVPATH": "/devices/platform/serial8250/serial8250:0/serial8250:0.3/tty/ttyS3",
+          "DEVNAME": "/dev/ttyS3",
+          "SUBSYSTEM": "tty"
+        },
+        "raw_redacted": true
+      },
+      "setserial": {
+        "available": false,
+        "status": "unavailable",
+        "reason": "setserial-not-found"
+      },
+      "dmesg": {
+        "available": true,
+        "status": "unavailable",
+        "reason": "dmesg: read kernel buffer failed: Operation not permitted"
+      },
+      "rank": 237,
+      "recommendation": "local-ttyS-candidate",
+      "confidence": "medium",
+      "selection_reasons": [
+        "ttyS device has a recent modified timestamp"
+      ]
+    },
+    {
+      "display_path": "/dev/ttyS2",
+      "path": "/dev/ttyS2",
+      "resolved_path": "/dev/ttyS2",
+      "target_path": "/dev/ttyS2",
+      "exists": true,
+      "readable": true,
+      "writable": true,
+      "owner": "root",
+      "group": "dialout",
+      "mode": "crw-rw----",
+      "modified_time": "2026-06-09T20:33:13.920408+00:00",
+      "modified_age_seconds": 6768,
+      "stable_path": false,
+      "path_type": "ttyS",
+      "label": "ttyS2",
+      "in_use": false,
+      "in_use_state": {
+        "state": "not_in_use",
+        "checked_with": [
+          "fuser",
+          "lsof"
+        ],
+        "unavailable_tools": [],
+        "pids": []
+      },
+      "udevadm": {
+        "available": true,
+        "status": "ok",
+        "properties": {
+          "DEVPATH": "/devices/platform/serial8250/serial8250:0/serial8250:0.2/tty/ttyS2",
+          "DEVNAME": "/dev/ttyS2",
+          "SUBSYSTEM": "tty"
+        },
+        "raw_redacted": true
+      },
+      "setserial": {
+        "available": false,
+        "status": "unavailable",
+        "reason": "setserial-not-found"
+      },
+      "dmesg": {
+        "available": true,
+        "status": "unavailable",
+        "reason": "dmesg: read kernel buffer failed: Operation not permitted"
+      },
+      "rank": 238,
+      "recommendation": "local-ttyS-candidate",
+      "confidence": "medium",
+      "selection_reasons": [
+        "ttyS device has a recent modified timestamp"
+      ]
+    },
+    {
       "display_path": "/dev/ttyS1",
       "path": "/dev/ttyS1",
       "resolved_path": "/dev/ttyS1",
@@ -154,8 +1832,8 @@
       "owner": "root",
       "group": "dialout",
       "mode": "crw-rw----",
-      "modified_time": "2026-06-07T21:00:19+00:00",
-      "modified_age_seconds": 692,
+      "modified_time": "2026-06-09T20:33:13.921035+00:00",
+      "modified_age_seconds": 6768,
       "stable_path": false,
       "path_type": "ttyS",
       "label": "ttyS1",
@@ -207,8 +1885,8 @@
       "owner": "root",
       "group": "dialout",
       "mode": "crw-rw----",
-      "modified_time": "2026-06-05T14:15:54.896845+00:00",
-      "modified_age_seconds": 197756,
+      "modified_time": "2026-06-09T20:33:13.920927+00:00",
+      "modified_age_seconds": 6768,
       "stable_path": false,
       "path_type": "ttyS",
       "label": "ttyS0",
@@ -242,1495 +1920,11 @@
         "status": "unavailable",
         "reason": "dmesg: read kernel buffer failed: Operation not permitted"
       },
-      "rank": 650,
+      "rank": 240,
       "recommendation": "local-ttyS-candidate",
-      "confidence": "low",
+      "confidence": "medium",
       "selection_reasons": [
-        "older ttyS serial candidate"
-      ]
-    },
-    {
-      "display_path": "/dev/ttyS10",
-      "path": "/dev/ttyS10",
-      "resolved_path": "/dev/ttyS10",
-      "target_path": "/dev/ttyS10",
-      "exists": true,
-      "readable": true,
-      "writable": true,
-      "owner": "root",
-      "group": "dialout",
-      "mode": "crw-rw----",
-      "modified_time": "2026-06-05T14:15:54.895450+00:00",
-      "modified_age_seconds": 197756,
-      "stable_path": false,
-      "path_type": "ttyS",
-      "label": "ttyS10",
-      "in_use": false,
-      "in_use_state": {
-        "state": "not_in_use",
-        "checked_with": [
-          "fuser",
-          "lsof"
-        ],
-        "unavailable_tools": [],
-        "pids": []
-      },
-      "udevadm": {
-        "available": true,
-        "status": "ok",
-        "properties": {
-          "DEVPATH": "/devices/platform/serial8250/serial8250:0/serial8250:0.10/tty/ttyS10",
-          "DEVNAME": "/dev/ttyS10",
-          "SUBSYSTEM": "tty"
-        },
-        "raw_redacted": true
-      },
-      "setserial": {
-        "available": false,
-        "status": "unavailable",
-        "reason": "setserial-not-found"
-      },
-      "dmesg": {
-        "available": true,
-        "status": "unavailable",
-        "reason": "dmesg: read kernel buffer failed: Operation not permitted"
-      },
-      "rank": 650,
-      "recommendation": "local-ttyS-candidate",
-      "confidence": "low",
-      "selection_reasons": [
-        "older ttyS serial candidate"
-      ]
-    },
-    {
-      "display_path": "/dev/ttyS11",
-      "path": "/dev/ttyS11",
-      "resolved_path": "/dev/ttyS11",
-      "target_path": "/dev/ttyS11",
-      "exists": true,
-      "readable": true,
-      "writable": true,
-      "owner": "root",
-      "group": "dialout",
-      "mode": "crw-rw----",
-      "modified_time": "2026-06-05T14:15:54.895263+00:00",
-      "modified_age_seconds": 197756,
-      "stable_path": false,
-      "path_type": "ttyS",
-      "label": "ttyS11",
-      "in_use": false,
-      "in_use_state": {
-        "state": "not_in_use",
-        "checked_with": [
-          "fuser",
-          "lsof"
-        ],
-        "unavailable_tools": [],
-        "pids": []
-      },
-      "udevadm": {
-        "available": true,
-        "status": "ok",
-        "properties": {
-          "DEVPATH": "/devices/platform/serial8250/serial8250:0/serial8250:0.11/tty/ttyS11",
-          "DEVNAME": "/dev/ttyS11",
-          "SUBSYSTEM": "tty"
-        },
-        "raw_redacted": true
-      },
-      "setserial": {
-        "available": false,
-        "status": "unavailable",
-        "reason": "setserial-not-found"
-      },
-      "dmesg": {
-        "available": true,
-        "status": "unavailable",
-        "reason": "dmesg: read kernel buffer failed: Operation not permitted"
-      },
-      "rank": 650,
-      "recommendation": "local-ttyS-candidate",
-      "confidence": "low",
-      "selection_reasons": [
-        "older ttyS serial candidate"
-      ]
-    },
-    {
-      "display_path": "/dev/ttyS12",
-      "path": "/dev/ttyS12",
-      "resolved_path": "/dev/ttyS12",
-      "target_path": "/dev/ttyS12",
-      "exists": true,
-      "readable": true,
-      "writable": true,
-      "owner": "root",
-      "group": "dialout",
-      "mode": "crw-rw----",
-      "modified_time": "2026-06-05T14:15:54.895088+00:00",
-      "modified_age_seconds": 197756,
-      "stable_path": false,
-      "path_type": "ttyS",
-      "label": "ttyS12",
-      "in_use": false,
-      "in_use_state": {
-        "state": "not_in_use",
-        "checked_with": [
-          "fuser",
-          "lsof"
-        ],
-        "unavailable_tools": [],
-        "pids": []
-      },
-      "udevadm": {
-        "available": true,
-        "status": "ok",
-        "properties": {
-          "DEVPATH": "/devices/platform/serial8250/serial8250:0/serial8250:0.12/tty/ttyS12",
-          "DEVNAME": "/dev/ttyS12",
-          "SUBSYSTEM": "tty"
-        },
-        "raw_redacted": true
-      },
-      "setserial": {
-        "available": false,
-        "status": "unavailable",
-        "reason": "setserial-not-found"
-      },
-      "dmesg": {
-        "available": true,
-        "status": "unavailable",
-        "reason": "dmesg: read kernel buffer failed: Operation not permitted"
-      },
-      "rank": 650,
-      "recommendation": "local-ttyS-candidate",
-      "confidence": "low",
-      "selection_reasons": [
-        "older ttyS serial candidate"
-      ]
-    },
-    {
-      "display_path": "/dev/ttyS13",
-      "path": "/dev/ttyS13",
-      "resolved_path": "/dev/ttyS13",
-      "target_path": "/dev/ttyS13",
-      "exists": true,
-      "readable": true,
-      "writable": true,
-      "owner": "root",
-      "group": "dialout",
-      "mode": "crw-rw----",
-      "modified_time": "2026-06-05T14:15:54.894000+00:00",
-      "modified_age_seconds": 197756,
-      "stable_path": false,
-      "path_type": "ttyS",
-      "label": "ttyS13",
-      "in_use": false,
-      "in_use_state": {
-        "state": "not_in_use",
-        "checked_with": [
-          "fuser",
-          "lsof"
-        ],
-        "unavailable_tools": [],
-        "pids": []
-      },
-      "udevadm": {
-        "available": true,
-        "status": "ok",
-        "properties": {
-          "DEVPATH": "/devices/platform/serial8250/serial8250:0/serial8250:0.13/tty/ttyS13",
-          "DEVNAME": "/dev/ttyS13",
-          "SUBSYSTEM": "tty"
-        },
-        "raw_redacted": true
-      },
-      "setserial": {
-        "available": false,
-        "status": "unavailable",
-        "reason": "setserial-not-found"
-      },
-      "dmesg": {
-        "available": true,
-        "status": "unavailable",
-        "reason": "dmesg: read kernel buffer failed: Operation not permitted"
-      },
-      "rank": 650,
-      "recommendation": "local-ttyS-candidate",
-      "confidence": "low",
-      "selection_reasons": [
-        "older ttyS serial candidate"
-      ]
-    },
-    {
-      "display_path": "/dev/ttyS14",
-      "path": "/dev/ttyS14",
-      "resolved_path": "/dev/ttyS14",
-      "target_path": "/dev/ttyS14",
-      "exists": true,
-      "readable": true,
-      "writable": true,
-      "owner": "root",
-      "group": "dialout",
-      "mode": "crw-rw----",
-      "modified_time": "2026-06-05T14:15:54.895331+00:00",
-      "modified_age_seconds": 197756,
-      "stable_path": false,
-      "path_type": "ttyS",
-      "label": "ttyS14",
-      "in_use": false,
-      "in_use_state": {
-        "state": "not_in_use",
-        "checked_with": [
-          "fuser",
-          "lsof"
-        ],
-        "unavailable_tools": [],
-        "pids": []
-      },
-      "udevadm": {
-        "available": true,
-        "status": "ok",
-        "properties": {
-          "DEVPATH": "/devices/platform/serial8250/serial8250:0/serial8250:0.14/tty/ttyS14",
-          "DEVNAME": "/dev/ttyS14",
-          "SUBSYSTEM": "tty"
-        },
-        "raw_redacted": true
-      },
-      "setserial": {
-        "available": false,
-        "status": "unavailable",
-        "reason": "setserial-not-found"
-      },
-      "dmesg": {
-        "available": true,
-        "status": "unavailable",
-        "reason": "dmesg: read kernel buffer failed: Operation not permitted"
-      },
-      "rank": 650,
-      "recommendation": "local-ttyS-candidate",
-      "confidence": "low",
-      "selection_reasons": [
-        "older ttyS serial candidate"
-      ]
-    },
-    {
-      "display_path": "/dev/ttyS15",
-      "path": "/dev/ttyS15",
-      "resolved_path": "/dev/ttyS15",
-      "target_path": "/dev/ttyS15",
-      "exists": true,
-      "readable": true,
-      "writable": true,
-      "owner": "root",
-      "group": "dialout",
-      "mode": "crw-rw----",
-      "modified_time": "2026-06-05T14:15:54.898171+00:00",
-      "modified_age_seconds": 197756,
-      "stable_path": false,
-      "path_type": "ttyS",
-      "label": "ttyS15",
-      "in_use": false,
-      "in_use_state": {
-        "state": "not_in_use",
-        "checked_with": [
-          "fuser",
-          "lsof"
-        ],
-        "unavailable_tools": [],
-        "pids": []
-      },
-      "udevadm": {
-        "available": true,
-        "status": "ok",
-        "properties": {
-          "DEVPATH": "/devices/platform/serial8250/serial8250:0/serial8250:0.15/tty/ttyS15",
-          "DEVNAME": "/dev/ttyS15",
-          "SUBSYSTEM": "tty"
-        },
-        "raw_redacted": true
-      },
-      "setserial": {
-        "available": false,
-        "status": "unavailable",
-        "reason": "setserial-not-found"
-      },
-      "dmesg": {
-        "available": true,
-        "status": "unavailable",
-        "reason": "dmesg: read kernel buffer failed: Operation not permitted"
-      },
-      "rank": 650,
-      "recommendation": "local-ttyS-candidate",
-      "confidence": "low",
-      "selection_reasons": [
-        "older ttyS serial candidate"
-      ]
-    },
-    {
-      "display_path": "/dev/ttyS16",
-      "path": "/dev/ttyS16",
-      "resolved_path": "/dev/ttyS16",
-      "target_path": "/dev/ttyS16",
-      "exists": true,
-      "readable": true,
-      "writable": true,
-      "owner": "root",
-      "group": "dialout",
-      "mode": "crw-rw----",
-      "modified_time": "2026-06-05T14:15:54.899888+00:00",
-      "modified_age_seconds": 197756,
-      "stable_path": false,
-      "path_type": "ttyS",
-      "label": "ttyS16",
-      "in_use": false,
-      "in_use_state": {
-        "state": "not_in_use",
-        "checked_with": [
-          "fuser",
-          "lsof"
-        ],
-        "unavailable_tools": [],
-        "pids": []
-      },
-      "udevadm": {
-        "available": true,
-        "status": "ok",
-        "properties": {
-          "DEVPATH": "/devices/platform/serial8250/serial8250:0/serial8250:0.16/tty/ttyS16",
-          "DEVNAME": "/dev/ttyS16",
-          "SUBSYSTEM": "tty"
-        },
-        "raw_redacted": true
-      },
-      "setserial": {
-        "available": false,
-        "status": "unavailable",
-        "reason": "setserial-not-found"
-      },
-      "dmesg": {
-        "available": true,
-        "status": "unavailable",
-        "reason": "dmesg: read kernel buffer failed: Operation not permitted"
-      },
-      "rank": 650,
-      "recommendation": "local-ttyS-candidate",
-      "confidence": "low",
-      "selection_reasons": [
-        "older ttyS serial candidate"
-      ]
-    },
-    {
-      "display_path": "/dev/ttyS17",
-      "path": "/dev/ttyS17",
-      "resolved_path": "/dev/ttyS17",
-      "target_path": "/dev/ttyS17",
-      "exists": true,
-      "readable": true,
-      "writable": true,
-      "owner": "root",
-      "group": "dialout",
-      "mode": "crw-rw----",
-      "modified_time": "2026-06-05T14:15:54.896268+00:00",
-      "modified_age_seconds": 197756,
-      "stable_path": false,
-      "path_type": "ttyS",
-      "label": "ttyS17",
-      "in_use": false,
-      "in_use_state": {
-        "state": "not_in_use",
-        "checked_with": [
-          "fuser",
-          "lsof"
-        ],
-        "unavailable_tools": [],
-        "pids": []
-      },
-      "udevadm": {
-        "available": true,
-        "status": "ok",
-        "properties": {
-          "DEVPATH": "/devices/platform/serial8250/serial8250:0/serial8250:0.17/tty/ttyS17",
-          "DEVNAME": "/dev/ttyS17",
-          "SUBSYSTEM": "tty"
-        },
-        "raw_redacted": true
-      },
-      "setserial": {
-        "available": false,
-        "status": "unavailable",
-        "reason": "setserial-not-found"
-      },
-      "dmesg": {
-        "available": true,
-        "status": "unavailable",
-        "reason": "dmesg: read kernel buffer failed: Operation not permitted"
-      },
-      "rank": 650,
-      "recommendation": "local-ttyS-candidate",
-      "confidence": "low",
-      "selection_reasons": [
-        "older ttyS serial candidate"
-      ]
-    },
-    {
-      "display_path": "/dev/ttyS18",
-      "path": "/dev/ttyS18",
-      "resolved_path": "/dev/ttyS18",
-      "target_path": "/dev/ttyS18",
-      "exists": true,
-      "readable": true,
-      "writable": true,
-      "owner": "root",
-      "group": "dialout",
-      "mode": "crw-rw----",
-      "modified_time": "2026-06-05T14:15:54.896027+00:00",
-      "modified_age_seconds": 197756,
-      "stable_path": false,
-      "path_type": "ttyS",
-      "label": "ttyS18",
-      "in_use": false,
-      "in_use_state": {
-        "state": "not_in_use",
-        "checked_with": [
-          "fuser",
-          "lsof"
-        ],
-        "unavailable_tools": [],
-        "pids": []
-      },
-      "udevadm": {
-        "available": true,
-        "status": "ok",
-        "properties": {
-          "DEVPATH": "/devices/platform/serial8250/serial8250:0/serial8250:0.18/tty/ttyS18",
-          "DEVNAME": "/dev/ttyS18",
-          "SUBSYSTEM": "tty"
-        },
-        "raw_redacted": true
-      },
-      "setserial": {
-        "available": false,
-        "status": "unavailable",
-        "reason": "setserial-not-found"
-      },
-      "dmesg": {
-        "available": true,
-        "status": "unavailable",
-        "reason": "dmesg: read kernel buffer failed: Operation not permitted"
-      },
-      "rank": 650,
-      "recommendation": "local-ttyS-candidate",
-      "confidence": "low",
-      "selection_reasons": [
-        "older ttyS serial candidate"
-      ]
-    },
-    {
-      "display_path": "/dev/ttyS19",
-      "path": "/dev/ttyS19",
-      "resolved_path": "/dev/ttyS19",
-      "target_path": "/dev/ttyS19",
-      "exists": true,
-      "readable": true,
-      "writable": true,
-      "owner": "root",
-      "group": "dialout",
-      "mode": "crw-rw----",
-      "modified_time": "2026-06-05T14:15:54.896268+00:00",
-      "modified_age_seconds": 197756,
-      "stable_path": false,
-      "path_type": "ttyS",
-      "label": "ttyS19",
-      "in_use": false,
-      "in_use_state": {
-        "state": "not_in_use",
-        "checked_with": [
-          "fuser",
-          "lsof"
-        ],
-        "unavailable_tools": [],
-        "pids": []
-      },
-      "udevadm": {
-        "available": true,
-        "status": "ok",
-        "properties": {
-          "DEVPATH": "/devices/platform/serial8250/serial8250:0/serial8250:0.19/tty/ttyS19",
-          "DEVNAME": "/dev/ttyS19",
-          "SUBSYSTEM": "tty"
-        },
-        "raw_redacted": true
-      },
-      "setserial": {
-        "available": false,
-        "status": "unavailable",
-        "reason": "setserial-not-found"
-      },
-      "dmesg": {
-        "available": true,
-        "status": "unavailable",
-        "reason": "dmesg: read kernel buffer failed: Operation not permitted"
-      },
-      "rank": 650,
-      "recommendation": "local-ttyS-candidate",
-      "confidence": "low",
-      "selection_reasons": [
-        "older ttyS serial candidate"
-      ]
-    },
-    {
-      "display_path": "/dev/ttyS2",
-      "path": "/dev/ttyS2",
-      "resolved_path": "/dev/ttyS2",
-      "target_path": "/dev/ttyS2",
-      "exists": true,
-      "readable": true,
-      "writable": true,
-      "owner": "root",
-      "group": "dialout",
-      "mode": "crw-rw----",
-      "modified_time": "2026-06-05T14:15:54.896791+00:00",
-      "modified_age_seconds": 197756,
-      "stable_path": false,
-      "path_type": "ttyS",
-      "label": "ttyS2",
-      "in_use": false,
-      "in_use_state": {
-        "state": "not_in_use",
-        "checked_with": [
-          "fuser",
-          "lsof"
-        ],
-        "unavailable_tools": [],
-        "pids": []
-      },
-      "udevadm": {
-        "available": true,
-        "status": "ok",
-        "properties": {
-          "DEVPATH": "/devices/platform/serial8250/serial8250:0/serial8250:0.2/tty/ttyS2",
-          "DEVNAME": "/dev/ttyS2",
-          "SUBSYSTEM": "tty"
-        },
-        "raw_redacted": true
-      },
-      "setserial": {
-        "available": false,
-        "status": "unavailable",
-        "reason": "setserial-not-found"
-      },
-      "dmesg": {
-        "available": true,
-        "status": "unavailable",
-        "reason": "dmesg: read kernel buffer failed: Operation not permitted"
-      },
-      "rank": 650,
-      "recommendation": "local-ttyS-candidate",
-      "confidence": "low",
-      "selection_reasons": [
-        "older ttyS serial candidate"
-      ]
-    },
-    {
-      "display_path": "/dev/ttyS20",
-      "path": "/dev/ttyS20",
-      "resolved_path": "/dev/ttyS20",
-      "target_path": "/dev/ttyS20",
-      "exists": true,
-      "readable": true,
-      "writable": true,
-      "owner": "root",
-      "group": "dialout",
-      "mode": "crw-rw----",
-      "modified_time": "2026-06-05T14:15:54.898078+00:00",
-      "modified_age_seconds": 197756,
-      "stable_path": false,
-      "path_type": "ttyS",
-      "label": "ttyS20",
-      "in_use": false,
-      "in_use_state": {
-        "state": "not_in_use",
-        "checked_with": [
-          "fuser",
-          "lsof"
-        ],
-        "unavailable_tools": [],
-        "pids": []
-      },
-      "udevadm": {
-        "available": true,
-        "status": "ok",
-        "properties": {
-          "DEVPATH": "/devices/platform/serial8250/serial8250:0/serial8250:0.20/tty/ttyS20",
-          "DEVNAME": "/dev/ttyS20",
-          "SUBSYSTEM": "tty"
-        },
-        "raw_redacted": true
-      },
-      "setserial": {
-        "available": false,
-        "status": "unavailable",
-        "reason": "setserial-not-found"
-      },
-      "dmesg": {
-        "available": true,
-        "status": "unavailable",
-        "reason": "dmesg: read kernel buffer failed: Operation not permitted"
-      },
-      "rank": 650,
-      "recommendation": "local-ttyS-candidate",
-      "confidence": "low",
-      "selection_reasons": [
-        "older ttyS serial candidate"
-      ]
-    },
-    {
-      "display_path": "/dev/ttyS21",
-      "path": "/dev/ttyS21",
-      "resolved_path": "/dev/ttyS21",
-      "target_path": "/dev/ttyS21",
-      "exists": true,
-      "readable": true,
-      "writable": true,
-      "owner": "root",
-      "group": "dialout",
-      "mode": "crw-rw----",
-      "modified_time": "2026-06-05T14:15:54.897604+00:00",
-      "modified_age_seconds": 197756,
-      "stable_path": false,
-      "path_type": "ttyS",
-      "label": "ttyS21",
-      "in_use": false,
-      "in_use_state": {
-        "state": "not_in_use",
-        "checked_with": [
-          "fuser",
-          "lsof"
-        ],
-        "unavailable_tools": [],
-        "pids": []
-      },
-      "udevadm": {
-        "available": true,
-        "status": "ok",
-        "properties": {
-          "DEVPATH": "/devices/platform/serial8250/serial8250:0/serial8250:0.21/tty/ttyS21",
-          "DEVNAME": "/dev/ttyS21",
-          "SUBSYSTEM": "tty"
-        },
-        "raw_redacted": true
-      },
-      "setserial": {
-        "available": false,
-        "status": "unavailable",
-        "reason": "setserial-not-found"
-      },
-      "dmesg": {
-        "available": true,
-        "status": "unavailable",
-        "reason": "dmesg: read kernel buffer failed: Operation not permitted"
-      },
-      "rank": 650,
-      "recommendation": "local-ttyS-candidate",
-      "confidence": "low",
-      "selection_reasons": [
-        "older ttyS serial candidate"
-      ]
-    },
-    {
-      "display_path": "/dev/ttyS22",
-      "path": "/dev/ttyS22",
-      "resolved_path": "/dev/ttyS22",
-      "target_path": "/dev/ttyS22",
-      "exists": true,
-      "readable": true,
-      "writable": true,
-      "owner": "root",
-      "group": "dialout",
-      "mode": "crw-rw----",
-      "modified_time": "2026-06-05T14:15:54.900873+00:00",
-      "modified_age_seconds": 197756,
-      "stable_path": false,
-      "path_type": "ttyS",
-      "label": "ttyS22",
-      "in_use": false,
-      "in_use_state": {
-        "state": "not_in_use",
-        "checked_with": [
-          "fuser",
-          "lsof"
-        ],
-        "unavailable_tools": [],
-        "pids": []
-      },
-      "udevadm": {
-        "available": true,
-        "status": "ok",
-        "properties": {
-          "DEVPATH": "/devices/platform/serial8250/serial8250:0/serial8250:0.22/tty/ttyS22",
-          "DEVNAME": "/dev/ttyS22",
-          "SUBSYSTEM": "tty"
-        },
-        "raw_redacted": true
-      },
-      "setserial": {
-        "available": false,
-        "status": "unavailable",
-        "reason": "setserial-not-found"
-      },
-      "dmesg": {
-        "available": true,
-        "status": "unavailable",
-        "reason": "dmesg: read kernel buffer failed: Operation not permitted"
-      },
-      "rank": 650,
-      "recommendation": "local-ttyS-candidate",
-      "confidence": "low",
-      "selection_reasons": [
-        "older ttyS serial candidate"
-      ]
-    },
-    {
-      "display_path": "/dev/ttyS23",
-      "path": "/dev/ttyS23",
-      "resolved_path": "/dev/ttyS23",
-      "target_path": "/dev/ttyS23",
-      "exists": true,
-      "readable": true,
-      "writable": true,
-      "owner": "root",
-      "group": "dialout",
-      "mode": "crw-rw----",
-      "modified_time": "2026-06-05T14:15:54.899778+00:00",
-      "modified_age_seconds": 197756,
-      "stable_path": false,
-      "path_type": "ttyS",
-      "label": "ttyS23",
-      "in_use": false,
-      "in_use_state": {
-        "state": "not_in_use",
-        "checked_with": [
-          "fuser",
-          "lsof"
-        ],
-        "unavailable_tools": [],
-        "pids": []
-      },
-      "udevadm": {
-        "available": true,
-        "status": "ok",
-        "properties": {
-          "DEVPATH": "/devices/platform/serial8250/serial8250:0/serial8250:0.23/tty/ttyS23",
-          "DEVNAME": "/dev/ttyS23",
-          "SUBSYSTEM": "tty"
-        },
-        "raw_redacted": true
-      },
-      "setserial": {
-        "available": false,
-        "status": "unavailable",
-        "reason": "setserial-not-found"
-      },
-      "dmesg": {
-        "available": true,
-        "status": "unavailable",
-        "reason": "dmesg: read kernel buffer failed: Operation not permitted"
-      },
-      "rank": 650,
-      "recommendation": "local-ttyS-candidate",
-      "confidence": "low",
-      "selection_reasons": [
-        "older ttyS serial candidate"
-      ]
-    },
-    {
-      "display_path": "/dev/ttyS24",
-      "path": "/dev/ttyS24",
-      "resolved_path": "/dev/ttyS24",
-      "target_path": "/dev/ttyS24",
-      "exists": true,
-      "readable": true,
-      "writable": true,
-      "owner": "root",
-      "group": "dialout",
-      "mode": "crw-rw----",
-      "modified_time": "2026-06-05T14:15:54.901995+00:00",
-      "modified_age_seconds": 197756,
-      "stable_path": false,
-      "path_type": "ttyS",
-      "label": "ttyS24",
-      "in_use": false,
-      "in_use_state": {
-        "state": "not_in_use",
-        "checked_with": [
-          "fuser",
-          "lsof"
-        ],
-        "unavailable_tools": [],
-        "pids": []
-      },
-      "udevadm": {
-        "available": true,
-        "status": "ok",
-        "properties": {
-          "DEVPATH": "/devices/platform/serial8250/serial8250:0/serial8250:0.24/tty/ttyS24",
-          "DEVNAME": "/dev/ttyS24",
-          "SUBSYSTEM": "tty"
-        },
-        "raw_redacted": true
-      },
-      "setserial": {
-        "available": false,
-        "status": "unavailable",
-        "reason": "setserial-not-found"
-      },
-      "dmesg": {
-        "available": true,
-        "status": "unavailable",
-        "reason": "dmesg: read kernel buffer failed: Operation not permitted"
-      },
-      "rank": 650,
-      "recommendation": "local-ttyS-candidate",
-      "confidence": "low",
-      "selection_reasons": [
-        "older ttyS serial candidate"
-      ]
-    },
-    {
-      "display_path": "/dev/ttyS25",
-      "path": "/dev/ttyS25",
-      "resolved_path": "/dev/ttyS25",
-      "target_path": "/dev/ttyS25",
-      "exists": true,
-      "readable": true,
-      "writable": true,
-      "owner": "root",
-      "group": "dialout",
-      "mode": "crw-rw----",
-      "modified_time": "2026-06-05T14:15:54.901578+00:00",
-      "modified_age_seconds": 197756,
-      "stable_path": false,
-      "path_type": "ttyS",
-      "label": "ttyS25",
-      "in_use": false,
-      "in_use_state": {
-        "state": "not_in_use",
-        "checked_with": [
-          "fuser",
-          "lsof"
-        ],
-        "unavailable_tools": [],
-        "pids": []
-      },
-      "udevadm": {
-        "available": true,
-        "status": "ok",
-        "properties": {
-          "DEVPATH": "/devices/platform/serial8250/serial8250:0/serial8250:0.25/tty/ttyS25",
-          "DEVNAME": "/dev/ttyS25",
-          "SUBSYSTEM": "tty"
-        },
-        "raw_redacted": true
-      },
-      "setserial": {
-        "available": false,
-        "status": "unavailable",
-        "reason": "setserial-not-found"
-      },
-      "dmesg": {
-        "available": true,
-        "status": "unavailable",
-        "reason": "dmesg: read kernel buffer failed: Operation not permitted"
-      },
-      "rank": 650,
-      "recommendation": "local-ttyS-candidate",
-      "confidence": "low",
-      "selection_reasons": [
-        "older ttyS serial candidate"
-      ]
-    },
-    {
-      "display_path": "/dev/ttyS26",
-      "path": "/dev/ttyS26",
-      "resolved_path": "/dev/ttyS26",
-      "target_path": "/dev/ttyS26",
-      "exists": true,
-      "readable": true,
-      "writable": true,
-      "owner": "root",
-      "group": "dialout",
-      "mode": "crw-rw----",
-      "modified_time": "2026-06-05T14:15:54.898883+00:00",
-      "modified_age_seconds": 197756,
-      "stable_path": false,
-      "path_type": "ttyS",
-      "label": "ttyS26",
-      "in_use": false,
-      "in_use_state": {
-        "state": "not_in_use",
-        "checked_with": [
-          "fuser",
-          "lsof"
-        ],
-        "unavailable_tools": [],
-        "pids": []
-      },
-      "udevadm": {
-        "available": true,
-        "status": "ok",
-        "properties": {
-          "DEVPATH": "/devices/platform/serial8250/serial8250:0/serial8250:0.26/tty/ttyS26",
-          "DEVNAME": "/dev/ttyS26",
-          "SUBSYSTEM": "tty"
-        },
-        "raw_redacted": true
-      },
-      "setserial": {
-        "available": false,
-        "status": "unavailable",
-        "reason": "setserial-not-found"
-      },
-      "dmesg": {
-        "available": true,
-        "status": "unavailable",
-        "reason": "dmesg: read kernel buffer failed: Operation not permitted"
-      },
-      "rank": 650,
-      "recommendation": "local-ttyS-candidate",
-      "confidence": "low",
-      "selection_reasons": [
-        "older ttyS serial candidate"
-      ]
-    },
-    {
-      "display_path": "/dev/ttyS27",
-      "path": "/dev/ttyS27",
-      "resolved_path": "/dev/ttyS27",
-      "target_path": "/dev/ttyS27",
-      "exists": true,
-      "readable": true,
-      "writable": true,
-      "owner": "root",
-      "group": "dialout",
-      "mode": "crw-rw----",
-      "modified_time": "2026-06-05T14:15:54.902396+00:00",
-      "modified_age_seconds": 197756,
-      "stable_path": false,
-      "path_type": "ttyS",
-      "label": "ttyS27",
-      "in_use": false,
-      "in_use_state": {
-        "state": "not_in_use",
-        "checked_with": [
-          "fuser",
-          "lsof"
-        ],
-        "unavailable_tools": [],
-        "pids": []
-      },
-      "udevadm": {
-        "available": true,
-        "status": "ok",
-        "properties": {
-          "DEVPATH": "/devices/platform/serial8250/serial8250:0/serial8250:0.27/tty/ttyS27",
-          "DEVNAME": "/dev/ttyS27",
-          "SUBSYSTEM": "tty"
-        },
-        "raw_redacted": true
-      },
-      "setserial": {
-        "available": false,
-        "status": "unavailable",
-        "reason": "setserial-not-found"
-      },
-      "dmesg": {
-        "available": true,
-        "status": "unavailable",
-        "reason": "dmesg: read kernel buffer failed: Operation not permitted"
-      },
-      "rank": 650,
-      "recommendation": "local-ttyS-candidate",
-      "confidence": "low",
-      "selection_reasons": [
-        "older ttyS serial candidate"
-      ]
-    },
-    {
-      "display_path": "/dev/ttyS28",
-      "path": "/dev/ttyS28",
-      "resolved_path": "/dev/ttyS28",
-      "target_path": "/dev/ttyS28",
-      "exists": true,
-      "readable": true,
-      "writable": true,
-      "owner": "root",
-      "group": "dialout",
-      "mode": "crw-rw----",
-      "modified_time": "2026-06-05T14:15:54.896725+00:00",
-      "modified_age_seconds": 197756,
-      "stable_path": false,
-      "path_type": "ttyS",
-      "label": "ttyS28",
-      "in_use": false,
-      "in_use_state": {
-        "state": "not_in_use",
-        "checked_with": [
-          "fuser",
-          "lsof"
-        ],
-        "unavailable_tools": [],
-        "pids": []
-      },
-      "udevadm": {
-        "available": true,
-        "status": "ok",
-        "properties": {
-          "DEVPATH": "/devices/platform/serial8250/serial8250:0/serial8250:0.28/tty/ttyS28",
-          "DEVNAME": "/dev/ttyS28",
-          "SUBSYSTEM": "tty"
-        },
-        "raw_redacted": true
-      },
-      "setserial": {
-        "available": false,
-        "status": "unavailable",
-        "reason": "setserial-not-found"
-      },
-      "dmesg": {
-        "available": true,
-        "status": "unavailable",
-        "reason": "dmesg: read kernel buffer failed: Operation not permitted"
-      },
-      "rank": 650,
-      "recommendation": "local-ttyS-candidate",
-      "confidence": "low",
-      "selection_reasons": [
-        "older ttyS serial candidate"
-      ]
-    },
-    {
-      "display_path": "/dev/ttyS29",
-      "path": "/dev/ttyS29",
-      "resolved_path": "/dev/ttyS29",
-      "target_path": "/dev/ttyS29",
-      "exists": true,
-      "readable": true,
-      "writable": true,
-      "owner": "root",
-      "group": "dialout",
-      "mode": "crw-rw----",
-      "modified_time": "2026-06-05T14:15:54.899888+00:00",
-      "modified_age_seconds": 197756,
-      "stable_path": false,
-      "path_type": "ttyS",
-      "label": "ttyS29",
-      "in_use": false,
-      "in_use_state": {
-        "state": "not_in_use",
-        "checked_with": [
-          "fuser",
-          "lsof"
-        ],
-        "unavailable_tools": [],
-        "pids": []
-      },
-      "udevadm": {
-        "available": true,
-        "status": "ok",
-        "properties": {
-          "DEVPATH": "/devices/platform/serial8250/serial8250:0/serial8250:0.29/tty/ttyS29",
-          "DEVNAME": "/dev/ttyS29",
-          "SUBSYSTEM": "tty"
-        },
-        "raw_redacted": true
-      },
-      "setserial": {
-        "available": false,
-        "status": "unavailable",
-        "reason": "setserial-not-found"
-      },
-      "dmesg": {
-        "available": true,
-        "status": "unavailable",
-        "reason": "dmesg: read kernel buffer failed: Operation not permitted"
-      },
-      "rank": 650,
-      "recommendation": "local-ttyS-candidate",
-      "confidence": "low",
-      "selection_reasons": [
-        "older ttyS serial candidate"
-      ]
-    },
-    {
-      "display_path": "/dev/ttyS3",
-      "path": "/dev/ttyS3",
-      "resolved_path": "/dev/ttyS3",
-      "target_path": "/dev/ttyS3",
-      "exists": true,
-      "readable": true,
-      "writable": true,
-      "owner": "root",
-      "group": "dialout",
-      "mode": "crw-rw----",
-      "modified_time": "2026-06-05T14:15:54.896725+00:00",
-      "modified_age_seconds": 197756,
-      "stable_path": false,
-      "path_type": "ttyS",
-      "label": "ttyS3",
-      "in_use": false,
-      "in_use_state": {
-        "state": "not_in_use",
-        "checked_with": [
-          "fuser",
-          "lsof"
-        ],
-        "unavailable_tools": [],
-        "pids": []
-      },
-      "udevadm": {
-        "available": true,
-        "status": "ok",
-        "properties": {
-          "DEVPATH": "/devices/platform/serial8250/serial8250:0/serial8250:0.3/tty/ttyS3",
-          "DEVNAME": "/dev/ttyS3",
-          "SUBSYSTEM": "tty"
-        },
-        "raw_redacted": true
-      },
-      "setserial": {
-        "available": false,
-        "status": "unavailable",
-        "reason": "setserial-not-found"
-      },
-      "dmesg": {
-        "available": true,
-        "status": "unavailable",
-        "reason": "dmesg: read kernel buffer failed: Operation not permitted"
-      },
-      "rank": 650,
-      "recommendation": "local-ttyS-candidate",
-      "confidence": "low",
-      "selection_reasons": [
-        "older ttyS serial candidate"
-      ]
-    },
-    {
-      "display_path": "/dev/ttyS30",
-      "path": "/dev/ttyS30",
-      "resolved_path": "/dev/ttyS30",
-      "target_path": "/dev/ttyS30",
-      "exists": true,
-      "readable": true,
-      "writable": true,
-      "owner": "root",
-      "group": "dialout",
-      "mode": "crw-rw----",
-      "modified_time": "2026-06-05T14:15:54.896524+00:00",
-      "modified_age_seconds": 197756,
-      "stable_path": false,
-      "path_type": "ttyS",
-      "label": "ttyS30",
-      "in_use": false,
-      "in_use_state": {
-        "state": "not_in_use",
-        "checked_with": [
-          "fuser",
-          "lsof"
-        ],
-        "unavailable_tools": [],
-        "pids": []
-      },
-      "udevadm": {
-        "available": true,
-        "status": "ok",
-        "properties": {
-          "DEVPATH": "/devices/platform/serial8250/serial8250:0/serial8250:0.30/tty/ttyS30",
-          "DEVNAME": "/dev/ttyS30",
-          "SUBSYSTEM": "tty"
-        },
-        "raw_redacted": true
-      },
-      "setserial": {
-        "available": false,
-        "status": "unavailable",
-        "reason": "setserial-not-found"
-      },
-      "dmesg": {
-        "available": true,
-        "status": "unavailable",
-        "reason": "dmesg: read kernel buffer failed: Operation not permitted"
-      },
-      "rank": 650,
-      "recommendation": "local-ttyS-candidate",
-      "confidence": "low",
-      "selection_reasons": [
-        "older ttyS serial candidate"
-      ]
-    },
-    {
-      "display_path": "/dev/ttyS31",
-      "path": "/dev/ttyS31",
-      "resolved_path": "/dev/ttyS31",
-      "target_path": "/dev/ttyS31",
-      "exists": true,
-      "readable": true,
-      "writable": true,
-      "owner": "root",
-      "group": "dialout",
-      "mode": "crw-rw----",
-      "modified_time": "2026-06-05T14:15:54.901406+00:00",
-      "modified_age_seconds": 197756,
-      "stable_path": false,
-      "path_type": "ttyS",
-      "label": "ttyS31",
-      "in_use": false,
-      "in_use_state": {
-        "state": "not_in_use",
-        "checked_with": [
-          "fuser",
-          "lsof"
-        ],
-        "unavailable_tools": [],
-        "pids": []
-      },
-      "udevadm": {
-        "available": true,
-        "status": "ok",
-        "properties": {
-          "DEVPATH": "/devices/platform/serial8250/serial8250:0/serial8250:0.31/tty/ttyS31",
-          "DEVNAME": "/dev/ttyS31",
-          "SUBSYSTEM": "tty"
-        },
-        "raw_redacted": true
-      },
-      "setserial": {
-        "available": false,
-        "status": "unavailable",
-        "reason": "setserial-not-found"
-      },
-      "dmesg": {
-        "available": true,
-        "status": "unavailable",
-        "reason": "dmesg: read kernel buffer failed: Operation not permitted"
-      },
-      "rank": 650,
-      "recommendation": "local-ttyS-candidate",
-      "confidence": "low",
-      "selection_reasons": [
-        "older ttyS serial candidate"
-      ]
-    },
-    {
-      "display_path": "/dev/ttyS6",
-      "path": "/dev/ttyS6",
-      "resolved_path": "/dev/ttyS6",
-      "target_path": "/dev/ttyS6",
-      "exists": true,
-      "readable": true,
-      "writable": true,
-      "owner": "root",
-      "group": "dialout",
-      "mode": "crw-rw----",
-      "modified_time": "2026-06-05T14:15:54.903352+00:00",
-      "modified_age_seconds": 197756,
-      "stable_path": false,
-      "path_type": "ttyS",
-      "label": "ttyS6",
-      "in_use": false,
-      "in_use_state": {
-        "state": "not_in_use",
-        "checked_with": [
-          "fuser",
-          "lsof"
-        ],
-        "unavailable_tools": [],
-        "pids": []
-      },
-      "udevadm": {
-        "available": true,
-        "status": "ok",
-        "properties": {
-          "DEVPATH": "/devices/platform/serial8250/serial8250:0/serial8250:0.6/tty/ttyS6",
-          "DEVNAME": "/dev/ttyS6",
-          "SUBSYSTEM": "tty"
-        },
-        "raw_redacted": true
-      },
-      "setserial": {
-        "available": false,
-        "status": "unavailable",
-        "reason": "setserial-not-found"
-      },
-      "dmesg": {
-        "available": true,
-        "status": "unavailable",
-        "reason": "dmesg: read kernel buffer failed: Operation not permitted"
-      },
-      "rank": 650,
-      "recommendation": "local-ttyS-candidate",
-      "confidence": "low",
-      "selection_reasons": [
-        "older ttyS serial candidate"
-      ]
-    },
-    {
-      "display_path": "/dev/ttyS7",
-      "path": "/dev/ttyS7",
-      "resolved_path": "/dev/ttyS7",
-      "target_path": "/dev/ttyS7",
-      "exists": true,
-      "readable": true,
-      "writable": true,
-      "owner": "root",
-      "group": "dialout",
-      "mode": "crw-rw----",
-      "modified_time": "2026-06-05T14:15:54.901488+00:00",
-      "modified_age_seconds": 197756,
-      "stable_path": false,
-      "path_type": "ttyS",
-      "label": "ttyS7",
-      "in_use": false,
-      "in_use_state": {
-        "state": "not_in_use",
-        "checked_with": [
-          "fuser",
-          "lsof"
-        ],
-        "unavailable_tools": [],
-        "pids": []
-      },
-      "udevadm": {
-        "available": true,
-        "status": "ok",
-        "properties": {
-          "DEVPATH": "/devices/platform/serial8250/serial8250:0/serial8250:0.7/tty/ttyS7",
-          "DEVNAME": "/dev/ttyS7",
-          "SUBSYSTEM": "tty"
-        },
-        "raw_redacted": true
-      },
-      "setserial": {
-        "available": false,
-        "status": "unavailable",
-        "reason": "setserial-not-found"
-      },
-      "dmesg": {
-        "available": true,
-        "status": "unavailable",
-        "reason": "dmesg: read kernel buffer failed: Operation not permitted"
-      },
-      "rank": 650,
-      "recommendation": "local-ttyS-candidate",
-      "confidence": "low",
-      "selection_reasons": [
-        "older ttyS serial candidate"
-      ]
-    },
-    {
-      "display_path": "/dev/ttyS8",
-      "path": "/dev/ttyS8",
-      "resolved_path": "/dev/ttyS8",
-      "target_path": "/dev/ttyS8",
-      "exists": true,
-      "readable": true,
-      "writable": true,
-      "owner": "root",
-      "group": "dialout",
-      "mode": "crw-rw----",
-      "modified_time": "2026-06-05T14:15:54.902485+00:00",
-      "modified_age_seconds": 197756,
-      "stable_path": false,
-      "path_type": "ttyS",
-      "label": "ttyS8",
-      "in_use": false,
-      "in_use_state": {
-        "state": "not_in_use",
-        "checked_with": [
-          "fuser",
-          "lsof"
-        ],
-        "unavailable_tools": [],
-        "pids": []
-      },
-      "udevadm": {
-        "available": true,
-        "status": "ok",
-        "properties": {
-          "DEVPATH": "/devices/platform/serial8250/serial8250:0/serial8250:0.8/tty/ttyS8",
-          "DEVNAME": "/dev/ttyS8",
-          "SUBSYSTEM": "tty"
-        },
-        "raw_redacted": true
-      },
-      "setserial": {
-        "available": false,
-        "status": "unavailable",
-        "reason": "setserial-not-found"
-      },
-      "dmesg": {
-        "available": true,
-        "status": "unavailable",
-        "reason": "dmesg: read kernel buffer failed: Operation not permitted"
-      },
-      "rank": 650,
-      "recommendation": "local-ttyS-candidate",
-      "confidence": "low",
-      "selection_reasons": [
-        "older ttyS serial candidate"
-      ]
-    },
-    {
-      "display_path": "/dev/ttyS9",
-      "path": "/dev/ttyS9",
-      "resolved_path": "/dev/ttyS9",
-      "target_path": "/dev/ttyS9",
-      "exists": true,
-      "readable": true,
-      "writable": true,
-      "owner": "root",
-      "group": "dialout",
-      "mode": "crw-rw----",
-      "modified_time": "2026-06-05T14:15:54.901825+00:00",
-      "modified_age_seconds": 197756,
-      "stable_path": false,
-      "path_type": "ttyS",
-      "label": "ttyS9",
-      "in_use": false,
-      "in_use_state": {
-        "state": "not_in_use",
-        "checked_with": [
-          "fuser",
-          "lsof"
-        ],
-        "unavailable_tools": [],
-        "pids": []
-      },
-      "udevadm": {
-        "available": true,
-        "status": "ok",
-        "properties": {
-          "DEVPATH": "/devices/platform/serial8250/serial8250:0/serial8250:0.9/tty/ttyS9",
-          "DEVNAME": "/dev/ttyS9",
-          "SUBSYSTEM": "tty"
-        },
-        "raw_redacted": true
-      },
-      "setserial": {
-        "available": false,
-        "status": "unavailable",
-        "reason": "setserial-not-found"
-      },
-      "dmesg": {
-        "available": true,
-        "status": "unavailable",
-        "reason": "dmesg: read kernel buffer failed: Operation not permitted"
-      },
-      "rank": 650,
-      "recommendation": "local-ttyS-candidate",
-      "confidence": "low",
-      "selection_reasons": [
-        "older ttyS serial candidate"
+        "ttyS device has a recent modified timestamp"
       ]
     }
   ],
@@ -1741,41 +1935,45 @@
     38400,
     57600
   ],
-  "attempt_count": 20,
+  "attempt_count": 1,
   "attempts": [
     {
-      "path": "/dev/ttyS5",
+      "path": "/dev/serial/by-id/usb-Microchip_Technology_Inc._MCP2221_USB-I2C_UART_Combo-if00",
       "baud": 115200,
-      "started_at": "2026-06-07T21:11:57.210481+00:00",
+      "started_at": "2026-06-09T22:26:08.292552+00:00",
       "status": "checked",
-      "bytes": 0,
-      "captured": false,
-      "classification": "no_bytes_read",
+      "bytes": 2280,
+      "captured": true,
+      "classification": "prompt_detected",
       "classification_detail": {
-        "classification": "no_bytes_read",
-        "device_type": "unknown",
-        "prompt_state": "no_output",
-        "prompt_label": "No console output",
-        "confidence": "low",
-        "signals": []
+        "classification": "prompt_detected",
+        "device_type": "netapp",
+        "prompt_state": "cluster_setup_prompt",
+        "prompt_label": "NetApp cluster setup wizard",
+        "confidence": "high",
+        "signals": [
+          "cluster setup"
+        ]
       },
-      "device_type": "unknown",
-      "prompt_state": "no_output",
-      "prompt_label": "No console output",
-      "confidence": "low",
-      "signals": [],
-      "output_excerpt": "",
+      "device_type": "netapp",
+      "prompt_state": "cluster_setup_prompt",
+      "prompt_label": "NetApp cluster setup wizard",
+      "confidence": "high",
+      "signals": [
+        "cluster setup"
+      ],
+      "output_excerpt": ". . . . . . . . . . .%. . . .9. . . .<. . . ... . . .0. . . . . . . . ... . . .. . . . . . .0. . .0. . ... . . .. . . . R. . . .<. . .0... . .0. . .0. . ..w...)....s...o....^..v.....^...;....8.8.r.p.9.8.x.1.8.8.>.0..8.fv;.8.<.8.8..x.x.,...w.....w.(.;gH8\nthe value \".;gH8\" is invalid for type <yes>\nThis message must be acknowledged: type yes to continue.\nYou can type \"back\", \"exit\", or \"help\" at any question.\ncluster setup prompt\nYou can enter the following commands at any time:\n\"help\" or \"?\" - if you want to have a question clarified,\n\"back\" - if you want to change previously answered questions, and\ncluster setup prompt\nAny changes you made before quitting will be saved.\ncluster setup prompt\nTo accept a default or omit a question, do not enter a value.\nThis system will send event messages and periodic reports to NetApp Technical\nSupport. To disable this feature, enter\nautosupport modify -support disable\nwithin 24 hours.\nEnabling AutoSupport can significantly speed problem determination\nand resolution, should a problem occur on your system.\nFor further information on AutoSupport, see:\nhttps://support.netapp.com/autosupport/\nType yes to confirm and continue {yes}:\ncluster setup prompt\nYou can enter the following commands at any time:\n\"help\" or \"?\" - if you want to have a question clarified,\n\"back\" - if you want to change previously answered questions, and\ncluster setup prompt\nAny changes you made before quitting will be saved.\ncluster setup prompt\nTo accept a default or omit a question, do not enter a value.\nThis system will send event messages and periodic reports to NetApp T",
       "raw_output_redacted": true,
       "sequence_reads": [
         {
           "sequence": "newline",
           "wake_bytes_sent": 1,
-          "bytes_read": 0
+          "bytes_read": 1357
         },
         {
           "sequence": "carriage-return",
           "wake_bytes_sent": 1,
-          "bytes_read": 0
+          "bytes_read": 923
         },
         {
           "sequence": "read-window-1",
@@ -1793,778 +1991,10 @@
           "bytes_read": 0
         }
       ],
-      "blocker": "No bytes were read from this serial candidate and baud."
-    },
-    {
-      "path": "/dev/ttyS5",
-      "baud": 9600,
-      "started_at": "2026-06-07T21:11:58.990274+00:00",
-      "status": "checked",
-      "bytes": 0,
-      "captured": false,
-      "classification": "no_bytes_read",
-      "classification_detail": {
-        "classification": "no_bytes_read",
-        "device_type": "unknown",
-        "prompt_state": "no_output",
-        "prompt_label": "No console output",
-        "confidence": "low",
-        "signals": []
-      },
-      "device_type": "unknown",
-      "prompt_state": "no_output",
-      "prompt_label": "No console output",
-      "confidence": "low",
-      "signals": [],
-      "output_excerpt": "",
-      "raw_output_redacted": true,
-      "sequence_reads": [
-        {
-          "sequence": "newline",
-          "wake_bytes_sent": 1,
-          "bytes_read": 0
-        },
-        {
-          "sequence": "carriage-return",
-          "wake_bytes_sent": 1,
-          "bytes_read": 0
-        },
-        {
-          "sequence": "read-window-1",
-          "wake_bytes_sent": 0,
-          "bytes_read": 0
-        },
-        {
-          "sequence": "read-window-2",
-          "wake_bytes_sent": 0,
-          "bytes_read": 0
-        },
-        {
-          "sequence": "read-window-3",
-          "wake_bytes_sent": 0,
-          "bytes_read": 0
-        }
-      ],
-      "blocker": "No bytes were read from this serial candidate and baud."
-    },
-    {
-      "path": "/dev/ttyS5",
-      "baud": 19200,
-      "started_at": "2026-06-07T21:12:00.757658+00:00",
-      "status": "checked",
-      "bytes": 0,
-      "captured": false,
-      "classification": "no_bytes_read",
-      "classification_detail": {
-        "classification": "no_bytes_read",
-        "device_type": "unknown",
-        "prompt_state": "no_output",
-        "prompt_label": "No console output",
-        "confidence": "low",
-        "signals": []
-      },
-      "device_type": "unknown",
-      "prompt_state": "no_output",
-      "prompt_label": "No console output",
-      "confidence": "low",
-      "signals": [],
-      "output_excerpt": "",
-      "raw_output_redacted": true,
-      "sequence_reads": [
-        {
-          "sequence": "newline",
-          "wake_bytes_sent": 1,
-          "bytes_read": 0
-        },
-        {
-          "sequence": "carriage-return",
-          "wake_bytes_sent": 1,
-          "bytes_read": 0
-        },
-        {
-          "sequence": "read-window-1",
-          "wake_bytes_sent": 0,
-          "bytes_read": 0
-        },
-        {
-          "sequence": "read-window-2",
-          "wake_bytes_sent": 0,
-          "bytes_read": 0
-        },
-        {
-          "sequence": "read-window-3",
-          "wake_bytes_sent": 0,
-          "bytes_read": 0
-        }
-      ],
-      "blocker": "No bytes were read from this serial candidate and baud."
-    },
-    {
-      "path": "/dev/ttyS5",
-      "baud": 38400,
-      "started_at": "2026-06-07T21:12:02.524901+00:00",
-      "status": "checked",
-      "bytes": 0,
-      "captured": false,
-      "classification": "no_bytes_read",
-      "classification_detail": {
-        "classification": "no_bytes_read",
-        "device_type": "unknown",
-        "prompt_state": "no_output",
-        "prompt_label": "No console output",
-        "confidence": "low",
-        "signals": []
-      },
-      "device_type": "unknown",
-      "prompt_state": "no_output",
-      "prompt_label": "No console output",
-      "confidence": "low",
-      "signals": [],
-      "output_excerpt": "",
-      "raw_output_redacted": true,
-      "sequence_reads": [
-        {
-          "sequence": "newline",
-          "wake_bytes_sent": 1,
-          "bytes_read": 0
-        },
-        {
-          "sequence": "carriage-return",
-          "wake_bytes_sent": 1,
-          "bytes_read": 0
-        },
-        {
-          "sequence": "read-window-1",
-          "wake_bytes_sent": 0,
-          "bytes_read": 0
-        },
-        {
-          "sequence": "read-window-2",
-          "wake_bytes_sent": 0,
-          "bytes_read": 0
-        },
-        {
-          "sequence": "read-window-3",
-          "wake_bytes_sent": 0,
-          "bytes_read": 0
-        }
-      ],
-      "blocker": "No bytes were read from this serial candidate and baud."
-    },
-    {
-      "path": "/dev/ttyS5",
-      "baud": 57600,
-      "started_at": "2026-06-07T21:12:04.315598+00:00",
-      "status": "checked",
-      "bytes": 0,
-      "captured": false,
-      "classification": "no_bytes_read",
-      "classification_detail": {
-        "classification": "no_bytes_read",
-        "device_type": "unknown",
-        "prompt_state": "no_output",
-        "prompt_label": "No console output",
-        "confidence": "low",
-        "signals": []
-      },
-      "device_type": "unknown",
-      "prompt_state": "no_output",
-      "prompt_label": "No console output",
-      "confidence": "low",
-      "signals": [],
-      "output_excerpt": "",
-      "raw_output_redacted": true,
-      "sequence_reads": [
-        {
-          "sequence": "newline",
-          "wake_bytes_sent": 1,
-          "bytes_read": 0
-        },
-        {
-          "sequence": "carriage-return",
-          "wake_bytes_sent": 1,
-          "bytes_read": 0
-        },
-        {
-          "sequence": "read-window-1",
-          "wake_bytes_sent": 0,
-          "bytes_read": 0
-        },
-        {
-          "sequence": "read-window-2",
-          "wake_bytes_sent": 0,
-          "bytes_read": 0
-        },
-        {
-          "sequence": "read-window-3",
-          "wake_bytes_sent": 0,
-          "bytes_read": 0
-        }
-      ],
-      "blocker": "No bytes were read from this serial candidate and baud."
-    },
-    {
-      "path": "/dev/ttyS4",
-      "baud": 115200,
-      "started_at": "2026-06-07T21:12:06.082397+00:00",
-      "status": "checked",
-      "bytes": 0,
-      "captured": false,
-      "classification": "no_bytes_read",
-      "classification_detail": {
-        "classification": "no_bytes_read",
-        "device_type": "unknown",
-        "prompt_state": "no_output",
-        "prompt_label": "No console output",
-        "confidence": "low",
-        "signals": []
-      },
-      "device_type": "unknown",
-      "prompt_state": "no_output",
-      "prompt_label": "No console output",
-      "confidence": "low",
-      "signals": [],
-      "output_excerpt": "",
-      "raw_output_redacted": true,
-      "sequence_reads": [
-        {
-          "sequence": "newline",
-          "wake_bytes_sent": 1,
-          "bytes_read": 0
-        },
-        {
-          "sequence": "carriage-return",
-          "wake_bytes_sent": 1,
-          "bytes_read": 0
-        },
-        {
-          "sequence": "read-window-1",
-          "wake_bytes_sent": 0,
-          "bytes_read": 0
-        },
-        {
-          "sequence": "read-window-2",
-          "wake_bytes_sent": 0,
-          "bytes_read": 0
-        },
-        {
-          "sequence": "read-window-3",
-          "wake_bytes_sent": 0,
-          "bytes_read": 0
-        }
-      ],
-      "blocker": "No bytes were read from this serial candidate and baud."
-    },
-    {
-      "path": "/dev/ttyS4",
-      "baud": 9600,
-      "started_at": "2026-06-07T21:12:07.849529+00:00",
-      "status": "checked",
-      "bytes": 0,
-      "captured": false,
-      "classification": "no_bytes_read",
-      "classification_detail": {
-        "classification": "no_bytes_read",
-        "device_type": "unknown",
-        "prompt_state": "no_output",
-        "prompt_label": "No console output",
-        "confidence": "low",
-        "signals": []
-      },
-      "device_type": "unknown",
-      "prompt_state": "no_output",
-      "prompt_label": "No console output",
-      "confidence": "low",
-      "signals": [],
-      "output_excerpt": "",
-      "raw_output_redacted": true,
-      "sequence_reads": [
-        {
-          "sequence": "newline",
-          "wake_bytes_sent": 1,
-          "bytes_read": 0
-        },
-        {
-          "sequence": "carriage-return",
-          "wake_bytes_sent": 1,
-          "bytes_read": 0
-        },
-        {
-          "sequence": "read-window-1",
-          "wake_bytes_sent": 0,
-          "bytes_read": 0
-        },
-        {
-          "sequence": "read-window-2",
-          "wake_bytes_sent": 0,
-          "bytes_read": 0
-        },
-        {
-          "sequence": "read-window-3",
-          "wake_bytes_sent": 0,
-          "bytes_read": 0
-        }
-      ],
-      "blocker": "No bytes were read from this serial candidate and baud."
-    },
-    {
-      "path": "/dev/ttyS4",
-      "baud": 19200,
-      "started_at": "2026-06-07T21:12:09.617789+00:00",
-      "status": "checked",
-      "bytes": 0,
-      "captured": false,
-      "classification": "no_bytes_read",
-      "classification_detail": {
-        "classification": "no_bytes_read",
-        "device_type": "unknown",
-        "prompt_state": "no_output",
-        "prompt_label": "No console output",
-        "confidence": "low",
-        "signals": []
-      },
-      "device_type": "unknown",
-      "prompt_state": "no_output",
-      "prompt_label": "No console output",
-      "confidence": "low",
-      "signals": [],
-      "output_excerpt": "",
-      "raw_output_redacted": true,
-      "sequence_reads": [
-        {
-          "sequence": "newline",
-          "wake_bytes_sent": 1,
-          "bytes_read": 0
-        },
-        {
-          "sequence": "carriage-return",
-          "wake_bytes_sent": 1,
-          "bytes_read": 0
-        },
-        {
-          "sequence": "read-window-1",
-          "wake_bytes_sent": 0,
-          "bytes_read": 0
-        },
-        {
-          "sequence": "read-window-2",
-          "wake_bytes_sent": 0,
-          "bytes_read": 0
-        },
-        {
-          "sequence": "read-window-3",
-          "wake_bytes_sent": 0,
-          "bytes_read": 0
-        }
-      ],
-      "blocker": "No bytes were read from this serial candidate and baud."
-    },
-    {
-      "path": "/dev/ttyS4",
-      "baud": 38400,
-      "started_at": "2026-06-07T21:12:11.385426+00:00",
-      "status": "checked",
-      "bytes": 0,
-      "captured": false,
-      "classification": "no_bytes_read",
-      "classification_detail": {
-        "classification": "no_bytes_read",
-        "device_type": "unknown",
-        "prompt_state": "no_output",
-        "prompt_label": "No console output",
-        "confidence": "low",
-        "signals": []
-      },
-      "device_type": "unknown",
-      "prompt_state": "no_output",
-      "prompt_label": "No console output",
-      "confidence": "low",
-      "signals": [],
-      "output_excerpt": "",
-      "raw_output_redacted": true,
-      "sequence_reads": [
-        {
-          "sequence": "newline",
-          "wake_bytes_sent": 1,
-          "bytes_read": 0
-        },
-        {
-          "sequence": "carriage-return",
-          "wake_bytes_sent": 1,
-          "bytes_read": 0
-        },
-        {
-          "sequence": "read-window-1",
-          "wake_bytes_sent": 0,
-          "bytes_read": 0
-        },
-        {
-          "sequence": "read-window-2",
-          "wake_bytes_sent": 0,
-          "bytes_read": 0
-        },
-        {
-          "sequence": "read-window-3",
-          "wake_bytes_sent": 0,
-          "bytes_read": 0
-        }
-      ],
-      "blocker": "No bytes were read from this serial candidate and baud."
-    },
-    {
-      "path": "/dev/ttyS4",
-      "baud": 57600,
-      "started_at": "2026-06-07T21:12:13.152848+00:00",
-      "status": "checked",
-      "bytes": 0,
-      "captured": false,
-      "classification": "no_bytes_read",
-      "classification_detail": {
-        "classification": "no_bytes_read",
-        "device_type": "unknown",
-        "prompt_state": "no_output",
-        "prompt_label": "No console output",
-        "confidence": "low",
-        "signals": []
-      },
-      "device_type": "unknown",
-      "prompt_state": "no_output",
-      "prompt_label": "No console output",
-      "confidence": "low",
-      "signals": [],
-      "output_excerpt": "",
-      "raw_output_redacted": true,
-      "sequence_reads": [
-        {
-          "sequence": "newline",
-          "wake_bytes_sent": 1,
-          "bytes_read": 0
-        },
-        {
-          "sequence": "carriage-return",
-          "wake_bytes_sent": 1,
-          "bytes_read": 0
-        },
-        {
-          "sequence": "read-window-1",
-          "wake_bytes_sent": 0,
-          "bytes_read": 0
-        },
-        {
-          "sequence": "read-window-2",
-          "wake_bytes_sent": 0,
-          "bytes_read": 0
-        },
-        {
-          "sequence": "read-window-3",
-          "wake_bytes_sent": 0,
-          "bytes_read": 0
-        }
-      ],
-      "blocker": "No bytes were read from this serial candidate and baud."
-    },
-    {
-      "path": "/dev/ttyS1",
-      "baud": 115200,
-      "started_at": "2026-06-07T21:12:14.920639+00:00",
-      "status": "blocked",
-      "bytes": 0,
-      "captured": false,
-      "classification": "serial_open_failed",
-      "classification_detail": {
-        "classification": "serial_open_failed",
-        "device_type": "unknown",
-        "prompt_state": "serial_open_failed",
-        "prompt_label": "Serial open failed",
-        "confidence": "low",
-        "signals": [
-          "serial open failed"
-        ]
-      },
-      "device_type": "unknown",
-      "prompt_state": "serial_open_failed",
-      "prompt_label": "Serial open failed",
-      "confidence": "low",
-      "signals": [
-        "serial open failed"
-      ],
-      "output_excerpt": "",
-      "raw_output_redacted": true,
-      "sequence_reads": [],
-      "blocker": "TimeoutError: serial probe attempt timed out"
-    },
-    {
-      "path": "/dev/ttyS1",
-      "baud": 9600,
-      "started_at": "2026-06-07T21:12:18.920969+00:00",
-      "status": "blocked",
-      "bytes": 0,
-      "captured": false,
-      "classification": "serial_open_failed",
-      "classification_detail": {
-        "classification": "serial_open_failed",
-        "device_type": "unknown",
-        "prompt_state": "serial_open_failed",
-        "prompt_label": "Serial open failed",
-        "confidence": "low",
-        "signals": [
-          "serial open failed"
-        ]
-      },
-      "device_type": "unknown",
-      "prompt_state": "serial_open_failed",
-      "prompt_label": "Serial open failed",
-      "confidence": "low",
-      "signals": [
-        "serial open failed"
-      ],
-      "output_excerpt": "",
-      "raw_output_redacted": true,
-      "sequence_reads": [],
-      "blocker": "TimeoutError: serial probe attempt timed out"
-    },
-    {
-      "path": "/dev/ttyS1",
-      "baud": 19200,
-      "started_at": "2026-06-07T21:12:22.921475+00:00",
-      "status": "blocked",
-      "bytes": 0,
-      "captured": false,
-      "classification": "serial_open_failed",
-      "classification_detail": {
-        "classification": "serial_open_failed",
-        "device_type": "unknown",
-        "prompt_state": "serial_open_failed",
-        "prompt_label": "Serial open failed",
-        "confidence": "low",
-        "signals": [
-          "serial open failed"
-        ]
-      },
-      "device_type": "unknown",
-      "prompt_state": "serial_open_failed",
-      "prompt_label": "Serial open failed",
-      "confidence": "low",
-      "signals": [
-        "serial open failed"
-      ],
-      "output_excerpt": "",
-      "raw_output_redacted": true,
-      "sequence_reads": [],
-      "blocker": "TimeoutError: serial probe attempt timed out"
-    },
-    {
-      "path": "/dev/ttyS1",
-      "baud": 38400,
-      "started_at": "2026-06-07T21:12:26.922109+00:00",
-      "status": "blocked",
-      "bytes": 0,
-      "captured": false,
-      "classification": "serial_open_failed",
-      "classification_detail": {
-        "classification": "serial_open_failed",
-        "device_type": "unknown",
-        "prompt_state": "serial_open_failed",
-        "prompt_label": "Serial open failed",
-        "confidence": "low",
-        "signals": [
-          "serial open failed"
-        ]
-      },
-      "device_type": "unknown",
-      "prompt_state": "serial_open_failed",
-      "prompt_label": "Serial open failed",
-      "confidence": "low",
-      "signals": [
-        "serial open failed"
-      ],
-      "output_excerpt": "",
-      "raw_output_redacted": true,
-      "sequence_reads": [],
-      "blocker": "TimeoutError: serial probe attempt timed out"
-    },
-    {
-      "path": "/dev/ttyS1",
-      "baud": 57600,
-      "started_at": "2026-06-07T21:12:30.922432+00:00",
-      "status": "blocked",
-      "bytes": 0,
-      "captured": false,
-      "classification": "serial_open_failed",
-      "classification_detail": {
-        "classification": "serial_open_failed",
-        "device_type": "unknown",
-        "prompt_state": "serial_open_failed",
-        "prompt_label": "Serial open failed",
-        "confidence": "low",
-        "signals": [
-          "serial open failed"
-        ]
-      },
-      "device_type": "unknown",
-      "prompt_state": "serial_open_failed",
-      "prompt_label": "Serial open failed",
-      "confidence": "low",
-      "signals": [
-        "serial open failed"
-      ],
-      "output_excerpt": "",
-      "raw_output_redacted": true,
-      "sequence_reads": [],
-      "blocker": "TimeoutError: serial probe attempt timed out"
-    },
-    {
-      "path": "/dev/ttyS0",
-      "baud": 115200,
-      "started_at": "2026-06-07T21:12:34.922975+00:00",
-      "status": "blocked",
-      "bytes": 0,
-      "captured": false,
-      "classification": "serial_open_failed",
-      "classification_detail": {
-        "classification": "serial_open_failed",
-        "device_type": "unknown",
-        "prompt_state": "serial_open_failed",
-        "prompt_label": "Serial open failed",
-        "confidence": "low",
-        "signals": [
-          "serial open failed"
-        ]
-      },
-      "device_type": "unknown",
-      "prompt_state": "serial_open_failed",
-      "prompt_label": "Serial open failed",
-      "confidence": "low",
-      "signals": [
-        "serial open failed"
-      ],
-      "output_excerpt": "",
-      "raw_output_redacted": true,
-      "sequence_reads": [],
-      "blocker": "SerialException: Could not configure port: (5, 'Input/output error')"
-    },
-    {
-      "path": "/dev/ttyS0",
-      "baud": 9600,
-      "started_at": "2026-06-07T21:12:34.923130+00:00",
-      "status": "blocked",
-      "bytes": 0,
-      "captured": false,
-      "classification": "serial_open_failed",
-      "classification_detail": {
-        "classification": "serial_open_failed",
-        "device_type": "unknown",
-        "prompt_state": "serial_open_failed",
-        "prompt_label": "Serial open failed",
-        "confidence": "low",
-        "signals": [
-          "serial open failed"
-        ]
-      },
-      "device_type": "unknown",
-      "prompt_state": "serial_open_failed",
-      "prompt_label": "Serial open failed",
-      "confidence": "low",
-      "signals": [
-        "serial open failed"
-      ],
-      "output_excerpt": "",
-      "raw_output_redacted": true,
-      "sequence_reads": [],
-      "blocker": "SerialException: Could not configure port: (5, 'Input/output error')"
-    },
-    {
-      "path": "/dev/ttyS0",
-      "baud": 19200,
-      "started_at": "2026-06-07T21:12:34.923176+00:00",
-      "status": "blocked",
-      "bytes": 0,
-      "captured": false,
-      "classification": "serial_open_failed",
-      "classification_detail": {
-        "classification": "serial_open_failed",
-        "device_type": "unknown",
-        "prompt_state": "serial_open_failed",
-        "prompt_label": "Serial open failed",
-        "confidence": "low",
-        "signals": [
-          "serial open failed"
-        ]
-      },
-      "device_type": "unknown",
-      "prompt_state": "serial_open_failed",
-      "prompt_label": "Serial open failed",
-      "confidence": "low",
-      "signals": [
-        "serial open failed"
-      ],
-      "output_excerpt": "",
-      "raw_output_redacted": true,
-      "sequence_reads": [],
-      "blocker": "SerialException: Could not configure port: (5, 'Input/output error')"
-    },
-    {
-      "path": "/dev/ttyS0",
-      "baud": 38400,
-      "started_at": "2026-06-07T21:12:34.923200+00:00",
-      "status": "blocked",
-      "bytes": 0,
-      "captured": false,
-      "classification": "serial_open_failed",
-      "classification_detail": {
-        "classification": "serial_open_failed",
-        "device_type": "unknown",
-        "prompt_state": "serial_open_failed",
-        "prompt_label": "Serial open failed",
-        "confidence": "low",
-        "signals": [
-          "serial open failed"
-        ]
-      },
-      "device_type": "unknown",
-      "prompt_state": "serial_open_failed",
-      "prompt_label": "Serial open failed",
-      "confidence": "low",
-      "signals": [
-        "serial open failed"
-      ],
-      "output_excerpt": "",
-      "raw_output_redacted": true,
-      "sequence_reads": [],
-      "blocker": "SerialException: Could not configure port: (5, 'Input/output error')"
-    },
-    {
-      "path": "/dev/ttyS0",
-      "baud": 57600,
-      "started_at": "2026-06-07T21:12:34.923220+00:00",
-      "status": "blocked",
-      "bytes": 0,
-      "captured": false,
-      "classification": "serial_open_failed",
-      "classification_detail": {
-        "classification": "serial_open_failed",
-        "device_type": "unknown",
-        "prompt_state": "serial_open_failed",
-        "prompt_label": "Serial open failed",
-        "confidence": "low",
-        "signals": [
-          "serial open failed"
-        ]
-      },
-      "device_type": "unknown",
-      "prompt_state": "serial_open_failed",
-      "prompt_label": "Serial open failed",
-      "confidence": "low",
-      "signals": [
-        "serial open failed"
-      ],
-      "output_excerpt": "",
-      "raw_output_redacted": true,
-      "sequence_reads": [],
-      "blocker": "SerialException: Could not configure port: (5, 'Input/output error')"
+      "blocker": null
     }
   ],
-  "last_console_blocker": "Serial candidates were discovered, but no valid NetApp prompt, boot state, or login flow was detected.",
+  "last_console_blocker": null,
   "serial_import_error": null,
   "management_topology": {
     "connected_management_ports": [
@@ -2582,9 +2012,7 @@
     "Serial auto-discovery includes /dev/serial/by-id/*, /dev/ttyUSB*, /dev/ttyACM*, and /dev/ttyS*.",
     "Only one NetApp management port is connected at the moment."
   ],
-  "blockers": [
-    "Serial candidates were discovered, but no valid NetApp prompt, boot state, or login flow was detected."
-  ],
+  "blockers": [],
   "not_attempted": [
     "Ctrl+C, Ctrl+Z, break, boot menu selection, or any boot interruption",
     "username or password entry",
@@ -2594,5 +2022,91 @@
     "vCenter or ESXi datastore mount",
     "controller reboot, takeover/giveback, wipe, or upgrade"
   ],
-  "next_safe_action": "Use the selected candidate as the next physical console check, then verify cable placement, adapter ownership, power state, and baud before rerunning discovery."
+  "next_safe_action": "Use the selected console adapter/baud for read-only NetApp state capture.",
+  "runtime_state": {
+    "provider_id": "netapp-ontap",
+    "device_role": "storage-controller",
+    "checked_at": "2026-06-09T22:26:10.076606+00:00",
+    "configured": false,
+    "configured_state": "setup_wizard",
+    "source": "console_discovery",
+    "manual_env_flag_required": false,
+    "legacy_env": {
+      "netapp_configured_env": false,
+      "netapp_configured_env_role": "legacy_override_or_desired_flag",
+      "netapp_console_port_env_role": "optional_hint_only",
+      "manual_state_tracking_required": false
+    },
+    "console": {
+      "discovered_port": "/dev/serial/by-id/usb-Microchip_Technology_Inc._MCP2221_USB-I2C_UART_Combo-if00",
+      "baud": 115200,
+      "confidence": "high",
+      "last_seen": "2026-06-09T22:26:02.225527+00:00",
+      "source": "autodiscovery",
+      "selection_source": "prompt-evidence",
+      "prompt_state": "cluster_setup_prompt",
+      "prompt_label": "NetApp cluster setup wizard",
+      "configured_port_hint": null,
+      "detected_automatically": true,
+      "manual_env_update_required": false
+    },
+    "management": {
+      "cluster_mgmt_ip": "192.168.1.208",
+      "rest_443_reachable": false,
+      "ssh_22_reachable": false
+    },
+    "api": {
+      "access_values_present": false,
+      "authenticated": null,
+      "status": "not_attempted",
+      "reason": "NetApp API access values are missing."
+    },
+    "storage": {
+      "protocol": "nfs",
+      "ready": true,
+      "source": "bootstrap_profile_and_live_api_validation",
+      "nfs_lifs_detected": [
+        "192.168.1.212",
+        "192.168.1.213"
+      ],
+      "iscsi_lifs_detected": [],
+      "blockers": []
+    },
+    "verified_at": null,
+    "evidence_report_path": "artifacts/codex-runs/netapp-console-autodiscovery-report.md",
+    "detected_management_ips": {},
+    "detected_storage_protocol_readiness": {
+      "protocol": "nfs",
+      "ready": true,
+      "source": "bootstrap_profile_and_live_api_validation",
+      "nfs_lifs_detected": [
+        "192.168.1.212",
+        "192.168.1.213"
+      ],
+      "iscsi_lifs_detected": [],
+      "blockers": []
+    },
+    "last_successful_probe_at": "2026-06-09T22:26:02.225527+00:00",
+    "last_report_path": "artifacts/codex-runs/netapp-console-autodiscovery-report.md",
+    "confidence": "high",
+    "blockers": [],
+    "artifacts": {
+      "state_report": "artifacts/codex-runs/netapp-live-state-report.md",
+      "automanagement_report": "artifacts/codex-runs/netapp-state-automanagement-report.md",
+      "console_last_known_good": "artifacts/codex-runs/netapp-console-last-known-good-redacted.json"
+    },
+    "next_safe_action": "Complete or validate NetApp setup, then run Validate NetApp Setup.",
+    "source_type": "live_cached",
+    "freshness": "current",
+    "ttl_seconds": 86400,
+    "stale_after_seconds": 86400,
+    "is_current": true,
+    "is_operator_visible": true,
+    "recheck_command": "make provider-lab-refresh-live-state",
+    "evidence_artifacts": [
+      "artifacts/codex-runs/netapp-live-state-report.md",
+      "artifacts/codex-runs/netapp-state-automanagement-report.md",
+      "artifacts/codex-runs/netapp-console-last-known-good-redacted.json"
+    ]
+  }
 }

@@ -16,6 +16,8 @@ import type {
   HpeRaidIntentWrite,
   HpeRaidPlanPreview,
   HpeStorageDiscovery,
+  IloBaselinePreview,
+  IloBaselineReadiness,
   IloSetupIntent,
   IloSetupIntentWrite,
   IloSetupPlanPreview,
@@ -153,6 +155,10 @@ export const api = {
   mediaInventory: () => apiRequest<MediaInventory>("/api/v1/media-inventory"),
   iloUpgradeReadiness: () =>
     apiRequest<IloUpgradeReadiness>("/api/v1/providers/ilo-redfish/upgrade-readiness"),
+  iloBaselinePreview: () =>
+    apiRequest<IloBaselinePreview>("/api/v1/providers/hpe-ilo/baseline-preview"),
+  iloBaselineReadiness: () =>
+    apiRequest<IloBaselineReadiness>("/api/v1/providers/hpe-ilo/readiness"),
   iloSetupIntent: () =>
     apiRequest<IloSetupIntent>("/api/v1/providers/ilo-redfish/setup-intent"),
   saveIloSetupIntent: (payload: IloSetupIntentWrite) =>

@@ -79,6 +79,13 @@ ALLOWED_WORKFLOW_ACTION_RUNNERS: dict[str, WorkflowActionExecutionSpec] = {
         registry_command="make provider-lab-ilo-inventory",
         reports=("artifacts/codex-runs/ilo-real-run-report.md",),
     ),
+    "ilo.baseline-preview": WorkflowActionExecutionSpec(
+        action_id="ilo.baseline-preview",
+        kind="api",
+        label="Preview Baseline",
+        api_endpoint="/api/v1/providers/hpe-ilo/baseline-preview",
+        api_method="GET",
+    ),
     "esxi.readiness": WorkflowActionExecutionSpec(
         action_id="esxi.readiness",
         kind="command",

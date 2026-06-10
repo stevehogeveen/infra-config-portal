@@ -262,6 +262,7 @@ class LabAddressPlan(BaseModel):
     netapp_node_a_mgmt: str | None = Field(default=None, max_length=80)
     netapp_node_b_mgmt: str | None = Field(default=None, max_length=80)
     netapp_svm_mgmt: str | None = Field(default=None, max_length=80)
+    netapp_nfs_lifs: list[str] = Field(default_factory=list, max_length=16)
     netapp_iscsi_lifs: list[str] = Field(default_factory=list, max_length=16)
 
     @field_validator(
@@ -286,9 +287,9 @@ class LabAddressPlan(BaseModel):
         text = str(value).strip()
         return text or None
 
-    @field_validator("netapp_iscsi_lifs", mode="before")
+    @field_validator("netapp_nfs_lifs", "netapp_iscsi_lifs", mode="before")
     @classmethod
-    def split_iscsi_lifs(cls, value: Any) -> list[str]:
+    def split_lifs(cls, value: Any) -> list[str]:
         if value is None:
             return []
         if isinstance(value, str):
@@ -327,15 +328,15 @@ class LabAddressPlan(BaseModel):
                 raise ValueError("address must be an IPv4 or IPv6 address") from exc
         return value
 
-    @field_validator("netapp_iscsi_lifs")
+    @field_validator("netapp_nfs_lifs", "netapp_iscsi_lifs")
     @classmethod
-    def validate_iscsi_lifs(cls, value: list[str]) -> list[str]:
+    def validate_lifs(cls, value: list[str]) -> list[str]:
         cleaned = [item.strip() for item in value if item.strip()]
         for item in cleaned:
             try:
                 ip_address(item)
             except ValueError as exc:
-                raise ValueError("NetApp iSCSI LIFs must be IPv4 or IPv6 addresses") from exc
+                raise ValueError("NetApp LIFs must be IPv4 or IPv6 addresses") from exc
         return cleaned
 
 
@@ -344,14 +345,28 @@ class LabGlobalSettings(BaseModel):
 
     subnet_prefix: int = Field(default=24, ge=23, le=29)
     gateway: str | None = Field(default=None, max_length=80)
+    support_unit: str | None = Field(default=None, max_length=120)
     domain_name: str | None = Field(default=None, max_length=160)
+    dom_dc: str | None = Field(default=None, max_length=80)
     dns_servers: list[str] = Field(default_factory=list, max_length=8)
     ntp_servers: list[str] = Field(default_factory=list, max_length=8)
     timezone: str | None = Field(default=None, max_length=80)
     netapp_enabled: bool = True
     netapp_disabled_reason: str | None = Field(default=None, max_length=300)
+    vcenter_enabled: bool = False
+    vlan_id: str | None = Field(default=None, max_length=80)
+    mtu: int | None = Field(default=None, ge=576, le=9216)
 
-    @field_validator("gateway", "domain_name", "timezone", "netapp_disabled_reason", mode="before")
+    @field_validator(
+        "gateway",
+        "support_unit",
+        "domain_name",
+        "dom_dc",
+        "timezone",
+        "netapp_disabled_reason",
+        "vlan_id",
+        mode="before",
+    )
     @classmethod
     def strip_text(cls, value: str | None) -> str | None:
         if value is None:
@@ -397,6 +412,40 @@ class LabSubnetOptionRead(BaseModel):
     usable_hosts: int
     netapp_supported: bool
     netapp_disabled_reason: str | None = None
+    default_topology: str | None = None
+
+
+class LabProfileDevices(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    gateway: str | None = None
+    switch_primary: str | None = None
+    switch_secondary: str | None = None
+    reserved: list[str] = Field(default_factory=list)
+    ups: str | None = None
+    backup_storage: str | None = None
+    utility_vm: str | None = None
+    esxi: str | None = None
+    ilo: str | None = None
+    cisco: str | None = None
+    netapp: dict[str, Any] | None = None
+    vcenter: str | None = None
+
+
+class LabProfileFeatures(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    netapp_enabled: bool = True
+    vcenter_enabled: bool = False
+    firmware_gate_enabled: bool = True
+    build_verification_enabled: bool = True
+    storage_protocol: str = Field(default="nfs", max_length=40)
+    disable_ipv6: bool = True
+    enable_snmp: bool = False
+    enable_ntp: bool = True
+    enable_dns: bool = True
+    netapp_disabled_reason: str | None = Field(default=None, max_length=300)
+    vcenter_disabled_reason: str | None = Field(default=None, max_length=300)
 
 
 class LabProfileWrite(BaseModel):
@@ -404,15 +453,41 @@ class LabProfileWrite(BaseModel):
 
     name: str = Field(min_length=2, max_length=120)
     description: str | None = Field(default=None, max_length=1200)
+    profile_topology: Literal["high_address_lab", "compact_edge_lab", "custom"] | None = None
+    subnet_cidr: str | None = Field(default=None, max_length=80)
+    gateway: str | None = Field(default=None, max_length=80)
+    dns: list[str] = Field(default_factory=list, max_length=8)
+    ntp: list[str] = Field(default_factory=list, max_length=8)
+    vlan_id: str | None = Field(default=None, max_length=80)
+    mtu: int | None = Field(default=None, ge=576, le=9216)
+    devices: LabProfileDevices = Field(default_factory=LabProfileDevices)
+    features: LabProfileFeatures = Field(default_factory=LabProfileFeatures)
     global_settings: LabGlobalSettings = Field(default_factory=LabGlobalSettings)
     address_plan: LabAddressPlan = Field(default_factory=LabAddressPlan)
 
-    @field_validator("name", "description", mode="before")
+    @field_validator(
+        "name",
+        "description",
+        "profile_topology",
+        "subnet_cidr",
+        "gateway",
+        "vlan_id",
+        mode="before",
+    )
     @classmethod
     def strip_text(cls, value: str | None) -> str | None:
         if value is None:
             return None
         return str(value).strip()
+
+    @field_validator("dns", "ntp", mode="before")
+    @classmethod
+    def split_top_level_server_list(cls, value: Any) -> list[str]:
+        if value is None:
+            return []
+        if isinstance(value, str):
+            return [item.strip() for item in value.split(",") if item.strip()]
+        return value
 
     @field_validator("*", mode="after")
     @classmethod
@@ -426,6 +501,15 @@ class LabProfileRevisionRead(BaseModel):
     saved_at: datetime
     name: str
     description: str
+    profile_topology: str = "high_address_lab"
+    subnet_cidr: str | None = None
+    gateway: str | None = None
+    dns: list[str] = Field(default_factory=list)
+    ntp: list[str] = Field(default_factory=list)
+    vlan_id: str | None = None
+    mtu: int | None = None
+    devices: LabProfileDevices = Field(default_factory=LabProfileDevices)
+    features: LabProfileFeatures = Field(default_factory=LabProfileFeatures)
     global_settings: LabGlobalSettings
     address_plan: LabAddressPlan
 
@@ -434,8 +518,21 @@ class LabProfileRead(BaseModel):
     id: str
     name: str
     description: str
+    profile_topology: str = "high_address_lab"
+    subnet_cidr: str | None = None
+    gateway: str | None = None
+    dns: list[str] = Field(default_factory=list)
+    ntp: list[str] = Field(default_factory=list)
+    vlan_id: str | None = None
+    mtu: int | None = None
+    devices: LabProfileDevices = Field(default_factory=LabProfileDevices)
+    features: LabProfileFeatures = Field(default_factory=LabProfileFeatures)
     global_settings: LabGlobalSettings
     address_plan: LabAddressPlan
+    resolved_address_plan: LabAddressPlan
+    not_in_scope_stages: list[str] = Field(default_factory=list)
+    mismatch_warnings: list[dict[str, Any]] = Field(default_factory=list)
+    fix_guidance: list[dict[str, Any]] = Field(default_factory=list)
     source: str
     version: int
     active: bool
@@ -445,8 +542,20 @@ class LabProfileRead(BaseModel):
     history: list[LabProfileRevisionRead] = Field(default_factory=list)
 
 
+class LabProfileContextRead(BaseModel):
+    active_profile: LabProfileRead
+    topology: str
+    resolved_address_plan: LabAddressPlan
+    enabled_features: LabProfileFeatures
+    disabled_features: dict[str, str] = Field(default_factory=dict)
+    not_in_scope_stages: list[str] = Field(default_factory=list)
+    mismatch_warnings: list[dict[str, Any]] = Field(default_factory=list)
+    fix_guidance: list[dict[str, Any]] = Field(default_factory=list)
+
+
 class LabProfileListRead(BaseModel):
     active_profile: LabProfileRead
+    active_context: LabProfileContextRead
     runtime_profile: LabProfileRead
     profiles: list[LabProfileRead]
     subnet_options: list[LabSubnetOptionRead] = Field(default_factory=list)
@@ -642,6 +751,109 @@ class IloReadinessSummaryRead(BaseModel):
     warnings: list[str] = Field(default_factory=list)
     removable_warnings: list[str] = Field(default_factory=list)
     disabled_dangerous_actions: list[ProviderActionRead] = Field(default_factory=list)
+    reports_artifacts: list[IloReportArtifactPlaceholderRead] = Field(default_factory=list)
+
+
+class IloBaselineKitProfileRead(BaseModel):
+    kit_id: str
+    support_unit: str
+    subnet_mask: str
+    gateway: str
+    dom_dc: str
+    derived_subnet: str
+    source_type: str = "operator_config"
+    checked_at: str | None = None
+    freshness: str = "live"
+    recheck_command: str = "GET /api/v1/lab/profiles"
+
+
+class IloBaselineDiscoveryRangeRead(BaseModel):
+    source_subnet: str
+    default_start_host: str
+    default_end_host: str
+    addresses: list[str] = Field(default_factory=list)
+    override_supported: bool = True
+    override_active: bool = False
+    source_type: str = "operator_config"
+    checked_at: str | None = None
+    freshness: str = "live"
+    recheck_command: str = "GET /api/v1/providers/hpe-ilo/baseline-preview"
+
+
+class IloBaselineReadinessCheckRead(BaseModel):
+    name: str
+    status: str
+    current: str
+    desired: str
+    source_type: str
+    checked_at: str | None = None
+    freshness: str
+    message: str
+    next_action: str
+
+
+class IloBaselineSectionRead(BaseModel):
+    id: str
+    title: str
+    status: str
+    items: dict[str, Any] = Field(default_factory=dict)
+    secret_refs: list[str] = Field(default_factory=list)
+    notes: list[str] = Field(default_factory=list)
+
+
+class IloBaselinePlanRowRead(BaseModel):
+    section: str
+    item: str
+    current: Any
+    desired: Any
+    action: Literal[
+        "no_change",
+        "create",
+        "update",
+        "check",
+        "warning",
+        "blocked",
+        "requires_confirmation",
+    ]
+    severity: str
+    message: str
+
+
+class IloBaselineBlockerRead(BaseModel):
+    problem: str
+    source: str
+    current_value: str
+    expected_value: str
+    where_to_fix: str
+    recommended_action: str
+    copyable_command: str | None = None
+    recheck_command: str
+    evidence_links: list[str] = Field(default_factory=list)
+
+
+class IloBaselineReadinessRead(BaseModel):
+    provider_id: str
+    source_provider_id: str
+    provider_mode: str
+    generated_at: datetime
+    source_type: str
+    checked_at: str | None = None
+    freshness: str
+    kit_profile: IloBaselineKitProfileRead
+    discovery_range: IloBaselineDiscoveryRangeRead
+    connection_readiness: list[IloBaselineReadinessCheckRead]
+    current_state: dict[str, Any] = Field(default_factory=dict)
+    comparison_rows: list[IloBaselinePlanRowRead] = Field(default_factory=list)
+    reset_required: bool = False
+    apply_enabled: bool = False
+    apply_reason: str
+    blockers: list[IloBaselineBlockerRead] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    next_action: str
+
+
+class IloBaselinePreviewRead(IloBaselineReadinessRead):
+    expected_baseline_sections: list[IloBaselineSectionRead] = Field(default_factory=list)
     reports_artifacts: list[IloReportArtifactPlaceholderRead] = Field(default_factory=list)
 
 
@@ -1225,7 +1437,15 @@ class LabValidationItemRead(BaseModel):
     label: str
     category: str
     stage: str
-    status: Literal["ready", "partial", "blocked", "not_configured", "not_checked", "warning"]
+    status: Literal[
+        "ready",
+        "partial",
+        "blocked",
+        "not_configured",
+        "not_checked",
+        "warning",
+        "not_in_scope",
+    ]
     current_state: str
     desired_state: str
     setup_summary: str
@@ -1498,6 +1718,11 @@ class ControlLabProfileRead(BaseModel):
     active_profile_name: str
     source: str
     version: int
+    topology: str | None = None
+    features: dict[str, Any] = Field(default_factory=dict)
+    not_in_scope_stages: list[str] = Field(default_factory=list)
+    mismatch_warnings: list[dict[str, Any]] = Field(default_factory=list)
+    fix_guidance: list[dict[str, Any]] = Field(default_factory=list)
     global_settings: LabGlobalSettings
     address_plan: LabAddressPlan
     known_lab_profile: dict[str, Any]

@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 
 from app.providers.registry import ProviderRegistryError, provider_registry
 from app.services import netapp_real_lab
+from app.services.lab_profiles import create_lab_profile
 from app.services.netapp_observations import (
     reset_netapp_observations,
     save_netapp_observations,
@@ -442,6 +443,14 @@ def test_netapp_nfs_vcenter_readiness_is_preview_only_and_single_port_aware(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
+    monkeypatch.setenv("LAB_PROFILE_STORE", str(tmp_path / "lab-profiles.json"))
+    create_lab_profile(
+        {
+            "name": "High Storage Lab",
+            "subnet_cidr": "192.168.1.0/24",
+            "features": {"netapp_enabled": True, "vcenter_enabled": True},
+        }
+    )
     monkeypatch.setattr(netapp_real_lab, "NFS_VCENTER_READINESS_JSON", tmp_path / "nfs.json")
     monkeypatch.setattr(netapp_real_lab, "NFS_VCENTER_READINESS_REPORT", tmp_path / "nfs.md")
 

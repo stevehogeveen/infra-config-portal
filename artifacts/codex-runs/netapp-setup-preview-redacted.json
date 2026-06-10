@@ -1,0 +1,330 @@
+{
+  "provider_id": "netapp-ontap",
+  "action": "setup-preview",
+  "checked_at": "2026-06-10T00:36:28.439253+00:00",
+  "status": "blocked",
+  "message": "NetApp setup preview generated. No setup/apply command was run.",
+  "mode": "local-lab-readwrite",
+  "apply_enabled": false,
+  "detected_state": "cluster_setup_wizard",
+  "console": {
+    "selected_port": "/dev/serial/by-id/usb-Microchip_Technology_Inc._MCP2221_USB-I2C_UART_Combo-if00",
+    "selected_baud": 115200,
+    "prompt_state": "cluster_setup_prompt",
+    "prompt_label": "NetApp cluster setup wizard",
+    "source": "autodiscovery",
+    "confidence": "high",
+    "checked_at": "2026-06-10T00:35:43.149970"
+  },
+  "setup_intent": {
+    "cluster_name": null,
+    "node_a_name": null,
+    "node_b_name": null,
+    "cluster_mgmt_ip": "192.168.1.220",
+    "node_a_mgmt_ip": "192.168.1.221",
+    "node_b_mgmt_ip": "192.168.1.222",
+    "svm_name": null,
+    "svm_mgmt_ip": "192.168.1.223",
+    "nfs_lifs": [
+      "192.168.1.230",
+      "192.168.1.231"
+    ],
+    "nfs_volume": "esxi_datastore_01",
+    "nfs_mount_path": "/esxi_datastore_01",
+    "export_policy": "esxi_nfs_policy",
+    "export_client_match": "192.168.1.0/24",
+    "dns_servers": [],
+    "ntp_servers": [],
+    "search_domains": [],
+    "admin_access_source": null,
+    "admin_access_configured": false,
+    "admin_access_redacted": true
+  },
+  "missing_fields": [
+    "cluster_name",
+    "node_a_name",
+    "node_b_name",
+    "svm_name",
+    "dns_servers",
+    "ntp_servers",
+    "search_domains",
+    "admin_access_source"
+  ],
+  "remediation_items": [
+    {
+      "field_name": "cluster_name",
+      "where_to_set": ".env.local.real-lab: NETAPP_CLUSTER_NAME",
+      "suggested_value": "lab-ontap-cluster-01",
+      "recheck_command": "make provider-lab-netapp-setup-preview"
+    },
+    {
+      "field_name": "node_a_name",
+      "where_to_set": ".env.local.real-lab: NETAPP_NODE_A_NAME",
+      "suggested_value": "netapp-a",
+      "recheck_command": "make provider-lab-netapp-setup-preview"
+    },
+    {
+      "field_name": "node_b_name",
+      "where_to_set": ".env.local.real-lab: NETAPP_NODE_B_NAME",
+      "suggested_value": "netapp-b",
+      "recheck_command": "make provider-lab-netapp-setup-preview"
+    },
+    {
+      "field_name": "svm_name",
+      "where_to_set": ".env.local.real-lab: NETAPP_SVM_NAME",
+      "suggested_value": "svm_esxi_nfs",
+      "recheck_command": "make provider-lab-netapp-setup-preview"
+    },
+    {
+      "field_name": "dns_servers",
+      "where_to_set": ".env.local.real-lab: NETAPP_DNS_SERVERS",
+      "suggested_value": null,
+      "recheck_command": "make provider-lab-netapp-setup-preview"
+    },
+    {
+      "field_name": "ntp_servers",
+      "where_to_set": ".env.local.real-lab: NETAPP_NTP_SERVERS",
+      "suggested_value": null,
+      "recheck_command": "make provider-lab-netapp-setup-preview"
+    },
+    {
+      "field_name": "search_domains",
+      "where_to_set": ".env.local.real-lab: NETAPP_SEARCH_DOMAINS",
+      "suggested_value": null,
+      "recheck_command": "make provider-lab-netapp-setup-preview"
+    },
+    {
+      "field_name": "admin_access_source",
+      "where_to_set": ".env.local.real-lab: NETAPP_ADMIN_ACCESS_SOURCE",
+      "suggested_value": ".env.local.real-lab NetApp admin access reference",
+      "recheck_command": "make provider-lab-netapp-setup-preview"
+    }
+  ],
+  "address_conflict_scan": {
+    "status": "ready",
+    "checked_at": "2026-06-10T00:36:28.471396+00:00",
+    "required_before_apply": true,
+    "targets": [
+      {
+        "id": "controller_a_sp",
+        "label": "Controller A SP",
+        "address": "192.168.1.210"
+      },
+      {
+        "id": "controller_b_sp",
+        "label": "Controller B SP",
+        "address": "192.168.1.211"
+      },
+      {
+        "id": "cluster_mgmt",
+        "label": "Cluster management",
+        "address": "192.168.1.220"
+      },
+      {
+        "id": "node_a_mgmt",
+        "label": "Node A management",
+        "address": "192.168.1.221"
+      },
+      {
+        "id": "node_b_mgmt",
+        "label": "Node B management",
+        "address": "192.168.1.222"
+      },
+      {
+        "id": "svm_mgmt",
+        "label": "SVM management",
+        "address": "192.168.1.223"
+      },
+      {
+        "id": "nfs_lif_1",
+        "label": "NFS LIF 1",
+        "address": "192.168.1.230"
+      },
+      {
+        "id": "nfs_lif_2",
+        "label": "NFS LIF 2",
+        "address": "192.168.1.231"
+      }
+    ],
+    "results": [
+      {
+        "id": "controller_a_sp",
+        "label": "Controller A SP",
+        "address": "192.168.1.210",
+        "ping": "no_reply",
+        "tcp_443": "closed",
+        "tcp_22": "closed",
+        "neighbor_state": "INCOMPLETE",
+        "classification": "unused_free"
+      },
+      {
+        "id": "controller_b_sp",
+        "label": "Controller B SP",
+        "address": "192.168.1.211",
+        "ping": "no_reply",
+        "tcp_443": "closed",
+        "tcp_22": "closed",
+        "neighbor_state": "INCOMPLETE",
+        "classification": "unused_free"
+      },
+      {
+        "id": "cluster_mgmt",
+        "label": "Cluster management",
+        "address": "192.168.1.220",
+        "ping": "no_reply",
+        "tcp_443": "closed",
+        "tcp_22": "closed",
+        "neighbor_state": "INCOMPLETE",
+        "classification": "unused_free"
+      },
+      {
+        "id": "node_a_mgmt",
+        "label": "Node A management",
+        "address": "192.168.1.221",
+        "ping": "no_reply",
+        "tcp_443": "closed",
+        "tcp_22": "closed",
+        "neighbor_state": "INCOMPLETE",
+        "classification": "unused_free"
+      },
+      {
+        "id": "node_b_mgmt",
+        "label": "Node B management",
+        "address": "192.168.1.222",
+        "ping": "no_reply",
+        "tcp_443": "closed",
+        "tcp_22": "closed",
+        "neighbor_state": "INCOMPLETE",
+        "classification": "unused_free"
+      },
+      {
+        "id": "svm_mgmt",
+        "label": "SVM management",
+        "address": "192.168.1.223",
+        "ping": "no_reply",
+        "tcp_443": "closed",
+        "tcp_22": "closed",
+        "neighbor_state": "INCOMPLETE",
+        "classification": "unused_free"
+      },
+      {
+        "id": "nfs_lif_1",
+        "label": "NFS LIF 1",
+        "address": "192.168.1.230",
+        "ping": "no_reply",
+        "tcp_443": "closed",
+        "tcp_22": "closed",
+        "neighbor_state": "INCOMPLETE",
+        "classification": "unused_free"
+      },
+      {
+        "id": "nfs_lif_2",
+        "label": "NFS LIF 2",
+        "address": "192.168.1.231",
+        "ping": "no_reply",
+        "tcp_443": "closed",
+        "tcp_22": "closed",
+        "neighbor_state": "INCOMPLETE",
+        "classification": "unused_free"
+      }
+    ],
+    "free": true,
+    "conflicts": [],
+    "message": "All planned NetApp addresses had no ICMP/TCP response during this scan.",
+    "recheck_command": "make provider-lab-netapp-setup-preview"
+  },
+  "wizard_api_path_options": [
+    {
+      "path": "console_wizard",
+      "available": true,
+      "description": "Use the serial console setup wizard for initial cluster creation.",
+      "status": "supported_when_gated"
+    },
+    {
+      "path": "ontap_rest_after_cluster_mgmt",
+      "available": false,
+      "description": "Use ONTAP REST only after cluster management exists and safe GET validation succeeds.",
+      "status": "blocked_until_cluster_management"
+    },
+    {
+      "path": "ssh_cli_after_cluster_mgmt",
+      "available": false,
+      "description": "Use fixed ONTAP CLI commands only after SSH/access validation and approval.",
+      "status": "blocked_until_cluster_management"
+    }
+  ],
+  "exact_changes": [
+    {
+      "area": "cluster",
+      "change": "Create or join cluster",
+      "value": null
+    },
+    {
+      "area": "cluster_mgmt",
+      "change": "Assign cluster management IP",
+      "value": "192.168.1.220"
+    },
+    {
+      "area": "node_a",
+      "change": "Assign node A name and management IP",
+      "value": "missing / 192.168.1.221"
+    },
+    {
+      "area": "node_b",
+      "change": "Assign node B name and management IP",
+      "value": "missing / 192.168.1.222"
+    },
+    {
+      "area": "svm",
+      "change": "Create SVM and management LIF",
+      "value": "missing / 192.168.1.223"
+    },
+    {
+      "area": "nfs",
+      "change": "Create NFS LIFs",
+      "value": "192.168.1.230, 192.168.1.231"
+    },
+    {
+      "area": "nfs",
+      "change": "Create datastore volume/export",
+      "value": "esxi_datastore_01 at /esxi_datastore_01"
+    },
+    {
+      "area": "services",
+      "change": "Configure DNS, NTP, and search domains",
+      "value": "operator-provided values required"
+    }
+  ],
+  "apply_command": "NETAPP_SETUP_APPLY=true NETAPP_SETUP_CONFIRM=\"APPLY NETAPP CLUSTER SETUP\" NETAPP_SETUP_ALLOW_CLUSTER_CREATE=true PROVIDER_MODE=local-lab-readwrite make provider-lab-netapp-setup-apply",
+  "required_flags": [
+    "PROVIDER_MODE=local-lab-readwrite",
+    "NETAPP_SETUP_APPLY=true",
+    "NETAPP_SETUP_CONFIRM=\"APPLY NETAPP CLUSTER SETUP\"",
+    "NETAPP_SETUP_ALLOW_CLUSTER_CREATE=true"
+  ],
+  "pre_apply_requirements": [
+    "Rerun address conflict scan immediately before apply.",
+    "Console prompt must still classify as cluster_setup_wizard or node_setup_wizard.",
+    "All setup intent fields must be configured in .env.local.real-lab.",
+    "Required apply flags and exact confirmation phrase must be present."
+  ],
+  "blockers": [
+    "Required NetApp setup intent fields are missing."
+  ],
+  "warnings": [
+    "Preview only. No NetApp setup, storage, ONTAP API write, reboot, wipe, or upgrade command was run.",
+    "Admin access values are represented only as configured/missing/redacted state."
+  ],
+  "not_attempted": [
+    "cluster setup wizard answers",
+    "ONTAP API write",
+    "SSH/CLI configuration command",
+    "SVM, LIF, volume, export, datastore, or iSCSI creation",
+    "controller reboot, takeover/giveback, wipe, or ONTAP upgrade"
+  ],
+  "artifacts": {
+    "report": "artifacts/codex-runs/netapp-setup-preview-report.md",
+    "json": "artifacts/codex-runs/netapp-setup-preview-redacted.json"
+  },
+  "next_safe_action": "Resolve missing fields and rerun preview; apply remains blocked until flags and a fresh conflict scan pass."
+}

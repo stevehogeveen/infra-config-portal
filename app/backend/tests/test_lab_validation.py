@@ -10,6 +10,7 @@ from app.services.lab_validation import (
     get_lab_validation_summary,
     map_validation_status,
 )
+from app.services.lab_profiles import create_lab_profile
 from app.services import vcenter_netapp_readiness
 
 
@@ -19,6 +20,50 @@ def test_validation_item_status_mapping() -> None:
     assert map_validation_status(configured=True, warnings=["warn"]) == "warning"
     assert map_validation_status(checked=False) == "not_checked"
     assert map_validation_status() == "not_configured"
+
+
+def test_compact_profile_marks_netapp_and_vcenter_validation_not_in_scope(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    monkeypatch.setenv("LAB_PROFILE_STORE", str(tmp_path / "lab-profiles.json"))
+    create_lab_profile(
+        {
+            "name": "Compact Edge Lab",
+            "subnet_cidr": "10.10.5.0/26",
+            "address_plan": {"subnet": "10.10.5.0/26"},
+        }
+    )
+
+    payload = get_lab_validation_summary(write_report=False)
+    items = {item["id"]: item for item in payload["validation_items"]}
+
+    assert items["netapp-console"]["status"] == "not_in_scope"
+    assert items["netapp-ontap-cluster"]["status"] == "not_in_scope"
+    assert items["vcenter-netapp-datastore"]["status"] == "not_in_scope"
+    assert items["netapp-console"]["blockers"] == []
+    assert items["netapp-ontap-cluster"]["blockers"] == []
+    assert items["vcenter-netapp-datastore"]["blockers"] == []
+
+
+def test_vcenter_netapp_readiness_is_not_in_scope_for_compact_profile(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    monkeypatch.setenv("LAB_PROFILE_STORE", str(tmp_path / "lab-profiles.json"))
+    create_lab_profile(
+        {
+            "name": "Compact Edge Lab",
+            "subnet_cidr": "10.10.5.0/26",
+            "address_plan": {"subnet": "10.10.5.0/26"},
+        }
+    )
+
+    result = vcenter_netapp_readiness.get_vcenter_netapp_readiness(write_report=False)
+
+    assert result["status"] == "not_in_scope"
+    assert result["blockers"] == []
+    assert "active lab profile" in result["message"]
 
 
 def test_login_hints_do_not_include_secret_values() -> None:
@@ -42,7 +87,16 @@ def test_ready_cisco_shows_ssh_login_hint() -> None:
 
 def test_netapp_cluster_setup_wizard_blocks_vcenter_netapp_readiness(
     monkeypatch,
+    tmp_path,
 ) -> None:
+    monkeypatch.setenv("LAB_PROFILE_STORE", str(tmp_path / "lab-profiles.json"))
+    create_lab_profile(
+        {
+            "name": "High Storage Lab",
+            "subnet_cidr": "192.168.1.0/24",
+            "features": {"netapp_enabled": True, "vcenter_enabled": True},
+        }
+    )
     monkeypatch.setattr(vcenter_netapp_readiness, "settings", _vcenter_netapp_settings())
     monkeypatch.setattr(vcenter_netapp_readiness, "which", lambda _: "/usr/bin/govc")
     monkeypatch.setattr(
@@ -62,7 +116,15 @@ def test_netapp_cluster_setup_wizard_blocks_vcenter_netapp_readiness(
     assert any("cluster_setup_wizard" in blocker for blocker in result["blockers"])
 
 
-def test_vcenter_not_configured_is_not_configured_yet(monkeypatch) -> None:
+def test_vcenter_not_configured_is_not_configured_yet(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("LAB_PROFILE_STORE", str(tmp_path / "lab-profiles.json"))
+    create_lab_profile(
+        {
+            "name": "High Storage Lab",
+            "subnet_cidr": "192.168.1.0/24",
+            "features": {"netapp_enabled": True, "vcenter_enabled": True},
+        }
+    )
     monkeypatch.setattr(
         vcenter_netapp_readiness,
         "settings",

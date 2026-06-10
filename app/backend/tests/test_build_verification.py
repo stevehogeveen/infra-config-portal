@@ -12,6 +12,7 @@ from app.services.build_verification import (
     validate_credential_compatibility,
     validate_mtu_consistency,
 )
+from app.services.lab_profiles import create_lab_profile
 
 
 def test_credential_escaping_accepts_special_characters() -> None:
@@ -116,6 +117,57 @@ def test_build_verification_failure_reporting(monkeypatch, tmp_path) -> None:
         "operator_action_required",
         "not_configured_yet",
     }
+
+
+def test_build_verification_compact_profile_marks_netapp_vcenter_not_in_scope(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    monkeypatch.setenv("LAB_PROFILE_STORE", str(tmp_path / "lab-profiles.json"))
+    create_lab_profile(
+        {
+            "name": "Compact Edge Lab",
+            "subnet_cidr": "10.10.5.0/26",
+            "address_plan": {"subnet": "10.10.5.0/26"},
+        }
+    )
+    monkeypatch.setattr(
+        "app.services.build_verification.settings",
+        replace(settings, netapp_configured=False, vcenter_configured=False),
+    )
+    monkeypatch.setattr("app.services.build_verification._reachable", lambda host, port, check_ports: False if host else None)
+
+    result = build_lab_build_verification(check_ports=True)
+    protocols = {item["protocol"]: item for item in result["protocols"]["checks"]}
+
+    assert result["lab_ip_profile"]["active_lab_profile"]["topology"] == "compact_edge_lab"
+    assert result["lab_ip_profile"]["expected"]["netapp_cluster_mgmt"] == "not_in_scope"
+    assert protocols["NetApp REST"]["classification"] == "not_in_scope"
+    assert protocols["NetApp SSH"]["classification"] == "not_in_scope"
+    assert protocols["NetApp NFS/vCenter"]["classification"] == "not_in_scope"
+    assert not any(item["classification"] == "not_in_scope" for item in result["failures"])
+
+
+def test_build_verification_reports_exact_fix_for_out_of_scope_env_override(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    monkeypatch.setenv("LAB_PROFILE_STORE", str(tmp_path / "lab-profiles.json"))
+    monkeypatch.setenv("NETAPP_CLUSTER_MGMT_IP", "192.168.1.220")
+    create_lab_profile(
+        {
+            "name": "Compact Edge Lab",
+            "subnet_cidr": "10.10.5.0/26",
+            "address_plan": {"subnet": "10.10.5.0/26"},
+        }
+    )
+
+    result = build_lab_build_verification(check_ports=False)
+    mismatches = {item["env_field"]: item for item in result["lab_ip_profile"]["mismatches"]}
+
+    assert mismatches["NETAPP_CLUSTER_MGMT_IP"]["expected"] == "not_in_scope"
+    assert mismatches["NETAPP_CLUSTER_MGMT_IP"]["configured"] == "192.168.1.220"
+    assert "Unset NETAPP_CLUSTER_MGMT_IP" in mismatches["NETAPP_CLUSTER_MGMT_IP"]["recommended_action"]
 
 
 def test_mock_provider_mode_cannot_produce_real_certification(monkeypatch, tmp_path) -> None:
@@ -253,10 +305,8 @@ def test_build_verification_login_required_is_operator_action(monkeypatch) -> No
 
 
 def test_build_verification_marks_stale_active_ip(monkeypatch) -> None:
-    monkeypatch.setattr(
-        "app.services.build_verification.settings",
-        replace(settings, cisco_target_ip="10.10.8.112", esxi_test_host="10.10.8.203"),
-    )
+    monkeypatch.setenv("CISCO_TARGET_IP", "10.10.8.112")
+    monkeypatch.setenv("ESXI_TEST_HOST", "10.10.8.203")
 
     result = build_lab_build_verification(check_ports=False)
 
@@ -274,7 +324,7 @@ def test_build_verification_flags_stale_netapp_raw_env(monkeypatch) -> None:
 
     result = build_lab_build_verification(check_ports=False)
 
-    assert result["lab_ip_profile"]["configured"]["netapp_cluster_mgmt"] == "192.168.1.220"
+    assert result["lab_ip_profile"]["configured"]["netapp_cluster_mgmt"] == "10.10.8.45"
     stale_fields = {item["field"] for item in result["lab_ip_profile"]["stale_10_10_8_values"]}
     assert "netapp_cluster_mgmt_ip_env" in stale_fields
 

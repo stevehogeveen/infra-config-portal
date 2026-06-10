@@ -1,8 +1,8 @@
 # NetApp NFS / vCenter Readiness
 
-Checked at: 2026-06-07T17:44:30.600531+00:00
+Checked at: 2026-06-10T03:04:02.088647+00:00
 Status: `blocked`
-Provider mode: `local-lab-readwrite`
+Provider mode: `mock`
 Apply enabled: `False`
 
 ## Management Topology
@@ -11,8 +11,8 @@ Apply enabled: `False`
 - Note: Only one NetApp management port is connected at the moment.
 
 ## Planned NFS
-- SVM management IP: `192.168.1.211`
-- NFS LIFs: `192.168.1.212, 192.168.1.213`
+- SVM management IP: `192.168.1.223`
+- NFS LIFs: `192.168.1.230, 192.168.1.231`
 - Volume: `esxi_datastore_01`
 - Export policy: `esxi_nfs_policy`
 - Mount path: `/esxi_datastore_01`
@@ -20,17 +20,17 @@ Apply enabled: `False`
 - Client match: `192.168.1.0/24`
 
 ## Tool / Target State
-- NetApp cluster management: `192.168.1.208`
+- NetApp cluster management: `192.168.1.220`
 - ESXi management: `192.168.1.203`
 - vCenter configured: `False`
 - govc available: `False`
 
 ## Preview Commands
-- `govc datastore.create -type nfs -name netapp_nfs_ds01 -remote-host 192.168.1.212 -remote-path /esxi_datastore_01`
-- `esxcli storage nfs add -H 192.168.1.212 -s /esxi_datastore_01 -v netapp_nfs_ds01`
+- `govc datastore.create -type nfs -name netapp_nfs_ds01 -remote-host 192.168.1.230 -remote-path /esxi_datastore_01`
+- `esxcli storage nfs add -H 192.168.1.230 -s /esxi_datastore_01 -v netapp_nfs_ds01`
 
 ## Blockers
-- NETAPP_CONFIGURED=false; ONTAP REST/NFS setup is not ready for live validation.
+- No live NetApp configured state exists yet; run Validate NetApp Setup.
 - NetApp API credentials are missing; values must stay in .env.local.real-lab when ready.
 - vCenter/govc target is not configured yet; vCenter datastore validation is blocked.
 
@@ -39,7 +39,7 @@ Apply enabled: `False`
 - NFS/vCenter readiness is preview-only. No ONTAP, vCenter, ESXi, or storage apply action is run.
 
 ## Not Attempted
-- Ctrl+Z, break, boot menu selection, or boot interruption beyond the generic Ctrl+C wake byte
+- Ctrl+C, Ctrl+Z, break, boot menu selection, or any boot interruption
 - username or password entry
 - cluster setup commands
 - SP, node, SVM, LIF, volume, export, or datastore creation

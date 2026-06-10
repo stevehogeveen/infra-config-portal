@@ -1,10 +1,10 @@
 {
   "provider_id": "firmware-compliance",
   "status": "blocked",
-  "checked_at": "2026-06-06T18:00:05.340391+00:00",
+  "checked_at": "2026-06-09T16:04:12.077684+00:00",
   "devices": {
     "ilo": {
-      "status": "warning",
+      "status": "blocked",
       "component_count": 3
     },
     "cisco": {
@@ -17,10 +17,17 @@
     }
   },
   "blockers": [
+    "iLO HPE iLO firmware: current unknown, required 3.19; Current firmware or OS version is unknown. Next action: Inventory iLO through Redfish, then stage an approved HPE iLO firmware package if the version is below baseline.",
     "Cisco Cisco IOS XE version: current unknown, required 17.9; Current firmware or OS version is unknown. Next action: Run Cisco firmware inventory from console."
   ],
   "warnings": [
-    "Cisco Cisco bootloader/ROMMON: current unknown, required manual approval; Current firmware or OS version is unknown. Next action: Collect Cisco boot variable and ROMMON details from read-only show commands."
+    "HPE Server HPE BIOS version: current unknown, required manual approval; Current firmware or OS version is unknown. Next action: Confirm BIOS version from iLO Redfish system inventory or the server console before configuration.",
+    "HPE Smart Array HPE Smart Array controller firmware: current unknown, required manual approval; Current firmware or OS version is unknown. Next action: Run HPE storage discovery and compare controller firmware with the approved SPP for this host.",
+    "Cisco Cisco bootloader/ROMMON: current unknown, required manual approval; Current firmware or OS version is unknown. Next action: Collect Cisco boot variable and ROMMON details from read-only show commands.",
+    "NetApp ONTAP version: current unknown, required 9.14; NetApp firmware inventory is waiting for live setup validation. Next action: Set NETAPP_CURRENT_ONTAP_VERSION from verified ONTAP read-only discovery before setup.",
+    "NetApp NetApp disk firmware: current unknown, required manual approval; NetApp firmware inventory is waiting for live setup validation. Next action: Collect disk firmware inventory through an approved read-only NetApp workflow.",
+    "NetApp NetApp shelf firmware: current unknown, required manual approval; NetApp firmware inventory is waiting for live setup validation. Next action: Collect shelf firmware inventory through an approved read-only NetApp workflow.",
+    "NetApp NetApp SP/BMC firmware: current unknown, required manual approval; NetApp firmware inventory is waiting for live setup validation. Next action: Collect SP/BMC firmware inventory through an approved read-only NetApp workflow."
   ],
   "waiver": {
     "configured": false,

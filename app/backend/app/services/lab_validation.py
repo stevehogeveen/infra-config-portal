@@ -7,17 +7,11 @@ from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
 from app.core.config import (
-    LAB_ANSIBLE_CONTROL_HOST_IP,
-    LAB_CISCO_MANAGEMENT_IP,
-    LAB_ESXI_MANAGEMENT_IP,
-    LAB_ILO_IP,
-    LAB_NETAPP_CONTROLLER_A_SP_IP,
-    LAB_NETAPP_CONTROLLER_B_SP_IP,
     settings,
 )
 from app.providers.redaction import redact_sensitive
 from app.services.build_verification import get_lab_build_verification
-from app.services.lab_profiles import active_lab_profile_for_report
+from app.services.lab_profiles import active_lab_profile_context
 from app.services.netapp_state import get_netapp_runtime_state
 from app.services.netapp_upgrade_center import build_netapp_upgrade_plan
 from app.services.vcenter_netapp_readiness import get_vcenter_netapp_readiness
@@ -28,28 +22,37 @@ CODEX_RUN_DIR = REPO_ROOT / "artifacts" / "codex-runs"
 HANDOFF_REPORT = CODEX_RUN_DIR / "lab-validation-handoff-report.md"
 SUMMARY_JSON = CODEX_RUN_DIR / "lab-validation-summary-redacted.json"
 
-VALIDATION_STATUSES = ("ready", "partial", "blocked", "not_configured", "not_checked", "warning")
+VALIDATION_STATUSES = (
+    "ready",
+    "partial",
+    "blocked",
+    "not_configured",
+    "not_checked",
+    "warning",
+    "not_in_scope",
+)
 
 
 def get_lab_validation_summary(*, write_report: bool = False) -> dict[str, Any]:
     generated_at = _now()
+    profile_context = active_lab_profile_context()
     actions = {str(action.get("action_id")): action for action in list_workflow_actions()}
     netapp_state = get_netapp_runtime_state()
     vcenter_netapp = get_vcenter_netapp_readiness(check_ports=False, write_report=False)
     build_verification = get_lab_build_verification()
     items = [
-        _lab_profile_item(generated_at, actions),
+        _lab_profile_item(generated_at, actions, profile_context),
         _firmware_item(actions),
-        build_cisco_validation_item(actions=actions),
+        build_cisco_validation_item(actions=actions, profile_context=profile_context),
         _ilo_item(actions),
         _raid_item(actions),
-        _esxi_item(actions),
-        _vcenter_item(actions),
-        _netapp_console_item(netapp_state, actions),
-        _netapp_ontap_item(netapp_state, actions),
-        _netapp_upgrade_item(actions),
-        _netapp_nfs_item(netapp_state, actions),
-        _vcenter_netapp_item(vcenter_netapp, actions),
+        _esxi_item(actions, profile_context=profile_context),
+        _vcenter_item(actions, profile_context=profile_context),
+        _netapp_console_item(netapp_state, actions, profile_context=profile_context),
+        _netapp_ontap_item(netapp_state, actions, profile_context=profile_context),
+        _netapp_upgrade_item(actions, profile_context=profile_context),
+        _netapp_nfs_item(netapp_state, actions, profile_context=profile_context),
+        _vcenter_netapp_item(vcenter_netapp, actions, profile_context=profile_context),
         _build_verification_item(build_verification, actions),
     ]
     counts = _progress_counts(items)
@@ -83,9 +86,12 @@ def build_cisco_validation_item(
     actions: dict[str, dict[str, Any]] | None = None,
     management_ready: bool | None = None,
     target_ip: str | None = None,
+    profile_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     actions = actions or {}
-    target = target_ip or settings.cisco_target_ip or LAB_CISCO_MANAGEMENT_IP
+    profile_context = profile_context or active_lab_profile_context()
+    plan = profile_context.get("resolved_address_plan") or {}
+    target = target_ip or plan.get("cisco_management") or settings.cisco_target_ip
     ready = settings.cisco_mgmt_configured if management_ready is None else management_ready
     artifacts = _existing(
         [
@@ -153,55 +159,38 @@ def map_validation_status(
     return "not_checked" if not checked else "not_configured"
 
 
-def _lab_profile_item(generated_at: str, actions: dict[str, dict[str, Any]]) -> dict[str, Any]:
-    profile = active_lab_profile_for_report()
-    saved_address_plan = profile.get("address_plan") if isinstance(profile.get("address_plan"), dict) else {}
-    runtime_address_plan = {
-        "subnet": settings.lab_subnet_cidr,
-        "ilo": settings.ilo_test_host or LAB_ILO_IP,
-        "server_nic": settings.server_embedded_nic_ip,
-        "esxi_management": settings.esxi_test_host or LAB_ESXI_MANAGEMENT_IP,
-        "cisco_management": settings.cisco_target_ip or LAB_CISCO_MANAGEMENT_IP,
-        "ansible_control_host": LAB_ANSIBLE_CONTROL_HOST_IP,
-        "netapp_controller_a_sp": settings.netapp_controller_a_sp or LAB_NETAPP_CONTROLLER_A_SP_IP,
-        "netapp_controller_b_sp": settings.netapp_controller_b_sp or LAB_NETAPP_CONTROLLER_B_SP_IP,
-        "netapp_cluster_mgmt": settings.netapp_cluster_mgmt_ip,
-        "netapp_node_a_mgmt": settings.netapp_node_a_mgmt_ip,
-        "netapp_node_b_mgmt": settings.netapp_node_b_mgmt_ip,
-        "netapp_svm_mgmt": settings.netapp_svm_mgmt_ip,
-        "netapp_nfs_lifs": ", ".join(settings.netapp_nfs_lifs),
-    }
-    saved_subnet = saved_address_plan.get("subnet")
-    mismatch = bool(saved_subnet and saved_subnet != runtime_address_plan["subnet"])
+def _lab_profile_item(
+    generated_at: str,
+    actions: dict[str, dict[str, Any]],
+    profile_context: dict[str, Any],
+) -> dict[str, Any]:
+    runtime_address_plan = profile_context.get("resolved_address_plan") or {}
     warnings = [
-        f"Active saved profile `{profile.get('name')}` uses subnet {saved_subnet}; validation uses runtime lab subnet {runtime_address_plan['subnet']}."
-    ] if mismatch else []
+        f"{item.get('env_field')}: expected {item.get('expected_value')}, current {item.get('current_value')}."
+        for item in profile_context.get("mismatch_warnings") or []
+    ]
+    mismatch = bool(warnings)
     proof_points = [
+        f"Topology: {profile_context.get('topology')}",
         f"Lab subnet: {runtime_address_plan['subnet']}",
         f"iLO: {runtime_address_plan['ilo']}",
-        f"Server NIC: {runtime_address_plan['server_nic']}",
+        f"Server NIC: {runtime_address_plan.get('server_embedded_nic') or 'not_in_scope'}",
         f"ESXi: {runtime_address_plan['esxi_management']}",
         f"Cisco: {runtime_address_plan['cisco_management']}",
         f"Ansible/control host: {runtime_address_plan['ansible_control_host']}",
-        f"NetApp controller A SP: {runtime_address_plan['netapp_controller_a_sp']}",
-        f"NetApp controller B SP: {runtime_address_plan['netapp_controller_b_sp']}",
-        f"NetApp cluster: {runtime_address_plan['netapp_cluster_mgmt']}",
-        f"NetApp node A: {runtime_address_plan['netapp_node_a_mgmt']}",
-        f"NetApp node B: {runtime_address_plan['netapp_node_b_mgmt']}",
-        f"NetApp SVM: {runtime_address_plan['netapp_svm_mgmt']}",
-        f"NetApp NFS LIFs: {runtime_address_plan['netapp_nfs_lifs']}",
+        f"NetApp cluster: {runtime_address_plan.get('netapp_cluster_mgmt') or 'not_in_scope'}",
+        f"NetApp NFS LIFs: {', '.join(runtime_address_plan.get('netapp_nfs_lifs') or []) or 'not_in_scope'}",
+        f"Disabled features: {', '.join(profile_context.get('disabled_features') or {}) or 'none'}",
     ]
-    if mismatch:
-        proof_points.append(f"Saved profile `{profile.get('name')}` remains historical context only until refreshed.")
     return _item(
         item_id="lab-profile",
         label="Lab Profile",
         category="Profile",
         status="warning" if mismatch else "ready",
-        current_state=f"Runtime lab profile uses subnet {runtime_address_plan['subnet']}.",
-        desired_state="Lab profile contains iLO, server NIC, ESXi, Cisco, Ansible, and NetApp targets.",
+        current_state=f"Active lab profile uses subnet {runtime_address_plan['subnet']}.",
+        desired_state="Active lab profile drives default targets and feature scope.",
         setup_summary="Known runtime lab addressing is loaded.",
-        next_action="Refresh the saved active Lab Profile if it should replace the runtime profile." if mismatch else "Use this profile for validation and keep live checks separate from historical proof.",
+        next_action="Resolve profile/runtime mismatch warnings before live certification." if mismatch else "Use this profile for validation and keep live checks separate from historical proof.",
         login_hint="No login target; profile defines addresses only.",
         management_url=None,
         ssh_target=None,
@@ -251,7 +240,9 @@ def _firmware_item(actions: dict[str, dict[str, Any]]) -> dict[str, Any]:
 
 
 def _ilo_item(actions: dict[str, dict[str, Any]]) -> dict[str, Any]:
-    host = settings.ilo_test_host or LAB_ILO_IP
+    profile_context = active_lab_profile_context()
+    plan = profile_context.get("resolved_address_plan") or {}
+    host = plan.get("ilo") or settings.ilo_test_host
     credentials_missing = _missing_credentials(
         [
             ("ILO_TEST_USERNAME", settings.ilo_test_username),
@@ -310,8 +301,14 @@ def _raid_item(actions: dict[str, dict[str, Any]]) -> dict[str, Any]:
     )
 
 
-def _esxi_item(actions: dict[str, dict[str, Any]]) -> dict[str, Any]:
-    host = settings.esxi_test_host or LAB_ESXI_MANAGEMENT_IP
+def _esxi_item(
+    actions: dict[str, dict[str, Any]],
+    *,
+    profile_context: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    profile_context = profile_context or active_lab_profile_context()
+    plan = profile_context.get("resolved_address_plan") or {}
+    host = plan.get("esxi_management") or settings.esxi_test_host
     credentials_missing = _missing_credentials(
         [
             ("ESXI_TEST_USERNAME", settings.esxi_test_username),
@@ -344,7 +341,22 @@ def _esxi_item(actions: dict[str, dict[str, Any]]) -> dict[str, Any]:
     )
 
 
-def _vcenter_item(actions: dict[str, dict[str, Any]]) -> dict[str, Any]:
+def _vcenter_item(
+    actions: dict[str, dict[str, Any]],
+    *,
+    profile_context: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    profile_context = profile_context or active_lab_profile_context()
+    features = profile_context.get("enabled_features") or {}
+    if not features.get("vcenter_enabled"):
+        return _not_in_scope_item(
+            item_id="vcenter",
+            label="vCenter",
+            category="Compute",
+            reason="vCenter is disabled by the active lab profile.",
+            recheck_command="make provider-lab-validation",
+            linked_workflow_action=_action_link(actions, "vcenter-netapp.readiness"),
+        )
     target = _redacted_url(settings.vcenter_host)
     credential_missing = _missing_credentials(
         [
@@ -378,7 +390,23 @@ def _vcenter_item(actions: dict[str, dict[str, Any]]) -> dict[str, Any]:
     )
 
 
-def _netapp_console_item(netapp_state: dict[str, Any], actions: dict[str, dict[str, Any]]) -> dict[str, Any]:
+def _netapp_console_item(
+    netapp_state: dict[str, Any],
+    actions: dict[str, dict[str, Any]],
+    *,
+    profile_context: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    profile_context = profile_context or active_lab_profile_context()
+    features = profile_context.get("enabled_features") or {}
+    if not features.get("netapp_enabled"):
+        return _not_in_scope_item(
+            item_id="netapp-console",
+            label="NetApp Console",
+            category="Storage",
+            reason="NetApp is disabled by the active lab profile.",
+            recheck_command="make provider-lab-validation",
+            linked_workflow_action=_action_link(actions, "netapp.console-read-state"),
+        )
     artifacts = _existing(
         [
             "artifacts/codex-runs/netapp-console-autodiscovery-report.md",
@@ -417,7 +445,23 @@ def _netapp_console_item(netapp_state: dict[str, Any], actions: dict[str, dict[s
     )
 
 
-def _netapp_ontap_item(netapp_state: dict[str, Any], actions: dict[str, dict[str, Any]]) -> dict[str, Any]:
+def _netapp_ontap_item(
+    netapp_state: dict[str, Any],
+    actions: dict[str, dict[str, Any]],
+    *,
+    profile_context: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    profile_context = profile_context or active_lab_profile_context()
+    features = profile_context.get("enabled_features") or {}
+    if not features.get("netapp_enabled"):
+        return _not_in_scope_item(
+            item_id="netapp-ontap-cluster",
+            label="NetApp ONTAP / Cluster",
+            category="Storage",
+            reason="NetApp is disabled by the active lab profile.",
+            recheck_command="make provider-lab-validation",
+            linked_workflow_action=_action_link(actions, "netapp.validate-setup"),
+        )
     state = _netapp_console_state(netapp_state)
     configured = bool(netapp_state.get("configured"))
     artifacts = _existing(
@@ -467,7 +511,22 @@ def _netapp_ontap_item(netapp_state: dict[str, Any], actions: dict[str, dict[str
     )
 
 
-def _netapp_upgrade_item(actions: dict[str, dict[str, Any]]) -> dict[str, Any]:
+def _netapp_upgrade_item(
+    actions: dict[str, dict[str, Any]],
+    *,
+    profile_context: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    profile_context = profile_context or active_lab_profile_context()
+    features = profile_context.get("enabled_features") or {}
+    if not features.get("netapp_enabled"):
+        return _not_in_scope_item(
+            item_id="netapp-ontap-upgrade",
+            label="NetApp ONTAP Upgrade",
+            category="Storage",
+            reason="NetApp upgrade is disabled because NetApp is not in scope for the active profile.",
+            recheck_command="make provider-lab-validation",
+            linked_workflow_action=_action_link(actions, "netapp.ontap-upgrade-validate"),
+        )
     plan = build_netapp_upgrade_plan(write_report=False)
     artifacts = _existing(
         [
@@ -523,7 +582,23 @@ def _netapp_upgrade_item(actions: dict[str, dict[str, Any]]) -> dict[str, Any]:
     )
 
 
-def _netapp_nfs_item(netapp_state: dict[str, Any], actions: dict[str, dict[str, Any]]) -> dict[str, Any]:
+def _netapp_nfs_item(
+    netapp_state: dict[str, Any],
+    actions: dict[str, dict[str, Any]],
+    *,
+    profile_context: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    profile_context = profile_context or active_lab_profile_context()
+    features = profile_context.get("enabled_features") or {}
+    if not features.get("netapp_enabled"):
+        return _not_in_scope_item(
+            item_id="netapp-nfs",
+            label="NetApp NFS",
+            category="Storage",
+            reason="NetApp NFS is disabled because NetApp is not in scope for the active profile.",
+            recheck_command="make provider-lab-validation",
+            linked_workflow_action=_action_link(actions, "vcenter-netapp.readiness"),
+        )
     state = _netapp_console_state(netapp_state)
     blocked = state == "cluster_setup_wizard" or not netapp_state.get("configured")
     artifacts = _existing(["artifacts/codex-runs/netapp-nfs-vcenter-readiness-report.md"])
@@ -563,7 +638,23 @@ def _netapp_nfs_item(netapp_state: dict[str, Any], actions: dict[str, dict[str, 
     )
 
 
-def _vcenter_netapp_item(readiness: dict[str, Any], actions: dict[str, dict[str, Any]]) -> dict[str, Any]:
+def _vcenter_netapp_item(
+    readiness: dict[str, Any],
+    actions: dict[str, dict[str, Any]],
+    *,
+    profile_context: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    profile_context = profile_context or active_lab_profile_context()
+    features = profile_context.get("enabled_features") or {}
+    if not features.get("netapp_enabled") or not features.get("vcenter_enabled"):
+        return _not_in_scope_item(
+            item_id="vcenter-netapp-datastore",
+            label="vCenter-NetApp Datastore",
+            category="Storage",
+            reason="NetApp or vCenter is disabled by the active lab profile.",
+            recheck_command="make provider-lab-validation",
+            linked_workflow_action=_action_link(actions, "vcenter-netapp.readiness"),
+        )
     status_map = {
         "ready": "ready",
         "not_configured_yet": "not_configured",
@@ -706,6 +797,39 @@ def _item(
         "recheck_command": recheck_command,
         "linked_workflow_action": linked_workflow_action,
     }
+
+
+def _not_in_scope_item(
+    *,
+    item_id: str,
+    label: str,
+    category: str,
+    reason: str,
+    recheck_command: str,
+    linked_workflow_action: dict[str, Any] | None,
+) -> dict[str, Any]:
+    return _item(
+        item_id=item_id,
+        label=label,
+        category=category,
+        status="not_in_scope",
+        current_state="not_in_scope",
+        desired_state=reason,
+        setup_summary=reason,
+        next_action="Enable this feature in the active lab profile when it is intentionally in scope.",
+        login_hint="Not in scope for the active lab profile.",
+        management_url=None,
+        ssh_target=None,
+        proof_points=[reason],
+        evidence_artifacts=[],
+        last_checked=None,
+        source_type="not_checked",
+        freshness="not_checked",
+        blockers=[],
+        warnings=[],
+        recheck_command=recheck_command,
+        linked_workflow_action=linked_workflow_action,
+    )
 
 
 def _blocker(
