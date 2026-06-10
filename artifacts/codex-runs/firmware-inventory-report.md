@@ -1,6 +1,6 @@
 # Firmware Inventory Report
 
-Checked: 2026-06-09T16:04:12.051651+00:00
+Checked: 2026-06-10T19:46:56.326361+00:00
 Provider mode: local-lab-readwrite
 
 ## Live Inventory

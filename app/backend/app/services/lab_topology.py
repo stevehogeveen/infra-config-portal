@@ -9,11 +9,11 @@ CUSTOM_LAB = "custom"
 PROFILE_TOPOLOGIES = {HIGH_ADDRESS_LAB, COMPACT_EDGE_LAB, CUSTOM_LAB}
 
 NETAPP_DISABLED_COMPACT_REASON = (
-    "NetApp capabilities require a /24 or larger lab subnet for high-address defaults; compact lab profiles "
+    "NetApp capabilities require a /24 or larger lab subnet for high-address defaults; compact lab setups "
     "mark NetApp not in scope unless it is manually enabled with custom in-subnet addresses."
 )
 VCENTER_DISABLED_COMPACT_REASON = (
-    "vCenter is not in scope for compact /26 lab profiles unless it is manually enabled."
+    "vCenter is not in scope for compact /26 lab setups unless it is manually enabled."
 )
 NETAPP_DISABLED_PREFIX_REASON = (
     "NetApp high-address defaults require a /24 or larger lab subnet."
@@ -304,6 +304,7 @@ def _feature_state(
         "storage_protocol": _clean_string(raw_features.get("storage_protocol"))
         or ("nfs" if netapp_enabled else "none"),
         "disable_ipv6": _bool_value(raw_features.get("disable_ipv6"), True),
+        "block_legacy_protocols": _bool_value(raw_features.get("block_legacy_protocols"), True),
         "enable_snmp": _bool_value(raw_features.get("enable_snmp"), False),
         "enable_ntp": _bool_value(raw_features.get("enable_ntp"), True),
         "enable_dns": _bool_value(raw_features.get("enable_dns"), True),
@@ -312,7 +313,7 @@ def _feature_state(
         else NETAPP_DISABLED_COMPACT_REASON
         if compact
         else NETAPP_DISABLED_PREFIX_REASON,
-        "vcenter_disabled_reason": None if vcenter_enabled else VCENTER_DISABLED_COMPACT_REASON if compact else "vCenter is disabled by the active lab profile.",
+        "vcenter_disabled_reason": None if vcenter_enabled else VCENTER_DISABLED_COMPACT_REASON if compact else "vCenter is disabled by the active lab setup.",
     }
 
 

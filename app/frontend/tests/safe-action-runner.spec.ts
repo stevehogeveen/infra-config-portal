@@ -91,24 +91,25 @@ test("does not render a run button for a destructive action", async ({ page }) =
   await expect(destructiveRow.getByRole("button", { name: /Run Check|Run Verification|Refresh Status/ })).toHaveCount(0);
 });
 
-test("uses merged navigation and dashboard lab profile selector", async ({ page }) => {
+test("uses merged navigation and dashboard lab setup selector", async ({ page }) => {
   await page.goto("/verification");
 
   await expect(page.getByRole("heading", { name: "Validation & Reports" })).toBeVisible();
   await expect(page.locator("nav .nav-item-label")).toHaveText([
     "Dashboard",
     "Lab Setup",
+    "Hardware",
     "Control Center",
     "Firmware Upgrades",
     "Validation & Reports",
-    "Settings / Lab Profile"
+    "Settings"
   ]);
   await expect(page.locator("nav .nav-item-label", { hasText: /^Verification$/ })).toHaveCount(0);
   await expect(page.locator("nav .nav-item-label", { hasText: /^Lab Validation$/ })).toHaveCount(0);
   await expect(page.locator("nav .nav-item-label", { hasText: /^Reports$/ })).toHaveCount(0);
 
   await page.goto("/dashboard");
-  await expect(page.getByRole("combobox", { name: "Active lab profile" })).toBeVisible();
+  await expect(page.getByRole("combobox", { name: "Active lab setup" })).toBeVisible();
   await expect(page.getByText("Runtime Lab").first()).toBeVisible();
   await expect(page.getByText("192.168.1.201").first()).toBeVisible();
 });
@@ -117,13 +118,13 @@ test("renders standard control layout with collapsed evidence and seeded options
   await page.goto("/control-center?section=netapp");
 
   await expect(page.getByRole("heading", { name: "Control Center" })).toBeVisible();
-  await expect(page.getByText("Needs review: ONTAP version unknown")).toBeVisible();
+  await expect(page.getByText("ONTAP version is unknown.")).toBeVisible();
   await expect(page.getByText("Access").first()).toBeVisible();
-  await expect(page.getByText("Management IP").first()).toBeVisible();
+  await expect(page.getByText("Cluster management").first()).toBeVisible();
   await expect(page.getByText("192.168.1.220").first()).toBeVisible();
-  await expect(page.getByText("Username Field")).toBeVisible();
-  await expect(page.getByText("NETAPP_USERNAME")).toBeVisible();
-  await expect(page.getByText("Core settings")).toBeVisible();
+  await expect(page.getByText("Access Username")).toBeVisible();
+  await expect(page.locator("input[value='operator-admin']")).toBeVisible();
+  await expect(page.getByText("Actions / Configs")).toBeVisible();
   await expect(page.getByText("artifacts/codex-runs/netapp-live-state-report.md").first()).toBeHidden();
   await expect(page.locator("input[value='topsecret-password-ref']")).toBeHidden();
 
@@ -496,7 +497,7 @@ function labProfiles() {
       subnet: "192.168.1.0/24"
     },
     created_at: checkedAt,
-    description: "Mocked lab profile",
+    description: "Test lab setup",
     global_settings: {
       dns_servers: [],
       domain_name: null,
@@ -531,6 +532,7 @@ function labProfiles() {
     },
     features: {
       build_verification_enabled: true,
+      block_legacy_protocols: true,
       disable_ipv6: true,
       enable_dns: true,
       enable_ntp: true,
@@ -539,7 +541,7 @@ function labProfiles() {
       netapp_disabled_reason: null,
       netapp_enabled: true,
       storage_protocol: "nfs",
-      vcenter_disabled_reason: "vCenter is disabled by the active lab profile.",
+      vcenter_disabled_reason: "vCenter is disabled by the active lab setup.",
       vcenter_enabled: false
     },
     resolved_address_plan: {
@@ -573,7 +575,7 @@ function labProfiles() {
     active_profile: profile,
     active_context: {
       active_profile: profile,
-      disabled_features: { vcenter: "vCenter is disabled by the active lab profile." },
+      disabled_features: { vcenter: "vCenter is disabled by the active lab setup." },
       enabled_features: profile.features,
       fix_guidance: [],
       mismatch_warnings: [],

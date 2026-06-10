@@ -1,0 +1,65 @@
+{
+  "generated_at": "2026-06-10",
+  "agents_utf8": true,
+  "skills_used": [
+    "lab-builder-skill-steward",
+    "lab-builder-ux",
+    "lab-builder-product-craft",
+    "lab-builder-real-runtime",
+    "lab-builder-toolchain",
+    "lab-builder-hardware-run",
+    "lab-builder-report-remediation"
+  ],
+  "real_hardware_actions": [
+    {
+      "action_id": "cisco.firmware-inventory",
+      "mode": "read_only",
+      "status": "failed",
+      "executed": true,
+      "return_code": null,
+      "blockers": [
+        "Command exceeded the 35s safe action runner timeout."
+      ],
+      "report_artifacts": [
+        "artifacts/codex-runs/cisco-firmware-inventory-report.md"
+      ],
+      "trace_artifact": "artifacts/codex-runs/workflow-action-runs/20260610T193353Z__cisco.firmware-inventory__workflow-action-cisco.firmware-inventory-22e6feeb39b0.json"
+    }
+  ],
+  "report_center": {
+    "overall_status": "warning",
+    "critical": 0,
+    "firmware_cisco_ios_xe_unknown": {
+      "severity": "warning",
+      "classification": "warning"
+    }
+  },
+  "browser_verification": {
+    "path": "/control-center?section=cisco",
+    "blocked_in_sidebar": false,
+    "firmware_panel_class": "inline-firmware-panel warning",
+    "check_firmware_button_visible": true,
+    "global_config_observed": {
+      "dns_servers": "8.8.8.8",
+      "ntp_servers": "",
+      "enable_dns": true,
+      "enable_ntp": true,
+      "enable_snmp": false,
+      "disable_ipv6": true,
+      "storage_protocol": "nfs"
+    }
+  },
+  "commands": [
+    "npm run build",
+    "app/backend/.venv/bin/pytest app/backend/tests/test_report_center.py::test_report_center_firmware_unknown_version_issue_is_warning app/backend/tests/test_report_center.py::test_report_center_firmware_observed_below_minimum_stays_critical app/backend/tests/test_workflow_action_runner.py::test_cisco_firmware_inventory_uses_short_ui_timeout",
+    "curl -fsS http://127.0.0.1:8001/api/v1/reports/issues",
+    "curl -fsS http://127.0.0.1:8001/api/v1/workflows/actions/cisco.firmware-inventory",
+    "curl -fsS -X POST http://127.0.0.1:8001/api/v1/workflows/actions/cisco.firmware-inventory/run",
+    "Playwright browser checks against http://127.0.0.1:5173/control-center?section=cisco"
+  ],
+  "blockers": [
+    "Cisco version collection still does not complete through the live read-only path; the UI now receives a bounded failed trace.",
+    "NTP is enabled in the active profile but no NTP server value is set."
+  ],
+  "writes_or_destructive_actions_run": false
+}

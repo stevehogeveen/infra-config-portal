@@ -1,57 +1,57 @@
 {
   "provider_id": "netapp-ontap",
   "action": "console-read-state",
-  "checked_at": "2026-06-10T00:35:43.149970+00:00",
-  "status": "ready",
-  "message": "NetApp console state read completed. NetApp console produced NetApp cluster setup wizard.",
+  "checked_at": "2026-06-10T19:44:46.169670+00:00",
+  "status": "blocked",
+  "message": "NetApp console autodiscovery selected a serial candidate, but no usable NetApp prompt/state was detected.",
   "mode": "local-lab-readwrite",
   "configured_port_hint": null,
   "configured_port_hint_role": "optional_hint_only",
   "autodiscovery_enabled": true,
   "manual_env_update_required": false,
-  "selected_port": "/dev/serial/by-id/usb-Microchip_Technology_Inc._MCP2221_USB-I2C_UART_Combo-if00",
-  "selected_baud": 115200,
-  "selected_prompt_state": "cluster_setup_prompt",
-  "selected_prompt_label": "NetApp cluster setup wizard",
-  "selection_source": "prompt-evidence",
+  "selected_port": "/dev/serial/by-id/usb-Prolific_Technology_Inc._USB-Serial_Controller_D-if00-port0",
+  "selected_baud": 9600,
+  "selected_prompt_state": "unknown_output",
+  "selected_prompt_label": "Unclassified console output",
+  "selection_source": "auto-stable-candidate",
   "selection_origin": "autodiscovery",
   "detected_automatically": true,
   "selection_confidence": "high",
-  "selection_reason": "cluster setup",
-  "selected_device_type": "netapp",
-  "selected_classification": "prompt_detected",
-  "prompt_detected": true,
-  "candidate_count": 35,
-  "selectable_candidate_count": 35,
+  "selection_reason": "stable /dev/serial/by-id path; candidate name matches common USB serial adapter",
+  "selected_device_type": "unknown",
+  "selected_classification": "unknown",
+  "prompt_detected": false,
+  "candidate_count": 36,
+  "selectable_candidate_count": 33,
   "probed_candidate_count": 4,
-  "skipped_candidate_count": 31,
+  "skipped_candidate_count": 29,
   "candidate_counts": {
-    "total": 35,
-    "existing": 35,
-    "selectable": 35,
-    "stable_existing": 1,
-    "usb_existing": 3,
+    "total": 36,
+    "existing": 36,
+    "selectable": 33,
+    "stable_existing": 2,
+    "usb_existing": 4,
     "ttys_existing": 32,
-    "in_use": 0,
+    "in_use": 3,
     "inaccessible": 0
   },
   "candidates": [
     {
-      "display_path": "/dev/serial/by-id/usb-Microchip_Technology_Inc._MCP2221_USB-I2C_UART_Combo-if00",
-      "path": "/dev/serial/by-id/usb-Microchip_Technology_Inc._MCP2221_USB-I2C_UART_Combo-if00",
-      "resolved_path": "/dev/ttyACM0",
-      "target_path": "/dev/ttyACM0",
+      "display_path": "/dev/serial/by-id/usb-Prolific_Technology_Inc._USB-Serial_Controller_D-if00-port0",
+      "path": "/dev/serial/by-id/usb-Prolific_Technology_Inc._USB-Serial_Controller_D-if00-port0",
+      "resolved_path": "/dev/ttyUSB0",
+      "target_path": "/dev/ttyUSB0",
       "exists": true,
       "readable": true,
       "writable": true,
       "owner": "root",
       "group": "dialout",
       "mode": "crw-rw----",
-      "modified_time": "2026-06-09T22:26:16+00:00",
-      "modified_age_seconds": 7767,
+      "modified_time": "2026-06-10T19:42:32+00:00",
+      "modified_age_seconds": 134,
       "stable_path": true,
       "path_type": "by-id",
-      "label": "usb-Microchip Technology Inc. MCP2221 USB-I2C UART Combo-if00 -> /dev/ttyACM0",
+      "label": "usb-Prolific Technology Inc. USB-Serial Controller D-if00-port0 -> /dev/ttyUSB0",
       "in_use": false,
       "in_use_state": {
         "state": "not_in_use",
@@ -66,143 +66,17 @@
         "available": true,
         "status": "ok",
         "properties": {
-          "DEVPATH": "/devices/pci0000:00/0000:00:14.0/usb3/3-6/3-6:1.0/tty/ttyACM0",
-          "DEVNAME": "/dev/ttyACM0",
+          "DEVPATH": "/devices/pci0000:00/0000:00:14.0/usb3/3-9/3-9:1.0/ttyUSB0/tty/ttyUSB0",
+          "DEVNAME": "/dev/ttyUSB0",
           "SUBSYSTEM": "tty",
           "ID_BUS": "usb",
-          "ID_MODEL": "MCP2221_USB-I2C_UART_Combo",
-          "ID_MODEL_ID": "00dd",
-          "ID_VENDOR": "Microchip_Technology_Inc.",
-          "ID_VENDOR_ID": "04d8",
-          "ID_REVISION": "0100",
+          "ID_MODEL": "USB-Serial_Controller_D",
+          "ID_MODEL_ID": "2303",
+          "ID_VENDOR": "Prolific_Technology_Inc.",
+          "ID_VENDOR_ID": "067b",
+          "ID_REVISION": "0400",
           "ID_TYPE": "generic",
-          "ID_USB_DRIVER": "cdc_acm",
-          "ID_PATH": "pci-0000:00:14.0-usb-0:6:1.0"
-        },
-        "raw_redacted": true
-      },
-      "setserial": {
-        "available": false,
-        "status": "unavailable",
-        "reason": "setserial-not-found"
-      },
-      "dmesg": {
-        "available": true,
-        "status": "unavailable",
-        "reason": "dmesg: read kernel buffer failed: Operation not permitted"
-      },
-      "rank": -35,
-      "recommendation": "preferred-stable-path",
-      "confidence": "high",
-      "selection_reasons": [
-        "stable /dev/serial/by-id path",
-        "candidate name matches NetApp serial hint"
-      ]
-    },
-    {
-      "display_path": "/dev/ttyACM0",
-      "path": "/dev/ttyACM0",
-      "resolved_path": "/dev/ttyACM0",
-      "target_path": "/dev/ttyACM0",
-      "exists": true,
-      "readable": true,
-      "writable": true,
-      "owner": "root",
-      "group": "dialout",
-      "mode": "crw-rw----",
-      "modified_time": "2026-06-09T22:26:16+00:00",
-      "modified_age_seconds": 7767,
-      "stable_path": false,
-      "path_type": "ttyACM",
-      "label": "ttyACM0",
-      "in_use": false,
-      "in_use_state": {
-        "state": "not_in_use",
-        "checked_with": [
-          "fuser",
-          "lsof"
-        ],
-        "unavailable_tools": [],
-        "pids": []
-      },
-      "udevadm": {
-        "available": true,
-        "status": "ok",
-        "properties": {
-          "DEVPATH": "/devices/pci0000:00/0000:00:14.0/usb3/3-6/3-6:1.0/tty/ttyACM0",
-          "DEVNAME": "/dev/ttyACM0",
-          "SUBSYSTEM": "tty",
-          "ID_BUS": "usb",
-          "ID_MODEL": "MCP2221_USB-I2C_UART_Combo",
-          "ID_MODEL_ID": "00dd",
-          "ID_VENDOR": "Microchip_Technology_Inc.",
-          "ID_VENDOR_ID": "04d8",
-          "ID_REVISION": "0100",
-          "ID_TYPE": "generic",
-          "ID_USB_DRIVER": "cdc_acm",
-          "ID_PATH": "pci-0000:00:14.0-usb-0:6:1.0"
-        },
-        "raw_redacted": true
-      },
-      "setserial": {
-        "available": false,
-        "status": "unavailable",
-        "reason": "setserial-not-found"
-      },
-      "dmesg": {
-        "available": true,
-        "status": "unavailable",
-        "reason": "dmesg: read kernel buffer failed: Operation not permitted"
-      },
-      "rank": 65,
-      "recommendation": "usb-serial-candidate",
-      "confidence": "medium",
-      "selection_reasons": [
-        "ttyACM USB serial fallback",
-        "candidate name matches NetApp serial hint"
-      ]
-    },
-    {
-      "display_path": "/dev/ttyACM1",
-      "path": "/dev/ttyACM1",
-      "resolved_path": "/dev/ttyACM1",
-      "target_path": "/dev/ttyACM1",
-      "exists": true,
-      "readable": true,
-      "writable": true,
-      "owner": "root",
-      "group": "dialout",
-      "mode": "crw-rw----",
-      "modified_time": "2026-06-09T20:56:20.595289+00:00",
-      "modified_age_seconds": 13162,
-      "stable_path": false,
-      "path_type": "ttyACM",
-      "label": "ttyACM1",
-      "in_use": false,
-      "in_use_state": {
-        "state": "not_in_use",
-        "checked_with": [
-          "fuser",
-          "lsof"
-        ],
-        "unavailable_tools": [],
-        "pids": []
-      },
-      "udevadm": {
-        "available": true,
-        "status": "ok",
-        "properties": {
-          "DEVPATH": "/devices/pci0000:00/0000:00:14.0/usb3/3-9/3-9:1.0/tty/ttyACM1",
-          "DEVNAME": "/dev/ttyACM1",
-          "SUBSYSTEM": "tty",
-          "ID_BUS": "usb",
-          "ID_MODEL": "MCP2221_USB-I2C_UART_Combo",
-          "ID_MODEL_ID": "00dd",
-          "ID_VENDOR": "Microchip_Technology_Inc.",
-          "ID_VENDOR_ID": "04d8",
-          "ID_REVISION": "0100",
-          "ID_TYPE": "generic",
-          "ID_USB_DRIVER": "cdc_acm",
+          "ID_USB_DRIVER": "pl2303",
           "ID_PATH": "pci-0000:00:14.0-usb-0:9:1.0"
         },
         "raw_redacted": true
@@ -217,12 +91,75 @@
         "status": "unavailable",
         "reason": "dmesg: read kernel buffer failed: Operation not permitted"
       },
-      "rank": 65,
+      "rank": -10,
+      "recommendation": "preferred-stable-path",
+      "confidence": "high",
+      "selection_reasons": [
+        "stable /dev/serial/by-id path",
+        "candidate name matches common USB serial adapter"
+      ]
+    },
+    {
+      "display_path": "/dev/ttyUSB0",
+      "path": "/dev/ttyUSB0",
+      "resolved_path": "/dev/ttyUSB0",
+      "target_path": "/dev/ttyUSB0",
+      "exists": true,
+      "readable": true,
+      "writable": true,
+      "owner": "root",
+      "group": "dialout",
+      "mode": "crw-rw----",
+      "modified_time": "2026-06-10T19:42:32+00:00",
+      "modified_age_seconds": 134,
+      "stable_path": false,
+      "path_type": "ttyUSB",
+      "label": "ttyUSB0",
+      "in_use": false,
+      "in_use_state": {
+        "state": "not_in_use",
+        "checked_with": [
+          "fuser",
+          "lsof"
+        ],
+        "unavailable_tools": [],
+        "pids": []
+      },
+      "udevadm": {
+        "available": true,
+        "status": "ok",
+        "properties": {
+          "DEVPATH": "/devices/pci0000:00/0000:00:14.0/usb3/3-9/3-9:1.0/ttyUSB0/tty/ttyUSB0",
+          "DEVNAME": "/dev/ttyUSB0",
+          "SUBSYSTEM": "tty",
+          "ID_BUS": "usb",
+          "ID_MODEL": "USB-Serial_Controller_D",
+          "ID_MODEL_ID": "2303",
+          "ID_VENDOR": "Prolific_Technology_Inc.",
+          "ID_VENDOR_ID": "067b",
+          "ID_REVISION": "0400",
+          "ID_TYPE": "generic",
+          "ID_USB_DRIVER": "pl2303",
+          "ID_PATH": "pci-0000:00:14.0-usb-0:9:1.0"
+        },
+        "raw_redacted": true
+      },
+      "setserial": {
+        "available": false,
+        "status": "unavailable",
+        "reason": "setserial-not-found"
+      },
+      "dmesg": {
+        "available": true,
+        "status": "unavailable",
+        "reason": "dmesg: read kernel buffer failed: Operation not permitted"
+      },
+      "rank": 90,
       "recommendation": "usb-serial-candidate",
       "confidence": "medium",
       "selection_reasons": [
-        "ttyACM USB serial fallback",
-        "candidate name matches NetApp serial hint"
+        "ttyUSB USB serial fallback",
+        "candidate name matches common USB serial adapter"
       ]
     },
     {
@@ -236,8 +173,8 @@
       "owner": "root",
       "group": "dialout",
       "mode": "crw-rw----",
-      "modified_time": "2026-06-09T20:33:13.921228+00:00",
-      "modified_age_seconds": 14549,
+      "modified_time": "2026-06-10T13:04:02.401399+00:00",
+      "modified_age_seconds": 24043,
       "stable_path": false,
       "path_type": "ttyS",
       "label": "ttyS20",
@@ -289,8 +226,8 @@
       "owner": "root",
       "group": "dialout",
       "mode": "crw-rw----",
-      "modified_time": "2026-06-09T20:33:13.921554+00:00",
-      "modified_age_seconds": 14549,
+      "modified_time": "2026-06-10T13:04:02.404788+00:00",
+      "modified_age_seconds": 24043,
       "stable_path": false,
       "path_type": "ttyS",
       "label": "ttyS21",
@@ -342,8 +279,8 @@
       "owner": "root",
       "group": "dialout",
       "mode": "crw-rw----",
-      "modified_time": "2026-06-09T20:33:13.922104+00:00",
-      "modified_age_seconds": 14549,
+      "modified_time": "2026-06-10T13:04:02.405144+00:00",
+      "modified_age_seconds": 24043,
       "stable_path": false,
       "path_type": "ttyS",
       "label": "ttyS22",
@@ -395,8 +332,8 @@
       "owner": "root",
       "group": "dialout",
       "mode": "crw-rw----",
-      "modified_time": "2026-06-09T20:33:13.923676+00:00",
-      "modified_age_seconds": 14549,
+      "modified_time": "2026-06-10T13:04:02.405336+00:00",
+      "modified_age_seconds": 24043,
       "stable_path": false,
       "path_type": "ttyS",
       "label": "ttyS23",
@@ -448,8 +385,8 @@
       "owner": "root",
       "group": "dialout",
       "mode": "crw-rw----",
-      "modified_time": "2026-06-09T20:33:13.919990+00:00",
-      "modified_age_seconds": 14549,
+      "modified_time": "2026-06-10T13:04:02.405032+00:00",
+      "modified_age_seconds": 24043,
       "stable_path": false,
       "path_type": "ttyS",
       "label": "ttyS24",
@@ -501,8 +438,8 @@
       "owner": "root",
       "group": "dialout",
       "mode": "crw-rw----",
-      "modified_time": "2026-06-09T20:33:13.921206+00:00",
-      "modified_age_seconds": 14549,
+      "modified_time": "2026-06-10T13:04:02.406573+00:00",
+      "modified_age_seconds": 24043,
       "stable_path": false,
       "path_type": "ttyS",
       "label": "ttyS25",
@@ -554,8 +491,8 @@
       "owner": "root",
       "group": "dialout",
       "mode": "crw-rw----",
-      "modified_time": "2026-06-09T20:33:13.924195+00:00",
-      "modified_age_seconds": 14549,
+      "modified_time": "2026-06-10T13:04:02.406406+00:00",
+      "modified_age_seconds": 24043,
       "stable_path": false,
       "path_type": "ttyS",
       "label": "ttyS26",
@@ -607,8 +544,8 @@
       "owner": "root",
       "group": "dialout",
       "mode": "crw-rw----",
-      "modified_time": "2026-06-09T20:33:13.921412+00:00",
-      "modified_age_seconds": 14549,
+      "modified_time": "2026-06-10T13:04:02.404788+00:00",
+      "modified_age_seconds": 24043,
       "stable_path": false,
       "path_type": "ttyS",
       "label": "ttyS27",
@@ -660,8 +597,8 @@
       "owner": "root",
       "group": "dialout",
       "mode": "crw-rw----",
-      "modified_time": "2026-06-09T20:33:13.924195+00:00",
-      "modified_age_seconds": 14549,
+      "modified_time": "2026-06-10T13:04:02.405809+00:00",
+      "modified_age_seconds": 24043,
       "stable_path": false,
       "path_type": "ttyS",
       "label": "ttyS28",
@@ -713,8 +650,8 @@
       "owner": "root",
       "group": "dialout",
       "mode": "crw-rw----",
-      "modified_time": "2026-06-09T20:33:13.923992+00:00",
-      "modified_age_seconds": 14549,
+      "modified_time": "2026-06-10T13:04:02.406406+00:00",
+      "modified_age_seconds": 24043,
       "stable_path": false,
       "path_type": "ttyS",
       "label": "ttyS29",
@@ -766,8 +703,8 @@
       "owner": "root",
       "group": "dialout",
       "mode": "crw-rw----",
-      "modified_time": "2026-06-09T20:33:13.925251+00:00",
-      "modified_age_seconds": 14549,
+      "modified_time": "2026-06-10T13:04:02.405809+00:00",
+      "modified_age_seconds": 24043,
       "stable_path": false,
       "path_type": "ttyS",
       "label": "ttyS30",
@@ -819,8 +756,8 @@
       "owner": "root",
       "group": "dialout",
       "mode": "crw-rw----",
-      "modified_time": "2026-06-09T20:33:13.922912+00:00",
-      "modified_age_seconds": 14549,
+      "modified_time": "2026-06-10T13:04:02.406693+00:00",
+      "modified_age_seconds": 24043,
       "stable_path": false,
       "path_type": "ttyS",
       "label": "ttyS31",
@@ -872,8 +809,8 @@
       "owner": "root",
       "group": "dialout",
       "mode": "crw-rw----",
-      "modified_time": "2026-06-09T20:33:13.920460+00:00",
-      "modified_age_seconds": 14549,
+      "modified_time": "2026-06-10T13:04:02.403298+00:00",
+      "modified_age_seconds": 24043,
       "stable_path": false,
       "path_type": "ttyS",
       "label": "ttyS19",
@@ -925,8 +862,8 @@
       "owner": "root",
       "group": "dialout",
       "mode": "crw-rw----",
-      "modified_time": "2026-06-09T20:33:13.920927+00:00",
-      "modified_age_seconds": 14549,
+      "modified_time": "2026-06-10T13:04:02.401857+00:00",
+      "modified_age_seconds": 24043,
       "stable_path": false,
       "path_type": "ttyS",
       "label": "ttyS18",
@@ -978,8 +915,8 @@
       "owner": "root",
       "group": "dialout",
       "mode": "crw-rw----",
-      "modified_time": "2026-06-09T20:33:13.919384+00:00",
-      "modified_age_seconds": 14549,
+      "modified_time": "2026-06-10T13:04:02.400595+00:00",
+      "modified_age_seconds": 24043,
       "stable_path": false,
       "path_type": "ttyS",
       "label": "ttyS17",
@@ -1031,8 +968,8 @@
       "owner": "root",
       "group": "dialout",
       "mode": "crw-rw----",
-      "modified_time": "2026-06-09T20:33:13.920927+00:00",
-      "modified_age_seconds": 14549,
+      "modified_time": "2026-06-10T13:04:02.401851+00:00",
+      "modified_age_seconds": 24043,
       "stable_path": false,
       "path_type": "ttyS",
       "label": "ttyS16",
@@ -1084,8 +1021,8 @@
       "owner": "root",
       "group": "dialout",
       "mode": "crw-rw----",
-      "modified_time": "2026-06-09T20:33:13.921175+00:00",
-      "modified_age_seconds": 14549,
+      "modified_time": "2026-06-10T13:04:02.401593+00:00",
+      "modified_age_seconds": 24043,
       "stable_path": false,
       "path_type": "ttyS",
       "label": "ttyS15",
@@ -1137,8 +1074,8 @@
       "owner": "root",
       "group": "dialout",
       "mode": "crw-rw----",
-      "modified_time": "2026-06-09T20:33:13.921035+00:00",
-      "modified_age_seconds": 14549,
+      "modified_time": "2026-06-10T13:04:02.400542+00:00",
+      "modified_age_seconds": 24043,
       "stable_path": false,
       "path_type": "ttyS",
       "label": "ttyS14",
@@ -1190,8 +1127,8 @@
       "owner": "root",
       "group": "dialout",
       "mode": "crw-rw----",
-      "modified_time": "2026-06-09T20:33:13.921412+00:00",
-      "modified_age_seconds": 14549,
+      "modified_time": "2026-06-10T13:04:02.401729+00:00",
+      "modified_age_seconds": 24043,
       "stable_path": false,
       "path_type": "ttyS",
       "label": "ttyS13",
@@ -1243,8 +1180,8 @@
       "owner": "root",
       "group": "dialout",
       "mode": "crw-rw----",
-      "modified_time": "2026-06-09T20:33:13.922841+00:00",
-      "modified_age_seconds": 14549,
+      "modified_time": "2026-06-10T13:04:02.399713+00:00",
+      "modified_age_seconds": 24043,
       "stable_path": false,
       "path_type": "ttyS",
       "label": "ttyS12",
@@ -1296,8 +1233,8 @@
       "owner": "root",
       "group": "dialout",
       "mode": "crw-rw----",
-      "modified_time": "2026-06-09T20:33:13.919288+00:00",
-      "modified_age_seconds": 14549,
+      "modified_time": "2026-06-10T13:04:02.401445+00:00",
+      "modified_age_seconds": 24043,
       "stable_path": false,
       "path_type": "ttyS",
       "label": "ttyS11",
@@ -1349,8 +1286,8 @@
       "owner": "root",
       "group": "dialout",
       "mode": "crw-rw----",
-      "modified_time": "2026-06-09T20:33:13.918000+00:00",
-      "modified_age_seconds": 14549,
+      "modified_time": "2026-06-10T13:04:02.406035+00:00",
+      "modified_age_seconds": 24043,
       "stable_path": false,
       "path_type": "ttyS",
       "label": "ttyS10",
@@ -1402,8 +1339,8 @@
       "owner": "root",
       "group": "dialout",
       "mode": "crw-rw----",
-      "modified_time": "2026-06-09T20:33:13.922576+00:00",
-      "modified_age_seconds": 14549,
+      "modified_time": "2026-06-10T13:04:02.407400+00:00",
+      "modified_age_seconds": 24043,
       "stable_path": false,
       "path_type": "ttyS",
       "label": "ttyS9",
@@ -1455,8 +1392,8 @@
       "owner": "root",
       "group": "dialout",
       "mode": "crw-rw----",
-      "modified_time": "2026-06-09T20:33:13.926330+00:00",
-      "modified_age_seconds": 14549,
+      "modified_time": "2026-06-10T13:04:02.406406+00:00",
+      "modified_age_seconds": 24043,
       "stable_path": false,
       "path_type": "ttyS",
       "label": "ttyS8",
@@ -1508,8 +1445,8 @@
       "owner": "root",
       "group": "dialout",
       "mode": "crw-rw----",
-      "modified_time": "2026-06-09T20:33:13.928310+00:00",
-      "modified_age_seconds": 14549,
+      "modified_time": "2026-06-10T13:04:02.408978+00:00",
+      "modified_age_seconds": 24043,
       "stable_path": false,
       "path_type": "ttyS",
       "label": "ttyS7",
@@ -1561,8 +1498,8 @@
       "owner": "root",
       "group": "dialout",
       "mode": "crw-rw----",
-      "modified_time": "2026-06-09T20:33:13.924254+00:00",
-      "modified_age_seconds": 14549,
+      "modified_time": "2026-06-10T13:04:02.405276+00:00",
+      "modified_age_seconds": 24043,
       "stable_path": false,
       "path_type": "ttyS",
       "label": "ttyS6",
@@ -1614,8 +1551,8 @@
       "owner": "root",
       "group": "dialout",
       "mode": "crw-rw----",
-      "modified_time": "2026-06-09T20:33:13.943403+00:00",
-      "modified_age_seconds": 14549,
+      "modified_time": "2026-06-10T19:44:20+00:00",
+      "modified_age_seconds": 26,
       "stable_path": false,
       "path_type": "ttyS",
       "label": "ttyS5",
@@ -1670,8 +1607,8 @@
       "owner": "root",
       "group": "dialout",
       "mode": "crw-rw----",
-      "modified_time": "2026-06-09T20:33:30+00:00",
-      "modified_age_seconds": 14533,
+      "modified_time": "2026-06-10T19:41:32+00:00",
+      "modified_age_seconds": 194,
       "stable_path": false,
       "path_type": "ttyS",
       "label": "ttyS4",
@@ -1726,8 +1663,8 @@
       "owner": "root",
       "group": "dialout",
       "mode": "crw-rw----",
-      "modified_time": "2026-06-09T20:33:13.922313+00:00",
-      "modified_age_seconds": 14549,
+      "modified_time": "2026-06-10T13:04:02.405809+00:00",
+      "modified_age_seconds": 24043,
       "stable_path": false,
       "path_type": "ttyS",
       "label": "ttyS3",
@@ -1779,8 +1716,8 @@
       "owner": "root",
       "group": "dialout",
       "mode": "crw-rw----",
-      "modified_time": "2026-06-09T20:33:13.920408+00:00",
-      "modified_age_seconds": 14549,
+      "modified_time": "2026-06-10T13:04:02.403085+00:00",
+      "modified_age_seconds": 24043,
       "stable_path": false,
       "path_type": "ttyS",
       "label": "ttyS2",
@@ -1822,59 +1759,6 @@
       ]
     },
     {
-      "display_path": "/dev/ttyS1",
-      "path": "/dev/ttyS1",
-      "resolved_path": "/dev/ttyS1",
-      "target_path": "/dev/ttyS1",
-      "exists": true,
-      "readable": true,
-      "writable": true,
-      "owner": "root",
-      "group": "dialout",
-      "mode": "crw-rw----",
-      "modified_time": "2026-06-09T20:33:13.921035+00:00",
-      "modified_age_seconds": 14549,
-      "stable_path": false,
-      "path_type": "ttyS",
-      "label": "ttyS1",
-      "in_use": false,
-      "in_use_state": {
-        "state": "not_in_use",
-        "checked_with": [
-          "fuser",
-          "lsof"
-        ],
-        "unavailable_tools": [],
-        "pids": []
-      },
-      "udevadm": {
-        "available": true,
-        "status": "ok",
-        "properties": {
-          "DEVPATH": "/devices/platform/serial8250/serial8250:0/serial8250:0.1/tty/ttyS1",
-          "DEVNAME": "/dev/ttyS1",
-          "SUBSYSTEM": "tty"
-        },
-        "raw_redacted": true
-      },
-      "setserial": {
-        "available": false,
-        "status": "unavailable",
-        "reason": "setserial-not-found"
-      },
-      "dmesg": {
-        "available": true,
-        "status": "unavailable",
-        "reason": "dmesg: read kernel buffer failed: Operation not permitted"
-      },
-      "rank": 239,
-      "recommendation": "local-ttyS-candidate",
-      "confidence": "medium",
-      "selection_reasons": [
-        "ttyS device has a recent modified timestamp"
-      ]
-    },
-    {
       "display_path": "/dev/ttyS0",
       "path": "/dev/ttyS0",
       "resolved_path": "/dev/ttyS0",
@@ -1885,8 +1769,8 @@
       "owner": "root",
       "group": "dialout",
       "mode": "crw-rw----",
-      "modified_time": "2026-06-09T20:33:13.920927+00:00",
-      "modified_age_seconds": 14549,
+      "modified_time": "2026-06-10T13:04:02.399713+00:00",
+      "modified_age_seconds": 24043,
       "stable_path": false,
       "path_type": "ttyS",
       "label": "ttyS0",
@@ -1926,6 +1810,197 @@
       "selection_reasons": [
         "ttyS device has a recent modified timestamp"
       ]
+    },
+    {
+      "display_path": "/dev/serial/by-id/usb-Microchip_Technology_Inc._MCP2221_USB-I2C_UART_Combo-if00",
+      "path": "/dev/serial/by-id/usb-Microchip_Technology_Inc._MCP2221_USB-I2C_UART_Combo-if00",
+      "resolved_path": "/dev/ttyACM0",
+      "target_path": "/dev/ttyACM0",
+      "exists": true,
+      "readable": true,
+      "writable": true,
+      "owner": "root",
+      "group": "dialout",
+      "mode": "crw-rw----",
+      "modified_time": "2026-06-10T19:44:42+00:00",
+      "modified_age_seconds": 4,
+      "stable_path": true,
+      "path_type": "by-id",
+      "label": "usb-Microchip Technology Inc. MCP2221 USB-I2C UART Combo-if00 -> /dev/ttyACM0",
+      "in_use": true,
+      "in_use_state": {
+        "state": "in_use",
+        "checked_with": [
+          "fuser",
+          "lsof"
+        ],
+        "unavailable_tools": [],
+        "pids": [
+          161492,
+          161616
+        ]
+      },
+      "udevadm": {
+        "available": true,
+        "status": "ok",
+        "properties": {
+          "DEVPATH": "/devices/pci0000:00/0000:00:14.0/usb3/3-6/3-6:1.0/tty/ttyACM0",
+          "DEVNAME": "/dev/ttyACM0",
+          "SUBSYSTEM": "tty",
+          "ID_BUS": "usb",
+          "ID_MODEL": "MCP2221_USB-I2C_UART_Combo",
+          "ID_MODEL_ID": "00dd",
+          "ID_VENDOR": "Microchip_Technology_Inc.",
+          "ID_VENDOR_ID": "04d8",
+          "ID_REVISION": "0100",
+          "ID_TYPE": "generic",
+          "ID_USB_DRIVER": "cdc_acm",
+          "ID_PATH": "pci-0000:00:14.0-usb-0:6:1.0"
+        },
+        "raw_redacted": true
+      },
+      "setserial": {
+        "available": false,
+        "status": "unavailable",
+        "reason": "setserial-not-found"
+      },
+      "dmesg": {
+        "available": true,
+        "status": "unavailable",
+        "reason": "dmesg: read kernel buffer failed: Operation not permitted"
+      },
+      "rank": 565,
+      "recommendation": "in-use-deprioritized",
+      "confidence": "low",
+      "selection_reasons": [
+        "stable /dev/serial/by-id path",
+        "candidate name matches NetApp serial hint",
+        "path appears to be in use"
+      ]
+    },
+    {
+      "display_path": "/dev/ttyACM0",
+      "path": "/dev/ttyACM0",
+      "resolved_path": "/dev/ttyACM0",
+      "target_path": "/dev/ttyACM0",
+      "exists": true,
+      "readable": true,
+      "writable": true,
+      "owner": "root",
+      "group": "dialout",
+      "mode": "crw-rw----",
+      "modified_time": "2026-06-10T19:44:42+00:00",
+      "modified_age_seconds": 4,
+      "stable_path": false,
+      "path_type": "ttyACM",
+      "label": "ttyACM0",
+      "in_use": true,
+      "in_use_state": {
+        "state": "in_use",
+        "checked_with": [
+          "fuser",
+          "lsof"
+        ],
+        "unavailable_tools": [],
+        "pids": [
+          161492,
+          161616
+        ]
+      },
+      "udevadm": {
+        "available": true,
+        "status": "ok",
+        "properties": {
+          "DEVPATH": "/devices/pci0000:00/0000:00:14.0/usb3/3-6/3-6:1.0/tty/ttyACM0",
+          "DEVNAME": "/dev/ttyACM0",
+          "SUBSYSTEM": "tty",
+          "ID_BUS": "usb",
+          "ID_MODEL": "MCP2221_USB-I2C_UART_Combo",
+          "ID_MODEL_ID": "00dd",
+          "ID_VENDOR": "Microchip_Technology_Inc.",
+          "ID_VENDOR_ID": "04d8",
+          "ID_REVISION": "0100",
+          "ID_TYPE": "generic",
+          "ID_USB_DRIVER": "cdc_acm",
+          "ID_PATH": "pci-0000:00:14.0-usb-0:6:1.0"
+        },
+        "raw_redacted": true
+      },
+      "setserial": {
+        "available": false,
+        "status": "unavailable",
+        "reason": "setserial-not-found"
+      },
+      "dmesg": {
+        "available": true,
+        "status": "unavailable",
+        "reason": "dmesg: read kernel buffer failed: Operation not permitted"
+      },
+      "rank": 665,
+      "recommendation": "in-use-deprioritized",
+      "confidence": "low",
+      "selection_reasons": [
+        "ttyACM USB serial fallback",
+        "candidate name matches NetApp serial hint",
+        "path appears to be in use"
+      ]
+    },
+    {
+      "display_path": "/dev/ttyS1",
+      "path": "/dev/ttyS1",
+      "resolved_path": "/dev/ttyS1",
+      "target_path": "/dev/ttyS1",
+      "exists": true,
+      "readable": true,
+      "writable": true,
+      "owner": "root",
+      "group": "dialout",
+      "mode": "crw-rw----",
+      "modified_time": "2026-06-10T17:48:28+00:00",
+      "modified_age_seconds": 6978,
+      "stable_path": false,
+      "path_type": "ttyS",
+      "label": "ttyS1",
+      "in_use": true,
+      "in_use_state": {
+        "state": "in_use",
+        "checked_with": [
+          "fuser",
+          "lsof"
+        ],
+        "unavailable_tools": [],
+        "pids": [
+          114072,
+          115879
+        ]
+      },
+      "udevadm": {
+        "available": true,
+        "status": "ok",
+        "properties": {
+          "DEVPATH": "/devices/platform/serial8250/serial8250:0/serial8250:0.1/tty/ttyS1",
+          "DEVNAME": "/dev/ttyS1",
+          "SUBSYSTEM": "tty"
+        },
+        "raw_redacted": true
+      },
+      "setserial": {
+        "available": false,
+        "status": "unavailable",
+        "reason": "setserial-not-found"
+      },
+      "dmesg": {
+        "available": true,
+        "status": "unavailable",
+        "reason": "dmesg: read kernel buffer failed: Operation not permitted"
+      },
+      "rank": 839,
+      "recommendation": "in-use-deprioritized",
+      "confidence": "low",
+      "selection_reasons": [
+        "ttyS device has a recent modified timestamp",
+        "path appears to be in use"
+      ]
     }
   ],
   "bauds_tried": [
@@ -1935,45 +2010,41 @@
     38400,
     57600
   ],
-  "attempt_count": 1,
+  "attempt_count": 20,
   "attempts": [
     {
-      "path": "/dev/serial/by-id/usb-Microchip_Technology_Inc._MCP2221_USB-I2C_UART_Combo-if00",
+      "path": "/dev/serial/by-id/usb-Prolific_Technology_Inc._USB-Serial_Controller_D-if00-port0",
       "baud": 115200,
-      "started_at": "2026-06-10T00:35:49.292805+00:00",
+      "started_at": "2026-06-10T19:44:53.536861+00:00",
       "status": "checked",
-      "bytes": 1846,
-      "captured": true,
-      "classification": "prompt_detected",
+      "bytes": 0,
+      "captured": false,
+      "classification": "no_bytes_read",
       "classification_detail": {
-        "classification": "prompt_detected",
-        "device_type": "netapp",
-        "prompt_state": "cluster_setup_prompt",
-        "prompt_label": "NetApp cluster setup wizard",
-        "confidence": "high",
-        "signals": [
-          "cluster setup"
-        ]
+        "classification": "no_bytes_read",
+        "device_type": "unknown",
+        "prompt_state": "no_output",
+        "prompt_label": "No console output",
+        "confidence": "low",
+        "signals": []
       },
-      "device_type": "netapp",
-      "prompt_state": "cluster_setup_prompt",
-      "prompt_label": "NetApp cluster setup wizard",
-      "confidence": "high",
-      "signals": [
-        "cluster setup"
-      ],
-      "output_excerpt": "cluster setup prompt\nYou can enter the following commands at any time:\n\"help\" or \"?\" - if you want to have a question clarified,\n\"back\" - if you want to change previously answered questions, and\ncluster setup prompt\nAny changes you made before quitting will be saved.\ncluster setup prompt\nTo accept a default or omit a question, do not enter a value.\nThis system will send event messages and periodic reports to NetApp Technical\nSupport. To disable this feature, enter\nautosupport modify -support disable\nwithin 24 hours.\nEnabling AutoSupport can significantly speed problem determination\nand resolution, should a problem occur on your system.\nFor further information on AutoSupport, see:\nhttps://support.netapp.com/autosupport/\nType yes to confirm and continue {yes}:\ncluster setup prompt\nYou can enter the following commands at any time:\n\"help\" or \"?\" - if you want to have a question clarified,\n\"back\" - if you want to change previously answered questions, and\ncluster setup prompt\nAny changes you made before quitting will be saved.\ncluster setup prompt\nTo accept a default or omit a question, do not enter a value.\nThis system will send event messages and periodic reports to NetApp Technical\nSupport. To disable this feature, enter\nautosupport modify -support disable\nwithin 24 hours.\nEnabling AutoSupport can significantly speed problem determination\nand resolution, should a problem occur on your system.\nFor further information on AutoSupport, see:\nhttps://support.netapp.com/autosupport/\nType yes to confirm and continue {yes}:",
+      "device_type": "unknown",
+      "prompt_state": "no_output",
+      "prompt_label": "No console output",
+      "confidence": "low",
+      "signals": [],
+      "output_excerpt": "",
       "raw_output_redacted": true,
       "sequence_reads": [
         {
           "sequence": "newline",
           "wake_bytes_sent": 1,
-          "bytes_read": 923
+          "bytes_read": 0
         },
         {
           "sequence": "carriage-return",
           "wake_bytes_sent": 1,
-          "bytes_read": 923
+          "bytes_read": 0
         },
         {
           "sequence": "read-window-1",
@@ -1991,10 +2062,814 @@
           "bytes_read": 0
         }
       ],
-      "blocker": null
+      "blocker": "No bytes were read from this serial candidate and baud."
+    },
+    {
+      "path": "/dev/serial/by-id/usb-Prolific_Technology_Inc._USB-Serial_Controller_D-if00-port0",
+      "baud": 9600,
+      "started_at": "2026-06-10T19:44:55.302489+00:00",
+      "status": "checked",
+      "bytes": 16,
+      "captured": true,
+      "classification": "unknown",
+      "classification_detail": {
+        "classification": "unknown",
+        "device_type": "unknown",
+        "prompt_state": "unknown_output",
+        "prompt_label": "Unclassified console output",
+        "confidence": "low",
+        "signals": [
+          "printable output did not match known Cisco or NetApp prompts"
+        ]
+      },
+      "device_type": "unknown",
+      "prompt_state": "unknown_output",
+      "prompt_label": "Unclassified console output",
+      "confidence": "low",
+      "signals": [
+        "printable output did not match known Cisco or NetApp prompts"
+      ],
+      "output_excerpt": "SW011\nDescripti",
+      "raw_output_redacted": true,
+      "sequence_reads": [
+        {
+          "sequence": "newline",
+          "wake_bytes_sent": 1,
+          "bytes_read": 0
+        },
+        {
+          "sequence": "carriage-return",
+          "wake_bytes_sent": 1,
+          "bytes_read": 0
+        },
+        {
+          "sequence": "read-window-1",
+          "wake_bytes_sent": 0,
+          "bytes_read": 0
+        },
+        {
+          "sequence": "read-window-2",
+          "wake_bytes_sent": 0,
+          "bytes_read": 0
+        },
+        {
+          "sequence": "read-window-3",
+          "wake_bytes_sent": 0,
+          "bytes_read": 16
+        }
+      ],
+      "blocker": "Console output was captured but did not match known Cisco or NetApp prompts."
+    },
+    {
+      "path": "/dev/serial/by-id/usb-Prolific_Technology_Inc._USB-Serial_Controller_D-if00-port0",
+      "baud": 19200,
+      "started_at": "2026-06-10T19:44:56.437260+00:00",
+      "status": "checked",
+      "bytes": 11,
+      "captured": true,
+      "classification": "unreadable_gibberish",
+      "classification_detail": {
+        "classification": "unreadable_gibberish",
+        "device_type": "unknown",
+        "prompt_state": "unreadable",
+        "prompt_label": "Unreadable console text",
+        "confidence": "low",
+        "signals": [
+          "replacement/control character ratio indicates wrong baud or line settings"
+        ]
+      },
+      "device_type": "unknown",
+      "prompt_state": "unreadable",
+      "prompt_label": "Unreadable console text",
+      "confidence": "low",
+      "signals": [
+        "replacement/control character ratio indicates wrong baud or line settings"
+      ],
+      "output_excerpt": "..`...f..x.",
+      "raw_output_redacted": true,
+      "sequence_reads": [
+        {
+          "sequence": "newline",
+          "wake_bytes_sent": 1,
+          "bytes_read": 1
+        },
+        {
+          "sequence": "carriage-return",
+          "wake_bytes_sent": 1,
+          "bytes_read": 1
+        },
+        {
+          "sequence": "read-window-1",
+          "wake_bytes_sent": 0,
+          "bytes_read": 1
+        },
+        {
+          "sequence": "read-window-2",
+          "wake_bytes_sent": 0,
+          "bytes_read": 0
+        },
+        {
+          "sequence": "read-window-3",
+          "wake_bytes_sent": 0,
+          "bytes_read": 8
+        }
+      ],
+      "blocker": "Bytes were read but look like wrong-baud or unreadable console text."
+    },
+    {
+      "path": "/dev/serial/by-id/usb-Prolific_Technology_Inc._USB-Serial_Controller_D-if00-port0",
+      "baud": 38400,
+      "started_at": "2026-06-10T19:44:56.453172+00:00",
+      "status": "checked",
+      "bytes": 22,
+      "captured": true,
+      "classification": "unreadable_gibberish",
+      "classification_detail": {
+        "classification": "unreadable_gibberish",
+        "device_type": "unknown",
+        "prompt_state": "unreadable",
+        "prompt_label": "Unreadable console text",
+        "confidence": "low",
+        "signals": [
+          "replacement/control character ratio indicates wrong baud or line settings"
+        ]
+      },
+      "device_type": "unknown",
+      "prompt_state": "unreadable",
+      "prompt_label": "Unreadable console text",
+      "confidence": "low",
+      "signals": [
+        "replacement/control character ratio indicates wrong baud or line settings"
+      ],
+      "output_excerpt": ".x...xxx..x.xxx.x.?...",
+      "raw_output_redacted": true,
+      "sequence_reads": [
+        {
+          "sequence": "newline",
+          "wake_bytes_sent": 1,
+          "bytes_read": 2
+        },
+        {
+          "sequence": "carriage-return",
+          "wake_bytes_sent": 1,
+          "bytes_read": 0
+        },
+        {
+          "sequence": "read-window-1",
+          "wake_bytes_sent": 0,
+          "bytes_read": 20
+        },
+        {
+          "sequence": "read-window-2",
+          "wake_bytes_sent": 0,
+          "bytes_read": 0
+        },
+        {
+          "sequence": "read-window-3",
+          "wake_bytes_sent": 0,
+          "bytes_read": 0
+        }
+      ],
+      "blocker": "Bytes were read but look like wrong-baud or unreadable console text."
+    },
+    {
+      "path": "/dev/serial/by-id/usb-Prolific_Technology_Inc._USB-Serial_Controller_D-if00-port0",
+      "baud": 57600,
+      "started_at": "2026-06-10T19:44:56.467676+00:00",
+      "status": "checked",
+      "bytes": 28,
+      "captured": true,
+      "classification": "unreadable_gibberish",
+      "classification_detail": {
+        "classification": "unreadable_gibberish",
+        "device_type": "unknown",
+        "prompt_state": "unreadable",
+        "prompt_label": "Unreadable console text",
+        "confidence": "low",
+        "signals": [
+          "replacement/control character ratio indicates wrong baud or line settings"
+        ]
+      },
+      "device_type": "unknown",
+      "prompt_state": "unreadable",
+      "prompt_label": "Unreadable console text",
+      "confidence": "low",
+      "signals": [
+        "replacement/control character ratio indicates wrong baud or line settings"
+      ],
+      "output_excerpt": "..........................of",
+      "raw_output_redacted": true,
+      "sequence_reads": [
+        {
+          "sequence": "newline",
+          "wake_bytes_sent": 1,
+          "bytes_read": 17
+        },
+        {
+          "sequence": "carriage-return",
+          "wake_bytes_sent": 1,
+          "bytes_read": 6
+        },
+        {
+          "sequence": "read-window-1",
+          "wake_bytes_sent": 0,
+          "bytes_read": 5
+        },
+        {
+          "sequence": "read-window-2",
+          "wake_bytes_sent": 0,
+          "bytes_read": 0
+        },
+        {
+          "sequence": "read-window-3",
+          "wake_bytes_sent": 0,
+          "bytes_read": 0
+        }
+      ],
+      "blocker": "Bytes were read but look like wrong-baud or unreadable console text."
+    },
+    {
+      "path": "/dev/ttyUSB0",
+      "baud": 115200,
+      "started_at": "2026-06-10T19:44:56.487454+00:00",
+      "status": "checked",
+      "bytes": 15,
+      "captured": true,
+      "classification": "unreadable_gibberish",
+      "classification_detail": {
+        "classification": "unreadable_gibberish",
+        "device_type": "unknown",
+        "prompt_state": "unreadable",
+        "prompt_label": "Unreadable console text",
+        "confidence": "low",
+        "signals": [
+          "replacement/control character ratio indicates wrong baud or line settings"
+        ]
+      },
+      "device_type": "unknown",
+      "prompt_state": "unreadable",
+      "prompt_label": "Unreadable console text",
+      "confidence": "low",
+      "signals": [
+        "replacement/control character ratio indicates wrong baud or line settings"
+      ],
+      "output_excerpt": "........f...fff",
+      "raw_output_redacted": true,
+      "sequence_reads": [
+        {
+          "sequence": "newline",
+          "wake_bytes_sent": 1,
+          "bytes_read": 0
+        },
+        {
+          "sequence": "carriage-return",
+          "wake_bytes_sent": 1,
+          "bytes_read": 0
+        },
+        {
+          "sequence": "read-window-1",
+          "wake_bytes_sent": 0,
+          "bytes_read": 2
+        },
+        {
+          "sequence": "read-window-2",
+          "wake_bytes_sent": 0,
+          "bytes_read": 7
+        },
+        {
+          "sequence": "read-window-3",
+          "wake_bytes_sent": 0,
+          "bytes_read": 6
+        }
+      ],
+      "blocker": "Bytes were read but look like wrong-baud or unreadable console text."
+    },
+    {
+      "path": "/dev/ttyUSB0",
+      "baud": 9600,
+      "started_at": "2026-06-10T19:44:56.503001+00:00",
+      "status": "checked",
+      "bytes": 2829,
+      "captured": true,
+      "classification": "unreadable_gibberish",
+      "classification_detail": {
+        "classification": "unreadable_gibberish",
+        "device_type": "unknown",
+        "prompt_state": "unreadable",
+        "prompt_label": "Unreadable console text",
+        "confidence": "low",
+        "signals": [
+          "replacement/control character ratio indicates wrong baud or line settings"
+        ]
+      },
+      "device_type": "unknown",
+      "prompt_state": "unreadable",
+      "prompt_label": "Unreadable console text",
+      "confidence": "low",
+      "signals": [
+        "replacement/control character ratio indicates wrong baud or line settings"
+      ],
+      "output_excerpt": "#####...........................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................",
+      "raw_output_redacted": true,
+      "sequence_reads": [
+        {
+          "sequence": "newline",
+          "wake_bytes_sent": 1,
+          "bytes_read": 0
+        },
+        {
+          "sequence": "carriage-return",
+          "wake_bytes_sent": 1,
+          "bytes_read": 0
+        },
+        {
+          "sequence": "read-window-1",
+          "wake_bytes_sent": 0,
+          "bytes_read": 474
+        },
+        {
+          "sequence": "read-window-2",
+          "wake_bytes_sent": 0,
+          "bytes_read": 859
+        },
+        {
+          "sequence": "read-window-3",
+          "wake_bytes_sent": 0,
+          "bytes_read": 1496
+        }
+      ],
+      "blocker": "Bytes were read but look like wrong-baud or unreadable console text."
+    },
+    {
+      "path": "/dev/ttyUSB0",
+      "baud": 19200,
+      "started_at": "2026-06-10T19:44:57.764357+00:00",
+      "status": "checked",
+      "bytes": 51,
+      "captured": true,
+      "classification": "unreadable_gibberish",
+      "classification_detail": {
+        "classification": "unreadable_gibberish",
+        "device_type": "unknown",
+        "prompt_state": "unreadable",
+        "prompt_label": "Unreadable console text",
+        "confidence": "low",
+        "signals": [
+          "replacement/control character ratio indicates wrong baud or line settings"
+        ]
+      },
+      "device_type": "unknown",
+      "prompt_state": "unreadable",
+      "prompt_label": "Unreadable console text",
+      "confidence": "low",
+      "signals": [
+        "replacement/control character ratio indicates wrong baud or line settings"
+      ],
+      "output_excerpt": "..f.....~f........xf....`f.....ff.fx....f.f.~..",
+      "raw_output_redacted": true,
+      "sequence_reads": [
+        {
+          "sequence": "newline",
+          "wake_bytes_sent": 1,
+          "bytes_read": 0
+        },
+        {
+          "sequence": "carriage-return",
+          "wake_bytes_sent": 1,
+          "bytes_read": 0
+        },
+        {
+          "sequence": "read-window-1",
+          "wake_bytes_sent": 0,
+          "bytes_read": 0
+        },
+        {
+          "sequence": "read-window-2",
+          "wake_bytes_sent": 0,
+          "bytes_read": 51
+        },
+        {
+          "sequence": "read-window-3",
+          "wake_bytes_sent": 0,
+          "bytes_read": 0
+        }
+      ],
+      "blocker": "Bytes were read but look like wrong-baud or unreadable console text."
+    },
+    {
+      "path": "/dev/ttyUSB0",
+      "baud": 38400,
+      "started_at": "2026-06-10T19:44:59.677380+00:00",
+      "status": "checked",
+      "bytes": 8,
+      "captured": true,
+      "classification": "unreadable_gibberish",
+      "classification_detail": {
+        "classification": "unreadable_gibberish",
+        "device_type": "unknown",
+        "prompt_state": "unreadable",
+        "prompt_label": "Unreadable console text",
+        "confidence": "low",
+        "signals": [
+          "replacement/control character ratio indicates wrong baud or line settings"
+        ]
+      },
+      "device_type": "unknown",
+      "prompt_state": "unreadable",
+      "prompt_label": "Unreadable console text",
+      "confidence": "low",
+      "signals": [
+        "replacement/control character ratio indicates wrong baud or line settings"
+      ],
+      "output_excerpt": "........",
+      "raw_output_redacted": true,
+      "sequence_reads": [
+        {
+          "sequence": "newline",
+          "wake_bytes_sent": 1,
+          "bytes_read": 2
+        },
+        {
+          "sequence": "carriage-return",
+          "wake_bytes_sent": 1,
+          "bytes_read": 6
+        },
+        {
+          "sequence": "read-window-1",
+          "wake_bytes_sent": 0,
+          "bytes_read": 0
+        },
+        {
+          "sequence": "read-window-2",
+          "wake_bytes_sent": 0,
+          "bytes_read": 0
+        },
+        {
+          "sequence": "read-window-3",
+          "wake_bytes_sent": 0,
+          "bytes_read": 0
+        }
+      ],
+      "blocker": "Bytes were read but look like wrong-baud or unreadable console text."
+    },
+    {
+      "path": "/dev/ttyUSB0",
+      "baud": 57600,
+      "started_at": "2026-06-10T19:45:01.565136+00:00",
+      "status": "checked",
+      "bytes": 4,
+      "captured": true,
+      "classification": "unreadable_gibberish",
+      "classification_detail": {
+        "classification": "unreadable_gibberish",
+        "device_type": "unknown",
+        "prompt_state": "unreadable",
+        "prompt_label": "Unreadable console text",
+        "confidence": "low",
+        "signals": [
+          "replacement/control character ratio indicates wrong baud or line settings"
+        ]
+      },
+      "device_type": "unknown",
+      "prompt_state": "unreadable",
+      "prompt_label": "Unreadable console text",
+      "confidence": "low",
+      "signals": [
+        "replacement/control character ratio indicates wrong baud or line settings"
+      ],
+      "output_excerpt": "....",
+      "raw_output_redacted": true,
+      "sequence_reads": [
+        {
+          "sequence": "newline",
+          "wake_bytes_sent": 1,
+          "bytes_read": 2
+        },
+        {
+          "sequence": "carriage-return",
+          "wake_bytes_sent": 1,
+          "bytes_read": 2
+        },
+        {
+          "sequence": "read-window-1",
+          "wake_bytes_sent": 0,
+          "bytes_read": 0
+        },
+        {
+          "sequence": "read-window-2",
+          "wake_bytes_sent": 0,
+          "bytes_read": 0
+        },
+        {
+          "sequence": "read-window-3",
+          "wake_bytes_sent": 0,
+          "bytes_read": 0
+        }
+      ],
+      "blocker": "Bytes were read but look like wrong-baud or unreadable console text."
+    },
+    {
+      "path": "/dev/ttyS20",
+      "baud": 115200,
+      "started_at": "2026-06-10T19:45:03.452917+00:00",
+      "status": "blocked",
+      "bytes": 0,
+      "captured": false,
+      "classification": "serial_open_failed",
+      "classification_detail": {
+        "classification": "serial_open_failed",
+        "device_type": "unknown",
+        "prompt_state": "serial_open_failed",
+        "prompt_label": "Serial open failed",
+        "confidence": "low",
+        "signals": [
+          "serial open failed"
+        ]
+      },
+      "device_type": "unknown",
+      "prompt_state": "serial_open_failed",
+      "prompt_label": "Serial open failed",
+      "confidence": "low",
+      "signals": [
+        "serial open failed"
+      ],
+      "output_excerpt": "",
+      "raw_output_redacted": true,
+      "sequence_reads": [],
+      "blocker": "SerialException: Could not configure port: (5, 'Input/output error')"
+    },
+    {
+      "path": "/dev/ttyS20",
+      "baud": 9600,
+      "started_at": "2026-06-10T19:45:03.453227+00:00",
+      "status": "blocked",
+      "bytes": 0,
+      "captured": false,
+      "classification": "serial_open_failed",
+      "classification_detail": {
+        "classification": "serial_open_failed",
+        "device_type": "unknown",
+        "prompt_state": "serial_open_failed",
+        "prompt_label": "Serial open failed",
+        "confidence": "low",
+        "signals": [
+          "serial open failed"
+        ]
+      },
+      "device_type": "unknown",
+      "prompt_state": "serial_open_failed",
+      "prompt_label": "Serial open failed",
+      "confidence": "low",
+      "signals": [
+        "serial open failed"
+      ],
+      "output_excerpt": "",
+      "raw_output_redacted": true,
+      "sequence_reads": [],
+      "blocker": "SerialException: Could not configure port: (5, 'Input/output error')"
+    },
+    {
+      "path": "/dev/ttyS20",
+      "baud": 19200,
+      "started_at": "2026-06-10T19:45:03.453304+00:00",
+      "status": "blocked",
+      "bytes": 0,
+      "captured": false,
+      "classification": "serial_open_failed",
+      "classification_detail": {
+        "classification": "serial_open_failed",
+        "device_type": "unknown",
+        "prompt_state": "serial_open_failed",
+        "prompt_label": "Serial open failed",
+        "confidence": "low",
+        "signals": [
+          "serial open failed"
+        ]
+      },
+      "device_type": "unknown",
+      "prompt_state": "serial_open_failed",
+      "prompt_label": "Serial open failed",
+      "confidence": "low",
+      "signals": [
+        "serial open failed"
+      ],
+      "output_excerpt": "",
+      "raw_output_redacted": true,
+      "sequence_reads": [],
+      "blocker": "SerialException: Could not configure port: (5, 'Input/output error')"
+    },
+    {
+      "path": "/dev/ttyS20",
+      "baud": 38400,
+      "started_at": "2026-06-10T19:45:03.453344+00:00",
+      "status": "blocked",
+      "bytes": 0,
+      "captured": false,
+      "classification": "serial_open_failed",
+      "classification_detail": {
+        "classification": "serial_open_failed",
+        "device_type": "unknown",
+        "prompt_state": "serial_open_failed",
+        "prompt_label": "Serial open failed",
+        "confidence": "low",
+        "signals": [
+          "serial open failed"
+        ]
+      },
+      "device_type": "unknown",
+      "prompt_state": "serial_open_failed",
+      "prompt_label": "Serial open failed",
+      "confidence": "low",
+      "signals": [
+        "serial open failed"
+      ],
+      "output_excerpt": "",
+      "raw_output_redacted": true,
+      "sequence_reads": [],
+      "blocker": "SerialException: Could not configure port: (5, 'Input/output error')"
+    },
+    {
+      "path": "/dev/ttyS20",
+      "baud": 57600,
+      "started_at": "2026-06-10T19:45:03.453389+00:00",
+      "status": "blocked",
+      "bytes": 0,
+      "captured": false,
+      "classification": "serial_open_failed",
+      "classification_detail": {
+        "classification": "serial_open_failed",
+        "device_type": "unknown",
+        "prompt_state": "serial_open_failed",
+        "prompt_label": "Serial open failed",
+        "confidence": "low",
+        "signals": [
+          "serial open failed"
+        ]
+      },
+      "device_type": "unknown",
+      "prompt_state": "serial_open_failed",
+      "prompt_label": "Serial open failed",
+      "confidence": "low",
+      "signals": [
+        "serial open failed"
+      ],
+      "output_excerpt": "",
+      "raw_output_redacted": true,
+      "sequence_reads": [],
+      "blocker": "SerialException: Could not configure port: (5, 'Input/output error')"
+    },
+    {
+      "path": "/dev/ttyS21",
+      "baud": 115200,
+      "started_at": "2026-06-10T19:45:03.453416+00:00",
+      "status": "blocked",
+      "bytes": 0,
+      "captured": false,
+      "classification": "serial_open_failed",
+      "classification_detail": {
+        "classification": "serial_open_failed",
+        "device_type": "unknown",
+        "prompt_state": "serial_open_failed",
+        "prompt_label": "Serial open failed",
+        "confidence": "low",
+        "signals": [
+          "serial open failed"
+        ]
+      },
+      "device_type": "unknown",
+      "prompt_state": "serial_open_failed",
+      "prompt_label": "Serial open failed",
+      "confidence": "low",
+      "signals": [
+        "serial open failed"
+      ],
+      "output_excerpt": "",
+      "raw_output_redacted": true,
+      "sequence_reads": [],
+      "blocker": "SerialException: Could not configure port: (5, 'Input/output error')"
+    },
+    {
+      "path": "/dev/ttyS21",
+      "baud": 9600,
+      "started_at": "2026-06-10T19:45:03.453438+00:00",
+      "status": "blocked",
+      "bytes": 0,
+      "captured": false,
+      "classification": "serial_open_failed",
+      "classification_detail": {
+        "classification": "serial_open_failed",
+        "device_type": "unknown",
+        "prompt_state": "serial_open_failed",
+        "prompt_label": "Serial open failed",
+        "confidence": "low",
+        "signals": [
+          "serial open failed"
+        ]
+      },
+      "device_type": "unknown",
+      "prompt_state": "serial_open_failed",
+      "prompt_label": "Serial open failed",
+      "confidence": "low",
+      "signals": [
+        "serial open failed"
+      ],
+      "output_excerpt": "",
+      "raw_output_redacted": true,
+      "sequence_reads": [],
+      "blocker": "SerialException: Could not configure port: (5, 'Input/output error')"
+    },
+    {
+      "path": "/dev/ttyS21",
+      "baud": 19200,
+      "started_at": "2026-06-10T19:45:03.453458+00:00",
+      "status": "blocked",
+      "bytes": 0,
+      "captured": false,
+      "classification": "serial_open_failed",
+      "classification_detail": {
+        "classification": "serial_open_failed",
+        "device_type": "unknown",
+        "prompt_state": "serial_open_failed",
+        "prompt_label": "Serial open failed",
+        "confidence": "low",
+        "signals": [
+          "serial open failed"
+        ]
+      },
+      "device_type": "unknown",
+      "prompt_state": "serial_open_failed",
+      "prompt_label": "Serial open failed",
+      "confidence": "low",
+      "signals": [
+        "serial open failed"
+      ],
+      "output_excerpt": "",
+      "raw_output_redacted": true,
+      "sequence_reads": [],
+      "blocker": "SerialException: Could not configure port: (5, 'Input/output error')"
+    },
+    {
+      "path": "/dev/ttyS21",
+      "baud": 38400,
+      "started_at": "2026-06-10T19:45:03.453477+00:00",
+      "status": "blocked",
+      "bytes": 0,
+      "captured": false,
+      "classification": "serial_open_failed",
+      "classification_detail": {
+        "classification": "serial_open_failed",
+        "device_type": "unknown",
+        "prompt_state": "serial_open_failed",
+        "prompt_label": "Serial open failed",
+        "confidence": "low",
+        "signals": [
+          "serial open failed"
+        ]
+      },
+      "device_type": "unknown",
+      "prompt_state": "serial_open_failed",
+      "prompt_label": "Serial open failed",
+      "confidence": "low",
+      "signals": [
+        "serial open failed"
+      ],
+      "output_excerpt": "",
+      "raw_output_redacted": true,
+      "sequence_reads": [],
+      "blocker": "SerialException: Could not configure port: (5, 'Input/output error')"
+    },
+    {
+      "path": "/dev/ttyS21",
+      "baud": 57600,
+      "started_at": "2026-06-10T19:45:03.453495+00:00",
+      "status": "blocked",
+      "bytes": 0,
+      "captured": false,
+      "classification": "serial_open_failed",
+      "classification_detail": {
+        "classification": "serial_open_failed",
+        "device_type": "unknown",
+        "prompt_state": "serial_open_failed",
+        "prompt_label": "Serial open failed",
+        "confidence": "low",
+        "signals": [
+          "serial open failed"
+        ]
+      },
+      "device_type": "unknown",
+      "prompt_state": "serial_open_failed",
+      "prompt_label": "Serial open failed",
+      "confidence": "low",
+      "signals": [
+        "serial open failed"
+      ],
+      "output_excerpt": "",
+      "raw_output_redacted": true,
+      "sequence_reads": [],
+      "blocker": "SerialException: Could not configure port: (5, 'Input/output error')"
     }
   ],
-  "last_console_blocker": null,
+  "last_console_blocker": "Serial candidates were discovered, but no valid NetApp prompt, boot state, or login flow was detected.",
   "serial_import_error": null,
   "management_topology": {
     "connected_management_ports": [
@@ -2012,7 +2887,9 @@
     "Serial auto-discovery includes /dev/serial/by-id/*, /dev/ttyUSB*, /dev/ttyACM*, and /dev/ttyS*.",
     "Only one NetApp management port is connected at the moment."
   ],
-  "blockers": [],
+  "blockers": [
+    "Serial candidates were discovered, but no valid NetApp prompt, boot state, or login flow was detected."
+  ],
   "not_attempted": [
     "Ctrl+C, Ctrl+Z, break, boot menu selection, or any boot interruption",
     "username or password entry",
@@ -2022,13 +2899,13 @@
     "vCenter or ESXi datastore mount",
     "controller reboot, takeover/giveback, wipe, or upgrade"
   ],
-  "next_safe_action": "Use the selected console adapter/baud for read-only NetApp state capture.",
+  "next_safe_action": "Use the selected candidate as the next physical console check, then verify cable placement, adapter ownership, power state, and baud before rerunning discovery.",
   "runtime_state": {
     "provider_id": "netapp-ontap",
     "device_role": "storage-controller",
-    "checked_at": "2026-06-10T00:35:51.057531+00:00",
+    "checked_at": "2026-06-10T19:45:03.469609+00:00",
     "configured": false,
-    "configured_state": "setup_wizard",
+    "configured_state": "blocked",
     "source": "console_read_state",
     "manual_env_flag_required": false,
     "legacy_env": {
@@ -2038,14 +2915,14 @@
       "manual_state_tracking_required": false
     },
     "console": {
-      "discovered_port": "/dev/serial/by-id/usb-Microchip_Technology_Inc._MCP2221_USB-I2C_UART_Combo-if00",
-      "baud": 115200,
+      "discovered_port": "/dev/serial/by-id/usb-Prolific_Technology_Inc._USB-Serial_Controller_D-if00-port0",
+      "baud": 9600,
       "confidence": "high",
-      "last_seen": "2026-06-10T00:35:43.149970+00:00",
+      "last_seen": "2026-06-10T19:44:46.169670+00:00",
       "source": "autodiscovery",
-      "selection_source": "prompt-evidence",
-      "prompt_state": "cluster_setup_prompt",
-      "prompt_label": "NetApp cluster setup wizard",
+      "selection_source": "auto-stable-candidate",
+      "prompt_state": "unknown_output",
+      "prompt_label": "Unclassified console output",
       "configured_port_hint": null,
       "detected_automatically": true,
       "manual_env_update_required": false
@@ -2086,16 +2963,18 @@
       "iscsi_lifs_detected": [],
       "blockers": []
     },
-    "last_successful_probe_at": "2026-06-10T00:35:43.149970+00:00",
+    "last_successful_probe_at": "2026-06-10T19:44:46.169670+00:00",
     "last_report_path": "artifacts/codex-runs/netapp-console-state-report.md",
     "confidence": "high",
-    "blockers": [],
+    "blockers": [
+      "Serial candidates were discovered, but no valid NetApp prompt, boot state, or login flow was detected."
+    ],
     "artifacts": {
       "state_report": "artifacts/codex-runs/netapp-live-state-report.md",
       "automanagement_report": "artifacts/codex-runs/netapp-state-automanagement-report.md",
       "console_last_known_good": "artifacts/codex-runs/netapp-console-last-known-good-redacted.json"
     },
-    "next_safe_action": "Complete or validate NetApp setup, then run Validate NetApp Setup.",
+    "next_safe_action": "Serial candidates were discovered, but no valid NetApp prompt, boot state, or login flow was detected.",
     "source_type": "live_cached",
     "freshness": "current",
     "ttl_seconds": 86400,

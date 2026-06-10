@@ -40,7 +40,11 @@ from app.providers.action_policy import (  # noqa: E402
 from app.providers.cisco_ansible import CiscoAnsibleAdapter  # noqa: E402
 from app.providers.cisco_console import CiscoConsoleAdapter  # noqa: E402
 from app.providers.esxi_readonly import EsxiReadonlyAdapter  # noqa: E402
-from app.providers.ilo_redfish import IloRedfishAdapter  # noqa: E402
+from app.providers.ilo_redfish import (  # noqa: E402
+    IloRedfishAdapter,
+    IloRedfishConfig,
+    ilo_redfish_redaction_values,
+)
 from app.providers.lab_safety import current_lab_safety  # noqa: E402
 from app.providers.redaction import redact_sensitive  # noqa: E402
 from app.providers.registry import ProviderRegistryError, provider_registry  # noqa: E402
@@ -271,7 +275,15 @@ def _tool_availability(provider_ids: list[str]) -> dict[str, bool]:
 def _target_summary(provider_ids: list[str]) -> dict[str, Any]:
     targets: dict[str, Any] = {}
     if "ilo-redfish" in provider_ids:
-        targets["ilo"] = {"configured": bool(settings.ilo_test_host)}
+        config = IloRedfishConfig.from_settings()
+        targets["ilo"] = {
+            "configured": bool(config.host),
+            "source_type": config.host_source,
+            "candidate_count": len(config.target_candidates),
+            "candidate_sources": [
+                candidate["source"] for candidate in config.target_candidates
+            ],
+        }
     if "esxi-readonly" in provider_ids:
         targets["esxi"] = {
             "configured": settings.esxi_configured,
@@ -288,6 +300,7 @@ def _target_summary(provider_ids: list[str]) -> dict[str, Any]:
 
 def _guarded_rebuild_planning() -> dict[str, Any]:
     safety = current_lab_safety()
+    ilo_config = IloRedfishConfig.from_settings()
     if not safety.destructive_allowed:
         return {
             "status": "disabled",
@@ -324,12 +337,12 @@ def _guarded_rebuild_planning() -> dict[str, Any]:
             _blocked_plan(
                 "ilo-virtual-media-boot",
                 "iLO virtual media and boot workflow preview",
-                settings.ilo_test_host,
+                ilo_config.host,
             ),
             _blocked_plan(
                 "firmware-upgrade",
                 "Firmware upgrade workflow preview",
-                settings.ilo_test_host,
+                ilo_config.host,
             ),
         ],
     }
@@ -441,12 +454,14 @@ def _serial_candidate_summary() -> dict[str, Any]:
 def _tcp_preflight(provider_ids: list[str] | None = None) -> dict[str, Any]:
     provider_ids = provider_ids or list(PROVIDER_IDS)
     action_policy = current_lab_action_policy()
+    ilo_config = IloRedfishConfig.from_settings()
     checks = {
         "ilo_https": {
-            "host": settings.ilo_test_host,
+            "host": ilo_config.host,
+            "candidates": ilo_config.target_candidates,
             "provider_id": "ilo-redfish",
             "port": 443,
-            "configured": bool(settings.ilo_test_host),
+            "configured": bool(ilo_config.target_candidates),
             "planned": False,
             "skip_reason": None,
         },
@@ -527,7 +542,11 @@ def _tcp_preflight(provider_ids: list[str] | None = None) -> dict[str, Any]:
                 planned=bool(check["planned"]),
             )
         elif host:
-            results[label] = _tcp_connect(str(host), int(check["port"]))
+            candidates = check.get("candidates")
+            if isinstance(candidates, list) and candidates:
+                results[label] = _tcp_connect_candidates(candidates, int(check["port"]))
+            else:
+                results[label] = _tcp_connect(str(host), int(check["port"]))
         else:
             results[label] = {"configured": False, "reachable": False}
     return results
@@ -574,6 +593,38 @@ def _tcp_connect(host: str, port: int) -> dict[str, Any]:
     return {"configured": True, "reachable": False, "port": port, "attempts": attempts}
 
 
+def _tcp_connect_candidates(candidates: list[dict[str, str]], port: int) -> dict[str, Any]:
+    attempts: list[dict[str, Any]] = []
+    for index, candidate in enumerate(candidates, start=1):
+        host = candidate.get("host")
+        if not host:
+            continue
+        result = _tcp_connect(str(host), port)
+        candidate_result = {
+            "candidate_index": index,
+            "target_source": candidate.get("source", "unknown"),
+            "reachable": result.get("reachable", False),
+            "attempts": result.get("attempts", []),
+        }
+        attempts.append(candidate_result)
+        if result.get("reachable"):
+            return {
+                "configured": True,
+                "reachable": True,
+                "port": port,
+                "candidate_count": len(candidates),
+                "selected_source": candidate_result["target_source"],
+                "candidate_attempts": attempts,
+            }
+    return {
+        "configured": bool(candidates),
+        "reachable": False,
+        "port": port,
+        "candidate_count": len(candidates),
+        "candidate_attempts": attempts,
+    }
+
+
 def _probe_summary(result: dict[str, Any]) -> dict[str, Any]:
     safe_keys = {
         "provider_id",
@@ -585,6 +636,10 @@ def _probe_summary(result: dict[str, Any]) -> dict[str, Any]:
         "phases",
         "not_attempted",
         "base_url",
+        "target_source",
+        "candidate_index",
+        "target_candidate_count",
+        "candidate_attempts",
         "tls_verify",
         "timeout_seconds",
         "max_attempts",
@@ -598,6 +653,8 @@ def _probe_summary(result: dict[str, Any]) -> dict[str, Any]:
         "firmware",
         "network_adapters",
         "storage",
+        "endpoint_detection",
+        "legacy_identity",
         "discovery",
         "prompt_state",
         "prompt_sample",
@@ -620,6 +677,10 @@ def _status_summary(status: dict[str, Any]) -> dict[str, Any]:
     if status.get("id") == "ilo-redfish":
         configuration = {
             "host_configured": bool(configuration.get("host_configured")),
+            "host_source": configuration.get("host_source"),
+            "fallback_hosts_configured": configuration.get("fallback_hosts_configured", 0),
+            "target_candidate_count": configuration.get("target_candidate_count", 0),
+            "target_candidate_sources": configuration.get("target_candidate_sources", []),
             "username_configured": bool(configuration.get("username_configured")),
             "password_configured": bool(configuration.get("password_configured")),
             "tls_verify": configuration.get("tls_verify"),
@@ -716,7 +777,12 @@ def _markdown_report(report: dict[str, Any]) -> str:
                     f"- {label}: skipped=true, reason={value.get('reason', 'unknown')}"
                 )
             else:
-                lines.append(f"- {label}: reachable={value.get('reachable', False)}")
+                detail = f"- {label}: reachable={value.get('reachable', False)}"
+                if value.get("candidate_count"):
+                    detail += f", candidates={value.get('candidate_count')}"
+                if value.get("selected_source"):
+                    detail += f", selected_source={value.get('selected_source')}"
+                lines.append(detail)
 
     lines.extend(
         [
@@ -874,9 +940,7 @@ def _probe_detail_lines(probe: dict[str, Any]) -> list[str]:
 
 def _redaction_values() -> list[str | None]:
     return [
-        settings.ilo_test_host,
-        settings.ilo_test_username,
-        settings.ilo_test_password,
+        *ilo_redfish_redaction_values(),
         settings.esxi_test_host,
         settings.esxi_test_username,
         settings.esxi_test_password,

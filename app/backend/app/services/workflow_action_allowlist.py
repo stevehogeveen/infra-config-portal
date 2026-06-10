@@ -47,6 +47,7 @@ ALLOWED_WORKFLOW_ACTION_RUNNERS: dict[str, WorkflowActionExecutionSpec] = {
         command=("make", "provider-lab-firmware-cisco-inventory"),
         registry_command="make provider-lab-firmware-cisco-inventory",
         reports=("artifacts/codex-runs/cisco-firmware-inventory-report.md",),
+        timeout_seconds=35,
     ),
     "cisco.validate-ssh-scp": WorkflowActionExecutionSpec(
         action_id="cisco.validate-ssh-scp",
@@ -78,6 +79,15 @@ ALLOWED_WORKFLOW_ACTION_RUNNERS: dict[str, WorkflowActionExecutionSpec] = {
         command=("make", "provider-lab-ilo-inventory"),
         registry_command="make provider-lab-ilo-inventory",
         reports=("artifacts/codex-runs/ilo-real-run-report.md",),
+    ),
+    "ilo.firmware-inventory": WorkflowActionExecutionSpec(
+        action_id="ilo.firmware-inventory",
+        kind="command",
+        label="Check Firmware",
+        command=("make", "provider-lab-firmware-inventory"),
+        registry_command="make provider-lab-firmware-inventory",
+        reports=("artifacts/codex-runs/firmware-inventory-report.md",),
+        timeout_seconds=45,
     ),
     "ilo.baseline-preview": WorkflowActionExecutionSpec(
         action_id="ilo.baseline-preview",
@@ -146,6 +156,24 @@ ALLOWED_WORKFLOW_ACTION_RUNNERS: dict[str, WorkflowActionExecutionSpec] = {
         registry_command="make provider-lab-netapp-nfs-vcenter-readiness",
         reports=("artifacts/codex-runs/netapp-nfs-vcenter-readiness-report.md",),
     ),
+    "netapp.ontap-upgrade-inventory": WorkflowActionExecutionSpec(
+        action_id="netapp.ontap-upgrade-inventory",
+        kind="command",
+        label="Check Firmware",
+        command=("make", "provider-lab-netapp-ontap-upgrade-inventory"),
+        registry_command="make provider-lab-netapp-ontap-upgrade-inventory",
+        reports=("artifacts/codex-runs/netapp-upgrade-inventory-report.md",),
+        timeout_seconds=45,
+    ),
+    "netapp.component-firmware-inventory": WorkflowActionExecutionSpec(
+        action_id="netapp.component-firmware-inventory",
+        kind="command",
+        label="Check Firmware",
+        command=("make", "provider-lab-netapp-ontap-upgrade-inventory"),
+        registry_command="make provider-lab-netapp-ontap-upgrade-inventory",
+        reports=("artifacts/codex-runs/netapp-upgrade-inventory-report.md",),
+        timeout_seconds=45,
+    ),
     "vcenter-netapp.readiness": WorkflowActionExecutionSpec(
         action_id="vcenter-netapp.readiness",
         kind="command",
@@ -172,6 +200,7 @@ ALLOWED_WORKFLOW_ACTION_RUNNERS: dict[str, WorkflowActionExecutionSpec] = {
             "artifacts/codex-runs/firmware-compliance-report.md",
             "artifacts/codex-runs/firmware-compliance-summary-redacted.json",
         ),
+        timeout_seconds=45,
     ),
     "build-verification.run-full": WorkflowActionExecutionSpec(
         action_id="build-verification.run-full",

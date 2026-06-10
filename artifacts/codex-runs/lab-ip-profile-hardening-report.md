@@ -1,6 +1,6 @@
 # Lab IP Profile Hardening Report
 
-- Checked at: `2026-06-10T15:39:22.887875+00:00`
+- Checked at: `2026-06-10T21:52:14.333870+00:00`
 - Classification: `stale_config`
 - Status: `blocked`
 - Source: `test_fixture`

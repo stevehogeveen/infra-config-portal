@@ -1,6 +1,6 @@
 # HPE RAID Discovery Report
 
-Date: 2026-06-06T02:48:16.421519+00:00
+Date: 2026-06-10T18:46:03.822179+00:00
 Mode: `local-lab-readwrite`
 Probe status: ok
 Probe message: Read-only Redfish probe completed.
@@ -18,17 +18,17 @@ Probe message: Read-only Redfish probe completed.
 
 ## Current Layout
 
-- Controller: HPE Smart Array P408i-a SR Gen10 location=Slot 0 health=OK
-- Physical drive: Bay 1I:1:1 capacity=1.09 TiB media=HDD health=OK
-- Physical drive: Bay 1I:1:2 capacity=1.09 TiB media=HDD health=OK
-- Physical drive: Bay 1I:1:3 capacity=1.09 TiB media=HDD health=OK
-- Physical drive: Bay 1I:1:4 capacity=1.09 TiB media=HDD health=OK
-- Physical drive: Bay 2I:1:5 capacity=1.09 TiB media=HDD health=OK
-- Physical drive: Bay 2I:1:6 capacity=1.09 TiB media=HDD health=OK
-- Physical drive: Bay 2I:1:7 capacity=1.09 TiB media=HDD health=OK
-- Physical drive: Bay 2I:1:8 capacity=1.09 TiB media=HDD health=OK
-- Logical drive: ESXi-OS raid=RAID1 capacity=500.0 GiB health=OK
-- Logical drive: VM-Datastore raid=RAID6 capacity=3.27 TiB health=OK
+- Controller: HPE MR416i-a Gen10+ location={'PartLocation': {'ServiceLabel': 'Slot=12', 'LocationType': 'Slot', 'LocationOrdinalValue': 12}} health=OK
+- Physical drive: Bay 0 capacity=894.3 GiB media=SSD health=OK
+- Physical drive: Bay 1 capacity=894.3 GiB media=SSD health=OK
+- Physical drive: Bay 2 capacity=894.3 GiB media=SSD health=OK
+- Physical drive: Bay 3 capacity=894.3 GiB media=SSD health=OK
+- Physical drive: Bay 4 capacity=894.3 GiB media=SSD health=OK
+- Physical drive: Bay 64518 capacity=unknown media=None health=OK
+- Physical drive: Bay 64520 capacity=unknown media=None health=OK
+- Physical drive: Bay 64519 capacity=unknown media=None health=OK
+- Logical drive: Data RAID 1 log raid=RAID1 capacity=893.8 GiB health=OK
+- Logical drive: OS RAID 1 logic raid=RAID1 capacity=500.0 GiB health=OK
 
 ## Not Attempted
 

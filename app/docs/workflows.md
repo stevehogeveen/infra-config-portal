@@ -73,11 +73,20 @@ The current API surface is:
    `POST /api/v1/control/actions/{action_id}/plan`.
 3. Request a run placeholder with
    `POST /api/v1/control/actions/{action_id}/run`.
+4. Save local first-time access and IP intent for supported provider sections
+   with `PUT /api/v1/control/access/{section_id}`.
 
 `run` is intentionally a safe placeholder in this pass. It returns the action,
 blockers, and suggested command/API endpoint, but does not execute commands,
 call providers, perform serial writes, apply configuration, reset devices,
 install ESXi, provision storage, or run firmware updates.
+
+For iLO, Cisco, and ONTAP, the Control Center shows editable Access & IP Config
+at the top of the provider section. Defaults come from the active lab profile,
+saved values are local intent only, and secret-looking values are rejected.
+Firmware checks stay inline on the provider section and use registered read-only
+workflow actions when available. `Upgrade Now` remains guarded and disabled
+unless a future workflow explicitly satisfies its approval gates.
 
 Each action includes its device/stage, classification (`read-only`, `write`,
 `destructive`, or `upgrade`), required inputs, required flags, required

@@ -545,13 +545,7 @@ def _collect_firmware() -> list[dict[str, Any]]:
         status = _optional_str(component.get("status")) or "unknown"
         if status in {"passed", "waived"}:
             continue
-        classification = (
-            "hard_fail"
-            if status in {"blocked", "unknown"}
-            else "not_configured_yet"
-            if status == "not_configured_yet"
-            else "warning"
-        )
+        classification = _firmware_component_classification(component, status)
         label = _optional_str(component.get("label")) or _optional_str(component.get("id")) or "component"
         device = _optional_str(component.get("device")) or "Firmware"
         issues.append(
@@ -601,6 +595,20 @@ def _collect_firmware() -> list[dict[str, Any]]:
             )
         )
     return issues
+
+
+def _firmware_component_classification(component: dict[str, Any], status: str) -> str:
+    if status == "not_configured_yet":
+        return "not_configured_yet"
+    if (
+        status in {"blocked", "unknown"}
+        and not component.get("current_version")
+        and "unknown" in (_optional_str(component.get("reason")) or "").lower()
+    ):
+        return "warning"
+    if status in {"blocked", "unknown"}:
+        return "hard_fail"
+    return "warning"
 
 
 def _collect_cisco() -> list[dict[str, Any]]:
@@ -1529,7 +1537,7 @@ def _fix_location_for_field(field: str) -> str:
         "netapp_iscsi_lifs_env",
     }:
         return ".env.local.real-lab"
-    return "Settings / Lab Profile"
+    return "Lab Setup"
 
 
 def _nonfatal_netapp_blockers(value: Any) -> list[str]:

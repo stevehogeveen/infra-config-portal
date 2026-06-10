@@ -201,6 +201,11 @@ def test_control_access_config_saves_original_dhcp_and_presence_only_credentials
             "username_reference": "local-admin",
             "password_configured": True,
             "password_reference_label": "local env reference",
+            "editable_fields": [
+                {"label": "Management IP", "value": "192.0.2.56"},
+                {"label": "Gateway", "value": "192.0.2.1"},
+                {"label": "DNS", "value": "lab-dns.local"},
+            ],
         },
     )
 
@@ -210,13 +215,21 @@ def test_control_access_config_saves_original_dhcp_and_presence_only_credentials
     assert payload["original_dhcp_ip"] == "192.0.2.55"
     assert payload["username_reference"] == "local-admin"
     assert payload["password_configured"] is True
-    assert payload["password_reference_label"] == "local env reference"
+    assert payload["password_reference_label"] is None
     assert payload["blockers"] == []
+    fields = {item["label"]: item for item in payload["editable_fields"]}
+    assert fields["Management IP"]["value"] == "192.0.2.56"
+    assert fields["Management IP"]["source"] == "saved_override"
+    assert fields["Gateway"]["value"] == "192.0.2.1"
+    assert fields["DNS"]["value"] == "lab-dns.local"
 
     catalog = client.get("/api/v1/control/actions").json()
     ilo = next(section for section in catalog["sections"] if section["id"] == "ilo")
     assert ilo["access_config"]["original_dhcp_ip"] == "192.0.2.55"
     assert ilo["access_config"]["password_configured"] is True
+    catalog_fields = {item["label"]: item for item in ilo["access_config"]["editable_fields"]}
+    assert catalog_fields["Management IP"]["value"] == "192.0.2.56"
+    assert catalog_fields["Management IP"]["source"] == "saved_override"
 
 
 def test_control_access_config_rejects_secret_shaped_values(
@@ -233,6 +246,25 @@ def test_control_access_config_rejects_secret_shaped_values(
             "original_dhcp_ip": "192.0.2.10",
             "username_reference": "password=bad",
             "password_configured": True,
+        },
+    )
+
+    assert response.status_code == 422
+
+
+def test_control_access_config_rejects_unknown_editable_fields(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    monkeypatch.setenv("CONTROL_ACCESS_STORE", str(tmp_path / "control-access.json"))
+
+    response = client.put(
+        "/api/v1/control/access/netapp",
+        json={
+            "first_time_configuring": False,
+            "password_configured": False,
+            "editable_fields": [{"label": "Plaintext Password", "value": "not allowed"}],
         },
     )
 

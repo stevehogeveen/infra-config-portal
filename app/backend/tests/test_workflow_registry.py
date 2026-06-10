@@ -46,6 +46,7 @@ def test_registry_contains_expected_provider_actions() -> None:
         "ilo.auth",
         "ilo.inventory",
         "ilo.baseline-preview",
+        "ilo.firmware-inventory",
         "ilo.virtual-media-insert",
         "ilo.one-time-boot",
         "ilo.reset-server",
@@ -67,6 +68,8 @@ def test_registry_contains_expected_provider_actions() -> None:
         "netapp.console-read-state",
         "netapp.nfs-vcenter-readiness",
         "netapp.setup-preview",
+        "netapp.ontap-upgrade-inventory",
+        "netapp.component-firmware-inventory",
         "vcenter-netapp.readiness",
         "vcenter-netapp.datastore-plan",
         "vcenter-netapp.datastore-apply-placeholder",
@@ -120,6 +123,8 @@ def test_safe_read_only_registry_actions_are_ui_runnable() -> None:
     assert actions["reports.summary"]["ui_run_supported"] is True
     assert actions["ilo.baseline-preview"]["ui_run_supported"] is True
     assert actions["ilo.baseline-preview"]["api_endpoint"] == "/api/v1/providers/hpe-ilo/baseline-preview"
+    assert actions["netapp.component-firmware-inventory"]["ui_run_supported"] is True
+    assert actions["netapp.component-firmware-inventory"]["current_availability"] == "available"
 
 
 def test_compact_profile_marks_netapp_registry_actions_not_in_scope(
@@ -149,6 +154,7 @@ def test_write_destructive_and_unallowlisted_actions_are_not_ui_runnable() -> No
 
     assert actions["raid.apply"]["ui_run_supported"] is False
     assert any("guarded workflow" in blocker for blocker in actions["raid.apply"]["ui_run_blockers"])
+    assert actions["ilo.firmware-inventory"]["ui_run_supported"] is True
     assert actions["ilo.virtual-media-insert"]["ui_run_supported"] is False
     assert actions["build-verification.run-scoped"]["ui_run_supported"] is False
     assert actions["vcenter-netapp.datastore-apply-placeholder"]["mode"] == "write"

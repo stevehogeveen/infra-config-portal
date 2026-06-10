@@ -1,0 +1,278 @@
+{
+  "boot_override_state": {
+    "enabled": "Disabled",
+    "mode": "UEFI",
+    "power_state": "On",
+    "target": "None"
+  },
+  "commands_run": [
+    "file -bi AGENTS.md",
+    "iconv -f UTF-8 -t UTF-8 AGENTS.md >/dev/null",
+    "make provider-lab-ilo-reachability",
+    "make provider-lab-ilo-inventory",
+    "make provider-lab-hpe-storage-discovery",
+    "make provider-lab-esxi-detect-installer",
+    "npm run build (app/frontend)",
+    ".venv/bin/python -m pytest -q tests/test_provider_status_adapters.py::<10 targeted tests>",
+    "git diff --check -- <touched HPE/iLO/frontend files>"
+  ],
+  "environment": {
+    "active_lab_profile_subnet": "10.10.8.0/24",
+    "candidate_count": 2,
+    "candidate_sources": [
+      "active_lab_profile",
+      "control_access_original_dhcp_ip"
+    ],
+    "destructive_mode": "blocked",
+    "host_source": "active_lab_profile",
+    "local_readonly": "allowed"
+  },
+  "evidence": {
+    "esxi_installer_boot_report": "artifacts/codex-runs/esxi-installer-boot-report.md",
+    "hpe_raid_discovery_report": "artifacts/codex-runs/hpe-raid-discovery-report.md",
+    "provider_smoke_report": "artifacts/real-lab/provider-smoke-20260610T184525Z.json",
+    "reachability_report": "artifacts/real-lab/ilo-reachability-20260610T184329Z.json"
+  },
+  "failure_classification": {
+    "code_test_bug": false,
+    "credentials_missing": false,
+    "stale_report_only": false,
+    "tls_self_signed_issue": false,
+    "unreachable": [
+      {
+        "candidate_index": 1,
+        "classification": "tcp_timeout_or_filtered",
+        "http_failure_kind": null,
+        "http_status": "skipped",
+        "target_source": "active_lab_profile",
+        "tcp_failure_kind": "timeout",
+        "tcp_reachable": false
+      }
+    ],
+    "unsupported_endpoint": [
+      {
+        "classification": "unsupported_endpoint",
+        "endpoint": "/redfish/v1/Systems/1/NetworkAdapters/",
+        "impact": "not blocking; EthernetInterfaces and storage endpoints were available",
+        "status_code": 404
+      }
+    ]
+  },
+  "generated_at": "2026-06-10T18:55:02.371042+00:00",
+  "health_summary": {
+    "chassis": "OK",
+    "controller": "OK",
+    "logical_drive_healths": [
+      "OK"
+    ],
+    "manager": "OK",
+    "physical_drive_healths": [
+      "OK"
+    ],
+    "power_summary_available": true,
+    "system": "OK",
+    "system_rollup": "OK",
+    "thermal_summary_available": true
+  },
+  "identity": {
+    "bios_version": "U46 v1.80 (07/05/2023)",
+    "chassis_health": "OK",
+    "ilo_firmware_version": "iLO 5 v3.19",
+    "ilo_model": "iLO 5",
+    "manager_health": "OK",
+    "power_state": "On",
+    "server_model": "ProLiant DL360 Gen10 Plus",
+    "system_health": "OK",
+    "system_health_rollup": "OK"
+  },
+  "raid_visibility": {
+    "controller_count": 1,
+    "controllers": [
+      {
+        "firmware_version": "52.26.3-5379",
+        "health": "OK",
+        "model": "HPE MR416i-a Gen10+",
+        "name": "HPE MR416i-a Gen10+",
+        "serial_number_present": true,
+        "state": "Enabled",
+        "supported_raid_types": [
+          "None",
+          "RAID0",
+          "RAID1",
+          "RAID10",
+          "RAID5",
+          "RAID50",
+          "RAID6",
+          "RAID60"
+        ]
+      }
+    ],
+    "logical_drive_count": 2,
+    "logical_drives": [
+      {
+        "capacity_gib": 893.8,
+        "dedicated_spare_count": 1,
+        "drive_count": 2,
+        "health": "OK",
+        "name": "Data RAID 1 log",
+        "raid_type": "RAID1",
+        "state": "Enabled"
+      },
+      {
+        "capacity_gib": 500.0,
+        "dedicated_spare_count": 0,
+        "drive_count": 2,
+        "health": "OK",
+        "name": "OS RAID 1 logic",
+        "raid_type": "RAID1",
+        "state": "Enabled"
+      }
+    ],
+    "physical_drive_count": 8,
+    "physical_drives": [
+      {
+        "bay": "0",
+        "capacity_gib": 894.3,
+        "health": "OK",
+        "media_type": "SSD",
+        "name": "HPE 960GB 22G SAS SSD",
+        "protocol": "SAS",
+        "serial_number_present": true,
+        "state": "Enabled"
+      },
+      {
+        "bay": "1",
+        "capacity_gib": 894.3,
+        "health": "OK",
+        "media_type": "SSD",
+        "name": "HPE 960GB 22G SAS SSD",
+        "protocol": "SAS",
+        "serial_number_present": true,
+        "state": "Enabled"
+      },
+      {
+        "bay": "2",
+        "capacity_gib": 894.3,
+        "health": "OK",
+        "media_type": "SSD",
+        "name": "HPE 960GB 22G SAS SSD",
+        "protocol": "SAS",
+        "serial_number_present": true,
+        "state": "Enabled"
+      },
+      {
+        "bay": "3",
+        "capacity_gib": 894.3,
+        "health": "OK",
+        "media_type": "SSD",
+        "name": "HPE 960GB 22G SAS SSD",
+        "protocol": "SAS",
+        "serial_number_present": true,
+        "state": "Enabled"
+      },
+      {
+        "bay": "4",
+        "capacity_gib": 894.3,
+        "health": "OK",
+        "media_type": "SSD",
+        "name": "HPE 960GB 22G SAS SSD",
+        "protocol": "SAS",
+        "serial_number_present": true,
+        "state": "StandbySpare"
+      },
+      {
+        "bay": "64518",
+        "capacity_gib": null,
+        "health": "OK",
+        "media_type": null,
+        "name": "Empty Bay",
+        "protocol": null,
+        "serial_number_present": false,
+        "state": "Absent"
+      },
+      {
+        "bay": "64520",
+        "capacity_gib": null,
+        "health": "OK",
+        "media_type": null,
+        "name": "Empty Bay",
+        "protocol": null,
+        "serial_number_present": false,
+        "state": "Absent"
+      },
+      {
+        "bay": "64519",
+        "capacity_gib": null,
+        "health": "OK",
+        "media_type": null,
+        "name": "Empty Bay",
+        "protocol": null,
+        "serial_number_present": false,
+        "state": "Absent"
+      }
+    ],
+    "status": "available",
+    "visible": true
+  },
+  "reachability": {
+    "candidate_attempts": [
+      {
+        "candidate_index": 1,
+        "classification": "tcp_timeout_or_filtered",
+        "http_failure_kind": null,
+        "http_status": "skipped",
+        "target_source": "active_lab_profile",
+        "tcp_failure_kind": "timeout",
+        "tcp_reachable": false
+      },
+      {
+        "candidate_index": 2,
+        "classification": "redfish_root_available",
+        "http_failure_kind": null,
+        "http_status": "ok",
+        "target_source": "control_access_original_dhcp_ip",
+        "tcp_failure_kind": null,
+        "tcp_reachable": true
+      }
+    ],
+    "classification": "redfish_root_available",
+    "reachable": true,
+    "selected_target_source": "control_access_original_dhcp_ip",
+    "target_candidate_sources": [
+      "active_lab_profile",
+      "control_access_original_dhcp_ip"
+    ],
+    "tls_verify": false
+  },
+  "redacted": true,
+  "safety": {
+    "destructive_actions_attempted": false,
+    "historical_artifacts_are_evidence_only": true,
+    "raw_host_addresses_serials_credentials_omitted": true,
+    "read_only": true
+  },
+  "scope": "HPE iLO / DL360 read-only inspection for current TDC-LABv1 run",
+  "skills_used": [
+    "lab-builder-skill-steward",
+    "lab-builder-real-runtime",
+    "lab-builder-hardware-run",
+    "lab-builder-toolchain",
+    "lab-builder-report-remediation",
+    "lab-builder-ux",
+    "lab-builder-product-craft"
+  ],
+  "ui_change": {
+    "apply_path_changed": false,
+    "behavior": "plan-only visual bay assignment for RAID member/spare/unused roles",
+    "drive_assignment_board_added": true
+  },
+  "virtual_media_state": {
+    "connected_via": "NotConnected",
+    "image_present": false,
+    "inserted": false,
+    "media_types": [
+      "CD",
+      "DVD"
+    ]
+  }
+}

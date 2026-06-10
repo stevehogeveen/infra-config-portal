@@ -441,6 +441,7 @@ class LabProfileFeatures(BaseModel):
     build_verification_enabled: bool = True
     storage_protocol: str = Field(default="nfs", max_length=40)
     disable_ipv6: bool = True
+    block_legacy_protocols: bool = True
     enable_snmp: bool = False
     enable_ntp: bool = True
     enable_dns: bool = True
@@ -1626,6 +1627,19 @@ class ControlEditableConfigFieldRead(BaseModel):
     source: str
 
 
+class ControlEditableConfigFieldWrite(BaseModel):
+    label: str = Field(max_length=80)
+    value: str | None = Field(default=None, max_length=240)
+
+    @field_validator("label", "value", mode="before")
+    @classmethod
+    def strip_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        text = str(value).strip()
+        return text or None
+
+
 class ControlAccessConfigWrite(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -1634,6 +1648,7 @@ class ControlAccessConfigWrite(BaseModel):
     username_reference: str | None = Field(default=None, max_length=120)
     password_configured: bool = False
     password_reference_label: str | None = Field(default=None, max_length=120)
+    editable_fields: list[ControlEditableConfigFieldWrite] | None = Field(default=None, max_length=12)
 
     @field_validator(
         "original_dhcp_ip",

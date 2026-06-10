@@ -17,6 +17,10 @@ class ControlAccessConfigNotFoundError(LookupError):
     pass
 
 
+class ControlAccessConfigValidationError(ValueError):
+    pass
+
+
 ACCESS_SECTION_METADATA: dict[str, dict[str, Any]] = {
     "cisco": {
         "title": "Cisco first-time access",
@@ -69,12 +73,20 @@ def update_control_access_config(section_id: str, payload: dict[str, Any]) -> di
         raise ControlAccessConfigNotFoundError(section_id)
     _validate_ip(payload.get("original_dhcp_ip"))
     store = _read_store()
+    previous = store.get(section_id)
+    previous = previous if isinstance(previous, dict) else {}
+    editable_fields = (
+        _editable_field_overrides(section_id, payload.get("editable_fields"))
+        if payload.get("editable_fields") is not None
+        else _saved_editable_fields(previous.get("editable_fields"))
+    )
     store[section_id] = {
         "first_time_configuring": bool(payload.get("first_time_configuring", True)),
         "original_dhcp_ip": _clean_string(payload.get("original_dhcp_ip")),
         "username_reference": _clean_string(payload.get("username_reference")),
         "password_configured": bool(payload.get("password_configured", False)),
-        "password_reference_label": _clean_string(payload.get("password_reference_label")),
+        "password_reference_label": None,
+        "editable_fields": editable_fields,
         "updated_at": _now(),
     }
     _write_store(store)
@@ -93,6 +105,7 @@ def _read_config(
     username_reference = _clean_string(saved.get("username_reference"))
     password_configured = bool(saved.get("password_configured", False))
     first_time_configuring = bool(saved.get("first_time_configuring", True))
+    saved_fields = _saved_editable_fields(saved.get("editable_fields"))
     blockers = []
     if first_time_configuring and not original_dhcp_ip:
         blockers.append("Original DHCP/current-access IP is required before first-time config edits.")
@@ -112,12 +125,12 @@ def _read_config(
         "desired_address_label": metadata["desired_label"],
         "username_reference": username_reference,
         "password_configured": password_configured,
-        "password_reference_label": _clean_string(saved.get("password_reference_label")),
+        "password_reference_label": None,
         "editable_fields": [
             {
                 "label": label,
-                "value": _field_value(label, lab_profile, section_id),
-                "source": "active_lab_profile",
+                "value": saved_fields.get(label) or _field_value(label, lab_profile, section_id),
+                "source": "saved_override" if label in saved_fields else "active_lab_profile",
             }
             for label in metadata["editable_fields"]
         ],
@@ -166,7 +179,70 @@ def _field_value(label: str, lab_profile: dict[str, Any], section_id: str) -> st
         return ", ".join(lifs) if lifs else "Not set"
     if label == "Server NIC IP":
         return str(address_plan.get("server_embedded_nic") or "Not set")
+    if label == "VLAN":
+        vlan = global_settings.get("vlan_id")
+        return str(vlan) if vlan else "Not set"
+    if label == "SSH/SCP":
+        return "Enable after validation"
+    if label == "Local users":
+        return "Secret references only"
     return "Configured in section workflow"
+
+
+def _editable_field_overrides(section_id: str, fields: Any) -> dict[str, str]:
+    if fields is None:
+        return {}
+    if not isinstance(fields, list):
+        raise ControlAccessConfigValidationError("editable_fields must be a list of label/value entries.")
+    allowed = set(ACCESS_SECTION_METADATA[section_id]["editable_fields"])
+    overrides: dict[str, str] = {}
+    for field in fields:
+        if not isinstance(field, dict):
+            raise ControlAccessConfigValidationError("editable_fields entries must be objects.")
+        label = _clean_string(field.get("label"))
+        value = _clean_string(field.get("value"))
+        if not label:
+            raise ControlAccessConfigValidationError("editable_fields entries require a label.")
+        if label not in allowed:
+            raise ControlAccessConfigValidationError(f"{label} is not an editable field for {section_id}.")
+        if not value or value == "Not set":
+            continue
+        _validate_editable_field(section_id, label, value)
+        overrides[label] = value
+    return overrides
+
+
+def _saved_editable_fields(fields: Any) -> dict[str, str]:
+    if not isinstance(fields, dict):
+        return {}
+    return {
+        str(label): str(value)
+        for label, value in fields.items()
+        if _clean_string(label) and _clean_string(value)
+    }
+
+
+def _validate_editable_field(section_id: str, label: str, value: str) -> None:
+    ip_fields = {"Management IP", "Gateway", "Cluster IP", "SVM IP", "Server NIC IP"}
+    ip_list_fields = {"SP IPs", "Node IPs", "LIFs"}
+    if label in ip_fields:
+        _validate_ip(value)
+    if label in ip_list_fields:
+        _validate_ip_list(value)
+    if section_id == "cisco" and label == "VLAN":
+        text = value.strip()
+        if text.isdigit():
+            vlan_id = int(text)
+            if vlan_id < 1 or vlan_id > 4094:
+                raise ControlAccessConfigValidationError("VLAN must be between 1 and 4094.")
+
+
+def _validate_ip_list(value: str) -> None:
+    parts = [item.strip() for item in value.split(",") if item.strip()]
+    if not parts:
+        return
+    for item in parts:
+        _validate_ip(item)
 
 
 def _store_path() -> Path:
@@ -197,7 +273,10 @@ def _validate_ip(value: Any) -> None:
     text = _clean_string(value)
     if not text:
         return
-    ip_address(text)
+    try:
+        ip_address(text)
+    except ValueError as exc:
+        raise ControlAccessConfigValidationError(f"{text} must be an IPv4 or IPv6 address.") from exc
 
 
 def _clean_string(value: Any) -> str | None:

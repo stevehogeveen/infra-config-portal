@@ -133,8 +133,9 @@ status, link scope, and text payload. Media Inventory shows sample metadata by
 default, or placeholder-only metadata from explicitly configured
 `MEDIA_INVENTORY_DIRS`.
 
-Lab Profiles can save named lab address plans, activate a prior lab, create a
-new lab, and review earlier profile versions. Profile state is local-only under
+Lab Setup can save named lab address plans, activate a prior lab, create a new
+lab, edit the lab subnet/IP plan, maintain shared global defaults, and review
+earlier profile versions. Profile state is local-only under
 `.local/lab-profiles.json` by default. It stores address intent, rejects
 secret-shaped text, and does not call providers, rewrite `.env.local.real-lab`,
 or enable apply actions.

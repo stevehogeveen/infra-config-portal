@@ -45,6 +45,8 @@ from app.services.ilo_setup_apply import (
     CONFIRMATION_PHRASE as ILO_SETUP_CONFIRMATION_PHRASE,
     apply_ilo_setup,
 )
+from app.services.control_access import update_control_access_config
+from app.services.lab_profiles import create_lab_profile
 from app.schemas import IloNetworkIntent, IloSetupApplyCreate, IloSetupIntentWrite
 
 
@@ -1341,6 +1343,10 @@ def test_provider_smoke_skips_unconfigured_management_tcp_preflight(monkeypatch)
     fake_settings = types.SimpleNamespace(
         provider_mode="local-readonly",
         ilo_test_host="192.0.2.202",
+        ilo_test_username="local-admin",
+        ilo_test_password="local-password",
+        ilo_test_verify_tls=False,
+        ilo_test_timeout_seconds=1.0,
         esxi_test_host="192.0.2.50",
         esxi_configured=False,
         cisco_target_ip="192.0.2.60",
@@ -1352,6 +1358,7 @@ def test_provider_smoke_skips_unconfigured_management_tcp_preflight(monkeypatch)
         return {"configured": True, "reachable": True, "port": port, "attempts": []}
 
     monkeypatch.setattr(smoke, "settings", fake_settings)
+    monkeypatch.setattr("app.providers.ilo_redfish.settings", fake_settings)
     monkeypatch.setattr(
         smoke,
         "current_lab_safety",
@@ -1383,6 +1390,10 @@ def test_provider_smoke_provider_filter_limits_tcp_preflight(monkeypatch) -> Non
     fake_settings = types.SimpleNamespace(
         provider_mode="local-readonly",
         ilo_test_host="192.0.2.202",
+        ilo_test_username="local-admin",
+        ilo_test_password="local-password",
+        ilo_test_verify_tls=False,
+        ilo_test_timeout_seconds=1.0,
         esxi_test_host="192.0.2.50",
         esxi_configured=True,
         cisco_target_ip="192.0.2.60",
@@ -1394,6 +1405,7 @@ def test_provider_smoke_provider_filter_limits_tcp_preflight(monkeypatch) -> Non
         return {"configured": True, "reachable": True, "port": port, "attempts": []}
 
     monkeypatch.setattr(smoke, "settings", fake_settings)
+    monkeypatch.setattr("app.providers.ilo_redfish.settings", fake_settings)
     monkeypatch.setattr(
         smoke,
         "current_lab_safety",
@@ -1410,6 +1422,123 @@ def test_provider_smoke_provider_filter_limits_tcp_preflight(monkeypatch) -> Non
     assert calls == [("192.0.2.202", 443)]
     assert set(result) == {"ilo_https"}
     assert result["ilo_https"]["reachable"] is True
+
+
+def test_provider_smoke_ilo_preflight_uses_active_lab_profile(monkeypatch) -> None:
+    smoke = _load_provider_smoke_module()
+    calls: list[tuple[str, int]] = []
+    monkeypatch.setenv("ILO_TEST_HOST", "192.168.1.201")
+    monkeypatch.setattr(
+        smoke,
+        "settings",
+        types.SimpleNamespace(
+            provider_mode="local-readonly",
+            esxi_test_host="192.0.2.50",
+            esxi_configured=False,
+            cisco_target_ip="192.0.2.60",
+            cisco_mgmt_configured=False,
+        ),
+    )
+    monkeypatch.setattr(
+        smoke,
+        "current_lab_safety",
+        lambda: LabSafetyState(
+            closed_loop_ack=True,
+            readonly_ack=True,
+            destructive_ack=False,
+        ),
+    )
+    create_lab_profile(
+        {
+            "name": "TDC-LAB",
+            "address_plan": {
+                "subnet": "10.10.8.0/24",
+                "ilo": "10.10.8.200",
+                "server_embedded_nic": "10.10.8.201",
+                "esxi_management": "10.10.8.202",
+                "cisco_management": "10.10.8.203",
+                "ansible_control_host": "10.10.8.5",
+            },
+        }
+    )
+
+    def fake_tcp(host: str, port: int) -> dict[str, object]:
+        calls.append((host, port))
+        return {"configured": True, "reachable": True, "port": port, "attempts": []}
+
+    monkeypatch.setattr(smoke, "_tcp_connect", fake_tcp)
+
+    result = smoke._tcp_preflight(["ilo-redfish"])
+
+    assert calls == [("10.10.8.200", 443)]
+    assert result["ilo_https"]["reachable"] is True
+
+
+def test_provider_smoke_ilo_preflight_tries_first_access_candidate(monkeypatch) -> None:
+    smoke = _load_provider_smoke_module()
+    calls: list[tuple[str, int]] = []
+    monkeypatch.setenv("ILO_TEST_HOST", "192.168.1.201")
+    monkeypatch.setattr(
+        smoke,
+        "settings",
+        types.SimpleNamespace(
+            provider_mode="local-readonly",
+            esxi_test_host="192.0.2.50",
+            esxi_configured=False,
+            cisco_target_ip="192.0.2.60",
+            cisco_mgmt_configured=False,
+        ),
+    )
+    monkeypatch.setattr(
+        smoke,
+        "current_lab_safety",
+        lambda: LabSafetyState(
+            closed_loop_ack=True,
+            readonly_ack=True,
+            destructive_ack=False,
+        ),
+    )
+    create_lab_profile(
+        {
+            "name": "TDC-LAB",
+            "address_plan": {
+                "subnet": "10.10.8.0/24",
+                "ilo": "10.10.8.200",
+                "server_embedded_nic": "10.10.8.201",
+                "esxi_management": "10.10.8.202",
+                "cisco_management": "10.10.8.203",
+                "ansible_control_host": "10.10.8.5",
+            },
+        }
+    )
+    update_control_access_config(
+        "ilo",
+        {
+            "first_time_configuring": True,
+            "original_dhcp_ip": "10.10.8.110",
+            "username_reference": "local-admin",
+            "password_configured": True,
+            "password_reference_label": "local secret ref",
+        },
+    )
+
+    def fake_tcp(host: str, port: int) -> dict[str, object]:
+        calls.append((host, port))
+        return {
+            "configured": True,
+            "reachable": host == "10.10.8.110",
+            "port": port,
+            "attempts": [],
+        }
+
+    monkeypatch.setattr(smoke, "_tcp_connect", fake_tcp)
+
+    result = smoke._tcp_preflight(["ilo-redfish"])
+
+    assert calls == [("10.10.8.200", 443), ("10.10.8.110", 443)]
+    assert result["ilo_https"]["reachable"] is True
+    assert result["ilo_https"]["candidate_count"] == 2
+    assert result["ilo_https"]["selected_source"] == "control_access_original_dhcp_ip"
 
 
 def test_provider_smoke_provider_filter_reads_env(monkeypatch) -> None:
@@ -1548,6 +1677,66 @@ def test_ilo_readonly_status_is_unchanged_by_management_flags(monkeypatch) -> No
     assert status.status == "ready"
     assert status.safe_actions[0].enabled is True
     assert status.safe_actions[0].reason == "Run GET-only endpoint detection and Redfish inventory checks."
+
+
+def test_ilo_config_prefers_active_lab_profile_host(monkeypatch) -> None:
+    monkeypatch.setenv("ILO_TEST_HOST", "192.168.1.201")
+    create_lab_profile(
+        {
+            "name": "TDC-LAB",
+            "address_plan": {
+                "subnet": "10.10.8.0/24",
+                "ilo": "10.10.8.200",
+                "server_embedded_nic": "10.10.8.201",
+                "esxi_management": "10.10.8.202",
+                "cisco_management": "10.10.8.203",
+                "ansible_control_host": "10.10.8.5",
+            },
+        }
+    )
+
+    config = IloRedfishConfig.from_settings()
+
+    assert config.host == "10.10.8.200"
+    assert config.host_source == "active_lab_profile"
+
+
+def test_ilo_config_includes_saved_first_access_candidate(monkeypatch) -> None:
+    monkeypatch.setenv("ILO_TEST_HOST", "192.168.1.201")
+    create_lab_profile(
+        {
+            "name": "TDC-LAB",
+            "address_plan": {
+                "subnet": "10.10.8.0/24",
+                "ilo": "10.10.8.200",
+                "server_embedded_nic": "10.10.8.201",
+                "esxi_management": "10.10.8.202",
+                "cisco_management": "10.10.8.203",
+                "ansible_control_host": "10.10.8.5",
+            },
+        }
+    )
+    update_control_access_config(
+        "ilo",
+        {
+            "first_time_configuring": True,
+            "original_dhcp_ip": "10.10.8.110",
+            "username_reference": "local-admin",
+            "password_configured": True,
+            "password_reference_label": "local secret ref",
+        },
+    )
+
+    config = IloRedfishConfig.from_settings()
+
+    assert config.host == "10.10.8.200"
+    assert config.host_source == "active_lab_profile"
+    assert config.fallback_hosts == ("10.10.8.110",)
+    assert config.fallback_host_sources == ("control_access_original_dhcp_ip",)
+    assert config.target_candidates == [
+        {"host": "10.10.8.200", "source": "active_lab_profile"},
+        {"host": "10.10.8.110", "source": "control_access_original_dhcp_ip"},
+    ]
 
 
 def test_ilo_setup_apply_blocks_hostname_patch_in_local_readonly(
@@ -1942,6 +2131,67 @@ def test_ilo_local_lab_allows_get_only_inventory_and_local_recording(monkeypatch
     assert "local-admin" not in encoded
     assert "super-secret-password" not in encoded
     assert "SECRET-SERIAL-123" not in encoded
+
+
+def test_ilo_probe_tries_first_access_candidate_after_primary_network_failure(monkeypatch) -> None:
+    import httpx
+
+    _allow_readonly_ilo_lab(monkeypatch)
+    requested_urls: list[str] = []
+
+    class FakeClient:
+        def __init__(self, **_kwargs) -> None:
+            pass
+
+        def __enter__(self) -> "FakeClient":
+            return self
+
+        def __exit__(self, *_args) -> None:
+            pass
+
+        def get(self, url: str) -> httpx.Response:
+            requested_urls.append(url)
+            request = httpx.Request("GET", url)
+            if "10.10.8.200" in url:
+                raise httpx.ConnectError("network unreachable", request=request)
+            path = "/" + url.split("/", 3)[3] if "/" in url.split("://", 1)[-1] else "/"
+            payload = {"@odata.id": "/redfish/v1/"} if path in {"/redfish/v1/", "/redfish/v1"} else {}
+            status_code = 200 if path in {"/redfish/v1/", "/redfish/v1"} else 404
+            return httpx.Response(
+                status_code,
+                headers={"content-type": "application/json"},
+                content=json.dumps(payload).encode("utf-8"),
+                request=request,
+            )
+
+    monkeypatch.setattr("app.providers.ilo_redfish.httpx.Client", FakeClient)
+    adapter = IloRedfishAdapter(
+        provider_mode="local-readonly",
+        config=IloRedfishConfig(
+            host="10.10.8.200",
+            username="local-admin",
+            password="super-secret-password",
+            verify_tls=False,
+            timeout_seconds=1.0,
+            host_source="active_lab_profile",
+            fallback_hosts=("10.10.8.110",),
+            fallback_host_sources=("control_access_original_dhcp_ip",),
+        ),
+    )
+
+    result = adapter.probe()
+    encoded = json.dumps(result)
+
+    assert result["status"] == "ok"
+    assert result["target_source"] == "control_access_original_dhcp_ip"
+    assert result["candidate_attempts"][0]["target_source"] == "active_lab_profile"
+    assert result["candidate_attempts"][0]["classification"] == "network_unreachable"
+    assert result["candidate_attempts"][1]["target_source"] == "control_access_original_dhcp_ip"
+    assert any("10.10.8.200" in url for url in requested_urls)
+    assert any("10.10.8.110" in url for url in requested_urls)
+    assert "10.10.8.200" not in encoded
+    assert "10.10.8.110" not in encoded
+    assert "super-secret-password" not in encoded
 
 
 def test_ilo_local_lab_dangerous_actions_remain_blocked(monkeypatch) -> None:
@@ -2418,6 +2668,19 @@ def test_ilo_redacts_secrets() -> None:
     assert username not in encoded
     assert "abc123" not in encoded
     assert encoded.count("REDACTED") >= 3
+
+
+def test_redaction_does_not_corrupt_classification_when_username_is_short() -> None:
+    redacted = redact_sensitive(
+        {
+            "classification": "redfish_root_available",
+            "message": "root login failed for root@example.test",
+        },
+        ["root"],
+    )
+
+    assert redacted["classification"] == "redfish_root_available"
+    assert redacted["message"] == "REDACTED login failed for REDACTED@example.test"
 
 
 def test_redaction_keeps_cisco_privilege_evidence_without_secret_values() -> None:

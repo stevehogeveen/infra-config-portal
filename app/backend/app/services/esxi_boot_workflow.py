@@ -13,6 +13,7 @@ from urllib.parse import quote
 import httpx
 
 from app.core.config import settings
+from app.providers.ilo_redfish import IloRedfishConfig, ilo_redfish_redaction_values
 from app.providers.action_policy import ActionCategory, current_lab_action_policy
 from app.providers.redaction import redact_sensitive
 from app.services.firmware_compliance import firmware_gate_blockers
@@ -535,13 +536,14 @@ def _post_virtual_media_action(device: dict[str, Any], url: str) -> dict[str, An
 
 
 def _post_redfish(path: str, payload: dict[str, Any]) -> dict[str, Any]:
-    base_url = _base_url(settings.ilo_test_host or "")
+    config = IloRedfishConfig.from_settings()
+    base_url = _base_url(config.host or "")
     with httpx.Client(
-        auth=(settings.ilo_test_username, settings.ilo_test_password),
+        auth=(config.username, config.password),
         follow_redirects=False,
-        timeout=httpx.Timeout(settings.ilo_test_timeout_seconds),
+        timeout=httpx.Timeout(config.timeout_seconds),
         trust_env=False,
-        verify=settings.ilo_test_verify_tls,
+        verify=config.verify_tls,
     ) as client:
         response = client.post(base_url + path, json=payload)
         try:
@@ -561,13 +563,14 @@ def _safe_post_redfish(path: str, payload: dict[str, Any]) -> dict[str, Any]:
 def _patch_system_boot(payload: dict[str, Any]) -> dict[str, Any]:
     system = _get_redfish_resource(SYSTEM_PATH)
     etag = system.get("etag") or "*"
-    base_url = _base_url(settings.ilo_test_host or "")
+    config = IloRedfishConfig.from_settings()
+    base_url = _base_url(config.host or "")
     with httpx.Client(
-        auth=(settings.ilo_test_username, settings.ilo_test_password),
+        auth=(config.username, config.password),
         follow_redirects=False,
-        timeout=httpx.Timeout(settings.ilo_test_timeout_seconds),
+        timeout=httpx.Timeout(config.timeout_seconds),
         trust_env=False,
-        verify=settings.ilo_test_verify_tls,
+        verify=config.verify_tls,
     ) as client:
         response = client.patch(base_url + SYSTEM_PATH, headers={"If-Match": str(etag)}, json=payload)
         try:
@@ -792,7 +795,8 @@ def _odata_id(value: Any) -> str | None:
 
 
 def _source_ip_for_ilo() -> str:
-    host = settings.ilo_test_host or "192.168.1.201"
+    config = IloRedfishConfig.from_settings()
+    host = config.host or "192.168.1.201"
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
         sock.connect((host, 443))
         return str(sock.getsockname()[0])
@@ -809,7 +813,7 @@ def _is_under_any(path: Path, directories: list[Path]) -> bool:
 
 
 def _sanitize(payload: Any) -> Any:
-    return redact_sensitive(payload, [settings.ilo_test_host, settings.ilo_test_username, settings.ilo_test_password])
+    return redact_sensitive(payload, ilo_redfish_redaction_values())
 
 
 def _now() -> str:

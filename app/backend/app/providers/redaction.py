@@ -52,10 +52,17 @@ def redact_sensitive(value: Any, secrets: Iterable[str | None] = ()) -> Any:
     if isinstance(value, str):
         redacted_value = value
         for secret in secret_values:
-            redacted_value = redacted_value.replace(secret, "REDACTED")
+            redacted_value = _redact_secret_value(redacted_value, secret)
         return SENSITIVE_VALUE_RE.sub(r"\1\2REDACTED", redacted_value)
 
     return value
+
+
+def _redact_secret_value(value: str, secret: str) -> str:
+    if len(secret) < 6 and secret.isalnum():
+        pattern = rf"(?<![A-Za-z0-9_]){re.escape(secret)}(?![A-Za-z0-9_])"
+        return re.sub(pattern, "REDACTED", value)
+    return value.replace(secret, "REDACTED")
 
 
 def _is_sensitive_key(key: str) -> bool:

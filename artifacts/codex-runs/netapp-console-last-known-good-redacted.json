@@ -1,13 +1,13 @@
 {
   "provider_id": "netapp-ontap",
   "device_role": "storage-controller",
-  "checked_at": "2026-06-10T15:39:49.406742+00:00",
-  "discovered_console_port": "/dev/serial/by-id/usb-Microchip_Technology_Inc._MCP2221_USB-I2C_UART_Combo-if00",
+  "checked_at": "2026-06-10T21:52:27.138895+00:00",
+  "discovered_console_port": "/dev/ttyS20",
   "discovered_baud": null,
-  "confidence": "high",
-  "last_seen": "2026-06-10T15:39:42.854630+00:00",
+  "confidence": "medium",
+  "last_seen": "2026-06-10T21:52:24.018615+00:00",
   "source": "autodiscovery",
-  "selection_source": "auto-stable-candidate",
+  "selection_source": "auto-ttys-candidate",
   "manual_env_update_required": false,
   "configured_port_hint_used_as_hint_only": false,
   "redaction_applied": true

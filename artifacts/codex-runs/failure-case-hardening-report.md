@@ -1,6 +1,6 @@
 # Failure Case Hardening Report
 
-- Checked at: `2026-06-10T15:39:22.887875+00:00`
+- Checked at: `2026-06-10T21:52:14.333870+00:00`
 - Provider mode: `mock`
 - Credential values, tokens, and secrets are redacted.
 
@@ -55,10 +55,10 @@
 
 ## ESXi API/SSH unreachable before install/config
 
-- Classification: `warning`
-- UI message: ESXi API is warning.
-- Report artifact detail: Review ESXi API readiness.
-- Exact next action: Review ESXi API readiness.
+- Classification: `blocked_by_prior_stage`
+- UI message: ESXi API is blocked_by_prior_stage.
+- Report artifact detail: Install/configure ESXi management at 192.168.1.203, then set ESXI_CONFIGURED=true before API certification.
+- Exact next action: Install/configure ESXi management at 192.168.1.203, then set ESXI_CONFIGURED=true before API certification.
 
 ## stale Cisco/ESXi/NetApp IPs
 
@@ -76,7 +76,7 @@
 
 ## username/password special character handling
 
-- Classification: `passed`
+- Classification: `not_configured_yet`
 - UI message: Credential values are tested for .env, JSON, YAML, shell, Ansible, Cisco CLI, iLO Redfish, ESXi, and NetApp compatibility.
 - Report artifact detail: Field names are reported; credential values remain redacted.
-- Exact next action: Credential compatibility passed for configured fields.
+- Exact next action: Fix the named env/config field; values remain redacted.

@@ -14,7 +14,12 @@ from app.core.config import settings
 from app.models import HpeRaidIntent
 from app.providers.action_policy import ActionCategory, current_lab_action_policy
 from app.providers.ilo_redfish import PROVIDER_ID
-from app.providers.ilo_redfish import IloRedfishAdapter, _base_url
+from app.providers.ilo_redfish import (
+    IloRedfishAdapter,
+    IloRedfishConfig,
+    _base_url,
+    ilo_redfish_redaction_values,
+)
 from app.providers.probe_cache import get_probe_result
 from app.providers.redaction import redact_sensitive
 from app.services.firmware_compliance import firmware_gate_blockers
@@ -637,17 +642,18 @@ def _redfish_raid(value: str) -> str:
 
 
 def _patch_smartstorage_settings(payload: dict[str, Any]) -> dict[str, Any]:
-    if not settings.ilo_test_host or not settings.ilo_test_username or not settings.ilo_test_password:
+    config = IloRedfishConfig.from_settings()
+    if not config.host or not config.username or not config.password:
         raise RuntimeError("Complete iLO configuration is required for HPE RAID apply.")
 
-    base_url = _base_url(settings.ilo_test_host)
-    timeout = httpx.Timeout(settings.ilo_test_timeout_seconds)
+    base_url = _base_url(config.host)
+    timeout = httpx.Timeout(config.timeout_seconds)
     with httpx.Client(
-        auth=(settings.ilo_test_username, settings.ilo_test_password),
+        auth=(config.username, config.password),
         follow_redirects=False,
         timeout=timeout,
         trust_env=False,
-        verify=settings.ilo_test_verify_tls,
+        verify=config.verify_tls,
     ) as client:
         current = _get_with_retries(client, base_url + SMART_STORAGE_SETTINGS_PATH)
         etag = current.headers.get("etag") or current.headers.get("ETag") or "*"
@@ -666,7 +672,7 @@ def _patch_smartstorage_settings(payload: dict[str, Any]) -> dict[str, Any]:
             "status_code": response.status_code,
             "response": redact_sensitive(
                 body,
-                [settings.ilo_test_host, settings.ilo_test_username, settings.ilo_test_password],
+                ilo_redfish_redaction_values(config),
             ),
         }
 
@@ -676,19 +682,28 @@ def _get_smartstorage_resource(path: str) -> dict[str, Any]:
 
 
 def _get_redfish_resource(path: str) -> dict[str, Any]:
-    if not settings.ilo_test_host or not settings.ilo_test_username or not settings.ilo_test_password:
+    config = IloRedfishConfig.from_settings()
+    if not config.target_candidates or not config.username or not config.password:
         raise RuntimeError("Complete iLO configuration is required for HPE Redfish access.")
 
-    base_url = _base_url(settings.ilo_test_host)
-    timeout = httpx.Timeout(settings.ilo_test_timeout_seconds)
-    with httpx.Client(
-        auth=(settings.ilo_test_username, settings.ilo_test_password),
-        follow_redirects=False,
-        timeout=timeout,
-        trust_env=False,
-        verify=settings.ilo_test_verify_tls,
-    ) as client:
-        response = _get_with_retries(client, base_url + path)
+    timeout = httpx.Timeout(config.timeout_seconds)
+    last_exc: httpx.HTTPError | None = None
+    for candidate in config.target_candidates:
+        base_url = _base_url(candidate["host"])
+        try:
+            with httpx.Client(
+                auth=(config.username, config.password),
+                follow_redirects=False,
+                timeout=timeout,
+                trust_env=False,
+                verify=config.verify_tls,
+            ) as client:
+                response = _get_with_retries(client, base_url + path)
+        except httpx.HTTPError as exc:
+            if not _try_next_redfish_get_candidate(exc):
+                raise
+            last_exc = exc
+            continue
         try:
             body: Any = response.json()
         except ValueError:
@@ -696,27 +711,32 @@ def _get_redfish_resource(path: str) -> dict[str, Any]:
         return {
             "method": "GET",
             "path": path,
+            "target_source": candidate.get("source"),
             "status_code": response.status_code,
             "etag": response.headers.get("etag") or response.headers.get("ETag"),
             "body": body if isinstance(body, dict) else {"value": body},
         }
+    if last_exc is not None:
+        raise last_exc
+    raise RuntimeError("Complete iLO target configuration is required for HPE Redfish access.")
 
 
 def _post_system_reset(reset_type: str) -> dict[str, Any]:
-    if not settings.ilo_test_host or not settings.ilo_test_username or not settings.ilo_test_password:
+    config = IloRedfishConfig.from_settings()
+    if not config.host or not config.username or not config.password:
         raise RuntimeError("Complete iLO configuration is required for server reset.")
 
     system = _get_redfish_resource(SYSTEM_PATH)
     system_body = system.get("body") if isinstance(system.get("body"), dict) else {}
     target = _system_reset_target(system_body)
-    base_url = _base_url(settings.ilo_test_host)
-    timeout = httpx.Timeout(settings.ilo_test_timeout_seconds)
+    base_url = _base_url(config.host)
+    timeout = httpx.Timeout(config.timeout_seconds)
     with httpx.Client(
-        auth=(settings.ilo_test_username, settings.ilo_test_password),
+        auth=(config.username, config.password),
         follow_redirects=False,
         timeout=timeout,
         trust_env=False,
-        verify=settings.ilo_test_verify_tls,
+        verify=config.verify_tls,
     ) as client:
         response = client.post(base_url + target, json={"ResetType": reset_type})
         try:
@@ -811,6 +831,13 @@ def _get_with_retries(client: httpx.Client, url: str) -> httpx.Response:
     raise RuntimeError("GET failed without exception.")
 
 
+def _try_next_redfish_get_candidate(exc: httpx.HTTPError) -> bool:
+    text = str(exc).lower()
+    if any(token in text for token in ("certificate", "tls", "ssl")):
+        return False
+    return isinstance(exc, (httpx.TimeoutException, httpx.TransportError))
+
+
 def _layout_summary(discovery: HpeStorageDiscoveryRead) -> dict[str, Any]:
     return {
         "last_probe_time": discovery.last_probe_time,
@@ -856,7 +883,7 @@ def _write_after_reset_validation_report(result: dict[str, Any]) -> None:
 def _sanitize_artifact(payload: Any) -> Any:
     return redact_sensitive(
         payload,
-        [settings.ilo_test_host, settings.ilo_test_username, settings.ilo_test_password],
+        ilo_redfish_redaction_values(),
     )
 
 

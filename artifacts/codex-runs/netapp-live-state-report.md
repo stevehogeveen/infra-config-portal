@@ -1,6 +1,6 @@
 # NetApp Live State Report
 
-- Checked at: `2026-06-10T15:39:21.407540+00:00`
+- Checked at: `2026-06-10T21:52:08.047324+00:00`
 - Status: `blocked`
 - Configured state: `blocked`
 - Configured: `False`
@@ -9,10 +9,10 @@
 
 ## Console
 
-- Discovered port: `/dev/serial/by-id/usb-Microchip_Technology_Inc._MCP2221_USB-I2C_UART_Combo-if00`
+- Discovered port: `/dev/ttyS20`
 - Baud: `none`
-- Confidence: `high`
-- Last seen: `2026-06-10T15:20:41.049791`
+- Confidence: `medium`
+- Last seen: `2026-06-10T21:49:12.407440`
 - Source: `autodiscovery`
 
 ## Live Checks

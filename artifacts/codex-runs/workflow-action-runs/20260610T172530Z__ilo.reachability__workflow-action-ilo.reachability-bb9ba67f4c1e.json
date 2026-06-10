@@ -1,0 +1,30 @@
+{
+  "action_id": "ilo.reachability",
+  "action_label": "Reachability",
+  "blockers": [],
+  "checked_at": "2026-06-10T17:25:30.983887+00:00",
+  "command": "make provider-lab-ilo-reachability",
+  "executed": true,
+  "finished_at": "2026-06-10T17:25:30.983887+00:00",
+  "freshness": "current",
+  "mode": "read_only",
+  "next_action": "Review evidence artifacts, then continue with the next safe stage.",
+  "not_mock": true,
+  "report_artifacts": [
+    "artifacts/codex-runs/ilo-local-lab-test-report.md"
+  ],
+  "return_code": 0,
+  "run_id": "workflow-action:ilo.reachability:bb9ba67f4c1e",
+  "source_type": "live_probe",
+  "stage_id": "ilo",
+  "stage_label": "HPE / iLO",
+  "started_at": "2026-06-10T17:25:24.648140+00:00",
+  "status": "completed",
+  "stderr_summary": "",
+  "stdout_summary": "/home/administrator/infra-config-portal/scripts/check-repo-root.sh\nmake -C /home/administrator/infra-config-portal/app provider-lab-ilo-reachability\nmake[1]: Entering directory '/home/administrator/infra-config-portal/app'\ncd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $(if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi) scripts/ilo_real_reachability.py\n{\n  \"checked_at\": \"2026-06-10T17:25:24.867052+00:00\",\n  \"provider_mode\": \"local-lab-readwrite\",\n  \"env_file\": {\n    \"path\": \".env.local.real-lab\",\n    \"exists\": true,\n    \"mode\": \"0o600\"\n  },\n  \"target\": {\n    \"host_configured\": true,\n    \"username_configured\": true,\n    \"password_configured\": true,\n    \"tls_verify\": false,\n    \"timeout_seconds\": 3.0,\n    \"redacted\": true\n  },\n  \"policy\": {\n    \"required_flags\": [\n      {\n        \"name\": \"LAB_ENVIRONMENT\",\n        \"status\": \"present\"\n      },\n      {\n        \"name\": \"LAB_ACKNOWLEDGE_REAL_HARDWARE\",\n        \"status\": \"enabled\"\n      },\n      {\n        \"name\": \"LAB_ACKNOWLEDGE_DEVICE_RECONFIGURATION\",\n        \"status\": \"enabled\"\n      },\n      {\n        \"name\": \"LAB_ACKNOWLEDGE_DATA_LOSS_RISK\",\n        \"status\": \"enabled\"\n      },\n      {\n        \"name\": \"LAB_ACKNOWLEDGE_LAB_ONLY\",\n... output truncated ...\n      \"status\": \"failed\",\n      \"reachable\": false,\n      \"port\": 443,\n      \"failure_kind\": \"timeout\",\n      \"attempts\": [\n        {\n          \"attempt\": 1,\n          \"status\": \"failed\",\n          \"error_class\": \"TimeoutError\",\n          \"failure_kind\": \"timeout\",\n          \"elapsed_ms\": 3002\n        },\n        {\n          \"attempt\": 2,\n          \"status\": \"failed\",\n          \"error_class\": \"OSError\",\n          \"failure_kind\": \"network_unreachable\",\n          \"elapsed_ms\": 62\n        },\n        {\n          \"attempt\": 3,\n          \"status\": \"failed\",\n          \"error_class\": \"TimeoutError\",\n          \"failure_kind\": \"timeout\",\n          \"elapsed_ms\": 3002\n        }\n      ]\n    },\n    \"http\": {\n      \"status\": \"skipped\",\n      \"reason\": \"TCP reachability failed before HTTPS/Redfish check.\",\n      \"tcp_failure_kind\": \"timeout\"\n    }\n  },\n  \"classification\": \"tcp_timeout_or_filtered\",\n  \"next_action\": \"Check VLAN/routing/firewall and confirm iLO is powered and cabled.\"\n}\nreport_json=artifacts/real-lab/ilo-reachability-20260610T172530Z.json\nreport_markdown=artifacts/real-lab/ilo-reachability-20260610T172530Z.md\nmake[1]: Leaving directory '/home/administrator/infra-config-portal/app'",
+  "summary": "Safe read-only/report-only action completed. Review evidence before using results as current state.",
+  "trace_artifact": "artifacts/codex-runs/workflow-action-runs/20260610T172530Z__ilo.reachability__workflow-action-ilo.reachability-bb9ba67f4c1e.json",
+  "warnings": [
+    "Output was redacted and truncated for operator display."
+  ]
+}

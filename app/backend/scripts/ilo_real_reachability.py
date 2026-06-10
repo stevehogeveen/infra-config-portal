@@ -27,7 +27,11 @@ if REAL_LAB_ENV.exists():
 # Load local lab env before app imports; settings reads env at import time.
 from app.core.config import settings  # noqa: E402
 from app.providers.action_policy import LOCAL_LAB_MODE, current_lab_action_policy  # noqa: E402
-from app.providers.ilo_redfish import IloRedfishConfig, _base_url  # noqa: E402
+from app.providers.ilo_redfish import (  # noqa: E402
+    IloRedfishConfig,
+    _base_url,
+    ilo_redfish_redaction_values,
+)
 from app.providers.redaction import redact_sensitive  # noqa: E402
 
 
@@ -43,7 +47,13 @@ def main() -> int:
             "mode": _file_mode(REAL_LAB_ENV),
         },
         "target": {
-            "host_configured": bool(config.host),
+            "host_configured": bool(config.target_candidates),
+            "host_source": config.host_source,
+            "fallback_hosts_configured": len(config.fallback_hosts),
+            "target_candidate_count": len(config.target_candidates),
+            "target_candidate_sources": [
+                candidate["source"] for candidate in config.target_candidates
+            ],
             "username_configured": bool(config.username),
             "password_configured": bool(config.password),
             "tls_verify": config.verify_tls,
@@ -70,30 +80,67 @@ def main() -> int:
         _finish(report)
         return 0
 
-    assert config.host is not None
-    base_url = _base_url(config.host)
+    candidate_attempts: list[dict[str, Any]] = []
+    selected_result: dict[str, Any] | None = None
+    for index, candidate in enumerate(config.target_candidates, start=1):
+        result = _candidate_reachability(config, candidate, index)
+        candidate_attempts.append(_candidate_reachability_summary(result))
+        selected_result = result
+        if not _try_next_reachability_candidate(str(result["classification"])):
+            break
+
+    if selected_result is None:
+        report.update(
+            {
+                "classification": "blocked_by_configuration",
+                "blockers": ["Missing local iLO target configuration."],
+                "next_action": "Configure an iLO target in the active lab profile or local first-access record.",
+            }
+        )
+        _finish(report)
+        return 0
+
+    report.update(
+        {
+            "selected_target_source": selected_result.get("target_source"),
+            "candidate_attempts": candidate_attempts,
+            "diagnostics": selected_result["diagnostics"],
+            "classification": selected_result["classification"],
+            "next_action": selected_result["next_action"],
+            "blockers": selected_result["blockers"],
+        }
+    )
+    _finish(report)
+    return 0
+
+
+def _candidate_reachability(
+    config: IloRedfishConfig,
+    candidate: dict[str, str],
+    candidate_index: int,
+) -> dict[str, Any]:
+    host_value = candidate["host"]
+    base_url = _base_url(host_value)
     parsed = urlparse(base_url)
-    host = parsed.hostname or config.host
+    host = parsed.hostname or host_value
     port = parsed.port or (443 if parsed.scheme == "https" else 80)
 
     dns_result = _dns_check(host)
     tcp_result = _tcp_check(host, port)
     http_result = _http_check(base_url, config.verify_tls) if tcp_result["reachable"] else _http_skipped(tcp_result)
     classification = _classify(dns_result, tcp_result, http_result)
-    report.update(
-        {
-            "diagnostics": {
-                "dns": dns_result,
-                "tcp": tcp_result,
-                "http": http_result,
-            },
-            "classification": classification,
-            "next_action": _next_action(classification),
-            "blockers": _blockers(classification),
-        }
-    )
-    _finish(report)
-    return 0
+    return {
+        "candidate_index": candidate_index,
+        "target_source": candidate.get("source", "unknown"),
+        "diagnostics": {
+            "dns": dns_result,
+            "tcp": tcp_result,
+            "http": http_result,
+        },
+        "classification": classification,
+        "next_action": _next_action(classification),
+        "blockers": _blockers(classification),
+    }
 
 
 def _gate_blockers(config: IloRedfishConfig, policy: Any) -> list[str]:
@@ -104,6 +151,34 @@ def _gate_blockers(config: IloRedfishConfig, policy: Any) -> list[str]:
     if config.missing_fields:
         blockers.append(f"Missing local iLO configuration: {', '.join(config.missing_fields)}.")
     return list(dict.fromkeys(blockers))
+
+
+def _candidate_reachability_summary(result: dict[str, Any]) -> dict[str, Any]:
+    diagnostics = result.get("diagnostics") if isinstance(result.get("diagnostics"), dict) else {}
+    tcp = diagnostics.get("tcp") if isinstance(diagnostics.get("tcp"), dict) else {}
+    http = diagnostics.get("http") if isinstance(diagnostics.get("http"), dict) else {}
+    return {
+        "candidate_index": result.get("candidate_index"),
+        "target_source": result.get("target_source"),
+        "classification": result.get("classification"),
+        "tcp_reachable": tcp.get("reachable", False),
+        "tcp_failure_kind": tcp.get("failure_kind"),
+        "http_status": http.get("status", "not_checked"),
+        "http_failure_kind": http.get("failure_kind"),
+    }
+
+
+def _try_next_reachability_candidate(classification: str) -> bool:
+    return classification in {
+        "dns_resolution_failed",
+        "execution_environment_socket_permission_denied",
+        "tcp_timeout_or_filtered",
+        "tcp_connection_refused",
+        "network_route_unreachable",
+        "tcp_connect_failed",
+        "https_or_redfish_connect_failed",
+        "https_reachable_redfish_unconfirmed",
+    }
 
 
 def _dns_check(host: str) -> dict[str, Any]:
@@ -349,6 +424,10 @@ def _markdown_report(report: dict[str, Any]) -> str:
         "",
         "## Target",
         f"- host_configured: {(report.get('target') or {}).get('host_configured', False)}",
+        f"- host_source: {(report.get('target') or {}).get('host_source', 'unknown')}",
+        f"- fallback_hosts_configured: {(report.get('target') or {}).get('fallback_hosts_configured', 0)}",
+        f"- target_candidate_count: {(report.get('target') or {}).get('target_candidate_count', 0)}",
+        f"- selected_target_source: {report.get('selected_target_source', 'none')}",
         f"- username_configured: {(report.get('target') or {}).get('username_configured', False)}",
         f"- password_configured: {(report.get('target') or {}).get('password_configured', False)}",
         f"- tls_verify: {(report.get('target') or {}).get('tls_verify', 'unknown')}",
@@ -361,6 +440,14 @@ def _markdown_report(report: dict[str, Any]) -> str:
         f"- http_status: {http.get('status', 'not_checked')}",
         f"- http_failure_kind: {http.get('failure_kind', 'none')}",
     ]
+    for candidate in report.get("candidate_attempts", []):
+        lines.append(
+            "- candidate: "
+            f"index={candidate.get('candidate_index')}, "
+            f"source={candidate.get('target_source')}, "
+            f"classification={candidate.get('classification')}, "
+            f"tcp_reachable={candidate.get('tcp_reachable', False)}"
+        )
     for blocker in report.get("blockers", []):
         lines.append(f"- blocker: {blocker}")
     lines.append("")
@@ -378,13 +465,10 @@ def _elapsed_ms(started: float) -> int:
 
 
 def _redaction_values() -> list[str | None]:
-    values: list[str | None] = [
-        settings.ilo_test_host,
-        settings.ilo_test_username,
-        settings.ilo_test_password,
-    ]
-    if settings.ilo_test_host:
-        base_url = _base_url(settings.ilo_test_host)
+    config = IloRedfishConfig.from_settings()
+    values = ilo_redfish_redaction_values(config)
+    if config.host:
+        base_url = _base_url(config.host)
         parsed = urlparse(base_url)
         values.extend([base_url, parsed.netloc, parsed.hostname])
     return values

@@ -1,16 +1,16 @@
 # HPE RAID After Reset Validation Report
 
-Started: 2026-06-08T13:48:42.124461+00:00
-Finished: 2026-06-08T14:04:05.440131+00:00
+Started: 2026-06-10T19:45:44.203242+00:00
+Finished: 2026-06-10T19:46:30.288305+00:00
 Status: failed
 Message: Live SmartStorage layout does not yet match the saved RAID intent.
 
 ## Wait
 
-- Reachable: False
-- Attempts: 44
-- Elapsed seconds: 923
-- Power state: None
+- Reachable: True
+- Attempts: 1
+- Elapsed seconds: 6
+- Power state: On
 
 ## Validation
 

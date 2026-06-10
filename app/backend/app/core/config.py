@@ -37,7 +37,13 @@ def _load_local_real_lab_env() -> None:
     app_root = repo_root / "app"
     backend_root = app_root / "backend"
 
-    for base in (cwd, cwd.parent, cwd.parent.parent, backend_root, app_root, repo_root):
+    search_bases = (
+        (cwd,)
+        if os.getenv("INFRA_CONFIG_TEST_ISOLATE_REAL_LAB_ENV") == "1"
+        else (cwd, cwd.parent, cwd.parent.parent, backend_root, app_root, repo_root)
+    )
+
+    for base in search_bases:
         env_file = base / ".env.local.real-lab"
         if env_file not in candidates:
             candidates.append(env_file)
@@ -58,6 +64,8 @@ def _load_local_real_lab_env() -> None:
                         os.environ[key] = value
                     continue
                 os.environ[key] = value
+            if authoritative_real_lab:
+                break
 
 
 def _split_csv(value: str) -> list[str]:

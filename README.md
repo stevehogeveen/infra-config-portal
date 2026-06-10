@@ -108,10 +108,11 @@ than substituting test fixture data.
 
 ## Saved Lab Profiles
 
-Lab Profiles let an operator save named lab address plans, activate a previous
-lab, create a new lab, and review prior profile versions. The frontend exposes
-the active lab selector in the app shell and a `Lab Profiles` page for editing
-the local address plan.
+Lab Setup lets an operator save named lab address plans, activate a previous
+lab, create a new lab, edit the lab subnet/IP plan, and maintain shared global
+defaults such as gateway, DNS, NTP, timezone, VLAN, MTU, and vCenter scope.
+The active lab selector is visible in the app shell and Lab Setup is the
+primary profile editing surface.
 
 Profile state is stored locally under `.local/lab-profiles.json` by default
 and is ignored by Git. It stores non-secret address intent only. Selecting a lab

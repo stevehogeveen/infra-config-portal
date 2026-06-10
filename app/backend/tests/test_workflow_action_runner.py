@@ -51,6 +51,25 @@ def test_report_only_action_can_run(
     assert result["freshness"] == "current"
 
 
+def test_cisco_firmware_inventory_uses_short_ui_timeout(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(workflow_action_run_store, "WORKFLOW_ACTION_RUN_TRACE_DIR", tmp_path)
+
+    def fake_run(command: tuple[str, ...], timeout_seconds: int) -> subprocess.CompletedProcess[str]:
+        assert command == ("make", "provider-lab-firmware-cisco-inventory")
+        assert timeout_seconds == 35
+        return subprocess.CompletedProcess(command, 0, stdout="version checked", stderr="")
+
+    monkeypatch.setattr(workflow_action_runner, "_run_subprocess", fake_run)
+
+    result = run_workflow_action("cisco.firmware-inventory")
+
+    assert result["status"] == "completed"
+    assert result["executed"] is True
+
+
 def test_destructive_action_is_refused(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(workflow_action_run_store, "WORKFLOW_ACTION_RUN_TRACE_DIR", tmp_path)
 

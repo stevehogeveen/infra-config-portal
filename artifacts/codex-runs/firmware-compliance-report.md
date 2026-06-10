@@ -1,6 +1,6 @@
 # Firmware Compliance Report
 
-Checked: 2026-06-09T16:04:12.077684+00:00
+Checked: 2026-06-10T19:46:56.353107+00:00
 Provider mode: local-lab-readwrite
 Scope: full
 Status: blocked

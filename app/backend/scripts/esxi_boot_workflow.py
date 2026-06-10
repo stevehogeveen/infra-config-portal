@@ -4,7 +4,7 @@ import argparse
 import json
 
 from app.providers.redaction import redact_sensitive
-from app.core.config import settings
+from app.providers.ilo_redfish import ilo_redfish_redaction_values
 from app.services.esxi_boot_workflow import (
     detect_esxi_installer_boot_status,
     eject_esxi_virtual_media,
@@ -58,7 +58,7 @@ def _summary(result: dict) -> dict:
             "warnings": result.get("warnings") or [],
             "report": result.get("report"),
         },
-        [settings.ilo_test_host, settings.ilo_test_username, settings.ilo_test_password],
+        ilo_redfish_redaction_values(),
     )
 
 

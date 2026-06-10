@@ -634,7 +634,7 @@ def _runtime_mismatch_guidance(
             "current_value": current_value,
             "expected_value": expected_value,
             "active_profile": active.get("name"),
-            "where_to_fix": ".env.local.real-lab or Settings / Lab Profile",
+            "where_to_fix": ".env.local.real-lab or Lab Setup",
             "recommended_action": action,
             "recheck_command": "make provider-lab-build-verification-live",
         }

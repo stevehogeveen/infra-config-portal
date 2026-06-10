@@ -1,6 +1,6 @@
 # Build Verification Classification Report
 
-- Checked at: `2026-06-10T15:39:22.887875+00:00`
+- Checked at: `2026-06-10T21:52:14.333870+00:00`
 - Overall certification state: `test_fixture`
 - Source: `test_fixture`
 - Freshness: `unknown`
@@ -48,6 +48,48 @@
 - Report detail: ESXi ISO media inventory is not configured.
 - Next action: Place the ESXi ISO under MEDIA_INVENTORY_DIRS or set ESXI_INSTALL_ISO/ESXI_ISO_PATH before ESXi boot verification.
 
+### protocol - blocked_by_prior_stage
+
+- UI message: Cisco SSH/SCP is blocked_by_prior_stage.
+- Report detail: Complete or confirm Cisco console bootstrap, then set CISCO_MGMT_CONFIGURED=true before treating SSH/SCP as a port failure.
+- Next action: Complete or confirm Cisco console bootstrap, then set CISCO_MGMT_CONFIGURED=true before treating SSH/SCP as a port failure.
+
+### protocol - blocked_by_prior_stage
+
+- UI message: ESXi API is blocked_by_prior_stage.
+- Report detail: Install/configure ESXi management at 192.168.1.203, then set ESXI_CONFIGURED=true before API certification.
+- Next action: Install/configure ESXi management at 192.168.1.203, then set ESXI_CONFIGURED=true before API certification.
+
+### protocol - blocked_by_prior_stage
+
+- UI message: ESXi SSH is blocked_by_prior_stage.
+- Report detail: Install/configure ESXi management and enable/confirm SSH before ESXi SSH certification.
+- Next action: Install/configure ESXi management and enable/confirm SSH before ESXi SSH certification.
+
+### credential - not_configured_yet
+
+- UI message: ilo credential compatibility needs attention.
+- Report detail: Field `ILO_TEST_PASSWORD` failed compatibility/configuration; value remains redacted.
+- Next action: Set ILO_TEST_PASSWORD in .env.local.real-lab when this provider stage is ready.
+
+### credential - not_configured_yet
+
+- UI message: cisco credential compatibility needs attention.
+- Report detail: Field `CISCO_TEST_PASSWORD` failed compatibility/configuration; value remains redacted.
+- Next action: Set CISCO_TEST_PASSWORD in .env.local.real-lab when this provider stage is ready.
+
+### credential - not_configured_yet
+
+- UI message: cisco_enable credential compatibility needs attention.
+- Report detail: Field `CISCO_ENABLE_PASSWORD or ANSIBLE_CISCO_ENABLE_PASSWORD` failed compatibility/configuration; value remains redacted.
+- Next action: Set CISCO_ENABLE_PASSWORD or ANSIBLE_CISCO_ENABLE_PASSWORD in .env.local.real-lab when this provider stage is ready.
+
+### credential - not_configured_yet
+
+- UI message: esxi credential compatibility needs attention.
+- Report detail: Field `ESXI_TEST_PASSWORD` failed compatibility/configuration; value remains redacted.
+- Next action: Set ESXI_TEST_PASSWORD in .env.local.real-lab when this provider stage is ready.
+
 ### protocol - warning
 
 - UI message: iLO Redfish is warning.
@@ -59,21 +101,3 @@
 - UI message: iLO XML fallback is warning.
 - Report detail: Review iLO XML fallback readiness.
 - Next action: Review iLO XML fallback readiness.
-
-### protocol - warning
-
-- UI message: Cisco SSH/SCP is warning.
-- Report detail: Review Cisco SSH/SCP readiness.
-- Next action: Review Cisco SSH/SCP readiness.
-
-### protocol - warning
-
-- UI message: ESXi API is warning.
-- Report detail: Review ESXi API readiness.
-- Next action: Review ESXi API readiness.
-
-### protocol - warning
-
-- UI message: ESXi SSH is warning.
-- Report detail: Review ESXi SSH readiness.
-- Next action: Review ESXi SSH readiness.

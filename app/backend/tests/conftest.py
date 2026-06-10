@@ -19,17 +19,50 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from app import models  # noqa: F401
-from app.core.database import Base, get_session
-from app.main import app
+os.environ["INFRA_CONFIG_TEST_ISOLATE_REAL_LAB_ENV"] = "1"
+os.environ.pop("LAB_ENVIRONMENT", None)
+TEST_RUNTIME_ENV = {
+    "LAB_SUBNET_CIDR": "192.168.1.0/24",
+    "ILO_TEST_HOST": "192.168.1.201",
+    "SERVER_EMBEDDED_NIC_IP": "192.168.1.202",
+    "ESXI_TEST_HOST": "192.168.1.203",
+    "CISCO_TARGET_IP": "192.168.1.204",
+    "ANSIBLE_CISCO_HOST": "192.168.1.204",
+    "ANSIBLE_CONTROL_HOST": "192.168.1.205",
+    "NETAPP_CONTROLLER_A_SP": "192.168.1.210",
+    "NETAPP_CONTROLLER_B_SP": "192.168.1.211",
+    "NETAPP_CLUSTER_MGMT_IP": "192.168.1.220",
+    "NETAPP_NODE_A_MGMT_IP": "192.168.1.221",
+    "NETAPP_NODE_B_MGMT_IP": "192.168.1.222",
+    "NETAPP_SVM_MGMT_IP": "192.168.1.223",
+    "NETAPP_NFS_LIFS": "192.168.1.230,192.168.1.231",
+    "NETAPP_ISCSI_LIFS": "192.168.1.240,192.168.1.241,192.168.1.242,192.168.1.243",
+    "LAB_GATEWAY": "192.168.1.1",
+    "CISCO_MANAGEMENT_GATEWAY": "192.168.1.1",
+    "LAB_DNS_SERVERS": "",
+    "LAB_NTP_SERVERS": "",
+    "LAB_PROFILE_TOPOLOGY": "high_address_lab",
+    "LAB_PROFILE_NETAPP_ENABLED": "true",
+    "LAB_CLOSED_LOOP_ACK": "YES",
+    "LAB_READONLY_ACK": "YES",
+    "ESXI_CONFIGURED": "false",
+    "CISCO_MGMT_CONFIGURED": "false",
+    "NETAPP_CONFIGURED": "false",
+}
+os.environ.update(TEST_RUNTIME_ENV)
+
+from app import models  # noqa: E402,F401
+from app.core.database import Base, get_session  # noqa: E402
+from app.main import app  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
 def isolate_local_lab_state(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
-    if "LAB_PROFILE_STORE" not in os.environ:
-        monkeypatch.setenv("LAB_PROFILE_STORE", str(tmp_path / "lab-profiles.json"))
-    if "CONTROL_ACCESS_STORE" not in os.environ:
-        monkeypatch.setenv("CONTROL_ACCESS_STORE", str(tmp_path / "control-access.json"))
+    monkeypatch.setenv("LAB_PROFILE_STORE", str(tmp_path / "lab-profiles.json"))
+    monkeypatch.setenv("CONTROL_ACCESS_STORE", str(tmp_path / "control-access.json"))
+    for key, value in TEST_RUNTIME_ENV.items():
+        monkeypatch.setenv(key, value)
+    monkeypatch.delenv("LAB_ENVIRONMENT", raising=False)
 
 
 async def _run_sync_with_asyncio_executor(

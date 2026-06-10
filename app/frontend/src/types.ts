@@ -428,6 +428,7 @@ export type LabProfileFeatures = {
   build_verification_enabled: boolean;
   storage_protocol: string;
   disable_ipv6: boolean;
+  block_legacy_protocols: boolean;
   enable_snmp: boolean;
   enable_ntp: boolean;
   enable_dns: boolean;
@@ -567,6 +568,11 @@ export type ControlEditableConfigField = {
   source: string;
 };
 
+export type ControlEditableConfigFieldWrite = {
+  label: string;
+  value: string | null;
+};
+
 export type ControlAccessConfig = {
   section_id: string;
   title: string;
@@ -590,6 +596,7 @@ export type ControlAccessConfigWrite = {
   username_reference: string | null;
   password_configured: boolean;
   password_reference_label: string | null;
+  editable_fields?: ControlEditableConfigFieldWrite[];
 };
 
 export type ControlAction = {

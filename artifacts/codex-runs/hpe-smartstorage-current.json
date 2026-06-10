@@ -1,153 +1,18 @@
 {
-  "@Redfish.Settings": {
-    "@odata.type": "#Settings.v1_0_0.Settings",
-    "ETag": "2A010991",
-    "Messages": [
-      {
-        "MessageId": "SmartStorageMessages.2.0.1.Success"
-      }
-    ],
-    "SettingsObject": {
-      "@odata.id": "/redfish/v1/systems/1/smartstorageconfig/settings/"
-    },
-    "Time": "2001-01-08T03:35:39+00:00"
-  },
-  "@odata.context": "/redfish/v1/$metadata#SmartStorageConfig.SmartStorageConfig",
-  "@odata.etag": "W/\"67CFED7A8EAC252525166C95FDC4A584\"",
-  "@odata.id": "/redfish/v1/systems/1/smartstorageconfig/",
-  "@odata.type": "#SmartStorageConfig.v2_0_1.SmartStorageConfig",
-  "CurrentParallelSurfaceScanCount": 1,
-  "DataGuard": "Strict",
-  "DegradedPerformanceOptimization": "Disabled",
-  "DriveWriteCache": "Disabled",
-  "DriveWriteCacheUnconfigured": "Default",
-  "ElevatorSort": "Enabled",
-  "EncryptionConfiguration": "None",
-  "EncryptionEULA": null,
-  "ExpandPriority": "Medium",
-  "FlexibleLatencySchedulerSetting": "Default",
-  "Id": "smartstorageconfig",
-  "InconsistencyRepairPolicy": "Disabled",
-  "Location": "Slot 0",
-  "LocationFormat": "PCISlot",
-  "LogicalDrives": [
-    {
-      "Accelerator": "None",
-      "BlockSizeBytes": 512,
-      "CapacityBlocks": 1048576000,
-      "CapacityGiB": 500,
-      "DataDrives": [
-        "1I:1:1",
-        "1I:1:2"
-      ],
-      "DriveLocationFormat": "ControllerPort:Box:Bay",
-      "LegacyBootPriority": "Primary",
-      "LogicalDriveName": "ESXi-OS",
-      "LogicalDriveNumber": 1,
-      "ParityGroupCount": 0,
-      "Raid": "Raid1",
-      "SpareDrives": [],
-      "SpareRebuildMode": null,
-      "StripSizeBytes": 262144,
-      "StripeSizeBytes": 262144,
-      "VolumeUniqueIdentifier": "600508B1001C4B4A61AB85D59BE56063"
-    },
-    {
-      "Accelerator": "None",
-      "BlockSizeBytes": 512,
-      "CapacityBlocks": 7032478896,
-      "CapacityGiB": 3353,
-      "DataDrives": [
-        "1I:1:3",
-        "1I:1:4",
-        "2I:1:5",
-        "2I:1:6",
-        "2I:1:7"
-      ],
-      "DriveLocationFormat": "ControllerPort:Box:Bay",
-      "LegacyBootPriority": "None",
-      "LogicalDriveName": "VM-Datastore",
-      "LogicalDriveNumber": 2,
-      "ParityGroupCount": 0,
-      "Raid": "Raid6",
-      "SpareDrives": [
-        "2I:1:8"
-      ],
-      "SpareRebuildMode": "Dedicated",
-      "StripSizeBytes": 262144,
-      "StripeSizeBytes": 786432,
-      "VolumeUniqueIdentifier": "600508B1001C10992E84202F6D5118E8"
+  "_http_status": 404,
+  "_path": "/redfish/v1/systems/1/smartstorageconfig/",
+  "body": {
+    "error": {
+      "code": "iLO.0.10.ExtendedInfo",
+      "message": "See @Message.ExtendedInfo for more information.",
+      "@Message.ExtendedInfo": [
+        {
+          "MessageArgs": [
+            "/redfish/v1/systems/1/smartstorageconfig/"
+          ],
+          "MessageId": "Base.1.18.ResourceMissingAtURI"
+        }
+      ]
     }
-  ],
-  "MonitorAndPerformanceAnalysisDelaySeconds": 60,
-  "NoBatteryWriteCache": "Disabled",
-  "Oem": {
-    "Hpe": {
-      "@odata.type": "#HpeBiosExt.v2_0_0.HpeBiosExt",
-      "SettingsObject": {
-        "UnmodifiedETag": "W/\"0FD8CB8CB31F98989897027D10EB39DE\""
-      }
-    }
-  },
-  "PhysicalDrives": [
-    {
-      "LegacyBootPriority": "None",
-      "Location": "1I:1:1",
-      "LocationFormat": "ControllerPort:Box:Bay"
-    },
-    {
-      "LegacyBootPriority": "None",
-      "Location": "1I:1:2",
-      "LocationFormat": "ControllerPort:Box:Bay"
-    },
-    {
-      "LegacyBootPriority": "None",
-      "Location": "1I:1:3",
-      "LocationFormat": "ControllerPort:Box:Bay"
-    },
-    {
-      "LegacyBootPriority": "None",
-      "Location": "1I:1:4",
-      "LocationFormat": "ControllerPort:Box:Bay"
-    },
-    {
-      "LegacyBootPriority": "None",
-      "Location": "2I:1:5",
-      "LocationFormat": "ControllerPort:Box:Bay"
-    },
-    {
-      "LegacyBootPriority": "None",
-      "Location": "2I:1:6",
-      "LocationFormat": "ControllerPort:Box:Bay"
-    },
-    {
-      "LegacyBootPriority": "None",
-      "Location": "2I:1:7",
-      "LocationFormat": "ControllerPort:Box:Bay"
-    },
-    {
-      "LegacyBootPriority": "None",
-      "Location": "2I:1:8",
-      "LocationFormat": "ControllerPort:Box:Bay"
-    }
-  ],
-  "Ports": [
-    {
-      "OperatingModeAfterReboot": "Mixed",
-      "PortIndex": 0
-    },
-    {
-      "OperatingModeAfterReboot": "Mixed",
-      "PortIndex": 1
-    }
-  ],
-  "PowerModeAfterReboot": "MaxPerformance",
-  "PredictiveSpareRebuild": "Disabled",
-  "QueueDepth": "Automatic",
-  "ReadCachePercent": 10,
-  "RebuildPriority": "High",
-  "SurfaceScanAnalysisDelaySeconds": 3,
-  "SurfaceScanAnalysisPriority": "Idle",
-  "SurvivalPowerMode": "Enabled",
-  "WriteCacheBypassThresholdKiB": 1040
+  }
 }

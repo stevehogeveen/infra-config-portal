@@ -1,6 +1,6 @@
 # Build Verification / Product Certification
 
-- Checked at: `2026-06-10T15:39:22.887875+00:00`
+- Checked at: `2026-06-10T21:52:14.333870+00:00`
 - Status: `blocked`
 - Certification state: `test_fixture`
 - Source: `test_fixture`
@@ -35,18 +35,22 @@
 - `hard_fail` `protocol`: NetApp SSH is hard_fail. Next action: NetApp cluster management REST is not reachable.
 - `stale_config` `lab-ip-profile`: Active lab IP profile contains stale or mismatched target values. Next action: Update provider environment inputs to match `Runtime environment` or remove out-of-scope overrides before certification.
 - `operator_action_required` `protocol`: ESXi ISO media inventory is operator_action_required. Next action: Place the ESXi ISO under MEDIA_INVENTORY_DIRS or set ESXI_INSTALL_ISO/ESXI_ISO_PATH before ESXi boot verification.
+- `blocked_by_prior_stage` `protocol`: Cisco SSH/SCP is blocked_by_prior_stage. Next action: Complete or confirm Cisco console bootstrap, then set CISCO_MGMT_CONFIGURED=true before treating SSH/SCP as a port failure.
+- `blocked_by_prior_stage` `protocol`: ESXi API is blocked_by_prior_stage. Next action: Install/configure ESXi management at 192.168.1.203, then set ESXI_CONFIGURED=true before API certification.
+- `blocked_by_prior_stage` `protocol`: ESXi SSH is blocked_by_prior_stage. Next action: Install/configure ESXi management and enable/confirm SSH before ESXi SSH certification.
+- `not_configured_yet` `credential`: ilo credential compatibility needs attention. Next action: Set ILO_TEST_PASSWORD in .env.local.real-lab when this provider stage is ready.
+- `not_configured_yet` `credential`: cisco credential compatibility needs attention. Next action: Set CISCO_TEST_PASSWORD in .env.local.real-lab when this provider stage is ready.
+- `not_configured_yet` `credential`: cisco_enable credential compatibility needs attention. Next action: Set CISCO_ENABLE_PASSWORD or ANSIBLE_CISCO_ENABLE_PASSWORD in .env.local.real-lab when this provider stage is ready.
+- `not_configured_yet` `credential`: esxi credential compatibility needs attention. Next action: Set ESXI_TEST_PASSWORD in .env.local.real-lab when this provider stage is ready.
 - `warning` `protocol`: iLO Redfish is warning. Next action: Review iLO Redfish readiness.
 - `warning` `protocol`: iLO XML fallback is warning. Next action: Review iLO XML fallback readiness.
-- `warning` `protocol`: Cisco SSH/SCP is warning. Next action: Review Cisco SSH/SCP readiness.
-- `warning` `protocol`: ESXi API is warning. Next action: Review ESXi API readiness.
-- `warning` `protocol`: ESXi SSH is warning. Next action: Review ESXi SSH readiness.
 
 ## Credential Compatibility
 
-- `passed` `ILO_TEST_PASSWORD`: configured; values redacted
-- `passed` `CISCO_TEST_PASSWORD`: configured; values redacted
-- `passed` `CISCO_ENABLE_PASSWORD or ANSIBLE_CISCO_ENABLE_PASSWORD`: configured; values redacted
-- `passed` `ESXI_TEST_PASSWORD`: configured; values redacted
+- `not_configured_yet` `ILO_TEST_PASSWORD`: not configured; values redacted
+- `not_configured_yet` `CISCO_TEST_PASSWORD`: not configured; values redacted
+- `not_configured_yet` `CISCO_ENABLE_PASSWORD or ANSIBLE_CISCO_ENABLE_PASSWORD`: not configured; values redacted
+- `not_configured_yet` `ESXI_TEST_PASSWORD`: not configured; values redacted
 
 ## MTU Consistency
 
@@ -60,18 +64,18 @@
 - Configured: `False`
 - Source: `live_verification`
 - Manual env flag required: `False`
-- Discovered console port: `/dev/serial/by-id/usb-Microchip_Technology_Inc._MCP2221_USB-I2C_UART_Combo-if00`
+- Discovered console port: `/dev/ttyS20`
 - Console baud: `none`
-- Console confidence: `high`
+- Console confidence: `medium`
 
 ## Protocol Readiness
 
 - `warning` `iLO Redfish`: Review iLO Redfish readiness.
 - `warning` `iLO XML fallback`: Review iLO XML fallback readiness.
 - `passed` `Cisco console`: Cisco console discovery and prompt detection passed.
-- `warning` `Cisco SSH/SCP`: Review Cisco SSH/SCP readiness.
-- `warning` `ESXi API`: Review ESXi API readiness.
-- `warning` `ESXi SSH`: Review ESXi SSH readiness.
+- `blocked_by_prior_stage` `Cisco SSH/SCP`: Complete or confirm Cisco console bootstrap, then set CISCO_MGMT_CONFIGURED=true before treating SSH/SCP as a port failure.
+- `blocked_by_prior_stage` `ESXi API`: Install/configure ESXi management at 192.168.1.203, then set ESXI_CONFIGURED=true before API certification.
+- `blocked_by_prior_stage` `ESXi SSH`: Install/configure ESXi management and enable/confirm SSH before ESXi SSH certification.
 - `operator_action_required` `ESXi ISO media inventory`: Place the ESXi ISO under MEDIA_INVENTORY_DIRS or set ESXI_INSTALL_ISO/ESXI_ISO_PATH before ESXi boot verification.
 - `hard_fail` `NetApp REST`: NetApp cluster management REST is not reachable.
 - `hard_fail` `NetApp SSH`: NetApp cluster management REST is not reachable.

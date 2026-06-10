@@ -363,8 +363,9 @@ def _section_state(
         provider = providers.get("ilo-redfish")
         discovery = provider.discovery if provider and provider.discovery else {}
         config = provider.configuration if provider else {}
+        provider_status = provider.status if provider else "not_loaded"
         current = [
-            _item("Status", provider.status if provider else "not_loaded"),
+            _item("Status", provider_status),
             _item("Host configured", _presence(config.get("host_configured"))),
             _item("Username configured", _presence(config.get("username_configured"))),
             _item("Password configured", _presence(config.get("password_configured"))),
@@ -372,6 +373,21 @@ def _section_state(
             _firmware_item("iLO firmware", firmware_components, "hpe_ilo_firmware"),
             _firmware_item("BIOS", firmware_components, "hpe_bios_version"),
         ]
+        if provider and provider_status in {"blocked", "failed", "unavailable"}:
+            current.extend(
+                [
+                    _item(
+                        "Firmware live check",
+                        provider.message or "iLO inventory did not complete.",
+                        "blocked",
+                    ),
+                    _item(
+                        "Firmware next action",
+                        (provider.blockers or ["Refresh iLO reachability before firmware inventory."])[0],
+                        "blocked",
+                    ),
+                ]
+            )
         desired = [
             _item("iLO IP", known["ilo"]),
             _item("Inventory", "authenticated inventory available before apply paths"),
@@ -562,7 +578,7 @@ def _control_lab_profile() -> dict[str, Any]:
             "LAB_ALLOW_FIRMWARE_UPDATES": settings.lab_allow_firmware_updates,
             "LAB_ALLOW_FACTORY_RESET": settings.lab_allow_factory_reset,
         },
-        "edit_profile_path": "/lab-profiles",
+        "edit_profile_path": "/lab-setup",
         "env_update_command": active_lab_profile_runtime_env_command(),
         "stale_or_invalid_values": [
             str(item.get("recommended_action") or item)

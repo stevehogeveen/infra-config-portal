@@ -125,6 +125,7 @@ from app.services.control_actions import (
 )
 from app.services.control_access import (
     ControlAccessConfigNotFoundError,
+    ControlAccessConfigValidationError,
     update_control_access_config,
 )
 from app.services.ilo_baseline import (
@@ -525,6 +526,8 @@ def update_control_access_route(
         return update_control_access_config(section_id, payload.model_dump())
     except ControlAccessConfigNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Control access section not found") from exc
+    except ControlAccessConfigValidationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.post("/control/actions/{action_id}/plan", response_model=ControlActionPlanRead)

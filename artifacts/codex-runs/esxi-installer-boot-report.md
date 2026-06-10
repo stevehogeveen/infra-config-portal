@@ -2,7 +2,7 @@
 
 ## Summary
 
-- checked_at: 2026-06-07T13:31:03.142574+00:00
+- checked_at: 2026-06-10T18:46:23.843310+00:00
 - status: installed_esxi
 - message: Installed ESXi is running and no installer boot override is queued.
 - report: artifacts/codex-runs/esxi-installer-boot-report.md
@@ -21,7 +21,7 @@
 ```json
 {
   "blockers": [],
-  "checked_at": "2026-06-07T13:31:03.142574+00:00",
+  "checked_at": "2026-06-10T18:46:23.843310+00:00",
   "installer_detection": {
     "evidence": {
       "boot": {

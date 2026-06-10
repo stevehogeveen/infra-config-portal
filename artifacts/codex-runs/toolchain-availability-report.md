@@ -1,6 +1,6 @@
 # Toolchain Availability Report
 
-- Checked at: `2026-06-10T15:39:22.897319+00:00`
+- Checked at: `2026-06-10T21:52:14.343105+00:00`
 - Status: `warning`
 - Provider mode: `mock`
 - Next safe action: Use available tools only through staged readiness, preview, approval, and audit gates.

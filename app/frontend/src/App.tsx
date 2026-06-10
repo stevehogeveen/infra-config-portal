@@ -26,7 +26,7 @@ import {
   X,
   XCircle
 } from "lucide-react";
-import { createContext, FormEvent, ReactNode, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, FormEvent, ReactNode, SetStateAction, useContext, useEffect, useMemo, useState } from "react";
 import { Link, Navigate, NavLink, Route as RouterRoute, Routes, useLocation, useNavigate, useParams } from "react-router-dom";
 
 import { api } from "./api";
@@ -338,6 +338,21 @@ type BuildOverview = {
   mode: string;
 };
 
+type HardwareInventoryRow = {
+  id: string;
+  equipment: string;
+  type: string;
+  role: string;
+  osFirmware: string;
+  access: string;
+  target: string;
+  usernameField: string;
+  status: string;
+  lastChecked: string | null;
+  actions: string[];
+  evidence: string[];
+};
+
 type LabAddressScalarKey = Exclude<keyof LabAddressPlan, "netapp_nfs_lifs" | "netapp_iscsi_lifs">;
 type LabAddressInputKey = Exclude<LabAddressScalarKey, "subnet">;
 type LabGlobalSettingsFormState = {
@@ -350,6 +365,12 @@ type LabGlobalSettingsFormState = {
   vlanId: string;
   mtu: string;
   vcenterEnabled: boolean;
+  storageProtocol: string;
+  disableIpv6: boolean;
+  blockLegacyProtocols: boolean;
+  enableSnmp: boolean;
+  enableNtp: boolean;
+  enableDns: boolean;
 };
 
 type LabProfileFormState = {
@@ -361,6 +382,22 @@ type LabProfileFormState = {
   netappNfsLifs: string;
   netappIscsiLifs: string;
 };
+
+type GlobalConfigEditState = Pick<
+  LabGlobalSettingsFormState,
+  | "domainName"
+  | "dnsServers"
+  | "ntpServers"
+  | "timezone"
+  | "vlanId"
+  | "mtu"
+  | "storageProtocol"
+  | "disableIpv6"
+  | "blockLegacyProtocols"
+  | "enableSnmp"
+  | "enableNtp"
+  | "enableDns"
+>;
 
 const labSubnetField: { key: "subnet"; label: string } = { key: "subnet", label: "Subnet CIDR" };
 
@@ -389,7 +426,7 @@ const labAddressFields: Array<{ key: LabAddressScalarKey; label: string }> = [
 
 const defaultLabSubnet = "192.168.1.0/24";
 const netappDisabledForSubnetReason =
-  "NetApp and vCenter are outside the normal scope for compact lab profiles. Use a /24 high-address profile, or manually enable them with custom in-subnet addresses.";
+  "NetApp and vCenter are outside the normal scope for compact lab setups. Use a /24 high-address setup, or manually enable them with custom in-subnet addresses.";
 const labBuilderCoreOffsets: Partial<Record<LabAddressInputKey, number>> = {
   ilo: 201,
   server_embedded_nic: 202,
@@ -423,7 +460,7 @@ const queueSectionMeta: Array<Omit<QueueSection, "items">> = [
   {
     id: "approved_ready_to_plan",
     title: "Approved Ready To Plan",
-    empty: "No approved requests are waiting for a dry-run plan."
+    empty: "No approved requests are waiting for a preview plan."
   },
   {
     id: "planned_ready_to_execute",
@@ -636,6 +673,7 @@ function App() {
             <RouterRoute path="/" element={<Navigate to="/dashboard" replace />} />
             <RouterRoute path="/dashboard" element={<Dashboard />} />
             <RouterRoute path="/lab-setup" element={<LabSetupPage />} />
+            <RouterRoute path="/hardware" element={<ProviderStatusPage />} />
             <RouterRoute path="/run-center" element={<RunCenter />} />
             <RouterRoute path="/control-center" element={<ControlCenterPage />} />
             <RouterRoute path="/firmware" element={<FirmwarePage />} />
@@ -675,7 +713,7 @@ function App() {
             <RouterRoute path="/audit-events" element={<AuditEvents />} />
             <RouterRoute path="/artifacts" element={<Navigate to="/validation-reports?section=evidence" replace />} />
             <RouterRoute path="/media" element={<MediaInventoryPage />} />
-            <RouterRoute path="/providers" element={<Navigate to="/lab-setup" replace />} />
+            <RouterRoute path="/providers" element={<Navigate to="/hardware" replace />} />
           </Routes>
         </AppShell>
       </ReportIssuesContext.Provider>
@@ -700,6 +738,7 @@ function AppShell({
   labProfileState: LabProfileList | null;
 }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [configDrawerOpen, setConfigDrawerOpen] = useState(false);
   const location = useLocation();
 
   useEffect(() => {
@@ -728,10 +767,17 @@ function AppShell({
         </div>
         {health?.dev_test_banner && <DevTestBanner message={health.dev_test_banner} />}
         <div className="operator-mode-bar">
-          <ModeToggle />
+          <div className="shell-action-row">
+            <button className="primary" onClick={() => setConfigDrawerOpen(true)} type="button">
+              <Pencil size={16} />
+              Edit Config
+            </button>
+            <ModeToggle />
+          </div>
         </div>
         {children}
       </main>
+      {configDrawerOpen && <ActiveLabConfigDrawer onClose={() => setConfigDrawerOpen(false)} />}
     </div>
   );
 }
@@ -822,24 +868,25 @@ function SidebarNav({
       <nav>
         <NavItem to="/dashboard" icon={<Gauge size={18} />} label="Dashboard" issueBadge={pageBadges.dashboard} />
         <NavItem to="/lab-setup" icon={<Layers size={18} />} label="Lab Setup" />
+        <NavItem to="/hardware" icon={<Activity size={18} />} label="Hardware" />
         <NavItem to="/control-center" icon={<Wrench size={18} />} label="Control Center" issueBadge={pageBadges["control-center"]} />
         <NavItem to="/firmware" icon={<ShieldCheck size={18} />} label="Firmware Upgrades" issueBadge={pageBadges.firmware} />
         <NavItem to="/validation-reports" icon={<FileText size={18} />} label="Validation & Reports" issueBadge={pageBadges.reports ?? pageBadges.verification} />
-        <NavItem to="/settings" icon={<Settings size={18} />} label="Settings / Lab Profile" issueBadge={pageBadges.settings} />
+        <NavItem to="/settings" icon={<Settings size={18} />} label="Settings" issueBadge={pageBadges.settings} />
       </nav>
       <div className="sidebar-profile">
         <div className="sidebar-profile-head">
           <span>{modeLabel}</span>
           <StatusBadge status={modeStatus} />
         </div>
-        <strong>{activeProfile?.name ?? (labProfileLoading ? "Loading profile" : "No active profile")}</strong>
+        <strong>{activeProfile?.name ?? (labProfileLoading ? "Loading setup" : "No active setup")}</strong>
         <dl>
           <div>
             <dt>Subnet</dt>
             <dd>{displayAddress(activeProfile?.address_plan.subnet)}</dd>
           </div>
           <div>
-            <dt>Profile</dt>
+            <dt>Source</dt>
             <dd>{activeProfile ? labelize(activeProfile.source) : "Unavailable"}</dd>
           </div>
         </dl>
@@ -873,17 +920,14 @@ function NavItem({
 
 function IssueNavBadge({ badge }: { badge?: ReportPageBadge }) {
   if (!badge) return null;
+  if (badge.status === "success" || badge.status === "warning") return null;
   const className = `issue-nav-badge issue-tone-${badge.status}`;
   const label =
     badge.status === "critical"
       ? `Blocked ${badge.critical || badge.count}`
-      : badge.status === "warning"
-        ? `Review ${badge.warning || badge.count}`
-        : badge.status === "success"
-          ? "Ready"
-          : badge.status === "not_configured_yet"
-            ? "Not configured"
-            : badge.label;
+      : badge.status === "not_configured_yet"
+        ? "Not configured"
+        : badge.label;
   return <span className={className}>{label}</span>;
 }
 
@@ -911,17 +955,17 @@ function ActiveLabSelector({
   const canApplyRuntimeIps = Boolean(activeProfile && activeProfile.source === "saved" && mismatchCount > 0);
 
   return (
-    <section className="active-lab-strip" aria-label="Active lab profile">
+    <section className="active-lab-strip" aria-label="Active lab setup">
       <div className="active-lab-main">
         <Layers size={18} />
         <div>
-          <span>Active Lab</span>
+          <span>Active Lab Setup</span>
           <strong>{activeProfile?.name ?? (loading ? "Loading" : "Unavailable")}</strong>
         </div>
       </div>
       <div className="active-lab-controls">
         <select
-          aria-label="Active lab profile"
+          aria-label="Active lab setup"
           disabled={loading || !state}
           onChange={(event) => onActivate(event.target.value)}
           value={activeProfile?.id ?? "runtime"}
@@ -932,10 +976,6 @@ function ActiveLabSelector({
             </option>
           ))}
         </select>
-        <Link className="button-link" to="/lab-profiles">
-          <Pencil size={16} />
-          Manage
-        </Link>
         {canApplyRuntimeIps && (
           <button
             className="primary"
@@ -964,6 +1004,283 @@ function ActiveLabSelector({
   );
 }
 
+function ActiveLabConfigDrawer({ onClose }: { onClose: () => void }) {
+  const { activeProfile, loading, onActivate, onReload } = useLabProfileContext();
+  const [form, setForm] = useState<LabProfileFormState>(() =>
+    activeProfile ? labProfileFormFrom(activeProfile) : blankLabProfileForm()
+  );
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+  const profileKey = `${activeProfile?.id ?? "none"}:${activeProfile?.version ?? "0"}`;
+  const subnetPrefix = parseSubnetPrefix(form.globalSettings.subnetPrefix);
+  const netappEnabled = labNetAppSupported(subnetPrefix);
+
+  useEffect(() => {
+    setForm(activeProfile ? labProfileFormFrom(activeProfile) : blankLabProfileForm());
+    setMessage("");
+    setError("");
+  }, [profileKey, activeProfile]);
+
+  function updateGlobal<K extends keyof LabGlobalSettingsFormState>(key: K, value: LabGlobalSettingsFormState[K]) {
+    setForm((current) => ({ ...current, globalSettings: { ...current.globalSettings, [key]: value } }));
+  }
+
+  function updateAddress(key: LabAddressScalarKey, value: string) {
+    if (key === "subnet") {
+      setForm((current) => applyLabSubnetChoice(current, value, current.globalSettings.subnetPrefix));
+      return;
+    }
+    setForm((current) => ({
+      ...current,
+      addresses: {
+        ...current.addresses,
+        [key]: value
+      }
+    }));
+  }
+
+  function updatePrefix(value: string) {
+    setForm((current) => applyLabSubnetChoice(current, current.addresses.subnet || defaultLabSubnet, value));
+  }
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    setBusy(true);
+    setMessage("");
+    setError("");
+    try {
+      const payload = labProfilePayload(form);
+      if (activeProfile?.source === "saved") {
+        await api.updateLabProfile(activeProfile.id, payload);
+      } else {
+        const saved = await api.createLabProfile({
+          ...payload,
+          name: payload.name || "Saved lab setup"
+        });
+        await onActivate(saved.id);
+      }
+      await onReload();
+      setMessage("Active lab setup saved.");
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="config-drawer-layer" role="presentation">
+      <button className="config-drawer-scrim" aria-label="Close config editor" onClick={onClose} type="button" />
+      <aside className="config-drawer" aria-label="Edit active lab setup">
+        <div className="config-drawer-head">
+          <div>
+            <p className="eyebrow">Active Lab Setup</p>
+            <h2>Edit Config</h2>
+          </div>
+          <button className="icon-button" aria-label="Close config editor" onClick={onClose} type="button">
+            <X size={18} />
+          </button>
+        </div>
+        <form className="config-drawer-form" onSubmit={submit}>
+          <section>
+            <h3>Setup</h3>
+            <div className="config-drawer-grid">
+              <Field label="Name">
+                <input
+                  disabled={loading || busy}
+                  onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
+                  value={form.name}
+                />
+              </Field>
+              <Field label="Subnet">
+                <input
+                  disabled={loading || busy}
+                  onChange={(event) => updateAddress("subnet", event.target.value)}
+                  value={form.addresses.subnet}
+                />
+              </Field>
+              <Field label="Subnet size">
+                <select
+                  disabled={loading || busy}
+                  onChange={(event) => updatePrefix(event.target.value)}
+                  value={form.globalSettings.subnetPrefix}
+                >
+                  {defaultLabSubnetOptions().map((option) => (
+                    <option key={option.prefix} value={option.prefix}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="Gateway">
+                <input
+                  disabled={loading || busy}
+                  onChange={(event) => updateGlobal("gateway", event.target.value)}
+                  value={form.globalSettings.gateway}
+                />
+              </Field>
+            </div>
+          </section>
+          <section>
+            <h3>Network Defaults</h3>
+            <div className="config-drawer-grid">
+              <Field label="DNS">
+                <input
+                  disabled={loading || busy}
+                  onChange={(event) => updateGlobal("dnsServers", event.target.value)}
+                  value={form.globalSettings.dnsServers}
+                />
+              </Field>
+              <Field label="NTP">
+                <input
+                  disabled={loading || busy}
+                  onChange={(event) => updateGlobal("ntpServers", event.target.value)}
+                  value={form.globalSettings.ntpServers}
+                />
+              </Field>
+              <Field label="Domain">
+                <input
+                  disabled={loading || busy}
+                  onChange={(event) => updateGlobal("domainName", event.target.value)}
+                  value={form.globalSettings.domainName}
+                />
+              </Field>
+              <Field label="VLAN">
+                <input
+                  disabled={loading || busy}
+                  onChange={(event) => updateGlobal("vlanId", event.target.value)}
+                  value={form.globalSettings.vlanId}
+                />
+              </Field>
+              <Field label="MTU">
+                <input
+                  disabled={loading || busy}
+                  inputMode="numeric"
+                  onChange={(event) => updateGlobal("mtu", event.target.value)}
+                  value={form.globalSettings.mtu}
+                />
+              </Field>
+              <Field label="Storage protocol">
+                <select
+                  disabled={loading || busy || !netappEnabled}
+                  onChange={(event) => updateGlobal("storageProtocol", event.target.value)}
+                  value={form.globalSettings.storageProtocol}
+                >
+                  <option value="nfs">NFS</option>
+                  <option value="iscsi">iSCSI</option>
+                  <option value="none">Local only</option>
+                </select>
+              </Field>
+            </div>
+            <div className="config-toggle-grid">
+              <label className="checkbox-line">
+                <input
+                  checked={form.globalSettings.enableDns}
+                  disabled={loading || busy}
+                  onChange={(event) => updateGlobal("enableDns", event.target.checked)}
+                  type="checkbox"
+                />
+                <span>DNS</span>
+              </label>
+              <label className="checkbox-line">
+                <input
+                  checked={form.globalSettings.enableNtp}
+                  disabled={loading || busy}
+                  onChange={(event) => updateGlobal("enableNtp", event.target.checked)}
+                  type="checkbox"
+                />
+                <span>NTP</span>
+              </label>
+              <label className="checkbox-line">
+                <input
+                  checked={form.globalSettings.enableSnmp}
+                  disabled={loading || busy}
+                  onChange={(event) => updateGlobal("enableSnmp", event.target.checked)}
+                  type="checkbox"
+                />
+                <span>SNMP</span>
+              </label>
+              <label className="checkbox-line">
+                <input
+                  checked={form.globalSettings.disableIpv6}
+                  disabled={loading || busy}
+                  onChange={(event) => updateGlobal("disableIpv6", event.target.checked)}
+                  type="checkbox"
+                />
+                <span>Disable IPv6</span>
+              </label>
+              <label className="checkbox-line">
+                <input
+                  checked={form.globalSettings.blockLegacyProtocols}
+                  disabled={loading || busy}
+                  onChange={(event) => updateGlobal("blockLegacyProtocols", event.target.checked)}
+                  type="checkbox"
+                />
+                <span>Block legacy protocols</span>
+              </label>
+            </div>
+          </section>
+          <section>
+            <h3>Devices</h3>
+            <div className="config-drawer-grid">
+              {labCoreAddressFields.map((field) => (
+                <Field key={`drawer-${field.key}`} label={field.label}>
+                  <input
+                    disabled={loading || busy}
+                    onChange={(event) => updateAddress(field.key, event.target.value)}
+                    value={form.addresses[field.key]}
+                  />
+                </Field>
+              ))}
+            </div>
+          </section>
+          {netappEnabled && (
+            <section>
+              <h3>NetApp</h3>
+              <div className="config-drawer-grid">
+                {labNetAppAddressFields.map((field) => (
+                  <Field key={`drawer-${field.key}`} label={field.label}>
+                    <input
+                      disabled={loading || busy}
+                      onChange={(event) => updateAddress(field.key, event.target.value)}
+                      value={form.addresses[field.key]}
+                    />
+                  </Field>
+                ))}
+                <Field label="NFS LIFs">
+                  <input
+                    disabled={loading || busy}
+                    onChange={(event) => setForm((current) => ({ ...current, netappNfsLifs: event.target.value }))}
+                    value={form.netappNfsLifs}
+                  />
+                </Field>
+                <Field label="iSCSI LIFs">
+                  <input
+                    disabled={loading || busy}
+                    onChange={(event) => setForm((current) => ({ ...current, netappIscsiLifs: event.target.value }))}
+                    value={form.netappIscsiLifs}
+                  />
+                </Field>
+              </div>
+            </section>
+          )}
+          {(message || error) && <p className={error ? "form-error" : "active-lab-success"}>{error || message}</p>}
+          <div className="config-drawer-actions">
+            <button disabled={busy || loading} type="submit" className="primary">
+              <Save size={16} />
+              {busy ? "Saving" : activeProfile?.source === "saved" ? "Save Config" : "Save As Lab Setup"}
+            </button>
+            <button disabled={busy} onClick={onClose} type="button">
+              Close
+            </button>
+          </div>
+        </form>
+      </aside>
+    </div>
+  );
+}
+
 function LabProfileSummaryCard({
   context,
   profile
@@ -979,9 +1296,9 @@ function LabProfileSummaryCard({
     <section className="status-summary-card profile-summary-card">
       <div className="status-summary-head">
         <div>
-          <span className="summary-kicker">Active profile</span>
+          <span className="summary-kicker">Active Lab Setup</span>
           <h2>{profile.name}</h2>
-          <p>{profile.description || "Selected lab profile drives addresses shown on setup and control pages."}</p>
+          <p>{profile.description || "Saved lab setup values drive addresses shown on setup and control pages."}</p>
         </div>
         <StatusBadge status={profile.source === "runtime_env" ? "runtime" : "current"} />
       </div>
@@ -1056,13 +1373,13 @@ function ProfileMismatchWarning({ state }: { state: LabProfileList | null }) {
   }
 
   return (
-    <section className="profile-mismatch-warning" aria-label="Profile mismatch warning">
+    <section className="profile-mismatch-warning" aria-label="Setup mismatch warning">
       <AlertTriangle size={18} />
       <div>
-        <strong>Profile mismatch: live runtime uses different values</strong>
+        <strong>Setup mismatch: live runtime uses different values</strong>
         <p>
-          Normal profile switching does not require editing `.env`. For live checks only, align the runtime
-          profile with the selected lab profile from Settings / Lab Profile, then restart the backend.
+          Normal setup switching does not require editing `.env`. For live checks only, align the runtime
+          values with the selected lab setup from Lab Setup, then restart the backend.
         </p>
         <ul>
           {mismatches.slice(0, 4).map((item) => (
@@ -1073,9 +1390,9 @@ function ProfileMismatchWarning({ state }: { state: LabProfileList | null }) {
             </li>
           ))}
         </ul>
-        <Link className="button-link" to="/settings">
-          <Settings size={16} />
-          Open Settings / Lab Profile
+        <Link className="button-link" to="/lab-setup">
+          <Layers size={16} />
+          Open Lab Setup
         </Link>
       </div>
     </section>
@@ -1400,6 +1717,16 @@ function LabSetupPage() {
   const location = useLocation();
   const navigate = useNavigate();
   const { reportIssues } = useReportIssues();
+  const {
+    error: labProfileError,
+    loading: labProfileLoading,
+    onActivate: activateLabProfile,
+    onApplyRuntimeEnv: applyRuntimeEnv,
+    onReload: reloadLabProfiles,
+    runtimeApplyLoading,
+    runtimeApplyMessage,
+    state: labProfileState
+  } = useLabProfileContext();
   const { isAdvancedMode } = useUiMode();
   const [stages, setStages] = useState<WorkflowStage[]>([]);
   const [selectedStageId, setSelectedStageId] = useState("");
@@ -1439,6 +1766,10 @@ function LabSetupPage() {
     navigate(`/lab-setup?stage=${encodeURIComponent(stageId)}`);
   }
 
+  async function refreshSetup() {
+    await Promise.all([load(), reloadLabProfiles()]);
+  }
+
   async function runWorkflowAction(action: WorkflowAction) {
     setError("");
     setRunningWorkflowActionId(action.action_id);
@@ -1466,8 +1797,8 @@ function LabSetupPage() {
 
   return (
     <Page
-      description="A compact setup checklist with one next action per lab stage."
-      primaryAction={{ icon: <RefreshCw size={16} />, label: "Refresh", onClick: load, disabled: loading }}
+      description="Set the active lab name, IP plan, and shared defaults before running registry checks."
+      primaryAction={{ icon: <RefreshCw size={16} />, label: "Refresh", onClick: refreshSetup, disabled: loading || labProfileLoading }}
       title="Lab Setup"
       actions={
         isAdvancedMode ? (
@@ -1489,6 +1820,24 @@ function LabSetupPage() {
         )
       }
     >
+      <ActiveLabSelector
+        error={labProfileError}
+        loading={labProfileLoading}
+        onActivate={activateLabProfile}
+        onApplyRuntimeEnv={applyRuntimeEnv}
+        runtimeApplyLoading={runtimeApplyLoading}
+        runtimeApplyMessage={runtimeApplyMessage}
+        state={labProfileState}
+      />
+      <ProfileMismatchWarning state={labProfileState} />
+      <ActiveLabSetupOverview state={labProfileState} />
+      <section className="panel lab-setup-workflow-section">
+        <div className="readiness-head">
+          <div>
+            <PanelTitle icon={<Workflow size={18} />} title="Readiness Workflow" />
+            <p className="muted">Registry-backed checks remain below the saved lab setup so live runs use the selected profile.</p>
+          </div>
+        </div>
       <Feedback loading={loading && !stages.length} error={error} />
       {stages.length ? (
         <>
@@ -1568,11 +1917,65 @@ function LabSetupPage() {
           )}
         </>
       ) : (
-        <section className="panel">
+        <section>
           <EmptyState title="No workflow registry data" detail="Refresh after the backend registry endpoint is available." />
         </section>
       )}
+      </section>
     </Page>
+  );
+}
+
+function ActiveLabSetupOverview({ state }: { state: LabProfileList | null }) {
+  const active = state?.active_profile ?? null;
+  const address = active?.resolved_address_plan ?? active?.address_plan ?? blankLabAddressPlan();
+  const global = active?.global_settings;
+  const features = active?.features;
+  if (!active) {
+    return <EmptyState title="No active lab setup" detail="Choose an active lab setup before running device checks." />;
+  }
+  const rows: WorkflowSummaryItem[] = [
+    { label: "Subnet", value: displayAddress(address.subnet) },
+    { label: "Gateway", value: displayAddress(global?.gateway) },
+    { label: "DNS", value: global?.dns_servers.join(", ") || "Not set" },
+    { label: "NTP", value: global?.ntp_servers.join(", ") || "Not set" },
+    { label: "VLAN", value: global?.vlan_id || "Not set" },
+    { label: "MTU", value: global?.mtu ? String(global.mtu) : "Not set" },
+    { label: "Storage", value: features?.storage_protocol?.toUpperCase() || "Not set" },
+    { label: "IPv6", value: features?.disable_ipv6 ? "Disabled" : "Allowed" },
+    { label: "Legacy Protocols", value: features?.block_legacy_protocols ? "Blocked" : "Allowed" },
+    { label: "iLO", value: displayAddress(address.ilo) },
+    { label: "Server NIC", value: displayAddress(address.server_embedded_nic) },
+    { label: "ESXi", value: displayAddress(address.esxi_management) },
+    { label: "Cisco", value: displayAddress(address.cisco_management) },
+    { label: "Control Host", value: displayAddress(address.ansible_control_host) },
+    ...(features?.netapp_enabled
+      ? [
+          { label: "NetApp Cluster", value: displayAddress(address.netapp_cluster_mgmt) },
+          { label: "NetApp Node A", value: displayAddress(address.netapp_node_a_mgmt) },
+          { label: "NetApp Node B", value: displayAddress(address.netapp_node_b_mgmt) },
+          { label: "NetApp SVM", value: displayAddress(address.netapp_svm_mgmt) }
+        ]
+      : [])
+  ];
+  return (
+    <section className="panel lab-setup-overview">
+      <div className="readiness-head">
+        <div>
+          <PanelTitle icon={<Layers size={18} />} title="Active Lab Setup" />
+          <p className="muted">{active.description || "Saved values drive device defaults across the app."}</p>
+        </div>
+        <StatusBadge status={active.source === "saved" ? "current" : "not_checked"} />
+      </div>
+      <div className="config-compact-table lab-setup-config-table">
+        {rows.map((row) => (
+          <div key={`setup-overview-${row.label}`}>
+            <span>{row.label}</span>
+            <strong>{row.value}</strong>
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -2169,6 +2572,7 @@ function RunCenter() {
 }
 
 function HumanStatusPill({ status }: { status: string }) {
+  if (isLowSignalStatusBubble(status)) return null;
   return <span className={`status-pillow ${statusTone(status)}`}>{displayStatusLabel(status)}</span>;
 }
 
@@ -2894,8 +3298,8 @@ function RunTraceSummary({
           <dd>{trace.finished_at ? formatDateTime(trace.finished_at) : "Not checked"}</dd>
         </div>
         <div>
-          <dt>Not Mock</dt>
-          <dd>{latestRun ? (latestRun.not_mock ? "true" : "false") : trace.source_type === "live_probe" ? "true" : "not checked"}</dd>
+          <dt>Real Source</dt>
+          <dd>{latestRun ? (latestRun.not_mock ? "yes" : "test mode") : trace.source_type === "live_probe" ? "yes" : "not checked"}</dd>
         </div>
         {latestRun && (
           <div>
@@ -3164,7 +3568,7 @@ function buildRunChoices({
       title: "VM Request Lifecycle",
       category: "Portal workflow",
       status: `${totalWork} active`,
-      description: "Request approval, dry-run plan, audit events, and reports.",
+      description: "Request approval, preview plan, audit events, and reports.",
       blockers: [],
       primaryLabel: "Open Work Queue",
       onPrimary: onOpenQueue,
@@ -3414,7 +3818,7 @@ function RunCenterSelectedWork({
             {selectedRun.status === "completed" ? <CheckCircle2 size={18} /> : <AlertTriangle size={18} />}
             <div>
               <strong>{review?.status ?? "review"}</strong>
-              <p>{review?.message ?? "Review the dry-run plan before execution."}</p>
+              <p>{review?.message ?? "Review the preview plan before execution."}</p>
             </div>
           </div>
           <StageList events={stageEvents} />
@@ -4522,7 +4926,7 @@ function NetAppConsoleReadinessPanel({
         <p>No serial port is opened, no console command is sent, and these observations are not sent to NetApp.</p>
       </div>
       <div className="provider-fact-grid compact">
-        <ProviderFact label="Stored Locally" value={observations?.mock_only ? "Test fixture store" : "Local evidence"} />
+        <ProviderFact label="Stored Locally" value={observations?.mock_only ? "Test mode store" : "Local evidence"} />
         <ProviderFact label="Sent To NetApp" value={observations?.sent_to_netapp ? "Yes" : "No"} />
         <ProviderFact label="Updated By" value={observations?.updated_by ?? "system"} />
         <ProviderFact label="Updated At" value={observations?.updated_at ? formatDateTime(observations.updated_at) : "-"} />
@@ -4689,7 +5093,7 @@ function NetAppProviderArtifactList({ artifacts }: { artifacts: NetAppProviderAr
             <ProviderFact label="Kind" value={artifact.kind} />
             <ProviderFact label="Generated" value={formatDateTime(artifact.generated_at)} />
             <ProviderFact label="Download" value={artifact.downloadable ? "Available" : "Unavailable"} />
-            <ProviderFact label="Source" value={artifact.mock_only ? "Test fixture" : "Historical evidence"} />
+            <ProviderFact label="Source" value={artifact.mock_only ? "Test mode" : "Historical evidence"} />
             <ProviderFact label="Redacted" value={artifact.redacted ? "true" : "false"} />
           </div>
           <div className="provider-callout">
@@ -5748,7 +6152,7 @@ function ProviderArtifactCard({ artifact }: { artifact: NetAppProviderArtifact }
         <ProviderFact label="Provider" value={artifact.provider_id} />
         <ProviderFact label="Kind" value={labelize(artifact.kind)} />
         <ProviderFact label="Generated" value={formatDateTime(artifact.generated_at)} />
-        <ProviderFact label="Source" value={artifact.mock_only ? "Test fixture" : "Historical evidence"} />
+        <ProviderFact label="Source" value={artifact.mock_only ? "Test mode" : "Historical evidence"} />
         <ProviderFact label="Redacted" value={artifact.redacted ? "true" : "false"} />
         <ProviderFact label="Downloadable" value={artifact.downloadable ? "true" : "false"} />
         <ProviderFact label="Source Endpoint" value={asString(artifact.metadata.source_endpoint) || "-"} />
@@ -5865,6 +6269,48 @@ function LabProfilesPage({
   onStateChange: (state: LabProfileList) => void;
   state: LabProfileList | null;
 }) {
+  async function activateProfile(profileId: string) {
+    onStateChange(await api.activateLabProfile(profileId));
+  }
+
+  return (
+    <Page
+      title="Saved Lab Setups"
+      actions={
+        <>
+          <button onClick={onReload} disabled={loading}>
+            <RefreshCw size={16} />
+            Refresh
+          </button>
+        </>
+      }
+    >
+      <LabProfileManager
+        error={error}
+        loading={loading}
+        onActivateProfile={activateProfile}
+        onReload={onReload}
+        state={state}
+      />
+    </Page>
+  );
+}
+
+function LabProfileManager({
+  error,
+  loading,
+  onActivateProfile,
+  onReload,
+  showMetrics = true,
+  state
+}: {
+  error: string;
+  loading: boolean;
+  onActivateProfile: (profileId: string) => Promise<void>;
+  onReload: () => Promise<void>;
+  showMetrics?: boolean;
+  state: LabProfileList | null;
+}) {
   const [selectedProfileId, setSelectedProfileId] = useState("");
   const [formInitialized, setFormInitialized] = useState(false);
   const [form, setForm] = useState<LabProfileFormState>(() => blankLabProfileForm());
@@ -5925,7 +6371,10 @@ function LabProfilesPage({
     setForm((current) => applyLabSubnetChoice(current, subnet, current.globalSettings.subnetPrefix));
   }
 
-  function updateGlobalSetting(key: keyof LabGlobalSettingsFormState, value: string) {
+  function updateGlobalSetting<K extends keyof LabGlobalSettingsFormState>(
+    key: K,
+    value: LabGlobalSettingsFormState[K]
+  ) {
     setForm((current) => ({
       ...current,
       globalSettings: {
@@ -5986,7 +6435,7 @@ function LabProfilesPage({
     setSaveError("");
     setBusyAction(`activate-${profileId}`);
     try {
-      onStateChange(await api.activateLabProfile(profileId));
+      await onActivateProfile(profileId);
     } catch (err) {
       setSaveError((err as Error).message);
     } finally {
@@ -5995,43 +6444,31 @@ function LabProfilesPage({
   }
 
   return (
-    <Page
-      title="Lab Profiles"
-      actions={
-        <>
-          <button onClick={onReload} disabled={loading}>
-            <RefreshCw size={16} />
-            Refresh
-          </button>
-          <button onClick={startNewProfile} type="button">
-            <Plus size={16} />
-            New Lab
-          </button>
-        </>
-      }
-    >
+    <>
       <Feedback loading={loading && !state} error={error} />
       {state && activeProfile && (
         <>
-          <section className="metric-grid lab-profile-metrics">
-            <Metric label="Saved Labs" value={state.profiles.length} icon={<Layers size={18} />} />
-            <Metric
-              label="Active Version"
-              value={activeProfile.version}
-              icon={<History size={18} />}
-            />
-            <Metric
-              label="Active History"
-              value={activeProfile.history.length}
-              icon={<ClipboardList size={18} />}
-            />
-            <Metric
-              label="Address Fields"
-              value={labAddressFields.length + 1}
-              icon={<Route size={18} />}
-            />
-            <Metric label="Subnet Sizes" value={subnetOptions.length} icon={<Route size={18} />} />
-          </section>
+          {showMetrics && (
+            <section className="metric-grid lab-profile-metrics">
+              <Metric label="Saved Labs" value={state.profiles.length} icon={<Layers size={18} />} />
+              <Metric
+                label="Active Version"
+                value={activeProfile.version}
+                icon={<History size={18} />}
+              />
+              <Metric
+                label="Active History"
+                value={activeProfile.history.length}
+                icon={<ClipboardList size={18} />}
+              />
+              <Metric
+                label="Address Fields"
+                value={labAddressFields.length + 1}
+                icon={<Route size={18} />}
+              />
+              <Metric label="Subnet Sizes" value={subnetOptions.length} icon={<Route size={18} />} />
+            </section>
+          )}
 
           <section className="panel active-lab-panel">
             <div className="readiness-head">
@@ -6064,6 +6501,12 @@ function LabProfilesPage({
           <div className="lab-profile-layout">
             <section className="panel">
               <PanelTitle icon={<Layers size={18} />} title="Saved Labs" />
+              <div className="action-row">
+                <button onClick={startNewProfile} type="button">
+                  <Plus size={16} />
+                  New Lab
+                </button>
+              </div>
               {state.profiles.length ? (
                 <div className="lab-profile-list">
                   {state.profiles.map((profile) => (
@@ -6098,7 +6541,7 @@ function LabProfilesPage({
                   ))}
                 </div>
               ) : (
-                <p className="muted">No saved lab profiles.</p>
+                <p className="muted">No saved lab setups.</p>
               )}
             </section>
 
@@ -6216,20 +6659,57 @@ function LabProfilesPage({
                         <input
                           checked={form.globalSettings.vcenterEnabled && netappSupported}
                           disabled={!netappSupported}
-                          onChange={(event) =>
-                            setForm({
-                              ...form,
-                              globalSettings: {
-                                ...form.globalSettings,
-                                vcenterEnabled: event.target.checked
-                              }
-                            })
-                          }
+                          onChange={(event) => updateGlobalSetting("vcenterEnabled", event.target.checked)}
                           type="checkbox"
                         />
                         <span>{netappSupported ? "Include vCenter readiness" : "Not in scope for compact profile"}</span>
                       </label>
                     </Field>
+                    <Field label="Storage Protocol">
+                      <select
+                        disabled={!netappSupported}
+                        onChange={(event) => updateGlobalSetting("storageProtocol", event.target.value)}
+                        value={form.globalSettings.storageProtocol}
+                      >
+                        <option value="nfs">NFS</option>
+                        <option value="iscsi">iSCSI</option>
+                        <option value="none">Local only</option>
+                      </select>
+                    </Field>
+                  </div>
+                  <div className="global-policy-grid">
+                    <label className="checkbox-line">
+                      <input
+                        checked={form.globalSettings.enableDns}
+                        onChange={(event) => updateGlobalSetting("enableDns", event.target.checked)}
+                        type="checkbox"
+                      />
+                      <span>DNS assigned globally</span>
+                    </label>
+                    <label className="checkbox-line">
+                      <input
+                        checked={form.globalSettings.enableNtp}
+                        onChange={(event) => updateGlobalSetting("enableNtp", event.target.checked)}
+                        type="checkbox"
+                      />
+                      <span>NTP assigned globally</span>
+                    </label>
+                    <label className="checkbox-line">
+                      <input
+                        checked={form.globalSettings.enableSnmp}
+                        onChange={(event) => updateGlobalSetting("enableSnmp", event.target.checked)}
+                        type="checkbox"
+                      />
+                      <span>SNMP assigned globally</span>
+                    </label>
+                    <label className="checkbox-line">
+                      <input
+                        checked={form.globalSettings.disableIpv6}
+                        onChange={(event) => updateGlobalSetting("disableIpv6", event.target.checked)}
+                        type="checkbox"
+                      />
+                      <span>Disable IPv6 globally</span>
+                    </label>
                   </div>
                 </section>
 
@@ -6354,7 +6834,7 @@ function LabProfilesPage({
           </section>
         </>
       )}
-    </Page>
+    </>
   );
 }
 
@@ -6415,10 +6895,11 @@ function LabAddressSummary({ profile }: { profile: LabProfile }) {
 
 function ControlCenterPage() {
   const { isAdvancedMode } = useUiMode();
-  const { activeContext, activeProfile } = useLabProfileContext();
+  const { activeContext, activeProfile, onReload: reloadLabProfiles } = useLabProfileContext();
+  const { reloadReportIssues } = useReportIssues();
   const [catalog, setCatalog] = useState<ControlActionCatalog | null>(null);
   const [workflowActions, setWorkflowActions] = useState<WorkflowAction[]>([]);
-  const [activeSectionId, setActiveSectionId] = useState<ControlCenterSectionId>("action-catalog");
+  const [activeSectionId, setActiveSectionId] = useState<ControlCenterSectionId>("cisco");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [busyAction, setBusyAction] = useState("");
@@ -6504,10 +6985,32 @@ function ControlCenterPage() {
       const result = await api.runWorkflowAction(action.action_id);
       setWorkflowActionRunResults((current) => ({ ...current, [action.action_id]: result }));
       await load();
+      await reloadReportIssues();
     } catch (err) {
       setError((err as Error).message);
     } finally {
       setRunningWorkflowActionId("");
+    }
+  }
+
+  async function saveGlobalConfig(values: GlobalConfigEditState) {
+    if (!activeProfile || activeProfile.source !== "saved") {
+      throw new Error("Save the active runtime values as a saved lab setup before editing global config here.");
+    }
+    setBusyAction("global-config");
+    setError("");
+    try {
+      const form = labProfileFormFrom(activeProfile);
+      form.globalSettings = {
+        ...form.globalSettings,
+        ...values
+      };
+      await api.updateLabProfile(activeProfile.id, labProfilePayload(form));
+      await reloadLabProfiles();
+      await load();
+      await reloadReportIssues();
+    } finally {
+      setBusyAction("");
     }
   }
 
@@ -6540,13 +7043,12 @@ function ControlCenterPage() {
   const commanderActions = actions.filter((action) => action.id.startsWith("commander."));
   const netappInScope = activeContext?.enabled_features.netapp_enabled ?? activeProfile?.features.netapp_enabled ?? true;
   const visibleSections: ControlCenterSectionId[] = [
-    "lab-profile",
     "cisco",
     "ilo",
     "raid",
     "esxi",
     ...(netappInScope || isAdvancedMode ? (["netapp"] as ControlCenterSectionId[]) : []),
-    "action-catalog"
+    ...(isAdvancedMode ? (["action-catalog"] as ControlCenterSectionId[]) : [])
   ];
   const activeRegistryStageId = workflowStageIdForControlSection(activeSectionId);
   const scopedWorkflowActions =
@@ -6608,10 +7110,10 @@ function ControlCenterPage() {
   return (
     <Page
       activeSection={activeSectionId}
-      description="Plan, copy, and inspect safe control actions without exposing every provider detail at once."
+      description="Operate each lab device from compact controls. Detailed reports and raw command metadata stay collapsed."
       issueArea="control-center"
       onSectionChange={(sectionId) => setActiveSectionId(sectionId as ControlCenterSectionId)}
-      primaryAction={{ icon: <Workflow size={16} />, label: "Guided View", to: "/run-center" }}
+      primaryAction={{ icon: <Activity size={16} />, label: "Hardware List", to: "/hardware" }}
       sections={controlSectionOptions}
       title="Control Center"
       actions={
@@ -6654,25 +7156,22 @@ function ControlCenterPage() {
 
           {activeSectionId !== "action-catalog" && selectedSection && (
             <StandardControlSectionLayout
+              accessError={accessError}
               activeProfile={activeProfile}
+              busyAccessSection={busyAccessSection}
               catalogProfile={catalog?.lab_profile ?? null}
               copyMessage={copyMessage}
               onCopyText={copyText}
               onRefresh={load}
               onRunWorkflowAction={runWorkflowAction}
+              onSaveGlobalConfig={saveGlobalConfig}
+              onSaveAccess={saveAccessConfig}
               runningActionId={runningWorkflowActionId}
+              savingGlobalConfig={busyAction === "global-config"}
               section={selectedSection}
               workflowActions={scopedWorkflowActions}
             >
               <>
-                {selectedSection.access_config && (
-                  <ControlAccessConfigTile
-                    busy={busyAccessSection === selectedSection.id}
-                    config={selectedSection.access_config}
-                    error={busyAccessSection === selectedSection.id ? "" : accessError}
-                    onSave={saveAccessConfig}
-                  />
-                )}
                 <ActionCatalogTable
                   actions={scopedWorkflowActions}
                   onCopy={copyWorkflowAction}
@@ -6724,7 +7223,7 @@ function ControlCenterPage() {
             </StandardControlSectionLayout>
           )}
 
-          {activeSectionId === "action-catalog" && (
+          {activeSectionId === "action-catalog" && isAdvancedMode && (
             <>
               <AdvancedDetails
                 className="section-details"
@@ -6773,33 +7272,46 @@ function ControlCenterPage() {
   );
 }
 
+const standardInlineAccessSectionIds = new Set<string>();
+
 function StandardControlSectionLayout({
+  accessError,
   activeProfile,
+  busyAccessSection,
   catalogProfile,
   children,
   copyMessage,
   onCopyText,
   onRefresh,
   onRunWorkflowAction,
+  onSaveGlobalConfig,
+  onSaveAccess,
   runningActionId,
+  savingGlobalConfig,
   section,
   workflowActions
 }: {
+  accessError: string;
   activeProfile: LabProfile | null;
+  busyAccessSection: string;
   catalogProfile: ControlLabProfile | null;
   children: ReactNode;
   copyMessage: string;
   onCopyText: (text: string, label: string) => void;
   onRefresh: () => void;
   onRunWorkflowAction: (action: WorkflowAction) => void;
+  onSaveGlobalConfig: (values: GlobalConfigEditState) => Promise<void>;
+  onSaveAccess: (sectionId: string, payload: ControlAccessConfigWrite) => Promise<void>;
   runningActionId: string;
+  savingGlobalConfig: boolean;
   section: ControlSectionRecord;
   workflowActions: WorkflowAction[];
 }) {
   const access = standardAccessForSection(section, activeProfile, workflowActions, onRunWorkflowAction, onRefresh, onCopyText, runningActionId);
   const configRows = standardConfigForSection(section.id, activeProfile, catalogProfile);
-  const options = controlConfigOptionsForSection(section.id, workflowActions);
+  const options = controlConfigOptionsForSection(section.id, workflowActions, activeProfile);
   const warning = firmwareWarningForSection(section);
+  const useInlineAccessConfig = standardInlineAccessSectionIds.has(section.id);
 
   return (
     <section className="standard-control-section" id={`standard-control-${section.id}`}>
@@ -6814,10 +7326,7 @@ function StandardControlSectionLayout({
 
       <div className={`firmware-warning-strip ${warning.tone}`}>
         <span>{warning.message}</span>
-        <Link className="small-button" to="/firmware">
-          <ShieldCheck size={14} />
-          {warning.actionLabel}
-        </Link>
+        <StatusBadge status={warning.tone === "ready" ? "current" : warning.tone === "blocked" ? "blocked" : "not_checked"} />
       </div>
 
       <section className="standard-block access-block">
@@ -6833,7 +7342,7 @@ function StandardControlSectionLayout({
           {access.url && <ProviderFact label="URL" value={access.url} />}
           {access.sshTarget && <ProviderFact label="SSH Target" value={access.sshTarget} />}
           {access.consolePort && <ProviderFact label="Console Port" value={access.consolePort} />}
-          <ProviderFact label="Username Field" value={access.usernameField} />
+          <ProviderFact label="UID / Username Field" value={access.usernameField} />
           <ProviderFact label="Live Status" value={displayStatusLabel(access.liveStatus)} />
         </div>
         <div className="standard-action-row">
@@ -6857,46 +7366,41 @@ function StandardControlSectionLayout({
         </div>
       </section>
 
-      <section className="standard-block config-block">
-        <div className="standard-block-head">
-          <div>
-            <span className="summary-kicker">Config</span>
-            <h3>Core settings</h3>
-          </div>
-          <StatusBadge status={configRows.length ? "current" : "not_checked"} />
-        </div>
-        <div className="config-fact-grid">
-          {configRows.map((row) => (
-            <ProviderFact key={`${section.id}-${row.label}`} label={row.label} value={row.value} />
-          ))}
-        </div>
-      </section>
+      <ConfigSummaryBlock configRows={configRows} sectionId={section.id} />
 
       <details className="actions-config-dropdown">
         <summary>
           <span>Actions / Configs</span>
           <small>{options.length} available options</small>
         </summary>
-        <div className="actions-config-menu">
+        <div className="actions-config-table" role="table" aria-label={`${section.title} actions and config options`}>
+          <div className="actions-config-table-head" role="row">
+            <span>Option</span>
+            <span>Desired</span>
+            <span>Status</span>
+            <span>Path</span>
+          </div>
           {options.map((option) => (
-            <article key={option.option_id}>
-              <div>
+            <div className="actions-config-row" key={option.option_id} role="row">
+              <div className="actions-config-option-cell">
                 <strong>{option.label}</strong>
-                <p>{option.description}</p>
+                <span>{option.description}</span>
               </div>
-              <div className="option-meta-grid">
-                <ProviderFact label="Current" value={option.current_value} />
-                <ProviderFact label="Desired" value={option.desired_value} />
-                <ProviderFact label="Supported By" value={option.supported_by.map(labelize).join(", ")} />
-                <ProviderFact label="Effect" value={displayStatusLabel(option.effect)} />
+              <div>
+                <strong>{option.desired_value}</strong>
+                <span className="muted-mini">Current: {option.current_value}</span>
               </div>
-              <div className="classification-tags">
-                <span className={`classification-tag ${option.effect}`}>{displayStatusLabel(option.effect)}</span>
+              <div className="actions-config-status-cell">
                 <StatusBadge status={option.availability} />
+                <span className={`classification-tag ${option.effect}`}>{displayStatusLabel(option.effect)}</span>
                 {option.requires_confirmation && <span className="classification-tag destructive">Confirmation required</span>}
                 {option.recommended_default && <span className="classification-tag read-only">Recommended</span>}
               </div>
-            </article>
+              <div>
+                <strong>{option.supported_by.map(labelize).join(", ")}</strong>
+                <span className="muted-mini">{option.linked_action_id ?? "Profile only"}</span>
+              </div>
+            </div>
           ))}
         </div>
       </details>
@@ -6913,35 +7417,395 @@ function StandardControlSectionLayout({
   );
 }
 
+function ConfigSummaryBlock({
+  configRows,
+  sectionId
+}: {
+  configRows: WorkflowSummaryItem[];
+  sectionId: string;
+}) {
+  return (
+    <section className="standard-block config-block">
+      <div className="standard-block-head">
+        <div>
+          <span className="summary-kicker">Config</span>
+          <h3>Saved setup values</h3>
+        </div>
+        <StatusBadge status={configRows.length ? "current" : "not_checked"} />
+      </div>
+      <div className="config-compact-table" aria-label={`${labelize(sectionId)} applied config values`}>
+        {configRows.map((row) => (
+          <div key={`${sectionId}-${row.label}`}>
+            <span>{row.label}</span>
+            <strong>{row.value}</strong>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function GlobalConfigEditor({
+  activeProfile,
+  configRows,
+  onSave,
+  saving,
+  sectionId
+}: {
+  activeProfile: LabProfile | null;
+  configRows: WorkflowSummaryItem[];
+  onSave: (values: GlobalConfigEditState) => Promise<void>;
+  saving: boolean;
+  sectionId: string;
+}) {
+  const [form, setForm] = useState<GlobalConfigEditState>(() => globalConfigEditStateFromProfile(activeProfile));
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+  const profileKey = `${activeProfile?.id ?? "none"}:${activeProfile?.version ?? "0"}`;
+  const editable = Boolean(activeProfile && activeProfile.source === "saved");
+
+  useEffect(() => {
+    setForm(globalConfigEditStateFromProfile(activeProfile));
+    setMessage("");
+    setError("");
+  }, [profileKey]);
+
+  function update<K extends keyof GlobalConfigEditState>(key: K, value: GlobalConfigEditState[K]) {
+    setForm((current) => ({ ...current, [key]: value }));
+  }
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    setMessage("");
+    setError("");
+    try {
+      await onSave(form);
+      setMessage("Global config saved.");
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  }
+
+  return (
+    <section className="standard-block config-block compact-global-config">
+      <div className="standard-block-head">
+        <div>
+          <span className="summary-kicker">Config</span>
+          <h3>Global device defaults</h3>
+        </div>
+        <StatusBadge status={configRows.length ? "current" : "not_checked"} />
+      </div>
+      <form className="global-config-editor" onSubmit={submit}>
+        <div className="global-config-editor-grid">
+          <Field label="DNS">
+            <input
+              disabled={!editable}
+              onChange={(event) => update("dnsServers", event.target.value)}
+              value={form.dnsServers}
+            />
+          </Field>
+          <Field label="NTP">
+            <input
+              disabled={!editable}
+              onChange={(event) => update("ntpServers", event.target.value)}
+              value={form.ntpServers}
+            />
+          </Field>
+          <Field label="Domain">
+            <input
+              disabled={!editable}
+              onChange={(event) => update("domainName", event.target.value)}
+              value={form.domainName}
+            />
+          </Field>
+          <Field label="VLAN">
+            <input
+              disabled={!editable}
+              inputMode="numeric"
+              onChange={(event) => update("vlanId", event.target.value)}
+              value={form.vlanId}
+            />
+          </Field>
+          <Field label="MTU">
+            <input
+              disabled={!editable}
+              inputMode="numeric"
+              onChange={(event) => update("mtu", event.target.value)}
+              value={form.mtu}
+            />
+          </Field>
+          <Field label="Storage">
+            <select
+              disabled={!editable}
+              onChange={(event) => update("storageProtocol", event.target.value)}
+              value={form.storageProtocol}
+            >
+              <option value="nfs">NFS</option>
+              <option value="iscsi">iSCSI</option>
+              <option value="none">Local only</option>
+            </select>
+          </Field>
+        </div>
+        <div className="global-policy-grid compact">
+          <label className="checkbox-line">
+            <input
+              checked={form.enableDns}
+              disabled={!editable}
+              onChange={(event) => update("enableDns", event.target.checked)}
+              type="checkbox"
+            />
+            <span>DNS</span>
+          </label>
+          <label className="checkbox-line">
+            <input
+              checked={form.enableNtp}
+              disabled={!editable}
+              onChange={(event) => update("enableNtp", event.target.checked)}
+              type="checkbox"
+            />
+            <span>NTP</span>
+          </label>
+          <label className="checkbox-line">
+            <input
+              checked={form.enableSnmp}
+              disabled={!editable}
+              onChange={(event) => update("enableSnmp", event.target.checked)}
+              type="checkbox"
+            />
+            <span>SNMP</span>
+          </label>
+          <label className="checkbox-line">
+            <input
+              checked={form.disableIpv6}
+              disabled={!editable}
+              onChange={(event) => update("disableIpv6", event.target.checked)}
+              type="checkbox"
+            />
+            <span>Disable IPv6</span>
+          </label>
+        </div>
+        {(message || error || !editable) && (
+          <p className={error ? "form-error" : "muted"}>
+            {error || message || "Load a saved active profile to edit global defaults from this page."}
+          </p>
+        )}
+        <div className="standard-action-row">
+          <button className="small-button primary" disabled={!editable || saving} type="submit">
+            <Save size={14} />
+            {saving ? "Saving" : "Save global config"}
+          </button>
+          <Link className="button-link small-button" to="/lab-setup">
+            <Pencil size={14} />
+            Full profile
+          </Link>
+        </div>
+      </form>
+      <div className="config-compact-table" aria-label={`${labelize(sectionId)} applied config values`}>
+        {configRows.map((row) => (
+          <div key={`${sectionId}-${row.label}`}>
+            <span>{row.label}</span>
+            <strong>{row.value}</strong>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function InlineFirmwarePanel({
+  checkSummary,
+  onRunWorkflowAction,
+  runningActionId,
+  section,
+  workflowActions
+}: {
+  checkSummary: { actionLabel: string; message: string; tone: string };
+  onRunWorkflowAction: (action: WorkflowAction) => void;
+  runningActionId: string;
+  section: ControlSectionRecord;
+  workflowActions: WorkflowAction[];
+}) {
+  const firmwareItems = firmwareItemsForSection(section);
+  const checkAction = firmwareCheckActionForSection(section.id, workflowActions);
+  const upgradeAction = firmwareUpgradeActionForSection(section.id, workflowActions);
+  const checking = Boolean(checkAction && runningActionId === checkAction.action_id);
+  const checkRunnable = Boolean(checkAction && workflowActionCanRun(checkAction));
+  const upgradeRunnable = Boolean(
+    upgradeAction && workflowActionCanRun(upgradeAction) && !workflowActionRequiresGuard(upgradeAction)
+  );
+  const traceBlockers = checkAction?.last_run_trace.blockers ?? [];
+  const traceWarnings = checkAction?.last_run_trace.warnings ?? [];
+  const checkTitle = checkAction
+    ? checkRunnable
+      ? "Run the registered read-only firmware inventory check."
+      : humanizeAction(checkAction.blockers[0] || checkAction.ui_run_blockers[0] || checkAction.next_action)
+    : "No read-only firmware inventory action is registered for this section.";
+  const upgradeTitle = upgradeAction
+    ? upgradeRunnable
+      ? "Run the registered upgrade workflow."
+      : "Upgrade requires guarded workflow approval and explicit future gates."
+    : "No upgrade workflow is registered for this section.";
+
+  return (
+    <section className={`inline-firmware-panel ${checkSummary.tone}`}>
+      <div className="inline-firmware-head">
+        <div>
+          <p className="summary-kicker">Firmware</p>
+          <h3>{section.id === "netapp" ? "ONTAP / component firmware" : "Firmware check"}</h3>
+          <p>{checkSummary.message}</p>
+        </div>
+        <div className="standard-action-row">
+          <button
+            className="small-button primary"
+            disabled={!checkRunnable || checking}
+            onClick={() => {
+              if (checkAction && checkRunnable) onRunWorkflowAction(checkAction);
+            }}
+            title={checkTitle}
+            type="button"
+          >
+            {checking ? <RefreshCw className="spin-icon" size={14} /> : <ShieldCheck size={14} />}
+            {checking ? "Checking" : "Check Firmware"}
+          </button>
+          <button
+            className="small-button"
+            disabled={!upgradeRunnable}
+            onClick={() => {
+              if (upgradeAction && upgradeRunnable) onRunWorkflowAction(upgradeAction);
+            }}
+            title={upgradeTitle}
+            type="button"
+          >
+            <Play size={14} />
+            Upgrade Now
+          </button>
+        </div>
+      </div>
+      {firmwareItems.length > 0 ? (
+        <div className="firmware-inline-grid">
+          {firmwareItems.map((item) => (
+            <div key={`${section.id}-firmware-${item.label}`}>
+              <span>{item.label}</span>
+              <strong>{item.value || "Unknown"}</strong>
+              {item.status && <StatusBadge status={item.status} />}
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="muted">Firmware state is not checked yet.</p>
+      )}
+      {checkAction?.last_run_trace.summary && (
+        <p className="firmware-inline-note">{humanizeAction(checkAction.last_run_trace.summary)}</p>
+      )}
+      {(traceBlockers.length > 0 || traceWarnings.length > 0) && (
+        <div className="firmware-inline-issues">
+          {traceBlockers.slice(0, 2).map((blocker) => (
+            <div className="provider-issue warning" key={`${section.id}-firmware-blocker-${blocker}`}>
+              <AlertTriangle size={16} />
+              <span>{humanizeAction(blocker)}</span>
+            </div>
+          ))}
+          {traceWarnings.slice(0, 2).map((warning) => (
+            <div className="provider-issue" key={`${section.id}-firmware-warning-${warning}`}>
+              <AlertTriangle size={16} />
+              <span>{humanizeAction(warning)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function firmwareItemsForSection(section: ControlSectionRecord): ControlStateItem[] {
+  const matches = section.current_state.filter((item) =>
+    /firmware|bios|ios xe|ontap|rommon|smart array|bmc|sp version|version|iso/i.test(item.label)
+  );
+  return matches.slice(0, 8);
+}
+
+function firmwareCheckActionForSection(sectionId: string, actions: WorkflowAction[]): WorkflowAction | null {
+  const tokensBySection: Record<string, string[]> = {
+    cisco: ["cisco.firmware-inventory", "firmware"],
+    ilo: ["ilo.firmware-inventory", "firmware", "ilo.inventory"],
+    netapp: ["netapp.component-firmware-inventory", "netapp.ontap-upgrade-inventory", "firmware", "upgrade-inventory"]
+  };
+  return firstWorkflowActionByTokens(
+    actions,
+    tokensBySection[sectionId] ?? ["firmware", "inventory"],
+    (action) => action.mode === "read_only"
+  );
+}
+
+function firmwareUpgradeActionForSection(sectionId: string, actions: WorkflowAction[]): WorkflowAction | null {
+  const tokensBySection: Record<string, string[]> = {
+    cisco: ["cisco.firmware-upgrade", "upgrade"],
+    ilo: ["ilo.firmware-upgrade", "upgrade"],
+    netapp: ["netapp.ontap-upgrade-apply", "upgrade-apply"]
+  };
+  return firstWorkflowActionByTokens(
+    actions,
+    tokensBySection[sectionId] ?? ["upgrade"],
+    (action) => action.mode === "upgrade"
+  );
+}
+
+function firstWorkflowActionByTokens(
+  actions: WorkflowAction[],
+  tokens: string[],
+  predicate: (action: WorkflowAction) => boolean
+): WorkflowAction | null {
+  const normalizedTokens = tokens.map((token) => token.toLowerCase());
+  for (const token of normalizedTokens) {
+    const match = actions.find(
+      (action) =>
+        predicate(action) &&
+        (action.action_id.toLowerCase().includes(token) || action.label.toLowerCase().includes(token))
+    );
+    if (match) return match;
+  }
+  return null;
+}
+
 function firmwareWarningForSection(section: ControlSectionRecord): { actionLabel: string; message: string; tone: string } {
   const firmwareItems = section.current_state.filter((item) => /firmware|bios|ios xe|ontap|smart array|version|iso/i.test(item.label));
   const statuses = firmwareItems.map((item) => `${item.status ?? ""} ${item.value}`.toLowerCase());
-  const hasBlocked = statuses.some((status) => /blocked|below|fail|critical/.test(status));
+  const hasUnknown = statuses.some((status) => /unknown|not checked|not_checked|timeout/.test(status));
+  const hasBlocked = statuses.some(
+    (status) => /below|fail|critical/.test(status) || (/blocked/.test(status) && !/unknown|not checked|not_checked|timeout/.test(status))
+  );
   const hasReady = firmwareItems.length > 0 && statuses.every((status) => /ready|passed|current|compliant|available/.test(status));
   const actionLabel = section.id === "firmware-upgrade" ? "View upgrade" : "Check firmware";
   if (section.id === "lab-profile") {
-    return { actionLabel, message: "Ready: active lab profile selected", tone: "ready" };
+    return { actionLabel, message: "Active lab setup selected.", tone: "ready" };
   }
   if (hasBlocked) {
-    return { actionLabel, message: "Blocked: firmware below approved baseline", tone: "blocked" };
+    return {
+      actionLabel,
+      message: "Firmware is below the approved baseline.",
+      tone: "blocked"
+    };
+  }
+  if (hasUnknown) {
+    return { actionLabel, message: "Firmware inventory did not return current versions.", tone: "warning" };
   }
   if (hasReady) {
-    return { actionLabel, message: "Ready: firmware current", tone: "ready" };
+    return { actionLabel, message: "Firmware is current.", tone: "ready" };
   }
   if (section.id === "raid") {
-    return { actionLabel, message: "Needs review: Smart Array firmware unknown", tone: "warning" };
+    return { actionLabel, message: "Smart Array firmware is unknown.", tone: "warning" };
   }
   if (section.id === "esxi") {
-    return { actionLabel, message: "Needs review: ESXi version or ISO not verified", tone: "warning" };
+    return { actionLabel, message: "ESXi version or ISO is not verified.", tone: "warning" };
   }
   if (section.id === "netapp") {
-    return { actionLabel, message: "Needs review: ONTAP version unknown", tone: "warning" };
+    return { actionLabel, message: "ONTAP version is unknown.", tone: "warning" };
   }
   if (section.id === "ilo") {
-    return { actionLabel, message: "Needs review: iLO, BIOS, or Smart Array firmware unknown", tone: "warning" };
+    return { actionLabel, message: "iLO, BIOS, or Smart Array firmware is unknown.", tone: "warning" };
   }
   if (section.id === "cisco") {
-    return { actionLabel, message: "Needs review: IOS XE firmware unknown", tone: "warning" };
+    return { actionLabel, message: "IOS XE firmware is unknown.", tone: "warning" };
   }
   return { actionLabel, message: "Not configured yet: firmware unavailable until device setup", tone: "neutral" };
 }
@@ -7051,16 +7915,23 @@ function standardConfigForSection(
   const gateway = global?.gateway || asString(network.gateway) || "Not set";
   const mtu = global?.mtu ? String(global.mtu) : asString(network.mtu) || "Not set";
   const vlan = global?.vlan_id || asString(objectValue(network.vlan_ids).cisco_management) || "Not set";
+  const dnsPolicy = profilePolicyValue(features?.enable_dns, dns, "servers");
+  const ntpPolicy = profilePolicyValue(features?.enable_ntp, ntp, "servers");
+  const snmpPolicy = profileSnmpValue(features);
+  const ipv6Policy = features?.disable_ipv6 === false ? "Allowed by lab setup" : "Disabled by lab setup";
+  const legacyProtocolPolicy = features?.block_legacy_protocols === false ? "Allowed by lab setup" : "Blocked by lab setup";
 
   if (sectionId === "cisco") {
     return [
       { label: "IP Address", value: displayAddress(address.cisco_management) },
       { label: "Subnet / Gateway", value: `${displayAddress(address.subnet)} / ${gateway}` },
-      { label: "DNS", value: dns },
-      { label: "NTP", value: ntp },
-      { label: "SNMP", value: "Controlled option" },
+      { label: "DNS", value: dnsPolicy },
+      { label: "NTP", value: ntpPolicy },
+      { label: "SNMP", value: snmpPolicy },
       { label: "MTU", value: mtu },
       { label: "VLAN", value: vlan },
+      { label: "IPv6", value: ipv6Policy },
+      { label: "Legacy Protocols", value: legacyProtocolPolicy },
       { label: "Hostname", value: "Cisco switch" },
       { label: "Protocols", value: "SSH/SCP after validation" }
     ];
@@ -7069,8 +7940,10 @@ function standardConfigForSection(
     return [
       { label: "IP Address", value: displayAddress(address.ilo) },
       { label: "Subnet / Gateway", value: `${displayAddress(address.subnet)} / ${gateway}` },
-      { label: "DNS", value: dns },
-      { label: "NTP", value: ntp },
+      { label: "DNS", value: dnsPolicy },
+      { label: "NTP", value: ntpPolicy },
+      { label: "SNMP", value: snmpPolicy },
+      { label: "Legacy Protocols", value: legacyProtocolPolicy },
       { label: "Hostname", value: "iLO host" },
       { label: "Boot Options", value: "One-time boot gated" },
       { label: "Virtual Media", value: "Plan before mount" },
@@ -7092,8 +7965,9 @@ function standardConfigForSection(
       { label: "Management IP", value: displayAddress(address.esxi_management) },
       { label: "Subnet / Gateway", value: `${displayAddress(address.subnet)} / ${gateway}` },
       { label: "Hostname", value: "ESXi host" },
-      { label: "DNS", value: dns },
-      { label: "NTP", value: ntp },
+      { label: "DNS", value: dnsPolicy },
+      { label: "NTP", value: ntpPolicy },
+      { label: "Legacy Protocols", value: legacyProtocolPolicy },
       { label: "SSH", value: "Disabled until enabled" },
       { label: "vSwitch", value: "Management network" },
       { label: "Datastore", value: features?.netapp_enabled ? "NFS/iSCSI after NetApp readiness" : "Local storage by profile" }
@@ -7102,7 +7976,7 @@ function standardConfigForSection(
   if (sectionId === "netapp") {
     if (features?.netapp_enabled === false) {
       return [
-        { label: "Scope", value: profile?.features.netapp_disabled_reason ?? "NetApp is not in scope for the active lab profile." },
+        { label: "Scope", value: profile?.features.netapp_disabled_reason ?? "NetApp is not in scope for the active lab setup." },
         { label: "Subnet", value: displayAddress(address.subnet) },
         { label: "Topology", value: profile ? labelize(profile.profile_topology) : "Not set" },
         { label: "Normal Validation", value: "Skipped" },
@@ -7117,8 +7991,9 @@ function standardConfigForSection(
       { label: "SVM Mgmt", value: displayAddress(address.netapp_svm_mgmt) },
       { label: "NFS LIFs", value: address.netapp_nfs_lifs.join(", ") || "Not set" },
       { label: "iSCSI LIFs", value: address.netapp_iscsi_lifs.join(", ") || "Not set" },
-      { label: "DNS / NTP", value: `${dns} / ${ntp}` },
-      { label: "SNMP / MTU", value: `Controlled option / ${mtu}` },
+      { label: "DNS / NTP", value: `${dnsPolicy} / ${ntpPolicy}` },
+      { label: "SNMP / MTU", value: `${snmpPolicy} / ${mtu}` },
+      { label: "Legacy Protocols", value: legacyProtocolPolicy },
       { label: "Protocols", value: profile?.features.storage_protocol?.toUpperCase() ?? "NFS or iSCSI" }
     ];
   }
@@ -7132,12 +8007,29 @@ function standardConfigForSection(
   ];
 }
 
-function controlConfigOptionsForSection(sectionId: string, workflowActions: WorkflowAction[]): ControlConfigOption[] {
+function controlConfigOptionsForSection(
+  sectionId: string,
+  workflowActions: WorkflowAction[],
+  profile: LabProfile | null
+): ControlConfigOption[] {
   const actionFor = (tokens: string[]) => workflowActions.find((action) =>
     tokens.some((token) => action.action_id.includes(token) || action.label.toLowerCase().includes(token))
   );
   const availabilityFor = (tokens: string[]) => actionFor(tokens)?.current_availability ?? "not_configured";
   const linkedActionFor = (tokens: string[]) => actionFor(tokens)?.action_id ?? null;
+  const address = profile?.resolved_address_plan ?? profile?.address_plan ?? blankLabAddressPlan();
+  const global = profile?.global_settings;
+  const features = profile?.features;
+  const dns = global?.dns_servers.length ? global.dns_servers.join(", ") : "Not set";
+  const ntp = global?.ntp_servers.length ? global.ntp_servers.join(", ") : "Not set";
+  const mtu = global?.mtu ? String(global.mtu) : "Not set";
+  const vlan = global?.vlan_id || "Not set";
+  const dnsPolicy = profilePolicyValue(features?.enable_dns, dns, "servers");
+  const ntpPolicy = profilePolicyValue(features?.enable_ntp, ntp, "servers");
+  const snmpPolicy = profileSnmpValue(features);
+  const ipv6Policy = features?.disable_ipv6 === false ? "Allowed" : "Disabled";
+  const legacyProtocolPolicy = features?.block_legacy_protocols === false ? "Allowed" : "Blocked";
+  const storageProtocol = features?.storage_protocol?.toUpperCase() || "NFS";
   const option = (
     option_id: string,
     label: string,
@@ -7165,22 +8057,23 @@ function controlConfigOptionsForSection(sectionId: string, workflowActions: Work
 
   if (sectionId === "cisco") {
     return [
-      option("disable_ipv6", "Disable IPv6", "Disable unused IPv6 paths after console access is confirmed.", ["console", "ansible"], "config_change", ["bootstrap"], "Disabled"),
-      option("enable_snmp", "Enable / Disable SNMP", "Set SNMP state through the saved Cisco bootstrap plan.", ["console", "ansible"], "config_change", ["bootstrap"], "Policy selected"),
-      option("configure_ntp", "Configure NTP", "Apply NTP servers from the active lab profile.", ["console", "ansible"], "config_change", ["bootstrap"], "Profile NTP"),
-      option("configure_dns", "Configure DNS", "Apply DNS servers from the active lab profile.", ["console", "ansible"], "config_change", ["bootstrap"], "Profile DNS"),
-      option("configure_mtu", "Configure MTU", "Set management MTU for the lab network.", ["console", "ansible"], "config_change", ["bootstrap"], "Profile MTU"),
-      option("block_legacy_protocols", "Block Legacy Protocols", "Disable older management protocols after SSH is ready.", ["console", "ansible"], "config_change", ["bootstrap"], "Blocked"),
+      option("disable_ipv6", "Disable IPv6", "Disable unused IPv6 paths after console access is confirmed.", ["console", "ansible"], "config_change", ["bootstrap"], ipv6Policy),
+      option("enable_snmp", "Enable / Disable SNMP", "Set SNMP state through the saved Cisco bootstrap plan.", ["console", "ansible"], "config_change", ["bootstrap"], snmpPolicy),
+      option("configure_ntp", "Configure NTP", "Apply NTP servers from the active lab setup.", ["console", "ansible"], "config_change", ["bootstrap"], ntpPolicy),
+      option("configure_dns", "Configure DNS", "Apply DNS servers from the active lab setup.", ["console", "ansible"], "config_change", ["bootstrap"], dnsPolicy),
+      option("configure_mtu", "Configure MTU", "Set management MTU for the lab network.", ["console", "ansible"], "config_change", ["bootstrap"], mtu),
+      option("block_legacy_protocols", "Block Legacy Protocols", "Disable older management protocols after SSH is ready.", ["console", "ansible"], "config_change", ["bootstrap"], legacyProtocolPolicy),
       option("enable_ssh", "Enable SSH", "Enable SSH for management validation.", ["console", "ansible"], "config_change", ["validate-ssh"], "Enabled"),
       option("enable_scp", "Enable SCP", "Enable SCP for image/config transfer after access is validated.", ["console", "ansible"], "config_change", ["validate-ssh"], "Enabled"),
-      option("configure_vlan10", "Configure VLAN 10", "Configure access VLAN 10 and access ports.", ["console", "ansible"], "config_change", ["apply-bootstrap"], "VLAN 10"),
+      option("configure_vlan10", "Configure VLAN", "Configure the active profile management VLAN and access ports.", ["console", "ansible"], "config_change", ["apply-bootstrap"], vlan),
       option("run_validation", "Run Validation", "Validate console, privilege, SSH, and SCP readiness.", ["console", "ansible"], "read_only", ["validate", "privilege"], "Validated", false)
     ];
   }
   if (sectionId === "ilo") {
     return [
-      option("configure_ntp", "Configure NTP", "Apply iLO NTP settings from the active lab profile.", ["redfish"], "config_change", ["ilo", "setup"], "Profile NTP"),
-      option("configure_dns", "Configure DNS", "Apply iLO DNS and hostname settings.", ["redfish"], "config_change", ["ilo", "setup"], "Profile DNS"),
+      option("configure_ntp", "Configure NTP", "Apply iLO NTP settings from the active lab setup.", ["redfish"], "config_change", ["ilo", "setup"], ntpPolicy),
+      option("configure_dns", "Configure DNS", "Apply iLO DNS and hostname settings.", ["redfish"], "config_change", ["ilo", "setup"], dnsPolicy),
+      option("configure_snmp", "Configure SNMP", "Apply iLO SNMP intent from the active global policy.", ["redfish"], "config_change", ["ilo", "setup"], snmpPolicy),
       option("configure_ilo_virtual_media", "Configure iLO Virtual Media", "Mount or unmount installer media through a guarded Redfish path.", ["redfish"], "config_change", ["virtual-media"], "Selected ISO"),
       option("set_one_time_boot", "Set One-Time Boot", "Set the next boot target after media readiness passes.", ["redfish"], "config_change", ["one-time-boot"], "Installer media"),
       option("refresh_inventory", "Refresh Inventory", "Read server, manager, firmware, and storage inventory.", ["redfish"], "read_only", ["inventory"], "Current inventory", false),
@@ -7202,6 +8095,8 @@ function controlConfigOptionsForSection(sectionId: string, workflowActions: Work
     return [
       option("esxi_install_rebuild", "Install / Rebuild", "Run guarded ESXi install/rebuild workflow after readiness passes.", ["redfish", "govc"], "destructive", ["rebuild", "install"], "Install selected ISO"),
       option("enable_ssh", "Enable SSH", "Enable SSH for management validation when policy allows.", ["govc", "manual"], "config_change", ["ssh"], "Enabled"),
+      option("configure_ntp", "Configure NTP", "Apply NTP servers from the active lab setup.", ["govc"], "config_change", ["management"], ntpPolicy),
+      option("configure_dns", "Configure DNS", "Apply DNS servers from the active lab setup.", ["govc"], "config_change", ["management"], dnsPolicy),
       option("validate_api", "Validate API", "Validate ESXi management API readiness.", ["govc"], "read_only", ["management", "api"], "Validated", false),
       option("validate_ssh", "Validate SSH", "Validate ESXi SSH readiness.", ["cli"], "read_only", ["ssh"], "Validated", false),
       option("configure_esxi_nfs_datastore", "Add NFS Datastore", "Add the NetApp NFS datastore after NetApp readiness passes.", ["govc"], "config_change", ["datastore"], "Mounted")
@@ -7215,15 +8110,18 @@ function controlConfigOptionsForSection(sectionId: string, workflowActions: Work
       option("upgrade_plan", "Upgrade Plan", "Plan ONTAP upgrade package, target, and validation blockers.", ["ontap_rest"], "read_only", ["upgrade-plan", "plan"], "Plan ready", false),
       option("upgrade_validate", "Upgrade Validate", "Run pre-upgrade validation gates.", ["ontap_rest"], "read_only", ["upgrade-validate", "validate"], "Validated", false),
       option("upgrade_apply", "Upgrade Apply", "Guarded ONTAP upgrade apply path after exact confirmation.", ["ontap_rest"], "upgrade", ["upgrade-apply"], "Upgrade ONTAP"),
-      option("configure_netapp_nfs", "Configure NetApp NFS", "Configure NFS export path and datastore readiness.", ["ontap_rest", "ansible"], "config_change", ["nfs"], "NFS ready"),
-      option("choose_storage_protocol", "Choose Storage Protocol", "Select NFS or iSCSI for the build handoff.", ["manual", "ontap_rest"], "config_change", ["nfs", "iscsi"], "NFS or iSCSI"),
+      option("configure_dns", "Configure DNS", "Apply DNS servers from the active lab setup.", ["ontap_rest"], "config_change", ["setup"], dnsPolicy),
+      option("configure_ntp", "Configure NTP", "Apply NTP servers from the active lab setup.", ["ontap_rest"], "config_change", ["setup"], ntpPolicy),
+      option("configure_snmp", "Configure SNMP", "Apply SNMP policy from the active lab setup.", ["ontap_rest"], "config_change", ["setup"], snmpPolicy),
+      option("configure_netapp_nfs", "Configure NetApp NFS", "Configure NFS export path and datastore readiness.", ["ontap_rest", "ansible"], "config_change", ["nfs"], `${storageProtocol} / ${address.netapp_nfs_lifs.join(", ") || "No LIFs"}`),
+      option("choose_storage_protocol", "Choose Storage Protocol", "Select NFS or iSCSI for the build handoff.", ["manual", "ontap_rest"], "config_change", ["nfs", "iscsi"], storageProtocol),
       option("nfs_vcenter_readiness", "NFS / vCenter Readiness", "Validate datastore handoff before vCenter use.", ["govc", "ontap_rest"], "read_only", ["vcenter", "nfs"], "Ready", false)
     ];
   }
   return [
-    option("configure_dns", "Configure DNS", "Apply profile DNS values.", ["manual"], "config_change", ["dns"], "Profile DNS"),
-    option("configure_ntp", "Configure NTP", "Apply profile NTP values.", ["manual"], "config_change", ["ntp"], "Profile NTP"),
-    option("configure_mtu", "Configure MTU", "Apply profile MTU value.", ["manual"], "config_change", ["mtu"], "Profile MTU")
+    option("configure_dns", "Configure DNS", "Apply profile DNS values.", ["manual"], "config_change", ["dns"], dnsPolicy),
+    option("configure_ntp", "Configure NTP", "Apply profile NTP values.", ["manual"], "config_change", ["ntp"], ntpPolicy),
+    option("configure_mtu", "Configure MTU", "Apply profile MTU value.", ["manual"], "config_change", ["mtu"], mtu)
   ];
 }
 
@@ -7246,6 +8144,33 @@ function findControlStateValue(section: ControlSectionRecord, token: string): st
   const normalized = token.toLowerCase();
   const match = section.current_state.find((item) => item.label.toLowerCase().includes(normalized));
   return match?.value && match.value !== "Not set" ? match.value : null;
+}
+
+function globalConfigEditStateFromProfile(profile: LabProfile | null): GlobalConfigEditState {
+  const source = profile ? labProfileFormFrom(profile).globalSettings : blankLabGlobalSettings(24);
+  return {
+    domainName: source.domainName,
+    dnsServers: source.dnsServers,
+    ntpServers: source.ntpServers,
+    timezone: source.timezone,
+    vlanId: source.vlanId,
+    mtu: source.mtu,
+    storageProtocol: source.storageProtocol,
+    disableIpv6: source.disableIpv6,
+    blockLegacyProtocols: source.blockLegacyProtocols,
+    enableSnmp: source.enableSnmp,
+    enableNtp: source.enableNtp,
+    enableDns: source.enableDns
+  };
+}
+
+function profilePolicyValue(enabled: boolean | undefined, value: string, missingLabel: string): string {
+  if (enabled === false) return "Disabled by lab setup";
+  return value && value !== "Not set" ? value : `Enabled, ${missingLabel} not set`;
+}
+
+function profileSnmpValue(features: Partial<LabProfileFeatures> | null | undefined): string {
+  return features?.enable_snmp ? "Enabled by lab setup" : "Disabled by lab setup";
 }
 
 function CommanderModePanel({
@@ -7413,8 +8338,9 @@ function ControlAccessConfigTile({
   const [originalDhcpIp, setOriginalDhcpIp] = useState(config.original_dhcp_ip ?? "");
   const [usernameReference, setUsernameReference] = useState(config.username_reference ?? "");
   const [passwordConfigured, setPasswordConfigured] = useState(config.password_configured);
-  const [passwordReferenceLabel, setPasswordReferenceLabel] = useState(
-    config.password_reference_label ?? ""
+  const [passwordReferenceLabel, setPasswordReferenceLabel] = useState("");
+  const [editableFieldValues, setEditableFieldValues] = useState<Record<string, string>>(
+    controlEditableFieldValues(config)
   );
 
   useEffect(() => {
@@ -7422,7 +8348,8 @@ function ControlAccessConfigTile({
     setOriginalDhcpIp(config.original_dhcp_ip ?? "");
     setUsernameReference(config.username_reference ?? "");
     setPasswordConfigured(config.password_configured);
-    setPasswordReferenceLabel(config.password_reference_label ?? "");
+    setPasswordReferenceLabel("");
+    setEditableFieldValues(controlEditableFieldValues(config));
   }, [config]);
 
   async function submit(event: FormEvent) {
@@ -7432,7 +8359,11 @@ function ControlAccessConfigTile({
       original_dhcp_ip: cleanNullable(originalDhcpIp),
       username_reference: cleanNullable(usernameReference),
       password_configured: passwordConfigured,
-      password_reference_label: cleanNullable(passwordReferenceLabel)
+      password_reference_label: cleanNullable(passwordReferenceLabel),
+      editable_fields: config.editable_fields.map((field) => ({
+        label: field.label,
+        value: cleanNullable(editableFieldValues[field.label] ?? "")
+      }))
     });
   }
 
@@ -7444,12 +8375,12 @@ function ControlAccessConfigTile({
         <div>
           <p className="summary-kicker">Access & IP Config</p>
           <h3>{config.title}</h3>
-          <p>{firstTimeConfiguring ? config.first_time_note : "Existing access is recorded; final IP settings remain editable from the lab profile."}</p>
+          <p>{firstTimeConfiguring ? config.first_time_note : "Existing access is recorded; final IP settings remain editable from the lab setup."}</p>
         </div>
         <StatusBadge status={ready ? "ready" : "blocked"} />
       </div>
-      <div className="control-access-layout">
-        <form className="control-access-form" onSubmit={submit}>
+      <form className="control-access-layout" onSubmit={submit}>
+        <div className="control-access-form">
           <label className="checkbox-line">
             <input
               checked={firstTimeConfiguring}
@@ -7484,22 +8415,27 @@ function ControlAccessConfigTile({
           <Field label="Password Reference">
             <input
               onChange={(event) => setPasswordReferenceLabel(event.target.value)}
-              placeholder="Reference only, no plaintext password"
+              placeholder={config.password_configured ? "Configured; enter new reference to replace" : "Reference only, no plaintext password"}
               value={passwordReferenceLabel}
             />
+            <small>
+              {config.password_configured
+                ? "Saved credential reference is hidden."
+                : "Do not enter a plaintext password."}
+            </small>
           </Field>
           <Feedback error={error} />
           <div className="action-row">
             <button disabled={busy} type="submit">
               <Save size={16} />
-              {busy ? "Saving" : "Save Access Config"}
+              {busy ? "Saving" : "Save Access & IP Config"}
             </button>
-            <Link className="button-link" to="/lab-profiles">
+            <Link className="button-link" to="/lab-setup">
               <Pencil size={16} />
               Edit IP Profile
             </Link>
           </div>
-        </form>
+        </div>
         <div className="control-access-facts">
           <div className="provider-fact-grid compact">
             <ProviderFact label={config.desired_address_label} value={displayAddress(config.desired_management_ip)} />
@@ -7522,16 +8458,32 @@ function ControlAccessConfigTile({
           )}
           <div className="control-config-field-list">
             {config.editable_fields.map((field) => (
-              <div key={`${config.section_id}-${field.label}`}>
-                <span>{field.label}</span>
-                <strong>{field.value}</strong>
-              </div>
+              <Field key={`${config.section_id}-${field.label}`} label={field.label}>
+                <input
+                  onChange={(event) =>
+                    setEditableFieldValues((current) => ({
+                      ...current,
+                      [field.label]: event.target.value
+                    }))
+                  }
+                  placeholder={field.value || "Not set"}
+                  value={editableFieldValues[field.label] ?? ""}
+                />
+                <small>{field.source === "saved_override" ? "Saved override" : "Default from active lab setup"}</small>
+              </Field>
             ))}
           </div>
         </div>
-      </div>
+      </form>
     </section>
   );
+}
+
+function controlEditableFieldValues(config: ControlAccessConfig): Record<string, string> {
+  return config.editable_fields.reduce<Record<string, string>>((values, field) => {
+    values[field.label] = field.value === "Not set" ? "" : field.value;
+    return values;
+  }, {});
 }
 
 function CurrentStateBlock({ items }: { items: ControlStateItem[] }) {
@@ -7788,7 +8740,7 @@ function ControlLabProfilePanel({
           ))}
         </div>
       ) : (
-        <p className="success">No stale or invalid core lab profile values are reported.</p>
+        <p className="success">No stale or invalid core lab setup values are reported.</p>
       )}
       {profile.mismatch_warnings.length > 0 && (
         <div className="provider-issue-rows">
@@ -9086,7 +10038,7 @@ function ValidationReportsPage() {
     { id: "esxi", label: "ESXi", status: filteredStatusForSource(issues, "esxi") },
     { id: "netapp", label: "NetApp", status: filteredStatusForSource(issues, "netapp") },
     { id: "firmware", label: "Firmware", status: filteredStatusForSource(issues, "firmware") },
-    { id: "lab_profile", label: "Lab Profile", status: filteredStatusForSource(issues, "lab_profile") }
+    { id: "lab_profile", label: "Lab Setup", status: filteredStatusForSource(issues, "lab_profile") }
   ];
 
   return (
@@ -9323,7 +10275,7 @@ function ReportsPage() {
     { id: "esxi", label: "ESXi", status: filteredStatusForSource(issues, "esxi") },
     { id: "netapp", label: "NetApp", status: filteredStatusForSource(issues, "netapp") },
     { id: "firmware", label: "Firmware", status: filteredStatusForSource(issues, "firmware") },
-    { id: "lab_profile", label: "Lab Profile", status: filteredStatusForSource(issues, "lab_profile") }
+    { id: "lab_profile", label: "Lab Setup", status: filteredStatusForSource(issues, "lab_profile") }
   ];
 
   return (
@@ -9860,7 +10812,7 @@ function minimalStageLabel(stageId: string, fallback: string): string {
     esxi: "ESXi",
     firmware: "Firmware",
     ilo: "HPE / iLO",
-    "lab-profile": "Lab Profile",
+    "lab-profile": "Lab Setup",
     netapp: "NetApp",
     raid: "RAID / Storage"
   };
@@ -10089,9 +11041,9 @@ function SettingsPage({
       description="Lab profile, local settings, and safety metadata without repeating provider diagnostics."
       issueArea="settings"
       onSectionChange={(sectionId) => setActiveSection(sectionId as SettingsSectionId)}
-      primaryAction={{ icon: <Pencil size={16} />, label: "Manage Profile", to: "/lab-profiles" }}
+      primaryAction={{ icon: <Layers size={16} />, label: "Open Lab Setup", to: "/lab-setup" }}
       sections={sections}
-      title="Settings / Lab Profile"
+      title="Settings"
       actions={
         <button onClick={load} disabled={loading || labProfileLoading} type="button">
           <RefreshCw size={16} />
@@ -10112,7 +11064,7 @@ function SettingsPage({
       {activeSection === "ip-profile" && (
         <section className="panel">
           <StatusSummaryCard
-            message={activeProfile?.description || "Active lab profile controls the address plan shown throughout the shell."}
+            message={activeProfile?.description || "Active lab setup controls the address plan shown throughout the shell."}
             status={activeProfile ? "current" : "not_run"}
             title={activeProfile?.name ?? "No active profile"}
             items={[
@@ -10127,7 +11079,7 @@ function SettingsPage({
               <LabAddressSummary profile={activeProfile} />
             </AdvancedDetails>
           ) : (
-            <EmptyState title="No active lab profile" detail="Load or create a lab profile from the profile manager." />
+            <EmptyState title="No active lab setup" detail="Load or create a saved lab setup from Edit Config." />
           )}
         </section>
       )}
@@ -10484,6 +11436,7 @@ async function copyWorkflowActionToClipboard(action: WorkflowAction) {
 }
 
 function ProviderStatusPage() {
+  const { activeContext, activeProfile } = useLabProfileContext();
   const [providers, setProviders] = useState<ProviderStatus[]>([]);
   const [ciscoSetupReadiness, setCiscoSetupReadiness] = useState<CiscoSetupReadiness | null>(null);
   const [ciscoSetupWizardPlan, setCiscoSetupWizardPlan] = useState<CiscoSetupWizardPlan | null>(null);
@@ -10499,38 +11452,28 @@ function ProviderStatusPage() {
   const [firmwareCompliance, setFirmwareCompliance] = useState<ProviderProbeResult | null>(null);
   const [fullRebuildSummary, setFullRebuildSummary] = useState<ProviderProbeResult | null>(null);
   const [buildVerification, setBuildVerification] = useState<ProviderProbeResult | null>(null);
+  const [activeProviderSectionId, setActiveProviderSectionId] = useState("ilo");
 
   async function load() {
     setError("");
     setLoading(true);
     try {
-      const [
-        providerStatuses,
-        ciscoReadiness,
-        setupWizardPlan,
-        bootstrapRequirements,
-        consoleBootstrapPlan,
-        firmwareGate,
-        fullRebuild,
-        certification
-      ] = await Promise.all([
+      const [providerStatuses, firmwareGate, fullRebuild, certification] = await Promise.all([
         api.providers(),
-        api.ciscoSetupReadiness(),
-        api.ciscoSetupWizardPlan(),
-        api.ciscoBootstrapRequirements(),
-        api.ciscoConsoleBootstrapPlan(),
         api.firmwareCompliance(),
         api.fullRebuildSummary(),
         api.buildVerification()
       ]);
       setProviders(providerStatuses);
-      setCiscoSetupReadiness(ciscoReadiness);
-      setCiscoSetupWizardPlan(setupWizardPlan);
-      setCiscoBootstrapRequirements(bootstrapRequirements);
-      setCiscoConsoleBootstrapPlan(consoleBootstrapPlan);
       setFirmwareCompliance(firmwareGate);
       setFullRebuildSummary(fullRebuild);
       setBuildVerification(certification);
+      void Promise.allSettled([
+        api.ciscoSetupReadiness().then(setCiscoSetupReadiness),
+        api.ciscoSetupWizardPlan().then(setCiscoSetupWizardPlan),
+        api.ciscoBootstrapRequirements().then(setCiscoBootstrapRequirements),
+        api.ciscoConsoleBootstrapPlan().then(setCiscoConsoleBootstrapPlan)
+      ]);
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -10602,6 +11545,15 @@ function ProviderStatusPage() {
   const iloProvider = orderedProviders.find((provider) => provider.id === "ilo-redfish") ?? null;
   const esxiProvider = orderedProviders.find((provider) => provider.id === "esxi-readonly") ?? null;
   const netappProvider = orderedProviders.find((provider) => provider.id === "netapp-ontap") ?? null;
+  const providerSections = useMemo(() => buildProviderSections(orderedProviders), [orderedProviders]);
+  const providerSectionIdSignature = providerSections.map((section) => section.id).join("|");
+  const selectedProviderSection =
+    providerSections.find((section) => section.id === activeProviderSectionId) ??
+    providerSections[0] ??
+    null;
+  const selectedProviders = selectedProviderSection
+    ? orderedProviders.filter((provider) => selectedProviderSection.providerIds.includes(provider.id))
+    : [];
   const buildStages = useMemo(
     () =>
       buildLabBuildStages({
@@ -10631,55 +11583,114 @@ function ProviderStatusPage() {
     () => buildLabOverview(buildStages, buildVerification, providers),
     [buildStages, buildVerification, providers]
   );
+  const hardwareRows = useMemo(
+    () =>
+      buildHardwareInventoryRows({
+        activeProfile,
+        buildVerification,
+        ciscoSetupReadiness,
+        esxiProvider,
+        firmwareCompliance,
+        fullRebuildSummary,
+        iloProvider,
+        netappEnabled: activeContext?.enabled_features.netapp_enabled ?? activeProfile?.features.netapp_enabled ?? true,
+        netappProvider,
+        orderedProviders
+      }),
+    [
+      activeContext,
+      activeProfile,
+      buildVerification,
+      ciscoSetupReadiness,
+      esxiProvider,
+      firmwareCompliance,
+      fullRebuildSummary,
+      iloProvider,
+      netappProvider,
+      orderedProviders
+    ]
+  );
+
+  useEffect(() => {
+    if (providerSections.length && !providerSections.some((section) => section.id === activeProviderSectionId)) {
+      setActiveProviderSectionId(providerSections[0].id);
+    }
+  }, [activeProviderSectionId, providerSectionIdSignature, providerSections]);
 
   return (
     <Page
-      title="Lab Builder"
+      description="Compact inventory for the active lab setup, live discovery, and current readiness."
+      primaryAction={{ icon: <RefreshCw size={16} />, label: "Refresh", onClick: load, disabled: loading || Boolean(busyProvider) }}
+      title="Hardware"
       actions={
-        <button onClick={load} disabled={loading || Boolean(busyProvider)}>
-          <RefreshCw size={16} />
-          Refresh Status
-        </button>
+        <Link className="button-link" to="/control-center">
+          <Wrench size={16} />
+          Control Center
+        </Link>
       }
     >
-      <Feedback loading={loading && !providers.length} error={error} />
+      <Feedback loading={loading && !activeProfile && !providers.length} error={error} />
       <section className="lab-builder-surface">
-        <BuildOverviewCard overview={buildOverview} />
-        <GuidedWorkflowLane stages={buildStages} />
-        <section className="build-stage-grid" aria-label="Build stages">
-          {buildStages.map((stage) => (
-            <BuildStageCard key={stage.id} stage={stage} />
-          ))}
-        </section>
+        <HardwareInventorySummary overview={buildOverview} rows={hardwareRows} />
+        <HardwareInventoryTable rows={hardwareRows} />
+        {providers.length > 0 ? (
+          <AdvancedDetails className="section-details provider-global-evidence" summary="Provider workflow details and proof" title="Provider Proof">
+            <BuildOverviewCard overview={buildOverview} />
+            <GuidedWorkflowLane stages={buildStages} />
+            <section className="build-stage-grid" aria-label="Build stages">
+              {buildStages.map((stage) => (
+                <BuildStageCard key={stage.id} stage={stage} />
+              ))}
+            </section>
+            <section className="provider-workspace" aria-label="Hardware provider workspace">
+              <div className="readiness-head">
+                <div>
+                  <PanelTitle icon={<Activity size={18} />} title="Provider Workflows" />
+                  <p className="muted">Read-only checks, saved intent, and guarded apply paths.</p>
+                </div>
+              </div>
+              <ProviderSectionTabs
+                activeSectionId={selectedProviderSection?.id ?? ""}
+                busy={Boolean(busyProvider) || busyPromptReadiness || busyBootstrapRequirements}
+                onSelect={setActiveProviderSectionId}
+                sections={providerSections}
+              />
+              <div className="provider-status-stack">
+                {selectedProviderSection?.id === "cisco" && ciscoSetupReadiness && (
+                  <CiscoSetupReadinessPanel
+                    bootstrapRequirements={ciscoBootstrapRequirements}
+                    busyBootstrapRequirements={busyBootstrapRequirements}
+                    consoleBootstrapPlan={ciscoConsoleBootstrapPlan}
+                    onSaveBootstrapRequirements={saveBootstrapRequirements}
+                    readiness={ciscoSetupReadiness}
+                    setupWizardPlan={ciscoSetupWizardPlan}
+                  />
+                )}
+                {selectedProviders.map((provider) => (
+                  <ProviderDetailCard
+                    busy={busyProvider === provider.id}
+                    busyPromptReadiness={busyPromptReadiness}
+                    key={provider.id}
+                    onProbe={() => runProbe(provider)}
+                    onPromptReadiness={runPromptReadiness}
+                    promptReadinessResult={promptReadinessResult}
+                    provider={provider}
+                    probeResult={probeResults[provider.id] ?? null}
+                  />
+                ))}
+              </div>
+            </section>
+          </AdvancedDetails>
+        ) : (
+          !loading && <EmptyState title="No hardware providers" detail="Refresh after provider status is available from the backend." />
+        )}
         <AdvancedDetails
           className="provider-global-evidence advanced-diagnostics"
-          summary="Raw reports, provider evidence, protected actions, command text, and redacted payloads"
+          summary="Raw reports, protected actions, command text, and redacted payloads"
           title="Advanced diagnostics"
         >
           <FullRebuildSummaryPanel summary={fullRebuildSummary} />
           <BuildVerificationPanel verification={buildVerification} />
-          {ciscoSetupReadiness && (
-            <CiscoSetupReadinessPanel
-              bootstrapRequirements={ciscoBootstrapRequirements}
-              busyBootstrapRequirements={busyBootstrapRequirements}
-              consoleBootstrapPlan={ciscoConsoleBootstrapPlan}
-              onSaveBootstrapRequirements={saveBootstrapRequirements}
-              readiness={ciscoSetupReadiness}
-              setupWizardPlan={ciscoSetupWizardPlan}
-            />
-          )}
-          {orderedProviders.map((provider) => (
-            <ProviderDetailCard
-              busy={busyProvider === provider.id}
-              busyPromptReadiness={busyPromptReadiness}
-              key={provider.id}
-              onProbe={() => runProbe(provider)}
-              onPromptReadiness={runPromptReadiness}
-              promptReadinessResult={promptReadinessResult}
-              provider={provider}
-              probeResult={probeResults[provider.id] ?? null}
-            />
-          ))}
         </AdvancedDetails>
       </section>
     </Page>
@@ -10773,6 +11784,7 @@ function BuildStageCard({ stage }: { stage: BuildStage }) {
 }
 
 function StatusPill({ status }: { status: string }) {
+  if (isLowSignalStatusBubble(status)) return null;
   return <span className={`status-pillow ${statusTone(status)}`}>{displayStatusLabel(status)}</span>;
 }
 
@@ -10868,23 +11880,23 @@ function buildLabBuildStages({
   return [
     {
       id: "lab-profile",
-      title: "Lab Profile",
-      step: "Step 1: Confirm lab profile",
+      title: "Lab Setup",
+      step: "Step 1: Confirm lab setup",
       status: asString(labProfile.status) || asString(labProfile.classification) || "not-configured",
       message: "Confirms the active lab address plan and groups older report references as evidence.",
-      nextAction: humanizeAction(asString(labProfile.next_action) || "Confirm the lab profile before running provider stages."),
+      nextAction: humanizeAction(asString(labProfile.next_action) || "Confirm the lab setup before running provider stages."),
       metricLabel: "Evidence",
       metricValue: staleArtifacts.length ? "Stale evidence" : "Current profile",
       blocker: labProfileCurrentBlocker,
       detailSummary: "Lab profile, historical evidence, and address plan",
       details: (
         <div className="stage-detail-grid">
-          <ProviderFact label="Lab Profile" value={labelize(asString(labProfile.status) || "unknown")} />
+          <ProviderFact label="Lab Setup" value={labelize(asString(labProfile.status) || "unknown")} />
           <ProviderFact label="Expected Subnet" value={asString(expectedProfile.subnet) || "Not loaded"} />
           <ProviderFact label="Historical Evidence" value={staleArtifacts.length ? String(staleArtifacts.length) : "None detected"} />
           <ProviderFact label="Source" value={resultSourceLabel(labProfile)} />
-          <ProviderFact label="Next Action" value={humanizeAction(asString(labProfile.next_action) || "Confirm the lab profile.")} />
-          <JsonDetails title="Advanced lab profile evidence" data={labProfile} />
+          <ProviderFact label="Next Action" value={humanizeAction(asString(labProfile.next_action) || "Confirm the lab setup.")} />
+          <JsonDetails title="Advanced lab setup evidence" data={labProfile} />
         </div>
       )
     },
@@ -11111,6 +12123,319 @@ function StageSummaryDetails({ rows }: { rows: Array<[string, string]> }) {
       </p>
     </div>
   );
+}
+
+function HardwareInventorySummary({
+  overview,
+  rows
+}: {
+  overview: BuildOverview;
+  rows: HardwareInventoryRow[];
+}) {
+  const blocked = rows.filter((row) => isAttentionStatus(row.status)).length;
+  const notChecked = rows.filter((row) => ["not_checked", "not-configured", "not_configured_yet", "missing-config"].includes(row.status)).length;
+  const ready = rows.filter((row) => isReadyStatus(row.status)).length;
+  return (
+    <section className="hardware-summary-strip" aria-label="Hardware inventory summary">
+      <StatusSummaryCard
+        message={overview.currentPhase}
+        status={blocked ? "blocked" : ready ? "ready" : "not_checked"}
+        title="Lab Hardware Inventory"
+        items={[
+          { label: "Equipment", value: String(rows.length) },
+          { label: "Ready", value: String(ready) },
+          { label: "Needs Attention", value: String(blocked) },
+          { label: "Not Checked", value: String(notChecked) }
+        ]}
+      />
+      <NextActionCard detail={overview.nextAction} />
+      <BlockerSummary blockers={blocked ? rows.filter((row) => isAttentionStatus(row.status)).map((row) => `${row.equipment}: ${displayStatusLabel(row.status)}`).slice(0, 3) : []} />
+    </section>
+  );
+}
+
+function HardwareInventoryTable({ rows }: { rows: HardwareInventoryRow[] }) {
+  return (
+    <section className="panel hardware-inventory-panel" aria-label="Hardware inventory">
+      <div className="issue-list-head">
+        <PanelTitle icon={<ClipboardList size={18} />} title="Hardware Inventory" />
+        <span>{rows.length} rows</span>
+      </div>
+      <div className="hardware-table-wrap">
+        <table className="provider-candidate-table hardware-inventory-table">
+          <thead>
+            <tr>
+              <th>Equipment</th>
+              <th>Type</th>
+              <th>Role</th>
+              <th>OS / Firmware</th>
+              <th>Access</th>
+              <th>IP / Console</th>
+              <th>UID / Username Field</th>
+              <th>Status</th>
+              <th>Last Checked</th>
+              <th>Actions / Configs</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.id}>
+                <td>
+                  <strong>{row.equipment}</strong>
+                </td>
+                <td>{row.type}</td>
+                <td>{row.role}</td>
+                <td>{row.osFirmware}</td>
+                <td>{row.access}</td>
+                <td>{row.target}</td>
+                <td>{row.usernameField}</td>
+                <td><StatusBadge status={row.status} /></td>
+                <td>{row.lastChecked ? formatDateTime(row.lastChecked) : "Not checked"}</td>
+                <td><HardwareActionsDropdown row={row} /></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+function HardwareActionsDropdown({ row }: { row: HardwareInventoryRow }) {
+  return (
+    <details className="row-actions-dropdown">
+      <summary>Actions</summary>
+      <div>
+        <ul>
+          {row.actions.map((action) => (
+            <li key={`${row.id}-${action}`}>{action}</li>
+          ))}
+        </ul>
+        <AdvancedDetails
+          className="inline-advanced row-proof-details"
+          summary={`${row.evidence.length} proof link${row.evidence.length === 1 ? "" : "s"}`}
+          title="Proof"
+        >
+          <EvidenceList artifacts={row.evidence} empty="No proof artifact is linked to this row yet." />
+        </AdvancedDetails>
+      </div>
+    </details>
+  );
+}
+
+function buildHardwareInventoryRows({
+  activeProfile,
+  buildVerification,
+  ciscoSetupReadiness,
+  esxiProvider,
+  firmwareCompliance,
+  fullRebuildSummary,
+  iloProvider,
+  netappEnabled,
+  netappProvider,
+  orderedProviders
+}: {
+  activeProfile: LabProfile | null;
+  buildVerification: ProviderProbeResult | null;
+  ciscoSetupReadiness: CiscoSetupReadiness | null;
+  esxiProvider: ProviderStatus | null;
+  firmwareCompliance: ProviderProbeResult | null;
+  fullRebuildSummary: ProviderProbeResult | null;
+  iloProvider: ProviderStatus | null;
+  netappEnabled: boolean;
+  netappProvider: ProviderStatus | null;
+  orderedProviders: ProviderStatus[];
+}): HardwareInventoryRow[] {
+  const address = activeProfile?.resolved_address_plan ?? activeProfile?.address_plan ?? blankLabAddressPlan();
+  const devices = activeProfile?.devices ?? {};
+  const ciscoProviders = orderedProviders.filter((provider) => provider.id.startsWith("cisco-"));
+  const ciscoConsole = objectValue(ciscoSetupReadiness?.console);
+  const ciscoTarget = displayAddress(address.cisco_management);
+  const netappRuntimeState = objectValue(netappProvider?.configuration.runtime_state);
+  const netappConsole = objectValue(netappRuntimeState.console);
+  const stages = objectValue(fullRebuildSummary?.stages);
+  const raidStage = objectValue(stages.raid || stages.hpe_raid || stages.storage);
+  const rows: HardwareInventoryRow[] = [
+    {
+      id: "cisco-switch",
+      equipment: "Cisco switch",
+      type: "Network",
+      role: "Management switch",
+      osFirmware: firmwareSummary(firmwareCompliance, ["cisco", "ios xe"]) || "IOS XE unknown",
+      access: asString(ciscoConsole.selected_path) ? "Console" : "Console / SSH",
+      target: asString(ciscoConsole.selected_path) || ciscoTarget,
+      usernameField: "CISCO_USERNAME",
+      status: providerSectionStatus(ciscoProviders),
+      lastChecked: latestCheckedAt(...ciscoProviders.map((provider) => provider.checked_at)),
+      actions: hardwareActionsFor("cisco"),
+      evidence: uniqueStrings(ciscoProviders.flatMap((provider) => provider.evidence_artifacts))
+    },
+    {
+      id: "hpe-ilo",
+      equipment: "HPE iLO",
+      type: "Management",
+      role: "Server out-of-band",
+      osFirmware: firmwareSummary(firmwareCompliance, ["ilo", "hpe ilo"]) || "iLO firmware unknown",
+      access: "Redfish HTTPS",
+      target: displayAddress(address.ilo),
+      usernameField: "ILO_USERNAME",
+      status: operatorHardwareStatus(iloProvider?.status, iloProvider),
+      lastChecked: latestCheckedAt(iloProvider?.checked_at ?? null, firmwareCompliance?.checked_at ?? null),
+      actions: hardwareActionsFor("ilo"),
+      evidence: uniqueStrings([...(iloProvider?.evidence_artifacts ?? []), ...probeEvidencePaths(firmwareCompliance)])
+    },
+    {
+      id: "dl360-server",
+      equipment: "DL360 server",
+      type: "Server",
+      role: "ESXi host hardware",
+      osFirmware: firmwareSummary(firmwareCompliance, ["bios", "server"]) || "BIOS unknown",
+      access: "Through iLO",
+      target: displayAddress(address.server_embedded_nic || address.ilo),
+      usernameField: "ILO_USERNAME",
+      status: operatorHardwareStatus(iloProvider?.status, iloProvider),
+      lastChecked: latestCheckedAt(iloProvider?.checked_at ?? null, buildVerification?.checked_at ?? null),
+      actions: hardwareActionsFor("server"),
+      evidence: uniqueStrings([...(iloProvider?.evidence_artifacts ?? []), ...probeEvidencePaths(buildVerification)])
+    },
+    {
+      id: "smart-array",
+      equipment: "Smart Array / RAID",
+      type: "Storage controller",
+      role: "ESXi boot and datastore layout",
+      osFirmware: firmwareSummary(firmwareCompliance, ["smart array", "array"]) || "Smart Array firmware unknown",
+      access: "Through iLO",
+      target: displayAddress(address.ilo),
+      usernameField: "ILO_USERNAME",
+      status: asString(raidStage.status) || "not_checked",
+      lastChecked: latestCheckedAt(asString(raidStage.checked_at) || null, buildVerification?.checked_at ?? null),
+      actions: hardwareActionsFor("raid"),
+      evidence: uniqueStrings(probeEvidencePaths(buildVerification))
+    },
+    {
+      id: "esxi-host",
+      equipment: "ESXi host",
+      type: "Virtualization",
+      role: "Compute runtime",
+      osFirmware: firmwareSummary(firmwareCompliance, ["esxi", "vmware"]) || "ESXi version unknown",
+      access: "HTTPS / SSH / API",
+      target: displayAddress(address.esxi_management),
+      usernameField: "ESXI_USERNAME",
+      status: operatorHardwareStatus(esxiProvider?.status, esxiProvider),
+      lastChecked: latestCheckedAt(esxiProvider?.checked_at ?? null, buildVerification?.checked_at ?? null),
+      actions: hardwareActionsFor("esxi"),
+      evidence: uniqueStrings([...(esxiProvider?.evidence_artifacts ?? []), ...probeEvidencePaths(buildVerification)])
+    },
+    {
+      id: "netapp-controller",
+      equipment: "NetApp controller",
+      type: "Storage",
+      role: "Console bootstrap",
+      osFirmware: firmwareSummary(firmwareCompliance, ["netapp", "sp", "bmc"]) || "Controller firmware unknown",
+      access: "Serial console",
+      target: asString(netappConsole.discovered_port) || displayAddress(address.netapp_controller_a_sp),
+      usernameField: "NETAPP_USERNAME",
+      status: netappEnabled ? operatorHardwareStatus(netappProvider?.status, netappProvider) : "not_configured_yet",
+      lastChecked: latestCheckedAt(netappProvider?.checked_at ?? null, firmwareCompliance?.checked_at ?? null),
+      actions: hardwareActionsFor("netapp-controller"),
+      evidence: uniqueStrings([...(netappProvider?.evidence_artifacts ?? []), ...probeEvidencePaths(firmwareCompliance)])
+    },
+    {
+      id: "netapp-cluster",
+      equipment: "NetApp cluster",
+      type: "Storage",
+      role: "NFS / iSCSI services",
+      osFirmware: firmwareSummary(firmwareCompliance, ["ontap", "netapp"]) || "ONTAP unknown",
+      access: "ONTAP REST / SSH",
+      target: displayAddress(address.netapp_cluster_mgmt),
+      usernameField: "NETAPP_USERNAME",
+      status: netappEnabled ? operatorHardwareStatus(netappProvider?.status, netappProvider) : "not_configured_yet",
+      lastChecked: latestCheckedAt(netappProvider?.checked_at ?? null, buildVerification?.checked_at ?? null),
+      actions: hardwareActionsFor("netapp-cluster"),
+      evidence: uniqueStrings([...(netappProvider?.evidence_artifacts ?? []), ...probeEvidencePaths(buildVerification)])
+    },
+    {
+      id: "ups",
+      equipment: "UPS",
+      type: "Power",
+      role: "Power protection",
+      osFirmware: "Not inventoried",
+      access: "Management / manual",
+      target: displayAddress(devices.ups),
+      usernameField: "UPS_USERNAME",
+      status: devices.ups ? "not_checked" : "not_configured_yet",
+      lastChecked: null,
+      actions: hardwareActionsFor("ups"),
+      evidence: []
+    },
+    {
+      id: "backup-storage",
+      equipment: "backup storage",
+      type: "Storage",
+      role: "Backup target",
+      osFirmware: "Not inventoried",
+      access: "Management / SMB / NFS",
+      target: displayAddress(devices.backup_storage),
+      usernameField: "BACKUP_STORAGE_USERNAME",
+      status: devices.backup_storage ? "not_checked" : "not_configured_yet",
+      lastChecked: null,
+      actions: hardwareActionsFor("backup-storage"),
+      evidence: []
+    },
+    {
+      id: "utility-vm",
+      equipment: "utility VM",
+      type: "Utility",
+      role: "Control host services",
+      osFirmware: "Guest OS unknown",
+      access: "SSH",
+      target: displayAddress(address.ansible_control_host || devices.utility_vm),
+      usernameField: "CONTROL_HOST_USERNAME",
+      status: address.ansible_control_host || devices.utility_vm ? "not_checked" : "not_configured_yet",
+      lastChecked: buildVerification?.checked_at ?? null,
+      actions: hardwareActionsFor("utility-vm"),
+      evidence: probeEvidencePaths(buildVerification)
+    }
+  ];
+  return rows;
+}
+
+function hardwareActionsFor(kind: string): string[] {
+  const shared = ["test access", "refresh inventory", "validation / proof"];
+  const networkConfig = ["configure IP", "configure DNS", "configure NTP", "configure SNMP", "configure MTU", "disable IPv6", "block legacy protocols"];
+  if (kind === "cisco") return [...shared, "check firmware", ...networkConfig, "enable SSH/SCP", "configure VLAN", "setup preview"];
+  if (kind === "ilo") return [...shared, "check firmware", ...networkConfig, "configure virtual media", "setup preview"];
+  if (kind === "server") return [...shared, "check firmware", "configure virtual media", "validation / proof"];
+  if (kind === "raid") return ["refresh inventory", "setup preview", "validation / proof"];
+  if (kind === "esxi") return [...shared, "check firmware", ...networkConfig, "enable SSH/SCP", "setup preview"];
+  if (kind === "netapp-controller") return [...shared, "check firmware", "setup preview", "upgrade inventory", "validation / proof"];
+  if (kind === "netapp-cluster") return [...shared, "check firmware", ...networkConfig, "choose storage protocol", "setup preview", "upgrade inventory", "upgrade plan", "validation / proof"];
+  return [...shared, "configure IP"];
+}
+
+function firmwareSummary(probe: ProviderProbeResult | null, tokens: string[]): string {
+  const components = recordArray(probe?.components);
+  const normalizedTokens = tokens.map((token) => token.toLowerCase());
+  const match = components.find((component) => {
+    const text = `${asString(component.device)} ${asString(component.label)} ${asString(component.id)}`.toLowerCase();
+    return normalizedTokens.some((token) => text.includes(token));
+  });
+  if (!match) return "";
+  const version = asString(match.current_version);
+  const status = asString(match.status) || "unknown";
+  return version ? `${version} / ${displayStatusLabel(status)}` : displayStatusLabel(status);
+}
+
+function operatorHardwareStatus(status: string | undefined, provider?: ProviderStatus | null): string {
+  if (!status) return "not_checked";
+  if (provider?.source_type === "test_fixture" || provider?.mode === "mock") return "not_checked";
+  return status;
+}
+
+function latestCheckedAt(...values: Array<string | null | undefined>): string | null {
+  const checked = values.filter((value): value is string => Boolean(value));
+  if (!checked.length) return null;
+  return checked.sort((left, right) => right.localeCompare(left))[0];
 }
 
 function FullRebuildSummaryPanel({ summary }: { summary: ProviderProbeResult | null }) {
@@ -12408,57 +13733,44 @@ function IloRedfishDetails({ provider }: { provider: ProviderStatus }) {
 
   useEffect(() => {
     let cancelled = false;
-    Promise.all([
-      api.iloUpgradeReadiness(),
-      api.iloBaselinePreview(),
-      api.iloBaselineReadiness(),
-      api.iloSetupIntent(),
-      api.iloSetupPlanPreview(),
-      api.hpeStorageDiscovery(),
-      api.hpeRaidIntent(),
-      api.hpeRaidPlanPreview(),
-      api.hpeRaidApplyPlan(),
-      api.hpeRaidPending(),
-      api.hpeRaidResetPlan(),
-      api.esxiInstallReadiness()
-    ])
-      .then(([
-        readinessPayload,
-        baselinePreviewPayload,
-        baselineReadinessPayload,
-        intentPayload,
-        planPayload,
-        storagePayload,
-        raidIntentPayload,
-        raidPlanPayload,
-        raidApplyPayload,
-        raidPendingPayload,
-        raidResetPayload,
-        esxiInstallPayload
-      ]) => {
-        if (!cancelled) {
-          setReadiness(readinessPayload);
-          setBaselinePreview(baselinePreviewPayload);
-          setBaselineReadiness(baselineReadinessPayload);
-          setSetupIntent(intentPayload);
-          setSetupPlan(planPayload);
-          setRaidDiscovery(storagePayload);
-          setRaidIntent(raidIntentPayload);
-          setRaidPlan(raidPlanPayload);
-          setRaidApplyPlan(raidApplyPayload);
-          setRaidPending(raidPendingPayload);
-          setRaidResetPlan(raidResetPayload);
-          setEsxiInstallReadiness(esxiInstallPayload);
-          setError("");
-          setSetupError("");
-          setRaidError("");
-        }
-      })
-      .catch((err: Error) => {
-        if (!cancelled) {
-          setError(err.message);
-        }
-      });
+    setError("");
+    setSetupError("");
+    setRaidError("");
+    const appendError = (setter: (value: SetStateAction<string>) => void, message: string) => {
+      setter((current) => (current ? `${current}; ${message}` : message));
+    };
+    const loadPart = <T,>(
+      label: string,
+      promise: Promise<T>,
+      onValue: (value: T) => void,
+      onError: (message: string) => void
+    ) => {
+      promise
+        .then((value) => {
+          if (!cancelled) {
+            onValue(value);
+          }
+        })
+        .catch((err: Error) => {
+          if (!cancelled) {
+            const message = err instanceof Error ? err.message : String(err);
+            onError(`${label}: ${message}`);
+          }
+        });
+    };
+
+    loadPart("iLO upgrade readiness", api.iloUpgradeReadiness(), setReadiness, (message) => appendError(setError, message));
+    loadPart("iLO baseline preview", api.iloBaselinePreview(), setBaselinePreview, (message) => appendError(setError, message));
+    loadPart("iLO baseline readiness", api.iloBaselineReadiness(), setBaselineReadiness, (message) => appendError(setError, message));
+    loadPart("iLO setup intent", api.iloSetupIntent(), setSetupIntent, (message) => appendError(setSetupError, message));
+    loadPart("iLO setup plan", api.iloSetupPlanPreview(), setSetupPlan, (message) => appendError(setSetupError, message));
+    loadPart("HPE storage discovery", api.hpeStorageDiscovery(), setRaidDiscovery, (message) => appendError(setRaidError, message));
+    loadPart("HPE RAID intent", api.hpeRaidIntent(), setRaidIntent, (message) => appendError(setRaidError, message));
+    loadPart("HPE RAID plan", api.hpeRaidPlanPreview(), setRaidPlan, (message) => appendError(setRaidError, message));
+    loadPart("HPE RAID apply plan", api.hpeRaidApplyPlan(), setRaidApplyPlan, (message) => appendError(setRaidError, message));
+    loadPart("HPE RAID pending check", api.hpeRaidPending(), setRaidPending, (message) => appendError(setRaidError, message));
+    loadPart("HPE RAID reset plan", api.hpeRaidResetPlan(), setRaidResetPlan, (message) => appendError(setRaidError, message));
+    loadPart("ESXi install readiness", api.esxiInstallReadiness(), setEsxiInstallReadiness, (message) => appendError(setRaidError, message));
     return () => {
       cancelled = true;
     };
@@ -12649,11 +13961,11 @@ function IloRedfishDetails({ provider }: { provider: ProviderStatus }) {
         savedMessage={setupSavedMessage}
       />
       </AdvancedDetails>
-      <AdvancedDetails
-        className="provider-workflow-details"
-        summary="Current drives, desired RAID layout, pending reset, and validation after reset"
-        title="HPE Storage / RAID"
-      >
+      <section className="provider-core-workflow">
+        <div className="readiness-head">
+          <PanelTitle icon={<HardDrive size={18} />} title="HPE Storage / RAID" />
+          <StatusBadge status={asString(raidPlan?.status) || "not_loaded"} />
+        </div>
       <HpeRaidSetupPanel
         busy={raidBusy}
         applyPlan={raidApplyPlan}
@@ -12670,7 +13982,7 @@ function IloRedfishDetails({ provider }: { provider: ProviderStatus }) {
         resetPlan={raidResetPlan}
         savedMessage={raidSavedMessage}
       />
-      </AdvancedDetails>
+      </section>
       <AdvancedDetails
         className="provider-workflow-details"
         summary="Virtual media, ISO, one-time boot, BIOS, and installer readiness"
@@ -13218,6 +14530,31 @@ function HpeRaidSetupPanel({
     }));
   }
 
+  function assignDriveBay(bay: string, target: HpeDriveAssignmentTarget) {
+    if (!bay) return;
+    setForm((current) => ({
+      ...current,
+      volumes: current.volumes.map((volume, volumeIndex) => {
+        const nextVolume = {
+          ...volume,
+          drive_bays: sortHpeBays(volume.drive_bays.filter((item) => item !== bay)),
+          spare_bays: sortHpeBays((volume.spare_bays ?? []).filter((item) => item !== bay))
+        };
+        if (target.kind === "data" && target.volumeIndex === volumeIndex) {
+          nextVolume.drive_bays = sortHpeBays([...nextVolume.drive_bays, bay]);
+        }
+        if (target.kind === "spare" && target.volumeIndex === volumeIndex) {
+          nextVolume.spare_bays = sortHpeBays([...nextVolume.spare_bays, bay]);
+          nextVolume.spare_rebuild_mode = nextVolume.spare_rebuild_mode || "Dedicated";
+        }
+        if (!nextVolume.spare_bays.length) {
+          nextVolume.spare_rebuild_mode = null;
+        }
+        return nextVolume;
+      })
+    }));
+  }
+
   function useEsxiLayout() {
     const bays = drives.map((drive) => asString(drive.bay_id)).filter(Boolean);
     const bootBays = bays.slice(0, 2);
@@ -13406,11 +14743,17 @@ function HpeRaidSetupPanel({
             Add RAID Volume
           </button>
         </div>
+        <div className="span-2">
+          <HpeDriveAssignmentBoard
+            drives={drives}
+            onAssign={assignDriveBay}
+            volumes={form.volumes}
+          />
+        </div>
         <div className="span-2 hpe-raid-volume-list">
           {form.volumes.length === 0 && <p className="muted">No RAID volumes planned.</p>}
           {form.volumes.map((volume, index) => (
             <HpeRaidVolumeEditor
-              drives={drives}
               key={`${index}-${volume.name}`}
               onChange={(next) => updateVolume(index, next)}
               onRemove={() => removeVolume(index)}
@@ -13475,25 +14818,16 @@ function HpeRaidSetupPanel({
 }
 
 function HpeRaidVolumeEditor({
-  drives,
   onChange,
   onRemove,
   volume
 }: {
-  drives: Array<Record<string, unknown>>;
   onChange: (volume: HpeRaidVolumeIntent) => void;
   onRemove: () => void;
   volume: HpeRaidVolumeIntent;
 }) {
   function update<K extends keyof HpeRaidVolumeIntent>(field: K, value: HpeRaidVolumeIntent[K]) {
     onChange({ ...volume, [field]: value });
-  }
-
-  function toggleBay(bay: string) {
-    const nextBays = volume.drive_bays.includes(bay)
-      ? volume.drive_bays.filter((item) => item !== bay)
-      : [...volume.drive_bays, bay];
-    update("drive_bays", nextBays);
   }
 
   return (
@@ -13530,30 +14864,108 @@ function HpeRaidVolumeEditor({
           Remove Volume
         </button>
       </div>
-      <div className="hpe-drive-selector">
-        {drives.map((drive) => {
-          const bay = asString(drive.bay_id);
-          return (
-            <label className="hpe-drive-choice" key={bay || asString(drive.display_label)}>
-              <input
-                checked={Boolean(bay && volume.drive_bays.includes(bay))}
-                disabled={!bay}
-                onChange={() => toggleBay(bay)}
-                type="checkbox"
-              />
-              <span>
-                <strong>{asString(drive.display_label) || "Drive"}</strong>
-                {asString(drive.capacity_label)} {asString(drive.media_type)} {labelize(asString(drive.health) || "unknown")}
-              </span>
-            </label>
-          );
-        })}
+      <div className="hpe-volume-bay-summary">
+        <HpeBayList label="Member bays" bays={volume.drive_bays} />
+        <HpeBayList label="Dedicated spares" bays={volume.spare_bays ?? []} />
       </div>
     </div>
   );
 }
 
-type Dl360BayRole = "unused" | "os" | "datastore" | "spare";
+type HpeDriveAssignmentKind = "unused" | "data" | "spare";
+type HpeDriveAssignmentTarget = {
+  kind: HpeDriveAssignmentKind;
+  volumeIndex: number | null;
+};
+
+function HpeDriveAssignmentBoard({
+  drives,
+  onAssign,
+  volumes
+}: {
+  drives: Array<Record<string, unknown>>;
+  onAssign: (bay: string, target: HpeDriveAssignmentTarget) => void;
+  volumes: HpeRaidVolumeIntent[];
+}) {
+  if (!drives.length) {
+    return <p className="muted">No physical drive inventory is cached yet.</p>;
+  }
+
+  const assignedCount = hpeAssignedBays(volumes).size;
+  const usableDriveCount = drives.filter(hpeDriveAssignable).length;
+
+  return (
+    <section className="hpe-drive-board" aria-label="RAID drive assignment">
+      <div className="hpe-drive-board-head">
+        <div>
+          <strong>Drive Assignment</strong>
+          <p>{assignedCount} of {usableDriveCount} usable bays assigned in the saved intent draft.</p>
+        </div>
+        <span className="status-pillow tone-neutral">Plan only</span>
+      </div>
+      {volumes.length === 0 && (
+        <p className="provider-redaction-note">Add a RAID volume or load the ESXi layout before assigning bays.</p>
+      )}
+      <div className="hpe-drive-bay-grid">
+        {drives.map((drive) => {
+          const bay = asString(drive.bay_id);
+          const assignment: HpeDriveAssignmentTarget = bay
+            ? hpeDriveAssignment(volumes, bay)
+            : { kind: "unused", volumeIndex: null };
+          const assignable = Boolean(bay) && hpeDriveAssignable(drive) && volumes.length > 0;
+          const assignmentValue = hpeDriveAssignmentValue(assignment);
+          const assignmentLabel = hpeDriveAssignmentLabel(volumes, assignment);
+          return (
+            <div
+              className={`hpe-drive-bay role-${assignment.kind}${assignable ? "" : " is-disabled"}`}
+              key={bay || asString(drive.display_label)}
+            >
+              <div className="hpe-drive-bay-top">
+                <span>{asString(drive.display_label) || bay || "Drive"}</span>
+                <strong>{asString(drive.capacity_label) || "No media"}</strong>
+              </div>
+              <div className="hpe-drive-bay-meta">
+                <span>{asString(drive.media_type) || asString(drive.MediaType) || "-"}</span>
+                <span>{asString(drive.Protocol) || asString(drive.InterfaceType) || "-"}</span>
+                <span>{labelize(statusHealth(drive))}</span>
+              </div>
+              <span className="hpe-drive-assignment-badge">{assignmentLabel}</span>
+              <label className="hpe-drive-assignment-control">
+                <span>Assignment</span>
+                <select
+                  disabled={!assignable}
+                  value={assignmentValue}
+                  onChange={(event) => onAssign(bay, parseHpeDriveAssignmentTarget(event.target.value))}
+                >
+                  <option value="unused">Unused</option>
+                  {volumes.map((volume, volumeIndex) => (
+                    <option key={`data-${volumeIndex}`} value={`data:${volumeIndex}`}>
+                      {(volume.name || `Volume ${volumeIndex + 1}`).trim()} member
+                    </option>
+                  ))}
+                  {volumes.map((volume, volumeIndex) => (
+                    <option key={`spare-${volumeIndex}`} value={`spare:${volumeIndex}`}>
+                      {(volume.name || `Volume ${volumeIndex + 1}`).trim()} spare
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function HpeBayList({ bays, label }: { bays: string[]; label: string }) {
+  return (
+    <div>
+      <span>{label}</span>
+      <p>{sortHpeBays(bays).join(", ") || "None"}</p>
+    </div>
+  );
+}
 
 function Dl360RaidProfileEditor({
   drives,
@@ -13573,29 +14985,6 @@ function Dl360RaidProfileEditor({
   const datastoreBays = new Set(datastoreVolume?.drive_bays ?? []);
   const spareBays = new Set(datastoreVolume?.spare_bays ?? []);
   const datastoreRaid = datastoreVolume?.raid_level || "RAID6";
-
-  function bayRole(bay: string): Dl360BayRole {
-    if (osBays.has(bay)) return "os";
-    if (datastoreBays.has(bay)) return "datastore";
-    if (spareBays.has(bay)) return "spare";
-    return "unused";
-  }
-
-  function setBayRole(bay: string, role: Dl360BayRole) {
-    const nextOs = new Set(osBays);
-    const nextDatastore = new Set(datastoreBays);
-    const nextSpare = new Set(spareBays);
-    nextOs.delete(bay);
-    nextDatastore.delete(bay);
-    nextSpare.delete(bay);
-    if (role === "os") nextOs.add(bay);
-    if (role === "datastore") nextDatastore.add(bay);
-    if (role === "spare") {
-      nextSpare.clear();
-      nextSpare.add(bay);
-    }
-    onChange(dl360ProfileVolumes([...nextOs], datastoreRaid, [...nextDatastore], [...nextSpare]));
-  }
 
   function setDatastoreRaid(raidLevel: string) {
     onChange(dl360ProfileVolumes([...osBays], raidLevel, [...datastoreBays], [...spareBays]));
@@ -13627,43 +15016,11 @@ function Dl360RaidProfileEditor({
           </select>
         </Field>
       </div>
-      <table className="provider-candidate-table hpe-raid-table">
-        <thead>
-          <tr>
-            <th>Bay</th>
-            <th>Capacity</th>
-            <th>Media</th>
-            <th>Assignment</th>
-          </tr>
-        </thead>
-        <tbody>
-          {drives.map((drive) => {
-            const bay = asString(drive.bay_id);
-            return (
-              <tr key={bay || asString(drive.display_label)}>
-                <td>{asString(drive.display_label) || bay || "-"}</td>
-                <td>{asString(drive.capacity_label) || "-"}</td>
-                <td>{asString(drive.media_type) || "-"}</td>
-                <td>
-                  <select
-                    disabled={!bay}
-                    value={bay ? bayRole(bay) : "unused"}
-                    onChange={(event) => setBayRole(bay, event.target.value as Dl360BayRole)}
-                  >
-                    <option value="unused">Unused</option>
-                    <option value="os">OS RAID</option>
-                    <option value="datastore">Datastore</option>
-                    <option value="spare">Dedicated spare</option>
-                  </select>
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-      <p className="provider-redaction-note">
-        OS bays: {[...osBays].join(", ") || "none"}; datastore bays: {[...datastoreBays].join(", ") || "none"}; spare: {[...spareBays].join(", ") || "none"}.
-      </p>
+      <div className="hpe-profile-summary">
+        <HpeBayList label="OS bays" bays={[...osBays]} />
+        <HpeBayList label="Datastore bays" bays={[...datastoreBays]} />
+        <HpeBayList label="Dedicated spares" bays={[...spareBays]} />
+      </div>
     </div>
   );
 }
@@ -13700,6 +15057,73 @@ function dl360ProfileVolumes(
     });
   }
   return volumes;
+}
+
+function parseHpeDriveAssignmentTarget(value: string): HpeDriveAssignmentTarget {
+  if (value === "unused") {
+    return { kind: "unused", volumeIndex: null };
+  }
+  const [kind, index] = value.split(":");
+  const volumeIndex = Number(index);
+  if ((kind === "data" || kind === "spare") && Number.isInteger(volumeIndex) && volumeIndex >= 0) {
+    return { kind, volumeIndex };
+  }
+  return { kind: "unused", volumeIndex: null };
+}
+
+function hpeDriveAssignmentValue(target: HpeDriveAssignmentTarget): string {
+  if (target.kind === "unused" || target.volumeIndex === null) {
+    return "unused";
+  }
+  return `${target.kind}:${target.volumeIndex}`;
+}
+
+function hpeDriveAssignment(volumes: HpeRaidVolumeIntent[], bay: string): HpeDriveAssignmentTarget {
+  for (let index = 0; index < volumes.length; index += 1) {
+    const volume = volumes[index];
+    if (volume.drive_bays.includes(bay)) {
+      return { kind: "data", volumeIndex: index };
+    }
+    if ((volume.spare_bays ?? []).includes(bay)) {
+      return { kind: "spare", volumeIndex: index };
+    }
+  }
+  return { kind: "unused", volumeIndex: null };
+}
+
+function hpeDriveAssignmentLabel(volumes: HpeRaidVolumeIntent[], target: HpeDriveAssignmentTarget): string {
+  if (target.kind === "unused" || target.volumeIndex === null) {
+    return "Unused";
+  }
+  const volume = volumes[target.volumeIndex];
+  const name = volume?.name.trim() || `Volume ${target.volumeIndex + 1}`;
+  return target.kind === "spare" ? `${name} spare` : `${name} member`;
+}
+
+function hpeAssignedBays(volumes: HpeRaidVolumeIntent[]): Set<string> {
+  const bays = new Set<string>();
+  volumes.forEach((volume) => {
+    volume.drive_bays.forEach((bay) => bays.add(bay));
+    (volume.spare_bays ?? []).forEach((bay) => bays.add(bay));
+  });
+  return bays;
+}
+
+function hpeDriveAssignable(drive: Record<string, unknown>): boolean {
+  const state = asString(objectValue(drive.Status).State || drive.State).toLowerCase();
+  const name = asString(drive.Name || drive.display_label).toLowerCase();
+  return state !== "absent" && !name.includes("empty bay");
+}
+
+function sortHpeBays(bays: string[]): string[] {
+  return Array.from(new Set(bays.filter(Boolean))).sort((left, right) => {
+    const leftNumber = Number(left);
+    const rightNumber = Number(right);
+    if (Number.isFinite(leftNumber) && Number.isFinite(rightNumber)) {
+      return leftNumber - rightNumber;
+    }
+    return left.localeCompare(right, undefined, { numeric: true });
+  });
 }
 
 function EsxiInstallReadinessPanel({
@@ -14595,7 +16019,7 @@ function displayStatusLabel(status: string): string {
     stale: "Stale",
     stale_config: "Old config needs review",
     success: "Ready",
-    test_fixture: "Test fixture",
+    test_fixture: "Test mode",
     "upgrade_disabled": "Upgrade disabled",
     unverified: "Unverified",
     unavailable: "Not available",
@@ -14667,6 +16091,10 @@ function humanizeAction(value: string): string {
     ["GET-only", "read-only"],
     ["GET-Only", "Read-only"]
   ].reduce((current, [from, to]) => current.split(from).join(to), value)
+    .replace(/active lab profile/g, "active lab setup")
+    .replace(/Active lab profile/g, "Active lab setup")
+    .replace(/lab profile/g, "lab setup")
+    .replace(/Lab Profile/g, "Lab Setup")
     .replace(/Review gates, then copy [`'"]?[^`'"]*make [^`'"]+[`'"]? when this stage is in scope\./g, "Open Advanced when this step is in scope.")
     .replace(/Run [`'"]?Run Build Verification[`'"]? with PROVIDER_MODE=local-lab-readwrite\.?/g, "Run Build Verification in Real Lab Mode.")
     .replace(/PROVIDER_MODE=local-lab-readwrite/g, "Real Lab Mode")
@@ -15194,9 +16622,9 @@ function WorkflowRunStructuredView({
   return (
     <>
       <section className="panel safety-note">
-        <PanelTitle icon={<ShieldCheck size={18} />} title="Local Dry-Run Safety" />
+        <PanelTitle icon={<ShieldCheck size={18} />} title="Local Preview Safety" />
         <p>
-          This run uses provider <strong>{run.provider}</strong>. The plan and result are local dry-run data;
+          This run uses provider <strong>{run.provider}</strong>. The plan and result are local preview data;
           no vCenter, ESXi, AWX, Terraform, OpenTofu, Redfish, ONTAP, switch, DNS, IPAM, or storage endpoint is called.
         </p>
       </section>
@@ -15228,8 +16656,8 @@ function WorkflowRunStructuredView({
         <PanelTitle icon={<Play size={18} />} title="Execution Result" />
         <div className="detail-grid">
           <Info label="Result" value={result.message} />
-          <Info label="Dry-Run Task" value={result.mockTaskId} />
-          <Info label="Dry-Run VM" value={result.mockVmId} />
+          <Info label="Preview Task" value={result.mockTaskId} />
+          <Info label="Preview VM" value={result.mockVmId} />
           <Info label="Provider" value={result.provider} />
         </div>
         <StepTable empty="Execution has not recorded completed steps yet." steps={executedSteps} />
@@ -15308,7 +16736,7 @@ function ArtifactCard({ artifact }: { artifact: ArtifactRecord }) {
         <span>{labelize(artifact.kind)}</span>
         <span>{artifact.downloadable ? "Download available" : "No file generated"}</span>
         {artifact.redacted && <span>Redacted</span>}
-        {artifact.mock_only && <span>Test fixture</span>}
+        {artifact.mock_only && <span>Test mode</span>}
       </div>
       {metadata.length > 0 && (
         <ul className="artifact-metadata">
@@ -15334,8 +16762,8 @@ function artifactMetadataSummary(artifact: ArtifactRecord): string[] {
   const items = [
     metadataSummaryItem("Provider", metadata.provider),
     metadataSummaryItem("Run status", metadata.run_status),
-    metadataSummaryItem("Dry-run task", metadata.mock_task_id),
-    metadataSummaryItem("Dry-run VM", metadata.mock_vm_id),
+    metadataSummaryItem("Preview task", metadata.mock_task_id),
+    metadataSummaryItem("Preview VM", metadata.mock_vm_id),
     metadataSummaryItem("Events", metadata.event_count),
     metadataSummaryItem("Steps", metadata.step_count)
   ].filter((item): item is string => Boolean(item));
@@ -15651,16 +17079,15 @@ function PageIssueIndicator({ badge }: { badge?: ReportPageBadge }) {
   if (!isAdvancedMode && badge.status === "success") {
     return null;
   }
+  if (badge.status === "success" || badge.status === "warning") {
+    return null;
+  }
   const label =
     badge.status === "critical"
       ? `Blocked: ${badge.critical || badge.count} critical`
-      : badge.status === "warning"
-        ? `Needs review: ${badge.warning || badge.count} warning`
-        : badge.status === "success"
-          ? "Ready: no open issues"
-          : badge.status === "not_configured_yet"
-            ? `Not configured yet: ${badge.not_configured_yet || badge.count}`
-            : badge.label;
+      : badge.status === "not_configured_yet"
+        ? `Not configured yet: ${badge.not_configured_yet || badge.count}`
+        : badge.label;
   const icon =
     badge.status === "critical" ? (
       <XCircle size={16} />
@@ -15899,7 +17326,13 @@ function Feedback({ loading, error }: { loading?: boolean; error?: string }) {
 }
 
 function StatusBadge({ status }: { status: string }) {
+  if (isLowSignalStatusBubble(status)) return null;
   return <span className={`status status-${status}`}>{displayStatusLabel(status)}</span>;
+}
+
+function isLowSignalStatusBubble(status: string): boolean {
+  const label = displayStatusLabel(status).trim().toLowerCase();
+  return label === "ready";
 }
 
 function ButtonLink({ to, icon, label }: { to: string; icon: ReactNode; label: string }) {
@@ -16106,20 +17539,20 @@ function queueActionForSection(sectionId: QueueSectionId): { label: string; reas
   }
   if (sectionId === "approved_ready_to_plan") {
     return {
-      label: "Create dry-run plan",
-      reason: "Approval is recorded; the next safe step is dry-run planning."
+      label: "Create preview plan",
+      reason: "Approval is recorded; the next safe step is preview planning."
     };
   }
   if (sectionId === "planned_ready_to_execute") {
     return {
-      label: "Launch dry-run execution",
-      reason: "A persisted dry-run plan is ready for explicit local execution."
+      label: "Launch preview execution",
+      reason: "A persisted preview plan is ready for explicit local execution."
     };
   }
   if (sectionId === "executing") {
     return {
       label: "Monitor run",
-      reason: "Dry-run execution is in progress; watch stages, logs, and audit events."
+      reason: "Preview execution is in progress; watch stages, logs, and audit events."
     };
   }
   if (sectionId === "blocked_failed") {
@@ -16186,13 +17619,13 @@ function readyReasonForAction(action: "submit" | "approve" | "plan" | "execute" 
     return "Required intent fields are present; submit will run request validation.";
   }
   if (action === "approve") {
-    return "Validation passed; approving records the decision and unlocks dry-run planning.";
+    return "Validation passed; approving records the decision and unlocks preview planning.";
   }
   if (action === "plan") {
-    return "Approval is recorded; planning will create a dry-run plan.";
+    return "Approval is recorded; planning will create a preview plan.";
   }
   if (action === "execute") {
-    return "A valid persisted dry-run plan exists; execution remains local dry-run only.";
+    return "A valid persisted preview plan exists; execution remains local preview only.";
   }
   return "This request can still be cancelled before execution starts.";
 }
@@ -16224,7 +17657,7 @@ function disabledReasonForAction(
   }
   if (action === "execute") {
     if (blockerReason) return blockerReason;
-    return "Execute is available after a valid dry-run plan is created and still matches the request.";
+    return "Execute is available after a valid preview plan is created and still matches the request.";
   }
   return `Cancel is available before execution starts. Current status is ${labelize(request.status)}.`;
 }
@@ -16261,7 +17694,7 @@ function planSummaryForRun(run: WorkflowRun) {
   const storageTier = stringFromUnknown(vm.storage_tier);
 
   return {
-    summary: stringFromUnknown(plan.summary) || "Mock dry-run plan summary is not available.",
+    summary: stringFromUnknown(plan.summary) || "Preview plan summary is not available.",
     vmName: stringFromUnknown(plan.vm_name) || stringFromUnknown(vm.vm_name) || "-",
     template: stringFromUnknown(vm.template) || "-",
     placement: `${stringFromUnknown(intent.site) || "-"}/${stringFromUnknown(vm.cluster) || "-"}`,
@@ -16351,6 +17784,7 @@ function labProfileFormFrom(profile: {
   name: string;
   description: string | null;
   profile_topology?: string | null;
+  features?: Partial<LabProfileFeatures>;
   global_settings?: LabGlobalSettings;
   address_plan: LabAddressPlan;
 }): LabProfileFormState {
@@ -16367,7 +17801,7 @@ function labProfileFormFrom(profile: {
     description: profile.description ?? "",
     profileTopology: profile.profile_topology ?? topologyForPrefix(prefix),
     addresses,
-    globalSettings: labGlobalSettingsFormFrom(profile.global_settings, profile.address_plan, prefix),
+    globalSettings: labGlobalSettingsFormFrom(profile.global_settings, profile.address_plan, prefix, profile.features),
     netappNfsLifs: profile.address_plan.netapp_nfs_lifs.join(", "),
     netappIscsiLifs: profile.address_plan.netapp_iscsi_lifs.join(", ")
   };
@@ -16421,16 +17855,17 @@ function labProfilePayload(form: LabProfileFormState): LabProfileWrite {
       vcenter_enabled: form.globalSettings.vcenterEnabled && netappEnabled,
       firmware_gate_enabled: true,
       build_verification_enabled: true,
-      storage_protocol: netappEnabled ? "nfs" : "none",
-      disable_ipv6: true,
-      enable_snmp: false,
-      enable_ntp: Boolean(form.globalSettings.ntpServers.trim()),
-      enable_dns: Boolean(form.globalSettings.dnsServers.trim()),
+      storage_protocol: netappEnabled ? form.globalSettings.storageProtocol || "nfs" : "none",
+      disable_ipv6: form.globalSettings.disableIpv6,
+      block_legacy_protocols: form.globalSettings.blockLegacyProtocols,
+      enable_snmp: form.globalSettings.enableSnmp,
+      enable_ntp: form.globalSettings.enableNtp,
+      enable_dns: form.globalSettings.enableDns,
       netapp_disabled_reason: netappEnabled ? null : netappDisabledForSubnetReason,
       vcenter_disabled_reason:
         form.globalSettings.vcenterEnabled && netappEnabled
           ? null
-          : "vCenter is disabled by the active lab profile."
+          : "vCenter is disabled by the active lab setup."
     },
     global_settings: {
       subnet_prefix: subnetPrefix,
@@ -16490,14 +17925,21 @@ function blankLabGlobalSettings(prefix: number): LabGlobalSettingsFormState {
     timezone: "",
     vlanId: "",
     mtu: "",
-    vcenterEnabled: false
+    vcenterEnabled: false,
+    storageProtocol: "nfs",
+    disableIpv6: true,
+    blockLegacyProtocols: true,
+    enableSnmp: false,
+    enableNtp: true,
+    enableDns: true
   };
 }
 
 function labGlobalSettingsFormFrom(
   settings: LabGlobalSettings | undefined,
   addressPlan: LabAddressPlan,
-  prefix: number
+  prefix: number,
+  features?: Partial<LabProfileFeatures>
 ): LabGlobalSettingsFormState {
   const generated = generateLabAddressPlan(addressPlan.subnet ?? defaultLabSubnet, prefix);
   return {
@@ -16509,7 +17951,13 @@ function labGlobalSettingsFormFrom(
     timezone: settings?.timezone ?? "",
     vlanId: settings?.vlan_id ?? "",
     mtu: settings?.mtu ? String(settings.mtu) : "",
-    vcenterEnabled: settings?.vcenter_enabled ?? false
+    vcenterEnabled: settings?.vcenter_enabled ?? features?.vcenter_enabled ?? false,
+    storageProtocol: features?.storage_protocol ?? "nfs",
+    disableIpv6: features?.disable_ipv6 ?? true,
+    blockLegacyProtocols: features?.block_legacy_protocols ?? true,
+    enableSnmp: features?.enable_snmp ?? false,
+    enableNtp: features?.enable_ntp ?? Boolean(settings?.ntp_servers.length),
+    enableDns: features?.enable_dns ?? Boolean(settings?.dns_servers.length)
   };
 }
 
@@ -16545,7 +17993,11 @@ function applyLabSubnetChoice(
 
   if (!labNetAppSupported(prefix)) {
     nextForm.globalSettings.vcenterEnabled = false;
+    nextForm.globalSettings.storageProtocol = "none";
     return clearNetAppAddresses(nextForm);
+  }
+  if (nextForm.globalSettings.storageProtocol === "none") {
+    nextForm.globalSettings.storageProtocol = "nfs";
   }
 
   labNetAppAddressFields.forEach((field) => {
@@ -16750,7 +18202,7 @@ function reviewBeforeExecute(run: WorkflowRun): { status: string; message: strin
     message:
       typeof review.message === "string"
         ? review.message
-        : "Review the dry-run plan before execution."
+        : "Review the preview plan before execution."
   };
 }
 
@@ -16758,19 +18210,19 @@ function reviewStateForRun(run: WorkflowRun): { status: string; message: string 
   if (run.status === "completed") {
     return {
       status: "completed",
-      message: "Dry-run execution completed; review the result summary, audit trail, and report placeholders."
+      message: "Preview execution completed; review the result summary, audit trail, and report placeholders."
     };
   }
   if (run.status === "executing") {
     return {
       status: "executing",
-      message: "Dry-run execution is in progress; monitor stage events and audit records."
+      message: "Preview execution is in progress; monitor stage events and audit records."
     };
   }
   if (run.status === "failed") {
     return {
       status: "failed",
-      message: run.error_message ?? "Dry-run execution failed; review blockers and audit details."
+      message: run.error_message ?? "Preview execution failed; review blockers and audit details."
     };
   }
   if (run.status === "cancelled") {
@@ -16782,7 +18234,7 @@ function reviewStateForRun(run: WorkflowRun): { status: string; message: string 
   return (
     reviewBeforeExecute(run) ?? {
       status: "review",
-      message: "Review the dry-run plan before launching local execution."
+      message: "Review the preview plan before launching local execution."
     }
   );
 }

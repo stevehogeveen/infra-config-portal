@@ -42,21 +42,28 @@ class IloRedfishConfig:
     password: str | None
     verify_tls: bool
     timeout_seconds: float
+    host_source: str = "runtime_env"
+    fallback_hosts: tuple[str, ...] = ()
+    fallback_host_sources: tuple[str, ...] = ()
 
     @classmethod
     def from_settings(cls) -> "IloRedfishConfig":
+        host, host_source, fallback_hosts, fallback_host_sources = _configured_ilo_targets()
         return cls(
-            host=settings.ilo_test_host,
+            host=host,
             username=settings.ilo_test_username,
             password=settings.ilo_test_password,
             verify_tls=settings.ilo_test_verify_tls,
             timeout_seconds=settings.ilo_test_timeout_seconds,
+            host_source=host_source,
+            fallback_hosts=fallback_hosts,
+            fallback_host_sources=fallback_host_sources,
         )
 
     @property
     def missing_fields(self) -> list[str]:
         missing = []
-        if not self.host:
+        if not self.target_candidates:
             missing.append("ILO_TEST_HOST")
         if not self.username:
             missing.append("ILO_TEST_USERNAME")
@@ -67,6 +74,30 @@ class IloRedfishConfig:
     @property
     def configured(self) -> bool:
         return not self.missing_fields
+
+    @property
+    def target_candidates(self) -> list[dict[str, str]]:
+        candidates: list[dict[str, str]] = []
+        seen: set[str] = set()
+        raw_candidates: list[tuple[str | None, str]] = [(self.host, self.host_source)]
+        raw_candidates.extend(
+            (
+                host,
+                self.fallback_host_sources[index]
+                if index < len(self.fallback_host_sources)
+                else "fallback",
+            )
+            for index, host in enumerate(self.fallback_hosts)
+        )
+        for host, source in raw_candidates:
+            if not host:
+                continue
+            clean_host = host.strip()
+            if not clean_host or clean_host in seen:
+                continue
+            seen.add(clean_host)
+            candidates.append({"host": clean_host, "source": source})
+        return candidates
 
 
 class IloRedfishAdapter:
@@ -131,6 +162,12 @@ class IloRedfishAdapter:
             ),
             configuration={
                 "host_configured": bool(self.config.host),
+                "host_source": self.config.host_source,
+                "fallback_hosts_configured": len(self.config.fallback_hosts),
+                "target_candidate_count": len(self.config.target_candidates),
+                "target_candidate_sources": [
+                    candidate["source"] for candidate in self.config.target_candidates
+                ],
                 "username_configured": bool(self.config.username),
                 "password_configured": bool(self.config.password),
                 "tls_verify": self.config.verify_tls,
@@ -181,17 +218,58 @@ class IloRedfishAdapter:
                 missing_fields=self.config.missing_fields,
             )
 
-        assert self.config.host is not None
         assert self.config.username is not None
         assert self.config.password is not None
 
-        base_url = _base_url(self.config.host)
+        candidates = self.config.target_candidates
+        candidate_attempts: list[dict[str, Any]] = []
+        last_result: dict[str, Any] | None = None
+        for index, candidate in enumerate(candidates, start=1):
+            result = self._probe_target(
+                str(candidate["host"]),
+                str(candidate["source"]),
+                policy,
+                candidate_index=index,
+                candidate_count=len(candidates),
+            )
+            candidate_attempts.append(_candidate_probe_summary(result))
+            last_result = result
+            if result.get("status") == "ok" or not _try_next_ilo_candidate(result):
+                if len(candidates) > 1:
+                    result["candidate_attempts"] = candidate_attempts
+                return self._record_result(result)
+
+        if last_result is None:
+            return self._record_blocked(
+                "Missing local iLO configuration: ILO_TEST_HOST.",
+                missing_fields=["ILO_TEST_HOST"],
+            )
+        if len(candidates) > 1:
+            last_result["candidate_attempts"] = candidate_attempts
+        return self._record_result(last_result)
+
+    def _probe_target(
+        self,
+        host: str,
+        host_source: str,
+        policy: Any,
+        *,
+        candidate_index: int,
+        candidate_count: int,
+    ) -> dict[str, Any]:
+        assert self.config.username is not None
+        assert self.config.password is not None
+
+        base_url = _base_url(host)
         requests: list[dict[str, Any]] = []
         result: dict[str, Any] = {
             "provider_id": PROVIDER_ID,
             "status": "ok",
             "message": "Read-only Redfish probe completed.",
             "base_url": _redacted_base_url(base_url),
+            "target_source": host_source,
+            "candidate_index": candidate_index,
+            "target_candidate_count": candidate_count,
             "tls_verify": self.config.verify_tls,
             "timeout_seconds": self.config.timeout_seconds,
             "max_attempts": MAX_GET_ATTEMPTS,
@@ -258,7 +336,7 @@ class IloRedfishAdapter:
                             "blockers": [detection["next_safe_action"]],
                         }
                     )
-                    return self._record_result(result)
+                    return result
 
                 root = detection.get("redfish_root_payload")
                 if not isinstance(root, dict):
@@ -291,7 +369,7 @@ class IloRedfishAdapter:
                             "blockers": [detection["next_safe_action"]],
                         }
                     )
-                    return self._record_result(result)
+                    return result
                 result["service_root"] = _resource_summary(root)
                 result["managers"] = _collection_summaries(
                     client,
@@ -375,7 +453,7 @@ class IloRedfishAdapter:
                 }
             )
 
-        return self._record_result(result)
+        return result
 
     def _record_blocked(self, message: str, **extra: Any) -> dict[str, Any]:
         return self._record_result(
@@ -394,12 +472,150 @@ class IloRedfishAdapter:
         return record_probe_result(PROVIDER_ID, redacted)
 
     def _redaction_values(self) -> list[str | None]:
-        values: list[str | None] = [self.config.password, self.config.username, self.config.host]
-        if self.config.host:
-            base_url = _base_url(self.config.host)
-            parsed = urlparse(base_url)
-            values.extend([base_url, parsed.netloc, parsed.hostname])
-        return values
+        return ilo_redfish_redaction_values(self.config)
+
+
+def _candidate_probe_summary(result: dict[str, Any]) -> dict[str, Any]:
+    requests = result.get("requests")
+    return {
+        "candidate_index": result.get("candidate_index"),
+        "target_source": result.get("target_source"),
+        "status": result.get("status"),
+        "classification": _probe_classification(result),
+        "request_count": len(requests) if isinstance(requests, list) else 0,
+        "message": result.get("message"),
+    }
+
+
+def _try_next_ilo_candidate(result: dict[str, Any]) -> bool:
+    return _probe_classification(result) in {
+        "network_unreachable",
+        "endpoint_not_found_or_wrong_target",
+        "web_available_redfish_not_found",
+        "legacy_available_redfish_not_found",
+        "redfish_http_error",
+        "unknown_endpoint_state",
+    }
+
+
+def _probe_classification(result: dict[str, Any]) -> str:
+    detection = result.get("endpoint_detection")
+    if isinstance(detection, dict) and detection.get("classification"):
+        return str(detection["classification"])
+    return "unknown_endpoint_state"
+
+
+def _configured_ilo_targets() -> tuple[str | None, str, tuple[str, ...], tuple[str, ...]]:
+    profile_host = _active_saved_profile_ilo_host()
+    first_access_host = _saved_ilo_first_access_host()
+    if profile_host:
+        fallback_hosts, fallback_sources = _fallback_ilo_targets(
+            profile_host,
+            [(first_access_host, "control_access_original_dhcp_ip")],
+        )
+        return profile_host, "active_lab_profile", fallback_hosts, fallback_sources
+
+    runtime_host = _clean_target_host(settings.ilo_test_host)
+    if runtime_host:
+        fallback_hosts, fallback_sources = _fallback_ilo_targets(
+            runtime_host,
+            [(first_access_host, "control_access_original_dhcp_ip")],
+        )
+        return runtime_host, "runtime_env", fallback_hosts, fallback_sources
+
+    if first_access_host:
+        return first_access_host, "control_access_original_dhcp_ip", (), ()
+    return None, "runtime_env", (), ()
+
+
+def _configured_ilo_host() -> tuple[str | None, str]:
+    host, host_source, _fallback_hosts, _fallback_sources = _configured_ilo_targets()
+    return host, host_source
+
+
+def _fallback_ilo_targets(
+    primary_host: str,
+    candidates: list[tuple[str | None, str]],
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    fallback_hosts: list[str] = []
+    fallback_sources: list[str] = []
+    seen = {primary_host}
+    for host, source in candidates:
+        clean_host = _clean_target_host(host)
+        if not clean_host or clean_host in seen:
+            continue
+        seen.add(clean_host)
+        fallback_hosts.append(clean_host)
+        fallback_sources.append(source)
+    return tuple(fallback_hosts), tuple(fallback_sources)
+
+
+def _active_saved_profile_ilo_host() -> str | None:
+    try:
+        from app.services.lab_profiles import active_lab_profile_context
+
+        context = active_lab_profile_context()
+    except Exception:
+        return None
+
+    active = context.get("active_profile") if isinstance(context, dict) else {}
+    if not isinstance(active, dict) or active.get("source") != "saved":
+        return None
+    plan = context.get("resolved_address_plan") if isinstance(context, dict) else {}
+    if not isinstance(plan, dict):
+        return None
+    return _clean_target_host(plan.get("ilo"))
+
+
+def _saved_ilo_first_access_host() -> str | None:
+    try:
+        from app.services.control_access import control_access_configs
+        from app.services.lab_profiles import active_lab_profile_context
+
+        context = active_lab_profile_context()
+    except Exception:
+        return None
+
+    active = context.get("active_profile") if isinstance(context, dict) else {}
+    if not isinstance(active, dict) or active.get("source") != "saved":
+        return None
+    try:
+        configs = control_access_configs(active)
+    except Exception:
+        return None
+    ilo_config = configs.get("ilo") if isinstance(configs, dict) else {}
+    if not isinstance(ilo_config, dict):
+        return None
+    return _clean_target_host(ilo_config.get("original_dhcp_ip"))
+
+
+def _clean_target_host(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    host = value.strip()
+    return host or None
+
+
+def ilo_redfish_redaction_values(config: IloRedfishConfig | None = None) -> list[str | None]:
+    config = config or IloRedfishConfig.from_settings()
+    values: list[str | None] = [
+        settings.ilo_test_host,
+        settings.ilo_test_username,
+        settings.ilo_test_password,
+        config.host,
+        config.username,
+        config.password,
+    ]
+    values.extend(config.fallback_hosts)
+    for candidate in config.target_candidates:
+        values.append(candidate.get("host"))
+    for host in (settings.ilo_test_host, config.host, *config.fallback_hosts):
+        if not host:
+            continue
+        base_url = _base_url(host)
+        parsed = urlparse(base_url)
+        values.extend([base_url, parsed.netloc, parsed.hostname])
+    return values
 
 
 def _base_url(host: str) -> str:

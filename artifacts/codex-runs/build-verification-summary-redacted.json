@@ -1,6 +1,6 @@
 {
   "provider_id": "build-verification",
-  "checked_at": "2026-06-10T15:39:22.887875+00:00",
+  "checked_at": "2026-06-10T21:52:14.333870+00:00",
   "status": "blocked",
   "certification_state": "test_fixture",
   "message": "Build Verification / Product Certification completed with redacted findings.",
@@ -32,11 +32,12 @@
       "build_verification_enabled": true,
       "storage_protocol": "nfs",
       "disable_ipv6": true,
+      "block_legacy_protocols": true,
       "enable_snmp": false,
       "enable_ntp": true,
       "enable_dns": true,
       "netapp_disabled_reason": null,
-      "vcenter_disabled_reason": "vCenter is disabled by the active lab profile."
+      "vcenter_disabled_reason": "vCenter is disabled by the active lab setup."
     },
     "not_in_scope_stages": [
       "vcenter",
@@ -66,26 +67,26 @@
       "cisco_management": "192.168.1.204",
       "ansible_cisco_inventory_target": "192.168.1.204",
       "ansible_control_host": "192.168.1.205",
-      "netapp_controller_a_sp": null,
-      "netapp_controller_b_sp": null,
+      "netapp_controller_a_sp": "192.168.1.210",
+      "netapp_controller_b_sp": "192.168.1.211",
       "netapp_cluster_mgmt": "10.10.8.45",
-      "netapp_node_a_mgmt": null,
-      "netapp_node_b_mgmt": null,
-      "netapp_svm_mgmt": null,
-      "netapp_nfs_lifs": null,
-      "netapp_iscsi_lifs": null,
+      "netapp_node_a_mgmt": "192.168.1.221",
+      "netapp_node_b_mgmt": "192.168.1.222",
+      "netapp_svm_mgmt": "192.168.1.223",
+      "netapp_nfs_lifs": "192.168.1.230,192.168.1.231",
+      "netapp_iscsi_lifs": "192.168.1.240,192.168.1.241,192.168.1.242,192.168.1.243",
       "runtime_subnet_default": "192.168.1.0/24",
       "runtime_provider_mode": "mock",
       "cisco_target_ip_env": "192.168.1.204",
       "ansible_cisco_host_env": "192.168.1.204",
-      "netapp_controller_a_sp_env": null,
-      "netapp_controller_b_sp_env": null,
+      "netapp_controller_a_sp_env": "192.168.1.210",
+      "netapp_controller_b_sp_env": "192.168.1.211",
       "netapp_cluster_mgmt_ip_env": "10.10.8.45",
-      "netapp_node_a_mgmt_ip_env": null,
-      "netapp_node_b_mgmt_ip_env": null,
-      "netapp_svm_mgmt_ip_env": null,
-      "netapp_nfs_lifs_env": null,
-      "netapp_iscsi_lifs_env": null
+      "netapp_node_a_mgmt_ip_env": "192.168.1.221",
+      "netapp_node_b_mgmt_ip_env": "192.168.1.222",
+      "netapp_svm_mgmt_ip_env": "192.168.1.223",
+      "netapp_nfs_lifs_env": "192.168.1.230,192.168.1.231",
+      "netapp_iscsi_lifs_env": "192.168.1.240,192.168.1.241,192.168.1.242,192.168.1.243"
     },
     "mismatches": [
       {
@@ -178,11 +179,12 @@
         "build_verification_enabled": true,
         "storage_protocol": "nfs",
         "disable_ipv6": true,
+        "block_legacy_protocols": true,
         "enable_snmp": false,
         "enable_ntp": true,
         "enable_dns": true,
         "netapp_disabled_reason": null,
-        "vcenter_disabled_reason": "vCenter is disabled by the active lab profile."
+        "vcenter_disabled_reason": "vCenter is disabled by the active lab setup."
       },
       "global_settings": {
         "subnet_prefix": 24,
@@ -259,7 +261,7 @@
           "current_value": "10.10.8.45",
           "expected_value": "192.168.1.220",
           "active_profile": "Runtime environment",
-          "where_to_fix": ".env.local.real-lab or Settings / Lab Profile",
+          "where_to_fix": ".env.local.real-lab or Lab Setup",
           "recommended_action": "Set NETAPP_CLUSTER_MGMT_IP to 192.168.1.220 or update the active lab profile.",
           "recheck_command": "make provider-lab-build-verification-live"
         }
@@ -272,7 +274,7 @@
           "current_value": "10.10.8.45",
           "expected_value": "192.168.1.220",
           "active_profile": "Runtime environment",
-          "where_to_fix": ".env.local.real-lab or Settings / Lab Profile",
+          "where_to_fix": ".env.local.real-lab or Lab Setup",
           "recommended_action": "Set NETAPP_CLUSTER_MGMT_IP to 192.168.1.220 or update the active lab profile.",
           "recheck_command": "make provider-lab-build-verification-live",
           "copyable_command": "NETAPP_CLUSTER_MGMT_IP=192.168.1.220"
@@ -281,8 +283,8 @@
       "source": "runtime_env",
       "version": 1,
       "active": true,
-      "created_at": "2026-06-10T15:39:22.887897+00:00",
-      "updated_at": "2026-06-10T15:39:22.887897+00:00",
+      "created_at": "2026-06-10T21:52:14.333892+00:00",
+      "updated_at": "2026-06-10T21:52:14.333892+00:00",
       "last_selected_at": null,
       "history": []
     },
@@ -336,11 +338,12 @@
         "build_verification_enabled": true,
         "storage_protocol": "nfs",
         "disable_ipv6": true,
+        "block_legacy_protocols": true,
         "enable_snmp": false,
         "enable_ntp": true,
         "enable_dns": true,
         "netapp_disabled_reason": null,
-        "vcenter_disabled_reason": "vCenter is disabled by the active lab profile."
+        "vcenter_disabled_reason": "vCenter is disabled by the active lab setup."
       },
       "global_settings": {
         "subnet_prefix": 24,
@@ -414,8 +417,8 @@
       "source": "runtime_env",
       "version": 1,
       "active": true,
-      "created_at": "2026-06-10T15:39:22.888180+00:00",
-      "updated_at": "2026-06-10T15:39:22.888180+00:00",
+      "created_at": "2026-06-10T21:52:14.334157+00:00",
+      "updated_at": "2026-06-10T21:52:14.334157+00:00",
       "last_selected_at": null,
       "history": []
     },
@@ -451,14 +454,15 @@
       "build_verification_enabled": true,
       "storage_protocol": "nfs",
       "disable_ipv6": true,
+      "block_legacy_protocols": true,
       "enable_snmp": false,
       "enable_ntp": true,
       "enable_dns": true,
       "netapp_disabled_reason": null,
-      "vcenter_disabled_reason": "vCenter is disabled by the active lab profile."
+      "vcenter_disabled_reason": "vCenter is disabled by the active lab setup."
     },
     "disabled_features": {
-      "vcenter": "vCenter is disabled by the active lab profile."
+      "vcenter": "vCenter is disabled by the active lab setup."
     },
     "not_in_scope_stages": [
       "vcenter",
@@ -472,7 +476,7 @@
         "current_value": "10.10.8.45",
         "expected_value": "192.168.1.220",
         "active_profile": "Runtime environment",
-        "where_to_fix": ".env.local.real-lab or Settings / Lab Profile",
+        "where_to_fix": ".env.local.real-lab or Lab Setup",
         "recommended_action": "Set NETAPP_CLUSTER_MGMT_IP to 192.168.1.220 or update the active lab profile.",
         "recheck_command": "make provider-lab-build-verification-live"
       }
@@ -485,7 +489,7 @@
         "current_value": "10.10.8.45",
         "expected_value": "192.168.1.220",
         "active_profile": "Runtime environment",
-        "where_to_fix": ".env.local.real-lab or Settings / Lab Profile",
+        "where_to_fix": ".env.local.real-lab or Lab Setup",
         "recommended_action": "Set NETAPP_CLUSTER_MGMT_IP to 192.168.1.220 or update the active lab profile.",
         "recheck_command": "make provider-lab-build-verification-live",
         "copyable_command": "NETAPP_CLUSTER_MGMT_IP=192.168.1.220"
@@ -493,112 +497,52 @@
     ]
   },
   "credentials": {
-    "status": "ready",
-    "classification": "passed",
+    "status": "blocked",
+    "classification": "not_configured_yet",
     "checks": [
       {
         "name": "ilo",
-        "configured": true,
-        "status": "ready",
-        "classification": "passed",
+        "configured": false,
+        "status": "blocked",
+        "classification": "not_configured_yet",
         "field": "ILO_TEST_PASSWORD",
-        "length": 8,
-        "special_characters_present": true,
-        "shell": {
-          "safe_with_quoting": true,
-          "quoted_length": 8
-        },
-        "json": {
-          "serializable": true
-        },
-        "yaml": {
-          "quote_required": true,
-          "safe_when_quoted": true
-        },
-        "ansible": {
-          "use_no_log": true,
-          "pass_as_structured_var": true
-        },
-        "issues": [],
-        "next_action": "Credential compatibility passed with redacted value handling."
+        "issues": [
+          "credential is missing"
+        ],
+        "next_action": "Set ILO_TEST_PASSWORD in .env.local.real-lab when this provider stage is ready."
       },
       {
         "name": "cisco",
-        "configured": true,
-        "status": "ready",
-        "classification": "passed",
+        "configured": false,
+        "status": "blocked",
+        "classification": "not_configured_yet",
         "field": "CISCO_TEST_PASSWORD",
-        "length": 8,
-        "special_characters_present": true,
-        "shell": {
-          "safe_with_quoting": true,
-          "quoted_length": 8
-        },
-        "json": {
-          "serializable": true
-        },
-        "yaml": {
-          "quote_required": true,
-          "safe_when_quoted": true
-        },
-        "ansible": {
-          "use_no_log": true,
-          "pass_as_structured_var": true
-        },
-        "issues": [],
-        "next_action": "Credential compatibility passed with redacted value handling."
+        "issues": [
+          "credential is missing"
+        ],
+        "next_action": "Set CISCO_TEST_PASSWORD in .env.local.real-lab when this provider stage is ready."
       },
       {
         "name": "cisco_enable",
-        "configured": true,
-        "status": "ready",
-        "classification": "passed",
+        "configured": false,
+        "status": "blocked",
+        "classification": "not_configured_yet",
         "field": "CISCO_ENABLE_PASSWORD or ANSIBLE_CISCO_ENABLE_PASSWORD",
-        "length": 8,
-        "special_characters_present": true,
-        "shell": {
-          "safe_with_quoting": true,
-          "quoted_length": 8
-        },
-        "json": {
-          "serializable": true
-        },
-        "yaml": {
-          "quote_required": true,
-          "safe_when_quoted": true
-        },
-        "ansible": {
-          "use_no_log": true,
-          "pass_as_structured_var": true
-        },
-        "issues": [],
-        "next_action": "Credential compatibility passed with redacted value handling."
+        "issues": [
+          "credential is missing"
+        ],
+        "next_action": "Set CISCO_ENABLE_PASSWORD or ANSIBLE_CISCO_ENABLE_PASSWORD in .env.local.real-lab when this provider stage is ready."
       },
       {
         "name": "esxi",
-        "configured": true,
-        "status": "ready",
-        "classification": "passed",
+        "configured": false,
+        "status": "blocked",
+        "classification": "not_configured_yet",
         "field": "ESXI_TEST_PASSWORD",
-        "length": 8,
-        "special_characters_present": true,
-        "shell": {
-          "safe_with_quoting": true,
-          "quoted_length": 8
-        },
-        "json": {
-          "serializable": true
-        },
-        "yaml": {
-          "quote_required": true,
-          "safe_when_quoted": true
-        },
-        "ansible": {
-          "use_no_log": true,
-          "pass_as_structured_var": true
-        },
-        "issues": [],
-        "next_action": "Credential compatibility passed with redacted value handling."
+        "issues": [
+          "credential is missing"
+        ],
+        "next_action": "Set ESXI_TEST_PASSWORD in .env.local.real-lab when this provider stage is ready."
       }
     ]
   },
@@ -681,9 +625,9 @@
         "reachable": null,
         "required": true,
         "status": "unknown",
-        "classification": "warning",
+        "classification": "blocked_by_prior_stage",
         "blockers": [],
-        "next_action": "Review Cisco SSH/SCP readiness.",
+        "next_action": "Complete or confirm Cisco console bootstrap, then set CISCO_MGMT_CONFIGURED=true before treating SSH/SCP as a port failure.",
         "source_type": "not_checked",
         "checked_at": null,
         "freshness": "unknown",
@@ -700,9 +644,9 @@
         "reachable": null,
         "required": true,
         "status": "unknown",
-        "classification": "warning",
+        "classification": "blocked_by_prior_stage",
         "blockers": [],
-        "next_action": "Review ESXi API readiness.",
+        "next_action": "Install/configure ESXi management at 192.168.1.203, then set ESXI_CONFIGURED=true before API certification.",
         "source_type": "not_checked",
         "checked_at": null,
         "freshness": "unknown",
@@ -719,9 +663,9 @@
         "reachable": null,
         "required": true,
         "status": "unknown",
-        "classification": "warning",
+        "classification": "blocked_by_prior_stage",
         "blockers": [],
-        "next_action": "Review ESXi SSH readiness.",
+        "next_action": "Install/configure ESXi management and enable/confirm SSH before ESXi SSH certification.",
         "source_type": "not_checked",
         "checked_at": null,
         "freshness": "unknown",
@@ -770,7 +714,7 @@
         "manual_env_flag_required": false,
         "next_action": "NetApp cluster management REST is not reachable.",
         "source_type": "live_cached",
-        "checked_at": "2026-06-10T15:39:21.914400+00:00",
+        "checked_at": "2026-06-10T21:52:11.152514+00:00",
         "freshness": "current",
         "ttl_seconds": 86400,
         "stale_after_seconds": 86400,
@@ -798,7 +742,7 @@
         "manual_env_flag_required": false,
         "next_action": "NetApp cluster management REST is not reachable.",
         "source_type": "live_cached",
-        "checked_at": "2026-06-10T15:39:21.914400+00:00",
+        "checked_at": "2026-06-10T21:52:11.152514+00:00",
         "freshness": "current",
         "ttl_seconds": 86400,
         "stale_after_seconds": 86400,
@@ -817,16 +761,16 @@
         "status": "ready",
         "classification": "passed",
         "blockers": [],
-        "selected_port": "/dev/serial/by-id/usb-Microchip_Technology_Inc._MCP2221_USB-I2C_UART_Combo-if00",
+        "selected_port": "/dev/ttyS20",
         "selected_baud": null,
         "prompt_state": null,
-        "confidence": "high",
-        "last_seen": "2026-06-10T15:20:41.049791",
+        "confidence": "medium",
+        "last_seen": "2026-06-10T21:49:12.407440",
         "selection_source": "autodiscovery",
         "manual_env_update_required": false,
         "next_action": "NetApp console was detected automatically; no .env port update is required.",
         "source_type": "live_cached",
-        "checked_at": "2026-06-10T15:39:21.914400+00:00",
+        "checked_at": "2026-06-10T21:52:11.152514+00:00",
         "freshness": "current",
         "ttl_seconds": 86400,
         "stale_after_seconds": 86400,
@@ -861,7 +805,7 @@
   "netapp_live_state": {
     "provider_id": "netapp-ontap",
     "device_role": "storage-controller",
-    "checked_at": "2026-06-10T15:39:21.914400+00:00",
+    "checked_at": "2026-06-10T21:52:11.152514+00:00",
     "configured": false,
     "configured_state": "blocked",
     "source": "live_verification",
@@ -873,12 +817,12 @@
       "manual_state_tracking_required": false
     },
     "console": {
-      "discovered_port": "/dev/serial/by-id/usb-Microchip_Technology_Inc._MCP2221_USB-I2C_UART_Combo-if00",
+      "discovered_port": "/dev/ttyS20",
       "baud": null,
-      "confidence": "high",
-      "last_seen": "2026-06-10T15:20:41.049791",
+      "confidence": "medium",
+      "last_seen": "2026-06-10T21:49:12.407440",
       "source": "autodiscovery",
-      "selection_source": "auto-stable-candidate",
+      "selection_source": "auto-ttys-candidate",
       "prompt_state": null,
       "prompt_label": "Candidate selected by OS evidence",
       "configured_port_hint": null,
@@ -921,9 +865,9 @@
       "iscsi_lifs_detected": [],
       "blockers": []
     },
-    "last_successful_probe_at": "2026-06-10T15:20:41.049791",
+    "last_successful_probe_at": "2026-06-10T21:49:12.407440",
     "last_report_path": "artifacts/codex-runs/netapp-live-state-report.md",
-    "confidence": "high",
+    "confidence": "medium",
     "blockers": [
       "NetApp cluster management REST is not reachable.",
       "NetApp API access values are missing; keep any values local and redacted."
@@ -949,7 +893,7 @@
   },
   "toolchain": {
     "provider_id": "toolchain-readiness",
-    "checked_at": "2026-06-10T15:39:22.892597+00:00",
+    "checked_at": "2026-06-10T21:52:14.338502+00:00",
     "status": "warning",
     "provider_mode": "mock",
     "tools": [
@@ -1178,7 +1122,7 @@
       "report_detail": "Test fixtures cannot produce real lab certification.",
       "next_action": "Run `make provider-lab-build-verification-live` with PROVIDER_MODE=local-lab-readwrite.",
       "source_type": "test_fixture",
-      "checked_at": "2026-06-10T15:39:22.893053+00:00",
+      "checked_at": "2026-06-10T21:52:14.339034+00:00",
       "freshness": "unknown",
       "ttl_seconds": null,
       "stale_after_seconds": null,
@@ -1196,7 +1140,7 @@
       "report_detail": "NetApp cluster management REST is not reachable.; NetApp API access values are missing; keep any values local and redacted.",
       "next_action": "NetApp cluster management REST is not reachable.",
       "source_type": "live_cached",
-      "checked_at": "2026-06-10T15:39:21.914400+00:00",
+      "checked_at": "2026-06-10T21:52:11.152514+00:00",
       "freshness": "current",
       "ttl_seconds": 86400,
       "stale_after_seconds": 86400,
@@ -1214,7 +1158,7 @@
       "report_detail": "NetApp cluster management REST is not reachable.; NetApp API access values are missing; keep any values local and redacted.",
       "next_action": "NetApp cluster management REST is not reachable.",
       "source_type": "live_cached",
-      "checked_at": "2026-06-10T15:39:21.914400+00:00",
+      "checked_at": "2026-06-10T21:52:11.152514+00:00",
       "freshness": "current",
       "ttl_seconds": 86400,
       "stale_after_seconds": 86400,
@@ -1232,7 +1176,7 @@
       "report_detail": "2 stale active values; 1 active profile mismatches.",
       "next_action": "Update provider environment inputs to match `Runtime environment` or remove out-of-scope overrides before certification.",
       "source_type": "live_cached",
-      "checked_at": "2026-06-10T15:39:22.892995+00:00",
+      "checked_at": "2026-06-10T21:52:14.338870+00:00",
       "freshness": "current",
       "ttl_seconds": 86400,
       "stale_after_seconds": 86400,
@@ -1258,6 +1202,126 @@
       "is_operator_visible": true,
       "recheck_command": "make provider-lab-live-status",
       "evidence_artifacts": []
+    },
+    {
+      "category": "protocol",
+      "classification": "blocked_by_prior_stage",
+      "ui_message": "Cisco SSH/SCP is blocked_by_prior_stage.",
+      "report_detail": "Complete or confirm Cisco console bootstrap, then set CISCO_MGMT_CONFIGURED=true before treating SSH/SCP as a port failure.",
+      "next_action": "Complete or confirm Cisco console bootstrap, then set CISCO_MGMT_CONFIGURED=true before treating SSH/SCP as a port failure.",
+      "source_type": "not_checked",
+      "checked_at": null,
+      "freshness": "unknown",
+      "ttl_seconds": 86400,
+      "stale_after_seconds": 86400,
+      "is_current": false,
+      "is_operator_visible": true,
+      "recheck_command": "make provider-lab-live-status",
+      "evidence_artifacts": []
+    },
+    {
+      "category": "protocol",
+      "classification": "blocked_by_prior_stage",
+      "ui_message": "ESXi API is blocked_by_prior_stage.",
+      "report_detail": "Install/configure ESXi management at 192.168.1.203, then set ESXI_CONFIGURED=true before API certification.",
+      "next_action": "Install/configure ESXi management at 192.168.1.203, then set ESXI_CONFIGURED=true before API certification.",
+      "source_type": "not_checked",
+      "checked_at": null,
+      "freshness": "unknown",
+      "ttl_seconds": 86400,
+      "stale_after_seconds": 86400,
+      "is_current": false,
+      "is_operator_visible": true,
+      "recheck_command": "make provider-lab-live-status",
+      "evidence_artifacts": []
+    },
+    {
+      "category": "protocol",
+      "classification": "blocked_by_prior_stage",
+      "ui_message": "ESXi SSH is blocked_by_prior_stage.",
+      "report_detail": "Install/configure ESXi management and enable/confirm SSH before ESXi SSH certification.",
+      "next_action": "Install/configure ESXi management and enable/confirm SSH before ESXi SSH certification.",
+      "source_type": "not_checked",
+      "checked_at": null,
+      "freshness": "unknown",
+      "ttl_seconds": 86400,
+      "stale_after_seconds": 86400,
+      "is_current": false,
+      "is_operator_visible": true,
+      "recheck_command": "make provider-lab-live-status",
+      "evidence_artifacts": []
+    },
+    {
+      "category": "credential",
+      "classification": "not_configured_yet",
+      "ui_message": "ilo credential compatibility needs attention.",
+      "report_detail": "Field `ILO_TEST_PASSWORD` failed compatibility/configuration; value remains redacted.",
+      "next_action": "Set ILO_TEST_PASSWORD in .env.local.real-lab when this provider stage is ready.",
+      "source_type": "live_cached",
+      "checked_at": "2026-06-10T21:52:14.338917+00:00",
+      "freshness": "current",
+      "ttl_seconds": 86400,
+      "stale_after_seconds": 86400,
+      "is_current": true,
+      "is_operator_visible": true,
+      "recheck_command": "make provider-lab-build-verification-live",
+      "evidence_artifacts": [
+        "artifacts/codex-runs/build-verification-report.md"
+      ]
+    },
+    {
+      "category": "credential",
+      "classification": "not_configured_yet",
+      "ui_message": "cisco credential compatibility needs attention.",
+      "report_detail": "Field `CISCO_TEST_PASSWORD` failed compatibility/configuration; value remains redacted.",
+      "next_action": "Set CISCO_TEST_PASSWORD in .env.local.real-lab when this provider stage is ready.",
+      "source_type": "live_cached",
+      "checked_at": "2026-06-10T21:52:14.338946+00:00",
+      "freshness": "current",
+      "ttl_seconds": 86400,
+      "stale_after_seconds": 86400,
+      "is_current": true,
+      "is_operator_visible": true,
+      "recheck_command": "make provider-lab-build-verification-live",
+      "evidence_artifacts": [
+        "artifacts/codex-runs/build-verification-report.md"
+      ]
+    },
+    {
+      "category": "credential",
+      "classification": "not_configured_yet",
+      "ui_message": "cisco_enable credential compatibility needs attention.",
+      "report_detail": "Field `CISCO_ENABLE_PASSWORD or ANSIBLE_CISCO_ENABLE_PASSWORD` failed compatibility/configuration; value remains redacted.",
+      "next_action": "Set CISCO_ENABLE_PASSWORD or ANSIBLE_CISCO_ENABLE_PASSWORD in .env.local.real-lab when this provider stage is ready.",
+      "source_type": "live_cached",
+      "checked_at": "2026-06-10T21:52:14.338973+00:00",
+      "freshness": "current",
+      "ttl_seconds": 86400,
+      "stale_after_seconds": 86400,
+      "is_current": true,
+      "is_operator_visible": true,
+      "recheck_command": "make provider-lab-build-verification-live",
+      "evidence_artifacts": [
+        "artifacts/codex-runs/build-verification-report.md"
+      ]
+    },
+    {
+      "category": "credential",
+      "classification": "not_configured_yet",
+      "ui_message": "esxi credential compatibility needs attention.",
+      "report_detail": "Field `ESXI_TEST_PASSWORD` failed compatibility/configuration; value remains redacted.",
+      "next_action": "Set ESXI_TEST_PASSWORD in .env.local.real-lab when this provider stage is ready.",
+      "source_type": "live_cached",
+      "checked_at": "2026-06-10T21:52:14.338998+00:00",
+      "freshness": "current",
+      "ttl_seconds": 86400,
+      "stale_after_seconds": 86400,
+      "is_current": true,
+      "is_operator_visible": true,
+      "recheck_command": "make provider-lab-build-verification-live",
+      "evidence_artifacts": [
+        "artifacts/codex-runs/build-verification-report.md"
+      ]
     },
     {
       "category": "protocol",
@@ -1290,54 +1354,6 @@
       "is_operator_visible": true,
       "recheck_command": "make provider-lab-live-status",
       "evidence_artifacts": []
-    },
-    {
-      "category": "protocol",
-      "classification": "warning",
-      "ui_message": "Cisco SSH/SCP is warning.",
-      "report_detail": "Review Cisco SSH/SCP readiness.",
-      "next_action": "Review Cisco SSH/SCP readiness.",
-      "source_type": "not_checked",
-      "checked_at": null,
-      "freshness": "unknown",
-      "ttl_seconds": 86400,
-      "stale_after_seconds": 86400,
-      "is_current": false,
-      "is_operator_visible": true,
-      "recheck_command": "make provider-lab-live-status",
-      "evidence_artifacts": []
-    },
-    {
-      "category": "protocol",
-      "classification": "warning",
-      "ui_message": "ESXi API is warning.",
-      "report_detail": "Review ESXi API readiness.",
-      "next_action": "Review ESXi API readiness.",
-      "source_type": "not_checked",
-      "checked_at": null,
-      "freshness": "unknown",
-      "ttl_seconds": 86400,
-      "stale_after_seconds": 86400,
-      "is_current": false,
-      "is_operator_visible": true,
-      "recheck_command": "make provider-lab-live-status",
-      "evidence_artifacts": []
-    },
-    {
-      "category": "protocol",
-      "classification": "warning",
-      "ui_message": "ESXi SSH is warning.",
-      "report_detail": "Review ESXi SSH readiness.",
-      "next_action": "Review ESXi SSH readiness.",
-      "source_type": "not_checked",
-      "checked_at": null,
-      "freshness": "unknown",
-      "ttl_seconds": 86400,
-      "stale_after_seconds": 86400,
-      "is_current": false,
-      "is_operator_visible": true,
-      "recheck_command": "make provider-lab-live-status",
-      "evidence_artifacts": []
     }
   ],
   "blockers": [
@@ -1345,14 +1361,14 @@
     "Last live result: NetApp cluster management REST is not reachable.",
     "Last live result: NetApp cluster management REST is not reachable.",
     "Last live result: Update provider environment inputs to match `Runtime environment` or remove out-of-scope overrides before certification.",
-    "Not checked: Place the ESXi ISO under MEDIA_INVENTORY_DIRS or set ESXI_INSTALL_ISO/ESXI_ISO_PATH before ESXi boot verification."
+    "Not checked: Place the ESXi ISO under MEDIA_INVENTORY_DIRS or set ESXI_INSTALL_ISO/ESXI_ISO_PATH before ESXi boot verification.",
+    "Not checked: Complete or confirm Cisco console bootstrap, then set CISCO_MGMT_CONFIGURED=true before treating SSH/SCP as a port failure.",
+    "Not checked: Install/configure ESXi management at 192.168.1.203, then set ESXI_CONFIGURED=true before API certification.",
+    "Not checked: Install/configure ESXi management and enable/confirm SSH before ESXi SSH certification."
   ],
   "warnings": [
     "Not checked: Review iLO Redfish readiness.",
-    "Not checked: Review iLO XML fallback readiness.",
-    "Not checked: Review Cisco SSH/SCP readiness.",
-    "Not checked: Review ESXi API readiness.",
-    "Not checked: Review ESXi SSH readiness."
+    "Not checked: Review iLO XML fallback readiness."
   ],
   "artifacts": {
     "report": "artifacts/codex-runs/build-verification-report.md",

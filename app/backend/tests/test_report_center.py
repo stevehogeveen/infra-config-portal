@@ -80,7 +80,7 @@ def test_report_center_aggregates_build_verification_failures(monkeypatch) -> No
     assert issue["next_action"] == "Complete console bootstrap, then rerun verification."
 
 
-def test_report_center_firmware_blocked_issue_is_critical(monkeypatch) -> None:
+def test_report_center_firmware_unknown_version_issue_is_warning(monkeypatch) -> None:
     monkeypatch.setattr(
         report_center,
         "get_firmware_compliance",
@@ -99,6 +99,39 @@ def test_report_center_firmware_blocked_issue_is_critical(monkeypatch) -> None:
                     "required_version": "17.9",
                     "reason": "Current firmware or OS version is unknown.",
                     "next_action": "Run Cisco firmware inventory from console.",
+                }
+            ],
+            "reports": {"compliance": "artifacts/codex-runs/firmware-compliance-report.md"},
+        },
+    )
+
+    payload = report_center.get_report_center(source_ids=("firmware",))
+
+    issue = payload["issues"][0]
+    assert issue["source"] == "firmware"
+    assert issue["severity"] == "warning"
+    assert issue["classification"] == "warning"
+
+
+def test_report_center_firmware_observed_below_minimum_stays_critical(monkeypatch) -> None:
+    monkeypatch.setattr(
+        report_center,
+        "get_firmware_compliance",
+        lambda **_: {
+            "provider_id": "firmware-compliance",
+            "checked_at": _fresh_checked_at(),
+            "source_type": "live_probe",
+            "status": "blocked",
+            "components": [
+                {
+                    "id": "cisco_ios_xe_version",
+                    "device": "Cisco",
+                    "label": "Cisco IOS XE version",
+                    "status": "blocked",
+                    "current_version": "16.12.05",
+                    "required_version": "17.9",
+                    "reason": "Current version 16.12.05 is below minimum 17.9.",
+                    "next_action": "Review firmware baseline and live inventory.",
                 }
             ],
             "reports": {"compliance": "artifacts/codex-runs/firmware-compliance-report.md"},
@@ -149,7 +182,7 @@ def test_report_center_stale_config_includes_fix_details(monkeypatch) -> None:
     assert issue["details"]["field"] == "cisco_management"
     assert issue["details"]["current_value"] == "198.51.100.20"
     assert issue["details"]["expected_value"] == "198.51.100.30"
-    assert issue["details"]["where_to_fix"] == "Settings / Lab Profile"
+    assert issue["details"]["where_to_fix"] == "Lab Setup"
     assert issue["recheck_command"] == "make provider-lab-build-verification-live"
 
 

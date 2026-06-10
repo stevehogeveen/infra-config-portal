@@ -9,8 +9,8 @@ from typing import Any
 
 from app.core.database import SessionLocal
 from app.providers.ilo_redfish import IloRedfishAdapter
+from app.providers.ilo_redfish import ilo_redfish_redaction_values
 from app.providers.redaction import redact_sensitive
-from app.core.config import settings
 from app.schemas import HpeRaidApplyCreate, HpeRaidIntentWrite, HpeRaidVolumeIntent
 from app.services.hpe_raid import (
     AFTER_RESET_VALIDATION_REPORT,
@@ -195,7 +195,7 @@ def _default_esxi_intent(discovery: dict[str, Any]) -> HpeRaidIntentWrite:
 def _sanitize(payload: dict[str, Any]) -> dict[str, Any]:
     return redact_sensitive(
         payload,
-        [settings.ilo_test_host, settings.ilo_test_username, settings.ilo_test_password],
+        ilo_redfish_redaction_values(),
     )
 
 
