@@ -380,6 +380,95 @@ def test_lab_profile_api_keeps_saved_profile_active_and_reports_runtime_mismatch
     assert "provider-lab-live-status" in payload["next_safe_action"]
 
 
+def test_lab_profile_runtime_env_apply_updates_active_profile_ips(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    env_path = tmp_path / ".env.local.real-lab"
+    runtime_keys = [
+        "LAB_SUBNET_CIDR",
+        "ILO_TEST_HOST",
+        "SERVER_EMBEDDED_NIC_IP",
+        "ESXI_TEST_HOST",
+        "CISCO_TARGET_IP",
+        "ANSIBLE_CISCO_HOST",
+        "ANSIBLE_CONTROL_HOST",
+        "NETAPP_CONTROLLER_A_SP",
+        "NETAPP_CONTROLLER_B_SP",
+        "NETAPP_CLUSTER_MGMT_IP",
+        "NETAPP_NODE_A_MGMT_IP",
+        "NETAPP_NODE_B_MGMT_IP",
+        "NETAPP_SVM_MGMT_IP",
+        "NETAPP_NFS_LIFS",
+        "NETAPP_ISCSI_LIFS",
+        "LAB_PROFILE_TOPOLOGY",
+        "LAB_GATEWAY",
+        "LAB_DNS_SERVERS",
+        "LAB_NTP_SERVERS",
+        "LAB_MTU",
+        "LAB_PROFILE_NETAPP_ENABLED",
+        "CISCO_MGMT_CONFIGURED",
+        "ESXI_CONFIGURED",
+    ]
+    for key in runtime_keys:
+        monkeypatch.setenv(key, "")
+    monkeypatch.setenv("PROVIDER_MODE", "local-lab-readwrite")
+    monkeypatch.setenv("LAB_PROFILE_STORE", str(tmp_path / "lab-profiles.json"))
+    monkeypatch.setenv("LAB_RUNTIME_ENV_FILE", str(env_path))
+    monkeypatch.setenv("LAB_SUBNET_CIDR", "192.168.1.0/24")
+    monkeypatch.setenv("ILO_TEST_HOST", "192.168.1.201")
+    monkeypatch.setenv("SERVER_EMBEDDED_NIC_IP", "192.168.1.202")
+    monkeypatch.setenv("ESXI_TEST_HOST", "192.168.1.203")
+
+    created = client.post(
+        "/api/v1/lab/profiles",
+        json={
+            "name": "Old Demo Lab",
+            "address_plan": {
+                "subnet": "10.10.8.0/24",
+                "ilo": "10.10.8.200",
+                "server_embedded_nic": "10.10.8.201",
+                "esxi_management": "10.10.8.202",
+                "cisco_management": "10.10.8.2",
+                "ansible_control_host": "10.10.8.5",
+            },
+        },
+    )
+    assert created.status_code == 201
+
+    mismatches = client.get("/api/v1/lab/profiles").json()["active_context"]["mismatch_warnings"]
+    assert {item["env_field"] for item in mismatches} >= {
+        "LAB_SUBNET_CIDR",
+        "ILO_TEST_HOST",
+        "SERVER_EMBEDDED_NIC_IP",
+        "ESXI_TEST_HOST",
+    }
+
+    response = client.post("/api/v1/lab/profiles/active/apply-runtime-env")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["applied"] is True
+    assert payload["env_path"] == str(env_path)
+    assert set(payload["updated_keys"]) >= {
+        "LAB_SUBNET_CIDR",
+        "ILO_TEST_HOST",
+        "SERVER_EMBEDDED_NIC_IP",
+        "ESXI_TEST_HOST",
+    }
+    assert payload["restart_required"] is True
+    assert payload["lab_profiles"]["active_context"]["mismatch_warnings"] == []
+    contents = env_path.read_text(encoding="utf-8")
+    assert "LAB_SUBNET_CIDR=10.10.8.0/24" in contents
+    assert "ILO_TEST_HOST=10.10.8.200" in contents
+    assert "SERVER_EMBEDDED_NIC_IP=10.10.8.201" in contents
+    assert "ESXI_TEST_HOST=10.10.8.202" in contents
+    assert "PASSWORD" not in contents
+    assert "TOKEN" not in contents
+    assert "SECRET" not in contents
+
+
 def test_lab_profile_api_returns_compact_topology_context(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,

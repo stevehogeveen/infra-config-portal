@@ -487,7 +487,10 @@ type LabProfileContextValue = {
   error: string;
   loading: boolean;
   onActivate: (profileId: string) => Promise<void>;
+  onApplyRuntimeEnv: () => Promise<void>;
   onReload: () => Promise<void>;
+  runtimeApplyLoading: boolean;
+  runtimeApplyMessage: string;
   state: LabProfileList | null;
 };
 
@@ -497,7 +500,10 @@ const LabProfileContext = createContext<LabProfileContextValue>({
   error: "",
   loading: false,
   onActivate: async () => {},
+  onApplyRuntimeEnv: async () => {},
   onReload: async () => {},
+  runtimeApplyLoading: false,
+  runtimeApplyMessage: "",
   state: null
 });
 
@@ -516,6 +522,8 @@ function App() {
   const [labProfileState, setLabProfileState] = useState<LabProfileList | null>(null);
   const [labProfileError, setLabProfileError] = useState("");
   const [labProfileLoading, setLabProfileLoading] = useState(true);
+  const [runtimeApplyLoading, setRuntimeApplyLoading] = useState(false);
+  const [runtimeApplyMessage, setRuntimeApplyMessage] = useState("");
   const [health, setHealth] = useState<HealthStatus | null>(null);
   const [healthError, setHealthError] = useState("");
   const [reportIssues, setReportIssues] = useState<ReportCenter | null>(null);
@@ -537,6 +545,7 @@ function App() {
 
   async function activateLabProfile(profileId: string) {
     setLabProfileError("");
+    setRuntimeApplyMessage("");
     setLabProfileLoading(true);
     try {
       setLabProfileState(await api.activateLabProfile(profileId));
@@ -544,6 +553,21 @@ function App() {
       setLabProfileError((err as Error).message);
     } finally {
       setLabProfileLoading(false);
+    }
+  }
+
+  async function applyActiveLabProfileRuntimeEnv() {
+    setLabProfileError("");
+    setRuntimeApplyMessage("");
+    setRuntimeApplyLoading(true);
+    try {
+      const result = await api.applyActiveLabProfileRuntimeEnv();
+      setLabProfileState(result.lab_profiles);
+      setRuntimeApplyMessage(`${result.message} ${result.next_action}`);
+    } catch (err) {
+      setLabProfileError((err as Error).message);
+    } finally {
+      setRuntimeApplyLoading(false);
     }
   }
 
@@ -591,7 +615,10 @@ function App() {
           error: labProfileError,
           loading: labProfileLoading,
           onActivate: activateLabProfile,
+          onApplyRuntimeEnv: applyActiveLabProfileRuntimeEnv,
           onReload: loadLabProfileState,
+          runtimeApplyLoading,
+          runtimeApplyMessage,
           state: labProfileState
         }}
       >
@@ -864,16 +891,24 @@ function ActiveLabSelector({
   error,
   loading,
   onActivate,
+  onApplyRuntimeEnv,
+  runtimeApplyLoading,
+  runtimeApplyMessage,
   state
 }: {
   error: string;
   loading: boolean;
   onActivate: (profileId: string) => Promise<void>;
+  onApplyRuntimeEnv: () => Promise<void>;
+  runtimeApplyLoading: boolean;
+  runtimeApplyMessage: string;
   state: LabProfileList | null;
 }) {
   const activeProfile = state?.active_profile ?? null;
   const activeContext = state?.active_context ?? null;
   const options = state ? [state.runtime_profile, ...state.profiles] : [];
+  const mismatchCount = profileMismatchItems(state).length;
+  const canApplyRuntimeIps = Boolean(activeProfile && activeProfile.source === "saved" && mismatchCount > 0);
 
   return (
     <section className="active-lab-strip" aria-label="Active lab profile">
@@ -901,6 +936,18 @@ function ActiveLabSelector({
           <Pencil size={16} />
           Manage
         </Link>
+        {canApplyRuntimeIps && (
+          <button
+            className="primary"
+            disabled={loading || runtimeApplyLoading}
+            onClick={onApplyRuntimeEnv}
+            title="Write active profile IPs to repo-root .env.local.real-lab"
+            type="button"
+          >
+            <Save size={16} />
+            {runtimeApplyLoading ? "Applying" : "Apply Runtime IPs"}
+          </button>
+        )}
       </div>
       {activeProfile && (
         <div className="active-lab-meta">
@@ -912,6 +959,7 @@ function ActiveLabSelector({
         </div>
       )}
       {error && <p className="active-lab-error">{error}</p>}
+      {runtimeApplyMessage && <p className="active-lab-success">{runtimeApplyMessage}</p>}
     </section>
   );
 }
@@ -1057,6 +1105,9 @@ function Dashboard() {
     error: labProfileError,
     loading: labProfileLoading,
     onActivate: activateLabProfile,
+    onApplyRuntimeEnv: applyRuntimeEnv,
+    runtimeApplyLoading,
+    runtimeApplyMessage,
     state: labProfileState
   } = useLabProfileContext();
   const [requests, setRequests] = useState<RequestRecord[]>([]);
@@ -1128,6 +1179,9 @@ function Dashboard() {
         error={labProfileError}
         loading={labProfileLoading}
         onActivate={activateLabProfile}
+        onApplyRuntimeEnv={applyRuntimeEnv}
+        runtimeApplyLoading={runtimeApplyLoading}
+        runtimeApplyMessage={runtimeApplyMessage}
         state={labProfileState}
       />
       <ProfileMismatchWarning state={labProfileState} />

@@ -14,7 +14,7 @@ from app.providers.registry import ProviderRegistryError, provider_registry
 from app.services.build_verification import get_lab_build_verification
 from app.services.control_access import control_access_configs
 from app.services.firmware_compliance import get_firmware_compliance
-from app.services.lab_profiles import active_lab_profile_context
+from app.services.lab_profiles import active_lab_profile_context, active_lab_profile_runtime_env_command
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 
@@ -563,7 +563,7 @@ def _control_lab_profile() -> dict[str, Any]:
             "LAB_ALLOW_FACTORY_RESET": settings.lab_allow_factory_reset,
         },
         "edit_profile_path": "/lab-profiles",
-        "env_update_command": _env_update_command(known),
+        "env_update_command": active_lab_profile_runtime_env_command(),
         "stale_or_invalid_values": [
             str(item.get("recommended_action") or item)
             for item in context.get("mismatch_warnings") or []
@@ -583,33 +583,6 @@ def _lab_profile_netapp_blocker(lab_profile: dict[str, Any]) -> str | None:
     if features.get("netapp_enabled", True):
         return None
     return features.get("netapp_disabled_reason") or "NetApp is disabled for the active lab profile."
-
-
-def _env_update_command(known: dict[str, Any]) -> str:
-    lines = [
-        "cat <<'EOF' >> app/.env.local.real-lab",
-        f"LAB_SUBNET_CIDR={known['subnet']}",
-        f"ILO_TEST_HOST={known['ilo']}",
-        f"ESXI_TEST_HOST={known['esxi_management']}",
-        f"CISCO_TARGET_IP={known['cisco_management']}",
-        f"ANSIBLE_CONTROL_HOST={known['ansible_control_host']}",
-        "CISCO_MGMT_CONFIGURED=false",
-        "ESXI_CONFIGURED=false",
-        "EOF",
-    ]
-    if known.get("server_embedded_nic"):
-        lines.insert(3, f"SERVER_EMBEDDED_NIC_IP={known['server_embedded_nic']}")
-    if known.get("netapp_cluster_mgmt"):
-        lines[1:1] = []
-        lines.insert(-3, f"NETAPP_CONTROLLER_A_SP={known.get('netapp_controller_a_sp')}")
-        lines.insert(-3, f"NETAPP_CONTROLLER_B_SP={known.get('netapp_controller_b_sp')}")
-        lines.insert(-3, f"NETAPP_CLUSTER_MGMT_IP={known.get('netapp_cluster_mgmt')}")
-        lines.insert(-3, f"NETAPP_NODE_A_MGMT_IP={known.get('netapp_node_a_mgmt')}")
-        lines.insert(-3, f"NETAPP_NODE_B_MGMT_IP={known.get('netapp_node_b_mgmt')}")
-        lines.insert(-3, f"NETAPP_SVM_MGMT_IP={known.get('netapp_svm_mgmt')}")
-        lines.insert(-3, f"NETAPP_NFS_LIFS={','.join(known.get('netapp_nfs_lifs') or [])}")
-        lines.insert(-3, f"NETAPP_ISCSI_LIFS={','.join(known.get('netapp_iscsi_lifs') or [])}")
-    return "\n".join(lines)
 
 
 def _profile_issues(address_plan: dict[str, Any], known: dict[str, Any]) -> list[str]:

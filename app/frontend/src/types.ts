@@ -519,6 +519,17 @@ export type LabProfileList = {
   next_safe_action: string;
 };
 
+export type LabProfileRuntimeApply = {
+  applied: boolean;
+  env_path: string;
+  updated_keys: string[];
+  removed_keys: string[];
+  restart_required: boolean;
+  message: string;
+  next_action: string;
+  lab_profiles: LabProfileList;
+};
+
 export type ControlActionClassification = "read-only" | "write" | "destructive" | "upgrade";
 
 export type ControlActionInput = {

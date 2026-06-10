@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from copy import deepcopy
 from datetime import UTC, datetime
 from pathlib import Path
@@ -30,6 +31,42 @@ NETAPP_DISABLED_REASON = (
     "NetApp high-address defaults require a /24 or larger lab subnet. "
     "Compact /26 lab profiles keep NetApp not_in_scope by default."
 )
+RUNTIME_ENV_FILE_ENV = "LAB_RUNTIME_ENV_FILE"
+RUNTIME_ENV_SCALAR_FIELDS = (
+    ("subnet", "LAB_SUBNET_CIDR"),
+    ("ilo", "ILO_TEST_HOST"),
+    ("server_embedded_nic", "SERVER_EMBEDDED_NIC_IP"),
+    ("esxi_management", "ESXI_TEST_HOST"),
+    ("cisco_management", "CISCO_TARGET_IP"),
+    ("cisco_management", "ANSIBLE_CISCO_HOST"),
+    ("ansible_control_host", "ANSIBLE_CONTROL_HOST"),
+)
+RUNTIME_ENV_NETAPP_FIELDS = (
+    ("netapp_controller_a_sp", "NETAPP_CONTROLLER_A_SP"),
+    ("netapp_controller_b_sp", "NETAPP_CONTROLLER_B_SP"),
+    ("netapp_cluster_mgmt", "NETAPP_CLUSTER_MGMT_IP"),
+    ("netapp_node_a_mgmt", "NETAPP_NODE_A_MGMT_IP"),
+    ("netapp_node_b_mgmt", "NETAPP_NODE_B_MGMT_IP"),
+    ("netapp_svm_mgmt", "NETAPP_SVM_MGMT_IP"),
+    ("netapp_nfs_lifs", "NETAPP_NFS_LIFS"),
+    ("netapp_iscsi_lifs", "NETAPP_ISCSI_LIFS"),
+)
+RUNTIME_ENV_PROFILE_KEYS = (
+    "LAB_PROFILE_TOPOLOGY",
+    "LAB_GATEWAY",
+    "LAB_DNS_SERVERS",
+    "LAB_NTP_SERVERS",
+    "LAB_MTU",
+    "LAB_PROFILE_NETAPP_ENABLED",
+    "CISCO_MGMT_CONFIGURED",
+    "ESXI_CONFIGURED",
+)
+RUNTIME_ENV_ALLOWED_KEYS = {
+    *(env_key for _, env_key in RUNTIME_ENV_SCALAR_FIELDS),
+    *(env_key for _, env_key in RUNTIME_ENV_NETAPP_FIELDS),
+    *RUNTIME_ENV_PROFILE_KEYS,
+}
+ENV_ASSIGNMENT_RE = re.compile(r"^(?P<prefix>\s*(?:export\s+)?)(?P<key>[A-Z0-9_]+)\s*=.*$")
 
 
 class LabProfileError(Exception):
@@ -130,6 +167,53 @@ def activate_lab_profile(profile_id: str) -> dict[str, Any]:
     return list_lab_profiles()
 
 
+def apply_active_profile_to_runtime_env() -> dict[str, Any]:
+    store = _read_store()
+    profiles = _profiles_with_active_flag(store)
+    active = _active_profile(store, profiles)
+    if active.get("id") == RUNTIME_PROFILE_ID or active.get("source") != "saved":
+        raise LabProfileError("Select a saved lab profile before applying runtime IPs.")
+
+    context = active_lab_profile_context(active)
+    updates, removals = _runtime_env_changes_for_context(context)
+    env_path = _runtime_env_path()
+    updated_keys, removed_keys = _write_runtime_env(env_path, updates, removals)
+
+    for key in removed_keys:
+        os.environ.pop(key, None)
+    for key, value in updates.items():
+        os.environ[key] = value
+
+    changed = bool(updated_keys or removed_keys)
+    return {
+        "applied": changed,
+        "env_path": _path_label(env_path),
+        "updated_keys": updated_keys,
+        "removed_keys": removed_keys,
+        "restart_required": True,
+        "message": (
+            "Runtime IP env values were updated from the active lab profile."
+            if changed
+            else "Runtime IP env values already match the active lab profile."
+        ),
+        "next_action": "Restart the backend before running live provider checks that use startup-loaded settings.",
+        "lab_profiles": list_lab_profiles(),
+    }
+
+
+def active_lab_profile_runtime_env_command() -> str:
+    context = active_lab_profile_context()
+    updates, removals = _runtime_env_changes_for_context(context)
+    lines = ["cat <<'EOF' >> .env.local.real-lab"]
+    lines.extend(f"{key}={updates[key]}" for key in sorted(updates))
+    lines.append("EOF")
+    if removals:
+        lines.append("")
+        lines.append("# Remove not-in-scope runtime IP keys if they exist:")
+        lines.extend(f"# unset {key}" for key in sorted(removals))
+    return "\n".join(lines)
+
+
 def get_active_saved_lab_profile() -> dict[str, Any] | None:
     store = _read_store()
     profile_id = store.get("active_profile_id")
@@ -190,6 +274,133 @@ def lab_subnet_options() -> list[dict[str, Any]]:
         }
         for prefix in SUBNET_PREFIX_OPTIONS
     ]
+
+
+def _runtime_env_path() -> Path:
+    configured = os.getenv(RUNTIME_ENV_FILE_ENV)
+    if configured:
+        return Path(configured)
+    return REPO_ROOT / ".env.local.real-lab"
+
+
+def _path_label(path: Path) -> str:
+    try:
+        return str(path.relative_to(REPO_ROOT))
+    except ValueError:
+        return str(path)
+
+
+def _runtime_env_changes_for_context(context: dict[str, Any]) -> tuple[dict[str, str], set[str]]:
+    active = context["active_profile"]
+    address_plan = context["resolved_address_plan"]
+    global_settings = active.get("global_settings") or {}
+    features = context.get("enabled_features") or {}
+    updates: dict[str, str] = {}
+    removals: set[str] = set()
+
+    for field, env_key in RUNTIME_ENV_SCALAR_FIELDS:
+        value = _profile_value(address_plan.get(field))
+        if value:
+            updates[env_key] = value
+
+    updates["LAB_PROFILE_TOPOLOGY"] = str(context.get("topology") or active.get("profile_topology") or HIGH_ADDRESS_LAB)
+    for source_key, env_key in (
+        ("gateway", "LAB_GATEWAY"),
+        ("mtu", "LAB_MTU"),
+    ):
+        value = _profile_value(global_settings.get(source_key) or active.get(source_key))
+        if value:
+            updates[env_key] = value
+        else:
+            removals.add(env_key)
+    for source_key, env_key in (
+        ("dns_servers", "LAB_DNS_SERVERS"),
+        ("ntp_servers", "LAB_NTP_SERVERS"),
+    ):
+        value = _profile_value(global_settings.get(source_key) or active.get(source_key))
+        if value:
+            updates[env_key] = value
+        else:
+            removals.add(env_key)
+
+    netapp_enabled = bool(features.get("netapp_enabled"))
+    updates["LAB_PROFILE_NETAPP_ENABLED"] = "true" if netapp_enabled else "false"
+    updates["CISCO_MGMT_CONFIGURED"] = "false"
+    updates["ESXI_CONFIGURED"] = "false"
+    if netapp_enabled:
+        for field, env_key in RUNTIME_ENV_NETAPP_FIELDS:
+            value = _profile_value(address_plan.get(field))
+            if value:
+                updates[env_key] = value
+            else:
+                removals.add(env_key)
+    else:
+        removals.update(env_key for _, env_key in RUNTIME_ENV_NETAPP_FIELDS)
+
+    return updates, removals - set(updates)
+
+
+def _write_runtime_env(
+    path: Path,
+    updates: dict[str, str],
+    removals: set[str],
+) -> tuple[list[str], list[str]]:
+    current = _read_env_file_values(path)
+    updated_keys = sorted(
+        key for key, value in updates.items() if key in RUNTIME_ENV_ALLOWED_KEYS and current.get(key) != value
+    )
+    removed_keys = sorted(
+        key
+        for key in removals
+        if key in RUNTIME_ENV_ALLOWED_KEYS and (key in current or os.environ.get(key) is not None)
+    )
+    if not updated_keys and not removed_keys:
+        return [], []
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lines = path.read_text(encoding="utf-8").splitlines() if path.exists() else []
+    seen: set[str] = set()
+    next_lines: list[str] = []
+    for line in lines:
+        key = _env_line_key(line)
+        if key is None or key not in RUNTIME_ENV_ALLOWED_KEYS:
+            next_lines.append(line)
+            continue
+        if key in removals:
+            seen.add(key)
+            continue
+        if key in updates:
+            next_lines.append(f"{key}={updates[key]}")
+            seen.add(key)
+            continue
+        next_lines.append(line)
+
+    if next_lines and next_lines[-1].strip():
+        next_lines.append("")
+    for key in sorted(updates):
+        if key in RUNTIME_ENV_ALLOWED_KEYS and key not in seen:
+            next_lines.append(f"{key}={updates[key]}")
+    path.write_text("\n".join(next_lines).rstrip() + "\n", encoding="utf-8")
+    return updated_keys, removed_keys
+
+
+def _read_env_file_values(path: Path) -> dict[str, str]:
+    if not path.exists():
+        return {}
+    values: dict[str, str] = {}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        key = _env_line_key(line)
+        if key is None:
+            continue
+        values[key] = line.split("=", maxsplit=1)[1].strip().strip("\"'")
+    return values
+
+
+def _env_line_key(line: str) -> str | None:
+    match = ENV_ASSIGNMENT_RE.match(line)
+    if not match:
+        return None
+    return match.group("key")
 
 
 def _store_path() -> Path:

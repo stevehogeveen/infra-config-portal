@@ -25,6 +25,7 @@ import type {
   LabValidationSummary,
   LabProfile,
   LabProfileList,
+  LabProfileRuntimeApply,
   LabProfileWrite,
   MediaInventory,
   NetAppConsoleReadiness,
@@ -331,6 +332,10 @@ export const api = {
     }),
   activateLabProfile: (id: string) =>
     apiRequest<LabProfileList>(`/api/v1/lab/profiles/${id}/activate`, {
+      method: "POST"
+    }),
+  applyActiveLabProfileRuntimeEnv: () =>
+    apiRequest<LabProfileRuntimeApply>("/api/v1/lab/profiles/active/apply-runtime-env", {
       method: "POST"
     }),
   ciscoConsolePromptReadiness: () =>

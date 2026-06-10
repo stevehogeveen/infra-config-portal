@@ -564,6 +564,17 @@ class LabProfileListRead(BaseModel):
     next_safe_action: str
 
 
+class LabProfileRuntimeApplyRead(BaseModel):
+    applied: bool
+    env_path: str
+    updated_keys: list[str] = Field(default_factory=list)
+    removed_keys: list[str] = Field(default_factory=list)
+    restart_required: bool = True
+    message: str
+    next_action: str
+    lab_profiles: LabProfileListRead
+
+
 class AuditEventRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

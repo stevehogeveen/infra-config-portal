@@ -127,12 +127,21 @@ overridden. `/26` compact profiles use offset defaults from the subnet network
 address and keep NetApp/vCenter `not_in_scope` by default. See
 `app/docs/lab-profile-examples.md`.
 
+When the active saved profile differs from runtime IP values, the Dashboard
+Active Lab strip exposes `Apply Runtime IPs`. It writes only allowlisted
+non-secret profile IP/runtime keys to repo-root `.env.local.real-lab`, updates
+the running backend process env so the mismatch clears, and still requires a
+backend restart before live provider checks rely on startup-loaded settings. It
+does not write credentials, call providers, apply device configuration, or
+reset hardware.
+
 The API surface is:
 
 - `GET /api/v1/lab/profiles`
 - `POST /api/v1/lab/profiles`
 - `PUT /api/v1/lab/profiles/{profile_id}`
 - `POST /api/v1/lab/profiles/{profile_id}/activate`
+- `POST /api/v1/lab/profiles/active/apply-runtime-env`
 
 ## Provider Status Preview
 

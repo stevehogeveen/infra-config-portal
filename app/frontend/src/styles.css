@@ -350,6 +350,14 @@ button:disabled {
   margin: 0;
 }
 
+.active-lab-success {
+  color: #0f766e;
+  font-size: 13px;
+  font-weight: 800;
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
 .profile-summary-card {
   grid-column: span 2;
 }
@@ -393,7 +401,7 @@ button:disabled {
   align-items: center;
   display: grid;
   gap: 8px;
-  grid-template-columns: 130px minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-columns: minmax(210px, 0.7fr) minmax(0, 1fr) minmax(0, 1fr);
 }
 
 .profile-mismatch-warning li span,
@@ -401,6 +409,11 @@ button:disabled {
   font-size: 12px;
   font-style: normal;
   font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.profile-mismatch-warning li strong {
+  overflow-wrap: anywhere;
 }
 
 .profile-mismatch-warning li em {

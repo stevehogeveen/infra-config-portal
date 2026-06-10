@@ -56,6 +56,7 @@ from app.schemas import (
     LabValidationSummaryRead,
     LabProfileListRead,
     LabProfileRead,
+    LabProfileRuntimeApplyRead,
     LabProfileWrite,
     MediaInventoryRead,
     NetAppConsoleReadinessRead,
@@ -152,6 +153,7 @@ from app.services.lab_profiles import (
     LabProfileError,
     LabProfileNotFoundError,
     activate_lab_profile,
+    apply_active_profile_to_runtime_env,
     create_lab_profile,
     list_lab_profiles,
     update_lab_profile,
@@ -629,6 +631,14 @@ def activate_lab_profile_route(profile_id: str) -> LabProfileListRead:
         return activate_lab_profile(profile_id)
     except LabProfileNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Lab profile not found") from exc
+
+
+@router.post("/lab/profiles/active/apply-runtime-env", response_model=LabProfileRuntimeApplyRead)
+def apply_active_lab_profile_runtime_env_route() -> LabProfileRuntimeApplyRead:
+    try:
+        return apply_active_profile_to_runtime_env()
+    except LabProfileError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.get(

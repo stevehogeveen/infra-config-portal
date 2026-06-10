@@ -19,6 +19,13 @@ by default. The address plan is intent only. Activating a profile does not probe
 devices, does not update provider environment variables, does not rewrite local
 env files, and does not enable any real apply lane.
 
+When runtime IP values are stale, the Active Lab strip can explicitly run
+`POST /api/v1/lab/profiles/active/apply-runtime-env`. That action rewrites only
+allowlisted non-secret profile runtime keys in repo-root `.env.local.real-lab`
+and updates the current backend process environment so profile mismatch warnings
+clear. It does not write credentials, call providers, configure devices, reset
+hardware, or replace the required backend restart before live provider checks.
+
 Lab creation includes topology, subnet CIDR, gateway, domain, DNS, NTP, VLAN,
 MTU, device addresses, and feature flags. The subnet size selector offers `/29`
 through `/23`, but the supported default layouts are:
