@@ -51,6 +51,7 @@ from app.schemas import (
     IloSetupIntentWrite,
     IloSetupPlanPreviewRead,
     IloUpgradeReadinessRead,
+    LabValidationSummaryRead,
     LabProfileListRead,
     LabProfileRead,
     LabProfileWrite,
@@ -73,6 +74,7 @@ from app.schemas import (
     VMDeploymentCreate,
     VMDeploymentUpdate,
     WorkflowActionRead,
+    WorkflowActionRunRead,
     WorkflowRunRead,
     WorkflowStageRead,
 )
@@ -147,6 +149,7 @@ from app.services.lab_profiles import (
     list_lab_profiles,
     update_lab_profile,
 )
+from app.services.lab_validation import get_lab_validation_summary
 from app.services.hpe_raid import (
     apply_hpe_raid_plan,
     build_hpe_raid_apply_plan,
@@ -187,16 +190,34 @@ from app.services.netapp_real_lab import (
     run_netapp_console_discovery,
     run_netapp_console_read_state,
 )
+from app.services.netapp_setup_intent import (
+    apply_netapp_setup,
+    build_netapp_setup_preview,
+)
+from app.services.netapp_upgrade_center import (
+    apply_netapp_upgrade,
+    build_netapp_upgrade_inventory,
+    build_netapp_upgrade_plan,
+    validate_netapp_upgrade,
+)
 from app.services.netapp_upgrade_readiness import get_netapp_upgrade_readiness
 from app.services.readiness import get_request_readiness
 from app.services.report_center import get_report_center, get_report_summary
 from app.services.upgrade_decision import get_ilo_upgrade_readiness
+from app.services.vcenter_netapp_readiness import (
+    get_vcenter_netapp_datastore_plan,
+    get_vcenter_netapp_readiness,
+)
 from app.services.workflow_registry import (
     WorkflowRegistryNotFoundError,
     get_workflow_action,
     get_workflow_stage,
     list_workflow_actions,
     list_workflow_stages,
+)
+from app.services.workflow_action_runner import (
+    list_workflow_action_runs,
+    run_workflow_action,
 )
 
 router = APIRouter(prefix="/api/v1")
@@ -425,6 +446,31 @@ def read_workflow_action(action_id: str) -> WorkflowActionRead:
         raise HTTPException(status_code=404, detail="Workflow action not found") from exc
 
 
+@router.post("/workflows/actions/{action_id}/run", response_model=WorkflowActionRunRead)
+def run_workflow_action_route(
+    action_id: str,
+    session: Session = Depends(get_session),
+) -> WorkflowActionRunRead:
+    try:
+        return run_workflow_action(action_id, session)
+    except WorkflowRegistryNotFoundError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail={"blocker": "Workflow action not found", "action_id": action_id},
+        ) from exc
+
+
+@router.get("/workflows/actions/{action_id}/runs", response_model=list[WorkflowActionRunRead])
+def read_workflow_action_runs(action_id: str) -> list[WorkflowActionRunRead]:
+    try:
+        return list_workflow_action_runs(action_id)
+    except WorkflowRegistryNotFoundError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail={"blocker": "Workflow action not found", "action_id": action_id},
+        ) from exc
+
+
 @router.get("/workflows/stages/{stage_id}", response_model=WorkflowStageRead)
 def read_workflow_stage(stage_id: str) -> WorkflowStageRead:
     try:
@@ -511,6 +557,26 @@ def read_full_rebuild_summary() -> ProviderProbeResultRead:
 @router.get("/lab/build-verification", response_model=ProviderProbeResultRead)
 def read_lab_build_verification() -> ProviderProbeResultRead:
     return get_lab_build_verification()
+
+
+@router.get("/lab/validation", response_model=LabValidationSummaryRead)
+def read_lab_validation() -> LabValidationSummaryRead:
+    return get_lab_validation_summary(write_report=False)
+
+
+@router.get("/lab/validation/handoff", response_model=LabValidationSummaryRead)
+def read_lab_validation_handoff() -> LabValidationSummaryRead:
+    return get_lab_validation_summary(write_report=True)
+
+
+@router.get("/lab/vcenter-netapp/readiness", response_model=ProviderProbeResultRead)
+def read_vcenter_netapp_readiness() -> ProviderProbeResultRead:
+    return get_vcenter_netapp_readiness(check_ports=False, write_report=False)
+
+
+@router.get("/lab/vcenter-netapp/datastore-plan", response_model=ProviderProbeResultRead)
+def read_vcenter_netapp_datastore_plan() -> ProviderProbeResultRead:
+    return get_vcenter_netapp_datastore_plan(write_report=False)
 
 
 @router.get("/reports/issues", response_model=ReportCenterRead)
@@ -909,6 +975,54 @@ def run_netapp_setup_validation_route() -> ProviderProbeResultRead:
 )
 def read_netapp_nfs_vcenter_readiness() -> ProviderProbeResultRead:
     return get_netapp_nfs_vcenter_readiness()
+
+
+@router.get(
+    "/providers/netapp-ontap/setup-preview",
+    response_model=ProviderProbeResultRead,
+)
+def read_netapp_setup_preview() -> ProviderProbeResultRead:
+    return build_netapp_setup_preview(run_address_scan=False, write_report=False)
+
+
+@router.post(
+    "/providers/netapp-ontap/setup-apply",
+    response_model=ProviderProbeResultRead,
+)
+def run_netapp_setup_apply_route() -> ProviderProbeResultRead:
+    return apply_netapp_setup()
+
+
+@router.get(
+    "/providers/netapp-ontap/ontap-upgrade/inventory",
+    response_model=ProviderProbeResultRead,
+)
+def read_netapp_ontap_upgrade_inventory() -> ProviderProbeResultRead:
+    return build_netapp_upgrade_inventory(write_report=False)
+
+
+@router.get(
+    "/providers/netapp-ontap/ontap-upgrade/plan",
+    response_model=ProviderProbeResultRead,
+)
+def read_netapp_ontap_upgrade_plan() -> ProviderProbeResultRead:
+    return build_netapp_upgrade_plan(write_report=False)
+
+
+@router.post(
+    "/providers/netapp-ontap/ontap-upgrade/validate",
+    response_model=ProviderProbeResultRead,
+)
+def run_netapp_ontap_upgrade_validate_route() -> ProviderProbeResultRead:
+    return validate_netapp_upgrade()
+
+
+@router.post(
+    "/providers/netapp-ontap/ontap-upgrade/apply",
+    response_model=ProviderProbeResultRead,
+)
+def run_netapp_ontap_upgrade_apply_route() -> ProviderProbeResultRead:
+    return apply_netapp_upgrade()
 
 
 @router.get(

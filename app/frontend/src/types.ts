@@ -13,6 +13,22 @@ export type RequestStatus =
 
 export type WorkflowRunStatus = "planned" | "executing" | "completed" | "failed" | "cancelled";
 
+export type UiDisplayMode = "simple" | "advanced";
+
+export type MinimalStageSummary = {
+  label: string;
+  status: string;
+  one_line_summary: string;
+  next_action: string;
+  primary_button_label: string;
+  primary_button_enabled: boolean;
+  secondary_action_label?: string;
+  blocker_count: number;
+  proof_count: number;
+  last_checked: string | null;
+  advanced_available: boolean;
+};
+
 export type VMDeployment = {
   cluster: string;
   vm_name: string;
@@ -189,6 +205,71 @@ export type ProviderProbeResult = {
   blockers: string[];
   checked_at: string | null;
   [key: string]: unknown;
+};
+
+export type LabValidationBlocker = {
+  problem: string;
+  source: string;
+  current_value: string;
+  expected_value: string;
+  where_to_fix: string;
+  recommended_action: string;
+  copyable_command: string;
+  recheck_command: string;
+  evidence_links: string[];
+  [key: string]: unknown;
+};
+
+export type LabValidationItem = {
+  id: string;
+  label: string;
+  category: string;
+  stage: string;
+  status: "ready" | "partial" | "blocked" | "not_configured" | "not_checked" | "warning";
+  current_state: string;
+  desired_state: string;
+  setup_summary: string;
+  next_action: string;
+  login_hint: string;
+  management_url: string | null;
+  ssh_target: string | null;
+  proof_points: string[];
+  evidence_artifacts: string[];
+  evidence_collapsed_by_default: boolean;
+  last_checked: string | null;
+  source_type: "live_probe" | "live_cached" | "historical_artifact" | "not_checked";
+  freshness: string;
+  blockers: LabValidationBlocker[];
+  warnings: string[];
+  recheck_command: string;
+  linked_workflow_action: {
+    action_id: string;
+    label: string | null;
+    stage: string | null;
+    command: string | null;
+    run_endpoint: string | null;
+    ui_run_supported: boolean | null;
+  } | null;
+};
+
+export type LabValidationProofLink = {
+  component_id: string;
+  component_label: string;
+  path: string;
+};
+
+export type LabValidationSummary = {
+  overall_status: string;
+  progress_counts: Record<string, number>;
+  top_blocker: LabValidationBlocker | null;
+  validation_items: LabValidationItem[];
+  proof_links: LabValidationProofLink[];
+  generated_at: string;
+  next_action: string;
+  source_type: string;
+  freshness: string;
+  handoff_report: string;
+  warnings: string[];
 };
 
 export type ReportIssueSeverity = "critical" | "warning" | "info" | "success" | string;
@@ -559,6 +640,33 @@ export type WorkflowRunTrace = {
   next_action: string;
 };
 
+export type WorkflowActionRun = {
+  run_id: string;
+  action_id: string;
+  action_label: string;
+  stage_id: string;
+  stage_label: string;
+  mode: WorkflowActionMode | string;
+  started_at: string;
+  finished_at: string;
+  checked_at: string;
+  status: string;
+  source_type: "live_probe" | "live_cached" | "historical_artifact" | "test_fixture" | "not_checked" | string;
+  freshness: string;
+  not_mock: boolean;
+  command: string | null;
+  executed: boolean;
+  return_code: number | null;
+  stdout_summary: string;
+  stderr_summary: string;
+  report_artifacts: string[];
+  trace_artifact: string | null;
+  summary: string;
+  blockers: string[];
+  warnings: string[];
+  next_action: string;
+};
+
 export type WorkflowAction = {
   action_id: string;
   label: string;
@@ -588,6 +696,10 @@ export type WorkflowAction = {
   evidence_artifacts: string[];
   stale_after_seconds: number;
   last_run_trace: WorkflowRunTrace;
+  ui_run_supported: boolean;
+  ui_run_blockers: string[];
+  run_endpoint: string;
+  runs_endpoint: string;
 };
 
 export type WorkflowStage = {

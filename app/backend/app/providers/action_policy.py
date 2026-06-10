@@ -67,6 +67,8 @@ ALLOWLISTED_WORKFLOW_ACTIONS = frozenset(
         "vm.deploy-ovf",
         "netapp.initial-setup",
         "netapp.svm-lif-iscsi",
+        "netapp.ontap-upgrade",
+        "netapp.component-firmware",
         "ilo.power-action",
         "ilo.firmware-update",
         "lab.factory-reset",

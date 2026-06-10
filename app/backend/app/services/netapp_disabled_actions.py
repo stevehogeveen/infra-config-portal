@@ -31,7 +31,7 @@ _DISABLED_ACTIONS: dict[str, tuple[str, str, str]] = {
     "probe-ontap-api-unconfigured": (
         "netapp-probe-api",
         "Probe ONTAP API",
-        "Disabled while NETAPP_CONFIGURED=false.",
+        "Disabled until live NetApp validation is explicitly run.",
     ),
     "probe-sp": (
         "netapp-probe-sp",

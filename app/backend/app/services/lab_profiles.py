@@ -37,11 +37,11 @@ NETAPP_DISABLED_REASON = (
 )
 LAB_BUILDER_CORE_OFFSETS = {
     "gateway": 1,
-    "cisco_management": 2,
-    "ansible_control_host": 5,
-    "ilo": 200,
-    "server_embedded_nic": 201,
-    "esxi_management": 202,
+    "ilo": 201,
+    "server_embedded_nic": 202,
+    "esxi_management": 203,
+    "cisco_management": 204,
+    "ansible_control_host": 205,
 }
 COMPACT_CORE_OFFSETS = {
     "gateway": 1,
@@ -52,14 +52,14 @@ COMPACT_CORE_OFFSETS = {
     "ansible_control_host": 6,
 }
 LAB_BUILDER_NETAPP_OFFSETS = {
-    "netapp_controller_a_sp": 13,
-    "netapp_controller_b_sp": 14,
-    "netapp_cluster_mgmt": 45,
-    "netapp_node_a_mgmt": 46,
-    "netapp_node_b_mgmt": 47,
-    "netapp_svm_mgmt": 48,
+    "netapp_controller_a_sp": 210,
+    "netapp_controller_b_sp": 211,
+    "netapp_cluster_mgmt": 220,
+    "netapp_node_a_mgmt": 221,
+    "netapp_node_b_mgmt": 222,
+    "netapp_svm_mgmt": 223,
 }
-LAB_BUILDER_NETAPP_ISCSI_OFFSETS = (49, 50, 51, 52)
+LAB_BUILDER_NETAPP_ISCSI_OFFSETS = (240, 241, 242, 243)
 
 
 class LabProfileError(Exception):
@@ -74,15 +74,18 @@ def list_lab_profiles() -> dict[str, Any]:
     store = _read_store()
     profiles = _profiles_with_active_flag(store)
     active_profile = _active_profile(store, profiles)
+    test_fixture_mode = _provider_mode() == "mock"
     return {
         "active_profile": active_profile,
         "runtime_profile": _runtime_profile(active=active_profile["id"] == RUNTIME_PROFILE_ID),
         "profiles": profiles,
         "subnet_options": lab_subnet_options(),
         "store_path": _store_path_label(),
-        "mock_only": True,
+        "mock_only": test_fixture_mode,
         "next_safe_action": (
             "Select a saved lab or create a new profile before running lab-specific planning."
+            if test_fixture_mode
+            else "Run `make provider-lab-live-status` to refresh the current real-lab profile."
         ),
     }
 
@@ -228,7 +231,11 @@ def _find_profile(store: dict[str, Any], profile_id: str) -> dict[str, Any]:
 def _profiles_with_active_flag(store: dict[str, Any]) -> list[dict[str, Any]]:
     active_id = store.get("active_profile_id")
     profiles = [
-        _profile_read(profile, active=profile.get("id") == active_id)
+        _profile_read(
+            profile,
+            active=profile.get("id") == active_id
+            and not _saved_profile_is_stale_for_operator_runtime(profile),
+        )
         for profile in store.get("profiles", [])
         if isinstance(profile, dict)
     ]
@@ -244,6 +251,8 @@ def _active_profile(store: dict[str, Any], profiles: list[dict[str, Any]]) -> di
     if active_id:
         for profile in profiles:
             if profile["id"] == active_id:
+                if _saved_profile_is_stale_for_operator_runtime(profile):
+                    return _runtime_profile(active=True)
                 return profile
     return _runtime_profile(active=True)
 
@@ -302,6 +311,49 @@ def _runtime_profile(*, active: bool) -> dict[str, Any]:
         "last_selected_at": None,
         "history": [],
     }
+
+
+def _provider_mode() -> str:
+    return os.getenv("PROVIDER_MODE", settings.provider_mode)
+
+
+def _saved_profile_is_stale_for_operator_runtime(profile: dict[str, Any]) -> bool:
+    if _provider_mode() == "mock":
+        return False
+    if profile.get("source") != "saved":
+        return False
+    global_settings, address_plan = _normalize_profile_components(profile)
+    return _contains_stale_lab_value(address_plan, global_settings) or _differs_from_runtime_profile(
+        address_plan
+    )
+
+
+def _contains_stale_lab_value(*values: Any) -> bool:
+    stack = list(values)
+    while stack:
+        value = stack.pop()
+        if isinstance(value, dict):
+            stack.extend(value.values())
+            continue
+        if isinstance(value, (list, tuple)):
+            stack.extend(value)
+            continue
+        if isinstance(value, str) and "10.10.8." in value:
+            return True
+    return False
+
+
+def _differs_from_runtime_profile(address_plan: dict[str, Any]) -> bool:
+    runtime_address_plan = _runtime_address_plan()
+    for key, runtime_value in runtime_address_plan.items():
+        value = address_plan.get(key)
+        if isinstance(runtime_value, list):
+            if list(value or []) != runtime_value:
+                return True
+            continue
+        if value != runtime_value:
+            return True
+    return False
 
 
 def _runtime_address_plan() -> dict[str, Any]:

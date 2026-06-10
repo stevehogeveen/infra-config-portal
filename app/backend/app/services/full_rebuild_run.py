@@ -9,6 +9,7 @@ from typing import Any
 
 from app.providers.redaction import redact_sensitive
 from app.services.hpe_raid import REPO_ROOT
+from app.services.status_source import attach_status_source
 
 CODEX_RUN_DIR = REPO_ROOT / "artifacts" / "codex-runs"
 BASELINE_REPORT = CODEX_RUN_DIR / "full-device-rebuild-baseline-report.md"
@@ -96,7 +97,6 @@ def build_full_rebuild_summary_reports() -> dict[str, Any]:
         "message": SUMMARY_ONLY_MESSAGE,
         "provider_mode": "local-lab-readwrite",
         "env_file": ".env.local.real-lab",
-        "mock_results_used": False,
         "blockers": [],
         "warnings": [
             "Existing artifact summaries are referenced as historical evidence only.",
@@ -112,6 +112,13 @@ def build_full_rebuild_summary_reports() -> dict[str, Any]:
         | {"summary_json": _display_path(SUMMARY_JSON)},
         "next_safe_action": "Run `make provider-lab-full-rebuild` from the repository root for real lab execution.",
     }
+    payload = attach_status_source(
+        payload,
+        source_type="historical_artifact",
+        checked_at=checked_at,
+        recheck_command="make provider-lab-refresh-live-state",
+        evidence_artifacts=[_display_path(path) for path in REQUESTED_REPORTS.values()],
+    )
     sanitized = _sanitize(payload)
     _write_requested_reports(sanitized)
     SUMMARY_JSON.write_text(json.dumps(sanitized, indent=2), encoding="utf-8")
@@ -193,7 +200,6 @@ def run_full_rebuild_execution() -> dict[str, Any]:
         "message": "Real full lab rebuild execution ran live local-lab-readwrite stages.",
         "provider_mode": "local-lab-readwrite",
         "env_file": ".env.local.real-lab",
-        "mock_results_used": False,
         "blockers": list(dict.fromkeys(blockers)),
         "warnings": _execution_warnings(),
         "git": git_status,
@@ -209,6 +215,13 @@ def run_full_rebuild_execution() -> dict[str, Any]:
         | {"execution_summary_json": _display_path(EXECUTION_SUMMARY_JSON)},
         "next_safe_action": _next_action(status, blockers),
     }
+    payload = attach_status_source(
+        payload,
+        source_type="live_probe",
+        checked_at=checked_at,
+        recheck_command="make provider-lab-refresh-live-state",
+        evidence_artifacts=[_display_path(path) for path in REQUESTED_REPORTS.values()],
+    )
     sanitized = _sanitize(payload)
     _write_requested_reports(sanitized)
     EXECUTION_SUMMARY_JSON.write_text(json.dumps(sanitized, indent=2), encoding="utf-8")
@@ -224,13 +237,13 @@ def get_full_rebuild_summary() -> dict[str, Any]:
                 return payload
         except (OSError, ValueError):
             pass
-    return {
+    return attach_status_source(
+        {
         "provider_id": "full-device-rebuild",
         "checked_at": None,
         "status": "not_run",
         "message": "Full rebuild orchestration summary has not been generated yet.",
         "provider_mode": "unknown",
-        "mock_results_used": False,
         "blockers": ["Full rebuild summary has not been generated yet."],
         "warnings": [],
         "stages": {},
@@ -239,7 +252,12 @@ def get_full_rebuild_summary() -> dict[str, Any]:
             for key, path in REQUESTED_REPORTS.items()
         },
         "next_safe_action": "Run `make provider-lab-full-rebuild` from the repository root.",
-    }
+        },
+        source_type="not_checked",
+        checked_at=None,
+        recheck_command="make provider-lab-refresh-live-state",
+        evidence_artifacts=[_display_path(path) for path in REQUESTED_REPORTS.values()],
+    )
 
 
 def _run_live_stage(command: list[str], report: Path) -> dict[str, Any]:
@@ -472,7 +490,8 @@ def _stage_markdown(title: str, payload: dict[str, Any], stage_key: str) -> str:
         f"- Checked at: `{payload['checked_at']}`",
         f"- Status: `{stage['status']}`",
         f"- Message: {stage['message']}",
-        f"- Mock results used: `{payload['mock_results_used']}`",
+        f"- Source: `{payload.get('source_type')}`",
+        f"- Freshness: `{payload.get('freshness')}`",
         "",
         "## Blockers",
         "",
@@ -497,8 +516,8 @@ def _final_markdown(payload: dict[str, Any]) -> str:
         "",
         f"- Checked at: `{payload['checked_at']}`",
         f"- Overall status: `{payload['status']}`",
-        f"- Provider mode: `{payload['provider_mode']}`",
-        f"- Mock results used: `{payload['mock_results_used']}`",
+        f"- Source: `{payload.get('source_type')}`",
+        f"- Freshness: `{payload.get('freshness')}`",
         "",
         "## Stage Status",
         "",

@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import replace
 
 from app.core.config import settings
+from app.services import build_verification as build_verification_service
 from app.services.build_verification import (
     build_toolchain_availability,
     build_lab_build_verification,
@@ -98,16 +99,17 @@ def test_build_verification_failure_reporting(monkeypatch, tmp_path) -> None:
     assert "failures" in result
     assert result["lab_ip_profile"]["expected"]["cisco_management"] == "192.168.1.204"
     assert result["lab_ip_profile"]["expected"]["ansible_control_host"] == "192.168.1.205"
-    assert result["lab_ip_profile"]["expected"]["netapp_controller_a_sp"] == "192.168.1.206"
-    assert result["lab_ip_profile"]["expected"]["netapp_cluster_mgmt"] == "192.168.1.208"
+    assert result["lab_ip_profile"]["expected"]["netapp_controller_a_sp"] == "192.168.1.210"
+    assert result["lab_ip_profile"]["expected"]["netapp_cluster_mgmt"] == "192.168.1.220"
     assert result["lab_ip_profile"]["expected"]["netapp_iscsi_lifs"] == (
-        "192.168.1.212,192.168.1.213,192.168.1.214,192.168.1.215"
+        "192.168.1.240,192.168.1.241,192.168.1.242,192.168.1.243"
     )
     assert result["artifacts"]["report"] == "artifacts/codex-runs/build-verification-report.md"
     assert result["artifacts"]["lab_ip_profile_report"] == "artifacts/codex-runs/lab-ip-profile-update-report.md"
     assert result["artifacts"]["lab_ip_profile_hardening_report"] == "artifacts/codex-runs/lab-ip-profile-hardening-report.md"
     assert result["artifacts"]["toolchain_availability_report"] == "artifacts/codex-runs/toolchain-availability-report.md"
     assert result["toolchain"]["provider_id"] == "toolchain-readiness"
+    assert all(item.get("source_type") for item in result["protocols"]["checks"])
     assert {item["classification"] for item in result["failures"]} & {
         "hard_fail",
         "blocked_by_prior_stage",
@@ -116,12 +118,81 @@ def test_build_verification_failure_reporting(monkeypatch, tmp_path) -> None:
     }
 
 
+def test_mock_provider_mode_cannot_produce_real_certification(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("LAB_PROFILE_STORE", str(tmp_path / "lab-profiles.json"))
+    live_state = _netapp_live_state(configured=True)
+    monkeypatch.setattr(
+        "app.services.build_verification.settings",
+        replace(
+            settings,
+            provider_mode="mock",
+            cisco_mgmt_configured=True,
+            esxi_configured=True,
+            netapp_configured=True,
+            netapp_api_password="compatible-value",
+        ),
+    )
+    monkeypatch.setattr("app.services.build_verification.read_netapp_live_state", lambda **_kwargs: live_state)
+    monkeypatch.setattr("app.services.build_verification.get_netapp_runtime_state", lambda: live_state)
+    monkeypatch.setattr("app.services.build_verification._reachable", lambda host, port, check_ports: True if host else None)
+
+    result = build_lab_build_verification(check_ports=True)
+
+    assert result["source_type"] == "test_fixture"
+    assert result["certification_state"] == "test_fixture"
+    assert result["operator_runtime_mode"] == "dev_test"
+    assert result["dev_test_banner"]
+    assert any(item["category"] == "runtime-mode" for item in result["failures"])
+
+
+def test_cached_test_fixture_summary_is_not_current_in_real_runtime(monkeypatch, tmp_path) -> None:
+    artifact_dir = tmp_path / "artifacts" / "codex-runs"
+    artifact_dir.mkdir(parents=True)
+    monkeypatch.setattr(build_verification_service, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(build_verification_service, "REPORT", artifact_dir / "build-verification-report.md")
+    monkeypatch.setattr(
+        build_verification_service,
+        "CURRENT_STATE_REPORT",
+        artifact_dir / "build-verification-current-state-report.md",
+    )
+    monkeypatch.setattr(
+        build_verification_service,
+        "EVIDENCE_REPORT",
+        artifact_dir / "build-verification-evidence-report.md",
+    )
+    monkeypatch.setattr(
+        build_verification_service,
+        "SUMMARY",
+        artifact_dir / "build-verification-summary-redacted.json",
+    )
+    monkeypatch.setattr(
+        "app.services.build_verification.settings",
+        replace(settings, provider_mode="local-lab-readwrite"),
+    )
+    build_verification_service.SUMMARY.write_text(
+        '{"provider_id":"build-verification","provider_mode":"mock","source_type":"test_fixture","status":"blocked"}',
+        encoding="utf-8",
+    )
+
+    result = build_verification_service.get_lab_build_verification()
+
+    assert result["status"] == "not_run"
+    assert result["source_type"] == "not_checked"
+    assert result["certification_state"] == "not_checked"
+    assert result["blockers"] == []
+    assert "historical evidence only" in result["message"]
+
+
 def test_build_verification_stages_unconfigured_providers(monkeypatch) -> None:
     monkeypatch.setattr(
         "app.services.build_verification.settings",
         replace(settings, cisco_mgmt_configured=False, esxi_configured=False, netapp_configured=False),
     )
     monkeypatch.setattr("app.services.build_verification._reachable", lambda host, port, check_ports: False if host else None)
+    monkeypatch.setattr(
+        "app.services.build_verification.get_netapp_runtime_state",
+        lambda: _netapp_live_state(configured=False, configured_state="not_detected", source="none", reachable=None),
+    )
 
     result = build_lab_build_verification(check_ports=True)
     protocols = {item["protocol"]: item for item in result["protocols"]["checks"]}
@@ -131,6 +202,54 @@ def test_build_verification_stages_unconfigured_providers(monkeypatch) -> None:
     assert protocols["ESXi SSH"]["classification"] == "blocked_by_prior_stage"
     assert protocols["NetApp REST"]["classification"] == "not_configured_yet"
     assert protocols["NetApp SSH"]["classification"] == "not_configured_yet"
+
+
+def test_build_verification_uses_live_netapp_state_before_env_false(monkeypatch) -> None:
+    live_state = _netapp_live_state(configured=True)
+    monkeypatch.setattr(
+        "app.services.build_verification.settings",
+        replace(settings, netapp_configured=False),
+    )
+    monkeypatch.setattr("app.services.build_verification.read_netapp_live_state", lambda **_kwargs: live_state)
+    monkeypatch.setattr("app.services.build_verification.get_netapp_runtime_state", lambda: live_state)
+    monkeypatch.setattr("app.services.build_verification._reachable", lambda host, port, check_ports: False if host else None)
+
+    result = build_lab_build_verification(check_ports=True)
+    protocols = {item["protocol"]: item for item in result["protocols"]["checks"]}
+
+    assert result["netapp_live_state"]["configured"] is True
+    assert protocols["NetApp REST"]["classification"] == "passed"
+    assert protocols["NetApp SSH"]["classification"] == "passed"
+    assert protocols["NetApp REST"]["manual_env_flag_required"] is False
+
+
+def test_build_verification_env_true_live_failure_is_stale_config(monkeypatch) -> None:
+    live_state = _netapp_live_state(configured=False, configured_state="blocked", reachable=False)
+    monkeypatch.setattr(
+        "app.services.build_verification.settings",
+        replace(settings, netapp_configured=True, netapp_api_password="compatible-value"),
+    )
+    monkeypatch.setattr("app.services.build_verification.read_netapp_live_state", lambda **_kwargs: live_state)
+    monkeypatch.setattr("app.services.build_verification.get_netapp_runtime_state", lambda: live_state)
+    monkeypatch.setattr("app.services.build_verification._reachable", lambda host, port, check_ports: False if host else None)
+
+    result = build_lab_build_verification(check_ports=True)
+    protocols = {item["protocol"]: item for item in result["protocols"]["checks"]}
+
+    assert protocols["NetApp REST"]["classification"] == "stale_config"
+    assert protocols["NetApp SSH"]["classification"] == "stale_config"
+
+
+def test_build_verification_login_required_is_operator_action(monkeypatch) -> None:
+    live_state = _netapp_live_state(configured=False, configured_state="login_required")
+    monkeypatch.setattr("app.services.build_verification.read_netapp_live_state", lambda **_kwargs: live_state)
+    monkeypatch.setattr("app.services.build_verification.get_netapp_runtime_state", lambda: live_state)
+
+    result = build_lab_build_verification(check_ports=True)
+    protocols = {item["protocol"]: item for item in result["protocols"]["checks"]}
+
+    assert protocols["NetApp REST"]["classification"] == "operator_action_required"
+    assert protocols["NetApp REST"]["configured"] is False
 
 
 def test_build_verification_marks_stale_active_ip(monkeypatch) -> None:
@@ -150,12 +269,12 @@ def test_build_verification_flags_stale_netapp_raw_env(monkeypatch) -> None:
     monkeypatch.setenv("NETAPP_CLUSTER_MGMT_IP", "10.10.8.45")
     monkeypatch.setattr(
         "app.services.build_verification.settings",
-        replace(settings, netapp_cluster_mgmt_ip="192.168.1.208"),
+        replace(settings, netapp_cluster_mgmt_ip="192.168.1.220"),
     )
 
     result = build_lab_build_verification(check_ports=False)
 
-    assert result["lab_ip_profile"]["configured"]["netapp_cluster_mgmt"] == "192.168.1.208"
+    assert result["lab_ip_profile"]["configured"]["netapp_cluster_mgmt"] == "192.168.1.220"
     stale_fields = {item["field"] for item in result["lab_ip_profile"]["stale_10_10_8_values"]}
     assert "netapp_cluster_mgmt_ip_env" in stale_fields
 
@@ -188,3 +307,46 @@ def test_toolchain_availability_reports_local_checks() -> None:
         "ONTAP REST",
         "govc",
     ]
+
+
+def _netapp_live_state(
+    *,
+    configured: bool,
+    configured_state: str = "configured",
+    reachable: bool | None = True,
+    source: str | None = None,
+) -> dict:
+    return {
+        "provider_id": "netapp-ontap",
+        "device_role": "storage-controller",
+        "checked_at": "2026-06-08T12:00:00+00:00",
+        "source_type": "live_probe",
+        "freshness": "current",
+        "is_current": True,
+        "is_operator_visible": True,
+        "status": "ready" if configured else "blocked",
+        "configured": configured,
+        "configured_state": configured_state,
+        "source": source or ("live_verification" if configured else "console_read_state"),
+        "manual_env_flag_required": False,
+        "legacy_env": {
+            "netapp_configured_env": False,
+            "netapp_configured_env_role": "legacy_override_or_desired_flag",
+            "manual_state_tracking_required": False,
+        },
+        "console": {
+            "discovered_port": "/dev/ttyUSB0",
+            "baud": 115200,
+            "confidence": "high",
+            "last_seen": "2026-06-08T12:00:00+00:00",
+            "source": "autodiscovery",
+        },
+        "management": {
+            "rest_443_reachable": reachable,
+            "ssh_22_reachable": reachable,
+        },
+        "api": {"authenticated": configured},
+        "storage": {"protocol": "nfs", "ready": configured},
+        "blockers": [] if configured else ["NetApp live validation failed."],
+        "next_safe_action": "Manual env flag not required.",
+    }

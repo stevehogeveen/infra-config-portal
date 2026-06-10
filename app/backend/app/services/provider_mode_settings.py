@@ -11,15 +11,8 @@ from app.providers.redaction import redact_sensitive
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 PROVIDER_MODE_OPTIONS = {
-    "mock": {
-        "label": "Simulation",
-        "status": "safe_default",
-        "description": "No real infrastructure contact. This remains the repository default.",
-        "restart_command": "PROVIDER_MODE=mock make app-restart",
-        "requirements": [],
-    },
     "local-readonly": {
-        "label": "Local Read-only Lab",
+        "label": "Read-only Live Checks",
         "status": "read_only",
         "description": "Allows explicit read-only provider probes when local targets and acknowledgements are configured.",
         "restart_command": "PROVIDER_MODE=local-readonly LAB_READONLY_ACK=YES make app-restart",
@@ -30,7 +23,7 @@ PROVIDER_MODE_OPTIONS = {
         ],
     },
     "local-lab-readwrite": {
-        "label": "Local Lab Read/write",
+        "label": "Real Lab Runtime",
         "status": "guarded_write",
         "description": "Enables only allowlisted lab write paths that still require workflow-specific flags and confirmations.",
         "restart_command": "PROVIDER_MODE=local-lab-readwrite make app-restart",
@@ -50,18 +43,30 @@ class ProviderModeSettingsError(ValueError):
 def read_provider_mode_settings() -> dict[str, Any]:
     desired_mode = _read_desired_mode()
     current_mode = settings.provider_mode
-    selected_mode = desired_mode or current_mode
-    option = PROVIDER_MODE_OPTIONS.get(selected_mode, PROVIDER_MODE_OPTIONS["mock"])
+    selected_mode = desired_mode or (
+        current_mode if current_mode in PROVIDER_MODE_OPTIONS else "local-lab-readwrite"
+    )
+    option = PROVIDER_MODE_OPTIONS.get(selected_mode, PROVIDER_MODE_OPTIONS["local-lab-readwrite"])
+    dev_test_banner = (
+        "The app is currently served with PROVIDER_MODE=mock. This is test mode only and cannot certify real lab results."
+        if current_mode == "mock"
+        else None
+    )
     return {
         "current_mode": current_mode,
         "desired_mode": selected_mode,
         "pending_restart": selected_mode != current_mode,
         "options": _mode_options(),
         "restart_command": option["restart_command"],
+        "expected_runtime_mode": "local-lab-readwrite",
+        "dev_test_banner": dev_test_banner,
         "mode_env_path": _path_label(_env_path()),
         "store_path": _path_label(_store_path()),
         "updated_at": _read_store().get("updated_at"),
         "next_safe_action": (
+            "Restart in Real Lab Runtime before relying on operator status, reports, or certification."
+            if dev_test_banner
+            else
             "Restart the app with the shown command for the desired provider mode to take effect."
             if selected_mode != current_mode
             else "Provider mode is active. Use explicit section actions; page load does not run providers."
@@ -77,7 +82,7 @@ def update_provider_mode_settings(payload: dict[str, Any]) -> dict[str, Any]:
     store = {
         "desired_mode": desired_mode,
         "updated_at": now,
-        "mock_default_preserved": True,
+        "operator_runtime_only": True,
     }
     _write_store(store)
     _write_env_file(desired_mode)

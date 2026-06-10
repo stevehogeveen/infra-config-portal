@@ -29,11 +29,18 @@ app.add_middleware(
 
 
 @app.get("/health")
-def health() -> dict[str, str]:
+def health() -> dict[str, str | None]:
     return {
         "status": "ok",
         "app": settings.app_name,
         "provider_mode": settings.provider_mode,
+        "operator_runtime_mode": "dev_test" if settings.provider_mode == "mock" else "real_lab",
+        "expected_runtime_mode": "local-lab-readwrite",
+        "dev_test_banner": (
+            "PROVIDER_MODE=mock is test mode only. Real lab status, reports, and certification require local-lab-readwrite."
+            if settings.provider_mode == "mock"
+            else None
+        ),
     }
 
 

@@ -6,6 +6,11 @@ from typing import Any, Literal
 
 from app.providers.action_policy import ActionCategory, current_lab_action_policy
 from app.services.control_actions import ACTIONS, ActionDefinition, REPO_ROOT
+from app.services.workflow_action_allowlist import workflow_action_run_blockers
+from app.services.workflow_action_run_store import (
+    latest_workflow_action_run_trace,
+    run_trace_to_registry_trace,
+)
 
 WorkflowCategory = Literal[
     "discover",
@@ -120,8 +125,8 @@ STAGE_SEEDS: tuple[WorkflowStageSeed, ...] = (
         "netapp",
         "NetApp",
         70,
-        "Serial console, live state, setup preview, and NFS/vCenter readiness.",
-        "Planned NetApp intent remains separate from current live validation.",
+        "Serial console, setup preview/apply gates, ONTAP upgrade center, and NFS/vCenter readiness.",
+        "Planned NetApp intent and upgrade readiness remain separate from current live validation.",
         dependencies=("lab-profile", "cisco", "esxi"),
     ),
     WorkflowStageSeed(
@@ -200,10 +205,18 @@ CATEGORY_BY_CONTROL_ACTION = {
     "esxi.ssh-api-check": "verify",
     "netapp.console-autodiscovery": "discover",
     "netapp.console-read-state": "verify",
+    "netapp.console-login-state": "verify",
     "netapp.live-state": "verify",
     "netapp.validate-setup": "verify",
     "netapp.setup-preview": "plan",
+    "netapp.setup-apply": "apply",
+    "netapp.post-setup-validation": "verify",
     "netapp.nfs-vcenter-readiness": "verify",
+    "netapp.ontap-upgrade-inventory": "inventory",
+    "netapp.ontap-upgrade-plan": "plan",
+    "netapp.ontap-upgrade-validate": "verify",
+    "netapp.ontap-upgrade-apply": "upgrade",
+    "netapp.component-firmware-inventory": "inventory",
     "firmware.inventory": "inventory",
     "firmware.compliance-check": "verify",
     "firmware.waiver-check": "waive",
@@ -340,6 +353,59 @@ EXTRA_ACTIONS: tuple[WorkflowActionSeed, ...] = (
         ),
     ),
     WorkflowActionSeed(
+        "vcenter-netapp.readiness",
+        "vCenter-NetApp Readiness",
+        "netapp",
+        "vcenter-netapp",
+        "verify",
+        "read_only",
+        "Evaluate vCenter/govc, ESXi management, NetApp cluster, and planned NFS prerequisites for a future datastore lane.",
+        "make_target",
+        command="make provider-lab-vcenter-netapp-readiness",
+        reports=("artifacts/codex-runs/vcenter-netapp-readiness-report.md",),
+        required_credentials=(
+            "vCenter credential reference with values redacted when configured.",
+            "NetApp API credential reference with values redacted when configured.",
+        ),
+    ),
+    WorkflowActionSeed(
+        "vcenter-netapp.datastore-plan",
+        "vCenter-NetApp Datastore Plan",
+        "netapp",
+        "vcenter-netapp",
+        "plan",
+        "read_only",
+        "Generate the preview-only NFS datastore add plan and command preview without mounting storage.",
+        "make_target",
+        command="make provider-lab-vcenter-netapp-datastore-plan",
+        reports=("artifacts/codex-runs/vcenter-netapp-datastore-plan-report.md",),
+        required_credentials=(
+            "vCenter credential reference with values redacted when configured.",
+            "NetApp API credential reference with values redacted when configured.",
+        ),
+    ),
+    WorkflowActionSeed(
+        "vcenter-netapp.datastore-apply-placeholder",
+        "Future Datastore Apply",
+        "netapp",
+        "vcenter-netapp",
+        "apply",
+        "write",
+        "Future write-capable datastore mount lane. It is intentionally not runnable until guarded apply gates are implemented.",
+        "manual_guidance",
+        required_mode="local-lab-readwrite",
+        required_gates=("NETAPP_CONFIGURED live verification", "VCENTER_CONFIGURED=true", "fresh datastore plan"),
+        required_confirmations=("APPLY VCENTER NETAPP DATASTORE",),
+        required_credentials=(
+            "vCenter credential reference with values redacted.",
+            "NetApp API credential reference with values redacted.",
+        ),
+        safety_notes=(
+            "Write-capable placeholder only; no registry runner or backend apply endpoint exists.",
+            "Future apply must require fresh discovery, approval, audit logging, and rollback notes.",
+        ),
+    ),
+    WorkflowActionSeed(
         "build-verification.live-status",
         "Live Status / Current State",
         "build-verification",
@@ -352,6 +418,21 @@ EXTRA_ACTIONS: tuple[WorkflowActionSeed, ...] = (
         reports=(
             "artifacts/codex-runs/provider-lab-live-status-report.md",
             "artifacts/codex-runs/provider-lab-live-status-redacted.json",
+        ),
+    ),
+    WorkflowActionSeed(
+        "lab-validation.summary",
+        "Lab Validation Summary",
+        "build-verification",
+        "lab-validation",
+        "report",
+        "read_only",
+        "Generate the Lab Validation / Handoff summary with login hints, proof links, and next actions.",
+        "make_target",
+        command="make provider-lab-validation",
+        reports=(
+            "artifacts/codex-runs/lab-validation-handoff-report.md",
+            "artifacts/codex-runs/lab-validation-summary-redacted.json",
         ),
     ),
     WorkflowActionSeed(
@@ -515,10 +596,31 @@ def _action_read(seed: WorkflowActionSeed) -> dict[str, Any]:
     blockers = _blockers_for_seed(seed)
     reports = list(seed.reports)
     existing_reports = [report for report in reports if (REPO_ROOT / report).exists()]
-    last_report = _latest_report(existing_reports)
-    last_status = "report_available" if last_report else "not_checked"
-    availability = "blocked" if blockers else _availability_for_seed(seed)
-    trace = _run_trace(seed, last_report, blockers, availability)
+    latest_run = latest_workflow_action_run_trace(seed.action_id)
+    last_report = (
+        str(latest_run.get("trace_artifact"))
+        if latest_run and latest_run.get("trace_artifact")
+        else _latest_report(existing_reports)
+    )
+    last_status = (
+        str(latest_run.get("status"))
+        if latest_run and latest_run.get("status")
+        else "report_available"
+        if last_report
+        else "not_checked"
+    )
+    runner_action = _runner_action_probe(seed)
+    ui_run_blockers = workflow_action_run_blockers(runner_action)
+    ui_run_supported = not ui_run_blockers
+    availability = "blocked" if blockers else "available" if ui_run_supported else _availability_for_seed(seed)
+    trace = _run_trace(seed, last_report, blockers, availability, latest_run)
+    evidence_artifacts = _unique(
+        [
+            *existing_reports,
+            *(list(latest_run.get("report_artifacts") or []) if latest_run else []),
+            *([str(latest_run.get("trace_artifact"))] if latest_run and latest_run.get("trace_artifact") else []),
+        ]
+    )
     return {
         "action_id": seed.action_id,
         "label": seed.label,
@@ -545,9 +647,13 @@ def _action_read(seed: WorkflowActionSeed) -> dict[str, Any]:
         "current_availability": availability,
         "blockers": blockers,
         "next_action": _next_action(seed, blockers, availability),
-        "evidence_artifacts": existing_reports,
+        "evidence_artifacts": evidence_artifacts,
         "stale_after_seconds": seed.stale_after_seconds,
         "last_run_trace": trace,
+        "ui_run_supported": ui_run_supported,
+        "ui_run_blockers": ui_run_blockers,
+        "run_endpoint": f"/api/v1/workflows/actions/{seed.action_id}/run",
+        "runs_endpoint": f"/api/v1/workflows/actions/{seed.action_id}/runs",
     }
 
 
@@ -588,7 +694,10 @@ def _run_trace(
     last_report: str | None,
     blockers: list[str],
     availability: str,
+    latest_run: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    if latest_run:
+        return run_trace_to_registry_trace(latest_run)
     started_at = None
     finished_at = None
     source_type: RunTraceSourceType = "not_checked"
@@ -637,17 +746,30 @@ def _blockers_for_seed(seed: WorkflowActionSeed) -> list[str]:
 
 def _availability_for_seed(seed: WorkflowActionSeed) -> str:
     if seed.mode == "report_only" and seed.api_endpoint:
-        return "available"
+        return "manual_command_required"
     if seed.command or seed.api_endpoint:
         return "manual_command_required"
     return "not_available"
+
+
+def _runner_action_probe(seed: WorkflowActionSeed) -> dict[str, Any]:
+    return {
+        "action_id": seed.action_id,
+        "mode": seed.mode,
+        "required_confirmations": list(seed.required_confirmations),
+        "command": seed.command,
+        "api_endpoint": seed.api_endpoint,
+        "api_method": seed.api_method,
+    }
 
 
 def _next_action(seed: WorkflowActionSeed, blockers: list[str], availability: str) -> str:
     if blockers:
         return blockers[0]
     if availability == "available" and seed.api_endpoint:
-        return f"Open {seed.api_method or 'GET'} {seed.api_endpoint}."
+        return "Run Check from the UI to refresh current state."
+    if availability == "available" and seed.command:
+        return "Run Check from the UI to refresh current state."
     if seed.command:
         return f"Review gates, then copy `{seed.command}` when this stage is in scope."
     if seed.api_endpoint:

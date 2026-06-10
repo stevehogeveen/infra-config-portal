@@ -39,7 +39,7 @@ def get_netapp_readiness_comparison() -> dict[str, Any]:
         "blockers": [
             "Live NetApp discovery is disabled; comparison uses planned targets and manual observations only.",
             "Apply, probe, console, bootstrap, and configuration actions are disabled.",
-            "NETAPP_CONFIGURED=false; cluster management is not treated as reachable.",
+            "Live NetApp configured state has not verified cluster management reachability.",
             "Credentials are missing." if not _credentials_present() else "Credentials are present but not returned.",
             "LAB_READONLY_ACK=YES is missing for future safe probes."
             if settings.lab_readonly_ack != "YES"
@@ -108,7 +108,7 @@ def _comparison_items(
             id_="cluster-management-not-configured",
             label="Cluster management",
             planned=f"Cluster management planned at {management_ips['cluster']}",
-            observed="Not discovered; not treated as reachable while NETAPP_CONFIGURED=false",
+            observed="Not discovered; not treated as reachable until live verification succeeds",
             next_action="Configure cluster management outside this portal before any future read-only ONTAP probe.",
         ),
         _planned_not_live_item(

@@ -65,8 +65,12 @@ def test_registry_contains_expected_provider_actions() -> None:
         "netapp.console-read-state",
         "netapp.nfs-vcenter-readiness",
         "netapp.setup-preview",
+        "vcenter-netapp.readiness",
+        "vcenter-netapp.datastore-plan",
+        "vcenter-netapp.datastore-apply-placeholder",
         "build-verification.live-status",
         "build-verification.run-full",
+        "lab-validation.summary",
         "build-verification.toolchain-check",
         "reports.issue-center",
     }.issubset(action_ids)
@@ -96,8 +100,33 @@ def test_registry_does_not_treat_mock_or_test_state_as_real_current_state() -> N
     assert actions
     for action in actions:
         trace = action["last_run_trace"]
-        assert trace["source_type"] in {"historical_artifact", "not_checked"}
-        assert trace["freshness"] in {"historical", "not_checked"}
+        assert trace["source_type"] in {"historical_artifact", "not_checked", "live_probe"}
+        assert trace["source_type"] not in {"mock", "test", "test_fixture"}
+        assert trace["freshness"] in {"historical", "not_checked", "current"}
+        if trace["source_type"] == "live_probe":
+            assert trace["freshness"] == "current"
+
+
+def test_safe_read_only_registry_actions_are_ui_runnable() -> None:
+    actions = {action["action_id"]: action for action in list_workflow_actions()}
+
+    assert actions["build-verification.run-full"]["ui_run_supported"] is True
+    assert actions["build-verification.run-full"]["current_availability"] == "available"
+    assert actions["build-verification.run-full"]["run_endpoint"].endswith(
+        "/workflows/actions/build-verification.run-full/run"
+    )
+    assert actions["reports.summary"]["ui_run_supported"] is True
+
+
+def test_write_destructive_and_unallowlisted_actions_are_not_ui_runnable() -> None:
+    actions = {action["action_id"]: action for action in list_workflow_actions()}
+
+    assert actions["raid.apply"]["ui_run_supported"] is False
+    assert any("guarded workflow" in blocker for blocker in actions["raid.apply"]["ui_run_blockers"])
+    assert actions["ilo.virtual-media-insert"]["ui_run_supported"] is False
+    assert actions["build-verification.run-scoped"]["ui_run_supported"] is False
+    assert actions["vcenter-netapp.datastore-apply-placeholder"]["mode"] == "write"
+    assert actions["vcenter-netapp.datastore-apply-placeholder"]["ui_run_supported"] is False
 
 
 def test_workflow_registry_api_endpoints(client: TestClient) -> None:

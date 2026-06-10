@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
+from app.core.config import settings
 from app.providers.netapp import PROVIDER_ID
 
 
@@ -10,6 +11,8 @@ PLAN_PREVIEW_ENDPOINT = "/api/v1/providers/netapp-ontap/plan-preview"
 
 
 def list_netapp_artifact_placeholders() -> list[dict[str, Any]]:
+    if settings.provider_mode != "mock":
+        return []
     generated_at = datetime.now(UTC)
     return [
         {
@@ -18,7 +21,7 @@ def list_netapp_artifact_placeholders() -> list[dict[str, Any]]:
             "kind": "netapp_plan_preview",
             "title": "NetApp ONTAP Plan Preview",
             "description": (
-                "Mock-only metadata placeholder for the NetApp ONTAP plan preview. "
+                "Test fixture metadata placeholder for the NetApp ONTAP plan preview. "
                 "No report file is written and no ONTAP endpoint is contacted."
             ),
             "status": "available_preview",

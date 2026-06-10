@@ -60,6 +60,9 @@ load_provider_mode_config() {
       log "Ignoring unsupported PROVIDER_MODE in ${APP_MODE_ENV_FILE}: ${mode}"
       ;;
   esac
+  if [[ -z "${PROVIDER_MODE:-}" ]]; then
+    export PROVIDER_MODE="local-lab-readwrite"
+  fi
 }
 
 ensure_repo_root() {
@@ -263,7 +266,7 @@ start_app() {
   load_provider_mode_config
   mkdir -p "${RUN_DIR}" "${LOG_DIR}"
   run_smoke
-  log "Starting backend with PROVIDER_MODE=${PROVIDER_MODE:-mock}"
+  log "Starting backend with PROVIDER_MODE=${PROVIDER_MODE:-local-lab-readwrite}"
   start_service "backend" "${BACKEND_PID_FILE}" is_backend_pid "${BACKEND_DIR}" "${LOG_DIR}/backend.log" \
     "${BACKEND_DIR}/.venv/bin/uvicorn" app.main:app --reload --host 127.0.0.1 --port "${BACKEND_PORT}"
   start_service "frontend" "${FRONTEND_PID_FILE}" is_frontend_pid "${FRONTEND_DIR}" "${LOG_DIR}/frontend.log" \
@@ -286,7 +289,7 @@ stop_app() {
 status_app() {
   ensure_repo_root
   load_provider_mode_config
-  log "configured provider mode: ${PROVIDER_MODE:-mock}"
+  log "configured provider mode: ${PROVIDER_MODE:-local-lab-readwrite}"
   service_status "backend" "${BACKEND_PID_FILE}" is_backend_pid || true
   service_status "frontend" "${FRONTEND_PID_FILE}" is_frontend_pid || true
 }

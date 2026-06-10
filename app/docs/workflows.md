@@ -87,6 +87,95 @@ lab profile. The tile is first-time configuration metadata only; it writes local
 ignored state under `.local/control-access.json`, does not store plaintext
 passwords, does not call providers, and does not enable direct run/apply paths.
 
+## Workflow Action Registry
+
+The shared workflow/action registry is the canonical read model for hardware
+stage and action definitions consumed by Run Center, Control Center, Reports,
+and future provider pages.
+
+The registry read API surface is:
+
+1. `GET /api/v1/workflows/stages`
+2. `GET /api/v1/workflows/actions`
+3. `GET /api/v1/workflows/stages/{stage_id}`
+4. `GET /api/v1/workflows/actions/{action_id}`
+5. `GET /api/v1/workflows/actions/{action_id}/runs`
+
+The guarded safe-run API is:
+
+1. `POST /api/v1/workflows/actions/{action_id}/run`
+
+The run endpoint is allowlist-only. It refuses any action whose mode is not
+`read_only` or `report_only`, any action with required confirmations, and any
+registry command or API endpoint that does not exactly match the safe runner
+allowlist. Refused actions return a normalized blocked run result for known
+actions, or a clear 404 blocker for unknown action IDs.
+
+Runnable results include `started_at`, `finished_at`, `checked_at`, `status`,
+`source_type=live_probe`, `freshness=current`, `not_mock=true`, the redacted
+stdout/stderr summaries, return code, evidence artifact links, a trace artifact
+under `artifacts/codex-runs/workflow-action-runs/`, blockers, warnings, and a
+next action. Destructive, write, reset, install, bootstrap, and upgrade actions
+remain guarded/copy-only and are not run from this endpoint.
+
+Registry actions include provider, stage, category, mode, source type,
+copyable command or API endpoint, required mode, gates, confirmations,
+presence-only credential requirements, reports, evidence artifacts, current
+availability, UI run support/blockers, run endpoints, blockers, next action,
+and an artifact-backed `last_run_trace`.
+
+Registry reads do not run commands, probe providers, call hardware, apply
+configuration, reset devices, install ESXi, provision storage, or update
+firmware. Existing report artifacts are surfaced as `historical_artifact`
+evidence only. A newly saved workflow action run trace overrides older
+historical artifact status for that action. Missing traces are `not_checked`.
+Mock and test state must not be treated as current real-lab state.
+
+The first stage order is:
+
+1. `lab-profile`
+2. `firmware`
+3. `cisco`
+4. `ilo`
+5. `raid`
+6. `esxi`
+7. `netapp`
+8. `build-verification`
+9. `reports`
+
+## Lab Validation / Handoff
+
+The Lab Validation page at `/lab-validation` summarizes setup state across the
+lab without turning historical evidence into current truth. It is a handoff
+view: each row shows component status, setup summary, login/proof target, next
+action, source type, freshness, proof points, collapsed evidence artifacts, and
+the linked workflow action.
+
+The API surface is:
+
+1. `GET /api/v1/lab/validation`
+2. `GET /api/v1/lab/validation/handoff`
+3. `GET /api/v1/lab/vcenter-netapp/readiness`
+4. `GET /api/v1/lab/vcenter-netapp/datastore-plan`
+
+The local report targets are:
+
+```bash
+make provider-lab-validation
+make provider-lab-vcenter-netapp-readiness
+make provider-lab-vcenter-netapp-datastore-plan
+make provider-lab-netapp-setup-preview
+make provider-lab-netapp-ontap-upgrade-inventory
+make provider-lab-netapp-ontap-upgrade-plan
+make provider-lab-netapp-ontap-upgrade-validate
+```
+
+These targets write redacted reports under `artifacts/codex-runs/`. They do
+not run datastore apply, ONTAP writes, ESXi writes, vCenter writes, storage
+provisioning, reboot, wipe, or upgrade actions. The vCenter-NetApp readiness
+lane classifies datastore work as `blocked_by_prior_stage` while NetApp is
+still at `cluster_setup_wizard` or until ONTAP/NFS setup is proven.
+
 ## MVP: Deploy VM From vSphere Template
 
 The MVP workflow accepts a request for a VM deployment and simulates planning

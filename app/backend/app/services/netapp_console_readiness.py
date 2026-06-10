@@ -11,6 +11,7 @@ from app.services.netapp_observations import (
     netapp_observation_blockers,
     summarize_netapp_observations,
 )
+from app.services.netapp_state import get_netapp_runtime_state
 
 
 PROVIDER_ID = "netapp-ontap"
@@ -22,6 +23,8 @@ def get_netapp_console_readiness() -> dict[str, Any]:
     prerequisites = _prerequisites()
     readiness_buckets = _readiness_buckets()
     observations = get_netapp_observations()
+    runtime_state = get_netapp_runtime_state()
+    live_configured = bool(runtime_state.get("configured"))
     observation_summary = summarize_netapp_observations(observations)
     observation_blockers = netapp_observation_blockers(observations)
     credentials_present = bool(settings.netapp_api_username and settings.netapp_api_password)
@@ -35,7 +38,11 @@ def get_netapp_console_readiness() -> dict[str, Any]:
         "bootstrap_enabled": False,
         "console_probe_enabled": real_lab_probe_available,
         "apply_enabled": False,
-        "netapp_configured": settings.netapp_configured,
+        "netapp_configured": live_configured,
+        "netapp_configured_source": runtime_state.get("source"),
+        "legacy_netapp_configured_env": settings.netapp_configured,
+        "manual_env_flag_required": False,
+        "runtime_state": runtime_state,
         "planned_targets": planned_targets,
         "current_discovered_targets": _current_discovered_targets(),
         "prerequisites": prerequisites,
@@ -61,8 +68,8 @@ def get_netapp_console_readiness() -> dict[str, Any]:
         "blockers": [
             *policy_blockers,
             "Bootstrap and configuration actions are disabled.",
-            "NETAPP_CONFIGURED=false; ONTAP API/storage discovery is blocked until cluster management is configured.",
-            "Cluster management is planned but not configured or treated as reachable.",
+            *([] if live_configured else ["NetApp configured state has not been verified by live check yet."]),
+            "Cluster management is planned until live state verifies reachability.",
             "Node management is planned but not configured.",
             "SVM management and iSCSI LIFs are planned but not live.",
             *([] if credentials_present else ["NetApp API credentials are missing."]),
@@ -109,6 +116,29 @@ def _planned_targets() -> dict[str, Any]:
 
 
 def _current_discovered_targets() -> dict[str, Any]:
+    runtime_state = get_netapp_runtime_state()
+    if runtime_state.get("configured"):
+        detected = (
+            runtime_state.get("detected_management_ips")
+            if isinstance(runtime_state.get("detected_management_ips"), dict)
+            else {}
+        )
+        return {
+            "discovery_enabled": True,
+            "source": runtime_state.get("source") or "live_verification",
+            "controller_sp": {"controller_a": None, "controller_b": None},
+            "management_ips": {
+                "cluster": detected.get("cluster") or settings.netapp_cluster_mgmt_ip,
+                "node_a": settings.netapp_node_a_mgmt_ip,
+                "node_b": settings.netapp_node_b_mgmt_ip,
+                "svm": settings.netapp_svm_mgmt_ip,
+            },
+            "iscsi_lif_range": {
+                "start": settings.netapp_iscsi_lifs[0] if settings.netapp_iscsi_lifs else None,
+                "end": settings.netapp_iscsi_lifs[-1] if settings.netapp_iscsi_lifs else None,
+                "addresses": list(settings.netapp_iscsi_lifs),
+            },
+        }
     return {
         "discovery_enabled": False,
         "source": "not_discovered",
@@ -197,7 +227,7 @@ def _readiness_buckets() -> dict[str, dict[str, Any]]:
             "ready": False,
             "details": [
                 "Cluster, node, SVM, and iSCSI management targets are planned only.",
-                "Cluster management is not configured while NETAPP_CONFIGURED=false.",
+                "Cluster management is not configured until live verification marks it ready.",
                 "Node management is not configured.",
                 "SVM management and iSCSI LIF range are planned but not live.",
             ],

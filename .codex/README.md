@@ -6,6 +6,9 @@ tasks with `codex exec`.
 ## Layout
 
 - `config.toml`: project defaults for sandboxed, non-interactive Codex runs.
+- `skills/`: project-specific Codex skills for Lab Builder runtime, UX,
+  hardware-run, report-remediation, toolchain, skill stewardship, dual-app
+  architecture, and product craft conventions.
 - `tasks/`: small task prompts intended to be run one at a time.
 - `prompts/`: reusable prompts for resume or future workflow helpers.
 - `runs/`: generated final responses and JSONL logs from Codex runs.
@@ -73,6 +76,73 @@ Resume with a specific prompt file:
 ```bash
 ./scripts/codex-resume-last.sh .codex/tasks/004-tests-and-quality-gates.md
 ```
+
+## Project Skills
+
+Project-specific skills live under `.codex/skills/`. Future Codex runs should
+inspect this directory before starting a task, read the relevant `SKILL.md`
+files, and apply the smallest matching set automatically.
+
+Skill list:
+
+- `lab-builder-real-runtime`: runtime status, source type, freshness,
+  live-vs-mock boundaries, stale evidence, blocker classification, or
+  `local-lab-readwrite` gates.
+- `lab-builder-ux`: sidebar navigation, setup page layout, operator next
+  actions, status color semantics, Reports, or evidence/raw JSON placement.
+- `lab-builder-hardware-run`: discover-plan-apply-verify-report workflows,
+  lab profile handling, console autodiscovery, NetApp/Cisco/iLO/ESXi run
+  sequencing, or hardware artifacts.
+- `lab-builder-report-remediation`: Report Center, issue cards, stale config
+  warnings, blocker fields, evidence links, copyable fix commands, or recheck
+  commands.
+- `lab-builder-toolchain`: Toolchain Readiness, provider tool availability,
+  Cisco serial/SSH tooling, iLO Redfish/iLOrest, ESXi install/vSphere tooling,
+  NetApp ONTAP tooling, or firmware baseline workflows.
+- `lab-builder-skill-steward`: automatic skill selection, skill inventory,
+  skill creation criteria, and major-run skill improvement reviews.
+- `lab-builder-dual-app-architecture`: architecture comparisons and migration
+  planning between `infra-config-portal` and `lab-builder`.
+- `lab-builder-product-craft`: product polish, visual coherence, page
+  simplification, action-first controls, and mock-state clarity.
+
+Automatic loading rules:
+
+- Frontend/UX: use `lab-builder-ux` and `lab-builder-product-craft`.
+- Real runtime/status/reporting: use `lab-builder-real-runtime`.
+- Hardware workflows: use `lab-builder-hardware-run`.
+- Blocker/report remediation: use `lab-builder-report-remediation`.
+- External provider tools and firmware/toolchain checks: use
+  `lab-builder-toolchain`.
+- Cross-app synthesis: use `lab-builder-dual-app-architecture`.
+- Skill upkeep: use `lab-builder-skill-steward`.
+
+Mock/test state must never be treated as real lab state. Historical artifacts
+are evidence, not current blockers unless a fresh check proves the blocker is
+current.
+
+## Asking Codex To Use Skills
+
+Usually no explicit request is needed. Codex should choose skills automatically
+from the task scope. You can still name a skill directly, for example:
+
+```text
+Use lab-builder-product-craft and lab-builder-ux for this UI pass.
+```
+
+For broad runs, ask for the applied skills to be listed in the generated run
+report.
+
+## Creating Or Updating Skills
+
+Use `lab-builder-skill-steward` before creating or updating a skill. A new
+skill should be proposed or created only when the workflow is reusable, applies
+to multiple future tasks, reduces future prompt length or mistakes, captures a
+recurring failure mode or product rule, and includes clear `when to use` and
+`do not use` guidance.
+
+When a pattern is promising but not yet proven, record it as a future skill
+candidate in the run report instead of creating another skill.
 
 ## Safety Rules
 

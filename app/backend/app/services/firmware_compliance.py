@@ -11,6 +11,8 @@ from app.core.config import settings
 from app.providers.probe_cache import get_probe_result
 from app.providers.redaction import redact_sensitive
 from app.services.media_inventory import get_media_inventory
+from app.services.netapp_state import get_netapp_runtime_state
+from app.services.status_source import attach_status_source
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 BASELINE_PATH = REPO_ROOT / "config" / "firmware-baselines" / "real-lab.yml"
@@ -76,9 +78,19 @@ def get_firmware_inventory(*, refresh_live: bool = False) -> dict[str, Any]:
         inventory["warnings"].append("No cached iLO firmware inventory is available.")
     if not cisco_versions.get("ios_xe_version") and not settings.cisco_mgmt_configured:
         inventory["warnings"].append("Cisco management is not configured yet; run Cisco firmware inventory from console.")
-    if not settings.netapp_configured:
-        inventory["warnings"].append("NETAPP_CONFIGURED=false; NetApp firmware inventory is not configured yet.")
-    return _sanitize(inventory)
+    netapp_runtime_state = get_netapp_runtime_state()
+    if not netapp_runtime_state.get("configured"):
+        inventory["warnings"].append("NetApp firmware inventory is waiting for live setup validation.")
+    source_type = "live_cached" if any(inventory["last_probe_times"].values()) else "not_checked"
+    return _sanitize(
+        attach_status_source(
+            inventory,
+            source_type=source_type,
+            checked_at=inventory["checked_at"] if source_type == "live_cached" else None,
+            recheck_command="make provider-lab-firmware-inventory",
+            evidence_artifacts=[str(INVENTORY_REPORT.relative_to(REPO_ROOT))],
+        )
+    )
 
 
 def get_firmware_media_inventory() -> dict[str, Any]:
@@ -155,7 +167,20 @@ def get_firmware_compliance(*, refresh_live: bool = False, scope: str = "full") 
             "waiver": str(WAIVER_REPORT.relative_to(REPO_ROOT)) if waiver.get("active") else None,
         },
     }
-    return _sanitize(result)
+    source_type = "live_cached" if inventory.get("source_type") == "live_cached" else "not_checked"
+    return _sanitize(
+        attach_status_source(
+            result,
+            source_type=source_type,
+            checked_at=result["checked_at"] if source_type == "live_cached" else None,
+            recheck_command="make provider-lab-firmware-compliance",
+            evidence_artifacts=[
+                str(INVENTORY_REPORT.relative_to(REPO_ROOT)),
+                str(COMPLIANCE_REPORT.relative_to(REPO_ROOT)),
+                str(COMPLIANCE_SUMMARY.relative_to(REPO_ROOT)),
+            ],
+        )
+    )
 
 
 def firmware_gate_blockers(scope: str) -> list[str]:
@@ -258,9 +283,9 @@ def _classify_component(
     approved = baseline_component.get("approved") or []
     status = "passed"
     reason = "Current version matches the firmware baseline."
-    if baseline_component["id"].startswith("netapp_") and not settings.netapp_configured:
+    if baseline_component["id"].startswith("netapp_") and not get_netapp_runtime_state().get("configured") and not current:
         status = "not_configured_yet"
-        reason = "NETAPP_CONFIGURED=false; NetApp firmware gate is waiting for setup values."
+        reason = "NetApp firmware inventory is waiting for live setup validation."
     elif not current:
         status = baseline_component.get("unknown_policy") or "unknown"
         reason = "Current firmware or OS version is unknown."
@@ -388,8 +413,9 @@ def _merged_cisco_versions(
 
 
 def _netapp_versions(probe: dict[str, Any]) -> dict[str, Any]:
+    runtime_state = get_netapp_runtime_state()
     return {
-        "status": "configured" if settings.netapp_configured else "not_configured_yet",
+        "status": "configured" if runtime_state.get("configured") else "not_configured_yet",
         "ontap_version": settings.netapp_current_ontap_version,
         "disk_firmware": os.getenv("NETAPP_CURRENT_DISK_FIRMWARE"),
         "shelf_firmware": os.getenv("NETAPP_CURRENT_SHELF_FIRMWARE"),

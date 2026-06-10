@@ -12,17 +12,21 @@ LAB_SERVER_EMBEDDED_NIC_IP = "192.168.1.202"
 LAB_ESXI_MANAGEMENT_IP = "192.168.1.203"
 LAB_CISCO_MANAGEMENT_IP = "192.168.1.204"
 LAB_ANSIBLE_CONTROL_HOST_IP = "192.168.1.205"
-LAB_NETAPP_CONTROLLER_A_SP_IP = "192.168.1.206"
-LAB_NETAPP_CONTROLLER_B_SP_IP = "192.168.1.207"
-LAB_NETAPP_CLUSTER_MGMT_IP = "192.168.1.208"
-LAB_NETAPP_NODE_A_MGMT_IP = "192.168.1.209"
-LAB_NETAPP_NODE_B_MGMT_IP = "192.168.1.210"
-LAB_NETAPP_SVM_MGMT_IP = "192.168.1.211"
+LAB_NETAPP_CONTROLLER_A_SP_IP = "192.168.1.210"
+LAB_NETAPP_CONTROLLER_B_SP_IP = "192.168.1.211"
+LAB_NETAPP_CLUSTER_MGMT_IP = "192.168.1.220"
+LAB_NETAPP_NODE_A_MGMT_IP = "192.168.1.221"
+LAB_NETAPP_NODE_B_MGMT_IP = "192.168.1.222"
+LAB_NETAPP_SVM_MGMT_IP = "192.168.1.223"
+LAB_NETAPP_NFS_LIF_IPS = (
+    "192.168.1.230",
+    "192.168.1.231",
+)
 LAB_NETAPP_ISCSI_LIF_IPS = (
-    "192.168.1.212",
-    "192.168.1.213",
-    "192.168.1.214",
-    "192.168.1.215",
+    "192.168.1.240",
+    "192.168.1.241",
+    "192.168.1.242",
+    "192.168.1.243",
 )
 
 
@@ -249,6 +253,7 @@ class Settings:
     netapp_console_port: str | None = _optional_env("NETAPP_CONSOLE_PORT")
     netapp_console_baud: int = _int_env("NETAPP_CONSOLE_BAUD", 115200)
     netapp_console_timeout_seconds: float = _float_env("NETAPP_CONSOLE_TIMEOUT_SECONDS", 2.0)
+    netapp_console_autodiscovery_disabled: bool = _bool_env("NETAPP_CONSOLE_AUTODISCOVERY_DISABLED", False)
     netapp_connected_management_ports: tuple[str, ...] = tuple(
         _split_csv(os.getenv("NETAPP_CONNECTED_MANAGEMENT_PORTS", "cluster_mgmt"))
     )
@@ -259,13 +264,24 @@ class Settings:
     netapp_storage_protocol: str = os.getenv("NETAPP_STORAGE_PROTOCOL", "nfs")
     netapp_nfs_lifs: tuple[str, ...] = _lab_default_csv_env(
         "NETAPP_NFS_LIFS",
-        LAB_NETAPP_ISCSI_LIF_IPS[:2],
+        LAB_NETAPP_NFS_LIF_IPS,
     )
     netapp_nfs_volume: str = os.getenv("NETAPP_NFS_VOLUME", "esxi_datastore_01")
     netapp_nfs_export_policy: str = os.getenv("NETAPP_NFS_EXPORT_POLICY", "esxi_nfs_policy")
     netapp_nfs_mount_path: str = os.getenv("NETAPP_NFS_MOUNT_PATH", "/esxi_datastore_01")
     netapp_nfs_datastore_name: str = os.getenv("NETAPP_NFS_DATASTORE_NAME", "netapp_nfs_ds01")
     netapp_nfs_client_match: str = os.getenv("NETAPP_NFS_CLIENT_MATCH", LAB_SUBNET_CIDR)
+    netapp_cluster_name: str | None = _optional_env("NETAPP_CLUSTER_NAME")
+    netapp_node_a_name: str | None = _optional_env("NETAPP_NODE_A_NAME")
+    netapp_node_b_name: str | None = _optional_env("NETAPP_NODE_B_NAME")
+    netapp_svm_name: str | None = _optional_env("NETAPP_SVM_NAME")
+    netapp_dns_servers: tuple[str, ...] = tuple(_split_csv(os.getenv("NETAPP_DNS_SERVERS", "")))
+    netapp_ntp_servers: tuple[str, ...] = tuple(_split_csv(os.getenv("NETAPP_NTP_SERVERS", "")))
+    netapp_search_domains: tuple[str, ...] = tuple(_split_csv(os.getenv("NETAPP_SEARCH_DOMAINS", "")))
+    netapp_admin_access_source: str | None = _optional_env("NETAPP_ADMIN_ACCESS_SOURCE")
+    netapp_target_ontap_version: str | None = _optional_env("NETAPP_TARGET_ONTAP_VERSION")
+    netapp_ontap_image_id: str | None = _optional_env("NETAPP_ONTAP_IMAGE_ID")
+    netapp_upgrade_advisor_plan: str | None = _optional_env("NETAPP_UPGRADE_ADVISOR_PLAN")
     vcenter_configured: bool = _bool_env("VCENTER_CONFIGURED", False)
     vcenter_host: str | None = _optional_env("VCENTER_HOST") or _optional_env("GOVC_URL")
     vcenter_username: str | None = _optional_env("VCENTER_USERNAME") or _optional_env("GOVC_USERNAME")

@@ -12,6 +12,7 @@ from app.services.netapp_real_lab import (
     get_latest_netapp_console_state,
     get_netapp_nfs_vcenter_readiness,
 )
+from app.services.netapp_state import get_netapp_runtime_state
 from app.services.netapp_upgrade_readiness import get_netapp_upgrade_readiness
 
 
@@ -23,7 +24,8 @@ class NetAppOntapAdapter:
         self.provider_mode = provider_mode or settings.provider_mode
 
     def health(self) -> ProviderStatus:
-        configured = settings.netapp_configured
+        runtime_state = get_netapp_runtime_state()
+        configured = bool(runtime_state.get("configured"))
         policy = current_lab_action_policy(self.provider_mode)
         readonly_enabled = self.provider_mode in REAL_CONTACT_MODES and policy.readonly_allowed
         latest_console_discovery = get_latest_netapp_console_discovery()
@@ -38,8 +40,14 @@ class NetAppOntapAdapter:
             capabilities=[
                 "health",
                 "plan-preview",
+                "setup-preview",
+                "setup-apply-guarded",
                 "readiness-preview",
                 "readiness-comparison-preview",
+                "ontap-upgrade-inventory",
+                "ontap-upgrade-plan",
+                "ontap-upgrade-validate",
+                "ontap-upgrade-apply-guarded",
                 "upgrade-readiness-preview",
                 "console-discovery-readonly",
                 "console-read-state-readonly",
@@ -55,9 +63,10 @@ class NetAppOntapAdapter:
                 "latest_console_discovery": latest_console_discovery,
                 "latest_console_state": latest_console_state,
                 "nfs_vcenter_readiness": nfs_vcenter_readiness,
+                "runtime_state": runtime_state,
             },
             blockers=[
-                "NETAPP_CONFIGURED=false; live ONTAP readiness and discovery are blocked.",
+                "NetApp configured state is not verified by live check yet.",
                 "No live ONTAP storage/NFS/vCenter apply operation is permitted from this portal.",
             ]
             if not configured
@@ -66,12 +75,12 @@ class NetAppOntapAdapter:
                 "Planned NetApp targets have not been discovered or compared to live hardware.",
                 "Console discovery is newline-only and does not send credentials, setup commands, or boot interrupts.",
                 settings.netapp_management_topology_note,
-                "Upgrade path is a preview placeholder until read-only ONTAP discovery and media inventory are complete.",
+                "ONTAP Upgrade Center stays disabled until setup, image selection, pre-upgrade validation, and exact flags are ready.",
             ],
             safe_actions=[
                 ProviderAction(
                     id="netapp-console-discovery",
-                    label="Console Discovery",
+                    label="Discover NetApp Console",
                     enabled=readonly_enabled,
                     read_only=True,
                     reason=(
@@ -81,6 +90,32 @@ class NetAppOntapAdapter:
                     ),
                     method="POST",
                     endpoint="/api/v1/providers/netapp-ontap/console-discovery",
+                ),
+                ProviderAction(
+                    id="netapp-live-state",
+                    label="Read NetApp State",
+                    enabled=readonly_enabled,
+                    read_only=True,
+                    reason=(
+                        "Run read-only NetApp state checks and persist the result."
+                        if readonly_enabled
+                        else "Requires local-readonly/local-lab-readwrite mode with real-lab acknowledgements."
+                    ),
+                    method="POST",
+                    endpoint="/api/v1/providers/netapp-ontap/live-state",
+                ),
+                ProviderAction(
+                    id="netapp-validate-setup",
+                    label="Validate NetApp Setup",
+                    enabled=readonly_enabled,
+                    read_only=True,
+                    reason=(
+                        "Mark configured only after live verification succeeds."
+                        if readonly_enabled
+                        else "Requires local-readonly/local-lab-readwrite mode with real-lab acknowledgements."
+                    ),
+                    method="POST",
+                    endpoint="/api/v1/providers/netapp-ontap/validate-setup",
                 ),
                 ProviderAction(
                     id="netapp-console-read-state",
@@ -102,6 +137,7 @@ class NetAppOntapAdapter:
     def plan_preview(self) -> dict:
         status = self.health()
         configuration = self._configuration()
+        runtime_state = configuration["runtime_state"]
         discovery = self._discovery()
         console_readiness = get_netapp_console_readiness()
         readiness_comparison = get_netapp_readiness_comparison()
@@ -133,7 +169,10 @@ class NetAppOntapAdapter:
             "provider_id": PROVIDER_ID,
             "mode": self.provider_mode,
             "apply_enabled": False,
-            "netapp_configured": settings.netapp_configured,
+            "netapp_configured": bool(runtime_state.get("configured")),
+            "netapp_configured_source": runtime_state.get("source"),
+            "manual_env_flag_required": False,
+            "runtime_state": runtime_state,
             "planned_targets": planned_targets,
             "current_discovered_targets": current_discovered_targets,
             "readiness_summary": {
@@ -222,8 +261,17 @@ class NetAppOntapAdapter:
 
     def _configuration(self) -> dict:
         iscsi_lifs = list(settings.netapp_iscsi_lifs)
+        nfs_lifs = list(settings.netapp_nfs_lifs)
+        runtime_state = get_netapp_runtime_state()
+        console_state = runtime_state.get("console") if isinstance(runtime_state.get("console"), dict) else {}
+        live_configured = bool(runtime_state.get("configured"))
+        configured_state = str(runtime_state.get("configured_state") or "")
         return {
-            "netapp_configured": settings.netapp_configured,
+            "netapp_configured": live_configured,
+            "netapp_configured_source": runtime_state.get("source"),
+            "legacy_netapp_configured_env": settings.netapp_configured,
+            "manual_env_flag_required": False,
+            "runtime_state": runtime_state,
             "planned_sp_ips": {
                 "controller_a": settings.netapp_controller_a_sp,
                 "controller_b": settings.netapp_controller_b_sp,
@@ -242,18 +290,30 @@ class NetAppOntapAdapter:
             "current_discovered_targets": _current_discovered_targets(),
             "api_configured_flags": {
                 "endpoint_configured": bool(
-                    settings.netapp_configured and settings.netapp_cluster_mgmt_ip
+                    live_configured and settings.netapp_cluster_mgmt_ip
                 ),
                 "endpoint_planned": bool(settings.netapp_cluster_mgmt_ip),
-                "endpoint_reachable": False,
+                "endpoint_reachable": bool(
+                    (runtime_state.get("management") or {}).get("rest_443_reachable")
+                    if isinstance(runtime_state.get("management"), dict)
+                    else False
+                ),
                 "username_configured": settings.netapp_api_username is not None,
                 "credential_configured": settings.netapp_api_password is not None,
                 "tls_verify": settings.netapp_api_verify_tls,
             },
             "console": {
                 "configured_port_hint": settings.netapp_console_port,
+                "configured_port_hint_role": "optional_hint_only",
+                "manual_env_update_required": False,
+                "discovered_port": console_state.get("discovered_port"),
+                "discovered_baud": console_state.get("baud"),
+                "confidence": console_state.get("confidence"),
+                "last_seen": console_state.get("last_seen"),
+                "source": console_state.get("source"),
                 "baud": settings.netapp_console_baud,
                 "timeout_seconds": settings.netapp_console_timeout_seconds,
+                "autodiscovery_enabled": not settings.netapp_console_autodiscovery_disabled,
                 "connected_management_ports": list(settings.netapp_connected_management_ports),
                 "management_topology_note": settings.netapp_management_topology_note,
             },
@@ -274,7 +334,9 @@ class NetAppOntapAdapter:
                 "tls_verify": settings.vcenter_verify_tls,
             },
             "safe_next_action": (
-                "Run NetApp console discovery/read-state, then review NFS/vCenter readiness; keep apply paths disabled."
+                "Review the setup plan for the detected cluster setup wizard; keep apply paths disabled until explicit setup gates exist."
+                if configured_state == "setup_wizard"
+                else "Run NetApp console discovery/read-state, then review NFS/vCenter readiness; keep apply paths disabled."
             ),
             "target_addressing": [
                 {"label": "Controller A SP", "address": settings.netapp_controller_a_sp},
@@ -283,16 +345,26 @@ class NetAppOntapAdapter:
                 {"label": "Node A management / e0M", "address": settings.netapp_node_a_mgmt_ip},
                 {"label": "Node B management / e0M", "address": settings.netapp_node_b_mgmt_ip},
                 {"label": "SVM management", "address": settings.netapp_svm_mgmt_ip},
+                {"label": "NFS LIFs", "address": ", ".join(nfs_lifs)},
                 {"label": "iSCSI LIFs", "address": ", ".join(settings.netapp_iscsi_lifs)},
             ],
             "artifact_placeholders": [
-                "setup-plan.json",
-                "readiness-report.md",
-                "upgrade-path-preview.md",
+                "netapp-setup-plan-report.md",
+                "netapp-setup-preview-report.md",
+                "netapp-cluster-setup-apply-report.md",
+                "netapp-post-setup-validation-report.md",
+                "netapp-management-network-scan-report.md",
+                "netapp-upgrade-inventory-report.md",
+                "netapp-ontap-upgrade-plan-report.md",
+                "netapp-ontap-upgrade-validation-report.md",
+                "netapp-ontap-upgrade-apply-report.md",
                 "storage-iscsi-plan-preview.json",
                 "netapp-console-autodiscovery-report.md",
                 "netapp-console-state-report.md",
+                "netapp-console-login-state-report.md",
+                "netapp-console-current-report.md",
                 "netapp-nfs-vcenter-readiness-report.md",
+                "netapp-bringup-build-verification-report.md",
                 "cluster-svm-lif-intent.json",
                 "post-run-report.md",
             ],
@@ -301,6 +373,8 @@ class NetAppOntapAdapter:
     def _discovery(self) -> dict:
         credentials_present = bool(settings.netapp_api_username and settings.netapp_api_password)
         readonly_ack = settings.lab_readonly_ack == "YES"
+        runtime_state = get_netapp_runtime_state()
+        live_configured = bool(runtime_state.get("configured"))
         return {
             "safe_next_action": (
                 "Preview only. Capture console/API discovery requirements before enabling any "
@@ -322,15 +396,19 @@ class NetAppOntapAdapter:
                     ],
                 },
                 "cluster_management_readiness": {
-                    "status": "not_configured",
-                    "ready": False,
+                    "status": "verified_by_live_check" if live_configured else "not_configured",
+                    "ready": live_configured,
                     "planned": settings.netapp_cluster_mgmt_ip,
-                    "current": None,
-                    "reachable": False,
+                    "current": settings.netapp_cluster_mgmt_ip if live_configured else None,
+                    "reachable": bool(
+                        (runtime_state.get("management") or {}).get("rest_443_reachable")
+                        if isinstance(runtime_state.get("management"), dict)
+                        else live_configured
+                    ),
                     "details": [
-                        "Cluster management address is planned only.",
-                        "NETAPP_CONFIGURED=false means cluster management is not treated as reachable.",
-                        "Cluster management not configured blocks setup and upgrade readiness.",
+                        "Cluster management address comes from the bootstrap profile.",
+                        "Configured state is derived from live verification, not manual env tracking.",
+                        "Manual env flag not required.",
                     ],
                 },
                 "node_management_readiness": {
@@ -368,15 +446,17 @@ class NetAppOntapAdapter:
                     ],
                 },
                 "ontap_api_readiness": {
-                    "status": "blocked_until_configured",
-                    "ready": False,
-                    "configured": settings.netapp_configured,
+                    "status": "verified_by_live_check" if live_configured else "blocked_until_live_validation",
+                    "ready": live_configured,
+                    "configured": live_configured,
+                    "configured_state": runtime_state.get("configured_state"),
+                    "configured_source": runtime_state.get("source"),
                     "api_access_present": credentials_present,
                     "local_readonly_ack": readonly_ack,
                     "provider_mode": self.provider_mode,
                     "details": [
-                        "NETAPP_CONFIGURED=false blocks ONTAP API readiness.",
-                        "Cluster management is planned but not treated as reachable.",
+                        "Build Verification prefers live verified state over NETAPP_CONFIGURED.",
+                        "NETAPP_CONFIGURED is legacy/desired context only.",
                         "Credentials are missing." if not credentials_present else "Credentials are present but not returned.",
                         "LAB_READONLY_ACK=YES is missing." if not readonly_ack else "LAB_READONLY_ACK=YES is present.",
                         "PROVIDER_MODE=local-readonly is required for any future safe probe.",
@@ -464,6 +544,29 @@ def _disabled_actions() -> list[ProviderAction]:
 
 
 def _current_discovered_targets() -> dict:
+    runtime_state = get_netapp_runtime_state()
+    if runtime_state.get("configured"):
+        detected = (
+            runtime_state.get("detected_management_ips")
+            if isinstance(runtime_state.get("detected_management_ips"), dict)
+            else {}
+        )
+        return {
+            "discovery_enabled": True,
+            "source": runtime_state.get("source") or "live_verification",
+            "controller_sp": {"controller_a": None, "controller_b": None},
+            "management_ips": {
+                "cluster": detected.get("cluster") or settings.netapp_cluster_mgmt_ip,
+                "node_a": settings.netapp_node_a_mgmt_ip,
+                "node_b": settings.netapp_node_b_mgmt_ip,
+                "svm": settings.netapp_svm_mgmt_ip,
+            },
+            "iscsi_lif_range": {
+                "start": settings.netapp_iscsi_lifs[0] if settings.netapp_iscsi_lifs else None,
+                "end": settings.netapp_iscsi_lifs[-1] if settings.netapp_iscsi_lifs else None,
+                "addresses": list(settings.netapp_iscsi_lifs),
+            },
+        }
     return {
         "discovery_enabled": False,
         "source": "not_discovered",

@@ -381,7 +381,8 @@ NetApp setup preview may only:
 
 - display planned Controller SP, cluster management, node management, SVM
   management, and iSCSI LIF addresses
-- report `NETAPP_CONFIGURED` as a presence flag
+- report live verified configured state and legacy `NETAPP_CONFIGURED` context
+  separately
 - show console/bootstrap, ONTAP API, and upgrade readiness placeholders
 - show cluster/SVM/LIF intent and artifact/report placeholders
 - serve `GET /api/v1/providers/netapp-ontap/plan-preview` from local planned
@@ -391,8 +392,22 @@ NetApp setup preview may only:
 - contribute provider-scoped metadata to `GET /api/v1/providers/artifacts`
 - serve `GET /api/v1/providers/netapp-ontap/upgrade-readiness` as an offline
   media-readiness preview using sanitized media inventory metadata only
+- serve `GET /api/v1/providers/netapp-ontap/setup-preview` as a setup intent,
+  remediation, wizard/API path, exact-change, and guarded apply-command preview
+- serve `POST /api/v1/providers/netapp-ontap/setup-apply` as a guarded
+  write-capable path that refuses without `NETAPP_SETUP_APPLY=true`,
+  `NETAPP_SETUP_CONFIRM="APPLY NETAPP CLUSTER SETUP"`, and
+  `NETAPP_SETUP_ALLOW_CLUSTER_CREATE=true`
+- serve `/api/v1/providers/netapp-ontap/ontap-upgrade/*` inventory, plan,
+  validation, and guarded apply endpoints for the ONTAP Upgrade Center; apply
+  refuses without configured cluster management, selected image/target, passed
+  validation or explicit waiver, and `NETAPP_ONTAP_UPGRADE_APPLY=true` plus
+  `NETAPP_ONTAP_UPGRADE_CONFIRM="UPGRADE ONTAP"`
 - serve `GET /api/v1/providers/netapp-ontap/console-readiness` as manual
   console/bootstrap guidance without opening serial ports or sending commands
+- serve `GET`/`POST /api/v1/providers/netapp-ontap/live-state` and `POST
+  /api/v1/providers/netapp-ontap/validate-setup` as read-only runtime-state
+  checks that persist redacted configured-state evidence
 - serve `GET` and `PUT /api/v1/providers/netapp-ontap/observations` as
   process-local, mock-only operator readiness notes that are bounded, redacted,
   reject secret-shaped note text, and are never sent to NetApp
@@ -402,10 +417,12 @@ NetApp setup preview may only:
   or blocking, optional Controller B console observation is a warning, and
   console readiness reports required and optional observation counts separately
 
-While `NETAPP_CONFIGURED=false`, ONTAP API readiness is disabled and no probe is
-available. The adapter does not configure ONTAP, create clusters, change IPs,
-create SVMs, create LIFs, create volumes, upload images, upgrade ONTAP, reboot
-controllers, wipe disks, or apply changes.
+`NETAPP_CONFIGURED` is legacy/advanced context only; Build Verification prefers
+live verified state. `NETAPP_CONSOLE_PORT` is an optional hint, while discovered
+port/baud/confidence/source are persisted in local runtime state. The adapter
+does not configure ONTAP, create clusters, change IPs, create SVMs, create
+LIFs, create volumes, upload images, upgrade ONTAP, reboot controllers, wipe
+disks, or apply changes.
 
 ## Optional Provider Smoke
 

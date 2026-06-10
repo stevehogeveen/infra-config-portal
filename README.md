@@ -3,12 +3,11 @@
 Self-service infrastructure configuration portal for requesting, validating,
 approving, executing, and auditing datacenter automation workflows.
 
-The current MVP scaffold lives in `app/`. It is mock-first by design: local
-development must not call real vSphere, ESXi, NetApp, switch APIs, OVF, storage,
-AWX, Terraform, NetBox, Nautobot, or other infrastructure provider APIs. HPE
-iLO/Redfish, Cisco console, Cisco Ansible SSH, and ESXi preview probes are
-allowed only when explicitly run in `PROVIDER_MODE=local-readonly` on an
-isolated local lab machine.
+The current MVP scaffold lives in `app/`. The running app is a real-lab
+operator surface: status, reports, Build Verification, Run Center, Control
+Center, Firmware Compliance, and Provider Status report live, live-cached,
+historical, or not-checked sources. Mock provider data is reserved for automated
+tests and must not be used as a substitute for current lab state.
 
 ## Project Layout
 
@@ -82,12 +81,14 @@ The backend runs at `http://127.0.0.1:8001`. The Vite frontend runs at
 
 ### Operational Mode
 
-The Settings page includes an Operational Mode panel. The safe default is shown
-as `Simulation`; it maps to `PROVIDER_MODE=mock` internally and does not contact
-real infrastructure. Selecting `Local Read-only Lab` or `Local Lab Read/write`
-writes ignored local state under `.local/provider-mode-settings.json` and
-`.local/app-mode.env`. Restart the app with `make app-restart` or the command
-shown in the panel for the selected mode to take effect.
+The Settings page includes an Operational Mode panel. Runtime options are
+`Real Lab Runtime` (`PROVIDER_MODE=local-lab-readwrite`) and
+`Read-only Live Checks` (`PROVIDER_MODE=local-readonly`). If the backend is
+served with `PROVIDER_MODE=mock`, the UI shows a dev/test banner and Build
+Verification cannot certify real results. Selecting a runtime writes ignored
+local state under `.local/provider-mode-settings.json` and `.local/app-mode.env`.
+Restart the app with `make app-restart` or the command shown in the panel for
+the selected mode to take effect.
 
 An explicit shell `PROVIDER_MODE=...` still overrides the local mode file. The
 mode selector does not store credentials, does not call providers, and does not
@@ -101,7 +102,9 @@ docker compose up --build
 ```
 
 Compose starts local PostgreSQL, the FastAPI backend, and the Vite frontend.
-Provider adapters still start in Simulation by default.
+Provider adapters start in real-lab runtime mode by default. Without configured
+live state, operator surfaces show `Not checked yet` or `Run live check` rather
+than substituting test fixture data.
 
 ## Saved Lab Profiles
 
@@ -125,12 +128,13 @@ The API surface is:
 
 ## Provider Status Preview
 
-The Provider Status page shows mock provider cards plus HPE iLO/Redfish, Cisco
-console, Cisco Ansible SSH, ESXi read-only, and NetApp setup previews. Default
-`PROVIDER_MODE=mock` performs no real probes on page load. Shared serial
-console discovery dynamically inspects `/dev/serial/by-id/*`, `/dev/ttyUSB*`,
-`/dev/ttyACM*`, and `/dev/ttyS*` without opening the serial port during status
-refresh. Local iLO, ESXi, and Cisco settings are shown
+The Provider Status page shows real-lab provider cards for HPE iLO/Redfish,
+Cisco console, Cisco Ansible SSH, ESXi read-only, and NetApp setup state.
+Mock provider cards are test fixtures only. Provider Status does not use mock
+health as a fallback; missing live state is reported as not checked. Shared
+serial console discovery dynamically inspects `/dev/serial/by-id/*`,
+`/dev/ttyUSB*`, `/dev/ttyACM*`, and `/dev/ttyS*` without opening the serial port
+during status refresh. Local iLO, ESXi, and Cisco settings are shown
 only as configured/missing flags; configured hostnames, usernames, and passwords
 are not returned in provider status payloads.
 
@@ -153,38 +157,55 @@ placeholders. The structured plan preview is available at
 `GET /api/v1/providers/netapp-ontap/plan-preview`; it is generated from local
 planned values and makes no ONTAP write calls. Run Center shows the same NetApp
 payload with explicit read-only console discovery/read-state controls when
-real-lab mode and acknowledgements are active. `GET /api/v1/providers/netapp-ontap/artifacts` returns mock-only,
-non-downloadable artifact metadata for that preview; it does not write files or
-generate reports. `GET /api/v1/providers/artifacts` aggregates provider-scoped
+real-lab mode and acknowledgements are active. `GET /api/v1/providers/netapp-ontap/artifacts`
+returns test-fixture placeholder metadata only when the backend is explicitly in
+test mode; real runtime uses generated reports and current-state artifacts
+instead. `GET /api/v1/providers/artifacts` aggregates provider-scoped
 artifact metadata, and the Reports / Artifacts page makes the NetApp placeholder
-discoverable outside Run Center. `GET /api/v1/providers/netapp-ontap/upgrade-readiness`
+discoverable outside Run Center. `GET /api/v1/providers/netapp-ontap/setup-preview`
+exposes the setup intent, missing setup fields, wizard/API path options, exact
+proposed changes, apply command, and pre-apply address conflict scan
+requirement. `POST /api/v1/providers/netapp-ontap/setup-apply` is guarded and
+refuses unless `NETAPP_SETUP_APPLY=true`,
+`NETAPP_SETUP_CONFIRM="APPLY NETAPP CLUSTER SETUP"`, and
+`NETAPP_SETUP_ALLOW_CLUSTER_CREATE=true` are present and the setup intent and
+fresh address scan pass. `GET /api/v1/providers/netapp-ontap/upgrade-readiness`
 compares an unknown or locally configured placeholder ONTAP version with
 sanitized media inventory metadata only; it does not query a controller and
-keeps upgrade/apply disabled. `GET /api/v1/providers/netapp-ontap/console-readiness`
+keeps upgrade/apply disabled. ONTAP Upgrade Center endpoints under
+`/api/v1/providers/netapp-ontap/ontap-upgrade/*` provide inventory, plan,
+validation, and guarded apply report paths. Upgrade apply refuses unless setup
+is verified, an image/package and target are selected, validation passes or an
+explicit waiver is present, and `NETAPP_ONTAP_UPGRADE_APPLY=true` with
+`NETAPP_ONTAP_UPGRADE_CONFIRM="UPGRADE ONTAP"` is set. `GET /api/v1/providers/netapp-ontap/console-readiness`
 returns console/bootstrap prerequisites and expected prompt/state guidance.
 `GET`/`POST /api/v1/providers/netapp-ontap/console-discovery` and
 `GET`/`POST /api/v1/providers/netapp-ontap/console-read-state` support the
 real-lab serial path; the POST actions open ranked local console candidates and
-send newline, carriage return, and Ctrl+C wake bytes only. They do not send
+send newline and carriage return wake bytes only. They do not send
 credentials, commands, Ctrl+Z, break, boot menu selections, boot interruption,
 SP APIs, SSH, or ONTAP API calls.
+`GET`/`POST /api/v1/providers/netapp-ontap/live-state` and `POST
+/api/v1/providers/netapp-ontap/validate-setup` read and persist redacted
+runtime state. `NETAPP_CONSOLE_PORT` is an optional hint only; discovered port,
+baud, confidence, last seen, and source are saved in local app state and reports.
 `GET /api/v1/providers/netapp-ontap/nfs-vcenter-readiness` writes a
 preview-only NFS/vCenter readiness report with no ONTAP, vCenter, or ESXi
 apply action. `GET /api/v1/providers/netapp-ontap/observations` and `PUT
-/api/v1/providers/netapp-ontap/observations` provide a process-local,
-mock-only place to record bounded manual readiness observations; these notes
-reject secret-shaped text, are not persisted to artifacts, and are not sent to
-any NetApp device.
+/api/v1/providers/netapp-ontap/observations` provide a process-local evidence
+capture for bounded manual readiness observations; these notes reject
+secret-shaped text, are not persisted to artifacts, and are not sent to any
+NetApp device.
 `GET /api/v1/providers/netapp-ontap/readiness-comparison` compares planned
 targets with those manual observations only; it does not discover or validate
 live device state. Missing required manual checks are reported as unknown or
 blocking rows, while optional Controller B console observation is reported as a
 warning when absent. The console readiness summary keeps required and optional
-observation counts separate. Keep `NETAPP_CONFIGURED=false` until ONTAP
-cluster management/API is actually configured. Local serial console discovery
-does not require `NETAPP_CONFIGURED=true`. The portal must not create an
-ONTAP cluster, change IPs, create SVMs or LIFs, create volumes, upgrade ONTAP,
-reboot controllers, wipe disks, or apply NetApp changes.
+observation counts separate. `NETAPP_CONFIGURED` is legacy/advanced context
+only; Build Verification prefers live verified NetApp state and does not require
+manual env state tracking. The portal must not create an ONTAP cluster, change
+IPs, create SVMs or LIFs, create volumes, upgrade ONTAP, reboot controllers,
+wipe disks, or apply NetApp changes.
 
 ESXi and Cisco management IPs can be recorded as planned targets without being
 treated as reachable devices. Keep `ESXI_CONFIGURED=false` until ESXi
@@ -238,19 +259,57 @@ make provider-lab-serial-console-discovery
 make provider-lab-netapp-console-autodiscovery
 make provider-lab-netapp-console-discovery
 make provider-lab-netapp-console-read-state
+make provider-lab-netapp-live-state
+make provider-lab-netapp-validate-setup
 make provider-lab-netapp-nfs-vcenter-readiness
 ```
+
+NetApp setup and ONTAP Upgrade Center report targets, with apply still disabled
+unless exact flags are intentionally present:
+
+```bash
+make provider-lab-netapp-setup-baseline
+make provider-lab-netapp-setup-plan
+make provider-lab-netapp-setup-preview
+make provider-lab-netapp-setup-apply
+make provider-lab-netapp-post-setup-validation
+make provider-lab-netapp-ontap-upgrade-inventory
+make provider-lab-netapp-ontap-upgrade-plan
+make provider-lab-netapp-ontap-upgrade-validate
+make provider-lab-netapp-ontap-upgrade-apply
+```
+
+Lab validation and vCenter-NetApp handoff/readiness reports, with apply still
+disabled:
+
+```bash
+make provider-lab-validation
+make provider-lab-vcenter-netapp-readiness
+make provider-lab-vcenter-netapp-datastore-plan
+```
+
+These targets write `lab-validation-handoff-report.md`,
+`vcenter-netapp-readiness-report.md`, and
+`vcenter-netapp-datastore-plan-report.md` under `artifacts/codex-runs/`. They
+do not run ONTAP, vCenter, ESXi, datastore, storage provisioning, reboot, wipe,
+or upgrade write actions. vCenter-NetApp readiness remains blocked by the
+NetApp setup/NFS prior stage while the console shows `cluster_setup_wizard`.
 
 The console targets write redacted reports under `artifacts/codex-runs/` and
 use a configured `NETAPP_CONSOLE_PORT` as a ranking hint when set, then
 auto-discover `/dev/serial/by-id/*`, `/dev/ttyUSB*`, `/dev/ttyACM*`, and
-`/dev/ttyS*`. The current lab can
-run with only one NetApp management port connected; that is enough for initial
-console/API bring-up, but full HA/SP/node/SVM/NFS validation remains blocked
-until the remaining management/data paths are connected and configured.
+`/dev/ttyS*`. Operators do not copy discovered console ports or configured
+state back into `.env.local.real-lab`; the app persists last-known-good state in
+`artifacts/codex-runs/netapp-console-last-known-good-redacted.json`,
+`artifacts/codex-runs/netapp-live-state-report.md`, and
+`artifacts/codex-runs/netapp-state-automanagement-report.md`. The current lab
+can run with only one NetApp management port connected; that is enough for
+initial console/API bring-up, but full HA/SP/node/SVM/NFS validation remains
+blocked until the remaining management/data paths are connected and configured.
 
 The backend loads local provider values from `.env.local.real-lab`, but ignores
-`PROVIDER_MODE` from that file so default app and test startup remains mock.
+`PROVIDER_MODE` from that file; the running app defaults to
+`local-lab-readwrite`, while test targets set `PROVIDER_MODE=mock` explicitly.
 Plain `make provider-smoke` runs in mock mode and skips probes. With explicit
 `PROVIDER_MODE=local-readonly`, the smoke command writes sanitized JSON and
 Markdown summaries under ignored `artifacts/real-lab/`, skips planned but not
@@ -448,7 +507,7 @@ fallback command that requires it.
 
 ## Safety Rules
 
-- Keep `PROVIDER_MODE=mock` for local development and Codex exec tasks.
+- Keep `PROVIDER_MODE=mock` for automated tests only.
 - Use `PROVIDER_MODE=local-readonly` only for explicit local iLO, Cisco, and
   ESXi preview probes, or NetApp readiness-only reporting, on an isolated lab
   machine with `LAB_CLOSED_LOOP_ACK=YES` and `LAB_READONLY_ACK=YES`.

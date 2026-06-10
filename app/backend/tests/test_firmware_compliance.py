@@ -78,6 +78,7 @@ def test_not_configured_netapp_is_not_configured_yet(monkeypatch, firmware_setti
     firmware_settings.netapp_configured = False
     firmware_settings.netapp_current_ontap_version = None
     monkeypatch.setattr(fc, "settings", firmware_settings)
+    monkeypatch.setattr(fc, "get_netapp_runtime_state", lambda: {"configured": False})
     monkeypatch.setattr(fc, "load_firmware_baseline", lambda: _baseline(_component("netapp_ontap_version", minimum="9.14")))
 
     result = fc.get_firmware_compliance()
@@ -185,6 +186,7 @@ def test_full_scope_keeps_netapp_not_configured_warning(monkeypatch, firmware_se
     firmware_settings.netapp_configured = False
     firmware_settings.netapp_current_ontap_version = None
     monkeypatch.setattr(fc, "settings", firmware_settings)
+    monkeypatch.setattr(fc, "get_netapp_runtime_state", lambda: {"configured": False})
     monkeypatch.setattr(
         fc,
         "load_firmware_baseline",
@@ -199,7 +201,7 @@ def test_full_scope_keeps_netapp_not_configured_warning(monkeypatch, firmware_se
 
     assert result["status"] == "warning"
     assert result["devices"]["netapp"]["status"] == "not_configured_yet"
-    assert any("NETAPP_CONFIGURED=false" in warning for warning in result["warnings"])
+    assert any("NetApp firmware inventory is waiting for live setup validation" in warning for warning in result["warnings"])
 
 
 @pytest.mark.parametrize(
@@ -220,6 +222,7 @@ def test_old_provider_versions_block(
     settings_attr,
 ) -> None:
     monkeypatch.setattr(fc, "settings", firmware_settings)
+    monkeypatch.setattr(fc, "get_netapp_runtime_state", lambda: {"configured": firmware_settings.netapp_configured})
     monkeypatch.setattr(fc, "load_firmware_baseline", lambda: _baseline(_component(component_id, minimum=minimum)))
     if settings_attr:
         setattr(firmware_settings, settings_attr[0], settings_attr[1])

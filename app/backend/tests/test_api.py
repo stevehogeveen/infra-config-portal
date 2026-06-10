@@ -108,7 +108,7 @@ def test_control_action_unknown_returns_404(client: TestClient) -> None:
     assert response.status_code == 404
 
 
-def test_provider_mode_settings_exposes_simulation_and_lab_options(
+def test_provider_mode_settings_exposes_real_lab_runtime_options(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
     tmp_path,
@@ -121,11 +121,14 @@ def test_provider_mode_settings_exposes_simulation_and_lab_options(
     assert response.status_code == 200
     payload = response.json()
     labels = {option["mode"]: option["label"] for option in payload["options"]}
-    assert labels["mock"] == "Simulation"
-    assert labels["local-readonly"] == "Local Read-only Lab"
-    assert labels["local-lab-readwrite"] == "Local Lab Read/write"
-    assert payload["desired_mode"] == payload["current_mode"]
-    assert payload["pending_restart"] is False
+    assert "mock" not in labels
+    assert labels["local-readonly"] == "Read-only Live Checks"
+    assert labels["local-lab-readwrite"] == "Real Lab Runtime"
+    assert payload["desired_mode"] == "local-lab-readwrite"
+    assert payload["expected_runtime_mode"] == "local-lab-readwrite"
+    assert payload["pending_restart"] is (payload["current_mode"] != "local-lab-readwrite")
+    if payload["current_mode"] == "mock":
+        assert "test mode only" in payload["dev_test_banner"]
     assert payload["mode_env_path"].endswith("app-mode.env")
 
 
@@ -156,7 +159,7 @@ def test_provider_mode_settings_save_writes_ignored_local_restart_config(
 
     stored = json.loads(store_path.read_text(encoding="utf-8"))
     assert stored["desired_mode"] == desired
-    assert stored["mock_default_preserved"] is True
+    assert stored["operator_runtime_only"] is True
     assert "password" not in stored
 
 
@@ -336,6 +339,43 @@ def test_lab_profile_api_saves_selects_and_versions_profiles(
     assert activated.json()["active_profile"]["id"] == profile_id
 
 
+def test_lab_profile_api_uses_runtime_profile_for_stale_saved_real_lab_profile(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    monkeypatch.setenv("PROVIDER_MODE", "local-lab-readwrite")
+    monkeypatch.setenv("LAB_PROFILE_STORE", str(tmp_path / "lab-profiles.json"))
+
+    created = client.post(
+        "/api/v1/lab/profiles",
+        json={
+            "name": "Old Demo Lab",
+            "address_plan": {
+                "subnet": "10.10.8.0/24",
+                "ilo": "10.10.8.200",
+                "server_embedded_nic": "10.10.8.201",
+                "esxi_management": "10.10.8.202",
+                "cisco_management": "10.10.8.2",
+                "ansible_control_host": "10.10.8.5",
+            },
+        },
+    )
+    assert created.status_code == 201
+
+    response = client.get("/api/v1/lab/profiles")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["mock_only"] is False
+    assert payload["active_profile"]["id"] == "runtime"
+    assert payload["active_profile"]["address_plan"]["subnet"] == "192.168.1.0/24"
+    assert payload["active_profile"]["address_plan"]["ilo"] == "192.168.1.201"
+    assert payload["runtime_profile"]["active"] is True
+    assert payload["profiles"][0]["active"] is False
+    assert "provider-lab-live-status" in payload["next_safe_action"]
+
+
 def test_lab_profile_subnet_options_include_netapp_capability_boundary(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
@@ -374,17 +414,17 @@ def test_lab_profile_uses_lab_builder_schema_for_24_when_addresses_are_blank(
     assert payload["global_settings"]["gateway"] == "192.0.2.1"
     assert payload["global_settings"]["netapp_enabled"] is True
     assert payload["address_plan"]["subnet"] == "192.0.2.0/24"
-    assert payload["address_plan"]["cisco_management"] == "192.0.2.2"
-    assert payload["address_plan"]["ilo"] == "192.0.2.200"
-    assert payload["address_plan"]["esxi_management"] == "192.0.2.202"
-    assert payload["address_plan"]["netapp_controller_a_sp"] == "192.0.2.13"
-    assert payload["address_plan"]["netapp_cluster_mgmt"] == "192.0.2.45"
-    assert payload["address_plan"]["netapp_svm_mgmt"] == "192.0.2.48"
+    assert payload["address_plan"]["cisco_management"] == "192.0.2.204"
+    assert payload["address_plan"]["ilo"] == "192.0.2.201"
+    assert payload["address_plan"]["esxi_management"] == "192.0.2.203"
+    assert payload["address_plan"]["netapp_controller_a_sp"] == "192.0.2.210"
+    assert payload["address_plan"]["netapp_cluster_mgmt"] == "192.0.2.220"
+    assert payload["address_plan"]["netapp_svm_mgmt"] == "192.0.2.223"
     assert payload["address_plan"]["netapp_iscsi_lifs"] == [
-        "192.0.2.49",
-        "192.0.2.50",
-        "192.0.2.51",
-        "192.0.2.52",
+        "192.0.2.240",
+        "192.0.2.241",
+        "192.0.2.242",
+        "192.0.2.243",
     ]
 
 

@@ -98,7 +98,7 @@ def main() -> int:
 
 def _operator_steps() -> list[str]:
     return [
-        "Keep NETAPP_CONFIGURED=false for this readiness run.",
+        "Treat NETAPP_CONFIGURED as legacy context; live configured state is tracked automatically.",
         "Use the portal NetApp page to review planned targets separately from current/discovered targets.",
         "Physically verify controller identity, power, cabling, and management network patching.",
         "Use an operator-managed serial terminal if console state must be observed.",
@@ -149,7 +149,7 @@ def _markdown_report(report: dict[str, Any]) -> str:
         f"Scope: {report['safe_real_run_scope']}",
         "",
         "## Safety",
-        f"- NETAPP_CONFIGURED: {safety['netapp_configured']}",
+        f"- NETAPP_CONFIGURED_LEGACY: {safety['netapp_configured']}",
         f"- local_readonly_ack: {safety['local_readonly_ack']}",
         f"- apply_enabled: {safety['apply_enabled']}",
         f"- probe_enabled: {safety['probe_enabled']}",
@@ -183,7 +183,7 @@ def _print_summary(report: dict[str, Any]) -> None:
     comparison = report["comparison_counts"]
     print("netapp_real_run_readiness=complete")
     print(f"provider_mode={report['provider_mode']}")
-    print(f"netapp_configured={report['safety']['netapp_configured']}")
+    print(f"netapp_configured_legacy={report['safety']['netapp_configured']}")
     print(f"setup_status={report['setup_readiness']['status']}")
     print(f"upgrade_status={report['upgrade_readiness']['status']}")
     print(

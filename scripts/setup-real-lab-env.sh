@@ -5,7 +5,7 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 echo "This writes local real-lab settings to .env.local.real-lab."
 echo "This file is ignored by Git and must never be committed."
-echo "Lab IP profile: iLO .201, server NIC .202, ESXi .203, Cisco .204, Ansible/control host .205, NetApp .206-.215 on 192.168.1.0/24."
+echo "Lab IP profile: iLO .201, server NIC .202, ESXi .203, Cisco .204, Ansible/control host .205, NetApp .210/.211/.220+ on 192.168.1.0/24."
 echo
 
 read -rp "Closed loop lab network only? Type YES: " closed_loop
@@ -38,14 +38,14 @@ default_server_embedded_nic_ip="192.168.1.202"
 default_esxi_host="192.168.1.203"
 default_cisco_ip="192.168.1.204"
 default_ansible_control_host="192.168.1.205"
-default_netapp_controller_a_sp="192.168.1.206"
-default_netapp_controller_b_sp="192.168.1.207"
-default_netapp_cluster_mgmt_ip="192.168.1.208"
-default_netapp_node_a_mgmt_ip="192.168.1.209"
-default_netapp_node_b_mgmt_ip="192.168.1.210"
-default_netapp_svm_mgmt_ip="192.168.1.211"
-default_netapp_iscsi_lifs="192.168.1.212,192.168.1.213,192.168.1.214,192.168.1.215"
-default_netapp_nfs_lifs="192.168.1.212,192.168.1.213"
+default_netapp_controller_a_sp="192.168.1.210"
+default_netapp_controller_b_sp="192.168.1.211"
+default_netapp_cluster_mgmt_ip="192.168.1.220"
+default_netapp_node_a_mgmt_ip="192.168.1.221"
+default_netapp_node_b_mgmt_ip="192.168.1.222"
+default_netapp_svm_mgmt_ip="192.168.1.223"
+default_netapp_iscsi_lifs="192.168.1.240,192.168.1.241,192.168.1.242,192.168.1.243"
+default_netapp_nfs_lifs="192.168.1.230,192.168.1.231"
 default_netapp_nfs_volume="esxi_datastore_01"
 default_netapp_nfs_export_policy="esxi_nfs_policy"
 default_netapp_nfs_mount_path="/esxi_datastore_01"
@@ -99,7 +99,7 @@ read -rp "Planned NetApp NFS mount path [${default_netapp_nfs_mount_path}]: " ne
 netapp_nfs_mount_path="${netapp_nfs_mount_path:-$default_netapp_nfs_mount_path}"
 read -rp "Planned vCenter/ESXi datastore name [${default_netapp_nfs_datastore_name}]: " netapp_nfs_datastore_name
 netapp_nfs_datastore_name="${netapp_nfs_datastore_name:-$default_netapp_nfs_datastore_name}"
-read -rp "Is NetApp ONTAP cluster management/API configured for read-only probes? Type YES or press Enter: " netapp_ready
+read -rp "Legacy NetApp API configured hint, optional because live validation derives state. Type YES or press Enter: " netapp_ready
 read -rp "Is vCenter/govc configured for datastore validation? Type YES or press Enter: " vcenter_ready
 read -rp "vCenter host or GOVC_URL, blank if not ready []: " vcenter_host
 

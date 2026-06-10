@@ -22,7 +22,8 @@ def test_summary_target_is_report_only(monkeypatch, tmp_path: Path) -> None:
 
     assert result["status"] == "summary_only"
     assert result["blockers"] == []
-    assert result["mock_results_used"] is False
+    assert result["source_type"] == "historical_artifact"
+    assert result["is_current"] is False
 
 
 def test_real_full_rebuild_invokes_live_stages(monkeypatch, tmp_path: Path) -> None:

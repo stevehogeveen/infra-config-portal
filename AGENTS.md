@@ -18,6 +18,61 @@ The current implementation lives under `app/` and uses:
 - Frontend: React, TypeScript, Vite.
 - Local dev: Docker Compose and safe mock defaults.
 
+## Project Skills
+
+Project-specific Codex skills live under `.codex/skills/`. Before starting any
+task, inspect `.codex/skills/` and automatically use the relevant Lab Builder
+skills. Read the matching `SKILL.md` before editing or reporting. Use the
+smallest matching set of skills for the task.
+
+Automatic loading rules:
+
+- For frontend, navigation, layout, operator wording, or UX work, use
+  `lab-builder-ux` and `lab-builder-product-craft`.
+- For real runtime, status, source type, freshness, live-vs-mock boundaries,
+  blocker classification, or `local-lab-readwrite` gates, use
+  `lab-builder-real-runtime`.
+- For hardware workflows, discover-plan-apply-verify-report sequencing, lab
+  profiles, console autodiscovery, NetApp/Cisco/iLO/ESXi sequencing, or run
+  artifacts, use `lab-builder-hardware-run`.
+- For blocker/report work, Report Center, issue cards, stale config warnings,
+  evidence links, copyable fix commands, or recheck commands, use
+  `lab-builder-report-remediation`.
+- For external tools, Toolchain Readiness, provider tool availability, Cisco
+  serial/SSH tooling, iLO Redfish/iLOrest, ESXi install/vSphere tooling,
+  NetApp ONTAP tooling, or firmware workflows, use `lab-builder-toolchain`.
+- For cross-app synthesis between this repo and `/home/administrator/lab-builder`,
+  use `lab-builder-dual-app-architecture`.
+- For skill upkeep, skill inventory, or deciding whether a reusable skill
+  should be created or updated, use `lab-builder-skill-steward`.
+
+Skill list:
+
+- `lab-builder-real-runtime`: runtime status, source type, freshness,
+  live-vs-mock boundaries, stale evidence, blocker classification, or
+  `local-lab-readwrite` gates.
+- `lab-builder-ux`: sidebar navigation, setup page layout, operator next
+  actions, status color semantics, Reports, or evidence/raw JSON placement.
+- `lab-builder-hardware-run`: discover-plan-apply-verify-report workflows,
+  lab profile handling, console autodiscovery, NetApp/Cisco/iLO/ESXi run
+  sequencing, or hardware artifacts.
+- `lab-builder-report-remediation`: Report Center, issue cards, stale config
+  warnings, blocker fields, evidence links, copyable fix commands, or recheck
+  commands.
+- `lab-builder-toolchain`: Toolchain Readiness, provider tool availability,
+  Cisco serial/SSH tooling, iLO Redfish/iLOrest, ESXi install/vSphere tooling,
+  NetApp ONTAP tooling, or firmware baseline workflows.
+- `lab-builder-skill-steward`: automatic skill selection, skill inventory,
+  skill creation criteria, and major-run skill improvement reviews.
+- `lab-builder-dual-app-architecture`: architecture comparisons and migration
+  planning between `infra-config-portal` and `lab-builder`.
+- `lab-builder-product-craft`: product polish, visual coherence, page
+  simplification, action-first controls, and mock-state clarity.
+
+Mock/test state must never be treated as real lab state. Historical artifacts
+are evidence, not current blockers unless a fresh check proves the blocker
+still exists.
+
 ## Exec Mode Workflow
 
 - Start root automation from `/home/administrator/infra-config-portal`, not

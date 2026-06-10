@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from dataclasses import replace
 
 from app.core.config import settings
 from app.providers.base import ProviderAction, ProviderStatus, SourceOfTruthAdapter, VsphereAdapter
@@ -11,10 +12,36 @@ from app.providers.esxi_readonly import EsxiReadonlyAdapter
 from app.providers.ilo_redfish import IloRedfishAdapter
 from app.providers.mock import MockSourceOfTruthAdapter, MockVsphereAdapter
 from app.providers.netapp import NetAppOntapAdapter
+from app.services.status_source import status_source_metadata
 
 
 class ProviderRegistryError(RuntimeError):
     pass
+
+
+RECHECK_COMMANDS = {
+    "ilo-redfish": "make provider-lab-ilo-reachability",
+    "cisco-console": "make provider-lab-cisco-console-ethernet-readiness",
+    "cisco-ansible": "make provider-lab-cisco-console-ethernet-readiness",
+    "esxi-readonly": "make provider-lab-esxi-install-readiness",
+    "netapp-ontap": "make provider-lab-netapp-live-state",
+    "mock-vsphere": "make test",
+    "mock-source-of-truth": "make test",
+    "mock-awx": "make test",
+    "mock-opentofu": "make test",
+    "mock-network-switch": "make test",
+}
+
+EVIDENCE_ARTIFACTS = {
+    "ilo-redfish": ["artifacts/codex-runs/ilo-real-run-report.md"],
+    "cisco-console": ["artifacts/codex-runs/cisco-4h-lab-run-report.md"],
+    "cisco-ansible": ["artifacts/codex-runs/cisco-console-ethernet-readiness-report.md"],
+    "esxi-readonly": ["artifacts/codex-runs/esxi-install-readiness-report.md"],
+    "netapp-ontap": [
+        "artifacts/codex-runs/netapp-live-state-report.md",
+        "artifacts/codex-runs/netapp-console-autodiscovery-report.md",
+    ],
+}
 
 
 @dataclass(frozen=True)
@@ -34,7 +61,7 @@ class ProviderRegistry:
 
     def statuses(self) -> list[ProviderStatus]:
         self._ensure_status_mode()
-        return [
+        statuses = [
             self._safe_status(
                 "ilo-redfish",
                 "HPE iLO / Redfish",
@@ -59,11 +86,17 @@ class ProviderRegistry:
                 "virtualization",
                 lambda: EsxiReadonlyAdapter(self.provider_mode).health(),
             ),
-            self.vsphere_adapter.health(),
-            self.source_of_truth_adapter.health(),
             NetAppOntapAdapter(self.provider_mode).health(),
-            *self.placeholder_statuses,
         ]
+        if self.provider_mode == "mock":
+            statuses.extend(
+                [
+                    self.vsphere_adapter.health(),
+                    self.source_of_truth_adapter.health(),
+                    *self.placeholder_statuses,
+                ]
+            )
+        return [self._with_source_metadata(status) for status in statuses]
 
     def _ensure_lifecycle_mode(self) -> None:
         if self.provider_mode not in {"mock", "local-readonly"}:
@@ -107,6 +140,23 @@ class ProviderRegistry:
                     )
                 ],
             )
+
+    def _with_source_metadata(self, status: ProviderStatus) -> ProviderStatus:
+        source_type = (
+            "test_fixture"
+            if self.provider_mode == "mock"
+            else "live_cached"
+            if status.last_probe_time
+            else "not_checked"
+        )
+        metadata = status_source_metadata(
+            source_type=source_type,
+            checked_at=status.last_probe_time,
+            recheck_command=RECHECK_COMMANDS.get(status.id),
+            evidence_artifacts=EVIDENCE_ARTIFACTS.get(status.id, []),
+            is_operator_visible=source_type != "test_fixture",
+        )
+        return replace(status, **metadata)
 
 
 def provider_registry(provider_mode: str | None = None) -> ProviderRegistry:

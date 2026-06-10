@@ -13,15 +13,24 @@ from pathlib import Path
 from shutil import which
 from typing import Any
 
+from sqlalchemy.orm import Session
+
 from app.core.config import settings
 from app.providers.action_policy import REAL_CONTACT_MODES, current_lab_action_policy
 from app.providers.redaction import redact_sensitive
 from app.services.serial_console_discovery import (
+    SerialConsoleDiscoveryPaths,
     SerialConsoleProbeOptions,
     discover_serial_console_candidates,
     probe_serial_candidates,
     selectable_serial_candidates,
     serial_baud_order,
+)
+from app.services.netapp_state import (
+    get_netapp_runtime_state,
+    read_netapp_live_state,
+    update_netapp_runtime_state_from_console_probe,
+    validate_netapp_setup,
 )
 
 PROVIDER_ID = "netapp-ontap"
@@ -32,6 +41,8 @@ CONSOLE_DISCOVERY_REPORT = CODEX_RUN_DIR / "netapp-console-autodiscovery-report.
 CONSOLE_DISCOVERY_JSON = CODEX_RUN_DIR / "netapp-console-autodiscovery-redacted.json"
 CONSOLE_STATE_REPORT = CODEX_RUN_DIR / "netapp-console-state-report.md"
 CONSOLE_STATE_JSON = CODEX_RUN_DIR / "netapp-console-state-redacted.json"
+CONSOLE_LOGIN_STATE_REPORT = CODEX_RUN_DIR / "netapp-console-login-state-report.md"
+CONSOLE_LOGIN_STATE_JSON = CODEX_RUN_DIR / "netapp-console-login-state-redacted.json"
 NFS_VCENTER_READINESS_REPORT = CODEX_RUN_DIR / "netapp-nfs-vcenter-readiness-report.md"
 NFS_VCENTER_READINESS_JSON = CODEX_RUN_DIR / "netapp-nfs-vcenter-readiness-redacted.json"
 
@@ -55,6 +66,7 @@ VALID_NETAPP_STATES = {
     "loader_prompt",
     "boot_menu",
     "cluster_setup_prompt",
+    "node_setup_prompt",
     "existing_cluster_shell",
     "login_required",
     "password_required",
@@ -75,6 +87,16 @@ NOT_ATTEMPTED = [
     "vCenter or ESXi datastore mount",
     "controller reboot, takeover/giveback, wipe, or upgrade",
 ]
+READ_ONLY_ONTAP_COMMANDS = (
+    ("ontap_version", "version"),
+    ("node_identity", "system node show -fields node,model,health,uptime"),
+    ("cluster_status", "cluster show"),
+    (
+        "network_interface_summary",
+        "network interface show -fields vserver,lif,address,role,home-node,home-port,status-admin,status-oper",
+    ),
+    ("storage_aggregate_summary", "storage aggregate show -fields aggregate,node,state,size,available,usedsize"),
+)
 
 
 @dataclass(frozen=True)
@@ -92,39 +114,171 @@ class NetAppConsoleCandidate:
 
 
 def get_latest_netapp_console_discovery() -> dict[str, Any]:
-    return _latest_or_not_run(
+    latest = _latest_or_not_run(
         CONSOLE_DISCOVERY_JSON,
         action="console-discovery",
         message="NetApp console discovery has not run yet.",
         next_safe_action="Run `make provider-lab-netapp-console-autodiscovery`.",
     )
+    return {**latest, "runtime_state": get_netapp_runtime_state()}
 
 
 def get_latest_netapp_console_state() -> dict[str, Any]:
-    return _latest_or_not_run(
+    latest = _latest_or_not_run(
         CONSOLE_STATE_JSON,
         action="console-read-state",
         message="NetApp console read-state has not run yet.",
         next_safe_action="Run `make provider-lab-netapp-console-read-state` after console cables are connected.",
     )
+    return {**latest, "runtime_state": get_netapp_runtime_state()}
 
 
-def run_netapp_console_discovery() -> dict[str, Any]:
+def run_netapp_console_discovery(*, session: Session | None = None) -> dict[str, Any]:
     return _run_console_probe(
         action="console-discovery",
         report_path=CONSOLE_DISCOVERY_REPORT,
         json_path=CONSOLE_DISCOVERY_JSON,
         message="NetApp console discovery completed.",
+        session=session,
     )
 
 
-def run_netapp_console_read_state() -> dict[str, Any]:
+def run_netapp_console_read_state(*, session: Session | None = None) -> dict[str, Any]:
     return _run_console_probe(
         action="console-read-state",
         report_path=CONSOLE_STATE_REPORT,
         json_path=CONSOLE_STATE_JSON,
         message="NetApp console state read completed.",
+        session=session,
     )
+
+
+def run_netapp_console_login_state() -> dict[str, Any]:
+    CODEX_RUN_DIR.mkdir(parents=True, exist_ok=True)
+    checked_at = _now()
+    console_state = get_latest_netapp_console_state()
+    selected_port = console_state.get("selected_port")
+    selected_baud = console_state.get("selected_baud")
+    prompt_state = console_state.get("selected_prompt_state")
+    identified_state = _identify_console_state(prompt_state)
+    credentials = _netapp_console_credential_state()
+    login_attempted = False
+    read_only_commands_attempted = False
+    command_results: list[dict[str, Any]] = []
+    blockers: list[str] = []
+    warnings = [
+        "Guarded console login only uses NetApp-specific console credentials or NetApp API credentials as a fallback.",
+        "Read-only commands are fixed and only run after an ONTAP shell prompt is detected.",
+        "No setup, cluster creation, network configuration, storage provisioning, reboot, wipe, or upgrade commands are sent.",
+    ]
+
+    if not selected_port or not selected_baud:
+        blockers.append("No selected NetApp console port/baud exists; rerun console read-state first.")
+    elif identified_state in {"cluster_setup_wizard", "node_setup_wizard"}:
+        warnings.append(
+            f"Current console state is `{identified_state}`; this is identified state, but no setup command is allowed in this stage."
+        )
+    elif identified_state in {"loader", "boot_menu", "sp_bmc_login"}:
+        blockers.append(
+            f"Current console state is `{identified_state}`; credential entry and ONTAP read-only commands are not safe in this state."
+        )
+    elif identified_state == "login_required" and not credentials["usable"]:
+        blockers.append("NetApp console/API credentials are missing; guarded login was skipped.")
+    elif identified_state == "ontap_shell":
+        read_only_commands_attempted = True
+        command_results = _run_console_read_only_commands(
+            str(selected_port),
+            int(selected_baud),
+            credentials=None,
+        )
+    elif identified_state == "login_required" and credentials["usable"]:
+        login_attempted = True
+        read_only_commands_attempted = True
+        command_results = _run_console_read_only_commands(
+            str(selected_port),
+            int(selected_baud),
+            credentials=credentials,
+        )
+        if not command_results:
+            blockers.append("Guarded console login did not reach an ONTAP shell prompt.")
+    else:
+        blockers.append(f"Current console state is `{identified_state}`; no safe login/read-only command path is available.")
+
+    status = "ready" if identified_state in {"cluster_setup_wizard", "node_setup_wizard", "ontap_shell"} and not command_results else "blocked"
+    if command_results and all(item.get("status") == "captured" for item in command_results):
+        status = "ready"
+    elif command_results:
+        status = "warning"
+    payload = {
+        "provider_id": PROVIDER_ID,
+        "action": "console-login-state",
+        "checked_at": checked_at,
+        "status": status,
+        "message": "NetApp console login/read-only state identification completed.",
+        "mode": settings.provider_mode,
+        "selected_port": selected_port,
+        "selected_baud": selected_baud,
+        "prompt_state": prompt_state,
+        "identified_state": identified_state,
+        "credential_state": {
+            "console_username_configured": credentials["console_username_configured"],
+            "console_password_configured": credentials["console_password_configured"],
+            "api_username_configured": credentials["api_username_configured"],
+            "api_password_configured": credentials["api_password_configured"],
+            "usable": credentials["usable"],
+        },
+        "login_attempted": login_attempted,
+        "read_only_commands_attempted": read_only_commands_attempted,
+        "read_only_commands": [
+            {"id": command_id, "command": command} for command_id, command in READ_ONLY_ONTAP_COMMANDS
+        ],
+        "command_results": command_results,
+        "blockers": blockers,
+        "warnings": warnings,
+        "artifacts": {
+            "report": _rel(CONSOLE_LOGIN_STATE_REPORT),
+            "json": _rel(CONSOLE_LOGIN_STATE_JSON),
+            "console_state": _rel(CONSOLE_STATE_JSON),
+        },
+        "not_attempted": [
+            "cluster setup commands",
+            "SP, node, SVM, LIF, volume, export, datastore, user, or iSCSI configuration",
+            "ONTAP API write",
+            "vCenter or ESXi datastore mount",
+            "controller reboot, takeover/giveback, wipe, or upgrade",
+        ],
+        "next_safe_action": _console_login_next_action(identified_state, credentials, blockers),
+    }
+    sanitized = _sanitize(payload)
+    _write_json(CONSOLE_LOGIN_STATE_JSON, sanitized)
+    CONSOLE_LOGIN_STATE_REPORT.write_text(_console_login_markdown(sanitized), encoding="utf-8")
+    return sanitized
+
+
+def get_netapp_live_state(*, write_report: bool = False) -> dict[str, Any]:
+    state = get_netapp_runtime_state()
+    payload = {
+        **state,
+        "action": "cached-live-state",
+        "status": "ready" if state.get("configured") else "not_run" if state.get("source") == "none" else "blocked",
+        "message": (
+            "Cached NetApp configured state is verified by live check."
+            if state.get("configured")
+            else "Cached NetApp live state is not configured yet."
+        ),
+        "warnings": ["Manual env flag not required."],
+    }
+    if write_report:
+        read_netapp_live_state(check_ports=False, write_report=True)
+    return payload
+
+
+def run_netapp_live_state() -> dict[str, Any]:
+    return read_netapp_live_state(write_report=True)
+
+
+def run_netapp_setup_validation() -> dict[str, Any]:
+    return validate_netapp_setup(write_report=True)
 
 
 def get_netapp_nfs_vcenter_readiness(*, check_ports: bool | None = None, write_report: bool = True) -> dict[str, Any]:
@@ -132,6 +286,13 @@ def get_netapp_nfs_vcenter_readiness(*, check_ports: bool | None = None, write_r
         check_ports = settings.provider_mode in REAL_CONTACT_MODES
     CODEX_RUN_DIR.mkdir(parents=True, exist_ok=True)
     checked_at = _now()
+    netapp_live_state = (
+        read_netapp_live_state(check_ports=check_ports, write_report=False)
+        if check_ports
+        else get_netapp_runtime_state()
+    )
+    live_configured = bool(netapp_live_state.get("configured"))
+    legacy_env_configured = bool(settings.netapp_configured)
     nfs_lifs = list(settings.netapp_nfs_lifs)
     first_nfs_lif = nfs_lifs[0] if nfs_lifs else settings.netapp_svm_mgmt_ip
     connected_management_ports = list(settings.netapp_connected_management_ports)
@@ -139,7 +300,7 @@ def get_netapp_nfs_vcenter_readiness(*, check_ports: bool | None = None, write_r
     netapp_credentials_present = bool(settings.netapp_api_username and settings.netapp_api_password)
     vcenter_credentials_present = bool(settings.vcenter_username and settings.vcenter_password)
     govc_available = which("govc") is not None
-    netapp_api_configured = bool(settings.netapp_configured and settings.netapp_cluster_mgmt_ip)
+    netapp_api_configured = bool((live_configured or legacy_env_configured) and settings.netapp_cluster_mgmt_ip)
     vcenter_configured = bool(settings.vcenter_configured and settings.vcenter_host)
     esxi_configured = bool(settings.esxi_configured and settings.esxi_test_host)
 
@@ -149,8 +310,8 @@ def get_netapp_nfs_vcenter_readiness(*, check_ports: bool | None = None, write_r
             443,
             enabled=bool(check_ports and netapp_api_configured),
             disabled_reason=(
-                "NETAPP_CONFIGURED=false; cluster management REST is planned but not live."
-                if not settings.netapp_configured
+                "NetApp live configured state has not been verified; cluster management REST is planned but not live."
+                if not live_configured and not legacy_env_configured
                 else "Port checks disabled for this run."
             ),
         ),
@@ -159,8 +320,8 @@ def get_netapp_nfs_vcenter_readiness(*, check_ports: bool | None = None, write_r
             22,
             enabled=bool(check_ports and netapp_api_configured),
             disabled_reason=(
-                "NETAPP_CONFIGURED=false; cluster management SSH is planned but not live."
-                if not settings.netapp_configured
+                "NetApp live configured state has not been verified; cluster management SSH is planned but not live."
+                if not live_configured and not legacy_env_configured
                 else "Port checks disabled for this run."
             ),
         ),
@@ -190,8 +351,8 @@ def get_netapp_nfs_vcenter_readiness(*, check_ports: bool | None = None, write_r
                 2049,
                 enabled=bool(check_ports and netapp_api_configured),
                 disabled_reason=(
-                    "NFS LIFs are planned only until NetApp setup creates/confirms data LIFs."
-                    if not settings.netapp_configured
+                    "NFS LIFs are planned only until NetApp setup live verification confirms data readiness."
+                    if not live_configured and not legacy_env_configured
                     else "Port checks disabled for this run."
                 ),
             )
@@ -200,8 +361,13 @@ def get_netapp_nfs_vcenter_readiness(*, check_ports: bool | None = None, write_r
     }
 
     blockers = []
-    if not settings.netapp_configured:
-        blockers.append("NETAPP_CONFIGURED=false; ONTAP REST/NFS setup is not ready for live validation.")
+    if not live_configured:
+        if legacy_env_configured:
+            blockers.append(
+                "NETAPP_CONFIGURED=true is a legacy/desired flag, but live NetApp validation has not verified configured state."
+            )
+        else:
+            blockers.append("No live NetApp configured state exists yet; run Validate NetApp Setup.")
     if not netapp_credentials_present:
         blockers.append("NetApp API credentials are missing; values must stay in .env.local.real-lab when ready.")
     if not esxi_configured:
@@ -235,6 +401,8 @@ def get_netapp_nfs_vcenter_readiness(*, check_ports: bool | None = None, write_r
         "ontap_apply_enabled": False,
         "vcenter_apply_enabled": False,
         "esxi_apply_enabled": False,
+        "manual_env_flag_required": False,
+        "live_state": netapp_live_state,
         "single_management_port_mode": single_management_port,
         "management_topology": {
             "connected_management_ports": connected_management_ports,
@@ -254,6 +422,8 @@ def get_netapp_nfs_vcenter_readiness(*, check_ports: bool | None = None, write_r
         },
         "targets": {
             "netapp_cluster_mgmt_ip": settings.netapp_cluster_mgmt_ip,
+            "netapp_configured_source": "live_verification" if live_configured else "not_verified",
+            "legacy_netapp_configured_env": legacy_env_configured,
             "esxi_management_ip": settings.esxi_test_host,
             "vcenter_host_configured": bool(settings.vcenter_host),
             "vcenter_configured": settings.vcenter_configured,
@@ -313,11 +483,18 @@ def _run_console_probe(
     report_path: Path,
     json_path: Path,
     message: str,
+    session: Session | None = None,
 ) -> dict[str, Any]:
     CODEX_RUN_DIR.mkdir(parents=True, exist_ok=True)
     checked_at = _now()
+    discovery_paths = (
+        SerialConsoleDiscoveryPaths(by_id_glob="", usb_glob="", acm_glob="", ttys_glob="")
+        if settings.netapp_console_autodiscovery_disabled
+        else None
+    )
     candidates = discover_serial_console_candidates(
         configured_hint=settings.netapp_console_port,
+        paths=discovery_paths,
         collect_details=True,
         device_hint="netapp",
     )
@@ -415,11 +592,16 @@ def _run_console_probe(
         ),
         "mode": settings.provider_mode,
         "configured_port_hint": settings.netapp_console_port,
+        "configured_port_hint_role": "optional_hint_only",
+        "autodiscovery_enabled": not settings.netapp_console_autodiscovery_disabled,
+        "manual_env_update_required": False,
         "selected_port": selected["path"] if selected else None,
         "selected_baud": selected["baud"] if selected else None,
         "selected_prompt_state": selected["prompt_state"] if selected else None,
         "selected_prompt_label": selected["prompt_label"] if selected else None,
         "selection_source": selected["selection_source"] if selected else None,
+        "selection_origin": _selection_origin(selected),
+        "detected_automatically": _selection_origin(selected) == "autodiscovery",
         "selection_confidence": selected["confidence"] if selected else None,
         "selection_reason": selected["selection_reason"] if selected else None,
         "selected_device_type": selected["device_type"] if selected else None,
@@ -453,9 +635,188 @@ def _run_console_probe(
         ),
     }
     sanitized = _sanitize(payload)
+    runtime_state = update_netapp_runtime_state_from_console_probe(sanitized, session=session)
+    sanitized["runtime_state"] = runtime_state
     _write_json(json_path, sanitized)
     report_path.write_text(_console_markdown(sanitized), encoding="utf-8")
     return sanitized
+
+
+def _identify_console_state(prompt_state: object) -> str:
+    state = str(prompt_state or "").strip()
+    if state == "existing_cluster_shell":
+        return "ontap_shell"
+    if state == "cluster_setup_prompt":
+        return "cluster_setup_wizard"
+    if state == "node_setup_prompt":
+        return "node_setup_wizard"
+    if state in {"login_required", "password_required"}:
+        return "login_required"
+    if state == "loader_prompt":
+        return "loader"
+    if state == "boot_menu":
+        return "boot_menu"
+    if state == "sp_bmc_login":
+        return "sp_bmc_login"
+    if state == "booting":
+        return "booting"
+    return "unknown"
+
+
+def _netapp_console_credential_state() -> dict[str, Any]:
+    console_username = os.getenv("NETAPP_CONSOLE_USERNAME")
+    console_password = os.getenv("NETAPP_CONSOLE_PASSWORD")
+    api_username = os.getenv("NETAPP_API_USERNAME")
+    api_password = os.getenv("NETAPP_API_PASSWORD")
+    username = console_username or api_username
+    password = console_password or api_password
+    return {
+        "console_username_configured": bool(console_username),
+        "console_password_configured": bool(console_password),
+        "api_username_configured": bool(api_username),
+        "api_password_configured": bool(api_password),
+        "usable": bool(username and password),
+        "_username": username,
+        "_password": password,
+    }
+
+
+def _run_console_read_only_commands(
+    port: str,
+    baud: int,
+    *,
+    credentials: dict[str, Any] | None,
+) -> list[dict[str, Any]]:
+    try:
+        import serial  # type: ignore[import-untyped]
+    except ImportError:
+        return [
+            {
+                "id": "serial",
+                "command": None,
+                "status": "blocked",
+                "reason": "pyserial is not installed; console login/read-only commands cannot run.",
+            }
+        ]
+
+    try:
+        with serial.Serial(port=port, baudrate=baud, timeout=0.45, write_timeout=0.5) as conn:
+            _safe_reset_input(conn)
+            conn.write(b"\r\n")
+            _safe_flush(conn)
+            initial_text = _read_serial(conn, window=max(settings.netapp_console_timeout_seconds, 1.0))
+            if credentials is not None:
+                login_result = _complete_netapp_console_login(conn, initial_text, credentials)
+                if login_result.get("status") != "ontap_shell":
+                    return [login_result]
+                initial_text = str(login_result.get("output_excerpt") or "")
+            classification = _classify_netapp_console(initial_text)
+            if classification["state"] != "existing_cluster_shell":
+                return [
+                    {
+                        "id": "prompt",
+                        "command": None,
+                        "status": "blocked",
+                        "prompt_state": classification["state"],
+                        "reason": "ONTAP shell prompt was not detected; read-only ONTAP commands were skipped.",
+                        "output_excerpt": _printable_excerpt(_redact_console_text(initial_text, credentials)),
+                    }
+                ]
+            results: list[dict[str, Any]] = []
+            for command_id, command in READ_ONLY_ONTAP_COMMANDS:
+                conn.write(command.encode("utf-8") + b"\r")
+                _safe_flush(conn)
+                text = _read_serial(conn, window=3.0)
+                prompt = _classify_netapp_console(text)
+                results.append(
+                    {
+                        "id": command_id,
+                        "command": command,
+                        "status": "captured" if text else "no_output",
+                        "prompt_state": prompt["state"],
+                        "output_excerpt": _printable_excerpt(_redact_console_text(text, credentials), max_chars=1200),
+                    }
+                )
+            return results
+    except Exception as exc:  # pragma: no cover - hardware dependent
+        return [
+            {
+                "id": "serial",
+                "command": None,
+                "status": "blocked",
+                "reason": _serial_error_summary(exc),
+            }
+        ]
+
+
+def _complete_netapp_console_login(
+    conn: Any,
+    initial_text: str,
+    credentials: dict[str, Any],
+) -> dict[str, Any]:
+    text = initial_text
+    username = credentials.get("_username")
+    password = credentials.get("_password")
+    if not username or not password:
+        return {
+            "id": "login",
+            "command": None,
+            "status": "blocked",
+            "reason": "NetApp console/API credentials are missing.",
+        }
+    lower = text.lower()
+    transitions: list[str] = []
+    if "username:" in lower or "login:" in lower:
+        transitions.append("username_prompt_seen")
+        conn.write(str(username).encode("utf-8") + b"\r")
+        _safe_flush(conn)
+        text += _read_serial(conn, window=1.5)
+        lower = text.lower()
+    if "password:" in lower:
+        transitions.append("password_prompt_seen")
+        conn.write(str(password).encode("utf-8") + b"\r")
+        _safe_flush(conn)
+        text += _read_serial(conn, window=2.5)
+    conn.write(b"\r")
+    _safe_flush(conn)
+    text += _read_serial(conn, window=1.5)
+    classification = _classify_netapp_console(text)
+    return {
+        "id": "login",
+        "command": None,
+        "status": "ontap_shell" if classification["state"] == "existing_cluster_shell" else "blocked",
+        "prompt_state": classification["state"],
+        "login_state_transitions": transitions,
+        "reason": (
+            "ONTAP shell prompt detected after guarded credential exchange."
+            if classification["state"] == "existing_cluster_shell"
+            else "Guarded credential exchange did not reach an ONTAP shell prompt."
+        ),
+        "output_excerpt": _printable_excerpt(_redact_console_text(text, credentials), max_chars=1200),
+    }
+
+
+def _redact_console_text(text: str, credentials: dict[str, Any] | None) -> str:
+    redacted = text
+    for key in ("_username", "_password"):
+        value = credentials.get(key) if credentials else None
+        if value:
+            redacted = redacted.replace(str(value), "REDACTED")
+    return redacted
+
+
+def _console_login_next_action(
+    identified_state: str,
+    credentials: dict[str, Any],
+    blockers: list[str],
+) -> str:
+    if identified_state in {"cluster_setup_wizard", "node_setup_wizard"}:
+        return "Build and review the setup plan; do not enter setup commands until a guarded apply workflow and explicit apply confirmations exist."
+    if identified_state == "login_required" and not credentials.get("usable"):
+        return "Configure NetApp console or API credentials locally, then rerun `make provider-lab-netapp-console-login-state`."
+    if identified_state == "ontap_shell" and not blockers:
+        return "Review the read-only ONTAP identity outputs and proceed to management reachability/setup planning."
+    return "Rerun console read-state after resolving the current console state blocker."
 
 
 def _best_ranked_candidate(candidates: list[dict[str, Any]]) -> dict[str, Any] | None:
@@ -586,6 +947,18 @@ def _selection_source_from_candidate(candidate: dict[str, Any]) -> str:
     if candidate.get("path_type") == "ttyS":
         return "auto-ttys-candidate"
     return "auto-fallback-candidate"
+
+
+def _selection_origin(selected: dict[str, Any] | None) -> str:
+    if not selected:
+        return "none"
+    path = selected.get("path")
+    if settings.netapp_console_port and path == settings.netapp_console_port:
+        return "hint"
+    source = str(selected.get("selection_source") or "")
+    if source == "configured-port-hint":
+        return "hint"
+    return "autodiscovery"
 
 
 def _candidate_reason(candidate: dict[str, Any] | None) -> str:
@@ -827,8 +1200,12 @@ def _classify_netapp_console(text: str) -> dict[str, str]:
         return {"state": "boot_menu", "label": "Boot menu"}
     if "cluster setup" in lower or "initial configuration dialog" in lower:
         return {"state": "cluster_setup_prompt", "label": "Cluster setup prompt"}
+    if "node setup" in lower or "node setup wizard" in lower:
+        return {"state": "node_setup_prompt", "label": "Node setup wizard"}
     if re.search(r"(?m)[A-Za-z0-9_.:-]+::\*?>\s*$", text):
         return {"state": "existing_cluster_shell", "label": "Existing ONTAP cluster shell"}
+    if "sp login" in lower or "bmc login" in lower:
+        return {"state": "sp_bmc_login", "label": "SP/BMC login"}
     if "username:" in lower or "login:" in lower:
         return {"state": "login_required", "label": "Login prompt"}
     if "password:" in lower:
@@ -962,7 +1339,10 @@ def _redaction_values() -> list[str]:
     for key, value in os.environ.items():
         if not value:
             continue
-        if any(fragment in key.lower() for fragment in ("password", "token", "secret", "credential", "authorization", "cookie")):
+        if any(
+            fragment in key.lower()
+            for fragment in ("password", "token", "secret", "credential", "authorization", "cookie")
+        ):
             values.append(value)
     return values
 
@@ -978,12 +1358,16 @@ def _console_markdown(payload: dict[str, Any]) -> str:
         "",
         "## Selection",
         f"- Configured port hint: `{payload.get('configured_port_hint') or 'not set'}`",
+        f"- Hint role: `{payload.get('configured_port_hint_role') or 'optional_hint_only'}`",
+        f"- Autodiscovery enabled: `{payload.get('autodiscovery_enabled')}`",
+        f"- Manual env update required: `{payload.get('manual_env_update_required')}`",
         f"- Selected port: `{payload.get('selected_port') or 'none'}`",
         f"- Selected baud: `{payload.get('selected_baud') or 'none'}`",
         f"- Prompt/state: `{payload.get('selected_prompt_label') or 'not detected'}`",
         f"- Prompt detected: `{payload.get('prompt_detected')}`",
         f"- Selection confidence: `{payload.get('selection_confidence') or 'none'}`",
         f"- Selection source: `{payload.get('selection_source') or 'none'}`",
+        f"- Selection origin: `{payload.get('selection_origin') or 'none'}`",
         f"- Selection reason: {payload.get('selection_reason') or 'none'}",
         f"- Candidate count: `{payload.get('candidate_count', 0)}`",
         f"- Selectable candidates: `{payload.get('selectable_candidate_count', 0)}`",
@@ -1035,6 +1419,58 @@ def _console_markdown(payload: dict[str, Any]) -> str:
     lines.extend(f"- {item}" for item in payload.get("warnings", []) or ["None"])
     lines.extend(["", "## Not Attempted"])
     lines.extend(f"- {item}" for item in payload.get("not_attempted", []))
+    lines.append("")
+    return "\n".join(lines)
+
+
+def _console_login_markdown(payload: dict[str, Any]) -> str:
+    credentials = payload.get("credential_state") or {}
+    lines = [
+        "# NetApp Console Login / Read-Only State",
+        "",
+        f"Checked at: {payload['checked_at']}",
+        f"Status: `{payload['status']}`",
+        f"Provider mode: `{payload['mode']}`",
+        "",
+        "## Current Console",
+        f"- Selected port: `{payload.get('selected_port') or 'none'}`",
+        f"- Selected baud: `{payload.get('selected_baud') or 'none'}`",
+        f"- Prompt state: `{payload.get('prompt_state') or 'unknown'}`",
+        f"- Identified state: `{payload.get('identified_state') or 'unknown'}`",
+        "",
+        "## Credential State",
+        f"- NETAPP_CONSOLE_USERNAME: `{'configured' if credentials.get('console_username_configured') else 'missing'}`",
+        f"- NETAPP_CONSOLE_PASSWORD: `{'configured' if credentials.get('console_password_configured') else 'missing'}`",
+        f"- NETAPP_API_USERNAME: `{'configured' if credentials.get('api_username_configured') else 'missing'}`",
+        f"- NETAPP_API_PASSWORD: `{'configured' if credentials.get('api_password_configured') else 'missing'}`",
+        f"- Usable credential pair: `{bool(credentials.get('usable'))}`",
+        "",
+        "## Actions",
+        f"- Guarded login attempted: `{payload.get('login_attempted')}`",
+        f"- Read-only commands attempted: `{payload.get('read_only_commands_attempted')}`",
+        "",
+        "## Fixed Read-Only Command Set",
+    ]
+    for item in payload.get("read_only_commands") or []:
+        lines.append(f"- `{item.get('id')}`: `{item.get('command')}`")
+    lines.extend(["", "## Command Results"])
+    results = payload.get("command_results") or []
+    if results:
+        for item in results:
+            lines.append(
+                f"- `{item.get('id')}` status=`{item.get('status')}` prompt=`{item.get('prompt_state') or 'none'}`"
+            )
+            if item.get("reason"):
+                lines.append(f"  Reason: {item.get('reason')}")
+    else:
+        lines.append("- No console login or ONTAP shell read-only command was attempted.")
+    lines.extend(["", "## Blockers"])
+    lines.extend(f"- {item}" for item in payload.get("blockers", []) or ["None"])
+    lines.extend(["", "## Warnings"])
+    lines.extend(f"- {item}" for item in payload.get("warnings", []) or ["None"])
+    lines.extend(["", "## Not Attempted"])
+    lines.extend(f"- {item}" for item in payload.get("not_attempted", []))
+    lines.extend(["", "## Next Action", "", payload.get("next_safe_action") or "Review current console state."])
     lines.append("")
     return "\n".join(lines)
 

@@ -3,20 +3,21 @@
 Self-service infrastructure configuration portal for requesting, validating,
 approving, executing, and auditing datacenter automation workflows.
 
-The first MVP implements one safe workflow:
+The first MVP implements one safe workflow and a real-lab operator surface:
 
 - Deploy VM from vSphere template
 - Store requests locally
 - Validate user input and mock source-of-truth data
 - Require approval before planning and execution
 - Report readiness, blockers, and the next safe action
-- Simulate execution through mock provider adapters
+- Keep VM lifecycle execution in local dry-run/test-fixture adapters until real provider lanes are approved
 - Record audit events for each important transition
 
-No real vCenter, ESXi, NetApp, switch API, AWX, Ansible, Terraform, OpenTofu,
-NetBox, or Nautobot calls are made in this version. HPE iLO/Redfish and Cisco
-console, Cisco Ansible SSH, and ESXi checks are preview-only and run only
-through explicit local-readonly probe actions.
+Operator status surfaces use live, live-cached, historical, or not-checked
+source metadata. Mock provider data is for automated tests only and is not used
+as a substitute for current lab state. Real provider actions remain gated by
+explicit runtime mode, acknowledgements, dry-run/read-only behavior, and
+workflow-specific safety checks.
 
 ## Project Layout
 
@@ -29,7 +30,7 @@ infra-config-portal/
     frontend/               React + Vite + TypeScript UI
     docs/                   Architecture, workflow, security, providers
     docker-compose.yml      Local dev services
-    .env.example            Safe mock defaults
+    .env.example            Safe local runtime defaults
     Makefile                Common local tasks
 ```
 
@@ -146,7 +147,8 @@ docker compose up --build
 ```
 
 Compose starts PostgreSQL, the FastAPI backend, and the Vite frontend. Provider
-adapters still run in mock mode only.
+status still follows the runtime source model; tests opt into mock fixtures
+explicitly.
 
 ## MVP API Flow
 
@@ -171,10 +173,11 @@ deploy, or execute local media files, and it redacts actual local filenames.
 
 ## Provider Status Preview
 
-Provider Status shows mock provider health plus preview surfaces for HPE iLO /
-Redfish, Cisco console, Cisco Ansible SSH, ESXi read-only checks, and NetApp
-setup planning. Default
-`PROVIDER_MODE=mock` never runs real probes on page load. Cisco console
+Provider Status shows real-lab provider health for HPE iLO / Redfish, Cisco
+console, Cisco Ansible SSH, ESXi read-only checks, and NetApp setup planning.
+Mock provider cards are test fixtures only and are hidden from real-lab runtime.
+Missing live state is reported as not checked rather than replaced with mock
+health. Cisco console
 discovery is read-only filesystem inspection of `/dev/serial/by-id/*`,
 `/dev/ttyUSB*`, and `/dev/ttyACM*`; it does not open serial ports or send
 commands during discovery.
@@ -184,9 +187,8 @@ password values.
 
 `netapp-ontap` setup remains plan/preview only. The provider page displays the
 planned Controller SP, cluster management, node management, SVM management, and
-iSCSI LIF addresses separately from current/discovered targets. When
-`NETAPP_CONFIGURED=false`, current/discovered targets stay empty and cluster
-management is not treated as reachable just because a planned address exists.
+iSCSI LIF addresses separately from current/discovered targets. Current targets
+come from live verification and runtime state, not from manual env tracking.
 The page also shows separate setup and upgrade readiness, bootstrap/API/upgrade
 readiness, cluster/SVM/LIF intent, storage/iSCSI intent, and artifact/report
 placeholders. The structured
@@ -194,17 +196,35 @@ placeholders. The structured
 plan-only contract for Run Center and future report generation. Run Center
 renders it as a preview-only section with refresh only; it has no NetApp apply,
 confirm, start, execution, upgrade, reboot, wipe, create, or configuration
-control. `GET /api/v1/providers/netapp-ontap/artifacts` returns mock-only,
-non-downloadable artifact metadata for the plan preview without writing files or
-generating archives. `GET /api/v1/providers/artifacts` aggregates provider
+control. `GET /api/v1/providers/netapp-ontap/artifacts` returns test-fixture
+placeholder metadata only when the backend is explicitly in test mode; real
+runtime uses generated current-state and evidence artifacts instead.
+`GET /api/v1/providers/artifacts` aggregates provider
 artifact metadata, and the Reports / Artifacts page exposes the NetApp
 placeholder outside Run Center with provider/kind/status filters.
 `GET /api/v1/providers/netapp-ontap/upgrade-readiness` is offline-only: it uses
 an unknown or locally configured placeholder current ONTAP version and sanitized
 media inventory metadata to preview candidate media and upgrade path shape.
+`GET /api/v1/providers/netapp-ontap/setup-preview` exposes setup intent,
+remediation items, wizard/API path options, exact proposed changes, apply
+command, and pre-apply address conflict scan requirements. `POST
+/api/v1/providers/netapp-ontap/setup-apply` is guarded and refuses unless
+`NETAPP_SETUP_APPLY=true`, `NETAPP_SETUP_CONFIRM="APPLY NETAPP CLUSTER SETUP"`,
+and `NETAPP_SETUP_ALLOW_CLUSTER_CREATE=true` are present and the setup intent
+and fresh address scan pass. ONTAP Upgrade Center endpoints under
+`/api/v1/providers/netapp-ontap/ontap-upgrade/*` provide inventory, plan,
+validation, and guarded apply report paths. Upgrade apply refuses unless setup
+is verified, an image/package and target are selected, validation passes or an
+explicit waiver is present, and `NETAPP_ONTAP_UPGRADE_APPLY=true` with
+`NETAPP_ONTAP_UPGRADE_CONFIRM="UPGRADE ONTAP"` is set.
 `GET /api/v1/providers/netapp-ontap/console-readiness` is manual/offline only:
 it lists prerequisites, manual operator steps, expected prompts/states, and
 disabled bootstrap actions without opening serial ports or sending commands.
+`GET`/`POST /api/v1/providers/netapp-ontap/live-state` and `POST
+/api/v1/providers/netapp-ontap/validate-setup` persist redacted live state,
+including discovered console port, baud, confidence, last seen, and configured
+state evidence. `NETAPP_CONSOLE_PORT` is an optional hint only, and
+`NETAPP_CONFIGURED` is legacy/advanced context only.
 `GET /api/v1/providers/netapp-ontap/observations` and `PUT
 /api/v1/providers/netapp-ontap/observations` capture bounded operator
 readiness observations in a process-local mock store only and reject
@@ -220,9 +240,9 @@ counts. Cluster management not configured, node management not configured, SVM
 management planned but not live, iSCSI LIF range planned but not live, missing
 credentials, and missing `LAB_READONLY_ACK=YES` are reported as setup/upgrade
 readiness blockers where applicable.
-Keep `NETAPP_CONFIGURED=false`; ONTAP API readiness is disabled and no NetApp
-Service Processor, console, SSH, ONTAP API, storage provisioning, LIF creation,
-upgrade, reboot, wipe, or apply call is made.
+No NetApp Service Processor, SSH, storage provisioning, LIF creation, upgrade,
+reboot, wipe, or apply call is made. ONTAP API validation is read-only and only
+runs through explicit live-state/setup-validation actions.
 
 ESXi and Cisco management IPs can be planned without being treated as reachable
 targets. Keep `ESXI_CONFIGURED=false` until ESXi management networking is
@@ -324,8 +344,24 @@ NetApp-only real-run readiness, with no ONTAP probes or apply actions:
 PROVIDER_MODE=local-readonly make netapp-real-readiness
 ```
 
+NetApp setup and ONTAP Upgrade Center report targets, with apply still disabled
+unless exact flags are intentionally present:
+
+```bash
+make provider-lab-netapp-setup-baseline
+make provider-lab-netapp-setup-plan
+make provider-lab-netapp-setup-preview
+make provider-lab-netapp-setup-apply
+make provider-lab-netapp-post-setup-validation
+make provider-lab-netapp-ontap-upgrade-inventory
+make provider-lab-netapp-ontap-upgrade-plan
+make provider-lab-netapp-ontap-upgrade-validate
+make provider-lab-netapp-ontap-upgrade-apply
+```
+
 The backend loads local provider values from `.env.local.real-lab`, but ignores
-`PROVIDER_MODE` from that file so default app and test startup remains mock.
+`PROVIDER_MODE` from that file; the running app defaults to
+`local-lab-readwrite`, while test targets set `PROVIDER_MODE=mock` explicitly.
 Plain `make provider-smoke` runs in mock mode and skips probes. With explicit
 `PROVIDER_MODE=local-readonly`, the smoke command skips missing
 hardware/configuration and planned but not configured ESXi/Cisco management
@@ -433,7 +469,8 @@ upgrade, reboot, wipe, or apply endpoints.
 
 ## Safety Defaults
 
-- `PROVIDER_MODE=mock`
+- Runtime app: `PROVIDER_MODE=local-lab-readwrite`
+- Automated tests: `PROVIDER_MODE=mock`
 - No plaintext secrets are stored
 - Provider credential records are references only
 - Real provider adapters must require explicit configuration

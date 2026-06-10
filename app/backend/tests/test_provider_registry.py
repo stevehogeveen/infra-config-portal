@@ -33,6 +33,16 @@ def test_provider_status_endpoint_reports_mock_registry(client: TestClient) -> N
     assert all("disabled_actions" in provider for provider in payload)
 
 
+def test_real_lab_provider_status_hides_mock_placeholders() -> None:
+    statuses = provider_registry("local-lab-readwrite").statuses()
+    ids = {status.id for status in statuses}
+
+    assert {"ilo-redfish", "cisco-console", "cisco-ansible", "esxi-readonly", "netapp-ontap"} <= ids
+    assert all(not status.id.startswith("mock-") for status in statuses)
+    assert all(status.source_type != "test_fixture" for status in statuses)
+    assert all(status.is_operator_visible for status in statuses)
+
+
 def test_netapp_ontap_status_preview_is_plan_only_and_redacted(client: TestClient) -> None:
     response = client.get("/api/v1/providers/status")
 
@@ -44,8 +54,14 @@ def test_netapp_ontap_status_preview_is_plan_only_and_redacted(client: TestClien
     assert netapp["capabilities"] == [
         "health",
         "plan-preview",
+        "setup-preview",
+        "setup-apply-guarded",
         "readiness-preview",
         "readiness-comparison-preview",
+        "ontap-upgrade-inventory",
+        "ontap-upgrade-plan",
+        "ontap-upgrade-validate",
+        "ontap-upgrade-apply-guarded",
         "upgrade-readiness-preview",
         "console-discovery-readonly",
         "console-read-state-readonly",
@@ -53,19 +69,19 @@ def test_netapp_ontap_status_preview_is_plan_only_and_redacted(client: TestClien
     ]
     assert netapp["configuration"]["netapp_configured"] is False
     assert netapp["configuration"]["planned_sp_ips"] == {
-        "controller_a": "192.168.1.206",
-        "controller_b": "192.168.1.207",
+        "controller_a": "192.168.1.210",
+        "controller_b": "192.168.1.211",
     }
     assert netapp["configuration"]["planned_management_ips"] == {
-        "cluster": "192.168.1.208",
-        "node_a": "192.168.1.209",
-        "node_b": "192.168.1.210",
-        "svm": "192.168.1.211",
+        "cluster": "192.168.1.220",
+        "node_a": "192.168.1.221",
+        "node_b": "192.168.1.222",
+        "svm": "192.168.1.223",
     }
     assert netapp["configuration"]["planned_iscsi_lif_range"] == {
-        "start": "192.168.1.212",
-        "end": "192.168.1.215",
-        "addresses": ["192.168.1.212", "192.168.1.213", "192.168.1.214", "192.168.1.215"],
+        "start": "192.168.1.240",
+        "end": "192.168.1.243",
+        "addresses": ["192.168.1.240", "192.168.1.241", "192.168.1.242", "192.168.1.243"],
     }
     assert netapp["configuration"]["api_configured_flags"] == {
         "endpoint_configured": False,
@@ -83,13 +99,14 @@ def test_netapp_ontap_status_preview_is_plan_only_and_redacted(client: TestClien
         "svm": None,
     }
     assert netapp["configuration"]["target_addressing"] == [
-        {"label": "Controller A SP", "address": "192.168.1.206"},
-        {"label": "Controller B SP", "address": "192.168.1.207"},
-        {"label": "Cluster management", "address": "192.168.1.208"},
-        {"label": "Node A management / e0M", "address": "192.168.1.209"},
-        {"label": "Node B management / e0M", "address": "192.168.1.210"},
-        {"label": "SVM management", "address": "192.168.1.211"},
-        {"label": "iSCSI LIFs", "address": "192.168.1.212, 192.168.1.213, 192.168.1.214, 192.168.1.215"},
+        {"label": "Controller A SP", "address": "192.168.1.210"},
+        {"label": "Controller B SP", "address": "192.168.1.211"},
+        {"label": "Cluster management", "address": "192.168.1.220"},
+        {"label": "Node A management / e0M", "address": "192.168.1.221"},
+        {"label": "Node B management / e0M", "address": "192.168.1.222"},
+        {"label": "SVM management", "address": "192.168.1.223"},
+        {"label": "NFS LIFs", "address": "192.168.1.230, 192.168.1.231"},
+        {"label": "iSCSI LIFs", "address": "192.168.1.240, 192.168.1.241, 192.168.1.242, 192.168.1.243"},
     ]
     readiness = netapp["discovery"]["readiness"]
     assert readiness["sp_readiness"]["status"] == "planned_not_live"
@@ -98,7 +115,7 @@ def test_netapp_ontap_status_preview_is_plan_only_and_redacted(client: TestClien
     assert readiness["node_management_readiness"]["status"] == "not_configured"
     assert readiness["svm_readiness"]["status"] == "planned_not_live"
     assert readiness["iscsi_lif_readiness"]["status"] == "planned_not_live"
-    assert readiness["ontap_api_readiness"]["status"] == "blocked_until_configured"
+    assert readiness["ontap_api_readiness"]["status"] == "blocked_until_live_validation"
     assert readiness["ontap_api_readiness"]["configured"] is False
     assert readiness["ontap_api_readiness"]["api_access_present"] is False
     assert isinstance(readiness["ontap_api_readiness"]["local_readonly_ack"], bool)
@@ -107,10 +124,12 @@ def test_netapp_ontap_status_preview_is_plan_only_and_redacted(client: TestClien
     assert readiness["storage_iscsi_plan_preview"]["status"] == "preview_only"
     assert readiness["reports_artifacts"]["status"] == "placeholder"
     assert netapp["configuration"]["console"]["baud"] == 115200
+    assert netapp["configuration"]["console"]["configured_port_hint_role"] == "optional_hint_only"
+    assert netapp["configuration"]["console"]["manual_env_update_required"] is False
     assert netapp["configuration"]["console"]["connected_management_ports"] == ["cluster_mgmt"]
     assert netapp["configuration"]["planned_nfs"] == {
         "storage_protocol": "nfs",
-        "nfs_lifs": ["192.168.1.212", "192.168.1.213"],
+        "nfs_lifs": ["192.168.1.230", "192.168.1.231"],
         "volume": "esxi_datastore_01",
         "export_policy": "esxi_nfs_policy",
         "mount_path": "/esxi_datastore_01",
@@ -125,7 +144,12 @@ def test_netapp_ontap_status_preview_is_plan_only_and_redacted(client: TestClien
         "tls_verify": True,
     }
     safe_actions = {action["label"]: action for action in netapp["safe_actions"]}
-    assert set(safe_actions) == {"Console Discovery", "Read Console State"}
+    assert set(safe_actions) == {
+        "Discover NetApp Console",
+        "Read NetApp State",
+        "Validate NetApp Setup",
+        "Read Console State",
+    }
     assert all(action["read_only"] is True for action in safe_actions.values())
     assert all(action["enabled"] is False for action in safe_actions.values())
     disabled_actions = {action["label"]: action for action in netapp["disabled_actions"]}
@@ -158,20 +182,20 @@ def test_netapp_ontap_plan_preview_endpoint_is_plan_only_and_redacted(
     assert payload["apply_enabled"] is False
     assert payload["netapp_configured"] is False
     assert payload["planned_targets"]["sp_ips"] == {
-        "controller_a": "192.168.1.206",
-        "controller_b": "192.168.1.207",
+        "controller_a": "192.168.1.210",
+        "controller_b": "192.168.1.211",
     }
     assert payload["planned_targets"]["management_ips"] == {
-        "cluster": "192.168.1.208",
-        "node_a": "192.168.1.209",
-        "node_b": "192.168.1.210",
-        "svm": "192.168.1.211",
+        "cluster": "192.168.1.220",
+        "node_a": "192.168.1.221",
+        "node_b": "192.168.1.222",
+        "svm": "192.168.1.223",
     }
     assert payload["planned_targets"]["iscsi_lif_range"]["addresses"] == [
-        "192.168.1.212",
-        "192.168.1.213",
-        "192.168.1.214",
-        "192.168.1.215",
+        "192.168.1.240",
+        "192.168.1.241",
+        "192.168.1.242",
+        "192.168.1.243",
     ]
     assert payload["planned_targets"]["api_access_flags"] == {
         "endpoint_configured": False,
@@ -189,14 +213,14 @@ def test_netapp_ontap_plan_preview_endpoint_is_plan_only_and_redacted(
     assert readiness["sp_readiness"]["status"] == "planned_not_live"
     assert readiness["cluster_management_readiness"]["status"] == "not_configured"
     assert readiness["cluster_management_readiness"]["reachable"] is False
-    assert readiness["ontap_api_readiness"]["status"] == "blocked_until_configured"
+    assert readiness["ontap_api_readiness"]["status"] == "blocked_until_live_validation"
     assert readiness["ontap_api_readiness"]["api_access_present"] is False
     assert isinstance(readiness["ontap_api_readiness"]["local_readonly_ack"], bool)
     assert readiness["iscsi_lif_readiness"]["status"] == "planned_not_live"
     assert readiness["storage_iscsi_plan_preview"]["status"] == "preview_only"
     assert readiness["reports_artifacts"]["status"] == "placeholder"
-    assert payload["cluster_intent_preview"]["management_ip"] == "192.168.1.208"
-    assert payload["svm_intent_preview"]["management_ip"] == "192.168.1.211"
+    assert payload["cluster_intent_preview"]["management_ip"] == "192.168.1.220"
+    assert payload["svm_intent_preview"]["management_ip"] == "192.168.1.223"
     assert len(payload["lif_intent_preview"]["iscsi_lifs"]) == 4
     assert payload["storage_iscsi_plan_preview"]["status"] == "placeholder"
     assert payload["readiness_comparison_preview"]["endpoint"] == (
@@ -208,10 +232,18 @@ def test_netapp_ontap_plan_preview_endpoint_is_plan_only_and_redacted(
     assert payload["readiness_comparison_preview"]["blocker_count"] == 5
     assert payload["upgrade_readiness_preview"]["status"] == "preview_only"
     assert {
-        "setup-plan.json",
-        "readiness-report.md",
-        "upgrade-path-preview.md",
+        "netapp-setup-plan-report.md",
+        "netapp-setup-preview-report.md",
+        "netapp-cluster-setup-apply-report.md",
+        "netapp-post-setup-validation-report.md",
+        "netapp-management-network-scan-report.md",
+        "netapp-upgrade-inventory-report.md",
+        "netapp-ontap-upgrade-plan-report.md",
+        "netapp-ontap-upgrade-validation-report.md",
+        "netapp-ontap-upgrade-apply-report.md",
         "storage-iscsi-plan-preview.json",
+        "netapp-console-login-state-report.md",
+        "netapp-bringup-build-verification-report.md",
         "cluster-svm-lif-intent.json",
         "post-run-report.md",
     }.issubset(set(payload["artifact_placeholders"]))
@@ -265,7 +297,7 @@ def test_netapp_ontap_upgrade_readiness_is_offline_disabled_and_redacted(
     assert payload["required_intermediate_versions"] == []
     assert payload["upgrade_chain"] == []
     assert any("Current ONTAP version is not discovered" in blocker for blocker in payload["blockers"])
-    assert any("cluster management is planned but not reachable" in blocker for blocker in payload["blockers"])
+    assert any("Live NetApp configured state has not verified cluster management reachability" in blocker for blocker in payload["blockers"])
     assert any("LAB_READONLY_ACK=YES" in blocker for blocker in payload["blockers"])
     assert any("No ONTAP API" in warning for warning in payload["warnings"])
     assert any("Add ONTAP image media" in warning for warning in payload["removable_warnings"])
@@ -296,20 +328,20 @@ def test_netapp_ontap_console_readiness_is_manual_offline_and_redacted(
     assert payload["apply_enabled"] is False
     assert payload["netapp_configured"] is False
     assert payload["planned_targets"]["controller_sp"] == {
-        "controller_a": "192.168.1.206",
-        "controller_b": "192.168.1.207",
+        "controller_a": "192.168.1.210",
+        "controller_b": "192.168.1.211",
     }
     assert payload["planned_targets"]["management_ips"] == {
-        "cluster": "192.168.1.208",
-        "node_a": "192.168.1.209",
-        "node_b": "192.168.1.210",
-        "svm": "192.168.1.211",
+        "cluster": "192.168.1.220",
+        "node_a": "192.168.1.221",
+        "node_b": "192.168.1.222",
+        "svm": "192.168.1.223",
     }
     assert payload["planned_targets"]["iscsi_lif_range"]["addresses"] == [
-        "192.168.1.212",
-        "192.168.1.213",
-        "192.168.1.214",
-        "192.168.1.215",
+        "192.168.1.240",
+        "192.168.1.241",
+        "192.168.1.242",
+        "192.168.1.243",
     ]
     assert payload["current_discovered_targets"]["management_ips"]["cluster"] is None
     assert payload["current_discovered_targets"]["iscsi_lif_range"]["addresses"] == []
@@ -423,9 +455,10 @@ def test_netapp_nfs_vcenter_readiness_is_preview_only_and_single_port_aware(
     assert payload["ontap_apply_enabled"] is False
     assert payload["vcenter_apply_enabled"] is False
     assert payload["single_management_port_mode"] is True
-    assert payload["planned_nfs"]["nfs_lifs"] == ["192.168.1.212", "192.168.1.213"]
+    assert payload["planned_nfs"]["nfs_lifs"] == ["192.168.1.230", "192.168.1.231"]
     assert payload["planned_nfs"]["datastore_name"] == "netapp_nfs_ds01"
-    assert any("NETAPP_CONFIGURED=false" in blocker for blocker in payload["blockers"])
+    assert any("No live NetApp configured state" in blocker for blocker in payload["blockers"])
+    assert payload["manual_env_flag_required"] is False
     assert (tmp_path / "nfs.json").exists()
     assert (tmp_path / "nfs.md").exists()
     assert not _contains_sensitive_key(payload)
@@ -575,20 +608,20 @@ def test_netapp_readiness_comparison_defaults_to_manual_unknowns_and_redacts(
     assert payload["apply_enabled"] is False
     assert payload["discovery_enabled"] is False
     assert payload["planned_targets"]["sp_ips"] == {
-        "controller_a": "192.168.1.206",
-        "controller_b": "192.168.1.207",
+        "controller_a": "192.168.1.210",
+        "controller_b": "192.168.1.211",
     }
     assert payload["planned_targets"]["management_ips"] == {
-        "cluster": "192.168.1.208",
-        "node_a": "192.168.1.209",
-        "node_b": "192.168.1.210",
-        "svm": "192.168.1.211",
+        "cluster": "192.168.1.220",
+        "node_a": "192.168.1.221",
+        "node_b": "192.168.1.222",
+        "svm": "192.168.1.223",
     }
     assert payload["planned_targets"]["iscsi_lif_range"]["addresses"] == [
-        "192.168.1.212",
-        "192.168.1.213",
-        "192.168.1.214",
-        "192.168.1.215",
+        "192.168.1.240",
+        "192.168.1.241",
+        "192.168.1.242",
+        "192.168.1.243",
     ]
     assert payload["current_discovered_targets"]["discovery_enabled"] is False
     assert payload["current_discovered_targets"]["management_ips"]["cluster"] is None

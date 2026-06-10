@@ -1220,6 +1220,51 @@ class ProviderProbeResultRead(BaseModel):
     model_config = ConfigDict(extra="allow")
 
 
+class LabValidationItemRead(BaseModel):
+    id: str
+    label: str
+    category: str
+    stage: str
+    status: Literal["ready", "partial", "blocked", "not_configured", "not_checked", "warning"]
+    current_state: str
+    desired_state: str
+    setup_summary: str
+    next_action: str
+    login_hint: str
+    management_url: str | None = None
+    ssh_target: str | None = None
+    proof_points: list[str] = Field(default_factory=list)
+    evidence_artifacts: list[str] = Field(default_factory=list)
+    evidence_collapsed_by_default: bool = True
+    last_checked: str | None = None
+    source_type: Literal["live_probe", "live_cached", "historical_artifact", "not_checked"]
+    freshness: str
+    blockers: list[dict[str, Any]] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    recheck_command: str
+    linked_workflow_action: dict[str, Any] | None = None
+
+
+class LabValidationProofLinkRead(BaseModel):
+    component_id: str
+    component_label: str
+    path: str
+
+
+class LabValidationSummaryRead(BaseModel):
+    overall_status: str
+    progress_counts: dict[str, int]
+    top_blocker: dict[str, Any] | None = None
+    validation_items: list[LabValidationItemRead]
+    proof_links: list[LabValidationProofLinkRead] = Field(default_factory=list)
+    generated_at: str
+    next_action: str
+    source_type: str
+    freshness: str
+    handoff_report: str
+    warnings: list[str] = Field(default_factory=list)
+
+
 class ReportIssueRead(BaseModel):
     id: str
     source: str
@@ -1528,6 +1573,33 @@ class WorkflowRunTraceRead(BaseModel):
     next_action: str
 
 
+class WorkflowActionRunRead(BaseModel):
+    run_id: str
+    action_id: str
+    action_label: str
+    stage_id: str
+    stage_label: str
+    mode: Literal["read_only", "write", "destructive", "upgrade", "report_only"] | str
+    started_at: str
+    finished_at: str
+    checked_at: str
+    status: str
+    source_type: Literal["live_probe", "live_cached", "historical_artifact", "test_fixture", "not_checked"] | str
+    freshness: str
+    not_mock: bool = True
+    command: str | None = None
+    executed: bool = False
+    return_code: int | None = None
+    stdout_summary: str = ""
+    stderr_summary: str = ""
+    report_artifacts: list[str] = Field(default_factory=list)
+    trace_artifact: str | None = None
+    summary: str
+    blockers: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    next_action: str
+
+
 class WorkflowActionRead(BaseModel):
     action_id: str
     label: str
@@ -1568,6 +1640,10 @@ class WorkflowActionRead(BaseModel):
     evidence_artifacts: list[str] = Field(default_factory=list)
     stale_after_seconds: int
     last_run_trace: WorkflowRunTraceRead
+    ui_run_supported: bool = False
+    ui_run_blockers: list[str] = Field(default_factory=list)
+    run_endpoint: str
+    runs_endpoint: str
 
 
 class WorkflowStageRead(BaseModel):

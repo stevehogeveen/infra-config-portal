@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, date, datetime
 
-from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, JSON, String, Text
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, JSON, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -166,6 +166,37 @@ class HpeRaidIntent(Base):
 
     provider_id: Mapped[str] = mapped_column(String(80), primary_key=True)
     intent_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utcnow,
+        onupdate=utcnow,
+    )
+
+
+class ProviderRuntimeState(Base):
+    __tablename__ = "provider_runtime_states"
+    __table_args__ = (
+        UniqueConstraint(
+            "provider_id",
+            "device_role",
+            name="uq_provider_runtime_states_provider_device",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    provider_id: Mapped[str] = mapped_column(String(80), index=True)
+    device_role: Mapped[str] = mapped_column(String(120), index=True)
+    discovered_console_port: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    discovered_baud: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    configured_state: Mapped[str] = mapped_column(String(80), default="not_detected", index=True)
+    configured: Mapped[bool] = mapped_column(Boolean, default=False)
+    source: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    last_successful_probe_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_report_path: Mapped[str | None] = mapped_column(String(400), nullable=True)
+    confidence: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    blockers: Mapped[list] = mapped_column(JSON, default=list)
+    data_json: Mapped[dict] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

@@ -26,6 +26,15 @@ class ProviderStatus:
     capabilities: list[str]
     message: str
     id: str = ""
+    source_type: str = "not_checked"
+    checked_at: str | None = None
+    freshness: str = "unknown"
+    ttl_seconds: int | None = None
+    stale_after_seconds: int | None = None
+    is_current: bool = False
+    is_operator_visible: bool = True
+    recheck_command: str | None = None
+    evidence_artifacts: list[str] = field(default_factory=list)
     configuration: dict[str, Any] = field(default_factory=dict)
     discovery: dict[str, Any] | None = None
     blockers: list[str] = field(default_factory=list)

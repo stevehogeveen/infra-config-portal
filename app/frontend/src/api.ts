@@ -20,6 +20,7 @@ import type {
   IloSetupIntentWrite,
   IloSetupPlanPreview,
   IloUpgradeReadiness,
+  LabValidationSummary,
   LabProfile,
   LabProfileList,
   LabProfileWrite,
@@ -41,6 +42,7 @@ import type {
   VMDeploymentCreate,
   VMDeploymentUpdate,
   WorkflowAction,
+  WorkflowActionRun,
   WorkflowRun,
   WorkflowStage
 } from "./types";
@@ -137,6 +139,12 @@ export const api = {
   workflowActions: () => apiRequest<WorkflowAction[]>("/api/v1/workflows/actions"),
   workflowAction: (id: string) =>
     apiRequest<WorkflowAction>(`/api/v1/workflows/actions/${encodeURIComponent(id)}`),
+  runWorkflowAction: (id: string) =>
+    apiRequest<WorkflowActionRun>(`/api/v1/workflows/actions/${encodeURIComponent(id)}/run`, {
+      method: "POST"
+    }),
+  workflowActionRuns: (id: string) =>
+    apiRequest<WorkflowActionRun[]>(`/api/v1/workflows/actions/${encodeURIComponent(id)}/runs`),
   requestArtifacts: (id: string) =>
     apiRequest<ArtifactRecord[]>(`/api/v1/requests/${id}/artifacts`),
   workflowRunArtifacts: (id: string) =>
@@ -227,6 +235,24 @@ export const api = {
     }),
   netappNfsVcenterReadiness: () =>
     apiRequest<ProviderProbeResult>("/api/v1/providers/netapp-ontap/nfs-vcenter-readiness"),
+  netappSetupPreview: () =>
+    apiRequest<ProviderProbeResult>("/api/v1/providers/netapp-ontap/setup-preview"),
+  runNetappSetupApply: () =>
+    apiRequest<ProviderProbeResult>("/api/v1/providers/netapp-ontap/setup-apply", {
+      method: "POST"
+    }),
+  netappOntapUpgradeInventory: () =>
+    apiRequest<ProviderProbeResult>("/api/v1/providers/netapp-ontap/ontap-upgrade/inventory"),
+  netappOntapUpgradePlan: () =>
+    apiRequest<ProviderProbeResult>("/api/v1/providers/netapp-ontap/ontap-upgrade/plan"),
+  validateNetappOntapUpgrade: () =>
+    apiRequest<ProviderProbeResult>("/api/v1/providers/netapp-ontap/ontap-upgrade/validate", {
+      method: "POST"
+    }),
+  runNetappOntapUpgradeApply: () =>
+    apiRequest<ProviderProbeResult>("/api/v1/providers/netapp-ontap/ontap-upgrade/apply", {
+      method: "POST"
+    }),
   netappObservations: () =>
     apiRequest<NetAppObservations>("/api/v1/providers/netapp-ontap/observations"),
   saveNetappObservations: (payload: NetAppObservationUpdate) =>
@@ -274,6 +300,14 @@ export const api = {
     apiRequest<ProviderProbeResult>("/api/v1/lab/full-rebuild-summary"),
   buildVerification: () =>
     apiRequest<ProviderProbeResult>("/api/v1/lab/build-verification"),
+  labValidation: () =>
+    apiRequest<LabValidationSummary>("/api/v1/lab/validation"),
+  labValidationHandoff: () =>
+    apiRequest<LabValidationSummary>("/api/v1/lab/validation/handoff"),
+  vcenterNetappReadiness: () =>
+    apiRequest<ProviderProbeResult>("/api/v1/lab/vcenter-netapp/readiness"),
+  vcenterNetappDatastorePlan: () =>
+    apiRequest<ProviderProbeResult>("/api/v1/lab/vcenter-netapp/datastore-plan"),
   reportIssues: () =>
     apiRequest<ReportCenter>("/api/v1/reports/issues"),
   reportSummary: () =>

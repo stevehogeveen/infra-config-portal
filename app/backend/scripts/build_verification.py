@@ -1,8 +1,21 @@
 from __future__ import annotations
 
 import json
+import os
+from pathlib import Path
 
-from app.services.build_verification import build_lab_build_verification
+from dotenv import dotenv_values
+
+REPO_ROOT = Path(__file__).resolve().parents[3]
+REAL_LAB_ENV = REPO_ROOT / ".env.local.real-lab"
+
+if REAL_LAB_ENV.exists():
+    for key, value in dotenv_values(REAL_LAB_ENV).items():
+        if value is None or key in os.environ:
+            continue
+        os.environ[key] = value
+
+from app.services.build_verification import build_lab_build_verification  # noqa: E402
 
 
 def main() -> int:

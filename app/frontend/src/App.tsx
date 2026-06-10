@@ -58,6 +58,8 @@ import type {
   IloSetupIntentWrite,
   IloSetupPlanPreview,
   IloUpgradeReadiness,
+  LabValidationItem,
+  LabValidationSummary,
   LabAddressPlan,
   LabGlobalSettings,
   LabProfile,
@@ -65,6 +67,7 @@ import type {
   LabProfileWrite,
   LabSubnetOption,
   MediaInventory,
+  MinimalStageSummary,
   NetAppConsoleReadiness,
   NetAppObservationUpdate,
   NetAppProviderArtifact,
@@ -84,9 +87,11 @@ import type {
   RequestReadiness,
   RequestRecord,
   RequestStatus,
+  UiDisplayMode,
   VMDeploymentCreate,
   VMDeploymentUpdate,
   WorkflowAction,
+  WorkflowActionRun,
   WorkflowRun,
   WorkflowStage
 } from "./types";
@@ -180,6 +185,7 @@ type VerificationSectionId =
   | "credentials"
   | "mtu-protocols"
   | "certification-report";
+type LabValidationSectionId = "overview" | "vcenter-netapp" | "handoff";
 type ReportsSectionId =
   | "all"
   | "critical"
@@ -234,6 +240,12 @@ type ReportLink = {
   label: string;
   path: string;
   status?: string;
+};
+
+type MinimalStageItem = MinimalStageSummary & {
+  disabled_reason?: string;
+  id: string;
+  primary_action?: WorkflowAction | null;
 };
 
 type LegacyReportSectionId =
@@ -334,11 +346,11 @@ const defaultLabSubnet = "192.168.1.0/24";
 const netappDisabledForSubnetReason =
   "NetApp capabilities require a /24 or larger lab subnet. They are disabled for /25 through /29 lab profiles.";
 const labBuilderCoreOffsets: Partial<Record<LabAddressInputKey, number>> = {
-  cisco_management: 2,
-  ansible_control_host: 5,
-  ilo: 200,
-  server_embedded_nic: 201,
-  esxi_management: 202
+  ilo: 201,
+  server_embedded_nic: 202,
+  esxi_management: 203,
+  cisco_management: 204,
+  ansible_control_host: 205
 };
 const compactCoreOffsets: Partial<Record<LabAddressInputKey, number>> = {
   cisco_management: 2,
@@ -348,14 +360,14 @@ const compactCoreOffsets: Partial<Record<LabAddressInputKey, number>> = {
   ansible_control_host: 6
 };
 const labBuilderNetAppOffsets: Partial<Record<LabAddressInputKey, number>> = {
-  netapp_controller_a_sp: 13,
-  netapp_controller_b_sp: 14,
-  netapp_cluster_mgmt: 45,
-  netapp_node_a_mgmt: 46,
-  netapp_node_b_mgmt: 47,
-  netapp_svm_mgmt: 48
+  netapp_controller_a_sp: 210,
+  netapp_controller_b_sp: 211,
+  netapp_cluster_mgmt: 220,
+  netapp_node_a_mgmt: 221,
+  netapp_node_b_mgmt: 222,
+  netapp_svm_mgmt: 223
 };
-const labBuilderNetAppIscsiOffsets = [49, 50, 51, 52];
+const labBuilderNetAppIscsiOffsets = [240, 241, 242, 243];
 
 const queueSectionMeta: Array<Omit<QueueSection, "items">> = [
   {
@@ -408,6 +420,29 @@ function useReportIssues() {
   return useContext(ReportIssuesContext);
 }
 
+type UiModeContextValue = {
+  isAdvancedMode: boolean;
+  setUiMode: (mode: UiDisplayMode) => void;
+  uiMode: UiDisplayMode;
+};
+
+const UiModeContext = createContext<UiModeContextValue>({
+  isAdvancedMode: false,
+  setUiMode: () => {},
+  uiMode: "simple"
+});
+
+function useUiMode() {
+  return useContext(UiModeContext);
+}
+
+function initialUiMode(): UiDisplayMode {
+  if (typeof window === "undefined") {
+    return "simple";
+  }
+  return window.localStorage.getItem("infra-config-operator-ui-mode") === "advanced" ? "advanced" : "simple";
+}
+
 function App() {
   const [labProfileState, setLabProfileState] = useState<LabProfileList | null>(null);
   const [labProfileError, setLabProfileError] = useState("");
@@ -417,6 +452,7 @@ function App() {
   const [reportIssues, setReportIssues] = useState<ReportCenter | null>(null);
   const [reportIssuesError, setReportIssuesError] = useState("");
   const [reportIssuesLoading, setReportIssuesLoading] = useState(true);
+  const [uiMode, setUiMode] = useState<UiDisplayMode>(initialUiMode);
 
   async function loadLabProfileState() {
     setLabProfileError("");
@@ -473,60 +509,68 @@ function App() {
       });
   }, []);
 
+  useEffect(() => {
+    window.localStorage.setItem("infra-config-operator-ui-mode", uiMode);
+  }, [uiMode]);
+
   return (
-    <ReportIssuesContext.Provider
-      value={{ reportIssues, reportIssuesError, reportIssuesLoading, reloadReportIssues: loadReportIssues }}
-    >
-      <AppShell
-        health={health}
-        healthError={healthError}
-        labProfileError={labProfileError}
-        labProfileLoading={labProfileLoading}
-        labProfileState={labProfileState}
+    <UiModeContext.Provider value={{ isAdvancedMode: uiMode === "advanced", setUiMode, uiMode }}>
+      <ReportIssuesContext.Provider
+        value={{ reportIssues, reportIssuesError, reportIssuesLoading, reloadReportIssues: loadReportIssues }}
       >
-        <Routes>
-          <RouterRoute path="/" element={<Navigate to="/dashboard" replace />} />
-          <RouterRoute path="/dashboard" element={<Dashboard />} />
-          <RouterRoute path="/run-center" element={<RunCenter />} />
-          <RouterRoute path="/control-center" element={<ControlCenterPage />} />
-          <RouterRoute path="/firmware" element={<FirmwarePage />} />
-          <RouterRoute path="/verification" element={<BuildVerificationPage />} />
-          <RouterRoute path="/reports" element={<ReportsPage />} />
-          <RouterRoute
-            path="/settings"
-            element={
-              <SettingsPage
-                health={health}
-                labProfileError={labProfileError}
-                labProfileLoading={labProfileLoading}
-                onReload={loadLabProfileState}
-                state={labProfileState}
-              />
-            }
-          />
-          <RouterRoute path="/requests" element={<RequestListPage />} />
-          <RouterRoute path="/requests/new" element={<NewRequest />} />
-          <RouterRoute path="/requests/:id" element={<RequestDetail />} />
-          <RouterRoute path="/workflow-runs/:id" element={<WorkflowRunDetail />} />
-          <RouterRoute
-            path="/lab-profiles"
-            element={
-              <LabProfilesPage
-                error={labProfileError}
-                loading={labProfileLoading}
-                onReload={loadLabProfileState}
-                onStateChange={setLabProfileState}
-                state={labProfileState}
-              />
-            }
-          />
-          <RouterRoute path="/audit-events" element={<AuditEvents />} />
-          <RouterRoute path="/artifacts" element={<Navigate to="/reports" replace />} />
-          <RouterRoute path="/media" element={<MediaInventoryPage />} />
-          <RouterRoute path="/providers" element={<Navigate to="/verification" replace />} />
-        </Routes>
-      </AppShell>
-    </ReportIssuesContext.Provider>
+        <AppShell
+          health={health}
+          healthError={healthError}
+          labProfileError={labProfileError}
+          labProfileLoading={labProfileLoading}
+          labProfileState={labProfileState}
+        >
+          <Routes>
+            <RouterRoute path="/" element={<Navigate to="/dashboard" replace />} />
+            <RouterRoute path="/dashboard" element={<Dashboard />} />
+            <RouterRoute path="/lab-setup" element={<LabSetupPage />} />
+            <RouterRoute path="/run-center" element={<RunCenter />} />
+            <RouterRoute path="/control-center" element={<ControlCenterPage />} />
+            <RouterRoute path="/firmware" element={<FirmwarePage />} />
+            <RouterRoute path="/verification" element={<BuildVerificationPage />} />
+            <RouterRoute path="/lab-validation" element={<LabValidationPage />} />
+            <RouterRoute path="/reports" element={<ReportsPage />} />
+            <RouterRoute
+              path="/settings"
+              element={
+                <SettingsPage
+                  health={health}
+                  labProfileError={labProfileError}
+                  labProfileLoading={labProfileLoading}
+                  onReload={loadLabProfileState}
+                  state={labProfileState}
+                />
+              }
+            />
+            <RouterRoute path="/requests" element={<RequestListPage />} />
+            <RouterRoute path="/requests/new" element={<NewRequest />} />
+            <RouterRoute path="/requests/:id" element={<RequestDetail />} />
+            <RouterRoute path="/workflow-runs/:id" element={<WorkflowRunDetail />} />
+            <RouterRoute
+              path="/lab-profiles"
+              element={
+                <LabProfilesPage
+                  error={labProfileError}
+                  loading={labProfileLoading}
+                  onReload={loadLabProfileState}
+                  onStateChange={setLabProfileState}
+                  state={labProfileState}
+                />
+              }
+            />
+            <RouterRoute path="/audit-events" element={<AuditEvents />} />
+            <RouterRoute path="/artifacts" element={<Navigate to="/reports" replace />} />
+            <RouterRoute path="/media" element={<MediaInventoryPage />} />
+            <RouterRoute path="/providers" element={<Navigate to="/lab-setup" replace />} />
+          </Routes>
+        </AppShell>
+      </ReportIssuesContext.Provider>
+    </UiModeContext.Provider>
   );
 }
 
@@ -573,6 +617,9 @@ function AppShell({
           <span>Lab Builder</span>
         </div>
         {health?.dev_test_banner && <DevTestBanner message={health.dev_test_banner} />}
+        <div className="operator-mode-bar">
+          <ModeToggle />
+        </div>
         {children}
       </main>
     </div>
@@ -585,9 +632,42 @@ function DevTestBanner({ message }: { message: string }) {
       <AlertTriangle size={18} />
       <div>
         <strong>Dev/Test Mode</strong>
-        <p>{message}</p>
+        <p>{humanizeDevTestBanner(message)}</p>
       </div>
     </section>
+  );
+}
+
+function humanizeDevTestBanner(message: string): string {
+  if (message.includes("PROVIDER_MODE=mock")) {
+    return "Test mode is on. Real lab status, reports, and certification require Real Lab Mode.";
+  }
+  return humanizeAction(message);
+}
+
+function ModeToggle() {
+  const { setUiMode, uiMode } = useUiMode();
+  return (
+    <div className="mode-toggle" role="group" aria-label="Display mode">
+      <button
+        aria-pressed={uiMode === "simple"}
+        className={uiMode === "simple" ? "active" : ""}
+        onClick={() => setUiMode("simple")}
+        type="button"
+      >
+        <ClipboardList size={16} />
+        Operator
+      </button>
+      <button
+        aria-pressed={uiMode === "advanced"}
+        className={uiMode === "advanced" ? "active" : ""}
+        onClick={() => setUiMode("advanced")}
+        type="button"
+      >
+        <Wrench size={16} />
+        Advanced
+      </button>
+    </div>
   );
 }
 
@@ -631,10 +711,12 @@ function SidebarNav({
       </div>
       <nav>
         <NavItem to="/dashboard" icon={<Gauge size={18} />} label="Dashboard" issueBadge={pageBadges.dashboard} />
+        <NavItem to="/lab-setup" icon={<Layers size={18} />} label="Lab Setup" />
         <NavItem to="/run-center" icon={<Workflow size={18} />} label="Run Center" issueBadge={pageBadges["run-center"]} />
         <NavItem to="/control-center" icon={<Wrench size={18} />} label="Control" issueBadge={pageBadges["control-center"]} />
         <NavItem to="/firmware" icon={<ShieldCheck size={18} />} label="Firmware" issueBadge={pageBadges.firmware} />
         <NavItem to="/verification" icon={<CheckCircle2 size={18} />} label="Verification" issueBadge={pageBadges.verification} />
+        <NavItem to="/lab-validation" icon={<ClipboardList size={18} />} label="Lab Validation" />
         <NavItem to="/reports" icon={<FileText size={18} />} label="Reports" issueBadge={pageBadges.reports} />
         <NavItem to="/settings" icon={<Settings size={18} />} label="Settings" issueBadge={pageBadges.settings} />
       </nav>
@@ -1027,7 +1109,188 @@ function RequestListPage() {
   );
 }
 
+function LabSetupPage() {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const { reportIssues } = useReportIssues();
+  const { isAdvancedMode } = useUiMode();
+  const [stages, setStages] = useState<WorkflowStage[]>([]);
+  const [selectedStageId, setSelectedStageId] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [runningWorkflowActionId, setRunningWorkflowActionId] = useState("");
+  const [workflowActionRunResults, setWorkflowActionRunResults] = useState<Record<string, WorkflowActionRun>>({});
+
+  async function load() {
+    setError("");
+    setLoading(true);
+    try {
+      const nextStages = await api.workflowStages();
+      setStages(nextStages);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    load();
+  }, []);
+
+  useEffect(() => {
+    const queryStage = new URLSearchParams(location.search).get("stage") ?? "";
+    if (queryStage && stages.some((stage) => stage.stage_id === queryStage)) {
+      setSelectedStageId(queryStage);
+    } else if (!selectedStageId && stages.length) {
+      setSelectedStageId(stages[0].stage_id);
+    }
+  }, [location.search, selectedStageId, stages]);
+
+  function selectStage(stageId: string) {
+    setSelectedStageId(stageId);
+    navigate(`/lab-setup?stage=${encodeURIComponent(stageId)}`);
+  }
+
+  async function runWorkflowAction(action: WorkflowAction) {
+    setError("");
+    setRunningWorkflowActionId(action.action_id);
+    try {
+      const result = await api.runWorkflowAction(action.action_id);
+      setWorkflowActionRunResults((current) => ({ ...current, [action.action_id]: result }));
+      await load();
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setRunningWorkflowActionId("");
+    }
+  }
+
+  const issues = reportIssues?.issues ?? [];
+  const issueCountsByStage = workflowIssueCountsByStage(stages, issues);
+  const issueCountsByAction = workflowIssueCountsByAction(issues);
+  const selectedStage = stages.find((stage) => stage.stage_id === selectedStageId) ?? stages[0] ?? null;
+  const selectedStageIssues = selectedStage ? issues.filter((issue) => reportIssueMatchesStageId(issue, selectedStage.stage_id)) : [];
+  const stageSnapshot = selectedStage ? workflowStageSnapshot(selectedStage) : null;
+  const primary = selectedStage ? primaryWorkflowAction(selectedStage) : null;
+  const minimalStageItems = stages.map((stage) =>
+    minimalStageItemFromWorkflowStage(stage, issueCountsByStage[stage.stage_id] ?? stage.blocked_count)
+  );
+
+  return (
+    <Page
+      description="A compact setup checklist with one next action per lab stage."
+      primaryAction={{ icon: <RefreshCw size={16} />, label: "Refresh", onClick: load, disabled: loading }}
+      title="Lab Setup"
+      actions={
+        isAdvancedMode ? (
+          <>
+            <Link className="button-link" to="/run-center">
+              <Workflow size={16} />
+              Run Center
+            </Link>
+            <Link className="button-link" to="/reports">
+              <FileText size={16} />
+              Reports
+            </Link>
+          </>
+        ) : (
+          <Link className="button-link" to="/run-center">
+            <Workflow size={16} />
+            Run Center
+          </Link>
+        )
+      }
+    >
+      <Feedback loading={loading && !stages.length} error={error} />
+      {stages.length ? (
+        <>
+          <div className="calm-section-grid">
+            <StatusSummaryCard
+              message={
+                selectedStage
+                  ? isAdvancedMode
+                    ? `${selectedStage.label}: ${workflowStageRowSummary(selectedStage)}`
+                    : minimalStageItemFromWorkflowStage(selectedStage, issueCountsByStage[selectedStage.stage_id] ?? selectedStage.blocked_count).one_line_summary
+                  : "Registry stages are loading."
+              }
+              status={selectedStage?.current_state ?? "not_checked"}
+              title={selectedStage ? minimalStageLabel(selectedStage.stage_id, selectedStage.label) : "Lab setup"}
+              items={
+                isAdvancedMode
+                  ? [
+                      { label: "Stages", value: String(stages.length) },
+                      { label: "Actions", value: String(stages.reduce((total, stage) => total + stage.action_count, 0)) },
+                      { label: "Issues", value: String(Object.values(issueCountsByStage).reduce((total, count) => total + count, 0)) },
+                      { label: "Freshness", value: labelize(stageSnapshot?.freshness ?? "unknown") }
+                    ]
+                  : [
+                      { label: "Stages", value: String(stages.length) },
+                      { label: "Blockers", value: String(Object.values(issueCountsByStage).reduce((total, count) => total + count, 0)) },
+                      { label: "Proof", value: selectedStage ? String(workflowStageEvidenceArtifacts(selectedStage).length) : "0" },
+                      { label: "Checked", value: stageSnapshot?.lastChecked ? formatDateTime(stageSnapshot.lastChecked) : "Not checked" }
+                    ]
+              }
+            />
+            <NextActionCard
+              detail={primary?.next_action ?? "Select a registry stage to see available actions."}
+              to={primary ? `/control-center?section=action-catalog&action=${encodeURIComponent(primary.action_id)}` : undefined}
+            />
+            <BlockerSummary
+              blockers={selectedStage ? stageBlockers(selectedStage) : []}
+              warnings={selectedStage ? stageWarnings(selectedStage) : []}
+              empty={isAdvancedMode ? "No current registry blocker is reported for the selected stage." : "No current blocker is reported for this step."}
+            />
+          </div>
+          {isAdvancedMode ? (
+            <section className="registry-setup-layout">
+              <WorkflowStageList
+                issuesByStage={issueCountsByStage}
+                onCopy={copyWorkflowActionToClipboard}
+                onSelect={selectStage}
+                selectedStageId={selectedStage?.stage_id ?? ""}
+                stages={stages}
+              />
+              <StageDetailPanel
+                actionIssueCounts={issueCountsByAction}
+                onCopy={copyWorkflowActionToClipboard}
+                onRun={runWorkflowAction}
+                runningActionId={runningWorkflowActionId}
+                stage={selectedStage ?? undefined}
+                stageIssues={selectedStageIssues}
+                runResults={workflowActionRunResults}
+              />
+            </section>
+          ) : (
+            <section className="minimal-setup-layout">
+              <MinimalStageList
+                items={minimalStageItems}
+                onSelect={selectStage}
+                selectedId={selectedStage?.stage_id ?? ""}
+              />
+              <MinimalWorkflowStageDetail
+                actionIssueCounts={issueCountsByAction}
+                onCopy={copyWorkflowActionToClipboard}
+                onRun={runWorkflowAction}
+                runningActionId={runningWorkflowActionId}
+                stage={selectedStage ?? undefined}
+                stageIssues={selectedStageIssues}
+                runResults={workflowActionRunResults}
+              />
+            </section>
+          )}
+        </>
+      ) : (
+        <section className="panel">
+          <EmptyState title="No workflow registry data" detail="Refresh after the backend registry endpoint is available." />
+        </section>
+      )}
+    </Page>
+  );
+}
+
 function RunCenter() {
+  const { isAdvancedMode } = useUiMode();
   const [requests, setRequests] = useState<RequestRecord[]>([]);
   const [runs, setRuns] = useState<WorkflowRun[]>([]);
   const [providers, setProviders] = useState<ProviderStatus[]>([]);
@@ -1040,6 +1303,12 @@ function RunCenter() {
   const [netappConsoleState, setNetappConsoleState] = useState<ProviderProbeResult | null>(null);
   const [netappLiveState, setNetappLiveState] = useState<ProviderProbeResult | null>(null);
   const [netappNfsVcenterReadiness, setNetappNfsVcenterReadiness] = useState<ProviderProbeResult | null>(null);
+  const [netappSetupPreview, setNetappSetupPreview] = useState<ProviderProbeResult | null>(null);
+  const [netappSetupApply, setNetappSetupApply] = useState<ProviderProbeResult | null>(null);
+  const [netappUpgradeInventory, setNetappUpgradeInventory] = useState<ProviderProbeResult | null>(null);
+  const [netappUpgradePlan, setNetappUpgradePlan] = useState<ProviderProbeResult | null>(null);
+  const [netappUpgradeValidation, setNetappUpgradeValidation] = useState<ProviderProbeResult | null>(null);
+  const [netappUpgradeApply, setNetappUpgradeApply] = useState<ProviderProbeResult | null>(null);
   const [netappReadinessComparison, setNetappReadinessComparison] = useState<NetAppReadinessComparison | null>(null);
   const [netappUpgradeReadiness, setNetappUpgradeReadiness] = useState<NetAppUpgradeReadiness | null>(null);
   const [netappAction, setNetappAction] = useState<string>("");
@@ -1058,6 +1327,8 @@ function RunCenter() {
   const [netappError, setNetappError] = useState("");
   const [loading, setLoading] = useState(true);
   const [netappLoading, setNetappLoading] = useState(false);
+  const [runningWorkflowActionId, setRunningWorkflowActionId] = useState("");
+  const [workflowActionRunResults, setWorkflowActionRunResults] = useState<Record<string, WorkflowActionRun>>({});
 
   async function load() {
     setError("");
@@ -1094,6 +1365,9 @@ function RunCenter() {
         nextConsoleState,
         nextLiveState,
         nextNfsVcenterReadiness,
+        nextSetupPreview,
+        nextUpgradeInventory,
+        nextUpgradePlan,
         nextReadinessComparison,
         nextUpgradeReadiness,
         nextArtifacts
@@ -1104,6 +1378,9 @@ function RunCenter() {
         api.netappConsoleReadState(),
         api.netappLiveState(),
         api.netappNfsVcenterReadiness(),
+        api.netappSetupPreview(),
+        api.netappOntapUpgradeInventory(),
+        api.netappOntapUpgradePlan(),
         api.netappReadinessComparison(),
         api.netappUpgradeReadiness(),
         api.netappArtifacts()
@@ -1114,6 +1391,9 @@ function RunCenter() {
       setNetappConsoleState(nextConsoleState);
       setNetappLiveState(nextLiveState);
       setNetappNfsVcenterReadiness(nextNfsVcenterReadiness);
+      setNetappSetupPreview(nextSetupPreview);
+      setNetappUpgradeInventory(nextUpgradeInventory);
+      setNetappUpgradePlan(nextUpgradePlan);
       setNetappReadinessComparison(nextReadinessComparison);
       setNetappUpgradeReadiness(nextUpgradeReadiness);
       setNetappArtifacts(nextArtifacts);
@@ -1177,6 +1457,105 @@ function RunCenter() {
       setNetappError((err as Error).message);
     } finally {
       setNetappAction("");
+    }
+  }
+
+  async function runNetAppSetupPreview() {
+    setNetappError("");
+    setNetappAction("setup-preview");
+    try {
+      const result = await api.netappSetupPreview();
+      setNetappSetupPreview(result);
+      await loadNetAppPlanPreview();
+    } catch (err) {
+      setNetappError((err as Error).message);
+    } finally {
+      setNetappAction("");
+    }
+  }
+
+  async function runNetAppSetupApply() {
+    setNetappError("");
+    setNetappAction("setup-apply");
+    try {
+      const result = await api.runNetappSetupApply();
+      setNetappSetupApply(result);
+      await loadNetAppPlanPreview();
+    } catch (err) {
+      setNetappError((err as Error).message);
+    } finally {
+      setNetappAction("");
+    }
+  }
+
+  async function runNetAppUpgradeInventory() {
+    setNetappError("");
+    setNetappAction("upgrade-inventory");
+    try {
+      const result = await api.netappOntapUpgradeInventory();
+      setNetappUpgradeInventory(result);
+    } catch (err) {
+      setNetappError((err as Error).message);
+    } finally {
+      setNetappAction("");
+    }
+  }
+
+  async function runNetAppUpgradePlan() {
+    setNetappError("");
+    setNetappAction("upgrade-plan");
+    try {
+      const result = await api.netappOntapUpgradePlan();
+      setNetappUpgradePlan(result);
+    } catch (err) {
+      setNetappError((err as Error).message);
+    } finally {
+      setNetappAction("");
+    }
+  }
+
+  async function validateNetAppUpgrade() {
+    setNetappError("");
+    setNetappAction("upgrade-validate");
+    try {
+      const result = await api.validateNetappOntapUpgrade();
+      setNetappUpgradeValidation(result);
+      await runNetAppUpgradePlan();
+    } catch (err) {
+      setNetappError((err as Error).message);
+    } finally {
+      setNetappAction("");
+    }
+  }
+
+  async function runNetAppUpgradeApply() {
+    setNetappError("");
+    setNetappAction("upgrade-apply");
+    try {
+      const result = await api.runNetappOntapUpgradeApply();
+      setNetappUpgradeApply(result);
+      await runNetAppUpgradePlan();
+    } catch (err) {
+      setNetappError((err as Error).message);
+    } finally {
+      setNetappAction("");
+    }
+  }
+
+  async function runWorkflowAction(action: WorkflowAction) {
+    setError("");
+    setRunningWorkflowActionId(action.action_id);
+    try {
+      const result = await api.runWorkflowAction(action.action_id);
+      setWorkflowActionRunResults((current) => ({ ...current, [action.action_id]: result }));
+      await load();
+      if (activeSection === "netapp") {
+        await loadNetAppPlanPreview();
+      }
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setRunningWorkflowActionId("");
     }
   }
 
@@ -1275,6 +1654,9 @@ function RunCenter() {
           : "ready")
     }
   ];
+  const minimalRunStageItems = workflowStages.map((stage) =>
+    minimalStageItemFromWorkflowStage(stage, stage.blocked_count)
+  );
 
   return (
     <Page
@@ -1315,15 +1697,29 @@ function RunCenter() {
             />
             <BlockerSummary blockers={selectedBlockers} />
           </div>
-          <WorkflowStageList
-            onSelect={(stageId) => {
-              const nextSection = stageId === "ilo" ? "ilo" : stageId;
-              if (["cisco", "ilo", "raid", "esxi", "netapp"].includes(nextSection)) {
-                setActiveSection(nextSection as RunCenterSectionId);
-              }
-            }}
-            stages={workflowStages}
-          />
+          {isAdvancedMode ? (
+            <WorkflowStageList
+              onCopy={copyWorkflowActionToClipboard}
+              onSelect={(stageId) => {
+                const nextSection = stageId === "ilo" ? "ilo" : stageId;
+                if (["cisco", "ilo", "raid", "esxi", "netapp"].includes(nextSection)) {
+                  setActiveSection(nextSection as RunCenterSectionId);
+                }
+              }}
+              stages={workflowStages}
+            />
+          ) : (
+            <MinimalStageList
+              items={minimalRunStageItems.filter((item) => item.id !== "reports")}
+              onSelect={(stageId) => {
+                const nextSection = stageId === "ilo" ? "ilo" : stageId;
+                if (["cisco", "ilo", "raid", "esxi", "netapp"].includes(nextSection)) {
+                  setActiveSection(nextSection as RunCenterSectionId);
+                }
+              }}
+              selectedId=""
+            />
+          )}
           <AdvancedDetails
             className="section-details"
             summary="Stage picker, work queue, and selected request detail"
@@ -1377,25 +1773,77 @@ function RunCenter() {
       {["cisco", "ilo", "raid", "esxi"].includes(activeSection) && (
         <>
           <RunCenterSectionFocus choice={focusChoiceBySection[activeSection]} />
-          <StageDetailPanel
-            onCopy={copyWorkflowActionToClipboard}
-            stage={registryStageBySection[activeSection]}
-          />
+          {isAdvancedMode ? (
+            <StageDetailPanel
+              onCopy={copyWorkflowActionToClipboard}
+              onRun={runWorkflowAction}
+              runningActionId={runningWorkflowActionId}
+              runResults={workflowActionRunResults}
+              stage={registryStageBySection[activeSection]}
+            />
+          ) : (
+            <MinimalWorkflowStageDetail
+              onCopy={copyWorkflowActionToClipboard}
+              onRun={runWorkflowAction}
+              runningActionId={runningWorkflowActionId}
+              runResults={workflowActionRunResults}
+              stage={registryStageBySection[activeSection]}
+            />
+          )}
         </>
       )}
       {activeSection === "netapp" && (
         <>
-          <RunCenterSectionFocus choice={focusChoiceBySection.netapp} />
-          <StageDetailPanel
-            onCopy={copyWorkflowActionToClipboard}
-            stage={registryStageBySection.netapp}
-          />
-          <AdvancedDetails
-            className="section-details"
-            summary="NetApp planned targets, live readiness comparison, console result, and artifacts"
-            title="NetApp live readiness details"
-          >
-            <NetAppRunCenterPreview
+          {isAdvancedMode && <RunCenterSectionFocus choice={focusChoiceBySection.netapp} />}
+          {isAdvancedMode ? (
+            <>
+              <StageDetailPanel
+                onCopy={copyWorkflowActionToClipboard}
+                onRun={runWorkflowAction}
+                runningActionId={runningWorkflowActionId}
+                runResults={workflowActionRunResults}
+                stage={registryStageBySection.netapp}
+              />
+              <AdvancedDetails
+                className="section-details"
+                summary="NetApp planned targets, live readiness comparison, console result, and artifacts"
+                title="NetApp live readiness details"
+              >
+                <NetAppRunCenterPreview
+                  artifacts={netappArtifacts}
+                  consoleDiscovery={netappConsoleDiscovery}
+                  consoleReadiness={netappConsoleReadiness}
+                  consoleState={netappConsoleState}
+                  error={netappError}
+                  loading={netappLoading}
+                  liveState={netappLiveState}
+                  nfsVcenterReadiness={netappNfsVcenterReadiness}
+                  netappAction={netappAction}
+                  onRunConsoleDiscovery={runNetAppConsoleDiscovery}
+                  onRunConsoleReadState={runNetAppConsoleReadState}
+                  onRunLiveState={runNetAppLiveState}
+                  onRunSetupApply={runNetAppSetupApply}
+                  onRunSetupPreview={runNetAppSetupPreview}
+                  onRunUpgradeApply={runNetAppUpgradeApply}
+                  onRunUpgradeInventory={runNetAppUpgradeInventory}
+                  onRunUpgradePlan={runNetAppUpgradePlan}
+                  onValidateUpgrade={validateNetAppUpgrade}
+                  onValidateSetup={validateNetAppSetup}
+                  onRefresh={loadNetAppPlanPreview}
+                  preview={netappPlanPreview}
+                  readinessComparison={netappReadinessComparison}
+                  setupApply={netappSetupApply}
+                  setupPreview={netappSetupPreview}
+                  upgradeApply={netappUpgradeApply}
+                  upgradeInventory={netappUpgradeInventory}
+                  upgradePlan={netappUpgradePlan}
+                  upgradeReadiness={netappUpgradeReadiness}
+                  upgradeValidation={netappUpgradeValidation}
+                />
+              </AdvancedDetails>
+            </>
+          ) : (
+            <MinimalNetAppPanel
               artifacts={netappArtifacts}
               consoleDiscovery={netappConsoleDiscovery}
               consoleReadiness={netappConsoleReadiness}
@@ -1405,27 +1853,258 @@ function RunCenter() {
               liveState={netappLiveState}
               nfsVcenterReadiness={netappNfsVcenterReadiness}
               netappAction={netappAction}
-              onRunConsoleDiscovery={runNetAppConsoleDiscovery}
-              onRunConsoleReadState={runNetAppConsoleReadState}
-              onRunLiveState={runNetAppLiveState}
-              onValidateSetup={validateNetAppSetup}
+              onRunSetupPreview={runNetAppSetupPreview}
               onRefresh={loadNetAppPlanPreview}
               preview={netappPlanPreview}
-              readinessComparison={netappReadinessComparison}
+              setupPreview={netappSetupPreview}
+              upgradeInventory={netappUpgradeInventory}
+              upgradePlan={netappUpgradePlan}
               upgradeReadiness={netappUpgradeReadiness}
+              upgradeValidation={netappUpgradeValidation}
             />
-          </AdvancedDetails>
+          )}
         </>
       )}
     </Page>
   );
 }
 
-function WorkflowStageList({
+function HumanStatusPill({ status }: { status: string }) {
+  return <span className={`status-pillow ${statusTone(status)}`}>{displayStatusLabel(status)}</span>;
+}
+
+function MinimalStageList({
+  items,
   onSelect,
+  selectedId
+}: {
+  items: MinimalStageItem[];
+  onSelect: (id: string) => void;
+  selectedId: string;
+}) {
+  return (
+    <section className="panel minimal-stage-list">
+      <div className="readiness-head">
+        <PanelTitle icon={<Workflow size={18} />} title="Setup Steps" />
+        <span className="muted">{items.length} steps</span>
+      </div>
+      <div className="minimal-stage-rows">
+        {items.map((item) => (
+          <MinimalStageRow
+            item={item}
+            key={item.id}
+            onSelect={() => onSelect(item.id)}
+            selected={item.id === selectedId}
+          />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function MinimalStageRow({
+  item,
+  onSelect,
+  selected
+}: {
+  item: MinimalStageItem;
+  onSelect: () => void;
+  selected: boolean;
+}) {
+  return (
+    <article className={selected ? "minimal-stage-row selected" : "minimal-stage-row"}>
+      <button className="minimal-stage-row-main" onClick={onSelect} type="button">
+        <div>
+          <strong>{item.label}</strong>
+          <p>{item.one_line_summary}</p>
+        </div>
+        <HumanStatusPill status={item.status} />
+      </button>
+      <div className="minimal-stage-next">
+        <span>Next action</span>
+        <strong>{item.next_action}</strong>
+      </div>
+      <div className="minimal-stage-action">
+        {item.primary_button_enabled ? (
+          <button className="small-button" onClick={onSelect} type="button">
+            <Route size={14} />
+            {item.primary_button_label}
+          </button>
+        ) : (
+          <span>{item.disabled_reason || "Waiting on earlier step"}</span>
+        )}
+      </div>
+    </article>
+  );
+}
+
+function MinimalWorkflowStageDetail({
+  actionIssueCounts = {},
+  onCopy,
+  onRun,
+  runningActionId = "",
+  runResults = {},
+  stage,
+  stageIssues = []
+}: {
+  actionIssueCounts?: Record<string, number>;
+  onCopy: (action: WorkflowAction) => void;
+  onRun?: (action: WorkflowAction) => void;
+  runningActionId?: string;
+  runResults?: Record<string, WorkflowActionRun>;
+  stage: WorkflowStage | undefined;
+  stageIssues?: ReportIssue[];
+}) {
+  const { isAdvancedMode } = useUiMode();
+  if (!stage) {
+    return (
+      <section className="panel">
+        <EmptyState title="No setup step" detail="Select a setup step to see its current state and next action." />
+      </section>
+    );
+  }
+  const item = minimalStageItemFromWorkflowStage(stage, stageIssues.length || stage.blocked_count);
+  const primary = primaryWorkflowAction(stage);
+  const blockers = stageBlockers(stage);
+  const warnings = stageWarnings(stage);
+  const artifacts = workflowStageEvidenceArtifacts(stage);
+
+  return (
+    <MinimalDetailPanel
+      currentState={stageCurrentSimpleSummary(stage)}
+      desiredState={stage.desired_state}
+      item={item}
+      primaryAction={
+        primary ? (
+          isAdvancedMode ? (
+            <WorkflowActionRunControl
+              action={primary}
+              compact
+              onCopy={onCopy}
+              onRun={onRun}
+              running={runningActionId === primary.action_id}
+            />
+          ) : (
+            <SimpleWorkflowActionControl
+              action={primary}
+              onRun={onRun}
+              running={runningActionId === primary.action_id}
+            />
+          )
+        ) : null
+      }
+    >
+      <BlockerSummary blockers={blockers.slice(0, 1)} warnings={blockers.length ? [] : warnings.slice(0, 1)} empty="No current blocker is reported for this step." />
+      <EvidenceDrawer count={artifacts.length} title={`${item.label} Proof`}>
+        <EvidenceList artifacts={artifacts} empty="No proof links are available for this step yet." />
+      </EvidenceDrawer>
+      {isAdvancedMode && (
+        <StageDetailPanel
+          actionIssueCounts={actionIssueCounts}
+          onCopy={onCopy}
+          onRun={onRun}
+          runningActionId={runningActionId}
+          runResults={runResults}
+          stage={stage}
+          stageIssues={stageIssues}
+        />
+      )}
+    </MinimalDetailPanel>
+  );
+}
+
+function MinimalDetailPanel({
+  children,
+  currentState,
+  desiredState,
+  item,
+  primaryAction
+}: {
+  children?: ReactNode;
+  currentState: string;
+  desiredState: string;
+  item: MinimalStageItem;
+  primaryAction?: ReactNode;
+}) {
+  return (
+    <section className="panel minimal-detail-panel">
+      <div className="minimal-detail-head">
+        <div>
+          <span className="summary-kicker">Selected step</span>
+          <h2>{item.label}</h2>
+          <p>{item.one_line_summary}</p>
+        </div>
+        <HumanStatusPill status={item.status} />
+      </div>
+      <div className="minimal-detail-grid">
+        <div>
+          <span>Current state</span>
+          <strong>{currentState}</strong>
+        </div>
+        <div>
+          <span>Desired state</span>
+          <strong>{desiredState}</strong>
+        </div>
+        <div>
+          <span>Next action</span>
+          <strong>{item.next_action}</strong>
+        </div>
+      </div>
+      <div className="minimal-primary-action">
+        <span>Move forward</span>
+        {primaryAction || <strong>{item.disabled_reason || "No action is available yet."}</strong>}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function EvidenceDrawer({
+  children,
+  count,
+  title
+}: {
+  children: ReactNode;
+  count: number;
+  title: string;
+}) {
+  return (
+    <AdvancedDetails
+      className="evidence-drawer"
+      summary={`${count} proof item${count === 1 ? "" : "s"}`}
+      title={title}
+    >
+      {children}
+    </AdvancedDetails>
+  );
+}
+
+function EvidenceList({ artifacts, empty }: { artifacts: string[]; empty: string }) {
+  if (!artifacts.length) {
+    return <EmptyState title="No proof yet" detail={empty} />;
+  }
+  return (
+    <ul className="issue-evidence-list">
+      {artifacts.map((artifact) => (
+        <li key={artifact}>
+          <code>{artifact}</code>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function WorkflowStageList({
+  issuesByStage = {},
+  onCopy,
+  onSelect,
+  selectedStageId = "",
   stages
 }: {
+  issuesByStage?: Record<string, number>;
+  onCopy?: (action: WorkflowAction) => void;
   onSelect: (stageId: string) => void;
+  selectedStageId?: string;
   stages: WorkflowStage[];
 }) {
   return (
@@ -1435,36 +2114,60 @@ function WorkflowStageList({
         <span className="muted">{stages.length} registry stages</span>
       </div>
       {stages.length ? (
-        <table className="provider-candidate-table workflow-registry-table">
-          <thead>
-            <tr>
-              <th>Stage</th>
-              <th>State</th>
-              <th>Actions</th>
-              <th>Reports</th>
-              <th>Next</th>
-            </tr>
-          </thead>
-          <tbody>
-            {stages.map((stage) => (
-              <tr key={stage.stage_id}>
-                <td>
-                  <strong>{stage.label}</strong>
-                  <span>{stage.stage_id}</span>
-                </td>
-                <td><StatusBadge status={stage.current_state} /></td>
-                <td>{stage.action_count}</td>
-                <td>{stage.report_count}</td>
-                <td>
-                  <button className="small-button" onClick={() => onSelect(stage.stage_id)} type="button">
-                    <Route size={14} />
-                    Open
+        <div className="workflow-stage-rows">
+          {stages.map((stage) => {
+            const snapshot = workflowStageSnapshot(stage);
+            const primary = primaryWorkflowAction(stage);
+            const issueCount = issuesByStage[stage.stage_id] ?? stage.blocked_count;
+            return (
+              <article className={stage.stage_id === selectedStageId ? "workflow-stage-row selected" : "workflow-stage-row"} key={stage.stage_id}>
+                <div className="workflow-stage-row-head">
+                  <div>
+                    <strong>{stage.label}</strong>
+                    <span>{stage.stage_id}</span>
+                  </div>
+                  <StatusBadge status={stage.current_state} />
+                </div>
+                <p>{workflowStageRowSummary(stage)}</p>
+                <dl className="workflow-stage-row-meta">
+                  <div>
+                    <dt>Next action</dt>
+                    <dd>
+                      <strong>{primary?.label ?? "No action"}</strong>
+                      <span>{primary?.next_action ?? "No registry action is available."}</span>
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Source</dt>
+                    <dd><SourceFreshnessInline freshness={snapshot.freshness} sourceType={snapshot.sourceType} /></dd>
+                  </div>
+                  <div>
+                    <dt>Last checked</dt>
+                    <dd>{snapshot.lastChecked ? formatDateTime(snapshot.lastChecked) : "Not checked"}</dd>
+                  </div>
+                  <div>
+                    <dt>Issues</dt>
+                    <dd>{issueCount ? `${issueCount}` : "0"}</dd>
+                  </div>
+                </dl>
+                <div className="workflow-stage-recheck">
+                  <span>Recheck</span>
+                  <code>{snapshot.recheckCommand || "No command registered"}</code>
+                </div>
+                <button className="small-button" onClick={() => onSelect(stage.stage_id)} type="button">
+                  <Route size={14} />
+                  Open
+                </button>
+                {primary && onCopy && (
+                  <button className="small-button" onClick={() => onCopy(primary)} type="button">
+                    <Copy size={14} />
+                    Copy recheck
                   </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+                )}
+              </article>
+            );
+          })}
+        </div>
       ) : (
         <EmptyState title="No workflow registry data" detail="Refresh Run Center after the backend registry endpoint is available." />
       )}
@@ -1473,10 +2176,20 @@ function WorkflowStageList({
 }
 
 function StageDetailPanel({
+  actionIssueCounts = {},
   onCopy,
+  onRun,
+  runningActionId = "",
+  runResults = {},
+  stageIssues = [],
   stage
 }: {
+  actionIssueCounts?: Record<string, number>;
   onCopy: (action: WorkflowAction) => void;
+  onRun?: (action: WorkflowAction) => void;
+  runningActionId?: string;
+  runResults?: Record<string, WorkflowActionRun>;
+  stageIssues?: ReportIssue[];
   stage: WorkflowStage | undefined;
 }) {
   const [selectedActionId, setSelectedActionId] = useState("");
@@ -1503,101 +2216,188 @@ function StageDetailPanel({
 
   const selectedAction =
     stage.actions.find((action) => action.action_id === selectedActionId) ?? stage.actions[0] ?? null;
+  const primary = primaryWorkflowAction(stage);
+  const snapshot = workflowStageSnapshot(stage);
+  const blockers = stageBlockers(stage);
+  const warnings = stageWarnings(stage);
 
   return (
     <section className="panel stage-detail-panel">
       <div className="readiness-head">
         <div>
-          <PanelTitle icon={<Route size={18} />} title={`${stage.label} Registry`} />
-          <p>{stage.desired_state}</p>
+          <PanelTitle icon={<Route size={18} />} title={`${stage.label} Setup`} />
+          <p>{workflowStageRowSummary(stage)}</p>
         </div>
         <StatusBadge status={stage.current_state} />
       </div>
       <div className="provider-fact-grid compact">
         <ProviderFact label="Actions" value={String(stage.action_count)} />
-        <ProviderFact label="Blocked" value={String(stage.blocked_count)} />
-        <ProviderFact label="Reports" value={String(stage.report_count)} />
-        <ProviderFact label="Primary" value={stage.primary_action ?? "Not set"} />
+        <ProviderFact label="Issues" value={String(stageIssues.length || stage.blocked_count)} />
+        <ProviderFact label="Source" value={labelize(snapshot.sourceType)} />
+        <ProviderFact label="Freshness" value={labelize(snapshot.freshness)} />
+        <ProviderFact label="Last Checked" value={snapshot.lastChecked ? formatDateTime(snapshot.lastChecked) : "Not checked"} />
+        <ProviderFact label="Recheck" value={snapshot.recheckCommand || "No command registered"} />
       </div>
+      <div className="stage-state-grid">
+        <section>
+          <strong>Current state</strong>
+          <p>{stageCurrentSummary(stage)}</p>
+        </section>
+        <section>
+          <strong>Desired state</strong>
+          <p>{stage.desired_state}</p>
+        </section>
+        <section>
+          <strong>Next action</strong>
+          <p>{primary?.next_action ?? "No registry action is available for this stage."}</p>
+        </section>
+      </div>
+      {primary && (
+        <div className="registry-command-strip">
+          <div>
+            <span>{workflowActionCanRun(primary) ? "Primary check" : "Primary handoff"}</span>
+            {workflowActionCanRun(primary) ? (
+              <strong>{workflowRunButtonLabel(primary)}</strong>
+            ) : (
+              <code>{workflowActionCopyText(primary)}</code>
+            )}
+          </div>
+          <WorkflowActionRunControl
+            action={primary}
+            compact
+            onCopy={onCopy}
+            onRun={onRun}
+            running={runningActionId === primary.action_id}
+          />
+          <Link
+            className="button-link"
+            to={`/control-center?section=action-catalog&action=${encodeURIComponent(primary.action_id)}`}
+          >
+            <Route size={14} />
+            Open action
+          </Link>
+        </div>
+      )}
+      <BlockerSummary blockers={blockers} warnings={warnings} empty="No current registry blocker is reported. Historical evidence remains collapsed below." />
       <WorkflowActionList
+        actionIssueCounts={actionIssueCounts}
         actions={stage.actions}
         onCopy={onCopy}
+        onRun={onRun}
         onSelect={setSelectedActionId}
+        runningActionId={runningActionId}
         selectedActionId={selectedAction?.action_id ?? ""}
       />
-      {selectedAction && <WorkflowActionDetail action={selectedAction} onCopy={onCopy} />}
+      {selectedAction && (
+        <WorkflowActionDetail
+          action={selectedAction}
+          latestRun={runResults[selectedAction.action_id]}
+          onCopy={onCopy}
+          onRun={onRun}
+          running={runningActionId === selectedAction.action_id}
+        />
+      )}
+      <StageEvidenceDetails stage={stage} />
     </section>
   );
 }
 
 function WorkflowActionList({
+  actionIssueCounts = {},
   actions,
   onCopy,
+  onRun,
   onSelect,
+  runningActionId = "",
   selectedActionId
 }: {
+  actionIssueCounts?: Record<string, number>;
   actions: WorkflowAction[];
   onCopy: (action: WorkflowAction) => void;
+  onRun?: (action: WorkflowAction) => void;
   onSelect: (actionId: string) => void;
+  runningActionId?: string;
   selectedActionId: string;
 }) {
   if (!actions.length) {
     return <EmptyState title="No actions" detail="No registry actions are defined for this stage." />;
   }
   return (
-    <table className="provider-candidate-table workflow-action-table">
-      <thead>
-        <tr>
-          <th>Action</th>
-          <th>Category</th>
-          <th>Mode</th>
-          <th>Availability</th>
-          <th>Controls</th>
-        </tr>
-      </thead>
-      <tbody>
-        {actions.map((action) => (
-          <tr className={action.action_id === selectedActionId ? "selected-row" : ""} key={action.action_id}>
-            <td>
-              <strong>{action.label}</strong>
-              <span>{action.action_id}</span>
-            </td>
-            <td>{labelize(action.category)}</td>
-            <td><span className={`classification-tag ${workflowModeClass(action.mode)}`}>{workflowModeLabel(action.mode)}</span></td>
-            <td>
-              <StatusBadge status={action.current_availability} />
-              {action.blockers[0] && <p className="control-table-note">{action.blockers[0]}</p>}
-            </td>
-            <td>
-              <div className="action-row">
-                <button className="small-button" onClick={() => onSelect(action.action_id)} type="button">
-                  <Route size={14} />
-                  Detail
-                </button>
-                <button className="small-button" onClick={() => onCopy(action)} type="button">
-                  <Copy size={14} />
-                  Copy
-                </button>
+    <div className="workflow-action-rows">
+      {actions.map((action) => {
+        const trace = action.last_run_trace;
+        const issueCount = actionIssueCounts[action.action_id] ?? action.blockers.length;
+        return (
+          <article className={action.action_id === selectedActionId ? "workflow-action-row selected" : "workflow-action-row"} key={action.action_id}>
+            <div className="workflow-action-row-head">
+              <div>
+                <strong>{action.label}</strong>
+                <span>{action.action_id}</span>
               </div>
-            </td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
+              <div className="classification-tags">
+                <span className={`classification-tag ${workflowModeClass(action.mode)}`}>{workflowModeLabel(action.mode)}</span>
+                <StatusBadge status={action.current_availability} />
+              </div>
+            </div>
+            <p>{action.next_action}</p>
+            {action.blockers[0] && <p className="control-table-note">{action.blockers[0]}</p>}
+            <WorkflowActionHandoff action={action} />
+            <dl className="workflow-action-row-meta">
+              <div>
+                <dt>Type</dt>
+                <dd>{labelize(action.category)}</dd>
+              </div>
+              <div>
+                <dt>Source</dt>
+                <dd><SourceFreshnessInline freshness={trace.freshness} sourceType={trace.source_type} /></dd>
+              </div>
+              <div>
+                <dt>Last run</dt>
+                <dd>{trace.finished_at ? formatDateTime(trace.finished_at) : "Not checked"}</dd>
+              </div>
+              <div>
+                <dt>Issues</dt>
+                <dd>{issueCount ? String(issueCount) : "0"}</dd>
+              </div>
+            </dl>
+            <div className="action-row">
+              <WorkflowActionRunControl
+                action={action}
+                compact
+                onCopy={onCopy}
+                onRun={onRun}
+                running={runningActionId === action.action_id}
+              />
+              <button className="small-button" onClick={() => onSelect(action.action_id)} type="button">
+                <Route size={14} />
+                Detail
+              </button>
+            </div>
+          </article>
+        );
+      })}
+    </div>
   );
 }
 
 function WorkflowActionDetail({
   action,
-  onCopy
+  latestRun,
+  onCopy,
+  onRun,
+  running = false
 }: {
   action: WorkflowAction;
+  latestRun?: WorkflowActionRun;
   onCopy: (action: WorkflowAction) => void;
+  onRun?: (action: WorkflowAction) => void;
+  running?: boolean;
 }) {
+  const trace = latestRun ? workflowRunToTrace(latestRun) : action.last_run_trace;
   return (
     <AdvancedDetails
       className="section-details workflow-action-detail"
-      summary={`${action.category} / ${action.mode} / ${action.source_type}`}
+      summary={`${action.category} / ${action.mode} / ${trace.source_type} / ${trace.freshness}`}
       title={action.label}
     >
       <div className="workflow-action-detail-grid">
@@ -1620,27 +2420,161 @@ function WorkflowActionDetail({
               <dt>Source</dt>
               <dd>{labelize(action.source_type)}</dd>
             </div>
+            <div>
+              <dt>Status source</dt>
+              <dd>{labelize(trace.source_type)}</dd>
+            </div>
+            <div>
+              <dt>Freshness</dt>
+              <dd>{labelize(trace.freshness)}</dd>
+            </div>
+            {workflowActionCanRun(action) ? (
+              <div>
+                <dt>Runner</dt>
+                <dd>{action.run_endpoint}</dd>
+              </div>
+            ) : (
+              <div>
+                <dt>Copy command</dt>
+                <dd><code>{workflowActionCopyText(action)}</code></dd>
+              </div>
+            )}
           </dl>
           <p>{action.description}</p>
           <div className="action-row">
-            <button className="small-button" onClick={() => onCopy(action)} type="button">
-              <Copy size={14} />
-              Copy command
-            </button>
+            <WorkflowActionRunControl
+              action={action}
+              onCopy={onCopy}
+              onRun={onRun}
+              running={running}
+            />
           </div>
-          <code>{workflowActionCopyText(action)}</code>
+          {!workflowActionCanRun(action) && <code>{workflowActionCopyText(action)}</code>}
         </div>
-        <RunTraceSummary trace={action.last_run_trace} />
+        <RunTraceSummary latestRun={latestRun} trace={trace} />
       </div>
       <RequirementList title="Required gates" items={action.required_gates} />
       <RequirementList title="Confirmations" items={action.required_confirmations} />
-      <RequirementList title="Reports" items={action.reports} code />
       <RequirementList title="Safety notes" items={action.safety_notes} />
+      <WorkflowEvidenceDetails action={action} />
     </AdvancedDetails>
   );
 }
 
-function RunTraceSummary({ trace }: { trace: WorkflowAction["last_run_trace"] }) {
+function WorkflowActionRunControl({
+  action,
+  compact = false,
+  onCopy,
+  onRun,
+  running
+}: {
+  action: WorkflowAction;
+  compact?: boolean;
+  onCopy: (action: WorkflowAction) => void;
+  onRun?: (action: WorkflowAction) => void;
+  running: boolean;
+}) {
+  if (workflowActionCanRun(action) && onRun) {
+    return (
+      <button
+        className={compact ? "small-button primary" : "primary"}
+        disabled={running}
+        onClick={() => onRun(action)}
+        type="button"
+      >
+        {running ? <RefreshCw className="spin-icon" size={compact ? 14 : 16} /> : <Play size={compact ? 14 : 16} />}
+        {running ? "Running" : workflowRunButtonLabel(action)}
+      </button>
+    );
+  }
+
+  if (workflowActionRequiresGuard(action)) {
+    return (
+      <span className="guarded-workflow-label">
+        <Ban size={compact ? 14 : 16} />
+        Requires guarded workflow
+      </span>
+    );
+  }
+
+  return (
+    <button className={compact ? "small-button" : ""} onClick={() => onCopy(action)} type="button">
+      <Copy size={compact ? 14 : 16} />
+      Copy command
+    </button>
+  );
+}
+
+function SimpleWorkflowActionControl({
+  action,
+  onRun,
+  running
+}: {
+  action: WorkflowAction;
+  onRun?: (action: WorkflowAction) => void;
+  running: boolean;
+}) {
+  const { setUiMode } = useUiMode();
+
+  if (workflowActionCanRun(action) && onRun) {
+    return (
+      <button
+        className="small-button primary"
+        disabled={running}
+        onClick={() => onRun(action)}
+        type="button"
+      >
+        {running ? <RefreshCw className="spin-icon" size={14} /> : <Play size={14} />}
+        {running ? "Running" : workflowRunButtonLabel(action)}
+      </button>
+    );
+  }
+
+  if (workflowActionRequiresGuard(action)) {
+    return (
+      <span className="guarded-workflow-label">
+        <Ban size={14} />
+        Requires guarded workflow
+      </span>
+    );
+  }
+
+  return (
+    <button className="small-button" onClick={() => setUiMode("advanced")} type="button">
+      <Settings size={14} />
+      Open Advanced
+    </button>
+  );
+}
+
+function WorkflowActionHandoff({ action }: { action: WorkflowAction }) {
+  if (workflowActionCanRun(action)) {
+    return (
+      <div className="workflow-action-command runnable">
+        <span>UI check</span>
+        <strong>{workflowRunButtonLabel(action)}</strong>
+      </div>
+    );
+  }
+  return (
+    <div className="workflow-action-command">
+      <span>{workflowActionRequiresGuard(action) ? "Guarded" : "Copy command"}</span>
+      {workflowActionRequiresGuard(action) ? (
+        <strong>Requires guarded workflow</strong>
+      ) : (
+        <code>{workflowActionCopyText(action)}</code>
+      )}
+    </div>
+  );
+}
+
+function RunTraceSummary({
+  latestRun,
+  trace
+}: {
+  latestRun?: WorkflowActionRun;
+  trace: WorkflowAction["last_run_trace"];
+}) {
   return (
     <section className="run-trace-summary">
       <div className="readiness-head">
@@ -1660,10 +2594,119 @@ function RunTraceSummary({ trace }: { trace: WorkflowAction["last_run_trace"] })
           <dt>Finished</dt>
           <dd>{trace.finished_at ? formatDateTime(trace.finished_at) : "Not checked"}</dd>
         </div>
+        <div>
+          <dt>Not Mock</dt>
+          <dd>{latestRun ? (latestRun.not_mock ? "true" : "false") : trace.source_type === "live_probe" ? "true" : "not checked"}</dd>
+        </div>
+        {latestRun && (
+          <div>
+            <dt>Return Code</dt>
+            <dd>{latestRun.return_code === null ? "None" : String(latestRun.return_code)}</dd>
+          </div>
+        )}
       </dl>
       <p>{trace.summary}</p>
+      {latestRun && (
+        <div className="action-run-output-grid">
+          <div>
+            <strong>stdout redacted summary</strong>
+            <pre>{latestRun.stdout_summary || "No stdout captured."}</pre>
+          </div>
+          <div>
+            <strong>stderr redacted summary</strong>
+            <pre>{latestRun.stderr_summary || "No stderr captured."}</pre>
+          </div>
+        </div>
+      )}
+      {trace.command && (
+        <div className="recheck-command-row">
+          <span>Recheck</span>
+          <code>{trace.command}</code>
+        </div>
+      )}
+      {latestRun?.trace_artifact && (
+        <div className="recheck-command-row">
+          <span>Trace artifact</span>
+          <code>{latestRun.trace_artifact}</code>
+        </div>
+      )}
       {trace.warnings.length > 0 && <BlockerSummary blockers={[]} warnings={trace.warnings} />}
+      {trace.blockers.length > 0 && <BlockerSummary blockers={trace.blockers} warnings={[]} />}
     </section>
+  );
+}
+
+function SourceFreshnessInline({
+  freshness,
+  sourceType
+}: {
+  freshness: string;
+  sourceType: string;
+}) {
+  return (
+    <span className={`source-freshness source-${statusClassName(sourceType)} freshness-${statusClassName(freshness)}`}>
+      <strong>{displayStatusLabel(sourceType || "not_checked")}</strong>
+      <span>{displayStatusLabel(freshness || "unknown")}</span>
+    </span>
+  );
+}
+
+function StageEvidenceDetails({ stage }: { stage: WorkflowStage }) {
+  const artifacts = uniqueStrings([
+    ...stage.reports,
+    ...stage.actions.flatMap((action) => [
+      ...action.reports,
+      ...action.evidence_artifacts,
+      ...(action.last_run_report ? [action.last_run_report] : []),
+      ...action.last_run_trace.report_artifacts
+    ])
+  ]);
+  return (
+    <AdvancedDetails
+      className="section-details report-evidence-details"
+      summary={`${artifacts.length} evidence artifact${artifacts.length === 1 ? "" : "s"}`}
+      title={`${stage.label} evidence`}
+    >
+      {artifacts.length ? (
+        <ul className="issue-evidence-list">
+          {artifacts.map((artifact) => (
+            <li key={`stage-evidence-${stage.stage_id}-${artifact}`}>
+              <code>{artifact}</code>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <EmptyState title="No evidence paths" detail="This registry stage has no report artifact paths yet." />
+      )}
+    </AdvancedDetails>
+  );
+}
+
+function WorkflowEvidenceDetails({ action }: { action: WorkflowAction }) {
+  const artifacts = uniqueStrings([
+    ...action.evidence_artifacts,
+    ...(action.last_run_report ? [action.last_run_report] : []),
+    ...action.last_run_trace.report_artifacts,
+    ...action.reports
+  ]);
+  return (
+    <AdvancedDetails
+      className="issue-evidence-details"
+      summary={`${artifacts.length} evidence artifact${artifacts.length === 1 ? "" : "s"}`}
+      title="Evidence"
+    >
+      {artifacts.length ? (
+        <ul className="issue-evidence-list">
+          {artifacts.map((artifact) => (
+            <li key={`action-evidence-${action.action_id}-${artifact}`}>
+              <code>{artifact}</code>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <EmptyState title="No evidence paths" detail="This action has not produced report evidence in the registry." />
+      )}
+    </AdvancedDetails>
   );
 }
 
@@ -1833,22 +2876,28 @@ function buildRunChoices({
 }
 
 function RunCenterSectionFocus({ choice }: { choice: RunChoice | undefined }) {
+  const { isAdvancedMode } = useUiMode();
+
   if (!choice) {
     return <EmptyState title="Section unavailable" detail="Refresh Run Center to reload provider status for this section." />;
+  }
+
+  const summaryItems = [
+    { label: "Category", value: choice.category },
+    { label: "Status", value: displayStatusLabel(choice.status) },
+    { label: "Blockers", value: choice.blockers.length ? String(choice.blockers.length) : "None" }
+  ];
+  if (isAdvancedMode) {
+    summaryItems.push({ label: "Command", value: choice.command ?? "UI only" });
   }
 
   return (
     <div className="calm-section-grid">
       <StatusSummaryCard
-        message={choice.description}
+        message={isAdvancedMode ? choice.description : simpleRunChoiceSummary(choice)}
         status={choice.blockers.length ? "blocked" : choice.status}
         title={choice.title}
-        items={[
-          { label: "Category", value: choice.category },
-          { label: "Mode", value: labelize(choice.status) },
-          { label: "Blockers", value: choice.blockers.length ? String(choice.blockers.length) : "None" },
-          { label: "Command", value: choice.command ?? "UI only" }
-        ]}
+        items={summaryItems}
       />
       <NextActionCard
         detail={choice.primaryLabel}
@@ -1858,6 +2907,22 @@ function RunCenterSectionFocus({ choice }: { choice: RunChoice | undefined }) {
       <BlockerSummary blockers={choice.blockers} />
     </div>
   );
+}
+
+function simpleRunChoiceSummary(choice: RunChoice): string {
+  if (choice.blockers.length) {
+    return choice.blockers[0];
+  }
+  const summaries: Record<string, string> = {
+    cisco: "Switch readiness is summarized here.",
+    firmware: "Firmware status and the next check are summarized here.",
+    ilo: "Server access and iLO readiness are summarized here.",
+    lab: "Lab profile readiness and the next setup step are summarized here.",
+    netapp: "Console, ONTAP setup, storage, and upgrade readiness are summarized below.",
+    verification: "Build verification status and proof are summarized here.",
+    vm: "Request workflow status and the next operator action are summarized here."
+  };
+  return summaries[choice.id] ?? "Current status and the next action are summarized here.";
 }
 
 function RunCenterRunChooser({
@@ -2068,6 +3133,192 @@ function providerBlockers(providers: ProviderStatus[], providerIds: string[]): s
     .flatMap((provider) => provider.blockers.map((blocker) => `${provider.name}: ${blocker}`));
 }
 
+function MinimalNetAppPanel({
+  artifacts,
+  consoleDiscovery,
+  consoleReadiness,
+  consoleState,
+  error,
+  loading,
+  liveState,
+  nfsVcenterReadiness,
+  netappAction,
+  onRunSetupPreview,
+  onRefresh,
+  preview,
+  setupPreview,
+  upgradeInventory,
+  upgradePlan,
+  upgradeReadiness,
+  upgradeValidation
+}: {
+  artifacts: NetAppProviderArtifact[];
+  consoleDiscovery: ProviderProbeResult | null;
+  consoleReadiness: NetAppConsoleReadiness | null;
+  consoleState: ProviderProbeResult | null;
+  error: string;
+  loading: boolean;
+  liveState: ProviderProbeResult | null;
+  nfsVcenterReadiness: ProviderProbeResult | null;
+  netappAction: string;
+  onRunSetupPreview: () => void;
+  onRefresh: () => void;
+  preview: NetAppPlanPreview | null;
+  setupPreview: ProviderProbeResult | null;
+  upgradeInventory: ProviderProbeResult | null;
+  upgradePlan: ProviderProbeResult | null;
+  upgradeReadiness: NetAppUpgradeReadiness | null;
+  upgradeValidation: ProviderProbeResult | null;
+}) {
+  const runtimeState = objectValue(
+    liveState?.runtime_state ?? consoleState?.runtime_state ?? consoleDiscovery?.runtime_state ?? consoleReadiness?.runtime_state
+  );
+  const runtimeConsole = objectValue(runtimeState.console);
+  const selectedPort =
+    asString(runtimeConsole.discovered_port) || asString(consoleState?.selected_port) || asString(consoleDiscovery?.selected_port);
+  const selectedBaud =
+    asString(runtimeConsole.baud) || asString(consoleState?.selected_baud) || asString(consoleDiscovery?.selected_baud);
+  const consoleDetected = Boolean(selectedPort);
+  const setupDetectedState = asString(setupPreview?.detected_state);
+  const configuredByLiveCheck = asBoolean(liveState?.configured ?? runtimeState.configured ?? preview?.netapp_configured);
+  const setupMissingFields = stringArray(setupPreview?.missing_fields);
+  const nfsBlockers = stringArray(nfsVcenterReadiness?.blockers);
+  const upgradeButtonState = netappUpgradeButtonState({
+    action: netappAction,
+    apply: null,
+    inventory: upgradeInventory,
+    plan: upgradePlan,
+    validation: upgradeValidation
+  });
+  const upgradeBlocked = stringArray(upgradePlan?.blockers).length || (upgradeReadiness?.blockers.length ?? 0);
+  const upgradeStatus = upgradeBlocked
+    ? "blocked"
+    : upgradeReadiness?.upgrade_enabled || upgradeButtonState === "Ready to upgrade"
+      ? "ready"
+      : "disabled";
+  const netappBlockers = uniqueStrings([
+    ...stringArray(preview?.blockers),
+    ...stringArray(setupPreview?.blockers),
+    ...stringArray(consoleDiscovery?.blockers),
+    ...stringArray(consoleState?.blockers),
+    ...stringArray(liveState?.blockers),
+    ...nfsBlockers,
+    ...stringArray(upgradePlan?.blockers),
+    ...(upgradeReadiness?.blockers ?? [])
+  ]);
+  const nextAction =
+    setupMissingFields.length > 0
+      ? "Complete NetApp setup details."
+      : upgradeStatus === "disabled" && !configuredByLiveCheck
+        ? "Finish ONTAP setup before planning an upgrade."
+        : humanizeAction(
+            asString(setupPreview?.next_safe_action) ||
+              asString(preview?.next_safe_action) ||
+              asString(liveState?.next_safe_action) ||
+              "Refresh NetApp readiness."
+          );
+  const rows = [
+    {
+      label: "Console",
+      status: consoleDetected ? "ready" : "not_checked",
+      summary: consoleDetected
+        ? selectedBaud === "115200"
+          ? "Console detected"
+          : "Console detected"
+        : "Console not detected"
+    },
+    {
+      label: "ONTAP state",
+      status: configuredByLiveCheck ? "ready" : setupDetectedState || "not_checked",
+      summary: configuredByLiveCheck
+        ? "Configured"
+        : setupDetectedState === "cluster_setup_wizard"
+          ? "Setup wizard detected"
+          : "Unknown"
+    },
+    {
+      label: "Management",
+      status: configuredByLiveCheck ? "ready" : "not_configured_yet",
+      summary: configuredByLiveCheck ? "Configured" : "Not configured"
+    },
+    {
+      label: "NFS datastore",
+      status: nfsBlockers.length ? "blocked" : nfsVcenterReadiness?.status ?? "not_checked",
+      summary: nfsBlockers.length
+        ? "Blocked"
+        : asString(nfsVcenterReadiness?.status) === "ready"
+          ? "Ready"
+          : "Not created"
+    },
+    {
+      label: "Upgrade",
+      status: upgradeStatus,
+      summary:
+        upgradeStatus === "ready"
+          ? "Ready"
+          : upgradeStatus === "blocked"
+            ? "Blocked"
+            : "Upgrade disabled until ONTAP setup is complete."
+    }
+  ];
+  const proofCount =
+    artifacts.length +
+    workflowProbeEvidenceCount(consoleDiscovery) +
+    workflowProbeEvidenceCount(consoleState) +
+    workflowProbeEvidenceCount(liveState) +
+    workflowProbeEvidenceCount(nfsVcenterReadiness) +
+    workflowProbeEvidenceCount(setupPreview) +
+    workflowProbeEvidenceCount(upgradePlan);
+  const evidencePaths = uniqueStrings([
+    ...probeEvidencePaths(consoleDiscovery),
+    ...probeEvidencePaths(consoleState),
+    ...probeEvidencePaths(liveState),
+    ...probeEvidencePaths(nfsVcenterReadiness),
+    ...probeEvidencePaths(setupPreview),
+    ...probeEvidencePaths(upgradePlan),
+    ...artifacts.map((artifact) => artifact.title)
+  ]);
+  const busy = Boolean(netappAction);
+
+  return (
+    <section className="panel minimal-netapp-panel">
+      <div className="minimal-detail-head">
+        <div>
+          <span className="summary-kicker">NetApp</span>
+          <h2>ONTAP Setup</h2>
+          <p>{setupMissingFields.length ? "Setup details missing" : nextAction}</p>
+        </div>
+        <HumanStatusPill status={netappBlockers.length ? "blocked" : configuredByLiveCheck ? "ready" : "not_configured_yet"} />
+      </div>
+      <Feedback loading={loading && !preview} error={error} />
+      <div className="minimal-netapp-grid">
+        {rows.map((row) => (
+          <article key={row.label}>
+            <span>{row.label}</span>
+            <strong>{row.summary}</strong>
+            <HumanStatusPill status={row.status} />
+          </article>
+        ))}
+      </div>
+      <NextActionCard detail={nextAction} />
+      <BlockerSummary blockers={netappBlockers.slice(0, 1)} empty="No current NetApp blocker is reported." />
+      <div className="action-row">
+        <button className="primary" onClick={onRunSetupPreview} disabled={busy || loading} type="button">
+          <ClipboardList size={16} />
+          {netappAction === "setup-preview" ? "Previewing" : "Preview Setup"}
+        </button>
+        <button onClick={onRefresh} disabled={busy || loading} type="button">
+          <RefreshCw size={16} />
+          Refresh
+        </button>
+      </div>
+      <EvidenceDrawer count={proofCount} title="NetApp Proof">
+        <EvidenceList artifacts={evidencePaths} empty="No NetApp proof links are available yet." />
+      </EvidenceDrawer>
+    </section>
+  );
+}
+
 function NetAppRunCenterPreview({
   artifacts,
   consoleDiscovery,
@@ -2081,11 +3332,23 @@ function NetAppRunCenterPreview({
   onRunConsoleDiscovery,
   onRunConsoleReadState,
   onRunLiveState,
+  onRunSetupApply,
+  onRunSetupPreview,
+  onRunUpgradeApply,
+  onRunUpgradeInventory,
+  onRunUpgradePlan,
+  onValidateUpgrade,
   onValidateSetup,
   onRefresh,
   preview,
   readinessComparison,
-  upgradeReadiness
+  setupApply,
+  setupPreview,
+  upgradeApply,
+  upgradeInventory,
+  upgradePlan,
+  upgradeReadiness,
+  upgradeValidation
 }: {
   artifacts: NetAppProviderArtifact[];
   consoleDiscovery: ProviderProbeResult | null;
@@ -2099,11 +3362,23 @@ function NetAppRunCenterPreview({
   onRunConsoleDiscovery: () => void;
   onRunConsoleReadState: () => void;
   onRunLiveState: () => void;
+  onRunSetupApply: () => void;
+  onRunSetupPreview: () => void;
+  onRunUpgradeApply: () => void;
+  onRunUpgradeInventory: () => void;
+  onRunUpgradePlan: () => void;
+  onValidateUpgrade: () => void;
   onValidateSetup: () => void;
   onRefresh: () => void;
   preview: NetAppPlanPreview | null;
   readinessComparison: NetAppReadinessComparison | null;
+  setupApply: ProviderProbeResult | null;
+  setupPreview: ProviderProbeResult | null;
+  upgradeApply: ProviderProbeResult | null;
+  upgradeInventory: ProviderProbeResult | null;
+  upgradePlan: ProviderProbeResult | null;
   upgradeReadiness: NetAppUpgradeReadiness | null;
+  upgradeValidation: ProviderProbeResult | null;
 }) {
   const plannedTargets = objectValue(preview?.planned_targets);
   const currentDiscoveredTargets = objectValue(preview?.current_discovered_targets);
@@ -2157,6 +3432,21 @@ function NetAppRunCenterPreview({
             <strong>Setup vs upgrade readiness</strong>
             <p>Setup: {operatorReadinessLabel(asString(setupReadiness.status) || "blocked_until_live_setup_ready")}. Upgrade: {operatorReadinessLabel(asString(upgradeReadinessSummary.status) || "blocked_until_setup_ready")}.</p>
           </div>
+          <NetAppSetupUpgradeCenterPanel
+            netappAction={netappAction}
+            onRunSetupApply={onRunSetupApply}
+            onRunSetupPreview={onRunSetupPreview}
+            onRunUpgradeApply={onRunUpgradeApply}
+            onRunUpgradeInventory={onRunUpgradeInventory}
+            onRunUpgradePlan={onRunUpgradePlan}
+            onValidateUpgrade={onValidateUpgrade}
+            setupApply={setupApply}
+            setupPreview={setupPreview}
+            upgradeApply={upgradeApply}
+            upgradeInventory={upgradeInventory}
+            upgradePlan={upgradePlan}
+            upgradeValidation={upgradeValidation}
+          />
           <h3>Readiness Sections</h3>
           <NetAppReadinessGrid readiness={preview.readiness_buckets} />
           <h3>Blockers / Warnings</h3>
@@ -2345,6 +3635,190 @@ function NetAppUpgradeReadinessPanel({
       <DisabledActionList actions={readiness.disabled_actions} />
     </div>
   );
+}
+
+function NetAppSetupUpgradeCenterPanel({
+  netappAction,
+  onRunSetupApply,
+  onRunSetupPreview,
+  onRunUpgradeApply,
+  onRunUpgradeInventory,
+  onRunUpgradePlan,
+  onValidateUpgrade,
+  setupApply,
+  setupPreview,
+  upgradeApply,
+  upgradeInventory,
+  upgradePlan,
+  upgradeValidation
+}: {
+  netappAction: string;
+  onRunSetupApply: () => void;
+  onRunSetupPreview: () => void;
+  onRunUpgradeApply: () => void;
+  onRunUpgradeInventory: () => void;
+  onRunUpgradePlan: () => void;
+  onValidateUpgrade: () => void;
+  setupApply: ProviderProbeResult | null;
+  setupPreview: ProviderProbeResult | null;
+  upgradeApply: ProviderProbeResult | null;
+  upgradeInventory: ProviderProbeResult | null;
+  upgradePlan: ProviderProbeResult | null;
+  upgradeValidation: ProviderProbeResult | null;
+}) {
+  const setupIntent = objectValue(setupPreview?.setup_intent);
+  const setupArtifacts = objectValue(setupPreview?.artifacts);
+  const setupApplyArtifacts = objectValue(setupApply?.artifacts);
+  const setupApplyReady = asBoolean(setupPreview?.apply_enabled);
+  const setupMissingFields = stringArray(setupPreview?.missing_fields);
+  const upgradeInventoryArtifacts = objectValue(upgradeInventory?.artifacts);
+  const upgradePlanArtifacts = objectValue(upgradePlan?.artifacts);
+  const upgradeValidationArtifacts = objectValue(upgradeValidation?.artifacts);
+  const upgradeApplyArtifacts = objectValue(upgradeApply?.artifacts);
+  const selectedPackage = objectValue(upgradePlan?.selected_package);
+  const upgradeButtonState = netappUpgradeButtonState({
+    action: netappAction,
+    apply: upgradeApply,
+    inventory: upgradeInventory,
+    plan: upgradePlan,
+    validation: upgradeValidation
+  });
+  const upgradeReady = upgradeButtonState === "Ready to upgrade";
+  const busy = Boolean(netappAction);
+
+  return (
+    <section className="netapp-upgrade-center">
+      <div className="readiness-head">
+        <PanelTitle icon={<HardDrive size={18} />} title="NetApp Setup / ONTAP Upgrade Center" />
+        <span className={`status-pill status-${slugStatus(upgradeButtonState)}`}>{upgradeButtonState}</span>
+      </div>
+      <div className="netapp-upgrade-center-grid">
+        <div className="setup-preview-block">
+          <div className="readiness-head">
+            <h3>Setup Wizard</h3>
+            <StatusBadge status={asString(setupPreview?.detected_state) || "not_checked"} />
+          </div>
+          <div className="provider-fact-grid compact">
+            <ProviderFact label="Detected State" value={labelize(asString(setupPreview?.detected_state) || "not_checked")} />
+            <ProviderFact label="Cluster" value={asString(setupIntent.cluster_name) || "Missing"} />
+            <ProviderFact label="Cluster Mgmt" value={asString(setupIntent.cluster_mgmt_ip) || "Not set"} />
+            <ProviderFact label="SVM" value={asString(setupIntent.svm_name) || "Missing"} />
+            <ProviderFact label="NFS Volume" value={asString(setupIntent.nfs_volume) || "Not set"} />
+            <ProviderFact label="Missing Fields" value={setupMissingFields.length ? String(setupMissingFields.length) : "None"} />
+          </div>
+          <div className="action-row">
+            <button onClick={onRunSetupPreview} disabled={busy}>
+              <RefreshCw size={16} />
+              {netappAction === "setup-preview" ? "Previewing" : "Setup Preview"}
+            </button>
+            <button onClick={onRunSetupApply} disabled={busy || !setupApplyReady} title={setupApplyReady ? "Run guarded setup apply" : "Disabled until flags and setup intent are ready"}>
+              <Play size={16} />
+              {netappAction === "setup-apply" ? "Applying" : "Setup Apply"}
+            </button>
+          </div>
+          <NetAppRunCenterIssues
+            blockers={stringArray(setupPreview?.blockers)}
+            removableWarnings={[]}
+            warnings={stringArray(setupPreview?.warnings)}
+          />
+          <NetAppReportLinkRow
+            reports={[
+              asString(setupArtifacts.report),
+              asString(setupArtifacts.json),
+              asString(setupApplyArtifacts.report)
+            ]}
+          />
+        </div>
+        <div className="setup-preview-block">
+          <div className="readiness-head">
+            <h3>ONTAP Upgrade</h3>
+            <StatusBadge status={slugStatus(upgradeButtonState)} />
+          </div>
+          <div className="provider-fact-grid compact">
+            <ProviderFact label="Current Version" value={asString(upgradePlan?.current_version) || asString(upgradeInventory?.current_ontap_version) || "Unknown"} />
+            <ProviderFact label="Target Version" value={asString(upgradePlan?.target_version) || "Not selected"} />
+            <ProviderFact label="Image / Package" value={asString(selectedPackage.redacted_label) || "None"} />
+            <ProviderFact label="Package Loaded" value={asBoolean(upgradePlan?.package_loaded) ? "Yes" : "No"} />
+            <ProviderFact label="Validation" value={asString(upgradeValidation?.status) || asString(objectValue(upgradePlan?.pre_upgrade_validation).status) || "Not run"} />
+            <ProviderFact label="Path" value={labelize(asString(upgradePlan?.supported_path_state) || asString(upgradeInventory?.supported_path_state) || "unknown")} />
+          </div>
+          <div className="action-row">
+            <button onClick={onRunUpgradeInventory} disabled={busy}>
+              <RefreshCw size={16} />
+              {netappAction === "upgrade-inventory" ? "Inventorying" : "Upgrade Inventory"}
+            </button>
+            <button onClick={onRunUpgradePlan} disabled={busy}>
+              <ClipboardList size={16} />
+              {netappAction === "upgrade-plan" ? "Planning" : "Upgrade Plan"}
+            </button>
+            <button onClick={onValidateUpgrade} disabled={busy}>
+              <ShieldCheck size={16} />
+              {netappAction === "upgrade-validate" ? "Validating" : "Validate Upgrade"}
+            </button>
+            <button onClick={onRunUpgradeApply} disabled={busy || !upgradeReady} title={upgradeReady ? "Run guarded ONTAP upgrade" : upgradeButtonState}>
+              <Play size={16} />
+              {netappAction === "upgrade-apply" ? "Upgrading" : "Upgrade"}
+            </button>
+          </div>
+          <NetAppRunCenterIssues
+            blockers={stringArray(upgradePlan?.blockers)}
+            removableWarnings={[]}
+            warnings={stringArray(upgradePlan?.warnings)}
+          />
+          <NetAppReportLinkRow
+            reports={[
+              asString(upgradeInventoryArtifacts.report),
+              asString(upgradePlanArtifacts.report),
+              asString(upgradeValidationArtifacts.report),
+              asString(upgradeApplyArtifacts.report)
+            ]}
+          />
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function NetAppReportLinkRow({ reports }: { reports: Array<string | null> }) {
+  const filtered = reports.filter((report): report is string => Boolean(report));
+  if (!filtered.length) {
+    return <p className="muted">No report links are available yet.</p>;
+  }
+  return (
+    <div className="tag-row netapp-artifact-row">
+      {filtered.map((report) => (
+        <span key={report}>{report}</span>
+      ))}
+    </div>
+  );
+}
+
+function netappUpgradeButtonState({
+  action,
+  apply,
+  inventory,
+  plan,
+  validation
+}: {
+  action: string;
+  apply: ProviderProbeResult | null;
+  inventory: ProviderProbeResult | null;
+  plan: ProviderProbeResult | null;
+  validation: ProviderProbeResult | null;
+}): string {
+  if (action === "upgrade-apply") return "Upgrade running";
+  if (apply?.status === "ready" || apply?.status === "completed") return "Upgrade completed";
+  if (apply?.status === "failed") return "Upgrade failed";
+  if (asString(plan?.button_state)) return asString(plan?.button_state);
+  if (!asBoolean(inventory?.cluster_management_configured)) return "Disabled: NetApp not configured";
+  if (!objectValue(plan?.selected_package).id) return "Disabled: no ONTAP image/package";
+  if (!validation || validation.status === "not_run") return "Disabled: validation not run";
+  if (validation.status !== "passed") return "Disabled: validation failed";
+  return "Ready to upgrade";
+}
+
+function slugStatus(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "") || "unknown";
 }
 
 const netappConsoleStateOptions: Array<{ value: NetAppObservationUpdate["observed_console_state"]; label: string }> = [
@@ -4562,9 +6036,10 @@ function LabAddressSummary({ profile }: { profile: LabProfile }) {
 }
 
 function ControlCenterPage() {
+  const { isAdvancedMode } = useUiMode();
   const [catalog, setCatalog] = useState<ControlActionCatalog | null>(null);
   const [workflowActions, setWorkflowActions] = useState<WorkflowAction[]>([]);
-  const [activeSectionId, setActiveSectionId] = useState<ControlCenterSectionId>("lab-profile");
+  const [activeSectionId, setActiveSectionId] = useState<ControlCenterSectionId>("action-catalog");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [busyAction, setBusyAction] = useState("");
@@ -4572,6 +6047,8 @@ function ControlCenterPage() {
   const [accessError, setAccessError] = useState("");
   const [planResult, setPlanResult] = useState<ControlActionPlan | null>(null);
   const [selectedWorkflowActionId, setSelectedWorkflowActionId] = useState("");
+  const [runningWorkflowActionId, setRunningWorkflowActionId] = useState("");
+  const [workflowActionRunResults, setWorkflowActionRunResults] = useState<Record<string, WorkflowActionRun>>({});
   const [copyMessage, setCopyMessage] = useState("");
   const location = useLocation();
 
@@ -4641,6 +6118,20 @@ function ControlCenterPage() {
     copyText(workflowActionCopyText(action), action.label);
   }
 
+  async function runWorkflowAction(action: WorkflowAction) {
+    setError("");
+    setRunningWorkflowActionId(action.action_id);
+    try {
+      const result = await api.runWorkflowAction(action.action_id);
+      setWorkflowActionRunResults((current) => ({ ...current, [action.action_id]: result }));
+      await load();
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setRunningWorkflowActionId("");
+    }
+  }
+
   async function saveAccessConfig(sectionId: string, payload: ControlAccessConfigWrite) {
     setBusyAccessSection(sectionId);
     setAccessError("");
@@ -4669,6 +6160,11 @@ function ControlCenterPage() {
   const registryUpgradeActions = workflowActions.filter((action) => action.mode === "upgrade").length;
   const commanderActions = actions.filter((action) => action.id.startsWith("commander."));
   const visibleSections: ControlCenterSectionId[] = ["lab-profile", "cisco", "ilo", "raid", "esxi", "netapp", "action-catalog"];
+  const activeRegistryStageId = workflowStageIdForControlSection(activeSectionId);
+  const scopedWorkflowActions =
+    activeSectionId === "action-catalog"
+      ? workflowActions
+      : workflowActions.filter((action) => action.stage === activeRegistryStageId);
   const selectedSection =
     activeSectionId === "action-catalog"
       ? null
@@ -4676,14 +6172,27 @@ function ControlCenterPage() {
   const selectedActions = selectedSection?.actions ?? actions;
   const selectedBlockers = selectedActions.flatMap((action) => (action.blocker ? [action.blocker] : []));
   const selectedWorkflowAction =
-    workflowActions.find((action) => action.action_id === selectedWorkflowActionId) ??
-    workflowActions[0] ??
+    scopedWorkflowActions.find((action) => action.action_id === selectedWorkflowActionId) ??
+    scopedWorkflowActions[0] ??
     null;
   const selectedCatalogBlockers =
-    activeSectionId === "action-catalog"
-      ? workflowActions.flatMap((action) => action.blockers.slice(0, 1))
+    scopedWorkflowActions.length
+      ? scopedWorkflowActions.flatMap((action) => action.blockers.slice(0, 1))
       : selectedBlockers;
   const generatedLabel = catalog?.generated_at ? formatDateTime(catalog.generated_at) : "Registry";
+  const scopedActionKeySignature = scopedWorkflowActions.map((action) => action.action_id).join("|");
+
+  useEffect(() => {
+    if (!scopedWorkflowActions.length) {
+      return;
+    }
+    setSelectedWorkflowActionId((current) =>
+      scopedWorkflowActions.some((action) => action.action_id === current)
+        ? current
+        : scopedWorkflowActions[0].action_id
+    );
+  }, [activeSectionId, scopedActionKeySignature]);
+
   const controlSectionOptions: SectionOption<ControlCenterSectionId>[] = visibleSections.map((sectionId) => {
     if (sectionId === "action-catalog") {
       return { id: sectionId, label: "Action Catalog", status: registryBlockedActions ? "blocked" : "ready" };
@@ -4733,15 +6242,14 @@ function ControlCenterPage() {
               status={selectedSection?.status ?? (registryBlockedActions ? "blocked" : "ready")}
               title={selectedSection?.title ?? "Action Catalog"}
               items={[
-                { label: "Actions", value: String(activeSectionId === "action-catalog" ? workflowActions.length : selectedActions.length) },
-                { label: "Blocked", value: String(activeSectionId === "action-catalog" ? registryBlockedActions : selectedBlockers.length) },
+                { label: "Actions", value: String(scopedWorkflowActions.length || selectedActions.length) },
+                { label: "Blocked", value: String(scopedWorkflowActions.length ? selectedCatalogBlockers.length : selectedBlockers.length) },
                 { label: "Upgrade", value: String(activeSectionId === "action-catalog" ? registryUpgradeActions : upgradeActions) },
                 { label: "Generated", value: generatedLabel }
               ]}
             />
             <NextActionCard
               detail={
-                selectedSection?.actions[0]?.label ??
                 selectedWorkflowAction?.next_action ??
                 "Use Detail or Copy from the registry-backed action catalog."
               }
@@ -4760,11 +6268,39 @@ function ControlCenterPage() {
           )}
 
           {activeSectionId !== "action-catalog" && selectedSection && (
-            <AdvancedDetails
-              className="section-details"
-              summary="Current state, desired state, plan diff, actions, reports, and diagnostics"
-              title={`${selectedSection.title} controls`}
-            >
+            <>
+              <ActionCatalogTable
+                actions={scopedWorkflowActions}
+                onCopy={copyWorkflowAction}
+                onRun={runWorkflowAction}
+                onSelect={setSelectedWorkflowActionId}
+                runningActionId={runningWorkflowActionId}
+                selectedActionId={selectedWorkflowAction?.action_id ?? ""}
+              />
+              {selectedWorkflowAction && (
+                isAdvancedMode ? (
+                  <WorkflowActionDetail
+                    action={selectedWorkflowAction}
+                    latestRun={workflowActionRunResults[selectedWorkflowAction.action_id]}
+                    onCopy={copyWorkflowAction}
+                    onRun={runWorkflowAction}
+                    running={runningWorkflowActionId === selectedWorkflowAction.action_id}
+                  />
+                ) : (
+                  <CompactWorkflowActionDetails
+                    action={selectedWorkflowAction}
+                    latestRun={workflowActionRunResults[selectedWorkflowAction.action_id]}
+                    onCopy={copyWorkflowAction}
+                    onRun={runWorkflowAction}
+                    running={runningWorkflowActionId === selectedWorkflowAction.action_id}
+                  />
+                )
+              )}
+              <AdvancedDetails
+                className="section-details"
+                summary="Legacy current state, desired state, plan diff, report links, and diagnostics"
+                title={`${selectedSection.title} evidence`}
+              >
               <ControlSection
                 busyAction={busyAction}
                 copyMessage={copyMessage}
@@ -4777,6 +6313,7 @@ function ControlCenterPage() {
                 planResult={planResult?.action.section_id === selectedSection.id ? planResult : null}
                 section={selectedSection}
                 showAccessConfig={false}
+                showActions={false}
               >
                 {selectedSection.id === "lab-profile" && catalog && (
                   <ControlLabProfilePanel onCopyText={copyText} profile={catalog.lab_profile} />
@@ -4784,7 +6321,8 @@ function ControlCenterPage() {
                 {selectedSection.id === "firmware-upgrade" && <FirmwareUpgradeCenter section={selectedSection} />}
                 {selectedSection.id === "reports" && <ActionHistoryReportsPanel actions={actions} />}
               </ControlSection>
-            </AdvancedDetails>
+              </AdvancedDetails>
+            </>
           )}
 
           {activeSectionId === "action-catalog" && (
@@ -4802,13 +6340,31 @@ function ControlCenterPage() {
                 />
               </AdvancedDetails>
               <ActionCatalogTable
-                actions={workflowActions}
+                actions={scopedWorkflowActions}
                 onCopy={copyWorkflowAction}
+                onRun={runWorkflowAction}
                 onSelect={setSelectedWorkflowActionId}
+                runningActionId={runningWorkflowActionId}
                 selectedActionId={selectedWorkflowAction?.action_id ?? ""}
               />
               {selectedWorkflowAction && (
-                <WorkflowActionDetail action={selectedWorkflowAction} onCopy={copyWorkflowAction} />
+                isAdvancedMode ? (
+                  <WorkflowActionDetail
+                    action={selectedWorkflowAction}
+                    latestRun={workflowActionRunResults[selectedWorkflowAction.action_id]}
+                    onCopy={copyWorkflowAction}
+                    onRun={runWorkflowAction}
+                    running={runningWorkflowActionId === selectedWorkflowAction.action_id}
+                  />
+                ) : (
+                  <CompactWorkflowActionDetails
+                    action={selectedWorkflowAction}
+                    latestRun={workflowActionRunResults[selectedWorkflowAction.action_id]}
+                    onCopy={copyWorkflowAction}
+                    onRun={runWorkflowAction}
+                    running={runningWorkflowActionId === selectedWorkflowAction.action_id}
+                  />
+                )
               )}
             </>
           )}
@@ -4860,6 +6416,7 @@ function ControlSection({
   onPlan,
   planResult,
   section,
+  showActions = true,
   showAccessConfig = true
 }: {
   accessError: string;
@@ -4873,6 +6430,7 @@ function ControlSection({
   onPlan: (action: ControlAction) => void;
   planResult: ControlActionPlan | null;
   section: ControlSectionRecord;
+  showActions?: boolean;
   showAccessConfig?: boolean;
 }) {
   const resultStatus = asString(section.last_result.status) || "not_run";
@@ -4903,7 +6461,7 @@ function ControlSection({
         <PlanDiffBlock items={section.plan_diff} />
       </div>
       {children}
-      {section.actions.length > 0 && (
+      {showActions && section.actions.length > 0 && (
         <ActionButtonRow
           actions={section.actions}
           busyAction={busyAction}
@@ -5429,17 +6987,118 @@ function ActionHistoryReportsPanel({ actions }: { actions: ControlAction[] }) {
   );
 }
 
+function CompactActionRow({
+  action,
+  onCopy,
+  onRun,
+  onSelect,
+  running,
+  selected
+}: {
+  action: WorkflowAction;
+  onCopy: (action: WorkflowAction) => void;
+  onRun?: (action: WorkflowAction) => void;
+  onSelect: (actionId: string) => void;
+  running: boolean;
+  selected: boolean;
+}) {
+  return (
+    <tr className={selected ? "selected-row" : ""}>
+      <td>
+        <button className="table-row-button" onClick={() => onSelect(action.action_id)} type="button">
+          <strong>{humanWorkflowActionLabel(action)}</strong>
+          <span>{humanizeAction(action.next_action)}</span>
+        </button>
+      </td>
+      <td>{minimalStageLabel(action.stage, action.stage_label)}</td>
+      <td>{workflowModeLabel(action.mode)}</td>
+      <td>
+        <StatusBadge status={action.current_availability} />
+        {action.blockers[0] && <p className="control-table-note">{humanizeBlocker(action.blockers[0])}</p>}
+      </td>
+      <td>
+        <div className="action-row">
+          <WorkflowActionRunControl
+            action={action}
+            compact
+            onCopy={onCopy}
+            onRun={onRun}
+            running={running}
+          />
+          <button className="small-button" onClick={() => onSelect(action.action_id)} type="button">
+            <Route size={14} />
+            Details
+          </button>
+        </div>
+      </td>
+    </tr>
+  );
+}
+
+function CompactWorkflowActionDetails({
+  action,
+  latestRun,
+  onCopy,
+  onRun,
+  running
+}: {
+  action: WorkflowAction;
+  latestRun?: WorkflowActionRun;
+  onCopy: (action: WorkflowAction) => void;
+  onRun?: (action: WorkflowAction) => void;
+  running: boolean;
+}) {
+  const trace = latestRun ? workflowRunToTrace(latestRun) : action.last_run_trace;
+  const artifacts = uniqueStrings([
+    ...action.evidence_artifacts,
+    ...action.reports,
+    ...(action.last_run_report ? [action.last_run_report] : []),
+    ...trace.report_artifacts
+  ]);
+  return (
+    <section className="panel compact-action-detail">
+      <div className="minimal-detail-head">
+        <div>
+          <span className="summary-kicker">{minimalStageLabel(action.stage, action.stage_label)}</span>
+          <h2>{humanWorkflowActionLabel(action)}</h2>
+          <p>{humanizeAction(action.next_action)}</p>
+        </div>
+        <HumanStatusPill status={action.current_availability} />
+      </div>
+      <BlockerSummary blockers={action.blockers.slice(0, 1)} empty="No current blocker is reported for this action." />
+      <div className="minimal-primary-action">
+        <span>Move forward</span>
+        <WorkflowActionRunControl
+          action={action}
+          compact
+          onCopy={onCopy}
+          onRun={onRun}
+          running={running}
+        />
+      </div>
+      <EvidenceDrawer count={artifacts.length} title="Action Proof">
+        <EvidenceList artifacts={artifacts} empty="No proof links are available for this action yet." />
+      </EvidenceDrawer>
+    </section>
+  );
+}
+
 function ActionCatalogTable({
   actions,
   onCopy,
+  onRun,
   onSelect,
+  runningActionId = "",
   selectedActionId
 }: {
   actions: WorkflowAction[];
   onCopy: (action: WorkflowAction) => void;
+  onRun?: (action: WorkflowAction) => void;
   onSelect: (actionId: string) => void;
+  runningActionId?: string;
   selectedActionId: string;
 }) {
+  const { isAdvancedMode } = useUiMode();
   const [query, setQuery] = useState("");
   const [mode, setMode] = useState("all");
   const [stage, setStage] = useState("all");
@@ -5451,6 +7110,64 @@ function ActionCatalogTable({
     const stageMatch = stage === "all" || action.stage_label === stage;
     return queryMatch && modeMatch && stageMatch;
   });
+
+  if (!isAdvancedMode) {
+    return (
+      <section className="panel action-catalog-panel compact-action-panel">
+        <div className="readiness-head">
+          <PanelTitle icon={<ClipboardList size={18} />} title="Actions" />
+          <span className="muted">{filtered.length} of {actions.length}</span>
+        </div>
+        <div className="control-catalog-filters compact">
+          <Field label="Search">
+            <input value={query} onChange={(event) => setQuery(event.target.value)} />
+          </Field>
+          <Field label="Type">
+            <select value={mode} onChange={(event) => setMode(event.target.value)}>
+              <option value="all">All</option>
+              <option value="read_only">Read only</option>
+              <option value="report_only">Report only</option>
+              <option value="write">Write</option>
+              <option value="destructive">Destructive</option>
+              <option value="upgrade">Upgrade</option>
+            </select>
+          </Field>
+          <Field label="Stage">
+            <select value={stage} onChange={(event) => setStage(event.target.value)}>
+              <option value="all">All</option>
+              {stages.map((item) => (
+                <option key={item} value={item}>{item}</option>
+              ))}
+            </select>
+          </Field>
+        </div>
+        <table className="provider-candidate-table compact-action-table">
+          <thead>
+            <tr>
+              <th>Action</th>
+              <th>Stage</th>
+              <th>Type</th>
+              <th>Status</th>
+              <th>Run / Copy</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.map((action) => (
+              <CompactActionRow
+                action={action}
+                key={`compact-catalog-${action.action_id}`}
+                onCopy={onCopy}
+                onRun={onRun}
+                onSelect={onSelect}
+                running={runningActionId === action.action_id}
+                selected={action.action_id === selectedActionId}
+              />
+            ))}
+          </tbody>
+        </table>
+      </section>
+    );
+  }
 
   return (
     <section className="panel action-catalog-panel">
@@ -5486,10 +7203,11 @@ function ActionCatalogTable({
           <tr>
             <th>Action</th>
             <th>Stage</th>
+            <th>Device / Provider</th>
             <th>Mode</th>
             <th>Availability</th>
-            <th>Last Report</th>
-            <th>Controls</th>
+            <th>Last Run</th>
+            <th>Command / Details</th>
           </tr>
         </thead>
         <tbody>
@@ -5500,6 +7218,7 @@ function ActionCatalogTable({
                 <span>{action.action_id}</span>
               </td>
               <td>{action.stage_label}</td>
+              <td>{labelize(action.provider)}</td>
               <td>
                 <span className={`classification-tag ${workflowModeClass(action.mode)}`}>
                   {workflowModeLabel(action.mode)}
@@ -5511,21 +7230,31 @@ function ActionCatalogTable({
               </td>
               <td>
                 <StatusBadge status={action.last_run_status} />
-                {action.last_run_report && <code>{action.last_run_report}</code>}
+                <SourceFreshnessInline
+                  freshness={action.last_run_trace.freshness}
+                  sourceType={action.last_run_trace.source_type}
+                />
+                <span className="control-table-note">
+                  {action.last_run_trace.finished_at ? formatDateTime(action.last_run_trace.finished_at) : "Not checked"}
+                </span>
               </td>
               <td>
+                <WorkflowActionHandoff action={action} />
                 <div className="action-row">
+                  <WorkflowActionRunControl
+                    action={action}
+                    compact
+                    onCopy={onCopy}
+                    onRun={onRun}
+                    running={runningActionId === action.action_id}
+                  />
                   <button
                     className="small-button"
                     onClick={() => onSelect(action.action_id)}
                     type="button"
                   >
                     <Route size={14} />
-                    Detail
-                  </button>
-                  <button className="small-button" onClick={() => onCopy(action)} type="button">
-                    <Copy size={14} />
-                    Copy
+                    Details
                   </button>
                 </div>
               </td>
@@ -5537,7 +7266,120 @@ function ActionCatalogTable({
   );
 }
 
+function FirmwareMinimalOverview({
+  compliance,
+  components,
+  devices,
+  packages,
+  reports
+}: {
+  compliance: ProviderProbeResult | null;
+  components: Record<string, unknown>[];
+  devices: Record<string, unknown>;
+  packages: Record<string, unknown>[];
+  reports: ReportLink[];
+}) {
+  const rows = [
+    firmwareMinimalRow("iLO", devices, components, ["ilo", "hpe"]),
+    firmwareMinimalRow("Cisco", devices, components, ["cisco"]),
+    firmwareMinimalRow("ONTAP", devices, components, ["netapp", "ontap"]),
+    {
+      label: "Packages",
+      status: packages.length ? "available" : "missing-config",
+      summary: packages.length ? "Available" : "Missing"
+    }
+  ];
+  const blockers = stringArray(compliance?.blockers);
+  const warnings = stringArray(compliance?.warnings);
+  const simpleBlockers = blockers.length ? [firmwareSimpleBlocker(blockers[0])] : [];
+  const simpleWarnings = blockers.length || !warnings.length ? [] : [firmwareSimpleBlocker(warnings[0])];
+  return (
+    <section className="panel minimal-firmware-panel">
+      <div className="minimal-detail-head">
+        <div>
+          <span className="summary-kicker">Firmware</span>
+          <h2>{displayStatusLabel(compliance?.status ?? "not_run")}</h2>
+          <p>{asString(compliance?.message) || "Firmware status has not loaded yet."}</p>
+        </div>
+        <HumanStatusPill status={compliance?.status ?? "not_run"} />
+      </div>
+      <div className="minimal-netapp-grid">
+        {rows.map((row) => (
+          <article key={row.label}>
+            <span>{row.label}</span>
+            <strong>{row.summary}</strong>
+            <HumanStatusPill status={row.status} />
+          </article>
+        ))}
+      </div>
+      <NextActionCard detail={firmwareSimpleNextAction(asString(compliance?.next_safe_action) || "Refresh firmware compliance.")} />
+      <BlockerSummary blockers={simpleBlockers} warnings={simpleWarnings} empty="No firmware blocker is reported." />
+      <EvidenceDrawer count={reports.length} title="Firmware Proof">
+        <ReportLinkList reports={reports} />
+      </EvidenceDrawer>
+    </section>
+  );
+}
+
+function firmwareSimpleBlocker(value: string): string {
+  const normalized = value.toLowerCase();
+  if (normalized.includes("ilo") || normalized.includes("hpe")) {
+    return "iLO firmware needs a live inventory check.";
+  }
+  if (normalized.includes("cisco")) {
+    return "Cisco firmware needs a live inventory check.";
+  }
+  if (normalized.includes("netapp") || normalized.includes("ontap")) {
+    return "ONTAP version is not configured yet.";
+  }
+  if (normalized.includes("package") || normalized.includes("media")) {
+    return "Required firmware package is missing.";
+  }
+  return humanizeBlocker(value.split(";")[0] || value);
+}
+
+function firmwareSimpleNextAction(value: string): string {
+  const normalized = value.toLowerCase();
+  if (normalized.includes("ilo") || normalized.includes("hpe")) {
+    return "Check iLO firmware inventory.";
+  }
+  if (normalized.includes("cisco")) {
+    return "Check Cisco firmware inventory.";
+  }
+  if (normalized.includes("netapp") || normalized.includes("ontap")) {
+    return "Configure ONTAP version information.";
+  }
+  if (normalized.includes("package") || normalized.includes("media")) {
+    return "Add the required firmware package.";
+  }
+  return humanizeAction(value);
+}
+
+function firmwareMinimalRow(
+  label: string,
+  devices: Record<string, unknown>,
+  components: Record<string, unknown>[],
+  tokens: string[]
+): { label: string; status: string; summary: string } {
+  const matchingDevice = Object.entries(devices).find(([key]) =>
+    tokens.some((token) => key.toLowerCase().includes(token))
+  );
+  const deviceStatus = asString(objectValue(matchingDevice?.[1]).status);
+  const matchingComponent = components.find((component) => {
+    const text = `${asString(component.device)} ${asString(component.label)} ${asString(component.id)}`.toLowerCase();
+    return tokens.some((token) => text.includes(token));
+  });
+  const status = deviceStatus || asString(matchingComponent?.status) || "unknown";
+  const version = asString(matchingComponent?.current_version);
+  return {
+    label,
+    status,
+    summary: version ? `${displayStatusLabel(status)} / ${version}` : displayStatusLabel(status)
+  };
+}
+
 function FirmwarePage() {
+  const { isAdvancedMode } = useUiMode();
   const [activeSection, setActiveSection] = useState<FirmwareSectionId>("compliance");
   const [inventory, setInventory] = useState<ProviderProbeResult | null>(null);
   const [compliance, setCompliance] = useState<ProviderProbeResult | null>(null);
@@ -5606,50 +7448,60 @@ function FirmwarePage() {
     >
       <Feedback loading={loading && !compliance} error={error} />
       {activeSection === "compliance" && (
-        <div className="calm-section-grid">
-          <StatusSummaryCard
-            message={asString(compliance?.message) || "Firmware compliance has not loaded yet."}
-            status={compliance?.status ?? "not_run"}
-            title="Firmware compliance"
-            items={[
-              { label: "Components", value: String(components.length) },
-              { label: "Blockers", value: String(stringArray(compliance?.blockers).length) },
-              { label: "Warnings", value: String(stringArray(compliance?.warnings).length) },
-              { label: "Checked", value: compliance?.checked_at ? formatDateTime(compliance.checked_at) : "Not run" }
-            ]}
-          />
-          <NextActionCard detail={humanizeAction(asString(compliance?.next_safe_action) || "Refresh compliance evidence.")} />
-          <BlockerSummary blockers={stringArray(compliance?.blockers)} warnings={stringArray(compliance?.warnings)} />
-          <AdvancedDetails className="section-details span-3" summary="Component matrix and report links" title="Compliance details">
-            {components.length ? (
-              <table className="provider-candidate-table">
-                <thead>
-                  <tr>
-                    <th>Device</th>
-                    <th>Component</th>
-                    <th>Status</th>
-                    <th>Current</th>
-                    <th>Required</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {components.map((item, index) => (
-                    <tr key={`${asString(item.id) || index}`}>
-                      <td>{asString(item.device) || "-"}</td>
-                      <td>{asString(item.label) || asString(item.id) || "-"}</td>
-                      <td><StatusBadge status={asString(item.status) || "unknown"} /></td>
-                      <td>{asString(item.current_version) || "Unknown"}</td>
-                      <td>{asString(item.required_version) || stringArray(item.approved_versions).join(", ") || "Manual"}</td>
+        isAdvancedMode ? (
+          <div className="calm-section-grid">
+            <StatusSummaryCard
+              message={asString(compliance?.message) || "Firmware compliance has not loaded yet."}
+              status={compliance?.status ?? "not_run"}
+              title="Firmware compliance"
+              items={[
+                { label: "Components", value: String(components.length) },
+                { label: "Blockers", value: String(stringArray(compliance?.blockers).length) },
+                { label: "Warnings", value: String(stringArray(compliance?.warnings).length) },
+                { label: "Checked", value: compliance?.checked_at ? formatDateTime(compliance.checked_at) : "Not run" }
+              ]}
+            />
+            <NextActionCard detail={humanizeAction(asString(compliance?.next_safe_action) || "Refresh compliance evidence.")} />
+            <BlockerSummary blockers={stringArray(compliance?.blockers)} warnings={stringArray(compliance?.warnings)} />
+            <AdvancedDetails className="section-details span-3" summary="Component matrix and report links" title="Compliance details">
+              {components.length ? (
+                <table className="provider-candidate-table">
+                  <thead>
+                    <tr>
+                      <th>Device</th>
+                      <th>Component</th>
+                      <th>Status</th>
+                      <th>Current</th>
+                      <th>Required</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            ) : (
-              <EmptyState title="No component matrix" detail="Compliance evidence did not include per-component rows." />
-            )}
-            <ReportLinkList reports={reports} />
-          </AdvancedDetails>
-        </div>
+                  </thead>
+                  <tbody>
+                    {components.map((item, index) => (
+                      <tr key={`${asString(item.id) || index}`}>
+                        <td>{asString(item.device) || "-"}</td>
+                        <td>{asString(item.label) || asString(item.id) || "-"}</td>
+                        <td><StatusBadge status={asString(item.status) || "unknown"} /></td>
+                        <td>{asString(item.current_version) || "Unknown"}</td>
+                        <td>{asString(item.required_version) || stringArray(item.approved_versions).join(", ") || "Manual"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <EmptyState title="No component matrix" detail="Compliance evidence did not include per-component rows." />
+              )}
+              <ReportLinkList reports={reports} />
+            </AdvancedDetails>
+          </div>
+        ) : (
+          <FirmwareMinimalOverview
+            compliance={compliance}
+            components={components}
+            devices={inventoryDevices}
+            packages={packages}
+            reports={reports}
+          />
+        )
       )}
       {activeSection === "inventory" && (
         <section className="panel">
@@ -5711,7 +7563,10 @@ function FirmwarePage() {
               { label: "Reports", value: String(firmwareActions.filter((action) => action.last_report).length) }
             ]}
           />
-          {firmwareSection && <FirmwareUpgradeCenter section={firmwareSection} />}
+          {!isAdvancedMode && (
+            <NextActionCard detail="Review firmware readiness first; upgrade execution remains disabled." />
+          )}
+          {firmwareSection && isAdvancedMode && <FirmwareUpgradeCenter section={firmwareSection} />}
           <AdvancedDetails className="section-details" summary="Plan/copy actions and report links" title="Upgrade action catalog">
             <ActionCatalogReadonly actions={firmwareActions} />
           </AdvancedDetails>
@@ -5914,10 +7769,317 @@ function VerificationSimpleSection({
   );
 }
 
+function LabValidationPage() {
+  const [activeSection, setActiveSection] = useState<LabValidationSectionId>("overview");
+  const [validation, setValidation] = useState<LabValidationSummary | null>(null);
+  const [vcenterNetapp, setVcenterNetapp] = useState<ProviderProbeResult | null>(null);
+  const [selectedId, setSelectedId] = useState("lab-profile");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
+
+  async function load() {
+    setError("");
+    setLoading(true);
+    try {
+      const [nextValidation, nextVcenterNetapp] = await Promise.all([
+        api.labValidation(),
+        api.vcenterNetappReadiness()
+      ]);
+      setValidation(nextValidation);
+      setVcenterNetapp(nextVcenterNetapp);
+      if (!nextValidation.validation_items.some((item) => item.id === selectedId)) {
+        setSelectedId(nextValidation.validation_items[0]?.id ?? "lab-profile");
+      }
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    load();
+  }, []);
+
+  useEffect(() => {
+    if (activeSection === "vcenter-netapp") {
+      setSelectedId("vcenter-netapp-datastore");
+    }
+  }, [activeSection]);
+
+  const items = validation?.validation_items ?? [];
+  const selectedItem = items.find((item) => item.id === selectedId) ?? items[0] ?? null;
+  const vcenterItem = items.find((item) => item.id === "vcenter-netapp-datastore") ?? selectedItem;
+  const vcenterRows = items.filter((item) => item.id.includes("vcenter") || item.id.includes("netapp"));
+  const vcenterSelectedItem = vcenterRows.find((item) => item.id === selectedId) ?? vcenterItem;
+  const sections: SectionOption<LabValidationSectionId>[] = [
+    { id: "overview", label: "Overview", status: validation?.overall_status ?? "not_checked" },
+    { id: "vcenter-netapp", label: "vCenter-NetApp", status: vcenterItem?.status ?? "not_checked" },
+    { id: "handoff", label: "Handoff", status: validation?.handoff_report ? "report_available" : "not_checked" }
+  ];
+
+  return (
+    <Page
+      activeSection={activeSection}
+      description="Handoff view for setup state, login targets, proof links, and next actions across the lab."
+      onSectionChange={(sectionId) => setActiveSection(sectionId as LabValidationSectionId)}
+      primaryAction={{ icon: <RefreshCw size={16} />, label: "Refresh", onClick: load, disabled: loading }}
+      sections={sections}
+      title="Lab Validation / Handoff"
+    >
+      <Feedback loading={loading && !validation} error={error} />
+      {validation && (
+        <>
+          <LabValidationSummaryStrip summary={validation} />
+          {activeSection === "overview" && (
+            <section className="lab-validation-layout">
+              <LabValidationTable items={items} onSelect={setSelectedId} selectedId={selectedItem?.id ?? ""} />
+              {selectedItem && <LabValidationDetail item={selectedItem} vcenterNetapp={vcenterNetapp} />}
+            </section>
+          )}
+          {activeSection === "vcenter-netapp" && vcenterSelectedItem && (
+            <section className="lab-validation-layout">
+              <LabValidationTable items={vcenterRows} onSelect={setSelectedId} selectedId={vcenterSelectedItem.id} />
+              <LabValidationDetail item={vcenterSelectedItem} vcenterNetapp={vcenterNetapp} />
+            </section>
+          )}
+          {activeSection === "handoff" && <LabValidationHandoff summary={validation} />}
+        </>
+      )}
+    </Page>
+  );
+}
+
+function LabValidationSummaryStrip({ summary }: { summary: LabValidationSummary }) {
+  const counts = summary.progress_counts;
+  return (
+    <section className="validation-summary-strip" aria-label="Lab validation summary counts">
+      <ValidationCount label="Ready" status="ready" value={counts.ready ?? 0} />
+      <ValidationCount label="Partial" status="partial" value={counts.partial ?? 0} />
+      <ValidationCount label="Blocked" status="blocked" value={counts.blocked ?? 0} />
+      <ValidationCount label="Not configured" status="not_configured" value={counts.not_configured ?? 0} />
+      <div className="validation-next-action">
+        <span>Next action</span>
+        <strong>{summary.next_action}</strong>
+      </div>
+    </section>
+  );
+}
+
+function ValidationCount({ label, status, value }: { label: string; status: string; value: number }) {
+  return (
+    <article className={`validation-count validation-count-${statusClassName(status)}`}>
+      <span>{label}</span>
+      <strong>{value}</strong>
+      <StatusBadge status={status} />
+    </article>
+  );
+}
+
+function LabValidationTable({
+  items,
+  onSelect,
+  selectedId
+}: {
+  items: LabValidationItem[];
+  onSelect: (id: string) => void;
+  selectedId: string;
+}) {
+  return (
+    <section className="panel lab-validation-table-panel">
+      <div className="issue-list-head">
+        <PanelTitle icon={<ClipboardList size={18} />} title="Validation Items" />
+        <span>{items.length} components</span>
+      </div>
+      <table className="provider-candidate-table lab-validation-table lab-validation-overview-table">
+        <thead>
+          <tr>
+            <th>Component</th>
+            <th>Status</th>
+            <th>Setup summary</th>
+            <th>Login / Proof</th>
+            <th>Next action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {items.map((item) => (
+            <tr className={item.id === selectedId ? "selected-row" : ""} key={item.id}>
+              <td>
+                <button className="table-row-button" onClick={() => onSelect(item.id)} type="button">
+                  <strong>{item.label}</strong>
+                  <span>{item.category}</span>
+                </button>
+              </td>
+              <td>
+                <StatusBadge status={item.status} />
+              </td>
+              <td>{item.setup_summary}</td>
+              <td>
+                <span>{item.login_hint}</span>
+                {item.evidence_artifacts.length > 0 && <small>{item.evidence_artifacts.length} proof link{item.evidence_artifacts.length === 1 ? "" : "s"}</small>}
+              </td>
+              <td>{item.next_action}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </section>
+  );
+}
+
+function LabValidationDetail({
+  item,
+  vcenterNetapp
+}: {
+  item: LabValidationItem;
+  vcenterNetapp: ProviderProbeResult | null;
+}) {
+  const { isAdvancedMode } = useUiMode();
+  const isVcenterNetapp = item.id === "vcenter-netapp-datastore";
+  const preview = objectValue(vcenterNetapp?.datastore_add_preview);
+  const blockers = item.blockers.map((blocker) => blocker.problem);
+  const reports: ReportLink[] = item.evidence_artifacts.map((path) => ({
+    label: item.label,
+    path,
+    status: item.source_type === "historical_artifact" ? "stale" : item.status
+  }));
+
+  return (
+    <section className="panel lab-validation-detail-panel">
+      <div className="validation-detail-head">
+        <div>
+          <span className="summary-kicker">{item.category}</span>
+          <h2>{item.label}</h2>
+        </div>
+        <StatusBadge status={item.status} />
+      </div>
+      <div className="detail-grid">
+        <Info label="Current state" value={item.current_state} />
+        <Info label="Desired state" value={item.desired_state} />
+        <Info label="Last checked" value={item.last_checked ? formatDateTime(item.last_checked) : "Not checked" } />
+        {isAdvancedMode && <Info label="Source" value={`${labelize(item.source_type)} / ${labelize(item.freshness)}`} />}
+      </div>
+      <div className="validation-login-proof">
+        <strong>Login / proof</strong>
+        <p>{item.login_hint}</p>
+        {item.management_url && <code>{item.management_url}</code>}
+        {item.ssh_target && <code>{item.ssh_target}</code>}
+      </div>
+      <BlockerSummary blockers={blockers} warnings={item.warnings} empty="No current blocker is reported for this validation item." />
+      <AdvancedDetails
+        className="section-details"
+        summary="Recheck command, linked workflow, source, and command preview"
+        title="Advanced validation details"
+      >
+        <div className="validation-command-row">
+          <span>Recheck command</span>
+          <code>{item.recheck_command}</code>
+        </div>
+        {item.linked_workflow_action && (
+          <div className="validation-command-row">
+            <span>Linked workflow</span>
+            <Link to={`/control-center?section=action-catalog&action=${encodeURIComponent(item.linked_workflow_action.action_id)}`}>
+              {item.linked_workflow_action.label ?? item.linked_workflow_action.action_id}
+            </Link>
+          </div>
+        )}
+        {isVcenterNetapp && (
+          <div className="validation-plan-preview">
+            <strong>Datastore command preview</strong>
+            <code>{asString(preview.govc) || "govc preview unavailable until readiness loads"}</code>
+            <code>{asString(preview.esxi_fallback) || "ESXi fallback preview unavailable until readiness loads"}</code>
+          </div>
+        )}
+      </AdvancedDetails>
+      <AdvancedDetails
+        className="section-details"
+        summary={`${item.proof_points.length} proof point${item.proof_points.length === 1 ? "" : "s"}`}
+        title="Proof Points"
+      >
+        {item.proof_points.length ? (
+          <ul className="compact-list">
+            {item.proof_points.map((point) => (
+              <li key={point}>{point}</li>
+            ))}
+          </ul>
+        ) : (
+          <EmptyState title="No proof points" detail="Proof points will appear after a validation source reports them." />
+        )}
+      </AdvancedDetails>
+      <AdvancedDetails
+        className="section-details"
+        summary={`${item.evidence_artifacts.length} artifact${item.evidence_artifacts.length === 1 ? "" : "s"}`}
+        title="Evidence"
+      >
+        <ReportLinkList reports={reports} />
+      </AdvancedDetails>
+    </section>
+  );
+}
+
+function LabValidationHandoff({ summary }: { summary: LabValidationSummary }) {
+  return (
+    <section className="panel lab-validation-handoff">
+      <div className="validation-detail-head">
+        <div>
+          <span className="summary-kicker">Handoff</span>
+          <h2>Operator Handoff</h2>
+        </div>
+        <StatusBadge status={summary.overall_status} />
+      </div>
+      <div className="detail-grid">
+        <Info label="Generated" value={formatDateTime(summary.generated_at)} />
+        <Info label="Report" value={summary.handoff_report} />
+        <Info label="Proof links" value={String(summary.proof_links.length)} />
+        <Info label="Top blocker" value={summary.top_blocker?.problem ?? "None"} />
+      </div>
+      <table className="provider-candidate-table lab-validation-table lab-validation-handoff-table">
+        <thead>
+          <tr>
+            <th>Component</th>
+            <th>Status</th>
+            <th>Login / target</th>
+            <th>What remains</th>
+          </tr>
+        </thead>
+        <tbody>
+          {summary.validation_items.map((item) => (
+            <tr key={item.id}>
+              <td>{item.label}</td>
+              <td><StatusBadge status={item.status} /></td>
+              <td>{item.login_hint}</td>
+              <td>{item.status === "ready" ? "Ready for handoff" : item.next_action}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <AdvancedDetails
+        className="section-details"
+        summary={`${summary.proof_links.length} proof link${summary.proof_links.length === 1 ? "" : "s"}`}
+        title="Evidence Links"
+      >
+        {summary.proof_links.length ? (
+          <ul className="issue-evidence-list">
+            {summary.proof_links.map((link) => (
+              <li key={`${link.component_id}-${link.path}`}>
+                <strong>{link.component_label}</strong>
+                <code>{link.path}</code>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <EmptyState title="No proof links" detail="Proof links will appear after validation reports are generated." />
+        )}
+      </AdvancedDetails>
+    </section>
+  );
+}
+
 function ReportsPage() {
   const location = useLocation();
   const navigate = useNavigate();
   const { reportIssues, reportIssuesError, reportIssuesLoading, reloadReportIssues } = useReportIssues();
+  const { isAdvancedMode, setUiMode } = useUiMode();
   const [activeSection, setActiveSection] = useState<ReportsSectionId>("all");
 
   useEffect(() => {
@@ -6006,24 +8168,40 @@ function ReportsPage() {
 
           <TopFixesPanel issues={reportIssues.top_issues.slice(0, 3)} />
 
-          <section className="panel issue-list-panel">
-            <div className="issue-list-head">
-              <PanelTitle icon={<ClipboardList size={18} />} title="Issue List" />
-              <span>{filteredIssues.length} shown</span>
-            </div>
-            {filteredIssues.length ? (
-              <div className="issue-card-grid">
-                {filteredIssues.map((issue) => (
-                  <ReportIssueCard issue={issue} key={issue.id} />
-                ))}
+          {isAdvancedMode ? (
+            <section className="panel issue-list-panel">
+              <div className="issue-list-head">
+                <PanelTitle icon={<ClipboardList size={18} />} title="Issue List" />
+                <span>{filteredIssues.length} shown</span>
               </div>
-            ) : (
-              <EmptyState
-                title="No issues for this filter"
-                detail="This filter has no open, review, not-configured, or passed findings in the current report snapshot."
-              />
-            )}
-          </section>
+              {filteredIssues.length ? (
+                <div className="issue-card-grid">
+                  {filteredIssues.map((issue) => (
+                    <ReportIssueCard issue={issue} key={issue.id} />
+                  ))}
+                </div>
+              ) : (
+                <EmptyState
+                  title="No issues for this filter"
+                  detail="This filter has no open, review, not-configured, or passed findings in the current report snapshot."
+                />
+              )}
+            </section>
+          ) : (
+            <section className="panel issue-list-panel">
+              <div className="issue-list-head">
+                <PanelTitle icon={<ClipboardList size={18} />} title="Issue Details" />
+                <span>{filteredIssues.length} available</span>
+              </div>
+              <div className="simple-more-row">
+                <span>Top fixes are shown above. Full issue rows, source links, and raw evidence are available in Advanced.</span>
+                <button className="small-button" onClick={() => setUiMode("advanced")} type="button">
+                  <Settings size={14} />
+                  Show details
+                </button>
+              </div>
+            </section>
+          )}
 
           <ReportActionGroups issues={issues} />
           <ReportEvidenceGroups reportCenter={reportIssues} />
@@ -6066,23 +8244,36 @@ function TopFixesPanel({ issues }: { issues: ReportIssue[] }) {
         <StatusBadge status={issues.length ? issues[0].severity : "passed"} />
       </div>
       {issues.length ? (
-        <div className="top-fix-list">
-          {issues.map((issue, index) => (
-            <article className={`top-fix-item issue-tone-${issue.severity}`} key={issue.id}>
-              <span>{index + 1}</span>
-              <div>
-                <strong>{issue.title}</strong>
-                <p>{issue.next_action}</p>
-                <Link to={issue.linked_page || "/reports"}>Open source page</Link>
-              </div>
-            </article>
-          ))}
-        </div>
+        <TopFixesList issues={issues} />
       ) : (
         <EmptyState title="No critical fixes" detail="No critical or warning issues are open in the current report snapshot." />
       )}
     </section>
   );
+}
+
+function TopFixesList({ issues }: { issues: ReportIssue[] }) {
+  return (
+    <div className="top-fix-list">
+      {issues.map((issue, index) => (
+        <article className={`top-fix-item issue-tone-${issue.severity}`} key={issue.id}>
+          <span>{index + 1}</span>
+          <div>
+            <strong>{humanizeIssueTitle(issue.title)}</strong>
+            <p>{humanizeAction(issue.next_action)}</p>
+            <Link to={issue.linked_page || "/reports"}>Open source page</Link>
+          </div>
+        </article>
+      ))}
+    </div>
+  );
+}
+
+function humanizeIssueTitle(value: string): string {
+  return humanizeAction(value)
+    .replace(/ is hard_fail\./g, " is not reachable.")
+    .replace(/hard_fail/g, "not reachable")
+    .replace(/_/g, " ");
 }
 
 function ReportIssueCard({ issue }: { issue: ReportIssue }) {
@@ -6106,7 +8297,15 @@ function ReportIssueCard({ issue }: { issue: ReportIssue }) {
         </div>
         <div>
           <dt>Source stage</dt>
-          <dd>{issue.source_stage_label || issue.source_stage}</dd>
+          <dd>
+            {issue.source_stage_id ? (
+              <Link to={`/lab-setup?stage=${encodeURIComponent(issue.source_stage_id)}`}>
+                {issue.source_stage_label || issue.source_stage_id}
+              </Link>
+            ) : (
+              issue.source_stage_label || issue.source_stage
+            )}
+          </dd>
         </div>
         <div>
           <dt>Source action</dt>
@@ -6303,11 +8502,11 @@ function ReportActionGroups({ issues }: { issues: ReportIssue[] }) {
   const rows = Array.from(grouped.entries()).sort((left, right) => left[1].stageLabel.localeCompare(right[1].stageLabel));
 
   return (
-    <section className="panel report-action-groups">
-      <div className="readiness-head">
-        <PanelTitle icon={<Route size={18} />} title="Action Links" />
-        <span className="muted">{rows.length} source groups</span>
-      </div>
+    <AdvancedDetails
+      className="section-details report-action-groups"
+      summary={`${rows.length} source action group${rows.length === 1 ? "" : "s"}`}
+      title="Action Links"
+    >
       {rows.length ? (
         <table className="provider-candidate-table workflow-registry-table">
           <thead>
@@ -6334,7 +8533,7 @@ function ReportActionGroups({ issues }: { issues: ReportIssue[] }) {
       ) : (
         <EmptyState title="No action links" detail="Report issues have not been linked to registry actions yet." />
       )}
-    </section>
+    </AdvancedDetails>
   );
 }
 
@@ -6381,6 +8580,219 @@ function reportIssueMatchesSource(issue: ReportIssue, source: ReportsSectionId):
     lab_profile: ["lab-profile", "lab_profile", "lab profile", "toolchain", "serial"]
   };
   return (tokensBySource[source] ?? []).some((token) => text.includes(token));
+}
+
+type WorkflowStageSnapshot = {
+  freshness: string;
+  lastChecked: string | null;
+  recheckCommand: string;
+  sourceType: string;
+};
+
+function primaryWorkflowAction(stage: WorkflowStage): WorkflowAction | null {
+  return stage.actions.find((action) => action.action_id === stage.primary_action) ?? stage.actions[0] ?? null;
+}
+
+function workflowStageSnapshot(stage: WorkflowStage): WorkflowStageSnapshot {
+  const traces = stage.actions.map((action) => action.last_run_trace);
+  const currentTrace = traces.find((trace) =>
+    ["live_probe", "live_cached"].includes(trace.source_type) && trace.freshness === "current"
+  );
+  const historicalTrace = traces.find((trace) => trace.source_type === "historical_artifact" || trace.freshness === "historical");
+  const testTrace = traces.find((trace) => trace.source_type === "test_fixture");
+  const selectedTrace = currentTrace ?? historicalTrace ?? testTrace ?? traces[0] ?? null;
+  const checkedAtValues = traces
+    .map((trace) => trace.finished_at)
+    .filter((value): value is string => Boolean(value))
+    .sort();
+  const lastChecked = checkedAtValues.length ? checkedAtValues[checkedAtValues.length - 1] : null;
+  const primary = primaryWorkflowAction(stage);
+  return {
+    freshness: selectedTrace?.freshness ?? "unknown",
+    lastChecked,
+    recheckCommand: primary ? workflowActionCopyText(primary) : "",
+    sourceType: selectedTrace?.source_type ?? "not_checked"
+  };
+}
+
+function workflowStageRowSummary(stage: WorkflowStage): string {
+  const historical = stage.actions.filter((action) => action.last_run_trace.source_type === "historical_artifact").length;
+  const notChecked = stage.actions.filter((action) => action.last_run_trace.source_type === "not_checked").length;
+  const parts = [
+    `${stage.action_count} action${stage.action_count === 1 ? "" : "s"}`,
+    stage.blocked_count ? `${stage.blocked_count} blocked` : "no current registry blocker",
+    historical ? `${historical} historical trace${historical === 1 ? "" : "s"}` : "",
+    notChecked ? `${notChecked} not checked` : ""
+  ].filter(Boolean);
+  return parts.join(", ");
+}
+
+function minimalStageItemFromWorkflowStage(stage: WorkflowStage, issueCount = 0): MinimalStageItem {
+  const primary = primaryWorkflowAction(stage);
+  const snapshot = workflowStageSnapshot(stage);
+  const blockers = stageBlockers(stage);
+  const warnings = stageWarnings(stage);
+  const artifacts = workflowStageEvidenceArtifacts(stage);
+  const primaryLabel = primary ? minimalWorkflowActionButtonLabel(primary) : "No action";
+  const primaryEnabled = primary ? !workflowActionRequiresGuard(primary) : false;
+  return {
+    advanced_available: true,
+    blocker_count: blockers.length || issueCount,
+    disabled_reason: primary ? humanizeBlocker(primary.blockers[0] || primary.ui_run_blockers[0] || "Requires guarded workflow") : "No action registered",
+    id: stage.stage_id,
+    label: minimalStageLabel(stage.stage_id, stage.label),
+    last_checked: snapshot.lastChecked,
+    next_action: humanizeAction(primary?.next_action || stage.desired_state || "Review this step."),
+    one_line_summary: minimalStageSummaryText(stage, blockers, warnings),
+    primary_action: primary,
+    primary_button_enabled: primaryEnabled,
+    primary_button_label: primaryLabel,
+    proof_count: artifacts.length,
+    secondary_action_label: artifacts.length ? "View proof" : undefined,
+    status: stage.current_state
+  };
+}
+
+function minimalStageLabel(stageId: string, fallback: string): string {
+  const labels: Record<string, string> = {
+    "build-verification": "Build Verification",
+    cisco: "Cisco",
+    esxi: "ESXi",
+    firmware: "Firmware",
+    ilo: "HPE / iLO",
+    "lab-profile": "Lab Profile",
+    netapp: "NetApp",
+    raid: "RAID / Storage"
+  };
+  return labels[stageId] ?? fallback;
+}
+
+function minimalStageSummaryText(stage: WorkflowStage, blockers: string[], warnings: string[]): string {
+  if (blockers.length) {
+    return humanizeBlocker(blockers[0]);
+  }
+  if (warnings.length) {
+    return humanizeBlocker(warnings[0]);
+  }
+  if (isReadyStatus(stage.current_state)) {
+    return `${minimalStageLabel(stage.stage_id, stage.label)} is ready for the next step.`;
+  }
+  if (isWaitingStatus(stage.current_state)) {
+    return `${minimalStageLabel(stage.stage_id, stage.label)} is waiting on required setup.`;
+  }
+  return stage.desired_state || "No current blocker is reported.";
+}
+
+function stageCurrentSimpleSummary(stage: WorkflowStage): string {
+  if (stage.blocked_count) {
+    return `${stage.blocked_count} blocker${stage.blocked_count === 1 ? "" : "s"} need attention.`;
+  }
+  if (isReadyStatus(stage.current_state)) {
+    return "Ready.";
+  }
+  if (isWaitingStatus(stage.current_state)) {
+    return "Waiting on setup.";
+  }
+  return displayStatusLabel(stage.current_state);
+}
+
+function minimalWorkflowActionButtonLabel(action: WorkflowAction): string {
+  if (workflowActionCanRun(action)) return workflowRunButtonLabel(action);
+  if (workflowActionRequiresGuard(action)) return "Guarded workflow";
+  return "Review details";
+}
+
+function workflowStageEvidenceArtifacts(stage: WorkflowStage): string[] {
+  return uniqueStrings([
+    ...stage.reports,
+    ...stage.actions.flatMap((action) => [
+      ...action.reports,
+      ...action.evidence_artifacts,
+      ...(action.last_run_report ? [action.last_run_report] : []),
+      ...action.last_run_trace.report_artifacts
+    ])
+  ]);
+}
+
+function stageCurrentSummary(stage: WorkflowStage): string {
+  const snapshot = workflowStageSnapshot(stage);
+  const issueText = stage.blocked_count
+    ? `${stage.blocked_count} action${stage.blocked_count === 1 ? "" : "s"} have current registry blockers.`
+    : "No current registry blocker is reported.";
+  const evidenceText =
+    snapshot.sourceType === "historical_artifact"
+      ? "Last run evidence is historical and requires a recheck before it can be treated as current state."
+      : snapshot.sourceType === "not_checked"
+        ? "This stage has not been checked in the registry trace."
+        : `Latest source is ${labelize(snapshot.sourceType)} with ${labelize(snapshot.freshness)} freshness.`;
+  return `${issueText} ${evidenceText}`;
+}
+
+function stageBlockers(stage: WorkflowStage): string[] {
+  return uniqueStrings(stage.actions.flatMap((action) => [...action.blockers, ...action.last_run_trace.blockers]));
+}
+
+function stageWarnings(stage: WorkflowStage): string[] {
+  const historicalWarnings = stage.actions
+    .filter((action) => action.last_run_trace.source_type === "historical_artifact")
+    .map((action) => `${action.label}: historical evidence only; run the recheck command before treating this as current.`);
+  return uniqueStrings([
+    ...stage.actions.flatMap((action) => action.last_run_trace.warnings),
+    ...historicalWarnings
+  ]);
+}
+
+function workflowIssueCountsByStage(stages: WorkflowStage[], issues: ReportIssue[]): Record<string, number> {
+  return stages.reduce<Record<string, number>>((acc, stage) => {
+    acc[stage.stage_id] = issues.filter((issue) => reportIssueMatchesStageId(issue, stage.stage_id)).length;
+    return acc;
+  }, {});
+}
+
+function workflowIssueCountsByAction(issues: ReportIssue[]): Record<string, number> {
+  return issues.reduce<Record<string, number>>((acc, issue) => {
+    if (issue.source_action_id) {
+      acc[issue.source_action_id] = (acc[issue.source_action_id] ?? 0) + 1;
+    }
+    if (issue.auto_fix_action_id && issue.auto_fix_action_id !== issue.source_action_id) {
+      acc[issue.auto_fix_action_id] = (acc[issue.auto_fix_action_id] ?? 0) + 1;
+    }
+    return acc;
+  }, {});
+}
+
+function reportIssueMatchesStageId(issue: ReportIssue, stageId: string): boolean {
+  const normalizedStage = normalizeRegistryKey(stageId);
+  return [
+    issue.source_stage_id,
+    issue.source_stage,
+    issue.source,
+    issue.source_stage_label
+  ]
+    .filter(Boolean)
+    .some((value) => normalizeRegistryKey(value) === normalizedStage);
+}
+
+function normalizeRegistryKey(value: string | null | undefined): string {
+  return (value ?? "").toLowerCase().replace(/_/g, "-").replace(/\s+/g, "-");
+}
+
+function uniqueStrings(values: string[]): string[] {
+  return [...new Set(values.filter(Boolean))];
+}
+
+function statusClassName(value: string): string {
+  return normalizeRegistryKey(value || "unknown").replace(/[^a-z0-9-]/g, "-");
+}
+
+function workflowStageIdForControlSection(sectionId: ControlCenterSectionId): string {
+  if (sectionId === "ilo") return "ilo";
+  if (sectionId === "raid") return "raid";
+  if (sectionId === "esxi") return "esxi";
+  if (sectionId === "netapp") return "netapp";
+  if (sectionId === "cisco") return "cisco";
+  if (sectionId === "lab-profile") return "lab-profile";
+  return "";
 }
 
 function SettingsPage({
@@ -6800,9 +9212,61 @@ function workflowModeLabel(value: WorkflowAction["mode"]): string {
   return labelize(value);
 }
 
+function humanWorkflowActionLabel(action: WorkflowAction): string {
+  const mapped: Record<string, string> = {
+    "netapp.ontap-upgrade-inventory": "Check ONTAP upgrade package",
+    "netapp.ontap-upgrade-plan": "Plan ONTAP upgrade",
+    "netapp.ontap-upgrade-validate": "Validate ONTAP upgrade",
+    "netapp.setup-apply": "Apply NetApp setup",
+    "netapp.setup-preview": "Preview NetApp setup",
+    "provider-lab-netapp-ontap-upgrade-validate": "Validate ONTAP upgrade"
+  };
+  return mapped[action.action_id] ?? humanizeAction(action.label);
+}
+
 function workflowModeClass(value: WorkflowAction["mode"]): string {
   if (value === "read_only" || value === "report_only") return "read-only";
   return value;
+}
+
+function workflowActionCanRun(action: WorkflowAction): boolean {
+  return action.ui_run_supported && action.current_availability === "available" && action.ui_run_blockers.length === 0;
+}
+
+function workflowActionRequiresGuard(action: WorkflowAction): boolean {
+  return ["write", "destructive", "upgrade"].includes(action.mode);
+}
+
+function workflowRunButtonLabel(action: WorkflowAction): string {
+  const id = action.action_id;
+  if (id.includes("console-read-state")) return "Read Console State";
+  if (id.includes("build-verification")) return "Run Verification";
+  if (id.includes("firmware")) return "Check Firmware";
+  if (id.includes("toolchain")) return "Check Toolchain";
+  if (id.includes("live-status") || action.mode === "report_only") return "Refresh Status";
+  return "Run Check";
+}
+
+function workflowRunToTrace(run: WorkflowActionRun): WorkflowAction["last_run_trace"] {
+  return {
+    run_id: run.run_id,
+    action_id: run.action_id,
+    stage_id: run.stage_id,
+    started_at: run.started_at,
+    finished_at: run.finished_at,
+    status: run.status,
+    source_type: run.source_type,
+    freshness: run.freshness,
+    command: run.command,
+    report_artifacts: uniqueStrings([
+      ...run.report_artifacts,
+      ...(run.trace_artifact ? [run.trace_artifact] : [])
+    ]),
+    summary: run.summary,
+    blockers: run.blockers,
+    warnings: run.warnings,
+    next_action: run.next_action
+  };
 }
 
 function workflowActionCopyText(action: WorkflowAction): string {
@@ -8401,8 +10865,9 @@ function AdvancedDetails({
   summary: string;
   title: string;
 }) {
+  const { isAdvancedMode } = useUiMode();
   return (
-    <details className={`advanced-details ${className}`.trim()}>
+    <details className={`advanced-details ${className}`.trim()} open={isAdvancedMode ? true : undefined}>
       <summary>
         <span>{title}</span>
         <small>{summary}</small>
@@ -10674,18 +13139,26 @@ function statusTone(status: string): string {
 function displayStatusLabel(status: string): string {
   const normalized = status || "unknown";
   const labels: Record<string, string> = {
+    "api_access_present": "Management access configured",
     "awaiting-bootstrap": "Waiting",
     "blocked_by_prior_stage": "Waiting on earlier step",
     blocked: "Needs attention",
     checking: "Checking",
+    "cluster_setup_wizard": "Setup wizard detected",
     "console bootstrap required": "Console bootstrap required",
     "console_bootstrap_required": "Console bootstrap required",
     completed: "Ready",
+    disabled: "Disabled",
     critical: "Blocked",
     failed: "Needs attention",
     "guarded_write": "Guarded write",
     hard_fail: "Blocked",
+    historical: "Previous evidence",
+    historical_artifact: "Previous evidence",
     info: "Info",
+    live_cached: "Recent live check",
+    live_probe: "Live check",
+    "live_readiness": "Readiness check",
     "local-lab-readwrite": "Real Lab Mode",
     "local-readonly": "Read-only Lab Mode",
     "missing-config": "Not configured yet",
@@ -10694,6 +13167,7 @@ function displayStatusLabel(status: string): string {
     "needs-attention": "Needs attention",
     "needs-selection": "Needs selection",
     not_configured_yet: "Not configured yet",
+    not_checked: "Not checked",
     "not-configured": "Not configured yet",
     "not-run": "Not run",
     ok: "Ready",
@@ -10703,10 +13177,14 @@ function displayStatusLabel(status: string): string {
     "planned-target": "Planned",
     ready: "Ready",
     "read_only": "Read only",
+    "report_only": "Report only",
     "safe_default": "Safe default",
+    "setup_intent_missing": "Setup details missing",
     stale: "Stale",
-    stale_config: "Blocked",
+    stale_config: "Old config needs review",
     success: "Ready",
+    test_fixture: "Test fixture",
+    "upgrade_disabled": "Upgrade disabled",
     unverified: "Unverified",
     unavailable: "Not available",
     waiting: "Waiting"
@@ -10755,17 +13233,33 @@ function providerSourceOverview(providers: ProviderStatus[]): string {
 function humanizeAction(value: string): string {
   if (!value) return "Review this stage.";
   return [
+    ["provider-lab-netapp-ontap-upgrade-validate", "Validate ONTAP upgrade"],
+    ["provider-lab-netapp-ontap-upgrade-plan", "Plan ONTAP upgrade"],
+    ["provider-lab-netapp-ontap-upgrade-inventory", "Check ONTAP upgrade package"],
+    ["provider-lab-netapp-setup-preview", "Preview NetApp setup"],
+    ["provider-lab-netapp-setup-apply", "Apply NetApp setup"],
+    ["make provider-lab-build-verification-live", "Run Build Verification"],
     ["provider-lab-build-verification", "Run Build Verification"],
     ["blocked_by_prior_stage", "waiting on earlier step"],
     ["stale_config", "old lab IP detected"],
     ["operator_action_required", "needs your action"],
     ["local-lab-readwrite", "Real Lab Mode"],
+    ["historical_artifact", "previous evidence"],
+    ["live_probe", "live check"],
+    ["cluster_setup_wizard", "Setup wizard detected"],
+    ["not_configured_yet", "Not configured yet"],
+    ["NETAPP_SETUP_APPLY missing", "Setup apply not enabled"],
     ["NETAPP_CONFIGURED=false", "NetApp is not verified by live check yet"],
     ["NETAPP_CONFIGURED=true", "legacy NetApp env flag"],
     ["Redfish PATCH accepted", "iLO accepted the storage change"],
     ["GET-only", "read-only"],
     ["GET-Only", "Read-only"]
-  ].reduce((current, [from, to]) => current.split(from).join(to), value);
+  ].reduce((current, [from, to]) => current.split(from).join(to), value)
+    .replace(/Review gates, then copy [`'"]?[^`'"]*make [^`'"]+[`'"]? when this stage is in scope\./g, "Open Advanced when this step is in scope.")
+    .replace(/Run [`'"]?Run Build Verification[`'"]? with PROVIDER_MODE=local-lab-readwrite\.?/g, "Run Build Verification in Real Lab Mode.")
+    .replace(/PROVIDER_MODE=local-lab-readwrite/g, "Real Lab Mode")
+    .replace(/Run [`'"]?Run Build Verification[`'"]? with (?:PROVIDER_MODE=)?Real Lab Mode\.?/g, "Run Build Verification in Real Lab Mode.")
+    .replace(/PROVIDER_MODE=mock cannot contact or modify real devices for [a-z0-9._-]+\.?/gi, "Test mode cannot check hardware for this step.");
 }
 
 function humanizeBlocker(value: string): string {
@@ -10784,6 +13278,18 @@ function reportLinksFromProbe(prefix: string, probe: ProviderProbeResult | null)
       status: probe?.status ?? "report_available"
     }))
     .filter((report) => report.path.length > 0);
+}
+
+function workflowProbeEvidenceCount(probe: ProviderProbeResult | null): number {
+  const artifacts = objectValue(probe?.artifacts);
+  return Object.values(artifacts).filter((value) => Boolean(asString(value))).length;
+}
+
+function probeEvidencePaths(probe: ProviderProbeResult | null): string[] {
+  const artifacts = objectValue(probe?.artifacts);
+  return Object.values(artifacts)
+    .map((value) => asString(value))
+    .filter(Boolean);
 }
 
 function reportLinksFromActions(actions: ControlAction[]): ReportLink[] {
@@ -11716,14 +14222,18 @@ function PageHeader({
 }
 
 function PageIssueIndicator({ badge }: { badge?: ReportPageBadge }) {
+  const { isAdvancedMode } = useUiMode();
   if (!badge) {
-    return (
+    return isAdvancedMode ? (
       <div className="page-issue-indicator issue-tone-neutral">
         <Activity size={16} />
         <strong>Report status loading</strong>
         <span>Issue counts will appear when the report center is available.</span>
       </div>
-    );
+    ) : null;
+  }
+  if (!isAdvancedMode && badge.status === "success") {
+    return null;
   }
   const label =
     badge.status === "critical"
