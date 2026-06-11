@@ -90,6 +90,7 @@ VCSA ISO media is available under `artifacts/Media`, but vCenter is not configur
 ## Commits And Pushes
 
 - Commit `fb6c7a1` (`Complete NetApp NFS setup workflow and validation`) was pushed to `origin/main`.
+- Commit `49c8bbc` (`Add overnight NetApp NFS VM final report`) was pushed to `origin/main`.
 
 ## Remaining Blockers
 
@@ -104,4 +105,4 @@ VCSA ISO media is available under `artifacts/Media`, but vCenter is not configur
 
 ## Exact Next Morning Action
 
-Configure the missing NetApp local-lab access without printing secrets: add the required NetApp console/API credential fields to `.env.local.real-lab`, set the non-secret `NETAPP_ADMIN_ACCESS_SOURCE`, then rerun `make provider-lab-netapp-live-state` and `make provider-lab-netapp-setup-preview`. Do not run setup or NFS apply until the console/API state is understood and the explicit confirmation gates are set.
+Configure the missing NetApp local-lab access without printing secrets: add `NETAPP_CONSOLE_USERNAME`, `NETAPP_CONSOLE_PASSWORD`, `NETAPP_API_USERNAME`, and `NETAPP_API_PASSWORD` to `.env.local.real-lab`, set the non-secret `NETAPP_ADMIN_ACCESS_SOURCE`, then rerun `make provider-lab-netapp-live-state` and `make provider-lab-netapp-setup-preview`. Do not run setup or NFS apply until the console/API state is understood and the explicit confirmation gates are set.
