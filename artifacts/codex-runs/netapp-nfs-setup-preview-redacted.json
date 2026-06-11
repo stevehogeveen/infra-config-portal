@@ -1,0 +1,143 @@
+{
+  "provider_id": "netapp-ontap",
+  "action": "nfs-setup-preview",
+  "checked_at": "2026-06-11T02:27:32.053012+00:00",
+  "status": "blocked",
+  "message": "NetApp NFS setup preview generated. No ONTAP, ESXi, vCenter, or storage write action was run.",
+  "mode": "local-lab-readwrite",
+  "apply_enabled": false,
+  "source_type": "live_cached",
+  "freshness": "current",
+  "configured_state": "login_required",
+  "configured": false,
+  "api_access_present": false,
+  "nfs_plan": {
+    "storage_protocol": "nfs",
+    "svm_name": "esxi_svm",
+    "svm_management_ip": "192.168.1.223",
+    "nfs_lifs": [
+      "192.168.1.230",
+      "192.168.1.231"
+    ],
+    "preferred_nfs_lif": "192.168.1.230",
+    "fallback_nfs_lif": "192.168.1.231",
+    "volume": "esxi_datastore_01",
+    "mount_path": "/esxi_datastore_01",
+    "export_policy": "esxi_nfs_policy",
+    "export_client_match": "192.168.1.0/24",
+    "datastore_name": "netapp_nfs_ds01",
+    "future_iscsi_lifs_ignored": [
+      "192.168.1.240",
+      "192.168.1.241",
+      "192.168.1.242",
+      "192.168.1.243"
+    ],
+    "missing_fields": []
+  },
+  "exact_changes": [
+    {
+      "area": "svm",
+      "change": "Create or confirm SVM for ESXi NFS",
+      "value": "esxi_svm"
+    },
+    {
+      "area": "nfs",
+      "change": "Enable or confirm NFS service",
+      "value": "nfs"
+    },
+    {
+      "area": "network",
+      "change": "Create or confirm NFS data LIFs",
+      "value": "192.168.1.230, 192.168.1.231"
+    },
+    {
+      "area": "volume",
+      "change": "Create or confirm datastore volume",
+      "value": "esxi_datastore_01"
+    },
+    {
+      "area": "export",
+      "change": "Create or confirm export policy",
+      "value": "esxi_nfs_policy"
+    },
+    {
+      "area": "export",
+      "change": "Allow ESXi lab clients",
+      "value": "192.168.1.0/24"
+    },
+    {
+      "area": "datastore",
+      "change": "Prepare ESXi datastore mount target",
+      "value": "netapp_nfs_ds01"
+    }
+  ],
+  "rest_preview": [
+    {
+      "method": "GET",
+      "path": "/api/cluster",
+      "purpose": "Confirm cluster identity"
+    },
+    {
+      "method": "GET",
+      "path": "/api/svm/svms",
+      "purpose": "Check SVM existence"
+    },
+    {
+      "method": "POST",
+      "path": "/api/svm/svms",
+      "purpose": "Create SVM esxi_svm if absent"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/protocols/nfs/services/{svm.uuid}",
+      "purpose": "Enable NFS service if disabled"
+    },
+    {
+      "method": "POST",
+      "path": "/api/network/ip/interfaces",
+      "purpose": "Create NFS data LIFs if absent"
+    },
+    {
+      "method": "POST",
+      "path": "/api/storage/volumes",
+      "purpose": "Create volume esxi_datastore_01 if absent"
+    },
+    {
+      "method": "POST",
+      "path": "/api/protocols/nfs/export-policies",
+      "purpose": "Create export policy esxi_nfs_policy if absent"
+    },
+    {
+      "method": "POST",
+      "path": "/api/protocols/nfs/export-policies/{policy.id}/rules",
+      "purpose": "Allow 192.168.1.0/24"
+    }
+  ],
+  "required_flags": [
+    "PROVIDER_MODE=local-lab-readwrite",
+    "NETAPP_NFS_SETUP_APPLY=true",
+    "NETAPP_NFS_SETUP_CONFIRM=\"APPLY NETAPP NFS SETUP\"",
+    "NETAPP_NFS_SETUP_ALLOW_STORAGE_CREATE=true"
+  ],
+  "blockers": [
+    "NetApp ONTAP cluster is not live-configured yet; NFS setup is blocked by prior cluster setup.",
+    "NetApp API access fields are missing: NETAPP_API_USERNAME, NETAPP_API_PASSWORD."
+  ],
+  "warnings": [
+    "Preview only. No SVM, NFS service, LIF, volume, export policy, export rule, datastore, or iSCSI action was run.",
+    "This operation is NFS-only; future iSCSI LIFs are intentionally ignored."
+  ],
+  "not_attempted": [
+    "ONTAP REST write",
+    "SVM, LIF, NFS service, volume, export policy, or export rule creation",
+    "iSCSI configuration",
+    "ESXi datastore mount",
+    "vCenter datastore mount",
+    "controller reboot, wipe, takeover/giveback, or ONTAP upgrade"
+  ],
+  "artifacts": {
+    "report": "artifacts/codex-runs/netapp-nfs-setup-preview-report.md",
+    "json": "artifacts/codex-runs/netapp-nfs-setup-preview-redacted.json"
+  },
+  "next_safe_action": "Resolve blockers, rerun live validation, then run guarded NFS setup apply only from an attended real-lab session."
+}

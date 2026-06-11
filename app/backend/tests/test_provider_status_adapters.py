@@ -2294,6 +2294,7 @@ def test_local_lab_readwrite_allows_allowlisted_lab_action_categories() -> None:
         ActionCategory.NETWORK_CONFIG,
     )
     assert policy.action_allowed("netapp.svm-lif-iscsi", ActionCategory.STORAGE_CONFIG)
+    assert policy.action_allowed("netapp.nfs-setup", ActionCategory.STORAGE_CONFIG)
     assert policy.action_allowed("ilo.bios-settings", ActionCategory.BIOS_CONFIG)
     assert policy.action_allowed("ilo.boot-settings", ActionCategory.BOOT_CONFIG)
     assert policy.action_allowed("ilo.virtual-media", ActionCategory.VIRTUAL_MEDIA)

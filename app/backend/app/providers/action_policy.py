@@ -66,6 +66,7 @@ ALLOWLISTED_WORKFLOW_ACTIONS = frozenset(
         "esxi.datastore-vswitch-vmkernel",
         "vm.deploy-ovf",
         "netapp.initial-setup",
+        "netapp.nfs-setup",
         "netapp.svm-lif-iscsi",
         "netapp.ontap-upgrade",
         "netapp.component-firmware",

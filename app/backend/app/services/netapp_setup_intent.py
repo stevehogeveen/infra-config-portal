@@ -30,14 +30,19 @@ POST_SETUP_VALIDATION_JSON = CODEX_RUN_DIR / "netapp-post-setup-validation-redac
 
 SETUP_CONFIRM_PHRASE = "APPLY NETAPP CLUSTER SETUP"
 SETUP_SUPPORTED_STATES = {"cluster_setup_wizard", "node_setup_wizard"}
+DEFAULT_CLUSTER_NAME = "lab-netapp-cluster"
+DEFAULT_NODE_A_NAME = "lab-netapp-node-a"
+DEFAULT_NODE_B_NAME = "lab-netapp-node-b"
+DEFAULT_SVM_NAME = "esxi_svm"
+DEFAULT_SEARCH_DOMAIN = "lab.local"
 SETUP_ENV_FIELDS = {
-    "cluster_name": ("NETAPP_CLUSTER_NAME", "lab-ontap-cluster-01"),
-    "node_a_name": ("NETAPP_NODE_A_NAME", "netapp-a"),
-    "node_b_name": ("NETAPP_NODE_B_NAME", "netapp-b"),
-    "svm_name": ("NETAPP_SVM_NAME", "svm_esxi_nfs"),
-    "dns_servers": ("NETAPP_DNS_SERVERS", None),
-    "ntp_servers": ("NETAPP_NTP_SERVERS", None),
-    "search_domains": ("NETAPP_SEARCH_DOMAINS", None),
+    "cluster_name": ("NETAPP_CLUSTER_NAME", DEFAULT_CLUSTER_NAME),
+    "node_a_name": ("NETAPP_NODE_A_NAME", DEFAULT_NODE_A_NAME),
+    "node_b_name": ("NETAPP_NODE_B_NAME", DEFAULT_NODE_B_NAME),
+    "svm_name": ("NETAPP_SVM_NAME", DEFAULT_SVM_NAME),
+    "dns_servers": ("NETAPP_DNS_SERVERS", "active profile DNS or lab gateway"),
+    "ntp_servers": ("NETAPP_NTP_SERVERS", "active profile NTP or control host"),
+    "search_domains": ("NETAPP_SEARCH_DOMAINS", DEFAULT_SEARCH_DOMAIN),
     "admin_access_source": ("NETAPP_ADMIN_ACCESS_SOURCE", ".env.local.real-lab NetApp admin access reference"),
 }
 
@@ -46,23 +51,24 @@ def get_netapp_setup_intent() -> dict[str, Any]:
     if not _netapp_in_scope():
         return _not_in_scope_payload("setup-intent")
     access_state = _admin_access_state()
+    profile_defaults = _active_profile_setup_defaults()
     intent = {
-        "cluster_name": settings.netapp_cluster_name,
-        "node_a_name": settings.netapp_node_a_name,
-        "node_b_name": settings.netapp_node_b_name,
+        "cluster_name": settings.netapp_cluster_name or DEFAULT_CLUSTER_NAME,
+        "node_a_name": settings.netapp_node_a_name or DEFAULT_NODE_A_NAME,
+        "node_b_name": settings.netapp_node_b_name or DEFAULT_NODE_B_NAME,
         "cluster_mgmt_ip": settings.netapp_cluster_mgmt_ip,
         "node_a_mgmt_ip": settings.netapp_node_a_mgmt_ip,
         "node_b_mgmt_ip": settings.netapp_node_b_mgmt_ip,
-        "svm_name": settings.netapp_svm_name,
+        "svm_name": settings.netapp_svm_name or DEFAULT_SVM_NAME,
         "svm_mgmt_ip": settings.netapp_svm_mgmt_ip,
         "nfs_lifs": list(settings.netapp_nfs_lifs),
         "nfs_volume": settings.netapp_nfs_volume,
         "nfs_mount_path": settings.netapp_nfs_mount_path,
         "export_policy": settings.netapp_nfs_export_policy,
         "export_client_match": settings.netapp_nfs_client_match,
-        "dns_servers": list(settings.netapp_dns_servers),
-        "ntp_servers": list(settings.netapp_ntp_servers),
-        "search_domains": list(settings.netapp_search_domains),
+        "dns_servers": _list_or_default(settings.netapp_dns_servers, profile_defaults["dns_servers"]),
+        "ntp_servers": _list_or_default(settings.netapp_ntp_servers, profile_defaults["ntp_servers"]),
+        "search_domains": _list_or_default(settings.netapp_search_domains, profile_defaults["search_domains"]),
         "admin_access_source": access_state["source"],
         "admin_access_configured": access_state["configured"],
         "admin_access_redacted": True,
@@ -419,6 +425,68 @@ def _admin_access_state() -> dict[str, Any]:
     }
 
 
+def _active_profile_setup_defaults() -> dict[str, list[str]]:
+    context = active_lab_profile_context()
+    active = context.get("active_profile") if isinstance(context.get("active_profile"), dict) else {}
+    global_settings = active.get("global_settings") if isinstance(active.get("global_settings"), dict) else {}
+    address_plan = (
+        context.get("resolved_address_plan")
+        if isinstance(context.get("resolved_address_plan"), dict)
+        else active.get("resolved_address_plan")
+        if isinstance(active.get("resolved_address_plan"), dict)
+        else active.get("address_plan")
+        if isinstance(active.get("address_plan"), dict)
+        else {}
+    )
+
+    dns_servers = _string_list(global_settings.get("dns_servers"))
+    if not dns_servers:
+        gateway = _clean_string(global_settings.get("gateway") or active.get("gateway") or os.getenv("LAB_GATEWAY"))
+        dns_servers = [gateway] if gateway else []
+
+    ntp_servers = _string_list(global_settings.get("ntp_servers"))
+    if not ntp_servers:
+        control_host = _clean_string(address_plan.get("ansible_control_host") or os.getenv("ANSIBLE_CONTROL_HOST"))
+        ntp_servers = [control_host] if control_host else []
+
+    search_domain = _clean_string(
+        global_settings.get("domain_name")
+        or os.getenv("LAB_SEARCH_DOMAIN")
+        or os.getenv("LAB_DOMAIN_NAME")
+        or os.getenv("CISCO_DOMAIN_NAME")
+        or DEFAULT_SEARCH_DOMAIN
+    )
+    return {
+        "dns_servers": dns_servers,
+        "ntp_servers": ntp_servers,
+        "search_domains": [search_domain] if search_domain else [],
+    }
+
+
+def _list_or_default(values: tuple[str, ...] | list[str], default: list[str]) -> list[str]:
+    cleaned = _string_list(values)
+    return cleaned if cleaned else list(default)
+
+
+def _string_list(value: Any) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        candidates = value.split(",")
+    elif isinstance(value, (list, tuple)):
+        candidates = value
+    else:
+        candidates = [value]
+    return [item for item in (_clean_string(candidate) for candidate in candidates) if item]
+
+
+def _clean_string(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
 def _setup_apply_gates(
     detected_state: str,
     intent: dict[str, Any],
@@ -616,6 +684,11 @@ def _wizard_api_path_options(detected_state: str) -> list[dict[str, Any]]:
 
 
 def _setup_changes(intent: dict[str, Any]) -> list[dict[str, Any]]:
+    services_value = (
+        f"DNS {', '.join(intent.get('dns_servers') or []) or 'missing'}; "
+        f"NTP {', '.join(intent.get('ntp_servers') or []) or 'missing'}; "
+        f"search {', '.join(intent.get('search_domains') or []) or 'missing'}"
+    )
     return [
         {"area": "cluster", "change": "Create or join cluster", "value": intent.get("cluster_name")},
         {"area": "cluster_mgmt", "change": "Assign cluster management IP", "value": intent.get("cluster_mgmt_ip")},
@@ -624,7 +697,7 @@ def _setup_changes(intent: dict[str, Any]) -> list[dict[str, Any]]:
         {"area": "svm", "change": "Create SVM and management LIF", "value": f"{intent.get('svm_name') or 'missing'} / {intent.get('svm_mgmt_ip')}"},
         {"area": "nfs", "change": "Create NFS LIFs", "value": ", ".join(intent.get("nfs_lifs") or [])},
         {"area": "nfs", "change": "Create datastore volume/export", "value": f"{intent.get('nfs_volume')} at {intent.get('nfs_mount_path')}"},
-        {"area": "services", "change": "Configure DNS, NTP, and search domains", "value": "operator-provided values required"},
+        {"area": "services", "change": "Configure DNS, NTP, and search domains", "value": services_value},
     ]
 
 

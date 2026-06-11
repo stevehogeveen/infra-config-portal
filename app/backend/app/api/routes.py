@@ -173,6 +173,11 @@ from app.services.hpe_raid import (
     write_hpe_raid_pending_report,
 )
 from app.services.esxi_install_readiness import get_esxi_install_readiness
+from app.services.esxi_vm_deploy import (
+    apply_esxi_vm_deploy,
+    build_esxi_vm_deploy_preview,
+    validate_esxi_vm_deploy,
+)
 from app.services.firmware_compliance import (
     get_firmware_compliance,
     get_firmware_inventory,
@@ -203,6 +208,11 @@ from app.services.netapp_real_lab import (
 from app.services.netapp_setup_intent import (
     apply_netapp_setup,
     build_netapp_setup_preview,
+)
+from app.services.netapp_nfs_setup import (
+    apply_netapp_nfs_setup,
+    build_netapp_nfs_setup_preview,
+    validate_netapp_nfs_setup,
 )
 from app.services.netapp_upgrade_center import (
     apply_netapp_upgrade,
@@ -939,6 +949,30 @@ def read_esxi_install_readiness(
 
 
 @router.get(
+    "/providers/esxi-readonly/vm-deploy-preview",
+    response_model=ProviderProbeResultRead,
+)
+def read_esxi_vm_deploy_preview() -> ProviderProbeResultRead:
+    return build_esxi_vm_deploy_preview(write_report=False)
+
+
+@router.post(
+    "/providers/esxi-readonly/vm-deploy-apply",
+    response_model=ProviderProbeResultRead,
+)
+def run_esxi_vm_deploy_apply_route() -> ProviderProbeResultRead:
+    return apply_esxi_vm_deploy()
+
+
+@router.post(
+    "/providers/esxi-readonly/vm-deploy-validate",
+    response_model=ProviderProbeResultRead,
+)
+def run_esxi_vm_deploy_validate_route() -> ProviderProbeResultRead:
+    return validate_esxi_vm_deploy()
+
+
+@router.get(
     "/providers/netapp-ontap/plan-preview",
     response_model=NetAppPlanPreviewRead,
 )
@@ -1016,6 +1050,30 @@ def run_netapp_setup_validation_route() -> ProviderProbeResultRead:
 )
 def read_netapp_nfs_vcenter_readiness() -> ProviderProbeResultRead:
     return get_netapp_nfs_vcenter_readiness()
+
+
+@router.get(
+    "/providers/netapp-ontap/nfs-setup-preview",
+    response_model=ProviderProbeResultRead,
+)
+def read_netapp_nfs_setup_preview() -> ProviderProbeResultRead:
+    return build_netapp_nfs_setup_preview(write_report=False)
+
+
+@router.post(
+    "/providers/netapp-ontap/nfs-setup-apply",
+    response_model=ProviderProbeResultRead,
+)
+def run_netapp_nfs_setup_apply_route() -> ProviderProbeResultRead:
+    return apply_netapp_nfs_setup()
+
+
+@router.post(
+    "/providers/netapp-ontap/nfs-setup-validate",
+    response_model=ProviderProbeResultRead,
+)
+def run_netapp_nfs_setup_validate_route() -> ProviderProbeResultRead:
+    return validate_netapp_nfs_setup()
 
 
 @router.get(

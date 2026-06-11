@@ -1,0 +1,97 @@
+{
+  "provider_id": "netapp-ontap",
+  "device_role": "storage-controller",
+  "action": "post-setup-validation",
+  "checked_at": "2026-06-11T02:27:24.206941+00:00",
+  "status": "blocked",
+  "configured": false,
+  "configured_state": "login_required",
+  "source": "live_verification",
+  "mode": "local-lab-readwrite",
+  "message": "NetApp setup validation is blocked by live-state evidence.",
+  "manual_env_flag_required": false,
+  "legacy_env": {
+    "netapp_configured_env": false,
+    "netapp_configured_env_role": "legacy_override_or_desired_flag",
+    "netapp_console_port_env_role": "optional_hint_only",
+    "manual_state_tracking_required": false
+  },
+  "console": {
+    "discovered_port": "/dev/serial/by-id/usb-Microchip_Technology_Inc._MCP2221_USB-I2C_UART_Combo-if00",
+    "baud": 115200,
+    "confidence": "medium",
+    "last_seen": "2026-06-11T02:24:08.898217",
+    "source": "autodiscovery",
+    "selection_source": "prompt-evidence",
+    "prompt_state": "login_required",
+    "prompt_label": "NetApp login prompt",
+    "configured_port_hint": null,
+    "detected_automatically": true,
+    "manual_env_update_required": false
+  },
+  "management": {
+    "cluster_mgmt_ip": "192.168.1.220",
+    "rest_443_reachable": false,
+    "ssh_22_reachable": false
+  },
+  "api": {
+    "access_values_present": false,
+    "authenticated": null,
+    "status": "not_attempted",
+    "reason": "NetApp API access values are missing."
+  },
+  "storage": {
+    "protocol": "nfs",
+    "ready": true,
+    "source": "bootstrap_profile_and_live_api_validation",
+    "nfs_lifs_detected": [
+      "192.168.1.230",
+      "192.168.1.231"
+    ],
+    "iscsi_lifs_detected": [],
+    "blockers": []
+  },
+  "detected_management_ips": {},
+  "detected_storage_protocol_readiness": {
+    "protocol": "nfs",
+    "ready": true,
+    "source": "bootstrap_profile_and_live_api_validation",
+    "nfs_lifs_detected": [
+      "192.168.1.230",
+      "192.168.1.231"
+    ],
+    "iscsi_lifs_detected": [],
+    "blockers": []
+  },
+  "last_successful_probe_at": "2026-06-11T02:24:08.898217",
+  "last_report_path": "artifacts/codex-runs/netapp-live-state-report.md",
+  "confidence": "medium",
+  "blockers": [
+    "NetApp cluster management REST is not reachable.",
+    "NetApp API access values are missing; keep any values local and redacted."
+  ],
+  "warnings": [
+    "Manual env flag not required.",
+    "Live checks are read-only and do not run NetApp setup, storage, upgrade, reboot, wipe, or apply commands."
+  ],
+  "artifacts": {
+    "report": "artifacts/codex-runs/netapp-post-setup-validation-report.md",
+    "state_report": "artifacts/codex-runs/netapp-live-state-report.md",
+    "automanagement_report": "artifacts/codex-runs/netapp-state-automanagement-report.md",
+    "console_last_known_good": "artifacts/codex-runs/netapp-console-last-known-good-redacted.json",
+    "json": "artifacts/codex-runs/netapp-post-setup-validation-redacted.json"
+  },
+  "next_safe_action": "Use approved credentials only through the live validation path; do not paste secrets into the UI.",
+  "source_type": "live_probe",
+  "freshness": "current",
+  "ttl_seconds": 86400,
+  "stale_after_seconds": 86400,
+  "is_current": true,
+  "is_operator_visible": true,
+  "recheck_command": "make provider-lab-refresh-live-state",
+  "evidence_artifacts": [
+    "artifacts/codex-runs/netapp-live-state-report.md",
+    "artifacts/codex-runs/netapp-state-automanagement-report.md",
+    "artifacts/codex-runs/netapp-console-last-known-good-redacted.json"
+  ]
+}

@@ -242,6 +242,26 @@ export const api = {
     }),
   netappNfsVcenterReadiness: () =>
     apiRequest<ProviderProbeResult>("/api/v1/providers/netapp-ontap/nfs-vcenter-readiness"),
+  netappNfsSetupPreview: () =>
+    apiRequest<ProviderProbeResult>("/api/v1/providers/netapp-ontap/nfs-setup-preview"),
+  runNetappNfsSetupApply: () =>
+    apiRequest<ProviderProbeResult>("/api/v1/providers/netapp-ontap/nfs-setup-apply", {
+      method: "POST"
+    }),
+  validateNetappNfsSetup: () =>
+    apiRequest<ProviderProbeResult>("/api/v1/providers/netapp-ontap/nfs-setup-validate", {
+      method: "POST"
+    }),
+  esxiVmDeployPreview: () =>
+    apiRequest<ProviderProbeResult>("/api/v1/providers/esxi-readonly/vm-deploy-preview"),
+  runEsxiVmDeployApply: () =>
+    apiRequest<ProviderProbeResult>("/api/v1/providers/esxi-readonly/vm-deploy-apply", {
+      method: "POST"
+    }),
+  validateEsxiVmDeploy: () =>
+    apiRequest<ProviderProbeResult>("/api/v1/providers/esxi-readonly/vm-deploy-validate", {
+      method: "POST"
+    }),
   netappSetupPreview: () =>
     apiRequest<ProviderProbeResult>("/api/v1/providers/netapp-ontap/setup-preview"),
   runNetappSetupApply: () =>

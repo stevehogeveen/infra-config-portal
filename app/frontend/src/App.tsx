@@ -2015,6 +2015,9 @@ function RunCenter() {
   const [netappConsoleState, setNetappConsoleState] = useState<ProviderProbeResult | null>(null);
   const [netappLiveState, setNetappLiveState] = useState<ProviderProbeResult | null>(null);
   const [netappNfsVcenterReadiness, setNetappNfsVcenterReadiness] = useState<ProviderProbeResult | null>(null);
+  const [netappNfsSetupPreview, setNetappNfsSetupPreview] = useState<ProviderProbeResult | null>(null);
+  const [netappNfsSetupApply, setNetappNfsSetupApply] = useState<ProviderProbeResult | null>(null);
+  const [netappNfsSetupValidation, setNetappNfsSetupValidation] = useState<ProviderProbeResult | null>(null);
   const [netappSetupPreview, setNetappSetupPreview] = useState<ProviderProbeResult | null>(null);
   const [netappSetupApply, setNetappSetupApply] = useState<ProviderProbeResult | null>(null);
   const [netappUpgradeInventory, setNetappUpgradeInventory] = useState<ProviderProbeResult | null>(null);
@@ -2077,6 +2080,7 @@ function RunCenter() {
         nextConsoleState,
         nextLiveState,
         nextNfsVcenterReadiness,
+        nextNfsSetupPreview,
         nextSetupPreview,
         nextUpgradeInventory,
         nextUpgradePlan,
@@ -2090,6 +2094,7 @@ function RunCenter() {
         api.netappConsoleReadState(),
         api.netappLiveState(),
         api.netappNfsVcenterReadiness(),
+        api.netappNfsSetupPreview(),
         api.netappSetupPreview(),
         api.netappOntapUpgradeInventory(),
         api.netappOntapUpgradePlan(),
@@ -2103,6 +2108,7 @@ function RunCenter() {
       setNetappConsoleState(nextConsoleState);
       setNetappLiveState(nextLiveState);
       setNetappNfsVcenterReadiness(nextNfsVcenterReadiness);
+      setNetappNfsSetupPreview(nextNfsSetupPreview);
       setNetappSetupPreview(nextSetupPreview);
       setNetappUpgradeInventory(nextUpgradeInventory);
       setNetappUpgradePlan(nextUpgradePlan);
@@ -2192,6 +2198,48 @@ function RunCenter() {
     try {
       const result = await api.runNetappSetupApply();
       setNetappSetupApply(result);
+      await loadNetAppPlanPreview();
+    } catch (err) {
+      setNetappError((err as Error).message);
+    } finally {
+      setNetappAction("");
+    }
+  }
+
+  async function runNetAppNfsSetupPreview() {
+    setNetappError("");
+    setNetappAction("nfs-setup-preview");
+    try {
+      const result = await api.netappNfsSetupPreview();
+      setNetappNfsSetupPreview(result);
+      await loadNetAppPlanPreview();
+    } catch (err) {
+      setNetappError((err as Error).message);
+    } finally {
+      setNetappAction("");
+    }
+  }
+
+  async function runNetAppNfsSetupApply() {
+    setNetappError("");
+    setNetappAction("nfs-setup-apply");
+    try {
+      const result = await api.runNetappNfsSetupApply();
+      setNetappNfsSetupApply(result);
+      await loadNetAppPlanPreview();
+    } catch (err) {
+      setNetappError((err as Error).message);
+    } finally {
+      setNetappAction("");
+    }
+  }
+
+  async function validateNetAppNfsSetup() {
+    setNetappError("");
+    setNetappAction("nfs-setup-validate");
+    try {
+      const result = await api.validateNetappNfsSetup();
+      setNetappNfsSetupValidation(result);
       await loadNetAppPlanPreview();
     } catch (err) {
       setNetappError((err as Error).message);
@@ -2540,16 +2588,22 @@ function RunCenter() {
                   loading={netappLoading}
                   liveState={netappLiveState}
                   nfsVcenterReadiness={netappNfsVcenterReadiness}
+                  nfsSetupApply={netappNfsSetupApply}
+                  nfsSetupPreview={netappNfsSetupPreview}
+                  nfsSetupValidation={netappNfsSetupValidation}
                   netappAction={netappAction}
                   onRunConsoleDiscovery={runNetAppConsoleDiscovery}
                   onRunConsoleReadState={runNetAppConsoleReadState}
                   onRunLiveState={runNetAppLiveState}
+                  onRunNfsSetupApply={runNetAppNfsSetupApply}
+                  onRunNfsSetupPreview={runNetAppNfsSetupPreview}
                   onRunSetupApply={runNetAppSetupApply}
                   onRunSetupPreview={runNetAppSetupPreview}
                   onRunUpgradeApply={runNetAppUpgradeApply}
                   onRunUpgradeInventory={runNetAppUpgradeInventory}
                   onRunUpgradePlan={runNetAppUpgradePlan}
                   onValidateUpgrade={validateNetAppUpgrade}
+                  onValidateNfsSetup={validateNetAppNfsSetup}
                   onValidateSetup={validateNetAppSetup}
                   onRefresh={loadNetAppPlanPreview}
                   preview={netappPlanPreview}
@@ -4051,16 +4105,22 @@ function NetAppRunCenterPreview({
   loading,
   liveState,
   nfsVcenterReadiness,
+  nfsSetupApply,
+  nfsSetupPreview,
+  nfsSetupValidation,
   netappAction,
   onRunConsoleDiscovery,
   onRunConsoleReadState,
   onRunLiveState,
+  onRunNfsSetupApply,
+  onRunNfsSetupPreview,
   onRunSetupApply,
   onRunSetupPreview,
   onRunUpgradeApply,
   onRunUpgradeInventory,
   onRunUpgradePlan,
   onValidateUpgrade,
+  onValidateNfsSetup,
   onValidateSetup,
   onRefresh,
   preview,
@@ -4081,16 +4141,22 @@ function NetAppRunCenterPreview({
   loading: boolean;
   liveState: ProviderProbeResult | null;
   nfsVcenterReadiness: ProviderProbeResult | null;
+  nfsSetupApply: ProviderProbeResult | null;
+  nfsSetupPreview: ProviderProbeResult | null;
+  nfsSetupValidation: ProviderProbeResult | null;
   netappAction: string;
   onRunConsoleDiscovery: () => void;
   onRunConsoleReadState: () => void;
   onRunLiveState: () => void;
+  onRunNfsSetupApply: () => void;
+  onRunNfsSetupPreview: () => void;
   onRunSetupApply: () => void;
   onRunSetupPreview: () => void;
   onRunUpgradeApply: () => void;
   onRunUpgradeInventory: () => void;
   onRunUpgradePlan: () => void;
   onValidateUpgrade: () => void;
+  onValidateNfsSetup: () => void;
   onValidateSetup: () => void;
   onRefresh: () => void;
   preview: NetAppPlanPreview | null;
@@ -4192,10 +4258,16 @@ function NetAppRunCenterPreview({
             loading={loading}
             netappAction={netappAction}
             nfsVcenterReadiness={nfsVcenterReadiness}
+            nfsSetupApply={nfsSetupApply}
+            nfsSetupPreview={nfsSetupPreview}
+            nfsSetupValidation={nfsSetupValidation}
             onRefresh={onRefresh}
             onRunConsoleDiscovery={onRunConsoleDiscovery}
             onRunConsoleReadState={onRunConsoleReadState}
             onRunLiveState={onRunLiveState}
+            onRunNfsSetupApply={onRunNfsSetupApply}
+            onRunNfsSetupPreview={onRunNfsSetupPreview}
+            onValidateNfsSetup={onValidateNfsSetup}
             onValidateSetup={onValidateSetup}
           />
           <details className="stage-details">
@@ -4612,10 +4684,16 @@ function NetAppRealLabPanel({
   loading,
   netappAction,
   nfsVcenterReadiness,
+  nfsSetupApply,
+  nfsSetupPreview,
+  nfsSetupValidation,
   onRefresh,
   onRunConsoleDiscovery,
   onRunConsoleReadState,
   onRunLiveState,
+  onRunNfsSetupApply,
+  onRunNfsSetupPreview,
+  onValidateNfsSetup,
   onValidateSetup
 }: {
   consoleDiscovery: ProviderProbeResult | null;
@@ -4625,10 +4703,16 @@ function NetAppRealLabPanel({
   loading: boolean;
   netappAction: string;
   nfsVcenterReadiness: ProviderProbeResult | null;
+  nfsSetupApply: ProviderProbeResult | null;
+  nfsSetupPreview: ProviderProbeResult | null;
+  nfsSetupValidation: ProviderProbeResult | null;
   onRefresh: () => void;
   onRunConsoleDiscovery: () => void;
   onRunConsoleReadState: () => void;
   onRunLiveState: () => void;
+  onRunNfsSetupApply: () => void;
+  onRunNfsSetupPreview: () => void;
+  onValidateNfsSetup: () => void;
   onValidateSetup: () => void;
 }) {
   const probeEnabled = asBoolean(consoleReadiness?.console_probe_enabled);
@@ -4636,11 +4720,17 @@ function NetAppRealLabPanel({
   const stateArtifacts = objectValue(consoleState?.artifacts);
   const liveArtifacts = objectValue(liveState?.artifacts);
   const nfsArtifacts = objectValue(nfsVcenterReadiness?.artifacts);
+  const nfsSetupArtifacts = objectValue(nfsSetupPreview?.artifacts);
+  const nfsApplyArtifacts = objectValue(nfsSetupApply?.artifacts);
+  const nfsValidationArtifacts = objectValue(nfsSetupValidation?.artifacts);
   const nfsTopology = objectValue(nfsVcenterReadiness?.management_topology);
   const nfsTargets = objectValue(nfsVcenterReadiness?.targets);
   const plannedNfs = objectValue(nfsVcenterReadiness?.planned_nfs);
+  const plannedNfsSetup = objectValue(nfsSetupPreview?.nfs_plan);
   const connectedPorts = stringArray(nfsTopology.connected_management_ports);
   const nfsLifs = stringArray(plannedNfs.nfs_lifs);
+  const nfsSetupBlockers = stringArray(nfsSetupPreview?.blockers);
+  const nfsSetupApplyReady = asBoolean(nfsSetupPreview?.apply_enabled);
   const busy = Boolean(netappAction);
   const discoveryCandidateCounts = objectValue(consoleDiscovery?.candidate_counts);
   const discoveryCandidates = recordArray(consoleDiscovery?.candidates);
@@ -4687,7 +4777,7 @@ function NetAppRealLabPanel({
     <div className="netapp-real-lab-panel">
       <div className="provider-callout">
         <strong>Real-lab read-only path</strong>
-        <p>Console discovery is newline-only. NFS/vCenter remains readiness preview with no apply control.</p>
+        <p>Console discovery is newline-only. NFS setup has preview, guarded apply, and validation controls; apply stays disabled until live setup, access, and confirmation gates pass.</p>
       </div>
       <div className="provider-fact-grid compact">
         <ProviderFact label="Console Probe" value={probeEnabled ? "Available" : "Blocked"} />
@@ -4713,6 +4803,10 @@ function NetAppRealLabPanel({
         <ProviderFact label="NFS Readiness" value={operatorReadinessLabel(asString(nfsVcenterReadiness?.status) || "not run")} />
         <ProviderFact label="NFS LIFs" value={nfsLifs.length ? nfsLifs.join(", ") : "Not planned"} />
         <ProviderFact label="Datastore" value={asString(plannedNfs.datastore_name) || "Not planned"} />
+        <ProviderFact label="NFS Setup" value={operatorReadinessLabel(asString(nfsSetupPreview?.status) || "not run")} />
+        <ProviderFact label="NFS Apply" value={nfsSetupApplyReady ? "Ready" : "Disabled"} />
+        <ProviderFact label="NFS Volume" value={asString(plannedNfsSetup.volume) || asString(plannedNfs.volume) || "Not planned"} />
+        <ProviderFact label="Export Policy" value={asString(plannedNfsSetup.export_policy) || asString(plannedNfs.export_policy) || "Not planned"} />
         <ProviderFact label="vCenter" value={asBoolean(nfsTargets.vcenter_configured) ? "Configured" : "Not configured"} />
         <ProviderFact label="govc" value={asBoolean(nfsTargets.govc_available) ? "Available" : "Missing"} />
       </div>
@@ -4734,6 +4828,18 @@ function NetAppRealLabPanel({
         <button onClick={onValidateSetup} disabled={!probeEnabled || busy || loading} type="button">
           <ShieldCheck size={16} />
           {netappAction === "validate-setup" ? "Validating" : "Validate NetApp Setup"}
+        </button>
+        <button onClick={onRunNfsSetupPreview} disabled={busy || loading} type="button">
+          <ClipboardList size={16} />
+          {netappAction === "nfs-setup-preview" ? "Previewing" : "Preview NFS Setup"}
+        </button>
+        <button onClick={onRunNfsSetupApply} disabled={busy || loading || !nfsSetupApplyReady} title={nfsSetupApplyReady ? "Run guarded NFS setup apply" : "Disabled until NFS setup gates pass"} type="button">
+          <Play size={16} />
+          {netappAction === "nfs-setup-apply" ? "Applying" : "Apply NFS Setup"}
+        </button>
+        <button onClick={onValidateNfsSetup} disabled={busy || loading} type="button">
+          <ShieldCheck size={16} />
+          {netappAction === "nfs-setup-validate" ? "Validating" : "Validate NFS"}
         </button>
         <button onClick={onRunConsoleReadState} disabled={!probeEnabled || busy || loading} type="button">
           <Activity size={16} />
@@ -4776,6 +4882,17 @@ function NetAppRealLabPanel({
         />
         <NetAppEvidenceTile
           lines={[
+            asString(nfsSetupPreview?.message) || "NFS setup preview has not loaded.",
+            `Preview report: ${asString(nfsSetupArtifacts.report) || "artifacts/codex-runs/netapp-nfs-setup-preview-report.md"}`,
+            `Apply report: ${asString(nfsApplyArtifacts.report) || "artifacts/codex-runs/netapp-nfs-setup-apply-report.md"}`,
+            `Validation report: ${asString(nfsValidationArtifacts.report) || "artifacts/codex-runs/netapp-nfs-setup-validation-report.md"}`,
+            nfsSetupBlockers[0] || "No NFS setup blocker reported."
+          ]}
+          tag={labelize(asString(nfsSetupPreview?.status) || "not run")}
+          title="NFS setup"
+        />
+        <NetAppEvidenceTile
+          lines={[
             asString(nfsVcenterReadiness?.message) || "NFS/vCenter readiness has not loaded.",
             `Report: ${asString(nfsArtifacts.report) || "artifacts/codex-runs/netapp-nfs-vcenter-readiness-report.md"}`,
             asString(nfsTopology.note) || "Only one management path is expected right now."
@@ -4789,6 +4906,9 @@ function NetAppRealLabPanel({
           ...(consoleDiscovery?.blockers ?? []),
           ...(consoleState?.blockers ?? []),
           ...(liveState?.blockers ?? []),
+          ...(nfsSetupPreview?.blockers ?? []),
+          ...(nfsSetupApply?.blockers ?? []),
+          ...(nfsSetupValidation?.blockers ?? []),
           ...(nfsVcenterReadiness?.blockers ?? [])
         ]}
         removableWarnings={[]}
@@ -4796,6 +4916,9 @@ function NetAppRealLabPanel({
           ...(consoleDiscovery?.warnings ?? []),
           ...(consoleState?.warnings ?? []),
           ...(liveState?.warnings ?? []),
+          ...(nfsSetupPreview?.warnings ?? []),
+          ...(nfsSetupApply?.warnings ?? []),
+          ...(nfsSetupValidation?.warnings ?? []),
           ...(nfsVcenterReadiness?.warnings ?? [])
         ]}
       />

@@ -51,11 +51,13 @@ class NetAppOntapAdapter:
                 "upgrade-readiness-preview",
                 "console-discovery-readonly",
                 "console-read-state-readonly",
+                "nfs-setup-preview",
+                "nfs-setup-apply-guarded",
                 "nfs-vcenter-readiness-preview",
             ],
             message=(
                 "NetApp ONTAP preview with explicit read-only console discovery available in real-lab modes. "
-                "Storage/NFS/vCenter apply remains disabled."
+                "NFS setup apply is guarded and disabled until live setup, access, and exact confirmation gates pass."
             ),
             configuration=self._configuration(),
             discovery={
@@ -129,6 +131,15 @@ class NetAppOntapAdapter:
                     ),
                     method="POST",
                     endpoint="/api/v1/providers/netapp-ontap/console-read-state",
+                ),
+                ProviderAction(
+                    id="netapp-nfs-setup-preview",
+                    label="Preview NFS Setup",
+                    enabled=True,
+                    read_only=True,
+                    reason="Preview planned SVM, NFS LIF, volume, export policy, and datastore target without writes.",
+                    method="GET",
+                    endpoint="/api/v1/providers/netapp-ontap/nfs-setup-preview",
                 ),
             ],
             disabled_actions=_disabled_actions(),

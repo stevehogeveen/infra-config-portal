@@ -52,6 +52,7 @@ def test_control_action_catalog_exposes_device_actions_without_direct_runs(
         "ilo.inventory",
         "raid.apply",
         "esxi.rebuild-install",
+        "esxi.vm-deploy-preview",
         "netapp.setup-preview",
         "firmware.upgrade-apply-placeholder",
         "build-verification.run-full",

@@ -5,7 +5,7 @@ from dataclasses import replace
 
 from app.core.config import settings
 from app.schemas import MediaInventoryItemRead, MediaInventoryRead
-from app.services import netapp_setup_intent, netapp_upgrade_center
+from app.services import netapp_nfs_setup, netapp_setup_intent, netapp_upgrade_center
 
 
 def test_setup_preview_detects_cluster_setup_wizard(monkeypatch) -> None:
@@ -74,9 +74,16 @@ def test_setup_apply_exposes_missing_intent_fields(monkeypatch) -> None:
 
     payload = netapp_setup_intent.apply_netapp_setup(write_report=False)
 
-    assert "cluster_name" in payload["missing_fields"]
+    assert "cluster_name" not in payload["missing_fields"]
+    assert payload["intent"]["cluster_name"] == "lab-netapp-cluster"
+    assert payload["intent"]["node_a_name"] == "lab-netapp-node-a"
+    assert payload["intent"]["node_b_name"] == "lab-netapp-node-b"
+    assert payload["intent"]["svm_name"] == "esxi_svm"
+    assert payload["intent"]["dns_servers"]
+    assert payload["intent"]["ntp_servers"]
+    assert payload["intent"]["search_domains"] == ["lab.local"]
     assert "admin_access_source" in payload["missing_fields"]
-    assert any(item["field_name"] == "cluster_name" for item in payload["remediation_items"])
+    assert any(item["field_name"] == "admin_access_source" for item in payload["remediation_items"])
 
 
 def test_setup_preview_reports_apply_command_and_confirmations(monkeypatch) -> None:
@@ -93,6 +100,47 @@ def test_setup_preview_reports_apply_command_and_confirmations(monkeypatch) -> N
     assert 'NETAPP_SETUP_CONFIRM="APPLY NETAPP CLUSTER SETUP"' in payload["apply_command"]
     assert "NETAPP_SETUP_APPLY=true" in payload["required_flags"]
     assert 'NETAPP_SETUP_CONFIRM="APPLY NETAPP CLUSTER SETUP"' in payload["required_flags"]
+
+
+def test_nfs_setup_preview_blocks_until_cluster_and_access_are_ready(monkeypatch) -> None:
+    _patch_nfs_runtime(monkeypatch, configured=False)
+
+    payload = netapp_nfs_setup.build_netapp_nfs_setup_preview(write_report=False)
+
+    assert payload["status"] == "blocked"
+    assert payload["apply_enabled"] is False
+    assert payload["nfs_plan"]["storage_protocol"] == "nfs"
+    assert payload["nfs_plan"]["volume"] == "esxi_datastore_01"
+    assert payload["nfs_plan"]["preferred_nfs_lif"] == "192.168.1.230"
+    assert any("prior cluster setup" in blocker for blocker in payload["blockers"])
+    assert any("iSCSI" in item for item in payload["not_attempted"])
+
+
+def test_nfs_setup_apply_refuses_without_flags(monkeypatch) -> None:
+    _patch_nfs_runtime(monkeypatch, configured=True)
+    settings_override = replace(
+        settings,
+        provider_mode="local-lab-readwrite",
+        lab_environment="isolated-real-lab",
+        lab_acknowledge_real_hardware=True,
+        lab_acknowledge_device_reconfiguration=True,
+        lab_acknowledge_data_loss_risk=True,
+        lab_acknowledge_lab_only=True,
+        netapp_api_username="admin",
+        netapp_api_password="configured-value",
+    )
+    monkeypatch.setattr(netapp_nfs_setup, "settings", settings_override)
+    monkeypatch.delenv("NETAPP_NFS_SETUP_APPLY", raising=False)
+    monkeypatch.delenv("NETAPP_NFS_SETUP_CONFIRM", raising=False)
+    monkeypatch.delenv("NETAPP_NFS_SETUP_ALLOW_STORAGE_CREATE", raising=False)
+
+    payload = netapp_nfs_setup.apply_netapp_nfs_setup(write_report=False)
+
+    assert payload["status"] == "blocked"
+    assert payload["apply_enabled"] is False
+    assert payload["apply"]["ontap_writes_attempted"] is False
+    assert any("NETAPP_NFS_SETUP_APPLY=true" in blocker for blocker in payload["blockers"])
+    assert any("NETAPP_NFS_SETUP_ALLOW_STORAGE_CREATE=true" in blocker for blocker in payload["blockers"])
 
 
 def test_upgrade_inventory_reports_not_configured_before_cluster_management(monkeypatch) -> None:
@@ -236,10 +284,10 @@ def _patch_setup_settings(monkeypatch) -> None:
         lab_acknowledge_device_reconfiguration=True,
         lab_acknowledge_data_loss_risk=True,
         lab_acknowledge_lab_only=True,
-        netapp_cluster_name="lab-ontap-cluster-01",
-        netapp_node_a_name="netapp-a",
-        netapp_node_b_name="netapp-b",
-        netapp_svm_name="svm_esxi_nfs",
+        netapp_cluster_name="lab-netapp-cluster",
+        netapp_node_a_name="lab-netapp-node-a",
+        netapp_node_b_name="lab-netapp-node-b",
+        netapp_svm_name="esxi_svm",
         netapp_dns_servers=("192.168.1.1",),
         netapp_ntp_servers=("192.168.1.205",),
         netapp_search_domains=("lab.local",),
@@ -263,6 +311,18 @@ def _patch_upgrade_runtime(monkeypatch, *, configured: bool) -> None:
     )
 
 
+def _patch_nfs_runtime(monkeypatch, *, configured: bool) -> None:
+    monkeypatch.setattr(
+        netapp_nfs_setup,
+        "get_netapp_runtime_state",
+        lambda: {
+            "configured": configured,
+            "configured_state": "configured" if configured else "login_required",
+            "source": "test",
+        },
+    )
+
+
 def _patch_upgrade_settings(
     monkeypatch,
     *,
@@ -282,10 +342,10 @@ def _patch_upgrade_settings(
         netapp_target_ontap_version="9.14.1" if current_version else None,
         netapp_api_username="admin",
         netapp_api_password=access_value,
-        netapp_cluster_name="lab-ontap-cluster-01",
-        netapp_node_a_name="netapp-a",
-        netapp_node_b_name="netapp-b",
-        netapp_svm_name="svm_esxi_nfs",
+        netapp_cluster_name="lab-netapp-cluster",
+        netapp_node_a_name="lab-netapp-node-a",
+        netapp_node_b_name="lab-netapp-node-b",
+        netapp_svm_name="esxi_svm",
         netapp_dns_servers=("192.168.1.1",),
         netapp_ntp_servers=("192.168.1.205",),
         netapp_search_domains=("lab.local",),

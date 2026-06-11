@@ -66,6 +66,8 @@ def test_netapp_ontap_status_preview_is_plan_only_and_redacted(client: TestClien
         "upgrade-readiness-preview",
         "console-discovery-readonly",
         "console-read-state-readonly",
+        "nfs-setup-preview",
+        "nfs-setup-apply-guarded",
         "nfs-vcenter-readiness-preview",
     ]
     assert netapp["configuration"]["netapp_configured"] is False
@@ -147,12 +149,18 @@ def test_netapp_ontap_status_preview_is_plan_only_and_redacted(client: TestClien
     safe_actions = {action["label"]: action for action in netapp["safe_actions"]}
     assert set(safe_actions) == {
         "Discover NetApp Console",
+        "Preview NFS Setup",
         "Read NetApp State",
         "Validate NetApp Setup",
         "Read Console State",
     }
     assert all(action["read_only"] is True for action in safe_actions.values())
-    assert all(action["enabled"] is False for action in safe_actions.values())
+    assert safe_actions["Preview NFS Setup"]["enabled"] is True
+    assert all(
+        action["enabled"] is False
+        for label, action in safe_actions.items()
+        if label != "Preview NFS Setup"
+    )
     disabled_actions = {action["label"]: action for action in netapp["disabled_actions"]}
     assert set(disabled_actions) >= {
         "Create Cluster",
@@ -471,6 +479,25 @@ def test_netapp_nfs_vcenter_readiness_is_preview_only_and_single_port_aware(
     assert (tmp_path / "nfs.json").exists()
     assert (tmp_path / "nfs.md").exists()
     assert not _contains_sensitive_key(payload)
+
+
+def test_netapp_nfs_setup_preview_is_guarded_nfs_only(client: TestClient) -> None:
+    response = client.get("/api/v1/providers/netapp-ontap/nfs-setup-preview")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["provider_id"] == "netapp-ontap"
+    assert payload["action"] == "nfs-setup-preview"
+    assert payload["apply_enabled"] is False
+    assert payload["nfs_plan"]["storage_protocol"] == "nfs"
+    assert payload["nfs_plan"]["volume"] == "esxi_datastore_01"
+    assert payload["nfs_plan"]["mount_path"] == "/esxi_datastore_01"
+    assert payload["nfs_plan"]["export_policy"] == "esxi_nfs_policy"
+    assert payload["nfs_plan"]["datastore_name"] == "netapp_nfs_ds01"
+    assert payload["nfs_plan"]["preferred_nfs_lif"] == "192.168.1.230"
+    assert payload["nfs_plan"]["fallback_nfs_lif"] == "192.168.1.231"
+    assert any("iSCSI" in item for item in payload["not_attempted"])
+    assert not _contains_forbidden_plan_preview_key(payload)
 
 
 def test_netapp_observations_default_state_is_mock_only_and_redacted(
