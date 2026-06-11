@@ -1,0 +1,2 @@
+/ha-datacenter/vm/win2022-01
+/ha-datacenter/vm/grand-operation-test-vm

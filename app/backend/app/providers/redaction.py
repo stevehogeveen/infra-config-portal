@@ -13,6 +13,19 @@ SENSITIVE_KEYWORDS = (
     "token",
 )
 
+SENSITIVE_IDENTITY_KEYS = {
+    "assettag",
+    "asset_tag",
+    "fqdn",
+    "hostname",
+    "host_name",
+    "macaddress",
+    "mac_address",
+    "serialnumber",
+    "serial_number",
+    "uuid",
+}
+
 SENSITIVE_VALUE_RE = re.compile(
     r"(?i)(password|token|secret|authorization|cookie)(\s*[=:]\s*)([^,\s]+)"
 )
@@ -69,6 +82,8 @@ def _is_sensitive_key(key: str) -> bool:
     lower_key = key.lower()
     if lower_key in NON_SECRET_EVIDENCE_KEYS:
         return False
+    if lower_key in SENSITIVE_IDENTITY_KEYS:
+        return True
     if lower_key.endswith("_configured") or lower_key.endswith("configured"):
         return False
     return any(keyword in lower_key for keyword in SENSITIVE_KEYWORDS)

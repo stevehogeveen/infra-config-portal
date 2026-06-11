@@ -40,6 +40,7 @@ VIRTUAL_MEDIA_STATE = CODEX_RUN_DIR / "esxi-virtual-media-state.json"
 DEFAULT_MEDIA_PORT = 8088
 PREFERRED_ISO_MARKERS = ("8.0.3", "803", "oct2025")
 RESET_TYPE = "ForceRestart"
+POWER_ON_RESET_TYPE = "On"
 
 
 def prepare_esxi_media_url() -> dict[str, Any]:
@@ -353,28 +354,45 @@ def reset_for_esxi_installer_boot() -> dict[str, Any]:
             },
         )
 
-    reset = _post_system_reset(RESET_TYPE)
-    wait = _wait_for_ilo()
+    pre_system = _safe_get(SYSTEM_PATH)
+    pre_power_state = _body(pre_system).get("PowerState") if pre_system.get("status_code") else None
+    reset_type = POWER_ON_RESET_TYPE if pre_power_state == "Off" else RESET_TYPE
+    reset = _post_system_reset(reset_type)
+    reset_attempts = [reset]
+    if reset_type != POWER_ON_RESET_TYPE and not _reset_succeeded(reset) and _reset_failed_because_power_is_off(reset):
+        reset = _post_system_reset(POWER_ON_RESET_TYPE)
+        reset_attempts.append(reset)
+    reset_ok = _reset_succeeded(reset)
+    wait = _wait_for_ilo(require_powered=True) if reset_ok else {"reachable": False, "skipped": "reset_failed"}
     post_system = _safe_get(SYSTEM_PATH)
     vm_state = _safe_get(str((media.get("device") or {}).get("path") or ""))
     detection = _installer_detection(post_system, vm_state)
-    status = "boot_requested" if wait["reachable"] else "blocked"
+    status = "boot_requested" if reset_ok and wait["reachable"] else "blocked"
     warnings = detection.get("warnings") or []
     if detection.get("status") == "indeterminate":
         warnings.append("iLO Redfish did not expose a definitive ESXi installer console/boot signal.")
+    blockers = []
+    if not reset_ok:
+        blockers.append(
+            f"Server reset/power-on request failed with HTTP status {reset.get('status_code')}."
+        )
+    if reset_ok and not wait["reachable"]:
+        blockers.append("Server did not report a powered-on state during reset wait.")
     return _write_report(
         INSTALLER_BOOT_REPORT,
         "ESXi Installer Boot Report",
         {
             "status": status,
-            "message": "Server reset completed and ESXi installer boot was requested." if status == "boot_requested" else "Server did not return to iLO reachability after reset wait.",
+            "message": "Server reset/power-on completed and ESXi installer boot was requested." if status == "boot_requested" else "Server reset/power-on did not complete.",
             "checked_at": _now(),
+            "pre_system": _boot_summary(pre_system) if pre_system.get("status_code") else pre_system,
             "reset": reset,
+            "reset_attempts": reset_attempts,
             "wait": wait,
             "post_system": _boot_summary(post_system) if post_system.get("status_code") else post_system,
             "virtual_media_after_reset": _virtual_media_summary(vm_state) if vm_state.get("status_code") else vm_state,
             "installer_detection": detection,
-            "blockers": [] if status == "boot_requested" else ["iLO/server did not return during reset wait."],
+            "blockers": blockers,
             "warnings": warnings,
             "report": str(INSTALLER_BOOT_REPORT.relative_to(REPO_ROOT)),
             "next_safe_action": "Use console or manual KVM observation to continue ESXi installer if Redfish detection is indeterminate.",
@@ -580,25 +598,54 @@ def _patch_system_boot(payload: dict[str, Any]) -> dict[str, Any]:
     return _sanitize({"method": "PATCH", "path": SYSTEM_PATH, "status_code": response.status_code, "request": payload, "response": body})
 
 
-def _wait_for_ilo() -> dict[str, Any]:
+def _wait_for_ilo(*, require_powered: bool = False) -> dict[str, Any]:
     timeout_seconds = int(os.getenv("ESXI_INSTALL_BOOT_WAIT_SECONDS", "900"))
     poll_seconds = int(os.getenv("ESXI_INSTALL_BOOT_POLL_SECONDS", "20"))
     started = time.monotonic()
     attempts = 0
     last_error: dict[str, Any] | None = None
+    last_power_state: str | None = None
+    ilo_reachable = False
     while time.monotonic() - started <= timeout_seconds:
         attempts += 1
         result = _safe_get(SYSTEM_PATH)
         if result.get("status_code"):
+            ilo_reachable = True
+            last_power_state = _body(result).get("PowerState")
+            if require_powered and last_power_state == "Off":
+                last_error = {
+                    "status_code": result.get("status_code"),
+                    "power_state": last_power_state,
+                    "reason": "server_power_state_off",
+                }
+                time.sleep(max(poll_seconds, 1))
+                continue
             return {
                 "reachable": True,
                 "attempts": attempts,
                 "elapsed_seconds": int(time.monotonic() - started),
-                "power_state": _body(result).get("PowerState"),
+                "power_state": last_power_state,
+                "ilo_reachable": ilo_reachable,
             }
         last_error = result
         time.sleep(max(poll_seconds, 1))
-    return {"reachable": False, "attempts": attempts, "elapsed_seconds": int(time.monotonic() - started), "last_error": last_error}
+    return {
+        "reachable": False,
+        "attempts": attempts,
+        "elapsed_seconds": int(time.monotonic() - started),
+        "ilo_reachable": ilo_reachable,
+        "last_power_state": last_power_state,
+        "last_error": last_error,
+    }
+
+
+def _reset_succeeded(reset: dict[str, Any]) -> bool:
+    status_code = reset.get("status_code")
+    return isinstance(status_code, int) and 200 <= status_code < 300
+
+
+def _reset_failed_because_power_is_off(reset: dict[str, Any]) -> bool:
+    return "power is off" in json.dumps(reset).lower()
 
 
 def _installer_detection(system: dict[str, Any], virtual_media: dict[str, Any]) -> dict[str, Any]:

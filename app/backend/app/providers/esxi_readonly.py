@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import importlib.util
 import socket
+import sys
 import time
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
@@ -21,6 +23,7 @@ PROVIDER_ID = "esxi-readonly"
 MAX_ATTEMPTS = 3
 HTTPS_PORT = 443
 SSH_PORT = 22
+REPO_ROOT = Path(__file__).resolve().parents[4]
 
 
 @dataclass(frozen=True)
@@ -462,7 +465,13 @@ def _tool_availability() -> dict[str, bool]:
 def _which(name: str) -> bool:
     from shutil import which
 
-    return which(name) is not None
+    if which(name) is not None:
+        return True
+    for directory in (Path(sys.executable).parent, REPO_ROOT / ".local" / "bin"):
+        candidate = directory / name
+        if candidate.exists() and candidate.is_file():
+            return True
+    return False
 
 
 def _dangerous_actions() -> list[ProviderAction]:

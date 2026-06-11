@@ -1,0 +1,977 @@
+{
+  "virtualMachines": [
+    {
+      "self": {
+        "type": "VirtualMachine",
+        "value": "3"
+      },
+      "value": null,
+      "availableField": null,
+      "parent": {
+        "type": "Folder",
+        "value": "ha-folder-vm"
+      },
+      "customValue": null,
+      "overallStatus": "green",
+      "configStatus": "green",
+      "configIssue": null,
+      "effectiveRole": [
+        -1
+      ],
+      "permission": null,
+      "name": "grand-operation-test-vm",
+      "disabledMethod": [
+        "setCustomValue",
+        "AddTag",
+        "RemoveTag",
+        "RetrieveCustomValues",
+        "RefreshStorageInfo",
+        "ReportFailoverCompleted",
+        "RetrieveBackupAgent",
+        "CreateSnapshotEx_Task",
+        "RevertToCurrentSnapshot_Task",
+        "ExtractOvfEnvironment",
+        "PowerOffVM_Task",
+        "SuspendVM_Task",
+        "SuspendToMemoryVM_Task",
+        "ResetVM_Task",
+        "ShutdownGuest",
+        "RebootGuest",
+        "StandbyGuest",
+        "AnswerVM",
+        "CustomizeVM_Task",
+        "CheckCustomizationSpec",
+        "MigrateVM_Task",
+        "RelocateVM_Task",
+        "CloneVM_Task",
+        "CloneFromLibraryItem_Task",
+        "InstantClone_Task",
+        "CreateForkChild_Task",
+        "EnableForkParent_Task",
+        "DisableForkParent_Task",
+        "RetrieveForkChildren_Task",
+        "RetrieveForkParent_Task",
+        "CreateImportLease",
+        "MarkAsTemplate",
+        "MarkAsVirtualMachine",
+        "ResetGuestInformation",
+        "MountToolsInstaller",
+        "MountToolsInstallerImage",
+        "UnmountToolsInstaller",
+        "UpgradeTools_Task",
+        "UpgradeToolsFromImage_Task",
+        "AcquireMksTicket",
+        "QueryConnections",
+        "DropConnections",
+        "AcquireTicket",
+        "SetScreenResolution",
+        "DefragmentAllDisks",
+        "CreateSecondaryVM_Task",
+        "CreateSecondaryVMEx_Task",
+        "TurnOffFaultToleranceForVM_Task",
+        "MakePrimaryVM_Task",
+        "TerminateFaultTolerantVM_Task",
+        "DisableSecondaryVM_Task",
+        "EnableSecondaryVM_Task",
+        "SetDisplayTopology",
+        "StartRecording_Task",
+        "StopRecording_Task",
+        "StartReplaying_Task",
+        "StopReplaying_Task",
+        "PromoteDisks_Task",
+        "CreateScreenshot_Task",
+        "PutUsbScanCodes",
+        "QueryChangedDiskAreas",
+        "QueryUnownedFiles",
+        "reloadVirtualMachineFromPath_Task",
+        "QueryFaultToleranceCompatibility",
+        "QueryFaultToleranceCompatibilityEx",
+        "InvokeFSR_Task",
+        "TerminateVM",
+        "IsNativeSnapshotCapable",
+        "ConfigureQuorumFilePathPrefix_Task",
+        "InjectOvfEnvironment",
+        "WipeDisk_Task",
+        "ShrinkDisk_Task",
+        "SendNMI",
+        "ReloadEx_Task",
+        "AttachDisk_Task",
+        "DetachDisk_Task",
+        "CryptoUnlock_Task",
+        "Checkout_Task",
+        "Checkin_Task",
+        "Revert_Task",
+        "MarkAsLibraryItem_Task",
+        "RemoveLibraryItem_Task",
+        "CloneVmAsLibraryItem_Task",
+        "SetAhDeviceHints",
+        "GuestQuiesceBegin_Task",
+        "GuestQuiesceEnd_Task"
+      ],
+      "recentTask": null,
+      "declaredAlarmState": null,
+      "triggeredAlarmState": null,
+      "alarmActionsEnabled": null,
+      "tag": null,
+      "capability": {
+        "snapshotOperationsSupported": true,
+        "multipleSnapshotsSupported": true,
+        "snapshotConfigSupported": true,
+        "poweredOffSnapshotsSupported": true,
+        "memorySnapshotsSupported": true,
+        "revertToSnapshotSupported": true,
+        "quiescedSnapshotsSupported": true,
+        "disableSnapshotsSupported": false,
+        "lockSnapshotsSupported": true,
+        "consolePreferencesSupported": false,
+        "cpuFeatureMaskSupported": true,
+        "s1AcpiManagementSupported": true,
+        "settingScreenResolutionSupported": false,
+        "toolsAutoUpdateSupported": false,
+        "vmNpivWwnSupported": true,
+        "npivWwnOnNonRdmVmSupported": true,
+        "vmNpivWwnDisableSupported": true,
+        "vmNpivWwnUpdateSupported": true,
+        "swapPlacementSupported": true,
+        "toolsSyncTimeSupported": true,
+        "virtualMmuUsageSupported": false,
+        "diskSharesSupported": true,
+        "bootOptionsSupported": true,
+        "bootRetryOptionsSupported": true,
+        "settingVideoRamSizeSupported": true,
+        "settingDisplayTopologySupported": false,
+        "recordReplaySupported": false,
+        "changeTrackingSupported": true,
+        "multipleCoresPerSocketSupported": true,
+        "hostBasedReplicationSupported": true,
+        "guestAutoLockSupported": true,
+        "memoryReservationLockSupported": true,
+        "featureRequirementSupported": true,
+        "poweredOnMonitorTypeChangeSupported": true,
+        "seSparseDiskSupported": true,
+        "nestedHVSupported": true,
+        "vPMCSupported": true,
+        "secureBootSupported": true,
+        "perVmEvcSupported": true,
+        "virtualMmuUsageIgnored": true,
+        "virtualExecUsageIgnored": true,
+        "diskOnlySnapshotOnSuspendedVMSupported": true,
+        "suspendToMemorySupported": true,
+        "toolsSyncTimeAllowSupported": true,
+        "sevSupported": true,
+        "pmemFailoverSupported": true,
+        "requireSgxAttestationSupported": false,
+        "changeModeDisksSupported": true,
+        "vendorDeviceGroupSupported": false
+      },
+      "config": {
+        "changeVersion": "2001-01-13T07:24:40.206713Z",
+        "modified": "1970-01-01T00:00:00Z",
+        "name": "grand-operation-test-vm",
+        "guestFullName": "Microsoft Windows Server 2022 (64-bit)",
+        "version": "vmx-19",
+        "uuid": "564db9c3-44fa-d943-5b4d-762771fdcab3",
+        "createDate": "2001-01-13T07:11:21.53664Z",
+        "instanceUuid": "52f6c1ce-36f8-07a5-4caf-645c8fb2c5f4",
+        "npivTemporaryDisabled": true,
+        "locationId": "564db9c3-44fa-d943-5b4d-762771fdcab3",
+        "template": false,
+        "guestId": "windows2019srvNext_64Guest",
+        "alternateGuestName": "",
+        "annotation": "DepOps W2K22 Server Template v1.0 - Released Feb 28 2025",
+        "files": {
+          "vmPathName": "[datastore1] grand-operation-test-vm/grand-operation-test-vm.vmx",
+          "snapshotDirectory": "[datastore1] grand-operation-test-vm",
+          "suspendDirectory": "[datastore1] grand-operation-test-vm",
+          "logDirectory": "[datastore1] grand-operation-test-vm"
+        },
+        "tools": {
+          "toolsVersion": 12389,
+          "afterPowerOn": true,
+          "afterResume": true,
+          "beforeGuestStandby": true,
+          "beforeGuestShutdown": true,
+          "toolsUpgradePolicy": "manual",
+          "syncTimeWithHostAllowed": true,
+          "syncTimeWithHost": false,
+          "lastInstallInfo": {
+            "counter": 0
+          }
+        },
+        "flags": {
+          "enableLogging": true,
+          "useToe": false,
+          "runWithDebugInfo": false,
+          "monitorType": "release",
+          "htSharing": "any",
+          "snapshotDisabled": false,
+          "snapshotLocked": false,
+          "diskUuidEnabled": true,
+          "snapshotPowerOffBehavior": "powerOff",
+          "recordReplayEnabled": false,
+          "faultToleranceType": "unset",
+          "cbrcCacheEnabled": false,
+          "vvtdEnabled": false,
+          "vbsEnabled": false
+        },
+        "defaultPowerOps": {
+          "powerOffType": "soft",
+          "suspendType": "hard",
+          "resetType": "soft",
+          "defaultPowerOffType": "soft",
+          "defaultSuspendType": "hard",
+          "defaultResetType": "soft",
+          "standbyAction": "checkpoint"
+        },
+        "rebootPowerOff": false,
+        "hardware": {
+          "numCPU": 1,
+          "numCoresPerSocket": 1,
+          "autoCoresPerSocket": false,
+          "memoryMB": 4096,
+          "virtualICH7MPresent": false,
+          "virtualSMCPresent": false,
+          "device": [
+            {
+              "key": 200,
+              "deviceInfo": {
+                "label": "IDE 0",
+                "summary": "IDE 0"
+              },
+              "busNumber": 0
+            },
+            {
+              "key": 201,
+              "deviceInfo": {
+                "label": "IDE 1",
+                "summary": "IDE 1"
+              },
+              "busNumber": 1
+            },
+            {
+              "key": 300,
+              "deviceInfo": {
+                "label": "PS2 controller 0",
+                "summary": "PS2 controller 0"
+              },
+              "busNumber": 0,
+              "device": [
+                600,
+                700
+              ]
+            },
+            {
+              "key": 100,
+              "deviceInfo": {
+                "label": "PCI controller 0",
+                "summary": "PCI controller 0"
+              },
+              "busNumber": 0,
+              "device": [
+                500,
+                12000,
+                14000,
+                1000,
+                15000,
+                4000
+              ]
+            },
+            {
+              "key": 400,
+              "deviceInfo": {
+                "label": "SIO controller 0",
+                "summary": "SIO controller 0"
+              },
+              "busNumber": 0
+            },
+            {
+              "key": 600,
+              "deviceInfo": {
+                "label": "Keyboard ",
+                "summary": "Keyboard"
+              },
+              "controllerKey": 300,
+              "unitNumber": 0
+            },
+            {
+              "key": 700,
+              "deviceInfo": {
+                "label": "Pointing device",
+                "summary": "Pointing device; Device"
+              },
+              "backing": {
+                "deviceName": "",
+                "useAutoDetect": false,
+                "hostPointingDevice": "autodetect"
+              },
+              "controllerKey": 300,
+              "unitNumber": 1
+            },
+            {
+              "key": 500,
+              "deviceInfo": {
+                "label": "Video card ",
+                "summary": "Video card"
+              },
+              "controllerKey": 100,
+              "unitNumber": 0,
+              "videoRamSizeInKB": 4096,
+              "numDisplays": 1,
+              "useAutoDetect": true,
+              "enable3DSupport": false,
+              "use3dRenderer": "automatic",
+              "graphicsMemorySizeInKB": 262144
+            },
+            {
+              "key": 12000,
+              "deviceInfo": {
+                "label": "VMCI device",
+                "summary": "Device on the virtual machine PCI bus that provides support for the virtual machine communication interface"
+              },
+              "controllerKey": 100,
+              "unitNumber": 17,
+              "id": -1,
+              "allowUnrestrictedCommunication": false,
+              "filterEnable": true
+            },
+            {
+              "key": 14000,
+              "deviceInfo": {
+                "label": "USB xHCI controller ",
+                "summary": "USB xHCI controller"
+              },
+              "slotInfo": {
+                "pciSlotNumber": 224
+              },
+              "controllerKey": 100,
+              "unitNumber": 23,
+              "busNumber": 0,
+              "autoConnectDevices": false
+            },
+            {
+              "key": 1000,
+              "deviceInfo": {
+                "label": "SCSI controller 0",
+                "summary": "LSI Logic SAS"
+              },
+              "slotInfo": {
+                "pciSlotNumber": 160
+              },
+              "controllerKey": 100,
+              "unitNumber": 3,
+              "busNumber": 0,
+              "device": [
+                2000
+              ],
+              "hotAddRemove": true,
+              "sharedBus": "noSharing",
+              "scsiCtlrUnitNumber": 7
+            },
+            {
+              "key": 15000,
+              "deviceInfo": {
+                "label": "SATA controller 0",
+                "summary": "AHCI"
+              },
+              "slotInfo": {
+                "pciSlotNumber": 32
+              },
+              "controllerKey": 100,
+              "unitNumber": 24,
+              "busNumber": 0,
+              "device": [
+                16000
+              ]
+            },
+            {
+              "key": 16000,
+              "deviceInfo": {
+                "label": "CD/DVD drive 1",
+                "summary": "Remote ATAPI CD/DVD drive 0"
+              },
+              "backing": {
+                "deviceName": "CD/DVD drive 0",
+                "useAutoDetect": false
+              },
+              "connectable": {
+                "startConnected": false,
+                "allowGuestControl": true,
+                "connected": false,
+                "status": "untried"
+              },
+              "controllerKey": 15000,
+              "unitNumber": 0
+            },
+            {
+              "key": 2000,
+              "deviceInfo": {
+                "label": "Hard disk 1",
+                "summary": "104,857,600 KB"
+              },
+              "backing": {
+                "fileName": "[datastore1] grand-operation-test-vm/grand-operation-test-vm.vmdk",
+                "datastore": {
+                  "type": "Datastore",
+                  "value": "3a511c1a-8c8f99ac-931f-20677cd582a4"
+                },
+                "backingObjectId": "",
+                "diskMode": "persistent",
+                "split": false,
+                "writeThrough": false,
+                "thinProvisioned": true,
+                "eagerlyScrub": false,
+                "uuid": "6000C294-92e0-c43e-555e-1c7a8f31ba4d",
+                "contentId": "54f920f42cc53b9bc3d8aaafa6b5e941",
+                "digestEnabled": false,
+                "sharing": "sharingNone"
+              },
+              "controllerKey": 1000,
+              "unitNumber": 0,
+              "capacityInKB": 104857600,
+              "capacityInBytes": 107374182400,
+              "shares": {
+                "shares": 1000,
+                "level": "normal"
+              },
+              "storageIOAllocation": {
+                "limit": -1,
+                "shares": {
+                  "shares": 1000,
+                  "level": "normal"
+                },
+                "reservation": 0
+              },
+              "diskObjectId": "3-2000",
+              "vDiskVersion": 1,
+              "nativeUnmanagedLinkedClone": false,
+              "guestReadOnly": false
+            },
+            {
+              "key": 4000,
+              "deviceInfo": {
+                "label": "Network adapter 1",
+                "summary": "VM Network"
+              },
+              "backing": {
+                "deviceName": "VM Network",
+                "useAutoDetect": false,
+                "network": {
+                  "type": "Network",
+                  "value": "HaNetwork-VM Network"
+                }
+              },
+              "connectable": {
+                "migrateConnect": "unset",
+                "startConnected": true,
+                "allowGuestControl": true,
+                "connected": false,
+                "status": "untried"
+              },
+              "slotInfo": {
+                "pciSlotNumber": 192
+              },
+              "controllerKey": 100,
+              "unitNumber": 7,
+              "addressType": "generated",
+              "wakeOnLanEnabled": true,
+              "resourceAllocation": {
+                "reservation": 0,
+                "share": {
+                  "shares": 50,
+                  "level": "normal"
+                },
+                "limit": -1
+              },
+              "uptCompatibilityEnabled": false
+            }
+          ],
+          "motherboardLayout": "i440bxHostBridge",
+          "simultaneousThreads": 1
+        },
+        "cpuAllocation": {
+          "reservation": 0,
+          "expandableReservation": false,
+          "limit": -1,
+          "shares": {
+            "shares": 1000,
+            "level": "normal"
+          }
+        },
+        "memoryAllocation": {
+          "reservation": 0,
+          "expandableReservation": false,
+          "limit": -1,
+          "shares": {
+            "shares": 40960,
+            "level": "normal"
+          }
+        },
+        "latencySensitivity": {
+          "level": "normal"
+        },
+        "memoryHotAddEnabled": false,
+        "cpuHotAddEnabled": false,
+        "cpuHotRemoveEnabled": false,
+        "extraConfig": [
+          {
+            "key": "svga.present",
+            "value": "TRUE"
+          },
+          {
+            "key": "pciBridge0.present",
+            "value": "TRUE"
+          },
+          {
+            "key": "pciBridge4.present",
+            "value": "TRUE"
+          },
+          {
+            "key": "pciBridge4.virtualDev",
+            "value": "pcieRootPort"
+          },
+          {
+            "key": "pciBridge4.functions",
+            "value": "8"
+          },
+          {
+            "key": "pciBridge5.present",
+            "value": "TRUE"
+          },
+          {
+            "key": "pciBridge5.virtualDev",
+            "value": "pcieRootPort"
+          },
+          {
+            "key": "pciBridge5.functions",
+            "value": "8"
+          },
+          {
+            "key": "pciBridge6.present",
+            "value": "TRUE"
+          },
+          {
+            "key": "pciBridge6.virtualDev",
+            "value": "pcieRootPort"
+          },
+          {
+            "key": "pciBridge6.functions",
+            "value": "8"
+          },
+          {
+            "key": "pciBridge7.present",
+            "value": "TRUE"
+          },
+          {
+            "key": "pciBridge7.virtualDev",
+            "value": "pcieRootPort"
+          },
+          {
+            "key": "pciBridge7.functions",
+            "value": "8"
+          },
+          {
+            "key": "hpet0.present",
+            "value": "TRUE"
+          },
+          {
+            "key": "usb_xhci.pciSlotNumber",
+            "value": "224"
+          },
+          {
+            "key": "scsi0.pciSlotNumber",
+            "value": "160"
+          },
+          {
+            "key": "sata0.pciSlotNumber",
+            "value": "32"
+          },
+          {
+            "key": "ethernet0.pciSlotNumber",
+            "value": "192"
+          },
+          {
+            "key": "disk.EnableUUID",
+            "value": "TRUE"
+          },
+          {
+            "key": "nvram",
+            "value": "grand-operation-test-vm.nvram"
+          },
+          {
+            "key": "svga.autodetect",
+            "value": "TRUE"
+          },
+          {
+            "key": "vmware.tools.internalversion",
+            "value": "12389"
+          },
+          {
+            "key": "vmware.tools.requiredversion",
+            "value": "12448"
+          },
+          {
+            "key": "migrate.hostLogState",
+            "value": "none"
+          },
+          {
+            "key": "migrate.migrationId",
+            "value": "0"
+          },
+          {
+            "key": "migrate.hostLog",
+            "value": ""
+          }
+        ],
+        "cpuFeatureMask": [
+          {
+            "level": 0
+          },
+          {
+            "level": 0,
+            "vendor": "amd"
+          },
+          {
+            "level": 1
+          },
+          {
+            "level": 1,
+            "vendor": "amd"
+          },
+          {
+            "level": -2147483648
+          },
+          {
+            "level": -2147483648,
+            "vendor": "amd"
+          },
+          {
+            "level": -2147483647
+          },
+          {
+            "level": -2147483647,
+            "vendor": "amd"
+          },
+          {
+            "level": -2147483640
+          },
+          {
+            "level": -2147483640,
+            "vendor": "amd"
+          }
+        ],
+        "datastoreUrl": [
+          {
+            "name": "datastore1",
+            "url": "/vmfs/volumes/3a511c1a-8c8f99ac-931f-20677cd582a4/"
+          }
+        ],
+        "swapPlacement": "inherit",
+        "bootOptions": {
+          "enterBIOSSetup": false,
+          "efiSecureBootEnabled": true,
+          "bootRetryEnabled": false,
+          "bootRetryDelay": 10000,
+          "networkBootProtocol": "ipv4"
+        },
+        "vAssertsEnabled": false,
+        "changeTrackingEnabled": false,
+        "firmware": "efi",
+        "maxMksConnections": 40,
+        "guestAutoLockEnabled": true,
+        "memoryReservationLockedToMax": false,
+        "initialOverhead": {
+          "initialMemoryReservation": 221552640,
+          "initialSwapReservation": 2393018368
+        },
+        "nestedHVEnabled": false,
+        "vPMCEnabled": false,
+        "scheduledHardwareUpgradeInfo": {
+          "upgradePolicy": "never",
+          "scheduledHardwareUpgradeStatus": "none"
+        },
+        "vmxConfigChecksum": "NFZSQnYrdHpBNnRwVzVPR1JaOTRlZjBXTGFlRHZiejZUd3pVMnZrWnh5OD0=",
+        "messageBusTunnelEnabled": false,
+        "guestIntegrityInfo": {
+          "enabled": false
+        },
+        "migrateEncryption": "opportunistic",
+        "sgxInfo": {
+          "epcSize": 0,
+          "flcMode": "unlocked",
+          "requireAttestation": false
+        },
+        "ftEncryptionMode": "ftEncryptionOpportunistic",
+        "guestMonitoringModeInfo": {},
+        "sevEnabled": false,
+        "numaInfo": {
+          "autoCoresPerNumaNode": true,
+          "vnumaOnCpuHotaddExposed": false
+        },
+        "pmemFailoverEnabled": false,
+        "vmxStatsCollectionEnabled": true,
+        "vmOpNotificationToAppEnabled": false,
+        "vmOpNotificationTimeout": -1,
+        "deviceSwap": {
+          "lsiToPvscsi": {
+            "enabled": true,
+            "applicable": true,
+            "status": "none"
+          }
+        },
+        "deviceGroups": {},
+        "fixedPassthruHotPlugEnabled": false,
+        "metroFtEnabled": false
+      },
+      "layout": {
+        "configFile": [
+          "grand-operation-test-vm.nvram",
+          "grand-operation-test-vm.vmsd"
+        ],
+        "disk": [
+          {
+            "key": 2000,
+            "diskFile": [
+              "[datastore1] grand-operation-test-vm/grand-operation-test-vm.vmdk"
+            ]
+          }
+        ]
+      },
+      "layoutEx": {
+        "file": [
+          {
+            "key": 0,
+            "name": "[datastore1] grand-operation-test-vm/grand-operation-test-vm.vmx",
+            "type": "config",
+            "size": 1852,
+            "uniqueSize": 1852,
+            "accessible": true
+          },
+          {
+            "key": 1,
+            "name": "[datastore1] grand-operation-test-vm/grand-operation-test-vm.nvram",
+            "type": "nvram",
+            "size": 270840,
+            "uniqueSize": 270840,
+            "accessible": true
+          },
+          {
+            "key": 2,
+            "name": "[datastore1] grand-operation-test-vm/grand-operation-test-vm.vmsd",
+            "type": "snapshotList",
+            "size": 0,
+            "accessible": true
+          },
+          {
+            "key": 3,
+            "name": "[datastore1] grand-operation-test-vm/grand-operation-test-vm.vmdk",
+            "type": "diskDescriptor",
+            "size": 518,
+            "uniqueSize": 518,
+            "accessible": true
+          },
+          {
+            "key": 4,
+            "name": "[datastore1] grand-operation-test-vm/grand-operation-test-vm-flat.vmdk",
+            "type": "diskExtent",
+            "size": 18861785088,
+            "uniqueSize": 18861785088,
+            "accessible": true
+          }
+        ],
+        "disk": [
+          {
+            "key": 2000,
+            "chain": [
+              {
+                "fileKey": [
+                  3,
+                  4
+                ]
+              }
+            ]
+          }
+        ],
+        "timestamp": "2001-01-13T07:24:40.3062Z"
+      },
+      "storage": {
+        "perDatastoreUsage": [
+          {
+            "datastore": {
+              "type": "Datastore",
+              "value": "3a511c1a-8c8f99ac-931f-20677cd582a4"
+            },
+            "committed": 18862058298,
+            "uncommitted": 95200382976,
+            "unshared": 18862058298
+          }
+        ],
+        "timestamp": "2001-01-13T07:24:40.306492Z"
+      },
+      "environmentBrowser": {
+        "type": "EnvironmentBrowser",
+        "value": "3-envmgr"
+      },
+      "resourcePool": {
+        "type": "ResourcePool",
+        "value": "ha-root-pool"
+      },
+      "parentVApp": null,
+      "resourceConfig": {
+        "entity": {
+          "type": "VirtualMachine",
+          "value": "3"
+        },
+        "cpuAllocation": {
+          "reservation": 0,
+          "expandableReservation": false,
+          "limit": -1,
+          "shares": {
+            "shares": 1000,
+            "level": "normal"
+          }
+        },
+        "memoryAllocation": {
+          "reservation": 0,
+          "expandableReservation": false,
+          "limit": -1,
+          "shares": {
+            "shares": 40960,
+            "level": "normal"
+          }
+        }
+      },
+      "runtime": {
+        "host": {
+          "type": "HostSystem",
+          "value": "ha-host"
+        },
+        "connectionState": "connected",
+        "powerState": "poweredOff",
+        "vmFailoverInProgress": false,
+        "faultToleranceState": "notConfigured",
+        "toolsInstallerMounted": false,
+        "maxCpuUsage": 2294,
+        "maxMemoryUsage": 4096,
+        "numMksConnections": 0,
+        "recordReplayState": "inactive",
+        "cleanPowerOff": true,
+        "onlineStandby": false,
+        "consolidationNeeded": false,
+        "offlineFeatureRequirement": [
+          {
+            "key": "cpuid.lm",
+            "featureName": "cpuid.lm",
+            "value": "Num:Min:1"
+          }
+        ],
+        "paused": false,
+        "snapshotInBackground": false,
+        "instantCloneFrozen": false
+      },
+      "guest": {
+        "toolsStatus": "toolsNotRunning",
+        "toolsVersionStatus": "guestToolsNeedUpgrade",
+        "toolsVersionStatus2": "guestToolsSupportedOld",
+        "toolsRunningStatus": "guestToolsNotRunning",
+        "toolsVersion": "12389",
+        "screen": {
+          "width": 0,
+          "height": 0
+        },
+        "guestState": "notRunning",
+        "appHeartbeatStatus": "appStatusGray",
+        "guestKernelCrashed": false,
+        "appState": "none",
+        "guestOperationsReady": false,
+        "interactiveGuestOperationsReady": false,
+        "guestStateChangeSupported": false,
+        "hwVersion": "vmx-19",
+        "customizationInfo": {
+          "customizationStatus": "TOOLSDEPLOYPKG_IDLE"
+        }
+      },
+      "summary": {
+        "vm": {
+          "type": "VirtualMachine",
+          "value": "3"
+        },
+        "runtime": {
+          "host": {
+            "type": "HostSystem",
+            "value": "ha-host"
+          },
+          "connectionState": "connected",
+          "powerState": "poweredOff",
+          "vmFailoverInProgress": false,
+          "faultToleranceState": "notConfigured",
+          "toolsInstallerMounted": false,
+          "maxCpuUsage": 2294,
+          "maxMemoryUsage": 4096,
+          "numMksConnections": 0,
+          "recordReplayState": "inactive",
+          "cleanPowerOff": true,
+          "onlineStandby": false,
+          "consolidationNeeded": false,
+          "offlineFeatureRequirement": [
+            {
+              "key": "cpuid.lm",
+              "featureName": "cpuid.lm",
+              "value": "Num:Min:1"
+            }
+          ],
+          "paused": false,
+          "snapshotInBackground": false,
+          "instantCloneFrozen": false
+        },
+        "guest": {
+          "toolsStatus": "toolsNotRunning",
+          "toolsVersionStatus": "guestToolsNeedUpgrade",
+          "toolsVersionStatus2": "guestToolsSupportedOld",
+          "toolsRunningStatus": "guestToolsNotRunning",
+          "hwVersion": "vmx-19"
+        },
+        "config": {
+          "name": "grand-operation-test-vm",
+          "template": false,
+          "vmPathName": "[datastore1] grand-operation-test-vm/grand-operation-test-vm.vmx",
+          "memorySizeMB": 4096,
+          "numCpu": 1,
+          "numEthernetCards": 1,
+          "numVirtualDisks": 1,
+          "uuid": "564db9c3-44fa-d943-5b4d-762771fdcab3",
+          "instanceUuid": "52f6c1ce-36f8-07a5-4caf-645c8fb2c5f4",
+          "guestId": "windows2019srvNext_64Guest",
+          "guestFullName": "Microsoft Windows Server 2022 (64-bit)",
+          "annotation": "DepOps W2K22 Server Template v1.0 - Released Feb 28 2025",
+          "tpmPresent": false,
+          "hwVersion": "vmx-19"
+        },
+        "storage": {
+          "committed": 18862058298,
+          "uncommitted": 95200382976,
+          "unshared": 18862058298,
+          "timestamp": "2001-01-13T07:24:40.306492Z"
+        },
+        "quickStats": {
+          "guestHeartbeatStatus": "gray"
+        },
+        "overallStatus": "green"
+      },
+      "datastore": [
+        {
+          "type": "Datastore",
+          "value": "3a511c1a-8c8f99ac-931f-20677cd582a4"
+        }
+      ],
+      "network": [
+        {
+          "type": "Network",
+          "value": "HaNetwork-VM Network"
+        }
+      ],
+      "snapshot": null,
+      "rootSnapshot": null,
+      "guestHeartbeatStatus": "gray"
+    }
+  ]
+}

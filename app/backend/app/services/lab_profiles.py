@@ -58,8 +58,6 @@ RUNTIME_ENV_PROFILE_KEYS = (
     "LAB_NTP_SERVERS",
     "LAB_MTU",
     "LAB_PROFILE_NETAPP_ENABLED",
-    "CISCO_MGMT_CONFIGURED",
-    "ESXI_CONFIGURED",
 )
 RUNTIME_ENV_ALLOWED_KEYS = {
     *(env_key for _, env_key in RUNTIME_ENV_SCALAR_FIELDS),
@@ -325,8 +323,6 @@ def _runtime_env_changes_for_context(context: dict[str, Any]) -> tuple[dict[str,
 
     netapp_enabled = bool(features.get("netapp_enabled"))
     updates["LAB_PROFILE_NETAPP_ENABLED"] = "true" if netapp_enabled else "false"
-    updates["CISCO_MGMT_CONFIGURED"] = "false"
-    updates["ESXI_CONFIGURED"] = "false"
     if netapp_enabled:
         for field, env_key in RUNTIME_ENV_NETAPP_FIELDS:
             value = _profile_value(address_plan.get(field))

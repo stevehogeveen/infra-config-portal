@@ -127,17 +127,21 @@ def test_vlan10_bootstrap_plan_configures_required_lab_network(monkeypatch) -> N
     assert "interface Vlan10" in commands
     assert " ip address 192.168.1.204 255.255.255.0" in commands
     assert " no shutdown" in commands
-    assert "interface range Gi1/0/1,Gi1/0/2" in commands
+    assert "interface Gi1/0/1" in commands
+    assert "interface Gi1/0/2" in commands
+    assert "interface range Gi1/0/1,Gi1/0/2" not in commands
     assert " switchport access vlan 10" in commands
     assert " switchport mode trunk" not in commands
     assert "ip domain-name lab.local" in commands
-    assert "crypto key generate rsa modulus 2048" in commands
+    assert "crypto key generate rsa general-keys label LAB-SSH-HOSTKEY modulus 2048" in commands
+    assert "ip ssh rsa keypair-name LAB-SSH-HOSTKEY" in commands
     assert "ip ssh version 2" in commands
     assert "ip scp server enable" in commands
     assert "line vty 0 31" in commands
     assert " login local" in commands
     assert plan["domain_source"] == "default"
-    assert plan["ssh_key_generation"] == "rsa modulus 2048"
+    assert plan["ssh_key_generation"] == "rsa general-keys label LAB-SSH-HOSTKEY modulus 2048"
+    assert plan["ssh_keypair_name"] == "LAB-SSH-HOSTKEY"
     assert commands[-1] == "write memory"
 
 
@@ -161,7 +165,9 @@ def test_vlan10_bootstrap_plan_uses_detected_access_ports(monkeypatch) -> None:
 
     assert plan["access_port_source"] == "always-access-plus-detected-show-interfaces-status"
     assert plan["always_access_ports"] == ["Gi1/0/1"]
-    assert "interface range Gi1/0/1,Gi1/0/7" in plan["redacted_commands"]
+    assert "interface Gi1/0/1" in plan["redacted_commands"]
+    assert "interface Gi1/0/7" in plan["redacted_commands"]
+    assert "interface range Gi1/0/1,Gi1/0/7" not in plan["redacted_commands"]
 
 
 def test_vlan10_bootstrap_plan_keeps_first_port_access_even_when_detection_skips_it(monkeypatch) -> None:
@@ -182,15 +188,46 @@ def test_vlan10_bootstrap_plan_keeps_first_port_access_even_when_detection_skips
 
     plan = workflow._bootstrap_plan({"detected_access_ports": ["Gi1/0/2", "Gi1/0/3"]})
 
-    assert "interface range Gi1/0/1,Gi1/0/2,Gi1/0/3" in plan["redacted_commands"]
+    assert "interface Gi1/0/1" in plan["redacted_commands"]
+    assert "interface Gi1/0/2" in plan["redacted_commands"]
+    assert "interface Gi1/0/3" in plan["redacted_commands"]
+    assert "interface range Gi1/0/1,Gi1/0/2,Gi1/0/3" not in plan["redacted_commands"]
     assert " switchport mode access" in plan["redacted_commands"]
     assert " switchport mode trunk" not in plan["redacted_commands"]
 
 
 def test_bootstrap_apply_waits_longer_for_keygen_and_save() -> None:
-    assert workflow._bootstrap_command_wait_seconds("crypto key generate rsa modulus 2048") == 8.0
+    assert (
+        workflow._bootstrap_command_wait_seconds(
+            "crypto key generate rsa general-keys label LAB-SSH-HOSTKEY modulus 2048"
+        )
+        == 8.0
+    )
     assert workflow._bootstrap_command_wait_seconds("write memory") == 8.0
     assert workflow._bootstrap_command_wait_seconds("ip ssh version 2") == 2.0
+
+
+def test_crypto_keygen_answers_existing_key_prompt(monkeypatch) -> None:
+    sent: list[str] = []
+    reads = iter(["Do you really want to replace them? [yes/no]:", "keys generated"])
+
+    def fake_send(_conn: Any, command: str, *, secret: bool = False) -> None:
+        del secret
+        sent.append(command)
+
+    def fake_read(_conn: Any, *, window: float) -> str:
+        assert window == 8.0
+        return next(reads)
+
+    monkeypatch.setattr(workflow, "_send", fake_send)
+    monkeypatch.setattr(workflow, "_read", fake_read)
+
+    workflow._send_crypto_keygen(
+        object(),
+        "crypto key generate rsa general-keys label LAB-SSH-HOSTKEY modulus 2048",
+    )
+
+    assert sent == ["crypto key generate rsa general-keys label LAB-SSH-HOSTKEY modulus 2048", "yes"]
 
 
 def test_read_only_validation_does_not_overwrite_apply_report() -> None:
@@ -265,7 +302,7 @@ def test_vlan10_failure_classifier_distinguishes_svi_and_host_route() -> None:
         "vlan10_state": {"configured": True, "ip": "192.168.1.204", "line_status": "down", "protocol_status": "down"},
         "ports_assigned_vlan10": ["Gi1/0/1"],
     }
-    ethernet = {"status": "blocked", "host_route": {"status": "ready"}}
+    ethernet = {"status": "blocked", "host_route": {"status": "ready"}, "ping": {"status": "ok"}}
 
     assert workflow._classify_vlan10_failure(apply, switch, ethernet) == "svi_down"
 
@@ -273,6 +310,19 @@ def test_vlan10_failure_classifier_distinguishes_svi_and_host_route() -> None:
     ethernet["host_route"] = {"status": "blocked"}
 
     assert workflow._classify_vlan10_failure(apply, switch, ethernet) == "host_routing"
+
+    ethernet["host_route"] = {"status": "ready"}
+    ethernet["ping"] = {"status": "ok"}
+    ethernet["ssh"] = {"reachable": False, "error": "[Errno 111] Connection refused"}
+    ethernet["scp"] = {"reachable": False, "error": "[Errno 111] Connection refused"}
+
+    assert workflow._classify_vlan10_failure(apply, switch, ethernet) == "ssh_service"
+
+    ethernet["ssh"] = {"reachable": True}
+    ethernet["scp"] = {"reachable": True}
+    ethernet["ping"] = {"status": "failed"}
+
+    assert workflow._classify_vlan10_failure(apply, switch, ethernet) == "host_reachability"
 
     switch["vlan10_state"] = {"configured": True, "ip": "192.168.1.203", "line_status": "up", "protocol_status": "up"}
 

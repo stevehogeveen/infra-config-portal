@@ -179,6 +179,7 @@ def apply_netapp_setup(*, write_report: bool = True) -> dict[str, Any]:
         "required_flags": _setup_required_flags(),
         "flag_state": gates["flag_state"],
         "intent": intent["intent"],
+        "missing_fields": intent["missing_fields"],
         "remediation_items": intent["remediation_items"],
         "address_conflict_scan": address_scan,
         "before": {
@@ -798,6 +799,17 @@ def _setup_apply_markdown(payload: dict[str, Any]) -> str:
         "## Required Flags",
     ]
     lines.extend(f"- `{item}`" for item in payload.get("required_flags") or [])
+    lines.extend(["", "## Missing Setup Intent Fields"])
+    lines.extend(f"- `{item}`" for item in payload.get("missing_fields") or ["None"])
+    lines.extend(["", "## Remediation Items"])
+    for item in payload.get("remediation_items") or []:
+        lines.append(
+            f"- `{item.get('field_name')}`: set `{item.get('where_to_set')}`"
+            + (f" suggested `{item.get('suggested_value')}`" if item.get("suggested_value") else "")
+            + f"; recheck `{item.get('recheck_command')}`"
+        )
+    if not payload.get("remediation_items"):
+        lines.append("- None")
     lines.extend(["", "## Blockers"])
     lines.extend(f"- {item}" for item in payload.get("blockers") or ["None"])
     lines.extend(["", "## Transcript Summary"])

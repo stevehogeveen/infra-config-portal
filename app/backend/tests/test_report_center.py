@@ -360,6 +360,55 @@ def test_cisco_live_configured_result_clears_older_management_blocker(monkeypatc
     assert any(issue["source"] == "cisco" and issue["severity"] == "success" for issue in payload["issues"])
 
 
+def test_newer_cisco_ssh_scp_reports_supersede_old_management_failures(monkeypatch) -> None:
+    def read_artifact(path: str) -> dict[str, Any] | None:
+        if path == "artifacts/codex-runs/cisco-4h-lab-run-details-redacted.json":
+            return {
+                "checked_at": "2026-06-10T22:30:38+00:00",
+                "source_type": "live_probe",
+                "status": "blocked",
+                "blockers": [
+                    "SSH TCP/22 to Cisco management IP failed.",
+                    "SCP readiness over TCP/22 to Cisco management IP failed.",
+                ],
+                "warnings": [],
+                "stages": {
+                    "ethernet_management_validation": {
+                        "status": "blocked",
+                        "blockers": [
+                            "SSH TCP/22 to Cisco management IP failed.",
+                            "SCP readiness over TCP/22 to Cisco management IP failed.",
+                        ],
+                        "warnings": [],
+                    }
+                },
+            }
+        return None
+
+    monkeypatch.setattr(report_center, "_read_json_artifact", read_artifact)
+    monkeypatch.setattr(report_center, "_existing_artifacts", lambda source: [])
+    monkeypatch.setattr(report_center, "_cisco_ssh_scp_validations_newer_than", lambda checked_at: True)
+
+    payload = report_center.get_report_center(source_ids=("cisco",))
+
+    assert payload["counts"]["critical"] == 0
+    stale_issue = next(
+        issue for issue in payload["issues"] if issue["title"] == "Historical Cisco SSH/SCP failure superseded"
+    )
+    assert stale_issue["severity"] == "warning"
+    assert stale_issue["status"] == "stale"
+    assert all(
+        not (
+            issue["severity"] == "critical"
+            and (
+                "SSH TCP/22 to Cisco management IP failed." in issue["problem"]
+                or "SCP readiness over TCP/22 to Cisco management IP failed." in issue["problem"]
+            )
+        )
+        for issue in payload["issues"]
+    )
+
+
 def test_report_issue_severity_mapping_by_source() -> None:
     fresh_checked_at = _fresh_checked_at()
 

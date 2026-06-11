@@ -5,6 +5,7 @@ import os
 import shlex
 import socket
 import subprocess
+import sys
 from importlib import util as importlib_util
 from datetime import UTC, datetime
 from pathlib import Path
@@ -63,17 +64,21 @@ def build_lab_build_verification(*, check_ports: bool = True) -> dict[str, Any]:
     runtime_guard = _runtime_mode_guard()
     if runtime_guard:
         failures = [runtime_guard, *failures]
-    blockers = [
-        _blocker_text_with_source(item)
-        for item in failures
-        if item["classification"]
-        in {"hard_fail", "stale_config", "operator_action_required", "blocked_by_prior_stage"}
-    ]
-    warnings = [
-        _blocker_text_with_source(item)
-        for item in failures
-        if item["classification"] == "warning"
-    ]
+    blockers = list(
+        dict.fromkeys(
+            _blocker_text_with_source(item)
+            for item in failures
+            if item["classification"]
+            in {"hard_fail", "stale_config", "operator_action_required", "blocked_by_prior_stage"}
+        )
+    )
+    warnings = list(
+        dict.fromkeys(
+            _blocker_text_with_source(item)
+            for item in failures
+            if item["classification"] == "warning"
+        )
+    )
     source_type = _build_verification_source_type(check_ports=check_ports)
     certification_state = (
         "test_fixture"
@@ -1350,7 +1355,7 @@ def _python_module_version(module: str) -> str | None:
 
 
 def _cli_tool(name: str, command: str, purpose: str, *, required: bool) -> dict[str, Any]:
-    path = which(command)
+    path = _command_path(command)
     return {
         "name": name,
         "type": "cli",
@@ -1358,18 +1363,44 @@ def _cli_tool(name: str, command: str, purpose: str, *, required: bool) -> dict[
         "available": path is not None,
         "required": required,
         "path": path,
-        "version": _cli_version(command) if path else None,
+        "version": _cli_version(command, path) if path else None,
         "purpose": purpose,
         "check": f"{command} --version",
     }
 
 
-def _cli_version(command: str) -> str | None:
+def _command_path(command: str) -> str | None:
+    path = which(command)
+    if path:
+        return path
+    for directory in (Path(sys.executable).parent, REPO_ROOT / ".local" / "bin"):
+        candidate = directory / command
+        if candidate.exists() and os.access(candidate, os.X_OK):
+            return str(candidate)
+    return None
+
+
+def _tool_env() -> dict[str, str]:
+    env = dict(os.environ)
+    venv_bin = str(Path(sys.executable).parent)
+    local_bin = str(REPO_ROOT / ".local" / "bin")
+    env["PATH"] = os.pathsep.join([venv_bin, local_bin, env.get("PATH", "")])
+    local_collections = str(REPO_ROOT / ".local" / "ansible" / "collections")
+    existing_collections = env.get("ANSIBLE_COLLECTIONS_PATH")
+    env["ANSIBLE_COLLECTIONS_PATH"] = (
+        os.pathsep.join([local_collections, existing_collections])
+        if existing_collections
+        else local_collections
+    )
+    return env
+
+
+def _cli_version(command: str, path: str) -> str | None:
     version_args = {
-        "ansible": ["ansible", "--version"],
-        "govc": ["govc", "version"],
-        "ilorest": ["ilorest", "--version"],
-    }.get(command, [command, "--version"])
+        "ansible": [path, "--version"],
+        "govc": [path, "version"],
+        "ilorest": [path, "--version"],
+    }.get(command, [path, "--version"])
     try:
         result = subprocess.run(
             version_args,
@@ -1378,6 +1409,7 @@ def _cli_version(command: str) -> str | None:
             text=True,
             timeout=3.0,
             check=False,
+            env=_tool_env(),
         )
     except (OSError, subprocess.TimeoutExpired):
         return None
@@ -1386,7 +1418,7 @@ def _cli_version(command: str) -> str | None:
 
 
 def _ansible_collection_tool(name: str, collection: str, purpose: str, *, required: bool) -> dict[str, Any]:
-    ansible_galaxy = which("ansible-galaxy")
+    ansible_galaxy = _command_path("ansible-galaxy")
     available = False
     version = None
     if ansible_galaxy:
@@ -1398,6 +1430,7 @@ def _ansible_collection_tool(name: str, collection: str, purpose: str, *, requir
                 text=True,
                 timeout=5.0,
                 check=False,
+                env=_tool_env(),
             )
             available = result.returncode == 0 and collection in (result.stdout or "")
             for line in (result.stdout or "").splitlines():

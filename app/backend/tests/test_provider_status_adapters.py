@@ -9,6 +9,7 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
+from app.providers import esxi_readonly
 from app.providers.base import ProviderAction, ProviderStatus
 from app.providers.action_policy import ActionCategory, LabActionPolicy
 from app.providers.cisco_console import (
@@ -1206,6 +1207,17 @@ def test_esxi_configured_true_runs_readonly_reachability(monkeypatch) -> None:
     assert calls == [("192.0.2.50", 443), ("192.0.2.50", 22)]
     assert result["status"] == "failed"
     assert "ESXi HTTPS port is not reachable." in result["blockers"]
+
+
+def test_esxi_tool_availability_checks_repo_local_bin(monkeypatch, tmp_path: Path) -> None:
+    local_bin = tmp_path / ".local" / "bin"
+    local_bin.mkdir(parents=True)
+    tool = local_bin / "govc"
+    tool.write_text("#!/bin/sh\n", encoding="utf-8")
+
+    monkeypatch.setattr(esxi_readonly, "REPO_ROOT", tmp_path)
+
+    assert esxi_readonly._which("govc") is True
 
 
 def test_cisco_management_configured_false_returns_bootstrap_status_and_skips_probe(
@@ -2668,6 +2680,32 @@ def test_ilo_redacts_secrets() -> None:
     assert username not in encoded
     assert "abc123" not in encoded
     assert encoded.count("REDACTED") >= 3
+
+
+def test_redaction_masks_hardware_identity_fields() -> None:
+    redacted = redact_sensitive(
+        {
+            "Oem": {
+                "Hpe": {
+                    "FQDN": "private-ilo.example.test",
+                    "HostName": "private-ilo",
+                }
+            },
+            "UUID": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+            "SerialNumber": "SERIAL123",
+            "MACAddress": "00:11:22:33:44:55",
+            "serial_number_present": True,
+            "mac_address_present": True,
+        }
+    )
+
+    encoded = json.dumps(redacted)
+    assert "private-ilo" not in encoded
+    assert "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee" not in encoded
+    assert "SERIAL123" not in encoded
+    assert "00:11:22:33:44:55" not in encoded
+    assert redacted["serial_number_present"] is True
+    assert redacted["mac_address_present"] is True
 
 
 def test_redaction_does_not_corrupt_classification_when_username_is_short() -> None:

@@ -44,6 +44,41 @@ def test_setup_apply_refuses_without_flags(monkeypatch) -> None:
     assert any("NETAPP_SETUP_ALLOW_CLUSTER_CREATE=true" in blocker for blocker in payload["blockers"])
 
 
+def test_setup_apply_exposes_missing_intent_fields(monkeypatch) -> None:
+    _patch_setup_runtime(monkeypatch, detected=False)
+    settings_override = replace(
+        settings,
+        provider_mode="local-lab-readwrite",
+        lab_environment="isolated-real-lab",
+        lab_acknowledge_real_hardware=True,
+        lab_acknowledge_device_reconfiguration=True,
+        lab_acknowledge_data_loss_risk=True,
+        lab_acknowledge_lab_only=True,
+        netapp_cluster_name=None,
+        netapp_node_a_name=None,
+        netapp_node_b_name=None,
+        netapp_svm_name=None,
+        netapp_dns_servers=(),
+        netapp_ntp_servers=(),
+        netapp_search_domains=(),
+        netapp_admin_access_source=None,
+        netapp_api_username=None,
+        netapp_api_password=None,
+    )
+    monkeypatch.setattr(netapp_setup_intent, "settings", settings_override)
+    monkeypatch.setattr(
+        netapp_setup_intent,
+        "scan_planned_netapp_addresses",
+        lambda *, enabled: {"status": "ready", "free": True, "results": [], "conflicts": []},
+    )
+
+    payload = netapp_setup_intent.apply_netapp_setup(write_report=False)
+
+    assert "cluster_name" in payload["missing_fields"]
+    assert "admin_access_source" in payload["missing_fields"]
+    assert any(item["field_name"] == "cluster_name" for item in payload["remediation_items"])
+
+
 def test_setup_preview_reports_apply_command_and_confirmations(monkeypatch) -> None:
     _patch_setup_runtime(monkeypatch, detected=True)
     _patch_setup_settings(monkeypatch)

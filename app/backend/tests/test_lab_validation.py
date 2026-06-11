@@ -143,6 +143,37 @@ def test_vcenter_not_configured_is_not_configured_yet(monkeypatch, tmp_path) -> 
     assert any("VCENTER_HOST" in blocker or "GOVC_URL" in blocker for blocker in result["blockers"])
 
 
+def test_vcenter_netapp_readiness_finds_repo_local_govc(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("LAB_PROFILE_STORE", str(tmp_path / "lab-profiles.json"))
+    create_lab_profile(
+        {
+            "name": "High Storage Lab",
+            "subnet_cidr": "192.168.1.0/24",
+            "features": {"netapp_enabled": True, "vcenter_enabled": True},
+        }
+    )
+    local_bin = tmp_path / ".local" / "bin"
+    local_bin.mkdir(parents=True)
+    (local_bin / "govc").write_text("#!/bin/sh\n", encoding="utf-8")
+    report_dir = tmp_path / "artifacts" / "codex-runs"
+    monkeypatch.setattr(vcenter_netapp_readiness, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(vcenter_netapp_readiness, "READINESS_REPORT", report_dir / "vcenter-netapp-readiness-report.md")
+    monkeypatch.setattr(vcenter_netapp_readiness, "PLAN_REPORT", report_dir / "vcenter-netapp-datastore-plan-report.md")
+    monkeypatch.setattr(vcenter_netapp_readiness, "READINESS_JSON", report_dir / "vcenter-netapp-readiness-redacted.json")
+    monkeypatch.setattr(vcenter_netapp_readiness, "which", lambda _: None)
+    monkeypatch.setattr(vcenter_netapp_readiness, "settings", _vcenter_netapp_settings())
+    monkeypatch.setattr(
+        vcenter_netapp_readiness,
+        "get_netapp_runtime_state",
+        lambda: {"configured": True, "configured_state": "configured", "console": {}},
+    )
+
+    result = vcenter_netapp_readiness.get_vcenter_netapp_readiness()
+
+    assert result["status"] == "ready"
+    assert result["tooling"]["govc_available"] is True
+
+
 def test_evidence_artifacts_are_collapsed_supporting_metadata() -> None:
     payload = get_lab_validation_summary(write_report=False)
 

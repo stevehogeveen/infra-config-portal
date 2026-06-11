@@ -1,0 +1,17 @@
+{
+  "DiskProvisioning": "flat",
+  "IPAllocationPolicy": "dhcpPolicy",
+  "IPProtocol": "IPv4",
+  "NetworkMapping": [
+    {
+      "Name": "VM Network",
+      "Network": ""
+    }
+  ],
+  "Annotation": "DepOps W2K22 Server Template v1.0 - Released Feb 28 2025",
+  "MarkAsTemplate": false,
+  "PowerOn": false,
+  "InjectOvfEnv": false,
+  "WaitForIP": false,
+  "Name": null
+}

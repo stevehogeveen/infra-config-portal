@@ -440,8 +440,6 @@ def test_lab_profile_runtime_env_apply_updates_active_profile_ips(
         "LAB_NTP_SERVERS",
         "LAB_MTU",
         "LAB_PROFILE_NETAPP_ENABLED",
-        "CISCO_MGMT_CONFIGURED",
-        "ESXI_CONFIGURED",
     ]
     for key in runtime_keys:
         monkeypatch.setenv(key, "")

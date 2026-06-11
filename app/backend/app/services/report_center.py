@@ -41,6 +41,12 @@ INFO_CLASSIFICATIONS = {"not_configured_yet"}
 SUCCESS_CLASSIFICATIONS = {"passed"}
 OPEN_STATUSES = {"open", "blocked"}
 STATUS_TTL_SECONDS = 24 * 60 * 60
+CISCO_MANAGEMENT_FAILURE_TOKENS = (
+    "SSH TCP/22 to Cisco management IP failed.",
+    "SCP readiness over TCP/22 to Cisco management IP failed.",
+)
+CISCO_SSH_VALIDATION_REPORT = "artifacts/codex-runs/cisco-ssh-validation-report.md"
+CISCO_SCP_VALIDATION_REPORT = "artifacts/codex-runs/cisco-scp-validation-report.md"
 
 SOURCE_LABELS = {
     "build_verification": "Build Verification",
@@ -636,6 +642,12 @@ def _collect_cisco() -> list[dict[str, Any]]:
         default_stage="console-bootstrap",
         evidence_artifacts=artifacts,
     )
+    issues = _supersede_cisco_management_failures(
+        issues=issues,
+        payload=payload,
+        source_report=details_path,
+        evidence_artifacts=artifacts,
+    )
     if not issues:
         issues.append(
             _issue(
@@ -652,6 +664,64 @@ def _collect_cisco() -> list[dict[str, Any]]:
             )
         )
     return issues
+
+
+def _supersede_cisco_management_failures(
+    *,
+    issues: list[dict[str, Any]],
+    payload: dict[str, Any],
+    source_report: str,
+    evidence_artifacts: list[str],
+) -> list[dict[str, Any]]:
+    if not _cisco_ssh_scp_validations_newer_than(_optional_str(payload.get("checked_at"))):
+        return issues
+    filtered: list[dict[str, Any]] = []
+    superseded = False
+    for issue in issues:
+        text = f"{issue.get('summary', '')} {issue.get('problem', '')}"
+        if issue.get("source") == "cisco" and any(token in text for token in CISCO_MANAGEMENT_FAILURE_TOKENS):
+            superseded = True
+            continue
+        filtered.append(issue)
+    if not superseded:
+        return filtered
+    filtered.append(
+        _issue(
+            source="cisco",
+            source_stage="historical-ethernet-management",
+            classification="warning",
+            title="Historical Cisco SSH/SCP failure superseded",
+            summary="Newer Cisco SSH and SCP validation reports are ready.",
+            problem="Older Cisco run details reported SSH/SCP failures, but newer dedicated validation reports succeeded.",
+            next_action="Use the latest Cisco validation evidence or rerun Cisco ethernet readiness if the state changes.",
+            source_report=source_report,
+            evidence_artifacts=_unique(
+                [
+                    *evidence_artifacts,
+                    CISCO_SSH_VALIDATION_REPORT,
+                    CISCO_SCP_VALIDATION_REPORT,
+                ]
+            ),
+            last_checked=_optional_str(payload.get("checked_at")),
+            source_type="historical_artifact",
+            stale_after_seconds=None,
+        )
+    )
+    return filtered
+
+
+def _cisco_ssh_scp_validations_newer_than(checked_at: str | None) -> bool:
+    baseline = _parse_iso_datetime(checked_at)
+    for report in (CISCO_SSH_VALIDATION_REPORT, CISCO_SCP_VALIDATION_REPORT):
+        metadata = _read_text_status_report(report)
+        if _optional_str(metadata.get("status")) not in {"ready", "passed", "completed", "ok", "succeeded"}:
+            return False
+        report_checked_at = _parse_iso_datetime(_optional_str(metadata.get("checked_at")))
+        if baseline and report_checked_at and report_checked_at <= baseline:
+            return False
+        if baseline and report_checked_at is None:
+            return False
+    return True
 
 
 def _collect_ilo() -> list[dict[str, Any]]:
@@ -961,7 +1031,7 @@ def _payload_stage_issues(
         status = _optional_str(stage.get("status")) or "unknown"
         blockers = _strings(stage.get("blockers"))
         warnings = _strings(stage.get("warnings"))
-        if status in {"ready", "passed", "completed", "ok", "succeeded"} and not blockers and not warnings:
+        if status in {"ready", "passed", "completed", "ok", "succeeded", "captured"} and not blockers and not warnings:
             continue
         if status in {"not-attempted", "not_attempted", "skipped"}:
             continue
@@ -981,7 +1051,7 @@ def _payload_stage_issues(
                 source_type=source_type,
             )
         )
-        if not blockers and not warnings and status not in {"ready", "passed", "completed", "ok", "succeeded"}:
+        if not blockers and not warnings and status not in {"ready", "passed", "completed", "ok", "succeeded", "captured"}:
             issues.append(
                 _issue(
                     source=source,
@@ -1016,7 +1086,7 @@ def _payload_status_issues(
     warnings = _strings(payload.get("warnings"))
     checked_at = _optional_str(payload.get("checked_at"))
     source_type = _optional_str(payload.get("source_type")) or _default_source_type(checked_at)
-    if status in {"ready", "passed", "completed", "ok", "succeeded", "waived"} and not blockers and not warnings:
+    if status in {"ready", "passed", "completed", "ok", "succeeded", "captured", "waived"} and not blockers and not warnings:
         return []
     if status in {"not_run", "not-run", "not_checked", "not-checked"} and not blockers:
         return [
@@ -1365,7 +1435,7 @@ def _normalize_classification(value: Any) -> str:
         return text
     if text in {"blocked", "failed", "critical"}:
         return "hard_fail"
-    if text in {"ready", "ok", "completed", "succeeded"}:
+    if text in {"ready", "ok", "completed", "succeeded", "captured"}:
         return "passed"
     if text in {"not_run", "not_configured", "missing-config", "not-configured"}:
         return "not_configured_yet"
@@ -1472,6 +1542,43 @@ def _read_json_artifact(path: str) -> dict[str, Any] | None:
     except (OSError, ValueError):
         return None
     return payload if isinstance(payload, dict) else None
+
+
+def _read_text_status_report(path: str) -> dict[str, str | None]:
+    artifact = _repo_path(path)
+    if not artifact.exists():
+        return {"checked_at": None, "status": None}
+    try:
+        text = artifact.read_text(encoding="utf-8")
+    except OSError:
+        return {"checked_at": None, "status": None}
+    checked_match = re.search(
+        r"(?:Checked at:\s*`([^`]+)`|checked_at:\s*`?([^`\n]+)`?)",
+        text,
+        flags=re.IGNORECASE,
+    )
+    status_match = re.search(
+        r"(?:Status:\s*`([^`]+)`|status:\s*`?([A-Za-z0-9_.-]+)`?)",
+        text,
+        flags=re.IGNORECASE,
+    )
+    return {
+        "checked_at": _optional_str((checked_match.group(1) or checked_match.group(2)) if checked_match else None),
+        "status": _optional_str((status_match.group(1) or status_match.group(2)) if status_match else None),
+    }
+
+
+def _parse_iso_datetime(value: str | None) -> datetime | None:
+    text = _optional_str(value)
+    if not text:
+        return None
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
 
 
 def _repo_path(path: str) -> Path:

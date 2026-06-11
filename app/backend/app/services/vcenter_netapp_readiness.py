@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import socket
+import sys
 from datetime import UTC, datetime
 from pathlib import Path
 from shutil import which
@@ -97,7 +98,7 @@ def get_vcenter_netapp_readiness(
     netapp_stage = _netapp_stage(netapp_state)
     vcenter_target = _redacted_url(settings.vcenter_host)
     first_lif = (list(settings.netapp_nfs_lifs) or [settings.netapp_svm_mgmt_ip])[0]
-    govc_available = which("govc") is not None
+    govc_available = _tool_available("govc")
     vcenter_host_configured = bool(settings.vcenter_host or settings.vcenter_configured)
     vcenter_credentials_configured = bool(settings.vcenter_username and settings.vcenter_password)
     netapp_credentials_configured = bool(settings.netapp_api_username and settings.netapp_api_password)
@@ -113,8 +114,8 @@ def get_vcenter_netapp_readiness(
         "govc_available": _config_check(
             "govc",
             govc_available,
-            "govc is available on PATH.",
-            "govc is not installed or not on PATH.",
+            "govc is available on PATH or repo-local .local/bin.",
+            "govc is not installed or not discoverable.",
         ),
         "vcenter_credentials_configured": _config_check(
             "vCenter credentials",
@@ -271,6 +272,16 @@ def _classify(
     if missing_vcenter:
         return ("not_configured_yet", [f"vCenter/govc is not configured yet: {', '.join(missing_vcenter)}."])
     return ("ready", [])
+
+
+def _tool_available(name: str) -> bool:
+    if which(name) is not None:
+        return True
+    for directory in (Path(sys.executable).parent, REPO_ROOT / ".local" / "bin"):
+        candidate = directory / name
+        if candidate.exists() and candidate.is_file():
+            return True
+    return False
 
 
 def _netapp_stage(state: dict[str, Any]) -> str:

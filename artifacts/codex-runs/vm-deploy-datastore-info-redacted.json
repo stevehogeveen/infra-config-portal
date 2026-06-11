@@ -1,0 +1,126 @@
+{
+  "datastores": [
+    {
+      "self": {
+        "type": "Datastore",
+        "value": "3a511c1a-8c8f99ac-931f-20677cd582a4"
+      },
+      "value": null,
+      "availableField": null,
+      "parent": {
+        "type": "Folder",
+        "value": "ha-folder-datastore"
+      },
+      "customValue": null,
+      "overallStatus": "green",
+      "configStatus": "green",
+      "configIssue": null,
+      "effectiveRole": [
+        -1
+      ],
+      "permission": null,
+      "name": "datastore1",
+      "disabledMethod": null,
+      "recentTask": null,
+      "declaredAlarmState": null,
+      "triggeredAlarmState": null,
+      "alarmActionsEnabled": null,
+      "tag": null,
+      "info": {
+        "name": "datastore1",
+        "url": "/vmfs/volumes/3a511c1a-8c8f99ac-931f-20677cd582a4",
+        "freeSpace": 374440198144,
+        "maxFileSize": 70368744177664,
+        "maxVirtualDiskCapacity": 68169720922112,
+        "maxMemoryFileSize": 70368744177664,
+        "timestamp": "2001-01-13T07:11:23.003769Z",
+        "maxPhysicalRDMFileSize": 70368744177664,
+        "maxVirtualRDMFileSize": 68169720922112,
+        "vmfs": {
+          "type": "VMFS",
+          "name": "datastore1",
+          "capacity": 399163523072,
+          "blockSizeMb": 1,
+          "blockSize": 1024,
+          "unmapGranularity": 1024,
+          "unmapPriority": "low",
+          "maxBlocks": 63963136,
+          "majorVersion": 6,
+          "version": "6.82",
+          "uuid": "3a511c1a-8c8f99ac-931f-20677cd582a4",
+          "extent": [
+            {
+              "diskName": "naa.600508b1001c4b4a61ab85d59be56063",
+              "partition": 8
+            }
+          ],
+          "vmfsUpgradable": false,
+          "ssd": false,
+          "local": true
+        }
+      },
+      "summary": {
+        "datastore": {
+          "type": "Datastore",
+          "value": "3a511c1a-8c8f99ac-931f-20677cd582a4"
+        },
+        "name": "datastore1",
+        "url": "/vmfs/volumes/3a511c1a-8c8f99ac-931f-20677cd582a4",
+        "capacity": 399163523072,
+        "freeSpace": 374440198144,
+        "uncommitted": 93195780096,
+        "accessible": true,
+        "type": "VMFS"
+      },
+      "host": [
+        {
+          "key": {
+            "type": "HostSystem",
+            "value": "ha-host"
+          },
+          "mountInfo": {
+            "path": "/vmfs/volumes/3a511c1a-8c8f99ac-931f-20677cd582a4",
+            "accessMode": "readWrite",
+            "mounted": true,
+            "accessible": true
+          }
+        }
+      ],
+      "vm": [
+        {
+          "type": "VirtualMachine",
+          "value": "2"
+        },
+        {
+          "type": "VirtualMachine",
+          "value": "3"
+        }
+      ],
+      "browser": {
+        "type": "HostDatastoreBrowser",
+        "value": "3a511c1a-8c8f99ac-931f-20677cd582a4-datastorebrowser"
+      },
+      "capability": {
+        "directoryHierarchySupported": true,
+        "rawDiskMappingsSupported": true,
+        "perFileThinProvisioningSupported": true,
+        "storageIORMSupported": true,
+        "nativeSnapshotSupported": false,
+        "topLevelDirectoryCreateSupported": true,
+        "seSparseSupported": true,
+        "vmfsSparseSupported": false,
+        "vsanSparseSupported": false,
+        "upitSupported": false,
+        "vmdkExpandSupported": true,
+        "clusteredVmdkSupported": false
+      },
+      "iormConfiguration": {
+        "enabled": false,
+        "congestionThresholdMode": "",
+        "congestionThreshold": 232,
+        "statsCollectionEnabled": false,
+        "reservationEnabled": true
+      }
+    }
+  ]
+}

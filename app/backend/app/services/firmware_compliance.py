@@ -22,6 +22,7 @@ COMPLIANCE_REPORT = CODEX_RUN_DIR / "firmware-compliance-report.md"
 COMPLIANCE_SUMMARY = CODEX_RUN_DIR / "firmware-compliance-summary-redacted.json"
 WAIVER_REPORT = CODEX_RUN_DIR / "firmware-waiver-report.md"
 LOCAL_WAIVER_PATH = CODEX_RUN_DIR / "firmware-waiver.json"
+CISCO_FIRMWARE_INVENTORY_REPORT = CODEX_RUN_DIR / "cisco-firmware-inventory-report.md"
 
 BLOCKING_STATUSES = {"blocked", "unknown"}
 VALID_STATUSES = {"passed", "blocked", "warning", "not_configured_yet", "unknown", "waived"}
@@ -98,9 +99,9 @@ def get_firmware_media_inventory() -> dict[str, Any]:
     media = get_media_inventory(directories=tuple(str(path) for path in directories))
     items = [item.model_dump() for item in media.items if _is_firmware_like(item.model_dump())]
     grouped = {
-        "hpe": [item for item in items if _matches_any(item, ("hpe", "ilo", "spp", "smart"))],
-        "cisco": [item for item in items if _matches_any(item, ("cisco", "ios", "iosxe", "cat", "bin"))],
-        "netapp": [item for item in items if _matches_any(item, ("netapp", "ontap", "shelf", "disk"))],
+        "hpe": [item for item in items if _matches_product_hint(item, ("hpe", "hpe-ilo", "hpe-spp", "hpe-sum"))],
+        "cisco": [item for item in items if _matches_product_hint(item, ("cisco", "cisco-ios-xe"))],
+        "netapp": [item for item in items if _matches_product_hint(item, ("netapp", "netapp-ontap"))],
     }
     return {
         "mode": media.mode,
@@ -383,6 +384,7 @@ def _merged_cisco_versions(
 ) -> dict[str, Any]:
     ansible = _cisco_versions(ansible_probe)
     console = _cisco_versions(console_probe)
+    report = _cisco_firmware_report_versions()
     historical: dict[str, Any] | None = None
     if ansible.get("ios_xe_version") or ansible.get("bootloader_rommon"):
         historical = {
@@ -392,6 +394,29 @@ def _merged_cisco_versions(
             "bootloader_rommon": ansible.get("bootloader_rommon"),
             "historical": True,
             "note": "Cached non-console evidence only; live console evidence remains preferred.",
+        }
+    if console_probe and (console.get("ios_xe_version") or console.get("bootloader_rommon")):
+        return {
+            "status": console.get("status"),
+            "ios_xe_version": console.get("ios_xe_version"),
+            "bootloader_rommon": console.get("bootloader_rommon"),
+            "source": console.get("source"),
+            "checked_at": console_checked_at,
+            "historical_evidence": historical,
+        }
+    if (
+        not ansible.get("ios_xe_version")
+        and not console.get("ios_xe_version")
+        and report.get("ios_xe_version")
+        and not _console_inventory_failure_blocks_report(console_probe)
+    ):
+        return {
+            "status": report.get("status") or "ok",
+            "ios_xe_version": report.get("ios_xe_version"),
+            "bootloader_rommon": report.get("bootloader_rommon"),
+            "source": report.get("source") or "cisco-firmware-inventory-report",
+            "checked_at": report.get("checked_at"),
+            "historical_evidence": historical,
         }
     if console_probe:
         return {
@@ -410,6 +435,40 @@ def _merged_cisco_versions(
         "checked_at": ansible_checked_at,
         "historical_evidence": None,
     }
+
+
+def _console_inventory_failure_blocks_report(console_probe: dict[str, Any]) -> bool:
+    if _optional_status(console_probe.get("status")) not in {"blocked", "failed"}:
+        return False
+    text = " ".join(_string_list(console_probe.get("blockers")) + _string_list(console_probe.get("warnings"))).lower()
+    return any(token in text for token in ("no prompt", "wrong baud", "unreadable", "garbled"))
+
+
+def _optional_status(value: Any) -> str | None:
+    return str(value).strip().lower() if value else None
+
+
+def _cisco_firmware_report_versions() -> dict[str, Any]:
+    if not CISCO_FIRMWARE_INVENTORY_REPORT.exists():
+        return {}
+    try:
+        text = CISCO_FIRMWARE_INVENTORY_REPORT.read_text(encoding="utf-8")
+    except OSError:
+        return {}
+    checked_at = datetime.fromtimestamp(CISCO_FIRMWARE_INVENTORY_REPORT.stat().st_mtime, UTC).isoformat()
+    return {
+        "status": _report_field(text, "Status"),
+        "source": _report_field(text, "Source") or "cisco-firmware-inventory-report",
+        "ios_xe_version": _report_field(text, "IOS XE version"),
+        "bootloader_rommon": _report_field(text, "Bootloader/ROMMON"),
+        "checked_at": checked_at,
+    }
+
+
+def _report_field(text: str, label: str) -> str | None:
+    escaped = re.escape(label)
+    match = re.search(rf"^\s*-\s*{escaped}:\s*(.+?)\s*$", text, flags=re.IGNORECASE | re.MULTILINE)
+    return match.group(1).strip(" `") if match else None
 
 
 def _netapp_versions(probe: dict[str, Any]) -> dict[str, Any]:
@@ -678,9 +737,11 @@ def _is_firmware_like(item: dict[str, Any]) -> bool:
     return extension in {".bin", ".rom", ".fw", ".fwpkg", ".scexe", ".firmware", ".tgz", ".zip", ".image"}
 
 
-def _matches_any(item: dict[str, Any], needles: tuple[str, ...]) -> bool:
-    text = json.dumps(item).lower()
-    return any(needle in text for needle in needles)
+def _matches_product_hint(item: dict[str, Any], hints: tuple[str, ...]) -> bool:
+    expected = {hint.lower() for hint in hints}
+    product_hints = {str(hint).lower() for hint in item.get("product_hints") or []}
+    generation_hints = {str(hint).lower() for hint in item.get("generation_hints") or []}
+    return bool((product_hints | generation_hints) & expected)
 
 
 def _inventory_markdown(inventory: dict[str, Any]) -> str:

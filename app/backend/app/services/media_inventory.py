@@ -68,7 +68,10 @@ def get_media_inventory(
             continue
 
         try:
-            entries = sorted(path.iterdir(), key=lambda item: item.name.lower())
+            entries = sorted(
+                (entry for entry in path.rglob("*") if not entry.is_symlink() and entry.is_file()),
+                key=lambda item: str(item.relative_to(path)).lower(),
+            )
         except OSError:
             warnings.append(f"{source_label} could not be read.")
             continue
@@ -80,8 +83,6 @@ def get_media_inventory(
                     f"Media inventory truncated at {MEDIA_INVENTORY_LIMIT} local files."
                 )
                 break
-            if entry.is_symlink() or not entry.is_file():
-                continue
             items.append(_inventory_item(entry, len(items) + 1, source_label))
 
     return MediaInventoryRead(
@@ -93,7 +94,7 @@ def get_media_inventory(
 
 
 def _inventory_item(path: Path, index: int, source_label: str) -> MediaInventoryItemRead:
-    extension = path.suffix.lower()
+    extension = _extension(path)
     category = _category_for_extension(extension)
     hints = _safe_media_hints(path.name)
     return MediaInventoryItemRead(
@@ -109,6 +110,13 @@ def _inventory_item(path: Path, index: int, source_label: str) -> MediaInventory
     )
 
 
+def _extension(path: Path) -> str:
+    name = path.name.lower()
+    if name.endswith(".tar.gz"):
+        return ".tar.gz"
+    return path.suffix.lower()
+
+
 def _category_for_extension(extension: str) -> str:
     if extension == ".iso":
         return "iso"
@@ -118,7 +126,20 @@ def _category_for_extension(extension: str) -> str:
         return "ova"
     if extension == ".vmdk":
         return "vmdk"
-    if extension in {".bin", ".rom", ".fw", ".fwpkg", ".scexe", ".firmware"}:
+    if extension in {
+        ".bin",
+        ".rom",
+        ".fw",
+        ".fwpkg",
+        ".scexe",
+        ".firmware",
+        ".tgz",
+        ".tar",
+        ".tar.gz",
+        ".zip",
+        ".pkg",
+        ".image",
+    }:
         return "firmware"
     return "other"
 
@@ -130,12 +151,18 @@ def _safe_media_hints(name: str) -> dict[str, list[str] | str | None]:
 
     if re.search(r"(?:^|[^a-z0-9])hpe(?:[^a-z0-9]|$)", normalized):
         product_hints.append("hpe")
+    if re.search(r"(?:^|[^a-z0-9])(?:sum|smart[\s._-]?update)(?:[^a-z0-9]|$)", normalized):
+        _append_unique(product_hints, "hpe-sum")
     if re.search(r"(?:^|[^a-z0-9])spp(?:[^a-z0-9]|$)", normalized):
-        product_hints.append("hpe-spp")
-    if re.search(r"(?:^|[^a-z0-9])(?:netapp|ontap)(?:[^a-z0-9]|$)", normalized):
-        product_hints.append("netapp-ontap")
-    if re.search(r"(?:^|[^a-z0-9])(?:vmware|esxi)(?:[^a-z0-9]|$)", normalized):
-        product_hints.append("vmware-esxi")
+        _append_unique(product_hints, "hpe-spp")
+    if re.search(r"(?:^|[^a-z0-9])(?:netapp|ontap)(?:[^a-z0-9]|$)", normalized) or _ontap_q_image_version(normalized):
+        _append_unique(product_hints, "netapp-ontap")
+    if re.search(r"(?:^|[^a-z0-9])(?:vcsa|vcenter|vcenter[\s._-]?server[\s._-]?appliance)(?:[^a-z0-9]|$)", normalized):
+        _append_unique(product_hints, "vmware-vcenter")
+    if re.search(r"(?:^|[^a-z0-9])(?:esxi|vmvisor|hypervisor)(?:[^a-z0-9]|$)", normalized):
+        _append_unique(product_hints, "vmware-esxi")
+    if re.search(r"(?:^|[^a-z0-9])(?:cisco|iosxe|ios[\s._-]?xe|cat9k)(?:[^a-z0-9]|$)", normalized):
+        _append_unique(product_hints, "cisco-ios-xe")
 
     for match in re.finditer(r"(?:^|[^a-z0-9])ilo[\s._-]?([456])(?:[^a-z0-9]|$)", normalized):
         _append_unique(product_hints, "hpe-ilo")
@@ -152,6 +179,10 @@ def _safe_media_hints(name: str) -> dict[str, list[str] | str | None]:
 
 
 def _version_hint(normalized_name: str) -> str | None:
+    ontap_q_image = _ontap_q_image_version(normalized_name)
+    if ontap_q_image:
+        return ontap_q_image
+
     ilo_compact = re.search(
         r"(?:^|[^a-z0-9])ilo[\s._-]?[456][\s._-]*v?(\d{1,2})(\d{2})(?:[^a-z0-9]|$)",
         normalized_name,
@@ -167,6 +198,19 @@ def _version_hint(normalized_name: str) -> str | None:
         return None
     parts = [str(int(part)) for part in dotted.groups() if part is not None]
     return ".".join(parts)
+
+
+def _ontap_q_image_version(normalized_name: str) -> str | None:
+    match = re.search(
+        r"(?:^|[^a-z0-9])(?P<major>\d)(?P<minor>\d{2})(?P<patch>\d)(?:p(?P<patch_release>\d+))?_q_image(?:[^a-z0-9]|$)",
+        normalized_name,
+    )
+    if not match:
+        return None
+    version = f"{int(match.group('major'))}.{int(match.group('minor'))}.{int(match.group('patch'))}"
+    if match.group("patch_release"):
+        version += f"P{int(match.group('patch_release'))}"
+    return version
 
 
 def _append_unique(values: list[str], value: str) -> None:

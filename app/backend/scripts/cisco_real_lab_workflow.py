@@ -59,6 +59,7 @@ PROMPT_RE = re.compile(r"(?m)(?:^|\r|\n)([A-Za-z0-9_.:/()-]+(?:\(config[^\)]*\))
 RECLAIMABLE_CONSOLE_COMMANDS = ("screen", "picocom", "minicom", "python")
 CISCO_DEFAULT_DOMAIN_NAME = "lab.local"
 CISCO_ALWAYS_ACCESS_PORTS = ("Gi1/0/1",)
+CISCO_SSH_HOSTKEY_LABEL = "LAB-SSH-HOSTKEY"
 
 
 @dataclass(frozen=True)
@@ -703,22 +704,24 @@ def _bootstrap_plan(identity: dict[str, Any] | None = None) -> dict[str, Any]:
         commands.append(f" ip address {target_ip} {netmask}")
     commands.extend([" no shutdown", " exit"])
     if access_ports:
-        commands.extend(
-            [
-                f"interface range {','.join(access_ports)}",
-                " switchport mode access",
-                f" switchport access vlan {vlan}",
-                " no shutdown",
-                " exit",
-            ]
-        )
+        for port in access_ports:
+            commands.extend(
+                [
+                    f"interface {port}",
+                    " switchport mode access",
+                    f" switchport access vlan {vlan}",
+                    " no shutdown",
+                    " exit",
+                ]
+            )
     if settings.cisco_management_gateway:
         commands.append(f"ip default-gateway {settings.cisco_management_gateway}")
     if username and settings.cisco_test_password:
         commands.append(f"username {username} privilege 15 secret <redacted>")
     commands.extend(
         [
-            "crypto key generate rsa modulus 2048",
+            f"crypto key generate rsa general-keys label {CISCO_SSH_HOSTKEY_LABEL} modulus 2048",
+            f"ip ssh rsa keypair-name {CISCO_SSH_HOSTKEY_LABEL}",
             "ip ssh version 2",
             "ip scp server enable",
             "line console 0",
@@ -766,7 +769,8 @@ def _bootstrap_plan(identity: dict[str, Any] | None = None) -> dict[str, Any]:
         "domain_configured": bool(domain_name),
         "domain_source": "env" if settings.cisco_domain_name else "default",
         "dns_server_count": len(settings.cisco_dns_servers),
-        "ssh_key_generation": "rsa modulus 2048",
+        "ssh_key_generation": f"rsa general-keys label {CISCO_SSH_HOSTKEY_LABEL} modulus 2048",
+        "ssh_keypair_name": CISCO_SSH_HOSTKEY_LABEL,
         "ssh_version": "2",
         "scp_enabled": True,
         "http_https_disabled": True,
@@ -822,9 +826,12 @@ def _apply_bootstrap(conn: Any, plan: dict[str, Any]) -> dict[str, Any]:
         actual = command
         if command.startswith("username ") and settings.cisco_test_username and settings.cisco_test_password:
             actual = f"username {settings.cisco_test_username} privilege 15 secret {settings.cisco_test_password}"
-        _send(conn, actual, secret=" secret " in actual)
+        if actual.startswith("crypto key generate rsa"):
+            _send_crypto_keygen(conn, actual)
+        else:
+            _send(conn, actual, secret=" secret " in actual)
+            _read(conn, window=_bootstrap_command_wait_seconds(command))
         sent.append(command)
-        _read(conn, window=_bootstrap_command_wait_seconds(command))
     return {
         "status": "completed",
         "serial_writes_attempted": True,
@@ -838,6 +845,19 @@ def _bootstrap_command_wait_seconds(command: str) -> float:
     if command.startswith("crypto key generate") or command == "write memory":
         return 8.0
     return 2.0
+
+
+def _send_crypto_keygen(conn: Any, command: str) -> None:
+    _send(conn, command)
+    output = _read(conn, window=8.0)
+    lower = output.lower()
+    if "[yes/no]" in lower or "replace" in lower:
+        _send(conn, "yes")
+        output = _read(conn, window=8.0)
+        lower = output.lower()
+    if "how many bits" in lower or "modulus" in lower and "2048" not in lower:
+        _send(conn, "2048")
+        _read(conn, window=8.0)
 
 
 def _post_apply_reconnect_switch_validation(
@@ -1494,8 +1514,15 @@ def _classify_vlan10_failure(
     route = ethernet.get("host_route") if isinstance(ethernet, dict) else {}
     if not route or route.get("status") != "ready":
         return "host_routing"
+    ping = ethernet.get("ping") if isinstance(ethernet, dict) else {}
+    if ping.get("status") != "ok":
+        return "host_reachability"
+    ssh = ethernet.get("ssh") if isinstance(ethernet, dict) else {}
+    scp = ethernet.get("scp") if isinstance(ethernet, dict) else {}
+    if ssh.get("reachable") is False or scp.get("reachable") is False:
+        return "ssh_service"
     if ethernet.get("status") != "ready":
-        return "host_routing"
+        return "host_reachability"
     return "passed"
 
 
@@ -1859,6 +1886,8 @@ def _vlan10_bootstrap_fix_markdown(payload: dict[str, Any]) -> str:
             "- `svi_down`: `interface Vlan10` exists but line/protocol is not up/up.",
             "- `port_down`: no selected/detected access port is confirmed in VLAN 10.",
             "- `host_routing`: switch-side validation looks usable, but Ubuntu cannot route/reach `192.168.1.204`.",
+            "- `host_reachability`: Ubuntu can route to `192.168.1.204`, but ping or another host reachability check failed.",
+            "- `ssh_service`: VLAN 10 and ping are usable, but SSH/SCP TCP readiness failed.",
             "- `passed`: switch-side validation and Ubuntu reachability passed.",
             "",
             "## Blockers",

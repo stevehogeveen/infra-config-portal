@@ -1416,6 +1416,7 @@ function profileMismatchItems(state: LabProfileList | null): Array<{ active: str
 }
 
 function Dashboard() {
+  const { reportIssues } = useReportIssues();
   const {
     activeContext,
     activeProfile,
@@ -1469,13 +1470,23 @@ function Dashboard() {
     .filter((item) => item.sectionId !== "completed")
     .slice(0, 5);
   const blockedItems = queueSections.find((section) => section.id === "blocked_failed")?.items ?? [];
+  const reportCriticalCount = reportIssues?.counts.critical ?? 0;
+  const reportWarningCount = reportIssues?.counts.warning ?? 0;
+  const reportBlockerIssues = (reportIssues?.top_issues ?? reportIssues?.issues ?? [])
+    .filter((issue) => ["critical", "warning"].includes(issue.severity))
+    .slice(0, 5);
+  const reportBlockers = reportBlockerIssues.map(
+    (issue) => `${humanizeIssueTitle(issue.title)}: ${humanizeAction(issue.next_action)}`
+  );
+  const blockerMessages = [...blockedItems.map((item) => item.reason), ...reportBlockers];
+  const hasCurrentBlockers = blockedItems.length > 0 || reportCriticalCount > 0;
   const readyToApprove = requests.filter((request) => readinessByRequest[request.id]?.ready_for_approval).length;
   const readyToPlan = requests.filter((request) => readinessByRequest[request.id]?.ready_for_plan).length;
   const readyToExecute = requests.filter((request) => readinessByRequest[request.id]?.ready_for_execute).length;
   const latestRun = [...runs].sort((left, right) => right.updated_at.localeCompare(left.updated_at))[0] ?? null;
   const dashboardSections: SectionOption<DashboardSectionId>[] = [
     { id: "overview", label: "Overview" },
-    { id: "blockers", label: "Current Blockers", status: blockedItems.length ? "blocked" : "ready" },
+    { id: "blockers", label: "Current Blockers", status: hasCurrentBlockers ? "blocked" : reportWarningCount ? "warning" : "ready" },
     { id: "last-run", label: "Last Run", status: latestRun?.status ?? "not_run" },
     { id: "next-actions", label: "Next Actions", status: nextActionItems.length ? "ready" : "not_run" }
   ];
@@ -1506,9 +1517,13 @@ function Dashboard() {
         <div className="calm-section-grid">
           {activeProfile && <LabProfileSummaryCard context={activeContext} profile={activeProfile} />}
           <StatusSummaryCard
-            message={`${nextActionItems.length} active operator action${nextActionItems.length === 1 ? "" : "s"} across ${requests.length} request${requests.length === 1 ? "" : "s"}.`}
-            status={blockedItems.length ? "blocked" : nextActionItems.length ? "ready" : "completed"}
-            title={blockedItems.length ? "Attention needed" : "Workflow queue is calm"}
+            message={
+              hasCurrentBlockers
+                ? `${reportCriticalCount || blockedItems.length} current lab blocker${(reportCriticalCount || blockedItems.length) === 1 ? "" : "s"}; ${nextActionItems.length} active operator action${nextActionItems.length === 1 ? "" : "s"} across ${requests.length} request${requests.length === 1 ? "" : "s"}.`
+                : `${nextActionItems.length} active operator action${nextActionItems.length === 1 ? "" : "s"} across ${requests.length} request${requests.length === 1 ? "" : "s"}.`
+            }
+            status={hasCurrentBlockers ? "blocked" : reportWarningCount ? "warning" : nextActionItems.length ? "ready" : "completed"}
+            title={hasCurrentBlockers ? "Attention needed" : "Workflow queue is calm"}
             items={[
               { label: "Ready To Approve", value: String(readyToApprove) },
               { label: "Ready To Plan", value: String(readyToPlan) },
@@ -1520,13 +1535,18 @@ function Dashboard() {
             detail={nextActionItems[0]?.actionLabel ?? "Open Lab Setup when the next lab step is ready."}
             to="/lab-setup"
           />
-          <BlockerSummary blockers={blockedItems.map((item) => item.reason)} />
+          <BlockerSummary blockers={blockerMessages} />
         </div>
       )}
       {activeSection === "blockers" && (
         <section className="panel">
           <PanelTitle icon={<AlertTriangle size={18} />} title="Current Blockers" />
-          <BlockerSummary blockers={blockedItems.map((item) => `${item.title}: ${item.reason}`)} />
+          <BlockerSummary
+            blockers={[
+              ...blockedItems.map((item) => `${item.title}: ${item.reason}`),
+              ...reportBlockers
+            ]}
+          />
           <AdvancedDetails
             className="section-details"
             summary="Blocked and failed queue items"
@@ -2788,8 +2808,8 @@ function EvidenceList({ artifacts, empty }: { artifacts: string[]; empty: string
   }
   return (
     <ul className="issue-evidence-list">
-      {artifacts.map((artifact) => (
-        <li key={artifact}>
+      {artifacts.map((artifact, index) => (
+        <li key={`${artifact}-${index}`}>
           <code>{artifact}</code>
         </li>
       ))}
@@ -6916,12 +6936,12 @@ function ControlCenterPage() {
     setError("");
     setLoading(true);
     try {
-      const nextWorkflowActions = await api.workflowActions();
+      const [nextWorkflowActions, nextCatalog] = await Promise.all([
+        api.workflowActions(),
+        api.controlActions()
+      ]);
       setWorkflowActions(nextWorkflowActions);
-      setLoading(false);
-      api.controlActions()
-        .then(setCatalog)
-        .catch((err: Error) => setError((current) => current || err.message));
+      setCatalog(nextCatalog);
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -7060,14 +7080,17 @@ function ControlCenterPage() {
       ? null
       : sections.find((section) => section.id === activeSectionId) ?? sections[0] ?? null;
   const selectedActions = selectedSection?.actions ?? actions;
-  const selectedBlockers = selectedActions.flatMap((action) => (action.blocker ? [action.blocker] : []));
+  const selectedBlockers = uniqueStrings(selectedActions.flatMap((action) => (action.blocker ? [action.blocker] : [])));
   const selectedWorkflowAction =
     scopedWorkflowActions.find((action) => action.action_id === selectedWorkflowActionId) ??
     scopedWorkflowActions[0] ??
     null;
   const selectedCatalogBlockers =
     scopedWorkflowActions.length
-      ? scopedWorkflowActions.flatMap((action) => action.blockers.slice(0, 1))
+      ? uniqueStrings([
+          ...selectedBlockers,
+          ...scopedWorkflowActions.flatMap((action) => action.blockers.slice(0, 1))
+        ])
       : selectedBlockers;
   const generatedLabel = catalog?.generated_at ? formatDateTime(catalog.generated_at) : "Registry";
   const scopedActionKeySignature = scopedWorkflowActions.map((action) => action.action_id).join("|");
@@ -11629,7 +11652,7 @@ function ProviderStatusPage() {
         </Link>
       }
     >
-      <Feedback loading={loading && !activeProfile && !providers.length} error={error} />
+      <Feedback loading={loading && !providers.length} error={error} />
       <section className="lab-builder-surface">
         <HardwareInventorySummary overview={buildOverview} rows={hardwareRows} />
         <HardwareInventoryTable rows={hardwareRows} />
@@ -12207,8 +12230,8 @@ function HardwareActionsDropdown({ row }: { row: HardwareInventoryRow }) {
       <summary>Actions</summary>
       <div>
         <ul>
-          {row.actions.map((action) => (
-            <li key={`${row.id}-${action}`}>{action}</li>
+          {row.actions.map((action, index) => (
+            <li key={`${row.id}-${action}-${index}`}>{action}</li>
           ))}
         </ul>
         <AdvancedDetails
@@ -17232,8 +17255,8 @@ function BlockerSummary({
             title="More items"
           >
             <ul className="compact-list">
-              {rest.map((item) => (
-                <li key={item}>{item}</li>
+              {rest.map((item, index) => (
+                <li key={`${item}-${index}`}>{item}</li>
               ))}
             </ul>
           </AdvancedDetails>

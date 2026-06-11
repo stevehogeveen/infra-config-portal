@@ -171,6 +171,60 @@ def test_install_readiness_uses_installed_esxi_state_after_cleanup() -> None:
     ) == "Installed ESXi is running; no installer boot override is queued."
 
 
+def test_reset_for_installer_boot_powers_on_when_server_is_off(monkeypatch, tmp_path: Path) -> None:
+    _redirect_reports(monkeypatch, tmp_path)
+    monkeypatch.setattr(esxi_boot_workflow, "_action_blockers", lambda *_args: [])
+    monkeypatch.setattr(esxi_boot_workflow, "firmware_gate_blockers", lambda *_args: [])
+    monkeypatch.setattr(
+        esxi_boot_workflow,
+        "insert_esxi_virtual_media",
+        lambda: {"status": "inserted", "device": {"path": "/redfish/v1/Managers/1/VirtualMedia/2/"}},
+    )
+    monkeypatch.setattr(esxi_boot_workflow, "set_esxi_one_time_boot", lambda: {"status": "set"})
+
+    reset_types: list[str] = []
+
+    def fake_reset(reset_type: str) -> dict:
+        reset_types.append(reset_type)
+        return {
+            "method": "POST",
+            "path": "/redfish/v1/Systems/1/Actions/ComputerSystem.Reset/",
+            "status_code": 200,
+            "request": {"ResetType": reset_type},
+            "response": {},
+        }
+
+    def fake_safe_get(path: str) -> dict:
+        if path == esxi_boot_workflow.SYSTEM_PATH:
+            return {
+                "status_code": 200,
+                "body": {
+                    "PowerState": "Off",
+                    "Boot": {
+                        "BootSourceOverrideEnabled": "Once",
+                        "BootSourceOverrideTarget": "Cd",
+                    },
+                },
+            }
+        return {"status_code": 200, "body": {"Inserted": True, "Image": "http://example.invalid/esxi.iso"}}
+
+    monkeypatch.setattr(esxi_boot_workflow, "_post_system_reset", fake_reset)
+    monkeypatch.setattr(esxi_boot_workflow, "_safe_get", fake_safe_get)
+    monkeypatch.setattr(
+        esxi_boot_workflow,
+        "_wait_for_ilo",
+        lambda *, require_powered=False: {"reachable": True, "power_state": "On", "require_powered": require_powered},
+    )
+    monkeypatch.setattr(esxi_boot_workflow, "_installer_detection", lambda *_args: {"status": "detected", "warnings": []})
+
+    result = esxi_boot_workflow.reset_for_esxi_installer_boot()
+
+    assert result["status"] == "boot_requested"
+    assert reset_types == ["On"]
+    assert result["wait"]["require_powered"] is True
+    assert not result["blockers"]
+
+
 def _redirect_reports(monkeypatch, tmp_path: Path) -> None:
     repo_root = tmp_path
     codex_runs = repo_root / "artifacts" / "codex-runs"

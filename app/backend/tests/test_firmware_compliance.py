@@ -45,6 +45,20 @@ def test_compliant_firmware_passes(monkeypatch, firmware_settings) -> None:
     assert result["blockers"] == []
 
 
+def test_firmware_media_inventory_groups_by_product_hints(monkeypatch, firmware_settings, tmp_path) -> None:
+    firmware_settings.media_inventory_dirs = (str(tmp_path),)
+    monkeypatch.setattr(fc, "settings", firmware_settings)
+    monkeypatch.setattr(fc, "_media_directories", lambda: [tmp_path])
+    (tmp_path / "9131P17_q_image.tgz").write_bytes(b"ontap")
+    (tmp_path / "cat9k_iosxe.17.15.05.SPA.bin").write_bytes(b"cisco")
+    (tmp_path / "ilo5_319.fwpkg").write_bytes(b"ilo")
+
+    result = fc.get_firmware_media_inventory()
+
+    assert result["candidate_count"] == 3
+    assert result["grouped_counts"] == {"cisco": 1, "hpe": 1, "netapp": 1}
+
+
 def test_below_minimum_blocks(monkeypatch, firmware_settings) -> None:
     monkeypatch.setattr(fc, "settings", firmware_settings)
     monkeypatch.setattr(fc, "load_firmware_baseline", lambda: _baseline(_component("hpe_ilo_firmware", minimum="3.19")))
@@ -157,6 +171,43 @@ def test_blocked_console_inventory_marks_ansible_version_historical(monkeypatch,
     assert cisco_inventory["ios_xe_version"] is None
     assert cisco_inventory["historical_evidence"]["ios_xe_version"] == "17.15.05"
     assert cisco_inventory["historical_evidence"]["historical"] is True
+
+
+def test_cisco_firmware_report_fills_missing_provider_cache(monkeypatch, firmware_settings, tmp_path) -> None:
+    report = tmp_path / "cisco-firmware-inventory-report.md"
+    report.write_text(
+        "\n".join(
+            [
+                "# Cisco Firmware Inventory Report",
+                "",
+                "- Status: ok",
+                "- Source: console-user-exec-show-version",
+                "- IOS XE version: 17.15.05",
+                "- Bootloader/ROMMON: 17.12.1",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(fc, "settings", firmware_settings)
+    monkeypatch.setattr(fc, "CISCO_FIRMWARE_INVENTORY_REPORT", report)
+    monkeypatch.setattr(fc, "load_firmware_baseline", lambda: _baseline(_component("cisco_ios_xe_version", minimum="17.9")))
+    record_probe_result(
+        "cisco-console",
+        {
+            "provider_id": "cisco-console",
+            "status": "blocked",
+            "source": "console-readiness",
+            "blockers": ["Console requires login or password; credentials are not configured for this probe."],
+        },
+    )
+
+    result = fc.get_firmware_compliance(scope="cisco")
+    cisco_inventory = result["inventory"]["live_inventory"]["cisco"]
+
+    assert result["status"] == "passed"
+    assert result["components"][0]["current_version"] == "17.15.05"
+    assert cisco_inventory["source"] == "console-user-exec-show-version"
+    assert cisco_inventory["bootloader_rommon"] == "17.12.1"
 
 
 def test_cisco_scope_ignores_netapp_not_configured(monkeypatch, firmware_settings) -> None:
