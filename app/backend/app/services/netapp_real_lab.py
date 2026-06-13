@@ -89,6 +89,7 @@ NOT_ATTEMPTED = [
     "controller reboot, takeover/giveback, wipe, or upgrade",
 ]
 READ_ONLY_ONTAP_COMMANDS = (
+    ("disable_paging", "set -rows 0"),
     ("ontap_version", "version"),
     ("node_identity", "system node show -fields node,model,health,uptime"),
     ("cluster_status", "cluster show"),
@@ -96,7 +97,7 @@ READ_ONLY_ONTAP_COMMANDS = (
         "network_interface_summary",
         "network interface show -fields vserver,lif,address,role,home-node,home-port,status-admin,status-oper",
     ),
-    ("storage_aggregate_summary", "storage aggregate show -fields aggregate,node,state,size,available,usedsize"),
+    ("storage_aggregate_summary", "storage aggregate show -fields aggregate,node,state,size,availsize,usedsize"),
 )
 
 
@@ -210,6 +211,7 @@ def run_netapp_console_login_state() -> dict[str, Any]:
         status = "ready"
     elif command_results:
         status = "warning"
+    effective_identified_state = _identified_state_after_commands(identified_state, command_results)
     payload = {
         "provider_id": PROVIDER_ID,
         "action": "console-login-state",
@@ -220,7 +222,8 @@ def run_netapp_console_login_state() -> dict[str, Any]:
         "selected_port": selected_port,
         "selected_baud": selected_baud,
         "prompt_state": prompt_state,
-        "identified_state": identified_state,
+        "initial_identified_state": identified_state,
+        "identified_state": effective_identified_state,
         "credential_state": {
             "console_username_configured": credentials["console_username_configured"],
             "console_password_configured": credentials["console_password_configured"],
@@ -248,12 +251,82 @@ def run_netapp_console_login_state() -> dict[str, Any]:
             "vCenter or ESXi datastore mount",
             "controller reboot, takeover/giveback, wipe, or upgrade",
         ],
-        "next_safe_action": _console_login_next_action(identified_state, credentials, blockers),
+        "next_safe_action": _console_login_next_action(effective_identified_state, credentials, blockers, command_results),
     }
     sanitized = _sanitize(payload)
+    runtime_state = update_netapp_runtime_state_from_console_probe(
+        _login_runtime_probe_payload(sanitized),
+    )
+    sanitized["runtime_state"] = runtime_state
     _write_json(CONSOLE_LOGIN_STATE_JSON, sanitized)
     CONSOLE_LOGIN_STATE_REPORT.write_text(_console_login_markdown(sanitized), encoding="utf-8")
     return sanitized
+
+
+def latest_console_ontap_version() -> dict[str, Any]:
+    try:
+        payload = json.loads(CONSOLE_LOGIN_STATE_JSON.read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {"version": None, "source": "not_available", "checked_at": None}
+    version = _ontap_version_from_console_payload(payload if isinstance(payload, dict) else {})
+    return {
+        "version": version,
+        "source": "console_read_only" if version else "not_available",
+        "checked_at": payload.get("checked_at") if isinstance(payload, dict) else None,
+        "identified_state": payload.get("identified_state") if isinstance(payload, dict) else None,
+    }
+
+
+def _ontap_version_from_console_payload(payload: dict[str, Any]) -> str | None:
+    results = payload.get("command_results")
+    if not isinstance(results, list):
+        return None
+    for result in results:
+        if not isinstance(result, dict):
+            continue
+        if result.get("id") != "ontap_version":
+            continue
+        text = str(result.get("output_excerpt") or "")
+        match = re.search(r"NetApp Release\s+([0-9][0-9A-Za-z_.-]*)", text)
+        if match:
+            return match.group(1).rstrip(":,;")
+    return None
+
+
+def _login_runtime_probe_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    effective_state = payload.get("identified_state")
+    selected_prompt_state = (
+        "existing_cluster_shell"
+        if effective_state == "ontap_shell"
+        else payload.get("prompt_state")
+    )
+    selected_prompt_label = (
+        "Existing ONTAP cluster shell"
+        if selected_prompt_state == "existing_cluster_shell"
+        else "NetApp login prompt"
+        if selected_prompt_state in {"login_required", "password_required"}
+        else None
+    )
+    return {
+        **payload,
+        "selected_prompt_state": selected_prompt_state,
+        "selected_prompt_label": selected_prompt_label,
+        "selection_source": "console-login-state",
+    }
+
+
+def _identified_state_after_commands(
+    identified_state: str,
+    command_results: list[dict[str, Any]],
+) -> str:
+    captured = [item for item in command_results if item.get("status") == "captured"]
+    if not captured:
+        return identified_state
+    if any(item.get("prompt_state") == "existing_cluster_shell" for item in captured):
+        return "ontap_shell"
+    if len(captured) == len(command_results):
+        return "ontap_shell"
+    return identified_state
 
 
 def get_netapp_live_state(*, write_report: bool = False) -> dict[str, Any]:
@@ -874,11 +947,14 @@ def _console_login_next_action(
     identified_state: str,
     credentials: dict[str, Any],
     blockers: list[str],
+    command_results: list[dict[str, Any]],
 ) -> str:
     if identified_state in {"cluster_setup_wizard", "node_setup_wizard"}:
         return "Build and review the setup plan; do not enter setup commands until a guarded apply workflow and explicit apply confirmations exist."
     if identified_state == "login_required" and not credentials.get("usable"):
         return "Configure NetApp console or API credentials locally, then rerun `make provider-lab-netapp-console-login-state`."
+    if command_results and not blockers:
+        return "Review the read-only ONTAP identity outputs and proceed to management reachability/setup planning."
     if identified_state == "ontap_shell" and not blockers:
         return "Review the read-only ONTAP identity outputs and proceed to management reachability/setup planning."
     return "Rerun console read-state after resolving the current console state blocker."
@@ -1501,6 +1577,7 @@ def _console_login_markdown(payload: dict[str, Any]) -> str:
         f"- Selected port: `{payload.get('selected_port') or 'none'}`",
         f"- Selected baud: `{payload.get('selected_baud') or 'none'}`",
         f"- Prompt state: `{payload.get('prompt_state') or 'unknown'}`",
+        f"- Initial identified state: `{payload.get('initial_identified_state') or payload.get('identified_state') or 'unknown'}`",
         f"- Identified state: `{payload.get('identified_state') or 'unknown'}`",
         "",
         "## Credential State",

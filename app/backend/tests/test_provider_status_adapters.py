@@ -13,9 +13,12 @@ from app.providers import esxi_readonly
 from app.providers.base import ProviderAction, ProviderStatus
 from app.providers.action_policy import ActionCategory, LabActionPolicy
 from app.providers.cisco_console import (
+    CONSOLE_WAKE_SEQUENCES,
     CiscoConsoleAdapter,
     CiscoConsoleConfig,
     ConsoleDiscoveryPaths,
+    MAX_PROMPT_SCAN_BAUDS,
+    _open_console_connection,
     _prompt_blocker_message,
     _prompt_state,
     discover_cisco_console,
@@ -45,6 +48,11 @@ from app.services.ilo_readiness import save_ilo_setup_intent
 from app.services.ilo_setup_apply import (
     CONFIRMATION_PHRASE as ILO_SETUP_CONFIRMATION_PHRASE,
     apply_ilo_setup,
+)
+from app.services.hpe_raid import (
+    _pending_next_safe_action,
+    _pending_report_status,
+    _pending_summary,
 )
 from app.services.control_access import update_control_access_config
 from app.services.lab_profiles import create_lab_profile
@@ -301,6 +309,49 @@ def test_cisco_console_probe_returns_command_summaries_not_raw_output(
     assert "192.0.2.10" not in encoded
 
 
+def test_ilo_probe_preserves_previous_legacy_identity_on_auth_failed_refresh() -> None:
+    clear_probe_results()
+    record_probe_result(
+        "ilo-redfish",
+        {
+            "provider_id": "ilo-redfish",
+            "status": "failed",
+            "legacy_identity": {
+                "source": "/xmldata?item=All",
+                "current_firmware": "3.19",
+                "ilo_generation": "ilo5",
+            },
+        },
+    )
+    adapter = IloRedfishAdapter(
+        provider_mode="local-readonly",
+        config=IloRedfishConfig(
+            host="192.168.1.201",
+            username="operator",
+            password="secret-value",
+            verify_tls=False,
+            timeout_seconds=1.0,
+        ),
+    )
+
+    result = adapter._record_result(  # noqa: SLF001
+        {
+            "provider_id": "ilo-redfish",
+            "status": "failed",
+            "legacy_identity": {},
+            "endpoint_detection": {
+                "classification": "redfish_inventory_auth_failed",
+            },
+            "warnings": [],
+            "blockers": ["Inventory collections returned HTTP 401."],
+        }
+    )
+
+    assert result["legacy_identity"]["current_firmware"] == "3.19"
+    assert result["legacy_identity"]["preserved_from_previous_probe"] is True
+    assert result["endpoint_detection"]["legacy_identity"]["current_firmware"] == "3.19"
+
+
 def test_cisco_console_firmware_inventory_parses_ios_xe_from_user_exec(
     tmp_path: Path,
     monkeypatch,
@@ -309,6 +360,10 @@ def test_cisco_console_firmware_inventory_parses_ios_xe_from_user_exec(
     tty = tmp_path / "ttyUSB0"
     tty.touch()
     _allow_readonly_lab(monkeypatch)
+    monkeypatch.setattr(
+        "app.providers.cisco_console.settings",
+        _cisco_console_settings(cisco_mgmt_configured=False),
+    )
     writes = _install_tracking_fake_serial(
         monkeypatch,
         [
@@ -331,6 +386,74 @@ def test_cisco_console_firmware_inventory_parses_ios_xe_from_user_exec(
     assert b"show version\n" in writes
     assert b"enable\n" not in writes
     assert "Cisco IOS XE Software" not in encoded
+
+
+def test_cisco_firmware_inventory_uses_ssh_when_management_is_configured(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    clear_probe_results()
+    tty = tmp_path / "ttyUSB0"
+    tty.touch()
+    _allow_readonly_lab(monkeypatch)
+    monkeypatch.setattr(
+        "app.providers.cisco_console.settings",
+        _cisco_console_settings(
+            cisco_mgmt_configured=True,
+            cisco_target_ip="192.0.2.204",
+            cisco_test_username="admin",
+            cisco_test_password="secret",
+            cisco_enable_password="secret",
+            ansible_cisco_timeout_seconds=8.0,
+        ),
+    )
+
+    class FakeConnection:
+        def send_command(self, command: str, *, read_timeout: float) -> str:
+            assert command == "show version"
+            assert read_timeout == 8.0
+            return "Cisco IOS XE Software, Version 17.15.05\nSwitch01#"
+
+        def disconnect(self) -> None:
+            return None
+
+    fake_netmiko = types.ModuleType("netmiko")
+    fake_netmiko.ConnectHandler = lambda **_kwargs: FakeConnection()  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "netmiko", fake_netmiko)
+
+    result = CiscoConsoleAdapter(
+        provider_mode="local-readonly",
+        config=CiscoConsoleConfig(port=str(tty), baud=9600, timeout_seconds=1.0),
+    ).firmware_inventory()
+    encoded = json.dumps(result)
+
+    assert result["status"] == "ok"
+    assert result["source"] == "ssh-netmiko-show-version"
+    assert result["ios_xe_version"] == "17.15.05"
+    assert "Cisco IOS XE Software" not in encoded
+    assert "secret" not in encoded
+
+
+def test_cisco_console_serial_read_timeout_is_bounded(monkeypatch) -> None:
+    serial_calls: list[dict[str, object]] = []
+
+    class FakeSerialConnection:
+        pass
+
+    def fake_serial(**kwargs):
+        serial_calls.append(kwargs)
+        return FakeSerialConnection()
+
+    monkeypatch.setitem(sys.modules, "serial", types.SimpleNamespace(Serial=fake_serial))
+
+    result = _open_console_connection(
+        CiscoConsoleConfig(port="/dev/ttyUSB0", baud=9600, timeout_seconds=2.0),
+        "/dev/ttyUSB0",
+    )
+
+    assert isinstance(result, FakeSerialConnection)
+    assert serial_calls[0]["timeout"] == 0.35
+    assert serial_calls[0]["write_timeout"] == 2.0
 
 
 def test_cisco_prompt_readiness_is_blocked_in_mock_mode() -> None:
@@ -443,28 +566,59 @@ def test_cisco_prompt_readiness_blocks_login_required_prompt(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
+    monkeypatch.setattr(
+        "app.providers.cisco_console.settings",
+        _cisco_console_settings(cisco_test_username=None, cisco_test_password=None),
+    )
     result, writes = _run_prompt_readiness_with_fake_serial(tmp_path, monkeypatch, "Username:")
 
     assert writes == [b"\n"]
     assert result["status"] == "blocked"
     assert result["prompt_state"] == "login-required"
     assert result["login_required"] is True
+    assert result["credentials_configured"] is False
     assert result["prompt_ready"] is False
     assert result["safe_show_commands_allowed"] is False
     assert result["prompt_classification"]["label"] == "Login required"
     assert result["prompt_classification"]["classification"] == "login_prompt"
+    assert "configure Cisco console credentials" in result["blockers"][0]
+
+
+def test_cisco_prompt_readiness_login_prompt_reports_configured_credentials(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        "app.providers.cisco_console.settings",
+        _cisco_console_settings(cisco_test_username="operator", cisco_test_password="secret"),
+    )
+
+    result, writes = _run_prompt_readiness_with_fake_serial(tmp_path, monkeypatch, "Username:")
+
+    assert writes == [b"\n"]
+    assert result["status"] == "blocked"
+    assert result["prompt_state"] == "login-required"
+    assert result["credentials_configured"] is True
+    assert "guarded Cisco privilege/bootstrap workflow" in result["blockers"][0]
+    assert "prompt readiness will not send credentials" in result["next_safe_action"]
 
 
 def test_cisco_prompt_readiness_classifies_password_prompt(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
+    monkeypatch.setattr(
+        "app.providers.cisco_console.settings",
+        _cisco_console_settings(cisco_test_username="operator", cisco_test_password="secret"),
+    )
     result, writes = _run_prompt_readiness_with_fake_serial(tmp_path, monkeypatch, "Password:")
 
     assert writes == [b"\n"]
     assert result["status"] == "blocked"
     assert result["prompt_state"] == "password-required"
     assert result["prompt_classification"]["classification"] == "password_prompt"
+    assert result["credentials_configured"] is True
+    assert "guarded Cisco privilege/bootstrap workflow" in result["blockers"][0]
 
 
 def test_cisco_prompt_readiness_blocks_config_mode_prompt(
@@ -496,7 +650,7 @@ def test_cisco_prompt_readiness_blocks_unknown_prompt(
         "unrecognized prompt text",
     )
 
-    assert writes == [b"\n", b"\r", b"\x03", b"\x1a"] * 5
+    assert writes == _expected_prompt_scan_writes()
     assert result["status"] == "blocked"
     assert result["prompt_state"] == "unknown"
     assert result["prompt_ready"] is False
@@ -515,7 +669,7 @@ def test_cisco_prompt_readiness_blocks_when_no_prompt_text_captured(
         "",
     )
 
-    assert writes == [b"\n", b"\r", b"\x03", b"\x1a"] * 5
+    assert writes == _expected_prompt_scan_writes()
     assert result["status"] == "blocked"
     assert result["message"].startswith("Console port opened but no prompt text was captured")
     assert result["blockers"] == [result["message"]]
@@ -560,7 +714,7 @@ def test_cisco_prompt_readiness_reports_configured_read_timing(
         paths=_discovery_paths(paths),
     ).prompt_readiness()
 
-    assert writes == [b"\n", b"\r", b"\x03", b"\x1a"] * 5
+    assert writes == _expected_prompt_scan_writes()
     assert result["status"] == "blocked"
     assert result["read_timing"]["settle_seconds"] == 0.1
     assert result["read_timing"]["read_window_seconds"] == 0.2
@@ -580,7 +734,7 @@ def test_cisco_prompt_readiness_classifies_wrong_baud_gibberish(
         "\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd",
     )
 
-    assert writes == [b"\n", b"\r", b"\x03", b"\x1a"] * 5
+    assert writes == _expected_prompt_scan_writes()
     assert result["status"] == "blocked"
     assert result["prompt_state"] == "unreadable"
     assert result["prompt_classification"]["classification"] == "unreadable_gibberish"
@@ -1671,6 +1825,44 @@ def test_hpe_raid_plan_preserves_existing_esxi_layout() -> None:
     assert "RAID create/delete/update" in plan["not_attempted"]
 
 
+def test_hpe_raid_pending_blocks_reset_when_smartstorage_reads_are_unauthorized() -> None:
+    pending = _pending_summary(
+        {"_http_status": 401, "_path": "/redfish/v1/Systems/1/SmartStorageConfig/"},
+        {"_http_status": 401, "_path": "/redfish/v1/Systems/1/SmartStorageConfig/Settings/"},
+        {
+            "LogicalDrives": [
+                {
+                    "LogicalDriveName": "ESXi-OS",
+                    "Raid": "Raid1",
+                    "DataDrives": ["1I:1:1", "1I:1:2"],
+                    "SpareDrives": [],
+                }
+            ]
+        },
+        {
+            "redfish_result": {
+                "status_code": 400,
+                "response": {
+                    "error": {
+                        "@Message.ExtendedInfo": [
+                            {"MessageId": "iLO.2.25.SystemResetRequired"}
+                        ]
+                    }
+                },
+            }
+        },
+    )
+
+    assert pending["smartstorage_reads_available"] is False
+    assert pending["last_apply_system_reset_required"] is True
+    assert pending["pending_config_exists"] is False
+    assert pending["reset_required"] is False
+    assert _pending_report_status(pending) == "blocked"
+    assert _pending_next_safe_action(pending) == (
+        "Resolve iLO Redfish SmartStorage authorization, then rerun HPE RAID discovery and pending checks."
+    )
+
+
 def test_ilo_readonly_status_is_unchanged_by_management_flags(monkeypatch) -> None:
     _allow_readonly_ilo_lab(monkeypatch)
     adapter = IloRedfishAdapter(
@@ -1688,7 +1880,11 @@ def test_ilo_readonly_status_is_unchanged_by_management_flags(monkeypatch) -> No
 
     assert status.status == "ready"
     assert status.safe_actions[0].enabled is True
-    assert status.safe_actions[0].reason == "Run GET-only endpoint detection and Redfish inventory checks."
+    assert status.safe_actions[0].label == "Read-Only Redfish Inventory"
+    assert (
+        status.safe_actions[0].reason
+        == "Run read-only endpoint detection, authentication, and Redfish inventory checks."
+    )
 
 
 def test_ilo_config_prefers_active_lab_profile_host(monkeypatch) -> None:
@@ -2550,6 +2746,163 @@ def test_ilo_probe_classifies_inventory_auth_after_root_available(monkeypatch) -
     assert "SECRET-SERIAL-123" not in json.dumps(result)
 
 
+def test_ilo_probe_retries_inventory_with_redfish_session_auth(monkeypatch) -> None:
+    import httpx
+    import json as json_module
+
+    _allow_readonly_ilo_lab(monkeypatch)
+    token = "session-token-secret"
+    password = "super-secret-password"
+    requested: list[tuple[str, str, bool]] = []
+
+    class FakeClient:
+        def __init__(self, **kwargs) -> None:
+            self.headers = kwargs.get("headers") or {}
+
+        def __enter__(self) -> "FakeClient":
+            return self
+
+        def __exit__(self, *_args) -> None:
+            pass
+
+        def get(self, url: str) -> httpx.Response:
+            path = "/" + url.split("/", 3)[3] if "/" in url.split("://", 1)[-1] else "/"
+            has_token = self.headers.get("X-Auth-Token") == token
+            requested.append(("GET", path, has_token))
+            payloads: dict[str, tuple[int, dict[str, object] | bytes]] = {
+                "/redfish/v1/": (
+                    200,
+                    {
+                        "@odata.id": "/redfish/v1/",
+                        "Links": {
+                            "Sessions": {"@odata.id": "/redfish/v1/SessionService/Sessions/"}
+                        },
+                        "Managers": {"@odata.id": "/redfish/v1/Managers/"},
+                        "Systems": {"@odata.id": "/redfish/v1/Systems/"},
+                        "Chassis": {"@odata.id": "/redfish/v1/Chassis/"},
+                        "UpdateService": {"@odata.id": "/redfish/v1/UpdateService/"},
+                    },
+                ),
+                "/redfish/v1": (200, {"@odata.id": "/redfish/v1/"}),
+                "/": (200, b"<html></html>"),
+                "/xmldata?item=All": (
+                    200,
+                    (
+                        b"<RIMP><HSI><SPN>ProLiant DL360 Gen10</SPN>"
+                        b"<SBSN>SECRET-SERIAL-123</SBSN></HSI>"
+                        b"<MP><PN>Integrated Lights-Out 5</PN><FWRI>3.19</FWRI></MP></RIMP>"
+                    ),
+                ),
+                "/redfish/v1/Managers/": (
+                    200,
+                    {"Members": [{"@odata.id": "/redfish/v1/Managers/1"}]},
+                ),
+                "/redfish/v1/Managers/1": (
+                    200,
+                    {"Id": "1", "Name": "Manager", "ManagerType": "BMC", "FirmwareVersion": "3.19"},
+                ),
+                "/redfish/v1/Systems/": (
+                    200,
+                    {"Members": [{"@odata.id": "/redfish/v1/Systems/1"}]},
+                ),
+                "/redfish/v1/Systems/1": (
+                    200,
+                    {
+                        "Id": "1",
+                        "Name": "Server",
+                        "Model": "ProLiant DL360 Gen10",
+                        "PowerState": "On",
+                    },
+                ),
+                "/redfish/v1/Chassis/": (
+                    200,
+                    {"Members": [{"@odata.id": "/redfish/v1/Chassis/1"}]},
+                ),
+                "/redfish/v1/Chassis/1": (
+                    200,
+                    {
+                        "Id": "1",
+                        "Name": "Chassis",
+                        "ChassisType": "RackMount",
+                        "Power": {"@odata.id": "/redfish/v1/Chassis/1/Power"},
+                        "Thermal": {"@odata.id": "/redfish/v1/Chassis/1/Thermal"},
+                    },
+                ),
+                "/redfish/v1/Chassis/1/Power": (200, {"Id": "Power"}),
+                "/redfish/v1/Chassis/1/Thermal": (200, {"Id": "Thermal"}),
+                "/redfish/v1/UpdateService/": (
+                    200,
+                    {"FirmwareInventory": {"@odata.id": "/redfish/v1/UpdateService/FirmwareInventory/"}},
+                ),
+                "/redfish/v1/UpdateService/FirmwareInventory/": (200, {"Members": []}),
+            }
+            if path in {
+                "/redfish/v1/Managers/",
+                "/redfish/v1/Systems/",
+                "/redfish/v1/Chassis/",
+                "/redfish/v1/UpdateService/",
+            } and not has_token:
+                return httpx.Response(401, request=httpx.Request("GET", url))
+            status, payload = payloads.get(path, (404, {}))
+            content = payload if isinstance(payload, bytes) else json_module.dumps(payload).encode("utf-8")
+            content_type = "text/xml" if path == "/xmldata?item=All" else "application/json"
+            return httpx.Response(
+                status,
+                headers={"content-type": content_type},
+                content=content,
+                request=httpx.Request("GET", url),
+            )
+
+        def post(self, url: str, **kwargs) -> httpx.Response:
+            path = "/" + url.split("/", 3)[3] if "/" in url.split("://", 1)[-1] else "/"
+            requested.append(("POST", path, False))
+            assert kwargs["json"]["Password"] == password
+            return httpx.Response(
+                201,
+                headers={
+                    "X-Auth-Token": token,
+                    "Location": "/redfish/v1/SessionService/Sessions/1",
+                },
+                request=httpx.Request("POST", url),
+            )
+
+        def delete(self, url: str) -> httpx.Response:
+            path = "/" + url.split("/", 3)[3] if "/" in url.split("://", 1)[-1] else "/"
+            requested.append(("DELETE", path, self.headers.get("X-Auth-Token") == token))
+            return httpx.Response(204, request=httpx.Request("DELETE", url))
+
+    monkeypatch.setattr("app.providers.ilo_redfish.httpx.Client", FakeClient)
+    adapter = IloRedfishAdapter(
+        provider_mode="local-readonly",
+        config=IloRedfishConfig(
+            host="192.0.2.202",
+            username="local-admin",
+            password=password,
+            verify_tls=False,
+            timeout_seconds=1.0,
+        ),
+    )
+
+    result = adapter.probe()
+    encoded = json.dumps(result)
+
+    assert result["status"] == "ok"
+    assert result["authentication_method"] == "redfish_session_token"
+    assert result["redfish_auth"]["status"] == "ready"
+    assert result["redfish_auth"]["auth_header_received"] is True
+    assert result["redfish_auth"]["location_present"] is True
+    assert result["redfish_auth"]["cleanup_status"] == "completed"
+    assert result["endpoint_detection"]["auth_failure_classification"] == (
+        "basic_auth_recovered_with_session_token"
+    )
+    assert result["endpoint_detection"]["auth_recovery_hint"] == "session_auth_used"
+    assert any(item == ("POST", "/redfish/v1/SessionService/Sessions/", False) for item in requested)
+    assert any(item == ("DELETE", "/redfish/v1/SessionService/Sessions/1", True) for item in requested)
+    assert password not in encoded
+    assert token not in encoded
+    assert "SECRET-SERIAL-123" not in encoded
+
+
 def test_ilo_probe_for_lab_target_192_168_1_202_is_get_only_and_redacted(monkeypatch) -> None:
     clear_probe_results()
     requested_urls: list[str] = []
@@ -2885,6 +3238,40 @@ def _allow_readonly_lab(monkeypatch) -> None:
     )
 
 
+def _cisco_console_settings(**overrides) -> types.SimpleNamespace:
+    from app.providers import cisco_console as cisco_console_module
+
+    current = cisco_console_module.settings
+    values = {
+        "provider_mode": getattr(current, "provider_mode", "mock"),
+        "cisco_mgmt_configured": getattr(current, "cisco_mgmt_configured", False),
+        "cisco_target_ip": getattr(current, "cisco_target_ip", None),
+        "cisco_test_username": getattr(current, "cisco_test_username", None),
+        "cisco_test_password": getattr(current, "cisco_test_password", None),
+        "cisco_enable_password": getattr(current, "cisco_enable_password", None),
+        "cisco_console_port": getattr(current, "cisco_console_port", None),
+        "cisco_console_baud": getattr(current, "cisco_console_baud", 9600),
+        "cisco_console_timeout_seconds": getattr(current, "cisco_console_timeout_seconds", 1.0),
+        "cisco_console_transport": getattr(current, "cisco_console_transport", "local_serial"),
+        "cisco_console_tcp_host": getattr(current, "cisco_console_tcp_host", None),
+        "cisco_console_tcp_port": getattr(current, "cisco_console_tcp_port", 2001),
+        "cisco_console_prompt_settle_seconds": getattr(
+            current,
+            "cisco_console_prompt_settle_seconds",
+            0.5,
+        ),
+        "cisco_console_prompt_read_window_seconds": getattr(
+            current,
+            "cisco_console_prompt_read_window_seconds",
+            1.0,
+        ),
+        "cisco_console_prompt_max_bytes": getattr(current, "cisco_console_prompt_max_bytes", 8192),
+        "ansible_cisco_timeout_seconds": getattr(current, "ansible_cisco_timeout_seconds", 8.0),
+    }
+    values.update(overrides)
+    return types.SimpleNamespace(**values)
+
+
 def _allow_readonly_ilo_lab(monkeypatch) -> None:
     monkeypatch.setattr(
         "app.providers.ilo_redfish.current_lab_action_policy",
@@ -2972,6 +3359,34 @@ def _install_fake_httpx_client(
                 status_code,
                 headers={"content-type": content_type},
                 content=content,
+                request=request,
+            )
+
+        def post(self, url: str, **_kwargs) -> httpx.Response:
+            if requested_urls is not None:
+                requested_urls.append(url)
+            path = "/" + url.split("/", 3)[3] if "/" in url.split("://", 1)[-1] else "/"
+            response_spec = responses.get(f"POST {path}", (404, "text/plain"))
+            status_code, content_type = response_spec[:2]
+            request = httpx.Request("POST", url)
+            return httpx.Response(
+                status_code,
+                headers={"content-type": content_type},
+                content=b"",
+                request=request,
+            )
+
+        def delete(self, url: str) -> httpx.Response:
+            if requested_urls is not None:
+                requested_urls.append(url)
+            path = "/" + url.split("/", 3)[3] if "/" in url.split("://", 1)[-1] else "/"
+            response_spec = responses.get(f"DELETE {path}", (204, "text/plain"))
+            status_code, content_type = response_spec[:2]
+            request = httpx.Request("DELETE", url)
+            return httpx.Response(
+                status_code,
+                headers={"content-type": content_type},
+                content=b"",
                 request=request,
             )
 
@@ -3115,6 +3530,10 @@ def _run_prompt_readiness_with_fake_serial(
         paths=_discovery_paths(paths),
     ).prompt_readiness()
     return result, writes
+
+
+def _expected_prompt_scan_writes() -> list[bytes]:
+    return [sequence for _name, sequence in CONSOLE_WAKE_SEQUENCES if sequence] * MAX_PROMPT_SCAN_BAUDS
 
 
 def _run_prompt_readiness_with_serial_open_error(

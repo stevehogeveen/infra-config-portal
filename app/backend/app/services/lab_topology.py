@@ -64,6 +64,7 @@ ADDRESS_PLAN_SCALAR_FIELDS = (
     "netapp_node_b_mgmt",
     "netapp_svm_mgmt",
 )
+ADDRESS_PLAN_ACCESS_FIELDS = ("ilo_initial",)
 ADDRESS_PLAN_LIST_FIELDS = ("netapp_nfs_lifs", "netapp_iscsi_lifs")
 
 NETAPP_ADDRESS_FIELDS = {
@@ -234,6 +235,8 @@ def _topology_for(raw: str | None, prefix: int) -> str:
 
 def _default_address_plan(network: IPv4Network, topology: str) -> dict[str, Any]:
     plan: dict[str, Any] = {field: None for field in ADDRESS_PLAN_SCALAR_FIELDS}
+    for field in ADDRESS_PLAN_ACCESS_FIELDS:
+        plan[field] = None
     plan["netapp_nfs_lifs"] = []
     plan["netapp_iscsi_lifs"] = []
     plan["subnet"] = str(network)
@@ -257,7 +260,7 @@ def _default_address_plan(network: IPv4Network, topology: str) -> dict[str, Any]
 
 
 def _merge_address_overrides(plan: dict[str, Any], overrides: dict[str, Any]) -> None:
-    for field in ADDRESS_PLAN_SCALAR_FIELDS:
+    for field in (*ADDRESS_PLAN_SCALAR_FIELDS, *ADDRESS_PLAN_ACCESS_FIELDS):
         value = _clean_string(overrides.get(field))
         if value:
             plan[field] = value
@@ -436,6 +439,13 @@ def _validate_addresses(
         if duplicate_field:
             raise LabTopologyError(f"{field} duplicates {duplicate_field} at {value}.")
         seen[value] = field
+    for field in ADDRESS_PLAN_ACCESS_FIELDS:
+        value = _clean_string(plan.get(field))
+        if value:
+            try:
+                ip_address(value)
+            except ValueError as exc:
+                raise LabTopologyError(f"{field} must be a valid IPv4 address.") from exc
 
 
 def _clear_netapp(plan: dict[str, Any]) -> None:
@@ -488,7 +498,10 @@ def _reserved_compact_addresses(network: IPv4Network) -> list[str]:
 
 
 def _address_plan_response(plan: dict[str, Any]) -> dict[str, Any]:
-    response = {field: _clean_string(plan.get(field)) for field in ADDRESS_PLAN_SCALAR_FIELDS}
+    response = {
+        field: _clean_string(plan.get(field))
+        for field in (*ADDRESS_PLAN_SCALAR_FIELDS, *ADDRESS_PLAN_ACCESS_FIELDS)
+    }
     response["netapp_nfs_lifs"] = _clean_string_list(plan.get("netapp_nfs_lifs"))
     response["netapp_iscsi_lifs"] = _clean_string_list(plan.get("netapp_iscsi_lifs"))
     return response

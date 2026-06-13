@@ -21,6 +21,7 @@ def test_registry_contains_expected_stage_ids_in_stable_order() -> None:
         "raid",
         "esxi",
         "netapp",
+        "vcenter",
         "build-verification",
         "reports",
     ]

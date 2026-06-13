@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from scripts import cisco_real_lab_workflow as workflow
+from scripts import cisco_console_ethernet_readiness as ethernet_readiness
 
 
 def test_console_ownership_paths_include_selected_by_id_and_resolved_tty(tmp_path: Path) -> None:
@@ -99,6 +100,39 @@ def test_claim_blocks_owner_without_reclaim_lane(tmp_path: Path, monkeypatch) ->
 def test_bootstrap_apply_requested_is_args_apply_only() -> None:
     assert workflow._bootstrap_apply_requested(argparse.Namespace(apply=False)) is False
     assert workflow._bootstrap_apply_requested(argparse.Namespace(apply=True)) is True
+
+
+def test_ethernet_readiness_accepts_privileged_exec_prompt() -> None:
+    readiness = {
+        "console": {"status": "ready"},
+        "ethernet_readiness": {"ready": True, "management_configured": True},
+        "blockers": [],
+    }
+    prompt = {
+        "prompt_state": "privileged-exec",
+        "blockers": ["Privileged exec prompt was detected; no configuration commands were sent."],
+    }
+
+    assert ethernet_readiness._overall_status(readiness, prompt) == "ready"
+    assert ethernet_readiness._blockers(readiness, prompt) == []
+
+
+def test_ethernet_readiness_treats_configured_login_prompt_as_recoverable() -> None:
+    readiness = {
+        "console": {"status": "ready"},
+        "ethernet_readiness": {"ready": True, "management_configured": True},
+        "blockers": [],
+        "warnings": [],
+    }
+    prompt = {
+        "prompt_state": "login-required",
+        "credentials_configured": True,
+        "blockers": ["Console is at a login prompt; use the guarded Cisco privilege/bootstrap workflow."],
+    }
+
+    assert ethernet_readiness._overall_status(readiness, prompt) == "ready"
+    assert ethernet_readiness._blockers(readiness, prompt) == []
+    assert "guarded privilege check" in ethernet_readiness._warnings(readiness, prompt)[0]
 
 
 def test_vlan10_bootstrap_plan_configures_required_lab_network(monkeypatch) -> None:

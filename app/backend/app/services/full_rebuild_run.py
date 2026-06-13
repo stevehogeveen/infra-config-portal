@@ -13,7 +13,7 @@ from app.services.status_source import attach_status_source
 
 CODEX_RUN_DIR = REPO_ROOT / "artifacts" / "codex-runs"
 BASELINE_REPORT = CODEX_RUN_DIR / "full-device-rebuild-baseline-report.md"
-CISCO_PRIVILEGE_REPORT = CODEX_RUN_DIR / "cisco-privilege-check-report.md"
+CISCO_PRIVILEGE_REPORT = CODEX_RUN_DIR / "cisco-privileged-exec-fix-report.md"
 CISCO_BOOTSTRAP_REPORT = CODEX_RUN_DIR / "cisco-full-bootstrap-report.md"
 HPE_ILO_REPORT = CODEX_RUN_DIR / "hpe-full-rebuild-ilo-report.md"
 HPE_RAID_REPORT = CODEX_RUN_DIR / "hpe-full-rebuild-raid-report.md"

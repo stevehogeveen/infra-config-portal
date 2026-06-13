@@ -33,6 +33,7 @@ def test_24_high_address_topology_derives_lab_builder_defaults() -> None:
 
     assert profile["profile_topology"] == "high_address_lab"
     assert plan["ilo"] == "192.168.1.201"
+    assert plan["ilo_initial"] is None
     assert plan["server_embedded_nic"] == "192.168.1.202"
     assert plan["esxi_management"] == "192.168.1.203"
     assert plan["cisco_management"] == "192.168.1.204"
@@ -85,6 +86,16 @@ def test_custom_override_inside_subnet_passes_validation() -> None:
     assert profile["profile_topology"] == "custom"
     assert profile["resolved_address_plan"]["ilo"] == "10.10.5.12"
     assert profile["resolved_address_plan"]["esxi_management"] == "10.10.5.13"
+
+
+def test_initial_ilo_login_ip_can_differ_from_permanent_subnet() -> None:
+    profile = _derive(
+        subnet_cidr="192.0.2.0/24",
+        address_plan={"ilo": "192.0.2.10", "ilo_initial": "10.0.0.55"},
+    )
+
+    assert profile["resolved_address_plan"]["ilo"] == "192.0.2.10"
+    assert profile["resolved_address_plan"]["ilo_initial"] == "10.0.0.55"
 
 
 def test_out_of_subnet_override_fails_validation() -> None:

@@ -9,12 +9,12 @@ from app.providers.ilo_redfish import PROVIDER_ID
 from app.providers.redaction import redact_sensitive
 from app.core.config import settings
 from app.services.hpe_raid import (
-    AFTER_RESET_VALIDATION_REPORT,
+    PENDING_REPORT,
     REPO_ROOT,
     SYSTEM_PATH,
     _get_redfish_resource,
     _response_summary,
-    validate_hpe_raid_after_reset,
+    write_hpe_raid_pending_report,
 )
 from app.services.media_inventory import get_media_inventory
 from app.services.esxi_boot_workflow import esxi_boot_workflow_summary
@@ -34,13 +34,13 @@ def get_esxi_install_readiness(session: Session) -> dict[str, Any]:
     bios = _bios_readiness(system, requests)
     media = get_media_inventory()
     iso = _iso_readiness(media.model_dump())
-    raid_validation = validate_hpe_raid_after_reset(session)
+    raid_validation = _raid_validation_snapshot(session)
     boot_workflow = esxi_boot_workflow_summary()
 
     blockers = []
     warnings = []
     if raid_validation.get("status") != "succeeded":
-        blockers.append("RAID validation after reset must succeed before ESXi install readiness.")
+        blockers.append("RAID storage state must validate before ESXi install readiness.")
     if not virtual_media["supported"]:
         blockers.append("iLO virtual media support was not discovered through Redfish.")
     if not boot["one_time_boot_supported"]:
@@ -78,7 +78,7 @@ def get_esxi_install_readiness(session: Session) -> dict[str, Any]:
         "raid_validation": {
             "status": raid_validation.get("status"),
             "message": raid_validation.get("message"),
-            "report": str(AFTER_RESET_VALIDATION_REPORT.relative_to(REPO_ROOT)),
+            "report": raid_validation.get("report") or str(PENDING_REPORT.relative_to(REPO_ROOT)),
             "matches_saved_intent": (
                 raid_validation.get("validation", {}).get("matches")
                 if isinstance(raid_validation.get("validation"), dict)
@@ -97,6 +97,24 @@ def get_esxi_install_readiness(session: Session) -> dict[str, Any]:
     CODEX_RUN_DIR.mkdir(parents=True, exist_ok=True)
     ESXI_INSTALL_READINESS_REPORT.write_text(_readiness_markdown(sanitized), encoding="utf-8")
     return sanitized
+
+
+def _raid_validation_snapshot(session: Session) -> dict[str, Any]:
+    pending_report = write_hpe_raid_pending_report(session)
+    pending = pending_report.get("pending") if isinstance(pending_report.get("pending"), dict) else {}
+    matches = bool(pending.get("live_matches_expected"))
+    status = "succeeded" if matches else "blocked"
+    return {
+        "status": status,
+        "message": "RAID live layout matches saved intent." if matches else pending_report.get("message"),
+        "report": str(PENDING_REPORT.relative_to(REPO_ROOT)),
+        "validation": {
+            "matches": matches,
+            "pending_config_exists": pending.get("pending_config_exists"),
+            "reset_required": pending.get("reset_required"),
+            "smartstorage_reads_available": pending.get("smartstorage_reads_available"),
+        },
+    }
 
 
 def _safe_get(path: str, requests: list[dict[str, Any]]) -> dict[str, Any]:

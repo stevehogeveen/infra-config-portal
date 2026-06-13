@@ -471,21 +471,30 @@ def _safe_ontap_api_probe() -> dict[str, Any]:
     host = settings.netapp_cluster_mgmt_ip
     if not host or not settings.netapp_api_username or not settings.netapp_api_password:
         return _api_probe_not_attempted("NetApp API host or access values are missing.")
+    fallback_reason = ""
     try:
-        with httpx.Client(verify=settings.netapp_api_verify_tls, timeout=3.0) as client:
-            response = client.get(
-                f"https://{host}/api/cluster?fields=version",
-                auth=(settings.netapp_api_username, settings.netapp_api_password),
-                headers={"Accept": "application/json"},
-            )
+        response = _ontap_api_cluster_get(host, verify=settings.netapp_api_verify_tls)
     except (httpx.HTTPError, OSError) as exc:
-        return {
-            "status": "blocked",
-            "authenticated": False,
-            "reason": f"NetApp API GET failed with {exc.__class__.__name__}.",
-        }
+        fallback_reason = f"{exc.__class__.__name__}"
+        if not settings.netapp_api_verify_tls:
+            return {
+                "status": "blocked",
+                "authenticated": False,
+                "reason": f"NetApp API GET failed with {fallback_reason}.",
+            }
+        try:
+            response = _ontap_api_cluster_get(host, verify=False)
+        except (httpx.HTTPError, OSError) as fallback_exc:
+            return {
+                "status": "blocked",
+                "authenticated": False,
+                "reason": f"NetApp API GET failed with {fallback_reason}; TLS-disabled fallback failed with {fallback_exc.__class__.__name__}.",
+            }
     if 200 <= response.status_code < 300:
-        return {"status": "ready", "authenticated": True, "reason": "Safe ONTAP API GET authenticated."}
+        reason = "Safe ONTAP API GET authenticated."
+        if fallback_reason:
+            reason = f"{reason} TLS-disabled local-lab fallback was used after {fallback_reason}."
+        return {"status": "ready", "authenticated": True, "reason": reason}
     if response.status_code in {401, 403}:
         return {"status": "blocked", "authenticated": False, "reason": "NetApp API authentication failed."}
     return {
@@ -493,6 +502,15 @@ def _safe_ontap_api_probe() -> dict[str, Any]:
         "authenticated": False,
         "reason": f"Safe ONTAP API GET returned HTTP {response.status_code}.",
     }
+
+
+def _ontap_api_cluster_get(host: str, *, verify: bool) -> httpx.Response:
+    with httpx.Client(verify=verify, timeout=3.0, trust_env=False) as client:
+        return client.get(
+            f"https://{host}/api/cluster?fields=version",
+            auth=(settings.netapp_api_username, settings.netapp_api_password),
+            headers={"Accept": "application/json"},
+        )
 
 
 def _api_probe_not_attempted(reason: str) -> dict[str, Any]:

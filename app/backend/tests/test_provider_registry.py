@@ -66,6 +66,7 @@ def test_netapp_ontap_status_preview_is_plan_only_and_redacted(client: TestClien
         "upgrade-readiness-preview",
         "console-discovery-readonly",
         "console-read-state-readonly",
+        "address-remediation-plan",
         "nfs-setup-preview",
         "nfs-setup-apply-guarded",
         "nfs-vcenter-readiness-preview",
@@ -153,13 +154,14 @@ def test_netapp_ontap_status_preview_is_plan_only_and_redacted(client: TestClien
         "Read NetApp State",
         "Validate NetApp Setup",
         "Read Console State",
+        "Address Plan",
     }
     assert all(action["read_only"] is True for action in safe_actions.values())
     assert safe_actions["Preview NFS Setup"]["enabled"] is True
     assert all(
         action["enabled"] is False
         for label, action in safe_actions.items()
-        if label != "Preview NFS Setup"
+        if label not in {"Preview NFS Setup", "Address Plan"}
     )
     disabled_actions = {action["label"]: action for action in netapp["disabled_actions"]}
     assert set(disabled_actions) >= {

@@ -128,7 +128,10 @@ NO_CONSOLE_ADAPTER_MESSAGE = (
     "refresh Provider Status."
 )
 USB_SERIAL_NAME_HINTS = ("Cisco", "FTDI", "Prolific", "Silicon_Labs", "CP210", "USB-Serial")
-COMMON_CISCO_CONSOLE_BAUDS = (9600, 19200, 38400, 57600, 115200)
+COMMON_CISCO_CONSOLE_BAUDS = (9600, 115200, 19200, 38400, 57600)
+MAX_PROMPT_SCAN_CANDIDATES = 2
+MAX_PROMPT_SCAN_BAUDS = 2
+MAX_SERIAL_READ_TIMEOUT_SECONDS = 0.35
 CONSOLE_WAKE_SEQUENCES = (
     ("newline", b"\n"),
     ("enter", b"\r"),
@@ -466,6 +469,88 @@ class CiscoConsoleAdapter:
             last_probe_time=last_time,
         )
 
+    def cached_health(self) -> ProviderStatus:
+        last_result, last_time = get_probe_result(PROVIDER_ID)
+        safety = current_lab_safety()
+        policy = current_lab_action_policy(self.provider_mode)
+        readonly_allowed = (
+            safety.readonly_allowed if self.provider_mode == "local-readonly" else policy.readonly_allowed
+        )
+        configured_path = self.config.port if self.config.transport == "local_serial" else None
+        if self.config.transport == "tcp" and self.config.tcp_host and self.config.tcp_port:
+            configured_path = f"{self.config.tcp_host}:{self.config.tcp_port}"
+        status = "configured" if configured_path else "not_checked"
+        blockers: list[str] = []
+        warnings = [
+            "Control Center uses cached Cisco console status; run Discover Console for a fresh serial scan."
+        ]
+        if self.provider_mode in REAL_CONTACT_MODES and not readonly_allowed:
+            blockers.extend(policy.readonly_blockers())
+            if blockers:
+                status = "blocked"
+        elif self.provider_mode not in REAL_CONTACT_MODES:
+            warnings.append(
+                "Provider mode is not local-readonly or local-lab-readwrite; Cisco probe actions are disabled."
+            )
+
+        return ProviderStatus(
+            id=PROVIDER_ID,
+            name="Cisco Console",
+            kind="network-console",
+            mode=self.provider_mode,
+            status=status,
+            capabilities=[
+                "dynamic-console-discovery",
+                "local-serial-console",
+                "tcp-console-ser2net",
+                "explicit-read-only-probe",
+                "safe-show-commands",
+            ],
+            message="Cached Cisco console status is shown for fast UI rendering; explicit discovery is available.",
+            configuration={
+                "port_configured": bool(self.config.port),
+                "transport": self.config.transport,
+                "configured_port": self.config.port,
+                "tcp_host_configured": bool(self.config.tcp_host),
+                "tcp_port_configured": bool(self.config.tcp_port),
+                "tcp_host": self.config.tcp_host,
+                "tcp_port": self.config.tcp_port,
+                "baud": self.config.baud,
+                "timeout_seconds": self.config.timeout_seconds,
+                "prompt_settle_seconds": self.config.prompt_settle_seconds,
+                "prompt_read_window_seconds": self.config.prompt_read_window_seconds,
+                "prompt_max_bytes": self.config.prompt_max_bytes,
+                **safety.as_flags(),
+            },
+            discovery={
+                "status": status,
+                "effective_path": configured_path,
+                "source": "cached_config",
+                "cached_probe_status": last_result.get("status") if last_result else None,
+                "operator_message": "Use Discover Console to refresh serial candidates and prompt readiness.",
+            },
+            blockers=blockers,
+            warnings=warnings,
+            safe_actions=[
+                ProviderAction(
+                    id="probe-cisco-console",
+                    label="Read-Only Probe",
+                    enabled=bool(configured_path) and readonly_allowed and self.provider_mode in REAL_CONTACT_MODES,
+                    read_only=True,
+                    reason=(
+                        "Open the configured console path only after the operator starts a discovery/probe action."
+                        if configured_path
+                        else "Configure or discover a Cisco console path before probing."
+                    ),
+                    method="POST",
+                    endpoint=f"/api/v1/providers/{PROVIDER_ID}/probe",
+                )
+            ],
+            disabled_actions=_dangerous_actions(),
+            last_probe_result=last_result,
+            last_probe_time=last_time,
+        )
+
     def probe(self) -> dict[str, Any]:
         if self.provider_mode not in REAL_CONTACT_MODES:
             return self._record_blocked(
@@ -595,7 +680,12 @@ class CiscoConsoleAdapter:
             )
 
         discovery = discover_cisco_console(self.config, self.paths)
-        scan_candidates = _scan_candidates(discovery)
+        if settings.cisco_mgmt_configured:
+            ssh_result = _ssh_cisco_firmware_inventory(discovery)
+            if ssh_result["status"] == "ok":
+                return self._record_cisco_firmware_result(ssh_result)
+
+        scan_candidates = _scan_candidates(discovery, max_candidates=MAX_PROMPT_SCAN_CANDIDATES)
         if not scan_candidates:
             return self._record_cisco_firmware_result(
                 {
@@ -624,9 +714,10 @@ class CiscoConsoleAdapter:
 
         attempts: list[dict[str, Any]] = []
         last_blocker = "No Cisco exec prompt was detected on discovered console candidates."
+        baud_rates = _baud_scan_order(self.config.baud, max_bauds=MAX_PROMPT_SCAN_BAUDS)
         for candidate in scan_candidates:
             port = str(candidate["path"])
-            for baud in _baud_scan_order(self.config.baud):
+            for baud in baud_rates:
                 try:
                     connection = _open_console_connection(self.config, port, baud=baud)
                 except Exception as exc:  # pragma: no cover - hardware dependent
@@ -794,7 +885,8 @@ class CiscoConsoleAdapter:
         attempts: list[dict[str, Any]] = []
         last_blocker = "No Cisco prompt or login flow was detected on discovered console candidates."
         best_prompt_sample: dict[str, Any] | None = None
-        baud_rates = _baud_scan_order(self.config.baud)
+        scan_candidates = _scan_candidates(discovery, max_candidates=MAX_PROMPT_SCAN_CANDIDATES)
+        baud_rates = _baud_scan_order(self.config.baud, max_bauds=MAX_PROMPT_SCAN_BAUDS)
         read_timing = {
             "settle_seconds": self.config.prompt_settle_seconds,
             "read_window_seconds": self.config.prompt_read_window_seconds,
@@ -934,7 +1026,18 @@ class CiscoConsoleAdapter:
         )
 
     def _record_result(self, result: dict[str, Any]) -> dict[str, Any]:
-        return record_probe_result(PROVIDER_ID, redact_sensitive(result, [self.config.port]))
+        return record_probe_result(
+            PROVIDER_ID,
+            redact_sensitive(
+                result,
+                [
+                    self.config.port,
+                    settings.cisco_test_username,
+                    settings.cisco_test_password,
+                    settings.cisco_enable_password,
+                ],
+            ),
+        )
 
     def _record_cisco_firmware_result(self, result: dict[str, Any]) -> dict[str, Any]:
         recorded = self._record_result(result)
@@ -967,6 +1070,7 @@ class CiscoConsoleAdapter:
             "setup_wizard_detected": prompt_state == "setup-wizard",
             "config_mode_detected": prompt_state == "config-mode",
             "login_required": prompt_state == "login-required",
+            "credentials_configured": _cisco_console_credentials_configured(),
             "not_attempted": PROMPT_READINESS_NOT_ATTEMPTED,
             "next_safe_action": _prompt_next_safe_action(prompt_state, extra.get("prompt_sample")),
             "warnings": warnings or [],
@@ -1216,7 +1320,7 @@ def _candidate_accessible(candidate: ConsoleCandidate) -> bool:
     return bool(candidate.readable) and bool(candidate.writable)
 
 
-def _scan_candidates(discovery: dict[str, Any]) -> list[dict[str, Any]]:
+def _scan_candidates(discovery: dict[str, Any], *, max_candidates: int | None = None) -> list[dict[str, Any]]:
     if discovery.get("transport") == "tcp_console" and isinstance(discovery.get("effective_path"), str):
         tcp_console = discovery.get("tcp_console") if isinstance(discovery.get("tcp_console"), dict) else {}
         return [
@@ -1253,6 +1357,8 @@ def _scan_candidates(discovery: dict[str, Any]) -> list[dict[str, Any]]:
                 str(candidate.get("path")),
             ),
         )
+    if max_candidates is not None:
+        return candidates[: max(max_candidates, 0)]
     return candidates
 
 
@@ -1264,8 +1370,11 @@ def _candidate_count(discovery: dict[str, Any]) -> int:
     return len(candidates) if isinstance(candidates, list) else 0
 
 
-def _baud_scan_order(configured_baud: int) -> list[int]:
-    return list(dict.fromkeys([configured_baud, *COMMON_CISCO_CONSOLE_BAUDS]))
+def _baud_scan_order(configured_baud: int, *, max_bauds: int | None = None) -> list[int]:
+    bauds = list(dict.fromkeys([configured_baud, *COMMON_CISCO_CONSOLE_BAUDS]))
+    if max_bauds is not None:
+        return bauds[: max(max_bauds, 0)]
+    return bauds
 
 
 def _normalize_console_transport(value: str | None) -> str:
@@ -1336,9 +1445,112 @@ def _open_console_connection(
     return serial.Serial(
         port=port,
         baudrate=baud or config.baud,
-        timeout=config.timeout_seconds,
+        timeout=min(max(config.timeout_seconds, 0.05), MAX_SERIAL_READ_TIMEOUT_SECONDS),
         write_timeout=config.timeout_seconds,
     )
+
+
+def _ssh_cisco_firmware_inventory(discovery: dict[str, Any]) -> dict[str, Any]:
+    missing = []
+    if not settings.cisco_target_ip:
+        missing.append("CISCO_TARGET_IP")
+    if not settings.cisco_test_username:
+        missing.append("CISCO_TEST_USERNAME")
+    if not settings.cisco_test_password:
+        missing.append("CISCO_TEST_PASSWORD")
+    if missing:
+        return {
+            "provider_id": PROVIDER_ID,
+            "action": "firmware-inventory",
+            "status": "blocked",
+            "message": "Cisco SSH firmware inventory is missing local connection fields.",
+            "source": "ssh-netmiko-show-version",
+            "discovery": discovery,
+            "warnings": [],
+            "blockers": [f"Cisco SSH firmware inventory missing fields: {', '.join(missing)}."],
+        }
+    try:
+        from netmiko import ConnectHandler  # type: ignore[import-untyped]
+    except ImportError:
+        return {
+            "provider_id": PROVIDER_ID,
+            "action": "firmware-inventory",
+            "status": "blocked",
+            "message": "Netmiko is not installed; Cisco SSH firmware inventory cannot run.",
+            "source": "ssh-netmiko-show-version",
+            "discovery": discovery,
+            "warnings": [],
+            "blockers": ["Netmiko is not installed; use the console firmware inventory path."],
+        }
+
+    connection = None
+    try:
+        connection = ConnectHandler(
+            device_type="cisco_ios",
+            host=settings.cisco_target_ip,
+            username=settings.cisco_test_username,
+            password=settings.cisco_test_password,
+            secret=settings.cisco_enable_password or "",
+            conn_timeout=settings.ansible_cisco_timeout_seconds,
+            auth_timeout=settings.ansible_cisco_timeout_seconds,
+            banner_timeout=settings.ansible_cisco_timeout_seconds,
+            fast_cli=False,
+        )
+        output = str(
+            connection.send_command(
+                "show version",
+                read_timeout=max(settings.ansible_cisco_timeout_seconds, 8.0),
+            )
+        )
+    except Exception as exc:  # pragma: no cover - network and device dependent
+        return {
+            "provider_id": PROVIDER_ID,
+            "action": "firmware-inventory",
+            "status": "blocked",
+            "message": "Cisco SSH firmware inventory did not complete.",
+            "source": "ssh-netmiko-show-version",
+            "discovery": discovery,
+            "warnings": [],
+            "blockers": [f"Cisco SSH firmware inventory failed before parsing show version: {exc.__class__.__name__}."],
+        }
+    finally:
+        if connection is not None:
+            try:
+                connection.disconnect()
+            except Exception:
+                pass
+
+    command_summary = _command_summary("show version", output)
+    ios_xe_version = _ios_xe_version(output)
+    return {
+        "provider_id": PROVIDER_ID,
+        "action": "firmware-inventory",
+        "status": "ok" if ios_xe_version else "blocked",
+        "message": (
+            "Cisco IOS XE firmware inventory completed from management SSH."
+            if ios_xe_version
+            else "Cisco SSH show version ran, but IOS XE version was not parsed."
+        ),
+        "source": "ssh-netmiko-show-version",
+        "prompt_state": "ssh-management",
+        "selected_path": settings.cisco_target_ip,
+        "selected_baud": None,
+        "selected_sequence": "ssh",
+        "discovery": discovery,
+        "attempts": [
+            {
+                "transport": "ssh",
+                "status": "checked",
+                "classification": "management_ssh",
+                "captured": bool(output),
+            }
+        ],
+        "safe_show_commands": [command_summary],
+        "ios_xe_version": ios_xe_version,
+        "bootloader_rommon": _bootloader_rommon_version(output),
+        "warnings": [],
+        "blockers": [] if ios_xe_version else ["Cisco IOS XE version was not parsed from SSH show version output."],
+    }
 
 
 def _write_console_discovery_report(result: dict[str, Any]) -> None:
@@ -1581,9 +1793,13 @@ def _prompt_blocker_message(
     if prompt_state == "setup-wizard":
         return "Console is at an initial setup wizard prompt; no answers or commands were sent."
     if prompt_state == "login-required":
-        return "Console requires login or password; credentials are not configured for this probe."
+        if _cisco_console_credentials_configured():
+            return "Console is at a login prompt; use the guarded Cisco privilege/bootstrap workflow to authenticate before readiness."
+        return "Console is at a login prompt; configure Cisco console credentials in local ignored real-lab config before guarded authentication."
     if prompt_state == "password-required":
-        return "Console is requesting a password; credentials are not printed or sent by prompt readiness."
+        if _cisco_console_credentials_configured():
+            return "Console is requesting a password; prompt readiness did not send credentials, use the guarded Cisco privilege/bootstrap workflow."
+        return "Console is requesting a password; configure Cisco console credentials in local ignored real-lab config before guarded authentication."
     if prompt_state == "privileged-exec":
         return "Privileged exec prompt was detected; no configuration commands were sent."
     if prompt_state == "config-mode":
@@ -1649,11 +1865,19 @@ def _prompt_next_safe_action(prompt_state: str, prompt_sample: object) -> str:
             "Verify adapter ownership, cable placement, power state, and baud 9600/115200 "
             "before running another newline-only readiness check."
         )
+    if prompt_state in {"login-required", "password-required"}:
+        if _cisco_console_credentials_configured():
+            return "Run the guarded Cisco privilege/bootstrap workflow from local-lab-readwrite mode; prompt readiness will not send credentials."
+        return "Add Cisco console credentials to the ignored real-lab environment, then rerun the guarded Cisco privilege/bootstrap workflow."
     guidance = PROMPT_CLASSIFICATION_GUIDANCE.get(
         prompt_state,
         PROMPT_CLASSIFICATION_GUIDANCE["unknown"],
     )
     return str(guidance["next_safe_action"])
+
+
+def _cisco_console_credentials_configured() -> bool:
+    return bool(settings.cisco_test_username and settings.cisco_test_password)
 
 
 def _prompt_sample_summary(prompt_text: str) -> dict[str, Any]:

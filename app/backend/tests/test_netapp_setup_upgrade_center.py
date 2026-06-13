@@ -5,7 +5,7 @@ from dataclasses import replace
 
 from app.core.config import settings
 from app.schemas import MediaInventoryItemRead, MediaInventoryRead
-from app.services import netapp_nfs_setup, netapp_setup_intent, netapp_upgrade_center
+from app.services import netapp_address_plan, netapp_nfs_setup, netapp_setup_intent, netapp_upgrade_center
 
 
 def test_setup_preview_detects_cluster_setup_wizard(monkeypatch) -> None:
@@ -46,6 +46,13 @@ def test_setup_apply_refuses_without_flags(monkeypatch) -> None:
 
 def test_setup_apply_exposes_missing_intent_fields(monkeypatch) -> None:
     _patch_setup_runtime(monkeypatch, detected=False)
+    for name in (
+        "NETAPP_CONSOLE_USERNAME",
+        "NETAPP_CONSOLE_PASSWORD",
+        "NETAPP_API_USERNAME",
+        "NETAPP_API_PASSWORD",
+    ):
+        monkeypatch.delenv(name, raising=False)
     settings_override = replace(
         settings,
         provider_mode="local-lab-readwrite",
@@ -102,6 +109,82 @@ def test_setup_preview_reports_apply_command_and_confirmations(monkeypatch) -> N
     assert 'NETAPP_SETUP_CONFIRM="APPLY NETAPP CLUSTER SETUP"' in payload["required_flags"]
 
 
+def test_address_plan_uses_console_discovered_addresses(monkeypatch, tmp_path) -> None:
+    console_json = tmp_path / "netapp-console-login-state-redacted.json"
+    console_json.write_text(
+        json.dumps(
+            {
+                "checked_at": "2026-06-13T00:00:00+00:00",
+                "identified_state": "ontap_shell",
+                "command_results": [
+                    {
+                        "id": "network_interface_summary",
+                        "output_excerpt": "\n".join(
+                            [
+                                "network interface show -fields vserver,lif,address,role,home-node,home-port,status-admin,status-oper",
+                                "vserver lif role address home-node home-port status-oper status-admin",
+                                "------- ------------ ------- --------------- --------- --------- ----------- ------------",
+                                "X20     X20-01_mgmt1 node-mgmt",
+                                "                             10.10.8.46      X20-01    e0M       -           up",
+                                "X20     X20-02_mgmt1 node-mgmt",
+                                "                             10.10.8.47      X20-02    e0M       up          up",
+                                "X20     cluster_mgmt cluster-mgmt",
+                                "                             10.10.8.45      X20-01    e0M       up          up",
+                                "stage_nfs",
+                                "        nfs_lif_01   data    10.10.8.48      X20-01    e0b       up          up",
+                            ]
+                        ),
+                    },
+                    {
+                        "id": "cluster_status",
+                        "output_excerpt": "\n".join(
+                            [
+                                "cluster show",
+                                "Node                  Health  Eligibility",
+                                "--------------------- ------- ------------",
+                                "X20-01                false   true",
+                                "X20-02                true    true",
+                                "Warning: Cluster HA is not working correctly.",
+                            ]
+                        ),
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    settings_override = replace(
+        settings,
+        provider_mode="local-lab-readwrite",
+        netapp_cluster_mgmt_ip="192.168.1.220",
+        netapp_node_a_mgmt_ip="192.168.1.221",
+        netapp_node_b_mgmt_ip="192.168.1.222",
+        netapp_svm_mgmt_ip="192.168.1.223",
+        netapp_nfs_lifs=("192.168.1.230", "192.168.1.231"),
+    )
+    monkeypatch.setattr(netapp_address_plan, "settings", settings_override)
+    monkeypatch.setattr(netapp_address_plan, "CONSOLE_LOGIN_STATE_JSON", console_json)
+    monkeypatch.setattr(
+        netapp_address_plan,
+        "get_netapp_runtime_state",
+        lambda: {
+            "configured": False,
+            "configured_state": "ontap_detected",
+            "source": "console_discovery",
+        },
+    )
+
+    payload = netapp_address_plan.build_netapp_address_remediation_plan(write_report=False)
+
+    assert payload["current_targets"]["cluster_mgmt"] == "10.10.8.45"
+    assert payload["current_targets"]["node_a_mgmt"] == "10.10.8.46"
+    assert payload["current_targets"]["node_b_mgmt"] == "10.10.8.47"
+    assert payload["current_targets"]["nfs_lifs"] == ["10.10.8.48"]
+    assert payload["planned_targets"]["cluster_mgmt"] == "192.168.1.220"
+    assert any(item["id"] == "cluster_mgmt" and item["status"] == "mismatch" for item in payload["address_comparisons"])
+    assert payload["console_facts"]["cluster_ha_warning"] is True
+
+
 def test_nfs_setup_preview_blocks_until_cluster_and_access_are_ready(monkeypatch) -> None:
     _patch_nfs_runtime(monkeypatch, configured=False)
 
@@ -152,6 +235,30 @@ def test_upgrade_inventory_reports_not_configured_before_cluster_management(monk
 
     assert payload["status"] == "not_configured_yet"
     assert payload["current_ontap_version"] is None
+    assert any("cluster management" in blocker for blocker in payload["blockers"])
+
+
+def test_upgrade_inventory_uses_console_version_before_cluster_management(monkeypatch) -> None:
+    _patch_upgrade_runtime(monkeypatch, configured=False)
+    _patch_upgrade_settings(monkeypatch)
+    _patch_media(monkeypatch, [_ontap_media(version_hint="9.17.1")])
+    monkeypatch.setattr(
+        netapp_upgrade_center,
+        "latest_console_ontap_version",
+        lambda: {
+            "version": "9.17.1",
+            "source": "console_read_only",
+            "checked_at": "2026-06-13T00:00:00+00:00",
+        },
+    )
+
+    payload = netapp_upgrade_center.build_netapp_upgrade_inventory(write_report=False)
+
+    assert payload["status"] == "not_configured_yet"
+    assert payload["current_ontap_version"] == "9.17.1"
+    assert payload["current_version_source"] == "console_read_only"
+    assert payload["cluster_image_repository"]["source_type"] == "console_read_only"
+    assert not any("Current ONTAP version is unknown" in blocker for blocker in payload["blockers"])
     assert any("cluster management" in blocker for blocker in payload["blockers"])
 
 
@@ -353,6 +460,11 @@ def _patch_upgrade_settings(
         netapp_upgrade_advisor_plan="redacted local plan reference",
     )
     monkeypatch.setattr(netapp_upgrade_center, "settings", settings_override)
+    monkeypatch.setattr(
+        netapp_upgrade_center,
+        "latest_console_ontap_version",
+        lambda: {"version": None, "source": "not_available", "checked_at": None},
+    )
 
 
 def _patch_media(monkeypatch, items: list[MediaInventoryItemRead]) -> None:
@@ -360,7 +472,7 @@ def _patch_media(monkeypatch, items: list[MediaInventoryItemRead]) -> None:
     monkeypatch.setattr(netapp_upgrade_center, "get_media_inventory", lambda: inventory)
 
 
-def _ontap_media() -> MediaInventoryItemRead:
+def _ontap_media(*, version_hint: str = "9.14.1") -> MediaInventoryItemRead:
     return MediaInventoryItemRead(
         placeholder_name="firmware-1.tgz",
         extension=".tgz",
@@ -369,5 +481,5 @@ def _ontap_media() -> MediaInventoryItemRead:
         source="configured-directory-1",
         actual_name_redacted=True,
         product_hints=["netapp-ontap"],
-        version_hint="9.14.1",
+        version_hint=version_hint,
     )

@@ -37,6 +37,7 @@ from app.schemas import (
     ControlActionCatalogRead,
     ControlActionPlanRead,
     ControlActionRunRead,
+    FirmwareSummaryRead,
     HpeRaidApplyCreate,
     HpeRaidIntentRead,
     HpeRaidIntentWrite,
@@ -77,6 +78,7 @@ from app.schemas import (
     VMDeploymentCreate,
     VMDeploymentUpdate,
     WorkflowActionRead,
+    WorkflowActionRunCreate,
     WorkflowActionRunRead,
     WorkflowRunRead,
     WorkflowStageRead,
@@ -173,6 +175,15 @@ from app.services.hpe_raid import (
     write_hpe_raid_pending_report,
 )
 from app.services.esxi_install_readiness import get_esxi_install_readiness
+from app.services.esxi_management_recovery import (
+    recover_esxi_management,
+    validate_esxi_post_recovery,
+)
+from app.services.esxi_netapp_datastore import (
+    apply_esxi_netapp_datastore,
+    build_esxi_netapp_datastore_preview,
+    validate_esxi_netapp_datastore,
+)
 from app.services.esxi_vm_deploy import (
     apply_esxi_vm_deploy,
     build_esxi_vm_deploy_preview,
@@ -181,6 +192,7 @@ from app.services.esxi_vm_deploy import (
 from app.services.firmware_compliance import (
     get_firmware_compliance,
     get_firmware_inventory,
+    get_firmware_summaries,
     write_waiver_report,
 )
 from app.services.full_rebuild_run import get_full_rebuild_summary
@@ -189,7 +201,18 @@ from app.services.netapp_artifacts import (
     list_netapp_artifact_placeholders,
     list_provider_artifact_placeholders,
 )
+from app.services.netapp_address_plan import (
+    apply_netapp_address_remediation,
+    build_netapp_address_remediation_plan,
+    build_netapp_address_remediation_preview,
+    validate_netapp_address_remediation,
+)
 from app.services.netapp_console_readiness import get_netapp_console_readiness
+from app.services.netapp_factory_reset import (
+    apply_netapp_factory_reset,
+    build_netapp_factory_reset_preview,
+    validate_netapp_factory_reset,
+)
 from app.services.netapp_observations import (
     get_netapp_observations,
     save_netapp_observations,
@@ -225,6 +248,8 @@ from app.services.readiness import get_request_readiness
 from app.services.report_center import get_report_center, get_report_summary
 from app.services.upgrade_decision import get_ilo_upgrade_readiness
 from app.services.vcenter_netapp_readiness import (
+    get_vcenter_install_plan,
+    get_vcenter_install_readiness,
     get_vcenter_netapp_datastore_plan,
     get_vcenter_netapp_readiness,
 )
@@ -469,10 +494,11 @@ def read_workflow_action(action_id: str) -> WorkflowActionRead:
 @router.post("/workflows/actions/{action_id}/run", response_model=WorkflowActionRunRead)
 def run_workflow_action_route(
     action_id: str,
+    payload: WorkflowActionRunCreate | None = None,
     session: Session = Depends(get_session),
 ) -> WorkflowActionRunRead:
     try:
-        return run_workflow_action(action_id, session)
+        return run_workflow_action(action_id, session, payload.model_dump() if payload else None)
     except WorkflowRegistryNotFoundError as exc:
         raise HTTPException(
             status_code=404,
@@ -525,6 +551,11 @@ def update_provider_mode_settings_route(
 @router.get("/control/actions", response_model=ControlActionCatalogRead)
 def read_control_actions() -> ControlActionCatalogRead:
     return get_control_action_catalog()
+
+
+@router.get("/firmware/summary", response_model=list[FirmwareSummaryRead])
+def read_firmware_summary() -> list[FirmwareSummaryRead]:
+    return get_firmware_summaries()
 
 
 @router.put("/control/access/{section_id}", response_model=ControlAccessConfigRead)
@@ -599,6 +630,16 @@ def read_vcenter_netapp_readiness() -> ProviderProbeResultRead:
 @router.get("/lab/vcenter-netapp/datastore-plan", response_model=ProviderProbeResultRead)
 def read_vcenter_netapp_datastore_plan() -> ProviderProbeResultRead:
     return get_vcenter_netapp_datastore_plan(write_report=False)
+
+
+@router.get("/lab/vcenter/install-readiness", response_model=ProviderProbeResultRead)
+def read_vcenter_install_readiness() -> ProviderProbeResultRead:
+    return get_vcenter_install_readiness(check_ports=False, write_report=False)
+
+
+@router.get("/lab/vcenter/install-plan", response_model=ProviderProbeResultRead)
+def read_vcenter_install_plan() -> ProviderProbeResultRead:
+    return get_vcenter_install_plan(write_report=False)
 
 
 @router.get("/reports/issues", response_model=ReportCenterRead)
@@ -972,6 +1013,46 @@ def run_esxi_vm_deploy_validate_route() -> ProviderProbeResultRead:
     return validate_esxi_vm_deploy()
 
 
+@router.post(
+    "/providers/esxi-readonly/recover-management",
+    response_model=ProviderProbeResultRead,
+)
+def run_esxi_recover_management_route() -> ProviderProbeResultRead:
+    return recover_esxi_management()
+
+
+@router.post(
+    "/providers/esxi-readonly/post-recovery-validation",
+    response_model=ProviderProbeResultRead,
+)
+def run_esxi_post_recovery_validation_route() -> ProviderProbeResultRead:
+    return validate_esxi_post_recovery()
+
+
+@router.get(
+    "/providers/esxi-readonly/netapp-datastore-preview",
+    response_model=ProviderProbeResultRead,
+)
+def read_esxi_netapp_datastore_preview() -> ProviderProbeResultRead:
+    return build_esxi_netapp_datastore_preview(write_report=False)
+
+
+@router.post(
+    "/providers/esxi-readonly/netapp-datastore-apply",
+    response_model=ProviderProbeResultRead,
+)
+def run_esxi_netapp_datastore_apply_route() -> ProviderProbeResultRead:
+    return apply_esxi_netapp_datastore()
+
+
+@router.post(
+    "/providers/esxi-readonly/netapp-datastore-validate",
+    response_model=ProviderProbeResultRead,
+)
+def run_esxi_netapp_datastore_validate_route() -> ProviderProbeResultRead:
+    return validate_esxi_netapp_datastore()
+
+
 @router.get(
     "/providers/netapp-ontap/plan-preview",
     response_model=NetAppPlanPreviewRead,
@@ -1042,6 +1123,86 @@ def run_netapp_live_state_route() -> ProviderProbeResultRead:
 )
 def run_netapp_setup_validation_route() -> ProviderProbeResultRead:
     return run_netapp_setup_validation()
+
+
+@router.get(
+    "/providers/netapp-ontap/address-plan",
+    response_model=ProviderProbeResultRead,
+)
+def read_netapp_address_plan_route() -> ProviderProbeResultRead:
+    return build_netapp_address_remediation_plan(write_report=False)
+
+
+@router.post(
+    "/providers/netapp-ontap/address-plan",
+    response_model=ProviderProbeResultRead,
+)
+def run_netapp_address_plan_route() -> ProviderProbeResultRead:
+    return build_netapp_address_remediation_plan()
+
+
+@router.get(
+    "/providers/netapp-ontap/address-preview",
+    response_model=ProviderProbeResultRead,
+)
+def read_netapp_address_preview_route() -> ProviderProbeResultRead:
+    return build_netapp_address_remediation_preview(write_report=False)
+
+
+@router.post(
+    "/providers/netapp-ontap/address-preview",
+    response_model=ProviderProbeResultRead,
+)
+def run_netapp_address_preview_route() -> ProviderProbeResultRead:
+    return build_netapp_address_remediation_preview()
+
+
+@router.post(
+    "/providers/netapp-ontap/address-apply",
+    response_model=ProviderProbeResultRead,
+)
+def run_netapp_address_apply_route() -> ProviderProbeResultRead:
+    return apply_netapp_address_remediation()
+
+
+@router.post(
+    "/providers/netapp-ontap/address-validate",
+    response_model=ProviderProbeResultRead,
+)
+def run_netapp_address_validate_route() -> ProviderProbeResultRead:
+    return validate_netapp_address_remediation()
+
+
+@router.get(
+    "/providers/netapp-ontap/factory-reset-preview",
+    response_model=ProviderProbeResultRead,
+)
+def read_netapp_factory_reset_preview_route() -> ProviderProbeResultRead:
+    return build_netapp_factory_reset_preview(write_report=False)
+
+
+@router.post(
+    "/providers/netapp-ontap/factory-reset-preview",
+    response_model=ProviderProbeResultRead,
+)
+def run_netapp_factory_reset_preview_route() -> ProviderProbeResultRead:
+    return build_netapp_factory_reset_preview()
+
+
+@router.post(
+    "/providers/netapp-ontap/factory-reset-apply",
+    response_model=ProviderProbeResultRead,
+)
+def run_netapp_factory_reset_apply_route() -> ProviderProbeResultRead:
+    return apply_netapp_factory_reset()
+
+
+@router.post(
+    "/providers/netapp-ontap/factory-reset-validate",
+    response_model=ProviderProbeResultRead,
+)
+def run_netapp_factory_reset_validate_route() -> ProviderProbeResultRead:
+    return validate_netapp_factory_reset()
 
 
 @router.get(

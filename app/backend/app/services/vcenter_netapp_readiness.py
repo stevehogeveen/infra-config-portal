@@ -19,6 +19,10 @@ CODEX_RUN_DIR = REPO_ROOT / "artifacts" / "codex-runs"
 READINESS_REPORT = CODEX_RUN_DIR / "vcenter-netapp-readiness-report.md"
 PLAN_REPORT = CODEX_RUN_DIR / "vcenter-netapp-datastore-plan-report.md"
 READINESS_JSON = CODEX_RUN_DIR / "vcenter-netapp-readiness-redacted.json"
+VCENTER_INSTALL_READINESS_REPORT = CODEX_RUN_DIR / "vcenter-install-readiness-report.md"
+VCENTER_INSTALL_PLAN_REPORT = CODEX_RUN_DIR / "vcenter-install-plan-report.md"
+VCENTER_INSTALL_READINESS_JSON = CODEX_RUN_DIR / "vcenter-install-readiness-redacted.json"
+VCENTER_INSTALL_PLAN_JSON = CODEX_RUN_DIR / "vcenter-install-plan-redacted.json"
 CONSOLE_STATE_JSON = CODEX_RUN_DIR / "netapp-console-state-redacted.json"
 CONSOLE_LOGIN_STATE_JSON = CODEX_RUN_DIR / "netapp-console-login-state-redacted.json"
 
@@ -240,6 +244,169 @@ def get_vcenter_netapp_datastore_plan(*, write_report: bool = True) -> dict[str,
         "action": "vcenter-netapp-datastore-plan",
         "message": "vCenter-NetApp datastore plan generated. Preview only; no changes were made.",
     }
+
+
+def get_vcenter_install_readiness(
+    *,
+    check_ports: bool = True,
+    write_report: bool = True,
+) -> dict[str, Any]:
+    generated_at = _now()
+    profile_context = active_lab_profile_context()
+    features = profile_context.get("enabled_features") or {}
+    plan = profile_context.get("resolved_address_plan") or {}
+    vcsa_iso = _find_vcsa_iso()
+    esxi_host = settings.esxi_test_host or LAB_ESXI_MANAGEMENT_IP
+    datastore_name = settings.netapp_nfs_datastore_name
+    vcenter_host_configured = bool(settings.vcenter_host or settings.vcenter_configured)
+    vcenter_credentials_configured = bool(settings.vcenter_username and settings.vcenter_password)
+    govc_available = _tool_available("govc")
+    vcsa_deploy_available = _tool_available("vcsa-deploy")
+    vcenter_enabled = bool(features.get("vcenter_enabled", True))
+    checks = {
+        "vcenter_in_scope": _config_check(
+            "vCenter in scope",
+            vcenter_enabled,
+            "vCenter is enabled by the active lab profile.",
+            "vCenter is disabled by the active lab profile.",
+        ),
+        "vcsa_iso_present": _config_check(
+            "VCSA ISO",
+            bool(vcsa_iso),
+            "VCSA ISO media is present under the configured media roots.",
+            "No VCSA ISO was found under MEDIA_INVENTORY_DIRS/artifacts/Media.",
+        ),
+        "esxi_management_reachable": _tcp_check("ESXi management", esxi_host, 443, check_ports=check_ports),
+        "netapp_nfs_lif_reachable": _tcp_check(
+            "NetApp NFS LIF",
+            (settings.netapp_nfs_lifs or [None])[0],
+            2049,
+            check_ports=check_ports,
+        ),
+        "govc_available": _config_check(
+            "govc",
+            govc_available,
+            "govc is available.",
+            "govc is not installed or not discoverable.",
+        ),
+        "vcsa_deploy_available": _config_check(
+            "vcsa-deploy",
+            vcsa_deploy_available,
+            "vcsa-deploy is available.",
+            "vcsa-deploy is not installed or not discoverable.",
+        ),
+        "vcenter_target_configured": _config_check(
+            "vCenter target",
+            vcenter_host_configured,
+            "vCenter target is configured.",
+            "VCENTER_HOST/GOVC_URL is not configured.",
+        ),
+        "vcenter_credentials_configured": _config_check(
+            "vCenter credentials",
+            vcenter_credentials_configured,
+            "vCenter credential fields are configured.",
+            "VCENTER_USERNAME/GOVC_USERNAME and VCENTER_PASSWORD/GOVC_PASSWORD are missing.",
+        ),
+    }
+    blockers = []
+    if not vcenter_enabled:
+        blockers.append("vCenter is disabled by the active lab profile.")
+    if not vcsa_iso:
+        blockers.append("VCSA ISO media was not found under the configured media roots.")
+    if checks["esxi_management_reachable"]["status"] != "ready":
+        blockers.append("ESXi management must be reachable before vCenter install planning can proceed.")
+    if checks["netapp_nfs_lif_reachable"]["status"] != "ready":
+        blockers.append("NetApp NFS LIF must be reachable before vCenter install planning can proceed.")
+    if not govc_available:
+        blockers.append("govc is required for target datastore/ESXi validation.")
+    if not vcsa_deploy_available:
+        blockers.append("vcsa-deploy is required before guided VCSA install can run.")
+    if not vcenter_host_configured:
+        blockers.append("vCenter target values are missing.")
+    if not vcenter_credentials_configured:
+        blockers.append("vCenter credential values are missing.")
+    payload = {
+        "provider_id": "vcenter",
+        "action": "vcenter-install-readiness",
+        "checked_at": generated_at,
+        "generated_at": generated_at,
+        "status": "blocked" if blockers else "ready",
+        "message": "vCenter install readiness evaluated. No vCenter deployment was started.",
+        "mode": settings.provider_mode,
+        "apply_enabled": False,
+        "source_type": "live_probe" if check_ports else "live_cached",
+        "freshness": "current" if check_ports else "not_checked",
+        "current_state": {
+            "vcenter_installed": vcenter_host_configured,
+            "esxi_management": esxi_host,
+            "netapp_datastore": datastore_name,
+            "vcsa_iso": _safe_media_path(vcsa_iso),
+        },
+        "target_state": {
+            "vcenter": _redacted_url(settings.vcenter_host),
+            "deployment_target": esxi_host,
+            "datastore": datastore_name,
+            "lab_network": plan.get("subnet") if isinstance(plan, dict) else None,
+        },
+        "checks": checks,
+        "blockers": list(dict.fromkeys(blockers)),
+        "warnings": [
+            "Install apply is intentionally disabled; this report only prepares the guided deployment lane.",
+            "vCenter must wait until ESXi management and the NetApp datastore are ready.",
+        ],
+        "not_attempted": [
+            "VCSA deploy install",
+            "vCenter appliance power operation",
+            "ESXi datastore mount",
+            "vCenter configuration write",
+        ],
+        "artifacts": {
+            "readiness_report": _rel(VCENTER_INSTALL_READINESS_REPORT),
+            "plan_report": _rel(VCENTER_INSTALL_PLAN_REPORT),
+            "readiness_json": _rel(VCENTER_INSTALL_READINESS_JSON),
+        },
+        "next_safe_action": (
+            "Generate the vCenter install plan after readiness is ready."
+            if not blockers
+            else "Restore ESXi management, mount the NetApp datastore, and configure missing vCenter values."
+        ),
+    }
+    sanitized = redact_sensitive(payload)
+    if write_report:
+        CODEX_RUN_DIR.mkdir(parents=True, exist_ok=True)
+        VCENTER_INSTALL_READINESS_JSON.write_text(json.dumps(sanitized, indent=2) + "\n", encoding="utf-8")
+        VCENTER_INSTALL_READINESS_REPORT.write_text(_vcenter_install_markdown(sanitized), encoding="utf-8")
+    return sanitized
+
+
+def get_vcenter_install_plan(*, write_report: bool = True) -> dict[str, Any]:
+    readiness = get_vcenter_install_readiness(check_ports=True, write_report=write_report)
+    plan = {
+        **readiness,
+        "action": "vcenter-install-plan",
+        "message": "vCenter install plan generated. Preview only; no install was started.",
+        "install_plan": {
+            "vcsa_iso": (readiness.get("current_state") or {}).get("vcsa_iso"),
+            "deployment_target": (readiness.get("target_state") or {}).get("deployment_target"),
+            "datastore": (readiness.get("target_state") or {}).get("datastore"),
+            "command_preview": [
+                "Mount VCSA ISO locally.",
+                "Generate redacted VCSA deployment JSON from active lab profile.",
+                "vcsa-deploy install --accept-eula --acknowledge-ceip <redacted-vcsa-plan.json>",
+            ],
+        },
+        "artifacts": {
+            **(readiness.get("artifacts") or {}),
+            "plan_report": _rel(VCENTER_INSTALL_PLAN_REPORT),
+            "plan_json": _rel(VCENTER_INSTALL_PLAN_JSON),
+        },
+    }
+    sanitized = redact_sensitive(plan)
+    if write_report:
+        CODEX_RUN_DIR.mkdir(parents=True, exist_ok=True)
+        VCENTER_INSTALL_PLAN_JSON.write_text(json.dumps(sanitized, indent=2) + "\n", encoding="utf-8")
+        VCENTER_INSTALL_PLAN_REPORT.write_text(_vcenter_install_markdown(sanitized), encoding="utf-8")
+    return sanitized
 
 
 def _classify(
@@ -484,6 +651,71 @@ def _plan_markdown(payload: dict[str, Any]) -> str:
             "- Future apply must require fresh discovery, approval, audit logging, and explicit write gates.",
         ]
     ) + "\n"
+
+
+def _find_vcsa_iso() -> Path | None:
+    roots = [Path(item).expanduser() for item in settings.media_inventory_dirs]
+    roots.append(REPO_ROOT / "artifacts" / "Media")
+    candidates: list[Path] = []
+    for root in roots:
+        if not root.exists() or not root.is_dir():
+            continue
+        for path in root.rglob("*.iso"):
+            lowered = path.name.lower()
+            if any(marker in lowered for marker in ("vcsa", "vcenter", "vmware-vc")):
+                candidates.append(path)
+    if not candidates:
+        return None
+    return sorted(candidates, key=lambda item: str(item).lower())[0]
+
+
+def _safe_media_path(path: Path | None) -> str | None:
+    if path is None:
+        return None
+    try:
+        return str(path.resolve().relative_to(REPO_ROOT))
+    except ValueError:
+        return str(path)
+
+
+def _vcenter_install_markdown(payload: dict[str, Any]) -> str:
+    current = payload.get("current_state") or {}
+    target = payload.get("target_state") or {}
+    install_plan = payload.get("install_plan") or {}
+    lines = [
+        "# vCenter Install Readiness Report" if payload.get("action") == "vcenter-install-readiness" else "# vCenter Install Plan Report",
+        "",
+        f"- Checked at: `{payload.get('checked_at')}`",
+        f"- Action: `{payload.get('action')}`",
+        f"- Status: `{payload.get('status')}`",
+        f"- Apply enabled: `{payload.get('apply_enabled')}`",
+        "",
+        "## Current State",
+        f"- VCSA ISO: `{current.get('vcsa_iso') or 'not found'}`",
+        f"- ESXi management: `{current.get('esxi_management')}`",
+        f"- NetApp datastore: `{current.get('netapp_datastore')}`",
+        f"- vCenter installed/configured: `{current.get('vcenter_installed')}`",
+        "",
+        "## Target State",
+        f"- vCenter: `{target.get('vcenter') or 'not configured'}`",
+        f"- Deployment target: `{target.get('deployment_target')}`",
+        f"- Datastore: `{target.get('datastore')}`",
+        "",
+        "## Checks",
+    ]
+    for key, check in (payload.get("checks") or {}).items():
+        lines.append(f"- {key}: `{check.get('status')}` - {check.get('detail')}")
+    command_preview = install_plan.get("command_preview") if isinstance(install_plan, dict) else None
+    if command_preview:
+        lines.extend(["", "## Command Preview"])
+        lines.extend(f"- `{item}`" for item in command_preview)
+    lines.extend(["", "## Blockers"])
+    lines.extend(f"- {item}" for item in payload.get("blockers") or ["None"])
+    lines.extend(["", "## Warnings"])
+    lines.extend(f"- {item}" for item in payload.get("warnings") or ["None"])
+    lines.extend(["", "## Safety", "- No vCenter install, vCenter write, ESXi write, datastore mount, or appliance power action was run."])
+    lines.extend(["", "## Next Action", f"- {payload.get('next_safe_action')}"])
+    return "\n".join(lines) + "\n"
 
 
 def _redacted_url(value: str | None) -> str | None:

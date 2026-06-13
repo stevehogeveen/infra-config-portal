@@ -158,7 +158,7 @@ class IloRedfishAdapter:
             ],
             message=(
                 "Local iLO configuration is checked without contacting Redfish; "
-                "the probe button performs explicit GET-only requests."
+                "the probe button performs an explicit read-only Redfish inventory check."
             ),
             configuration={
                 "host_configured": bool(self.config.host),
@@ -180,11 +180,11 @@ class IloRedfishAdapter:
             safe_actions=[
                 ProviderAction(
                     id="probe-ilo-redfish",
-                    label="GET-Only Endpoint Detection",
+                    label="Read-Only Redfish Inventory",
                     enabled=probe_enabled,
                     read_only=True,
                     reason=(
-                        "Run GET-only endpoint detection and Redfish inventory checks."
+                        "Run read-only endpoint detection, authentication, and Redfish inventory checks."
                         if probe_enabled
                         else requirement_reason
                     ),
@@ -290,6 +290,12 @@ class IloRedfishAdapter:
                 "warnings": [],
             },
             "legacy_identity": {},
+            "authentication_method": "basic",
+            "redfish_auth": {
+                "status": "not_attempted",
+                "method": "redfish_session_token",
+                "reason": "Basic authentication was sufficient or inventory collection access has not been checked.",
+            },
             "endpoint_detection": {
                 "classification": "not_checked",
                 "message": "GET-only endpoint detection has not run.",
@@ -356,6 +362,49 @@ class IloRedfishAdapter:
                     None,
                 )
                 if unauthorized_collection is not None:
+                    session_client = _open_redfish_session_client(
+                        base_url,
+                        root,
+                        requests,
+                        self.config,
+                    )
+                    result["redfish_auth"] = session_client["summary"]
+                    if session_client.get("client") is not None:
+                        with session_client["client"] as token_client:
+                            try:
+                                collection_checks = _inventory_collection_access_checks(
+                                    token_client,
+                                    base_url,
+                                    root,
+                                    requests,
+                                )
+                                unauthorized_collection = next(
+                                    (
+                                        check
+                                        for check in collection_checks
+                                        if check.get("status_code") in {401, 403}
+                                    ),
+                                    None,
+                                )
+                                if unauthorized_collection is None:
+                                    result["authentication_method"] = "redfish_session_token"
+                                    detection = _mark_inventory_collection_authorized(
+                                        detection,
+                                        collection_checks,
+                                        auth_method="redfish_session_token",
+                                    )
+                                    result["endpoint_detection"] = detection
+                                    _populate_inventory_result(result, token_client, base_url, root, requests)
+                                    return result
+                            finally:
+                                _close_redfish_session(
+                                    token_client,
+                                    base_url,
+                                    str(session_client.get("location") or ""),
+                                    requests,
+                                    result["redfish_auth"],
+                                )
+
                     detection = _classify_inventory_auth_failure(
                         detection,
                         int(unauthorized_collection["status_code"]),
@@ -370,42 +419,12 @@ class IloRedfishAdapter:
                         }
                     )
                     return result
-                result["service_root"] = _resource_summary(root)
-                result["managers"] = _collection_summaries(
-                    client,
-                    base_url,
-                    _odata_id(root.get("Managers")),
-                    requests,
+                result["endpoint_detection"] = _mark_inventory_collection_authorized(
+                    detection,
+                    collection_checks,
+                    auth_method="basic",
                 )
-                result["systems"] = _collection_summaries(
-                    client,
-                    base_url,
-                    _odata_id(root.get("Systems")),
-                    requests,
-                )
-                chassis = _collection_summaries(
-                    client,
-                    base_url,
-                    _odata_id(root.get("Chassis")),
-                    requests,
-                    include_links=True,
-                )
-                result["chassis"] = [_strip_links(item) for item in chassis]
-                result["power"] = _linked_summaries(client, base_url, chassis, "Power", requests)
-                result["thermal"] = _linked_summaries(client, base_url, chassis, "Thermal", requests)
-                result["firmware"] = _firmware_summaries(client, base_url, root, requests)
-                result["network_adapters"] = _network_adapter_summaries(
-                    client,
-                    base_url,
-                    result["systems"],
-                    requests,
-                )
-                result["storage"] = _storage_discovery(
-                    client,
-                    base_url,
-                    result["systems"],
-                    requests,
-                )
+                _populate_inventory_result(result, client, base_url, root, requests)
         except httpx.HTTPStatusError as exc:
             detection = _classify_inventory_auth_failure(
                 result.get("endpoint_detection"),
@@ -469,6 +488,8 @@ class IloRedfishAdapter:
 
     def _record_result(self, result: dict[str, Any]) -> dict[str, Any]:
         redacted = redact_sensitive(result, self._redaction_values())
+        previous_result, previous_checked_at = get_probe_result(PROVIDER_ID)
+        redacted = _preserve_legacy_identity(redacted, previous_result, previous_checked_at)
         return record_probe_result(PROVIDER_ID, redacted)
 
     def _redaction_values(self) -> list[str | None]:
@@ -485,6 +506,41 @@ def _candidate_probe_summary(result: dict[str, Any]) -> dict[str, Any]:
         "request_count": len(requests) if isinstance(requests, list) else 0,
         "message": result.get("message"),
     }
+
+
+def _preserve_legacy_identity(
+    result: dict[str, Any],
+    previous_result: dict[str, Any] | None,
+    previous_checked_at: str | None,
+) -> dict[str, Any]:
+    legacy_identity = result.get("legacy_identity")
+    if isinstance(legacy_identity, dict) and legacy_identity.get("current_firmware"):
+        return result
+    if not isinstance(previous_result, dict):
+        return result
+    previous_identity = previous_result.get("legacy_identity")
+    if not isinstance(previous_identity, dict) or not previous_identity.get("current_firmware"):
+        return result
+
+    preserved = dict(result)
+    preserved["legacy_identity"] = {
+        **previous_identity,
+        "source": previous_identity.get("source") or LEGACY_XML_PATH,
+        "preserved_from_previous_probe": True,
+        "previous_checked_at": previous_checked_at,
+    }
+    detection = preserved.get("endpoint_detection")
+    if isinstance(detection, dict):
+        preserved["endpoint_detection"] = {
+            **detection,
+            "legacy_identity": preserved["legacy_identity"],
+        }
+    warnings = list(preserved.get("warnings") or [])
+    warnings.append(
+        "Preserved previous legacy iLO identity after the current Redfish inventory probe returned no legacy identity."
+    )
+    preserved["warnings"] = warnings
+    return preserved
 
 
 def _try_next_ilo_candidate(result: dict[str, Any]) -> bool:
@@ -845,6 +901,234 @@ def _classify_inventory_auth_failure(
         }
     )
     return detection
+
+
+def _mark_inventory_collection_authorized(
+    detection_value: Any,
+    collection_checks: list[dict[str, Any]],
+    *,
+    auth_method: str,
+) -> dict[str, Any]:
+    detection = dict(detection_value) if isinstance(detection_value, dict) else {}
+    available = any(check.get("status_code") == 200 for check in collection_checks)
+    detection.update(
+        {
+            "inventory_collection_status": "available" if available else "checked",
+            "inventory_collection_classification": "redfish_collection_available"
+            if available
+            else "redfish_collection_checked",
+            "inventory_collection_checks": collection_checks,
+        }
+    )
+    if auth_method == "redfish_session_token":
+        detection["auth_failure_classification"] = "basic_auth_recovered_with_session_token"
+        detection["auth_recovery_hint"] = "session_auth_used"
+        hints = list(detection.get("diagnostic_hints") or [])
+        hints.append("Basic auth was insufficient for inventory collections; Redfish session auth succeeded.")
+        detection["diagnostic_hints"] = hints
+    return detection
+
+
+def _open_redfish_session_client(
+    base_url: str,
+    root: dict[str, Any],
+    requests: list[dict[str, Any]],
+    config: IloRedfishConfig,
+) -> dict[str, Any]:
+    summary: dict[str, Any] = {
+        "status": "blocked",
+        "method": "redfish_session_token",
+        "login_collection_path": None,
+        "auth_header_received": False,
+        "location_present": False,
+        "message": "Redfish session authentication did not run.",
+    }
+    session_path = _session_collection_path(base_url, root, requests, config)
+    summary["login_collection_path"] = session_path
+    if not session_path:
+        summary["message"] = "Redfish session collection path was not found."
+        return {"summary": summary, "client": None, "location": None}
+    if not config.username or not config.password:
+        summary["message"] = "iLO username/password are not configured for session authentication."
+        return {"summary": summary, "client": None, "location": None}
+
+    response: httpx.Response | None = None
+    try:
+        with httpx.Client(
+            follow_redirects=False,
+            timeout=httpx.Timeout(config.timeout_seconds),
+            trust_env=False,
+            verify=config.verify_tls,
+        ) as auth_client:
+            response = auth_client.post(
+                _redfish_url(base_url, session_path),
+                json={"UserName": config.username, "Password": config.password},
+            )
+    except httpx.HTTPError as exc:
+        requests.append(
+            {
+                "method": "POST",
+                "path": session_path,
+                "status": "failed",
+                "error": _normalized_http_error(exc),
+                "classification": _classify_http_error(exc),
+            }
+        )
+        summary["message"] = "Redfish session authentication failed before a response was returned."
+        return {"summary": summary, "client": None, "location": None}
+
+    token = response.headers.get("X-Auth-Token")
+    location = response.headers.get("Location")
+    token_received = bool(token)
+    requests.append(
+        {
+            "method": "POST",
+            "path": session_path,
+            "status_code": response.status_code,
+            "classification": "redfish_session_created"
+            if response.status_code in {200, 201} and token_received
+            else "redfish_session_failed",
+            "auth_header_received": token_received,
+            "location_present": bool(location),
+        }
+    )
+    summary.update(
+        {
+            "status": "ready" if response.status_code in {200, 201} and token_received else "blocked",
+            "auth_header_received": token_received,
+            "location_present": bool(location),
+            "message": "Redfish session token acquired."
+            if response.status_code in {200, 201} and token_received
+            else f"Redfish session authentication returned HTTP {response.status_code}.",
+        }
+    )
+    if summary["status"] != "ready" or not token:
+        return {"summary": summary, "client": None, "location": None}
+
+    return {
+        "summary": summary,
+        "client": httpx.Client(
+            headers={"X-Auth-Token": token},
+            follow_redirects=False,
+            timeout=httpx.Timeout(config.timeout_seconds),
+            trust_env=False,
+            verify=config.verify_tls,
+        ),
+        "location": location,
+    }
+
+
+def _session_collection_path(
+    base_url: str,
+    root: dict[str, Any],
+    requests: list[dict[str, Any]],
+    config: IloRedfishConfig,
+) -> str | None:
+    links = root.get("Links") if isinstance(root.get("Links"), dict) else {}
+    sessions_path = _odata_id(links.get("Sessions"))
+    if sessions_path:
+        return sessions_path
+
+    session_service_path = _odata_id(root.get("SessionService"))
+    if session_service_path:
+        try:
+            with httpx.Client(
+                auth=(config.username, config.password),
+                follow_redirects=False,
+                timeout=httpx.Timeout(config.timeout_seconds),
+                trust_env=False,
+                verify=config.verify_tls,
+            ) as client:
+                service = _get_json(client, base_url, session_service_path, requests)
+            sessions_path = _odata_id(service.get("Sessions"))
+            if sessions_path:
+                return sessions_path
+        except httpx.HTTPError:
+            return f"{session_service_path.rstrip('/')}/Sessions/"
+    return "/redfish/v1/SessionService/Sessions/"
+
+
+def _close_redfish_session(
+    client: httpx.Client,
+    base_url: str,
+    location: str,
+    requests: list[dict[str, Any]],
+    summary: dict[str, Any],
+) -> None:
+    if not location:
+        summary["cleanup_status"] = "not_attempted"
+        summary["cleanup_reason"] = "No session location was returned."
+        return
+    try:
+        response = client.delete(_redfish_url(base_url, location))
+        requests.append(
+            {
+                "method": "DELETE",
+                "path": location,
+                "status_code": response.status_code,
+                "classification": "redfish_session_closed"
+                if response.status_code in {200, 202, 204}
+                else "redfish_session_close_failed",
+            }
+        )
+        summary["cleanup_status"] = "completed" if response.status_code in {200, 202, 204} else "warning"
+    except httpx.HTTPError as exc:
+        requests.append(
+            {
+                "method": "DELETE",
+                "path": location,
+                "status": "failed",
+                "error": _normalized_http_error(exc),
+                "classification": _classify_http_error(exc),
+            }
+        )
+        summary["cleanup_status"] = "warning"
+        summary["cleanup_error"] = _normalized_http_error(exc)
+
+
+def _populate_inventory_result(
+    result: dict[str, Any],
+    client: httpx.Client,
+    base_url: str,
+    root: dict[str, Any],
+    requests: list[dict[str, Any]],
+) -> None:
+    result["service_root"] = _resource_summary(root)
+    result["managers"] = _collection_summaries(
+        client,
+        base_url,
+        _odata_id(root.get("Managers")),
+        requests,
+    )
+    result["systems"] = _collection_summaries(
+        client,
+        base_url,
+        _odata_id(root.get("Systems")),
+        requests,
+    )
+    chassis = _collection_summaries(
+        client,
+        base_url,
+        _odata_id(root.get("Chassis")),
+        requests,
+        include_links=True,
+    )
+    result["chassis"] = [_strip_links(item) for item in chassis]
+    result["power"] = _linked_summaries(client, base_url, chassis, "Power", requests)
+    result["thermal"] = _linked_summaries(client, base_url, chassis, "Thermal", requests)
+    result["firmware"] = _firmware_summaries(client, base_url, root, requests)
+    result["network_adapters"] = _network_adapter_summaries(
+        client,
+        base_url,
+        result["systems"],
+        requests,
+    )
+    result["storage"] = _storage_discovery(
+        client,
+        base_url,
+        result["systems"],
+        requests,
+    )
 
 
 def _inventory_collection_access_checks(

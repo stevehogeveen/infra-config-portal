@@ -14,6 +14,7 @@ from app.schemas import MediaInventoryItemRead
 from app.services.lab_profiles import active_lab_profile_context
 from app.services.media_inventory import get_media_inventory
 from app.services.netapp_disabled_actions import disabled_netapp_actions
+from app.services.netapp_real_lab import latest_console_ontap_version
 from app.services.netapp_setup_intent import get_netapp_setup_intent
 from app.services.netapp_state import get_netapp_runtime_state
 
@@ -51,8 +52,25 @@ def build_netapp_upgrade_inventory(*, write_report: bool = True) -> dict[str, An
     access_configured = bool(settings.netapp_api_username and settings.netapp_api_password)
     media_inventory = get_media_inventory()
     local_packages = [_candidate_from_media(item) for item in media_inventory.items if _is_ontap_media(item)]
-    current_version = settings.netapp_current_ontap_version if configured else None
-    current_source = "configured_placeholder" if current_version else "unknown"
+    console_version = (
+        latest_console_ontap_version()
+        if settings.provider_mode != "mock"
+        else {"version": None, "source": "not_available", "checked_at": None}
+    )
+    current_version = settings.netapp_current_ontap_version or console_version.get("version")
+    if settings.netapp_current_ontap_version:
+        current_source = "configured_placeholder"
+    elif current_version:
+        current_source = str(console_version.get("source") or "unknown")
+    else:
+        current_source = "unknown"
+    repository_source = (
+        "console_read_only"
+        if console_version.get("version")
+        else "not_checked"
+        if not configured
+        else "live_probe_not_implemented"
+    )
     blockers = []
     if not configured:
         blockers.append("NetApp cluster management is not configured/reachable yet.")
@@ -74,10 +92,10 @@ def build_netapp_upgrade_inventory(*, write_report: bool = True) -> dict[str, An
         "access_configured": access_configured,
         "current_ontap_version": current_version,
         "current_version_source": current_source,
-        "node_image_versions": _node_versions(current_version),
+        "node_image_versions": _node_versions(current_version, current_source),
         "cluster_image_repository": {
             "available": False,
-            "source_type": "not_checked" if not configured else "live_probe_not_implemented",
+            "source_type": repository_source,
             "packages": [],
             "note": "Cluster image repository is not queried until cluster management and access are configured.",
         },
@@ -459,12 +477,12 @@ def _selected_package(candidates: list[dict[str, Any]], target_version: str | No
     return candidates[0]
 
 
-def _node_versions(current_version: str | None) -> list[dict[str, Any]]:
+def _node_versions(current_version: str | None, source_type: str = "configured_placeholder") -> list[dict[str, Any]]:
     if not current_version:
         return []
     return [
-        {"node": settings.netapp_node_a_name or "node-a", "version": current_version, "source_type": "configured_placeholder"},
-        {"node": settings.netapp_node_b_name or "node-b", "version": current_version, "source_type": "configured_placeholder"},
+        {"node": settings.netapp_node_a_name or "node-a", "version": current_version, "source_type": source_type},
+        {"node": settings.netapp_node_b_name or "node-b", "version": current_version, "source_type": source_type},
     ]
 
 

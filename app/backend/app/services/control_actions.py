@@ -7,13 +7,13 @@ from ipaddress import ip_address, ip_network
 from pathlib import Path
 from typing import Any, Literal
 
-from app.core.config import settings
+from app.core.config import LAB_CISCO_MANAGEMENT_IP, settings
 from app.providers.action_policy import ActionCategory, current_lab_action_policy
 from app.providers.base import ProviderStatus
 from app.providers.registry import ProviderRegistryError, provider_registry
 from app.services.build_verification import get_lab_build_verification
 from app.services.control_access import control_access_configs
-from app.services.firmware_compliance import get_firmware_compliance
+from app.services.firmware_compliance import get_firmware_compliance, get_firmware_summaries
 from app.services.lab_profiles import active_lab_profile_context, active_lab_profile_runtime_env_command
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
@@ -67,9 +67,10 @@ class SectionDefinition:
 
 
 def get_control_action_catalog() -> dict[str, Any]:
-    providers = _provider_statuses()
+    providers = _provider_statuses(lightweight=True)
     policy = current_lab_action_policy()
     firmware = get_firmware_compliance(refresh_live=False, scope="full")
+    firmware_summaries = {summary["device_id"]: summary for summary in get_firmware_summaries(compliance=firmware)}
     verification = get_lab_build_verification()
     lab_profile = _control_lab_profile()
     access_configs = control_access_configs(lab_profile)
@@ -81,6 +82,7 @@ def get_control_action_catalog() -> dict[str, Any]:
             action_by_id,
             providers,
             firmware,
+            firmware_summaries,
             verification,
             lab_profile,
             access_configs,
@@ -183,9 +185,9 @@ def _find_action(catalog: dict[str, Any], action_id: str) -> dict[str, Any]:
     raise ControlActionNotFoundError(action_id)
 
 
-def _provider_statuses() -> dict[str, ProviderStatus]:
+def _provider_statuses(*, lightweight: bool = False) -> dict[str, ProviderStatus]:
     try:
-        statuses = provider_registry().statuses()
+        statuses = provider_registry().statuses(lightweight=lightweight)
     except ProviderRegistryError:
         return {}
     return {status.id: status for status in statuses}
@@ -198,6 +200,7 @@ def _action_read(
     lab_profile: dict[str, Any],
 ) -> dict[str, Any]:
     blockers: list[str] = []
+    diagnostics: list[str] = list(action.diagnostics)
     if action.section_id == "netapp":
         netapp_blocker = _lab_profile_netapp_blocker(lab_profile)
         if netapp_blocker:
@@ -205,7 +208,11 @@ def _action_read(
     for provider_id in action.provider_ids:
         provider = providers.get(provider_id)
         if provider and provider.status in {"blocked", "failed", "unavailable"}:
-            blockers.extend(provider.blockers or [provider.message])
+            provider_blockers = provider.blockers or [provider.message]
+            if _provider_blocker_is_nonblocking_for_action(action, provider_id):
+                diagnostics.extend(str(item) for item in provider_blockers if item)
+            else:
+                blockers.extend(provider_blockers)
     if action.policy_action_id and action.policy_category:
         blockers.extend(policy.action_blockers(action.policy_action_id, action.policy_category))
 
@@ -254,8 +261,16 @@ def _action_read(
         "plan_endpoint": f"/api/v1/control/actions/{action.id}/plan",
         "run_endpoint": f"/api/v1/control/actions/{action.id}/run",
         "direct_run_supported": action.direct_run_supported,
-        "diagnostics": list(action.diagnostics),
+        "diagnostics": list(dict.fromkeys(diagnostics)),
     }
+
+
+def _provider_blocker_is_nonblocking_for_action(action: ActionDefinition, provider_id: str) -> bool:
+    return (
+        provider_id == "netapp-ontap"
+        and action.section_id == "netapp"
+        and action.classification == "read-only"
+    )
 
 
 def _section_read(
@@ -263,6 +278,7 @@ def _section_read(
     action_by_id: dict[str, dict[str, Any]],
     providers: dict[str, ProviderStatus],
     firmware: dict[str, Any],
+    firmware_summaries: dict[str, dict[str, Any]],
     verification: dict[str, Any],
     lab_profile: dict[str, Any],
     access_configs: dict[str, dict[str, Any]],
@@ -288,6 +304,7 @@ def _section_read(
         "stage": section.stage,
         "description": section.description,
         "status": "not_in_scope" if not_in_scope else "blocked" if blocked_actions else "ready",
+        "firmware_summary": _firmware_summary_for_section(section.id, firmware_summaries),
         "current_state": current,
         "desired_state": desired,
         "plan_diff": diff,
@@ -594,6 +611,92 @@ def _section_not_in_scope(section_id: str, lab_profile: dict[str, Any]) -> bool:
     return False
 
 
+def _firmware_summary_for_section(
+    section_id: str,
+    firmware_summaries: dict[str, dict[str, Any]],
+) -> dict[str, Any] | None:
+    if section_id in {"cisco", "ilo", "raid", "esxi", "netapp"}:
+        return firmware_summaries.get(section_id)
+    if section_id == "firmware-upgrade":
+        return {
+            **(firmware_summaries.get("ilo") or {}),
+            "device_id": "firmware-upgrade",
+            "label": "Firmware / Software",
+            "component_type": "global_firmware_compliance",
+            "current_versions": [
+                version
+                for device_id in ("cisco", "ilo", "raid", "esxi", "netapp")
+                for version in (firmware_summaries.get(device_id) or {}).get("current_versions", [])
+            ],
+            "approved_versions": [
+                version
+                for device_id in ("cisco", "ilo", "raid", "esxi", "netapp")
+                for version in (firmware_summaries.get(device_id) or {}).get("approved_versions", [])
+            ][:8],
+            "compliance_status": _rollup_firmware_summary_status(firmware_summaries),
+            "severity": _rollup_firmware_summary_severity(firmware_summaries),
+            "last_scanned": _latest_firmware_summary_scan(firmware_summaries),
+            "source_type": "cached_live",
+            "freshness": _rollup_firmware_summary_freshness(firmware_summaries),
+            "blocker": _rollup_firmware_summary_blocker(firmware_summaries),
+            "next_action": "Open device details below or run the global firmware compliance check.",
+            "scan_action_id": "firmware.compliance-check",
+            "upgrade_center_link": "/firmware",
+            "evidence_artifacts": [
+                "artifacts/codex-runs/firmware-inventory-report.md",
+                "artifacts/codex-runs/firmware-compliance-report.md",
+                "artifacts/codex-runs/firmware-compliance-summary-redacted.json",
+            ],
+        }
+    return None
+
+
+def _rollup_firmware_summary_status(firmware_summaries: dict[str, dict[str, Any]]) -> str:
+    statuses = {str(summary.get("compliance_status")) for summary in firmware_summaries.values()}
+    if "needs_upgrade" in statuses:
+        return "needs_upgrade"
+    if "cannot_verify" in statuses:
+        return "cannot_verify"
+    if statuses == {"not_configured"}:
+        return "not_configured"
+    return "current"
+
+
+def _rollup_firmware_summary_severity(firmware_summaries: dict[str, dict[str, Any]]) -> str:
+    severities = {str(summary.get("severity")) for summary in firmware_summaries.values()}
+    if "red" in severities:
+        return "red"
+    if "yellow" in severities:
+        return "yellow"
+    if severities == {"gray"}:
+        return "gray"
+    return "green"
+
+
+def _rollup_firmware_summary_freshness(firmware_summaries: dict[str, dict[str, Any]]) -> str:
+    freshness = {str(summary.get("freshness")) for summary in firmware_summaries.values()}
+    if "stale" in freshness:
+        return "stale"
+    if "historical" in freshness:
+        return "historical"
+    if "not_checked" in freshness and len(freshness) == 1:
+        return "not_checked"
+    return "live"
+
+
+def _rollup_firmware_summary_blocker(firmware_summaries: dict[str, dict[str, Any]]) -> str | None:
+    for severity in ("red", "yellow", "gray"):
+        for summary in firmware_summaries.values():
+            if summary.get("severity") == severity and summary.get("blocker"):
+                return str(summary["blocker"])
+    return None
+
+
+def _latest_firmware_summary_scan(firmware_summaries: dict[str, dict[str, Any]]) -> str | None:
+    scans = [str(summary["last_scanned"]) for summary in firmware_summaries.values() if summary.get("last_scanned")]
+    return sorted(scans, reverse=True)[0] if scans else None
+
+
 def _lab_profile_netapp_blocker(lab_profile: dict[str, Any]) -> str | None:
     features = lab_profile.get("features") or {}
     if features.get("netapp_enabled", True):
@@ -858,7 +961,7 @@ ACTIONS: tuple[ActionDefinition, ...] = (
         "Check privileged exec readiness and classify prompt state.",
         "read-only",
         command="make provider-lab-cisco-privilege-check",
-        report="artifacts/codex-runs/cisco-privilege-check-report.md",
+        report="artifacts/codex-runs/cisco-privileged-exec-fix-report.md",
         provider_ids=("cisco-console", "cisco-ansible"),
     ),
     _action(
@@ -887,8 +990,12 @@ ACTIONS: tuple[ActionDefinition, ...] = (
         required_inputs=(
             ActionInput("confirmation_phrase", "Confirmation phrase", True),
         ),
-        required_flags=("CISCO_CONSOLE_APPLY_ENABLED=true",),
-        required_confirmations=("APPLY CISCO BOOTSTRAP",),
+        required_flags=(
+            "CISCO_CONSOLE_APPLY_ENABLED=true",
+            "LAB_APPLY_ACK=YES",
+            f"LAB_TARGET_ACK={LAB_CISCO_MANAGEMENT_IP}",
+        ),
+        required_confirmations=(f"APPLY CISCO CONSOLE BOOTSTRAP {LAB_CISCO_MANAGEMENT_IP}",),
         policy_action_id="cisco-console.bootstrap",
         policy_category=ActionCategory.NETWORK_CONFIG,
     ),
@@ -1188,6 +1295,37 @@ ACTIONS: tuple[ActionDefinition, ...] = (
         required_flags=("ESXI_CONFIGURED=true",),
     ),
     _action(
+        "esxi.recover-management",
+        "Recover Management",
+        "esxi",
+        "ESXi Control",
+        "Diagnose ESXi reachability and run the guarded iLO power-on recovery path only when gates pass.",
+        "destructive",
+        command="make provider-lab-esxi-recover-management",
+        method="POST",
+        endpoint="/api/v1/providers/esxi-readonly/recover-management",
+        report="artifacts/codex-runs/esxi-reachability-remediation-report.md",
+        provider_ids=("ilo-redfish", "esxi-readonly"),
+        required_flags=("LAB_ALLOW_POWER_ACTIONS=true", "ESXI_RECOVERY_APPLY=true"),
+        required_confirmations=("RECOVER ESXI MANAGEMENT",),
+        policy_action_id="ilo.power-action",
+        policy_category=ActionCategory.POWER_ACTION,
+    ),
+    _action(
+        "esxi.post-recovery-validation",
+        "Post-Recovery Validation",
+        "esxi",
+        "ESXi Control",
+        "Validate ESXi management reachability after a recovery attempt.",
+        "read-only",
+        command="make provider-lab-esxi-post-recovery-validation",
+        method="POST",
+        endpoint="/api/v1/providers/esxi-readonly/post-recovery-validation",
+        report="artifacts/codex-runs/esxi-post-recovery-validation-report.md",
+        provider_ids=("esxi-readonly",),
+        required_flags=("ESXI_CONFIGURED=true",),
+    ),
+    _action(
         "esxi.ssh-api-check",
         "SSH / API Check",
         "esxi",
@@ -1199,6 +1337,51 @@ ACTIONS: tuple[ActionDefinition, ...] = (
         endpoint="/api/v1/providers/esxi-readonly/probe",
         provider_ids=("esxi-readonly",),
         required_flags=("ESXI_CONFIGURED=true", "LAB_READONLY_ACK=YES"),
+    ),
+    _action(
+        "esxi.netapp-datastore-preview",
+        "Mount NetApp Datastore Preview",
+        "esxi",
+        "ESXi Control",
+        "Preview the direct ESXi NetApp NFS datastore mount target and govc command.",
+        "read-only",
+        command="make provider-lab-esxi-netapp-datastore-preview",
+        method="GET",
+        endpoint="/api/v1/providers/esxi-readonly/netapp-datastore-preview",
+        report="artifacts/codex-runs/esxi-netapp-nfs-datastore-preview-report.md",
+        provider_ids=("esxi-readonly",),
+        required_flags=("ESXI_CONFIGURED=true",),
+    ),
+    _action(
+        "esxi.netapp-datastore-apply",
+        "Mount NetApp Datastore",
+        "esxi",
+        "ESXi Control",
+        "Guarded direct ESXi govc datastore.create path for the NetApp NFS datastore.",
+        "write",
+        command="make provider-lab-esxi-netapp-datastore-apply",
+        method="POST",
+        endpoint="/api/v1/providers/esxi-readonly/netapp-datastore-apply",
+        report="artifacts/codex-runs/esxi-netapp-nfs-datastore-apply-report.md",
+        provider_ids=("esxi-readonly",),
+        required_flags=("ESXI_NETAPP_DATASTORE_APPLY=true",),
+        required_confirmations=("MOUNT NETAPP NFS DATASTORE",),
+        policy_action_id="esxi.datastore-vswitch-vmkernel",
+        policy_category=ActionCategory.STORAGE_CONFIG,
+    ),
+    _action(
+        "esxi.netapp-datastore-validate",
+        "Validate NetApp Datastore",
+        "esxi",
+        "ESXi Control",
+        "Validate the NetApp NFS datastore is visible and accessible to ESXi.",
+        "read-only",
+        command="make provider-lab-esxi-netapp-datastore-validate",
+        method="POST",
+        endpoint="/api/v1/providers/esxi-readonly/netapp-datastore-validate",
+        report="artifacts/codex-runs/esxi-netapp-nfs-datastore-validation-report.md",
+        provider_ids=("esxi-readonly",),
+        required_flags=("ESXI_CONFIGURED=true",),
     ),
     _action(
         "esxi.vm-deploy-preview",
@@ -1216,7 +1399,7 @@ ACTIONS: tuple[ActionDefinition, ...] = (
     ),
     _action(
         "esxi.vm-deploy-apply",
-        "VM Deploy Apply",
+        "VM Deploy to Selected Datastore",
         "esxi",
         "ESXi Control",
         "Guarded direct ESXi govc import.ovf lane with explicit datastore and power-on gates.",
@@ -1306,6 +1489,120 @@ ACTIONS: tuple[ActionDefinition, ...] = (
         method="POST",
         endpoint="/api/v1/providers/netapp-ontap/validate-setup",
         report="artifacts/codex-runs/netapp-live-state-report.md",
+        provider_ids=("netapp-ontap",),
+    ),
+    _action(
+        "netapp.address-plan",
+        "Address Plan",
+        "netapp",
+        "NetApp Control",
+        "Compare console-discovered ONTAP addresses with the active lab profile and show the safe readdress/profile-update path.",
+        "read-only",
+        command="make provider-lab-netapp-address-plan",
+        method="POST",
+        endpoint="/api/v1/providers/netapp-ontap/address-plan",
+        report="artifacts/codex-runs/netapp-address-remediation-plan-report.md",
+        provider_ids=("netapp-ontap",),
+    ),
+    _action(
+        "netapp.address-preview",
+        "Readdress Preview",
+        "netapp",
+        "NetApp Control",
+        "Preview exact console-mediated ONTAP address changes from the discovered 10.10.8.x state to the active 192.168.1.x lab plan.",
+        "read-only",
+        command="make provider-lab-netapp-address-preview",
+        method="POST",
+        endpoint="/api/v1/providers/netapp-ontap/address-preview",
+        report="artifacts/codex-runs/netapp-address-remediation-preview-report.md",
+        provider_ids=("netapp-ontap",),
+    ),
+    _action(
+        "netapp.address-apply",
+        "Readdress Apply",
+        "netapp",
+        "NetApp Control",
+        "Guarded console-mediated ONTAP network readdress; refused unless fresh target checks and exact confirmation gates pass.",
+        "write",
+        command="make provider-lab-netapp-address-apply",
+        method="POST",
+        endpoint="/api/v1/providers/netapp-ontap/address-apply",
+        report="artifacts/codex-runs/netapp-address-remediation-apply-report.md",
+        provider_ids=("netapp-ontap",),
+        required_flags=(
+            "NETAPP_ADDRESS_APPLY=true",
+            "NETAPP_ADDRESS_ALLOW_CONSOLE_WRITES=true",
+            "NETAPP_ADDRESS_ACCEPT_HA_WARNING=true",
+        ),
+        required_confirmations=("APPLY NETAPP ADDRESS REMEDIATION",),
+        policy_action_id="netapp.address-remediation",
+        policy_category=ActionCategory.NETWORK_CONFIG,
+    ),
+    _action(
+        "netapp.address-validate",
+        "Readdress Validate",
+        "netapp",
+        "NetApp Control",
+        "Validate planned NetApp management and NFS addresses after a readdress attempt.",
+        "read-only",
+        command="make provider-lab-netapp-address-validate",
+        method="POST",
+        endpoint="/api/v1/providers/netapp-ontap/address-validate",
+        report="artifacts/codex-runs/netapp-address-remediation-validation-report.md",
+        provider_ids=("netapp-ontap",),
+    ),
+    _action(
+        "netapp.ha-node-diagnose",
+        "HA / Node Diagnose",
+        "netapp",
+        "NetApp Control",
+        "Collect read-only HA/node evidence and show the exact X20-01 blocker instead of a generic NetApp failure.",
+        "read-only",
+        command="make provider-lab-netapp-ha-node-diagnose",
+        report="artifacts/codex-runs/netapp-ha-node-remediation-report.md",
+        provider_ids=("netapp-ontap",),
+    ),
+    _action(
+        "netapp.factory-reset-preview",
+        "Factory Reset Preview",
+        "netapp",
+        "NetApp Control",
+        "Preview the destructive NetApp reset/rebuild recovery path and show exactly what would be reset.",
+        "read-only",
+        command="make provider-lab-netapp-factory-reset-preview",
+        method="POST",
+        endpoint="/api/v1/providers/netapp-ontap/factory-reset-preview",
+        report="artifacts/codex-runs/netapp-factory-reset-plan-report.md",
+        provider_ids=("netapp-ontap",),
+    ),
+    _action(
+        "netapp.factory-reset-apply",
+        "Factory Reset Apply",
+        "netapp",
+        "NetApp Control",
+        "Destructive NetApp factory-reset lane; refused unless factory-reset gates and executor availability are explicit.",
+        "destructive",
+        command="make provider-lab-netapp-factory-reset-apply",
+        method="POST",
+        endpoint="/api/v1/providers/netapp-ontap/factory-reset-apply",
+        report="artifacts/codex-runs/netapp-factory-reset-apply-report.md",
+        provider_ids=("netapp-ontap",),
+        required_flags=("LAB_ALLOW_FACTORY_RESET=true", "NETAPP_FACTORY_RESET_APPLY=true"),
+        required_confirmations=("FACTORY RESET NETAPP",),
+        policy_action_id="netapp.factory-reset",
+        policy_category=ActionCategory.FACTORY_RESET,
+    ),
+    _action(
+        "netapp.factory-reset-validate",
+        "Factory Reset Validate",
+        "netapp",
+        "NetApp Control",
+        "Validate whether NetApp is back at setup wizard state after a reset.",
+        "read-only",
+        command="make provider-lab-netapp-factory-reset-validate",
+        method="POST",
+        endpoint="/api/v1/providers/netapp-ontap/factory-reset-validate",
+        report="artifacts/codex-runs/netapp-factory-reset-validation-report.md",
         provider_ids=("netapp-ontap",),
     ),
     _action(
@@ -1473,6 +1770,58 @@ ACTIONS: tuple[ActionDefinition, ...] = (
         provider_ids=("netapp-ontap",),
     ),
     _action(
+        "vcenter.install-readiness",
+        "Install Readiness",
+        "vcenter",
+        "vCenter Control",
+        "Evaluate VCSA media, ESXi reachability, NetApp datastore prerequisites, and missing vCenter values.",
+        "read-only",
+        command="make provider-lab-vcenter-install-readiness",
+        method="GET",
+        endpoint="/api/v1/lab/vcenter/install-readiness",
+        report="artifacts/codex-runs/vcenter-install-readiness-report.md",
+        provider_ids=("esxi-readonly", "netapp-ontap"),
+    ),
+    _action(
+        "vcenter.install-plan",
+        "Install Plan",
+        "vcenter",
+        "vCenter Control",
+        "Build the preview-only VCSA deployment plan after ESXi and NetApp datastore prerequisites are ready.",
+        "read-only",
+        command="make provider-lab-vcenter-install-plan",
+        method="GET",
+        endpoint="/api/v1/lab/vcenter/install-plan",
+        report="artifacts/codex-runs/vcenter-install-plan-report.md",
+        provider_ids=("esxi-readonly", "netapp-ontap"),
+    ),
+    _action(
+        "vcenter.netapp-readiness",
+        "NetApp Readiness",
+        "vcenter",
+        "vCenter Control",
+        "Review vCenter, govc, ESXi management, and NetApp NFS readiness for datastore use.",
+        "read-only",
+        command="make provider-lab-vcenter-netapp-readiness",
+        method="GET",
+        endpoint="/api/v1/lab/vcenter-netapp/readiness",
+        report="artifacts/codex-runs/vcenter-netapp-readiness-report.md",
+        provider_ids=("esxi-readonly", "netapp-ontap"),
+    ),
+    _action(
+        "vcenter.netapp-datastore-plan",
+        "NetApp Datastore Plan",
+        "vcenter",
+        "vCenter Control",
+        "Generate the preview-only NetApp NFS datastore add plan for vCenter/ESXi.",
+        "read-only",
+        command="make provider-lab-vcenter-netapp-datastore-plan",
+        method="GET",
+        endpoint="/api/v1/lab/vcenter-netapp/datastore-plan",
+        report="artifacts/codex-runs/vcenter-netapp-datastore-plan-report.md",
+        provider_ids=("esxi-readonly", "netapp-ontap"),
+    ),
+    _action(
         "firmware.inventory",
         "Run Inventory",
         "firmware-upgrade",
@@ -1541,12 +1890,11 @@ ACTIONS: tuple[ActionDefinition, ...] = (
         "firmware-upgrade",
         "Firmware / Upgrade Center",
         "Build a staged upgrade plan from inventory, packages, baseline, and waivers.",
-        "upgrade",
+        "read-only",
         command="make provider-lab-firmware-compliance",
         method="GET",
         endpoint="/api/v1/providers/ilo-redfish/upgrade-readiness",
         report="artifacts/codex-runs/firmware-compliance-gate-final-report.md",
-        required_confirmations=("PLAN FIRMWARE UPGRADE",),
     ),
     _action(
         "firmware.upgrade-apply-placeholder",
@@ -1634,7 +1982,7 @@ ACTIONS: tuple[ActionDefinition, ...] = (
 SECTIONS: tuple[SectionDefinition, ...] = (
     SectionDefinition(
         "lab-profile",
-        "Lab Profile",
+        "Lab Setup",
         "Profile",
         "Active and known lab addressing, configured flags, and non-secret env update handoff.",
         (),
@@ -1698,7 +2046,12 @@ SECTIONS: tuple[SectionDefinition, ...] = (
             "esxi.kickstart-generation",
             "esxi.rebuild-install",
             "esxi.management-validation",
+            "esxi.recover-management",
+            "esxi.post-recovery-validation",
             "esxi.ssh-api-check",
+            "esxi.netapp-datastore-preview",
+            "esxi.netapp-datastore-apply",
+            "esxi.netapp-datastore-validate",
             "esxi.vm-deploy-preview",
             "esxi.vm-deploy-apply",
             "esxi.vm-deploy-validate",
@@ -1714,6 +2067,14 @@ SECTIONS: tuple[SectionDefinition, ...] = (
             "netapp.console-read-state",
             "netapp.live-state",
             "netapp.validate-setup",
+            "netapp.address-plan",
+            "netapp.address-preview",
+            "netapp.address-apply",
+            "netapp.address-validate",
+            "netapp.ha-node-diagnose",
+            "netapp.factory-reset-preview",
+            "netapp.factory-reset-apply",
+            "netapp.factory-reset-validate",
             "netapp.setup-preview",
             "netapp.setup-apply",
             "netapp.post-setup-validation",
@@ -1726,6 +2087,18 @@ SECTIONS: tuple[SectionDefinition, ...] = (
             "netapp.ontap-upgrade-validate",
             "netapp.ontap-upgrade-apply",
             "netapp.component-firmware-inventory",
+        ),
+    ),
+    SectionDefinition(
+        "vcenter",
+        "vCenter Control",
+        "vCenter",
+        "vCenter install readiness, VCSA media, NetApp datastore handoff, and deployment planning.",
+        (
+            "vcenter.install-readiness",
+            "vcenter.install-plan",
+            "vcenter.netapp-readiness",
+            "vcenter.netapp-datastore-plan",
         ),
     ),
     SectionDefinition(

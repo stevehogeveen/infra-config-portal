@@ -171,6 +171,32 @@ def test_install_readiness_uses_installed_esxi_state_after_cleanup() -> None:
     ) == "Installed ESXi is running; no installer boot override is queued."
 
 
+def test_install_readiness_raid_snapshot_does_not_wait_for_reset(monkeypatch) -> None:
+    calls = 0
+
+    def fake_pending_report(_session) -> dict:
+        nonlocal calls
+        calls += 1
+        return {
+            "message": "HPE SmartStorage current/settings state cannot be read.",
+            "pending": {
+                "live_matches_expected": False,
+                "pending_config_exists": False,
+                "reset_required": False,
+                "smartstorage_reads_available": False,
+            },
+        }
+
+    monkeypatch.setattr(esxi_install_readiness, "write_hpe_raid_pending_report", fake_pending_report)
+
+    snapshot = esxi_install_readiness._raid_validation_snapshot(object())
+
+    assert calls == 1
+    assert snapshot["status"] == "blocked"
+    assert snapshot["validation"]["reset_required"] is False
+    assert snapshot["validation"]["smartstorage_reads_available"] is False
+
+
 def test_reset_for_installer_boot_powers_on_when_server_is_off(monkeypatch, tmp_path: Path) -> None:
     _redirect_reports(monkeypatch, tmp_path)
     monkeypatch.setattr(esxi_boot_workflow, "_action_blockers", lambda *_args: [])

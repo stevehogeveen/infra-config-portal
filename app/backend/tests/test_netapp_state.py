@@ -88,6 +88,59 @@ def test_login_required_does_not_equal_configured(db_session: Session) -> None:
     assert state["configured"] is False
 
 
+def test_console_login_state_upgrades_to_ontap_shell_after_commands() -> None:
+    assert (
+        netapp_real_lab._identified_state_after_commands(
+            "login_required",
+            [
+                {
+                    "status": "captured",
+                    "prompt_state": "existing_cluster_shell",
+                }
+            ],
+        )
+        == "ontap_shell"
+    )
+
+
+def test_latest_console_ontap_version_parser_uses_read_only_command_output() -> None:
+    payload = {
+        "checked_at": "2026-06-13T00:00:00+00:00",
+        "command_results": [
+            {
+                "id": "ontap_version",
+                "status": "captured",
+                "output_excerpt": "NetApp Release 9.17.1: Fri May 02 01:22:03 UTC 2026",
+            }
+        ],
+    }
+
+    assert netapp_real_lab._ontap_version_from_console_payload(payload) == "9.17.1"
+
+
+def test_netapp_aggregate_read_command_uses_supported_field_name() -> None:
+    commands = dict(netapp_real_lab.READ_ONLY_ONTAP_COMMANDS)
+
+    assert "availsize" in commands["storage_aggregate_summary"]
+    assert "available" not in commands["storage_aggregate_summary"]
+
+
+def test_console_login_runtime_payload_uses_existing_cluster_shell_after_login() -> None:
+    payload = netapp_real_lab._login_runtime_probe_payload(
+        {
+            "action": "console-login-state",
+            "selected_port": "/dev/ttyACM0",
+            "selected_baud": 115200,
+            "prompt_state": "login_required",
+            "identified_state": "ontap_shell",
+        }
+    )
+
+    assert payload["selected_prompt_state"] == "existing_cluster_shell"
+    assert payload["selected_prompt_label"] == "Existing ONTAP cluster shell"
+    assert payload["selection_source"] == "console-login-state"
+
+
 def test_configured_is_only_true_after_live_validation(monkeypatch, db_session: Session) -> None:
     update_netapp_runtime_state_from_console_probe(
         _console_payload(prompt_state="existing_cluster_shell"),

@@ -6,6 +6,7 @@ from app.providers.action_policy import REAL_CONTACT_MODES, current_lab_action_p
 from app.services.netapp_console_readiness import get_netapp_console_readiness
 from app.services.netapp_disabled_actions import disabled_netapp_actions
 from app.services.firmware_compliance import firmware_gate_blockers
+from app.services.netapp_address_plan import latest_console_network_facts
 from app.services.netapp_readiness_comparison import get_netapp_readiness_comparison
 from app.services.netapp_real_lab import (
     get_latest_netapp_console_discovery,
@@ -23,8 +24,11 @@ class NetAppOntapAdapter:
     def __init__(self, provider_mode: str | None = None) -> None:
         self.provider_mode = provider_mode or settings.provider_mode
 
+    def _runtime_state(self) -> dict:
+        return _runtime_state_for_mode(self.provider_mode)
+
     def health(self) -> ProviderStatus:
-        runtime_state = get_netapp_runtime_state()
+        runtime_state = self._runtime_state()
         configured = bool(runtime_state.get("configured"))
         policy = current_lab_action_policy(self.provider_mode)
         readonly_enabled = self.provider_mode in REAL_CONTACT_MODES and policy.readonly_allowed
@@ -51,6 +55,7 @@ class NetAppOntapAdapter:
                 "upgrade-readiness-preview",
                 "console-discovery-readonly",
                 "console-read-state-readonly",
+                "address-remediation-plan",
                 "nfs-setup-preview",
                 "nfs-setup-apply-guarded",
                 "nfs-vcenter-readiness-preview",
@@ -140,6 +145,15 @@ class NetAppOntapAdapter:
                     reason="Preview planned SVM, NFS LIF, volume, export policy, and datastore target without writes.",
                     method="GET",
                     endpoint="/api/v1/providers/netapp-ontap/nfs-setup-preview",
+                ),
+                ProviderAction(
+                    id="netapp-address-plan",
+                    label="Address Plan",
+                    enabled=True,
+                    read_only=True,
+                    reason="Compare console-discovered ONTAP addresses with the planned lab profile without writes.",
+                    method="POST",
+                    endpoint="/api/v1/providers/netapp-ontap/address-plan",
                 ),
             ],
             disabled_actions=_disabled_actions(),
@@ -273,7 +287,7 @@ class NetAppOntapAdapter:
     def _configuration(self) -> dict:
         iscsi_lifs = list(settings.netapp_iscsi_lifs)
         nfs_lifs = list(settings.netapp_nfs_lifs)
-        runtime_state = get_netapp_runtime_state()
+        runtime_state = self._runtime_state()
         console_state = runtime_state.get("console") if isinstance(runtime_state.get("console"), dict) else {}
         live_configured = bool(runtime_state.get("configured"))
         configured_state = str(runtime_state.get("configured_state") or "")
@@ -298,7 +312,7 @@ class NetAppOntapAdapter:
                 "end": iscsi_lifs[-1] if iscsi_lifs else None,
                 "addresses": iscsi_lifs,
             },
-            "current_discovered_targets": _current_discovered_targets(),
+            "current_discovered_targets": _current_discovered_targets(self.provider_mode, runtime_state),
             "api_configured_flags": {
                 "endpoint_configured": bool(
                     live_configured and settings.netapp_cluster_mgmt_ip
@@ -384,7 +398,7 @@ class NetAppOntapAdapter:
     def _discovery(self) -> dict:
         credentials_present = bool(settings.netapp_api_username and settings.netapp_api_password)
         readonly_ack = settings.lab_readonly_ack == "YES"
-        runtime_state = get_netapp_runtime_state()
+        runtime_state = self._runtime_state()
         live_configured = bool(runtime_state.get("configured"))
         return {
             "safe_next_action": (
@@ -554,8 +568,38 @@ def _disabled_actions() -> list[ProviderAction]:
     )
 
 
-def _current_discovered_targets() -> dict:
-    runtime_state = get_netapp_runtime_state()
+def _runtime_state_for_mode(provider_mode: str) -> dict:
+    if provider_mode in REAL_CONTACT_MODES:
+        return get_netapp_runtime_state()
+    return {
+        "provider_id": PROVIDER_ID,
+        "device_role": "storage-controller",
+        "checked_at": None,
+        "configured": False,
+        "configured_state": "not_detected",
+        "source": "none",
+        "manual_env_flag_required": False,
+        "console": {},
+        "management": {},
+        "api": {},
+        "storage": {},
+        "detected_management_ips": {},
+        "detected_storage_protocol_readiness": {},
+        "last_successful_probe_at": None,
+        "last_report_path": None,
+        "confidence": "low",
+        "blockers": ["Mock NetApp preview does not use persisted real-lab runtime state."],
+        "artifacts": {},
+        "next_safe_action": "Switch to a real-lab provider mode before reading live NetApp state.",
+    }
+
+
+def _current_discovered_targets(
+    provider_mode: str | None = None,
+    runtime_state: dict | None = None,
+) -> dict:
+    mode = provider_mode or settings.provider_mode
+    runtime_state = runtime_state if runtime_state is not None else _runtime_state_for_mode(mode)
     if runtime_state.get("configured"):
         detected = (
             runtime_state.get("detected_management_ips")
@@ -578,6 +622,36 @@ def _current_discovered_targets() -> dict:
                 "addresses": list(settings.netapp_iscsi_lifs),
             },
         }
+    console = runtime_state.get("console") if isinstance(runtime_state.get("console"), dict) else {}
+    if mode in REAL_CONTACT_MODES and console.get("prompt_state") == "existing_cluster_shell":
+        console_facts = latest_console_network_facts()
+        current = console_facts.get("current_targets") if isinstance(console_facts.get("current_targets"), dict) else {}
+        if current.get("cluster_mgmt") or current.get("node_mgmt_by_node") or current.get("nfs_lifs"):
+            node_mgmt = current.get("node_mgmt_by_node") if isinstance(current.get("node_mgmt_by_node"), dict) else {}
+            node_names = sorted(node_mgmt)
+            return {
+                "discovery_enabled": True,
+                "source": "console_read_only",
+                "checked_at": console_facts.get("checked_at"),
+                "controller_sp": {"controller_a": None, "controller_b": None},
+                "management_ips": {
+                    "cluster": current.get("cluster_mgmt"),
+                    "node_a": current.get("node_a_mgmt") or (node_mgmt.get(node_names[0]) if node_names else None),
+                    "node_b": current.get("node_b_mgmt") or (node_mgmt.get(node_names[1]) if len(node_names) > 1 else None),
+                    "svm": None,
+                },
+                "nfs_lif_range": {
+                    "start": (current.get("nfs_lifs") or [None])[0],
+                    "end": (current.get("nfs_lifs") or [None])[-1],
+                    "addresses": list(current.get("nfs_lifs") or []),
+                },
+                "health": console_facts.get("node_health"),
+                "cluster_ha_warning": console_facts.get("cluster_ha_warning"),
+                "notes": [
+                    "Current addresses came from guarded console read-only output.",
+                    "REST/API configured state is still not verified.",
+                ],
+            }
     return {
         "discovery_enabled": False,
         "source": "not_discovered",

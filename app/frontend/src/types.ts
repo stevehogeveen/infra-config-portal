@@ -366,6 +366,7 @@ export type ReportCenter = {
 export type LabAddressPlan = {
   subnet: string | null;
   ilo: string | null;
+  ilo_initial: string | null;
   server_embedded_nic: string | null;
   esxi_management: string | null;
   cisco_management: string | null;
@@ -623,12 +624,37 @@ export type ControlAction = {
   diagnostics: string[];
 };
 
+export type FirmwareVersionSummary = {
+  label: string;
+  version: string | null;
+  status: string | null;
+};
+
+export type FirmwareSummary = {
+  device_id: string;
+  label: string;
+  component_type: string;
+  current_versions: FirmwareVersionSummary[];
+  approved_versions: FirmwareVersionSummary[];
+  compliance_status: string;
+  severity: string;
+  last_scanned: string | null;
+  source_type: string;
+  freshness: string;
+  blocker: string | null;
+  next_action: string;
+  scan_action_id: string | null;
+  upgrade_center_link: string;
+  evidence_artifacts: string[];
+};
+
 export type ControlSectionRecord = {
   id: string;
   title: string;
   stage: string;
   description: string;
   status: string;
+  firmware_summary: FirmwareSummary | null;
   current_state: ControlStateItem[];
   desired_state: ControlStateItem[];
   plan_diff: ControlPlanDiffItem[];
@@ -800,8 +826,15 @@ export type WorkflowAction = {
   last_run_trace: WorkflowRunTrace;
   ui_run_supported: boolean;
   ui_run_blockers: string[];
+  guarded_run_supported: boolean;
+  guarded_run_blockers: string[];
   run_endpoint: string;
   runs_endpoint: string;
+};
+
+export type WorkflowActionRunRequest = {
+  confirmation_phrase?: string;
+  confirmed_gates?: string[];
 };
 
 export type WorkflowStage = {

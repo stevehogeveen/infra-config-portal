@@ -42,7 +42,9 @@ button,
   font-weight: 700;
   gap: 8px;
   min-height: 38px;
+  min-width: 0;
   padding: 8px 12px;
+  white-space: normal;
 }
 
 button:hover,
@@ -1521,7 +1523,8 @@ th {
   color: #8a5d00;
 }
 
-.status-warning {
+.status-warning,
+.status-cannot_verify {
   background: #fff7df;
   color: #8a5d00;
 }
@@ -1599,6 +1602,7 @@ th {
 }
 
 .status-failed,
+.status-needs_upgrade,
 .status-blocked,
 .status-blocked_unknown_path,
 .status-blocked_incompatible,
@@ -2204,6 +2208,302 @@ textarea {
   border-left-color: #b42318;
 }
 
+.firmware-summary-strip {
+  background: #fbfcfd;
+  border: 1px solid #dfe4ea;
+  border-left: 4px solid #64748b;
+  border-radius: 8px;
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+}
+
+.firmware-summary-strip.ready {
+  background: #f5fbf8;
+  border-left-color: #0f766e;
+}
+
+.firmware-summary-strip.warning {
+  background: #fffaf0;
+  border-left-color: #d97706;
+}
+
+.firmware-summary-strip.blocked {
+  background: #fff7f7;
+  border-left-color: #b42318;
+}
+
+.firmware-summary-strip.neutral {
+  background: #f8fafc;
+  border-left-color: #94a3b8;
+}
+
+.firmware-summary-head {
+  align-items: flex-start;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.firmware-summary-head h3 {
+  font-size: 18px;
+  letter-spacing: 0;
+  margin: 3px 0 6px;
+}
+
+.firmware-summary-head p,
+.firmware-summary-disabled {
+  color: #475569;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.firmware-summary-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.firmware-summary-grid .provider-fact {
+  background: #ffffff;
+}
+
+.firmware-summary-grid > div {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  min-width: 0;
+  padding: 9px;
+}
+
+.firmware-summary-grid span {
+  color: #64748b;
+  display: block;
+  font-size: 11px;
+  font-weight: 900;
+  margin-bottom: 4px;
+  text-transform: uppercase;
+}
+
+.firmware-summary-grid strong {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.firmware-summary-reason {
+  align-items: flex-start;
+  color: #7c2d12;
+  display: flex;
+  font-size: 13px;
+  font-weight: 800;
+  gap: 8px;
+}
+
+.firmware-summary-actions {
+  justify-content: flex-end;
+}
+
+.firmware-summary-evidence {
+  margin: 0;
+}
+
+.firmware-focus-strip {
+  align-items: center;
+  background: #ffffff;
+  border: 1px solid #d7dde5;
+  border-radius: 8px;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(180px, 0.45fr) minmax(0, 1fr) auto;
+  padding: 12px;
+}
+
+.firmware-focus-strip .field {
+  margin: 0;
+}
+
+.firmware-focus-strip strong {
+  display: block;
+  margin: 3px 0;
+}
+
+.firmware-focus-strip p {
+  color: #475569;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.firmware-upgrade-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.firmware-upgrade-head {
+  align-items: start;
+  display: grid;
+  gap: 14px;
+  grid-template-columns: minmax(0, 1fr) minmax(340px, 0.8fr);
+}
+
+.firmware-upgrade-head h2 {
+  font-size: 22px;
+  letter-spacing: 0;
+  margin: 3px 0 6px;
+}
+
+.firmware-upgrade-head p {
+  color: #475569;
+  margin: 0;
+}
+
+.firmware-upgrade-counts {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.firmware-upgrade-counts > div {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 9px;
+}
+
+.firmware-upgrade-counts span {
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.firmware-upgrade-counts strong {
+  color: #0f172a;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.firmware-run-note {
+  align-items: center;
+  background: #f0faf8;
+  border: 1px solid #b8e5da;
+  border-radius: 6px;
+  color: #0f5f56;
+  display: flex;
+  font-weight: 800;
+  gap: 8px;
+  padding: 10px 12px;
+}
+
+.firmware-upgrade-table-wrap {
+  overflow-x: auto;
+}
+
+.firmware-upgrade-table {
+  min-width: 860px;
+  table-layout: fixed;
+}
+
+.firmware-upgrade-table th:nth-child(1),
+.firmware-upgrade-table td:nth-child(1) {
+  width: 14%;
+}
+
+.firmware-upgrade-table th:nth-child(2),
+.firmware-upgrade-table td:nth-child(2),
+.firmware-upgrade-table th:nth-child(3),
+.firmware-upgrade-table td:nth-child(3) {
+  width: 18%;
+}
+
+.firmware-upgrade-table th:nth-child(4),
+.firmware-upgrade-table td:nth-child(4) {
+  width: 16%;
+}
+
+.firmware-upgrade-table th:nth-child(5),
+.firmware-upgrade-table td:nth-child(5) {
+  width: 14%;
+}
+
+.firmware-upgrade-table th:nth-child(6),
+.firmware-upgrade-table td:nth-child(6) {
+  width: 20%;
+}
+
+.firmware-upgrade-row td {
+  vertical-align: top;
+}
+
+.firmware-upgrade-row td:first-child strong,
+.firmware-package-cell strong {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.firmware-upgrade-row td:first-child span,
+.firmware-package-cell span,
+.firmware-action-reason,
+.firmware-upgrade-footer {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.firmware-upgrade-row td:nth-child(2),
+.firmware-upgrade-row td:nth-child(3) {
+  overflow-wrap: anywhere;
+}
+
+.firmware-upgrade-row.ready {
+  border-left: 3px solid #0f766e;
+}
+
+.firmware-upgrade-row.warning {
+  border-left: 3px solid #d97706;
+}
+
+.firmware-upgrade-row.blocked {
+  border-left: 3px solid #b42318;
+}
+
+.firmware-upgrade-row.neutral {
+  border-left: 3px solid #94a3b8;
+}
+
+.firmware-upgrade-row td:nth-child(5) p,
+.firmware-action-reason {
+  margin: 8px 0 0;
+}
+
+.firmware-upgrade-actions {
+  display: grid;
+  gap: 8px;
+}
+
+.firmware-upgrade-actions .small-button {
+  justify-content: center;
+  width: 100%;
+}
+
+.firmware-upgrade-apply-button {
+  font-weight: 900;
+}
+
+.firmware-upgrade-footer {
+  border-top: 1px solid #e2e8f0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  padding-top: 12px;
+}
+
+.firmware-evidence-panel {
+  display: grid;
+  gap: 14px;
+}
+
 .inline-firmware-head {
   align-items: flex-start;
   display: flex;
@@ -2316,9 +2616,179 @@ textarea {
   overflow-wrap: anywhere;
 }
 
+.current-access-inline {
+  align-items: end;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(180px, 1fr) minmax(160px, 0.8fr) auto;
+  padding: 10px;
+}
+
+.current-access-inline .field {
+  margin: 0;
+}
+
+.current-access-inline input {
+  min-height: 36px;
+}
+
+.current-access-final {
+  border-top: 1px solid #e5e9ef;
+  min-width: 0;
+  padding-top: 8px;
+}
+
+.current-access-final span,
+.current-access-final small {
+  color: #64748b;
+  display: block;
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.current-access-final strong {
+  display: block;
+  margin: 3px 0;
+  overflow-wrap: anywhere;
+}
+
+.current-access-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.current-access-inline > p {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
+.setup-run-options-block .standard-block-head p {
+  color: #64748b;
+  margin: 4px 0 0;
+}
+
+.setup-run-option-list {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  display: grid;
+  overflow: hidden;
+}
+
+.setup-run-option-row {
+  align-items: center;
+  background: #ffffff;
+  border-bottom: 1px solid #e2e8f0;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(220px, 1.5fr) minmax(180px, 1fr) auto minmax(120px, 0.7fr);
+  min-width: 0;
+  padding: 10px;
+}
+
+.setup-run-option-row:last-child {
+  border-bottom: 0;
+}
+
+.setup-run-option-main,
+.setup-run-option-meta,
+.setup-run-option-last {
+  min-width: 0;
+}
+
+.setup-run-option-main strong {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.setup-run-option-main span,
+.setup-run-option-main p,
+.setup-run-option-last span {
+  color: #64748b;
+  display: block;
+  font-size: 12px;
+  margin: 3px 0 0;
+  overflow-wrap: anywhere;
+}
+
+.setup-run-option-main p {
+  color: #9a3412;
+  font-weight: 800;
+}
+
+.setup-run-option-meta {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.setup-run-option-action {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.setup-run-option-last strong {
+  display: block;
+  font-size: 12px;
+  margin-top: 3px;
+}
+
+.setup-run-option-summary {
+  color: #64748b;
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 12px;
+  font-weight: 900;
+  gap: 8px;
+  text-transform: uppercase;
+}
+
+.setup-run-option-summary span {
+  background: #edf2f7;
+  border-radius: 999px;
+  padding: 4px 8px;
+}
+
 .global-config-editor {
   display: grid;
   gap: 10px;
+}
+
+.control-profile-editor-block .standard-block-head p {
+  color: #64748b;
+  margin: 4px 0 0;
+}
+
+.control-profile-editor {
+  display: grid;
+  gap: 10px;
+}
+
+.control-profile-editor-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.control-profile-editor-grid .field {
+  margin: 0;
+}
+
+.control-profile-editor input,
+.control-profile-editor select {
+  min-height: 36px;
+}
+
+.control-profile-checkbox {
+  align-items: center;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  min-height: 36px;
+  padding: 8px 10px;
 }
 
 .global-config-editor-grid {
@@ -3310,6 +3780,7 @@ textarea {
   color: #166534;
   display: block;
   font-size: 13px;
+  overflow-wrap: anywhere;
 }
 
 .guarded-workflow-label {
@@ -3324,6 +3795,162 @@ textarea {
   gap: 6px;
   min-height: 30px;
   padding: 5px 8px;
+}
+
+.guarded-action-control {
+  display: inline-flex;
+  min-width: 0;
+  position: relative;
+  width: 100%;
+}
+
+.guarded-action-button {
+  justify-content: center;
+  line-height: 1.25;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  text-align: center;
+  width: 100%;
+}
+
+.guarded-action-button.destructive {
+  background: #b42318;
+  border-color: #991b1b;
+  color: #fff;
+}
+
+.guarded-action-dialog-layer {
+  align-items: center;
+  background: rgba(15, 23, 42, 0.42);
+  display: grid;
+  inset: 0;
+  justify-items: center;
+  padding: 24px;
+  position: fixed;
+  z-index: 1000;
+}
+
+.guarded-action-dialog {
+  background: #fff;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  box-shadow: 0 18px 45px rgba(15, 23, 42, 0.18);
+  color: #0f172a;
+  display: grid;
+  gap: 12px;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  max-height: min(720px, calc(100vh - 48px));
+  min-height: 0;
+  min-width: 0;
+  padding: 12px;
+  width: min(540px, calc(100vw - 32px));
+}
+
+.guarded-action-dialog-head,
+.guarded-action-dialog-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: space-between;
+}
+
+.guarded-action-dialog-head {
+  min-width: 0;
+}
+
+.guarded-action-dialog-head strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.guarded-action-dialog-body {
+  display: grid;
+  gap: 12px;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.guarded-action-warning {
+  align-items: flex-start;
+  background: #fff7ed;
+  border: 1px solid #fed7aa;
+  border-radius: 6px;
+  color: #9a3412;
+  display: flex;
+  gap: 8px;
+  padding: 8px;
+}
+
+.guarded-action-warning span,
+.guarded-gate-list span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.guarded-gate-list {
+  display: grid;
+  gap: 8px;
+}
+
+.guarded-gate-list label {
+  align-items: start;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: 18px minmax(0, 1fr);
+  padding: 8px;
+}
+
+.guarded-gate-list input {
+  height: 16px;
+  margin: 2px 0 0;
+  min-height: 16px;
+  padding: 0;
+  width: 16px;
+}
+
+.firmware-guarded-controls {
+  display: grid;
+  gap: 12px;
+}
+
+.firmware-guarded-control-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.firmware-guarded-control {
+  align-items: center;
+  background: #ffffff;
+  border: 1px solid #dfe4ea;
+  border-radius: 6px;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(0, 1fr) minmax(130px, auto);
+  padding: 10px;
+}
+
+.firmware-guarded-control strong,
+.firmware-guarded-control span {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.firmware-guarded-control span {
+  color: #64748b;
+  font-size: 12px;
+  margin-top: 3px;
+}
+
+@media (max-width: 1180px) {
+  .firmware-guarded-control-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 .spin-icon {
@@ -5550,7 +6177,14 @@ pre {
   .control-catalog-filters,
   .config-drawer-grid,
   .config-toggle-grid,
+  .firmware-focus-strip,
+  .firmware-upgrade-head,
+  .firmware-upgrade-counts,
+  .firmware-summary-grid,
   .global-config-editor-grid,
+  .control-profile-editor-grid,
+  .current-access-inline,
+  .setup-run-option-row,
   .global-policy-grid,
   .option-meta-grid,
   .provider-mode-option-grid,
@@ -5607,6 +6241,7 @@ pre {
   .artifact-grid,
   .provider-fact-grid,
   .firmware-inline-grid,
+  .firmware-summary-grid,
   .provider-action-layout {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -5689,8 +6324,15 @@ pre {
     .control-state-grid,
     .config-compact-table,
     .config-fact-grid,
+    .firmware-focus-strip,
+    .firmware-upgrade-head,
+    .firmware-upgrade-counts,
     .firmware-inline-grid,
+    .firmware-summary-grid,
     .global-config-editor-grid,
+    .control-profile-editor-grid,
+    .current-access-inline,
+    .setup-run-option-row,
     .global-policy-grid,
     .control-action-list,
     .control-profile-grid,
@@ -5735,9 +6377,93 @@ pre {
       border-bottom: 0;
     }
 
+    .firmware-summary-head,
+    .firmware-upgrade-head,
     .inline-firmware-head {
       display: grid;
       grid-template-columns: 1fr;
+    }
+
+    .firmware-upgrade-table-wrap {
+      overflow-x: visible;
+    }
+
+    .firmware-upgrade-table {
+      min-width: 0;
+    }
+
+    .firmware-upgrade-table thead {
+      display: none;
+    }
+
+    .firmware-upgrade-table,
+    .firmware-upgrade-table tbody,
+    .firmware-upgrade-table tr,
+    .firmware-upgrade-table td {
+      display: block;
+      width: 100%;
+    }
+
+    .firmware-upgrade-table th:nth-child(1),
+    .firmware-upgrade-table td:nth-child(1),
+    .firmware-upgrade-table th:nth-child(2),
+    .firmware-upgrade-table td:nth-child(2),
+    .firmware-upgrade-table th:nth-child(3),
+    .firmware-upgrade-table td:nth-child(3),
+    .firmware-upgrade-table th:nth-child(4),
+    .firmware-upgrade-table td:nth-child(4),
+    .firmware-upgrade-table th:nth-child(5),
+    .firmware-upgrade-table td:nth-child(5),
+    .firmware-upgrade-table th:nth-child(6),
+    .firmware-upgrade-table td:nth-child(6) {
+      width: 100%;
+    }
+
+    .firmware-upgrade-table tr {
+      background: #ffffff;
+      border: 1px solid #dfe4ea;
+      border-radius: 6px;
+      margin-bottom: 12px;
+      padding: 10px;
+    }
+
+    .firmware-upgrade-table td {
+      border-bottom: 0;
+      padding: 8px 0;
+    }
+
+    .firmware-upgrade-table td::before {
+      color: #64748b;
+      content: "";
+      display: block;
+      font-size: 11px;
+      font-weight: 900;
+      margin-bottom: 4px;
+      text-transform: uppercase;
+    }
+
+    .firmware-upgrade-table td:nth-child(1)::before {
+      content: "Device";
+    }
+
+    .firmware-upgrade-table td:nth-child(2)::before {
+      content: "Version you have";
+    }
+
+    .firmware-upgrade-table td:nth-child(3)::before {
+      content: "Version you need";
+    }
+
+    .firmware-upgrade-table td:nth-child(4)::before {
+      content: "Available firmware";
+    }
+
+    .firmware-upgrade-table td:nth-child(5)::before {
+      content: "Status";
+    }
+
+    .firmware-upgrade-table td:nth-child(6)::before {
+      content: "Action";
     }
 
     .section-switch {
@@ -5803,9 +6529,24 @@ pre {
     .control-command-strip,
     .control-section-head,
     .control-report-list > div,
+    .firmware-guarded-control-grid,
     .report-link-list > div {
       grid-template-columns: 1fr;
     }
+
+  .firmware-guarded-control {
+    grid-template-columns: 1fr;
+  }
+
+  .guarded-action-dialog-layer {
+    align-items: stretch;
+    padding: 12px;
+  }
+
+  .guarded-action-dialog {
+    max-height: calc(100vh - 24px);
+    width: 100%;
+  }
 
   .status-summary-head,
   .status-summary-facts {

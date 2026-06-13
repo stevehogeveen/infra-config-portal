@@ -7,7 +7,10 @@ from typing import Any, Literal
 from app.providers.action_policy import ActionCategory, current_lab_action_policy
 from app.services.control_actions import ACTIONS, ActionDefinition, REPO_ROOT
 from app.services.lab_profiles import active_lab_profile_context
-from app.services.workflow_action_allowlist import workflow_action_run_blockers
+from app.services.workflow_action_allowlist import (
+    workflow_action_guarded_run_support_blockers,
+    workflow_action_run_blockers,
+)
 from app.services.workflow_action_run_store import (
     latest_workflow_action_run_trace,
     run_trace_to_registry_trace,
@@ -131,17 +134,25 @@ STAGE_SEEDS: tuple[WorkflowStageSeed, ...] = (
         dependencies=("lab-profile", "cisco", "esxi"),
     ),
     WorkflowStageSeed(
+        "vcenter",
+        "vCenter",
+        80,
+        "VCSA media, ESXi target, NetApp datastore handoff, and install planning evidence.",
+        "vCenter install planning starts only after ESXi management and NetApp NFS datastore readiness.",
+        dependencies=("esxi", "netapp"),
+    ),
+    WorkflowStageSeed(
         "build-verification",
         "Build Verification",
-        80,
+        90,
         "Product certification, live-status summaries, and toolchain checks.",
         "All required stages are verified before the run is called complete.",
-        dependencies=("cisco", "ilo", "raid", "esxi", "netapp", "firmware"),
+        dependencies=("cisco", "ilo", "raid", "esxi", "netapp", "vcenter", "firmware"),
     ),
     WorkflowStageSeed(
         "reports",
         "Reports",
-        90,
+        100,
         "Issue, evidence, and action-history report surfaces.",
         "Reports link back to source actions and stay evidence, not primary blockers.",
         dependencies=("build-verification",),
@@ -162,6 +173,7 @@ CONTROL_PROVIDER_MAP = {
     "raid": "raid",
     "esxi": "esxi",
     "netapp": "netapp",
+    "vcenter": "vcenter",
     "firmware-upgrade": "firmware",
     "verification": "build-verification",
     "reports": "reports",
@@ -173,6 +185,7 @@ CREDENTIALS_BY_PROVIDER = {
     "ilo-redfish": "iLO credential reference with values redacted.",
     "esxi-readonly": "ESXi management credential reference when ESXI_CONFIGURED=true.",
     "netapp-ontap": "NetApp console or ONTAP credential reference when configured.",
+    "vcenter": "vCenter deployment and SSO credential references when configured.",
 }
 
 CATEGORY_BY_CONTROL_ACTION = {
@@ -213,6 +226,14 @@ CATEGORY_BY_CONTROL_ACTION = {
     "netapp.console-login-state": "verify",
     "netapp.live-state": "verify",
     "netapp.validate-setup": "verify",
+    "netapp.address-plan": "plan",
+    "netapp.address-preview": "plan",
+    "netapp.address-apply": "apply",
+    "netapp.address-validate": "verify",
+    "netapp.ha-node-diagnose": "verify",
+    "netapp.factory-reset-preview": "plan",
+    "netapp.factory-reset-apply": "reset",
+    "netapp.factory-reset-validate": "verify",
     "netapp.setup-preview": "plan",
     "netapp.setup-apply": "apply",
     "netapp.post-setup-validation": "verify",
@@ -270,6 +291,34 @@ EXTRA_ACTIONS: tuple[WorkflowActionSeed, ...] = (
             "artifacts/codex-runs/lab-ip-profile-update-report.md",
             "artifacts/codex-runs/lab-ip-profile-hardening-report.md",
         ),
+    ),
+    WorkflowActionSeed(
+        "cisco.setup-readiness",
+        "Cisco Setup Readiness",
+        "cisco",
+        "cisco",
+        "verify",
+        "read_only",
+        "Read Cisco setup wizard, console, management, and next safe action readiness.",
+        "api_endpoint",
+        api_endpoint="/api/v1/providers/cisco/setup-readiness",
+        api_method="GET",
+        outputs=("setup phase", "console readiness", "management readiness", "next safe action"),
+        reports=("artifacts/codex-runs/cisco-real-lab-readiness-report.md",),
+    ),
+    WorkflowActionSeed(
+        "ilo.setup-plan-preview",
+        "iLO Setup Plan Preview",
+        "ilo",
+        "ilo",
+        "plan",
+        "read_only",
+        "Preview desired iLO setup intent and blocked apply gates without applying settings.",
+        "api_endpoint",
+        api_endpoint="/api/v1/providers/ilo-redfish/setup-plan-preview",
+        api_method="GET",
+        outputs=("desired setup intent", "plan preview", "blocked apply gates"),
+        reports=("artifacts/codex-runs/hpe-full-rebuild-ilo-report.md",),
     ),
     WorkflowActionSeed(
         "raid.debug",
@@ -344,6 +393,84 @@ EXTRA_ACTIONS: tuple[WorkflowActionSeed, ...] = (
         reports=("artifacts/codex-runs/esxi-management-readiness-report.md",),
         required_gates=("ESXI_CONFIGURED=true",),
         required_credentials=("ESXi management credential reference when ESXI_CONFIGURED=true.",),
+    ),
+    WorkflowActionSeed(
+        "esxi.recover-management",
+        "ESXi Recover Management",
+        "esxi",
+        "esxi",
+        "apply",
+        "destructive",
+        "Diagnose ESXi reachability and run guarded iLO power-on recovery only after explicit gates pass.",
+        "make_target",
+        command="make provider-lab-esxi-recover-management",
+        reports=("artifacts/codex-runs/esxi-reachability-remediation-report.md",),
+        required_mode="local-lab-readwrite",
+        required_gates=("iLO Redfish auth ready", "ESXi HTTPS unreachable", "host power state verified Off", "ESXI_RECOVERY_APPLY=true"),
+        required_confirmations=("RECOVER ESXI MANAGEMENT",),
+        required_credentials=("iLO credential reference with values redacted.",),
+        policy_action_id="ilo.power-action",
+        policy_category=ActionCategory.POWER_ACTION,
+    ),
+    WorkflowActionSeed(
+        "esxi.post-recovery-validation",
+        "ESXi Post-Recovery Validation",
+        "esxi",
+        "esxi",
+        "verify",
+        "read_only",
+        "Validate ESXi management HTTPS and SSH reachability after recovery.",
+        "make_target",
+        command="make provider-lab-esxi-post-recovery-validation",
+        reports=("artifacts/codex-runs/esxi-post-recovery-validation-report.md",),
+        required_gates=("ESXI_CONFIGURED=true",),
+        required_credentials=("ESXi management credential reference with values redacted.",),
+    ),
+    WorkflowActionSeed(
+        "esxi.netapp-datastore-preview",
+        "ESXi Mount NetApp Datastore Preview",
+        "esxi",
+        "esxi",
+        "plan",
+        "read_only",
+        "Preview the NetApp NFS datastore mount target and govc command.",
+        "make_target",
+        command="make provider-lab-esxi-netapp-datastore-preview",
+        reports=("artifacts/codex-runs/esxi-netapp-nfs-datastore-preview-report.md",),
+        required_gates=("ESXI_CONFIGURED=true", "NetApp NFS ready"),
+        required_credentials=("ESXi management credential reference with values redacted.",),
+    ),
+    WorkflowActionSeed(
+        "esxi.netapp-datastore-apply",
+        "ESXi Mount NetApp Datastore",
+        "esxi",
+        "esxi",
+        "apply",
+        "write",
+        "Mount the NetApp NFS datastore on direct ESXi through guarded govc datastore.create.",
+        "make_target",
+        command="make provider-lab-esxi-netapp-datastore-apply",
+        reports=("artifacts/codex-runs/esxi-netapp-nfs-datastore-apply-report.md",),
+        required_mode="local-lab-readwrite",
+        required_gates=("fresh datastore preview", "ESXi management reachable", "ESXI_NETAPP_DATASTORE_APPLY=true"),
+        required_confirmations=("MOUNT NETAPP NFS DATASTORE",),
+        required_credentials=("ESXi management credential reference with values redacted.",),
+        policy_action_id="esxi.datastore-vswitch-vmkernel",
+        policy_category=ActionCategory.STORAGE_CONFIG,
+    ),
+    WorkflowActionSeed(
+        "esxi.netapp-datastore-validate",
+        "ESXi Validate NetApp Datastore",
+        "esxi",
+        "esxi",
+        "verify",
+        "read_only",
+        "Validate the NetApp NFS datastore is visible and accessible on ESXi.",
+        "make_target",
+        command="make provider-lab-esxi-netapp-datastore-validate",
+        reports=("artifacts/codex-runs/esxi-netapp-nfs-datastore-validation-report.md",),
+        required_gates=("ESXI_CONFIGURED=true",),
+        required_credentials=("ESXi management credential reference with values redacted.",),
     ),
     WorkflowActionSeed(
         "esxi.vm-deploy-preview",
@@ -436,6 +563,39 @@ EXTRA_ACTIONS: tuple[WorkflowActionSeed, ...] = (
         required_credentials=(
             "vCenter credential reference with values redacted when configured.",
             "NetApp API credential reference with values redacted when configured.",
+        ),
+    ),
+    WorkflowActionSeed(
+        "vcenter.install-readiness",
+        "vCenter Install Readiness",
+        "vcenter",
+        "vcenter",
+        "verify",
+        "read_only",
+        "Evaluate VCSA media, ESXi reachability, NetApp datastore prerequisites, and missing vCenter values.",
+        "make_target",
+        command="make provider-lab-vcenter-install-readiness",
+        reports=("artifacts/codex-runs/vcenter-install-readiness-report.md",),
+        required_credentials=(
+            "vCenter deployment credential reference with values redacted when configured.",
+            "ESXi management credential reference with values redacted.",
+        ),
+    ),
+    WorkflowActionSeed(
+        "vcenter.install-plan",
+        "vCenter Install Plan",
+        "vcenter",
+        "vcenter",
+        "plan",
+        "read_only",
+        "Generate the preview-only VCSA deployment plan after prerequisites are ready.",
+        "make_target",
+        command="make provider-lab-vcenter-install-plan",
+        reports=("artifacts/codex-runs/vcenter-install-plan-report.md",),
+        required_gates=("ESXi management reachable", "NetApp datastore ready", "VCSA ISO available"),
+        required_credentials=(
+            "vCenter deployment credential reference with values redacted when configured.",
+            "ESXi management credential reference with values redacted.",
         ),
     ),
     WorkflowActionSeed(
@@ -602,6 +762,7 @@ def find_workflow_action_for_issue(issue: dict[str, Any]) -> dict[str, str | Non
 def _build_registry() -> dict[str, list[dict[str, Any]]]:
     seeds = [_seed_from_control_action(action) for action in ACTIONS]
     seeds.extend(EXTRA_ACTIONS)
+    seeds = _dedupe_seeds(seeds)
     actions = [_action_read(seed) for seed in seeds]
     actions.sort(key=lambda action: (STAGE_BY_ID[action["stage"]].order, action["action_id"]))
     stages = [_stage_read(stage_seed, actions) for stage_seed in STAGE_SEEDS]
@@ -649,9 +810,15 @@ def _seed_from_control_action(action: ActionDefinition) -> WorkflowActionSeed:
 def _action_read(seed: WorkflowActionSeed) -> dict[str, Any]:
     blockers = _blockers_for_seed(seed)
     not_in_scope_reason = _not_in_scope_reason_for_seed(seed)
-    reports = list(seed.reports)
-    existing_reports = [report for report in reports if (REPO_ROOT / report).exists()]
     latest_run = latest_workflow_action_run_trace(seed.action_id)
+    reports = _unique(
+        [
+            *list(seed.reports),
+            *(list(latest_run.get("report_artifacts") or []) if latest_run else []),
+            *([str(latest_run.get("trace_artifact"))] if latest_run and latest_run.get("trace_artifact") else []),
+        ]
+    )
+    existing_reports = [report for report in reports if (REPO_ROOT / report).exists()]
     last_report = (
         str(latest_run.get("trace_artifact"))
         if latest_run and latest_run.get("trace_artifact")
@@ -667,6 +834,8 @@ def _action_read(seed: WorkflowActionSeed) -> dict[str, Any]:
     runner_action = _runner_action_probe(seed)
     ui_run_blockers = workflow_action_run_blockers(runner_action)
     ui_run_supported = not ui_run_blockers
+    guarded_run_blockers = workflow_action_guarded_run_support_blockers(runner_action)
+    guarded_run_supported = not guarded_run_blockers
     availability = (
         "not_in_scope"
         if not_in_scope_reason
@@ -716,6 +885,8 @@ def _action_read(seed: WorkflowActionSeed) -> dict[str, Any]:
         "last_run_trace": trace,
         "ui_run_supported": ui_run_supported,
         "ui_run_blockers": ui_run_blockers,
+        "guarded_run_supported": guarded_run_supported,
+        "guarded_run_blockers": guarded_run_blockers,
         "run_endpoint": f"/api/v1/workflows/actions/{seed.action_id}/run",
         "runs_endpoint": f"/api/v1/workflows/actions/{seed.action_id}/runs",
     }
@@ -838,6 +1009,17 @@ def _runner_action_probe(seed: WorkflowActionSeed) -> dict[str, Any]:
         "api_endpoint": seed.api_endpoint,
         "api_method": seed.api_method,
     }
+
+
+def _dedupe_seeds(seeds: list[WorkflowActionSeed]) -> list[WorkflowActionSeed]:
+    seen: set[str] = set()
+    result: list[WorkflowActionSeed] = []
+    for seed in seeds:
+        if seed.action_id in seen:
+            continue
+        seen.add(seed.action_id)
+        result.append(seed)
+    return result
 
 
 def _next_action(seed: WorkflowActionSeed, blockers: list[str], availability: str) -> str:

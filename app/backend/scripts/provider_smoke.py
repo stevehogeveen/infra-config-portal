@@ -653,6 +653,8 @@ def _probe_summary(result: dict[str, Any]) -> dict[str, Any]:
         "firmware",
         "network_adapters",
         "storage",
+        "authentication_method",
+        "redfish_auth",
         "endpoint_detection",
         "legacy_identity",
         "discovery",
@@ -893,7 +895,13 @@ def _probe_detail_lines(probe: dict[str, Any]) -> list[str]:
         return lines
 
     if provider_id == "ilo-redfish":
+        redfish_auth = probe.get("redfish_auth") if isinstance(probe.get("redfish_auth"), dict) else {}
         return [
+            f"  - authentication_method: {probe.get('authentication_method', 'unknown')}",
+            f"  - redfish_auth_status: {redfish_auth.get('status', 'not-recorded')}",
+            f"  - auth_header_received: {redfish_auth.get('auth_header_received', 'not-recorded')}",
+            f"  - session_location_present: {redfish_auth.get('location_present', 'not-recorded')}",
+            f"  - auth_cleanup_status: {redfish_auth.get('cleanup_status', 'not-recorded')}",
             f"  - redfish_requests: {len(probe.get('requests', []))}",
             (
                 "  - inventory_counts: "

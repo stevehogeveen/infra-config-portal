@@ -1,10 +1,13 @@
 artifacts/real-lab/
 artifacts/screenshots/
+app/frontend/artifacts/screenshots/
 app/frontend/test-results/
-artifacts/codex-runs/provider-probe-cache/
-artifacts/codex-runs/*-terminal.log
+artifacts/codex-runs/
+artifacts/ui-audit/
 .env.local.providers
 .env.local.real-lab
 .env.local.real-lab.*
 .local/
 artifacts/Media/
+ilorest_logs/
+app/backend/ilorest_logs/

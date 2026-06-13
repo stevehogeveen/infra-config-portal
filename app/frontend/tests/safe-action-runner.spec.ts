@@ -18,13 +18,16 @@ const destructiveAction = workflowAction({
   action_id: "raid.apply",
   category: "apply",
   current_availability: "manual_command_required",
+  guarded_run_supported: true,
   label: "Apply",
   mode: "destructive",
   provider: "raid",
+  required_confirmations: ["APPLY HPE RAID PLAN"],
+  required_gates: ["HPE_RAID_ALLOW_DESTRUCTIVE=true"],
   stage: "raid",
   stage_label: "RAID",
   ui_run_supported: false,
-  ui_run_blockers: ["destructive actions require a guarded workflow and cannot be run from this UI pass."]
+  ui_run_blockers: ["guarded workflow requires exact confirmation phrase: APPLY HPE RAID PLAN"]
 });
 
 const netappSetupPreviewAction = workflowAction({
@@ -63,6 +66,141 @@ const ciscoValidationAction = workflowAction({
   ui_run_supported: false
 });
 
+const ciscoFirmwareAction = workflowAction({
+  action_id: "cisco.firmware-inventory",
+  category: "inventory",
+  current_availability: "available",
+  label: "Cisco Firmware Inventory",
+  mode: "read_only",
+  provider: "cisco",
+  stage: "cisco",
+  stage_label: "Cisco",
+  ui_run_supported: true
+});
+
+const ciscoBootstrapAction = workflowAction({
+  action_id: "cisco.apply-bootstrap",
+  category: "apply",
+  current_availability: "manual_command_required",
+  guarded_run_supported: true,
+  label: "Apply Bootstrap",
+  mode: "write",
+  provider: "cisco",
+  required_confirmations: ["APPLY CISCO CONSOLE BOOTSTRAP 192.168.1.204"],
+  required_gates: ["CISCO_CONSOLE_APPLY_ENABLED=true", "LAB_APPLY_ACK=YES", "LAB_TARGET_ACK=192.168.1.204"],
+  stage: "cisco",
+  stage_label: "Cisco Control",
+  ui_run_supported: false,
+  ui_run_blockers: ["guarded workflow requires exact confirmation phrase: APPLY CISCO CONSOLE BOOTSTRAP 192.168.1.204"]
+});
+
+const iloVirtualMediaAction = workflowAction({
+  action_id: "ilo.virtual-media-insert",
+  category: "install",
+  current_availability: "manual_command_required",
+  guarded_run_supported: true,
+  label: "Virtual Media Insert",
+  mode: "write",
+  provider: "ilo-redfish",
+  required_confirmations: ["INSERT ESXI VIRTUAL MEDIA"],
+  stage: "ilo",
+  stage_label: "HPE / iLO Control",
+  ui_run_supported: false,
+  ui_run_blockers: ["guarded workflow requires exact confirmation phrase: INSERT ESXI VIRTUAL MEDIA"]
+});
+
+const esxiRebuildAction = workflowAction({
+  action_id: "esxi.rebuild-install",
+  category: "install",
+  current_availability: "manual_command_required",
+  guarded_run_supported: true,
+  label: "Rebuild / Install",
+  mode: "destructive",
+  provider: "esxi",
+  required_confirmations: ["REBUILD ESXI HOST"],
+  required_gates: ["LAB_ALLOW_POWER_ACTIONS=true"],
+  stage: "esxi",
+  stage_label: "ESXi Control",
+  ui_run_supported: false,
+  ui_run_blockers: ["guarded workflow requires exact confirmation phrase: REBUILD ESXI HOST"]
+});
+
+const netappFirmwareAction = workflowAction({
+  action_id: "netapp.ontap-upgrade-inventory",
+  blockers: ["not configured yet"],
+  category: "inventory",
+  current_availability: "blocked",
+  label: "ONTAP Upgrade Inventory",
+  mode: "read_only",
+  provider: "netapp-ontap",
+  stage: "netapp",
+  stage_label: "NetApp",
+  ui_run_supported: false,
+  ui_run_blockers: ["not configured yet"]
+});
+
+const netappSetupApplyAction = workflowAction({
+  action_id: "netapp.setup-apply",
+  category: "apply",
+  current_availability: "manual_command_required",
+  guarded_run_supported: true,
+  label: "Apply Setup",
+  mode: "write",
+  provider: "netapp-ontap",
+  required_confirmations: ["APPLY NETAPP CLUSTER SETUP"],
+  required_gates: ["NETAPP_SETUP_APPLY=true"],
+  stage: "netapp",
+  stage_label: "NetApp",
+  ui_run_supported: false,
+  ui_run_blockers: ["guarded workflow requires exact confirmation phrase: APPLY NETAPP CLUSTER SETUP"]
+});
+
+const firmwareUpgradePlanAction = workflowAction({
+  action_id: "firmware.upgrade-plan",
+  category: "plan",
+  current_availability: "available",
+  label: "Plan Upgrade",
+  mode: "read_only",
+  provider: "firmware",
+  stage: "firmware-upgrade",
+  stage_label: "Firmware / Upgrade Center",
+  ui_run_supported: true
+});
+
+const firmwareUpgradeApplyPlaceholderAction = workflowAction({
+  action_id: "firmware.upgrade-apply-placeholder",
+  blockers: ["requires guarded firmware update workflow"],
+  category: "upgrade",
+  current_availability: "manual_command_required",
+  label: "Run Upgrade Placeholder",
+  mode: "upgrade",
+  provider: "firmware",
+  guarded_run_blockers: ["No guarded UI runner allowlist entry exists for this action yet."],
+  guarded_run_supported: false,
+  required_confirmations: ["RUN FIRMWARE UPGRADE"],
+  required_gates: ["LAB_ALLOW_FIRMWARE_UPDATES=true"],
+  stage: "firmware-upgrade",
+  stage_label: "Firmware / Upgrade Center",
+  ui_run_supported: false,
+  ui_run_blockers: ["requires guarded firmware update workflow"]
+});
+
+const netappOntapUpgradeApplyAction = workflowAction({
+  action_id: "netapp.ontap-upgrade-apply",
+  category: "upgrade",
+  current_availability: "manual_command_required",
+  guarded_run_supported: true,
+  label: "Upgrade ONTAP",
+  mode: "upgrade",
+  provider: "netapp-ontap",
+  required_confirmations: ["UPGRADE ONTAP"],
+  required_gates: ["NETAPP_ONTAP_UPGRADE_APPLY=true"],
+  stage: "netapp",
+  stage_label: "NetApp",
+  ui_run_supported: false,
+  ui_run_blockers: ["guarded workflow requires exact confirmation phrase: UPGRADE ONTAP"]
+});
+
 test.beforeEach(async ({ page }) => {
   await installApiMocks(page);
 });
@@ -83,12 +221,42 @@ test("renders Run Check control for a safe read-only action and invokes the safe
   await expect(page.getByRole("button", { name: "Run Verification" }).first()).toBeVisible();
 });
 
-test("does not render a run button for a destructive action", async ({ page }) => {
+test("renders guarded confirmation controls for a destructive action", async ({ page }) => {
   await page.goto("/control-center?section=action-catalog&action=raid.apply");
 
-  const destructiveRow = page.getByRole("row", { name: /Apply Requires guarded workflow/ });
-  await expect(destructiveRow.getByText("Requires guarded workflow").first()).toBeVisible();
-  await expect(destructiveRow.getByRole("button", { name: /Run Check|Run Verification|Refresh Status/ })).toHaveCount(0);
+  const destructiveDetail = page.locator(".compact-action-detail");
+  await expect(destructiveDetail).toContainText("Apply");
+  const applyButton = destructiveDetail.getByRole("button", { name: "Apply", exact: true });
+  await expect(applyButton).toBeVisible();
+  await applyButton.click();
+  const dialog = page.getByRole("dialog", { name: /Apply confirmation/ });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Apply" })).toBeDisabled();
+  await dialog.getByRole("textbox", { name: "Confirmation" }).fill("APPLY HPE RAID PLAN");
+  await dialog.getByLabel("HPE_RAID_ALLOW_DESTRUCTIVE=true").check();
+  await expect(dialog.getByRole("button", { name: "Apply" })).toBeEnabled();
+});
+
+test("keeps Control Center tabs reachable in normal mode", async ({ page }) => {
+  await page.goto("/control-center?section=cisco");
+
+  await expect(page.getByRole("heading", { name: "Control Center" })).toBeVisible();
+  await expect(page.getByRole("tab", { name: /Lab Setup/ })).toBeVisible();
+  await expect(page.getByRole("tab", { name: /Cisco Control/ })).toBeVisible();
+  await expect(page.getByRole("tab", { name: /HPE \/ iLO Control/ })).toBeVisible();
+  await expect(page.getByRole("tab", { name: /RAID Control/ })).toBeVisible();
+  await expect(page.getByRole("tab", { name: /Firmware \/ Upgrade/ })).toBeVisible();
+  await expect(page.getByRole("tab", { name: /Verification/ })).toBeVisible();
+  await expect(page.getByRole("tab", { name: /Reports/ })).toBeVisible();
+  await expect(page.getByRole("tab", { name: /Action Catalog/ })).toBeVisible();
+  await expect(page.getByText("Setup and upgrade workbench")).toHaveCount(0);
+
+  await page.getByRole("tab", { name: /Action Catalog/ }).click();
+  await expect(page.getByRole("tab", { name: /Action Catalog/ })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByText("Run Full Verification").first()).toBeVisible();
+
+  await page.getByRole("tab", { name: /Reports/ }).click();
+  await expect(page.getByRole("tab", { name: /Reports/ })).toHaveAttribute("aria-selected", "true");
 });
 
 test("uses merged navigation and dashboard lab setup selector", async ({ page }) => {
@@ -118,12 +286,15 @@ test("renders standard control layout with collapsed evidence and seeded options
   await page.goto("/control-center?section=netapp");
 
   await expect(page.getByRole("heading", { name: "Control Center" })).toBeVisible();
-  await expect(page.getByText("ONTAP version is unknown.")).toBeVisible();
+  await expect(page.getByText("Firmware / Software")).toBeVisible();
+  await expect(page.getByText("Not configured: Not configured yet.")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Scan Firmware" })).toBeDisabled();
+  await expect(page.getByText("Scan disabled: Not configured yet")).toBeVisible();
   await expect(page.getByText("Access").first()).toBeVisible();
   await expect(page.getByText("Cluster management").first()).toBeVisible();
   await expect(page.getByText("192.168.1.220").first()).toBeVisible();
-  await expect(page.getByText("Access Username")).toBeVisible();
-  await expect(page.locator("input[value='operator-admin']")).toBeVisible();
+  await expect(page.getByText("UID / Username Field")).toBeVisible();
+  await expect(page.getByText("NETAPP_USERNAME")).toBeVisible();
   await expect(page.getByText("Actions / Configs")).toBeVisible();
   await expect(page.getByText("artifacts/codex-runs/netapp-live-state-report.md").first()).toBeHidden();
   await expect(page.locator("input[value='topsecret-password-ref']")).toBeHidden();
@@ -135,17 +306,60 @@ test("renders standard control layout with collapsed evidence and seeded options
 
   await page.locator("details.standard-evidence-details > summary").click();
   await expect(page.getByText("artifacts/codex-runs/netapp-live-state-report.md").first()).toBeVisible();
+
+  await page.getByRole("link", { name: "Open Firmware Upgrades" }).click();
+  await expect(page).toHaveURL(/\/firmware\?device=netapp/);
+  await expect(page.getByRole("heading", { name: "Firmware Upgrades" })).toBeVisible();
+  await expect(page.getByRole("combobox", { name: "Focused device" })).toHaveValue("netapp");
 });
 
 test("renders Firmware Upgrades as the global upgrade overview", async ({ page }) => {
-  await page.goto("/firmware");
+  await page.goto("/firmware?device=cisco");
 
   await expect(page.getByRole("heading", { name: "Firmware Upgrades" })).toBeVisible();
-  await expect(page.getByText("iLO").first()).toBeVisible();
-  await expect(page.getByText("Cisco").first()).toBeVisible();
-  await expect(page.getByText("ONTAP").first()).toBeVisible();
-  await expect(page.getByText("ESXi").first()).toBeVisible();
-  await expect(page.getByText("Smart Array").first()).toBeVisible();
+  await expect(page.getByRole("combobox", { name: "Focused device" })).toHaveValue("cisco");
+  await expect(page.locator(".section-switch button")).toHaveCount(2);
+  await expect(page.getByRole("tab", { name: /Evidence/ })).toBeVisible();
+  await expect(page.getByText("Version you have")).toBeVisible();
+  await expect(page.getByText("Version you need")).toBeVisible();
+  const ciscoRow = page.getByRole("row", { name: /Cisco IOS XE: 17\.15\.05/ });
+  await expect(ciscoRow).toBeVisible();
+  await expect(ciscoRow.getByText("Cisco").first()).toBeVisible();
+  await expect(ciscoRow.getByText("17.15.05").first()).toBeVisible();
+  await expect(ciscoRow.getByText("cisco-ios-xe-firmware.bin")).toBeVisible();
+  await expect(ciscoRow.getByText("ROMMON baseline missing/manual review", { exact: true })).toBeVisible();
+  await expect(ciscoRow.getByRole("button", { name: "Plan Upgrade" })).toBeEnabled();
+  await expect(ciscoRow.getByRole("button", { name: "Upgrade", exact: true })).toHaveCount(0);
+  const configureButton = ciscoRow.getByRole("button", { name: "Configure", exact: true });
+  await expect(configureButton).toBeEnabled();
+  await expect(ciscoRow.getByText("No guarded runner is implemented for this action yet.")).toHaveCount(0);
+  await configureButton.click();
+  const dialog = page.getByRole("dialog", { name: /Apply Bootstrap confirmation/ });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole("textbox", { name: "Confirmation" })).toHaveAttribute(
+    "placeholder",
+    "APPLY CISCO CONSOLE BOOTSTRAP 192.168.1.204"
+  );
+  await dialog.getByRole("button", { name: "Close guarded action" }).click();
+  await expect(page.getByText("iLO firmware needs a live inventory check.")).toHaveCount(0);
+});
+
+test("shows real guarded controls in the Control Center firmware tab", async ({ page }) => {
+  await page.goto("/control-center?section=firmware-upgrade");
+
+  const guardedPanel = page.locator(".firmware-guarded-controls");
+  await expect(guardedPanel).toBeVisible();
+  await expect(guardedPanel.getByText("Cisco Configure")).toBeVisible();
+  await expect(guardedPanel.getByText("iLO Virtual Media")).toBeVisible();
+  await expect(guardedPanel.getByText("RAID Apply")).toBeVisible();
+  await expect(guardedPanel.getByText("ESXi Rebuild")).toBeVisible();
+  await expect(guardedPanel.getByText("NetApp Setup")).toBeVisible();
+  await expect(guardedPanel.getByRole("button", { name: "Configure", exact: true })).toBeEnabled();
+  await expect(guardedPanel.getByRole("button", { name: "Apply RAID", exact: true })).toBeEnabled();
+  await expect(guardedPanel.getByRole("button", { name: "Rebuild", exact: true })).toBeEnabled();
+
+  await guardedPanel.getByRole("button", { name: "Configure", exact: true }).click();
+  await expect(page.getByRole("dialog", { name: /Apply Bootstrap confirmation/ })).toBeVisible();
 });
 
 async function installApiMocks(page: Page) {
@@ -187,7 +401,22 @@ async function installApiMocks(page: Page) {
       return json(route, workflowStages());
     }
     if (url.pathname === "/api/v1/workflows/actions") {
-      return json(route, [safeAction, destructiveAction, netappSetupPreviewAction, netappNfsReadinessAction, ciscoValidationAction]);
+      return json(route, [
+        safeAction,
+        destructiveAction,
+        netappSetupPreviewAction,
+        netappNfsReadinessAction,
+        ciscoValidationAction,
+        ciscoFirmwareAction,
+        ciscoBootstrapAction,
+        iloVirtualMediaAction,
+        esxiRebuildAction,
+        netappFirmwareAction,
+        netappSetupApplyAction,
+        firmwareUpgradePlanAction,
+        firmwareUpgradeApplyPlaceholderAction,
+        netappOntapUpgradeApplyAction
+      ]);
     }
     if (url.pathname === "/api/v1/control/actions") {
       return json(route, controlCatalog());
@@ -210,7 +439,16 @@ async function installApiMocks(page: Page) {
     if (url.pathname === "/api/v1/lab/firmware-waiver-check") {
       return json(route, { checked_at: checkedAt, status: "not_checked", warnings: [], blockers: [] });
     }
+    if (url.pathname === "/api/v1/firmware/summary") {
+      return json(route, firmwareSummaries());
+    }
+    if (url.pathname === "/api/v1/media-inventory") {
+      return json(route, mediaInventory());
+    }
     if (url.pathname === "/api/v1/workflows/actions/build-verification.run-full/run") {
+      return json(route, workflowActionRun());
+    }
+    if (url.pathname.endsWith("/run")) {
       return json(route, workflowActionRun());
     }
     if (url.pathname.endsWith("/runs")) {
@@ -302,6 +540,8 @@ function workflowAction(overrides: Record<string, unknown>) {
     safety_notes: [],
     source_type: "make_target",
     stale_after_seconds: 86400,
+    guarded_run_blockers: overrides.guarded_run_blockers ?? [],
+    guarded_run_supported: Boolean(overrides.guarded_run_supported),
     ui_run_blockers: overrides.ui_run_blockers ?? [],
     ui_run_supported: uiRunSupported,
     ...overrides
@@ -457,13 +697,34 @@ function firmwareInventory() {
   };
 }
 
+function mediaInventory() {
+  return {
+    configured_directories: ["/redacted/firmware"],
+    items: [
+      {
+        actual_name_redacted: true,
+        category: "firmware",
+        extension: ".bin",
+        generation_hints: ["9300"],
+        placeholder_name: "cisco-ios-xe-firmware.bin",
+        product_hints: ["cisco", "ios-xe"],
+        size_bytes: 1024,
+        source: "local",
+        version_hint: "17.15.05"
+      }
+    ],
+    mode: "configured",
+    warnings: []
+  };
+}
+
 function firmwareCompliance() {
   return {
     blockers: [],
     checked_at: checkedAt,
     components: [
       { current_version: "Unknown", device: "iLO", id: "hpe_ilo_firmware", label: "iLO firmware", status: "unknown" },
-      { current_version: "Unknown", device: "Cisco", id: "cisco_ios_xe_version", label: "Cisco IOS XE", status: "unknown" },
+      { current_version: "17.15.05", device: "Cisco", id: "cisco_ios_xe_version", label: "Cisco IOS XE", status: "passed" },
       { current_version: "Unknown", device: "NetApp", id: "netapp_ontap_version", label: "ONTAP", status: "unknown" },
       { current_version: "Unknown", device: "ESXi", id: "esxi_version", label: "ESXi", status: "unknown" },
       { current_version: "Unknown", device: "HPE", id: "hpe_bios_version", label: "BIOS", status: "unknown" },
@@ -475,6 +736,51 @@ function firmwareCompliance() {
     status: "warning",
     warnings: ["Firmware versions unknown."]
   };
+}
+
+function firmwareSummaries() {
+  return [
+    {
+      approved_versions: [
+        { label: "Cisco IOS XE", status: "minimum", version: ">= 17.9" },
+        { label: "ROMMON", status: "manual_review", version: null }
+      ],
+      blocker: "ROMMON baseline missing/manual review",
+      compliance_status: "cannot_verify",
+      component_type: "network_os",
+      current_versions: [
+        { label: "Cisco IOS XE", status: "passed", version: "17.15.05" },
+        { label: "ROMMON", status: "warning", version: null }
+      ],
+      device_id: "cisco",
+      evidence_artifacts: ["artifacts/codex-runs/cisco-firmware-inventory-report.md"],
+      freshness: "live",
+      label: "Cisco",
+      last_scanned: checkedAt,
+      next_action: "Open Firmware Upgrades and record the manual baseline decision.",
+      scan_action_id: "cisco.firmware-inventory",
+      severity: "yellow",
+      source_type: "cached_live",
+      upgrade_center_link: "/firmware?device=cisco"
+    },
+    {
+      approved_versions: [{ label: "ONTAP", status: "minimum", version: ">= 9.14" }],
+      blocker: "not configured yet",
+      compliance_status: "not_configured",
+      component_type: "storage_os_and_component_firmware",
+      current_versions: [{ label: "ONTAP", status: "not_configured_yet", version: null }],
+      device_id: "netapp",
+      evidence_artifacts: ["artifacts/codex-runs/netapp-upgrade-inventory-report.md"],
+      freshness: "not_checked",
+      label: "NetApp",
+      last_scanned: null,
+      next_action: "Complete device setup and credentials before firmware inventory.",
+      scan_action_id: "netapp.ontap-upgrade-inventory",
+      severity: "gray",
+      source_type: "not_checked",
+      upgrade_center_link: "/firmware?device=netapp"
+    }
+  ];
 }
 
 function labProfiles() {
@@ -641,6 +947,7 @@ function controlCatalog() {
           { detail: null, label: "ONTAP", status: "unknown", value: "Unknown" }
         ],
         description: "Minimal NetApp control section.",
+        firmware_summary: firmwareSummaries()[1],
         id: "netapp",
         last_result: {
           checked_at: checkedAt,
@@ -665,9 +972,21 @@ function controlCatalog() {
           { detail: null, label: "Cisco IOS XE", status: "unknown", value: "Unknown" }
         ],
         description: "Minimal Cisco control section.",
+        firmware_summary: firmwareSummaries()[0],
         id: "cisco",
         stage: "Cisco Control",
         title: "Cisco Control"
+      }),
+      controlSection({
+        current_state: [
+          { detail: null, label: "Cisco IOS XE", status: "cannot_verify", value: "17.15.05" },
+          { detail: null, label: "ONTAP", status: "not_configured", value: "Unknown" }
+        ],
+        description: "Firmware and upgrade controls.",
+        id: "firmware-upgrade",
+        stage: "Firmware / Upgrade Center",
+        status: "warning",
+        title: "Firmware / Upgrade"
       })
     ],
     summary: {}
@@ -683,6 +1002,7 @@ function controlSection(overrides: Record<string, unknown>) {
     description: "Mock control section.",
     desired_state: [],
     destructive_actions: [],
+    firmware_summary: null,
     id: "mock",
     last_result: { checked_at: null, label: null, report: null, status: "not_run" },
     plan_diff: [],

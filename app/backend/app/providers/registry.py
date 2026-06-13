@@ -59,7 +59,7 @@ class ProviderRegistry:
         self._ensure_lifecycle_mode()
         return self.source_of_truth_adapter
 
-    def statuses(self) -> list[ProviderStatus]:
+    def statuses(self, *, lightweight: bool = False) -> list[ProviderStatus]:
         self._ensure_status_mode()
         statuses = [
             self._safe_status(
@@ -72,7 +72,11 @@ class ProviderRegistry:
                 "cisco-console",
                 "Cisco Console",
                 "network-console",
-                lambda: CiscoConsoleAdapter(self.provider_mode).health(),
+                lambda: (
+                    CiscoConsoleAdapter(self.provider_mode).cached_health()
+                    if lightweight
+                    else CiscoConsoleAdapter(self.provider_mode).health()
+                ),
             ),
             self._safe_status(
                 "cisco-ansible",

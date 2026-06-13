@@ -1,5 +1,5 @@
-.PHONY: check-repo-root codex-audit codex-task codex-next codex-resume test dev lint provider-smoke provider-smoke-ilo-readonly provider-smoke-ilo-local-lab provider-inventory-ilo-local-lab provider-lab-live-status provider-lab-refresh-live-state provider-lab-build-verification-live provider-lab-ilo-reachability provider-lab-ilo-authentication provider-lab-ilo-inventory provider-lab-ilo-readiness provider-lab-firmware-inventory provider-lab-firmware-cisco-inventory provider-lab-cisco-firmware-cisco-inventory provider-lab-firmware-compliance provider-lab-firmware-compliance-scope-cisco provider-lab-firmware-compliance-scope-hpe provider-lab-firmware-compliance-scope-full provider-lab-firmware-waiver-check provider-lab-hpe-storage-discovery provider-lab-hpe-raid-discovery provider-lab-hpe-raid-plan provider-lab-hpe-raid-apply provider-lab-hpe-raid-validate-after-reset provider-lab-esxi-install-readiness provider-lab-esxi-media-url provider-lab-esxi-insert-virtual-media provider-lab-esxi-eject-virtual-media provider-lab-esxi-one-time-boot provider-lab-esxi-reset-installer-boot provider-lab-esxi-detect-installer provider-lab-esxi-vm-deploy-preview provider-lab-esxi-vm-deploy-apply provider-lab-esxi-vm-deploy-validate provider-lab-cisco-console-ethernet-readiness provider-lab-cisco-console-recovery provider-lab-cisco-privilege-check provider-lab-cisco-vlan10-bootstrap-fix provider-lab-cisco-vlan10-bootstrap-apply provider-lab-full-rebuild-summary provider-lab-full-rebuild provider-lab-build-verification provider-lab-validation provider-lab-vcenter-netapp-readiness provider-lab-vcenter-netapp-datastore-plan provider-lab-toolchain-check provider-lab-serial-console-discovery provider-lab-netapp-console-autodiscovery provider-lab-netapp-console-discovery provider-lab-netapp-console-read-state provider-lab-netapp-console-login-state provider-lab-netapp-live-state provider-lab-netapp-validate-setup provider-lab-netapp-nfs-vcenter-readiness netapp-real-readiness app-start app-stop app-restart app-status app-check
-.PHONY: provider-lab-netapp-setup-baseline provider-lab-netapp-setup-plan provider-lab-netapp-setup-preview provider-lab-netapp-setup-apply provider-lab-netapp-post-setup-validation provider-lab-netapp-nfs-setup-preview provider-lab-netapp-nfs-setup-apply provider-lab-netapp-nfs-setup-validate provider-lab-netapp-ontap-upgrade-inventory provider-lab-netapp-ontap-upgrade-plan provider-lab-netapp-ontap-upgrade-validate provider-lab-netapp-ontap-upgrade-apply
+.PHONY: check-repo-root codex-audit codex-task codex-next codex-resume test dev lint provider-smoke provider-smoke-ilo-readonly provider-smoke-ilo-local-lab provider-inventory-ilo-local-lab provider-lab-live-status provider-lab-refresh-live-state provider-lab-build-verification-live provider-lab-ilo-reachability provider-lab-ilo-authentication provider-lab-ilo-inventory provider-lab-ilo-readiness provider-lab-firmware-inventory provider-lab-firmware-cisco-inventory provider-lab-cisco-firmware-cisco-inventory provider-lab-firmware-compliance provider-lab-firmware-compliance-scope-cisco provider-lab-firmware-compliance-scope-hpe provider-lab-firmware-compliance-scope-full provider-lab-firmware-waiver-check provider-lab-hpe-storage-discovery provider-lab-hpe-raid-discovery provider-lab-hpe-raid-plan provider-lab-hpe-raid-apply provider-lab-hpe-raid-validate-after-reset provider-lab-esxi-install-readiness provider-lab-esxi-media-url provider-lab-esxi-insert-virtual-media provider-lab-esxi-eject-virtual-media provider-lab-esxi-one-time-boot provider-lab-esxi-reset-installer-boot provider-lab-esxi-detect-installer provider-lab-esxi-recover-management provider-lab-esxi-post-recovery-validation provider-lab-esxi-netapp-datastore-preview provider-lab-esxi-netapp-datastore-apply provider-lab-esxi-netapp-datastore-validate provider-lab-esxi-vm-deploy-preview provider-lab-esxi-vm-deploy-apply provider-lab-esxi-vm-deploy-validate provider-lab-cisco-console-ethernet-readiness provider-lab-cisco-console-recovery provider-lab-cisco-privilege-check provider-lab-cisco-vlan10-bootstrap-fix provider-lab-cisco-vlan10-bootstrap-apply provider-lab-full-rebuild-summary provider-lab-full-rebuild provider-lab-build-verification provider-lab-validation provider-lab-vcenter-netapp-readiness provider-lab-vcenter-netapp-datastore-plan provider-lab-vcenter-install-readiness provider-lab-vcenter-install-plan provider-lab-toolchain-check provider-lab-serial-console-discovery provider-lab-netapp-console-autodiscovery provider-lab-netapp-console-discovery provider-lab-netapp-console-read-state provider-lab-netapp-console-login-state provider-lab-netapp-live-state provider-lab-netapp-validate-setup provider-lab-netapp-address-plan provider-lab-netapp-nfs-vcenter-readiness netapp-real-readiness app-start app-stop app-restart app-status app-check
+.PHONY: provider-lab-netapp-setup-baseline provider-lab-netapp-setup-plan provider-lab-netapp-setup-preview provider-lab-netapp-setup-apply provider-lab-netapp-post-setup-validation provider-lab-netapp-address-preview provider-lab-netapp-address-apply provider-lab-netapp-address-validate provider-lab-netapp-ha-node-diagnose provider-lab-netapp-factory-reset-preview provider-lab-netapp-factory-reset-apply provider-lab-netapp-factory-reset-validate provider-lab-netapp-nfs-setup-preview provider-lab-netapp-nfs-setup-apply provider-lab-netapp-nfs-setup-validate provider-lab-netapp-ontap-upgrade-inventory provider-lab-netapp-ontap-upgrade-plan provider-lab-netapp-ontap-upgrade-validate provider-lab-netapp-ontap-upgrade-apply
 
 REPO_ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 TASK ?= .codex/tasks/001-backend-vm-request-lifecycle.md
@@ -154,6 +154,21 @@ provider-lab-esxi-reset-installer-boot: check-repo-root
 provider-lab-esxi-detect-installer: check-repo-root
 	$(MAKE) -C $(REPO_ROOT)/app provider-lab-esxi-detect-installer
 
+provider-lab-esxi-recover-management: check-repo-root
+	$(MAKE) -C $(REPO_ROOT)/app provider-lab-esxi-recover-management
+
+provider-lab-esxi-post-recovery-validation: check-repo-root
+	$(MAKE) -C $(REPO_ROOT)/app provider-lab-esxi-post-recovery-validation
+
+provider-lab-esxi-netapp-datastore-preview: check-repo-root
+	$(MAKE) -C $(REPO_ROOT)/app provider-lab-esxi-netapp-datastore-preview
+
+provider-lab-esxi-netapp-datastore-apply: check-repo-root
+	$(MAKE) -C $(REPO_ROOT)/app provider-lab-esxi-netapp-datastore-apply
+
+provider-lab-esxi-netapp-datastore-validate: check-repo-root
+	$(MAKE) -C $(REPO_ROOT)/app provider-lab-esxi-netapp-datastore-validate
+
 provider-lab-esxi-vm-deploy-preview: check-repo-root
 	$(MAKE) -C $(REPO_ROOT)/app provider-lab-esxi-vm-deploy-preview
 
@@ -196,6 +211,12 @@ provider-lab-vcenter-netapp-readiness: check-repo-root
 provider-lab-vcenter-netapp-datastore-plan: check-repo-root
 	$(MAKE) -C $(REPO_ROOT)/app provider-lab-vcenter-netapp-datastore-plan
 
+provider-lab-vcenter-install-readiness: check-repo-root
+	$(MAKE) -C $(REPO_ROOT)/app provider-lab-vcenter-install-readiness
+
+provider-lab-vcenter-install-plan: check-repo-root
+	$(MAKE) -C $(REPO_ROOT)/app provider-lab-vcenter-install-plan
+
 provider-lab-toolchain-check: check-repo-root
 	$(MAKE) -C $(REPO_ROOT)/app provider-lab-toolchain-check
 
@@ -237,6 +258,30 @@ provider-lab-netapp-setup-apply: check-repo-root
 
 provider-lab-netapp-post-setup-validation: check-repo-root
 	$(MAKE) -C $(REPO_ROOT)/app provider-lab-netapp-post-setup-validation
+
+provider-lab-netapp-address-plan: check-repo-root
+	$(MAKE) -C $(REPO_ROOT)/app provider-lab-netapp-address-plan
+
+provider-lab-netapp-address-preview: check-repo-root
+	$(MAKE) -C $(REPO_ROOT)/app provider-lab-netapp-address-preview
+
+provider-lab-netapp-address-apply: check-repo-root
+	$(MAKE) -C $(REPO_ROOT)/app provider-lab-netapp-address-apply
+
+provider-lab-netapp-address-validate: check-repo-root
+	$(MAKE) -C $(REPO_ROOT)/app provider-lab-netapp-address-validate
+
+provider-lab-netapp-ha-node-diagnose: check-repo-root
+	$(MAKE) -C $(REPO_ROOT)/app provider-lab-netapp-ha-node-diagnose
+
+provider-lab-netapp-factory-reset-preview: check-repo-root
+	$(MAKE) -C $(REPO_ROOT)/app provider-lab-netapp-factory-reset-preview
+
+provider-lab-netapp-factory-reset-apply: check-repo-root
+	$(MAKE) -C $(REPO_ROOT)/app provider-lab-netapp-factory-reset-apply
+
+provider-lab-netapp-factory-reset-validate: check-repo-root
+	$(MAKE) -C $(REPO_ROOT)/app provider-lab-netapp-factory-reset-validate
 
 provider-lab-netapp-nfs-setup-preview: check-repo-root
 	$(MAKE) -C $(REPO_ROOT)/app provider-lab-netapp-nfs-setup-preview

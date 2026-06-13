@@ -6,6 +6,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+import httpx
+
 from app.core.config import settings
 from app.providers.action_policy import ActionCategory, LOCAL_LAB_READWRITE_MODE, current_lab_action_policy
 from app.providers.redaction import redact_sensitive
@@ -76,18 +78,22 @@ def apply_netapp_nfs_setup(*, write_report: bool = True) -> dict[str, Any]:
     plan = _nfs_plan()
     gates = _apply_gates(runtime_state, plan)
     blocked = bool(gates["blockers"])
+    rest_apply = _rest_apply_not_attempted("Apply gates blocked before ONTAP REST session started.")
+    if not blocked:
+        rest_apply = _ensure_nfs_export_rule(plan)
+        blocked = rest_apply["status"] == "failed"
     payload = {
         "provider_id": PROVIDER_ID,
         "action": "nfs-setup-apply",
         "checked_at": checked_at,
-        "status": "blocked" if blocked else "ready_to_apply",
+        "status": "blocked" if gates["blockers"] else rest_apply["status"],
         "message": (
             "NetApp NFS setup apply was refused before any ONTAP or datastore write command."
-            if blocked
-            else "NetApp NFS setup gates passed. The ONTAP REST executor is intentionally not auto-started by unattended runs."
+            if gates["blockers"]
+            else rest_apply["message"]
         ),
         "mode": settings.provider_mode,
-        "apply_enabled": not blocked,
+        "apply_enabled": not bool(gates["blockers"]),
         "source_type": "live_cached",
         "freshness": "current",
         "configured_state": runtime_state.get("configured_state"),
@@ -99,16 +105,13 @@ def apply_netapp_nfs_setup(*, write_report: bool = True) -> dict[str, Any]:
         "rest_preview": _rest_preview(plan),
         "required_flags": _required_flags(),
         "apply": {
-            "ontap_writes_attempted": False,
+            "ontap_writes_attempted": bool(rest_apply.get("ontap_writes_attempted")),
             "esxi_writes_attempted": False,
             "vcenter_writes_attempted": False,
-            "transcript_summary": [
-                "No transcript was captured because apply gates did not start an ONTAP REST session."
-                if blocked
-                else "Apply gates passed, but this workflow requires an attended executor before ONTAP REST writes are sent.",
-            ],
+            "transcript_summary": list(rest_apply.get("transcript_summary") or []),
+            "rest_result": rest_apply,
         },
-        "blockers": gates["blockers"],
+        "blockers": gates["blockers"] + list(rest_apply.get("blockers") or []),
         "warnings": [
             "No secrets are printed or written to the apply report.",
             "Run NFS validation after a guarded NFS setup session completes.",
@@ -120,8 +123,8 @@ def apply_netapp_nfs_setup(*, write_report: bool = True) -> dict[str, Any]:
         },
         "next_safe_action": (
             "Resolve blockers and rerun `make provider-lab-netapp-nfs-setup-preview` before apply."
-            if blocked
-            else "Run the attended ONTAP REST executor, then validate NFS and ESXi datastore visibility."
+            if gates["blockers"] or rest_apply.get("status") == "failed"
+            else "Run NFS validation and then mount the NFS datastore on ESXi."
         ),
     }
     sanitized = _sanitize(payload)
@@ -257,6 +260,116 @@ def _rest_preview(plan: dict[str, Any]) -> list[dict[str, Any]]:
         {"method": "POST", "path": "/api/protocols/nfs/export-policies", "purpose": f"Create export policy {plan.get('export_policy')} if absent"},
         {"method": "POST", "path": "/api/protocols/nfs/export-policies/{policy.id}/rules", "purpose": f"Allow {plan.get('export_client_match')}"},
     ]
+
+
+def _ensure_nfs_export_rule(plan: dict[str, Any]) -> dict[str, Any]:
+    policy_name = str(plan.get("export_policy") or "")
+    client_match = str(plan.get("export_client_match") or "")
+    if not policy_name or not client_match:
+        return _rest_apply_failed("NFS export policy or client match is missing.")
+    try:
+        policy = _get_export_policy(policy_name)
+    except (httpx.HTTPError, OSError, ValueError) as exc:
+        return _rest_apply_failed(f"Could not read NetApp export policy `{policy_name}`: {exc.__class__.__name__}.")
+    if not policy:
+        return _rest_apply_failed(f"NetApp export policy `{policy_name}` was not found.")
+    rules = list(policy.get("rules") or [])
+    for rule in rules:
+        clients = rule.get("clients") if isinstance(rule, dict) else []
+        if any(str(client.get("match") or "") == client_match for client in clients or [] if isinstance(client, dict)):
+            return {
+                "status": "ready",
+                "message": f"NetApp NFS export rule for `{client_match}` already exists on `{policy_name}`.",
+                "ontap_writes_attempted": False,
+                "blockers": [],
+                "transcript_summary": [f"Existing export rule found for {client_match}; no ONTAP write was needed."],
+                "policy": {"name": policy_name, "id": policy.get("id")},
+            }
+    body = {
+        "clients": [{"match": client_match}],
+        "protocols": ["nfs"],
+        "ro_rule": ["sys"],
+        "rw_rule": ["sys"],
+        "superuser": ["sys"],
+    }
+    try:
+        response = _ontap_request("POST", f"/api/protocols/nfs/export-policies/{policy['id']}/rules", json_body=body)
+    except (httpx.HTTPError, OSError) as exc:
+        return _rest_apply_failed(f"Could not create NetApp export rule for `{client_match}`: {exc.__class__.__name__}.")
+    if response.status_code not in {200, 201, 202}:
+        return _rest_apply_failed(f"NetApp export rule create returned HTTP {response.status_code}.")
+    return {
+        "status": "applied",
+        "message": f"NetApp NFS export rule for `{client_match}` was created on `{policy_name}`.",
+        "ontap_writes_attempted": True,
+        "blockers": [],
+        "transcript_summary": [f"Created export policy rule for {client_match} on {policy_name}."],
+        "policy": {"name": policy_name, "id": policy.get("id")},
+    }
+
+
+def _get_export_policy(policy_name: str) -> dict[str, Any] | None:
+    response = _ontap_request(
+        "GET",
+        f"/api/protocols/nfs/export-policies?name={policy_name}&fields=id,name,svm.name,rules",
+    )
+    if response.status_code != 200:
+        raise ValueError(f"HTTP {response.status_code}")
+    payload = response.json()
+    for record in payload.get("records") or []:
+        if record.get("name") == policy_name:
+            return record
+    return None
+
+
+def _ontap_request(method: str, path: str, *, json_body: dict[str, Any] | None = None) -> httpx.Response:
+    host = settings.netapp_cluster_mgmt_ip
+    if not host or not settings.netapp_api_username or not settings.netapp_api_password:
+        raise ValueError("NetApp API target or credentials missing")
+    try:
+        return _ontap_request_once(method, host, path, verify=settings.netapp_api_verify_tls, json_body=json_body)
+    except (httpx.HTTPError, OSError):
+        if not settings.netapp_api_verify_tls:
+            raise
+        return _ontap_request_once(method, host, path, verify=False, json_body=json_body)
+
+
+def _ontap_request_once(
+    method: str,
+    host: str,
+    path: str,
+    *,
+    verify: bool,
+    json_body: dict[str, Any] | None,
+) -> httpx.Response:
+    with httpx.Client(verify=verify, timeout=10.0, trust_env=False) as client:
+        return client.request(
+            method,
+            f"https://{host}{path}",
+            auth=(settings.netapp_api_username, settings.netapp_api_password),
+            headers={"Accept": "application/json"},
+            json=json_body,
+        )
+
+
+def _rest_apply_not_attempted(reason: str) -> dict[str, Any]:
+    return {
+        "status": "blocked",
+        "message": reason,
+        "ontap_writes_attempted": False,
+        "blockers": [],
+        "transcript_summary": [reason],
+    }
+
+
+def _rest_apply_failed(reason: str) -> dict[str, Any]:
+    return {
+        "status": "failed",
+        "message": reason,
+        "ontap_writes_attempted": False,
+        "blockers": [reason],
+        "transcript_summary": [reason],
+    }
 
 
 def _required_flags() -> list[str]:

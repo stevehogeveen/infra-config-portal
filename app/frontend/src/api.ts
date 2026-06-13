@@ -12,6 +12,7 @@ import type {
   ControlActionCatalog,
   ControlActionPlan,
   ControlActionRun,
+  FirmwareSummary,
   HpeRaidIntent,
   HpeRaidIntentWrite,
   HpeRaidPlanPreview,
@@ -45,6 +46,7 @@ import type {
   VMDeploymentCreate,
   VMDeploymentUpdate,
   WorkflowAction,
+  WorkflowActionRunRequest,
   WorkflowActionRun,
   WorkflowRun,
   WorkflowStage
@@ -142,9 +144,10 @@ export const api = {
   workflowActions: () => apiRequest<WorkflowAction[]>("/api/v1/workflows/actions"),
   workflowAction: (id: string) =>
     apiRequest<WorkflowAction>(`/api/v1/workflows/actions/${encodeURIComponent(id)}`),
-  runWorkflowAction: (id: string) =>
+  runWorkflowAction: (id: string, payload?: WorkflowActionRunRequest) =>
     apiRequest<WorkflowActionRun>(`/api/v1/workflows/actions/${encodeURIComponent(id)}/run`, {
-      method: "POST"
+      method: "POST",
+      body: payload
     }),
   workflowActionRuns: (id: string) =>
     apiRequest<WorkflowActionRun[]>(`/api/v1/workflows/actions/${encodeURIComponent(id)}/runs`),
@@ -240,6 +243,12 @@ export const api = {
     apiRequest<ProviderProbeResult>("/api/v1/providers/netapp-ontap/validate-setup", {
       method: "POST"
     }),
+  netappAddressPlan: () =>
+    apiRequest<ProviderProbeResult>("/api/v1/providers/netapp-ontap/address-plan"),
+  runNetappAddressPlan: () =>
+    apiRequest<ProviderProbeResult>("/api/v1/providers/netapp-ontap/address-plan", {
+      method: "POST"
+    }),
   netappNfsVcenterReadiness: () =>
     apiRequest<ProviderProbeResult>("/api/v1/providers/netapp-ontap/nfs-vcenter-readiness"),
   netappNfsSetupPreview: () =>
@@ -323,6 +332,8 @@ export const api = {
     apiRequest<ProviderProbeResult>(`/api/v1/lab/firmware-compliance?scope=${encodeURIComponent(scope)}`),
   firmwareWaiverCheck: () =>
     apiRequest<ProviderProbeResult>("/api/v1/lab/firmware-waiver-check"),
+  firmwareSummary: () =>
+    apiRequest<FirmwareSummary[]>("/api/v1/firmware/summary"),
   fullRebuildSummary: () =>
     apiRequest<ProviderProbeResult>("/api/v1/lab/full-rebuild-summary"),
   buildVerification: () =>

@@ -84,6 +84,35 @@ def test_control_action_catalog_exposes_device_actions_without_direct_runs(
     assert "PASSWORD" not in lab_profile["env_update_command"].upper()
 
 
+def test_control_action_catalog_keeps_netapp_readonly_actions_runnable_when_state_blocked(
+    client: TestClient,
+) -> None:
+    response = client.get("/api/v1/control/actions")
+
+    assert response.status_code == 200
+    payload = response.json()
+    actions = {action["id"]: action for action in payload["actions"]}
+
+    readonly_ids = {
+        "netapp.console-autodiscovery",
+        "netapp.console-read-state",
+        "netapp.live-state",
+        "netapp.setup-preview",
+        "netapp.nfs-setup-preview",
+        "netapp.ontap-upgrade-inventory",
+        "netapp.ontap-upgrade-plan",
+        "netapp.ontap-upgrade-validate",
+    }
+    for action_id in readonly_ids:
+        assert actions[action_id]["classification"] == "read-only"
+        assert actions[action_id]["availability"] == "manual_command_required"
+        assert actions[action_id]["blocker"] is None
+
+    assert actions["netapp.setup-apply"]["availability"] == "blocked"
+    assert actions["netapp.nfs-setup-apply"]["availability"] == "blocked"
+    assert actions["netapp.ontap-upgrade-apply"]["availability"] == "blocked"
+
+
 def test_control_action_plan_and_run_are_safe_placeholders(client: TestClient) -> None:
     planned = client.post("/api/v1/control/actions/ilo.inventory/plan")
 
@@ -320,6 +349,7 @@ def test_lab_profile_api_saves_selects_and_versions_profiles(
             "address_plan": {
                 "subnet": "192.0.2.0/24",
                 "ilo": "192.0.2.10",
+                "ilo_initial": "10.0.0.55",
                 "server_embedded_nic": "192.0.2.11",
                 "esxi_management": "192.0.2.12",
                 "cisco_management": "192.0.2.13",
@@ -338,6 +368,8 @@ def test_lab_profile_api_saves_selects_and_versions_profiles(
     profile_id = created.json()["id"]
     assert created.json()["active"] is True
     assert created.json()["version"] == 1
+    assert created.json()["address_plan"]["ilo"] == "192.0.2.10"
+    assert created.json()["address_plan"]["ilo_initial"] == "10.0.0.55"
 
     updated = client.put(
         f"/api/v1/lab/profiles/{profile_id}",

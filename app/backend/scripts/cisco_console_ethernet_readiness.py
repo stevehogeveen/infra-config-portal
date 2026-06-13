@@ -36,7 +36,7 @@ def main() -> int:
             "setup_readiness": readiness,
             "console_bootstrap_plan": bootstrap_plan,
             "blockers": _blockers(readiness, prompt_result),
-            "warnings": readiness.get("warnings") or [],
+            "warnings": _warnings(readiness, prompt_result),
             "not_attempted": [
                 "configuration mode",
                 "write memory",
@@ -59,7 +59,7 @@ def _overall_status(readiness: dict[str, Any], prompt_result: dict[str, Any] | N
     console = readiness.get("console") or {}
     if console.get("status") != "ready":
         return "blocked"
-    if not prompt_result or prompt_result.get("prompt_state") != "exec":
+    if not _prompt_is_usable(prompt_result) and not _prompt_is_recoverable_login(prompt_result):
         return "blocked"
     ethernet = readiness.get("ethernet_readiness") or {}
     return "ready" if ethernet.get("ready") else "blocked"
@@ -69,12 +69,33 @@ def _blockers(readiness: dict[str, Any], prompt_result: dict[str, Any] | None) -
     blockers = list(readiness.get("blockers") or [])
     if not prompt_result:
         blockers.append("Console prompt readiness did not run.")
-    elif prompt_result.get("prompt_state") != "exec":
+    elif not _prompt_is_usable(prompt_result) and not _prompt_is_recoverable_login(prompt_result):
         blockers.extend(prompt_result.get("blockers") or ["Console prompt was not identified as an exec prompt."])
     ethernet = readiness.get("ethernet_readiness") or {}
     if not ethernet.get("ready"):
         blockers.append("Cisco Ethernet management is not configured; SSH/SCP readiness requires console bootstrap.")
     return list(dict.fromkeys(blockers))
+
+
+def _warnings(readiness: dict[str, Any], prompt_result: dict[str, Any] | None) -> list[str]:
+    warnings = list(readiness.get("warnings") or [])
+    if _prompt_is_recoverable_login(prompt_result):
+        warnings.append(
+            "Cisco console is at login prompt, but credentials are configured; run guarded privilege check when console exec is required."
+        )
+    return list(dict.fromkeys(warnings))
+
+
+def _prompt_is_usable(prompt_result: dict[str, Any] | None) -> bool:
+    return bool(prompt_result and prompt_result.get("prompt_state") in {"exec", "privileged-exec"})
+
+
+def _prompt_is_recoverable_login(prompt_result: dict[str, Any] | None) -> bool:
+    return bool(
+        prompt_result
+        and prompt_result.get("prompt_state") in {"login-required", "password-required"}
+        and prompt_result.get("credentials_configured") is True
+    )
 
 
 def _summary(payload: dict[str, Any]) -> dict[str, Any]:

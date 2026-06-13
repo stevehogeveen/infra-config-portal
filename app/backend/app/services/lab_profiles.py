@@ -566,6 +566,8 @@ def _contains_stale_lab_value(*values: Any) -> bool:
 def _differs_from_runtime_profile(address_plan: dict[str, Any]) -> bool:
     runtime_address_plan = _runtime_address_plan()
     for key, runtime_value in runtime_address_plan.items():
+        if key == "ilo_initial":
+            continue
         value = address_plan.get(key)
         if isinstance(runtime_value, list):
             if list(value or []) != runtime_value:
@@ -750,6 +752,7 @@ def _normalize_address_plan(value: dict[str, Any]) -> dict[str, Any]:
     string_fields = [
         "subnet",
         "ilo",
+        "ilo_initial",
         "server_embedded_nic",
         "esxi_management",
         "cisco_management",

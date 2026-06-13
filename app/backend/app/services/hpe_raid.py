@@ -346,15 +346,12 @@ def write_hpe_raid_pending_report(session: Session) -> dict[str, Any]:
     settings_body = _sanitize_artifact(_resource_body_or_error(settings_response))
     expected = _sanitize_artifact(expected_payload)
     pending = _pending_summary(current_body, settings_body, expected, last_apply)
+    next_safe_action = _pending_next_safe_action(pending)
     report = {
         "checked_at": datetime.now(UTC).isoformat(),
         "provider_id": PROVIDER_ID,
-        "status": "pending-reset" if pending["reset_required"] else "ready",
-        "message": (
-            "Pending HPE RAID settings require a server reset."
-            if pending["reset_required"]
-            else "No reset-required pending RAID state was detected."
-        ),
+        "status": _pending_report_status(pending),
+        "message": _pending_report_message(pending),
         "provider_mode": settings.provider_mode,
         "current_get": _response_summary(current),
         "settings_get": _response_summary(settings_response),
@@ -362,12 +359,7 @@ def write_hpe_raid_pending_report(session: Session) -> dict[str, Any]:
         "blockers": [],
         "warnings": [],
         "last_apply": _sanitize_artifact(last_apply),
-        "next_safe_action": (
-            f"Run `HPE_RAID_ALLOW_RESET=true HPE_RAID_RESET_CONFIRM=\"{RESET_CONFIRMATION_PHRASE}\" "
-            "LAB_ALLOW_POWER_ACTIONS=true make -C app provider-lab-server-reset-for-raid` when ready."
-            if pending["reset_required"]
-            else "No reset-required pending RAID state was detected."
-        ),
+        "next_safe_action": next_safe_action,
     }
     CODEX_RUN_DIR.mkdir(parents=True, exist_ok=True)
     SMARTSTORAGE_CURRENT.write_text(json.dumps(current_body, indent=2), encoding="utf-8")
@@ -533,24 +525,67 @@ def _pending_summary(
     current_drives = _logical_drive_debug(current)
     settings_drives = _logical_drive_debug(settings_response)
     expected_drives = _planned_logical_drive_debug(expected)
-    reset_required = _last_apply_has_message(last_apply, "iLO.2.25.SystemResetRequired")
+    current_readable = _smartstorage_readable(current)
+    settings_readable = _smartstorage_readable(settings_response)
+    smartstorage_reads_available = current_readable and settings_readable
+    last_apply_reset_required = _last_apply_has_message(last_apply, "iLO.2.25.SystemResetRequired")
     pending_matches_expected = _drive_debug_equivalent(settings_drives, expected_drives)
     live_matches_expected = _drive_debug_equivalent(current_drives, expected_drives)
     pending_differs_from_live = not _drive_debug_equivalent(current_drives, settings_drives)
-    reset_required = not live_matches_expected and (
-        reset_required or (pending_matches_expected and not live_matches_expected)
+    pending_config_exists = (
+        smartstorage_reads_available
+        and pending_matches_expected
+        and not live_matches_expected
+    )
+    reset_required = pending_config_exists and (
+        last_apply_reset_required or pending_differs_from_live
     )
     return {
-        "pending_config_exists": pending_matches_expected and not live_matches_expected,
+        "smartstorage_reads_available": smartstorage_reads_available,
+        "current_readable": current_readable,
+        "settings_readable": settings_readable,
+        "pending_config_exists": pending_config_exists,
         "pending_matches_expected": pending_matches_expected,
         "live_matches_expected": live_matches_expected,
         "pending_differs_from_live": pending_differs_from_live,
         "reset_required": reset_required,
-        "last_apply_system_reset_required": _last_apply_has_message(last_apply, "iLO.2.25.SystemResetRequired"),
+        "last_apply_system_reset_required": last_apply_reset_required,
         "current_logical_drives": current_drives,
         "settings_logical_drives": settings_drives,
         "expected_logical_drives": expected_drives,
     }
+
+
+def _smartstorage_readable(value: dict[str, Any]) -> bool:
+    status = value.get("_http_status")
+    return status is None or int(status or 0) < 400
+
+
+def _pending_report_status(pending: dict[str, Any]) -> str:
+    if not pending.get("smartstorage_reads_available"):
+        return "blocked"
+    if pending.get("reset_required"):
+        return "pending-reset"
+    return "ready"
+
+
+def _pending_report_message(pending: dict[str, Any]) -> str:
+    if not pending.get("smartstorage_reads_available"):
+        return "HPE SmartStorage current/settings state cannot be read."
+    if pending.get("reset_required"):
+        return "Pending HPE RAID settings require a server reset."
+    return "No reset-required pending RAID state was detected."
+
+
+def _pending_next_safe_action(pending: dict[str, Any]) -> str:
+    if not pending.get("smartstorage_reads_available"):
+        return "Resolve iLO Redfish SmartStorage authorization, then rerun HPE RAID discovery and pending checks."
+    if pending.get("reset_required"):
+        return (
+            f"Run `HPE_RAID_ALLOW_RESET=true HPE_RAID_RESET_CONFIRM=\"{RESET_CONFIRMATION_PHRASE}\" "
+            "LAB_ALLOW_POWER_ACTIONS=true make -C app provider-lab-server-reset-for-raid` when ready."
+        )
+    return "No reset-required pending RAID state was detected."
 
 
 def _last_apply_has_message(last_apply: dict[str, Any], message_id: str) -> bool:
@@ -967,6 +1002,9 @@ def _pending_markdown(report: dict[str, Any]) -> str:
         "",
         "## Pending State",
         "",
+        f"- SmartStorage reads available: {pending.get('smartstorage_reads_available')}",
+        f"- Current readable: {pending.get('current_readable')}",
+        f"- Settings readable: {pending.get('settings_readable')}",
         f"- Pending config exists: {pending.get('pending_config_exists')}",
         f"- Settings match saved intent: {pending.get('pending_matches_expected')}",
         f"- Live config matches saved intent: {pending.get('live_matches_expected')}",

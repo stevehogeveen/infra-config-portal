@@ -27,6 +27,7 @@ import {
   XCircle
 } from "lucide-react";
 import { createContext, FormEvent, ReactNode, SetStateAction, useContext, useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { Link, Navigate, NavLink, Route as RouterRoute, Routes, useLocation, useNavigate, useParams } from "react-router-dom";
 
 import { api } from "./api";
@@ -49,6 +50,7 @@ import type {
   ControlPlanDiffItem,
   ControlSectionRecord,
   ControlStateItem,
+  FirmwareSummary,
   HpeRaidIntent,
   HpeRaidIntentWrite,
   HpeRaidPlanPreview,
@@ -95,6 +97,7 @@ import type {
   VMDeploymentCreate,
   VMDeploymentUpdate,
   WorkflowAction,
+  WorkflowActionRunRequest,
   WorkflowActionRun,
   WorkflowRun,
   WorkflowStage
@@ -113,6 +116,8 @@ const statusOrder: RequestStatus[] = [
   "cancelled",
   "rejected"
 ];
+
+type RunWorkflowActionHandler = (action: WorkflowAction, request?: WorkflowActionRunRequest) => void;
 
 const cancellableStatuses: RequestStatus[] = [
   "draft",
@@ -179,8 +184,20 @@ type PlanStep = {
 type RunCenterView = "choose" | "queue" | "selected" | "netapp";
 type RunCenterSectionId = "guided" | "cisco" | "ilo" | "raid" | "esxi" | "netapp";
 type DashboardSectionId = "overview" | "blockers" | "last-run" | "next-actions";
-type ControlCenterSectionId = "lab-profile" | "cisco" | "ilo" | "raid" | "esxi" | "netapp" | "action-catalog";
-type FirmwareSectionId = "compliance" | "inventory" | "packages" | "waivers" | "upgrade-plans";
+type ControlCenterSectionId =
+  | "lab-profile"
+  | "cisco"
+  | "ilo"
+  | "raid"
+  | "esxi"
+  | "netapp"
+  | "vcenter"
+  | "firmware-upgrade"
+  | "verification"
+  | "reports"
+  | "action-catalog";
+type FirmwareSectionId = "upgrade" | "evidence";
+type FirmwareDeviceFilter = "all" | "cisco" | "ilo" | "raid" | "esxi" | "netapp" | "vcenter";
 type VerificationSectionId =
   | "summary"
   | "network"
@@ -399,10 +416,35 @@ type GlobalConfigEditState = Pick<
   | "enableDns"
 >;
 
+type ControlProfileEditField =
+  | {
+      kind: "profile";
+      key: "name" | "description";
+      label: string;
+    }
+  | {
+      kind: "address";
+      key: LabAddressScalarKey;
+      label: string;
+    }
+  | {
+      kind: "global";
+      key: keyof LabGlobalSettingsFormState;
+      label: string;
+      options?: Array<{ label: string; value: string }>;
+      valueType?: "boolean" | "number" | "select" | "text";
+    }
+  | {
+      kind: "netapp-list";
+      key: "netappNfsLifs" | "netappIscsiLifs";
+      label: string;
+    };
+
 const labSubnetField: { key: "subnet"; label: string } = { key: "subnet", label: "Subnet CIDR" };
 
 const labCoreAddressFields: Array<{ key: LabAddressInputKey; label: string }> = [
-  { key: "ilo", label: "iLO" },
+  { key: "ilo", label: "Permanent iLO IP" },
+  { key: "ilo_initial", label: "Initial iLO Login IP" },
   { key: "server_embedded_nic", label: "Server NIC" },
   { key: "esxi_management", label: "ESXi Management" },
   { key: "cisco_management", label: "Cisco Management" },
@@ -1790,11 +1832,11 @@ function LabSetupPage() {
     await Promise.all([load(), reloadLabProfiles()]);
   }
 
-  async function runWorkflowAction(action: WorkflowAction) {
+  async function runWorkflowAction(action: WorkflowAction, request?: WorkflowActionRunRequest) {
     setError("");
     setRunningWorkflowActionId(action.action_id);
     try {
-      const result = await api.runWorkflowAction(action.action_id);
+      const result = await api.runWorkflowAction(action.action_id, request);
       setWorkflowActionRunResults((current) => ({ ...current, [action.action_id]: result }));
       await load();
     } catch (err) {
@@ -2014,6 +2056,7 @@ function RunCenter() {
   const [netappConsoleDiscovery, setNetappConsoleDiscovery] = useState<ProviderProbeResult | null>(null);
   const [netappConsoleState, setNetappConsoleState] = useState<ProviderProbeResult | null>(null);
   const [netappLiveState, setNetappLiveState] = useState<ProviderProbeResult | null>(null);
+  const [netappAddressPlan, setNetappAddressPlan] = useState<ProviderProbeResult | null>(null);
   const [netappNfsVcenterReadiness, setNetappNfsVcenterReadiness] = useState<ProviderProbeResult | null>(null);
   const [netappNfsSetupPreview, setNetappNfsSetupPreview] = useState<ProviderProbeResult | null>(null);
   const [netappNfsSetupApply, setNetappNfsSetupApply] = useState<ProviderProbeResult | null>(null);
@@ -2079,6 +2122,7 @@ function RunCenter() {
         nextConsoleDiscovery,
         nextConsoleState,
         nextLiveState,
+        nextAddressPlan,
         nextNfsVcenterReadiness,
         nextNfsSetupPreview,
         nextSetupPreview,
@@ -2093,6 +2137,7 @@ function RunCenter() {
         api.netappConsoleDiscovery(),
         api.netappConsoleReadState(),
         api.netappLiveState(),
+        api.netappAddressPlan(),
         api.netappNfsVcenterReadiness(),
         api.netappNfsSetupPreview(),
         api.netappSetupPreview(),
@@ -2107,6 +2152,7 @@ function RunCenter() {
       setNetappConsoleDiscovery(nextConsoleDiscovery);
       setNetappConsoleState(nextConsoleState);
       setNetappLiveState(nextLiveState);
+      setNetappAddressPlan(nextAddressPlan);
       setNetappNfsVcenterReadiness(nextNfsVcenterReadiness);
       setNetappNfsSetupPreview(nextNfsSetupPreview);
       setNetappSetupPreview(nextSetupPreview);
@@ -2170,6 +2216,20 @@ function RunCenter() {
     try {
       const result = await api.validateNetappSetup();
       setNetappLiveState(result);
+      await loadNetAppPlanPreview();
+    } catch (err) {
+      setNetappError((err as Error).message);
+    } finally {
+      setNetappAction("");
+    }
+  }
+
+  async function runNetAppAddressPlan() {
+    setNetappError("");
+    setNetappAction("address-plan");
+    try {
+      const result = await api.runNetappAddressPlan();
+      setNetappAddressPlan(result);
       await loadNetAppPlanPreview();
     } catch (err) {
       setNetappError((err as Error).message);
@@ -2302,11 +2362,11 @@ function RunCenter() {
     }
   }
 
-  async function runWorkflowAction(action: WorkflowAction) {
+  async function runWorkflowAction(action: WorkflowAction, request?: WorkflowActionRunRequest) {
     setError("");
     setRunningWorkflowActionId(action.action_id);
     try {
-      const result = await api.runWorkflowAction(action.action_id);
+      const result = await api.runWorkflowAction(action.action_id, request);
       setWorkflowActionRunResults((current) => ({ ...current, [action.action_id]: result }));
       await load();
       if (activeSection === "netapp") {
@@ -2580,6 +2640,7 @@ function RunCenter() {
                 title="NetApp live readiness details"
               >
                 <NetAppRunCenterPreview
+                  addressPlan={netappAddressPlan}
                   artifacts={netappArtifacts}
                   consoleDiscovery={netappConsoleDiscovery}
                   consoleReadiness={netappConsoleReadiness}
@@ -2594,6 +2655,7 @@ function RunCenter() {
                   netappAction={netappAction}
                   onRunConsoleDiscovery={runNetAppConsoleDiscovery}
                   onRunConsoleReadState={runNetAppConsoleReadState}
+                  onRunAddressPlan={runNetAppAddressPlan}
                   onRunLiveState={runNetAppLiveState}
                   onRunNfsSetupApply={runNetAppNfsSetupApply}
                   onRunNfsSetupPreview={runNetAppNfsSetupPreview}
@@ -2620,6 +2682,7 @@ function RunCenter() {
             </>
           ) : (
             <MinimalNetAppPanel
+              addressPlan={netappAddressPlan}
               artifacts={netappArtifacts}
               consoleDiscovery={netappConsoleDiscovery}
               consoleReadiness={netappConsoleReadiness}
@@ -2629,7 +2692,15 @@ function RunCenter() {
               liveState={netappLiveState}
               nfsVcenterReadiness={netappNfsVcenterReadiness}
               netappAction={netappAction}
+              onRunAddressPlan={runNetAppAddressPlan}
+              onRunLiveState={runNetAppLiveState}
+              onRunNfsSetupPreview={runNetAppNfsSetupPreview}
               onRunSetupPreview={runNetAppSetupPreview}
+              onRunUpgradeInventory={runNetAppUpgradeInventory}
+              onRunUpgradePlan={runNetAppUpgradePlan}
+              onValidateNfsSetup={validateNetAppNfsSetup}
+              onValidateSetup={validateNetAppSetup}
+              onValidateUpgrade={validateNetAppUpgrade}
               onRefresh={loadNetAppPlanPreview}
               preview={netappPlanPreview}
               setupPreview={netappSetupPreview}
@@ -2726,7 +2797,7 @@ function MinimalWorkflowStageDetail({
 }: {
   actionIssueCounts?: Record<string, number>;
   onCopy: (action: WorkflowAction) => void;
-  onRun?: (action: WorkflowAction) => void;
+  onRun?: RunWorkflowActionHandler;
   runningActionId?: string;
   runResults?: Record<string, WorkflowActionRun>;
   stage: WorkflowStage | undefined;
@@ -2963,7 +3034,7 @@ function StageDetailPanel({
 }: {
   actionIssueCounts?: Record<string, number>;
   onCopy: (action: WorkflowAction) => void;
-  onRun?: (action: WorkflowAction) => void;
+  onRun?: RunWorkflowActionHandler;
   runningActionId?: string;
   runResults?: Record<string, WorkflowActionRun>;
   stageIssues?: ReportIssue[];
@@ -3091,7 +3162,7 @@ function WorkflowActionList({
   actionIssueCounts?: Record<string, number>;
   actions: WorkflowAction[];
   onCopy: (action: WorkflowAction) => void;
-  onRun?: (action: WorkflowAction) => void;
+  onRun?: RunWorkflowActionHandler;
   onSelect: (actionId: string) => void;
   runningActionId?: string;
   selectedActionId: string;
@@ -3167,7 +3238,7 @@ function WorkflowActionDetail({
   action: WorkflowAction;
   latestRun?: WorkflowActionRun;
   onCopy: (action: WorkflowAction) => void;
-  onRun?: (action: WorkflowAction) => void;
+  onRun?: RunWorkflowActionHandler;
   running?: boolean;
 }) {
   const trace = latestRun ? workflowRunToTrace(latestRun) : action.last_run_trace;
@@ -3248,7 +3319,7 @@ function WorkflowActionRunControl({
   action: WorkflowAction;
   compact?: boolean;
   onCopy: (action: WorkflowAction) => void;
-  onRun?: (action: WorkflowAction) => void;
+  onRun?: RunWorkflowActionHandler;
   running: boolean;
 }) {
   if (workflowActionCanRun(action) && onRun) {
@@ -3267,10 +3338,12 @@ function WorkflowActionRunControl({
 
   if (workflowActionRequiresGuard(action)) {
     return (
-      <span className="guarded-workflow-label">
-        <Ban size={compact ? 14 : 16} />
-        Requires guarded workflow
-      </span>
+      <GuardedWorkflowActionButton
+        action={action}
+        compact={compact}
+        onRun={onRun}
+        running={running}
+      />
     );
   }
 
@@ -3288,7 +3361,7 @@ function SimpleWorkflowActionControl({
   running
 }: {
   action: WorkflowAction;
-  onRun?: (action: WorkflowAction) => void;
+  onRun?: RunWorkflowActionHandler;
   running: boolean;
 }) {
   const { setUiMode } = useUiMode();
@@ -3309,10 +3382,12 @@ function SimpleWorkflowActionControl({
 
   if (workflowActionRequiresGuard(action)) {
     return (
-      <span className="guarded-workflow-label">
-        <Ban size={14} />
-        Requires guarded workflow
-      </span>
+      <GuardedWorkflowActionButton
+        action={action}
+        compact
+        onRun={onRun}
+        running={running}
+      />
     );
   }
 
@@ -3333,15 +3408,138 @@ function WorkflowActionHandoff({ action }: { action: WorkflowAction }) {
       </div>
     );
   }
+  if (workflowActionRequiresGuard(action) && workflowActionCanStartGuarded(action)) {
+    return (
+      <div className="workflow-action-command runnable guarded">
+        <span>Guarded UI action</span>
+        <strong>{guardedWorkflowRunButtonLabel(action)}</strong>
+      </div>
+    );
+  }
   return (
     <div className="workflow-action-command">
       <span>{workflowActionRequiresGuard(action) ? "Guarded" : "Copy command"}</span>
       {workflowActionRequiresGuard(action) ? (
-        <strong>Requires guarded workflow</strong>
+        <strong>{workflowGuardedDisabledReason(action)}</strong>
       ) : (
         <code>{workflowActionCopyText(action)}</code>
       )}
     </div>
+  );
+}
+
+function GuardedWorkflowActionButton({
+  action,
+  compact = false,
+  label,
+  onRun,
+  running
+}: {
+  action: WorkflowAction;
+  compact?: boolean;
+  label?: string;
+  onRun?: RunWorkflowActionHandler;
+  running: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const [confirmation, setConfirmation] = useState("");
+  const [confirmedGates, setConfirmedGates] = useState<Record<string, boolean>>({});
+  const requiredPhrase = action.required_confirmations[0] ?? "";
+  const canStart = workflowActionCanStartGuarded(action) && Boolean(onRun);
+  const phraseMatches = confirmation === requiredPhrase;
+  const gatesMatch = action.required_gates.every((gate) => confirmedGates[gate]);
+  const ready = canStart && phraseMatches && gatesMatch && !running;
+  const disabledReason = workflowGuardedDisabledReason(action);
+
+  useEffect(() => {
+    if (!open) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [open]);
+
+  function toggleGate(gate: string) {
+    setConfirmedGates((current) => ({ ...current, [gate]: !current[gate] }));
+  }
+
+  function startGuardedAction() {
+    if (!ready || !onRun) return;
+    onRun(action, {
+      confirmation_phrase: confirmation,
+      confirmed_gates: action.required_gates.filter((gate) => confirmedGates[gate])
+    });
+    setOpen(false);
+    setConfirmation("");
+    setConfirmedGates({});
+  }
+
+  return (
+    <span className="guarded-action-control">
+      <button
+        className={`${compact ? "small-button" : ""} guarded-action-button ${action.mode === "destructive" ? "destructive" : "primary"}`}
+        disabled={!canStart || running}
+        onClick={() => setOpen(true)}
+        title={canStart ? "Open guarded confirmation." : disabledReason}
+        type="button"
+      >
+        {running ? <RefreshCw className="spin-icon" size={compact ? 14 : 16} /> : <Play size={compact ? 14 : 16} />}
+        {running ? "Running" : label ?? guardedWorkflowRunButtonLabel(action)}
+      </button>
+      {open && createPortal(
+        <div className="guarded-action-dialog-layer" onMouseDown={(event) => {
+          if (event.target === event.currentTarget) setOpen(false);
+        }}>
+          <div className="guarded-action-dialog" role="dialog" aria-label={`${action.label} confirmation`} aria-modal="true">
+            <div className="guarded-action-dialog-head">
+              <strong>{humanWorkflowActionLabel(action)}</strong>
+              <button className="icon-button" onClick={() => setOpen(false)} type="button" aria-label="Close guarded action">
+                <X size={16} />
+              </button>
+            </div>
+            <div className="guarded-action-dialog-body">
+              <div className="guarded-action-warning">
+                <AlertTriangle size={16} />
+                <span>{workflowModeLabel(action.mode)} action against local lab hardware.</span>
+              </div>
+              {action.required_gates.length > 0 && (
+                <div className="guarded-gate-list">
+                  {action.required_gates.map((gate) => (
+                    <label key={`${action.action_id}-${gate}`}>
+                      <input
+                        checked={Boolean(confirmedGates[gate])}
+                        onChange={() => toggleGate(gate)}
+                        type="checkbox"
+                      />
+                      <span>{gate}</span>
+                    </label>
+                  ))}
+                </div>
+              )}
+              <Field label="Confirmation">
+                <input
+                  autoComplete="off"
+                  onChange={(event) => setConfirmation(event.target.value)}
+                  placeholder={requiredPhrase}
+                  value={confirmation}
+                />
+              </Field>
+            </div>
+            <div className="guarded-action-dialog-actions">
+              <button className="small-button" onClick={() => setOpen(false)} type="button">
+                Cancel
+              </button>
+              <button className="small-button primary" disabled={!ready} onClick={startGuardedAction} type="button">
+                <Play size={14} />
+                {label ?? guardedWorkflowRunButtonLabel(action)}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+    </span>
   );
 }
 
@@ -3911,6 +4109,7 @@ function providerBlockers(providers: ProviderStatus[], providerIds: string[]): s
 }
 
 function MinimalNetAppPanel({
+  addressPlan,
   artifacts,
   consoleDiscovery,
   consoleReadiness,
@@ -3920,7 +4119,15 @@ function MinimalNetAppPanel({
   liveState,
   nfsVcenterReadiness,
   netappAction,
+  onRunAddressPlan,
+  onRunLiveState,
+  onRunNfsSetupPreview,
   onRunSetupPreview,
+  onRunUpgradeInventory,
+  onRunUpgradePlan,
+  onValidateNfsSetup,
+  onValidateSetup,
+  onValidateUpgrade,
   onRefresh,
   preview,
   setupPreview,
@@ -3929,6 +4136,7 @@ function MinimalNetAppPanel({
   upgradeReadiness,
   upgradeValidation
 }: {
+  addressPlan: ProviderProbeResult | null;
   artifacts: NetAppProviderArtifact[];
   consoleDiscovery: ProviderProbeResult | null;
   consoleReadiness: NetAppConsoleReadiness | null;
@@ -3938,7 +4146,15 @@ function MinimalNetAppPanel({
   liveState: ProviderProbeResult | null;
   nfsVcenterReadiness: ProviderProbeResult | null;
   netappAction: string;
+  onRunAddressPlan: () => void;
+  onRunLiveState: () => void;
+  onRunNfsSetupPreview: () => void;
   onRunSetupPreview: () => void;
+  onRunUpgradeInventory: () => void;
+  onRunUpgradePlan: () => void;
+  onValidateNfsSetup: () => void;
+  onValidateSetup: () => void;
+  onValidateUpgrade: () => void;
   onRefresh: () => void;
   preview: NetAppPlanPreview | null;
   setupPreview: ProviderProbeResult | null;
@@ -3960,6 +4176,11 @@ function MinimalNetAppPanel({
   const configuredByLiveCheck = asBoolean(liveState?.configured ?? runtimeState.configured ?? preview?.netapp_configured);
   const setupMissingFields = stringArray(setupPreview?.missing_fields);
   const nfsBlockers = stringArray(nfsVcenterReadiness?.blockers);
+  const addressBlockers = stringArray(addressPlan?.blockers);
+  const addressComparisons = recordArray(addressPlan?.address_comparisons);
+  const addressMismatchCount = addressComparisons.filter((item) =>
+    ["mismatch", "missing_current"].includes(asString(item.status))
+  ).length;
   const upgradeButtonState = netappUpgradeButtonState({
     action: netappAction,
     apply: null,
@@ -3979,6 +4200,7 @@ function MinimalNetAppPanel({
     ...stringArray(consoleDiscovery?.blockers),
     ...stringArray(consoleState?.blockers),
     ...stringArray(liveState?.blockers),
+    ...addressBlockers,
     ...nfsBlockers,
     ...stringArray(upgradePlan?.blockers),
     ...(upgradeReadiness?.blockers ?? [])
@@ -4015,8 +4237,12 @@ function MinimalNetAppPanel({
     },
     {
       label: "Management",
-      status: configuredByLiveCheck ? "ready" : "not_configured_yet",
-      summary: configuredByLiveCheck ? "Configured" : "Not configured"
+      status: configuredByLiveCheck ? "ready" : addressMismatchCount ? "blocked" : "not_configured_yet",
+      summary: configuredByLiveCheck
+        ? "Configured"
+        : addressMismatchCount
+          ? "Address mismatch"
+          : "Not configured"
     },
     {
       label: "NFS datastore",
@@ -4043,6 +4269,7 @@ function MinimalNetAppPanel({
     workflowProbeEvidenceCount(consoleDiscovery) +
     workflowProbeEvidenceCount(consoleState) +
     workflowProbeEvidenceCount(liveState) +
+    workflowProbeEvidenceCount(addressPlan) +
     workflowProbeEvidenceCount(nfsVcenterReadiness) +
     workflowProbeEvidenceCount(setupPreview) +
     workflowProbeEvidenceCount(upgradePlan);
@@ -4050,6 +4277,7 @@ function MinimalNetAppPanel({
     ...probeEvidencePaths(consoleDiscovery),
     ...probeEvidencePaths(consoleState),
     ...probeEvidencePaths(liveState),
+    ...probeEvidencePaths(addressPlan),
     ...probeEvidencePaths(nfsVcenterReadiness),
     ...probeEvidencePaths(setupPreview),
     ...probeEvidencePaths(upgradePlan),
@@ -4080,9 +4308,41 @@ function MinimalNetAppPanel({
       <NextActionCard detail={nextAction} />
       <BlockerSummary blockers={netappBlockers.slice(0, 1)} empty="No current NetApp blocker is reported." />
       <div className="action-row">
+        <button onClick={onRunLiveState} disabled={busy || loading} type="button">
+          <RefreshCw size={16} />
+          {netappAction === "live-state" ? "Checking" : "Check State"}
+        </button>
         <button className="primary" onClick={onRunSetupPreview} disabled={busy || loading} type="button">
           <ClipboardList size={16} />
           {netappAction === "setup-preview" ? "Previewing" : "Preview Setup"}
+        </button>
+        <button onClick={onRunAddressPlan} disabled={busy || loading} type="button">
+          <Route size={16} />
+          {netappAction === "address-plan" ? "Planning" : "Address Plan"}
+        </button>
+        <button onClick={onValidateSetup} disabled={busy || loading} type="button">
+          <ShieldCheck size={16} />
+          {netappAction === "validate-setup" ? "Validating" : "Validate Setup"}
+        </button>
+        <button onClick={onRunNfsSetupPreview} disabled={busy || loading} type="button">
+          <HardDrive size={16} />
+          {netappAction === "nfs-setup-preview" ? "Previewing" : "Preview NFS"}
+        </button>
+        <button onClick={onValidateNfsSetup} disabled={busy || loading} type="button">
+          <ShieldCheck size={16} />
+          {netappAction === "nfs-setup-validate" ? "Validating" : "Validate NFS"}
+        </button>
+        <button onClick={onRunUpgradeInventory} disabled={busy || loading} type="button">
+          <RefreshCw size={16} />
+          {netappAction === "upgrade-inventory" ? "Checking" : "Check ONTAP"}
+        </button>
+        <button onClick={onRunUpgradePlan} disabled={busy || loading} type="button">
+          <ClipboardList size={16} />
+          {netappAction === "upgrade-plan" ? "Planning" : "Plan Upgrade"}
+        </button>
+        <button onClick={onValidateUpgrade} disabled={busy || loading} type="button">
+          <ShieldCheck size={16} />
+          {netappAction === "upgrade-validate" ? "Validating" : "Validate Upgrade"}
         </button>
         <button onClick={onRefresh} disabled={busy || loading} type="button">
           <RefreshCw size={16} />
@@ -4097,6 +4357,7 @@ function MinimalNetAppPanel({
 }
 
 function NetAppRunCenterPreview({
+  addressPlan,
   artifacts,
   consoleDiscovery,
   consoleReadiness,
@@ -4111,6 +4372,7 @@ function NetAppRunCenterPreview({
   netappAction,
   onRunConsoleDiscovery,
   onRunConsoleReadState,
+  onRunAddressPlan,
   onRunLiveState,
   onRunNfsSetupApply,
   onRunNfsSetupPreview,
@@ -4133,6 +4395,7 @@ function NetAppRunCenterPreview({
   upgradeReadiness,
   upgradeValidation
 }: {
+  addressPlan: ProviderProbeResult | null;
   artifacts: NetAppProviderArtifact[];
   consoleDiscovery: ProviderProbeResult | null;
   consoleReadiness: NetAppConsoleReadiness | null;
@@ -4147,6 +4410,7 @@ function NetAppRunCenterPreview({
   netappAction: string;
   onRunConsoleDiscovery: () => void;
   onRunConsoleReadState: () => void;
+  onRunAddressPlan: () => void;
   onRunLiveState: () => void;
   onRunNfsSetupApply: () => void;
   onRunNfsSetupPreview: () => void;
@@ -4182,6 +4446,7 @@ function NetAppRunCenterPreview({
   const storagePreview = preview?.storage_iscsi_plan_preview ?? {};
   const upgradePreview = preview?.upgrade_readiness_preview ?? {};
   const disabledActions = preview?.disabled_actions ?? [];
+  const addressComparisons = recordArray(addressPlan?.address_comparisons);
 
   return (
     <section className="panel netapp-run-center-preview">
@@ -4217,6 +4482,13 @@ function NetAppRunCenterPreview({
           <KeyValueTable rows={targetAddressing} labelKey="label" valueKey="address" empty="No NetApp target addresses are planned." />
           <h3>Current / Discovered Targets</h3>
           <KeyValueTable rows={currentAddressing} labelKey="label" valueKey="address" empty="No NetApp current targets have been discovered." />
+          <h3>Address Remediation</h3>
+          <NetAppAddressPlanPanel
+            addressPlan={addressPlan}
+            busy={Boolean(netappAction)}
+            comparisons={addressComparisons}
+            onRunAddressPlan={onRunAddressPlan}
+          />
           <div className="provider-callout">
             <strong>Setup vs upgrade readiness</strong>
             <p>Setup: {operatorReadinessLabel(asString(setupReadiness.status) || "blocked_until_live_setup_ready")}. Upgrade: {operatorReadinessLabel(asString(upgradeReadinessSummary.status) || "blocked_until_setup_ready")}.</p>
@@ -4310,6 +4582,67 @@ function NetAppRunCenterPreview({
         !loading && !error && <p className="muted">No NetApp plan-preview payload is available.</p>
       )}
     </section>
+  );
+}
+
+function NetAppAddressPlanPanel({
+  addressPlan,
+  busy,
+  comparisons,
+  onRunAddressPlan
+}: {
+  addressPlan: ProviderProbeResult | null;
+  busy: boolean;
+  comparisons: Record<string, unknown>[];
+  onRunAddressPlan: () => void;
+}) {
+  if (!addressPlan) {
+    return (
+      <div className="provider-callout">
+        <strong>Address plan not checked</strong>
+        <p>Run Address Plan to compare console-discovered ONTAP addresses with the active lab profile.</p>
+        <button onClick={onRunAddressPlan} disabled={busy} type="button">
+          <Route size={16} />
+          Run Address Plan
+        </button>
+      </div>
+    );
+  }
+  const artifacts = objectValue(addressPlan.artifacts);
+  const operatorPaths = recordArray(addressPlan.operator_paths);
+  return (
+    <div className="netapp-address-plan-panel">
+      <div className="provider-fact-grid compact">
+        <ProviderFact label="Status" value={labelize(asString(addressPlan.status) || "unknown")} />
+        <ProviderFact label="Apply" value={asBoolean(addressPlan.apply_enabled) ? "Enabled" : "Disabled"} />
+        <ProviderFact label="Next Action" value={humanizeAction(asString(addressPlan.next_safe_action) || "Review address blockers.")} />
+        <ProviderFact label="Report" value={asString(artifacts.report) || "Not written"} />
+      </div>
+      <div className="action-row">
+        <button onClick={onRunAddressPlan} disabled={busy} type="button">
+          <Route size={16} />
+          Run Address Plan
+        </button>
+      </div>
+      <NetAppRunCenterIssues
+        blockers={stringArray(addressPlan.blockers)}
+        removableWarnings={[]}
+        warnings={stringArray(addressPlan.warnings)}
+      />
+      <KeyValueTable
+        rows={comparisons}
+        labelKey="label"
+        valueKey="status"
+        empty="No address comparison rows are available."
+      />
+      <div className="tag-row netapp-artifact-row">
+        {operatorPaths.map((path) => (
+          <span key={asString(path.id) || asString(path.label)}>
+            {asString(path.label)}: {labelize(asString(path.status) || "unknown")}
+          </span>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -7042,7 +7375,7 @@ function ControlCenterPage() {
   const { reloadReportIssues } = useReportIssues();
   const [catalog, setCatalog] = useState<ControlActionCatalog | null>(null);
   const [workflowActions, setWorkflowActions] = useState<WorkflowAction[]>([]);
-  const [activeSectionId, setActiveSectionId] = useState<ControlCenterSectionId>("cisco");
+  const [activeSectionId, setActiveSectionId] = useState<ControlCenterSectionId>("lab-profile");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [busyAction, setBusyAction] = useState("");
@@ -7058,18 +7391,19 @@ function ControlCenterPage() {
   async function load() {
     setError("");
     setLoading(true);
-    try {
-      const [nextWorkflowActions, nextCatalog] = await Promise.all([
-        api.workflowActions(),
-        api.controlActions()
-      ]);
-      setWorkflowActions(nextWorkflowActions);
-      setCatalog(nextCatalog);
-    } catch (err) {
-      setError((err as Error).message);
-    } finally {
-      setLoading(false);
+    const loadErrors: string[] = [];
+    await Promise.all([
+      api.workflowActions()
+        .then(setWorkflowActions)
+        .catch((err: Error) => loadErrors.push(`Workflow actions: ${err.message}`)),
+      api.controlActions()
+        .then(setCatalog)
+        .catch((err: Error) => loadErrors.push(`Control catalog: ${err.message}`))
+    ]);
+    if (loadErrors.length) {
+      setError(loadErrors.join(" "));
     }
+    setLoading(false);
   }
 
   useEffect(() => {
@@ -7078,7 +7412,19 @@ function ControlCenterPage() {
 
   useEffect(() => {
     const querySection = new URLSearchParams(location.search).get("section");
-    const allowed: ControlCenterSectionId[] = ["lab-profile", "cisco", "ilo", "raid", "esxi", "netapp", "action-catalog"];
+    const allowed: ControlCenterSectionId[] = [
+      "lab-profile",
+      "cisco",
+      "ilo",
+      "raid",
+      "esxi",
+      "netapp",
+      "vcenter",
+      "firmware-upgrade",
+      "verification",
+      "reports",
+      "action-catalog"
+    ];
     if (querySection && allowed.includes(querySection as ControlCenterSectionId)) {
       setActiveSectionId(querySection as ControlCenterSectionId);
     }
@@ -7121,11 +7467,11 @@ function ControlCenterPage() {
     copyText(workflowActionCopyText(action), action.label);
   }
 
-  async function runWorkflowAction(action: WorkflowAction) {
+  async function runWorkflowAction(action: WorkflowAction, request?: WorkflowActionRunRequest) {
     setError("");
     setRunningWorkflowActionId(action.action_id);
     try {
-      const result = await api.runWorkflowAction(action.action_id);
+      const result = await api.runWorkflowAction(action.action_id, request);
       setWorkflowActionRunResults((current) => ({ ...current, [action.action_id]: result }));
       await load();
       await reloadReportIssues();
@@ -7152,6 +7498,31 @@ function ControlCenterPage() {
       await reloadLabProfiles();
       await load();
       await reloadReportIssues();
+    } finally {
+      setBusyAction("");
+    }
+  }
+
+  async function saveProfileConfig(form: LabProfileFormState) {
+    if (!activeProfile) {
+      throw new Error("Load the active lab setup before editing values here.");
+    }
+    setBusyAction("profile-config");
+    setError("");
+    try {
+      const nextForm = controlProfileFormForSave(form, activeProfile);
+      const payload = labProfilePayload(nextForm);
+      if (activeProfile.source === "saved") {
+        await api.updateLabProfile(activeProfile.id, payload);
+      } else {
+        await api.createLabProfile(payload);
+      }
+      await reloadLabProfiles();
+      await load();
+      await reloadReportIssues();
+    } catch (err) {
+      setError((err as Error).message);
+      throw err;
     } finally {
       setBusyAction("");
     }
@@ -7186,52 +7557,62 @@ function ControlCenterPage() {
   const commanderActions = actions.filter((action) => action.id.startsWith("commander."));
   const netappInScope = activeContext?.enabled_features.netapp_enabled ?? activeProfile?.features.netapp_enabled ?? true;
   const visibleSections: ControlCenterSectionId[] = [
+    "lab-profile",
     "cisco",
     "ilo",
     "raid",
     "esxi",
     ...(netappInScope || isAdvancedMode ? (["netapp"] as ControlCenterSectionId[]) : []),
-    ...(isAdvancedMode ? (["action-catalog"] as ControlCenterSectionId[]) : [])
+    "vcenter",
+    "firmware-upgrade",
+    "verification",
+    "reports",
+    "action-catalog"
   ];
   const activeRegistryStageId = workflowStageIdForControlSection(activeSectionId);
   const scopedWorkflowActions =
     activeSectionId === "action-catalog"
       ? workflowActions
       : workflowActions.filter((action) => action.stage === activeRegistryStageId);
+  const visibleScopedWorkflowActions = isAdvancedMode ? scopedWorkflowActions : operatorVisibleWorkflowActions(scopedWorkflowActions);
   const selectedSection =
     activeSectionId === "action-catalog"
       ? null
-      : sections.find((section) => section.id === activeSectionId) ?? sections[0] ?? null;
+      : sections.find((section) => section.id === activeSectionId) ?? null;
   const selectedActions = selectedSection?.actions ?? actions;
   const selectedBlockers = uniqueStrings(selectedActions.flatMap((action) => (action.blocker ? [action.blocker] : [])));
   const selectedWorkflowAction =
-    scopedWorkflowActions.find((action) => action.action_id === selectedWorkflowActionId) ??
-    scopedWorkflowActions[0] ??
+    visibleScopedWorkflowActions.find((action) => action.action_id === selectedWorkflowActionId) ??
+    visibleScopedWorkflowActions[0] ??
     null;
   const selectedCatalogBlockers =
-    scopedWorkflowActions.length
+    visibleScopedWorkflowActions.length
       ? uniqueStrings([
           ...selectedBlockers,
-          ...scopedWorkflowActions.flatMap((action) => action.blockers.slice(0, 1))
+          ...visibleScopedWorkflowActions.flatMap((action) => action.blockers.slice(0, 1))
         ])
       : selectedBlockers;
   const generatedLabel = catalog?.generated_at ? formatDateTime(catalog.generated_at) : "Registry";
-  const scopedActionKeySignature = scopedWorkflowActions.map((action) => action.action_id).join("|");
+  const scopedActionKeySignature = visibleScopedWorkflowActions.map((action) => action.action_id).join("|");
+  const waitingForControlCatalog = activeSectionId !== "action-catalog" && !catalog;
+  const waitingForActionCatalog = activeSectionId === "action-catalog" && !workflowActions.length;
+  const showControlCenterLoading = loading && (waitingForControlCatalog || waitingForActionCatalog);
+  const canRenderControlSurface = Boolean(catalog) || activeSectionId === "action-catalog";
 
   useEffect(() => {
     if (!visibleSections.includes(activeSectionId)) {
-      setActiveSectionId("action-catalog");
+      setActiveSectionId(visibleSections[0] ?? "lab-profile");
     }
   }, [activeSectionId, isAdvancedMode, netappInScope]);
 
   useEffect(() => {
-    if (!scopedWorkflowActions.length) {
+    if (!visibleScopedWorkflowActions.length) {
       return;
     }
     setSelectedWorkflowActionId((current) =>
-      scopedWorkflowActions.some((action) => action.action_id === current)
+      visibleScopedWorkflowActions.some((action) => action.action_id === current)
         ? current
-        : scopedWorkflowActions[0].action_id
+        : visibleScopedWorkflowActions[0].action_id
     );
   }, [activeSectionId, scopedActionKeySignature]);
 
@@ -7241,11 +7622,21 @@ function ControlCenterPage() {
     }
     const section = sections.find((item) => item.id === sectionId);
     const label =
-      sectionId === "ilo"
+      sectionId === "lab-profile"
+        ? "Lab Setup"
+        : sectionId === "ilo"
         ? "HPE / iLO Control"
         : sectionId === "raid"
           ? "RAID Control"
-          : section?.title ?? labelize(sectionId);
+          : sectionId === "vcenter"
+            ? "vCenter Control"
+          : sectionId === "firmware-upgrade"
+            ? "Firmware / Upgrade"
+            : sectionId === "verification"
+              ? "Verification"
+              : sectionId === "reports"
+                ? "Reports"
+              : section?.title ?? labelize(sectionId);
     return {
       id: sectionId,
       label,
@@ -7271,8 +7662,14 @@ function ControlCenterPage() {
         </>
       }
     >
-      <Feedback loading={loading && !catalog && !workflowActions.length} error={error} />
-      {(catalog || activeSectionId === "action-catalog") && (
+      <Feedback loading={showControlCenterLoading} error={error} />
+      {!loading && !catalog && activeSectionId !== "action-catalog" && !error && (
+        <EmptyState
+          detail="The control catalog did not load. Refresh this page or run make app-check, then retry the selected section."
+          title="Control catalog unavailable"
+        />
+      )}
+      {canRenderControlSurface && (
         <section className="control-center-surface">
           <div className="calm-section-grid">
             <StatusSummaryCard
@@ -7284,8 +7681,8 @@ function ControlCenterPage() {
               status={selectedSection?.status ?? (registryBlockedActions ? "blocked" : "ready")}
               title={selectedSection?.title ?? "Action Catalog"}
               items={[
-                { label: "Actions", value: String(scopedWorkflowActions.length || selectedActions.length) },
-                { label: "Blocked", value: String(scopedWorkflowActions.length ? selectedCatalogBlockers.length : selectedBlockers.length) },
+                { label: "Actions", value: String(visibleScopedWorkflowActions.length || selectedActions.length) },
+                { label: "Blocked", value: String(visibleScopedWorkflowActions.length ? selectedCatalogBlockers.length : selectedBlockers.length) },
                 { label: "Upgrade", value: String(activeSectionId === "action-catalog" ? registryUpgradeActions : upgradeActions) },
                 { label: "Generated", value: generatedLabel }
               ]}
@@ -7304,6 +7701,7 @@ function ControlCenterPage() {
             <StandardControlSectionLayout
               accessError={accessError}
               activeProfile={activeProfile}
+              allWorkflowActions={workflowActions}
               busyAccessSection={busyAccessSection}
               catalogProfile={catalog?.lab_profile ?? null}
               copyMessage={copyMessage}
@@ -7311,15 +7709,19 @@ function ControlCenterPage() {
               onRefresh={load}
               onRunWorkflowAction={runWorkflowAction}
               onSaveGlobalConfig={saveGlobalConfig}
+              onSaveProfileConfig={saveProfileConfig}
               onSaveAccess={saveAccessConfig}
+              onCopyWorkflowAction={copyWorkflowAction}
               runningActionId={runningWorkflowActionId}
+              runResults={workflowActionRunResults}
               savingGlobalConfig={busyAction === "global-config"}
+              savingProfileConfig={busyAction === "profile-config"}
               section={selectedSection}
-              workflowActions={scopedWorkflowActions}
+              workflowActions={visibleScopedWorkflowActions}
             >
               <>
                 <ActionCatalogTable
-                  actions={scopedWorkflowActions}
+                  actions={visibleScopedWorkflowActions}
                   onCopy={copyWorkflowAction}
                   onRun={runWorkflowAction}
                   onSelect={setSelectedWorkflowActionId}
@@ -7369,22 +7771,24 @@ function ControlCenterPage() {
             </StandardControlSectionLayout>
           )}
 
-          {activeSectionId === "action-catalog" && isAdvancedMode && (
+          {activeSectionId === "action-catalog" && (
             <>
-              <AdvancedDetails
-                className="section-details"
-                summary="Manual command helpers stay collapsed until needed"
-                title="Commander mode"
-              >
-                <CommanderModePanel
-                  actions={commanderActions}
-                  busyAction={busyAction}
-                  onCopy={copyAction}
-                  onPlan={planAction}
-                />
-              </AdvancedDetails>
+              {isAdvancedMode && (
+                <AdvancedDetails
+                  className="section-details"
+                  summary="Manual command helpers stay collapsed until needed"
+                  title="Commander mode"
+                >
+                  <CommanderModePanel
+                    actions={commanderActions}
+                    busyAction={busyAction}
+                    onCopy={copyAction}
+                    onPlan={planAction}
+                  />
+                </AdvancedDetails>
+              )}
               <ActionCatalogTable
-                actions={scopedWorkflowActions}
+                actions={visibleScopedWorkflowActions}
                 onCopy={copyWorkflowAction}
                 onRun={runWorkflowAction}
                 onSelect={setSelectedWorkflowActionId}
@@ -7418,11 +7822,40 @@ function ControlCenterPage() {
   );
 }
 
+function operatorVisibleWorkflowActions(actions: WorkflowAction[]): WorkflowAction[] {
+  const byId = new Map<string, WorkflowAction>();
+  actions
+    .filter((action) => !action.action_id.startsWith("commander."))
+    .filter((action) => action.current_availability !== "not_available")
+    .filter((action) => !/placeholder|future|create-waiver/i.test(`${action.action_id} ${action.label} ${action.description}`))
+    .filter((action) => workflowActionCanRun(action) || workflowActionRequiresGuard(action))
+    .forEach((action) => {
+      if (!byId.has(action.action_id)) {
+        byId.set(action.action_id, action);
+      }
+    });
+  return Array.from(byId.values()).sort(workflowActionOperatorSort);
+}
+
+function workflowActionOperatorSort(left: WorkflowAction, right: WorkflowAction): number {
+  const runnableDelta = Number(workflowActionCanRun(right)) - Number(workflowActionCanRun(left));
+  if (runnableDelta !== 0) return runnableDelta;
+  const leftGuarded = workflowActionRequiresGuard(left) ? 1 : 0;
+  const rightGuarded = workflowActionRequiresGuard(right) ? 1 : 0;
+  if (leftGuarded !== rightGuarded) return leftGuarded - rightGuarded;
+  const leftOrder = setupActionCategoryOrder(left);
+  const rightOrder = setupActionCategoryOrder(right);
+  if (leftOrder !== rightOrder) return leftOrder - rightOrder;
+  return humanWorkflowActionLabel(left).localeCompare(humanWorkflowActionLabel(right));
+}
+
 const standardInlineAccessSectionIds = new Set<string>();
+const currentAccessSectionIds = new Set<string>(["cisco", "ilo", "raid", "esxi", "netapp"]);
 
 function StandardControlSectionLayout({
   accessError,
   activeProfile,
+  allWorkflowActions,
   busyAccessSection,
   catalogProfile,
   children,
@@ -7431,25 +7864,34 @@ function StandardControlSectionLayout({
   onRefresh,
   onRunWorkflowAction,
   onSaveGlobalConfig,
+  onSaveProfileConfig,
   onSaveAccess,
+  onCopyWorkflowAction,
   runningActionId,
+  runResults,
   savingGlobalConfig,
+  savingProfileConfig,
   section,
   workflowActions
 }: {
   accessError: string;
   activeProfile: LabProfile | null;
+  allWorkflowActions: WorkflowAction[];
   busyAccessSection: string;
   catalogProfile: ControlLabProfile | null;
   children: ReactNode;
   copyMessage: string;
   onCopyText: (text: string, label: string) => void;
   onRefresh: () => void;
-  onRunWorkflowAction: (action: WorkflowAction) => void;
+  onRunWorkflowAction: RunWorkflowActionHandler;
   onSaveGlobalConfig: (values: GlobalConfigEditState) => Promise<void>;
+  onSaveProfileConfig: (form: LabProfileFormState) => Promise<void>;
   onSaveAccess: (sectionId: string, payload: ControlAccessConfigWrite) => Promise<void>;
+  onCopyWorkflowAction: (action: WorkflowAction) => void;
   runningActionId: string;
+  runResults: Record<string, WorkflowActionRun>;
   savingGlobalConfig: boolean;
+  savingProfileConfig: boolean;
   section: ControlSectionRecord;
   workflowActions: WorkflowAction[];
 }) {
@@ -7470,10 +7912,19 @@ function StandardControlSectionLayout({
         <StatusPill status={section.status} />
       </div>
 
-      <div className={`firmware-warning-strip ${warning.tone}`}>
-        <span>{warning.message}</span>
-        <StatusBadge status={warning.tone === "ready" ? "current" : warning.tone === "blocked" ? "blocked" : "not_checked"} />
-      </div>
+      {section.firmware_summary ? (
+        <FirmwareSummaryStrip
+          onRunWorkflowAction={onRunWorkflowAction}
+          runningActionId={runningActionId}
+          summary={section.firmware_summary}
+          workflowActions={allWorkflowActions}
+        />
+      ) : (
+        <div className={`firmware-warning-strip ${warning.tone}`}>
+          <span>{warning.message}</span>
+          <StatusBadge status={warning.tone === "ready" ? "current" : warning.tone === "blocked" ? "blocked" : "not_checked"} />
+        </div>
+      )}
 
       <section className="standard-block access-block">
         <div className="standard-block-head">
@@ -7484,7 +7935,13 @@ function StandardControlSectionLayout({
           <StatusBadge status={access.liveStatus} />
         </div>
         <div className="access-fact-grid">
-          <ProviderFact label="Management IP" value={displayAddress(access.managementIp)} />
+          <ProviderFact label="Permanent management IP" value={displayAddress(access.managementIp)} />
+          {(section.access_config?.original_dhcp_ip || (section.id === "ilo" ? activeProfile?.address_plan.ilo_initial : null)) && (
+            <ProviderFact
+              label="Current login IP"
+              value={displayAddress(section.access_config?.original_dhcp_ip || activeProfile?.address_plan.ilo_initial)}
+            />
+          )}
           {access.url && <ProviderFact label="URL" value={access.url} />}
           {access.sshTarget && <ProviderFact label="SSH Target" value={access.sshTarget} />}
           {access.consolePort && <ProviderFact label="Console Port" value={access.consolePort} />}
@@ -7510,9 +7967,40 @@ function StandardControlSectionLayout({
             )
           )}
         </div>
+        {section.access_config && currentAccessSectionIds.has(section.id) && (
+          <CurrentAccessConfigInline
+            busy={busyAccessSection === section.id}
+            config={section.access_config}
+            error={busyAccessSection === section.id ? "" : accessError}
+            onSave={onSaveAccess}
+          />
+        )}
       </section>
 
-      <ConfigSummaryBlock configRows={configRows} sectionId={section.id} />
+      <SectionProfileConfigEditor
+        activeProfile={activeProfile}
+        configRows={configRows}
+        onSave={onSaveProfileConfig}
+        saving={savingProfileConfig}
+        sectionId={section.id}
+      />
+
+      <SetupExecutionOptionsPanel
+        actions={workflowActions}
+        onCopy={onCopyWorkflowAction}
+        onRun={onRunWorkflowAction}
+        runResults={runResults}
+        runningActionId={runningActionId}
+        sectionId={section.id}
+      />
+
+      {section.id === "firmware-upgrade" && (
+        <FirmwareGuardedControlsPanel
+          actions={firmwareGuardedControls(allWorkflowActions)}
+          onRunWorkflowAction={onRunWorkflowAction}
+          runningActionId={runningActionId}
+        />
+      )}
 
       <details className="actions-config-dropdown">
         <summary>
@@ -7586,6 +8074,424 @@ function ConfigSummaryBlock({
             <strong>{row.value}</strong>
           </div>
         ))}
+      </div>
+    </section>
+  );
+}
+
+function FirmwareSummaryStrip({
+  onRunWorkflowAction,
+  runningActionId,
+  summary,
+  workflowActions
+}: {
+  onRunWorkflowAction: RunWorkflowActionHandler;
+  runningActionId: string;
+  summary: FirmwareSummary;
+  workflowActions: WorkflowAction[];
+}) {
+  const scanAction = summary.scan_action_id
+    ? workflowActions.find((action) => action.action_id === summary.scan_action_id) ?? null
+    : null;
+  const running = Boolean(scanAction && runningActionId === scanAction.action_id);
+  const canRunScan = Boolean(scanAction && workflowActionCanRun(scanAction));
+  const disabledReason = scanAction
+    ? firmwareReasonText(scanAction.blockers[0] || scanAction.ui_run_blockers[0] || summary.blocker || "Prerequisites missing.")
+    : "No safe scan action is registered for this device.";
+  const upgradeLink = summary.upgrade_center_link || `/firmware?device=${summary.device_id}`;
+
+  return (
+    <section className={`firmware-summary-strip ${firmwareSummaryTone(summary)}`}>
+      <div className="firmware-summary-head">
+        <div>
+          <span className="summary-kicker">Firmware / Software</span>
+          <h3>{summary.label}</h3>
+          <p>{firmwareSummaryLine(summary)}</p>
+        </div>
+        <div className="standard-action-row firmware-summary-actions">
+          <button
+            className="small-button primary"
+            disabled={!canRunScan || running}
+            onClick={() => {
+              if (scanAction && canRunScan) onRunWorkflowAction(scanAction);
+            }}
+            title={canRunScan ? "Run the registered read-only firmware scan." : disabledReason}
+            type="button"
+          >
+            {running ? <RefreshCw className="spin-icon" size={14} /> : <ShieldCheck size={14} />}
+            {running ? "Scanning" : "Scan Firmware"}
+          </button>
+          <Link className="button-link small-button" to={upgradeLink}>
+            <Route size={14} />
+            Open Firmware Upgrades
+          </Link>
+        </div>
+      </div>
+      <div className="firmware-summary-grid">
+        <ProviderFact label="Status" value={firmwareComplianceLabel(summary.compliance_status)} />
+        <ProviderFact label="Current" value={firmwareVersionList(summary.current_versions, "Unknown")} />
+        <ProviderFact label="Baseline" value={firmwareBaselineList(summary.approved_versions)} />
+        <ProviderFact label="Last scanned" value={summary.last_scanned ? formatDateTime(summary.last_scanned) : "Not checked"} />
+        <ProviderFact label="Source" value={firmwareSourceLabel(summary.source_type)} />
+        <ProviderFact label="Freshness" value={firmwareFreshnessLabel(summary.freshness)} />
+      </div>
+      {summary.blocker && (
+        <div className="firmware-summary-reason">
+          <AlertTriangle size={16} />
+          <span>{firmwareReasonText(summary.blocker)}</span>
+        </div>
+      )}
+      {!canRunScan && (
+        <p className="firmware-summary-disabled">Scan disabled: {disabledReason}</p>
+      )}
+      {summary.evidence_artifacts.length > 0 && (
+        <AdvancedDetails
+          className="firmware-summary-evidence"
+          summary={`${summary.evidence_artifacts.length} firmware evidence link${summary.evidence_artifacts.length === 1 ? "" : "s"}`}
+          title="Firmware evidence"
+        >
+          <EvidenceList artifacts={summary.evidence_artifacts} empty="No firmware evidence links are available yet." />
+        </AdvancedDetails>
+      )}
+    </section>
+  );
+}
+
+function firmwareSummaryTone(summary: FirmwareSummary): string {
+  if (summary.severity === "red") return "blocked";
+  if (summary.severity === "yellow") return "warning";
+  if (summary.severity === "gray") return "neutral";
+  return "ready";
+}
+
+function firmwareSummaryLine(summary: FirmwareSummary): string {
+  const status = firmwareComplianceLabel(summary.compliance_status);
+  if (summary.blocker) {
+    return `${status}: ${firmwareReasonText(summary.blocker)}.`;
+  }
+  return `${status}: ${firmwareVersionList(summary.current_versions, "versions available")}.`;
+}
+
+function firmwareReasonText(value: string): string {
+  const text = humanizeBlocker(value);
+  return text ? `${text.charAt(0).toUpperCase()}${text.slice(1)}` : text;
+}
+
+function firmwareComplianceLabel(status: string): string {
+  if (status === "current") return "Current";
+  if (status === "needs_upgrade") return "Needs upgrade";
+  if (status === "cannot_verify") return "Cannot verify";
+  if (status === "not_configured") return "Not configured";
+  return displayStatusLabel(status);
+}
+
+function firmwareVersionList(values: Array<{ label: string; version: string | null; status?: string | null }>, empty: string): string {
+  if (!values.length) return empty;
+  return values
+    .slice(0, 4)
+    .map((item) => `${item.label}: ${item.version || "Unknown"}`)
+    .join("; ");
+}
+
+function firmwareBaselineList(values: Array<{ label: string; version: string | null; status?: string | null }>): string {
+  if (!values.length) return "Not set";
+  return values
+    .slice(0, 4)
+    .map((item) =>
+      item.version
+        ? `${item.label}: ${item.version}`
+        : `${item.label}: ${displayStatusLabel(item.status || "manual_review")}`
+    )
+    .join("; ");
+}
+
+function firmwareSourceLabel(sourceType: string): string {
+  if (sourceType === "live_check") return "live check";
+  if (sourceType === "cached_live") return "cached live";
+  if (sourceType === "historical_evidence") return "historical evidence";
+  if (sourceType === "not_checked") return "not checked";
+  return displayStatusLabel(sourceType).toLowerCase();
+}
+
+function firmwareFreshnessLabel(freshness: string): string {
+  if (freshness === "not_checked") return "not checked";
+  return displayStatusLabel(freshness).toLowerCase();
+}
+
+function SectionProfileConfigEditor({
+  activeProfile,
+  configRows,
+  onSave,
+  saving,
+  sectionId
+}: {
+  activeProfile: LabProfile | null;
+  configRows: WorkflowSummaryItem[];
+  onSave: (form: LabProfileFormState) => Promise<void>;
+  saving: boolean;
+  sectionId: string;
+}) {
+  const [form, setForm] = useState<LabProfileFormState>(() =>
+    activeProfile ? labProfileFormFrom(activeProfile) : blankLabProfileForm()
+  );
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+  const profileKey = `${sectionId}:${activeProfile?.id ?? "none"}:${activeProfile?.version ?? "0"}:${activeProfile?.source ?? "missing"}`;
+  const subnetPrefix = parseSubnetPrefix(form.globalSettings.subnetPrefix);
+  const fields = controlProfileFieldsForSection(sectionId, labNetAppSupported(subnetPrefix));
+  const editable = Boolean(activeProfile);
+  const saveMode =
+    activeProfile?.source === "saved"
+      ? "Updates the active saved lab setup."
+      : "Creates a saved lab setup from the current runtime values.";
+
+  useEffect(() => {
+    setForm(activeProfile ? labProfileFormFrom(activeProfile) : blankLabProfileForm());
+    setMessage("");
+    setError("");
+  }, [profileKey, activeProfile]);
+
+  function updateProfileField(key: "name" | "description", value: string) {
+    setForm((current) => ({ ...current, [key]: value }));
+  }
+
+  function updateAddress(key: LabAddressScalarKey, value: string) {
+    if (key === "subnet") {
+      setForm((current) => applyLabSubnetChoice(current, value, current.globalSettings.subnetPrefix));
+      return;
+    }
+    setForm((current) => ({
+      ...current,
+      addresses: {
+        ...current.addresses,
+        [key]: value
+      }
+    }));
+  }
+
+  function updateGlobal<K extends keyof LabGlobalSettingsFormState>(key: K, value: LabGlobalSettingsFormState[K]) {
+    setForm((current) => ({
+      ...current,
+      globalSettings: {
+        ...current.globalSettings,
+        [key]: value
+      }
+    }));
+  }
+
+  function updateNetAppList(key: "netappNfsLifs" | "netappIscsiLifs", value: string) {
+    setForm((current) => ({ ...current, [key]: value }));
+  }
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    setMessage("");
+    setError("");
+    try {
+      await onSave(form);
+      setMessage("Setup values saved.");
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  }
+
+  return (
+    <section className="standard-block config-block control-profile-editor-block">
+      <div className="standard-block-head">
+        <div>
+          <span className="summary-kicker">Config</span>
+          <h3>Saved setup values</h3>
+          <p>{editable ? saveMode : "Load the active lab setup before editing values."}</p>
+        </div>
+        <StatusBadge status={activeProfile?.source === "saved" ? "current" : editable ? "not_checked" : "blocked"} />
+      </div>
+      <form className="control-profile-editor" onSubmit={submit}>
+        <div className="control-profile-editor-grid">
+          {fields.map((field) => {
+            if (field.kind === "profile") {
+              return (
+                <Field key={`${sectionId}-${field.kind}-${field.key}`} label={field.label}>
+                  <input
+                    disabled={!editable || saving}
+                    onChange={(event) => updateProfileField(field.key, event.target.value)}
+                    value={form[field.key]}
+                  />
+                </Field>
+              );
+            }
+            if (field.kind === "address") {
+              return (
+                <Field key={`${sectionId}-${field.kind}-${field.key}`} label={field.label}>
+                  <input
+                    disabled={!editable || saving}
+                    inputMode="decimal"
+                    onChange={(event) => updateAddress(field.key, event.target.value)}
+                    placeholder={
+                      field.key === "ilo_initial"
+                        ? "192.168.1.11"
+                        : field.key === "ilo"
+                          ? "192.168.1.201"
+                          : undefined
+                    }
+                    value={form.addresses[field.key]}
+                  />
+                </Field>
+              );
+            }
+            if (field.kind === "netapp-list") {
+              return (
+                <Field key={`${sectionId}-${field.kind}-${field.key}`} label={field.label}>
+                  <input
+                    disabled={!editable || saving}
+                    inputMode="decimal"
+                    onChange={(event) => updateNetAppList(field.key, event.target.value)}
+                    placeholder="Comma-separated IPs"
+                    value={form[field.key]}
+                  />
+                </Field>
+              );
+            }
+            if (field.valueType === "boolean") {
+              return (
+                <label className="checkbox-line control-profile-checkbox" key={`${sectionId}-${field.kind}-${field.key}`}>
+                  <input
+                    checked={Boolean(form.globalSettings[field.key])}
+                    disabled={!editable || saving}
+                    onChange={(event) => updateGlobal(field.key, event.target.checked as LabGlobalSettingsFormState[typeof field.key])}
+                    type="checkbox"
+                  />
+                  <span>{field.label}</span>
+                </label>
+              );
+            }
+            if (field.valueType === "select") {
+              return (
+                <Field key={`${sectionId}-${field.kind}-${field.key}`} label={field.label}>
+                  <select
+                    disabled={!editable || saving}
+                    onChange={(event) => updateGlobal(field.key, event.target.value as LabGlobalSettingsFormState[typeof field.key])}
+                    value={String(form.globalSettings[field.key] ?? "")}
+                  >
+                    {(field.options ?? []).map((option) => (
+                      <option key={`${field.key}-${option.value}`} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+              );
+            }
+            return (
+              <Field key={`${sectionId}-${field.kind}-${field.key}`} label={field.label}>
+                <input
+                  disabled={!editable || saving}
+                  inputMode={field.valueType === "number" ? "numeric" : undefined}
+                  onChange={(event) => updateGlobal(field.key, event.target.value as LabGlobalSettingsFormState[typeof field.key])}
+                  value={String(form.globalSettings[field.key] ?? "")}
+                />
+              </Field>
+            );
+          })}
+        </div>
+        <p className="muted-mini">
+          Saving these values updates local setup state only. It does not contact hardware, change provider mode, or enable apply actions.
+        </p>
+        {(message || error) && <p className={error ? "form-error" : "success"}>{error || message}</p>}
+        <div className="standard-action-row">
+          <button className="small-button primary" disabled={!editable || saving} type="submit">
+            <Save size={14} />
+            {saving ? "Saving" : activeProfile?.source === "saved" ? "Save setup values" : "Create saved setup"}
+          </button>
+          <Link className="button-link small-button" to="/lab-setup">
+            <Pencil size={14} />
+            Full profile
+          </Link>
+        </div>
+      </form>
+      <div className="config-compact-table" aria-label={`${labelize(sectionId)} applied config values`}>
+        {configRows.map((row) => (
+          <div key={`${sectionId}-${row.label}`}>
+            <span>{row.label}</span>
+            <strong>{row.value}</strong>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function SetupExecutionOptionsPanel({
+  actions,
+  onCopy,
+  onRun,
+  runResults,
+  runningActionId,
+  sectionId
+}: {
+  actions: WorkflowAction[];
+  onCopy: (action: WorkflowAction) => void;
+  onRun: (action: WorkflowAction) => void;
+  runResults: Record<string, WorkflowActionRun>;
+  runningActionId: string;
+  sectionId: string;
+}) {
+  const setupActions = setupExecutionActionsForSection(sectionId, actions);
+  const runnableCount = setupActions.filter((action) => workflowActionCanRun(action)).length;
+  const guardedCount = setupActions.filter((action) => workflowActionRequiresGuard(action)).length;
+  const status = runnableCount ? "available" : setupActions.length ? "manual_command_required" : "not_available";
+
+  return (
+    <section className="standard-block setup-run-options-block">
+      <div className="standard-block-head">
+        <div>
+          <span className="summary-kicker">Run</span>
+          <h3>Run options</h3>
+          <p>Checks, previews, and reports can run from the UI. Apply, reset, install, and upgrade actions stay gated.</p>
+        </div>
+        <StatusBadge status={status} />
+      </div>
+      {setupActions.length ? (
+        <div className="setup-run-option-list">
+          {setupActions.map((action) => {
+            const latestRun = runResults[action.action_id];
+            const trace = latestRun ? workflowRunToTrace(latestRun) : action.last_run_trace;
+            const blocker = action.blockers[0] || action.ui_run_blockers[0] || latestRun?.blockers[0] || "";
+            return (
+              <div className="setup-run-option-row" key={`${sectionId}-${action.action_id}`}>
+                <div className="setup-run-option-main">
+                  <strong>{humanWorkflowActionLabel(action)}</strong>
+                  <span>{humanizeAction(action.description || action.next_action)}</span>
+                  {blocker && <p>{humanizeBlocker(blocker)}</p>}
+                </div>
+                <div className="setup-run-option-meta">
+                  <span className={`classification-tag ${workflowModeClass(action.mode)}`}>{workflowModeLabel(action.mode)}</span>
+                  <StatusBadge status={action.current_availability} />
+                  <SourceFreshnessInline freshness={trace.freshness} sourceType={trace.source_type} />
+                </div>
+                <div className="setup-run-option-action">
+                  <WorkflowActionRunControl
+                    action={action}
+                    compact
+                    onCopy={onCopy}
+                    onRun={onRun}
+                    running={runningActionId === action.action_id}
+                  />
+                </div>
+                <div className="setup-run-option-last">
+                  <span>{trace.finished_at ? formatDateTime(trace.finished_at) : "Not checked"}</span>
+                  {latestRun && <strong>{displayStatusLabel(latestRun.status)}</strong>}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <EmptyState title="No run options" detail="This section does not expose direct run options yet." />
+      )}
+      <div className="setup-run-option-summary">
+        <span>{runnableCount} runnable</span>
+        <span>{guardedCount} gated</span>
+        <span>{setupActions.length} total</span>
       </div>
     </section>
   );
@@ -7766,7 +8672,7 @@ function InlineFirmwarePanel({
   workflowActions
 }: {
   checkSummary: { actionLabel: string; message: string; tone: string };
-  onRunWorkflowAction: (action: WorkflowAction) => void;
+  onRunWorkflowAction: RunWorkflowActionHandler;
   runningActionId: string;
   section: ControlSectionRecord;
   workflowActions: WorkflowAction[];
@@ -7933,7 +8839,7 @@ function firmwareWarningForSection(section: ControlSectionRecord): { actionLabel
     };
   }
   if (hasUnknown) {
-    return { actionLabel, message: "Firmware inventory did not return current versions.", tone: "warning" };
+    return { actionLabel, message: firmwareUnknownMessageForSection(section.id), tone: "warning" };
   }
   if (hasReady) {
     return { actionLabel, message: "Firmware is current.", tone: "ready" };
@@ -7956,11 +8862,20 @@ function firmwareWarningForSection(section: ControlSectionRecord): { actionLabel
   return { actionLabel, message: "Not configured yet: firmware unavailable until device setup", tone: "neutral" };
 }
 
+function firmwareUnknownMessageForSection(sectionId: string): string {
+  if (sectionId === "raid") return "Smart Array firmware is unknown.";
+  if (sectionId === "esxi") return "ESXi version or ISO is not verified.";
+  if (sectionId === "netapp") return "ONTAP version is unknown.";
+  if (sectionId === "ilo") return "iLO, BIOS, or Smart Array firmware is unknown.";
+  if (sectionId === "cisco") return "IOS XE firmware is unknown.";
+  return "Firmware inventory did not return current versions.";
+}
+
 function standardAccessForSection(
   section: ControlSectionRecord,
   profile: LabProfile | null,
   workflowActions: WorkflowAction[],
-  onRunWorkflowAction: (action: WorkflowAction) => void,
+  onRunWorkflowAction: RunWorkflowActionHandler,
   onRefresh: () => void,
   onCopyText: (text: string, label: string) => void,
   runningActionId: string
@@ -7978,6 +8893,8 @@ function standardAccessForSection(
           ? address.esxi_management
           : section.id === "netapp"
             ? address.netapp_cluster_mgmt
+            : section.id === "vcenter"
+              ? "Not configured"
             : address.subnet;
   const url =
     section.id === "ilo" && managementIp
@@ -8084,7 +9001,8 @@ function standardConfigForSection(
   }
   if (sectionId === "ilo") {
     return [
-      { label: "IP Address", value: displayAddress(address.ilo) },
+      { label: "Permanent IP", value: displayAddress(address.ilo) },
+      { label: "Initial login IP", value: displayAddress(address.ilo_initial) },
       { label: "Subnet / Gateway", value: `${displayAddress(address.subnet)} / ${gateway}` },
       { label: "DNS", value: dnsPolicy },
       { label: "NTP", value: ntpPolicy },
@@ -8143,6 +9061,19 @@ function standardConfigForSection(
       { label: "Protocols", value: profile?.features.storage_protocol?.toUpperCase() ?? "NFS or iSCSI" }
     ];
   }
+  if (sectionId === "vcenter") {
+    return [
+      { label: "Install State", value: "Not installed / not configured" },
+      { label: "Deployment Target", value: displayAddress(address.esxi_management) },
+      { label: "Datastore", value: "netapp_nfs_ds01" },
+      { label: "Storage Protocol", value: profile?.features.storage_protocol?.toUpperCase() ?? "NFS" },
+      { label: "VCSA Media", value: "Required under artifacts/Media" },
+      { label: "DNS", value: dnsPolicy },
+      { label: "NTP", value: ntpPolicy },
+      { label: "Gateway", value: gateway },
+      { label: "Apply", value: "Install disabled until ESXi and NetApp are ready" }
+    ];
+  }
   return [
     { label: "Subnet", value: displayAddress(address.subnet) },
     { label: "iLO", value: displayAddress(address.ilo) },
@@ -8151,6 +9082,155 @@ function standardConfigForSection(
     { label: "NetApp Cluster", value: displayAddress(address.netapp_cluster_mgmt) },
     { label: "Gateway", value: gateway }
   ];
+}
+
+function controlProfileFieldsForSection(sectionId: string, netappEnabled: boolean): ControlProfileEditField[] {
+  const profileFields: ControlProfileEditField[] = [
+    { kind: "profile", key: "name", label: "Setup Name" },
+    { kind: "profile", key: "description", label: "Notes" }
+  ];
+  const commonNetworkFields: ControlProfileEditField[] = [
+    { kind: "address", key: "subnet", label: "Subnet CIDR" },
+    { kind: "global", key: "gateway", label: "Gateway" },
+    { kind: "global", key: "dnsServers", label: "DNS Servers" },
+    { kind: "global", key: "ntpServers", label: "NTP Servers" }
+  ];
+  const policyFields: ControlProfileEditField[] = [
+    { kind: "global", key: "enableDns", label: "Use DNS", valueType: "boolean" },
+    { kind: "global", key: "enableNtp", label: "Use NTP", valueType: "boolean" },
+    { kind: "global", key: "enableSnmp", label: "Use SNMP", valueType: "boolean" },
+    { kind: "global", key: "disableIpv6", label: "Disable IPv6", valueType: "boolean" },
+    { kind: "global", key: "blockLegacyProtocols", label: "Block Legacy Protocols", valueType: "boolean" }
+  ];
+  const globalDeviceFields: ControlProfileEditField[] = [
+    { kind: "global", key: "domainName", label: "Domain" },
+    { kind: "global", key: "vlanId", label: "VLAN", valueType: "number" },
+    { kind: "global", key: "mtu", label: "MTU", valueType: "number" }
+  ];
+  const netappFields: ControlProfileEditField[] = [
+    { kind: "address", key: "netapp_controller_a_sp", label: "Controller A SP" },
+    { kind: "address", key: "netapp_controller_b_sp", label: "Controller B SP" },
+    { kind: "address", key: "netapp_cluster_mgmt", label: "Cluster Mgmt" },
+    { kind: "address", key: "netapp_node_a_mgmt", label: "Node A Mgmt" },
+    { kind: "address", key: "netapp_node_b_mgmt", label: "Node B Mgmt" },
+    { kind: "address", key: "netapp_svm_mgmt", label: "SVM Mgmt" },
+    { kind: "netapp-list", key: "netappNfsLifs", label: "NFS LIFs" },
+    { kind: "netapp-list", key: "netappIscsiLifs", label: "iSCSI LIFs" },
+    {
+      kind: "global",
+      key: "storageProtocol",
+      label: "Storage Protocol",
+      options: [
+        { label: "NFS", value: "nfs" },
+        { label: "iSCSI", value: "iscsi" },
+        { label: "Local only", value: "none" }
+      ],
+      valueType: "select"
+    }
+  ];
+
+  if (sectionId === "lab-profile") {
+    return [
+      ...profileFields,
+      { kind: "address", key: "subnet", label: "Subnet CIDR" },
+      { kind: "address", key: "ilo", label: "Permanent iLO IP" },
+      { kind: "address", key: "ilo_initial", label: "Initial iLO Login IP" },
+      { kind: "address", key: "server_embedded_nic", label: "Server Embedded NIC" },
+      { kind: "address", key: "esxi_management", label: "ESXi Management IP" },
+      { kind: "address", key: "cisco_management", label: "Cisco Management IP" },
+      { kind: "address", key: "ansible_control_host", label: "Control Host IP" },
+      ...globalDeviceFields,
+      ...commonNetworkFields.filter((field) => field.kind !== "address"),
+      ...policyFields,
+      ...(netappEnabled ? netappFields : [])
+    ];
+  }
+  if (sectionId === "ilo") {
+    return [
+      { kind: "address", key: "ilo", label: "Permanent iLO IP" },
+      { kind: "address", key: "ilo_initial", label: "Initial iLO Login IP" },
+      ...commonNetworkFields,
+      { kind: "global", key: "domainName", label: "Domain" },
+      ...policyFields.filter((field) => field.key !== "disableIpv6")
+    ];
+  }
+  if (sectionId === "cisco") {
+    return [
+      { kind: "address", key: "cisco_management", label: "Cisco Management IP" },
+      { kind: "address", key: "ansible_control_host", label: "Control Host IP" },
+      ...commonNetworkFields,
+      ...globalDeviceFields,
+      ...policyFields
+    ];
+  }
+  if (sectionId === "raid") {
+    return [
+      { kind: "address", key: "ilo", label: "Permanent iLO IP" },
+      { kind: "address", key: "server_embedded_nic", label: "Server Embedded NIC" },
+      ...commonNetworkFields
+    ];
+  }
+  if (sectionId === "esxi") {
+    return [
+      { kind: "address", key: "esxi_management", label: "ESXi Management IP" },
+      ...commonNetworkFields,
+      ...globalDeviceFields,
+      ...policyFields.filter((field) => field.key !== "enableSnmp")
+    ];
+  }
+  if (sectionId === "netapp") {
+    return [
+      ...netappFields,
+      ...commonNetworkFields,
+      ...policyFields.filter((field) => field.key !== "disableIpv6")
+    ];
+  }
+  return [
+    { kind: "address", key: "ilo", label: "Permanent iLO IP" },
+    { kind: "address", key: "cisco_management", label: "Cisco Management IP" },
+    { kind: "address", key: "esxi_management", label: "ESXi Management IP" },
+    ...commonNetworkFields
+  ];
+}
+
+function setupExecutionActionsForSection(sectionId: string, actions: WorkflowAction[]): WorkflowAction[] {
+  const stageId = sectionId === "firmware-upgrade" ? "firmware" : sectionId === "verification" ? "build-verification" : sectionId;
+  const byId = new Map<string, WorkflowAction>();
+  actions
+    .filter((action) => action.stage === stageId)
+    .filter((action) => !action.action_id.startsWith("commander."))
+    .forEach((action) => {
+      if (!byId.has(action.action_id)) {
+        byId.set(action.action_id, action);
+      }
+    });
+  return Array.from(byId.values()).sort((left, right) => {
+    const runnableDelta = Number(workflowActionCanRun(right)) - Number(workflowActionCanRun(left));
+    if (runnableDelta !== 0) return runnableDelta;
+    const leftOrder = setupActionCategoryOrder(left);
+    const rightOrder = setupActionCategoryOrder(right);
+    if (leftOrder !== rightOrder) return leftOrder - rightOrder;
+    return left.label.localeCompare(right.label);
+  });
+}
+
+function setupActionCategoryOrder(action: WorkflowAction): number {
+  const categoryOrder: Partial<Record<WorkflowAction["category"], number>> = {
+    discover: 10,
+    inventory: 20,
+    verify: 30,
+    plan: 40,
+    report: 50,
+    apply: 70,
+    reset: 80,
+    upgrade: 90,
+    reclaim: 95,
+    waive: 100
+  };
+  if (action.mode === "write") return 70;
+  if (action.mode === "destructive") return 80;
+  if (action.mode === "upgrade") return 90;
+  return categoryOrder[action.category] ?? 60;
 }
 
 function controlConfigOptionsForSection(
@@ -8240,12 +9320,13 @@ function controlConfigOptionsForSection(
   if (sectionId === "esxi") {
     return [
       option("esxi_install_rebuild", "Install / Rebuild", "Run guarded ESXi install/rebuild workflow after readiness passes.", ["redfish", "govc"], "destructive", ["rebuild", "install"], "Install selected ISO"),
+      option("esxi_recover_management", "Recover Management", "Recover ESXi management reachability through the guarded iLO path when power state is verified.", ["redfish", "govc"], "destructive", ["recover-management"], displayAddress(address.esxi_management)),
       option("enable_ssh", "Enable SSH", "Enable SSH for management validation when policy allows.", ["govc", "manual"], "config_change", ["ssh"], "Enabled"),
       option("configure_ntp", "Configure NTP", "Apply NTP servers from the active lab setup.", ["govc"], "config_change", ["management"], ntpPolicy),
       option("configure_dns", "Configure DNS", "Apply DNS servers from the active lab setup.", ["govc"], "config_change", ["management"], dnsPolicy),
       option("validate_api", "Validate API", "Validate ESXi management API readiness.", ["govc"], "read_only", ["management", "api"], "Validated", false),
       option("validate_ssh", "Validate SSH", "Validate ESXi SSH readiness.", ["cli"], "read_only", ["ssh"], "Validated", false),
-      option("configure_esxi_nfs_datastore", "Add NFS Datastore", "Add the NetApp NFS datastore after NetApp readiness passes.", ["govc"], "config_change", ["datastore"], "Mounted")
+      option("configure_esxi_nfs_datastore", "Add NFS Datastore", "Add the NetApp NFS datastore after NetApp readiness passes.", ["govc"], "config_change", ["netapp-datastore"], "Mounted")
     ];
   }
   if (sectionId === "netapp") {
@@ -8262,6 +9343,14 @@ function controlConfigOptionsForSection(
       option("configure_netapp_nfs", "Configure NetApp NFS", "Configure NFS export path and datastore readiness.", ["ontap_rest", "ansible"], "config_change", ["nfs"], `${storageProtocol} / ${address.netapp_nfs_lifs.join(", ") || "No LIFs"}`),
       option("choose_storage_protocol", "Choose Storage Protocol", "Select NFS or iSCSI for the build handoff.", ["manual", "ontap_rest"], "config_change", ["nfs", "iscsi"], storageProtocol),
       option("nfs_vcenter_readiness", "NFS / vCenter Readiness", "Validate datastore handoff before vCenter use.", ["govc", "ontap_rest"], "read_only", ["vcenter", "nfs"], "Ready", false)
+    ];
+  }
+  if (sectionId === "vcenter") {
+    return [
+      option("vcenter_install_readiness", "Install Readiness", "Check VCSA media, ESXi reachability, NetApp datastore readiness, and missing values.", ["manual", "govc"], "read_only", ["install-readiness"], "Ready", false),
+      option("vcenter_install_plan", "Install Plan", "Build the preview-only VCSA deployment plan after prerequisites are ready.", ["manual", "govc"], "read_only", ["install-plan"], "Plan ready", false),
+      option("vcenter_netapp_readiness", "NetApp Readiness", "Validate vCenter/govc handoff against the NetApp NFS datastore plan.", ["govc", "ontap_rest"], "read_only", ["netapp-readiness"], "Ready", false),
+      option("vcenter_datastore_plan", "Datastore Plan", "Preview datastore attach commands without mounting storage.", ["govc"], "read_only", ["datastore-plan"], "Plan ready", false)
     ];
   }
   return [
@@ -8466,6 +9555,77 @@ function ControlSection({
         <JsonDetails title={`${section.title} diagnostics`} data={section.advanced_diagnostics} />
       </AdvancedDetails>
     </section>
+  );
+}
+
+function CurrentAccessConfigInline({
+  busy,
+  config,
+  error,
+  onSave
+}: {
+  busy: boolean;
+  config: ControlAccessConfig;
+  error: string;
+  onSave: (sectionId: string, payload: ControlAccessConfigWrite) => Promise<void>;
+}) {
+  const [currentIp, setCurrentIp] = useState(config.original_dhcp_ip ?? "");
+  const [message, setMessage] = useState("");
+  const [localError, setLocalError] = useState("");
+  const configKey = `${config.section_id}:${config.original_dhcp_ip ?? ""}:${config.updated_at ?? ""}`;
+  const finalIp = displayAddress(config.desired_management_ip);
+
+  useEffect(() => {
+    setCurrentIp(config.original_dhcp_ip ?? "");
+    setMessage("");
+    setLocalError("");
+  }, [configKey, config]);
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    setMessage("");
+    setLocalError("");
+    try {
+      await onSave(config.section_id, {
+        first_time_configuring: config.first_time_configuring,
+        original_dhcp_ip: cleanNullable(currentIp),
+        username_reference: config.username_reference,
+        password_configured: config.password_configured,
+        password_reference_label: config.password_reference_label
+      });
+      setMessage("Current login IP saved.");
+    } catch (err) {
+      setLocalError((err as Error).message);
+    }
+  }
+
+  return (
+    <form className="current-access-inline" onSubmit={submit}>
+      <Field label="Current login IP">
+        <input
+          disabled={busy}
+          inputMode="decimal"
+          onChange={(event) => setCurrentIp(event.target.value)}
+          placeholder="Temporary DHCP or existing address"
+          value={currentIp}
+        />
+        <small>Use this when the device is still reachable at a temporary address.</small>
+      </Field>
+      <div className="current-access-final">
+        <span>Permanent IP</span>
+        <strong>{finalIp}</strong>
+        <small>{config.desired_address_label}</small>
+      </div>
+      <div className="current-access-actions">
+        <button className="small-button" disabled={busy} type="submit">
+          <Save size={14} />
+          {busy ? "Saving" : "Save current IP"}
+        </button>
+      </div>
+      {(message || localError || error) && (
+        <p className={localError || error ? "form-error" : "success"}>{localError || error || message}</p>
+      )}
+    </form>
   );
 }
 
@@ -8918,6 +10078,48 @@ function ControlLabProfilePanel({
   );
 }
 
+function FirmwareGuardedControlsPanel({
+  actions,
+  onRunWorkflowAction,
+  runningActionId
+}: {
+  actions: WorkflowAction[];
+  onRunWorkflowAction: RunWorkflowActionHandler;
+  runningActionId: string;
+}) {
+  if (!actions.length) {
+    return null;
+  }
+  return (
+    <section className="control-extra-panel firmware-guarded-controls">
+      <div className="readiness-head">
+        <div>
+          <strong>Guarded Controls</strong>
+          <p>Configuration, install, and upgrade actions with exact confirmation gates.</p>
+        </div>
+        <StatusBadge status="manual_command_required" />
+      </div>
+      <div className="firmware-guarded-control-grid">
+        {actions.map((action) => (
+          <article className="firmware-guarded-control" key={`firmware-guarded-${action.action_id}`}>
+            <div>
+              <strong>{firmwareRelatedActionTitle(action)}</strong>
+              <span>{minimalStageLabel(action.stage, action.stage_label)}</span>
+            </div>
+            <GuardedWorkflowActionButton
+              action={action}
+              compact
+              label={firmwareRelatedActionLabel(action)}
+              onRun={onRunWorkflowAction}
+              running={runningActionId === action.action_id}
+            />
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function FirmwareUpgradeCenter({ section }: { section: ControlSectionRecord }) {
   return (
     <section className="control-extra-panel upgrade-center-panel">
@@ -8993,7 +10195,7 @@ function CompactActionRow({
 }: {
   action: WorkflowAction;
   onCopy: (action: WorkflowAction) => void;
-  onRun?: (action: WorkflowAction) => void;
+  onRun?: RunWorkflowActionHandler;
   onSelect: (actionId: string) => void;
   running: boolean;
   selected: boolean;
@@ -9041,7 +10243,7 @@ function CompactWorkflowActionDetails({
   action: WorkflowAction;
   latestRun?: WorkflowActionRun;
   onCopy: (action: WorkflowAction) => void;
-  onRun?: (action: WorkflowAction) => void;
+  onRun?: RunWorkflowActionHandler;
   running: boolean;
 }) {
   const trace = latestRun ? workflowRunToTrace(latestRun) : action.last_run_trace;
@@ -9089,7 +10291,7 @@ function ActionCatalogTable({
 }: {
   actions: WorkflowAction[];
   onCopy: (action: WorkflowAction) => void;
-  onRun?: (action: WorkflowAction) => void;
+  onRun?: RunWorkflowActionHandler;
   onSelect: (actionId: string) => void;
   runningActionId?: string;
   selectedActionId: string;
@@ -9265,13 +10467,17 @@ function ActionCatalogTable({
 function FirmwareMinimalOverview({
   compliance,
   components,
+  deviceFilter,
   devices,
+  focusedSummary,
   packages,
   reports
 }: {
   compliance: ProviderProbeResult | null;
   components: Record<string, unknown>[];
+  deviceFilter: FirmwareDeviceFilter;
   devices: Record<string, unknown>;
+  focusedSummary: FirmwareSummary | null;
   packages: Record<string, unknown>[];
   reports: ReportLink[];
 }) {
@@ -9289,11 +10495,16 @@ function FirmwareMinimalOverview({
       status: packages.length ? "available" : "missing-config",
       summary: packages.length ? "Available" : "Missing"
     }
-  ];
+  ].filter((row) => deviceFilter === "all" || firmwareRowMatchesDevice(row.label, deviceFilter));
+  const focusedIssue = deviceFilter !== "all" && focusedSummary?.blocker ? firmwareReasonText(focusedSummary.blocker) : "";
+  const focusedIsBlocking = focusedSummary?.compliance_status === "needs_upgrade";
   const blockers = stringArray(compliance?.blockers);
   const warnings = stringArray(compliance?.warnings);
-  const simpleBlockers = blockers.length ? [firmwareSimpleBlocker(blockers[0])] : [];
-  const simpleWarnings = blockers.length || !warnings.length ? [] : [firmwareSimpleBlocker(warnings[0])];
+  const simpleBlockers = focusedIssue && focusedIsBlocking ? [focusedIssue] : blockers.length ? [firmwareSimpleBlocker(blockers[0])] : [];
+  const simpleWarnings = focusedIssue && !focusedIsBlocking ? [focusedIssue] : simpleBlockers.length || !warnings.length ? [] : [firmwareSimpleBlocker(warnings[0])];
+  const nextAction = focusedSummary && deviceFilter !== "all"
+    ? focusedSummary.next_action
+    : asString(compliance?.next_safe_action) || "Refresh firmware compliance.";
   return (
     <section className="panel minimal-firmware-panel">
       <div className="minimal-detail-head">
@@ -9313,7 +10524,7 @@ function FirmwareMinimalOverview({
           </article>
         ))}
       </div>
-      <NextActionCard detail={firmwareSimpleNextAction(asString(compliance?.next_safe_action) || "Refresh firmware compliance.")} />
+      <NextActionCard detail={firmwareSimpleNextAction(nextAction)} />
       <BlockerSummary blockers={simpleBlockers} warnings={simpleWarnings} empty="No firmware blocker is reported." />
       <EvidenceDrawer count={reports.length} title="Firmware Proof">
         <ReportLinkList reports={reports} />
@@ -9324,6 +10535,12 @@ function FirmwareMinimalOverview({
 
 function firmwareSimpleBlocker(value: string): string {
   const normalized = value.toLowerCase();
+  if (normalized.includes("baseline missing/manual review")) {
+    return value.split(";")[0]?.trim() || "Firmware baseline missing/manual review.";
+  }
+  if (normalized.includes("manual approval") && (normalized.includes("bios") || normalized.includes("smart array"))) {
+    return "HPE firmware baseline missing/manual review.";
+  }
   if (normalized.includes("ilo") || normalized.includes("hpe")) {
     return "iLO firmware needs a live inventory check.";
   }
@@ -9341,6 +10558,9 @@ function firmwareSimpleBlocker(value: string): string {
 
 function firmwareSimpleNextAction(value: string): string {
   const normalized = value.toLowerCase();
+  if (normalized.includes("manual baseline") || normalized.includes("baseline missing/manual review")) {
+    return "Open Firmware Upgrades and record the manual baseline decision.";
+  }
   if (normalized.includes("ilo") || normalized.includes("hpe")) {
     return "Check iLO firmware inventory.";
   }
@@ -9379,13 +10599,475 @@ function firmwareMinimalRow(
   };
 }
 
+function firmwareRowMatchesDevice(label: string, deviceFilter: FirmwareDeviceFilter): boolean {
+  const normalized = label.toLowerCase();
+  if (deviceFilter === "cisco") return normalized.includes("cisco");
+  if (deviceFilter === "ilo") return normalized.includes("ilo") || normalized.includes("bios");
+  if (deviceFilter === "raid") return normalized.includes("smart array");
+  if (deviceFilter === "esxi") return normalized.includes("esxi");
+  if (deviceFilter === "netapp") return normalized.includes("ontap") || normalized.includes("netapp");
+  if (deviceFilter === "vcenter") return normalized.includes("vcenter");
+  return true;
+}
+
+function filterFirmwareComponents(
+  components: Record<string, unknown>[],
+  deviceFilter: FirmwareDeviceFilter
+): Record<string, unknown>[] {
+  if (deviceFilter === "all") return components;
+  return components.filter((component) => {
+    const text = `${asString(component.device)} ${asString(component.label)} ${asString(component.id)}`.toLowerCase();
+    if (deviceFilter === "cisco") return text.includes("cisco");
+    if (deviceFilter === "ilo") return text.includes("ilo") || text.includes("bios");
+    if (deviceFilter === "raid") return text.includes("smart array") || text.includes("raid");
+    if (deviceFilter === "esxi") return text.includes("esxi") || text.includes("vmware");
+    if (deviceFilter === "netapp") return text.includes("netapp") || text.includes("ontap");
+    if (deviceFilter === "vcenter") return text.includes("vcenter");
+    return true;
+  });
+}
+
+type FirmwareUpgradeRow = {
+  summary: FirmwareSummary;
+  current: string;
+  target: string;
+  packageItem: MediaInventory["items"][number] | null;
+  scanAction: WorkflowAction | null;
+  planAction: WorkflowAction | null;
+  upgradeAction: WorkflowAction | null;
+  relatedAction: WorkflowAction | null;
+};
+
+function FirmwareUpgradePanel({
+  actionMessage,
+  deviceFilter,
+  media,
+  onRunWorkflowAction,
+  reports,
+  runningActionId,
+  summaries,
+  workflowActions
+}: {
+  actionMessage: string;
+  deviceFilter: FirmwareDeviceFilter;
+  media: MediaInventory | null;
+  onRunWorkflowAction: RunWorkflowActionHandler;
+  reports: ReportLink[];
+  runningActionId: string;
+  summaries: FirmwareSummary[];
+  workflowActions: WorkflowAction[];
+}) {
+  const rows = firmwareUpgradeRows(summaries, media?.items ?? [], workflowActions)
+    .filter((row) => firmwareSummaryMatchesDevice(row.summary, deviceFilter));
+  const needsUpgradeCount = rows.filter((row) => row.summary.compliance_status === "needs_upgrade").length;
+  const cannotVerifyCount = rows.filter((row) => row.summary.compliance_status === "cannot_verify").length;
+  const availablePackageCount = rows.filter((row) => row.packageItem).length;
+
+  return (
+    <section className="panel firmware-upgrade-panel">
+      <div className="firmware-upgrade-head">
+        <div>
+          <span className="summary-kicker">Upgrade</span>
+          <h2>Firmware Upgrade Queue</h2>
+          <p>Current version, required version, available package, and the next action are shown in one row.</p>
+        </div>
+        <div className="firmware-upgrade-counts">
+          <div><span>Devices</span><strong>{rows.length}</strong></div>
+          <div><span>Packages</span><strong>{availablePackageCount}</strong></div>
+          <div><span>Needs Upgrade</span><strong>{needsUpgradeCount}</strong></div>
+          <div><span>Review</span><strong>{cannotVerifyCount}</strong></div>
+        </div>
+      </div>
+      {actionMessage && (
+        <div className="firmware-run-note">
+          <CheckCircle2 size={16} />
+          <span>{actionMessage}</span>
+        </div>
+      )}
+      {rows.length ? (
+        <div className="firmware-upgrade-table-wrap">
+          <table className="firmware-upgrade-table">
+            <thead>
+              <tr>
+                <th>Device</th>
+                <th>Version you have</th>
+                <th>Version you need</th>
+                <th>Available firmware</th>
+                <th>Status</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => (
+                <FirmwareUpgradeRowView
+                  key={row.summary.device_id}
+                  onRunWorkflowAction={onRunWorkflowAction}
+                  row={row}
+                  runningActionId={runningActionId}
+                />
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <EmptyState title="No firmware rows" detail="No firmware summaries match the selected device." />
+      )}
+      <div className="firmware-upgrade-footer">
+        <span>{reports.length} evidence item{reports.length === 1 ? "" : "s"} available.</span>
+        <span>Upgrade actions open a guarded confirmation when a runner exists; unsupported rows stay disabled.</span>
+      </div>
+    </section>
+  );
+}
+
+function FirmwareUpgradeRowView({
+  onRunWorkflowAction,
+  row,
+  runningActionId
+}: {
+  onRunWorkflowAction: RunWorkflowActionHandler;
+  row: FirmwareUpgradeRow;
+  runningActionId: string;
+}) {
+  const scanRunning = Boolean(row.scanAction && runningActionId === row.scanAction.action_id);
+  const planRunning = Boolean(row.planAction && runningActionId === row.planAction.action_id);
+  const upgradeRunning = Boolean(row.upgradeAction && runningActionId === row.upgradeAction.action_id);
+  const relatedRunning = Boolean(row.relatedAction && runningActionId === row.relatedAction.action_id);
+  const canRunScan = Boolean(row.scanAction && workflowActionCanRun(row.scanAction));
+  const canRunPlan = Boolean(row.planAction && workflowActionCanRun(row.planAction));
+  const canStartGuardedUpgrade = Boolean(row.upgradeAction && workflowActionCanStartGuarded(row.upgradeAction));
+  const canRunUpgrade = Boolean(
+    row.upgradeAction && workflowActionCanRun(row.upgradeAction) && !workflowActionRequiresGuard(row.upgradeAction)
+  );
+  const canStartRelatedAction = Boolean(row.relatedAction && workflowActionCanStartGuarded(row.relatedAction));
+  const scanDisabledReason = firmwareActionDisabledReason(row.scanAction, "No safe scan action is registered.");
+  const planDisabledReason = firmwareActionDisabledReason(row.planAction, "No upgrade plan action is registered.");
+  const upgradeDisabledReason = firmwareUpgradeDisabledReason(row.upgradeAction);
+  const showGuardedUpgrade = Boolean(
+    row.upgradeAction && workflowActionRequiresGuard(row.upgradeAction) && (canStartGuardedUpgrade || !row.relatedAction)
+  );
+
+  return (
+    <tr className={`firmware-upgrade-row ${firmwareSummaryTone(row.summary)}`}>
+      <td>
+        <strong>{row.summary.label}</strong>
+        <span>{labelize(row.summary.component_type)}</span>
+      </td>
+      <td>{row.current}</td>
+      <td>{row.target}</td>
+      <td>
+        {row.packageItem ? (
+          <div className="firmware-package-cell">
+            <strong>{row.packageItem.placeholder_name}</strong>
+            <span>
+              {row.packageItem.version_hint ? `Version ${row.packageItem.version_hint}` : labelize(row.packageItem.category)}
+            </span>
+          </div>
+        ) : (
+          <span className="muted">No matching package detected</span>
+        )}
+      </td>
+      <td>
+        <StatusBadge status={row.summary.compliance_status} />
+        {row.summary.blocker && <p>{firmwareReasonText(row.summary.blocker)}</p>}
+      </td>
+      <td>
+        <div className="firmware-upgrade-actions">
+          <button
+            className="small-button"
+            disabled={!canRunScan || scanRunning}
+            onClick={() => {
+              if (row.scanAction && canRunScan) onRunWorkflowAction(row.scanAction);
+            }}
+            title={canRunScan ? "Run the safe firmware inventory action." : scanDisabledReason}
+            type="button"
+          >
+            {scanRunning ? <RefreshCw className="spin-icon" size={14} /> : <ShieldCheck size={14} />}
+            {scanRunning ? "Scanning" : "Scan"}
+          </button>
+          <button
+            className="small-button primary"
+            disabled={!canRunPlan || planRunning}
+            onClick={() => {
+              if (row.planAction && canRunPlan) onRunWorkflowAction(row.planAction);
+            }}
+            title={canRunPlan ? "Build or refresh the firmware upgrade plan." : planDisabledReason}
+            type="button"
+          >
+            {planRunning ? <RefreshCw className="spin-icon" size={14} /> : <ClipboardList size={14} />}
+            {planRunning ? "Planning" : "Plan Upgrade"}
+          </button>
+          {showGuardedUpgrade && row.upgradeAction ? (
+            <GuardedWorkflowActionButton
+              action={row.upgradeAction}
+              compact
+              label="Upgrade"
+              onRun={onRunWorkflowAction}
+              running={upgradeRunning}
+            />
+          ) : !row.relatedAction ? (
+            <button
+              className="small-button firmware-upgrade-apply-button"
+              disabled={!canRunUpgrade || upgradeRunning}
+              onClick={() => {
+                if (row.upgradeAction && canRunUpgrade) onRunWorkflowAction(row.upgradeAction);
+              }}
+              title={canRunUpgrade ? "Start the approved firmware upgrade action." : upgradeDisabledReason}
+              type="button"
+            >
+              {upgradeRunning ? <RefreshCw className="spin-icon" size={14} /> : <Play size={14} />}
+              {upgradeRunning ? "Upgrading" : "Upgrade"}
+            </button>
+          ) : null}
+          {row.relatedAction && (
+            <GuardedWorkflowActionButton
+              action={row.relatedAction}
+              compact
+              label={firmwareRelatedActionLabel(row.relatedAction)}
+              onRun={onRunWorkflowAction}
+              running={relatedRunning}
+            />
+          )}
+        </div>
+        {!canRunUpgrade && !canStartGuardedUpgrade && !row.relatedAction && <p className="firmware-action-reason">{upgradeDisabledReason}</p>}
+        {row.relatedAction && !canStartRelatedAction && <p className="firmware-action-reason">{workflowGuardedDisabledReason(row.relatedAction)}</p>}
+      </td>
+    </tr>
+  );
+}
+
+function FirmwareEvidencePanel({
+  compliance,
+  components,
+  firmwareActions,
+  inventory,
+  media,
+  reports,
+  waiver
+}: {
+  compliance: ProviderProbeResult | null;
+  components: Record<string, unknown>[];
+  firmwareActions: ControlAction[];
+  inventory: ProviderProbeResult | null;
+  media: MediaInventory | null;
+  reports: ReportLink[];
+  waiver: ProviderProbeResult | null;
+}) {
+  return (
+    <section className="panel firmware-evidence-panel">
+      <StatusSummaryCard
+        message={asString(compliance?.message) || "Firmware evidence has not loaded yet."}
+        status={compliance?.status ?? "not_run"}
+        title="Evidence"
+        items={[
+          { label: "Components", value: String(components.length) },
+          { label: "Packages", value: String(media?.items.length ?? 0) },
+          { label: "Reports", value: String(reports.length) },
+          { label: "Waiver", value: displayStatusLabel(waiver?.status ?? "not_run") }
+        ]}
+      />
+      <BlockerSummary blockers={stringArray(compliance?.blockers)} warnings={stringArray(compliance?.warnings)} />
+      <AdvancedDetails className="section-details" summary="Component versions" title="Current and required versions">
+        {components.length ? (
+          <table className="provider-candidate-table">
+            <thead>
+              <tr>
+                <th>Device</th>
+                <th>Component</th>
+                <th>Status</th>
+                <th>Current</th>
+                <th>Required</th>
+              </tr>
+            </thead>
+            <tbody>
+              {components.map((item, index) => (
+                <tr key={`${asString(item.id) || index}`}>
+                  <td>{asString(item.device) || "-"}</td>
+                  <td>{asString(item.label) || asString(item.id) || "-"}</td>
+                  <td><StatusBadge status={asString(item.status) || "unknown"} /></td>
+                  <td>{asString(item.current_version) || "Unknown"}</td>
+                  <td>{asString(item.required_version) || stringArray(item.approved_versions).join(", ") || "Manual review"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : (
+          <EmptyState title="No component evidence" detail="Compliance evidence did not include per-component rows." />
+        )}
+      </AdvancedDetails>
+      <AdvancedDetails className="section-details" summary="Available media metadata" title="Firmware packages">
+        {media ? <MediaInventoryCompact inventory={media} /> : <EmptyState title="No media inventory" detail="Media metadata has not loaded." />}
+      </AdvancedDetails>
+      <AdvancedDetails className="section-details" summary="Reports and action catalog" title="Reports">
+        <ReportLinkList reports={reports} />
+        <ActionCatalogReadonly actions={firmwareActions} />
+      </AdvancedDetails>
+      <AdvancedDetails className="section-details" summary="Inventory and waiver payloads" title="Raw evidence">
+        <JsonDetails title="Firmware inventory" data={inventory ?? {}} />
+        <JsonDetails title="Waiver status" data={waiver ?? {}} />
+      </AdvancedDetails>
+    </section>
+  );
+}
+
+function firmwareUpgradeRows(
+  summaries: FirmwareSummary[],
+  mediaItems: MediaInventory["items"],
+  workflowActions: WorkflowAction[]
+): FirmwareUpgradeRow[] {
+  return summaries.map((summary) => ({
+    summary,
+    current: firmwareVersionList(summary.current_versions, "Unknown"),
+    target: firmwareBaselineList(summary.approved_versions),
+    packageItem: firmwarePackageForSummary(summary, mediaItems),
+    scanAction: summary.scan_action_id ? workflowActions.find((action) => action.action_id === summary.scan_action_id) ?? null : null,
+    planAction: firmwarePlanActionForSummary(summary, workflowActions),
+    upgradeAction: firmwareApplyActionForSummary(summary, workflowActions),
+    relatedAction: firmwareRelatedActionForSummary(summary, workflowActions)
+  }));
+}
+
+function firmwareSummaryMatchesDevice(summary: FirmwareSummary, deviceFilter: FirmwareDeviceFilter): boolean {
+  if (deviceFilter === "all") return true;
+  if (deviceFilter === "ilo") return summary.device_id === "ilo" || summary.device_id === "raid";
+  return summary.device_id === deviceFilter;
+}
+
+function firmwarePlanActionForSummary(summary: FirmwareSummary, actions: WorkflowAction[]): WorkflowAction | null {
+  const preferred = summary.device_id === "netapp" ? "netapp.ontap-upgrade-plan" : "firmware.upgrade-plan";
+  return actions.find((action) => action.action_id === preferred) ?? null;
+}
+
+function firmwareApplyActionForSummary(summary: FirmwareSummary, actions: WorkflowAction[]): WorkflowAction | null {
+  const preferred = summary.device_id === "netapp" ? "netapp.ontap-upgrade-apply" : "firmware.upgrade-apply-placeholder";
+  return actions.find((action) => action.action_id === preferred) ?? null;
+}
+
+function firmwareRelatedActionForSummary(summary: FirmwareSummary, actions: WorkflowAction[]): WorkflowAction | null {
+  const relatedByDevice: Record<string, string> = {
+    cisco: "cisco.apply-bootstrap",
+    esxi: "esxi.rebuild-install",
+    ilo: "ilo.virtual-media-insert",
+    netapp: "netapp.setup-apply",
+    raid: "raid.apply"
+  };
+  const actionId = relatedByDevice[summary.device_id];
+  if (!actionId) return null;
+  return actions.find((action) => action.action_id === actionId) ?? null;
+}
+
+const firmwareGuardedControlActionIds = [
+  "cisco.apply-bootstrap",
+  "ilo.virtual-media-insert",
+  "raid.apply",
+  "esxi.rebuild-install",
+  "netapp.setup-apply",
+  "netapp.ontap-upgrade-apply"
+];
+
+function firmwareGuardedControls(actions: WorkflowAction[]): WorkflowAction[] {
+  const byId = new Map(actions.map((action) => [action.action_id, action]));
+  return firmwareGuardedControlActionIds
+    .map((actionId) => byId.get(actionId) ?? null)
+    .filter((action): action is WorkflowAction => Boolean(action));
+}
+
+function firmwareRelatedActionLabel(action: WorkflowAction): string {
+  const labels: Record<string, string> = {
+    "cisco.apply-bootstrap": "Configure",
+    "esxi.rebuild-install": "Rebuild",
+    "ilo.virtual-media-insert": "Insert Media",
+    "netapp.ontap-upgrade-apply": "Upgrade",
+    "netapp.setup-apply": "Apply Setup",
+    "raid.apply": "Apply RAID"
+  };
+  return labels[action.action_id] ?? guardedWorkflowRunButtonLabel(action);
+}
+
+function firmwareRelatedActionTitle(action: WorkflowAction): string {
+  const labels: Record<string, string> = {
+    "cisco.apply-bootstrap": "Cisco Configure",
+    "esxi.rebuild-install": "ESXi Rebuild",
+    "ilo.virtual-media-insert": "iLO Virtual Media",
+    "netapp.ontap-upgrade-apply": "NetApp ONTAP Upgrade",
+    "netapp.setup-apply": "NetApp Setup",
+    "raid.apply": "RAID Apply"
+  };
+  return labels[action.action_id] ?? humanWorkflowActionLabel(action);
+}
+
+function firmwarePackageForSummary(
+  summary: FirmwareSummary,
+  mediaItems: MediaInventory["items"]
+): MediaInventory["items"][number] | null {
+  const tokensByDevice: Record<string, string[]> = {
+    cisco: ["cisco", "ios", "ios-xe", "rommon"],
+    esxi: ["esxi", "vmware"],
+    ilo: ["ilo", "hpe", "spp", "fwpkg"],
+    netapp: ["netapp", "ontap"],
+    raid: ["raid", "smart array", "hpe", "spp"],
+    vcenter: ["vcenter", "vcsa", "vmware"]
+  };
+  const tokens = tokensByDevice[summary.device_id] ?? [summary.device_id];
+  const scored = mediaItems
+    .map((item) => ({
+      item,
+      score: firmwarePackageScore(item, tokens)
+    }))
+    .filter(({ score }) => score > 0)
+    .sort((left, right) => right.score - left.score);
+  return scored[0]?.item ?? null;
+}
+
+function firmwarePackageScore(item: MediaInventory["items"][number], tokens: string[]): number {
+  const text = [
+    item.placeholder_name,
+    item.category,
+    item.extension,
+    item.version_hint,
+    ...item.product_hints,
+    ...item.generation_hints
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  let score = item.category === "firmware" ? 2 : 0;
+  for (const token of tokens) {
+    if (text.includes(token.toLowerCase())) score += 2;
+  }
+  if (item.version_hint) score += 1;
+  return score;
+}
+
+function firmwareActionDisabledReason(action: WorkflowAction | null, fallback: string): string {
+  if (!action) return fallback;
+  const reason = action.ui_run_blockers[0] || action.blockers[0] || action.next_action;
+  return reason ? firmwareReasonText(reason) : "Action is not available from this page.";
+}
+
+function firmwareUpgradeDisabledReason(action: WorkflowAction | null): string {
+  if (!action) return "No upgrade action is registered.";
+  if (workflowActionRequiresGuard(action)) {
+    return workflowActionCanStartGuarded(action) ? "Guarded confirmation required." : workflowGuardedDisabledReason(action);
+  }
+  if (!workflowActionCanRun(action)) return firmwareActionDisabledReason(action, "Upgrade action is not available.");
+  return "";
+}
+
 function FirmwarePage() {
-  const { isAdvancedMode } = useUiMode();
-  const [activeSection, setActiveSection] = useState<FirmwareSectionId>("compliance");
+  const location = useLocation();
+  const navigate = useNavigate();
+  const [activeSection, setActiveSection] = useState<FirmwareSectionId>("upgrade");
+  const [deviceFilter, setDeviceFilter] = useState<FirmwareDeviceFilter>("all");
   const [inventory, setInventory] = useState<ProviderProbeResult | null>(null);
   const [compliance, setCompliance] = useState<ProviderProbeResult | null>(null);
   const [waiver, setWaiver] = useState<ProviderProbeResult | null>(null);
   const [catalog, setCatalog] = useState<ControlActionCatalog | null>(null);
+  const [media, setMedia] = useState<MediaInventory | null>(null);
+  const [firmwareSummaries, setFirmwareSummaries] = useState<FirmwareSummary[]>([]);
+  const [workflowActions, setWorkflowActions] = useState<WorkflowAction[]>([]);
+  const [runningActionId, setRunningActionId] = useState("");
+  const [actionMessage, setActionMessage] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
 
@@ -9393,16 +11075,22 @@ function FirmwarePage() {
     setError("");
     setLoading(true);
     try {
-      const [nextInventory, nextCompliance, nextWaiver, nextCatalog] = await Promise.all([
+      const [nextInventory, nextCompliance, nextWaiver, nextCatalog, nextSummaries, nextMedia, nextWorkflowActions] = await Promise.all([
         api.firmwareInventory(),
         api.firmwareCompliance(),
         api.firmwareWaiverCheck(),
-        api.controlActions()
+        api.controlActions(),
+        api.firmwareSummary(),
+        api.mediaInventory(),
+        api.workflowActions()
       ]);
       setInventory(nextInventory);
       setCompliance(nextCompliance);
       setWaiver(nextWaiver);
       setCatalog(nextCatalog);
+      setFirmwareSummaries(nextSummaries);
+      setMedia(nextMedia);
+      setWorkflowActions(nextWorkflowActions);
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -9410,19 +11098,37 @@ function FirmwarePage() {
     }
   }
 
+  async function runWorkflowAction(action: WorkflowAction, request?: WorkflowActionRunRequest) {
+    setError("");
+    setActionMessage("");
+    setRunningActionId(action.action_id);
+    try {
+      const result = await api.runWorkflowAction(action.action_id, request);
+      const resultSummary = result.summary || result.next_action || displayStatusLabel(result.status);
+      setActionMessage(`${humanWorkflowActionLabel(action)}: ${resultSummary}`);
+      await load();
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setRunningActionId("");
+    }
+  }
+
   useEffect(() => {
     load();
   }, []);
 
+  useEffect(() => {
+    const requestedDevice = new URLSearchParams(location.search).get("device");
+    const allowed: FirmwareDeviceFilter[] = ["all", "cisco", "ilo", "raid", "esxi", "netapp", "vcenter"];
+    setDeviceFilter(allowed.includes(requestedDevice as FirmwareDeviceFilter) ? requestedDevice as FirmwareDeviceFilter : "all");
+  }, [location.search]);
+
   const components = recordArray(compliance?.components);
-  const packages = [
-    ...recordArray(inventory?.packages),
-    ...recordArray(inventory?.firmware_packages),
-    ...recordArray(inventory?.media_candidates)
-  ];
-  const inventoryDevices = objectValue(compliance?.devices);
+  const filteredComponents = filterFirmwareComponents(components, deviceFilter);
   const firmwareSection = catalog?.sections.find((section) => section.id === "firmware-upgrade") ?? null;
   const firmwareActions = catalog?.actions.filter((action) => action.section_id === "firmware-upgrade") ?? [];
+  const focusedSummary = firmwareSummaries.find((summary) => summary.device_id === deviceFilter) ?? null;
   const reports = [
     ...reportLinksFromProbe("Inventory", inventory),
     ...reportLinksFromProbe("Compliance", compliance),
@@ -9430,17 +11136,14 @@ function FirmwarePage() {
     ...reportLinksFromActions(firmwareActions)
   ];
   const sections: SectionOption<FirmwareSectionId>[] = [
-    { id: "compliance", label: "Compliance", status: compliance?.status ?? "not_run" },
-    { id: "inventory", label: "Inventory", status: inventory?.status ?? "not_run" },
-    { id: "packages", label: "Packages", status: packages.length ? "available" : "not_run" },
-    { id: "waivers", label: "Waivers", status: waiver?.status ?? "not_run" },
-    { id: "upgrade-plans", label: "Upgrade Plans", status: firmwareSection?.status ?? "not_run" }
+    { id: "upgrade", label: "Upgrade", status: compliance?.status ?? "not_run" },
+    { id: "evidence", label: "Evidence", status: reports.length ? "report_available" : firmwareSection?.status ?? "not_run" }
   ];
 
   return (
     <Page
       activeSection={activeSection}
-      description="Global upgrade overview for iLO, Cisco, ONTAP, ESXi, BIOS, and Smart Array with upgrade actions hidden until selected."
+      description="Current version, target version, package availability, and guarded upgrade controls for lab firmware."
       issueArea="firmware"
       onSectionChange={(sectionId) => setActiveSection(sectionId as FirmwareSectionId)}
       primaryAction={{ icon: <RefreshCw size={16} />, label: "Refresh", onClick: load, disabled: loading }}
@@ -9448,130 +11151,54 @@ function FirmwarePage() {
       title="Firmware Upgrades"
     >
       <Feedback loading={loading && !compliance} error={error} />
-      {activeSection === "compliance" && (
-        isAdvancedMode ? (
-          <div className="calm-section-grid">
-            <StatusSummaryCard
-              message={asString(compliance?.message) || "Firmware compliance has not loaded yet."}
-              status={compliance?.status ?? "not_run"}
-              title="Firmware compliance"
-              items={[
-                { label: "Components", value: String(components.length) },
-                { label: "Blockers", value: String(stringArray(compliance?.blockers).length) },
-                { label: "Warnings", value: String(stringArray(compliance?.warnings).length) },
-                { label: "Checked", value: compliance?.checked_at ? formatDateTime(compliance.checked_at) : "Not run" }
-              ]}
-            />
-            <NextActionCard detail={humanizeAction(asString(compliance?.next_safe_action) || "Refresh compliance evidence.")} />
-            <BlockerSummary blockers={stringArray(compliance?.blockers)} warnings={stringArray(compliance?.warnings)} />
-            <AdvancedDetails className="section-details span-3" summary="Component matrix and report links" title="Compliance details">
-              {components.length ? (
-                <table className="provider-candidate-table">
-                  <thead>
-                    <tr>
-                      <th>Device</th>
-                      <th>Component</th>
-                      <th>Status</th>
-                      <th>Current</th>
-                      <th>Required</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {components.map((item, index) => (
-                      <tr key={`${asString(item.id) || index}`}>
-                        <td>{asString(item.device) || "-"}</td>
-                        <td>{asString(item.label) || asString(item.id) || "-"}</td>
-                        <td><StatusBadge status={asString(item.status) || "unknown"} /></td>
-                        <td>{asString(item.current_version) || "Unknown"}</td>
-                        <td>{asString(item.required_version) || stringArray(item.approved_versions).join(", ") || "Manual"}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              ) : (
-                <EmptyState title="No component matrix" detail="Compliance evidence did not include per-component rows." />
-              )}
-              <ReportLinkList reports={reports} />
-            </AdvancedDetails>
-          </div>
-        ) : (
-          <FirmwareMinimalOverview
-            compliance={compliance}
-            components={components}
-            devices={inventoryDevices}
-            packages={packages}
-            reports={reports}
-          />
-        )
-      )}
-      {activeSection === "inventory" && (
-        <section className="panel">
-          <StatusSummaryCard
-            message={asString(inventory?.message) || "Firmware inventory has not loaded yet."}
-            status={inventory?.status ?? "not_run"}
-            title="Firmware inventory"
-            items={Object.entries(inventoryDevices).slice(0, 4).map(([label, value]) => ({
-              label: labelize(label),
-              value: labelize(asString(objectValue(value).status) || "unknown")
-            }))}
-          />
-          <AdvancedDetails className="section-details" summary="Raw redacted firmware inventory payload" title="Inventory details">
-            <JsonDetails title="Firmware inventory" data={inventory ?? {}} />
-          </AdvancedDetails>
-        </section>
-      )}
-      {activeSection === "packages" && (
-        <section className="panel">
-          <StatusSummaryCard
-            message="Local media/package metadata is shown as redacted candidates only."
-            status={packages.length ? "available" : "not_run"}
-            title="Firmware packages"
-            items={[
-              { label: "Candidates", value: String(packages.length) },
-              { label: "Source", value: asString(inventory?.media_inventory_mode) || "Local metadata" }
-            ]}
-          />
-          <AdvancedDetails className="section-details" summary="Package candidate metadata" title="Package candidates">
-            {packages.length ? <KeyValueTable rows={packages} labelKey="redacted_label" valueKey="version" empty="No packages found." /> : <EmptyState title="No packages" detail="No firmware package metadata is available." />}
-          </AdvancedDetails>
-        </section>
-      )}
-      {activeSection === "waivers" && (
-        <div className="calm-section-grid">
-          <StatusSummaryCard
-            message={asString(waiver?.message) || "Firmware waiver status has not loaded yet."}
-            status={waiver?.status ?? "not_run"}
-            title="Waiver status"
-            items={[
-              { label: "Blockers", value: String(stringArray(waiver?.blockers).length) },
-              { label: "Warnings", value: String(stringArray(waiver?.warnings).length) },
-              { label: "Checked", value: waiver?.checked_at ? formatDateTime(waiver.checked_at) : "Not run" }
-            ]}
-          />
-          <NextActionCard detail={humanizeAction(asString(waiver?.next_safe_action) || "Review waiver policy before upgrades.")} />
-          <BlockerSummary blockers={stringArray(waiver?.blockers)} warnings={stringArray(waiver?.warnings)} />
+      <section className="firmware-focus-strip" aria-label="Firmware device focus">
+        <Field label="Focused device">
+          <select
+            onChange={(event) => {
+              const value = event.target.value as FirmwareDeviceFilter;
+              setDeviceFilter(value);
+              navigate(value === "all" ? "/firmware" : `/firmware?device=${encodeURIComponent(value)}`, { replace: true });
+            }}
+            value={deviceFilter}
+          >
+            <option value="all">All devices</option>
+            <option value="cisco">Cisco</option>
+            <option value="ilo">iLO / HPE</option>
+            <option value="raid">RAID / Smart Array</option>
+            <option value="esxi">ESXi</option>
+            <option value="netapp">NetApp</option>
+            <option value="vcenter">vCenter</option>
+          </select>
+        </Field>
+        <div>
+          <span className="summary-kicker">Focus status</span>
+          <strong>{focusedSummary ? firmwareComplianceLabel(focusedSummary.compliance_status) : "All firmware"}</strong>
+          <p>{focusedSummary ? firmwareSummaryLine(focusedSummary) : "Showing every firmware row with current, target, package, and action controls."}</p>
         </div>
+        {focusedSummary && <StatusBadge status={focusedSummary.compliance_status} />}
+      </section>
+      {activeSection === "upgrade" && (
+        <FirmwareUpgradePanel
+          actionMessage={actionMessage}
+          deviceFilter={deviceFilter}
+          media={media}
+          onRunWorkflowAction={runWorkflowAction}
+          reports={reports}
+          runningActionId={runningActionId}
+          summaries={firmwareSummaries}
+          workflowActions={workflowActions}
+        />
       )}
-      {activeSection === "upgrade-plans" && (
-        <section className="panel">
-          <StatusSummaryCard
-            message={firmwareSection?.description ?? "Upgrade execution remains gated and unavailable from this overview."}
-            status={firmwareSection?.status ?? "not_run"}
-            title="Upgrade plans"
-            items={[
-              { label: "Actions", value: String(firmwareActions.length) },
-              { label: "Blocked", value: String(firmwareActions.filter((action) => action.availability === "blocked").length) },
-              { label: "Reports", value: String(firmwareActions.filter((action) => action.last_report).length) }
-            ]}
-          />
-          {!isAdvancedMode && (
-            <NextActionCard detail="Review firmware readiness first; upgrade execution remains disabled." />
-          )}
-          {firmwareSection && isAdvancedMode && <FirmwareUpgradeCenter section={firmwareSection} />}
-          <AdvancedDetails className="section-details" summary="Plan/copy actions and report links" title="Upgrade action catalog">
-            <ActionCatalogReadonly actions={firmwareActions} />
-          </AdvancedDetails>
-        </section>
+      {activeSection === "evidence" && (
+        <FirmwareEvidencePanel
+          compliance={compliance}
+          components={filteredComponents}
+          firmwareActions={firmwareActions}
+          inventory={inventory}
+          media={media}
+          reports={reports}
+          waiver={waiver}
+        />
       )}
     </Page>
   );
@@ -10164,10 +11791,14 @@ function ValidationReportsPage() {
   const selectedValidationItem =
     validationItems.find((item) => item.id === selectedValidationId) ?? validationItems[0] ?? null;
   const proofLinks = validation?.proof_links ?? [];
-  const criticalCount = reportIssues?.counts.critical ?? 0;
-  const warningCount = reportIssues?.counts.warning ?? 0;
-  const notConfiguredCount = reportIssues?.classification_counts.not_configured_yet ?? 0;
-  const passedCount = reportIssues?.counts.success ?? 0;
+  const verificationBlockerCount = stringArray(verification?.blockers).length;
+  const criticalCount = Math.max(reportIssues?.counts.critical ?? 0, verificationBlockerCount);
+  const warningCount = Math.max(reportIssues?.counts.warning ?? 0, (validation?.warnings ?? stringArray(verification?.warnings)).length);
+  const notConfiguredCount = Math.max(
+    reportIssues?.classification_counts.not_configured_yet ?? 0,
+    validation?.progress_counts.not_configured ?? 0
+  );
+  const passedCount = Math.max(reportIssues?.counts.success ?? 0, validation?.progress_counts.ready ?? 0);
   const sections: SectionOption<ValidationReportsSectionId>[] = [
     { id: "summary", label: "Summary", status: reportIssues?.overall_status ?? validation?.overall_status ?? "not_checked" },
     { id: "issues", label: "Issues", status: criticalCount ? "critical" : warningCount ? "warning" : "ready" },
@@ -11088,6 +12719,10 @@ function workflowStageIdForControlSection(sectionId: ControlCenterSectionId): st
   if (sectionId === "raid") return "raid";
   if (sectionId === "esxi") return "esxi";
   if (sectionId === "netapp") return "netapp";
+  if (sectionId === "vcenter") return "vcenter";
+  if (sectionId === "firmware-upgrade") return "firmware";
+  if (sectionId === "verification") return "build-verification";
+  if (sectionId === "reports") return "reports";
   if (sectionId === "cisco") return "cisco";
   if (sectionId === "lab-profile") return "lab-profile";
   return "";
@@ -11535,14 +13170,75 @@ function workflowActionRequiresGuard(action: WorkflowAction): boolean {
   return ["write", "destructive", "upgrade"].includes(action.mode);
 }
 
+function workflowActionCanStartGuarded(action: WorkflowAction): boolean {
+  return workflowActionRequiresGuard(action) && Boolean(action.guarded_run_supported) && action.guarded_run_blockers.length === 0;
+}
+
+function workflowGuardedDisabledReason(action: WorkflowAction): string {
+  const reason = action.guarded_run_blockers[0] || action.blockers[0] || action.next_action || "No guarded runner is registered for this action.";
+  if (reason.includes("No guarded UI runner allowlist")) {
+    return "No guarded runner is implemented for this action yet.";
+  }
+  return reason;
+}
+
 function workflowRunButtonLabel(action: WorkflowAction): string {
   const id = action.action_id;
-  if (id.includes("console-read-state")) return "Read Console State";
-  if (id.includes("build-verification")) return "Run Verification";
+  if (id.includes("view-active")) return "View Profile";
+  if (id.includes("validate-ip-profile")) return "Validate Profile";
+  if (id.includes("setup-readiness")) return "Check Setup";
+  if (id.includes("setup-plan-preview")) return "Preview Setup";
+  if (id.includes("package-inventory")) return "View Packages";
+  if (id.includes("waiver-check")) return "Check Waiver";
+  if (id.includes("iso-media")) return "Check ISO";
+  if (id.includes("installer-boot")) return "Detect Installer";
+  if (id.includes("management-validation")) return "Validate Management";
+  if (id.includes("ssh-api")) return "Check SSH/API";
+  if (id === "raid.discovery") return "Discover RAID";
+  if (id === "raid.plan") return "Preview RAID";
+  if (id.includes("pending-check")) return "Check Pending";
+  if (id.includes("raid.validate")) return "Validate RAID";
+  if (id.includes("debug")) return "Collect Debug";
+  if (id.includes("post-setup")) return "Validate Setup";
+  if (id.includes("nfs-setup-preview")) return "Preview NFS";
+  if (id.includes("nfs-setup-validate")) return "Validate NFS";
+  if (id.includes("upgrade-inventory")) return "Check Upgrade";
+  if (id.includes("upgrade-plan")) return "Plan Upgrade";
+  if (id === "firmware.compliance-check") return "Check Compliance";
   if (id.includes("firmware")) return "Check Firmware";
+  if (id.includes("reachability")) return "Test Reachability";
+  if (id.includes("auth")) return "Check Auth";
+  if (id.includes("discover-console") || id.includes("console-autodiscovery") || id.includes("serial-console-discovery")) {
+    return "Discover Console";
+  }
+  if (id.includes("console-read-state")) return "Read Console State";
+  if (id.includes("console-login-state")) return "Check Login State";
+  if (id.includes("live-state")) return "Read State";
+  if (id.includes("inventory")) return "Read Inventory";
+  if (id.includes("baseline-preview")) return "Preview Baseline";
+  if (id.includes("setup-preview")) return "Preview Setup";
+  if (id.includes("vm-deploy-preview")) return "Preview Deploy";
+  if (id.includes("datastore-plan")) return "Plan Datastore";
+  if (id.includes("privilege")) return "Check Privilege";
+  if (id.includes("ssh-scp")) return "Validate SSH/SCP";
+  if (id.includes("readiness")) return "Check Readiness";
+  if (id.includes("validation") || id.includes("validate")) return "Validate";
+  if (id.includes("build-verification")) return "Run Verification";
   if (id.includes("toolchain")) return "Check Toolchain";
   if (id.includes("live-status") || action.mode === "report_only") return "Refresh Status";
   return "Run Check";
+}
+
+function guardedWorkflowRunButtonLabel(action: WorkflowAction): string {
+  const id = action.action_id;
+  if (id.includes("upgrade")) return "Start Upgrade";
+  if (id.includes("reset") || id.includes("reload")) return "Reset";
+  if (id.includes("rebuild") || id.includes("install")) return "Rebuild";
+  if (id.includes("virtual-media")) return "Insert Media";
+  if (id.includes("one-time-boot")) return "Set Boot";
+  if (id.includes("deploy-apply")) return "Deploy";
+  if (id.includes("apply") || id.includes("bootstrap")) return "Apply";
+  return action.mode === "destructive" ? "Start" : "Apply";
 }
 
 function workflowRunToTrace(run: WorkflowActionRun): WorkflowAction["last_run_trace"] {
@@ -17953,6 +19649,18 @@ function labProfileFormFrom(profile: {
   };
 }
 
+function controlProfileFormForSave(
+  form: LabProfileFormState,
+  activeProfile: LabProfile | null
+): LabProfileFormState {
+  const fallbackName = activeProfile?.source === "saved" ? activeProfile.name : "Local lab setup";
+  const name = form.name.trim() && form.name !== "Runtime environment" ? form.name : fallbackName;
+  return {
+    ...form,
+    name
+  };
+}
+
 function labProfilePayload(form: LabProfileFormState): LabProfileWrite {
   const addressPlan = blankLabAddressPlan();
   const subnetPrefix = parseSubnetPrefix(form.globalSettings.subnetPrefix);
@@ -18034,6 +19742,7 @@ function blankLabAddressPlan(): LabAddressPlan {
   return {
     subnet: null,
     ilo: null,
+    ilo_initial: null,
     server_embedded_nic: null,
     esxi_management: null,
     cisco_management: null,
@@ -18132,6 +19841,9 @@ function applyLabSubnetChoice(
 
   const generated = generateLabAddressPlan(normalizedSubnet, prefix);
   labCoreAddressFields.forEach((field) => {
+    if (field.key === "ilo_initial") {
+      return;
+    }
     addresses[field.key] = generated.addresses[field.key] ?? "";
   });
   nextForm.globalSettings.gateway = generated.gateway ?? nextForm.globalSettings.gateway;

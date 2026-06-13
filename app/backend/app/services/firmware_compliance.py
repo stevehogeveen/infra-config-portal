@@ -11,6 +11,7 @@ from app.core.config import settings
 from app.providers.probe_cache import get_probe_result
 from app.providers.redaction import redact_sensitive
 from app.services.media_inventory import get_media_inventory
+from app.services.netapp_real_lab import latest_console_ontap_version
 from app.services.netapp_state import get_netapp_runtime_state
 from app.services.status_source import attach_status_source
 
@@ -23,15 +24,72 @@ COMPLIANCE_SUMMARY = CODEX_RUN_DIR / "firmware-compliance-summary-redacted.json"
 WAIVER_REPORT = CODEX_RUN_DIR / "firmware-waiver-report.md"
 LOCAL_WAIVER_PATH = CODEX_RUN_DIR / "firmware-waiver.json"
 CISCO_FIRMWARE_INVENTORY_REPORT = CODEX_RUN_DIR / "cisco-firmware-inventory-report.md"
+ESXI_MANAGEMENT_VALIDATION_REPORT = CODEX_RUN_DIR / "esxi-management-validation-report.md"
+VCENTER_NETAPP_READINESS_REPORT = CODEX_RUN_DIR / "vcenter-netapp-readiness-report.md"
 
 BLOCKING_STATUSES = {"blocked", "unknown"}
 VALID_STATUSES = {"passed", "blocked", "warning", "not_configured_yet", "unknown", "waived"}
 VALID_SCOPES = {"hpe", "cisco", "netapp", "full"}
+FIRMWARE_SUMMARY_STALE_AFTER_SECONDS = 24 * 60 * 60
 SCOPE_COMPONENT_PREFIXES = {
     "hpe": ("hpe_",),
     "cisco": ("cisco_",),
     "netapp": ("netapp_",),
     "full": ("hpe_", "cisco_", "netapp_"),
+}
+SUMMARY_COMPONENTS = {
+    "cisco": ("cisco_ios_xe_version", "cisco_bootloader_rommon"),
+    "ilo": ("hpe_ilo_firmware", "hpe_bios_version"),
+    "raid": ("hpe_smart_array_firmware",),
+    "netapp": ("netapp_ontap_version", "netapp_disk_firmware", "netapp_shelf_firmware", "netapp_sp_bmc_firmware"),
+}
+SUMMARY_LABELS = {
+    "cisco": "Cisco",
+    "ilo": "iLO / HPE",
+    "raid": "RAID / Smart Array",
+    "esxi": "ESXi",
+    "netapp": "NetApp",
+    "vcenter": "vCenter",
+}
+SUMMARY_COMPONENT_TYPES = {
+    "cisco": "network_os",
+    "ilo": "management_firmware",
+    "raid": "storage_controller_firmware",
+    "esxi": "hypervisor",
+    "netapp": "storage_os_and_component_firmware",
+    "vcenter": "management_software",
+}
+SUMMARY_SCAN_ACTIONS = {
+    "cisco": "cisco.firmware-inventory",
+    "ilo": "ilo.firmware-inventory",
+    "raid": "ilo.firmware-inventory",
+    "esxi": "esxi.management-validation",
+    "netapp": "netapp.ontap-upgrade-inventory",
+    "vcenter": "vcenter-netapp.readiness",
+}
+SUMMARY_EVIDENCE_ARTIFACTS = {
+    "cisco": (
+        "artifacts/codex-runs/cisco-firmware-inventory-report.md",
+        "artifacts/codex-runs/firmware-compliance-report.md",
+    ),
+    "ilo": (
+        "artifacts/codex-runs/firmware-inventory-report.md",
+        "artifacts/codex-runs/firmware-compliance-report.md",
+    ),
+    "raid": (
+        "artifacts/codex-runs/firmware-inventory-report.md",
+        "artifacts/codex-runs/firmware-compliance-report.md",
+        "artifacts/codex-runs/hpe-raid-discovery-report.md",
+    ),
+    "esxi": (
+        "artifacts/codex-runs/esxi-management-validation-report.md",
+        "artifacts/codex-runs/firmware-compliance-report.md",
+    ),
+    "netapp": (
+        "artifacts/codex-runs/netapp-upgrade-inventory-report.md",
+        "artifacts/codex-runs/firmware-compliance-report.md",
+    ),
+    "vcenter": ("artifacts/codex-runs/vcenter-netapp-readiness-report.md",),
 }
 
 
@@ -182,6 +240,23 @@ def get_firmware_compliance(*, refresh_live: bool = False, scope: str = "full") 
             ],
         )
     )
+
+
+def get_firmware_summaries(*, compliance: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+    compliance = compliance or get_firmware_compliance(refresh_live=False, scope="full")
+    components = {
+        component.get("id"): component
+        for component in compliance.get("components", [])
+        if isinstance(component, dict) and component.get("id")
+    }
+    inventory = compliance.get("inventory") if isinstance(compliance.get("inventory"), dict) else {}
+    summaries = [
+        _component_firmware_summary(device_id, components, inventory)
+        for device_id in ("cisco", "ilo", "raid", "netapp")
+    ]
+    summaries.append(_esxi_firmware_summary())
+    summaries.append(_vcenter_firmware_summary())
+    return _sanitize({"summaries": summaries})["summaries"]
 
 
 def firmware_gate_blockers(scope: str) -> list[str]:
@@ -352,9 +427,12 @@ def _ilo_versions(probe: dict[str, Any]) -> dict[str, Any]:
     storage = probe.get("storage") if isinstance(probe.get("storage"), dict) else {}
     controllers = _records(storage.get("controllers"))
     firmware = _records(probe.get("firmware"))
+    legacy_identity = probe.get("legacy_identity") if isinstance(probe.get("legacy_identity"), dict) else {}
     return {
         "status": probe.get("status") or "not_checked",
-        "ilo_firmware": _first(managers, ("FirmwareVersion", "firmware_version")) or _firmware_match(firmware, "ilo"),
+        "ilo_firmware": _first(managers, ("FirmwareVersion", "firmware_version"))
+        or _firmware_match(firmware, "ilo")
+        or legacy_identity.get("current_firmware"),
         "bios_version": _first(systems, ("BiosVersion", "bios_version", "BIOSVersion")) or _firmware_match(firmware, "bios"),
         "smart_array_firmware": _first(controllers, ("FirmwareVersion", "firmware_version", "Version")) or _firmware_match(firmware, "smart"),
     }
@@ -473,9 +551,18 @@ def _report_field(text: str, label: str) -> str | None:
 
 def _netapp_versions(probe: dict[str, Any]) -> dict[str, Any]:
     runtime_state = get_netapp_runtime_state()
+    console_version = (
+        latest_console_ontap_version()
+        if settings.provider_mode != "mock"
+        else {"version": None, "source": "not_available", "checked_at": None}
+    )
+    ontap_version = settings.netapp_current_ontap_version or console_version.get("version")
     return {
         "status": "configured" if runtime_state.get("configured") else "not_configured_yet",
-        "ontap_version": settings.netapp_current_ontap_version,
+        "ontap_version": ontap_version,
+        "ontap_version_source": "configured_placeholder"
+        if settings.netapp_current_ontap_version
+        else console_version.get("source"),
         "disk_firmware": os.getenv("NETAPP_CURRENT_DISK_FIRMWARE"),
         "shelf_firmware": os.getenv("NETAPP_CURRENT_SHELF_FIRMWARE"),
         "sp_bmc_firmware": os.getenv("NETAPP_CURRENT_SP_BMC_FIRMWARE"),
@@ -629,6 +716,376 @@ def _workflow_scope(scope: str) -> str:
     if any(token in lower for token in ("hpe", "ilo", "raid", "esxi", "server")):
         return "hpe"
     return _normalize_scope(lower)
+
+
+def _component_firmware_summary(
+    device_id: str,
+    components: dict[str, dict[str, Any]],
+    inventory: dict[str, Any],
+) -> dict[str, Any]:
+    component_ids = SUMMARY_COMPONENTS[device_id]
+    selected = [components[component_id] for component_id in component_ids if component_id in components]
+    source = _component_source_info(device_id, inventory)
+    compliance_status = _summary_compliance_status(selected)
+    blocker = _summary_blocker(compliance_status, selected, source)
+    severity = _summary_severity(compliance_status, source["freshness"])
+    return {
+        "device_id": device_id,
+        "label": SUMMARY_LABELS[device_id],
+        "component_type": SUMMARY_COMPONENT_TYPES[device_id],
+        "current_versions": _summary_current_versions(selected),
+        "approved_versions": _summary_approved_versions(selected),
+        "compliance_status": compliance_status,
+        "severity": severity,
+        "last_scanned": source["last_scanned"],
+        "source_type": source["source_type"],
+        "freshness": source["freshness"],
+        "blocker": blocker,
+        "next_action": _summary_next_action(compliance_status, selected, blocker),
+        "scan_action_id": SUMMARY_SCAN_ACTIONS[device_id],
+        "upgrade_center_link": f"/firmware?device={device_id}",
+        "evidence_artifacts": _existing_summary_artifacts(device_id),
+    }
+
+
+def _summary_current_versions(components: list[dict[str, Any]]) -> list[dict[str, str | None]]:
+    rows: list[dict[str, str | None]] = []
+    for component in components:
+        rows.append(
+            {
+                "label": _summary_component_label(component),
+                "version": component.get("current_version"),
+                "status": component.get("status"),
+            }
+        )
+    return rows
+
+
+def _summary_approved_versions(components: list[dict[str, Any]]) -> list[dict[str, str | None]]:
+    rows: list[dict[str, str | None]] = []
+    for component in components:
+        label = _summary_component_label(component)
+        minimum = component.get("required_version")
+        approved = [str(value) for value in component.get("approved_versions") or [] if value]
+        if minimum:
+            rows.append({"label": label, "version": f">= {minimum}", "status": "minimum"})
+        for value in approved:
+            rows.append({"label": label, "version": value, "status": "approved"})
+        if not minimum and not approved:
+            rows.append({"label": label, "version": None, "status": "manual_review"})
+    return rows
+
+
+def _summary_component_label(component: dict[str, Any]) -> str:
+    label = str(component.get("label") or component.get("id") or "Version")
+    id_replacements = {
+        "hpe_ilo_firmware": "iLO firmware",
+        "hpe_bios_version": "BIOS",
+        "hpe_smart_array_firmware": "Smart Array",
+        "cisco_ios_xe_version": "Cisco IOS XE",
+        "cisco_bootloader_rommon": "ROMMON",
+        "netapp_ontap_version": "ONTAP",
+    }
+    component_id = str(component.get("id") or "")
+    if component_id in id_replacements:
+        return id_replacements[component_id]
+    replacements = {
+        "HPE iLO firmware": "iLO firmware",
+        "HPE BIOS version": "BIOS",
+        "HPE Smart Array controller firmware": "Smart Array",
+        "Cisco IOS XE version": "Cisco IOS XE",
+        "Cisco bootloader/ROMMON": "ROMMON",
+        "ONTAP version": "ONTAP",
+    }
+    return replacements.get(label, label)
+
+
+def _summary_compliance_status(components: list[dict[str, Any]]) -> str:
+    if not components:
+        return "cannot_verify"
+    statuses = [str(component.get("status") or "unknown") for component in components]
+    if all(status == "not_configured_yet" for status in statuses):
+        return "not_configured"
+    if any(_component_is_below_baseline(component) for component in components):
+        return "needs_upgrade"
+    if any(status in {"blocked", "warning", "unknown", "not_configured_yet"} for status in statuses):
+        return "cannot_verify"
+    if not any(component.get("current_version") for component in components):
+        return "cannot_verify"
+    return "current"
+
+
+def _component_is_below_baseline(component: dict[str, Any]) -> bool:
+    return component.get("status") == "blocked" and "below minimum" in str(component.get("reason") or "").lower()
+
+
+def _summary_severity(compliance_status: str, freshness: str) -> str:
+    if compliance_status == "needs_upgrade":
+        return "red"
+    if compliance_status == "not_configured":
+        return "gray"
+    if compliance_status == "cannot_verify":
+        return "yellow"
+    if freshness in {"stale", "historical"}:
+        return "yellow"
+    return "green"
+
+
+def _summary_blocker(
+    compliance_status: str,
+    components: list[dict[str, Any]],
+    source: dict[str, str | None],
+) -> str | None:
+    if compliance_status == "not_configured":
+        return "not configured yet"
+    if compliance_status == "needs_upgrade":
+        component = next((item for item in components if _component_is_below_baseline(item)), None)
+        return str(component.get("reason") if component else "below baseline")
+    if compliance_status == "current":
+        if source["freshness"] in {"stale", "historical"}:
+            return "stale evidence only"
+        return None
+    manual_review = _manual_review_message(components)
+    if manual_review:
+        return manual_review
+    missing_versions = [component for component in components if not component.get("current_version")]
+    if missing_versions:
+        return _cannot_verify_reason(" ".join(str(item.get("reason") or "") for item in missing_versions), source)
+    if source["freshness"] in {"stale", "historical"}:
+        return "stale evidence only"
+    return "live scan not run"
+
+
+def _manual_review_message(components: list[dict[str, Any]]) -> str | None:
+    labels = [
+        _summary_component_label(component)
+        for component in components
+        if component.get("status") == "warning"
+        and not component.get("required_version")
+        and not component.get("approved_versions")
+    ]
+    if not labels:
+        return None
+    return f"{', '.join(labels)} baseline missing/manual review"
+
+
+def _cannot_verify_reason(text: str, source: dict[str, str | None]) -> str:
+    lower = text.lower()
+    if source["freshness"] in {"stale", "historical"}:
+        return "stale evidence only"
+    if "credential" in lower or "auth" in lower or "password" in lower:
+        return "credentials missing"
+    if "unreachable" in lower or "timeout" in lower or "port is not reachable" in lower:
+        return "device unreachable"
+    if "unsupported" in lower or "not supported" in lower:
+        return "unsupported endpoint"
+    return "live scan not run"
+
+
+def _summary_next_action(
+    compliance_status: str,
+    components: list[dict[str, Any]],
+    blocker: str | None,
+) -> str:
+    if compliance_status == "current":
+        return "Open Firmware Upgrades for full planning, or rescan before apply work."
+    if compliance_status == "not_configured":
+        return "Complete device setup and credentials before firmware inventory."
+    if compliance_status == "needs_upgrade":
+        component = next((item for item in components if _component_is_below_baseline(item)), None)
+        return str(component.get("next_action") if component else "Open Firmware Upgrades to plan the upgrade.")
+    if blocker and "baseline missing/manual review" in blocker:
+        return "Open Firmware Upgrades and record the manual baseline decision."
+    component = next((item for item in components if item.get("next_action")), None)
+    return str(component.get("next_action") if component else "Run a safe firmware scan.")
+
+
+def _component_source_info(device_id: str, inventory: dict[str, Any]) -> dict[str, str | None]:
+    last_probe_times = inventory.get("last_probe_times") if isinstance(inventory.get("last_probe_times"), dict) else {}
+    live_inventory = inventory.get("live_inventory") if isinstance(inventory.get("live_inventory"), dict) else {}
+    source_type = "not_checked"
+    checked_at: str | None = None
+    if device_id == "cisco":
+        cisco = live_inventory.get("cisco") if isinstance(live_inventory.get("cisco"), dict) else {}
+        report = _cisco_firmware_report_versions()
+        checked_at = _string_or_none(cisco.get("checked_at")) or _string_or_none(last_probe_times.get("cisco_console")) or _string_or_none(last_probe_times.get("cisco"))
+        source_type = "cached_live" if checked_at else "not_checked"
+        if (
+            report.get("ios_xe_version")
+            and cisco.get("ios_xe_version") == report.get("ios_xe_version")
+            and cisco.get("checked_at") == report.get("checked_at")
+        ):
+            checked_at = _string_or_none(report.get("checked_at"))
+            source_type = "historical_evidence"
+    elif device_id in {"ilo", "raid"}:
+        checked_at = _string_or_none(last_probe_times.get("ilo"))
+        source_type = "cached_live" if checked_at else "not_checked"
+    elif device_id == "netapp":
+        checked_at = _string_or_none(last_probe_times.get("netapp"))
+        source_type = "cached_live" if checked_at else "not_checked"
+    freshness = _freshness(source_type, checked_at)
+    return {"source_type": source_type, "last_scanned": checked_at, "freshness": freshness}
+
+
+def _esxi_firmware_summary() -> dict[str, Any]:
+    probe, checked_at = get_probe_result("esxi-readonly")
+    probe_versions = _esxi_probe_versions(probe if isinstance(probe, dict) else {})
+    report_versions = _esxi_report_versions()
+    versions = probe_versions or report_versions
+    source_type = "cached_live" if probe_versions else "historical_evidence" if report_versions else "not_checked"
+    last_scanned = checked_at if probe_versions else _report_checked_at(ESXI_MANAGEMENT_VALIDATION_REPORT) if report_versions else checked_at
+    freshness = _freshness(source_type, last_scanned)
+    if versions:
+        compliance_status = "current"
+        blocker = "stale evidence only" if freshness in {"stale", "historical"} else None
+    elif not settings.esxi_configured:
+        compliance_status = "not_configured"
+        blocker = "not configured yet"
+    else:
+        compliance_status = "cannot_verify"
+        blocker = _cannot_verify_reason(json.dumps(probe or {}), {"source_type": source_type, "freshness": freshness})
+    return {
+        "device_id": "esxi",
+        "label": SUMMARY_LABELS["esxi"],
+        "component_type": SUMMARY_COMPONENT_TYPES["esxi"],
+        "current_versions": versions,
+        "approved_versions": [],
+        "compliance_status": compliance_status,
+        "severity": _summary_severity(compliance_status, freshness),
+        "last_scanned": last_scanned,
+        "source_type": source_type,
+        "freshness": freshness,
+        "blocker": blocker,
+        "next_action": "Run ESXi management validation before install or datastore work.",
+        "scan_action_id": SUMMARY_SCAN_ACTIONS["esxi"],
+        "upgrade_center_link": "/firmware?device=esxi",
+        "evidence_artifacts": _existing_summary_artifacts("esxi"),
+    }
+
+
+def _vcenter_firmware_summary() -> dict[str, Any]:
+    last_scanned = _report_checked_at(VCENTER_NETAPP_READINESS_REPORT)
+    source_type = "cached_live" if last_scanned else "not_checked"
+    freshness = _freshness(source_type, last_scanned)
+    configured = bool(settings.vcenter_configured)
+    compliance_status = "cannot_verify" if configured else "not_configured"
+    blocker = "live scan not run" if configured else "not configured yet"
+    return {
+        "device_id": "vcenter",
+        "label": SUMMARY_LABELS["vcenter"],
+        "component_type": SUMMARY_COMPONENT_TYPES["vcenter"],
+        "current_versions": [],
+        "approved_versions": [],
+        "compliance_status": compliance_status,
+        "severity": _summary_severity(compliance_status, freshness),
+        "last_scanned": last_scanned,
+        "source_type": source_type,
+        "freshness": freshness,
+        "blocker": blocker,
+        "next_action": "Configure vCenter and rerun vCenter-NetApp readiness when that lane is in scope.",
+        "scan_action_id": SUMMARY_SCAN_ACTIONS["vcenter"],
+        "upgrade_center_link": "/firmware?device=vcenter",
+        "evidence_artifacts": _existing_summary_artifacts("vcenter"),
+    }
+
+
+def _esxi_probe_versions(probe: dict[str, Any]) -> list[dict[str, str | None]]:
+    versions = (probe.get("vim_service_versions") or {}).get("versions") if isinstance(probe.get("vim_service_versions"), dict) else []
+    if not versions:
+        return []
+    return [{"label": "VIM API", "version": str(max(versions)), "status": probe.get("status") or "ok"}]
+
+
+def _esxi_report_versions() -> list[dict[str, str | None]]:
+    text = _read_text(ESXI_MANAGEMENT_VALIDATION_REPORT)
+    if not text:
+        return []
+    match = re.search(
+        r"version/build/API:\s*`([^`]+)`\s*/\s*`([^`]+)`\s*/\s*`([^`]+)`",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if match:
+        return [
+            {"label": "ESXi", "version": match.group(1), "status": "passed"},
+            {"label": "Build", "version": match.group(2), "status": "passed"},
+            {"label": "API", "version": match.group(3), "status": "passed"},
+        ]
+    match = re.search(r"VMware ESXi\s+([0-9.]+)\s+build-([0-9]+)", text, flags=re.IGNORECASE)
+    if match:
+        return [
+            {"label": "ESXi", "version": match.group(1), "status": "passed"},
+            {"label": "Build", "version": match.group(2), "status": "passed"},
+        ]
+    return []
+
+
+def _existing_summary_artifacts(device_id: str) -> list[str]:
+    return [
+        path
+        for path in SUMMARY_EVIDENCE_ARTIFACTS.get(device_id, ())
+        if (REPO_ROOT / path).exists()
+    ]
+
+
+def _freshness(source_type: str, checked_at: str | None) -> str:
+    if not checked_at or source_type == "not_checked":
+        return "not_checked"
+    parsed = _parse_datetime(checked_at)
+    if parsed and (datetime.now(UTC) - parsed).total_seconds() > FIRMWARE_SUMMARY_STALE_AFTER_SECONDS:
+        return "stale"
+    if source_type == "historical_evidence":
+        return "historical"
+    return "live"
+
+
+def _parse_datetime(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
+
+
+def _report_checked_at(path: Path) -> str | None:
+    text = _read_text(path)
+    if not text:
+        return _path_mtime(path)
+    for label in ("Checked", "Checked at", "Generated", "Date"):
+        value = _report_scalar(text, label)
+        if value:
+            return value.strip(" `")
+    return _path_mtime(path)
+
+
+def _report_scalar(text: str, label: str) -> str | None:
+    escaped = re.escape(label)
+    match = re.search(rf"^\s*(?:-\s*)?{escaped}:\s*`?(.+?)`?\s*$", text, flags=re.IGNORECASE | re.MULTILINE)
+    return match.group(1).strip(" `") if match else None
+
+
+def _path_mtime(path: Path) -> str | None:
+    if not path.exists():
+        return None
+    return datetime.fromtimestamp(path.stat().st_mtime, UTC).isoformat()
+
+
+def _read_text(path: Path) -> str:
+    if not path.exists():
+        return ""
+    try:
+        return path.read_text(encoding="utf-8")
+    except OSError:
+        return ""
+
+
+def _string_or_none(value: Any) -> str | None:
+    text = str(value).strip() if value is not None else ""
+    return text or None
 
 
 def _device_summary(components: list[dict[str, Any]]) -> dict[str, Any]:

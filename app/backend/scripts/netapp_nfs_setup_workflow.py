@@ -51,7 +51,7 @@ def _summary(result: dict) -> dict:
         "blockers": result.get("blockers") or [],
         "warnings": result.get("warnings") or [],
         "artifacts": result.get("artifacts") if isinstance(result.get("artifacts"), dict) else {},
-        "no_write_actions_attempted": True,
+        "no_write_actions_attempted": not bool(((result.get("apply") or {}).get("rest_result") or {}).get("ontap_writes_attempted")),
     }
 
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import signal
 import subprocess
 import uuid
 from dataclasses import asdict, is_dataclass
@@ -12,7 +13,11 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.providers.redaction import redact_sensitive
+from app.services.ilo_baseline import get_ilo_baseline_preview
 from app.services.lab_profiles import list_lab_profiles
+from app.services.cisco_setup_readiness import get_cisco_setup_readiness
+from app.services.ilo_readiness import get_ilo_setup_plan_preview
+from app.services.media_inventory import get_media_inventory
 from app.services.report_center import get_report_center, get_report_summary
 from app.services.workflow_action_allowlist import (
     get_workflow_action_execution_spec,
@@ -31,9 +36,18 @@ class WorkflowActionRunNotFoundError(LookupError):
     pass
 
 
-def run_workflow_action(action_id: str, session: Session | None = None) -> dict[str, Any]:
+def run_workflow_action(
+    action_id: str,
+    session: Session | None = None,
+    payload: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     action = get_workflow_action(action_id)
-    blockers = workflow_action_run_blockers(action)
+    payload = payload or {}
+    blockers = workflow_action_run_blockers(
+        action,
+        confirmation_phrase=_string_or_none(payload.get("confirmation_phrase")),
+        confirmed_gates=_string_list(payload.get("confirmed_gates")),
+    )
     started_at = _now()
     run_id = f"workflow-action:{action_id}:{uuid.uuid4().hex[:12]}"
     if blockers:
@@ -161,6 +175,14 @@ def _run_api_action(
 
 
 def _api_action_payload(action_id: str, session: Session | None) -> Any:
+    if action_id == "cisco.setup-readiness":
+        return get_cisco_setup_readiness()
+    if action_id == "ilo.baseline-preview":
+        return get_ilo_baseline_preview()
+    if action_id == "ilo.setup-plan-preview":
+        return get_ilo_setup_plan_preview(session)
+    if action_id == "firmware.package-inventory":
+        return get_media_inventory()
     if action_id == "reports.issue-center":
         if session is None:
             raise WorkflowActionRunNotFoundError("Report Center requires a database session.")
@@ -211,14 +233,27 @@ def _base_result(
 ) -> dict[str, Any]:
     finished_at = _now()
     report_artifacts = _existing_report_artifacts(action.get("reports") or [])
+    guarded = str(action.get("mode") or "") in {"write", "destructive", "upgrade"}
     if status == "completed":
-        summary = "Safe read-only/report-only action completed. Review evidence before using results as current state."
-        next_action = "Review evidence artifacts, then continue with the next safe stage."
+        summary = (
+            "Guarded workflow action completed. Review evidence before continuing."
+            if guarded
+            else "Safe read-only/report-only action completed. Review evidence before using results as current state."
+        )
+        next_action = "Review evidence artifacts, then continue with the next stage."
     elif status == "blocked":
-        summary = "Action was not run by the safe read-only action runner."
+        summary = (
+            "Guarded action was not run because required gates were not satisfied."
+            if guarded
+            else "Action was not run by the safe read-only action runner."
+        )
         next_action = blockers[0] if blockers else str(action.get("next_action") or "Review the blocked action.")
     else:
-        summary = "Safe read-only/report-only action failed before completing cleanly."
+        summary = (
+            "Guarded workflow action failed before completing cleanly."
+            if guarded
+            else "Safe read-only/report-only action failed before completing cleanly."
+        )
         next_action = "Review the run trace and evidence, fix the blocker, then run the check again."
     return {
         "run_id": run_id,
@@ -253,15 +288,44 @@ def _run_subprocess(command: tuple[str, ...], timeout_seconds: int) -> subproces
         **os.environ,
         "PYTHONUNBUFFERED": "1",
     }
-    return subprocess.run(
+    process = subprocess.Popen(
         command,
         cwd=REPO_ROOT,
         env=env,
-        capture_output=True,
-        check=False,
+        stderr=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        start_new_session=True,
         text=True,
-        timeout=timeout_seconds,
     )
+    try:
+        stdout, stderr = process.communicate(timeout=timeout_seconds)
+    except subprocess.TimeoutExpired as exc:
+        _terminate_process_group(process)
+        stdout, stderr = process.communicate()
+        raise subprocess.TimeoutExpired(
+            command,
+            timeout_seconds,
+            output=stdout,
+            stderr=stderr,
+        ) from exc
+    return subprocess.CompletedProcess(command, process.returncode, stdout=stdout, stderr=stderr)
+
+
+def _terminate_process_group(process: subprocess.Popen[str]) -> None:
+    try:
+        os.killpg(process.pid, signal.SIGTERM)
+    except ProcessLookupError:
+        return
+    try:
+        process.wait(timeout=5)
+        return
+    except subprocess.TimeoutExpired:
+        pass
+    try:
+        os.killpg(process.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        return
+    process.wait(timeout=5)
 
 
 def _action_command(action: dict[str, Any]) -> str | None:
@@ -349,6 +413,19 @@ def _decode_output(value: Any) -> str:
 
 def _now() -> str:
     return datetime.now(UTC).isoformat()
+
+
+def _string_or_none(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = str(value)
+    return text if text else None
+
+
+def _string_list(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item) for item in value if item]
 
 
 def _unique(values: Any) -> list[Any]:

@@ -252,6 +252,7 @@ class LabAddressPlan(BaseModel):
 
     subnet: str | None = Field(default=None, max_length=80)
     ilo: str | None = Field(default=None, max_length=80)
+    ilo_initial: str | None = Field(default=None, max_length=80)
     server_embedded_nic: str | None = Field(default=None, max_length=80)
     esxi_management: str | None = Field(default=None, max_length=80)
     cisco_management: str | None = Field(default=None, max_length=80)
@@ -268,6 +269,7 @@ class LabAddressPlan(BaseModel):
     @field_validator(
         "subnet",
         "ilo",
+        "ilo_initial",
         "server_embedded_nic",
         "esxi_management",
         "cisco_management",
@@ -308,6 +310,7 @@ class LabAddressPlan(BaseModel):
 
     @field_validator(
         "ilo",
+        "ilo_initial",
         "server_embedded_nic",
         "esxi_management",
         "cisco_management",
@@ -1721,12 +1724,37 @@ class ControlActionRead(BaseModel):
     diagnostics: list[str] = Field(default_factory=list)
 
 
+class FirmwareVersionSummaryRead(BaseModel):
+    label: str
+    version: str | None = None
+    status: str | None = None
+
+
+class FirmwareSummaryRead(BaseModel):
+    device_id: str
+    label: str
+    component_type: str
+    current_versions: list[FirmwareVersionSummaryRead] = Field(default_factory=list)
+    approved_versions: list[FirmwareVersionSummaryRead] = Field(default_factory=list)
+    compliance_status: str
+    severity: str
+    last_scanned: str | None = None
+    source_type: str
+    freshness: str
+    blocker: str | None = None
+    next_action: str
+    scan_action_id: str | None = None
+    upgrade_center_link: str
+    evidence_artifacts: list[str] = Field(default_factory=list)
+
+
 class ControlSectionRead(BaseModel):
     id: str
     title: str
     stage: str
     description: str
     status: str
+    firmware_summary: FirmwareSummaryRead | None = None
     current_state: list[ControlStateItemRead] = Field(default_factory=list)
     desired_state: list[ControlStateItemRead] = Field(default_factory=list)
     plan_diff: list[ControlPlanDiffItemRead] = Field(default_factory=list)
@@ -1851,6 +1879,11 @@ class WorkflowActionRunRead(BaseModel):
     next_action: str
 
 
+class WorkflowActionRunCreate(BaseModel):
+    confirmation_phrase: str | None = None
+    confirmed_gates: list[str] = Field(default_factory=list)
+
+
 class WorkflowActionRead(BaseModel):
     action_id: str
     label: str
@@ -1893,6 +1926,8 @@ class WorkflowActionRead(BaseModel):
     last_run_trace: WorkflowRunTraceRead
     ui_run_supported: bool = False
     ui_run_blockers: list[str] = Field(default_factory=list)
+    guarded_run_supported: bool = False
+    guarded_run_blockers: list[str] = Field(default_factory=list)
     run_endpoint: str
     runs_endpoint: str
 
