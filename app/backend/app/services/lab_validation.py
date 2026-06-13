@@ -549,7 +549,7 @@ def _netapp_upgrade_item(
         )
         for item in plan.get("blockers") or []
     ]
-    status = "ready" if plan.get("status") == "ready" else "blocked" if blockers else "not_checked"
+    status = "ready" if plan.get("status") in {"ready", "current"} else "blocked" if blockers else "not_checked"
     return _item(
         item_id="netapp-ontap-upgrade",
         label="NetApp ONTAP Upgrade",

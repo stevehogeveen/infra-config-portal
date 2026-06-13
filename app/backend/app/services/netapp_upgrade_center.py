@@ -71,6 +71,8 @@ def build_netapp_upgrade_inventory(*, write_report: bool = True) -> dict[str, An
         if not configured
         else "live_probe_not_implemented"
     )
+    configured_target = settings.netapp_target_ontap_version
+    no_upgrade_target = _same_version(current_version, configured_target)
     blockers = []
     if not configured:
         blockers.append("NetApp cluster management is not configured/reachable yet.")
@@ -78,9 +80,13 @@ def build_netapp_upgrade_inventory(*, write_report: bool = True) -> dict[str, An
         blockers.append("NetApp API access values are missing; keep values in .env.local.real-lab.")
     if not current_version:
         blockers.append("Current ONTAP version is unknown until ONTAP/API/CLI discovery can run.")
-    if not local_packages:
+    if not local_packages and not no_upgrade_target:
         blockers.append("No local ONTAP image package is available from MEDIA_INVENTORY_DIRS or artifacts/Media.")
-    supported_path_state = _supported_path_state(current_version, _recommended_target(current_version, local_packages), blockers)
+    supported_path_state = _supported_path_state(
+        current_version,
+        configured_target or _recommended_target(current_version, local_packages),
+        blockers,
+    )
     payload = {
         "provider_id": PROVIDER_ID,
         "action": "ontap-upgrade-inventory",
@@ -150,22 +156,27 @@ def build_netapp_upgrade_plan(*, write_report: bool = True) -> dict[str, Any]:
     )
     selected_package = _selected_package(list(inventory.get("local_image_packages") or []), target_version)
     validation = _latest_validation()
+    no_upgrade_required = _no_upgrade_required(inventory, target_version)
     blockers = list(inventory.get("blockers") or [])
     if not target_version:
         blockers.append("No target ONTAP version is selected.")
-    if selected_package is None:
+    if selected_package is None and not no_upgrade_required:
         blockers.append("No local ONTAP image/package is selected.")
-    if validation.get("validation_passed") is not True:
+    if validation.get("validation_passed") is not True and not no_upgrade_required:
         blockers.append("Pre-upgrade validation has not passed.")
     manual_plan_attached = bool(settings.netapp_upgrade_advisor_plan)
-    if not manual_plan_attached:
+    if not manual_plan_attached and not no_upgrade_required:
         blockers.append("Manual Upgrade Advisor/Health Checker plan is not attached.")
     payload = {
         "provider_id": PROVIDER_ID,
         "action": "ontap-upgrade-plan",
         "checked_at": _now(),
-        "status": "blocked" if blockers else "ready",
-        "message": "NetApp ONTAP upgrade plan generated. No upgrade command was run.",
+        "status": "blocked" if blockers else "current" if no_upgrade_required else "ready",
+        "message": (
+            "NetApp ONTAP is already at the selected target version. No upgrade command is needed."
+            if no_upgrade_required
+            else "NetApp ONTAP upgrade plan generated. No upgrade command was run."
+        ),
         "mode": settings.provider_mode,
         "current_version": inventory.get("current_ontap_version"),
         "current_version_source": inventory.get("current_version_source"),
@@ -184,7 +195,7 @@ def build_netapp_upgrade_plan(*, write_report: bool = True) -> dict[str, Any]:
             "Expected ONTAP commands/API calls are shown for review only.",
             "Use NetApp Upgrade Advisor/Health Checker output before applying a real upgrade.",
         ],
-        "expected_commands_or_api_calls": _expected_upgrade_actions(target_version, selected_package),
+        "expected_commands_or_api_calls": [] if no_upgrade_required else _expected_upgrade_actions(target_version, selected_package),
         "progress_command": "cluster image show-update-progress",
         "post_upgrade_validation_command": "make provider-lab-netapp-ontap-upgrade-validate",
         "sp_bmc_reboot_recommended_before_upgrade": None,
@@ -192,7 +203,11 @@ def build_netapp_upgrade_plan(*, write_report: bool = True) -> dict[str, Any]:
         "button_state": _upgrade_button_state(inventory, selected_package, validation, blockers),
         "not_attempted": _upgrade_not_attempted(),
         "artifacts": {"report": _rel(UPGRADE_PLAN_REPORT), "json": _rel(UPGRADE_PLAN_JSON)},
-        "next_safe_action": "Resolve blockers, run validation, and keep upgrade apply disabled until all gates pass.",
+        "next_safe_action": (
+            "No ONTAP upgrade is required; continue with NetApp NFS and ESXi datastore validation."
+            if no_upgrade_required
+            else "Resolve blockers, run validation, and keep upgrade apply disabled until all gates pass."
+        ),
     }
     sanitized = _sanitize(payload)
     if write_report:
@@ -219,25 +234,37 @@ def validate_netapp_upgrade(*, write_report: bool = True) -> dict[str, Any]:
     )
     selected_package = _selected_package(list(inventory.get("local_image_packages") or []), target_version)
     setup_intent = get_netapp_setup_intent()
+    no_upgrade_required = _no_upgrade_required(inventory, target_version)
     blockers = list(inventory.get("blockers") or [])
     if setup_intent["missing_fields"]:
         blockers.append("NetApp setup intent is incomplete.")
     if not target_version:
         blockers.append("No target ONTAP version is selected.")
-    if selected_package is None:
+    if selected_package is None and not no_upgrade_required:
         blockers.append("No ONTAP image/package is selected.")
-    if inventory.get("supported_path_state") in {"blocked", "unknown"}:
+    if inventory.get("supported_path_state") in {"blocked", "unknown"} and not no_upgrade_required:
         blockers.append("Supported ONTAP upgrade path is not confirmed.")
-    warnings = [
-        "Pre-upgrade validation is blocked until the cluster is configured and a local image/package is selected.",
-        "No package upload, image validation, or upgrade command was run.",
-    ]
+    warnings = (
+        [
+            "Current ONTAP version matches the selected target; no package upload, image validation, or upgrade command is needed.",
+            "No upgrade command was run.",
+        ]
+        if no_upgrade_required
+        else [
+            "Pre-upgrade validation is blocked until the cluster is configured and a local image/package is selected.",
+            "No package upload, image validation, or upgrade command was run.",
+        ]
+    )
     payload = {
         "provider_id": PROVIDER_ID,
         "action": "ontap-upgrade-validate",
         "checked_at": _now(),
-        "status": "blocked" if blockers else "passed",
-        "message": "NetApp ONTAP pre-upgrade validation completed without running upgrade commands.",
+        "status": "blocked" if blockers else "current" if no_upgrade_required else "passed",
+        "message": (
+            "NetApp ONTAP is already at the selected target version; upgrade validation is satisfied without upgrade commands."
+            if no_upgrade_required
+            else "NetApp ONTAP pre-upgrade validation completed without running upgrade commands."
+        ),
         "mode": settings.provider_mode,
         "validation_passed": not blockers,
         "validation_waiver": _upgrade_validation_waiver(),
@@ -248,7 +275,11 @@ def validate_netapp_upgrade(*, write_report: bool = True) -> dict[str, Any]:
             _check("cluster_management", bool(inventory.get("cluster_management_configured")), "Cluster management configured and reachable."),
             _check("access", bool(inventory.get("access_configured")), "NetApp API access values configured."),
             _check("current_version", bool(inventory.get("current_ontap_version")), "Current ONTAP version discovered."),
-            _check("target_package", selected_package is not None, "Local ONTAP image/package selected."),
+            _check(
+                "target_package",
+                selected_package is not None or no_upgrade_required,
+                "Local ONTAP image/package selected or no upgrade required.",
+            ),
             _check("supported_path", inventory.get("supported_path_state") not in {"blocked", "unknown"}, "Upgrade path is confirmed."),
             _check("setup_intent", not setup_intent["missing_fields"], "Setup intent complete."),
         ],
@@ -259,6 +290,8 @@ def validate_netapp_upgrade(*, write_report: bool = True) -> dict[str, Any]:
         "next_safe_action": (
             "Resolve validation blockers before the Upgrade button can become ready."
             if blockers
+            else "No ONTAP upgrade is required; continue with NetApp NFS and ESXi datastore validation."
+            if no_upgrade_required
             else "Review the plan and use the exact apply flags only from an attended real-lab session."
         ),
     }
@@ -281,6 +314,44 @@ def apply_netapp_upgrade(*, write_report: bool = True) -> dict[str, Any]:
             UPGRADE_APPLY_REPORT.write_text(_apply_markdown(payload), encoding="utf-8")
         return payload
     plan = build_netapp_upgrade_plan(write_report=False)
+    if plan.get("status") == "current":
+        payload = {
+            "provider_id": PROVIDER_ID,
+            "action": "ontap-upgrade-apply",
+            "checked_at": _now(),
+            "status": "current",
+            "message": "NetApp ONTAP is already at the selected target version. No upgrade apply is needed.",
+            "mode": settings.provider_mode,
+            "apply_enabled": False,
+            "flag_state": {
+                "provider_mode": settings.provider_mode,
+                "local_lab_readwrite": settings.provider_mode == LOCAL_LAB_READWRITE_MODE,
+                "netapp_ontap_upgrade_apply": os.getenv("NETAPP_ONTAP_UPGRADE_APPLY") == "true",
+                "netapp_ontap_upgrade_confirm": os.getenv("NETAPP_ONTAP_UPGRADE_CONFIRM") == UPGRADE_CONFIRM_PHRASE,
+                "validation_passed": True,
+                "validation_waiver": False,
+            },
+            "required_flags": [],
+            "current_version": plan.get("current_version"),
+            "target_version": plan.get("target_version"),
+            "selected_package": plan.get("selected_package"),
+            "pre_upgrade_validation": _latest_validation(),
+            "validation_waiver": _upgrade_validation_waiver(),
+            "expected_commands_or_api_calls": [],
+            "progress_command": None,
+            "post_upgrade_validation_command": "make provider-lab-netapp-ontap-upgrade-validate",
+            "upgrade_writes_attempted": False,
+            "blockers": [],
+            "warnings": ["Upgrade apply is disabled because the controller is already at the selected target version."],
+            "not_attempted": _upgrade_not_attempted(),
+            "artifacts": {"report": _rel(UPGRADE_APPLY_REPORT), "json": _rel(UPGRADE_APPLY_JSON)},
+            "next_safe_action": "Continue with NetApp NFS and ESXi datastore validation.",
+        }
+        sanitized = _sanitize(payload)
+        if write_report:
+            _write_json(UPGRADE_APPLY_JSON, sanitized)
+            UPGRADE_APPLY_REPORT.write_text(_apply_markdown(sanitized), encoding="utf-8")
+        return sanitized
     validation = _latest_validation()
     waiver = _upgrade_validation_waiver()
     flag_state = {
@@ -455,11 +526,27 @@ def _supported_path_state(current_version: Any, target_version: Any, blockers: l
     target_key = _version_key(target_version)
     if current_key is None or target_key is None:
         return "manual-review"
-    if target_key <= current_key:
+    if target_key == current_key:
+        return "current"
+    if target_key < current_key:
         return "blocked"
     if len(current_key) >= 2 and len(target_key) >= 2 and target_key[0] == current_key[0] and target_key[1] - current_key[1] <= 1:
         return "direct"
     return "manual-review"
+
+
+def _no_upgrade_required(inventory: dict[str, Any], target_version: Any) -> bool:
+    return _same_version(inventory.get("current_ontap_version"), target_version)
+
+
+def _same_version(current_version: Any, target_version: Any) -> bool:
+    if not current_version or not target_version:
+        return False
+    current_key = _version_key(current_version)
+    target_key = _version_key(target_version)
+    if current_key is not None and target_key is not None:
+        return current_key == target_key
+    return str(current_version).strip() == str(target_version).strip()
 
 
 def _selected_package(candidates: list[dict[str, Any]], target_version: str | None) -> dict[str, Any] | None:
@@ -594,6 +681,8 @@ def _upgrade_button_state(
 ) -> str:
     if not inventory.get("cluster_management_configured"):
         return "Disabled: NetApp not configured"
+    if inventory.get("supported_path_state") == "current":
+        return "Current: no ONTAP upgrade needed"
     if selected_package is None:
         return "Disabled: no ONTAP image/package"
     if validation.get("status") == "not_run":

@@ -362,6 +362,54 @@ def test_upgrade_button_state_variants(monkeypatch, tmp_path) -> None:
     assert netapp_upgrade_center.build_netapp_upgrade_plan(write_report=False)["button_state"] == "Disabled: validation failed"
 
 
+def test_upgrade_validation_current_when_target_matches_running_version(monkeypatch) -> None:
+    _patch_upgrade_runtime(monkeypatch, configured=True)
+    _patch_upgrade_settings(monkeypatch, current_version="9.17.1", target_version="9.17.1")
+    _patch_media(monkeypatch, [_ontap_media(version_hint="9.17.1")])
+    monkeypatch.setattr(netapp_upgrade_center, "get_netapp_setup_intent", lambda: {"missing_fields": []})
+
+    payload = netapp_upgrade_center.validate_netapp_upgrade(write_report=False)
+
+    assert payload["status"] == "current"
+    assert payload["validation_passed"] is True
+    assert payload["blockers"] == []
+    assert payload["current_version"] == "9.17.1"
+    assert payload["target_version"] == "9.17.1"
+    assert any("no upgrade" in warning.lower() for warning in payload["warnings"])
+
+
+def test_upgrade_plan_current_disables_upgrade_button_without_blocker(monkeypatch, tmp_path) -> None:
+    _patch_upgrade_runtime(monkeypatch, configured=True)
+    _patch_upgrade_settings(monkeypatch, current_version="9.17.1", target_version="9.17.1")
+    _patch_media(monkeypatch, [_ontap_media(version_hint="9.17.1")])
+    validation = tmp_path / "validation.json"
+    validation.write_text(json.dumps({"status": "current", "validation_passed": True}), encoding="utf-8")
+    monkeypatch.setattr(netapp_upgrade_center, "UPGRADE_VALIDATION_JSON", validation)
+
+    payload = netapp_upgrade_center.build_netapp_upgrade_plan(write_report=False)
+
+    assert payload["status"] == "current"
+    assert payload["button_state"] == "Current: no ONTAP upgrade needed"
+    assert payload["blockers"] == []
+    assert payload["expected_commands_or_api_calls"] == []
+
+
+def test_upgrade_apply_current_does_not_attempt_upgrade(monkeypatch, tmp_path) -> None:
+    _patch_upgrade_runtime(monkeypatch, configured=True)
+    _patch_upgrade_settings(monkeypatch, current_version="9.17.1", target_version="9.17.1")
+    _patch_media(monkeypatch, [_ontap_media(version_hint="9.17.1")])
+    validation = tmp_path / "validation.json"
+    validation.write_text(json.dumps({"status": "current", "validation_passed": True}), encoding="utf-8")
+    monkeypatch.setattr(netapp_upgrade_center, "UPGRADE_VALIDATION_JSON", validation)
+
+    payload = netapp_upgrade_center.apply_netapp_upgrade(write_report=False)
+
+    assert payload["status"] == "current"
+    assert payload["apply_enabled"] is False
+    assert payload["upgrade_writes_attempted"] is False
+    assert payload["blockers"] == []
+
+
 def _patch_setup_runtime(monkeypatch, *, detected: bool) -> None:
     monkeypatch.setattr(
         netapp_setup_intent,
@@ -434,6 +482,7 @@ def _patch_upgrade_settings(
     monkeypatch,
     *,
     current_version: str | None = None,
+    target_version: str | None = None,
     access_value: str = "configured-value",
 ) -> None:
     settings_override = replace(
@@ -446,7 +495,7 @@ def _patch_upgrade_settings(
         lab_acknowledge_lab_only=True,
         lab_allow_firmware_updates=True,
         netapp_current_ontap_version=current_version,
-        netapp_target_ontap_version="9.14.1" if current_version else None,
+        netapp_target_ontap_version=target_version if target_version is not None else "9.14.1" if current_version else None,
         netapp_api_username="admin",
         netapp_api_password=access_value,
         netapp_cluster_name="lab-netapp-cluster",

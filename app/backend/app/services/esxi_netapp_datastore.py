@@ -21,12 +21,14 @@ VALIDATION_REPORT = CODEX_RUN_DIR / "esxi-netapp-nfs-datastore-validation-report
 VALIDATION_JSON = CODEX_RUN_DIR / "esxi-netapp-nfs-datastore-validation-redacted.json"
 
 DATASTORE_CONFIRM_PHRASE = "MOUNT NETAPP NFS DATASTORE"
+DATASTORE_ACCESS_MODE = "readWrite"
 
 
 def build_esxi_netapp_datastore_preview(*, write_report: bool = True) -> dict[str, Any]:
     plan = _mount_plan()
     target = _target_state()
     current = _datastore_info(plan) if target["can_query"] else _skipped_datastore_info()
+    command_preview = _command_preview(plan, target)
     blockers = _preview_blockers(plan, target, current)
     payload = {
         "provider_id": "esxi-readonly",
@@ -39,9 +41,9 @@ def build_esxi_netapp_datastore_preview(*, write_report: bool = True) -> dict[st
         "source_type": "live_probe" if current.get("checked") else "live_cached",
         "freshness": "current",
         "current_state": current,
-        "target_state": plan,
+        "target_state": _target_payload(plan, target),
         "required_flags": _required_flags(),
-        "command_preview": _command_preview(plan),
+        "command_preview": command_preview,
         "blockers": blockers,
         "warnings": _warnings(),
         "not_attempted": _not_attempted(),
@@ -70,6 +72,7 @@ def apply_esxi_netapp_datastore(*, write_report: bool = True) -> dict[str, Any]:
     gates = _apply_gates(plan, target, current)
     apply_result = {
         "govc_datastore_create_attempted": False,
+        "govc_datastore_remove_attempted": False,
         "return_code": None,
         "result": "not_attempted",
     }
@@ -82,29 +85,53 @@ def apply_esxi_netapp_datastore(*, write_report: bool = True) -> dict[str, Any]:
     )
 
     if not blockers:
-        if current.get("exists") and current.get("accessible"):
+        if current.get("exists") and current.get("accessible") and _is_read_write(current):
             status = "ready"
             message = "NetApp NFS datastore is already mounted and accessible on ESXi."
             apply_result["result"] = "already_mounted"
         else:
-            result = _run_govc(_govc_create_args(plan), env=_govc_env(), timeout=120)
-            apply_result = {
-                "govc_datastore_create_attempted": True,
-                "return_code": result["return_code"],
-                "result": "completed" if result["return_code"] == 0 else "failed",
-                "stderr": result.get("stderr"),
-            }
-            if result["return_code"] == 0:
-                after = _datastore_info(plan)
-                current = after
-                status = "mounted" if after.get("exists") else "warning"
-                message = "NetApp NFS datastore mount command completed."
-                if not after.get("exists"):
-                    blockers.append("govc datastore.create returned success, but datastore.info did not confirm the datastore.")
+            if current.get("exists") and not _is_read_write(current):
+                remove_result = _run_govc(
+                    _govc_remove_args(plan, target.get("host_target")),
+                    env=_govc_env(),
+                    timeout=120,
+                )
+                apply_result["govc_datastore_remove_attempted"] = True
+                apply_result["remove_return_code"] = remove_result["return_code"]
+                if remove_result["return_code"] != 0:
+                    status = "failed"
+                    message = "govc datastore.remove failed while remounting the NetApp NFS datastore read-write."
+                    apply_result["return_code"] = remove_result["return_code"]
+                    apply_result["result"] = "failed"
+                    apply_result["stderr"] = remove_result.get("stderr")
+                    blockers.append("govc datastore.remove failed.")
+
+            if blockers:
+                result = None
             else:
-                status = "failed"
-                message = "govc datastore.create failed."
-                blockers.append("govc datastore.create failed.")
+                result = _run_govc(_govc_create_args(plan, target.get("host_target")), env=_govc_env(), timeout=120)
+            if result is None:
+                pass
+            else:
+                apply_result["govc_datastore_create_attempted"] = True
+                apply_result["return_code"] = result["return_code"]
+                apply_result["result"] = "completed" if result["return_code"] == 0 else "failed"
+                apply_result["stderr"] = result.get("stderr")
+                if result["return_code"] == 0:
+                    after = _datastore_info(plan)
+                    current = after
+                    status = "mounted" if after.get("exists") else "warning"
+                    message = "NetApp NFS datastore mount command completed."
+                    if not after.get("exists"):
+                        blockers.append("govc datastore.create returned success, but datastore.info did not confirm the datastore.")
+                    if after.get("exists") and not _is_read_write(after):
+                        status = "failed"
+                        message = "NetApp NFS datastore mounted, but ESXi still reports it is not read-write."
+                        blockers.append("Datastore is not mounted read-write.")
+                else:
+                    status = "failed"
+                    message = "govc datastore.create failed."
+                    blockers.append("govc datastore.create failed.")
 
     payload = {
         "provider_id": "esxi-readonly",
@@ -117,10 +144,10 @@ def apply_esxi_netapp_datastore(*, write_report: bool = True) -> dict[str, Any]:
         "source_type": "live_probe" if current.get("checked") else "live_cached",
         "freshness": "current",
         "current_state": current,
-        "target_state": plan,
+        "target_state": _target_payload(plan, target),
         "flag_state": gates["flag_state"],
         "required_flags": _required_flags(),
-        "command_preview": _command_preview(plan),
+        "command_preview": _command_preview(plan, target),
         "apply": apply_result,
         "blockers": list(dict.fromkeys(blockers)),
         "warnings": _warnings(),
@@ -153,6 +180,8 @@ def validate_esxi_netapp_datastore(*, write_report: bool = True) -> dict[str, An
         blockers.append(f"Datastore `{plan['datastore_name']}` is not visible to ESXi govc.")
     if current.get("exists") and current.get("accessible") is False:
         blockers.append(f"Datastore `{plan['datastore_name']}` is visible but not accessible.")
+    if current.get("exists") and not _is_read_write(current):
+        blockers.append(f"Datastore `{plan['datastore_name']}` is mounted but not read-write.")
     payload = {
         "provider_id": "esxi-readonly",
         "action": "esxi-netapp-datastore-validation",
@@ -164,7 +193,7 @@ def validate_esxi_netapp_datastore(*, write_report: bool = True) -> dict[str, An
         "source_type": "live_probe" if current.get("checked") else "live_cached",
         "freshness": "current",
         "current_state": current,
-        "target_state": plan,
+        "target_state": _target_payload(plan, target),
         "blockers": list(dict.fromkeys(blockers)),
         "warnings": _warnings(),
         "not_attempted": _not_attempted(),
@@ -200,6 +229,7 @@ def _mount_plan() -> dict[str, Any]:
 def _target_state() -> dict[str, Any]:
     env = _govc_env()
     missing = []
+    host_target = os.getenv("ESXI_NETAPP_DATASTORE_HOST_TARGET")
     if not settings.esxi_configured:
         missing.append("ESXI_CONFIGURED=true")
     if not env.get("GOVC_URL"):
@@ -215,7 +245,11 @@ def _target_state() -> dict[str, Any]:
     if govc and not missing:
         about = _run_govc(["about"], env=env, timeout=15)
         if about["return_code"] != 0:
-            missing.append("reachable ESXi govc endpoint")
+            missing.append(_govc_about_missing_field(about))
+        else:
+            host_target = host_target or _discover_host_target()
+            if not host_target:
+                missing.append("ESXi govc host target")
     return {
         "provider_mode": settings.provider_mode,
         "esxi_configured": settings.esxi_configured,
@@ -224,9 +258,45 @@ def _target_state() -> dict[str, Any]:
         "username_configured": bool(env.get("GOVC_USERNAME")),
         "credential_configured": bool(env.get("GOVC_PASSWORD")),
         "govc_about": about,
+        "host_target": host_target,
+        "host_target_configured": bool(host_target),
         "missing_fields": missing,
         "can_query": bool(govc and not missing),
     }
+
+
+def _govc_about_missing_field(about: dict[str, Any]) -> str:
+    stderr = str(about.get("stderr") or "").lower()
+    if "incorrect user name or password" in stderr or "login" in stderr:
+        return "valid ESXi govc credentials"
+    if "certificate" in stderr:
+        return "trusted ESXi govc TLS settings"
+    return "reachable ESXi govc endpoint"
+
+
+def _discover_host_target() -> str | None:
+    result = _run_govc(["host.info", "-json"], env=_govc_env(), timeout=30)
+    if result.get("return_code") != 0:
+        return None
+    try:
+        payload = json.loads(result.get("stdout") or "{}")
+    except json.JSONDecodeError:
+        return None
+    host_systems = payload.get("hostSystems") or payload.get("HostSystems") or []
+    if not isinstance(host_systems, list) or not host_systems:
+        return None
+    first = host_systems[0]
+    if not isinstance(first, dict):
+        return None
+    name = first.get("name") or first.get("Name")
+    return str(name) if name else None
+
+
+def _target_payload(plan: dict[str, Any], target: dict[str, Any]) -> dict[str, Any]:
+    payload = dict(plan)
+    payload["esxi_host_target"] = target.get("host_target")
+    payload["esxi_host_target_configured"] = bool(target.get("host_target"))
+    return payload
 
 
 def _datastore_info(plan: dict[str, Any]) -> dict[str, Any]:
@@ -249,18 +319,26 @@ def _datastore_summary(stdout: str | None) -> dict[str, Any] | None:
         payload = json.loads(stdout)
     except json.JSONDecodeError:
         return None
-    datastores = payload.get("Datastores") if isinstance(payload, dict) else None
+    datastores = (payload.get("Datastores") or payload.get("datastores")) if isinstance(payload, dict) else None
     if not isinstance(datastores, list) or not datastores:
         return None
-    summary = datastores[0].get("Summary") if isinstance(datastores[0], dict) else None
+    datastore = datastores[0]
+    summary = (datastore.get("Summary") or datastore.get("summary")) if isinstance(datastore, dict) else None
     if not isinstance(summary, dict):
         return None
+    host_mounts = datastore.get("host") or datastore.get("Host") or []
+    mount_info = None
+    if isinstance(host_mounts, list) and host_mounts:
+        first_mount = host_mounts[0]
+        if isinstance(first_mount, dict):
+            mount_info = first_mount.get("mountInfo") or first_mount.get("MountInfo")
     return {
-        "name": summary.get("Name"),
-        "type": summary.get("Type"),
-        "accessible": summary.get("Accessible"),
-        "capacity": summary.get("Capacity"),
-        "free_space": summary.get("FreeSpace"),
+        "name": summary.get("Name") or summary.get("name"),
+        "type": summary.get("Type") or summary.get("type"),
+        "accessible": summary.get("Accessible") if "Accessible" in summary else summary.get("accessible"),
+        "capacity": summary.get("Capacity") or summary.get("capacity"),
+        "free_space": summary.get("FreeSpace") or summary.get("freeSpace"),
+        "access_mode": mount_info.get("accessMode") if isinstance(mount_info, dict) else None,
     }
 
 
@@ -290,6 +368,11 @@ def _preview_blockers(plan: dict[str, Any], target: dict[str, Any], current: dic
     return list(dict.fromkeys(blockers))
 
 
+def _is_read_write(current: dict[str, Any]) -> bool:
+    summary = current.get("summary") if isinstance(current.get("summary"), dict) else {}
+    return summary.get("access_mode") == DATASTORE_ACCESS_MODE
+
+
 def _target_blocker(target: dict[str, Any]) -> str:
     missing = target.get("missing_fields") or []
     if missing:
@@ -314,10 +397,10 @@ def _apply_gates(plan: dict[str, Any], target: dict[str, Any], current: dict[str
     return {"flag_state": flag_state, "blockers": list(dict.fromkeys(blockers))}
 
 
-def _govc_create_args(plan: dict[str, Any]) -> list[str]:
+def _govc_create_args(plan: dict[str, Any], host_target: Any) -> list[str]:
     datastore_type = "-type"
     datastore_kind = "nfs41" if str(plan.get("nfs_version")).lower() == "nfs41" else "nfs"
-    return [
+    args = [
         "datastore.create",
         datastore_type,
         datastore_kind,
@@ -327,13 +410,26 @@ def _govc_create_args(plan: dict[str, Any]) -> list[str]:
         plan["remote_host"],
         "-remote-path",
         plan["remote_path"],
+        "-mode",
+        DATASTORE_ACCESS_MODE,
     ]
+    if host_target:
+        args.append(str(host_target))
+    return args
 
 
-def _command_preview(plan: dict[str, Any]) -> list[str]:
+def _govc_remove_args(plan: dict[str, Any], host_target: Any) -> list[str]:
+    args = ["datastore.remove", "-ds", plan["datastore_name"]]
+    if host_target:
+        args.append(str(host_target))
+    return args
+
+
+def _command_preview(plan: dict[str, Any], target: dict[str, Any]) -> list[str]:
     return [
         f"govc datastore.info -json {plan['datastore_name']}",
-        " ".join(["govc", *_govc_create_args(plan)]),
+        " ".join(["govc", *_govc_remove_args(plan, target.get("host_target") or "<esxi-host-target>"), "# only if existing mount is read-only"]),
+        " ".join(["govc", *_govc_create_args(plan, target.get("host_target") or "<esxi-host-target>")]),
         f"govc datastore.info -json {plan['datastore_name']}",
     ]
 
@@ -348,7 +444,7 @@ def _required_flags() -> list[str]:
 
 def _warnings() -> list[str]:
     return [
-        "Datastore apply only runs govc datastore.create; it does not create ONTAP exports or change ESXi networking.",
+        "Datastore apply runs govc datastore.create and may remount an existing read-only ESXi NFS mount; it does not delete NFS contents.",
         "NFS v3 is the default mount type for this lab workflow; set ESXI_NETAPP_DATASTORE_NFS_VERSION=nfs41 only after validation.",
     ]
 
@@ -363,6 +459,7 @@ def _not_attempted(apply_attempted: bool = False) -> list[str]:
     ]
     if not apply_attempted:
         skipped.insert(0, "govc datastore.create")
+        skipped.insert(1, "govc datastore.remove")
     return skipped
 
 

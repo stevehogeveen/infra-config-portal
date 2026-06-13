@@ -8,9 +8,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+import httpx
+
 from app.core.config import LAB_ESXI_MANAGEMENT_IP, settings
 from app.providers.action_policy import ActionCategory, LOCAL_LAB_READWRITE_MODE, current_lab_action_policy
-from app.providers.ilo_redfish import IloRedfishAdapter
+from app.providers.ilo_redfish import IloRedfishAdapter, IloRedfishConfig, _base_url
 from app.providers.redaction import redact_sensitive
 from app.services.hpe_raid import REPO_ROOT, SYSTEM_PATH, _get_redfish_resource, _post_system_reset
 
@@ -21,6 +23,8 @@ VALIDATION_REPORT = CODEX_RUN_DIR / "esxi-post-recovery-validation-report.md"
 VALIDATION_JSON = CODEX_RUN_DIR / "esxi-post-recovery-validation-redacted.json"
 
 RECOVERY_CONFIRM_PHRASE = "RECOVER ESXI MANAGEMENT"
+ASSERT_POWER_OFF_CONFIRM_PHRASE = "SERVER IS OFF"
+SYSTEM_RESET_TARGET = "/redfish/v1/systems/1/Actions/ComputerSystem.Reset/"
 
 
 def recover_esxi_management(*, write_report: bool = True) -> dict[str, Any]:
@@ -37,12 +41,14 @@ def recover_esxi_management(*, write_report: bool = True) -> dict[str, Any]:
         "result": "not_attempted",
     }
 
+    operator_asserted_power_off = _operator_asserted_power_off(pre_system, ilo_probe, gates)
+
     if not blockers and target["https_reachable"]:
         status = "ready"
         message = "ESXi management is already reachable; no recovery action was required."
-    elif not blockers and pre_system.get("power_state") == "Off":
+    elif not blockers and (pre_system.get("power_state") == "Off" or operator_asserted_power_off):
         apply_attempted = True
-        apply_result = _power_on_and_wait(target)
+        apply_result = _power_on_and_wait(target, operator_asserted=operator_asserted_power_off)
         status = "recovered" if apply_result.get("esxi_https_reachable_after") else "blocked"
         message = (
             "ESXi host power-on was requested and management is reachable."
@@ -50,7 +56,12 @@ def recover_esxi_management(*, write_report: bool = True) -> dict[str, Any]:
             else "ESXi host power-on was requested, but management did not become reachable before timeout."
         )
         if status != "recovered":
-            blockers = ["ESXi management did not become reachable after guarded power-on."]
+            if apply_result.get("result") == "power_on_rejected":
+                reset_status = (apply_result.get("reset") or {}).get("status_code")
+                blockers = [f"iLO rejected the guarded power-on request with HTTP {reset_status}."]
+                message = "iLO rejected the guarded power-on request before ESXi polling could start."
+            else:
+                blockers = ["ESXi management did not become reachable after guarded power-on."]
     elif not blockers:
         status = "blocked"
         message = "ESXi is powered on or power state is unknown, but management is not reachable."
@@ -237,6 +248,10 @@ def _recovery_gates() -> dict[str, Any]:
         "lab_allow_power_actions": os.getenv("LAB_ALLOW_POWER_ACTIONS") == "true" or policy.allow_power_actions,
         "esxi_recovery_apply": os.getenv("ESXI_RECOVERY_APPLY") == "true",
         "esxi_recovery_confirm": os.getenv("ESXI_RECOVERY_CONFIRM") == RECOVERY_CONFIRM_PHRASE,
+        "esxi_recovery_assume_power_off": os.getenv("ESXI_RECOVERY_ASSUME_POWER_OFF") == "true",
+        "esxi_recovery_assume_power_off_confirm": (
+            os.getenv("ESXI_RECOVERY_ASSUME_POWER_OFF_CONFIRM") == ASSERT_POWER_OFF_CONFIRM_PHRASE
+        ),
     }
     blockers = policy.action_blockers("ilo.power-action", ActionCategory.POWER_ACTION)
     if not flag_state["esxi_recovery_apply"]:
@@ -255,13 +270,14 @@ def _recovery_blockers(
     if target["https_reachable"]:
         return []
     blockers: list[str] = []
+    operator_asserted_power_off = _operator_asserted_power_off(pre_system, ilo_probe, gates)
     if not target["ilo_https_reachable"]:
         blockers.append(f"iLO HTTPS is not reachable at {target['ilo_host']}:443.")
-    if pre_system.get("status_code") in {401, 403} or ilo_probe.get("status") != "ok":
+    if (pre_system.get("status_code") in {401, 403} or ilo_probe.get("status") != "ok") and not operator_asserted_power_off:
         blockers.append(
             "iLO Redfish authorization is blocked; the app cannot read power state or issue guarded power recovery."
         )
-    if pre_system.get("power_state") not in {"Off"}:
+    if pre_system.get("power_state") not in {"Off"} and not operator_asserted_power_off:
         blockers.append(
             "The app can only auto-recover a verified powered-off host; current power state is not confirmed as Off."
         )
@@ -272,6 +288,11 @@ def _recovery_blockers(
 def _recovery_method(target: dict[str, Any], pre_system: dict[str, Any], ilo_probe: dict[str, Any]) -> dict[str, Any]:
     if target["https_reachable"]:
         return {"method": "none", "reason": "ESXi HTTPS is already reachable."}
+    if _operator_asserted_power_off(pre_system, ilo_probe, _recovery_gates()):
+        return {
+            "method": "operator_asserted_redfish_power_on",
+            "reason": "Operator asserted the host is powered off; only ResetType=On may be attempted.",
+        }
     if pre_system.get("status_code") in {401, 403} or ilo_probe.get("status") != "ok":
         return {
             "method": "blocked_before_apply",
@@ -285,8 +306,46 @@ def _recovery_method(target: dict[str, Any], pre_system: dict[str, Any], ilo_pro
     }
 
 
-def _power_on_and_wait(target: dict[str, Any]) -> dict[str, Any]:
-    reset = _post_system_reset("On")
+def _operator_asserted_power_off(
+    pre_system: dict[str, Any],
+    ilo_probe: dict[str, Any],
+    gates: dict[str, Any],
+) -> bool:
+    flags = gates.get("flag_state") if isinstance(gates.get("flag_state"), dict) else {}
+    if not flags.get("esxi_recovery_assume_power_off") or not flags.get("esxi_recovery_assume_power_off_confirm"):
+        return False
+    if pre_system.get("power_state") == "On":
+        return False
+    return _ilo_identity_available(ilo_probe)
+
+
+def _ilo_identity_available(ilo_probe: dict[str, Any]) -> bool:
+    if not isinstance(ilo_probe, dict):
+        return False
+    if isinstance(ilo_probe.get("legacy_identity"), dict) and ilo_probe["legacy_identity"]:
+        return True
+    detection = ilo_probe.get("endpoint_detection") if isinstance(ilo_probe.get("endpoint_detection"), dict) else {}
+    if detection.get("redfish_status") == "available":
+        return True
+    root = detection.get("redfish_root_payload") if isinstance(detection.get("redfish_root_payload"), dict) else {}
+    product = str(root.get("Product") or "")
+    vendor = str(root.get("Vendor") or "")
+    return "ProLiant" in product or vendor == "HPE"
+
+
+def _power_on_and_wait(target: dict[str, Any], *, operator_asserted: bool = False) -> dict[str, Any]:
+    reset = _post_standard_system_power_on() if operator_asserted else _post_system_reset("On")
+    status_code = int(reset.get("status_code") or 0)
+    if status_code < 200 or status_code >= 300:
+        return {
+            "power_on_attempted": True,
+            "force_restart_attempted": False,
+            "operator_asserted_power_off": operator_asserted,
+            "result": "power_on_rejected",
+            "reset": reset,
+            "poll_checks": [],
+            "esxi_https_reachable_after": False,
+        }
     deadline = time.monotonic() + float(os.getenv("ESXI_RECOVERY_WAIT_SECONDS", "300"))
     poll_seconds = float(os.getenv("ESXI_RECOVERY_POLL_SECONDS", "15"))
     checks: list[dict[str, Any]] = []
@@ -299,11 +358,55 @@ def _power_on_and_wait(target: dict[str, Any]) -> dict[str, Any]:
     return {
         "power_on_attempted": True,
         "force_restart_attempted": False,
+        "operator_asserted_power_off": operator_asserted,
         "result": "power_on_requested",
         "reset": reset,
         "poll_checks": checks[-10:],
         "esxi_https_reachable_after": bool(checks and checks[-1].get("reachable")),
     }
+
+
+def _post_standard_system_power_on() -> dict[str, Any]:
+    config = IloRedfishConfig.from_settings()
+    if not config.target_candidates or not config.username or not config.password:
+        raise RuntimeError("Complete iLO configuration is required for server power-on.")
+    timeout = httpx.Timeout(config.timeout_seconds)
+    response: httpx.Response | None = None
+    candidate = config.target_candidates[0]
+    try:
+        with httpx.Client(
+            auth=(config.username, config.password),
+            follow_redirects=False,
+            timeout=timeout,
+            trust_env=False,
+            verify=config.verify_tls,
+        ) as client:
+            response = client.post(_base_url(candidate["host"]) + SYSTEM_RESET_TARGET, json={"ResetType": "On"})
+    except httpx.HTTPError as exc:
+        return _sanitize(
+            {
+                "method": "POST",
+                "path": SYSTEM_RESET_TARGET,
+                "target_source": candidate.get("source"),
+                "status": "failed",
+                "error_class": exc.__class__.__name__,
+                "request": {"ResetType": "On"},
+            }
+        )
+    try:
+        body: Any = response.json()
+    except ValueError:
+        body = {"text": response.text[:1000]}
+    return _sanitize(
+        {
+            "method": "POST",
+            "path": SYSTEM_RESET_TARGET,
+            "target_source": candidate.get("source"),
+            "status_code": response.status_code,
+            "request": {"ResetType": "On"},
+            "response": body if isinstance(body, dict) else {"value": body},
+        }
+    )
 
 
 def _tcp_check(host: str | None, port: int) -> dict[str, Any]:
@@ -340,6 +443,8 @@ def _required_flags() -> list[str]:
         "LAB_ALLOW_POWER_ACTIONS=true",
         "ESXI_RECOVERY_APPLY=true",
         f'ESXI_RECOVERY_CONFIRM="{RECOVERY_CONFIRM_PHRASE}"',
+        'Optional auth-bypass power-on only: ESXI_RECOVERY_ASSUME_POWER_OFF=true',
+        f'Optional auth-bypass power-on only: ESXI_RECOVERY_ASSUME_POWER_OFF_CONFIRM="{ASSERT_POWER_OFF_CONFIRM_PHRASE}"',
     ]
 
 
@@ -352,6 +457,8 @@ def _warnings(target: dict[str, Any], pre_system: dict[str, Any], ilo_probe: dic
         warnings.append("ESXi SSH is not reachable or not enabled.")
     if pre_system.get("status_code") == 401 or ilo_probe.get("status") != "ok":
         warnings.append("iLO root is reachable, but Redfish inventory/auth is blocked for the configured account.")
+    if _operator_asserted_power_off(pre_system, ilo_probe, _recovery_gates()):
+        warnings.append("Operator asserted the server is off; recovery may attempt only ResetType=On without a prior power-state read.")
     return list(dict.fromkeys(warnings))
 
 
@@ -377,8 +484,10 @@ def _next_action(
 ) -> str:
     if not blockers and target["https_reachable"]:
         return "Run ESXi post-recovery validation, then mount the NetApp NFS datastore."
+    if _operator_asserted_power_off(pre_system, ilo_probe, _recovery_gates()):
+        return "Wait for ESXi HTTPS to return, then rerun post-recovery validation."
     if pre_system.get("status_code") in {401, 403} or ilo_probe.get("status") != "ok":
-        return "Fix iLO account permissions/authentication for Redfish inventory and power actions, then rerun recovery."
+        return "Fix iLO account permissions/authentication, or rerun with the explicit server-off assertion if the host is visibly powered off."
     if pre_system.get("power_state") == "Off":
         return "Run the guarded recovery command with the exact power-action flags from this report."
     return "Use iLO console/KVM or the guarded ESXi rebuild workflow to restore management on 192.168.1.203."
