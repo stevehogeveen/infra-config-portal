@@ -1,17 +1,25 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import socket
+import ssl
 import subprocess
 import sys
+import tempfile
+import time
 from datetime import UTC, datetime
+from ipaddress import ip_network
 from pathlib import Path
 from shutil import which
 from typing import Any
+from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit, urlunsplit
+from urllib.request import Request, urlopen
 
 from app.core.config import LAB_ESXI_MANAGEMENT_IP, settings
+from app.providers.action_policy import ActionCategory, LOCAL_LAB_READWRITE_MODE, current_lab_action_policy
 from app.providers.redaction import redact_sensitive
 from app.services.lab_profiles import active_lab_profile_context
 from app.services.netapp_state import get_netapp_runtime_state
@@ -24,11 +32,21 @@ READINESS_JSON = CODEX_RUN_DIR / "vcenter-netapp-readiness-redacted.json"
 VCENTER_INSTALL_READINESS_REPORT = CODEX_RUN_DIR / "vcenter-install-readiness-report.md"
 VCENTER_INSTALL_PLAN_REPORT = CODEX_RUN_DIR / "vcenter-install-plan-report.md"
 VCENTER_INSTALL_PREVIEW_REPORT = CODEX_RUN_DIR / "vcenter-install-preview-report.md"
+VCENTER_INSTALL_APPLY_REPORT = CODEX_RUN_DIR / "vcenter-install-apply-report.md"
+VCENTER_POST_INSTALL_VALIDATION_REPORT = CODEX_RUN_DIR / "vcenter-post-install-validation-report.md"
+VCENTER_INSTALL_APPLY_FINAL_REPORT = CODEX_RUN_DIR / "vcenter-install-apply-unblock-final-report.md"
 VCENTER_INSTALL_READINESS_JSON = CODEX_RUN_DIR / "vcenter-install-readiness-redacted.json"
 VCENTER_INSTALL_PLAN_JSON = CODEX_RUN_DIR / "vcenter-install-plan-redacted.json"
 VCENTER_INSTALL_PREVIEW_JSON = CODEX_RUN_DIR / "vcenter-install-preview-redacted.json"
+VCENTER_INSTALL_APPLY_JSON = CODEX_RUN_DIR / "vcenter-install-apply-redacted.json"
+VCENTER_POST_INSTALL_VALIDATION_JSON = CODEX_RUN_DIR / "vcenter-post-install-validation-redacted.json"
+VCENTER_INSTALL_SPEC_REDACTED_JSON = CODEX_RUN_DIR / "vcenter-install-spec-redacted.json"
 CONSOLE_STATE_JSON = CODEX_RUN_DIR / "netapp-console-state-redacted.json"
 CONSOLE_LOGIN_STATE_JSON = CODEX_RUN_DIR / "netapp-console-login-state-redacted.json"
+VCENTER_INSTALL_CONFIRM_PHRASE = "DEPLOY VCENTER"
+VCENTER_INSTALL_POLICY_ACTION_ID = "vcenter.vcsa-deploy"
+VCENTER_INSTALL_DEPLOY_TIMEOUT_SECONDS = 7200
+VCENTER_INSTALL_VALIDATE_WAIT_SECONDS = 600
 VCSA_MOUNT_ROOTS = (
     Path("/tmp/vcsa-iso"),
     Path("/mnt/vcsa-iso"),
@@ -354,10 +372,13 @@ def get_vcenter_install_readiness(
             + ", ".join(credential_state["missing_fields"])
             + "."
         )
-    warnings = [
-        "Install apply is intentionally disabled; this report only prepares the guided deployment lane.",
-        "vCenter deploy must wait until ESXi management and the NetApp datastore are ready.",
-    ]
+    readiness_ready = not blockers
+    apply_gate_state = _vcenter_install_apply_gate_state(readiness_ready=readiness_ready)
+    apply_enabled = readiness_ready and not apply_gate_state["blockers"]
+    warnings = _vcenter_install_warnings(
+        readiness_ready=readiness_ready,
+        apply_gate_blockers=apply_gate_state["blockers"],
+    )
     if not vcenter_profile_enabled:
         warnings.append("Golden State treats vCenter as expected partial until the appliance is deployed and configured.")
     payload = {
@@ -368,7 +389,11 @@ def get_vcenter_install_readiness(
         "status": "blocked" if blockers else "ready",
         "message": "vCenter install readiness evaluated. No vCenter deployment was started.",
         "mode": settings.provider_mode,
-        "apply_enabled": False,
+        "apply_enabled": apply_enabled,
+        "deploy_enabled": apply_enabled,
+        "ready_for_deploy": apply_enabled,
+        "apply_disabled_reason": _first_blocker([*blockers, *apply_gate_state["blockers"]]),
+        "apply_gate_state": apply_gate_state,
         "source_type": "live_provider" if check_ports else "operator_config",
         "freshness": "live" if check_ports else "not_checked",
         "current_state": {
@@ -407,12 +432,18 @@ def get_vcenter_install_readiness(
             "readiness_report": _rel(VCENTER_INSTALL_READINESS_REPORT),
             "plan_report": _rel(VCENTER_INSTALL_PLAN_REPORT),
             "preview_report": _rel(VCENTER_INSTALL_PREVIEW_REPORT),
+            "apply_report": _rel(VCENTER_INSTALL_APPLY_REPORT),
+            "post_install_validation_report": _rel(VCENTER_POST_INSTALL_VALIDATION_REPORT),
+            "final_report": _rel(VCENTER_INSTALL_APPLY_FINAL_REPORT),
             "readiness_json": _rel(VCENTER_INSTALL_READINESS_JSON),
         },
+        "deploy_action_id": "vcenter.install-apply",
+        "deploy_action_label": "Deploy vCenter",
+        "recheck_command": "make provider-lab-vcenter-install-readiness",
         "next_safe_action": (
-            "Run Preview Deploy to generate the redacted VCSA deployment plan."
+            "Run Preview Deploy, then run the guarded vCenter install apply target."
             if not blockers
-            else "Complete missing vCenter deployment values and local-only credentials, then rerun vCenter install readiness."
+            else "Resolve the current vCenter install blockers, then rerun vCenter install readiness."
         ),
     }
     sanitized = redact_sensitive(payload)
@@ -459,6 +490,184 @@ def get_vcenter_install_preview(*, write_report: bool = True) -> dict[str, Any]:
     return sanitized
 
 
+def get_vcenter_install_apply(*, write_report: bool = True) -> dict[str, Any]:
+    generated_at = _now()
+    readiness = get_vcenter_install_readiness(check_ports=True, write_report=write_report)
+    plan = get_vcenter_install_plan(write_report=write_report)
+    preview = get_vcenter_install_preview(write_report=write_report)
+    readiness_ready = readiness.get("status") == "ready" and not readiness.get("blockers")
+    preview_ready = preview.get("status") == "ready" and not preview.get("blockers")
+    gate_state = _vcenter_install_apply_gate_state(
+        readiness_ready=readiness_ready,
+        preview_ready=preview_ready,
+    )
+    deployment_values = (
+        readiness.get("deployment_values") if isinstance(readiness.get("deployment_values"), dict) else {}
+    )
+    spec = _vcenter_deployment_spec(deployment_values)
+    spec_blockers = _vcenter_deployment_spec_blockers(spec)
+    blockers = _unique(
+        [
+            *list(readiness.get("blockers") or []),
+            *([] if preview_ready else list(preview.get("blockers") or [])),
+            *gate_state["blockers"],
+            *spec_blockers,
+        ]
+    )
+    apply_result = {
+        "vcsa_deploy_attempted": False,
+        "return_code": None,
+        "result": "not_attempted",
+        "stdout_summary": "",
+        "stderr_summary": "",
+        "command": _vcsa_deploy_command_preview(readiness),
+    }
+    validation: dict[str, Any] | None = None
+    refresh_result: dict[str, Any] | None = None
+
+    if write_report and spec:
+        _write_json(VCENTER_INSTALL_SPEC_REDACTED_JSON, _sanitize(spec))
+
+    status = "blocked" if blockers else "ready_to_apply"
+    message = (
+        "vCenter install apply was refused before vcsa-deploy because required gates or readiness checks are incomplete."
+        if blockers
+        else "vCenter install apply gates passed; running vcsa-deploy against the local lab ESXi target."
+    )
+    if not blockers:
+        deploy_path = (readiness.get("current_state") or {}).get("vcsa_deploy")
+        apply_result = _run_vcsa_deploy(spec, deploy_path)
+        if apply_result["return_code"] == 0:
+            status = "completed"
+            message = "vcsa-deploy completed. Running post-install vCenter validation."
+            validation = validate_vcenter_post_install(wait_for_ready=True, write_report=write_report)
+            refresh_result = _refresh_post_install_reports()
+        else:
+            status = "failed"
+            message = "vcsa-deploy failed. Review the redacted apply report before rerunning."
+            blockers.append("vcsa-deploy returned a non-zero exit code.")
+
+    payload = {
+        "provider_id": "vcenter",
+        "action": "vcenter-install-apply",
+        "checked_at": generated_at,
+        "generated_at": generated_at,
+        "status": status,
+        "message": message,
+        "mode": settings.provider_mode,
+        "apply_enabled": not blockers,
+        "deploy_enabled": not blockers,
+        "source_type": "live_provider",
+        "freshness": "live",
+        "current_state": readiness.get("current_state") or {},
+        "target_state": readiness.get("target_state") or {},
+        "deployment_values": deployment_values,
+        "install_plan": preview.get("install_plan") or plan.get("install_plan") or {},
+        "apply_gate_state": gate_state,
+        "apply": apply_result,
+        "post_install_validation": validation,
+        "post_install_refresh": refresh_result,
+        "blockers": _unique(blockers),
+        "warnings": _vcenter_apply_warnings(validation=validation, refresh_result=refresh_result),
+        "not_attempted": _vcenter_apply_not_attempted(apply_result),
+        "artifacts": {
+            "readiness_report": _rel(VCENTER_INSTALL_READINESS_REPORT),
+            "plan_report": _rel(VCENTER_INSTALL_PLAN_REPORT),
+            "preview_report": _rel(VCENTER_INSTALL_PREVIEW_REPORT),
+            "apply_report": _rel(VCENTER_INSTALL_APPLY_REPORT),
+            "post_install_validation_report": _rel(VCENTER_POST_INSTALL_VALIDATION_REPORT),
+            "final_report": _rel(VCENTER_INSTALL_APPLY_FINAL_REPORT),
+            "apply_json": _rel(VCENTER_INSTALL_APPLY_JSON),
+            "redacted_spec_json": _rel(VCENTER_INSTALL_SPEC_REDACTED_JSON),
+        },
+        "next_safe_action": (
+            "Review post-install validation, then refresh Golden State and Lab Validation."
+            if status == "completed"
+            else "Resolve the listed blocker, rerun readiness, plan, preview, then rerun vCenter install apply."
+        ),
+    }
+    sanitized = _sanitize(payload)
+    if write_report:
+        _write_json(VCENTER_INSTALL_APPLY_JSON, sanitized)
+        VCENTER_INSTALL_APPLY_REPORT.write_text(_vcenter_apply_markdown(sanitized), encoding="utf-8")
+        VCENTER_INSTALL_APPLY_FINAL_REPORT.write_text(_vcenter_apply_final_markdown(sanitized), encoding="utf-8")
+    return sanitized
+
+
+def validate_vcenter_post_install(
+    *,
+    wait_for_ready: bool = False,
+    write_report: bool = True,
+) -> dict[str, Any]:
+    checked_at = _now()
+    target = _vcenter_validation_target()
+    host = target["host"]
+    wait_seconds = _int_env("VCENTER_INSTALL_VALIDATE_WAIT_SECONDS", VCENTER_INSTALL_VALIDATE_WAIT_SECONDS)
+    if wait_for_ready and host:
+        _wait_for_tcp(host, 443, timeout_seconds=wait_seconds, poll_seconds=15)
+    ping_ready = _ping(host) if host else False
+    tcp_443 = _tcp_open(host, 443) if host else False
+    api_probe = _vcenter_api_probe(host) if host and tcp_443 else _skipped_probe("vCenter HTTPS/API readiness was not reachable.")
+    govc_about = _run_vcenter_govc(["about"], timeout=45) if target["govc_configured"] else _skipped_govc(target)
+    govc_ready = govc_about.get("return_code") == 0
+    esxi_visible = _vcenter_esxi_visibility(target) if govc_ready else _skipped_probe("govc authentication did not pass.")
+    datastore_visible = _vcenter_datastore_visibility(target) if govc_ready else _skipped_probe("govc authentication did not pass.")
+    blockers = []
+    warnings = []
+    if not host:
+        blockers.append("VCENTER_HOST/GOVC_URL or VCENTER_MANAGEMENT_IP is required for post-install validation.")
+    if host and not tcp_443:
+        blockers.append("vCenter TCP/443 is not reachable after deployment.")
+    if not target["govc_configured"]:
+        blockers.append("vCenter govc credentials are not configured for post-install validation.")
+    elif not govc_ready:
+        blockers.append("govc authentication to vCenter failed.")
+    if host and not ping_ready:
+        warnings.append("ICMP ping did not reply; TCP/API checks are authoritative for this validation.")
+    if govc_ready and not esxi_visible.get("visible"):
+        warnings.append("ESXi is not visible in vCenter inventory yet; host add/attach is not implemented in this apply workflow.")
+    if govc_ready and not datastore_visible.get("visible"):
+        warnings.append("NetApp datastore is not visible through vCenter yet; validate again after ESXi inventory is attached.")
+    payload = {
+        "provider_id": "vcenter",
+        "action": "vcenter-post-install-validation",
+        "checked_at": checked_at,
+        "generated_at": checked_at,
+        "status": "blocked" if blockers else "ready",
+        "message": "Post-install vCenter validation completed with ping, TCP/443, HTTPS/API, and govc checks.",
+        "mode": settings.provider_mode,
+        "apply_enabled": False,
+        "source_type": "live_provider",
+        "freshness": "live",
+        "target": target,
+        "checks": {
+            "ping": {"status": "ready" if ping_ready else "warning", "host": host, "reply": ping_ready},
+            "tcp_443": {"status": "ready" if tcp_443 else "blocked", "host": host, "port": 443},
+            "api_readiness": api_probe,
+            "govc_authentication": govc_about,
+            "esxi_visible": esxi_visible,
+            "netapp_datastore_visible": datastore_visible,
+        },
+        "blockers": _unique(blockers),
+        "warnings": _unique(warnings),
+        "not_attempted": _post_install_not_attempted(govc_ready),
+        "artifacts": {
+            "report": _rel(VCENTER_POST_INSTALL_VALIDATION_REPORT),
+            "json": _rel(VCENTER_POST_INSTALL_VALIDATION_JSON),
+        },
+        "next_safe_action": (
+            "Refresh Golden State and Lab Validation."
+            if not blockers
+            else "Fix the current validation blocker, then rerun post-install validation."
+        ),
+    }
+    sanitized = _sanitize(payload)
+    if write_report:
+        _write_json(VCENTER_POST_INSTALL_VALIDATION_JSON, sanitized)
+        VCENTER_POST_INSTALL_VALIDATION_REPORT.write_text(_vcenter_post_install_markdown(sanitized), encoding="utf-8")
+    return sanitized
+
+
 def _vcenter_install_plan_payload(
     readiness: dict[str, Any],
     *,
@@ -469,6 +678,10 @@ def _vcenter_install_plan_payload(
     artifact_key: str,
 ) -> dict[str, Any]:
     deployment_values = readiness.get("deployment_values") if isinstance(readiness.get("deployment_values"), dict) else {}
+    apply_gate_state = (
+        readiness.get("apply_gate_state") if isinstance(readiness.get("apply_gate_state"), dict) else {}
+    )
+    deploy_apply_enabled = bool(readiness.get("apply_enabled")) and not apply_gate_state.get("blockers")
     return {
         **readiness,
         "action": action,
@@ -493,9 +706,13 @@ def _vcenter_install_plan_payload(
                     "install --accept-eula --acknowledge-ceip <redacted-vcsa-plan.json>"
                 ),
             ],
-            "deploy_confirmations_present": False,
-            "deploy_apply_enabled": False,
+            "deploy_confirmations_present": not bool(apply_gate_state.get("blockers")),
+            "deploy_apply_enabled": deploy_apply_enabled,
+            "apply_disabled_reason": readiness.get("apply_disabled_reason"),
         },
+        "apply_enabled": deploy_apply_enabled,
+        "deploy_enabled": deploy_apply_enabled,
+        "ready_for_deploy": deploy_apply_enabled,
         "artifacts": {
             **(readiness.get("artifacts") or {}),
             f"{artifact_key}_report": _rel(report),
@@ -520,6 +737,7 @@ def _vcenter_deployment_values(
         "gateway": settings.vcenter_gateway or _clean_value(global_settings.get("gateway")) or _clean_value(active_profile.get("gateway")),
         "dns_servers": _first_non_empty_list(settings.vcenter_dns_servers, global_settings.get("dns_servers"), active_profile.get("dns")),
         "ntp_servers": _first_non_empty_list(settings.vcenter_ntp_servers, global_settings.get("ntp_servers"), active_profile.get("ntp")),
+        "time_sync_mode": _vcenter_time_sync_mode(),
         "sso_domain": settings.vcenter_sso_domain,
         "sso_admin_username": sso_admin_username,
         "sso_admin_username_status": "configured" if bool(sso_admin_username) else "missing",
@@ -544,7 +762,11 @@ def _vcenter_deployment_value_checks(values: dict[str, Any]) -> dict[str, dict[s
         "subnet_cidr": _value_check("Subnet", "VCENTER_SUBNET_CIDR or active lab subnet", values.get("subnet_cidr")),
         "gateway": _value_check("Gateway", "VCENTER_GATEWAY or active lab gateway", values.get("gateway")),
         "dns_servers": _value_check("DNS servers", "VCENTER_DNS_SERVERS or active lab DNS", values.get("dns_servers")),
-        "ntp_servers": _value_check("NTP servers", "VCENTER_NTP_SERVERS or active lab NTP", values.get("ntp_servers")),
+        "time_sync": _value_check(
+            "Time synchronization",
+            "VCENTER_TIME_SYNC_MODE=tools or VCENTER_NTP_SERVERS/active lab NTP",
+            values.get("time_sync_mode") == "tools" or values.get("ntp_servers"),
+        ),
         "sso_domain": _value_check("SSO domain", "VCENTER_SSO_DOMAIN", values.get("sso_domain")),
         "sso_admin_username": _value_check(
             "SSO admin username",
@@ -590,6 +812,347 @@ def _vcenter_deployment_credential_state() -> dict[str, Any]:
         "source_type": "operator_config",
         "freshness": "live",
     }
+
+
+def _vcenter_install_apply_gate_state(
+    *,
+    readiness_ready: bool,
+    preview_ready: bool | None = None,
+) -> dict[str, Any]:
+    policy = current_lab_action_policy(settings.provider_mode)
+    flag_state = {
+        "provider_mode": settings.provider_mode,
+        "local_lab_readwrite": settings.provider_mode == LOCAL_LAB_READWRITE_MODE,
+        "readiness_ready": readiness_ready,
+        "preview_ready": preview_ready,
+        "install_apply": os.getenv("VCENTER_INSTALL_APPLY") == "true",
+        "install_confirm": os.getenv("VCENTER_INSTALL_CONFIRM") == VCENTER_INSTALL_CONFIRM_PHRASE,
+        "install_allow_deploy": os.getenv("VCENTER_INSTALL_ALLOW_DEPLOY") == "true",
+    }
+    blockers = policy.action_blockers(VCENTER_INSTALL_POLICY_ACTION_ID, ActionCategory.VM_DEPLOY)
+    if not readiness_ready:
+        blockers.append("vCenter install readiness must be ready before apply.")
+    if preview_ready is False:
+        blockers.append("vCenter install preview must be ready before apply.")
+    if not flag_state["install_apply"]:
+        blockers.append("VCENTER_INSTALL_APPLY=true is required.")
+    if not flag_state["install_confirm"]:
+        blockers.append(f'VCENTER_INSTALL_CONFIRM="{VCENTER_INSTALL_CONFIRM_PHRASE}" is required.')
+    if not flag_state["install_allow_deploy"]:
+        blockers.append("VCENTER_INSTALL_ALLOW_DEPLOY=true is required.")
+    return {
+        "required_flags": _vcenter_install_required_flags(),
+        "flag_state": flag_state,
+        "blockers": _unique(blockers),
+    }
+
+
+def _vcenter_install_required_flags() -> list[str]:
+    return [
+        "PROVIDER_MODE=local-lab-readwrite",
+        "VCENTER_INSTALL_APPLY=true",
+        f'VCENTER_INSTALL_CONFIRM="{VCENTER_INSTALL_CONFIRM_PHRASE}"',
+        "VCENTER_INSTALL_ALLOW_DEPLOY=true",
+    ]
+
+
+def _vcenter_install_warnings(*, readiness_ready: bool, apply_gate_blockers: list[str]) -> list[str]:
+    if not readiness_ready:
+        return ["vCenter install is blocked by the current readiness findings."]
+    if apply_gate_blockers:
+        return ["Ready to preview; deploy remains gated by explicit local-lab apply confirmations."]
+    return ["Ready to deploy through the guarded vCenter install apply lane."]
+
+
+def _vcenter_deployment_spec(values: dict[str, Any]) -> dict[str, Any]:
+    prefix = _prefix_from_cidr(values.get("subnet_cidr"))
+    network_name = values.get("network") or values.get("portgroup")
+    ntp_servers = ",".join(_coerce_string_list(values.get("ntp_servers")))
+    os_spec: dict[str, Any] = {
+        "password": settings.vcenter_appliance_root_password,
+        "ssh_enable": False,
+    }
+    if values.get("time_sync_mode") == "ntp":
+        os_spec["ntp_servers"] = ntp_servers
+    else:
+        os_spec["time_tools_sync"] = True
+    esxi_spec = {
+        "hostname": values.get("esxi_target"),
+        "username": settings.esxi_test_username,
+        "password": settings.esxi_test_password,
+        "deployment_network": network_name,
+        "datastore": values.get("datastore_target"),
+    }
+    if not _vcsa_deploy_verify_tls():
+        thumbprint = _server_certificate_sha1_thumbprint(values.get("esxi_target"))
+        esxi_spec["ssl_certificate_verification"] = (
+            {"thumbprint": thumbprint} if thumbprint else {"verification_mode": "NONE"}
+        )
+    return {
+        "__version": "2.13.0",
+        "new_vcsa": {
+            "esxi": esxi_spec,
+            "appliance": {
+                "thin_disk_mode": True,
+                "deployment_option": values.get("deployment_size") or "tiny",
+                "name": values.get("appliance_name"),
+            },
+            "network": {
+                "ip_family": "ipv4",
+                "mode": "static",
+                "system_name": _vcenter_system_name(values),
+                "ip": values.get("management_ip"),
+                "prefix": prefix,
+                "gateway": values.get("gateway"),
+                "dns_servers": _coerce_string_list(values.get("dns_servers")),
+            },
+            "os": os_spec,
+            "sso": {
+                "password": settings.vcenter_sso_admin_password,
+                "domain_name": values.get("sso_domain"),
+            },
+        },
+        "ceip": {"settings": {"ceip_enabled": False}},
+    }
+
+
+def _vcenter_deployment_spec_blockers(spec: dict[str, Any]) -> list[str]:
+    blockers = []
+    vcsa = spec.get("new_vcsa") if isinstance(spec.get("new_vcsa"), dict) else {}
+    required = {
+        "new_vcsa.esxi.hostname": (vcsa.get("esxi") or {}).get("hostname"),
+        "new_vcsa.esxi.username": (vcsa.get("esxi") or {}).get("username"),
+        "new_vcsa.esxi.password": (vcsa.get("esxi") or {}).get("password"),
+        "new_vcsa.esxi.deployment_network": (vcsa.get("esxi") or {}).get("deployment_network"),
+        "new_vcsa.esxi.datastore": (vcsa.get("esxi") or {}).get("datastore"),
+        "new_vcsa.appliance.name": (vcsa.get("appliance") or {}).get("name"),
+        "new_vcsa.network.ip": (vcsa.get("network") or {}).get("ip"),
+        "new_vcsa.network.prefix": (vcsa.get("network") or {}).get("prefix"),
+        "new_vcsa.network.gateway": (vcsa.get("network") or {}).get("gateway"),
+        "new_vcsa.network.dns_servers": (vcsa.get("network") or {}).get("dns_servers"),
+        "new_vcsa.os.password": (vcsa.get("os") or {}).get("password"),
+        "new_vcsa.sso.password": (vcsa.get("sso") or {}).get("password"),
+        "new_vcsa.sso.domain_name": (vcsa.get("sso") or {}).get("domain_name"),
+    }
+    for key, value in required.items():
+        if not value:
+            blockers.append(f"Generated VCSA spec is missing {key}.")
+    return blockers
+
+
+def _vcenter_system_name(values: dict[str, Any]) -> str | None:
+    host = _host_from_endpoint(settings.vcenter_host)
+    return host or _clean_value(values.get("management_ip"))
+
+
+def _prefix_from_cidr(value: Any) -> str | None:
+    text = _clean_value(value)
+    if not text:
+        return None
+    try:
+        return str(ip_network(text, strict=False).prefixlen)
+    except ValueError:
+        if text.startswith("/") and text[1:].isdigit():
+            return text[1:]
+        if text.isdigit():
+            return text
+        return None
+
+
+def _run_vcsa_deploy(spec: dict[str, Any], deploy_path_value: Any) -> dict[str, Any]:
+    deploy_path = Path(str(deploy_path_value)).expanduser() if deploy_path_value else _find_vcsa_deploy()
+    if not deploy_path or not deploy_path.exists():
+        return {
+            "vcsa_deploy_attempted": False,
+            "return_code": 127,
+            "result": "not_found",
+            "stdout_summary": "",
+            "stderr_summary": "vcsa-deploy executable was not found.",
+            "command": _vcsa_deploy_command_preview({"current_state": {"vcsa_deploy": str(deploy_path_value or "vcsa-deploy")}}),
+        }
+    timeout = _int_env("VCENTER_INSTALL_DEPLOY_TIMEOUT_SECONDS", VCENTER_INSTALL_DEPLOY_TIMEOUT_SECONDS)
+    temp_path: str | None = None
+    try:
+        with tempfile.NamedTemporaryFile("w", encoding="utf-8", prefix="vcsa-deploy-", suffix=".json", delete=False) as handle:
+            temp_path = handle.name
+            json.dump(spec, handle, indent=2)
+            handle.write("\n")
+        os.chmod(temp_path, 0o600)
+        completed = subprocess.run(
+            _vcsa_deploy_install_command(str(deploy_path), temp_path),
+            capture_output=True,
+            check=False,
+            text=True,
+            timeout=timeout,
+        )
+        result = {
+            "vcsa_deploy_attempted": True,
+            "return_code": completed.returncode,
+            "result": "completed" if completed.returncode == 0 else "failed",
+            "stdout_summary": _tail(completed.stdout),
+            "stderr_summary": _tail(completed.stderr),
+            "command": _vcsa_deploy_command_preview({"current_state": {"vcsa_deploy": str(deploy_path)}}),
+        }
+    except subprocess.TimeoutExpired as exc:
+        result = {
+            "vcsa_deploy_attempted": True,
+            "return_code": 124,
+            "result": "timeout",
+            "stdout_summary": _tail(_decode_bytes(exc.stdout)),
+            "stderr_summary": "vcsa-deploy command timed out.",
+            "command": _vcsa_deploy_command_preview({"current_state": {"vcsa_deploy": str(deploy_path)}}),
+        }
+    except OSError as exc:
+        result = {
+            "vcsa_deploy_attempted": True,
+            "return_code": 127,
+            "result": "failed_to_start",
+            "stdout_summary": "",
+            "stderr_summary": f"vcsa-deploy failed to start: {exc.__class__.__name__}.",
+            "command": _vcsa_deploy_command_preview({"current_state": {"vcsa_deploy": str(deploy_path)}}),
+        }
+    finally:
+        if temp_path:
+            try:
+                Path(temp_path).unlink()
+            except OSError:
+                pass
+    return _sanitize(result)
+
+
+def _vcenter_validation_target() -> dict[str, Any]:
+    host = _host_from_endpoint(settings.vcenter_host) or settings.vcenter_management_ip
+    username = _vcenter_validation_username()
+    password = _vcenter_validation_password()
+    verify_tls = _vcenter_validation_verify_tls()
+    return {
+        "host": host,
+        "url": _vcenter_govc_url(host),
+        "username_configured": bool(username),
+        "credential_configured": bool(password),
+        "govc_available": _tool_available("govc"),
+        "govc_configured": bool(host and username and password and _tool_available("govc")),
+        "esxi_target": settings.vcenter_esxi_target or settings.esxi_test_host or LAB_ESXI_MANAGEMENT_IP,
+        "datastore": settings.vcenter_datastore_target or settings.netapp_nfs_datastore_name,
+        "verify_tls": verify_tls,
+    }
+
+
+def _run_vcenter_govc(args: list[str], *, timeout: int) -> dict[str, Any]:
+    govc = _tool_path("govc")
+    if govc is None:
+        return {"status": "blocked", "return_code": 127, "stdout": "", "stderr": "govc executable was not found."}
+    env = os.environ.copy()
+    target = _vcenter_validation_target()
+    env["GOVC_URL"] = target["url"] or ""
+    env["GOVC_USERNAME"] = _vcenter_validation_username() or ""
+    env["GOVC_PASSWORD"] = _vcenter_validation_password() or ""
+    env["GOVC_INSECURE"] = "false" if target["verify_tls"] else "true"
+    try:
+        completed = subprocess.run(
+            [str(govc), *args],
+            capture_output=True,
+            check=False,
+            env=env,
+            text=True,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired:
+        return {"status": "blocked", "return_code": 124, "stdout": "", "stderr": "govc command timed out."}
+    except OSError as exc:
+        return {"status": "blocked", "return_code": 127, "stdout": "", "stderr": f"govc failed to start: {exc.__class__.__name__}."}
+    return _sanitize(
+        {
+            "status": "ready" if completed.returncode == 0 else "blocked",
+            "return_code": completed.returncode,
+            "stdout": _tail(completed.stdout),
+            "stderr": _tail(completed.stderr),
+        }
+    )
+
+
+def _vcenter_esxi_visibility(target: dict[str, Any]) -> dict[str, Any]:
+    result = _run_vcenter_govc(["host.info", "-json"], timeout=45)
+    visible = _json_contains(result.get("stdout"), str(target.get("esxi_target") or ""))
+    return {**result, "visible": bool(result.get("return_code") == 0 and visible)}
+
+
+def _vcenter_datastore_visibility(target: dict[str, Any]) -> dict[str, Any]:
+    datastore = str(target.get("datastore") or "")
+    result = _run_vcenter_govc(["datastore.info", "-json", datastore], timeout=45) if datastore else _skipped_probe("Datastore target is not configured.")
+    visible = result.get("return_code") == 0 and (not datastore or _json_contains(result.get("stdout"), datastore))
+    return {**result, "visible": bool(visible)}
+
+
+def _vcenter_api_probe(host: str) -> dict[str, Any]:
+    url = f"https://{host}/ui/"
+    context = None if _vcenter_validation_verify_tls() else ssl._create_unverified_context()
+    request = Request(url, method="GET", headers={"User-Agent": "infra-config-portal-vcenter-validation"})
+    try:
+        with urlopen(request, timeout=10, context=context) as response:
+            status_code = int(response.status)
+    except HTTPError as exc:
+        status_code = int(exc.code)
+    except (OSError, URLError, ValueError) as exc:
+        return {
+            "status": "blocked",
+            "url": _redacted_url(url),
+            "reachable": False,
+            "status_code": None,
+            "detail": f"HTTPS probe failed with {exc.__class__.__name__}.",
+        }
+    return {
+        "status": "ready" if 200 <= status_code < 500 else "blocked",
+        "url": _redacted_url(url),
+        "reachable": 200 <= status_code < 500,
+        "status_code": status_code,
+        "detail": "vCenter HTTPS endpoint responded.",
+    }
+
+
+def _skipped_probe(reason: str) -> dict[str, Any]:
+    return {"status": "not_checked", "checked": False, "visible": False, "detail": reason}
+
+
+def _skipped_govc(target: dict[str, Any]) -> dict[str, Any]:
+    missing = []
+    if not target.get("host"):
+        missing.append("VCENTER_HOST/GOVC_URL or VCENTER_MANAGEMENT_IP")
+    if not target.get("username_configured"):
+        missing.append("VCENTER_USERNAME/GOVC_USERNAME or VCENTER_SSO_ADMIN_USERNAME")
+    if not target.get("credential_configured"):
+        missing.append("VCENTER_PASSWORD/GOVC_PASSWORD or VCENTER_SSO_ADMIN_PASSWORD")
+    if not target.get("govc_available"):
+        missing.append("govc")
+    return {
+        "status": "not_configured",
+        "return_code": None,
+        "stdout": "",
+        "stderr": "",
+        "missing_fields": missing,
+    }
+
+
+def _refresh_post_install_reports() -> dict[str, Any]:
+    refreshed: dict[str, Any] = {}
+    errors: list[str] = []
+    try:
+        from app.services.golden_state import get_provider_lab_golden_state
+
+        golden = get_provider_lab_golden_state(write_report=True)
+        refreshed["golden_state_status"] = golden.get("status")
+        refreshed["golden_state_report"] = (golden.get("artifacts") or {}).get("report")
+    except Exception as exc:
+        errors.append(f"Golden State refresh failed: {exc.__class__.__name__}.")
+    try:
+        from app.services.lab_validation import get_lab_validation_summary
+
+        validation = get_lab_validation_summary(write_report=True)
+        refreshed["lab_validation_status"] = validation.get("overall_status") or validation.get("status")
+        refreshed["lab_validation_report"] = validation.get("handoff_report")
+    except Exception as exc:
+        errors.append(f"Lab Validation refresh failed: {exc.__class__.__name__}.")
+    return {"refreshed": refreshed, "errors": errors}
 
 
 def _value_check(label: str, field: str, value: Any) -> dict[str, Any]:
@@ -956,7 +1519,7 @@ def _ip_available_check(label: str, host: Any, *, check_ports: bool) -> dict[str
     tcp_443 = _tcp_open(address, 443)
     tcp_5480 = _tcp_open(address, 5480)
     neighbor = _neighbor_state(address)
-    neighbor_in_use = neighbor in {"REACHABLE", "STALE", "DELAY", "PROBE"}
+    neighbor_in_use = neighbor in {"REACHABLE", "DELAY", "PROBE"}
     in_use = ping_reply or tcp_443 or tcp_5480 or neighbor_in_use
     return {
         "label": label,
@@ -1021,6 +1584,237 @@ def _neighbor_state(address: str) -> str | None:
         if state in text:
             return state
     return None
+
+
+def _wait_for_tcp(host: str, port: int, *, timeout_seconds: int, poll_seconds: int) -> bool:
+    deadline = time.monotonic() + max(timeout_seconds, 0)
+    while True:
+        if _tcp_open(host, port):
+            return True
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(max(poll_seconds, 1))
+
+
+def _host_from_endpoint(value: str | None) -> str | None:
+    text = _clean_value(value)
+    if not text:
+        return None
+    if "://" not in text:
+        return text.split("/", maxsplit=1)[0]
+    parts = urlsplit(text)
+    return parts.hostname
+
+
+def _vcenter_govc_url(host: str | None) -> str | None:
+    if not host:
+        return None
+    configured = _clean_value(settings.vcenter_host)
+    if configured and "://" in configured:
+        parts = urlsplit(configured)
+        if parts.path and parts.path != "/":
+            return configured
+        return urlunsplit((parts.scheme, parts.netloc, "/sdk", "", ""))
+    return f"https://{host}/sdk"
+
+
+def _vcenter_time_sync_mode() -> str:
+    configured = _clean_value(os.getenv("VCENTER_TIME_SYNC_MODE"))
+    return "ntp" if configured and configured.lower() == "ntp" else "tools"
+
+
+def _vcenter_validation_verify_tls() -> bool:
+    if os.getenv("VCENTER_VERIFY_TLS") is None and os.getenv("GOVC_TLS_VERIFY") is None:
+        if settings.provider_mode == LOCAL_LAB_READWRITE_MODE:
+            return False
+    return bool(settings.vcenter_verify_tls)
+
+
+def _vcenter_validation_username() -> str | None:
+    return (
+        _canonical_vcenter_sso_admin_username()
+        or _canonical_vcenter_sso_username(_clean_value(os.getenv("VCENTER_USERNAME")))
+        or _clean_value(os.getenv("GOVC_USERNAME"))
+    )
+
+
+def _vcenter_validation_password() -> str | None:
+    return (
+        _clean_value(settings.vcenter_sso_admin_password)
+        or _clean_value(os.getenv("VCENTER_PASSWORD"))
+        or _clean_value(os.getenv("GOVC_PASSWORD"))
+    )
+
+
+def _canonical_vcenter_sso_admin_username() -> str | None:
+    return _canonical_vcenter_sso_username(_clean_value(settings.vcenter_sso_admin_username))
+
+
+def _canonical_vcenter_sso_username(username: str | None) -> str | None:
+    if not username:
+        return None
+    if "@" not in username:
+        return username
+    name, domain = username.split("@", 1)
+    if name.lower() == "administrator":
+        return f"Administrator@{domain}"
+    return username
+
+
+def _time_sync_label(values: dict[str, Any]) -> str:
+    if values.get("time_sync_mode") == "ntp":
+        return f"NTP ({', '.join(values.get('ntp_servers') or []) or 'missing'})"
+    return "VMware Tools"
+
+
+def _vcsa_deploy_command_preview(readiness: dict[str, Any]) -> str:
+    deploy = (readiness.get("current_state") or {}).get("vcsa_deploy") or "vcsa-deploy"
+    return " ".join(_vcsa_deploy_install_command(str(deploy), "<generated-vcsa-spec.json>"))
+
+
+def _vcsa_deploy_install_command(deploy: str, spec_path: str) -> list[str]:
+    command = [deploy, "install", "--accept-eula", "--acknowledge-ceip"]
+    if not _vcsa_deploy_verify_tls():
+        command.append("--no-ssl-certificate-verification")
+    command.append(spec_path)
+    return command
+
+
+def _vcsa_deploy_verify_tls() -> bool:
+    return bool(getattr(settings, "esxi_test_verify_tls", settings.vcenter_verify_tls))
+
+
+def _server_certificate_sha1_thumbprint(host: Any, port: int = 443) -> str | None:
+    text = _clean_value(host)
+    if not text:
+        return None
+    try:
+        pem = ssl.get_server_certificate((text, port), timeout=10)
+        der = ssl.PEM_cert_to_DER_cert(pem)
+    except (OSError, ValueError, ssl.SSLError):
+        return None
+    digest = hashlib.sha1(der).hexdigest().upper()
+    return ":".join(digest[index : index + 2] for index in range(0, len(digest), 2))
+
+
+def _first_blocker(values: list[Any]) -> str | None:
+    for value in values:
+        if value:
+            return str(value)
+    return None
+
+
+def _int_env(name: str, default: int) -> int:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        return default
+
+
+def _tail(value: str | None, *, max_chars: int = 4000) -> str:
+    text = value or ""
+    return text[-max_chars:] if len(text) > max_chars else text
+
+
+def _decode_bytes(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+    return str(value)
+
+
+def _json_contains(stdout: Any, needle: str) -> bool:
+    text = str(stdout or "")
+    if not needle:
+        return False
+    if needle in text:
+        return True
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError:
+        return False
+    return needle in json.dumps(payload)
+
+
+def _vcenter_apply_warnings(
+    *,
+    validation: dict[str, Any] | None,
+    refresh_result: dict[str, Any] | None,
+) -> list[str]:
+    warnings = [
+        "vcsa-deploy is the only deployment executor for this workflow; secrets are passed through a temporary local spec and not written to artifacts.",
+    ]
+    if validation:
+        warnings.extend(str(item) for item in validation.get("warnings") or [])
+    if refresh_result:
+        warnings.extend(str(item) for item in refresh_result.get("errors") or [])
+    return _unique(warnings)
+
+
+def _vcenter_apply_not_attempted(apply_result: dict[str, Any]) -> list[str]:
+    skipped = [
+        "vCenter delete",
+        "vCenter inventory host add",
+        "NetApp datastore create/delete",
+        "ESXi host reconfiguration outside vcsa-deploy",
+    ]
+    if not apply_result.get("vcsa_deploy_attempted"):
+        skipped.insert(0, "vcsa-deploy install")
+    return skipped
+
+
+def _post_install_not_attempted(govc_ready: bool) -> list[str]:
+    skipped = [
+        "vCenter inventory host add",
+        "vCenter datastore mount/create",
+        "ESXi host reconfiguration",
+        "NetApp ONTAP write",
+    ]
+    if not govc_ready:
+        skipped.insert(0, "vCenter inventory validation through govc")
+    return skipped
+
+
+def _write_json(path: Path, payload: Any) -> None:
+    CODEX_RUN_DIR.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+
+
+def _sanitize(payload: Any) -> Any:
+    return redact_sensitive(payload, _redaction_values())
+
+
+def _redaction_values() -> list[str]:
+    configured = [
+        settings.vcenter_password,
+        settings.vcenter_sso_admin_password,
+        settings.vcenter_appliance_root_password,
+        settings.esxi_test_password,
+    ]
+    env_values = [
+        value
+        for key, value in os.environ.items()
+        if value and any(fragment in key.lower() for fragment in ("password", "token", "secret", "authorization", "cookie"))
+    ]
+    return [str(value) for value in [*configured, *env_values] if value]
+
+
+def _unique(values: list[Any]) -> list[Any]:
+    seen: set[str] = set()
+    result: list[Any] = []
+    for value in values:
+        if value in {None, ""}:
+            continue
+        key = str(value)
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(value)
+    return result
 
 
 def _missing_fields(vcenter_host: bool, vcenter_credentials: bool, netapp_credentials: bool) -> list[str]:
@@ -1180,7 +1974,7 @@ def _vcenter_install_markdown(payload: dict[str, Any]) -> str:
         f"- Subnet: `{values.get('subnet_cidr') or 'missing'}`",
         f"- Gateway: `{values.get('gateway') or 'missing'}`",
         f"- DNS: `{', '.join(values.get('dns_servers') or []) or 'missing'}`",
-        f"- NTP: `{', '.join(values.get('ntp_servers') or []) or 'missing'}`",
+        f"- Time sync: `{_time_sync_label(values)}`",
         f"- SSO domain: `{values.get('sso_domain') or 'missing'}`",
         f"- SSO admin username: `{values.get('sso_admin_username_status') or 'missing'}`",
         f"- Values complete: `{values.get('complete')}`",
@@ -1205,6 +1999,131 @@ def _vcenter_install_markdown(payload: dict[str, Any]) -> str:
     lines.extend(f"- {item}" for item in payload.get("warnings") or ["None"])
     lines.extend(["", "## Safety", "- No vCenter install, vCenter write, ESXi write, datastore mount, or appliance power action was run."])
     lines.extend(["", "## Next Action", f"- {payload.get('next_safe_action')}"])
+    return "\n".join(lines) + "\n"
+
+
+def _vcenter_apply_markdown(payload: dict[str, Any]) -> str:
+    current = payload.get("current_state") or {}
+    target = payload.get("target_state") or {}
+    apply_result = payload.get("apply") or {}
+    gate_state = payload.get("apply_gate_state") or {}
+    flag_state = gate_state.get("flag_state") if isinstance(gate_state.get("flag_state"), dict) else {}
+    lines = [
+        "# vCenter Install Apply Report",
+        "",
+        f"- Checked at: `{payload.get('checked_at')}`",
+        f"- Status: `{payload.get('status')}`",
+        f"- Provider mode: `{payload.get('mode')}`",
+        f"- Apply enabled: `{payload.get('apply_enabled')}`",
+        f"- vcsa-deploy attempted: `{apply_result.get('vcsa_deploy_attempted')}`",
+        f"- vcsa-deploy result: `{apply_result.get('result')}`",
+        f"- vcsa-deploy return code: `{apply_result.get('return_code')}`",
+        "",
+        "## Current State",
+        f"- VCSA ISO: `{current.get('vcsa_iso') or 'not found'}`",
+        f"- vcsa-deploy: `{current.get('vcsa_deploy') or 'not found'}`",
+        f"- ESXi management: `{current.get('esxi_management')}`",
+        f"- NetApp datastore: `{current.get('netapp_datastore')}`",
+        "",
+        "## Target State",
+        f"- vCenter: `{target.get('vcenter') or 'not configured'}`",
+        f"- Deployment target: `{target.get('deployment_target')}`",
+        f"- Datastore: `{target.get('datastore')}`",
+        f"- Network / portgroup: `{target.get('network') or target.get('portgroup') or 'not configured'}`",
+        "",
+        "## Apply Gates",
+    ]
+    for flag in gate_state.get("required_flags") or []:
+        lines.append(f"- `{flag}`")
+    lines.extend(["", "## Gate State"])
+    for key, value in flag_state.items():
+        lines.append(f"- {key}: `{value}`")
+    lines.extend(["", "## Command"])
+    lines.append(f"- `{apply_result.get('command') or _vcsa_deploy_command_preview(payload)}`")
+    if apply_result.get("stdout_summary"):
+        lines.extend(["", "## vcsa-deploy stdout summary", "```text", str(apply_result.get("stdout_summary")), "```"])
+    if apply_result.get("stderr_summary"):
+        lines.extend(["", "## vcsa-deploy stderr summary", "```text", str(apply_result.get("stderr_summary")), "```"])
+    lines.extend(["", "## Blockers"])
+    lines.extend(f"- {item}" for item in payload.get("blockers") or ["None"])
+    lines.extend(["", "## Warnings"])
+    lines.extend(f"- {item}" for item in payload.get("warnings") or ["None"])
+    lines.extend(
+        [
+            "",
+            "## Safety",
+            "- Secrets are redacted in this report.",
+            "- The unredacted VCSA spec is written only to a temporary 0600 file for vcsa-deploy and is removed after the command exits.",
+        ]
+    )
+    return "\n".join(lines) + "\n"
+
+
+def _vcenter_post_install_markdown(payload: dict[str, Any]) -> str:
+    target = payload.get("target") or {}
+    checks = payload.get("checks") or {}
+    lines = [
+        "# vCenter Post-Install Validation Report",
+        "",
+        f"- Checked at: `{payload.get('checked_at')}`",
+        f"- Status: `{payload.get('status')}`",
+        f"- vCenter host: `{target.get('host') or 'not configured'}`",
+        f"- govc configured: `{target.get('govc_configured')}`",
+        f"- ESXi target: `{target.get('esxi_target')}`",
+        f"- Datastore: `{target.get('datastore')}`",
+        "",
+        "## Checks",
+    ]
+    for key, check in checks.items():
+        status = check.get("status") if isinstance(check, dict) else "unknown"
+        detail = check.get("detail") if isinstance(check, dict) else ""
+        lines.append(f"- {key}: `{status}` {detail or ''}".rstrip())
+    lines.extend(["", "## Blockers"])
+    lines.extend(f"- {item}" for item in payload.get("blockers") or ["None"])
+    lines.extend(["", "## Warnings"])
+    lines.extend(f"- {item}" for item in payload.get("warnings") or ["None"])
+    lines.extend(["", "## Safety", "- Validation uses ping, TCP/443, HTTPS/API, and read-only govc inventory checks."])
+    return "\n".join(lines) + "\n"
+
+
+def _vcenter_apply_final_markdown(payload: dict[str, Any]) -> str:
+    validation = payload.get("post_install_validation") or {}
+    refresh = payload.get("post_install_refresh") or {}
+    refreshed = refresh.get("refreshed") if isinstance(refresh.get("refreshed"), dict) else {}
+    artifacts = payload.get("artifacts") or {}
+    lines = [
+        "# vCenter Install Apply Unblock Final Report",
+        "",
+        f"- Checked at: `{payload.get('checked_at')}`",
+        f"- Apply status: `{payload.get('status')}`",
+        f"- Validation status: `{validation.get('status') or 'not_run'}`",
+        f"- Golden State refresh: `{refreshed.get('golden_state_status') or 'not_run'}`",
+        f"- Lab Validation refresh: `{refreshed.get('lab_validation_status') or 'not_run'}`",
+        "",
+        "## Reports",
+    ]
+    for label, path in artifacts.items():
+        lines.append(f"- {label}: `{path}`")
+    lines.extend(["", "## Blockers"])
+    lines.extend(f"- {item}" for item in payload.get("blockers") or ["None"])
+    if validation.get("blockers"):
+        lines.extend(["", "## Validation Blockers"])
+        lines.extend(f"- {item}" for item in validation.get("blockers") or [])
+    lines.extend(["", "## Warnings"])
+    lines.extend(f"- {item}" for item in payload.get("warnings") or ["None"])
+    lines.extend(["", "## Next Action", f"- {payload.get('next_safe_action')}"])
+    lines.extend(
+        [
+            "",
+            "## Skill Improvement Review",
+            "",
+            "- Skills used: lab-builder-skill-steward, lab-builder-real-runtime, lab-builder-hardware-run, lab-builder-toolchain, lab-builder-ux, lab-builder-product-craft, lab-builder-report-remediation",
+            "- Skills created or updated: none",
+            "- Skill gaps found: none requiring a new reusable skill in this pass",
+            "- Candidate skills deferred: none",
+            "- No additional skills were created because this work fits the existing Lab Builder skill set.",
+        ]
+    )
     return "\n".join(lines) + "\n"
 
 

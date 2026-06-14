@@ -209,11 +209,15 @@ def _vm_deployment_row() -> dict[str, Any]:
 
 def _vcenter_row() -> dict[str, Any]:
     artifact = _read_json("artifacts/codex-runs/vcenter-install-readiness-redacted.json")
+    validation = _read_json("artifacts/codex-runs/vcenter-post-install-validation-redacted.json")
     deployment_values = artifact.get("deployment_values") if isinstance(artifact.get("deployment_values"), dict) else {}
     values_complete = bool(deployment_values.get("complete"))
-    configured = bool(settings.vcenter_host or settings.vcenter_configured)
+    validation_ready = validation.get("status") == "ready"
+    configured = bool(settings.vcenter_host or settings.vcenter_configured or validation_ready)
     current_state = (
-        "Configured"
+        "Deployed and authenticated"
+        if validation_ready
+        else "Configured"
         if configured
         else "Expected partial: deployment values complete; deploy pending"
         if values_complete
@@ -234,6 +238,8 @@ def _vcenter_row() -> dict[str, Any]:
             "artifacts/codex-runs/vcenter-install-readiness-report.md",
             "artifacts/codex-runs/vcenter-install-plan-report.md",
             "artifacts/codex-runs/vcenter-install-preview-report.md",
+            "artifacts/codex-runs/vcenter-install-apply-report.md",
+            "artifacts/codex-runs/vcenter-post-install-validation-report.md",
         ],
         warnings=[] if configured else ["vCenter is expected partial until deployment values and confirmation gates are ready."],
     )
@@ -467,9 +473,15 @@ def _netapp_credential_row() -> dict[str, Any]:
 
 def _vcenter_credential_row() -> dict[str, Any]:
     artifact = _read_json("artifacts/codex-runs/vcenter-install-readiness-redacted.json")
+    validation = _read_json("artifacts/codex-runs/vcenter-post-install-validation-redacted.json")
     checks = artifact.get("checks") if isinstance(artifact.get("checks"), dict) else {}
-    credential_check = checks.get("vcenter_credentials_configured") if isinstance(checks.get("vcenter_credentials_configured"), dict) else {}
-    configured = bool(settings.vcenter_username and settings.vcenter_password) or credential_check.get("status") == "ready"
+    credential_check = (
+        checks.get("vcenter_deployment_credentials_configured")
+        if isinstance(checks.get("vcenter_deployment_credentials_configured"), dict)
+        else {}
+    )
+    validation_ready = validation.get("status") == "ready"
+    configured = bool(settings.vcenter_username and settings.vcenter_password) or credential_check.get("status") == "ready" or validation_ready
     metadata = _artifact_metadata(
         "artifacts/codex-runs/vcenter-install-readiness-redacted.json",
         "make provider-lab-vcenter-install-readiness",
@@ -478,9 +490,9 @@ def _vcenter_credential_row() -> dict[str, Any]:
         "vcenter",
         "vCenter",
         configured=configured,
-        tested=False,
+        tested=validation_ready,
         field="VCENTER_USERNAME/GOVC_USERNAME and VCENTER_PASSWORD/GOVC_PASSWORD",
-        next_action="Configure vCenter deployment values, then run vCenter install readiness.",
+        next_action="No credential action required." if validation_ready else "Configure vCenter deployment values, then run vCenter install readiness.",
         metadata=metadata,
     )
 
@@ -490,10 +502,25 @@ def _vcenter_readiness(rows: list[dict[str, Any]], credentials: dict[str, Any]) 
     vcenter_credential = next((row for row in credentials["rows"] if row["id"] == "vcenter"), {})
     vcsa_iso_found = _vcsa_iso_found()
     artifact = _read_json("artifacts/codex-runs/vcenter-install-readiness-redacted.json")
+    preview_artifact = _read_json("artifacts/codex-runs/vcenter-install-preview-redacted.json")
+    validation_artifact = _read_json("artifacts/codex-runs/vcenter-post-install-validation-redacted.json")
+    validation_ready = validation_artifact.get("status") == "ready"
     deployment_values = artifact.get("deployment_values") if isinstance(artifact.get("deployment_values"), dict) else {}
     value_checks = artifact.get("value_checks") if isinstance(artifact.get("value_checks"), dict) else {}
     credential_detail = artifact.get("credential_state") if isinstance(artifact.get("credential_state"), dict) else {}
     checks = artifact.get("checks") if isinstance(artifact.get("checks"), dict) else {}
+    apply_gate_state = (
+        preview_artifact.get("apply_gate_state")
+        if isinstance(preview_artifact.get("apply_gate_state"), dict)
+        else artifact.get("apply_gate_state")
+        if isinstance(artifact.get("apply_gate_state"), dict)
+        else {}
+    )
+    apply_gate_blockers = [
+        str(item)
+        for item in apply_gate_state.get("blockers") or []
+        if item
+    ]
     vcsa_deploy_check = checks.get("vcsa_deploy_available") if isinstance(checks.get("vcsa_deploy_available"), dict) else {}
     management_ip_check = (
         checks.get("vcenter_management_ip_available")
@@ -504,10 +531,10 @@ def _vcenter_readiness(rows: list[dict[str, Any]], credentials: dict[str, Any]) 
         bool(value_checks) and all(isinstance(check, dict) and check.get("status") == "ready" for check in value_checks.values())
     )
     deployment_credentials_configured = bool(credential_detail.get("deployment_credentials_configured"))
-    post_install_credentials_configured = bool(vcenter_credential.get("configured")) or bool(
+    post_install_credentials_configured = validation_ready or bool(vcenter_credential.get("configured")) or bool(
         credential_detail.get("post_install_vcenter_credentials_configured")
     )
-    vcenter_configured = bool(settings.vcenter_host or settings.vcenter_configured) or bool(
+    vcenter_configured = validation_ready or bool(settings.vcenter_host or settings.vcenter_configured) or bool(
         deployment_values.get("post_install_vcenter_configured")
     )
     esxi_ready = row_by_id.get("esxi", {}).get("status") == "ready"
@@ -523,6 +550,20 @@ def _vcenter_readiness(rows: list[dict[str, Any]], credentials: dict[str, Any]) 
         and values_complete
         and deployment_credentials_configured
     )
+    preview_ready = ready_for_preview and preview_artifact.get("status") == "ready"
+    deploy_enabled = bool(
+        not validation_ready
+        and preview_ready
+        and not apply_gate_blockers
+        and (artifact.get("apply_enabled") or preview_artifact.get("apply_enabled"))
+    )
+    deploy_disabled_reason = (
+        str((artifact.get("blockers") or preview_artifact.get("blockers") or [""])[0])
+        if not ready_for_preview and (artifact.get("blockers") or preview_artifact.get("blockers"))
+        else apply_gate_blockers[0]
+        if apply_gate_blockers
+        else None
+    )
     values_state = "complete" if values_complete else "incomplete"
     credential_state = "configured" if deployment_credentials_configured else "missing"
     metadata = _artifact_metadata(
@@ -530,33 +571,48 @@ def _vcenter_readiness(rows: list[dict[str, Any]], credentials: dict[str, Any]) 
         "make provider-lab-vcenter-install-readiness",
     )
     return {
-        "status": "ready" if ready_for_preview else "not_configured",
-        "preview_state": "ready_for_preview" if ready_for_preview else "not_ready",
-        "deploy_state": "deploy_disabled",
+        "status": "ready" if validation_ready or ready_for_preview else "not_configured",
+        "preview_state": "deployed" if validation_ready else "ready_for_preview" if ready_for_preview else "not_ready",
+        "deploy_state": "deployed" if validation_ready else "ready_to_deploy" if deploy_enabled else "deploy_gated" if ready_for_preview else "not_ready",
         "ready_for_preview": ready_for_preview,
-        "ready_for_deploy": False,
+        "preview_ready": preview_ready,
+        "ready_for_deploy": deploy_enabled,
         "vcsa_iso": "found" if vcsa_iso_found else "not_found",
         "vcsa_deploy": str(vcsa_deploy_check.get("status") or "not_checked"),
-        "management_ip_available": "available" if management_ip_available else str(management_ip_check.get("status") or "not_checked"),
+        "management_ip_available": (
+            "in_use_by_deployed_vcenter"
+            if validation_ready
+            else "available"
+            if management_ip_available
+            else str(management_ip_check.get("status") or "not_checked")
+        ),
         "esxi": "ready" if esxi_ready else "not_ready",
         "netapp_datastore": "ready" if datastore_ready else "not_ready",
         "vcenter_credentials": credential_state,
         "credentials": credential_state,
         "post_install_vcenter_credentials": "configured" if post_install_credentials_configured else "missing",
-        "vcenter_config": "configured" if vcenter_configured else "expected_partial",
+        "vcenter_config": "deployed" if validation_ready else "configured" if vcenter_configured else "expected_partial",
         "vcenter_values": values_state,
         "values_complete": values_complete,
-        "deploy_enabled": False,
+        "deploy_enabled": deploy_enabled,
         "preview_action_id": "vcenter.install-preview",
-        "deploy_action_label": "Deploy disabled until explicit deployment confirmation gates are implemented.",
+        "deploy_action_id": "vcenter.install-apply",
+        "deploy_action_label": "Deploy vCenter",
+        "deploy_disabled_reason": deploy_disabled_reason,
+        "apply_gate_state": apply_gate_state,
         "deployment_values": deployment_values,
         "value_checks": value_checks,
         "checks": checks,
+        "post_install_validation": validation_artifact,
         "credential_detail": credential_detail,
         "next_action": (
-            "Run Preview Deploy to generate the redacted VCSA deployment plan."
+            "vCenter is deployed and post-install validation is ready."
+            if validation_ready
+            else "Deploy vCenter through the guarded install apply workflow."
+            if deploy_enabled
+            else "Run Preview Deploy to generate the redacted VCSA deployment plan."
             if ready_for_preview
-            else "Open vCenter install readiness and complete missing local-only deployment values."
+            else "Open vCenter install readiness and complete the current missing local-only deployment values."
         ),
         "source_type": metadata["source_type"],
         "freshness": metadata["freshness"],
@@ -567,6 +623,8 @@ def _vcenter_readiness(rows: list[dict[str, Any]], credentials: dict[str, Any]) 
                 "artifacts/codex-runs/vcenter-install-readiness-report.md",
                 "artifacts/codex-runs/vcenter-install-plan-report.md",
                 "artifacts/codex-runs/vcenter-install-preview-report.md",
+                "artifacts/codex-runs/vcenter-install-apply-report.md",
+                "artifacts/codex-runs/vcenter-post-install-validation-report.md",
             ]
         ),
     }
@@ -801,7 +859,7 @@ def _markdown(payload: dict[str, Any]) -> str:
             "",
             "## Skill Improvement Review",
             "",
-            "- Skills used: lab-builder-skill-steward, lab-builder-real-runtime, lab-builder-ux, lab-builder-product-craft, lab-builder-hardware-run, lab-builder-report-remediation",
+            "- Skills used: lab-builder-skill-steward, lab-builder-real-runtime, lab-builder-hardware-run, lab-builder-toolchain, lab-builder-ux, lab-builder-product-craft, lab-builder-report-remediation",
             "- Skills created or updated: none",
             "- Skill gaps found: none requiring a new reusable skill in this pass",
             "- Candidate skills deferred: none",

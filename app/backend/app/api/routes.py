@@ -249,6 +249,7 @@ from app.services.readiness import get_request_readiness
 from app.services.report_center import get_report_center, get_report_summary
 from app.services.upgrade_decision import get_ilo_upgrade_readiness
 from app.services.vcenter_netapp_readiness import (
+    get_vcenter_install_apply,
     get_vcenter_install_plan,
     get_vcenter_install_preview,
     get_vcenter_install_readiness,
@@ -652,6 +653,11 @@ def read_vcenter_install_plan() -> ProviderProbeResultRead:
 @router.get("/lab/vcenter/install-preview", response_model=ProviderProbeResultRead)
 def read_vcenter_install_preview() -> ProviderProbeResultRead:
     return get_vcenter_install_preview(write_report=False)
+
+
+@router.post("/lab/vcenter/install-apply", response_model=ProviderProbeResultRead)
+def run_vcenter_install_apply() -> ProviderProbeResultRead:
+    return get_vcenter_install_apply(write_report=True)
 
 
 @router.get("/reports/issues", response_model=ReportCenterRead)

@@ -214,6 +214,42 @@ def test_guarded_action_runs_with_exact_confirmation_and_gates(monkeypatch, tmp_
     assert "Guarded workflow action completed" in result["summary"]
 
 
+def test_vcenter_install_apply_runner_injects_explicit_gates(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(workflow_action_run_store, "WORKFLOW_ACTION_RUN_TRACE_DIR", tmp_path)
+
+    class AllowPolicy:
+        def action_blockers(self, action_id: str, category: object) -> list[str]:
+            return []
+
+    monkeypatch.setattr(workflow_registry, "current_lab_action_policy", lambda: AllowPolicy())
+
+    def fake_run(command: tuple[str, ...], timeout_seconds: int) -> subprocess.CompletedProcess[str]:
+        assert command == (
+            "env",
+            "VCENTER_INSTALL_APPLY=true",
+            "VCENTER_INSTALL_CONFIRM=DEPLOY VCENTER",
+            "VCENTER_INSTALL_ALLOW_DEPLOY=true",
+            "make",
+            "provider-lab-vcenter-install-apply",
+        )
+        assert timeout_seconds == 7200
+        return subprocess.CompletedProcess(command, 0, stdout="vcenter deploy complete", stderr="")
+
+    monkeypatch.setattr(workflow_action_runner, "_run_subprocess", fake_run)
+
+    result = run_workflow_action(
+        "vcenter.install-apply",
+        payload={
+            "confirmation_phrase": "DEPLOY VCENTER",
+            "confirmed_gates": ["VCENTER_INSTALL_APPLY=true", "VCENTER_INSTALL_ALLOW_DEPLOY=true"],
+        },
+    )
+
+    assert result["status"] == "completed"
+    assert result["executed"] is True
+    assert result["return_code"] == 0
+
+
 def test_unknown_action_returns_clear_404(client: TestClient) -> None:
     response = client.post("/api/v1/workflows/actions/not-a-real-action/run")
 

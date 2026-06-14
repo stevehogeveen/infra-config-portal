@@ -602,6 +602,28 @@ ALLOWED_WORKFLOW_ACTION_RUNNERS: dict[str, WorkflowActionExecutionSpec] = {
             "artifacts/codex-runs/vcenter-install-preview-redacted.json",
         ),
     ),
+    "vcenter.install-apply": WorkflowActionExecutionSpec(
+        action_id="vcenter.install-apply",
+        kind="command",
+        label="Deploy vCenter",
+        command=(
+            "env",
+            "VCENTER_INSTALL_APPLY=true",
+            "VCENTER_INSTALL_CONFIRM=DEPLOY VCENTER",
+            "VCENTER_INSTALL_ALLOW_DEPLOY=true",
+            "make",
+            "provider-lab-vcenter-install-apply",
+        ),
+        registry_command="make provider-lab-vcenter-install-apply",
+        reports=(
+            "artifacts/codex-runs/vcenter-install-apply-report.md",
+            "artifacts/codex-runs/vcenter-post-install-validation-report.md",
+            "artifacts/codex-runs/vcenter-install-apply-unblock-final-report.md",
+            "artifacts/codex-runs/vcenter-install-apply-redacted.json",
+            "artifacts/codex-runs/vcenter-post-install-validation-redacted.json",
+        ),
+        timeout_seconds=7200,
+    ),
     "firmware.compliance-check": WorkflowActionExecutionSpec(
         action_id="firmware.compliance-check",
         kind="command",

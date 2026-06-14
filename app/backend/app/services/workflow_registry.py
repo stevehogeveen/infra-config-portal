@@ -246,6 +246,7 @@ CATEGORY_BY_CONTROL_ACTION = {
     "netapp.ontap-upgrade-validate": "verify",
     "netapp.ontap-upgrade-apply": "upgrade",
     "netapp.component-firmware-inventory": "inventory",
+    "vcenter.install-apply": "apply",
     "firmware.inventory": "inventory",
     "firmware.compliance-check": "verify",
     "firmware.waiver-check": "waive",
@@ -1066,6 +1067,10 @@ def _not_in_scope_reason_for_seed(seed: WorkflowActionSeed) -> str | None:
     features = active_lab_profile_context().get("enabled_features") or {}
     if (seed.stage == "netapp" or "netapp" in seed.provider or seed.action_id.startswith("netapp.")) and not features.get("netapp_enabled"):
         return "NetApp is disabled by the active lab profile."
+    if seed.action_id.startswith("vcenter.install-"):
+        if not features.get("netapp_enabled"):
+            return "NetApp is disabled by the active lab profile."
+        return None
     if ("vcenter" in seed.provider or seed.action_id.startswith("vcenter-netapp.")) and (
         not features.get("netapp_enabled") or not features.get("vcenter_enabled")
     ):

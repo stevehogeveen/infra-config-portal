@@ -3434,12 +3434,16 @@ function WorkflowActionHandoff({ action }: { action: WorkflowAction }) {
 function GuardedWorkflowActionButton({
   action,
   compact = false,
+  enabled = true,
+  disabledReasonOverride,
   label,
   onRun,
   running
 }: {
   action: WorkflowAction;
   compact?: boolean;
+  enabled?: boolean;
+  disabledReasonOverride?: string;
   label?: string;
   onRun?: RunWorkflowActionHandler;
   running: boolean;
@@ -3448,11 +3452,11 @@ function GuardedWorkflowActionButton({
   const [confirmation, setConfirmation] = useState("");
   const [confirmedGates, setConfirmedGates] = useState<Record<string, boolean>>({});
   const requiredPhrase = action.required_confirmations[0] ?? "";
-  const canStart = workflowActionCanStartGuarded(action) && Boolean(onRun);
+  const canStart = enabled && workflowActionCanStartGuarded(action) && Boolean(onRun);
   const phraseMatches = confirmation === requiredPhrase;
   const gatesMatch = action.required_gates.every((gate) => confirmedGates[gate]);
   const ready = canStart && phraseMatches && gatesMatch && !running;
-  const disabledReason = workflowGuardedDisabledReason(action);
+  const disabledReason = disabledReasonOverride || workflowGuardedDisabledReason(action);
 
   useEffect(() => {
     if (!open) return;
@@ -9353,6 +9357,7 @@ function controlConfigOptionsForSection(
       option("vcenter_install_readiness", "Install Readiness", "Check VCSA media, ESXi reachability, NetApp datastore readiness, and missing values.", ["manual", "govc"], "read_only", ["install-readiness"], "Ready", false),
       option("vcenter_install_plan", "Install Plan", "Build the preview-only VCSA deployment plan after prerequisites are ready.", ["manual", "govc"], "read_only", ["install-plan"], "Plan ready", false),
       option("vcenter_install_preview", "Preview Deploy", "Generate the redacted VCSA deploy preview without starting deployment.", ["manual", "govc"], "read_only", ["install-preview"], "Preview ready", false),
+      option("vcenter_install_apply", "Deploy vCenter", "Run the guarded vcsa-deploy install workflow after readiness and preview are ready.", ["manual", "govc"], "config_change", ["install-apply"], "Deploy vCenter"),
       option("vcenter_netapp_readiness", "NetApp Readiness", "Validate vCenter/govc handoff against the NetApp NFS datastore plan.", ["govc", "ontap_rest"], "read_only", ["netapp-readiness"], "Ready", false),
       option("vcenter_datastore_plan", "Datastore Plan", "Preview datastore attach commands without mounting storage.", ["govc"], "read_only", ["datastore-plan"], "Plan ready", false)
     ];
@@ -11404,6 +11409,7 @@ function VerificationSimpleSection({
 function GoldenStatePage() {
   const [activeSection, setActiveSection] = useState<GoldenStateSectionId>("dashboard");
   const [goldenState, setGoldenState] = useState<ProviderProbeResult | null>(null);
+  const [workflowActionCatalog, setWorkflowActionCatalog] = useState<WorkflowAction[]>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [runningAction, setRunningAction] = useState("");
@@ -11413,7 +11419,12 @@ function GoldenStatePage() {
     setError("");
     setLoading(true);
     try {
-      setGoldenState(await api.goldenState());
+      const [nextGoldenState, nextWorkflowActions] = await Promise.all([
+        api.goldenState(),
+        api.workflowActions()
+      ]);
+      setGoldenState(nextGoldenState);
+      setWorkflowActionCatalog(nextWorkflowActions);
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -11421,12 +11432,12 @@ function GoldenStatePage() {
     }
   }
 
-  async function runGoldenAction(actionId: string) {
+  async function runGoldenAction(actionId: string, request?: WorkflowActionRunRequest) {
     setError("");
     setRunMessage("");
     setRunningAction(actionId);
     try {
-      const result = await api.runWorkflowAction(actionId);
+      const result = await api.runWorkflowAction(actionId, request);
       setRunMessage(`${result.action_label}: ${displayStatusLabel(result.status)}`);
       await load();
     } catch (err) {
@@ -11505,6 +11516,7 @@ function GoldenStatePage() {
               onRunAction={runGoldenAction}
               readiness={vcenter}
               runningAction={runningAction}
+              workflowActions={workflowActionCatalog}
             />
           )}
         </>
@@ -11747,11 +11759,13 @@ function GoldenCredentialStatus({
 function GoldenVcenterReadiness({
   onRunAction,
   readiness,
-  runningAction
+  runningAction,
+  workflowActions
 }: {
-  onRunAction: (actionId: string) => void;
+  onRunAction: (actionId: string, request?: WorkflowActionRunRequest) => void;
   readiness: Record<string, unknown>;
   runningAction: string;
+  workflowActions: WorkflowAction[];
 }) {
   const deploymentValues = objectValue(readiness.deployment_values);
   const valueChecks = objectValue(readiness.value_checks);
@@ -11760,12 +11774,27 @@ function GoldenVcenterReadiness({
   const managementIpCheck = objectValue(checks.vcenter_management_ip_available);
   const credentialDetail = objectValue(readiness.credential_detail);
   const previewActionId = asString(readiness.preview_action_id) || "vcenter.install-preview";
+  const deployActionId = asString(readiness.deploy_action_id) || "vcenter.install-apply";
+  const deployAction = workflowActions.find((action) => action.action_id === deployActionId) ?? null;
   const previewBusy = runningAction === previewActionId;
+  const deployBusy = runningAction === deployActionId;
   const deployEnabled = asBoolean(readiness.deploy_enabled);
+  const deployed = asString(readiness.deploy_state) === "deployed" || asString(readiness.vcenter_config) === "deployed";
   const readyForPreview = asBoolean(readiness.ready_for_preview) || asString(readiness.preview_state) === "ready_for_preview";
   const readyForDeploy = asBoolean(readiness.ready_for_deploy) || deployEnabled;
-  const installLaneStatus = readyForDeploy ? "ready_for_deploy" : readyForPreview ? "ready_for_preview" : asString(readiness.status) || "not_configured";
-  const deployState = readyForDeploy ? "ready_for_deploy" : asString(readiness.deploy_state) || "deploy_disabled";
+  const installLaneStatus = deployed ? "deployed" : readyForDeploy ? "ready_for_deploy" : readyForPreview ? "ready_for_preview" : asString(readiness.status) || "not_configured";
+  const deployState = deployed ? "deployed" : readyForDeploy ? "ready_for_deploy" : asString(readiness.deploy_state) || "deploy_disabled";
+  const deployDisabledReason =
+    deployed
+      ? "vCenter is deployed and post-install validation is ready."
+      : asString(readiness.deploy_disabled_reason) ||
+    (!readyForPreview
+      ? "vCenter install readiness is not ready."
+      : !asBoolean(readiness.preview_ready)
+        ? "Preview Deploy must be ready before install apply."
+        : deployAction
+          ? workflowGuardedDisabledReason(deployAction)
+          : "vcenter.install-apply is not available in the workflow registry.");
   const credentialsConfigured =
     (asString(readiness.credentials) || asString(readiness.vcenter_credentials)) === "configured" ||
     asBoolean(credentialDetail.deployment_credentials_configured);
@@ -11793,10 +11822,10 @@ function GoldenVcenterReadiness({
     {
       label: "Management IP Available",
       status:
-        asString(readiness.management_ip_available) === "available" || asString(managementIpCheck.status) === "ready"
+        deployed || asString(readiness.management_ip_available) === "available" || asString(managementIpCheck.status) === "ready"
           ? "ready"
           : "not_checked",
-      value: labelize(asString(readiness.management_ip_available) || asString(managementIpCheck.status) || "not_checked")
+      value: deployed ? "In use by deployed vCenter" : labelize(asString(readiness.management_ip_available) || asString(managementIpCheck.status) || "not_checked")
     },
     {
       label: "vCenter Values",
@@ -11815,7 +11844,14 @@ function GoldenVcenterReadiness({
     { label: "Subnet", value: asString(deploymentValues.subnet_cidr) || "Missing", status: vcenterValueStatus(valueChecks, "subnet_cidr") },
     { label: "Gateway", value: asString(deploymentValues.gateway) || "Missing", status: vcenterValueStatus(valueChecks, "gateway") },
     { label: "DNS", value: stringArray(deploymentValues.dns_servers).join(", ") || "Missing", status: vcenterValueStatus(valueChecks, "dns_servers") },
-    { label: "NTP", value: stringArray(deploymentValues.ntp_servers).join(", ") || "Missing", status: vcenterValueStatus(valueChecks, "ntp_servers") },
+    {
+      label: "Time Sync",
+      value:
+        asString(deploymentValues.time_sync_mode) === "tools"
+          ? "VMware Tools"
+          : stringArray(deploymentValues.ntp_servers).join(", ") || "Missing",
+      status: vcenterValueStatus(valueChecks, "time_sync")
+    },
     { label: "SSO Domain", value: asString(deploymentValues.sso_domain) || "Missing", status: vcenterValueStatus(valueChecks, "sso_domain") },
     {
       label: "SSO Admin Username",
@@ -11845,7 +11881,7 @@ function GoldenVcenterReadiness({
         <div>
           <span className="summary-kicker">Install lane</span>
           <strong>{displayStatusLabel(installLaneStatus)}</strong>
-          <p>{readyForPreview ? "Preview can be generated from current readiness evidence." : "Preview is waiting on readiness evidence."}</p>
+          <p>{deployed ? "vCenter is deployed and post-install validation is ready." : readyForPreview ? "Preview can be generated from current readiness evidence." : "Preview is waiting on readiness evidence."}</p>
         </div>
         <VisibleStatusBadge status={deployState} />
       </div>
@@ -11861,23 +11897,32 @@ function GoldenVcenterReadiness({
       <div className="golden-vcenter-actions">
         <button
           className="small-button primary"
-          disabled={Boolean(runningAction)}
+          disabled={!readyForPreview || Boolean(runningAction)}
+          title={readyForPreview ? "Generate the redacted VCSA deploy preview." : "vCenter install readiness must be ready before preview."}
           onClick={() => onRunAction(previewActionId)}
           type="button"
         >
           <Play size={14} />
           {previewBusy ? "Previewing" : "Preview Deploy"}
         </button>
-        <button
-          className="small-button"
-          disabled={!deployEnabled || Boolean(runningAction)}
-          title={asString(readiness.deploy_action_label) || "Deploy disabled until all values and confirmation gates are present."}
-          type="button"
-        >
-          <Ban size={14} />
-          Deploy
-        </button>
+        {deployAction ? (
+          <GuardedWorkflowActionButton
+            action={deployAction}
+            compact
+            disabledReasonOverride={deployEnabled ? undefined : deployDisabledReason}
+            enabled={deployEnabled && !Boolean(runningAction)}
+            label="Deploy vCenter"
+            onRun={(action, request) => onRunAction(action.action_id, request)}
+            running={deployBusy}
+          />
+        ) : (
+          <button className="small-button" disabled title={deployDisabledReason} type="button">
+            <Ban size={14} />
+            Deploy vCenter
+          </button>
+        )}
       </div>
+      {!deployEnabled && <p className="vcenter-deploy-disabled-reason">{deployDisabledReason}</p>}
       <div className="vcenter-values-section">
         <div className="issue-list-head">
           <PanelTitle icon={<ClipboardList size={18} />} title="Install Values" />
@@ -13710,7 +13755,8 @@ function humanWorkflowActionLabel(action: WorkflowAction): string {
     "netapp.ontap-upgrade-validate": "Validate ONTAP upgrade",
     "netapp.setup-apply": "Apply NetApp setup",
     "netapp.setup-preview": "Preview NetApp setup",
-    "provider-lab-netapp-ontap-upgrade-validate": "Validate ONTAP upgrade"
+    "provider-lab-netapp-ontap-upgrade-validate": "Validate ONTAP upgrade",
+    "vcenter.install-apply": "Deploy vCenter"
   };
   return mapped[action.action_id] ?? humanizeAction(action.label);
 }

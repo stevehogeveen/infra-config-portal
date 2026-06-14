@@ -1069,6 +1069,14 @@ button:disabled {
   gap: 6px;
 }
 
+.vcenter-deploy-disabled-reason {
+  color: #475569;
+  font-size: 13px;
+  line-height: 1.4;
+  margin: -6px 0 0;
+  overflow-wrap: anywhere;
+}
+
 .vcenter-values-section {
   display: grid;
   gap: 10px;

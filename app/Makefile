@@ -222,6 +222,9 @@ provider-lab-vcenter-install-plan:
 provider-lab-vcenter-install-preview:
 	cd backend && PROVIDER_MODE=local-readonly PYTHONPATH=. $$(if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi) scripts/vcenter_netapp_readiness.py install-preview
 
+provider-lab-vcenter-install-apply:
+	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. VCENTER_INSTALL_APPLY="$${VCENTER_INSTALL_APPLY:-}" VCENTER_INSTALL_CONFIRM="$${VCENTER_INSTALL_CONFIRM:-}" VCENTER_INSTALL_ALLOW_DEPLOY="$${VCENTER_INSTALL_ALLOW_DEPLOY:-}" $$(if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi) scripts/vcenter_netapp_readiness.py install-apply
+
 provider-lab-toolchain-check:
 	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $$(if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi) scripts/toolchain_availability.py
 

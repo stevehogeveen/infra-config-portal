@@ -1,7 +1,7 @@
 {
   "provider_id": "provider-lab-golden-state",
-  "checked_at": "2026-06-14T00:48:43.488761+00:00",
-  "generated_at": "2026-06-14T00:48:43.488761+00:00",
+  "checked_at": "2026-06-14T18:53:13.113323+00:00",
+  "generated_at": "2026-06-14T18:53:13.113323+00:00",
   "status": "partial",
   "message": "Golden-state validation surface generated from proven real-lab evidence. No provider write action was run.",
   "source_type": "historical_artifact",
@@ -112,7 +112,7 @@
       },
       "source_type": "live_cached",
       "freshness": "current",
-      "checked_at": "2026-06-14T00:14:09.365731+00:00",
+      "checked_at": "2026-06-14T00:51:49.532219+00:00",
       "evidence_artifacts": [
         "artifacts/codex-runs/netapp-live-state-report.md",
         "artifacts/codex-runs/netapp-ontap-upgrade-validation-report.md"
@@ -167,28 +167,28 @@
     {
       "id": "vcenter",
       "label": "vCenter",
-      "status": "not_configured",
-      "golden_state": "Expected partial until deployed and configured",
-      "current_state": "Expected partial: deployment values incomplete",
-      "drift": "expected_partial",
+      "status": "ready",
+      "golden_state": "Configured and reachable",
+      "current_state": "Deployed and authenticated",
+      "drift": "none",
       "repair_action": {
         "label": "Configure vCenter values",
         "action_id": "vcenter.install-readiness",
         "command": "make provider-lab-vcenter-install-readiness",
         "available": true
       },
-      "source_type": "historical_artifact",
-      "freshness": "historical",
-      "checked_at": "2026-06-14T00:48:05.590329+00:00",
+      "source_type": "live_cached",
+      "freshness": "current",
+      "checked_at": "2026-06-14T18:51:50.026247+00:00",
       "evidence_artifacts": [
         "artifacts/codex-runs/vcenter-install-readiness-report.md",
         "artifacts/codex-runs/vcenter-install-plan-report.md",
-        "artifacts/codex-runs/vcenter-install-preview-report.md"
+        "artifacts/codex-runs/vcenter-install-preview-report.md",
+        "artifacts/codex-runs/vcenter-install-apply-report.md",
+        "artifacts/codex-runs/vcenter-post-install-validation-report.md"
       ],
       "blockers": [],
-      "warnings": [
-        "vCenter is expected partial until deployment values and confirmation gates are ready."
-      ]
+      "warnings": []
     },
     {
       "id": "firmware",
@@ -222,32 +222,6 @@
   ],
   "drift_rows": [
     {
-      "id": "vcenter",
-      "label": "vCenter",
-      "status": "not_configured",
-      "golden_state": "Expected partial until deployed and configured",
-      "current_state": "Expected partial: deployment values incomplete",
-      "drift": "expected_partial",
-      "repair_action": {
-        "label": "Configure vCenter values",
-        "action_id": "vcenter.install-readiness",
-        "command": "make provider-lab-vcenter-install-readiness",
-        "available": true
-      },
-      "source_type": "historical_artifact",
-      "freshness": "historical",
-      "checked_at": "2026-06-14T00:48:05.590329+00:00",
-      "evidence_artifacts": [
-        "artifacts/codex-runs/vcenter-install-readiness-report.md",
-        "artifacts/codex-runs/vcenter-install-plan-report.md",
-        "artifacts/codex-runs/vcenter-install-preview-report.md"
-      ],
-      "blockers": [],
-      "warnings": [
-        "vCenter is expected partial until deployment values and confirmation gates are ready."
-      ]
-    },
-    {
       "id": "firmware",
       "label": "Firmware",
       "status": "warning",
@@ -278,7 +252,7 @@
     }
   ],
   "credentials": {
-    "status": "partial",
+    "status": "ready",
     "summary": "Credential state is presence/test status only; values are never returned.",
     "rows": [
       {
@@ -337,34 +311,61 @@
         "id": "vcenter",
         "label": "vCenter",
         "configured": true,
-        "tested": false,
-        "status": "configured",
+        "tested": true,
+        "status": "tested",
         "field": "VCENTER_USERNAME/GOVC_USERNAME and VCENTER_PASSWORD/GOVC_PASSWORD",
-        "next_action": "Configure vCenter deployment values, then run vCenter install readiness.",
+        "next_action": "No credential action required.",
         "source_type": "live_provider",
         "freshness": "live",
-        "checked_at": "2026-06-14T00:48:05.579173+00:00",
+        "checked_at": "2026-06-14T18:51:49.590859+00:00",
         "recheck_command": "make provider-lab-vcenter-install-readiness"
       }
     ]
   },
   "vcenter_readiness": {
-    "status": "not_configured",
+    "status": "ready",
+    "preview_state": "deployed",
+    "deploy_state": "deployed",
+    "ready_for_preview": false,
+    "preview_ready": false,
+    "ready_for_deploy": false,
     "vcsa_iso": "found",
+    "vcsa_deploy": "ready",
+    "management_ip_available": "in_use_by_deployed_vcenter",
     "esxi": "ready",
     "netapp_datastore": "ready",
-    "vcenter_credentials": "missing",
-    "credentials": "missing",
+    "vcenter_credentials": "configured",
+    "credentials": "configured",
     "post_install_vcenter_credentials": "configured",
-    "vcenter_config": "expected_partial",
-    "vcenter_values": "incomplete",
-    "values_complete": false,
+    "vcenter_config": "deployed",
+    "vcenter_values": "complete",
+    "values_complete": true,
     "deploy_enabled": false,
     "preview_action_id": "vcenter.install-preview",
-    "deploy_action_label": "Deploy disabled until values, credentials, fresh readiness, and confirmation gates are present.",
+    "deploy_action_id": "vcenter.install-apply",
+    "deploy_action_label": "Deploy vCenter",
+    "deploy_disabled_reason": "vCenter management IP must be available before vCenter install planning can proceed.",
+    "apply_gate_state": {
+      "required_flags": [
+        "PROVIDER_MODE=local-lab-readwrite",
+        "VCENTER_INSTALL_APPLY=true",
+        "VCENTER_INSTALL_CONFIRM=\"DEPLOY VCENTER\"",
+        "VCENTER_INSTALL_ALLOW_DEPLOY=true"
+      ],
+      "flag_state": {
+        "provider_mode": "local-lab-readwrite",
+        "local_lab_readwrite": true,
+        "readiness_ready": true,
+        "preview_ready": null,
+        "install_apply": true,
+        "install_confirm": true,
+        "install_allow_deploy": true
+      },
+      "blockers": []
+    },
     "deployment_values": {
-      "appliance_name": null,
-      "management_ip": null,
+      "appliance_name": "lab-vcenter",
+      "management_ip": "192.168.1.206",
       "subnet_cidr": "192.168.1.0/24",
       "gateway": "192.168.1.1",
       "dns_servers": [
@@ -373,40 +374,35 @@
       "ntp_servers": [
         "192.168.1.99"
       ],
-      "sso_domain": null,
-      "sso_admin_username": null,
-      "sso_admin_username_status": "missing",
+      "time_sync_mode": "tools",
+      "sso_domain": "vsphere.local",
+      "sso_admin_username": "administrator@vsphere.local",
+      "sso_admin_username_status": "configured",
       "esxi_target": "192.168.1.203",
       "datastore_target": "netapp_nfs_ds01",
       "vcsa_iso_path": "artifacts/Media/VMware-VCSA-all-8.0.3-24853646.iso",
       "deployment_size": "tiny",
-      "network": null,
-      "portgroup": null,
+      "network": "VM Network",
+      "portgroup": "VM Network",
       "post_install_vcenter_configured": false,
       "post_install_vcenter": null,
-      "complete": false,
-      "missing_fields": [
-        "VCENTER_APPLIANCE_NAME",
-        "VCENTER_MANAGEMENT_IP",
-        "VCENTER_SSO_DOMAIN",
-        "VCENTER_SSO_ADMIN_USERNAME",
-        "VCENTER_NETWORK or VCENTER_PORTGROUP"
-      ]
+      "complete": true,
+      "missing_fields": []
     },
     "value_checks": {
       "appliance_name": {
         "label": "vCenter appliance name",
         "field": "VCENTER_APPLIANCE_NAME",
-        "status": "not_configured",
-        "detail": "vCenter appliance name is missing.",
+        "status": "ready",
+        "detail": "vCenter appliance name is configured.",
         "source_type": "operator_config",
         "freshness": "live"
       },
       "management_ip": {
         "label": "vCenter management IP",
         "field": "VCENTER_MANAGEMENT_IP",
-        "status": "not_configured",
-        "detail": "vCenter management IP is missing.",
+        "status": "ready",
+        "detail": "vCenter management IP is configured.",
         "source_type": "operator_config",
         "freshness": "live"
       },
@@ -434,27 +430,27 @@
         "source_type": "operator_config",
         "freshness": "live"
       },
-      "ntp_servers": {
-        "label": "NTP servers",
-        "field": "VCENTER_NTP_SERVERS or active lab NTP",
+      "time_sync": {
+        "label": "Time synchronization",
+        "field": "VCENTER_TIME_SYNC_MODE=tools or VCENTER_NTP_SERVERS/active lab NTP",
         "status": "ready",
-        "detail": "NTP servers is configured.",
+        "detail": "Time synchronization is configured.",
         "source_type": "operator_config",
         "freshness": "live"
       },
       "sso_domain": {
         "label": "SSO domain",
         "field": "VCENTER_SSO_DOMAIN",
-        "status": "not_configured",
-        "detail": "SSO domain is missing.",
+        "status": "ready",
+        "detail": "SSO domain is configured.",
         "source_type": "operator_config",
         "freshness": "live"
       },
       "sso_admin_username": {
         "label": "SSO admin username",
         "field": "VCENTER_SSO_ADMIN_USERNAME",
-        "status": "not_configured",
-        "detail": "SSO admin username is missing.",
+        "status": "ready",
+        "detail": "SSO admin username is configured.",
         "source_type": "operator_config",
         "freshness": "live"
       },
@@ -493,35 +489,204 @@
       "network_portgroup": {
         "label": "Network / portgroup",
         "field": "VCENTER_NETWORK or VCENTER_PORTGROUP",
-        "status": "not_configured",
-        "detail": "Network / portgroup is missing.",
+        "status": "ready",
+        "detail": "Network / portgroup is configured.",
         "source_type": "operator_config",
         "freshness": "live"
       }
     },
+    "checks": {
+      "vcenter_profile_scope": {
+        "label": "vCenter profile scope",
+        "status": "ready",
+        "detail": "vCenter is marked configured by the active lab profile.",
+        "source_type": "operator_config",
+        "freshness": "live"
+      },
+      "vcsa_iso_present": {
+        "label": "VCSA ISO",
+        "status": "ready",
+        "detail": "VCSA ISO media is present under the configured media roots.",
+        "source_type": "operator_config",
+        "freshness": "live"
+      },
+      "esxi_management_reachable": {
+        "label": "ESXi management",
+        "host": "192.168.1.203",
+        "port": 443,
+        "status": "ready",
+        "detail": "TCP 443 reachable.",
+        "source_type": "live_provider",
+        "freshness": "live"
+      },
+      "netapp_nfs_lif_reachable": {
+        "label": "NetApp NFS LIF",
+        "host": "192.168.1.230",
+        "port": 2049,
+        "status": "ready",
+        "detail": "TCP 2049 reachable.",
+        "source_type": "live_provider",
+        "freshness": "live"
+      },
+      "netapp_datastore_ready": {
+        "label": "NetApp datastore",
+        "datastore": "netapp_nfs_ds01",
+        "status": "ready",
+        "detail": "netapp_nfs_ds01 is mounted read/write.",
+        "source_type": "historical_artifact",
+        "freshness": "historical",
+        "checked_at": "2026-06-13T20:05:31.557633+00:00",
+        "recheck_command": "make provider-lab-esxi-netapp-datastore-validate",
+        "evidence_artifacts": [
+          "artifacts/codex-runs/esxi-netapp-nfs-datastore-validation-redacted.json"
+        ]
+      },
+      "vcenter_management_ip_available": {
+        "label": "vCenter management IP",
+        "host": "192.168.1.206",
+        "status": "blocked",
+        "detail": "Management IP appears to be in use or visible on the local network.",
+        "available": false,
+        "ping": "reply",
+        "tcp_443": "open",
+        "tcp_5480": "open",
+        "neighbor_state": "DELAY",
+        "source_type": "live_provider",
+        "freshness": "live",
+        "recheck_command": "make provider-lab-vcenter-install-readiness"
+      },
+      "govc_available": {
+        "label": "govc",
+        "status": "ready",
+        "detail": "govc is available.",
+        "source_type": "operator_config",
+        "freshness": "live"
+      },
+      "vcsa_deploy_available": {
+        "label": "vcsa-deploy",
+        "status": "ready",
+        "detail": "vcsa-deploy is found and executable.",
+        "path": "/tmp/vcsa-iso/vcsa-cli-installer/lin64/vcsa-deploy",
+        "executable": true,
+        "source_type": "tool_probe",
+        "freshness": "live",
+        "recheck_command": "make provider-lab-vcenter-install-readiness"
+      },
+      "vcenter_values_complete": {
+        "label": "vCenter deployment values",
+        "status": "ready",
+        "detail": "All required vCenter deployment values are configured.",
+        "source_type": "operator_config",
+        "freshness": "live"
+      },
+      "vcenter_deployment_credentials_configured": {
+        "label": "vCenter deployment credentials",
+        "status": "ready",
+        "detail": "Local-only deployment credential fields are configured.",
+        "source_type": "operator_config",
+        "freshness": "live"
+      }
+    },
+    "post_install_validation": {
+      "provider_id": "vcenter",
+      "action": "vcenter-post-install-validation",
+      "checked_at": "2026-06-14T18:47:26.196943+00:00",
+      "generated_at": "2026-06-14T18:47:26.196943+00:00",
+      "status": "ready",
+      "message": "Post-install vCenter validation completed with ping, TCP/443, HTTPS/API, and govc checks.",
+      "mode": "local-lab-readwrite",
+      "apply_enabled": false,
+      "source_type": "live_provider",
+      "freshness": "live",
+      "target": {
+        "host": "192.168.1.206",
+        "url": "https://192.168.1.206/sdk",
+        "username_configured": true,
+        "credential_configured": true,
+        "govc_available": true,
+        "govc_configured": true,
+        "esxi_target": "192.168.1.203",
+        "datastore": "netapp_nfs_ds01",
+        "verify_tls": false
+      },
+      "checks": {
+        "ping": {
+          "status": "ready",
+          "host": "192.168.1.206",
+          "reply": true
+        },
+        "tcp_443": {
+          "status": "ready",
+          "host": "192.168.1.206",
+          "port": 443
+        },
+        "api_readiness": {
+          "status": "ready",
+          "url": "https://192.168.1.206/ui/",
+          "reachable": true,
+          "status_code": 200,
+          "detail": "vCenter HTTPS endpoint responded."
+        },
+        "govc_authentication": {
+          "status": "ready",
+          "return_code": 0,
+          "stdout": "FullName:     VMware vCenter Server 8.0.3 build-24853646\nName:         VMware vCenter Server\nVendor:       VMware, Inc.\nVersion:      8.0.3\nBuild:        24853646\nOS type:      linux-x64\nAPI type:     VirtualCenter\nAPI version:  8.0.3.0\nProduct ID:   vpx\nUUID:         b3d044d5-30f8-45b6-ac98-bb13bd9de386\n",
+          "stderr": ""
+        },
+        "esxi_visible": {
+          "status": "blocked",
+          "return_code": 1,
+          "stdout": "",
+          "stderr": "/home/administrator/infra-config-portal/.local/bin/govc: please specify a datacenter\n",
+          "visible": false
+        },
+        "netapp_datastore_visible": {
+          "status": "blocked",
+          "return_code": 1,
+          "stdout": "",
+          "stderr": "/home/administrator/infra-config-portal/.local/bin/govc: please specify a datacenter\n",
+          "visible": false
+        }
+      },
+      "blockers": [],
+      "warnings": [
+        "ESXi is not visible in vCenter inventory yet; host add/attach is not implemented in this apply workflow.",
+        "NetApp datastore is not visible through vCenter yet; validate again after ESXi inventory is attached."
+      ],
+      "not_attempted": [
+        "vCenter inventory host add",
+        "vCenter datastore mount/create",
+        "ESXi host reconfiguration",
+        "NetApp ONTAP write"
+      ],
+      "artifacts": {
+        "report": "artifacts/codex-runs/vcenter-post-install-validation-report.md",
+        "json": "artifacts/codex-runs/vcenter-post-install-validation-redacted.json"
+      },
+      "next_safe_action": "Refresh Golden State and Lab Validation."
+    },
     "credential_detail": {
-      "sso_admin_username_configured": false,
-      "sso_admin_password_configured": false,
-      "appliance_root_password_configured": false,
+      "sso_admin_username_configured": true,
+      "sso_admin_password_configured": true,
+      "appliance_root_password_configured": true,
       "esxi_credentials_configured": true,
       "post_install_vcenter_credentials_configured": true,
-      "deployment_credentials_configured": false,
-      "missing_fields": [
-        "VCENTER_APPLIANCE_ROOT_PASSWORD",
-        "VCENTER_SSO_ADMIN_PASSWORD"
-      ],
+      "deployment_credentials_configured": true,
+      "missing_fields": [],
       "source_type": "operator_config",
       "freshness": "live"
     },
-    "next_action": "Open vCenter install readiness and complete missing local-only deployment values.",
+    "next_action": "vCenter is deployed and post-install validation is ready.",
     "source_type": "live_provider",
     "freshness": "live",
-    "checked_at": "2026-06-14T00:48:05.579173+00:00",
+    "checked_at": "2026-06-14T18:51:49.590859+00:00",
     "recheck_command": "make provider-lab-vcenter-install-readiness",
     "evidence_artifacts": [
       "artifacts/codex-runs/vcenter-install-readiness-report.md",
       "artifacts/codex-runs/vcenter-install-plan-report.md",
-      "artifacts/codex-runs/vcenter-install-preview-report.md"
+      "artifacts/codex-runs/vcenter-install-preview-report.md",
+      "artifacts/codex-runs/vcenter-install-apply-report.md",
+      "artifacts/codex-runs/vcenter-post-install-validation-report.md"
     ]
   },
   "workflow_actions": [
@@ -556,7 +721,6 @@
   ],
   "blockers": [],
   "warnings": [
-    "vCenter is expected partial until deployment values and confirmation gates are ready.",
     "HPE Server HPE BIOS version: current U32 v3.30 (07/31/2024), required manual approval; Baseline requires manual approval because no minimum or approved version is set. Next action: Confirm BIOS version from iLO Redfish system inventory or the server console before configuration.",
     "HPE Smart Array HPE Smart Array controller firmware: current 1.98, required manual approval; Baseline requires manual approval because no minimum or approved version is set. Next action: Run HPE storage discovery and compare controller firmware with the approved SPP for this host.",
     "Cisco Cisco bootloader/ROMMON: current unknown, required manual approval; Baseline requires manual approval because no minimum or approved version is set. Next action: Collect Cisco boot variable and ROMMON details from read-only show commands.",
@@ -621,6 +785,16 @@
       "path": "artifacts/codex-runs/vcenter-install-preview-report.md"
     },
     {
+      "component_id": "vcenter",
+      "component_label": "vCenter",
+      "path": "artifacts/codex-runs/vcenter-install-apply-report.md"
+    },
+    {
+      "component_id": "vcenter",
+      "component_label": "vCenter",
+      "path": "artifacts/codex-runs/vcenter-post-install-validation-report.md"
+    },
+    {
       "component_id": "firmware",
       "component_label": "Firmware",
       "path": "artifacts/codex-runs/firmware-compliance-report.md"
@@ -631,7 +805,7 @@
     "summary_json": "artifacts/codex-runs/golden-state-summary-redacted.json"
   },
   "handoff_report": "artifacts/codex-runs/golden-state-productization-report.md",
-  "next_safe_action": "Open vCenter install readiness and complete missing local-only deployment values.",
+  "next_safe_action": "vCenter is deployed and post-install validation is ready.",
   "not_attempted": [
     "Cisco write/reload",
     "iLO power/reset/firmware/virtual media",

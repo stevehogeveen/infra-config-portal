@@ -80,6 +80,7 @@ def test_registry_contains_expected_provider_actions() -> None:
         "vcenter-netapp.readiness",
         "vcenter-netapp.datastore-plan",
         "vcenter-netapp.datastore-apply-placeholder",
+        "vcenter.install-apply",
         "build-verification.live-status",
         "build-verification.run-full",
         "lab-validation.summary",
@@ -174,6 +175,8 @@ def test_write_destructive_and_unallowlisted_actions_are_not_ui_runnable() -> No
     assert actions["build-verification.run-scoped"]["ui_run_supported"] is False
     assert actions["vcenter-netapp.datastore-apply-placeholder"]["mode"] == "write"
     assert actions["vcenter-netapp.datastore-apply-placeholder"]["ui_run_supported"] is False
+    assert actions["vcenter.install-apply"]["mode"] == "write"
+    assert actions["vcenter.install-apply"]["ui_run_supported"] is False
 
 
 def test_workflow_registry_api_endpoints(client: TestClient) -> None:

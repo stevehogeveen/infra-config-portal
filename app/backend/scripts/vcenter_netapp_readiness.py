@@ -17,6 +17,7 @@ if REAL_LAB_ENV.exists():
         os.environ[key] = value
 
 from app.services.vcenter_netapp_readiness import (  # noqa: E402
+    get_vcenter_install_apply,
     get_vcenter_install_plan,
     get_vcenter_install_preview,
     get_vcenter_install_readiness,
@@ -29,7 +30,14 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Generate vCenter readiness and datastore plan reports.")
     parser.add_argument(
         "action",
-        choices=("readiness", "datastore-plan", "install-readiness", "install-plan", "install-preview"),
+        choices=(
+            "readiness",
+            "datastore-plan",
+            "install-readiness",
+            "install-plan",
+            "install-preview",
+            "install-apply",
+        ),
     )
     args = parser.parse_args()
 
@@ -41,10 +49,14 @@ def main() -> int:
         result = get_vcenter_install_plan(write_report=True)
     elif args.action == "install-preview":
         result = get_vcenter_install_preview(write_report=True)
+    elif args.action == "install-apply":
+        result = get_vcenter_install_apply(write_report=True)
     else:
         result = get_vcenter_netapp_readiness(check_ports=True, write_report=True)
 
     print(json.dumps(_summary(result), indent=2))
+    if args.action == "install-apply" and result.get("status") not in {"completed", "ready"}:
+        return 1
     return 0
 
 
@@ -60,7 +72,7 @@ def _summary(result: dict) -> dict:
         "warnings": result.get("warnings") or [],
         "artifacts": artifacts,
         "apply_enabled": result.get("apply_enabled"),
-        "no_write_actions_attempted": True,
+        "no_write_actions_attempted": not bool((result.get("apply") or {}).get("vcsa_deploy_attempted")),
     }
 
 

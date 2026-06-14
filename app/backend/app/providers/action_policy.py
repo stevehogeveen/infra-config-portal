@@ -65,6 +65,7 @@ ALLOWLISTED_WORKFLOW_ACTIONS = frozenset(
         "esxi.install-config",
         "esxi.datastore-vswitch-vmkernel",
         "vm.deploy-ovf",
+        "vcenter.vcsa-deploy",
         "netapp.initial-setup",
         "netapp.address-remediation",
         "netapp.factory-reset",

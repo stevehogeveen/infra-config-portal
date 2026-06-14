@@ -1,6 +1,6 @@
 # Golden State Productization Report
 
-- Generated at: `2026-06-14T00:48:43.488761+00:00`
+- Generated at: `2026-06-14T18:53:13.113323+00:00`
 - Status: `partial`
 - Real hardware workflow run by this report: `False`
 - Secrets: not included; credentials are configured/tested status only.
@@ -16,7 +16,7 @@
 | NetApp | ONTAP 9.17.1 current | ONTAP 9.17.1 | `none` | `make provider-lab-netapp-validate-setup` |
 | NetApp NFS datastore | Mounted read/write on ESXi | netapp_nfs_ds01 readWrite | `none` | `make provider-lab-esxi-netapp-datastore-validate` |
 | VM deployment | VM deployed on NetApp datastore | VM on netapp_nfs_ds01 | `none` | `make provider-lab-esxi-vm-deploy-validate` |
-| vCenter | Expected partial until deployed and configured | Expected partial: deployment values incomplete | `expected_partial` | `make provider-lab-vcenter-install-readiness` |
+| vCenter | Configured and reachable | Deployed and authenticated | `none` | `make provider-lab-vcenter-install-readiness` |
 | Firmware | Current or accepted after manual baseline review | Needs manual baseline review | `needs_review` | `make provider-lab-firmware-compliance` |
 
 ## Credential Status
@@ -27,18 +27,22 @@
 | Cisco | `True` | `True` | No credential action required. |
 | ESXi | `True` | `True` | No credential action required. |
 | NetApp | `True` | `True` | No credential action required. |
-| vCenter | `True` | `False` | Configure vCenter deployment values, then run vCenter install readiness. |
+| vCenter | `True` | `True` | No credential action required. |
 
 ## vCenter Readiness
 
 - VCSA ISO: `found`
+- vcsa-deploy: `ready`
 - ESXi: `ready`
 - NetApp datastore: `ready`
-- vCenter values: `incomplete`
-- vCenter credentials: `missing`
-- vCenter config: `expected_partial`
+- Management IP available: `in_use_by_deployed_vcenter`
+- vCenter values: `complete`
+- vCenter credentials: `configured`
+- vCenter config: `deployed`
+- Preview state: `deployed`
+- Deploy state: `deployed`
 - Deploy enabled: `False`
-- Next action: Open vCenter install readiness and complete missing local-only deployment values.
+- Next action: vCenter is deployed and post-install validation is ready.
 
 ## Workflow Actions
 
@@ -49,7 +53,6 @@
 
 ## Drift
 
-- vCenter: `expected_partial` - Expected partial: deployment values incomplete
 - Firmware: `needs_review` - Needs manual baseline review
 
 ## Evidence
@@ -65,11 +68,13 @@
 - `artifacts/codex-runs/vcenter-install-readiness-report.md`
 - `artifacts/codex-runs/vcenter-install-plan-report.md`
 - `artifacts/codex-runs/vcenter-install-preview-report.md`
+- `artifacts/codex-runs/vcenter-install-apply-report.md`
+- `artifacts/codex-runs/vcenter-post-install-validation-report.md`
 - `artifacts/codex-runs/firmware-compliance-report.md`
 
 ## Skill Improvement Review
 
-- Skills used: lab-builder-skill-steward, lab-builder-real-runtime, lab-builder-ux, lab-builder-product-craft, lab-builder-hardware-run, lab-builder-report-remediation
+- Skills used: lab-builder-skill-steward, lab-builder-real-runtime, lab-builder-hardware-run, lab-builder-toolchain, lab-builder-ux, lab-builder-product-craft, lab-builder-report-remediation
 - Skills created or updated: none
 - Skill gaps found: none requiring a new reusable skill in this pass
 - Candidate skills deferred: none

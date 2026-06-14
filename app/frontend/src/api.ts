@@ -354,6 +354,10 @@ export const api = {
     apiRequest<ProviderProbeResult>("/api/v1/lab/vcenter/install-plan"),
   vcenterInstallPreview: () =>
     apiRequest<ProviderProbeResult>("/api/v1/lab/vcenter/install-preview"),
+  vcenterInstallApply: () =>
+    apiRequest<ProviderProbeResult>("/api/v1/lab/vcenter/install-apply", {
+      method: "POST"
+    }),
   reportIssues: () =>
     apiRequest<ReportCenter>("/api/v1/reports/issues"),
   reportSummary: () =>

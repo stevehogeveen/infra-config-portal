@@ -154,7 +154,9 @@ def test_vcenter_netapp_readiness_finds_repo_local_govc(monkeypatch, tmp_path) -
     )
     local_bin = tmp_path / ".local" / "bin"
     local_bin.mkdir(parents=True)
-    (local_bin / "govc").write_text("#!/bin/sh\n", encoding="utf-8")
+    govc = local_bin / "govc"
+    govc.write_text("#!/bin/sh\n", encoding="utf-8")
+    govc.chmod(0o755)
     report_dir = tmp_path / "artifacts" / "codex-runs"
     monkeypatch.setattr(vcenter_netapp_readiness, "REPO_ROOT", tmp_path)
     monkeypatch.setattr(vcenter_netapp_readiness, "READINESS_REPORT", report_dir / "vcenter-netapp-readiness-report.md")
