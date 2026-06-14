@@ -1,17 +1,19 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
 
+from app.services import lab_validation
+from app.services import vcenter_netapp_readiness
 from app.services.lab_validation import (
     build_cisco_validation_item,
     get_lab_validation_summary,
     map_validation_status,
 )
 from app.services.lab_profiles import create_lab_profile
-from app.services import vcenter_netapp_readiness
 
 
 def test_validation_item_status_mapping() -> None:
@@ -117,6 +119,7 @@ def test_netapp_cluster_setup_wizard_blocks_vcenter_netapp_readiness(
 
 
 def test_vcenter_not_configured_is_not_configured_yet(monkeypatch, tmp_path) -> None:
+    _patch_vcenter_netapp_paths(monkeypatch, tmp_path)
     monkeypatch.setenv("LAB_PROFILE_STORE", str(tmp_path / "lab-profiles.json"))
     create_lab_profile(
         {
@@ -126,10 +129,10 @@ def test_vcenter_not_configured_is_not_configured_yet(monkeypatch, tmp_path) -> 
         }
     )
     monkeypatch.setattr(
-        vcenter_netapp_readiness,
-        "settings",
-        _vcenter_netapp_settings(vcenter_host=None, vcenter_configured=False),
-    )
+            vcenter_netapp_readiness,
+            "settings",
+            _vcenter_netapp_settings(vcenter_host=None, vcenter_configured=False, vcenter_management_ip=None),
+        )
     monkeypatch.setattr(vcenter_netapp_readiness, "which", lambda _: "/usr/bin/govc")
     monkeypatch.setattr(
         vcenter_netapp_readiness,
@@ -141,6 +144,117 @@ def test_vcenter_not_configured_is_not_configured_yet(monkeypatch, tmp_path) -> 
 
     assert result["status"] == "not_configured_yet"
     assert any("VCENTER_HOST" in blocker or "GOVC_URL" in blocker for blocker in result["blockers"])
+
+
+def test_vcenter_netapp_readiness_uses_ready_post_attach_state_without_host_env(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    _enable_high_storage_profile(monkeypatch, tmp_path)
+    _patch_vcenter_netapp_paths(monkeypatch, tmp_path)
+    _write_post_attach_validation(tmp_path)
+    monkeypatch.setattr(
+        vcenter_netapp_readiness,
+        "settings",
+        _vcenter_netapp_settings(
+            vcenter_host=None,
+            vcenter_configured=False,
+            vcenter_management_ip=None,
+            vcenter_username=None,
+            vcenter_password=None,
+        ),
+    )
+    monkeypatch.setattr(vcenter_netapp_readiness, "which", lambda _: None)
+    monkeypatch.setattr(
+        vcenter_netapp_readiness,
+        "get_netapp_runtime_state",
+        lambda: {"configured": True, "configured_state": "configured", "console": {}},
+    )
+
+    result = vcenter_netapp_readiness.get_vcenter_netapp_readiness(write_report=True)
+
+    assert result["status"] == "ready"
+    assert result["blockers"] == []
+    assert result["targets"]["vcenter"] == "https://192.168.1.206/sdk"
+    assert result["targets"]["datastore_name"] == "netapp_nfs_ds01"
+    assert result["checks"]["vcenter_configured"]["status"] == "ready"
+    assert result["checks"]["datastore_mounted"]["status"] == "ready"
+    assert result["credential_state"]["vcenter_target_derived"] is True
+    assert "No vCenter-NetApp datastore action required" in result["next_safe_action"]
+    assert "VCENTER_HOST" not in json.dumps(result["blockers"])
+    assert (tmp_path / "artifacts/codex-runs/vcenter-netapp-readiness-report.md").exists()
+
+
+def test_lab_validation_marks_vcenter_netapp_ready_from_post_attach_state(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    _enable_high_storage_profile(monkeypatch, tmp_path)
+    _patch_lab_validation_paths(monkeypatch, tmp_path)
+    _patch_vcenter_netapp_paths(monkeypatch, tmp_path)
+    _write_post_attach_validation(tmp_path)
+    monkeypatch.setattr(
+        vcenter_netapp_readiness,
+        "settings",
+        _vcenter_netapp_settings(
+            vcenter_host=None,
+            vcenter_configured=False,
+            vcenter_management_ip=None,
+            vcenter_username=None,
+            vcenter_password=None,
+        ),
+    )
+    monkeypatch.setattr(vcenter_netapp_readiness, "which", lambda _: None)
+    monkeypatch.setattr(
+        vcenter_netapp_readiness,
+        "get_netapp_runtime_state",
+        lambda: {"configured": True, "configured_state": "configured", "console": {}},
+    )
+    monkeypatch.setattr(
+        lab_validation,
+        "get_netapp_runtime_state",
+        lambda: {"configured": True, "configured_state": "configured", "console": {}},
+    )
+    monkeypatch.setattr(
+        lab_validation,
+        "get_lab_build_verification",
+        lambda: {
+            "status": "completed",
+            "message": "Build Verification completed.",
+            "source_type": "live_probe",
+            "freshness": "current",
+            "checked_at": "2026-06-14T20:00:00+00:00",
+            "blockers": [],
+            "warnings": [],
+            "next_safe_action": "Review warnings, then continue product certification.",
+        },
+    )
+
+    payload = lab_validation.get_lab_validation_summary(write_report=True)
+    items = {item["id"]: item for item in payload["validation_items"]}
+
+    assert items["vcenter-netapp-datastore"]["status"] == "ready"
+    assert items["vcenter-netapp-datastore"]["management_url"] == "https://192.168.1.206/sdk"
+    assert "No vCenter-NetApp datastore action required" in items["vcenter-netapp-datastore"]["next_action"]
+    assert "VCENTER_HOST / GOVC_URL not configured" not in items["vcenter-netapp-datastore"]["login_hint"]
+    report = (tmp_path / "artifacts/codex-runs/lab-validation-handoff-report.md").read_text(encoding="utf-8")
+    assert "| vCenter-NetApp Datastore | `ready` |" in report
+    assert "No vCenter-NetApp datastore action required" in report
+
+
+def test_handoff_remaining_items_collapses_supporting_partials_to_firmware() -> None:
+    items = [
+        {"id": "firmware-compliance", "label": "Firmware Compliance", "status": "partial", "next_action": "Refresh firmware compliance."},
+        {"id": "hpe-ilo", "label": "HPE / iLO", "status": "partial", "next_action": "Refresh iLO evidence.", "blockers": []},
+        {"id": "raid-storage", "label": "RAID / Storage", "status": "partial", "next_action": "Refresh RAID evidence.", "blockers": []},
+        {"id": "esxi-host", "label": "ESXi Host", "status": "partial", "next_action": "Refresh ESXi evidence.", "blockers": []},
+        {"id": "vcenter-netapp-datastore", "label": "vCenter-NetApp Datastore", "status": "ready", "next_action": "No action required."},
+    ]
+
+    remaining = lab_validation._remaining_items(items)
+
+    assert [item["id"] for item in remaining] == ["firmware-compliance"]
+    assert "remaining expected partial" in lab_validation._summary_next_action(None, remaining)
 
 
 def test_vcenter_netapp_readiness_finds_repo_local_govc(monkeypatch, tmp_path) -> None:
@@ -157,11 +271,7 @@ def test_vcenter_netapp_readiness_finds_repo_local_govc(monkeypatch, tmp_path) -
     govc = local_bin / "govc"
     govc.write_text("#!/bin/sh\n", encoding="utf-8")
     govc.chmod(0o755)
-    report_dir = tmp_path / "artifacts" / "codex-runs"
-    monkeypatch.setattr(vcenter_netapp_readiness, "REPO_ROOT", tmp_path)
-    monkeypatch.setattr(vcenter_netapp_readiness, "READINESS_REPORT", report_dir / "vcenter-netapp-readiness-report.md")
-    monkeypatch.setattr(vcenter_netapp_readiness, "PLAN_REPORT", report_dir / "vcenter-netapp-datastore-plan-report.md")
-    monkeypatch.setattr(vcenter_netapp_readiness, "READINESS_JSON", report_dir / "vcenter-netapp-readiness-redacted.json")
+    _patch_vcenter_netapp_paths(monkeypatch, tmp_path)
     monkeypatch.setattr(vcenter_netapp_readiness, "which", lambda _: None)
     monkeypatch.setattr(vcenter_netapp_readiness, "settings", _vcenter_netapp_settings())
     monkeypatch.setattr(
@@ -203,8 +313,11 @@ def _vcenter_netapp_settings(**overrides):
         "provider_mode": "mock",
         "vcenter_host": "https://vcenter.example/sdk",
         "vcenter_configured": True,
+        "vcenter_management_ip": None,
         "vcenter_username": "configured-user",
         "vcenter_password": "configured-password",
+        "vcenter_sso_admin_username": "administrator@vsphere.local",
+        "vcenter_sso_admin_password": "configured-password",
         "netapp_api_username": "configured-user",
         "netapp_api_password": "configured-password",
         "netapp_cluster_mgmt_ip": "192.168.1.220",
@@ -219,3 +332,79 @@ def _vcenter_netapp_settings(**overrides):
     }
     values.update(overrides)
     return SimpleNamespace(**values)
+
+
+def _enable_high_storage_profile(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("LAB_PROFILE_STORE", str(tmp_path / "lab-profiles.json"))
+    create_lab_profile(
+        {
+            "name": "High Storage Lab",
+            "subnet_cidr": "192.168.1.0/24",
+            "features": {"netapp_enabled": True, "vcenter_enabled": True},
+        }
+    )
+
+
+def _patch_vcenter_netapp_paths(monkeypatch, tmp_path: Path) -> None:
+    run_dir = tmp_path / "artifacts" / "codex-runs"
+    monkeypatch.setattr(vcenter_netapp_readiness, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(vcenter_netapp_readiness, "CODEX_RUN_DIR", run_dir)
+    monkeypatch.setattr(vcenter_netapp_readiness, "READINESS_REPORT", run_dir / "vcenter-netapp-readiness-report.md")
+    monkeypatch.setattr(vcenter_netapp_readiness, "PLAN_REPORT", run_dir / "vcenter-netapp-datastore-plan-report.md")
+    monkeypatch.setattr(vcenter_netapp_readiness, "READINESS_JSON", run_dir / "vcenter-netapp-readiness-redacted.json")
+    monkeypatch.setattr(
+        vcenter_netapp_readiness,
+        "VCENTER_POST_ATTACH_VALIDATION_JSON",
+        run_dir / "vcenter-post-attach-validation-redacted.json",
+    )
+
+
+def _patch_lab_validation_paths(monkeypatch, tmp_path: Path) -> None:
+    run_dir = tmp_path / "artifacts" / "codex-runs"
+    monkeypatch.setattr(lab_validation, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(lab_validation, "CODEX_RUN_DIR", run_dir)
+    monkeypatch.setattr(lab_validation, "HANDOFF_REPORT", run_dir / "lab-validation-handoff-report.md")
+    monkeypatch.setattr(lab_validation, "SUMMARY_JSON", run_dir / "lab-validation-summary-redacted.json")
+
+
+def _write_post_attach_validation(root: Path) -> None:
+    run_dir = root / "artifacts" / "codex-runs"
+    run_dir.mkdir(parents=True, exist_ok=True)
+    (run_dir / "vcenter-post-attach-validation-redacted.json").write_text(
+        json.dumps(
+            {
+                "status": "ready",
+                "checked_at": "2026-06-14T20:00:00+00:00",
+                "source_type": "live_provider",
+                "freshness": "live",
+                "target": {
+                    "host": "192.168.1.206",
+                    "url": "https://192.168.1.206/sdk",
+                    "username_configured": True,
+                    "credential_configured": True,
+                    "govc_available": True,
+                    "govc_configured": True,
+                    "esxi_target": "192.168.1.203",
+                    "datastore": "netapp_nfs_ds01",
+                    "datacenter": "Lab-DC",
+                    "cluster": "Lab-Cluster",
+                },
+                "checks": {
+                    "datacenter_visible": {"visible": True, "status": "ready", "name": "Lab-DC"},
+                    "cluster_visible": {"visible": True, "status": "ready", "name": "Lab-Cluster"},
+                    "esxi_visible": {"visible": True, "status": "ready", "name": "192.168.1.203"},
+                    "netapp_datastore_visible": {
+                        "visible": True,
+                        "status": "ready",
+                        "name": "netapp_nfs_ds01",
+                        "paths": ["/Lab-DC/datastore/netapp_nfs_ds01"],
+                    },
+                    "vm_inventory_visible": {"visible": True, "status": "ready", "count": 4},
+                },
+                "blockers": [],
+                "warnings": [],
+                "recheck_command": "make provider-lab-vcenter-post-attach-validation",
+            }
+        ),
+        encoding="utf-8",
+    )

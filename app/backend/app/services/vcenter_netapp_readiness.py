@@ -138,11 +138,26 @@ def get_vcenter_netapp_readiness(
         return sanitized
     netapp_state = get_netapp_runtime_state()
     netapp_stage = _netapp_stage(netapp_state)
-    vcenter_target = _redacted_url(settings.vcenter_host)
+    datastore_name = settings.netapp_nfs_datastore_name
+    post_attach_state = _post_attach_vcenter_netapp_state(datastore_name=datastore_name)
+    vcenter_management_ip = _clean_value(getattr(settings, "vcenter_management_ip", None))
+    vcenter_target = (
+        _redacted_url(settings.vcenter_host)
+        or _redacted_url(_vcenter_govc_url(vcenter_management_ip))
+        or post_attach_state.get("url")
+        or post_attach_state.get("host")
+    )
     first_lif = (list(settings.netapp_nfs_lifs) or [settings.netapp_svm_mgmt_ip])[0]
-    govc_available = _tool_available("govc")
-    vcenter_host_configured = bool(settings.vcenter_host or settings.vcenter_configured)
-    vcenter_credentials_configured = bool(settings.vcenter_username and settings.vcenter_password)
+    govc_available = _tool_available("govc") or bool(post_attach_state.get("govc_available"))
+    vcenter_host_configured = bool(
+        settings.vcenter_host
+        or vcenter_management_ip
+        or settings.vcenter_configured
+        or post_attach_state.get("ready")
+    )
+    vcenter_credentials_configured = bool(settings.vcenter_username and settings.vcenter_password) or bool(
+        post_attach_state.get("credential_configured")
+    )
     netapp_credentials_configured = bool(settings.netapp_api_username and settings.netapp_api_password)
     planned_nfs = _planned_nfs()
 
@@ -150,8 +165,8 @@ def get_vcenter_netapp_readiness(
         "vcenter_configured": _config_check(
             "vCenter target",
             vcenter_host_configured,
-            "VCENTER_HOST or GOVC_URL is configured.",
-            "VCENTER_HOST / GOVC_URL is not configured.",
+            "vCenter target is configured or derived from deployed vCenter state.",
+            "VCENTER_HOST / GOVC_URL / VCENTER_MANAGEMENT_IP is not configured and no ready post-attach validation target was found.",
         ),
         "govc_available": _config_check(
             "govc",
@@ -195,12 +210,8 @@ def get_vcenter_netapp_readiness(
             "detail": "ONTAP API existence checks are not attempted until ONTAP is configured and credentials are present.",
             "source_type": "not_checked",
         },
-        "datastore_mounted": {
-            "label": "Datastore mounted",
-            "status": "not_checked",
-            "detail": "vCenter/ESXi datastore inventory is not checked until vCenter/govc and NetApp NFS are ready.",
-            "source_type": "not_checked",
-        },
+        "vcenter_post_attach_validation": _post_attach_validation_check(post_attach_state),
+        "datastore_mounted": _post_attach_datastore_check(post_attach_state, datastore_name),
     }
 
     classification, blockers = _classify(
@@ -209,6 +220,7 @@ def get_vcenter_netapp_readiness(
         vcenter_credentials_configured=vcenter_credentials_configured,
         govc_available=govc_available,
         planned_nfs=planned_nfs,
+        post_attach_ready=bool(post_attach_state.get("ready")),
     )
     warnings = [
         "Preview only. No ONTAP, vCenter, ESXi, NFS, datastore, or storage write action is run.",
@@ -224,7 +236,11 @@ def get_vcenter_netapp_readiness(
         "checked_at": generated_at,
         "generated_at": generated_at,
         "status": classification,
-        "message": _message(classification),
+        "message": _message(
+            classification,
+            post_attach_ready=bool(post_attach_state.get("ready")),
+            datastore_name=datastore_name,
+        ),
         "mode": settings.provider_mode,
         "apply_enabled": False,
         "source_type": "live_probe" if check_ports else "live_cached",
@@ -232,15 +248,17 @@ def get_vcenter_netapp_readiness(
         "netapp_stage": netapp_stage,
         "targets": {
             "vcenter": vcenter_target,
+            "vcenter_management_ip": vcenter_management_ip or post_attach_state.get("host"),
             "esxi_management": settings.esxi_test_host or LAB_ESXI_MANAGEMENT_IP,
             "netapp_cluster_management": settings.netapp_cluster_mgmt_ip,
             "netapp_nfs_lif": first_lif,
-            "datastore_name": settings.netapp_nfs_datastore_name,
+            "datastore_name": datastore_name,
         },
         "credential_state": {
             "vcenter_host_configured": vcenter_host_configured,
             "vcenter_credentials_configured": vcenter_credentials_configured,
             "netapp_credentials_configured": netapp_credentials_configured,
+            "vcenter_target_derived": bool(post_attach_state.get("ready") and not settings.vcenter_host),
             "missing_fields": _missing_fields(vcenter_host_configured, vcenter_credentials_configured, netapp_credentials_configured),
         },
         "tooling": {
@@ -248,6 +266,7 @@ def get_vcenter_netapp_readiness(
             "govc_path": "configured" if govc_available else "not_found",
         },
         "planned_nfs": planned_nfs,
+        "post_attach_validation": post_attach_state,
         "checks": checks,
         "datastore_add_preview": _datastore_preview(first_lif),
         "blockers": blockers,
@@ -264,7 +283,11 @@ def get_vcenter_netapp_readiness(
             "datastore_plan_report": _rel(PLAN_REPORT),
             "readiness_json": _rel(READINESS_JSON),
         },
-        "next_safe_action": _next_action(classification),
+        "next_safe_action": _next_action(
+            classification,
+            post_attach_ready=bool(post_attach_state.get("ready")),
+            datastore_name=datastore_name,
+        ),
     }
     sanitized = redact_sensitive(payload)
     if write_report:
@@ -1883,6 +1906,118 @@ def _read_json_artifact(path: Path) -> dict[str, Any]:
     return payload if isinstance(payload, dict) else {}
 
 
+def _post_attach_vcenter_netapp_state(*, datastore_name: str | None) -> dict[str, Any]:
+    payload = _read_json_artifact(VCENTER_POST_ATTACH_VALIDATION_JSON)
+    target = payload.get("target") if isinstance(payload.get("target"), dict) else {}
+    checks = payload.get("checks") if isinstance(payload.get("checks"), dict) else {}
+    datastore_check = checks.get("netapp_datastore_visible") if isinstance(checks.get("netapp_datastore_visible"), dict) else {}
+    host = _clean_value(target.get("host")) or _host_from_endpoint(str(target.get("url") or ""))
+    url = _redacted_url(str(target.get("url") or "")) or _redacted_url(_vcenter_govc_url(host))
+    required_visible = {
+        "datacenter_visible": _check_visible(checks, "datacenter_visible"),
+        "cluster_visible": _check_visible(checks, "cluster_visible"),
+        "esxi_visible": _check_visible(checks, "esxi_visible"),
+        "netapp_datastore_visible": _check_visible(checks, "netapp_datastore_visible"),
+        "vm_inventory_visible": _check_visible(checks, "vm_inventory_visible"),
+    }
+    datastore_matches = _datastore_check_matches(datastore_check, datastore_name)
+    ready = payload.get("status") == "ready" and all(required_visible.values()) and datastore_matches
+    return {
+        "artifact": _rel(VCENTER_POST_ATTACH_VALIDATION_JSON),
+        "artifact_exists": bool(payload),
+        "checked_at": payload.get("checked_at"),
+        "status": payload.get("status") or "not_checked",
+        "ready": ready,
+        "host": host,
+        "url": url,
+        "datacenter": target.get("datacenter"),
+        "cluster": target.get("cluster"),
+        "esxi_target": target.get("esxi_target"),
+        "datastore": target.get("datastore") or datastore_check.get("name") or datastore_name,
+        "datastore_matches": datastore_matches,
+        "govc_available": bool(target.get("govc_available") or target.get("govc_configured")),
+        "credential_configured": bool(target.get("username_configured") and target.get("credential_configured")),
+        "visible": required_visible,
+        "source_type": payload.get("source_type") or "historical_artifact",
+        "freshness": payload.get("freshness") or "historical",
+        "recheck_command": payload.get("recheck_command") or "make provider-lab-vcenter-post-attach-validation",
+    }
+
+
+def _check_visible(checks: dict[str, Any], key: str) -> bool:
+    check = checks.get(key)
+    return isinstance(check, dict) and check.get("visible") is True
+
+
+def _datastore_check_matches(check: dict[str, Any], datastore_name: str | None) -> bool:
+    expected = _clean_value(datastore_name)
+    if not expected:
+        return bool(check.get("visible"))
+    candidates = [check.get("name"), *(check.get("paths") if isinstance(check.get("paths"), list) else [])]
+    return any(expected == str(candidate).strip().split("/")[-1] or expected in str(candidate) for candidate in candidates if candidate)
+
+
+def _post_attach_validation_check(state: dict[str, Any]) -> dict[str, Any]:
+    if not state.get("artifact_exists"):
+        return {
+            "label": "vCenter post-attach validation",
+            "status": "not_checked",
+            "detail": "No post-attach validation artifact was found.",
+            "source_type": "not_checked",
+            "freshness": "not_checked",
+            "recheck_command": "make provider-lab-vcenter-post-attach-validation",
+        }
+    ready = bool(state.get("ready"))
+    return {
+        "label": "vCenter post-attach validation",
+        "status": "ready" if ready else "blocked",
+        "detail": (
+            "Post-attach validation shows vCenter deployed, ESXi attached, datastore visible, and VM inventory visible."
+            if ready
+            else "Post-attach validation evidence does not yet show all required vCenter inventory checks ready."
+        ),
+        "source_type": "live_cached",
+        "freshness": "current" if ready else "historical",
+        "checked_at": state.get("checked_at"),
+        "recheck_command": state.get("recheck_command") or "make provider-lab-vcenter-post-attach-validation",
+        "evidence_artifacts": [state.get("artifact")] if state.get("artifact") else [],
+    }
+
+
+def _post_attach_datastore_check(state: dict[str, Any], datastore_name: str | None) -> dict[str, Any]:
+    datastore = state.get("datastore") or datastore_name
+    if state.get("ready"):
+        return {
+            "label": "Datastore visible through vCenter",
+            "status": "ready",
+            "detail": f"{datastore} is visible through vCenter post-attach validation.",
+            "source_type": "live_cached",
+            "freshness": "current",
+            "checked_at": state.get("checked_at"),
+            "recheck_command": state.get("recheck_command") or "make provider-lab-vcenter-post-attach-validation",
+            "evidence_artifacts": [state.get("artifact")] if state.get("artifact") else [],
+        }
+    if state.get("artifact_exists"):
+        return {
+            "label": "Datastore visible through vCenter",
+            "status": "blocked",
+            "detail": f"Post-attach validation does not show {datastore} visible through vCenter.",
+            "source_type": "historical_artifact",
+            "freshness": "historical",
+            "checked_at": state.get("checked_at"),
+            "recheck_command": state.get("recheck_command") or "make provider-lab-vcenter-post-attach-validation",
+            "evidence_artifacts": [state.get("artifact")] if state.get("artifact") else [],
+        }
+    return {
+        "label": "Datastore visible through vCenter",
+        "status": "not_checked",
+        "detail": "vCenter/ESXi datastore inventory is not checked until vCenter/govc and NetApp NFS are ready.",
+        "source_type": "not_checked",
+        "freshness": "not_checked",
+        "recheck_command": "make provider-lab-vcenter-post-attach-validation",
+    }
+
+
 def _classify(
     *,
     netapp_stage: str,
@@ -1890,6 +2025,7 @@ def _classify(
     vcenter_credentials_configured: bool,
     govc_available: bool,
     planned_nfs: dict[str, Any],
+    post_attach_ready: bool = False,
 ) -> tuple[str, list[str]]:
     if netapp_stage == "cluster_setup_wizard":
         return (
@@ -1903,9 +2039,11 @@ def _classify(
         )
     if not planned_nfs["planned"]:
         return ("blocked_by_prior_stage", ["NetApp NFS volume/export/datastore plan is incomplete."])
+    if post_attach_ready:
+        return ("ready", [])
     missing_vcenter = []
     if not vcenter_host_configured:
-        missing_vcenter.append("VCENTER_HOST/GOVC_URL")
+        missing_vcenter.append("VCENTER_HOST/GOVC_URL/VCENTER_MANAGEMENT_IP")
     if not vcenter_credentials_configured:
         missing_vcenter.append("VCENTER_USERNAME/GOVC_USERNAME and VCENTER_PASSWORD/GOVC_PASSWORD")
     if not govc_available:
@@ -2487,7 +2625,10 @@ def _missing_fields(vcenter_host: bool, vcenter_credentials: bool, netapp_creden
     return missing
 
 
-def _message(status: str) -> str:
+def _message(status: str, *, post_attach_ready: bool = False, datastore_name: str | None = None) -> str:
+    if status == "ready" and post_attach_ready:
+        datastore = datastore_name or "the NetApp datastore"
+        return f"vCenter is deployed, ESXi is attached, and {datastore} is visible through vCenter."
     if status == "ready":
         return "vCenter-NetApp readiness is ready for a future guarded datastore apply lane."
     if status == "not_configured_yet":
@@ -2495,11 +2636,14 @@ def _message(status: str) -> str:
     return "vCenter-NetApp readiness is blocked by prior NetApp/ONTAP/NFS setup."
 
 
-def _next_action(status: str) -> str:
+def _next_action(status: str, *, post_attach_ready: bool = False, datastore_name: str | None = None) -> str:
+    if status == "ready" and post_attach_ready:
+        datastore = datastore_name or "the NetApp datastore"
+        return f"No vCenter-NetApp datastore action required; post-attach validation is ready and {datastore} is visible through vCenter."
     if status == "ready":
         return "Review the datastore command preview; keep apply disabled until a guarded apply workflow is implemented."
     if status == "not_configured_yet":
-        return "Configure VCENTER_HOST/GOVC_URL, vCenter credentials, and govc, then rerun `make provider-lab-vcenter-netapp-readiness`."
+        return "Configure VCENTER_HOST/GOVC_URL or VCENTER_MANAGEMENT_IP, vCenter credentials, and govc, then rerun `make provider-lab-vcenter-netapp-readiness`."
     return "Complete NetApp ONTAP setup and NFS readiness before vCenter datastore work."
 
 
@@ -2524,6 +2668,22 @@ def _readiness_markdown(payload: dict[str, Any]) -> str:
     lines.extend(["", "## Checks"])
     for key, check in (payload.get("checks") or {}).items():
         lines.append(f"- {key}: `{check.get('status')}` - {check.get('detail')}")
+    post_attach = payload.get("post_attach_validation") if isinstance(payload.get("post_attach_validation"), dict) else {}
+    if post_attach:
+        lines.extend(
+            [
+                "",
+                "## Post-Attach Evidence",
+                f"- Status: `{post_attach.get('status')}`",
+                f"- Ready: `{post_attach.get('ready')}`",
+                f"- vCenter: `{post_attach.get('url') or post_attach.get('host') or 'not configured'}`",
+                f"- ESXi attached: `{(post_attach.get('visible') or {}).get('esxi_visible')}`",
+                f"- Datastore visible: `{(post_attach.get('visible') or {}).get('netapp_datastore_visible')}`",
+                f"- VM inventory visible: `{(post_attach.get('visible') or {}).get('vm_inventory_visible')}`",
+                f"- Checked at: `{post_attach.get('checked_at')}`",
+            ]
+        )
+    lines.extend(["", "## Next Action", f"- {payload.get('next_safe_action')}"])
     lines.extend(["", "## Safety", "- No datastore, ONTAP, vCenter, ESXi, NFS, or storage write action was run."])
     return "\n".join(lines) + "\n"
 
@@ -2545,6 +2705,10 @@ def _plan_markdown(payload: dict[str, Any]) -> str:
             f"- Mount path: `{planned.get('mount_path')}`",
             f"- Datastore: `{planned.get('datastore_name')}`",
             f"- NFS LIFs: `{', '.join(planned.get('nfs_lifs') or [])}`",
+            "",
+            "## Current State",
+            f"- Status: `{payload.get('status')}`",
+            f"- Next action: {payload.get('next_safe_action')}",
             "",
             "## Command Preview",
             f"- govc: `{preview.get('govc')}`",

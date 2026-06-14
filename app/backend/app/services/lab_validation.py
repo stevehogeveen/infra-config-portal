@@ -57,6 +57,7 @@ def get_lab_validation_summary(*, write_report: bool = False) -> dict[str, Any]:
     ]
     counts = _progress_counts(items)
     top_blocker = _top_blocker(items)
+    remaining_items = _remaining_items(items)
     payload = {
         "overall_status": _overall_status(counts),
         "progress_counts": counts,
@@ -64,7 +65,7 @@ def get_lab_validation_summary(*, write_report: bool = False) -> dict[str, Any]:
         "validation_items": items,
         "proof_links": _proof_links(items),
         "generated_at": generated_at,
-        "next_action": top_blocker.get("recommended_action") if top_blocker else "Review Lab Validation rows and refresh the first not-checked stage.",
+        "next_action": _summary_next_action(top_blocker, remaining_items),
         "source_type": "live_cached",
         "freshness": "current",
         "handoff_report": _rel(HANDOFF_REPORT),
@@ -901,6 +902,36 @@ def _top_blocker(items: list[dict[str, Any]]) -> dict[str, Any] | None:
     return None
 
 
+def _remaining_items(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    actionable = [
+        item
+        for item in items
+        if item.get("status") in {"blocked", "not_configured", "not_checked"} and item.get("status") != "not_in_scope"
+    ]
+    if actionable:
+        return actionable
+    partials = [item for item in items if item.get("status") in {"partial", "warning"}]
+    firmware = [item for item in partials if item.get("id") == "firmware-compliance"]
+    other_actionable_partials = [item for item in partials if item.get("id") != "firmware-compliance" and item.get("blockers")]
+    if firmware and not other_actionable_partials:
+        return firmware
+    return partials
+
+
+def _only_expected_firmware_partial(items: list[dict[str, Any]]) -> bool:
+    return len(items) == 1 and items[0].get("id") == "firmware-compliance" and items[0].get("status") in {"partial", "warning"}
+
+
+def _summary_next_action(top_blocker: dict[str, Any] | None, remaining_items: list[dict[str, Any]]) -> str:
+    if top_blocker:
+        return str(top_blocker.get("recommended_action") or top_blocker.get("recheck_command") or "")
+    if _only_expected_firmware_partial(remaining_items):
+        return "Firmware needs manual baseline review; this is the remaining expected partial. No vCenter-NetApp datastore action required."
+    if not remaining_items:
+        return "No Lab Validation action required; current handoff rows are ready."
+    return "Review Lab Validation rows and refresh the first not-checked stage."
+
+
 def _proof_links(items: list[dict[str, Any]]) -> list[dict[str, str]]:
     links: list[dict[str, str]] = []
     seen: set[str] = set()
@@ -1053,9 +1084,14 @@ def _handoff_markdown(payload: dict[str, Any]) -> str:
     for link in payload.get("proof_links") or []:
         lines.append(f"- {link.get('component_label')}: `{link.get('path')}`")
     lines.extend(["", "## What Remains", ""])
-    for item in payload.get("validation_items") or []:
-        if item.get("status") in {"blocked", "not_configured", "not_checked", "partial", "warning"}:
+    remaining_items = _remaining_items(payload.get("validation_items") or [])
+    if _only_expected_firmware_partial(remaining_items):
+        lines.append("- Firmware Compliance: Firmware needs manual baseline review; this is the remaining expected partial.")
+    elif remaining_items:
+        for item in remaining_items:
             lines.append(f"- {item.get('label')}: {item.get('next_action')}")
+    else:
+        lines.append("- None")
     lines.extend(["", "## Skill Improvement Review", "", "- Skills used: lab-builder-skill-steward, lab-builder-real-runtime, lab-builder-ux, lab-builder-product-craft, lab-builder-hardware-run, lab-builder-report-remediation, lab-builder-toolchain, lab-builder-dual-app-architecture", "- Skills created or updated: none", "- Skill gaps found: none requiring a new reusable skill in this pass", "- Candidate skills deferred: none", "- No additional skills were created because this work fits the existing Lab Builder skill set."])
     return "\n".join(lines) + "\n"
 
