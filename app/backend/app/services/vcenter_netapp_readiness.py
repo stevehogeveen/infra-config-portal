@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import os
 import socket
+import subprocess
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
@@ -27,6 +29,12 @@ VCENTER_INSTALL_PLAN_JSON = CODEX_RUN_DIR / "vcenter-install-plan-redacted.json"
 VCENTER_INSTALL_PREVIEW_JSON = CODEX_RUN_DIR / "vcenter-install-preview-redacted.json"
 CONSOLE_STATE_JSON = CODEX_RUN_DIR / "netapp-console-state-redacted.json"
 CONSOLE_LOGIN_STATE_JSON = CODEX_RUN_DIR / "netapp-console-login-state-redacted.json"
+VCSA_MOUNT_ROOTS = (
+    Path("/tmp/vcsa-iso"),
+    Path("/mnt/vcsa-iso"),
+    Path("/media/vcsa-iso"),
+    Path("/run/media/vcsa-iso"),
+)
 
 
 def get_vcenter_netapp_readiness(
@@ -269,9 +277,14 @@ def get_vcenter_install_readiness(
     esxi_host = str(deployment_values.get("esxi_target") or settings.esxi_test_host or LAB_ESXI_MANAGEMENT_IP)
     vcenter_host_configured = bool(settings.vcenter_host or settings.vcenter_configured)
     govc_available = _tool_available("govc")
-    vcsa_deploy_available = _tool_available("vcsa-deploy")
+    vcsa_deploy_status = _vcsa_deploy_status()
     vcenter_profile_enabled = _boolish(features.get("vcenter_enabled"), default=False)
     datastore_ready = _datastore_ready_check(datastore_name)
+    management_ip_available = _ip_available_check(
+        "vCenter management IP",
+        deployment_values.get("management_ip"),
+        check_ports=check_ports,
+    )
     checks = {
         "vcenter_profile_scope": _config_check(
             "vCenter profile scope",
@@ -293,18 +306,14 @@ def get_vcenter_install_readiness(
             check_ports=check_ports,
         ),
         "netapp_datastore_ready": datastore_ready,
+        "vcenter_management_ip_available": management_ip_available,
         "govc_available": _config_check(
             "govc",
             govc_available,
             "govc is available.",
             "govc is not installed or not discoverable.",
         ),
-        "vcsa_deploy_available": _config_check(
-            "vcsa-deploy",
-            vcsa_deploy_available,
-            "vcsa-deploy is available.",
-            "vcsa-deploy is not installed or not discoverable.",
-        ),
+        "vcsa_deploy_available": vcsa_deploy_status,
         "vcenter_values_complete": _config_check(
             "vCenter deployment values",
             deployment_values_complete,
@@ -327,10 +336,12 @@ def get_vcenter_install_readiness(
         blockers.append("NetApp NFS LIF must be reachable before vCenter install planning can proceed.")
     if datastore_ready["status"] != "ready":
         blockers.append("NetApp datastore must be validated read/write before vCenter install planning can proceed.")
+    if management_ip_available["status"] != "ready":
+        blockers.append("vCenter management IP must be available before vCenter install planning can proceed.")
     if not govc_available:
         blockers.append("govc is required for target datastore/ESXi validation.")
-    if not vcsa_deploy_available:
-        blockers.append("vcsa-deploy is required before guided VCSA install can run.")
+    if vcsa_deploy_status["status"] != "ready":
+        blockers.append("vcsa-deploy must be found and executable before guided VCSA install can run.")
     if not deployment_values_complete:
         blockers.append(
             "vCenter deployment values are incomplete: "
@@ -366,6 +377,7 @@ def get_vcenter_install_readiness(
             "netapp_datastore": datastore_name,
             "netapp_datastore_access": datastore_ready.get("detail"),
             "vcsa_iso": _safe_media_path(vcsa_iso),
+            "vcsa_deploy": vcsa_deploy_status.get("path"),
             "post_install_vcenter": _redacted_url(settings.vcenter_host),
         },
         "target_state": {
@@ -377,6 +389,7 @@ def get_vcenter_install_readiness(
             "network": deployment_values.get("network"),
             "portgroup": deployment_values.get("portgroup"),
             "lab_network": deployment_values.get("subnet_cidr"),
+            "management_ip_available": management_ip_available.get("available"),
         },
         "deployment_values": deployment_values,
         "value_checks": value_checks,
@@ -471,10 +484,14 @@ def _vcenter_install_plan_payload(
             "portgroup": deployment_values.get("portgroup"),
             "deployment_target": (readiness.get("target_state") or {}).get("deployment_target"),
             "datastore": (readiness.get("target_state") or {}).get("datastore"),
+            "vcsa_deploy": (readiness.get("current_state") or {}).get("vcsa_deploy"),
             "command_preview": [
                 "Mount VCSA ISO locally.",
                 "Generate redacted VCSA deployment JSON from active lab profile and local-only credential status.",
-                "vcsa-deploy install --accept-eula --acknowledge-ceip <redacted-vcsa-plan.json>",
+                (
+                    f"{(readiness.get('current_state') or {}).get('vcsa_deploy') or 'vcsa-deploy'} "
+                    "install --accept-eula --acknowledge-ceip <redacted-vcsa-plan.json>"
+                ),
             ],
             "deploy_confirmations_present": False,
             "deploy_apply_enabled": False,
@@ -642,6 +659,11 @@ def _configured_vcsa_iso_path() -> Path | None:
     return Path(value).expanduser() if value else None
 
 
+def _configured_vcsa_deploy_path() -> Path | None:
+    value = getattr(settings, "vcenter_vcsa_deploy_path", None)
+    return Path(value).expanduser() if value else None
+
+
 def _clean_value(value: Any) -> str | None:
     if value is None:
         return None
@@ -724,13 +746,61 @@ def _classify(
 
 
 def _tool_available(name: str) -> bool:
-    if which(name) is not None:
-        return True
+    return _tool_path(name) is not None
+
+
+def _tool_path(name: str) -> Path | None:
+    found = which(name)
+    if found:
+        return Path(found)
     for directory in (Path(sys.executable).parent, REPO_ROOT / ".local" / "bin"):
         candidate = directory / name
+        if candidate.exists() and candidate.is_file() and os.access(candidate, os.X_OK):
+            return candidate
+    return None
+
+
+def _vcsa_deploy_status() -> dict[str, Any]:
+    path = _find_vcsa_deploy()
+    if path is None:
+        return {
+            "label": "vcsa-deploy",
+            "status": "not_configured",
+            "detail": (
+                "vcsa-deploy is not installed, configured with VCSA_DEPLOY/VCSA_DEPLOY_PATH/"
+                "VCENTER_VCSA_DEPLOY, or found under a mounted VCSA ISO."
+            ),
+            "path": None,
+            "executable": False,
+            "source_type": "tool_probe",
+            "freshness": "live",
+            "recheck_command": "make provider-lab-vcenter-install-readiness",
+        }
+    executable = os.access(path, os.X_OK)
+    return {
+        "label": "vcsa-deploy",
+        "status": "ready" if executable else "blocked",
+        "detail": "vcsa-deploy is found and executable." if executable else "vcsa-deploy was found but is not executable.",
+        "path": _safe_external_path(path),
+        "executable": executable,
+        "source_type": "tool_probe",
+        "freshness": "live",
+        "recheck_command": "make provider-lab-vcenter-install-readiness",
+    }
+
+
+def _find_vcsa_deploy() -> Path | None:
+    explicit = _configured_vcsa_deploy_path()
+    if explicit and explicit.exists() and explicit.is_file():
+        return explicit
+    path_tool = _tool_path("vcsa-deploy")
+    if path_tool is not None:
+        return path_tool
+    for root in VCSA_MOUNT_ROOTS:
+        candidate = root / "vcsa-cli-installer" / "lin64" / "vcsa-deploy"
         if candidate.exists() and candidate.is_file():
-            return True
-    return False
+            return candidate
+    return None
 
 
 def _netapp_stage(state: dict[str, Any]) -> str:
@@ -859,6 +929,100 @@ def _tcp_check(label: str, host: str | None, port: int, *, check_ports: bool) ->
     }
 
 
+def _ip_available_check(label: str, host: Any, *, check_ports: bool) -> dict[str, Any]:
+    address = _clean_value(host)
+    if not address:
+        return {
+            "label": label,
+            "host": None,
+            "status": "not_configured",
+            "detail": f"{label} is not configured.",
+            "available": False,
+            "source_type": "not_checked",
+            "freshness": "not_checked",
+        }
+    if not check_ports:
+        return {
+            "label": label,
+            "host": address,
+            "status": "not_checked",
+            "detail": "Management IP availability was not checked in this read.",
+            "available": None,
+            "source_type": "not_checked",
+            "freshness": "not_checked",
+            "recheck_command": "make provider-lab-vcenter-install-readiness",
+        }
+    ping_reply = _ping(address)
+    tcp_443 = _tcp_open(address, 443)
+    tcp_5480 = _tcp_open(address, 5480)
+    neighbor = _neighbor_state(address)
+    neighbor_in_use = neighbor in {"REACHABLE", "STALE", "DELAY", "PROBE"}
+    in_use = ping_reply or tcp_443 or tcp_5480 or neighbor_in_use
+    return {
+        "label": label,
+        "host": address,
+        "status": "ready" if not in_use else "blocked",
+        "detail": (
+            "Management IP appears available for VCSA deployment."
+            if not in_use
+            else "Management IP appears to be in use or visible on the local network."
+        ),
+        "available": not in_use,
+        "ping": "reply" if ping_reply else "no_reply",
+        "tcp_443": "open" if tcp_443 else "closed",
+        "tcp_5480": "open" if tcp_5480 else "closed",
+        "neighbor_state": neighbor or "not_present",
+        "source_type": "live_provider",
+        "freshness": "live",
+        "recheck_command": "make provider-lab-vcenter-install-readiness",
+    }
+
+
+def _ping(address: str) -> bool:
+    if which("ping") is None:
+        return False
+    try:
+        result = subprocess.run(
+            ["ping", "-c", "1", "-W", "1", address],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+            timeout=2,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return result.returncode == 0
+
+
+def _tcp_open(address: str, port: int) -> bool:
+    try:
+        with socket.create_connection((address, port), timeout=1.0):
+            return True
+    except OSError:
+        return False
+
+
+def _neighbor_state(address: str) -> str | None:
+    if which("ip") is None:
+        return None
+    try:
+        result = subprocess.run(
+            ["ip", "neigh", "show", address],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            check=False,
+            timeout=2,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    text = result.stdout.strip()
+    for state in ("REACHABLE", "STALE", "DELAY", "PROBE", "FAILED", "INCOMPLETE"):
+        if state in text:
+            return state
+    return None
+
+
 def _missing_fields(vcenter_host: bool, vcenter_credentials: bool, netapp_credentials: bool) -> list[str]:
     missing = []
     if not vcenter_host:
@@ -968,6 +1132,15 @@ def _safe_media_path(path: Path | None) -> str | None:
         return str(path)
 
 
+def _safe_external_path(path: Path | None) -> str | None:
+    if path is None:
+        return None
+    try:
+        return str(path.resolve())
+    except OSError:
+        return str(path)
+
+
 def _vcenter_install_markdown(payload: dict[str, Any]) -> str:
     current = payload.get("current_state") or {}
     target = payload.get("target_state") or {}
@@ -988,6 +1161,7 @@ def _vcenter_install_markdown(payload: dict[str, Any]) -> str:
         "",
         "## Current State",
         f"- VCSA ISO: `{current.get('vcsa_iso') or 'not found'}`",
+        f"- vcsa-deploy: `{current.get('vcsa_deploy') or 'not found'}`",
         f"- ESXi management: `{current.get('esxi_management')}`",
         f"- NetApp datastore: `{current.get('netapp_datastore')}`",
         f"- vCenter installed/configured: `{current.get('vcenter_installed')}`",
@@ -998,6 +1172,7 @@ def _vcenter_install_markdown(payload: dict[str, Any]) -> str:
         f"- Datastore: `{target.get('datastore')}`",
         f"- Deployment size: `{target.get('deployment_size') or 'not configured'}`",
         f"- Network / portgroup: `{target.get('network') or target.get('portgroup') or 'not configured'}`",
+        f"- Management IP available: `{target.get('management_ip_available')}`",
         "",
         "## Deployment Values",
         f"- Appliance name: `{values.get('appliance_name') or 'missing'}`",

@@ -29,8 +29,12 @@ def test_vcenter_install_preview_uses_redacted_value_and_credential_status(
 ) -> None:
     _patch_paths(monkeypatch, tmp_path)
     media = tmp_path / "artifacts" / "Media" / "VMware-VCSA-all-8.0.3.iso"
+    vcsa_deploy = tmp_path / "vcsa-cli-installer" / "lin64" / "vcsa-deploy"
     media.parent.mkdir(parents=True)
+    vcsa_deploy.parent.mkdir(parents=True)
     media.write_bytes(b"vcsa")
+    vcsa_deploy.write_text("#!/bin/sh\n", encoding="utf-8")
+    vcsa_deploy.chmod(0o755)
     _write_datastore_validation(tmp_path)
     monkeypatch.setattr(
         vcenter_netapp_readiness,
@@ -51,6 +55,7 @@ def test_vcenter_install_preview_uses_redacted_value_and_credential_status(
             vcenter_datastore_target="netapp_nfs_ds01",
             vcenter_deployment_size="tiny",
             vcenter_network="VM Network",
+            vcenter_vcsa_deploy_path=str(vcsa_deploy),
             esxi_test_username="root",
             esxi_test_password="super-secret-esxi",
         ),
@@ -58,6 +63,7 @@ def test_vcenter_install_preview_uses_redacted_value_and_credential_status(
     monkeypatch.setattr(vcenter_netapp_readiness, "active_lab_profile_context", lambda: _profile_context())
     monkeypatch.setattr(vcenter_netapp_readiness, "_tool_available", lambda _name: True)
     monkeypatch.setattr(vcenter_netapp_readiness, "_tcp_check", _tcp_ready)
+    monkeypatch.setattr(vcenter_netapp_readiness, "_ip_available_check", _ip_available)
 
     result = vcenter_netapp_readiness.get_vcenter_install_preview(write_report=True)
     serialized = json.dumps(result)
@@ -70,6 +76,22 @@ def test_vcenter_install_preview_uses_redacted_value_and_credential_status(
     assert "super-secret" not in serialized
     assert (tmp_path / "artifacts/codex-runs/vcenter-install-preview-redacted.json").exists()
     assert (tmp_path / "artifacts/codex-runs/vcenter-install-preview-report.md").exists()
+
+
+def test_vcsa_deploy_is_found_under_mounted_iso(monkeypatch, tmp_path: Path) -> None:
+    mounted = tmp_path / "vcsa-iso"
+    deploy = mounted / "vcsa-cli-installer" / "lin64" / "vcsa-deploy"
+    deploy.parent.mkdir(parents=True)
+    deploy.write_text("#!/bin/sh\n", encoding="utf-8")
+    deploy.chmod(0o755)
+    monkeypatch.setattr(vcenter_netapp_readiness, "settings", _settings())
+    monkeypatch.setattr(vcenter_netapp_readiness, "VCSA_MOUNT_ROOTS", (mounted,))
+
+    result = vcenter_netapp_readiness._vcsa_deploy_status()
+
+    assert result["status"] == "ready"
+    assert result["executable"] is True
+    assert result["path"] == str(deploy.resolve())
 
 
 def _patch_paths(monkeypatch, tmp_path: Path) -> None:
@@ -111,6 +133,7 @@ def _settings(**overrides) -> SimpleNamespace:
         "vcenter_esxi_target": None,
         "vcenter_datastore_target": None,
         "vcenter_vcsa_iso_path": None,
+        "vcenter_vcsa_deploy_path": None,
         "vcenter_deployment_size": "tiny",
         "vcenter_network": None,
         "vcenter_portgroup": None,
@@ -140,6 +163,18 @@ def _tcp_ready(label: str, host: str | None, port: int, *, check_ports: bool) ->
         "port": port,
         "status": "ready",
         "detail": f"TCP {port} reachable.",
+        "source_type": "live_provider",
+        "freshness": "live",
+    }
+
+
+def _ip_available(label: str, host: str | None, *, check_ports: bool) -> dict:
+    return {
+        "label": label,
+        "host": host,
+        "status": "ready",
+        "detail": "Management IP appears available for VCSA deployment.",
+        "available": True,
         "source_type": "live_provider",
         "freshness": "live",
     }

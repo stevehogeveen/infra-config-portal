@@ -493,6 +493,13 @@ def _vcenter_readiness(rows: list[dict[str, Any]], credentials: dict[str, Any]) 
     deployment_values = artifact.get("deployment_values") if isinstance(artifact.get("deployment_values"), dict) else {}
     value_checks = artifact.get("value_checks") if isinstance(artifact.get("value_checks"), dict) else {}
     credential_detail = artifact.get("credential_state") if isinstance(artifact.get("credential_state"), dict) else {}
+    checks = artifact.get("checks") if isinstance(artifact.get("checks"), dict) else {}
+    vcsa_deploy_check = checks.get("vcsa_deploy_available") if isinstance(checks.get("vcsa_deploy_available"), dict) else {}
+    management_ip_check = (
+        checks.get("vcenter_management_ip_available")
+        if isinstance(checks.get("vcenter_management_ip_available"), dict)
+        else {}
+    )
     values_complete = bool(deployment_values.get("complete")) or (
         bool(value_checks) and all(isinstance(check, dict) and check.get("status") == "ready" for check in value_checks.values())
     )
@@ -505,6 +512,17 @@ def _vcenter_readiness(rows: list[dict[str, Any]], credentials: dict[str, Any]) 
     )
     esxi_ready = row_by_id.get("esxi", {}).get("status") == "ready"
     datastore_ready = row_by_id.get("netapp-nfs-datastore", {}).get("status") == "ready"
+    vcsa_deploy_ready = vcsa_deploy_check.get("status") == "ready"
+    management_ip_available = management_ip_check.get("status") == "ready"
+    ready_for_preview = (
+        vcsa_iso_found
+        and vcsa_deploy_ready
+        and esxi_ready
+        and datastore_ready
+        and management_ip_available
+        and values_complete
+        and deployment_credentials_configured
+    )
     values_state = "complete" if values_complete else "incomplete"
     credential_state = "configured" if deployment_credentials_configured else "missing"
     metadata = _artifact_metadata(
@@ -512,10 +530,14 @@ def _vcenter_readiness(rows: list[dict[str, Any]], credentials: dict[str, Any]) 
         "make provider-lab-vcenter-install-readiness",
     )
     return {
-        "status": "ready"
-        if vcsa_iso_found and esxi_ready and datastore_ready and values_complete and deployment_credentials_configured
-        else "not_configured",
+        "status": "ready" if ready_for_preview else "not_configured",
+        "preview_state": "ready_for_preview" if ready_for_preview else "not_ready",
+        "deploy_state": "deploy_disabled",
+        "ready_for_preview": ready_for_preview,
+        "ready_for_deploy": False,
         "vcsa_iso": "found" if vcsa_iso_found else "not_found",
+        "vcsa_deploy": str(vcsa_deploy_check.get("status") or "not_checked"),
+        "management_ip_available": "available" if management_ip_available else str(management_ip_check.get("status") or "not_checked"),
         "esxi": "ready" if esxi_ready else "not_ready",
         "netapp_datastore": "ready" if datastore_ready else "not_ready",
         "vcenter_credentials": credential_state,
@@ -526,13 +548,14 @@ def _vcenter_readiness(rows: list[dict[str, Any]], credentials: dict[str, Any]) 
         "values_complete": values_complete,
         "deploy_enabled": False,
         "preview_action_id": "vcenter.install-preview",
-        "deploy_action_label": "Deploy disabled until values, credentials, fresh readiness, and confirmation gates are present.",
+        "deploy_action_label": "Deploy disabled until explicit deployment confirmation gates are implemented.",
         "deployment_values": deployment_values,
         "value_checks": value_checks,
+        "checks": checks,
         "credential_detail": credential_detail,
         "next_action": (
             "Run Preview Deploy to generate the redacted VCSA deployment plan."
-            if vcsa_iso_found and esxi_ready and datastore_ready and values_complete and deployment_credentials_configured
+            if ready_for_preview
             else "Open vCenter install readiness and complete missing local-only deployment values."
         ),
         "source_type": metadata["source_type"],
@@ -746,11 +769,15 @@ def _markdown(payload: dict[str, Any]) -> str:
             "## vCenter Readiness",
             "",
             f"- VCSA ISO: `{vcenter.get('vcsa_iso')}`",
+            f"- vcsa-deploy: `{vcenter.get('vcsa_deploy')}`",
             f"- ESXi: `{vcenter.get('esxi')}`",
             f"- NetApp datastore: `{vcenter.get('netapp_datastore')}`",
+            f"- Management IP available: `{vcenter.get('management_ip_available')}`",
             f"- vCenter values: `{vcenter.get('vcenter_values')}`",
             f"- vCenter credentials: `{vcenter.get('vcenter_credentials')}`",
             f"- vCenter config: `{vcenter.get('vcenter_config')}`",
+            f"- Preview state: `{vcenter.get('preview_state')}`",
+            f"- Deploy state: `{vcenter.get('deploy_state')}`",
             f"- Deploy enabled: `{vcenter.get('deploy_enabled')}`",
             f"- Next action: {vcenter.get('next_action')}",
             "",

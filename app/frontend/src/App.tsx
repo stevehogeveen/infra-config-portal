@@ -11755,10 +11755,17 @@ function GoldenVcenterReadiness({
 }) {
   const deploymentValues = objectValue(readiness.deployment_values);
   const valueChecks = objectValue(readiness.value_checks);
+  const checks = objectValue(readiness.checks);
+  const vcsaDeployCheck = objectValue(checks.vcsa_deploy_available);
+  const managementIpCheck = objectValue(checks.vcenter_management_ip_available);
   const credentialDetail = objectValue(readiness.credential_detail);
   const previewActionId = asString(readiness.preview_action_id) || "vcenter.install-preview";
   const previewBusy = runningAction === previewActionId;
   const deployEnabled = asBoolean(readiness.deploy_enabled);
+  const readyForPreview = asBoolean(readiness.ready_for_preview) || asString(readiness.preview_state) === "ready_for_preview";
+  const readyForDeploy = asBoolean(readiness.ready_for_deploy) || deployEnabled;
+  const installLaneStatus = readyForDeploy ? "ready_for_deploy" : readyForPreview ? "ready_for_preview" : asString(readiness.status) || "not_configured";
+  const deployState = readyForDeploy ? "ready_for_deploy" : asString(readiness.deploy_state) || "deploy_disabled";
   const credentialsConfigured =
     (asString(readiness.credentials) || asString(readiness.vcenter_credentials)) === "configured" ||
     asBoolean(credentialDetail.deployment_credentials_configured);
@@ -11769,6 +11776,11 @@ function GoldenVcenterReadiness({
       value: labelize(asString(readiness.vcsa_iso) || "not_found")
     },
     {
+      label: "vcsa-deploy Found",
+      status: asString(readiness.vcsa_deploy) === "ready" || asString(vcsaDeployCheck.status) === "ready" ? "ready" : "not_configured",
+      value: displayStatusLabel(asString(readiness.vcsa_deploy) || asString(vcsaDeployCheck.status) || "not_checked")
+    },
+    {
       label: "ESXi Ready",
       status: asString(readiness.esxi) === "ready" ? "ready" : "not_checked",
       value: labelize(asString(readiness.esxi) || "not_ready")
@@ -11777,6 +11789,14 @@ function GoldenVcenterReadiness({
       label: "NetApp Datastore Ready",
       status: asString(readiness.netapp_datastore) === "ready" ? "ready" : "not_checked",
       value: labelize(asString(readiness.netapp_datastore) || "not_ready")
+    },
+    {
+      label: "Management IP Available",
+      status:
+        asString(readiness.management_ip_available) === "available" || asString(managementIpCheck.status) === "ready"
+          ? "ready"
+          : "not_checked",
+      value: labelize(asString(readiness.management_ip_available) || asString(managementIpCheck.status) || "not_checked")
     },
     {
       label: "vCenter Values",
@@ -11819,7 +11839,15 @@ function GoldenVcenterReadiness({
           <span className="summary-kicker">vCenter</span>
           <h2>Readiness</h2>
         </div>
-        <StatusBadge status={asString(readiness.status) || "not_configured"} />
+        <StatusBadge status={installLaneStatus} />
+      </div>
+      <div className="vcenter-deploy-state">
+        <div>
+          <span className="summary-kicker">Install lane</span>
+          <strong>{displayStatusLabel(installLaneStatus)}</strong>
+          <p>{readyForPreview ? "Preview can be generated from current readiness evidence." : "Preview is waiting on readiness evidence."}</p>
+        </div>
+        <VisibleStatusBadge status={deployState} />
       </div>
       <div className="vcenter-readiness-list">
         {requirements.map((requirement) => (
@@ -18316,7 +18344,7 @@ function providerSectionStatus(providers: ProviderStatus[]): string {
 }
 
 function isReadyStatus(status: string): boolean {
-  return ["ready", "ok", "available", "completed", "passed"].includes(status);
+  return ["ready", "ok", "available", "completed", "passed", "ready_for_preview", "ready_for_deploy"].includes(status);
 }
 
 function isAttentionStatus(status: string): boolean {
@@ -18384,10 +18412,13 @@ function displayStatusLabel(status: string): string {
     "pending_restart": "Restart required",
     "planned-target": "Planned",
     ready: "Ready",
+    ready_for_deploy: "Ready for deploy",
+    ready_for_preview: "Ready for preview",
     "read_only": "Read only",
     "report_only": "Report only",
     "safe_default": "Safe default",
     "setup_intent_missing": "Setup details missing",
+    deploy_disabled: "Deploy disabled",
     stale: "Stale",
     stale_config: "Old config needs review",
     success: "Ready",

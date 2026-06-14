@@ -308,6 +308,9 @@ class Settings:
     vcenter_esxi_target: str | None = _optional_env("VCENTER_ESXI_TARGET")
     vcenter_datastore_target: str | None = _optional_env("VCENTER_DATASTORE_TARGET")
     vcenter_vcsa_iso_path: str | None = _optional_env("VCENTER_VCSA_ISO_PATH") or _optional_env("VCSA_ISO_PATH")
+    vcenter_vcsa_deploy_path: str | None = (
+        _optional_env("VCENTER_VCSA_DEPLOY") or _optional_env("VCSA_DEPLOY_PATH") or _optional_env("VCSA_DEPLOY")
+    )
     vcenter_deployment_size: str | None = _optional_env("VCENTER_DEPLOYMENT_SIZE") or "tiny"
     vcenter_network: str | None = _optional_env("VCENTER_NETWORK")
     vcenter_portgroup: str | None = _optional_env("VCENTER_PORTGROUP")

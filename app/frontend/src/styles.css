@@ -1003,6 +1003,29 @@ button:disabled {
   gap: 16px;
 }
 
+.vcenter-deploy-state {
+  align-items: center;
+  border: 1px solid #dfe4ea;
+  border-radius: 8px;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  min-width: 0;
+  padding: 14px;
+}
+
+.vcenter-deploy-state strong,
+.vcenter-deploy-state p {
+  overflow-wrap: anywhere;
+}
+
+.vcenter-deploy-state p {
+  color: #475569;
+  font-size: 13px;
+  line-height: 1.4;
+  margin: 4px 0 0;
+}
+
 .vcenter-readiness-list {
   border: 1px solid #dfe4ea;
   border-radius: 8px;
@@ -1701,6 +1724,7 @@ th {
 }
 
 .status-info,
+.status-deploy_disabled,
 .status-not_configured,
 .status-not_checked,
 .status-not_configured_yet {
@@ -1725,7 +1749,9 @@ th {
 .status-safe_default,
 .status-matched,
 .status-success,
-.status-passed {
+.status-passed,
+.status-ready_for_deploy,
+.status-ready_for_preview {
   background: #e6f6ee;
   color: #166534;
 }
