@@ -545,6 +545,76 @@ def _collect_firmware() -> list[dict[str, Any]]:
     source_type = _optional_str(payload.get("source_type")) or _default_source_type(checked_at)
     artifacts = _artifact_values(payload) or _existing_artifacts("firmware")
     issues: list[dict[str, Any]] = []
+    paths = _records(payload.get("upgrade_paths"))
+    if paths:
+        for path in paths:
+            path_status = _optional_str(path.get("path_status")) or "unknown"
+            if path_status == "current":
+                continue
+            classification = _firmware_path_classification(path_status)
+            label = _optional_str(path.get("component_label")) or _optional_str(path.get("component_id")) or "component"
+            device = _optional_str(path.get("device_label")) or "Firmware"
+            package_status = (
+                f"available: {_optional_str(path.get('package_name'))}"
+                if path.get("package_available")
+                else "not available"
+            )
+            missing = ", ".join(_strings(path.get("missing_evidence"))) or "none"
+            issue_source_type = _optional_str(path.get("source_type")) or source_type
+            issue_freshness = _optional_str(path.get("freshness"))
+            issues.append(
+                _issue(
+                    source="firmware",
+                    source_stage=_device_source_stage(device),
+                    classification=classification,
+                    title=f"Firmware {display_status(path_status)}: {device} {label}",
+                    summary=(
+                        f"Current {_optional_str(path.get('current_version')) or 'unknown'}; "
+                        f"target {_optional_str(path.get('target_version')) or 'manual review'}; "
+                        f"path {display_status(path_status)}; package {package_status}."
+                    ),
+                    problem=(
+                        f"{device} {label} is {display_status(path_status)}. "
+                        f"Missing evidence: {missing}."
+                    ),
+                    next_action=_optional_str(path.get("next_action"))
+                    or _optional_str(payload.get("next_safe_action"))
+                    or "Review firmware upgrade path evidence.",
+                    source_report=_optional_str(_dict(payload.get("reports")).get("compliance")),
+                    evidence_artifacts=_unique([*artifacts, *_strings(path.get("evidence_artifacts"))]),
+                    last_checked=_optional_str(path.get("last_checked")) or checked_at,
+                    source_type=issue_source_type,
+                    freshness=issue_freshness,
+                    details={
+                        "component_id": path.get("component_id"),
+                        "current_value": path.get("current_version"),
+                        "expected_value": path.get("target_version"),
+                        "path_status": path_status,
+                        "package_available": path.get("package_available"),
+                        "package_name": path.get("package_name"),
+                        "missing_evidence": path.get("missing_evidence") or [],
+                        "where_it_came_from": "Firmware upgrade path model",
+                        "where_to_fix": "Firmware Upgrades",
+                    },
+                )
+            )
+        if not issues:
+            issues.append(
+                _issue(
+                    source="firmware",
+                    source_stage="compliance",
+                    classification="passed",
+                    title="Firmware/software paths are current",
+                    summary="Every normalized firmware/software path is current or explicitly accepted.",
+                    problem="No active problem reported.",
+                    next_action="Keep firmware evidence current before major workflow execution.",
+                    source_report=_optional_str(_dict(payload.get("reports")).get("compliance")),
+                    evidence_artifacts=artifacts,
+                    last_checked=checked_at,
+                    source_type=source_type,
+                )
+            )
+        return issues
     for component in _records(payload.get("components")):
         if component.get("in_scope") is False:
             continue
@@ -615,6 +685,14 @@ def _firmware_component_classification(component: dict[str, Any], status: str) -
     if status in {"blocked", "unknown"}:
         return "hard_fail"
     return "warning"
+
+
+def _firmware_path_classification(path_status: str) -> str:
+    if path_status == "blocked":
+        return "hard_fail"
+    if path_status in {"manual_review", "unknown", "direct", "staged"}:
+        return "warning"
+    return "passed"
 
 
 def _collect_cisco() -> list[dict[str, Any]]:

@@ -8,6 +8,7 @@ from typing import Any
 from app.core.config import settings
 from app.providers.redaction import redact_sensitive
 from app.services.build_verification import get_lab_build_verification
+from app.services.firmware_compliance import get_firmware_compliance
 from app.services.media_inventory import get_media_inventory
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
@@ -125,20 +126,7 @@ def _golden_rows(*, live_status: dict[str, Any]) -> list[dict[str, Any]]:
         _datastore_row(),
         _vm_deployment_row(),
         _vcenter_row(),
-        _row(
-            row_id="firmware",
-            label="Firmware",
-            golden_state="Current or accepted after manual baseline review",
-            current_state="Needs manual baseline review",
-            ready=False,
-            drift="needs_review",
-            status="warning",
-            repair_label="Run firmware compliance",
-            repair_action_id="firmware.compliance-check",
-            repair_command="make provider-lab-firmware-compliance",
-            evidence=["artifacts/codex-runs/firmware-compliance-report.md"],
-            warnings=_stage_warnings(live_status, "firmware-compliance") or ["Manual firmware baseline review remains."],
-        ),
+        _firmware_row(live_status),
     ]
 
 
@@ -150,8 +138,108 @@ def _golden_state_sentence(vcenter_row: dict[str, Any]) -> str:
     )
     return (
         "Cisco, iLO, RAID, ESXi, NetApp, NetApp NFS datastore, VM deployment, "
-        f"and {vcenter_text}; firmware requires manual baseline review."
+        f"and {vcenter_text}; firmware/software baselines are classified by component."
     )
+
+
+def _firmware_row(live_status: dict[str, Any]) -> dict[str, Any]:
+    compliance = get_firmware_compliance(refresh_live=False, scope="full")
+    paths = [
+        path
+        for path in compliance.get("upgrade_paths", [])
+        if isinstance(path, dict)
+    ]
+    blocked = [path for path in paths if path.get("path_status") == "blocked"]
+    review = [
+        path
+        for path in paths
+        if path.get("path_status") in {"manual_review", "unknown"}
+    ]
+    needs_upgrade = [
+        path
+        for path in paths
+        if path.get("path_status") in {"direct", "staged"}
+    ]
+    current_count = len([path for path in paths if path.get("path_status") == "current"])
+    if blocked:
+        drift = "blocked"
+        status = "blocked"
+    elif review:
+        drift = "manual_review"
+        status = "warning"
+    elif needs_upgrade:
+        drift = "needs_upgrade"
+        status = "warning"
+    else:
+        drift = "none"
+        status = "ready"
+    if blocked:
+        current_state = _firmware_component_list(blocked, "blocked")
+    elif review:
+        current_state = _firmware_component_list(review, "manual review")
+    elif needs_upgrade:
+        current_state = _firmware_component_list(needs_upgrade, "upgrade needed")
+    else:
+        current_state = f"{current_count}/{len(paths)} firmware/software components current"
+    row = _row(
+        row_id="firmware",
+        label="Firmware / software",
+        golden_state="Required firmware/software components are current or explicitly accepted",
+        current_state=current_state,
+        ready=drift == "none",
+        drift=drift,
+        status=status,
+        repair_label="Open Firmware Upgrades" if review else "Run firmware compliance",
+        repair_action_id="firmware.compliance-check",
+        repair_command="make provider-lab-firmware-compliance",
+        evidence=[
+            "artifacts/codex-runs/firmware-compliance-report.md",
+            "artifacts/codex-runs/firmware-compliance-summary-redacted.json",
+        ],
+        warnings=_firmware_warnings(paths, live_status),
+    )
+    row["firmware_components"] = [
+        {
+            "component_id": path.get("component_id"),
+            "component_label": path.get("component_label"),
+            "device_label": path.get("device_label"),
+            "current_version": path.get("current_version"),
+            "target_version": path.get("target_version"),
+            "path_status": path.get("path_status"),
+            "package_available": path.get("package_available"),
+            "package_name": path.get("package_name"),
+            "missing_evidence": path.get("missing_evidence") or [],
+            "next_action": path.get("next_action"),
+        }
+        for path in paths
+        if path.get("path_status") != "current"
+    ]
+    row["upgrade_path_summary"] = compliance.get("upgrade_path_summary", {})
+    return row
+
+
+def _firmware_component_list(paths: list[dict[str, Any]], suffix: str) -> str:
+    labels = [f"{path.get('device_label')} - {path.get('component_label')}" for path in paths]
+    return f"{len(paths)} component{'s' if len(paths) != 1 else ''} need {suffix}: {', '.join(labels[:5])}"
+
+
+def _firmware_warnings(paths: list[dict[str, Any]], live_status: dict[str, Any]) -> list[str]:
+    warnings = _stage_warnings(live_status, "firmware-compliance")
+    for path in paths:
+        if path.get("path_status") == "current":
+            continue
+        warnings.append(
+            "{device} {component}: {status}; current {current}; target {target}; package {package}; next {next_action}".format(
+                device=path.get("device_label"),
+                component=path.get("component_label"),
+                status=path.get("path_status"),
+                current=path.get("current_version") or "unknown",
+                target=path.get("target_version") or "manual review",
+                package=path.get("package_name") or "not available",
+                next_action=path.get("next_action"),
+            )
+        )
+    return list(dict.fromkeys(warnings))
 
 
 def _netapp_row(live_status: dict[str, Any]) -> dict[str, Any]:

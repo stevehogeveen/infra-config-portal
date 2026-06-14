@@ -11,6 +11,7 @@ from app.core.config import (
 )
 from app.providers.redaction import redact_sensitive
 from app.services.build_verification import get_lab_build_verification
+from app.services.firmware_compliance import get_firmware_compliance
 from app.services.lab_profiles import active_lab_profile_context
 from app.services.netapp_state import get_netapp_runtime_state
 from app.services.netapp_upgrade_center import build_netapp_upgrade_plan
@@ -208,6 +209,16 @@ def _lab_profile_item(
 
 
 def _firmware_item(actions: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    compliance = get_firmware_compliance(refresh_live=False, scope="full")
+    paths = [
+        path
+        for path in compliance.get("upgrade_paths", [])
+        if isinstance(path, dict)
+    ]
+    review_paths = [path for path in paths if path.get("path_status") in {"manual_review", "unknown"}]
+    blocked_paths = [path for path in paths if path.get("path_status") == "blocked"]
+    upgrade_paths = [path for path in paths if path.get("path_status") in {"direct", "staged"}]
+    current_paths = [path for path in paths if path.get("path_status") == "current"]
     artifacts = _existing(
         [
             "artifacts/codex-runs/firmware-compliance-report.md",
@@ -215,26 +226,93 @@ def _firmware_item(actions: dict[str, dict[str, Any]]) -> dict[str, Any]:
             "artifacts/codex-runs/toolchain-availability-report.md",
         ]
     )
-    status = "partial" if artifacts else "not_checked"
+    status = (
+        "blocked"
+        if blocked_paths
+        else "partial"
+        if review_paths or upgrade_paths
+        else "ready"
+        if paths
+        else "not_checked"
+    )
+    proof_points = [
+        (
+            f"{path.get('device_label')} {path.get('component_label')}: current "
+            f"{path.get('current_version') or 'unknown'}, target "
+            f"{path.get('target_version') or 'manual review'}, path "
+            f"{path.get('path_status')}, package "
+            f"{path.get('package_name') or 'not available'}."
+        )
+        for path in paths
+    ]
+    warnings = [
+        (
+            f"{path.get('device_label')} {path.get('component_label')}: "
+            f"{path.get('disabled_reason') or path.get('next_action')}"
+        )
+        for path in [*blocked_paths, *review_paths, *upgrade_paths]
+    ]
     return _item(
         item_id="firmware-compliance",
         label="Firmware Compliance",
         category="Preflight",
         status=status,
-        current_state="Historical firmware compliance evidence is available." if artifacts else "Firmware compliance has not been checked.",
-        desired_state="Firmware inventory and compliance are refreshed before handoff.",
-        setup_summary="Firmware reports are available as supporting evidence." if artifacts else "No firmware proof is available yet.",
-        next_action="Refresh firmware compliance when certification is in scope.",
+        current_state=(
+            f"{len(current_paths)}/{len(paths)} firmware/software components current; "
+            f"{len(review_paths)} manual review; {len(blocked_paths)} blocked."
+            if paths
+            else "Firmware compliance has not been checked."
+        ),
+        desired_state="Firmware/software components are current or explicitly accepted with package/path evidence.",
+        setup_summary=(
+            "Firmware/software path status is normalized by component."
+            if paths
+            else "No firmware proof is available yet."
+        ),
+        next_action=(
+            "Open Firmware Upgrades and review the named firmware/software components."
+            if review_paths or upgrade_paths
+            else "Resolve firmware upgrade blockers."
+            if blocked_paths
+            else "No firmware handoff action remains."
+            if paths
+            else "Refresh firmware compliance when certification is in scope."
+        ),
         login_hint="No direct login; use firmware workflow evidence.",
         management_url=None,
         ssh_target=None,
-        proof_points=["Compliance evidence belongs in the evidence drawer."],
-        evidence_artifacts=artifacts,
-        last_checked=_last_checked(artifacts),
-        source_type=_source_for_artifacts(artifacts),
-        freshness=_freshness_for_artifacts(artifacts),
-        blockers=[],
-        warnings=["Firmware evidence is historical until rerun."] if artifacts else [],
+        proof_points=proof_points or ["Compliance evidence belongs in the evidence drawer."],
+        evidence_artifacts=_existing(
+            list(
+                dict.fromkeys(
+                    [
+                        *artifacts,
+                        *[
+                            artifact
+                            for path in paths
+                            for artifact in path.get("evidence_artifacts") or []
+                        ],
+                    ]
+                )
+            )
+        ),
+        last_checked=_last_checked(artifacts) or compliance.get("checked_at"),
+        source_type=str(compliance.get("source_type") or _source_for_artifacts(artifacts)),
+        freshness=str(compliance.get("freshness") or _freshness_for_artifacts(artifacts)),
+        blockers=[
+            _blocker(
+                problem=str(path.get("disabled_reason") or path.get("next_action")),
+                source="Firmware upgrade path model",
+                current_value=str(path.get("current_version") or "unknown"),
+                expected_value=str(path.get("target_version") or "manual review"),
+                where_to_fix="Firmware Upgrades",
+                recommended_action=str(path.get("next_action")),
+                recheck_command="make provider-lab-firmware-compliance",
+                evidence_links=[str(item) for item in path.get("evidence_artifacts") or []],
+            )
+            for path in blocked_paths
+        ],
+        warnings=warnings,
         recheck_command="make provider-lab-firmware-compliance",
         linked_workflow_action=_action_link(actions, "firmware.compliance-check"),
     )
@@ -926,7 +1004,10 @@ def _summary_next_action(top_blocker: dict[str, Any] | None, remaining_items: li
     if top_blocker:
         return str(top_blocker.get("recommended_action") or top_blocker.get("recheck_command") or "")
     if _only_expected_firmware_partial(remaining_items):
-        return "Firmware needs manual baseline review; this is the remaining expected partial. No vCenter-NetApp datastore action required."
+        firmware = remaining_items[0]
+        return (
+            f"{firmware.get('next_action')} No vCenter-NetApp datastore action required."
+        )
     if not remaining_items:
         return "No Lab Validation action required; current handoff rows are ready."
     return "Review Lab Validation rows and refresh the first not-checked stage."
@@ -1086,7 +1167,11 @@ def _handoff_markdown(payload: dict[str, Any]) -> str:
     lines.extend(["", "## What Remains", ""])
     remaining_items = _remaining_items(payload.get("validation_items") or [])
     if _only_expected_firmware_partial(remaining_items):
-        lines.append("- Firmware Compliance: Firmware needs manual baseline review; this is the remaining expected partial.")
+        firmware = remaining_items[0]
+        lines.append(f"- Firmware Compliance: {firmware.get('next_action')}")
+        for point in firmware.get("proof_points") or []:
+            if "path current" in str(point).lower() or "manual" in str(point).lower() or "blocked" in str(point).lower():
+                lines.append(f"  - {point}")
     elif remaining_items:
         for item in remaining_items:
             lines.append(f"- {item.get('label')}: {item.get('next_action')}")

@@ -618,6 +618,12 @@ def _firmware_summary_for_section(
     if section_id in {"cisco", "ilo", "raid", "esxi", "netapp"}:
         return firmware_summaries.get(section_id)
     if section_id == "firmware-upgrade":
+        all_paths = [
+            path
+            for device_id in ("cisco", "ilo", "raid", "esxi", "netapp", "vcenter")
+            for path in (firmware_summaries.get(device_id) or {}).get("upgrade_paths", [])
+            if isinstance(path, dict)
+        ]
         return {
             **(firmware_summaries.get("ilo") or {}),
             "device_id": "firmware-upgrade",
@@ -642,6 +648,36 @@ def _firmware_summary_for_section(
             "next_action": "Open device details below or run the global firmware compliance check.",
             "scan_action_id": "firmware.compliance-check",
             "upgrade_center_link": "/firmware",
+            "upgrade_paths": all_paths,
+            "path_status": _rollup_firmware_summary_path_status(firmware_summaries),
+            "target_version": "; ".join(
+                str(summary.get("target_version"))
+                for summary in firmware_summaries.values()
+                if summary.get("target_version")
+            ) or None,
+            "package_available": any(summary.get("package_available") for summary in firmware_summaries.values()),
+            "package_name": next(
+                (str(summary.get("package_name")) for summary in firmware_summaries.values() if summary.get("package_name")),
+                None,
+            ),
+            "required_intermediate_versions": list(
+                dict.fromkeys(
+                    version
+                    for summary in firmware_summaries.values()
+                    for version in summary.get("required_intermediate_versions", [])
+                )
+            ),
+            "prechecks_required": list(
+                dict.fromkeys(
+                    check
+                    for summary in firmware_summaries.values()
+                    for check in summary.get("prechecks_required", [])
+                )
+            ),
+            "reboot_required": any(summary.get("reboot_required") for summary in firmware_summaries.values()),
+            "estimated_impact": _rollup_firmware_summary_impact(firmware_summaries),
+            "apply_enabled": any(summary.get("apply_enabled") for summary in firmware_summaries.values()),
+            "disabled_reason": _rollup_firmware_summary_disabled_reason(firmware_summaries),
             "evidence_artifacts": [
                 "artifacts/codex-runs/firmware-inventory-report.md",
                 "artifacts/codex-runs/firmware-compliance-report.md",
@@ -690,6 +726,28 @@ def _rollup_firmware_summary_blocker(firmware_summaries: dict[str, dict[str, Any
             if summary.get("severity") == severity and summary.get("blocker"):
                 return str(summary["blocker"])
     return None
+
+
+def _rollup_firmware_summary_path_status(firmware_summaries: dict[str, dict[str, Any]]) -> str:
+    statuses = {str(summary.get("path_status") or "unknown") for summary in firmware_summaries.values()}
+    for status in ("blocked", "staged", "direct", "unknown", "manual_review"):
+        if status in statuses:
+            return status
+    return "current"
+
+
+def _rollup_firmware_summary_impact(firmware_summaries: dict[str, dict[str, Any]]) -> str:
+    for summary in firmware_summaries.values():
+        if summary.get("path_status") != "current" and summary.get("estimated_impact"):
+            return str(summary["estimated_impact"])
+    return "No upgrade impact expected while current."
+
+
+def _rollup_firmware_summary_disabled_reason(firmware_summaries: dict[str, dict[str, Any]]) -> str:
+    for summary in firmware_summaries.values():
+        if summary.get("path_status") != "current" and summary.get("disabled_reason"):
+            return str(summary["disabled_reason"])
+    return "No upgrade is needed; apply stays disabled."
 
 
 def _latest_firmware_summary_scan(firmware_summaries: dict[str, dict[str, Any]]) -> str | None:

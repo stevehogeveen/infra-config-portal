@@ -26,6 +26,11 @@ LOCAL_WAIVER_PATH = CODEX_RUN_DIR / "firmware-waiver.json"
 CISCO_FIRMWARE_INVENTORY_REPORT = CODEX_RUN_DIR / "cisco-firmware-inventory-report.md"
 ESXI_MANAGEMENT_VALIDATION_REPORT = CODEX_RUN_DIR / "esxi-management-validation-report.md"
 VCENTER_NETAPP_READINESS_REPORT = CODEX_RUN_DIR / "vcenter-netapp-readiness-report.md"
+ESXI_POST_RECOVERY_VALIDATION_JSON = CODEX_RUN_DIR / "esxi-post-recovery-validation-redacted.json"
+NETAPP_ONTAP_UPGRADE_VALIDATION_JSON = CODEX_RUN_DIR / "netapp-ontap-upgrade-validation-redacted.json"
+NETAPP_ONTAP_UPGRADE_PLAN_JSON = CODEX_RUN_DIR / "netapp-ontap-upgrade-plan-redacted.json"
+VCENTER_POST_INSTALL_VALIDATION_JSON = CODEX_RUN_DIR / "vcenter-post-install-validation-redacted.json"
+VCENTER_POST_ATTACH_VALIDATION_JSON = CODEX_RUN_DIR / "vcenter-post-attach-validation-redacted.json"
 
 BLOCKING_STATUSES = {"blocked", "unknown"}
 VALID_STATUSES = {"passed", "blocked", "warning", "not_configured_yet", "unknown", "waived"}
@@ -90,6 +95,121 @@ SUMMARY_EVIDENCE_ARTIFACTS = {
         "artifacts/codex-runs/firmware-compliance-report.md",
     ),
     "vcenter": ("artifacts/codex-runs/vcenter-netapp-readiness-report.md",),
+}
+UPGRADE_PATH_STATUSES = {"current", "direct", "staged", "blocked", "unknown", "manual_review"}
+UPGRADE_COMPONENT_ORDER = (
+    "cisco_ios_xe_version",
+    "cisco_bootloader_rommon",
+    "hpe_ilo_firmware",
+    "hpe_bios_version",
+    "hpe_smart_array_firmware",
+    "esxi_version",
+    "netapp_ontap_version",
+    "netapp_disk_firmware",
+    "netapp_shelf_firmware",
+    "netapp_sp_bmc_firmware",
+    "vcenter_vcsa_version",
+)
+UPGRADE_COMPONENT_META = {
+    "cisco_ios_xe_version": {
+        "device_label": "Cisco",
+        "component_label": "Cisco IOS XE",
+        "equipment_type": "network_os",
+        "scan_action_id": "cisco.firmware-inventory",
+        "prechecks_required": ["Read-only show version inventory", "ROMMON/bootloader review before firmware apply"],
+        "reboot_required": True,
+        "estimated_impact": "Switch reload required for an IOS XE upgrade.",
+    },
+    "cisco_bootloader_rommon": {
+        "device_label": "Cisco",
+        "component_label": "Cisco ROMMON / bootloader",
+        "equipment_type": "bootloader",
+        "scan_action_id": "cisco.firmware-inventory",
+        "prechecks_required": ["Read-only boot variable and ROMMON inventory"],
+        "reboot_required": True,
+        "estimated_impact": "Manual ROMMON review; reload impact depends on vendor procedure.",
+    },
+    "hpe_ilo_firmware": {
+        "device_label": "iLO",
+        "component_label": "iLO firmware",
+        "equipment_type": "management_firmware",
+        "scan_action_id": "ilo.firmware-inventory",
+        "prechecks_required": ["Redfish manager inventory", "HPE package match"],
+        "reboot_required": False,
+        "estimated_impact": "iLO management controller restart may interrupt management sessions.",
+    },
+    "hpe_bios_version": {
+        "device_label": "HPE Server",
+        "component_label": "HPE BIOS",
+        "equipment_type": "system_bios",
+        "scan_action_id": "ilo.firmware-inventory",
+        "prechecks_required": ["Redfish system inventory", "Approved HPE baseline or SPP evidence"],
+        "reboot_required": True,
+        "estimated_impact": "Host reboot required for BIOS changes.",
+    },
+    "hpe_smart_array_firmware": {
+        "device_label": "HPE Smart Array",
+        "component_label": "Smart Array firmware",
+        "equipment_type": "storage_controller_firmware",
+        "scan_action_id": "ilo.firmware-inventory",
+        "prechecks_required": ["HPE storage discovery", "Approved HPE baseline or SPP evidence"],
+        "reboot_required": True,
+        "estimated_impact": "Controller firmware update may require host reboot and storage maintenance window.",
+    },
+    "esxi_version": {
+        "device_label": "ESXi",
+        "component_label": "ESXi image",
+        "equipment_type": "hypervisor",
+        "scan_action_id": "esxi.management-validation",
+        "prechecks_required": ["ESXi management validation", "Approved ESXi ISO media"],
+        "reboot_required": True,
+        "estimated_impact": "ESXi image change requires host maintenance and reboot.",
+    },
+    "netapp_ontap_version": {
+        "device_label": "NetApp",
+        "component_label": "ONTAP",
+        "equipment_type": "storage_os",
+        "scan_action_id": "netapp.ontap-upgrade-inventory",
+        "prechecks_required": ["ONTAP upgrade inventory", "Upgrade validation", "Upgrade Advisor or Health Checker review"],
+        "reboot_required": True,
+        "estimated_impact": "ONTAP upgrade may trigger takeover/giveback or controller reboot sequencing.",
+    },
+    "netapp_disk_firmware": {
+        "device_label": "NetApp",
+        "component_label": "NetApp disk firmware",
+        "equipment_type": "disk_firmware",
+        "scan_action_id": "netapp.component-firmware-inventory",
+        "prechecks_required": ["ONTAP component firmware inventory"],
+        "reboot_required": False,
+        "estimated_impact": "Impact depends on NetApp component firmware procedure.",
+    },
+    "netapp_shelf_firmware": {
+        "device_label": "NetApp",
+        "component_label": "NetApp shelf firmware",
+        "equipment_type": "shelf_firmware",
+        "scan_action_id": "netapp.component-firmware-inventory",
+        "prechecks_required": ["ONTAP shelf firmware inventory"],
+        "reboot_required": False,
+        "estimated_impact": "Impact depends on NetApp shelf firmware procedure.",
+    },
+    "netapp_sp_bmc_firmware": {
+        "device_label": "NetApp",
+        "component_label": "NetApp SP/BMC firmware",
+        "equipment_type": "service_processor_firmware",
+        "scan_action_id": "netapp.component-firmware-inventory",
+        "prechecks_required": ["ONTAP service processor/BMC inventory"],
+        "reboot_required": False,
+        "estimated_impact": "Service processor restart may interrupt out-of-band management.",
+    },
+    "vcenter_vcsa_version": {
+        "device_label": "vCenter",
+        "component_label": "VCSA / vCenter",
+        "equipment_type": "management_software",
+        "scan_action_id": "vcenter-netapp.readiness",
+        "prechecks_required": ["vCenter post-install or post-attach validation", "Approved VCSA ISO media"],
+        "reboot_required": True,
+        "estimated_impact": "VCSA upgrade affects vCenter management availability.",
+    },
 }
 
 
@@ -176,12 +296,19 @@ def get_firmware_compliance(*, refresh_live: bool = False, scope: str = "full") 
     baseline = load_firmware_baseline()
     inventory = get_firmware_inventory(refresh_live=refresh_live)
     waiver = load_firmware_waiver()
+    checked_at = datetime.now(UTC).isoformat()
     components = [
         _classify_component(component, inventory, waiver)
         for component in baseline.get("components", [])
     ]
     for component in components:
         component["in_scope"] = _component_in_scope(component["id"], normalized_scope)
+    upgrade_paths = _firmware_upgrade_paths(
+        components=components,
+        inventory=inventory,
+        baseline=baseline,
+        checked_at=checked_at,
+    )
     scoped_components = [component for component in components if component["in_scope"]]
     blockers = [
         _blocker_text(component)
@@ -204,7 +331,7 @@ def get_firmware_compliance(*, refresh_live: bool = False, scope: str = "full") 
         "provider_id": "firmware-compliance",
         "status": overall_status,
         "message": _overall_message(overall_status),
-        "checked_at": datetime.now(UTC).isoformat(),
+        "checked_at": checked_at,
         "provider_mode": settings.provider_mode,
         "scope": normalized_scope,
         "baseline": {
@@ -214,11 +341,14 @@ def get_firmware_compliance(*, refresh_live: bool = False, scope: str = "full") 
         "waiver": waiver,
         "inventory": inventory,
         "components": components,
+        "upgrade_paths": upgrade_paths,
+        "upgrade_path_summary": _upgrade_path_summary(upgrade_paths),
         "devices": _device_summary(components),
         "blockers": blockers,
         "warnings": warnings,
         "next_safe_action": _next_safe_action(overall_status, scoped_components),
         "apply_enabled": overall_status in {"passed", "waived", "warning"},
+        "upgrade_apply_enabled": any(path.get("apply_enabled") for path in upgrade_paths),
         "reports": {
             "inventory": str(INVENTORY_REPORT.relative_to(REPO_ROOT)),
             "compliance": str(COMPLIANCE_REPORT.relative_to(REPO_ROOT)),
@@ -250,12 +380,17 @@ def get_firmware_summaries(*, compliance: dict[str, Any] | None = None) -> list[
         if isinstance(component, dict) and component.get("id")
     }
     inventory = compliance.get("inventory") if isinstance(compliance.get("inventory"), dict) else {}
+    upgrade_paths = [
+        path
+        for path in compliance.get("upgrade_paths", [])
+        if isinstance(path, dict)
+    ]
     summaries = [
-        _component_firmware_summary(device_id, components, inventory)
+        _component_firmware_summary(device_id, components, inventory, upgrade_paths)
         for device_id in ("cisco", "ilo", "raid", "netapp")
     ]
-    summaries.append(_esxi_firmware_summary())
-    summaries.append(_vcenter_firmware_summary())
+    summaries.append(_esxi_firmware_summary(upgrade_paths))
+    summaries.append(_vcenter_firmware_summary(upgrade_paths))
     return _sanitize({"summaries": summaries})["summaries"]
 
 
@@ -406,19 +541,20 @@ def _current_version_for(component_id: str, inventory: dict[str, Any]) -> str | 
     ilo = live.get("ilo", {})
     cisco = live.get("cisco", {})
     netapp = live.get("netapp", {})
+    report_versions = _firmware_inventory_report_versions()
     mapping = {
-        "hpe_ilo_firmware": ilo.get("ilo_firmware"),
-        "hpe_bios_version": ilo.get("bios_version"),
-        "hpe_smart_array_firmware": ilo.get("smart_array_firmware"),
+        "hpe_ilo_firmware": ilo.get("ilo_firmware") or report_versions.get("ilo_firmware"),
+        "hpe_bios_version": ilo.get("bios_version") or report_versions.get("bios_version"),
+        "hpe_smart_array_firmware": ilo.get("smart_array_firmware") or report_versions.get("smart_array_firmware"),
         "cisco_ios_xe_version": cisco.get("ios_xe_version") or os.getenv("CISCO_CURRENT_IOS_XE_VERSION"),
         "cisco_bootloader_rommon": cisco.get("bootloader_rommon") or os.getenv("CISCO_CURRENT_BOOTLOADER_ROMMON"),
-        "netapp_ontap_version": netapp.get("ontap_version"),
+        "netapp_ontap_version": netapp.get("ontap_version") or report_versions.get("ontap_version"),
         "netapp_disk_firmware": netapp.get("disk_firmware"),
         "netapp_shelf_firmware": netapp.get("shelf_firmware"),
         "netapp_sp_bmc_firmware": netapp.get("sp_bmc_firmware"),
     }
     value = mapping.get(component_id)
-    return str(value).strip() if value else None
+    return _known_version_or_none(value)
 
 
 def _ilo_versions(probe: dict[str, Any]) -> dict[str, Any]:
@@ -543,25 +679,77 @@ def _cisco_firmware_report_versions() -> dict[str, Any]:
     }
 
 
+def _firmware_inventory_report_versions() -> dict[str, Any]:
+    if not INVENTORY_REPORT.exists():
+        return {}
+    try:
+        text = INVENTORY_REPORT.read_text(encoding="utf-8")
+    except OSError:
+        return {}
+    return {
+        "checked_at": _report_scalar(text, "Checked") or _path_mtime(INVENTORY_REPORT),
+        "ilo_firmware": _known_version_or_none(_report_field(text, "iLO firmware")),
+        "bios_version": _known_version_or_none(_report_field(text, "HPE BIOS")),
+        "smart_array_firmware": _known_version_or_none(_report_field(text, "HPE Smart Array")),
+        "ontap_version": _known_version_or_none(_report_field(text, "ONTAP")),
+        "netapp_disk_firmware": _known_version_or_none(_report_field(text, "NetApp disk firmware")),
+        "netapp_shelf_firmware": _known_version_or_none(_report_field(text, "NetApp shelf firmware")),
+        "netapp_sp_bmc_firmware": _known_version_or_none(_report_field(text, "NetApp SP/BMC firmware")),
+    }
+
+
+def _netapp_upgrade_versions() -> dict[str, Any]:
+    validation = _read_json_artifact(NETAPP_ONTAP_UPGRADE_VALIDATION_JSON)
+    plan = _read_json_artifact(NETAPP_ONTAP_UPGRADE_PLAN_JSON)
+    source = "netapp-ontap-upgrade-validation"
+    payload = validation if validation.get("current_version") or validation.get("target_version") else plan
+    if payload is plan:
+        source = "netapp-ontap-upgrade-plan"
+    return {
+        "source": source,
+        "checked_at": _string_or_none(payload.get("checked_at")),
+        "current_version": _known_version_or_none(payload.get("current_version")),
+        "target_version": _known_version_or_none(payload.get("target_version")),
+        "selected_package": payload.get("selected_package") if isinstance(payload.get("selected_package"), dict) else {},
+        "status": _string_or_none(payload.get("status")),
+        "validation_passed": bool(payload.get("validation_passed")),
+    }
+
+
 def _report_field(text: str, label: str) -> str | None:
     escaped = re.escape(label)
     match = re.search(rf"^\s*-\s*{escaped}:\s*(.+?)\s*$", text, flags=re.IGNORECASE | re.MULTILINE)
     return match.group(1).strip(" `") if match else None
 
 
+def _known_version_or_none(value: Any) -> str | None:
+    text = str(value).strip() if value is not None else ""
+    if not text or text.lower() in {"unknown", "none", "null", "n/a", "not set", "not selected"}:
+        return None
+    return text
+
+
 def _netapp_versions(probe: dict[str, Any]) -> dict[str, Any]:
     runtime_state = get_netapp_runtime_state()
+    upgrade_versions = _netapp_upgrade_versions()
     console_version = (
         latest_console_ontap_version()
         if settings.provider_mode != "mock"
         else {"version": None, "source": "not_available", "checked_at": None}
     )
-    ontap_version = settings.netapp_current_ontap_version or console_version.get("version")
+    ontap_version = (
+        settings.netapp_current_ontap_version
+        or upgrade_versions.get("current_version")
+        or console_version.get("version")
+    )
+    configured = runtime_state.get("configured") or bool(upgrade_versions.get("current_version"))
     return {
-        "status": "configured" if runtime_state.get("configured") else "not_configured_yet",
+        "status": "configured" if configured else "not_configured_yet",
         "ontap_version": ontap_version,
         "ontap_version_source": "configured_placeholder"
         if settings.netapp_current_ontap_version
+        else upgrade_versions.get("source")
+        if upgrade_versions.get("current_version")
         else console_version.get("source"),
         "disk_firmware": os.getenv("NETAPP_CURRENT_DISK_FIRMWARE"),
         "shelf_firmware": os.getenv("NETAPP_CURRENT_SHELF_FIRMWARE"),
@@ -693,6 +881,9 @@ def _compare_versions(current: str, minimum: str) -> int:
 
 
 def _version_parts(value: str) -> list[int]:
+    version_marker = re.search(r"\bv(\d+(?:\.\d+)+)", value, flags=re.IGNORECASE)
+    if version_marker:
+        return [int(part) for part in re.findall(r"\d+", version_marker.group(1))]
     parts = re.findall(r"\d+", value)
     return [int(part) for part in parts] or [0]
 
@@ -722,6 +913,7 @@ def _component_firmware_summary(
     device_id: str,
     components: dict[str, dict[str, Any]],
     inventory: dict[str, Any],
+    upgrade_paths: list[dict[str, Any]],
 ) -> dict[str, Any]:
     component_ids = SUMMARY_COMPONENTS[device_id]
     selected = [components[component_id] for component_id in component_ids if component_id in components]
@@ -729,6 +921,7 @@ def _component_firmware_summary(
     compliance_status = _summary_compliance_status(selected)
     blocker = _summary_blocker(compliance_status, selected, source)
     severity = _summary_severity(compliance_status, source["freshness"])
+    path_rollup = _summary_path_rollup(_paths_for_device(device_id, upgrade_paths))
     return {
         "device_id": device_id,
         "label": SUMMARY_LABELS[device_id],
@@ -745,6 +938,7 @@ def _component_firmware_summary(
         "scan_action_id": SUMMARY_SCAN_ACTIONS[device_id],
         "upgrade_center_link": f"/firmware?device={device_id}",
         "evidence_artifacts": _existing_summary_artifacts(device_id),
+        **path_rollup,
     }
 
 
@@ -927,7 +1121,7 @@ def _component_source_info(device_id: str, inventory: dict[str, Any]) -> dict[st
     return {"source_type": source_type, "last_scanned": checked_at, "freshness": freshness}
 
 
-def _esxi_firmware_summary() -> dict[str, Any]:
+def _esxi_firmware_summary(upgrade_paths: list[dict[str, Any]]) -> dict[str, Any]:
     probe, checked_at = get_probe_result("esxi-readonly")
     probe_versions = _esxi_probe_versions(probe if isinstance(probe, dict) else {})
     report_versions = _esxi_report_versions()
@@ -944,6 +1138,7 @@ def _esxi_firmware_summary() -> dict[str, Any]:
     else:
         compliance_status = "cannot_verify"
         blocker = _cannot_verify_reason(json.dumps(probe or {}), {"source_type": source_type, "freshness": freshness})
+    path_rollup = _summary_path_rollup(_paths_for_device("esxi", upgrade_paths))
     return {
         "device_id": "esxi",
         "label": SUMMARY_LABELS["esxi"],
@@ -960,22 +1155,29 @@ def _esxi_firmware_summary() -> dict[str, Any]:
         "scan_action_id": SUMMARY_SCAN_ACTIONS["esxi"],
         "upgrade_center_link": "/firmware?device=esxi",
         "evidence_artifacts": _existing_summary_artifacts("esxi"),
+        **path_rollup,
     }
 
 
-def _vcenter_firmware_summary() -> dict[str, Any]:
+def _vcenter_firmware_summary(upgrade_paths: list[dict[str, Any]]) -> dict[str, Any]:
     last_scanned = _report_checked_at(VCENTER_NETAPP_READINESS_REPORT)
     source_type = "cached_live" if last_scanned else "not_checked"
     freshness = _freshness(source_type, last_scanned)
-    configured = bool(settings.vcenter_configured)
-    compliance_status = "cannot_verify" if configured else "not_configured"
-    blocker = "live scan not run" if configured else "not configured yet"
+    vcenter_version = _vcenter_current_version()
+    configured = bool(settings.vcenter_configured or vcenter_version.get("version"))
+    compliance_status = "current" if vcenter_version.get("version") else "cannot_verify" if configured else "not_configured"
+    blocker = None if vcenter_version.get("version") else "live scan not run" if configured else "not configured yet"
+    path_rollup = _summary_path_rollup(_paths_for_device("vcenter", upgrade_paths))
     return {
         "device_id": "vcenter",
         "label": SUMMARY_LABELS["vcenter"],
         "component_type": SUMMARY_COMPONENT_TYPES["vcenter"],
-        "current_versions": [],
-        "approved_versions": [],
+        "current_versions": [
+            {"label": "VCSA / vCenter", "version": vcenter_version.get("version"), "status": "passed"}
+        ] if vcenter_version.get("version") else [],
+        "approved_versions": [
+            {"label": "VCSA ISO", "version": path_rollup.get("target_version"), "status": "media"}
+        ] if path_rollup.get("target_version") else [],
         "compliance_status": compliance_status,
         "severity": _summary_severity(compliance_status, freshness),
         "last_scanned": last_scanned,
@@ -986,7 +1188,584 @@ def _vcenter_firmware_summary() -> dict[str, Any]:
         "scan_action_id": SUMMARY_SCAN_ACTIONS["vcenter"],
         "upgrade_center_link": "/firmware?device=vcenter",
         "evidence_artifacts": _existing_summary_artifacts("vcenter"),
+        **path_rollup,
     }
+
+
+def _firmware_upgrade_paths(
+    *,
+    components: list[dict[str, Any]],
+    inventory: dict[str, Any],
+    baseline: dict[str, Any],
+    checked_at: str,
+) -> list[dict[str, Any]]:
+    component_by_id = {
+        str(component.get("id")): component
+        for component in components
+        if isinstance(component, dict) and component.get("id")
+    }
+    baseline_by_id = {
+        str(component.get("id")): component
+        for component in baseline.get("components", [])
+        if isinstance(component, dict) and component.get("id")
+    }
+    media_items = _all_media_items()
+    return [
+        _firmware_upgrade_path(
+            component_id=component_id,
+            component=component_by_id.get(component_id),
+            baseline_component=baseline_by_id.get(component_id),
+            inventory=inventory,
+            media_items=media_items,
+            checked_at=checked_at,
+        )
+        for component_id in UPGRADE_COMPONENT_ORDER
+    ]
+
+
+def _firmware_upgrade_path(
+    *,
+    component_id: str,
+    component: dict[str, Any] | None,
+    baseline_component: dict[str, Any] | None,
+    inventory: dict[str, Any],
+    media_items: list[dict[str, Any]],
+    checked_at: str,
+) -> dict[str, Any]:
+    meta = UPGRADE_COMPONENT_META[component_id]
+    current_version = _path_current_version(component_id, component)
+    target = _path_target(component_id, baseline_component, media_items)
+    package = _package_for_component(component_id, current_version, target.get("target_version"), media_items)
+    source = _path_source_info(component_id, inventory, current_version, checked_at)
+    evidence = _path_evidence_artifacts(component_id)
+    required_intermediates = _string_list((baseline_component or {}).get("required_intermediate_versions"))
+    missing_evidence = _missing_path_evidence(
+        current_version=current_version,
+        target_version=target.get("target_version"),
+        baseline_component=baseline_component,
+        component_id=component_id,
+    )
+    status = _path_status(
+        component_id=component_id,
+        current_version=current_version,
+        target_version=target.get("target_version"),
+        target_kind=target.get("target_kind"),
+        package_available=bool(package),
+        required_intermediate_versions=required_intermediates,
+        missing_evidence=missing_evidence,
+    )
+    disabled_reason = _path_disabled_reason(
+        path_status=status,
+        component_id=component_id,
+        current_version=current_version,
+        target_version=target.get("target_version"),
+        package_available=bool(package),
+        freshness=source["freshness"],
+        missing_evidence=missing_evidence,
+    )
+    next_action = _path_next_action(status, component_id, disabled_reason)
+    return _sanitize_path(
+        {
+            "component_id": component_id,
+            "component_label": meta["component_label"],
+            "device_label": meta["device_label"],
+            "equipment_type": meta["equipment_type"],
+            "current_version": current_version,
+            "target_version": target.get("target_version"),
+            "baseline_source": target.get("baseline_source"),
+            "package_available": bool(package),
+            "package_name": package.get("placeholder_name") if package else None,
+            "package_version": package.get("version_hint") if package else None,
+            "path_status": status,
+            "required_intermediate_versions": required_intermediates,
+            "prechecks_required": list(meta["prechecks_required"]),
+            "reboot_required": bool(meta["reboot_required"]),
+            "estimated_impact": meta["estimated_impact"],
+            "apply_enabled": False,
+            "disabled_reason": disabled_reason,
+            "next_action": next_action,
+            "evidence_artifacts": evidence,
+            "missing_evidence": missing_evidence,
+            "scan_action_id": meta["scan_action_id"],
+            "last_checked": source["last_checked"],
+            "source_type": source["source_type"],
+            "freshness": source["freshness"],
+        }
+    )
+
+
+def _path_current_version(component_id: str, component: dict[str, Any] | None) -> str | None:
+    if component_id == "esxi_version":
+        versions = _esxi_probe_versions(get_probe_result("esxi-readonly")[0] or {})
+        if versions:
+            return _known_version_or_none(versions[0].get("version"))
+        for version in _esxi_report_versions():
+            if version.get("label") == "ESXi":
+                return _known_version_or_none(version.get("version"))
+        return None
+    if component_id == "vcenter_vcsa_version":
+        return _vcenter_current_version().get("version")
+    value = (component or {}).get("current_version")
+    if component_id == "netapp_ontap_version" and not value:
+        value = _netapp_upgrade_versions().get("current_version")
+    return _known_version_or_none(value)
+
+
+def _path_target(
+    component_id: str,
+    baseline_component: dict[str, Any] | None,
+    media_items: list[dict[str, Any]],
+) -> dict[str, str | None]:
+    if component_id == "netapp_ontap_version":
+        upgrade = _netapp_upgrade_versions()
+        if upgrade.get("target_version"):
+            return {
+                "target_version": upgrade["target_version"],
+                "baseline_source": _rel(NETAPP_ONTAP_UPGRADE_VALIDATION_JSON)
+                if NETAPP_ONTAP_UPGRADE_VALIDATION_JSON.exists()
+                else _rel(NETAPP_ONTAP_UPGRADE_PLAN_JSON),
+                "target_kind": "exact",
+            }
+    if component_id == "esxi_version":
+        target = _media_target_version("esxi_version", media_items)
+        return {
+            "target_version": target.get("version"),
+            "baseline_source": target.get("source"),
+            "target_kind": "exact" if target.get("version") else None,
+        }
+    if component_id == "vcenter_vcsa_version":
+        target = _media_target_version("vcenter_vcsa_version", media_items)
+        return {
+            "target_version": target.get("version"),
+            "baseline_source": target.get("source"),
+            "target_kind": "exact" if target.get("version") else None,
+        }
+    approved = [str(value) for value in (baseline_component or {}).get("approved") or [] if value]
+    if approved:
+        return {
+            "target_version": approved[0],
+            "baseline_source": f"{_rel(BASELINE_PATH)} approved",
+            "target_kind": "exact",
+        }
+    minimum = _known_version_or_none((baseline_component or {}).get("minimum"))
+    if minimum:
+        return {
+            "target_version": f">= {minimum}",
+            "baseline_source": f"{_rel(BASELINE_PATH)} minimum",
+            "target_kind": "minimum",
+        }
+    return {
+        "target_version": None,
+        "baseline_source": f"{_rel(BASELINE_PATH)} manual review" if baseline_component else "No baseline configured",
+        "target_kind": None,
+    }
+
+
+def _path_status(
+    *,
+    component_id: str,
+    current_version: str | None,
+    target_version: str | None,
+    target_kind: str | None,
+    package_available: bool,
+    required_intermediate_versions: list[str],
+    missing_evidence: list[str],
+) -> str:
+    if not current_version:
+        if component_id in {
+            "cisco_bootloader_rommon",
+            "netapp_disk_firmware",
+            "netapp_shelf_firmware",
+            "netapp_sp_bmc_firmware",
+        }:
+            return "manual_review"
+        return "unknown"
+    if not target_version:
+        return "manual_review"
+    if _version_satisfies_target(current_version, target_version, target_kind):
+        return "current"
+    if not package_available and _package_required_for_upgrade(component_id):
+        return "blocked"
+    if required_intermediate_versions:
+        return "staged"
+    if component_id in {"cisco_ios_xe_version", "hpe_ilo_firmware", "netapp_ontap_version", "esxi_version", "vcenter_vcsa_version"}:
+        return "manual_review"
+    return "manual_review" if missing_evidence else "unknown"
+
+
+def _path_disabled_reason(
+    *,
+    path_status: str,
+    component_id: str,
+    current_version: str | None,
+    target_version: str | None,
+    package_available: bool,
+    freshness: str,
+    missing_evidence: list[str],
+) -> str:
+    if path_status == "current":
+        return "No upgrade is needed; apply stays disabled."
+    if path_status == "manual_review" and missing_evidence:
+        return f"Manual review required: missing {', '.join(missing_evidence)}."
+    if not current_version:
+        return "Scan needed: current version evidence is missing."
+    if not target_version:
+        return "Manual review required: target baseline evidence is missing."
+    if path_status == "blocked" and not package_available:
+        return "Blocked: a matching local package/media item is required before planning apply."
+    if freshness in {"stale", "historical", "not_checked", "unknown"}:
+        return "Apply disabled: evidence is not fresh live inventory."
+    if path_status in {"direct", "staged"}:
+        return "Apply disabled: confirmation gates and vendor path validation are not implemented in this lane."
+    if missing_evidence:
+        return f"Manual review required: missing {', '.join(missing_evidence)}."
+    return f"Manual review required before {UPGRADE_COMPONENT_META[component_id]['component_label']} can be actionable."
+
+
+def _path_next_action(path_status: str, component_id: str, disabled_reason: str) -> str:
+    label = UPGRADE_COMPONENT_META[component_id]["component_label"]
+    if path_status == "current":
+        return f"No {label} upgrade needed; rescan before any future apply work."
+    if path_status == "unknown":
+        return f"Scan needed: run {UPGRADE_COMPONENT_META[component_id]['scan_action_id']} to detect the current version."
+    if path_status == "blocked":
+        return disabled_reason
+    if path_status == "staged":
+        return f"Review staged {label} upgrade plan and required intermediate versions."
+    if path_status == "direct":
+        return f"Review direct {label} upgrade plan; apply remains disabled until all gates are present."
+    return f"Manual review: record the approved {label} baseline and vendor upgrade-path evidence."
+
+
+def _missing_path_evidence(
+    *,
+    current_version: str | None,
+    target_version: str | None,
+    baseline_component: dict[str, Any] | None,
+    component_id: str,
+) -> list[str]:
+    missing: list[str] = []
+    if not current_version:
+        missing.append("current version")
+    if not target_version:
+        missing.append("target baseline")
+    if component_id == "cisco_bootloader_rommon" and not current_version:
+        missing.append("ROMMON/bootloader inventory")
+    if component_id in {"hpe_bios_version", "hpe_smart_array_firmware"} and not (baseline_component or {}).get("minimum") and not (baseline_component or {}).get("approved"):
+        missing.append("approved HPE baseline")
+    if component_id.startswith("netapp_") and component_id != "netapp_ontap_version":
+        if not current_version:
+            missing.append("component firmware inventory")
+        if not target_version:
+            missing.append("component firmware baseline")
+    return list(dict.fromkeys(missing))
+
+
+def _version_satisfies_target(current_version: str, target_version: str, target_kind: str | None) -> bool:
+    target = target_version.replace(">=", "").strip()
+    comparison = _compare_versions(current_version, target)
+    if target_kind == "minimum" or target_version.strip().startswith(">="):
+        return comparison >= 0
+    return comparison == 0
+
+
+def _package_required_for_upgrade(component_id: str) -> bool:
+    return component_id in {
+        "cisco_ios_xe_version",
+        "hpe_ilo_firmware",
+        "hpe_bios_version",
+        "hpe_smart_array_firmware",
+        "esxi_version",
+        "netapp_ontap_version",
+        "vcenter_vcsa_version",
+    }
+
+
+def _all_media_items() -> list[dict[str, Any]]:
+    media = get_media_inventory(directories=tuple(str(path) for path in _media_directories()))
+    items = [item.model_dump() for item in media.items]
+    return [
+        item
+        for item in items
+        if item.get("category") in {"firmware", "iso"} or _is_firmware_like(item)
+    ]
+
+
+def _package_for_component(
+    component_id: str,
+    current_version: str | None,
+    target_version: str | None,
+    media_items: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+    hints = _package_hints(component_id)
+    scored = [
+        (score, item)
+        for item in media_items
+        if (score := _package_score_for_component(item, hints, current_version, target_version, component_id)) > 0
+    ]
+    if not scored:
+        return None
+    scored.sort(key=lambda value: value[0], reverse=True)
+    return scored[0][1]
+
+
+def _media_target_version(component_id: str, media_items: list[dict[str, Any]]) -> dict[str, str | None]:
+    package = _package_for_component(component_id, None, None, media_items)
+    if not package:
+        return {"version": None, "source": None}
+    return {
+        "version": _known_version_or_none(package.get("version_hint")),
+        "source": f"artifacts/Media {package.get('placeholder_name')}",
+    }
+
+
+def _package_hints(component_id: str) -> tuple[str, ...]:
+    return {
+        "cisco_ios_xe_version": ("cisco-ios-xe", "cisco", "iosxe", "cat9k"),
+        "hpe_ilo_firmware": ("hpe-ilo", "ilo"),
+        "hpe_bios_version": ("hpe-spp", "hpe-sum", "bios"),
+        "hpe_smart_array_firmware": ("hpe-spp", "hpe-sum", "smart-array", "raid"),
+        "esxi_version": ("vmware-esxi", "esxi"),
+        "netapp_ontap_version": ("netapp-ontap", "ontap"),
+        "vcenter_vcsa_version": ("vmware-vcenter", "vcsa", "vcenter"),
+    }.get(component_id, ())
+
+
+def _package_score_for_component(
+    item: dict[str, Any],
+    hints: tuple[str, ...],
+    current_version: str | None,
+    target_version: str | None,
+    component_id: str,
+) -> int:
+    product_hints = {str(value).lower() for value in item.get("product_hints") or []}
+    generation_hints = {str(value).lower() for value in item.get("generation_hints") or []}
+    text = " ".join(
+        str(value)
+        for value in [
+            item.get("placeholder_name"),
+            item.get("category"),
+            item.get("extension"),
+            item.get("version_hint"),
+            *product_hints,
+            *generation_hints,
+        ]
+        if value
+    ).lower()
+    score = 0
+    for hint in hints:
+        if hint.lower() in text or hint.lower() in product_hints:
+            score += 4
+    if score == 0:
+        return 0
+    if component_id == "hpe_ilo_firmware" and current_version and "ilo 5" in current_version.lower() and "ilo5" in generation_hints:
+        score += 3
+    version = _known_version_or_none(item.get("version_hint"))
+    target = target_version.replace(">=", "").strip() if target_version else None
+    if version and target and _compare_versions(version, target) == 0:
+        score += 5
+    elif version and current_version and _compare_versions(version, current_version) == 0:
+        score += 4
+    elif version and target_version and target_version.startswith(">=") and _compare_versions(version, target) >= 0:
+        score += 2
+    if component_id in {"esxi_version", "vcenter_vcsa_version"} and item.get("category") == "iso":
+        score += 2
+    if component_id not in {"hpe_bios_version", "hpe_smart_array_firmware"} and item.get("category") == "firmware":
+        score += 1
+    return score
+
+
+def _path_source_info(
+    component_id: str,
+    inventory: dict[str, Any],
+    current_version: str | None,
+    checked_at: str,
+) -> dict[str, str | None]:
+    report_versions = _firmware_inventory_report_versions()
+    if component_id in {"hpe_ilo_firmware", "hpe_bios_version", "hpe_smart_array_firmware"} and report_versions.get("checked_at"):
+        return {
+            "source_type": "historical_evidence",
+            "freshness": _freshness("historical_evidence", report_versions.get("checked_at")),
+            "last_checked": report_versions.get("checked_at"),
+        }
+    if component_id == "cisco_ios_xe_version" or component_id == "cisco_bootloader_rommon":
+        cisco = _component_source_info("cisco", inventory)
+        return {"source_type": cisco["source_type"], "freshness": cisco["freshness"], "last_checked": cisco["last_scanned"]}
+    if component_id.startswith("netapp_"):
+        upgrade = _netapp_upgrade_versions()
+        if upgrade.get("checked_at"):
+            return {
+                "source_type": "historical_evidence",
+                "freshness": _freshness("historical_evidence", upgrade.get("checked_at")),
+                "last_checked": upgrade.get("checked_at"),
+            }
+        netapp = _component_source_info("netapp", inventory)
+        return {"source_type": netapp["source_type"], "freshness": netapp["freshness"], "last_checked": netapp["last_scanned"]}
+    if component_id == "esxi_version":
+        last_scanned = _report_checked_at(ESXI_MANAGEMENT_VALIDATION_REPORT) or _path_mtime(ESXI_POST_RECOVERY_VALIDATION_JSON)
+        source_type = "historical_evidence" if last_scanned else "not_checked"
+        return {"source_type": source_type, "freshness": _freshness(source_type, last_scanned), "last_checked": last_scanned}
+    if component_id == "vcenter_vcsa_version":
+        version = _vcenter_current_version()
+        return {
+            "source_type": version.get("source_type") or "not_checked",
+            "freshness": version.get("freshness") or "not_checked",
+            "last_checked": version.get("checked_at") or checked_at if current_version else None,
+        }
+    return {"source_type": "not_checked", "freshness": "not_checked", "last_checked": None}
+
+
+def _path_evidence_artifacts(component_id: str) -> list[str]:
+    mapping = {
+        "cisco_ios_xe_version": SUMMARY_EVIDENCE_ARTIFACTS["cisco"],
+        "cisco_bootloader_rommon": SUMMARY_EVIDENCE_ARTIFACTS["cisco"],
+        "hpe_ilo_firmware": SUMMARY_EVIDENCE_ARTIFACTS["ilo"],
+        "hpe_bios_version": SUMMARY_EVIDENCE_ARTIFACTS["ilo"],
+        "hpe_smart_array_firmware": SUMMARY_EVIDENCE_ARTIFACTS["raid"],
+        "esxi_version": SUMMARY_EVIDENCE_ARTIFACTS["esxi"],
+        "netapp_ontap_version": SUMMARY_EVIDENCE_ARTIFACTS["netapp"],
+        "netapp_disk_firmware": SUMMARY_EVIDENCE_ARTIFACTS["netapp"],
+        "netapp_shelf_firmware": SUMMARY_EVIDENCE_ARTIFACTS["netapp"],
+        "netapp_sp_bmc_firmware": SUMMARY_EVIDENCE_ARTIFACTS["netapp"],
+        "vcenter_vcsa_version": SUMMARY_EVIDENCE_ARTIFACTS["vcenter"],
+    }
+    extra = {
+        "netapp_ontap_version": (
+            "artifacts/codex-runs/netapp-ontap-upgrade-validation-report.md",
+            "artifacts/codex-runs/netapp-ontap-upgrade-plan-report.md",
+        ),
+        "vcenter_vcsa_version": (
+            "artifacts/codex-runs/vcenter-post-install-validation-report.md",
+            "artifacts/codex-runs/vcenter-post-attach-validation-report.md",
+        ),
+    }.get(component_id, ())
+    return [
+        path
+        for path in (*mapping.get(component_id, ()), *extra)
+        if (REPO_ROOT / path).exists()
+    ]
+
+
+def _paths_for_device(device_id: str, upgrade_paths: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    component_ids = {
+        "cisco": {"cisco_ios_xe_version", "cisco_bootloader_rommon"},
+        "ilo": {"hpe_ilo_firmware", "hpe_bios_version"},
+        "raid": {"hpe_smart_array_firmware"},
+        "netapp": {"netapp_ontap_version", "netapp_disk_firmware", "netapp_shelf_firmware", "netapp_sp_bmc_firmware"},
+        "esxi": {"esxi_version"},
+        "vcenter": {"vcenter_vcsa_version"},
+    }.get(device_id, set())
+    return [path for path in upgrade_paths if path.get("component_id") in component_ids]
+
+
+def _summary_path_rollup(paths: list[dict[str, Any]]) -> dict[str, Any]:
+    if not paths:
+        return {
+            "upgrade_paths": [],
+            "path_status": "unknown",
+            "target_version": None,
+            "package_available": False,
+            "package_name": None,
+            "required_intermediate_versions": [],
+            "prechecks_required": [],
+            "reboot_required": False,
+            "estimated_impact": "Unknown until firmware/software path is classified.",
+            "apply_enabled": False,
+            "disabled_reason": "No upgrade path rows are available.",
+        }
+    statuses = [str(path.get("path_status") or "unknown") for path in paths]
+    status = _rollup_path_status(statuses)
+    package = next((path for path in paths if path.get("package_available")), None)
+    disabled = next((path.get("disabled_reason") for path in paths if path.get("path_status") != "current"), None)
+    return {
+        "upgrade_paths": paths,
+        "path_status": status,
+        "target_version": "; ".join(
+            f"{path.get('component_label')}: {path.get('target_version')}"
+            for path in paths
+            if path.get("target_version")
+        ) or None,
+        "package_available": any(path.get("package_available") for path in paths),
+        "package_name": package.get("package_name") if package else None,
+        "required_intermediate_versions": list(
+            dict.fromkeys(
+                version
+                for path in paths
+                for version in path.get("required_intermediate_versions") or []
+            )
+        ),
+        "prechecks_required": list(
+            dict.fromkeys(
+                check
+                for path in paths
+                for check in path.get("prechecks_required") or []
+            )
+        ),
+        "reboot_required": any(path.get("reboot_required") for path in paths),
+        "estimated_impact": next((path.get("estimated_impact") for path in paths if path.get("path_status") != "current"), None)
+        or "No upgrade impact expected while current.",
+        "apply_enabled": any(path.get("apply_enabled") for path in paths),
+        "disabled_reason": str(disabled or "No upgrade is needed; apply stays disabled."),
+    }
+
+
+def _rollup_path_status(statuses: list[str]) -> str:
+    for status in ("blocked", "staged", "direct", "unknown", "manual_review"):
+        if status in statuses:
+            return status
+    return "current"
+
+
+def _upgrade_path_summary(paths: list[dict[str, Any]]) -> dict[str, Any]:
+    counts = {status: 0 for status in UPGRADE_PATH_STATUSES}
+    for path in paths:
+        status = str(path.get("path_status") or "unknown")
+        counts[status if status in counts else "unknown"] += 1
+    return {
+        "counts": counts,
+        "current": counts["current"],
+        "manual_review": counts["manual_review"],
+        "unknown": counts["unknown"],
+        "blocked": counts["blocked"],
+        "apply_enabled": any(path.get("apply_enabled") for path in paths),
+        "components_needing_review": [
+            path["component_label"]
+            for path in paths
+            if path.get("path_status") in {"manual_review", "unknown"}
+        ],
+        "blocked_components": [
+            path["component_label"]
+            for path in paths
+            if path.get("path_status") == "blocked"
+        ],
+    }
+
+
+def _vcenter_current_version() -> dict[str, str | None]:
+    for path in (VCENTER_POST_ATTACH_VALIDATION_JSON, VCENTER_POST_INSTALL_VALIDATION_JSON):
+        payload = _read_json_artifact(path)
+        checks = payload.get("checks") if isinstance(payload.get("checks"), dict) else {}
+        govc = checks.get("govc_authentication") if isinstance(checks.get("govc_authentication"), dict) else {}
+        stdout = str(govc.get("stdout") or "")
+        version = _regex_version(stdout, r"Version:\s*([0-9.]+)")
+        if version:
+            return {
+                "version": version,
+                "build": _regex_version(stdout, r"Build:\s*([0-9]+)"),
+                "checked_at": _string_or_none(payload.get("checked_at")) or _path_mtime(path),
+                "source_type": str(payload.get("source_type") or "live_probe"),
+                "freshness": str(payload.get("freshness") or "current"),
+            }
+    return {"version": None, "build": None, "checked_at": None, "source_type": "not_checked", "freshness": "not_checked"}
+
+
+def _sanitize_path(path: dict[str, Any]) -> dict[str, Any]:
+    path["path_status"] = path["path_status"] if path["path_status"] in UPGRADE_PATH_STATUSES else "unknown"
+    return path
+
+
+def _rel(path: Path) -> str:
+    return str(path.relative_to(REPO_ROOT))
 
 
 def _esxi_probe_versions(probe: dict[str, Any]) -> list[dict[str, str | None]]:
@@ -1081,6 +1860,16 @@ def _read_text(path: Path) -> str:
         return path.read_text(encoding="utf-8")
     except OSError:
         return ""
+
+
+def _read_json_artifact(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return payload if isinstance(payload, dict) else {}
 
 
 def _string_or_none(value: Any) -> str | None:
@@ -1296,6 +2085,7 @@ def _summary(compliance: dict[str, Any]) -> dict[str, Any]:
         "warnings": compliance["warnings"],
         "waiver": compliance["waiver"],
         "reports": compliance["reports"],
+        "upgrade_path_summary": compliance.get("upgrade_path_summary", {}),
     }
 
 

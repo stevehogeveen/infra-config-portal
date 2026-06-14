@@ -1838,10 +1838,18 @@ th {
 }
 
 .status-current,
+.status-direct,
 .status-upgrade_available,
 .status-upgrade_recommended {
   background: #e6f6ee;
   color: #166534;
+}
+
+.status-staged,
+.status-manual_review,
+.status-unknown {
+  background: #fff7df;
+  color: #8a5d00;
 }
 
 .status-not_applicable {
@@ -2611,57 +2619,80 @@ textarea {
 }
 
 .firmware-upgrade-table {
-  min-width: 860px;
+  min-width: 980px;
   table-layout: fixed;
 }
 
 .firmware-upgrade-table th:nth-child(1),
 .firmware-upgrade-table td:nth-child(1) {
-  width: 14%;
+  width: 13%;
 }
 
 .firmware-upgrade-table th:nth-child(2),
-.firmware-upgrade-table td:nth-child(2),
+.firmware-upgrade-table td:nth-child(2) {
+  width: 17%;
+}
+
 .firmware-upgrade-table th:nth-child(3),
 .firmware-upgrade-table td:nth-child(3) {
-  width: 18%;
+  width: 13%;
 }
 
 .firmware-upgrade-table th:nth-child(4),
 .firmware-upgrade-table td:nth-child(4) {
-  width: 16%;
+  width: 13%;
 }
 
 .firmware-upgrade-table th:nth-child(5),
 .firmware-upgrade-table td:nth-child(5) {
-  width: 14%;
+  width: 15%;
 }
 
 .firmware-upgrade-table th:nth-child(6),
 .firmware-upgrade-table td:nth-child(6) {
-  width: 20%;
+  width: 14%;
+}
+
+.firmware-upgrade-table th:nth-child(7),
+.firmware-upgrade-table td:nth-child(7) {
+  width: 15%;
 }
 
 .firmware-upgrade-row td {
   vertical-align: top;
 }
 
+.firmware-upgrade-row {
+  cursor: pointer;
+}
+
+.firmware-upgrade-row.selected {
+  background: #f8fafc;
+  outline: 2px solid #2563eb;
+  outline-offset: -2px;
+}
+
 .firmware-upgrade-row td:first-child strong,
+.firmware-upgrade-row td:nth-child(2) strong,
 .firmware-package-cell strong {
   display: block;
   overflow-wrap: anywhere;
 }
 
 .firmware-upgrade-row td:first-child span,
+.firmware-upgrade-row td:nth-child(2) span,
 .firmware-package-cell span,
 .firmware-action-reason,
 .firmware-upgrade-footer {
   color: #64748b;
+  display: block;
   font-size: 12px;
 }
 
 .firmware-upgrade-row td:nth-child(2),
-.firmware-upgrade-row td:nth-child(3) {
+.firmware-upgrade-row td:nth-child(3),
+.firmware-upgrade-row td:nth-child(4),
+.firmware-upgrade-row td:nth-child(6) {
   overflow-wrap: anywhere;
 }
 
@@ -2706,6 +2737,66 @@ textarea {
   flex-wrap: wrap;
   gap: 8px 18px;
   padding-top: 12px;
+}
+
+.firmware-path-detail {
+  background: #fbfcfd;
+  border: 1px solid #dfe4ea;
+  border-radius: 8px;
+  display: grid;
+  gap: 14px;
+  padding: 14px;
+}
+
+.firmware-path-detail-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.firmware-path-detail-grid > div {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  min-width: 0;
+  padding: 10px;
+}
+
+.firmware-path-detail-grid h4 {
+  font-size: 13px;
+  letter-spacing: 0;
+  margin: 0 0 8px;
+}
+
+.firmware-path-detail-grid ul,
+.golden-firmware-detail ul,
+.handoff-firmware-points ul {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.firmware-path-detail-grid li,
+.golden-firmware-detail li,
+.handoff-firmware-points li {
+  margin: 5px 0;
+  overflow-wrap: anywhere;
+}
+
+.golden-firmware-detail,
+.handoff-firmware-points {
+  display: grid;
+  gap: 8px;
+}
+
+.golden-firmware-detail strong,
+.golden-firmware-detail span:not(.status) {
+  display: block;
+}
+
+.golden-firmware-detail p,
+.handoff-firmware-points p {
+  color: #475569;
+  margin: 0;
 }
 
 .firmware-evidence-panel {
@@ -6452,6 +6543,7 @@ pre {
   .artifact-grid,
   .provider-fact-grid,
   .firmware-inline-grid,
+  .firmware-path-detail-grid,
   .firmware-summary-grid,
   .provider-action-layout {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -6576,6 +6668,7 @@ pre {
     .report-evidence-groups,
     .validation-summary-strip,
     .lab-validation-layout,
+    .firmware-path-detail-grid,
     .golden-workflow-grid,
     .golden-state-stack,
     .report-evidence-groups dl {
@@ -6628,7 +6721,9 @@ pre {
     .firmware-upgrade-table th:nth-child(5),
     .firmware-upgrade-table td:nth-child(5),
     .firmware-upgrade-table th:nth-child(6),
-    .firmware-upgrade-table td:nth-child(6) {
+    .firmware-upgrade-table td:nth-child(6),
+    .firmware-upgrade-table th:nth-child(7),
+    .firmware-upgrade-table td:nth-child(7) {
       width: 100%;
     }
 
@@ -6660,22 +6755,26 @@ pre {
     }
 
     .firmware-upgrade-table td:nth-child(2)::before {
-      content: "Version you have";
+      content: "Component";
     }
 
     .firmware-upgrade-table td:nth-child(3)::before {
-      content: "Version you need";
+      content: "Current";
     }
 
     .firmware-upgrade-table td:nth-child(4)::before {
-      content: "Available firmware";
+      content: "Target";
     }
 
     .firmware-upgrade-table td:nth-child(5)::before {
-      content: "Status";
+      content: "Path";
     }
 
     .firmware-upgrade-table td:nth-child(6)::before {
+      content: "Package";
+    }
+
+    .firmware-upgrade-table td:nth-child(7)::before {
       content: "Action";
     }
 

@@ -254,7 +254,61 @@ def test_handoff_remaining_items_collapses_supporting_partials_to_firmware() -> 
     remaining = lab_validation._remaining_items(items)
 
     assert [item["id"] for item in remaining] == ["firmware-compliance"]
-    assert "remaining expected partial" in lab_validation._summary_next_action(None, remaining)
+    next_action = lab_validation._summary_next_action(None, remaining)
+    assert "Refresh firmware compliance" in next_action
+    assert "No vCenter-NetApp datastore action required" in next_action
+
+
+def test_firmware_handoff_includes_upgrade_path_summary(monkeypatch) -> None:
+    monkeypatch.setattr(
+        lab_validation,
+        "get_firmware_compliance",
+        lambda **_: {
+            "checked_at": "2026-06-14T20:00:00+00:00",
+            "source_type": "historical_evidence",
+            "upgrade_paths": [
+                {
+                    "device_label": "Cisco",
+                    "component_label": "Cisco IOS XE",
+                    "current_version": "17.15.05",
+                    "target_version": "17.15.05",
+                    "path_status": "current",
+                    "package_name": "firmware-1.bin",
+                    "evidence_artifacts": [],
+                },
+                {
+                    "device_label": "HPE Server",
+                    "component_label": "HPE BIOS",
+                    "current_version": "U32 v3.30",
+                    "target_version": None,
+                    "path_status": "manual_review",
+                    "package_name": None,
+                    "disabled_reason": "Manual review required: missing target baseline.",
+                    "evidence_artifacts": [],
+                },
+            ],
+        },
+    )
+
+    item = lab_validation._firmware_item({})
+    markdown = lab_validation._handoff_markdown(
+        {
+            "generated_at": "2026-06-14T20:00:00+00:00",
+            "overall_status": "partial",
+            "validation_items": [item],
+            "proof_links": [],
+            "top_blocker": None,
+        }
+    )
+
+    assert item["status"] == "partial"
+    assert "1/2 firmware/software components current" in item["current_state"]
+    assert "Cisco Cisco IOS XE: current 17.15.05, target 17.15.05, path current, package firmware-1.bin." in item["proof_points"]
+    assert "HPE Server HPE BIOS: current U32 v3.30, target manual review, path manual_review, package not available." in item["proof_points"]
+    assert "Open Firmware Upgrades" in item["next_action"]
+    assert "## What Remains" in markdown
+    assert "HPE Server HPE BIOS: current U32 v3.30" in markdown
+    assert "raw" not in markdown.lower()
 
 
 def test_vcenter_netapp_readiness_finds_repo_local_govc(monkeypatch, tmp_path) -> None:

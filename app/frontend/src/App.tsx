@@ -51,6 +51,7 @@ import type {
   ControlSectionRecord,
   ControlStateItem,
   FirmwareSummary,
+  FirmwareUpgradePath,
   HpeRaidIntent,
   HpeRaidIntentWrite,
   HpeRaidPlanPreview,
@@ -8106,6 +8107,7 @@ function FirmwareSummaryStrip({
     ? firmwareReasonText(scanAction.blockers[0] || scanAction.ui_run_blockers[0] || summary.blocker || "Prerequisites missing.")
     : "No safe scan action is registered for this device.";
   const upgradeLink = summary.upgrade_center_link || `/firmware?device=${summary.device_id}`;
+  const primaryPath = firmwarePrimaryPath(summary);
 
   return (
     <section className={`firmware-summary-strip ${firmwareSummaryTone(summary)}`}>
@@ -8138,6 +8140,8 @@ function FirmwareSummaryStrip({
         <ProviderFact label="Status" value={firmwareComplianceLabel(summary.compliance_status)} />
         <ProviderFact label="Current" value={firmwareVersionList(summary.current_versions, "Unknown")} />
         <ProviderFact label="Baseline" value={firmwareBaselineList(summary.approved_versions)} />
+        <ProviderFact label="Path" value={firmwarePathStatusLabel(summary.path_status || primaryPath?.path_status || summary.compliance_status)} />
+        <ProviderFact label="Package" value={summary.package_name || primaryPath?.package_name || (summary.package_available ? "Available" : "Not available")} />
         <ProviderFact label="Last scanned" value={summary.last_scanned ? formatDateTime(summary.last_scanned) : "Not checked"} />
         <ProviderFact label="Source" value={firmwareSourceLabel(summary.source_type)} />
         <ProviderFact label="Freshness" value={firmwareFreshnessLabel(summary.freshness)} />
@@ -8172,11 +8176,25 @@ function firmwareSummaryTone(summary: FirmwareSummary): string {
 }
 
 function firmwareSummaryLine(summary: FirmwareSummary): string {
+  const displayPath = firmwareDisplayPath(summary);
+  if (displayPath?.current_version) {
+    return `${displayPath.component_label}: ${displayPath.current_version}, ${firmwarePathStatusLabel(displayPath.path_status).toLowerCase()}.`;
+  }
   const status = firmwareComplianceLabel(summary.compliance_status);
   if (summary.blocker) {
     return `${status}: ${firmwareReasonText(summary.blocker)}.`;
   }
   return `${status}: ${firmwareVersionList(summary.current_versions, "versions available")}.`;
+}
+
+function firmwareDisplayPath(summary: FirmwareSummary): FirmwareUpgradePath | null {
+  const paths = summary.upgrade_paths ?? [];
+  return paths.find((path) => path.current_version && path.path_status === "current") ?? paths.find((path) => path.current_version) ?? firmwarePrimaryPath(summary);
+}
+
+function firmwarePrimaryPath(summary: FirmwareSummary): FirmwareUpgradePath | null {
+  const paths = summary.upgrade_paths ?? [];
+  return paths.find((path) => path.path_status !== "current") ?? paths[0] ?? null;
 }
 
 function firmwareReasonText(value: string): string {
@@ -8189,6 +8207,16 @@ function firmwareComplianceLabel(status: string): string {
   if (status === "needs_upgrade") return "Needs upgrade";
   if (status === "cannot_verify") return "Cannot verify";
   if (status === "not_configured") return "Not configured";
+  return displayStatusLabel(status);
+}
+
+function firmwarePathStatusLabel(status: string): string {
+  if (status === "current") return "Current";
+  if (status === "direct") return "Direct upgrade available";
+  if (status === "staged") return "Staged upgrade required";
+  if (status === "blocked") return "Blocked";
+  if (status === "unknown") return "Scan needed";
+  if (status === "manual_review") return "Manual review";
   return displayStatusLabel(status);
 }
 
@@ -10641,6 +10669,7 @@ function filterFirmwareComponents(
 
 type FirmwareUpgradeRow = {
   summary: FirmwareSummary;
+  path: FirmwareUpgradePath;
   current: string;
   target: string;
   packageItem: MediaInventory["items"][number] | null;
@@ -10671,9 +10700,11 @@ function FirmwareUpgradePanel({
 }) {
   const rows = firmwareUpgradeRows(summaries, media?.items ?? [], workflowActions)
     .filter((row) => firmwareSummaryMatchesDevice(row.summary, deviceFilter));
-  const needsUpgradeCount = rows.filter((row) => row.summary.compliance_status === "needs_upgrade").length;
-  const cannotVerifyCount = rows.filter((row) => row.summary.compliance_status === "cannot_verify").length;
-  const availablePackageCount = rows.filter((row) => row.packageItem).length;
+  const [selectedRowKey, setSelectedRowKey] = useState("");
+  const selectedRow = rows.find((row) => firmwareUpgradeRowKey(row) === selectedRowKey) ?? rows[0] ?? null;
+  const needsUpgradeCount = rows.filter((row) => ["direct", "staged"].includes(row.path.path_status)).length;
+  const cannotVerifyCount = rows.filter((row) => ["manual_review", "unknown"].includes(row.path.path_status)).length;
+  const availablePackageCount = rows.filter((row) => row.path.package_available || row.packageItem).length;
 
   return (
     <section className="panel firmware-upgrade-panel">
@@ -10702,20 +10733,23 @@ function FirmwareUpgradePanel({
             <thead>
               <tr>
                 <th>Device</th>
-                <th>Version you have</th>
-                <th>Version you need</th>
-                <th>Available firmware</th>
-                <th>Status</th>
+                <th>Component</th>
+                <th>Current</th>
+                <th>Target</th>
+                <th>Path</th>
+                <th>Package</th>
                 <th>Action</th>
               </tr>
             </thead>
             <tbody>
               {rows.map((row) => (
                 <FirmwareUpgradeRowView
-                  key={row.summary.device_id}
+                  key={firmwareUpgradeRowKey(row)}
                   onRunWorkflowAction={onRunWorkflowAction}
                   row={row}
                   runningActionId={runningActionId}
+                  selected={selectedRow ? firmwareUpgradeRowKey(row) === firmwareUpgradeRowKey(selectedRow) : false}
+                  setSelected={() => setSelectedRowKey(firmwareUpgradeRowKey(row))}
                 />
               ))}
             </tbody>
@@ -10728,6 +10762,7 @@ function FirmwareUpgradePanel({
         <span>{reports.length} evidence item{reports.length === 1 ? "" : "s"} available.</span>
         <span>Upgrade actions open a guarded confirmation when a runner exists; unsupported rows stay disabled.</span>
       </div>
+      {selectedRow && <FirmwareUpgradePathDetail row={selectedRow} />}
     </section>
   );
 }
@@ -10735,11 +10770,15 @@ function FirmwareUpgradePanel({
 function FirmwareUpgradeRowView({
   onRunWorkflowAction,
   row,
-  runningActionId
+  runningActionId,
+  selected,
+  setSelected
 }: {
   onRunWorkflowAction: RunWorkflowActionHandler;
   row: FirmwareUpgradeRow;
   runningActionId: string;
+  selected: boolean;
+  setSelected: () => void;
 }) {
   const scanRunning = Boolean(row.scanAction && runningActionId === row.scanAction.action_id);
   const planRunning = Boolean(row.planAction && runningActionId === row.planAction.action_id);
@@ -10759,20 +10798,42 @@ function FirmwareUpgradeRowView({
     row.upgradeAction && workflowActionRequiresGuard(row.upgradeAction) && (canStartGuardedUpgrade || !row.relatedAction)
   );
 
+  const tone = firmwarePathTone(row.path.path_status);
+
   return (
-    <tr className={`firmware-upgrade-row ${firmwareSummaryTone(row.summary)}`}>
+    <tr
+      className={`firmware-upgrade-row ${tone} ${selected ? "selected" : ""}`}
+      onClick={setSelected}
+      tabIndex={0}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") setSelected();
+      }}
+    >
       <td>
-        <strong>{row.summary.label}</strong>
-        <span>{labelize(row.summary.component_type)}</span>
+        <strong>{row.path.device_label}</strong>
+        <span>{labelize(row.path.equipment_type)}</span>
+      </td>
+      <td>
+        <strong>{row.path.component_label}</strong>
+        <span>{labelize(row.path.equipment_type)}</span>
       </td>
       <td>{row.current}</td>
       <td>{row.target}</td>
       <td>
-        {row.packageItem ? (
+        <StatusBadge status={row.path.path_status} />
+        <p>{firmwarePathStatusLabel(row.path.path_status)}</p>
+        {row.path.required_intermediate_versions.length > 0 && (
+          <p>via {row.path.required_intermediate_versions.join(", ")}</p>
+        )}
+      </td>
+      <td>
+        {row.path.package_available || row.packageItem ? (
           <div className="firmware-package-cell">
-            <strong>{row.packageItem.placeholder_name}</strong>
+            <strong>{row.path.package_name || row.packageItem?.placeholder_name}</strong>
             <span>
-              {row.packageItem.version_hint ? `Version ${row.packageItem.version_hint}` : labelize(row.packageItem.category)}
+              {row.path.package_version || row.packageItem?.version_hint
+                ? `Version ${row.path.package_version || row.packageItem?.version_hint}`
+                : labelize(row.packageItem?.category || "package")}
             </span>
           </div>
         ) : (
@@ -10780,15 +10841,12 @@ function FirmwareUpgradeRowView({
         )}
       </td>
       <td>
-        <StatusBadge status={row.summary.compliance_status} />
-        {row.summary.blocker && <p>{firmwareReasonText(row.summary.blocker)}</p>}
-      </td>
-      <td>
         <div className="firmware-upgrade-actions">
           <button
             className="small-button"
             disabled={!canRunScan || scanRunning}
-            onClick={() => {
+            onClick={(event) => {
+              event.stopPropagation();
               if (row.scanAction && canRunScan) onRunWorkflowAction(row.scanAction);
             }}
             title={canRunScan ? "Run the safe firmware inventory action." : scanDisabledReason}
@@ -10800,7 +10858,8 @@ function FirmwareUpgradeRowView({
           <button
             className="small-button primary"
             disabled={!canRunPlan || planRunning}
-            onClick={() => {
+            onClick={(event) => {
+              event.stopPropagation();
               if (row.planAction && canRunPlan) onRunWorkflowAction(row.planAction);
             }}
             title={canRunPlan ? "Build or refresh the firmware upgrade plan." : planDisabledReason}
@@ -10821,7 +10880,8 @@ function FirmwareUpgradeRowView({
             <button
               className="small-button firmware-upgrade-apply-button"
               disabled={!canRunUpgrade || upgradeRunning}
-              onClick={() => {
+              onClick={(event) => {
+                event.stopPropagation();
                 if (row.upgradeAction && canRunUpgrade) onRunWorkflowAction(row.upgradeAction);
               }}
               title={canRunUpgrade ? "Start the approved firmware upgrade action." : upgradeDisabledReason}
@@ -10841,11 +10901,79 @@ function FirmwareUpgradeRowView({
             />
           )}
         </div>
-        {!canRunUpgrade && !canStartGuardedUpgrade && !row.relatedAction && <p className="firmware-action-reason">{upgradeDisabledReason}</p>}
+        <p className="firmware-action-reason">{row.path.next_action}</p>
+        {!canRunUpgrade && !canStartGuardedUpgrade && !row.relatedAction && <p className="firmware-action-reason">{row.path.disabled_reason || upgradeDisabledReason}</p>}
         {row.relatedAction && !canStartRelatedAction && <p className="firmware-action-reason">{workflowGuardedDisabledReason(row.relatedAction)}</p>}
       </td>
     </tr>
   );
+}
+
+function FirmwareUpgradePathDetail({ row }: { row: FirmwareUpgradeRow }) {
+  const path = row.path;
+  return (
+    <section className="firmware-path-detail" aria-label="Firmware upgrade path detail">
+      <div className="validation-detail-head">
+        <div>
+          <span className="summary-kicker">Selected Path</span>
+          <h3>{path.device_label} / {path.component_label}</h3>
+          <p>{path.next_action}</p>
+        </div>
+        <StatusBadge status={path.path_status} />
+      </div>
+      <div className="detail-grid">
+        <Info label="Current" value={path.current_version || "Scan needed"} />
+        <Info label="Target" value={path.target_version || "Manual review"} />
+        <Info label="Path" value={firmwarePathStatusLabel(path.path_status)} />
+        <Info label="Package" value={path.package_name || (path.package_available ? "Available" : "Not available")} />
+        <Info label="Reboot / Impact" value={`${path.reboot_required ? "Reboot required" : "No reboot marked"}; ${path.estimated_impact}`} />
+        <Info label="Apply" value={path.apply_enabled ? "Enabled" : `Disabled: ${path.disabled_reason}`} />
+      </div>
+      <div className="firmware-path-detail-grid">
+        <div>
+          <strong>Prechecks</strong>
+          <ul>
+            {(path.prechecks_required.length ? path.prechecks_required : ["No precheck metadata available."]).map((item) => (
+              <li key={`${path.component_id}-precheck-${item}`}>{item}</li>
+            ))}
+          </ul>
+        </div>
+        <div>
+          <strong>Missing Evidence</strong>
+          <ul>
+            {(path.missing_evidence.length ? path.missing_evidence : ["No missing evidence is reported."]).map((item) => (
+              <li key={`${path.component_id}-missing-${item}`}>{item}</li>
+            ))}
+          </ul>
+        </div>
+        <div>
+          <strong>Package Details</strong>
+          <ul>
+            <li>{path.package_name || "No matching package detected."}</li>
+            <li>{path.package_version ? `Version ${path.package_version}` : "Package version unavailable."}</li>
+            <li>{path.baseline_source || "Baseline source unavailable."}</li>
+          </ul>
+        </div>
+      </div>
+      <AdvancedDetails
+        className="firmware-summary-evidence"
+        summary={`${path.evidence_artifacts.length} evidence link${path.evidence_artifacts.length === 1 ? "" : "s"}`}
+        title="Path Evidence"
+      >
+        <EvidenceList artifacts={path.evidence_artifacts} empty="No firmware evidence links are available yet." />
+      </AdvancedDetails>
+    </section>
+  );
+}
+
+function firmwareUpgradeRowKey(row: FirmwareUpgradeRow): string {
+  return `${row.summary.device_id}-${row.path.component_id}`;
+}
+
+function firmwarePathTone(status: string): string {
+  if (status === "blocked") return "blocked";
+  if (status === "manual_review" || status === "unknown" || status === "direct" || status === "staged") return "warning";
+  return "ready";
 }
 
 function FirmwareEvidencePanel({
@@ -10865,6 +10993,7 @@ function FirmwareEvidencePanel({
   reports: ReportLink[];
   waiver: ProviderProbeResult | null;
 }) {
+  const upgradePaths = recordArray(compliance?.upgrade_paths);
   return (
     <section className="panel firmware-evidence-panel">
       <StatusSummaryCard
@@ -10879,6 +11008,36 @@ function FirmwareEvidencePanel({
         ]}
       />
       <BlockerSummary blockers={stringArray(compliance?.blockers)} warnings={stringArray(compliance?.warnings)} />
+      <AdvancedDetails className="section-details" summary="Normalized upgrade path rows" title="Upgrade Path Model">
+        {upgradePaths.length ? (
+          <table className="provider-candidate-table">
+            <thead>
+              <tr>
+                <th>Device</th>
+                <th>Component</th>
+                <th>Current</th>
+                <th>Target</th>
+                <th>Path</th>
+                <th>Package</th>
+              </tr>
+            </thead>
+            <tbody>
+              {upgradePaths.map((path, index) => (
+                <tr key={`${asString(path.component_id) || index}`}>
+                  <td>{asString(path.device_label) || "-"}</td>
+                  <td>{asString(path.component_label) || asString(path.component_id) || "-"}</td>
+                  <td>{asString(path.current_version) || "Unknown"}</td>
+                  <td>{asString(path.target_version) || "Manual review"}</td>
+                  <td><StatusBadge status={asString(path.path_status) || "unknown"} /></td>
+                  <td>{asString(path.package_name) || (asBoolean(path.package_available) ? "Available" : "Not available")}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : (
+          <EmptyState title="No upgrade path model" detail="Firmware compliance did not include normalized path rows." />
+        )}
+      </AdvancedDetails>
       <AdvancedDetails className="section-details" summary="Component versions" title="Current and required versions">
         {components.length ? (
           <table className="provider-candidate-table">
@@ -10927,16 +11086,51 @@ function firmwareUpgradeRows(
   mediaItems: MediaInventory["items"],
   workflowActions: WorkflowAction[]
 ): FirmwareUpgradeRow[] {
-  return summaries.map((summary) => ({
-    summary,
-    current: firmwareVersionList(summary.current_versions, "Unknown"),
-    target: firmwareBaselineList(summary.approved_versions),
-    packageItem: firmwarePackageForSummary(summary, mediaItems),
-    scanAction: summary.scan_action_id ? workflowActions.find((action) => action.action_id === summary.scan_action_id) ?? null : null,
-    planAction: firmwarePlanActionForSummary(summary, workflowActions),
-    upgradeAction: firmwareApplyActionForSummary(summary, workflowActions),
-    relatedAction: firmwareRelatedActionForSummary(summary, workflowActions)
-  }));
+  return summaries.flatMap((summary) => {
+    const paths = summary.upgrade_paths?.length ? summary.upgrade_paths : [legacyFirmwarePathForSummary(summary)];
+    return paths.map((path) => ({
+      summary,
+      path,
+      current: path.current_version || "Unknown",
+      target: path.target_version || "Manual review",
+      packageItem: firmwarePackageForPath(path, summary, mediaItems),
+      scanAction: (path.scan_action_id || summary.scan_action_id)
+        ? workflowActions.find((action) => action.action_id === (path.scan_action_id || summary.scan_action_id)) ?? null
+        : null,
+      planAction: firmwarePlanActionForSummary(summary, workflowActions),
+      upgradeAction: ["direct", "staged"].includes(path.path_status) ? firmwareApplyActionForSummary(summary, workflowActions) : null,
+      relatedAction: path.apply_enabled ? firmwareRelatedActionForSummary(summary, workflowActions) : null
+    }));
+  });
+}
+
+function legacyFirmwarePathForSummary(summary: FirmwareSummary): FirmwareUpgradePath {
+  return {
+    component_id: summary.device_id,
+    component_label: summary.label,
+    device_label: summary.label,
+    equipment_type: summary.component_type,
+    current_version: firmwareVersionList(summary.current_versions, "Unknown"),
+    target_version: firmwareBaselineList(summary.approved_versions),
+    baseline_source: null,
+    package_available: summary.package_available,
+    package_name: summary.package_name,
+    package_version: null,
+    path_status: summary.path_status || summary.compliance_status,
+    required_intermediate_versions: summary.required_intermediate_versions ?? [],
+    prechecks_required: summary.prechecks_required ?? [],
+    reboot_required: summary.reboot_required ?? false,
+    estimated_impact: summary.estimated_impact || "Unknown until firmware/software path is classified.",
+    apply_enabled: summary.apply_enabled ?? false,
+    disabled_reason: summary.disabled_reason || summary.blocker || "No upgrade path details are available.",
+    next_action: summary.next_action,
+    evidence_artifacts: summary.evidence_artifacts,
+    missing_evidence: [],
+    scan_action_id: summary.scan_action_id,
+    last_checked: summary.last_scanned,
+    source_type: summary.source_type,
+    freshness: summary.freshness
+  };
 }
 
 function firmwareSummaryMatchesDevice(summary: FirmwareSummary, deviceFilter: FirmwareDeviceFilter): boolean {
@@ -11029,6 +11223,19 @@ function firmwarePackageForSummary(
     .filter(({ score }) => score > 0)
     .sort((left, right) => right.score - left.score);
   return scored[0]?.item ?? null;
+}
+
+function firmwarePackageForPath(
+  path: FirmwareUpgradePath,
+  summary: FirmwareSummary,
+  mediaItems: MediaInventory["items"]
+): MediaInventory["items"][number] | null {
+  if (path.package_name) {
+    const matched = mediaItems.find((item) => item.placeholder_name === path.package_name);
+    if (matched) return matched;
+  }
+  if (path.package_available) return firmwarePackageForSummary(summary, mediaItems);
+  return path.component_id === summary.device_id ? firmwarePackageForSummary(summary, mediaItems) : null;
 }
 
 function firmwarePackageScore(item: MediaInventory["items"][number], tokens: string[]): number {
@@ -11637,7 +11844,10 @@ function GoldenStateTable({
                     </div>
                   </td>
                   <td>{asString(row.golden_state)}</td>
-                  <td>{asString(row.current_state)}</td>
+                  <td>
+                    {asString(row.current_state)}
+                    <GoldenFirmwareComponentDetail row={row} />
+                  </td>
                   <td>{drift === "none" ? "None" : <StatusBadge status={drift} />}</td>
                   <td>
                     <div className="golden-repair-cell">
@@ -11666,6 +11876,24 @@ function GoldenStateTable({
         <EmptyState title="No rows" detail={emptyDetail} />
       )}
     </section>
+  );
+}
+
+function GoldenFirmwareComponentDetail({ row }: { row: Record<string, unknown> }) {
+  const components = recordArray(row.firmware_components);
+  if (!components.length) return null;
+  return (
+    <div className="golden-firmware-detail">
+      {components.slice(0, 6).map((component) => (
+        <div key={asString(component.component_id) || asString(component.component_label)}>
+          <strong>{asString(component.device_label)} - {asString(component.component_label)}</strong>
+          <span>
+            {asString(component.current_version) || "unknown"} to {asString(component.target_version) || "manual review"}
+          </span>
+          <StatusBadge status={asString(component.path_status) || "manual_review"} />
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -12363,7 +12591,7 @@ function LabValidationHandoff({ summary }: { summary: LabValidationSummary }) {
               <td>{item.label}</td>
               <td><StatusBadge status={item.status} /></td>
               <td>{item.login_hint}</td>
-              <td>{item.status === "ready" ? "Ready for handoff" : item.next_action}</td>
+              <td><LabValidationRemainderCell item={item} /></td>
             </tr>
           ))}
         </tbody>
@@ -12387,6 +12615,21 @@ function LabValidationHandoff({ summary }: { summary: LabValidationSummary }) {
         )}
       </AdvancedDetails>
     </section>
+  );
+}
+
+function LabValidationRemainderCell({ item }: { item: LabValidationItem }) {
+  if (item.status === "ready") return <>Ready for handoff</>;
+  if (item.id !== "firmware-compliance") return <>{item.next_action}</>;
+  const points = item.proof_points.filter((point) => /current|target|path|package/i.test(point)).slice(0, 4);
+  if (!points.length) return <>{item.next_action}</>;
+  return (
+    <div className="handoff-firmware-points">
+      <strong>{item.next_action}</strong>
+      {points.map((point) => (
+        <span key={point}>{point}</span>
+      ))}
+    </div>
   );
 }
 
@@ -12667,7 +12910,7 @@ function ValidationProofHandoff({ summary }: { summary: LabValidationSummary }) 
               <td>{item.label}</td>
               <td><StatusBadge status={item.status} /></td>
               <td>{item.login_hint}</td>
-              <td>{item.status === "ready" ? "Ready for handoff" : item.next_action}</td>
+              <td><LabValidationRemainderCell item={item} /></td>
             </tr>
           ))}
         </tbody>

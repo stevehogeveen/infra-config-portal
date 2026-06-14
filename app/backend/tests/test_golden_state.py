@@ -88,6 +88,70 @@ def test_golden_state_marks_vcenter_ready_only_after_post_attach_validation(monk
     assert result["vcenter_readiness"]["datastore_visible"] is True
 
 
+def test_golden_state_firmware_drift_lists_exact_components(monkeypatch, tmp_path: Path) -> None:
+    _patch_paths(monkeypatch, tmp_path)
+    _write_golden_artifacts(tmp_path)
+    monkeypatch.setattr(golden_state, "get_lab_build_verification", lambda: _build_verification())
+    monkeypatch.setattr(
+        golden_state,
+        "get_firmware_compliance",
+        lambda **_: {
+            "status": "warning",
+            "upgrade_path_summary": {"current": 1, "manual_review": 2, "blocked": 0},
+            "upgrade_paths": [
+                {
+                    "component_id": "cisco_ios_xe_version",
+                    "component_label": "Cisco IOS XE",
+                    "device_label": "Cisco",
+                    "current_version": "17.15.05",
+                    "target_version": "17.15.05",
+                    "path_status": "current",
+                    "package_available": True,
+                    "package_name": "firmware-1.bin",
+                    "missing_evidence": [],
+                    "next_action": "No Cisco IOS XE upgrade needed.",
+                },
+                {
+                    "component_id": "hpe_bios_version",
+                    "component_label": "HPE BIOS",
+                    "device_label": "HPE Server",
+                    "current_version": "U32 v3.30",
+                    "target_version": None,
+                    "path_status": "manual_review",
+                    "package_available": False,
+                    "package_name": None,
+                    "missing_evidence": ["target baseline", "approved HPE baseline"],
+                    "next_action": "Record the approved HPE BIOS baseline.",
+                },
+                {
+                    "component_id": "netapp_disk_firmware",
+                    "component_label": "NetApp disk firmware",
+                    "device_label": "NetApp",
+                    "current_version": None,
+                    "target_version": None,
+                    "path_status": "manual_review",
+                    "package_available": False,
+                    "package_name": None,
+                    "missing_evidence": ["current version", "component firmware baseline"],
+                    "next_action": "Record NetApp component firmware inventory.",
+                },
+            ],
+        },
+    )
+
+    result = golden_state.get_provider_lab_golden_state(write_report=False)
+    firmware = next(row for row in result["rows"] if row["id"] == "firmware")
+
+    assert firmware["drift"] == "manual_review"
+    assert firmware["status"] == "warning"
+    assert "2 components need manual review" in firmware["current_state"]
+    assert [component["component_id"] for component in firmware["firmware_components"]] == [
+        "hpe_bios_version",
+        "netapp_disk_firmware",
+    ]
+    assert firmware["firmware_components"][0]["missing_evidence"] == ["target baseline", "approved HPE baseline"]
+
+
 def test_golden_state_api_shape(client: TestClient) -> None:
     response = client.get("/api/v1/lab/golden-state")
 

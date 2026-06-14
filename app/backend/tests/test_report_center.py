@@ -146,6 +146,49 @@ def test_report_center_firmware_observed_below_minimum_stays_critical(monkeypatc
     assert issue["classification"] == "hard_fail"
 
 
+def test_report_center_firmware_path_issue_preserves_upgrade_context(monkeypatch) -> None:
+    monkeypatch.setattr(
+        report_center,
+        "get_firmware_compliance",
+        lambda **_: {
+            "provider_id": "firmware-compliance",
+            "checked_at": _fresh_checked_at(),
+            "source_type": "historical_evidence",
+            "status": "warning",
+            "reports": {"compliance": "artifacts/codex-runs/firmware-compliance-report.md"},
+            "upgrade_paths": [
+                {
+                    "component_id": "hpe_bios_version",
+                    "component_label": "HPE BIOS",
+                    "device_label": "HPE Server",
+                    "current_version": "U32 v3.30",
+                    "target_version": None,
+                    "path_status": "manual_review",
+                    "package_available": False,
+                    "package_name": None,
+                    "missing_evidence": ["target baseline", "approved HPE baseline"],
+                    "next_action": "Record the approved HPE BIOS baseline.",
+                    "evidence_artifacts": ["artifacts/codex-runs/firmware-inventory-report.md"],
+                    "last_checked": _fresh_checked_at(),
+                    "source_type": "historical_evidence",
+                    "freshness": "historical",
+                }
+            ],
+        },
+    )
+
+    payload = report_center.get_report_center(source_ids=("firmware",))
+
+    issue = payload["issues"][0]
+    assert issue["source"] == "firmware"
+    assert issue["classification"] == "warning"
+    assert "Current U32 v3.30; target manual review; path manual review; package not available." == issue["summary"]
+    assert issue["details"]["component_id"] == "hpe_bios_version"
+    assert issue["details"]["path_status"] == "manual_review"
+    assert issue["details"]["missing_evidence"] == ["target baseline", "approved HPE baseline"]
+    assert issue["details"]["where_to_fix"] == "Firmware Upgrades"
+
+
 def test_report_center_stale_config_includes_fix_details(monkeypatch) -> None:
     monkeypatch.setattr(
         report_center,

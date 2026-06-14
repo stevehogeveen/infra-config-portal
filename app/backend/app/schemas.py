@@ -1730,6 +1730,33 @@ class FirmwareVersionSummaryRead(BaseModel):
     status: str | None = None
 
 
+class FirmwareUpgradePathRead(BaseModel):
+    component_id: str
+    component_label: str
+    device_label: str
+    equipment_type: str
+    current_version: str | None = None
+    target_version: str | None = None
+    baseline_source: str | None = None
+    package_available: bool = False
+    package_name: str | None = None
+    package_version: str | None = None
+    path_status: str
+    required_intermediate_versions: list[str] = Field(default_factory=list)
+    prechecks_required: list[str] = Field(default_factory=list)
+    reboot_required: bool = False
+    estimated_impact: str
+    apply_enabled: bool = False
+    disabled_reason: str
+    next_action: str
+    evidence_artifacts: list[str] = Field(default_factory=list)
+    missing_evidence: list[str] = Field(default_factory=list)
+    scan_action_id: str | None = None
+    last_checked: str | None = None
+    source_type: str
+    freshness: str
+
+
 class FirmwareSummaryRead(BaseModel):
     device_id: str
     label: str
@@ -1746,6 +1773,17 @@ class FirmwareSummaryRead(BaseModel):
     scan_action_id: str | None = None
     upgrade_center_link: str
     evidence_artifacts: list[str] = Field(default_factory=list)
+    upgrade_paths: list[FirmwareUpgradePathRead] = Field(default_factory=list)
+    path_status: str = "unknown"
+    target_version: str | None = None
+    package_available: bool = False
+    package_name: str | None = None
+    required_intermediate_versions: list[str] = Field(default_factory=list)
+    prechecks_required: list[str] = Field(default_factory=list)
+    reboot_required: bool = False
+    estimated_impact: str = "Unknown until firmware/software path is classified."
+    apply_enabled: bool = False
+    disabled_reason: str = "No upgrade path rows are available."
 
 
 class ControlSectionRead(BaseModel):

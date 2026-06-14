@@ -9,8 +9,23 @@ from app.services import firmware_compliance as fc
 
 
 @pytest.fixture(autouse=True)
-def clear_probe_cache(monkeypatch) -> None:
+def clear_probe_cache(monkeypatch, tmp_path) -> None:
     clear_probe_results()
+    monkeypatch.setattr(fc, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(fc, "BASELINE_PATH", tmp_path / "config" / "firmware-baselines" / "real-lab.yml")
+    monkeypatch.setattr(fc, "CODEX_RUN_DIR", tmp_path / "artifacts" / "codex-runs")
+    monkeypatch.setattr(fc, "_media_directories", lambda: [tmp_path])
+    monkeypatch.setattr(fc, "COMPLIANCE_REPORT", tmp_path / "artifacts" / "codex-runs" / "firmware-compliance-report.md")
+    monkeypatch.setattr(fc, "COMPLIANCE_SUMMARY", tmp_path / "artifacts" / "codex-runs" / "firmware-compliance-summary-redacted.json")
+    monkeypatch.setattr(fc, "WAIVER_REPORT", tmp_path / "artifacts" / "codex-runs" / "firmware-waiver-report.md")
+    monkeypatch.setattr(fc, "LOCAL_WAIVER_PATH", tmp_path / "artifacts" / "codex-runs" / "firmware-waiver.json")
+    monkeypatch.setattr(fc, "CISCO_FIRMWARE_INVENTORY_REPORT", tmp_path / "cisco-firmware-inventory-report.md")
+    monkeypatch.setattr(fc, "INVENTORY_REPORT", tmp_path / "firmware-inventory-report.md")
+    monkeypatch.setattr(fc, "NETAPP_ONTAP_UPGRADE_VALIDATION_JSON", tmp_path / "netapp-ontap-upgrade-validation-redacted.json")
+    monkeypatch.setattr(fc, "NETAPP_ONTAP_UPGRADE_PLAN_JSON", tmp_path / "netapp-ontap-upgrade-plan-redacted.json")
+    monkeypatch.setattr(fc, "ESXI_MANAGEMENT_VALIDATION_REPORT", tmp_path / "esxi-post-recovery-validation-report.md")
+    monkeypatch.setattr(fc, "VCENTER_POST_INSTALL_VALIDATION_JSON", tmp_path / "vcenter-post-install-validation-redacted.json")
+    monkeypatch.setattr(fc, "VCENTER_POST_ATTACH_VALIDATION_JSON", tmp_path / "vcenter-post-attach-validation-redacted.json")
     monkeypatch.setattr(
         fc,
         "latest_console_ontap_version",
@@ -274,6 +289,144 @@ def test_cisco_firmware_report_fills_missing_provider_cache(monkeypatch, firmwar
     assert cisco_inventory["bootloader_rommon"] == "17.12.1"
 
 
+def test_ontap_target_9171_is_current(monkeypatch, firmware_settings) -> None:
+    firmware_settings.netapp_current_ontap_version = "9.17.1"
+    monkeypatch.setattr(fc, "settings", firmware_settings)
+    monkeypatch.setattr(fc, "get_netapp_runtime_state", lambda: {"configured": True})
+    monkeypatch.setattr(fc, "load_firmware_baseline", lambda: _baseline(_component("netapp_ontap_version", approved=["9.17.1"])))
+
+    result = fc.get_firmware_compliance(scope="netapp")
+    path = _path_for(result, "netapp_ontap_version")
+
+    assert path["current_version"] == "9.17.1"
+    assert path["target_version"] == "9.17.1"
+    assert path["path_status"] == "current"
+    assert path["apply_enabled"] is False
+
+
+def test_cisco_ios_xe_current_equals_target_is_current(monkeypatch, firmware_settings) -> None:
+    firmware_settings.cisco_mgmt_configured = False
+    monkeypatch.setattr(fc, "settings", firmware_settings)
+    monkeypatch.setattr(fc, "load_firmware_baseline", lambda: _baseline(_component("cisco_ios_xe_version", approved=["17.15.05"])))
+    record_probe_result("cisco-console", {"provider_id": "cisco-console", "status": "ok", "ios_xe_version": "17.15.05"})
+
+    result = fc.get_firmware_compliance(scope="cisco")
+    path = _path_for(result, "cisco_ios_xe_version")
+
+    assert path["current_version"] == "17.15.05"
+    assert path["target_version"] == "17.15.05"
+    assert path["path_status"] == "current"
+
+
+def test_ilo_current_equals_target_is_current(monkeypatch, firmware_settings) -> None:
+    monkeypatch.setattr(fc, "settings", firmware_settings)
+    monkeypatch.setattr(fc, "load_firmware_baseline", lambda: _baseline(_component("hpe_ilo_firmware", approved=["3.19"])))
+    record_probe_result("ilo-redfish", {"provider_id": "ilo-redfish", "status": "ok", "managers": [{"FirmwareVersion": "iLO 5 v3.19"}]})
+
+    result = fc.get_firmware_compliance(scope="hpe")
+    path = _path_for(result, "hpe_ilo_firmware")
+
+    assert path["current_version"] == "iLO 5 v3.19"
+    assert path["target_version"] == "3.19"
+    assert path["path_status"] == "current"
+
+
+def test_missing_baseline_becomes_manual_review(monkeypatch, firmware_settings) -> None:
+    monkeypatch.setattr(fc, "settings", firmware_settings)
+    monkeypatch.setattr(fc, "load_firmware_baseline", lambda: _baseline(_component("hpe_bios_version", unknown_policy="warning")))
+    record_probe_result("ilo-redfish", {"provider_id": "ilo-redfish", "status": "ok", "systems": [{"BiosVersion": "U32 v3.30"}]})
+
+    result = fc.get_firmware_compliance(scope="hpe")
+    path = _path_for(result, "hpe_bios_version")
+
+    assert path["current_version"] == "U32 v3.30"
+    assert path["target_version"] is None
+    assert path["path_status"] == "manual_review"
+    assert "approved HPE baseline" in path["missing_evidence"]
+
+
+def test_missing_package_blocks_upgrade_apply(monkeypatch, firmware_settings) -> None:
+    monkeypatch.setattr(fc, "settings", firmware_settings)
+    monkeypatch.setattr(fc, "load_firmware_baseline", lambda: _baseline(_component("hpe_ilo_firmware", approved=["3.19"])))
+    record_probe_result("ilo-redfish", {"provider_id": "ilo-redfish", "status": "ok", "managers": [{"FirmwareVersion": "2.80"}]})
+
+    result = fc.get_firmware_compliance(scope="hpe")
+    path = _path_for(result, "hpe_ilo_firmware")
+
+    assert path["path_status"] == "blocked"
+    assert path["package_available"] is False
+    assert path["apply_enabled"] is False
+    assert "matching local package" in path["disabled_reason"]
+
+
+def test_unknown_current_version_requires_scan(monkeypatch, firmware_settings) -> None:
+    monkeypatch.setattr(fc, "settings", firmware_settings)
+    monkeypatch.setattr(fc, "load_firmware_baseline", lambda: _baseline(_component("hpe_ilo_firmware", approved=["3.19"])))
+
+    result = fc.get_firmware_compliance(scope="hpe")
+    path = _path_for(result, "hpe_ilo_firmware")
+
+    assert path["path_status"] == "unknown"
+    assert path["apply_enabled"] is False
+    assert "ilo.firmware-inventory" in path["next_action"]
+
+
+def test_staged_path_renders_intermediate_versions(monkeypatch, firmware_settings, tmp_path) -> None:
+    firmware_settings.media_inventory_dirs = (str(tmp_path),)
+    (tmp_path / "ilo5_319.fwpkg").write_bytes(b"firmware")
+    monkeypatch.setattr(fc, "settings", firmware_settings)
+    monkeypatch.setattr(fc, "_media_directories", lambda: [tmp_path])
+    monkeypatch.setattr(
+        fc,
+        "load_firmware_baseline",
+        lambda: _baseline(
+            _component(
+                "hpe_ilo_firmware",
+                approved=["3.19"],
+                required_intermediate_versions=["3.00"],
+            )
+        ),
+    )
+    record_probe_result("ilo-redfish", {"provider_id": "ilo-redfish", "status": "ok", "managers": [{"FirmwareVersion": "2.80"}]})
+
+    result = fc.get_firmware_compliance(scope="hpe")
+    path = _path_for(result, "hpe_ilo_firmware")
+
+    assert path["path_status"] == "staged"
+    assert path["required_intermediate_versions"] == ["3.00"]
+    assert path["package_available"] is True
+    assert path["apply_enabled"] is False
+
+
+def test_stale_evidence_does_not_enable_upgrade_apply(monkeypatch, firmware_settings, tmp_path) -> None:
+    firmware_settings.cisco_mgmt_configured = False
+    firmware_settings.media_inventory_dirs = (str(tmp_path),)
+    (tmp_path / "cat9k_iosxe.17.15.05.SPA.bin").write_bytes(b"firmware")
+    monkeypatch.setattr(fc, "settings", firmware_settings)
+    monkeypatch.setattr(fc, "_media_directories", lambda: [tmp_path])
+    monkeypatch.setattr(
+        fc,
+        "_cisco_firmware_report_versions",
+        lambda: {
+            "status": "ok",
+            "source": "console-user-exec-show-version",
+            "ios_xe_version": "16.12.05",
+            "bootloader_rommon": None,
+            "checked_at": "2020-01-01T00:00:00+00:00",
+        },
+    )
+    monkeypatch.setattr(fc, "load_firmware_baseline", lambda: _baseline(_component("cisco_ios_xe_version", approved=["17.15.05"])))
+
+    result = fc.get_firmware_compliance(scope="cisco")
+    path = _path_for(result, "cisco_ios_xe_version")
+
+    assert path["path_status"] == "manual_review"
+    assert path["package_available"] is True
+    assert path["freshness"] == "stale"
+    assert path["apply_enabled"] is False
+    assert "not fresh live inventory" in path["disabled_reason"]
+
+
 def test_firmware_summary_includes_cisco_ios_xe_from_report(monkeypatch, firmware_settings) -> None:
     firmware_settings.cisco_mgmt_configured = False
     monkeypatch.setattr(fc, "settings", firmware_settings)
@@ -501,6 +654,7 @@ def test_firmware_payload_redacts_secrets(monkeypatch, firmware_settings) -> Non
 
     assert "ilo-secret" not in str(result)
     assert "REDACTED" in str(result)
+    assert firmware_settings.ilo_test_password not in str(result["upgrade_paths"])
 
 
 def test_api_exposes_firmware_gate_schema(client, monkeypatch, firmware_settings) -> None:
@@ -535,6 +689,10 @@ def _summary_for(summaries: list[dict], device_id: str) -> dict:
     return next(summary for summary in summaries if summary["device_id"] == device_id)
 
 
+def _path_for(payload: dict, component_id: str) -> dict:
+    return next(path for path in payload["upgrade_paths"] if path["component_id"] == component_id)
+
+
 def _baseline(*components: dict) -> dict:
     return {"baseline_id": "test", "components": list(components)}
 
@@ -543,6 +701,8 @@ def _component(
     component_id: str,
     *,
     minimum: str | None = None,
+    approved: list[str] | None = None,
+    required_intermediate_versions: list[str] | None = None,
     unknown_policy: str = "blocked",
 ) -> dict:
     return {
@@ -550,7 +710,8 @@ def _component(
         "device": component_id.split("_", 1)[0],
         "label": component_id,
         "minimum": minimum,
-        "approved": [],
+        "approved": approved or [],
+        "required_intermediate_versions": required_intermediate_versions or [],
         "unknown_policy": unknown_policy,
         "next_action": "Review firmware.",
     }

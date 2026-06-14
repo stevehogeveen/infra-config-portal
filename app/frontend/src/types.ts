@@ -630,6 +630,33 @@ export type FirmwareVersionSummary = {
   status: string | null;
 };
 
+export type FirmwareUpgradePath = {
+  component_id: string;
+  component_label: string;
+  device_label: string;
+  equipment_type: string;
+  current_version: string | null;
+  target_version: string | null;
+  baseline_source: string | null;
+  package_available: boolean;
+  package_name: string | null;
+  package_version: string | null;
+  path_status: "current" | "direct" | "staged" | "blocked" | "unknown" | "manual_review" | string;
+  required_intermediate_versions: string[];
+  prechecks_required: string[];
+  reboot_required: boolean;
+  estimated_impact: string;
+  apply_enabled: boolean;
+  disabled_reason: string;
+  next_action: string;
+  evidence_artifacts: string[];
+  missing_evidence: string[];
+  scan_action_id: string | null;
+  last_checked: string | null;
+  source_type: string;
+  freshness: string;
+};
+
 export type FirmwareSummary = {
   device_id: string;
   label: string;
@@ -646,6 +673,17 @@ export type FirmwareSummary = {
   scan_action_id: string | null;
   upgrade_center_link: string;
   evidence_artifacts: string[];
+  upgrade_paths: FirmwareUpgradePath[];
+  path_status: string;
+  target_version: string | null;
+  package_available: boolean;
+  package_name: string | null;
+  required_intermediate_versions: string[];
+  prechecks_required: string[];
+  reboot_required: boolean;
+  estimated_impact: string;
+  apply_enabled: boolean;
+  disabled_reason: string;
 };
 
 export type ControlSectionRecord = {
