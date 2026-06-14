@@ -348,6 +348,12 @@ export const api = {
     apiRequest<ProviderProbeResult>("/api/v1/lab/vcenter-netapp/readiness"),
   vcenterNetappDatastorePlan: () =>
     apiRequest<ProviderProbeResult>("/api/v1/lab/vcenter-netapp/datastore-plan"),
+  vcenterInstallReadiness: () =>
+    apiRequest<ProviderProbeResult>("/api/v1/lab/vcenter/install-readiness"),
+  vcenterInstallPlan: () =>
+    apiRequest<ProviderProbeResult>("/api/v1/lab/vcenter/install-plan"),
+  vcenterInstallPreview: () =>
+    apiRequest<ProviderProbeResult>("/api/v1/lab/vcenter/install-preview"),
   reportIssues: () =>
     apiRequest<ReportCenter>("/api/v1/reports/issues"),
   reportSummary: () =>

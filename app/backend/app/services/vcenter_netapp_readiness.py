@@ -21,8 +21,10 @@ PLAN_REPORT = CODEX_RUN_DIR / "vcenter-netapp-datastore-plan-report.md"
 READINESS_JSON = CODEX_RUN_DIR / "vcenter-netapp-readiness-redacted.json"
 VCENTER_INSTALL_READINESS_REPORT = CODEX_RUN_DIR / "vcenter-install-readiness-report.md"
 VCENTER_INSTALL_PLAN_REPORT = CODEX_RUN_DIR / "vcenter-install-plan-report.md"
+VCENTER_INSTALL_PREVIEW_REPORT = CODEX_RUN_DIR / "vcenter-install-preview-report.md"
 VCENTER_INSTALL_READINESS_JSON = CODEX_RUN_DIR / "vcenter-install-readiness-redacted.json"
 VCENTER_INSTALL_PLAN_JSON = CODEX_RUN_DIR / "vcenter-install-plan-redacted.json"
+VCENTER_INSTALL_PREVIEW_JSON = CODEX_RUN_DIR / "vcenter-install-preview-redacted.json"
 CONSOLE_STATE_JSON = CODEX_RUN_DIR / "netapp-console-state-redacted.json"
 CONSOLE_LOGIN_STATE_JSON = CODEX_RUN_DIR / "netapp-console-login-state-redacted.json"
 
@@ -253,22 +255,29 @@ def get_vcenter_install_readiness(
 ) -> dict[str, Any]:
     generated_at = _now()
     profile_context = active_lab_profile_context()
+    active_profile = profile_context.get("active_profile") if isinstance(profile_context.get("active_profile"), dict) else {}
     features = profile_context.get("enabled_features") or {}
     plan = profile_context.get("resolved_address_plan") or {}
     vcsa_iso = _find_vcsa_iso()
-    esxi_host = settings.esxi_test_host or LAB_ESXI_MANAGEMENT_IP
-    datastore_name = settings.netapp_nfs_datastore_name
+    deployment_values = _vcenter_deployment_values(plan=plan, active_profile=active_profile, vcsa_iso=vcsa_iso)
+    value_checks = _vcenter_deployment_value_checks(deployment_values)
+    credential_state = _vcenter_deployment_credential_state()
+    deployment_values_complete = all(item.get("status") == "ready" for item in value_checks.values())
+    deployment_values["complete"] = deployment_values_complete
+    deployment_values["missing_fields"] = _missing_value_labels(value_checks)
+    datastore_name = str(deployment_values.get("datastore_target") or settings.netapp_nfs_datastore_name)
+    esxi_host = str(deployment_values.get("esxi_target") or settings.esxi_test_host or LAB_ESXI_MANAGEMENT_IP)
     vcenter_host_configured = bool(settings.vcenter_host or settings.vcenter_configured)
-    vcenter_credentials_configured = bool(settings.vcenter_username and settings.vcenter_password)
     govc_available = _tool_available("govc")
     vcsa_deploy_available = _tool_available("vcsa-deploy")
-    vcenter_enabled = bool(features.get("vcenter_enabled", True))
+    vcenter_profile_enabled = _boolish(features.get("vcenter_enabled"), default=False)
+    datastore_ready = _datastore_ready_check(datastore_name)
     checks = {
-        "vcenter_in_scope": _config_check(
-            "vCenter in scope",
-            vcenter_enabled,
-            "vCenter is enabled by the active lab profile.",
-            "vCenter is disabled by the active lab profile.",
+        "vcenter_profile_scope": _config_check(
+            "vCenter profile scope",
+            vcenter_profile_enabled,
+            "vCenter is marked configured by the active lab profile.",
+            "vCenter is not configured yet by the active lab profile; this is expected partial until deployment completes.",
         ),
         "vcsa_iso_present": _config_check(
             "VCSA ISO",
@@ -283,6 +292,7 @@ def get_vcenter_install_readiness(
             2049,
             check_ports=check_ports,
         ),
+        "netapp_datastore_ready": datastore_ready,
         "govc_available": _config_check(
             "govc",
             govc_available,
@@ -295,36 +305,50 @@ def get_vcenter_install_readiness(
             "vcsa-deploy is available.",
             "vcsa-deploy is not installed or not discoverable.",
         ),
-        "vcenter_target_configured": _config_check(
-            "vCenter target",
-            vcenter_host_configured,
-            "vCenter target is configured.",
-            "VCENTER_HOST/GOVC_URL is not configured.",
+        "vcenter_values_complete": _config_check(
+            "vCenter deployment values",
+            deployment_values_complete,
+            "All required vCenter deployment values are configured.",
+            "One or more required vCenter deployment values are missing.",
         ),
-        "vcenter_credentials_configured": _config_check(
-            "vCenter credentials",
-            vcenter_credentials_configured,
-            "vCenter credential fields are configured.",
-            "VCENTER_USERNAME/GOVC_USERNAME and VCENTER_PASSWORD/GOVC_PASSWORD are missing.",
+        "vcenter_deployment_credentials_configured": _config_check(
+            "vCenter deployment credentials",
+            bool(credential_state["deployment_credentials_configured"]),
+            "Local-only deployment credential fields are configured.",
+            "Local-only deployment credential fields are missing.",
         ),
     }
     blockers = []
-    if not vcenter_enabled:
-        blockers.append("vCenter is disabled by the active lab profile.")
     if not vcsa_iso:
         blockers.append("VCSA ISO media was not found under the configured media roots.")
     if checks["esxi_management_reachable"]["status"] != "ready":
         blockers.append("ESXi management must be reachable before vCenter install planning can proceed.")
     if checks["netapp_nfs_lif_reachable"]["status"] != "ready":
         blockers.append("NetApp NFS LIF must be reachable before vCenter install planning can proceed.")
+    if datastore_ready["status"] != "ready":
+        blockers.append("NetApp datastore must be validated read/write before vCenter install planning can proceed.")
     if not govc_available:
         blockers.append("govc is required for target datastore/ESXi validation.")
     if not vcsa_deploy_available:
         blockers.append("vcsa-deploy is required before guided VCSA install can run.")
-    if not vcenter_host_configured:
-        blockers.append("vCenter target values are missing.")
-    if not vcenter_credentials_configured:
-        blockers.append("vCenter credential values are missing.")
+    if not deployment_values_complete:
+        blockers.append(
+            "vCenter deployment values are incomplete: "
+            + ", ".join(_missing_value_labels(value_checks))
+            + "."
+        )
+    if not credential_state["deployment_credentials_configured"]:
+        blockers.append(
+            "vCenter deployment credentials are missing: "
+            + ", ".join(credential_state["missing_fields"])
+            + "."
+        )
+    warnings = [
+        "Install apply is intentionally disabled; this report only prepares the guided deployment lane.",
+        "vCenter deploy must wait until ESXi management and the NetApp datastore are ready.",
+    ]
+    if not vcenter_profile_enabled:
+        warnings.append("Golden State treats vCenter as expected partial until the appliance is deployed and configured.")
     payload = {
         "provider_id": "vcenter",
         "action": "vcenter-install-readiness",
@@ -334,26 +358,32 @@ def get_vcenter_install_readiness(
         "message": "vCenter install readiness evaluated. No vCenter deployment was started.",
         "mode": settings.provider_mode,
         "apply_enabled": False,
-        "source_type": "live_probe" if check_ports else "live_cached",
-        "freshness": "current" if check_ports else "not_checked",
+        "source_type": "live_provider" if check_ports else "operator_config",
+        "freshness": "live" if check_ports else "not_checked",
         "current_state": {
             "vcenter_installed": vcenter_host_configured,
             "esxi_management": esxi_host,
             "netapp_datastore": datastore_name,
+            "netapp_datastore_access": datastore_ready.get("detail"),
             "vcsa_iso": _safe_media_path(vcsa_iso),
+            "post_install_vcenter": _redacted_url(settings.vcenter_host),
         },
         "target_state": {
-            "vcenter": _redacted_url(settings.vcenter_host),
+            "vcenter": deployment_values.get("management_ip"),
+            "appliance_name": deployment_values.get("appliance_name"),
             "deployment_target": esxi_host,
             "datastore": datastore_name,
-            "lab_network": plan.get("subnet") if isinstance(plan, dict) else None,
+            "deployment_size": deployment_values.get("deployment_size"),
+            "network": deployment_values.get("network"),
+            "portgroup": deployment_values.get("portgroup"),
+            "lab_network": deployment_values.get("subnet_cidr"),
         },
+        "deployment_values": deployment_values,
+        "value_checks": value_checks,
+        "credential_state": credential_state,
         "checks": checks,
         "blockers": list(dict.fromkeys(blockers)),
-        "warnings": [
-            "Install apply is intentionally disabled; this report only prepares the guided deployment lane.",
-            "vCenter must wait until ESXi management and the NetApp datastore are ready.",
-        ],
+        "warnings": warnings,
         "not_attempted": [
             "VCSA deploy install",
             "vCenter appliance power operation",
@@ -363,12 +393,13 @@ def get_vcenter_install_readiness(
         "artifacts": {
             "readiness_report": _rel(VCENTER_INSTALL_READINESS_REPORT),
             "plan_report": _rel(VCENTER_INSTALL_PLAN_REPORT),
+            "preview_report": _rel(VCENTER_INSTALL_PREVIEW_REPORT),
             "readiness_json": _rel(VCENTER_INSTALL_READINESS_JSON),
         },
         "next_safe_action": (
-            "Generate the vCenter install plan after readiness is ready."
+            "Run Preview Deploy to generate the redacted VCSA deployment plan."
             if not blockers
-            else "Restore ESXi management, mount the NetApp datastore, and configure missing vCenter values."
+            else "Complete missing vCenter deployment values and local-only credentials, then rerun vCenter install readiness."
         ),
     }
     sanitized = redact_sensitive(payload)
@@ -381,32 +412,283 @@ def get_vcenter_install_readiness(
 
 def get_vcenter_install_plan(*, write_report: bool = True) -> dict[str, Any]:
     readiness = get_vcenter_install_readiness(check_ports=True, write_report=write_report)
-    plan = {
-        **readiness,
-        "action": "vcenter-install-plan",
-        "message": "vCenter install plan generated. Preview only; no install was started.",
-        "install_plan": {
-            "vcsa_iso": (readiness.get("current_state") or {}).get("vcsa_iso"),
-            "deployment_target": (readiness.get("target_state") or {}).get("deployment_target"),
-            "datastore": (readiness.get("target_state") or {}).get("datastore"),
-            "command_preview": [
-                "Mount VCSA ISO locally.",
-                "Generate redacted VCSA deployment JSON from active lab profile.",
-                "vcsa-deploy install --accept-eula --acknowledge-ceip <redacted-vcsa-plan.json>",
-            ],
-        },
-        "artifacts": {
-            **(readiness.get("artifacts") or {}),
-            "plan_report": _rel(VCENTER_INSTALL_PLAN_REPORT),
-            "plan_json": _rel(VCENTER_INSTALL_PLAN_JSON),
-        },
-    }
+    plan = _vcenter_install_plan_payload(
+        readiness,
+        action="vcenter-install-plan",
+        message="vCenter install plan generated. Preview only; no install was started.",
+        report=VCENTER_INSTALL_PLAN_REPORT,
+        json_report=VCENTER_INSTALL_PLAN_JSON,
+        artifact_key="plan",
+    )
     sanitized = redact_sensitive(plan)
     if write_report:
         CODEX_RUN_DIR.mkdir(parents=True, exist_ok=True)
         VCENTER_INSTALL_PLAN_JSON.write_text(json.dumps(sanitized, indent=2) + "\n", encoding="utf-8")
         VCENTER_INSTALL_PLAN_REPORT.write_text(_vcenter_install_markdown(sanitized), encoding="utf-8")
     return sanitized
+
+
+def get_vcenter_install_preview(*, write_report: bool = True) -> dict[str, Any]:
+    readiness = get_vcenter_install_readiness(check_ports=True, write_report=write_report)
+    preview = _vcenter_install_plan_payload(
+        readiness,
+        action="vcenter-install-preview",
+        message="vCenter deploy preview generated. No VCSA deployment was started.",
+        report=VCENTER_INSTALL_PREVIEW_REPORT,
+        json_report=VCENTER_INSTALL_PREVIEW_JSON,
+        artifact_key="preview",
+    )
+    sanitized = redact_sensitive(preview)
+    if write_report:
+        CODEX_RUN_DIR.mkdir(parents=True, exist_ok=True)
+        VCENTER_INSTALL_PREVIEW_JSON.write_text(json.dumps(sanitized, indent=2) + "\n", encoding="utf-8")
+        VCENTER_INSTALL_PREVIEW_REPORT.write_text(_vcenter_install_markdown(sanitized), encoding="utf-8")
+    return sanitized
+
+
+def _vcenter_install_plan_payload(
+    readiness: dict[str, Any],
+    *,
+    action: str,
+    message: str,
+    report: Path,
+    json_report: Path,
+    artifact_key: str,
+) -> dict[str, Any]:
+    deployment_values = readiness.get("deployment_values") if isinstance(readiness.get("deployment_values"), dict) else {}
+    return {
+        **readiness,
+        "action": action,
+        "message": message,
+        "install_plan": {
+            "vcsa_iso": deployment_values.get("vcsa_iso_path") or (readiness.get("current_state") or {}).get("vcsa_iso"),
+            "appliance_name": deployment_values.get("appliance_name"),
+            "management_ip": deployment_values.get("management_ip"),
+            "sso_domain": deployment_values.get("sso_domain"),
+            "sso_admin_username_status": deployment_values.get("sso_admin_username_status"),
+            "deployment_size": deployment_values.get("deployment_size"),
+            "network": deployment_values.get("network"),
+            "portgroup": deployment_values.get("portgroup"),
+            "deployment_target": (readiness.get("target_state") or {}).get("deployment_target"),
+            "datastore": (readiness.get("target_state") or {}).get("datastore"),
+            "command_preview": [
+                "Mount VCSA ISO locally.",
+                "Generate redacted VCSA deployment JSON from active lab profile and local-only credential status.",
+                "vcsa-deploy install --accept-eula --acknowledge-ceip <redacted-vcsa-plan.json>",
+            ],
+            "deploy_confirmations_present": False,
+            "deploy_apply_enabled": False,
+        },
+        "artifacts": {
+            **(readiness.get("artifacts") or {}),
+            f"{artifact_key}_report": _rel(report),
+            f"{artifact_key}_json": _rel(json_report),
+        },
+    }
+
+
+def _vcenter_deployment_values(
+    *,
+    plan: dict[str, Any],
+    active_profile: dict[str, Any],
+    vcsa_iso: Path | None,
+) -> dict[str, Any]:
+    global_settings = active_profile.get("global_settings") if isinstance(active_profile.get("global_settings"), dict) else {}
+    vcsa_iso_path = _safe_media_path(vcsa_iso) or _safe_media_path(_configured_vcsa_iso_path())
+    sso_admin_username = settings.vcenter_sso_admin_username
+    return {
+        "appliance_name": settings.vcenter_appliance_name,
+        "management_ip": settings.vcenter_management_ip,
+        "subnet_cidr": settings.vcenter_subnet_cidr or _clean_value(plan.get("subnet")) or settings.lab_subnet_cidr,
+        "gateway": settings.vcenter_gateway or _clean_value(global_settings.get("gateway")) or _clean_value(active_profile.get("gateway")),
+        "dns_servers": _first_non_empty_list(settings.vcenter_dns_servers, global_settings.get("dns_servers"), active_profile.get("dns")),
+        "ntp_servers": _first_non_empty_list(settings.vcenter_ntp_servers, global_settings.get("ntp_servers"), active_profile.get("ntp")),
+        "sso_domain": settings.vcenter_sso_domain,
+        "sso_admin_username": sso_admin_username,
+        "sso_admin_username_status": "configured" if bool(sso_admin_username) else "missing",
+        "esxi_target": settings.vcenter_esxi_target
+        or settings.esxi_test_host
+        or _clean_value(plan.get("esxi_management"))
+        or LAB_ESXI_MANAGEMENT_IP,
+        "datastore_target": settings.vcenter_datastore_target or settings.netapp_nfs_datastore_name or "netapp_nfs_ds01",
+        "vcsa_iso_path": vcsa_iso_path,
+        "deployment_size": settings.vcenter_deployment_size,
+        "network": settings.vcenter_network or settings.vcenter_portgroup,
+        "portgroup": settings.vcenter_portgroup or settings.vcenter_network,
+        "post_install_vcenter_configured": bool(settings.vcenter_host or settings.vcenter_configured),
+        "post_install_vcenter": _redacted_url(settings.vcenter_host),
+    }
+
+
+def _vcenter_deployment_value_checks(values: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    return {
+        "appliance_name": _value_check("vCenter appliance name", "VCENTER_APPLIANCE_NAME", values.get("appliance_name")),
+        "management_ip": _value_check("vCenter management IP", "VCENTER_MANAGEMENT_IP", values.get("management_ip")),
+        "subnet_cidr": _value_check("Subnet", "VCENTER_SUBNET_CIDR or active lab subnet", values.get("subnet_cidr")),
+        "gateway": _value_check("Gateway", "VCENTER_GATEWAY or active lab gateway", values.get("gateway")),
+        "dns_servers": _value_check("DNS servers", "VCENTER_DNS_SERVERS or active lab DNS", values.get("dns_servers")),
+        "ntp_servers": _value_check("NTP servers", "VCENTER_NTP_SERVERS or active lab NTP", values.get("ntp_servers")),
+        "sso_domain": _value_check("SSO domain", "VCENTER_SSO_DOMAIN", values.get("sso_domain")),
+        "sso_admin_username": _value_check(
+            "SSO admin username",
+            "VCENTER_SSO_ADMIN_USERNAME",
+            values.get("sso_admin_username"),
+        ),
+        "esxi_target": _value_check("ESXi target", "VCENTER_ESXI_TARGET or ESXI_TEST_HOST", values.get("esxi_target")),
+        "datastore_target": _value_check(
+            "Datastore target",
+            "VCENTER_DATASTORE_TARGET or NETAPP_NFS_DATASTORE_NAME",
+            values.get("datastore_target"),
+        ),
+        "vcsa_iso_path": _value_check("VCSA ISO path", "VCENTER_VCSA_ISO_PATH or VCSA_ISO_PATH", values.get("vcsa_iso_path")),
+        "deployment_size": _value_check("Deployment size", "VCENTER_DEPLOYMENT_SIZE", values.get("deployment_size")),
+        "network_portgroup": _value_check(
+            "Network / portgroup",
+            "VCENTER_NETWORK or VCENTER_PORTGROUP",
+            values.get("network") or values.get("portgroup"),
+        ),
+    }
+
+
+def _vcenter_deployment_credential_state() -> dict[str, Any]:
+    sso_password_configured = bool(settings.vcenter_sso_admin_password)
+    root_password_configured = bool(settings.vcenter_appliance_root_password)
+    esxi_credentials_configured = bool(settings.esxi_test_username and settings.esxi_test_password)
+    post_install_vcenter_credentials_configured = bool(settings.vcenter_username and settings.vcenter_password)
+    missing_fields = []
+    if not root_password_configured:
+        missing_fields.append("VCENTER_APPLIANCE_ROOT_PASSWORD")
+    if not sso_password_configured:
+        missing_fields.append("VCENTER_SSO_ADMIN_PASSWORD")
+    if not esxi_credentials_configured:
+        missing_fields.append("ESXI_TEST_USERNAME/ESXI_TEST_PASSWORD")
+    return {
+        "sso_admin_username_configured": bool(settings.vcenter_sso_admin_username),
+        "sso_admin_password_configured": sso_password_configured,
+        "appliance_root_password_configured": root_password_configured,
+        "esxi_credentials_configured": esxi_credentials_configured,
+        "post_install_vcenter_credentials_configured": post_install_vcenter_credentials_configured,
+        "deployment_credentials_configured": not missing_fields,
+        "missing_fields": missing_fields,
+        "source_type": "operator_config",
+        "freshness": "live",
+    }
+
+
+def _value_check(label: str, field: str, value: Any) -> dict[str, Any]:
+    configured = bool(value) if not isinstance(value, (list, tuple)) else bool(list(value))
+    return {
+        "label": label,
+        "field": field,
+        "status": "ready" if configured else "not_configured",
+        "detail": f"{label} is configured." if configured else f"{label} is missing.",
+        "source_type": "operator_config",
+        "freshness": "live",
+    }
+
+
+def _missing_value_labels(value_checks: dict[str, dict[str, Any]]) -> list[str]:
+    return [
+        str(check.get("field") or check.get("label") or key)
+        for key, check in value_checks.items()
+        if check.get("status") != "ready"
+    ]
+
+
+def _datastore_ready_check(datastore_name: str | None) -> dict[str, Any]:
+    path = REPO_ROOT / "artifacts" / "codex-runs" / "esxi-netapp-nfs-datastore-validation-redacted.json"
+    payload = _read_json_artifact(path)
+    if not payload:
+        return {
+            "label": "NetApp datastore",
+            "datastore": datastore_name,
+            "status": "not_checked",
+            "detail": "No NetApp datastore validation artifact was found.",
+            "source_type": "not_checked",
+            "freshness": "not_checked",
+            "checked_at": None,
+            "recheck_command": "make provider-lab-esxi-netapp-datastore-validate",
+        }
+    current = payload.get("current_state") if isinstance(payload.get("current_state"), dict) else {}
+    summary = current.get("summary") if isinstance(current.get("summary"), dict) else {}
+    artifact_datastore = str(summary.get("name") or "")
+    access_mode = str(summary.get("access_mode") or "")
+    ready = (
+        payload.get("status") == "ready"
+        and current.get("exists") is True
+        and current.get("accessible") is True
+        and access_mode == "readWrite"
+        and (not datastore_name or artifact_datastore == datastore_name)
+    )
+    return {
+        "label": "NetApp datastore",
+        "datastore": artifact_datastore or datastore_name,
+        "status": "ready" if ready else "blocked",
+        "detail": (
+            f"{artifact_datastore or datastore_name} is mounted read/write."
+            if ready
+            else "NetApp datastore validation evidence does not show the requested datastore mounted read/write."
+        ),
+        "source_type": "historical_artifact",
+        "freshness": "historical",
+        "checked_at": payload.get("checked_at"),
+        "recheck_command": "make provider-lab-esxi-netapp-datastore-validate",
+        "evidence_artifacts": [_rel(path)] if path.exists() else [],
+    }
+
+
+def _configured_vcsa_iso_path() -> Path | None:
+    value = settings.vcenter_vcsa_iso_path
+    return Path(value).expanduser() if value else None
+
+
+def _clean_value(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def _boolish(value: Any, *, default: bool = False) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        lowered = value.strip().lower()
+        if lowered in {"1", "true", "yes", "on"}:
+            return True
+        if lowered in {"0", "false", "no", "off"}:
+            return False
+    return bool(value)
+
+
+def _first_non_empty_list(*values: Any) -> list[str]:
+    for value in values:
+        items = _coerce_string_list(value)
+        if items:
+            return items
+    return []
+
+
+def _coerce_string_list(value: Any) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [item.strip() for item in value.split(",") if item.strip()]
+    if isinstance(value, (tuple, list)):
+        return [str(item).strip() for item in value if str(item).strip()]
+    return []
+
+
+def _read_json_artifact(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return payload if isinstance(payload, dict) else {}
 
 
 def _classify(
@@ -527,7 +809,8 @@ def _config_check(label: str, ok: bool, ready_detail: str, missing_detail: str) 
         "label": label,
         "status": "ready" if ok else "not_configured",
         "detail": ready_detail if ok else missing_detail,
-        "source_type": "live_cached",
+        "source_type": "operator_config",
+        "freshness": "live",
     }
 
 
@@ -540,6 +823,7 @@ def _tcp_check(label: str, host: str | None, port: int, *, check_ports: bool) ->
             "status": "not_configured",
             "detail": f"{label} host is not configured.",
             "source_type": "not_checked",
+            "freshness": "not_checked",
         }
     if not check_ports:
         return {
@@ -549,6 +833,7 @@ def _tcp_check(label: str, host: str | None, port: int, *, check_ports: bool) ->
             "status": "not_checked",
             "detail": "Reachability not checked in this read.",
             "source_type": "not_checked",
+            "freshness": "not_checked",
         }
     try:
         with socket.create_connection((host, port), timeout=2.5):
@@ -560,7 +845,8 @@ def _tcp_check(label: str, host: str | None, port: int, *, check_ports: bool) ->
             "port": port,
             "status": "blocked",
             "detail": f"TCP {port} check failed with {exc.__class__.__name__}.",
-            "source_type": "live_probe",
+            "source_type": "live_provider",
+            "freshness": "live",
         }
     return {
         "label": label,
@@ -568,7 +854,8 @@ def _tcp_check(label: str, host: str | None, port: int, *, check_ports: bool) ->
         "port": port,
         "status": "ready" if reachable else "blocked",
         "detail": f"TCP {port} reachable.",
-        "source_type": "live_probe",
+        "source_type": "live_provider",
+        "freshness": "live",
     }
 
 
@@ -654,6 +941,9 @@ def _plan_markdown(payload: dict[str, Any]) -> str:
 
 
 def _find_vcsa_iso() -> Path | None:
+    explicit = _configured_vcsa_iso_path()
+    if explicit and explicit.exists() and explicit.is_file():
+        return explicit
     roots = [Path(item).expanduser() for item in settings.media_inventory_dirs]
     roots.append(REPO_ROOT / "artifacts" / "Media")
     candidates: list[Path] = []
@@ -681,9 +971,15 @@ def _safe_media_path(path: Path | None) -> str | None:
 def _vcenter_install_markdown(payload: dict[str, Any]) -> str:
     current = payload.get("current_state") or {}
     target = payload.get("target_state") or {}
+    values = payload.get("deployment_values") or {}
+    credential_state = payload.get("credential_state") or {}
     install_plan = payload.get("install_plan") or {}
+    title = {
+        "vcenter-install-readiness": "# vCenter Install Readiness Report",
+        "vcenter-install-preview": "# vCenter Install Preview Report",
+    }.get(str(payload.get("action")), "# vCenter Install Plan Report")
     lines = [
-        "# vCenter Install Readiness Report" if payload.get("action") == "vcenter-install-readiness" else "# vCenter Install Plan Report",
+        title,
         "",
         f"- Checked at: `{payload.get('checked_at')}`",
         f"- Action: `{payload.get('action')}`",
@@ -700,6 +996,25 @@ def _vcenter_install_markdown(payload: dict[str, Any]) -> str:
         f"- vCenter: `{target.get('vcenter') or 'not configured'}`",
         f"- Deployment target: `{target.get('deployment_target')}`",
         f"- Datastore: `{target.get('datastore')}`",
+        f"- Deployment size: `{target.get('deployment_size') or 'not configured'}`",
+        f"- Network / portgroup: `{target.get('network') or target.get('portgroup') or 'not configured'}`",
+        "",
+        "## Deployment Values",
+        f"- Appliance name: `{values.get('appliance_name') or 'missing'}`",
+        f"- Management IP: `{values.get('management_ip') or 'missing'}`",
+        f"- Subnet: `{values.get('subnet_cidr') or 'missing'}`",
+        f"- Gateway: `{values.get('gateway') or 'missing'}`",
+        f"- DNS: `{', '.join(values.get('dns_servers') or []) or 'missing'}`",
+        f"- NTP: `{', '.join(values.get('ntp_servers') or []) or 'missing'}`",
+        f"- SSO domain: `{values.get('sso_domain') or 'missing'}`",
+        f"- SSO admin username: `{values.get('sso_admin_username_status') or 'missing'}`",
+        f"- Values complete: `{values.get('complete')}`",
+        "",
+        "## Credential Status",
+        f"- SSO admin password: `{'configured' if credential_state.get('sso_admin_password_configured') else 'missing'}`",
+        f"- Appliance root password: `{'configured' if credential_state.get('appliance_root_password_configured') else 'missing'}`",
+        f"- ESXi credentials: `{'configured' if credential_state.get('esxi_credentials_configured') else 'missing'}`",
+        f"- Post-install vCenter credentials: `{'configured' if credential_state.get('post_install_vcenter_credentials_configured') else 'missing'}`",
         "",
         "## Checks",
     ]

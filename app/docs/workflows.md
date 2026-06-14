@@ -192,6 +192,9 @@ The local report targets are:
 make provider-lab-validation
 make provider-lab-vcenter-netapp-readiness
 make provider-lab-vcenter-netapp-datastore-plan
+make provider-lab-vcenter-install-readiness
+make provider-lab-vcenter-install-plan
+make provider-lab-vcenter-install-preview
 make provider-lab-netapp-setup-preview
 make provider-lab-netapp-ontap-upgrade-inventory
 make provider-lab-netapp-ontap-upgrade-plan
@@ -203,6 +206,14 @@ not run datastore apply, ONTAP writes, ESXi writes, vCenter writes, storage
 provisioning, reboot, wipe, or upgrade actions. The vCenter-NetApp readiness
 lane classifies datastore work as `blocked_by_prior_stage` while NetApp is
 still at `cluster_setup_wizard` or until ONTAP/NFS setup is proven.
+
+The vCenter install lane is report-only. It models the local-only VCSA
+deployment values and credential presence needed before any future deploy lane:
+appliance name, management IP, subnet, gateway, DNS, NTP, SSO domain/admin,
+ESXi target, NetApp datastore target, VCSA ISO path, deployment size, and
+network/portgroup. Secret values stay in `.env.local.real-lab` or the operator
+environment and reports show only configured/missing status. The preview target
+writes redacted plan artifacts and does not start `vcsa-deploy`.
 
 ## Golden State
 

@@ -1796,6 +1796,19 @@ ACTIONS: tuple[ActionDefinition, ...] = (
         provider_ids=("esxi-readonly", "netapp-ontap"),
     ),
     _action(
+        "vcenter.install-preview",
+        "Preview Deploy",
+        "vcenter",
+        "vCenter Control",
+        "Generate the redacted VCSA deploy preview without starting deployment.",
+        "read-only",
+        command="make provider-lab-vcenter-install-preview",
+        method="GET",
+        endpoint="/api/v1/lab/vcenter/install-preview",
+        report="artifacts/codex-runs/vcenter-install-preview-report.md",
+        provider_ids=("esxi-readonly", "netapp-ontap"),
+    ),
+    _action(
         "vcenter.netapp-readiness",
         "NetApp Readiness",
         "vcenter",
@@ -2097,6 +2110,7 @@ SECTIONS: tuple[SectionDefinition, ...] = (
         (
             "vcenter.install-readiness",
             "vcenter.install-plan",
+            "vcenter.install-preview",
             "vcenter.netapp-readiness",
             "vcenter.netapp-datastore-plan",
         ),

@@ -1,6 +1,6 @@
 # Golden State Productization Report
 
-- Generated at: `2026-06-14T00:10:05.295556+00:00`
+- Generated at: `2026-06-14T00:48:43.488761+00:00`
 - Status: `partial`
 - Real hardware workflow run by this report: `False`
 - Secrets: not included; credentials are configured/tested status only.
@@ -16,7 +16,7 @@
 | NetApp | ONTAP 9.17.1 current | ONTAP 9.17.1 | `none` | `make provider-lab-netapp-validate-setup` |
 | NetApp NFS datastore | Mounted read/write on ESXi | netapp_nfs_ds01 readWrite | `none` | `make provider-lab-esxi-netapp-datastore-validate` |
 | VM deployment | VM deployed on NetApp datastore | VM on netapp_nfs_ds01 | `none` | `make provider-lab-esxi-vm-deploy-validate` |
-| vCenter | Not configured for this golden state | Missing deployment values | `expected_partial` | `make provider-lab-vcenter-install-readiness` |
+| vCenter | Expected partial until deployed and configured | Expected partial: deployment values incomplete | `expected_partial` | `make provider-lab-vcenter-install-readiness` |
 | Firmware | Current or accepted after manual baseline review | Needs manual baseline review | `needs_review` | `make provider-lab-firmware-compliance` |
 
 ## Credential Status
@@ -34,9 +34,11 @@
 - VCSA ISO: `found`
 - ESXi: `ready`
 - NetApp datastore: `ready`
-- vCenter credentials: `configured`
-- vCenter config: `missing`
-- Next action: Configure vCenter deployment values.
+- vCenter values: `incomplete`
+- vCenter credentials: `missing`
+- vCenter config: `expected_partial`
+- Deploy enabled: `False`
+- Next action: Open vCenter install readiness and complete missing local-only deployment values.
 
 ## Workflow Actions
 
@@ -47,7 +49,7 @@
 
 ## Drift
 
-- vCenter: `expected_partial` - Missing deployment values
+- vCenter: `expected_partial` - Expected partial: deployment values incomplete
 - Firmware: `needs_review` - Needs manual baseline review
 
 ## Evidence
@@ -61,6 +63,8 @@
 - `artifacts/codex-runs/esxi-netapp-nfs-datastore-validation-report.md`
 - `artifacts/codex-runs/esxi-vm-deploy-validation-report.md`
 - `artifacts/codex-runs/vcenter-install-readiness-report.md`
+- `artifacts/codex-runs/vcenter-install-plan-report.md`
+- `artifacts/codex-runs/vcenter-install-preview-report.md`
 - `artifacts/codex-runs/firmware-compliance-report.md`
 
 ## Skill Improvement Review

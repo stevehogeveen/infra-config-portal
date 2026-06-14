@@ -1003,6 +1003,63 @@ button:disabled {
   gap: 16px;
 }
 
+.vcenter-readiness-list {
+  border: 1px solid #dfe4ea;
+  border-radius: 8px;
+  display: grid;
+  overflow: hidden;
+}
+
+.vcenter-readiness-row {
+  align-items: center;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(150px, 0.8fr) minmax(0, 1fr) auto;
+  min-width: 0;
+  padding: 11px 14px;
+}
+
+.vcenter-readiness-row + .vcenter-readiness-row {
+  border-top: 1px solid #dfe4ea;
+}
+
+.vcenter-readiness-row span,
+.vcenter-readiness-row strong {
+  overflow-wrap: anywhere;
+}
+
+.vcenter-readiness-row > span {
+  color: #475569;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.golden-vcenter-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.golden-vcenter-actions .small-button {
+  align-items: center;
+  display: inline-flex;
+  gap: 6px;
+}
+
+.vcenter-values-section {
+  display: grid;
+  gap: 10px;
+}
+
+.vcenter-values-table td,
+.vcenter-values-table th {
+  vertical-align: top;
+}
+
+.vcenter-values-table td:nth-child(2) {
+  overflow-wrap: anywhere;
+}
+
 .status-summary-card,
 .next-action-card,
 .blocker-summary,

@@ -599,6 +599,23 @@ EXTRA_ACTIONS: tuple[WorkflowActionSeed, ...] = (
         ),
     ),
     WorkflowActionSeed(
+        "vcenter.install-preview",
+        "vCenter Preview Deploy",
+        "vcenter",
+        "vcenter",
+        "preview",
+        "read_only",
+        "Generate the redacted VCSA deploy preview without starting deployment.",
+        "make_target",
+        command="make provider-lab-vcenter-install-preview",
+        reports=("artifacts/codex-runs/vcenter-install-preview-report.md",),
+        required_gates=("ESXi management reachable", "NetApp datastore ready", "VCSA ISO available"),
+        required_credentials=(
+            "Local-only VCSA root and SSO credential references with values redacted.",
+            "ESXi management credential reference with values redacted.",
+        ),
+    ),
+    WorkflowActionSeed(
         "vcenter-netapp.datastore-apply-placeholder",
         "Future Datastore Apply",
         "netapp",

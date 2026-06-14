@@ -123,20 +123,7 @@ def _golden_rows(*, live_status: dict[str, Any]) -> list[dict[str, Any]]:
         _netapp_row(live_status),
         _datastore_row(),
         _vm_deployment_row(),
-        _row(
-            row_id="vcenter",
-            label="vCenter",
-            golden_state="Not configured for this golden state",
-            current_state="Missing deployment values",
-            ready=False,
-            drift="expected_partial",
-            status="not_configured",
-            repair_label="Configure vCenter values",
-            repair_action_id="vcenter.install-readiness",
-            repair_command="make provider-lab-vcenter-install-readiness",
-            evidence=["artifacts/codex-runs/vcenter-install-readiness-report.md"],
-            warnings=["vCenter is intentionally not deployed in this run."],
-        ),
+        _vcenter_row(),
         _row(
             row_id="firmware",
             label="Firmware",
@@ -217,6 +204,38 @@ def _vm_deployment_row() -> dict[str, Any]:
         repair_command="make provider-lab-esxi-vm-deploy-validate",
         evidence=["artifacts/codex-runs/esxi-vm-deploy-validation-report.md"],
         warnings=[] if ready else ["VM validation evidence does not show the target VM on the NetApp datastore."],
+    )
+
+
+def _vcenter_row() -> dict[str, Any]:
+    artifact = _read_json("artifacts/codex-runs/vcenter-install-readiness-redacted.json")
+    deployment_values = artifact.get("deployment_values") if isinstance(artifact.get("deployment_values"), dict) else {}
+    values_complete = bool(deployment_values.get("complete"))
+    configured = bool(settings.vcenter_host or settings.vcenter_configured)
+    current_state = (
+        "Configured"
+        if configured
+        else "Expected partial: deployment values complete; deploy pending"
+        if values_complete
+        else "Expected partial: deployment values incomplete"
+    )
+    return _row(
+        row_id="vcenter",
+        label="vCenter",
+        golden_state="Configured and reachable" if configured else "Expected partial until deployed and configured",
+        current_state=current_state,
+        ready=configured,
+        drift="none" if configured else "expected_partial",
+        status="ready" if configured else "not_configured",
+        repair_label="Configure vCenter values",
+        repair_action_id="vcenter.install-readiness",
+        repair_command="make provider-lab-vcenter-install-readiness",
+        evidence=[
+            "artifacts/codex-runs/vcenter-install-readiness-report.md",
+            "artifacts/codex-runs/vcenter-install-plan-report.md",
+            "artifacts/codex-runs/vcenter-install-preview-report.md",
+        ],
+        warnings=[] if configured else ["vCenter is expected partial until deployment values and confirmation gates are ready."],
     )
 
 
@@ -471,29 +490,62 @@ def _vcenter_readiness(rows: list[dict[str, Any]], credentials: dict[str, Any]) 
     vcenter_credential = next((row for row in credentials["rows"] if row["id"] == "vcenter"), {})
     vcsa_iso_found = _vcsa_iso_found()
     artifact = _read_json("artifacts/codex-runs/vcenter-install-readiness-redacted.json")
-    checks = artifact.get("checks") if isinstance(artifact.get("checks"), dict) else {}
-    target_check = checks.get("vcenter_target_configured") if isinstance(checks.get("vcenter_target_configured"), dict) else {}
-    vcenter_configured = bool(settings.vcenter_host or settings.vcenter_configured) or target_check.get("status") == "ready"
-    credential_configured = bool(vcenter_credential.get("configured"))
-    config_state = "configured" if vcenter_configured else "missing"
-    credential_state = "configured" if credential_configured else "missing"
+    deployment_values = artifact.get("deployment_values") if isinstance(artifact.get("deployment_values"), dict) else {}
+    value_checks = artifact.get("value_checks") if isinstance(artifact.get("value_checks"), dict) else {}
+    credential_detail = artifact.get("credential_state") if isinstance(artifact.get("credential_state"), dict) else {}
+    values_complete = bool(deployment_values.get("complete")) or (
+        bool(value_checks) and all(isinstance(check, dict) and check.get("status") == "ready" for check in value_checks.values())
+    )
+    deployment_credentials_configured = bool(credential_detail.get("deployment_credentials_configured"))
+    post_install_credentials_configured = bool(vcenter_credential.get("configured")) or bool(
+        credential_detail.get("post_install_vcenter_credentials_configured")
+    )
+    vcenter_configured = bool(settings.vcenter_host or settings.vcenter_configured) or bool(
+        deployment_values.get("post_install_vcenter_configured")
+    )
+    esxi_ready = row_by_id.get("esxi", {}).get("status") == "ready"
+    datastore_ready = row_by_id.get("netapp-nfs-datastore", {}).get("status") == "ready"
+    values_state = "complete" if values_complete else "incomplete"
+    credential_state = "configured" if deployment_credentials_configured else "missing"
     metadata = _artifact_metadata(
         "artifacts/codex-runs/vcenter-install-readiness-redacted.json",
         "make provider-lab-vcenter-install-readiness",
     )
     return {
-        "status": "ready" if vcsa_iso_found and vcenter_configured and credential_configured else "not_configured",
+        "status": "ready"
+        if vcsa_iso_found and esxi_ready and datastore_ready and values_complete and deployment_credentials_configured
+        else "not_configured",
         "vcsa_iso": "found" if vcsa_iso_found else "not_found",
-        "esxi": "ready" if row_by_id.get("esxi", {}).get("status") == "ready" else "not_ready",
-        "netapp_datastore": "ready" if row_by_id.get("netapp-nfs-datastore", {}).get("status") == "ready" else "not_ready",
+        "esxi": "ready" if esxi_ready else "not_ready",
+        "netapp_datastore": "ready" if datastore_ready else "not_ready",
         "vcenter_credentials": credential_state,
-        "vcenter_config": config_state,
-        "next_action": "Configure vCenter deployment values.",
+        "credentials": credential_state,
+        "post_install_vcenter_credentials": "configured" if post_install_credentials_configured else "missing",
+        "vcenter_config": "configured" if vcenter_configured else "expected_partial",
+        "vcenter_values": values_state,
+        "values_complete": values_complete,
+        "deploy_enabled": False,
+        "preview_action_id": "vcenter.install-preview",
+        "deploy_action_label": "Deploy disabled until values, credentials, fresh readiness, and confirmation gates are present.",
+        "deployment_values": deployment_values,
+        "value_checks": value_checks,
+        "credential_detail": credential_detail,
+        "next_action": (
+            "Run Preview Deploy to generate the redacted VCSA deployment plan."
+            if vcsa_iso_found and esxi_ready and datastore_ready and values_complete and deployment_credentials_configured
+            else "Open vCenter install readiness and complete missing local-only deployment values."
+        ),
         "source_type": metadata["source_type"],
         "freshness": metadata["freshness"],
         "checked_at": metadata["checked_at"],
         "recheck_command": metadata["recheck_command"],
-        "evidence_artifacts": _existing(["artifacts/codex-runs/vcenter-install-readiness-report.md"]),
+        "evidence_artifacts": _existing(
+            [
+                "artifacts/codex-runs/vcenter-install-readiness-report.md",
+                "artifacts/codex-runs/vcenter-install-plan-report.md",
+                "artifacts/codex-runs/vcenter-install-preview-report.md",
+            ]
+        ),
     }
 
 
@@ -696,8 +748,10 @@ def _markdown(payload: dict[str, Any]) -> str:
             f"- VCSA ISO: `{vcenter.get('vcsa_iso')}`",
             f"- ESXi: `{vcenter.get('esxi')}`",
             f"- NetApp datastore: `{vcenter.get('netapp_datastore')}`",
+            f"- vCenter values: `{vcenter.get('vcenter_values')}`",
             f"- vCenter credentials: `{vcenter.get('vcenter_credentials')}`",
             f"- vCenter config: `{vcenter.get('vcenter_config')}`",
+            f"- Deploy enabled: `{vcenter.get('deploy_enabled')}`",
             f"- Next action: {vcenter.get('next_action')}",
             "",
             "## Workflow Actions",

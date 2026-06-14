@@ -591,6 +591,17 @@ ALLOWED_WORKFLOW_ACTION_RUNNERS: dict[str, WorkflowActionExecutionSpec] = {
             "artifacts/codex-runs/vcenter-install-plan-redacted.json",
         ),
     ),
+    "vcenter.install-preview": WorkflowActionExecutionSpec(
+        action_id="vcenter.install-preview",
+        kind="command",
+        label="Preview Deploy",
+        command=("make", "provider-lab-vcenter-install-preview"),
+        registry_command="make provider-lab-vcenter-install-preview",
+        reports=(
+            "artifacts/codex-runs/vcenter-install-preview-report.md",
+            "artifacts/codex-runs/vcenter-install-preview-redacted.json",
+        ),
+    ),
     "firmware.compliance-check": WorkflowActionExecutionSpec(
         action_id="firmware.compliance-check",
         kind="command",

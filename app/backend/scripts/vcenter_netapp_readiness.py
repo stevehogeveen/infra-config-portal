@@ -18,6 +18,7 @@ if REAL_LAB_ENV.exists():
 
 from app.services.vcenter_netapp_readiness import (  # noqa: E402
     get_vcenter_install_plan,
+    get_vcenter_install_preview,
     get_vcenter_install_readiness,
     get_vcenter_netapp_datastore_plan,
     get_vcenter_netapp_readiness,
@@ -26,7 +27,10 @@ from app.services.vcenter_netapp_readiness import (  # noqa: E402
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Generate vCenter readiness and datastore plan reports.")
-    parser.add_argument("action", choices=("readiness", "datastore-plan", "install-readiness", "install-plan"))
+    parser.add_argument(
+        "action",
+        choices=("readiness", "datastore-plan", "install-readiness", "install-plan", "install-preview"),
+    )
     args = parser.parse_args()
 
     if args.action == "datastore-plan":
@@ -35,6 +39,8 @@ def main() -> int:
         result = get_vcenter_install_readiness(check_ports=True, write_report=True)
     elif args.action == "install-plan":
         result = get_vcenter_install_plan(write_report=True)
+    elif args.action == "install-preview":
+        result = get_vcenter_install_preview(write_report=True)
     else:
         result = get_vcenter_netapp_readiness(check_ports=True, write_report=True)
 

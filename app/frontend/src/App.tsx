@@ -9352,6 +9352,7 @@ function controlConfigOptionsForSection(
     return [
       option("vcenter_install_readiness", "Install Readiness", "Check VCSA media, ESXi reachability, NetApp datastore readiness, and missing values.", ["manual", "govc"], "read_only", ["install-readiness"], "Ready", false),
       option("vcenter_install_plan", "Install Plan", "Build the preview-only VCSA deployment plan after prerequisites are ready.", ["manual", "govc"], "read_only", ["install-plan"], "Plan ready", false),
+      option("vcenter_install_preview", "Preview Deploy", "Generate the redacted VCSA deploy preview without starting deployment.", ["manual", "govc"], "read_only", ["install-preview"], "Preview ready", false),
       option("vcenter_netapp_readiness", "NetApp Readiness", "Validate vCenter/govc handoff against the NetApp NFS datastore plan.", ["govc", "ontap_rest"], "read_only", ["netapp-readiness"], "Ready", false),
       option("vcenter_datastore_plan", "Datastore Plan", "Preview datastore attach commands without mounting storage.", ["govc"], "read_only", ["datastore-plan"], "Plan ready", false)
     ];
@@ -11499,7 +11500,13 @@ function GoldenStatePage() {
           {activeSection === "credentials" && (
             <GoldenCredentialStatus rows={credentialRows} status={asString(credentials.status) || "not_checked"} />
           )}
-          {activeSection === "vcenter" && <GoldenVcenterReadiness readiness={vcenter} />}
+          {activeSection === "vcenter" && (
+            <GoldenVcenterReadiness
+              onRunAction={runGoldenAction}
+              readiness={vcenter}
+              runningAction={runningAction}
+            />
+          )}
         </>
       )}
     </Page>
@@ -11737,7 +11744,74 @@ function GoldenCredentialStatus({
   );
 }
 
-function GoldenVcenterReadiness({ readiness }: { readiness: Record<string, unknown> }) {
+function GoldenVcenterReadiness({
+  onRunAction,
+  readiness,
+  runningAction
+}: {
+  onRunAction: (actionId: string) => void;
+  readiness: Record<string, unknown>;
+  runningAction: string;
+}) {
+  const deploymentValues = objectValue(readiness.deployment_values);
+  const valueChecks = objectValue(readiness.value_checks);
+  const credentialDetail = objectValue(readiness.credential_detail);
+  const previewActionId = asString(readiness.preview_action_id) || "vcenter.install-preview";
+  const previewBusy = runningAction === previewActionId;
+  const deployEnabled = asBoolean(readiness.deploy_enabled);
+  const credentialsConfigured =
+    (asString(readiness.credentials) || asString(readiness.vcenter_credentials)) === "configured" ||
+    asBoolean(credentialDetail.deployment_credentials_configured);
+  const requirements = [
+    {
+      label: "VCSA ISO Found",
+      status: asString(readiness.vcsa_iso) === "found" ? "ready" : "not_configured",
+      value: labelize(asString(readiness.vcsa_iso) || "not_found")
+    },
+    {
+      label: "ESXi Ready",
+      status: asString(readiness.esxi) === "ready" ? "ready" : "not_checked",
+      value: labelize(asString(readiness.esxi) || "not_ready")
+    },
+    {
+      label: "NetApp Datastore Ready",
+      status: asString(readiness.netapp_datastore) === "ready" ? "ready" : "not_checked",
+      value: labelize(asString(readiness.netapp_datastore) || "not_ready")
+    },
+    {
+      label: "vCenter Values",
+      status: asBoolean(readiness.values_complete) || asString(readiness.vcenter_values) === "complete" ? "ready" : "not_configured",
+      value: labelize(asString(readiness.vcenter_values) || "incomplete")
+    },
+    {
+      label: "Credentials",
+      status: credentialsConfigured ? "ready" : "not_configured",
+      value: credentialsConfigured ? "Configured" : "Missing"
+    }
+  ];
+  const valueRows = [
+    { label: "Appliance Name", value: asString(deploymentValues.appliance_name) || "Missing", status: vcenterValueStatus(valueChecks, "appliance_name") },
+    { label: "Management IP", value: asString(deploymentValues.management_ip) || "Missing", status: vcenterValueStatus(valueChecks, "management_ip") },
+    { label: "Subnet", value: asString(deploymentValues.subnet_cidr) || "Missing", status: vcenterValueStatus(valueChecks, "subnet_cidr") },
+    { label: "Gateway", value: asString(deploymentValues.gateway) || "Missing", status: vcenterValueStatus(valueChecks, "gateway") },
+    { label: "DNS", value: stringArray(deploymentValues.dns_servers).join(", ") || "Missing", status: vcenterValueStatus(valueChecks, "dns_servers") },
+    { label: "NTP", value: stringArray(deploymentValues.ntp_servers).join(", ") || "Missing", status: vcenterValueStatus(valueChecks, "ntp_servers") },
+    { label: "SSO Domain", value: asString(deploymentValues.sso_domain) || "Missing", status: vcenterValueStatus(valueChecks, "sso_domain") },
+    {
+      label: "SSO Admin Username",
+      value: labelize(asString(deploymentValues.sso_admin_username_status) || "missing"),
+      status: vcenterValueStatus(valueChecks, "sso_admin_username")
+    },
+    { label: "ESXi Target", value: asString(deploymentValues.esxi_target) || "Missing", status: vcenterValueStatus(valueChecks, "esxi_target") },
+    { label: "Datastore Target", value: asString(deploymentValues.datastore_target) || "Missing", status: vcenterValueStatus(valueChecks, "datastore_target") },
+    { label: "VCSA ISO Path", value: asString(deploymentValues.vcsa_iso_path) || "Missing", status: vcenterValueStatus(valueChecks, "vcsa_iso_path") },
+    { label: "Deployment Size", value: asString(deploymentValues.deployment_size) || "Missing", status: vcenterValueStatus(valueChecks, "deployment_size") },
+    {
+      label: "Network / Portgroup",
+      value: asString(deploymentValues.network) || asString(deploymentValues.portgroup) || "Missing",
+      status: vcenterValueStatus(valueChecks, "network_portgroup")
+    }
+  ];
   return (
     <section className="panel golden-vcenter-panel">
       <div className="validation-detail-head">
@@ -11747,12 +11821,76 @@ function GoldenVcenterReadiness({ readiness }: { readiness: Record<string, unkno
         </div>
         <StatusBadge status={asString(readiness.status) || "not_configured"} />
       </div>
+      <div className="vcenter-readiness-list">
+        {requirements.map((requirement) => (
+          <div className="vcenter-readiness-row" key={requirement.label}>
+            <span>{requirement.label}</span>
+            <strong>{requirement.value}</strong>
+            <VisibleStatusBadge status={requirement.status} />
+          </div>
+        ))}
+      </div>
+      <div className="golden-vcenter-actions">
+        <button
+          className="small-button primary"
+          disabled={Boolean(runningAction)}
+          onClick={() => onRunAction(previewActionId)}
+          type="button"
+        >
+          <Play size={14} />
+          {previewBusy ? "Previewing" : "Preview Deploy"}
+        </button>
+        <button
+          className="small-button"
+          disabled={!deployEnabled || Boolean(runningAction)}
+          title={asString(readiness.deploy_action_label) || "Deploy disabled until all values and confirmation gates are present."}
+          type="button"
+        >
+          <Ban size={14} />
+          Deploy
+        </button>
+      </div>
+      <div className="vcenter-values-section">
+        <div className="issue-list-head">
+          <PanelTitle icon={<ClipboardList size={18} />} title="Install Values" />
+          <VisibleStatusBadge status={asBoolean(readiness.values_complete) ? "ready" : "not_configured"} />
+        </div>
+        <table className="provider-candidate-table vcenter-values-table">
+          <thead>
+            <tr>
+              <th>Value</th>
+              <th>Configured Value</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {valueRows.map((row) => (
+              <tr key={row.label}>
+                <td>{row.label}</td>
+                <td>{row.value}</td>
+                <td><VisibleStatusBadge status={row.status} /></td>
+              </tr>
+            ))}
+            <tr>
+              <td>SSO Admin Password</td>
+              <td>{asBoolean(credentialDetail.sso_admin_password_configured) ? "Configured" : "Missing"}</td>
+              <td><VisibleStatusBadge status={asBoolean(credentialDetail.sso_admin_password_configured) ? "ready" : "not_configured"} /></td>
+            </tr>
+            <tr>
+              <td>Appliance Root Password</td>
+              <td>{asBoolean(credentialDetail.appliance_root_password_configured) ? "Configured" : "Missing"}</td>
+              <td><VisibleStatusBadge status={asBoolean(credentialDetail.appliance_root_password_configured) ? "ready" : "not_configured"} /></td>
+            </tr>
+            <tr>
+              <td>ESXi Credentials</td>
+              <td>{asBoolean(credentialDetail.esxi_credentials_configured) ? "Configured" : "Missing"}</td>
+              <td><VisibleStatusBadge status={asBoolean(credentialDetail.esxi_credentials_configured) ? "ready" : "not_configured"} /></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
       <div className="detail-grid">
-        <Info label="VCSA ISO" value={labelize(asString(readiness.vcsa_iso) || "not_found")} />
-        <Info label="ESXi" value={labelize(asString(readiness.esxi) || "not_ready")} />
-        <Info label="NetApp Datastore" value={labelize(asString(readiness.netapp_datastore) || "not_ready")} />
-        <Info label="vCenter Credentials" value={labelize(asString(readiness.vcenter_credentials) || "missing")} />
-        <Info label="vCenter Config" value={labelize(asString(readiness.vcenter_config) || "missing")} />
+        <Info label="vCenter Config" value={labelize(asString(readiness.vcenter_config) || "expected_partial")} />
         <Info label="Source" value={labelize(asString(readiness.source_type) || "not_checked")} />
         <Info label="Freshness" value={labelize(asString(readiness.freshness) || "not_checked")} />
         <Info label="Checked" value={readiness.checked_at ? formatDateTime(asString(readiness.checked_at)) : "Not checked"} />
@@ -11764,6 +11902,15 @@ function GoldenVcenterReadiness({ readiness }: { readiness: Record<string, unkno
       </AdvancedDetails>
     </section>
   );
+}
+
+function vcenterValueStatus(checks: Record<string, unknown>, key: string): string {
+  const check = objectValue(checks[key]);
+  return asString(check.status) || "not_configured";
+}
+
+function VisibleStatusBadge({ status }: { status: string }) {
+  return <span className={`status status-${status}`}>{displayStatusLabel(status)}</span>;
 }
 
 function reportLinksFromGoldenState(rows: Record<string, unknown>[]): ReportLink[] {
