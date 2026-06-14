@@ -358,7 +358,9 @@ def _vcenter_item(
             linked_workflow_action=_action_link(actions, "vcenter-netapp.readiness"),
         )
     validation = _json_artifact("artifacts/codex-runs/vcenter-post-install-validation-redacted.json")
+    attach_validation = _json_artifact("artifacts/codex-runs/vcenter-post-attach-validation-redacted.json")
     validation_target = validation.get("target") if isinstance(validation.get("target"), dict) else {}
+    attach_ready = _vcenter_post_attach_ready(attach_validation)
     validation_ready = validation.get("status") == "ready"
     target = _redacted_url(validation_target.get("host") or settings.vcenter_host)
     credential_missing = _missing_credentials(
@@ -368,36 +370,39 @@ def _vcenter_item(
             ("VCENTER_PASSWORD/GOVC_PASSWORD", settings.vcenter_password or settings.vcenter_sso_admin_password),
         ]
     )
-    configured = validation_ready or bool(settings.vcenter_configured and settings.vcenter_host)
+    configured = attach_ready or validation_ready or bool(settings.vcenter_configured and settings.vcenter_host)
     artifacts = _existing(
         [
             "artifacts/codex-runs/vcenter-install-apply-report.md",
             "artifacts/codex-runs/vcenter-post-install-validation-report.md",
             "artifacts/codex-runs/vcenter-install-apply-unblock-final-report.md",
+            "artifacts/codex-runs/vcenter-attach-esxi-preview-report.md",
+            "artifacts/codex-runs/vcenter-attach-esxi-apply-report.md",
+            "artifacts/codex-runs/vcenter-post-attach-validation-report.md",
         ]
     )
-    warnings = [str(item) for item in validation.get("warnings") or []] if validation else []
+    warnings = [str(item) for item in attach_validation.get("warnings") or []] if attach_validation else [str(item) for item in validation.get("warnings") or []] if validation else []
     return _item(
         item_id="vcenter",
         label="vCenter",
         category="Compute",
-        status="ready" if validation_ready else "partial" if configured else "not_configured",
-        current_state="vCenter is deployed and authenticated." if validation_ready else "vCenter target is configured." if configured else "vCenter target is not configured yet.",
-        desired_state="vCenter/govc target and credentials configured for datastore validation.",
-        setup_summary="vCenter post-install validation is ready." if validation_ready else "vCenter is ready for datastore validation." if configured else "vCenter/govc is not configured yet.",
-        next_action="Attach/validate ESXi inventory if vCenter-managed datastore workflows are in scope." if validation_ready else "Configure vCenter/govc fields, then rerun vCenter-NetApp readiness.",
+        status="ready" if attach_ready else "partial" if configured else "not_configured",
+        current_state="vCenter manages ESXi and sees the NetApp datastore." if attach_ready else "vCenter is deployed and authenticated; ESXi attach is pending." if validation_ready else "vCenter target is configured." if configured else "vCenter target is not configured yet.",
+        desired_state="vCenter manages ESXi, sees the NetApp datastore, and exposes VM inventory.",
+        setup_summary="vCenter post-attach validation is ready." if attach_ready else "vCenter post-install validation is ready; attach ESXi next." if validation_ready else "vCenter is ready for datastore validation." if configured else "vCenter/govc is not configured yet.",
+        next_action="Refresh Golden State and continue managed validation." if attach_ready else "Run vCenter ESXi attach preview, guarded apply, and post-attach validation." if validation_ready else "Configure vCenter/govc fields, then rerun vCenter-NetApp readiness.",
         login_hint=_login_hint(target or "VCENTER_HOST / GOVC_URL not configured", credential_missing),
         management_url=target,
         ssh_target=None,
-        proof_points=["vCenter credentials are shown by field presence only.", "Post-install validation uses ping, TCP/443, HTTPS, and govc auth."],
+        proof_points=["vCenter credentials are shown by field presence only.", "Post-attach validation uses read-only govc inventory checks for datacenter, cluster, host, datastore, and VMs."],
         evidence_artifacts=artifacts,
-        last_checked=validation.get("checked_at") or _last_checked(artifacts),
-        source_type="live_probe" if validation_ready else "live_cached" if configured else "not_checked",
-        freshness="current" if validation_ready or configured else "not_checked",
+        last_checked=attach_validation.get("checked_at") or validation.get("checked_at") or _last_checked(artifacts),
+        source_type="live_probe" if attach_ready or validation_ready else "live_cached" if configured else "not_checked",
+        freshness="current" if attach_ready or validation_ready or configured else "not_checked",
         blockers=[],
         warnings=warnings or ([f"Credentials not configured: {', '.join(credential_missing)}"] if credential_missing else []),
-        recheck_command="make provider-lab-vcenter-netapp-readiness",
-        linked_workflow_action=_action_link(actions, "vcenter-netapp.readiness"),
+        recheck_command="make provider-lab-vcenter-post-attach-validation" if configured else "make provider-lab-vcenter-netapp-readiness",
+        linked_workflow_action=_action_link(actions, "vcenter.post-attach-validation" if configured else "vcenter-netapp.readiness"),
     )
 
 
@@ -979,6 +984,21 @@ def _json_artifact(path: str) -> dict[str, Any]:
     except (OSError, ValueError):
         return {}
     return payload if isinstance(payload, dict) else {}
+
+
+def _vcenter_post_attach_ready(payload: dict[str, Any]) -> bool:
+    checks = payload.get("checks") if isinstance(payload.get("checks"), dict) else {}
+    required = (
+        "datacenter_visible",
+        "cluster_visible",
+        "esxi_visible",
+        "netapp_datastore_visible",
+        "vm_inventory_visible",
+    )
+    return payload.get("status") == "ready" and all(
+        isinstance(checks.get(key), dict) and checks[key].get("visible") is True
+        for key in required
+    )
 
 
 def _redacted_url(value: str | None) -> str | None:

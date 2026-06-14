@@ -358,6 +358,14 @@ export const api = {
     apiRequest<ProviderProbeResult>("/api/v1/lab/vcenter/install-apply", {
       method: "POST"
     }),
+  vcenterAttachEsxiPreview: () =>
+    apiRequest<ProviderProbeResult>("/api/v1/lab/vcenter/attach-esxi-preview"),
+  vcenterAttachEsxiApply: () =>
+    apiRequest<ProviderProbeResult>("/api/v1/lab/vcenter/attach-esxi-apply", {
+      method: "POST"
+    }),
+  vcenterPostAttachValidation: () =>
+    apiRequest<ProviderProbeResult>("/api/v1/lab/vcenter/post-attach-validation"),
   reportIssues: () =>
     apiRequest<ReportCenter>("/api/v1/reports/issues"),
   reportSummary: () =>

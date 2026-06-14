@@ -1733,6 +1733,7 @@ th {
 
 .status-info,
 .status-deploy_disabled,
+.status-waiting_for_vcenter,
 .status-not_configured,
 .status-not_checked,
 .status-not_configured_yet {
@@ -1758,6 +1759,9 @@ th {
 .status-matched,
 .status-success,
 .status-passed,
+.status-managed,
+.status-deployed,
+.status-ready_for_attach,
 .status-ready_for_deploy,
 .status-ready_for_preview {
   background: #e6f6ee;

@@ -26,6 +26,7 @@ def get_provider_lab_golden_state(*, write_report: bool = False) -> dict[str, An
     blockers = [blocker for row in rows for blocker in row["blockers"]]
     warnings = list(dict.fromkeys(warning for row in rows for warning in row["warnings"]))
     vcenter_readiness = _vcenter_readiness(rows, credentials)
+    vcenter_row = next((row for row in rows if row.get("id") == "vcenter"), {})
     workflow_actions = _workflow_actions()
     payload = {
         "provider_id": "provider-lab-golden-state",
@@ -36,7 +37,7 @@ def get_provider_lab_golden_state(*, write_report: bool = False) -> dict[str, An
         "source_type": "historical_artifact",
         "freshness": "historical",
         "current_state": "ready" if not blockers else "blocked",
-        "golden_state": "Cisco, iLO, RAID, ESXi, NetApp, NetApp NFS datastore, and VM deployment are ready; vCenter is not configured; firmware requires manual baseline review.",
+        "golden_state": _golden_state_sentence(vcenter_row),
         "rows": rows,
         "drift_rows": drift_rows,
         "credentials": credentials,
@@ -141,6 +142,18 @@ def _golden_rows(*, live_status: dict[str, Any]) -> list[dict[str, Any]]:
     ]
 
 
+def _golden_state_sentence(vcenter_row: dict[str, Any]) -> str:
+    vcenter_text = (
+        "vCenter is deployed, ESXi attached, and the NetApp datastore is visible"
+        if vcenter_row.get("status") == "ready"
+        else "vCenter still needs deployment or attach validation"
+    )
+    return (
+        "Cisco, iLO, RAID, ESXi, NetApp, NetApp NFS datastore, VM deployment, "
+        f"and {vcenter_text}; firmware requires manual baseline review."
+    )
+
+
 def _netapp_row(live_status: dict[str, Any]) -> dict[str, Any]:
     upgrade = _read_json("artifacts/codex-runs/netapp-ontap-upgrade-validation-redacted.json")
     version = upgrade.get("current_version") or upgrade.get("target_version") or "unknown"
@@ -210,12 +223,16 @@ def _vm_deployment_row() -> dict[str, Any]:
 def _vcenter_row() -> dict[str, Any]:
     artifact = _read_json("artifacts/codex-runs/vcenter-install-readiness-redacted.json")
     validation = _read_json("artifacts/codex-runs/vcenter-post-install-validation-redacted.json")
+    attach_validation = _read_json("artifacts/codex-runs/vcenter-post-attach-validation-redacted.json")
     deployment_values = artifact.get("deployment_values") if isinstance(artifact.get("deployment_values"), dict) else {}
     values_complete = bool(deployment_values.get("complete"))
     validation_ready = validation.get("status") == "ready"
-    configured = bool(settings.vcenter_host or settings.vcenter_configured or validation_ready)
+    attach_ready = _vcenter_post_attach_ready(attach_validation)
+    configured = bool(settings.vcenter_host or settings.vcenter_configured or validation_ready or attach_ready)
     current_state = (
-        "Deployed and authenticated"
+        "Deployed; ESXi attached; NetApp datastore visible"
+        if attach_ready
+        else "Deployed and authenticated; ESXi attach pending"
         if validation_ready
         else "Configured"
         if configured
@@ -226,22 +243,31 @@ def _vcenter_row() -> dict[str, Any]:
     return _row(
         row_id="vcenter",
         label="vCenter",
-        golden_state="Configured and reachable" if configured else "Expected partial until deployed and configured",
+        golden_state="Deployed, ESXi attached, and NetApp datastore visible" if configured else "Expected partial until deployed and configured",
         current_state=current_state,
-        ready=configured,
-        drift="none" if configured else "expected_partial",
-        status="ready" if configured else "not_configured",
-        repair_label="Configure vCenter values",
-        repair_action_id="vcenter.install-readiness",
-        repair_command="make provider-lab-vcenter-install-readiness",
+        ready=attach_ready,
+        drift="none" if attach_ready else "expected_partial" if configured or values_complete else "missing_or_stale",
+        status="ready" if attach_ready else "warning" if configured else "not_configured",
+        repair_label="Validate attach" if attach_ready else "Attach ESXi" if configured else "Configure vCenter values",
+        repair_action_id="vcenter.post-attach-validation" if attach_ready else "vcenter.attach-esxi-preview" if configured else "vcenter.install-readiness",
+        repair_command=(
+            "make provider-lab-vcenter-post-attach-validation"
+            if attach_ready
+            else "make provider-lab-vcenter-attach-esxi-preview"
+            if configured
+            else "make provider-lab-vcenter-install-readiness"
+        ),
         evidence=[
             "artifacts/codex-runs/vcenter-install-readiness-report.md",
             "artifacts/codex-runs/vcenter-install-plan-report.md",
             "artifacts/codex-runs/vcenter-install-preview-report.md",
             "artifacts/codex-runs/vcenter-install-apply-report.md",
             "artifacts/codex-runs/vcenter-post-install-validation-report.md",
+            "artifacts/codex-runs/vcenter-attach-esxi-preview-report.md",
+            "artifacts/codex-runs/vcenter-attach-esxi-apply-report.md",
+            "artifacts/codex-runs/vcenter-post-attach-validation-report.md",
         ],
-        warnings=[] if configured else ["vCenter is expected partial until deployment values and confirmation gates are ready."],
+        warnings=[] if attach_ready else ["vCenter is deployed but ESXi/datastore management through vCenter still needs attach validation."] if configured else ["vCenter is expected partial until deployment values and confirmation gates are ready."],
     )
 
 
@@ -497,6 +523,21 @@ def _vcenter_credential_row() -> dict[str, Any]:
     )
 
 
+def _vcenter_post_attach_ready(payload: dict[str, Any]) -> bool:
+    checks = payload.get("checks") if isinstance(payload.get("checks"), dict) else {}
+    required = (
+        "datacenter_visible",
+        "cluster_visible",
+        "esxi_visible",
+        "netapp_datastore_visible",
+        "vm_inventory_visible",
+    )
+    return payload.get("status") == "ready" and all(
+        isinstance(checks.get(key), dict) and checks[key].get("visible") is True
+        for key in required
+    )
+
+
 def _vcenter_readiness(rows: list[dict[str, Any]], credentials: dict[str, Any]) -> dict[str, Any]:
     row_by_id = {row["id"]: row for row in rows}
     vcenter_credential = next((row for row in credentials["rows"] if row["id"] == "vcenter"), {})
@@ -504,7 +545,11 @@ def _vcenter_readiness(rows: list[dict[str, Any]], credentials: dict[str, Any]) 
     artifact = _read_json("artifacts/codex-runs/vcenter-install-readiness-redacted.json")
     preview_artifact = _read_json("artifacts/codex-runs/vcenter-install-preview-redacted.json")
     validation_artifact = _read_json("artifacts/codex-runs/vcenter-post-install-validation-redacted.json")
+    attach_preview_artifact = _read_json("artifacts/codex-runs/vcenter-attach-esxi-preview-redacted.json")
+    attach_validation_artifact = _read_json("artifacts/codex-runs/vcenter-post-attach-validation-redacted.json")
     validation_ready = validation_artifact.get("status") == "ready"
+    post_attach_ready = _vcenter_post_attach_ready(attach_validation_artifact)
+    attach_checks = attach_validation_artifact.get("checks") if isinstance(attach_validation_artifact.get("checks"), dict) else {}
     deployment_values = artifact.get("deployment_values") if isinstance(artifact.get("deployment_values"), dict) else {}
     value_checks = artifact.get("value_checks") if isinstance(artifact.get("value_checks"), dict) else {}
     credential_detail = artifact.get("credential_state") if isinstance(artifact.get("credential_state"), dict) else {}
@@ -534,7 +579,7 @@ def _vcenter_readiness(rows: list[dict[str, Any]], credentials: dict[str, Any]) 
     post_install_credentials_configured = validation_ready or bool(vcenter_credential.get("configured")) or bool(
         credential_detail.get("post_install_vcenter_credentials_configured")
     )
-    vcenter_configured = validation_ready or bool(settings.vcenter_host or settings.vcenter_configured) or bool(
+    vcenter_configured = post_attach_ready or validation_ready or bool(settings.vcenter_host or settings.vcenter_configured) or bool(
         deployment_values.get("post_install_vcenter_configured")
     )
     esxi_ready = row_by_id.get("esxi", {}).get("status") == "ready"
@@ -571,9 +616,14 @@ def _vcenter_readiness(rows: list[dict[str, Any]], credentials: dict[str, Any]) 
         "make provider-lab-vcenter-install-readiness",
     )
     return {
-        "status": "ready" if validation_ready or ready_for_preview else "not_configured",
+        "status": "ready" if post_attach_ready else "partial" if validation_ready else "ready" if ready_for_preview else "not_configured",
         "preview_state": "deployed" if validation_ready else "ready_for_preview" if ready_for_preview else "not_ready",
         "deploy_state": "deployed" if validation_ready else "ready_to_deploy" if deploy_enabled else "deploy_gated" if ready_for_preview else "not_ready",
+        "attach_state": "managed" if post_attach_ready else "ready_for_attach" if validation_ready else "waiting_for_vcenter",
+        "post_attach_ready": post_attach_ready,
+        "esxi_attached": bool((attach_checks.get("esxi_visible") or {}).get("visible")),
+        "datastore_visible": bool((attach_checks.get("netapp_datastore_visible") or {}).get("visible")),
+        "vm_inventory_visible": bool((attach_checks.get("vm_inventory_visible") or {}).get("visible")),
         "ready_for_preview": ready_for_preview,
         "preview_ready": preview_ready,
         "ready_for_deploy": deploy_enabled,
@@ -591,22 +641,29 @@ def _vcenter_readiness(rows: list[dict[str, Any]], credentials: dict[str, Any]) 
         "vcenter_credentials": credential_state,
         "credentials": credential_state,
         "post_install_vcenter_credentials": "configured" if post_install_credentials_configured else "missing",
-        "vcenter_config": "deployed" if validation_ready else "configured" if vcenter_configured else "expected_partial",
+        "vcenter_config": "managed" if post_attach_ready else "deployed" if validation_ready else "configured" if vcenter_configured else "expected_partial",
         "vcenter_values": values_state,
         "values_complete": values_complete,
         "deploy_enabled": deploy_enabled,
         "preview_action_id": "vcenter.install-preview",
         "deploy_action_id": "vcenter.install-apply",
         "deploy_action_label": "Deploy vCenter",
+        "attach_preview_action_id": "vcenter.attach-esxi-preview",
+        "attach_apply_action_id": "vcenter.attach-esxi-apply",
+        "post_attach_validation_action_id": "vcenter.post-attach-validation",
+        "attach_preview_ready": attach_preview_artifact.get("status") == "ready",
         "deploy_disabled_reason": deploy_disabled_reason,
         "apply_gate_state": apply_gate_state,
         "deployment_values": deployment_values,
         "value_checks": value_checks,
         "checks": checks,
         "post_install_validation": validation_artifact,
+        "post_attach_validation": attach_validation_artifact,
         "credential_detail": credential_detail,
         "next_action": (
-            "vCenter is deployed and post-install validation is ready."
+            "vCenter is deployed, manages ESXi, sees the NetApp datastore, and has VM inventory visible."
+            if post_attach_ready
+            else "Run the guarded ESXi attach workflow so vCenter manages the ESXi host and sees the datastore."
             if validation_ready
             else "Deploy vCenter through the guarded install apply workflow."
             if deploy_enabled
@@ -617,7 +674,11 @@ def _vcenter_readiness(rows: list[dict[str, Any]], credentials: dict[str, Any]) 
         "source_type": metadata["source_type"],
         "freshness": metadata["freshness"],
         "checked_at": metadata["checked_at"],
-        "recheck_command": metadata["recheck_command"],
+        "recheck_command": (
+            "make provider-lab-vcenter-post-attach-validation"
+            if post_attach_ready or validation_ready
+            else metadata["recheck_command"]
+        ),
         "evidence_artifacts": _existing(
             [
                 "artifacts/codex-runs/vcenter-install-readiness-report.md",
@@ -625,6 +686,9 @@ def _vcenter_readiness(rows: list[dict[str, Any]], credentials: dict[str, Any]) 
                 "artifacts/codex-runs/vcenter-install-preview-report.md",
                 "artifacts/codex-runs/vcenter-install-apply-report.md",
                 "artifacts/codex-runs/vcenter-post-install-validation-report.md",
+                "artifacts/codex-runs/vcenter-attach-esxi-preview-report.md",
+                "artifacts/codex-runs/vcenter-attach-esxi-apply-report.md",
+                "artifacts/codex-runs/vcenter-post-attach-validation-report.md",
             ]
         ),
     }

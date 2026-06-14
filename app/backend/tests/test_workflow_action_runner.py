@@ -187,6 +187,14 @@ def test_guarded_action_runs_with_exact_confirmation_and_gates(monkeypatch, tmp_
 
     monkeypatch.setattr(workflow_registry, "current_lab_action_policy", lambda: AllowPolicy())
 
+    def get_unblocked_action(action_id: str) -> dict:
+        action = workflow_registry.get_workflow_action(action_id)
+        action["blockers"] = []
+        action["current_availability"] = "manual_command_required"
+        return action
+
+    monkeypatch.setattr(workflow_action_runner, "get_workflow_action", get_unblocked_action)
+
     def fake_run(command: tuple[str, ...], timeout_seconds: int) -> subprocess.CompletedProcess[str]:
         assert command == (
             "env",
@@ -223,6 +231,14 @@ def test_vcenter_install_apply_runner_injects_explicit_gates(monkeypatch, tmp_pa
 
     monkeypatch.setattr(workflow_registry, "current_lab_action_policy", lambda: AllowPolicy())
 
+    def get_unblocked_action(action_id: str) -> dict:
+        action = workflow_registry.get_workflow_action(action_id)
+        action["blockers"] = []
+        action["current_availability"] = "manual_command_required"
+        return action
+
+    monkeypatch.setattr(workflow_action_runner, "get_workflow_action", get_unblocked_action)
+
     def fake_run(command: tuple[str, ...], timeout_seconds: int) -> subprocess.CompletedProcess[str]:
         assert command == (
             "env",
@@ -242,6 +258,50 @@ def test_vcenter_install_apply_runner_injects_explicit_gates(monkeypatch, tmp_pa
         payload={
             "confirmation_phrase": "DEPLOY VCENTER",
             "confirmed_gates": ["VCENTER_INSTALL_APPLY=true", "VCENTER_INSTALL_ALLOW_DEPLOY=true"],
+        },
+    )
+
+    assert result["status"] == "completed"
+    assert result["executed"] is True
+    assert result["return_code"] == 0
+
+
+def test_vcenter_attach_esxi_apply_runner_injects_explicit_gates(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(workflow_action_run_store, "WORKFLOW_ACTION_RUN_TRACE_DIR", tmp_path)
+
+    class AllowPolicy:
+        def action_blockers(self, action_id: str, category: object) -> list[str]:
+            return []
+
+    monkeypatch.setattr(workflow_registry, "current_lab_action_policy", lambda: AllowPolicy())
+
+    def get_unblocked_attach_action(action_id: str) -> dict:
+        action = workflow_registry.get_workflow_action(action_id)
+        action["blockers"] = []
+        action["current_availability"] = "manual_command_required"
+        return action
+
+    monkeypatch.setattr(workflow_action_runner, "get_workflow_action", get_unblocked_attach_action)
+
+    def fake_run(command: tuple[str, ...], timeout_seconds: int) -> subprocess.CompletedProcess[str]:
+        assert command == (
+            "env",
+            "VCENTER_ATTACH_ESXI_APPLY=true",
+            "VCENTER_ATTACH_ESXI_CONFIRM=ATTACH ESXI TO VCENTER",
+            "VCENTER_ATTACH_ESXI_ALLOW=true",
+            "make",
+            "provider-lab-vcenter-attach-esxi-apply",
+        )
+        assert timeout_seconds == 1200
+        return subprocess.CompletedProcess(command, 0, stdout="attach complete", stderr="")
+
+    monkeypatch.setattr(workflow_action_runner, "_run_subprocess", fake_run)
+
+    result = run_workflow_action(
+        "vcenter.attach-esxi-apply",
+        payload={
+            "confirmation_phrase": "ATTACH ESXI TO VCENTER",
+            "confirmed_gates": ["VCENTER_ATTACH_ESXI_APPLY=true", "VCENTER_ATTACH_ESXI_ALLOW=true"],
         },
     )
 

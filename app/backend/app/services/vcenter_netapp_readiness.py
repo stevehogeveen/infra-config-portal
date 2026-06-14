@@ -19,7 +19,7 @@ from urllib.parse import urlsplit, urlunsplit
 from urllib.request import Request, urlopen
 
 from app.core.config import LAB_ESXI_MANAGEMENT_IP, settings
-from app.providers.action_policy import ActionCategory, LOCAL_LAB_READWRITE_MODE, current_lab_action_policy
+from app.providers.action_policy import ActionCategory, LOCAL_LAB_READWRITE_MODE, LOCAL_READONLY_MODE, current_lab_action_policy
 from app.providers.redaction import redact_sensitive
 from app.services.lab_profiles import active_lab_profile_context
 from app.services.netapp_state import get_netapp_runtime_state
@@ -35,18 +35,28 @@ VCENTER_INSTALL_PREVIEW_REPORT = CODEX_RUN_DIR / "vcenter-install-preview-report
 VCENTER_INSTALL_APPLY_REPORT = CODEX_RUN_DIR / "vcenter-install-apply-report.md"
 VCENTER_POST_INSTALL_VALIDATION_REPORT = CODEX_RUN_DIR / "vcenter-post-install-validation-report.md"
 VCENTER_INSTALL_APPLY_FINAL_REPORT = CODEX_RUN_DIR / "vcenter-install-apply-unblock-final-report.md"
+VCENTER_ATTACH_ESXI_PREVIEW_REPORT = CODEX_RUN_DIR / "vcenter-attach-esxi-preview-report.md"
+VCENTER_ATTACH_ESXI_APPLY_REPORT = CODEX_RUN_DIR / "vcenter-attach-esxi-apply-report.md"
+VCENTER_POST_ATTACH_VALIDATION_REPORT = CODEX_RUN_DIR / "vcenter-post-attach-validation-report.md"
+VCENTER_ATTACH_ESXI_FINAL_REPORT = CODEX_RUN_DIR / "vcenter-attach-esxi-datastore-final-report.md"
 VCENTER_INSTALL_READINESS_JSON = CODEX_RUN_DIR / "vcenter-install-readiness-redacted.json"
 VCENTER_INSTALL_PLAN_JSON = CODEX_RUN_DIR / "vcenter-install-plan-redacted.json"
 VCENTER_INSTALL_PREVIEW_JSON = CODEX_RUN_DIR / "vcenter-install-preview-redacted.json"
 VCENTER_INSTALL_APPLY_JSON = CODEX_RUN_DIR / "vcenter-install-apply-redacted.json"
 VCENTER_POST_INSTALL_VALIDATION_JSON = CODEX_RUN_DIR / "vcenter-post-install-validation-redacted.json"
+VCENTER_ATTACH_ESXI_PREVIEW_JSON = CODEX_RUN_DIR / "vcenter-attach-esxi-preview-redacted.json"
+VCENTER_ATTACH_ESXI_APPLY_JSON = CODEX_RUN_DIR / "vcenter-attach-esxi-apply-redacted.json"
+VCENTER_POST_ATTACH_VALIDATION_JSON = CODEX_RUN_DIR / "vcenter-post-attach-validation-redacted.json"
 VCENTER_INSTALL_SPEC_REDACTED_JSON = CODEX_RUN_DIR / "vcenter-install-spec-redacted.json"
 CONSOLE_STATE_JSON = CODEX_RUN_DIR / "netapp-console-state-redacted.json"
 CONSOLE_LOGIN_STATE_JSON = CODEX_RUN_DIR / "netapp-console-login-state-redacted.json"
 VCENTER_INSTALL_CONFIRM_PHRASE = "DEPLOY VCENTER"
+VCENTER_ATTACH_ESXI_CONFIRM_PHRASE = "ATTACH ESXI TO VCENTER"
 VCENTER_INSTALL_POLICY_ACTION_ID = "vcenter.vcsa-deploy"
+VCENTER_ATTACH_ESXI_POLICY_ACTION_ID = "vcenter.attach-esxi"
 VCENTER_INSTALL_DEPLOY_TIMEOUT_SECONDS = 7200
 VCENTER_INSTALL_VALIDATE_WAIT_SECONDS = 600
+VCENTER_ATTACH_ESXI_TIMEOUT_SECONDS = 900
 VCSA_MOUNT_ROOTS = (
     Path("/tmp/vcsa-iso"),
     Path("/mnt/vcsa-iso"),
@@ -668,6 +678,250 @@ def validate_vcenter_post_install(
     return sanitized
 
 
+def get_vcenter_attach_esxi_preview(*, write_report: bool = True) -> dict[str, Any]:
+    checked_at = _now()
+    target = _vcenter_attach_target(include_thumbprint=True)
+    govc_about = _run_vcenter_govc(["about"], timeout=45) if target["govc_configured"] else _skipped_govc(target)
+    govc_ready = govc_about.get("return_code") == 0
+    datacenter_visible = _vcenter_datacenter_visibility(target) if govc_ready else _skipped_probe("govc authentication did not pass.")
+    cluster_visible = _vcenter_cluster_visibility(target) if govc_ready else _skipped_probe("govc authentication did not pass.")
+    esxi_visible = _vcenter_esxi_visibility(target) if govc_ready and datacenter_visible.get("visible") else _skipped_probe(
+        "Datacenter is not visible yet; attach apply will ensure it before host validation."
+    )
+    datastore_visible = _vcenter_datastore_visibility(target) if govc_ready and datacenter_visible.get("visible") else _skipped_probe(
+        "Datacenter is not visible yet; attach apply will validate datastore visibility after host attach."
+    )
+    vm_inventory_visible = _vcenter_vm_inventory_visibility(target) if govc_ready and datacenter_visible.get("visible") else _skipped_probe(
+        "Datacenter is not visible yet; VM inventory validation will run after host attach."
+    )
+    esxi_reachable = _tcp_check("ESXi management", target.get("esxi_target"), 443, check_ports=True)
+    thumbprint_check = _vcenter_esxi_thumbprint_check(target)
+    blockers = _vcenter_attach_preview_blockers(
+        target=target,
+        govc_about=govc_about,
+        esxi_reachable=esxi_reachable,
+    )
+    warnings = [
+        "Preview only. No vCenter datacenter, cluster, host attach, datastore, ESXi, or NetApp write action was run.",
+    ]
+    if thumbprint_check.get("status") != "ready":
+        warnings.append("ESXi certificate thumbprint could not be read; guarded apply will use govc -noverify for this local lab attach.")
+    payload = {
+        "provider_id": "vcenter",
+        "action": "vcenter-attach-esxi-preview",
+        "checked_at": checked_at,
+        "generated_at": checked_at,
+        "status": "blocked" if blockers else "ready",
+        "message": "vCenter ESXi attach preview generated. No vCenter inventory write was run.",
+        "mode": settings.provider_mode,
+        "apply_enabled": False,
+        "ready_for_apply": not blockers,
+        "source_type": "live_provider",
+        "freshness": "live",
+        "target": target,
+        "attach_plan": _vcenter_attach_plan(
+            target=target,
+            datacenter_visible=datacenter_visible,
+            cluster_visible=cluster_visible,
+            esxi_visible=esxi_visible,
+            datastore_visible=datastore_visible,
+            vm_inventory_visible=vm_inventory_visible,
+        ),
+        "apply_gate_state": _vcenter_attach_apply_gate_state(preview_ready=not blockers),
+        "checks": {
+            "govc_authentication": govc_about,
+            "esxi_management_reachable": esxi_reachable,
+            "esxi_certificate_thumbprint": thumbprint_check,
+            "datacenter_visible": datacenter_visible,
+            "cluster_visible": cluster_visible,
+            "esxi_visible": esxi_visible,
+            "netapp_datastore_visible": datastore_visible,
+            "vm_inventory_visible": vm_inventory_visible,
+        },
+        "blockers": _unique(blockers),
+        "warnings": _unique(warnings),
+        "not_attempted": [
+            "vCenter datacenter create",
+            "vCenter cluster create",
+            "vCenter ESXi host add",
+            "vCenter datastore mount/create",
+            "ESXi host reconfiguration outside vCenter attach",
+            "NetApp ONTAP write",
+        ],
+        "artifacts": {
+            "preview_report": _rel(VCENTER_ATTACH_ESXI_PREVIEW_REPORT),
+            "preview_json": _rel(VCENTER_ATTACH_ESXI_PREVIEW_JSON),
+            "apply_report": _rel(VCENTER_ATTACH_ESXI_APPLY_REPORT),
+            "post_attach_validation_report": _rel(VCENTER_POST_ATTACH_VALIDATION_REPORT),
+            "final_report": _rel(VCENTER_ATTACH_ESXI_FINAL_REPORT),
+        },
+        "recheck_command": "make provider-lab-vcenter-attach-esxi-preview",
+        "next_safe_action": (
+            "Run the guarded vCenter ESXi attach apply target with explicit confirmation gates."
+            if not blockers
+            else "Resolve the current attach preview blockers, then rerun preview."
+        ),
+    }
+    sanitized = _sanitize(payload)
+    if write_report:
+        _write_json(VCENTER_ATTACH_ESXI_PREVIEW_JSON, sanitized)
+        VCENTER_ATTACH_ESXI_PREVIEW_REPORT.write_text(_vcenter_attach_preview_markdown(sanitized), encoding="utf-8")
+    return sanitized
+
+
+def get_vcenter_attach_esxi_apply(*, write_report: bool = True) -> dict[str, Any]:
+    checked_at = _now()
+    preview = get_vcenter_attach_esxi_preview(write_report=write_report)
+    target = _vcenter_attach_target(include_thumbprint=True)
+    preview_ready = preview.get("status") == "ready" and not preview.get("blockers")
+    gate_state = _vcenter_attach_apply_gate_state(preview_ready=preview_ready)
+    blockers = _unique([*list(preview.get("blockers") or []), *gate_state["blockers"]])
+    operations: list[dict[str, Any]] = []
+    validation: dict[str, Any] | None = None
+    status = "blocked" if blockers else "ready_to_apply"
+    message = (
+        "vCenter ESXi attach apply was refused because required gates or readiness checks are incomplete."
+        if blockers
+        else "vCenter ESXi attach apply gates passed; running idempotent datacenter, cluster, and host attach steps."
+    )
+
+    if not blockers:
+        for operation in (
+            _ensure_vcenter_datacenter,
+            _ensure_vcenter_cluster,
+            _attach_esxi_host_to_vcenter,
+        ):
+            result = operation(target)
+            operations.append(result)
+            if result.get("status") != "ready":
+                blockers.append(str(result.get("detail") or f"{result.get('operation')} failed."))
+                break
+        validation = validate_vcenter_post_attach(write_report=write_report)
+        if blockers:
+            status = "failed"
+            message = "vCenter ESXi attach failed before all idempotent steps completed."
+        elif validation.get("status") == "ready":
+            status = "completed"
+            message = "vCenter ESXi attach completed and post-attach validation passed."
+            _refresh_post_install_reports()
+        else:
+            status = "failed"
+            message = "vCenter ESXi attach ran, but post-attach validation is not ready."
+            blockers.extend(str(item) for item in validation.get("blockers") or [])
+
+    payload = {
+        "provider_id": "vcenter",
+        "action": "vcenter-attach-esxi-apply",
+        "checked_at": checked_at,
+        "generated_at": checked_at,
+        "status": status,
+        "message": message,
+        "mode": settings.provider_mode,
+        "apply_enabled": not blockers,
+        "source_type": "live_provider",
+        "freshness": "live",
+        "target": target,
+        "attach_plan": preview.get("attach_plan") or {},
+        "apply_gate_state": gate_state,
+        "operations": operations,
+        "post_attach_validation": validation,
+        "blockers": _unique(blockers),
+        "warnings": _vcenter_attach_apply_warnings(operations=operations, validation=validation),
+        "not_attempted": _vcenter_attach_not_attempted(status=status, operations=operations),
+        "artifacts": {
+            "preview_report": _rel(VCENTER_ATTACH_ESXI_PREVIEW_REPORT),
+            "apply_report": _rel(VCENTER_ATTACH_ESXI_APPLY_REPORT),
+            "post_attach_validation_report": _rel(VCENTER_POST_ATTACH_VALIDATION_REPORT),
+            "final_report": _rel(VCENTER_ATTACH_ESXI_FINAL_REPORT),
+            "apply_json": _rel(VCENTER_ATTACH_ESXI_APPLY_JSON),
+        },
+        "next_safe_action": (
+            "Refresh Golden State and Lab Validation."
+            if status == "completed"
+            else "Resolve the listed blocker, rerun preview, then rerun guarded vCenter ESXi attach apply."
+        ),
+    }
+    sanitized = _sanitize(payload)
+    if write_report:
+        _write_json(VCENTER_ATTACH_ESXI_APPLY_JSON, sanitized)
+        VCENTER_ATTACH_ESXI_APPLY_REPORT.write_text(_vcenter_attach_apply_markdown(sanitized), encoding="utf-8")
+        VCENTER_ATTACH_ESXI_FINAL_REPORT.write_text(_vcenter_attach_final_markdown(sanitized), encoding="utf-8")
+    return sanitized
+
+
+def validate_vcenter_post_attach(*, write_report: bool = True) -> dict[str, Any]:
+    checked_at = _now()
+    target = _vcenter_attach_target(include_thumbprint=False)
+    govc_about = _run_vcenter_govc(["about"], timeout=45) if target["govc_configured"] else _skipped_govc(target)
+    govc_ready = govc_about.get("return_code") == 0
+    datacenter_visible = _vcenter_datacenter_visibility(target) if govc_ready else _skipped_probe("govc authentication did not pass.")
+    cluster_visible = _vcenter_cluster_visibility(target) if govc_ready else _skipped_probe("govc authentication did not pass.")
+    esxi_visible = _vcenter_esxi_visibility(target) if govc_ready else _skipped_probe("govc authentication did not pass.")
+    datastore_visible = _vcenter_datastore_visibility(target) if govc_ready else _skipped_probe("govc authentication did not pass.")
+    vm_inventory_visible = _vcenter_vm_inventory_visibility(target) if govc_ready else _skipped_probe("govc authentication did not pass.")
+    blockers = []
+    if not target["govc_configured"]:
+        blockers.append("vCenter govc credentials are not configured for post-attach validation.")
+    elif not govc_ready:
+        blockers.append("govc authentication to vCenter failed.")
+    if govc_ready and not datacenter_visible.get("visible"):
+        blockers.append(f"vCenter datacenter {target.get('datacenter')} is not visible.")
+    if govc_ready and target.get("cluster") and not cluster_visible.get("visible"):
+        blockers.append(f"vCenter cluster {target.get('cluster')} is not visible.")
+    if govc_ready and not esxi_visible.get("visible"):
+        blockers.append(f"ESXi host {target.get('esxi_target')} is not visible in vCenter.")
+    if govc_ready and not datastore_visible.get("visible"):
+        blockers.append(f"Datastore {target.get('datastore')} is not visible in vCenter.")
+    if govc_ready and not vm_inventory_visible.get("visible"):
+        blockers.append("No VM inventory is visible through vCenter after host attach.")
+    payload = {
+        "provider_id": "vcenter",
+        "action": "vcenter-post-attach-validation",
+        "checked_at": checked_at,
+        "generated_at": checked_at,
+        "status": "blocked" if blockers else "ready",
+        "message": "Post-attach vCenter validation completed with govc datacenter, cluster, host, datastore, and VM inventory checks.",
+        "mode": settings.provider_mode,
+        "apply_enabled": False,
+        "source_type": "live_provider",
+        "freshness": "live",
+        "target": target,
+        "checks": {
+            "govc_authentication": govc_about,
+            "datacenter_visible": datacenter_visible,
+            "cluster_visible": cluster_visible,
+            "esxi_visible": esxi_visible,
+            "netapp_datastore_visible": datastore_visible,
+            "vm_inventory_visible": vm_inventory_visible,
+        },
+        "blockers": _unique(blockers),
+        "warnings": [],
+        "not_attempted": [
+            "vCenter datacenter create",
+            "vCenter cluster create",
+            "vCenter ESXi host add",
+            "vCenter datastore mount/create",
+            "ESXi host reconfiguration",
+            "NetApp ONTAP write",
+        ],
+        "artifacts": {
+            "report": _rel(VCENTER_POST_ATTACH_VALIDATION_REPORT),
+            "json": _rel(VCENTER_POST_ATTACH_VALIDATION_JSON),
+        },
+        "recheck_command": "make provider-lab-vcenter-post-attach-validation",
+        "next_safe_action": (
+            "Refresh Golden State and Lab Validation."
+            if not blockers
+            else "Fix the current post-attach validation blocker, then rerun post-attach validation."
+        ),
+    }
+    sanitized = _sanitize(payload)
+    if write_report:
+        _write_json(VCENTER_POST_ATTACH_VALIDATION_JSON, sanitized)
+        VCENTER_POST_ATTACH_VALIDATION_REPORT.write_text(_vcenter_post_attach_markdown(sanitized), encoding="utf-8")
+    return sanitized
+
+
 def _vcenter_install_plan_payload(
     readiness: dict[str, Any],
     *,
@@ -1034,8 +1288,33 @@ def _vcenter_validation_target() -> dict[str, Any]:
         "govc_configured": bool(host and username and password and _tool_available("govc")),
         "esxi_target": settings.vcenter_esxi_target or settings.esxi_test_host or LAB_ESXI_MANAGEMENT_IP,
         "datastore": settings.vcenter_datastore_target or settings.netapp_nfs_datastore_name,
+        "datacenter": _vcenter_datacenter_name(),
+        "cluster": _vcenter_cluster_name(),
         "verify_tls": verify_tls,
     }
+
+
+def _vcenter_attach_target(*, include_thumbprint: bool) -> dict[str, Any]:
+    target = _vcenter_validation_target()
+    esxi_username = _clean_value(settings.esxi_test_username)
+    esxi_password = _clean_value(settings.esxi_test_password)
+    thumbprint = _server_certificate_sha1_thumbprint(target.get("esxi_target")) if include_thumbprint else None
+    return {
+        **target,
+        "esxi_username_configured": bool(esxi_username),
+        "esxi_credential_configured": bool(esxi_password),
+        "esxi_thumbprint_configured": bool(thumbprint),
+        "esxi_thumbprint": thumbprint,
+        "host_attach_tls_mode": "thumbprint" if thumbprint else "noverify",
+    }
+
+
+def _vcenter_datacenter_name() -> str:
+    return _clean_value(getattr(settings, "vcenter_datacenter_name", None)) or "Lab-DC"
+
+
+def _vcenter_cluster_name() -> str:
+    return _clean_value(getattr(settings, "vcenter_cluster_name", None)) or "Lab-Cluster"
 
 
 def _run_vcenter_govc(args: list[str], *, timeout: int) -> dict[str, Any]:
@@ -1071,17 +1350,345 @@ def _run_vcenter_govc(args: list[str], *, timeout: int) -> dict[str, Any]:
     )
 
 
+def _vcenter_attach_preview_blockers(
+    *,
+    target: dict[str, Any],
+    govc_about: dict[str, Any],
+    esxi_reachable: dict[str, Any],
+) -> list[str]:
+    blockers = []
+    if not target.get("host"):
+        blockers.append("VCENTER_HOST/GOVC_URL or VCENTER_MANAGEMENT_IP is required for ESXi attach.")
+    if not target.get("username_configured") or not target.get("credential_configured"):
+        blockers.append("vCenter govc credentials are required for ESXi attach.")
+    if not target.get("govc_available"):
+        blockers.append("govc is required for ESXi attach.")
+    elif target.get("govc_configured") and govc_about.get("return_code") != 0:
+        blockers.append("govc authentication to vCenter must pass before ESXi attach.")
+    if esxi_reachable.get("status") != "ready":
+        blockers.append("ESXi management TCP/443 must be reachable before vCenter host attach.")
+    if not target.get("esxi_username_configured") or not target.get("esxi_credential_configured"):
+        blockers.append("ESXi local credentials are required for govc host attach.")
+    if not target.get("datacenter"):
+        blockers.append("VCENTER_DATACENTER_NAME is required.")
+    if not target.get("cluster"):
+        blockers.append("VCENTER_CLUSTER_NAME is required.")
+    if not target.get("datastore"):
+        blockers.append("VCENTER_DATASTORE_TARGET or NETAPP_NFS_DATASTORE_NAME is required.")
+    return blockers
+
+
+def _vcenter_attach_apply_gate_state(*, preview_ready: bool) -> dict[str, Any]:
+    policy = current_lab_action_policy(settings.provider_mode)
+    flag_state = {
+        "provider_mode": settings.provider_mode,
+        "local_lab_readwrite": settings.provider_mode == LOCAL_LAB_READWRITE_MODE,
+        "preview_ready": preview_ready,
+        "attach_apply": os.getenv("VCENTER_ATTACH_ESXI_APPLY") == "true",
+        "attach_confirm": os.getenv("VCENTER_ATTACH_ESXI_CONFIRM") == VCENTER_ATTACH_ESXI_CONFIRM_PHRASE,
+        "attach_allow": os.getenv("VCENTER_ATTACH_ESXI_ALLOW") == "true",
+    }
+    blockers = policy.action_blockers(VCENTER_ATTACH_ESXI_POLICY_ACTION_ID, ActionCategory.VM_DEPLOY)
+    if not preview_ready:
+        blockers.append("vCenter ESXi attach preview must be ready before apply.")
+    if not flag_state["attach_apply"]:
+        blockers.append("VCENTER_ATTACH_ESXI_APPLY=true is required.")
+    if not flag_state["attach_confirm"]:
+        blockers.append(f'VCENTER_ATTACH_ESXI_CONFIRM="{VCENTER_ATTACH_ESXI_CONFIRM_PHRASE}" is required.')
+    if not flag_state["attach_allow"]:
+        blockers.append("VCENTER_ATTACH_ESXI_ALLOW=true is required.")
+    return {
+        "required_flags": _vcenter_attach_required_flags(),
+        "flag_state": flag_state,
+        "blockers": _unique(blockers),
+    }
+
+
+def _vcenter_attach_required_flags() -> list[str]:
+    return [
+        "PROVIDER_MODE=local-lab-readwrite",
+        "VCENTER_ATTACH_ESXI_APPLY=true",
+        f'VCENTER_ATTACH_ESXI_CONFIRM="{VCENTER_ATTACH_ESXI_CONFIRM_PHRASE}"',
+        "VCENTER_ATTACH_ESXI_ALLOW=true",
+    ]
+
+
+def _vcenter_attach_plan(
+    *,
+    target: dict[str, Any],
+    datacenter_visible: dict[str, Any],
+    cluster_visible: dict[str, Any],
+    esxi_visible: dict[str, Any],
+    datastore_visible: dict[str, Any],
+    vm_inventory_visible: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "datacenter": target.get("datacenter"),
+        "cluster": target.get("cluster"),
+        "esxi_target": target.get("esxi_target"),
+        "datastore": target.get("datastore"),
+        "steps": [
+            {
+                "operation": "datacenter.ensure",
+                "status": "already_visible" if datacenter_visible.get("visible") else "will_create",
+                "command_preview": f"govc datacenter.create {target.get('datacenter')}",
+            },
+            {
+                "operation": "cluster.ensure",
+                "status": "already_visible" if cluster_visible.get("visible") else "will_create",
+                "command_preview": f"govc cluster.create -dc {target.get('datacenter')} {target.get('cluster')}",
+            },
+            {
+                "operation": "esxi.attach",
+                "status": "already_visible" if esxi_visible.get("visible") else "will_attach",
+                "command_preview": _vcenter_attach_host_command_preview(target),
+                "tls_mode": target.get("host_attach_tls_mode"),
+            },
+            {
+                "operation": "post_attach.validate",
+                "status": "ready" if datastore_visible.get("visible") and vm_inventory_visible.get("visible") else "will_validate",
+                "command_preview": "make provider-lab-vcenter-post-attach-validation",
+            },
+        ],
+    }
+
+
+def _ensure_vcenter_datacenter(target: dict[str, Any]) -> dict[str, Any]:
+    existing = _vcenter_datacenter_visibility(target)
+    if existing.get("visible"):
+        return _vcenter_operation_result(
+            "datacenter.ensure",
+            command_preview=f"govc datacenter.create {target.get('datacenter')}",
+            attempted=False,
+            changed=False,
+            result=existing,
+            detail=f"Datacenter {target.get('datacenter')} already exists.",
+        )
+    result = _run_vcenter_govc(["datacenter.create", str(target.get("datacenter"))], timeout=120)
+    return _vcenter_operation_result(
+        "datacenter.ensure",
+        command_preview=f"govc datacenter.create {target.get('datacenter')}",
+        attempted=True,
+        changed=result.get("return_code") == 0,
+        result=result,
+        detail=(
+            f"Datacenter {target.get('datacenter')} created."
+            if result.get("return_code") == 0
+            else f"Datacenter {target.get('datacenter')} could not be created."
+        ),
+    )
+
+
+def _ensure_vcenter_cluster(target: dict[str, Any]) -> dict[str, Any]:
+    existing = _vcenter_cluster_visibility(target)
+    if existing.get("visible"):
+        return _vcenter_operation_result(
+            "cluster.ensure",
+            command_preview=f"govc cluster.create -dc {target.get('datacenter')} {target.get('cluster')}",
+            attempted=False,
+            changed=False,
+            result=existing,
+            detail=f"Cluster {target.get('cluster')} already exists.",
+        )
+    result = _run_vcenter_govc(
+        ["cluster.create", "-dc", str(target.get("datacenter")), str(target.get("cluster"))],
+        timeout=120,
+    )
+    return _vcenter_operation_result(
+        "cluster.ensure",
+        command_preview=f"govc cluster.create -dc {target.get('datacenter')} {target.get('cluster')}",
+        attempted=True,
+        changed=result.get("return_code") == 0,
+        result=result,
+        detail=(
+            f"Cluster {target.get('cluster')} created."
+            if result.get("return_code") == 0
+            else f"Cluster {target.get('cluster')} could not be created."
+        ),
+    )
+
+
+def _attach_esxi_host_to_vcenter(target: dict[str, Any]) -> dict[str, Any]:
+    existing = _vcenter_esxi_visibility(target)
+    if existing.get("visible"):
+        return _vcenter_operation_result(
+            "esxi.attach",
+            command_preview=_vcenter_attach_host_command_preview(target),
+            attempted=False,
+            changed=False,
+            result=existing,
+            detail=f"ESXi host {target.get('esxi_target')} is already visible in vCenter.",
+        )
+    command = [
+        "cluster.add",
+        "-dc",
+        str(target.get("datacenter")),
+        "-cluster",
+        str(target.get("cluster")),
+        "-hostname",
+        str(target.get("esxi_target")),
+        "-username",
+        str(settings.esxi_test_username),
+        "-password",
+        str(settings.esxi_test_password),
+    ]
+    if target.get("esxi_thumbprint"):
+        command.extend(["-thumbprint", str(target.get("esxi_thumbprint"))])
+    else:
+        command.append("-noverify")
+    result = _run_vcenter_govc(command, timeout=VCENTER_ATTACH_ESXI_TIMEOUT_SECONDS)
+    return _vcenter_operation_result(
+        "esxi.attach",
+        command_preview=_vcenter_attach_host_command_preview(target),
+        attempted=True,
+        changed=result.get("return_code") == 0,
+        result=result,
+        detail=(
+            f"ESXi host {target.get('esxi_target')} attached to vCenter."
+            if result.get("return_code") == 0
+            else f"ESXi host {target.get('esxi_target')} could not be attached to vCenter."
+        ),
+    )
+
+
+def _vcenter_operation_result(
+    operation: str,
+    *,
+    command_preview: str,
+    attempted: bool,
+    changed: bool,
+    result: dict[str, Any],
+    detail: str,
+) -> dict[str, Any]:
+    return _sanitize(
+        {
+            "operation": operation,
+            "status": "ready" if result.get("return_code") in {0, None} and result.get("status") != "blocked" else "blocked",
+            "attempted": attempted,
+            "changed": changed,
+            "detail": detail,
+            "command_preview": command_preview,
+            "return_code": result.get("return_code"),
+            "stdout_summary": result.get("stdout") or "",
+            "stderr_summary": result.get("stderr") or "",
+        }
+    )
+
+
+def _vcenter_attach_host_command_preview(target: dict[str, Any]) -> str:
+    tls_flag = (
+        f"-thumbprint {target.get('esxi_thumbprint')}"
+        if target.get("esxi_thumbprint")
+        else "-noverify"
+    )
+    return (
+        "govc cluster.add "
+        f"-dc {target.get('datacenter')} "
+        f"-cluster {target.get('cluster')} "
+        f"-hostname {target.get('esxi_target')} "
+        "-username <configured> -password <redacted> "
+        f"{tls_flag}"
+    )
+
+
+def _vcenter_datacenter_visibility(target: dict[str, Any]) -> dict[str, Any]:
+    datacenter = str(target.get("datacenter") or "")
+    if not datacenter:
+        return _skipped_probe("vCenter datacenter target is not configured.")
+    result = _run_vcenter_govc(["find", "/", "-type", "d", "-name", datacenter], timeout=45)
+    paths = _stdout_lines(result.get("stdout"))
+    visible = result.get("return_code") == 0 and _path_list_contains(paths, datacenter)
+    return _visibility_result(result, visible=visible, name=datacenter, paths=paths, missing_status="not_found")
+
+
+def _vcenter_cluster_visibility(target: dict[str, Any]) -> dict[str, Any]:
+    cluster = str(target.get("cluster") or "")
+    datacenter = str(target.get("datacenter") or "")
+    if not cluster:
+        return _skipped_probe("vCenter cluster target is not configured.")
+    if not datacenter:
+        return _skipped_probe("vCenter datacenter target is not configured.")
+    result = _run_vcenter_govc(["find", f"/{datacenter}/host", "-type", "c", "-name", cluster], timeout=45)
+    paths = _stdout_lines(result.get("stdout"))
+    visible = result.get("return_code") == 0 and _path_list_contains(paths, cluster)
+    return _visibility_result(result, visible=visible, name=cluster, paths=paths, missing_status="not_found")
+
+
 def _vcenter_esxi_visibility(target: dict[str, Any]) -> dict[str, Any]:
-    result = _run_vcenter_govc(["host.info", "-json"], timeout=45)
-    visible = _json_contains(result.get("stdout"), str(target.get("esxi_target") or ""))
-    return {**result, "visible": bool(result.get("return_code") == 0 and visible)}
+    datacenter = str(target.get("datacenter") or "")
+    esxi_target = str(target.get("esxi_target") or "")
+    if not datacenter:
+        return _skipped_probe("vCenter datacenter target is not configured.")
+    if not esxi_target:
+        return _skipped_probe("ESXi target is not configured.")
+    result = _run_vcenter_govc(["find", f"/{datacenter}", "-type", "h"], timeout=45)
+    paths = _stdout_lines(result.get("stdout"))
+    visible = result.get("return_code") == 0 and _path_list_contains(paths, esxi_target)
+    return _visibility_result(result, visible=visible, name=esxi_target, paths=paths, missing_status="not_found")
 
 
 def _vcenter_datastore_visibility(target: dict[str, Any]) -> dict[str, Any]:
+    datacenter = str(target.get("datacenter") or "")
     datastore = str(target.get("datastore") or "")
-    result = _run_vcenter_govc(["datastore.info", "-json", datastore], timeout=45) if datastore else _skipped_probe("Datastore target is not configured.")
-    visible = result.get("return_code") == 0 and (not datastore or _json_contains(result.get("stdout"), datastore))
-    return {**result, "visible": bool(visible)}
+    if not datacenter:
+        return _skipped_probe("vCenter datacenter target is not configured.")
+    if not datastore:
+        return _skipped_probe("Datastore target is not configured.")
+    result = _run_vcenter_govc(["find", f"/{datacenter}", "-type", "s", "-name", datastore], timeout=45)
+    paths = _stdout_lines(result.get("stdout"))
+    visible = result.get("return_code") == 0 and _path_list_contains(paths, datastore)
+    return _visibility_result(result, visible=visible, name=datastore, paths=paths, missing_status="not_found")
+
+
+def _vcenter_vm_inventory_visibility(target: dict[str, Any]) -> dict[str, Any]:
+    datacenter = str(target.get("datacenter") or "")
+    if not datacenter:
+        return _skipped_probe("vCenter datacenter target is not configured.")
+    result = _run_vcenter_govc(["find", f"/{datacenter}/vm", "-type", "m"], timeout=45)
+    paths = _stdout_lines(result.get("stdout"))
+    visible = result.get("return_code") == 0 and bool(paths)
+    payload = _visibility_result(result, visible=visible, name="vm inventory", paths=paths, missing_status="not_found")
+    payload["count"] = len(paths)
+    return payload
+
+
+def _vcenter_esxi_thumbprint_check(target: dict[str, Any]) -> dict[str, Any]:
+    thumbprint = target.get("esxi_thumbprint")
+    if thumbprint:
+        return {
+            "status": "ready",
+            "configured": True,
+            "detail": "ESXi certificate SHA-1 thumbprint was read for govc host attach.",
+            "thumbprint": thumbprint,
+            "source_type": "live_provider",
+            "freshness": "live",
+        }
+    return {
+        "status": "warning",
+        "configured": False,
+        "detail": "ESXi certificate SHA-1 thumbprint could not be read; local-lab attach can fall back to govc -noverify.",
+        "thumbprint": None,
+        "source_type": "live_provider",
+        "freshness": "live",
+    }
+
+
+def _visibility_result(
+    result: dict[str, Any],
+    *,
+    visible: bool,
+    name: str,
+    paths: list[str],
+    missing_status: str,
+) -> dict[str, Any]:
+    status = "ready" if visible else missing_status if result.get("return_code") == 0 else "blocked"
+    return {
+        **result,
+        "status": status,
+        "visible": bool(visible),
+        "name": name,
+        "paths": paths,
+    }
 
 
 def _vcenter_api_probe(host: str) -> dict[str, Any]:
@@ -1625,7 +2232,7 @@ def _vcenter_time_sync_mode() -> str:
 
 def _vcenter_validation_verify_tls() -> bool:
     if os.getenv("VCENTER_VERIFY_TLS") is None and os.getenv("GOVC_TLS_VERIFY") is None:
-        if settings.provider_mode == LOCAL_LAB_READWRITE_MODE:
+        if settings.provider_mode in {LOCAL_READONLY_MODE, LOCAL_LAB_READWRITE_MODE}:
             return False
     return bool(settings.vcenter_verify_tls)
 
@@ -1740,6 +2347,22 @@ def _json_contains(stdout: Any, needle: str) -> bool:
     return needle in json.dumps(payload)
 
 
+def _stdout_lines(stdout: Any) -> list[str]:
+    return [line.strip() for line in str(stdout or "").splitlines() if line.strip()]
+
+
+def _path_list_contains(paths: list[str], needle: str) -> bool:
+    if not needle:
+        return False
+    lowered = needle.lower()
+    for path in paths:
+        if lowered == path.rstrip("/").split("/")[-1].lower():
+            return True
+        if lowered in path.lower():
+            return True
+    return False
+
+
 def _vcenter_apply_warnings(
     *,
     validation: dict[str, Any] | None,
@@ -1777,6 +2400,42 @@ def _post_install_not_attempted(govc_ready: bool) -> list[str]:
     if not govc_ready:
         skipped.insert(0, "vCenter inventory validation through govc")
     return skipped
+
+
+def _vcenter_attach_apply_warnings(
+    *,
+    operations: list[dict[str, Any]],
+    validation: dict[str, Any] | None,
+) -> list[str]:
+    warnings = [
+        "vCenter host attach uses govc with local-only ESXi credential values; credentials are never written to reports.",
+    ]
+    if any(operation.get("operation") == "esxi.attach" and "-noverify" in str(operation.get("command_preview")) for operation in operations):
+        warnings.append("ESXi certificate thumbprint was unavailable; govc host attach used -noverify for this local lab.")
+    if validation:
+        warnings.extend(str(item) for item in validation.get("warnings") or [])
+    return _unique(warnings)
+
+
+def _vcenter_attach_not_attempted(*, status: str, operations: list[dict[str, Any]]) -> list[str]:
+    attempted = {str(operation.get("operation")) for operation in operations if operation.get("attempted")}
+    skipped = [
+        "vCenter datastore mount/create",
+        "ESXi host power/reset/reboot",
+        "ESXi datastore create/delete",
+        "NetApp ONTAP write",
+        "VM create/delete/power operation",
+    ]
+    if status == "blocked":
+        skipped.extend(["vCenter datacenter create", "vCenter cluster create", "vCenter ESXi host add"])
+    else:
+        if "datacenter.ensure" not in attempted:
+            skipped.append("vCenter datacenter create")
+        if "cluster.ensure" not in attempted:
+            skipped.append("vCenter cluster create")
+        if "esxi.attach" not in attempted:
+            skipped.append("vCenter ESXi host add")
+    return _unique(skipped)
 
 
 def _write_json(path: Path, payload: Any) -> None:
@@ -2099,6 +2758,162 @@ def _vcenter_apply_final_markdown(payload: dict[str, Any]) -> str:
         f"- Validation status: `{validation.get('status') or 'not_run'}`",
         f"- Golden State refresh: `{refreshed.get('golden_state_status') or 'not_run'}`",
         f"- Lab Validation refresh: `{refreshed.get('lab_validation_status') or 'not_run'}`",
+        "",
+        "## Reports",
+    ]
+    for label, path in artifacts.items():
+        lines.append(f"- {label}: `{path}`")
+    lines.extend(["", "## Blockers"])
+    lines.extend(f"- {item}" for item in payload.get("blockers") or ["None"])
+    if validation.get("blockers"):
+        lines.extend(["", "## Validation Blockers"])
+        lines.extend(f"- {item}" for item in validation.get("blockers") or [])
+    lines.extend(["", "## Warnings"])
+    lines.extend(f"- {item}" for item in payload.get("warnings") or ["None"])
+    lines.extend(["", "## Next Action", f"- {payload.get('next_safe_action')}"])
+    lines.extend(
+        [
+            "",
+            "## Skill Improvement Review",
+            "",
+            "- Skills used: lab-builder-skill-steward, lab-builder-real-runtime, lab-builder-hardware-run, lab-builder-toolchain, lab-builder-ux, lab-builder-product-craft, lab-builder-report-remediation",
+            "- Skills created or updated: none",
+            "- Skill gaps found: none requiring a new reusable skill in this pass",
+            "- Candidate skills deferred: none",
+            "- No additional skills were created because this work fits the existing Lab Builder skill set.",
+        ]
+    )
+    return "\n".join(lines) + "\n"
+
+
+def _vcenter_attach_preview_markdown(payload: dict[str, Any]) -> str:
+    target = payload.get("target") or {}
+    plan = payload.get("attach_plan") or {}
+    checks = payload.get("checks") or {}
+    lines = [
+        "# vCenter ESXi Attach Preview Report",
+        "",
+        f"- Checked at: `{payload.get('checked_at')}`",
+        f"- Status: `{payload.get('status')}`",
+        f"- Apply enabled: `{payload.get('apply_enabled')}`",
+        "",
+        "## Target",
+        f"- vCenter host: `{target.get('host') or 'not configured'}`",
+        f"- Datacenter: `{target.get('datacenter')}`",
+        f"- Cluster: `{target.get('cluster')}`",
+        f"- ESXi host: `{target.get('esxi_target')}`",
+        f"- Datastore: `{target.get('datastore')}`",
+        f"- Host attach TLS mode: `{target.get('host_attach_tls_mode')}`",
+        "",
+        "## Plan",
+    ]
+    for step in plan.get("steps") or []:
+        lines.append(f"- {step.get('operation')}: `{step.get('status')}` - `{step.get('command_preview')}`")
+    lines.extend(["", "## Checks"])
+    for key, check in checks.items():
+        if not isinstance(check, dict):
+            continue
+        lines.append(f"- {key}: `{check.get('status')}` visible=`{check.get('visible')}`")
+    lines.extend(["", "## Blockers"])
+    lines.extend(f"- {item}" for item in payload.get("blockers") or ["None"])
+    lines.extend(["", "## Warnings"])
+    lines.extend(f"- {item}" for item in payload.get("warnings") or ["None"])
+    lines.extend(["", "## Safety", "- Preview only. No vCenter inventory write, ESXi write, datastore mount, or NetApp action was run."])
+    lines.extend(["", "## Next Action", f"- {payload.get('next_safe_action')}"])
+    return "\n".join(lines) + "\n"
+
+
+def _vcenter_attach_apply_markdown(payload: dict[str, Any]) -> str:
+    target = payload.get("target") or {}
+    gate_state = payload.get("apply_gate_state") or {}
+    flag_state = gate_state.get("flag_state") if isinstance(gate_state.get("flag_state"), dict) else {}
+    lines = [
+        "# vCenter ESXi Attach Apply Report",
+        "",
+        f"- Checked at: `{payload.get('checked_at')}`",
+        f"- Status: `{payload.get('status')}`",
+        f"- Provider mode: `{payload.get('mode')}`",
+        f"- Apply enabled: `{payload.get('apply_enabled')}`",
+        "",
+        "## Target",
+        f"- vCenter host: `{target.get('host') or 'not configured'}`",
+        f"- Datacenter: `{target.get('datacenter')}`",
+        f"- Cluster: `{target.get('cluster')}`",
+        f"- ESXi host: `{target.get('esxi_target')}`",
+        f"- Datastore: `{target.get('datastore')}`",
+        "",
+        "## Apply Gates",
+    ]
+    for flag in gate_state.get("required_flags") or []:
+        lines.append(f"- `{flag}`")
+    lines.extend(["", "## Gate State"])
+    for key, value in flag_state.items():
+        lines.append(f"- {key}: `{value}`")
+    lines.extend(["", "## Operations"])
+    for operation in payload.get("operations") or []:
+        lines.append(
+            f"- {operation.get('operation')}: `{operation.get('status')}` "
+            f"attempted=`{operation.get('attempted')}` changed=`{operation.get('changed')}` - {operation.get('detail')}"
+        )
+        if operation.get("stderr_summary"):
+            lines.append(f"  - stderr summary: `{operation.get('stderr_summary')}`")
+    lines.extend(["", "## Blockers"])
+    lines.extend(f"- {item}" for item in payload.get("blockers") or ["None"])
+    lines.extend(["", "## Warnings"])
+    lines.extend(f"- {item}" for item in payload.get("warnings") or ["None"])
+    lines.extend(
+        [
+            "",
+            "## Safety",
+            "- ESXi credential values are passed only to govc for host attach and are redacted from artifacts.",
+            "- No datastore create/delete, NetApp write, VM power action, or ESXi power/reset action was run.",
+        ]
+    )
+    lines.extend(["", "## Next Action", f"- {payload.get('next_safe_action')}"])
+    return "\n".join(lines) + "\n"
+
+
+def _vcenter_post_attach_markdown(payload: dict[str, Any]) -> str:
+    target = payload.get("target") or {}
+    checks = payload.get("checks") or {}
+    lines = [
+        "# vCenter Post-Attach Validation Report",
+        "",
+        f"- Checked at: `{payload.get('checked_at')}`",
+        f"- Status: `{payload.get('status')}`",
+        f"- vCenter host: `{target.get('host') or 'not configured'}`",
+        f"- Datacenter: `{target.get('datacenter')}`",
+        f"- Cluster: `{target.get('cluster')}`",
+        f"- ESXi host: `{target.get('esxi_target')}`",
+        f"- Datastore: `{target.get('datastore')}`",
+        "",
+        "## Checks",
+    ]
+    for key, check in checks.items():
+        if not isinstance(check, dict):
+            continue
+        suffix = ""
+        if key == "vm_inventory_visible":
+            suffix = f" count=`{check.get('count')}`"
+        lines.append(f"- {key}: `{check.get('status')}` visible=`{check.get('visible')}`{suffix}")
+    lines.extend(["", "## Blockers"])
+    lines.extend(f"- {item}" for item in payload.get("blockers") or ["None"])
+    lines.extend(["", "## Warnings"])
+    lines.extend(f"- {item}" for item in payload.get("warnings") or ["None"])
+    lines.extend(["", "## Safety", "- Validation uses read-only govc inventory checks."])
+    lines.extend(["", "## Next Action", f"- {payload.get('next_safe_action')}"])
+    return "\n".join(lines) + "\n"
+
+
+def _vcenter_attach_final_markdown(payload: dict[str, Any]) -> str:
+    validation = payload.get("post_attach_validation") or {}
+    artifacts = payload.get("artifacts") or {}
+    lines = [
+        "# vCenter Attach ESXi Datastore Final Report",
+        "",
+        f"- Checked at: `{payload.get('checked_at')}`",
+        f"- Apply status: `{payload.get('status')}`",
+        f"- Post-attach validation status: `{validation.get('status') or 'not_run'}`",
         "",
         "## Reports",
     ]

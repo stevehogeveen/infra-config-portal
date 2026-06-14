@@ -54,6 +54,40 @@ def test_golden_state_credentials_are_presence_only(monkeypatch, tmp_path: Path)
     assert all({"configured", "tested", "status"}.issubset(row) for row in result["credentials"]["rows"])
 
 
+def test_golden_state_marks_vcenter_ready_only_after_post_attach_validation(monkeypatch, tmp_path: Path) -> None:
+    _patch_paths(monkeypatch, tmp_path)
+    _write_golden_artifacts(tmp_path)
+    run_dir = tmp_path / "artifacts" / "codex-runs"
+    _write_json(
+        run_dir / "vcenter-post-install-validation-redacted.json",
+        {"status": "ready"},
+    )
+    _write_json(
+        run_dir / "vcenter-post-attach-validation-redacted.json",
+        {
+            "status": "ready",
+            "checks": {
+                "datacenter_visible": {"visible": True},
+                "cluster_visible": {"visible": True},
+                "esxi_visible": {"visible": True},
+                "netapp_datastore_visible": {"visible": True},
+                "vm_inventory_visible": {"visible": True},
+            },
+        },
+    )
+    (run_dir / "vcenter-post-install-validation-report.md").write_text("redacted report\n", encoding="utf-8")
+    (run_dir / "vcenter-post-attach-validation-report.md").write_text("redacted report\n", encoding="utf-8")
+    monkeypatch.setattr(golden_state, "get_lab_build_verification", lambda: _build_verification())
+
+    result = golden_state.get_provider_lab_golden_state(write_report=False)
+    rows = {row["id"]: row for row in result["rows"]}
+
+    assert rows["vcenter"]["status"] == "ready"
+    assert "ESXi attached" in rows["vcenter"]["current_state"]
+    assert result["vcenter_readiness"]["vcenter_config"] == "managed"
+    assert result["vcenter_readiness"]["datastore_visible"] is True
+
+
 def test_golden_state_api_shape(client: TestClient) -> None:
     response = client.get("/api/v1/lab/golden-state")
 

@@ -9358,6 +9358,9 @@ function controlConfigOptionsForSection(
       option("vcenter_install_plan", "Install Plan", "Build the preview-only VCSA deployment plan after prerequisites are ready.", ["manual", "govc"], "read_only", ["install-plan"], "Plan ready", false),
       option("vcenter_install_preview", "Preview Deploy", "Generate the redacted VCSA deploy preview without starting deployment.", ["manual", "govc"], "read_only", ["install-preview"], "Preview ready", false),
       option("vcenter_install_apply", "Deploy vCenter", "Run the guarded vcsa-deploy install workflow after readiness and preview are ready.", ["manual", "govc"], "config_change", ["install-apply"], "Deploy vCenter"),
+      option("vcenter_attach_esxi_preview", "Attach ESXi Preview", "Preview datacenter, cluster, host attach, datastore, and VM inventory checks.", ["govc"], "read_only", ["attach-preview"], "Preview ready", false),
+      option("vcenter_attach_esxi_apply", "Attach ESXi", "Run the guarded govc host attach workflow after preview is ready.", ["govc"], "config_change", ["attach-apply"], "Attach ESXi"),
+      option("vcenter_post_attach_validation", "Post-Attach Validation", "Validate vCenter host, datastore, and VM inventory visibility.", ["govc"], "read_only", ["attach-validation"], "Ready", false),
       option("vcenter_netapp_readiness", "NetApp Readiness", "Validate vCenter/govc handoff against the NetApp NFS datastore plan.", ["govc", "ontap_rest"], "read_only", ["netapp-readiness"], "Ready", false),
       option("vcenter_datastore_plan", "Datastore Plan", "Preview datastore attach commands without mounting storage.", ["govc"], "read_only", ["datastore-plan"], "Plan ready", false)
     ];
@@ -11775,14 +11778,24 @@ function GoldenVcenterReadiness({
   const credentialDetail = objectValue(readiness.credential_detail);
   const previewActionId = asString(readiness.preview_action_id) || "vcenter.install-preview";
   const deployActionId = asString(readiness.deploy_action_id) || "vcenter.install-apply";
+  const attachPreviewActionId = asString(readiness.attach_preview_action_id) || "vcenter.attach-esxi-preview";
+  const attachApplyActionId = asString(readiness.attach_apply_action_id) || "vcenter.attach-esxi-apply";
+  const attachValidationActionId = asString(readiness.post_attach_validation_action_id) || "vcenter.post-attach-validation";
   const deployAction = workflowActions.find((action) => action.action_id === deployActionId) ?? null;
+  const attachApplyAction = workflowActions.find((action) => action.action_id === attachApplyActionId) ?? null;
   const previewBusy = runningAction === previewActionId;
   const deployBusy = runningAction === deployActionId;
+  const attachPreviewBusy = runningAction === attachPreviewActionId;
+  const attachApplyBusy = runningAction === attachApplyActionId;
+  const attachValidationBusy = runningAction === attachValidationActionId;
   const deployEnabled = asBoolean(readiness.deploy_enabled);
-  const deployed = asString(readiness.deploy_state) === "deployed" || asString(readiness.vcenter_config) === "deployed";
+  const managed = asBoolean(readiness.post_attach_ready) || asString(readiness.attach_state) === "managed" || asString(readiness.vcenter_config) === "managed";
+  const deployed = managed || asString(readiness.deploy_state) === "deployed" || asString(readiness.vcenter_config) === "deployed";
   const readyForPreview = asBoolean(readiness.ready_for_preview) || asString(readiness.preview_state) === "ready_for_preview";
   const readyForDeploy = asBoolean(readiness.ready_for_deploy) || deployEnabled;
-  const installLaneStatus = deployed ? "deployed" : readyForDeploy ? "ready_for_deploy" : readyForPreview ? "ready_for_preview" : asString(readiness.status) || "not_configured";
+  const attachPreviewReady = asBoolean(readiness.attach_preview_ready);
+  const attachReady = deployed && !managed;
+  const installLaneStatus = managed ? "managed" : deployed ? "deployed" : readyForDeploy ? "ready_for_deploy" : readyForPreview ? "ready_for_preview" : asString(readiness.status) || "not_configured";
   const deployState = deployed ? "deployed" : readyForDeploy ? "ready_for_deploy" : asString(readiness.deploy_state) || "deploy_disabled";
   const deployDisabledReason =
     deployed
@@ -11795,6 +11808,15 @@ function GoldenVcenterReadiness({
         : deployAction
           ? workflowGuardedDisabledReason(deployAction)
           : "vcenter.install-apply is not available in the workflow registry.");
+  const attachDisabledReason = managed
+    ? "vCenter already manages ESXi and sees the NetApp datastore."
+    : !deployed
+      ? "vCenter must be deployed before ESXi attach."
+      : !attachPreviewReady
+        ? "Attach preview must be ready before guarded attach apply."
+        : attachApplyAction
+          ? workflowGuardedDisabledReason(attachApplyAction)
+          : "vcenter.attach-esxi-apply is not available in the workflow registry.";
   const credentialsConfigured =
     (asString(readiness.credentials) || asString(readiness.vcenter_credentials)) === "configured" ||
     asBoolean(credentialDetail.deployment_credentials_configured);
@@ -11836,6 +11858,21 @@ function GoldenVcenterReadiness({
       label: "Credentials",
       status: credentialsConfigured ? "ready" : "not_configured",
       value: credentialsConfigured ? "Configured" : "Missing"
+    },
+    {
+      label: "ESXi Attached",
+      status: asBoolean(readiness.esxi_attached) ? "ready" : deployed ? "warning" : "not_checked",
+      value: asBoolean(readiness.esxi_attached) ? "Visible" : deployed ? "Pending" : "Not checked"
+    },
+    {
+      label: "Datastore Visible",
+      status: asBoolean(readiness.datastore_visible) ? "ready" : deployed ? "warning" : "not_checked",
+      value: asBoolean(readiness.datastore_visible) ? "Visible" : deployed ? "Pending" : "Not checked"
+    },
+    {
+      label: "VM Inventory",
+      status: asBoolean(readiness.vm_inventory_visible) ? "ready" : deployed ? "warning" : "not_checked",
+      value: asBoolean(readiness.vm_inventory_visible) ? "Visible" : deployed ? "Pending" : "Not checked"
     }
   ];
   const valueRows = [
@@ -11881,7 +11918,7 @@ function GoldenVcenterReadiness({
         <div>
           <span className="summary-kicker">Install lane</span>
           <strong>{displayStatusLabel(installLaneStatus)}</strong>
-          <p>{deployed ? "vCenter is deployed and post-install validation is ready." : readyForPreview ? "Preview can be generated from current readiness evidence." : "Preview is waiting on readiness evidence."}</p>
+          <p>{managed ? "vCenter manages ESXi and sees the NetApp datastore." : deployed ? "vCenter is deployed; ESXi attach is the next managed-state step." : readyForPreview ? "Preview can be generated from current readiness evidence." : "Preview is waiting on readiness evidence."}</p>
         </div>
         <VisibleStatusBadge status={deployState} />
       </div>
@@ -11923,6 +11960,53 @@ function GoldenVcenterReadiness({
         )}
       </div>
       {!deployEnabled && <p className="vcenter-deploy-disabled-reason">{deployDisabledReason}</p>}
+      <div className="vcenter-deploy-state">
+        <div>
+          <span className="summary-kicker">Attach lane</span>
+          <strong>{displayStatusLabel(asString(readiness.attach_state) || "not_checked")}</strong>
+          <p>{managed ? "Host, datastore, and VM inventory are visible through vCenter." : deployed ? "Attach preview and guarded apply manage the ESXi host in vCenter." : "Attach waits for deployed vCenter evidence."}</p>
+        </div>
+        <VisibleStatusBadge status={asString(readiness.attach_state) || "not_checked"} />
+      </div>
+      <div className="golden-vcenter-actions">
+        <button
+          className="small-button primary"
+          disabled={!deployed || managed || Boolean(runningAction)}
+          title={deployed ? "Generate the redacted ESXi attach preview." : "vCenter must be deployed before attach preview."}
+          onClick={() => onRunAction(attachPreviewActionId)}
+          type="button"
+        >
+          <Play size={14} />
+          {attachPreviewBusy ? "Previewing" : "Preview Attach"}
+        </button>
+        {attachApplyAction ? (
+          <GuardedWorkflowActionButton
+            action={attachApplyAction}
+            compact
+            disabledReasonOverride={attachPreviewReady && attachReady ? undefined : attachDisabledReason}
+            enabled={attachPreviewReady && attachReady && !Boolean(runningAction)}
+            label="Attach ESXi"
+            onRun={(action, request) => onRunAction(action.action_id, request)}
+            running={attachApplyBusy}
+          />
+        ) : (
+          <button className="small-button" disabled title={attachDisabledReason} type="button">
+            <Ban size={14} />
+            Attach ESXi
+          </button>
+        )}
+        <button
+          className="small-button"
+          disabled={!deployed || Boolean(runningAction)}
+          onClick={() => onRunAction(attachValidationActionId)}
+          title={deployed ? "Validate vCenter host, datastore, and VM inventory visibility." : "vCenter must be deployed before post-attach validation."}
+          type="button"
+        >
+          <RefreshCw size={14} />
+          {attachValidationBusy ? "Validating" : "Validate Attach"}
+        </button>
+      </div>
+      {!managed && deployed && <p className="vcenter-deploy-disabled-reason">{attachDisabledReason}</p>}
       <div className="vcenter-values-section">
         <div className="issue-list-head">
           <PanelTitle icon={<ClipboardList size={18} />} title="Install Values" />
@@ -13756,7 +13840,10 @@ function humanWorkflowActionLabel(action: WorkflowAction): string {
     "netapp.setup-apply": "Apply NetApp setup",
     "netapp.setup-preview": "Preview NetApp setup",
     "provider-lab-netapp-ontap-upgrade-validate": "Validate ONTAP upgrade",
-    "vcenter.install-apply": "Deploy vCenter"
+    "vcenter.install-apply": "Deploy vCenter",
+    "vcenter.attach-esxi-preview": "Preview ESXi attach",
+    "vcenter.attach-esxi-apply": "Attach ESXi",
+    "vcenter.post-attach-validation": "Validate ESXi attach"
   };
   return mapped[action.action_id] ?? humanizeAction(action.label);
 }

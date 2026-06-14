@@ -307,6 +307,8 @@ class Settings:
     vcenter_appliance_root_password: str | None = _optional_env("VCENTER_APPLIANCE_ROOT_PASSWORD")
     vcenter_esxi_target: str | None = _optional_env("VCENTER_ESXI_TARGET")
     vcenter_datastore_target: str | None = _optional_env("VCENTER_DATASTORE_TARGET")
+    vcenter_datacenter_name: str = os.getenv("VCENTER_DATACENTER_NAME", "Lab-DC")
+    vcenter_cluster_name: str = os.getenv("VCENTER_CLUSTER_NAME", "Lab-Cluster")
     vcenter_vcsa_iso_path: str | None = _optional_env("VCENTER_VCSA_ISO_PATH") or _optional_env("VCSA_ISO_PATH")
     vcenter_vcsa_deploy_path: str | None = (
         _optional_env("VCENTER_VCSA_DEPLOY") or _optional_env("VCSA_DEPLOY_PATH") or _optional_env("VCSA_DEPLOY")

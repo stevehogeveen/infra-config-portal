@@ -210,6 +210,23 @@ def test_vcenter_validation_defaults_to_insecure_tls_for_local_lab(monkeypatch, 
     assert vcenter_netapp_readiness._vcenter_validation_verify_tls() is False
 
 
+def test_vcenter_validation_defaults_to_insecure_tls_for_local_readonly(monkeypatch, tmp_path: Path) -> None:
+    media, vcsa_deploy = _write_vcsa_media(tmp_path)
+    monkeypatch.delenv("VCENTER_VERIFY_TLS", raising=False)
+    monkeypatch.delenv("GOVC_TLS_VERIFY", raising=False)
+    monkeypatch.setattr(
+        vcenter_netapp_readiness,
+        "settings",
+        _settings(
+            provider_mode="local-readonly",
+            vcenter_vcsa_deploy_path=str(vcsa_deploy),
+            media_inventory_dirs=(str(media.parent),),
+        ),
+    )
+
+    assert vcenter_netapp_readiness._vcenter_validation_verify_tls() is False
+
+
 def test_vcenter_validation_prefers_sso_credentials_over_generic_govc(monkeypatch, tmp_path: Path) -> None:
     media, vcsa_deploy = _write_vcsa_media(tmp_path)
     monkeypatch.delenv("VCENTER_USERNAME", raising=False)
@@ -240,6 +257,123 @@ def test_vcenter_validation_canonicalizes_explicit_administrator_username(monkey
     assert vcenter_netapp_readiness._vcenter_validation_username() == "Administrator@vsphere.local"
 
 
+def test_vcenter_attach_preview_plans_datacenter_cluster_and_host_attach(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    _patch_paths(monkeypatch, tmp_path)
+    media, vcsa_deploy = _write_vcsa_media(tmp_path)
+    monkeypatch.setattr(vcenter_netapp_readiness, "settings", _ready_settings(media, vcsa_deploy))
+    monkeypatch.setattr(vcenter_netapp_readiness, "_tool_available", lambda _name: True)
+    monkeypatch.setattr(vcenter_netapp_readiness, "_tcp_check", _tcp_ready)
+    monkeypatch.setattr(vcenter_netapp_readiness, "_server_certificate_sha1_thumbprint", lambda _host: "AA:BB:CC")
+    monkeypatch.setattr(vcenter_netapp_readiness, "_run_vcenter_govc", _empty_vcenter_inventory)
+
+    result = vcenter_netapp_readiness.get_vcenter_attach_esxi_preview(write_report=True)
+    serialized = json.dumps(result)
+
+    assert result["status"] == "ready"
+    assert result["action"] == "vcenter-attach-esxi-preview"
+    assert result["attach_plan"]["steps"][0]["status"] == "will_create"
+    assert result["attach_plan"]["steps"][2]["status"] == "will_attach"
+    assert result["checks"]["esxi_certificate_thumbprint"]["status"] == "ready"
+    assert "super-secret" not in serialized
+    assert (tmp_path / "artifacts/codex-runs/vcenter-attach-esxi-preview-report.md").exists()
+
+
+def test_vcenter_attach_apply_refuses_without_explicit_gates(monkeypatch, tmp_path: Path) -> None:
+    _patch_paths(monkeypatch, tmp_path)
+    media, vcsa_deploy = _write_vcsa_media(tmp_path)
+    monkeypatch.delenv("VCENTER_ATTACH_ESXI_APPLY", raising=False)
+    monkeypatch.delenv("VCENTER_ATTACH_ESXI_CONFIRM", raising=False)
+    monkeypatch.delenv("VCENTER_ATTACH_ESXI_ALLOW", raising=False)
+    monkeypatch.setattr(vcenter_netapp_readiness, "settings", _ready_settings(media, vcsa_deploy))
+    monkeypatch.setattr(vcenter_netapp_readiness, "current_lab_action_policy", lambda _mode=None: _AllowPolicy())
+    monkeypatch.setattr(vcenter_netapp_readiness, "_tool_available", lambda _name: True)
+    monkeypatch.setattr(vcenter_netapp_readiness, "_tcp_check", _tcp_ready)
+    monkeypatch.setattr(vcenter_netapp_readiness, "_server_certificate_sha1_thumbprint", lambda _host: "AA:BB:CC")
+    monkeypatch.setattr(vcenter_netapp_readiness, "_run_vcenter_govc", _empty_vcenter_inventory)
+
+    def fail_operation(_target: dict) -> dict:
+        raise AssertionError("attach operations must not run without explicit gates")
+
+    monkeypatch.setattr(vcenter_netapp_readiness, "_ensure_vcenter_datacenter", fail_operation)
+
+    result = vcenter_netapp_readiness.get_vcenter_attach_esxi_apply(write_report=True)
+
+    assert result["status"] == "blocked"
+    assert "VCENTER_ATTACH_ESXI_APPLY=true is required." in result["blockers"]
+    assert not result["operations"]
+    assert (tmp_path / "artifacts/codex-runs/vcenter-attach-esxi-apply-report.md").exists()
+
+
+def test_vcenter_attach_apply_runs_operations_and_redacts_secrets(monkeypatch, tmp_path: Path) -> None:
+    _patch_paths(monkeypatch, tmp_path)
+    media, vcsa_deploy = _write_vcsa_media(tmp_path)
+    monkeypatch.setenv("VCENTER_ATTACH_ESXI_APPLY", "true")
+    monkeypatch.setenv("VCENTER_ATTACH_ESXI_CONFIRM", "ATTACH ESXI TO VCENTER")
+    monkeypatch.setenv("VCENTER_ATTACH_ESXI_ALLOW", "true")
+    monkeypatch.setattr(vcenter_netapp_readiness, "settings", _ready_settings(media, vcsa_deploy))
+    monkeypatch.setattr(vcenter_netapp_readiness, "current_lab_action_policy", lambda _mode=None: _AllowPolicy())
+    monkeypatch.setattr(vcenter_netapp_readiness, "_tool_available", lambda _name: True)
+    monkeypatch.setattr(vcenter_netapp_readiness, "_tcp_check", _tcp_ready)
+    monkeypatch.setattr(vcenter_netapp_readiness, "_server_certificate_sha1_thumbprint", lambda _host: "AA:BB:CC")
+    monkeypatch.setattr(vcenter_netapp_readiness, "_run_vcenter_govc", _empty_vcenter_inventory)
+    monkeypatch.setattr(vcenter_netapp_readiness, "_refresh_post_install_reports", lambda: {"refreshed": {}, "errors": []})
+    monkeypatch.setattr(
+        vcenter_netapp_readiness,
+        "_ensure_vcenter_datacenter",
+        lambda _target: _operation("datacenter.ensure", changed=True),
+    )
+    monkeypatch.setattr(
+        vcenter_netapp_readiness,
+        "_ensure_vcenter_cluster",
+        lambda _target: _operation("cluster.ensure", changed=True),
+    )
+    monkeypatch.setattr(
+        vcenter_netapp_readiness,
+        "_attach_esxi_host_to_vcenter",
+        lambda _target: _operation("esxi.attach", changed=True, stderr="super-secret-esxi"),
+    )
+    monkeypatch.setattr(
+        vcenter_netapp_readiness,
+        "validate_vcenter_post_attach",
+        lambda **_kwargs: {"status": "ready", "blockers": [], "warnings": []},
+    )
+
+    result = vcenter_netapp_readiness.get_vcenter_attach_esxi_apply(write_report=True)
+    serialized = json.dumps(result)
+
+    assert result["status"] == "completed"
+    assert [operation["operation"] for operation in result["operations"]] == [
+        "datacenter.ensure",
+        "cluster.ensure",
+        "esxi.attach",
+    ]
+    assert "super-secret" not in serialized
+    assert (tmp_path / "artifacts/codex-runs/vcenter-attach-esxi-datastore-final-report.md").exists()
+
+
+def test_vcenter_post_attach_validation_requires_host_datastore_and_vm_inventory(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    _patch_paths(monkeypatch, tmp_path)
+    media, vcsa_deploy = _write_vcsa_media(tmp_path)
+    monkeypatch.setattr(vcenter_netapp_readiness, "settings", _ready_settings(media, vcsa_deploy))
+    monkeypatch.setattr(vcenter_netapp_readiness, "_tool_available", lambda _name: True)
+    monkeypatch.setattr(vcenter_netapp_readiness, "_run_vcenter_govc", _ready_vcenter_inventory)
+
+    result = vcenter_netapp_readiness.validate_vcenter_post_attach(write_report=True)
+
+    assert result["status"] == "ready"
+    assert result["checks"]["datacenter_visible"]["visible"] is True
+    assert result["checks"]["esxi_visible"]["visible"] is True
+    assert result["checks"]["netapp_datastore_visible"]["visible"] is True
+    assert result["checks"]["vm_inventory_visible"]["count"] == 1
+    assert (tmp_path / "artifacts/codex-runs/vcenter-post-attach-validation-report.md").exists()
+
+
 def _patch_paths(monkeypatch, tmp_path: Path) -> None:
     run_dir = tmp_path / "artifacts" / "codex-runs"
     monkeypatch.setattr(vcenter_netapp_readiness, "REPO_ROOT", tmp_path)
@@ -250,11 +384,18 @@ def _patch_paths(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(vcenter_netapp_readiness, "VCENTER_INSTALL_APPLY_REPORT", run_dir / "vcenter-install-apply-report.md")
     monkeypatch.setattr(vcenter_netapp_readiness, "VCENTER_POST_INSTALL_VALIDATION_REPORT", run_dir / "vcenter-post-install-validation-report.md")
     monkeypatch.setattr(vcenter_netapp_readiness, "VCENTER_INSTALL_APPLY_FINAL_REPORT", run_dir / "vcenter-install-apply-unblock-final-report.md")
+    monkeypatch.setattr(vcenter_netapp_readiness, "VCENTER_ATTACH_ESXI_PREVIEW_REPORT", run_dir / "vcenter-attach-esxi-preview-report.md")
+    monkeypatch.setattr(vcenter_netapp_readiness, "VCENTER_ATTACH_ESXI_APPLY_REPORT", run_dir / "vcenter-attach-esxi-apply-report.md")
+    monkeypatch.setattr(vcenter_netapp_readiness, "VCENTER_POST_ATTACH_VALIDATION_REPORT", run_dir / "vcenter-post-attach-validation-report.md")
+    monkeypatch.setattr(vcenter_netapp_readiness, "VCENTER_ATTACH_ESXI_FINAL_REPORT", run_dir / "vcenter-attach-esxi-datastore-final-report.md")
     monkeypatch.setattr(vcenter_netapp_readiness, "VCENTER_INSTALL_READINESS_JSON", run_dir / "vcenter-install-readiness-redacted.json")
     monkeypatch.setattr(vcenter_netapp_readiness, "VCENTER_INSTALL_PLAN_JSON", run_dir / "vcenter-install-plan-redacted.json")
     monkeypatch.setattr(vcenter_netapp_readiness, "VCENTER_INSTALL_PREVIEW_JSON", run_dir / "vcenter-install-preview-redacted.json")
     monkeypatch.setattr(vcenter_netapp_readiness, "VCENTER_INSTALL_APPLY_JSON", run_dir / "vcenter-install-apply-redacted.json")
     monkeypatch.setattr(vcenter_netapp_readiness, "VCENTER_POST_INSTALL_VALIDATION_JSON", run_dir / "vcenter-post-install-validation-redacted.json")
+    monkeypatch.setattr(vcenter_netapp_readiness, "VCENTER_ATTACH_ESXI_PREVIEW_JSON", run_dir / "vcenter-attach-esxi-preview-redacted.json")
+    monkeypatch.setattr(vcenter_netapp_readiness, "VCENTER_ATTACH_ESXI_APPLY_JSON", run_dir / "vcenter-attach-esxi-apply-redacted.json")
+    monkeypatch.setattr(vcenter_netapp_readiness, "VCENTER_POST_ATTACH_VALIDATION_JSON", run_dir / "vcenter-post-attach-validation-redacted.json")
     monkeypatch.setattr(vcenter_netapp_readiness, "VCENTER_INSTALL_SPEC_REDACTED_JSON", run_dir / "vcenter-install-spec-redacted.json")
 
 
@@ -285,6 +426,8 @@ def _settings(**overrides) -> SimpleNamespace:
         "vcenter_appliance_root_password": None,
         "vcenter_esxi_target": None,
         "vcenter_datastore_target": None,
+        "vcenter_datacenter_name": "Lab-DC",
+        "vcenter_cluster_name": "Lab-Cluster",
         "vcenter_vcsa_iso_path": None,
         "vcenter_vcsa_deploy_path": None,
         "vcenter_deployment_size": "tiny",
@@ -390,3 +533,42 @@ def _ready_settings(media: Path, vcsa_deploy: Path) -> SimpleNamespace:
         esxi_test_username="root",
         esxi_test_password="super-secret-esxi",
     )
+
+
+def _empty_vcenter_inventory(args: list[str], *, timeout: int) -> dict:
+    if args == ["about"]:
+        return {"status": "ready", "return_code": 0, "stdout": "vCenter", "stderr": ""}
+    return {"status": "ready", "return_code": 0, "stdout": "", "stderr": ""}
+
+
+def _ready_vcenter_inventory(args: list[str], *, timeout: int) -> dict:
+    if args == ["about"]:
+        return {"status": "ready", "return_code": 0, "stdout": "vCenter", "stderr": ""}
+    text = " ".join(args)
+    if "-type d" in text:
+        stdout = "/Lab-DC\n"
+    elif "-type c" in text:
+        stdout = "/Lab-DC/host/Lab-Cluster\n"
+    elif "-type h" in text:
+        stdout = "/Lab-DC/host/Lab-Cluster/192.168.1.203\n"
+    elif "-type s" in text:
+        stdout = "/Lab-DC/datastore/netapp_nfs_ds01\n"
+    elif "-type m" in text:
+        stdout = "/Lab-DC/vm/vcsa01\n"
+    else:
+        stdout = ""
+    return {"status": "ready", "return_code": 0, "stdout": stdout, "stderr": ""}
+
+
+def _operation(operation: str, *, changed: bool, stderr: str = "") -> dict:
+    return {
+        "operation": operation,
+        "status": "ready",
+        "attempted": changed,
+        "changed": changed,
+        "detail": f"{operation} completed.",
+        "command_preview": operation,
+        "return_code": 0,
+        "stdout_summary": "",
+        "stderr_summary": stderr,
+    }

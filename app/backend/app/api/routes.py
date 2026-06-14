@@ -249,12 +249,15 @@ from app.services.readiness import get_request_readiness
 from app.services.report_center import get_report_center, get_report_summary
 from app.services.upgrade_decision import get_ilo_upgrade_readiness
 from app.services.vcenter_netapp_readiness import (
+    get_vcenter_attach_esxi_apply,
+    get_vcenter_attach_esxi_preview,
     get_vcenter_install_apply,
     get_vcenter_install_plan,
     get_vcenter_install_preview,
     get_vcenter_install_readiness,
     get_vcenter_netapp_datastore_plan,
     get_vcenter_netapp_readiness,
+    validate_vcenter_post_attach,
 )
 from app.services.workflow_registry import (
     WorkflowRegistryNotFoundError,
@@ -658,6 +661,21 @@ def read_vcenter_install_preview() -> ProviderProbeResultRead:
 @router.post("/lab/vcenter/install-apply", response_model=ProviderProbeResultRead)
 def run_vcenter_install_apply() -> ProviderProbeResultRead:
     return get_vcenter_install_apply(write_report=True)
+
+
+@router.get("/lab/vcenter/attach-esxi-preview", response_model=ProviderProbeResultRead)
+def read_vcenter_attach_esxi_preview() -> ProviderProbeResultRead:
+    return get_vcenter_attach_esxi_preview(write_report=False)
+
+
+@router.post("/lab/vcenter/attach-esxi-apply", response_model=ProviderProbeResultRead)
+def run_vcenter_attach_esxi_apply() -> ProviderProbeResultRead:
+    return get_vcenter_attach_esxi_apply(write_report=True)
+
+
+@router.get("/lab/vcenter/post-attach-validation", response_model=ProviderProbeResultRead)
+def read_vcenter_post_attach_validation() -> ProviderProbeResultRead:
+    return validate_vcenter_post_attach(write_report=False)
 
 
 @router.get("/reports/issues", response_model=ReportCenterRead)
