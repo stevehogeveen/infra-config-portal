@@ -889,6 +889,120 @@ button:disabled {
   overflow-x: auto;
 }
 
+.golden-state-stack {
+  display: grid;
+  gap: 18px;
+}
+
+.golden-state-table-panel {
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.golden-state-table,
+.golden-credential-table {
+  min-width: 980px;
+  table-layout: fixed;
+}
+
+.golden-state-table th:nth-child(1),
+.golden-state-table td:nth-child(1) {
+  width: 18%;
+}
+
+.golden-state-table th:nth-child(2),
+.golden-state-table td:nth-child(2),
+.golden-state-table th:nth-child(3),
+.golden-state-table td:nth-child(3) {
+  width: 23%;
+}
+
+.golden-state-table th:nth-child(4),
+.golden-state-table td:nth-child(4) {
+  width: 13%;
+}
+
+.golden-state-table th:nth-child(5),
+.golden-state-table td:nth-child(5) {
+  width: 23%;
+}
+
+.golden-state-table td,
+.golden-credential-table td {
+  overflow-wrap: anywhere;
+  vertical-align: top;
+}
+
+.golden-component-cell,
+.golden-repair-cell {
+  display: grid;
+  gap: 8px;
+}
+
+.golden-component-cell {
+  justify-items: start;
+}
+
+.golden-source-note {
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.golden-repair-cell {
+  align-items: start;
+}
+
+.golden-repair-cell .small-button {
+  max-width: 100%;
+  width: fit-content;
+  word-break: normal;
+}
+
+.golden-state-table code,
+.golden-workflow-grid code {
+  background: #f8fafc;
+  border: 1px solid #dfe4ea;
+  border-radius: 6px;
+  display: block;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+  padding: 7px;
+}
+
+.golden-workflow-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(4, minmax(180px, 1fr));
+}
+
+.golden-workflow-grid article {
+  border: 1px solid #dfe4ea;
+  border-radius: 8px;
+  display: grid;
+  gap: 12px;
+  grid-template-rows: minmax(0, 1fr) auto;
+  min-width: 0;
+  padding: 14px;
+}
+
+.golden-workflow-grid strong,
+.golden-workflow-grid p {
+  overflow-wrap: anywhere;
+}
+
+.golden-workflow-grid p {
+  color: #475569;
+  font-size: 13px;
+  line-height: 1.4;
+  margin: 6px 0;
+}
+
+.golden-vcenter-panel {
+  display: grid;
+  gap: 16px;
+}
+
 .status-summary-card,
 .next-action-card,
 .blocker-summary,
@@ -6211,7 +6325,8 @@ pre {
   .action-run-output-grid,
   .workflow-stage-row-meta,
   .workflow-action-row-meta,
-  .report-evidence-groups {
+  .report-evidence-groups,
+  .golden-workflow-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -6229,7 +6344,8 @@ pre {
   }
 
   .validation-summary-strip,
-  .lab-validation-layout {
+  .lab-validation-layout,
+  .golden-state-stack {
     grid-template-columns: minmax(0, 1fr);
   }
 
@@ -6365,6 +6481,8 @@ pre {
     .report-evidence-groups,
     .validation-summary-strip,
     .lab-validation-layout,
+    .golden-workflow-grid,
+    .golden-state-stack,
     .report-evidence-groups dl {
       grid-template-columns: 1fr;
     }

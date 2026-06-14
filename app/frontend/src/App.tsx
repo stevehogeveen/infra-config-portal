@@ -206,6 +206,7 @@ type VerificationSectionId =
   | "credentials"
   | "mtu-protocols"
   | "certification-report";
+type GoldenStateSectionId = "dashboard" | "drift" | "credentials" | "vcenter";
 type LabValidationSectionId = "overview" | "vcenter-netapp" | "handoff";
 type ValidationReportsSectionId = "summary" | "issues" | "validation" | "proof" | "evidence";
 type ReportsSectionId =
@@ -720,6 +721,7 @@ function App() {
             <RouterRoute path="/control-center" element={<ControlCenterPage />} />
             <RouterRoute path="/firmware" element={<FirmwarePage />} />
             <RouterRoute path="/firmware-upgrades" element={<Navigate to="/firmware" replace />} />
+            <RouterRoute path="/golden-state" element={<GoldenStatePage />} />
             <RouterRoute path="/validation-reports" element={<ValidationReportsPage />} />
             <RouterRoute path="/verification" element={<Navigate to="/validation-reports" replace />} />
             <RouterRoute path="/lab-validation" element={<Navigate to="/validation-reports?section=validation" replace />} />
@@ -913,6 +915,7 @@ function SidebarNav({
         <NavItem to="/hardware" icon={<Activity size={18} />} label="Hardware" />
         <NavItem to="/control-center" icon={<Wrench size={18} />} label="Control Center" issueBadge={pageBadges["control-center"]} />
         <NavItem to="/firmware" icon={<ShieldCheck size={18} />} label="Firmware Upgrades" issueBadge={pageBadges.firmware} />
+        <NavItem to="/golden-state" icon={<CheckCircle2 size={18} />} label="Golden State" />
         <NavItem to="/validation-reports" icon={<FileText size={18} />} label="Validation & Reports" issueBadge={pageBadges.reports ?? pageBadges.verification} />
         <NavItem to="/settings" icon={<Settings size={18} />} label="Settings" issueBadge={pageBadges.settings} />
       </nav>
@@ -11395,6 +11398,386 @@ function VerificationSimpleSection({
       </AdvancedDetails>
     </section>
   );
+}
+
+function GoldenStatePage() {
+  const [activeSection, setActiveSection] = useState<GoldenStateSectionId>("dashboard");
+  const [goldenState, setGoldenState] = useState<ProviderProbeResult | null>(null);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [runningAction, setRunningAction] = useState("");
+  const [runMessage, setRunMessage] = useState("");
+
+  async function load() {
+    setError("");
+    setLoading(true);
+    try {
+      setGoldenState(await api.goldenState());
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function runGoldenAction(actionId: string) {
+    setError("");
+    setRunMessage("");
+    setRunningAction(actionId);
+    try {
+      const result = await api.runWorkflowAction(actionId);
+      setRunMessage(`${result.action_label}: ${displayStatusLabel(result.status)}`);
+      await load();
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setRunningAction("");
+    }
+  }
+
+  useEffect(() => {
+    load();
+  }, []);
+
+  const rows = recordArray(goldenState?.rows);
+  const driftRows = recordArray(goldenState?.drift_rows);
+  const credentials = objectValue(goldenState?.credentials);
+  const credentialRows = recordArray(credentials.rows);
+  const vcenter = objectValue(goldenState?.vcenter_readiness);
+  const workflowActions = recordArray(goldenState?.workflow_actions);
+  const sections: SectionOption<GoldenStateSectionId>[] = [
+    { id: "dashboard", label: "Dashboard", status: goldenState?.status ?? "not_checked" },
+    { id: "drift", label: "Drift", status: driftRows.length ? "warning" : "ready" },
+    { id: "credentials", label: "Credentials", status: asString(credentials.status) || "not_checked" },
+    { id: "vcenter", label: "vCenter", status: asString(vcenter.status) || "not_configured" }
+  ];
+
+  return (
+    <Page
+      activeSection={activeSection}
+      description="Golden-state, current-state, drift, credentials, vCenter readiness, and handoff actions."
+      issueArea="reports"
+      onSectionChange={(sectionId) => setActiveSection(sectionId as GoldenStateSectionId)}
+      primaryAction={{
+        icon: <FileText size={16} />,
+        label: "Generate Handoff Report",
+        onClick: () => runGoldenAction("full-lab.handoff-report"),
+        disabled: loading || Boolean(runningAction)
+      }}
+      sections={sections}
+      title="Golden State"
+    >
+      <Feedback loading={loading && !goldenState} error={error} />
+      {runMessage && <div className="feedback success">{runMessage}</div>}
+      {goldenState && (
+        <>
+          {activeSection === "dashboard" && (
+            <GoldenStateDashboard
+              goldenState={goldenState}
+              onRunAction={runGoldenAction}
+              rows={rows}
+              runningAction={runningAction}
+              workflowActions={workflowActions}
+            />
+          )}
+          {activeSection === "drift" && (
+            <section className="golden-state-stack">
+              <GoldenStateTable
+                emptyDetail="No drift is reported for the golden-state rows."
+                onRunAction={runGoldenAction}
+                rows={driftRows}
+                runningAction={runningAction}
+                title="Drift"
+              />
+              <BlockerSummary
+                blockers={stringArray(goldenState.blockers)}
+                warnings={stringArray(goldenState.warnings)}
+                empty="No current blocker is reported for the golden-state surface."
+              />
+            </section>
+          )}
+          {activeSection === "credentials" && (
+            <GoldenCredentialStatus rows={credentialRows} status={asString(credentials.status) || "not_checked"} />
+          )}
+          {activeSection === "vcenter" && <GoldenVcenterReadiness readiness={vcenter} />}
+        </>
+      )}
+    </Page>
+  );
+}
+
+function GoldenStateDashboard({
+  goldenState,
+  onRunAction,
+  rows,
+  runningAction,
+  workflowActions
+}: {
+  goldenState: ProviderProbeResult;
+  onRunAction: (actionId: string) => void;
+  rows: Record<string, unknown>[];
+  runningAction: string;
+  workflowActions: Record<string, unknown>[];
+}) {
+  const readyCount = rows.filter((row) => asString(row.status) === "ready").length;
+  const driftCount = rows.filter((row) => asString(row.drift) !== "none").length;
+  const artifacts = objectValue(goldenState.artifacts);
+  return (
+    <section className="golden-state-stack">
+      <div className="calm-section-grid">
+        <StatusSummaryCard
+          message={goldenState.message}
+          status={goldenState.status}
+          title="Golden state"
+          items={[
+            { label: "Rows Ready", value: `${readyCount}/${rows.length}` },
+            { label: "Drift Rows", value: String(driftCount) },
+            { label: "Blockers", value: String(stringArray(goldenState.blockers).length) },
+            { label: "Checked", value: goldenState.checked_at ? formatDateTime(goldenState.checked_at) : "Not checked" }
+          ]}
+        />
+        <NextActionCard detail={humanizeAction(asString(goldenState.next_safe_action) || "Review drift rows.")} />
+        <StatusSummaryCard
+          message="Handoff report and redacted summary are generated by the golden-state make target."
+          status={goldenState.handoff_report ? "report_available" : "not_checked"}
+          title="Handoff"
+          items={[
+            { label: "Report", value: asString(artifacts.report) || "Not generated" },
+            { label: "Summary", value: asString(artifacts.summary_json) || "Not generated" }
+          ]}
+        />
+      </div>
+      <GoldenStateTable
+        emptyDetail="No golden-state rows have been reported."
+        onRunAction={onRunAction}
+        rows={rows}
+        runningAction={runningAction}
+        title="Current State"
+      />
+      <GoldenWorkflowActions
+        actions={workflowActions}
+        onRunAction={onRunAction}
+        runningAction={runningAction}
+      />
+      <AdvancedDetails className="section-details" summary="Golden-state proof links" title="Evidence">
+        <ReportLinkList reports={reportLinksFromGoldenState(rows)} />
+      </AdvancedDetails>
+    </section>
+  );
+}
+
+function GoldenStateTable({
+  emptyDetail,
+  onRunAction,
+  rows,
+  runningAction,
+  title
+}: {
+  emptyDetail: string;
+  onRunAction: (actionId: string) => void;
+  rows: Record<string, unknown>[];
+  runningAction: string;
+  title: string;
+}) {
+  return (
+    <section className="panel golden-state-table-panel">
+      <div className="issue-list-head">
+        <PanelTitle icon={<CheckCircle2 size={18} />} title={title} />
+        <span>{rows.length} rows</span>
+      </div>
+      {rows.length ? (
+        <table className="provider-candidate-table golden-state-table">
+          <thead>
+            <tr>
+              <th>Component</th>
+              <th>Golden State</th>
+              <th>Current State</th>
+              <th>Drift</th>
+              <th>Repair Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => {
+              const repairAction = objectValue(row.repair_action);
+              const actionId = asString(repairAction.action_id);
+              const drift = asString(row.drift) || "none";
+              return (
+                <tr key={asString(row.id) || asString(row.label)}>
+                  <td>
+                    <div className="golden-component-cell">
+                      <strong>{asString(row.label)}</strong>
+                      <StatusBadge status={asString(row.status) || "not_checked"} />
+                      <SourceFreshnessInline
+                        freshness={asString(row.freshness) || "not_checked"}
+                        sourceType={asString(row.source_type) || "not_checked"}
+                      />
+                      {row.checked_at ? <span className="golden-source-note">{formatDateTime(asString(row.checked_at))}</span> : null}
+                    </div>
+                  </td>
+                  <td>{asString(row.golden_state)}</td>
+                  <td>{asString(row.current_state)}</td>
+                  <td>{drift === "none" ? "None" : <StatusBadge status={drift} />}</td>
+                  <td>
+                    <div className="golden-repair-cell">
+                      {actionId ? (
+                        <button
+                          className="small-button"
+                          disabled={Boolean(runningAction)}
+                          onClick={() => onRunAction(actionId)}
+                          type="button"
+                        >
+                          <RefreshCw size={14} />
+                          {runningAction === actionId ? "Running" : asString(repairAction.label) || "Run"}
+                        </button>
+                      ) : (
+                        <span>{asString(repairAction.label) || "Manual"}</span>
+                      )}
+                      <code>{asString(repairAction.command)}</code>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      ) : (
+        <EmptyState title="No rows" detail={emptyDetail} />
+      )}
+    </section>
+  );
+}
+
+function GoldenWorkflowActions({
+  actions,
+  onRunAction,
+  runningAction
+}: {
+  actions: Record<string, unknown>[];
+  onRunAction: (actionId: string) => void;
+  runningAction: string;
+}) {
+  return (
+    <section className="panel golden-workflow-panel">
+      <div className="issue-list-head">
+        <PanelTitle icon={<Workflow size={18} />} title="Full Lab Workflows" />
+        <span>{actions.length} actions</span>
+      </div>
+      <div className="golden-workflow-grid">
+        {actions.map((action) => {
+          const actionId = asString(action.id);
+          return (
+            <article key={actionId}>
+              <div>
+                <strong>{asString(action.label)}</strong>
+                <p>{asString(action.description)}</p>
+                <code>{asString(action.command)}</code>
+              </div>
+              <button
+                className="small-button"
+                disabled={Boolean(runningAction)}
+                onClick={() => onRunAction(actionId)}
+                type="button"
+              >
+                <Play size={14} />
+                {runningAction === actionId ? "Running" : "Run"}
+              </button>
+            </article>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function GoldenCredentialStatus({
+  rows,
+  status
+}: {
+  rows: Record<string, unknown>[];
+  status: string;
+}) {
+  return (
+    <section className="panel golden-state-table-panel">
+      <div className="validation-detail-head">
+        <div>
+          <span className="summary-kicker">Local</span>
+          <h2>Credential Status</h2>
+        </div>
+        <StatusBadge status={status} />
+      </div>
+      <table className="provider-candidate-table golden-credential-table">
+        <thead>
+          <tr>
+            <th>Provider</th>
+            <th>Configured</th>
+            <th>Tested</th>
+            <th>Next Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={asString(row.id) || asString(row.label)}>
+              <td>
+                <div className="golden-component-cell">
+                  <strong>{asString(row.label)}</strong>
+                  <SourceFreshnessInline
+                    freshness={asString(row.freshness) || "not_checked"}
+                    sourceType={asString(row.source_type) || "not_checked"}
+                  />
+                </div>
+              </td>
+              <td><StatusBadge status={asBoolean(row.configured) ? "configured" : "missing"} /></td>
+              <td><StatusBadge status={asBoolean(row.tested) ? "tested" : "not_checked"} /></td>
+              <td>{asString(row.next_action)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </section>
+  );
+}
+
+function GoldenVcenterReadiness({ readiness }: { readiness: Record<string, unknown> }) {
+  return (
+    <section className="panel golden-vcenter-panel">
+      <div className="validation-detail-head">
+        <div>
+          <span className="summary-kicker">vCenter</span>
+          <h2>Readiness</h2>
+        </div>
+        <StatusBadge status={asString(readiness.status) || "not_configured"} />
+      </div>
+      <div className="detail-grid">
+        <Info label="VCSA ISO" value={labelize(asString(readiness.vcsa_iso) || "not_found")} />
+        <Info label="ESXi" value={labelize(asString(readiness.esxi) || "not_ready")} />
+        <Info label="NetApp Datastore" value={labelize(asString(readiness.netapp_datastore) || "not_ready")} />
+        <Info label="vCenter Credentials" value={labelize(asString(readiness.vcenter_credentials) || "missing")} />
+        <Info label="vCenter Config" value={labelize(asString(readiness.vcenter_config) || "missing")} />
+        <Info label="Source" value={labelize(asString(readiness.source_type) || "not_checked")} />
+        <Info label="Freshness" value={labelize(asString(readiness.freshness) || "not_checked")} />
+        <Info label="Checked" value={readiness.checked_at ? formatDateTime(asString(readiness.checked_at)) : "Not checked"} />
+        <Info label="Recheck" value={asString(readiness.recheck_command) || "make provider-lab-vcenter-install-readiness"} />
+      </div>
+      <NextActionCard detail={humanizeAction(asString(readiness.next_action) || "Configure vCenter deployment values.")} />
+      <AdvancedDetails className="section-details" summary="vCenter readiness evidence" title="Evidence">
+        <ReportLinkList reports={reportLinksFromPaths("vCenter", stringArray(readiness.evidence_artifacts), asString(readiness.status) || "not_configured")} />
+      </AdvancedDetails>
+    </section>
+  );
+}
+
+function reportLinksFromGoldenState(rows: Record<string, unknown>[]): ReportLink[] {
+  return rows.flatMap((row) =>
+    stringArray(row.evidence_artifacts).map((path) => ({
+      label: asString(row.label) || "Golden State",
+      path,
+      status: asString(row.status) || "historical"
+    }))
+  );
+}
+
+function reportLinksFromPaths(label: string, paths: string[], status: string): ReportLink[] {
+  return paths.map((path) => ({ label, path, status }));
 }
 
 function LabValidationPage() {

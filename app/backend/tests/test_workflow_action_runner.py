@@ -138,6 +138,25 @@ def test_live_status_action_uses_live_lab_timeout(
     assert result["executed"] is True
 
 
+def test_full_lab_handoff_action_runs_golden_state_target(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(workflow_action_run_store, "WORKFLOW_ACTION_RUN_TRACE_DIR", tmp_path)
+
+    def fake_run(command: tuple[str, ...], timeout_seconds: int) -> subprocess.CompletedProcess[str]:
+        assert command == ("make", "provider-lab-golden-state")
+        assert timeout_seconds == 90
+        return subprocess.CompletedProcess(command, 0, stdout="golden state generated", stderr="")
+
+    monkeypatch.setattr(workflow_action_runner, "_run_subprocess", fake_run)
+
+    result = run_workflow_action("full-lab.handoff-report")
+
+    assert result["status"] == "completed"
+    assert result["executed"] is True
+
+
 def test_destructive_action_is_refused(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(workflow_action_run_store, "WORKFLOW_ACTION_RUN_TRACE_DIR", tmp_path)
 

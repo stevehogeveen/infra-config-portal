@@ -83,6 +83,10 @@ def test_registry_contains_expected_provider_actions() -> None:
         "build-verification.live-status",
         "build-verification.run-full",
         "lab-validation.summary",
+        "full-lab.validation",
+        "full-lab.build-plan",
+        "full-lab.repair",
+        "full-lab.handoff-report",
         "build-verification.toolchain-check",
         "reports.issue-center",
     }.issubset(action_ids)
@@ -127,6 +131,10 @@ def test_safe_read_only_registry_actions_are_ui_runnable() -> None:
     assert actions["build-verification.run-full"]["run_endpoint"].endswith(
         "/workflows/actions/build-verification.run-full/run"
     )
+    assert actions["full-lab.validation"]["ui_run_supported"] is True
+    assert actions["full-lab.build-plan"]["ui_run_supported"] is True
+    assert actions["full-lab.repair"]["ui_run_supported"] is True
+    assert actions["full-lab.handoff-report"]["ui_run_supported"] is True
     assert actions["reports.summary"]["ui_run_supported"] is True
     assert actions["ilo.baseline-preview"]["ui_run_supported"] is True
     assert actions["ilo.baseline-preview"]["api_endpoint"] == "/api/v1/providers/hpe-ilo/baseline-preview"

@@ -196,6 +196,7 @@ from app.services.firmware_compliance import (
     write_waiver_report,
 )
 from app.services.full_rebuild_run import get_full_rebuild_summary
+from app.services.golden_state import get_provider_lab_golden_state
 from app.services.media_inventory import get_media_inventory
 from app.services.netapp_artifacts import (
     list_netapp_artifact_placeholders,
@@ -610,6 +611,11 @@ def read_full_rebuild_summary() -> ProviderProbeResultRead:
 @router.get("/lab/build-verification", response_model=ProviderProbeResultRead)
 def read_lab_build_verification() -> ProviderProbeResultRead:
     return get_lab_build_verification()
+
+
+@router.get("/lab/golden-state", response_model=ProviderProbeResultRead)
+def read_provider_lab_golden_state() -> ProviderProbeResultRead:
+    return get_provider_lab_golden_state(write_report=False)
 
 
 @router.get("/lab/validation", response_model=LabValidationSummaryRead)

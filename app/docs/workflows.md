@@ -204,6 +204,25 @@ provisioning, reboot, wipe, or upgrade actions. The vCenter-NetApp readiness
 lane classifies datastore work as `blocked_by_prior_stage` while NetApp is
 still at `cluster_setup_wizard` or until ONTAP/NFS setup is proven.
 
+## Golden State
+
+The Golden State page at `/golden-state` productizes the known-good real-lab
+path into compact rows for Cisco, iLO, RAID, ESXi, NetApp, NetApp NFS
+datastore, VM deployment, vCenter, and firmware.
+
+The API and report target are:
+
+```bash
+GET /api/v1/lab/golden-state
+make provider-lab-golden-state
+```
+
+`make provider-lab-golden-state` writes
+`artifacts/codex-runs/golden-state-productization-report.md` and a redacted JSON
+summary. It reads existing redacted evidence and configured/missing status only;
+it does not run provider writes, vCenter deployment, datastore changes, VM
+power actions, firmware apply, RAID apply, or console configuration.
+
 ## MVP: Deploy VM From vSphere Template
 
 The MVP workflow accepts a request for a VM deployment and simulates planning

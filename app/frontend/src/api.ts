@@ -338,6 +338,8 @@ export const api = {
     apiRequest<ProviderProbeResult>("/api/v1/lab/full-rebuild-summary"),
   buildVerification: () =>
     apiRequest<ProviderProbeResult>("/api/v1/lab/build-verification"),
+  goldenState: () =>
+    apiRequest<ProviderProbeResult>("/api/v1/lab/golden-state"),
   labValidation: () =>
     apiRequest<LabValidationSummary>("/api/v1/lab/validation"),
   labValidationHandoff: () =>

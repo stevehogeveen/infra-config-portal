@@ -1,0 +1,471 @@
+{
+  "provider_id": "provider-lab-golden-state",
+  "checked_at": "2026-06-14T00:10:05.295556+00:00",
+  "generated_at": "2026-06-14T00:10:05.295556+00:00",
+  "status": "partial",
+  "message": "Golden-state validation surface generated from proven real-lab evidence. No provider write action was run.",
+  "source_type": "historical_artifact",
+  "freshness": "historical",
+  "current_state": "ready",
+  "golden_state": "Cisco, iLO, RAID, ESXi, NetApp, NetApp NFS datastore, and VM deployment are ready; vCenter is not configured; firmware requires manual baseline review.",
+  "rows": [
+    {
+      "id": "cisco",
+      "label": "Cisco",
+      "status": "ready",
+      "golden_state": "Reachable and configured",
+      "current_state": "Reachable/configured",
+      "drift": "none",
+      "repair_action": {
+        "label": "Run Cisco readiness",
+        "action_id": "cisco.validate-ssh-scp",
+        "command": "make provider-lab-cisco-console-ethernet-readiness",
+        "available": true
+      },
+      "source_type": "live_cached",
+      "freshness": "current",
+      "checked_at": "2026-06-13T21:51:11.333126+00:00",
+      "evidence_artifacts": [
+        "artifacts/codex-runs/cisco-console-ethernet-readiness-report.md"
+      ],
+      "blockers": [],
+      "warnings": []
+    },
+    {
+      "id": "ilo",
+      "label": "iLO",
+      "status": "ready",
+      "golden_state": "Reachable at 192.168.1.201",
+      "current_state": "Reachable",
+      "drift": "none",
+      "repair_action": {
+        "label": "Run iLO reachability",
+        "action_id": "ilo.reachability",
+        "command": "make provider-lab-ilo-reachability",
+        "available": true
+      },
+      "source_type": "live_cached",
+      "freshness": "current",
+      "checked_at": "2026-06-05T16:32:55.791731+00:00",
+      "evidence_artifacts": [
+        "artifacts/codex-runs/ilo-real-run-report.md"
+      ],
+      "blockers": [],
+      "warnings": []
+    },
+    {
+      "id": "raid",
+      "label": "RAID",
+      "status": "ready",
+      "golden_state": "Saved RAID intent validated",
+      "current_state": "Validated",
+      "drift": "none",
+      "repair_action": {
+        "label": "Validate RAID",
+        "action_id": "raid.validate",
+        "command": "make provider-lab-hpe-raid-validate-after-reset",
+        "available": true
+      },
+      "source_type": "live_cached",
+      "freshness": "current",
+      "checked_at": "2026-06-12T20:00:41.990092+00:00",
+      "evidence_artifacts": [
+        "artifacts/codex-runs/hpe-raid-after-reset-validation-report.md"
+      ],
+      "blockers": [],
+      "warnings": []
+    },
+    {
+      "id": "esxi",
+      "label": "ESXi",
+      "status": "ready",
+      "golden_state": "Reachable at 192.168.1.203",
+      "current_state": "Reachable",
+      "drift": "none",
+      "repair_action": {
+        "label": "Validate ESXi",
+        "action_id": "esxi.post-recovery-validation",
+        "command": "make provider-lab-esxi-post-recovery-validation",
+        "available": true
+      },
+      "source_type": "live_cached",
+      "freshness": "current",
+      "checked_at": "2026-06-13T19:52:58.602236+00:00",
+      "evidence_artifacts": [
+        "artifacts/codex-runs/esxi-post-recovery-validation-report.md"
+      ],
+      "blockers": [],
+      "warnings": []
+    },
+    {
+      "id": "netapp",
+      "label": "NetApp",
+      "status": "ready",
+      "golden_state": "ONTAP 9.17.1 current",
+      "current_state": "ONTAP 9.17.1",
+      "drift": "none",
+      "repair_action": {
+        "label": "Validate NetApp setup",
+        "action_id": "netapp.validate-setup",
+        "command": "make provider-lab-netapp-validate-setup",
+        "available": true
+      },
+      "source_type": "live_cached",
+      "freshness": "current",
+      "checked_at": "2026-06-13T23:41:33.921776+00:00",
+      "evidence_artifacts": [
+        "artifacts/codex-runs/netapp-live-state-report.md",
+        "artifacts/codex-runs/netapp-ontap-upgrade-validation-report.md"
+      ],
+      "blockers": [],
+      "warnings": []
+    },
+    {
+      "id": "netapp-nfs-datastore",
+      "label": "NetApp NFS datastore",
+      "status": "ready",
+      "golden_state": "Mounted read/write on ESXi",
+      "current_state": "netapp_nfs_ds01 readWrite",
+      "drift": "none",
+      "repair_action": {
+        "label": "Validate datastore",
+        "action_id": "esxi.netapp-datastore-validate",
+        "command": "make provider-lab-esxi-netapp-datastore-validate",
+        "available": true
+      },
+      "source_type": "live_cached",
+      "freshness": "current",
+      "checked_at": "2026-06-13T20:05:31.558566+00:00",
+      "evidence_artifacts": [
+        "artifacts/codex-runs/esxi-netapp-nfs-datastore-validation-report.md"
+      ],
+      "blockers": [],
+      "warnings": []
+    },
+    {
+      "id": "vm-deployment",
+      "label": "VM deployment",
+      "status": "ready",
+      "golden_state": "VM deployed on NetApp datastore",
+      "current_state": "VM on netapp_nfs_ds01",
+      "drift": "none",
+      "repair_action": {
+        "label": "Validate VM",
+        "action_id": "esxi.vm-deploy-validate",
+        "command": "make provider-lab-esxi-vm-deploy-validate",
+        "available": true
+      },
+      "source_type": "live_cached",
+      "freshness": "current",
+      "checked_at": "2026-06-13T20:16:06.158750+00:00",
+      "evidence_artifacts": [
+        "artifacts/codex-runs/esxi-vm-deploy-validation-report.md"
+      ],
+      "blockers": [],
+      "warnings": []
+    },
+    {
+      "id": "vcenter",
+      "label": "vCenter",
+      "status": "not_configured",
+      "golden_state": "Not configured for this golden state",
+      "current_state": "Missing deployment values",
+      "drift": "expected_partial",
+      "repair_action": {
+        "label": "Configure vCenter values",
+        "action_id": "vcenter.install-readiness",
+        "command": "make provider-lab-vcenter-install-readiness",
+        "available": true
+      },
+      "source_type": "historical_artifact",
+      "freshness": "historical",
+      "checked_at": "2026-06-13T15:53:45.882692+00:00",
+      "evidence_artifacts": [
+        "artifacts/codex-runs/vcenter-install-readiness-report.md"
+      ],
+      "blockers": [],
+      "warnings": [
+        "vCenter is intentionally not deployed in this run."
+      ]
+    },
+    {
+      "id": "firmware",
+      "label": "Firmware",
+      "status": "warning",
+      "golden_state": "Current or accepted after manual baseline review",
+      "current_state": "Needs manual baseline review",
+      "drift": "needs_review",
+      "repair_action": {
+        "label": "Run firmware compliance",
+        "action_id": "firmware.compliance-check",
+        "command": "make provider-lab-firmware-compliance",
+        "available": true
+      },
+      "source_type": "historical_artifact",
+      "freshness": "historical",
+      "checked_at": "2026-06-13T21:51:45.971719+00:00",
+      "evidence_artifacts": [
+        "artifacts/codex-runs/firmware-compliance-report.md"
+      ],
+      "blockers": [],
+      "warnings": [
+        "HPE Server HPE BIOS version: current U32 v3.30 (07/31/2024), required manual approval; Baseline requires manual approval because no minimum or approved version is set. Next action: Confirm BIOS version from iLO Redfish system inventory or the server console before configuration.",
+        "HPE Smart Array HPE Smart Array controller firmware: current 1.98, required manual approval; Baseline requires manual approval because no minimum or approved version is set. Next action: Run HPE storage discovery and compare controller firmware with the approved SPP for this host.",
+        "Cisco Cisco bootloader/ROMMON: current unknown, required manual approval; Baseline requires manual approval because no minimum or approved version is set. Next action: Collect Cisco boot variable and ROMMON details from read-only show commands.",
+        "NetApp NetApp disk firmware: current unknown, required manual approval; Current firmware or OS version is unknown. Next action: Collect disk firmware inventory through an approved read-only NetApp workflow.",
+        "NetApp NetApp shelf firmware: current unknown, required manual approval; Current firmware or OS version is unknown. Next action: Collect shelf firmware inventory through an approved read-only NetApp workflow.",
+        "NetApp NetApp SP/BMC firmware: current unknown, required manual approval; Current firmware or OS version is unknown. Next action: Collect SP/BMC firmware inventory through an approved read-only NetApp workflow."
+      ]
+    }
+  ],
+  "drift_rows": [
+    {
+      "id": "vcenter",
+      "label": "vCenter",
+      "status": "not_configured",
+      "golden_state": "Not configured for this golden state",
+      "current_state": "Missing deployment values",
+      "drift": "expected_partial",
+      "repair_action": {
+        "label": "Configure vCenter values",
+        "action_id": "vcenter.install-readiness",
+        "command": "make provider-lab-vcenter-install-readiness",
+        "available": true
+      },
+      "source_type": "historical_artifact",
+      "freshness": "historical",
+      "checked_at": "2026-06-13T15:53:45.882692+00:00",
+      "evidence_artifacts": [
+        "artifacts/codex-runs/vcenter-install-readiness-report.md"
+      ],
+      "blockers": [],
+      "warnings": [
+        "vCenter is intentionally not deployed in this run."
+      ]
+    },
+    {
+      "id": "firmware",
+      "label": "Firmware",
+      "status": "warning",
+      "golden_state": "Current or accepted after manual baseline review",
+      "current_state": "Needs manual baseline review",
+      "drift": "needs_review",
+      "repair_action": {
+        "label": "Run firmware compliance",
+        "action_id": "firmware.compliance-check",
+        "command": "make provider-lab-firmware-compliance",
+        "available": true
+      },
+      "source_type": "historical_artifact",
+      "freshness": "historical",
+      "checked_at": "2026-06-13T21:51:45.971719+00:00",
+      "evidence_artifacts": [
+        "artifacts/codex-runs/firmware-compliance-report.md"
+      ],
+      "blockers": [],
+      "warnings": [
+        "HPE Server HPE BIOS version: current U32 v3.30 (07/31/2024), required manual approval; Baseline requires manual approval because no minimum or approved version is set. Next action: Confirm BIOS version from iLO Redfish system inventory or the server console before configuration.",
+        "HPE Smart Array HPE Smart Array controller firmware: current 1.98, required manual approval; Baseline requires manual approval because no minimum or approved version is set. Next action: Run HPE storage discovery and compare controller firmware with the approved SPP for this host.",
+        "Cisco Cisco bootloader/ROMMON: current unknown, required manual approval; Baseline requires manual approval because no minimum or approved version is set. Next action: Collect Cisco boot variable and ROMMON details from read-only show commands.",
+        "NetApp NetApp disk firmware: current unknown, required manual approval; Current firmware or OS version is unknown. Next action: Collect disk firmware inventory through an approved read-only NetApp workflow.",
+        "NetApp NetApp shelf firmware: current unknown, required manual approval; Current firmware or OS version is unknown. Next action: Collect shelf firmware inventory through an approved read-only NetApp workflow.",
+        "NetApp NetApp SP/BMC firmware: current unknown, required manual approval; Current firmware or OS version is unknown. Next action: Collect SP/BMC firmware inventory through an approved read-only NetApp workflow."
+      ]
+    }
+  ],
+  "credentials": {
+    "status": "partial",
+    "summary": "Credential state is presence/test status only; values are never returned.",
+    "rows": [
+      {
+        "id": "ilo",
+        "label": "iLO",
+        "configured": true,
+        "tested": true,
+        "status": "tested",
+        "field": "ILO_TEST_PASSWORD",
+        "next_action": "No credential action required.",
+        "source_type": "live_probe",
+        "freshness": "current",
+        "checked_at": "2026-06-13T21:50:53.541905+00:00",
+        "recheck_command": "make provider-lab-live-status"
+      },
+      {
+        "id": "cisco",
+        "label": "Cisco",
+        "configured": true,
+        "tested": true,
+        "status": "tested",
+        "field": "CISCO_TEST_PASSWORD and CISCO_ENABLE_PASSWORD",
+        "next_action": "No credential action required.",
+        "source_type": "live_probe",
+        "freshness": "current",
+        "checked_at": "2026-06-13T21:50:53.541905+00:00",
+        "recheck_command": "make provider-lab-live-status"
+      },
+      {
+        "id": "esxi",
+        "label": "ESXi",
+        "configured": true,
+        "tested": true,
+        "status": "tested",
+        "field": "ESXI_TEST_USERNAME/GOVC_USERNAME and ESXI_TEST_PASSWORD/GOVC_PASSWORD",
+        "next_action": "No credential action required.",
+        "source_type": "live_probe",
+        "freshness": "current",
+        "checked_at": "2026-06-13T20:16:06.158191+00:00",
+        "recheck_command": "make provider-lab-esxi-vm-deploy-validate"
+      },
+      {
+        "id": "netapp",
+        "label": "NetApp",
+        "configured": true,
+        "tested": true,
+        "status": "tested",
+        "field": "NETAPP_API_USERNAME and NETAPP_API_PASSWORD",
+        "next_action": "No credential action required.",
+        "source_type": "live_cached",
+        "freshness": "current",
+        "checked_at": "2026-06-13T19:57:07.490655+00:00",
+        "recheck_command": "make provider-lab-netapp-validate-setup"
+      },
+      {
+        "id": "vcenter",
+        "label": "vCenter",
+        "configured": true,
+        "tested": false,
+        "status": "configured",
+        "field": "VCENTER_USERNAME/GOVC_USERNAME and VCENTER_PASSWORD/GOVC_PASSWORD",
+        "next_action": "Configure vCenter deployment values, then run vCenter install readiness.",
+        "source_type": "live_probe",
+        "freshness": "current",
+        "checked_at": "2026-06-13T15:53:43.376161+00:00",
+        "recheck_command": "make provider-lab-vcenter-install-readiness"
+      }
+    ]
+  },
+  "vcenter_readiness": {
+    "status": "not_configured",
+    "vcsa_iso": "found",
+    "esxi": "ready",
+    "netapp_datastore": "ready",
+    "vcenter_credentials": "configured",
+    "vcenter_config": "missing",
+    "next_action": "Configure vCenter deployment values.",
+    "source_type": "live_probe",
+    "freshness": "current",
+    "checked_at": "2026-06-13T15:53:43.376161+00:00",
+    "recheck_command": "make provider-lab-vcenter-install-readiness",
+    "evidence_artifacts": [
+      "artifacts/codex-runs/vcenter-install-readiness-report.md"
+    ]
+  },
+  "workflow_actions": [
+    {
+      "id": "full-lab.validation",
+      "label": "Run Full Lab Validation",
+      "command": "make provider-lab-validation",
+      "mode": "read_only",
+      "description": "Refresh the existing Lab Validation / Handoff summary."
+    },
+    {
+      "id": "full-lab.build-plan",
+      "label": "Run Full Lab Build Plan",
+      "command": "make provider-lab-full-rebuild-summary",
+      "mode": "read_only",
+      "description": "Generate the existing full rebuild summary without apply."
+    },
+    {
+      "id": "full-lab.repair",
+      "label": "Run Full Lab Repair",
+      "command": "make provider-lab-golden-state",
+      "mode": "report_only",
+      "description": "Generate repair guidance from drift rows and linked existing actions."
+    },
+    {
+      "id": "full-lab.handoff-report",
+      "label": "Generate Handoff Report",
+      "command": "make provider-lab-golden-state",
+      "mode": "report_only",
+      "description": "Write the golden-state handoff report."
+    }
+  ],
+  "blockers": [],
+  "warnings": [
+    "vCenter is intentionally not deployed in this run.",
+    "HPE Server HPE BIOS version: current U32 v3.30 (07/31/2024), required manual approval; Baseline requires manual approval because no minimum or approved version is set. Next action: Confirm BIOS version from iLO Redfish system inventory or the server console before configuration.",
+    "HPE Smart Array HPE Smart Array controller firmware: current 1.98, required manual approval; Baseline requires manual approval because no minimum or approved version is set. Next action: Run HPE storage discovery and compare controller firmware with the approved SPP for this host.",
+    "Cisco Cisco bootloader/ROMMON: current unknown, required manual approval; Baseline requires manual approval because no minimum or approved version is set. Next action: Collect Cisco boot variable and ROMMON details from read-only show commands.",
+    "NetApp NetApp disk firmware: current unknown, required manual approval; Current firmware or OS version is unknown. Next action: Collect disk firmware inventory through an approved read-only NetApp workflow.",
+    "NetApp NetApp shelf firmware: current unknown, required manual approval; Current firmware or OS version is unknown. Next action: Collect shelf firmware inventory through an approved read-only NetApp workflow.",
+    "NetApp NetApp SP/BMC firmware: current unknown, required manual approval; Current firmware or OS version is unknown. Next action: Collect SP/BMC firmware inventory through an approved read-only NetApp workflow."
+  ],
+  "proof_links": [
+    {
+      "component_id": "cisco",
+      "component_label": "Cisco",
+      "path": "artifacts/codex-runs/cisco-console-ethernet-readiness-report.md"
+    },
+    {
+      "component_id": "ilo",
+      "component_label": "iLO",
+      "path": "artifacts/codex-runs/ilo-real-run-report.md"
+    },
+    {
+      "component_id": "raid",
+      "component_label": "RAID",
+      "path": "artifacts/codex-runs/hpe-raid-after-reset-validation-report.md"
+    },
+    {
+      "component_id": "esxi",
+      "component_label": "ESXi",
+      "path": "artifacts/codex-runs/esxi-post-recovery-validation-report.md"
+    },
+    {
+      "component_id": "netapp",
+      "component_label": "NetApp",
+      "path": "artifacts/codex-runs/netapp-live-state-report.md"
+    },
+    {
+      "component_id": "netapp",
+      "component_label": "NetApp",
+      "path": "artifacts/codex-runs/netapp-ontap-upgrade-validation-report.md"
+    },
+    {
+      "component_id": "netapp-nfs-datastore",
+      "component_label": "NetApp NFS datastore",
+      "path": "artifacts/codex-runs/esxi-netapp-nfs-datastore-validation-report.md"
+    },
+    {
+      "component_id": "vm-deployment",
+      "component_label": "VM deployment",
+      "path": "artifacts/codex-runs/esxi-vm-deploy-validation-report.md"
+    },
+    {
+      "component_id": "vcenter",
+      "component_label": "vCenter",
+      "path": "artifacts/codex-runs/vcenter-install-readiness-report.md"
+    },
+    {
+      "component_id": "firmware",
+      "component_label": "Firmware",
+      "path": "artifacts/codex-runs/firmware-compliance-report.md"
+    }
+  ],
+  "artifacts": {
+    "report": "artifacts/codex-runs/golden-state-productization-report.md",
+    "summary_json": "artifacts/codex-runs/golden-state-summary-redacted.json"
+  },
+  "handoff_report": "artifacts/codex-runs/golden-state-productization-report.md",
+  "next_safe_action": "Configure vCenter deployment values.",
+  "not_attempted": [
+    "Cisco write/reload",
+    "iLO power/reset/firmware/virtual media",
+    "RAID create/delete/apply/reset",
+    "ESXi datastore change or host reconfiguration",
+    "NetApp ONTAP/NFS/write or firmware apply",
+    "VCSA deployment",
+    "VM create/delete/power operation"
+  ],
+  "recheck_command": "make provider-lab-golden-state"
+}
