@@ -255,13 +255,13 @@ test("overview inventory renders the lab components", async ({ page }) => {
 test("each domain page exposes relevant run test or apply buttons", async ({ page }) => {
   const pages = [
     ["/overview", /Refresh Inventory|Generate Handoff/],
-    ["/network", /Test Cisco Access|Apply Network Config|Save Config|Scan Firmware/],
-    ["/server", /Test iLO|Test ESXi|Recover ESXi|Validate RAID|Reboot Server/],
-    ["/storage", /Test NetApp|Validate NFS|Mount Datastore|Refresh ONTAP/],
-    ["/virtualization", /Test vCenter|Attach ESXi|Validate Datastore|Deploy VM|Validate VM Inventory/],
-    ["/firmware-upgrades", /Scan All Firmware|Review Upgrade Path|Apply Upgrade/],
-    ["/validation", /Run Validation|Generate Handoff|Refresh Evidence/],
-    ["/settings", /Save Setup|Test Credentials|Refresh Consoles/]
+    ["/network", /Test Cisco Access|Backup \/ Export Config|Apply Network Config|Save Config|Scan Firmware/],
+    ["/server", /Test iLO|Backup \/ Export Inventory|Test ESXi|Rebuild ESXi|Recover ESXi|Validate RAID|Reboot Server/],
+    ["/storage", /Test NetApp|Backup \/ Export Storage|Reset \/ Recover Plan|Validate NFS|Mount Datastore|Refresh ONTAP/],
+    ["/virtualization", /Test vCenter|Backup \/ Export Inventory|Attach ESXi|Validate Datastore|Deploy VM|Validate VM Inventory/],
+    ["/firmware-upgrades", /Test Firmware Access|Backup \/ Export Inventory|Scan All Firmware|Review Upgrade Path|Apply Upgrade/],
+    ["/validation", /Run Validation|Backup \/ Export Proof|Generate Handoff|Refresh Evidence/],
+    ["/settings", /Save Setup|Backup \/ Export Setup|Test Credentials|Refresh Consoles/]
   ] as const;
 
   for (const [path, buttonName] of pages) {

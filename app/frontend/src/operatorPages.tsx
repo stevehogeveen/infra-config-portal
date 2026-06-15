@@ -275,6 +275,7 @@ export function OperatorNetworkPage({ labProfileState }: OperatorPageProps) {
         actions={actions}
         buttons={[
           { actionIds: ["cisco.validate-ssh-scp", "cisco.privilege-check", "cisco.setup-readiness"], label: "Test Cisco Access", primary: true },
+          { actionIds: ["cisco.privilege-check"], label: "Backup / Export Config" },
           { actionIds: ["cisco.apply-bootstrap"], kind: "write", label: "Apply Network Config" },
           { actionIds: ["cisco.save-config"], kind: "write", label: "Save Config", icon: <Save size={16} /> },
           { actionIds: ["cisco.firmware-inventory"], label: "Scan Firmware" }
@@ -370,7 +371,9 @@ export function OperatorServerPage({ labProfileState }: OperatorPageProps) {
         actions={actions}
         buttons={[
           { actionIds: ["ilo.reachability", "ilo.auth", "ilo.inventory"], label: "Test iLO", primary: true },
+          { actionIds: ["ilo.inventory", "raid.discovery"], label: "Backup / Export Inventory" },
           { actionIds: ["esxi.management-validation", "esxi.ssh-api-check", "esxi.readiness"], label: "Test ESXi" },
+          { actionIds: ["esxi.rebuild-install"], kind: "write", label: "Rebuild ESXi" },
           { actionIds: ["esxi.recover-management"], kind: "write", label: "Recover ESXi" },
           { actionIds: ["raid.validate", "raid.pending-check"], label: "Validate RAID" },
           { actionIds: ["ilo.reset-server", "raid.reset-commit"], kind: "apply", label: "Reboot Server" }
@@ -468,6 +471,8 @@ export function OperatorStoragePage({ labProfileState }: OperatorPageProps) {
         actions={actions}
         buttons={[
           { actionIds: ["netapp.live-state", "netapp.validate-setup", "netapp.setup-preview"], label: "Test NetApp", primary: true },
+          { actionIds: ["netapp.live-state", "netapp.console-read-state"], label: "Backup / Export Storage" },
+          { actionIds: ["netapp.factory-reset-preview", "netapp.address-preview"], label: "Reset / Recover Plan" },
           { actionIds: ["netapp.nfs-setup-validate", "netapp.nfs-vcenter-readiness"], label: "Validate NFS" },
           { actionIds: ["esxi.netapp-datastore-apply", "netapp.nfs-setup-apply"], kind: "write", label: "Mount Datastore" },
           { actionIds: ["netapp.ontap-upgrade-inventory", "netapp.component-firmware-inventory"], label: "Refresh ONTAP" }
@@ -560,6 +565,7 @@ export function OperatorVirtualizationPage({ labProfileState }: OperatorPageProp
         actions={actions}
         buttons={[
           { actionIds: ["vcenter-netapp.readiness", "vcenter.install-readiness"], label: "Test vCenter", primary: true },
+          { actionIds: ["vcenter.post-attach-validation", "vcenter-netapp.datastore-plan"], label: "Backup / Export Inventory" },
           { actionIds: ["vcenter.attach-esxi-apply"], kind: "write", label: "Attach ESXi" },
           { actionIds: ["vcenter.post-attach-validation", "vcenter-netapp.datastore-plan"], label: "Validate Datastore" },
           { actionIds: ["esxi.vm-deploy-apply"], kind: "write", label: "Deploy VM" },
@@ -643,7 +649,9 @@ export function OperatorFirmwareUpgradesPage() {
       <PageRunButtons
         actions={actions}
         buttons={[
-          { actionIds: ["firmware.inventory", "firmware.compliance-check"], label: "Scan All Firmware", primary: true },
+          { actionIds: ["firmware.inventory", "firmware.compliance-check"], label: "Test Firmware Access", primary: true },
+          { actionIds: ["firmware.inventory", "firmware.package-inventory"], label: "Backup / Export Inventory" },
+          { actionIds: ["firmware.inventory", "firmware.compliance-check"], label: "Scan All Firmware" },
           { actionIds: ["firmware.upgrade-plan", "netapp.ontap-upgrade-plan"], label: "Review Upgrade Path" },
           { actionIds: ["firmware.upgrade-apply-placeholder", "netapp.ontap-upgrade-apply"], kind: "apply", label: "Apply Upgrade" }
         ]}
@@ -726,6 +734,7 @@ export function OperatorValidationPage() {
         actions={actions}
         buttons={[
           { actionIds: ["full-lab.validation", "build-verification.run-full"], label: "Run Validation", primary: true },
+          { actionIds: ["build-verification.export-certification-report"], label: "Backup / Export Proof" },
           { actionIds: ["full-lab.handoff-report"], label: "Generate Handoff", onClick: async () => { await api.labValidationHandoff(); } },
           { actionIds: ["lab-validation.summary", "build-verification.live-status"], label: "Refresh Evidence", onClick: load }
         ]}
@@ -841,6 +850,7 @@ export function OperatorSettingsPage({
         actions={actions}
         buttons={[
           { disabledReason: "No unsaved setup changes are open on this page.", icon: <Save size={16} />, kind: "custom", label: "Save Setup", primary: true },
+          { actionIds: ["lab-profile.view-active"], label: "Backup / Export Setup" },
           { actionIds: ["build-verification.run-full", "full-lab.validation"], label: "Test Credentials" },
           { actionIds: ["cisco.discover-console", "netapp.console-autodiscovery"], label: "Refresh Consoles" }
         ]}
@@ -1275,9 +1285,15 @@ function buildInventoryRows({
       role: "Virtualization control",
       source: sourceLabel(vcenterNetapp),
       status: asString(vcenterNetapp?.status) || validationStatus(validation, ["vcenter"]) || "not_checked",
-      version: displayValue(asString(objectValue(vcenterNetapp?.current_state).vcenter_version))
+      version: vcenterVersion(vcenterNetapp)
     }
   ];
+}
+
+function vcenterVersion(vcenterNetapp: ProviderProbeResult | null): string {
+  const current = objectValue(vcenterNetapp?.current_state);
+  const postAttach = objectValue(vcenterNetapp?.post_attach_validation);
+  return displayValue(asString(current.vcenter_version) || asString(postAttach.vcenter_version));
 }
 
 function overviewNextAction(validation: LabValidationSummary | null, firmwareSummaries: FirmwareSummary[]): string {

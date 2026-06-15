@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -463,6 +464,7 @@ def test_netapp_nfs_vcenter_readiness_is_preview_only_and_single_port_aware(
     )
     monkeypatch.setattr(netapp_real_lab, "NFS_VCENTER_READINESS_JSON", tmp_path / "nfs.json")
     monkeypatch.setattr(netapp_real_lab, "NFS_VCENTER_READINESS_REPORT", tmp_path / "nfs.md")
+    monkeypatch.setattr(netapp_real_lab, "get_netapp_runtime_state", lambda: {"configured": False})
 
     response = client.get("/api/v1/providers/netapp-ontap/nfs-vcenter-readiness")
 
@@ -481,6 +483,50 @@ def test_netapp_nfs_vcenter_readiness_is_preview_only_and_single_port_aware(
     assert (tmp_path / "nfs.json").exists()
     assert (tmp_path / "nfs.md").exists()
     assert not _contains_sensitive_key(payload)
+
+
+def test_netapp_nfs_vcenter_readiness_derives_vcenter_target_from_management_ip(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("LAB_PROFILE_STORE", str(tmp_path / "lab-profiles.json"))
+    create_lab_profile(
+        {
+            "name": "High Storage Lab",
+            "subnet_cidr": "192.168.1.0/24",
+            "features": {"netapp_enabled": True, "vcenter_enabled": True},
+        }
+    )
+    monkeypatch.setattr(netapp_real_lab, "NFS_VCENTER_READINESS_JSON", tmp_path / "nfs.json")
+    monkeypatch.setattr(netapp_real_lab, "NFS_VCENTER_READINESS_REPORT", tmp_path / "nfs.md")
+    monkeypatch.setattr(netapp_real_lab, "get_netapp_runtime_state", lambda: {"configured": True})
+    monkeypatch.setattr(netapp_real_lab, "which", lambda name: "/usr/bin/govc" if name == "govc" else None)
+    monkeypatch.setattr(
+        netapp_real_lab,
+        "settings",
+        replace(
+            netapp_real_lab.settings,
+            provider_mode="local-lab-readwrite",
+            netapp_api_username="configured",
+            netapp_api_password="configured",
+            esxi_configured=True,
+            esxi_test_host="192.168.1.203",
+            vcenter_configured=False,
+            vcenter_host=None,
+            vcenter_management_ip="192.168.1.206",
+            vcenter_username="configured",
+            vcenter_password="configured",
+        ),
+    )
+
+    payload = netapp_real_lab.get_netapp_nfs_vcenter_readiness(check_ports=False)
+
+    assert payload["status"] == "ready"
+    assert payload["targets"]["vcenter_host_configured"] is True
+    assert payload["targets"]["vcenter_management_ip"] == "192.168.1.206"
+    assert not any("vCenter/govc target is not configured" in blocker for blocker in payload["blockers"])
+    assert (tmp_path / "nfs.json").exists()
+    assert (tmp_path / "nfs.md").exists()
 
 
 def test_netapp_nfs_setup_preview_is_guarded_nfs_only(client: TestClient) -> None:

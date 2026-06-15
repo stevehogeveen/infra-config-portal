@@ -6,6 +6,7 @@ import os
 import re
 import socket
 import subprocess
+import sys
 import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -437,9 +438,10 @@ def get_netapp_nfs_vcenter_readiness(*, check_ports: bool | None = None, write_r
     single_management_port = len(connected_management_ports) <= 1
     netapp_credentials_present = bool(settings.netapp_api_username and settings.netapp_api_password)
     vcenter_credentials_present = bool(settings.vcenter_username and settings.vcenter_password)
-    govc_available = which("govc") is not None
+    govc_available = _tool_available("govc")
     netapp_api_configured = bool((live_configured or legacy_env_configured) and settings.netapp_cluster_mgmt_ip)
-    vcenter_configured = bool(settings.vcenter_configured and settings.vcenter_host)
+    vcenter_target_host = _host_from_url(settings.vcenter_host) or settings.vcenter_management_ip
+    vcenter_configured = bool(settings.vcenter_configured or settings.vcenter_host or settings.vcenter_management_ip)
     esxi_configured = bool(settings.esxi_configured and settings.esxi_test_host)
 
     connectivity = {
@@ -464,11 +466,11 @@ def get_netapp_nfs_vcenter_readiness(*, check_ports: bool | None = None, write_r
             ),
         ),
         "vcenter_443": _tcp_check(
-            _host_from_url(settings.vcenter_host),
+            vcenter_target_host,
             443,
             enabled=bool(check_ports and vcenter_configured),
             disabled_reason=(
-                "VCENTER_CONFIGURED=false or VCENTER_HOST/GOVC_URL is missing."
+                "VCENTER_CONFIGURED=false and VCENTER_HOST/GOVC_URL/VCENTER_MANAGEMENT_IP is missing."
                 if not vcenter_configured
                 else "Port checks disabled for this run."
             ),
@@ -563,7 +565,8 @@ def get_netapp_nfs_vcenter_readiness(*, check_ports: bool | None = None, write_r
             "netapp_configured_source": "live_verification" if live_configured else "not_verified",
             "legacy_netapp_configured_env": legacy_env_configured,
             "esxi_management_ip": settings.esxi_test_host,
-            "vcenter_host_configured": bool(settings.vcenter_host),
+            "vcenter_host_configured": bool(vcenter_target_host),
+            "vcenter_management_ip": settings.vcenter_management_ip,
             "vcenter_configured": settings.vcenter_configured,
             "govc_available": govc_available,
         },
@@ -1431,6 +1434,21 @@ def _host_from_url(value: str | None) -> str | None:
         cleaned = cleaned.rsplit("@", 1)[-1]
     cleaned = cleaned.split("/", 1)[0]
     return cleaned.split(":", 1)[0] or None
+
+
+def _tool_available(name: str) -> bool:
+    return _tool_path(name) is not None
+
+
+def _tool_path(name: str) -> Path | None:
+    found = which(name)
+    if found:
+        return Path(found)
+    for directory in (Path(sys.executable).parent, REPO_ROOT / ".local" / "bin"):
+        candidate = directory / name
+        if candidate.exists() and candidate.is_file() and os.access(candidate, os.X_OK):
+            return candidate
+    return None
 
 
 def _latest_or_not_run(path: Path, *, action: str, message: str, next_safe_action: str) -> dict[str, Any]:

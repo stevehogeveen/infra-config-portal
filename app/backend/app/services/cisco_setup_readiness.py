@@ -21,7 +21,7 @@ DISABLED_ACTIONS = [
     "VLAN/interface/user/password changes",
     "enable SSH/SCP",
     "real config apply",
-    "running-config backup",
+    "raw running-config backup",
 ]
 
 
@@ -183,11 +183,11 @@ def get_cisco_setup_readiness(
             "reason": ansible_reason,
         },
         "backup_report": {
-            "backup_enabled": False,
-            "report_placeholder_enabled": True,
+            "backup_enabled": True,
+            "report_placeholder_enabled": False,
             "summary": (
-                "Backup/report placeholders are visible only. Running-config backup is "
-                "disabled until SSH management exists and a future guarded workflow approves it."
+                "Backup/export writes redacted console identity, VLAN, management, SSH/SCP, "
+                "and selected configuration proof. Raw running-config is not persisted."
             ),
         },
         "setup_wizard_plan": {

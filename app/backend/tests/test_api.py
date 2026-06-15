@@ -1286,7 +1286,9 @@ def test_cisco_setup_readiness_endpoint_is_read_only_preview(client: TestClient)
     assert payload["ssh_scp_readiness"]["planned_only"] is True
     assert payload["ssh_scp_readiness"]["apply_enabled"] is False
     assert payload["ansible"]["enabled"] is False
-    assert payload["backup_report"]["backup_enabled"] is False
+    assert payload["backup_report"]["backup_enabled"] is True
+    assert payload["backup_report"]["report_placeholder_enabled"] is False
+    assert "Raw running-config is not persisted" in payload["backup_report"]["summary"]
     assert payload["next_safe_action"] == (
         "Select a console candidate and run prompt readiness check."
     )

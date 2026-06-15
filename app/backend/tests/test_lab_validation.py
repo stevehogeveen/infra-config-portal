@@ -177,6 +177,7 @@ def test_vcenter_netapp_readiness_uses_ready_post_attach_state_without_host_env(
     assert result["blockers"] == []
     assert result["targets"]["vcenter"] == "https://192.168.1.206/sdk"
     assert result["targets"]["datastore_name"] == "netapp_nfs_ds01"
+    assert result["current_state"]["vcenter_version"] == "8.0.3 build-24853646"
     assert result["checks"]["vcenter_configured"]["status"] == "ready"
     assert result["checks"]["datastore_mounted"]["status"] == "ready"
     assert result["credential_state"]["vcenter_target_derived"] is True
@@ -444,6 +445,11 @@ def _write_post_attach_validation(root: Path) -> None:
                     "cluster": "Lab-Cluster",
                 },
                 "checks": {
+                    "govc_authentication": {
+                        "status": "ready",
+                        "return_code": 0,
+                        "stdout": "Version:      8.0.3\nBuild:        24853646\n",
+                    },
                     "datacenter_visible": {"visible": True, "status": "ready", "name": "Lab-DC"},
                     "cluster_visible": {"visible": True, "status": "ready", "name": "Lab-Cluster"},
                     "esxi_visible": {"visible": True, "status": "ready", "name": "192.168.1.203"},

@@ -254,6 +254,11 @@ def get_vcenter_netapp_readiness(
             "netapp_nfs_lif": first_lif,
             "datastore_name": datastore_name,
         },
+        "current_state": {
+            "vcenter_version": post_attach_state.get("vcenter_version"),
+            "vcenter_host": post_attach_state.get("host"),
+            "vcenter_url": post_attach_state.get("url"),
+        },
         "credential_state": {
             "vcenter_host_configured": vcenter_host_configured,
             "vcenter_credentials_configured": vcenter_credentials_configured,
@@ -326,7 +331,9 @@ def get_vcenter_install_readiness(
     deployment_values["missing_fields"] = _missing_value_labels(value_checks)
     datastore_name = str(deployment_values.get("datastore_target") or settings.netapp_nfs_datastore_name)
     esxi_host = str(deployment_values.get("esxi_target") or settings.esxi_test_host or LAB_ESXI_MANAGEMENT_IP)
-    vcenter_host_configured = bool(settings.vcenter_host or settings.vcenter_configured)
+    vcenter_host_configured = bool(
+        settings.vcenter_host or settings.vcenter_management_ip or settings.vcenter_configured
+    )
     govc_available = _tool_available("govc")
     vcsa_deploy_status = _vcsa_deploy_status()
     vcenter_profile_enabled = _boolish(features.get("vcenter_enabled"), default=False)
@@ -1027,7 +1034,9 @@ def _vcenter_deployment_values(
         "deployment_size": settings.vcenter_deployment_size,
         "network": settings.vcenter_network or settings.vcenter_portgroup,
         "portgroup": settings.vcenter_portgroup or settings.vcenter_network,
-        "post_install_vcenter_configured": bool(settings.vcenter_host or settings.vcenter_configured),
+        "post_install_vcenter_configured": bool(
+            settings.vcenter_host or settings.vcenter_management_ip or settings.vcenter_configured
+        ),
         "post_install_vcenter": _redacted_url(settings.vcenter_host),
     }
 
@@ -1910,9 +1919,11 @@ def _post_attach_vcenter_netapp_state(*, datastore_name: str | None) -> dict[str
     payload = _read_json_artifact(VCENTER_POST_ATTACH_VALIDATION_JSON)
     target = payload.get("target") if isinstance(payload.get("target"), dict) else {}
     checks = payload.get("checks") if isinstance(payload.get("checks"), dict) else {}
+    govc_authentication = checks.get("govc_authentication") if isinstance(checks.get("govc_authentication"), dict) else {}
     datastore_check = checks.get("netapp_datastore_visible") if isinstance(checks.get("netapp_datastore_visible"), dict) else {}
     host = _clean_value(target.get("host")) or _host_from_endpoint(str(target.get("url") or ""))
     url = _redacted_url(str(target.get("url") or "")) or _redacted_url(_vcenter_govc_url(host))
+    vcenter_version = _vcenter_version_from_govc_about(str(govc_authentication.get("stdout") or ""))
     required_visible = {
         "datacenter_visible": _check_visible(checks, "datacenter_visible"),
         "cluster_visible": _check_visible(checks, "cluster_visible"),
@@ -1934,6 +1945,7 @@ def _post_attach_vcenter_netapp_state(*, datastore_name: str | None) -> dict[str
         "cluster": target.get("cluster"),
         "esxi_target": target.get("esxi_target"),
         "datastore": target.get("datastore") or datastore_check.get("name") or datastore_name,
+        "vcenter_version": vcenter_version,
         "datastore_matches": datastore_matches,
         "govc_available": bool(target.get("govc_available") or target.get("govc_configured")),
         "credential_configured": bool(target.get("username_configured") and target.get("credential_configured")),
@@ -2349,6 +2361,21 @@ def _host_from_endpoint(value: str | None) -> str | None:
         return text.split("/", maxsplit=1)[0]
     parts = urlsplit(text)
     return parts.hostname
+
+
+def _vcenter_version_from_govc_about(stdout: str) -> str | None:
+    version = None
+    build = None
+    for line in stdout.splitlines():
+        key, _, value = line.partition(":")
+        normalized = key.strip().lower()
+        if normalized == "version":
+            version = value.strip() or None
+        elif normalized == "build":
+            build = value.strip() or None
+    if version and build:
+        return f"{version} build-{build}"
+    return version
 
 
 def _vcenter_govc_url(host: str | None) -> str | None:

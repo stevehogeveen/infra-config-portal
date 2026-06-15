@@ -23,6 +23,25 @@ def test_vcenter_install_readiness_reports_incomplete_values(monkeypatch, tmp_pa
     assert (tmp_path / "artifacts/codex-runs/vcenter-install-readiness-redacted.json").exists()
 
 
+def test_vcenter_install_readiness_treats_management_ip_as_configured_target(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    _patch_paths(monkeypatch, tmp_path)
+    monkeypatch.setattr(
+        vcenter_netapp_readiness,
+        "settings",
+        _settings(vcenter_management_ip="192.168.1.206"),
+    )
+    monkeypatch.setattr(vcenter_netapp_readiness, "active_lab_profile_context", lambda: _profile_context())
+    monkeypatch.setattr(vcenter_netapp_readiness, "_tool_available", lambda _name: False)
+
+    result = vcenter_netapp_readiness.get_vcenter_install_readiness(check_ports=False, write_report=True)
+
+    assert result["current_state"]["vcenter_installed"] is True
+    assert result["deployment_values"]["post_install_vcenter_configured"] is True
+
+
 def test_vcenter_install_preview_uses_redacted_value_and_credential_status(
     monkeypatch,
     tmp_path: Path,

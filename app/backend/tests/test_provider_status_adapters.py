@@ -835,14 +835,16 @@ def test_cisco_setup_readiness_is_plan_only_until_management_bootstrap() -> None
     assert readiness["ansible"]["enabled"] is False
     assert readiness["ansible"]["status"] == "awaiting-bootstrap"
     assert "CISCO_MGMT_CONFIGURED is false" in readiness["ansible"]["reason"]
-    assert readiness["backup_report"]["backup_enabled"] is False
+    assert readiness["backup_report"]["backup_enabled"] is True
+    assert readiness["backup_report"]["report_placeholder_enabled"] is False
+    assert "Raw running-config is not persisted" in readiness["backup_report"]["summary"]
     assert readiness["next_safe_action"] == (
         "Select a console candidate and run prompt readiness check."
     )
     assert "conf t" in readiness["disabled_actions"]
     assert "write memory" in readiness["disabled_actions"]
     assert "reload" in readiness["disabled_actions"]
-    assert "running-config backup" in readiness["disabled_actions"]
+    assert "raw running-config backup" in readiness["disabled_actions"]
     assert "Configure Terminal" not in encoded
     assert "/probe" not in encoded
 
