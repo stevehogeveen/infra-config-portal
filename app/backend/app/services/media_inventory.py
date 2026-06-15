@@ -7,6 +7,8 @@ from app.core.config import settings
 from app.schemas import MediaInventoryItemRead, MediaInventoryRead
 
 MEDIA_INVENTORY_LIMIT = 200
+REPO_ROOT = Path(__file__).resolve().parents[4]
+DEFAULT_MEDIA_ROOT = REPO_ROOT / "artifacts" / "Media"
 SAMPLE_MEDIA_ITEMS = [
     MediaInventoryItemRead(
         placeholder_name="sample-installer.iso",
@@ -97,17 +99,51 @@ def _inventory_item(path: Path, index: int, source_label: str) -> MediaInventory
     extension = _extension(path)
     category = _category_for_extension(extension)
     hints = _safe_media_hints(path.name)
+    exact_metadata = _repo_media_metadata(path, hints)
     return MediaInventoryItemRead(
         placeholder_name=f"{category}-{index}{extension}",
         extension=extension,
         size_bytes=path.stat().st_size,
         category=category,
         source=source_label,
-        actual_name_redacted=True,
+        actual_name_redacted=not bool(exact_metadata),
         product_hints=hints["product_hints"],
         generation_hints=hints["generation_hints"],
         version_hint=hints["version_hint"],
+        **exact_metadata,
     )
+
+
+def _repo_media_metadata(path: Path, hints: dict[str, list[str] | str | None]) -> dict[str, str | None]:
+    try:
+        resolved = path.resolve()
+        media_root = DEFAULT_MEDIA_ROOT.resolve()
+        resolved.relative_to(media_root)
+    except (OSError, ValueError):
+        return {}
+
+    product_hints = [str(item) for item in hints["product_hints"] if item]
+    return {
+        "file_name": path.name,
+        "file_path": str(resolved),
+        "detected_vendor": _detected_vendor(product_hints),
+        "detected_product": product_hints[0] if product_hints else None,
+        "detected_version": str(hints["version_hint"]) if hints["version_hint"] else None,
+        "confidence": "high" if product_hints or hints["version_hint"] else "medium",
+    }
+
+
+def _detected_vendor(product_hints: list[str]) -> str | None:
+    text = " ".join(product_hints).lower()
+    if "cisco" in text:
+        return "Cisco"
+    if "hpe" in text or "ilo" in text:
+        return "HPE"
+    if "netapp" in text or "ontap" in text:
+        return "NetApp"
+    if "vmware" in text or "esxi" in text or "vcenter" in text:
+        return "VMware"
+    return None
 
 
 def _extension(path: Path) -> str:
@@ -153,7 +189,10 @@ def _safe_media_hints(name: str) -> dict[str, list[str] | str | None]:
         product_hints.append("hpe")
     if re.search(r"(?:^|[^a-z0-9])(?:sum|smart[\s._-]?update)(?:[^a-z0-9]|$)", normalized):
         _append_unique(product_hints, "hpe-sum")
-    if re.search(r"(?:^|[^a-z0-9])spp(?:[^a-z0-9]|$)", normalized):
+    if re.search(r"(?:^|[^a-z0-9])spp(?:[^a-z0-9]|$)", normalized) or re.search(
+        r"service[\s._-]?pack.*proliant|proliant.*service[\s._-]?pack",
+        normalized,
+    ):
         _append_unique(product_hints, "hpe-spp")
     if re.search(r"(?:^|[^a-z0-9])(?:netapp|ontap)(?:[^a-z0-9]|$)", normalized) or _ontap_q_image_version(normalized):
         _append_unique(product_hints, "netapp-ontap")
@@ -189,6 +228,13 @@ def _version_hint(normalized_name: str) -> str | None:
     )
     if ilo_compact:
         return f"{int(ilo_compact.group(1))}.{ilo_compact.group(2)}"
+
+    spp_version = re.search(
+        r"(?:spp|service[\s._-]?pack).*?(\d{4})[._-](\d{1,2})(?:[._-](\d{1,2}))?",
+        normalized_name,
+    )
+    if spp_version:
+        return ".".join(str(int(part)) for part in spp_version.groups() if part is not None)
 
     dotted = re.search(
         r"(?:^|[^a-z0-9])v?(\d{1,3})[._-](\d{1,3})(?:[._-](\d{1,3}))?(?:[^a-z0-9]|$)",

@@ -32,6 +32,7 @@ import { Link, Navigate, NavLink, Route as RouterRoute, Routes, useLocation, use
 
 import { api } from "./api";
 import {
+  LabConfigEditorContext,
   OperatorFirmwareUpgradesPage,
   OperatorNetworkPage,
   OperatorOverviewPage,
@@ -743,7 +744,7 @@ function App() {
             <RouterRoute path="/firmware-upgrades" element={<OperatorFirmwareUpgradesPage />} />
             <RouterRoute path="/validation" element={<OperatorValidationPage />} />
             <RouterRoute path="/dashboard" element={<Navigate to="/overview" replace />} />
-            <RouterRoute path="/lab-setup" element={<Navigate to="/settings" replace />} />
+            <RouterRoute path="/lab-setup" element={<Navigate to="/overview" replace />} />
             <RouterRoute path="/hardware" element={<Navigate to="/overview" replace />} />
             <RouterRoute path="/run-center" element={<Navigate to="/overview" replace />} />
             <RouterRoute path="/control-center" element={<Navigate to="/overview" replace />} />
@@ -846,7 +847,9 @@ function AppShell({
             <ModeToggle />
           </div>
         </div>
-        {children}
+        <LabConfigEditorContext.Provider value={() => setConfigDrawerOpen(true)}>
+          {children}
+        </LabConfigEditorContext.Provider>
       </main>
       {configDrawerOpen && <ActiveLabConfigDrawer onClose={() => setConfigDrawerOpen(false)} />}
     </div>
@@ -1449,7 +1452,7 @@ function ProfileMismatchWarning({ state }: { state: LabProfileList | null }) {
         <strong>Setup mismatch: live runtime uses different values</strong>
         <p>
           Normal setup switching does not require editing `.env`. For live checks only, align the runtime
-          values with the selected lab setup from Lab Setup, then restart the backend.
+          values with the selected lab setup from Settings, then restart the backend.
         </p>
         <ul>
           {mismatches.slice(0, 4).map((item) => (
@@ -1460,9 +1463,9 @@ function ProfileMismatchWarning({ state }: { state: LabProfileList | null }) {
             </li>
           ))}
         </ul>
-        <Link className="button-link" to="/lab-setup">
+        <Link className="button-link" to="/settings">
           <Layers size={16} />
-          Open Lab Setup
+          Open Settings
         </Link>
       </div>
     </section>
@@ -1567,7 +1570,7 @@ function Dashboard() {
       description="A quiet operating summary for the current lab and workflow queue."
       issueArea="dashboard"
       onSectionChange={(sectionId) => setActiveSection(sectionId as DashboardSectionId)}
-      primaryAction={{ icon: <Layers size={16} />, label: "Open Lab Setup", to: "/lab-setup" }}
+      primaryAction={{ icon: <Layers size={16} />, label: "Open Overview", to: "/overview" }}
       sections={dashboardSections}
       title="Dashboard"
       actions={<ButtonLink to="/requests/new" icon={<Plus size={16} />} label="New VM" />}
@@ -1602,8 +1605,8 @@ function Dashboard() {
             ]}
           />
           <NextActionCard
-            detail={nextActionItems[0]?.actionLabel ?? "Open Lab Setup when the next lab step is ready."}
-            to="/lab-setup"
+            detail={nextActionItems[0]?.actionLabel ?? "Open Overview to review the active lab values."}
+            to="/overview"
           />
           <BlockerSummary blockers={blockerMessages} />
         </div>
@@ -1853,7 +1856,7 @@ function LabSetupPage() {
 
   function selectStage(stageId: string) {
     setSelectedStageId(stageId);
-    navigate(`/lab-setup?stage=${encodeURIComponent(stageId)}`);
+    navigate(`/overview?stage=${encodeURIComponent(stageId)}`);
   }
 
   async function refreshSetup() {
@@ -8461,9 +8464,9 @@ function SectionProfileConfigEditor({
             <Save size={14} />
             {saving ? "Saving" : activeProfile?.source === "saved" ? "Save setup values" : "Create saved setup"}
           </button>
-          <Link className="button-link small-button" to="/lab-setup">
+          <Link className="button-link small-button" to="/settings">
             <Pencil size={14} />
-            Full profile
+            Settings
           </Link>
         </div>
       </form>
@@ -8705,9 +8708,9 @@ function GlobalConfigEditor({
             <Save size={14} />
             {saving ? "Saving" : "Save global config"}
           </button>
-          <Link className="button-link small-button" to="/lab-setup">
+          <Link className="button-link small-button" to="/settings">
             <Pencil size={14} />
-            Full profile
+            Settings
           </Link>
         </div>
       </form>
@@ -9800,7 +9803,7 @@ function ControlAccessConfigTile({
               <Save size={16} />
               {busy ? "Saving" : "Save Access & IP Config"}
             </button>
-            <Link className="button-link" to="/lab-setup">
+            <Link className="button-link" to="/settings">
               <Pencil size={16} />
               Edit IP Profile
             </Link>
@@ -13182,7 +13185,7 @@ function ReportIssueCard({ issue }: { issue: ReportIssue }) {
           <dt>Source stage</dt>
           <dd>
             {issue.source_stage_id ? (
-              <Link to={`/lab-setup?stage=${encodeURIComponent(issue.source_stage_id)}`}>
+              <Link to="/overview">
                 {issue.source_stage_label || issue.source_stage_id}
               </Link>
             ) : (
@@ -13776,7 +13779,7 @@ function SettingsPage({
       description="Lab profile, local settings, and safety metadata without repeating provider diagnostics."
       issueArea="settings"
       onSectionChange={(sectionId) => setActiveSection(sectionId as SettingsSectionId)}
-      primaryAction={{ icon: <Layers size={16} />, label: "Open Lab Setup", to: "/lab-setup" }}
+      primaryAction={{ icon: <Layers size={16} />, label: "Open Overview", to: "/overview" }}
       sections={sections}
       title="Settings"
       actions={

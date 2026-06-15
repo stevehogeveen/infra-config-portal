@@ -604,6 +604,12 @@ class MediaInventoryItemRead(BaseModel):
     product_hints: list[str] = Field(default_factory=list)
     generation_hints: list[str] = Field(default_factory=list)
     version_hint: str | None = None
+    file_name: str | None = None
+    file_path: str | None = None
+    detected_vendor: str | None = None
+    detected_product: str | None = None
+    detected_version: str | None = None
+    confidence: str | None = None
 
 
 class MediaInventoryRead(BaseModel):
@@ -1730,10 +1736,20 @@ class FirmwareVersionSummaryRead(BaseModel):
     status: str | None = None
 
 
+class FirmwareFileCandidateRead(BaseModel):
+    file_name: str
+    file_path: str | None = None
+    detected_vendor: str | None = None
+    detected_product: str | None = None
+    detected_version: str | None = None
+    confidence: str = "medium"
+
+
 class FirmwareUpgradePathRead(BaseModel):
     component_id: str
     component_label: str
     device_label: str
+    equipment_label: str | None = None
     equipment_type: str
     current_version: str | None = None
     target_version: str | None = None
@@ -1741,6 +1757,10 @@ class FirmwareUpgradePathRead(BaseModel):
     package_available: bool = False
     package_name: str | None = None
     package_version: str | None = None
+    selected_file_name: str | None = None
+    selected_file_path: str | None = None
+    selection_source: str = "none"
+    candidate_files: list[FirmwareFileCandidateRead] = Field(default_factory=list)
     path_status: str
     required_intermediate_versions: list[str] = Field(default_factory=list)
     prechecks_required: list[str] = Field(default_factory=list)

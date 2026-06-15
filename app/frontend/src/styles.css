@@ -677,7 +677,7 @@ button:disabled {
 
 .operator-table {
   border-collapse: collapse;
-  min-width: 940px;
+  min-width: 980px;
   table-layout: fixed;
   width: 100%;
 }
@@ -713,16 +713,74 @@ button:disabled {
   width: 22%;
 }
 
-.firmware-path-table th:nth-child(1),
-.firmware-path-table td:nth-child(1) {
-  width: 18%;
+.access-table th:nth-child(1),
+.access-table td:nth-child(1) {
+  width: 16%;
 }
 
-.firmware-path-table th:nth-child(4),
-.firmware-path-table td:nth-child(4),
-.firmware-path-table th:nth-child(6),
-.firmware-path-table td:nth-child(6) {
+.access-table th:nth-child(2),
+.access-table td:nth-child(2) {
   width: 22%;
+}
+
+.access-table th:nth-child(5),
+.access-table td:nth-child(5) {
+  width: 24%;
+}
+
+.firmware-path-table th:nth-child(1),
+.firmware-path-table td:nth-child(1) {
+  width: 13%;
+}
+
+.firmware-path-table th:nth-child(2),
+.firmware-path-table td:nth-child(2) {
+  width: 15%;
+}
+
+.firmware-path-table th:nth-child(5),
+.firmware-path-table td:nth-child(5) {
+  width: 25%;
+}
+
+.firmware-path-table th:nth-child(7),
+.firmware-path-table td:nth-child(7) {
+  width: 22%;
+}
+
+.firmware-file-cell {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.firmware-file-cell select {
+  min-width: 0;
+  width: 100%;
+}
+
+.firmware-file-cell span {
+  color: #0f172a;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.firmware-file-cell small {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.firmware-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.firmware-row-actions button {
+  min-height: 32px;
+  padding: 6px 8px;
 }
 
 .validation-proof-list {
@@ -7400,6 +7458,16 @@ pre {
   .inventory-table td:nth-child(5),
   .inventory-table th:nth-child(6),
   .inventory-table td:nth-child(6),
+  .access-table th:nth-child(1),
+  .access-table td:nth-child(1),
+  .access-table th:nth-child(2),
+  .access-table td:nth-child(2),
+  .access-table th:nth-child(3),
+  .access-table td:nth-child(3),
+  .access-table th:nth-child(4),
+  .access-table td:nth-child(4),
+  .access-table th:nth-child(5),
+  .access-table td:nth-child(5),
   .firmware-path-table th:nth-child(1),
   .firmware-path-table td:nth-child(1),
   .firmware-path-table th:nth-child(2),
@@ -7411,7 +7479,9 @@ pre {
   .firmware-path-table th:nth-child(5),
   .firmware-path-table td:nth-child(5),
   .firmware-path-table th:nth-child(6),
-  .firmware-path-table td:nth-child(6) {
+  .firmware-path-table td:nth-child(6),
+  .firmware-path-table th:nth-child(7),
+  .firmware-path-table td:nth-child(7) {
     width: 100%;
   }
 
@@ -7447,27 +7517,51 @@ pre {
     content: "Source";
   }
 
-  .firmware-path-table td:nth-child(1)::before {
-    content: "Device";
+  .access-table td:nth-child(1)::before {
+    content: "Item";
   }
 
-  .firmware-path-table td:nth-child(2)::before {
-    content: "Current";
-  }
-
-  .firmware-path-table td:nth-child(3)::before {
+  .access-table td:nth-child(2)::before {
     content: "Target";
   }
 
+  .access-table td:nth-child(3)::before {
+    content: "Status";
+  }
+
+  .access-table td:nth-child(4)::before {
+    content: "App can see";
+  }
+
+  .access-table td:nth-child(5)::before {
+    content: "Needs";
+  }
+
+  .firmware-path-table td:nth-child(1)::before {
+    content: "Equipment";
+  }
+
+  .firmware-path-table td:nth-child(2)::before {
+    content: "Component";
+  }
+
+  .firmware-path-table td:nth-child(3)::before {
+    content: "Current Version";
+  }
+
   .firmware-path-table td:nth-child(4)::before {
-    content: "Path";
+    content: "Target Version";
   }
 
   .firmware-path-table td:nth-child(5)::before {
-    content: "Package";
+    content: "Selected File";
   }
 
   .firmware-path-table td:nth-child(6)::before {
+    content: "Status";
+  }
+
+  .firmware-path-table td:nth-child(7)::before {
     content: "Action";
   }
 

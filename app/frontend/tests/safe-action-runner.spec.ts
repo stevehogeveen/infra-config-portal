@@ -219,7 +219,9 @@ test("renders the new top-level navigation and pages", async ({ page }) => {
     "Settings"
   ]);
 
-  await expect(page.getByRole("heading", { name: "Lab overview" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Overview" })).toBeVisible();
+  await page.goto("/lab-setup");
+  await expect(page).toHaveURL(/\/overview/);
   await page.goto("/network");
   await expect(page.getByRole("heading", { name: "Network" })).toBeVisible();
   await page.goto("/server");
@@ -229,7 +231,7 @@ test("renders the new top-level navigation and pages", async ({ page }) => {
   await page.goto("/virtualization");
   await expect(page.getByRole("heading", { name: "Virtualization" })).toBeVisible();
   await page.goto("/firmware-upgrades");
-  await expect(page.getByRole("heading", { name: "Firmware upgrades" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Firmware Upgrades" })).toBeVisible();
   await page.goto("/validation");
   await expect(page.getByRole("heading", { name: "Validation", exact: true })).toBeVisible();
   await page.goto("/settings");
@@ -239,29 +241,46 @@ test("renders the new top-level navigation and pages", async ({ page }) => {
   await expect(page).toHaveURL(/\/overview/);
 });
 
-test("overview inventory renders the lab components", async ({ page }) => {
+test("overview shows active setup, lab values, and access without dashboard clutter", async ({ page }) => {
   await page.goto("/overview");
 
-  await expect(page.getByRole("heading", { name: "Hardware and software" })).toBeVisible();
-  await expect(page.getByRole("row", { name: /Cisco switch/ })).toBeVisible();
-  await expect(page.getByRole("row", { name: /HPE iLO/ })).toBeVisible();
-  await expect(page.getByRole("row", { name: /ESXi host/ })).toBeVisible();
-  await expect(page.getByRole("row", { name: /NetApp ONTAP/ })).toBeVisible();
-  await expect(page.getByRole("row", { name: /vCenter/ })).toBeVisible();
-  await expect(page.getByText("https://192.168.1.206/sdk").first()).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Active lab setup" })).toBeVisible();
+  await expect(page.getByText("Runtime Lab").first()).toBeVisible();
+  await expect(page.getByText("192.168.1.0/24").first()).toBeVisible();
+  await expect(page.getByRole("button", { name: "Edit Config" }).first()).toBeVisible();
+
+  await expect(page.getByRole("heading", { name: "Lab Values" })).toBeVisible();
+  await expect(page.getByText("Cisco IP").first()).toBeVisible();
+  await expect(page.getByText("192.168.1.204").first()).toBeVisible();
+  await expect(page.getByText("iLO IP").first()).toBeVisible();
+  await expect(page.getByText("192.168.1.201").first()).toBeVisible();
+  await expect(page.getByText("ESXi IP").first()).toBeVisible();
+  await expect(page.getByText("192.168.1.203").first()).toBeVisible();
+  await expect(page.getByText("NetApp cluster IP").first()).toBeVisible();
+  await expect(page.getByText("192.168.1.220").first()).toBeVisible();
+  await expect(page.getByText("vCenter IP").first()).toBeVisible();
+  await expect(page.getByText("192.168.1.206").first()).toBeVisible();
   await expect(page.getByText("netapp_nfs_ds01").first()).toBeVisible();
+
+  await expect(page.getByRole("heading", { name: "Currently Accessible" })).toBeVisible();
+  await expect(page.getByRole("row", { name: /Cisco/ })).toContainText(/Accessible|Needs credentials|Needs console/);
+  await expect(page.getByRole("row", { name: /iLO/ })).toContainText(/Accessible|Needs credentials/);
+  await expect(page.getByRole("row", { name: /NetApp/ })).toContainText(/Accessible|Need NetApp API reachable|Needs credentials/);
+  await expect(page.getByText(/what is healthy/i)).toHaveCount(0);
+  await expect(page.getByText(/what is next/i)).toHaveCount(0);
+  await expect(page.getByText("Artifact")).toHaveCount(0);
 });
 
 test("each domain page exposes relevant run test or apply buttons", async ({ page }) => {
   const pages = [
-    ["/overview", /Refresh Inventory|Generate Handoff/],
-    ["/network", /Test Cisco Access|Backup \/ Export Config|Apply Network Config|Save Config|Scan Firmware/],
-    ["/server", /Test iLO|Backup \/ Export Inventory|Test ESXi|Rebuild ESXi|Recover ESXi|Validate RAID|Reboot Server/],
-    ["/storage", /Test NetApp|Backup \/ Export Storage|Reset \/ Recover Plan|Validate NFS|Mount Datastore|Refresh ONTAP/],
-    ["/virtualization", /Test vCenter|Backup \/ Export Inventory|Attach ESXi|Validate Datastore|Deploy VM|Validate VM Inventory/],
-    ["/firmware-upgrades", /Test Firmware Access|Backup \/ Export Inventory|Scan All Firmware|Review Upgrade Path|Apply Upgrade/],
-    ["/validation", /Run Validation|Backup \/ Export Proof|Generate Handoff|Refresh Evidence/],
-    ["/settings", /Save Setup|Backup \/ Export Setup|Test Credentials|Refresh Consoles/]
+    ["/overview", /Refresh Access|Edit Config/],
+    ["/network", /Test Switch|Save Config|Scan Firmware/],
+    ["/server", /Test iLO|Test ESXi|Recover ESXi|Validate RAID/],
+    ["/storage", /Test NetApp|Validate NFS|Mount Datastore/],
+    ["/virtualization", /Test vCenter|Deploy VM|Validate Inventory/],
+    ["/firmware-upgrades", /Rescan Files|Scan Firmware|Validate Upgrade Path|Upgrade/],
+    ["/validation", /Run Validation|Generate Handoff/],
+    ["/settings", /Save Setup|Test Credentials|Refresh Consoles/]
   ] as const;
 
   for (const [path, buttonName] of pages) {
@@ -290,12 +309,29 @@ test("advanced proof is collapsed and operator labels hide raw statuses", async 
 test("firmware table renders upgrade path states", async ({ page }) => {
   await page.goto("/firmware-upgrades");
 
-  const ciscoRow = page.getByRole("row", { name: /Cisco/ });
+  await expect(page.getByRole("heading", { name: "Firmware Files" })).toBeVisible();
+  await expect(page.getByText("/home/administrator/infra-config-portal/artifacts/Media")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Rescan Files" }).first()).toBeVisible();
+  await expect(page.getByRole("link", { name: "Open Media Inventory" })).toBeVisible();
+
+  const ciscoRow = page.getByRole("row", { name: /Cisco Switch.*IOS XE/ });
+  await expect(ciscoRow).toHaveCount(1);
   await expect(ciscoRow).toContainText("17.15.05");
   await expect(ciscoRow).toContainText("Needs review");
-  await expect(ciscoRow).toContainText("cisco-ios-xe-firmware.bin");
-  await expect(page.getByRole("button", { name: "Review Upgrade Path" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Apply Upgrade" })).toBeDisabled();
+  await expect(ciscoRow).toContainText("cat9k_iosxe.17.15.05.SPA.bin");
+  await expect(ciscoRow).toContainText("Auto-selected");
+  await ciscoRow.getByRole("combobox").selectOption("cat9k_iosxe.17.12.01.SPA.bin");
+  await expect(ciscoRow).toContainText("cat9k_iosxe.17.12.01.SPA.bin");
+  await expect(ciscoRow).toContainText("Selected by user");
+  await expect(ciscoRow.getByRole("button", { name: "Scan" })).toBeVisible();
+  await expect(ciscoRow.getByRole("button", { name: "Validate Path" })).toBeVisible();
+  await expect(ciscoRow.getByRole("button", { name: "Upgrade" })).toBeDisabled();
+
+  await expect(page.getByRole("row", { name: /HPE Server.*Service Pack \/ Smart Array/ })).toContainText("SPP2024.03.00.iso");
+  await expect(page.getByRole("row", { name: /NetApp.*ONTAP/ })).toHaveCount(1);
+  const advanced = page.locator("details.advanced-drawer").first();
+  await expect(advanced).not.toHaveAttribute("open", "");
+  await expect(page.getByText("artifacts/codex-runs/cisco-firmware-inventory-report.md")).toHaveCount(0);
 });
 
 test("settings uses active lab setup values and never renders secret material", async ({ page }) => {
@@ -763,7 +799,9 @@ function hpeRaidPlanPreview() {
     apply_enabled: false,
     blockers: [],
     checked_at: checkedAt,
-    current_layout: {},
+    current_layout: {
+      controllers: [{ Model: "HPE Smart Array P408i-a SR Gen10" }]
+    },
     desired_intent: { volumes: [{ name: "esxi-os", purpose: "ESXi boot", raid_level: "RAID1" }, { name: "datastore", purpose: "VM datastore", raid_level: "RAID6" }] },
     destructive_actions_enabled: false,
     destructive_actions_requested: false,
@@ -968,12 +1006,18 @@ function firmwareInventory() {
 
 function mediaInventory() {
   return {
-    configured_directories: ["/redacted/firmware"],
+    configured_directories: ["/home/administrator/infra-config-portal/artifacts/Media"],
     items: [
       {
-        actual_name_redacted: true,
+        actual_name_redacted: false,
         category: "firmware",
+        confidence: "high",
+        detected_product: "cisco-ios-xe",
+        detected_vendor: "Cisco",
+        detected_version: "17.15.05",
         extension: ".bin",
+        file_name: "cat9k_iosxe.17.15.05.SPA.bin",
+        file_path: "/home/administrator/infra-config-portal/artifacts/Media/cat9k_iosxe.17.15.05.SPA.bin",
         generation_hints: ["9300"],
         placeholder_name: "cisco-ios-xe-firmware.bin",
         product_hints: ["cisco", "ios-xe"],
@@ -1000,6 +1044,37 @@ function firmwareCompliance() {
       { current_version: "Unknown", device: "HPE", id: "hpe_smart_array_firmware", label: "Smart Array", status: "unknown" }
     ],
     devices: { cisco: { status: "unknown" }, ilo: { status: "unknown" }, netapp: { status: "unknown" } },
+    inventory: {
+      media_inventory: {
+        candidate_count: 3,
+        candidates: [
+          {
+            file_name: "cat9k_iosxe.17.15.05.SPA.bin",
+            file_path: "/home/administrator/infra-config-portal/artifacts/Media/cat9k_iosxe.17.15.05.SPA.bin",
+            detected_vendor: "Cisco",
+            detected_product: "cisco-ios-xe",
+            detected_version: "17.15.05",
+            confidence: "high"
+          },
+          {
+            file_name: "cat9k_iosxe.17.12.01.SPA.bin",
+            file_path: "/home/administrator/infra-config-portal/artifacts/Media/cat9k_iosxe.17.12.01.SPA.bin",
+            detected_vendor: "Cisco",
+            detected_product: "cisco-ios-xe",
+            detected_version: "17.12.01",
+            confidence: "medium"
+          },
+          {
+            file_name: "ontap-9.14.1.tgz",
+            file_path: "/home/administrator/infra-config-portal/artifacts/Media/ontap-9.14.1.tgz",
+            detected_vendor: "NetApp",
+            detected_product: "netapp-ontap",
+            detected_version: "9.14.1",
+            confidence: "high"
+          }
+        ]
+      }
+    },
     message: "Firmware versions are not checked in this mocked UI test.",
     next_safe_action: "Check firmware inventory.",
     status: "warning",
@@ -1042,11 +1117,30 @@ function firmwareSummaries() {
         {
           apply_enabled: false,
           baseline_source: "manual",
-          component_id: "cisco-ios-xe",
+          candidate_files: [
+            {
+              confidence: "high",
+              detected_product: "cisco-ios-xe",
+              detected_vendor: "Cisco",
+              detected_version: "17.15.05",
+              file_name: "cat9k_iosxe.17.15.05.SPA.bin",
+              file_path: "/home/administrator/infra-config-portal/artifacts/Media/cat9k_iosxe.17.15.05.SPA.bin"
+            },
+            {
+              confidence: "medium",
+              detected_product: "cisco-ios-xe",
+              detected_vendor: "Cisco",
+              detected_version: "17.12.01",
+              file_name: "cat9k_iosxe.17.12.01.SPA.bin",
+              file_path: "/home/administrator/infra-config-portal/artifacts/Media/cat9k_iosxe.17.12.01.SPA.bin"
+            }
+          ],
+          component_id: "cisco_ios_xe_version",
           component_label: "Cisco IOS XE",
           current_version: "17.15.05",
           device_label: "Cisco",
           disabled_reason: "Manual ROMMON baseline review is still required.",
+          equipment_label: "Cisco Switch",
           equipment_type: "network_os",
           estimated_impact: "Switch reload may be required.",
           evidence_artifacts: ["artifacts/codex-runs/cisco-firmware-inventory-report.md"],
@@ -1062,6 +1156,9 @@ function firmwareSummaries() {
           reboot_required: true,
           required_intermediate_versions: [],
           scan_action_id: "cisco.firmware-inventory",
+          selected_file_name: "cat9k_iosxe.17.15.05.SPA.bin",
+          selected_file_path: "/home/administrator/infra-config-portal/artifacts/Media/cat9k_iosxe.17.15.05.SPA.bin",
+          selection_source: "auto",
           source_type: "cached_live",
           target_version: ">= 17.9"
         }
@@ -1094,11 +1191,22 @@ function firmwareSummaries() {
         {
           apply_enabled: false,
           baseline_source: "approved",
-          component_id: "netapp-ontap",
+          candidate_files: [
+            {
+              confidence: "high",
+              detected_product: "netapp-ontap",
+              detected_vendor: "NetApp",
+              detected_version: "9.14.1",
+              file_name: "ontap-9.14.1.tgz",
+              file_path: "/home/administrator/infra-config-portal/artifacts/Media/ontap-9.14.1.tgz"
+            }
+          ],
+          component_id: "netapp_ontap_version",
           component_label: "ONTAP",
           current_version: "9.14.1",
           device_label: "NetApp",
           disabled_reason: "Already current.",
+          equipment_label: "NetApp",
           equipment_type: "storage_os",
           estimated_impact: "None",
           evidence_artifacts: ["artifacts/codex-runs/netapp-upgrade-inventory-report.md"],
@@ -1114,8 +1222,77 @@ function firmwareSummaries() {
           reboot_required: false,
           required_intermediate_versions: [],
           scan_action_id: "netapp.ontap-upgrade-inventory",
+          selected_file_name: "ontap-9.14.1.tgz",
+          selected_file_path: "/home/administrator/infra-config-portal/artifacts/Media/ontap-9.14.1.tgz",
+          selection_source: "auto",
           source_type: "cached_live",
           target_version: ">= 9.14"
+        }
+      ]
+    },
+    {
+      approved_versions: [{ label: "HPE Service Pack", status: "manual_review", version: null }],
+      blocker: "Smart Array baseline missing/manual review",
+      compliance_status: "cannot_verify",
+      component_type: "storage_controller_firmware",
+      current_versions: [{ label: "Smart Array", status: "warning", version: "52.26.3-5379" }],
+      device_id: "raid",
+      evidence_artifacts: ["artifacts/codex-runs/firmware-inventory-report.md"],
+      freshness: "live",
+      label: "HPE Storage",
+      last_scanned: checkedAt,
+      next_action: "Use the HPE Service Pack for Smart Array firmware review.",
+      path_status: "manual_review",
+      package_available: true,
+      package_name: "SPP2024.03.00.iso",
+      prechecks_required: ["Review HPE Service Pack release notes"],
+      required_intermediate_versions: [],
+      reboot_required: true,
+      scan_action_id: "ilo.firmware-inventory",
+      severity: "yellow",
+      source_type: "cached_live",
+      target_version: null,
+      upgrade_center_link: "/firmware?device=raid",
+      upgrade_paths: [
+        {
+          apply_enabled: false,
+          baseline_source: "manual",
+          candidate_files: [
+            {
+              confidence: "high",
+              detected_product: "hpe-spp",
+              detected_vendor: "HPE",
+              detected_version: "2024.3.0",
+              file_name: "SPP2024.03.00.iso",
+              file_path: "/home/administrator/infra-config-portal/artifacts/Media/SPP2024.03.00.iso"
+            }
+          ],
+          component_id: "hpe_smart_array_firmware",
+          component_label: "Smart Array",
+          current_version: "52.26.3-5379",
+          device_label: "HPE Storage",
+          disabled_reason: "Manual review required: missing approved HPE baseline.",
+          equipment_label: "HPE Server",
+          equipment_type: "storage_controller_firmware",
+          estimated_impact: "Host reboot may be required.",
+          evidence_artifacts: ["artifacts/codex-runs/firmware-inventory-report.md"],
+          freshness: "live",
+          last_checked: checkedAt,
+          missing_evidence: ["approved HPE baseline"],
+          next_action: "Review HPE Service Pack release notes before applying upgrades.",
+          package_available: true,
+          package_name: "SPP2024.03.00.iso",
+          package_version: "2024.3.0",
+          path_status: "manual_review",
+          prechecks_required: ["Review HPE Service Pack release notes"],
+          reboot_required: true,
+          required_intermediate_versions: [],
+          scan_action_id: "ilo.firmware-inventory",
+          selected_file_name: "SPP2024.03.00.iso",
+          selected_file_path: "/home/administrator/infra-config-portal/artifacts/Media/SPP2024.03.00.iso",
+          selection_source: "auto",
+          source_type: "cached_live",
+          target_version: null
         }
       ]
     }

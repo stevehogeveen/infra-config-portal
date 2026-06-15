@@ -6,6 +6,7 @@ import pytest
 
 from app.providers.probe_cache import clear_probe_results, record_probe_result
 from app.services import firmware_compliance as fc
+from app.services import media_inventory as mi
 
 
 @pytest.fixture(autouse=True)
@@ -425,6 +426,84 @@ def test_stale_evidence_does_not_enable_upgrade_apply(monkeypatch, firmware_sett
     assert path["freshness"] == "stale"
     assert path["apply_enabled"] is False
     assert "not fresh live inventory" in path["disabled_reason"]
+
+
+def test_upgrade_path_exposes_selected_repo_media_file_and_candidates(
+    monkeypatch,
+    firmware_settings,
+    tmp_path,
+) -> None:
+    media_root = tmp_path / "artifacts" / "Media"
+    media_root.mkdir(parents=True)
+    selected = media_root / "cat9k_iosxe.17.15.05.SPA.bin"
+    alternate = media_root / "cat9k_iosxe.17.12.01.SPA.bin"
+    selected.write_bytes(b"firmware")
+    alternate.write_bytes(b"firmware")
+    firmware_settings.cisco_mgmt_configured = False
+    firmware_settings.media_inventory_dirs = (str(media_root),)
+    monkeypatch.setattr(fc, "settings", firmware_settings)
+    monkeypatch.setattr(fc, "_media_directories", lambda: [media_root])
+    monkeypatch.setattr(mi, "DEFAULT_MEDIA_ROOT", media_root)
+    monkeypatch.setattr(fc, "load_firmware_baseline", lambda: _baseline(_component("cisco_ios_xe_version", approved=["17.15.05"])))
+    record_probe_result("cisco-console", {"provider_id": "cisco-console", "status": "ok", "ios_xe_version": "16.12.05"})
+
+    result = fc.get_firmware_compliance(scope="cisco")
+    path = _path_for(result, "cisco_ios_xe_version")
+
+    assert path["equipment_label"] == "Cisco"
+    assert path["selected_file_name"] == "cat9k_iosxe.17.15.05.SPA.bin"
+    assert path["selected_file_path"] == str(selected.resolve())
+    assert path["selection_source"] == "auto"
+    assert [candidate["file_name"] for candidate in path["candidate_files"]] == [
+        "cat9k_iosxe.17.15.05.SPA.bin",
+        "cat9k_iosxe.17.12.01.SPA.bin",
+    ]
+    assert path["candidate_files"][0]["detected_vendor"] == "Cisco"
+    assert path["candidate_files"][0]["detected_product"] == "cisco-ios-xe"
+
+
+def test_hpe_service_pack_media_is_candidate_for_smart_array(
+    monkeypatch,
+    firmware_settings,
+    tmp_path,
+) -> None:
+    media_root = tmp_path / "artifacts" / "Media"
+    media_root.mkdir(parents=True)
+    spp = media_root / "Service Pack for ProLiant 2024.03.iso"
+    spp.write_bytes(b"spp")
+    firmware_settings.media_inventory_dirs = (str(media_root),)
+    monkeypatch.setattr(fc, "settings", firmware_settings)
+    monkeypatch.setattr(fc, "_media_directories", lambda: [media_root])
+    monkeypatch.setattr(mi, "DEFAULT_MEDIA_ROOT", media_root)
+    monkeypatch.setattr(
+        fc,
+        "load_firmware_baseline",
+        lambda: _baseline(_component("hpe_smart_array_firmware", unknown_policy="warning")),
+    )
+    record_probe_result(
+        "ilo-redfish",
+        {
+            "provider_id": "ilo-redfish",
+            "status": "ok",
+            "storage": {
+                "controllers": [
+                    {
+                        "FirmwareVersion": "52.26.3-5379",
+                        "Model": "HPE Smart Array P408i-a SR Gen10",
+                    }
+                ]
+            },
+        },
+    )
+
+    result = fc.get_firmware_compliance(scope="hpe")
+    path = _path_for(result, "hpe_smart_array_firmware")
+
+    assert path["current_version"] == "52.26.3-5379"
+    assert path["selected_file_name"] == "Service Pack for ProLiant 2024.03.iso"
+    assert path["selected_file_path"] == str(spp.resolve())
+    assert path["candidate_files"][0]["detected_product"] == "hpe-spp"
+    assert path["selection_source"] == "auto"
 
 
 def test_firmware_summary_includes_cisco_ios_xe_from_report(monkeypatch, firmware_settings) -> None:

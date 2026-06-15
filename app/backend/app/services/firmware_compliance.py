@@ -1236,6 +1236,7 @@ def _firmware_upgrade_path(
     current_version = _path_current_version(component_id, component)
     target = _path_target(component_id, baseline_component, media_items)
     package = _package_for_component(component_id, current_version, target.get("target_version"), media_items)
+    candidate_files = _candidate_files_for_component(component_id, current_version, target.get("target_version"), media_items)
     source = _path_source_info(component_id, inventory, current_version, checked_at)
     evidence = _path_evidence_artifacts(component_id)
     required_intermediates = _string_list((baseline_component or {}).get("required_intermediate_versions"))
@@ -1269,6 +1270,7 @@ def _firmware_upgrade_path(
             "component_id": component_id,
             "component_label": meta["component_label"],
             "device_label": meta["device_label"],
+            "equipment_label": meta["device_label"],
             "equipment_type": meta["equipment_type"],
             "current_version": current_version,
             "target_version": target.get("target_version"),
@@ -1276,6 +1278,10 @@ def _firmware_upgrade_path(
             "package_available": bool(package),
             "package_name": package.get("placeholder_name") if package else None,
             "package_version": package.get("version_hint") if package else None,
+            "selected_file_name": _media_file_name(package) if package else None,
+            "selected_file_path": _media_file_path(package) if package else None,
+            "selection_source": "auto" if package else "none",
+            "candidate_files": candidate_files,
             "path_status": status,
             "required_intermediate_versions": required_intermediates,
             "prechecks_required": list(meta["prechecks_required"]),
@@ -1507,6 +1513,55 @@ def _package_for_component(
         return None
     scored.sort(key=lambda value: value[0], reverse=True)
     return scored[0][1]
+
+
+def _candidate_files_for_component(
+    component_id: str,
+    current_version: str | None,
+    target_version: str | None,
+    media_items: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    hints = _package_hints(component_id)
+    scored = [
+        (score, item)
+        for item in media_items
+        if (score := _package_score_for_component(item, hints, current_version, target_version, component_id)) > 0
+    ]
+    scored.sort(key=lambda value: value[0], reverse=True)
+    candidates: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for score, item in scored:
+        name = _media_file_name(item)
+        key = f"{name}:{_media_file_path(item) or ''}"
+        if key in seen:
+            continue
+        seen.add(key)
+        candidates.append(
+            {
+                "file_name": name,
+                "file_path": _media_file_path(item),
+                "detected_vendor": item.get("detected_vendor"),
+                "detected_product": item.get("detected_product")
+                or ", ".join(str(value) for value in item.get("product_hints") or [] if value)
+                or None,
+                "detected_version": item.get("detected_version") or item.get("version_hint"),
+                "confidence": item.get("confidence") or ("high" if score >= 10 else "medium"),
+            }
+        )
+    return candidates
+
+
+def _media_file_name(item: dict[str, Any] | None) -> str:
+    if not item:
+        return ""
+    return str(item.get("file_name") or item.get("placeholder_name") or "media item")
+
+
+def _media_file_path(item: dict[str, Any] | None) -> str | None:
+    if not item:
+        return None
+    value = item.get("file_path")
+    return str(value) if value else None
 
 
 def _media_target_version(component_id: str, media_items: list[dict[str, Any]]) -> dict[str, str | None]:

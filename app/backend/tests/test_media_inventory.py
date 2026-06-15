@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
+from app.services import media_inventory as mi
 from app.services.media_inventory import get_media_inventory
 
 
@@ -39,6 +40,27 @@ def test_media_inventory_scans_configured_directory_metadata_only(tmp_path) -> N
     ]
     assert all(item.actual_name_redacted is True for item in inventory.items)
     assert "customer-host-install" not in repr(inventory)
+
+
+def test_media_inventory_exposes_exact_names_only_for_repo_media_root(monkeypatch, tmp_path) -> None:
+    media_root = tmp_path / "artifacts" / "Media"
+    media_root.mkdir(parents=True)
+    firmware = media_root / "cat9k_iosxe.17.15.05.SPA.bin"
+    firmware.write_bytes(b"firmware")
+    monkeypatch.setattr(mi, "DEFAULT_MEDIA_ROOT", media_root)
+
+    inventory = mi.get_media_inventory((str(media_root),))
+
+    assert inventory.mode == "local"
+    assert len(inventory.items) == 1
+    item = inventory.items[0]
+    assert item.actual_name_redacted is False
+    assert item.file_name == "cat9k_iosxe.17.15.05.SPA.bin"
+    assert item.file_path == str(firmware.resolve())
+    assert item.detected_vendor == "Cisco"
+    assert item.detected_product == "cisco-ios-xe"
+    assert item.detected_version == "17.15.5"
+    assert item.confidence == "high"
 
 
 def test_media_inventory_scans_nested_vm_template_metadata_only(tmp_path) -> None:
@@ -130,3 +152,17 @@ def test_media_inventory_exposes_redacted_cisco_and_vcenter_hints_only(tmp_path)
     assert vcenter.version_hint == "8.0.3"
     assert "cat9k" not in repr(inventory)
     assert "VCSA" not in repr(inventory)
+
+
+def test_media_inventory_detects_service_pack_for_proliant_as_hpe_spp(tmp_path) -> None:
+    (tmp_path / "Service Pack for ProLiant 2024.03.iso").write_bytes(b"spp")
+
+    inventory = get_media_inventory((str(tmp_path),))
+
+    assert len(inventory.items) == 1
+    item = inventory.items[0]
+    assert item.category == "iso"
+    assert item.product_hints == ["hpe-spp"]
+    assert item.version_hint == "2024.3"
+    assert item.actual_name_redacted is True
+    assert "Service Pack" not in repr(inventory)

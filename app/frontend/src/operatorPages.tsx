@@ -4,7 +4,6 @@ import {
   Ban,
   CheckCircle2,
   ClipboardList,
-  FileText,
   Gauge,
   HardDrive,
   Layers,
@@ -17,11 +16,12 @@ import {
   ShieldCheck,
   Wrench
 } from "lucide-react";
-import { ReactNode, useEffect, useMemo, useState } from "react";
+import { createContext, ReactNode, useContext, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 
 import { api } from "./api";
 import type {
+  FirmwareFileCandidate,
   FirmwareSummary,
   FirmwareUpgradePath,
   LabAddressPlan,
@@ -66,6 +66,14 @@ type AccessItem = {
   value: string;
 };
 
+type AccessRow = {
+  appSees: string;
+  item: string;
+  needs: string;
+  status: string;
+  target: string;
+};
+
 type InventoryRow = {
   accessTarget: string;
   item: string;
@@ -100,19 +108,26 @@ const emptyRunState: WorkflowRunState = {
 
 const noProofText = "Advanced proof is hidden unless you need it.";
 
+export const LabConfigEditorContext = createContext<(() => void) | null>(null);
+
 export function OperatorOverviewPage({
   health,
   labProfileError = "",
   labProfileLoading = false,
   labProfileState
 }: OperatorPageProps) {
+  const openConfigEditor = useContext(LabConfigEditorContext);
   const activeProfile = activeLabProfile(labProfileState);
   const address = activeAddressPlan(activeProfile);
+  const global = activeProfile?.global_settings ?? null;
+  const features = activeProfile?.features ?? null;
   const [providers, setProviders] = useState<ProviderStatus[]>([]);
   const [validation, setValidation] = useState<LabValidationSummary | null>(null);
   const [firmwareSummaries, setFirmwareSummaries] = useState<FirmwareSummary[]>([]);
   const [vcenterNetapp, setVcenterNetapp] = useState<ProviderProbeResult | null>(null);
   const [buildVerification, setBuildVerification] = useState<ProviderProbeResult | null>(null);
+  const [ciscoReadiness, setCiscoReadiness] = useState<ProviderProbeResult | null>(null);
+  const [netappConsole, setNetappConsole] = useState<ProviderProbeResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -120,18 +135,30 @@ export function OperatorOverviewPage({
     setError("");
     setLoading(true);
     try {
-      const [nextProviders, nextValidation, nextFirmware, nextVcenterNetapp, nextBuildVerification] = await Promise.all([
+      const [
+        nextProviders,
+        nextValidation,
+        nextFirmware,
+        nextVcenterNetapp,
+        nextBuildVerification,
+        nextCiscoReadiness,
+        nextNetappConsole
+      ] = await Promise.all([
         safeApi(api.providers, [] as ProviderStatus[]),
         safeApi(api.labValidation, null),
         safeApi(api.firmwareSummary, [] as FirmwareSummary[]),
         safeApi(api.vcenterNetappReadiness, null),
-        safeApi(api.buildVerification, null)
+        safeApi(api.buildVerification, null),
+        safeApi(api.ciscoSetupReadiness, null),
+        safeApi(api.netappConsoleReadiness, null)
       ]);
       setProviders(Array.isArray(nextProviders) ? nextProviders : []);
       setValidation(nextValidation);
       setFirmwareSummaries(Array.isArray(nextFirmware) ? nextFirmware : []);
       setVcenterNetapp(nextVcenterNetapp);
       setBuildVerification(nextBuildVerification);
+      setCiscoReadiness(nextCiscoReadiness as ProviderProbeResult | null);
+      setNetappConsole(nextNetappConsole as ProviderProbeResult | null);
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -147,8 +174,14 @@ export function OperatorOverviewPage({
     () => buildInventoryRows({ address, firmwareSummaries, providers, validation, vcenterNetapp }),
     [address, firmwareSummaries, providers, validation, vcenterNetapp]
   );
-  const nextAction = overviewNextAction(validation, firmwareSummaries);
-  const overallStatus = validation?.overall_status ?? buildVerification?.status ?? "not_checked";
+  const labValues = useMemo(
+    () => overviewLabValues({ address, ciscoReadiness, features, global, netappConsole, profile: activeProfile, vcenterNetapp }),
+    [address, activeProfile, ciscoReadiness, features, global, netappConsole, vcenterNetapp]
+  );
+  const accessRows = useMemo(
+    () => overviewAccessRows({ address, ciscoReadiness, providers, validation, vcenterNetapp }),
+    [address, ciscoReadiness, providers, validation, vcenterNetapp]
+  );
 
   return (
     <OperatorPage title="Overview">
@@ -157,47 +190,59 @@ export function OperatorOverviewPage({
           <>
             <button disabled={loading} onClick={() => void load()} type="button">
               <RefreshCw size={16} />
-              Refresh Inventory
+              Refresh Access
             </button>
-            <button onClick={() => void api.labValidationHandoff()} type="button">
-              <FileText size={16} />
-              Generate Handoff
+            <button className="primary" onClick={() => openConfigEditor?.()} type="button">
+              <Settings size={16} />
+              Edit Config
             </button>
-            <Link className="button-link" to="/validation">
-              <CheckCircle2 size={16} />
-              View Validation
-            </Link>
           </>
         }
-        description="This page shows what exists."
-        helper="Hardware, software, access targets, versions, and one clear next action are shown without raw proof paths."
+        description="This page shows what the app can currently access."
+        helper="Change values here if your lab uses different IPs. Advanced proof is hidden unless you need it."
         icon={<Gauge size={26} />}
-        nextAction={nextAction}
-        status={overallStatus}
-        title="Lab overview"
+        title="Overview"
       />
       <Feedback loading={loading && !validation} error={error || labProfileError} />
       {labProfileLoading && <Feedback loading />}
       <section className="operator-section" aria-label="Active lab summary">
         <div className="operator-section-head">
           <div>
-            <p className="operator-kicker">Active lab setup</p>
-            <h2>{activeProfile?.name ?? "No active setup"}</h2>
+            <p className="operator-kicker">This is what I am working on</p>
+            <h2>Active Lab Setup</h2>
+            <p className="operator-muted">{activeProfile?.name ?? "No active setup"}</p>
+            <p className="operator-muted">
+              {labelize(activeProfile?.profile_topology ?? labProfileState?.active_context?.topology ?? "topology not set")}
+              {" / "}
+              {displayAddress(address.subnet)}
+            </p>
           </div>
-          <SimpleStatusPill status={runtimeStatus(health ?? null)} />
+          <button onClick={() => openConfigEditor?.()} type="button">
+            <Settings size={16} />
+            Edit Config
+          </button>
         </div>
+      </section>
+      <section className="operator-section" aria-label="Lab values">
+        <div className="operator-section-head">
+          <div>
+            <p className="operator-kicker">These are the values</p>
+            <h2>Lab Values</h2>
+          </div>
+        </div>
+        <ConfigValueList values={labValues} />
+      </section>
+      <AccessTable rows={accessRows} />
+      <AdvancedDrawer title="Advanced details" summary={noProofText}>
+        <InventoryTable rows={rows} />
+        <ValidationProofList items={validation?.validation_items ?? []} proofLinks={validation?.proof_links.length ?? 0} />
         <ConfigValueList
           values={[
-            { label: "Subnet", value: displayAddress(address.subnet), source: "Saved setup" },
-            { label: "Access target", value: vcenterTarget(vcenterNetapp, activeProfile), source: "vCenter" },
-            { label: "ESXi", value: displayAddress(address.esxi_management), source: "Saved setup" },
-            { label: "NetApp datastore", value: datastoreName(vcenterNetapp), status: datastoreVisibleStatus(vcenterNetapp) }
+            { label: "Runtime mode", value: displayStatus(runtimeStatus(health ?? null)) },
+            { label: "Build verification", value: displayStatus(buildVerification?.status ?? "not_checked") },
+            { label: "Validation rows", value: String(validation?.validation_items.length ?? 0) }
           ]}
         />
-      </section>
-      <InventoryTable rows={rows} />
-      <AdvancedDrawer title="Overview proof" summary={noProofText}>
-        <ValidationProofList items={validation?.validation_items ?? []} proofLinks={validation?.proof_links.length ?? 0} />
       </AdvancedDrawer>
     </OperatorPage>
   );
@@ -274,9 +319,7 @@ export function OperatorNetworkPage({ labProfileState }: OperatorPageProps) {
       <PageRunButtons
         actions={actions}
         buttons={[
-          { actionIds: ["cisco.validate-ssh-scp", "cisco.privilege-check", "cisco.setup-readiness"], label: "Test Cisco Access", primary: true },
-          { actionIds: ["cisco.privilege-check"], label: "Backup / Export Config" },
-          { actionIds: ["cisco.apply-bootstrap"], kind: "write", label: "Apply Network Config" },
+          { actionIds: ["cisco.validate-ssh-scp", "cisco.privilege-check", "cisco.setup-readiness"], label: "Test Switch", primary: true },
           { actionIds: ["cisco.save-config"], kind: "write", label: "Save Config", icon: <Save size={16} /> },
           { actionIds: ["cisco.firmware-inventory"], label: "Scan Firmware" }
         ]}
@@ -362,6 +405,7 @@ export function OperatorServerPage({ labProfileState }: OperatorPageProps) {
           { label: "Server", value: "HPE DL360", source: "Saved setup" },
           { label: "iLO IP", value: displayAddress(address.ilo), source: "Saved setup" },
           { label: "RAID layout", value: raidLayoutLabel(raidPlan), status: raidStatus },
+          { label: "HPE Service Pack", value: servicePackSummary(firmwareSummaries), source: "Firmware files" },
           { label: "ESXi management", value: displayAddress(address.esxi_management), source: "Saved setup" },
           { label: "BIOS / iLO firmware", value: firmwareVersion(firmwareSummaries, "ilo") },
           { label: "ESXi version", value: firmwareVersion(firmwareSummaries, "esxi") }
@@ -371,12 +415,9 @@ export function OperatorServerPage({ labProfileState }: OperatorPageProps) {
         actions={actions}
         buttons={[
           { actionIds: ["ilo.reachability", "ilo.auth", "ilo.inventory"], label: "Test iLO", primary: true },
-          { actionIds: ["ilo.inventory", "raid.discovery"], label: "Backup / Export Inventory" },
           { actionIds: ["esxi.management-validation", "esxi.ssh-api-check", "esxi.readiness"], label: "Test ESXi" },
-          { actionIds: ["esxi.rebuild-install"], kind: "write", label: "Rebuild ESXi" },
           { actionIds: ["esxi.recover-management"], kind: "write", label: "Recover ESXi" },
-          { actionIds: ["raid.validate", "raid.pending-check"], label: "Validate RAID" },
-          { actionIds: ["ilo.reset-server", "raid.reset-commit"], kind: "apply", label: "Reboot Server" }
+          { actionIds: ["raid.validate", "raid.pending-check"], label: "Validate RAID" }
         ]}
         onReload={load}
       />
@@ -384,6 +425,7 @@ export function OperatorServerPage({ labProfileState }: OperatorPageProps) {
         <ConfigValueList
           values={[
             { label: "RAID warnings", value: String(stringArray(raidPlan?.warnings).length) },
+            { label: "RAID controller model", value: raidControllerModels(raidPlan) },
             { label: "ESXi blockers", value: String(stringArray(esxiReadiness?.blockers).length) },
             { label: "Smart Array firmware", value: firmwareVersion(firmwareSummaries, "raid") }
           ]}
@@ -471,11 +513,8 @@ export function OperatorStoragePage({ labProfileState }: OperatorPageProps) {
         actions={actions}
         buttons={[
           { actionIds: ["netapp.live-state", "netapp.validate-setup", "netapp.setup-preview"], label: "Test NetApp", primary: true },
-          { actionIds: ["netapp.live-state", "netapp.console-read-state"], label: "Backup / Export Storage" },
-          { actionIds: ["netapp.factory-reset-preview", "netapp.address-preview"], label: "Reset / Recover Plan" },
           { actionIds: ["netapp.nfs-setup-validate", "netapp.nfs-vcenter-readiness"], label: "Validate NFS" },
-          { actionIds: ["esxi.netapp-datastore-apply", "netapp.nfs-setup-apply"], kind: "write", label: "Mount Datastore" },
-          { actionIds: ["netapp.ontap-upgrade-inventory", "netapp.component-firmware-inventory"], label: "Refresh ONTAP" }
+          { actionIds: ["esxi.netapp-datastore-apply", "netapp.nfs-setup-apply"], kind: "write", label: "Mount Datastore" }
         ]}
         onReload={load}
       />
@@ -565,11 +604,8 @@ export function OperatorVirtualizationPage({ labProfileState }: OperatorPageProp
         actions={actions}
         buttons={[
           { actionIds: ["vcenter-netapp.readiness", "vcenter.install-readiness"], label: "Test vCenter", primary: true },
-          { actionIds: ["vcenter.post-attach-validation", "vcenter-netapp.datastore-plan"], label: "Backup / Export Inventory" },
-          { actionIds: ["vcenter.attach-esxi-apply"], kind: "write", label: "Attach ESXi" },
-          { actionIds: ["vcenter.post-attach-validation", "vcenter-netapp.datastore-plan"], label: "Validate Datastore" },
           { actionIds: ["esxi.vm-deploy-apply"], kind: "write", label: "Deploy VM" },
-          { actionIds: ["esxi.vm-deploy-validate"], label: "Validate VM Inventory" }
+          { actionIds: ["esxi.vm-deploy-validate", "vcenter.post-attach-validation"], label: "Validate Inventory" }
         ]}
         onReload={load}
       />
@@ -591,6 +627,7 @@ export function OperatorFirmwareUpgradesPage() {
   const [firmwareSummaries, setFirmwareSummaries] = useState<FirmwareSummary[]>([]);
   const [media, setMedia] = useState<MediaInventory | null>(null);
   const [compliance, setCompliance] = useState<ProviderProbeResult | null>(null);
+  const [selectedFiles, setSelectedFiles] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -623,37 +660,38 @@ export function OperatorFirmwareUpgradesPage() {
     asString(compliance?.status) || "not_checked",
     ...firmwareSummaries.map((summary) => summary.compliance_status || summary.path_status || "not_checked")
   ]);
-  const rows = firmwareRows(firmwareSummaries);
+  const rows = firmwareRows(firmwareSummaries, compliance, selectedFiles);
+  const files = firmwareFilesInfo(media, compliance);
 
   return (
     <OperatorPage title="Firmware Upgrades">
       <PageStatusHeader
         actions={<button disabled={loading} onClick={() => void load()} type="button"><RefreshCw size={16} />Refresh</button>}
-        description="Use these buttons to test or change this part of the lab."
-        helper="Current version, target version, upgrade path, package, and action are shown in one compact table."
+        description="Firmware files are read from the local media folder."
+        helper="Choose the file for each device. Upgrade stays gated until the path is validated."
         icon={<ShieldCheck size={26} />}
-        nextAction={firmwareNextAction(firmwareSummaries, compliance)}
         status={firmwareStatus}
-        title="Firmware upgrades"
+        title="Firmware Upgrades"
       />
       <Feedback loading={loading && !firmwareSummaries.length} error={error} />
-      <AccessSummary
-        items={[
-          { label: "Packages", value: String(media?.items.filter((item) => item.category === "firmware").length ?? 0), detail: "Local media inventory" },
-          { label: "Current scan", value: compliance?.checked_at ? formatDateTime(compliance.checked_at) : "Not checked", status: asString(compliance?.status) || "not_checked" },
-          { label: "Manual baseline review", value: rows.some((row) => row.pathStatus === "manual_review") ? "Needs review" : "Not needed", status: rows.some((row) => row.pathStatus === "manual_review") ? "manual_review" : "ready" },
-          { label: "Apply lane", value: "Guarded", detail: "Upgrade apply changes state" }
-        ]}
+      <FirmwareFilesPanel
+        directory="/home/administrator/infra-config-portal/artifacts/Media"
+        lastScanned={files.lastScanned}
+        loading={loading}
+        onRescan={() => void load()}
+        packageCount={files.packageCount}
       />
-      <FirmwarePathTable rows={rows} />
+      <FirmwarePathTable
+        rows={rows}
+        selectedFiles={selectedFiles}
+        onSelect={(componentId, fileName) => setSelectedFiles((current) => ({ ...current, [componentId]: fileName }))}
+      />
       <PageRunButtons
         actions={actions}
         buttons={[
-          { actionIds: ["firmware.inventory", "firmware.compliance-check"], label: "Test Firmware Access", primary: true },
-          { actionIds: ["firmware.inventory", "firmware.package-inventory"], label: "Backup / Export Inventory" },
-          { actionIds: ["firmware.inventory", "firmware.compliance-check"], label: "Scan All Firmware" },
-          { actionIds: ["firmware.upgrade-plan", "netapp.ontap-upgrade-plan"], label: "Review Upgrade Path" },
-          { actionIds: ["firmware.upgrade-apply-placeholder", "netapp.ontap-upgrade-apply"], kind: "apply", label: "Apply Upgrade" }
+          { actionIds: ["firmware.inventory", "firmware.compliance-check"], label: "Scan Firmware", primary: true },
+          { actionIds: ["firmware.upgrade-plan", "netapp.ontap-upgrade-plan"], label: "Validate Upgrade Path" },
+          { actionIds: ["firmware.upgrade-apply-placeholder", "netapp.ontap-upgrade-apply"], kind: "apply", label: "Upgrade" }
         ]}
         onReload={load}
       />
@@ -725,7 +763,6 @@ export function OperatorValidationPage() {
       <ConfigValueList
         values={[
           { label: "vCenter-NetApp readiness", value: displayStatus(vcenterNetapp?.status ?? "not_checked"), status: vcenterNetapp?.status ?? "not_checked" },
-          { label: "Proof count", value: String(validation?.proof_links.length ?? 0) },
           { label: "Top blocker", value: validation?.top_blocker?.problem ?? "None", status: validation?.top_blocker ? "blocked" : "ready" },
           { label: "Checked", value: validation?.generated_at ? formatDateTime(validation.generated_at) : "Not checked" }
         ]}
@@ -734,14 +771,12 @@ export function OperatorValidationPage() {
         actions={actions}
         buttons={[
           { actionIds: ["full-lab.validation", "build-verification.run-full"], label: "Run Validation", primary: true },
-          { actionIds: ["build-verification.export-certification-report"], label: "Backup / Export Proof" },
-          { actionIds: ["full-lab.handoff-report"], label: "Generate Handoff", onClick: async () => { await api.labValidationHandoff(); } },
-          { actionIds: ["lab-validation.summary", "build-verification.live-status"], label: "Refresh Evidence", onClick: load }
+          { actionIds: ["full-lab.handoff-report"], label: "Generate Handoff", onClick: async () => { await api.labValidationHandoff(); } }
         ]}
         onReload={load}
       />
-      <ValidationProofList items={validation?.validation_items ?? []} proofLinks={validation?.proof_links.length ?? 0} />
       <AdvancedDrawer title="Validation proof" summary={noProofText}>
+        <ValidationProofList items={validation?.validation_items ?? []} proofLinks={validation?.proof_links.length ?? 0} />
         <ConfigValueList
           values={[
             { label: "Source", value: sourceLabel(validation) },
@@ -850,7 +885,6 @@ export function OperatorSettingsPage({
         actions={actions}
         buttons={[
           { disabledReason: "No unsaved setup changes are open on this page.", icon: <Save size={16} />, kind: "custom", label: "Save Setup", primary: true },
-          { actionIds: ["lab-profile.view-active"], label: "Backup / Export Setup" },
           { actionIds: ["build-verification.run-full", "full-lab.validation"], label: "Test Credentials" },
           { actionIds: ["cisco.discover-console", "netapp.console-autodiscovery"], label: "Refresh Consoles" }
         ]}
@@ -890,8 +924,8 @@ function PageStatusHeader({
   description: string;
   helper: string;
   icon: ReactNode;
-  nextAction: string;
-  status: string;
+  nextAction?: string;
+  status?: string;
   title: string;
 }) {
   return (
@@ -904,11 +938,13 @@ function PageStatusHeader({
         <span>{helper}</span>
       </div>
       <div className="operator-status-side">
-        <SimpleStatusPill status={status} />
-        <div>
-          <span>Next action</span>
-          <strong>{nextAction}</strong>
-        </div>
+        {status && <SimpleStatusPill status={status} />}
+        {nextAction && (
+          <div>
+            <span>Next action</span>
+            <strong>{nextAction}</strong>
+          </div>
+        )}
         {actions && <div className="operator-header-actions">{actions}</div>}
       </div>
     </header>
@@ -1080,50 +1116,168 @@ function InventoryTable({ rows }: { rows: InventoryRow[] }) {
   );
 }
 
+function AccessTable({ rows }: { rows: AccessRow[] }) {
+  return (
+    <section className="operator-section" aria-label="Currently Accessible">
+      <div className="operator-section-head">
+        <div>
+          <p className="operator-kicker">This is what the app can see</p>
+          <h2>Currently Accessible</h2>
+        </div>
+        <span>{rows.filter((row) => row.status === "accessible").length} accessible</span>
+      </div>
+      <div className="operator-table-wrap">
+        <table className="operator-table access-table">
+          <thead>
+            <tr>
+              <th>Item</th>
+              <th>Target</th>
+              <th>Status</th>
+              <th>App can see</th>
+              <th>Needs before it can see it</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.item}>
+                <td><strong>{row.item}</strong></td>
+                <td>{row.target}</td>
+                <td><SimpleStatusPill status={row.status} /></td>
+                <td>{row.appSees}</td>
+                <td>{row.needs}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
 type FirmwareTableRow = {
   action: string;
+  candidateFiles: FirmwareFileCandidate[];
+  component: string;
+  componentId: string;
   current: string;
-  device: string;
-  packageName: string;
-  path: string;
+  equipment: string;
   pathStatus: string;
+  selectedFileName: string;
+  selectionSource: string;
   target: string;
 };
 
-function FirmwarePathTable({ rows }: { rows: FirmwareTableRow[] }) {
+function FirmwarePathTable({
+  onSelect,
+  rows,
+  selectedFiles
+}: {
+  onSelect: (componentId: string, fileName: string) => void;
+  rows: FirmwareTableRow[];
+  selectedFiles: Record<string, string>;
+}) {
   return (
     <section className="operator-section" aria-label="Firmware upgrade path">
       <div className="operator-section-head">
         <div>
-          <p className="operator-kicker">Upgrade path</p>
-          <h2>Firmware and software versions</h2>
+          <p className="operator-kicker">Firmware Table</p>
+          <h2>Equipment and selected files</h2>
         </div>
       </div>
       <div className="operator-table-wrap">
         <table className="operator-table firmware-path-table">
           <thead>
             <tr>
-              <th>Device</th>
-              <th>Current</th>
-              <th>Target</th>
-              <th>Path</th>
-              <th>Package</th>
+              <th>Equipment</th>
+              <th>Component</th>
+              <th>Current Version</th>
+              <th>Target Version</th>
+              <th>Selected File</th>
+              <th>Status</th>
               <th>Action</th>
             </tr>
           </thead>
           <tbody>
             {rows.map((row) => (
-              <tr key={`${row.device}-${row.current}-${row.target}`}>
-                <td><strong>{row.device}</strong></td>
+              <tr key={row.componentId}>
+                <td><strong>{row.equipment}</strong></td>
+                <td>{row.component}</td>
                 <td>{row.current}</td>
                 <td>{row.target}</td>
-                <td><SimpleStatusPill status={row.pathStatus} /> {row.path}</td>
-                <td>{row.packageName}</td>
-                <td>{row.action}</td>
+                <td>
+                  <div className="firmware-file-cell">
+                    <select
+                      aria-label={`${row.equipment} ${row.component} firmware file`}
+                      onChange={(event) => onSelect(row.componentId, event.target.value)}
+                      value={selectedFiles[row.componentId] ?? row.selectedFileName}
+                    >
+                      <option value="">No file selected</option>
+                      {row.candidateFiles.map((candidate) => (
+                        <option key={`${row.componentId}-${candidate.file_name}-${candidate.file_path ?? ""}`} value={candidate.file_name}>
+                          {candidate.file_name}
+                        </option>
+                      ))}
+                    </select>
+                    <span>{row.selectedFileName || "No file selected"}</span>
+                    <small>{selectionSourceLabel(row.selectionSource)}</small>
+                  </div>
+                </td>
+                <td><SimpleStatusPill status={row.pathStatus} /></td>
+                <td>
+                  <div className="firmware-row-actions">
+                    <button type="button">Scan</button>
+                    <button type="button">Validate Path</button>
+                    <button disabled={row.pathStatus !== "ready_to_upgrade"} type="button">Upgrade</button>
+                  </div>
+                  <span className="operator-muted">{row.action}</span>
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
+      </div>
+    </section>
+  );
+}
+
+function FirmwareFilesPanel({
+  directory,
+  lastScanned,
+  loading,
+  onRescan,
+  packageCount
+}: {
+  directory: string;
+  lastScanned: string;
+  loading: boolean;
+  onRescan: () => void;
+  packageCount: number;
+}) {
+  return (
+    <section className="operator-section firmware-files-panel" aria-label="Firmware Files">
+      <div className="operator-section-head">
+        <div>
+          <p className="operator-kicker">Firmware Files</p>
+          <h2>Firmware Files</h2>
+          <p className="operator-muted">Firmware files are read from this folder. Use the HPE Service Pack for server BIOS and Smart Array updates, and pick a different file if the app chose the wrong one.</p>
+        </div>
+      </div>
+      <ConfigValueList
+        values={[
+          { label: "Directory", value: directory, source: "Local folder" },
+          { label: "Last scanned", value: lastScanned },
+          { label: "Package count", value: String(packageCount) }
+        ]}
+      />
+      <div className="page-run-buttons">
+        <button disabled={loading} onClick={onRescan} type="button">
+          <RefreshCw size={16} />
+          Rescan Files
+        </button>
+        <Link className="button-link" to="/media">
+          <HardDrive size={16} />
+          Open Media Inventory
+        </Link>
       </div>
     </section>
   );
@@ -1290,27 +1444,148 @@ function buildInventoryRows({
   ];
 }
 
+function overviewLabValues({
+  address,
+  ciscoReadiness,
+  features,
+  global,
+  netappConsole,
+  profile,
+  vcenterNetapp
+}: {
+  address: LabAddressPlan;
+  ciscoReadiness: ProviderProbeResult | null;
+  features: LabProfileFeatures | null;
+  global: LabProfile["global_settings"] | null;
+  netappConsole: ProviderProbeResult | null;
+  profile: LabProfile | null;
+  vcenterNetapp: ProviderProbeResult | null;
+}): ConfigValue[] {
+  return [
+    { label: "Lab name", value: profile?.name ?? "No active setup", source: "Active setup" },
+    { label: "Subnet", value: displayAddress(address.subnet), source: "Saved setup" },
+    { label: "Topology", value: labelize(profile?.profile_topology ?? "not set up yet"), source: "Saved setup" },
+    { label: "Gateway", value: displayAddress(global?.gateway ?? profile?.gateway), source: "Saved setup" },
+    { label: "DNS", value: listLabel(global?.dns_servers ?? profile?.dns), source: "Saved setup" },
+    { label: "NTP", value: listLabel(global?.ntp_servers ?? profile?.ntp), source: "Saved setup" },
+    { label: "VLAN", value: displayValue(global?.vlan_id ?? profile?.vlan_id), source: "Saved setup" },
+    { label: "MTU", value: displayValue(global?.mtu ?? profile?.mtu), source: "Saved setup" },
+    { label: "Cisco IP", value: displayAddress(address.cisco_management), source: "Saved setup" },
+    { label: "iLO IP", value: displayAddress(address.ilo), source: "Saved setup" },
+    { label: "ESXi IP", value: displayAddress(address.esxi_management), source: "Saved setup" },
+    { label: "NetApp cluster IP", value: displayAddress(address.netapp_cluster_mgmt), source: "Saved setup" },
+    { label: "NetApp NFS LIF", value: listLabel(address.netapp_nfs_lifs), source: "Saved setup" },
+    { label: "vCenter IP", value: vcenterAddress(vcenterNetapp, profile), source: "Saved or discovered" },
+    { label: "Datastore name", value: datastoreName(vcenterNetapp), source: "Saved or discovered" },
+    { label: "Cisco console", value: consolePathFromCisco(ciscoReadiness), source: "Discovered when available" },
+    { label: "NetApp console", value: consolePathFromNetapp(netappConsole), source: "Discovered when available" },
+    { label: "Feature toggles", value: featureToggleSummary(features), source: "Saved setup" }
+  ];
+}
+
+function overviewAccessRows({
+  address,
+  ciscoReadiness,
+  providers,
+  validation,
+  vcenterNetapp
+}: {
+  address: LabAddressPlan;
+  ciscoReadiness: ProviderProbeResult | null;
+  providers: ProviderStatus[];
+  validation: LabValidationSummary | null;
+  vcenterNetapp: ProviderProbeResult | null;
+}): AccessRow[] {
+  const statusFor = (tokens: string[], fallback = "not_checked") =>
+    validationStatus(validation, tokens) || providerStatus(providers, tokens) || fallback;
+  const checks = objectValue(vcenterNetapp?.checks);
+  const vmInventory = objectValue(checks.vm_inventory_visible);
+  const vmCount = asString(vmInventory.count);
+  return [
+    accessRow({
+      appSees: sourceLabelFromStatus(statusFor(["cisco"])),
+      item: "Cisco",
+      need: consolePathFromCisco(ciscoReadiness) === "Not set up yet" ? "Need console connection" : "Need credentials",
+      status: statusFor(["cisco"]),
+      target: displayAddress(address.cisco_management)
+    }),
+    accessRow({
+      appSees: sourceLabelFromStatus(statusFor(["ilo", "hpe"])),
+      item: "iLO",
+      need: "Need credentials",
+      status: statusFor(["ilo", "hpe"]),
+      target: address.ilo ? `https://${address.ilo}` : "Not set up yet"
+    }),
+    accessRow({
+      appSees: sourceLabelFromStatus(statusFor(["esxi"])),
+      item: "ESXi",
+      need: "Need credentials",
+      status: statusFor(["esxi"]),
+      target: displayAddress(address.esxi_management)
+    }),
+    accessRow({
+      appSees: sourceLabelFromStatus(statusFor(["netapp", "storage"], asString(vcenterNetapp?.status) || "not_checked")),
+      item: "NetApp",
+      need: "Need NetApp API reachable",
+      status: statusFor(["netapp", "storage"], asString(vcenterNetapp?.status) || "not_checked"),
+      target: displayAddress(address.netapp_cluster_mgmt)
+    }),
+    accessRow({
+      appSees: sourceLabel(vcenterNetapp),
+      item: "vCenter",
+      need: "Need vCenter attached",
+      status: asString(vcenterNetapp?.status) || validationStatus(validation, ["vcenter"]) || "not_checked",
+      target: vcenterTarget(vcenterNetapp, null)
+    }),
+    accessRow({
+      appSees: datastoreVisibleStatus(vcenterNetapp) === "ready" ? "Datastore visible" : "Not visible yet",
+      item: "Datastore",
+      need: "Need vCenter attached",
+      status: datastoreVisibleStatus(vcenterNetapp),
+      target: datastoreName(vcenterNetapp)
+    }),
+    accessRow({
+      appSees: asBoolean(vmInventory.visible) ? `${vmCount || "Some"} VMs visible` : "VM inventory not visible yet",
+      item: "VM inventory",
+      need: "Need vCenter attached",
+      status: asBoolean(vmInventory.visible) ? "ready" : "not_checked",
+      target: "vCenter inventory"
+    })
+  ];
+}
+
+function accessRow({
+  appSees,
+  item,
+  need,
+  status,
+  target
+}: {
+  appSees: string;
+  item: string;
+  need: string;
+  status: string;
+  target: string;
+}): AccessRow {
+  if (!target || target === "Not set up yet") {
+    return { appSees: "No value set", item, needs: "Need IP value", status: "not_setup", target: "Not set up yet" };
+  }
+  if (["ready", "ok", "passed", "completed", "current"].includes(status)) {
+    return { appSees, item, needs: "Nothing right now", status: "accessible", target };
+  }
+  if (need === "Need console connection") {
+    return { appSees: "No console connection selected", item, needs: need, status: "needs_console", target };
+  }
+  if (need === "Need credentials") {
+    return { appSees, item, needs: need, status: "needs_credentials", target };
+  }
+  return { appSees, item, needs: need, status: "not_accessible", target };
+}
+
 function vcenterVersion(vcenterNetapp: ProviderProbeResult | null): string {
   const current = objectValue(vcenterNetapp?.current_state);
   const postAttach = objectValue(vcenterNetapp?.post_attach_validation);
   return displayValue(asString(current.vcenter_version) || asString(postAttach.vcenter_version));
-}
-
-function overviewNextAction(validation: LabValidationSummary | null, firmwareSummaries: FirmwareSummary[]): string {
-  const manualFirmware = firmwareSummaries.some((summary) =>
-    summary.path_status === "manual_review" ||
-    summary.approved_versions.some((version) => version.status === "manual_review")
-  );
-  if (manualFirmware) {
-    return "Review the firmware manual baseline, then generate handoff.";
-  }
-  if (validation?.top_blocker) {
-    return humanize(validation.top_blocker.recommended_action || validation.top_blocker.problem);
-  }
-  if (validation?.overall_status === "ready") {
-    return "Generate handoff.";
-  }
-  return humanize(validation?.next_action || "Refresh inventory.");
 }
 
 function validationStatus(validation: LabValidationSummary | null, tokens: string[]): string {
@@ -1375,19 +1650,122 @@ function humanWorkflowActionLabel(action: WorkflowAction): string {
   return humanize(action.label || action.action_id);
 }
 
-function firmwareRows(summaries: FirmwareSummary[]): FirmwareTableRow[] {
+function firmwareRows(
+  summaries: FirmwareSummary[],
+  compliance: ProviderProbeResult | null,
+  selectedFiles: Record<string, string>
+): FirmwareTableRow[] {
+  const paths = firmwareUpgradePaths(summaries, compliance);
+  const byComponent = new Map<string, { path: FirmwareUpgradePath; summary: FirmwareSummary | null }>();
+  for (const { path, summary } of paths) {
+    if (!byComponent.has(path.component_id)) {
+      byComponent.set(path.component_id, { path, summary });
+    }
+  }
+  const orderedIds = [
+    "cisco_ios_xe_version",
+    "hpe_ilo_firmware",
+    "hpe_bios_version",
+    "hpe_smart_array_firmware",
+    "esxi_version",
+    "netapp_ontap_version",
+    "vcenter_vcsa_version",
+    "netapp_disk_firmware",
+    "netapp_shelf_firmware",
+    "netapp_sp_bmc_firmware"
+  ];
+  return orderedIds.flatMap((componentId) => {
+    const entry = byComponent.get(componentId);
+    if (!entry) return [];
+    if (isOptionalUndetectedFirmwareComponent(componentId, entry.path)) return [];
+    const { path, summary } = entry;
+    const candidateFiles = path.candidate_files ?? [];
+    const selectedOverride = selectedFiles[path.component_id];
+    const selectedFileName = selectedOverride ?? path.selected_file_name ?? path.package_name ?? "";
+    return [{
+      action: simpleFirmwareAction(path),
+      candidateFiles,
+      component: firmwareComponentLabel(path),
+      componentId: path.component_id,
+      current: displayValue(path.current_version),
+      equipment: path.equipment_label || path.device_label || summary?.label || "Equipment",
+      pathStatus: simpleFirmwareStatus(path, selectedFileName),
+      selectedFileName,
+      selectionSource: selectedOverride !== undefined ? "user" : path.selection_source ?? (selectedFileName ? "auto" : "none"),
+      target: displayValue(path.target_version)
+    }];
+  });
+}
+
+function firmwareUpgradePaths(
+  summaries: FirmwareSummary[],
+  compliance: ProviderProbeResult | null
+): Array<{ path: FirmwareUpgradePath; summary: FirmwareSummary | null }> {
+  const compliancePaths = recordArray(compliance?.upgrade_paths)
+    .map((path) => path as FirmwareUpgradePath)
+    .filter((path) => path.component_id);
+  if (compliancePaths.length) {
+    return compliancePaths.map((path) => ({
+      path,
+      summary: summaries.find((summary) => summary.upgrade_paths.some((candidate) => candidate.component_id === path.component_id)) ?? null
+    }));
+  }
   return summaries.flatMap((summary) => {
     const paths = summary.upgrade_paths?.length ? summary.upgrade_paths : [legacyPath(summary)];
-    return paths.map((path) => ({
-      action: humanize(path.next_action || summary.next_action || "Review upgrade path."),
-      current: displayValue(path.current_version || currentVersion(summary)),
-      device: path.device_label || summary.label,
-      packageName: path.package_name || (path.package_available ? "Available" : "Not set up yet"),
-      path: pathStatusLabel(path),
-      pathStatus: path.path_status || summary.path_status || summary.compliance_status,
-      target: displayValue(path.target_version || summary.target_version)
-    }));
+    return paths.map((path) => ({ path, summary }));
   });
+}
+
+function isOptionalUndetectedFirmwareComponent(componentId: string, path: FirmwareUpgradePath): boolean {
+  if (!["netapp_disk_firmware", "netapp_shelf_firmware", "netapp_sp_bmc_firmware"].includes(componentId)) return false;
+  return !path.current_version && !path.target_version && !(path.candidate_files?.length);
+}
+
+function firmwareComponentLabel(path: FirmwareUpgradePath): string {
+  if (path.component_id === "cisco_ios_xe_version") return "IOS XE";
+  if (path.component_id === "hpe_ilo_firmware") return "iLO firmware";
+  if (path.component_id === "hpe_bios_version") return "Service Pack / BIOS";
+  if (path.component_id === "hpe_smart_array_firmware") return "Service Pack / Smart Array";
+  if (path.component_id === "esxi_version") return "ESXi image";
+  if (path.component_id === "netapp_ontap_version") return "ONTAP";
+  if (path.component_id === "vcenter_vcsa_version") return "VCSA";
+  return path.component_label;
+}
+
+function simpleFirmwareStatus(path: FirmwareUpgradePath, selectedFileName: string): string {
+  if (path.path_status === "current") return "current";
+  if (!path.current_version) return "scan_needed";
+  if (!selectedFileName && path.package_available === false) return "file_needed";
+  if (path.path_status === "blocked") return "file_needed";
+  if (path.path_status === "manual_review") return "manual_review";
+  if (path.path_status === "direct" || path.path_status === "staged") return "ready_to_upgrade";
+  if (path.target_version && path.current_version !== path.target_version) return "upgrade_available";
+  return "not_setup";
+}
+
+function simpleFirmwareAction(path: FirmwareUpgradePath): string {
+  if (path.path_status === "current") return "No upgrade needed.";
+  if (!path.current_version) return "Scan firmware.";
+  if (path.path_status === "blocked") return "Choose a matching file.";
+  if (path.path_status === "manual_review") return "Review baseline.";
+  return humanize(path.next_action || "Validate upgrade path.");
+}
+
+function firmwareFilesInfo(media: MediaInventory | null, compliance: ProviderProbeResult | null): { lastScanned: string; packageCount: number } {
+  const inventory = objectValue(compliance?.inventory);
+  const mediaInventory = objectValue(inventory.media_inventory);
+  const candidateCount = Number(mediaInventory.candidate_count ?? NaN);
+  const mediaCount = media?.items.filter((item) => item.category === "firmware" || item.category === "iso").length ?? 0;
+  return {
+    lastScanned: asString(compliance?.checked_at) ? formatDateTime(asString(compliance?.checked_at)) : "Not scanned",
+    packageCount: Number.isFinite(candidateCount) ? candidateCount : mediaCount
+  };
+}
+
+function selectionSourceLabel(source: string): string {
+  if (source === "auto") return "Auto-selected";
+  if (source === "user") return "Selected by user";
+  return "No file selected";
 }
 
 function legacyPath(summary: FirmwareSummary): FirmwareUpgradePath {
@@ -1419,28 +1797,8 @@ function legacyPath(summary: FirmwareSummary): FirmwareUpgradePath {
   };
 }
 
-function pathStatusLabel(path: FirmwareUpgradePath): string {
-  if (path.path_status === "manual_review") return "Needs review";
-  if (path.path_status === "current") return "Current";
-  if (path.path_status === "direct") return "Direct";
-  if (path.path_status === "staged") return `Staged through ${path.required_intermediate_versions.join(", ")}`;
-  if (path.path_status === "blocked") return "Blocked";
-  return displayStatus(path.path_status || "not_checked");
-}
-
-function firmwareNextAction(summaries: FirmwareSummary[], compliance: ProviderProbeResult | null): string {
-  const manual = summaries.find((summary) =>
-    summary.path_status === "manual_review" ||
-    summary.approved_versions.some((version) => version.status === "manual_review")
-  );
-  if (manual) return "Review manual baseline before applying upgrades.";
-  const blocker = summaries.find((summary) => summary.blocker);
-  if (blocker?.blocker) return humanize(blocker.blocker);
-  return humanize(asString(compliance?.next_safe_action) || "Scan all firmware.");
-}
-
-function currentVersion(summary: FirmwareSummary): string {
-  return summary.current_versions.map((version) => version.version).filter(Boolean).join(", ");
+function currentVersion(summary: FirmwareSummary | null): string {
+  return summary?.current_versions.map((version) => version.version).filter(Boolean).join(", ") ?? "";
 }
 
 function firmwareVersion(summaries: FirmwareSummary[], device: string): string {
@@ -1469,6 +1827,36 @@ function vcenterTarget(probe: ProviderProbeResult | null, profile: LabProfile | 
   if (explicit) return explicit.startsWith("http") ? explicit : `https://${explicit}/sdk`;
   if (managementIp) return `https://${managementIp}/sdk`;
   return "Not set up yet";
+}
+
+function vcenterAddress(probe: ProviderProbeResult | null, profile: LabProfile | null): string {
+  const target = vcenterTarget(probe, profile);
+  if (target === "Not set up yet") return target;
+  try {
+    return new URL(target).hostname || target;
+  } catch {
+    return target.replace(/^https?:\/\//, "").replace(/\/sdk\/?$/, "");
+  }
+}
+
+function consolePathFromCisco(probe: ProviderProbeResult | null): string {
+  const consoleState = objectValue(probe?.console);
+  return displayValue(
+    asString(consoleState.selected_path) ||
+    asString(consoleState.effective_path) ||
+    asString(consoleState.path)
+  );
+}
+
+function consolePathFromNetapp(probe: ProviderProbeResult | null): string {
+  const consoleState = objectValue(probe?.console);
+  const selected = objectValue(probe?.selected_console);
+  return displayValue(
+    asString(consoleState.selected_path) ||
+    asString(consoleState.effective_path) ||
+    asString(selected.path) ||
+    asString(probe?.console_port)
+  );
 }
 
 function datastoreName(probe: ProviderProbeResult | null): string {
@@ -1540,6 +1928,27 @@ function raidLayoutLabel(probe: ProviderProbeResult | null): string {
   const volumes = Array.isArray(desired.volumes) ? desired.volumes : [];
   if (volumes.length) return `${volumes.length} volume${volumes.length === 1 ? "" : "s"} planned`;
   return displayStatus(asString(probe?.status) || "not_checked");
+}
+
+function raidControllerModels(probe: ProviderProbeResult | null): string {
+  const currentLayout = objectValue(probe?.current_layout);
+  const controllers = recordArray(currentLayout.controllers);
+  const models = controllers
+    .map((controller) => asString(controller.Model) || asString(controller.model) || asString(controller.Name) || asString(controller.name))
+    .filter(Boolean);
+  return models.length ? Array.from(new Set(models)).join(", ") : "Not discovered yet";
+}
+
+function servicePackSummary(summaries: FirmwareSummary[]): string {
+  const hpePaths = summaries.flatMap((summary) =>
+    summary.upgrade_paths.filter((path) => ["hpe_bios_version", "hpe_smart_array_firmware"].includes(path.component_id))
+  );
+  const fileNames = hpePaths
+    .map((path) => path.selected_file_name || path.package_name)
+    .filter((name): name is string => Boolean(name));
+  if (fileNames.length) return Array.from(new Set(fileNames)).join(", ");
+  const hasHpeRows = hpePaths.length || summaries.some((summary) => ["ilo", "raid"].includes(summary.device_id));
+  return hasHpeRows ? "No service pack selected" : "Scan needed";
 }
 
 function offsetSummary(address: LabAddressPlan): string {
@@ -1638,20 +2047,22 @@ function strongestStatus(statuses: string[]): string {
 
 function statusTone(status: string): string {
   const normalized = status || "not_checked";
-  if (["ready", "ok", "completed", "passed", "success", "current"].includes(normalized)) return "ready";
+  if (["accessible", "ready", "ok", "completed", "passed", "success", "current"].includes(normalized)) return "ready";
   if (["blocked", "failed", "critical", "hard_fail", "error"].includes(normalized)) return "blocked";
-  if (["warning", "partial", "manual_review", "cannot_verify", "stale"].includes(normalized)) return "warning";
+  if (["needs_console", "needs_credentials", "not_accessible", "warning", "partial", "manual_review", "cannot_verify", "stale"].includes(normalized)) return "warning";
   return "neutral";
 }
 
 function displayStatus(status: string): string {
   const labels: Record<string, string> = {
+    accessible: "Accessible",
     blocked: "Blocked",
     cannot_verify: "Needs review",
     completed: "Ready",
     configured: "Configured",
     current: "Current",
     failed: "Needs attention",
+    file_needed: "File needed",
     hard_fail: "Blocked",
     historical: "Previous proof",
     historical_artifact: "Previous proof",
@@ -1665,15 +2076,23 @@ function displayStatus(status: string): string {
     not_checked: "Not checked",
     not_configured: "Not set up yet",
     not_configured_yet: "Not set up yet",
+    not_accessible: "Not accessible",
+    not_setup: "Not set up",
     not_in_scope: "Not in this setup",
     ok: "Ready",
     partial: "Partly ready",
     passed: "Ready",
     ready: "Ready",
+    ready_to_upgrade: "Ready to upgrade",
+    scan_needed: "Scan needed",
     stale: "Old proof",
     success: "Ready",
     unavailable: "Not available",
-    warning: "Needs review"
+    upgrade_available: "Upgrade available",
+    warning: "Needs review",
+    needs_console: "Needs console",
+    needs_credentials: "Needs credentials",
+    needs_firmware_scan: "Needs scan"
   };
   return labels[status] ?? labelize(status || "not_checked");
 }
@@ -1726,6 +2145,10 @@ function asBoolean(value: unknown): boolean {
 
 function stringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.map((item) => asString(item)).filter(Boolean) : [];
+}
+
+function recordArray(value: unknown): Array<Record<string, unknown>> {
+  return Array.isArray(value) ? value.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object" && !Array.isArray(item)) : [];
 }
 
 function objectValue(value: unknown): Record<string, unknown> {

@@ -630,10 +630,20 @@ export type FirmwareVersionSummary = {
   status: string | null;
 };
 
+export type FirmwareFileCandidate = {
+  file_name: string;
+  file_path: string | null;
+  detected_vendor: string | null;
+  detected_product: string | null;
+  detected_version: string | null;
+  confidence: string;
+};
+
 export type FirmwareUpgradePath = {
   component_id: string;
   component_label: string;
   device_label: string;
+  equipment_label?: string | null;
   equipment_type: string;
   current_version: string | null;
   target_version: string | null;
@@ -641,6 +651,10 @@ export type FirmwareUpgradePath = {
   package_available: boolean;
   package_name: string | null;
   package_version: string | null;
+  selected_file_name?: string | null;
+  selected_file_path?: string | null;
+  selection_source?: string | null;
+  candidate_files?: FirmwareFileCandidate[];
   path_status: "current" | "direct" | "staged" | "blocked" | "unknown" | "manual_review" | string;
   required_intermediate_versions: string[];
   prechecks_required: string[];
@@ -1194,6 +1208,12 @@ export type MediaInventoryItem = {
   product_hints: string[];
   generation_hints: string[];
   version_hint: string | null;
+  file_name?: string | null;
+  file_path?: string | null;
+  detected_vendor?: string | null;
+  detected_product?: string | null;
+  detected_version?: string | null;
+  confidence?: string | null;
 };
 
 export type MediaInventory = {
