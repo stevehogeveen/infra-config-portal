@@ -9,8 +9,11 @@ PROVIDER_MODE ?= local-lab-readwrite
 PROVIDER_SMOKE_PROVIDERS ?=
 BACKEND_PORT ?= 8001
 FRONTEND_PORT ?= 5173
+BACKEND_HOST ?= 127.0.0.1
+FRONTEND_HOST ?= 127.0.0.1
+APP_PROXY_TARGET ?= http://127.0.0.1:$(BACKEND_PORT)
 
-.PHONY: backend-venv backend-run backend-test frontend-install frontend-run up down start stop restart status check codex-audit codex-task codex-next codex-resume test dev lint provider-smoke provider-smoke-ilo-readonly provider-smoke-ilo-local-lab provider-inventory-ilo-local-lab provider-lab-live-status provider-lab-refresh-live-state provider-lab-build-verification-live provider-lab-ilo-reachability provider-lab-ilo-authentication provider-lab-ilo-inventory provider-lab-ilo-readiness provider-lab-firmware-inventory provider-lab-firmware-cisco-inventory provider-lab-cisco-firmware-cisco-inventory provider-lab-firmware-compliance provider-lab-firmware-compliance-scope-cisco provider-lab-firmware-compliance-scope-hpe provider-lab-firmware-compliance-scope-full provider-lab-firmware-waiver-check provider-lab-hpe-storage-discovery provider-lab-hpe-raid-discovery provider-lab-hpe-raid-plan provider-lab-hpe-raid-debug provider-lab-hpe-raid-pending provider-lab-server-reset-for-raid provider-lab-hpe-raid-validate-after-reset provider-lab-esxi-install-readiness provider-lab-esxi-media-url provider-lab-esxi-insert-virtual-media provider-lab-esxi-eject-virtual-media provider-lab-esxi-one-time-boot provider-lab-esxi-reset-installer-boot provider-lab-esxi-detect-installer provider-lab-esxi-recover-management provider-lab-esxi-post-recovery-validation provider-lab-esxi-netapp-datastore-preview provider-lab-esxi-netapp-datastore-apply provider-lab-esxi-netapp-datastore-validate provider-lab-esxi-vm-deploy-preview provider-lab-esxi-vm-deploy-apply provider-lab-esxi-vm-deploy-validate provider-lab-cisco-console-ethernet-readiness provider-lab-cisco-console-recovery provider-lab-cisco-privilege-check provider-lab-cisco-vlan10-bootstrap-fix provider-lab-cisco-vlan10-bootstrap-apply provider-lab-full-rebuild-summary provider-lab-full-rebuild provider-lab-build-verification provider-lab-golden-state provider-lab-validation provider-lab-vcenter-netapp-readiness provider-lab-vcenter-netapp-datastore-plan provider-lab-vcenter-install-readiness provider-lab-vcenter-install-plan provider-lab-vcenter-install-preview provider-lab-toolchain-check provider-lab-hpe-raid-apply provider-lab-serial-console-discovery provider-lab-netapp-console-autodiscovery provider-lab-netapp-console-discovery provider-lab-netapp-console-read-state provider-lab-netapp-console-login-state provider-lab-netapp-live-state provider-lab-netapp-validate-setup provider-lab-netapp-nfs-vcenter-readiness netapp-real-readiness
+.PHONY: backend-venv backend-run backend-test frontend-install frontend-run up down start start-lan stop restart restart-lan status check codex-audit codex-task codex-next codex-resume test dev lint provider-smoke provider-smoke-ilo-readonly provider-smoke-ilo-local-lab provider-inventory-ilo-local-lab provider-lab-live-status provider-lab-refresh-live-state provider-lab-build-verification-live provider-lab-ilo-reachability provider-lab-ilo-authentication provider-lab-ilo-inventory provider-lab-ilo-readiness provider-lab-firmware-inventory provider-lab-firmware-cisco-inventory provider-lab-cisco-firmware-cisco-inventory provider-lab-firmware-compliance provider-lab-firmware-compliance-scope-cisco provider-lab-firmware-compliance-scope-hpe provider-lab-firmware-compliance-scope-full provider-lab-firmware-waiver-check provider-lab-hpe-storage-discovery provider-lab-hpe-raid-discovery provider-lab-hpe-raid-plan provider-lab-hpe-raid-debug provider-lab-hpe-raid-pending provider-lab-server-reset-for-raid provider-lab-hpe-raid-validate-after-reset provider-lab-esxi-install-readiness provider-lab-esxi-media-url provider-lab-esxi-insert-virtual-media provider-lab-esxi-eject-virtual-media provider-lab-esxi-one-time-boot provider-lab-esxi-reset-installer-boot provider-lab-esxi-detect-installer provider-lab-esxi-recover-management provider-lab-esxi-post-recovery-validation provider-lab-esxi-netapp-datastore-preview provider-lab-esxi-netapp-datastore-apply provider-lab-esxi-netapp-datastore-validate provider-lab-esxi-vm-deploy-preview provider-lab-esxi-vm-deploy-apply provider-lab-esxi-vm-deploy-validate provider-lab-cisco-console-ethernet-readiness provider-lab-cisco-console-recovery provider-lab-cisco-privilege-check provider-lab-cisco-vlan10-bootstrap-fix provider-lab-cisco-vlan10-bootstrap-apply provider-lab-full-rebuild-summary provider-lab-full-rebuild provider-lab-build-verification provider-lab-golden-state provider-lab-validation provider-lab-vcenter-netapp-readiness provider-lab-vcenter-netapp-datastore-plan provider-lab-vcenter-install-readiness provider-lab-vcenter-install-plan provider-lab-vcenter-install-preview provider-lab-toolchain-check provider-lab-hpe-raid-apply provider-lab-serial-console-discovery provider-lab-netapp-console-autodiscovery provider-lab-netapp-console-discovery provider-lab-netapp-console-read-state provider-lab-netapp-console-login-state provider-lab-netapp-live-state provider-lab-netapp-validate-setup provider-lab-netapp-nfs-vcenter-readiness netapp-real-readiness
 .PHONY: provider-lab-netapp-setup-baseline provider-lab-netapp-setup-plan provider-lab-netapp-setup-preview provider-lab-netapp-setup-apply provider-lab-netapp-post-setup-validation provider-lab-netapp-address-plan provider-lab-netapp-address-preview provider-lab-netapp-address-apply provider-lab-netapp-address-validate provider-lab-netapp-ha-node-diagnose provider-lab-netapp-factory-reset-preview provider-lab-netapp-factory-reset-apply provider-lab-netapp-factory-reset-validate provider-lab-netapp-nfs-setup-preview provider-lab-netapp-nfs-setup-apply provider-lab-netapp-nfs-setup-validate provider-lab-netapp-ontap-upgrade-inventory provider-lab-netapp-ontap-upgrade-plan provider-lab-netapp-ontap-upgrade-validate provider-lab-netapp-ontap-upgrade-apply
 .PHONY: provider-lab-vcenter-attach-esxi-preview provider-lab-vcenter-attach-esxi-apply provider-lab-vcenter-post-attach-validation
 
@@ -20,7 +23,7 @@ backend-venv:
 	$(PIP) install -r $(BACKEND_DIR)/requirements.txt
 
 backend-run:
-	cd $(BACKEND_DIR) && .venv/bin/uvicorn app.main:app --reload --host 127.0.0.1 --port $(BACKEND_PORT)
+	cd $(BACKEND_DIR) && .venv/bin/uvicorn app.main:app --reload --host $(BACKEND_HOST) --port $(BACKEND_PORT)
 
 backend-test:
 	cd $(BACKEND_DIR) && PROVIDER_MODE=mock .venv/bin/pytest -q
@@ -29,7 +32,7 @@ frontend-install:
 	cd $(FRONTEND_DIR) && npm install
 
 frontend-run:
-	cd $(FRONTEND_DIR) && npm run dev -- --host 127.0.0.1 --port $(FRONTEND_PORT)
+	cd $(FRONTEND_DIR) && VITE_API_BASE_URL="" APP_PROXY_TARGET="$(APP_PROXY_TARGET)" npm run dev -- --host $(FRONTEND_HOST) --port $(FRONTEND_PORT)
 
 up:
 	docker compose up --build
@@ -40,11 +43,17 @@ down:
 start:
 	$(REPO_ROOT)/runit start
 
+start-lan:
+	FRONTEND_HOST=0.0.0.0 $(REPO_ROOT)/runit start
+
 stop:
 	$(REPO_ROOT)/runit stop
 
 restart:
 	$(REPO_ROOT)/runit restart
+
+restart-lan:
+	FRONTEND_HOST=0.0.0.0 $(REPO_ROOT)/runit restart
 
 status check:
 	$(REPO_ROOT)/runit status

@@ -9,6 +9,11 @@ RUN_DIR="${ROOT_DIR}/.local/run"
 LOG_DIR="${ROOT_DIR}/.local/log"
 BACKEND_PORT="${BACKEND_PORT:-8001}"
 FRONTEND_PORT="${FRONTEND_PORT:-5173}"
+BACKEND_HOST="${BACKEND_HOST:-127.0.0.1}"
+FRONTEND_HOST="${FRONTEND_HOST:-127.0.0.1}"
+PUBLIC_APP_HOST="${PUBLIC_APP_HOST:-}"
+APP_PROXY_TARGET="${APP_PROXY_TARGET:-http://127.0.0.1:${BACKEND_PORT}}"
+FRONTEND_API_BASE_URL="${FRONTEND_API_BASE_URL:-}"
 BACKEND_PID_FILE="${RUN_DIR}/infra-config-portal-backend.pid"
 FRONTEND_PID_FILE="${RUN_DIR}/infra-config-portal-frontend.pid"
 APP_MODE_ENV_FILE="${APP_MODE_ENV_FILE:-${ROOT_DIR}/.local/app-mode.env}"
@@ -27,6 +32,14 @@ Safe local app workflow:
 Ports:
   Backend:  ${BACKEND_PORT}
   Frontend: ${FRONTEND_PORT}
+
+Bind hosts:
+  Backend:  ${BACKEND_HOST}
+  Frontend: ${FRONTEND_HOST}
+
+LAN access:
+  FRONTEND_HOST=0.0.0.0 ./runit restart
+  PUBLIC_APP_HOST=<this-host-lan-ip> FRONTEND_HOST=0.0.0.0 ./runit restart
 EOF
 }
 
@@ -37,6 +50,31 @@ die() {
 
 log() {
   echo "$*"
+}
+
+default_public_host() {
+  if command -v ip >/dev/null 2>&1; then
+    ip -4 -o addr show scope global 2>/dev/null \
+      | awk '{ split($4, addr, "/"); print addr[1]; exit }'
+    return 0
+  fi
+  hostname -I 2>/dev/null | awk '{ print $1; exit }'
+}
+
+display_host_for_bind() {
+  local bind_host="$1"
+  if [[ -n "${PUBLIC_APP_HOST}" ]]; then
+    printf '%s\n' "${PUBLIC_APP_HOST}"
+    return 0
+  fi
+  case "${bind_host}" in
+    0.0.0.0|::)
+      default_public_host
+      ;;
+    *)
+      printf '%s\n' "${bind_host}"
+      ;;
+  esac
 }
 
 load_provider_mode_config() {
@@ -268,15 +306,21 @@ start_app() {
   run_smoke
   log "Starting backend with PROVIDER_MODE=${PROVIDER_MODE:-local-lab-readwrite}"
   start_service "backend" "${BACKEND_PID_FILE}" is_backend_pid "${BACKEND_DIR}" "${LOG_DIR}/backend.log" \
-    "${BACKEND_DIR}/.venv/bin/uvicorn" app.main:app --reload --host 127.0.0.1 --port "${BACKEND_PORT}"
+    "${BACKEND_DIR}/.venv/bin/uvicorn" app.main:app --reload --host "${BACKEND_HOST}" --port "${BACKEND_PORT}"
   start_service "frontend" "${FRONTEND_PID_FILE}" is_frontend_pid "${FRONTEND_DIR}" "${LOG_DIR}/frontend.log" \
-    env "VITE_API_BASE_URL=http://127.0.0.1:${BACKEND_PORT}" npm run dev -- --host 127.0.0.1 --port "${FRONTEND_PORT}"
+    env "VITE_API_BASE_URL=${FRONTEND_API_BASE_URL}" "APP_PROXY_TARGET=${APP_PROXY_TARGET}" \
+      npm run dev -- --host "${FRONTEND_HOST}" --port "${FRONTEND_PORT}"
+
+  local frontend_open_host backend_open_host
+  frontend_open_host="$(display_host_for_bind "${FRONTEND_HOST}")"
+  backend_open_host="$(display_host_for_bind "${BACKEND_HOST}")"
 
   log
   log "Open:"
-  log "  Frontend: http://127.0.0.1:${FRONTEND_PORT}"
-  log "  Backend:  http://127.0.0.1:${BACKEND_PORT}"
-  log "  API docs: http://127.0.0.1:${BACKEND_PORT}/docs"
+  log "  Frontend: http://${frontend_open_host}:${FRONTEND_PORT}"
+  log "  Backend:  http://${backend_open_host}:${BACKEND_PORT}"
+  log "  API docs: http://${backend_open_host}:${BACKEND_PORT}/docs"
+  log "  Frontend proxy target: ${APP_PROXY_TARGET}"
 }
 
 stop_app() {

@@ -122,6 +122,21 @@ make frontend-run
 The Vite dev server runs at `http://127.0.0.1:5173` and proxies API requests
 to `http://127.0.0.1:8001`.
 
+For LAN access from another computer on the same trusted lab network, bind only
+the frontend to all interfaces and keep the backend loopback-protected behind
+the Vite proxy:
+
+```bash
+cd /home/administrator/infra-config-portal
+make app-restart-lan
+```
+
+Then open `http://<this-host-lan-ip>:5173` from the other computer. If the
+auto-detected address is not the one you want shown in the start output, pass
+`PUBLIC_APP_HOST=<this-host-lan-ip>`. Expose the backend itself only when you
+explicitly need direct API access on a trusted lab network:
+`BACKEND_HOST=0.0.0.0 FRONTEND_HOST=0.0.0.0 make app-restart`.
+
 The VM request list shows filterable request status, ownership, readiness, and
 blocked indicators. The request detail view shows readiness, blockers,
 lifecycle actions, approval, mock execution, cancellation, request-scoped audit
