@@ -205,161 +205,121 @@ test.beforeEach(async ({ page }) => {
   await installApiMocks(page);
 });
 
-test("renders Run Check control for a safe read-only action and invokes the safe runner", async ({ page }) => {
-  await page.goto("/control-center?section=action-catalog&action=build-verification.run-full");
+test("renders the new top-level navigation and pages", async ({ page }) => {
+  await page.goto("/overview");
 
-  await expect(page.getByRole("heading", { name: "Control Center" })).toBeVisible();
-  const safeRow = page.getByRole("row", { name: /Run Full Verification/ });
-  const runButton = safeRow.getByRole("button", { name: "Run Verification" });
-  await expect(runButton).toBeVisible();
+  await expect(page.locator("nav .nav-item-label")).toHaveText([
+    "Overview",
+    "Network",
+    "Server",
+    "Storage",
+    "Virtualization",
+    "Firmware Upgrades",
+    "Validation",
+    "Settings"
+  ]);
+
+  await expect(page.getByRole("heading", { name: "Lab overview" })).toBeVisible();
+  await page.goto("/network");
+  await expect(page.getByRole("heading", { name: "Network" })).toBeVisible();
+  await page.goto("/server");
+  await expect(page.getByRole("heading", { name: "Server" })).toBeVisible();
+  await page.goto("/storage");
+  await expect(page.getByRole("heading", { name: "Storage" })).toBeVisible();
+  await page.goto("/virtualization");
+  await expect(page.getByRole("heading", { name: "Virtualization" })).toBeVisible();
+  await page.goto("/firmware-upgrades");
+  await expect(page.getByRole("heading", { name: "Firmware upgrades" })).toBeVisible();
+  await page.goto("/validation");
+  await expect(page.getByRole("heading", { name: "Validation", exact: true })).toBeVisible();
+  await page.goto("/settings");
+  await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
+
+  await page.goto("/control-center");
+  await expect(page).toHaveURL(/\/overview/);
+});
+
+test("overview inventory renders the lab components", async ({ page }) => {
+  await page.goto("/overview");
+
+  await expect(page.getByRole("heading", { name: "Hardware and software" })).toBeVisible();
+  await expect(page.getByRole("row", { name: /Cisco switch/ })).toBeVisible();
+  await expect(page.getByRole("row", { name: /HPE iLO/ })).toBeVisible();
+  await expect(page.getByRole("row", { name: /ESXi host/ })).toBeVisible();
+  await expect(page.getByRole("row", { name: /NetApp ONTAP/ })).toBeVisible();
+  await expect(page.getByRole("row", { name: /vCenter/ })).toBeVisible();
+  await expect(page.getByText("https://192.168.1.206/sdk").first()).toBeVisible();
+  await expect(page.getByText("netapp_nfs_ds01").first()).toBeVisible();
+});
+
+test("each domain page exposes relevant run test or apply buttons", async ({ page }) => {
+  const pages = [
+    ["/overview", /Refresh Inventory|Generate Handoff/],
+    ["/network", /Test Cisco Access|Apply Network Config|Save Config|Scan Firmware/],
+    ["/server", /Test iLO|Test ESXi|Recover ESXi|Validate RAID|Reboot Server/],
+    ["/storage", /Test NetApp|Validate NFS|Mount Datastore|Refresh ONTAP/],
+    ["/virtualization", /Test vCenter|Attach ESXi|Validate Datastore|Deploy VM|Validate VM Inventory/],
+    ["/firmware-upgrades", /Scan All Firmware|Review Upgrade Path|Apply Upgrade/],
+    ["/validation", /Run Validation|Generate Handoff|Refresh Evidence/],
+    ["/settings", /Save Setup|Test Credentials|Refresh Consoles/]
+  ] as const;
+
+  for (const [path, buttonName] of pages) {
+    await page.goto(path);
+    await expect(page.getByRole("button", { name: buttonName }).first()).toBeVisible();
+  }
+});
+
+test("advanced proof is collapsed and operator labels hide raw statuses", async ({ page }) => {
+  await page.goto("/validation");
+
+  const advanced = page.locator("details.advanced-drawer").first();
+  await expect(advanced).not.toHaveAttribute("open", "");
+  await expect(page.getByText("Golden State", { exact: true })).toBeVisible();
+  await expect(page.getByText("Expected working lab state.").first()).toBeVisible();
+  await expect(page.getByText("Different from expected")).toBeVisible();
+  await expect(page.getByText("Artifact")).toHaveCount(0);
+  await expect(page.getByText("manual_review")).toHaveCount(0);
+  await expect(page.getByText("not_configured_yet")).toHaveCount(0);
+
+  await page.goto("/settings");
+  await expect(page.getByText("Real lab").first()).toBeVisible();
+  await expect(page.getByText("local-lab-readwrite")).toHaveCount(0);
+});
+
+test("firmware table renders upgrade path states", async ({ page }) => {
+  await page.goto("/firmware-upgrades");
+
+  const ciscoRow = page.getByRole("row", { name: /Cisco/ });
+  await expect(ciscoRow).toContainText("17.15.05");
+  await expect(ciscoRow).toContainText("Needs review");
+  await expect(ciscoRow).toContainText("cisco-ios-xe-firmware.bin");
+  await expect(page.getByRole("button", { name: "Review Upgrade Path" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Apply Upgrade" })).toBeDisabled();
+});
+
+test("settings uses active lab setup values and never renders secret material", async ({ page }) => {
+  await page.goto("/settings");
+
+  await expect(page.getByText("Runtime Lab").first()).toBeVisible();
+  await expect(page.getByText("192.168.1.201").first()).toBeVisible();
+  await expect(page.getByText("192.168.1.204").first()).toBeVisible();
+  await expect(page.getByText("192.168.1.203").first()).toBeVisible();
+  await expect(page.getByText("192.168.1.220").first()).toBeVisible();
+  await expect(page.getByText("Configured or missing only")).toBeVisible();
+  await expect(page.getByText("Secret values are hidden")).toHaveCount(0);
+  await expect(page.locator("input[type='password']")).toHaveCount(0);
+});
+
+test("safe read-only page action still invokes the workflow runner", async ({ page }) => {
+  await page.goto("/validation");
 
   const runResponse = page.waitForResponse((response) =>
     response.url().includes("/api/v1/workflows/actions/build-verification.run-full/run")
   );
-  await runButton.click();
+  await page.getByRole("button", { name: "Run Validation" }).click();
   await expect((await runResponse).ok()).toBeTruthy();
-  await expect(page.getByRole("button", { name: "Run Verification" }).first()).toBeVisible();
-});
-
-test("renders guarded confirmation controls for a destructive action", async ({ page }) => {
-  await page.goto("/control-center?section=action-catalog&action=raid.apply");
-
-  const destructiveDetail = page.locator(".compact-action-detail");
-  await expect(destructiveDetail).toContainText("Apply");
-  const applyButton = destructiveDetail.getByRole("button", { name: "Apply", exact: true });
-  await expect(applyButton).toBeVisible();
-  await applyButton.click();
-  const dialog = page.getByRole("dialog", { name: /Apply confirmation/ });
-  await expect(dialog).toBeVisible();
-  await expect(dialog.getByRole("button", { name: "Apply" })).toBeDisabled();
-  await dialog.getByRole("textbox", { name: "Confirmation" }).fill("APPLY HPE RAID PLAN");
-  await dialog.getByLabel("HPE_RAID_ALLOW_DESTRUCTIVE=true").check();
-  await expect(dialog.getByRole("button", { name: "Apply" })).toBeEnabled();
-});
-
-test("keeps Control Center tabs reachable in normal mode", async ({ page }) => {
-  await page.goto("/control-center?section=cisco");
-
-  await expect(page.getByRole("heading", { name: "Control Center" })).toBeVisible();
-  await expect(page.getByRole("tab", { name: /Lab Setup/ })).toBeVisible();
-  await expect(page.getByRole("tab", { name: /Cisco Control/ })).toBeVisible();
-  await expect(page.getByRole("tab", { name: /HPE \/ iLO Control/ })).toBeVisible();
-  await expect(page.getByRole("tab", { name: /RAID Control/ })).toBeVisible();
-  await expect(page.getByRole("tab", { name: /Firmware \/ Upgrade/ })).toBeVisible();
-  await expect(page.getByRole("tab", { name: /Verification/ })).toBeVisible();
-  await expect(page.getByRole("tab", { name: /Reports/ })).toBeVisible();
-  await expect(page.getByRole("tab", { name: /Action Catalog/ })).toBeVisible();
-  await expect(page.getByText("Setup and upgrade workbench")).toHaveCount(0);
-
-  await page.getByRole("tab", { name: /Action Catalog/ }).click();
-  await expect(page.getByRole("tab", { name: /Action Catalog/ })).toHaveAttribute("aria-selected", "true");
-  await expect(page.getByText("Run Full Verification").first()).toBeVisible();
-
-  await page.getByRole("tab", { name: /Reports/ }).click();
-  await expect(page.getByRole("tab", { name: /Reports/ })).toHaveAttribute("aria-selected", "true");
-});
-
-test("uses merged navigation and dashboard lab setup selector", async ({ page }) => {
-  await page.goto("/verification");
-
-  await expect(page.getByRole("heading", { name: "Validation & Reports" })).toBeVisible();
-  await expect(page.locator("nav .nav-item-label")).toHaveText([
-    "Dashboard",
-    "Lab Setup",
-    "Hardware",
-    "Control Center",
-    "Firmware Upgrades",
-    "Validation & Reports",
-    "Settings"
-  ]);
-  await expect(page.locator("nav .nav-item-label", { hasText: /^Verification$/ })).toHaveCount(0);
-  await expect(page.locator("nav .nav-item-label", { hasText: /^Lab Validation$/ })).toHaveCount(0);
-  await expect(page.locator("nav .nav-item-label", { hasText: /^Reports$/ })).toHaveCount(0);
-
-  await page.goto("/dashboard");
-  await expect(page.getByRole("combobox", { name: "Active lab setup" })).toBeVisible();
-  await expect(page.getByText("Runtime Lab").first()).toBeVisible();
-  await expect(page.getByText("192.168.1.201").first()).toBeVisible();
-});
-
-test("renders standard control layout with collapsed evidence and seeded options", async ({ page }) => {
-  await page.goto("/control-center?section=netapp");
-
-  await expect(page.getByRole("heading", { name: "Control Center" })).toBeVisible();
-  await expect(page.getByText("Firmware / Software")).toBeVisible();
-  await expect(page.getByText("Not configured: Not configured yet.")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Scan Firmware" })).toBeDisabled();
-  await expect(page.getByText("Scan disabled: Not configured yet")).toBeVisible();
-  await expect(page.getByText("Access").first()).toBeVisible();
-  await expect(page.getByText("Cluster management").first()).toBeVisible();
-  await expect(page.getByText("192.168.1.220").first()).toBeVisible();
-  await expect(page.getByText("UID / Username Field")).toBeVisible();
-  await expect(page.getByText("NETAPP_USERNAME")).toBeVisible();
-  await expect(page.getByText("Actions / Configs")).toBeVisible();
-  await expect(page.getByText("artifacts/codex-runs/netapp-live-state-report.md").first()).toBeHidden();
-  await expect(page.locator("input[value='topsecret-password-ref']")).toBeHidden();
-
-  await page.locator("details.actions-config-dropdown > summary").click();
-  await expect(page.getByText("Configure NetApp NFS")).toBeVisible();
-  await expect(page.getByText("Choose Storage Protocol")).toBeVisible();
-  await expect(page.getByText("Upgrade Apply", { exact: true })).toBeVisible();
-
-  await page.locator("details.standard-evidence-details > summary").click();
-  await expect(page.getByText("artifacts/codex-runs/netapp-live-state-report.md").first()).toBeVisible();
-
-  await page.getByRole("link", { name: "Open Firmware Upgrades" }).click();
-  await expect(page).toHaveURL(/\/firmware\?device=netapp/);
-  await expect(page.getByRole("heading", { name: "Firmware Upgrades" })).toBeVisible();
-  await expect(page.getByRole("combobox", { name: "Focused device" })).toHaveValue("netapp");
-});
-
-test("renders Firmware Upgrades as the global upgrade overview", async ({ page }) => {
-  await page.goto("/firmware?device=cisco");
-
-  await expect(page.getByRole("heading", { name: "Firmware Upgrades" })).toBeVisible();
-  await expect(page.getByRole("combobox", { name: "Focused device" })).toHaveValue("cisco");
-  await expect(page.locator(".section-switch button")).toHaveCount(2);
-  await expect(page.getByRole("tab", { name: /Evidence/ })).toBeVisible();
-  await expect(page.getByText("Version you have")).toBeVisible();
-  await expect(page.getByText("Version you need")).toBeVisible();
-  const ciscoRow = page.getByRole("row", { name: /Cisco IOS XE: 17\.15\.05/ });
-  await expect(ciscoRow).toBeVisible();
-  await expect(ciscoRow.getByText("Cisco").first()).toBeVisible();
-  await expect(ciscoRow.getByText("17.15.05").first()).toBeVisible();
-  await expect(ciscoRow.getByText("cisco-ios-xe-firmware.bin")).toBeVisible();
-  await expect(ciscoRow.getByText("ROMMON baseline missing/manual review", { exact: true })).toBeVisible();
-  await expect(ciscoRow.getByRole("button", { name: "Plan Upgrade" })).toBeEnabled();
-  await expect(ciscoRow.getByRole("button", { name: "Upgrade", exact: true })).toHaveCount(0);
-  const configureButton = ciscoRow.getByRole("button", { name: "Configure", exact: true });
-  await expect(configureButton).toBeEnabled();
-  await expect(ciscoRow.getByText("No guarded runner is implemented for this action yet.")).toHaveCount(0);
-  await configureButton.click();
-  const dialog = page.getByRole("dialog", { name: /Apply Bootstrap confirmation/ });
-  await expect(dialog).toBeVisible();
-  await expect(dialog.getByRole("textbox", { name: "Confirmation" })).toHaveAttribute(
-    "placeholder",
-    "APPLY CISCO CONSOLE BOOTSTRAP 192.168.1.204"
-  );
-  await dialog.getByRole("button", { name: "Close guarded action" }).click();
-  await expect(page.getByText("iLO firmware needs a live inventory check.")).toHaveCount(0);
-});
-
-test("shows real guarded controls in the Control Center firmware tab", async ({ page }) => {
-  await page.goto("/control-center?section=firmware-upgrade");
-
-  const guardedPanel = page.locator(".firmware-guarded-controls");
-  await expect(guardedPanel).toBeVisible();
-  await expect(guardedPanel.getByText("Cisco Configure")).toBeVisible();
-  await expect(guardedPanel.getByText("iLO Virtual Media")).toBeVisible();
-  await expect(guardedPanel.getByText("RAID Apply")).toBeVisible();
-  await expect(guardedPanel.getByText("ESXi Rebuild")).toBeVisible();
-  await expect(guardedPanel.getByText("NetApp Setup")).toBeVisible();
-  await expect(guardedPanel.getByRole("button", { name: "Configure", exact: true })).toBeEnabled();
-  await expect(guardedPanel.getByRole("button", { name: "Apply RAID", exact: true })).toBeEnabled();
-  await expect(guardedPanel.getByRole("button", { name: "Rebuild", exact: true })).toBeEnabled();
-
-  await guardedPanel.getByRole("button", { name: "Configure", exact: true }).click();
-  await expect(page.getByRole("dialog", { name: /Apply Bootstrap confirmation/ })).toBeVisible();
+  await expect(page.getByText(/Run Full Verification:/)).toBeVisible();
 });
 
 async function installApiMocks(page: Page) {
@@ -401,25 +361,31 @@ async function installApiMocks(page: Page) {
       return json(route, workflowStages());
     }
     if (url.pathname === "/api/v1/workflows/actions") {
-      return json(route, [
-        safeAction,
-        destructiveAction,
-        netappSetupPreviewAction,
-        netappNfsReadinessAction,
-        ciscoValidationAction,
-        ciscoFirmwareAction,
-        ciscoBootstrapAction,
-        iloVirtualMediaAction,
-        esxiRebuildAction,
-        netappFirmwareAction,
-        netappSetupApplyAction,
-        firmwareUpgradePlanAction,
-        firmwareUpgradeApplyPlaceholderAction,
-        netappOntapUpgradeApplyAction
-      ]);
+      return json(route, workflowActions());
     }
     if (url.pathname === "/api/v1/control/actions") {
       return json(route, controlCatalog());
+    }
+    if (url.pathname === "/api/v1/providers/status") {
+      return json(route, providerStatuses());
+    }
+    if (url.pathname === "/api/v1/providers/cisco/setup-readiness") {
+      return json(route, ciscoSetupReadiness());
+    }
+    if (url.pathname === "/api/v1/providers/ilo-redfish/hpe-raid-plan-preview") {
+      return json(route, hpeRaidPlanPreview());
+    }
+    if (url.pathname === "/api/v1/providers/ilo-redfish/esxi-install-readiness") {
+      return json(route, esxiInstallReadiness());
+    }
+    if (url.pathname === "/api/v1/providers/netapp-ontap/plan-preview") {
+      return json(route, netappPlanPreview());
+    }
+    if (url.pathname === "/api/v1/providers/netapp-ontap/console-readiness") {
+      return json(route, netappConsoleReadiness());
+    }
+    if (url.pathname === "/api/v1/providers/netapp-ontap/nfs-vcenter-readiness") {
+      return json(route, netappNfsVcenterReadiness());
     }
     if (url.pathname === "/api/v1/lab/build-verification") {
       return json(route, buildVerification());
@@ -427,8 +393,17 @@ async function installApiMocks(page: Page) {
     if (url.pathname === "/api/v1/lab/validation") {
       return json(route, labValidation());
     }
+    if (url.pathname === "/api/v1/lab/validation/handoff") {
+      return json(route, labValidation());
+    }
     if (url.pathname === "/api/v1/lab/vcenter-netapp/readiness") {
-      return json(route, { status: "not_checked" });
+      return json(route, vcenterNetappReadiness());
+    }
+    if (url.pathname === "/api/v1/lab/vcenter/install-readiness") {
+      return json(route, vcenterInstallReadiness());
+    }
+    if (url.pathname === "/api/v1/lab/vcenter/post-attach-validation") {
+      return json(route, vcenterPostAttachValidation());
     }
     if (url.pathname === "/api/v1/lab/firmware-inventory") {
       return json(route, firmwareInventory());
@@ -548,6 +523,77 @@ function workflowAction(overrides: Record<string, unknown>) {
   };
 }
 
+function workflowActions() {
+  return [
+    safeAction,
+    destructiveAction,
+    netappSetupPreviewAction,
+    netappNfsReadinessAction,
+    ciscoValidationAction,
+    ciscoFirmwareAction,
+    ciscoBootstrapAction,
+    iloVirtualMediaAction,
+    esxiRebuildAction,
+    netappFirmwareAction,
+    netappSetupApplyAction,
+    firmwareUpgradePlanAction,
+    firmwareUpgradeApplyPlaceholderAction,
+    netappOntapUpgradeApplyAction,
+    readAction("cisco.setup-readiness", "Test Cisco Access", "cisco", "cisco"),
+    readAction("cisco.discover-console", "Refresh Cisco Console", "cisco", "cisco"),
+    readAction("ilo.reachability", "Test iLO", "ilo", "ilo-redfish"),
+    readAction("ilo.auth", "Test iLO Auth", "ilo", "ilo-redfish"),
+    readAction("esxi.management-validation", "Test ESXi", "esxi", "esxi"),
+    readAction("esxi.ssh-api-check", "Test ESXi SSH/API", "esxi", "esxi"),
+    readAction("raid.validate", "Validate RAID", "raid", "ilo-redfish"),
+    readAction("netapp.live-state", "Test NetApp", "netapp", "netapp-ontap"),
+    readAction("netapp.nfs-setup-validate", "Validate NFS", "netapp", "netapp-ontap"),
+    readAction("netapp.console-autodiscovery", "Refresh NetApp Consoles", "netapp", "netapp-ontap"),
+    readAction("netapp.component-firmware-inventory", "Refresh ONTAP", "netapp", "netapp-ontap"),
+    readAction("vcenter-netapp.readiness", "Test vCenter", "vcenter", "vcenter"),
+    readAction("vcenter.post-attach-validation", "Validate Datastore", "vcenter", "vcenter"),
+    readAction("esxi.vm-deploy-validate", "Validate VM Inventory", "esxi", "esxi"),
+    readAction("firmware.inventory", "Scan All Firmware", "firmware-upgrade", "firmware"),
+    readAction("lab-validation.summary", "Refresh Evidence", "validation", "lab-validation"),
+    writeAction("cisco.save-config", "Save Config", "cisco", "cisco"),
+    writeAction("esxi.recover-management", "Recover ESXi", "esxi", "esxi"),
+    writeAction("esxi.netapp-datastore-apply", "Mount Datastore", "esxi", "esxi"),
+    writeAction("vcenter.attach-esxi-apply", "Attach ESXi", "vcenter", "vcenter"),
+    writeAction("esxi.vm-deploy-apply", "Deploy VM", "esxi", "esxi")
+  ];
+}
+
+function readAction(action_id: string, label: string, stage: string, provider: string) {
+  return workflowAction({
+    action_id,
+    category: "verify",
+    current_availability: "available",
+    label,
+    mode: "read_only",
+    provider,
+    stage,
+    stage_label: label,
+    ui_run_supported: true
+  });
+}
+
+function writeAction(action_id: string, label: string, stage: string, provider: string) {
+  return workflowAction({
+    action_id,
+    category: "apply",
+    current_availability: "manual_command_required",
+    guarded_run_supported: true,
+    label,
+    mode: "write",
+    provider,
+    required_confirmations: [`CONFIRM ${label.toUpperCase()}`],
+    stage,
+    stage_label: label,
+    ui_run_supported: false,
+    ui_run_blockers: ["guarded workflow requires confirmation"]
+  });
+}
+
 function workflowActionRun() {
   return {
     action_id: "build-verification.run-full",
@@ -631,58 +677,281 @@ function buildVerification() {
   return {
     artifacts: { report: "artifacts/codex-runs/build-verification-report.md" },
     blockers: [],
-    certification_state: "not_checked",
+    certification_state: "ready",
     checked_at: checkedAt,
-    message: "Verification has not run in this mocked UI test.",
-    next_safe_action: "Run validation after setup steps are ready.",
-    status: "not_checked",
+    message: "Build verification is ready in this mocked UI test.",
+    next_safe_action: "Generate handoff.",
+    status: "ready",
+    warnings: []
+  };
+}
+
+function providerStatuses() {
+  return [
+    providerStatus("cisco-console", "Cisco", "network", "ready"),
+    providerStatus("ilo-redfish", "HPE iLO", "server", "ready"),
+    providerStatus("esxi-readonly", "ESXi", "virtualization", "ready"),
+    providerStatus("netapp-ontap", "NetApp ONTAP", "storage", "ready")
+  ];
+}
+
+function providerStatus(id: string, name: string, kind: string, status: string) {
+  return {
+    blockers: [],
+    capabilities: [],
+    checked_at: checkedAt,
+    configuration: {},
+    disabled_actions: [],
+    discovery: null,
+    evidence_artifacts: [],
+    freshness: "live",
+    id,
+    is_current: true,
+    is_operator_visible: true,
+    kind,
+    last_probe_result: null,
+    last_probe_time: checkedAt,
+    message: `${name} is ready.`,
+    mode: "local-lab-readwrite",
+    name,
+    recheck_command: null,
+    safe_actions: [],
+    source_type: "live_cached",
+    stale_after_seconds: 86400,
+    status,
+    ttl_seconds: null,
+    warnings: []
+  };
+}
+
+function ciscoSetupReadiness() {
+  return {
+    blockers: [],
+    bootstrap_preview: { apply_enabled: false, commands_redacted: true, missing_requirements: [], redacted_command_summary: [], serial_writes_attempted: false, summary: [] },
+    console: {
+      baud: 9600,
+      candidate_count: 1,
+      effective_path: "/dev/ttyUSB0",
+      fallback_candidate_count: 0,
+      last_prompt_readiness: {},
+      read_timing: {},
+      recommended_path: "/dev/ttyUSB0",
+      safe_next_action: "Test Cisco access.",
+      selected_path: "/dev/ttyUSB0",
+      selection_source: "discovered",
+      stable_candidate_count: 1,
+      status: "ready"
+    },
+    disabled_actions: [],
+    ethernet_readiness: {},
+    management_configured: true,
+    next_safe_action: "Cisco access is ready.",
+    password_recovery: {},
+    phase: "ready",
+    planned_management_ip: "192.168.1.204",
+    provider_id: "cisco",
+    real_lab_run: { prompt_state: "privileged-exec" },
+    setup_wizard_plan: null,
+    ssh_scp_readiness: { apply_enabled: false, planned_only: false, summary: "SSH and SCP are ready." },
+    state_boundaries: {},
+    warnings: []
+  };
+}
+
+function hpeRaidPlanPreview() {
+  return {
+    apply_enabled: false,
+    blockers: [],
+    checked_at: checkedAt,
+    current_layout: {},
+    desired_intent: { volumes: [{ name: "esxi-os", purpose: "ESXi boot", raid_level: "RAID1" }, { name: "datastore", purpose: "VM datastore", raid_level: "RAID6" }] },
+    destructive_actions_enabled: false,
+    destructive_actions_requested: false,
+    message: "RAID layout is ready.",
+    planned_layout: {},
+    provider_id: "ilo-redfish",
+    status: "ready",
+    warnings: []
+  };
+}
+
+function esxiInstallReadiness() {
+  return {
+    blockers: [],
+    checked_at: checkedAt,
+    message: "ESXi target is ready.",
+    next_safe_action: "Validate ESXi after any server change.",
+    provider_id: "esxi",
+    status: "ready",
+    warnings: []
+  };
+}
+
+function netappPlanPreview() {
+  return {
+    apply_enabled: false,
+    blockers: [],
+    checked_at: checkedAt,
+    message: "NetApp and NFS are ready.",
+    next_safe_action: "Validate NFS handoff.",
+    provider_id: "netapp-ontap",
+    status: "ready",
+    warnings: []
+  };
+}
+
+function netappConsoleReadiness() {
+  return {
+    blockers: [],
+    checked_at: checkedAt,
+    message: "NetApp console is ready.",
+    provider_id: "netapp-ontap",
+    runtime_state: { console: "/dev/ttyUSB1" },
+    status: "ready",
+    warnings: []
+  };
+}
+
+function netappNfsVcenterReadiness() {
+  return {
+    apply_enabled: false,
+    blockers: [],
+    checked_at: checkedAt,
+    message: "NetApp NFS datastore is ready.",
+    next_safe_action: "Mount datastore only through guarded apply.",
+    planned_nfs: {
+      datastore_name: "netapp_nfs_ds01",
+      export_policy: "esxi_ro_rw",
+      volume: "esxi_datastore_01"
+    },
+    provider_id: "netapp-ontap",
+    status: "ready",
+    warnings: []
+  };
+}
+
+function vcenterNetappReadiness() {
+  return {
+    action: "vcenter-netapp-readiness",
+    apply_enabled: false,
+    blockers: [],
+    checked_at: checkedAt,
+    checks: {
+      datastore_mounted: { status: "ready", visible: true },
+      netapp_datastore_visible: { status: "ready", visible: true },
+      vm_inventory_visible: { status: "ready", visible: true }
+    },
+    credential_state: {
+      netapp_credentials_configured: true,
+      vcenter_credentials_configured: true,
+      vcenter_host_configured: true
+    },
+    current_state: { vcenter_version: "8.0.3" },
+    freshness: "live",
+    message: "vCenter is deployed, ESXi is attached, and netapp_nfs_ds01 is visible through vCenter.",
+    next_safe_action: "No vCenter-NetApp datastore action required.",
+    provider_id: "vcenter-netapp",
+    source_type: "live_cached",
+    status: "ready",
+    targets: {
+      datastore_name: "netapp_nfs_ds01",
+      esxi_management: "192.168.1.203",
+      netapp_cluster_management: "192.168.1.220",
+      netapp_nfs_lif: "192.168.1.230",
+      vcenter: "https://192.168.1.206/sdk",
+      vcenter_management_ip: "192.168.1.206"
+    },
+    warnings: []
+  };
+}
+
+function vcenterInstallReadiness() {
+  return {
+    blockers: [],
+    checked_at: checkedAt,
+    credential_state: {
+      deployment_credentials_configured: true,
+      esxi_credentials_configured: true
+    },
+    deployment_values: {
+      complete: true,
+      datastore_target: "netapp_nfs_ds01",
+      management_ip: "192.168.1.206"
+    },
+    message: "vCenter install values are complete.",
+    provider_id: "vcenter",
+    status: "ready",
+    warnings: []
+  };
+}
+
+function vcenterPostAttachValidation() {
+  return {
+    blockers: [],
+    checked_at: checkedAt,
+    checks: {
+      netapp_datastore_visible: { status: "ready", visible: true },
+      vm_inventory_visible: { status: "ready", visible: true }
+    },
+    message: "vCenter post-attach validation is ready.",
+    post_attach_state: { ready: true },
+    provider_id: "vcenter",
+    status: "ready",
     warnings: []
   };
 }
 
 function labValidation() {
   return {
-    freshness: "not_checked",
+    freshness: "live",
     generated_at: checkedAt,
     handoff_report: "artifacts/codex-runs/lab-validation-handoff-report.md",
-    next_action: "Run validation after setup steps are ready.",
-    overall_status: "not_checked",
-    progress_counts: { blocked: 0, not_configured: 1, partial: 0, ready: 0 },
+    next_action: "Review the firmware manual baseline, then generate handoff.",
+    overall_status: "ready",
+    progress_counts: { blocked: 0, not_configured: 0, partial: 0, ready: 5 },
     proof_links: [
-      {
-        component_id: "netapp",
-        component_label: "NetApp",
-        path: "artifacts/codex-runs/netapp-live-state-report.md"
-      }
+      { component_id: "cisco", component_label: "Cisco", path: "artifacts/codex-runs/cisco-validation-report.md" },
+      { component_id: "ilo", component_label: "iLO", path: "artifacts/codex-runs/ilo-validation-report.md" },
+      { component_id: "esxi", component_label: "ESXi", path: "artifacts/codex-runs/esxi-validation-report.md" },
+      { component_id: "netapp", component_label: "NetApp", path: "artifacts/codex-runs/netapp-live-state-report.md" },
+      { component_id: "vcenter", component_label: "vCenter", path: "artifacts/codex-runs/vcenter-post-attach-validation-report.md" }
     ],
-    source_type: "not_checked",
+    source_type: "live_cached",
     top_blocker: null,
     validation_items: [
-      {
-        blockers: [],
-        category: "storage",
-        current_state: "Not checked",
-        desired_state: "NetApp setup validated",
-        evidence_artifacts: ["artifacts/codex-runs/netapp-live-state-report.md"],
-        evidence_collapsed_by_default: true,
-        freshness: "not_checked",
-        id: "netapp",
-        label: "NetApp",
-        last_checked: null,
-        linked_workflow_action: null,
-        login_hint: "Use NETAPP_USERNAME with the cluster management URL.",
-        management_url: "https://192.168.1.220",
-        next_action: "Run setup preview.",
-        proof_points: [],
-        recheck_command: "make provider-lab-netapp-live-state",
-        setup_summary: "NetApp setup is not validated yet.",
-        source_type: "not_checked",
-        ssh_target: "<username>@192.168.1.220",
-        stage: "netapp",
-        status: "not_configured",
-        warnings: []
-      }
+      validationItem("cisco", "Cisco", "network", "Switch access is ready.", "https://192.168.1.204"),
+      validationItem("ilo", "HPE iLO", "server", "iLO access is ready.", "https://192.168.1.201"),
+      validationItem("esxi", "ESXi host", "virtualization", "ESXi management is ready.", "https://192.168.1.203"),
+      validationItem("netapp", "NetApp", "storage", "NetApp NFS datastore is ready.", "https://192.168.1.220"),
+      validationItem("vcenter-netapp-datastore", "vCenter", "virtualization", "vCenter sees netapp_nfs_ds01.", "https://192.168.1.206/sdk")
     ],
+    warnings: []
+  };
+}
+
+function validationItem(id: string, label: string, category: string, summary: string, managementUrl: string) {
+  return {
+    blockers: [],
+    category,
+    current_state: "Ready",
+    desired_state: "Ready",
+    evidence_artifacts: [`artifacts/codex-runs/${id}-proof.md`],
+    evidence_collapsed_by_default: true,
+    freshness: "live",
+    id,
+    label,
+    last_checked: checkedAt,
+    linked_workflow_action: null,
+    login_hint: `Use configured ${label} credentials.`,
+    management_url: managementUrl,
+    next_action: "No action required.",
+    proof_points: [summary],
+    recheck_command: "make provider-lab-build-verification",
+    setup_summary: summary,
+    source_type: "live_cached",
+    ssh_target: null,
+    stage: id,
+    status: "ready",
     warnings: []
   };
 }
@@ -758,27 +1027,97 @@ function firmwareSummaries() {
       label: "Cisco",
       last_scanned: checkedAt,
       next_action: "Open Firmware Upgrades and record the manual baseline decision.",
+      path_status: "manual_review",
+      package_available: true,
+      package_name: "cisco-ios-xe-firmware.bin",
+      prechecks_required: ["Manual ROMMON baseline review"],
+      required_intermediate_versions: [],
+      reboot_required: true,
       scan_action_id: "cisco.firmware-inventory",
       severity: "yellow",
       source_type: "cached_live",
-      upgrade_center_link: "/firmware?device=cisco"
+      target_version: ">= 17.9",
+      upgrade_center_link: "/firmware?device=cisco",
+      upgrade_paths: [
+        {
+          apply_enabled: false,
+          baseline_source: "manual",
+          component_id: "cisco-ios-xe",
+          component_label: "Cisco IOS XE",
+          current_version: "17.15.05",
+          device_label: "Cisco",
+          disabled_reason: "Manual ROMMON baseline review is still required.",
+          equipment_type: "network_os",
+          estimated_impact: "Switch reload may be required.",
+          evidence_artifacts: ["artifacts/codex-runs/cisco-firmware-inventory-report.md"],
+          freshness: "live",
+          last_checked: checkedAt,
+          missing_evidence: ["ROMMON baseline"],
+          next_action: "Review manual baseline before applying upgrades.",
+          package_available: true,
+          package_name: "cisco-ios-xe-firmware.bin",
+          package_version: "17.15.05",
+          path_status: "manual_review",
+          prechecks_required: ["Manual ROMMON baseline review"],
+          reboot_required: true,
+          required_intermediate_versions: [],
+          scan_action_id: "cisco.firmware-inventory",
+          source_type: "cached_live",
+          target_version: ">= 17.9"
+        }
+      ]
     },
     {
       approved_versions: [{ label: "ONTAP", status: "minimum", version: ">= 9.14" }],
-      blocker: "not configured yet",
-      compliance_status: "not_configured",
+      blocker: null,
+      compliance_status: "ready",
       component_type: "storage_os_and_component_firmware",
-      current_versions: [{ label: "ONTAP", status: "not_configured_yet", version: null }],
+      current_versions: [{ label: "ONTAP", status: "passed", version: "9.14.1" }],
       device_id: "netapp",
       evidence_artifacts: ["artifacts/codex-runs/netapp-upgrade-inventory-report.md"],
-      freshness: "not_checked",
+      freshness: "live",
       label: "NetApp",
-      last_scanned: null,
-      next_action: "Complete device setup and credentials before firmware inventory.",
+      last_scanned: checkedAt,
+      next_action: "No upgrade required.",
+      path_status: "current",
+      package_available: true,
+      package_name: "netapp-ontap-upgrade.tgz",
+      prechecks_required: [],
+      required_intermediate_versions: [],
+      reboot_required: false,
       scan_action_id: "netapp.ontap-upgrade-inventory",
-      severity: "gray",
-      source_type: "not_checked",
-      upgrade_center_link: "/firmware?device=netapp"
+      severity: "green",
+      source_type: "cached_live",
+      target_version: ">= 9.14",
+      upgrade_center_link: "/firmware?device=netapp",
+      upgrade_paths: [
+        {
+          apply_enabled: false,
+          baseline_source: "approved",
+          component_id: "netapp-ontap",
+          component_label: "ONTAP",
+          current_version: "9.14.1",
+          device_label: "NetApp",
+          disabled_reason: "Already current.",
+          equipment_type: "storage_os",
+          estimated_impact: "None",
+          evidence_artifacts: ["artifacts/codex-runs/netapp-upgrade-inventory-report.md"],
+          freshness: "live",
+          last_checked: checkedAt,
+          missing_evidence: [],
+          next_action: "No upgrade required.",
+          package_available: true,
+          package_name: "netapp-ontap-upgrade.tgz",
+          package_version: "9.14.1",
+          path_status: "current",
+          prechecks_required: [],
+          reboot_required: false,
+          required_intermediate_versions: [],
+          scan_action_id: "netapp.ontap-upgrade-inventory",
+          source_type: "cached_live",
+          target_version: ">= 9.14"
+        }
+      ]
     }
   ];
 }
@@ -805,25 +1144,25 @@ function labProfiles() {
     created_at: checkedAt,
     description: "Test lab setup",
     global_settings: {
-      dns_servers: [],
-      domain_name: null,
-      gateway: null,
+      dns_servers: ["192.168.1.1"],
+      domain_name: "lab.local",
+      gateway: "192.168.1.1",
       netapp_disabled_reason: null,
       netapp_enabled: true,
-      ntp_servers: [],
+      ntp_servers: ["192.168.1.1"],
       subnet_prefix: 24,
-      timezone: null,
-      vcenter_enabled: false,
-      vlan_id: null,
-      mtu: null
+      timezone: "America/Toronto",
+      vcenter_enabled: true,
+      vlan_id: "10",
+      mtu: 1500
     },
     profile_topology: "high_address_lab",
     subnet_cidr: "192.168.1.0/24",
-    gateway: null,
-    dns: [],
-    ntp: [],
-    vlan_id: null,
-    mtu: null,
+    gateway: "192.168.1.1",
+    dns: ["192.168.1.1"],
+    ntp: ["192.168.1.1"],
+    vlan_id: "10",
+    mtu: 1500,
     devices: {
       cisco: "192.168.1.204",
       esxi: "192.168.1.203",
@@ -834,7 +1173,7 @@ function labProfiles() {
         nfs_lifs: ["192.168.1.230", "192.168.1.231"]
       },
       utility_vm: "192.168.1.205",
-      vcenter: null
+      vcenter: "https://192.168.1.206/sdk"
     },
     features: {
       build_verification_enabled: true,
@@ -847,8 +1186,8 @@ function labProfiles() {
       netapp_disabled_reason: null,
       netapp_enabled: true,
       storage_protocol: "nfs",
-      vcenter_disabled_reason: "vCenter is disabled by the active lab setup.",
-      vcenter_enabled: false
+      vcenter_disabled_reason: null,
+      vcenter_enabled: true
     },
     resolved_address_plan: {
       ansible_control_host: "192.168.1.205",
@@ -866,7 +1205,7 @@ function labProfiles() {
       server_embedded_nic: "192.168.1.202",
       subnet: "192.168.1.0/24"
     },
-    not_in_scope_stages: ["vcenter", "vcenter-netapp"],
+    not_in_scope_stages: [],
     mismatch_warnings: [],
     fix_guidance: [],
     history: [],
@@ -881,11 +1220,11 @@ function labProfiles() {
     active_profile: profile,
     active_context: {
       active_profile: profile,
-      disabled_features: { vcenter: "vCenter is disabled by the active lab setup." },
+      disabled_features: {},
       enabled_features: profile.features,
       fix_guidance: [],
       mismatch_warnings: [],
-      not_in_scope_stages: ["vcenter", "vcenter-netapp"],
+      not_in_scope_stages: [],
       resolved_address_plan: profile.resolved_address_plan,
       topology: "high_address_lab"
     },

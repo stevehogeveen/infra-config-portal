@@ -31,6 +31,16 @@ import { createPortal } from "react-dom";
 import { Link, Navigate, NavLink, Route as RouterRoute, Routes, useLocation, useNavigate, useParams } from "react-router-dom";
 
 import { api } from "./api";
+import {
+  OperatorFirmwareUpgradesPage,
+  OperatorNetworkPage,
+  OperatorOverviewPage,
+  OperatorServerPage,
+  OperatorSettingsPage,
+  OperatorStoragePage,
+  OperatorValidationPage,
+  OperatorVirtualizationPage
+} from "./operatorPages";
 import type {
   ArtifactRecord,
   AuditEvent,
@@ -714,28 +724,44 @@ function App() {
           labProfileState={labProfileState}
         >
           <Routes>
-            <RouterRoute path="/" element={<Navigate to="/dashboard" replace />} />
-            <RouterRoute path="/dashboard" element={<Dashboard />} />
-            <RouterRoute path="/lab-setup" element={<LabSetupPage />} />
-            <RouterRoute path="/hardware" element={<ProviderStatusPage />} />
-            <RouterRoute path="/run-center" element={<RunCenter />} />
-            <RouterRoute path="/control-center" element={<ControlCenterPage />} />
-            <RouterRoute path="/firmware" element={<FirmwarePage />} />
-            <RouterRoute path="/firmware-upgrades" element={<Navigate to="/firmware" replace />} />
-            <RouterRoute path="/golden-state" element={<GoldenStatePage />} />
-            <RouterRoute path="/validation-reports" element={<ValidationReportsPage />} />
-            <RouterRoute path="/verification" element={<Navigate to="/validation-reports" replace />} />
-            <RouterRoute path="/lab-validation" element={<Navigate to="/validation-reports?section=validation" replace />} />
-            <RouterRoute path="/reports" element={<Navigate to="/validation-reports?section=issues" replace />} />
+            <RouterRoute path="/" element={<Navigate to="/overview" replace />} />
             <RouterRoute
-              path="/settings"
+              path="/overview"
               element={
-                <SettingsPage
+                <OperatorOverviewPage
                   health={health}
                   labProfileError={labProfileError}
                   labProfileLoading={labProfileLoading}
-                  onReload={loadLabProfileState}
-                  state={labProfileState}
+                  labProfileState={labProfileState}
+                />
+              }
+            />
+            <RouterRoute path="/network" element={<OperatorNetworkPage labProfileState={labProfileState} />} />
+            <RouterRoute path="/server" element={<OperatorServerPage labProfileState={labProfileState} />} />
+            <RouterRoute path="/storage" element={<OperatorStoragePage labProfileState={labProfileState} />} />
+            <RouterRoute path="/virtualization" element={<OperatorVirtualizationPage labProfileState={labProfileState} />} />
+            <RouterRoute path="/firmware-upgrades" element={<OperatorFirmwareUpgradesPage />} />
+            <RouterRoute path="/validation" element={<OperatorValidationPage />} />
+            <RouterRoute path="/dashboard" element={<Navigate to="/overview" replace />} />
+            <RouterRoute path="/lab-setup" element={<Navigate to="/settings" replace />} />
+            <RouterRoute path="/hardware" element={<Navigate to="/overview" replace />} />
+            <RouterRoute path="/run-center" element={<Navigate to="/overview" replace />} />
+            <RouterRoute path="/control-center" element={<Navigate to="/overview" replace />} />
+            <RouterRoute path="/firmware" element={<Navigate to="/firmware-upgrades" replace />} />
+            <RouterRoute path="/golden-state" element={<Navigate to="/validation" replace />} />
+            <RouterRoute path="/validation-reports" element={<Navigate to="/validation" replace />} />
+            <RouterRoute path="/verification" element={<Navigate to="/validation" replace />} />
+            <RouterRoute path="/lab-validation" element={<Navigate to="/validation" replace />} />
+            <RouterRoute path="/reports" element={<Navigate to="/validation" replace />} />
+            <RouterRoute
+              path="/settings"
+              element={
+                <OperatorSettingsPage
+                  health={health}
+                  labProfileError={labProfileError}
+                  labProfileLoading={labProfileLoading}
+                  labProfileState={labProfileState}
+                  onReloadLabProfile={loadLabProfileState}
                 />
               }
             />
@@ -756,9 +782,9 @@ function App() {
               }
             />
             <RouterRoute path="/audit-events" element={<AuditEvents />} />
-            <RouterRoute path="/artifacts" element={<Navigate to="/validation-reports?section=evidence" replace />} />
+            <RouterRoute path="/artifacts" element={<Navigate to="/validation" replace />} />
             <RouterRoute path="/media" element={<MediaInventoryPage />} />
-            <RouterRoute path="/providers" element={<Navigate to="/hardware" replace />} />
+            <RouterRoute path="/providers" element={<Navigate to="/overview" replace />} />
           </Routes>
         </AppShell>
       </ReportIssuesContext.Provider>
@@ -893,13 +919,11 @@ function SidebarNav({
   const providerMode = health?.provider_mode ?? (healthError ? "unverified" : "checking");
   const modeLabel = displayModeLabel(providerMode);
   const modeStatus = providerMode === "mock" ? "test_fixture" : healthError ? "unavailable" : providerMode;
-  const { reportIssues } = useReportIssues();
-  const pageBadges = reportIssues?.page_badges ?? {};
 
   return (
     <aside className={drawerOpen ? "sidebar open" : "sidebar"} aria-label="Primary navigation">
       <div className="sidebar-top">
-        <Link className="brand" to="/dashboard">
+        <Link className="brand" to="/overview">
           <Server size={22} />
           <span>
             Lab Builder
@@ -911,14 +935,14 @@ function SidebarNav({
         </button>
       </div>
       <nav>
-        <NavItem to="/dashboard" icon={<Gauge size={18} />} label="Dashboard" issueBadge={pageBadges.dashboard} />
-        <NavItem to="/lab-setup" icon={<Layers size={18} />} label="Lab Setup" />
-        <NavItem to="/hardware" icon={<Activity size={18} />} label="Hardware" />
-        <NavItem to="/control-center" icon={<Wrench size={18} />} label="Control Center" issueBadge={pageBadges["control-center"]} />
-        <NavItem to="/firmware" icon={<ShieldCheck size={18} />} label="Firmware Upgrades" issueBadge={pageBadges.firmware} />
-        <NavItem to="/golden-state" icon={<CheckCircle2 size={18} />} label="Golden State" />
-        <NavItem to="/validation-reports" icon={<FileText size={18} />} label="Validation & Reports" issueBadge={pageBadges.reports ?? pageBadges.verification} />
-        <NavItem to="/settings" icon={<Settings size={18} />} label="Settings" issueBadge={pageBadges.settings} />
+        <NavItem to="/overview" icon={<Gauge size={18} />} label="Overview" />
+        <NavItem to="/network" icon={<Route size={18} />} label="Network" />
+        <NavItem to="/server" icon={<Server size={18} />} label="Server" />
+        <NavItem to="/storage" icon={<HardDrive size={18} />} label="Storage" />
+        <NavItem to="/virtualization" icon={<Layers size={18} />} label="Virtualization" />
+        <NavItem to="/firmware-upgrades" icon={<ShieldCheck size={18} />} label="Firmware Upgrades" />
+        <NavItem to="/validation" icon={<CheckCircle2 size={18} />} label="Validation" />
+        <NavItem to="/settings" icon={<Settings size={18} />} label="Settings" />
       </nav>
       <div className="sidebar-profile">
         <div className="sidebar-profile-head">
@@ -18771,14 +18795,15 @@ function displayStatusLabel(status: string): string {
     live_cached: "Recent live check",
     live_probe: "Live check",
     "live_readiness": "Readiness check",
-    "local-lab-readwrite": "Real Lab Mode",
-    "local-readonly": "Read-only Lab Mode",
+    "local-lab-readwrite": "Real lab",
+    "local-readonly": "Read-only lab",
+    manual_review: "Needs review",
     "missing-config": "Not configured yet",
     "missing-console": "Console not found",
     mock: "Test Mode",
     "needs-attention": "Needs attention",
     "needs-selection": "Needs selection",
-    not_configured_yet: "Not configured yet",
+    not_configured_yet: "Not set up yet",
     not_checked: "Not checked",
     "not-configured": "Not configured yet",
     "not-run": "Not run",
@@ -18808,8 +18833,8 @@ function displayStatusLabel(status: string): string {
 }
 
 function displayModeLabel(mode: string): string {
-  if (mode === "local-lab-readwrite") return "Real Lab Mode";
-  if (mode === "local-readonly") return "Read-only Lab Mode";
+  if (mode === "local-lab-readwrite") return "Real lab";
+  if (mode === "local-readonly") return "Read-only lab";
   if (mode === "mock") return "Test Mode";
   return displayStatusLabel(mode);
 }
