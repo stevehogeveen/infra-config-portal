@@ -237,7 +237,8 @@ test("renders the new top-level navigation and pages", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Validation", exact: true })).toBeVisible();
   await page.goto("/config");
   await expect(page.locator("h1", { hasText: "Edit Config" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Save As Lab Setup" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Settings" }).first()).toBeVisible();
+  await expect(page.getByRole("button", { name: "Run Save Config" })).toBeVisible();
   await page.goto("/settings");
   await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
 
@@ -275,21 +276,23 @@ test("overview shows active setup, lab values, and access without dashboard clut
   await expect(page.getByText("Artifact")).toHaveCount(0);
 });
 
-test("each domain page exposes relevant run test or apply buttons", async ({ page }) => {
+test("each side tab exposes contextual settings and a dedicated run button", async ({ page }) => {
   const pages = [
-    ["/overview", /Refresh Access|Edit Config/],
-    ["/network", /Test Switch|Save Config|Scan Firmware/],
-    ["/server", /Test iLO|Test ESXi|Recover ESXi|Validate RAID/],
-    ["/storage", /Test NetApp|Validate NFS|Mount Datastore/],
-    ["/virtualization", /Test vCenter|Deploy VM|Validate Inventory/],
-    ["/firmware-upgrades", /Rescan Files|Scan Firmware|Upgrade/],
-    ["/validation", /Run Validation|Generate Handoff/],
-    ["/settings", /Save Setup|Test Credentials|Refresh Consoles/]
+    ["/overview", "Run Refresh Access"],
+    ["/network", "Run Test Switch"],
+    ["/server", "Run Test Server"],
+    ["/storage", "Run Test NetApp"],
+    ["/virtualization", "Run Test vCenter"],
+    ["/firmware-upgrades", "Run Scan Firmware"],
+    ["/validation", "Run Validation"],
+    ["/config", "Run Save Config"],
+    ["/settings", "Run Refresh Settings"]
   ] as const;
 
-  for (const [path, buttonName] of pages) {
+  for (const [path, runButtonName] of pages) {
     await page.goto(path);
-    await expect(page.getByRole("button", { name: buttonName }).first()).toBeVisible();
+    await expect(page.getByRole("button", { name: "Settings" }).first()).toBeVisible();
+    await expect(page.getByRole("button", { name: runButtonName }).first()).toBeVisible();
   }
 });
 
@@ -302,6 +305,7 @@ test("operator pages expose a current view with refresh or fix guidance", async 
     "/virtualization",
     "/firmware-upgrades",
     "/validation",
+    "/config",
     "/settings"
   ];
 
@@ -313,8 +317,12 @@ test("operator pages expose a current view with refresh or fix guidance", async 
     await expect(currentView).toContainText("Source");
     await expect(currentView).toContainText("Freshness");
     await expect(currentView).toContainText("Checked");
-    await expect(page.locator("details.tab-settings-panel").first()).toBeVisible();
-    await expect(page.locator("section[aria-label='Run this tab']").first()).toBeVisible();
+    await page.getByRole("button", { name: "Settings" }).first().click();
+    const settings = page.locator("section.tab-settings-drawer").first();
+    await expect(settings).toBeVisible();
+    await expect(settings.locator("select[aria-label='IP mode']")).toBeVisible();
+    await expect(settings.locator("select[aria-label='SNMP version']")).toBeVisible();
+    await page.getByRole("button", { name: "Close settings" }).first().click();
   }
 
   await page.goto("/network");
@@ -364,7 +372,7 @@ test("firmware table renders upgrade path states", async ({ page }) => {
   await expect(ciscoRow).toContainText("cat9k_iosxe.17.12.01.SPA.bin");
   await expect(ciscoRow).toContainText("Selected by user");
   await expect(page.getByText("1 saved")).toBeVisible();
-  await page.getByRole("button", { name: "Refresh" }).click();
+  await page.getByRole("button", { name: "Rescan Files" }).click();
   await expect(ciscoRow).toContainText("cat9k_iosxe.17.12.01.SPA.bin");
   await expect(ciscoRow).toContainText("Selected by user");
   await expect(ciscoRow.getByRole("button", { name: "Scan" })).toHaveCount(0);
@@ -386,10 +394,11 @@ test("firmware page scan and upgrade controls run through the workflow runner", 
     response.url().includes("/api/v1/workflows/actions/firmware.inventory/run") &&
     response.request().method() === "POST"
   );
-  await page.getByRole("button", { name: "Scan Firmware" }).click();
+  await page.getByRole("button", { name: "Run Scan Firmware" }).click();
   await expect((await scanResponse).ok()).toBeTruthy();
   await expect(page.getByText(/Scan All Firmware:/)).toBeVisible();
 
+  await page.getByText("Protected firmware action").click();
   const upgradeResponse = page.waitForResponse((response) =>
     response.url().includes("/api/v1/workflows/actions/firmware.upgrade-apply-placeholder/run") &&
     response.request().method() === "POST"
@@ -418,6 +427,27 @@ test("settings uses active lab setup values and never renders secret material", 
   await expect(page.getByText("Configured or missing only")).toBeVisible();
   await expect(page.getByText("Secret values are hidden")).toHaveCount(0);
   await expect(page.locator("input[type='password']")).toHaveCount(0);
+});
+
+test("contextual settings support IP mode and SNMP version selection", async ({ page }) => {
+  await page.goto("/network");
+
+  await page.getByRole("button", { name: "Settings" }).first().click();
+  const settings = page.locator("section.tab-settings-drawer").first();
+  await settings.locator("select[aria-label='IP mode']").selectOption("ipv6");
+  await expect(settings.locator("select[aria-label='IP mode']")).toHaveValue("ipv6");
+  await settings.locator("select[aria-label='IP mode']").selectOption("both");
+  await expect(settings.locator("select[aria-label='IP mode']")).toHaveValue("both");
+  await settings.locator("select[aria-label='SNMP version']").selectOption("v3");
+  await expect(settings.locator("select[aria-label='SNMP version']")).toHaveValue("v3");
+
+  await page.goto("/config");
+  await page.getByRole("button", { name: "Settings" }).first().click();
+  const configSettings = page.locator("section.tab-settings-drawer").first();
+  await configSettings.locator("select[aria-label='IP mode']").selectOption("ipv6");
+  await expect(configSettings.locator("select[aria-label='IP mode']")).toHaveValue("ipv6");
+  await configSettings.locator("select[aria-label='SNMP version']").selectOption("v3");
+  await expect(configSettings.locator("select[aria-label='SNMP version']")).toHaveValue("v3");
 });
 
 test("safe read-only page action still invokes the workflow runner", async ({ page }) => {

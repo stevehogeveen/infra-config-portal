@@ -1,23 +1,21 @@
 import {
-  Activity,
-  AlertTriangle,
   Ban,
   CheckCircle2,
-  ClipboardList,
   Gauge,
   HardDrive,
   Layers,
   Play,
   RefreshCw,
   Route,
-  Save,
   Server,
   Settings,
   ShieldCheck,
+  SlidersHorizontal,
+  X,
   Wrench
 } from "lucide-react";
-import { ReactNode, useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { createContext, ReactNode, useContext, useEffect, useMemo, useState } from "react";
+import { Link, useLocation } from "react-router-dom";
 
 import { api } from "./api";
 import type {
@@ -53,6 +51,161 @@ type OperatorPageProps = {
   labProfileState: LabProfileList | null;
   onReloadLabProfile?: () => Promise<void>;
 };
+
+type OperatorTabId =
+  | "overview"
+  | "network"
+  | "server"
+  | "storage"
+  | "virtualization"
+  | "firmware"
+  | "validation"
+  | "config"
+  | "settings";
+
+type IpMode = "ipv4" | "ipv6" | "both";
+type SnmpVersion = "v2" | "v3";
+
+type OperatorTabSettingsState = {
+  advanced: Record<string, boolean | string>;
+  ipMode: IpMode;
+  snmpVersion: SnmpVersion;
+};
+
+type OperatorRunStatus = {
+  actionId?: string;
+  message: string;
+  state: "idle" | "running" | "success" | "error";
+};
+
+type OperatorTabStateContextValue = {
+  activeTab: OperatorTabId;
+  closeSettings: () => void;
+  openSettings: (tabId: OperatorTabId) => void;
+  runStatus: Record<OperatorTabId, OperatorRunStatus>;
+  setRunStatus: (tabId: OperatorTabId, status: OperatorRunStatus) => void;
+  settingsOpenFor: OperatorTabId | null;
+  tabSettings: Record<OperatorTabId, OperatorTabSettingsState>;
+  updateTabSettings: (tabId: OperatorTabId, patch: Partial<OperatorTabSettingsState>) => void;
+  updateTabAdvancedSetting: (tabId: OperatorTabId, key: string, value: boolean | string) => void;
+};
+
+const operatorTabs: OperatorTabId[] = [
+  "overview",
+  "network",
+  "server",
+  "storage",
+  "virtualization",
+  "firmware",
+  "validation",
+  "config",
+  "settings"
+];
+
+const idleRunStatus: OperatorRunStatus = {
+  message: "",
+  state: "idle"
+};
+
+const OperatorTabStateContext = createContext<OperatorTabStateContextValue | null>(null);
+
+export function OperatorTabStateProvider({ children }: { children: ReactNode }) {
+  const location = useLocation();
+  const activeTab = tabFromPath(location.pathname);
+  const [settingsOpenFor, setSettingsOpenFor] = useState<OperatorTabId | null>(null);
+  const [tabSettings, setTabSettings] = useState<Record<OperatorTabId, OperatorTabSettingsState>>(() =>
+    operatorTabs.reduce((accumulator, tabId) => {
+      accumulator[tabId] = defaultTabSettings(tabId);
+      return accumulator;
+    }, {} as Record<OperatorTabId, OperatorTabSettingsState>)
+  );
+  const [runStatus, setRunStatusState] = useState<Record<OperatorTabId, OperatorRunStatus>>(() =>
+    operatorTabs.reduce((accumulator, tabId) => {
+      accumulator[tabId] = idleRunStatus;
+      return accumulator;
+    }, {} as Record<OperatorTabId, OperatorRunStatus>)
+  );
+
+  useEffect(() => {
+    setSettingsOpenFor(null);
+  }, [activeTab]);
+
+  function updateTabSettings(tabId: OperatorTabId, patch: Partial<OperatorTabSettingsState>) {
+    setTabSettings((current) => ({
+      ...current,
+      [tabId]: {
+        ...current[tabId],
+        ...patch
+      }
+    }));
+  }
+
+  function updateTabAdvancedSetting(tabId: OperatorTabId, key: string, value: boolean | string) {
+    setTabSettings((current) => ({
+      ...current,
+      [tabId]: {
+        ...current[tabId],
+        advanced: {
+          ...current[tabId].advanced,
+          [key]: value
+        }
+      }
+    }));
+  }
+
+  function setRunStatus(tabId: OperatorTabId, status: OperatorRunStatus) {
+    setRunStatusState((current) => ({
+      ...current,
+      [tabId]: status
+    }));
+  }
+
+  return (
+    <OperatorTabStateContext.Provider
+      value={{
+        activeTab,
+        closeSettings: () => setSettingsOpenFor(null),
+        openSettings: setSettingsOpenFor,
+        runStatus,
+        setRunStatus,
+        settingsOpenFor,
+        tabSettings,
+        updateTabAdvancedSetting,
+        updateTabSettings
+      }}
+    >
+      {children}
+    </OperatorTabStateContext.Provider>
+  );
+}
+
+function useOperatorTabState() {
+  const context = useContext(OperatorTabStateContext);
+  if (!context) {
+    throw new Error("Operator tab state is unavailable.");
+  }
+  return context;
+}
+
+function tabFromPath(pathname: string): OperatorTabId {
+  if (pathname.startsWith("/network")) return "network";
+  if (pathname.startsWith("/server")) return "server";
+  if (pathname.startsWith("/storage")) return "storage";
+  if (pathname.startsWith("/virtualization")) return "virtualization";
+  if (pathname.startsWith("/firmware")) return "firmware";
+  if (pathname.startsWith("/validation")) return "validation";
+  if (pathname.startsWith("/config")) return "config";
+  if (pathname.startsWith("/settings")) return "settings";
+  return "overview";
+}
+
+function defaultTabSettings(tabId: OperatorTabId): OperatorTabSettingsState {
+  return {
+    advanced: Object.fromEntries(tabAdvancedSettings(tabId).map((setting) => [setting.key, setting.defaultValue])),
+    ipMode: "ipv4",
+    snmpVersion: "v2"
+  };
+}
 
 type ConfigValue = {
   label: string;
@@ -128,6 +281,24 @@ type RunButtonDefinition = {
   onClick?: () => Promise<void> | void;
   primary?: boolean;
   to?: string;
+};
+
+type TabRunConfig = {
+  actionIds?: string[];
+  actions?: WorkflowAction[];
+  allowBlockedRun?: boolean;
+  disabledReason?: string;
+  kind?: "read" | "write" | "apply" | "link" | "custom";
+  label: string;
+  onReload?: () => Promise<void> | void;
+  onRun?: () => Promise<string> | string;
+};
+
+type AdvancedSettingDefinition = {
+  defaultValue: boolean;
+  description: string;
+  key: string;
+  label: string;
 };
 
 type WorkflowRunState = {
@@ -220,35 +391,23 @@ export function OperatorOverviewPage({
   return (
     <OperatorPage title="Overview">
       <PageStatusHeader
-        actions={
-          <button disabled={loading} onClick={() => void load()} type="button">
-            <RefreshCw size={16} />
-            Refresh Access
-          </button>
-        }
         description="This page shows what the app can currently access."
         helper="Change values here if your lab uses different IPs. Advanced proof is hidden unless you need it."
         icon={<Gauge size={26} />}
+        runConfig={{
+          label: "Refresh Access",
+          onRun: async () => {
+            await load();
+            return "Refresh Access: current view refreshed.";
+          }
+        }}
+        settingsValues={tabSettingsValues("overview", activeProfile)}
+        tabId="overview"
         title="Overview"
       />
       <Feedback loading={loading && !validation} error={error || labProfileError} />
       {labProfileLoading && <Feedback loading />}
       <CurrentViewPanel model={currentView} />
-      <TabSettingsPanel values={tabSettingsValues("overview", activeProfile)} />
-      <section className="operator-section page-run-section" aria-label="Run this tab">
-        <div className="operator-section-head">
-          <div>
-            <p className="operator-kicker">Run</p>
-            <h2>Run this tab</h2>
-          </div>
-        </div>
-        <div className="page-run-buttons">
-          <button className="primary" disabled={loading} onClick={() => void load()} type="button">
-            <RefreshCw size={16} />
-            Refresh Access
-          </button>
-        </div>
-      </section>
       <section className="operator-section" aria-label="Active lab summary">
         <div className="operator-section-head">
           <div>
@@ -329,26 +488,23 @@ export function OperatorNetworkPage({ labProfileState }: OperatorPageProps) {
   return (
     <OperatorPage title="Network">
       <PageStatusHeader
-        actions={<button disabled={loading} onClick={() => void load()} type="button"><RefreshCw size={16} />Refresh</button>}
         description="Use these buttons to test or change this part of the lab."
         helper="Cisco access, VLAN, subnet, gateway, switch access, DNS, NTP, SNMP, and MTU are grouped here."
         icon={<Route size={26} />}
         nextAction={humanize(asString(ciscoReadiness?.next_safe_action) || "Test Cisco access, then save switch config when ready.")}
+        runConfig={{
+          actionIds: ["cisco.setup-readiness", "cisco.validate-ssh-scp", "cisco.privilege-check"],
+          actions,
+          label: "Test Switch",
+          onReload: load
+        }}
+        settingsValues={tabSettingsValues("network", activeProfile)}
         status={networkStatus}
+        tabId="network"
         title="Network"
       />
       <Feedback loading={loading && !ciscoReadiness} error={error} />
       <CurrentViewPanel model={currentView} />
-      <TabSettingsPanel values={tabSettingsValues("network", activeProfile)} />
-      <PageRunButtons
-        actions={actions}
-        buttons={[
-          { actionIds: ["cisco.validate-ssh-scp", "cisco.privilege-check", "cisco.setup-readiness"], label: "Test Switch", primary: true },
-          { actionIds: ["cisco.save-config"], kind: "write", label: "Save Config", icon: <Save size={16} /> },
-          { actionIds: ["cisco.firmware-inventory"], label: "Scan Firmware" }
-        ]}
-        onReload={load}
-      />
       <AccessSummary
         items={[
           { label: "Cisco switch", value: displayAddress(address.cisco_management), status: networkStatus },
@@ -427,27 +583,23 @@ export function OperatorServerPage({ labProfileState }: OperatorPageProps) {
   return (
     <OperatorPage title="Server">
       <PageStatusHeader
-        actions={<button disabled={loading} onClick={() => void load()} type="button"><RefreshCw size={16} />Refresh</button>}
         description="Use these buttons to test or change this part of the lab."
         helper="iLO, DL360 server, RAID layout, and ESXi access are grouped here."
         icon={<Server size={26} />}
         nextAction={humanize(asString(esxiReadiness?.next_safe_action) || "Test iLO and ESXi, then validate RAID when storage layout is ready.")}
+        runConfig={{
+          actionIds: ["ilo.reachability", "ilo.auth", "ilo.inventory", "esxi.management-validation", "raid.validate"],
+          actions,
+          label: "Test Server",
+          onReload: load
+        }}
+        settingsValues={tabSettingsValues("server", activeProfile)}
         status={strongestStatus([iloStatus, esxiStatus, raidStatus])}
+        tabId="server"
         title="Server"
       />
       <Feedback loading={loading && !providers.length} error={error} />
       <CurrentViewPanel model={currentView} />
-      <TabSettingsPanel values={tabSettingsValues("server", activeProfile)} />
-      <PageRunButtons
-        actions={actions}
-        buttons={[
-          { actionIds: ["ilo.reachability", "ilo.auth", "ilo.inventory"], label: "Test iLO", primary: true },
-          { actionIds: ["esxi.management-validation", "esxi.ssh-api-check", "esxi.readiness"], label: "Test ESXi" },
-          { actionIds: ["esxi.recover-management"], kind: "write", label: "Recover ESXi" },
-          { actionIds: ["raid.validate", "raid.pending-check"], label: "Validate RAID" }
-        ]}
-        onReload={load}
-      />
       <AccessSummary
         items={[
           { label: "iLO URL", value: address.ilo ? `https://${address.ilo}` : "Not set up yet", status: iloStatus },
@@ -529,26 +681,23 @@ export function OperatorStoragePage({ labProfileState }: OperatorPageProps) {
   return (
     <OperatorPage title="Storage">
       <PageStatusHeader
-        actions={<button disabled={loading} onClick={() => void load()} type="button"><RefreshCw size={16} />Refresh</button>}
         description="Use these buttons to test or change this part of the lab."
         helper="NetApp access, ONTAP, NFS LIFs, volume, export policy, and datastore readiness are grouped here."
         icon={<HardDrive size={26} />}
         nextAction={humanize(asString(vcenterNetapp?.next_safe_action) || asString(nfsReadiness?.next_safe_action) || "Validate NFS, then mount the datastore when guarded apply is ready.")}
+        runConfig={{
+          actionIds: ["netapp.live-state", "netapp.validate-setup", "netapp.setup-preview", "netapp.nfs-setup-validate"],
+          actions,
+          label: "Test NetApp",
+          onReload: load
+        }}
+        settingsValues={tabSettingsValues("storage", activeProfile)}
         status={storageStatus}
+        tabId="storage"
         title="Storage"
       />
       <Feedback loading={loading && !netappPlan} error={error} />
       <CurrentViewPanel model={currentView} />
-      <TabSettingsPanel values={tabSettingsValues("storage", activeProfile)} />
-      <PageRunButtons
-        actions={actions}
-        buttons={[
-          { actionIds: ["netapp.live-state", "netapp.validate-setup", "netapp.setup-preview"], label: "Test NetApp", primary: true },
-          { actionIds: ["netapp.nfs-setup-validate", "netapp.nfs-vcenter-readiness"], label: "Validate NFS" },
-          { actionIds: ["esxi.netapp-datastore-apply", "netapp.nfs-setup-apply"], kind: "write", label: "Mount Datastore" }
-        ]}
-        onReload={load}
-      />
       <AccessSummary
         items={[
           { label: "Console access", value: displayValue(asString(objectValue(consoleReadiness?.runtime_state).console)), detail: "Advanced proof has details" },
@@ -623,26 +772,23 @@ export function OperatorVirtualizationPage({ labProfileState }: OperatorPageProp
   return (
     <OperatorPage title="Virtualization">
       <PageStatusHeader
-        actions={<button disabled={loading} onClick={() => void load()} type="button"><RefreshCw size={16} />Refresh</button>}
         description="Use these buttons to test or change this part of the lab."
         helper="vCenter, ESXi attach, datastore visibility, VM inventory, and OVF deployment are grouped here."
         icon={<Layers size={26} />}
         nextAction={humanize(asString(vcenterNetapp?.next_safe_action) || "Test vCenter, then validate datastore and VM inventory visibility.")}
+        runConfig={{
+          actionIds: ["vcenter-netapp.readiness", "vcenter.install-readiness", "vcenter.post-attach-validation", "esxi.vm-deploy-validate"],
+          actions,
+          label: "Test vCenter",
+          onReload: load
+        }}
+        settingsValues={tabSettingsValues("virtualization", activeProfile)}
         status={virtualStatus}
+        tabId="virtualization"
         title="Virtualization"
       />
       <Feedback loading={loading && !vcenterNetapp} error={error} />
       <CurrentViewPanel model={currentView} />
-      <TabSettingsPanel values={tabSettingsValues("virtualization", activeProfile)} />
-      <PageRunButtons
-        actions={actions}
-        buttons={[
-          { actionIds: ["vcenter-netapp.readiness", "vcenter.install-readiness"], label: "Test vCenter", primary: true },
-          { actionIds: ["esxi.vm-deploy-apply"], kind: "write", label: "Deploy VM" },
-          { actionIds: ["esxi.vm-deploy-validate", "vcenter.post-attach-validation"], label: "Validate Inventory" }
-        ]}
-        onReload={load}
-      />
       <AccessSummary
         items={[
           { label: "vCenter target", value: target, status: virtualStatus },
@@ -742,23 +888,30 @@ export function OperatorFirmwareUpgradesPage({ labProfileState }: OperatorPagePr
   return (
     <OperatorPage title="Firmware Upgrades">
       <PageStatusHeader
-        actions={<button disabled={loading} onClick={() => void load()} type="button"><RefreshCw size={16} />Refresh</button>}
         description="Firmware files are read from the local media folder."
         helper="Choose the file for each device. Upgrade stays gated until the path is validated."
         icon={<ShieldCheck size={26} />}
+        runConfig={{
+          actionIds: ["firmware.inventory", "firmware.compliance-check"],
+          actions,
+          label: "Scan Firmware",
+          onReload: load
+        }}
+        settingsValues={tabSettingsValues("firmware", activeProfile)}
         status={firmwareStatus}
+        tabId="firmware"
         title="Firmware Upgrades"
       />
       <Feedback loading={loading && !firmwareSummaries.length} error={error} />
       <CurrentViewPanel model={currentView} />
-      <TabSettingsPanel values={tabSettingsValues("firmware", activeProfile)} />
-      <PageRunButtons
+      <AdditionalTabActions
         actions={actions}
         buttons={[
-          { actionIds: ["firmware.inventory", "firmware.compliance-check"], label: "Scan Firmware", primary: true },
           { actionIds: ["firmware.upgrade-apply-placeholder", "netapp.ontap-upgrade-apply"], allowBlockedRun: true, kind: "apply", label: "Upgrade" }
         ]}
+        description="Upgrade remains a protected placeholder until guarded firmware apply is explicitly enabled."
         onReload={load}
+        title="Protected firmware action"
       />
       <FirmwareFilesPanel
         directory="/home/administrator/infra-config-portal/artifacts/Media"
@@ -824,24 +977,31 @@ export function OperatorValidationPage({ labProfileState }: OperatorPageProps) {
   return (
     <OperatorPage title="Validation">
       <PageStatusHeader
-        actions={<button disabled={loading} onClick={() => void load()} type="button"><RefreshCw size={16} />Refresh</button>}
         description="Use these buttons to test or change this part of the lab."
         helper="Golden State means expected working lab state. Advanced proof is hidden unless you need it."
         icon={<CheckCircle2 size={26} />}
         nextAction={humanize(validation?.next_action || "Run validation, then generate the handoff.")}
+        runConfig={{
+          actionIds: ["build-verification.run-full", "full-lab.validation", "lab-validation.summary"],
+          actions,
+          label: "Validation",
+          onReload: load
+        }}
+        settingsValues={tabSettingsValues("validation", activeProfile)}
         status={validation?.overall_status ?? "not_checked"}
+        tabId="validation"
         title="Validation"
       />
       <Feedback loading={loading && !validation} error={error} />
       <CurrentViewPanel model={currentView} />
-      <TabSettingsPanel values={tabSettingsValues("validation", activeProfile)} />
-      <PageRunButtons
+      <AdditionalTabActions
         actions={actions}
         buttons={[
-          { actionIds: ["full-lab.validation", "build-verification.run-full"], label: "Run Validation", primary: true },
           { actionIds: ["full-lab.handoff-report"], label: "Generate Handoff", onClick: async () => { await api.labValidationHandoff(); } }
         ]}
+        description="Use this after validation has current proof links."
         onReload={load}
+        title="Handoff"
       />
       <AccessSummary
         items={[
@@ -883,7 +1043,6 @@ export function OperatorSettingsPage({
   const address = activeAddressPlan(activeProfile);
   const features = activeProfile?.features ?? null;
   const global = activeProfile?.global_settings ?? null;
-  const [actions, setActions] = useState<WorkflowAction[]>([]);
   const [vcenterNetapp, setVcenterNetapp] = useState<ProviderProbeResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -892,11 +1051,7 @@ export function OperatorSettingsPage({
     setError("");
     setLoading(true);
     try {
-      const [nextActions, nextVcenterNetapp] = await Promise.all([
-        safeApi(api.workflowActions, [] as WorkflowAction[]),
-        safeApi(api.vcenterNetappReadiness, null)
-      ]);
-      setActions(Array.isArray(nextActions) ? nextActions : []);
+      const nextVcenterNetapp = await safeApi(api.vcenterNetappReadiness, null);
       setVcenterNetapp(nextVcenterNetapp);
       if (onReloadLabProfile) {
         await onReloadLabProfile();
@@ -917,26 +1072,24 @@ export function OperatorSettingsPage({
   return (
     <OperatorPage title="Settings">
       <PageStatusHeader
-        actions={<button disabled={loading || labProfileLoading} onClick={() => void load()} type="button"><RefreshCw size={16} />Refresh</button>}
         description="Use these buttons to test or change this part of the lab."
         helper="Active lab setup values, IP layout, console mappings, credential status, and feature toggles are kept here."
         icon={<Settings size={26} />}
         nextAction={labProfileState?.next_safe_action ?? "Review the active lab setup before running validation."}
+        runConfig={{
+          label: "Refresh Settings",
+          onRun: async () => {
+            await load();
+            return "Refresh Settings: active lab setup and current status refreshed.";
+          }
+        }}
+        settingsValues={tabSettingsValues("settings", activeProfile)}
         status={activeProfile ? "ready" : "not_configured_yet"}
+        tabId="settings"
         title="Settings"
       />
       <Feedback loading={loading && !activeProfile} error={error || labProfileError} />
       <CurrentViewPanel model={currentView} />
-      <TabSettingsPanel values={tabSettingsValues("settings", activeProfile)} />
-      <PageRunButtons
-        actions={actions}
-        buttons={[
-          { to: "/config", icon: <Settings size={16} />, label: "Open Edit Config", primary: true },
-          { actionIds: ["build-verification.run-full", "full-lab.validation"], label: "Test Credentials" },
-          { actionIds: ["cisco.discover-console", "netapp.console-autodiscovery"], label: "Refresh Consoles" }
-        ]}
-        onReload={load}
-      />
       <section className="operator-section" aria-label="Active lab setup values">
         <div className="operator-section-head">
           <div>
@@ -999,42 +1152,137 @@ function OperatorPage({ children, title }: { children: ReactNode; title: string 
 }
 
 function PageStatusHeader({
-  actions,
   description,
   helper,
   icon,
   nextAction,
+  runConfig,
+  settingsValues,
   status,
+  tabId,
   title
 }: {
-  actions?: ReactNode;
   description: string;
   helper: string;
   icon: ReactNode;
   nextAction?: string;
+  runConfig: TabRunConfig;
+  settingsValues: ConfigValue[];
   status?: string;
+  tabId: OperatorTabId;
   title: string;
 }) {
+  const {
+    closeSettings,
+    openSettings,
+    runStatus,
+    setRunStatus,
+    settingsOpenFor,
+    tabSettings,
+    updateTabAdvancedSetting,
+    updateTabSettings
+  } = useOperatorTabState();
+  const byId = useMemo(() => new Map((runConfig.actions ?? []).map((action) => [action.action_id, action])), [runConfig.actions]);
+  const action = firstRunnableAction(byId, runConfig.actionIds ?? [], runConfig);
+  const disabledReason = runConfig.disabledReason || (runConfig.onRun ? "" : disabledReasonForRunConfig(runConfig, action));
+  const tabRunStatus = runStatus[tabId] ?? idleRunStatus;
+  const running = tabRunStatus.state === "running";
+  const drawerOpen = settingsOpenFor === tabId;
+  const settings = tabSettings[tabId] ?? defaultTabSettings(tabId);
+
+  async function runActiveTab() {
+    if (disabledReason || running) return;
+    setRunStatus(tabId, {
+      actionId: action?.action_id,
+      message: `${runConfig.label} is running.`,
+      state: "running"
+    });
+    try {
+      let message = "";
+      if (runConfig.onRun) {
+        message = await runConfig.onRun();
+      } else if (action) {
+        const result = await api.runWorkflowAction(action.action_id);
+        message = workflowRunMessage(action, result);
+      } else {
+        // TODO: Replace this safe placeholder once the backend exposes this tab action.
+        message = `${runConfig.label}: no backend action is registered yet.`;
+      }
+      if (runConfig.onReload) {
+        await runConfig.onReload();
+      }
+      setRunStatus(tabId, {
+        actionId: action?.action_id,
+        message: message || `${runConfig.label} completed.`,
+        state: "success"
+      });
+    } catch (err) {
+      setRunStatus(tabId, {
+        actionId: action?.action_id,
+        message: errorMessage(err),
+        state: "error"
+      });
+    }
+  }
+
   return (
-    <header className="operator-status-header">
-      <div className="operator-status-icon">{icon}</div>
-      <div className="operator-status-main">
-        <p className="operator-kicker">Lab Builder</p>
-        <h1>{title}</h1>
-        <p>{description}</p>
-        <span>{helper}</span>
-      </div>
-      <div className="operator-status-side">
-        {status && <SimpleStatusPill status={status} />}
-        {nextAction && (
-          <div>
-            <span>Next action</span>
-            <strong>{nextAction}</strong>
+    <>
+      <header className="operator-status-header">
+        <div className="operator-status-icon">{icon}</div>
+        <div className="operator-status-main">
+          <p className="operator-kicker">Lab Builder</p>
+          <h1>{title}</h1>
+          <p>{description}</p>
+          <span>{helper}</span>
+        </div>
+        <div className="operator-status-side">
+          {status && <SimpleStatusPill status={status} />}
+          {nextAction && (
+            <div>
+              <span>Next action</span>
+              <strong>{nextAction}</strong>
+            </div>
+          )}
+          <div className="operator-header-actions">
+            <button
+              aria-expanded={drawerOpen}
+              aria-controls={`settings-drawer-${tabId}`}
+              onClick={() => openSettings(tabId)}
+              type="button"
+            >
+              <SlidersHorizontal size={16} />
+              Settings
+            </button>
+            <button
+              className="primary"
+              disabled={Boolean(disabledReason) || running}
+              onClick={() => void runActiveTab()}
+              title={disabledReason || `Run ${runConfig.label}`}
+              type="button"
+            >
+              <Play size={16} />
+              {running ? "Running" : `Run ${runConfig.label}`}
+            </button>
           </div>
-        )}
-        {actions && <div className="operator-header-actions">{actions}</div>}
-      </div>
-    </header>
+          {disabledReason && <p className="operator-run-hint">{disabledReason}</p>}
+        </div>
+      </header>
+      {drawerOpen && (
+        <TabSettingsDrawer
+          onAdvancedChange={(key, value) => updateTabAdvancedSetting(tabId, key, value)}
+          onChange={(patch) => updateTabSettings(tabId, patch)}
+          onClose={closeSettings}
+          settings={settings}
+          tabId={tabId}
+          values={settingsValues}
+        />
+      )}
+      {tabRunStatus.message && (
+        <p className={`operator-action-message ${tabRunStatus.state === "error" ? "error" : tabRunStatus.state}`}>
+          {tabRunStatus.message}
+        </p>
+      )}
+    </>
   );
 }
 
@@ -1092,22 +1340,93 @@ function CurrentViewPanel({ model }: { model: CurrentViewModel }) {
   );
 }
 
-function TabSettingsPanel({ values }: { values: ConfigValue[] }) {
+function Field({ children, label }: { children: ReactNode; label: string }) {
   return (
-    <details className="tab-settings-panel">
-      <summary>
-        <Settings size={16} />
-        <span>Settings</span>
-        <small>Options for this tab</small>
-      </summary>
-      <div>
-        <ConfigValueList values={values} />
+    <label className="field">
+      <span>{label}</span>
+      {children}
+    </label>
+  );
+}
+
+function TabSettingsDrawer({
+  onAdvancedChange,
+  onChange,
+  onClose,
+  settings,
+  tabId,
+  values
+}: {
+  onAdvancedChange: (key: string, value: boolean | string) => void;
+  onChange: (patch: Partial<OperatorTabSettingsState>) => void;
+  onClose: () => void;
+  settings: OperatorTabSettingsState;
+  tabId: OperatorTabId;
+  values: ConfigValue[];
+}) {
+  const advancedSettings = tabAdvancedSettings(tabId);
+  return (
+    <section className="tab-settings-drawer" id={`settings-drawer-${tabId}`} aria-label={`${tabTitle(tabId)} settings`}>
+      <div className="tab-settings-drawer-head">
+        <div>
+          <p className="operator-kicker">Tab Settings</p>
+          <h2>{tabTitle(tabId)} Settings</h2>
+          <p className="operator-muted">These options apply to this tab's run flow. Saved lab values are edited in Edit Config.</p>
+        </div>
+        <button className="icon-button" aria-label="Close settings" onClick={onClose} type="button">
+          <X size={18} />
+        </button>
+      </div>
+      <div className="tab-settings-controls">
+        <Field label="IP mode">
+          <select
+            aria-label="IP mode"
+            onChange={(event) => onChange({ ipMode: event.target.value as IpMode })}
+            value={settings.ipMode}
+          >
+            <option value="ipv4">IPv4</option>
+            <option value="ipv6">IPv6</option>
+            <option value="both">Both</option>
+          </select>
+        </Field>
+        <Field label="SNMP version">
+          <select
+            aria-label="SNMP version"
+            onChange={(event) => onChange({ snmpVersion: event.target.value as SnmpVersion })}
+            value={settings.snmpVersion}
+          >
+            <option value="v2">SNMPv2</option>
+            <option value="v3">SNMPv3</option>
+          </select>
+        </Field>
+      </div>
+      <div className="tab-settings-advanced">
+        {advancedSettings.map((advanced) => (
+          <label className="checkbox-line" key={advanced.key}>
+            <input
+              checked={Boolean(settings.advanced[advanced.key])}
+              onChange={(event) => onAdvancedChange(advanced.key, event.target.checked)}
+              type="checkbox"
+            />
+            <span>
+              <strong>{advanced.label}</strong>
+              <small>{advanced.description}</small>
+            </span>
+          </label>
+        ))}
+      </div>
+      <ConfigValueList values={values} />
+      <div className="tab-settings-foot">
+        <p>
+          TODO: persist per-tab IP mode and SNMP version once the workflow run API accepts tab-scoped settings. The current
+          selections are safe UI state for this session.
+        </p>
         <Link className="button-link" to="/config">
           <Settings size={16} />
           Open Edit Config
         </Link>
       </div>
-    </details>
+    </section>
   );
 }
 
@@ -1153,14 +1472,18 @@ function ConfigValueList({ values }: { values: ConfigValue[] }) {
   );
 }
 
-function PageRunButtons({
+function AdditionalTabActions({
   actions,
   buttons,
-  onReload
+  description,
+  onReload,
+  title
 }: {
   actions: WorkflowAction[];
   buttons: RunButtonDefinition[];
+  description: string;
   onReload: () => Promise<void> | void;
+  title: string;
 }) {
   const [runState, setRunState] = useState<WorkflowRunState>(emptyRunState);
   const byId = useMemo(() => new Map(actions.map((action) => [action.action_id, action])), [actions]);
@@ -1181,13 +1504,14 @@ function PageRunButtons({
   }
 
   return (
-    <section className="operator-section page-run-section" aria-label="Run this tab">
-      <div className="operator-section-head">
-        <div>
-          <p className="operator-kicker">Run</p>
-          <h2>Run this tab</h2>
-        </div>
-      </div>
+    <details className="operator-section additional-actions" aria-label={title}>
+      <summary>
+        <span>
+          <span className="operator-kicker">Additional actions</span>
+          <strong>{title}</strong>
+          <small>{description}</small>
+        </span>
+      </summary>
       <div className="page-run-buttons">
         {buttons.map((button) => {
           if (button.to) {
@@ -1232,7 +1556,7 @@ function PageRunButtons({
           {runState.error || runState.message}
         </p>
       )}
-    </section>
+    </details>
   );
 }
 
@@ -1782,6 +2106,11 @@ function firstAction(byId: Map<string, WorkflowAction>, ids: string[]): Workflow
   return null;
 }
 
+function firstRunnableAction(byId: Map<string, WorkflowAction>, ids: string[], config: TabRunConfig): WorkflowAction | null {
+  const candidates = ids.map((id) => byId.get(id)).filter((action): action is WorkflowAction => Boolean(action));
+  return candidates.find((action) => !disabledReasonForRunConfig(config, action)) ?? candidates[0] ?? null;
+}
+
 function disabledReasonFor(button: RunButtonDefinition, action: WorkflowAction | null): string {
   if (button.kind === "custom" && !button.onClick) {
     return button.disabledReason || "This action is not ready yet.";
@@ -1793,6 +2122,30 @@ function disabledReasonFor(button: RunButtonDefinition, action: WorkflowAction |
     return "";
   }
   if (isChangingAction(action) || button.kind === "write" || button.kind === "apply") {
+    return "Needs guarded confirmation before changes are allowed.";
+  }
+  const blocker = action.ui_run_blockers[0] || action.blockers[0];
+  if (blocker) return humanize(blocker);
+  if (!action.ui_run_supported) {
+    return humanize(action.next_action || "This action is not available from the page yet.");
+  }
+  if (["blocked", "not_in_scope", "manual_command_required", "missing_config"].includes(action.current_availability)) {
+    return humanize(action.next_action || action.current_availability);
+  }
+  return "";
+}
+
+function disabledReasonForRunConfig(config: TabRunConfig, action: WorkflowAction | null): string {
+  if (config.kind === "custom" && !config.onRun) {
+    return config.disabledReason || "This action is not ready yet.";
+  }
+  if (!action) {
+    return config.onRun ? "" : "Action is not registered yet.";
+  }
+  if (config.allowBlockedRun) {
+    return "";
+  }
+  if (isChangingAction(action) || config.kind === "write" || config.kind === "apply") {
     return "Needs guarded confirmation before changes are allowed.";
   }
   const blocker = action.ui_run_blockers[0] || action.blockers[0];
@@ -2209,6 +2562,169 @@ function sourceLabelFromStatus(status: string): string {
   if (status === "ready") return "Ready";
   if (status === "not_checked") return "Not checked";
   return displayStatus(status);
+}
+
+function tabTitle(tabId: OperatorTabId): string {
+  const labels: Record<OperatorTabId, string> = {
+    config: "Edit Config",
+    firmware: "Firmware Upgrades",
+    network: "Network",
+    overview: "Overview",
+    server: "Server",
+    settings: "Settings",
+    storage: "Storage",
+    validation: "Validation",
+    virtualization: "Virtualization"
+  };
+  return labels[tabId];
+}
+
+function tabAdvancedSettings(tabId: OperatorTabId): AdvancedSettingDefinition[] {
+  const shared = [
+    {
+      defaultValue: true,
+      description: "Use the active lab profile targets for this tab.",
+      key: "use_saved_targets",
+      label: "Use saved targets"
+    }
+  ];
+  const definitions: Record<OperatorTabId, AdvancedSettingDefinition[]> = {
+    config: [
+      {
+        defaultValue: true,
+        description: "Keep feature toggles aligned with the saved lab profile.",
+        key: "sync_feature_toggles",
+        label: "Sync feature toggles"
+      },
+      {
+        defaultValue: false,
+        description: "Keep IPv6-only as UI intent until backend persistence exists.",
+        key: "allow_ipv6_only_intent",
+        label: "Allow IPv6-only intent"
+      }
+    ],
+    firmware: [
+      ...shared,
+      {
+        defaultValue: true,
+        description: "Include the HPE Service Pack and selected local files in scan results.",
+        key: "include_media_matching",
+        label: "Match local media"
+      },
+      {
+        defaultValue: false,
+        description: "Show protected upgrade placeholders without enabling firmware apply.",
+        key: "show_guarded_upgrade",
+        label: "Show guarded upgrade"
+      }
+    ],
+    network: [
+      ...shared,
+      {
+        defaultValue: true,
+        description: "Include DNS, NTP, VLAN, SNMP, and MTU checks.",
+        key: "include_network_services",
+        label: "Check network services"
+      },
+      {
+        defaultValue: false,
+        description: "Include firmware inventory evidence in the network view.",
+        key: "include_firmware_evidence",
+        label: "Include firmware evidence"
+      }
+    ],
+    overview: [
+      ...shared,
+      {
+        defaultValue: true,
+        description: "Use validation and provider status as the current view.",
+        key: "include_validation_summary",
+        label: "Include validation summary"
+      },
+      {
+        defaultValue: true,
+        description: "Show saved config values beside discovered status.",
+        key: "include_saved_config",
+        label: "Include saved config"
+      }
+    ],
+    server: [
+      ...shared,
+      {
+        defaultValue: true,
+        description: "Include iLO, ESXi, and RAID readiness in the run.",
+        key: "include_raid_and_esxi",
+        label: "Check iLO, ESXi, and RAID"
+      },
+      {
+        defaultValue: false,
+        description: "Include HPE firmware inventory evidence when present.",
+        key: "include_hpe_firmware",
+        label: "Include HPE firmware"
+      }
+    ],
+    settings: [
+      ...shared,
+      {
+        defaultValue: true,
+        description: "Refresh console mappings when available.",
+        key: "include_console_refresh",
+        label: "Refresh console mappings"
+      },
+      {
+        defaultValue: true,
+        description: "Show configured or missing credential state only.",
+        key: "include_credential_status",
+        label: "Credential status only"
+      }
+    ],
+    storage: [
+      ...shared,
+      {
+        defaultValue: true,
+        description: "Include ONTAP, NFS, and datastore readiness.",
+        key: "include_nfs_readiness",
+        label: "Check NFS readiness"
+      },
+      {
+        defaultValue: true,
+        description: "Include console readiness and selected console path.",
+        key: "include_console_readiness",
+        label: "Check console readiness"
+      }
+    ],
+    validation: [
+      ...shared,
+      {
+        defaultValue: true,
+        description: "Include firmware gate results in Golden State validation.",
+        key: "include_firmware_gate",
+        label: "Include firmware gate"
+      },
+      {
+        defaultValue: true,
+        description: "Prepare proof links for handoff after validation.",
+        key: "prepare_handoff",
+        label: "Prepare handoff proof"
+      }
+    ],
+    virtualization: [
+      ...shared,
+      {
+        defaultValue: true,
+        description: "Include datastore visibility and ESXi attach checks.",
+        key: "include_datastore_checks",
+        label: "Check datastore visibility"
+      },
+      {
+        defaultValue: true,
+        description: "Include VM inventory visibility in the run.",
+        key: "include_vm_inventory",
+        label: "Check VM inventory"
+      }
+    ]
+  };
+  return definitions[tabId];
 }
 
 function tabSettingsValues(tab: string, profile: LabProfile | null): ConfigValue[] {

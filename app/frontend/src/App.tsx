@@ -38,6 +38,7 @@ import {
   OperatorServerPage,
   OperatorSettingsPage,
   OperatorStoragePage,
+  OperatorTabStateProvider,
   OperatorValidationPage,
   OperatorVirtualizationPage
 } from "./operatorPages";
@@ -723,70 +724,72 @@ function App() {
           labProfileLoading={labProfileLoading}
           labProfileState={labProfileState}
         >
-          <Routes>
-            <RouterRoute path="/" element={<Navigate to="/overview" replace />} />
-            <RouterRoute
-              path="/overview"
-              element={
-                <OperatorOverviewPage
-                  health={health}
-                  labProfileError={labProfileError}
-                  labProfileLoading={labProfileLoading}
-                  labProfileState={labProfileState}
-                />
-              }
-            />
-            <RouterRoute path="/network" element={<OperatorNetworkPage labProfileState={labProfileState} />} />
-            <RouterRoute path="/server" element={<OperatorServerPage labProfileState={labProfileState} />} />
-            <RouterRoute path="/storage" element={<OperatorStoragePage labProfileState={labProfileState} />} />
-            <RouterRoute path="/virtualization" element={<OperatorVirtualizationPage labProfileState={labProfileState} />} />
-            <RouterRoute path="/firmware-upgrades" element={<OperatorFirmwareUpgradesPage labProfileState={labProfileState} />} />
-            <RouterRoute path="/validation" element={<OperatorValidationPage labProfileState={labProfileState} />} />
-            <RouterRoute path="/config" element={<ActiveLabConfigDrawer embedded />} />
-            <RouterRoute path="/dashboard" element={<Navigate to="/overview" replace />} />
-            <RouterRoute path="/lab-setup" element={<Navigate to="/overview" replace />} />
-            <RouterRoute path="/hardware" element={<Navigate to="/overview" replace />} />
-            <RouterRoute path="/run-center" element={<Navigate to="/overview" replace />} />
-            <RouterRoute path="/control-center" element={<Navigate to="/overview" replace />} />
-            <RouterRoute path="/firmware" element={<Navigate to="/firmware-upgrades" replace />} />
-            <RouterRoute path="/golden-state" element={<Navigate to="/validation" replace />} />
-            <RouterRoute path="/validation-reports" element={<Navigate to="/validation" replace />} />
-            <RouterRoute path="/verification" element={<Navigate to="/validation" replace />} />
-            <RouterRoute path="/lab-validation" element={<Navigate to="/validation" replace />} />
-            <RouterRoute path="/reports" element={<Navigate to="/validation" replace />} />
-            <RouterRoute
-              path="/settings"
-              element={
-                <OperatorSettingsPage
-                  health={health}
-                  labProfileError={labProfileError}
-                  labProfileLoading={labProfileLoading}
-                  labProfileState={labProfileState}
-                  onReloadLabProfile={loadLabProfileState}
-                />
-              }
-            />
-            <RouterRoute path="/requests" element={<RequestListPage />} />
-            <RouterRoute path="/requests/new" element={<NewRequest />} />
-            <RouterRoute path="/requests/:id" element={<RequestDetail />} />
-            <RouterRoute path="/workflow-runs/:id" element={<WorkflowRunDetail />} />
-            <RouterRoute
-              path="/lab-profiles"
-              element={
-                <LabProfilesPage
-                  error={labProfileError}
-                  loading={labProfileLoading}
-                  onReload={loadLabProfileState}
-                  onStateChange={setLabProfileState}
-                  state={labProfileState}
-                />
-              }
-            />
-            <RouterRoute path="/audit-events" element={<AuditEvents />} />
-            <RouterRoute path="/artifacts" element={<Navigate to="/validation" replace />} />
-            <RouterRoute path="/media" element={<MediaInventoryPage />} />
-            <RouterRoute path="/providers" element={<Navigate to="/overview" replace />} />
-          </Routes>
+          <OperatorTabStateProvider>
+            <Routes>
+              <RouterRoute path="/" element={<Navigate to="/overview" replace />} />
+              <RouterRoute
+                path="/overview"
+                element={
+                  <OperatorOverviewPage
+                    health={health}
+                    labProfileError={labProfileError}
+                    labProfileLoading={labProfileLoading}
+                    labProfileState={labProfileState}
+                  />
+                }
+              />
+              <RouterRoute path="/network" element={<OperatorNetworkPage labProfileState={labProfileState} />} />
+              <RouterRoute path="/server" element={<OperatorServerPage labProfileState={labProfileState} />} />
+              <RouterRoute path="/storage" element={<OperatorStoragePage labProfileState={labProfileState} />} />
+              <RouterRoute path="/virtualization" element={<OperatorVirtualizationPage labProfileState={labProfileState} />} />
+              <RouterRoute path="/firmware-upgrades" element={<OperatorFirmwareUpgradesPage labProfileState={labProfileState} />} />
+              <RouterRoute path="/validation" element={<OperatorValidationPage labProfileState={labProfileState} />} />
+              <RouterRoute path="/config" element={<ActiveLabConfigDrawer embedded />} />
+              <RouterRoute path="/dashboard" element={<Navigate to="/overview" replace />} />
+              <RouterRoute path="/lab-setup" element={<Navigate to="/overview" replace />} />
+              <RouterRoute path="/hardware" element={<Navigate to="/overview" replace />} />
+              <RouterRoute path="/run-center" element={<Navigate to="/overview" replace />} />
+              <RouterRoute path="/control-center" element={<Navigate to="/overview" replace />} />
+              <RouterRoute path="/firmware" element={<Navigate to="/firmware-upgrades" replace />} />
+              <RouterRoute path="/golden-state" element={<Navigate to="/validation" replace />} />
+              <RouterRoute path="/validation-reports" element={<Navigate to="/validation" replace />} />
+              <RouterRoute path="/verification" element={<Navigate to="/validation" replace />} />
+              <RouterRoute path="/lab-validation" element={<Navigate to="/validation" replace />} />
+              <RouterRoute path="/reports" element={<Navigate to="/validation" replace />} />
+              <RouterRoute
+                path="/settings"
+                element={
+                  <OperatorSettingsPage
+                    health={health}
+                    labProfileError={labProfileError}
+                    labProfileLoading={labProfileLoading}
+                    labProfileState={labProfileState}
+                    onReloadLabProfile={loadLabProfileState}
+                  />
+                }
+              />
+              <RouterRoute path="/requests" element={<RequestListPage />} />
+              <RouterRoute path="/requests/new" element={<NewRequest />} />
+              <RouterRoute path="/requests/:id" element={<RequestDetail />} />
+              <RouterRoute path="/workflow-runs/:id" element={<WorkflowRunDetail />} />
+              <RouterRoute
+                path="/lab-profiles"
+                element={
+                  <LabProfilesPage
+                    error={labProfileError}
+                    loading={labProfileLoading}
+                    onReload={loadLabProfileState}
+                    onStateChange={setLabProfileState}
+                    state={labProfileState}
+                  />
+                }
+              />
+              <RouterRoute path="/audit-events" element={<AuditEvents />} />
+              <RouterRoute path="/artifacts" element={<Navigate to="/validation" replace />} />
+              <RouterRoute path="/media" element={<MediaInventoryPage />} />
+              <RouterRoute path="/providers" element={<Navigate to="/overview" replace />} />
+            </Routes>
+          </OperatorTabStateProvider>
         </AppShell>
       </ReportIssuesContext.Provider>
       </LabProfileContext.Provider>
@@ -1081,15 +1084,24 @@ function ActiveLabConfigDrawer({
   const [form, setForm] = useState<LabProfileFormState>(() =>
     activeProfile ? labProfileFormFrom(activeProfile) : blankLabProfileForm()
   );
+  const [configIpMode, setConfigIpMode] = useState<"ipv4" | "ipv6" | "both">(() =>
+    form.globalSettings.disableIpv6 ? "ipv4" : "both"
+  );
+  const [configSettingsOpen, setConfigSettingsOpen] = useState(false);
+  const [configSnmpVersion, setConfigSnmpVersion] = useState<"v2" | "v3">("v2");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const profileKey = `${activeProfile?.id ?? "none"}:${activeProfile?.version ?? "0"}`;
   const subnetPrefix = parseSubnetPrefix(form.globalSettings.subnetPrefix);
   const netappEnabled = labNetAppSupported(subnetPrefix);
+  const configFormId = embedded ? "active-lab-config-form" : undefined;
 
   useEffect(() => {
-    setForm(activeProfile ? labProfileFormFrom(activeProfile) : blankLabProfileForm());
+    const nextForm = activeProfile ? labProfileFormFrom(activeProfile) : blankLabProfileForm();
+    setForm(nextForm);
+    setConfigIpMode(nextForm.globalSettings.disableIpv6 ? "ipv4" : "both");
+    setConfigSnmpVersion("v2");
     setMessage("");
     setError("");
   }, [profileKey, activeProfile]);
@@ -1114,6 +1126,16 @@ function ActiveLabConfigDrawer({
 
   function updatePrefix(value: string) {
     setForm((current) => applyLabSubnetChoice(current, current.addresses.subnet || defaultLabSubnet, value));
+  }
+
+  function updateConfigIpMode(value: "ipv4" | "ipv6" | "both") {
+    setConfigIpMode(value);
+    updateGlobal("disableIpv6", value === "ipv4");
+  }
+
+  function updateConfigSnmpVersion(value: "v2" | "v3") {
+    setConfigSnmpVersion(value);
+    updateGlobal("enableSnmp", true);
   }
 
   async function submit(event: FormEvent) {
@@ -1154,7 +1176,7 @@ function ActiveLabConfigDrawer({
           </button>
         )}
       </div>
-      <form className="config-drawer-form" onSubmit={submit}>
+      <form className="config-drawer-form" id={configFormId} onSubmit={submit}>
         <section>
           <h3>Setup</h3>
           <div className="config-drawer-grid">
@@ -1338,17 +1360,17 @@ function ActiveLabConfigDrawer({
           </section>
         )}
         {(message || error) && <p className={error ? "form-error" : "active-lab-success"}>{error || message}</p>}
-        <div className="config-drawer-actions">
-          <button disabled={busy || loading} type="submit" className="primary">
-            <Save size={16} />
-            {busy ? "Saving" : activeProfile?.source === "saved" ? "Save Config" : "Save As Lab Setup"}
-          </button>
-          {!embedded && (
+        {!embedded && (
+          <div className="config-drawer-actions">
+            <button disabled={busy || loading} type="submit" className="primary">
+              <Save size={16} />
+              {busy ? "Saving" : activeProfile?.source === "saved" ? "Save Config" : "Save As Lab Setup"}
+            </button>
             <button disabled={busy} onClick={onClose} type="button">
               Close
             </button>
-          )}
-        </div>
+          </div>
+        )}
       </form>
     </aside>
   );
@@ -1365,9 +1387,135 @@ function ActiveLabConfigDrawer({
             <span>Saved values drive every side tab. Secret values are not shown here.</span>
           </div>
           <div className="operator-status-side">
-            <StatusBadge status={activeProfile ? "ready" : "not_configured_yet"} />
+            <div>
+              <span>Status</span>
+              <strong>{activeProfile ? "Active setup loaded" : "No active setup"}</strong>
+            </div>
+            <div className="operator-header-actions">
+              <button
+                aria-controls="settings-drawer-config"
+                aria-expanded={configSettingsOpen}
+                onClick={() => setConfigSettingsOpen(true)}
+                type="button"
+              >
+                <Settings size={16} />
+                Settings
+              </button>
+              <button className="primary" disabled={busy || loading} form={configFormId} type="submit">
+                <Play size={16} />
+                {busy ? "Running" : "Run Save Config"}
+              </button>
+            </div>
           </div>
         </header>
+        {configSettingsOpen && (
+          <section className="tab-settings-drawer" id="settings-drawer-config" aria-label="Edit Config settings">
+            <div className="tab-settings-drawer-head">
+              <div>
+                <p className="operator-kicker">Tab Settings</p>
+                <h2>Edit Config Settings</h2>
+                <p className="operator-muted">These settings affect config editing and the next save from this tab.</p>
+              </div>
+              <button className="icon-button" aria-label="Close settings" onClick={() => setConfigSettingsOpen(false)} type="button">
+                <X size={18} />
+              </button>
+            </div>
+            <div className="tab-settings-controls">
+              <Field label="IP mode">
+                <select aria-label="IP mode" onChange={(event) => updateConfigIpMode(event.target.value as "ipv4" | "ipv6" | "both")} value={configIpMode}>
+                  <option value="ipv4">IPv4</option>
+                  <option value="ipv6">IPv6</option>
+                  <option value="both">Both</option>
+                </select>
+              </Field>
+              <Field label="SNMP version">
+                <select aria-label="SNMP version" onChange={(event) => updateConfigSnmpVersion(event.target.value as "v2" | "v3")} value={configSnmpVersion}>
+                  <option value="v2">SNMPv2</option>
+                  <option value="v3">SNMPv3</option>
+                </select>
+              </Field>
+            </div>
+            <div className="tab-settings-advanced">
+              <label className="checkbox-line">
+                <input
+                  checked={form.globalSettings.blockLegacyProtocols}
+                  disabled={loading || busy}
+                  onChange={(event) => updateGlobal("blockLegacyProtocols", event.target.checked)}
+                  type="checkbox"
+                />
+                <span>
+                  <strong>Block legacy protocols</strong>
+                  <small>Keep insecure fallback protocols disabled in generated config.</small>
+                </span>
+              </label>
+              <label className="checkbox-line">
+                <input
+                  checked={form.globalSettings.enableSnmp}
+                  disabled={loading || busy}
+                  onChange={(event) => updateGlobal("enableSnmp", event.target.checked)}
+                  type="checkbox"
+                />
+                <span>
+                  <strong>Enable SNMP</strong>
+                  <small>Selected protocol version is held as UI state until backend persistence exists.</small>
+                </span>
+              </label>
+            </div>
+            <p className="tab-settings-note">
+              TODO: persist IPv6-only mode and SNMP version after the lab profile schema accepts those fields. Saving now preserves the existing IPv6 allowed/disabled flag and SNMP enabled flag.
+            </p>
+          </section>
+        )}
+        <section className="operator-section current-view-panel" aria-label="Current view">
+          <div className="operator-section-head">
+            <div>
+              <p className="operator-kicker">Current View</p>
+              <h2>What the app sees now</h2>
+              <p className="operator-muted">
+                {activeProfile ? "The editable values below are loaded from the active lab setup." : "No saved setup is active yet."}
+              </p>
+            </div>
+            <StatusBadge status={activeProfile ? "ready" : "not_configured_yet"} />
+          </div>
+          <dl className="config-value-list">
+            <div>
+              <dt>Active setup</dt>
+              <dd><strong>{activeProfile?.name ?? "No active setup"}</strong><span>Saved setup</span></dd>
+            </div>
+            <div>
+              <dt>Subnet</dt>
+              <dd><strong>{displayAddress(form.addresses.subnet)}</strong><span>Editable below</span></dd>
+            </div>
+            <div>
+              <dt>Source</dt>
+              <dd><strong>{activeProfile ? labelize(activeProfile.source) : "Not checked"}</strong><span>Saved setup</span></dd>
+            </div>
+            <div>
+              <dt>Freshness</dt>
+              <dd><strong>{activeProfile ? "Operator config" : "Not checked"}</strong><span>Current page state</span></dd>
+            </div>
+            <div>
+              <dt>Checked</dt>
+              <dd><strong>{activeProfile?.updated_at ? formatDateTime(activeProfile.updated_at) : "Not checked"}</strong><span>Profile updated</span></dd>
+            </div>
+            <div>
+              <dt>IP mode</dt>
+              <dd><strong>{configIpMode === "ipv4" ? "IPv4" : configIpMode === "ipv6" ? "IPv6" : "Both"}</strong><span>Config tab setting</span></dd>
+            </div>
+            <div>
+              <dt>SNMP</dt>
+              <dd><strong>{form.globalSettings.enableSnmp ? `Enabled (${configSnmpVersion === "v2" ? "SNMPv2" : "SNMPv3"})` : "Disabled"}</strong><span>Network defaults</span></dd>
+            </div>
+            <div>
+              <dt>Storage protocol</dt>
+              <dd><strong>{labelize(form.globalSettings.storageProtocol || "none")}</strong><span>Network defaults</span></dd>
+            </div>
+            <div>
+              <dt>Last result</dt>
+              <dd><strong>{busy ? "Saving" : error ? "Error" : message ? "Saved" : "Not run"}</strong><span>{error || message || "Run Save Config when ready"}</span></dd>
+            </div>
+          </dl>
+        </section>
         {editor}
       </div>
     );

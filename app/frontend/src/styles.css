@@ -651,47 +651,122 @@ button:disabled {
   line-height: 1.4;
 }
 
-.tab-settings-panel {
+.tab-settings-drawer {
   background: #ffffff;
-  border: 1px solid #dfe4ea;
+  border: 1px solid #bfd5ee;
   border-radius: 8px;
-}
-
-.tab-settings-panel summary {
-  align-items: center;
-  cursor: pointer;
+  box-shadow: 0 14px 34px rgba(15, 23, 42, 0.09);
   display: grid;
-  gap: 8px;
-  grid-template-columns: auto auto minmax(0, 1fr);
-  list-style: none;
-  padding: 14px 16px;
+  gap: 16px;
+  padding: 18px;
 }
 
-.tab-settings-panel summary::-webkit-details-marker {
-  display: none;
+.tab-settings-drawer-head {
+  align-items: flex-start;
+  display: flex;
+  gap: 14px;
+  justify-content: space-between;
 }
 
-.tab-settings-panel summary span {
+.tab-settings-drawer-head h2 {
   color: #0f172a;
-  font-weight: 900;
+  font-size: 22px;
+  letter-spacing: 0;
+  margin: 4px 0 5px;
 }
 
-.tab-settings-panel summary small {
+.tab-settings-controls {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(180px, 1fr));
+}
+
+.tab-settings-advanced {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+}
+
+.tab-settings-advanced .checkbox-line {
+  align-items: flex-start;
+}
+
+.tab-settings-advanced .checkbox-line span {
+  display: grid;
+  gap: 2px;
+}
+
+.tab-settings-advanced .checkbox-line strong,
+.tab-settings-advanced .checkbox-line small {
+  display: block;
+}
+
+.tab-settings-advanced .checkbox-line small,
+.tab-settings-foot p,
+.tab-settings-note,
+.operator-run-hint {
   color: #64748b;
   font-size: 12px;
   font-weight: 800;
-  justify-self: end;
+  line-height: 1.4;
+  margin: 0;
 }
 
-.tab-settings-panel > div {
+.tab-settings-foot {
+  align-items: center;
   border-top: 1px solid #e5e9ef;
-  display: grid;
+  display: flex;
+  flex-wrap: wrap;
   gap: 12px;
-  padding: 14px 16px 16px;
+  justify-content: space-between;
+  padding-top: 4px;
 }
 
-.page-run-section {
-  border-color: #bfdbfe;
+.tab-settings-foot p,
+.tab-settings-note {
+  max-width: 760px;
+}
+
+.additional-actions {
+  border-color: #dbe5ef;
+  padding: 0;
+}
+
+.additional-actions summary {
+  align-items: center;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  list-style: none;
+  padding: 16px 18px;
+}
+
+.additional-actions summary::-webkit-details-marker {
+  display: none;
+}
+
+.additional-actions summary > span {
+  display: grid;
+  gap: 4px;
+}
+
+.additional-actions summary strong {
+  color: #0f172a;
+  font-size: 17px;
+}
+
+.additional-actions summary small {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.additional-actions .page-run-buttons,
+.additional-actions .operator-action-message {
+  margin: 0 18px 18px;
 }
 
 .run-button-wrap {
@@ -719,6 +794,18 @@ button:disabled {
   font-weight: 800;
   margin: 0;
   padding: 10px 12px;
+}
+
+.operator-action-message.running {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+  color: #334155;
+}
+
+.operator-action-message.success {
+  background: #e6f6ee;
+  border-color: #bbf7d0;
+  color: #166534;
 }
 
 .operator-action-message.error,
@@ -7451,7 +7538,8 @@ pre {
   }
 
   .access-summary,
-  .config-value-list {
+  .config-value-list,
+  .tab-settings-controls {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
@@ -7488,8 +7576,15 @@ pre {
   }
 
   .access-summary,
-  .config-value-list {
+  .config-value-list,
+  .tab-settings-controls {
     grid-template-columns: 1fr;
+  }
+
+  .tab-settings-foot,
+  .additional-actions summary {
+    align-items: stretch;
+    flex-direction: column;
   }
 
   .access-summary article,
