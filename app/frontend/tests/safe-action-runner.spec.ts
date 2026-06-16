@@ -238,7 +238,7 @@ test("renders the new top-level navigation and pages", async ({ page }) => {
   await page.goto("/config");
   await expect(page.locator("h1", { hasText: "Edit Config" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Settings" }).first()).toBeVisible();
-  await expect(page.getByRole("button", { name: "Run Save Config" })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Run Save/ })).toBeVisible();
   await page.goto("/settings");
   await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
 
@@ -249,28 +249,29 @@ test("renders the new top-level navigation and pages", async ({ page }) => {
 test("overview shows active setup, lab values, and access without dashboard clutter", async ({ page }) => {
   await page.goto("/overview");
 
-  await expect(page.getByRole("heading", { name: "Active lab setup" })).toBeVisible();
-  await expect(page.getByText("Runtime Lab").first()).toBeVisible();
-  await expect(page.getByText("192.168.1.0/24").first()).toBeVisible();
+  const workspace = page.locator("section[aria-label='Current view']").first();
+  const objects = workspace.locator("[aria-label='Objects']");
+  const detail = workspace.locator("[aria-label='Selected object detail']");
+
+  await expect(workspace.getByRole("heading", { name: "Current state and targets" })).toBeVisible();
+  await expect(objects).toContainText("Active Lab Setup");
+  await expect(objects).toContainText("Cisco");
+  await expect(objects).toContainText("iLO");
+  await expect(objects).toContainText("NetApp");
+  await expect(detail).toContainText("Runtime Lab");
+  await expect(detail).toContainText("192.168.1.0/24");
   await expect(page.locator("nav").getByText("Edit Config")).toBeVisible();
 
-  await expect(page.getByRole("heading", { name: "Lab Values" })).toBeVisible();
-  await expect(page.getByText("Cisco IP").first()).toBeVisible();
-  await expect(page.getByText("192.168.1.204").first()).toBeVisible();
-  await expect(page.getByText("iLO IP").first()).toBeVisible();
-  await expect(page.getByText("192.168.1.201").first()).toBeVisible();
-  await expect(page.getByText("ESXi IP").first()).toBeVisible();
-  await expect(page.getByText("192.168.1.203").first()).toBeVisible();
-  await expect(page.getByText("NetApp cluster IP").first()).toBeVisible();
-  await expect(page.getByText("192.168.1.220").first()).toBeVisible();
-  await expect(page.getByText("vCenter IP").first()).toBeVisible();
-  await expect(page.getByText("192.168.1.206").first()).toBeVisible();
+  await workspace.getByRole("button", { name: /Cisco/ }).click();
+  await expect(detail).toContainText("192.168.1.204");
+  await workspace.getByRole("button", { name: /iLO/ }).click();
+  await expect(detail).toContainText("192.168.1.201");
+  await workspace.getByRole("button", { name: /NetApp/ }).click();
+  await expect(detail).toContainText("192.168.1.220");
   await expect(page.getByText("netapp_nfs_ds01").first()).toBeVisible();
 
-  await expect(page.getByRole("heading", { name: "Currently Accessible" })).toBeVisible();
-  await expect(page.getByRole("row", { name: /Cisco/ })).toContainText(/Accessible|Needs credentials|Needs console/);
-  await expect(page.getByRole("row", { name: /iLO/ })).toContainText(/Accessible|Needs credentials/);
-  await expect(page.getByRole("row", { name: /NetApp/ })).toContainText(/Accessible|Need NetApp API reachable|Needs credentials/);
+  await expect(page.getByRole("heading", { name: "Lab Values" })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Currently Accessible" })).toHaveCount(0);
   await expect(page.getByText(/what is healthy/i)).toHaveCount(0);
   await expect(page.getByText(/what is next/i)).toHaveCount(0);
   await expect(page.getByText("Artifact")).toHaveCount(0);
@@ -285,7 +286,7 @@ test("each side tab exposes contextual settings and a dedicated run button", asy
     ["/virtualization", "Run Test vCenter"],
     ["/firmware-upgrades", "Run Scan Firmware"],
     ["/validation", "Run Validation"],
-    ["/config", "Run Save Config"],
+    ["/config", "Run Save As Lab Setup"],
     ["/settings", "Run Refresh Settings"]
   ] as const;
 
@@ -305,7 +306,6 @@ test("operator pages expose a current view with refresh or fix guidance", async 
     "/virtualization",
     "/firmware-upgrades",
     "/validation",
-    "/config",
     "/settings"
   ];
 
@@ -313,7 +313,9 @@ test("operator pages expose a current view with refresh or fix guidance", async 
     await page.goto(path);
     const currentView = page.locator("section[aria-label='Current view']").first();
     await expect(currentView).toBeVisible();
-    await expect(currentView).toContainText("What the app sees now");
+    await expect(currentView).toContainText("Current state and targets");
+    await expect(currentView.locator("[aria-label='Objects']")).toBeVisible();
+    await expect(currentView.locator("[aria-label='Selected object detail']")).toBeVisible();
     await expect(currentView).toContainText("Source");
     await expect(currentView).toContainText("Freshness");
     await expect(currentView).toContainText("Checked");
@@ -325,11 +327,24 @@ test("operator pages expose a current view with refresh or fix guidance", async 
     await page.getByRole("button", { name: "Close settings" }).first().click();
   }
 
+  await page.goto("/config");
+  const configCurrentView = page.locator("section[aria-label='Current view']").first();
+  await expect(configCurrentView).toContainText("Active setup");
+  await expect(configCurrentView).toContainText("IP mode");
+  await expect(configCurrentView).toContainText("Last result");
+  await expect(page.getByRole("navigation", { name: "Config sections" })).toContainText("Network Defaults");
+  await page.getByRole("button", { name: /Network Defaults/ }).click();
+  await expect(page.locator("section[aria-label='Config section editor']")).toContainText("DNS");
+  await page.getByRole("button", { name: "Settings" }).first().click();
+  const configSettings = page.locator("section.tab-settings-drawer").first();
+  await expect(configSettings.locator("select[aria-label='IP mode']")).toBeVisible();
+  await expect(configSettings.locator("select[aria-label='SNMP version']")).toBeVisible();
+
   await page.goto("/network");
   const networkCurrentView = page.locator("section[aria-label='Current view']").first();
-  await expect(networkCurrentView).toContainText("Test Switch");
-  await expect(networkCurrentView).toContainText("Test Switch checks Cisco reachability");
-  await expect(networkCurrentView).toContainText("Run Test Switch after fixing connectivity or credentials.");
+  await expect(page.getByRole("button", { name: "Run Test Switch" })).toBeVisible();
+  await expect(networkCurrentView).toContainText("Cisco access is ready.");
+  await expect(networkCurrentView).toContainText("make provider-lab-cisco-setup-readiness");
 });
 
 test("advanced proof is collapsed and operator labels hide raw statuses", async ({ page }) => {
@@ -337,9 +352,10 @@ test("advanced proof is collapsed and operator labels hide raw statuses", async 
 
   const advanced = page.locator("details.advanced-drawer").first();
   await expect(advanced).not.toHaveAttribute("open", "");
-  await expect(page.getByText("Golden State", { exact: true })).toBeVisible();
-  await expect(page.getByText("Expected working lab state.").first()).toBeVisible();
-  await expect(page.getByText("Different from expected").first()).toBeVisible();
+  const detail = page.getByLabel("Selected object detail");
+  await expect(detail.getByText("Golden State", { exact: true })).toBeVisible();
+  await expect(page.getByText("Golden State means expected working lab state.").first()).toBeVisible();
+  await expect(detail.getByText("Different from expected").first()).toBeVisible();
   await expect(page.getByText("Artifact")).toHaveCount(0);
   await expect(page.getByText("manual_review")).toHaveCount(0);
   await expect(page.getByText("not_configured_yet")).toHaveCount(0);
@@ -357,31 +373,37 @@ test("firmware table renders upgrade path states", async ({ page }) => {
   await expect(page.getByRole("button", { name: "Rescan Files" }).first()).toBeVisible();
   await expect(page.getByRole("link", { name: "Open Media Inventory" })).toBeVisible();
 
-  const ciscoRow = page.getByRole("row", { name: /Cisco Switch.*IOS XE/ });
-  await expect(ciscoRow).toHaveCount(1);
-  await expect(ciscoRow).toContainText("17.15.05");
-  await expect(ciscoRow).toContainText("Needs review");
-  await expect(ciscoRow).toContainText("cat9k_iosxe.17.15.05.SPA.bin");
-  await expect(ciscoRow).toContainText("Auto-selected");
+  const workspace = page.locator("section[aria-label='Current view']").first();
+  const objects = workspace.locator("[aria-label='Objects']");
+  const detail = workspace.locator("[aria-label='Selected object detail']");
+
+  await expect(objects).toContainText("Cisco Switch");
+  await expect(detail).toContainText("Cisco Switch");
+  await expect(detail).toContainText("IOS XE");
+  await expect(detail).toContainText("17.15.05");
+  await expect(detail).toContainText("Needs review");
+  await expect(detail).toContainText("cat9k_iosxe.17.15.05.SPA.bin");
+  await expect(detail).toContainText("Auto-selected");
   const selectionSave = page.waitForResponse((response) =>
     response.url().includes("/api/v1/firmware/file-selections") &&
     response.request().method() === "PUT"
   );
-  await ciscoRow.getByRole("combobox").selectOption("cat9k_iosxe.17.12.01.SPA.bin");
+  await detail.getByRole("combobox", { name: /Cisco Switch IOS XE firmware file/ }).selectOption("cat9k_iosxe.17.12.01.SPA.bin");
   await expect((await selectionSave).ok()).toBeTruthy();
-  await expect(ciscoRow).toContainText("cat9k_iosxe.17.12.01.SPA.bin");
-  await expect(ciscoRow).toContainText("Selected by user");
+  await expect(detail).toContainText("cat9k_iosxe.17.12.01.SPA.bin");
+  await expect(detail).toContainText("Selected by user");
   await expect(page.getByText("1 saved")).toBeVisible();
   await page.getByRole("button", { name: "Rescan Files" }).click();
-  await expect(ciscoRow).toContainText("cat9k_iosxe.17.12.01.SPA.bin");
-  await expect(ciscoRow).toContainText("Selected by user");
-  await expect(ciscoRow.getByRole("button", { name: "Scan" })).toHaveCount(0);
-  await expect(ciscoRow.getByRole("button", { name: "Validate Path" })).toHaveCount(0);
-  await expect(ciscoRow.getByRole("button", { name: "Upgrade" })).toHaveCount(0);
+  await expect(detail).toContainText("cat9k_iosxe.17.12.01.SPA.bin");
+  await expect(detail).toContainText("Selected by user");
+  await expect(workspace.getByRole("button", { name: "Scan" })).toHaveCount(0);
+  await expect(workspace.getByRole("button", { name: "Validate Path" })).toHaveCount(0);
+  await expect(workspace.getByRole("button", { name: "Upgrade" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Validate Upgrade Path" })).toHaveCount(0);
 
-  await expect(page.getByRole("row", { name: /HPE Server.*Service Pack \/ Smart Array/ })).toContainText("SPP2024.03.00.iso");
-  await expect(page.getByRole("row", { name: /NetApp.*ONTAP/ })).toHaveCount(1);
+  await objects.getByRole("button", { name: /HPE Server.*Smart Array/ }).click();
+  await expect(detail).toContainText("SPP2024.03.00.iso");
+  await expect(objects).toContainText("NetApp");
   const advanced = page.locator("details.advanced-drawer").first();
   await expect(advanced).not.toHaveAttribute("open", "");
   await expect(page.getByText("artifacts/codex-runs/cisco-firmware-inventory-report.md")).toHaveCount(0);
@@ -419,12 +441,16 @@ test("media inventory displays actual file names when exposed by the backend", a
 test("settings uses active lab setup values and never renders secret material", async ({ page }) => {
   await page.goto("/settings");
 
+  const workspace = page.locator("section[aria-label='Current view']").first();
+  const detail = workspace.locator("[aria-label='Selected object detail']");
   await expect(page.getByText("Runtime Lab").first()).toBeVisible();
   await expect(page.getByText("192.168.1.201").first()).toBeVisible();
   await expect(page.getByText("192.168.1.204").first()).toBeVisible();
   await expect(page.getByText("192.168.1.203").first()).toBeVisible();
   await expect(page.getByText("192.168.1.220").first()).toBeVisible();
-  await expect(page.getByText("Configured or missing only")).toBeVisible();
+  await workspace.getByRole("button", { name: /Credentials/ }).click();
+  await expect(detail).toContainText("Configured or missing");
+  await expect(detail).toContainText("Secret values stay hidden");
   await expect(page.getByText("Secret values are hidden")).toHaveCount(0);
   await expect(page.locator("input[type='password']")).toHaveCount(0);
 });

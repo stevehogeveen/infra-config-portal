@@ -247,11 +247,20 @@ type CurrentViewModelInput = {
   warnings?: Array<string | undefined | null>;
 };
 
-type AccessItem = {
-  label: string;
-  detail?: string;
-  status?: string;
-  value: string;
+type OperatorObjectRow = {
+  checkedAt?: string;
+  details: ConfigValue[];
+  freshness?: string;
+  id: string;
+  nextAction: string;
+  source?: string;
+  status: string;
+  summary: string;
+  target: string;
+  title: string;
+  type: string;
+  warnings?: string[];
+  blockers?: string[];
 };
 
 type AccessRow = {
@@ -374,7 +383,7 @@ export function OperatorOverviewPage({
     void load();
   }, []);
 
-  const rows = useMemo(
+  const inventoryRows = useMemo(
     () => buildInventoryRows({ address, firmwareSummaries, providers, validation, vcenterNetapp }),
     [address, firmwareSummaries, providers, validation, vcenterNetapp]
   );
@@ -387,6 +396,41 @@ export function OperatorOverviewPage({
     [address, ciscoReadiness, providers, validation, vcenterNetapp]
   );
   const currentView = overviewCurrentView({ buildVerification, providers, validation });
+  const workspaceRows = useMemo<OperatorObjectRow[]>(
+    () => [
+      {
+        checkedAt: activeProfile?.updated_at ? formatDateTime(activeProfile.updated_at) : currentView.checkedAt,
+        details: labValues,
+        freshness: "Operator config",
+        id: "active-setup",
+        nextAction: "Open Edit Config if any saved lab value is wrong.",
+        source: activeProfile ? "Saved setup" : "Not checked",
+        status: activeProfile ? "ready" : "not_configured_yet",
+        summary: `${activeProfile?.name ?? "No active setup"} / ${displayAddress(address.subnet)}`,
+        target: displayAddress(address.subnet),
+        title: "Active Lab Setup",
+        type: "Context"
+      },
+      ...accessRows.map((row) => ({
+        checkedAt: currentView.checkedAt,
+        details: [
+          { label: "App can see", value: row.appSees },
+          { label: "Needs", value: row.needs },
+          { label: "Target", value: row.target }
+        ],
+        freshness: currentView.freshness,
+        id: `access-${row.item.toLowerCase().replace(/\s+/g, "-")}`,
+        nextAction: row.needs === "Nothing right now" ? "No action required." : row.needs,
+        source: currentView.source,
+        status: row.status,
+        summary: `${row.item} is ${displayStatus(row.status).toLowerCase()}.`,
+        target: row.target,
+        title: row.item,
+        type: "Reachability"
+      }))
+    ],
+    [accessRows, activeProfile, address.subnet, currentView.checkedAt, currentView.freshness, currentView.source, labValues]
+  );
 
   return (
     <OperatorPage title="Overview">
@@ -407,33 +451,9 @@ export function OperatorOverviewPage({
       />
       <Feedback loading={loading && !validation} error={error || labProfileError} />
       {labProfileLoading && <Feedback loading />}
-      <CurrentViewPanel model={currentView} />
-      <section className="operator-section" aria-label="Active lab summary">
-        <div className="operator-section-head">
-          <div>
-            <p className="operator-kicker">This is what I am working on</p>
-            <h2>Active Lab Setup</h2>
-            <p className="operator-muted">{activeProfile?.name ?? "No active setup"}</p>
-            <p className="operator-muted">
-              {labelize(activeProfile?.profile_topology ?? labProfileState?.active_context?.topology ?? "topology not set")}
-              {" / "}
-              {displayAddress(address.subnet)}
-            </p>
-          </div>
-        </div>
-      </section>
-      <section className="operator-section" aria-label="Lab values">
-        <div className="operator-section-head">
-          <div>
-            <p className="operator-kicker">These are the values</p>
-            <h2>Lab Values</h2>
-          </div>
-        </div>
-        <ConfigValueList values={labValues} />
-      </section>
-      <AccessTable rows={accessRows} />
+      <OperatorWorkspace currentView={currentView} rows={workspaceRows} />
       <AdvancedDrawer title="Advanced details" summary={noProofText}>
-        <InventoryTable rows={rows} />
+        <InventoryTable rows={inventoryRows} />
         <ValidationProofList items={validation?.validation_items ?? []} proofLinks={validation?.proof_links.length ?? 0} />
         <ConfigValueList
           values={[
@@ -484,6 +504,93 @@ export function OperatorNetworkPage({ labProfileState }: OperatorPageProps) {
   const consoleState = objectValue(ciscoReadiness?.console);
   const networkStatus = asString(ciscoReadiness?.status) || (address.cisco_management ? "ready" : "not_configured_yet");
   const currentView = networkCurrentView({ address, ciscoReadiness });
+  const networkRows = useMemo<OperatorObjectRow[]>(
+    () => [
+      {
+        checkedAt: currentView.checkedAt,
+        details: [
+          { label: "Management IP", value: displayAddress(address.cisco_management), source: "Saved setup" },
+          { label: "Credentials", value: "Configured or missing only" },
+          { label: "Prompt", value: displayValue(asString(objectValue(ciscoReadiness?.real_lab_run).prompt_state)) }
+        ],
+        freshness: currentView.freshness,
+        id: "cisco-management",
+        nextAction: humanize(asString(ciscoReadiness?.next_safe_action) || "Run Test Switch."),
+        source: currentView.source,
+        status: networkStatus,
+        summary: asString(ciscoReadiness?.message) || "Cisco management reachability and setup readiness.",
+        target: displayAddress(address.cisco_management),
+        title: "Cisco Management",
+        type: "Device"
+      },
+      {
+        checkedAt: currentView.checkedAt,
+        details: [
+          { label: "Selected path", value: displayValue(asString(consoleState.selected_path)) },
+          { label: "Effective path", value: displayValue(asString(consoleState.effective_path)) },
+          { label: "Status", value: displayStatus(asString(consoleState.status) || "not_checked"), status: asString(consoleState.status) || "not_checked" }
+        ],
+        freshness: currentView.freshness,
+        id: "console",
+        nextAction: "Open Settings if the console path is wrong.",
+        source: currentView.source,
+        status: asString(consoleState.status) || "not_checked",
+        summary: "First-contact access for Cisco setup and recovery.",
+        target: displayValue(asString(consoleState.selected_path) || asString(consoleState.effective_path)),
+        title: "Console",
+        type: "Access"
+      },
+      {
+        checkedAt: currentView.checkedAt,
+        details: [
+          { label: "SSH/SCP", value: boolStateLabel(asBoolean(ciscoReadiness?.management_configured)) },
+          { label: "Secret handling", value: "Configured or missing only" }
+        ],
+        freshness: currentView.freshness,
+        id: "ssh-scp",
+        nextAction: "Run Test Switch after fixing connectivity or credentials.",
+        source: currentView.source,
+        status: asBoolean(ciscoReadiness?.management_configured) ? "ready" : "not_checked",
+        summary: "Management access check without exposing secret values.",
+        target: displayAddress(address.cisco_management),
+        title: "SSH / SCP",
+        type: "Access"
+      },
+      ...[
+        { id: "vlan", label: "VLAN", status: "ready", value: displayValue(global?.vlan_id ?? activeProfile?.vlan_id) },
+        { id: "dns", label: "DNS", status: featureStatus(features, "enable_dns"), value: listLabel(global?.dns_servers ?? activeProfile?.dns) },
+        { id: "ntp", label: "NTP", status: featureStatus(features, "enable_ntp"), value: listLabel(global?.ntp_servers ?? activeProfile?.ntp) },
+        { id: "snmp", label: "SNMP", status: featureStatus(features, "enable_snmp"), value: enabledLabel(features?.enable_snmp) },
+        { id: "mtu", label: "MTU", status: "ready", value: displayValue(global?.mtu ?? activeProfile?.mtu) }
+      ].map((item) => ({
+        checkedAt: currentView.checkedAt,
+        details: [{ label: item.label, value: item.value, source: "Saved setup", status: item.status }],
+        freshness: "Operator config",
+        id: item.id,
+        nextAction: "Open Settings or Edit Config to change this value.",
+        source: "Saved setup",
+        status: item.status,
+        summary: `${item.label} setting used by the network run.`,
+        target: item.value,
+        title: item.label,
+        type: "Network setting"
+      })),
+      {
+        checkedAt: currentView.checkedAt,
+        details: [{ label: "Cisco firmware", value: firmwareVersion(firmwareSummaries, "cisco") }],
+        freshness: currentView.freshness,
+        id: "firmware",
+        nextAction: "Open Firmware Upgrades for file selection and upgrade path.",
+        source: "Firmware files",
+        status: firmwareVersion(firmwareSummaries, "cisco") === "Not checked" ? "not_checked" : "ready",
+        summary: "Firmware evidence that can affect switch readiness.",
+        target: firmwareVersion(firmwareSummaries, "cisco"),
+        title: "Cisco Firmware",
+        type: "Firmware"
+      }
+    ],
+    [activeProfile, address.cisco_management, ciscoReadiness, consoleState, currentView, features, firmwareSummaries, global]
+  );
 
   return (
     <OperatorPage title="Network">
@@ -504,26 +611,7 @@ export function OperatorNetworkPage({ labProfileState }: OperatorPageProps) {
         title="Network"
       />
       <Feedback loading={loading && !ciscoReadiness} error={error} />
-      <CurrentViewPanel model={currentView} />
-      <AccessSummary
-        items={[
-          { label: "Cisco switch", value: displayAddress(address.cisco_management), status: networkStatus },
-          { label: "Console", value: displayValue(asString(consoleState.selected_path) || asString(consoleState.effective_path)), detail: "First contact access" },
-          { label: "SSH access", value: boolStateLabel(asBoolean(ciscoReadiness?.management_configured)), status: asBoolean(ciscoReadiness?.management_configured) ? "ready" : "not_checked" },
-          { label: "Credentials", value: "Configured or missing only", detail: "Secret values are hidden" }
-        ]}
-      />
-      <ConfigValueList
-        values={[
-          { label: "Subnet", value: displayAddress(address.subnet), source: "Saved setup" },
-          { label: "Gateway", value: displayAddress(global?.gateway ?? activeProfile?.gateway), source: "Saved setup" },
-          { label: "VLAN", value: displayValue(global?.vlan_id ?? activeProfile?.vlan_id), source: "Saved setup" },
-          { label: "DNS", value: listLabel(global?.dns_servers ?? activeProfile?.dns), status: featureStatus(features, "enable_dns") },
-          { label: "NTP", value: listLabel(global?.ntp_servers ?? activeProfile?.ntp), status: featureStatus(features, "enable_ntp") },
-          { label: "SNMP", value: enabledLabel(features?.enable_snmp), status: featureStatus(features, "enable_snmp") },
-          { label: "MTU", value: displayValue(global?.mtu ?? activeProfile?.mtu), source: "Saved setup" }
-        ]}
-      />
+      <OperatorWorkspace currentView={currentView} rows={networkRows} />
       <AdvancedDrawer title="Network proof" summary={noProofText}>
         <ConfigValueList
           values={[
@@ -579,6 +667,79 @@ export function OperatorServerPage({ labProfileState }: OperatorPageProps) {
   const esxiStatus = asString(esxiReadiness?.status) || providerStatus(providers, ["esxi"]) || "not_checked";
   const raidStatus = asString(raidPlan?.status) || "not_checked";
   const currentView = serverCurrentView({ address, esxiReadiness, iloStatus, raidPlan, raidStatus });
+  const serverRows = useMemo<OperatorObjectRow[]>(
+    () => [
+      {
+        checkedAt: currentView.checkedAt,
+        details: [
+          { label: "URL", value: address.ilo ? `https://${address.ilo}` : "Not set up yet" },
+          { label: "Credentials", value: "Configured or missing only" },
+          { label: "Power actions", value: "Guarded" }
+        ],
+        freshness: currentView.freshness,
+        id: "ilo",
+        nextAction: "Run Test Server before inventory or firmware work.",
+        source: currentView.source,
+        status: iloStatus,
+        summary: "HPE iLO management endpoint for the server.",
+        target: address.ilo ? `https://${address.ilo}` : "Not set up yet",
+        title: "HPE iLO",
+        type: "Management"
+      },
+      {
+        checkedAt: currentView.checkedAt,
+        details: [
+          { label: "Management IP", value: displayAddress(address.esxi_management), source: "Saved setup" },
+          { label: "Next safe action", value: humanize(asString(esxiReadiness?.next_safe_action) || "Validate ESXi after any server change.") }
+        ],
+        freshness: currentView.freshness,
+        id: "esxi",
+        nextAction: humanize(asString(esxiReadiness?.next_safe_action) || "Run Test Server."),
+        source: currentView.source,
+        status: esxiStatus,
+        summary: asString(esxiReadiness?.message) || "ESXi management readiness.",
+        target: displayAddress(address.esxi_management),
+        title: "ESXi Management",
+        type: "Hypervisor"
+      },
+      {
+        checkedAt: currentView.checkedAt,
+        details: [
+          { label: "Layout", value: raidLayoutLabel(raidPlan), status: raidStatus },
+          { label: "Controller", value: raidControllerModels(raidPlan) },
+          { label: "Warnings", value: String(stringArray(raidPlan?.warnings).length) }
+        ],
+        freshness: currentView.freshness,
+        id: "raid",
+        nextAction: "Validate RAID after storage layout changes.",
+        source: sourceLabel(raidPlan),
+        status: raidStatus,
+        summary: "Smart Array plan and current storage controller state.",
+        target: raidLayoutLabel(raidPlan),
+        title: "RAID Layout",
+        type: "Storage controller",
+        warnings: stringArray(raidPlan?.warnings)
+      },
+      {
+        checkedAt: currentView.checkedAt,
+        details: [
+          { label: "Service Pack", value: servicePackSummary(firmwareSummaries), source: "Firmware files" },
+          { label: "iLO / BIOS", value: firmwareVersion(firmwareSummaries, "ilo") },
+          { label: "Smart Array", value: firmwareVersion(firmwareSummaries, "raid") }
+        ],
+        freshness: currentView.freshness,
+        id: "hpe-firmware",
+        nextAction: "Open Firmware Upgrades to select the HPE Service Pack file.",
+        source: "Firmware files",
+        status: servicePackSummary(firmwareSummaries) === "Scan needed" ? "not_checked" : "ready",
+        summary: "HPE Service Pack, BIOS, iLO, and Smart Array firmware context.",
+        target: servicePackSummary(firmwareSummaries),
+        title: "HPE Firmware",
+        type: "Firmware"
+      }
+    ],
+    [address.esxi_management, address.ilo, currentView, esxiReadiness, esxiStatus, firmwareSummaries, iloStatus, raidPlan, raidStatus]
+  );
 
   return (
     <OperatorPage title="Server">
@@ -599,26 +760,7 @@ export function OperatorServerPage({ labProfileState }: OperatorPageProps) {
         title="Server"
       />
       <Feedback loading={loading && !providers.length} error={error} />
-      <CurrentViewPanel model={currentView} />
-      <AccessSummary
-        items={[
-          { label: "iLO URL", value: address.ilo ? `https://${address.ilo}` : "Not set up yet", status: iloStatus },
-          { label: "Server power", value: "Not checked", detail: "Power-changing actions stay guarded" },
-          { label: "ESXi IP", value: displayAddress(address.esxi_management), status: esxiStatus },
-          { label: "Credentials", value: "Configured or missing only", detail: "Secret values are hidden" }
-        ]}
-      />
-      <ConfigValueList
-        values={[
-          { label: "Server", value: "HPE DL360", source: "Saved setup" },
-          { label: "iLO IP", value: displayAddress(address.ilo), source: "Saved setup" },
-          { label: "RAID layout", value: raidLayoutLabel(raidPlan), status: raidStatus },
-          { label: "HPE Service Pack", value: servicePackSummary(firmwareSummaries), source: "Firmware files" },
-          { label: "ESXi management", value: displayAddress(address.esxi_management), source: "Saved setup" },
-          { label: "BIOS / iLO firmware", value: firmwareVersion(firmwareSummaries, "ilo") },
-          { label: "ESXi version", value: firmwareVersion(firmwareSummaries, "esxi") }
-        ]}
-      />
+      <OperatorWorkspace currentView={currentView} rows={serverRows} />
       <AdvancedDrawer title="Server proof" summary={noProofText}>
         <ConfigValueList
           values={[
@@ -677,6 +819,78 @@ export function OperatorStoragePage({ labProfileState }: OperatorPageProps) {
   const plannedNfs = objectValue(nfsReadiness?.planned_nfs);
   const storageStatus = asString(vcenterNetapp?.status) || asString(nfsReadiness?.status) || asString(netappPlan?.status) || "not_checked";
   const currentView = storageCurrentView({ address, consoleReadiness, netappPlan, nfsReadiness, vcenterNetapp });
+  const storageRows = useMemo<OperatorObjectRow[]>(
+    () => [
+      {
+        checkedAt: currentView.checkedAt,
+        details: [
+          { label: "Cluster management", value: displayAddress(address.netapp_cluster_mgmt), source: "Saved setup" },
+          { label: "SVM management", value: displayAddress(address.netapp_svm_mgmt), source: "Saved setup" },
+          { label: "ONTAP version", value: firmwareVersion(firmwareSummaries, "netapp") }
+        ],
+        freshness: currentView.freshness,
+        id: "cluster",
+        nextAction: humanize(asString(netappPlan?.next_safe_action) || "Run Test NetApp."),
+        source: currentView.source,
+        status: storageStatus,
+        summary: asString(netappPlan?.message) || "ONTAP management and setup readiness.",
+        target: displayAddress(address.netapp_cluster_mgmt),
+        title: "ONTAP Cluster",
+        type: "Storage"
+      },
+      {
+        checkedAt: currentView.checkedAt,
+        details: [
+          { label: "Console", value: displayValue(asString(objectValue(consoleReadiness?.runtime_state).console)) },
+          { label: "Status", value: displayStatus(asString(consoleReadiness?.status) || "not_checked"), status: asString(consoleReadiness?.status) || "not_checked" }
+        ],
+        freshness: currentView.freshness,
+        id: "console",
+        nextAction: "Open Settings if the console path is wrong.",
+        source: sourceLabel(consoleReadiness),
+        status: asString(consoleReadiness?.status) || "not_checked",
+        summary: "Serial console readiness for NetApp first-contact workflows.",
+        target: displayValue(asString(objectValue(consoleReadiness?.runtime_state).console)),
+        title: "Console",
+        type: "Access"
+      },
+      {
+        checkedAt: currentView.checkedAt,
+        details: [
+          { label: "NFS LIFs", value: listLabel(address.netapp_nfs_lifs), source: "Saved setup" },
+          { label: "Volume", value: displayValue(asString(plannedNfs.volume) || asString(plannedNfs.volume_name)) },
+          { label: "Export policy", value: displayValue(asString(plannedNfs.export_policy)) }
+        ],
+        freshness: currentView.freshness,
+        id: "nfs",
+        nextAction: humanize(asString(nfsReadiness?.next_safe_action) || "Validate NFS before any datastore mount action."),
+        source: sourceLabel(nfsReadiness),
+        status: asString(nfsReadiness?.status) || (address.netapp_nfs_lifs.length ? "ready" : "not_configured_yet"),
+        summary: asString(nfsReadiness?.message) || "NFS data path and export readiness.",
+        target: listLabel(address.netapp_nfs_lifs),
+        title: "NFS Data Path",
+        type: "Protocol",
+        warnings: stringArray(nfsReadiness?.warnings)
+      },
+      {
+        checkedAt: currentView.checkedAt,
+        details: [
+          { label: "Datastore", value: datastoreName(vcenterNetapp), status: datastoreVisibleStatus(vcenterNetapp) },
+          { label: "vCenter-NetApp source", value: sourceLabel(vcenterNetapp) }
+        ],
+        freshness: currentView.freshness,
+        id: "datastore",
+        nextAction: humanize(asString(vcenterNetapp?.next_safe_action) || "No datastore action required."),
+        source: sourceLabel(vcenterNetapp),
+        status: datastoreVisibleStatus(vcenterNetapp),
+        summary: asString(vcenterNetapp?.message) || "Datastore visibility through vCenter.",
+        target: datastoreName(vcenterNetapp),
+        title: "vCenter Datastore",
+        type: "Readiness"
+      }
+    ],
+    [address.netapp_cluster_mgmt, address.netapp_nfs_lifs, address.netapp_svm_mgmt, consoleReadiness, currentView, firmwareSummaries, netappPlan, nfsReadiness, plannedNfs, storageStatus, vcenterNetapp]
+  );
 
   return (
     <OperatorPage title="Storage">
@@ -697,25 +911,7 @@ export function OperatorStoragePage({ labProfileState }: OperatorPageProps) {
         title="Storage"
       />
       <Feedback loading={loading && !netappPlan} error={error} />
-      <CurrentViewPanel model={currentView} />
-      <AccessSummary
-        items={[
-          { label: "Console access", value: displayValue(asString(objectValue(consoleReadiness?.runtime_state).console)), detail: "Advanced proof has details" },
-          { label: "Cluster IP", value: displayAddress(address.netapp_cluster_mgmt), status: storageStatus },
-          { label: "NFS LIF", value: listLabel(address.netapp_nfs_lifs), status: address.netapp_nfs_lifs.length ? "ready" : "not_configured_yet" },
-          { label: "Credentials", value: "Configured or missing only", detail: "Secret values are hidden" }
-        ]}
-      />
-      <ConfigValueList
-        values={[
-          { label: "ONTAP version", value: firmwareVersion(firmwareSummaries, "netapp") },
-          { label: "Volume", value: displayValue(asString(plannedNfs.volume) || asString(plannedNfs.volume_name)) },
-          { label: "Export policy", value: displayValue(asString(plannedNfs.export_policy)) },
-          { label: "Datastore", value: datastoreName(vcenterNetapp), status: datastoreVisibleStatus(vcenterNetapp) },
-          { label: "Cluster management", value: displayAddress(address.netapp_cluster_mgmt), source: "Saved setup" },
-          { label: "SVM management", value: displayAddress(address.netapp_svm_mgmt), source: "Saved setup" }
-        ]}
-      />
+      <OperatorWorkspace currentView={currentView} rows={storageRows} />
       <AdvancedDrawer title="Storage proof" summary={noProofText}>
         <ConfigValueList
           values={[
@@ -768,6 +964,86 @@ export function OperatorVirtualizationPage({ labProfileState }: OperatorPageProp
   const target = vcenterTarget(vcenterNetapp || installReadiness, activeProfile);
   const postChecks = objectValue(postAttach?.checks);
   const currentView = virtualizationCurrentView({ activeProfile, installReadiness, postAttach, vcenterNetapp });
+  const virtualizationRows = useMemo<OperatorObjectRow[]>(
+    () => [
+      {
+        checkedAt: currentView.checkedAt,
+        details: [
+          { label: "Target", value: target },
+          { label: "Credentials", value: credentialSummary(vcenterNetapp) },
+          { label: "Source", value: sourceLabel(vcenterNetapp || installReadiness) }
+        ],
+        freshness: currentView.freshness,
+        id: "vcenter",
+        nextAction: humanize(asString(vcenterNetapp?.next_safe_action) || "Run Test vCenter."),
+        source: sourceLabel(vcenterNetapp || installReadiness),
+        status: virtualStatus,
+        summary: asString(vcenterNetapp?.message) || asString(installReadiness?.message) || "vCenter endpoint and readiness.",
+        target,
+        title: "vCenter",
+        type: "Control plane"
+      },
+      {
+        checkedAt: currentView.checkedAt,
+        details: [
+          { label: "ESXi target", value: displayAddress(address.esxi_management), source: "Saved setup" },
+          { label: "Attach state", value: attachStateLabel(vcenterNetapp, postAttach), status: virtualStatus }
+        ],
+        freshness: currentView.freshness,
+        id: "esxi-attach",
+        nextAction: "Validate attach state after ESXi or vCenter changes.",
+        source: currentView.source,
+        status: virtualStatus,
+        summary: "ESXi attachment and host visibility through vCenter.",
+        target: displayAddress(address.esxi_management),
+        title: "ESXi Attach",
+        type: "Inventory"
+      },
+      {
+        checkedAt: currentView.checkedAt,
+        details: [
+          { label: "Datastore", value: datastoreName(vcenterNetapp), status: datastoreVisibleStatus(vcenterNetapp || postAttach) },
+          { label: "Visibility", value: visibilityLabel(postChecks.netapp_datastore_visible ?? objectValue(vcenterNetapp?.checks).datastore_mounted) }
+        ],
+        freshness: currentView.freshness,
+        id: "datastore",
+        nextAction: "Validate datastore visibility after storage changes.",
+        source: currentView.source,
+        status: datastoreVisibleStatus(vcenterNetapp || postAttach),
+        summary: "NetApp datastore visibility through vCenter.",
+        target: datastoreName(vcenterNetapp),
+        title: "Datastore",
+        type: "Storage"
+      },
+      {
+        checkedAt: currentView.checkedAt,
+        details: [{ label: "VM inventory", value: visibilityLabel(postChecks.vm_inventory_visible), status: visibilityStatus(postChecks.vm_inventory_visible) }],
+        freshness: currentView.freshness,
+        id: "vm-inventory",
+        nextAction: "Validate inventory after datastore and vCenter access are ready.",
+        source: currentView.source,
+        status: visibilityStatus(postChecks.vm_inventory_visible),
+        summary: "VM inventory visibility for deployment validation.",
+        target: "vCenter inventory",
+        title: "VM Inventory",
+        type: "Inventory"
+      },
+      {
+        checkedAt: currentView.checkedAt,
+        details: [{ label: "OVF deployment", value: "Ready after validation", status: "not_checked" }],
+        freshness: "Operator config",
+        id: "ovf",
+        nextAction: "Run validation before any guarded VM deployment.",
+        source: "Saved setup",
+        status: "not_checked",
+        summary: "Deployment action remains gated behind validation.",
+        target: "OVF deployment",
+        title: "OVF Deployment",
+        type: "Guarded action"
+      }
+    ],
+    [activeProfile, address.esxi_management, currentView, installReadiness, postAttach, postChecks, target, vcenterNetapp, virtualStatus]
+  );
 
   return (
     <OperatorPage title="Virtualization">
@@ -788,25 +1064,7 @@ export function OperatorVirtualizationPage({ labProfileState }: OperatorPageProp
         title="Virtualization"
       />
       <Feedback loading={loading && !vcenterNetapp} error={error} />
-      <CurrentViewPanel model={currentView} />
-      <AccessSummary
-        items={[
-          { label: "vCenter target", value: target, status: virtualStatus },
-          { label: "ESXi target", value: displayAddress(address.esxi_management), status: asString(objectValue(vcenterNetapp?.targets).esxi_management) ? "ready" : "not_checked" },
-          { label: "Datastore", value: datastoreName(vcenterNetapp), status: datastoreVisibleStatus(vcenterNetapp || postAttach) },
-          { label: "Credentials", value: credentialSummary(vcenterNetapp), detail: "Secret values are hidden" }
-        ]}
-      />
-      <ConfigValueList
-        values={[
-          { label: "ESXi attach", value: attachStateLabel(vcenterNetapp, postAttach), status: virtualStatus },
-          { label: "Datastore visibility", value: visibilityLabel(postChecks.netapp_datastore_visible ?? objectValue(vcenterNetapp?.checks).datastore_mounted), status: datastoreVisibleStatus(vcenterNetapp || postAttach) },
-          { label: "VM inventory", value: visibilityLabel(postChecks.vm_inventory_visible), status: visibilityStatus(postChecks.vm_inventory_visible) },
-          { label: "OVF deployment", value: "Ready after validation", status: "not_checked" },
-          { label: "Access URL", value: target },
-          { label: "Datastore name", value: datastoreName(vcenterNetapp) }
-        ]}
-      />
+      <OperatorWorkspace currentView={currentView} rows={virtualizationRows} />
       <AdvancedDrawer title="Virtualization proof" summary={noProofText}>
         <ConfigValueList
           values={[
@@ -884,6 +1142,27 @@ export function OperatorFirmwareUpgradesPage({ labProfileState }: OperatorPagePr
   const rows = firmwareRows(firmwareSummaries, compliance, selectedFiles);
   const files = firmwareFilesInfo(media, compliance);
   const currentView = firmwareCurrentView({ compliance, files, rows });
+  const firmwareWorkspaceRows = useMemo<OperatorObjectRow[]>(
+    () => rows.map((row) => ({
+      checkedAt: currentView.checkedAt,
+      details: [
+        { label: "Current", value: row.current },
+        { label: "Target", value: row.target },
+        { label: "Selected file", value: row.selectedFileName || "No file selected", source: selectionSourceLabel(row.selectionSource) },
+        { label: "Candidate files", value: String(row.candidateFiles.length) }
+      ],
+      freshness: currentView.freshness,
+      id: `firmware-${row.componentId}`,
+      nextAction: row.action,
+      source: "Firmware inventory",
+      status: row.pathStatus,
+      summary: `${row.equipment} / ${row.component}`,
+      target: row.target,
+      title: row.equipment,
+      type: row.component
+    })),
+    [currentView.checkedAt, currentView.freshness, rows]
+  );
 
   return (
     <OperatorPage title="Firmware Upgrades">
@@ -903,7 +1182,38 @@ export function OperatorFirmwareUpgradesPage({ labProfileState }: OperatorPagePr
         title="Firmware Upgrades"
       />
       <Feedback loading={loading && !firmwareSummaries.length} error={error} />
-      <CurrentViewPanel model={currentView} />
+      <OperatorWorkspace
+        currentView={currentView}
+        rows={firmwareWorkspaceRows}
+        renderDetailExtra={(selected) => {
+          const row = rows.find((candidate) => `firmware-${candidate.componentId}` === selected.id);
+          if (!row) return null;
+          return (
+            <div className="firmware-detail-control">
+              <Field label="Selected firmware file">
+                <select
+                  aria-label={`${row.equipment} ${row.component} firmware file`}
+                  onChange={(event) => void saveFileSelection(row.componentId, event.target.value)}
+                  value={selectedFiles[row.componentId] ?? row.selectedFileName}
+                >
+                  <option value="">No file selected</option>
+                  {selectedFiles[row.componentId] && !row.candidateFiles.some((candidate) => candidate.file_name === selectedFiles[row.componentId]) ? (
+                    <option value={selectedFiles[row.componentId]}>{selectedFiles[row.componentId]}</option>
+                  ) : null}
+                  {row.candidateFiles.map((candidate) => (
+                    <option key={`${row.componentId}-${candidate.file_name}-${candidate.file_path ?? ""}`} value={candidate.file_name}>
+                      {candidate.file_name}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <p className="operator-muted">
+                {row.selectedFileName || "No file selected"} / {selectionSourceLabel(row.selectionSource)}
+              </p>
+            </div>
+          );
+        }}
+      />
       <AdditionalTabActions
         actions={actions}
         buttons={[
@@ -922,11 +1232,6 @@ export function OperatorFirmwareUpgradesPage({ labProfileState }: OperatorPagePr
         selectionStatus={selectionStatusLabel(fileSelections, savingSelection)}
       />
       <Feedback loading={false} error={selectionError} />
-      <FirmwarePathTable
-        rows={rows}
-        selectedFiles={selectedFiles}
-        onSelect={(componentId, fileName) => void saveFileSelection(componentId, fileName)}
-      />
       <AdvancedDrawer title="Firmware proof" summary={noProofText}>
         <ValidationProofList
           items={[]}
@@ -973,6 +1278,48 @@ export function OperatorValidationPage({ labProfileState }: OperatorPageProps) {
 
   const differentFromExpected = validation?.validation_items.filter((item) => item.status !== "ready").length ?? 0;
   const currentView = validationCurrentView({ buildVerification, validation, vcenterNetapp });
+  const validationRows = useMemo<OperatorObjectRow[]>(
+    () => [
+      ...(validation?.validation_items ?? []).map((item) => ({
+        checkedAt: item.last_checked ? formatDateTime(item.last_checked) : currentView.checkedAt,
+        details: [
+          { label: "Category", value: labelize(item.category || "validation") },
+          { label: "Current state", value: item.current_state || "Not checked" },
+          { label: "Setup summary", value: item.setup_summary || "Not checked" },
+          { label: "Management URL", value: item.management_url || "Not set up yet" }
+        ],
+        freshness: currentView.freshness,
+        id: item.id,
+        nextAction: humanize(item.next_action || validation?.next_action || "Review validation result."),
+        source: currentView.source,
+        status: item.status,
+        summary: item.setup_summary || item.current_state || "Validation item.",
+        target: item.management_url || item.label,
+        title: item.label,
+        type: labelize(item.category || item.stage || "Validation"),
+        warnings: item.warnings
+      })),
+      {
+        checkedAt: currentView.checkedAt,
+        details: [
+          { label: "Different from expected", value: String(differentFromExpected), status: differentFromExpected ? "warning" : "ready" },
+          { label: "Build verification", value: displayStatus(buildVerification?.status ?? "not_checked"), status: buildVerification?.status ?? "not_checked" },
+          { label: "Handoff", value: validation?.handoff_report ? "Ready to generate" : "Not generated", status: validation?.handoff_report ? "ready" : "not_checked" }
+        ],
+        freshness: currentView.freshness,
+        id: "handoff",
+        nextAction: validation?.handoff_report ? "Generate handoff after reviewing validation." : "Run validation before handoff.",
+        source: currentView.source,
+        status: validation?.overall_status ?? "not_checked",
+        summary: validation?.next_action || "Lab-wide validation and handoff readiness.",
+        target: "Golden State",
+        title: "Golden State / Handoff",
+        type: "Summary",
+        blockers: validation?.top_blocker ? [validation.top_blocker.problem] : []
+      }
+    ],
+    [buildVerification, currentView, differentFromExpected, validation]
+  );
 
   return (
     <OperatorPage title="Validation">
@@ -993,7 +1340,7 @@ export function OperatorValidationPage({ labProfileState }: OperatorPageProps) {
         title="Validation"
       />
       <Feedback loading={loading && !validation} error={error} />
-      <CurrentViewPanel model={currentView} />
+      <OperatorWorkspace currentView={currentView} rows={validationRows} />
       <AdditionalTabActions
         actions={actions}
         buttons={[
@@ -1002,21 +1349,6 @@ export function OperatorValidationPage({ labProfileState }: OperatorPageProps) {
         description="Use this after validation has current proof links."
         onReload={load}
         title="Handoff"
-      />
-      <AccessSummary
-        items={[
-          { label: "Golden State", value: "Expected working lab state.", status: validation?.overall_status ?? "not_checked" },
-          { label: "Different from expected", value: String(differentFromExpected), status: differentFromExpected ? "warning" : "ready" },
-          { label: "Build Verification", value: displayStatus(buildVerification?.status ?? "not_checked"), status: buildVerification?.status ?? "not_checked" },
-          { label: "Handoff", value: validation?.handoff_report ? "Ready to generate" : "Not generated", status: validation?.handoff_report ? "ready" : "not_checked" }
-        ]}
-      />
-      <ConfigValueList
-        values={[
-          { label: "vCenter-NetApp readiness", value: displayStatus(vcenterNetapp?.status ?? "not_checked"), status: vcenterNetapp?.status ?? "not_checked" },
-          { label: "Top blocker", value: validation?.top_blocker?.problem ?? "None", status: validation?.top_blocker ? "blocked" : "ready" },
-          { label: "Checked", value: validation?.generated_at ? formatDateTime(validation.generated_at) : "Not checked" }
-        ]}
       />
       <AdvancedDrawer title="Validation proof" summary={noProofText}>
         <ValidationProofList items={validation?.validation_items ?? []} proofLinks={validation?.proof_links.length ?? 0} />
@@ -1068,6 +1400,100 @@ export function OperatorSettingsPage({
   }, []);
 
   const currentView = settingsCurrentView({ activeProfile, health: health ?? null, labProfileState, vcenterNetapp });
+  const settingsRows = useMemo<OperatorObjectRow[]>(
+    () => [
+      {
+        checkedAt: currentView.checkedAt,
+        details: [
+          { label: "Subnet", value: displayAddress(address.subnet), source: "Saved setup" },
+          { label: "Offsets", value: offsetSummary(address), source: "Saved setup" },
+          { label: "iLO", value: displayAddress(address.ilo), source: "Saved setup" },
+          { label: "Cisco", value: displayAddress(address.cisco_management), source: "Saved setup" },
+          { label: "ESXi", value: displayAddress(address.esxi_management), source: "Saved setup" },
+          { label: "NetApp", value: displayAddress(address.netapp_cluster_mgmt), source: "Saved setup" },
+          { label: "vCenter", value: vcenterTarget(vcenterNetapp, activeProfile), source: "Saved or discovered" }
+        ],
+        freshness: currentView.freshness,
+        id: "active-setup",
+        nextAction: "Open Edit Config if the lab values are wrong.",
+        source: currentView.source,
+        status: activeProfile ? "ready" : "not_configured_yet",
+        summary: activeProfile?.name ?? "No active setup.",
+        target: displayAddress(address.subnet),
+        title: "Active Lab Setup",
+        type: "Context"
+      },
+      {
+        checkedAt: currentView.checkedAt,
+        details: [
+          { label: "Runtime mode", value: displayStatus(runtimeStatus(health ?? null)), status: runtimeStatus(health ?? null) },
+          { label: "Provider mode", value: displayStatus(health?.provider_mode ?? "not_checked"), status: health?.provider_mode ?? "not_checked" }
+        ],
+        freshness: currentView.freshness,
+        id: "runtime",
+        nextAction: "Run Refresh Settings after runtime changes.",
+        source: "Backend health",
+        status: runtimeStatus(health ?? null),
+        summary: "Runtime and provider mode currently used by the app.",
+        target: displayStatus(runtimeStatus(health ?? null)),
+        title: "Runtime Mode",
+        type: "Runtime"
+      },
+      {
+        checkedAt: currentView.checkedAt,
+        details: [
+          { label: "Cisco", value: "Configured or missing", status: "not_checked" },
+          { label: "iLO", value: "Configured or missing", status: "not_checked" },
+          { label: "ESXi", value: "Configured or missing", status: "not_checked" },
+          { label: "NetApp", value: netappCredentialStatus(vcenterNetapp), status: netappCredentialStatus(vcenterNetapp) === "Configured" ? "ready" : "not_checked" },
+          { label: "vCenter", value: vcenterCredentialStatus(vcenterNetapp), status: vcenterCredentialStatus(vcenterNetapp) === "Configured" ? "ready" : "not_checked" }
+        ],
+        freshness: currentView.freshness,
+        id: "credentials",
+        nextAction: "Update local secret files outside the UI if credentials are missing.",
+        source: "Configured or missing only",
+        status: strongestStatus([
+          netappCredentialStatus(vcenterNetapp) === "Configured" ? "ready" : "not_checked",
+          vcenterCredentialStatus(vcenterNetapp) === "Configured" ? "ready" : "not_checked"
+        ]),
+        summary: "Secret values stay hidden; only configured or missing state is shown.",
+        target: "Secret-safe status",
+        title: "Credentials",
+        type: "Safety"
+      },
+      {
+        checkedAt: currentView.checkedAt,
+        details: [
+          { label: "DNS / NTP / SNMP", value: featureToggleSummary(features), source: "Saved setup" },
+          { label: "Gateway", value: displayAddress(global?.gateway ?? activeProfile?.gateway), source: "Saved setup" },
+          { label: "Storage protocol", value: storageProtocolLabel(features), source: "Saved setup" }
+        ],
+        freshness: "Operator config",
+        id: "features",
+        nextAction: "Open Edit Config to change feature toggles.",
+        source: "Saved setup",
+        status: activeProfile ? "ready" : "not_configured_yet",
+        summary: "Network defaults and feature toggles used by runs.",
+        target: featureToggleSummary(features),
+        title: "Feature Toggles",
+        type: "Config"
+      },
+      {
+        checkedAt: currentView.checkedAt,
+        details: [{ label: "Console mappings", value: "Refresh consoles to discover current ports", status: "not_checked" }],
+        freshness: currentView.freshness,
+        id: "console-mappings",
+        nextAction: "Run Refresh Settings after plugging in or changing serial adapters.",
+        source: "Runtime discovery",
+        status: "not_checked",
+        summary: "Console paths used by Cisco and NetApp workflows.",
+        target: "Console mappings",
+        title: "Console Mappings",
+        type: "Access"
+      }
+    ],
+    [activeProfile, address, currentView, features, global, health, vcenterNetapp]
+  );
 
   return (
     <OperatorPage title="Settings">
@@ -1089,47 +1515,7 @@ export function OperatorSettingsPage({
         title="Settings"
       />
       <Feedback loading={loading && !activeProfile} error={error || labProfileError} />
-      <CurrentViewPanel model={currentView} />
-      <section className="operator-section" aria-label="Active lab setup values">
-        <div className="operator-section-head">
-          <div>
-            <p className="operator-kicker">Active lab setup</p>
-            <h2>{activeProfile?.name ?? "No active setup"}</h2>
-          </div>
-          <SimpleStatusPill status={runtimeStatus(health ?? null)} />
-        </div>
-        <ConfigValueList
-          values={[
-            { label: "Subnet", value: displayAddress(address.subnet), source: "Saved setup" },
-            { label: "Beginning IPs / offsets", value: offsetSummary(address), source: "Saved setup" },
-            { label: "iLO IP", value: displayAddress(address.ilo), source: "Saved setup" },
-            { label: "Cisco IP", value: displayAddress(address.cisco_management), source: "Saved setup" },
-            { label: "ESXi IP", value: displayAddress(address.esxi_management), source: "Saved setup" },
-            { label: "NetApp IPs", value: netappAddressSummary(address), source: "Saved setup" },
-            { label: "vCenter target", value: vcenterTarget(vcenterNetapp, activeProfile), source: "Saved or discovered" }
-          ]}
-        />
-      </section>
-      <section className="operator-section" aria-label="Credentials and feature toggles">
-        <div className="operator-section-head">
-          <div>
-            <p className="operator-kicker">Credential status</p>
-            <h2>Configured or missing only</h2>
-          </div>
-        </div>
-        <ConfigValueList
-          values={[
-            { label: "Cisco", value: "Configured or missing", status: "not_checked" },
-            { label: "iLO", value: "Configured or missing", status: "not_checked" },
-            { label: "ESXi", value: "Configured or missing", status: "not_checked" },
-            { label: "NetApp", value: netappCredentialStatus(vcenterNetapp), status: netappCredentialStatus(vcenterNetapp) === "Configured" ? "ready" : "not_checked" },
-            { label: "vCenter", value: vcenterCredentialStatus(vcenterNetapp), status: vcenterCredentialStatus(vcenterNetapp) === "Configured" ? "ready" : "not_checked" },
-            { label: "DNS / NTP / SNMP", value: featureToggleSummary(features), source: "Saved setup" },
-            { label: "Gateway", value: displayAddress(global?.gateway ?? activeProfile?.gateway), source: "Saved setup" },
-            { label: "Console mappings", value: "Refresh consoles to discover current ports", status: "not_checked" }
-          ]}
-        />
-      </section>
+      <OperatorWorkspace currentView={currentView} rows={settingsRows} />
       <AdvancedDrawer title="Settings proof" summary={noProofText}>
         <ConfigValueList
           values={[
@@ -1286,57 +1672,157 @@ function PageStatusHeader({
   );
 }
 
-function CurrentViewPanel({ model }: { model: CurrentViewModel }) {
-  const issueRows = [
-    ...model.blockers.map((blocker) => ({ status: "blocked", text: blocker })),
-    ...model.warnings.map((warning) => ({ status: "warning", text: warning }))
-  ].filter((item) => item.text);
-  const metaValues = [
-    { label: "Source", value: model.source },
-    { label: "Freshness", value: model.freshness, status: freshnessStatus(model.freshness) },
-    { label: "Checked", value: model.checkedAt },
-    ...(model.recheckCommand ? [{ label: "Recheck", value: model.recheckCommand, source: "Local command" }] : []),
-    ...model.details
-  ];
+function OperatorWorkspace({
+  currentView,
+  emptyDetail,
+  renderDetailExtra,
+  rows
+}: {
+  currentView: CurrentViewModel;
+  emptyDetail?: string;
+  renderDetailExtra?: (row: OperatorObjectRow) => ReactNode;
+  rows: OperatorObjectRow[];
+}) {
+  const [selectedId, setSelectedId] = useState(rows[0]?.id ?? "");
+  const selected = rows.find((row) => row.id === selectedId) ?? rows[0] ?? null;
+
+  useEffect(() => {
+    if (!rows.some((row) => row.id === selectedId)) {
+      setSelectedId(rows[0]?.id ?? "");
+    }
+  }, [rows, selectedId]);
+
+  const counts = workspaceCounts(rows);
 
   return (
-    <section className={`operator-section current-view-panel${model.available ? "" : " current-view-empty"}`} aria-label="Current view">
-      <div className="operator-section-head">
+    <section className="operator-console" aria-label="Current view">
+      <div className="operator-console-head">
         <div>
           <p className="operator-kicker">Current View</p>
-          <h2>What the app sees now</h2>
-          <p className="operator-muted">{model.summary}</p>
+          <h2>Current state and targets</h2>
+          <p>{currentView.summary}</p>
         </div>
-        <SimpleStatusPill status={model.status} />
+        <SimpleStatusPill status={currentView.status} />
       </div>
-      <ConfigValueList values={metaValues} />
-      {!model.available && (
-        <div className="current-view-guidance">
-          <strong>{model.scanLabel}</strong>
-          <p>{model.scanDetail}</p>
-          {model.fixSteps.length > 0 && (
-            <ul>
-              {model.fixSteps.map((step) => (
-                <li key={step}>{humanize(step)}</li>
-              ))}
-            </ul>
-          )}
+      <div className="domain-summary-strip" aria-label="Domain summary">
+        <SummaryMetric label="Ready" status="ready" value={String(counts.ready)} />
+        <SummaryMetric label="Needs review" status="warning" value={String(counts.warning)} />
+        <SummaryMetric label="Blocked" status="blocked" value={String(counts.blocked)} />
+        <SummaryMetric label="Not checked" status="not_checked" value={String(counts.neutral)} />
+        <SummaryMetric label="Source" value={currentView.source} />
+        <SummaryMetric label="Freshness" status={freshnessStatus(currentView.freshness)} value={currentView.freshness} />
+        <SummaryMetric label="Checked" value={currentView.checkedAt} />
+      </div>
+      <div className="operator-workspace-grid">
+        <div className="operator-object-list" aria-label="Objects">
+          <div className="operator-object-list-head">
+            <span>{rows.length} objects</span>
+            <strong>{rows.filter((row) => statusTone(row.status) === "ready").length} ready</strong>
+          </div>
+          {rows.map((row) => (
+            <button
+              aria-pressed={selected?.id === row.id}
+              className={selected?.id === row.id ? "operator-object-row selected" : "operator-object-row"}
+              key={row.id}
+              onClick={() => setSelectedId(row.id)}
+              type="button"
+            >
+              <span>
+                <strong>{row.title}</strong>
+                <small>{row.type}</small>
+              </span>
+              <span>
+                <strong>{row.target}</strong>
+                <small>{row.source || currentView.source}</small>
+              </span>
+              <SimpleStatusPill status={row.status} />
+            </button>
+          ))}
         </div>
-      )}
-      {model.available && issueRows.length > 0 && (
-        <div className="current-view-guidance">
-          <strong>Needs attention</strong>
-          <ul>
-            {issueRows.map((item) => (
-              <li key={`${item.status}-${item.text}`}>
-                <SimpleStatusPill status={item.status} />
-                <span>{humanize(item.text)}</span>
-              </li>
-            ))}
-          </ul>
+        <article className="operator-detail-pane" aria-label="Selected object detail">
+          {selected ? (
+            <>
+              <div className="operator-detail-head">
+                <div>
+                  <p className="operator-kicker">{selected.type}</p>
+                  <h2>{selected.title}</h2>
+                  <p>{selected.summary}</p>
+                </div>
+                <SimpleStatusPill status={selected.status} />
+              </div>
+              <div className="operator-detail-action">
+                <span>Next action</span>
+                <strong>{selected.nextAction}</strong>
+              </div>
+              <ConfigValueList
+                values={[
+                  { label: "Target", value: selected.target },
+                  { label: "Source", value: selected.source || currentView.source },
+                  { label: "Freshness", value: selected.freshness || currentView.freshness, status: freshnessStatus(selected.freshness || currentView.freshness) },
+                  { label: "Checked", value: selected.checkedAt || currentView.checkedAt },
+                  ...selected.details
+                ]}
+              />
+              <IssueList blockers={selected.blockers ?? []} warnings={selected.warnings ?? []} />
+              {renderDetailExtra?.(selected)}
+            </>
+          ) : (
+            <p className="operator-muted">{emptyDetail ?? "No objects are available yet."}</p>
+          )}
+        </article>
+      </div>
+      {currentView.recheckCommand && (
+        <div className="operator-recheck-strip">
+          <span>Recheck</span>
+          <code>{currentView.recheckCommand}</code>
         </div>
       )}
     </section>
+  );
+}
+
+function SummaryMetric({ label, status, value }: { label: string; status?: string; value: string }) {
+  return (
+    <div>
+      <span>{label}</span>
+      <strong>{value}</strong>
+      {status && <SimpleStatusPill status={status} />}
+    </div>
+  );
+}
+
+function IssueList({ blockers, warnings }: { blockers: string[]; warnings: string[] }) {
+  const issues = [
+    ...blockers.map((text) => ({ status: "blocked", text })),
+    ...warnings.map((text) => ({ status: "warning", text }))
+  ].filter((issue) => issue.text);
+  if (!issues.length) {
+    return null;
+  }
+  return (
+    <div className="operator-issue-list">
+      <strong>Needs attention</strong>
+      {issues.map((issue) => (
+        <div key={`${issue.status}-${issue.text}`}>
+          <SimpleStatusPill status={issue.status} />
+          <span>{humanize(issue.text)}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function workspaceCounts(rows: OperatorObjectRow[]): { blocked: number; neutral: number; ready: number; warning: number } {
+  return rows.reduce(
+    (counts, row) => {
+      const tone = statusTone(row.status);
+      if (tone === "ready") counts.ready += 1;
+      else if (tone === "warning") counts.warning += 1;
+      else if (tone === "blocked") counts.blocked += 1;
+      else counts.neutral += 1;
+      return counts;
+    },
+    { blocked: 0, neutral: 0, ready: 0, warning: 0 }
   );
 }
 
@@ -1425,31 +1911,6 @@ function TabSettingsDrawer({
           <Settings size={16} />
           Open Edit Config
         </Link>
-      </div>
-    </section>
-  );
-}
-
-function AccessSummary({ items }: { items: AccessItem[] }) {
-  return (
-    <section className="operator-section" aria-label="Access information">
-      <div className="operator-section-head">
-        <div>
-          <p className="operator-kicker">Access information</p>
-          <h2>How this part of the lab is reached</h2>
-        </div>
-      </div>
-      <div className="access-summary">
-        {items.map((item) => (
-          <article key={`${item.label}-${item.value}`}>
-            <div>
-              <span>{item.label}</span>
-              <strong>{item.value}</strong>
-              {item.detail && <p>{item.detail}</p>}
-            </div>
-            {item.status && <SimpleStatusPill status={item.status} />}
-          </article>
-        ))}
       </div>
     </section>
   );
@@ -1600,44 +2061,6 @@ function InventoryTable({ rows }: { rows: InventoryRow[] }) {
   );
 }
 
-function AccessTable({ rows }: { rows: AccessRow[] }) {
-  return (
-    <section className="operator-section" aria-label="Currently Accessible">
-      <div className="operator-section-head">
-        <div>
-          <p className="operator-kicker">This is what the app can see</p>
-          <h2>Currently Accessible</h2>
-        </div>
-        <span>{rows.filter((row) => row.status === "accessible").length} accessible</span>
-      </div>
-      <div className="operator-table-wrap">
-        <table className="operator-table access-table">
-          <thead>
-            <tr>
-              <th>Item</th>
-              <th>Target</th>
-              <th>Status</th>
-              <th>App can see</th>
-              <th>Needs before it can see it</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row) => (
-              <tr key={row.item}>
-                <td><strong>{row.item}</strong></td>
-                <td>{row.target}</td>
-                <td><SimpleStatusPill status={row.status} /></td>
-                <td>{row.appSees}</td>
-                <td>{row.needs}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </section>
-  );
-}
-
 type FirmwareTableRow = {
   action: string;
   candidateFiles: FirmwareFileCandidate[];
@@ -1650,77 +2073,6 @@ type FirmwareTableRow = {
   selectionSource: string;
   target: string;
 };
-
-function FirmwarePathTable({
-  onSelect,
-  rows,
-  selectedFiles
-}: {
-  onSelect: (componentId: string, fileName: string) => void;
-  rows: FirmwareTableRow[];
-  selectedFiles: Record<string, string>;
-}) {
-  return (
-    <section className="operator-section" aria-label="Firmware upgrade path">
-      <div className="operator-section-head">
-        <div>
-          <p className="operator-kicker">Firmware Table</p>
-          <h2>Equipment and selected files</h2>
-        </div>
-      </div>
-      <div className="operator-table-wrap">
-        <table className="operator-table firmware-path-table">
-          <thead>
-            <tr>
-              <th>Equipment</th>
-              <th>Component</th>
-              <th>Current Version</th>
-              <th>Target Version</th>
-              <th>Selected File</th>
-              <th>Status</th>
-              <th>Next Step</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row) => (
-              <tr key={row.componentId}>
-                <td><strong>{row.equipment}</strong></td>
-                <td>{row.component}</td>
-                <td>{row.current}</td>
-                <td>{row.target}</td>
-                <td>
-                  <div className="firmware-file-cell">
-                    <select
-                      aria-label={`${row.equipment} ${row.component} firmware file`}
-                      onChange={(event) => onSelect(row.componentId, event.target.value)}
-                      value={selectedFiles[row.componentId] ?? row.selectedFileName}
-                    >
-                      <option value="">No file selected</option>
-                      {selectedFiles[row.componentId] && !row.candidateFiles.some((candidate) => candidate.file_name === selectedFiles[row.componentId]) ? (
-                        <option value={selectedFiles[row.componentId]}>{selectedFiles[row.componentId]}</option>
-                      ) : null}
-                      {row.candidateFiles.map((candidate) => (
-                        <option key={`${row.componentId}-${candidate.file_name}-${candidate.file_path ?? ""}`} value={candidate.file_name}>
-                          {candidate.file_name}
-                        </option>
-                      ))}
-                    </select>
-                    <span>{row.selectedFileName || "No file selected"}</span>
-                    <small>{selectionSourceLabel(row.selectionSource)}</small>
-                  </div>
-                </td>
-                <td><SimpleStatusPill status={row.pathStatus} /></td>
-                <td>
-                  <span className="operator-muted">{row.action}</span>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </section>
-  );
-}
 
 function FirmwareFilesPanel({
   directory,
@@ -2216,7 +2568,7 @@ function firmwareRows(
       pathStatus: simpleFirmwareStatus(path, selectedFileName),
       selectedFileName,
       selectionSource: selectedOverride !== undefined ? "user" : path.selection_source ?? (selectedFileName ? "auto" : "none"),
-      target: displayValue(path.target_version)
+      target: displayValue(path.target_version ?? selectedFileName ?? path.package_name ?? "Review required")
     }];
   });
 }
