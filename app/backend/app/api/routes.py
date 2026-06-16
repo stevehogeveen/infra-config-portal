@@ -37,6 +37,8 @@ from app.schemas import (
     ControlActionCatalogRead,
     ControlActionPlanRead,
     ControlActionRunRead,
+    FirmwareFileSelectionsRead,
+    FirmwareFileSelectionsWrite,
     FirmwareSummaryRead,
     HpeRaidApplyCreate,
     HpeRaidIntentRead,
@@ -194,6 +196,10 @@ from app.services.firmware_compliance import (
     get_firmware_inventory,
     get_firmware_summaries,
     write_waiver_report,
+)
+from app.services.firmware_file_selections import (
+    read_firmware_file_selections,
+    save_firmware_file_selections,
 )
 from app.services.full_rebuild_run import get_full_rebuild_summary
 from app.services.golden_state import get_provider_lab_golden_state
@@ -562,6 +568,18 @@ def read_control_actions() -> ControlActionCatalogRead:
 @router.get("/firmware/summary", response_model=list[FirmwareSummaryRead])
 def read_firmware_summary() -> list[FirmwareSummaryRead]:
     return get_firmware_summaries()
+
+
+@router.get("/firmware/file-selections", response_model=FirmwareFileSelectionsRead)
+def read_firmware_file_selections_route() -> FirmwareFileSelectionsRead:
+    return read_firmware_file_selections()
+
+
+@router.put("/firmware/file-selections", response_model=FirmwareFileSelectionsRead)
+def update_firmware_file_selections_route(
+    payload: FirmwareFileSelectionsWrite,
+) -> FirmwareFileSelectionsRead:
+    return save_firmware_file_selections(payload.model_dump())
 
 
 @router.put("/control/access/{section_id}", response_model=ControlAccessConfigRead)

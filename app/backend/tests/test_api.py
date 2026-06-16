@@ -193,6 +193,64 @@ def test_provider_mode_settings_save_writes_ignored_local_restart_config(
     assert "password" not in stored
 
 
+def test_firmware_file_selections_persist_in_ignored_local_store(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    store_path = tmp_path / "firmware-file-selections.json"
+    monkeypatch.setenv("FIRMWARE_FILE_SELECTION_STORE", str(store_path))
+
+    initial = client.get("/api/v1/firmware/file-selections")
+
+    assert initial.status_code == 200
+    assert initial.json()["selected_files"] == {}
+    assert initial.json()["apply_enabled"] is False
+
+    saved = client.put(
+        "/api/v1/firmware/file-selections",
+        json={
+            "selected_files": {
+                "cisco_ios_xe_version": "cat9k_iosxe.17.12.01.SPA.bin",
+                "hpe_smart_array_firmware": "",
+            }
+        },
+    )
+
+    assert saved.status_code == 200
+    payload = saved.json()
+    assert payload["selected_files"] == {
+        "cisco_ios_xe_version": "cat9k_iosxe.17.12.01.SPA.bin",
+        "hpe_smart_array_firmware": "",
+    }
+    assert payload["store_path"].endswith("firmware-file-selections.json")
+    assert payload["source_type"] == "operator_config"
+    assert payload["apply_enabled"] is False
+
+    stored = json.loads(store_path.read_text(encoding="utf-8"))
+    assert stored["selected_files"] == payload["selected_files"]
+    assert stored["operator_runtime_only"] is True
+    assert "password" not in json.dumps(stored).lower()
+
+    reloaded = client.get("/api/v1/firmware/file-selections")
+    assert reloaded.status_code == 200
+    assert reloaded.json()["selected_files"] == payload["selected_files"]
+
+
+def test_firmware_file_selections_reject_paths_and_secret_like_values(client: TestClient) -> None:
+    with_path = client.put(
+        "/api/v1/firmware/file-selections",
+        json={"selected_files": {"cisco_ios_xe_version": "../cat9k.bin"}},
+    )
+    with_secret = client.put(
+        "/api/v1/firmware/file-selections",
+        json={"selected_files": {"cisco_ios_xe_version": "password=example.bin"}},
+    )
+
+    assert with_path.status_code == 422
+    assert with_secret.status_code == 422
+
+
 def test_control_action_catalog_includes_first_time_access_config(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,

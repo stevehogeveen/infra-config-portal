@@ -1745,6 +1745,51 @@ class FirmwareFileCandidateRead(BaseModel):
     confidence: str = "medium"
 
 
+class FirmwareFileSelectionsWrite(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    selected_files: dict[str, str] = Field(default_factory=dict)
+
+    @field_validator("selected_files", mode="before")
+    @classmethod
+    def normalize_empty_mapping(cls, value: Any) -> Any:
+        return {} if value is None else value
+
+    @field_validator("selected_files", mode="after")
+    @classmethod
+    def validate_selection_mapping(cls, value: dict[str, str]) -> dict[str, str]:
+        normalized: dict[str, str] = {}
+        for raw_component_id, raw_file_name in value.items():
+            component_id = str(raw_component_id).strip()
+            file_name = str(raw_file_name).strip()
+            if not re.fullmatch(r"[A-Za-z0-9_.-]{1,120}", component_id):
+                raise ValueError("firmware component IDs must be short safe identifiers")
+            if any(separator in file_name for separator in ("/", "\\")):
+                raise ValueError("firmware file selections store filenames only")
+            if len(file_name) > 255:
+                raise ValueError("firmware filenames must be 255 characters or fewer")
+            _reject_secret_values(component_id)
+            _reject_secret_values(file_name)
+            normalized[component_id] = file_name
+        return normalized
+
+
+class FirmwareFileSelectionsRead(BaseModel):
+    provider_id: str
+    status: str
+    message: str
+    source_type: str
+    freshness: str
+    checked_at: datetime | None = None
+    updated_at: datetime | None = None
+    store_path: str
+    selected_files: dict[str, str] = Field(default_factory=dict)
+    apply_enabled: bool = False
+    blockers: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    next_safe_action: str
+
+
 class FirmwareUpgradePathRead(BaseModel):
     component_id: str
     component_label: str

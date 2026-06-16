@@ -639,6 +639,26 @@ export type FirmwareFileCandidate = {
   confidence: string;
 };
 
+export type FirmwareFileSelections = {
+  provider_id: string;
+  status: string;
+  message: string;
+  source_type: string;
+  freshness: string;
+  checked_at: string | null;
+  updated_at: string | null;
+  store_path: string;
+  selected_files: Record<string, string>;
+  apply_enabled: boolean;
+  blockers: string[];
+  warnings: string[];
+  next_safe_action: string;
+};
+
+export type FirmwareFileSelectionsWrite = {
+  selected_files: Record<string, string>;
+};
+
 export type FirmwareUpgradePath = {
   component_id: string;
   component_label: string;

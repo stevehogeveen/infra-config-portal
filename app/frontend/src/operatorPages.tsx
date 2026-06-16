@@ -22,6 +22,7 @@ import { Link } from "react-router-dom";
 import { api } from "./api";
 import type {
   FirmwareFileCandidate,
+  FirmwareFileSelections,
   FirmwareSummary,
   FirmwareUpgradePath,
   LabAddressPlan,
@@ -627,28 +628,50 @@ export function OperatorFirmwareUpgradesPage() {
   const [firmwareSummaries, setFirmwareSummaries] = useState<FirmwareSummary[]>([]);
   const [media, setMedia] = useState<MediaInventory | null>(null);
   const [compliance, setCompliance] = useState<ProviderProbeResult | null>(null);
+  const [fileSelections, setFileSelections] = useState<FirmwareFileSelections | null>(null);
   const [selectedFiles, setSelectedFiles] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
+  const [savingSelection, setSavingSelection] = useState(false);
   const [error, setError] = useState("");
+  const [selectionError, setSelectionError] = useState("");
 
   async function load() {
     setError("");
     setLoading(true);
     try {
-      const [nextActions, nextSummaries, nextMedia, nextCompliance] = await Promise.all([
+      const [nextActions, nextSummaries, nextMedia, nextCompliance, nextSelections] = await Promise.all([
         safeApi(api.workflowActions, [] as WorkflowAction[]),
         safeApi(api.firmwareSummary, [] as FirmwareSummary[]),
         safeApi(api.mediaInventory, null),
-        safeApi(api.firmwareCompliance, null)
+        safeApi(api.firmwareCompliance, null),
+        safeApi(api.firmwareFileSelections, null)
       ]);
       setActions(Array.isArray(nextActions) ? nextActions : []);
       setFirmwareSummaries(Array.isArray(nextSummaries) ? nextSummaries : []);
       setMedia(nextMedia);
       setCompliance(nextCompliance);
+      setFileSelections(nextSelections);
+      setSelectedFiles(nextSelections?.selected_files ?? {});
     } catch (err) {
       setError(errorMessage(err));
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function saveFileSelection(componentId: string, fileName: string) {
+    const nextSelections = { ...selectedFiles, [componentId]: fileName };
+    setSelectedFiles(nextSelections);
+    setSelectionError("");
+    setSavingSelection(true);
+    try {
+      const saved = await api.saveFirmwareFileSelections({ selected_files: nextSelections });
+      setFileSelections(saved);
+      setSelectedFiles(saved.selected_files);
+    } catch (err) {
+      setSelectionError(errorMessage(err));
+    } finally {
+      setSavingSelection(false);
     }
   }
 
@@ -680,11 +703,13 @@ export function OperatorFirmwareUpgradesPage() {
         loading={loading}
         onRescan={() => void load()}
         packageCount={files.packageCount}
+        selectionStatus={selectionStatusLabel(fileSelections, savingSelection)}
       />
+      <Feedback loading={false} error={selectionError} />
       <FirmwarePathTable
         rows={rows}
         selectedFiles={selectedFiles}
-        onSelect={(componentId, fileName) => setSelectedFiles((current) => ({ ...current, [componentId]: fileName }))}
+        onSelect={(componentId, fileName) => void saveFileSelection(componentId, fileName)}
       />
       <PageRunButtons
         actions={actions}
@@ -1212,6 +1237,9 @@ function FirmwarePathTable({
                       value={selectedFiles[row.componentId] ?? row.selectedFileName}
                     >
                       <option value="">No file selected</option>
+                      {selectedFiles[row.componentId] && !row.candidateFiles.some((candidate) => candidate.file_name === selectedFiles[row.componentId]) ? (
+                        <option value={selectedFiles[row.componentId]}>{selectedFiles[row.componentId]}</option>
+                      ) : null}
                       {row.candidateFiles.map((candidate) => (
                         <option key={`${row.componentId}-${candidate.file_name}-${candidate.file_path ?? ""}`} value={candidate.file_name}>
                           {candidate.file_name}
@@ -1245,13 +1273,15 @@ function FirmwareFilesPanel({
   lastScanned,
   loading,
   onRescan,
-  packageCount
+  packageCount,
+  selectionStatus
 }: {
   directory: string;
   lastScanned: string;
   loading: boolean;
   onRescan: () => void;
   packageCount: number;
+  selectionStatus: string;
 }) {
   return (
     <section className="operator-section firmware-files-panel" aria-label="Firmware Files">
@@ -1266,7 +1296,8 @@ function FirmwareFilesPanel({
         values={[
           { label: "Directory", value: directory, source: "Local folder" },
           { label: "Last scanned", value: lastScanned },
-          { label: "Package count", value: String(packageCount) }
+          { label: "Package count", value: String(packageCount) },
+          { label: "Selections", value: selectionStatus, source: "Local runtime" }
         ]}
       />
       <div className="page-run-buttons">
@@ -1766,6 +1797,12 @@ function selectionSourceLabel(source: string): string {
   if (source === "auto") return "Auto-selected";
   if (source === "user") return "Selected by user";
   return "No file selected";
+}
+
+function selectionStatusLabel(fileSelections: FirmwareFileSelections | null, saving: boolean): string {
+  if (saving) return "Saving";
+  const count = Object.keys(fileSelections?.selected_files ?? {}).length;
+  return count ? `${count} saved` : "Not saved";
 }
 
 function legacyPath(summary: FirmwareSummary): FirmwareUpgradePath {

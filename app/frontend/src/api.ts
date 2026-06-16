@@ -12,6 +12,8 @@ import type {
   ControlActionCatalog,
   ControlActionPlan,
   ControlActionRun,
+  FirmwareFileSelections,
+  FirmwareFileSelectionsWrite,
   FirmwareSummary,
   HpeRaidIntent,
   HpeRaidIntentWrite,
@@ -334,6 +336,13 @@ export const api = {
     apiRequest<ProviderProbeResult>("/api/v1/lab/firmware-waiver-check"),
   firmwareSummary: () =>
     apiRequest<FirmwareSummary[]>("/api/v1/firmware/summary"),
+  firmwareFileSelections: () =>
+    apiRequest<FirmwareFileSelections>("/api/v1/firmware/file-selections"),
+  saveFirmwareFileSelections: (payload: FirmwareFileSelectionsWrite) =>
+    apiRequest<FirmwareFileSelections>("/api/v1/firmware/file-selections", {
+      method: "PUT",
+      body: payload
+    }),
   fullRebuildSummary: () =>
     apiRequest<ProviderProbeResult>("/api/v1/lab/full-rebuild-summary"),
   buildVerification: () =>

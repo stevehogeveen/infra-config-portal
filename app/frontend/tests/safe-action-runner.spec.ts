@@ -320,7 +320,16 @@ test("firmware table renders upgrade path states", async ({ page }) => {
   await expect(ciscoRow).toContainText("Needs review");
   await expect(ciscoRow).toContainText("cat9k_iosxe.17.15.05.SPA.bin");
   await expect(ciscoRow).toContainText("Auto-selected");
+  const selectionSave = page.waitForResponse((response) =>
+    response.url().includes("/api/v1/firmware/file-selections") &&
+    response.request().method() === "PUT"
+  );
   await ciscoRow.getByRole("combobox").selectOption("cat9k_iosxe.17.12.01.SPA.bin");
+  await expect((await selectionSave).ok()).toBeTruthy();
+  await expect(ciscoRow).toContainText("cat9k_iosxe.17.12.01.SPA.bin");
+  await expect(ciscoRow).toContainText("Selected by user");
+  await expect(page.getByText("1 saved")).toBeVisible();
+  await page.getByRole("button", { name: "Refresh" }).click();
   await expect(ciscoRow).toContainText("cat9k_iosxe.17.12.01.SPA.bin");
   await expect(ciscoRow).toContainText("Selected by user");
   await expect(ciscoRow.getByRole("button", { name: "Scan" })).toBeVisible();
@@ -359,6 +368,7 @@ test("safe read-only page action still invokes the workflow runner", async ({ pa
 });
 
 async function installApiMocks(page: Page) {
+  let firmwareFileSelections = firmwareFileSelectionState({});
   await page.route("**/*", async (route) => {
     const request = route.request();
     const url = new URL(request.url());
@@ -452,6 +462,13 @@ async function installApiMocks(page: Page) {
     }
     if (url.pathname === "/api/v1/firmware/summary") {
       return json(route, firmwareSummaries());
+    }
+    if (url.pathname === "/api/v1/firmware/file-selections") {
+      if (request.method() === "PUT") {
+        const payload = request.postDataJSON() as { selected_files?: Record<string, string> };
+        firmwareFileSelections = firmwareFileSelectionState(payload.selected_files ?? {});
+      }
+      return json(route, firmwareFileSelections);
     }
     if (url.pathname === "/api/v1/media-inventory") {
       return json(route, mediaInventory());
@@ -1001,6 +1018,24 @@ function firmwareInventory() {
     media_candidates: [],
     packages: [],
     status: "not_checked"
+  };
+}
+
+function firmwareFileSelectionState(selected_files: Record<string, string>) {
+  return {
+    apply_enabled: false,
+    blockers: [],
+    checked_at: checkedAt,
+    freshness: "live",
+    message: Object.keys(selected_files).length ? "Firmware file selections are saved in local runtime state." : "No firmware file selections are saved yet.",
+    next_safe_action: "Validate the upgrade path before any firmware apply workflow.",
+    provider_id: "firmware-file-selections",
+    selected_files,
+    source_type: "operator_config",
+    status: Object.keys(selected_files).length ? "ready" : "not_configured_yet",
+    store_path: ".local/firmware-file-selections.json",
+    updated_at: checkedAt,
+    warnings: []
   };
 }
 
