@@ -289,6 +289,35 @@ test("each domain page exposes relevant run test or apply buttons", async ({ pag
   }
 });
 
+test("operator pages expose a current view with refresh or fix guidance", async ({ page }) => {
+  const pages = [
+    "/overview",
+    "/network",
+    "/server",
+    "/storage",
+    "/virtualization",
+    "/firmware-upgrades",
+    "/validation",
+    "/settings"
+  ];
+
+  for (const path of pages) {
+    await page.goto(path);
+    const currentView = page.locator("section[aria-label='Current view']").first();
+    await expect(currentView).toBeVisible();
+    await expect(currentView).toContainText("What the app sees now");
+    await expect(currentView).toContainText("Source");
+    await expect(currentView).toContainText("Freshness");
+    await expect(currentView).toContainText("Checked");
+  }
+
+  await page.goto("/network");
+  const networkCurrentView = page.locator("section[aria-label='Current view']").first();
+  await expect(networkCurrentView).toContainText("Test Switch");
+  await expect(networkCurrentView).toContainText("Test Switch checks Cisco reachability");
+  await expect(networkCurrentView).toContainText("Run Test Switch after fixing connectivity or credentials.");
+});
+
 test("advanced proof is collapsed and operator labels hide raw statuses", async ({ page }) => {
   await page.goto("/validation");
 
@@ -296,7 +325,7 @@ test("advanced proof is collapsed and operator labels hide raw statuses", async 
   await expect(advanced).not.toHaveAttribute("open", "");
   await expect(page.getByText("Golden State", { exact: true })).toBeVisible();
   await expect(page.getByText("Expected working lab state.").first()).toBeVisible();
-  await expect(page.getByText("Different from expected")).toBeVisible();
+  await expect(page.getByText("Different from expected").first()).toBeVisible();
   await expect(page.getByText("Artifact")).toHaveCount(0);
   await expect(page.getByText("manual_review")).toHaveCount(0);
   await expect(page.getByText("not_configured_yet")).toHaveCount(0);

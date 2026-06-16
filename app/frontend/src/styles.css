@@ -595,6 +595,50 @@ button:disabled {
   font-weight: 800;
 }
 
+.current-view-panel {
+  border-color: #cbd5e1;
+}
+
+.current-view-empty {
+  background: #fbfcfe;
+}
+
+.current-view-guidance {
+  background: #f8fafc;
+  border: 1px solid #e5e9ef;
+  border-radius: 8px;
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+}
+
+.current-view-guidance strong {
+  color: #0f172a;
+}
+
+.current-view-guidance p {
+  color: #334155;
+  font-weight: 700;
+  line-height: 1.4;
+  margin: 0;
+}
+
+.current-view-guidance ul {
+  display: grid;
+  gap: 8px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.current-view-guidance li {
+  align-items: flex-start;
+  color: #334155;
+  display: flex;
+  gap: 8px;
+  line-height: 1.4;
+}
+
 .run-button-wrap {
   align-items: flex-start;
   display: grid;

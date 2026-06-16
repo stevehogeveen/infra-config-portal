@@ -61,6 +61,39 @@ type ConfigValue = {
   value: string;
 };
 
+type CurrentViewModel = {
+  available: boolean;
+  blockers: string[];
+  checkedAt: string;
+  details: ConfigValue[];
+  fixSteps: string[];
+  freshness: string;
+  recheckCommand: string;
+  scanDetail: string;
+  scanLabel: string;
+  source: string;
+  status: string;
+  summary: string;
+  warnings: string[];
+};
+
+type CurrentViewModelInput = {
+  available: boolean;
+  blockers?: Array<string | undefined | null>;
+  checkedAt?: string | null;
+  details: ConfigValue[];
+  fixSteps: Array<string | undefined | null>;
+  freshness?: string;
+  recheckCommand?: string;
+  scanDetail: string;
+  scanLabel: string;
+  signals?: unknown[];
+  source?: string;
+  status: string;
+  summary: string;
+  warnings?: Array<string | undefined | null>;
+};
+
 type AccessItem = {
   label: string;
   detail?: string;
@@ -185,6 +218,7 @@ export function OperatorOverviewPage({
     () => overviewAccessRows({ address, ciscoReadiness, providers, validation, vcenterNetapp }),
     [address, ciscoReadiness, providers, validation, vcenterNetapp]
   );
+  const currentView = overviewCurrentView({ buildVerification, providers, validation });
 
   return (
     <OperatorPage title="Overview">
@@ -208,6 +242,7 @@ export function OperatorOverviewPage({
       />
       <Feedback loading={loading && !validation} error={error || labProfileError} />
       {labProfileLoading && <Feedback loading />}
+      <CurrentViewPanel model={currentView} />
       <section className="operator-section" aria-label="Active lab summary">
         <div className="operator-section-head">
           <div>
@@ -287,6 +322,7 @@ export function OperatorNetworkPage({ labProfileState }: OperatorPageProps) {
 
   const consoleState = objectValue(ciscoReadiness?.console);
   const networkStatus = asString(ciscoReadiness?.status) || (address.cisco_management ? "ready" : "not_configured_yet");
+  const currentView = networkCurrentView({ address, ciscoReadiness });
 
   return (
     <OperatorPage title="Network">
@@ -300,6 +336,7 @@ export function OperatorNetworkPage({ labProfileState }: OperatorPageProps) {
         title="Network"
       />
       <Feedback loading={loading && !ciscoReadiness} error={error} />
+      <CurrentViewPanel model={currentView} />
       <AccessSummary
         items={[
           { label: "Cisco switch", value: displayAddress(address.cisco_management), status: networkStatus },
@@ -382,6 +419,7 @@ export function OperatorServerPage({ labProfileState }: OperatorPageProps) {
   const iloStatus = providerStatus(providers, ["ilo", "redfish"]) || "not_checked";
   const esxiStatus = asString(esxiReadiness?.status) || providerStatus(providers, ["esxi"]) || "not_checked";
   const raidStatus = asString(raidPlan?.status) || "not_checked";
+  const currentView = serverCurrentView({ address, esxiReadiness, iloStatus, raidPlan, raidStatus });
 
   return (
     <OperatorPage title="Server">
@@ -395,6 +433,7 @@ export function OperatorServerPage({ labProfileState }: OperatorPageProps) {
         title="Server"
       />
       <Feedback loading={loading && !providers.length} error={error} />
+      <CurrentViewPanel model={currentView} />
       <AccessSummary
         items={[
           { label: "iLO URL", value: address.ilo ? `https://${address.ilo}` : "Not set up yet", status: iloStatus },
@@ -481,6 +520,7 @@ export function OperatorStoragePage({ labProfileState }: OperatorPageProps) {
 
   const plannedNfs = objectValue(nfsReadiness?.planned_nfs);
   const storageStatus = asString(vcenterNetapp?.status) || asString(nfsReadiness?.status) || asString(netappPlan?.status) || "not_checked";
+  const currentView = storageCurrentView({ address, consoleReadiness, netappPlan, nfsReadiness, vcenterNetapp });
 
   return (
     <OperatorPage title="Storage">
@@ -494,6 +534,7 @@ export function OperatorStoragePage({ labProfileState }: OperatorPageProps) {
         title="Storage"
       />
       <Feedback loading={loading && !netappPlan} error={error} />
+      <CurrentViewPanel model={currentView} />
       <AccessSummary
         items={[
           { label: "Console access", value: displayValue(asString(objectValue(consoleReadiness?.runtime_state).console)), detail: "Advanced proof has details" },
@@ -572,6 +613,7 @@ export function OperatorVirtualizationPage({ labProfileState }: OperatorPageProp
   const virtualStatus = asString(postAttach?.status) || asString(vcenterNetapp?.status) || asString(installReadiness?.status) || "not_checked";
   const target = vcenterTarget(vcenterNetapp || installReadiness, activeProfile);
   const postChecks = objectValue(postAttach?.checks);
+  const currentView = virtualizationCurrentView({ activeProfile, installReadiness, postAttach, vcenterNetapp });
 
   return (
     <OperatorPage title="Virtualization">
@@ -585,6 +627,7 @@ export function OperatorVirtualizationPage({ labProfileState }: OperatorPageProp
         title="Virtualization"
       />
       <Feedback loading={loading && !vcenterNetapp} error={error} />
+      <CurrentViewPanel model={currentView} />
       <AccessSummary
         items={[
           { label: "vCenter target", value: target, status: virtualStatus },
@@ -687,6 +730,7 @@ export function OperatorFirmwareUpgradesPage() {
   ]);
   const rows = firmwareRows(firmwareSummaries, compliance, selectedFiles);
   const files = firmwareFilesInfo(media, compliance);
+  const currentView = firmwareCurrentView({ compliance, files, rows });
 
   return (
     <OperatorPage title="Firmware Upgrades">
@@ -699,6 +743,7 @@ export function OperatorFirmwareUpgradesPage() {
         title="Firmware Upgrades"
       />
       <Feedback loading={loading && !firmwareSummaries.length} error={error} />
+      <CurrentViewPanel model={currentView} />
       <FirmwareFilesPanel
         directory="/home/administrator/infra-config-portal/artifacts/Media"
         lastScanned={files.lastScanned}
@@ -765,6 +810,7 @@ export function OperatorValidationPage() {
   }, []);
 
   const differentFromExpected = validation?.validation_items.filter((item) => item.status !== "ready").length ?? 0;
+  const currentView = validationCurrentView({ buildVerification, validation, vcenterNetapp });
 
   return (
     <OperatorPage title="Validation">
@@ -778,6 +824,7 @@ export function OperatorValidationPage() {
         title="Validation"
       />
       <Feedback loading={loading && !validation} error={error} />
+      <CurrentViewPanel model={currentView} />
       <AccessSummary
         items={[
           { label: "Golden State", value: "Expected working lab state.", status: validation?.overall_status ?? "not_checked" },
@@ -855,6 +902,8 @@ export function OperatorSettingsPage({
     void load();
   }, []);
 
+  const currentView = settingsCurrentView({ activeProfile, health: health ?? null, labProfileState, vcenterNetapp });
+
   return (
     <OperatorPage title="Settings">
       <PageStatusHeader
@@ -867,6 +916,7 @@ export function OperatorSettingsPage({
         title="Settings"
       />
       <Feedback loading={loading && !activeProfile} error={error || labProfileError} />
+      <CurrentViewPanel model={currentView} />
       <section className="operator-section" aria-label="Active lab setup values">
         <div className="operator-section-head">
           <div>
@@ -974,6 +1024,60 @@ function PageStatusHeader({
         {actions && <div className="operator-header-actions">{actions}</div>}
       </div>
     </header>
+  );
+}
+
+function CurrentViewPanel({ model }: { model: CurrentViewModel }) {
+  const issueRows = [
+    ...model.blockers.map((blocker) => ({ status: "blocked", text: blocker })),
+    ...model.warnings.map((warning) => ({ status: "warning", text: warning }))
+  ].filter((item) => item.text);
+  const metaValues = [
+    { label: "Source", value: model.source },
+    { label: "Freshness", value: model.freshness, status: freshnessStatus(model.freshness) },
+    { label: "Checked", value: model.checkedAt },
+    ...(model.recheckCommand ? [{ label: "Recheck", value: model.recheckCommand, source: "Local command" }] : []),
+    ...model.details
+  ];
+
+  return (
+    <section className={`operator-section current-view-panel${model.available ? "" : " current-view-empty"}`} aria-label="Current view">
+      <div className="operator-section-head">
+        <div>
+          <p className="operator-kicker">Current View</p>
+          <h2>What the app sees now</h2>
+          <p className="operator-muted">{model.summary}</p>
+        </div>
+        <SimpleStatusPill status={model.status} />
+      </div>
+      <ConfigValueList values={metaValues} />
+      {!model.available && (
+        <div className="current-view-guidance">
+          <strong>{model.scanLabel}</strong>
+          <p>{model.scanDetail}</p>
+          {model.fixSteps.length > 0 && (
+            <ul>
+              {model.fixSteps.map((step) => (
+                <li key={step}>{humanize(step)}</li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+      {model.available && issueRows.length > 0 && (
+        <div className="current-view-guidance">
+          <strong>Needs attention</strong>
+          <ul>
+            {issueRows.map((item) => (
+              <li key={`${item.status}-${item.text}`}>
+                <SimpleStatusPill status={item.status} />
+                <span>{humanize(item.text)}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -2064,7 +2168,7 @@ function sourceLabel(value: unknown): string {
   const item = objectValue(value);
   const source = asString(item.source_type);
   const freshness = asString(item.freshness);
-  if (source === "live_probe" || source === "live_cached") return "Live";
+  if (source === "live_probe" || source === "live_cached" || source === "cached_live") return "Live";
   if (source === "historical_artifact" || freshness === "historical" || freshness === "stale") return "Previous proof";
   if (source === "not_checked" || freshness === "not_checked") return "Not checked";
   if (source) return displayStatus(source);
@@ -2075,6 +2179,342 @@ function sourceLabelFromStatus(status: string): string {
   if (status === "ready") return "Ready";
   if (status === "not_checked") return "Not checked";
   return displayStatus(status);
+}
+
+function overviewCurrentView({
+  buildVerification,
+  providers,
+  validation
+}: {
+  buildVerification: ProviderProbeResult | null;
+  providers: ProviderStatus[];
+  validation: LabValidationSummary | null;
+}): CurrentViewModel {
+  const readyProviders = providers.filter((provider) => ["ready", "ok", "passed"].includes(provider.status)).length;
+  const status = validation?.overall_status || strongestStatus([buildVerification?.status ?? "not_checked", ...providers.map((provider) => provider.status)]);
+  return currentViewModel({
+    available: Boolean(validation || buildVerification || providers.length),
+    details: [
+      { label: "Provider checks", value: providers.length ? `${readyProviders} ready / ${providers.length} loaded` : "Not checked" },
+      { label: "Validation rows", value: String(validation?.validation_items.length ?? 0) },
+      { label: "Build verification", value: displayStatus(buildVerification?.status ?? "not_checked"), status: buildVerification?.status ?? "not_checked" }
+    ],
+    fixSteps: [
+      validation?.next_action,
+      "Run Validation to refresh the lab-wide current view.",
+      "Open Settings if targets or credentials are missing."
+    ],
+    recheckCommand: "make provider-lab-build-verification",
+    scanDetail: "Run Validation refreshes the current view across the lab and records the next blocker if one exists.",
+    scanLabel: "Run Validation",
+    signals: [validation, buildVerification, ...providers],
+    status,
+    summary: validation?.top_blocker?.problem || validation?.next_action || "The overview uses validation and provider status as its current view."
+  });
+}
+
+function networkCurrentView({
+  address,
+  ciscoReadiness
+}: {
+  address: LabAddressPlan;
+  ciscoReadiness: ProviderProbeResult | null;
+}): CurrentViewModel {
+  const consoleState = objectValue(ciscoReadiness?.console);
+  const status = asString(ciscoReadiness?.status) || (address.cisco_management ? "not_checked" : "not_configured_yet");
+  return currentViewModel({
+    available: Boolean(ciscoReadiness?.checked_at || ciscoReadiness?.status),
+    details: [
+      { label: "Cisco target", value: displayAddress(address.cisco_management), source: "Saved setup" },
+      { label: "Console", value: displayValue(asString(consoleState.selected_path) || asString(consoleState.effective_path)), status: asString(consoleState.status) || "not_checked" },
+      { label: "SSH access", value: boolStateLabel(asBoolean(ciscoReadiness?.management_configured)), status: asBoolean(ciscoReadiness?.management_configured) ? "ready" : "not_checked" }
+    ],
+    fixSteps: [
+      asString(ciscoReadiness?.next_safe_action),
+      "Confirm the Cisco management IP and console path in Settings.",
+      "Run Test Switch after fixing connectivity or credentials."
+    ],
+    recheckCommand: "make provider-lab-cisco-setup-readiness",
+    scanDetail: "Test Switch checks Cisco reachability, console readiness, and credential state without printing secrets.",
+    scanLabel: "Test Switch",
+    signals: [ciscoReadiness],
+    status,
+    summary: asString(ciscoReadiness?.message) || asString(ciscoReadiness?.next_safe_action) || "No Cisco current view has been loaded yet."
+  });
+}
+
+function serverCurrentView({
+  address,
+  esxiReadiness,
+  iloStatus,
+  raidPlan,
+  raidStatus
+}: {
+  address: LabAddressPlan;
+  esxiReadiness: ProviderProbeResult | null;
+  iloStatus: string;
+  raidPlan: ProviderProbeResult | null;
+  raidStatus: string;
+}): CurrentViewModel {
+  const status = strongestStatus([iloStatus, esxiReadiness?.status ?? "not_checked", raidStatus]);
+  return currentViewModel({
+    available: Boolean(esxiReadiness?.checked_at || raidPlan?.checked_at || iloStatus !== "not_checked" || raidStatus !== "not_checked"),
+    details: [
+      { label: "iLO", value: address.ilo ? `https://${address.ilo}` : "Not set up yet", status: iloStatus },
+      { label: "ESXi", value: displayAddress(address.esxi_management), status: esxiReadiness?.status ?? "not_checked" },
+      { label: "RAID", value: raidLayoutLabel(raidPlan), status: raidStatus }
+    ],
+    fixSteps: [
+      asString(esxiReadiness?.next_safe_action),
+      "Run Test iLO before inventory or firmware work.",
+      "Run Test ESXi after iLO and management networking are reachable."
+    ],
+    recheckCommand: "make provider-lab-ilo-reachability",
+    scanDetail: "Test iLO and Test ESXi refresh the current server view; Validate RAID refreshes the storage controller plan.",
+    scanLabel: "Test iLO",
+    signals: [esxiReadiness, raidPlan],
+    status,
+    summary: asString(esxiReadiness?.message) || asString(raidPlan?.message) || "No server current view has been loaded yet."
+  });
+}
+
+function storageCurrentView({
+  address,
+  consoleReadiness,
+  netappPlan,
+  nfsReadiness,
+  vcenterNetapp
+}: {
+  address: LabAddressPlan;
+  consoleReadiness: ProviderProbeResult | null;
+  netappPlan: ProviderProbeResult | null;
+  nfsReadiness: ProviderProbeResult | null;
+  vcenterNetapp: ProviderProbeResult | null;
+}): CurrentViewModel {
+  const status = asString(vcenterNetapp?.status) || asString(nfsReadiness?.status) || asString(netappPlan?.status) || "not_checked";
+  return currentViewModel({
+    available: Boolean(vcenterNetapp?.checked_at || nfsReadiness?.checked_at || netappPlan?.checked_at || consoleReadiness?.checked_at),
+    details: [
+      { label: "Cluster", value: displayAddress(address.netapp_cluster_mgmt), status },
+      { label: "Console", value: displayValue(asString(objectValue(consoleReadiness?.runtime_state).console)), status: asString(consoleReadiness?.status) || "not_checked" },
+      { label: "Datastore", value: datastoreName(vcenterNetapp), status: datastoreVisibleStatus(vcenterNetapp) }
+    ],
+    fixSteps: [
+      asString(vcenterNetapp?.next_safe_action) || asString(nfsReadiness?.next_safe_action),
+      "Run Test NetApp to refresh ONTAP access and setup readiness.",
+      "Run Validate NFS before any datastore mount action."
+    ],
+    recheckCommand: "make provider-lab-netapp-live-state",
+    scanDetail: "Test NetApp refreshes ONTAP access; Validate NFS explains which storage or vCenter prerequisite is missing.",
+    scanLabel: "Test NetApp",
+    signals: [vcenterNetapp, nfsReadiness, netappPlan, consoleReadiness],
+    status,
+    summary: asString(vcenterNetapp?.message) || asString(nfsReadiness?.message) || asString(netappPlan?.message) || "No storage current view has been loaded yet."
+  });
+}
+
+function virtualizationCurrentView({
+  activeProfile,
+  installReadiness,
+  postAttach,
+  vcenterNetapp
+}: {
+  activeProfile: LabProfile | null;
+  installReadiness: ProviderProbeResult | null;
+  postAttach: ProviderProbeResult | null;
+  vcenterNetapp: ProviderProbeResult | null;
+}): CurrentViewModel {
+  const postChecks = objectValue(postAttach?.checks);
+  const status = asString(postAttach?.status) || asString(vcenterNetapp?.status) || asString(installReadiness?.status) || "not_checked";
+  return currentViewModel({
+    available: Boolean(postAttach?.checked_at || vcenterNetapp?.checked_at || installReadiness?.checked_at),
+    details: [
+      { label: "vCenter", value: vcenterTarget(vcenterNetapp || installReadiness, activeProfile), status },
+      { label: "Datastore", value: datastoreName(vcenterNetapp), status: datastoreVisibleStatus(vcenterNetapp || postAttach) },
+      { label: "VM inventory", value: visibilityLabel(postChecks.vm_inventory_visible), status: visibilityStatus(postChecks.vm_inventory_visible) }
+    ],
+    fixSteps: [
+      asString(vcenterNetapp?.next_safe_action) || asString(installReadiness?.next_safe_action),
+      "Run Test vCenter to refresh the current virtualization view.",
+      "Run Validate Inventory after datastore and vCenter access are ready."
+    ],
+    recheckCommand: "make provider-lab-vcenter-netapp-readiness",
+    scanDetail: "Test vCenter checks the vCenter target, ESXi attach readiness, datastore visibility, and credential state.",
+    scanLabel: "Test vCenter",
+    signals: [postAttach, vcenterNetapp, installReadiness],
+    status,
+    summary: asString(postAttach?.message) || asString(vcenterNetapp?.message) || asString(installReadiness?.message) || "No virtualization current view has been loaded yet."
+  });
+}
+
+function firmwareCurrentView({
+  compliance,
+  files,
+  rows
+}: {
+  compliance: ProviderProbeResult | null;
+  files: { lastScanned: string; packageCount: number };
+  rows: FirmwareTableRow[];
+}): CurrentViewModel {
+  const status = strongestStatus([asString(compliance?.status) || "not_checked", ...rows.map((row) => row.pathStatus)]);
+  const needsReview = rows.filter((row) => !["ready", "current", "ready_to_upgrade"].includes(row.pathStatus)).length;
+  return currentViewModel({
+    available: Boolean(compliance?.checked_at || rows.length || files.packageCount),
+    details: [
+      { label: "Media files", value: String(files.packageCount), status: files.packageCount ? "ready" : "not_checked" },
+      { label: "Firmware rows", value: String(rows.length), status: rows.length ? status : "not_checked" },
+      { label: "Needs review", value: String(needsReview), status: needsReview ? "warning" : "ready" }
+    ],
+    fixSteps: [
+      asString(compliance?.next_safe_action),
+      "Put firmware media in artifacts/Media, then run Scan Firmware.",
+      "Select the correct file for each row before any guarded upgrade workflow."
+    ],
+    recheckCommand: "make provider-lab-firmware-compliance",
+    scanDetail: "Scan Firmware refreshes inventory, media matching, and compliance guidance before any guarded upgrade action.",
+    scanLabel: "Scan Firmware",
+    signals: [compliance],
+    status,
+    summary: asString(compliance?.message) || (rows.length ? "Firmware current view is based on inventory, media matching, and selected files." : "No firmware current view has been loaded yet.")
+  });
+}
+
+function validationCurrentView({
+  buildVerification,
+  validation,
+  vcenterNetapp
+}: {
+  buildVerification: ProviderProbeResult | null;
+  validation: LabValidationSummary | null;
+  vcenterNetapp: ProviderProbeResult | null;
+}): CurrentViewModel {
+  const differentFromExpected = validation?.validation_items.filter((item) => item.status !== "ready").length ?? 0;
+  return currentViewModel({
+    available: Boolean(validation || buildVerification || vcenterNetapp),
+    details: [
+      { label: "Different from expected", value: String(differentFromExpected), status: differentFromExpected ? "warning" : "ready" },
+      { label: "Build verification", value: displayStatus(buildVerification?.status ?? "not_checked"), status: buildVerification?.status ?? "not_checked" },
+      { label: "vCenter-NetApp", value: displayStatus(vcenterNetapp?.status ?? "not_checked"), status: vcenterNetapp?.status ?? "not_checked" }
+    ],
+    fixSteps: [
+      validation?.top_blocker?.recommended_action || validation?.next_action,
+      "Run Validation to refresh current blockers and proof links.",
+      "Use the top blocker as the first fix before generating handoff."
+    ],
+    recheckCommand: "make provider-lab-build-verification",
+    scanDetail: "Run Validation refreshes the current blocker list and produces a proof-backed handoff view.",
+    scanLabel: "Run Validation",
+    signals: [validation, buildVerification, vcenterNetapp],
+    status: validation?.overall_status ?? "not_checked",
+    summary: validation?.top_blocker?.problem || validation?.next_action || "No validation current view has been loaded yet."
+  });
+}
+
+function settingsCurrentView({
+  activeProfile,
+  health,
+  labProfileState,
+  vcenterNetapp
+}: {
+  activeProfile: LabProfile | null;
+  health: HealthLike;
+  labProfileState: LabProfileList | null;
+  vcenterNetapp: ProviderProbeResult | null;
+}): CurrentViewModel {
+  return currentViewModel({
+    available: Boolean(activeProfile),
+    checkedAt: activeProfile?.updated_at ?? labProfileState?.active_profile?.updated_at ?? undefined,
+    details: [
+      { label: "Active setup", value: activeProfile?.name ?? "No active setup", status: activeProfile ? "ready" : "not_configured_yet" },
+      { label: "Runtime mode", value: displayStatus(runtimeStatus(health)), status: runtimeStatus(health) },
+      { label: "vCenter target", value: vcenterTarget(vcenterNetapp, activeProfile), status: vcenterNetapp?.status ?? "not_checked" }
+    ],
+    fixSteps: [
+      labProfileState?.next_safe_action,
+      "Open Edit Config from Overview if the active lab values are wrong.",
+      "Run Refresh Consoles after plugging in or changing serial adapters."
+    ],
+    freshness: activeProfile ? "operator_config" : "not_checked",
+    recheckCommand: "make provider-lab-build-verification",
+    scanDetail: "Refresh Consoles and Test Credentials update the current setup view without exposing secret values.",
+    scanLabel: "Refresh Consoles",
+    signals: [vcenterNetapp],
+    source: activeProfile ? "Saved setup" : "Not checked",
+    status: activeProfile ? "ready" : "not_configured_yet",
+    summary: activeProfile ? "The current setup view is loaded from the active lab profile." : "No active lab setup is loaded."
+  });
+}
+
+function currentViewModel({
+  available,
+  blockers = [],
+  checkedAt,
+  details,
+  fixSteps,
+  freshness,
+  recheckCommand,
+  scanDetail,
+  scanLabel,
+  signals = [],
+  source,
+  status,
+  summary,
+  warnings = []
+}: CurrentViewModelInput): CurrentViewModel {
+  return {
+    available,
+    blockers: uniqueStrings([...blockers, ...signalMessages(signals, "blockers")]),
+    checkedAt: checkedAt ? formatDateTime(checkedAt) : firstCheckedAt(signals),
+    details,
+    fixSteps: uniqueStrings(fixSteps),
+    freshness: displayStatus(freshness || firstMetadataValue(signals, ["freshness"]) || firstMetadataValue(signals, ["source_type"]) || "not_checked"),
+    recheckCommand: recheckCommand || firstMetadataValue(signals, ["recheck_command"]),
+    scanDetail,
+    scanLabel,
+    source: source || firstSource(signals),
+    status: status || "not_checked",
+    summary: humanize(summary),
+    warnings: uniqueStrings([...warnings, ...signalMessages(signals, "warnings")])
+  };
+}
+
+function firstSource(signals: unknown[]): string {
+  for (const signal of signals) {
+    const label = sourceLabel(signal);
+    if (label && label !== "Not checked") return label;
+  }
+  return "Not checked";
+}
+
+function firstCheckedAt(signals: unknown[]): string {
+  const raw = firstMetadataValue(signals, ["checked_at", "generated_at", "last_checked", "last_scanned", "updated_at"]);
+  return raw ? formatDateTime(raw) : "Not checked";
+}
+
+function firstMetadataValue(signals: unknown[], keys: string[]): string {
+  for (const signal of signals) {
+    const record = objectValue(signal);
+    for (const key of keys) {
+      const value = asString(record[key]);
+      if (value) return value;
+    }
+  }
+  return "";
+}
+
+function signalMessages(signals: unknown[], key: "blockers" | "warnings"): string[] {
+  return signals.flatMap((signal) => stringArray(objectValue(signal)[key]));
+}
+
+function uniqueStrings(values: Array<string | undefined | null>): string[] {
+  return Array.from(new Set(values.map((value) => asString(value).trim()).filter(Boolean)));
+}
+
+function freshnessStatus(value: string): string {
+  const normalized = value.toLowerCase();
+  if (normalized.includes("live") || normalized.includes("recent") || normalized.includes("operator config") || normalized.includes("saved")) return "ready";
+  if (normalized.includes("old") || normalized.includes("previous") || normalized.includes("stale")) return "warning";
+  return "not_checked";
 }
 
 function strongestStatus(statuses: string[]): string {
@@ -2109,6 +2549,8 @@ function displayStatus(status: string): string {
     hard_fail: "Blocked",
     historical: "Previous proof",
     historical_artifact: "Previous proof",
+    cached_live: "Recent live check",
+    live: "Live",
     live_cached: "Recent live check",
     live_probe: "Live check",
     "local-lab-readwrite": "Real lab",
@@ -2123,6 +2565,7 @@ function displayStatus(status: string): string {
     not_setup: "Not set up",
     not_in_scope: "Not in this setup",
     ok: "Ready",
+    operator_config: "Operator config",
     partial: "Partly ready",
     passed: "Ready",
     ready: "Ready",
