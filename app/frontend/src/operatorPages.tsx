@@ -16,7 +16,7 @@ import {
   ShieldCheck,
   Wrench
 } from "lucide-react";
-import { createContext, ReactNode, useContext, useEffect, useMemo, useState } from "react";
+import { ReactNode, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 
 import { api } from "./api";
@@ -144,15 +144,12 @@ const emptyRunState: WorkflowRunState = {
 
 const noProofText = "Advanced proof is hidden unless you need it.";
 
-export const LabConfigEditorContext = createContext<(() => void) | null>(null);
-
 export function OperatorOverviewPage({
   health,
   labProfileError = "",
   labProfileLoading = false,
   labProfileState
 }: OperatorPageProps) {
-  const openConfigEditor = useContext(LabConfigEditorContext);
   const activeProfile = activeLabProfile(labProfileState);
   const address = activeAddressPlan(activeProfile);
   const global = activeProfile?.global_settings ?? null;
@@ -224,16 +221,10 @@ export function OperatorOverviewPage({
     <OperatorPage title="Overview">
       <PageStatusHeader
         actions={
-          <>
-            <button disabled={loading} onClick={() => void load()} type="button">
-              <RefreshCw size={16} />
-              Refresh Access
-            </button>
-            <button className="primary" onClick={() => openConfigEditor?.()} type="button">
-              <Settings size={16} />
-              Edit Config
-            </button>
-          </>
+          <button disabled={loading} onClick={() => void load()} type="button">
+            <RefreshCw size={16} />
+            Refresh Access
+          </button>
         }
         description="This page shows what the app can currently access."
         helper="Change values here if your lab uses different IPs. Advanced proof is hidden unless you need it."
@@ -243,6 +234,21 @@ export function OperatorOverviewPage({
       <Feedback loading={loading && !validation} error={error || labProfileError} />
       {labProfileLoading && <Feedback loading />}
       <CurrentViewPanel model={currentView} />
+      <TabSettingsPanel values={tabSettingsValues("overview", activeProfile)} />
+      <section className="operator-section page-run-section" aria-label="Run this tab">
+        <div className="operator-section-head">
+          <div>
+            <p className="operator-kicker">Run</p>
+            <h2>Run this tab</h2>
+          </div>
+        </div>
+        <div className="page-run-buttons">
+          <button className="primary" disabled={loading} onClick={() => void load()} type="button">
+            <RefreshCw size={16} />
+            Refresh Access
+          </button>
+        </div>
+      </section>
       <section className="operator-section" aria-label="Active lab summary">
         <div className="operator-section-head">
           <div>
@@ -255,10 +261,6 @@ export function OperatorOverviewPage({
               {displayAddress(address.subnet)}
             </p>
           </div>
-          <button onClick={() => openConfigEditor?.()} type="button">
-            <Settings size={16} />
-            Edit Config
-          </button>
         </div>
       </section>
       <section className="operator-section" aria-label="Lab values">
@@ -337,6 +339,16 @@ export function OperatorNetworkPage({ labProfileState }: OperatorPageProps) {
       />
       <Feedback loading={loading && !ciscoReadiness} error={error} />
       <CurrentViewPanel model={currentView} />
+      <TabSettingsPanel values={tabSettingsValues("network", activeProfile)} />
+      <PageRunButtons
+        actions={actions}
+        buttons={[
+          { actionIds: ["cisco.validate-ssh-scp", "cisco.privilege-check", "cisco.setup-readiness"], label: "Test Switch", primary: true },
+          { actionIds: ["cisco.save-config"], kind: "write", label: "Save Config", icon: <Save size={16} /> },
+          { actionIds: ["cisco.firmware-inventory"], label: "Scan Firmware" }
+        ]}
+        onReload={load}
+      />
       <AccessSummary
         items={[
           { label: "Cisco switch", value: displayAddress(address.cisco_management), status: networkStatus },
@@ -355,15 +367,6 @@ export function OperatorNetworkPage({ labProfileState }: OperatorPageProps) {
           { label: "SNMP", value: enabledLabel(features?.enable_snmp), status: featureStatus(features, "enable_snmp") },
           { label: "MTU", value: displayValue(global?.mtu ?? activeProfile?.mtu), source: "Saved setup" }
         ]}
-      />
-      <PageRunButtons
-        actions={actions}
-        buttons={[
-          { actionIds: ["cisco.validate-ssh-scp", "cisco.privilege-check", "cisco.setup-readiness"], label: "Test Switch", primary: true },
-          { actionIds: ["cisco.save-config"], kind: "write", label: "Save Config", icon: <Save size={16} /> },
-          { actionIds: ["cisco.firmware-inventory"], label: "Scan Firmware" }
-        ]}
-        onReload={load}
       />
       <AdvancedDrawer title="Network proof" summary={noProofText}>
         <ConfigValueList
@@ -434,6 +437,17 @@ export function OperatorServerPage({ labProfileState }: OperatorPageProps) {
       />
       <Feedback loading={loading && !providers.length} error={error} />
       <CurrentViewPanel model={currentView} />
+      <TabSettingsPanel values={tabSettingsValues("server", activeProfile)} />
+      <PageRunButtons
+        actions={actions}
+        buttons={[
+          { actionIds: ["ilo.reachability", "ilo.auth", "ilo.inventory"], label: "Test iLO", primary: true },
+          { actionIds: ["esxi.management-validation", "esxi.ssh-api-check", "esxi.readiness"], label: "Test ESXi" },
+          { actionIds: ["esxi.recover-management"], kind: "write", label: "Recover ESXi" },
+          { actionIds: ["raid.validate", "raid.pending-check"], label: "Validate RAID" }
+        ]}
+        onReload={load}
+      />
       <AccessSummary
         items={[
           { label: "iLO URL", value: address.ilo ? `https://${address.ilo}` : "Not set up yet", status: iloStatus },
@@ -452,16 +466,6 @@ export function OperatorServerPage({ labProfileState }: OperatorPageProps) {
           { label: "BIOS / iLO firmware", value: firmwareVersion(firmwareSummaries, "ilo") },
           { label: "ESXi version", value: firmwareVersion(firmwareSummaries, "esxi") }
         ]}
-      />
-      <PageRunButtons
-        actions={actions}
-        buttons={[
-          { actionIds: ["ilo.reachability", "ilo.auth", "ilo.inventory"], label: "Test iLO", primary: true },
-          { actionIds: ["esxi.management-validation", "esxi.ssh-api-check", "esxi.readiness"], label: "Test ESXi" },
-          { actionIds: ["esxi.recover-management"], kind: "write", label: "Recover ESXi" },
-          { actionIds: ["raid.validate", "raid.pending-check"], label: "Validate RAID" }
-        ]}
-        onReload={load}
       />
       <AdvancedDrawer title="Server proof" summary={noProofText}>
         <ConfigValueList
@@ -535,6 +539,16 @@ export function OperatorStoragePage({ labProfileState }: OperatorPageProps) {
       />
       <Feedback loading={loading && !netappPlan} error={error} />
       <CurrentViewPanel model={currentView} />
+      <TabSettingsPanel values={tabSettingsValues("storage", activeProfile)} />
+      <PageRunButtons
+        actions={actions}
+        buttons={[
+          { actionIds: ["netapp.live-state", "netapp.validate-setup", "netapp.setup-preview"], label: "Test NetApp", primary: true },
+          { actionIds: ["netapp.nfs-setup-validate", "netapp.nfs-vcenter-readiness"], label: "Validate NFS" },
+          { actionIds: ["esxi.netapp-datastore-apply", "netapp.nfs-setup-apply"], kind: "write", label: "Mount Datastore" }
+        ]}
+        onReload={load}
+      />
       <AccessSummary
         items={[
           { label: "Console access", value: displayValue(asString(objectValue(consoleReadiness?.runtime_state).console)), detail: "Advanced proof has details" },
@@ -552,15 +566,6 @@ export function OperatorStoragePage({ labProfileState }: OperatorPageProps) {
           { label: "Cluster management", value: displayAddress(address.netapp_cluster_mgmt), source: "Saved setup" },
           { label: "SVM management", value: displayAddress(address.netapp_svm_mgmt), source: "Saved setup" }
         ]}
-      />
-      <PageRunButtons
-        actions={actions}
-        buttons={[
-          { actionIds: ["netapp.live-state", "netapp.validate-setup", "netapp.setup-preview"], label: "Test NetApp", primary: true },
-          { actionIds: ["netapp.nfs-setup-validate", "netapp.nfs-vcenter-readiness"], label: "Validate NFS" },
-          { actionIds: ["esxi.netapp-datastore-apply", "netapp.nfs-setup-apply"], kind: "write", label: "Mount Datastore" }
-        ]}
-        onReload={load}
       />
       <AdvancedDrawer title="Storage proof" summary={noProofText}>
         <ConfigValueList
@@ -628,6 +633,16 @@ export function OperatorVirtualizationPage({ labProfileState }: OperatorPageProp
       />
       <Feedback loading={loading && !vcenterNetapp} error={error} />
       <CurrentViewPanel model={currentView} />
+      <TabSettingsPanel values={tabSettingsValues("virtualization", activeProfile)} />
+      <PageRunButtons
+        actions={actions}
+        buttons={[
+          { actionIds: ["vcenter-netapp.readiness", "vcenter.install-readiness"], label: "Test vCenter", primary: true },
+          { actionIds: ["esxi.vm-deploy-apply"], kind: "write", label: "Deploy VM" },
+          { actionIds: ["esxi.vm-deploy-validate", "vcenter.post-attach-validation"], label: "Validate Inventory" }
+        ]}
+        onReload={load}
+      />
       <AccessSummary
         items={[
           { label: "vCenter target", value: target, status: virtualStatus },
@@ -646,15 +661,6 @@ export function OperatorVirtualizationPage({ labProfileState }: OperatorPageProp
           { label: "Datastore name", value: datastoreName(vcenterNetapp) }
         ]}
       />
-      <PageRunButtons
-        actions={actions}
-        buttons={[
-          { actionIds: ["vcenter-netapp.readiness", "vcenter.install-readiness"], label: "Test vCenter", primary: true },
-          { actionIds: ["esxi.vm-deploy-apply"], kind: "write", label: "Deploy VM" },
-          { actionIds: ["esxi.vm-deploy-validate", "vcenter.post-attach-validation"], label: "Validate Inventory" }
-        ]}
-        onReload={load}
-      />
       <AdvancedDrawer title="Virtualization proof" summary={noProofText}>
         <ConfigValueList
           values={[
@@ -668,7 +674,8 @@ export function OperatorVirtualizationPage({ labProfileState }: OperatorPageProp
   );
 }
 
-export function OperatorFirmwareUpgradesPage() {
+export function OperatorFirmwareUpgradesPage({ labProfileState }: OperatorPageProps) {
+  const activeProfile = activeLabProfile(labProfileState);
   const [actions, setActions] = useState<WorkflowAction[]>([]);
   const [firmwareSummaries, setFirmwareSummaries] = useState<FirmwareSummary[]>([]);
   const [media, setMedia] = useState<MediaInventory | null>(null);
@@ -744,6 +751,15 @@ export function OperatorFirmwareUpgradesPage() {
       />
       <Feedback loading={loading && !firmwareSummaries.length} error={error} />
       <CurrentViewPanel model={currentView} />
+      <TabSettingsPanel values={tabSettingsValues("firmware", activeProfile)} />
+      <PageRunButtons
+        actions={actions}
+        buttons={[
+          { actionIds: ["firmware.inventory", "firmware.compliance-check"], label: "Scan Firmware", primary: true },
+          { actionIds: ["firmware.upgrade-apply-placeholder", "netapp.ontap-upgrade-apply"], allowBlockedRun: true, kind: "apply", label: "Upgrade" }
+        ]}
+        onReload={load}
+      />
       <FirmwareFilesPanel
         directory="/home/administrator/infra-config-portal/artifacts/Media"
         lastScanned={files.lastScanned}
@@ -758,14 +774,6 @@ export function OperatorFirmwareUpgradesPage() {
         selectedFiles={selectedFiles}
         onSelect={(componentId, fileName) => void saveFileSelection(componentId, fileName)}
       />
-      <PageRunButtons
-        actions={actions}
-        buttons={[
-          { actionIds: ["firmware.inventory", "firmware.compliance-check"], label: "Scan Firmware", primary: true },
-          { actionIds: ["firmware.upgrade-apply-placeholder", "netapp.ontap-upgrade-apply"], allowBlockedRun: true, kind: "apply", label: "Upgrade" }
-        ]}
-        onReload={load}
-      />
       <AdvancedDrawer title="Firmware proof" summary={noProofText}>
         <ValidationProofList
           items={[]}
@@ -776,7 +784,8 @@ export function OperatorFirmwareUpgradesPage() {
   );
 }
 
-export function OperatorValidationPage() {
+export function OperatorValidationPage({ labProfileState }: OperatorPageProps) {
+  const activeProfile = activeLabProfile(labProfileState);
   const [actions, setActions] = useState<WorkflowAction[]>([]);
   const [validation, setValidation] = useState<LabValidationSummary | null>(null);
   const [buildVerification, setBuildVerification] = useState<ProviderProbeResult | null>(null);
@@ -825,6 +834,15 @@ export function OperatorValidationPage() {
       />
       <Feedback loading={loading && !validation} error={error} />
       <CurrentViewPanel model={currentView} />
+      <TabSettingsPanel values={tabSettingsValues("validation", activeProfile)} />
+      <PageRunButtons
+        actions={actions}
+        buttons={[
+          { actionIds: ["full-lab.validation", "build-verification.run-full"], label: "Run Validation", primary: true },
+          { actionIds: ["full-lab.handoff-report"], label: "Generate Handoff", onClick: async () => { await api.labValidationHandoff(); } }
+        ]}
+        onReload={load}
+      />
       <AccessSummary
         items={[
           { label: "Golden State", value: "Expected working lab state.", status: validation?.overall_status ?? "not_checked" },
@@ -839,14 +857,6 @@ export function OperatorValidationPage() {
           { label: "Top blocker", value: validation?.top_blocker?.problem ?? "None", status: validation?.top_blocker ? "blocked" : "ready" },
           { label: "Checked", value: validation?.generated_at ? formatDateTime(validation.generated_at) : "Not checked" }
         ]}
-      />
-      <PageRunButtons
-        actions={actions}
-        buttons={[
-          { actionIds: ["full-lab.validation", "build-verification.run-full"], label: "Run Validation", primary: true },
-          { actionIds: ["full-lab.handoff-report"], label: "Generate Handoff", onClick: async () => { await api.labValidationHandoff(); } }
-        ]}
-        onReload={load}
       />
       <AdvancedDrawer title="Validation proof" summary={noProofText}>
         <ValidationProofList items={validation?.validation_items ?? []} proofLinks={validation?.proof_links.length ?? 0} />
@@ -917,6 +927,16 @@ export function OperatorSettingsPage({
       />
       <Feedback loading={loading && !activeProfile} error={error || labProfileError} />
       <CurrentViewPanel model={currentView} />
+      <TabSettingsPanel values={tabSettingsValues("settings", activeProfile)} />
+      <PageRunButtons
+        actions={actions}
+        buttons={[
+          { to: "/config", icon: <Settings size={16} />, label: "Open Edit Config", primary: true },
+          { actionIds: ["build-verification.run-full", "full-lab.validation"], label: "Test Credentials" },
+          { actionIds: ["cisco.discover-console", "netapp.console-autodiscovery"], label: "Refresh Consoles" }
+        ]}
+        onReload={load}
+      />
       <section className="operator-section" aria-label="Active lab setup values">
         <div className="operator-section-head">
           <div>
@@ -957,15 +977,6 @@ export function OperatorSettingsPage({
           ]}
         />
       </section>
-      <PageRunButtons
-        actions={actions}
-        buttons={[
-          { disabledReason: "No unsaved setup changes are open on this page.", icon: <Save size={16} />, kind: "custom", label: "Save Setup", primary: true },
-          { actionIds: ["build-verification.run-full", "full-lab.validation"], label: "Test Credentials" },
-          { actionIds: ["cisco.discover-console", "netapp.console-autodiscovery"], label: "Refresh Consoles" }
-        ]}
-        onReload={load}
-      />
       <AdvancedDrawer title="Settings proof" summary={noProofText}>
         <ConfigValueList
           values={[
@@ -1081,6 +1092,25 @@ function CurrentViewPanel({ model }: { model: CurrentViewModel }) {
   );
 }
 
+function TabSettingsPanel({ values }: { values: ConfigValue[] }) {
+  return (
+    <details className="tab-settings-panel">
+      <summary>
+        <Settings size={16} />
+        <span>Settings</span>
+        <small>Options for this tab</small>
+      </summary>
+      <div>
+        <ConfigValueList values={values} />
+        <Link className="button-link" to="/config">
+          <Settings size={16} />
+          Open Edit Config
+        </Link>
+      </div>
+    </details>
+  );
+}
+
 function AccessSummary({ items }: { items: AccessItem[] }) {
   return (
     <section className="operator-section" aria-label="Access information">
@@ -1151,11 +1181,11 @@ function PageRunButtons({
   }
 
   return (
-    <section className="operator-section" aria-label="Run buttons">
+    <section className="operator-section page-run-section" aria-label="Run this tab">
       <div className="operator-section-head">
         <div>
-          <p className="operator-kicker">Run / Test / Apply</p>
-          <h2>Actions for this page</h2>
+          <p className="operator-kicker">Run</p>
+          <h2>Run this tab</h2>
         </div>
       </div>
       <div className="page-run-buttons">
@@ -2179,6 +2209,99 @@ function sourceLabelFromStatus(status: string): string {
   if (status === "ready") return "Ready";
   if (status === "not_checked") return "Not checked";
   return displayStatus(status);
+}
+
+function tabSettingsValues(tab: string, profile: LabProfile | null): ConfigValue[] {
+  const features = profile?.features ?? null;
+  const global = profile?.global_settings ?? null;
+  const address = activeAddressPlan(profile);
+  const common: ConfigValue[] = [
+    { label: "IP family", value: ipFamilyLabel(features), source: "Edit Config", status: features?.disable_ipv6 === false ? "warning" : "ready" },
+    { label: "SNMP", value: snmpPolicyLabel(features), source: "Edit Config", status: features?.enable_snmp ? "ready" : "not_checked" },
+    { label: "SNMP version", value: snmpVersionLabel(features), source: "Not persisted yet", status: "not_checked" }
+  ];
+  if (tab === "network") {
+    return [
+      ...common,
+      { label: "VLAN", value: displayValue(global?.vlan_id ?? profile?.vlan_id), source: "Edit Config" },
+      { label: "DNS", value: listLabel(global?.dns_servers ?? profile?.dns), status: featureStatus(features, "enable_dns") },
+      { label: "NTP", value: listLabel(global?.ntp_servers ?? profile?.ntp), status: featureStatus(features, "enable_ntp") },
+      { label: "MTU", value: displayValue(global?.mtu ?? profile?.mtu), source: "Edit Config" }
+    ];
+  }
+  if (tab === "server") {
+    return [
+      ...common,
+      { label: "iLO target", value: displayAddress(address.ilo), source: "Edit Config" },
+      { label: "Initial iLO", value: displayAddress(address.ilo_initial), source: "Edit Config" },
+      { label: "ESXi target", value: displayAddress(address.esxi_management), source: "Edit Config" },
+      { label: "Legacy protocols", value: legacyProtocolLabel(features), status: features?.block_legacy_protocols === false ? "warning" : "ready" }
+    ];
+  }
+  if (tab === "storage") {
+    return [
+      ...common,
+      { label: "Storage protocol", value: storageProtocolLabel(features), source: "Edit Config", status: features?.storage_protocol === "none" ? "not_checked" : "ready" },
+      { label: "NetApp cluster", value: displayAddress(address.netapp_cluster_mgmt), source: "Edit Config" },
+      { label: "NFS LIFs", value: listLabel(address.netapp_nfs_lifs), source: "Edit Config" },
+      { label: "iSCSI LIFs", value: listLabel(address.netapp_iscsi_lifs), source: "Edit Config" }
+    ];
+  }
+  if (tab === "virtualization") {
+    return [
+      ...common,
+      { label: "vCenter", value: enabledLabel(features?.vcenter_enabled), status: featureStatus(features, "vcenter_enabled") },
+      { label: "Storage protocol", value: storageProtocolLabel(features), source: "Edit Config" },
+      { label: "ESXi target", value: displayAddress(address.esxi_management), source: "Edit Config" },
+      { label: "Datastore source", value: listLabel(address.netapp_nfs_lifs), source: "Edit Config" }
+    ];
+  }
+  if (tab === "firmware") {
+    return [
+      ...common,
+      { label: "Firmware gate", value: enabledLabel(features?.firmware_gate_enabled), status: featureStatus(features, "firmware_gate_enabled") },
+      { label: "Media folder", value: "/home/administrator/infra-config-portal/artifacts/Media", source: "Local folder" },
+      { label: "Upgrade apply", value: "Guarded confirmation required", status: "not_checked" },
+      { label: "Storage protocol", value: storageProtocolLabel(features), source: "Edit Config" }
+    ];
+  }
+  if (tab === "validation") {
+    return [
+      ...common,
+      { label: "Build verification", value: enabledLabel(features?.build_verification_enabled), status: featureStatus(features, "build_verification_enabled") },
+      { label: "Firmware gate", value: enabledLabel(features?.firmware_gate_enabled), status: featureStatus(features, "firmware_gate_enabled") },
+      { label: "NetApp", value: enabledLabel(features?.netapp_enabled), status: featureStatus(features, "netapp_enabled") },
+      { label: "vCenter", value: enabledLabel(features?.vcenter_enabled), status: featureStatus(features, "vcenter_enabled") }
+    ];
+  }
+  return [
+    ...common,
+    { label: "Active setup", value: profile?.name ?? "No active setup", status: profile ? "ready" : "not_configured_yet" },
+    { label: "Subnet", value: displayAddress(address.subnet), source: "Edit Config" },
+    { label: "Storage protocol", value: storageProtocolLabel(features), source: "Edit Config" },
+    { label: "Legacy protocols", value: legacyProtocolLabel(features), status: features?.block_legacy_protocols === false ? "warning" : "ready" }
+  ];
+}
+
+function ipFamilyLabel(features: LabProfileFeatures | null): string {
+  return features?.disable_ipv6 === false ? "IPv4 and IPv6" : "IPv4 only";
+}
+
+function snmpPolicyLabel(features: LabProfileFeatures | null): string {
+  return features?.enable_snmp ? "Enabled" : "Disabled";
+}
+
+function snmpVersionLabel(features: LabProfileFeatures | null): string {
+  if (!features?.enable_snmp) return "Off";
+  return "SNMPv2/v3 selection not saved yet";
+}
+
+function legacyProtocolLabel(features: LabProfileFeatures | null): string {
+  return features?.block_legacy_protocols === false ? "Allowed" : "Blocked";
+}
+
+function storageProtocolLabel(features: LabProfileFeatures | null): string {
+  return labelize(features?.storage_protocol || "none");
 }
 
 function overviewCurrentView({

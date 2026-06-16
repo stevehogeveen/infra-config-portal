@@ -216,6 +216,7 @@ test("renders the new top-level navigation and pages", async ({ page }) => {
     "Virtualization",
     "Firmware Upgrades",
     "Validation",
+    "Edit Config",
     "Settings"
   ]);
 
@@ -234,6 +235,9 @@ test("renders the new top-level navigation and pages", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Firmware Upgrades" })).toBeVisible();
   await page.goto("/validation");
   await expect(page.getByRole("heading", { name: "Validation", exact: true })).toBeVisible();
+  await page.goto("/config");
+  await expect(page.locator("h1", { hasText: "Edit Config" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Save As Lab Setup" })).toBeVisible();
   await page.goto("/settings");
   await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
 
@@ -247,7 +251,7 @@ test("overview shows active setup, lab values, and access without dashboard clut
   await expect(page.getByRole("heading", { name: "Active lab setup" })).toBeVisible();
   await expect(page.getByText("Runtime Lab").first()).toBeVisible();
   await expect(page.getByText("192.168.1.0/24").first()).toBeVisible();
-  await expect(page.getByRole("button", { name: "Edit Config" }).first()).toBeVisible();
+  await expect(page.locator("nav").getByText("Edit Config")).toBeVisible();
 
   await expect(page.getByRole("heading", { name: "Lab Values" })).toBeVisible();
   await expect(page.getByText("Cisco IP").first()).toBeVisible();
@@ -309,6 +313,8 @@ test("operator pages expose a current view with refresh or fix guidance", async 
     await expect(currentView).toContainText("Source");
     await expect(currentView).toContainText("Freshness");
     await expect(currentView).toContainText("Checked");
+    await expect(page.locator("details.tab-settings-panel").first()).toBeVisible();
+    await expect(page.locator("section[aria-label='Run this tab']").first()).toBeVisible();
   }
 
   await page.goto("/network");
@@ -339,7 +345,7 @@ test("firmware table renders upgrade path states", async ({ page }) => {
   await page.goto("/firmware-upgrades");
 
   await expect(page.getByRole("heading", { name: "Firmware Files" })).toBeVisible();
-  await expect(page.getByText("/home/administrator/infra-config-portal/artifacts/Media")).toBeVisible();
+  await expect(page.getByLabel("Firmware Files").getByText("/home/administrator/infra-config-portal/artifacts/Media")).toBeVisible();
   await expect(page.getByRole("button", { name: "Rescan Files" }).first()).toBeVisible();
   await expect(page.getByRole("link", { name: "Open Media Inventory" })).toBeVisible();
 

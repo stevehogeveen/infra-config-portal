@@ -348,6 +348,18 @@ button:disabled {
   top: 0;
 }
 
+.config-drawer-page {
+  border: 1px solid #dfe4ea;
+  border-radius: 8px;
+  bottom: auto;
+  box-shadow: none;
+  max-width: 100%;
+  min-width: 0;
+  position: static;
+  right: auto;
+  top: auto;
+}
+
 .config-drawer-head {
   align-items: flex-start;
   border-bottom: 1px solid #dfe4ea;
@@ -637,6 +649,49 @@ button:disabled {
   display: flex;
   gap: 8px;
   line-height: 1.4;
+}
+
+.tab-settings-panel {
+  background: #ffffff;
+  border: 1px solid #dfe4ea;
+  border-radius: 8px;
+}
+
+.tab-settings-panel summary {
+  align-items: center;
+  cursor: pointer;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  list-style: none;
+  padding: 14px 16px;
+}
+
+.tab-settings-panel summary::-webkit-details-marker {
+  display: none;
+}
+
+.tab-settings-panel summary span {
+  color: #0f172a;
+  font-weight: 900;
+}
+
+.tab-settings-panel summary small {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 800;
+  justify-self: end;
+}
+
+.tab-settings-panel > div {
+  border-top: 1px solid #e5e9ef;
+  display: grid;
+  gap: 12px;
+  padding: 14px 16px 16px;
+}
+
+.page-run-section {
+  border-color: #bfdbfe;
 }
 
 .run-button-wrap {

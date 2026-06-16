@@ -32,7 +32,6 @@ import { Link, Navigate, NavLink, Route as RouterRoute, Routes, useLocation, use
 
 import { api } from "./api";
 import {
-  LabConfigEditorContext,
   OperatorFirmwareUpgradesPage,
   OperatorNetworkPage,
   OperatorOverviewPage,
@@ -741,8 +740,9 @@ function App() {
             <RouterRoute path="/server" element={<OperatorServerPage labProfileState={labProfileState} />} />
             <RouterRoute path="/storage" element={<OperatorStoragePage labProfileState={labProfileState} />} />
             <RouterRoute path="/virtualization" element={<OperatorVirtualizationPage labProfileState={labProfileState} />} />
-            <RouterRoute path="/firmware-upgrades" element={<OperatorFirmwareUpgradesPage />} />
-            <RouterRoute path="/validation" element={<OperatorValidationPage />} />
+            <RouterRoute path="/firmware-upgrades" element={<OperatorFirmwareUpgradesPage labProfileState={labProfileState} />} />
+            <RouterRoute path="/validation" element={<OperatorValidationPage labProfileState={labProfileState} />} />
+            <RouterRoute path="/config" element={<ActiveLabConfigDrawer embedded />} />
             <RouterRoute path="/dashboard" element={<Navigate to="/overview" replace />} />
             <RouterRoute path="/lab-setup" element={<Navigate to="/overview" replace />} />
             <RouterRoute path="/hardware" element={<Navigate to="/overview" replace />} />
@@ -810,7 +810,6 @@ function AppShell({
   labProfileState: LabProfileList | null;
 }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [configDrawerOpen, setConfigDrawerOpen] = useState(false);
   const location = useLocation();
 
   useEffect(() => {
@@ -840,18 +839,11 @@ function AppShell({
         {health?.dev_test_banner && <DevTestBanner message={health.dev_test_banner} />}
         <div className="operator-mode-bar">
           <div className="shell-action-row">
-            <button className="primary" onClick={() => setConfigDrawerOpen(true)} type="button">
-              <Pencil size={16} />
-              Edit Config
-            </button>
             <ModeToggle />
           </div>
         </div>
-        <LabConfigEditorContext.Provider value={() => setConfigDrawerOpen(true)}>
-          {children}
-        </LabConfigEditorContext.Provider>
+        {children}
       </main>
-      {configDrawerOpen && <ActiveLabConfigDrawer onClose={() => setConfigDrawerOpen(false)} />}
     </div>
   );
 }
@@ -945,6 +937,7 @@ function SidebarNav({
         <NavItem to="/virtualization" icon={<Layers size={18} />} label="Virtualization" />
         <NavItem to="/firmware-upgrades" icon={<ShieldCheck size={18} />} label="Firmware Upgrades" />
         <NavItem to="/validation" icon={<CheckCircle2 size={18} />} label="Validation" />
+        <NavItem to="/config" icon={<Pencil size={18} />} label="Edit Config" />
         <NavItem to="/settings" icon={<Settings size={18} />} label="Settings" />
       </nav>
       <div className="sidebar-profile">
@@ -1077,7 +1070,13 @@ function ActiveLabSelector({
   );
 }
 
-function ActiveLabConfigDrawer({ onClose }: { onClose: () => void }) {
+function ActiveLabConfigDrawer({
+  embedded = false,
+  onClose
+}: {
+  embedded?: boolean;
+  onClose?: () => void;
+}) {
   const { activeProfile, loading, onActivate, onReload } = useLabProfileContext();
   const [form, setForm] = useState<LabProfileFormState>(() =>
     activeProfile ? labProfileFormFrom(activeProfile) : blankLabProfileForm()
@@ -1142,162 +1141,177 @@ function ActiveLabConfigDrawer({ onClose }: { onClose: () => void }) {
     }
   }
 
-  return (
-    <div className="config-drawer-layer" role="presentation">
-      <button className="config-drawer-scrim" aria-label="Close config editor" onClick={onClose} type="button" />
-      <aside className="config-drawer" aria-label="Edit active lab setup">
-        <div className="config-drawer-head">
-          <div>
-            <p className="eyebrow">Active Lab Setup</p>
-            <h2>Edit Config</h2>
-          </div>
+  const editor = (
+    <aside className={embedded ? "config-drawer config-drawer-page" : "config-drawer"} aria-label="Edit active lab setup">
+      <div className="config-drawer-head">
+        <div>
+          <p className="eyebrow">Active Lab Setup</p>
+          <h2>Edit Config</h2>
+        </div>
+        {!embedded && (
           <button className="icon-button" aria-label="Close config editor" onClick={onClose} type="button">
             <X size={18} />
           </button>
-        </div>
-        <form className="config-drawer-form" onSubmit={submit}>
+        )}
+      </div>
+      <form className="config-drawer-form" onSubmit={submit}>
+        <section>
+          <h3>Setup</h3>
+          <div className="config-drawer-grid">
+            <Field label="Name">
+              <input
+                disabled={loading || busy}
+                onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
+                value={form.name}
+              />
+            </Field>
+            <Field label="Subnet">
+              <input
+                disabled={loading || busy}
+                onChange={(event) => updateAddress("subnet", event.target.value)}
+                value={form.addresses.subnet}
+              />
+            </Field>
+            <Field label="Subnet size">
+              <select
+                disabled={loading || busy}
+                onChange={(event) => updatePrefix(event.target.value)}
+                value={form.globalSettings.subnetPrefix}
+              >
+                {defaultLabSubnetOptions().map((option) => (
+                  <option key={option.prefix} value={option.prefix}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Gateway">
+              <input
+                disabled={loading || busy}
+                onChange={(event) => updateGlobal("gateway", event.target.value)}
+                value={form.globalSettings.gateway}
+              />
+            </Field>
+          </div>
+        </section>
+        <section>
+          <h3>Network Defaults</h3>
+          <div className="config-drawer-grid">
+            <Field label="DNS">
+              <input
+                disabled={loading || busy}
+                onChange={(event) => updateGlobal("dnsServers", event.target.value)}
+                value={form.globalSettings.dnsServers}
+              />
+            </Field>
+            <Field label="NTP">
+              <input
+                disabled={loading || busy}
+                onChange={(event) => updateGlobal("ntpServers", event.target.value)}
+                value={form.globalSettings.ntpServers}
+              />
+            </Field>
+            <Field label="Domain">
+              <input
+                disabled={loading || busy}
+                onChange={(event) => updateGlobal("domainName", event.target.value)}
+                value={form.globalSettings.domainName}
+              />
+            </Field>
+            <Field label="VLAN">
+              <input
+                disabled={loading || busy}
+                onChange={(event) => updateGlobal("vlanId", event.target.value)}
+                value={form.globalSettings.vlanId}
+              />
+            </Field>
+            <Field label="MTU">
+              <input
+                disabled={loading || busy}
+                inputMode="numeric"
+                onChange={(event) => updateGlobal("mtu", event.target.value)}
+                value={form.globalSettings.mtu}
+              />
+            </Field>
+            <Field label="Storage protocol">
+              <select
+                disabled={loading || busy || !netappEnabled}
+                onChange={(event) => updateGlobal("storageProtocol", event.target.value)}
+                value={form.globalSettings.storageProtocol}
+              >
+                <option value="nfs">NFS</option>
+                <option value="iscsi">iSCSI</option>
+                <option value="none">Local only</option>
+              </select>
+            </Field>
+          </div>
+          <div className="config-toggle-grid">
+            <label className="checkbox-line">
+              <input
+                checked={form.globalSettings.enableDns}
+                disabled={loading || busy}
+                onChange={(event) => updateGlobal("enableDns", event.target.checked)}
+                type="checkbox"
+              />
+              <span>DNS</span>
+            </label>
+            <label className="checkbox-line">
+              <input
+                checked={form.globalSettings.enableNtp}
+                disabled={loading || busy}
+                onChange={(event) => updateGlobal("enableNtp", event.target.checked)}
+                type="checkbox"
+              />
+              <span>NTP</span>
+            </label>
+            <label className="checkbox-line">
+              <input
+                checked={form.globalSettings.enableSnmp}
+                disabled={loading || busy}
+                onChange={(event) => updateGlobal("enableSnmp", event.target.checked)}
+                type="checkbox"
+              />
+              <span>SNMP</span>
+            </label>
+            <label className="checkbox-line">
+              <input
+                checked={!form.globalSettings.disableIpv6}
+                disabled={loading || busy}
+                onChange={(event) => updateGlobal("disableIpv6", !event.target.checked)}
+                type="checkbox"
+              />
+              <span>Allow IPv6</span>
+            </label>
+            <label className="checkbox-line">
+              <input
+                checked={form.globalSettings.blockLegacyProtocols}
+                disabled={loading || busy}
+                onChange={(event) => updateGlobal("blockLegacyProtocols", event.target.checked)}
+                type="checkbox"
+              />
+              <span>Block legacy protocols</span>
+            </label>
+          </div>
+        </section>
+        <section>
+          <h3>Devices</h3>
+          <div className="config-drawer-grid">
+            {labCoreAddressFields.map((field) => (
+              <Field key={`drawer-${field.key}`} label={field.label}>
+                <input
+                  disabled={loading || busy}
+                  onChange={(event) => updateAddress(field.key, event.target.value)}
+                  value={form.addresses[field.key]}
+                />
+              </Field>
+            ))}
+          </div>
+        </section>
+        {netappEnabled && (
           <section>
-            <h3>Setup</h3>
+            <h3>NetApp</h3>
             <div className="config-drawer-grid">
-              <Field label="Name">
-                <input
-                  disabled={loading || busy}
-                  onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
-                  value={form.name}
-                />
-              </Field>
-              <Field label="Subnet">
-                <input
-                  disabled={loading || busy}
-                  onChange={(event) => updateAddress("subnet", event.target.value)}
-                  value={form.addresses.subnet}
-                />
-              </Field>
-              <Field label="Subnet size">
-                <select
-                  disabled={loading || busy}
-                  onChange={(event) => updatePrefix(event.target.value)}
-                  value={form.globalSettings.subnetPrefix}
-                >
-                  {defaultLabSubnetOptions().map((option) => (
-                    <option key={option.prefix} value={option.prefix}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-              <Field label="Gateway">
-                <input
-                  disabled={loading || busy}
-                  onChange={(event) => updateGlobal("gateway", event.target.value)}
-                  value={form.globalSettings.gateway}
-                />
-              </Field>
-            </div>
-          </section>
-          <section>
-            <h3>Network Defaults</h3>
-            <div className="config-drawer-grid">
-              <Field label="DNS">
-                <input
-                  disabled={loading || busy}
-                  onChange={(event) => updateGlobal("dnsServers", event.target.value)}
-                  value={form.globalSettings.dnsServers}
-                />
-              </Field>
-              <Field label="NTP">
-                <input
-                  disabled={loading || busy}
-                  onChange={(event) => updateGlobal("ntpServers", event.target.value)}
-                  value={form.globalSettings.ntpServers}
-                />
-              </Field>
-              <Field label="Domain">
-                <input
-                  disabled={loading || busy}
-                  onChange={(event) => updateGlobal("domainName", event.target.value)}
-                  value={form.globalSettings.domainName}
-                />
-              </Field>
-              <Field label="VLAN">
-                <input
-                  disabled={loading || busy}
-                  onChange={(event) => updateGlobal("vlanId", event.target.value)}
-                  value={form.globalSettings.vlanId}
-                />
-              </Field>
-              <Field label="MTU">
-                <input
-                  disabled={loading || busy}
-                  inputMode="numeric"
-                  onChange={(event) => updateGlobal("mtu", event.target.value)}
-                  value={form.globalSettings.mtu}
-                />
-              </Field>
-              <Field label="Storage protocol">
-                <select
-                  disabled={loading || busy || !netappEnabled}
-                  onChange={(event) => updateGlobal("storageProtocol", event.target.value)}
-                  value={form.globalSettings.storageProtocol}
-                >
-                  <option value="nfs">NFS</option>
-                  <option value="iscsi">iSCSI</option>
-                  <option value="none">Local only</option>
-                </select>
-              </Field>
-            </div>
-            <div className="config-toggle-grid">
-              <label className="checkbox-line">
-                <input
-                  checked={form.globalSettings.enableDns}
-                  disabled={loading || busy}
-                  onChange={(event) => updateGlobal("enableDns", event.target.checked)}
-                  type="checkbox"
-                />
-                <span>DNS</span>
-              </label>
-              <label className="checkbox-line">
-                <input
-                  checked={form.globalSettings.enableNtp}
-                  disabled={loading || busy}
-                  onChange={(event) => updateGlobal("enableNtp", event.target.checked)}
-                  type="checkbox"
-                />
-                <span>NTP</span>
-              </label>
-              <label className="checkbox-line">
-                <input
-                  checked={form.globalSettings.enableSnmp}
-                  disabled={loading || busy}
-                  onChange={(event) => updateGlobal("enableSnmp", event.target.checked)}
-                  type="checkbox"
-                />
-                <span>SNMP</span>
-              </label>
-              <label className="checkbox-line">
-                <input
-                  checked={form.globalSettings.disableIpv6}
-                  disabled={loading || busy}
-                  onChange={(event) => updateGlobal("disableIpv6", event.target.checked)}
-                  type="checkbox"
-                />
-                <span>Disable IPv6</span>
-              </label>
-              <label className="checkbox-line">
-                <input
-                  checked={form.globalSettings.blockLegacyProtocols}
-                  disabled={loading || busy}
-                  onChange={(event) => updateGlobal("blockLegacyProtocols", event.target.checked)}
-                  type="checkbox"
-                />
-                <span>Block legacy protocols</span>
-              </label>
-            </div>
-          </section>
-          <section>
-            <h3>Devices</h3>
-            <div className="config-drawer-grid">
-              {labCoreAddressFields.map((field) => (
+              {labNetAppAddressFields.map((field) => (
                 <Field key={`drawer-${field.key}`} label={field.label}>
                   <input
                     disabled={loading || busy}
@@ -1306,50 +1320,63 @@ function ActiveLabConfigDrawer({ onClose }: { onClose: () => void }) {
                   />
                 </Field>
               ))}
+              <Field label="NFS LIFs">
+                <input
+                  disabled={loading || busy}
+                  onChange={(event) => setForm((current) => ({ ...current, netappNfsLifs: event.target.value }))}
+                  value={form.netappNfsLifs}
+                />
+              </Field>
+              <Field label="iSCSI LIFs">
+                <input
+                  disabled={loading || busy}
+                  onChange={(event) => setForm((current) => ({ ...current, netappIscsiLifs: event.target.value }))}
+                  value={form.netappIscsiLifs}
+                />
+              </Field>
             </div>
           </section>
-          {netappEnabled && (
-            <section>
-              <h3>NetApp</h3>
-              <div className="config-drawer-grid">
-                {labNetAppAddressFields.map((field) => (
-                  <Field key={`drawer-${field.key}`} label={field.label}>
-                    <input
-                      disabled={loading || busy}
-                      onChange={(event) => updateAddress(field.key, event.target.value)}
-                      value={form.addresses[field.key]}
-                    />
-                  </Field>
-                ))}
-                <Field label="NFS LIFs">
-                  <input
-                    disabled={loading || busy}
-                    onChange={(event) => setForm((current) => ({ ...current, netappNfsLifs: event.target.value }))}
-                    value={form.netappNfsLifs}
-                  />
-                </Field>
-                <Field label="iSCSI LIFs">
-                  <input
-                    disabled={loading || busy}
-                    onChange={(event) => setForm((current) => ({ ...current, netappIscsiLifs: event.target.value }))}
-                    value={form.netappIscsiLifs}
-                  />
-                </Field>
-              </div>
-            </section>
-          )}
-          {(message || error) && <p className={error ? "form-error" : "active-lab-success"}>{error || message}</p>}
-          <div className="config-drawer-actions">
-            <button disabled={busy || loading} type="submit" className="primary">
-              <Save size={16} />
-              {busy ? "Saving" : activeProfile?.source === "saved" ? "Save Config" : "Save As Lab Setup"}
-            </button>
+        )}
+        {(message || error) && <p className={error ? "form-error" : "active-lab-success"}>{error || message}</p>}
+        <div className="config-drawer-actions">
+          <button disabled={busy || loading} type="submit" className="primary">
+            <Save size={16} />
+            {busy ? "Saving" : activeProfile?.source === "saved" ? "Save Config" : "Save As Lab Setup"}
+          </button>
+          {!embedded && (
             <button disabled={busy} onClick={onClose} type="button">
               Close
             </button>
+          )}
+        </div>
+      </form>
+    </aside>
+  );
+
+  if (embedded) {
+    return (
+      <div className="operator-page config-route-page" data-page-title="Edit Config">
+        <header className="operator-status-header">
+          <div className="operator-status-icon"><Pencil size={26} /></div>
+          <div className="operator-status-main">
+            <p className="operator-kicker">Lab Builder</p>
+            <h1>Edit Config</h1>
+            <p>Change the active lab setup, network defaults, device addresses, and scoped feature toggles.</p>
+            <span>Saved values drive every side tab. Secret values are not shown here.</span>
           </div>
-        </form>
-      </aside>
+          <div className="operator-status-side">
+            <StatusBadge status={activeProfile ? "ready" : "not_configured_yet"} />
+          </div>
+        </header>
+        {editor}
+      </div>
+    );
+  }
+
+  return (
+    <div className="config-drawer-layer" role="presentation">
+      <button className="config-drawer-scrim" aria-label="Close config editor" onClick={onClose} type="button" />
+      {editor}
     </div>
   );
 }
