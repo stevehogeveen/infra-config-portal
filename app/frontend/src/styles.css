@@ -771,18 +771,6 @@ button:disabled {
   font-weight: 800;
 }
 
-.firmware-row-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-bottom: 8px;
-}
-
-.firmware-row-actions button {
-  min-height: 32px;
-  padding: 6px 8px;
-}
-
 .validation-proof-list {
   display: grid;
   gap: 10px;
@@ -7562,7 +7550,7 @@ pre {
   }
 
   .firmware-path-table td:nth-child(7)::before {
-    content: "Action";
+    content: "Next Step";
   }
 
   .advanced-drawer summary {

@@ -35,6 +35,7 @@ import type {
   ProviderProbeResult,
   ProviderStatus,
   WorkflowAction,
+  WorkflowActionRun,
   WorkflowActionRunRequest
 } from "./types";
 
@@ -86,6 +87,7 @@ type InventoryRow = {
 
 type RunButtonDefinition = {
   actionIds?: string[];
+  allowBlockedRun?: boolean;
   disabledReason?: string;
   icon?: ReactNode;
   kind?: "read" | "write" | "apply" | "link" | "custom";
@@ -715,8 +717,7 @@ export function OperatorFirmwareUpgradesPage() {
         actions={actions}
         buttons={[
           { actionIds: ["firmware.inventory", "firmware.compliance-check"], label: "Scan Firmware", primary: true },
-          { actionIds: ["firmware.upgrade-plan", "netapp.ontap-upgrade-plan"], label: "Validate Upgrade Path" },
-          { actionIds: ["firmware.upgrade-apply-placeholder", "netapp.ontap-upgrade-apply"], kind: "apply", label: "Upgrade" }
+          { actionIds: ["firmware.upgrade-apply-placeholder", "netapp.ontap-upgrade-apply"], allowBlockedRun: true, kind: "apply", label: "Upgrade" }
         ]}
         onReload={load}
       />
@@ -1036,7 +1037,7 @@ function PageRunButtons({
       const result = await api.runWorkflowAction(action.action_id, request);
       setRunState({
         error: "",
-        message: `${humanWorkflowActionLabel(action)}: ${humanize(result.summary || result.next_action || displayStatus(result.status))}`,
+        message: workflowRunMessage(action, result),
         runningActionId: ""
       });
       await onReload();
@@ -1219,7 +1220,7 @@ function FirmwarePathTable({
               <th>Target Version</th>
               <th>Selected File</th>
               <th>Status</th>
-              <th>Action</th>
+              <th>Next Step</th>
             </tr>
           </thead>
           <tbody>
@@ -1252,11 +1253,6 @@ function FirmwarePathTable({
                 </td>
                 <td><SimpleStatusPill status={row.pathStatus} /></td>
                 <td>
-                  <div className="firmware-row-actions">
-                    <button type="button">Scan</button>
-                    <button type="button">Validate Path</button>
-                    <button disabled={row.pathStatus !== "ready_to_upgrade"} type="button">Upgrade</button>
-                  </div>
                   <span className="operator-muted">{row.action}</span>
                 </td>
               </tr>
@@ -1289,7 +1285,7 @@ function FirmwareFilesPanel({
         <div>
           <p className="operator-kicker">Firmware Files</p>
           <h2>Firmware Files</h2>
-          <p className="operator-muted">Firmware files are read from this folder. Use the HPE Service Pack for server BIOS and Smart Array updates, and pick a different file if the app chose the wrong one.</p>
+          <p className="operator-muted">Firmware files are read from this folder. Use the HPE Service Pack for HPE iLO, BIOS, and Smart Array planning, and pick a different file if the app chose the wrong one.</p>
         </div>
       </div>
       <ConfigValueList
@@ -1659,6 +1655,9 @@ function disabledReasonFor(button: RunButtonDefinition, action: WorkflowAction |
   if (!action) {
     return "Action is not registered yet.";
   }
+  if (button.allowBlockedRun) {
+    return "";
+  }
   if (isChangingAction(action) || button.kind === "write" || button.kind === "apply") {
     return "Needs guarded confirmation before changes are allowed.";
   }
@@ -1679,6 +1678,13 @@ function isChangingAction(action: WorkflowAction): boolean {
 
 function humanWorkflowActionLabel(action: WorkflowAction): string {
   return humanize(action.label || action.action_id);
+}
+
+function workflowRunMessage(action: WorkflowAction, result: WorkflowActionRun): string {
+  const detail = result.status === "blocked"
+    ? result.blockers[0] || result.next_action || result.summary || displayStatus(result.status)
+    : result.summary || result.next_action || displayStatus(result.status);
+  return `${humanWorkflowActionLabel(action)}: ${humanize(detail)}`;
 }
 
 function firmwareRows(
@@ -1978,7 +1984,7 @@ function raidControllerModels(probe: ProviderProbeResult | null): string {
 
 function servicePackSummary(summaries: FirmwareSummary[]): string {
   const hpePaths = summaries.flatMap((summary) =>
-    summary.upgrade_paths.filter((path) => ["hpe_bios_version", "hpe_smart_array_firmware"].includes(path.component_id))
+    summary.upgrade_paths.filter((path) => ["hpe_ilo_firmware", "hpe_bios_version", "hpe_smart_array_firmware"].includes(path.component_id))
   );
   const fileNames = hpePaths
     .map((path) => path.selected_file_name || path.package_name)

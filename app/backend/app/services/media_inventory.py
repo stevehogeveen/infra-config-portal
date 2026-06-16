@@ -190,6 +190,9 @@ def _safe_media_hints(name: str) -> dict[str, list[str] | str | None]:
     if re.search(r"(?:^|[^a-z0-9])(?:sum|smart[\s._-]?update)(?:[^a-z0-9]|$)", normalized):
         _append_unique(product_hints, "hpe-sum")
     if re.search(r"(?:^|[^a-z0-9])spp(?:[^a-z0-9]|$)", normalized) or re.search(
+        r"(?:^|[^a-z0-9])gen\d{1,2}spp|spp\d{8,}",
+        normalized,
+    ) or re.search(
         r"service[\s._-]?pack.*proliant|proliant.*service[\s._-]?pack",
         normalized,
     ):
@@ -208,6 +211,8 @@ def _safe_media_hints(name: str) -> dict[str, list[str] | str | None]:
         _append_unique(generation_hints, f"ilo{match.group(1)}")
 
     for match in re.finditer(r"(?:^|[^a-z0-9])gen[\s._-]?(\d{1,2})(?:[^a-z0-9]|$)", normalized):
+        _append_unique(generation_hints, f"gen{match.group(1)}")
+    for match in re.finditer(r"(?:^|[^a-z0-9])gen(\d{1,2})spp", normalized):
         _append_unique(generation_hints, f"gen{match.group(1)}")
 
     return {

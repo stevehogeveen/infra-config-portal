@@ -278,7 +278,7 @@ test("each domain page exposes relevant run test or apply buttons", async ({ pag
     ["/server", /Test iLO|Test ESXi|Recover ESXi|Validate RAID/],
     ["/storage", /Test NetApp|Validate NFS|Mount Datastore/],
     ["/virtualization", /Test vCenter|Deploy VM|Validate Inventory/],
-    ["/firmware-upgrades", /Rescan Files|Scan Firmware|Validate Upgrade Path|Upgrade/],
+    ["/firmware-upgrades", /Rescan Files|Scan Firmware|Upgrade/],
     ["/validation", /Run Validation|Generate Handoff/],
     ["/settings", /Save Setup|Test Credentials|Refresh Consoles/]
   ] as const;
@@ -332,15 +332,44 @@ test("firmware table renders upgrade path states", async ({ page }) => {
   await page.getByRole("button", { name: "Refresh" }).click();
   await expect(ciscoRow).toContainText("cat9k_iosxe.17.12.01.SPA.bin");
   await expect(ciscoRow).toContainText("Selected by user");
-  await expect(ciscoRow.getByRole("button", { name: "Scan" })).toBeVisible();
-  await expect(ciscoRow.getByRole("button", { name: "Validate Path" })).toBeVisible();
-  await expect(ciscoRow.getByRole("button", { name: "Upgrade" })).toBeDisabled();
+  await expect(ciscoRow.getByRole("button", { name: "Scan" })).toHaveCount(0);
+  await expect(ciscoRow.getByRole("button", { name: "Validate Path" })).toHaveCount(0);
+  await expect(ciscoRow.getByRole("button", { name: "Upgrade" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Validate Upgrade Path" })).toHaveCount(0);
 
   await expect(page.getByRole("row", { name: /HPE Server.*Service Pack \/ Smart Array/ })).toContainText("SPP2024.03.00.iso");
   await expect(page.getByRole("row", { name: /NetApp.*ONTAP/ })).toHaveCount(1);
   const advanced = page.locator("details.advanced-drawer").first();
   await expect(advanced).not.toHaveAttribute("open", "");
   await expect(page.getByText("artifacts/codex-runs/cisco-firmware-inventory-report.md")).toHaveCount(0);
+});
+
+test("firmware page scan and upgrade controls run through the workflow runner", async ({ page }) => {
+  await page.goto("/firmware-upgrades");
+
+  const scanResponse = page.waitForResponse((response) =>
+    response.url().includes("/api/v1/workflows/actions/firmware.inventory/run") &&
+    response.request().method() === "POST"
+  );
+  await page.getByRole("button", { name: "Scan Firmware" }).click();
+  await expect((await scanResponse).ok()).toBeTruthy();
+  await expect(page.getByText(/Scan All Firmware:/)).toBeVisible();
+
+  const upgradeResponse = page.waitForResponse((response) =>
+    response.url().includes("/api/v1/workflows/actions/firmware.upgrade-apply-placeholder/run") &&
+    response.request().method() === "POST"
+  );
+  await page.getByRole("button", { name: "Upgrade" }).click();
+  await expect((await upgradeResponse).ok()).toBeTruthy();
+  await expect(page.getByText(/Run Upgrade Placeholder: requires guarded firmware update workflow/)).toBeVisible();
+});
+
+test("media inventory displays actual file names when exposed by the backend", async ({ page }) => {
+  await page.goto("/media");
+
+  await expect(page.getByRole("columnheader", { name: "File" }).first()).toBeVisible();
+  await expect(page.getByRole("cell", { name: "cat9k_iosxe.17.15.05.SPA.bin" }).first()).toBeVisible();
+  await expect(page.getByRole("cell", { name: "cisco-ios-xe-firmware.bin" })).toHaveCount(0);
 });
 
 test("settings uses active lab setup values and never renders secret material", async ({ page }) => {
@@ -474,10 +503,10 @@ async function installApiMocks(page: Page) {
       return json(route, mediaInventory());
     }
     if (url.pathname === "/api/v1/workflows/actions/build-verification.run-full/run") {
-      return json(route, workflowActionRun());
+      return json(route, workflowActionRun("build-verification.run-full"));
     }
     if (url.pathname.endsWith("/run")) {
-      return json(route, workflowActionRun());
+      return json(route, workflowActionRun(actionIdFromRunPath(url.pathname)));
     }
     if (url.pathname.endsWith("/runs")) {
       return json(route, []);
@@ -647,30 +676,35 @@ function writeAction(action_id: string, label: string, stage: string, provider: 
   });
 }
 
-function workflowActionRun() {
+function actionIdFromRunPath(pathname: string) {
+  return pathname.match(/\/api\/v1\/workflows\/actions\/(.+)\/run$/)?.[1] ?? "build-verification.run-full";
+}
+
+function workflowActionRun(actionId: string) {
+  const isFirmwareUpgrade = actionId === "firmware.upgrade-apply-placeholder";
   return {
-    action_id: "build-verification.run-full",
-    action_label: "Run Full Verification",
-    blockers: [],
+    action_id: actionId,
+    action_label: isFirmwareUpgrade ? "Run Upgrade Placeholder" : "Run Full Verification",
+    blockers: isFirmwareUpgrade ? ["requires guarded firmware update workflow"] : [],
     checked_at: checkedAt,
     command: "make provider-lab-build-verification",
-    executed: true,
+    executed: !isFirmwareUpgrade,
     finished_at: checkedAt,
     freshness: "current",
-    mode: "read_only",
-    next_action: "Review evidence artifacts, then continue with the next safe stage.",
+    mode: isFirmwareUpgrade ? "upgrade" : "read_only",
+    next_action: isFirmwareUpgrade ? "requires guarded firmware update workflow" : "Review evidence artifacts, then continue with the next safe stage.",
     not_mock: true,
     report_artifacts: ["artifacts/codex-runs/build-verification-report.md"],
-    return_code: 0,
-    run_id: "workflow-action:build-verification.run-full:test",
+    return_code: isFirmwareUpgrade ? null : 0,
+    run_id: `workflow-action:${actionId}:test`,
     source_type: "live_probe",
-    stage_id: "build-verification",
-    stage_label: "Build Verification",
+    stage_id: isFirmwareUpgrade ? "firmware-upgrade" : "build-verification",
+    stage_label: isFirmwareUpgrade ? "Firmware / Upgrade Center" : "Build Verification",
     started_at: checkedAt,
-    status: "completed",
+    status: isFirmwareUpgrade ? "blocked" : "completed",
     stderr_summary: "",
-    stdout_summary: "verification passed",
-    summary: "Safe read-only/report-only action completed.",
+    stdout_summary: isFirmwareUpgrade ? "" : "verification passed",
+    summary: isFirmwareUpgrade ? "Guarded action was not run because required gates were not satisfied." : "Safe read-only/report-only action completed.",
     trace_artifact: "artifacts/codex-runs/workflow-action-runs/test.json",
     warnings: []
   };

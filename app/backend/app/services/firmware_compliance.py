@@ -1577,7 +1577,7 @@ def _media_target_version(component_id: str, media_items: list[dict[str, Any]]) 
 def _package_hints(component_id: str) -> tuple[str, ...]:
     return {
         "cisco_ios_xe_version": ("cisco-ios-xe", "cisco", "iosxe", "cat9k"),
-        "hpe_ilo_firmware": ("hpe-ilo", "ilo"),
+        "hpe_ilo_firmware": ("hpe-ilo", "ilo", "hpe-spp", "hpe-sum"),
         "hpe_bios_version": ("hpe-spp", "hpe-sum", "bios"),
         "hpe_smart_array_firmware": ("hpe-spp", "hpe-sum", "smart-array", "raid"),
         "esxi_version": ("vmware-esxi", "esxi"),
@@ -1613,6 +1613,11 @@ def _package_score_for_component(
             score += 4
     if score == 0:
         return 0
+    if component_id.startswith("hpe_"):
+        if "gen10" in generation_hints:
+            score += 3
+        if "gen11" in generation_hints:
+            score -= 2
     if component_id == "hpe_ilo_firmware" and current_version and "ilo 5" in current_version.lower() and "ilo5" in generation_hints:
         score += 3
     version = _known_version_or_none(item.get("version_hint"))

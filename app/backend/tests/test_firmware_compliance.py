@@ -506,6 +506,53 @@ def test_hpe_service_pack_media_is_candidate_for_smart_array(
     assert path["selection_source"] == "auto"
 
 
+def test_current_gen10_spp_media_is_candidate_for_all_hpe_paths(
+    monkeypatch,
+    firmware_settings,
+    tmp_path,
+) -> None:
+    media_root = tmp_path / "artifacts" / "Media"
+    media_root.mkdir(parents=True)
+    gen11_spp = media_root / "P92600_001_gen11spp-2026.03.00.00-Gen11SPP2026030000.2026_0324.8.iso"
+    gen11_spp.write_bytes(b"gen11 spp")
+    spp = media_root / "P95170_001_gen10spp-2026.05.00.00-SPP2026050000.2026_0527.9.iso"
+    spp.write_bytes(b"spp")
+    firmware_settings.media_inventory_dirs = (str(media_root),)
+    monkeypatch.setattr(fc, "settings", firmware_settings)
+    monkeypatch.setattr(fc, "_media_directories", lambda: [media_root])
+    monkeypatch.setattr(mi, "DEFAULT_MEDIA_ROOT", media_root)
+    monkeypatch.setattr(
+        fc,
+        "load_firmware_baseline",
+        lambda: _baseline(
+            _component("hpe_ilo_firmware", minimum="3.19"),
+            _component("hpe_bios_version", unknown_policy="warning"),
+            _component("hpe_smart_array_firmware", unknown_policy="warning"),
+        ),
+    )
+    record_probe_result(
+        "ilo-redfish",
+        {
+            "provider_id": "ilo-redfish",
+            "status": "ok",
+            "managers": [{"FirmwareVersion": "iLO 5 v3.10"}],
+            "systems": [{"BiosVersion": "U32 v3.30 (07/31/2024)"}],
+            "storage": {"controllers": [{"FirmwareVersion": "1.98"}]},
+        },
+    )
+
+    result = fc.get_firmware_compliance(scope="hpe")
+
+    for component_id in ("hpe_ilo_firmware", "hpe_bios_version", "hpe_smart_array_firmware"):
+        path = _path_for(result, component_id)
+        assert "P95170_001_gen10spp-2026.05.00.00-SPP2026050000.2026_0527.9.iso" in [
+            candidate["file_name"] for candidate in path["candidate_files"]
+        ]
+        assert path["candidate_files"][0]["file_name"] == "P95170_001_gen10spp-2026.05.00.00-SPP2026050000.2026_0527.9.iso"
+        assert path["selected_file_path"] == str(spp.resolve())
+        assert path["candidate_files"][0]["detected_product"] == "hpe-spp"
+
+
 def test_firmware_summary_includes_cisco_ios_xe_from_report(monkeypatch, firmware_settings) -> None:
     firmware_settings.cisco_mgmt_configured = False
     monkeypatch.setattr(fc, "settings", firmware_settings)

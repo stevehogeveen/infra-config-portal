@@ -166,3 +166,21 @@ def test_media_inventory_detects_service_pack_for_proliant_as_hpe_spp(tmp_path) 
     assert item.version_hint == "2024.3"
     assert item.actual_name_redacted is True
     assert "Service Pack" not in repr(inventory)
+
+
+def test_media_inventory_detects_current_gen10_spp_iso_name(tmp_path) -> None:
+    (
+        tmp_path
+        / "P95170_001_gen10spp-2026.05.00.00-SPP2026050000.2026_0527.9.iso"
+    ).write_bytes(b"spp")
+
+    inventory = get_media_inventory((str(tmp_path),))
+
+    assert len(inventory.items) == 1
+    item = inventory.items[0]
+    assert item.category == "iso"
+    assert item.product_hints == ["hpe-spp"]
+    assert item.generation_hints == ["gen10"]
+    assert item.version_hint == "2026.5.0"
+    assert item.actual_name_redacted is True
+    assert "P95170" not in repr(inventory)

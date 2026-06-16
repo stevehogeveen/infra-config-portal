@@ -6710,8 +6710,8 @@ function MediaInventoryPage() {
           <section className="panel safety-note">
             <PanelTitle icon={<ShieldCheck size={18} />} title="Metadata-Only Safety" />
             <p>
-              Media inventory shows redacted placeholder names, extensions, sizes, categories, and source labels only.
-              It does not copy, mount, parse, deploy, or expose local media filenames.
+              Media inventory shows local media filenames when the backend can safely expose them, and redacts names for
+              sources that require privacy. It does not copy, mount, parse, or deploy local media.
             </p>
           </section>
           {inventory.warnings.length > 0 && (
@@ -6736,7 +6736,7 @@ function MediaInventoryPage() {
               <table>
                 <thead>
                   <tr>
-                    <th>Placeholder</th>
+                    <th>File</th>
                     <th>Category</th>
                     <th>Extension</th>
                     <th>Size</th>
@@ -6746,8 +6746,8 @@ function MediaInventoryPage() {
                 </thead>
                 <tbody>
                   {items.map((item) => (
-                    <tr key={`${item.placeholder_name}-${item.source}`}>
-                      <td>{item.placeholder_name}</td>
+                    <tr key={`${mediaInventoryItemName(item)}-${item.placeholder_name}-${item.source}`}>
+                      <td>{mediaInventoryItemName(item)}</td>
                       <td>{item.category}</td>
                       <td>{item.extension || "-"}</td>
                       <td>{formatBytes(item.size_bytes)}</td>
@@ -10856,7 +10856,7 @@ function FirmwareUpgradeRowView({
       <td>
         {row.path.package_available || row.packageItem ? (
           <div className="firmware-package-cell">
-            <strong>{row.path.package_name || row.packageItem?.placeholder_name}</strong>
+            <strong>{row.path.package_name || mediaInventoryItemName(row.packageItem)}</strong>
             <span>
               {row.path.package_version || row.packageItem?.version_hint
                 ? `Version ${row.path.package_version || row.packageItem?.version_hint}`
@@ -11258,7 +11258,7 @@ function firmwarePackageForPath(
   mediaItems: MediaInventory["items"]
 ): MediaInventory["items"][number] | null {
   if (path.package_name) {
-    const matched = mediaItems.find((item) => item.placeholder_name === path.package_name);
+    const matched = mediaItems.find((item) => item.placeholder_name === path.package_name || item.file_name === path.package_name);
     if (matched) return matched;
   }
   if (path.package_available) return firmwarePackageForSummary(summary, mediaItems);
@@ -11268,6 +11268,7 @@ function firmwarePackageForPath(
 function firmwarePackageScore(item: MediaInventory["items"][number], tokens: string[]): number {
   const text = [
     item.placeholder_name,
+    item.file_name,
     item.category,
     item.extension,
     item.version_hint,
@@ -14071,7 +14072,7 @@ function MediaInventoryCompact({ inventory }: { inventory: MediaInventory }) {
     <table>
       <thead>
         <tr>
-          <th>Placeholder</th>
+          <th>File</th>
           <th>Category</th>
           <th>Extension</th>
           <th>Size</th>
@@ -14079,8 +14080,8 @@ function MediaInventoryCompact({ inventory }: { inventory: MediaInventory }) {
       </thead>
       <tbody>
         {inventory.items.map((item) => (
-          <tr key={`${item.placeholder_name}-${item.source}`}>
-            <td>{item.placeholder_name}</td>
+          <tr key={`${mediaInventoryItemName(item)}-${item.placeholder_name}-${item.source}`}>
+            <td>{mediaInventoryItemName(item)}</td>
             <td>{item.category}</td>
             <td>{item.extension || "-"}</td>
             <td>{formatBytes(item.size_bytes)}</td>
@@ -14089,6 +14090,10 @@ function MediaInventoryCompact({ inventory }: { inventory: MediaInventory }) {
       </tbody>
     </table>
   );
+}
+
+function mediaInventoryItemName(item: MediaInventory["items"][number] | null | undefined): string {
+  return item?.file_name || item?.placeholder_name || "";
 }
 
 function classificationLabel(value: ControlAction["classification"]): string {
