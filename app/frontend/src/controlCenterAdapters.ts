@@ -78,6 +78,17 @@ export type FirmwareState = {
   fileSelections: FirmwareFileSelections | null;
 };
 
+export type FirmwareRuntimeStatus = {
+  actionIds: string[];
+  checkedAt: string | null;
+  freshness: string;
+  history: OperationResult[];
+  latestUpgrade: OperationResult | null;
+  message: string;
+  sourceType: string;
+  status: UpgradeStatus;
+};
+
 export type FirmwareUpgradeRequest = {
   actions: WorkflowAction[];
   config: ControlConfig;
@@ -94,6 +105,7 @@ export type ControlCenterSnapshot = {
   controlConfig: ControlConfig | null;
   controlSettings: ControlSettings | null;
   firmware: FirmwareState;
+  firmwareRuntime: FirmwareRuntimeStatus;
   health: HealthState | null;
   providers: ProviderStatus[];
 };
@@ -143,6 +155,17 @@ export const defaultSettings: ControlSettings = {
   firmwareRepository: "Backend firmware repository integration pending",
   loggingVerbosity: "normal",
   updatedAt: null
+};
+
+export const defaultFirmwareRuntimeStatus: FirmwareRuntimeStatus = {
+  actionIds: [],
+  checkedAt: null,
+  freshness: "not_checked",
+  history: [],
+  latestUpgrade: null,
+  message: "Firmware status/progress backend integration is pending.",
+  sourceType: "todo_placeholder",
+  status: "idle"
 };
 
 const preferredRunActionIds = [
@@ -400,6 +423,54 @@ export const firmwareAdapter = {
     };
   },
 
+  async status(actions: WorkflowAction[]): Promise<FirmwareRuntimeStatus> {
+    const actionIds = firmwareRuntimeActionIds(actions);
+    if (!actionIds.length) {
+      return {
+        ...defaultFirmwareRuntimeStatus,
+        message: "No backend firmware action catalog entries are available yet."
+      };
+    }
+
+    const runGroups = await Promise.all(
+      actionIds.map(async (actionId) => {
+        try {
+          const runs = await api.workflowActionRuns(actionId);
+          return Array.isArray(runs) ? runs : [];
+        } catch {
+          return [];
+        }
+      })
+    );
+    const history = runGroups
+      .flat()
+      .map((run) => normalizeWorkflowRun(run, firmwareOperationType(run.action_id)))
+      .sort((first, second) => Date.parse(second.checkedAt) - Date.parse(first.checkedAt))
+      .slice(0, 12);
+
+    if (!history.length) {
+      return {
+        ...defaultFirmwareRuntimeStatus,
+        actionIds,
+        message: "No backend firmware checks, validations, or upgrade attempts have been recorded yet.",
+        sourceType: "backend_action_runs"
+      };
+    }
+
+    const latest = history[0];
+    const latestUpgrade = history.find((result) => result.type === "firmware-upgrade") ?? null;
+    return {
+      actionIds,
+      checkedAt: latest.checkedAt,
+      freshness: latest.freshness,
+      history,
+      latestUpgrade,
+      message: latestUpgrade?.message ?? latest.message,
+      sourceType: latest.sourceType,
+      status: latestUpgrade ? upgradeStatusFromOperation(latestUpgrade.status) : upgradeStatusFromOperation(latest.status)
+    };
+  },
+
   async check(config: ControlConfig): Promise<{ firmware: FirmwareState; result: OperationResult }> {
     const validationErrors = configAdapter.validate(config);
     if (validationErrors.length) {
@@ -547,12 +618,15 @@ export const backendAdapter = {
       safeCall(api.controlCenterSettings, null),
       firmwareAdapter.load()
     ]);
+    const normalizedActions = Array.isArray(actions) ? actions : [];
+    const firmwareRuntime = await firmwareAdapter.status(normalizedActions);
     return {
-      actions: Array.isArray(actions) ? actions : [],
+      actions: normalizedActions,
       auditEvents: Array.isArray(auditEvents) ? auditEvents : [],
       controlConfig: controlConfig ? fromBackendConfig(controlConfig) : null,
       controlSettings: controlSettings ? fromBackendSettings(controlSettings) : null,
       firmware,
+      firmwareRuntime,
       health,
       providers: Array.isArray(providers) ? providers : []
     };
@@ -849,6 +923,38 @@ function mapStatus(status: string, blockers: string[]): OperationStatus {
     return "pending";
   }
   return blockers.length ? "blocked" : "success";
+}
+
+function firmwareRuntimeActionIds(actions: WorkflowAction[]): string[] {
+  const ids = actions
+    .filter((action) => {
+      const id = action.action_id.toLowerCase();
+      return (
+        action.stage === "firmware" ||
+        action.category === "upgrade" ||
+        id.includes("firmware") ||
+        id.includes("ontap-upgrade")
+      );
+    })
+    .map((action) => action.action_id);
+  return Array.from(new Set(ids)).slice(0, 12);
+}
+
+function firmwareOperationType(actionId: string): OperationResult["type"] {
+  const normalized = actionId.toLowerCase();
+  if (/(apply|upgrade-apply)/.test(normalized)) return "firmware-upgrade";
+  if (/(validate|compliance|waiver)/.test(normalized)) return "firmware-validation";
+  return "firmware-check";
+}
+
+function upgradeStatusFromOperation(status: OperationStatus): UpgradeStatus {
+  if (status === "running") return "upgrading";
+  if (status === "ready") return "ready";
+  if (status === "success") return "success";
+  if (status === "failed") return "failed";
+  if (status === "blocked") return "blocked";
+  if (status === "pending") return "pending";
+  return "idle";
 }
 
 function stringList(value: unknown): string[] {

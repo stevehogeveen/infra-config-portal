@@ -15,7 +15,7 @@ import {
   UploadCloud,
   Wrench
 } from "lucide-react";
-import { ReactNode, useEffect, useMemo, useState } from "react";
+import { ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { Link, Navigate, NavLink, Route, Routes, useLocation } from "react-router-dom";
 
 import {
@@ -23,6 +23,7 @@ import {
   configAdapter,
   createLocalOperationResult,
   defaultCredentialDraft,
+  defaultFirmwareRuntimeStatus,
   firmwareAdapter,
   firmwareValidationMatchesSelection,
   firmwareValidationPassed,
@@ -38,6 +39,7 @@ import type {
   ControlLogEntry,
   ControlSettings,
   CredentialDraft,
+  FirmwareRuntimeStatus,
   FirmwareState,
   HealthState,
   OperationResult,
@@ -67,6 +69,7 @@ type ControlCenterContext = {
   expectedUpgradePhrase: string;
   firmware: FirmwareState;
   firmwareCheckStatus: OperationStatus;
+  firmwareRuntime: FirmwareRuntimeStatus;
   firmwareUpgradeBlockers: string[];
   health: HealthState | null;
   latestFirmwareCheck: OperationResult | null;
@@ -113,8 +116,11 @@ export default function ControlCenter() {
   const [actions, setActions] = useState<WorkflowAction[]>([]);
   const [auditEvents, setAuditEvents] = useState<AuditEvent[]>([]);
   const [firmware, setFirmware] = useState<FirmwareState>({ fileSelections: null, summaries: [] });
+  const [firmwareRuntime, setFirmwareRuntime] = useState<FirmwareRuntimeStatus>(defaultFirmwareRuntimeStatus);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
+  const configEditedRef = useRef(false);
+  const settingsEditedRef = useRef(false);
 
   const [config, setConfig] = useState<ControlConfig>(() => configAdapter.load());
   const [settings, setSettings] = useState<ControlSettings>(() => settingsAdapter.load());
@@ -179,10 +185,11 @@ export default function ControlCenter() {
       setActions(snapshot.actions);
       setAuditEvents(snapshot.auditEvents);
       setFirmware(snapshot.firmware);
-      if (snapshot.controlConfig) {
+      setFirmwareRuntime(snapshot.firmwareRuntime);
+      if (snapshot.controlConfig && !configEditedRef.current) {
         setConfig(snapshot.controlConfig);
       }
-      if (snapshot.controlSettings) {
+      if (snapshot.controlSettings && !settingsEditedRef.current) {
         setSettings(snapshot.controlSettings);
       }
     } catch (error) {
@@ -196,10 +203,23 @@ export default function ControlCenter() {
     setLogs((current) => logsAdapter.add(current, entry));
   }
 
+  function updateConfig(value: ControlConfig | ((current: ControlConfig) => ControlConfig)) {
+    configEditedRef.current = true;
+    setConfig(value);
+    setConfigMessage("");
+  }
+
+  function updateSettings(value: ControlSettings | ((current: ControlSettings) => ControlSettings)) {
+    settingsEditedRef.current = true;
+    setSettings(value);
+    setSettingsMessage("");
+  }
+
   async function saveConfig() {
     const result = await configAdapter.save(config, credentialDraft);
     setConfig(result.config);
     setConfigErrors(result.errors);
+    configEditedRef.current = result.errors.length > 0 || result.savedVia !== "backend";
     setConfigMessage(
       result.errors.length
         ? ""
@@ -236,6 +256,7 @@ export default function ControlCenter() {
   async function saveSettings() {
     const result = await settingsAdapter.save(settings);
     setSettingsErrors(result.errors);
+    settingsEditedRef.current = result.errors.length > 0 || result.savedVia !== "backend";
     if (result.errors.length) {
       setSettingsMessage("");
       addLog({
@@ -267,6 +288,7 @@ export default function ControlCenter() {
     const result = await configAdapter.save(config, defaultCredentialDraft);
     setConfig(result.config);
     setConfigErrors(result.errors);
+    configEditedRef.current = result.errors.length > 0 || result.savedVia !== "backend";
     return result;
   }
 
@@ -640,6 +662,7 @@ export default function ControlCenter() {
     expectedUpgradePhrase,
     firmware,
     firmwareCheckStatus,
+    firmwareRuntime,
     firmwareUpgradeBlockers,
     health,
     latestFirmwareCheck,
@@ -661,11 +684,11 @@ export default function ControlCenter() {
     selectedPath,
     selectedPathId,
     selectedUpgradeAction,
-    setConfig,
+    setConfig: updateConfig,
     setCredentialDraft,
     setSelectedFirmware: updateSelectedFirmware,
     setSelectedPathId,
-    setSettings,
+    setSettings: updateSettings,
     settings,
     settingsErrors,
     settingsMessage,
@@ -768,6 +791,7 @@ function DashboardPage({ context }: { context: ControlCenterContext }) {
   const firmwareNeedsReview = context.firmware.summaries.filter((summary) =>
     ["needs_upgrade", "blocked", "cannot_verify", "not_configured"].includes(summary.compliance_status)
   ).length;
+  const latestFirmwareUpgrade = firmwareUpgradeSummaryResult(context);
   return (
     <Page title="Dashboard" subtitle="Control Center overview.">
       <section className="control-panel control-overview-panel">
@@ -786,8 +810,9 @@ function DashboardPage({ context }: { context: ControlCenterContext }) {
             ["Last firmware check", context.latestFirmwareCheck ? statusLabel(context.latestFirmwareCheck.status) : "Not checked"],
             [
               "Last firmware upgrade",
-              context.latestFirmwareUpgrade ? statusLabel(context.latestFirmwareUpgrade.status) : "Not started"
-            ]
+              latestFirmwareUpgrade ? statusLabel(latestFirmwareUpgrade.status) : "Not started"
+            ],
+            ["Firmware progress", firmwareProgressLabel(context)]
           ]}
         />
         <div className="quick-link-row">
@@ -808,6 +833,10 @@ function DashboardPage({ context }: { context: ControlCenterContext }) {
       <section className="control-panel">
         <PanelTitle icon={<UploadCloud size={18} />} title="Firmware Summary" />
         <FirmwareRollup summaries={context.firmware.summaries} />
+      </section>
+      <section className="control-panel">
+        <PanelTitle icon={<Activity size={18} />} title="Connection and Detection" />
+        <ProviderStatusList providers={context.providers} />
       </section>
     </Page>
   );
@@ -1056,6 +1085,8 @@ function FirmwarePage({ context }: { context: ControlCenterContext }) {
             ["Readiness", firmwareReadinessLabel(context)],
             ["Backend apply", backendApply],
             ["Progress", firmwareProgressLabel(context)],
+            ["Backend status/progress", context.firmwareRuntime.message],
+            ["Progress source", firmwareRuntimeSourceLabel(context.firmwareRuntime)],
             ["Required gates", requiredGates.length ? requiredGates.join(", ") : "None reported"]
           ]}
         />
@@ -1129,13 +1160,14 @@ function FirmwarePage({ context }: { context: ControlCenterContext }) {
 
       <section className="control-panel">
         <PanelTitle icon={<History size={18} />} title="Firmware Events" />
-        <ActivityList logs={context.logs.filter((log) => log.type === "firmware")} />
+        <ActivityList logs={firmwareEventLogs(context)} />
       </section>
     </Page>
   );
 }
 
 function ResultsPage({ context }: { context: ControlCenterContext }) {
+  const latestFirmwareUpgrade = firmwareUpgradeSummaryResult(context);
   return (
     <Page title="Results" subtitle="Latest run and firmware outcomes.">
       <div className="result-stack">
@@ -1153,7 +1185,7 @@ function ResultsPage({ context }: { context: ControlCenterContext }) {
         </section>
         <section className="control-panel">
           <PanelTitle icon={<UploadCloud size={18} />} title="Latest Firmware Upgrade Summary" />
-          {context.latestFirmwareUpgrade ? <ResultDetails result={context.latestFirmwareUpgrade} /> : <EmptyState title="No firmware upgrade" detail="Upgrade attempts appear here after confirmation." />}
+          {latestFirmwareUpgrade ? <ResultDetails result={latestFirmwareUpgrade} /> : <EmptyState title="No firmware upgrade" detail="Upgrade attempts appear here after confirmation." />}
         </section>
       </div>
     </Page>
@@ -1166,7 +1198,7 @@ function LogsPage({ context }: { context: ControlCenterContext }) {
     <Page title="Logs" subtitle="Config, run, firmware, settings, and backend audit activity.">
       <section className="control-panel">
         <PanelTitle icon={<History size={18} />} title="Activity Timeline" />
-        <ActivityList logs={[...context.logs, ...backendLogs]} />
+        <ActivityList logs={[...context.logs, ...firmwareRuntimeLogs(context.firmwareRuntime.history), ...backendLogs]} />
       </section>
     </Page>
   );
@@ -1406,6 +1438,65 @@ function FirmwareVisibilityTable({ summaries }: { summaries: FirmwareSummary[] }
       </table>
     </div>
   );
+}
+
+function ProviderStatusList({ providers }: { providers: ProviderStatus[] }) {
+  const visibleProviders = providers.filter((provider) => provider.is_operator_visible !== false).slice(0, 6);
+  if (!visibleProviders.length) {
+    return <EmptyState title="No provider status" detail="API provider status is unavailable or not checked yet." />;
+  }
+  return (
+    <div className="provider-status-list">
+      {visibleProviders.map((provider) => (
+        <article key={provider.id}>
+          <div>
+            <strong>{provider.name}</strong>
+            <small>{provider.message}</small>
+          </div>
+          <StatusPill status={provider.status} />
+          <span>{sourceLabel(provider.source_type)}</span>
+          <span>{provider.checked_at ? formatDateTime(provider.checked_at) : "Not checked"}</span>
+        </article>
+      ))}
+    </div>
+  );
+}
+
+function firmwareUpgradeSummaryResult(context: ControlCenterContext): OperationResult | null {
+  return context.latestFirmwareUpgrade ?? context.firmwareRuntime.latestUpgrade;
+}
+
+function firmwareEventLogs(context: ControlCenterContext): ControlLogEntry[] {
+  return [
+    ...context.logs.filter((log) => log.type === "firmware"),
+    ...firmwareRuntimeLogs(context.firmwareRuntime.history)
+  ];
+}
+
+function firmwareRuntimeLogs(results: OperationResult[]): ControlLogEntry[] {
+  return results.map((result) => ({
+    detail: result.message,
+    id: `firmware-runtime-${result.id}`,
+    message: firmwareEventMessage(result),
+    status: result.status,
+    timestamp: result.checkedAt,
+    type: "firmware"
+  }));
+}
+
+function firmwareEventMessage(result: OperationResult): string {
+  const label =
+    result.type === "firmware-upgrade"
+      ? "Firmware upgrade"
+      : result.type === "firmware-validation"
+        ? "Firmware validation"
+        : "Firmware check";
+  if (result.status === "success" || result.status === "ready") return `${label} succeeded`;
+  if (result.status === "failed") return `${label} failed`;
+  if (result.status === "pending") return `${label} pending`;
+  if (result.status === "blocked") return `${label} blocked`;
+  if (result.status === "running") return `${label} running`;
+  return label;
 }
 
 function ResultSummary({ result }: { result: OperationResult }) {
@@ -1650,19 +1741,31 @@ function firmwareStatusLabel(context: ControlCenterContext): string {
   if (context.upgradeStatus === "upgrading") return "Upgrade running";
   if (context.upgradeStatus === "validating") return "Validation running";
   if (context.latestFirmwareUpgrade) return `Upgrade ${statusLabel(context.latestFirmwareUpgrade.status)}`;
+  if (context.firmwareRuntime.latestUpgrade) return `Upgrade ${statusLabel(context.firmwareRuntime.latestUpgrade.status)}`;
   if (context.latestFirmwareCheck) return statusLabel(context.latestFirmwareCheck.status);
+  if (context.firmwareRuntime.history.length) return statusLabel(context.firmwareRuntime.status);
   return context.firmware.summaries.length ? "Summary loaded" : "Not checked";
 }
 
 function firmwareProgressLabel(context: ControlCenterContext): string {
   if (context.upgradeStatus === "upgrading") return "Backend request in progress";
   if (context.upgradeStatus === "validating") return "Validation in progress";
-  if (!context.latestFirmwareUpgrade) return "Not started";
-  if (context.latestFirmwareUpgrade.status === "success") return "Completed";
-  if (context.latestFirmwareUpgrade.status === "blocked") return "Blocked before execution";
-  if (context.latestFirmwareUpgrade.status === "pending") return "Backend integration pending";
-  if (context.latestFirmwareUpgrade.status === "failed") return "Failed";
-  return statusLabel(context.latestFirmwareUpgrade.status);
+  const latestUpgrade = firmwareUpgradeSummaryResult(context);
+  if (latestUpgrade) {
+    if (latestUpgrade.status === "success") return "Completed";
+    if (latestUpgrade.status === "blocked") return "Blocked before execution";
+    if (latestUpgrade.status === "pending") return "Backend integration pending";
+    if (latestUpgrade.status === "failed") return "Failed";
+    return statusLabel(latestUpgrade.status);
+  }
+  if (context.firmwareRuntime.history.length) return statusLabel(context.firmwareRuntime.status);
+  if (context.firmwareRuntime.sourceType === "todo_placeholder") return "Backend integration pending";
+  return "Not started";
+}
+
+function firmwareRuntimeSourceLabel(runtime: FirmwareRuntimeStatus): string {
+  const checked = runtime.checkedAt ? formatDateTime(runtime.checkedAt) : "Not checked";
+  return `${sourceLabel(runtime.sourceType)} / ${statusLabel(runtime.freshness)} / ${checked}`;
 }
 
 function validationStatusLabel(context: ControlCenterContext): string {
