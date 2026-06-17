@@ -867,6 +867,7 @@ function upgradeRequestBlockers(request: FirmwareUpgradeRequest): string[] {
   const blockers: string[] = [];
   blockers.push(...configAdapter.validate(request.config));
   blockers.push(...firmwareSelectionBlockers(request.selectedPath, request.selectedFirmware));
+  blockers.push(...firmwareUpgradeActionBlockers(request.selectedPath, upgradeActionForRequest(request)));
   if (!request.validationResult) {
     blockers.push("Validate firmware before starting an upgrade.");
   } else if (
@@ -888,6 +889,26 @@ function upgradeRequestBlockers(request: FirmwareUpgradeRequest): string[] {
   return blockers;
 }
 
+function firmwareUpgradeActionBlockers(
+  selectedPath: FirmwareUpgradePath | null,
+  action: WorkflowAction | null
+): string[] {
+  if (!selectedPath) {
+    return [];
+  }
+  const actionId = supportedUpgradeActionId(selectedPath);
+  if (!actionId) {
+    return ["Backend firmware upgrade integration is pending for this selected firmware path."];
+  }
+  if (!action) {
+    return [`Backend action ${actionId} is not available in the workflow catalog.`];
+  }
+  if (action.action_id === "firmware.upgrade-apply-placeholder") {
+    return ["Backend firmware upgrade execution is still a guarded placeholder for this selected firmware path."];
+  }
+  return [];
+}
+
 function firmwareSelectionBlockers(selectedPath: FirmwareUpgradePath | null, selectedFirmware: string): string[] {
   const blockers: string[] = [];
   if (!selectedPath) {
@@ -906,7 +927,7 @@ export function supportedUpgradeActionId(path: FirmwareUpgradePath | null): stri
   if (path?.component_id === "netapp_ontap_version") {
     return "netapp.ontap-upgrade-apply";
   }
-  return "firmware.upgrade-apply-placeholder";
+  return null;
 }
 
 export function upgradeConfirmationPhrase(path: FirmwareUpgradePath | null, action?: WorkflowAction | null): string {

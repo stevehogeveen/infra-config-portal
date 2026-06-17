@@ -911,6 +911,12 @@ function DashboardPage({ context }: { context: ControlCenterContext }) {
   ).length;
   const firmwarePaths = collectFirmwarePaths(context.firmware.summaries).length;
   const latestFirmwareUpgrade = firmwareUpgradeSummaryResult(context);
+  const hasResult = Boolean(
+    context.latestRun ||
+      context.latestFirmwareCheck ||
+      context.latestFirmwareValidation ||
+      latestFirmwareUpgrade
+  );
   return (
     <Page title="Dashboard" subtitle="Current target, connection, and latest action state.">
       <div className="control-dashboard-layout">
@@ -975,9 +981,9 @@ function DashboardPage({ context }: { context: ControlCenterContext }) {
             to="/run"
           />
           <WorkflowStepLink
-            detail={context.latestRun || latestFirmwareUpgrade ? "Latest outcomes available" : "No current result"}
+            detail={hasResult ? "Latest outcomes available" : "No current result"}
             label="Results"
-            status={context.latestRun || latestFirmwareUpgrade ? "ready" : "not_checked"}
+            status={hasResult ? "ready" : "not_checked"}
             to="/results"
           />
           <WorkflowStepLink
@@ -1216,7 +1222,7 @@ function RunPage({ context }: { context: ControlCenterContext }) {
       </section>
       <section className="control-panel">
         <PanelTitle icon={<History size={18} />} title="Run Activity" />
-        <ActivityList logs={context.logs.filter((log) => log.type === "run")} />
+        <ActivityList logs={runEventLogs(context)} />
       </section>
     </Page>
   );
@@ -1326,10 +1332,10 @@ function FirmwarePage({ context }: { context: ControlCenterContext }) {
         {backendPending && (
           <div className="control-alert warning">
             {placeholderApply
-              ? "Backend upgrade execution for this firmware path is a guarded TODO placeholder. Starting upgrade records a blocked backend event and does not run a provider firmware update."
+              ? "Backend upgrade execution for this firmware path is a guarded TODO placeholder. Firmware Upgrade stays disabled until a real guarded backend action is registered."
               : supportedActionId
-              ? `Backend action ${supportedActionId} is not available in the workflow catalog. Starting upgrade will return a safe TODO result and will not run a provider update.`
-              : "Backend upgrade integration is pending for this firmware path. Starting upgrade will return a safe TODO result and will not run a provider update."}
+              ? `Backend action ${supportedActionId} is not available in the workflow catalog. Firmware Upgrade stays disabled until that action is registered.`
+              : "Backend upgrade integration is pending for this firmware path. Firmware Upgrade stays disabled and no provider update can be requested from this UI."}
           </div>
         )}
         <div className="control-actions">
@@ -1638,6 +1644,13 @@ function firmwareUpgradeSummaryResult(context: ControlCenterContext): OperationR
   return context.latestFirmwareUpgrade ?? context.firmwareRuntime.latestUpgrade;
 }
 
+function runEventLogs(context: ControlCenterContext): ControlLogEntry[] {
+  return [
+    ...context.logs.filter((log) => log.type === "run"),
+    ...context.backendLogs.filter((log) => log.type === "run")
+  ];
+}
+
 function firmwareEventLogs(context: ControlCenterContext): ControlLogEntry[] {
   const backendFirmwareLogs = context.backendLogs.filter((log) => log.type === "firmware");
   return [
@@ -1892,6 +1905,8 @@ function firmwareStartBlockers(input: {
   blockers.push(...configAdapter.validate(input.config));
   if (!input.selectedPath) blockers.push("Select a firmware path before starting an upgrade.");
   if (!input.selectedFirmware.trim()) blockers.push("Selected firmware, image, or target version is required.");
+  const upgradeActionBlocker = firmwareUpgradeActionBlocker(input.selectedPath, input.selectedUpgradeAction);
+  if (upgradeActionBlocker) blockers.push(upgradeActionBlocker);
   if (!input.validation) {
     blockers.push("Validate firmware before starting an upgrade.");
   } else if (
@@ -1911,6 +1926,24 @@ function firmwareStartBlockers(input: {
     blockers.push(`Type ${expected} and check the confirmation box.`);
   }
   return blockers;
+}
+
+function firmwareUpgradeActionBlocker(
+  selectedPath: FirmwareUpgradePath | null,
+  selectedUpgradeAction: WorkflowAction | null
+): string | null {
+  if (!selectedPath) return null;
+  const actionId = supportedUpgradeActionId(selectedPath);
+  if (!actionId) {
+    return "Backend firmware upgrade integration is pending for this selected firmware path.";
+  }
+  if (!selectedUpgradeAction) {
+    return `Backend action ${actionId} is not available in the workflow catalog.`;
+  }
+  if (selectedUpgradeAction.action_id === "firmware.upgrade-apply-placeholder") {
+    return "Backend firmware upgrade execution is still a guarded placeholder for this selected firmware path.";
+  }
+  return null;
 }
 
 function firmwareValidateBlockers(input: {

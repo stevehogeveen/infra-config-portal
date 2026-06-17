@@ -1,6 +1,7 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
 
 const checkedAt = "2026-06-17T18:20:00Z";
+const hpeUpgradePathValue = "HPE iLO:hpe_ilo_firmware:2.91";
 const upgradePathValue = "NetApp ONTAP:netapp_ontap_version:9.14.1P1";
 
 type ControlCenterConfigMock = {
@@ -415,6 +416,35 @@ test("firmware upgrade stays blocked after selection changes, failed validation,
   await expect(page.getByText("Firmware validation blocked").first()).toBeVisible();
 });
 
+test("firmware upgrade stays disabled when no backend apply action exists", async ({ page }) => {
+  const actionRequests: string[] = [];
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    if (url.pathname.includes("/api/v1/workflows/actions/") && url.pathname.endsWith("/run")) {
+      actionRequests.push(url.pathname);
+    }
+  });
+
+  await page.goto("/configure");
+  await page.getByLabel("Target host, IP, or range").fill("192.0.2.203");
+  await page.getByRole("button", { name: "Save / apply config" }).click();
+
+  await page.goto("/firmware");
+  await page.getByLabel("Firmware path").selectOption(hpeUpgradePathValue);
+  await expect(page.getByLabel("Selected firmware, image, or version")).toHaveValue("ilo-2.91.fwpkg");
+  await page.getByRole("button", { name: "Validate Firmware" }).click();
+  await expect(page.getByText("Firmware validation succeeded")).toBeVisible();
+
+  await page.getByLabel("Require explicit operator confirmation before any firmware upgrade request is sent.").check();
+  await page.getByLabel("Confirmation phrase").fill("RUN FIRMWARE UPGRADE");
+
+  await expect(page.getByRole("button", { name: "Start Firmware Upgrade" })).toBeDisabled();
+  await expect(
+    page.getByText("Backend firmware upgrade integration is pending for this selected firmware path.")
+  ).toBeVisible();
+  expect(actionRequests).toEqual([]);
+});
+
 test("settings and logs remain top-level control-center pages", async ({ page }) => {
   await page.goto("/settings");
   await expect(page.getByRole("heading", { exact: true, name: "Settings" })).toBeVisible();
@@ -613,32 +643,64 @@ function firmwareSummaries() {
       apply_enabled: false,
       approved_versions: [{ label: "Approved", status: "approved", version: "2.90" }],
       blocker: null,
-      compliance_status: "current",
+      compliance_status: "needs_upgrade",
       component_type: "management_firmware",
       current_versions: [
-        { label: "iLO firmware", status: "current", version: "2.90" },
+        { label: "iLO firmware", status: "needs_upgrade", version: "2.80" },
         { label: "Bootloader", status: "current", version: "1.1" }
       ],
       device_id: "ilo",
-      disabled_reason: "No upgrade is needed.",
-      estimated_impact: "No upgrade impact expected while current.",
+      disabled_reason: "Backend guarded apply action is not registered.",
+      estimated_impact: "iLO firmware upgrade requires maintenance approval.",
       evidence_artifacts: ["artifacts/codex-runs/firmware-inventory-report.md"],
       freshness: "live",
       label: "HPE iLO",
       last_scanned: checkedAt,
-      next_action: "No iLO firmware action required.",
-      package_available: false,
-      package_name: null,
-      path_status: "current",
-      prechecks_required: [],
+      next_action: "Validate firmware evidence; upgrade remains disabled until backend apply exists.",
+      package_available: true,
+      package_name: "ilo-2.91.fwpkg",
+      path_status: "direct",
+      prechecks_required: ["iLO firmware prechecks"],
       reboot_required: false,
       required_intermediate_versions: [],
       scan_action_id: "ilo.firmware-inventory",
-      severity: "green",
+      severity: "yellow",
       source_type: "cached_live",
-      target_version: null,
+      target_version: "2.91",
       upgrade_center_link: "/firmware?device=ilo",
-      upgrade_paths: []
+      upgrade_paths: [
+        {
+          apply_enabled: false,
+          baseline_source: "real-lab.yml",
+          candidate_files: [],
+          component_id: "hpe_ilo_firmware",
+          component_label: "iLO firmware",
+          current_version: "2.80",
+          device_label: "HPE iLO",
+          disabled_reason: "Backend guarded apply action is not registered.",
+          equipment_label: "Server",
+          equipment_type: "management_firmware",
+          estimated_impact: "iLO firmware upgrade requires maintenance approval.",
+          evidence_artifacts: ["artifacts/codex-runs/firmware-inventory-report.md"],
+          freshness: "live",
+          last_checked: checkedAt,
+          missing_evidence: [],
+          next_action: "Validate firmware evidence; upgrade remains disabled until backend apply exists.",
+          package_available: true,
+          package_name: "ilo-2.91.fwpkg",
+          package_version: "2.91",
+          path_status: "direct",
+          prechecks_required: ["iLO firmware prechecks"],
+          reboot_required: true,
+          required_intermediate_versions: [],
+          scan_action_id: "ilo.firmware-inventory",
+          selected_file_name: "ilo-2.91.fwpkg",
+          selected_file_path: null,
+          selection_source: "test",
+          source_type: "cached_live",
+          target_version: "2.91"
+        }
+      ]
     },
     {
       apply_enabled: true,
