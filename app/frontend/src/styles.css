@@ -285,7 +285,7 @@ button:disabled {
 .result-panel-grid {
   display: grid;
   gap: 14px;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
 }
 
 .control-dashboard-grid.compact {

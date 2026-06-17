@@ -13,7 +13,7 @@ import type {
 export type IpMode = "ipv4" | "ipv6" | "both";
 export type SnmpVersion = "v2" | "v3";
 export type OperationStatus = "idle" | "running" | "ready" | "success" | "failed" | "blocked" | "pending";
-export type UpgradeStatus = "idle" | "validating" | "ready" | "upgrading" | "success" | "failed";
+export type UpgradeStatus = "idle" | "validating" | "ready" | "upgrading" | "success" | "failed" | "blocked" | "pending";
 
 export type ControlConfig = {
   target: string;
@@ -75,6 +75,7 @@ export type FirmwareState = {
 
 export type FirmwareUpgradeRequest = {
   actions: WorkflowAction[];
+  config: ControlConfig;
   confirmationAccepted: boolean;
   confirmationPhrase: string;
   selectedFirmware: string;
@@ -295,9 +296,13 @@ export const runAdapter = {
       return placeholderResult({
         blockers: validationErrors,
         message: "Run blocked until the current configuration is valid.",
+        raw: {
+          config_snapshot: sanitizedConfigSnapshot(config)
+        },
         status: "blocked",
         title: "Run blocked",
-        type: "run"
+        type: "run",
+        sourceType: "ui_local_state"
       });
     }
     if (!action) {
@@ -328,21 +333,84 @@ export const firmwareAdapter = {
     };
   },
 
-  async check(): Promise<{ firmware: FirmwareState; result: OperationResult }> {
+  async check(config: ControlConfig): Promise<{ firmware: FirmwareState; result: OperationResult }> {
+    const validationErrors = configAdapter.validate(config);
+    if (validationErrors.length) {
+      return {
+        firmware: await this.load(),
+        result: placeholderResult({
+          blockers: validationErrors,
+          message: "Firmware check blocked until the current configuration is valid.",
+          raw: {
+            config_snapshot: sanitizedConfigSnapshot(config)
+          },
+          sourceType: "ui_local_state",
+          status: "blocked",
+          title: "Firmware check blocked",
+          type: "firmware-check"
+        })
+      };
+    }
     const probe = await api.firmwareInventory();
     const firmware = await this.load();
     return {
       firmware,
-      result: normalizeProbeResult(probe, "firmware-check", "Firmware check")
+      result: normalizeProbeResult(probe, "firmware-check", "Firmware check", {
+        config_snapshot: sanitizedConfigSnapshot(config)
+      })
     };
   },
 
-  async validate(): Promise<{ firmware: FirmwareState; result: OperationResult }> {
+  async validate(input: {
+    config: ControlConfig;
+    selectedFirmware: string;
+    selectedPath: FirmwareUpgradePath | null;
+  }): Promise<{ firmware: FirmwareState; result: OperationResult }> {
+    const blockers = firmwareSelectionBlockers(input.selectedPath, input.selectedFirmware);
+    blockers.unshift(...configAdapter.validate(input.config));
+    if (blockers.length) {
+      return {
+        firmware: await this.load(),
+        result: placeholderResult({
+          blockers,
+          message: "Firmware validation blocked until the current config and firmware selection are complete.",
+          raw: firmwareSelectionRaw(input.config, input.selectedPath, input.selectedFirmware),
+          sourceType: "ui_local_state",
+          status: "blocked",
+          title: "Firmware validation blocked",
+          type: "firmware-validation"
+        })
+      };
+    }
+    const selectedPath = input.selectedPath;
+    if (!selectedPath) {
+      return {
+        firmware: await this.load(),
+        result: placeholderResult({
+          blockers: ["Select a firmware path before validation or upgrade."],
+          message: "Firmware validation blocked until a firmware path is selected.",
+          raw: firmwareSelectionRaw(input.config, input.selectedPath, input.selectedFirmware),
+          sourceType: "ui_local_state",
+          status: "blocked",
+          title: "Firmware validation blocked",
+          type: "firmware-validation"
+        })
+      };
+    }
+    const saved = await api.saveFirmwareFileSelections({
+      selected_files: { [selectedPath.component_id]: input.selectedFirmware.trim() }
+    });
     const probe = await api.firmwareCompliance("full");
     const firmware = await this.load();
     return {
-      firmware,
-      result: normalizeProbeResult(probe, "firmware-validation", "Firmware validation")
+      firmware: {
+        ...firmware,
+        fileSelections: saved
+      },
+      result: normalizeProbeResult(probe, "firmware-validation", "Firmware validation", {
+        ...firmwareSelectionRaw(input.config, input.selectedPath, input.selectedFirmware),
+        file_selection_saved_at: saved.updated_at
+      })
     };
   },
 
@@ -359,6 +427,7 @@ export const firmwareAdapter = {
     }
 
     const supportedActionId = supportedUpgradeActionId(request.selectedPath);
+    const action = upgradeActionForRequest(request);
     if (!supportedActionId) {
       return placeholderResult({
         blockers: [
@@ -375,7 +444,6 @@ export const firmwareAdapter = {
       });
     }
 
-    const action = request.actions.find((candidate) => candidate.action_id === supportedActionId);
     if (!action) {
       return placeholderResult({
         blockers: [`Backend action ${supportedActionId} is not available in the workflow catalog.`],
@@ -387,13 +455,14 @@ export const firmwareAdapter = {
     }
 
     const result = await api.runWorkflowAction(supportedActionId, {
-      confirmation_phrase: "UPGRADE ONTAP",
-      confirmed_gates: ["NETAPP_ONTAP_UPGRADE_APPLY=true"]
+      confirmation_phrase: request.confirmationPhrase.trim(),
+      confirmed_gates: action.required_gates
     });
-    return normalizeWorkflowRun(result, "firmware-upgrade", {
-      selected_component: request.selectedPath?.component_id ?? null,
-      selected_firmware: request.selectedFirmware
-    });
+    return normalizeWorkflowRun(result, "firmware-upgrade", firmwareSelectionRaw(
+      request.config,
+      request.selectedPath,
+      request.selectedFirmware
+    ));
   }
 };
 
@@ -446,7 +515,8 @@ function normalizeWorkflowRun(
 function normalizeProbeResult(
   result: ProviderProbeResult,
   type: OperationResult["type"],
-  fallbackTitle: string
+  fallbackTitle: string,
+  extraRaw: Record<string, unknown> = {}
 ): OperationResult {
   const blockers = stringList(result.blockers);
   return {
@@ -457,7 +527,10 @@ function normalizeProbeResult(
     freshness: stringValue((result as Record<string, unknown>).freshness, "not_checked"),
     id: `${type}:${Date.now()}`,
     message: result.message || stringValue((result as Record<string, unknown>).next_safe_action, "Backend check completed."),
-    raw: result as Record<string, unknown>,
+    raw: {
+      ...(result as Record<string, unknown>),
+      ...extraRaw
+    },
     sourceType: stringValue((result as Record<string, unknown>).source_type, "backend_api"),
     status: mapStatus(result.status, blockers),
     title: fallbackTitle,
@@ -468,8 +541,11 @@ function normalizeProbeResult(
 
 function placeholderResult(input: {
   blockers?: string[];
+  executed?: boolean;
+  freshness?: string;
   message: string;
   raw?: Record<string, unknown>;
+  sourceType?: string;
   status: OperationStatus;
   title: string;
   type: OperationResult["type"];
@@ -479,12 +555,12 @@ function placeholderResult(input: {
     artifacts: [],
     blockers: input.blockers ?? [],
     checkedAt: new Date().toISOString(),
-    executed: false,
-    freshness: "not_checked",
+    executed: input.executed ?? false,
+    freshness: input.freshness ?? "not_checked",
     id: `${input.type}:placeholder:${Date.now()}`,
     message: input.message,
     raw: input.raw ?? {},
-    sourceType: "todo_placeholder",
+    sourceType: input.sourceType ?? "todo_placeholder",
     status: input.status,
     title: input.title,
     type: input.type,
@@ -492,21 +568,46 @@ function placeholderResult(input: {
   };
 }
 
+export function createLocalOperationResult(input: {
+  blockers?: string[];
+  message: string;
+  raw?: Record<string, unknown>;
+  status: OperationStatus;
+  title: string;
+  type: OperationResult["type"];
+  warnings?: string[];
+}): OperationResult {
+  return placeholderResult({
+    ...input,
+    sourceType: "ui_local_state"
+  });
+}
+
 function upgradeRequestBlockers(request: FirmwareUpgradeRequest): string[] {
   const blockers: string[] = [];
-  if (!request.selectedPath) {
-    blockers.push("Select a firmware path before starting an upgrade.");
-  }
-  if (!request.selectedFirmware.trim()) {
-    blockers.push("Selected firmware, image, or target version is required.");
-  }
+  blockers.push(...configAdapter.validate(request.config));
+  blockers.push(...firmwareSelectionBlockers(request.selectedPath, request.selectedFirmware));
   if (!request.validationResult) {
     blockers.push("Validate firmware before starting an upgrade.");
-  } else if (["failed", "blocked"].includes(request.validationResult.status)) {
+  } else if (!firmwareValidationMatchesSelection(request.validationResult, request.selectedPath, request.selectedFirmware)) {
+    blockers.push("Validate the currently selected firmware path before starting an upgrade.");
+  } else if (!firmwareValidationPassed(request.validationResult)) {
     blockers.push("Firmware validation failed or is blocked. No override is supported in this UI.");
   }
-  if (!request.confirmationAccepted || request.confirmationPhrase.trim() !== upgradeConfirmationPhrase(request.selectedPath)) {
-    blockers.push(`Type ${upgradeConfirmationPhrase(request.selectedPath)} and check the confirmation box.`);
+  const action = upgradeActionForRequest(request);
+  if (!request.confirmationAccepted || request.confirmationPhrase.trim() !== upgradeConfirmationPhrase(request.selectedPath, action)) {
+    blockers.push(`Type ${upgradeConfirmationPhrase(request.selectedPath, action)} and check the confirmation box.`);
+  }
+  return blockers;
+}
+
+function firmwareSelectionBlockers(selectedPath: FirmwareUpgradePath | null, selectedFirmware: string): string[] {
+  const blockers: string[] = [];
+  if (!selectedPath) {
+    blockers.push("Select a firmware path before validation or upgrade.");
+  }
+  if (!selectedFirmware.trim()) {
+    blockers.push("Selected firmware, image, or target version is required.");
   }
   return blockers;
 }
@@ -518,8 +619,50 @@ export function supportedUpgradeActionId(path: FirmwareUpgradePath | null): stri
   return null;
 }
 
-export function upgradeConfirmationPhrase(path: FirmwareUpgradePath | null): string {
+export function upgradeConfirmationPhrase(path: FirmwareUpgradePath | null, action?: WorkflowAction | null): string {
+  const registeredPhrase = action?.required_confirmations.find((phrase) => phrase.trim());
+  if (registeredPhrase) return registeredPhrase;
   return supportedUpgradeActionId(path) === "netapp.ontap-upgrade-apply" ? "UPGRADE ONTAP" : "RUN FIRMWARE UPGRADE";
+}
+
+export function firmwareValidationMatchesSelection(
+  result: OperationResult | null,
+  path: FirmwareUpgradePath | null,
+  selectedFirmware: string
+): boolean {
+  if (!result || !path) return false;
+  return (
+    stringValue(result.raw.selected_component, "") === path.component_id &&
+    stringValue(result.raw.selected_target, "") === selectedPathTarget(path) &&
+    stringValue(result.raw.selected_firmware, "") === selectedFirmware.trim()
+  );
+}
+
+export function firmwareValidationPassed(result: OperationResult | null): boolean {
+  return Boolean(result && ["ready", "success"].includes(result.status));
+}
+
+function upgradeActionForRequest(request: FirmwareUpgradeRequest): WorkflowAction | null {
+  const supportedActionId = supportedUpgradeActionId(request.selectedPath);
+  return request.actions.find((candidate) => candidate.action_id === supportedActionId) ?? null;
+}
+
+function firmwareSelectionRaw(
+  config: ControlConfig,
+  selectedPath: FirmwareUpgradePath | null,
+  selectedFirmware: string
+): Record<string, unknown> {
+  return {
+    config_snapshot: sanitizedConfigSnapshot(config),
+    selected_component: selectedPath?.component_id ?? null,
+    selected_device: selectedPath?.device_label ?? null,
+    selected_firmware: selectedFirmware.trim(),
+    selected_target: selectedPath ? selectedPathTarget(selectedPath) : null
+  };
+}
+
+function selectedPathTarget(path: FirmwareUpgradePath): string {
+  return path.target_version || path.package_name || path.selected_file_name || "unknown";
 }
 
 function hasCredentialDraft(draft: CredentialDraft): boolean {

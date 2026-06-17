@@ -24,8 +24,11 @@ import { Link, Navigate, NavLink, Route, Routes, useLocation } from "react-route
 import {
   backendAdapter,
   configAdapter,
+  createLocalOperationResult,
   defaultCredentialDraft,
   firmwareAdapter,
+  firmwareValidationMatchesSelection,
+  firmwareValidationPassed,
   logsAdapter,
   resultsAdapter,
   runAdapter,
@@ -89,6 +92,7 @@ type ControlCenterContext = {
   selectedFirmware: string;
   selectedPath: FirmwareUpgradePath | null;
   selectedPathId: string;
+  selectedUpgradeAction: WorkflowAction | null;
   setConfig: (value: ControlConfig | ((current: ControlConfig) => ControlConfig)) => void;
   setCredentialDraft: (value: CredentialDraft | ((current: CredentialDraft) => CredentialDraft)) => void;
   setSelectedFirmware: (value: string) => void;
@@ -145,13 +149,19 @@ export default function ControlCenter() {
     () => firmwarePaths.find((path) => firmwarePathId(path) === selectedPathId) ?? null,
     [firmwarePaths, selectedPathId]
   );
+  const selectedUpgradeAction = useMemo(() => {
+    const actionId = supportedUpgradeActionId(selectedPath);
+    return actions.find((action) => action.action_id === actionId) ?? null;
+  }, [actions, selectedPath]);
   const targetSummary = config.target || "Not configured";
   const connectionStatus = health?.status === "ok" ? "Connected" : loading ? "Checking" : "Unavailable";
-  const expectedUpgradePhrase = upgradeConfirmationPhrase(selectedPath);
+  const expectedUpgradePhrase = upgradeConfirmationPhrase(selectedPath, selectedUpgradeAction);
   const firmwareUpgradeBlockers = firmwareStartBlockers({
     accepted: upgradeConfirmationAccepted,
+    config,
     phrase: upgradeConfirmationPhraseState,
     selectedFirmware,
+    selectedUpgradeAction,
     selectedPath,
     validation: latestFirmwareValidation
   });
@@ -242,6 +252,25 @@ export default function ControlCenter() {
       await refreshControlCenter();
     } catch (error) {
       const message = errorMessage(error);
+      const result = createLocalOperationResult({
+        blockers: [message],
+        message,
+        raw: {
+          config_snapshot: {
+            ip_mode: config.ipMode,
+            retry_count: config.retryCount,
+            snmp_credentials: config.snmpCredentialStatus,
+            snmp_version: config.snmpVersion,
+            target: config.target,
+            timeout_seconds: config.timeoutSeconds
+          }
+        },
+        status: "failed",
+        title: "Run failed",
+        type: "run"
+      });
+      setLatestRun(result);
+      resultsAdapter.saveRun(result);
       setRunStatus("failed");
       setRunError(message);
       addLog({
@@ -256,13 +285,13 @@ export default function ControlCenter() {
   async function checkFirmware() {
     setFirmwareCheckStatus("running");
     addLog({
-      detail: "Firmware visibility check started. No upgrade action is triggered by page load.",
+      detail: `Firmware visibility check started for ${targetSummary}. No upgrade action is triggered.`,
       message: "Firmware check started",
       status: "running",
       type: "firmware"
     });
     try {
-      const response = await firmwareAdapter.check();
+      const response = await firmwareAdapter.check(config);
       setFirmware(response.firmware);
       setLatestFirmwareCheck(response.result);
       resultsAdapter.saveFirmwareCheck(response.result);
@@ -275,6 +304,15 @@ export default function ControlCenter() {
       });
     } catch (error) {
       const message = errorMessage(error);
+      const result = createLocalOperationResult({
+        blockers: [message],
+        message,
+        status: "failed",
+        title: "Firmware check failed",
+        type: "firmware-check"
+      });
+      setLatestFirmwareCheck(result);
+      resultsAdapter.saveFirmwareCheck(result);
       setFirmwareCheckStatus("failed");
       addLog({
         detail: message,
@@ -294,7 +332,11 @@ export default function ControlCenter() {
       type: "firmware"
     });
     try {
-      const response = await firmwareAdapter.validate();
+      const response = await firmwareAdapter.validate({
+        config,
+        selectedFirmware,
+        selectedPath
+      });
       setFirmware(response.firmware);
       setLatestFirmwareValidation(response.result);
       resultsAdapter.saveFirmwareValidation(response.result);
@@ -307,6 +349,15 @@ export default function ControlCenter() {
       });
     } catch (error) {
       const message = errorMessage(error);
+      const result = createLocalOperationResult({
+        blockers: [message],
+        message,
+        status: "failed",
+        title: "Firmware validation failed",
+        type: "firmware-validation"
+      });
+      setLatestFirmwareValidation(result);
+      resultsAdapter.saveFirmwareValidation(result);
       setUpgradeStatus("failed");
       addLog({
         detail: message,
@@ -319,6 +370,25 @@ export default function ControlCenter() {
 
   async function startFirmwareUpgrade() {
     if (upgradeStatus === "upgrading") return;
+    if (firmwareUpgradeBlockers.length > 0) {
+      const result = createLocalOperationResult({
+        blockers: firmwareUpgradeBlockers,
+        message: "Firmware upgrade was not started.",
+        status: "blocked",
+        title: "Firmware upgrade blocked",
+        type: "firmware-upgrade"
+      });
+      setLatestFirmwareUpgrade(result);
+      resultsAdapter.saveFirmwareUpgrade(result);
+      setUpgradeStatus("blocked");
+      addLog({
+        detail: firmwareUpgradeBlockers.join(" "),
+        message: "Firmware upgrade blocked",
+        status: "blocked",
+        type: "firmware"
+      });
+      return;
+    }
     setUpgradeStatus("upgrading");
     addLog({
       detail: selectedPath ? firmwarePathLabel(selectedPath) : "Missing selected firmware path.",
@@ -329,6 +399,7 @@ export default function ControlCenter() {
     try {
       const result = await firmwareAdapter.upgrade({
         actions,
+        config,
         confirmationAccepted: upgradeConfirmationAccepted,
         confirmationPhrase: upgradeConfirmationPhraseState,
         selectedFirmware,
@@ -337,7 +408,7 @@ export default function ControlCenter() {
       });
       setLatestFirmwareUpgrade(result);
       resultsAdapter.saveFirmwareUpgrade(result);
-      setUpgradeStatus(result.status === "success" ? "success" : "failed");
+      setUpgradeStatus(upgradeStatusAfterResult(result));
       addLog({
         detail: result.message,
         message: operationLogMessage("Firmware upgrade", result.status),
@@ -347,6 +418,15 @@ export default function ControlCenter() {
       await refreshControlCenter();
     } catch (error) {
       const message = errorMessage(error);
+      const result = createLocalOperationResult({
+        blockers: [message],
+        message,
+        status: "failed",
+        title: "Firmware upgrade failed",
+        type: "firmware-upgrade"
+      });
+      setLatestFirmwareUpgrade(result);
+      resultsAdapter.saveFirmwareUpgrade(result);
       setUpgradeStatus("failed");
       addLog({
         detail: message,
@@ -363,6 +443,16 @@ export default function ControlCenter() {
     setSelectedFirmware(defaultFirmwareSelection(path));
     setUpgradeConfirmationAccepted(false);
     setUpgradeConfirmationPhrase("");
+    setUpgradeStatus("idle");
+  }
+
+  function updateSelectedFirmware(value: string) {
+    setSelectedFirmware(value);
+    setUpgradeConfirmationAccepted(false);
+    setUpgradeConfirmationPhrase("");
+    if (upgradeStatus !== "upgrading") {
+      setUpgradeStatus("idle");
+    }
   }
 
   const context: ControlCenterContext = {
@@ -398,9 +488,10 @@ export default function ControlCenter() {
     selectedFirmware,
     selectedPath,
     selectedPathId,
+    selectedUpgradeAction,
     setConfig,
     setCredentialDraft,
-    setSelectedFirmware,
+    setSelectedFirmware: updateSelectedFirmware,
     setSelectedPathId,
     setSettings,
     settings,
@@ -736,9 +827,12 @@ function RunPage({ context }: { context: ControlCenterContext }) {
 }
 
 function FirmwarePage({ context }: { context: ControlCenterContext }) {
-  const supportedAction = supportedUpgradeActionId(context.selectedPath);
+  const supportedAction = context.selectedUpgradeAction?.label ?? supportedUpgradeActionId(context.selectedPath);
   const backendPending = Boolean(context.selectedPath && !supportedAction);
   const startDisabled = context.firmwareUpgradeBlockers.length > 0 || context.upgradeStatus === "upgrading";
+  const validateDisabled =
+    context.upgradeStatus === "validating" || !context.selectedPath || !context.selectedFirmware.trim();
+  const requiredGates = context.selectedUpgradeAction?.required_gates ?? [];
   return (
     <Page title="Firmware" subtitle="Firmware visibility, validation, upgrade gating, and events.">
       <section className="control-panel">
@@ -770,9 +864,10 @@ function FirmwarePage({ context }: { context: ControlCenterContext }) {
             ["Target", context.targetSummary],
             ["Current firmware", context.selectedPath ? displayValue(context.selectedPath.current_version) : "Select a firmware path"],
             ["Selected firmware/image/version", context.selectedFirmware || "Missing"],
-            ["Compatibility check", context.latestFirmwareValidation?.status ? statusLabel(context.latestFirmwareValidation.status) : "Not validated"],
+            ["Compatibility check", validationStatusLabel(context)],
             ["Readiness", firmwareReadinessLabel(context)],
-            ["Backend apply", supportedAction ?? "Integration pending"]
+            ["Backend apply", supportedAction ?? "Integration pending"],
+            ["Required gates", requiredGates.length ? requiredGates.join(", ") : "None reported"]
           ]}
         />
         <div className="control-form-grid">
@@ -803,7 +898,7 @@ function FirmwarePage({ context }: { context: ControlCenterContext }) {
           </div>
         )}
         <div className="control-actions">
-          <button disabled={context.upgradeStatus === "validating"} onClick={() => void context.validateFirmware()} type="button">
+          <button disabled={validateDisabled} onClick={() => void context.validateFirmware()} type="button">
             <ShieldCheck size={16} />
             {context.upgradeStatus === "validating" ? "Validating" : "Validate Firmware"}
           </button>
@@ -847,7 +942,7 @@ function FirmwarePage({ context }: { context: ControlCenterContext }) {
 
 function ResultsPage({ context }: { context: ControlCenterContext }) {
   return (
-    <Page title="Results" subtitle="Latest run, firmware check, and firmware upgrade outcomes.">
+    <Page title="Results" subtitle="Latest run, firmware check, validation, and firmware upgrade outcomes.">
       <div className="result-panel-grid">
         <section className="control-panel">
           <PanelTitle icon={<Play size={18} />} title="Latest Run Result" />
@@ -856,6 +951,10 @@ function ResultsPage({ context }: { context: ControlCenterContext }) {
         <section className="control-panel">
           <PanelTitle icon={<ShieldCheck size={18} />} title="Latest Firmware Check Summary" />
           {context.latestFirmwareCheck ? <ResultDetails result={context.latestFirmwareCheck} /> : <EmptyState title="No firmware check" detail="Use Check Firmware on the Firmware page." />}
+        </section>
+        <section className="control-panel">
+          <PanelTitle icon={<ShieldCheck size={18} />} title="Latest Firmware Validation Summary" />
+          {context.latestFirmwareValidation ? <ResultDetails result={context.latestFirmwareValidation} /> : <EmptyState title="No firmware validation" detail="Select firmware, then validate before upgrade." />}
         </section>
         <section className="control-panel">
           <PanelTitle icon={<UploadCloud size={18} />} title="Latest Firmware Upgrade Summary" />
@@ -1201,27 +1300,35 @@ function firmwareReadinessLabel(context: ControlCenterContext): string {
   if (!context.selectedPath) return "Missing firmware path";
   if (!context.selectedFirmware) return "Missing selected firmware";
   if (!context.latestFirmwareValidation) return "Validation required";
-  if (["blocked", "failed"].includes(context.latestFirmwareValidation.status)) return "Blocked by validation";
-  if (!supportedUpgradeActionId(context.selectedPath)) return "Backend integration pending";
+  if (!firmwareValidationMatchesSelection(context.latestFirmwareValidation, context.selectedPath, context.selectedFirmware)) {
+    return "Validation required for selection";
+  }
+  if (!firmwareValidationPassed(context.latestFirmwareValidation)) return "Blocked by validation";
+  if (!context.selectedUpgradeAction) return "Backend integration pending";
   return "Ready for guarded backend request";
 }
 
 function firmwareStartBlockers(input: {
   accepted: boolean;
+  config: ControlConfig;
   phrase: string;
   selectedFirmware: string;
   selectedPath: FirmwareUpgradePath | null;
+  selectedUpgradeAction: WorkflowAction | null;
   validation: OperationResult | null;
 }): string[] {
   const blockers: string[] = [];
+  blockers.push(...configAdapter.validate(input.config));
   if (!input.selectedPath) blockers.push("Select a firmware path before starting an upgrade.");
   if (!input.selectedFirmware.trim()) blockers.push("Selected firmware, image, or target version is required.");
   if (!input.validation) {
     blockers.push("Validate firmware before starting an upgrade.");
-  } else if (["blocked", "failed"].includes(input.validation.status)) {
+  } else if (!firmwareValidationMatchesSelection(input.validation, input.selectedPath, input.selectedFirmware)) {
+    blockers.push("Validate the currently selected firmware path before starting an upgrade.");
+  } else if (!firmwareValidationPassed(input.validation)) {
     blockers.push("Firmware validation failed or is blocked. No override is supported.");
   }
-  const expected = upgradeConfirmationPhrase(input.selectedPath);
+  const expected = upgradeConfirmationPhrase(input.selectedPath, input.selectedUpgradeAction);
   if (!input.accepted || input.phrase.trim() !== expected) {
     blockers.push(`Type ${expected} and check the confirmation box.`);
   }
@@ -1230,7 +1337,14 @@ function firmwareStartBlockers(input: {
 
 function upgradeStatusFromResult(result: OperationResult | null): UpgradeStatus {
   if (!result) return "idle";
-  return result.status === "success" ? "success" : "failed";
+  return upgradeStatusAfterResult(result);
+}
+
+function upgradeStatusAfterResult(result: OperationResult): UpgradeStatus {
+  if (result.status === "success") return "success";
+  if (result.status === "blocked") return "blocked";
+  if (result.status === "pending") return "pending";
+  return "failed";
 }
 
 function operationLogMessage(prefix: string, status: string): string {
@@ -1249,6 +1363,14 @@ function firmwareStatusLabel(context: ControlCenterContext): string {
   if (context.latestFirmwareUpgrade) return `Upgrade ${statusLabel(context.latestFirmwareUpgrade.status)}`;
   if (context.latestFirmwareCheck) return statusLabel(context.latestFirmwareCheck.status);
   return context.firmware.summaries.length ? "Summary loaded" : "Not checked";
+}
+
+function validationStatusLabel(context: ControlCenterContext): string {
+  if (!context.latestFirmwareValidation) return "Not validated";
+  if (!firmwareValidationMatchesSelection(context.latestFirmwareValidation, context.selectedPath, context.selectedFirmware)) {
+    return "Not validated for selection";
+  }
+  return statusLabel(context.latestFirmwareValidation.status);
 }
 
 function ipModeLabel(value: string): string {

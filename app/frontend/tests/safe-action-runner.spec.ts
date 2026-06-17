@@ -55,6 +55,10 @@ test("configure saves target, IP mode, SNMPv3 credential presence, timeout, and 
   await expect(page.getByText("IPv4 and IPv6").first()).toBeVisible();
   await expect(page.getByText("SNMPv3").first()).toBeVisible();
   await expect(page.getByText("Configured").first()).toBeVisible();
+
+  await page.reload();
+  await expect(page.getByText("192.0.2.203").first()).toBeVisible();
+  await expect(page.getByText("SNMPv3").first()).toBeVisible();
 });
 
 test("run page has one Run button and writes latest result", async ({ page }) => {
@@ -79,12 +83,17 @@ test("run page has one Run button and writes latest result", async ({ page }) =>
 });
 
 test("firmware page checks visibility, validates, and gates upgrade confirmation", async ({ page }) => {
+  await page.goto("/configure");
+  await page.getByLabel("Target host, IP, or range").fill("192.0.2.203");
+  await page.getByRole("button", { name: "Save / apply config" }).click();
+
   await page.goto("/firmware");
 
   await expect(page.getByRole("heading", { exact: true, name: "Firmware" })).toBeVisible();
   await expect(page.getByRole("heading", { exact: true, name: "Firmware Visibility" })).toBeVisible();
   await expect(page.getByRole("heading", { exact: true, name: "Firmware Upgrade" })).toBeVisible();
   await expect(page.getByRole("heading", { exact: true, name: "Firmware Events" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Validate Firmware" })).toBeDisabled();
   await expect(page.getByRole("button", { name: "Start Firmware Upgrade" })).toBeDisabled();
 
   const checkResponse = page.waitForResponse((response) => response.url().includes("/api/v1/lab/firmware-inventory"));
@@ -94,6 +103,7 @@ test("firmware page checks visibility, validates, and gates upgrade confirmation
 
   await page.getByLabel("Firmware path").selectOption(upgradePathValue);
   await expect(page.getByLabel("Selected firmware, image, or version")).toHaveValue("ontap-9.14.1P1.tgz");
+  await expect(page.getByRole("button", { name: "Validate Firmware" })).toBeEnabled();
 
   const validateResponse = page.waitForResponse((response) => response.url().includes("/api/v1/lab/firmware-compliance"));
   await page.getByRole("button", { name: "Validate Firmware" }).click();
@@ -113,6 +123,15 @@ test("firmware page checks visibility, validates, and gates upgrade confirmation
   await expect((await upgradeResponse).ok()).toBeTruthy();
   await expect(page.getByText("Firmware upgrade blocked")).toBeVisible();
   await expect(page.getByText("Guarded action was not run because required gates were not satisfied.")).toBeVisible();
+
+  await page.goto("/results");
+  await expect(page.getByText("Latest Firmware Validation Summary")).toBeVisible();
+  await expect(
+    page
+      .locator("section")
+      .filter({ hasText: "Latest Firmware Validation Summary" })
+      .getByText("Firmware validation completed against the configured baseline.", { exact: true })
+  ).toBeVisible();
 });
 
 test("settings and logs remain top-level control-center pages", async ({ page }) => {
@@ -164,8 +183,12 @@ async function installApiMocks(page: Page) {
     if (url.pathname === "/api/v1/firmware/summary") {
       return json(route, firmwareSummaries());
     }
-    if (url.pathname === "/api/v1/firmware/file-selections") {
+    if (url.pathname === "/api/v1/firmware/file-selections" && request.method() === "GET") {
       return json(route, firmwareFileSelections());
+    }
+    if (url.pathname === "/api/v1/firmware/file-selections" && request.method() === "PUT") {
+      const payload = request.postDataJSON() as { selected_files?: Record<string, string> };
+      return json(route, firmwareFileSelections(payload.selected_files ?? {}));
     }
     if (url.pathname === "/api/v1/lab/firmware-inventory") {
       return json(route, firmwareInventory());
@@ -331,7 +354,7 @@ function firmwareSummaries() {
   ];
 }
 
-function firmwareFileSelections() {
+function firmwareFileSelections(selectedFiles: Record<string, string> = { netapp_ontap_version: "ontap-9.14.1P1.tgz" }) {
   return {
     apply_enabled: false,
     blockers: [],
@@ -340,7 +363,7 @@ function firmwareFileSelections() {
     message: "File selections loaded.",
     next_safe_action: "Validate firmware before apply.",
     provider_id: "firmware-file-selections",
-    selected_files: { netapp_ontap_version: "ontap-9.14.1P1.tgz" },
+    selected_files: selectedFiles,
     source_type: "local_state",
     status: "ready",
     store_path: ".local/firmware-file-selections.json",
