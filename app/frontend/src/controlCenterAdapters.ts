@@ -20,6 +20,7 @@ export type ControlConfig = {
   ipMode: IpMode;
   snmpVersion: SnmpVersion;
   snmpCredentialStatus: "missing" | "configured";
+  snmpCredentialVersion: SnmpVersion | null;
   timeoutSeconds: number;
   retryCount: number;
   updatedAt: string | null;
@@ -88,7 +89,6 @@ export type ControlCenterSnapshot = {
   auditEvents: AuditEvent[];
   firmware: FirmwareState;
   health: HealthState | null;
-  providerMode: ProviderModeSummary | null;
   providers: ProviderStatus[];
 };
 
@@ -99,14 +99,6 @@ export type HealthState = {
   operator_runtime_mode?: string;
   provider_mode?: string;
   status: string;
-};
-
-export type ProviderModeSummary = {
-  current_mode: string;
-  desired_mode: string;
-  pending_restart: boolean;
-  restart_command: string;
-  next_safe_action: string;
 };
 
 const CONFIG_STORAGE_KEY = "webuis-control-center-config-v2";
@@ -122,6 +114,7 @@ export const defaultConfig: ControlConfig = {
   ipMode: "ipv4",
   snmpVersion: "v2",
   snmpCredentialStatus: "missing",
+  snmpCredentialVersion: null,
   timeoutSeconds: 8,
   retryCount: 1,
   updatedAt: null
@@ -158,7 +151,15 @@ export const configAdapter = {
     "Backend target/SNMP config load-save endpoint is pending; this adapter stores only non-secret Control Center defaults locally.",
 
   load(): ControlConfig {
-    return { ...defaultConfig, ...readStored<Partial<ControlConfig>>(CONFIG_STORAGE_KEY) };
+    const stored = readStored<Partial<ControlConfig>>(CONFIG_STORAGE_KEY);
+    const loaded = { ...defaultConfig, ...stored };
+    if (loaded.snmpCredentialStatus === "configured" && !loaded.snmpCredentialVersion) {
+      return {
+        ...loaded,
+        snmpCredentialVersion: loaded.snmpVersion
+      };
+    }
+    return loaded;
   },
 
   validate(config: ControlConfig): string[] {
@@ -176,11 +177,16 @@ export const configAdapter = {
   },
 
   save(config: ControlConfig, credentialDraft: CredentialDraft): { config: ControlConfig; errors: string[] } {
+    const draftHasCredential = hasCredentialDraftForVersion(credentialDraft, config.snmpVersion);
+    const existingCredentialStillApplies =
+      config.snmpCredentialStatus === "configured" && config.snmpCredentialVersion === config.snmpVersion;
+    const snmpCredentialStatus = draftHasCredential || existingCredentialStillApplies ? "configured" : "missing";
     const next: ControlConfig = {
       ...config,
       retryCount: clampNumber(config.retryCount, 0, 5),
       timeoutSeconds: clampNumber(config.timeoutSeconds, 1, 120),
-      snmpCredentialStatus: hasCredentialDraft(credentialDraft) ? "configured" : config.snmpCredentialStatus,
+      snmpCredentialStatus,
+      snmpCredentialVersion: snmpCredentialStatus === "configured" ? config.snmpVersion : null,
       target: config.target.trim(),
       updatedAt: new Date().toISOString()
     };
@@ -468,20 +474,18 @@ export const firmwareAdapter = {
 
 export const backendAdapter = {
   async loadSnapshot(): Promise<ControlCenterSnapshot> {
-    const [health, providers, actions, auditEvents, firmware, providerMode] = await Promise.all([
+    const [health, providers, actions, auditEvents, firmware] = await Promise.all([
       safeCall(api.health, null),
       safeCall(api.providers, [] as ProviderStatus[]),
       safeCall(api.workflowActions, [] as WorkflowAction[]),
       safeCall(api.auditEvents, [] as AuditEvent[]),
-      firmwareAdapter.load(),
-      safeCall(api.providerModeSettings, null)
+      firmwareAdapter.load()
     ]);
     return {
       actions: Array.isArray(actions) ? actions : [],
       auditEvents: Array.isArray(auditEvents) ? auditEvents : [],
       firmware,
       health,
-      providerMode,
       providers: Array.isArray(providers) ? providers : []
     };
   }
@@ -665,8 +669,13 @@ function selectedPathTarget(path: FirmwareUpgradePath): string {
   return path.target_version || path.package_name || path.selected_file_name || "unknown";
 }
 
-function hasCredentialDraft(draft: CredentialDraft): boolean {
-  return Object.values(draft).some((value) => value.trim().length > 0);
+function hasCredentialDraftForVersion(draft: CredentialDraft, version: SnmpVersion): boolean {
+  if (version === "v2") {
+    return draft.snmpV2Community.trim().length > 0;
+  }
+  return [draft.snmpV3Username, draft.snmpV3AuthPassword, draft.snmpV3PrivacyPassword].every(
+    (value) => value.trim().length > 0
+  );
 }
 
 function sanitizedConfigSnapshot(config: ControlConfig): Record<string, unknown> {
@@ -674,6 +683,7 @@ function sanitizedConfigSnapshot(config: ControlConfig): Record<string, unknown>
     ip_mode: config.ipMode,
     retry_count: config.retryCount,
     snmp_credentials: config.snmpCredentialStatus,
+    snmp_credential_version: config.snmpCredentialVersion,
     snmp_version: config.snmpVersion,
     target: config.target,
     timeout_seconds: config.timeoutSeconds

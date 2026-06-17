@@ -1,7 +1,5 @@
 import {
   Activity,
-  AlertTriangle,
-  CheckCircle2,
   ClipboardList,
   Cpu,
   FileText,
@@ -15,8 +13,7 @@ import {
   SlidersHorizontal,
   TerminalSquare,
   UploadCloud,
-  Wrench,
-  XCircle
+  Wrench
 } from "lucide-react";
 import { ReactNode, useEffect, useMemo, useState } from "react";
 import { Link, Navigate, NavLink, Route, Routes, useLocation } from "react-router-dom";
@@ -45,7 +42,6 @@ import type {
   HealthState,
   OperationResult,
   OperationStatus,
-  ProviderModeSummary,
   UpgradeStatus
 } from "./controlCenterAdapters";
 import type { AuditEvent, FirmwareSummary, FirmwareUpgradePath, ProviderStatus, WorkflowAction } from "./types";
@@ -80,7 +76,6 @@ type ControlCenterContext = {
   loadError: string;
   loading: boolean;
   logs: ControlLogEntry[];
-  providerMode: ProviderModeSummary | null;
   providers: ProviderStatus[];
   refreshControlCenter: () => Promise<void>;
   runError: string;
@@ -113,7 +108,6 @@ type ControlCenterContext = {
 
 export default function ControlCenter() {
   const [health, setHealth] = useState<HealthState | null>(null);
-  const [providerMode, setProviderMode] = useState<ProviderModeSummary | null>(null);
   const [providers, setProviders] = useState<ProviderStatus[]>([]);
   const [actions, setActions] = useState<WorkflowAction[]>([]);
   const [auditEvents, setAuditEvents] = useState<AuditEvent[]>([]);
@@ -176,7 +170,6 @@ export default function ControlCenter() {
     try {
       const snapshot = await backendAdapter.loadSnapshot();
       setHealth(snapshot.health);
-      setProviderMode(snapshot.providerMode);
       setProviders(snapshot.providers);
       setActions(snapshot.actions);
       setAuditEvents(snapshot.auditEvents);
@@ -260,6 +253,7 @@ export default function ControlCenter() {
             ip_mode: config.ipMode,
             retry_count: config.retryCount,
             snmp_credentials: config.snmpCredentialStatus,
+            snmp_credential_version: config.snmpCredentialVersion,
             snmp_version: config.snmpVersion,
             target: config.target,
             timeout_seconds: config.timeoutSeconds
@@ -476,7 +470,6 @@ export default function ControlCenter() {
     loadError,
     loading,
     logs,
-    providerMode,
     providers,
     refreshControlCenter,
     runError,
@@ -589,7 +582,7 @@ function DashboardPage({ context }: { context: ControlCenterContext }) {
             facts={[
               ["IP mode", ipModeLabel(context.config.ipMode)],
               ["SNMP version", snmpVersionLabel(context.config.snmpVersion)],
-              ["SNMP credentials", credentialStatusLabel(context.config.snmpCredentialStatus)],
+              ["SNMP credentials", credentialConfigLabel(context.config)],
               ["Timeout / retry", `${context.config.timeoutSeconds}s / ${context.config.retryCount}`]
             ]}
           />
@@ -748,7 +741,9 @@ function ConfigurePage({ context }: { context: ControlCenterContext }) {
             </label>
           </div>
         )}
-        <p className="control-note">Credential values are never persisted. Saving stores only configured or missing state.</p>
+        <p className="control-note">
+          Credential values are never persisted. Saving stores only configured or missing state for the selected SNMP version.
+        </p>
       </section>
 
       <details className="control-panel control-details">
@@ -757,6 +752,7 @@ function ConfigurePage({ context }: { context: ControlCenterContext }) {
           facts={[
             ["Config adapter", "Local non-secret storage"],
             ["Backend config endpoint", "Integration pending"],
+            ["Credential state", credentialConfigLabel(context.config)],
             ["Provider mode", context.health?.provider_mode ?? "Unknown"],
             ["Last saved", context.config.updatedAt ? formatDateTime(context.config.updatedAt) : "Not saved"]
           ]}
@@ -791,6 +787,7 @@ function RunPage({ context }: { context: ControlCenterContext }) {
               ["Target", context.config.target || "Not configured"],
               ["IP mode", ipModeLabel(context.config.ipMode)],
               ["SNMP", snmpVersionLabel(context.config.snmpVersion)],
+              ["SNMP credentials", credentialConfigLabel(context.config)],
               ["Timeout / retry", `${context.config.timeoutSeconds}s / ${context.config.retryCount}`],
               ["Backend action", context.selectedAction?.label ?? "Safe placeholder"],
               ["Action source", context.selectedAction?.source_type ?? "todo_placeholder"]
@@ -827,8 +824,9 @@ function RunPage({ context }: { context: ControlCenterContext }) {
 }
 
 function FirmwarePage({ context }: { context: ControlCenterContext }) {
-  const supportedAction = context.selectedUpgradeAction?.label ?? supportedUpgradeActionId(context.selectedPath);
-  const backendPending = Boolean(context.selectedPath && !supportedAction);
+  const supportedActionId = supportedUpgradeActionId(context.selectedPath);
+  const backendApply = context.selectedUpgradeAction?.label ?? (supportedActionId ? `${supportedActionId} unavailable` : "Integration pending");
+  const backendPending = Boolean(context.selectedPath && (!supportedActionId || !context.selectedUpgradeAction));
   const startDisabled = context.firmwareUpgradeBlockers.length > 0 || context.upgradeStatus === "upgrading";
   const validateDisabled =
     context.upgradeStatus === "validating" || !context.selectedPath || !context.selectedFirmware.trim();
@@ -866,7 +864,8 @@ function FirmwarePage({ context }: { context: ControlCenterContext }) {
             ["Selected firmware/image/version", context.selectedFirmware || "Missing"],
             ["Compatibility check", validationStatusLabel(context)],
             ["Readiness", firmwareReadinessLabel(context)],
-            ["Backend apply", supportedAction ?? "Integration pending"],
+            ["Backend apply", backendApply],
+            ["Progress", firmwareProgressLabel(context)],
             ["Required gates", requiredGates.length ? requiredGates.join(", ") : "None reported"]
           ]}
         />
@@ -894,7 +893,9 @@ function FirmwarePage({ context }: { context: ControlCenterContext }) {
         </div>
         {backendPending && (
           <div className="control-alert warning">
-            Backend upgrade integration is pending for this firmware path. Starting upgrade will return a safe TODO result and will not run a provider update.
+            {supportedActionId
+              ? `Backend action ${supportedActionId} is not available in the workflow catalog. Starting upgrade will return a safe TODO result and will not run a provider update.`
+              : "Backend upgrade integration is pending for this firmware path. Starting upgrade will return a safe TODO result and will not run a provider update."}
           </div>
         )}
         <div className="control-actions">
@@ -1057,18 +1058,6 @@ function SettingsPage({ context }: { context: ControlCenterContext }) {
             </select>
           </label>
         </div>
-      </section>
-      <section className="control-panel">
-        <PanelTitle icon={<ShieldCheck size={18} />} title="Runtime" />
-        <FactGrid
-          facts={[
-            ["Provider mode", context.providerMode?.current_mode ?? context.health?.provider_mode ?? "Unknown"],
-            ["Desired mode", context.providerMode?.desired_mode ?? "Unknown"],
-            ["Pending restart", context.providerMode?.pending_restart ? "Yes" : "No"],
-            ["Restart command", context.providerMode?.restart_command ?? "Not reported"]
-          ]}
-        />
-        {context.providerMode?.next_safe_action && <p className="control-note">{context.providerMode.next_safe_action}</p>}
       </section>
       <div className="control-actions">
         <button className="primary" onClick={context.saveSettings} type="button">
@@ -1365,6 +1354,16 @@ function firmwareStatusLabel(context: ControlCenterContext): string {
   return context.firmware.summaries.length ? "Summary loaded" : "Not checked";
 }
 
+function firmwareProgressLabel(context: ControlCenterContext): string {
+  if (context.upgradeStatus === "upgrading") return "Backend request in progress";
+  if (!context.latestFirmwareUpgrade) return "Not started";
+  if (context.latestFirmwareUpgrade.status === "success") return "Completed";
+  if (context.latestFirmwareUpgrade.status === "blocked") return "Blocked before execution";
+  if (context.latestFirmwareUpgrade.status === "pending") return "Backend integration pending";
+  if (context.latestFirmwareUpgrade.status === "failed") return "Failed";
+  return statusLabel(context.latestFirmwareUpgrade.status);
+}
+
 function validationStatusLabel(context: ControlCenterContext): string {
   if (!context.latestFirmwareValidation) return "Not validated";
   if (!firmwareValidationMatchesSelection(context.latestFirmwareValidation, context.selectedPath, context.selectedFirmware)) {
@@ -1383,8 +1382,10 @@ function snmpVersionLabel(value: string): string {
   return value === "v3" ? "SNMPv3" : "SNMPv2";
 }
 
-function credentialStatusLabel(value: string): string {
-  return value === "configured" ? "Configured" : "Missing";
+function credentialConfigLabel(config: ControlConfig): string {
+  if (config.snmpCredentialStatus !== "configured") return "Missing";
+  if (!config.snmpCredentialVersion) return "Configured";
+  return `Configured for ${snmpVersionLabel(config.snmpCredentialVersion)}`;
 }
 
 function formatDateTime(value: string): string {
