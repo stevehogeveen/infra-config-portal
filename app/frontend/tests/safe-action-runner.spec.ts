@@ -81,6 +81,9 @@ test("renders the WebUIs Control Center sidebar and dashboard", async ({ page })
   await page.goto("/control-center?section=reports");
   await expect(page).toHaveURL(/\/results$/);
   await expect(page.getByRole("heading", { exact: true, name: "Results" })).toBeVisible();
+  await page.goto("/control-center/logs");
+  await expect(page).toHaveURL(/\/logs$/);
+  await expect(page.getByRole("heading", { exact: true, name: "Logs" })).toBeVisible();
 
   await page.goto("/overview");
   await expect(page).toHaveURL(/\/dashboard$/);
@@ -284,6 +287,10 @@ test("firmware page checks visibility, validates, and gates upgrade confirmation
   await expect(page.getByRole("heading", { exact: true, name: "Firmware Upgrade" })).toBeVisible();
   await expect(page.getByRole("heading", { exact: true, name: "Firmware Events" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Validate Firmware" })).toBeDisabled();
+  await expect(page.getByText("Select a firmware path before validation.")).toBeVisible();
+  await expect(
+    page.getByText("Selected firmware, image, or target version is required before validation.")
+  ).toBeVisible();
   await expect(page.getByRole("button", { name: "Start Firmware Upgrade" })).toBeDisabled();
 
   const checkResponse = page.waitForResponse((response) => response.url().includes("/api/v1/lab/firmware-inventory"));

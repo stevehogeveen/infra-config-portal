@@ -61,9 +61,12 @@ remain higher priority than `.local/app-mode.env`.
 
 ## Control Center / Action Catalog
 
-The Control Center at `/control-center` is the power-user counterpart to the
-simplified Lab Builder / Guided View. It exposes the full device and action
-surface without making real infrastructure changes from the page.
+The Control Center main flow is the sidebar app mounted at `/dashboard`,
+`/configure`, `/run`, `/firmware`, `/results`, `/logs`, and `/settings`.
+Legacy `/control-center` links redirect into that current flow instead of
+showing the older action-catalog UI as the primary surface. The page exposes
+safe device and action controls without making real infrastructure changes on
+load.
 
 The current API surface is:
 
@@ -76,17 +79,18 @@ The current API surface is:
 4. Save local first-time access and IP intent for supported provider sections
    with `PUT /api/v1/control/access/{section_id}`.
 
-`run` is intentionally a safe placeholder in this pass. It returns the action,
-blockers, and suggested command/API endpoint, but does not execute commands,
-call providers, perform serial writes, apply configuration, reset devices,
-install ESXi, provision storage, or run firmware updates.
+The Run page saves the current non-secret configuration to backend runtime
+state before it requests a workflow action. If the config cannot be validated
+or saved to backend state, the action is blocked so the backend cannot use stale
+target data.
 
-For iLO, Cisco, and ONTAP, the Control Center shows editable Access & IP Config
-at the top of the provider section. Defaults come from the active lab profile,
-saved values are local intent only, and secret-looking values are rejected.
-Firmware checks stay inline on the provider section and use registered read-only
-workflow actions when available. `Upgrade Now` remains guarded and disabled
-unless a future workflow explicitly satisfies its approval gates.
+Firmware Check also syncs current config first. Firmware Validate requires a
+firmware path and selected image/version, then saves the file selection before
+calling the validation endpoint. Firmware Upgrade is disabled until validation
+matches the current config and selected firmware, the validation result passed,
+and the operator enters the exact confirmation phrase and checkbox. Failed or
+stale validation blocks the upgrade; the guarded backend runner can still
+refuse the request if runtime gates are not satisfied.
 
 Each action includes its device/stage, classification (`read-only`, `write`,
 `destructive`, or `upgrade`), required inputs, required flags, required

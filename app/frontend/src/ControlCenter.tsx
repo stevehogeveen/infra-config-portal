@@ -70,6 +70,7 @@ type ControlCenterContext = {
   firmware: FirmwareState;
   firmwareCheckStatus: OperationStatus;
   firmwareRuntime: FirmwareRuntimeStatus;
+  firmwareValidationBlockers: string[];
   firmwareUpgradeBlockers: string[];
   health: HealthState | null;
   latestFirmwareCheck: OperationResult | null;
@@ -171,6 +172,11 @@ export default function ControlCenter() {
     }),
     ...(upgradeStatus === "validating" ? ["Firmware validation is still running."] : [])
   ];
+  const firmwareValidationBlockers = firmwareValidateBlockers({
+    config,
+    selectedFirmware,
+    selectedPath
+  });
 
   useEffect(() => {
     void refreshControlCenter();
@@ -710,6 +716,7 @@ export default function ControlCenter() {
     firmware,
     firmwareCheckStatus,
     firmwareRuntime,
+    firmwareValidationBlockers,
     firmwareUpgradeBlockers,
     health,
     latestFirmwareCheck,
@@ -786,6 +793,7 @@ export default function ControlCenter() {
           <Route path="/logs" element={<LogsPage context={context} />} />
           <Route path="/settings" element={<SettingsPage context={context} />} />
           <Route path="/control-center" element={<LegacyControlCenterRedirect />} />
+          <Route path="/control-center/*" element={<LegacyControlCenterRedirect />} />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Routes>
       </main>
@@ -796,7 +804,9 @@ export default function ControlCenter() {
 function LegacyControlCenterRedirect() {
   const location = useLocation();
   const params = new URLSearchParams(location.search);
-  const section = `${params.get("section") ?? ""} ${params.get("action") ?? ""} ${params.get("device") ?? ""}`.toLowerCase();
+  const section = `${location.pathname} ${params.get("section") ?? ""} ${params.get("action") ?? ""} ${
+    params.get("device") ?? ""
+  }`.toLowerCase();
   let target = "/dashboard";
   if (/(configure|config|setup|target)/.test(section)) {
     target = "/configure";
@@ -804,7 +814,7 @@ function LegacyControlCenterRedirect() {
     target = "/firmware";
   } else if (/(report|result|evidence|artifact)/.test(section)) {
     target = "/results";
-  } else if (/(^|\s)(logs?|audit)(\s|$)/.test(section)) {
+  } else if (/(^|[\s/])(logs?|audit)([\s/]|$)/.test(section)) {
     target = "/logs";
   } else if (/(setting|provider-mode|runtime)/.test(section)) {
     target = "/settings";
@@ -1251,6 +1261,9 @@ function FirmwarePage({ context }: { context: ControlCenterContext }) {
             {context.upgradeStatus === "validating" ? "Validating" : "Validate Firmware"}
           </button>
         </div>
+        {context.firmwareValidationBlockers.length > 0 && (
+          <IssueGroup title="Validation blockers" items={context.firmwareValidationBlockers} />
+        )}
         <div className="firmware-confirm-box">
           <label className="control-check-field">
             <input
@@ -1859,6 +1872,19 @@ function firmwareStartBlockers(input: {
   const expected = upgradeConfirmationPhrase(input.selectedPath, input.selectedUpgradeAction);
   if (!input.accepted || input.phrase.trim() !== expected) {
     blockers.push(`Type ${expected} and check the confirmation box.`);
+  }
+  return blockers;
+}
+
+function firmwareValidateBlockers(input: {
+  config: ControlConfig;
+  selectedFirmware: string;
+  selectedPath: FirmwareUpgradePath | null;
+}): string[] {
+  const blockers = [...configAdapter.validate(input.config)];
+  if (!input.selectedPath) blockers.push("Select a firmware path before validation.");
+  if (!input.selectedFirmware.trim()) {
+    blockers.push("Selected firmware, image, or target version is required before validation.");
   }
   return blockers;
 }
