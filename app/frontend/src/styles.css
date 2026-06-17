@@ -396,48 +396,6 @@ button:disabled {
   overflow-wrap: anywhere;
 }
 
-.control-workflow-steps {
-  display: grid;
-  gap: 10px;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-}
-
-.control-workflow-step {
-  align-items: start;
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  color: #172033;
-  display: grid;
-  gap: 12px;
-  grid-template-rows: minmax(64px, 1fr) auto;
-  min-width: 0;
-  padding: 12px;
-}
-
-.control-workflow-step:hover {
-  border-color: #0f766e;
-}
-
-.control-workflow-step div {
-  display: grid;
-  gap: 5px;
-  min-width: 0;
-}
-
-.control-workflow-step strong {
-  color: #0f172a;
-  font-size: 15px;
-}
-
-.control-workflow-step span {
-  color: #68778a;
-  font-size: 13px;
-  font-weight: 800;
-  line-height: 1.35;
-  overflow-wrap: anywhere;
-}
-
 .control-form-grid {
   display: grid;
   gap: 12px;
@@ -760,6 +718,7 @@ button:disabled {
 }
 
 .firmware-confirm-box,
+.firmware-visibility-empty,
 .firmware-path-summary {
   background: #f8fafc;
   border: 1px solid #e2e8f0;
@@ -834,10 +793,6 @@ button:disabled {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
-  .control-workflow-steps {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
   .firmware-state-rail {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
@@ -852,8 +807,7 @@ button:disabled {
   .control-next-actions,
   .control-form-grid,
   .control-fact-grid,
-  .control-status-strip,
-  .control-workflow-steps {
+  .control-status-strip {
     grid-template-columns: 1fr;
   }
 

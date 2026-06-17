@@ -62,16 +62,16 @@ SOURCE_LABELS = {
 }
 
 SOURCE_LINKS = {
-    "build_verification": "/verification",
+    "build_verification": "/run",
     "firmware": "/firmware",
-    "cisco": "/control-center?section=cisco",
-    "ilo": "/control-center?section=ilo",
-    "raid": "/control-center?section=raid",
-    "esxi": "/control-center?section=esxi",
-    "netapp": "/run-center?section=netapp",
-    "serial": "/control-center",
-    "toolchain": "/settings?section=toolchain",
-    "lab_profile": "/settings?section=ip-profile",
+    "cisco": "/run",
+    "ilo": "/run",
+    "raid": "/run",
+    "esxi": "/run",
+    "netapp": "/run",
+    "serial": "/run",
+    "toolchain": "/settings",
+    "lab_profile": "/configure",
 }
 
 RECHECK_COMMANDS = {

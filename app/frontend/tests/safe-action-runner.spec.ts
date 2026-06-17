@@ -294,7 +294,8 @@ test("run and firmware check sync unsaved current config before backend actions"
   await page.getByLabel("Timeout seconds").fill("15");
   await page.getByLabel("Retry count").fill("3");
 
-  await page.getByRole("button", { name: "Save and Continue to Run" }).click();
+  await page.getByRole("button", { name: "Save / apply config" }).click();
+  await page.locator(".control-nav").getByRole("link", { name: "Run" }).click();
   await page.getByRole("button", { name: /^Run$/ }).click();
   await expect(page.getByText("Safe read-only/report-only action completed.").first()).toBeVisible();
 

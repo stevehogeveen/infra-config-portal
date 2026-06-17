@@ -16,7 +16,7 @@ import {
   Wrench
 } from "lucide-react";
 import { ReactNode, useEffect, useMemo, useRef, useState } from "react";
-import { Link, Navigate, NavLink, Route, Routes, useLocation, useNavigate } from "react-router-dom";
+import { Link, Navigate, NavLink, Route, Routes, useLocation } from "react-router-dom";
 
 import {
   backendAdapter,
@@ -90,7 +90,6 @@ type ControlCenterContext = {
   runSelectedAction: () => Promise<void>;
   runStatus: OperationStatus;
   saveConfig: () => Promise<boolean>;
-  saveConfigAndContinue: () => Promise<void>;
   saveSettings: () => Promise<boolean>;
   selectedAction: WorkflowAction | null;
   selectedFirmware: string;
@@ -117,7 +116,6 @@ type ControlCenterContext = {
 };
 
 export default function ControlCenter() {
-  const navigate = useNavigate();
   const [health, setHealth] = useState<HealthState | null>(null);
   const [providers, setProviders] = useState<ProviderStatus[]>([]);
   const [actions, setActions] = useState<WorkflowAction[]>([]);
@@ -313,11 +311,6 @@ export default function ControlCenter() {
       configSaveInFlightRef.current = false;
       setConfigSaving(false);
     }
-  }
-
-  async function saveConfigAndContinue() {
-    const saved = await saveConfig();
-    if (saved) navigate("/run");
   }
 
   async function saveSettings(): Promise<boolean> {
@@ -775,7 +768,6 @@ export default function ControlCenter() {
     runSelectedAction,
     runStatus,
     saveConfig,
-    saveConfigAndContinue,
     saveSettings,
     selectedAction,
     selectedFirmware,
@@ -1052,10 +1044,6 @@ function ConfigurePage({ context }: { context: ControlCenterContext }) {
           <Save size={16} />
           {context.configSaving ? "Saving config" : "Save / apply config"}
         </button>
-        <button disabled={context.configSaving} onClick={() => void context.saveConfigAndContinue()} type="button">
-          <Play size={16} />
-          {context.configSaving ? "Saving config" : "Save and Continue to Run"}
-        </button>
       </div>
       {context.configMessage && <p className="control-action-message success">{context.configMessage}</p>}
     </Page>
@@ -1127,7 +1115,7 @@ function FirmwarePage({ context }: { context: ControlCenterContext }) {
         {context.firmware.summaries.length ? (
           <FirmwareVisibilityTable summaries={context.firmware.summaries} />
         ) : (
-          <EmptyState title="No firmware summary" detail="Run Check Firmware or confirm the backend firmware summary endpoint is available." />
+          <FirmwareVisibilityEmpty />
         )}
       </section>
 
@@ -1502,6 +1490,26 @@ function FirmwareVisibilityTable({ summaries }: { summaries: FirmwareSummary[] }
           ))}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+function FirmwareVisibilityEmpty() {
+  return (
+    <div className="firmware-visibility-empty">
+      <FactGrid
+        facts={[
+          ["Detected device/model", "Not checked"],
+          ["Current firmware version", "Not reported"],
+          ["Available firmware version", "Backend integration pending"],
+          ["Build/date", "Not reported"],
+          ["Bootloader/version", "Not reported"],
+          ["Hardware revision", "Not reported"],
+          ["Compatibility status", "Not checked"],
+          ["Last check time", "Not checked"],
+          ["Detection source", "Backend firmware summary pending"]
+        ]}
+      />
     </div>
   );
 }

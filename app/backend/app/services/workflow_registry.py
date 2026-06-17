@@ -1240,8 +1240,22 @@ def _issue_link(action: dict[str, Any]) -> dict[str, str | None]:
         "source_stage_label": str(action["stage_label"]),
         "source_action_id": str(action["action_id"]),
         "source_action_label": str(action["label"]),
-        "source_action_link": f"/control-center?section=action-catalog&action={action['action_id']}",
+        "source_action_link": _control_center_page_for_action(action),
     }
+
+
+def _control_center_page_for_action(action: dict[str, Any]) -> str:
+    action_id = str(action.get("action_id") or "").lower()
+    stage = str(action.get("stage") or "").lower()
+    if "firmware" in action_id or "ontap-upgrade" in action_id or "firmware" in stage:
+        return "/firmware"
+    if action_id.startswith("reports.") or "report" in stage:
+        return "/results"
+    if "toolchain" in action_id or "setting" in stage:
+        return "/settings"
+    if "lab-profile" in action_id or "profile" in stage:
+        return "/configure"
+    return "/run"
 
 
 def _unique(values: Any) -> list[Any]:

@@ -59,25 +59,33 @@ The mode selector does not store secrets, does not call providers, and does not
 grant apply permissions by itself. Explicit shell `PROVIDER_MODE=...` values
 remain higher priority than `.local/app-mode.env`.
 
-## Control Center / Action Catalog
+## Control Center
 
 The Control Center main flow is the sidebar app mounted at `/dashboard`,
 `/configure`, `/run`, `/firmware`, `/results`, `/logs`, and `/settings`.
 Legacy `/control-center` links redirect into that current flow instead of
-showing the older action-catalog UI as the primary surface. The page exposes
-safe device and action controls without making real infrastructure changes on
-load.
+showing the older action-catalog UI as the primary surface. The visible
+operator path is configure target/settings, run one selected backend action,
+then review results and logs.
 
-The current API surface is:
+The Control Center uses these backend APIs when available:
 
-1. List sections, lab profile metadata, current/desired/diff summaries, and the
-   action catalog with `GET /api/v1/control/actions`.
-2. Build a safe action plan with
-   `POST /api/v1/control/actions/{action_id}/plan`.
-3. Request a run placeholder with
-   `POST /api/v1/control/actions/{action_id}/run`.
-4. Save local first-time access and IP intent for supported provider sections
-   with `PUT /api/v1/control/access/{section_id}`.
+1. Save/load current target, IP mode, SNMP version, credential presence,
+   timeout, and retry settings with `/api/v1/control-center/config`.
+2. Save/load global defaults, API URL, firmware source, and logging verbosity
+   with `/api/v1/control-center/settings`.
+3. Read backend status, workflow actions, firmware status, and activity logs
+   with `/health`, `/api/v1/workflows/actions`,
+   `/api/v1/control-center/firmware-status`, and
+   `/api/v1/control-center/logs`.
+4. Run the selected safe action with
+   `POST /api/v1/workflows/actions/{action_id}/run`.
+5. Read firmware visibility with `GET /api/v1/firmware/summary` and
+   `GET /api/v1/firmware/file-selections`.
+6. Check and validate firmware with `GET /api/v1/lab/firmware-inventory`,
+   `GET /api/v1/lab/firmware-compliance`, and provider-specific validation
+   endpoints such as
+   `POST /api/v1/providers/netapp-ontap/ontap-upgrade/validate`.
 
 The Run page saves the current non-secret configuration to backend runtime
 state before it requests a workflow action. If the config cannot be validated
@@ -92,26 +100,11 @@ and the operator enters the exact confirmation phrase and checkbox. Failed or
 stale validation blocks the upgrade; the guarded backend runner can still
 refuse the request if runtime gates are not satisfied.
 
-Each action includes its device/stage, classification (`read-only`, `write`,
-`destructive`, or `upgrade`), required inputs, required flags, required
-confirmations, current availability, blocker, last report path, and suggested
-command/API endpoint. The catalog includes Cisco, iLO, RAID, ESXi, NetApp,
-firmware/upgrade, commander mode, and build verification controls.
-
-The Lab Profile panel displays the active address plan, the known lab profile,
-configured flags, VLAN/MTU/DNS/gateway/NTP metadata when present, stale/invalid
-value warnings, a link to the Lab Profiles editor, and a copyable non-secret env
-update command. Credential values remain environment-only and are represented
-only as configured/missing elsewhere in the app.
-
-Each device-oriented Control Center section surfaces an `Access & IP Config`
-tile before current/desired/diff state. This mirrors the Lab Builder first-pass
-shape: capture the original DHCP or current-access IP, record the access
-username reference, confirm that the password is available from the local
-credential path, then review the desired final IP/config values from the active
-lab profile. The tile is first-time configuration metadata only; it writes local
-ignored state under `.local/control-access.json`, does not store plaintext
-passwords, does not call providers, and does not enable direct run/apply paths.
+Firmware upgrade execution is never triggered by page load. The start button
+stays disabled until fields are complete, validation passes for the current
+selection, backend support is present, and the operator supplies the required
+confirmation. Missing backend functionality is surfaced as a safe pending
+integration state, not as a fake successful upgrade.
 
 ## Workflow Action Registry
 
