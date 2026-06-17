@@ -165,6 +165,31 @@ test("run page has one Run button and writes latest result", async ({ page }) =>
   await expect(runResult.locator("pre.control-code")).toContainText('"target": "192.0.2.203"');
 });
 
+test("run blocks invalid current config before backend action", async ({ page }) => {
+  const actionRequests: string[] = [];
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    if (
+      url.pathname === "/api/v1/workflows/actions/build-verification.run-full/run" &&
+      request.method() === "POST"
+    ) {
+      actionRequests.push("run");
+    }
+  });
+
+  await page.goto("/run");
+  await page.getByRole("button", { name: /^Run$/ }).click();
+
+  await expect(page.getByText("Run blocked until the current configuration is valid.").first()).toBeVisible();
+  await expect(page.getByText("Target host, IP, or range is required.").first()).toBeVisible();
+  expect(actionRequests).toEqual([]);
+
+  await page.goto("/results");
+  await expect(page.getByText("Run blocked").first()).toBeVisible();
+  await page.goto("/logs");
+  await expect(page.getByText("Run blocked").first()).toBeVisible();
+});
+
 test("firmware page checks visibility, validates, and gates upgrade confirmation", async ({ page }) => {
   const actionRequests: string[] = [];
   page.on("request", (request) => {
@@ -245,6 +270,28 @@ test("firmware page checks visibility, validates, and gates upgrade confirmation
       .filter({ hasText: "Latest Firmware Validation Summary" })
       .getByText("Firmware validation completed against the configured baseline.", { exact: true })
   ).toBeVisible();
+});
+
+test("firmware check blocks invalid current config before backend inventory", async ({ page }) => {
+  const actionRequests: string[] = [];
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    if (url.pathname === "/api/v1/lab/firmware-inventory") {
+      actionRequests.push("firmware-check");
+    }
+  });
+
+  await page.goto("/firmware");
+  await page.getByRole("button", { name: "Check Firmware" }).click();
+
+  await expect(page.getByText("Firmware check blocked").first()).toBeVisible();
+  await expect(page.getByText("Target host, IP, or range is required.").first()).toBeVisible();
+  expect(actionRequests).toEqual([]);
+
+  await page.goto("/results");
+  await expect(page.getByText("Firmware check blocked").first()).toBeVisible();
+  await page.goto("/logs");
+  await expect(page.getByText("Firmware check blocked").first()).toBeVisible();
 });
 
 test("firmware upgrade stays blocked after selection changes, failed validation, or config changes", async ({ page }) => {

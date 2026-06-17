@@ -152,15 +152,18 @@ export default function ControlCenter() {
   const targetSummary = config.target || "Not configured";
   const connectionStatus = health?.status === "ok" ? "Connected" : loading ? "Checking" : "Unavailable";
   const expectedUpgradePhrase = upgradeConfirmationPhrase(selectedPath, selectedUpgradeAction);
-  const firmwareUpgradeBlockers = firmwareStartBlockers({
-    accepted: upgradeConfirmationAccepted,
-    config,
-    phrase: upgradeConfirmationPhraseState,
-    selectedFirmware,
-    selectedUpgradeAction,
-    selectedPath,
-    validation: latestFirmwareValidation
-  });
+  const firmwareUpgradeBlockers = [
+    ...firmwareStartBlockers({
+      accepted: upgradeConfirmationAccepted,
+      config,
+      phrase: upgradeConfirmationPhraseState,
+      selectedFirmware,
+      selectedUpgradeAction,
+      selectedPath,
+      validation: latestFirmwareValidation
+    }),
+    ...(upgradeStatus === "validating" ? ["Firmware validation is still running."] : [])
+  ];
 
   useEffect(() => {
     void refreshControlCenter();
@@ -273,6 +276,35 @@ export default function ControlCenter() {
     setRunStatus("running");
     const syncResult = await syncConfigForAction();
     const currentConfig = syncResult.config;
+    if (syncResult.errors.length > 0 || syncResult.savedVia !== "backend") {
+      const result = createLocalOperationResult({
+        blockers:
+          syncResult.errors.length > 0
+            ? syncResult.errors
+            : ["Current config could not be saved to backend runtime state before Run."],
+        message:
+          syncResult.errors.length > 0
+            ? "Run blocked until the current configuration is valid."
+            : "Run blocked so the backend cannot use stale configuration.",
+        raw: {
+          config_snapshot: configSnapshot(currentConfig)
+        },
+        status: "blocked",
+        title: "Run blocked",
+        type: "run"
+      });
+      setLatestRun(result);
+      resultsAdapter.saveRun(result);
+      setRunStatus("blocked");
+      setRunError(result.message);
+      addLog({
+        detail: result.blockers.join(" "),
+        message: "Run blocked",
+        status: "blocked",
+        type: "run"
+      });
+      return;
+    }
     addLog({
       detail: `${selectedAction?.label ?? "Safe placeholder"} for ${currentConfig.target || "Not configured"}.`,
       message: "Run started",
@@ -280,27 +312,7 @@ export default function ControlCenter() {
       type: "run"
     });
     try {
-      const result =
-        syncResult.errors.length || syncResult.savedVia === "backend"
-          ? await runAdapter.run(currentConfig, selectedAction)
-          : createLocalOperationResult({
-              blockers: ["Current config could not be saved to backend runtime state before Run."],
-              message: "Run blocked so the backend cannot use stale configuration.",
-              raw: {
-                config_snapshot: {
-                  ip_mode: currentConfig.ipMode,
-                  retry_count: currentConfig.retryCount,
-                  snmp_credentials: currentConfig.snmpCredentialStatus,
-                  snmp_credential_version: currentConfig.snmpCredentialVersion,
-                  snmp_version: currentConfig.snmpVersion,
-                  target: currentConfig.target,
-                  timeout_seconds: currentConfig.timeoutSeconds
-                }
-              },
-              status: "blocked",
-              title: "Run blocked",
-              type: "run"
-            });
+      const result = await runAdapter.run(currentConfig, selectedAction);
       setLatestRun(result);
       resultsAdapter.saveRun(result);
       setRunStatus(result.status);
@@ -318,15 +330,7 @@ export default function ControlCenter() {
         blockers: [message],
         message,
         raw: {
-          config_snapshot: {
-            ip_mode: config.ipMode,
-            retry_count: config.retryCount,
-            snmp_credentials: config.snmpCredentialStatus,
-            snmp_credential_version: config.snmpCredentialVersion,
-            snmp_version: config.snmpVersion,
-            target: config.target,
-            timeout_seconds: config.timeoutSeconds
-          }
+          config_snapshot: configSnapshot(config)
         },
         status: "failed",
         title: "Run failed",
@@ -349,6 +353,34 @@ export default function ControlCenter() {
     setFirmwareCheckStatus("running");
     const syncResult = await syncConfigForAction();
     const currentConfig = syncResult.config;
+    if (syncResult.errors.length > 0 || syncResult.savedVia !== "backend") {
+      const result = createLocalOperationResult({
+        blockers:
+          syncResult.errors.length > 0
+            ? syncResult.errors
+            : ["Current config could not be saved to backend runtime state before Firmware Check."],
+        message:
+          syncResult.errors.length > 0
+            ? "Firmware check blocked until the current configuration is valid."
+            : "Firmware check blocked so the backend cannot use stale configuration.",
+        raw: {
+          config_snapshot: configSnapshot(currentConfig)
+        },
+        status: "blocked",
+        title: "Firmware check blocked",
+        type: "firmware-check"
+      });
+      setLatestFirmwareCheck(result);
+      resultsAdapter.saveFirmwareCheck(result);
+      setFirmwareCheckStatus("blocked");
+      addLog({
+        detail: result.blockers.join(" "),
+        message: "Firmware check blocked",
+        status: "blocked",
+        type: "firmware"
+      });
+      return;
+    }
     addLog({
       detail: `Firmware visibility check started for ${currentConfig.target || "Not configured"}. No upgrade action is triggered.`,
       message: "Firmware check started",
@@ -356,24 +388,10 @@ export default function ControlCenter() {
       type: "firmware"
     });
     try {
-      let nextFirmware: FirmwareState | null = null;
-      let result: OperationResult;
-      if (syncResult.errors.length || syncResult.savedVia === "backend") {
-        const response = await firmwareAdapter.check(currentConfig);
-        nextFirmware = response.firmware;
-        result = response.result;
-      } else {
-        result = createLocalOperationResult({
-          blockers: ["Current config could not be saved to backend runtime state before Firmware Check."],
-          message: "Firmware check blocked so the backend cannot use stale configuration.",
-          status: "blocked",
-          title: "Firmware check blocked",
-          type: "firmware-check"
-        });
-      }
-      if (nextFirmware) {
-        setFirmware(nextFirmware);
-      }
+      const response = await firmwareAdapter.check(currentConfig);
+      const nextFirmware = response.firmware;
+      const result = response.result;
+      setFirmware(nextFirmware);
       setLatestFirmwareCheck(result);
       resultsAdapter.saveFirmwareCheck(result);
       setFirmwareCheckStatus(result.status);
@@ -405,9 +423,37 @@ export default function ControlCenter() {
   }
 
   async function validateFirmware() {
+    if (upgradeStatus === "validating" || upgradeStatus === "upgrading") return;
+    clearFirmwareGateResults();
     setUpgradeStatus("validating");
     const syncResult = await syncConfigForAction();
     const currentConfig = syncResult.config;
+    if (syncResult.errors.length > 0 || syncResult.savedVia !== "backend") {
+      const result = createLocalOperationResult({
+        blockers:
+          syncResult.errors.length > 0
+            ? syncResult.errors
+            : ["Current config could not be saved to backend runtime state before Firmware Validate."],
+        message:
+          syncResult.errors.length > 0
+            ? "Firmware validation blocked until the current configuration is valid."
+            : "Firmware validation blocked so the backend cannot use stale configuration.",
+        raw: firmwareSelectionSnapshot(currentConfig, selectedPath, selectedFirmware),
+        status: "blocked",
+        title: "Firmware validation blocked",
+        type: "firmware-validation"
+      });
+      setLatestFirmwareValidation(result);
+      resultsAdapter.saveFirmwareValidation(result);
+      setUpgradeStatus("blocked");
+      addLog({
+        detail: result.blockers.join(" "),
+        message: "Firmware validation blocked",
+        status: "blocked",
+        type: "firmware"
+      });
+      return;
+    }
     addLog({
       detail: selectedPath ? firmwarePathLabel(selectedPath) : "No firmware path selected.",
       message: "Firmware validation started",
@@ -415,23 +461,11 @@ export default function ControlCenter() {
       type: "firmware"
     });
     try {
-      const response =
-        syncResult.errors.length || syncResult.savedVia === "backend"
-          ? await firmwareAdapter.validate({
-              config: currentConfig,
-              selectedFirmware,
-              selectedPath
-            })
-          : {
-              firmware,
-              result: createLocalOperationResult({
-                blockers: ["Current config could not be saved to backend runtime state before Firmware Validate."],
-                message: "Firmware validation blocked so the backend cannot use stale configuration.",
-                status: "blocked",
-                title: "Firmware validation blocked",
-                type: "firmware-validation"
-              })
-            };
+      const response = await firmwareAdapter.validate({
+        config: currentConfig,
+        selectedFirmware,
+        selectedPath
+      });
       setFirmware(response.firmware);
       setLatestFirmwareValidation(response.result);
       resultsAdapter.saveFirmwareValidation(response.result);
@@ -470,21 +504,23 @@ export default function ControlCenter() {
   }
 
   async function startFirmwareUpgrade() {
-    if (upgradeStatus === "upgrading") return;
+    if (upgradeStatus === "upgrading" || upgradeStatus === "validating") return;
     const syncResult = await syncConfigForAction();
     const currentConfig = syncResult.config;
     const currentBlockers =
-      syncResult.savedVia === "backend" || syncResult.errors.length
-        ? firmwareStartBlockers({
-            accepted: upgradeConfirmationAccepted,
-            config: currentConfig,
-            phrase: upgradeConfirmationPhraseState,
-            selectedFirmware,
-            selectedPath,
-            selectedUpgradeAction,
-            validation: latestFirmwareValidation
-          })
-        : ["Current config could not be saved to backend runtime state before Firmware Upgrade."];
+      syncResult.errors.length > 0
+        ? syncResult.errors
+        : syncResult.savedVia === "backend"
+          ? firmwareStartBlockers({
+              accepted: upgradeConfirmationAccepted,
+              config: currentConfig,
+              phrase: upgradeConfirmationPhraseState,
+              selectedFirmware,
+              selectedPath,
+              selectedUpgradeAction,
+              validation: latestFirmwareValidation
+            })
+          : ["Current config could not be saved to backend runtime state before Firmware Upgrade."];
     if (currentBlockers.length > 0) {
       const result = createLocalOperationResult({
         blockers: currentBlockers,
@@ -979,9 +1015,15 @@ function FirmwarePage({ context }: { context: ControlCenterContext }) {
   const supportedActionId = supportedUpgradeActionId(context.selectedPath);
   const backendApply = context.selectedUpgradeAction?.label ?? (supportedActionId ? `${supportedActionId} unavailable` : "Integration pending");
   const backendPending = Boolean(context.selectedPath && (!supportedActionId || !context.selectedUpgradeAction));
-  const startDisabled = context.firmwareUpgradeBlockers.length > 0 || context.upgradeStatus === "upgrading";
+  const startDisabled =
+    context.firmwareUpgradeBlockers.length > 0 ||
+    context.upgradeStatus === "upgrading" ||
+    context.upgradeStatus === "validating";
   const validateDisabled =
-    context.upgradeStatus === "validating" || !context.selectedPath || !context.selectedFirmware.trim();
+    context.upgradeStatus === "validating" ||
+    context.upgradeStatus === "upgrading" ||
+    !context.selectedPath ||
+    !context.selectedFirmware.trim();
   const requiredGates = context.selectedUpgradeAction?.required_gates ?? [];
   return (
     <Page title="Firmware" subtitle="Visibility, validation, upgrade workflow, and events.">
@@ -1498,6 +1540,7 @@ function firmwareVersionByLabel(summary: FirmwareSummary, pattern: RegExp): stri
 }
 
 function firmwareReadinessLabel(context: ControlCenterContext): string {
+  if (context.upgradeStatus === "validating") return "Validation running";
   if (!context.selectedPath) return "Missing firmware path";
   if (!context.selectedFirmware) return "Missing selected firmware";
   if (!context.latestFirmwareValidation) return "Validation required";
@@ -1550,6 +1593,36 @@ function firmwareStartBlockers(input: {
   return blockers;
 }
 
+function configSnapshot(config: ControlConfig): Record<string, unknown> {
+  return {
+    ip_mode: config.ipMode,
+    retry_count: config.retryCount,
+    snmp_credentials: config.snmpCredentialStatus,
+    snmp_credential_version: config.snmpCredentialVersion,
+    snmp_version: config.snmpVersion,
+    target: config.target,
+    timeout_seconds: config.timeoutSeconds
+  };
+}
+
+function firmwareSelectionSnapshot(
+  config: ControlConfig,
+  selectedPath: FirmwareUpgradePath | null,
+  selectedFirmware: string
+): Record<string, unknown> {
+  return {
+    config_snapshot: configSnapshot(config),
+    selected_component: selectedPath?.component_id ?? null,
+    selected_device: selectedPath?.device_label ?? null,
+    selected_firmware: selectedFirmware.trim(),
+    selected_target: selectedPath ? selectedFirmwareTarget(selectedPath) : null
+  };
+}
+
+function selectedFirmwareTarget(path: FirmwareUpgradePath): string {
+  return path.target_version || path.package_name || path.selected_file_name || "unknown";
+}
+
 function upgradeStatusFromResult(result: OperationResult | null): UpgradeStatus {
   if (!result) return "idle";
   return upgradeStatusAfterResult(result);
@@ -1575,6 +1648,7 @@ function resultStatusLabel(result: OperationResult | null, fallback: OperationSt
 
 function firmwareStatusLabel(context: ControlCenterContext): string {
   if (context.upgradeStatus === "upgrading") return "Upgrade running";
+  if (context.upgradeStatus === "validating") return "Validation running";
   if (context.latestFirmwareUpgrade) return `Upgrade ${statusLabel(context.latestFirmwareUpgrade.status)}`;
   if (context.latestFirmwareCheck) return statusLabel(context.latestFirmwareCheck.status);
   return context.firmware.summaries.length ? "Summary loaded" : "Not checked";
@@ -1582,6 +1656,7 @@ function firmwareStatusLabel(context: ControlCenterContext): string {
 
 function firmwareProgressLabel(context: ControlCenterContext): string {
   if (context.upgradeStatus === "upgrading") return "Backend request in progress";
+  if (context.upgradeStatus === "validating") return "Validation in progress";
   if (!context.latestFirmwareUpgrade) return "Not started";
   if (context.latestFirmwareUpgrade.status === "success") return "Completed";
   if (context.latestFirmwareUpgrade.status === "blocked") return "Blocked before execution";
@@ -1591,6 +1666,7 @@ function firmwareProgressLabel(context: ControlCenterContext): string {
 }
 
 function validationStatusLabel(context: ControlCenterContext): string {
+  if (context.upgradeStatus === "validating") return "Validation running";
   if (!context.latestFirmwareValidation) return "Not validated";
   if (
     !firmwareValidationMatchesSelection(
