@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -20,6 +21,7 @@ SECRET_VALUE_RE = re.compile(
 IP_MODES = {"ipv4", "ipv6", "both"}
 SNMP_VERSIONS = {"v2", "v3"}
 LOGGING_VERBOSITY = {"errors", "normal", "debug"}
+MAX_LOG_ENTRIES = 80
 
 
 class ControlCenterStateValidationError(ValueError):
@@ -44,9 +46,18 @@ def save_control_center_config(payload: dict[str, Any]) -> dict[str, Any]:
     _reject_secret_values(payload)
     store = _read_store()
     config = _normalize_config(payload)
-    config["updated_at"] = datetime.now(UTC).isoformat()
+    saved_at = datetime.now(UTC).isoformat()
+    config["updated_at"] = saved_at
     store["config"] = config
     store["operator_runtime_only"] = True
+    _append_log(
+        store,
+        detail=_config_log_detail(config),
+        message="Config saved",
+        status="saved",
+        timestamp=saved_at,
+        type_="config",
+    )
     _write_store(store)
     return read_control_center_config()
 
@@ -68,11 +79,29 @@ def save_control_center_settings(payload: dict[str, Any]) -> dict[str, Any]:
     _reject_secret_values(payload)
     store = _read_store()
     settings = _normalize_settings(payload)
-    settings["updated_at"] = datetime.now(UTC).isoformat()
+    saved_at = datetime.now(UTC).isoformat()
+    settings["updated_at"] = saved_at
     store["settings"] = settings
     store["operator_runtime_only"] = True
+    _append_log(
+        store,
+        detail=_settings_log_detail(settings),
+        message="Settings changed",
+        status="saved",
+        timestamp=saved_at,
+        type_="settings",
+    )
     _write_store(store)
     return read_control_center_settings()
+
+
+def read_control_center_state_logs(*, limit: int = MAX_LOG_ENTRIES) -> list[dict[str, Any]]:
+    store = _read_store()
+    logs = store.get("logs")
+    if not isinstance(logs, list):
+        return []
+    normalized = [_normalize_log_entry(entry) for entry in logs]
+    return [entry for entry in normalized if entry is not None][:limit]
 
 
 def _normalize_config(payload: dict[str, Any]) -> dict[str, Any]:
@@ -146,6 +175,55 @@ def _write_store(store: dict[str, Any]) -> None:
     path.write_text(json.dumps(redact_sensitive(store), indent=2, sort_keys=True), encoding="utf-8")
 
 
+def _append_log(
+    store: dict[str, Any],
+    *,
+    detail: str,
+    message: str,
+    status: str,
+    timestamp: str,
+    type_: str,
+) -> None:
+    existing = store.get("logs")
+    normalized_existing = (
+        [entry for entry in (_normalize_log_entry(item) for item in existing) if entry is not None]
+        if isinstance(existing, list)
+        else []
+    )
+    store["logs"] = [
+        {
+            "id": f"control:{uuid.uuid4().hex[:12]}",
+            "timestamp": timestamp,
+            "type": _log_type(type_),
+            "message": message,
+            "status": status,
+            "detail": _clean_string(redact_sensitive(detail)) or "",
+            "source_type": "operator_config",
+            "freshness": "live",
+        },
+        *normalized_existing,
+    ][:MAX_LOG_ENTRIES]
+
+
+def _normalize_log_entry(value: Any) -> dict[str, Any] | None:
+    if not isinstance(value, dict):
+        return None
+    message = _clean_string(value.get("message"))
+    timestamp = _clean_string(value.get("timestamp"))
+    if not message or not timestamp:
+        return None
+    return {
+        "id": _clean_string(value.get("id")) or f"control:{uuid.uuid4().hex[:12]}",
+        "timestamp": timestamp,
+        "type": _log_type(_clean_string(value.get("type")) or "system"),
+        "message": message,
+        "status": _clean_string(value.get("status")),
+        "detail": _clean_string(redact_sensitive(value.get("detail"))),
+        "source_type": _clean_string(value.get("source_type")) or "operator_config",
+        "freshness": _clean_string(value.get("freshness")) or "historical",
+    }
+
+
 def _store_path() -> Path:
     configured = os.getenv(STORE_ENV)
     if configured:
@@ -158,6 +236,27 @@ def _path_label(path: Path) -> str:
         return str(path.relative_to(REPO_ROOT))
     except ValueError:
         return str(path)
+
+
+def _config_log_detail(config: dict[str, Any]) -> str:
+    return (
+        f"Target {_clean_string(config.get('target')) or 'not configured'}; "
+        f"{config['ip_mode']}; {config['snmp_version']}; "
+        f"SNMP credentials {config['snmp_credential_status']}; "
+        f"timeout {config['timeout_seconds']}s; retry {config['retry_count']}."
+    )
+
+
+def _settings_log_detail(settings: dict[str, Any]) -> str:
+    return (
+        f"Defaults {settings['default_ip_mode']}; {settings['default_snmp_version']}; "
+        f"timeout {settings['default_timeout_seconds']}s; retry {settings['default_retry_count']}; "
+        f"logging {settings['logging_verbosity']}; firmware source updated."
+    )
+
+
+def _log_type(value: str) -> str:
+    return value if value in {"system", "config", "run", "firmware", "settings"} else "system"
 
 
 def _clean_string(value: Any) -> str | None:

@@ -236,10 +236,24 @@ def test_control_center_config_persists_non_secret_runtime_state(
     assert stored["config"]["target"] == "192.0.2.50/31"
     assert stored["operator_runtime_only"] is True
     assert "password" not in json.dumps(stored).lower()
+    assert stored["logs"][0]["message"] == "Config saved"
+    assert stored["logs"][0]["type"] == "config"
+    assert stored["logs"][0]["status"] == "saved"
+    assert "snmp_credential_status" not in json.dumps(stored["logs"][0]).lower()
 
     reloaded = client.get("/api/v1/control-center/config")
     assert reloaded.status_code == 200
     assert reloaded.json()["target"] == "192.0.2.50/31"
+
+    logs = client.get("/api/v1/control-center/logs")
+    assert logs.status_code == 200
+    assert any(
+        entry["message"] == "Config saved"
+        and entry["type"] == "config"
+        and entry["source_type"] == "operator_config"
+        and entry["freshness"] == "live"
+        for entry in logs.json()
+    )
 
 
 def test_control_center_settings_persist_global_defaults(
@@ -277,6 +291,17 @@ def test_control_center_settings_persist_global_defaults(
     assert stored["settings"]["firmware_repository"] == "/srv/lab-firmware"
     assert stored["operator_runtime_only"] is True
     assert "password" not in json.dumps(stored).lower()
+    assert stored["logs"][0]["message"] == "Settings changed"
+    assert stored["logs"][0]["type"] == "settings"
+
+    logs = client.get("/api/v1/control-center/logs")
+    assert logs.status_code == 200
+    assert any(
+        entry["message"] == "Settings changed"
+        and entry["type"] == "settings"
+        and entry["source_type"] == "operator_config"
+        for entry in logs.json()
+    )
 
 
 def test_control_center_state_rejects_secret_shaped_values(client: TestClient) -> None:

@@ -7,6 +7,7 @@ from sqlalchemy import desc, select
 from sqlalchemy.orm import Session
 
 from app.models import AuditEvent
+from app.services.control_center_state import read_control_center_state_logs
 from app.services.workflow_action_run_store import list_all_workflow_action_run_traces
 from app.services.workflow_registry import list_workflow_actions
 
@@ -72,12 +73,13 @@ def get_control_center_firmware_status() -> dict[str, Any]:
 
 def get_control_center_logs(session: Session, *, limit: int = 80) -> list[dict[str, Any]]:
     traces = [_log_from_trace(trace) for trace in list_all_workflow_action_run_traces(limit=limit)]
+    control_logs = read_control_center_state_logs(limit=limit)
     audit_rows = session.execute(
         select(AuditEvent).order_by(desc(AuditEvent.created_at)).limit(limit)
     ).scalars()
     audit_logs = [_log_from_audit_event(event) for event in audit_rows]
     return sorted(
-        [*traces, *audit_logs],
+        [*traces, *control_logs, *audit_logs],
         key=lambda log: str(log.get("timestamp") or ""),
         reverse=True,
     )[:limit]
