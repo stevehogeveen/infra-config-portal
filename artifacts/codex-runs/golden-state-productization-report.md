@@ -1,7 +1,7 @@
 # Golden State Productization Report
 
-- Generated at: `2026-06-14T18:53:13.113323+00:00`
-- Status: `partial`
+- Generated at: `2026-06-17T16:04:09.717030+00:00`
+- Status: `blocked`
 - Real hardware workflow run by this report: `False`
 - Secrets: not included; credentials are configured/tested status only.
 
@@ -9,40 +9,40 @@
 
 | Component | Golden State | Current State | Drift | Repair Action |
 | --- | --- | --- | --- | --- |
-| Cisco | Reachable and configured | Reachable/configured | `none` | `make provider-lab-cisco-console-ethernet-readiness` |
-| iLO | Reachable at 192.168.1.201 | Reachable | `none` | `make provider-lab-ilo-reachability` |
-| RAID | Saved RAID intent validated | Validated | `none` | `make provider-lab-hpe-raid-validate-after-reset` |
-| ESXi | Reachable at 192.168.1.203 | Reachable | `none` | `make provider-lab-esxi-post-recovery-validation` |
-| NetApp | ONTAP 9.17.1 current | ONTAP 9.17.1 | `none` | `make provider-lab-netapp-validate-setup` |
-| NetApp NFS datastore | Mounted read/write on ESXi | netapp_nfs_ds01 readWrite | `none` | `make provider-lab-esxi-netapp-datastore-validate` |
-| VM deployment | VM deployed on NetApp datastore | VM on netapp_nfs_ds01 | `none` | `make provider-lab-esxi-vm-deploy-validate` |
-| vCenter | Configured and reachable | Deployed and authenticated | `none` | `make provider-lab-vcenter-install-readiness` |
-| Firmware | Current or accepted after manual baseline review | Needs manual baseline review | `needs_review` | `make provider-lab-firmware-compliance` |
+| Cisco | Reachable and configured | Not checked from this app host; no local IPv4 address is on 10.10.8.0/24. | `not_checked` | `ip -4 -o addr show scope global` |
+| iLO | Reachable at 10.10.8.200 | Not checked from this app host; no local IPv4 address is on 10.10.8.0/24. | `not_checked` | `ip -4 -o addr show scope global` |
+| RAID | Saved RAID intent validated | Not checked from this app host; no local IPv4 address is on 10.10.8.0/24. | `not_checked` | `ip -4 -o addr show scope global` |
+| ESXi | Reachable at 10.10.8.202 | Not checked from this app host; no local IPv4 address is on 10.10.8.0/24. | `not_checked` | `ip -4 -o addr show scope global` |
+| NetApp | ONTAP 9.17.1 current | Not checked from this app host; no local IPv4 address is on 10.10.8.0/24. | `not_checked` | `ip -4 -o addr show scope global` |
+| NetApp NFS datastore | Mounted read/write on ESXi | Not checked from this app host; no local IPv4 address is on 10.10.8.0/24. | `not_checked` | `ip -4 -o addr show scope global` |
+| VM deployment | VM deployed on NetApp datastore | Not checked from this app host; no local IPv4 address is on 10.10.8.0/24. | `not_checked` | `ip -4 -o addr show scope global` |
+| vCenter | Enabled only when vCenter is in the active lab setup | Not in scope for the active lab setup | `none` | `make provider-lab-build-verification-live` |
+| Firmware / software | Required firmware/software components are current or explicitly accepted | 7 components need manual review: Cisco - Cisco ROMMON / bootloader, iLO - iLO firmware, HPE Server - HPE BIOS, HPE Smart Array - Smart Array firmware, NetApp - NetApp disk firmware | `manual_review` | `make provider-lab-firmware-compliance` |
 
 ## Credential Status
 
 | Provider | Configured | Tested | Next Action |
 | --- | --- | --- | --- |
-| iLO | `True` | `True` | No credential action required. |
-| Cisco | `True` | `True` | No credential action required. |
+| iLO | `False` | `False` | Configure local credential values and rerun the linked validation. |
+| Cisco | `False` | `False` | Configure local credential values and rerun the linked validation. |
 | ESXi | `True` | `True` | No credential action required. |
 | NetApp | `True` | `True` | No credential action required. |
 | vCenter | `True` | `True` | No credential action required. |
 
 ## vCenter Readiness
 
-- VCSA ISO: `found`
-- vcsa-deploy: `ready`
-- ESXi: `ready`
-- NetApp datastore: `ready`
-- Management IP available: `in_use_by_deployed_vcenter`
-- vCenter values: `complete`
-- vCenter credentials: `configured`
-- vCenter config: `deployed`
-- Preview state: `deployed`
-- Deploy state: `deployed`
+- VCSA ISO: `not_in_scope`
+- vcsa-deploy: `not_in_scope`
+- ESXi: `not_in_scope`
+- NetApp datastore: `not_in_scope`
+- Management IP available: `not_in_scope`
+- vCenter values: `not_in_scope`
+- vCenter credentials: `not_in_scope`
+- vCenter config: `not_in_scope`
+- Preview state: `not_in_scope`
+- Deploy state: `not_in_scope`
 - Deploy enabled: `False`
-- Next action: vCenter is deployed and post-install validation is ready.
+- Next action: Enable vCenter in the active lab setup when this lane is intentionally in scope.
 
 ## Workflow Actions
 
@@ -53,7 +53,14 @@
 
 ## Drift
 
-- Firmware: `needs_review` - Needs manual baseline review
+- Cisco: `not_checked` - Not checked from this app host; no local IPv4 address is on 10.10.8.0/24.
+- iLO: `not_checked` - Not checked from this app host; no local IPv4 address is on 10.10.8.0/24.
+- RAID: `not_checked` - Not checked from this app host; no local IPv4 address is on 10.10.8.0/24.
+- ESXi: `not_checked` - Not checked from this app host; no local IPv4 address is on 10.10.8.0/24.
+- NetApp: `not_checked` - Not checked from this app host; no local IPv4 address is on 10.10.8.0/24.
+- NetApp NFS datastore: `not_checked` - Not checked from this app host; no local IPv4 address is on 10.10.8.0/24.
+- VM deployment: `not_checked` - Not checked from this app host; no local IPv4 address is on 10.10.8.0/24.
+- Firmware / software: `manual_review` - 7 components need manual review: Cisco - Cisco ROMMON / bootloader, iLO - iLO firmware, HPE Server - HPE BIOS, HPE Smart Array - Smart Array firmware, NetApp - NetApp disk firmware
 
 ## Evidence
 
@@ -66,11 +73,9 @@
 - `artifacts/codex-runs/esxi-netapp-nfs-datastore-validation-report.md`
 - `artifacts/codex-runs/esxi-vm-deploy-validation-report.md`
 - `artifacts/codex-runs/vcenter-install-readiness-report.md`
-- `artifacts/codex-runs/vcenter-install-plan-report.md`
-- `artifacts/codex-runs/vcenter-install-preview-report.md`
-- `artifacts/codex-runs/vcenter-install-apply-report.md`
-- `artifacts/codex-runs/vcenter-post-install-validation-report.md`
+- `artifacts/codex-runs/vcenter-post-attach-validation-report.md`
 - `artifacts/codex-runs/firmware-compliance-report.md`
+- `artifacts/codex-runs/firmware-compliance-summary-redacted.json`
 
 ## Skill Improvement Review
 

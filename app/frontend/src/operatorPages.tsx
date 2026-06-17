@@ -1,6 +1,5 @@
 import {
   Ban,
-  CheckCircle2,
   Gauge,
   HardDrive,
   Layers,
@@ -59,7 +58,6 @@ type OperatorTabId =
   | "storage"
   | "virtualization"
   | "firmware"
-  | "validation"
   | "config"
   | "settings";
 
@@ -97,7 +95,6 @@ const operatorTabs: OperatorTabId[] = [
   "storage",
   "virtualization",
   "firmware",
-  "validation",
   "config",
   "settings"
 ];
@@ -193,7 +190,6 @@ function tabFromPath(pathname: string): OperatorTabId {
   if (pathname.startsWith("/storage")) return "storage";
   if (pathname.startsWith("/virtualization")) return "virtualization";
   if (pathname.startsWith("/firmware")) return "firmware";
-  if (pathname.startsWith("/validation")) return "validation";
   if (pathname.startsWith("/config")) return "config";
   if (pathname.startsWith("/settings")) return "settings";
   return "overview";
@@ -392,8 +388,15 @@ export function OperatorOverviewPage({
     [address, activeProfile, ciscoReadiness, features, global, netappConsole, vcenterNetapp]
   );
   const accessRows = useMemo(
-    () => overviewAccessRows({ address, ciscoReadiness, providers, validation, vcenterNetapp }),
-    [address, ciscoReadiness, providers, validation, vcenterNetapp]
+    () => overviewAccessRows({
+      address,
+      ciscoReadiness,
+      controlHostNetwork: labProfileState?.active_context?.control_host_network,
+      providers,
+      validation,
+      vcenterNetapp
+    }),
+    [address, ciscoReadiness, labProfileState?.active_context?.control_host_network, providers, validation, vcenterNetapp]
   );
   const currentView = overviewCurrentView({ buildVerification, providers, validation });
   const workspaceRows = useMemo<OperatorObjectRow[]>(
@@ -502,7 +505,13 @@ export function OperatorNetworkPage({ labProfileState }: OperatorPageProps) {
   }, []);
 
   const consoleState = objectValue(ciscoReadiness?.console);
-  const networkStatus = asString(ciscoReadiness?.status) || (address.cisco_management ? "ready" : "not_configured_yet");
+  const ethernetState = objectValue(ciscoReadiness?.ethernet_readiness);
+  const controlHostNetwork = objectValue(ciscoReadiness?.control_host_network);
+  const hostBlocked = controlHostNetworkBlocked(controlHostNetwork);
+  const networkStatus = hostBlocked
+    ? "blocked"
+    : asString(ciscoReadiness?.status) || (address.cisco_management ? "not_checked" : "not_configured_yet");
+  const sshStatus = hostBlocked ? "blocked" : asString(ethernetState.ssh_probe_status) || "not_checked";
   const currentView = networkCurrentView({ address, ciscoReadiness });
   const networkRows = useMemo<OperatorObjectRow[]>(
     () => [
@@ -532,10 +541,10 @@ export function OperatorNetworkPage({ labProfileState }: OperatorPageProps) {
         ],
         freshness: currentView.freshness,
         id: "console",
-        nextAction: "Open Settings if the console path is wrong.",
+        nextAction: hostBlocked ? controlHostNextAction(controlHostNetwork) : "Open Settings if the console path is wrong.",
         source: currentView.source,
-        status: asString(consoleState.status) || "not_checked",
-        summary: "First-contact access for Cisco setup and recovery.",
+        status: hostBlocked ? "blocked" : asString(consoleState.status) || "not_checked",
+        summary: hostBlocked ? controlHostBlocker(controlHostNetwork) : "First-contact access for Cisco setup and recovery.",
         target: displayValue(asString(consoleState.selected_path) || asString(consoleState.effective_path)),
         title: "Console",
         type: "Access"
@@ -548,10 +557,10 @@ export function OperatorNetworkPage({ labProfileState }: OperatorPageProps) {
         ],
         freshness: currentView.freshness,
         id: "ssh-scp",
-        nextAction: "Run Test Switch after fixing connectivity or credentials.",
+        nextAction: hostBlocked ? controlHostNextAction(controlHostNetwork) : "Run Test Switch after fixing connectivity or credentials.",
         source: currentView.source,
-        status: asBoolean(ciscoReadiness?.management_configured) ? "ready" : "not_checked",
-        summary: "Management access check without exposing secret values.",
+        status: sshStatus,
+        summary: hostBlocked ? controlHostBlocker(controlHostNetwork) : "Management access check without exposing secret values.",
         target: displayAddress(address.cisco_management),
         title: "SSH / SCP",
         type: "Access"
@@ -589,7 +598,7 @@ export function OperatorNetworkPage({ labProfileState }: OperatorPageProps) {
         type: "Firmware"
       }
     ],
-    [activeProfile, address.cisco_management, ciscoReadiness, consoleState, currentView, features, firmwareSummaries, global]
+    [activeProfile, address.cisco_management, ciscoReadiness, consoleState, controlHostNetwork, currentView, features, firmwareSummaries, global, hostBlocked, sshStatus]
   );
 
   return (
@@ -1242,128 +1251,6 @@ export function OperatorFirmwareUpgradesPage({ labProfileState }: OperatorPagePr
   );
 }
 
-export function OperatorValidationPage({ labProfileState }: OperatorPageProps) {
-  const activeProfile = activeLabProfile(labProfileState);
-  const [actions, setActions] = useState<WorkflowAction[]>([]);
-  const [validation, setValidation] = useState<LabValidationSummary | null>(null);
-  const [buildVerification, setBuildVerification] = useState<ProviderProbeResult | null>(null);
-  const [vcenterNetapp, setVcenterNetapp] = useState<ProviderProbeResult | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-
-  async function load() {
-    setError("");
-    setLoading(true);
-    try {
-      const [nextActions, nextValidation, nextBuildVerification, nextVcenterNetapp] = await Promise.all([
-        safeApi(api.workflowActions, [] as WorkflowAction[]),
-        safeApi(api.labValidation, null),
-        safeApi(api.buildVerification, null),
-        safeApi(api.vcenterNetappReadiness, null)
-      ]);
-      setActions(Array.isArray(nextActions) ? nextActions : []);
-      setValidation(nextValidation);
-      setBuildVerification(nextBuildVerification);
-      setVcenterNetapp(nextVcenterNetapp);
-    } catch (err) {
-      setError(errorMessage(err));
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  useEffect(() => {
-    void load();
-  }, []);
-
-  const differentFromExpected = validation?.validation_items.filter((item) => item.status !== "ready").length ?? 0;
-  const currentView = validationCurrentView({ buildVerification, validation, vcenterNetapp });
-  const validationRows = useMemo<OperatorObjectRow[]>(
-    () => [
-      ...(validation?.validation_items ?? []).map((item) => ({
-        checkedAt: item.last_checked ? formatDateTime(item.last_checked) : currentView.checkedAt,
-        details: [
-          { label: "Category", value: labelize(item.category || "validation") },
-          { label: "Current state", value: item.current_state || "Not checked" },
-          { label: "Setup summary", value: item.setup_summary || "Not checked" },
-          { label: "Management URL", value: item.management_url || "Not set up yet" }
-        ],
-        freshness: currentView.freshness,
-        id: item.id,
-        nextAction: humanize(item.next_action || validation?.next_action || "Review validation result."),
-        source: currentView.source,
-        status: item.status,
-        summary: item.setup_summary || item.current_state || "Validation item.",
-        target: item.management_url || item.label,
-        title: item.label,
-        type: labelize(item.category || item.stage || "Validation"),
-        warnings: item.warnings
-      })),
-      {
-        checkedAt: currentView.checkedAt,
-        details: [
-          { label: "Different from expected", value: String(differentFromExpected), status: differentFromExpected ? "warning" : "ready" },
-          { label: "Build verification", value: displayStatus(buildVerification?.status ?? "not_checked"), status: buildVerification?.status ?? "not_checked" },
-          { label: "Handoff", value: validation?.handoff_report ? "Ready to generate" : "Not generated", status: validation?.handoff_report ? "ready" : "not_checked" }
-        ],
-        freshness: currentView.freshness,
-        id: "handoff",
-        nextAction: validation?.handoff_report ? "Generate handoff after reviewing validation." : "Run validation before handoff.",
-        source: currentView.source,
-        status: validation?.overall_status ?? "not_checked",
-        summary: validation?.next_action || "Lab-wide validation and handoff readiness.",
-        target: "Golden State",
-        title: "Golden State / Handoff",
-        type: "Summary",
-        blockers: validation?.top_blocker ? [validation.top_blocker.problem] : []
-      }
-    ],
-    [buildVerification, currentView, differentFromExpected, validation]
-  );
-
-  return (
-    <OperatorPage title="Validation">
-      <PageStatusHeader
-        description="Use these buttons to test or change this part of the lab."
-        helper="Golden State means expected working lab state. Advanced proof is hidden unless you need it."
-        icon={<CheckCircle2 size={26} />}
-        nextAction={humanize(validation?.next_action || "Run validation, then generate the handoff.")}
-        runConfig={{
-          actionIds: ["build-verification.run-full", "full-lab.validation", "lab-validation.summary"],
-          actions,
-          label: "Validation",
-          onReload: load
-        }}
-        settingsValues={tabSettingsValues("validation", activeProfile)}
-        status={validation?.overall_status ?? "not_checked"}
-        tabId="validation"
-        title="Validation"
-      />
-      <Feedback loading={loading && !validation} error={error} />
-      <OperatorWorkspace currentView={currentView} rows={validationRows} />
-      <AdditionalTabActions
-        actions={actions}
-        buttons={[
-          { actionIds: ["full-lab.handoff-report"], label: "Generate Handoff", onClick: async () => { await api.labValidationHandoff(); } }
-        ]}
-        description="Use this after validation has current proof links."
-        onReload={load}
-        title="Handoff"
-      />
-      <AdvancedDrawer title="Validation proof" summary={noProofText}>
-        <ValidationProofList items={validation?.validation_items ?? []} proofLinks={validation?.proof_links.length ?? 0} />
-        <ConfigValueList
-          values={[
-            { label: "Source", value: sourceLabel(validation) },
-            { label: "Warnings", value: String(validation?.warnings.length ?? 0) },
-            { label: "Raw proof links", value: String(validation?.proof_links.length ?? 0) }
-          ]}
-        />
-      </AdvancedDrawer>
-    </OperatorPage>
-  );
-}
-
 export function OperatorSettingsPage({
   health,
   labProfileError = "",
@@ -1544,7 +1431,6 @@ function PageStatusHeader({
   nextAction,
   runConfig,
   settingsValues,
-  status,
   tabId,
   title
 }: {
@@ -1622,7 +1508,6 @@ function PageStatusHeader({
           <span>{helper}</span>
         </div>
         <div className="operator-status-side">
-          {status && <SimpleStatusPill status={status} />}
           {nextAction && (
             <div>
               <span>Next action</span>
@@ -1643,11 +1528,11 @@ function PageStatusHeader({
               className="primary"
               disabled={Boolean(disabledReason) || running}
               onClick={() => void runActiveTab()}
-              title={disabledReason || `Run ${runConfig.label}`}
+              title={disabledReason || runConfig.label}
               type="button"
             >
               <Play size={16} />
-              {running ? "Running" : `Run ${runConfig.label}`}
+              {running ? "Running" : runConfig.label}
             </button>
           </div>
           {disabledReason && <p className="operator-run-hint">{disabledReason}</p>}
@@ -1692,8 +1577,6 @@ function OperatorWorkspace({
     }
   }, [rows, selectedId]);
 
-  const counts = workspaceCounts(rows);
-
   return (
     <section className="operator-console" aria-label="Current view">
       <div className="operator-console-head">
@@ -1702,22 +1585,17 @@ function OperatorWorkspace({
           <h2>Current state and targets</h2>
           <p>{currentView.summary}</p>
         </div>
-        <SimpleStatusPill status={currentView.status} />
       </div>
       <div className="domain-summary-strip" aria-label="Domain summary">
-        <SummaryMetric label="Ready" status="ready" value={String(counts.ready)} />
-        <SummaryMetric label="Needs review" status="warning" value={String(counts.warning)} />
-        <SummaryMetric label="Blocked" status="blocked" value={String(counts.blocked)} />
-        <SummaryMetric label="Not checked" status="not_checked" value={String(counts.neutral)} />
         <SummaryMetric label="Source" value={currentView.source} />
-        <SummaryMetric label="Freshness" status={freshnessStatus(currentView.freshness)} value={currentView.freshness} />
+        <SummaryMetric label="Freshness" value={currentView.freshness} />
         <SummaryMetric label="Checked" value={currentView.checkedAt} />
       </div>
       <div className="operator-workspace-grid">
         <div className="operator-object-list" aria-label="Objects">
           <div className="operator-object-list-head">
             <span>{rows.length} objects</span>
-            <strong>{rows.filter((row) => statusTone(row.status) === "ready").length} ready</strong>
+            <strong>{currentView.source}</strong>
           </div>
           {rows.map((row) => (
             <button
@@ -1735,7 +1613,6 @@ function OperatorWorkspace({
                 <strong>{row.target}</strong>
                 <small>{row.source || currentView.source}</small>
               </span>
-              <SimpleStatusPill status={row.status} />
             </button>
           ))}
         </div>
@@ -1748,7 +1625,6 @@ function OperatorWorkspace({
                   <h2>{selected.title}</h2>
                   <p>{selected.summary}</p>
                 </div>
-                <SimpleStatusPill status={selected.status} />
               </div>
               <div className="operator-detail-action">
                 <span>Next action</span>
@@ -1781,12 +1657,11 @@ function OperatorWorkspace({
   );
 }
 
-function SummaryMetric({ label, status, value }: { label: string; status?: string; value: string }) {
+function SummaryMetric({ label, value }: { label: string; value: string }) {
   return (
     <div>
       <span>{label}</span>
       <strong>{value}</strong>
-      {status && <SimpleStatusPill status={status} />}
     </div>
   );
 }
@@ -1804,25 +1679,10 @@ function IssueList({ blockers, warnings }: { blockers: string[]; warnings: strin
       <strong>Needs attention</strong>
       {issues.map((issue) => (
         <div key={`${issue.status}-${issue.text}`}>
-          <SimpleStatusPill status={issue.status} />
           <span>{humanize(issue.text)}</span>
         </div>
       ))}
     </div>
-  );
-}
-
-function workspaceCounts(rows: OperatorObjectRow[]): { blocked: number; neutral: number; ready: number; warning: number } {
-  return rows.reduce(
-    (counts, row) => {
-      const tone = statusTone(row.status);
-      if (tone === "ready") counts.ready += 1;
-      else if (tone === "warning") counts.warning += 1;
-      else if (tone === "blocked") counts.blocked += 1;
-      else counts.neutral += 1;
-      return counts;
-    },
-    { blocked: 0, neutral: 0, ready: 0, warning: 0 }
   );
 }
 
@@ -1926,7 +1786,6 @@ function ConfigValueList({ values }: { values: ConfigValue[] }) {
             <strong>{value.value}</strong>
             {value.source && <span>{value.source}</span>}
           </dd>
-          {value.status && <SimpleStatusPill status={value.status} />}
         </div>
       ))}
     </dl>
@@ -2039,7 +1898,6 @@ function InventoryTable({ rows }: { rows: InventoryRow[] }) {
               <th>Role</th>
               <th>Access target</th>
               <th>Version</th>
-              <th>Status</th>
               <th>Source</th>
             </tr>
           </thead>
@@ -2050,7 +1908,6 @@ function InventoryTable({ rows }: { rows: InventoryRow[] }) {
                 <td>{row.role}</td>
                 <td>{row.accessTarget}</td>
                 <td>{row.version}</td>
-                <td><SimpleStatusPill status={row.status} /></td>
                 <td>{row.source}</td>
               </tr>
             ))}
@@ -2144,7 +2001,6 @@ function ValidationProofList({
                 <strong>{item.label}</strong>
                 <span>{item.setup_summary || item.current_state}</span>
               </div>
-              <SimpleStatusPill status={item.status} />
             </article>
           ))}
         </div>
@@ -2174,10 +2030,6 @@ function AdvancedDrawer({
       <div>{children}</div>
     </details>
   );
-}
-
-function SimpleStatusPill({ status }: { status: string }) {
-  return <span className={`simple-status-pill ${statusTone(status)}`}>{displayStatus(status)}</span>;
 }
 
 function Feedback({ error, loading }: { error?: string; loading?: boolean }) {
@@ -2320,72 +2172,104 @@ function overviewLabValues({
   ];
 }
 
+function controlHostNetworkBlocked(value: unknown): boolean {
+  const status = asString(objectValue(value).status);
+  return Boolean(status && status !== "ready");
+}
+
+function controlHostNextAction(value: unknown): string {
+  const item = objectValue(value);
+  return (
+    asString(item.next_action) ||
+    controlHostBlocker(value) ||
+    "Move this app host onto the active lab subnet, then refresh access."
+  );
+}
+
+function controlHostBlocker(value: unknown): string {
+  const item = objectValue(value);
+  const blockers = stringArray(item.blockers);
+  return (
+    blockers[0] ||
+    asString(item.message) ||
+    (asString(item.active_subnet)
+      ? `Control host is not on ${asString(item.active_subnet)}.`
+      : "")
+  );
+}
+
 function overviewAccessRows({
   address,
   ciscoReadiness,
+  controlHostNetwork,
   providers,
   validation,
   vcenterNetapp
 }: {
   address: LabAddressPlan;
   ciscoReadiness: ProviderProbeResult | null;
+  controlHostNetwork?: Record<string, unknown>;
   providers: ProviderStatus[];
   validation: LabValidationSummary | null;
   vcenterNetapp: ProviderProbeResult | null;
 }): AccessRow[] {
   const statusFor = (tokens: string[], fallback = "not_checked") =>
     validationStatus(validation, tokens) || providerStatus(providers, tokens) || fallback;
+  const hostBlocked = controlHostNetworkBlocked(controlHostNetwork);
+  const blockedStatus = hostBlocked ? "blocked" : "";
+  const blockedSees = "Not accessible from this app host";
+  const blockedNeed = controlHostNextAction(controlHostNetwork);
   const checks = objectValue(vcenterNetapp?.checks);
   const vmInventory = objectValue(checks.vm_inventory_visible);
   const vmCount = asString(vmInventory.count);
   return [
     accessRow({
-      appSees: sourceLabelFromStatus(statusFor(["cisco"])),
+      appSees: hostBlocked ? blockedSees : sourceLabelFromStatus(statusFor(["cisco"])),
       item: "Cisco",
-      need: consolePathFromCisco(ciscoReadiness) === "Not set up yet" ? "Need console connection" : "Need credentials",
-      status: statusFor(["cisco"]),
+      need: hostBlocked ? blockedNeed : consolePathFromCisco(ciscoReadiness) === "Not set up yet" ? "Need console connection" : "Need credentials",
+      status: blockedStatus || statusFor(["cisco"]),
       target: displayAddress(address.cisco_management)
     }),
     accessRow({
-      appSees: sourceLabelFromStatus(statusFor(["ilo", "hpe"])),
+      appSees: hostBlocked ? blockedSees : sourceLabelFromStatus(statusFor(["ilo", "hpe"])),
       item: "iLO",
-      need: "Need credentials",
-      status: statusFor(["ilo", "hpe"]),
+      need: hostBlocked ? blockedNeed : "Need credentials",
+      status: blockedStatus || statusFor(["ilo", "hpe"]),
       target: address.ilo ? `https://${address.ilo}` : "Not set up yet"
     }),
     accessRow({
-      appSees: sourceLabelFromStatus(statusFor(["esxi"])),
+      appSees: hostBlocked ? blockedSees : sourceLabelFromStatus(statusFor(["esxi"])),
       item: "ESXi",
-      need: "Need credentials",
-      status: statusFor(["esxi"]),
+      need: hostBlocked ? blockedNeed : "Need credentials",
+      status: blockedStatus || statusFor(["esxi"]),
       target: displayAddress(address.esxi_management)
     }),
     accessRow({
-      appSees: sourceLabelFromStatus(statusFor(["netapp", "storage"], asString(vcenterNetapp?.status) || "not_checked")),
+      appSees: hostBlocked ? blockedSees : sourceLabelFromStatus(statusFor(["netapp", "storage"], asString(vcenterNetapp?.status) || "not_checked")),
       item: "NetApp",
-      need: "Need NetApp API reachable",
-      status: statusFor(["netapp", "storage"], asString(vcenterNetapp?.status) || "not_checked"),
+      need: hostBlocked ? blockedNeed : "Need NetApp API reachable",
+      status: blockedStatus || statusFor(["netapp", "storage"], asString(vcenterNetapp?.status) || "not_checked"),
       target: displayAddress(address.netapp_cluster_mgmt)
     }),
     accessRow({
-      appSees: sourceLabel(vcenterNetapp),
+      appSees: hostBlocked ? blockedSees : sourceLabel(vcenterNetapp),
       item: "vCenter",
-      need: "Need vCenter attached",
-      status: asString(vcenterNetapp?.status) || validationStatus(validation, ["vcenter"]) || "not_checked",
+      need: hostBlocked ? blockedNeed : "Need vCenter attached",
+      status: blockedStatus || asString(vcenterNetapp?.status) || validationStatus(validation, ["vcenter"]) || "not_checked",
       target: vcenterTarget(vcenterNetapp, null)
     }),
     accessRow({
-      appSees: datastoreVisibleStatus(vcenterNetapp) === "ready" ? "Datastore visible" : "Not visible yet",
+      appSees: hostBlocked ? blockedSees : datastoreVisibleStatus(vcenterNetapp) === "ready" ? "Datastore visible" : "Not visible yet",
       item: "Datastore",
-      need: "Need vCenter attached",
-      status: datastoreVisibleStatus(vcenterNetapp),
+      need: hostBlocked ? blockedNeed : "Need vCenter attached",
+      status: blockedStatus || datastoreVisibleStatus(vcenterNetapp),
       target: datastoreName(vcenterNetapp)
     }),
     accessRow({
-      appSees: asBoolean(vmInventory.visible) ? `${vmCount || "Some"} VMs visible` : "VM inventory not visible yet",
+      appSees: hostBlocked ? blockedSees : asBoolean(vmInventory.visible) ? `${vmCount || "Some"} VMs visible` : "VM inventory not visible yet",
       item: "VM inventory",
-      need: "Need vCenter attached",
-      status: asBoolean(vmInventory.visible) ? "ready" : "not_checked",
+      need: hostBlocked ? blockedNeed : "Need vCenter attached",
+      status: blockedStatus || (asBoolean(vmInventory.visible) ? "ready" : "not_checked"),
       target: "vCenter inventory"
     })
   ];
@@ -2406,6 +2290,9 @@ function accessRow({
 }): AccessRow {
   if (!target || target === "Not set up yet") {
     return { appSees: "No value set", item, needs: "Need IP value", status: "not_setup", target: "Not set up yet" };
+  }
+  if (["blocked", "failed", "critical", "hard_fail"].includes(status)) {
+    return { appSees, item, needs: need, status: "blocked", target };
   }
   if (["ready", "ok", "passed", "completed", "current"].includes(status)) {
     return { appSees, item, needs: "Nothing right now", status: "accessible", target };
@@ -2925,7 +2812,6 @@ function tabTitle(tabId: OperatorTabId): string {
     server: "Server",
     settings: "Settings",
     storage: "Storage",
-    validation: "Validation",
     virtualization: "Virtualization"
   };
   return labels[tabId];
@@ -3045,21 +2931,6 @@ function tabAdvancedSettings(tabId: OperatorTabId): AdvancedSettingDefinition[] 
         label: "Check console readiness"
       }
     ],
-    validation: [
-      ...shared,
-      {
-        defaultValue: true,
-        description: "Include firmware gate results in Golden State validation.",
-        key: "include_firmware_gate",
-        label: "Include firmware gate"
-      },
-      {
-        defaultValue: true,
-        description: "Prepare proof links for handoff after validation.",
-        key: "prepare_handoff",
-        label: "Prepare handoff proof"
-      }
-    ],
     virtualization: [
       ...shared,
       {
@@ -3133,15 +3004,6 @@ function tabSettingsValues(tab: string, profile: LabProfile | null): ConfigValue
       { label: "Storage protocol", value: storageProtocolLabel(features), source: "Edit Config" }
     ];
   }
-  if (tab === "validation") {
-    return [
-      ...common,
-      { label: "Build verification", value: enabledLabel(features?.build_verification_enabled), status: featureStatus(features, "build_verification_enabled") },
-      { label: "Firmware gate", value: enabledLabel(features?.firmware_gate_enabled), status: featureStatus(features, "firmware_gate_enabled") },
-      { label: "NetApp", value: enabledLabel(features?.netapp_enabled), status: featureStatus(features, "netapp_enabled") },
-      { label: "vCenter", value: enabledLabel(features?.vcenter_enabled), status: featureStatus(features, "vcenter_enabled") }
-    ];
-  }
   return [
     ...common,
     { label: "Active setup", value: profile?.name ?? "No active setup", status: profile ? "ready" : "not_configured_yet" },
@@ -3212,25 +3074,34 @@ function networkCurrentView({
   ciscoReadiness: ProviderProbeResult | null;
 }): CurrentViewModel {
   const consoleState = objectValue(ciscoReadiness?.console);
-  const status = asString(ciscoReadiness?.status) || (address.cisco_management ? "not_checked" : "not_configured_yet");
+  const ethernetState = objectValue(ciscoReadiness?.ethernet_readiness);
+  const controlHostNetwork = objectValue(ciscoReadiness?.control_host_network);
+  const hostBlocked = controlHostNetworkBlocked(controlHostNetwork);
+  const status = hostBlocked
+    ? "blocked"
+    : asString(ciscoReadiness?.status) || (address.cisco_management ? "not_checked" : "not_configured_yet");
   return currentViewModel({
     available: Boolean(ciscoReadiness?.checked_at || ciscoReadiness?.status),
     details: [
       { label: "Cisco target", value: displayAddress(address.cisco_management), source: "Saved setup" },
-      { label: "Console", value: displayValue(asString(consoleState.selected_path) || asString(consoleState.effective_path)), status: asString(consoleState.status) || "not_checked" },
-      { label: "SSH access", value: boolStateLabel(asBoolean(ciscoReadiness?.management_configured)), status: asBoolean(ciscoReadiness?.management_configured) ? "ready" : "not_checked" }
+      { label: "Control host", value: hostBlocked ? "Not on active subnet" : "Subnet check clear", status: hostBlocked ? "blocked" : "ready" },
+      { label: "Console", value: displayValue(asString(consoleState.selected_path) || asString(consoleState.effective_path)), status: hostBlocked ? "blocked" : asString(consoleState.status) || "not_checked" },
+      { label: "SSH access", value: hostBlocked ? "Not accessible from this app host" : boolStateLabel(asBoolean(ciscoReadiness?.management_configured)), status: hostBlocked ? "blocked" : asString(ethernetState.ssh_probe_status) || "not_checked" }
     ],
     fixSteps: [
+      hostBlocked ? controlHostNextAction(controlHostNetwork) : "",
       asString(ciscoReadiness?.next_safe_action),
       "Confirm the Cisco management IP and console path in Settings.",
       "Run Test Switch after fixing connectivity or credentials."
-    ],
+    ].filter(Boolean),
     recheckCommand: "make provider-lab-cisco-setup-readiness",
     scanDetail: "Test Switch checks Cisco reachability, console readiness, and credential state without printing secrets.",
     scanLabel: "Test Switch",
     signals: [ciscoReadiness],
     status,
-    summary: asString(ciscoReadiness?.message) || asString(ciscoReadiness?.next_safe_action) || "No Cisco current view has been loaded yet."
+    summary: hostBlocked
+      ? controlHostBlocker(controlHostNetwork)
+      : asString(ciscoReadiness?.message) || asString(ciscoReadiness?.next_safe_action) || "No Cisco current view has been loaded yet."
   });
 }
 
@@ -3370,37 +3241,6 @@ function firmwareCurrentView({
   });
 }
 
-function validationCurrentView({
-  buildVerification,
-  validation,
-  vcenterNetapp
-}: {
-  buildVerification: ProviderProbeResult | null;
-  validation: LabValidationSummary | null;
-  vcenterNetapp: ProviderProbeResult | null;
-}): CurrentViewModel {
-  const differentFromExpected = validation?.validation_items.filter((item) => item.status !== "ready").length ?? 0;
-  return currentViewModel({
-    available: Boolean(validation || buildVerification || vcenterNetapp),
-    details: [
-      { label: "Different from expected", value: String(differentFromExpected), status: differentFromExpected ? "warning" : "ready" },
-      { label: "Build verification", value: displayStatus(buildVerification?.status ?? "not_checked"), status: buildVerification?.status ?? "not_checked" },
-      { label: "vCenter-NetApp", value: displayStatus(vcenterNetapp?.status ?? "not_checked"), status: vcenterNetapp?.status ?? "not_checked" }
-    ],
-    fixSteps: [
-      validation?.top_blocker?.recommended_action || validation?.next_action,
-      "Run Validation to refresh current blockers and proof links.",
-      "Use the top blocker as the first fix before generating handoff."
-    ],
-    recheckCommand: "make provider-lab-build-verification",
-    scanDetail: "Run Validation refreshes the current blocker list and produces a proof-backed handoff view.",
-    scanLabel: "Run Validation",
-    signals: [validation, buildVerification, vcenterNetapp],
-    status: validation?.overall_status ?? "not_checked",
-    summary: validation?.top_blocker?.problem || validation?.next_action || "No validation current view has been loaded yet."
-  });
-}
-
 function settingsCurrentView({
   activeProfile,
   health,
@@ -3519,14 +3359,6 @@ function strongestStatus(statuses: string[]): string {
   return normalized[0] ?? "not_checked";
 }
 
-function statusTone(status: string): string {
-  const normalized = status || "not_checked";
-  if (["accessible", "ready", "ok", "completed", "passed", "success", "current"].includes(normalized)) return "ready";
-  if (["blocked", "failed", "critical", "hard_fail", "error"].includes(normalized)) return "blocked";
-  if (["needs_console", "needs_credentials", "not_accessible", "warning", "partial", "manual_review", "cannot_verify", "stale"].includes(normalized)) return "warning";
-  return "neutral";
-}
-
 function displayStatus(status: string): string {
   const labels: Record<string, string> = {
     accessible: "Accessible",
@@ -3569,6 +3401,8 @@ function displayStatus(status: string): string {
     warning: "Needs review",
     needs_console: "Needs console",
     needs_credentials: "Needs credentials",
+    "needs-selection": "Needs selection",
+    needs_selection: "Needs selection",
     needs_firmware_scan: "Needs scan"
   };
   return labels[status] ?? labelize(status || "not_checked");

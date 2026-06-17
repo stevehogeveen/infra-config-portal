@@ -9,6 +9,7 @@ from app.providers.cisco_ansible import CiscoAnsibleAdapter
 from app.providers.cisco_console import CiscoConsoleAdapter
 from app.services.hpe_raid import REPO_ROOT
 from app.services.cisco_setup_wizard_plan import build_cisco_setup_wizard_plan
+from app.services.lab_profiles import active_lab_profile_context
 
 PROVIDER_ID = "cisco-setup"
 REAL_LAB_DETAILS = REPO_ROOT / "artifacts" / "codex-runs" / "cisco-4h-lab-run-details-redacted.json"
@@ -34,7 +35,13 @@ def get_cisco_setup_readiness(
     ansible_status: ProviderStatus | None = None,
 ) -> dict[str, Any]:
     mode = provider_mode or settings.provider_mode
-    target_ip = planned_management_ip if planned_management_ip is not None else settings.cisco_target_ip
+    profile_context = _profile_context(mode)
+    target_ip = (
+        planned_management_ip
+        if planned_management_ip is not None
+        else _profile_cisco_management_ip(profile_context)
+        or settings.cisco_target_ip
+    )
     mgmt_configured = (
         management_configured
         if management_configured is not None
@@ -42,11 +49,15 @@ def get_cisco_setup_readiness(
     )
     console = console_status or CiscoConsoleAdapter(mode).health()
     ansible = ansible_status or CiscoAnsibleAdapter(mode).health()
+    control_host_network = profile_context.get("control_host_network") or {}
+    control_host_blocked = _control_host_network_blocked(control_host_network)
+    control_host_blocker = _control_host_blocker(control_host_network)
     console_discovery = console.discovery or {}
     candidate_counts = _dict(console_discovery.get("candidate_counts"))
     last_prompt_readiness = _prompt_readiness_summary(console.last_probe_result)
     console_summary = {
-        "status": console.status,
+        "status": "blocked" if control_host_blocked else console.status,
+        "serial_candidate_status": console.status,
         "effective_path": console_discovery.get("effective_path"),
         "recommended_path": console_discovery.get("recommended_path"),
         "selected_path": console_discovery.get("effective_path"),
@@ -56,39 +67,65 @@ def get_cisco_setup_readiness(
         "candidate_count": int(candidate_counts.get("existing", 0) or 0),
         "stable_candidate_count": int(candidate_counts.get("stable_existing", 0) or 0),
         "fallback_candidate_count": int(candidate_counts.get("fallback_existing", 0) or 0),
-        "safe_next_action": NEXT_SAFE_ACTION,
+        "safe_next_action": control_host_network.get("next_action")
+        if control_host_blocked
+        else NEXT_SAFE_ACTION,
         "last_prompt_readiness": last_prompt_readiness,
     }
     warnings = list(dict.fromkeys([*console.warnings, *ansible.warnings]))
     blockers = list(dict.fromkeys([*console.blockers, *ansible.blockers]))
+    if control_host_blocked:
+        blockers = list(dict.fromkeys([control_host_blocker, *blockers]))
     setup_wizard_plan = build_cisco_setup_wizard_plan(console.last_probe_result)
     setup_wizard_detected = bool(setup_wizard_plan["setup_wizard_detected"])
     real_lab_run = _real_lab_run_summary()
     real_lab_recovery_available = mode in {"local-readonly", "local-lab-readwrite"}
     next_safe_action = (
-        "Review setup wizard plan preview."
-        if setup_wizard_detected
-        else "Recover Cisco password from console."
-        if real_lab_recovery_available and _needs_password_recovery_action(real_lab_run)
-        else NEXT_SAFE_ACTION
+        str(control_host_network.get("next_action") or control_host_blocker)
+        if control_host_blocked
+        else (
+            "Review setup wizard plan preview."
+            if setup_wizard_detected
+            else "Recover Cisco password from console."
+            if real_lab_recovery_available and _needs_password_recovery_action(real_lab_run)
+            else NEXT_SAFE_ACTION
+        )
     )
 
-    phase = "ssh-management-ready" if mgmt_configured else "console-bootstrap-required"
-    ansible_reason = (
-        "CISCO_MGMT_CONFIGURED is true; use explicit read-only Ansible checks before any future workflow."
+    phase = (
+        "blocked"
+        if control_host_blocked
+        else "ssh-management-ready"
         if mgmt_configured
-        else "CISCO_MGMT_CONFIGURED is false; use console bootstrap before Ansible SSH."
+        else "console-bootstrap-required"
+    )
+    ansible_reason = (
+        control_host_blocker
+        if control_host_blocked
+        else (
+            "CISCO_MGMT_CONFIGURED is true; use explicit read-only Ansible checks before any future workflow."
+            if mgmt_configured
+            else "CISCO_MGMT_CONFIGURED is false; use console bootstrap before Ansible SSH."
+        )
     )
 
     return {
         "provider_id": PROVIDER_ID,
+        "status": "blocked" if control_host_blocked else "not_checked",
+        "source_type": "not_checked" if control_host_blocked else "operator_config",
+        "freshness": "not_checked",
+        "checked_at": control_host_network.get("checked_at") if control_host_blocked else None,
         "phase": phase,
         "planned_management_ip": target_ip,
         "management_configured": mgmt_configured,
+        "control_host_network": control_host_network,
         "state_boundaries": {
             "discovered_current_device_state": {
-                "summary": "Console adapter discovery and latest prompt readiness only.",
-                "console_status": console.status,
+                "summary": "Current Cisco network access is blocked by the control-host subnet check."
+                if control_host_blocked
+                else "Console adapter discovery and latest prompt readiness only.",
+                "console_status": "blocked" if control_host_blocked else console.status,
+                "serial_candidate_status": console.status,
                 "selected_path": console_summary["selected_path"],
                 "baud": console_summary["baud"],
                 "prompt_state": last_prompt_readiness.get("prompt_state"),
@@ -139,14 +176,24 @@ def get_cisco_setup_readiness(
             "management_vlan": settings.cisco_management_vlan,
             "management_interface": settings.cisco_management_interface,
             "management_strategy": settings.cisco_management_strategy,
-            "ssh_probe_status": "skipped" if not mgmt_configured else ansible.status,
+            "ssh_probe_status": "blocked"
+            if control_host_blocked
+            else "skipped"
+            if not mgmt_configured
+            else ansible.status,
             "ssh_probe_reason": ansible_reason,
             "bootstrap_required": not mgmt_configured,
-            "ready": bool(mgmt_configured and ansible.status == "ready"),
+            "ready": bool(
+                not control_host_blocked and mgmt_configured and ansible.status == "ready"
+            ),
             "next_safe_action": (
+                str(control_host_network.get("next_action") or control_host_blocker)
+                if control_host_blocked
+                else (
                 "Use console bootstrap to establish management VLAN/IP/SSH/SCP readiness."
                 if not mgmt_configured
                 else "Run explicit read-only SSH/Ansible probe before any configuration workflow."
+                )
             ),
         },
         "bootstrap_preview": {
@@ -178,7 +225,11 @@ def get_cisco_setup_readiness(
         },
         "real_lab_run": real_lab_run,
         "ansible": {
-            "status": ansible.status if mgmt_configured else "awaiting-bootstrap",
+            "status": "blocked"
+            if control_host_blocked
+            else ansible.status
+            if mgmt_configured
+            else "awaiting-bootstrap",
             "enabled": False,
             "reason": ansible_reason,
         },
@@ -209,6 +260,41 @@ def _dict(value: object) -> dict[str, Any]:
     if isinstance(value, dict):
         return value
     return {}
+
+
+def _profile_context(mode: str) -> dict[str, Any]:
+    if mode == "mock":
+        return {}
+    return active_lab_profile_context()
+
+
+def _profile_cisco_management_ip(profile_context: dict[str, Any]) -> str | None:
+    plan = profile_context.get("resolved_address_plan")
+    if isinstance(plan, dict) and plan.get("cisco_management"):
+        return str(plan.get("cisco_management"))
+    profile = profile_context.get("active_profile")
+    if isinstance(profile, dict):
+        resolved = profile.get("resolved_address_plan")
+        if isinstance(resolved, dict) and resolved.get("cisco_management"):
+            return str(resolved.get("cisco_management"))
+    return None
+
+
+def _control_host_network_blocked(status: dict[str, Any]) -> bool:
+    return bool(status) and status.get("status") != "ready"
+
+
+def _control_host_blocker(status: dict[str, Any]) -> str:
+    blockers = status.get("blockers")
+    if isinstance(blockers, list):
+        first = next((str(item) for item in blockers if str(item).strip()), "")
+        if first:
+            return first
+    message = str(status.get("message") or "").strip()
+    if message:
+        return message
+    subnet = status.get("active_subnet") or "the active lab subnet"
+    return f"Control host is not on {subnet}; Cisco network access is not checked from this app host."
 
 
 def _management_ip_summary(target_ip: str | None) -> str:

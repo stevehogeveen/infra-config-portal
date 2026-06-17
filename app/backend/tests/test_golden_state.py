@@ -16,7 +16,9 @@ def test_golden_state_aggregates_known_good_rows(monkeypatch, tmp_path: Path) ->
     monkeypatch.setattr(
         golden_state,
         "get_media_inventory",
-        lambda: SimpleNamespace(items=[SimpleNamespace(category="iso", product_hints=["vmware-vcenter"])]),
+        lambda: SimpleNamespace(
+            items=[SimpleNamespace(category="iso", product_hints=["vmware-vcenter"])]
+        ),
     )
 
     result = golden_state.get_provider_lab_golden_state(write_report=True)
@@ -36,7 +38,10 @@ def test_golden_state_aggregates_known_good_rows(monkeypatch, tmp_path: Path) ->
     assert result["vcenter_readiness"]["vcsa_iso"] == "found"
     assert result["vcenter_readiness"]["esxi"] == "ready"
     assert result["vcenter_readiness"]["netapp_datastore"] == "ready"
-    assert result["artifacts"]["report"] == "artifacts/codex-runs/golden-state-productization-report.md"
+    assert (
+        result["artifacts"]["report"]
+        == "artifacts/codex-runs/golden-state-productization-report.md"
+    )
     assert (tmp_path / result["artifacts"]["report"]).exists()
 
 
@@ -51,10 +56,14 @@ def test_golden_state_credentials_are_presence_only(monkeypatch, tmp_path: Path)
     assert "length" not in serialized
     assert "quoted_length" not in serialized
     assert "super-secret" not in serialized
-    assert all({"configured", "tested", "status"}.issubset(row) for row in result["credentials"]["rows"])
+    assert all(
+        {"configured", "tested", "status"}.issubset(row) for row in result["credentials"]["rows"]
+    )
 
 
-def test_golden_state_marks_vcenter_ready_only_after_post_attach_validation(monkeypatch, tmp_path: Path) -> None:
+def test_golden_state_marks_vcenter_ready_only_after_post_attach_validation(
+    monkeypatch, tmp_path: Path
+) -> None:
     _patch_paths(monkeypatch, tmp_path)
     _write_golden_artifacts(tmp_path)
     run_dir = tmp_path / "artifacts" / "codex-runs"
@@ -75,8 +84,12 @@ def test_golden_state_marks_vcenter_ready_only_after_post_attach_validation(monk
             },
         },
     )
-    (run_dir / "vcenter-post-install-validation-report.md").write_text("redacted report\n", encoding="utf-8")
-    (run_dir / "vcenter-post-attach-validation-report.md").write_text("redacted report\n", encoding="utf-8")
+    (run_dir / "vcenter-post-install-validation-report.md").write_text(
+        "redacted report\n", encoding="utf-8"
+    )
+    (run_dir / "vcenter-post-attach-validation-report.md").write_text(
+        "redacted report\n", encoding="utf-8"
+    )
     monkeypatch.setattr(golden_state, "get_lab_build_verification", lambda: _build_verification())
 
     result = golden_state.get_provider_lab_golden_state(write_report=False)
@@ -86,6 +99,118 @@ def test_golden_state_marks_vcenter_ready_only_after_post_attach_validation(monk
     assert "ESXi attached" in rows["vcenter"]["current_state"]
     assert result["vcenter_readiness"]["vcenter_config"] == "managed"
     assert result["vcenter_readiness"]["datastore_visible"] is True
+
+
+def test_golden_state_marks_vcenter_not_in_scope_when_active_profile_disables_it(
+    monkeypatch, tmp_path: Path
+) -> None:
+    _patch_paths(monkeypatch, tmp_path)
+    _write_golden_artifacts(tmp_path)
+    run_dir = tmp_path / "artifacts" / "codex-runs"
+    _write_json(
+        run_dir / "vcenter-post-attach-validation-redacted.json",
+        {
+            "status": "ready",
+            "checks": {
+                "datacenter_visible": {"visible": True},
+                "cluster_visible": {"visible": True},
+                "esxi_visible": {"visible": True},
+                "netapp_datastore_visible": {"visible": True},
+                "vm_inventory_visible": {"visible": True},
+            },
+        },
+    )
+    (run_dir / "vcenter-post-attach-validation-report.md").write_text(
+        "redacted report\n", encoding="utf-8"
+    )
+    monkeypatch.setattr(
+        golden_state,
+        "active_lab_profile_context",
+        lambda: _profile_context(
+            not_in_scope_stages=["vcenter", "vcenter-netapp"],
+            disabled_features={"vcenter": "vCenter is disabled by the active lab setup."},
+        ),
+    )
+    monkeypatch.setattr(golden_state, "get_lab_build_verification", lambda: _build_verification())
+
+    result = golden_state.get_provider_lab_golden_state(write_report=False)
+    rows = {row["id"]: row for row in result["rows"]}
+
+    assert rows["vcenter"]["status"] == "not_in_scope"
+    assert rows["vcenter"]["drift"] == "none"
+    assert result["vcenter_readiness"]["status"] == "not_in_scope"
+    assert result["vcenter_readiness"]["deploy_enabled"] is False
+    assert "not in scope" in result["golden_state"]
+    assert "vcenter" not in {row["id"] for row in result["drift_rows"]}
+
+
+def test_golden_state_downgrades_netapp_dependents_when_runtime_not_ready(
+    monkeypatch, tmp_path: Path
+) -> None:
+    _patch_paths(monkeypatch, tmp_path)
+    _write_golden_artifacts(tmp_path)
+    monkeypatch.setattr(golden_state, "get_lab_build_verification", lambda: _build_verification())
+    monkeypatch.setattr(
+        golden_state,
+        "get_netapp_runtime_state",
+        lambda: _netapp_state(
+            configured=False,
+            configured_state="blocked",
+            blockers=["NetApp cluster management REST is not reachable."],
+        ),
+    )
+
+    result = golden_state.get_provider_lab_golden_state(write_report=False)
+    rows = {row["id"]: row for row in result["rows"]}
+
+    assert rows["netapp"]["status"] == "warning"
+    assert rows["netapp"]["current_state"] == "NetApp live state blocked"
+    assert rows["netapp"]["warnings"] == ["NetApp cluster management REST is not reachable."]
+    assert rows["netapp-nfs-datastore"]["status"] == "warning"
+    assert (
+        rows["netapp-nfs-datastore"]["current_state"]
+        == "Historical datastore proof; NetApp live state is not ready"
+    )
+    assert rows["vm-deployment"]["status"] == "warning"
+    assert (
+        rows["vm-deployment"]["current_state"]
+        == "Historical VM proof; datastore validation is not ready"
+    )
+
+
+def test_golden_state_blocks_network_rows_when_control_host_is_off_subnet(
+    monkeypatch, tmp_path: Path
+) -> None:
+    _patch_paths(monkeypatch, tmp_path)
+    _write_golden_artifacts(tmp_path)
+    monkeypatch.setattr(golden_state, "get_lab_build_verification", lambda: _build_verification())
+    monkeypatch.setattr(
+        golden_state,
+        "active_lab_profile_context",
+        lambda: _profile_context(control_host_network=_blocked_control_host_network()),
+    )
+
+    result = golden_state.get_provider_lab_golden_state(write_report=False)
+    rows = {row["id"]: row for row in result["rows"]}
+
+    assert result["status"] == "blocked"
+    assert result["source_type"] == "not_checked"
+    assert result["freshness"] == "not_checked"
+    assert len(result["blockers"]) == 1
+    assert "no IPv4 address on active lab subnet 10.10.8.0/24" in result["blockers"][0]
+    for row_id in (
+        "cisco",
+        "ilo",
+        "raid",
+        "esxi",
+        "netapp",
+        "netapp-nfs-datastore",
+        "vm-deployment",
+    ):
+        assert rows[row_id]["status"] == "blocked"
+        assert rows[row_id]["source_type"] == "not_checked"
+        assert "Not checked from this app host" in rows[row_id]["current_state"]
+    assert rows["firmware"]["status"] == "warning"
 
 
 def test_golden_state_firmware_drift_lists_exact_components(monkeypatch, tmp_path: Path) -> None:
@@ -149,7 +274,10 @@ def test_golden_state_firmware_drift_lists_exact_components(monkeypatch, tmp_pat
         "hpe_bios_version",
         "netapp_disk_firmware",
     ]
-    assert firmware["firmware_components"][0]["missing_evidence"] == ["target baseline", "approved HPE baseline"]
+    assert firmware["firmware_components"][0]["missing_evidence"] == [
+        "target baseline",
+        "approved HPE baseline",
+    ]
 
 
 def test_golden_state_api_shape(client: TestClient) -> None:
@@ -167,8 +295,18 @@ def test_golden_state_api_shape(client: TestClient) -> None:
 def _patch_paths(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(golden_state, "REPO_ROOT", tmp_path)
     monkeypatch.setattr(golden_state, "CODEX_RUN_DIR", tmp_path / "artifacts" / "codex-runs")
-    monkeypatch.setattr(golden_state, "GOLDEN_REPORT", tmp_path / "artifacts" / "codex-runs" / "golden-state-productization-report.md")
-    monkeypatch.setattr(golden_state, "GOLDEN_JSON", tmp_path / "artifacts" / "codex-runs" / "golden-state-summary-redacted.json")
+    monkeypatch.setattr(
+        golden_state,
+        "GOLDEN_REPORT",
+        tmp_path / "artifacts" / "codex-runs" / "golden-state-productization-report.md",
+    )
+    monkeypatch.setattr(
+        golden_state,
+        "GOLDEN_JSON",
+        tmp_path / "artifacts" / "codex-runs" / "golden-state-summary-redacted.json",
+    )
+    monkeypatch.setattr(golden_state, "active_lab_profile_context", lambda: _profile_context())
+    monkeypatch.setattr(golden_state, "get_netapp_runtime_state", lambda: _netapp_state())
 
 
 def _write_golden_artifacts(root: Path) -> None:
@@ -181,7 +319,11 @@ def _write_golden_artifacts(root: Path) -> None:
                 {"stage": "ilo-reachability", "status": "completed", "warnings": []},
                 {"stage": "cisco-console-ethernet", "status": "ready", "warnings": []},
                 {"stage": "netapp-live-state", "status": "ready", "warnings": []},
-                {"stage": "firmware-compliance", "status": "warning", "warnings": ["Manual firmware review remains."]},
+                {
+                    "stage": "firmware-compliance",
+                    "status": "warning",
+                    "warnings": ["Manual firmware review remains."],
+                },
             ]
         },
     )
@@ -205,7 +347,10 @@ def _write_golden_artifacts(root: Path) -> None:
         run_dir / "netapp-ontap-upgrade-validation-redacted.json",
         {"status": "current", "current_version": "9.17.1", "target_version": "9.17.1"},
     )
-    _write_json(run_dir / "vcenter-install-readiness-redacted.json", {"current_state": {"vcsa_iso": "configured-directory-1"}})
+    _write_json(
+        run_dir / "vcenter-install-readiness-redacted.json",
+        {"current_state": {"vcsa_iso": "configured-directory-1"}},
+    )
     (run_dir / "hpe-raid-after-reset-validation-report.md").write_text(
         "Status: succeeded\nMatches saved intent: True\n",
         encoding="utf-8",
@@ -232,16 +377,103 @@ def _build_verification() -> dict:
     return {
         "credentials": {
             "checks": [
-                {"name": "ilo", "configured": True, "classification": "passed", "field": "ILO_TEST_PASSWORD"},
-                {"name": "cisco", "configured": True, "classification": "passed", "field": "CISCO_TEST_PASSWORD"},
+                {
+                    "name": "ilo",
+                    "configured": True,
+                    "classification": "passed",
+                    "field": "ILO_TEST_PASSWORD",
+                },
+                {
+                    "name": "cisco",
+                    "configured": True,
+                    "classification": "passed",
+                    "field": "CISCO_TEST_PASSWORD",
+                },
                 {
                     "name": "cisco_enable",
                     "configured": True,
                     "classification": "passed",
                     "field": "CISCO_ENABLE_PASSWORD",
                 },
-                {"name": "esxi", "configured": True, "classification": "passed", "field": "ESXI_TEST_PASSWORD"},
-                {"name": "netapp", "configured": True, "classification": "passed", "field": "NETAPP_API_PASSWORD"},
+                {
+                    "name": "esxi",
+                    "configured": True,
+                    "classification": "passed",
+                    "field": "ESXI_TEST_PASSWORD",
+                },
+                {
+                    "name": "netapp",
+                    "configured": True,
+                    "classification": "passed",
+                    "field": "NETAPP_API_PASSWORD",
+                },
             ]
         }
+    }
+
+
+def _profile_context(
+    *,
+    not_in_scope_stages: list[str] | None = None,
+    disabled_features: dict[str, str] | None = None,
+    control_host_network: dict | None = None,
+) -> dict:
+    return {
+        "resolved_address_plan": {"subnet": "192.168.1.0/24"},
+        "not_in_scope_stages": not_in_scope_stages or [],
+        "disabled_features": disabled_features or {},
+        "control_host_network": control_host_network
+        or {
+            "status": "ready",
+            "classification": "on_active_subnet",
+            "active_subnet": "192.168.1.0/24",
+            "local_ipv4_cidrs": ["192.168.1.205/24"],
+            "matching_local_ipv4_cidrs": ["192.168.1.205/24"],
+            "checked_at": "2026-06-16T15:00:00+00:00",
+            "source_type": "live_probe",
+            "freshness": "current",
+            "message": "Control host has an IPv4 address on active lab subnet 192.168.1.0/24.",
+            "blockers": [],
+            "warnings": [],
+            "next_action": "Provider read-only checks may be refreshed from this host.",
+            "recheck_command": "ip -4 -o addr show scope global",
+        },
+    }
+
+
+def _blocked_control_host_network() -> dict:
+    blocker = (
+        "Control host has no IPv4 address on active lab subnet 10.10.8.0/24; "
+        "cached provider evidence cannot prove current visibility from this app host."
+    )
+    return {
+        "status": "blocked",
+        "classification": "not_on_active_subnet",
+        "active_subnet": "10.10.8.0/24",
+        "local_ipv4_cidrs": ["172.16.1.244/24", "192.168.1.240/24"],
+        "matching_local_ipv4_cidrs": [],
+        "checked_at": "2026-06-16T15:00:00+00:00",
+        "source_type": "live_probe",
+        "freshness": "current",
+        "message": blocker,
+        "blockers": [blocker],
+        "warnings": [],
+        "next_action": "Move this app host onto 10.10.8.0/24.",
+        "recheck_command": "ip -4 -o addr show scope global",
+    }
+
+
+def _netapp_state(
+    *,
+    configured: bool = True,
+    configured_state: str = "configured",
+    blockers: list[str] | None = None,
+) -> dict:
+    return {
+        "configured": configured,
+        "configured_state": configured_state,
+        "checked_at": "2026-06-16T15:00:00+00:00",
+        "source_type": "live_cached",
+        "freshness": "current",
+        "blockers": blockers or [],
     }

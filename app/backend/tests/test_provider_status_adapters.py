@@ -153,12 +153,13 @@ def test_cisco_candidate_discovery_with_fallback_candidate_warns(tmp_path: Path)
         _discovery_paths(paths),
     )
 
-    assert discovery["status"] == "ready"
-    assert discovery["selection_source"] == "auto-fallback-candidate"
-    assert discovery["effective_path"] == str(tty)
+    assert discovery["status"] == "needs-selection"
+    assert discovery["selection_source"] == "fallback-needs-selection"
+    assert discovery["effective_path"] is None
     assert discovery["candidate_counts"]["fallback_existing"] == 1
+    assert "Only fallback serial candidates were found" in discovery["blockers"][0]
     assert any("Fallback serial adapter detected" in warning for warning in discovery["warnings"])
-    assert "prompt readiness" in discovery["safe_next_action"]
+    assert "CISCO_CONSOLE_PORT" in discovery["safe_next_action"]
 
 
 def test_cisco_configured_port_missing_has_clear_blocker(tmp_path: Path) -> None:
@@ -236,7 +237,8 @@ def test_cisco_discovery_does_not_open_serial_or_send_commands(
         _discovery_paths(paths),
     )
 
-    assert discovery["status"] == "ready"
+    assert discovery["status"] == "needs-selection"
+    assert discovery["effective_path"] is None
 
 
 def test_cisco_setup_wizard_prompt_is_blocked() -> None:
@@ -847,6 +849,53 @@ def test_cisco_setup_readiness_is_plan_only_until_management_bootstrap() -> None
     assert "raw running-config backup" in readiness["disabled_actions"]
     assert "Configure Terminal" not in encoded
     assert "/probe" not in encoded
+
+
+def test_cisco_setup_readiness_blocks_when_control_host_off_subnet(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "app.services.cisco_setup_readiness.active_lab_profile_context",
+        lambda: {
+            "resolved_address_plan": {"cisco_management": "10.10.8.203"},
+            "control_host_network": _blocked_control_host_network(),
+        },
+    )
+    console_status = ProviderStatus(
+        id="cisco-console",
+        name="Cisco Console",
+        kind="network-console",
+        mode="local-readonly",
+        status="ready",
+        capabilities=["health"],
+        message="Console candidate found.",
+        configuration={"baud": 9600},
+        discovery={"effective_path": "/dev/ttyUSB0", "candidate_counts": {"existing": 1}},
+    )
+    ansible_status = ProviderStatus(
+        id="cisco-ansible",
+        name="Cisco Ansible SSH",
+        kind="network-automation",
+        mode="local-readonly",
+        status="ready",
+        capabilities=["health"],
+        message="Configured.",
+    )
+
+    readiness = get_cisco_setup_readiness(
+        provider_mode="local-readonly",
+        management_configured=True,
+        console_status=console_status,
+        ansible_status=ansible_status,
+    )
+
+    assert readiness["status"] == "blocked"
+    assert readiness["phase"] == "blocked"
+    assert readiness["planned_management_ip"] == "10.10.8.203"
+    assert readiness["console"]["status"] == "blocked"
+    assert readiness["console"]["serial_candidate_status"] == "ready"
+    assert readiness["ethernet_readiness"]["ready"] is False
+    assert readiness["ethernet_readiness"]["ssh_probe_status"] == "blocked"
+    assert readiness["ansible"]["status"] == "blocked"
+    assert "no IPv4 address on active lab subnet 10.10.8.0/24" in readiness["blockers"][0]
 
 
 def test_cisco_setup_readiness_surfaces_no_output_prompt_guidance() -> None:
@@ -3175,6 +3224,27 @@ def test_local_readonly_status_does_not_run_probes(monkeypatch) -> None:
     assert all(status.last_probe_result is None for status in statuses)
 
 
+def test_local_readonly_status_blocks_network_providers_when_control_host_off_subnet(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        "app.providers.registry.active_lab_profile_context",
+        lambda: {"control_host_network": _blocked_control_host_network()},
+    )
+
+    statuses = {status.id: status for status in provider_registry("local-readonly").statuses()}
+
+    for provider_id in ("ilo-redfish", "cisco-console", "cisco-ansible", "esxi-readonly", "netapp-ontap"):
+        status = statuses[provider_id]
+        assert status.status == "blocked"
+        assert status.source_type == "not_checked"
+        assert status.freshness == "not_checked"
+        assert status.is_current is False
+        assert "no IPv4 address on active lab subnet 10.10.8.0/24" in status.blockers[0]
+        assert status.configuration["control_host_network"]["classification"] == "not_on_active_subnet"
+        assert all(action.enabled is False for action in status.safe_actions)
+
+
 def test_provider_status_response_shape(client: TestClient) -> None:
     response = client.get("/api/v1/providers/status")
 
@@ -3216,6 +3286,28 @@ def _console_paths(tmp_path: Path) -> dict[str, Path]:
     by_id = dev / "serial" / "by-id"
     by_id.mkdir(parents=True)
     return {"dev": dev, "by_id": by_id}
+
+
+def _blocked_control_host_network() -> dict:
+    blocker = (
+        "Control host has no IPv4 address on active lab subnet 10.10.8.0/24; "
+        "cached provider evidence cannot prove current visibility from this app host."
+    )
+    return {
+        "status": "blocked",
+        "classification": "not_on_active_subnet",
+        "active_subnet": "10.10.8.0/24",
+        "local_ipv4_cidrs": ["172.16.1.244/24", "192.168.1.240/24"],
+        "matching_local_ipv4_cidrs": [],
+        "checked_at": "2026-06-16T15:00:00+00:00",
+        "source_type": "live_probe",
+        "freshness": "current",
+        "message": blocker,
+        "blockers": [blocker],
+        "warnings": [],
+        "next_action": "Move this app host onto 10.10.8.0/24.",
+        "recheck_command": "ip -4 -o addr show scope global",
+    }
 
 
 def _discovery_paths(paths: dict[str, Path]) -> ConsoleDiscoveryPaths:

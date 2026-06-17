@@ -22,6 +22,7 @@ from app.services.lab_topology import (
     runtime_configured_address_plan,
     topology_for_prefix,
 )
+from app.services.control_host_network import control_host_network_status
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 RUNTIME_PROFILE_ID = "runtime"
@@ -234,6 +235,19 @@ def active_lab_profile_context(profile: dict[str, Any] | None = None) -> dict[st
     active = deepcopy(profile or active_lab_profile_for_report())
     runtime = _runtime_profile(active=active.get("id") == RUNTIME_PROFILE_ID)
     warnings, guidance = _runtime_mismatch_guidance(active)
+    warnings = list(warnings)
+    guidance = list(guidance)
+    control_host_network = control_host_network_status(
+        {
+            "active_profile": active,
+            "resolved_address_plan": active.get("resolved_address_plan")
+            or active.get("address_plan")
+            or {},
+        }
+    )
+    if control_host_network.get("status") != "ready":
+        warnings.append(_control_host_network_warning(control_host_network))
+        guidance.append(_control_host_network_guidance(control_host_network))
     active["mismatch_warnings"] = warnings
     active["fix_guidance"] = guidance
     features = active.get("features") if isinstance(active.get("features"), dict) else {}
@@ -256,6 +270,27 @@ def active_lab_profile_context(profile: dict[str, Any] | None = None) -> dict[st
         "not_in_scope_stages": list(active.get("not_in_scope_stages") or []),
         "mismatch_warnings": warnings,
         "fix_guidance": guidance,
+        "control_host_network": control_host_network,
+    }
+
+
+def _control_host_network_warning(status: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "field": "control_host_network",
+        "env_field": "Control host subnet",
+        "expected_value": status.get("active_subnet") or "active lab subnet",
+        "current_value": ", ".join(status.get("local_ipv4_cidrs") or []) or "no detected IPv4 address",
+        "classification": status.get("classification") or "not_checked",
+        "message": status.get("message") or "Control host subnet visibility is not checked.",
+    }
+
+
+def _control_host_network_guidance(status: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "field": "control_host_network",
+        "action": status.get("next_action")
+        or "Move the app host onto the active lab subnet, then recheck provider status.",
+        "command": status.get("recheck_command") or "ip -4 -o addr show scope global",
     }
 
 

@@ -12,6 +12,7 @@ from app.providers.esxi_readonly import EsxiReadonlyAdapter
 from app.providers.ilo_redfish import IloRedfishAdapter
 from app.providers.mock import MockSourceOfTruthAdapter, MockVsphereAdapter
 from app.providers.netapp import NetAppOntapAdapter
+from app.services.lab_profiles import active_lab_profile_context
 from app.services.status_source import status_source_metadata
 
 
@@ -41,6 +42,14 @@ EVIDENCE_ARTIFACTS = {
         "artifacts/codex-runs/netapp-live-state-report.md",
         "artifacts/codex-runs/netapp-console-autodiscovery-report.md",
     ],
+}
+
+NETWORK_VISIBILITY_PROVIDER_IDS = {
+    "ilo-redfish",
+    "cisco-console",
+    "cisco-ansible",
+    "esxi-readonly",
+    "netapp-ontap",
 }
 
 
@@ -100,7 +109,8 @@ class ProviderRegistry:
                     *self.placeholder_statuses,
                 ]
             )
-        return [self._with_source_metadata(status) for status in statuses]
+        statuses = [self._with_source_metadata(status) for status in statuses]
+        return self._with_control_host_network_gate(statuses)
 
     def _ensure_lifecycle_mode(self) -> None:
         if self.provider_mode not in {"mock", "local-readonly"}:
@@ -161,6 +171,21 @@ class ProviderRegistry:
             is_operator_visible=source_type != "test_fixture",
         )
         return replace(status, **metadata)
+
+    def _with_control_host_network_gate(
+        self, statuses: list[ProviderStatus]
+    ) -> list[ProviderStatus]:
+        if self.provider_mode == "mock":
+            return statuses
+        control_host_network = active_lab_profile_context().get("control_host_network") or {}
+        if control_host_network.get("status") == "ready":
+            return statuses
+        return [
+            _network_gated_status(status, control_host_network)
+            if status.id in NETWORK_VISIBILITY_PROVIDER_IDS
+            else status
+            for status in statuses
+        ]
 
 
 def provider_registry(provider_mode: str | None = None) -> ProviderRegistry:
@@ -251,3 +276,69 @@ def _disabled_action(id_: str, label: str, reason: str) -> ProviderAction:
         read_only=False,
         reason=reason,
     )
+
+
+def _network_gated_status(
+    status: ProviderStatus, control_host_network: dict[str, object]
+) -> ProviderStatus:
+    reason = _control_host_blocker(control_host_network)
+    safe_actions = [
+        replace(action, enabled=False, reason=_with_reason(action.reason, reason))
+        for action in status.safe_actions
+    ]
+    disabled_actions = [
+        *status.disabled_actions,
+        _disabled_action(
+            f"{status.id}-network-visibility",
+            "Provider probe",
+            reason,
+        ),
+    ]
+    return replace(
+        status,
+        status="blocked",
+        message=f"Not checked from this app host: {reason}",
+        source_type="not_checked",
+        checked_at=str(control_host_network.get("checked_at") or "") or None,
+        freshness="not_checked",
+        ttl_seconds=None,
+        stale_after_seconds=None,
+        is_current=False,
+        recheck_command=str(
+            control_host_network.get("recheck_command") or "ip -4 -o addr show scope global"
+        ),
+        configuration={**status.configuration, "control_host_network": control_host_network},
+        blockers=_unique([reason, *status.blockers]),
+        safe_actions=safe_actions,
+        disabled_actions=disabled_actions,
+        last_probe_result=None,
+        last_probe_time=None,
+    )
+
+
+def _control_host_blocker(control_host_network: dict[str, object]) -> str:
+    blockers = control_host_network.get("blockers")
+    if isinstance(blockers, list):
+        first = next((str(item) for item in blockers if str(item).strip()), "")
+        if first:
+            return first
+    message = str(control_host_network.get("message") or "").strip()
+    if message:
+        return message
+    subnet = str(control_host_network.get("active_subnet") or "the active lab subnet")
+    return (
+        f"Control host subnet visibility is not checked for {subnet}; "
+        "provider status cannot be treated as current."
+    )
+
+
+def _with_reason(existing: str, reason: str) -> str:
+    if reason in existing:
+        return existing
+    if not existing:
+        return reason
+    return f"{existing} Control host blocker: {reason}"
+
+
+def _unique(values: list[str]) -> list[str]:
+    return list(dict.fromkeys(value for value in values if value))

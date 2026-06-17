@@ -508,6 +508,7 @@ export type LabProfileContext = {
   not_in_scope_stages: string[];
   mismatch_warnings: Array<Record<string, unknown>>;
   fix_guidance: Array<Record<string, unknown>>;
+  control_host_network: Record<string, unknown>;
 };
 
 export type LabProfileList = {
@@ -927,12 +928,18 @@ export type WorkflowStage = {
 
 export type CiscoSetupReadiness = {
   provider_id: string;
+  status: string;
+  source_type: string;
+  freshness: string;
+  checked_at: string | null;
   phase: string;
   planned_management_ip: string | null;
   management_configured: boolean;
+  control_host_network: Record<string, unknown>;
   state_boundaries: Record<string, unknown>;
   console: {
     status: string;
+    serial_candidate_status?: string;
     effective_path: string | null;
     recommended_path: string | null;
     selected_path: string | null;

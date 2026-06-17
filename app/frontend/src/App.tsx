@@ -39,7 +39,6 @@ import {
   OperatorSettingsPage,
   OperatorStoragePage,
   OperatorTabStateProvider,
-  OperatorValidationPage,
   OperatorVirtualizationPage
 } from "./operatorPages";
 import type {
@@ -745,7 +744,7 @@ function App() {
               <RouterRoute path="/storage" element={<OperatorStoragePage labProfileState={labProfileState} />} />
               <RouterRoute path="/virtualization" element={<OperatorVirtualizationPage labProfileState={labProfileState} />} />
               <RouterRoute path="/firmware-upgrades" element={<OperatorFirmwareUpgradesPage labProfileState={labProfileState} />} />
-              <RouterRoute path="/validation" element={<OperatorValidationPage labProfileState={labProfileState} />} />
+              <RouterRoute path="/validation" element={<Navigate to="/overview" replace />} />
               <RouterRoute path="/config" element={<ActiveLabConfigDrawer embedded />} />
               <RouterRoute path="/dashboard" element={<Navigate to="/overview" replace />} />
               <RouterRoute path="/lab-setup" element={<Navigate to="/overview" replace />} />
@@ -753,11 +752,11 @@ function App() {
               <RouterRoute path="/run-center" element={<Navigate to="/overview" replace />} />
               <RouterRoute path="/control-center" element={<Navigate to="/overview" replace />} />
               <RouterRoute path="/firmware" element={<Navigate to="/firmware-upgrades" replace />} />
-              <RouterRoute path="/golden-state" element={<Navigate to="/validation" replace />} />
-              <RouterRoute path="/validation-reports" element={<Navigate to="/validation" replace />} />
-              <RouterRoute path="/verification" element={<Navigate to="/validation" replace />} />
-              <RouterRoute path="/lab-validation" element={<Navigate to="/validation" replace />} />
-              <RouterRoute path="/reports" element={<Navigate to="/validation" replace />} />
+              <RouterRoute path="/golden-state" element={<Navigate to="/overview" replace />} />
+              <RouterRoute path="/validation-reports" element={<Navigate to="/overview" replace />} />
+              <RouterRoute path="/verification" element={<Navigate to="/overview" replace />} />
+              <RouterRoute path="/lab-validation" element={<Navigate to="/overview" replace />} />
+              <RouterRoute path="/reports" element={<Navigate to="/overview" replace />} />
               <RouterRoute
                 path="/settings"
                 element={
@@ -787,7 +786,7 @@ function App() {
                 }
               />
               <RouterRoute path="/audit-events" element={<AuditEvents />} />
-              <RouterRoute path="/artifacts" element={<Navigate to="/validation" replace />} />
+              <RouterRoute path="/artifacts" element={<Navigate to="/overview" replace />} />
               <RouterRoute path="/media" element={<MediaInventoryPage />} />
               <RouterRoute path="/providers" element={<Navigate to="/overview" replace />} />
             </Routes>
@@ -941,7 +940,6 @@ function SidebarNav({
         <NavItem to="/storage" icon={<HardDrive size={18} />} label="Storage" />
         <NavItem to="/virtualization" icon={<Layers size={18} />} label="Virtualization" />
         <NavItem to="/firmware-upgrades" icon={<ShieldCheck size={18} />} label="Firmware Upgrades" />
-        <NavItem to="/validation" icon={<CheckCircle2 size={18} />} label="Validation" />
         <NavItem to="/config" icon={<Pencil size={18} />} label="Edit Config" />
         <NavItem to="/settings" icon={<Settings size={18} />} label="Settings" />
       </nav>
@@ -14929,7 +14927,9 @@ function buildLabBuildStages({
     ...(ciscoSetupReadiness?.warnings ?? []),
     ...ciscoProviders.flatMap((provider) => provider.warnings)
   ];
-  const ciscoStatus = ciscoSetupReadiness?.phase || providerSectionStatus(ciscoProviders);
+  const ciscoStatus = ciscoSetupReadiness?.status === "blocked"
+    ? "blocked"
+    : ciscoSetupReadiness?.phase || providerSectionStatus(ciscoProviders);
   const ciscoConsole = objectValue(ciscoSetupReadiness?.console);
   const ciscoLastPrompt = objectValue(ciscoConsole.last_prompt_readiness);
   const ciscoPromptClassification = objectValue(ciscoLastPrompt.prompt_classification);
@@ -15032,7 +15032,7 @@ function buildLabBuildStages({
           (ciscoProviders[0] ? safeNextAction(ciscoProviders[0]) : "Load Cisco readiness.")
       ),
       metricLabel: "Console",
-      metricValue: ciscoSetupReadiness ? displayStatusLabel(ciscoSetupReadiness.console.status) : "Not loaded",
+      metricValue: ciscoSetupReadiness ? displayStatusLabel(ciscoSetupReadiness.status === "blocked" ? "blocked" : ciscoSetupReadiness.console.status) : "Not loaded",
       quickFacts: [
         ["Console Port", asString(ciscoConsole.selected_path) || asString(ciscoConsole.effective_path) || "Not selected"],
         ["Baud", asString(ciscoConsole.baud) || "Not selected"],
@@ -15794,6 +15794,7 @@ function CiscoSetupReadinessPanel({
   const setupWizardDetected = Boolean(
     setupWizardPlan?.setup_wizard_detected || readiness.setup_wizard_plan?.detected
   );
+  const readinessStatus = readiness.status === "blocked" ? "blocked" : readiness.phase;
   const displayedNextAction = setupWizardDetected
     ? "Review setup wizard readiness plan."
     : readiness.next_safe_action;
@@ -15819,10 +15820,10 @@ function CiscoSetupReadinessPanel({
           <h2>Cisco Setup Readiness</h2>
           <p>Bootstrap preview and SSH/Ansible readiness plan</p>
         </div>
-        <StatusBadge status={readiness.phase} />
+        <StatusBadge status={readinessStatus} />
       </div>
       <div className="provider-callout">
-        <strong>{setupWizardDetected ? "Setup wizard detected" : labelize(readiness.phase)}</strong>
+        <strong>{setupWizardDetected ? "Setup wizard detected" : labelize(readinessStatus)}</strong>
         <p>{displayedNextAction}</p>
       </div>
       <div className="provider-fact-grid">
@@ -15831,7 +15832,8 @@ function CiscoSetupReadinessPanel({
           label="Management Configured"
           value={readiness.management_configured ? "true" : "false"}
         />
-        <ProviderFact label="Console State" value={labelize(readiness.console.status)} />
+        <ProviderFact label="Cisco Access" value={displayStatusLabel(readinessStatus)} />
+        <ProviderFact label="Console Candidate" value={labelize(asString(readiness.console.serial_candidate_status) || readiness.console.status)} />
         <ProviderFact
           label="Prompt Captured"
           value={presenceLabel(lastPrompt.captured ?? discoveredState.prompt_captured)}

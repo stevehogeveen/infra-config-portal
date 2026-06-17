@@ -299,25 +299,33 @@ def discover_cisco_console(
 
     selected_candidate = _first_selectable_candidate(ranked_candidates)
     if selected_candidate:
-        effective_path = selected_candidate.path
         recommended_path = next(
             (candidate.path for candidate in ranked_candidates if candidate.stable_path and _candidate_accessible(candidate)),
             None,
         )
-        status = "ready"
-        selection_source = (
-            "configured-port-hint"
-            if config.port and selected_candidate.path == config.port
-            else (
-                "auto-stable-candidate"
-                if selected_candidate.stable_path
-                else "auto-fallback-candidate"
+        if config.port and selected_candidate.path == config.port:
+            effective_path = selected_candidate.path
+            status = "ready"
+            selection_source = "configured-port-hint"
+            _mark_recommendation(candidates, effective_path, "selected-auto")
+            safe_next_action = "Run prompt readiness against the configured console path."
+        elif selected_candidate.stable_path:
+            effective_path = selected_candidate.path
+            status = "ready"
+            selection_source = "auto-stable-candidate"
+            _mark_recommendation(candidates, effective_path, "selected-auto")
+            safe_next_action = "Run prompt readiness; auto-discovery will confirm prompt and baud."
+        else:
+            status = "needs-selection"
+            selection_source = "fallback-needs-selection"
+            blockers.append(
+                "Only fallback serial candidates were found; set CISCO_CONSOLE_PORT to the intended adapter or connect a stable /dev/serial/by-id path before treating Cisco console as reachable."
             )
-        )
-        _mark_recommendation(candidates, effective_path, "selected-auto")
-        safe_next_action = "Run prompt readiness; auto-discovery will confirm prompt and baud."
-        if not selected_candidate.stable_path:
             warnings.append(FALLBACK_CONSOLE_MESSAGE)
+            safe_next_action = (
+                "Select the intended Cisco console adapter with CISCO_CONSOLE_PORT or connect a stable "
+                "/dev/serial/by-id path, then refresh Provider Status."
+            )
         if config.port and selected_candidate.path != config.port:
             warnings.append(
                 "Configured CISCO_CONSOLE_PORT was treated as a hint; auto-discovery selected another usable adapter."

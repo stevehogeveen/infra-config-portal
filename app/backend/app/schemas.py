@@ -555,6 +555,7 @@ class LabProfileContextRead(BaseModel):
     not_in_scope_stages: list[str] = Field(default_factory=list)
     mismatch_warnings: list[dict[str, Any]] = Field(default_factory=list)
     fix_guidance: list[dict[str, Any]] = Field(default_factory=list)
+    control_host_network: dict[str, Any] = Field(default_factory=dict)
 
 
 class LabProfileListRead(BaseModel):
@@ -1200,9 +1201,14 @@ class ProviderModeSettingsWrite(BaseModel):
 
 class CiscoSetupReadinessRead(BaseModel):
     provider_id: str
+    status: str = "not_checked"
+    source_type: str = "operator_config"
+    freshness: str = "not_checked"
+    checked_at: str | None = None
     phase: str
     planned_management_ip: str | None = None
     management_configured: bool
+    control_host_network: dict[str, Any] = Field(default_factory=dict)
     state_boundaries: dict[str, Any] = Field(default_factory=dict)
     console: dict[str, Any]
     ethernet_readiness: dict[str, Any] = Field(default_factory=dict)
