@@ -217,6 +217,53 @@ test("run page has one Run button and writes latest result", async ({ page }) =>
   await expect(page.getByText("Run Full Verification")).toHaveCount(0);
 });
 
+test("visible action buttons ignore duplicate clicks while work is in flight", async ({ page }) => {
+  const actionRequests: string[] = [];
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    if (url.pathname === "/api/v1/control-center/config" && request.method() === "PUT") {
+      const body = request.postDataJSON() as Partial<ControlCenterConfigMock>;
+      actionRequests.push(`config:${body.target ?? ""}`);
+    }
+    if (
+      url.pathname === "/api/v1/workflows/actions/build-verification.run-full/run" &&
+      request.method() === "POST"
+    ) {
+      actionRequests.push("run");
+    }
+    if (url.pathname === "/api/v1/lab/firmware-inventory") {
+      actionRequests.push("firmware-check");
+    }
+  });
+
+  await page.goto("/configure");
+  await page.getByLabel("Target host, IP, or range").fill("192.0.2.203");
+  await page.getByRole("button", { name: "Save / apply config" }).evaluate((button) => {
+    (button as HTMLButtonElement).click();
+    (button as HTMLButtonElement).click();
+  });
+  await expect(page.getByText("Configuration saved")).toBeVisible();
+  expect(actionRequests).toEqual(["config:192.0.2.203"]);
+  actionRequests.length = 0;
+
+  await page.goto("/run");
+  await page.getByRole("button", { name: /^Run$/ }).evaluate((button) => {
+    (button as HTMLButtonElement).click();
+    (button as HTMLButtonElement).click();
+  });
+  await expect(page.getByText("Safe read-only/report-only action completed.").first()).toBeVisible();
+  expect(actionRequests).toEqual(["config:192.0.2.203", "run"]);
+  actionRequests.length = 0;
+
+  await page.goto("/firmware");
+  await page.getByRole("button", { name: "Check Firmware" }).evaluate((button) => {
+    (button as HTMLButtonElement).click();
+    (button as HTMLButtonElement).click();
+  });
+  await expect(page.getByText("Firmware check succeeded")).toBeVisible();
+  expect(actionRequests).toEqual(["config:192.0.2.203", "firmware-check"]);
+});
+
 test("run and firmware check sync unsaved current config before backend actions", async ({ page }) => {
   const configPayloads: Partial<ControlCenterConfigMock>[] = [];
   const actionRequests: string[] = [];
@@ -247,7 +294,7 @@ test("run and firmware check sync unsaved current config before backend actions"
   await page.getByLabel("Timeout seconds").fill("15");
   await page.getByLabel("Retry count").fill("3");
 
-  await page.getByRole("link", { name: "Continue to Run" }).click();
+  await page.getByRole("button", { name: "Save and Continue to Run" }).click();
   await page.getByRole("button", { name: /^Run$/ }).click();
   await expect(page.getByText("Safe read-only/report-only action completed.").first()).toBeVisible();
 
@@ -268,7 +315,7 @@ test("run and firmware check sync unsaved current config before backend actions"
   await page.getByRole("button", { name: "Check Firmware" }).click();
   await expect(page.getByText("Firmware check succeeded")).toBeVisible();
 
-  expect(configPayloads[1]).toMatchObject({
+  expect(configPayloads[2]).toMatchObject({
     snmp_credential_status: "configured",
     snmp_credential_version: "v3",
     snmp_version: "v3",
