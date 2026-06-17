@@ -166,6 +166,12 @@ test("run page has one Run button and writes latest result", async ({ page }) =>
   const runResult = page.locator("section").filter({ hasText: "Latest Run Result" });
   await runResult.getByText("Raw result").click();
   await expect(runResult.locator("pre.control-code")).toContainText('"target": "192.0.2.203"');
+
+  await page.goto("/configure");
+  await page.getByLabel("Target host, IP, or range").fill("192.0.2.204");
+  await page.goto("/results");
+  await expect(page.getByText("No run result")).toBeVisible();
+  await expect(page.getByText("Run Full Verification")).toHaveCount(0);
 });
 
 test("run and firmware check sync unsaved current config before backend actions", async ({ page }) => {

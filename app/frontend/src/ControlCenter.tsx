@@ -223,6 +223,9 @@ export default function ControlCenter() {
   }
 
   function updateConfig(value: ControlConfig | ((current: ControlConfig) => ControlConfig)) {
+    if (!configEditedRef.current) {
+      clearStoredResults();
+    }
     configEditedRef.current = true;
     setConfig(value);
     setConfigMessage("");
@@ -487,6 +490,31 @@ export default function ControlCenter() {
   async function validateFirmware() {
     if (upgradeStatus === "validating" || upgradeStatus === "upgrading") return;
     clearFirmwareGateResults();
+    const preflightBlockers = firmwareValidateBlockers({
+      config,
+      selectedFirmware,
+      selectedPath
+    });
+    if (preflightBlockers.length > 0) {
+      const result = createLocalOperationResult({
+        blockers: preflightBlockers,
+        message: "Firmware validation blocked until the current config and firmware selection are complete.",
+        raw: firmwareSelectionSnapshot(config, selectedPath, selectedFirmware),
+        status: "blocked",
+        title: "Firmware validation blocked",
+        type: "firmware-validation"
+      });
+      setLatestFirmwareValidation(result);
+      resultsAdapter.saveFirmwareValidation(result);
+      setUpgradeStatus("blocked");
+      addLog({
+        detail: result.blockers.join(" "),
+        message: "Firmware validation blocked",
+        status: "blocked",
+        type: "firmware"
+      });
+      return;
+    }
     setUpgradeStatus("validating");
     const syncResult = await syncConfigForAction();
     const currentConfig = syncResult.config;
@@ -572,6 +600,35 @@ export default function ControlCenter() {
 
   async function startFirmwareUpgrade() {
     if (upgradeStatus === "upgrading" || upgradeStatus === "validating") return;
+    const preflightBlockers = firmwareStartBlockers({
+      accepted: upgradeConfirmationAccepted,
+      config,
+      phrase: upgradeConfirmationPhraseState,
+      selectedFirmware,
+      selectedPath,
+      selectedUpgradeAction,
+      validation: latestFirmwareValidation
+    });
+    if (preflightBlockers.length > 0) {
+      const result = createLocalOperationResult({
+        blockers: preflightBlockers,
+        message: "Firmware upgrade was not started.",
+        raw: firmwareSelectionSnapshot(config, selectedPath, selectedFirmware),
+        status: "blocked",
+        title: "Firmware upgrade blocked",
+        type: "firmware-upgrade"
+      });
+      setLatestFirmwareUpgrade(result);
+      resultsAdapter.saveFirmwareUpgrade(result);
+      setUpgradeStatus("blocked");
+      addLog({
+        detail: preflightBlockers.join(" "),
+        message: "Firmware upgrade blocked",
+        status: "blocked",
+        type: "firmware"
+      });
+      return;
+    }
     const syncResult = await syncConfigForAction();
     const currentConfig = syncResult.config;
     if (syncResult.configChanged) {
