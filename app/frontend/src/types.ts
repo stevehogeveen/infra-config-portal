@@ -83,6 +83,63 @@ export type AuditEvent = {
   created_at: string;
 };
 
+export type ControlCenterIpMode = "ipv4" | "ipv6" | "both";
+
+export type ControlCenterSnmpVersion = "v2" | "v3";
+
+export type ControlCenterConfigRead = {
+  target: string;
+  ip_mode: ControlCenterIpMode;
+  snmp_version: ControlCenterSnmpVersion;
+  snmp_credential_status: "missing" | "configured";
+  snmp_credential_version: ControlCenterSnmpVersion | null;
+  timeout_seconds: number;
+  retry_count: number;
+  updated_at: string | null;
+  source_type: string;
+  freshness: string;
+  store_path: string;
+  credential_storage: string;
+  warnings: string[];
+  blockers: string[];
+};
+
+export type ControlCenterConfigWrite = {
+  target: string;
+  ip_mode: ControlCenterIpMode;
+  snmp_version: ControlCenterSnmpVersion;
+  snmp_credential_status: "missing" | "configured";
+  snmp_credential_version: ControlCenterSnmpVersion | null;
+  timeout_seconds: number;
+  retry_count: number;
+};
+
+export type ControlCenterSettingsRead = {
+  default_ip_mode: ControlCenterIpMode;
+  default_snmp_version: ControlCenterSnmpVersion;
+  default_timeout_seconds: number;
+  default_retry_count: number;
+  api_base_url: string;
+  firmware_repository: string;
+  logging_verbosity: "errors" | "normal" | "debug";
+  updated_at: string | null;
+  source_type: string;
+  freshness: string;
+  store_path: string;
+  warnings: string[];
+  blockers: string[];
+};
+
+export type ControlCenterSettingsWrite = {
+  default_ip_mode: ControlCenterIpMode;
+  default_snmp_version: ControlCenterSnmpVersion;
+  default_timeout_seconds: number;
+  default_retry_count: number;
+  api_base_url: string;
+  firmware_repository: string;
+  logging_verbosity: "errors" | "normal" | "debug";
+};
+
 export type ArtifactRecord = {
   id: string;
   request_id: string;

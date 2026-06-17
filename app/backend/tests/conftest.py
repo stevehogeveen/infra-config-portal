@@ -60,6 +60,7 @@ from app.main import app  # noqa: E402
 def isolate_local_lab_state(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
     monkeypatch.setenv("LAB_PROFILE_STORE", str(tmp_path / "lab-profiles.json"))
     monkeypatch.setenv("CONTROL_ACCESS_STORE", str(tmp_path / "control-access.json"))
+    monkeypatch.setenv("CONTROL_CENTER_STATE_STORE", str(tmp_path / "control-center-state.json"))
     monkeypatch.setenv("FIRMWARE_FILE_SELECTION_STORE", str(tmp_path / "firmware-file-selections.json"))
     for key, value in TEST_RUNTIME_ENV.items():
         monkeypatch.setenv(key, value)

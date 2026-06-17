@@ -1,6 +1,10 @@
 import { api } from "./api";
 import type {
   AuditEvent,
+  ControlCenterConfigRead,
+  ControlCenterConfigWrite,
+  ControlCenterSettingsRead,
+  ControlCenterSettingsWrite,
   FirmwareFileSelections,
   FirmwareSummary,
   FirmwareUpgradePath,
@@ -87,6 +91,8 @@ export type FirmwareUpgradeRequest = {
 export type ControlCenterSnapshot = {
   actions: WorkflowAction[];
   auditEvents: AuditEvent[];
+  controlConfig: ControlConfig | null;
+  controlSettings: ControlSettings | null;
   firmware: FirmwareState;
   health: HealthState | null;
   providers: ProviderStatus[];
@@ -148,7 +154,7 @@ const preferredRunActionIds = [
 
 export const configAdapter = {
   backendStatus:
-    "Backend target/SNMP config load-save endpoint is pending; this adapter stores only non-secret Control Center defaults locally.",
+    "Backend /api/v1/control-center/config stores non-secret target and SNMP state. Credential values remain operator/runtime only.",
 
   load(): ControlConfig {
     const stored = readStored<Partial<ControlConfig>>(CONFIG_STORAGE_KEY);
@@ -176,7 +182,10 @@ export const configAdapter = {
     return errors;
   },
 
-  save(config: ControlConfig, credentialDraft: CredentialDraft): { config: ControlConfig; errors: string[] } {
+  async save(
+    config: ControlConfig,
+    credentialDraft: CredentialDraft
+  ): Promise<{ config: ControlConfig; errors: string[]; savedVia: "backend" | "local_fallback" }> {
     const draftHasCredential = hasCredentialDraftForVersion(credentialDraft, config.snmpVersion);
     const existingCredentialStillApplies =
       config.snmpCredentialStatus === "configured" && config.snmpCredentialVersion === config.snmpVersion;
@@ -191,11 +200,17 @@ export const configAdapter = {
     };
     const errors = this.validate(normalized);
     if (errors.length) {
-      return { config: { ...normalized, updatedAt: config.updatedAt }, errors };
+      return { config: { ...normalized, updatedAt: config.updatedAt }, errors, savedVia: "local_fallback" };
     }
     const next: ControlConfig = { ...normalized, updatedAt: new Date().toISOString() };
-    writeStored(CONFIG_STORAGE_KEY, next);
-    return { config: next, errors };
+    try {
+      const saved = fromBackendConfig(await api.saveControlCenterConfig(toBackendConfig(next)));
+      writeStored(CONFIG_STORAGE_KEY, saved);
+      return { config: saved, errors, savedVia: "backend" };
+    } catch {
+      writeStored(CONFIG_STORAGE_KEY, next);
+      return { config: next, errors, savedVia: "local_fallback" };
+    }
   }
 };
 
@@ -204,7 +219,7 @@ export const settingsAdapter = {
     return { ...defaultSettings, ...readStored<Partial<ControlSettings>>(SETTINGS_STORAGE_KEY) };
   },
 
-  save(settings: ControlSettings): ControlSettings {
+  async save(settings: ControlSettings): Promise<{ settings: ControlSettings; savedVia: "backend" | "local_fallback" }> {
     const next: ControlSettings = {
       ...settings,
       defaultRetryCount: clampNumber(settings.defaultRetryCount, 0, 5),
@@ -212,8 +227,14 @@ export const settingsAdapter = {
       firmwareRepository: settings.firmwareRepository.trim() || defaultSettings.firmwareRepository,
       updatedAt: new Date().toISOString()
     };
-    writeStored(SETTINGS_STORAGE_KEY, next);
-    return next;
+    try {
+      const saved = fromBackendSettings(await api.saveControlCenterSettings(toBackendSettings(next)));
+      writeStored(SETTINGS_STORAGE_KEY, saved);
+      return { settings: saved, savedVia: "backend" };
+    } catch {
+      writeStored(SETTINGS_STORAGE_KEY, next);
+      return { settings: next, savedVia: "local_fallback" };
+    }
   }
 };
 
@@ -422,7 +443,10 @@ export const firmwareAdapter = {
     const saved = await api.saveFirmwareFileSelections({
       selected_files: { [selectedPath.component_id]: input.selectedFirmware.trim() }
     });
-    const probe = await api.firmwareCompliance("full");
+    const probe =
+      selectedPath.component_id === "netapp_ontap_version"
+        ? await api.validateNetappOntapUpgrade()
+        : await api.firmwareCompliance(firmwareScopeForPath(selectedPath));
     const firmware = await this.load();
     return {
       firmware: {
@@ -490,22 +514,76 @@ export const firmwareAdapter = {
 
 export const backendAdapter = {
   async loadSnapshot(): Promise<ControlCenterSnapshot> {
-    const [health, providers, actions, auditEvents, firmware] = await Promise.all([
+    const [health, providers, actions, auditEvents, controlConfig, controlSettings, firmware] = await Promise.all([
       safeCall(api.health, null),
       safeCall(api.providers, [] as ProviderStatus[]),
       safeCall(api.workflowActions, [] as WorkflowAction[]),
       safeCall(api.auditEvents, [] as AuditEvent[]),
+      safeCall(api.controlCenterConfig, null),
+      safeCall(api.controlCenterSettings, null),
       firmwareAdapter.load()
     ]);
     return {
       actions: Array.isArray(actions) ? actions : [],
       auditEvents: Array.isArray(auditEvents) ? auditEvents : [],
+      controlConfig: controlConfig ? fromBackendConfig(controlConfig) : null,
+      controlSettings: controlSettings ? fromBackendSettings(controlSettings) : null,
       firmware,
       health,
       providers: Array.isArray(providers) ? providers : []
     };
   }
 };
+
+function fromBackendConfig(config: ControlCenterConfigRead): ControlConfig {
+  return {
+    target: config.target ?? "",
+    ipMode: config.ip_mode,
+    snmpVersion: config.snmp_version,
+    snmpCredentialStatus: config.snmp_credential_status,
+    snmpCredentialVersion: config.snmp_credential_version,
+    timeoutSeconds: config.timeout_seconds,
+    retryCount: config.retry_count,
+    updatedAt: config.updated_at
+  };
+}
+
+function toBackendConfig(config: ControlConfig): ControlCenterConfigWrite {
+  return {
+    target: config.target,
+    ip_mode: config.ipMode,
+    snmp_version: config.snmpVersion,
+    snmp_credential_status: config.snmpCredentialStatus,
+    snmp_credential_version: config.snmpCredentialVersion,
+    timeout_seconds: config.timeoutSeconds,
+    retry_count: config.retryCount
+  };
+}
+
+function fromBackendSettings(settings: ControlCenterSettingsRead): ControlSettings {
+  return {
+    defaultIpMode: settings.default_ip_mode,
+    defaultSnmpVersion: settings.default_snmp_version,
+    defaultTimeoutSeconds: settings.default_timeout_seconds,
+    defaultRetryCount: settings.default_retry_count,
+    apiBaseUrl: settings.api_base_url,
+    firmwareRepository: settings.firmware_repository,
+    loggingVerbosity: settings.logging_verbosity,
+    updatedAt: settings.updated_at
+  };
+}
+
+function toBackendSettings(settings: ControlSettings): ControlCenterSettingsWrite {
+  return {
+    default_ip_mode: settings.defaultIpMode,
+    default_snmp_version: settings.defaultSnmpVersion,
+    default_timeout_seconds: settings.defaultTimeoutSeconds,
+    default_retry_count: settings.defaultRetryCount,
+    api_base_url: settings.apiBaseUrl,
+    firmware_repository: settings.firmwareRepository,
+    logging_verbosity: settings.loggingVerbosity
+  };
+}
 
 function normalizeWorkflowRun(
   result: WorkflowActionRun,
@@ -693,6 +771,13 @@ function firmwareSelectionRaw(
 
 function selectedPathTarget(path: FirmwareUpgradePath): string {
   return path.target_version || path.package_name || path.selected_file_name || "unknown";
+}
+
+function firmwareScopeForPath(path: FirmwareUpgradePath): "hpe" | "cisco" | "netapp" | "full" {
+  if (path.component_id.startsWith("netapp_")) return "netapp";
+  if (path.component_id.startsWith("cisco_")) return "cisco";
+  if (path.component_id.startsWith("hpe_")) return "hpe";
+  return "full";
 }
 
 function hasCredentialDraftForVersion(draft: CredentialDraft, version: SnmpVersion): boolean {

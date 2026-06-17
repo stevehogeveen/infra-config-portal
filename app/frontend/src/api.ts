@@ -12,6 +12,10 @@ import type {
   ControlActionCatalog,
   ControlActionPlan,
   ControlActionRun,
+  ControlCenterConfigRead,
+  ControlCenterConfigWrite,
+  ControlCenterSettingsRead,
+  ControlCenterSettingsWrite,
   FirmwareFileSelections,
   FirmwareFileSelectionsWrite,
   FirmwareSummary,
@@ -311,6 +315,20 @@ export const api = {
     apiRequest<ProviderModeSettings>("/api/v1/settings/provider-mode"),
   updateProviderModeSettings: (payload: ProviderModeSettingsWrite) =>
     apiRequest<ProviderModeSettings>("/api/v1/settings/provider-mode", {
+      method: "PUT",
+      body: payload
+    }),
+  controlCenterConfig: () =>
+    apiRequest<ControlCenterConfigRead>("/api/v1/control-center/config"),
+  saveControlCenterConfig: (payload: ControlCenterConfigWrite) =>
+    apiRequest<ControlCenterConfigRead>("/api/v1/control-center/config", {
+      method: "PUT",
+      body: payload
+    }),
+  controlCenterSettings: () =>
+    apiRequest<ControlCenterSettingsRead>("/api/v1/control-center/settings"),
+  saveControlCenterSettings: (payload: ControlCenterSettingsWrite) =>
+    apiRequest<ControlCenterSettingsRead>("/api/v1/control-center/settings", {
       method: "PUT",
       body: payload
     }),

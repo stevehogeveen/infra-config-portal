@@ -37,6 +37,10 @@ from app.schemas import (
     ControlActionCatalogRead,
     ControlActionPlanRead,
     ControlActionRunRead,
+    ControlCenterConfigRead,
+    ControlCenterConfigWrite,
+    ControlCenterSettingsRead,
+    ControlCenterSettingsWrite,
     FirmwareFileSelectionsRead,
     FirmwareFileSelectionsWrite,
     FirmwareSummaryRead,
@@ -131,6 +135,13 @@ from app.services.control_access import (
     ControlAccessConfigNotFoundError,
     ControlAccessConfigValidationError,
     update_control_access_config,
+)
+from app.services.control_center_state import (
+    ControlCenterStateValidationError,
+    read_control_center_config,
+    read_control_center_settings,
+    save_control_center_config,
+    save_control_center_settings,
 )
 from app.services.ilo_baseline import (
     get_ilo_baseline_preview,
@@ -557,6 +568,36 @@ def update_provider_mode_settings_route(
     try:
         return update_provider_mode_settings(payload.model_dump())
     except ProviderModeSettingsError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.get("/control-center/config", response_model=ControlCenterConfigRead)
+def read_control_center_config_route() -> ControlCenterConfigRead:
+    return read_control_center_config()
+
+
+@router.put("/control-center/config", response_model=ControlCenterConfigRead)
+def update_control_center_config_route(
+    payload: ControlCenterConfigWrite,
+) -> ControlCenterConfigRead:
+    try:
+        return save_control_center_config(payload.model_dump())
+    except ControlCenterStateValidationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.get("/control-center/settings", response_model=ControlCenterSettingsRead)
+def read_control_center_settings_route() -> ControlCenterSettingsRead:
+    return read_control_center_settings()
+
+
+@router.put("/control-center/settings", response_model=ControlCenterSettingsRead)
+def update_control_center_settings_route(
+    payload: ControlCenterSettingsWrite,
+) -> ControlCenterSettingsRead:
+    try:
+        return save_control_center_settings(payload.model_dump())
+    except ControlCenterStateValidationError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 

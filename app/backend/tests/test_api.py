@@ -193,6 +193,112 @@ def test_provider_mode_settings_save_writes_ignored_local_restart_config(
     assert "password" not in stored
 
 
+def test_control_center_config_persists_non_secret_runtime_state(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    store_path = tmp_path / "control-center-state.json"
+    monkeypatch.setenv("CONTROL_CENTER_STATE_STORE", str(store_path))
+
+    initial = client.get("/api/v1/control-center/config")
+
+    assert initial.status_code == 200
+    assert initial.json()["target"] == ""
+    assert initial.json()["credential_storage"] == "presence_only"
+
+    saved = client.put(
+        "/api/v1/control-center/config",
+        json={
+            "target": "192.0.2.50/31",
+            "ip_mode": "both",
+            "snmp_version": "v3",
+            "snmp_credential_status": "configured",
+            "snmp_credential_version": "v3",
+            "timeout_seconds": 20,
+            "retry_count": 2,
+        },
+    )
+
+    assert saved.status_code == 200
+    payload = saved.json()
+    assert payload["target"] == "192.0.2.50/31"
+    assert payload["ip_mode"] == "both"
+    assert payload["snmp_version"] == "v3"
+    assert payload["snmp_credential_status"] == "configured"
+    assert payload["snmp_credential_version"] == "v3"
+    assert payload["timeout_seconds"] == 20
+    assert payload["retry_count"] == 2
+    assert payload["source_type"] == "operator_config"
+    assert payload["store_path"].endswith("control-center-state.json")
+
+    stored = json.loads(store_path.read_text(encoding="utf-8"))
+    assert stored["config"]["target"] == "192.0.2.50/31"
+    assert stored["operator_runtime_only"] is True
+    assert "password" not in json.dumps(stored).lower()
+
+    reloaded = client.get("/api/v1/control-center/config")
+    assert reloaded.status_code == 200
+    assert reloaded.json()["target"] == "192.0.2.50/31"
+
+
+def test_control_center_settings_persist_global_defaults(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    store_path = tmp_path / "control-center-state.json"
+    monkeypatch.setenv("CONTROL_CENTER_STATE_STORE", str(store_path))
+
+    saved = client.put(
+        "/api/v1/control-center/settings",
+        json={
+            "default_ip_mode": "ipv6",
+            "default_snmp_version": "v3",
+            "default_timeout_seconds": 30,
+            "default_retry_count": 3,
+            "api_base_url": "same-origin",
+            "firmware_repository": "/srv/lab-firmware",
+            "logging_verbosity": "debug",
+        },
+    )
+
+    assert saved.status_code == 200
+    payload = saved.json()
+    assert payload["default_ip_mode"] == "ipv6"
+    assert payload["default_snmp_version"] == "v3"
+    assert payload["default_timeout_seconds"] == 30
+    assert payload["default_retry_count"] == 3
+    assert payload["firmware_repository"] == "/srv/lab-firmware"
+    assert payload["logging_verbosity"] == "debug"
+    assert payload["store_path"].endswith("control-center-state.json")
+
+    stored = json.loads(store_path.read_text(encoding="utf-8"))
+    assert stored["settings"]["firmware_repository"] == "/srv/lab-firmware"
+    assert stored["operator_runtime_only"] is True
+    assert "password" not in json.dumps(stored).lower()
+
+
+def test_control_center_state_rejects_secret_shaped_values(client: TestClient) -> None:
+    config_response = client.put(
+        "/api/v1/control-center/config",
+        json={
+            "target": "password=not-allowed",
+            "ip_mode": "ipv4",
+            "snmp_version": "v2",
+        },
+    )
+    settings_response = client.put(
+        "/api/v1/control-center/settings",
+        json={
+            "firmware_repository": "token=not-allowed",
+        },
+    )
+
+    assert config_response.status_code == 422
+    assert settings_response.status_code == 422
+
+
 def test_firmware_file_selections_persist_in_ignored_local_store(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,

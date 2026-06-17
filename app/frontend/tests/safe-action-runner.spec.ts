@@ -3,6 +3,39 @@ import { expect, test, type Page, type Route } from "@playwright/test";
 const checkedAt = "2026-06-17T18:20:00Z";
 const upgradePathValue = "NetApp ONTAP:netapp_ontap_version:9.14.1P1";
 
+type ControlCenterConfigMock = {
+  blockers: string[];
+  credential_storage: string;
+  freshness: string;
+  ip_mode: "ipv4" | "ipv6" | "both";
+  retry_count: number;
+  snmp_credential_status: "missing" | "configured";
+  snmp_credential_version: "v2" | "v3" | null;
+  snmp_version: "v2" | "v3";
+  source_type: string;
+  store_path: string;
+  target: string;
+  timeout_seconds: number;
+  updated_at: string | null;
+  warnings: string[];
+};
+
+type ControlCenterSettingsMock = {
+  api_base_url: string;
+  blockers: string[];
+  default_ip_mode: "ipv4" | "ipv6" | "both";
+  default_retry_count: number;
+  default_snmp_version: "v2" | "v3";
+  default_timeout_seconds: number;
+  firmware_repository: string;
+  freshness: string;
+  logging_verbosity: "errors" | "normal" | "debug";
+  source_type: string;
+  store_path: string;
+  updated_at: string | null;
+  warnings: string[];
+};
+
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
     if (!window.sessionStorage.getItem("control-center-e2e-storage-cleared")) {
@@ -73,6 +106,7 @@ test("run page has one Run button and writes latest result", async ({ page }) =>
   await page.goto("/configure");
   await page.getByLabel("Target host, IP, or range").fill("192.0.2.203");
   await page.getByRole("button", { name: "Save / apply config" }).click();
+  await expect(page.getByText("Configuration saved")).toBeVisible();
 
   await page.goto("/run");
   await expect(page.getByRole("button", { name: /^Run$/ })).toHaveCount(1);
@@ -116,7 +150,9 @@ test("firmware page checks visibility, validates, and gates upgrade confirmation
   await expect(page.getByLabel("Selected firmware, image, or version")).toHaveValue("ontap-9.14.1P1.tgz");
   await expect(page.getByRole("button", { name: "Validate Firmware" })).toBeEnabled();
 
-  const validateResponse = page.waitForResponse((response) => response.url().includes("/api/v1/lab/firmware-compliance"));
+  const validateResponse = page.waitForResponse((response) =>
+    response.url().includes("/api/v1/providers/netapp-ontap/ontap-upgrade/validate")
+  );
   await page.getByRole("button", { name: "Validate Firmware" }).click();
   await expect((await validateResponse).ok()).toBeTruthy();
   await expect(page.getByText("Firmware validation succeeded")).toBeVisible();
@@ -179,6 +215,7 @@ test("firmware upgrade stays blocked after selection changes, failed validation,
   await page.goto("/configure");
   await page.getByLabel("Target host, IP, or range").fill("192.0.2.204");
   await page.getByRole("button", { name: "Save / apply config" }).click();
+  await expect(page.getByText("Configuration saved")).toBeVisible();
   await page.goto("/firmware");
 
   await expect(page.getByRole("button", { name: "Start Firmware Upgrade" })).toBeDisabled();
@@ -204,6 +241,8 @@ test("settings and logs remain top-level control-center pages", async ({ page })
 });
 
 async function installApiMocks(page: Page) {
+  let controlConfig = controlCenterConfig();
+  let controlSettings = controlCenterSettings();
   let selectedFirmwareFiles: Record<string, string> = { netapp_ontap_version: "ontap-9.14.1P1.tgz" };
 
   await page.route("**/*", async (route) => {
@@ -237,6 +276,22 @@ async function installApiMocks(page: Page) {
     if (url.pathname === "/api/v1/audit-events") {
       return json(route, auditEvents());
     }
+    if (url.pathname === "/api/v1/control-center/config" && request.method() === "GET") {
+      return json(route, controlConfig);
+    }
+    if (url.pathname === "/api/v1/control-center/config" && request.method() === "PUT") {
+      controlConfig = controlCenterConfig(request.postDataJSON() as Partial<ControlCenterConfigMock>);
+      return json(route, controlConfig);
+    }
+    if (url.pathname === "/api/v1/control-center/settings" && request.method() === "GET") {
+      return json(route, controlSettings);
+    }
+    if (url.pathname === "/api/v1/control-center/settings" && request.method() === "PUT") {
+      controlSettings = controlCenterSettings(
+        request.postDataJSON() as Partial<ControlCenterSettingsMock>
+      );
+      return json(route, controlSettings);
+    }
     if (url.pathname === "/api/v1/firmware/summary") {
       return json(route, firmwareSummaries());
     }
@@ -252,6 +307,9 @@ async function installApiMocks(page: Page) {
       return json(route, firmwareInventory());
     }
     if (url.pathname === "/api/v1/lab/firmware-compliance") {
+      return json(route, firmwareCompliance(selectedFirmwareFiles));
+    }
+    if (url.pathname === "/api/v1/providers/netapp-ontap/ontap-upgrade/validate" && request.method() === "POST") {
       return json(route, firmwareCompliance(selectedFirmwareFiles));
     }
     if (url.pathname === "/api/v1/workflows/actions/build-verification.run-full/run" && request.method() === "POST") {
@@ -314,6 +372,45 @@ function providerStatuses() {
       warnings: []
     }
   ];
+}
+
+function controlCenterConfig(overrides: Partial<ControlCenterConfigMock> = {}): ControlCenterConfigMock {
+  return {
+    blockers: [],
+    credential_storage: "presence_only",
+    freshness: "live",
+    ip_mode: "ipv4",
+    retry_count: 1,
+    snmp_credential_status: "missing",
+    snmp_credential_version: null,
+    snmp_version: "v2",
+    source_type: "operator_config",
+    store_path: ".local/control-center-state.json",
+    target: "",
+    timeout_seconds: 8,
+    updated_at: checkedAt,
+    warnings: [],
+    ...overrides
+  };
+}
+
+function controlCenterSettings(overrides: Partial<ControlCenterSettingsMock> = {}): ControlCenterSettingsMock {
+  return {
+    api_base_url: "same-origin",
+    blockers: [],
+    default_ip_mode: "ipv4",
+    default_retry_count: 1,
+    default_snmp_version: "v2",
+    default_timeout_seconds: 8,
+    firmware_repository: "Backend firmware repository integration pending",
+    freshness: "live",
+    logging_verbosity: "normal",
+    source_type: "operator_config",
+    store_path: ".local/control-center-state.json",
+    updated_at: checkedAt,
+    warnings: [],
+    ...overrides
+  };
 }
 
 function firmwareSummaries() {

@@ -595,6 +595,78 @@ class AuditEventRead(BaseModel):
     created_at: datetime
 
 
+class ControlCenterConfigWrite(BaseModel):
+    target: str = Field(default="", max_length=240)
+    ip_mode: Literal["ipv4", "ipv6", "both"] = "ipv4"
+    snmp_version: Literal["v2", "v3"] = "v2"
+    snmp_credential_status: Literal["missing", "configured"] = "missing"
+    snmp_credential_version: Literal["v2", "v3"] | None = None
+    timeout_seconds: int = Field(default=8, ge=1, le=120)
+    retry_count: int = Field(default=1, ge=0, le=5)
+
+    @field_validator("target", mode="before")
+    @classmethod
+    def strip_target(cls, value: str | None) -> str:
+        return str(value or "").strip()
+
+    @field_validator("*", mode="after")
+    @classmethod
+    def reject_secret_values(cls, value: Any) -> Any:
+        _reject_secret_values(value)
+        return value
+
+    @model_validator(mode="after")
+    def align_credential_version(self) -> "ControlCenterConfigWrite":
+        if self.snmp_credential_status != "configured":
+            self.snmp_credential_version = None
+        elif self.snmp_credential_version is None:
+            self.snmp_credential_version = self.snmp_version
+        return self
+
+
+class ControlCenterConfigRead(ControlCenterConfigWrite):
+    updated_at: str | None = None
+    source_type: str = "operator_config"
+    freshness: str = "live"
+    store_path: str
+    credential_storage: str = "presence_only"
+    warnings: list[str] = Field(default_factory=list)
+    blockers: list[str] = Field(default_factory=list)
+
+
+class ControlCenterSettingsWrite(BaseModel):
+    default_ip_mode: Literal["ipv4", "ipv6", "both"] = "ipv4"
+    default_snmp_version: Literal["v2", "v3"] = "v2"
+    default_timeout_seconds: int = Field(default=8, ge=1, le=120)
+    default_retry_count: int = Field(default=1, ge=0, le=5)
+    api_base_url: str = Field(default="same-origin", max_length=240)
+    firmware_repository: str = Field(
+        default="Backend firmware repository integration pending",
+        max_length=240,
+    )
+    logging_verbosity: Literal["errors", "normal", "debug"] = "normal"
+
+    @field_validator("api_base_url", "firmware_repository", mode="before")
+    @classmethod
+    def strip_text(cls, value: str | None) -> str:
+        return str(value or "").strip()
+
+    @field_validator("*", mode="after")
+    @classmethod
+    def reject_secret_values(cls, value: Any) -> Any:
+        _reject_secret_values(value)
+        return value
+
+
+class ControlCenterSettingsRead(ControlCenterSettingsWrite):
+    updated_at: str | None = None
+    source_type: str = "operator_config"
+    freshness: str = "live"
+    store_path: str
+    warnings: list[str] = Field(default_factory=list)
+    blockers: list[str] = Field(default_factory=list)
+
+
 class MediaInventoryItemRead(BaseModel):
     placeholder_name: str
     extension: str
@@ -1126,7 +1198,7 @@ def _reject_secret_values(value: Any) -> None:
     if isinstance(value, str):
         if SECRET_VALUE_RE.search(value):
             raise ValueError(
-                "iLO setup intent stores labels/placeholders only; secret-looking values are not allowed"
+                "Operator config stores labels/placeholders only; secret-looking values are not allowed"
             )
         return
     if isinstance(value, BaseModel):

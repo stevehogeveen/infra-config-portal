@@ -81,8 +81,8 @@ type ControlCenterContext = {
   runError: string;
   runSelectedAction: () => Promise<void>;
   runStatus: OperationStatus;
-  saveConfig: () => void;
-  saveSettings: () => void;
+  saveConfig: () => Promise<void>;
+  saveSettings: () => Promise<void>;
   selectedAction: WorkflowAction | null;
   selectedFirmware: string;
   selectedPath: FirmwareUpgradePath | null;
@@ -174,6 +174,12 @@ export default function ControlCenter() {
       setActions(snapshot.actions);
       setAuditEvents(snapshot.auditEvents);
       setFirmware(snapshot.firmware);
+      if (snapshot.controlConfig) {
+        setConfig(snapshot.controlConfig);
+      }
+      if (snapshot.controlSettings) {
+        setSettings(snapshot.controlSettings);
+      }
     } catch (error) {
       setLoadError(errorMessage(error));
     } finally {
@@ -185,11 +191,17 @@ export default function ControlCenter() {
     setLogs((current) => logsAdapter.add(current, entry));
   }
 
-  function saveConfig() {
-    const result = configAdapter.save(config, credentialDraft);
+  async function saveConfig() {
+    const result = await configAdapter.save(config, credentialDraft);
     setConfig(result.config);
     setConfigErrors(result.errors);
-    setConfigMessage(result.errors.length ? "" : "Configuration saved");
+    setConfigMessage(
+      result.errors.length
+        ? ""
+        : result.savedVia === "backend"
+          ? "Configuration saved to backend runtime state"
+          : "Configuration saved locally; backend config endpoint was unavailable"
+    );
     if (result.errors.length) {
       addLog({
         detail: result.errors.join(" "),
@@ -209,19 +221,26 @@ export default function ControlCenter() {
     addLog({
       detail: `${result.config.target}; ${ipModeLabel(result.config.ipMode)}; ${snmpVersionLabel(result.config.snmpVersion)}.${
         clearedResults ? " Previous results were cleared because they used an older config." : ""
-      }`,
+      } ${result.savedVia === "backend" ? "Saved through backend config adapter." : "Saved in browser fallback state."}`,
       message: "Config saved",
       status: "saved",
       type: "config"
     });
   }
 
-  function saveSettings() {
-    const next = settingsAdapter.save(settings);
+  async function saveSettings() {
+    const result = await settingsAdapter.save(settings);
+    const next = result.settings;
     setSettings(next);
-    setSettingsMessage("Settings saved");
+    setSettingsMessage(
+      result.savedVia === "backend"
+        ? "Settings saved to backend runtime state"
+        : "Settings saved locally; backend settings endpoint was unavailable"
+    );
     addLog({
-      detail: `Default ${ipModeLabel(next.defaultIpMode)}, ${snmpVersionLabel(next.defaultSnmpVersion)}, timeout ${next.defaultTimeoutSeconds}s.`,
+      detail: `Default ${ipModeLabel(next.defaultIpMode)}, ${snmpVersionLabel(next.defaultSnmpVersion)}, timeout ${next.defaultTimeoutSeconds}s. ${
+        result.savedVia === "backend" ? "Saved through backend settings adapter." : "Saved in browser fallback state."
+      }`,
       message: "Settings changed",
       status: "saved",
       type: "settings"
@@ -786,8 +805,8 @@ function ConfigurePage({ context }: { context: ControlCenterContext }) {
         <summary>Advanced</summary>
         <FactGrid
           facts={[
-            ["Config adapter", "Local non-secret storage"],
-            ["Backend config endpoint", "Integration pending"],
+            ["Config adapter", "Backend non-secret runtime state with browser fallback"],
+            ["Backend config endpoint", "/api/v1/control-center/config"],
             ["Credential state", credentialConfigLabel(context.config)],
             ["Provider mode", context.health?.provider_mode ?? "Unknown"],
             ["Last saved", context.config.updatedAt ? formatDateTime(context.config.updatedAt) : "Not saved"]
@@ -797,7 +816,7 @@ function ConfigurePage({ context }: { context: ControlCenterContext }) {
 
       {context.configErrors.length > 0 && <IssueGroup title="Validation errors" items={context.configErrors} />}
       <div className="control-actions">
-        <button className="primary" onClick={context.saveConfig} type="button">
+        <button className="primary" onClick={() => void context.saveConfig()} type="button">
           <Save size={16} />
           Save / apply config
         </button>
@@ -1096,7 +1115,7 @@ function SettingsPage({ context }: { context: ControlCenterContext }) {
         </div>
       </section>
       <div className="control-actions">
-        <button className="primary" onClick={context.saveSettings} type="button">
+        <button className="primary" onClick={() => void context.saveSettings()} type="button">
           <Save size={16} />
           Save settings
         </button>
