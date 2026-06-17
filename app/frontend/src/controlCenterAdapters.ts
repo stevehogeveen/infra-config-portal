@@ -1,0 +1,600 @@
+import { api } from "./api";
+import type {
+  AuditEvent,
+  FirmwareFileSelections,
+  FirmwareSummary,
+  FirmwareUpgradePath,
+  ProviderProbeResult,
+  ProviderStatus,
+  WorkflowAction,
+  WorkflowActionRun
+} from "./types";
+
+export type IpMode = "ipv4" | "ipv6" | "both";
+export type SnmpVersion = "v2" | "v3";
+export type OperationStatus = "idle" | "running" | "ready" | "success" | "failed" | "blocked" | "pending";
+export type UpgradeStatus = "idle" | "validating" | "ready" | "upgrading" | "success" | "failed";
+
+export type ControlConfig = {
+  target: string;
+  ipMode: IpMode;
+  snmpVersion: SnmpVersion;
+  snmpCredentialStatus: "missing" | "configured";
+  timeoutSeconds: number;
+  retryCount: number;
+  updatedAt: string | null;
+};
+
+export type CredentialDraft = {
+  snmpV2Community: string;
+  snmpV3Username: string;
+  snmpV3AuthPassword: string;
+  snmpV3PrivacyPassword: string;
+};
+
+export type ControlSettings = {
+  defaultIpMode: IpMode;
+  defaultSnmpVersion: SnmpVersion;
+  defaultTimeoutSeconds: number;
+  defaultRetryCount: number;
+  apiBaseUrl: string;
+  firmwareRepository: string;
+  loggingVerbosity: "errors" | "normal" | "debug";
+  updatedAt: string | null;
+};
+
+export type ControlLogEntry = {
+  detail?: string;
+  id: string;
+  message: string;
+  status?: string;
+  timestamp: string;
+  type: "system" | "config" | "run" | "firmware" | "settings";
+};
+
+export type OperationResult = {
+  id: string;
+  type: "run" | "firmware-check" | "firmware-validation" | "firmware-upgrade";
+  title: string;
+  status: OperationStatus;
+  message: string;
+  checkedAt: string;
+  sourceType: string;
+  freshness: string;
+  executed: boolean;
+  blockers: string[];
+  warnings: string[];
+  artifacts: string[];
+  raw: Record<string, unknown>;
+};
+
+export type FirmwareState = {
+  summaries: FirmwareSummary[];
+  fileSelections: FirmwareFileSelections | null;
+};
+
+export type FirmwareUpgradeRequest = {
+  actions: WorkflowAction[];
+  confirmationAccepted: boolean;
+  confirmationPhrase: string;
+  selectedFirmware: string;
+  selectedPath: FirmwareUpgradePath | null;
+  validationResult: OperationResult | null;
+};
+
+export type ControlCenterSnapshot = {
+  actions: WorkflowAction[];
+  auditEvents: AuditEvent[];
+  firmware: FirmwareState;
+  health: HealthState | null;
+  providerMode: ProviderModeSummary | null;
+  providers: ProviderStatus[];
+};
+
+export type HealthState = {
+  app?: string;
+  dev_test_banner?: string | null;
+  expected_runtime_mode?: string;
+  operator_runtime_mode?: string;
+  provider_mode?: string;
+  status: string;
+};
+
+export type ProviderModeSummary = {
+  current_mode: string;
+  desired_mode: string;
+  pending_restart: boolean;
+  restart_command: string;
+  next_safe_action: string;
+};
+
+const CONFIG_STORAGE_KEY = "webuis-control-center-config-v2";
+const SETTINGS_STORAGE_KEY = "webuis-control-center-settings-v2";
+const LOG_STORAGE_KEY = "webuis-control-center-logs-v2";
+const RESULT_STORAGE_KEY = "webuis-control-center-latest-result-v2";
+const FIRMWARE_CHECK_STORAGE_KEY = "webuis-control-center-latest-firmware-check-v2";
+const FIRMWARE_VALIDATION_STORAGE_KEY = "webuis-control-center-latest-firmware-validation-v2";
+const FIRMWARE_UPGRADE_STORAGE_KEY = "webuis-control-center-latest-firmware-upgrade-v2";
+
+export const defaultConfig: ControlConfig = {
+  target: "",
+  ipMode: "ipv4",
+  snmpVersion: "v2",
+  snmpCredentialStatus: "missing",
+  timeoutSeconds: 8,
+  retryCount: 1,
+  updatedAt: null
+};
+
+export const defaultCredentialDraft: CredentialDraft = {
+  snmpV2Community: "",
+  snmpV3Username: "",
+  snmpV3AuthPassword: "",
+  snmpV3PrivacyPassword: ""
+};
+
+export const defaultSettings: ControlSettings = {
+  defaultIpMode: "ipv4",
+  defaultSnmpVersion: "v2",
+  defaultTimeoutSeconds: 8,
+  defaultRetryCount: 1,
+  apiBaseUrl: import.meta.env.VITE_API_BASE_URL || "same-origin",
+  firmwareRepository: "Backend firmware repository integration pending",
+  loggingVerbosity: "normal",
+  updatedAt: null
+};
+
+const preferredRunActionIds = [
+  "build-verification.run-full",
+  "full-lab.validation",
+  "lab-validation.summary",
+  "reports.summary",
+  "lab-profile.view-active"
+];
+
+export const configAdapter = {
+  backendStatus:
+    "Backend target/SNMP config load-save endpoint is pending; this adapter stores only non-secret Control Center defaults locally.",
+
+  load(): ControlConfig {
+    return { ...defaultConfig, ...readStored<Partial<ControlConfig>>(CONFIG_STORAGE_KEY) };
+  },
+
+  validate(config: ControlConfig): string[] {
+    const errors: string[] = [];
+    if (!config.target.trim()) {
+      errors.push("Target host, IP, or range is required.");
+    }
+    if (!Number.isFinite(config.timeoutSeconds) || config.timeoutSeconds < 1 || config.timeoutSeconds > 120) {
+      errors.push("Timeout must be between 1 and 120 seconds.");
+    }
+    if (!Number.isFinite(config.retryCount) || config.retryCount < 0 || config.retryCount > 5) {
+      errors.push("Retry count must be between 0 and 5.");
+    }
+    return errors;
+  },
+
+  save(config: ControlConfig, credentialDraft: CredentialDraft): { config: ControlConfig; errors: string[] } {
+    const next: ControlConfig = {
+      ...config,
+      retryCount: clampNumber(config.retryCount, 0, 5),
+      timeoutSeconds: clampNumber(config.timeoutSeconds, 1, 120),
+      snmpCredentialStatus: hasCredentialDraft(credentialDraft) ? "configured" : config.snmpCredentialStatus,
+      target: config.target.trim(),
+      updatedAt: new Date().toISOString()
+    };
+    const errors = this.validate(next);
+    if (errors.length) {
+      return { config: next, errors };
+    }
+    writeStored(CONFIG_STORAGE_KEY, next);
+    return { config: next, errors };
+  }
+};
+
+export const settingsAdapter = {
+  load(): ControlSettings {
+    return { ...defaultSettings, ...readStored<Partial<ControlSettings>>(SETTINGS_STORAGE_KEY) };
+  },
+
+  save(settings: ControlSettings): ControlSettings {
+    const next: ControlSettings = {
+      ...settings,
+      defaultRetryCount: clampNumber(settings.defaultRetryCount, 0, 5),
+      defaultTimeoutSeconds: clampNumber(settings.defaultTimeoutSeconds, 1, 120),
+      firmwareRepository: settings.firmwareRepository.trim() || defaultSettings.firmwareRepository,
+      updatedAt: new Date().toISOString()
+    };
+    writeStored(SETTINGS_STORAGE_KEY, next);
+    return next;
+  }
+};
+
+export const logsAdapter = {
+  load(): ControlLogEntry[] {
+    return readStored<ControlLogEntry[]>(LOG_STORAGE_KEY) ?? [];
+  },
+
+  add(logs: ControlLogEntry[], entry: Omit<ControlLogEntry, "id" | "timestamp">): ControlLogEntry[] {
+    const next = [
+      {
+        ...entry,
+        id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        timestamp: new Date().toISOString()
+      },
+      ...logs
+    ].slice(0, 80);
+    writeStored(LOG_STORAGE_KEY, next);
+    return next;
+  },
+
+  fromAuditEvents(auditEvents: AuditEvent[]): ControlLogEntry[] {
+    return auditEvents.slice(0, 20).map((event) => ({
+      detail: event.message,
+      id: `audit-${event.id}`,
+      message: humanize(event.event_type),
+      status: event.to_status ?? event.from_status ?? "recorded",
+      timestamp: event.created_at,
+      type: "system"
+    }));
+  }
+};
+
+export const resultsAdapter = {
+  loadRun(): OperationResult | null {
+    return readStored<OperationResult>(RESULT_STORAGE_KEY);
+  },
+
+  saveRun(result: OperationResult): void {
+    writeStored(RESULT_STORAGE_KEY, result);
+  },
+
+  loadFirmwareCheck(): OperationResult | null {
+    return readStored<OperationResult>(FIRMWARE_CHECK_STORAGE_KEY);
+  },
+
+  saveFirmwareCheck(result: OperationResult): void {
+    writeStored(FIRMWARE_CHECK_STORAGE_KEY, result);
+  },
+
+  loadFirmwareValidation(): OperationResult | null {
+    return readStored<OperationResult>(FIRMWARE_VALIDATION_STORAGE_KEY);
+  },
+
+  saveFirmwareValidation(result: OperationResult): void {
+    writeStored(FIRMWARE_VALIDATION_STORAGE_KEY, result);
+  },
+
+  loadFirmwareUpgrade(): OperationResult | null {
+    return readStored<OperationResult>(FIRMWARE_UPGRADE_STORAGE_KEY);
+  },
+
+  saveFirmwareUpgrade(result: OperationResult): void {
+    writeStored(FIRMWARE_UPGRADE_STORAGE_KEY, result);
+  }
+};
+
+export const runAdapter = {
+  selectAction(actions: WorkflowAction[]): WorkflowAction | null {
+    const runnable = actions.filter(
+      (action) =>
+        action.ui_run_supported &&
+        ["read_only", "report_only"].includes(action.mode) &&
+        !["blocked", "not_in_scope", "missing_config"].includes(action.current_availability)
+    );
+    for (const actionId of preferredRunActionIds) {
+      const match = runnable.find((action) => action.action_id === actionId);
+      if (match) return match;
+    }
+    return runnable[0] ?? null;
+  },
+
+  async run(config: ControlConfig, action: WorkflowAction | null): Promise<OperationResult> {
+    const validationErrors = configAdapter.validate(config);
+    if (validationErrors.length) {
+      return placeholderResult({
+        blockers: validationErrors,
+        message: "Run blocked until the current configuration is valid.",
+        status: "blocked",
+        title: "Run blocked",
+        type: "run"
+      });
+    }
+    if (!action) {
+      return placeholderResult({
+        blockers: ["Backend workflow action catalog is unavailable."],
+        message: "No provider call was run. Backend run integration is pending.",
+        status: "pending",
+        title: "Safe run placeholder",
+        type: "run"
+      });
+    }
+    const result = await api.runWorkflowAction(action.action_id);
+    return normalizeWorkflowRun(result, "run", {
+      config_snapshot: sanitizedConfigSnapshot(config)
+    });
+  }
+};
+
+export const firmwareAdapter = {
+  async load(): Promise<FirmwareState> {
+    const [summaries, fileSelections] = await Promise.all([
+      safeCall(api.firmwareSummary, [] as FirmwareSummary[]),
+      safeCall(api.firmwareFileSelections, null)
+    ]);
+    return {
+      fileSelections,
+      summaries: Array.isArray(summaries) ? summaries : []
+    };
+  },
+
+  async check(): Promise<{ firmware: FirmwareState; result: OperationResult }> {
+    const probe = await api.firmwareInventory();
+    const firmware = await this.load();
+    return {
+      firmware,
+      result: normalizeProbeResult(probe, "firmware-check", "Firmware check")
+    };
+  },
+
+  async validate(): Promise<{ firmware: FirmwareState; result: OperationResult }> {
+    const probe = await api.firmwareCompliance("full");
+    const firmware = await this.load();
+    return {
+      firmware,
+      result: normalizeProbeResult(probe, "firmware-validation", "Firmware validation")
+    };
+  },
+
+  async upgrade(request: FirmwareUpgradeRequest): Promise<OperationResult> {
+    const blockers = upgradeRequestBlockers(request);
+    if (blockers.length) {
+      return placeholderResult({
+        blockers,
+        message: "Firmware upgrade was not started.",
+        status: "blocked",
+        title: "Firmware upgrade blocked",
+        type: "firmware-upgrade"
+      });
+    }
+
+    const supportedActionId = supportedUpgradeActionId(request.selectedPath);
+    if (!supportedActionId) {
+      return placeholderResult({
+        blockers: [
+          "Backend firmware upgrade integration is pending for this selected firmware path."
+        ],
+        message: "No firmware update, reboot, or provider write was executed.",
+        status: "pending",
+        title: "Firmware upgrade pending backend integration",
+        type: "firmware-upgrade",
+        raw: {
+          selected_component: request.selectedPath?.component_id ?? null,
+          selected_firmware: request.selectedFirmware
+        }
+      });
+    }
+
+    const action = request.actions.find((candidate) => candidate.action_id === supportedActionId);
+    if (!action) {
+      return placeholderResult({
+        blockers: [`Backend action ${supportedActionId} is not available in the workflow catalog.`],
+        message: "Firmware upgrade was not started.",
+        status: "pending",
+        title: "Firmware upgrade pending backend integration",
+        type: "firmware-upgrade"
+      });
+    }
+
+    const result = await api.runWorkflowAction(supportedActionId, {
+      confirmation_phrase: "UPGRADE ONTAP",
+      confirmed_gates: ["NETAPP_ONTAP_UPGRADE_APPLY=true"]
+    });
+    return normalizeWorkflowRun(result, "firmware-upgrade", {
+      selected_component: request.selectedPath?.component_id ?? null,
+      selected_firmware: request.selectedFirmware
+    });
+  }
+};
+
+export const backendAdapter = {
+  async loadSnapshot(): Promise<ControlCenterSnapshot> {
+    const [health, providers, actions, auditEvents, firmware, providerMode] = await Promise.all([
+      safeCall(api.health, null),
+      safeCall(api.providers, [] as ProviderStatus[]),
+      safeCall(api.workflowActions, [] as WorkflowAction[]),
+      safeCall(api.auditEvents, [] as AuditEvent[]),
+      firmwareAdapter.load(),
+      safeCall(api.providerModeSettings, null)
+    ]);
+    return {
+      actions: Array.isArray(actions) ? actions : [],
+      auditEvents: Array.isArray(auditEvents) ? auditEvents : [],
+      firmware,
+      health,
+      providerMode,
+      providers: Array.isArray(providers) ? providers : []
+    };
+  }
+};
+
+function normalizeWorkflowRun(
+  result: WorkflowActionRun,
+  type: OperationResult["type"],
+  extraRaw: Record<string, unknown> = {}
+): OperationResult {
+  return {
+    artifacts: result.report_artifacts ?? [],
+    blockers: result.blockers ?? [],
+    checkedAt: result.checked_at ?? result.finished_at ?? new Date().toISOString(),
+    executed: Boolean(result.executed),
+    freshness: result.freshness || "not_checked",
+    id: result.run_id,
+    message: result.summary || result.stdout_summary || result.stderr_summary || result.next_action || "Workflow action finished.",
+    raw: {
+      ...result,
+      ...extraRaw
+    } as Record<string, unknown>,
+    sourceType: result.source_type || "not_checked",
+    status: mapStatus(result.status, result.blockers ?? []),
+    title: result.action_label,
+    type,
+    warnings: result.warnings ?? []
+  };
+}
+
+function normalizeProbeResult(
+  result: ProviderProbeResult,
+  type: OperationResult["type"],
+  fallbackTitle: string
+): OperationResult {
+  const blockers = stringList(result.blockers);
+  return {
+    artifacts: stringList((result as Record<string, unknown>).report_artifacts),
+    blockers,
+    checkedAt: result.checked_at ?? new Date().toISOString(),
+    executed: false,
+    freshness: stringValue((result as Record<string, unknown>).freshness, "not_checked"),
+    id: `${type}:${Date.now()}`,
+    message: result.message || stringValue((result as Record<string, unknown>).next_safe_action, "Backend check completed."),
+    raw: result as Record<string, unknown>,
+    sourceType: stringValue((result as Record<string, unknown>).source_type, "backend_api"),
+    status: mapStatus(result.status, blockers),
+    title: fallbackTitle,
+    type,
+    warnings: stringList(result.warnings)
+  };
+}
+
+function placeholderResult(input: {
+  blockers?: string[];
+  message: string;
+  raw?: Record<string, unknown>;
+  status: OperationStatus;
+  title: string;
+  type: OperationResult["type"];
+  warnings?: string[];
+}): OperationResult {
+  return {
+    artifacts: [],
+    blockers: input.blockers ?? [],
+    checkedAt: new Date().toISOString(),
+    executed: false,
+    freshness: "not_checked",
+    id: `${input.type}:placeholder:${Date.now()}`,
+    message: input.message,
+    raw: input.raw ?? {},
+    sourceType: "todo_placeholder",
+    status: input.status,
+    title: input.title,
+    type: input.type,
+    warnings: input.warnings ?? []
+  };
+}
+
+function upgradeRequestBlockers(request: FirmwareUpgradeRequest): string[] {
+  const blockers: string[] = [];
+  if (!request.selectedPath) {
+    blockers.push("Select a firmware path before starting an upgrade.");
+  }
+  if (!request.selectedFirmware.trim()) {
+    blockers.push("Selected firmware, image, or target version is required.");
+  }
+  if (!request.validationResult) {
+    blockers.push("Validate firmware before starting an upgrade.");
+  } else if (["failed", "blocked"].includes(request.validationResult.status)) {
+    blockers.push("Firmware validation failed or is blocked. No override is supported in this UI.");
+  }
+  if (!request.confirmationAccepted || request.confirmationPhrase.trim() !== upgradeConfirmationPhrase(request.selectedPath)) {
+    blockers.push(`Type ${upgradeConfirmationPhrase(request.selectedPath)} and check the confirmation box.`);
+  }
+  return blockers;
+}
+
+export function supportedUpgradeActionId(path: FirmwareUpgradePath | null): string | null {
+  if (path?.component_id === "netapp_ontap_version") {
+    return "netapp.ontap-upgrade-apply";
+  }
+  return null;
+}
+
+export function upgradeConfirmationPhrase(path: FirmwareUpgradePath | null): string {
+  return supportedUpgradeActionId(path) === "netapp.ontap-upgrade-apply" ? "UPGRADE ONTAP" : "RUN FIRMWARE UPGRADE";
+}
+
+function hasCredentialDraft(draft: CredentialDraft): boolean {
+  return Object.values(draft).some((value) => value.trim().length > 0);
+}
+
+function sanitizedConfigSnapshot(config: ControlConfig): Record<string, unknown> {
+  return {
+    ip_mode: config.ipMode,
+    retry_count: config.retryCount,
+    snmp_credentials: config.snmpCredentialStatus,
+    snmp_version: config.snmpVersion,
+    target: config.target,
+    timeout_seconds: config.timeoutSeconds
+  };
+}
+
+function mapStatus(status: string, blockers: string[]): OperationStatus {
+  const normalized = String(status || "").toLowerCase();
+  if (blockers.length && !["completed", "success", "ok", "passed", "ready", "current"].includes(normalized)) {
+    return "blocked";
+  }
+  if (["completed", "success", "ok", "passed", "ready", "current", "compliant"].includes(normalized)) {
+    return "success";
+  }
+  if (["blocked", "manual_command_required", "not_configured"].includes(normalized)) {
+    return "blocked";
+  }
+  if (["failed", "error", "unavailable"].includes(normalized)) {
+    return "failed";
+  }
+  if (["pending", "not_checked", "unknown"].includes(normalized)) {
+    return "pending";
+  }
+  return blockers.length ? "blocked" : "success";
+}
+
+function stringList(value: unknown): string[] {
+  return Array.isArray(value) ? value.map((item) => String(item)).filter(Boolean) : [];
+}
+
+function stringValue(value: unknown, fallback: string): string {
+  return typeof value === "string" && value ? value : fallback;
+}
+
+async function safeCall<T>(fn: () => Promise<T>, fallback: T): Promise<T> {
+  try {
+    return await fn();
+  } catch {
+    return fallback;
+  }
+}
+
+function clampNumber(value: number, min: number, max: number): number {
+  if (!Number.isFinite(value)) return min;
+  return Math.min(max, Math.max(min, value));
+}
+
+function readStored<T>(key: string): T | null {
+  try {
+    const raw = window.localStorage.getItem(key);
+    return raw ? (JSON.parse(raw) as T) : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeStored(key: string, value: unknown): void {
+  window.localStorage.setItem(key, JSON.stringify(value));
+}
+
+function humanize(value: string): string {
+  return value
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
