@@ -351,6 +351,40 @@ button:disabled {
   gap: 10px;
 }
 
+.control-workflow-strip {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.control-workflow-step {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  color: #172033;
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding: 12px;
+}
+
+.control-workflow-step:hover {
+  border-color: #0f766e;
+}
+
+.control-workflow-step span {
+  color: #68778a;
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.control-workflow-step strong {
+  color: #0f172a;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
 .control-form-grid {
   display: grid;
   gap: 12px;
@@ -412,6 +446,15 @@ button:disabled {
   color: #0f172a;
   cursor: pointer;
   font-weight: 900;
+}
+
+.control-note code {
+  background: #e2e8f0;
+  border-radius: 4px;
+  color: #0f172a;
+  display: inline-block;
+  font-weight: 900;
+  padding: 2px 6px;
 }
 
 .control-run-button {
@@ -724,6 +767,11 @@ button:disabled {
   padding: 12px;
 }
 
+.firmware-path-summary {
+  border-top: 1px solid #e2e8f0;
+  padding-top: 12px;
+}
+
 .result-stack {
   display: grid;
   gap: 14px;
@@ -744,6 +792,7 @@ button:disabled {
   }
 
   .control-topbar,
+  .control-workflow-strip,
   .control-dashboard-grid,
   .control-dashboard-grid.compact,
   .result-panel-grid {

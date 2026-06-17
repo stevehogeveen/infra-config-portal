@@ -820,7 +820,7 @@ function DashboardPage({ context }: { context: ControlCenterContext }) {
   ).length;
   const latestFirmwareUpgrade = firmwareUpgradeSummaryResult(context);
   return (
-    <Page title="Dashboard" subtitle="Control Center overview.">
+    <Page title="Dashboard" subtitle="Current target, connection, and latest action state.">
       <section className="control-panel control-overview-panel">
         <PanelTitle icon={<Gauge size={18} />} title="Current Target" />
         <FactGrid
@@ -858,14 +858,67 @@ function DashboardPage({ context }: { context: ControlCenterContext }) {
         </div>
       </section>
       <section className="control-panel">
-        <PanelTitle icon={<UploadCloud size={18} />} title="Firmware Summary" />
-        <FirmwareRollup summaries={context.firmware.summaries} />
+        <PanelTitle icon={<Activity size={18} />} title="Primary Workflow" />
+        <div className="control-workflow-strip">
+          <WorkflowStep
+            detail={`${context.config.target || "Target missing"}; ${ipModeLabel(context.config.ipMode)}; ${snmpVersionLabel(context.config.snmpVersion)}`}
+            label="Configure"
+            status={context.config.target ? "ready" : "missing"}
+            to="/configure"
+          />
+          <WorkflowStep
+            detail={context.latestRun ? context.latestRun.message : "Run the current backend action with saved config."}
+            label="Run"
+            status={context.latestRun?.status ?? context.runStatus}
+            to="/run"
+          />
+          <WorkflowStep
+            detail={context.latestFirmwareCheck ? context.latestFirmwareCheck.message : `${firmwareCount} firmware surfaces loaded.`}
+            label="Firmware"
+            status={context.latestFirmwareCheck?.status ?? (firmwareCount ? "ready" : "not_checked")}
+            to="/firmware"
+          />
+          <WorkflowStep
+            detail={context.latestRun || latestFirmwareUpgrade ? "Latest outcomes are available." : "Results appear after a run or firmware action."}
+            label="Results"
+            status={context.latestRun || latestFirmwareUpgrade ? "ready" : "not_checked"}
+            to="/results"
+          />
+        </div>
       </section>
       <section className="control-panel">
-        <PanelTitle icon={<Activity size={18} />} title="Connection and Detection" />
-        <ProviderStatusList providers={context.providers} />
+        <PanelTitle icon={<UploadCloud size={18} />} title="Firmware Summary" />
+        <FirmwareRollup summaries={context.firmware.summaries} />
+        <FactGrid
+          facts={[
+            ["Detected surfaces", firmwareCount ? String(firmwareCount) : "Not checked"],
+            ["Needs review", String(firmwareNeedsReview)],
+            ["Last firmware check", context.latestFirmwareCheck ? statusLabel(context.latestFirmwareCheck.status) : "Not checked"],
+            ["Last firmware upgrade", latestFirmwareUpgrade ? statusLabel(latestFirmwareUpgrade.status) : "Not started"]
+          ]}
+        />
       </section>
     </Page>
+  );
+}
+
+function WorkflowStep({
+  detail,
+  label,
+  status,
+  to
+}: {
+  detail: string;
+  label: string;
+  status: string;
+  to: string;
+}) {
+  return (
+    <Link className="control-workflow-step" to={to}>
+      <span>{label}</span>
+      <strong>{detail}</strong>
+      <StatusPill status={status} />
+    </Link>
   );
 }
 
@@ -1136,13 +1189,35 @@ function FirmwarePage({ context }: { context: ControlCenterContext }) {
           <label className="control-field control-field-wide">
             <span>Selected firmware, image, or version</span>
             <input
+              list="firmware-candidates"
               onChange={(event) => context.setSelectedFirmware(event.target.value)}
               placeholder="Select a path or enter a target firmware/image reference"
               type="text"
               value={context.selectedFirmware}
             />
+            <datalist id="firmware-candidates">
+              {firmwareCandidateOptions(context.selectedPath).map((candidate) => (
+                <option key={candidate} value={candidate} />
+              ))}
+            </datalist>
           </label>
         </div>
+        {context.selectedPath && (
+          <div className="firmware-path-summary">
+            <FactGrid
+              facts={[
+                ["Component", context.selectedPath.component_label],
+                ["Package available", context.selectedPath.package_available ? "Yes" : "No"],
+                [
+                  "Prechecks",
+                  context.selectedPath.prechecks_required.length ? context.selectedPath.prechecks_required.join(", ") : "None reported"
+                ],
+                ["Impact", context.selectedPath.estimated_impact],
+                ["Next safe action", context.selectedPath.next_action]
+              ]}
+            />
+          </div>
+        )}
         {backendPending && (
           <div className="control-alert warning">
             {supportedActionId
@@ -1159,12 +1234,16 @@ function FirmwarePage({ context }: { context: ControlCenterContext }) {
         <div className="firmware-confirm-box">
           <label className="control-check-field">
             <input
+              aria-label="Require explicit operator confirmation before any firmware upgrade request is sent."
               checked={context.upgradeConfirmationAccepted}
               onChange={(event) => context.setUpgradeConfirmationAccepted(event.target.checked)}
               type="checkbox"
             />
-            <span>Require explicit operator confirmation before any firmware upgrade request is sent.</span>
+            <span>I confirm this firmware upgrade request is intentional and should be sent to the guarded backend runner.</span>
           </label>
+          <p className="control-note">
+            Required phrase: <code>{context.expectedUpgradePhrase}</code>
+          </p>
           <label className="control-field">
             <span>Confirmation phrase</span>
             <input
@@ -1631,6 +1710,22 @@ function defaultFirmwareSelection(path: FirmwareUpgradePath | null): string {
   return path?.selected_file_name || path?.package_name || path?.target_version || "";
 }
 
+function firmwareCandidateOptions(path: FirmwareUpgradePath | null): string[] {
+  if (!path) return [];
+  return Array.from(
+    new Set(
+      [
+        path.selected_file_name,
+        path.package_name,
+        path.package_version,
+        path.target_version,
+        ...(path.candidate_files ?? []).map((candidate) => candidate.file_name),
+        ...(path.candidate_files ?? []).map((candidate) => candidate.detected_version)
+      ].filter((value): value is string => Boolean(value && value.trim()))
+    )
+  );
+}
+
 function firmwareCurrentVersion(summary: FirmwareSummary): string {
   return displayValue(summary.current_versions.find((item) => item.version)?.version ?? null);
 }
@@ -1755,7 +1850,9 @@ function upgradeStatusAfterResult(result: OperationResult): UpgradeStatus {
 
 function operationLogMessage(prefix: string, status: string): string {
   if (["success", "ready"].includes(status)) return `${prefix} succeeded`;
-  if (["blocked", "pending"].includes(status)) return `${prefix} blocked`;
+  if (status === "blocked") return `${prefix} blocked`;
+  if (status === "pending") return `${prefix} pending`;
+  if (status === "running") return `${prefix} started`;
   return `${prefix} failed`;
 }
 

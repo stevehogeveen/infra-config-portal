@@ -489,14 +489,30 @@ export const firmwareAdapter = {
         })
       };
     }
-    const probe = await api.firmwareInventory();
-    const firmware = await this.load();
-    return {
-      firmware,
-      result: normalizeProbeResult(probe, "firmware-check", "Firmware check", {
-        config_snapshot: sanitizedConfigSnapshot(config)
-      })
-    };
+    try {
+      const probe = await api.firmwareInventory();
+      const firmware = await this.load();
+      return {
+        firmware,
+        result: normalizeProbeResult(probe, "firmware-check", "Firmware check", {
+          config_snapshot: sanitizedConfigSnapshot(config)
+        })
+      };
+    } catch (error) {
+      return {
+        firmware: await this.load(),
+        result: placeholderResult({
+          blockers: [unknownErrorMessage(error)],
+          message: "Firmware check backend integration is unavailable. No firmware action was started.",
+          raw: {
+            config_snapshot: sanitizedConfigSnapshot(config)
+          },
+          status: "pending",
+          title: "Firmware check pending backend integration",
+          type: "firmware-check"
+        })
+      };
+    }
   },
 
   async validate(input: {
@@ -535,24 +551,38 @@ export const firmwareAdapter = {
         })
       };
     }
-    const saved = await api.saveFirmwareFileSelections({
-      selected_files: { [selectedPath.component_id]: input.selectedFirmware.trim() }
-    });
-    const probe =
-      selectedPath.component_id === "netapp_ontap_version"
-        ? await api.validateNetappOntapUpgrade()
-        : await api.firmwareCompliance(firmwareScopeForPath(selectedPath));
-    const firmware = await this.load();
-    return {
-      firmware: {
-        ...firmware,
-        fileSelections: saved
-      },
-      result: normalizeProbeResult(probe, "firmware-validation", "Firmware validation", {
-        ...firmwareSelectionRaw(input.config, input.selectedPath, input.selectedFirmware),
-        file_selection_saved_at: saved.updated_at
-      })
-    };
+    try {
+      const saved = await api.saveFirmwareFileSelections({
+        selected_files: { [selectedPath.component_id]: input.selectedFirmware.trim() }
+      });
+      const probe =
+        selectedPath.component_id === "netapp_ontap_version"
+          ? await api.validateNetappOntapUpgrade()
+          : await api.firmwareCompliance(firmwareScopeForPath(selectedPath));
+      const firmware = await this.load();
+      return {
+        firmware: {
+          ...firmware,
+          fileSelections: saved
+        },
+        result: normalizeProbeResult(probe, "firmware-validation", "Firmware validation", {
+          ...firmwareSelectionRaw(input.config, input.selectedPath, input.selectedFirmware),
+          file_selection_saved_at: saved.updated_at
+        })
+      };
+    } catch (error) {
+      return {
+        firmware: await this.load(),
+        result: placeholderResult({
+          blockers: [unknownErrorMessage(error)],
+          message: "Firmware validation backend integration is unavailable. No upgrade action was started.",
+          raw: firmwareSelectionRaw(input.config, input.selectedPath, input.selectedFirmware),
+          status: "pending",
+          title: "Firmware validation pending backend integration",
+          type: "firmware-validation"
+        })
+      };
+    }
   },
 
   async upgrade(request: FirmwareUpgradeRequest): Promise<OperationResult> {
@@ -579,6 +609,7 @@ export const firmwareAdapter = {
         title: "Firmware upgrade pending backend integration",
         type: "firmware-upgrade",
         raw: {
+          ...firmwareSelectionRaw(request.config, request.selectedPath, request.selectedFirmware),
           selected_component: request.selectedPath?.component_id ?? null,
           selected_firmware: request.selectedFirmware
         }
@@ -971,6 +1002,10 @@ async function safeCall<T>(fn: () => Promise<T>, fallback: T): Promise<T> {
   } catch {
     return fallback;
   }
+}
+
+function unknownErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function clampNumber(value: number, min: number, max: number): number {
