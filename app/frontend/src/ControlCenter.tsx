@@ -851,42 +851,56 @@ function DashboardPage({ context }: { context: ControlCenterContext }) {
   const latestFirmwareUpgrade = firmwareUpgradeSummaryResult(context);
   return (
     <Page title="Dashboard" subtitle="Current target, connection, and latest action state.">
-      <section className="control-panel control-overview-panel">
-        <PanelTitle icon={<Gauge size={18} />} title="Current Target" />
-        <FactGrid
-          facts={[
-            ["Current target", context.targetSummary],
-            ["API / connection", context.connectionStatus],
-            ["IP mode", ipModeLabel(context.config.ipMode)],
-            ["SNMP version", snmpVersionLabel(context.config.snmpVersion)],
-            [
-              "Detected firmware",
-              firmwareCount ? `${firmwareCount} surfaces, ${firmwareNeedsReview} need review` : "Not checked"
-            ],
-            ["Last run", resultStatusLabel(context.latestRun, context.runStatus)],
-            ["Last firmware check", context.latestFirmwareCheck ? statusLabel(context.latestFirmwareCheck.status) : "Not checked"],
-            [
-              "Last firmware upgrade",
-              latestFirmwareUpgrade ? statusLabel(latestFirmwareUpgrade.status) : "Not started"
-            ],
-            ["Firmware progress", firmwareProgressLabel(context)]
-          ]}
-        />
-        <div className="quick-link-row">
-          <Link className="button-link primary" to="/configure">
-            <SlidersHorizontal size={16} />
-            Configure
-          </Link>
-          <Link className="button-link" to="/run">
-            <Play size={16} />
-            Run
-          </Link>
-          <Link className="button-link" to="/firmware">
-            <UploadCloud size={16} />
-            Firmware
-          </Link>
-        </div>
-      </section>
+      <div className="control-dashboard-layout">
+        <section className="control-panel control-overview-panel">
+          <PanelTitle icon={<Gauge size={18} />} title="Current Target" />
+          <FactGrid
+            facts={[
+              ["Current target", context.targetSummary],
+              ["API / connection", context.connectionStatus],
+              ["IP mode", ipModeLabel(context.config.ipMode)],
+              ["SNMP version", snmpVersionLabel(context.config.snmpVersion)],
+              [
+                "Detected firmware",
+                firmwareCount ? `${firmwareCount} surfaces, ${firmwareNeedsReview} need review` : "Not checked"
+              ],
+              ["Last run", resultStatusLabel(context.latestRun, context.runStatus)],
+              ["Last firmware check", context.latestFirmwareCheck ? statusLabel(context.latestFirmwareCheck.status) : "Not checked"],
+              [
+                "Last firmware upgrade",
+                latestFirmwareUpgrade ? statusLabel(latestFirmwareUpgrade.status) : "Not started"
+              ],
+              ["Firmware progress", firmwareProgressLabel(context)]
+            ]}
+          />
+          <div className="quick-link-row">
+            <Link className="button-link primary" to="/configure">
+              <SlidersHorizontal size={16} />
+              Configure
+            </Link>
+            <Link className="button-link" to="/run">
+              <Play size={16} />
+              Run
+            </Link>
+            <Link className="button-link" to="/firmware">
+              <UploadCloud size={16} />
+              Firmware
+            </Link>
+          </div>
+        </section>
+        <section className="control-panel">
+          <PanelTitle icon={<UploadCloud size={18} />} title="Firmware Summary" />
+          <FirmwareRollup summaries={context.firmware.summaries} />
+          <FactGrid
+            facts={[
+              ["Detected surfaces", firmwareCount ? String(firmwareCount) : "Not checked"],
+              ["Needs review", String(firmwareNeedsReview)],
+              ["Last firmware check", context.latestFirmwareCheck ? statusLabel(context.latestFirmwareCheck.status) : "Not checked"],
+              ["Last firmware upgrade", latestFirmwareUpgrade ? statusLabel(latestFirmwareUpgrade.status) : "Not started"]
+            ]}
+          />
+        </section>
+      </div>
       <section className="control-panel">
         <PanelTitle icon={<Activity size={18} />} title="Primary Workflow" />
         <div className="control-workflow-strip">
@@ -917,16 +931,8 @@ function DashboardPage({ context }: { context: ControlCenterContext }) {
         </div>
       </section>
       <section className="control-panel">
-        <PanelTitle icon={<UploadCloud size={18} />} title="Firmware Summary" />
-        <FirmwareRollup summaries={context.firmware.summaries} />
-        <FactGrid
-          facts={[
-            ["Detected surfaces", firmwareCount ? String(firmwareCount) : "Not checked"],
-            ["Needs review", String(firmwareNeedsReview)],
-            ["Last firmware check", context.latestFirmwareCheck ? statusLabel(context.latestFirmwareCheck.status) : "Not checked"],
-            ["Last firmware upgrade", latestFirmwareUpgrade ? statusLabel(latestFirmwareUpgrade.status) : "Not started"]
-          ]}
-        />
+        <PanelTitle icon={<History size={18} />} title="Recent Activity" />
+        <ActivityList logs={context.logs.slice(0, 5)} />
       </section>
     </Page>
   );
@@ -1287,7 +1293,7 @@ function FirmwarePage({ context }: { context: ControlCenterContext }) {
             />
           </label>
           {context.firmwareUpgradeBlockers.length > 0 && <IssueGroup title="Upgrade blockers" items={context.firmwareUpgradeBlockers} />}
-          <button className="primary" disabled={startDisabled} onClick={() => void context.startFirmwareUpgrade()} type="button">
+          <button className="primary danger-action" disabled={startDisabled} onClick={() => void context.startFirmwareUpgrade()} type="button">
             <UploadCloud size={16} />
             {context.upgradeStatus === "upgrading" ? "Upgrade Running" : "Start Firmware Upgrade"}
           </button>
@@ -1484,31 +1490,6 @@ function FactGrid({ facts }: { facts: Array<[string, string]> }) {
   );
 }
 
-function FirmwareVisibilityCard({ summary }: { summary: FirmwareSummary }) {
-  return (
-    <article className="firmware-card">
-      <div className="firmware-card-head">
-        <strong>{summary.label}</strong>
-        <StatusPill status={summary.compliance_status} />
-      </div>
-      <FactGrid
-        facts={[
-          ["Detected device/model", summary.label],
-          ["Current firmware version", firmwareCurrentVersion(summary)],
-          ["Available firmware version", displayValue(summary.target_version || firstApprovedVersion(summary))],
-          ["Build/date", firmwareBuildDate(summary)],
-          ["Bootloader/version", firmwareBootloaderVersion(summary)],
-          ["Hardware revision", firmwareHardwareRevision(summary)],
-          ["Compatibility status", statusLabel(summary.path_status || summary.compliance_status)],
-          ["Last check time", summary.last_scanned ? formatDateTime(summary.last_scanned) : "Not checked"],
-          ["Detection source", `${sourceLabel(summary.source_type)} / ${statusLabel(summary.freshness)}`]
-        ]}
-      />
-      {summary.blocker && <div className="control-alert warning">{summary.blocker}</div>}
-    </article>
-  );
-}
-
 function FirmwareRollup({ summaries }: { summaries: FirmwareSummary[] }) {
   if (!summaries.length) {
     return <EmptyState title="Not checked" detail="Firmware summary is not available yet." />;
@@ -1575,28 +1556,6 @@ function FirmwareVisibilityTable({ summaries }: { summaries: FirmwareSummary[] }
           ))}
         </tbody>
       </table>
-    </div>
-  );
-}
-
-function ProviderStatusList({ providers }: { providers: ProviderStatus[] }) {
-  const visibleProviders = providers.filter((provider) => provider.is_operator_visible !== false).slice(0, 6);
-  if (!visibleProviders.length) {
-    return <EmptyState title="No provider status" detail="API provider status is unavailable or not checked yet." />;
-  }
-  return (
-    <div className="provider-status-list">
-      {visibleProviders.map((provider) => (
-        <article key={provider.id}>
-          <div>
-            <strong>{provider.name}</strong>
-            <small>{provider.message}</small>
-          </div>
-          <StatusPill status={provider.status} />
-          <span>{sourceLabel(provider.source_type)}</span>
-          <span>{provider.checked_at ? formatDateTime(provider.checked_at) : "Not checked"}</span>
-        </article>
-      ))}
     </div>
   );
 }

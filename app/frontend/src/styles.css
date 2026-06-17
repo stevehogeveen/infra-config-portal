@@ -82,6 +82,16 @@ button:disabled {
   color: #ffffff;
 }
 
+.danger-action:not(:disabled) {
+  background: #b42318;
+  border-color: #b42318;
+}
+
+.danger-action:not(:disabled):hover {
+  background: #8f1d15;
+  border-color: #8f1d15;
+}
+
 .control-center-shell {
   background: #f4f6f8;
   color: #172033;
@@ -281,15 +291,10 @@ button:disabled {
   margin: 0;
 }
 
-.control-dashboard-grid,
-.result-panel-grid {
+.control-dashboard-layout {
   display: grid;
   gap: 14px;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-}
-
-.control-dashboard-grid.compact {
-  grid-template-columns: repeat(3, minmax(220px, 1fr));
+  grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.85fr);
 }
 
 .control-overview-panel {
@@ -647,41 +652,6 @@ button:disabled {
   margin-top: 2px;
 }
 
-.provider-status-list {
-  display: grid;
-  gap: 10px;
-}
-
-.provider-status-list article {
-  align-items: center;
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  display: grid;
-  gap: 10px;
-  grid-template-columns: minmax(220px, 1fr) auto minmax(120px, auto) minmax(160px, auto);
-  padding: 12px;
-}
-
-.provider-status-list strong,
-.provider-status-list small {
-  display: block;
-  overflow-wrap: anywhere;
-}
-
-.provider-status-list small,
-.provider-status-list span {
-  color: #68778a;
-  font-size: 12px;
-  font-weight: 800;
-}
-
-.firmware-visibility-grid {
-  display: grid;
-  gap: 12px;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
 .control-table-wrap {
   border: 1px solid #e2e8f0;
   border-radius: 8px;
@@ -736,28 +706,6 @@ button:disabled {
   border-bottom: 0;
 }
 
-.firmware-card {
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  display: grid;
-  gap: 12px;
-  min-width: 0;
-  padding: 12px;
-}
-
-.firmware-card-head {
-  align-items: center;
-  display: flex;
-  gap: 10px;
-  justify-content: space-between;
-}
-
-.firmware-card-head strong {
-  color: #0f172a;
-  overflow-wrap: anywhere;
-}
-
 .firmware-confirm-box {
   background: #f8fafc;
   border: 1px solid #e2e8f0;
@@ -793,13 +741,7 @@ button:disabled {
 
   .control-topbar,
   .control-workflow-strip,
-  .control-dashboard-grid,
-  .control-dashboard-grid.compact,
-  .result-panel-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .firmware-visibility-grid {
+  .control-dashboard-layout {
     grid-template-columns: 1fr;
   }
 }
@@ -836,8 +778,4 @@ button:disabled {
     grid-column: 2;
   }
 
-  .provider-status-list article {
-    align-items: start;
-    grid-template-columns: 1fr;
-  }
 }
