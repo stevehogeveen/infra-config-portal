@@ -187,7 +187,7 @@ const preferredRunActionIds = [
 
 export const configAdapter = {
   backendStatus:
-    "Backend /api/v1/control-center/config stores non-secret target and SNMP state. Credential values remain operator/runtime only.",
+    "Backend runtime state; credential presence only.",
 
   load(): ControlConfig {
     const stored = readStored<Partial<ControlConfig>>(CONFIG_STORAGE_KEY);

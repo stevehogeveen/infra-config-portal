@@ -265,7 +265,13 @@ export default function ControlCenter() {
     setConfig(result.config);
     setConfigErrors(result.errors);
     configEditedRef.current = result.errors.length > 0 || result.savedVia !== "backend";
-    setConfigMessage(result.errors.length ? "" : "Configuration saved");
+    setConfigMessage(
+      result.errors.length
+        ? ""
+        : result.savedVia === "backend"
+          ? "Configuration saved to backend runtime state"
+          : "Configuration saved locally; backend apply is pending"
+    );
     if (result.errors.length) {
       addLog({ detail: result.errors.join(" "), message: "Config save failed", status: "blocked", type: "config" });
       return;
@@ -299,7 +305,11 @@ export default function ControlCenter() {
       return;
     }
     setSettings(result.settings);
-    setSettingsMessage("Settings saved");
+    setSettingsMessage(
+      result.savedVia === "backend"
+        ? "Settings saved to backend runtime state"
+        : "Settings saved locally; backend apply is pending"
+    );
     addLog({
       detail: `Default ${ipModeLabel(result.settings.defaultIpMode)}, ${snmpVersionLabel(result.settings.defaultSnmpVersion)}, timeout ${result.settings.defaultTimeoutSeconds}s.`,
       message: "Settings changed",
@@ -793,11 +803,12 @@ function TopHeader({ context }: { context: ControlCenterContext }) {
   return (
     <header className="control-topbar">
       <div>
-        <p className="control-kicker">Control Center</p>
-        <h1>WebUIs Control Center</h1>
-        <span>{activePage}</span>
+        <p className="control-kicker">WebUIs Control Center</p>
+        <h1>{activePage}</h1>
+        <span>Configure target/settings, run one action, then review results and logs.</span>
       </div>
       <div className="control-status-strip" aria-label="System status">
+        <StatusChip label="Target" value={context.targetSummary} />
         <StatusChip label="API" value={context.connectionStatus} />
         <StatusChip label="Run" value={resultStatusLabel(context.latestRun, context.runStatus)} />
         <StatusChip label="Firmware" value={firmwareStatusLabel(context)} />
@@ -813,7 +824,7 @@ function DashboardPage({ context }: { context: ControlCenterContext }) {
     <Page title="Dashboard" subtitle="Current target, backend reachability, and the next Control Center actions.">
       <section className="control-panel control-dashboard-panel">
         <div className="control-dashboard-primary">
-          <PanelTitle icon={<Gauge size={18} />} title="Current Target" />
+          <PanelTitle icon={<Gauge size={18} />} title="Control Overview" />
           <FactGrid
             facts={[
               ["Current target", context.targetSummary],
@@ -846,29 +857,11 @@ function DashboardPage({ context }: { context: ControlCenterContext }) {
           </Link>
         </div>
       </section>
-
       <section className="control-panel">
-        <PanelTitle icon={<Activity size={18} />} title="Workflow State" />
-        <div className="control-workflow-steps">
-          <WorkflowStepLink detail={context.config.target || "Target missing"} label="Configure" status={context.config.target ? "ready" : "missing"} to="/configure" />
-          <WorkflowStepLink detail={context.selectedAction?.label ?? "Safe placeholder"} label="Run" status={context.latestRun?.status ?? context.runStatus} to="/run" />
-          <WorkflowStepLink detail={firmwareStatusLabel(context)} label="Firmware" status={context.latestFirmwareCheck?.status ?? context.upgradeStatus} to="/firmware" />
-          <WorkflowStepLink detail={context.latestRun || context.latestFirmwareCheck ? "Latest outcomes available" : "No current result"} label="Results" status={context.latestRun || context.latestFirmwareCheck ? "ready" : "not_checked"} to="/results" />
-        </div>
+        <PanelTitle icon={<Activity size={18} />} title="Recent Activity" />
+        <ActivityList logs={[...context.logs, ...context.backendLogs].slice(0, 6)} />
       </section>
     </Page>
-  );
-}
-
-function WorkflowStepLink({ detail, label, status, to }: { detail: string; label: string; status: string; to: string }) {
-  return (
-    <Link className="control-workflow-step" to={to}>
-      <div>
-        <strong>{label}</strong>
-        <span>{detail}</span>
-      </div>
-      <StatusPill status={status} />
-    </Link>
   );
 }
 
@@ -887,27 +880,25 @@ function ConfigurePage({ context }: { context: ControlCenterContext }) {
               value={context.config.target}
             />
           </label>
-          <label className="control-field">
-            <span>IP mode</span>
-            <select
-              onChange={(event) => context.setConfig((current) => ({ ...current, ipMode: event.target.value as ControlConfig["ipMode"] }))}
-              value={context.config.ipMode}
-            >
-              <option value="ipv4">IPv4</option>
-              <option value="ipv6">IPv6</option>
-              <option value="both">Both</option>
-            </select>
-          </label>
-          <label className="control-field">
-            <span>SNMP version</span>
-            <select
-              onChange={(event) => context.setConfig((current) => ({ ...current, snmpVersion: event.target.value as ControlConfig["snmpVersion"] }))}
-              value={context.config.snmpVersion}
-            >
-              <option value="v2">SNMPv2</option>
-              <option value="v3">SNMPv3</option>
-            </select>
-          </label>
+          <SegmentedControl
+            label="IP mode"
+            onChange={(value) => context.setConfig((current) => ({ ...current, ipMode: value as ControlConfig["ipMode"] }))}
+            options={[
+              ["ipv4", "IPv4"],
+              ["ipv6", "IPv6"],
+              ["both", "Both"]
+            ]}
+            value={context.config.ipMode}
+          />
+          <SegmentedControl
+            label="SNMP version"
+            onChange={(value) => context.setConfig((current) => ({ ...current, snmpVersion: value as ControlConfig["snmpVersion"] }))}
+            options={[
+              ["v2", "SNMPv2"],
+              ["v3", "SNMPv3"]
+            ]}
+            value={context.config.snmpVersion}
+          />
         </div>
         {context.config.snmpVersion === "v2" ? (
           <label className="control-field control-field-wide">
@@ -954,7 +945,13 @@ function ConfigurePage({ context }: { context: ControlCenterContext }) {
             </label>
           </div>
         )}
-        <p className="control-note">Credential values are not stored in Control Center state; only configured or missing status is saved.</p>
+        <FactGrid
+          facts={[
+            ["Credential state", credentialConfigLabel(context.config)],
+            ["Backend config adapter", configAdapter.backendStatus],
+            ["Last saved", context.config.updatedAt ? formatDateTime(context.config.updatedAt) : "Not saved"]
+          ]}
+        />
       </section>
 
       <details className="control-panel control-details">
@@ -981,13 +978,7 @@ function ConfigurePage({ context }: { context: ControlCenterContext }) {
             />
           </label>
         </div>
-        <FactGrid
-          facts={[
-            ["Credential state", credentialConfigLabel(context.config)],
-            ["Provider mode", context.health?.provider_mode ?? "Unknown"],
-            ["Last saved", context.config.updatedAt ? formatDateTime(context.config.updatedAt) : "Not saved"]
-          ]}
-        />
+        <FactGrid facts={[["Provider mode", context.health?.provider_mode ?? "Unknown"]]} />
       </details>
 
       {context.configErrors.length > 0 && <IssueGroup title="Validation errors" items={context.configErrors} />}
@@ -1056,6 +1047,7 @@ function FirmwarePage({ context }: { context: ControlCenterContext }) {
     context.upgradeStatus === "upgrading" ||
     !context.selectedPath ||
     !context.selectedFirmware.trim();
+  const firmwarePaths = collectFirmwarePaths(context.firmware.summaries);
 
   return (
     <Page title="Firmware" subtitle="Firmware visibility, validation, guarded upgrades, and events.">
@@ -1092,15 +1084,12 @@ function FirmwarePage({ context }: { context: ControlCenterContext }) {
           ]}
         />
         <FirmwareStateRail status={context.upgradeStatus} />
-        <div className="control-alert info">
-          Firmware upgrades never start on page load. Start Firmware Upgrade requires validation, the exact confirmation phrase, and the confirmation checkbox.
-        </div>
         <div className="control-form-grid">
           <label className="control-field control-field-wide">
             <span>Firmware path</span>
             <select onChange={(event) => context.setSelectedPathId(event.target.value)} value={context.selectedPathId}>
               <option value="">Select firmware path</option>
-              {collectFirmwarePaths(context.firmware.summaries).map((path) => (
+              {firmwarePaths.map((path) => (
                 <option key={firmwarePathId(path)} value={firmwarePathId(path)}>
                   {firmwarePathLabel(path)}
                 </option>
@@ -1123,6 +1112,7 @@ function FirmwarePage({ context }: { context: ControlCenterContext }) {
             </datalist>
           </label>
         </div>
+        {!firmwarePaths.length && <div className="control-alert warning">No firmware upgrade paths are visible yet. Run Check Firmware or connect the backend firmware summary endpoint.</div>}
         {context.selectedPath && (
           <div className="firmware-path-summary">
             <FactGrid
@@ -1145,6 +1135,10 @@ function FirmwarePage({ context }: { context: ControlCenterContext }) {
         </div>
         {context.firmwareValidationBlockers.length > 0 && <IssueGroup title="Validation blockers" items={context.firmwareValidationBlockers} />}
         <div className="firmware-confirm-box">
+          <strong>Confirmation Required</strong>
+          <p className="control-note">
+            Start Firmware Upgrade never runs automatically and remains blocked until validation passes for the current config and selection.
+          </p>
           <label className="control-check-field">
             <input
               aria-label="Require explicit operator confirmation before any firmware upgrade request is sent."
@@ -1313,10 +1307,8 @@ function SettingsPage({ context }: { context: ControlCenterContext }) {
 
 function Page({ children, subtitle, title }: { children: ReactNode; subtitle: string; title: string }) {
   return (
-    <div className="control-page">
+    <div aria-label={title} className="control-page">
       <div className="control-page-head">
-        <p className="control-kicker">WebUIs</p>
-        <h2>{title}</h2>
         <p>{subtitle}</p>
       </div>
       {children}
@@ -1369,6 +1361,37 @@ function FactGrid({ facts }: { facts: Array<[string, string]> }) {
         </div>
       ))}
     </dl>
+  );
+}
+
+function SegmentedControl({
+  label,
+  onChange,
+  options,
+  value
+}: {
+  label: string;
+  onChange: (value: string) => void;
+  options: Array<[string, string]>;
+  value: string;
+}) {
+  return (
+    <div className="control-field">
+      <span>{label}</span>
+      <div className="segmented-control" role="group" aria-label={label}>
+        {options.map(([optionValue, optionLabel]) => (
+          <button
+            aria-pressed={value === optionValue}
+            className={value === optionValue ? "is-selected" : ""}
+            key={optionValue}
+            onClick={() => onChange(optionValue)}
+            type="button"
+          >
+            {optionLabel}
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }
 

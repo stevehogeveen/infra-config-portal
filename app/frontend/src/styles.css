@@ -212,7 +212,7 @@ button:disabled {
   border-radius: 8px;
   display: grid;
   gap: 16px;
-  grid-template-columns: minmax(220px, 1fr) minmax(320px, 1.3fr);
+  grid-template-columns: minmax(240px, 0.8fr) minmax(420px, 1.2fr);
   padding: 14px 16px;
 }
 
@@ -243,7 +243,7 @@ button:disabled {
 .control-status-strip {
   display: grid;
   gap: 8px;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
 .control-status-chip {
@@ -273,11 +273,6 @@ button:disabled {
 .control-page-head {
   display: grid;
   gap: 4px;
-}
-
-.control-page-head h2 {
-  font-size: 28px;
-  line-height: 1.1;
 }
 
 .control-page-head p,
@@ -473,6 +468,29 @@ button:disabled {
   min-height: 40px;
   padding: 8px 10px;
   width: 100%;
+}
+
+.segmented-control {
+  background: #eef2f6;
+  border: 1px solid #cfd6df;
+  border-radius: 6px;
+  display: grid;
+  gap: 2px;
+  grid-template-columns: repeat(auto-fit, minmax(72px, 1fr));
+  padding: 3px;
+}
+
+.segmented-control button {
+  background: transparent;
+  border-color: transparent;
+  min-height: 34px;
+  padding: 6px 8px;
+}
+
+.segmented-control button.is-selected {
+  background: #ffffff;
+  border-color: #9bd4ce;
+  color: #0f172a;
 }
 
 .control-check-field {
@@ -804,6 +822,10 @@ button:disabled {
     grid-template-columns: 1fr;
   }
 
+  .control-status-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .control-dashboard-panel {
     grid-template-columns: 1fr;
   }
@@ -830,6 +852,7 @@ button:disabled {
   .control-next-actions,
   .control-form-grid,
   .control-fact-grid,
+  .control-status-strip,
   .control-workflow-steps {
     grid-template-columns: 1fr;
   }

@@ -50,7 +50,7 @@ test.beforeEach(async ({ page }) => {
 test("renders the WebUIs Control Center sidebar and dashboard", async ({ page }) => {
   await page.goto("/dashboard");
 
-  await expect(page.getByRole("heading", { name: "WebUIs Control Center" })).toBeVisible();
+  await expect(page.getByRole("link", { name: /WebUIs Control Center/ })).toBeVisible();
   await expect(page.locator(".control-nav-link")).toHaveText([
     "Dashboard",
     "Configure",
@@ -61,8 +61,8 @@ test("renders the WebUIs Control Center sidebar and dashboard", async ({ page })
     "Settings"
   ]);
   await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
-  await expect(page.getByRole("heading", { exact: true, name: "Current Target" })).toBeVisible();
-  await expect(page.getByRole("heading", { exact: true, name: "Workflow State" })).toBeVisible();
+  await expect(page.getByRole("heading", { exact: true, name: "Control Overview" })).toBeVisible();
+  await expect(page.getByRole("heading", { exact: true, name: "Recent Activity" })).toBeVisible();
   await expect(page.getByText("Device / target detection")).toBeVisible();
   await expect(page.locator(".control-next-actions").getByRole("link", { name: /Configure/ })).toBeVisible();
   await expect(page.locator(".control-next-actions").getByRole("link", { name: /Run/ })).toBeVisible();
@@ -95,8 +95,8 @@ test("configure saves target, IP mode, SNMPv3 credential presence, timeout, and 
   await page.goto("/configure");
 
   await page.getByLabel("Target host, IP, or range").fill("192.0.2.203");
-  await page.getByLabel("IP mode").selectOption("both");
-  await page.getByLabel("SNMP version").selectOption("v3");
+  await chooseSegment(page, "IP mode", "Both");
+  await chooseSegment(page, "SNMP version", "SNMPv3");
   await expect(page.getByLabel("SNMPv3 username")).toBeVisible();
   await page.getByLabel("SNMPv3 username").fill("configured-reference");
   await page.getByLabel("SNMPv3 auth password").fill("configured-reference");
@@ -238,8 +238,8 @@ test("run and firmware check sync unsaved current config before backend actions"
 
   await page.goto("/configure");
   await page.getByLabel("Target host, IP, or range").fill("192.0.2.210");
-  await page.getByLabel("IP mode").selectOption("both");
-  await page.getByLabel("SNMP version").selectOption("v3");
+  await chooseSegment(page, "IP mode", "Both");
+  await chooseSegment(page, "SNMP version", "SNMPv3");
   await page.getByLabel("SNMPv3 username").fill("configured-reference");
   await page.getByLabel("SNMPv3 auth password").fill("configured-reference");
   await page.getByLabel("SNMPv3 privacy password").fill("configured-reference");
@@ -624,6 +624,10 @@ async function installApiMocks(page: Page) {
 
 function json(route: Route, body: unknown) {
   return route.fulfill({ contentType: "application/json", body: JSON.stringify(body) });
+}
+
+async function chooseSegment(page: Page, label: string, option: string) {
+  await page.getByRole("group", { name: label }).getByRole("button", { name: option }).click();
 }
 
 function providerModeSettings() {
