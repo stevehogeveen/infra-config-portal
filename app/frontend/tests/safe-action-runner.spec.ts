@@ -86,6 +86,7 @@ test("configure saves target, IP mode, SNMPv3 credential presence, timeout, and 
   await page.getByLabel("SNMPv3 username").fill("configured-reference");
   await page.getByLabel("SNMPv3 auth password").fill("configured-reference");
   await page.getByLabel("SNMPv3 privacy password").fill("configured-reference");
+  await page.getByText("Advanced").click();
   await page.getByLabel("Timeout seconds").fill("12");
   await page.getByLabel("Retry count").fill("2");
   await page.getByRole("button", { name: "Save / apply config" }).click();

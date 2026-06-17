@@ -617,52 +617,32 @@ function TopHeader({ context }: { context: ControlCenterContext }) {
 }
 
 function DashboardPage({ context }: { context: ControlCenterContext }) {
+  const firmwareCount = context.firmware.summaries.length;
+  const firmwareNeedsReview = context.firmware.summaries.filter((summary) =>
+    ["needs_upgrade", "blocked", "cannot_verify", "not_configured"].includes(summary.compliance_status)
+  ).length;
   return (
-    <Page title="Dashboard" subtitle="Current target, status, firmware signal, and the next workflow links.">
-      <div className="control-dashboard-grid">
-        <section className="control-panel">
-          <PanelTitle icon={<Gauge size={18} />} title="Current Target" />
-          <FactGrid
-            facts={[
-              ["Target", context.targetSummary],
-              ["API status", context.connectionStatus],
-              ["Provider mode", context.health?.provider_mode ?? "Unknown"],
-              ["Runtime", context.health?.operator_runtime_mode ?? "Unknown"]
-            ]}
-          />
-        </section>
-        <section className="control-panel">
-          <PanelTitle icon={<SlidersHorizontal size={18} />} title="Configured Defaults" />
-          <FactGrid
-            facts={[
-              ["IP mode", ipModeLabel(context.config.ipMode)],
-              ["SNMP version", snmpVersionLabel(context.config.snmpVersion)],
-              ["SNMP credentials", credentialConfigLabel(context.config)],
-              ["Timeout / retry", `${context.config.timeoutSeconds}s / ${context.config.retryCount}`]
-            ]}
-          />
-        </section>
-        <section className="control-panel">
-          <PanelTitle icon={<UploadCloud size={18} />} title="Firmware Summary" />
-          <FirmwareRollup summaries={context.firmware.summaries} />
-        </section>
-      </div>
-      <div className="control-dashboard-grid compact">
-        <section className="control-panel">
-          <PanelTitle icon={<Play size={18} />} title="Last Run" />
-          {context.latestRun ? <ResultSummary result={context.latestRun} /> : <EmptyState title="No run yet" detail="Configure a target, then run the selected action." />}
-        </section>
-        <section className="control-panel">
-          <PanelTitle icon={<ShieldCheck size={18} />} title="Last Firmware Check" />
-          {context.latestFirmwareCheck ? <ResultSummary result={context.latestFirmwareCheck} /> : <EmptyState title="No firmware check yet" detail="Open Firmware and run Check Firmware." />}
-        </section>
-        <section className="control-panel">
-          <PanelTitle icon={<Activity size={18} />} title="Last Firmware Upgrade" />
-          {context.latestFirmwareUpgrade ? <ResultSummary result={context.latestFirmwareUpgrade} /> : <EmptyState title="No upgrade attempt" detail="Firmware upgrades require validation and confirmation." />}
-        </section>
-      </div>
-      <section className="control-panel">
-        <PanelTitle icon={<ClipboardList size={18} />} title="Workflow" />
+    <Page title="Dashboard" subtitle="Control Center overview.">
+      <section className="control-panel control-overview-panel">
+        <PanelTitle icon={<Gauge size={18} />} title="Current Target" />
+        <FactGrid
+          facts={[
+            ["Current target", context.targetSummary],
+            ["API / connection", context.connectionStatus],
+            ["IP mode", ipModeLabel(context.config.ipMode)],
+            ["SNMP version", snmpVersionLabel(context.config.snmpVersion)],
+            [
+              "Detected firmware",
+              firmwareCount ? `${firmwareCount} surfaces, ${firmwareNeedsReview} need review` : "Not checked"
+            ],
+            ["Last run", resultStatusLabel(context.latestRun, context.runStatus)],
+            ["Last firmware check", context.latestFirmwareCheck ? statusLabel(context.latestFirmwareCheck.status) : "Not checked"],
+            [
+              "Last firmware upgrade",
+              context.latestFirmwareUpgrade ? statusLabel(context.latestFirmwareUpgrade.status) : "Not started"
+            ]
+          ]}
+        />
         <div className="quick-link-row">
           <Link className="button-link primary" to="/configure">
             <SlidersHorizontal size={16} />
@@ -678,13 +658,17 @@ function DashboardPage({ context }: { context: ControlCenterContext }) {
           </Link>
         </div>
       </section>
+      <section className="control-panel">
+        <PanelTitle icon={<UploadCloud size={18} />} title="Firmware Summary" />
+        <FirmwareRollup summaries={context.firmware.summaries} />
+      </section>
     </Page>
   );
 }
 
 function ConfigurePage({ context }: { context: ControlCenterContext }) {
   return (
-    <Page title="Configure" subtitle="Set the target and protocol defaults used by Run and Firmware workflows.">
+    <Page title="Configure" subtitle="Target and protocol configuration.">
       <section className="control-panel">
         <PanelTitle icon={<SlidersHorizontal size={18} />} title="Target and SNMP" />
         <div className="control-form-grid">
@@ -718,6 +702,72 @@ function ConfigurePage({ context }: { context: ControlCenterContext }) {
               <option value="v3">SNMPv3</option>
             </select>
           </label>
+        </div>
+
+        <div className="credential-block">
+          <PanelTitle icon={<ShieldCheck size={18} />} title="SNMP Credentials" />
+          {context.config.snmpVersion === "v2" ? (
+            <label className="control-field control-field-wide">
+              <span>SNMPv2 community</span>
+              <input
+                autoComplete="off"
+                onChange={(event) =>
+                  context.setCredentialDraft((current) => ({ ...current, snmpV2Community: event.target.value }))
+                }
+                placeholder="Configured at save time"
+                type="password"
+                value={context.credentialDraft.snmpV2Community}
+              />
+            </label>
+          ) : (
+            <div className="control-form-grid">
+              <label className="control-field">
+                <span>SNMPv3 username</span>
+                <input
+                  autoComplete="off"
+                  onChange={(event) =>
+                    context.setCredentialDraft((current) => ({ ...current, snmpV3Username: event.target.value }))
+                  }
+                  placeholder="Configured at save time"
+                  type="text"
+                  value={context.credentialDraft.snmpV3Username}
+                />
+              </label>
+              <label className="control-field">
+                <span>SNMPv3 auth password</span>
+                <input
+                  autoComplete="off"
+                  onChange={(event) =>
+                    context.setCredentialDraft((current) => ({ ...current, snmpV3AuthPassword: event.target.value }))
+                  }
+                  placeholder="Configured at save time"
+                  type="password"
+                  value={context.credentialDraft.snmpV3AuthPassword}
+                />
+              </label>
+              <label className="control-field">
+                <span>SNMPv3 privacy password</span>
+                <input
+                  autoComplete="off"
+                  onChange={(event) =>
+                    context.setCredentialDraft((current) => ({ ...current, snmpV3PrivacyPassword: event.target.value }))
+                  }
+                  placeholder="Configured at save time"
+                  type="password"
+                  value={context.credentialDraft.snmpV3PrivacyPassword}
+                />
+              </label>
+            </div>
+          )}
+          <p className="control-note">
+            Credential values are not stored in Control Center state; only configured/missing status is saved.
+          </p>
+        </div>
+      </section>
+
+      <details className="control-panel control-details">
+        <summary>Advanced</summary>
+        <div className="control-form-grid">
           <label className="control-field">
             <span>Timeout seconds</span>
             <input
@@ -739,70 +789,6 @@ function ConfigurePage({ context }: { context: ControlCenterContext }) {
             />
           </label>
         </div>
-      </section>
-
-      <section className="control-panel">
-        <PanelTitle icon={<ShieldCheck size={18} />} title="SNMP Credentials" />
-        {context.config.snmpVersion === "v2" ? (
-          <label className="control-field control-field-wide">
-            <span>SNMPv2 community</span>
-            <input
-              autoComplete="off"
-              onChange={(event) =>
-                context.setCredentialDraft((current) => ({ ...current, snmpV2Community: event.target.value }))
-              }
-              placeholder="Not saved; marks credentials configured when saved"
-              type="password"
-              value={context.credentialDraft.snmpV2Community}
-            />
-          </label>
-        ) : (
-          <div className="control-form-grid">
-            <label className="control-field">
-              <span>SNMPv3 username</span>
-              <input
-                autoComplete="off"
-                onChange={(event) =>
-                  context.setCredentialDraft((current) => ({ ...current, snmpV3Username: event.target.value }))
-                }
-                placeholder="Not saved"
-                type="text"
-                value={context.credentialDraft.snmpV3Username}
-              />
-            </label>
-            <label className="control-field">
-              <span>SNMPv3 auth password</span>
-              <input
-                autoComplete="off"
-                onChange={(event) =>
-                  context.setCredentialDraft((current) => ({ ...current, snmpV3AuthPassword: event.target.value }))
-                }
-                placeholder="Not saved"
-                type="password"
-                value={context.credentialDraft.snmpV3AuthPassword}
-              />
-            </label>
-            <label className="control-field">
-              <span>SNMPv3 privacy password</span>
-              <input
-                autoComplete="off"
-                onChange={(event) =>
-                  context.setCredentialDraft((current) => ({ ...current, snmpV3PrivacyPassword: event.target.value }))
-                }
-                placeholder="Not saved"
-                type="password"
-                value={context.credentialDraft.snmpV3PrivacyPassword}
-              />
-            </label>
-          </div>
-        )}
-        <p className="control-note">
-          Credential values are never persisted. Saving stores only configured or missing state for the selected SNMP version.
-        </p>
-      </section>
-
-      <details className="control-panel control-details">
-        <summary>Advanced</summary>
         <FactGrid
           facts={[
             ["Config adapter", "Backend non-secret runtime state with browser fallback"],
@@ -833,7 +819,7 @@ function ConfigurePage({ context }: { context: ControlCenterContext }) {
 function RunPage({ context }: { context: ControlCenterContext }) {
   const running = context.runStatus === "running";
   return (
-    <Page title="Run" subtitle="Review the current configuration, then run one selected backend action.">
+    <Page title="Run" subtitle="Run the configured action.">
       <section className="control-panel control-run-panel">
         <div>
           <PanelTitle icon={<Play size={18} />} title="Current Config Summary" />
@@ -887,7 +873,7 @@ function FirmwarePage({ context }: { context: ControlCenterContext }) {
     context.upgradeStatus === "validating" || !context.selectedPath || !context.selectedFirmware.trim();
   const requiredGates = context.selectedUpgradeAction?.required_gates ?? [];
   return (
-    <Page title="Firmware" subtitle="Firmware visibility, validation, upgrade gating, and events.">
+    <Page title="Firmware" subtitle="Visibility, validation, upgrade workflow, and events.">
       <section className="control-panel">
         <div className="control-panel-head">
           <PanelTitle icon={<Cpu size={18} />} title="Firmware Visibility" />
@@ -897,11 +883,7 @@ function FirmwarePage({ context }: { context: ControlCenterContext }) {
           </button>
         </div>
         {context.firmware.summaries.length ? (
-          <div className="firmware-visibility-grid">
-            {context.firmware.summaries.map((summary) => (
-              <FirmwareVisibilityCard key={summary.device_id} summary={summary} />
-            ))}
-          </div>
+          <FirmwareVisibilityTable summaries={context.firmware.summaries} />
         ) : (
           <EmptyState title="No firmware summary" detail="Run Check Firmware or confirm the backend firmware summary endpoint is available." />
         )}
@@ -998,8 +980,8 @@ function FirmwarePage({ context }: { context: ControlCenterContext }) {
 
 function ResultsPage({ context }: { context: ControlCenterContext }) {
   return (
-    <Page title="Results" subtitle="Latest run, firmware check, validation, and firmware upgrade outcomes.">
-      <div className="result-panel-grid">
+    <Page title="Results" subtitle="Latest run and firmware outcomes.">
+      <div className="result-stack">
         <section className="control-panel">
           <PanelTitle icon={<Play size={18} />} title="Latest Run Result" />
           {context.latestRun ? <ResultDetails result={context.latestRun} /> : <EmptyState title="No run result" detail="Run an action to populate this panel." />}
@@ -1035,7 +1017,7 @@ function LogsPage({ context }: { context: ControlCenterContext }) {
 
 function SettingsPage({ context }: { context: ControlCenterContext }) {
   return (
-    <Page title="Settings" subtitle="Global and advanced defaults only. Target-specific values stay in Configure.">
+    <Page title="Settings" subtitle="Global and advanced defaults.">
       <section className="control-panel">
         <PanelTitle icon={<Settings size={18} />} title="Global Defaults" />
         <div className="control-form-grid">
@@ -1218,6 +1200,52 @@ function FirmwareRollup({ summaries }: { summaries: FirmwareSummary[] }) {
       <p>
         {needsUpgrade} need upgrade review. {blocked} are blocked or not configured. Last check {latest ? formatDateTime(latest) : "not reported"}.
       </p>
+    </div>
+  );
+}
+
+function FirmwareVisibilityTable({ summaries }: { summaries: FirmwareSummary[] }) {
+  return (
+    <div className="control-table-wrap">
+      <table className="control-table">
+        <thead>
+          <tr>
+            <th>Detected device/model</th>
+            <th>Current firmware</th>
+            <th>Available firmware</th>
+            <th>Build/date</th>
+            <th>Bootloader/version</th>
+            <th>Hardware revision</th>
+            <th>Compatibility</th>
+            <th>Last check</th>
+            <th>Detection source</th>
+          </tr>
+        </thead>
+        <tbody>
+          {summaries.map((summary) => (
+            <tr key={summary.device_id}>
+              <td>
+                <strong>{summary.label}</strong>
+                <small>{summary.component_type}</small>
+              </td>
+              <td>{firmwareCurrentVersion(summary)}</td>
+              <td>{displayValue(summary.target_version || firstApprovedVersion(summary))}</td>
+              <td>Not reported</td>
+              <td>{firmwareBootloaderVersion(summary)}</td>
+              <td>Not reported</td>
+              <td>
+                <StatusPill status={summary.path_status || summary.compliance_status} />
+                {summary.blocker && <p>{summary.blocker}</p>}
+              </td>
+              <td>{summary.last_scanned ? formatDateTime(summary.last_scanned) : "Not checked"}</td>
+              <td>
+                <strong>{sourceLabel(summary.source_type)}</strong>
+                <small>{statusLabel(summary.freshness)}</small>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }

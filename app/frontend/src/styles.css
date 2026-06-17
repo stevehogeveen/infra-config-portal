@@ -292,6 +292,10 @@ button:disabled {
   grid-template-columns: repeat(3, minmax(220px, 1fr));
 }
 
+.control-overview-panel {
+  gap: 18px;
+}
+
 .control-panel {
   background: #ffffff;
   border: 1px solid #dfe4ea;
@@ -377,6 +381,14 @@ button:disabled {
   min-height: 40px;
   padding: 8px 10px;
   width: 100%;
+}
+
+.credential-block {
+  border-top: 1px solid #e2e8f0;
+  display: grid;
+  gap: 12px;
+  margin-top: 4px;
+  padding-top: 14px;
 }
 
 .control-check-field {
@@ -592,6 +604,60 @@ button:disabled {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.control-table-wrap {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  overflow: auto;
+}
+
+.control-table {
+  background: #ffffff;
+  border-collapse: collapse;
+  min-width: 980px;
+  width: 100%;
+}
+
+.control-table th,
+.control-table td {
+  border-bottom: 1px solid #e2e8f0;
+  padding: 10px 12px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.control-table th {
+  background: #f8fafc;
+  color: #334155;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.control-table td {
+  color: #172033;
+  font-size: 13px;
+}
+
+.control-table td strong,
+.control-table td small {
+  display: block;
+}
+
+.control-table td small {
+  color: #68778a;
+  font-size: 12px;
+  margin-top: 3px;
+}
+
+.control-table td p {
+  margin-top: 6px;
+}
+
+.control-table tr:last-child td {
+  border-bottom: 0;
+}
+
 .firmware-card {
   background: #f8fafc;
   border: 1px solid #e2e8f0;
@@ -621,6 +687,11 @@ button:disabled {
   display: grid;
   gap: 12px;
   padding: 12px;
+}
+
+.result-stack {
+  display: grid;
+  gap: 14px;
 }
 
 @media (max-width: 1040px) {
