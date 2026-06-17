@@ -1644,7 +1644,8 @@ function ResultDetails({ compact = false, result }: { compact?: boolean; result:
           ["Checked", formatDateTime(result.checkedAt)],
           ["Source", sourceLabel(result.sourceType)],
           ["Freshness", statusLabel(result.freshness)],
-          ["Executed", result.executed ? "Yes" : "No"]
+          ["Executed", result.executed ? "Yes" : "No"],
+          ...resultConfigFacts(result)
         ]}
       />
       <IssueGroup title="Blockers" items={result.blockers} />
@@ -1665,6 +1666,25 @@ function ResultDetails({ compact = false, result }: { compact?: boolean; result:
       )}
     </div>
   );
+}
+
+function resultConfigFacts(result: OperationResult): Array<[string, string]> {
+  const snapshot = operationConfigSnapshot(result);
+  if (!snapshot) return [];
+  const timeout = snapshot.timeout_seconds;
+  const retry = snapshot.retry_count;
+  return [
+    ["Target", stringFact(snapshot.target, "Not recorded")],
+    ["IP mode used", ipModeLabel(stringFact(snapshot.ip_mode, "ipv4"))],
+    ["SNMP used", snmpVersionLabel(stringFact(snapshot.snmp_version, "v2"))],
+    ["SNMP credential state", statusLabel(stringFact(snapshot.snmp_credentials ?? snapshot.snmp_credential_status, "missing"))],
+    ["Timeout / retry used", `${stringFact(timeout, "Not recorded")}s / ${stringFact(retry, "Not recorded")}`]
+  ];
+}
+
+function operationConfigSnapshot(result: OperationResult): Record<string, unknown> | null {
+  const candidate = result.raw.config_snapshot ?? result.raw.control_center_config;
+  return candidate && typeof candidate === "object" ? (candidate as Record<string, unknown>) : null;
 }
 
 function IssueGroup({ items, title }: { items: string[]; title: string }) {
@@ -1989,6 +2009,12 @@ function formatDateTime(value: string): string {
 
 function displayValue(value: string | null | undefined): string {
   return value && value.trim() ? value : "Not reported";
+}
+
+function stringFact(value: unknown, fallback: string): string {
+  if (typeof value === "string") return value.trim() || fallback;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  return fallback;
 }
 
 function sourceLabel(value: string): string {

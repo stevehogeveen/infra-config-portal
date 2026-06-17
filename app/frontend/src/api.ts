@@ -58,14 +58,15 @@ import type {
   WorkflowStage
 } from "./types";
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "";
+const ENV_API_BASE = import.meta.env.VITE_API_BASE_URL;
+const CONTROL_CENTER_SETTINGS_STORAGE_KEY = "webuis-control-center-settings-v2";
 
 type RequestOptions = Omit<RequestInit, "body"> & {
   body?: unknown;
 };
 
 async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const response = await fetch(`${API_BASE}${path}`, {
+  const response = await fetch(`${resolveApiBase()}${path}`, {
     ...options,
     headers: {
       "Content-Type": "application/json",
@@ -81,6 +82,34 @@ async function apiRequest<T>(path: string, options: RequestOptions = {}): Promis
   }
 
   return response.json() as Promise<T>;
+}
+
+function resolveApiBase(): string {
+  const envBase = normalizeApiBase(ENV_API_BASE);
+  if (envBase !== null) return envBase;
+  return storedApiBase();
+}
+
+function storedApiBase(): string {
+  try {
+    const raw = window.localStorage.getItem(CONTROL_CENTER_SETTINGS_STORAGE_KEY);
+    if (!raw) return "";
+    const parsed = JSON.parse(raw) as { apiBaseUrl?: unknown };
+    return normalizeApiBase(parsed.apiBaseUrl) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+function normalizeApiBase(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  if (trimmed === "same-origin") return "";
+  if (trimmed.startsWith("/") || /^https?:\/\//i.test(trimmed)) {
+    return trimmed.replace(/\/+$/, "");
+  }
+  return null;
 }
 
 function apiErrorMessage(detail: unknown): string {

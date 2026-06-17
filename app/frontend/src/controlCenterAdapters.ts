@@ -257,6 +257,9 @@ export const settingsAdapter = {
     if (SECRET_SHAPED_RE.test(settings.apiBaseUrl) || SECRET_SHAPED_RE.test(settings.firmwareRepository)) {
       errors.push("Settings must not contain secret-shaped values.");
     }
+    if (!validApiBaseUrl(settings.apiBaseUrl)) {
+      errors.push("API/server URL must be same-origin, a relative path, or an http(s) URL.");
+    }
     return errors;
   },
 
@@ -265,6 +268,7 @@ export const settingsAdapter = {
   ): Promise<{ settings: ControlSettings; errors: string[]; savedVia: "backend" | "local_fallback" }> {
     const next: ControlSettings = {
       ...settings,
+      apiBaseUrl: settings.apiBaseUrl.trim() || defaultSettings.apiBaseUrl,
       defaultRetryCount: clampNumber(settings.defaultRetryCount, 0, 5),
       defaultTimeoutSeconds: clampNumber(settings.defaultTimeoutSeconds, 1, 120),
       firmwareRepository: settings.firmwareRepository.trim() || defaultSettings.firmwareRepository,
@@ -404,9 +408,12 @@ export const runAdapter = {
         type: "run"
       });
     }
-    const result = await api.runWorkflowAction(action.action_id);
+    const configSnapshot = sanitizedConfigSnapshot(config);
+    const result = await api.runWorkflowAction(action.action_id, {
+      control_config: configSnapshot
+    });
     return normalizeWorkflowRun(result, "run", {
-      config_snapshot: sanitizedConfigSnapshot(config)
+      config_snapshot: configSnapshot
     });
   }
 };
@@ -627,6 +634,7 @@ export const firmwareAdapter = {
     }
 
     const result = await api.runWorkflowAction(supportedActionId, {
+      control_config: sanitizedConfigSnapshot(request.config),
       confirmation_phrase: request.confirmationPhrase.trim(),
       confirmed_gates: action.required_gates
     });
@@ -916,6 +924,11 @@ function hasCredentialDraftForVersion(draft: CredentialDraft, version: SnmpVersi
   return [draft.snmpV3Username, draft.snmpV3AuthPassword, draft.snmpV3PrivacyPassword].every(
     (value) => value.trim().length > 0
   );
+}
+
+function validApiBaseUrl(value: string): boolean {
+  const trimmed = value.trim();
+  return !trimmed || trimmed === "same-origin" || trimmed.startsWith("/") || /^https?:\/\//i.test(trimmed);
 }
 
 function sanitizedConfigSnapshot(config: ControlConfig): Record<string, unknown> {

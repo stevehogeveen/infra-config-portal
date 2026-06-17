@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-import sys
+import json
 import subprocess
+import sys
 import time
 import uuid
 from pathlib import Path
@@ -37,6 +38,69 @@ def test_read_only_action_can_run_and_save_trace(
     assert result["not_mock"] is True
     assert result["trace_artifact"]
     assert list(tmp_path.glob("*.json"))
+
+
+def test_action_trace_keeps_sanitized_control_center_config(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(workflow_action_run_store, "WORKFLOW_ACTION_RUN_TRACE_DIR", tmp_path)
+
+    def fake_run(command: tuple[str, ...], timeout_seconds: int) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(command, 0, stdout="verification passed", stderr="")
+
+    monkeypatch.setattr(workflow_action_runner, "_run_subprocess", fake_run)
+
+    result = run_workflow_action(
+        "build-verification.run-full",
+        payload={
+            "control_config": {
+                "target": "token=secret-target",
+                "ip_mode": "both",
+                "snmp_version": "v3",
+                "snmp_credentials": "configured",
+                "snmp_v3_auth_password": "do-not-store",
+                "timeout_seconds": 20,
+                "retry_count": 2,
+            }
+        },
+    )
+
+    assert result["control_center_config"] == {
+        "target": "token=REDACTED",
+        "ip_mode": "both",
+        "snmp_version": "v3",
+        "snmp_credentials": "configured",
+        "timeout_seconds": 20,
+        "retry_count": 2,
+    }
+    assert "do-not-store" not in json.dumps(result)
+    assert "secret-target" not in json.dumps(result)
+
+
+def test_blocked_firmware_upgrade_trace_keeps_control_center_config(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(workflow_action_run_store, "WORKFLOW_ACTION_RUN_TRACE_DIR", tmp_path)
+
+    result = run_workflow_action(
+        "netapp.ontap-upgrade-apply",
+        payload={
+            "control_config": {
+                "target": "192.0.2.203",
+                "ip_mode": "ipv4",
+                "snmp_version": "v2",
+                "snmp_credentials": "configured",
+                "timeout_seconds": 8,
+                "retry_count": 1,
+            }
+        },
+    )
+
+    assert result["status"] == "blocked"
+    assert result["executed"] is False
+    assert result["control_center_config"]["target"] == "192.0.2.203"
 
 
 def test_report_only_action_can_run(

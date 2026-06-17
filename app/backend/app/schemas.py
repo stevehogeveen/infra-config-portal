@@ -2058,11 +2058,13 @@ class WorkflowActionRunRead(BaseModel):
     blockers: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     next_action: str
+    control_center_config: dict[str, Any] | None = None
 
 
 class WorkflowActionRunCreate(BaseModel):
     confirmation_phrase: str | None = None
     confirmed_gates: list[str] = Field(default_factory=list)
+    control_config: dict[str, Any] | None = None
 
 
 class WorkflowActionRead(BaseModel):

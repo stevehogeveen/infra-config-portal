@@ -923,6 +923,7 @@ export type WorkflowActionRun = {
   blockers: string[];
   warnings: string[];
   next_action: string;
+  control_center_config?: Record<string, unknown> | null;
 };
 
 export type WorkflowAction = {
@@ -965,6 +966,7 @@ export type WorkflowAction = {
 export type WorkflowActionRunRequest = {
   confirmation_phrase?: string;
   confirmed_gates?: string[];
+  control_config?: Record<string, unknown>;
 };
 
 export type WorkflowStage = {

@@ -36,6 +36,18 @@ class WorkflowActionRunNotFoundError(LookupError):
     pass
 
 
+CONTROL_CENTER_CONFIG_KEYS = (
+    "target",
+    "ip_mode",
+    "snmp_version",
+    "snmp_credentials",
+    "snmp_credential_status",
+    "snmp_credential_version",
+    "timeout_seconds",
+    "retry_count",
+)
+
+
 def run_workflow_action(
     action_id: str,
     session: Session | None = None,
@@ -43,6 +55,7 @@ def run_workflow_action(
 ) -> dict[str, Any]:
     action = get_workflow_action(action_id)
     payload = payload or {}
+    control_config = _control_center_config_snapshot(payload.get("control_config"))
     blockers = workflow_action_run_blockers(
         action,
         confirmation_phrase=_string_or_none(payload.get("confirmation_phrase")),
@@ -51,7 +64,7 @@ def run_workflow_action(
     started_at = _now()
     run_id = f"workflow-action:{action_id}:{uuid.uuid4().hex[:12]}"
     if blockers:
-        result = _blocked_result(action, run_id, started_at, blockers)
+        result = _blocked_result(action, run_id, started_at, blockers, control_config=control_config)
         return save_workflow_action_run_trace(result)
 
     spec = get_workflow_action_execution_spec(action_id)
@@ -61,13 +74,21 @@ def run_workflow_action(
             run_id,
             started_at,
             ["No read-only UI runner allowlist entry exists for this action yet."],
+            control_config=control_config,
         )
         return save_workflow_action_run_trace(result)
 
     if spec.kind == "api":
-        result = _run_api_action(action, run_id, started_at, session)
+        result = _run_api_action(action, run_id, started_at, session, control_config=control_config)
     else:
-        result = _run_command_action(action, run_id, started_at, spec.command, spec.timeout_seconds)
+        result = _run_command_action(
+            action,
+            run_id,
+            started_at,
+            spec.command,
+            spec.timeout_seconds,
+            control_config=control_config,
+        )
 
     reports = _existing_report_artifacts([*list(action.get("reports") or []), *list(spec.reports)])
     result["report_artifacts"] = _unique(
@@ -97,6 +118,8 @@ def _run_command_action(
     started_at: str,
     command: tuple[str, ...],
     timeout_seconds: int,
+    *,
+    control_config: dict[str, Any] | None,
 ) -> dict[str, Any]:
     completed: subprocess.CompletedProcess[str] | None = None
     stderr = ""
@@ -133,6 +156,7 @@ def _run_command_action(
         stderr_summary=stderr_summary,
         blockers=blockers,
         warnings=_output_warnings(stdout_summary, stderr_summary),
+        control_config=control_config,
     )
 
 
@@ -141,6 +165,8 @@ def _run_api_action(
     run_id: str,
     started_at: str,
     session: Session | None,
+    *,
+    control_config: dict[str, Any] | None,
 ) -> dict[str, Any]:
     try:
         payload = _api_action_payload(str(action["action_id"]), session)
@@ -157,6 +183,7 @@ def _run_api_action(
             stderr_summary="",
             blockers=[],
             warnings=[],
+            control_config=control_config,
         )
     except Exception as exc:
         return _base_result(
@@ -171,6 +198,7 @@ def _run_api_action(
             stderr_summary=_redacted_summary(f"{exc.__class__.__name__}: {exc}"),
             blockers=[f"API action failed before completing safely: {exc.__class__.__name__}."],
             warnings=[],
+            control_config=control_config,
         )
 
 
@@ -201,6 +229,8 @@ def _blocked_result(
     run_id: str,
     started_at: str,
     blockers: list[str],
+    *,
+    control_config: dict[str, Any] | None,
 ) -> dict[str, Any]:
     return _base_result(
         action,
@@ -214,6 +244,7 @@ def _blocked_result(
         stderr_summary="",
         blockers=blockers,
         warnings=[],
+        control_config=control_config,
     )
 
 
@@ -230,6 +261,7 @@ def _base_result(
     stderr_summary: str,
     blockers: list[str],
     warnings: list[str],
+    control_config: dict[str, Any] | None,
 ) -> dict[str, Any]:
     finished_at = _now()
     report_artifacts = _existing_report_artifacts(action.get("reports") or [])
@@ -280,6 +312,7 @@ def _base_result(
         "blockers": blockers,
         "warnings": warnings,
         "next_action": next_action,
+        "control_center_config": control_config,
     }
 
 
@@ -413,6 +446,19 @@ def _decode_output(value: Any) -> str:
 
 def _now() -> str:
     return datetime.now(UTC).isoformat()
+
+
+def _control_center_config_snapshot(value: Any) -> dict[str, Any] | None:
+    if not isinstance(value, dict):
+        return None
+    snapshot = {
+        key: value[key]
+        for key in CONTROL_CENTER_CONFIG_KEYS
+        if key in value and value[key] is not None
+    }
+    if not snapshot:
+        return None
+    return redact_sensitive(snapshot, _redaction_values())
 
 
 def _string_or_none(value: Any) -> str | None:
