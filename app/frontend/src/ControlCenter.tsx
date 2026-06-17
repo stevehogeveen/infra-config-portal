@@ -25,6 +25,7 @@ import {
   defaultCredentialDraft,
   defaultFirmwareRuntimeStatus,
   firmwareAdapter,
+  firmwareSelectionAdapter,
   firmwareValidationMatchesSelection,
   firmwareValidationPassed,
   logsAdapter,
@@ -148,8 +149,8 @@ export default function ControlCenter() {
   const [runError, setRunError] = useState("");
   const [firmwareCheckStatus, setFirmwareCheckStatus] = useState<OperationStatus>(() => latestFirmwareCheck?.status ?? "idle");
   const [upgradeStatus, setUpgradeStatus] = useState<UpgradeStatus>(() => upgradeStatusFromResult(latestFirmwareUpgrade));
-  const [selectedPathId, setSelectedPathIdState] = useState("");
-  const [selectedFirmware, setSelectedFirmware] = useState("");
+  const [selectedPathId, setSelectedPathIdState] = useState(() => firmwareSelectionAdapter.load()?.selectedPathId ?? "");
+  const [selectedFirmware, setSelectedFirmware] = useState(() => firmwareSelectionAdapter.load()?.selectedFirmware ?? "");
   const [upgradeConfirmationAccepted, setUpgradeConfirmationAccepted] = useState(false);
   const [upgradeConfirmationPhraseState, setUpgradeConfirmationPhrase] = useState("");
 
@@ -192,7 +193,24 @@ export default function ControlCenter() {
     if (!savedSelection) return;
     setSelectedPathIdState(savedSelection.pathId);
     setSelectedFirmware(savedSelection.selectedFirmware);
+    firmwareSelectionAdapter.save({
+      selectedFirmware: savedSelection.selectedFirmware,
+      selectedPathId: savedSelection.pathId
+    });
   }, [firmware, firmwarePaths, selectedFirmware, selectedPathId]);
+
+  useEffect(() => {
+    if (!selectedPathId || firmwarePaths.length === 0) return;
+    const selectedPathStillExists = firmwarePaths.some((path) => firmwarePathId(path) === selectedPathId);
+    if (selectedPathStillExists) return;
+    setSelectedPathIdState("");
+    setSelectedFirmware("");
+    firmwareSelectionAdapter.clear();
+    clearFirmwareGateResults();
+    setUpgradeConfirmationAccepted(false);
+    setUpgradeConfirmationPhrase("");
+    setUpgradeStatus("idle");
+  }, [firmwarePaths, selectedPathId]);
 
   async function refreshControlCenter() {
     setLoading(true);
@@ -258,6 +276,7 @@ export default function ControlCenter() {
       status: "saved",
       type: "config"
     });
+    if (result.savedVia === "backend") await refreshControlCenter();
   }
 
   async function saveSettings() {
@@ -277,6 +296,7 @@ export default function ControlCenter() {
       status: "saved",
       type: "settings"
     });
+    if (result.savedVia === "backend") await refreshControlCenter();
   }
 
   async function syncConfigForAction(): Promise<{
@@ -354,6 +374,7 @@ export default function ControlCenter() {
   }
 
   async function checkFirmware() {
+    if (firmwareCheckStatus === "running") return;
     setFirmwareCheckStatus("running");
     const syncResult = await syncConfigForAction();
     const currentConfig = syncResult.config;
@@ -596,7 +617,13 @@ export default function ControlCenter() {
     firmwareSelectionEditedRef.current = true;
     setSelectedPathIdState(value);
     const path = firmwarePaths.find((candidate) => firmwarePathId(candidate) === value) ?? null;
-    setSelectedFirmware(defaultFirmwareSelection(path));
+    const nextFirmware = defaultFirmwareSelection(path);
+    setSelectedFirmware(nextFirmware);
+    if (value) {
+      firmwareSelectionAdapter.save({ selectedFirmware: nextFirmware, selectedPathId: value });
+    } else {
+      firmwareSelectionAdapter.clear();
+    }
     clearFirmwareGateResults();
     setUpgradeConfirmationAccepted(false);
     setUpgradeConfirmationPhrase("");
@@ -606,6 +633,9 @@ export default function ControlCenter() {
   function updateSelectedFirmware(value: string) {
     firmwareSelectionEditedRef.current = true;
     setSelectedFirmware(value);
+    if (selectedPathId) {
+      firmwareSelectionAdapter.save({ selectedFirmware: value, selectedPathId });
+    }
     clearFirmwareGateResults();
     setUpgradeConfirmationAccepted(false);
     setUpgradeConfirmationPhrase("");

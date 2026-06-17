@@ -80,6 +80,11 @@ export type FirmwareState = {
   fileSelections: FirmwareFileSelections | null;
 };
 
+export type FirmwareSelectionDraft = {
+  selectedFirmware: string;
+  selectedPathId: string;
+};
+
 export type FirmwareRuntimeStatus = {
   actionIds: string[];
   checkedAt: string | null;
@@ -129,6 +134,7 @@ const RESULT_STORAGE_KEY = "webuis-control-center-latest-result-v2";
 const FIRMWARE_CHECK_STORAGE_KEY = "webuis-control-center-latest-firmware-check-v2";
 const FIRMWARE_VALIDATION_STORAGE_KEY = "webuis-control-center-latest-firmware-validation-v2";
 const FIRMWARE_UPGRADE_STORAGE_KEY = "webuis-control-center-latest-firmware-upgrade-v2";
+const FIRMWARE_SELECTION_STORAGE_KEY = "webuis-control-center-firmware-selection-v2";
 const SECRET_SHAPED_RE = /(password\s*=|token\s*=|secret\s*=|bearer\s+|-----begin|private[_ -]?key)/i;
 
 export const defaultConfig: ControlConfig = {
@@ -380,6 +386,30 @@ export const resultsAdapter = {
 
   clearFirmwareUpgrade(): void {
     removeStored(FIRMWARE_UPGRADE_STORAGE_KEY);
+  }
+};
+
+export const firmwareSelectionAdapter = {
+  clear(): void {
+    removeStored(FIRMWARE_SELECTION_STORAGE_KEY);
+  },
+
+  load(): FirmwareSelectionDraft | null {
+    const stored = readStored<Partial<FirmwareSelectionDraft>>(FIRMWARE_SELECTION_STORAGE_KEY);
+    if (!stored || typeof stored.selectedPathId !== "string") {
+      return null;
+    }
+    return {
+      selectedFirmware: typeof stored.selectedFirmware === "string" ? stored.selectedFirmware : "",
+      selectedPathId: stored.selectedPathId
+    };
+  },
+
+  save(selection: FirmwareSelectionDraft): void {
+    writeStored(FIRMWARE_SELECTION_STORAGE_KEY, {
+      selectedFirmware: selection.selectedFirmware,
+      selectedPathId: selection.selectedPathId
+    });
   }
 };
 

@@ -445,6 +445,33 @@ test("firmware upgrade stays disabled when no backend apply action exists", asyn
   expect(actionRequests).toEqual([]);
 });
 
+test("firmware path selection persists before validation and still blocks upgrade", async ({ page }) => {
+  await page.goto("/configure");
+  await page.getByLabel("Target host, IP, or range").fill("192.0.2.203");
+  await page.getByRole("button", { name: "Save / apply config" }).click();
+
+  await page.goto("/firmware");
+  await page.getByLabel("Firmware path").selectOption(hpeUpgradePathValue);
+  await page.getByLabel("Selected firmware, image, or version").fill("");
+
+  await page.reload();
+
+  await expect(page.getByLabel("Firmware path")).toHaveValue(hpeUpgradePathValue);
+  await expect(page.getByLabel("Selected firmware, image, or version")).toHaveValue("");
+  await expect(page.getByRole("button", { name: "Validate Firmware" })).toBeDisabled();
+  await expect(page.getByText("Selected firmware, image, or target version is required before validation.")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Start Firmware Upgrade" })).toBeDisabled();
+
+  await page.getByLabel("Selected firmware, image, or version").fill("ilo-2.91.fwpkg");
+  await page.reload();
+
+  await expect(page.getByLabel("Firmware path")).toHaveValue(hpeUpgradePathValue);
+  await expect(page.getByLabel("Selected firmware, image, or version")).toHaveValue("ilo-2.91.fwpkg");
+  await expect(page.getByRole("button", { name: "Validate Firmware" })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Start Firmware Upgrade" })).toBeDisabled();
+  await expect(page.getByText("Validate firmware before starting an upgrade.")).toBeVisible();
+});
+
 test("settings and logs remain top-level control-center pages", async ({ page }) => {
   await page.goto("/settings");
   await expect(page.getByRole("heading", { exact: true, name: "Settings" })).toBeVisible();
