@@ -328,17 +328,16 @@ button:disabled {
 
 .control-fact-grid {
   display: grid;
-  gap: 10px;
+  border-top: 1px solid #e2e8f0;
+  gap: 0;
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
   margin: 0;
 }
 
 .control-fact-grid div {
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
-  border-radius: 6px;
+  border-bottom: 1px solid #e2e8f0;
   min-width: 0;
-  padding: 10px;
+  padding: 10px 12px 10px 0;
 }
 
 .control-fact-grid dd {
@@ -356,34 +355,41 @@ button:disabled {
   gap: 10px;
 }
 
-.control-next-actions {
+.control-workflow-steps {
   display: grid;
   gap: 10px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
-.control-next-action {
-  align-items: center;
+.control-workflow-step {
+  align-items: start;
   background: #f8fafc;
   border: 1px solid #e2e8f0;
   border-radius: 8px;
   color: #172033;
   display: grid;
-  gap: 10px;
-  grid-template-columns: minmax(150px, 0.35fr) minmax(0, 1fr) auto;
+  gap: 12px;
+  grid-template-rows: minmax(64px, 1fr) auto;
   min-width: 0;
   padding: 12px;
 }
 
-.control-next-action:hover {
+.control-workflow-step:hover {
   border-color: #0f766e;
 }
 
-.control-next-action strong {
-  color: #0f172a;
-  overflow-wrap: anywhere;
+.control-workflow-step div {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
 }
 
-.control-next-action > span {
+.control-workflow-step strong {
+  color: #0f172a;
+  font-size: 15px;
+}
+
+.control-workflow-step span {
   color: #68778a;
   font-size: 13px;
   font-weight: 800;
@@ -744,6 +750,10 @@ button:disabled {
   .control-dashboard-layout {
     grid-template-columns: 1fr;
   }
+
+  .control-workflow-steps {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 640px) {
@@ -756,13 +766,13 @@ button:disabled {
   }
 
   .control-form-grid,
-  .control-fact-grid {
+  .control-fact-grid,
+  .control-workflow-steps {
     grid-template-columns: 1fr;
   }
 
   .control-panel-head,
-  .control-run-panel,
-  .control-next-action {
+  .control-run-panel {
     align-items: stretch;
     display: grid;
     grid-template-columns: 1fr;

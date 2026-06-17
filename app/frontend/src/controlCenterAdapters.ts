@@ -900,10 +900,13 @@ function firmwareSelectionBlockers(selectedPath: FirmwareUpgradePath | null, sel
 }
 
 export function supportedUpgradeActionId(path: FirmwareUpgradePath | null): string | null {
+  if (!path) {
+    return null;
+  }
   if (path?.component_id === "netapp_ontap_version") {
     return "netapp.ontap-upgrade-apply";
   }
-  return null;
+  return "firmware.upgrade-apply-placeholder";
 }
 
 export function upgradeConfirmationPhrase(path: FirmwareUpgradePath | null, action?: WorkflowAction | null): string {

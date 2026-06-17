@@ -909,6 +909,7 @@ function DashboardPage({ context }: { context: ControlCenterContext }) {
   const firmwareNeedsReview = context.firmware.summaries.filter((summary) =>
     ["needs_upgrade", "blocked", "cannot_verify", "not_configured"].includes(summary.compliance_status)
   ).length;
+  const firmwarePaths = collectFirmwarePaths(context.firmware.summaries).length;
   const latestFirmwareUpgrade = firmwareUpgradeSummaryResult(context);
   return (
     <Page title="Dashboard" subtitle="Current target, connection, and latest action state.">
@@ -921,17 +922,12 @@ function DashboardPage({ context }: { context: ControlCenterContext }) {
               ["API / connection", context.connectionStatus],
               ["IP mode", ipModeLabel(context.config.ipMode)],
               ["SNMP version", snmpVersionLabel(context.config.snmpVersion)],
-              [
-                "Detected firmware",
-                firmwareCount ? `${firmwareCount} surfaces, ${firmwareNeedsReview} need review` : "Not checked"
-              ],
               ["Last run", resultStatusLabel(context.latestRun, context.runStatus)],
               ["Last firmware check", context.latestFirmwareCheck ? statusLabel(context.latestFirmwareCheck.status) : "Not checked"],
               [
                 "Last firmware upgrade",
                 latestFirmwareUpgrade ? statusLabel(latestFirmwareUpgrade.status) : "Not started"
-              ],
-              ["Firmware progress", firmwareProgressLabel(context)]
+              ]
             ]}
           />
           <div className="quick-link-row">
@@ -951,49 +947,50 @@ function DashboardPage({ context }: { context: ControlCenterContext }) {
         </section>
         <section className="control-panel">
           <PanelTitle icon={<UploadCloud size={18} />} title="Firmware Summary" />
-          <FirmwareRollup summaries={context.firmware.summaries} />
           <FactGrid
             facts={[
-              ["Detected surfaces", firmwareCount ? String(firmwareCount) : "Not checked"],
-              ["Needs review", String(firmwareNeedsReview)],
+              ["Detected firmware", firmwareCount ? `${firmwareCount} surfaces` : "Not checked"],
+              ["Upgrade paths", firmwarePaths ? String(firmwarePaths) : "None visible"],
+              ["Needs review", firmwareCount ? String(firmwareNeedsReview) : "Not checked"],
               ["Last firmware check", context.latestFirmwareCheck ? statusLabel(context.latestFirmwareCheck.status) : "Not checked"],
-              ["Last firmware upgrade", latestFirmwareUpgrade ? statusLabel(latestFirmwareUpgrade.status) : "Not started"]
+              ["Firmware progress", firmwareProgressLabel(context)]
             ]}
           />
+          <FirmwareRollup summaries={context.firmware.summaries} />
         </section>
       </div>
       <section className="control-panel">
-        <PanelTitle icon={<Activity size={18} />} title="Next Actions" />
-        <div className="control-next-actions">
-          <NextActionLink
+        <PanelTitle icon={<Activity size={18} />} title="Primary Workflow" />
+        <div className="control-workflow-steps">
+          <WorkflowStepLink
             detail={`${context.config.target || "Target missing"}; ${ipModeLabel(context.config.ipMode)}; ${snmpVersionLabel(context.config.snmpVersion)}`}
-            label="Configure target"
+            label="Configure"
             status={context.config.target ? "ready" : "missing"}
             to="/configure"
           />
-          <NextActionLink
-            detail={context.latestRun ? context.latestRun.message : "Use the saved config for the selected safe backend action."}
-            label="Run action"
+          <WorkflowStepLink
+            detail={context.selectedAction?.label ?? "Backend action pending"}
+            label="Run"
             status={context.latestRun?.status ?? context.runStatus}
             to="/run"
           />
-          <NextActionLink
+          <WorkflowStepLink
+            detail={context.latestRun || latestFirmwareUpgrade ? "Latest outcomes available" : "No current result"}
+            label="Results"
+            status={context.latestRun || latestFirmwareUpgrade ? "ready" : "not_checked"}
+            to="/results"
+          />
+          <WorkflowStepLink
             detail={
               context.latestFirmwareCheck
                 ? context.latestFirmwareCheck.message
                 : firmwareCount
                   ? `${firmwareCount} firmware surfaces loaded`
-                  : "Check firmware visibility"
+                  : "Visibility not checked"
             }
-            label="Review firmware"
+            label="Firmware"
             status={context.latestFirmwareCheck?.status ?? (firmwareCount ? "ready" : "not_checked")}
             to="/firmware"
-          />
-          <NextActionLink
-            detail={context.latestRun || latestFirmwareUpgrade ? "Latest outcomes are available." : "No run or firmware result yet."}
-            label="View results"
-            status={context.latestRun || latestFirmwareUpgrade ? "ready" : "not_checked"}
-            to="/results"
           />
         </div>
       </section>
@@ -1005,7 +1002,7 @@ function DashboardPage({ context }: { context: ControlCenterContext }) {
   );
 }
 
-function NextActionLink({
+function WorkflowStepLink({
   detail,
   label,
   status,
@@ -1017,9 +1014,11 @@ function NextActionLink({
   to: string;
 }) {
   return (
-    <Link className="control-next-action" to={to}>
-      <strong>{label}</strong>
-      <span>{detail}</span>
+    <Link className="control-workflow-step" to={to}>
+      <div>
+        <strong>{label}</strong>
+        <span>{detail}</span>
+      </div>
       <StatusPill status={status} />
     </Link>
   );
@@ -1225,8 +1224,11 @@ function RunPage({ context }: { context: ControlCenterContext }) {
 
 function FirmwarePage({ context }: { context: ControlCenterContext }) {
   const supportedActionId = supportedUpgradeActionId(context.selectedPath);
-  const backendApply = context.selectedUpgradeAction?.label ?? (supportedActionId ? `${supportedActionId} unavailable` : "Integration pending");
-  const backendPending = Boolean(context.selectedPath && (!supportedActionId || !context.selectedUpgradeAction));
+  const placeholderApply = context.selectedUpgradeAction?.action_id === "firmware.upgrade-apply-placeholder";
+  const backendApply = placeholderApply
+    ? "TODO placeholder - no firmware update will run"
+    : context.selectedUpgradeAction?.label ?? (supportedActionId ? `${supportedActionId} unavailable` : "Integration pending");
+  const backendPending = Boolean(context.selectedPath && (!supportedActionId || !context.selectedUpgradeAction || placeholderApply));
   const startDisabled =
     context.firmwareUpgradeBlockers.length > 0 ||
     context.upgradeStatus === "upgrading" ||
@@ -1323,7 +1325,9 @@ function FirmwarePage({ context }: { context: ControlCenterContext }) {
         )}
         {backendPending && (
           <div className="control-alert warning">
-            {supportedActionId
+            {placeholderApply
+              ? "Backend upgrade execution for this firmware path is a guarded TODO placeholder. Starting upgrade records a blocked backend event and does not run a provider firmware update."
+              : supportedActionId
               ? `Backend action ${supportedActionId} is not available in the workflow catalog. Starting upgrade will return a safe TODO result and will not run a provider update.`
               : "Backend upgrade integration is pending for this firmware path. Starting upgrade will return a safe TODO result and will not run a provider update."}
           </div>
@@ -1345,7 +1349,7 @@ function FirmwarePage({ context }: { context: ControlCenterContext }) {
               onChange={(event) => context.setUpgradeConfirmationAccepted(event.target.checked)}
               type="checkbox"
             />
-            <span>I confirm this firmware upgrade request is intentional and should be sent to the guarded backend runner.</span>
+            <span>I confirm this firmware upgrade request is intentional and the listed backend gates are understood.</span>
           </label>
           <p className="control-note">
             Required phrase: <code>{context.expectedUpgradePhrase}</code>
@@ -1869,6 +1873,9 @@ function firmwareReadinessLabel(context: ControlCenterContext): string {
   }
   if (!firmwareValidationPassed(context.latestFirmwareValidation)) return "Blocked by validation";
   if (!context.selectedUpgradeAction) return "Backend integration pending";
+  if (context.selectedUpgradeAction.action_id === "firmware.upgrade-apply-placeholder") {
+    return "Backend TODO placeholder";
+  }
   return "Ready for guarded backend request";
 }
 
