@@ -345,6 +345,62 @@ button:disabled {
   gap: 10px;
 }
 
+.control-dashboard-panel {
+  grid-template-columns: minmax(0, 1fr) 260px;
+}
+
+.control-dashboard-primary {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+
+.control-next-actions {
+  align-content: start;
+  display: grid;
+  gap: 10px;
+}
+
+.control-next-action {
+  align-items: start;
+  background: #f8fafc;
+  border: 1px solid #dfe4ea;
+  border-radius: 8px;
+  color: #172033;
+  display: grid;
+  gap: 6px;
+  grid-template-columns: auto minmax(0, 1fr);
+  min-height: 72px;
+  min-width: 0;
+  padding: 12px;
+}
+
+.control-next-action:hover {
+  border-color: #0f766e;
+}
+
+.control-next-action.is-primary {
+  background: #e9f5f3;
+  border-color: #9bd4ce;
+}
+
+.control-next-action svg {
+  grid-row: span 2;
+  margin-top: 2px;
+}
+
+.control-next-action strong {
+  color: #0f172a;
+}
+
+.control-next-action span {
+  color: #68778a;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
 .control-workflow-steps {
   display: grid;
   gap: 10px;
@@ -695,6 +751,36 @@ button:disabled {
   padding: 12px;
 }
 
+.firmware-state-rail {
+  display: grid;
+  gap: 6px;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.firmware-state-rail li {
+  background: #f8fafc;
+  border: 1px solid #dfe4ea;
+  border-radius: 6px;
+  color: #68778a;
+  font-size: 12px;
+  font-weight: 900;
+  min-width: 0;
+  overflow: hidden;
+  padding: 7px 8px;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.firmware-state-rail li.is-active {
+  background: #0f766e;
+  border-color: #0f766e;
+  color: #ffffff;
+}
+
 .result-stack {
   display: grid;
   gap: 14px;
@@ -718,8 +804,20 @@ button:disabled {
     grid-template-columns: 1fr;
   }
 
+  .control-dashboard-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .control-next-actions {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
   .control-workflow-steps {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .firmware-state-rail {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 }
 
@@ -729,6 +827,7 @@ button:disabled {
   }
 
   .control-nav,
+  .control-next-actions,
   .control-form-grid,
   .control-fact-grid,
   .control-workflow-steps {
@@ -748,6 +847,10 @@ button:disabled {
 
   .control-log-list li {
     grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .firmware-state-rail {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .control-log-list li > span {

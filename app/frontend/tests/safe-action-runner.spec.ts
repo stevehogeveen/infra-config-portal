@@ -62,10 +62,11 @@ test("renders the WebUIs Control Center sidebar and dashboard", async ({ page })
   ]);
   await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
   await expect(page.getByRole("heading", { exact: true, name: "Current Target" })).toBeVisible();
-  await expect(page.getByRole("heading", { exact: true, name: "Firmware Summary" })).toBeVisible();
-  await expect(page.locator(".quick-link-row").getByRole("link", { name: "Configure" })).toBeVisible();
-  await expect(page.locator(".quick-link-row").getByRole("link", { name: "Run" })).toBeVisible();
-  await expect(page.locator(".quick-link-row").getByRole("link", { name: "Firmware" })).toBeVisible();
+  await expect(page.getByRole("heading", { exact: true, name: "Workflow State" })).toBeVisible();
+  await expect(page.getByText("Device / target detection")).toBeVisible();
+  await expect(page.locator(".control-next-actions").getByRole("link", { name: /Configure/ })).toBeVisible();
+  await expect(page.locator(".control-next-actions").getByRole("link", { name: /Run/ })).toBeVisible();
+  await expect(page.locator(".control-next-actions").getByRole("link", { name: /Firmware/ })).toBeVisible();
 
   const nav = page.locator(".control-nav");
   for (const pageName of ["Configure", "Run", "Firmware", "Results", "Logs", "Settings", "Dashboard"]) {
@@ -106,11 +107,11 @@ test("configure saves target, IP mode, SNMPv3 credential presence, timeout, and 
   await page.getByRole("button", { name: "Save / apply config" }).click();
 
   await expect(page.getByText("Configuration saved")).toBeVisible();
+  await expect(page.getByText("Configured for SNMPv3").first()).toBeVisible();
   await page.goto("/dashboard");
   await expect(page.getByText("192.0.2.203").first()).toBeVisible();
   await expect(page.getByText("IPv4 and IPv6").first()).toBeVisible();
   await expect(page.getByText("SNMPv3").first()).toBeVisible();
-  await expect(page.getByText("Configured").first()).toBeVisible();
 
   await page.reload();
   await expect(page.getByText("192.0.2.203").first()).toBeVisible();
@@ -343,12 +344,12 @@ test("firmware page checks visibility, validates, and gates upgrade confirmation
   const firmwareCheckResult = page.locator("section").filter({ hasText: "Latest Firmware Check Summary" });
   await firmwareCheckResult.getByText("Raw result").click();
   await expect(firmwareCheckResult.locator("pre.control-code")).toContainText('"target": "192.0.2.203"');
-  await expect(page.getByText("Latest Firmware Validation Summary")).toBeVisible();
+  await expect(page.getByText("Latest Firmware Upgrade Summary")).toBeVisible();
   await expect(
     page
       .locator("section")
-      .filter({ hasText: "Latest Firmware Validation Summary" })
-      .getByText("Firmware validation completed against the configured baseline.", { exact: true })
+      .filter({ hasText: "Latest Firmware Upgrade Summary" })
+      .getByText("Guarded action was not run because required gates were not satisfied.", { exact: true })
   ).toBeVisible();
 });
 

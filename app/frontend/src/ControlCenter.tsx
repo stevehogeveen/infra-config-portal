@@ -800,52 +800,51 @@ function DashboardPage({ context }: { context: ControlCenterContext }) {
   const latestFirmwareUpgrade = firmwareUpgradeSummaryResult(context);
   const summary = firmwareSummaryText(context.firmware.summaries);
   return (
-    <Page title="Dashboard" subtitle="The current target, connection state, and latest action outcomes.">
-      <section className="control-panel">
-        <PanelTitle icon={<Gauge size={18} />} title="Current Target" />
-        <FactGrid
-          facts={[
-            ["Current target", context.targetSummary],
-            ["API / connection", context.connectionStatus],
-            ["IP mode", ipModeLabel(context.config.ipMode)],
-            ["SNMP version", snmpVersionLabel(context.config.snmpVersion)],
-            ["Detected firmware summary", summary],
-            ["Last run status", resultStatusLabel(context.latestRun, context.runStatus)],
-            ["Last firmware check", context.latestFirmwareCheck ? statusLabel(context.latestFirmwareCheck.status) : "Not checked"],
-            ["Last firmware check / upgrade status", latestFirmwareUpgrade ? statusLabel(latestFirmwareUpgrade.status) : "No upgrade attempt"]
-          ]}
-        />
-        <div className="quick-link-row">
-          <Link className="button-link primary" to="/configure">
-            <SlidersHorizontal size={16} />
-            Configure
+    <Page title="Dashboard" subtitle="Current target, backend reachability, and the next Control Center actions.">
+      <section className="control-panel control-dashboard-panel">
+        <div className="control-dashboard-primary">
+          <PanelTitle icon={<Gauge size={18} />} title="Current Target" />
+          <FactGrid
+            facts={[
+              ["Current target", context.targetSummary],
+              ["API / connection", context.connectionStatus],
+              ["IP mode", ipModeLabel(context.config.ipMode)],
+              ["SNMP version", snmpVersionLabel(context.config.snmpVersion)],
+              ["Device / target detection", providerDetectionText(context.providers)],
+              ["Detected firmware summary", summary],
+              ["Last run status", resultStatusLabel(context.latestRun, context.runStatus)],
+              ["Last firmware check", context.latestFirmwareCheck ? statusLabel(context.latestFirmwareCheck.status) : "Not checked"],
+              ["Last firmware upgrade", latestFirmwareUpgrade ? statusLabel(latestFirmwareUpgrade.status) : "No upgrade attempt"]
+            ]}
+          />
+        </div>
+        <div className="control-next-actions" aria-label="Primary workflow shortcuts">
+          <Link className="control-next-action is-primary" to="/configure">
+            <SlidersHorizontal size={18} />
+            <strong>Configure</strong>
+            <span>{context.config.target ? context.config.target : "Set target and SNMP"}</span>
           </Link>
-          <Link className="button-link" to="/run">
-            <Play size={16} />
-            Run
+          <Link className="control-next-action" to="/run">
+            <Play size={18} />
+            <strong>Run</strong>
+            <span>{context.selectedAction?.label ?? "Backend run pending"}</span>
           </Link>
-          <Link className="button-link" to="/firmware">
-            <UploadCloud size={16} />
-            Firmware
+          <Link className="control-next-action" to="/firmware">
+            <UploadCloud size={18} />
+            <strong>Firmware</strong>
+            <span>{firmwareStatusLabel(context)}</span>
           </Link>
         </div>
       </section>
+
       <section className="control-panel">
-        <PanelTitle icon={<Cpu size={18} />} title="Firmware Summary" />
-        <FirmwareRollup summaries={context.firmware.summaries} />
-      </section>
-      <section className="control-panel">
-        <PanelTitle icon={<Activity size={18} />} title="Primary Workflow" />
+        <PanelTitle icon={<Activity size={18} />} title="Workflow State" />
         <div className="control-workflow-steps">
           <WorkflowStepLink detail={context.config.target || "Target missing"} label="Configure" status={context.config.target ? "ready" : "missing"} to="/configure" />
           <WorkflowStepLink detail={context.selectedAction?.label ?? "Safe placeholder"} label="Run" status={context.latestRun?.status ?? context.runStatus} to="/run" />
           <WorkflowStepLink detail={firmwareStatusLabel(context)} label="Firmware" status={context.latestFirmwareCheck?.status ?? context.upgradeStatus} to="/firmware" />
           <WorkflowStepLink detail={context.latestRun || context.latestFirmwareCheck ? "Latest outcomes available" : "No current result"} label="Results" status={context.latestRun || context.latestFirmwareCheck ? "ready" : "not_checked"} to="/results" />
         </div>
-      </section>
-      <section className="control-panel">
-        <PanelTitle icon={<History size={18} />} title="Recent Activity" />
-        <ActivityList logs={[...context.logs, ...context.backendLogs].slice(0, 8)} />
       </section>
     </Page>
   );
@@ -1082,6 +1081,7 @@ function FirmwarePage({ context }: { context: ControlCenterContext }) {
             ["Last status source", firmwareRuntimeSourceLabel(context.firmwareRuntime)]
           ]}
         />
+        <FirmwareStateRail status={context.upgradeStatus} />
         <div className="control-alert info">
           Firmware upgrades never start on page load. Start Firmware Upgrade requires validation, the exact confirmation phrase, and the confirmation checkbox.
         </div>
@@ -1186,12 +1186,13 @@ function ResultsPage({ context }: { context: ControlCenterContext }) {
           {context.latestFirmwareCheck ? <ResultDetails result={context.latestFirmwareCheck} /> : <EmptyState title="No firmware check" detail="Use Check Firmware on the Firmware page." />}
         </section>
         <section className="control-panel">
-          <PanelTitle icon={<ShieldCheck size={18} />} title="Latest Firmware Validation Summary" />
-          {context.latestFirmwareValidation ? <ResultDetails result={context.latestFirmwareValidation} /> : <EmptyState title="No firmware validation" detail="Select firmware, then validate before upgrade." />}
-        </section>
-        <section className="control-panel">
           <PanelTitle icon={<UploadCloud size={18} />} title="Latest Firmware Upgrade Summary" />
           {latestFirmwareUpgrade ? <ResultDetails result={latestFirmwareUpgrade} /> : <EmptyState title="No firmware upgrade" detail="Upgrade attempts appear here after confirmation." />}
+          {!latestFirmwareUpgrade && context.latestFirmwareValidation && (
+            <div className="control-alert info">
+              Latest firmware validation: {statusLabel(context.latestFirmwareValidation.status)}. Upgrade results appear only after a confirmed Start Firmware Upgrade request.
+            </div>
+          )}
         </section>
       </div>
     </Page>
@@ -1331,6 +1332,19 @@ function StatusPill({ status }: { status: string }) {
   return <span className={`control-inline-status ${statusClass(status)}`}>{statusLabel(status)}</span>;
 }
 
+function FirmwareStateRail({ status }: { status: UpgradeStatus }) {
+  const states: UpgradeStatus[] = ["idle", "validating", "ready", "upgrading", "success", "failed", "blocked", "pending"];
+  return (
+    <ol className="firmware-state-rail" aria-label="Firmware upgrade state">
+      {states.map((state) => (
+        <li className={state === status ? "is-active" : ""} key={state}>
+          {statusLabel(state)}
+        </li>
+      ))}
+    </ol>
+  );
+}
+
 function FactGrid({ facts }: { facts: Array<[string, string]> }) {
   return (
     <dl className="control-fact-grid">
@@ -1341,19 +1355,6 @@ function FactGrid({ facts }: { facts: Array<[string, string]> }) {
         </div>
       ))}
     </dl>
-  );
-}
-
-function FirmwareRollup({ summaries }: { summaries: FirmwareSummary[] }) {
-  if (!summaries.length) return <EmptyState title="Not checked" detail="Firmware summary is not available yet." />;
-  const blocked = summaries.filter((summary) => ["blocked", "cannot_verify", "not_configured"].includes(summary.compliance_status)).length;
-  const needsUpgrade = summaries.filter((summary) => summary.compliance_status === "needs_upgrade").length;
-  return (
-    <div className="control-result-summary">
-      <StatusPill status={blocked ? "warning" : "ready"} />
-      <strong>{summaries.length} firmware surfaces detected</strong>
-      <p>{needsUpgrade} need upgrade review. {blocked} are blocked or not configured.</p>
-    </div>
   );
 }
 
@@ -1567,6 +1568,14 @@ function firmwareSummaryText(summaries: FirmwareSummary[]): string {
   if (!summaries.length) return "Not checked";
   const needsUpgrade = summaries.filter((summary) => summary.compliance_status === "needs_upgrade").length;
   return `${summaries.length} surfaces detected; ${needsUpgrade} need review`;
+}
+
+function providerDetectionText(providers: ProviderStatus[]): string {
+  const visible = providers.filter((provider) => provider.is_operator_visible !== false);
+  if (!visible.length) return "Not checked";
+  const ready = visible.filter((provider) => /ready|ok|available|connected|current/i.test(provider.status)).length;
+  const blocked = visible.filter((provider) => provider.blockers.length || /blocked|failed|unavailable|missing/i.test(provider.status)).length;
+  return `${visible.length} adapters visible; ${ready} ready; ${blocked} blocked or missing`;
 }
 
 function firmwareCurrentVersion(summary: FirmwareSummary): string {
