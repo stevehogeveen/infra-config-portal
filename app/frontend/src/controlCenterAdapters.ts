@@ -114,6 +114,7 @@ const RESULT_STORAGE_KEY = "webuis-control-center-latest-result-v2";
 const FIRMWARE_CHECK_STORAGE_KEY = "webuis-control-center-latest-firmware-check-v2";
 const FIRMWARE_VALIDATION_STORAGE_KEY = "webuis-control-center-latest-firmware-validation-v2";
 const FIRMWARE_UPGRADE_STORAGE_KEY = "webuis-control-center-latest-firmware-upgrade-v2";
+const SECRET_SHAPED_RE = /(password\s*=|token\s*=|secret\s*=|bearer\s+|-----begin|private[_ -]?key)/i;
 
 export const defaultConfig: ControlConfig = {
   target: "",
@@ -172,6 +173,9 @@ export const configAdapter = {
     const errors: string[] = [];
     if (!config.target.trim()) {
       errors.push("Target host, IP, or range is required.");
+    }
+    if (SECRET_SHAPED_RE.test(config.target)) {
+      errors.push("Target must not contain secret-shaped values.");
     }
     if (!Number.isFinite(config.timeoutSeconds) || config.timeoutSeconds < 1 || config.timeoutSeconds > 120) {
       errors.push("Timeout must be between 1 and 120 seconds.");

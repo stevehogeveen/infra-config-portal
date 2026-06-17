@@ -72,6 +72,16 @@ test("renders the WebUIs Control Center sidebar and dashboard", async ({ page })
     await expect(page.getByRole("heading", { exact: true, name: pageName })).toBeVisible();
   }
 
+  await page.goto("/control-center?section=action-catalog&action=build-verification.run-full");
+  await expect(page).toHaveURL(/\/run$/);
+  await expect(page.getByRole("heading", { exact: true, name: "Run" })).toBeVisible();
+  await page.goto("/control-center?section=firmware&device=netapp");
+  await expect(page).toHaveURL(/\/firmware$/);
+  await expect(page.getByRole("heading", { exact: true, name: "Firmware" })).toBeVisible();
+  await page.goto("/control-center?section=reports");
+  await expect(page).toHaveURL(/\/results$/);
+  await expect(page.getByRole("heading", { exact: true, name: "Results" })).toBeVisible();
+
   await page.goto("/overview");
   await expect(page).toHaveURL(/\/dashboard$/);
 });
@@ -103,11 +113,37 @@ test("configure saves target, IP mode, SNMPv3 credential presence, timeout, and 
   await expect(page.getByText("SNMPv3").first()).toBeVisible();
 });
 
+test("configure rejects secret-shaped target values before local fallback can persist them", async ({ page }) => {
+  await page.goto("/configure");
+
+  await page.getByLabel("Target host, IP, or range").fill("password=not-allowed");
+  await page.getByRole("button", { name: "Save / apply config" }).click();
+
+  await expect(page.getByText("Target must not contain secret-shaped values.")).toBeVisible();
+  await expect(page.getByText("Configuration saved")).toHaveCount(0);
+});
+
 test("run page has one Run button and writes latest result", async ({ page }) => {
+  const actionRequests: string[] = [];
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    if (url.pathname === "/api/v1/control-center/config" && request.method() === "PUT") {
+      const body = request.postDataJSON() as Partial<ControlCenterConfigMock>;
+      actionRequests.push(`config:${body.target ?? ""}`);
+    }
+    if (
+      url.pathname === "/api/v1/workflows/actions/build-verification.run-full/run" &&
+      request.method() === "POST"
+    ) {
+      actionRequests.push("run");
+    }
+  });
+
   await page.goto("/configure");
   await page.getByLabel("Target host, IP, or range").fill("192.0.2.203");
   await page.getByRole("button", { name: "Save / apply config" }).click();
   await expect(page.getByText("Configuration saved")).toBeVisible();
+  actionRequests.length = 0;
 
   await page.goto("/run");
   await expect(page.getByRole("button", { name: /^Run$/ })).toHaveCount(1);
@@ -118,6 +154,7 @@ test("run page has one Run button and writes latest result", async ({ page }) =>
   );
   await page.getByRole("button", { name: /^Run$/ }).click();
   await expect((await runResponse).ok()).toBeTruthy();
+  expect(actionRequests).toEqual(["config:192.0.2.203", "run"]);
   await expect(page.getByText("Safe read-only/report-only action completed.").first()).toBeVisible();
 
   await page.goto("/results");
@@ -129,9 +166,31 @@ test("run page has one Run button and writes latest result", async ({ page }) =>
 });
 
 test("firmware page checks visibility, validates, and gates upgrade confirmation", async ({ page }) => {
+  const actionRequests: string[] = [];
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    if (url.pathname === "/api/v1/control-center/config" && request.method() === "PUT") {
+      const body = request.postDataJSON() as Partial<ControlCenterConfigMock>;
+      actionRequests.push(`config:${body.target ?? ""}`);
+    }
+    if (url.pathname === "/api/v1/lab/firmware-inventory") {
+      actionRequests.push("firmware-check");
+    }
+    if (url.pathname === "/api/v1/providers/netapp-ontap/ontap-upgrade/validate") {
+      actionRequests.push("firmware-validate");
+    }
+    if (
+      url.pathname === "/api/v1/workflows/actions/netapp.ontap-upgrade-apply/run" &&
+      request.method() === "POST"
+    ) {
+      actionRequests.push("firmware-upgrade");
+    }
+  });
+
   await page.goto("/configure");
   await page.getByLabel("Target host, IP, or range").fill("192.0.2.203");
   await page.getByRole("button", { name: "Save / apply config" }).click();
+  actionRequests.length = 0;
 
   await page.goto("/firmware");
 
@@ -145,6 +204,7 @@ test("firmware page checks visibility, validates, and gates upgrade confirmation
   const checkResponse = page.waitForResponse((response) => response.url().includes("/api/v1/lab/firmware-inventory"));
   await page.getByRole("button", { name: "Check Firmware" }).click();
   await expect((await checkResponse).ok()).toBeTruthy();
+  expect(actionRequests.splice(0)).toEqual(["config:192.0.2.203", "firmware-check"]);
   await expect(page.getByText("Firmware check succeeded")).toBeVisible();
 
   await page.getByLabel("Firmware path").selectOption(upgradePathValue);
@@ -156,6 +216,7 @@ test("firmware page checks visibility, validates, and gates upgrade confirmation
   );
   await page.getByRole("button", { name: "Validate Firmware" }).click();
   await expect((await validateResponse).ok()).toBeTruthy();
+  expect(actionRequests.splice(0)).toEqual(["config:192.0.2.203", "firmware-validate"]);
   await expect(page.getByText("Firmware validation succeeded")).toBeVisible();
   await expect(page.getByRole("button", { name: "Start Firmware Upgrade" })).toBeDisabled();
 
@@ -169,6 +230,7 @@ test("firmware page checks visibility, validates, and gates upgrade confirmation
   );
   await page.getByRole("button", { name: "Start Firmware Upgrade" }).click();
   await expect((await upgradeResponse).ok()).toBeTruthy();
+  expect(actionRequests.splice(0)).toEqual(["config:192.0.2.203", "firmware-upgrade"]);
   await expect(page.getByText("Firmware upgrade blocked")).toBeVisible();
   await expect(page.getByText("Guarded action was not run because required gates were not satisfied.")).toBeVisible();
 
