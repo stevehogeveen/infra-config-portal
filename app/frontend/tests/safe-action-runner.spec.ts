@@ -118,6 +118,47 @@ test("configure saves target, IP mode, SNMPv3 credential presence, timeout, and 
   await expect(page.getByText("SNMPv3").first()).toBeVisible();
 });
 
+test("newer local fallback config survives an older backend snapshot on reload", async ({ page }) => {
+  await page.addInitScript(() => {
+    window.localStorage.setItem(
+      "webuis-control-center-config-v2",
+      JSON.stringify({
+        ipMode: "both",
+        retryCount: 4,
+        snmpCredentialStatus: "configured",
+        snmpCredentialVersion: "v3",
+        snmpVersion: "v3",
+        target: "192.0.2.250",
+        timeoutSeconds: 18,
+        updatedAt: "2026-06-17T19:00:00Z"
+      })
+    );
+    window.localStorage.setItem(
+      "webuis-control-center-settings-v2",
+      JSON.stringify({
+        apiBaseUrl: "same-origin",
+        defaultIpMode: "ipv6",
+        defaultRetryCount: 4,
+        defaultSnmpVersion: "v3",
+        defaultTimeoutSeconds: 18,
+        firmwareRepository: "/srv/local-fallback-firmware",
+        loggingVerbosity: "debug",
+        updatedAt: "2026-06-17T19:00:00Z"
+      })
+    );
+  });
+
+  await page.goto("/dashboard");
+  await expect(page.getByText("192.0.2.250").first()).toBeVisible();
+  await expect(page.getByText("IPv4 and IPv6").first()).toBeVisible();
+  await expect(page.getByText("SNMPv3").first()).toBeVisible();
+
+  await page.goto("/settings");
+  await expect(page.getByLabel("Default IP mode")).toHaveValue("ipv6");
+  await expect(page.getByLabel("Default SNMP version")).toHaveValue("v3");
+  await expect(page.getByLabel("Firmware repository/source")).toHaveValue("/srv/local-fallback-firmware");
+});
+
 test("configure rejects secret-shaped target values before local fallback can persist them", async ({ page }) => {
   await page.goto("/configure");
 
@@ -344,6 +385,12 @@ test("firmware page checks visibility, validates, and gates upgrade confirmation
   const firmwareCheckResult = page.locator("section").filter({ hasText: "Latest Firmware Check Summary" });
   await firmwareCheckResult.getByText("Raw result").click();
   await expect(firmwareCheckResult.locator("pre.control-code")).toContainText('"target": "192.0.2.203"');
+  const firmwareValidationResult = page.locator("section").filter({ hasText: "Latest Firmware Validation Summary" });
+  await expect(
+    firmwareValidationResult.locator(".control-result-summary").getByText("Firmware validation", { exact: true })
+  ).toBeVisible();
+  await firmwareValidationResult.getByText("Raw result").click();
+  await expect(firmwareValidationResult.locator("pre.control-code")).toContainText('"selected_firmware": "ontap-9.14.1P1.tgz"');
   await expect(page.getByText("Latest Firmware Upgrade Summary")).toBeVisible();
   await expect(
     page

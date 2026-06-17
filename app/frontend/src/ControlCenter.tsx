@@ -224,8 +224,18 @@ export default function ControlCenter() {
       setBackendLogs(snapshot.backendLogs);
       setFirmware(snapshot.firmware);
       setFirmwareRuntime(snapshot.firmwareRuntime);
-      if (snapshot.controlConfig && !configEditedRef.current) setConfig(snapshot.controlConfig);
-      if (snapshot.controlSettings && !settingsEditedRef.current) setSettings(snapshot.controlSettings);
+      const backendConfig = snapshot.controlConfig;
+      if (backendConfig && !configEditedRef.current) {
+        setConfig((current) =>
+          shouldAdoptBackendConfig(current, backendConfig) ? backendConfig : current
+        );
+      }
+      const backendSettings = snapshot.controlSettings;
+      if (backendSettings && !settingsEditedRef.current) {
+        setSettings((current) =>
+          shouldAdoptBackendSettings(current, backendSettings) ? backendSettings : current
+        );
+      }
     } catch (error) {
       setLoadError(errorMessage(error));
     } finally {
@@ -1186,6 +1196,10 @@ function ResultsPage({ context }: { context: ControlCenterContext }) {
           {context.latestFirmwareCheck ? <ResultDetails result={context.latestFirmwareCheck} /> : <EmptyState title="No firmware check" detail="Use Check Firmware on the Firmware page." />}
         </section>
         <section className="control-panel">
+          <PanelTitle icon={<ShieldCheck size={18} />} title="Latest Firmware Validation Summary" />
+          {context.latestFirmwareValidation ? <ResultDetails result={context.latestFirmwareValidation} /> : <EmptyState title="No firmware validation" detail="Validate a selected firmware path before upgrade." />}
+        </section>
+        <section className="control-panel">
           <PanelTitle icon={<UploadCloud size={18} />} title="Latest Firmware Upgrade Summary" />
           {latestFirmwareUpgrade ? <ResultDetails result={latestFirmwareUpgrade} /> : <EmptyState title="No firmware upgrade" detail="Upgrade attempts appear here after confirmation." />}
           {!latestFirmwareUpgrade && context.latestFirmwareValidation && (
@@ -1700,6 +1714,35 @@ function operationResultUsesConfig(result: OperationResult, config: ControlConfi
   if (!snapshot || typeof snapshot !== "object") return false;
   const expected = configSnapshot(config);
   return Object.entries(expected).every(([key, value]) => (snapshot as Record<string, unknown>)[key] === value);
+}
+
+function shouldAdoptBackendConfig(current: ControlConfig, backend: ControlConfig): boolean {
+  if (!hasLocalConfigState(current)) return true;
+  return backendStateIsAtLeastAsFresh(current.updatedAt, backend.updatedAt);
+}
+
+function shouldAdoptBackendSettings(current: ControlSettings, backend: ControlSettings): boolean {
+  if (!current.updatedAt) return true;
+  return backendStateIsAtLeastAsFresh(current.updatedAt, backend.updatedAt);
+}
+
+function hasLocalConfigState(config: ControlConfig): boolean {
+  return Boolean(
+    config.updatedAt ||
+      config.target.trim() ||
+      config.snmpCredentialStatus === "configured" ||
+      config.snmpCredentialVersion
+  );
+}
+
+function backendStateIsAtLeastAsFresh(currentUpdatedAt: string | null, backendUpdatedAt: string | null): boolean {
+  if (!currentUpdatedAt) return true;
+  if (!backendUpdatedAt) return false;
+  const currentTime = Date.parse(currentUpdatedAt);
+  const backendTime = Date.parse(backendUpdatedAt);
+  if (Number.isNaN(currentTime)) return true;
+  if (Number.isNaN(backendTime)) return false;
+  return backendTime >= currentTime;
 }
 
 function firmwareSelectionSnapshot(config: ControlConfig, selectedPath: FirmwareUpgradePath | null, selectedFirmware: string): Record<string, unknown> {
