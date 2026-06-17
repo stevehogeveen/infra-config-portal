@@ -284,12 +284,21 @@ export default function ControlCenter() {
     });
   }
 
-  async function syncConfigForAction(): Promise<{ config: ControlConfig; errors: string[]; savedVia: "backend" | "local_fallback" }> {
-    const result = await configAdapter.save(config, defaultCredentialDraft);
+  async function syncConfigForAction(): Promise<{
+    config: ControlConfig;
+    configChanged: boolean;
+    errors: string[];
+    savedVia: "backend" | "local_fallback";
+  }> {
+    const hadPendingConfig = configEditedRef.current || credentialDraftHasValues(credentialDraft);
+    const result = await configAdapter.save(config, credentialDraft);
     setConfig(result.config);
     setConfigErrors(result.errors);
     configEditedRef.current = result.errors.length > 0 || result.savedVia !== "backend";
-    return result;
+    if (result.errors.length === 0) {
+      setCredentialDraft(defaultCredentialDraft);
+    }
+    return { ...result, configChanged: hadPendingConfig && result.errors.length === 0 };
   }
 
   async function runSelectedAction() {
@@ -298,6 +307,10 @@ export default function ControlCenter() {
     setRunStatus("running");
     const syncResult = await syncConfigForAction();
     const currentConfig = syncResult.config;
+    if (syncResult.configChanged) {
+      clearStoredResults();
+      setRunStatus("running");
+    }
     if (syncResult.errors.length > 0 || syncResult.savedVia !== "backend") {
       const result = createLocalOperationResult({
         blockers:
@@ -375,6 +388,10 @@ export default function ControlCenter() {
     setFirmwareCheckStatus("running");
     const syncResult = await syncConfigForAction();
     const currentConfig = syncResult.config;
+    if (syncResult.configChanged) {
+      clearStoredResults();
+      setFirmwareCheckStatus("running");
+    }
     if (syncResult.errors.length > 0 || syncResult.savedVia !== "backend") {
       const result = createLocalOperationResult({
         blockers:
@@ -450,6 +467,10 @@ export default function ControlCenter() {
     setUpgradeStatus("validating");
     const syncResult = await syncConfigForAction();
     const currentConfig = syncResult.config;
+    if (syncResult.configChanged) {
+      clearStoredResults();
+      setUpgradeStatus("validating");
+    }
     if (syncResult.errors.length > 0 || syncResult.savedVia !== "backend") {
       const result = createLocalOperationResult({
         blockers:
@@ -529,18 +550,24 @@ export default function ControlCenter() {
     if (upgradeStatus === "upgrading" || upgradeStatus === "validating") return;
     const syncResult = await syncConfigForAction();
     const currentConfig = syncResult.config;
+    if (syncResult.configChanged) {
+      clearStoredResults();
+    }
+    const validationForUpgrade = syncResult.configChanged ? null : latestFirmwareValidation;
+    const confirmationAcceptedForUpgrade = syncResult.configChanged ? false : upgradeConfirmationAccepted;
+    const confirmationPhraseForUpgrade = syncResult.configChanged ? "" : upgradeConfirmationPhraseState;
     const currentBlockers =
       syncResult.errors.length > 0
         ? syncResult.errors
         : syncResult.savedVia === "backend"
           ? firmwareStartBlockers({
-              accepted: upgradeConfirmationAccepted,
+              accepted: confirmationAcceptedForUpgrade,
               config: currentConfig,
-              phrase: upgradeConfirmationPhraseState,
+              phrase: confirmationPhraseForUpgrade,
               selectedFirmware,
               selectedPath,
               selectedUpgradeAction,
-              validation: latestFirmwareValidation
+              validation: validationForUpgrade
             })
           : ["Current config could not be saved to backend runtime state before Firmware Upgrade."];
     if (currentBlockers.length > 0) {
@@ -573,11 +600,11 @@ export default function ControlCenter() {
       const result = await firmwareAdapter.upgrade({
         actions,
         config: currentConfig,
-        confirmationAccepted: upgradeConfirmationAccepted,
-        confirmationPhrase: upgradeConfirmationPhraseState,
+        confirmationAccepted: confirmationAcceptedForUpgrade,
+        confirmationPhrase: confirmationPhraseForUpgrade,
         selectedFirmware,
         selectedPath,
-        validationResult: latestFirmwareValidation
+        validationResult: validationForUpgrade
       });
       setLatestFirmwareUpgrade(result);
       resultsAdapter.saveFirmwareUpgrade(result);
@@ -1798,6 +1825,10 @@ function credentialConfigLabel(config: ControlConfig): string {
   if (config.snmpCredentialStatus !== "configured") return "Missing";
   if (!config.snmpCredentialVersion) return "Configured";
   return `Configured for ${snmpVersionLabel(config.snmpCredentialVersion)}`;
+}
+
+function credentialDraftHasValues(draft: CredentialDraft): boolean {
+  return Object.values(draft).some((value) => value.trim().length > 0);
 }
 
 function formatDateTime(value: string): string {

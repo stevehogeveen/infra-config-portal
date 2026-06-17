@@ -165,6 +165,66 @@ test("run page has one Run button and writes latest result", async ({ page }) =>
   await expect(runResult.locator("pre.control-code")).toContainText('"target": "192.0.2.203"');
 });
 
+test("run and firmware check sync unsaved current config before backend actions", async ({ page }) => {
+  const configPayloads: Partial<ControlCenterConfigMock>[] = [];
+  const actionRequests: string[] = [];
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    if (url.pathname === "/api/v1/control-center/config" && request.method() === "PUT") {
+      configPayloads.push(request.postDataJSON() as Partial<ControlCenterConfigMock>);
+    }
+    if (
+      url.pathname === "/api/v1/workflows/actions/build-verification.run-full/run" &&
+      request.method() === "POST"
+    ) {
+      actionRequests.push("run");
+    }
+    if (url.pathname === "/api/v1/lab/firmware-inventory") {
+      actionRequests.push("firmware-check");
+    }
+  });
+
+  await page.goto("/configure");
+  await page.getByLabel("Target host, IP, or range").fill("192.0.2.210");
+  await page.getByLabel("IP mode").selectOption("both");
+  await page.getByLabel("SNMP version").selectOption("v3");
+  await page.getByLabel("SNMPv3 username").fill("configured-reference");
+  await page.getByLabel("SNMPv3 auth password").fill("configured-reference");
+  await page.getByLabel("SNMPv3 privacy password").fill("configured-reference");
+  await page.getByText("Advanced").click();
+  await page.getByLabel("Timeout seconds").fill("15");
+  await page.getByLabel("Retry count").fill("3");
+
+  await page.getByRole("link", { name: "Continue to Run" }).click();
+  await page.getByRole("button", { name: /^Run$/ }).click();
+  await expect(page.getByText("Safe read-only/report-only action completed.").first()).toBeVisible();
+
+  expect(configPayloads[0]).toMatchObject({
+    ip_mode: "both",
+    retry_count: 3,
+    snmp_credential_status: "configured",
+    snmp_credential_version: "v3",
+    snmp_version: "v3",
+    target: "192.0.2.210",
+    timeout_seconds: 15
+  });
+  expect(actionRequests).toEqual(["run"]);
+
+  await page.goto("/configure");
+  await page.getByLabel("Target host, IP, or range").fill("192.0.2.211");
+  await page.locator(".control-nav").getByRole("link", { name: "Firmware" }).click();
+  await page.getByRole("button", { name: "Check Firmware" }).click();
+  await expect(page.getByText("Firmware check succeeded")).toBeVisible();
+
+  expect(configPayloads[1]).toMatchObject({
+    snmp_credential_status: "configured",
+    snmp_credential_version: "v3",
+    snmp_version: "v3",
+    target: "192.0.2.211"
+  });
+  expect(actionRequests).toEqual(["run", "firmware-check"]);
+});
+
 test("run blocks invalid current config before backend action", async ({ page }) => {
   const actionRequests: string[] = [];
   page.on("request", (request) => {
