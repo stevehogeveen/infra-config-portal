@@ -305,6 +305,12 @@ test("firmware page checks visibility, validates, and gates upgrade confirmation
   await expect(page.getByText("Firmware validation succeeded")).toBeVisible();
   await expect(page.getByRole("button", { name: "Start Firmware Upgrade" })).toBeDisabled();
 
+  await page.reload();
+  await expect(page.getByLabel("Firmware path")).toHaveValue(upgradePathValue);
+  await expect(page.getByLabel("Selected firmware, image, or version")).toHaveValue("ontap-9.14.1P1.tgz");
+  await expect(page.getByRole("button", { name: "Validate Firmware" })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Start Firmware Upgrade" })).toBeDisabled();
+
   await page.getByLabel("Require explicit operator confirmation before any firmware upgrade request is sent.").check();
   await page.getByLabel("Confirmation phrase").fill("UPGRADE ONTAP");
   await expect(page.getByRole("button", { name: "Start Firmware Upgrade" })).toBeEnabled();
@@ -418,7 +424,7 @@ test("settings and logs remain top-level control-center pages", async ({ page })
 async function installApiMocks(page: Page) {
   let controlConfig = controlCenterConfig();
   let controlSettings = controlCenterSettings();
-  let selectedFirmwareFiles: Record<string, string> = { netapp_ontap_version: "ontap-9.14.1P1.tgz" };
+  let selectedFirmwareFiles: Record<string, string> = {};
 
   await page.route("**/*", async (route) => {
     const request = route.request();

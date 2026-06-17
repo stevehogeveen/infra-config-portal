@@ -121,6 +121,7 @@ export default function ControlCenter() {
   const [loadError, setLoadError] = useState("");
   const configEditedRef = useRef(false);
   const settingsEditedRef = useRef(false);
+  const firmwareSelectionEditedRef = useRef(false);
 
   const [config, setConfig] = useState<ControlConfig>(() => configAdapter.load());
   const [settings, setSettings] = useState<ControlSettings>(() => settingsAdapter.load());
@@ -174,6 +175,18 @@ export default function ControlCenter() {
   useEffect(() => {
     void refreshControlCenter();
   }, []);
+
+  useEffect(() => {
+    if (firmwareSelectionEditedRef.current || selectedPathId || selectedFirmware.trim()) {
+      return;
+    }
+    const savedSelection = savedFirmwareSelection(firmware, firmwarePaths);
+    if (!savedSelection) {
+      return;
+    }
+    setSelectedPathIdState(savedSelection.pathId);
+    setSelectedFirmware(savedSelection.selectedFirmware);
+  }, [firmware, firmwarePaths, selectedFirmware, selectedPathId]);
 
   async function refreshControlCenter() {
     setLoading(true);
@@ -236,9 +249,12 @@ export default function ControlCenter() {
       });
       return;
     }
-    const clearedResults = Boolean(
-      latestRun || latestFirmwareCheck || latestFirmwareValidation || latestFirmwareUpgrade
-    );
+    const clearedResults = shouldClearResultsForConfig(result.config, [
+      latestRun,
+      latestFirmwareCheck,
+      latestFirmwareValidation,
+      latestFirmwareUpgrade
+    ]);
     if (clearedResults) {
       clearStoredResults();
     }
@@ -440,6 +456,7 @@ export default function ControlCenter() {
         status: result.status,
         type: "firmware"
       });
+      await refreshControlCenter();
     } catch (error) {
       const message = errorMessage(error);
       const result = createLocalOperationResult({
@@ -525,6 +542,7 @@ export default function ControlCenter() {
         status: response.result.status,
         type: "firmware"
       });
+      await refreshControlCenter();
     } catch (error) {
       const message = errorMessage(error);
       const result = createLocalOperationResult({
@@ -638,6 +656,7 @@ export default function ControlCenter() {
   }
 
   function setSelectedPathId(value: string) {
+    firmwareSelectionEditedRef.current = true;
     setSelectedPathIdState(value);
     const path = firmwarePaths.find((candidate) => firmwarePathId(candidate) === value) ?? null;
     setSelectedFirmware(defaultFirmwareSelection(path));
@@ -648,6 +667,7 @@ export default function ControlCenter() {
   }
 
   function updateSelectedFirmware(value: string) {
+    firmwareSelectionEditedRef.current = true;
     setSelectedFirmware(value);
     clearFirmwareGateResults();
     setUpgradeConfirmationAccepted(false);
@@ -1697,6 +1717,23 @@ function collectFirmwarePaths(summaries: FirmwareSummary[]): FirmwareUpgradePath
   return summaries.flatMap((summary) => summary.upgrade_paths ?? []);
 }
 
+function savedFirmwareSelection(
+  firmware: FirmwareState,
+  paths: FirmwareUpgradePath[]
+): { pathId: string; selectedFirmware: string } | null {
+  const selectedFiles = firmware.fileSelections?.selected_files ?? {};
+  for (const path of paths) {
+    const selectedFirmware = selectedFiles[path.component_id]?.trim();
+    if (selectedFirmware) {
+      return {
+        pathId: firmwarePathId(path),
+        selectedFirmware
+      };
+    }
+  }
+  return null;
+}
+
 function firmwarePathId(path: FirmwareUpgradePath): string {
   return `${path.device_label}:${path.component_id}:${path.target_version ?? path.package_name ?? "unknown"}`;
 }
@@ -1816,6 +1853,19 @@ function configSnapshot(config: ControlConfig): Record<string, unknown> {
     target: config.target,
     timeout_seconds: config.timeoutSeconds
   };
+}
+
+function shouldClearResultsForConfig(config: ControlConfig, results: Array<OperationResult | null>): boolean {
+  return results.some((result) => Boolean(result && !operationResultUsesConfig(result, config)));
+}
+
+function operationResultUsesConfig(result: OperationResult, config: ControlConfig): boolean {
+  const snapshot = result.raw.config_snapshot;
+  if (!snapshot || typeof snapshot !== "object") {
+    return false;
+  }
+  const expected = configSnapshot(config);
+  return Object.entries(expected).every(([key, value]) => (snapshot as Record<string, unknown>)[key] === value);
 }
 
 function firmwareSelectionSnapshot(
