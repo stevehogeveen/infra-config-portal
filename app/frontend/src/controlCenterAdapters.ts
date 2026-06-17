@@ -181,19 +181,19 @@ export const configAdapter = {
     const existingCredentialStillApplies =
       config.snmpCredentialStatus === "configured" && config.snmpCredentialVersion === config.snmpVersion;
     const snmpCredentialStatus = draftHasCredential || existingCredentialStillApplies ? "configured" : "missing";
-    const next: ControlConfig = {
+    const normalized: ControlConfig = {
       ...config,
       retryCount: clampNumber(config.retryCount, 0, 5),
       timeoutSeconds: clampNumber(config.timeoutSeconds, 1, 120),
       snmpCredentialStatus,
       snmpCredentialVersion: snmpCredentialStatus === "configured" ? config.snmpVersion : null,
-      target: config.target.trim(),
-      updatedAt: new Date().toISOString()
+      target: config.target.trim()
     };
-    const errors = this.validate(next);
+    const errors = this.validate(normalized);
     if (errors.length) {
-      return { config: next, errors };
+      return { config: { ...normalized, updatedAt: config.updatedAt }, errors };
     }
+    const next: ControlConfig = { ...normalized, updatedAt: new Date().toISOString() };
     writeStored(CONFIG_STORAGE_KEY, next);
     return { config: next, errors };
   }
@@ -256,12 +256,20 @@ export const resultsAdapter = {
     writeStored(RESULT_STORAGE_KEY, result);
   },
 
+  clearRun(): void {
+    removeStored(RESULT_STORAGE_KEY);
+  },
+
   loadFirmwareCheck(): OperationResult | null {
     return readStored<OperationResult>(FIRMWARE_CHECK_STORAGE_KEY);
   },
 
   saveFirmwareCheck(result: OperationResult): void {
     writeStored(FIRMWARE_CHECK_STORAGE_KEY, result);
+  },
+
+  clearFirmwareCheck(): void {
+    removeStored(FIRMWARE_CHECK_STORAGE_KEY);
   },
 
   loadFirmwareValidation(): OperationResult | null {
@@ -272,12 +280,20 @@ export const resultsAdapter = {
     writeStored(FIRMWARE_VALIDATION_STORAGE_KEY, result);
   },
 
+  clearFirmwareValidation(): void {
+    removeStored(FIRMWARE_VALIDATION_STORAGE_KEY);
+  },
+
   loadFirmwareUpgrade(): OperationResult | null {
     return readStored<OperationResult>(FIRMWARE_UPGRADE_STORAGE_KEY);
   },
 
   saveFirmwareUpgrade(result: OperationResult): void {
     writeStored(FIRMWARE_UPGRADE_STORAGE_KEY, result);
+  },
+
+  clearFirmwareUpgrade(): void {
+    removeStored(FIRMWARE_UPGRADE_STORAGE_KEY);
   }
 };
 
@@ -593,8 +609,15 @@ function upgradeRequestBlockers(request: FirmwareUpgradeRequest): string[] {
   blockers.push(...firmwareSelectionBlockers(request.selectedPath, request.selectedFirmware));
   if (!request.validationResult) {
     blockers.push("Validate firmware before starting an upgrade.");
-  } else if (!firmwareValidationMatchesSelection(request.validationResult, request.selectedPath, request.selectedFirmware)) {
-    blockers.push("Validate the currently selected firmware path before starting an upgrade.");
+  } else if (
+    !firmwareValidationMatchesSelection(
+      request.validationResult,
+      request.selectedPath,
+      request.selectedFirmware,
+      request.config
+    )
+  ) {
+    blockers.push("Validate the current config and selected firmware path before starting an upgrade.");
   } else if (!firmwareValidationPassed(request.validationResult)) {
     blockers.push("Firmware validation failed or is blocked. No override is supported in this UI.");
   }
@@ -632,14 +655,17 @@ export function upgradeConfirmationPhrase(path: FirmwareUpgradePath | null, acti
 export function firmwareValidationMatchesSelection(
   result: OperationResult | null,
   path: FirmwareUpgradePath | null,
-  selectedFirmware: string
+  selectedFirmware: string,
+  config?: ControlConfig
 ): boolean {
   if (!result || !path) return false;
-  return (
+  const selectionMatches =
     stringValue(result.raw.selected_component, "") === path.component_id &&
     stringValue(result.raw.selected_target, "") === selectedPathTarget(path) &&
-    stringValue(result.raw.selected_firmware, "") === selectedFirmware.trim()
-  );
+    stringValue(result.raw.selected_firmware, "") === selectedFirmware.trim();
+  if (!selectionMatches) return false;
+  if (!config) return true;
+  return configSnapshotsMatch(result.raw.config_snapshot, sanitizedConfigSnapshot(config));
 }
 
 export function firmwareValidationPassed(result: OperationResult | null): boolean {
@@ -688,6 +714,12 @@ function sanitizedConfigSnapshot(config: ControlConfig): Record<string, unknown>
     target: config.target,
     timeout_seconds: config.timeoutSeconds
   };
+}
+
+function configSnapshotsMatch(candidate: unknown, expected: Record<string, unknown>): boolean {
+  if (!candidate || typeof candidate !== "object") return false;
+  const snapshot = candidate as Record<string, unknown>;
+  return Object.entries(expected).every(([key, value]) => snapshot[key] === value);
 }
 
 function mapStatus(status: string, blockers: string[]): OperationStatus {
@@ -742,6 +774,10 @@ function readStored<T>(key: string): T | null {
 
 function writeStored(key: string, value: unknown): void {
   window.localStorage.setItem(key, JSON.stringify(value));
+}
+
+function removeStored(key: string): void {
+  window.localStorage.removeItem(key);
 }
 
 function humanize(value: string): string {

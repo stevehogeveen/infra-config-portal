@@ -199,9 +199,17 @@ export default function ControlCenter() {
       });
       return;
     }
+    const clearedResults = Boolean(
+      latestRun || latestFirmwareCheck || latestFirmwareValidation || latestFirmwareUpgrade
+    );
+    if (clearedResults) {
+      clearStoredResults();
+    }
     setCredentialDraft(defaultCredentialDraft);
     addLog({
-      detail: `${result.config.target}; ${ipModeLabel(result.config.ipMode)}; ${snmpVersionLabel(result.config.snmpVersion)}.`,
+      detail: `${result.config.target}; ${ipModeLabel(result.config.ipMode)}; ${snmpVersionLabel(result.config.snmpVersion)}.${
+        clearedResults ? " Previous results were cleared because they used an older config." : ""
+      }`,
       message: "Config saved",
       status: "saved",
       type: "config"
@@ -334,7 +342,13 @@ export default function ControlCenter() {
       setFirmware(response.firmware);
       setLatestFirmwareValidation(response.result);
       resultsAdapter.saveFirmwareValidation(response.result);
-      setUpgradeStatus(response.result.status === "success" ? "ready" : "failed");
+      setUpgradeStatus(
+        firmwareValidationPassed(response.result)
+          ? "ready"
+          : response.result.status === "blocked"
+            ? "blocked"
+            : "failed"
+      );
       addLog({
         detail: response.result.message,
         message: operationLogMessage("Firmware validation", response.result.status),
@@ -435,6 +449,7 @@ export default function ControlCenter() {
     setSelectedPathIdState(value);
     const path = firmwarePaths.find((candidate) => firmwarePathId(candidate) === value) ?? null;
     setSelectedFirmware(defaultFirmwareSelection(path));
+    clearFirmwareGateResults();
     setUpgradeConfirmationAccepted(false);
     setUpgradeConfirmationPhrase("");
     setUpgradeStatus("idle");
@@ -442,11 +457,32 @@ export default function ControlCenter() {
 
   function updateSelectedFirmware(value: string) {
     setSelectedFirmware(value);
+    clearFirmwareGateResults();
     setUpgradeConfirmationAccepted(false);
     setUpgradeConfirmationPhrase("");
     if (upgradeStatus !== "upgrading") {
       setUpgradeStatus("idle");
     }
+  }
+
+  function clearStoredResults() {
+    setLatestRun(null);
+    setLatestFirmwareCheck(null);
+    clearFirmwareGateResults();
+    resultsAdapter.clearRun();
+    resultsAdapter.clearFirmwareCheck();
+    setRunStatus("idle");
+    setFirmwareCheckStatus("idle");
+    setUpgradeConfirmationAccepted(false);
+    setUpgradeConfirmationPhrase("");
+    setUpgradeStatus("idle");
+  }
+
+  function clearFirmwareGateResults() {
+    setLatestFirmwareValidation(null);
+    setLatestFirmwareUpgrade(null);
+    resultsAdapter.clearFirmwareValidation();
+    resultsAdapter.clearFirmwareUpgrade();
   }
 
   const context: ControlCenterContext = {
@@ -1289,8 +1325,15 @@ function firmwareReadinessLabel(context: ControlCenterContext): string {
   if (!context.selectedPath) return "Missing firmware path";
   if (!context.selectedFirmware) return "Missing selected firmware";
   if (!context.latestFirmwareValidation) return "Validation required";
-  if (!firmwareValidationMatchesSelection(context.latestFirmwareValidation, context.selectedPath, context.selectedFirmware)) {
-    return "Validation required for selection";
+  if (
+    !firmwareValidationMatchesSelection(
+      context.latestFirmwareValidation,
+      context.selectedPath,
+      context.selectedFirmware,
+      context.config
+    )
+  ) {
+    return "Validation required for current config and selection";
   }
   if (!firmwareValidationPassed(context.latestFirmwareValidation)) return "Blocked by validation";
   if (!context.selectedUpgradeAction) return "Backend integration pending";
@@ -1312,8 +1355,15 @@ function firmwareStartBlockers(input: {
   if (!input.selectedFirmware.trim()) blockers.push("Selected firmware, image, or target version is required.");
   if (!input.validation) {
     blockers.push("Validate firmware before starting an upgrade.");
-  } else if (!firmwareValidationMatchesSelection(input.validation, input.selectedPath, input.selectedFirmware)) {
-    blockers.push("Validate the currently selected firmware path before starting an upgrade.");
+  } else if (
+    !firmwareValidationMatchesSelection(
+      input.validation,
+      input.selectedPath,
+      input.selectedFirmware,
+      input.config
+    )
+  ) {
+    blockers.push("Validate the current config and selected firmware path before starting an upgrade.");
   } else if (!firmwareValidationPassed(input.validation)) {
     blockers.push("Firmware validation failed or is blocked. No override is supported.");
   }
@@ -1366,8 +1416,15 @@ function firmwareProgressLabel(context: ControlCenterContext): string {
 
 function validationStatusLabel(context: ControlCenterContext): string {
   if (!context.latestFirmwareValidation) return "Not validated";
-  if (!firmwareValidationMatchesSelection(context.latestFirmwareValidation, context.selectedPath, context.selectedFirmware)) {
-    return "Not validated for selection";
+  if (
+    !firmwareValidationMatchesSelection(
+      context.latestFirmwareValidation,
+      context.selectedPath,
+      context.selectedFirmware,
+      context.config
+    )
+  ) {
+    return "Not validated for current config and selection";
   }
   return statusLabel(context.latestFirmwareValidation.status);
 }

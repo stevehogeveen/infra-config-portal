@@ -33,6 +33,12 @@ test("renders the WebUIs Control Center sidebar and dashboard", async ({ page })
   await expect(page.locator(".quick-link-row").getByRole("link", { name: "Run" })).toBeVisible();
   await expect(page.locator(".quick-link-row").getByRole("link", { name: "Firmware" })).toBeVisible();
 
+  const nav = page.locator(".control-nav");
+  for (const pageName of ["Configure", "Run", "Firmware", "Results", "Logs", "Settings", "Dashboard"]) {
+    await nav.getByRole("link", { name: pageName }).click();
+    await expect(page.getByRole("heading", { exact: true, name: pageName })).toBeVisible();
+  }
+
   await page.goto("/overview");
   await expect(page).toHaveURL(/\/dashboard$/);
 });
@@ -82,6 +88,9 @@ test("run page has one Run button and writes latest result", async ({ page }) =>
   await page.goto("/results");
   await expect(page.getByText("Run Full Verification").first()).toBeVisible();
   await expect(page.getByText("Success").first()).toBeVisible();
+  const runResult = page.locator("section").filter({ hasText: "Latest Run Result" });
+  await runResult.getByText("Raw result").click();
+  await expect(runResult.locator("pre.control-code")).toContainText('"target": "192.0.2.203"');
 });
 
 test("firmware page checks visibility, validates, and gates upgrade confirmation", async ({ page }) => {
@@ -127,6 +136,9 @@ test("firmware page checks visibility, validates, and gates upgrade confirmation
   await expect(page.getByText("Guarded action was not run because required gates were not satisfied.")).toBeVisible();
 
   await page.goto("/results");
+  const firmwareCheckResult = page.locator("section").filter({ hasText: "Latest Firmware Check Summary" });
+  await firmwareCheckResult.getByText("Raw result").click();
+  await expect(firmwareCheckResult.locator("pre.control-code")).toContainText('"target": "192.0.2.203"');
   await expect(page.getByText("Latest Firmware Validation Summary")).toBeVisible();
   await expect(
     page
@@ -134,6 +146,47 @@ test("firmware page checks visibility, validates, and gates upgrade confirmation
       .filter({ hasText: "Latest Firmware Validation Summary" })
       .getByText("Firmware validation completed against the configured baseline.", { exact: true })
   ).toBeVisible();
+});
+
+test("firmware upgrade stays blocked after selection changes, failed validation, or config changes", async ({ page }) => {
+  await page.goto("/configure");
+  await page.getByLabel("Target host, IP, or range").fill("192.0.2.203");
+  await page.getByRole("button", { name: "Save / apply config" }).click();
+
+  await page.goto("/firmware");
+  await page.getByLabel("Firmware path").selectOption(upgradePathValue);
+
+  await page.getByRole("button", { name: "Validate Firmware" }).click();
+  await expect(page.getByText("Firmware validation succeeded")).toBeVisible();
+
+  await page.getByLabel("Require explicit operator confirmation before any firmware upgrade request is sent.").check();
+  await page.getByLabel("Confirmation phrase").fill("UPGRADE ONTAP");
+  await expect(page.getByRole("button", { name: "Start Firmware Upgrade" })).toBeEnabled();
+
+  await page.getByLabel("Selected firmware, image, or version").fill("bad-image.tgz");
+  await expect(page.getByRole("button", { name: "Start Firmware Upgrade" })).toBeDisabled();
+  await expect(page.getByText("Validate firmware before starting an upgrade.")).toBeVisible();
+
+  await page.getByRole("button", { name: "Validate Firmware" }).click();
+  await expect(page.getByText("Firmware validation blocked")).toBeVisible();
+  await expect(page.getByText("Firmware validation failed or is blocked. No override is supported.")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Start Firmware Upgrade" })).toBeDisabled();
+
+  await page.getByLabel("Selected firmware, image, or version").fill("ontap-9.14.1P1.tgz");
+  await page.getByRole("button", { name: "Validate Firmware" }).click();
+  await expect(page.getByText("Firmware validation succeeded")).toBeVisible();
+
+  await page.goto("/configure");
+  await page.getByLabel("Target host, IP, or range").fill("192.0.2.204");
+  await page.getByRole("button", { name: "Save / apply config" }).click();
+  await page.goto("/firmware");
+
+  await expect(page.getByRole("button", { name: "Start Firmware Upgrade" })).toBeDisabled();
+  await expect(page.getByText("Validate firmware before starting an upgrade.")).toBeVisible();
+
+  await page.goto("/logs");
+  await expect(page.getByText("Config saved").first()).toBeVisible();
+  await expect(page.getByText("Firmware validation blocked").first()).toBeVisible();
 });
 
 test("settings and logs remain top-level control-center pages", async ({ page }) => {
@@ -151,6 +204,8 @@ test("settings and logs remain top-level control-center pages", async ({ page })
 });
 
 async function installApiMocks(page: Page) {
+  let selectedFirmwareFiles: Record<string, string> = { netapp_ontap_version: "ontap-9.14.1P1.tgz" };
+
   await page.route("**/*", async (route) => {
     const request = route.request();
     const url = new URL(request.url());
@@ -186,17 +241,18 @@ async function installApiMocks(page: Page) {
       return json(route, firmwareSummaries());
     }
     if (url.pathname === "/api/v1/firmware/file-selections" && request.method() === "GET") {
-      return json(route, firmwareFileSelections());
+      return json(route, firmwareFileSelections(selectedFirmwareFiles));
     }
     if (url.pathname === "/api/v1/firmware/file-selections" && request.method() === "PUT") {
       const payload = request.postDataJSON() as { selected_files?: Record<string, string> };
-      return json(route, firmwareFileSelections(payload.selected_files ?? {}));
+      selectedFirmwareFiles = payload.selected_files ?? {};
+      return json(route, firmwareFileSelections(selectedFirmwareFiles));
     }
     if (url.pathname === "/api/v1/lab/firmware-inventory") {
       return json(route, firmwareInventory());
     }
     if (url.pathname === "/api/v1/lab/firmware-compliance") {
-      return json(route, firmwareCompliance());
+      return json(route, firmwareCompliance(selectedFirmwareFiles));
     }
     if (url.pathname === "/api/v1/workflows/actions/build-verification.run-full/run" && request.method() === "POST") {
       return json(route, workflowActionRun("build-verification.run-full", "Run Full Verification", "completed"));
@@ -388,7 +444,22 @@ function firmwareInventory() {
   };
 }
 
-function firmwareCompliance() {
+function firmwareCompliance(selectedFiles: Record<string, string> = {}) {
+  const selectedFirmware = Object.values(selectedFiles).join(" ");
+  if (/bad/i.test(selectedFirmware)) {
+    return {
+      blockers: ["Selected firmware package failed baseline validation."],
+      checked_at: checkedAt,
+      freshness: "live",
+      message: "Firmware validation failed against the configured baseline.",
+      provider_id: "firmware-compliance",
+      report_artifacts: ["artifacts/codex-runs/firmware-compliance-report.md"],
+      source_type: "cached_live",
+      status: "blocked",
+      warnings: []
+    };
+  }
+
   return {
     blockers: [],
     checked_at: checkedAt,
