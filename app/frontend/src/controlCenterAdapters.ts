@@ -223,7 +223,23 @@ export const settingsAdapter = {
     return { ...defaultSettings, ...readStored<Partial<ControlSettings>>(SETTINGS_STORAGE_KEY) };
   },
 
-  async save(settings: ControlSettings): Promise<{ settings: ControlSettings; savedVia: "backend" | "local_fallback" }> {
+  validate(settings: ControlSettings): string[] {
+    const errors: string[] = [];
+    if (!Number.isFinite(settings.defaultTimeoutSeconds) || settings.defaultTimeoutSeconds < 1 || settings.defaultTimeoutSeconds > 120) {
+      errors.push("Default timeout must be between 1 and 120 seconds.");
+    }
+    if (!Number.isFinite(settings.defaultRetryCount) || settings.defaultRetryCount < 0 || settings.defaultRetryCount > 5) {
+      errors.push("Default retry count must be between 0 and 5.");
+    }
+    if (SECRET_SHAPED_RE.test(settings.apiBaseUrl) || SECRET_SHAPED_RE.test(settings.firmwareRepository)) {
+      errors.push("Settings must not contain secret-shaped values.");
+    }
+    return errors;
+  },
+
+  async save(
+    settings: ControlSettings
+  ): Promise<{ settings: ControlSettings; errors: string[]; savedVia: "backend" | "local_fallback" }> {
     const next: ControlSettings = {
       ...settings,
       defaultRetryCount: clampNumber(settings.defaultRetryCount, 0, 5),
@@ -231,13 +247,17 @@ export const settingsAdapter = {
       firmwareRepository: settings.firmwareRepository.trim() || defaultSettings.firmwareRepository,
       updatedAt: new Date().toISOString()
     };
+    const errors = this.validate(next);
+    if (errors.length) {
+      return { settings, errors, savedVia: "local_fallback" };
+    }
     try {
       const saved = fromBackendSettings(await api.saveControlCenterSettings(toBackendSettings(next)));
       writeStored(SETTINGS_STORAGE_KEY, saved);
-      return { settings: saved, savedVia: "backend" };
+      return { settings: saved, errors, savedVia: "backend" };
     } catch {
       writeStored(SETTINGS_STORAGE_KEY, next);
-      return { settings: next, savedVia: "local_fallback" };
+      return { settings: next, errors, savedVia: "local_fallback" };
     }
   }
 };

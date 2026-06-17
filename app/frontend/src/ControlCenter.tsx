@@ -94,6 +94,7 @@ type ControlCenterContext = {
   setSelectedPathId: (value: string) => void;
   setSettings: (value: ControlSettings | ((current: ControlSettings) => ControlSettings)) => void;
   settings: ControlSettings;
+  settingsErrors: string[];
   settingsMessage: string;
   startFirmwareUpgrade: () => Promise<void>;
   targetSummary: string;
@@ -120,6 +121,7 @@ export default function ControlCenter() {
   const [credentialDraft, setCredentialDraft] = useState<CredentialDraft>(defaultCredentialDraft);
   const [configErrors, setConfigErrors] = useState<string[]>([]);
   const [configMessage, setConfigMessage] = useState("");
+  const [settingsErrors, setSettingsErrors] = useState<string[]>([]);
   const [settingsMessage, setSettingsMessage] = useState("");
 
   const [logs, setLogs] = useState<ControlLogEntry[]>(() => logsAdapter.load());
@@ -230,6 +232,17 @@ export default function ControlCenter() {
 
   async function saveSettings() {
     const result = await settingsAdapter.save(settings);
+    setSettingsErrors(result.errors);
+    if (result.errors.length) {
+      setSettingsMessage("");
+      addLog({
+        detail: result.errors.join(" "),
+        message: "Settings change failed",
+        status: "blocked",
+        type: "settings"
+      });
+      return;
+    }
     const next = result.settings;
     setSettings(next);
     setSettingsMessage(
@@ -618,6 +631,7 @@ export default function ControlCenter() {
     setSelectedPathId,
     setSettings,
     settings,
+    settingsErrors,
     settingsMessage,
     startFirmwareUpgrade,
     targetSummary,
@@ -1003,6 +1017,10 @@ function FirmwarePage({ context }: { context: ControlCenterContext }) {
             ["Required gates", requiredGates.length ? requiredGates.join(", ") : "None reported"]
           ]}
         />
+        <div className="control-alert info">
+          Firmware upgrades do not run on page load. Start Firmware Upgrade sends a backend request only after validation,
+          the exact confirmation phrase, and the confirmation checkbox; backend gates can still block the request.
+        </div>
         <div className="control-form-grid">
           <label className="control-field control-field-wide">
             <span>Firmware path</span>
@@ -1199,6 +1217,7 @@ function SettingsPage({ context }: { context: ControlCenterContext }) {
           Save settings
         </button>
       </div>
+      {context.settingsErrors.length > 0 && <IssueGroup title="Settings validation errors" items={context.settingsErrors} />}
       {context.settingsMessage && <p className="control-action-message success">{context.settingsMessage}</p>}
     </Page>
   );
@@ -1264,9 +1283,9 @@ function FirmwareVisibilityCard({ summary }: { summary: FirmwareSummary }) {
           ["Detected device/model", summary.label],
           ["Current firmware version", firmwareCurrentVersion(summary)],
           ["Available firmware version", displayValue(summary.target_version || firstApprovedVersion(summary))],
-          ["Build/date", "Not reported by backend"],
+          ["Build/date", firmwareBuildDate(summary)],
           ["Bootloader/version", firmwareBootloaderVersion(summary)],
-          ["Hardware revision", "Not reported by backend"],
+          ["Hardware revision", firmwareHardwareRevision(summary)],
           ["Compatibility status", statusLabel(summary.path_status || summary.compliance_status)],
           ["Last check time", summary.last_scanned ? formatDateTime(summary.last_scanned) : "Not checked"],
           ["Detection source", `${sourceLabel(summary.source_type)} / ${statusLabel(summary.freshness)}`]
@@ -1327,9 +1346,9 @@ function FirmwareVisibilityTable({ summaries }: { summaries: FirmwareSummary[] }
               </td>
               <td>{firmwareCurrentVersion(summary)}</td>
               <td>{displayValue(summary.target_version || firstApprovedVersion(summary))}</td>
-              <td>Not reported</td>
+              <td>{firmwareBuildDate(summary)}</td>
               <td>{firmwareBootloaderVersion(summary)}</td>
-              <td>Not reported</td>
+              <td>{firmwareHardwareRevision(summary)}</td>
               <td>
                 <StatusPill status={summary.path_status || summary.compliance_status} />
                 {summary.blocker && <p>{summary.blocker}</p>}
@@ -1463,6 +1482,19 @@ function firstApprovedVersion(summary: FirmwareSummary): string | null {
 function firmwareBootloaderVersion(summary: FirmwareSummary): string {
   const bootloader = summary.current_versions.find((item) => /boot|rommon/i.test(item.label));
   return displayValue(bootloader?.version ?? null);
+}
+
+function firmwareBuildDate(summary: FirmwareSummary): string {
+  return firmwareVersionByLabel(summary, /build|date|release/i);
+}
+
+function firmwareHardwareRevision(summary: FirmwareSummary): string {
+  return firmwareVersionByLabel(summary, /hardware|revision|rev\b/i);
+}
+
+function firmwareVersionByLabel(summary: FirmwareSummary, pattern: RegExp): string {
+  const match = summary.current_versions.find((item) => pattern.test(item.label));
+  return displayValue(match?.version ?? null);
 }
 
 function firmwareReadinessLabel(context: ControlCenterContext): string {

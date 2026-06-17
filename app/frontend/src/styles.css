@@ -442,6 +442,12 @@ button:disabled {
   color: #744b00;
 }
 
+.control-alert.info {
+  background: #edf8ff;
+  border: 1px solid #bae6fd;
+  color: #075985;
+}
+
 .control-alert.error {
   background: #fef2f2;
   border: 1px solid #fecaca;

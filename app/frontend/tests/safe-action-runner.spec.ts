@@ -298,9 +298,14 @@ test("settings and logs remain top-level control-center pages", async ({ page })
   await page.getByRole("button", { name: "Save settings" }).click();
   await expect(page.getByText("Settings saved")).toBeVisible();
 
+  await page.getByLabel("Firmware repository/source").fill("token=not-allowed");
+  await page.getByRole("button", { name: "Save settings" }).click();
+  await expect(page.getByText("Settings must not contain secret-shaped values.")).toBeVisible();
+
   await page.goto("/logs");
   await expect(page.getByRole("heading", { name: "Logs" })).toBeVisible();
   await expect(page.getByText("Settings changed")).toBeVisible();
+  await expect(page.getByText("Settings change failed")).toBeVisible();
 });
 
 async function installApiMocks(page: Page) {
