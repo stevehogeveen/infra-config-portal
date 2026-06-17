@@ -8,7 +8,7 @@ import {
   Play,
   RefreshCw,
   Save,
-  Settings,
+  Settings as SettingsIcon,
   ShieldCheck,
   SlidersHorizontal,
   TerminalSquare,
@@ -55,13 +55,14 @@ const navItems = [
   { icon: <UploadCloud size={18} />, label: "Firmware", to: "/firmware" },
   { icon: <ClipboardList size={18} />, label: "Results", to: "/results" },
   { icon: <History size={18} />, label: "Logs", to: "/logs" },
-  { icon: <Settings size={18} />, label: "Settings", to: "/settings" }
+  { icon: <SettingsIcon size={18} />, label: "Settings", to: "/settings" }
 ];
 
 type ControlCenterContext = {
   actions: WorkflowAction[];
   auditEvents: AuditEvent[];
   backendLogs: ControlLogEntry[];
+  checkFirmware: () => Promise<void>;
   config: ControlConfig;
   configErrors: string[];
   configMessage: string;
@@ -107,7 +108,6 @@ type ControlCenterContext = {
   upgradeConfirmationPhrase: string;
   upgradeStatus: UpgradeStatus;
   validateFirmware: () => Promise<void>;
-  checkFirmware: () => Promise<void>;
   setUpgradeConfirmationAccepted: (value: boolean) => void;
   setUpgradeConfirmationPhrase: (value: string) => void;
 };
@@ -122,23 +122,27 @@ export default function ControlCenter() {
   const [firmwareRuntime, setFirmwareRuntime] = useState<FirmwareRuntimeStatus>(defaultFirmwareRuntimeStatus);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
-  const configEditedRef = useRef(false);
-  const settingsEditedRef = useRef(false);
-  const firmwareSelectionEditedRef = useRef(false);
 
   const [config, setConfig] = useState<ControlConfig>(() => configAdapter.load());
-  const [settings, setSettings] = useState<ControlSettings>(() => settingsAdapter.load());
   const [credentialDraft, setCredentialDraft] = useState<CredentialDraft>(defaultCredentialDraft);
   const [configErrors, setConfigErrors] = useState<string[]>([]);
   const [configMessage, setConfigMessage] = useState("");
+
+  const [settings, setSettings] = useState<ControlSettings>(() => settingsAdapter.load());
   const [settingsErrors, setSettingsErrors] = useState<string[]>([]);
   const [settingsMessage, setSettingsMessage] = useState("");
 
   const [logs, setLogs] = useState<ControlLogEntry[]>(() => logsAdapter.load());
   const [latestRun, setLatestRun] = useState<OperationResult | null>(() => resultsAdapter.loadRun());
-  const [latestFirmwareCheck, setLatestFirmwareCheck] = useState<OperationResult | null>(() => resultsAdapter.loadFirmwareCheck());
-  const [latestFirmwareValidation, setLatestFirmwareValidation] = useState<OperationResult | null>(() => resultsAdapter.loadFirmwareValidation());
-  const [latestFirmwareUpgrade, setLatestFirmwareUpgrade] = useState<OperationResult | null>(() => resultsAdapter.loadFirmwareUpgrade());
+  const [latestFirmwareCheck, setLatestFirmwareCheck] = useState<OperationResult | null>(() =>
+    resultsAdapter.loadFirmwareCheck()
+  );
+  const [latestFirmwareValidation, setLatestFirmwareValidation] = useState<OperationResult | null>(() =>
+    resultsAdapter.loadFirmwareValidation()
+  );
+  const [latestFirmwareUpgrade, setLatestFirmwareUpgrade] = useState<OperationResult | null>(() =>
+    resultsAdapter.loadFirmwareUpgrade()
+  );
 
   const [runStatus, setRunStatus] = useState<OperationStatus>(() => latestRun?.status ?? "idle");
   const [runError, setRunError] = useState("");
@@ -148,6 +152,10 @@ export default function ControlCenter() {
   const [selectedFirmware, setSelectedFirmware] = useState("");
   const [upgradeConfirmationAccepted, setUpgradeConfirmationAccepted] = useState(false);
   const [upgradeConfirmationPhraseState, setUpgradeConfirmationPhrase] = useState("");
+
+  const configEditedRef = useRef(false);
+  const settingsEditedRef = useRef(false);
+  const firmwareSelectionEditedRef = useRef(false);
 
   const selectedAction = useMemo(() => runAdapter.selectAction(actions), [actions]);
   const firmwarePaths = useMemo(() => collectFirmwarePaths(firmware.summaries), [firmware.summaries]);
@@ -159,25 +167,19 @@ export default function ControlCenter() {
     const actionId = supportedUpgradeActionId(selectedPath);
     return actions.find((action) => action.action_id === actionId) ?? null;
   }, [actions, selectedPath]);
+
   const targetSummary = config.target || "Not configured";
   const connectionStatus = health?.status === "ok" ? "Connected" : loading ? "Checking" : "Unavailable";
   const expectedUpgradePhrase = upgradeConfirmationPhrase(selectedPath, selectedUpgradeAction);
-  const firmwareUpgradeBlockers = [
-    ...firmwareStartBlockers({
-      accepted: upgradeConfirmationAccepted,
-      config,
-      phrase: upgradeConfirmationPhraseState,
-      selectedFirmware,
-      selectedUpgradeAction,
-      selectedPath,
-      validation: latestFirmwareValidation
-    }),
-    ...(upgradeStatus === "validating" ? ["Firmware validation is still running."] : [])
-  ];
-  const firmwareValidationBlockers = firmwareValidateBlockers({
+  const firmwareValidationBlockers = firmwareValidateBlockers({ config, selectedFirmware, selectedPath });
+  const firmwareUpgradeBlockers = firmwareStartBlockers({
+    accepted: upgradeConfirmationAccepted,
     config,
+    phrase: upgradeConfirmationPhraseState,
     selectedFirmware,
-    selectedPath
+    selectedPath,
+    selectedUpgradeAction,
+    validation: latestFirmwareValidation
   });
 
   useEffect(() => {
@@ -185,13 +187,9 @@ export default function ControlCenter() {
   }, []);
 
   useEffect(() => {
-    if (firmwareSelectionEditedRef.current || selectedPathId || selectedFirmware.trim()) {
-      return;
-    }
+    if (firmwareSelectionEditedRef.current || selectedPathId || selectedFirmware.trim()) return;
     const savedSelection = savedFirmwareSelection(firmware, firmwarePaths);
-    if (!savedSelection) {
-      return;
-    }
+    if (!savedSelection) return;
     setSelectedPathIdState(savedSelection.pathId);
     setSelectedFirmware(savedSelection.selectedFirmware);
   }, [firmware, firmwarePaths, selectedFirmware, selectedPathId]);
@@ -208,12 +206,8 @@ export default function ControlCenter() {
       setBackendLogs(snapshot.backendLogs);
       setFirmware(snapshot.firmware);
       setFirmwareRuntime(snapshot.firmwareRuntime);
-      if (snapshot.controlConfig && !configEditedRef.current) {
-        setConfig(snapshot.controlConfig);
-      }
-      if (snapshot.controlSettings && !settingsEditedRef.current) {
-        setSettings(snapshot.controlSettings);
-      }
+      if (snapshot.controlConfig && !configEditedRef.current) setConfig(snapshot.controlConfig);
+      if (snapshot.controlSettings && !settingsEditedRef.current) setSettings(snapshot.controlSettings);
     } catch (error) {
       setLoadError(errorMessage(error));
     } finally {
@@ -226,9 +220,7 @@ export default function ControlCenter() {
   }
 
   function updateConfig(value: ControlConfig | ((current: ControlConfig) => ControlConfig)) {
-    if (!configEditedRef.current) {
-      clearStoredResults();
-    }
+    if (!configEditedRef.current) clearStoredResults();
     configEditedRef.current = true;
     setConfig(value);
     setConfigMessage("");
@@ -245,20 +237,9 @@ export default function ControlCenter() {
     setConfig(result.config);
     setConfigErrors(result.errors);
     configEditedRef.current = result.errors.length > 0 || result.savedVia !== "backend";
-    setConfigMessage(
-      result.errors.length
-        ? ""
-        : result.savedVia === "backend"
-          ? "Configuration saved to backend runtime state"
-          : "Configuration saved locally; backend config endpoint was unavailable"
-    );
+    setConfigMessage(result.errors.length ? "" : "Configuration saved");
     if (result.errors.length) {
-      addLog({
-        detail: result.errors.join(" "),
-        message: "Config save failed",
-        status: "blocked",
-        type: "config"
-      });
+      addLog({ detail: result.errors.join(" "), message: "Config save failed", status: "blocked", type: "config" });
       return;
     }
     const clearedResults = shouldClearResultsForConfig(result.config, [
@@ -267,14 +248,12 @@ export default function ControlCenter() {
       latestFirmwareValidation,
       latestFirmwareUpgrade
     ]);
-    if (clearedResults) {
-      clearStoredResults();
-    }
+    if (clearedResults) clearStoredResults();
     setCredentialDraft(defaultCredentialDraft);
     addLog({
-      detail: `${result.config.target}; ${ipModeLabel(result.config.ipMode)}; ${snmpVersionLabel(result.config.snmpVersion)}.${
-        clearedResults ? " Previous results were cleared because they used an older config." : ""
-      } ${result.savedVia === "backend" ? "Saved through backend config adapter." : "Saved in browser fallback state."}`,
+      detail: `${result.config.target}; ${ipModeLabel(result.config.ipMode)}; ${snmpVersionLabel(result.config.snmpVersion)}. ${
+        result.savedVia === "backend" ? "Saved through backend config adapter." : "Saved in browser fallback state."
+      }`,
       message: "Config saved",
       status: "saved",
       type: "config"
@@ -287,25 +266,13 @@ export default function ControlCenter() {
     settingsEditedRef.current = result.errors.length > 0 || result.savedVia !== "backend";
     if (result.errors.length) {
       setSettingsMessage("");
-      addLog({
-        detail: result.errors.join(" "),
-        message: "Settings change failed",
-        status: "blocked",
-        type: "settings"
-      });
+      addLog({ detail: result.errors.join(" "), message: "Settings change failed", status: "blocked", type: "settings" });
       return;
     }
-    const next = result.settings;
-    setSettings(next);
-    setSettingsMessage(
-      result.savedVia === "backend"
-        ? "Settings saved to backend runtime state"
-        : "Settings saved locally; backend settings endpoint was unavailable"
-    );
+    setSettings(result.settings);
+    setSettingsMessage("Settings saved");
     addLog({
-      detail: `Default ${ipModeLabel(next.defaultIpMode)}, ${snmpVersionLabel(next.defaultSnmpVersion)}, timeout ${next.defaultTimeoutSeconds}s. ${
-        result.savedVia === "backend" ? "Saved through backend settings adapter." : "Saved in browser fallback state."
-      }`,
+      detail: `Default ${ipModeLabel(result.settings.defaultIpMode)}, ${snmpVersionLabel(result.settings.defaultSnmpVersion)}, timeout ${result.settings.defaultTimeoutSeconds}s.`,
       message: "Settings changed",
       status: "saved",
       type: "settings"
@@ -323,9 +290,7 @@ export default function ControlCenter() {
     setConfig(result.config);
     setConfigErrors(result.errors);
     configEditedRef.current = result.errors.length > 0 || result.savedVia !== "backend";
-    if (result.errors.length === 0) {
-      setCredentialDraft(defaultCredentialDraft);
-    }
+    if (result.errors.length === 0) setCredentialDraft(defaultCredentialDraft);
     return { ...result, configChanged: hadPendingConfig && result.errors.length === 0 };
   }
 
@@ -335,23 +300,16 @@ export default function ControlCenter() {
     setRunStatus("running");
     const syncResult = await syncConfigForAction();
     const currentConfig = syncResult.config;
-    if (syncResult.configChanged) {
-      clearStoredResults();
-      setRunStatus("running");
-    }
+    if (syncResult.configChanged) clearStoredResults();
     if (syncResult.errors.length > 0 || syncResult.savedVia !== "backend") {
       const result = createLocalOperationResult({
-        blockers:
-          syncResult.errors.length > 0
-            ? syncResult.errors
-            : ["Current config could not be saved to backend runtime state before Run."],
-        message:
-          syncResult.errors.length > 0
-            ? "Run blocked until the current configuration is valid."
-            : "Run blocked so the backend cannot use stale configuration.",
-        raw: {
-          config_snapshot: configSnapshot(currentConfig)
-        },
+        blockers: syncResult.errors.length
+          ? syncResult.errors
+          : ["Current config could not be saved to backend runtime state before Run."],
+        message: syncResult.errors.length
+          ? "Run blocked until the current configuration is valid."
+          : "Run blocked so the backend cannot use stale configuration.",
+        raw: { config_snapshot: configSnapshot(currentConfig) },
         status: "blocked",
         title: "Run blocked",
         type: "run"
@@ -360,16 +318,11 @@ export default function ControlCenter() {
       resultsAdapter.saveRun(result);
       setRunStatus("blocked");
       setRunError(result.message);
-      addLog({
-        detail: result.blockers.join(" "),
-        message: "Run blocked",
-        status: "blocked",
-        type: "run"
-      });
+      addLog({ detail: result.blockers.join(" "), message: "Run blocked", status: "blocked", type: "run" });
       return;
     }
     addLog({
-      detail: `${selectedAction?.label ?? "Safe placeholder"} for ${currentConfig.target || "Not configured"}.`,
+      detail: `${selectedAction?.label ?? "Safe placeholder"} for ${currentConfig.target}.`,
       message: "Run started",
       status: "running",
       type: "run"
@@ -380,21 +333,14 @@ export default function ControlCenter() {
       resultsAdapter.saveRun(result);
       setRunStatus(result.status);
       setRunError(["failed", "blocked"].includes(result.status) ? result.message : "");
-      addLog({
-        detail: result.message,
-        message: operationLogMessage("Run", result.status),
-        status: result.status,
-        type: "run"
-      });
+      addLog({ detail: result.message, message: operationLogMessage("Run", result.status), status: result.status, type: "run" });
       await refreshControlCenter();
     } catch (error) {
       const message = errorMessage(error);
       const result = createLocalOperationResult({
         blockers: [message],
         message,
-        raw: {
-          config_snapshot: configSnapshot(config)
-        },
+        raw: { config_snapshot: configSnapshot(config) },
         status: "failed",
         title: "Run failed",
         type: "run"
@@ -403,12 +349,7 @@ export default function ControlCenter() {
       resultsAdapter.saveRun(result);
       setRunStatus("failed");
       setRunError(message);
-      addLog({
-        detail: message,
-        message: "Run failed",
-        status: "failed",
-        type: "run"
-      });
+      addLog({ detail: message, message: "Run failed", status: "failed", type: "run" });
     }
   }
 
@@ -416,23 +357,16 @@ export default function ControlCenter() {
     setFirmwareCheckStatus("running");
     const syncResult = await syncConfigForAction();
     const currentConfig = syncResult.config;
-    if (syncResult.configChanged) {
-      clearStoredResults();
-      setFirmwareCheckStatus("running");
-    }
+    if (syncResult.configChanged) clearStoredResults();
     if (syncResult.errors.length > 0 || syncResult.savedVia !== "backend") {
       const result = createLocalOperationResult({
-        blockers:
-          syncResult.errors.length > 0
-            ? syncResult.errors
-            : ["Current config could not be saved to backend runtime state before Firmware Check."],
-        message:
-          syncResult.errors.length > 0
-            ? "Firmware check blocked until the current configuration is valid."
-            : "Firmware check blocked so the backend cannot use stale configuration.",
-        raw: {
-          config_snapshot: configSnapshot(currentConfig)
-        },
+        blockers: syncResult.errors.length
+          ? syncResult.errors
+          : ["Current config could not be saved to backend runtime state before Firmware Check."],
+        message: syncResult.errors.length
+          ? "Firmware check blocked until the current configuration is valid."
+          : "Firmware check blocked so the backend cannot use stale configuration.",
+        raw: { config_snapshot: configSnapshot(currentConfig) },
         status: "blocked",
         title: "Firmware check blocked",
         type: "firmware-check"
@@ -440,32 +374,25 @@ export default function ControlCenter() {
       setLatestFirmwareCheck(result);
       resultsAdapter.saveFirmwareCheck(result);
       setFirmwareCheckStatus("blocked");
-      addLog({
-        detail: result.blockers.join(" "),
-        message: "Firmware check blocked",
-        status: "blocked",
-        type: "firmware"
-      });
+      addLog({ detail: result.blockers.join(" "), message: "Firmware check blocked", status: "blocked", type: "firmware" });
       return;
     }
     addLog({
-      detail: `Firmware visibility check started for ${currentConfig.target || "Not configured"}. No upgrade action is triggered.`,
+      detail: `Firmware visibility check started for ${currentConfig.target}. No upgrade action is triggered.`,
       message: "Firmware check started",
       status: "running",
       type: "firmware"
     });
     try {
       const response = await firmwareAdapter.check(currentConfig);
-      const nextFirmware = response.firmware;
-      const result = response.result;
-      setFirmware(nextFirmware);
-      setLatestFirmwareCheck(result);
-      resultsAdapter.saveFirmwareCheck(result);
-      setFirmwareCheckStatus(result.status);
+      setFirmware(response.firmware);
+      setLatestFirmwareCheck(response.result);
+      resultsAdapter.saveFirmwareCheck(response.result);
+      setFirmwareCheckStatus(response.result.status);
       addLog({
-        detail: result.message,
-        message: operationLogMessage("Firmware check", result.status),
-        status: result.status,
+        detail: response.result.message,
+        message: operationLogMessage("Firmware check", response.result.status),
+        status: response.result.status,
         type: "firmware"
       });
       await refreshControlCenter();
@@ -481,23 +408,14 @@ export default function ControlCenter() {
       setLatestFirmwareCheck(result);
       resultsAdapter.saveFirmwareCheck(result);
       setFirmwareCheckStatus("failed");
-      addLog({
-        detail: message,
-        message: "Firmware check failed",
-        status: "failed",
-        type: "firmware"
-      });
+      addLog({ detail: message, message: "Firmware check failed", status: "failed", type: "firmware" });
     }
   }
 
   async function validateFirmware() {
     if (upgradeStatus === "validating" || upgradeStatus === "upgrading") return;
     clearFirmwareGateResults();
-    const preflightBlockers = firmwareValidateBlockers({
-      config,
-      selectedFirmware,
-      selectedPath
-    });
+    const preflightBlockers = firmwareValidateBlockers({ config, selectedFirmware, selectedPath });
     if (preflightBlockers.length > 0) {
       const result = createLocalOperationResult({
         blockers: preflightBlockers,
@@ -510,31 +428,21 @@ export default function ControlCenter() {
       setLatestFirmwareValidation(result);
       resultsAdapter.saveFirmwareValidation(result);
       setUpgradeStatus("blocked");
-      addLog({
-        detail: result.blockers.join(" "),
-        message: "Firmware validation blocked",
-        status: "blocked",
-        type: "firmware"
-      });
+      addLog({ detail: result.blockers.join(" "), message: "Firmware validation blocked", status: "blocked", type: "firmware" });
       return;
     }
     setUpgradeStatus("validating");
     const syncResult = await syncConfigForAction();
     const currentConfig = syncResult.config;
-    if (syncResult.configChanged) {
-      clearStoredResults();
-      setUpgradeStatus("validating");
-    }
+    if (syncResult.configChanged) clearStoredResults();
     if (syncResult.errors.length > 0 || syncResult.savedVia !== "backend") {
       const result = createLocalOperationResult({
-        blockers:
-          syncResult.errors.length > 0
-            ? syncResult.errors
-            : ["Current config could not be saved to backend runtime state before Firmware Validate."],
-        message:
-          syncResult.errors.length > 0
-            ? "Firmware validation blocked until the current configuration is valid."
-            : "Firmware validation blocked so the backend cannot use stale configuration.",
+        blockers: syncResult.errors.length
+          ? syncResult.errors
+          : ["Current config could not be saved to backend runtime state before Firmware Validate."],
+        message: syncResult.errors.length
+          ? "Firmware validation blocked until the current configuration is valid."
+          : "Firmware validation blocked so the backend cannot use stale configuration.",
         raw: firmwareSelectionSnapshot(currentConfig, selectedPath, selectedFirmware),
         status: "blocked",
         title: "Firmware validation blocked",
@@ -543,12 +451,7 @@ export default function ControlCenter() {
       setLatestFirmwareValidation(result);
       resultsAdapter.saveFirmwareValidation(result);
       setUpgradeStatus("blocked");
-      addLog({
-        detail: result.blockers.join(" "),
-        message: "Firmware validation blocked",
-        status: "blocked",
-        type: "firmware"
-      });
+      addLog({ detail: result.blockers.join(" "), message: "Firmware validation blocked", status: "blocked", type: "firmware" });
       return;
     }
     addLog({
@@ -558,21 +461,11 @@ export default function ControlCenter() {
       type: "firmware"
     });
     try {
-      const response = await firmwareAdapter.validate({
-        config: currentConfig,
-        selectedFirmware,
-        selectedPath
-      });
+      const response = await firmwareAdapter.validate({ config: currentConfig, selectedFirmware, selectedPath });
       setFirmware(response.firmware);
       setLatestFirmwareValidation(response.result);
       resultsAdapter.saveFirmwareValidation(response.result);
-      setUpgradeStatus(
-        firmwareValidationPassed(response.result)
-          ? "ready"
-          : response.result.status === "blocked"
-            ? "blocked"
-            : "failed"
-      );
+      setUpgradeStatus(firmwareValidationPassed(response.result) ? "ready" : response.result.status === "blocked" ? "blocked" : "failed");
       addLog({
         detail: response.result.message,
         message: operationLogMessage("Firmware validation", response.result.status),
@@ -592,12 +485,7 @@ export default function ControlCenter() {
       setLatestFirmwareValidation(result);
       resultsAdapter.saveFirmwareValidation(result);
       setUpgradeStatus("failed");
-      addLog({
-        detail: message,
-        message: "Firmware validation failed",
-        status: "failed",
-        type: "firmware"
-      });
+      addLog({ detail: message, message: "Firmware validation failed", status: "failed", type: "firmware" });
     }
   }
 
@@ -624,19 +512,12 @@ export default function ControlCenter() {
       setLatestFirmwareUpgrade(result);
       resultsAdapter.saveFirmwareUpgrade(result);
       setUpgradeStatus("blocked");
-      addLog({
-        detail: preflightBlockers.join(" "),
-        message: "Firmware upgrade blocked",
-        status: "blocked",
-        type: "firmware"
-      });
+      addLog({ detail: preflightBlockers.join(" "), message: "Firmware upgrade blocked", status: "blocked", type: "firmware" });
       return;
     }
     const syncResult = await syncConfigForAction();
     const currentConfig = syncResult.config;
-    if (syncResult.configChanged) {
-      clearStoredResults();
-    }
+    if (syncResult.configChanged) clearStoredResults();
     const validationForUpgrade = syncResult.configChanged ? null : latestFirmwareValidation;
     const confirmationAcceptedForUpgrade = syncResult.configChanged ? false : upgradeConfirmationAccepted;
     const confirmationPhraseForUpgrade = syncResult.configChanged ? "" : upgradeConfirmationPhraseState;
@@ -665,12 +546,7 @@ export default function ControlCenter() {
       setLatestFirmwareUpgrade(result);
       resultsAdapter.saveFirmwareUpgrade(result);
       setUpgradeStatus("blocked");
-      addLog({
-        detail: currentBlockers.join(" "),
-        message: "Firmware upgrade blocked",
-        status: "blocked",
-        type: "firmware"
-      });
+      addLog({ detail: currentBlockers.join(" "), message: "Firmware upgrade blocked", status: "blocked", type: "firmware" });
       return;
     }
     setUpgradeStatus("upgrading");
@@ -712,12 +588,7 @@ export default function ControlCenter() {
       setLatestFirmwareUpgrade(result);
       resultsAdapter.saveFirmwareUpgrade(result);
       setUpgradeStatus("failed");
-      addLog({
-        detail: message,
-        message: "Firmware upgrade failed",
-        status: "failed",
-        type: "firmware"
-      });
+      addLog({ detail: message, message: "Firmware upgrade failed", status: "failed", type: "firmware" });
     }
   }
 
@@ -738,9 +609,7 @@ export default function ControlCenter() {
     clearFirmwareGateResults();
     setUpgradeConfirmationAccepted(false);
     setUpgradeConfirmationPhrase("");
-    if (upgradeStatus !== "upgrading") {
-      setUpgradeStatus("idle");
-    }
+    if (upgradeStatus !== "upgrading") setUpgradeStatus("idle");
   }
 
   function clearStoredResults() {
@@ -824,7 +693,7 @@ export default function ControlCenter() {
           <Wrench size={22} />
           <span>
             WebUIs Control Center
-            <small>Admin control plane</small>
+            <small>Configure. Run. Review.</small>
           </span>
         </Link>
         <nav className="control-nav">
@@ -869,19 +738,12 @@ function LegacyControlCenterRedirect() {
     params.get("device") ?? ""
   }`.toLowerCase();
   let target = "/dashboard";
-  if (/(configure|config|setup|target)/.test(section)) {
-    target = "/configure";
-  } else if (/(firmware|upgrade|ontap)/.test(section)) {
-    target = "/firmware";
-  } else if (/(report|result|evidence|artifact)/.test(section)) {
-    target = "/results";
-  } else if (/(^|[\s/])(logs?|audit)([\s/]|$)/.test(section)) {
-    target = "/logs";
-  } else if (/(setting|provider-mode|runtime)/.test(section)) {
-    target = "/settings";
-  } else if (/(action|cisco|ilo|raid|esxi|netapp|serial|lab_profile)/.test(section)) {
-    target = "/run";
-  }
+  if (/(configure|config|setup|target)/.test(section)) target = "/configure";
+  else if (/(firmware|upgrade|ontap)/.test(section)) target = "/firmware";
+  else if (/(report|result|evidence|artifact)/.test(section)) target = "/results";
+  else if (/(^|[\s/])(logs?|audit)([\s/]|$)/.test(section)) target = "/logs";
+  else if (/(setting|provider-mode|runtime)/.test(section)) target = "/settings";
+  else if (/(action|cisco|ilo|raid|esxi|netapp|serial|lab_profile)/.test(section)) target = "/run";
   return <Navigate to={target} replace />;
 }
 
@@ -897,7 +759,7 @@ function TopHeader({ context }: { context: ControlCenterContext }) {
       </div>
       <div className="control-status-strip" aria-label="System status">
         <StatusChip label="API" value={context.connectionStatus} />
-        <StatusChip label="Last Run" value={resultStatusLabel(context.latestRun, context.runStatus)} />
+        <StatusChip label="Run" value={resultStatusLabel(context.latestRun, context.runStatus)} />
         <StatusChip label="Firmware" value={firmwareStatusLabel(context)} />
       </div>
     </header>
@@ -905,120 +767,61 @@ function TopHeader({ context }: { context: ControlCenterContext }) {
 }
 
 function DashboardPage({ context }: { context: ControlCenterContext }) {
-  const firmwareCount = context.firmware.summaries.length;
-  const firmwareNeedsReview = context.firmware.summaries.filter((summary) =>
-    ["needs_upgrade", "blocked", "cannot_verify", "not_configured"].includes(summary.compliance_status)
-  ).length;
-  const firmwarePaths = collectFirmwarePaths(context.firmware.summaries).length;
   const latestFirmwareUpgrade = firmwareUpgradeSummaryResult(context);
-  const hasResult = Boolean(
-    context.latestRun ||
-      context.latestFirmwareCheck ||
-      context.latestFirmwareValidation ||
-      latestFirmwareUpgrade
-  );
+  const summary = firmwareSummaryText(context.firmware.summaries);
   return (
-    <Page title="Dashboard" subtitle="Current target, connection, and latest action state.">
-      <div className="control-dashboard-layout">
-        <section className="control-panel control-overview-panel">
-          <PanelTitle icon={<Gauge size={18} />} title="Current Target" />
-          <FactGrid
-            facts={[
-              ["Current target", context.targetSummary],
-              ["API / connection", context.connectionStatus],
-              ["IP mode", ipModeLabel(context.config.ipMode)],
-              ["SNMP version", snmpVersionLabel(context.config.snmpVersion)],
-              ["Last run", resultStatusLabel(context.latestRun, context.runStatus)],
-              ["Last firmware check", context.latestFirmwareCheck ? statusLabel(context.latestFirmwareCheck.status) : "Not checked"],
-              [
-                "Last firmware upgrade",
-                latestFirmwareUpgrade ? statusLabel(latestFirmwareUpgrade.status) : "Not started"
-              ]
-            ]}
-          />
-          <div className="quick-link-row">
-            <Link className="button-link primary" to="/configure">
-              <SlidersHorizontal size={16} />
-              Configure
-            </Link>
-            <Link className="button-link" to="/run">
-              <Play size={16} />
-              Run
-            </Link>
-            <Link className="button-link" to="/firmware">
-              <UploadCloud size={16} />
-              Firmware
-            </Link>
-          </div>
-        </section>
-        <section className="control-panel">
-          <PanelTitle icon={<UploadCloud size={18} />} title="Firmware Summary" />
-          <FactGrid
-            facts={[
-              ["Detected firmware", firmwareCount ? `${firmwareCount} surfaces` : "Not checked"],
-              ["Upgrade paths", firmwarePaths ? String(firmwarePaths) : "None visible"],
-              ["Needs review", firmwareCount ? String(firmwareNeedsReview) : "Not checked"],
-              ["Last firmware check", context.latestFirmwareCheck ? statusLabel(context.latestFirmwareCheck.status) : "Not checked"],
-              ["Firmware progress", firmwareProgressLabel(context)]
-            ]}
-          />
-          <FirmwareRollup summaries={context.firmware.summaries} />
-        </section>
-      </div>
+    <Page title="Dashboard" subtitle="The current target, connection state, and latest action outcomes.">
+      <section className="control-panel">
+        <PanelTitle icon={<Gauge size={18} />} title="Current Target" />
+        <FactGrid
+          facts={[
+            ["Current target", context.targetSummary],
+            ["API / connection", context.connectionStatus],
+            ["IP mode", ipModeLabel(context.config.ipMode)],
+            ["SNMP version", snmpVersionLabel(context.config.snmpVersion)],
+            ["Detected firmware summary", summary],
+            ["Last run status", resultStatusLabel(context.latestRun, context.runStatus)],
+            ["Last firmware check", context.latestFirmwareCheck ? statusLabel(context.latestFirmwareCheck.status) : "Not checked"],
+            ["Last firmware check / upgrade status", latestFirmwareUpgrade ? statusLabel(latestFirmwareUpgrade.status) : "No upgrade attempt"]
+          ]}
+        />
+        <div className="quick-link-row">
+          <Link className="button-link primary" to="/configure">
+            <SlidersHorizontal size={16} />
+            Configure
+          </Link>
+          <Link className="button-link" to="/run">
+            <Play size={16} />
+            Run
+          </Link>
+          <Link className="button-link" to="/firmware">
+            <UploadCloud size={16} />
+            Firmware
+          </Link>
+        </div>
+      </section>
+      <section className="control-panel">
+        <PanelTitle icon={<Cpu size={18} />} title="Firmware Summary" />
+        <FirmwareRollup summaries={context.firmware.summaries} />
+      </section>
       <section className="control-panel">
         <PanelTitle icon={<Activity size={18} />} title="Primary Workflow" />
         <div className="control-workflow-steps">
-          <WorkflowStepLink
-            detail={`${context.config.target || "Target missing"}; ${ipModeLabel(context.config.ipMode)}; ${snmpVersionLabel(context.config.snmpVersion)}`}
-            label="Configure"
-            status={context.config.target ? "ready" : "missing"}
-            to="/configure"
-          />
-          <WorkflowStepLink
-            detail={context.selectedAction?.label ?? "Backend action pending"}
-            label="Run"
-            status={context.latestRun?.status ?? context.runStatus}
-            to="/run"
-          />
-          <WorkflowStepLink
-            detail={hasResult ? "Latest outcomes available" : "No current result"}
-            label="Results"
-            status={hasResult ? "ready" : "not_checked"}
-            to="/results"
-          />
-          <WorkflowStepLink
-            detail={
-              context.latestFirmwareCheck
-                ? context.latestFirmwareCheck.message
-                : firmwareCount
-                  ? `${firmwareCount} firmware surfaces loaded`
-                  : "Visibility not checked"
-            }
-            label="Firmware"
-            status={context.latestFirmwareCheck?.status ?? (firmwareCount ? "ready" : "not_checked")}
-            to="/firmware"
-          />
+          <WorkflowStepLink detail={context.config.target || "Target missing"} label="Configure" status={context.config.target ? "ready" : "missing"} to="/configure" />
+          <WorkflowStepLink detail={context.selectedAction?.label ?? "Safe placeholder"} label="Run" status={context.latestRun?.status ?? context.runStatus} to="/run" />
+          <WorkflowStepLink detail={firmwareStatusLabel(context)} label="Firmware" status={context.latestFirmwareCheck?.status ?? context.upgradeStatus} to="/firmware" />
+          <WorkflowStepLink detail={context.latestRun || context.latestFirmwareCheck ? "Latest outcomes available" : "No current result"} label="Results" status={context.latestRun || context.latestFirmwareCheck ? "ready" : "not_checked"} to="/results" />
         </div>
       </section>
       <section className="control-panel">
         <PanelTitle icon={<History size={18} />} title="Recent Activity" />
-        <ActivityList logs={context.logs.slice(0, 5)} />
+        <ActivityList logs={[...context.logs, ...context.backendLogs].slice(0, 8)} />
       </section>
     </Page>
   );
 }
 
-function WorkflowStepLink({
-  detail,
-  label,
-  status,
-  to
-}: {
-  detail: string;
-  label: string;
-  status: string;
-  to: string;
-}) {
+function WorkflowStepLink({ detail, label, status, to }: { detail: string; label: string; status: string; to: string }) {
   return (
     <Link className="control-workflow-step" to={to}>
       <div>
@@ -1032,7 +835,7 @@ function WorkflowStepLink({
 
 function ConfigurePage({ context }: { context: ControlCenterContext }) {
   return (
-    <Page title="Configure" subtitle="Target and protocol configuration.">
+    <Page title="Configure" subtitle="Target and SNMP configuration for the next run.">
       <section className="control-panel">
         <PanelTitle icon={<SlidersHorizontal size={18} />} title="Target and SNMP" />
         <div className="control-form-grid">
@@ -1067,66 +870,52 @@ function ConfigurePage({ context }: { context: ControlCenterContext }) {
             </select>
           </label>
         </div>
-
-        <div className="credential-block">
-          <PanelTitle icon={<ShieldCheck size={18} />} title="SNMP Credentials" />
-          {context.config.snmpVersion === "v2" ? (
-            <label className="control-field control-field-wide">
-              <span>SNMPv2 community</span>
+        {context.config.snmpVersion === "v2" ? (
+          <label className="control-field control-field-wide">
+            <span>SNMPv2 community</span>
+            <input
+              autoComplete="off"
+              onChange={(event) => context.setCredentialDraft((current) => ({ ...current, snmpV2Community: event.target.value }))}
+              placeholder="Configured at save time"
+              type="password"
+              value={context.credentialDraft.snmpV2Community}
+            />
+          </label>
+        ) : (
+          <div className="control-form-grid">
+            <label className="control-field">
+              <span>SNMPv3 username</span>
               <input
                 autoComplete="off"
-                onChange={(event) =>
-                  context.setCredentialDraft((current) => ({ ...current, snmpV2Community: event.target.value }))
-                }
+                onChange={(event) => context.setCredentialDraft((current) => ({ ...current, snmpV3Username: event.target.value }))}
                 placeholder="Configured at save time"
-                type="password"
-                value={context.credentialDraft.snmpV2Community}
+                type="text"
+                value={context.credentialDraft.snmpV3Username}
               />
             </label>
-          ) : (
-            <div className="control-form-grid">
-              <label className="control-field">
-                <span>SNMPv3 username</span>
-                <input
-                  autoComplete="off"
-                  onChange={(event) =>
-                    context.setCredentialDraft((current) => ({ ...current, snmpV3Username: event.target.value }))
-                  }
-                  placeholder="Configured at save time"
-                  type="text"
-                  value={context.credentialDraft.snmpV3Username}
-                />
-              </label>
-              <label className="control-field">
-                <span>SNMPv3 auth password</span>
-                <input
-                  autoComplete="off"
-                  onChange={(event) =>
-                    context.setCredentialDraft((current) => ({ ...current, snmpV3AuthPassword: event.target.value }))
-                  }
-                  placeholder="Configured at save time"
-                  type="password"
-                  value={context.credentialDraft.snmpV3AuthPassword}
-                />
-              </label>
-              <label className="control-field">
-                <span>SNMPv3 privacy password</span>
-                <input
-                  autoComplete="off"
-                  onChange={(event) =>
-                    context.setCredentialDraft((current) => ({ ...current, snmpV3PrivacyPassword: event.target.value }))
-                  }
-                  placeholder="Configured at save time"
-                  type="password"
-                  value={context.credentialDraft.snmpV3PrivacyPassword}
-                />
-              </label>
-            </div>
-          )}
-          <p className="control-note">
-            Credential values are not stored in Control Center state; only configured/missing status is saved.
-          </p>
-        </div>
+            <label className="control-field">
+              <span>SNMPv3 auth password</span>
+              <input
+                autoComplete="off"
+                onChange={(event) => context.setCredentialDraft((current) => ({ ...current, snmpV3AuthPassword: event.target.value }))}
+                placeholder="Configured at save time"
+                type="password"
+                value={context.credentialDraft.snmpV3AuthPassword}
+              />
+            </label>
+            <label className="control-field">
+              <span>SNMPv3 privacy password</span>
+              <input
+                autoComplete="off"
+                onChange={(event) => context.setCredentialDraft((current) => ({ ...current, snmpV3PrivacyPassword: event.target.value }))}
+                placeholder="Configured at save time"
+                type="password"
+                value={context.credentialDraft.snmpV3PrivacyPassword}
+              />
+            </label>
+          </div>
+        )}
+        <p className="control-note">Credential values are not stored in Control Center state; only configured or missing status is saved.</p>
       </section>
 
       <details className="control-panel control-details">
@@ -1155,8 +944,6 @@ function ConfigurePage({ context }: { context: ControlCenterContext }) {
         </div>
         <FactGrid
           facts={[
-            ["Config adapter", "Backend non-secret runtime state with browser fallback"],
-            ["Backend config endpoint", "/api/v1/control-center/config"],
             ["Credential state", credentialConfigLabel(context.config)],
             ["Provider mode", context.health?.provider_mode ?? "Unknown"],
             ["Last saved", context.config.updatedAt ? formatDateTime(context.config.updatedAt) : "Not saved"]
@@ -1183,7 +970,7 @@ function ConfigurePage({ context }: { context: ControlCenterContext }) {
 function RunPage({ context }: { context: ControlCenterContext }) {
   const running = context.runStatus === "running";
   return (
-    <Page title="Run" subtitle="Run the configured action.">
+    <Page title="Run" subtitle="Run one safe backend action using the current configuration.">
       <section className="control-panel control-run-panel">
         <div>
           <PanelTitle icon={<Play size={18} />} title="Current Config Summary" />
@@ -1204,21 +991,11 @@ function RunPage({ context }: { context: ControlCenterContext }) {
           {running ? "Running" : "Run"}
         </button>
       </section>
-      {!context.selectedAction && (
-        <div className="control-alert warning">
-          Backend action catalog is unavailable. Run returns a safe placeholder and does not contact providers.
-        </div>
-      )}
+      {!context.selectedAction && <div className="control-alert warning">Backend run integration is pending. The placeholder does not contact providers.</div>}
       {context.runError && <div className="control-alert error">{context.runError}</div>}
       <section className="control-panel">
         <PanelTitle icon={<FileText size={18} />} title="Latest Result Preview" />
-        {running ? (
-          <div className="control-loading">Running selected action...</div>
-        ) : context.latestRun ? (
-          <ResultDetails compact result={context.latestRun} />
-        ) : (
-          <EmptyState title="No result yet" detail="Press Run to execute the current action." />
-        )}
+        {running ? <div className="control-loading">Running selected action...</div> : context.latestRun ? <ResultDetails compact result={context.latestRun} /> : <EmptyState title="No result yet" detail="Press Run to execute the current action." />}
       </section>
       <section className="control-panel">
         <PanelTitle icon={<History size={18} />} title="Run Activity" />
@@ -1230,11 +1007,7 @@ function RunPage({ context }: { context: ControlCenterContext }) {
 
 function FirmwarePage({ context }: { context: ControlCenterContext }) {
   const supportedActionId = supportedUpgradeActionId(context.selectedPath);
-  const placeholderApply = context.selectedUpgradeAction?.action_id === "firmware.upgrade-apply-placeholder";
-  const backendApply = placeholderApply
-    ? "TODO placeholder - no firmware update will run"
-    : context.selectedUpgradeAction?.label ?? (supportedActionId ? `${supportedActionId} unavailable` : "Integration pending");
-  const backendPending = Boolean(context.selectedPath && (!supportedActionId || !context.selectedUpgradeAction || placeholderApply));
+  const backendPending = Boolean(context.selectedPath && (!supportedActionId || !context.selectedUpgradeAction));
   const startDisabled =
     context.firmwareUpgradeBlockers.length > 0 ||
     context.upgradeStatus === "upgrading" ||
@@ -1244,9 +1017,9 @@ function FirmwarePage({ context }: { context: ControlCenterContext }) {
     context.upgradeStatus === "upgrading" ||
     !context.selectedPath ||
     !context.selectedFirmware.trim();
-  const requiredGates = context.selectedUpgradeAction?.required_gates ?? [];
+
   return (
-    <Page title="Firmware" subtitle="Visibility, validation, upgrade workflow, and events.">
+    <Page title="Firmware" subtitle="Firmware visibility, validation, guarded upgrades, and events.">
       <section className="control-panel">
         <div className="control-panel-head">
           <PanelTitle icon={<Cpu size={18} />} title="Firmware Visibility" />
@@ -1273,17 +1046,14 @@ function FirmwarePage({ context }: { context: ControlCenterContext }) {
             ["Current firmware", context.selectedPath ? displayValue(context.selectedPath.current_version) : "Select a firmware path"],
             ["Selected firmware/image/version", context.selectedFirmware || "Missing"],
             ["Compatibility check", validationStatusLabel(context)],
-            ["Readiness", firmwareReadinessLabel(context)],
-            ["Backend apply", backendApply],
+            ["Readiness status", firmwareReadinessLabel(context)],
             ["Progress", firmwareProgressLabel(context)],
             ["Backend status/progress", context.firmwareRuntime.message],
-            ["Progress source", firmwareRuntimeSourceLabel(context.firmwareRuntime)],
-            ["Required gates", requiredGates.length ? requiredGates.join(", ") : "None reported"]
+            ["Last status source", firmwareRuntimeSourceLabel(context.firmwareRuntime)]
           ]}
         />
         <div className="control-alert info">
-          Firmware upgrades do not run on page load. Start Firmware Upgrade sends a backend request only after validation,
-          the exact confirmation phrase, and the confirmation checkbox; backend gates can still block the request.
+          Firmware upgrades never start on page load. Start Firmware Upgrade requires validation, the exact confirmation phrase, and the confirmation checkbox.
         </div>
         <div className="control-form-grid">
           <label className="control-field control-field-wide">
@@ -1319,34 +1089,21 @@ function FirmwarePage({ context }: { context: ControlCenterContext }) {
               facts={[
                 ["Component", context.selectedPath.component_label],
                 ["Package available", context.selectedPath.package_available ? "Yes" : "No"],
-                [
-                  "Prechecks",
-                  context.selectedPath.prechecks_required.length ? context.selectedPath.prechecks_required.join(", ") : "None reported"
-                ],
+                ["Prechecks", context.selectedPath.prechecks_required.length ? context.selectedPath.prechecks_required.join(", ") : "None reported"],
                 ["Impact", context.selectedPath.estimated_impact],
                 ["Next safe action", context.selectedPath.next_action]
               ]}
             />
           </div>
         )}
-        {backendPending && (
-          <div className="control-alert warning">
-            {placeholderApply
-              ? "Backend upgrade execution for this firmware path is a guarded TODO placeholder. Firmware Upgrade stays disabled until a real guarded backend action is registered."
-              : supportedActionId
-              ? `Backend action ${supportedActionId} is not available in the workflow catalog. Firmware Upgrade stays disabled until that action is registered.`
-              : "Backend upgrade integration is pending for this firmware path. Firmware Upgrade stays disabled and no provider update can be requested from this UI."}
-          </div>
-        )}
+        {backendPending && <div className="control-alert warning">Upgrade backend is pending for this firmware path; the start button remains disabled.</div>}
         <div className="control-actions">
           <button disabled={validateDisabled} onClick={() => void context.validateFirmware()} type="button">
             <ShieldCheck size={16} />
             {context.upgradeStatus === "validating" ? "Validating" : "Validate Firmware"}
           </button>
         </div>
-        {context.firmwareValidationBlockers.length > 0 && (
-          <IssueGroup title="Validation blockers" items={context.firmwareValidationBlockers} />
-        )}
+        {context.firmwareValidationBlockers.length > 0 && <IssueGroup title="Validation blockers" items={context.firmwareValidationBlockers} />}
         <div className="firmware-confirm-box">
           <label className="control-check-field">
             <input
@@ -1375,9 +1132,6 @@ function FirmwarePage({ context }: { context: ControlCenterContext }) {
             {context.upgradeStatus === "upgrading" ? "Upgrade Running" : "Start Firmware Upgrade"}
           </button>
         </div>
-        {context.upgradeStatus === "upgrading" && (
-          <div className="control-loading">Upgrade request is with the backend guard runner. Progress is shown when the backend returns it.</div>
-        )}
       </section>
 
       <section className="control-panel">
@@ -1416,11 +1170,9 @@ function ResultsPage({ context }: { context: ControlCenterContext }) {
 
 function LogsPage({ context }: { context: ControlCenterContext }) {
   const fallbackAuditLogs = context.backendLogs.length ? [] : logsAdapter.fromAuditEvents(context.auditEvents);
-  const fallbackFirmwareLogs = context.backendLogs.some((log) => log.type === "firmware")
-    ? []
-    : firmwareRuntimeLogs(context.firmwareRuntime.history);
+  const fallbackFirmwareLogs = context.backendLogs.some((log) => log.type === "firmware") ? [] : firmwareRuntimeLogs(context.firmwareRuntime.history);
   return (
-    <Page title="Logs" subtitle="Config, run, firmware, settings, and backend audit activity.">
+    <Page title="Logs" subtitle="Config, run, firmware, settings, and backend activity.">
       <section className="control-panel">
         <PanelTitle icon={<History size={18} />} title="Activity Timeline" />
         <ActivityList logs={[...context.logs, ...context.backendLogs, ...fallbackFirmwareLogs, ...fallbackAuditLogs]} />
@@ -1431,9 +1183,9 @@ function LogsPage({ context }: { context: ControlCenterContext }) {
 
 function SettingsPage({ context }: { context: ControlCenterContext }) {
   return (
-    <Page title="Settings" subtitle="Global and advanced defaults.">
+    <Page title="Settings" subtitle="Global defaults and advanced service settings.">
       <section className="control-panel">
-        <PanelTitle icon={<Settings size={18} />} title="Global Defaults" />
+        <PanelTitle icon={<SettingsIcon size={18} />} title="Global Defaults" />
         <div className="control-form-grid">
           <label className="control-field">
             <span>Default IP mode</span>
@@ -1483,19 +1235,11 @@ function SettingsPage({ context }: { context: ControlCenterContext }) {
         <div className="control-form-grid">
           <label className="control-field control-field-wide">
             <span>API/server URL</span>
-            <input
-              onChange={(event) => context.setSettings((current) => ({ ...current, apiBaseUrl: event.target.value }))}
-              type="text"
-              value={context.settings.apiBaseUrl}
-            />
+            <input onChange={(event) => context.setSettings((current) => ({ ...current, apiBaseUrl: event.target.value }))} type="text" value={context.settings.apiBaseUrl} />
           </label>
           <label className="control-field control-field-wide">
             <span>Firmware repository/source</span>
-            <input
-              onChange={(event) => context.setSettings((current) => ({ ...current, firmwareRepository: event.target.value }))}
-              type="text"
-              value={context.settings.firmwareRepository}
-            />
+            <input onChange={(event) => context.setSettings((current) => ({ ...current, firmwareRepository: event.target.value }))} type="text" value={context.settings.firmwareRepository} />
           </label>
           <label className="control-field">
             <span>Logging verbosity</span>
@@ -1571,25 +1315,14 @@ function FactGrid({ facts }: { facts: Array<[string, string]> }) {
 }
 
 function FirmwareRollup({ summaries }: { summaries: FirmwareSummary[] }) {
-  if (!summaries.length) {
-    return <EmptyState title="Not checked" detail="Firmware summary is not available yet." />;
-  }
+  if (!summaries.length) return <EmptyState title="Not checked" detail="Firmware summary is not available yet." />;
   const blocked = summaries.filter((summary) => ["blocked", "cannot_verify", "not_configured"].includes(summary.compliance_status)).length;
   const needsUpgrade = summaries.filter((summary) => summary.compliance_status === "needs_upgrade").length;
-  const sortedScanTimes = summaries
-    .map((summary) => summary.last_scanned)
-    .filter((value): value is string => Boolean(value))
-    .sort();
-  const latest = sortedScanTimes[sortedScanTimes.length - 1];
   return (
     <div className="control-result-summary">
-      <span className={`control-inline-status ${blocked ? "is-warn" : "is-good"}`}>
-        {blocked ? "Needs attention" : "Visible"}
-      </span>
+      <StatusPill status={blocked ? "warning" : "ready"} />
       <strong>{summaries.length} firmware surfaces detected</strong>
-      <p>
-        {needsUpgrade} need upgrade review. {blocked} are blocked or not configured. Last check {latest ? formatDateTime(latest) : "not reported"}.
-      </p>
+      <p>{needsUpgrade} need upgrade review. {blocked} are blocked or not configured.</p>
     </div>
   );
 }
@@ -1640,65 +1373,14 @@ function FirmwareVisibilityTable({ summaries }: { summaries: FirmwareSummary[] }
   );
 }
 
-function firmwareUpgradeSummaryResult(context: ControlCenterContext): OperationResult | null {
-  return context.latestFirmwareUpgrade ?? context.firmwareRuntime.latestUpgrade;
-}
-
-function runEventLogs(context: ControlCenterContext): ControlLogEntry[] {
-  return [
-    ...context.logs.filter((log) => log.type === "run"),
-    ...context.backendLogs.filter((log) => log.type === "run")
-  ];
-}
-
-function firmwareEventLogs(context: ControlCenterContext): ControlLogEntry[] {
-  const backendFirmwareLogs = context.backendLogs.filter((log) => log.type === "firmware");
-  return [
-    ...context.logs.filter((log) => log.type === "firmware"),
-    ...(backendFirmwareLogs.length ? backendFirmwareLogs : firmwareRuntimeLogs(context.firmwareRuntime.history))
-  ];
-}
-
-function firmwareRuntimeLogs(results: OperationResult[]): ControlLogEntry[] {
-  return results.map((result) => ({
-    detail: result.message,
-    id: `firmware-runtime-${result.id}`,
-    message: firmwareEventMessage(result),
-    status: result.status,
-    timestamp: result.checkedAt,
-    type: "firmware"
-  }));
-}
-
-function firmwareEventMessage(result: OperationResult): string {
-  const label =
-    result.type === "firmware-upgrade"
-      ? "Firmware upgrade"
-      : result.type === "firmware-validation"
-        ? "Firmware validation"
-        : "Firmware check";
-  if (result.status === "success" || result.status === "ready") return `${label} succeeded`;
-  if (result.status === "failed") return `${label} failed`;
-  if (result.status === "pending") return `${label} pending`;
-  if (result.status === "blocked") return `${label} blocked`;
-  if (result.status === "running") return `${label} running`;
-  return label;
-}
-
-function ResultSummary({ result }: { result: OperationResult }) {
-  return (
-    <div className="control-result-summary">
-      <StatusPill status={result.status} />
-      <strong>{result.title}</strong>
-      <p>{result.message}</p>
-    </div>
-  );
-}
-
 function ResultDetails({ compact = false, result }: { compact?: boolean; result: OperationResult }) {
   return (
     <div className="control-result-details">
-      <ResultSummary result={result} />
+      <div className="control-result-summary">
+        <StatusPill status={result.status} />
+        <strong>{result.title}</strong>
+        <p>{result.message}</p>
+      </div>
       <FactGrid
         facts={[
           ["Checked", formatDateTime(result.checkedAt)],
@@ -1728,25 +1410,6 @@ function ResultDetails({ compact = false, result }: { compact?: boolean; result:
   );
 }
 
-function resultConfigFacts(result: OperationResult): Array<[string, string]> {
-  const snapshot = operationConfigSnapshot(result);
-  if (!snapshot) return [];
-  const timeout = snapshot.timeout_seconds;
-  const retry = snapshot.retry_count;
-  return [
-    ["Target", stringFact(snapshot.target, "Not recorded")],
-    ["IP mode used", ipModeLabel(stringFact(snapshot.ip_mode, "ipv4"))],
-    ["SNMP used", snmpVersionLabel(stringFact(snapshot.snmp_version, "v2"))],
-    ["SNMP credential state", statusLabel(stringFact(snapshot.snmp_credentials ?? snapshot.snmp_credential_status, "missing"))],
-    ["Timeout / retry used", `${stringFact(timeout, "Not recorded")}s / ${stringFact(retry, "Not recorded")}`]
-  ];
-}
-
-function operationConfigSnapshot(result: OperationResult): Record<string, unknown> | null {
-  const candidate = result.raw.config_snapshot ?? result.raw.control_center_config;
-  return candidate && typeof candidate === "object" ? (candidate as Record<string, unknown>) : null;
-}
-
 function IssueGroup({ items, title }: { items: string[]; title: string }) {
   if (!items.length) return null;
   return (
@@ -1763,9 +1426,7 @@ function IssueGroup({ items, title }: { items: string[]; title: string }) {
 
 function ActivityList({ logs }: { logs: ControlLogEntry[] }) {
   const visible = [...logs].sort((first, second) => Date.parse(second.timestamp) - Date.parse(first.timestamp));
-  if (!visible.length) {
-    return <EmptyState title="No logs yet" detail="Config, run, firmware, settings, and backend events will appear here." />;
-  }
+  if (!visible.length) return <EmptyState title="No logs yet" detail="Config, run, firmware, settings, and backend events will appear here." />;
   return (
     <ol className="control-log-list">
       {visible.map((entry) => (
@@ -1797,19 +1458,11 @@ function collectFirmwarePaths(summaries: FirmwareSummary[]): FirmwareUpgradePath
   return summaries.flatMap((summary) => summary.upgrade_paths ?? []);
 }
 
-function savedFirmwareSelection(
-  firmware: FirmwareState,
-  paths: FirmwareUpgradePath[]
-): { pathId: string; selectedFirmware: string } | null {
+function savedFirmwareSelection(firmware: FirmwareState, paths: FirmwareUpgradePath[]): { pathId: string; selectedFirmware: string } | null {
   const selectedFiles = firmware.fileSelections?.selected_files ?? {};
   for (const path of paths) {
     const selectedFirmware = selectedFiles[path.component_id]?.trim();
-    if (selectedFirmware) {
-      return {
-        pathId: firmwarePathId(path),
-        selectedFirmware
-      };
-    }
+    if (selectedFirmware) return { pathId: firmwarePathId(path), selectedFirmware };
   }
   return null;
 }
@@ -1843,6 +1496,49 @@ function firmwareCandidateOptions(path: FirmwareUpgradePath | null): string[] {
   );
 }
 
+function runEventLogs(context: ControlCenterContext): ControlLogEntry[] {
+  return [...context.logs.filter((log) => log.type === "run"), ...context.backendLogs.filter((log) => log.type === "run")];
+}
+
+function firmwareEventLogs(context: ControlCenterContext): ControlLogEntry[] {
+  const backendFirmwareLogs = context.backendLogs.filter((log) => log.type === "firmware");
+  return [
+    ...context.logs.filter((log) => log.type === "firmware"),
+    ...(backendFirmwareLogs.length ? backendFirmwareLogs : firmwareRuntimeLogs(context.firmwareRuntime.history))
+  ];
+}
+
+function firmwareRuntimeLogs(results: OperationResult[]): ControlLogEntry[] {
+  return results.map((result) => ({
+    detail: result.message,
+    id: `firmware-runtime-${result.id}`,
+    message: firmwareEventMessage(result),
+    status: result.status,
+    timestamp: result.checkedAt,
+    type: "firmware"
+  }));
+}
+
+function firmwareEventMessage(result: OperationResult): string {
+  const label = result.type === "firmware-upgrade" ? "Firmware upgrade" : result.type === "firmware-validation" ? "Firmware validation" : "Firmware check";
+  if (result.status === "success" || result.status === "ready") return `${label} succeeded`;
+  if (result.status === "failed") return `${label} failed`;
+  if (result.status === "pending") return `${label} pending`;
+  if (result.status === "blocked") return `${label} blocked`;
+  if (result.status === "running") return `${label} running`;
+  return label;
+}
+
+function firmwareUpgradeSummaryResult(context: ControlCenterContext): OperationResult | null {
+  return context.latestFirmwareUpgrade ?? context.firmwareRuntime.latestUpgrade;
+}
+
+function firmwareSummaryText(summaries: FirmwareSummary[]): string {
+  if (!summaries.length) return "Not checked";
+  const needsUpgrade = summaries.filter((summary) => summary.compliance_status === "needs_upgrade").length;
+  return `${summaries.length} surfaces detected; ${needsUpgrade} need review`;
+}
+
 function firmwareCurrentVersion(summary: FirmwareSummary): string {
   return displayValue(summary.current_versions.find((item) => item.version)?.version ?? null);
 }
@@ -1874,21 +1570,11 @@ function firmwareReadinessLabel(context: ControlCenterContext): string {
   if (!context.selectedPath) return "Missing firmware path";
   if (!context.selectedFirmware) return "Missing selected firmware";
   if (!context.latestFirmwareValidation) return "Validation required";
-  if (
-    !firmwareValidationMatchesSelection(
-      context.latestFirmwareValidation,
-      context.selectedPath,
-      context.selectedFirmware,
-      context.config
-    )
-  ) {
+  if (!firmwareValidationMatchesSelection(context.latestFirmwareValidation, context.selectedPath, context.selectedFirmware, context.config)) {
     return "Validation required for current config and selection";
   }
   if (!firmwareValidationPassed(context.latestFirmwareValidation)) return "Blocked by validation";
   if (!context.selectedUpgradeAction) return "Backend integration pending";
-  if (context.selectedUpgradeAction.action_id === "firmware.upgrade-apply-placeholder") {
-    return "Backend TODO placeholder";
-  }
   return "Ready for guarded backend request";
 }
 
@@ -1909,54 +1595,49 @@ function firmwareStartBlockers(input: {
   if (upgradeActionBlocker) blockers.push(upgradeActionBlocker);
   if (!input.validation) {
     blockers.push("Validate firmware before starting an upgrade.");
-  } else if (
-    !firmwareValidationMatchesSelection(
-      input.validation,
-      input.selectedPath,
-      input.selectedFirmware,
-      input.config
-    )
-  ) {
+  } else if (!firmwareValidationMatchesSelection(input.validation, input.selectedPath, input.selectedFirmware, input.config)) {
     blockers.push("Validate the current config and selected firmware path before starting an upgrade.");
   } else if (!firmwareValidationPassed(input.validation)) {
     blockers.push("Firmware validation failed or is blocked. No override is supported.");
   }
   const expected = upgradeConfirmationPhrase(input.selectedPath, input.selectedUpgradeAction);
-  if (!input.accepted || input.phrase.trim() !== expected) {
-    blockers.push(`Type ${expected} and check the confirmation box.`);
-  }
+  if (!input.accepted || input.phrase.trim() !== expected) blockers.push(`Type ${expected} and check the confirmation box.`);
   return blockers;
 }
 
-function firmwareUpgradeActionBlocker(
-  selectedPath: FirmwareUpgradePath | null,
-  selectedUpgradeAction: WorkflowAction | null
-): string | null {
+function firmwareUpgradeActionBlocker(selectedPath: FirmwareUpgradePath | null, selectedUpgradeAction: WorkflowAction | null): string | null {
   if (!selectedPath) return null;
   const actionId = supportedUpgradeActionId(selectedPath);
-  if (!actionId) {
-    return "Backend firmware upgrade integration is pending for this selected firmware path.";
-  }
-  if (!selectedUpgradeAction) {
-    return `Backend action ${actionId} is not available in the workflow catalog.`;
-  }
+  if (!actionId) return "Backend firmware upgrade integration is pending for this selected firmware path.";
+  if (!selectedUpgradeAction) return `Backend action ${actionId} is not available in the workflow catalog.`;
   if (selectedUpgradeAction.action_id === "firmware.upgrade-apply-placeholder") {
     return "Backend firmware upgrade execution is still a guarded placeholder for this selected firmware path.";
   }
   return null;
 }
 
-function firmwareValidateBlockers(input: {
-  config: ControlConfig;
-  selectedFirmware: string;
-  selectedPath: FirmwareUpgradePath | null;
-}): string[] {
+function firmwareValidateBlockers(input: { config: ControlConfig; selectedFirmware: string; selectedPath: FirmwareUpgradePath | null }): string[] {
   const blockers = [...configAdapter.validate(input.config)];
   if (!input.selectedPath) blockers.push("Select a firmware path before validation.");
-  if (!input.selectedFirmware.trim()) {
-    blockers.push("Selected firmware, image, or target version is required before validation.");
-  }
+  if (!input.selectedFirmware.trim()) blockers.push("Selected firmware, image, or target version is required before validation.");
   return blockers;
+}
+
+function resultConfigFacts(result: OperationResult): Array<[string, string]> {
+  const snapshot = operationConfigSnapshot(result);
+  if (!snapshot) return [];
+  return [
+    ["Target", stringFact(snapshot.target, "Not recorded")],
+    ["IP mode used", ipModeLabel(stringFact(snapshot.ip_mode, "ipv4"))],
+    ["SNMP used", snmpVersionLabel(stringFact(snapshot.snmp_version, "v2"))],
+    ["SNMP credential state", statusLabel(stringFact(snapshot.snmp_credentials ?? snapshot.snmp_credential_status, "missing"))],
+    ["Timeout / retry used", `${stringFact(snapshot.timeout_seconds, "Not recorded")}s / ${stringFact(snapshot.retry_count, "Not recorded")}`]
+  ];
+}
+
+function operationConfigSnapshot(result: OperationResult): Record<string, unknown> | null {
+  const candidate = result.raw.config_snapshot ?? result.raw.control_center_config;
+  return candidate && typeof candidate === "object" ? (candidate as Record<string, unknown>) : null;
 }
 
 function configSnapshot(config: ControlConfig): Record<string, unknown> {
@@ -1977,18 +1658,12 @@ function shouldClearResultsForConfig(config: ControlConfig, results: Array<Opera
 
 function operationResultUsesConfig(result: OperationResult, config: ControlConfig): boolean {
   const snapshot = result.raw.config_snapshot;
-  if (!snapshot || typeof snapshot !== "object") {
-    return false;
-  }
+  if (!snapshot || typeof snapshot !== "object") return false;
   const expected = configSnapshot(config);
   return Object.entries(expected).every(([key, value]) => (snapshot as Record<string, unknown>)[key] === value);
 }
 
-function firmwareSelectionSnapshot(
-  config: ControlConfig,
-  selectedPath: FirmwareUpgradePath | null,
-  selectedFirmware: string
-): Record<string, unknown> {
+function firmwareSelectionSnapshot(config: ControlConfig, selectedPath: FirmwareUpgradePath | null, selectedFirmware: string): Record<string, unknown> {
   return {
     config_snapshot: configSnapshot(config),
     selected_component: selectedPath?.component_id ?? null,
@@ -2061,14 +1736,7 @@ function firmwareRuntimeSourceLabel(runtime: FirmwareRuntimeStatus): string {
 function validationStatusLabel(context: ControlCenterContext): string {
   if (context.upgradeStatus === "validating") return "Validation running";
   if (!context.latestFirmwareValidation) return "Not validated";
-  if (
-    !firmwareValidationMatchesSelection(
-      context.latestFirmwareValidation,
-      context.selectedPath,
-      context.selectedFirmware,
-      context.config
-    )
-  ) {
+  if (!firmwareValidationMatchesSelection(context.latestFirmwareValidation, context.selectedPath, context.selectedFirmware, context.config)) {
     return "Not validated for current config and selection";
   }
   return statusLabel(context.latestFirmwareValidation.status);
@@ -2097,10 +1765,7 @@ function credentialDraftHasValues(draft: CredentialDraft): boolean {
 function formatDateTime(value: string): string {
   const parsed = Date.parse(value);
   if (Number.isNaN(parsed)) return value;
-  return new Intl.DateTimeFormat(undefined, {
-    dateStyle: "medium",
-    timeStyle: "short"
-  }).format(parsed);
+  return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(parsed);
 }
 
 function displayValue(value: string | null | undefined): string {
