@@ -61,6 +61,7 @@ const navItems = [
 type ControlCenterContext = {
   actions: WorkflowAction[];
   auditEvents: AuditEvent[];
+  backendLogs: ControlLogEntry[];
   config: ControlConfig;
   configErrors: string[];
   configMessage: string;
@@ -116,6 +117,7 @@ export default function ControlCenter() {
   const [providers, setProviders] = useState<ProviderStatus[]>([]);
   const [actions, setActions] = useState<WorkflowAction[]>([]);
   const [auditEvents, setAuditEvents] = useState<AuditEvent[]>([]);
+  const [backendLogs, setBackendLogs] = useState<ControlLogEntry[]>([]);
   const [firmware, setFirmware] = useState<FirmwareState>({ fileSelections: null, summaries: [] });
   const [firmwareRuntime, setFirmwareRuntime] = useState<FirmwareRuntimeStatus>(defaultFirmwareRuntimeStatus);
   const [loading, setLoading] = useState(true);
@@ -203,6 +205,7 @@ export default function ControlCenter() {
       setProviders(snapshot.providers);
       setActions(snapshot.actions);
       setAuditEvents(snapshot.auditEvents);
+      setBackendLogs(snapshot.backendLogs);
       setFirmware(snapshot.firmware);
       setFirmwareRuntime(snapshot.firmwareRuntime);
       if (snapshot.controlConfig && !configEditedRef.current) {
@@ -763,6 +766,7 @@ export default function ControlCenter() {
   const context: ControlCenterContext = {
     actions,
     auditEvents,
+    backendLogs,
     checkFirmware,
     config,
     configErrors,
@@ -959,29 +963,35 @@ function DashboardPage({ context }: { context: ControlCenterContext }) {
         </section>
       </div>
       <section className="control-panel">
-        <PanelTitle icon={<Activity size={18} />} title="Primary Workflow" />
-        <div className="control-workflow-strip">
-          <WorkflowStep
+        <PanelTitle icon={<Activity size={18} />} title="Next Actions" />
+        <div className="control-next-actions">
+          <NextActionLink
             detail={`${context.config.target || "Target missing"}; ${ipModeLabel(context.config.ipMode)}; ${snmpVersionLabel(context.config.snmpVersion)}`}
-            label="Configure"
+            label="Configure target"
             status={context.config.target ? "ready" : "missing"}
             to="/configure"
           />
-          <WorkflowStep
-            detail={context.latestRun ? context.latestRun.message : "Run the current backend action with saved config."}
-            label="Run"
+          <NextActionLink
+            detail={context.latestRun ? context.latestRun.message : "Use the saved config for the selected safe backend action."}
+            label="Run action"
             status={context.latestRun?.status ?? context.runStatus}
             to="/run"
           />
-          <WorkflowStep
-            detail={context.latestFirmwareCheck ? context.latestFirmwareCheck.message : `${firmwareCount} firmware surfaces loaded.`}
-            label="Firmware"
+          <NextActionLink
+            detail={
+              context.latestFirmwareCheck
+                ? context.latestFirmwareCheck.message
+                : firmwareCount
+                  ? `${firmwareCount} firmware surfaces loaded`
+                  : "Check firmware visibility"
+            }
+            label="Review firmware"
             status={context.latestFirmwareCheck?.status ?? (firmwareCount ? "ready" : "not_checked")}
             to="/firmware"
           />
-          <WorkflowStep
-            detail={context.latestRun || latestFirmwareUpgrade ? "Latest outcomes are available." : "Results appear after a run or firmware action."}
-            label="Results"
+          <NextActionLink
+            detail={context.latestRun || latestFirmwareUpgrade ? "Latest outcomes are available." : "No run or firmware result yet."}
+            label="View results"
             status={context.latestRun || latestFirmwareUpgrade ? "ready" : "not_checked"}
             to="/results"
           />
@@ -995,7 +1005,7 @@ function DashboardPage({ context }: { context: ControlCenterContext }) {
   );
 }
 
-function WorkflowStep({
+function NextActionLink({
   detail,
   label,
   status,
@@ -1007,9 +1017,9 @@ function WorkflowStep({
   to: string;
 }) {
   return (
-    <Link className="control-workflow-step" to={to}>
-      <span>{label}</span>
-      <strong>{detail}</strong>
+    <Link className="control-next-action" to={to}>
+      <strong>{label}</strong>
+      <span>{detail}</span>
       <StatusPill status={status} />
     </Link>
   );
@@ -1395,12 +1405,15 @@ function ResultsPage({ context }: { context: ControlCenterContext }) {
 }
 
 function LogsPage({ context }: { context: ControlCenterContext }) {
-  const backendLogs = logsAdapter.fromAuditEvents(context.auditEvents);
+  const fallbackAuditLogs = context.backendLogs.length ? [] : logsAdapter.fromAuditEvents(context.auditEvents);
+  const fallbackFirmwareLogs = context.backendLogs.some((log) => log.type === "firmware")
+    ? []
+    : firmwareRuntimeLogs(context.firmwareRuntime.history);
   return (
     <Page title="Logs" subtitle="Config, run, firmware, settings, and backend audit activity.">
       <section className="control-panel">
         <PanelTitle icon={<History size={18} />} title="Activity Timeline" />
-        <ActivityList logs={[...context.logs, ...firmwareRuntimeLogs(context.firmwareRuntime.history), ...backendLogs]} />
+        <ActivityList logs={[...context.logs, ...context.backendLogs, ...fallbackFirmwareLogs, ...fallbackAuditLogs]} />
       </section>
     </Page>
   );
@@ -1622,9 +1635,10 @@ function firmwareUpgradeSummaryResult(context: ControlCenterContext): OperationR
 }
 
 function firmwareEventLogs(context: ControlCenterContext): ControlLogEntry[] {
+  const backendFirmwareLogs = context.backendLogs.filter((log) => log.type === "firmware");
   return [
     ...context.logs.filter((log) => log.type === "firmware"),
-    ...firmwareRuntimeLogs(context.firmwareRuntime.history)
+    ...(backendFirmwareLogs.length ? backendFirmwareLogs : firmwareRuntimeLogs(context.firmwareRuntime.history))
   ];
 }
 

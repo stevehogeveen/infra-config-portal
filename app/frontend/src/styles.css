@@ -356,36 +356,37 @@ button:disabled {
   gap: 10px;
 }
 
-.control-workflow-strip {
+.control-next-actions {
   display: grid;
   gap: 10px;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
-.control-workflow-step {
+.control-next-action {
+  align-items: center;
   background: #f8fafc;
   border: 1px solid #e2e8f0;
   border-radius: 8px;
   color: #172033;
   display: grid;
-  gap: 8px;
+  gap: 10px;
+  grid-template-columns: minmax(150px, 0.35fr) minmax(0, 1fr) auto;
   min-width: 0;
   padding: 12px;
 }
 
-.control-workflow-step:hover {
+.control-next-action:hover {
   border-color: #0f766e;
 }
 
-.control-workflow-step span {
-  color: #68778a;
-  font-size: 11px;
-  font-weight: 900;
-  text-transform: uppercase;
+.control-next-action strong {
+  color: #0f172a;
+  overflow-wrap: anywhere;
 }
 
-.control-workflow-step strong {
-  color: #0f172a;
+.control-next-action > span {
+  color: #68778a;
+  font-size: 13px;
+  font-weight: 800;
   line-height: 1.35;
   overflow-wrap: anywhere;
 }
@@ -740,7 +741,6 @@ button:disabled {
   }
 
   .control-topbar,
-  .control-workflow-strip,
   .control-dashboard-layout {
     grid-template-columns: 1fr;
   }
@@ -761,9 +761,11 @@ button:disabled {
   }
 
   .control-panel-head,
-  .control-run-panel {
+  .control-run-panel,
+  .control-next-action {
     align-items: stretch;
     display: grid;
+    grid-template-columns: 1fr;
   }
 
   .control-run-button {

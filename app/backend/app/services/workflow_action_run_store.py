@@ -40,6 +40,19 @@ def list_workflow_action_run_traces(action_id: str) -> list[dict[str, Any]]:
     )
 
 
+def list_all_workflow_action_run_traces(limit: int = 80) -> list[dict[str, Any]]:
+    traces: list[dict[str, Any]] = []
+    for path in WORKFLOW_ACTION_RUN_TRACE_DIR.glob("*.json"):
+        payload = _read_trace(path)
+        if payload:
+            traces.append(payload)
+    return sorted(
+        traces,
+        key=lambda trace: str(trace.get("finished_at") or trace.get("started_at") or ""),
+        reverse=True,
+    )[:limit]
+
+
 def latest_workflow_action_run_trace(action_id: str) -> dict[str, Any] | None:
     traces = list_workflow_action_run_traces(action_id)
     return traces[0] if traces else None

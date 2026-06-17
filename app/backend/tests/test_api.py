@@ -299,6 +299,67 @@ def test_control_center_state_rejects_secret_shaped_values(client: TestClient) -
     assert settings_response.status_code == 422
 
 
+def test_control_center_runtime_endpoints_summarize_stored_safe_runs(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    from app.services import workflow_action_run_store
+
+    monkeypatch.setattr(
+        workflow_action_run_store,
+        "WORKFLOW_ACTION_RUN_TRACE_DIR",
+        tmp_path / "workflow-action-runs",
+    )
+    workflow_action_run_store.save_workflow_action_run_trace(
+        {
+            "run_id": "workflow-action:netapp.ontap-upgrade-apply:test",
+            "action_id": "netapp.ontap-upgrade-apply",
+            "action_label": "Upgrade ONTAP",
+            "stage_id": "firmware",
+            "stage_label": "Firmware",
+            "mode": "upgrade",
+            "started_at": "2026-06-17T18:00:00Z",
+            "finished_at": "2026-06-17T18:00:01Z",
+            "checked_at": "2026-06-17T18:00:01Z",
+            "status": "blocked",
+            "source_type": "live_probe",
+            "freshness": "live",
+            "not_mock": True,
+            "command": "make provider-lab-netapp-ontap-upgrade-apply",
+            "executed": False,
+            "return_code": None,
+            "stdout_summary": "",
+            "stderr_summary": "",
+            "report_artifacts": [],
+            "trace_artifact": None,
+            "summary": "Guarded action was not run because required gates were not satisfied.",
+            "blockers": ["NETAPP_ONTAP_UPGRADE_APPLY=true is required."],
+            "warnings": [],
+            "next_action": "Review the blocked action.",
+            "control_center_config": {"target": "192.0.2.203"},
+        }
+    )
+
+    status_response = client.get("/api/v1/control-center/firmware-status")
+    logs_response = client.get("/api/v1/control-center/logs")
+
+    assert status_response.status_code == 200
+    status_payload = status_response.json()
+    assert "netapp.ontap-upgrade-apply" in status_payload["action_ids"]
+    assert status_payload["status"] == "blocked"
+    assert status_payload["latest_upgrade"]["action_id"] == "netapp.ontap-upgrade-apply"
+    assert status_payload["latest_upgrade"]["executed"] is False
+
+    assert logs_response.status_code == 200
+    assert any(
+        entry["message"] == "Firmware upgrade blocked"
+        and entry["type"] == "firmware"
+        and entry["status"] == "blocked"
+        for entry in logs_response.json()
+    )
+
+
 def test_firmware_file_selections_persist_in_ignored_local_store(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,

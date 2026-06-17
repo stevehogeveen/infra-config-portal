@@ -14,6 +14,8 @@ import type {
   ControlActionRun,
   ControlCenterConfigRead,
   ControlCenterConfigWrite,
+  ControlCenterFirmwareStatusRead,
+  ControlCenterLogRead,
   ControlCenterSettingsRead,
   ControlCenterSettingsWrite,
   FirmwareFileSelections,
@@ -361,6 +363,9 @@ export const api = {
       method: "PUT",
       body: payload
     }),
+  controlCenterFirmwareStatus: () =>
+    apiRequest<ControlCenterFirmwareStatusRead>("/api/v1/control-center/firmware-status"),
+  controlCenterLogs: () => apiRequest<ControlCenterLogRead[]>("/api/v1/control-center/logs"),
   controlActions: () => apiRequest<ControlActionCatalog>("/api/v1/control/actions"),
   updateControlAccessConfig: (sectionId: string, payload: ControlAccessConfigWrite) =>
     apiRequest<ControlAccessConfig>(`/api/v1/control/access/${encodeURIComponent(sectionId)}`, {

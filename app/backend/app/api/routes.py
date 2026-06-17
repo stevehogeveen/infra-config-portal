@@ -37,8 +37,10 @@ from app.schemas import (
     ControlActionCatalogRead,
     ControlActionPlanRead,
     ControlActionRunRead,
+    ControlCenterFirmwareStatusRead,
     ControlCenterConfigRead,
     ControlCenterConfigWrite,
+    ControlCenterLogRead,
     ControlCenterSettingsRead,
     ControlCenterSettingsWrite,
     FirmwareFileSelectionsRead,
@@ -142,6 +144,10 @@ from app.services.control_center_state import (
     read_control_center_settings,
     save_control_center_config,
     save_control_center_settings,
+)
+from app.services.control_center_runtime import (
+    get_control_center_firmware_status,
+    get_control_center_logs,
 )
 from app.services.ilo_baseline import (
     get_ilo_baseline_preview,
@@ -599,6 +605,18 @@ def update_control_center_settings_route(
         return save_control_center_settings(payload.model_dump())
     except ControlCenterStateValidationError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.get("/control-center/firmware-status", response_model=ControlCenterFirmwareStatusRead)
+def read_control_center_firmware_status_route() -> ControlCenterFirmwareStatusRead:
+    return get_control_center_firmware_status()
+
+
+@router.get("/control-center/logs", response_model=list[ControlCenterLogRead])
+def read_control_center_logs_route(
+    session: Session = Depends(get_session),
+) -> list[ControlCenterLogRead]:
+    return get_control_center_logs(session)
 
 
 @router.get("/control/actions", response_model=ControlActionCatalogRead)

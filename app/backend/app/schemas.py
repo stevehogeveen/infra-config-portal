@@ -2067,6 +2067,31 @@ class WorkflowActionRunCreate(BaseModel):
     control_config: dict[str, Any] | None = None
 
 
+class ControlCenterFirmwareStatusRead(BaseModel):
+    action_ids: list[str] = Field(default_factory=list)
+    checked_at: str | None = None
+    freshness: str
+    history: list[WorkflowActionRunRead] = Field(default_factory=list)
+    latest_upgrade: WorkflowActionRunRead | None = None
+    message: str
+    source_type: str
+    status: str
+    warnings: list[str] = Field(default_factory=list)
+    blockers: list[str] = Field(default_factory=list)
+    next_safe_action: str
+
+
+class ControlCenterLogRead(BaseModel):
+    id: str
+    timestamp: str
+    type: str
+    message: str
+    status: str | None = None
+    detail: str | None = None
+    source_type: str
+    freshness: str
+
+
 class WorkflowActionRead(BaseModel):
     action_id: str
     label: str

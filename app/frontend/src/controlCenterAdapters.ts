@@ -3,6 +3,8 @@ import type {
   AuditEvent,
   ControlCenterConfigRead,
   ControlCenterConfigWrite,
+  ControlCenterFirmwareStatusRead,
+  ControlCenterLogRead,
   ControlCenterSettingsRead,
   ControlCenterSettingsWrite,
   FirmwareFileSelections,
@@ -102,6 +104,7 @@ export type FirmwareUpgradeRequest = {
 export type ControlCenterSnapshot = {
   actions: WorkflowAction[];
   auditEvents: AuditEvent[];
+  backendLogs: ControlLogEntry[];
   controlConfig: ControlConfig | null;
   controlSettings: ControlSettings | null;
   firmware: FirmwareState;
@@ -316,6 +319,17 @@ export const logsAdapter = {
       timestamp: event.created_at,
       type: "system"
     }));
+  },
+
+  fromBackendLogs(logs: ControlCenterLogRead[]): ControlLogEntry[] {
+    return logs.slice(0, 80).map((entry) => ({
+      detail: entry.detail ?? undefined,
+      id: `backend-${entry.id}`,
+      message: entry.message,
+      status: entry.status ?? undefined,
+      timestamp: entry.timestamp,
+      type: logType(entry.type)
+    }));
   }
 };
 
@@ -431,6 +445,12 @@ export const firmwareAdapter = {
   },
 
   async status(actions: WorkflowAction[]): Promise<FirmwareRuntimeStatus> {
+    const backendStatus = await safeCall(api.controlCenterFirmwareStatus, null as ControlCenterFirmwareStatusRead | null);
+    const normalizedStatus = normalizeFirmwareRuntimeStatus(backendStatus);
+    if (normalizedStatus) {
+      return normalizedStatus;
+    }
+
     const actionIds = firmwareRuntimeActionIds(actions);
     if (!actionIds.length) {
       return {
@@ -648,11 +668,12 @@ export const firmwareAdapter = {
 
 export const backendAdapter = {
   async loadSnapshot(): Promise<ControlCenterSnapshot> {
-    const [health, providers, actions, auditEvents, controlConfig, controlSettings, firmware] = await Promise.all([
+    const [health, providers, actions, auditEvents, backendLogs, controlConfig, controlSettings, firmware] = await Promise.all([
       safeCall(api.health, null),
       safeCall(api.providers, [] as ProviderStatus[]),
       safeCall(api.workflowActions, [] as WorkflowAction[]),
       safeCall(api.auditEvents, [] as AuditEvent[]),
+      safeCall(api.controlCenterLogs, [] as ControlCenterLogRead[]),
       safeCall(api.controlCenterConfig, null),
       safeCall(api.controlCenterSettings, null),
       firmwareAdapter.load()
@@ -662,6 +683,7 @@ export const backendAdapter = {
     return {
       actions: normalizedActions,
       auditEvents: Array.isArray(auditEvents) ? auditEvents : [],
+      backendLogs: Array.isArray(backendLogs) ? logsAdapter.fromBackendLogs(backendLogs) : [],
       controlConfig: controlConfig ? fromBackendConfig(controlConfig) : null,
       controlSettings: controlSettings ? fromBackendSettings(controlSettings) : null,
       firmware,
@@ -671,6 +693,29 @@ export const backendAdapter = {
     };
   }
 };
+
+function normalizeFirmwareRuntimeStatus(status: ControlCenterFirmwareStatusRead | null): FirmwareRuntimeStatus | null {
+  if (!status || typeof status.message !== "string" || !Array.isArray(status.history)) {
+    return null;
+  }
+  const history = status.history
+    .map((run) => normalizeWorkflowRun(run, firmwareOperationType(run.action_id)))
+    .sort((first, second) => Date.parse(second.checkedAt) - Date.parse(first.checkedAt))
+    .slice(0, 12);
+  const latestUpgrade = status.latest_upgrade
+    ? normalizeWorkflowRun(status.latest_upgrade, "firmware-upgrade")
+    : history.find((result) => result.type === "firmware-upgrade") ?? null;
+  return {
+    actionIds: Array.isArray(status.action_ids) ? status.action_ids : [],
+    checkedAt: status.checked_at,
+    freshness: status.freshness || "not_checked",
+    history,
+    latestUpgrade,
+    message: status.message,
+    sourceType: status.source_type || "backend_action_runs",
+    status: upgradeStatusFromOperation(mapStatus(status.status, status.blockers ?? []))
+  };
+}
 
 function fromBackendConfig(config: ControlCenterConfigRead): ControlConfig {
   return {
@@ -1041,6 +1086,13 @@ function writeStored(key: string, value: unknown): void {
 
 function removeStored(key: string): void {
   window.localStorage.removeItem(key);
+}
+
+function logType(value: string): ControlLogEntry["type"] {
+  if (value === "config" || value === "run" || value === "firmware" || value === "settings") {
+    return value;
+  }
+  return "system";
 }
 
 function humanize(value: string): string {

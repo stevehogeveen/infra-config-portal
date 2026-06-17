@@ -140,6 +140,31 @@ export type ControlCenterSettingsWrite = {
   logging_verbosity: "errors" | "normal" | "debug";
 };
 
+export type ControlCenterFirmwareStatusRead = {
+  action_ids: string[];
+  checked_at: string | null;
+  freshness: string;
+  history: WorkflowActionRun[];
+  latest_upgrade: WorkflowActionRun | null;
+  message: string;
+  source_type: string;
+  status: string;
+  warnings: string[];
+  blockers: string[];
+  next_safe_action: string;
+};
+
+export type ControlCenterLogRead = {
+  id: string;
+  timestamp: string;
+  type: string;
+  message: string;
+  status: string | null;
+  detail: string | null;
+  source_type: string;
+  freshness: string;
+};
+
 export type ArtifactRecord = {
   id: string;
   request_id: string;
