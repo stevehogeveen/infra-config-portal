@@ -516,6 +516,31 @@ test("firmware upgrade stays blocked after selection changes, failed validation,
   await expect(page.getByText("Firmware validation blocked").first()).toBeVisible();
 });
 
+test("credential draft edits invalidate stale firmware validation before upgrade", async ({ page }) => {
+  await page.goto("/configure");
+  await page.getByLabel("Target host, IP, or range").fill("192.0.2.203");
+  await page.getByRole("button", { name: "Save / apply config" }).click();
+
+  await page.goto("/firmware");
+  await page.getByLabel("Firmware path").selectOption(upgradePathValue);
+  await page.getByRole("button", { name: "Validate Firmware" }).click();
+  await expect(page.getByText("Firmware validation succeeded")).toBeVisible();
+
+  await page.getByLabel("Require explicit operator confirmation before any firmware upgrade request is sent.").check();
+  await page.getByLabel("Confirmation phrase").fill("UPGRADE ONTAP");
+  await expect(page.getByRole("button", { name: "Start Firmware Upgrade" })).toBeEnabled();
+
+  await page.goto("/configure");
+  await page.getByLabel("SNMPv2 community").fill("configured-reference");
+  await page.goto("/firmware");
+
+  await expect(page.getByRole("button", { name: "Start Firmware Upgrade" })).toBeDisabled();
+  await expect(page.getByText("Validate firmware before starting an upgrade.")).toBeVisible();
+
+  await page.goto("/results");
+  await expect(page.getByText("No firmware validation")).toBeVisible();
+});
+
 test("firmware upgrade stays disabled when no backend apply action exists", async ({ page }) => {
   const actionRequests: string[] = [];
   page.on("request", (request) => {

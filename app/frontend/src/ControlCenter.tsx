@@ -268,6 +268,13 @@ export default function ControlCenter() {
     setConfigMessage("");
   }
 
+  function updateCredentialDraft(value: CredentialDraft | ((current: CredentialDraft) => CredentialDraft)) {
+    if (!configEditedRef.current) clearStoredResults();
+    configEditedRef.current = true;
+    setCredentialDraft(value);
+    setConfigMessage("");
+  }
+
   function updateSettings(value: ControlSettings | ((current: ControlSettings) => ControlSettings)) {
     settingsEditedRef.current = true;
     setSettings(value);
@@ -787,7 +794,7 @@ export default function ControlCenter() {
     selectedPathId,
     selectedUpgradeAction,
     setConfig: updateConfig,
-    setCredentialDraft,
+    setCredentialDraft: updateCredentialDraft,
     setSelectedFirmware: updateSelectedFirmware,
     setSelectedPathId,
     setSettings: updateSettings,
