@@ -331,6 +331,66 @@ button:disabled {
   font-weight: 700;
 }
 
+.cc-workflow-rail {
+  counter-reset: workflow;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.cc-workflow-rail li {
+  counter-increment: workflow;
+  min-width: 0;
+}
+
+.cc-workflow-rail a {
+  align-items: start;
+  border: 1px solid #dfe4ea;
+  border-radius: 8px;
+  color: #172033;
+  display: grid;
+  gap: 3px 10px;
+  grid-template-columns: 28px minmax(0, 1fr);
+  min-height: 72px;
+  padding: 12px;
+}
+
+.cc-workflow-rail a::before {
+  align-items: center;
+  background: #172033;
+  border-radius: 999px;
+  color: #ffffff;
+  content: counter(workflow);
+  display: inline-flex;
+  font-size: 12px;
+  font-weight: 900;
+  height: 24px;
+  justify-content: center;
+  line-height: 1;
+  width: 24px;
+}
+
+.cc-workflow-rail a:hover {
+  border-color: #0f766e;
+}
+
+.cc-workflow-rail strong,
+.cc-workflow-rail span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cc-workflow-rail span {
+  color: #5b6678;
+  font-size: 13px;
+  font-weight: 800;
+  grid-column: 2;
+}
+
 .cc-form-grid {
   display: grid;
   gap: 14px;
@@ -778,6 +838,10 @@ button:disabled {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .cc-workflow-rail {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .cc-big-run {
     max-width: 220px;
   }
@@ -794,7 +858,8 @@ button:disabled {
 
   .cc-status-strip,
   .cc-form-grid,
-  .cc-facts {
+  .cc-facts,
+  .cc-workflow-rail {
     grid-template-columns: 1fr;
   }
 

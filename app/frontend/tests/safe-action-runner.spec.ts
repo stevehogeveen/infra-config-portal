@@ -515,6 +515,31 @@ test("firmware check blocks invalid current config before backend inventory", as
   await expect(page.getByText("Firmware check blocked").first()).toBeVisible();
 });
 
+test("firmware page load and path selection do not auto-start upgrade", async ({ page }) => {
+  const upgradeRequests: string[] = [];
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    if (
+      url.pathname === "/api/v1/workflows/actions/netapp.ontap-upgrade-apply/run" &&
+      request.method() === "POST"
+    ) {
+      upgradeRequests.push("firmware-upgrade");
+    }
+  });
+
+  await page.goto("/firmware");
+  await expect(page.getByRole("heading", { exact: true, name: "Firmware Visibility" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Start Firmware Upgrade" })).toBeDisabled();
+  expect(upgradeRequests).toEqual([]);
+
+  await page.getByLabel("Firmware path").selectOption(hpeUpgradePathValue);
+  await expect(
+    page.getByText("Backend firmware upgrade integration is pending for this selected firmware path.").first()
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "Start Firmware Upgrade" })).toBeDisabled();
+  expect(upgradeRequests).toEqual([]);
+});
+
 test("firmware upgrade stays blocked after selection changes, failed validation, or config changes", async ({ page }) => {
   await page.goto("/configure");
   await page.getByLabel("Target host, IP, or range").fill("192.0.2.203");

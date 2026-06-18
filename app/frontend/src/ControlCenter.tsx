@@ -955,6 +955,16 @@ function DashboardPage({ context }: { context: ControlCenterContext }) {
       </section>
 
       <section className="cc-panel">
+        <SectionTitle icon={<Activity size={18} />} title="Primary Workflow" />
+        <ol className="cc-workflow-rail" aria-label="Primary workflow">
+          <WorkflowStep label="Configure" state={context.config.target ? "Ready" : "Missing target"} to="/configure" />
+          <WorkflowStep label="Run" state={resultStatusLabel(context.latestRun, context.runStatus)} to="/run" />
+          <WorkflowStep label="Results" state={context.latestRun || context.latestFirmwareCheck ? "Updated" : "Empty"} to="/results" />
+          <WorkflowStep label="Logs" state={combinedLogs(context).length ? "Activity recorded" : "No activity"} to="/logs" />
+        </ol>
+      </section>
+
+      <section className="cc-panel">
         <SectionTitle icon={<History size={18} />} title="Recent Activity" />
         <ActivityList logs={combinedLogs(context).slice(0, 6)} />
       </section>
@@ -1505,6 +1515,17 @@ function WorkflowLink({ icon, label, text, to }: { icon: ReactNode; label: strin
   );
 }
 
+function WorkflowStep({ label, state, to }: { label: string; state: string; to: string }) {
+  return (
+    <li>
+      <Link to={to}>
+        <strong>{label}</strong>
+        <span>{state}</span>
+      </Link>
+    </li>
+  );
+}
+
 function ActionRow({ children }: { children: ReactNode }) {
   return <div className="cc-actions">{children}</div>;
 }
@@ -1782,11 +1803,17 @@ function allLogSources(context: ControlCenterContext): ControlLogEntry[] {
 function uniqueLogs(logs: ControlLogEntry[]): ControlLogEntry[] {
   const seen = new Set<string>();
   return logs.filter((log) => {
-    const key = `${log.id}:${log.timestamp}:${log.message}`;
+    const timestamp = Date.parse(log.timestamp);
+    const bucket = Number.isNaN(timestamp) ? log.timestamp : String(Math.floor(timestamp / 5000));
+    const key = `${log.type}:${log.message}:${log.status ?? ""}:${normalizeLogDetail(log.detail)}:${bucket}`;
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
   });
+}
+
+function normalizeLogDetail(detail: string | undefined): string {
+  return (detail ?? "").replace(/\s+/g, " ").trim();
 }
 
 function firmwareUpgradeSummaryResult(context: ControlCenterContext): OperationResult | null {
