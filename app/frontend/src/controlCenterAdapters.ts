@@ -87,13 +87,16 @@ export type FirmwareSelectionDraft = {
 
 export type FirmwareRuntimeStatus = {
   actionIds: string[];
+  blockers: string[];
   checkedAt: string | null;
   freshness: string;
   history: OperationResult[];
   latestUpgrade: OperationResult | null;
   message: string;
+  nextSafeAction: string;
   sourceType: string;
   status: UpgradeStatus;
+  warnings: string[];
 };
 
 export type FirmwareUpgradeRequest = {
@@ -168,13 +171,16 @@ export const defaultSettings: ControlSettings = {
 
 export const defaultFirmwareRuntimeStatus: FirmwareRuntimeStatus = {
   actionIds: [],
+  blockers: [],
   checkedAt: null,
   freshness: "not_checked",
   history: [],
   latestUpgrade: null,
   message: "Firmware status/progress backend integration is pending.",
+  nextSafeAction: "Use firmware visibility and validation before any guarded upgrade request.",
   sourceType: "todo_placeholder",
-  status: "idle"
+  status: "idle",
+  warnings: []
 };
 
 const preferredRunActionIds = [
@@ -518,13 +524,19 @@ export const firmwareAdapter = {
     const latestUpgrade = history.find((result) => result.type === "firmware-upgrade") ?? null;
     return {
       actionIds,
+      blockers: latestUpgrade?.blockers ?? latest.blockers,
       checkedAt: latest.checkedAt,
       freshness: latest.freshness,
       history,
       latestUpgrade,
       message: latestUpgrade?.message ?? latest.message,
+      nextSafeAction:
+        stringValue(latestUpgrade?.raw.next_action, "") ||
+        stringValue(latest.raw.next_action, "") ||
+        "Review firmware action history before continuing.",
       sourceType: latest.sourceType,
-      status: latestUpgrade ? upgradeStatusFromOperation(latestUpgrade.status) : upgradeStatusFromOperation(latest.status)
+      status: latestUpgrade ? upgradeStatusFromOperation(latestUpgrade.status) : upgradeStatusFromOperation(latest.status),
+      warnings: latestUpgrade?.warnings ?? latest.warnings
     };
   },
 
@@ -737,13 +749,16 @@ function normalizeFirmwareRuntimeStatus(status: ControlCenterFirmwareStatusRead 
     : history.find((result) => result.type === "firmware-upgrade") ?? null;
   return {
     actionIds: Array.isArray(status.action_ids) ? status.action_ids : [],
+    blockers: stringList(status.blockers),
     checkedAt: status.checked_at,
     freshness: status.freshness || "not_checked",
     history,
     latestUpgrade,
     message: status.message,
+    nextSafeAction: status.next_safe_action || "Review firmware action history before continuing.",
     sourceType: status.source_type || "backend_action_runs",
-    status: upgradeStatusFromOperation(mapStatus(status.status, status.blockers ?? []))
+    status: upgradeStatusFromOperation(mapStatus(status.status, status.blockers ?? [])),
+    warnings: stringList(status.warnings)
   };
 }
 

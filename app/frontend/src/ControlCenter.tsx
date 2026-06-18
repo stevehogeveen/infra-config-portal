@@ -237,8 +237,12 @@ export default function ControlCenter() {
       setFirmware(snapshot.firmware);
       setFirmwareRuntime(snapshot.firmwareRuntime);
       if (snapshot.controlConfig && !configEditedRef.current) {
+        const backendConfig = configWithSettingsDefaults(
+          snapshot.controlConfig,
+          snapshot.controlSettings ?? settings
+        );
         setConfig((current) =>
-          shouldAdoptBackendConfig(current, snapshot.controlConfig!) ? snapshot.controlConfig! : current
+          shouldAdoptBackendConfig(current, backendConfig) ? backendConfig : current
         );
       }
       if (snapshot.controlSettings && !settingsEditedRef.current) {
@@ -322,6 +326,7 @@ export default function ControlCenter() {
         return false;
       }
       setSettings(result.settings);
+      setConfig((current) => configWithSettingsDefaults(current, result.settings));
       setSettingsMessage(
         result.savedVia === "backend"
           ? "Settings saved to backend runtime state"
@@ -1141,9 +1146,16 @@ function FirmwareUpgradeSection({ context }: { context: ControlCenterContext }) 
           ["Readiness status", firmwareReadinessLabel(context)],
           ["Progress", firmwareProgressLabel(context)],
           ["Backend status/progress", context.firmwareRuntime.message],
+          ["Next safe action", context.firmwareRuntime.nextSafeAction],
           ["Status source", firmwareRuntimeSourceLabel(context.firmwareRuntime)]
         ]}
       />
+      {context.firmwareRuntime.blockers.length > 0 && (
+        <IssueList title="Backend firmware status blockers" items={context.firmwareRuntime.blockers} />
+      )}
+      {context.firmwareRuntime.warnings.length > 0 && (
+        <IssueList title="Backend firmware status warnings" items={context.firmwareRuntime.warnings} tone="warn" />
+      )}
 
       <FirmwareStateRail status={context.upgradeStatus} />
 
@@ -1809,6 +1821,13 @@ function firmwareUpgradeActionBlocker(selectedPath: FirmwareUpgradePath | null, 
   const actionId = supportedUpgradeActionId(selectedPath);
   if (!actionId) return "Backend firmware upgrade integration is pending for this selected firmware path.";
   if (!selectedUpgradeAction) return `Backend action ${actionId} is not available in the workflow catalog.`;
+  if (["blocked", "missing_config", "not_in_scope"].includes(selectedUpgradeAction.current_availability)) {
+    return (
+      selectedUpgradeAction.blockers[0] ||
+      selectedUpgradeAction.next_action ||
+      `Backend action ${actionId} is not ready.`
+    );
+  }
   if (selectedUpgradeAction.action_id === "firmware.upgrade-apply-placeholder") {
     return "Backend firmware upgrade execution is still a guarded placeholder for this selected firmware path.";
   }
@@ -1870,6 +1889,17 @@ function shouldAdoptBackendConfig(current: ControlConfig, backend: ControlConfig
 function shouldAdoptBackendSettings(current: ControlSettings, backend: ControlSettings): boolean {
   if (!current.updatedAt) return true;
   return backendStateIsAtLeastAsFresh(current.updatedAt, backend.updatedAt);
+}
+
+function configWithSettingsDefaults(config: ControlConfig, settings: ControlSettings): ControlConfig {
+  if (hasLocalConfigState(config)) return config;
+  return {
+    ...config,
+    ipMode: settings.defaultIpMode,
+    retryCount: settings.defaultRetryCount,
+    snmpVersion: settings.defaultSnmpVersion,
+    timeoutSeconds: settings.defaultTimeoutSeconds
+  };
 }
 
 function hasLocalConfigState(config: ControlConfig): boolean {

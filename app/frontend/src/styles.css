@@ -578,7 +578,7 @@ button:disabled {
 .cc-state-rail {
   display: grid;
   gap: 8px;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(104px, 1fr));
   list-style: none;
   margin: 0;
   padding: 0;
@@ -794,8 +794,7 @@ button:disabled {
 
   .cc-status-strip,
   .cc-form-grid,
-  .cc-facts,
-  .cc-state-rail {
+  .cc-facts {
     grid-template-columns: 1fr;
   }
 
