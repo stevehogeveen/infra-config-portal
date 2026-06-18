@@ -170,6 +170,23 @@ test("newer local fallback config survives an older backend snapshot on reload",
   await expect(page.getByLabel("Firmware repository/source")).toHaveValue("/srv/local-fallback-firmware");
 });
 
+test("historical backend firmware upgrade does not replace current results", async ({ page }) => {
+  await page.route("**/api/v1/control-center/firmware-status", (route) =>
+    json(route, firmwareStatusWithUpgradeTarget("192.0.2.99"))
+  );
+
+  await page.goto("/configure");
+  await page.getByLabel("Target host, IP, or range").fill("192.0.2.203");
+  await page.getByRole("button", { name: "Save / apply config" }).click();
+  await expect(page.getByText("Configuration saved")).toBeVisible();
+
+  await page.goto("/results");
+  await expect(page.getByText("No firmware upgrade")).toBeVisible();
+  await expect(
+    page.getByText("Guarded action was not run because required gates were not satisfied.")
+  ).toHaveCount(0);
+});
+
 test("configure rejects secret-shaped target values before local fallback can persist them", async ({ page }) => {
   await page.goto("/configure");
 
@@ -1116,6 +1133,35 @@ function workflowActionRun(actionId: string, label: string, status: "blocked" | 
       ? "Guarded action was not run because required gates were not satisfied."
       : "Safe read-only/report-only action completed.",
     trace_artifact: null,
+    warnings: []
+  };
+}
+
+function firmwareStatusWithUpgradeTarget(target: string) {
+  const latestUpgrade = {
+    ...workflowActionRun("netapp.ontap-upgrade-apply", "Upgrade ONTAP", "blocked"),
+    control_center_config: {
+      ip_mode: "ipv4",
+      retry_count: 1,
+      snmp_credentials: "configured",
+      snmp_version: "v2",
+      target,
+      timeout_seconds: 8
+    },
+    freshness: "historical",
+    source_type: "historical_artifact"
+  };
+  return {
+    action_ids: ["netapp.ontap-upgrade-apply"],
+    blockers: latestUpgrade.blockers,
+    checked_at: checkedAt,
+    freshness: "historical",
+    history: [latestUpgrade],
+    latest_upgrade: latestUpgrade,
+    message: latestUpgrade.summary,
+    next_safe_action: latestUpgrade.next_action,
+    source_type: "historical_artifact",
+    status: "blocked",
     warnings: []
   };
 }

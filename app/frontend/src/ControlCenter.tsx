@@ -743,6 +743,42 @@ export default function ControlCenter() {
     if (upgradeStatus !== "upgrading") setUpgradeStatus("idle");
   }
 
+  function updateUpgradeConfirmationAccepted(value: boolean) {
+    setUpgradeConfirmationAccepted(value);
+    updateUpgradeDraftStatus(value, upgradeConfirmationPhraseState);
+  }
+
+  function updateUpgradeConfirmationPhrase(value: string) {
+    setUpgradeConfirmationPhrase(value);
+    updateUpgradeDraftStatus(upgradeConfirmationAccepted, value);
+  }
+
+  function updateUpgradeDraftStatus(accepted: boolean, phrase: string) {
+    if (upgradeStatus === "validating" || upgradeStatus === "upgrading") return;
+    if (!latestFirmwareValidation) {
+      setUpgradeStatus("idle");
+      return;
+    }
+    const blockers = firmwareStartBlockers({
+      accepted,
+      config,
+      phrase,
+      selectedFirmware,
+      selectedPath,
+      selectedUpgradeAction,
+      validation: latestFirmwareValidation
+    });
+    if (blockers.length === 0) {
+      setUpgradeStatus("ready");
+      return;
+    }
+    if (firmwareValidationMatchesSelection(latestFirmwareValidation, selectedPath, selectedFirmware, config)) {
+      setUpgradeStatus("blocked");
+    } else {
+      setUpgradeStatus("idle");
+    }
+  }
+
   function clearStoredResults() {
     setLatestRun(null);
     setLatestFirmwareCheck(null);
@@ -815,8 +851,8 @@ export default function ControlCenter() {
     upgradeConfirmationPhrase: upgradeConfirmationPhraseState,
     upgradeStatus,
     validateFirmware,
-    setUpgradeConfirmationAccepted,
-    setUpgradeConfirmationPhrase
+    setUpgradeConfirmationAccepted: updateUpgradeConfirmationAccepted,
+    setUpgradeConfirmationPhrase: updateUpgradeConfirmationPhrase
   };
 
   return (
@@ -1754,7 +1790,13 @@ function uniqueLogs(logs: ControlLogEntry[]): ControlLogEntry[] {
 }
 
 function firmwareUpgradeSummaryResult(context: ControlCenterContext): OperationResult | null {
-  return context.latestFirmwareUpgrade ?? context.firmwareRuntime.latestUpgrade;
+  if (context.latestFirmwareUpgrade && operationResultUsesConfig(context.latestFirmwareUpgrade, context.config)) {
+    return context.latestFirmwareUpgrade;
+  }
+  if (context.firmwareRuntime.latestUpgrade && operationResultUsesConfig(context.firmwareRuntime.latestUpgrade, context.config)) {
+    return context.firmwareRuntime.latestUpgrade;
+  }
+  return null;
 }
 
 function firmwareSummaryText(summaries: FirmwareSummary[]): string {
@@ -1898,8 +1940,8 @@ function shouldClearResultsForConfig(config: ControlConfig, results: Array<Opera
 }
 
 function operationResultUsesConfig(result: OperationResult, config: ControlConfig): boolean {
-  const snapshot = result.raw.config_snapshot;
-  if (!snapshot || typeof snapshot !== "object") return false;
+  const snapshot = operationConfigSnapshot(result);
+  if (!snapshot) return false;
   const expected = configSnapshot(config);
   return Object.entries(expected).every(([key, value]) => (snapshot as Record<string, unknown>)[key] === value);
 }
@@ -1986,10 +2028,13 @@ function resultStatusLabel(result: OperationResult | null, fallback: OperationSt
 function firmwareStatusLabel(context: ControlCenterContext): string {
   if (context.upgradeStatus === "upgrading") return "Upgrade running";
   if (context.upgradeStatus === "validating") return "Validation running";
-  if (context.latestFirmwareUpgrade) return `Upgrade ${statusLabel(context.latestFirmwareUpgrade.status)}`;
-  if (context.firmwareRuntime.latestUpgrade) return `Upgrade ${statusLabel(context.firmwareRuntime.latestUpgrade.status)}`;
+  const latestUpgrade = firmwareUpgradeSummaryResult(context);
+  if (latestUpgrade) return `Upgrade ${statusLabel(latestUpgrade.status)}`;
   if (context.latestFirmwareCheck) return statusLabel(context.latestFirmwareCheck.status);
-  if (context.firmwareRuntime.history.length) return statusLabel(context.firmwareRuntime.status);
+  if (context.firmwareRuntime.history.some((result) => operationResultUsesConfig(result, context.config))) {
+    return statusLabel(context.firmwareRuntime.status);
+  }
+  if (context.firmwareRuntime.history.length) return "Historical firmware activity";
   return context.firmware.summaries.length ? "Summary loaded" : "Not checked";
 }
 
