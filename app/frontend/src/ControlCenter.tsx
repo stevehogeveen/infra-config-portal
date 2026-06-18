@@ -1444,10 +1444,10 @@ function Banner({ children, tone }: { children: ReactNode; tone: "good" | "warn"
   return <div className={`cc-banner is-${tone}`}>{children}</div>;
 }
 
-function IssueList({ items, title }: { items: string[]; title: string }) {
+function IssueList({ items, title, tone = "bad" }: { items: string[]; title: string; tone?: "bad" | "warn" }) {
   if (!items.length) return null;
   return (
-    <div className="cc-issues">
+    <div className={`cc-issues is-${tone}`}>
       <strong>{title}</strong>
       <ul>
         {items.map((item) => (
@@ -1597,7 +1597,7 @@ function ResultDetails({ compact = false, result }: { compact?: boolean; result:
         ]}
       />
       <IssueList title="Blockers" items={result.blockers} />
-      <IssueList title="Warnings" items={result.warnings} />
+      <IssueList title="Warnings" items={result.warnings} tone="warn" />
       {result.artifacts.length > 0 && (
         <div className="cc-artifacts">
           <strong>Artifacts</strong>
@@ -1620,7 +1620,8 @@ function statusIcon(status: string) {
   const normalized = status.toLowerCase();
   if (/(success|ready|completed|ok|passed)/.test(normalized)) return <CheckCircle2 className="cc-icon-good" size={20} />;
   if (/(failed|error)/.test(normalized)) return <XCircle className="cc-icon-bad" size={20} />;
-  if (/(blocked|pending|missing|not_checked)/.test(normalized)) return <AlertTriangle className="cc-icon-warn" size={20} />;
+  if (/blocked/.test(normalized)) return <XCircle className="cc-icon-bad" size={20} />;
+  if (/(pending|missing|not_checked)/.test(normalized)) return <AlertTriangle className="cc-icon-warn" size={20} />;
   return <Activity className="cc-icon-info" size={20} />;
 }
 
@@ -2031,8 +2032,8 @@ function toneClass(value: string): string {
   const normalized = value.toLowerCase();
   if (/(success|ready|completed|connected|visible|current|saved|ok|passed)/.test(normalized)) return "is-good";
   if (/(running|checking|validating|summary|loaded)/.test(normalized)) return "is-info";
-  if (/(warning|blocked|pending|missing|not configured|unavailable|not checked|not run|attention)/.test(normalized)) return "is-warn";
-  if (/(failed|error|disconnected)/.test(normalized)) return "is-bad";
+  if (/(failed|error|blocked|disconnected)/.test(normalized)) return "is-bad";
+  if (/(warning|pending|missing|not configured|unavailable|not checked|not run|attention)/.test(normalized)) return "is-warn";
   return "is-neutral";
 }
 

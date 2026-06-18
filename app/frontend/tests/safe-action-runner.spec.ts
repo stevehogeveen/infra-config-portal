@@ -342,6 +342,8 @@ test("run blocks invalid current config before backend action", async ({ page })
 
   await expect(page.getByText("Run blocked until the current configuration is valid.").first()).toBeVisible();
   await expect(page.getByText("Target host, IP, or range is required.").first()).toBeVisible();
+  await expect(page.locator(".cc-pill.is-bad", { hasText: "Blocked" }).first()).toBeVisible();
+  await expect(page.locator(".cc-issues.is-bad", { hasText: "Target host, IP, or range is required." }).first()).toBeVisible();
   expect(actionRequests).toEqual([]);
 
   await page.goto("/results");
@@ -492,6 +494,8 @@ test("firmware upgrade stays blocked after selection changes, failed validation,
   await page.getByRole("button", { name: "Validate Firmware" }).click();
   await expect(page.getByText("Firmware validation blocked")).toBeVisible();
   await expect(page.getByText("Firmware validation failed or is blocked. No override is supported.")).toBeVisible();
+  await expect(page.locator(".cc-pill.is-bad", { hasText: "Blocked" }).first()).toBeVisible();
+  await expect(page.locator(".cc-issues.is-bad", { hasText: "Firmware validation failed or is blocked." }).first()).toBeVisible();
   await expect(page.getByRole("button", { name: "Start Firmware Upgrade" })).toBeDisabled();
 
   await page.getByLabel("Selected firmware, image, or version").fill("ontap-9.14.1P1.tgz");
