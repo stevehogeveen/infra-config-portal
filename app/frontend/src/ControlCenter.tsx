@@ -367,13 +367,20 @@ export default function ControlCenter() {
         savedVia: "local_fallback"
       };
     }
+    configSaveInFlightRef.current = true;
+    setConfigSaving(true);
     const hadPendingConfig = configEditedRef.current || credentialDraftHasValues(credentialDraft);
-    const result = await configAdapter.save(config, credentialDraft);
-    setConfig(result.config);
-    setConfigErrors(result.errors);
-    configEditedRef.current = result.errors.length > 0 || result.savedVia !== "backend";
-    if (result.errors.length === 0) setCredentialDraft(defaultCredentialDraft);
-    return { ...result, configChanged: hadPendingConfig && result.errors.length === 0 };
+    try {
+      const result = await configAdapter.save(config, credentialDraft);
+      setConfig(result.config);
+      setConfigErrors(result.errors);
+      configEditedRef.current = result.errors.length > 0 || result.savedVia !== "backend";
+      if (result.errors.length === 0) setCredentialDraft(defaultCredentialDraft);
+      return { ...result, configChanged: hadPendingConfig && result.errors.length === 0 };
+    } finally {
+      configSaveInFlightRef.current = false;
+      setConfigSaving(false);
+    }
   }
 
   async function runSelectedAction() {
@@ -1048,6 +1055,7 @@ function ConfigurePage({ context }: { context: ControlCenterContext }) {
 
 function RunPage({ context }: { context: ControlCenterContext }) {
   const running = context.runStatus === "running";
+  const runDisabled = running || context.configSaving;
   return (
     <Page title="Run">
       <section className="cc-panel cc-run-panel">
@@ -1065,9 +1073,9 @@ function RunPage({ context }: { context: ControlCenterContext }) {
             ]}
           />
         </div>
-        <button className="cc-big-run primary" disabled={running} onClick={() => void context.runSelectedAction()} type="button">
+        <button className="cc-big-run primary" disabled={runDisabled} onClick={() => void context.runSelectedAction()} type="button">
           <Play size={20} />
-          {running ? "Running" : "Run"}
+          {running ? "Running" : context.configSaving ? "Saving config" : "Run"}
         </button>
       </section>
 
@@ -1101,13 +1109,15 @@ function FirmwarePage({ context }: { context: ControlCenterContext }) {
 }
 
 function FirmwareVisibilitySection({ context }: { context: ControlCenterContext }) {
+  const checkRunning = context.firmwareCheckStatus === "running";
+  const checkDisabled = checkRunning || context.configSaving;
   return (
     <section className="cc-panel">
       <div className="cc-panel-head">
         <SectionTitle icon={<Cpu size={18} />} title="Firmware Visibility" />
-        <button disabled={context.firmwareCheckStatus === "running"} onClick={() => void context.checkFirmware()} type="button">
+        <button disabled={checkDisabled} onClick={() => void context.checkFirmware()} type="button">
           <RefreshCw size={16} />
-          {context.firmwareCheckStatus === "running" ? "Checking" : "Check Firmware"}
+          {checkRunning ? "Checking" : context.configSaving ? "Saving config" : "Check Firmware"}
         </button>
       </div>
       {context.firmware.summaries.length ? (
@@ -1128,11 +1138,13 @@ function FirmwareUpgradeSection({ context }: { context: ControlCenterContext }) 
   const supportedActionId = supportedUpgradeActionId(context.selectedPath);
   const backendPending = Boolean(context.selectedPath && (!supportedActionId || !context.selectedUpgradeAction));
   const validateDisabled =
+    context.configSaving ||
     context.upgradeStatus === "validating" ||
     context.upgradeStatus === "upgrading" ||
     !context.selectedPath ||
     !context.selectedFirmware.trim();
   const startDisabled =
+    context.configSaving ||
     context.firmwareUpgradeBlockers.length > 0 ||
     context.upgradeStatus === "upgrading" ||
     context.upgradeStatus === "validating";
@@ -1202,7 +1214,7 @@ function FirmwareUpgradeSection({ context }: { context: ControlCenterContext }) 
       <ActionRow>
         <button disabled={validateDisabled} onClick={() => void context.validateFirmware()} type="button">
           <ShieldCheck size={16} />
-          {context.upgradeStatus === "validating" ? "Validating" : "Validate Firmware"}
+          {context.upgradeStatus === "validating" ? "Validating" : context.configSaving ? "Saving config" : "Validate Firmware"}
         </button>
       </ActionRow>
       {context.firmwareValidationBlockers.length > 0 && <IssueList title="Validation blockers" items={context.firmwareValidationBlockers} />}
@@ -1236,7 +1248,7 @@ function FirmwareUpgradeSection({ context }: { context: ControlCenterContext }) 
         {context.firmwareUpgradeBlockers.length > 0 && <IssueList title="Upgrade blockers" items={context.firmwareUpgradeBlockers} />}
         <button className="primary danger-action" disabled={startDisabled} onClick={() => void context.startFirmwareUpgrade()} type="button">
           <UploadCloud size={16} />
-          {context.upgradeStatus === "upgrading" ? "Upgrade Running" : "Start Firmware Upgrade"}
+          {context.upgradeStatus === "upgrading" ? "Upgrade Running" : context.configSaving ? "Saving config" : "Start Firmware Upgrade"}
         </button>
       </div>
     </section>
@@ -2017,7 +2029,7 @@ function routeTargetFromLegacyPath(pathname: string, search: string): string {
   if (/(report|result|evidence|artifact)/.test(section)) return "/results";
   if (/(^|[\s/])(logs?|audit)([\s/]|$)/.test(section)) return "/logs";
   if (/(setting|provider-mode|runtime)/.test(section)) return "/settings";
-  if (/(action|cisco|ilo|raid|esxi|netapp|serial|lab_profile)/.test(section)) return "/run";
+  if (/(^|[\s/])run([\s/]|$)/.test(section) || /(action|cisco|ilo|raid|esxi|netapp|serial|lab_profile)/.test(section)) return "/run";
   return "/dashboard";
 }
 

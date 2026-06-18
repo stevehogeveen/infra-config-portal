@@ -87,6 +87,17 @@ test("renders the WebUIs Control Center sidebar and dashboard", async ({ page })
   await expect(page).toHaveURL(/\/logs$/);
   await expect(page.getByRole("heading", { exact: true, name: "Logs" })).toBeVisible();
 
+  for (const [legacyPath, expectedPage, expectedUrl] of [
+    ["/control-center/configure", "Configure", /\/configure$/],
+    ["/control-center/run", "Run", /\/run$/],
+    ["/control-center/results", "Results", /\/results$/],
+    ["/control-center/settings", "Settings", /\/settings$/]
+  ] as const) {
+    await page.goto(legacyPath);
+    await expect(page).toHaveURL(expectedUrl);
+    await expect(page.getByRole("heading", { exact: true, name: expectedPage })).toBeVisible();
+  }
+
   await page.goto("/overview");
   await expect(page).toHaveURL(/\/dashboard$/);
 });
@@ -209,6 +220,8 @@ test("run page has one Run button and writes latest result", async ({ page }) =>
   const runResult = page.locator("section").filter({ hasText: "Latest Run Result" });
   await runResult.getByText("Raw result").click();
   await expect(runResult.locator("pre.control-code")).toContainText('"target": "192.0.2.203"');
+  await page.goto("/logs");
+  await expect(page.getByText("Run succeeded").first()).toBeVisible();
 
   await page.goto("/configure");
   await page.getByLabel("Target host, IP, or range").fill("192.0.2.204");
@@ -448,6 +461,11 @@ test("firmware page checks visibility, validates, and gates upgrade confirmation
       .filter({ hasText: "Latest Firmware Upgrade Summary" })
       .getByText("Guarded action was not run because required gates were not satisfied.", { exact: true })
   ).toBeVisible();
+
+  await page.goto("/logs");
+  await expect(page.getByText("Firmware check succeeded").first()).toBeVisible();
+  await expect(page.getByText("Firmware validation succeeded").first()).toBeVisible();
+  await expect(page.getByText("Firmware upgrade blocked").first()).toBeVisible();
 });
 
 test("firmware check blocks invalid current config before backend inventory", async ({ page }) => {
