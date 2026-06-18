@@ -1166,6 +1166,8 @@ function FirmwareUpgradeSection({ context }: { context: ControlCenterContext }) 
           ["Progress", firmwareProgressLabel(context)],
           ["Backend status/progress", context.firmwareRuntime.message],
           ["Next safe action", context.firmwareRuntime.nextSafeAction],
+          ["Backend action", context.selectedUpgradeAction?.label ?? (context.selectedPath ? "Integration pending" : "Select firmware path")],
+          ["Backend gates", firmwareBackendGateLabel(context)],
           ["Status source", firmwareRuntimeSourceLabel(context.firmwareRuntime)]
         ]}
       />
@@ -1222,7 +1224,7 @@ function FirmwareUpgradeSection({ context }: { context: ControlCenterContext }) 
       <div className="cc-confirm-box">
         <div>
           <strong>Confirmation Required</strong>
-          <p>Start Firmware Upgrade stays blocked until validation matches the current config and firmware selection.</p>
+          <p>Start Firmware Upgrade stays blocked until validation matches the current config, firmware selection, confirmation phrase, and backend gates.</p>
         </div>
         <label className="cc-check-field">
           <input
@@ -1231,7 +1233,7 @@ function FirmwareUpgradeSection({ context }: { context: ControlCenterContext }) 
             onChange={(event) => context.setUpgradeConfirmationAccepted(event.target.checked)}
             type="checkbox"
           />
-          <span>I confirm this firmware upgrade request is intentional.</span>
+          <span>I confirm this firmware upgrade request is intentional and the listed backend gates are satisfied.</span>
         </label>
         <p>
           Required phrase: <code>{context.expectedUpgradePhrase}</code>
@@ -1831,7 +1833,9 @@ function firmwareStartBlockers(input: {
     blockers.push("Firmware validation failed or is blocked. No override is supported.");
   }
   const expected = upgradeConfirmationPhrase(input.selectedPath, input.selectedUpgradeAction);
-  if (!input.accepted || input.phrase.trim() !== expected) blockers.push(`Type ${expected} and check the confirmation box.`);
+  if (!input.accepted || input.phrase.trim() !== expected) {
+    blockers.push(`Type ${expected} and check the confirmation box acknowledging backend gates.`);
+  }
   return blockers;
 }
 
@@ -2008,6 +2012,13 @@ function firmwareProgressLabel(context: ControlCenterContext): string {
 function firmwareRuntimeSourceLabel(runtime: FirmwareRuntimeStatus): string {
   const checked = runtime.checkedAt ? formatDateTime(runtime.checkedAt) : "Not checked";
   return `${sourceLabel(runtime.sourceType)} / ${statusLabel(runtime.freshness)} / ${checked}`;
+}
+
+function firmwareBackendGateLabel(context: ControlCenterContext): string {
+  if (!context.selectedPath) return "Select firmware path";
+  if (!context.selectedUpgradeAction) return "Backend integration pending";
+  const gates = context.selectedUpgradeAction.required_gates ?? [];
+  return gates.length ? gates.join(", ") : "No backend gates reported";
 }
 
 function validationStatusLabel(context: ControlCenterContext): string {

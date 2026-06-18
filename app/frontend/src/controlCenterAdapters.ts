@@ -698,7 +698,7 @@ export const firmwareAdapter = {
     const result = await api.runWorkflowAction(supportedActionId, {
       control_config: sanitizedConfigSnapshot(request.config),
       confirmation_phrase: request.confirmationPhrase.trim(),
-      confirmed_gates: action.required_gates
+      confirmed_gates: request.confirmationAccepted ? action.required_gates : []
     });
     return normalizeWorkflowRun(result, "firmware-upgrade", firmwareSelectionRaw(
       request.config,
@@ -929,7 +929,7 @@ function upgradeRequestBlockers(request: FirmwareUpgradeRequest): string[] {
   }
   const action = upgradeActionForRequest(request);
   if (!request.confirmationAccepted || request.confirmationPhrase.trim() !== upgradeConfirmationPhrase(request.selectedPath, action)) {
-    blockers.push(`Type ${upgradeConfirmationPhrase(request.selectedPath, action)} and check the confirmation box.`);
+    blockers.push(`Type ${upgradeConfirmationPhrase(request.selectedPath, action)} and check the confirmation box acknowledging backend gates.`);
   }
   return blockers;
 }

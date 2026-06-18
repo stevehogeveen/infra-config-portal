@@ -367,6 +367,7 @@ test("run blocks invalid current config before backend action", async ({ page })
 
 test("firmware page checks visibility, validates, and gates upgrade confirmation", async ({ page }) => {
   const actionRequests: string[] = [];
+  const upgradePayloads: Record<string, unknown>[] = [];
   page.on("request", (request) => {
     const url = new URL(request.url());
     if (url.pathname === "/api/v1/control-center/config" && request.method() === "PUT") {
@@ -383,6 +384,7 @@ test("firmware page checks visibility, validates, and gates upgrade confirmation
       url.pathname === "/api/v1/workflows/actions/netapp.ontap-upgrade-apply/run" &&
       request.method() === "POST"
     ) {
+      upgradePayloads.push(request.postDataJSON() as Record<string, unknown>);
       actionRequests.push("firmware-upgrade");
     }
   });
@@ -413,6 +415,7 @@ test("firmware page checks visibility, validates, and gates upgrade confirmation
 
   await page.getByLabel("Firmware path").selectOption(upgradePathValue);
   await expect(page.getByLabel("Selected firmware, image, or version")).toHaveValue("ontap-9.14.1P1.tgz");
+  await expect(page.getByText("NETAPP_ONTAP_UPGRADE_APPLY=true")).toBeVisible();
   await expect(page.getByRole("button", { name: "Validate Firmware" })).toBeEnabled();
 
   const validateResponse = page.waitForResponse((response) =>
@@ -441,6 +444,11 @@ test("firmware page checks visibility, validates, and gates upgrade confirmation
   await page.getByRole("button", { name: "Start Firmware Upgrade" }).click();
   await expect((await upgradeResponse).ok()).toBeTruthy();
   expect(actionRequests.splice(0)).toEqual(["config:192.0.2.203", "firmware-upgrade"]);
+  expect(upgradePayloads).toHaveLength(1);
+  expect(upgradePayloads[0]).toMatchObject({
+    confirmation_phrase: "UPGRADE ONTAP",
+    confirmed_gates: ["NETAPP_ONTAP_UPGRADE_APPLY=true"]
+  });
   await expect(page.getByText("Firmware upgrade blocked")).toBeVisible();
   await expect(page.getByText("Guarded action was not run because required gates were not satisfied.")).toBeVisible();
 
