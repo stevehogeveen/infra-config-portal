@@ -104,6 +104,29 @@ def read_control_center_state_logs(*, limit: int = MAX_LOG_ENTRIES) -> list[dict
     return [entry for entry in normalized if entry is not None][:limit]
 
 
+def append_control_center_log(payload: dict[str, Any]) -> dict[str, Any]:
+    _reject_secret_values(payload)
+    message = _clean_string(payload.get("message"))
+    if not message:
+        raise ControlCenterStateValidationError("Control Center log message is required.")
+    store = _read_store()
+    timestamp = datetime.now(UTC).isoformat()
+    _append_log(
+        store,
+        detail=_clean_string(payload.get("detail")) or "",
+        message=message,
+        status=_clean_string(payload.get("status")) or "recorded",
+        timestamp=timestamp,
+        type_=_clean_string(payload.get("type")) or "system",
+    )
+    store["operator_runtime_only"] = True
+    _write_store(store)
+    logs = read_control_center_state_logs(limit=1)
+    if not logs:
+        raise ControlCenterStateValidationError("Control Center log could not be recorded.")
+    return logs[0]
+
+
 def _normalize_config(payload: dict[str, Any]) -> dict[str, Any]:
     target = _clean_string(payload.get("target")) or ""
     ip_mode = _enum_value(payload.get("ip_mode"), IP_MODES, "ipv4")

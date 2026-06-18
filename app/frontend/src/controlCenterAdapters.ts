@@ -5,6 +5,7 @@ import type {
   ControlCenterConfigWrite,
   ControlCenterFirmwareStatusRead,
   ControlCenterLogRead,
+  ControlCenterLogWrite,
   ControlCenterSettingsRead,
   ControlCenterSettingsWrite,
   FirmwareFileSelections,
@@ -320,6 +321,20 @@ export const logsAdapter = {
     ].slice(0, 80);
     writeStored(LOG_STORAGE_KEY, next);
     return next;
+  },
+
+  async persist(entry: Omit<ControlLogEntry, "id" | "timestamp">): Promise<void> {
+    const payload: ControlCenterLogWrite = {
+      detail: entry.detail ?? null,
+      message: entry.message,
+      status: entry.status ?? null,
+      type: entry.type
+    };
+    try {
+      await api.appendControlCenterLog(payload);
+    } catch {
+      // Local logs remain the source of truth when the backend is not available.
+    }
   },
 
   fromAuditEvents(auditEvents: AuditEvent[]): ControlLogEntry[] {

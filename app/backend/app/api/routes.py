@@ -41,6 +41,7 @@ from app.schemas import (
     ControlCenterConfigRead,
     ControlCenterConfigWrite,
     ControlCenterLogRead,
+    ControlCenterLogWrite,
     ControlCenterSettingsRead,
     ControlCenterSettingsWrite,
     FirmwareFileSelectionsRead,
@@ -140,6 +141,7 @@ from app.services.control_access import (
 )
 from app.services.control_center_state import (
     ControlCenterStateValidationError,
+    append_control_center_log,
     read_control_center_config,
     read_control_center_settings,
     save_control_center_config,
@@ -617,6 +619,16 @@ def read_control_center_logs_route(
     session: Session = Depends(get_session),
 ) -> list[ControlCenterLogRead]:
     return get_control_center_logs(session)
+
+
+@router.post("/control-center/logs", response_model=ControlCenterLogRead)
+def append_control_center_log_route(
+    payload: ControlCenterLogWrite,
+) -> ControlCenterLogRead:
+    try:
+        return append_control_center_log(payload.model_dump())
+    except ControlCenterStateValidationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.get("/control/actions", response_model=ControlActionCatalogRead)

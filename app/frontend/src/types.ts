@@ -165,6 +165,13 @@ export type ControlCenterLogRead = {
   freshness: string;
 };
 
+export type ControlCenterLogWrite = {
+  type: "system" | "config" | "run" | "firmware" | "settings";
+  message: string;
+  status?: string | null;
+  detail?: string | null;
+};
+
 export type ArtifactRecord = {
   id: string;
   request_id: string;

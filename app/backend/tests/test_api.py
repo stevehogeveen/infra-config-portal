@@ -324,6 +324,54 @@ def test_control_center_state_rejects_secret_shaped_values(client: TestClient) -
     assert settings_response.status_code == 422
 
 
+def test_control_center_log_append_persists_safe_operator_activity(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    store_path = tmp_path / "control-center-state.json"
+    monkeypatch.setenv("CONTROL_CENTER_STATE_STORE", str(store_path))
+
+    response = client.post(
+        "/api/v1/control-center/logs",
+        json={
+            "type": "firmware",
+            "message": "Firmware validation started",
+            "status": "running",
+            "detail": "Target 192.0.2.203; selected image ontap-9.14.1P1.tgz.",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["message"] == "Firmware validation started"
+    assert payload["type"] == "firmware"
+    assert payload["status"] == "running"
+    assert payload["source_type"] == "operator_config"
+    assert payload["freshness"] == "live"
+
+    logs = client.get("/api/v1/control-center/logs")
+    assert logs.status_code == 200
+    assert logs.json()[0]["message"] == "Firmware validation started"
+
+    stored = json.loads(store_path.read_text(encoding="utf-8"))
+    assert stored["operator_runtime_only"] is True
+    assert "password" not in json.dumps(stored).lower()
+
+
+def test_control_center_log_append_rejects_secret_shaped_values(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/control-center/logs",
+        json={
+            "type": "run",
+            "message": "Run failed",
+            "detail": "token=not-allowed",
+        },
+    )
+
+    assert response.status_code == 422
+
+
 def test_control_center_runtime_endpoints_summarize_stored_safe_runs(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,

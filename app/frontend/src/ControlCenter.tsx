@@ -259,6 +259,7 @@ export default function ControlCenter() {
 
   function addLog(entry: Omit<ControlLogEntry, "id" | "timestamp">) {
     setLogs((current) => logsAdapter.add(current, entry));
+    void logsAdapter.persist(entry);
   }
 
   function updateConfig(value: ControlConfig | ((current: ControlConfig) => ControlConfig)) {

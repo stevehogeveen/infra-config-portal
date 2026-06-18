@@ -2092,6 +2092,26 @@ class ControlCenterLogRead(BaseModel):
     freshness: str
 
 
+class ControlCenterLogWrite(BaseModel):
+    type: Literal["system", "config", "run", "firmware", "settings"] = "system"
+    message: str = Field(min_length=1, max_length=180)
+    status: str | None = Field(default=None, max_length=80)
+    detail: str | None = Field(default=None, max_length=600)
+
+    @field_validator("message", "status", "detail", mode="before")
+    @classmethod
+    def strip_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return str(value).strip()
+
+    @field_validator("*", mode="after")
+    @classmethod
+    def reject_secret_values(cls, value: Any) -> Any:
+        _reject_secret_values(value)
+        return value
+
+
 class WorkflowActionRead(BaseModel):
     action_id: str
     label: str
