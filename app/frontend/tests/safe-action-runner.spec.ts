@@ -187,6 +187,28 @@ test("historical backend firmware upgrade does not replace current results", asy
   ).toHaveCount(0);
 });
 
+test("legacy backend firmware config snapshots still match current config", async ({ page }) => {
+  await page.route("**/api/v1/control-center/firmware-status", (route) =>
+    json(route, firmwareStatusWithUpgradeTarget("192.0.2.203", "missing"))
+  );
+
+  await page.goto("/configure");
+  await page.getByLabel("Target host, IP, or range").fill("192.0.2.203");
+  await page.getByRole("button", { name: "Save / apply config" }).click();
+  await expect(page.getByText("Configuration saved")).toBeVisible();
+
+  await page.goto("/results");
+  await expect(page.getByText("Latest Firmware Upgrade Summary")).toBeVisible();
+  const firmwareUpgradeResult = page.locator("section").filter({ hasText: "Latest Firmware Upgrade Summary" });
+  await expect(
+    firmwareUpgradeResult
+      .locator(".control-result-summary")
+      .getByText("Guarded action was not run because required gates were not satisfied.", { exact: true })
+  ).toBeVisible();
+  await firmwareUpgradeResult.getByText("Raw result").click();
+  await expect(firmwareUpgradeResult.locator("pre.control-code")).toContainText('"target": "192.0.2.203"');
+});
+
 test("configure rejects secret-shaped target values before local fallback can persist them", async ({ page }) => {
   await page.goto("/configure");
 
@@ -1162,13 +1184,16 @@ function workflowActionRun(actionId: string, label: string, status: "blocked" | 
   };
 }
 
-function firmwareStatusWithUpgradeTarget(target: string) {
+function firmwareStatusWithUpgradeTarget(
+  target: string,
+  snmpCredentialStatus: "missing" | "configured" = "configured"
+) {
   const latestUpgrade = {
     ...workflowActionRun("netapp.ontap-upgrade-apply", "Upgrade ONTAP", "blocked"),
     control_center_config: {
       ip_mode: "ipv4",
       retry_count: 1,
-      snmp_credentials: "configured",
+      snmp_credential_status: snmpCredentialStatus,
       snmp_version: "v2",
       target,
       timeout_seconds: 8

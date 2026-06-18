@@ -451,11 +451,13 @@ def _now() -> str:
 def _control_center_config_snapshot(value: Any) -> dict[str, Any] | None:
     if not isinstance(value, dict):
         return None
-    snapshot = {
-        key: value[key]
-        for key in CONTROL_CENTER_CONFIG_KEYS
-        if key in value and value[key] is not None
-    }
+    snapshot = {}
+    for key in CONTROL_CENTER_CONFIG_KEYS:
+        if key not in value:
+            continue
+        if value[key] is None and key != "snmp_credential_version":
+            continue
+        snapshot[key] = value[key]
     if not snapshot:
         return None
     return redact_sensitive(snapshot, _redaction_values())

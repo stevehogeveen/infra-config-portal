@@ -1058,9 +1058,25 @@ function sanitizedConfigSnapshot(config: ControlConfig): Record<string, unknown>
 }
 
 function configSnapshotsMatch(candidate: unknown, expected: Record<string, unknown>): boolean {
-  if (!candidate || typeof candidate !== "object") return false;
-  const snapshot = candidate as Record<string, unknown>;
-  return Object.entries(expected).every(([key, value]) => snapshot[key] === value);
+  const actual = comparableConfigSnapshot(candidate);
+  if (!actual) return false;
+  const normalizedExpected = comparableConfigSnapshot(expected);
+  if (!normalizedExpected) return false;
+  return Object.entries(normalizedExpected).every(([key, value]) => actual[key] === value);
+}
+
+function comparableConfigSnapshot(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object") return null;
+  const snapshot = value as Record<string, unknown>;
+  return {
+    ip_mode: snapshot.ip_mode,
+    retry_count: snapshot.retry_count,
+    snmp_credentials: snapshot.snmp_credentials ?? snapshot.snmp_credential_status,
+    snmp_credential_version: snapshot.snmp_credential_version ?? null,
+    snmp_version: snapshot.snmp_version,
+    target: snapshot.target,
+    timeout_seconds: snapshot.timeout_seconds
+  };
 }
 
 function mapStatus(status: string, blockers: string[]): OperationStatus {

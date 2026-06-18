@@ -1970,7 +1970,20 @@ function operationResultUsesConfig(result: OperationResult, config: ControlConfi
   const snapshot = operationConfigSnapshot(result);
   if (!snapshot) return false;
   const expected = configSnapshot(config);
-  return Object.entries(expected).every(([key, value]) => (snapshot as Record<string, unknown>)[key] === value);
+  const actual = comparableConfigSnapshot(snapshot);
+  return Object.entries(expected).every(([key, value]) => actual[key] === value);
+}
+
+function comparableConfigSnapshot(snapshot: Record<string, unknown>): Record<string, unknown> {
+  return {
+    ip_mode: snapshot.ip_mode,
+    retry_count: snapshot.retry_count,
+    snmp_credentials: snapshot.snmp_credentials ?? snapshot.snmp_credential_status,
+    snmp_credential_version: snapshot.snmp_credential_version ?? null,
+    snmp_version: snapshot.snmp_version,
+    target: snapshot.target,
+    timeout_seconds: snapshot.timeout_seconds
+  };
 }
 
 function shouldAdoptBackendConfig(current: ControlConfig, backend: ControlConfig): boolean {

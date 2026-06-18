@@ -385,6 +385,90 @@ def test_control_center_runtime_endpoints_summarize_stored_safe_runs(
     )
 
 
+def test_control_center_firmware_status_uses_latest_activity_not_older_upgrade(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    from app.services import workflow_action_run_store
+
+    monkeypatch.setattr(
+        workflow_action_run_store,
+        "WORKFLOW_ACTION_RUN_TRACE_DIR",
+        tmp_path / "workflow-action-runs",
+    )
+    workflow_action_run_store.save_workflow_action_run_trace(
+        {
+            "run_id": "workflow-action:netapp.ontap-upgrade-apply:older",
+            "action_id": "netapp.ontap-upgrade-apply",
+            "action_label": "Upgrade ONTAP",
+            "stage_id": "firmware",
+            "stage_label": "Firmware",
+            "mode": "upgrade",
+            "started_at": "2026-06-17T18:00:00Z",
+            "finished_at": "2026-06-17T18:00:01Z",
+            "checked_at": "2026-06-17T18:00:01Z",
+            "status": "blocked",
+            "source_type": "live_probe",
+            "freshness": "live",
+            "not_mock": True,
+            "command": "make provider-lab-netapp-ontap-upgrade-apply",
+            "executed": False,
+            "return_code": None,
+            "stdout_summary": "",
+            "stderr_summary": "",
+            "report_artifacts": [],
+            "trace_artifact": None,
+            "summary": "Guarded action was not run because required gates were not satisfied.",
+            "blockers": ["NETAPP_ONTAP_UPGRADE_APPLY=true is required."],
+            "warnings": [],
+            "next_action": "Review the blocked action.",
+            "control_center_config": {"target": "192.0.2.203"},
+        }
+    )
+    workflow_action_run_store.save_workflow_action_run_trace(
+        {
+            "run_id": "workflow-action:firmware.compliance-check:newer",
+            "action_id": "firmware.compliance-check",
+            "action_label": "Firmware Compliance",
+            "stage_id": "firmware",
+            "stage_label": "Firmware",
+            "mode": "read_only",
+            "started_at": "2026-06-17T18:05:00Z",
+            "finished_at": "2026-06-17T18:05:01Z",
+            "checked_at": "2026-06-17T18:05:01Z",
+            "status": "completed",
+            "source_type": "live_probe",
+            "freshness": "live",
+            "not_mock": True,
+            "command": "make provider-lab-firmware-compliance",
+            "executed": True,
+            "return_code": 0,
+            "stdout_summary": "firmware compliance refreshed",
+            "stderr_summary": "",
+            "report_artifacts": [],
+            "trace_artifact": None,
+            "summary": "Firmware validation refreshed.",
+            "blockers": [],
+            "warnings": [],
+            "next_action": "Review compliance evidence.",
+            "control_center_config": {"target": "192.0.2.203"},
+        }
+    )
+
+    response = client.get("/api/v1/control-center/firmware-status")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "success"
+    assert payload["message"] == "Firmware validation refreshed."
+    assert payload["blockers"] == []
+    assert payload["next_safe_action"] == "Review compliance evidence."
+    assert payload["history"][0]["action_id"] == "firmware.compliance-check"
+    assert payload["latest_upgrade"]["action_id"] == "netapp.ontap-upgrade-apply"
+    assert payload["latest_upgrade"]["status"] == "blocked"
+
+
 def test_firmware_file_selections_persist_in_ignored_local_store(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,

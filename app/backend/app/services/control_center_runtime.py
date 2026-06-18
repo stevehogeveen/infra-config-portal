@@ -44,8 +44,7 @@ def get_control_center_firmware_status() -> dict[str, Any]:
         (trace for trace in traces if _firmware_operation_type(trace) == "firmware-upgrade"),
         None,
     )
-    active = latest_upgrade or latest
-    message_source = latest_upgrade or latest
+    active = latest
     return {
         "action_ids": firmware_action_ids,
         "checked_at": (
@@ -57,8 +56,8 @@ def get_control_center_firmware_status() -> dict[str, Any]:
         "history": traces,
         "latest_upgrade": latest_upgrade,
         "message": str(
-            message_source.get("summary")
-            or message_source.get("next_action")
+            active.get("summary")
+            or active.get("next_action")
             or "Firmware action history is available."
         ),
         "source_type": "historical_artifact",
