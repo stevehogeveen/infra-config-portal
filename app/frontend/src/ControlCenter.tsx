@@ -1,4 +1,5 @@
 import {
+  Database,
   Activity,
   AlertTriangle,
   CheckCircle2,
@@ -8,12 +9,14 @@ import {
   Gauge,
   History,
   Play,
+  Plus,
   RefreshCw,
   Save,
   Settings as SettingsIcon,
   ShieldCheck,
   SlidersHorizontal,
   TerminalSquare,
+  Trash2,
   UploadCloud,
   Wrench,
   XCircle
@@ -21,6 +24,7 @@ import {
 import { ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { Link, Navigate, NavLink, Route, Routes, useLocation } from "react-router-dom";
 
+import { api } from "./api";
 import {
   backendAdapter,
   configAdapter,
@@ -50,7 +54,20 @@ import type {
   OperationStatus,
   UpgradeStatus
 } from "./controlCenterAdapters";
-import type { AuditEvent, FirmwareSummary, FirmwareUpgradePath, ProviderStatus, WorkflowAction } from "./types";
+import type {
+  AuditEvent,
+  FirmwareSummary,
+  FirmwareUpgradePath,
+  LabAddressPlan,
+  LabGlobalSettings,
+  LabProfile,
+  LabProfileDevices,
+  LabProfileFeatures,
+  LabProfileList,
+  LabProfileWrite,
+  ProviderStatus,
+  WorkflowAction
+} from "./types";
 
 const navItems = [
   { icon: <Gauge size={18} />, label: "Dashboard", to: "/dashboard" },
@@ -62,11 +79,171 @@ const navItems = [
   { icon: <SettingsIcon size={18} />, label: "Settings", to: "/settings" }
 ];
 
+type ProfileDeviceKey = "cisco" | "server" | "storage" | "esxi" | "netapp" | "vcenter";
+type ConfigureTabKey = "lab" | ProfileDeviceKey;
+type FirmwareTabKey = "overview" | ProfileDeviceKey;
+type ProfileEditorMode = "existing" | "new";
+
+type ProfileDeviceDefinition = {
+  addressFields: Array<keyof LabAddressPlan>;
+  icon: ReactNode;
+  key: ProfileDeviceKey;
+  label: string;
+  summary: string;
+};
+
+type ProfileDeviceSelection = Record<ProfileDeviceKey, boolean>;
+
+type ProfileEditorState = {
+  addressPlan: LabAddressPlan;
+  description: string;
+  devices: LabProfileDevices;
+  deviceSelection: ProfileDeviceSelection;
+  dnsText: string;
+  features: LabProfileFeatures;
+  gateway: string;
+  id: string | null;
+  mode: ProfileEditorMode;
+  mtu: string;
+  name: string;
+  ntpText: string;
+  profileTopology: "high_address_lab" | "compact_edge_lab" | "custom";
+  subnet: string;
+  vlanId: string;
+};
+
+type StorageDriveAllocation = {
+  controller_path: string;
+  drive_bays: string;
+  drive_count: string;
+  id: string;
+  notes: string;
+  raid_level: string;
+  role: string;
+  volume_name: string;
+};
+
+type IloControllerInventory = {
+  adapterType: string | null;
+  firmwareVersion: string | null;
+  health: string | null;
+  id: string;
+  location: string | null;
+  model: string | null;
+  name: string;
+  protocol: string | null;
+  state: string | null;
+};
+
+type IloFirmwareInventory = {
+  biosVersion: string | null;
+  controllers: IloControllerInventory[];
+  iloFirmware: string | null;
+  smartArrayFirmware: string | null;
+  status: string;
+};
+
+const profileDeviceDefinitions: ProfileDeviceDefinition[] = [
+  {
+    addressFields: ["cisco_management", "ansible_control_host"],
+    icon: <TerminalSquare size={16} />,
+    key: "cisco",
+    label: "Cisco",
+    summary: "Switch management, console bootstrap, VLAN, and SNMP planning."
+  },
+  {
+    addressFields: ["ilo", "ilo_initial", "server_embedded_nic"],
+    icon: <Cpu size={16} />,
+    key: "server",
+    label: "Server / iLO",
+    summary: "Server identity, embedded NIC, iLO management, first-boot access, and firmware baseline."
+  },
+  {
+    addressFields: [],
+    icon: <Database size={16} />,
+    key: "storage",
+    label: "Internal Storage",
+    summary: "Local controller, RAID volumes, drive groups, spare policy, and apply/reboot planning."
+  },
+  {
+    addressFields: ["esxi_management"],
+    icon: <ShieldCheck size={16} />,
+    key: "esxi",
+    label: "ESXi",
+    summary: "ESXi management, datastore, vSwitch, DNS, and NTP defaults."
+  },
+  {
+    addressFields: [
+      "netapp_controller_a_sp",
+      "netapp_controller_b_sp",
+      "netapp_cluster_mgmt",
+      "netapp_node_a_mgmt",
+      "netapp_node_b_mgmt",
+      "netapp_svm_mgmt",
+      "netapp_nfs_lifs",
+      "netapp_iscsi_lifs"
+    ],
+    icon: <Database size={16} />,
+    key: "netapp",
+    label: "NetApp",
+    summary: "Cluster, node, SVM, SP, NFS, iSCSI, MTU, and storage defaults."
+  },
+  {
+    addressFields: [],
+    icon: <Gauge size={16} />,
+    key: "vcenter",
+    label: "vCenter",
+    summary: "vCenter, datacenter, cluster, datastore, and ESXi attachment defaults."
+  }
+];
+
+const defaultDeviceSelection: ProfileDeviceSelection = {
+  cisco: true,
+  esxi: true,
+  netapp: true,
+  server: true,
+  storage: true,
+  vcenter: false
+};
+
+const emptyAddressPlan: LabAddressPlan = {
+  ansible_control_host: null,
+  cisco_management: null,
+  esxi_management: null,
+  ilo: null,
+  ilo_initial: null,
+  netapp_cluster_mgmt: null,
+  netapp_controller_a_sp: null,
+  netapp_controller_b_sp: null,
+  netapp_iscsi_lifs: [],
+  netapp_nfs_lifs: [],
+  netapp_node_a_mgmt: null,
+  netapp_node_b_mgmt: null,
+  netapp_svm_mgmt: null,
+  server_embedded_nic: null,
+  subnet: null
+};
+
+const defaultProfileFeatures: LabProfileFeatures = {
+  block_legacy_protocols: true,
+  build_verification_enabled: true,
+  disable_ipv6: true,
+  enable_dns: true,
+  enable_ntp: true,
+  enable_snmp: false,
+  firmware_gate_enabled: true,
+  netapp_disabled_reason: null,
+  netapp_enabled: true,
+  storage_protocol: "nfs",
+  vcenter_disabled_reason: "vCenter is disabled by the active lab setup.",
+  vcenter_enabled: false
+};
+
 type ControlCenterContext = {
   actions: WorkflowAction[];
   auditEvents: AuditEvent[];
   backendLogs: ControlLogEntry[];
-  checkFirmware: () => Promise<void>;
+  checkFirmware: (targetOverride?: string, usernameReference?: string) => Promise<void>;
   config: ControlConfig;
   configErrors: string[];
   configMessage: string;
@@ -84,9 +261,23 @@ type ControlCenterContext = {
   latestFirmwareUpgrade: OperationResult | null;
   latestFirmwareValidation: OperationResult | null;
   latestRun: OperationResult | null;
+  labProfiles: LabProfileList | null;
   loadError: string;
   loading: boolean;
   logs: ControlLogEntry[];
+  activateLabProfile: (profileId: string) => Promise<void>;
+  deleteLabProfile: (profileId: string) => Promise<void>;
+  editLabProfile: (profileId: string) => void;
+  profileDeleting: boolean;
+  profileActivating: boolean;
+  profileEditor: ProfileEditorState;
+  profileErrors: string[];
+  profileMessage: string;
+  profileSaving: boolean;
+  recalculateProfileDefaults: () => void;
+  saveLabProfile: () => Promise<boolean>;
+  setProfileEditor: (value: ProfileEditorState | ((current: ProfileEditorState) => ProfileEditorState)) => void;
+  startNewLabProfile: () => void;
   providers: ProviderStatus[];
   refreshControlCenter: () => Promise<void>;
   runError: string;
@@ -108,14 +299,22 @@ type ControlCenterContext = {
   settingsErrors: string[];
   settingsMessage: string;
   settingsSaving: boolean;
-  startFirmwareUpgrade: () => Promise<void>;
+  startFirmwareUpgrade: (targetOverride?: string) => Promise<void>;
   targetSummary: string;
   upgradeConfirmationAccepted: boolean;
   upgradeConfirmationPhrase: string;
   upgradeStatus: UpgradeStatus;
-  validateFirmware: () => Promise<void>;
+  validateFirmware: (targetOverride?: string) => Promise<void>;
   setUpgradeConfirmationAccepted: (value: boolean) => void;
   setUpgradeConfirmationPhrase: (value: string) => void;
+};
+
+type ActiveOperation = {
+  detail: string;
+  key: string;
+  phases: string[];
+  progressCeiling?: number;
+  title: string;
 };
 
 export default function ControlCenter() {
@@ -124,7 +323,7 @@ export default function ControlCenter() {
   const [actions, setActions] = useState<WorkflowAction[]>([]);
   const [auditEvents, setAuditEvents] = useState<AuditEvent[]>([]);
   const [backendLogs, setBackendLogs] = useState<ControlLogEntry[]>([]);
-  const [firmware, setFirmware] = useState<FirmwareState>({ fileSelections: null, summaries: [] });
+  const [firmware, setFirmware] = useState<FirmwareState>({ fileSelections: null, latestInventory: null, summaries: [] });
   const [firmwareRuntime, setFirmwareRuntime] = useState<FirmwareRuntimeStatus>(defaultFirmwareRuntimeStatus);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
@@ -134,6 +333,13 @@ export default function ControlCenter() {
   const [configErrors, setConfigErrors] = useState<string[]>([]);
   const [configMessage, setConfigMessage] = useState("");
   const [configSaving, setConfigSaving] = useState(false);
+  const [labProfiles, setLabProfiles] = useState<LabProfileList | null>(null);
+  const [profileEditor, setProfileEditorState] = useState<ProfileEditorState>(() => newProfileEditor(config));
+  const [profileErrors, setProfileErrors] = useState<string[]>([]);
+  const [profileMessage, setProfileMessage] = useState("");
+  const [profileActivating, setProfileActivating] = useState(false);
+  const [profileSaving, setProfileSaving] = useState(false);
+  const [profileDeleting, setProfileDeleting] = useState(false);
 
   const [settings, setSettings] = useState<ControlSettings>(() => settingsAdapter.load());
   const [settingsErrors, setSettingsErrors] = useState<string[]>([]);
@@ -166,6 +372,9 @@ export default function ControlCenter() {
   const firmwareSelectionEditedRef = useRef(false);
   const configSaveInFlightRef = useRef(false);
   const settingsSaveInFlightRef = useRef(false);
+  const profileSaveInFlightRef = useRef(false);
+  const profileDeleteInFlightRef = useRef(false);
+  const profileEditedRef = useRef(false);
   const runInFlightRef = useRef(false);
   const firmwareCheckInFlightRef = useRef(false);
   const firmwareGateInFlightRef = useRef(false);
@@ -234,7 +443,10 @@ export default function ControlCenter() {
       setActions(snapshot.actions);
       setAuditEvents(snapshot.auditEvents);
       setBackendLogs(snapshot.backendLogs);
-      setFirmware(snapshot.firmware);
+      setFirmware((current) => ({
+        ...snapshot.firmware,
+        latestInventory: snapshot.firmware.latestInventory ?? current.latestInventory
+      }));
       setFirmwareRuntime(snapshot.firmwareRuntime);
       if (snapshot.controlConfig && !configEditedRef.current) {
         const backendConfig = configWithSettingsDefaults(
@@ -249,6 +461,16 @@ export default function ControlCenter() {
         setSettings((current) =>
           shouldAdoptBackendSettings(current, snapshot.controlSettings!) ? snapshot.controlSettings! : current
         );
+      }
+      try {
+        const profileList = await api.labProfiles();
+        setLabProfiles(profileList);
+        setProfileErrors([]);
+        if (!profileEditedRef.current) {
+          setProfileEditorState(profileEditorFromProfile(profileList.active_profile, config));
+        }
+      } catch (profileError) {
+        setProfileErrors([`Lab profile API unavailable: ${errorMessage(profileError)}`]);
       }
     } catch (error) {
       setLoadError(errorMessage(error));
@@ -280,6 +502,137 @@ export default function ControlCenter() {
     settingsEditedRef.current = true;
     setSettings(value);
     setSettingsMessage("");
+  }
+
+  function updateProfileEditor(value: ProfileEditorState | ((current: ProfileEditorState) => ProfileEditorState)) {
+    profileEditedRef.current = true;
+    setProfileEditorState(value);
+    setProfileMessage("");
+    setProfileErrors([]);
+  }
+
+  function startNewLabProfile() {
+    profileEditedRef.current = true;
+    setProfileEditorState(newProfileEditor(config, labProfiles?.active_profile));
+    setProfileMessage("New lab profile draft. Save it before running profile-based work.");
+    setProfileErrors([]);
+  }
+
+  function editLabProfile(profileId: string) {
+    const selected = labProfiles?.profiles.find((profile) => profile.id === profileId);
+    if (!selected) return;
+    profileEditedRef.current = false;
+    setProfileEditorState(profileEditorFromProfile(selected, config));
+    setProfileMessage(`Editing ${selected.name}.`);
+    setProfileErrors([]);
+  }
+
+  async function activateLabProfile(profileId: string) {
+    if (profileSaveInFlightRef.current || profileDeleteInFlightRef.current || profileActivating) return;
+    setProfileActivating(true);
+    try {
+      setProfileErrors([]);
+      const profileList = await api.activateLabProfile(profileId);
+      setLabProfiles(profileList);
+      profileEditedRef.current = false;
+      setProfileEditorState(profileEditorFromProfile(profileList.active_profile, config));
+      setProfileMessage(`Active profile changed to ${profileList.active_profile.name}.`);
+      addLog({
+        detail: profileList.active_profile.subnet_cidr ?? "No subnet recorded.",
+        message: "Lab profile selected",
+        status: "selected",
+        type: "config"
+      });
+    } catch (error) {
+      setProfileErrors([errorMessage(error)]);
+    } finally {
+      setProfileActivating(false);
+    }
+  }
+
+  async function saveLabProfile(): Promise<boolean> {
+    if (profileSaveInFlightRef.current) return false;
+    const errors = validateProfileEditor(profileEditor);
+    if (errors.length) {
+      setProfileErrors(errors);
+      setProfileMessage("");
+      return false;
+    }
+
+    profileSaveInFlightRef.current = true;
+    setProfileSaving(true);
+    try {
+      setProfileErrors([]);
+      const payload = profilePayloadFromEditor(profileEditor);
+      const saved =
+        profileEditor.mode === "existing" && profileEditor.id
+          ? await api.updateLabProfile(profileEditor.id, payload)
+          : await api.createLabProfile(payload);
+      const profileList = await api.activateLabProfile(saved.id);
+      setLabProfiles(profileList);
+      profileEditedRef.current = false;
+      setProfileEditorState(profileEditorFromProfile(profileList.active_profile, config));
+      setProfileMessage(`Lab profile ${saved.name} saved.`);
+      addLog({
+        detail: `${saved.name}; ${saved.subnet_cidr ?? payload.subnet_cidr ?? "No subnet"}; ${includedDeviceLabels(profileEditor.deviceSelection)}.`,
+        message: "Lab profile saved",
+        status: "saved",
+        type: "config"
+      });
+      return true;
+    } catch (error) {
+      setProfileErrors([errorMessage(error)]);
+      setProfileMessage("");
+      return false;
+    } finally {
+      profileSaveInFlightRef.current = false;
+      setProfileSaving(false);
+    }
+  }
+
+  async function deleteLabProfile(profileId: string) {
+    if (profileDeleteInFlightRef.current) return;
+    profileDeleteInFlightRef.current = true;
+    setProfileDeleting(true);
+    try {
+      setProfileErrors([]);
+      const profileList = await api.deleteLabProfile(profileId);
+      setLabProfiles(profileList);
+      profileEditedRef.current = false;
+      setProfileEditorState(profileEditorFromProfile(profileList.active_profile, config));
+      setProfileMessage("Saved lab profile deleted.");
+      addLog({ detail: profileId, message: "Lab profile deleted", status: "deleted", type: "config" });
+    } catch (error) {
+      setProfileErrors([errorMessage(error)]);
+    } finally {
+      profileDeleteInFlightRef.current = false;
+      setProfileDeleting(false);
+    }
+  }
+
+  function recalculateProfileDefaults() {
+    updateProfileEditor((current) => {
+      const defaults = profileDefaultsForSubnet(current.subnet);
+      return {
+        ...current,
+        addressPlan: {
+          ...current.addressPlan,
+          ...defaults.addressPlan
+        },
+        deviceSelection: {
+          ...current.deviceSelection,
+          netapp: current.deviceSelection.netapp && defaults.netappSupported
+        },
+        features: {
+          ...current.features,
+          netapp_disabled_reason: defaults.netappSupported ? null : "NetApp high-address defaults require a /24 or larger lab subnet.",
+          netapp_enabled: current.deviceSelection.netapp && defaults.netappSupported,
+          storage_protocol: current.deviceSelection.netapp && defaults.netappSupported ? current.features.storage_protocol || "nfs" : "none"
+        },
+        gateway: defaults.gateway,
+        profileTopology: defaults.profileTopology
+      };
+    });
   }
 
   async function saveConfig(): Promise<boolean> {
@@ -354,15 +707,16 @@ export default function ControlCenter() {
     }
   }
 
-  async function syncConfigForAction(): Promise<{
+  async function syncConfigForAction(configOverride?: ControlConfig): Promise<{
     config: ControlConfig;
     configChanged: boolean;
     errors: string[];
     savedVia: "backend" | "local_fallback";
   }> {
+    const actionConfig = configOverride ?? config;
     if (configSaveInFlightRef.current) {
       return {
-        config,
+        config: actionConfig,
         configChanged: false,
         errors: ["Configuration save is already in progress."],
         savedVia: "local_fallback"
@@ -370,9 +724,12 @@ export default function ControlCenter() {
     }
     configSaveInFlightRef.current = true;
     setConfigSaving(true);
-    const hadPendingConfig = configEditedRef.current || credentialDraftHasValues(credentialDraft);
+    const hadPendingConfig =
+      configEditedRef.current ||
+      credentialDraftHasValues(credentialDraft) ||
+      (configOverride ? !sameControlConfig(configOverride, config) : false);
     try {
-      const result = await configAdapter.save(config, credentialDraft);
+      const result = await configAdapter.save(actionConfig, credentialDraft);
       setConfig(result.config);
       setConfigErrors(result.errors);
       configEditedRef.current = result.errors.length > 0 || result.savedVia !== "backend";
@@ -450,12 +807,13 @@ export default function ControlCenter() {
     }
   }
 
-  async function checkFirmware() {
+  async function checkFirmware(targetOverride?: string, usernameReference?: string) {
     if (firmwareCheckInFlightRef.current || firmwareCheckStatus === "running") return;
     firmwareCheckInFlightRef.current = true;
     try {
       setFirmwareCheckStatus("running");
-      const syncResult = await syncConfigForAction();
+      const actionConfig = configWithTargetOverride(config, targetOverride);
+      const syncResult = await syncConfigForAction(actionConfig);
       const currentConfig = syncResult.config;
       if (syncResult.configChanged) clearStoredResults();
       if (syncResult.errors.length > 0 || syncResult.savedVia !== "backend") {
@@ -486,7 +844,7 @@ export default function ControlCenter() {
       });
 
       try {
-        const response = await firmwareAdapter.check(currentConfig);
+        const response = await firmwareAdapter.check(currentConfig, { usernameReference });
         setFirmware(response.firmware);
         setLatestFirmwareCheck(response.result);
         resultsAdapter.saveFirmwareCheck(response.result);
@@ -517,17 +875,18 @@ export default function ControlCenter() {
     }
   }
 
-  async function validateFirmware() {
+  async function validateFirmware(targetOverride?: string) {
     if (firmwareGateInFlightRef.current || upgradeStatus === "validating" || upgradeStatus === "upgrading") return;
     firmwareGateInFlightRef.current = true;
+    const actionConfig = configWithTargetOverride(config, targetOverride);
     try {
       clearFirmwareGateResults();
-      const preflightBlockers = firmwareValidateBlockers({ config, selectedFirmware, selectedPath });
+      const preflightBlockers = firmwareValidateBlockers({ config: actionConfig, selectedFirmware, selectedPath });
       if (preflightBlockers.length > 0) {
         const result = createLocalOperationResult({
           blockers: preflightBlockers,
           message: "Firmware validation blocked until the current config and firmware selection are complete.",
-          raw: firmwareSelectionSnapshot(config, selectedPath, selectedFirmware),
+          raw: firmwareSelectionSnapshot(actionConfig, selectedPath, selectedFirmware),
           status: "blocked",
           title: "Firmware validation blocked",
           type: "firmware-validation"
@@ -540,7 +899,7 @@ export default function ControlCenter() {
       }
 
       setUpgradeStatus("validating");
-      const syncResult = await syncConfigForAction();
+      const syncResult = await syncConfigForAction(actionConfig);
       const currentConfig = syncResult.config;
       if (syncResult.configChanged) clearStoredResults();
       if (syncResult.errors.length > 0 || syncResult.savedVia !== "backend") {
@@ -602,13 +961,14 @@ export default function ControlCenter() {
     }
   }
 
-  async function startFirmwareUpgrade() {
+  async function startFirmwareUpgrade(targetOverride?: string) {
     if (firmwareGateInFlightRef.current || upgradeStatus === "upgrading" || upgradeStatus === "validating") return;
     firmwareGateInFlightRef.current = true;
+    const actionConfig = configWithTargetOverride(config, targetOverride);
     try {
       const preflightBlockers = firmwareStartBlockers({
         accepted: upgradeConfirmationAccepted,
-        config,
+        config: actionConfig,
         phrase: upgradeConfirmationPhraseState,
         selectedFirmware,
         selectedPath,
@@ -619,7 +979,7 @@ export default function ControlCenter() {
         const result = createLocalOperationResult({
           blockers: preflightBlockers,
           message: "Firmware upgrade was not started.",
-          raw: firmwareSelectionSnapshot(config, selectedPath, selectedFirmware),
+          raw: firmwareSelectionSnapshot(actionConfig, selectedPath, selectedFirmware),
           status: "blocked",
           title: "Firmware upgrade blocked",
           type: "firmware-upgrade"
@@ -631,7 +991,7 @@ export default function ControlCenter() {
         return;
       }
 
-      const syncResult = await syncConfigForAction();
+      const syncResult = await syncConfigForAction(actionConfig);
       const currentConfig = syncResult.config;
       if (syncResult.configChanged) clearStoredResults();
       const validationForUpgrade = syncResult.configChanged ? null : latestFirmwareValidation;
@@ -822,9 +1182,23 @@ export default function ControlCenter() {
     latestFirmwareUpgrade,
     latestFirmwareValidation,
     latestRun,
+    labProfiles,
     loadError,
     loading,
     logs,
+    activateLabProfile,
+    deleteLabProfile,
+    editLabProfile,
+    profileDeleting,
+    profileActivating,
+    profileEditor,
+    profileErrors,
+    profileMessage,
+    profileSaving,
+    recalculateProfileDefaults,
+    saveLabProfile,
+    setProfileEditor: updateProfileEditor,
+    startNewLabProfile,
     providers,
     refreshControlCenter,
     runError,
@@ -883,6 +1257,7 @@ export default function ControlCenter() {
 
       <main className="cc-main">
         <TopBar context={context} />
+        <ActiveOperationBar context={context} />
         {loadError && <Banner tone="bad">{loadError}</Banner>}
         <Routes>
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
@@ -927,6 +1302,52 @@ function TopBar({ context }: { context: ControlCenterContext }) {
   );
 }
 
+function ActiveOperationBar({ context }: { context: ControlCenterContext }) {
+  const operation = activeOperationForContext(context);
+  const [startedAt, setStartedAt] = useState(() => Date.now());
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    if (!operation) return;
+    const timestamp = Date.now();
+    setStartedAt(timestamp);
+    setNow(timestamp);
+    const interval = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(interval);
+  }, [operation?.key]);
+
+  if (!operation) return null;
+
+  const elapsedMs = now - startedAt;
+  const phaseIndex = Math.min(operation.phases.length - 1, Math.floor(elapsedMs / 12000));
+  const phase = operation.phases[phaseIndex] ?? operation.phases[operation.phases.length - 1] ?? "Monitoring";
+  const progressCeiling = operation.progressCeiling ?? 88;
+  const progress = Math.min(progressCeiling, 8 + Math.floor(elapsedMs / 1000) * 3);
+
+  return (
+    <section className="cc-active-operation" aria-live="polite" aria-label="Active operation">
+      <div className="cc-active-operation-copy">
+        <strong>{operation.title}</strong>
+        <span>{operation.detail}</span>
+      </div>
+      <div
+        className="cc-active-operation-meter"
+        role="progressbar"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={progress}
+        aria-valuetext={`${phase}, ${progress}%`}
+      >
+        <span style={{ width: `${progress}%` }} />
+      </div>
+      <div className="cc-active-operation-phase">
+        <span>{phase}</span>
+        <time>{elapsedLabel(elapsedMs)}</time>
+      </div>
+    </section>
+  );
+}
+
 function DashboardPage({ context }: { context: ControlCenterContext }) {
   const firmwareUpgrade = firmwareUpgradeSummaryResult(context);
   return (
@@ -956,9 +1377,14 @@ function DashboardPage({ context }: { context: ControlCenterContext }) {
       </section>
 
       <section className="cc-panel">
+        <SectionTitle icon={<SlidersHorizontal size={18} />} title="Profile Devices" />
+        <ProfileDeviceSummary context={context} />
+      </section>
+
+      <section className="cc-panel">
         <SectionTitle icon={<Activity size={18} />} title="Primary Workflow" />
         <ol className="cc-workflow-rail" aria-label="Primary workflow">
-          <WorkflowStep label="Configure" state={context.config.target ? "Ready" : "Missing target"} to="/configure" />
+          <WorkflowStep label="Configure" state={context.config.target ? "Configured" : "Missing target"} to="/configure" />
           <WorkflowStep label="Run" state={resultStatusLabel(context.latestRun, context.runStatus)} to="/run" />
           <WorkflowStep label="Results" state={context.latestRun || context.latestFirmwareCheck ? "Updated" : "Empty"} to="/results" />
           <WorkflowStep label="Logs" state={combinedLogs(context).length ? "Activity recorded" : "No activity"} to="/logs" />
@@ -973,95 +1399,349 @@ function DashboardPage({ context }: { context: ControlCenterContext }) {
   );
 }
 
+function ProfileDeviceSummary({ context }: { context: ControlCenterContext }) {
+  const profile = context.labProfiles?.active_profile;
+  const selection = profile ? deviceSelectionFromProfile(profile, profile.features.netapp_enabled) : context.profileEditor.deviceSelection;
+  const addressPlan = profile?.address_plan ?? context.profileEditor.addressPlan;
+  const gateway = profile?.gateway ?? context.profileEditor.gateway;
+  const rows = profileDeviceDefinitions.map((definition) => ({
+    address: profileDeviceAddress(definition.key, addressPlan),
+    included: selection[definition.key],
+    label: definition.label
+  }));
+
+  if (!profile && context.loading) {
+    return <LoadingState text="Loading profile devices" />;
+  }
+
+  return (
+    <div className="cc-device-summary">
+      <FactList
+        facts={[
+          ["Active profile", profile?.name ?? context.profileEditor.name],
+          ["Subnet", profile?.subnet_cidr ?? context.profileEditor.subnet],
+          ["Gateway", gateway || "Not set"],
+          ["Profile state", profile?.source ? sourceLabel(profile.source) : "Draft or unavailable"]
+        ]}
+      />
+      <div className="cc-device-list">
+        {rows.map((row) => (
+          <div className={row.included ? "" : "is-excluded"} key={row.label}>
+            <strong>{row.label}</strong>
+            <span>{row.included ? row.address || "Included, IP not set" : "Excluded from this profile"}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function ConfigurePage({ context }: { context: ControlCenterContext }) {
+  const [activeTab, setActiveTab] = useState<ConfigureTabKey>("lab");
+  const activeProfile = context.labProfiles?.active_profile;
+  const includedCount = profileDeviceDefinitions.filter((definition) => context.profileEditor.deviceSelection[definition.key]).length;
+  const profileSubnetSummary = activeProfile?.subnet_cidr ?? context.profileEditor.subnet ?? "no subnet";
+
   return (
     <Page title="Configure">
-      <section className="cc-panel">
-        <SectionTitle icon={<SlidersHorizontal size={18} />} title="Target and SNMP" />
-        <div className="cc-form-grid">
-          <label className="cc-field cc-span-2">
-            <span>Target host, IP, or range</span>
-            <input
-              onChange={(event) => context.setConfig((current) => ({ ...current, target: event.target.value }))}
-              placeholder="192.0.2.203 or 192.0.2.0/24"
-              type="text"
-              value={context.config.target}
-            />
-          </label>
-          <SegmentedControl
-            label="IP mode"
-            onChange={(value) => context.setConfig((current) => ({ ...current, ipMode: value as ControlConfig["ipMode"] }))}
-            options={[
-              ["ipv4", "IPv4"],
-              ["ipv6", "IPv6"],
-              ["both", "Both"]
-            ]}
-            value={context.config.ipMode}
-          />
-          <SegmentedControl
-            label="SNMP version"
-            onChange={(value) => context.setConfig((current) => ({ ...current, snmpVersion: value as ControlConfig["snmpVersion"] }))}
-            options={[
-              ["v2", "SNMPv2"],
-              ["v3", "SNMPv3"]
-            ]}
-            value={context.config.snmpVersion}
-          />
+      <section className="cc-panel cc-profile-summary">
+        <div>
+          <SectionTitle icon={<SlidersHorizontal size={18} />} title="Active Profile" />
+          <p className="cc-muted">
+            {activeProfile
+              ? `${activeProfile.name} uses ${profileSubnetSummary} and includes ${includedCount} hardware tabs.`
+              : "Profile data is loading or unavailable."}
+          </p>
         </div>
-
-        {context.config.snmpVersion === "v2" ? (
-          <label className="cc-field">
-            <span>SNMPv2 community</span>
-            <input
-              autoComplete="off"
-              onChange={(event) => context.setCredentialDraft((current) => ({ ...current, snmpV2Community: event.target.value }))}
-              placeholder="Presence is saved; value is not stored"
-              type="password"
-              value={context.credentialDraft.snmpV2Community}
-            />
-          </label>
-        ) : (
-          <div className="cc-form-grid">
-            <label className="cc-field">
-              <span>SNMPv3 username</span>
-              <input
-                autoComplete="off"
-                onChange={(event) => context.setCredentialDraft((current) => ({ ...current, snmpV3Username: event.target.value }))}
-                type="text"
-                value={context.credentialDraft.snmpV3Username}
-              />
-            </label>
-            <label className="cc-field">
-              <span>SNMPv3 auth password</span>
-              <input
-                autoComplete="off"
-                onChange={(event) => context.setCredentialDraft((current) => ({ ...current, snmpV3AuthPassword: event.target.value }))}
-                type="password"
-                value={context.credentialDraft.snmpV3AuthPassword}
-              />
-            </label>
-            <label className="cc-field">
-              <span>SNMPv3 privacy password</span>
-              <input
-                autoComplete="off"
-                onChange={(event) => context.setCredentialDraft((current) => ({ ...current, snmpV3PrivacyPassword: event.target.value }))}
-                type="password"
-                value={context.credentialDraft.snmpV3PrivacyPassword}
-              />
-            </label>
-          </div>
-        )}
-
         <FactList
           facts={[
-            ["Credential state", credentialConfigLabel(context.config)],
-            ["Config adapter", configAdapter.backendStatus],
-            ["Last saved", context.config.updatedAt ? formatDateTime(context.config.updatedAt) : "Not saved"]
+            ["Lab", context.profileEditor.name || "Unnamed lab"],
+            ["Subnet", context.profileEditor.subnet || "Not set"],
+            ["Included hardware", includedDeviceLabels(context.profileEditor.deviceSelection)],
+            ["Profile source", activeProfile?.source ? sourceLabel(activeProfile.source) : "Not loaded"]
           ]}
         />
       </section>
 
-      <details className="cc-panel cc-details">
+      <div className="cc-configure-tabs" role="tablist" aria-label="Configure sections">
+        <button
+          aria-selected={activeTab === "lab"}
+          className={activeTab === "lab" ? "is-active" : ""}
+          onClick={() => setActiveTab("lab")}
+          role="tab"
+          type="button"
+        >
+          <SlidersHorizontal size={16} />
+          Lab
+        </button>
+        {profileDeviceDefinitions.map((definition) => {
+          const included = context.profileEditor.deviceSelection[definition.key];
+          return (
+            <button
+              aria-selected={activeTab === definition.key}
+              className={`${activeTab === definition.key ? "is-active" : ""} ${included ? "" : "is-excluded"}`}
+              key={definition.key}
+              onClick={() => setActiveTab(definition.key)}
+              role="tab"
+              type="button"
+            >
+              {definition.icon}
+              {definition.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {activeTab === "lab" ? (
+        <LabProfileTab context={context} />
+      ) : (
+        <EquipmentProfileTab context={context} definition={profileDeviceDefinitions.find((definition) => definition.key === activeTab)!} />
+      )}
+
+      {context.profileErrors.length > 0 && <IssueList title="Profile errors" items={context.profileErrors} />}
+      {context.configMessage && <Banner tone="good">{context.configMessage}</Banner>}
+      {context.profileMessage && <Banner tone="info">{context.profileMessage}</Banner>}
+    </Page>
+  );
+}
+
+function LabProfileTab({ context }: { context: ControlCenterContext }) {
+  const savedProfiles = context.labProfiles?.profiles ?? [];
+  const activeProfileId = context.labProfiles?.active_profile.id ?? "";
+  const deleteDisabled = !activeProfileId || activeProfileId === "runtime" || context.profileDeleting || context.profileActivating;
+  const profileSelectDisabled = !context.labProfiles || context.profileActivating || context.profileSaving || context.profileDeleting;
+  return (
+    <>
+      <section className="cc-panel">
+        <div className="cc-panel-head">
+          <SectionTitle icon={<SlidersHorizontal size={18} />} title="Lab Profile" />
+          <ActionRow>
+            <button onClick={context.startNewLabProfile} type="button">New profile</button>
+            <button
+              disabled={!activeProfileId || activeProfileId === "runtime" || context.profileActivating}
+              onClick={() => context.editLabProfile(activeProfileId)}
+              type="button"
+            >
+              Edit profile
+            </button>
+            <button
+              disabled={deleteDisabled}
+              onClick={() => {
+                if (activeProfileId && window.confirm("Delete this saved lab profile?")) {
+                  void context.deleteLabProfile(activeProfileId);
+                }
+              }}
+              type="button"
+            >
+              {context.profileDeleting ? "Deleting" : "Delete profile"}
+            </button>
+          </ActionRow>
+        </div>
+
+        <div className="cc-form-grid">
+          <label className="cc-field">
+            <span>Active lab profile</span>
+            <select
+              disabled={profileSelectDisabled}
+              onChange={(event) => void context.activateLabProfile(event.target.value)}
+              value={activeProfileId}
+            >
+              <option value="runtime">Runtime environment</option>
+              {savedProfiles.map((profile) => (
+                <option key={profile.id} value={profile.id}>
+                  {profile.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="cc-field">
+            <span>Lab name</span>
+            <input
+              onChange={(event) => updateProfileField(context, "name", event.target.value)}
+              placeholder="Lab-Uplands-G10"
+              type="text"
+              value={context.profileEditor.name}
+            />
+          </label>
+          <label className="cc-field cc-span-2">
+            <span>Description</span>
+            <textarea
+              onChange={(event) => updateProfileField(context, "description", event.target.value)}
+              placeholder="Short operator note for this lab profile"
+              rows={2}
+              value={context.profileEditor.description}
+            />
+          </label>
+          <label className="cc-field">
+            <span>Subnet CIDR</span>
+            <input
+              onChange={(event) => updateProfileSubnet(context, event.target.value)}
+              placeholder="192.168.1.0/24"
+              type="text"
+              value={context.profileEditor.subnet}
+            />
+          </label>
+          <label className="cc-field">
+            <span>Gateway</span>
+            <input
+              onChange={(event) => updateProfileField(context, "gateway", event.target.value)}
+              placeholder="192.168.1.1"
+              type="text"
+              value={context.profileEditor.gateway}
+            />
+          </label>
+          <label className="cc-field">
+            <span>DNS servers</span>
+            <input
+              onChange={(event) => updateProfileField(context, "dnsText", event.target.value)}
+              placeholder="192.168.1.1, 1.1.1.1"
+              type="text"
+              value={context.profileEditor.dnsText}
+            />
+          </label>
+          <label className="cc-field">
+            <span>NTP servers</span>
+            <input
+              onChange={(event) => updateProfileField(context, "ntpText", event.target.value)}
+              placeholder="192.168.1.1"
+              type="text"
+              value={context.profileEditor.ntpText}
+            />
+          </label>
+          <label className="cc-field">
+            <span>Management VLAN</span>
+            <input
+              onChange={(event) => updateProfileField(context, "vlanId", event.target.value)}
+              placeholder="1"
+              type="text"
+              value={context.profileEditor.vlanId}
+            />
+          </label>
+          <label className="cc-field">
+            <span>MTU</span>
+            <input
+              max={9216}
+              min={576}
+              onChange={(event) => updateProfileField(context, "mtu", event.target.value)}
+              placeholder="1500"
+              type="number"
+              value={context.profileEditor.mtu}
+            />
+          </label>
+        </div>
+
+        <div className="cc-hardware-picker" aria-label="Hardware included in this profile">
+          {profileDeviceDefinitions.map((definition) => (
+            <label className="cc-check-card" key={definition.key}>
+              <input
+                checked={context.profileEditor.deviceSelection[definition.key]}
+                onChange={(event) => updateProfileDeviceSelection(context, definition.key, event.target.checked)}
+                type="checkbox"
+              />
+              <span>
+                <strong>{definition.label}</strong>
+                <small>{definition.summary}</small>
+              </span>
+            </label>
+          ))}
+        </div>
+
+        <ActionRow>
+          <button onClick={context.recalculateProfileDefaults} type="button">
+            <RefreshCw size={16} />
+            Recalculate IP defaults
+          </button>
+          <button className="primary" disabled={context.profileSaving || context.profileActivating} onClick={() => void context.saveLabProfile()} type="button">
+            <Save size={16} />
+            {context.profileSaving ? "Saving profile" : "Save lab profile"}
+          </button>
+        </ActionRow>
+      </section>
+
+      <RunDefaultsPanel context={context} />
+    </>
+  );
+}
+
+function RunDefaultsPanel({ context }: { context: ControlCenterContext }) {
+  return (
+    <section className="cc-panel">
+      <SectionTitle icon={<Play size={18} />} title="Run Defaults" />
+      <div className="cc-form-grid">
+        <label className="cc-field cc-span-2">
+          <span>Target host, IP, or range</span>
+          <input
+            onChange={(event) => context.setConfig((current) => ({ ...current, target: event.target.value }))}
+            placeholder={context.profileEditor.subnet || "192.0.2.203 or 192.0.2.0/24"}
+            type="text"
+            value={context.config.target}
+          />
+        </label>
+        <SegmentedControl
+          label="IP mode"
+          onChange={(value) => context.setConfig((current) => ({ ...current, ipMode: value as ControlConfig["ipMode"] }))}
+          options={[
+            ["ipv4", "IPv4"],
+            ["ipv6", "IPv6"],
+            ["both", "Both"]
+          ]}
+          value={context.config.ipMode}
+        />
+        <SegmentedControl
+          label="SNMP version"
+          onChange={(value) => context.setConfig((current) => ({ ...current, snmpVersion: value as ControlConfig["snmpVersion"] }))}
+          options={[
+            ["v2", "SNMPv2"],
+            ["v3", "SNMPv3"]
+          ]}
+          value={context.config.snmpVersion}
+        />
+      </div>
+
+      {context.config.snmpVersion === "v2" ? (
+        <label className="cc-field">
+          <span>SNMPv2 community</span>
+          <input
+            autoComplete="off"
+            onChange={(event) => context.setCredentialDraft((current) => ({ ...current, snmpV2Community: event.target.value }))}
+            placeholder="Presence is saved; value is not stored"
+            type="password"
+            value={context.credentialDraft.snmpV2Community}
+          />
+        </label>
+      ) : (
+        <div className="cc-form-grid">
+          <label className="cc-field">
+            <span>SNMPv3 username</span>
+            <input
+              autoComplete="off"
+              onChange={(event) => context.setCredentialDraft((current) => ({ ...current, snmpV3Username: event.target.value }))}
+              type="text"
+              value={context.credentialDraft.snmpV3Username}
+            />
+          </label>
+          <label className="cc-field">
+            <span>SNMPv3 auth password</span>
+            <input
+              autoComplete="off"
+              onChange={(event) => context.setCredentialDraft((current) => ({ ...current, snmpV3AuthPassword: event.target.value }))}
+              type="password"
+              value={context.credentialDraft.snmpV3AuthPassword}
+            />
+          </label>
+          <label className="cc-field">
+            <span>SNMPv3 privacy password</span>
+            <input
+              autoComplete="off"
+              onChange={(event) => context.setCredentialDraft((current) => ({ ...current, snmpV3PrivacyPassword: event.target.value }))}
+              type="password"
+              value={context.credentialDraft.snmpV3PrivacyPassword}
+            />
+          </label>
+        </div>
+      )}
+
+      <details className="cc-details">
         <summary>Advanced</summary>
         <div className="cc-form-grid">
           <label className="cc-field">
@@ -1088,6 +1768,13 @@ function ConfigurePage({ context }: { context: ControlCenterContext }) {
         <FactList facts={[["Provider mode", context.health?.provider_mode ?? "Unknown"]]} />
       </details>
 
+      <FactList
+        facts={[
+          ["Credential state", credentialConfigLabel(context.config)],
+          ["Config adapter", configAdapter.backendStatus],
+          ["Last saved", context.config.updatedAt ? formatDateTime(context.config.updatedAt) : "Not saved"]
+        ]}
+      />
       {context.configErrors.length > 0 && <IssueList title="Validation errors" items={context.configErrors} />}
       <ActionRow>
         <button className="primary" disabled={context.configSaving} onClick={() => void context.saveConfig()} type="button">
@@ -1095,8 +1782,348 @@ function ConfigurePage({ context }: { context: ControlCenterContext }) {
           {context.configSaving ? "Saving config" : "Save / apply config"}
         </button>
       </ActionRow>
-      {context.configMessage && <Banner tone="good">{context.configMessage}</Banner>}
-    </Page>
+    </section>
+  );
+}
+
+function EquipmentProfileTab({
+  context,
+  definition
+}: {
+  context: ControlCenterContext;
+  definition: ProfileDeviceDefinition;
+}) {
+  const included = context.profileEditor.deviceSelection[definition.key];
+  return (
+    <section className={`cc-panel cc-equipment-panel ${included ? "" : "is-excluded"}`}>
+      <div className="cc-panel-head">
+        <SectionTitle icon={definition.icon} title={definition.label} />
+        <StatusPill status={included ? "included" : "excluded"} />
+      </div>
+      <p className="cc-muted">{definition.summary}</p>
+      {!included ? (
+        <Banner tone="info">This hardware is excluded from the active lab profile. Use the Lab tab to include it.</Banner>
+      ) : (
+        <>
+          <FactList
+            facts={[
+              ["Profile subnet", context.profileEditor.subnet || "Not set"],
+              ["Gateway", context.profileEditor.gateway || "Not set"],
+              ["IP defaults", "Derived from the lab subnet and editable here"],
+              ["Save target", context.profileEditor.mode === "existing" ? "Update saved profile" : "Create saved profile"]
+            ]}
+          />
+          <DeviceAutoFillPanel context={context} definition={definition} />
+          <DeviceAddressFields context={context} fields={definition.addressFields} />
+          <DeviceSpecificFields context={context} deviceKey={definition.key} />
+          <ActionRow>
+            <button className="primary" disabled={context.profileSaving} onClick={() => void context.saveLabProfile()} type="button">
+              <Save size={16} />
+              {context.profileSaving ? "Saving profile" : "Save lab profile"}
+            </button>
+          </ActionRow>
+        </>
+      )}
+    </section>
+  );
+}
+
+function DeviceAutoFillPanel({
+  context,
+  definition
+}: {
+  context: ControlCenterContext;
+  definition: ProfileDeviceDefinition;
+}) {
+  const facts = detectedDeviceFacts(context, definition.key);
+  return (
+    <div className="cc-subpanel cc-autofill-panel">
+      <div className="cc-panel-head">
+        <SectionTitle icon={<RefreshCw size={18} />} title="Detected Defaults" />
+        <button onClick={() => applyDetectedProfileDefaults(context, definition.key)} type="button">
+          <RefreshCw size={16} />
+          Fill missing defaults
+        </button>
+      </div>
+      <FactList facts={facts} />
+    </div>
+  );
+}
+
+function DeviceAddressFields({ context, fields }: { context: ControlCenterContext; fields: Array<keyof LabAddressPlan> }) {
+  if (!fields.length) return null;
+  return (
+    <div className="cc-form-grid">
+      {fields.map((field) => {
+        const value = context.profileEditor.addressPlan[field];
+        const isList = Array.isArray(value);
+        return (
+          <label className="cc-field" key={field}>
+            <span>{addressPlanFieldLabel(field)}</span>
+            <input
+              onChange={(event) => updateProfileAddressPlan(context, field, event.target.value)}
+              placeholder={isList ? "Comma-separated IPs" : "IP address"}
+              type="text"
+              value={isList ? value.join(", ") : value ?? ""}
+            />
+          </label>
+        );
+      })}
+    </div>
+  );
+}
+
+function DeviceSpecificFields({ context, deviceKey }: { context: ControlCenterContext; deviceKey: ProfileDeviceKey }) {
+  if (deviceKey === "cisco") {
+    return (
+      <div className="cc-form-grid">
+        <DeviceCredentialFields context={context} deviceKey={deviceKey} usernameLabel="Switch UID / username" passwordLabel="Switch password" />
+        <DeviceDetailField context={context} deviceKey={deviceKey} field="enable_password" label="Enable password" placeholder="Optional enable secret" type="password" />
+        <DeviceDetailField context={context} deviceKey={deviceKey} field="hostname" label="Switch hostname" placeholder="lab-switch-01" />
+        <DeviceDetailField context={context} deviceKey={deviceKey} field="management_vlan" label="Management VLAN" placeholder={context.profileEditor.vlanId || "1"} />
+        <DeviceDetailField context={context} deviceKey={deviceKey} field="console_port" label="Console port" placeholder="/dev/ttyUSB0" />
+        <DeviceDetailField context={context} deviceKey={deviceKey} field="console_baud" label="Console baud" placeholder="9600 or 115200" />
+        <DeviceDetailField context={context} deviceKey={deviceKey} field="snmp_location" label="SNMP location" placeholder="Lab rack" />
+        <DeviceDetailField context={context} deviceKey={deviceKey} field="snmp_contact" label="SNMP contact" placeholder="Operator reference" />
+      </div>
+    );
+  }
+  if (deviceKey === "server") {
+    return (
+      <div className="cc-form-grid">
+        <DeviceCredentialFields context={context} deviceKey={deviceKey} usernameLabel="iLO UID / username" passwordLabel="iLO password" />
+        <DeviceDetailField context={context} deviceKey={deviceKey} field="server_hostname" label="Server hostname" placeholder="lab-esxi-01" />
+        <DeviceDetailField context={context} deviceKey={deviceKey} field="role" label="Server role" placeholder="ESXi host" />
+        <DeviceDetailField context={context} deviceKey={deviceKey} field="install_media" label="Install media" placeholder="ESXi ISO or virtual media reference" />
+        <DeviceDetailField context={context} deviceKey={deviceKey} field="rack_slot" label="Rack / slot" placeholder="Rack 1 U10" />
+        <DeviceDetailField context={context} deviceKey={deviceKey} field="hostname" label="iLO hostname" placeholder="lab-server-ilo" />
+        <DeviceDetailField context={context} deviceKey={deviceKey} field="current_firmware" label="Detected iLO firmware" placeholder="Filled from firmware inventory" />
+        <DeviceDetailField context={context} deviceKey={deviceKey} field="bios_version" label="Detected BIOS version" placeholder="Filled from firmware inventory" />
+        <DeviceDetailField context={context} deviceKey={deviceKey} field="firmware_baseline" label="Firmware baseline" placeholder="2.91" />
+        <DeviceDetailField context={context} deviceKey={deviceKey} field="bios_profile" label="BIOS profile" placeholder="Virtualization host" />
+      </div>
+    );
+  }
+  if (deviceKey === "storage") {
+    return (
+      <>
+        <div className="cc-form-grid">
+          <DeviceCredentialFields context={context} deviceKey={deviceKey} usernameLabel="Storage UID / username" passwordLabel="Storage password" />
+          <DeviceDetailField context={context} deviceKey={deviceKey} field="target_controller" label="Target controller" placeholder="Smart Array P440ar or primary controller" />
+          <DeviceDetailField context={context} deviceKey={deviceKey} field="controller_path" label="Controller path" placeholder="/redfish/v1/Systems/1/SmartStorage/ArrayControllers/0" />
+          <DeviceDetailField context={context} deviceKey={deviceKey} field="controller_firmware" label="Detected controller firmware" placeholder="Filled from firmware inventory" />
+          <DeviceDetailField context={context} deviceKey={deviceKey} field="total_drive_bays" label="Total drive bays" placeholder="8" />
+          <DeviceDetailField context={context} deviceKey={deviceKey} field="write_cache_policy" label="Write cache policy" placeholder="Default or disabled until battery health verified" />
+          <DeviceDetailField context={context} deviceKey={deviceKey} field="stripe_size" label="Stripe size" placeholder="Default" />
+          <DeviceDetailField context={context} deviceKey={deviceKey} field="apply_policy" label="Apply policy" placeholder="Plan and approve before apply" />
+        </div>
+        <StorageDriveAllocationList context={context} />
+      </>
+    );
+  }
+  if (deviceKey === "esxi") {
+    return (
+      <div className="cc-form-grid">
+        <DeviceCredentialFields context={context} deviceKey={deviceKey} usernameLabel="ESXi UID / username" passwordLabel="ESXi password" />
+        <DeviceDetailField context={context} deviceKey={deviceKey} field="hostname" label="ESXi hostname" placeholder="esxi01.lab.local" />
+        <DeviceDetailField context={context} deviceKey={deviceKey} field="datastore" label="Default datastore" placeholder="datastore1" />
+        <DeviceDetailField context={context} deviceKey={deviceKey} field="vswitch" label="vSwitch" placeholder="vSwitch0" />
+        <DeviceDetailField context={context} deviceKey={deviceKey} field="vm_network" label="VM network" placeholder="VM Network" />
+        <DeviceDetailField context={context} deviceKey={deviceKey} field="dns_domain" label="DNS domain" placeholder="lab.local" />
+        <DeviceDetailField context={context} deviceKey={deviceKey} field="ntp_policy" label="NTP policy" placeholder="Use profile NTP servers" />
+      </div>
+    );
+  }
+  if (deviceKey === "netapp") {
+    return (
+      <div className="cc-form-grid">
+        <DeviceCredentialFields context={context} deviceKey={deviceKey} usernameLabel="NetApp UID / username" passwordLabel="NetApp password" />
+        <DeviceDetailField context={context} deviceKey={deviceKey} field="cluster_name" label="Cluster name" placeholder="lab-ontap" />
+        <DeviceDetailField context={context} deviceKey={deviceKey} field="svm_name" label="SVM name" placeholder="svm_lab" />
+        <label className="cc-field">
+          <span>Storage protocol</span>
+          <select
+            onChange={(event) => updateProfileFeature(context, "storage_protocol", event.target.value)}
+            value={context.profileEditor.features.storage_protocol}
+          >
+            <option value="nfs">NFS</option>
+            <option value="iscsi">iSCSI</option>
+            <option value="nfs_iscsi">NFS and iSCSI</option>
+          </select>
+        </label>
+        <DeviceDetailField context={context} deviceKey={deviceKey} field="broadcast_domain" label="Broadcast domain" placeholder="Default" />
+        <DeviceDetailField context={context} deviceKey={deviceKey} field="aggregate_name" label="Aggregate" placeholder="aggr1" />
+        <DeviceDetailField context={context} deviceKey={deviceKey} field="volume_prefix" label="Volume prefix" placeholder="lab" />
+      </div>
+    );
+  }
+  return (
+    <div className="cc-form-grid">
+      <DeviceCredentialFields context={context} deviceKey={deviceKey} usernameLabel="vCenter UID / username" passwordLabel="vCenter password" />
+      <DeviceDetailField context={context} deviceKey={deviceKey} field="endpoint" label="vCenter FQDN/IP" placeholder="vcenter.lab.local" />
+      <DeviceDetailField context={context} deviceKey={deviceKey} field="datacenter" label="Datacenter" placeholder="Lab-DC" />
+      <DeviceDetailField context={context} deviceKey={deviceKey} field="cluster" label="Cluster" placeholder="Lab-Cluster" />
+      <DeviceDetailField context={context} deviceKey={deviceKey} field="datastore" label="Datastore" placeholder="NetApp-NFS" />
+      <DeviceDetailField context={context} deviceKey={deviceKey} field="folder" label="VM folder" placeholder="Lab Builds" />
+      <DeviceDetailField context={context} deviceKey={deviceKey} field="esxi_attach_policy" label="ESXi attach policy" placeholder="Attach configured ESXi hosts" />
+    </div>
+  );
+}
+
+function DeviceDetailField({
+  context,
+  deviceKey,
+  field,
+  label,
+  placeholder,
+  type = "text"
+}: {
+  context: ControlCenterContext;
+  deviceKey: ProfileDeviceKey;
+  field: string;
+  label: string;
+  placeholder: string;
+  type?: "password" | "text";
+}) {
+  return (
+    <label className="cc-field">
+      <span>{label}</span>
+      <input
+        autoComplete={type === "password" ? "current-password" : undefined}
+        onChange={(event) => updateProfileDeviceDetail(context, deviceKey, field, event.target.value)}
+        placeholder={placeholder}
+        type={type}
+        value={deviceDetailValue(context.profileEditor, deviceKey, field)}
+      />
+    </label>
+  );
+}
+
+function DeviceCredentialFields({
+  context,
+  deviceKey,
+  passwordLabel,
+  usernameLabel
+}: {
+  context: ControlCenterContext;
+  deviceKey: ProfileDeviceKey;
+  passwordLabel: string;
+  usernameLabel: string;
+}) {
+  return (
+    <>
+      <DeviceDetailField context={context} deviceKey={deviceKey} field="uid" label={usernameLabel} placeholder="Administrator or admin user" />
+      <DeviceDetailField context={context} deviceKey={deviceKey} field="password" label={passwordLabel} placeholder="Enter password" type="password" />
+    </>
+  );
+}
+
+function StorageDriveAllocationList({ context }: { context: ControlCenterContext }) {
+  const rows = storageDriveAllocationRows(context.profileEditor);
+  return (
+    <div className="cc-subpanel cc-storage-plan">
+      <div className="cc-panel-head">
+        <SectionTitle icon={<Database size={18} />} title="Drive Allocation List" />
+        <button onClick={() => addStorageAllocation(context)} type="button">
+          <Plus size={16} />
+          Add drive group
+        </button>
+      </div>
+      <div className="cc-storage-allocation-list">
+        {rows.map((row) => (
+          <div className="cc-storage-allocation-row" key={row.id}>
+            <label className="cc-field">
+              <span>Use</span>
+              <select
+                aria-label={`${driveAllocationRoleLabel(row.role)} use`}
+                onChange={(event) => updateStorageAllocation(context, row.id, "role", event.target.value)}
+                value={row.role}
+              >
+                <option value="esxi">ESXi</option>
+                <option value="storage">Storage</option>
+                <option value="spare">Hot spare</option>
+                <option value="unused">Unused</option>
+              </select>
+            </label>
+            <label className="cc-field">
+              <span>Drive count</span>
+              <input
+                aria-label={`${driveAllocationRoleLabel(row.role)} drive count`}
+                min={0}
+                onChange={(event) => updateStorageAllocation(context, row.id, "drive_count", event.target.value)}
+                type="number"
+                value={row.drive_count}
+              />
+            </label>
+            <label className="cc-field">
+              <span>Drive bays</span>
+              <input
+                aria-label={`${driveAllocationRoleLabel(row.role)} drive bays`}
+                onChange={(event) => updateStorageAllocation(context, row.id, "drive_bays", event.target.value)}
+                placeholder="1, 2"
+                type="text"
+                value={row.drive_bays}
+              />
+            </label>
+            <label className="cc-field">
+              <span>RAID</span>
+              <select
+                aria-label={`${driveAllocationRoleLabel(row.role)} RAID`}
+                onChange={(event) => updateStorageAllocation(context, row.id, "raid_level", event.target.value)}
+                value={row.raid_level}
+              >
+                <option value="">None</option>
+                <option value="RAID0">RAID 0</option>
+                <option value="RAID1">RAID 1</option>
+                <option value="RAID5">RAID 5</option>
+                <option value="RAID6">RAID 6</option>
+                <option value="RAID10">RAID 10</option>
+                <option value="Spare">Spare</option>
+              </select>
+            </label>
+            <label className="cc-field">
+              <span>Volume / purpose</span>
+              <input
+                aria-label={`${driveAllocationRoleLabel(row.role)} volume`}
+                onChange={(event) => updateStorageAllocation(context, row.id, "volume_name", event.target.value)}
+                placeholder="ESXI_BOOT or DATA"
+                type="text"
+                value={row.volume_name}
+              />
+            </label>
+            <label className="cc-field">
+              <span>Controller</span>
+              <input
+                aria-label={`${driveAllocationRoleLabel(row.role)} controller`}
+                onChange={(event) => updateStorageAllocation(context, row.id, "controller_path", event.target.value)}
+                placeholder="Controller path or name"
+                type="text"
+                value={row.controller_path}
+              />
+            </label>
+            <label className="cc-field cc-storage-notes">
+              <span>Notes</span>
+              <input
+                aria-label={`${driveAllocationRoleLabel(row.role)} notes`}
+                onChange={(event) => updateStorageAllocation(context, row.id, "notes", event.target.value)}
+                placeholder="Optional"
+                type="text"
+                value={row.notes}
+              />
+            </label>
+            <button
+              aria-label={`Remove ${driveAllocationRoleLabel(row.role)} drive group`}
+              disabled={rows.length <= 1}
+              onClick={() => removeStorageAllocation(context, row.id)}
+              type="button"
+            >
+              <Trash2 size={16} />
+              Remove
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -1143,36 +2170,234 @@ function RunPage({ context }: { context: ControlCenterContext }) {
 }
 
 function FirmwarePage({ context }: { context: ControlCenterContext }) {
+  const [activeTab, setActiveTab] = useState<FirmwareTabKey>("overview");
+  const activeProfile = context.labProfiles?.active_profile;
+  const includedCount = profileDeviceDefinitions.filter((definition) => context.profileEditor.deviceSelection[definition.key]).length;
+
   return (
     <Page title="Firmware">
-      <FirmwareVisibilitySection context={context} />
-      <FirmwareUpgradeSection context={context} />
-      <section className="cc-panel">
-        <SectionTitle icon={<History size={18} />} title="Firmware Events" />
-        <ActivityList logs={firmwareEventLogs(context)} />
+      <section className="cc-panel cc-profile-summary">
+        <div>
+          <SectionTitle icon={<UploadCloud size={18} />} title="Firmware Profile" />
+          <p className="cc-muted">
+            {activeProfile
+              ? `${activeProfile.name} controls which firmware tabs are in scope.`
+              : "Profile data is loading or unavailable."}
+          </p>
+        </div>
+        <FactList
+          facts={[
+            ["Lab", context.profileEditor.name || "Unnamed lab"],
+            ["Subnet", context.profileEditor.subnet || "Not set"],
+            ["Included hardware", `${includedCount} equipment tabs`],
+            ["Firmware source", firmwareRuntimeSourceLabel(context.firmwareRuntime)]
+          ]}
+        />
       </section>
+
+      <div className="cc-configure-tabs cc-firmware-tabs" role="tablist" aria-label="Firmware sections">
+        <button
+          aria-selected={activeTab === "overview"}
+          className={activeTab === "overview" ? "is-active" : ""}
+          onClick={() => setActiveTab("overview")}
+          role="tab"
+          type="button"
+        >
+          <UploadCloud size={16} />
+          Overview
+        </button>
+        {profileDeviceDefinitions.map((definition) => {
+          const included = context.profileEditor.deviceSelection[definition.key];
+          return (
+            <button
+              aria-selected={activeTab === definition.key}
+              className={`${activeTab === definition.key ? "is-active" : ""} ${included ? "" : "is-excluded"}`}
+              key={definition.key}
+              onClick={() => setActiveTab(definition.key)}
+              role="tab"
+              type="button"
+            >
+              {definition.icon}
+              {definition.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {activeTab === "overview" ? (
+        <>
+          <FirmwareVisibilitySection context={context} />
+          <FirmwareUpgradeSection context={context} />
+          <section className="cc-panel">
+            <SectionTitle icon={<History size={18} />} title="Firmware Events" />
+            <ActivityList logs={firmwareEventLogs(context)} />
+          </section>
+        </>
+      ) : (
+        <FirmwareDeviceTab context={context} definition={profileDeviceDefinitions.find((definition) => definition.key === activeTab)!} />
+      )}
     </Page>
   );
 }
 
-function FirmwareVisibilitySection({ context }: { context: ControlCenterContext }) {
+function FirmwareDeviceTab({
+  context,
+  definition
+}: {
+  context: ControlCenterContext;
+  definition: ProfileDeviceDefinition;
+}) {
+  const included = context.profileEditor.deviceSelection[definition.key];
+  const summaries = firmwareSummariesForDevice(context.firmware.summaries, definition.key);
+  const paths = firmwarePathsForDevice(collectFirmwarePaths(context.firmware.summaries), definition.key);
+  const firmwareTarget = firmwareTargetForDevice(context.profileEditor, definition.key);
+  const simpleHpeFirmware = definition.key === "server" || definition.key === "storage";
+  return (
+    <>
+      <section className={`cc-panel cc-equipment-panel ${included ? "" : "is-excluded"}`}>
+        <div className="cc-panel-head">
+          <SectionTitle icon={definition.icon} title={`${definition.label} Firmware`} />
+          <StatusPill status={included ? "included" : "excluded"} />
+        </div>
+        <FactList
+          facts={[
+            ["Profile address", profileDeviceAddress(definition.key, context.profileEditor.addressPlan) || "Not set"],
+            ["Firmware target", firmwareTarget || context.targetSummary],
+            ["Firmware summaries", summaries.length ? `${summaries.length} reported` : "None reported"],
+            ["Upgrade paths", paths.length ? `${paths.length} available` : "None reported"],
+            ["Scope", included ? "Included by active profile" : "Excluded by active profile"]
+          ]}
+        />
+        {!included && (
+          <Banner tone="info">This hardware is excluded from the active lab profile. Use Configure to include it before firmware work.</Banner>
+        )}
+      </section>
+      {included && (
+        simpleHpeFirmware ? (
+          <>
+            <HpeIloFirmwareInventoryPanel context={context} deviceKey={definition.key === "server" ? "server" : "storage"} />
+            <FirmwareUpgradeSection context={context} deviceKey={definition.key} />
+          </>
+        ) : (
+          <>
+            <FirmwareVisibilitySection context={context} deviceKey={definition.key} />
+            <FirmwareUpgradeSection context={context} deviceKey={definition.key} />
+          </>
+        )
+      )}
+    </>
+  );
+}
+
+function HpeIloFirmwareInventoryPanel({
+  context,
+  deviceKey
+}: {
+  context: ControlCenterContext;
+  deviceKey: "server" | "storage";
+}) {
+  const result = context.firmware.latestInventory;
+  const inventory = hpeIloFirmwareInventory(context.firmware);
+  const warnings = hpeIloInventoryWarnings(result);
+  const blockers = stringArray(result?.blockers);
+  const hasReturnedValues = Boolean(
+    inventory.iloFirmware || inventory.biosVersion || inventory.smartArrayFirmware || inventory.controllers.length
+  );
+  const title = deviceKey === "server" ? "iLO Firmware" : "Internal Controller Firmware";
+  const target = firmwareTargetForDevice(context.profileEditor, "server") || context.targetSummary;
+  const uid = deviceDetailValue(context.profileEditor, "server", "uid");
   const checkRunning = context.firmwareCheckStatus === "running";
   const checkDisabled = checkRunning || context.configSaving;
+  const targetVersions = hpeFirmwareTargetVersions(context.firmware.summaries);
   return (
     <section className="cc-panel">
       <div className="cc-panel-head">
-        <SectionTitle icon={<Cpu size={18} />} title="Firmware Visibility" />
-        <button disabled={checkDisabled} onClick={() => void context.checkFirmware()} type="button">
+        <SectionTitle icon={<Cpu size={18} />} title={title} />
+        <StatusPill status={inventory.status} />
+      </div>
+      <FactList
+        facts={[
+          ["IP being used", target || "Not set"],
+          ["UID / username", uid || "Not set in Configure"],
+          ["Backend credential source", "Local backend iLO credentials; password is never shown"],
+          ["Inventory source", firmwareInventorySource(result)],
+          ["Last collected", result?.checked_at ? formatDateTime(result.checked_at) : "Not checked"],
+          ["Recheck command", "make provider-lab-hpe-firmware-inventory"]
+        ]}
+      />
+      <div className="cc-firmware-compare" role="table" aria-label="iLO firmware current and target versions">
+        <div className="cc-firmware-compare-row is-head" role="row">
+          <span role="columnheader">State</span>
+          <span role="columnheader">iLO</span>
+          <span role="columnheader">BIOS</span>
+          <span role="columnheader">Controller</span>
+        </div>
+        <div className="cc-firmware-compare-row" role="row">
+          <strong role="cell">Current</strong>
+          <span role="cell">{displayValue(inventory.iloFirmware)}</span>
+          <span role="cell">{displayValue(inventory.biosVersion)}</span>
+          <span role="cell">{displayValue(inventory.smartArrayFirmware)}</span>
+        </div>
+        <div className="cc-firmware-compare-row" role="row">
+          <strong role="cell">Should be</strong>
+          <span role="cell">{displayValue(targetVersions.ilo)}</span>
+          <span role="cell">{displayValue(targetVersions.bios)}</span>
+          <span role="cell">{displayValue(targetVersions.smartArray)}</span>
+        </div>
+      </div>
+      {!hasReturnedValues && (
+        <Banner tone="warn">
+          No current iLO Redfish firmware, BIOS, or controller versions were returned by the latest inventory.
+        </Banner>
+      )}
+      {blockers.map((blocker) => (
+        <Banner key={blocker} tone="bad">
+          {blocker}
+        </Banner>
+      ))}
+      {warnings.map((warning) => (
+        <Banner key={warning} tone="warn">
+          {warning}
+        </Banner>
+      ))}
+      <ActionRow>
+        <button
+          className="cc-primary"
+          disabled={checkDisabled || !target}
+          onClick={() => void context.checkFirmware(target, uid)}
+          type="button"
+        >
+          <RefreshCw size={16} />
+          {checkRunning ? "Running" : "Run"}
+        </button>
+      </ActionRow>
+    </section>
+  );
+}
+
+function FirmwareVisibilitySection({ context, deviceKey }: { context: ControlCenterContext; deviceKey?: ProfileDeviceKey }) {
+  const checkRunning = context.firmwareCheckStatus === "running";
+  const checkDisabled = checkRunning || context.configSaving;
+  const summaries = deviceKey ? firmwareSummariesForDevice(context.firmware.summaries, deviceKey) : context.firmware.summaries;
+  const firmwareTarget = deviceKey ? firmwareTargetForDevice(context.profileEditor, deviceKey) : "";
+  const title = deviceKey ? `${profileDeviceLabel(deviceKey)} Firmware Visibility` : "Firmware Visibility";
+  return (
+    <section className="cc-panel">
+      <div className="cc-panel-head">
+        <SectionTitle icon={<Cpu size={18} />} title={title} />
+        <button disabled={checkDisabled} onClick={() => void context.checkFirmware(firmwareTarget)} type="button">
           <RefreshCw size={16} />
           {checkRunning ? "Checking" : context.configSaving ? "Saving config" : "Check Firmware"}
         </button>
       </div>
-      {context.firmware.summaries.length ? (
+      {summaries.length ? (
         <div className="cc-firmware-list">
-          {context.firmware.summaries.map((summary) => (
+          {summaries.map((summary) => (
             <FirmwareVisibilityRow key={summary.device_id} summary={summary} />
           ))}
         </div>
+      ) : deviceKey ? (
+        <EmptyState title={`No ${profileDeviceLabel(deviceKey)} firmware data`} detail="Run Check Firmware to refresh backend firmware summaries for this profile." />
       ) : (
         <FirmwareVisibilityEmpty />
       )}
@@ -1180,41 +2405,64 @@ function FirmwareVisibilitySection({ context }: { context: ControlCenterContext 
   );
 }
 
-function FirmwareUpgradeSection({ context }: { context: ControlCenterContext }) {
-  const firmwarePaths = collectFirmwarePaths(context.firmware.summaries);
-  const supportedActionId = supportedUpgradeActionId(context.selectedPath);
-  const backendPending = Boolean(context.selectedPath && (!supportedActionId || !context.selectedUpgradeAction));
+function FirmwareUpgradeSection({ context, deviceKey }: { context: ControlCenterContext; deviceKey?: ProfileDeviceKey }) {
+  const allFirmwarePaths = collectFirmwarePaths(context.firmware.summaries);
+  const firmwarePaths = deviceKey ? firmwarePathsForDevice(allFirmwarePaths, deviceKey) : allFirmwarePaths;
+  const selectedPathInScope = !deviceKey || Boolean(context.selectedPath && firmwarePathMatchesDevice(context.selectedPath, deviceKey));
+  const selectedPathForPanel = selectedPathInScope ? context.selectedPath : null;
+  const firmwareTarget = deviceKey ? firmwareTargetForDevice(context.profileEditor, deviceKey) : "";
+  const configForPanel = configWithTargetOverride(context.config, firmwareTarget);
+  const supportedActionId = supportedUpgradeActionId(selectedPathForPanel);
+  const backendPending = Boolean(selectedPathForPanel && (!supportedActionId || !context.selectedUpgradeAction));
+  const validationBlockers = selectedPathInScope
+    ? firmwareValidateBlockers({ config: configForPanel, selectedFirmware: context.selectedFirmware, selectedPath: selectedPathForPanel })
+    : [`Select a ${profileDeviceLabel(deviceKey!)} firmware path before validation.`];
+  const upgradeBlockers = selectedPathInScope
+    ? firmwareStartBlockers({
+        accepted: context.upgradeConfirmationAccepted,
+        config: configForPanel,
+        phrase: context.upgradeConfirmationPhrase,
+        selectedFirmware: context.selectedFirmware,
+        selectedPath: selectedPathForPanel,
+        selectedUpgradeAction: selectedPathForPanel ? context.selectedUpgradeAction : null,
+        validation: context.latestFirmwareValidation
+      })
+    : [`Select a ${profileDeviceLabel(deviceKey!)} firmware path before starting an upgrade.`];
+  const expectedPhrase = upgradeConfirmationPhrase(selectedPathForPanel, selectedPathForPanel ? context.selectedUpgradeAction : null);
   const validateDisabled =
     context.configSaving ||
     context.upgradeStatus === "validating" ||
     context.upgradeStatus === "upgrading" ||
-    !context.selectedPath ||
+    !selectedPathForPanel ||
     !context.selectedFirmware.trim();
   const startDisabled =
     context.configSaving ||
-    context.firmwareUpgradeBlockers.length > 0 ||
+    !selectedPathForPanel ||
+    upgradeBlockers.length > 0 ||
     context.upgradeStatus === "upgrading" ||
     context.upgradeStatus === "validating";
+  const title = deviceKey ? `${profileDeviceLabel(deviceKey)} Firmware Upgrade` : "Firmware Upgrade";
+  const selectedPathId = selectedPathForPanel ? context.selectedPathId : "";
 
   return (
     <section className="cc-panel">
       <div className="cc-panel-head">
-        <SectionTitle icon={<UploadCloud size={18} />} title="Firmware Upgrade" />
+        <SectionTitle icon={<UploadCloud size={18} />} title={title} />
         <StatusPill status={context.upgradeStatus} />
       </div>
 
       <FactList
         facts={[
-          ["Target", context.targetSummary],
-          ["Current firmware", context.selectedPath ? displayValue(context.selectedPath.current_version) : "Select firmware path"],
-          ["Selected firmware/image/version", context.selectedFirmware || "Missing"],
+          ["Target", configForPanel.target || "Not configured"],
+          ["Current firmware", selectedPathForPanel ? displayValue(selectedPathForPanel.current_version) : "Select firmware path"],
+          ["Selected firmware/image/version", selectedPathForPanel ? context.selectedFirmware || "Missing" : "Missing"],
           ["Compatibility check", validationStatusLabel(context)],
           ["Readiness status", firmwareReadinessLabel(context)],
           ["Progress", firmwareProgressLabel(context)],
           ["Backend status/progress", context.firmwareRuntime.message],
           ["Next safe action", context.firmwareRuntime.nextSafeAction],
-          ["Backend action", context.selectedUpgradeAction?.label ?? (context.selectedPath ? "Integration pending" : "Select firmware path")],
-          ["Backend gates", firmwareBackendGateLabel(context)],
+          ["Backend action", selectedPathForPanel ? context.selectedUpgradeAction?.label ?? "Integration pending" : "Select firmware path"],
+          ["Backend gates", selectedPathForPanel ? firmwareBackendGateLabel(context) : "Select firmware path"],
           ["Status source", firmwareRuntimeSourceLabel(context.firmwareRuntime)]
         ]}
       />
@@ -1230,7 +2478,7 @@ function FirmwareUpgradeSection({ context }: { context: ControlCenterContext }) 
       <div className="cc-form-grid">
         <label className="cc-field cc-span-2">
           <span>Firmware path</span>
-          <select onChange={(event) => context.setSelectedPathId(event.target.value)} value={context.selectedPathId}>
+          <select onChange={(event) => context.setSelectedPathId(event.target.value)} value={selectedPathId}>
             <option value="">Select firmware path</option>
             {firmwarePaths.map((path) => (
               <option key={firmwarePathId(path)} value={firmwarePathId(path)}>
@@ -1246,27 +2494,27 @@ function FirmwareUpgradeSection({ context }: { context: ControlCenterContext }) 
             onChange={(event) => context.setSelectedFirmware(event.target.value)}
             placeholder="Select a path or enter a target firmware/image reference"
             type="text"
-            value={context.selectedFirmware}
+            value={selectedPathForPanel ? context.selectedFirmware : ""}
           />
           <datalist id="firmware-candidates">
-            {firmwareCandidateOptions(context.selectedPath).map((candidate) => (
+            {firmwareCandidateOptions(selectedPathForPanel).map((candidate) => (
               <option key={candidate} value={candidate} />
             ))}
           </datalist>
         </label>
       </div>
 
-      {!firmwarePaths.length && <Banner tone="warn">Firmware summary backend has not exposed upgrade paths yet.</Banner>}
+      {!firmwarePaths.length && <Banner tone="warn">Firmware summary backend has not exposed upgrade paths for this tab yet.</Banner>}
       {backendPending && <Banner tone="warn">Upgrade backend integration is pending for this selected firmware path.</Banner>}
-      {context.selectedPath && <FirmwarePathSummary path={context.selectedPath} />}
+      {selectedPathForPanel && <FirmwarePathSummary path={selectedPathForPanel} />}
 
       <ActionRow>
-        <button disabled={validateDisabled} onClick={() => void context.validateFirmware()} type="button">
+        <button disabled={validateDisabled} onClick={() => void context.validateFirmware(firmwareTarget)} type="button">
           <ShieldCheck size={16} />
           {context.upgradeStatus === "validating" ? "Validating" : context.configSaving ? "Saving config" : "Validate Firmware"}
         </button>
       </ActionRow>
-      {context.firmwareValidationBlockers.length > 0 && <IssueList title="Validation blockers" items={context.firmwareValidationBlockers} />}
+      {validationBlockers.length > 0 && <IssueList title="Validation blockers" items={validationBlockers} />}
 
       <div className="cc-confirm-box">
         <div>
@@ -1283,19 +2531,19 @@ function FirmwareUpgradeSection({ context }: { context: ControlCenterContext }) 
           <span>I confirm this firmware upgrade request is intentional and the listed backend gates are satisfied.</span>
         </label>
         <p>
-          Required phrase: <code>{context.expectedUpgradePhrase}</code>
+          Required phrase: <code>{expectedPhrase}</code>
         </p>
         <label className="cc-field">
           <span>Confirmation phrase</span>
           <input
             onChange={(event) => context.setUpgradeConfirmationPhrase(event.target.value)}
-            placeholder={context.expectedUpgradePhrase}
+            placeholder={expectedPhrase}
             type="text"
             value={context.upgradeConfirmationPhrase}
           />
         </label>
-        {context.firmwareUpgradeBlockers.length > 0 && <IssueList title="Upgrade blockers" items={context.firmwareUpgradeBlockers} />}
-        <button className="primary danger-action" disabled={startDisabled} onClick={() => void context.startFirmwareUpgrade()} type="button">
+        {upgradeBlockers.length > 0 && <IssueList title="Upgrade blockers" items={upgradeBlockers} />}
+        <button className="primary danger-action" disabled={startDisabled} onClick={() => void context.startFirmwareUpgrade(firmwareTarget)} type="button">
           <UploadCloud size={16} />
           {context.upgradeStatus === "upgrading" ? "Upgrade Running" : context.configSaving ? "Saving config" : "Start Firmware Upgrade"}
         </button>
@@ -1642,7 +2890,11 @@ function FirmwarePathSummary({ path }: { path: FirmwareUpgradePath }) {
     <div className="cc-subpanel">
       <FactList
         facts={[
-          ["Component", path.component_label],
+          ["Selected component", firmwareComponentDisplayLabel(path)],
+          ["Current version", displayValue(path.current_version)],
+          ["Target version", displayValue(path.target_version)],
+          ["Selected package/file", path.selected_file_name || path.package_name || "Not selected"],
+          ["Path status", statusLabel(path.path_status)],
           ["Package available", path.package_available ? "Yes" : "No"],
           ["Prechecks", path.prechecks_required.length ? path.prechecks_required.join(", ") : "None reported"],
           ["Impact", path.estimated_impact],
@@ -1720,6 +2972,56 @@ function collectFirmwarePaths(summaries: FirmwareSummary[]): FirmwareUpgradePath
   return summaries.flatMap((summary) => summary.upgrade_paths ?? []);
 }
 
+function firmwareSummariesForDevice(summaries: FirmwareSummary[], deviceKey: ProfileDeviceKey): FirmwareSummary[] {
+  return summaries.filter((summary) => firmwareSummaryMatchesDevice(summary, deviceKey));
+}
+
+function firmwarePathsForDevice(paths: FirmwareUpgradePath[], deviceKey: ProfileDeviceKey): FirmwareUpgradePath[] {
+  return paths.filter((path) => firmwarePathMatchesDevice(path, deviceKey));
+}
+
+function firmwareSummaryMatchesDevice(summary: FirmwareSummary, deviceKey: ProfileDeviceKey): boolean {
+  return firmwareTextMatchesDevice(
+    [
+      summary.device_id,
+      summary.label,
+      summary.component_type,
+      summary.scan_action_id,
+      summary.upgrade_center_link,
+      ...(summary.upgrade_paths ?? []).map((path) => firmwarePathSearchText(path))
+    ].join(" "),
+    deviceKey
+  );
+}
+
+function firmwarePathMatchesDevice(path: FirmwareUpgradePath, deviceKey: ProfileDeviceKey): boolean {
+  return firmwareTextMatchesDevice(firmwarePathSearchText(path), deviceKey);
+}
+
+function firmwarePathSearchText(path: FirmwareUpgradePath): string {
+  return [
+    path.device_label,
+    path.equipment_label,
+    path.equipment_type,
+    path.component_id,
+    path.component_label,
+    path.scan_action_id
+  ].join(" ");
+}
+
+function firmwareTextMatchesDevice(value: string, deviceKey: ProfileDeviceKey): boolean {
+  const text = value.toLowerCase();
+  if (deviceKey === "netapp") return /netapp|ontap|cluster|svm/.test(text);
+  if (deviceKey === "storage") return /smart array|arraycontroller|raid|storage|disk|drive|controller|logical/.test(text) && !/netapp|ontap/.test(text);
+  if (deviceKey === "server") {
+    return /\bilo\b|hpe.*ilo|server|bios|management_firmware/.test(text) && !/smart array|raid|storage|disk|drive|controller/.test(text);
+  }
+  if (deviceKey === "cisco") return /cisco|switch|nx-os|ios|rommon/.test(text);
+  if (deviceKey === "esxi") return /esxi|vmware|hypervisor/.test(text);
+  if (deviceKey === "vcenter") return /vcenter|vcentre/.test(text);
+  return false;
+}
+
 function savedFirmwareSelection(firmware: FirmwareState, paths: FirmwareUpgradePath[]): { pathId: string; selectedFirmware: string } | null {
   const selectedFiles = firmware.fileSelections?.selected_files ?? {};
   for (const path of paths) {
@@ -1735,7 +3037,15 @@ function firmwarePathId(path: FirmwareUpgradePath): string {
 
 function firmwarePathLabel(path: FirmwareUpgradePath): string {
   const target = path.target_version || path.package_name || path.selected_file_name || "target pending";
-  return `${path.device_label} - ${path.component_label} -> ${target}`;
+  const current = path.current_version || "current unknown";
+  return `${firmwareComponentDisplayLabel(path)}: ${current} -> ${target}`;
+}
+
+function firmwareComponentDisplayLabel(path: FirmwareUpgradePath): string {
+  if (path.component_id === "hpe_ilo_firmware") return "HPE iLO firmware";
+  if (path.component_id === "hpe_bios_version") return "HPE BIOS firmware";
+  if (path.component_id === "hpe_smart_array_firmware") return "HPE controller firmware - Smart Array";
+  return `${path.device_label} ${path.component_label}`.trim();
 }
 
 function defaultFirmwareSelection(path: FirmwareUpgradePath | null): string {
@@ -1827,6 +3137,91 @@ function firmwareUpgradeSummaryResult(context: ControlCenterContext): OperationR
   return null;
 }
 
+function activeOperationForContext(context: ControlCenterContext): ActiveOperation | null {
+  if (context.upgradeStatus === "upgrading") {
+    return {
+      detail: "Watching the guarded backend firmware request and waiting for the next status update.",
+      key: "firmware-upgrade",
+      phases: ["Submitting request", "Staging package", "Applying firmware", "Waiting for reboot or verify"],
+      progressCeiling: 95,
+      title: "Firmware upgrade monitoring in progress"
+    };
+  }
+  if (context.upgradeStatus === "validating") {
+    return {
+      detail: "Checking selected firmware evidence against the current target and saved configuration.",
+      key: "firmware-validation",
+      phases: ["Saving selection", "Checking inventory", "Matching package", "Reviewing blockers"],
+      title: "Firmware validation in progress"
+    };
+  }
+  if (context.firmwareCheckStatus === "running") {
+    return {
+      detail: "Refreshing firmware inventory and waiting for the backend response.",
+      key: "firmware-check",
+      phases: ["Starting scan", "Reading providers", "Refreshing compliance", "Writing evidence"],
+      title: "Firmware check in progress"
+    };
+  }
+  if (context.runStatus === "running") {
+    return {
+      detail: `Running ${context.selectedAction?.label ?? "the selected backend action"} and collecting result evidence.`,
+      key: "safe-run",
+      phases: ["Submitting action", "Waiting for backend", "Collecting result", "Refreshing evidence"],
+      title: "Safe run in progress"
+    };
+  }
+  if (context.profileSaving) {
+    return {
+      detail: "Saving the lab profile, activating it, and refreshing profile-backed runtime context.",
+      key: "profile-save",
+      phases: ["Saving profile", "Activating profile", "Refreshing context"],
+      title: "Lab profile save in progress"
+    };
+  }
+  if (context.profileDeleting) {
+    return {
+      detail: "Deleting the saved lab profile and loading the next active profile.",
+      key: "profile-delete",
+      phases: ["Deleting profile", "Refreshing profile list", "Reloading context"],
+      title: "Lab profile delete in progress"
+    };
+  }
+  if (context.profileActivating) {
+    return {
+      detail: "Activating the selected lab profile and recalculating visible hardware scope.",
+      key: "profile-activate",
+      phases: ["Activating profile", "Refreshing hardware scope", "Reloading context"],
+      title: "Lab profile activation in progress"
+    };
+  }
+  if (context.configSaving) {
+    return {
+      detail: "Saving non-secret runtime configuration before the next backend operation.",
+      key: "config-save",
+      phases: ["Saving config", "Refreshing runtime", "Updating controls"],
+      title: "Configuration save in progress"
+    };
+  }
+  if (context.settingsSaving) {
+    return {
+      detail: "Saving Control Center defaults and refreshing local runtime settings.",
+      key: "settings-save",
+      phases: ["Saving settings", "Refreshing defaults", "Updating controls"],
+      title: "Settings save in progress"
+    };
+  }
+  if (context.loading) {
+    return {
+      detail: "Loading provider status, action catalog, profiles, firmware summaries, and recent activity.",
+      key: "app-load",
+      phases: ["Loading status", "Loading actions", "Loading firmware", "Loading activity"],
+      title: "Control Center refresh in progress"
+    };
+  }
+  return null;
+}
+
 function firmwareSummaryText(summaries: FirmwareSummary[]): string {
   if (!summaries.length) return "Not checked";
   const needsUpgrade = summaries.filter((summary) => summary.compliance_status === "needs_upgrade").length;
@@ -1836,13 +3231,110 @@ function firmwareSummaryText(summaries: FirmwareSummary[]): string {
 function providerDetectionText(providers: ProviderStatus[]): string {
   const visible = providers.filter((provider) => provider.is_operator_visible !== false);
   if (!visible.length) return "Not checked";
-  const ready = visible.filter((provider) => /ready|ok|available|connected|current/i.test(provider.status)).length;
+  const available = visible.filter((provider) => /ready|ok|available|connected|current/i.test(provider.status)).length;
   const blocked = visible.filter((provider) => provider.blockers.length || /blocked|failed|unavailable|missing/i.test(provider.status)).length;
-  return `${visible.length} adapters visible; ${ready} ready; ${blocked} blocked or missing`;
+  return `${visible.length} adapters visible; ${available} reporting available; ${blocked} blocked or missing`;
 }
 
 function firmwareCurrentVersion(summary: FirmwareSummary): string {
   return displayValue(summary.current_versions.find((item) => item.version)?.version ?? null);
+}
+
+function hpeIloFirmwareInventory(firmware: FirmwareState): IloFirmwareInventory {
+  const result = firmware.latestInventory;
+  const liveInventory = recordFrom(result?.live_inventory);
+  const ilo = recordFrom(liveInventory?.ilo);
+  return {
+    biosVersion: unknownStringOrNull(ilo?.bios_version),
+    controllers: hpeIloControllerInventory(ilo?.controllers),
+    iloFirmware: unknownStringOrNull(ilo?.ilo_firmware),
+    smartArrayFirmware: unknownStringOrNull(ilo?.smart_array_firmware),
+    status: stringFact(ilo?.status, stringFact(result?.status, "not_checked"))
+  };
+}
+
+function hpeIloControllerInventory(value: unknown): IloControllerInventory[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item, index) => {
+      const controller = recordFrom(item);
+      if (!controller) return null;
+      const id = unknownStringOrNull(controller.id) || `controller-${index + 1}`;
+      const model = unknownStringOrNull(controller.model);
+      const name = unknownStringOrNull(controller.name) || model || `Storage controller ${index + 1}`;
+      return {
+        adapterType: unknownStringOrNull(controller.adapter_type),
+        firmwareVersion: unknownStringOrNull(controller.firmware_version),
+        health: unknownStringOrNull(controller.health),
+        id,
+        location: unknownStringOrNull(controller.location),
+        model,
+        name,
+        protocol: unknownStringOrNull(controller.protocol),
+        state: unknownStringOrNull(controller.state)
+      };
+    })
+    .filter((item): item is IloControllerInventory => item !== null);
+}
+
+function hpeFirmwareTargetVersions(summaries: FirmwareSummary[]): { bios: string | null; ilo: string | null; smartArray: string | null } {
+  const hpeSummaries = summaries.filter((summary) => summary.device_id === "ilo" || summary.device_id === "raid");
+  return {
+    bios: hpeFirmwareVersionByLabel(hpeSummaries, /bios/i, "target"),
+    ilo: hpeFirmwareVersionByLabel(hpeSummaries, /ilo/i, "target"),
+    smartArray: hpeFirmwareVersionByLabel(hpeSummaries, /smart array/i, "target")
+  };
+}
+
+function hpeFirmwareVersionByLabel(summaries: FirmwareSummary[], labelPattern: RegExp, kind: "current" | "target"): string | null {
+  const rows = summaries.flatMap((summary) => (kind === "current" ? summary.current_versions : summary.approved_versions));
+  const row =
+    kind === "target"
+      ? rows.find((item) => labelPattern.test(item.label) && item.version && item.status === "approved") ??
+        rows.find((item) => labelPattern.test(item.label) && item.version)
+      : rows.find((item) => labelPattern.test(item.label) && item.version);
+  if (row?.version) return row.version;
+  const summary = summaries.find((item) => labelPattern.test(item.label) && item.target_version);
+  return summary?.target_version ?? null;
+}
+
+function firmwareInventorySource(result: FirmwareState["latestInventory"]): string {
+  if (!result) return "Not checked";
+  const source = stringFact(result.source_type, "not_checked");
+  const freshness = stringFact(result.freshness, "not_checked");
+  return `${sourceLabel(source)} / ${statusLabel(freshness)}`;
+}
+
+function hpeIloInventoryWarnings(result: FirmwareState["latestInventory"]): string[] {
+  return Array.from(
+    new Set([
+      ...stringArray(result?.warnings).filter(isHpeIloInventoryWarning),
+      ...providerWarningsFor(result, "ilo")
+    ])
+  );
+}
+
+function isHpeIloInventoryWarning(warning: string): boolean {
+  if (/cisco|netapp/i.test(warning)) return false;
+  return /bios|controller|hpe|ilo|redfish|smart array|storage/i.test(warning);
+}
+
+function providerWarningsFor(result: FirmwareState["latestInventory"], provider: string): string[] {
+  const providerWarnings = recordFrom(result?.provider_warnings);
+  return stringArray(providerWarnings?.[provider]);
+}
+
+function recordFrom(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
+}
+
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.map((item) => String(item)).filter((item) => item.trim()) : [];
+}
+
+function unknownStringOrNull(value: unknown): string | null {
+  const text = typeof value === "string" || typeof value === "number" || typeof value === "boolean" ? String(value).trim() : "";
+  return text || null;
 }
 
 function firstApprovedVersion(summary: FirmwareSummary): string | null {
@@ -1921,9 +3413,6 @@ function firmwareUpgradeActionBlocker(selectedPath: FirmwareUpgradePath | null, 
       `Backend action ${actionId} is not ready.`
     );
   }
-  if (selectedUpgradeAction.action_id === "firmware.upgrade-apply-placeholder") {
-    return "Backend firmware upgrade execution is still a guarded placeholder for this selected firmware path.";
-  }
   return null;
 }
 
@@ -1961,6 +3450,733 @@ function configSnapshot(config: ControlConfig): Record<string, unknown> {
     target: config.target,
     timeout_seconds: config.timeoutSeconds
   };
+}
+
+function sameControlConfig(first: ControlConfig, second: ControlConfig): boolean {
+  return JSON.stringify(configSnapshot(first)) === JSON.stringify(configSnapshot(second));
+}
+
+function configWithTargetOverride(config: ControlConfig, targetOverride?: string): ControlConfig {
+  const target = targetOverride?.trim();
+  return target ? { ...config, target } : config;
+}
+
+function newProfileEditor(config: ControlConfig, seed?: LabProfile): ProfileEditorState {
+  const seedSubnet = seed?.subnet_cidr || seed?.address_plan?.subnet || cidrFromTarget(config.target) || "192.168.1.0/24";
+  const defaults = profileDefaultsForSubnet(seedSubnet);
+  return {
+    addressPlan: defaults.addressPlan,
+    description: "",
+    devices: { enabled: { ...defaultDeviceSelection, netapp: defaults.netappSupported } },
+    deviceSelection: { ...defaultDeviceSelection, netapp: defaults.netappSupported },
+    dnsText: "",
+    features: {
+      ...defaultProfileFeatures,
+      netapp_disabled_reason: defaults.netappSupported ? null : "NetApp high-address defaults require a /24 or larger lab subnet.",
+      netapp_enabled: defaults.netappSupported,
+      storage_protocol: defaults.netappSupported ? "nfs" : "none"
+    },
+    gateway: defaults.gateway,
+    id: null,
+    mode: "new",
+    mtu: "1500",
+    name: "New lab profile",
+    ntpText: "",
+    profileTopology: defaults.profileTopology,
+    subnet: seedSubnet,
+    vlanId: ""
+  };
+}
+
+function profileEditorFromProfile(profile: LabProfile | null | undefined, config: ControlConfig): ProfileEditorState {
+  if (!profile || profile.id === "runtime") return newProfileEditor(config, profile ?? undefined);
+  const defaults = profileDefaultsForSubnet(profile.subnet_cidr || profile.address_plan.subnet || "192.168.1.0/24");
+  const deviceSelection = deviceSelectionFromProfile(profile, defaults.netappSupported);
+  return {
+    addressPlan: {
+      ...emptyAddressPlan,
+      ...defaults.addressPlan,
+      ...profile.address_plan,
+      netapp_iscsi_lifs: profile.address_plan.netapp_iscsi_lifs ?? [],
+      netapp_nfs_lifs: profile.address_plan.netapp_nfs_lifs ?? []
+    },
+    description: profile.description ?? "",
+    devices: profile.devices ?? {},
+    deviceSelection,
+    dnsText: (profile.global_settings.dns_servers?.length ? profile.global_settings.dns_servers : profile.dns).join(", "),
+    features: { ...defaultProfileFeatures, ...profile.features },
+    gateway: profile.global_settings.gateway || profile.gateway || defaults.gateway,
+    id: profile.id,
+    mode: "existing",
+    mtu: profile.global_settings.mtu ? String(profile.global_settings.mtu) : profile.mtu ? String(profile.mtu) : "1500",
+    name: profile.name,
+    ntpText: (profile.global_settings.ntp_servers?.length ? profile.global_settings.ntp_servers : profile.ntp).join(", "),
+    profileTopology: (profile.profile_topology || defaults.profileTopology) as ProfileEditorState["profileTopology"],
+    subnet: profile.subnet_cidr || profile.address_plan.subnet || defaults.addressPlan.subnet || "192.168.1.0/24",
+    vlanId: profile.global_settings.vlan_id || profile.vlan_id || ""
+  };
+}
+
+function deviceSelectionFromProfile(profile: LabProfile, netappSupported: boolean): ProfileDeviceSelection {
+  const enabled = recordValue(profile.devices.enabled);
+  const serverIncluded = booleanRecordValue(enabled, "server", booleanRecordValue(enabled, "ilo", true));
+  return {
+    cisco: booleanRecordValue(enabled, "cisco", true),
+    esxi: booleanRecordValue(enabled, "esxi", true),
+    netapp: booleanRecordValue(enabled, "netapp", profile.features.netapp_enabled && netappSupported),
+    server: serverIncluded,
+    storage: booleanRecordValue(enabled, "storage", serverIncluded),
+    vcenter: booleanRecordValue(enabled, "vcenter", profile.features.vcenter_enabled)
+  };
+}
+
+function profileDefaultsForSubnet(subnet: string): {
+  addressPlan: LabAddressPlan;
+  gateway: string;
+  netappSupported: boolean;
+  profileTopology: ProfileEditorState["profileTopology"];
+} {
+  const parsed = parseIpv4Cidr(subnet);
+  const prefix = parsed?.prefix ?? 24;
+  const profileTopology: ProfileEditorState["profileTopology"] = prefix <= 24 ? "high_address_lab" : "compact_edge_lab";
+  const netappSupported = prefix <= 24;
+  const addressPlan: LabAddressPlan = {
+    ...emptyAddressPlan,
+    subnet: parsed?.cidr ?? subnet
+  };
+  const addressAt = (offset: number) => (parsed ? ipv4FromInt(parsed.base + offset) : null);
+  const gateway = addressAt(1) ?? "";
+
+  if (profileTopology === "high_address_lab") {
+    addressPlan.ilo = addressAt(201);
+    addressPlan.server_embedded_nic = addressAt(202);
+    addressPlan.esxi_management = addressAt(203);
+    addressPlan.cisco_management = addressAt(204);
+    addressPlan.ansible_control_host = addressAt(205);
+    addressPlan.netapp_controller_a_sp = addressAt(210);
+    addressPlan.netapp_controller_b_sp = addressAt(211);
+    addressPlan.netapp_cluster_mgmt = addressAt(220);
+    addressPlan.netapp_node_a_mgmt = addressAt(221);
+    addressPlan.netapp_node_b_mgmt = addressAt(222);
+    addressPlan.netapp_svm_mgmt = addressAt(223);
+    addressPlan.netapp_nfs_lifs = [addressAt(230), addressAt(231)].filter((value): value is string => Boolean(value));
+    addressPlan.netapp_iscsi_lifs = [addressAt(240), addressAt(241), addressAt(242), addressAt(243)].filter(
+      (value): value is string => Boolean(value)
+    );
+    return { addressPlan, gateway, netappSupported, profileTopology };
+  }
+
+  addressPlan.cisco_management = addressAt(2);
+  addressPlan.ansible_control_host = addressAt(9);
+  addressPlan.esxi_management = addressAt(10);
+  addressPlan.ilo = addressAt(11);
+  return { addressPlan, gateway, netappSupported, profileTopology };
+}
+
+function parseIpv4Cidr(value: string): { base: number; cidr: string; prefix: number } | null {
+  const match = value.trim().match(/^(\d{1,3}(?:\.\d{1,3}){3})(?:\/(\d{1,2}))?$/);
+  if (!match) return null;
+  const ip = ipv4ToInt(match[1]);
+  if (ip === null) return null;
+  const prefix = match[2] ? Number(match[2]) : 24;
+  if (!Number.isInteger(prefix) || prefix < 1 || prefix > 32) return null;
+  const mask = prefix === 0 ? 0 : (0xffffffff << (32 - prefix)) >>> 0;
+  const base = (ip & mask) >>> 0;
+  return { base, cidr: `${ipv4FromInt(base)}/${prefix}`, prefix };
+}
+
+function ipv4ToInt(value: string): number | null {
+  const parts = value.split(".").map((part) => Number(part));
+  if (parts.length !== 4 || parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) return null;
+  return (((parts[0] << 24) >>> 0) + (parts[1] << 16) + (parts[2] << 8) + parts[3]) >>> 0;
+}
+
+function ipv4FromInt(value: number): string {
+  return [24, 16, 8, 0].map((shift) => (value >>> shift) & 255).join(".");
+}
+
+function cidrFromTarget(target: string): string | null {
+  const trimmed = target.trim();
+  return trimmed.includes("/") ? trimmed : null;
+}
+
+function updateProfileField<K extends keyof ProfileEditorState>(
+  context: ControlCenterContext,
+  field: K,
+  value: ProfileEditorState[K]
+) {
+  context.setProfileEditor((current) => ({ ...current, [field]: value }));
+}
+
+function updateProfileSubnet(context: ControlCenterContext, subnet: string) {
+  const defaults = profileDefaultsForSubnet(subnet);
+  context.setProfileEditor((current) => ({
+    ...current,
+    addressPlan: {
+      ...current.addressPlan,
+      ...defaults.addressPlan,
+      subnet
+    },
+    deviceSelection: {
+      ...current.deviceSelection,
+      netapp: current.deviceSelection.netapp && defaults.netappSupported
+    },
+    features: {
+      ...current.features,
+      netapp_disabled_reason: defaults.netappSupported ? null : "NetApp high-address defaults require a /24 or larger lab subnet.",
+      netapp_enabled: current.deviceSelection.netapp && defaults.netappSupported,
+      storage_protocol: current.deviceSelection.netapp && defaults.netappSupported ? current.features.storage_protocol || "nfs" : "none"
+    },
+    gateway: defaults.gateway,
+    profileTopology: defaults.profileTopology,
+    subnet
+  }));
+}
+
+function updateProfileDeviceSelection(context: ControlCenterContext, deviceKey: ProfileDeviceKey, included: boolean) {
+  context.setProfileEditor((current) => {
+    const deviceSelection = { ...current.deviceSelection, [deviceKey]: included };
+    const features = {
+      ...current.features,
+      netapp_enabled: deviceSelection.netapp,
+      vcenter_enabled: deviceSelection.vcenter
+    };
+    features.storage_protocol = features.netapp_enabled ? features.storage_protocol || "nfs" : "none";
+    features.netapp_disabled_reason = features.netapp_enabled ? null : "NetApp excluded by lab profile.";
+    features.vcenter_disabled_reason = features.vcenter_enabled ? null : "vCenter excluded by lab profile.";
+    return {
+      ...current,
+      devices: {
+        ...current.devices,
+        enabled: deviceSelection
+      },
+      deviceSelection,
+      features
+    };
+  });
+}
+
+function updateProfileAddressPlan(context: ControlCenterContext, field: keyof LabAddressPlan, value: string) {
+  context.setProfileEditor((current) => ({
+    ...current,
+    addressPlan: {
+      ...current.addressPlan,
+      [field]: Array.isArray(current.addressPlan[field]) ? splitCsv(value) : value
+    }
+  }));
+}
+
+function updateProfileDeviceDetail(context: ControlCenterContext, deviceKey: ProfileDeviceKey, field: string, value: string) {
+  const detailKey = `${deviceKey}_details`;
+  context.setProfileEditor((current) => ({
+    ...current,
+    devices: {
+      ...current.devices,
+      [detailKey]: {
+        ...recordValue(current.devices[detailKey]),
+        [field]: value
+      }
+    }
+  }));
+}
+
+function setStorageAllocationRows(context: ControlCenterContext, rows: StorageDriveAllocation[]) {
+  context.setProfileEditor((current) => ({
+    ...current,
+    devices: {
+      ...current.devices,
+      storage_details: {
+        ...recordValue(current.devices.storage_details),
+        drive_allocations: rows
+      }
+    }
+  }));
+}
+
+function updateStorageAllocation(
+  context: ControlCenterContext,
+  rowId: string,
+  field: keyof StorageDriveAllocation,
+  value: string
+) {
+  const rows = storageDriveAllocationRows(context.profileEditor).map((row) =>
+    row.id === rowId ? { ...row, [field]: value } : row
+  );
+  setStorageAllocationRows(context, rows);
+}
+
+function addStorageAllocation(context: ControlCenterContext) {
+  const rows = storageDriveAllocationRows(context.profileEditor);
+  setStorageAllocationRows(context, [
+    ...rows,
+    {
+      controller_path: deviceDetailValue(context.profileEditor, "storage", "controller_path"),
+      drive_bays: "",
+      drive_count: "0",
+      id: `drive-group-${Date.now()}`,
+      notes: "",
+      raid_level: "",
+      role: "storage",
+      volume_name: ""
+    }
+  ]);
+}
+
+function removeStorageAllocation(context: ControlCenterContext, rowId: string) {
+  const rows = storageDriveAllocationRows(context.profileEditor).filter((row) => row.id !== rowId);
+  setStorageAllocationRows(context, rows.length ? rows : defaultStorageDriveAllocations(context.profileEditor));
+}
+
+function storageDriveAllocationRows(editor: ProfileEditorState): StorageDriveAllocation[] {
+  const details = recordValue(editor.devices.storage_details);
+  const saved = details.drive_allocations;
+  if (Array.isArray(saved)) {
+    const normalized = saved
+      .map((row, index) => storageAllocationFromRecord(recordValue(row), index))
+      .filter((row): row is StorageDriveAllocation => Boolean(row));
+    if (normalized.length) return normalized;
+  }
+  const legacyRows = legacyStorageAllocations(details);
+  return legacyRows.length ? legacyRows : defaultStorageDriveAllocations(editor);
+}
+
+function storageAllocationFromRecord(record: Record<string, unknown>, index: number): StorageDriveAllocation | null {
+  const role = stringRecordValue(record, "role", index === 0 ? "esxi" : "storage");
+  return {
+    controller_path: stringRecordValue(record, "controller_path"),
+    drive_bays: stringRecordValue(record, "drive_bays"),
+    drive_count: stringRecordValue(record, "drive_count"),
+    id: stringRecordValue(record, "id", `${role}-${index}`),
+    notes: stringRecordValue(record, "notes"),
+    raid_level: stringRecordValue(record, "raid_level"),
+    role,
+    volume_name: stringRecordValue(record, "volume_name")
+  };
+}
+
+function legacyStorageAllocations(details: Record<string, unknown>): StorageDriveAllocation[] {
+  const controller = stringRecordValue(details, "controller_path");
+  const osBays = stringRecordValue(details, "os_drive_bays");
+  const dataBays = stringRecordValue(details, "data_drive_bays");
+  const spareBay = stringRecordValue(details, "hot_spare_bay");
+  const rows: StorageDriveAllocation[] = [];
+  if (osBays || stringRecordValue(details, "os_raid_level")) {
+    rows.push({
+      controller_path: controller,
+      drive_bays: osBays,
+      drive_count: String(splitCsv(osBays).length || 2),
+      id: "esxi-boot",
+      notes: "",
+      raid_level: stringRecordValue(details, "os_raid_level", "RAID1"),
+      role: "esxi",
+      volume_name: stringRecordValue(details, "boot_volume_name", "ESXI_BOOT")
+    });
+  }
+  if (dataBays || stringRecordValue(details, "data_raid_level")) {
+    rows.push({
+      controller_path: controller,
+      drive_bays: dataBays,
+      drive_count: String(splitCsv(dataBays).length || 4),
+      id: "storage-data",
+      notes: "",
+      raid_level: stringRecordValue(details, "data_raid_level", "RAID5"),
+      role: "storage",
+      volume_name: stringRecordValue(details, "data_volume_name", "DATA")
+    });
+  }
+  if (spareBay) {
+    rows.push({
+      controller_path: controller,
+      drive_bays: spareBay,
+      drive_count: "1",
+      id: "hot-spare",
+      notes: "",
+      raid_level: "Spare",
+      role: "spare",
+      volume_name: "HOT_SPARE"
+    });
+  }
+  return rows;
+}
+
+function defaultStorageDriveAllocations(editor: ProfileEditorState): StorageDriveAllocation[] {
+  const controller = deviceDetailValue(editor, "storage", "controller_path");
+  return [
+    {
+      controller_path: controller,
+      drive_bays: "1, 2",
+      drive_count: "2",
+      id: "esxi-boot",
+      notes: "",
+      raid_level: "RAID1",
+      role: "esxi",
+      volume_name: "ESXI_BOOT"
+    },
+    {
+      controller_path: controller,
+      drive_bays: "3, 4, 5, 6",
+      drive_count: "4",
+      id: "storage-data",
+      notes: "",
+      raid_level: "RAID5",
+      role: "storage",
+      volume_name: "DATA"
+    },
+    {
+      controller_path: controller,
+      drive_bays: "7",
+      drive_count: "1",
+      id: "hot-spare",
+      notes: "",
+      raid_level: "Spare",
+      role: "spare",
+      volume_name: "HOT_SPARE"
+    }
+  ];
+}
+
+function driveAllocationRoleLabel(role: string): string {
+  if (role === "esxi") return "ESXi";
+  if (role === "storage") return "Storage";
+  if (role === "spare") return "Hot spare";
+  if (role === "unused") return "Unused";
+  return statusLabel(role);
+}
+
+function storageDetailsForProfile(editor: ProfileEditorState): Record<string, unknown> {
+  const details = recordValue(editor.devices.storage_details);
+  const rows = storageDriveAllocationRows(editor);
+  const esxi = rows.find((row) => row.role === "esxi");
+  const storage = rows.find((row) => row.role === "storage");
+  const spare = rows.find((row) => row.role === "spare");
+  return {
+    ...details,
+    boot_volume_name: esxi?.volume_name ?? stringRecordValue(details, "boot_volume_name"),
+    data_drive_bays: storage?.drive_bays ?? stringRecordValue(details, "data_drive_bays"),
+    data_raid_level: storage?.raid_level ?? stringRecordValue(details, "data_raid_level"),
+    data_volume_name: storage?.volume_name ?? stringRecordValue(details, "data_volume_name"),
+    drive_allocations: rows,
+    hot_spare_bay: spare?.drive_bays ?? stringRecordValue(details, "hot_spare_bay"),
+    os_drive_bays: esxi?.drive_bays ?? stringRecordValue(details, "os_drive_bays"),
+    os_raid_level: esxi?.raid_level ?? stringRecordValue(details, "os_raid_level")
+  };
+}
+
+function detectedDeviceFacts(context: ControlCenterContext, deviceKey: ProfileDeviceKey): Array<[string, string]> {
+  const summaries = firmwareSummariesForDevice(context.firmware.summaries, deviceKey);
+  const firstSummary = summaries[0] ?? null;
+  return [
+    ["Profile target", profileDeviceAddress(deviceKey, context.profileEditor.addressPlan) || "Not set"],
+    ["Current firmware", deviceCurrentFirmwareText(summaries)],
+    ["Approved/target firmware", deviceTargetFirmwareText(summaries)],
+    ["Controller / hardware", deviceHardwareText(summaries, deviceKey)],
+    ["Inventory source", firstSummary ? `${sourceLabel(firstSummary.source_type)} / ${statusLabel(firstSummary.freshness)}` : "No firmware inventory loaded"]
+  ];
+}
+
+function applyDetectedProfileDefaults(context: ControlCenterContext, deviceKey: ProfileDeviceKey) {
+  const definition = profileDeviceDefinitions.find((item) => item.key === deviceKey);
+  if (!definition) return;
+  const defaults = profileDefaultsForSubnet(context.profileEditor.subnet);
+  const detailDefaults = detectedDeviceDetailDefaults(context, deviceKey);
+  context.setProfileEditor((current) => {
+    const addressPlan = { ...current.addressPlan };
+    definition.addressFields.forEach((field) => {
+      const defaultValue = defaults.addressPlan[field];
+      if (addressFieldIsEmpty(addressPlan[field]) && !addressFieldIsEmpty(defaultValue)) {
+        Object.assign(addressPlan, { [field]: Array.isArray(defaultValue) ? [...defaultValue] : defaultValue });
+      }
+    });
+
+    const detailKey = `${deviceKey}_details`;
+    const existingDetails = recordValue(current.devices[detailKey]);
+    const nextDetails: Record<string, unknown> = { ...existingDetails };
+    Object.entries(detailDefaults).forEach(([field, value]) => {
+      if (!stringRecordValue(nextDetails, field) && value) {
+        nextDetails[field] = value;
+      }
+    });
+
+    if (deviceKey === "storage" && !Array.isArray(existingDetails.drive_allocations)) {
+      const editorWithDetails: ProfileEditorState = {
+        ...current,
+        devices: {
+          ...current.devices,
+          storage_details: nextDetails
+        }
+      };
+      const controller = stringRecordValue(nextDetails, "controller_path");
+      nextDetails.drive_allocations = defaultStorageDriveAllocations(editorWithDetails).map((row) => ({
+        ...row,
+        controller_path: row.controller_path || controller
+      }));
+    }
+
+    return {
+      ...current,
+      addressPlan,
+      devices: {
+        ...current.devices,
+        [detailKey]: nextDetails
+      }
+    };
+  });
+}
+
+function detectedDeviceDetailDefaults(context: ControlCenterContext, deviceKey: ProfileDeviceKey): Record<string, string> {
+  const summaries = firmwareSummariesForDevice(context.firmware.summaries, deviceKey);
+  const summary = summaries[0] ?? null;
+  const paths = firmwarePathsForDevice(collectFirmwarePaths(context.firmware.summaries), deviceKey);
+  const path = paths[0] ?? null;
+  const current = deviceCurrentFirmwareText(summaries);
+  const target = path?.target_version || path?.package_version || (summary ? firstApprovedVersion(summary) : null) || "";
+  const defaults: Record<string, string> = {};
+
+  if (deviceKey === "server") {
+    const iloCurrent = serverIloFirmwareText(summaries);
+    if (iloCurrent !== "Not detected") defaults.current_firmware = iloCurrent;
+    const bios = summary ? firmwareVersionByLabel(summary, /bios/i) : "";
+    if (bios && bios !== "Unknown") defaults.bios_version = bios;
+    if (target) defaults.firmware_baseline = target;
+  } else if (deviceKey === "storage") {
+    const hardware = deviceHardwareText(summaries, deviceKey);
+    if (hardware !== "Not detected") defaults.target_controller = hardware;
+    if (current !== "Not detected") defaults.controller_firmware = current;
+    if (target) defaults.firmware_baseline = target;
+    defaults.total_drive_bays = "8";
+  } else {
+    if (current !== "Not detected") defaults.current_firmware = current;
+    if (target) defaults.firmware_baseline = target;
+  }
+
+  return defaults;
+}
+
+function addressFieldIsEmpty(value: LabAddressPlan[keyof LabAddressPlan]): boolean {
+  if (Array.isArray(value)) return value.length === 0;
+  return !value;
+}
+
+function serverIloFirmwareText(summaries: FirmwareSummary[]): string {
+  const summary = summaries.find((candidate) => /ilo/i.test(candidate.label) || /management_firmware/i.test(candidate.component_type));
+  if (!summary) return "Not detected";
+  const version = firmwareVersionByLabel(summary, /ilo/i) || firmwareCurrentVersion(summary);
+  return version === "Unknown" ? "Not detected" : `${summary.label}: ${version}`;
+}
+
+function deviceCurrentFirmwareText(summaries: FirmwareSummary[]): string {
+  const values = summaries
+    .map((summary) => {
+      const version = firmwareCurrentVersion(summary);
+      return version === "Unknown" ? "" : `${summary.label}: ${version}`;
+    })
+    .filter(Boolean);
+  return values.length ? values.join("; ") : "Not detected";
+}
+
+function deviceTargetFirmwareText(summaries: FirmwareSummary[]): string {
+  const values = summaries
+    .map((summary) => firstApprovedVersion(summary) || summary.target_version || "")
+    .filter(Boolean);
+  return values.length ? Array.from(new Set(values)).join(", ") : "Not detected";
+}
+
+function deviceHardwareText(summaries: FirmwareSummary[], deviceKey: ProfileDeviceKey): string {
+  const paths = firmwarePathsForDevice(collectFirmwarePaths(summaries), deviceKey);
+  const pathLabel = paths.find((path) => path.component_label)?.component_label;
+  if (pathLabel) return pathLabel;
+  const summary = summaries[0];
+  if (summary?.label) return summary.label;
+  if (deviceKey === "storage") return "Not detected";
+  return "Not detected";
+}
+
+function updateProfileFeature<K extends keyof LabProfileFeatures>(
+  context: ControlCenterContext,
+  field: K,
+  value: LabProfileFeatures[K]
+) {
+  context.setProfileEditor((current) => ({
+    ...current,
+    features: {
+      ...current.features,
+      [field]: value
+    }
+  }));
+}
+
+function deviceDetailValue(editor: ProfileEditorState, deviceKey: ProfileDeviceKey, field: string): string {
+  const details = recordValue(editor.devices[`${deviceKey}_details`]);
+  const value = details[field];
+  return typeof value === "string" ? value : "";
+}
+
+function validateProfileEditor(editor: ProfileEditorState): string[] {
+  const errors: string[] = [];
+  if (editor.name.trim().length < 2) errors.push("Lab name is required.");
+  if (!editor.subnet.trim()) errors.push("Subnet CIDR is required.");
+  if (editor.subnet.trim() && !parseIpv4Cidr(editor.subnet.trim())) errors.push("Subnet CIDR must be an IPv4 CIDR such as 192.168.1.0/24.");
+  if (!Object.values(editor.deviceSelection).some(Boolean)) errors.push("Select at least one hardware device for the profile.");
+  if (editor.mtu.trim() && (Number(editor.mtu) < 576 || Number(editor.mtu) > 9216)) errors.push("MTU must be between 576 and 9216.");
+  return errors;
+}
+
+function profilePayloadFromEditor(editor: ProfileEditorState): LabProfileWrite {
+  const dnsServers = splitCsv(editor.dnsText);
+  const ntpServers = splitCsv(editor.ntpText);
+  const mtu = editor.mtu.trim() ? Number(editor.mtu) : null;
+  const addressPlan = {
+    ...emptyAddressPlan,
+    ...editor.addressPlan,
+    subnet: editor.subnet.trim()
+  };
+  const enabledDevices = {
+    ...editor.deviceSelection,
+    ilo: editor.deviceSelection.server
+  };
+  const devices: LabProfileDevices = {
+    ...editor.devices,
+    cisco: editor.deviceSelection.cisco ? addressPlan.cisco_management : null,
+    enabled: enabledDevices,
+    esxi: editor.deviceSelection.esxi ? addressPlan.esxi_management : null,
+    ilo: editor.deviceSelection.server ? addressPlan.ilo : null,
+    internal_storage: editor.deviceSelection.storage ? storageDetailsForProfile(editor) : null,
+    netapp: editor.deviceSelection.netapp
+      ? {
+          cluster_mgmt: addressPlan.netapp_cluster_mgmt,
+          controller_a_sp: addressPlan.netapp_controller_a_sp,
+          controller_b_sp: addressPlan.netapp_controller_b_sp,
+          iscsi_lifs: addressPlan.netapp_iscsi_lifs,
+          nfs_lifs: addressPlan.netapp_nfs_lifs,
+          node_a_mgmt: addressPlan.netapp_node_a_mgmt,
+          node_b_mgmt: addressPlan.netapp_node_b_mgmt,
+          status: "in_scope",
+          svm_mgmt: addressPlan.netapp_svm_mgmt
+        }
+      : null,
+    switch_primary: editor.deviceSelection.cisco ? addressPlan.cisco_management : null,
+    server: editor.deviceSelection.server ? addressPlan.server_embedded_nic : null,
+    storage_details: editor.deviceSelection.storage ? storageDetailsForProfile(editor) : null,
+    utility_vm: addressPlan.ansible_control_host,
+    vcenter: editor.deviceSelection.vcenter ? deviceDetailValue(editor, "vcenter", "endpoint") : null
+  };
+  const features: LabProfileFeatures = {
+    ...editor.features,
+    netapp_disabled_reason: editor.deviceSelection.netapp ? null : "NetApp excluded by lab profile.",
+    netapp_enabled: editor.deviceSelection.netapp,
+    storage_protocol: editor.deviceSelection.netapp ? editor.features.storage_protocol || "nfs" : "none",
+    vcenter_disabled_reason: editor.deviceSelection.vcenter ? null : "vCenter excluded by lab profile.",
+    vcenter_enabled: editor.deviceSelection.vcenter
+  };
+  const globalSettings: LabGlobalSettings = {
+    dns_servers: dnsServers,
+    domain_name: stringOrNull(deviceDetailValue(editor, "esxi", "dns_domain")),
+    gateway: stringOrNull(editor.gateway),
+    mtu,
+    netapp_disabled_reason: features.netapp_disabled_reason,
+    netapp_enabled: features.netapp_enabled,
+    ntp_servers: ntpServers,
+    subnet_prefix: parseIpv4Cidr(editor.subnet)?.prefix ?? 24,
+    timezone: null,
+    vlan_id: stringOrNull(editor.vlanId),
+    vcenter_enabled: features.vcenter_enabled
+  };
+  return {
+    address_plan: addressPlan,
+    description: stringOrNull(editor.description),
+    devices,
+    dns: dnsServers,
+    features,
+    gateway: stringOrNull(editor.gateway),
+    global_settings: globalSettings,
+    mtu,
+    name: editor.name.trim(),
+    ntp: ntpServers,
+    profile_topology: editor.profileTopology,
+    subnet_cidr: editor.subnet.trim(),
+    vlan_id: stringOrNull(editor.vlanId)
+  };
+}
+
+function includedDeviceLabels(selection: ProfileDeviceSelection): string {
+  const labels = profileDeviceDefinitions
+    .filter((definition) => selection[definition.key])
+    .map((definition) => definition.label);
+  return labels.length ? labels.join(", ") : "None selected";
+}
+
+function profileDeviceLabel(deviceKey: ProfileDeviceKey): string {
+  return profileDeviceDefinitions.find((definition) => definition.key === deviceKey)?.label ?? statusLabel(deviceKey);
+}
+
+function profileDeviceAddress(deviceKey: ProfileDeviceKey, addressPlan: LabAddressPlan): string {
+  if (deviceKey === "cisco") return addressPlan.cisco_management ?? "";
+  if (deviceKey === "server") return addressPlan.ilo_initial ?? addressPlan.ilo ?? addressPlan.server_embedded_nic ?? "";
+  if (deviceKey === "storage") return addressPlan.ilo_initial ?? addressPlan.ilo ?? "";
+  if (deviceKey === "esxi") return addressPlan.esxi_management ?? "";
+  if (deviceKey === "netapp") return addressPlan.netapp_cluster_mgmt ?? addressPlan.netapp_node_a_mgmt ?? "";
+  return "";
+}
+
+function firmwareTargetForDevice(editor: ProfileEditorState, deviceKey: ProfileDeviceKey): string {
+  if (deviceKey === "server" || deviceKey === "storage") {
+    return (
+      editor.addressPlan.ilo_initial ??
+      editor.addressPlan.ilo ??
+      editor.addressPlan.server_embedded_nic ??
+      ""
+    );
+  }
+  return profileDeviceAddress(deviceKey, editor.addressPlan);
+}
+
+function addressPlanFieldLabel(field: keyof LabAddressPlan): string {
+  const labels: Record<keyof LabAddressPlan, string> = {
+    ansible_control_host: "Automation/control host IP",
+    cisco_management: "Cisco management IP",
+    esxi_management: "ESXi management IP",
+    ilo: "iLO management IP",
+    ilo_initial: "Initial iLO IP",
+    netapp_cluster_mgmt: "Cluster management IP",
+    netapp_controller_a_sp: "Controller A SP IP",
+    netapp_controller_b_sp: "Controller B SP IP",
+    netapp_iscsi_lifs: "iSCSI LIF IPs",
+    netapp_nfs_lifs: "NFS LIF IPs",
+    netapp_node_a_mgmt: "Node A management IP",
+    netapp_node_b_mgmt: "Node B management IP",
+    netapp_svm_mgmt: "SVM management IP",
+    server_embedded_nic: "Server embedded NIC IP",
+    subnet: "Subnet"
+  };
+  return labels[field];
+}
+
+function splitCsv(value: string): string[] {
+  return value
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function stringOrNull(value: string): string | null {
+  const trimmed = value.trim();
+  return trimmed || null;
+}
+
+function recordValue(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+}
+
+function booleanRecordValue(record: Record<string, unknown>, key: string, fallback: boolean): boolean {
+  const value = record[key];
+  return typeof value === "boolean" ? value : fallback;
+}
+
+function stringRecordValue(record: Record<string, unknown>, key: string, fallback = ""): string {
+  const value = record[key];
+  if (typeof value === "string") return value;
+  if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  return fallback;
 }
 
 function shouldClearResultsForConfig(config: ControlConfig, results: Array<OperationResult | null>): boolean {
@@ -2154,6 +4370,13 @@ function formatDateTime(value: string): string {
   const parsed = Date.parse(value);
   if (Number.isNaN(parsed)) return value;
   return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(parsed);
+}
+
+function elapsedLabel(milliseconds: number): string {
+  const totalSeconds = Math.max(0, Math.floor(milliseconds / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 }
 
 function displayValue(value: string | null | undefined): string {

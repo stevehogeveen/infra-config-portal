@@ -153,6 +153,27 @@ def update_lab_profile(profile_id: str, payload: dict[str, Any]) -> dict[str, An
     return _profile_read(profile, active=store.get("active_profile_id") == profile_id)
 
 
+def delete_lab_profile(profile_id: str) -> dict[str, Any]:
+    if profile_id == RUNTIME_PROFILE_ID:
+        raise LabProfileError("Runtime environment profile cannot be deleted.")
+
+    store = _read_store()
+    profiles = store.get("profiles", [])
+    remaining = [
+        profile
+        for profile in profiles
+        if not (isinstance(profile, dict) and profile.get("id") == profile_id)
+    ]
+    if len(remaining) == len(profiles):
+        raise LabProfileNotFoundError("Lab profile not found")
+
+    store["profiles"] = remaining
+    if store.get("active_profile_id") == profile_id:
+        store["active_profile_id"] = None
+    _write_store(store)
+    return list_lab_profiles()
+
+
 def activate_lab_profile(profile_id: str) -> dict[str, Any]:
     store = _read_store()
     if profile_id == RUNTIME_PROFILE_ID:

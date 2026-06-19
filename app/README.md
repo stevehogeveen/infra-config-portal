@@ -405,10 +405,17 @@ under `artifacts/codex-runs/`. It does not upload, flash, reboot for firmware,
 or update firmware.
 
 ```bash
+make provider-lab-hpe-firmware-inventory
 make provider-lab-firmware-inventory
 make provider-lab-firmware-compliance
 make provider-lab-firmware-waiver-check
 ```
+
+Use `provider-lab-hpe-firmware-inventory` or its
+`provider-lab-ilo-firmware-inventory` alias when the current task is only iLO,
+BIOS, or Smart Array controller firmware discovery. The broader
+`provider-lab-firmware-inventory` target can refresh additional configured
+provider evidence.
 
 When the gate is blocked, Cisco bootstrap/apply, HPE RAID apply/reset, ESXi
 boot workflow actions, NetApp setup workflow previews, and full rebuild

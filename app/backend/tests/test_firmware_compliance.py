@@ -506,6 +506,196 @@ def test_hpe_service_pack_media_is_candidate_for_smart_array(
     assert path["selection_source"] == "auto"
 
 
+def test_hpe_smart_array_bridge_version_controls_staged_path(monkeypatch, firmware_settings, tmp_path) -> None:
+    media_root = tmp_path / "artifacts" / "Media"
+    media_root.mkdir(parents=True)
+    package = media_root / "HPE_SR_Gen10_8.00_A.fwpkg"
+    package.write_bytes(b"smart array")
+    firmware_settings.media_inventory_dirs = (str(media_root),)
+    monkeypatch.setattr(fc, "settings", firmware_settings)
+    monkeypatch.setattr(fc, "_media_directories", lambda: [media_root])
+    monkeypatch.setattr(mi, "DEFAULT_MEDIA_ROOT", media_root)
+    monkeypatch.setattr(
+        fc,
+        "load_firmware_baseline",
+        lambda: _baseline(
+            _component(
+                "hpe_smart_array_firmware",
+                minimum="8.00",
+                approved=["8.00"],
+                required_intermediate_versions=["5.61"],
+                unknown_policy="warning",
+            )
+        ),
+    )
+    record_probe_result(
+        "ilo-redfish",
+        {
+            "provider_id": "ilo-redfish",
+            "status": "ok",
+            "storage": {"controllers": [{"FirmwareVersion": "1.98", "Model": "HPE Smart Array P408i-a SR Gen10"}]},
+        },
+    )
+
+    staged = _path_for(fc.get_firmware_compliance(scope="hpe"), "hpe_smart_array_firmware")
+    assert staged["path_status"] == "staged"
+    assert staged["target_version"] == "8.00"
+    assert staged["required_intermediate_versions"] == ["5.61"]
+    assert staged["pending_intermediate_versions"] == ["5.61"]
+    assert staged["selected_file_name"] == "HPE_SR_Gen10_8.00_A.fwpkg"
+
+    clear_probe_results()
+    record_probe_result(
+        "ilo-redfish",
+        {
+            "provider_id": "ilo-redfish",
+            "status": "ok",
+            "storage": {"controllers": [{"FirmwareVersion": "5.61", "Model": "HPE Smart Array P408i-a SR Gen10"}]},
+        },
+    )
+
+    direct = _path_for(fc.get_firmware_compliance(scope="hpe"), "hpe_smart_array_firmware")
+    assert direct["path_status"] == "direct"
+    assert direct["pending_intermediate_versions"] == []
+
+
+def test_firmware_inventory_returns_ilo_bios_and_controller_details(monkeypatch, firmware_settings) -> None:
+    monkeypatch.setattr(fc, "settings", firmware_settings)
+    record_probe_result(
+        "ilo-redfish",
+        {
+            "provider_id": "ilo-redfish",
+            "status": "ok",
+            "managers": [{"FirmwareVersion": "iLO 5 v3.19"}],
+            "systems": [{"BiosVersion": "U32 v3.30 (07/31/2024)"}],
+            "storage": {
+                "controllers": [
+                    {
+                        "@odata.id": "/redfish/v1/Systems/1/Storage/1",
+                        "Id": "0",
+                        "Name": "Smart Array Controller",
+                        "Model": "HPE Smart Array P408i-a SR Gen10",
+                        "FirmwareVersion": "52.26.3-5379",
+                        "Location": "Slot 0",
+                        "ControllerProtocol": "SAS",
+                        "Status": {"Health": "OK", "State": "Enabled"},
+                    }
+                ]
+            },
+        },
+    )
+
+    inventory = fc.get_firmware_inventory()
+    ilo_inventory = inventory["live_inventory"]["ilo"]
+
+    assert ilo_inventory["ilo_firmware"] == "iLO 5 v3.19"
+    assert ilo_inventory["bios_version"] == "U32 v3.30 (07/31/2024)"
+    assert ilo_inventory["smart_array_firmware"] == "52.26.3-5379"
+    assert ilo_inventory["controllers"] == [
+        {
+            "id": "0",
+            "name": "Smart Array Controller",
+            "model": "HPE Smart Array P408i-a SR Gen10",
+            "firmware_version": "52.26.3-5379",
+            "health": "OK",
+            "state": "Enabled",
+            "location": "Slot 0",
+            "protocol": "SAS",
+            "adapter_type": None,
+            "odata_id": "/redfish/v1/Systems/1/Storage/1",
+        }
+    ]
+
+
+def test_firmware_inventory_refresh_uses_control_center_target_first(monkeypatch, firmware_settings) -> None:
+    monkeypatch.setattr(fc, "settings", firmware_settings)
+
+    class FakeIloConfig:
+        def __init__(
+            self,
+            *,
+            host,
+            username,
+            password,
+            verify_tls,
+            timeout_seconds,
+            host_source="runtime_env",
+            fallback_hosts=(),
+            fallback_host_sources=(),
+        ) -> None:
+            self.host = host
+            self.username = username
+            self.password = password
+            self.verify_tls = verify_tls
+            self.timeout_seconds = timeout_seconds
+            self.host_source = host_source
+            self.fallback_hosts = fallback_hosts
+            self.fallback_host_sources = fallback_host_sources
+
+        @classmethod
+        def from_settings(cls):
+            return cls(
+                host="192.168.1.201",
+                username="Administrator",
+                password="secret",
+                verify_tls=False,
+                timeout_seconds=8,
+                host_source="runtime_env",
+                fallback_hosts=("192.168.1.202",),
+                fallback_host_sources=("saved_profile",),
+            )
+
+    config = fc._ilo_refresh_config("192.168.1.11", config_cls=FakeIloConfig)
+
+    assert config.host == "192.168.1.11"
+    assert config.host_source == "control_center_target"
+    assert config.username == "Administrator"
+    assert config.password == "secret"
+    assert config.fallback_hosts == ("192.168.1.201", "192.168.1.202")
+    assert config.fallback_host_sources == ("runtime_env", "saved_profile")
+
+
+def test_firmware_inventory_hpe_scope_refreshes_ilo_only(monkeypatch, firmware_settings) -> None:
+    firmware_settings.netapp_configured = False
+    firmware_settings.netapp_current_ontap_version = None
+    monkeypatch.setattr(fc, "settings", firmware_settings)
+    monkeypatch.setattr(fc, "get_netapp_runtime_state", lambda: {"configured": False})
+    calls: list[dict[str, object]] = []
+
+    def fake_refresh_live_inventory(
+        *,
+        target_override: str | None = None,
+        include_other_providers: bool = True,
+    ) -> None:
+        calls.append(
+            {
+                "target_override": target_override,
+                "include_other_providers": include_other_providers,
+            }
+        )
+        record_probe_result(
+            "ilo-redfish",
+            {
+                "provider_id": "ilo-redfish",
+                "status": "ok",
+                "managers": [{"FirmwareVersion": "iLO 5 v3.19"}],
+            },
+        )
+
+    monkeypatch.setattr(fc, "_refresh_live_inventory", fake_refresh_live_inventory)
+
+    result = fc.get_firmware_inventory(
+        refresh_live=True,
+        target_override="192.0.2.11",
+        refresh_scope="hpe",
+    )
+
+    assert calls == [{"target_override": "192.0.2.11", "include_other_providers": False}]
+    assert result["live_inventory"]["ilo"]["ilo_firmware"] == "iLO 5 v3.19"
+    assert not any("NetApp firmware inventory" in warning for warning in result["warnings"])
+    assert result["recheck_command"] == "make provider-lab-hpe-firmware-inventory"
+
+
 def test_current_gen10_spp_media_is_candidate_for_all_hpe_paths(
     monkeypatch,
     firmware_settings,

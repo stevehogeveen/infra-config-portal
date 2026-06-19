@@ -5,6 +5,7 @@ import json
 
 from app.services.firmware_compliance import (
     get_firmware_inventory,
+    write_firmware_inventory_report,
     write_firmware_reports,
     write_waiver_report,
 )
@@ -18,7 +19,8 @@ def main() -> int:
     args = parser.parse_args()
 
     if args.mode == "inventory":
-        result = get_firmware_inventory(refresh_live=True)
+        result = get_firmware_inventory(refresh_live=True, refresh_scope=args.scope)
+        write_firmware_inventory_report(result)
         print(json.dumps(_inventory_summary(result), indent=2))
         return 0
     if args.mode == "cisco-inventory":
@@ -36,10 +38,19 @@ def main() -> int:
 
 
 def _inventory_summary(result: dict) -> dict:
+    ilo = ((result.get("live_inventory") or {}).get("ilo") or {})
     return {
         "checked_at": result.get("checked_at"),
         "provider_mode": result.get("provider_mode"),
+        "source_type": result.get("source_type"),
+        "freshness": result.get("freshness"),
+        "ilo_status": ilo.get("status"),
+        "ilo_firmware": ilo.get("ilo_firmware"),
+        "bios_version": ilo.get("bios_version"),
+        "smart_array_firmware": ilo.get("smart_array_firmware"),
+        "controller_count": len(ilo.get("controllers") or []),
         "warnings": result.get("warnings") or [],
+        "blockers": result.get("blockers") or [],
         "media_candidate_count": (result.get("media_inventory") or {}).get("candidate_count"),
     }
 

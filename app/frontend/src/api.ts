@@ -388,6 +388,11 @@ export const api = {
     }),
   firmwareInventory: () =>
     apiRequest<ProviderProbeResult>("/api/v1/lab/firmware-inventory"),
+  refreshFirmwareInventory: (payload: { target?: string | null; username_reference?: string | null }) =>
+    apiRequest<ProviderProbeResult>("/api/v1/lab/firmware-inventory/refresh", {
+      method: "POST",
+      body: payload
+    }),
   firmwareCompliance: (scope = "full") =>
     apiRequest<ProviderProbeResult>(`/api/v1/lab/firmware-compliance?scope=${encodeURIComponent(scope)}`),
   firmwareWaiverCheck: () =>
@@ -447,6 +452,10 @@ export const api = {
     apiRequest<LabProfile>(`/api/v1/lab/profiles/${id}`, {
       method: "PUT",
       body: payload
+    }),
+  deleteLabProfile: (id: string) =>
+    apiRequest<LabProfileList>(`/api/v1/lab/profiles/${id}`, {
+      method: "DELETE"
     }),
   activateLabProfile: (id: string) =>
     apiRequest<LabProfileList>(`/api/v1/lab/profiles/${id}/activate`, {

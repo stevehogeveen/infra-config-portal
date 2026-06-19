@@ -79,6 +79,7 @@ export type OperationResult = {
 export type FirmwareState = {
   summaries: FirmwareSummary[];
   fileSelections: FirmwareFileSelections | null;
+  latestInventory: ProviderProbeResult | null;
 };
 
 export type FirmwareSelectionDraft = {
@@ -491,6 +492,7 @@ export const firmwareAdapter = {
     ]);
     return {
       fileSelections,
+      latestInventory: null,
       summaries: Array.isArray(summaries) ? summaries : []
     };
   },
@@ -555,7 +557,10 @@ export const firmwareAdapter = {
     };
   },
 
-  async check(config: ControlConfig): Promise<{ firmware: FirmwareState; result: OperationResult }> {
+  async check(
+    config: ControlConfig,
+    options: { usernameReference?: string | null } = {}
+  ): Promise<{ firmware: FirmwareState; result: OperationResult }> {
     const validationErrors = configAdapter.validate(config);
     if (validationErrors.length) {
       return {
@@ -574,10 +579,13 @@ export const firmwareAdapter = {
       };
     }
     try {
-      const probe = await api.firmwareInventory();
+      const probe = await api.refreshFirmwareInventory({
+        target: config.target,
+        username_reference: options.usernameReference ?? null
+      });
       const firmware = await this.load();
       return {
-        firmware,
+        firmware: { ...firmware, latestInventory: probe },
         result: normalizeProbeResult(probe, "firmware-check", "Firmware check", {
           config_snapshot: sanitizedConfigSnapshot(config)
         })
@@ -644,15 +652,16 @@ export const firmwareAdapter = {
           ? await api.validateNetappOntapUpgrade()
           : await api.firmwareCompliance(firmwareScopeForPath(selectedPath));
       const firmware = await this.load();
+      const result = normalizeProbeResult(probe, "firmware-validation", "Firmware validation", {
+        ...firmwareSelectionRaw(input.config, input.selectedPath, input.selectedFirmware),
+        file_selection_saved_at: saved.updated_at
+      });
       return {
         firmware: {
           ...firmware,
           fileSelections: saved
         },
-        result: normalizeProbeResult(probe, "firmware-validation", "Firmware validation", {
-          ...firmwareSelectionRaw(input.config, input.selectedPath, input.selectedFirmware),
-          file_selection_saved_at: saved.updated_at
-        })
+        result: firmwareValidationResultForSelectedPath(result, probe, selectedPath)
       };
     } catch (error) {
       return {
@@ -713,7 +722,11 @@ export const firmwareAdapter = {
     const result = await api.runWorkflowAction(supportedActionId, {
       control_config: sanitizedConfigSnapshot(request.config),
       confirmation_phrase: request.confirmationPhrase.trim(),
-      confirmed_gates: request.confirmationAccepted ? action.required_gates : []
+      confirmed_gates: request.confirmationAccepted ? action.required_gates : [],
+      selected_component_id: request.selectedPath?.component_id ?? null,
+      selected_component_label: request.selectedPath?.component_label ?? null,
+      selected_firmware: request.selectedFirmware.trim(),
+      selected_target: request.selectedPath ? selectedPathTarget(request.selectedPath) : null
     });
     return normalizeWorkflowRun(result, "firmware-upgrade", firmwareSelectionRaw(
       request.config,
@@ -963,9 +976,6 @@ function firmwareUpgradeActionBlockers(
   if (!action) {
     return [`Backend action ${actionId} is not available in the workflow catalog.`];
   }
-  if (action.action_id === "firmware.upgrade-apply-placeholder") {
-    return ["Backend firmware upgrade execution is still a guarded placeholder for this selected firmware path."];
-  }
   return [];
 }
 
@@ -987,13 +997,18 @@ export function supportedUpgradeActionId(path: FirmwareUpgradePath | null): stri
   if (path?.component_id === "netapp_ontap_version") {
     return "netapp.ontap-upgrade-apply";
   }
+  if (["hpe_ilo_firmware", "hpe_bios_version", "hpe_smart_array_firmware"].includes(path.component_id)) {
+    return "firmware.hpe-upgrade-apply";
+  }
   return null;
 }
 
 export function upgradeConfirmationPhrase(path: FirmwareUpgradePath | null, action?: WorkflowAction | null): string {
   const registeredPhrase = action?.required_confirmations.find((phrase) => phrase.trim());
   if (registeredPhrase) return registeredPhrase;
-  return supportedUpgradeActionId(path) === "netapp.ontap-upgrade-apply" ? "UPGRADE ONTAP" : "RUN FIRMWARE UPGRADE";
+  if (supportedUpgradeActionId(path) === "netapp.ontap-upgrade-apply") return "UPGRADE ONTAP";
+  if (supportedUpgradeActionId(path) === "firmware.hpe-upgrade-apply") return "run";
+  return "RUN FIRMWARE UPGRADE";
 }
 
 export function firmwareValidationMatchesSelection(
@@ -1014,6 +1029,46 @@ export function firmwareValidationMatchesSelection(
 
 export function firmwareValidationPassed(result: OperationResult | null): boolean {
   return Boolean(result && ["ready", "success"].includes(result.status));
+}
+
+function firmwareValidationResultForSelectedPath(
+  result: OperationResult,
+  probe: ProviderProbeResult,
+  selectedPath: FirmwareUpgradePath
+): OperationResult {
+  if (!selectedUpgradePathIsActionable(probe, selectedPath)) {
+    return result;
+  }
+  return {
+    ...result,
+    blockers: [],
+    message: "Firmware validation passed for the selected upgrade path. Current, target, package, and precheck evidence are present.",
+    raw: {
+      ...result.raw,
+      validation_interpretation: "selected_upgrade_path_ready"
+    },
+    status: "ready",
+    warnings: [
+      ...result.warnings,
+      ...result.blockers.map((blocker) => `Compliance note: ${blocker}`)
+    ]
+  };
+}
+
+function selectedUpgradePathIsActionable(probe: ProviderProbeResult, selectedPath: FirmwareUpgradePath): boolean {
+  const matchingPath = objectList((probe as Record<string, unknown>).upgrade_paths).find(
+    (candidate) => stringValue(candidate.component_id, "") === selectedPath.component_id
+  );
+  if (!matchingPath) return false;
+  const pathStatus = stringValue(matchingPath.path_status, "");
+  const missingEvidence = stringList(matchingPath.missing_evidence);
+  return (
+    ["direct", "staged"].includes(pathStatus) &&
+    Boolean(stringValue(matchingPath.current_version, "")) &&
+    Boolean(stringValue(matchingPath.target_version, "")) &&
+    Boolean(matchingPath.package_available) &&
+    missingEvidence.length === 0
+  );
 }
 
 function upgradeActionForRequest(request: FirmwareUpgradeRequest): WorkflowAction | null {
@@ -1148,6 +1203,12 @@ function upgradeStatusFromOperation(status: OperationStatus): UpgradeStatus {
 
 function stringList(value: unknown): string[] {
   return Array.isArray(value) ? value.map((item) => String(item)).filter(Boolean) : [];
+}
+
+function objectList(value: unknown): Array<Record<string, unknown>> {
+  return Array.isArray(value)
+    ? value.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object" && !Array.isArray(item))
+    : [];
 }
 
 function stringValue(value: unknown, fallback: string): string {

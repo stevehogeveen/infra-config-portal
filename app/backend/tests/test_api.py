@@ -54,7 +54,7 @@ def test_control_action_catalog_exposes_device_actions_without_direct_runs(
         "esxi.rebuild-install",
         "esxi.vm-deploy-preview",
         "netapp.setup-preview",
-        "firmware.upgrade-apply-placeholder",
+        "firmware.hpe-upgrade-apply",
         "build-verification.run-full",
     }.issubset(action_ids)
 
@@ -67,10 +67,11 @@ def test_control_action_catalog_exposes_device_actions_without_direct_runs(
     upgrade = next(
         action
         for action in payload["actions"]
-        if action["id"] == "firmware.upgrade-apply-placeholder"
+        if action["id"] == "firmware.hpe-upgrade-apply"
     )
     assert upgrade["classification"] == "upgrade"
     assert "LAB_ALLOW_FIRMWARE_UPDATES=true" in upgrade["required_flags"]
+    assert "HPE_FIRMWARE_APPLY=true" in upgrade["required_flags"]
     assert upgrade["availability"] == "blocked"
     assert "executed" not in upgrade
 
@@ -784,6 +785,17 @@ def test_lab_profile_api_saves_selects_and_versions_profiles(
     activated = client.post(f"/api/v1/lab/profiles/{profile_id}/activate")
     assert activated.status_code == 200
     assert activated.json()["active_profile"]["id"] == profile_id
+
+    deleted = client.delete(f"/api/v1/lab/profiles/{profile_id}")
+    assert deleted.status_code == 200
+    assert deleted.json()["active_profile"]["id"] == "runtime"
+    assert deleted.json()["profiles"] == []
+
+    missing = client.delete(f"/api/v1/lab/profiles/{profile_id}")
+    assert missing.status_code == 404
+
+    runtime_delete = client.delete("/api/v1/lab/profiles/runtime")
+    assert runtime_delete.status_code == 422
 
 
 def test_lab_profile_api_keeps_saved_profile_active_and_reports_runtime_mismatch(

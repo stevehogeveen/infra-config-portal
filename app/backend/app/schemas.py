@@ -634,6 +634,25 @@ class ControlCenterConfigRead(ControlCenterConfigWrite):
     blockers: list[str] = Field(default_factory=list)
 
 
+class FirmwareInventoryRefreshCreate(BaseModel):
+    target: str | None = Field(default=None, max_length=240)
+    username_reference: str | None = Field(default=None, max_length=120)
+
+    @field_validator("target", "username_reference", mode="before")
+    @classmethod
+    def strip_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        text = str(value).strip()
+        return text or None
+
+    @field_validator("*", mode="after")
+    @classmethod
+    def reject_secret_values(cls, value: Any) -> Any:
+        _reject_secret_values(value)
+        return value
+
+
 class ControlCenterSettingsWrite(BaseModel):
     default_ip_mode: Literal["ipv4", "ipv6", "both"] = "ipv4"
     default_snmp_version: Literal["v2", "v3"] = "v2"

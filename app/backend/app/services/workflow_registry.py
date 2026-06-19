@@ -256,7 +256,7 @@ CATEGORY_BY_CONTROL_ACTION = {
     "firmware.package-inventory": "inventory",
     "firmware.create-waiver": "waive",
     "firmware.upgrade-plan": "upgrade",
-    "firmware.upgrade-apply-placeholder": "upgrade",
+    "firmware.hpe-upgrade-apply": "upgrade",
     "commander.force-live-discovery": "discover",
     "commander.ignore-cached-artifact": "verify",
     "commander.run-live-check": "verify",

@@ -87,6 +87,7 @@ def run_workflow_action(
             started_at,
             spec.command,
             spec.timeout_seconds,
+            payload=payload,
             control_config=control_config,
         )
 
@@ -119,11 +120,13 @@ def _run_command_action(
     command: tuple[str, ...],
     timeout_seconds: int,
     *,
+    payload: dict[str, Any],
     control_config: dict[str, Any] | None,
 ) -> dict[str, Any]:
     completed: subprocess.CompletedProcess[str] | None = None
     stderr = ""
     stdout = ""
+    command = _command_with_payload_context(str(action.get("action_id") or ""), command, payload)
     try:
         completed = _run_subprocess(command, timeout_seconds)
         stdout = completed.stdout or ""
@@ -144,6 +147,9 @@ def _run_command_action(
 
     stdout_summary = _redacted_summary(stdout)
     stderr_summary = _redacted_summary(stderr)
+    semantic_result = _semantic_command_result(stdout, status=status, blockers=blockers)
+    status = semantic_result["status"]
+    blockers = semantic_result["blockers"]
     return _base_result(
         action,
         run_id,
@@ -155,7 +161,7 @@ def _run_command_action(
         stdout_summary=stdout_summary,
         stderr_summary=stderr_summary,
         blockers=blockers,
-        warnings=_output_warnings(stdout_summary, stderr_summary),
+        warnings=_unique([*semantic_result["warnings"], *_output_warnings(stdout_summary, stderr_summary)]),
         control_config=control_config,
     )
 
@@ -342,6 +348,58 @@ def _run_subprocess(command: tuple[str, ...], timeout_seconds: int) -> subproces
             stderr=stderr,
         ) from exc
     return subprocess.CompletedProcess(command, process.returncode, stdout=stdout, stderr=stderr)
+
+
+def _command_with_payload_context(action_id: str, command: tuple[str, ...], payload: dict[str, Any]) -> tuple[str, ...]:
+    if action_id != "firmware.hpe-upgrade-apply":
+        return command
+    component_id = _string_or_none(payload.get("selected_component_id")) or _string_or_none(payload.get("selected_component"))
+    if not component_id:
+        return command
+    return ("env", f"HPE_FIRMWARE_COMPONENT_ID={component_id}", *command)
+
+
+def _semantic_command_result(stdout: str, *, status: str, blockers: list[str]) -> dict[str, Any]:
+    payload = _last_stdout_json_object(stdout)
+    if not payload:
+        return {"status": status, "blockers": blockers, "warnings": []}
+    child_status = str(payload.get("status") or "").lower()
+    child_blockers = _string_list(payload.get("blockers"))
+    child_warnings = _string_list(payload.get("warnings"))
+    if child_status in {"blocked", "failed", "error"}:
+        return {
+            "status": "failed" if child_status in {"failed", "error"} else "blocked",
+            "blockers": child_blockers or blockers,
+            "warnings": child_warnings,
+        }
+    if child_blockers:
+        return {"status": "blocked", "blockers": child_blockers, "warnings": child_warnings}
+    if child_status == "ready_for_operator_executor" and payload.get("upgrade_writes_attempted") is False:
+        return {
+            "status": "blocked",
+            "blockers": [
+                "HPE firmware gates passed, but no firmware writes were attempted; attach and enable the approved firmware package executor before reporting upgrade success."
+            ],
+            "warnings": child_warnings,
+        }
+    return {"status": status, "blockers": blockers, "warnings": child_warnings}
+
+
+def _last_stdout_json_object(stdout: str) -> dict[str, Any] | None:
+    if "{" not in stdout:
+        return None
+    decoder = json.JSONDecoder()
+    latest: dict[str, Any] | None = None
+    for index, character in enumerate(stdout):
+        if character != "{":
+            continue
+        try:
+            value, _ = decoder.raw_decode(stdout[index:])
+        except json.JSONDecodeError:
+            continue
+        if isinstance(value, dict):
+            latest = value
+    return latest
 
 
 def _terminate_process_group(process: subprocess.Popen[str]) -> None:

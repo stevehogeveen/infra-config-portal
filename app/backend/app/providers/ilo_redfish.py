@@ -489,6 +489,7 @@ class IloRedfishAdapter:
     def _record_result(self, result: dict[str, Any]) -> dict[str, Any]:
         redacted = redact_sensitive(result, self._redaction_values())
         previous_result, previous_checked_at = get_probe_result(PROVIDER_ID)
+        redacted = _preserve_inventory_sections(redacted, previous_result, previous_checked_at)
         redacted = _preserve_legacy_identity(redacted, previous_result, previous_checked_at)
         return record_probe_result(PROVIDER_ID, redacted)
 
@@ -506,6 +507,48 @@ def _candidate_probe_summary(result: dict[str, Any]) -> dict[str, Any]:
         "request_count": len(requests) if isinstance(requests, list) else 0,
         "message": result.get("message"),
     }
+
+
+def _preserve_inventory_sections(
+    result: dict[str, Any],
+    previous_result: dict[str, Any] | None,
+    previous_checked_at: str | None,
+) -> dict[str, Any]:
+    if not isinstance(previous_result, dict):
+        return result
+    preserved = dict(result)
+    preserved_sections: list[str] = []
+    for key in ("systems", "firmware"):
+        if _section_has_records(preserved.get(key)) or not _section_has_records(previous_result.get(key)):
+            continue
+        preserved[key] = previous_result[key]
+        preserved_sections.append(key)
+    if _storage_has_controller_records(preserved.get("storage")) or not _storage_has_controller_records(previous_result.get("storage")):
+        pass
+    else:
+        preserved["storage"] = previous_result["storage"]
+        preserved_sections.append("storage")
+    if not preserved_sections:
+        return result
+    preserved["preserved_previous_inventory_sections"] = {
+        "sections": preserved_sections,
+        "previous_checked_at": previous_checked_at,
+        "reason": "latest Redfish inventory collection was partial",
+    }
+    warnings = list(preserved.get("warnings") or [])
+    warnings.append(
+        "Preserved previous iLO Systems/Storage/Firmware evidence after the current Redfish inventory probe was partial."
+    )
+    preserved["warnings"] = warnings
+    return preserved
+
+
+def _section_has_records(value: Any) -> bool:
+    return isinstance(value, list) and bool(value)
+
+
+def _storage_has_controller_records(value: Any) -> bool:
+    return isinstance(value, dict) and isinstance(value.get("controllers"), list) and bool(value["controllers"])
 
 
 def _preserve_legacy_identity(
@@ -563,11 +606,11 @@ def _probe_classification(result: dict[str, Any]) -> str:
 
 def _configured_ilo_targets() -> tuple[str | None, str, tuple[str, ...], tuple[str, ...]]:
     profile_host = _active_saved_profile_ilo_host()
-    first_access_host = _saved_ilo_first_access_host()
+    first_access_candidates = _saved_ilo_first_access_targets()
     if profile_host:
         fallback_hosts, fallback_sources = _fallback_ilo_targets(
             profile_host,
-            [(first_access_host, "control_access_original_dhcp_ip")],
+            first_access_candidates,
         )
         return profile_host, "active_lab_profile", fallback_hosts, fallback_sources
 
@@ -575,12 +618,13 @@ def _configured_ilo_targets() -> tuple[str | None, str, tuple[str, ...], tuple[s
     if runtime_host:
         fallback_hosts, fallback_sources = _fallback_ilo_targets(
             runtime_host,
-            [(first_access_host, "control_access_original_dhcp_ip")],
+            first_access_candidates,
         )
         return runtime_host, "runtime_env", fallback_hosts, fallback_sources
 
-    if first_access_host:
-        return first_access_host, "control_access_original_dhcp_ip", (), ()
+    for first_access_host, first_access_source in first_access_candidates:
+        if first_access_host:
+            return first_access_host, first_access_source, (), ()
     return None, "runtime_env", (), ()
 
 
@@ -623,26 +667,36 @@ def _active_saved_profile_ilo_host() -> str | None:
     return _clean_target_host(plan.get("ilo"))
 
 
-def _saved_ilo_first_access_host() -> str | None:
+def _saved_ilo_first_access_targets() -> list[tuple[str | None, str]]:
     try:
         from app.services.control_access import control_access_configs
         from app.services.lab_profiles import active_lab_profile_context
 
         context = active_lab_profile_context()
     except Exception:
-        return None
+        return []
 
     active = context.get("active_profile") if isinstance(context, dict) else {}
     if not isinstance(active, dict) or active.get("source") != "saved":
-        return None
+        return []
+
+    candidates: list[tuple[str | None, str]] = []
     try:
         configs = control_access_configs(active)
     except Exception:
-        return None
+        configs = {}
     ilo_config = configs.get("ilo") if isinstance(configs, dict) else {}
-    if not isinstance(ilo_config, dict):
-        return None
-    return _clean_target_host(ilo_config.get("original_dhcp_ip"))
+    if isinstance(ilo_config, dict):
+        control_access_host = _clean_target_host(ilo_config.get("original_dhcp_ip"))
+        if control_access_host:
+            candidates.append((control_access_host, "control_access_original_dhcp_ip"))
+
+    plan = context.get("resolved_address_plan") if isinstance(context, dict) else {}
+    if isinstance(plan, dict):
+        profile_initial_host = _clean_target_host(plan.get("ilo_initial"))
+        if profile_initial_host:
+            candidates.append((profile_initial_host, "active_lab_profile_ilo_initial"))
+    return candidates
 
 
 def _clean_target_host(value: Any) -> str | None:

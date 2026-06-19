@@ -155,6 +155,93 @@ def test_cisco_firmware_inventory_allows_console_inventory_runtime(
     assert result["executed"] is True
 
 
+def test_ilo_firmware_inventory_uses_hpe_only_runtime(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(workflow_action_run_store, "WORKFLOW_ACTION_RUN_TRACE_DIR", tmp_path)
+
+    def get_unblocked_action(action_id: str) -> dict:
+        action = workflow_registry.get_workflow_action(action_id)
+        action["blockers"] = []
+        action["current_availability"] = "available"
+        return action
+
+    def fake_run(command: tuple[str, ...], timeout_seconds: int) -> subprocess.CompletedProcess[str]:
+        assert command == ("make", "provider-lab-hpe-firmware-inventory")
+        assert timeout_seconds == 45
+        return subprocess.CompletedProcess(command, 0, stdout="hpe firmware checked", stderr="")
+
+    monkeypatch.setattr(workflow_action_runner, "get_workflow_action", get_unblocked_action)
+    monkeypatch.setattr(workflow_action_runner, "_run_subprocess", fake_run)
+
+    result = run_workflow_action("ilo.firmware-inventory")
+
+    assert result["status"] == "completed"
+    assert result["executed"] is True
+
+
+def test_hpe_firmware_upgrade_apply_uses_guarded_runtime(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(workflow_action_run_store, "WORKFLOW_ACTION_RUN_TRACE_DIR", tmp_path)
+
+    class AllowPolicy:
+        def action_blockers(self, action_id: str, category: object) -> list[str]:
+            return []
+
+    monkeypatch.setattr(workflow_registry, "current_lab_action_policy", lambda: AllowPolicy())
+
+    def get_unblocked_action(action_id: str) -> dict:
+        action = workflow_registry.get_workflow_action(action_id)
+        action["blockers"] = []
+        action["current_availability"] = "manual_command_required"
+        return action
+
+    def fake_run(command: tuple[str, ...], timeout_seconds: int) -> subprocess.CompletedProcess[str]:
+        assert command == (
+            "env",
+            "HPE_FIRMWARE_COMPONENT_ID=hpe_smart_array_firmware",
+            "make",
+            "provider-lab-hpe-firmware-upgrade-apply",
+        )
+        assert timeout_seconds == 180
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            stdout=json.dumps(
+                {
+                    "status": "blocked",
+                    "selected_component_id": "hpe_smart_array_firmware",
+                    "selected_component_label": "Smart Array firmware",
+                    "apply_enabled": False,
+                    "upgrade_writes_attempted": False,
+                    "blockers": ["HPE firmware package executor is not enabled yet."],
+                    "warnings": ["No firmware package upload was executed."],
+                }
+            ),
+            stderr="",
+        )
+
+    monkeypatch.setattr(workflow_action_runner, "get_workflow_action", get_unblocked_action)
+    monkeypatch.setattr(workflow_action_runner, "_run_subprocess", fake_run)
+
+    result = run_workflow_action(
+        "firmware.hpe-upgrade-apply",
+        payload={
+            "confirmation_phrase": "run",
+            "confirmed_gates": ["LAB_ALLOW_FIRMWARE_UPDATES=true", "HPE_FIRMWARE_APPLY=true"],
+            "selected_component_id": "hpe_smart_array_firmware",
+        },
+    )
+
+    assert result["status"] == "blocked"
+    assert result["executed"] is True
+    assert result["blockers"] == ["HPE firmware package executor is not enabled yet."]
+    assert result["warnings"][0] == "No firmware package upload was executed."
+
+
 def test_subprocess_timeout_terminates_child_process_group(tmp_path: Path) -> None:
     marker = f"workflow-timeout-child-{uuid.uuid4().hex}"
     script = tmp_path / "spawn_child.py"

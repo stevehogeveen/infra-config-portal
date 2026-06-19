@@ -116,6 +116,7 @@ test("configure saves target, IP mode, SNMPv3 credential presence, timeout, and 
   await page.getByLabel("Timeout seconds").fill("12");
   await page.getByLabel("Retry count").fill("2");
   await page.getByRole("button", { name: "Save / apply config" }).click();
+  await expect(page.getByText("Configuration save in progress")).toBeVisible();
 
   await expect(page.getByText("Configuration saved")).toBeVisible();
   await expect(page.getByText("Configured for SNMPv3").first()).toBeVisible();
@@ -127,6 +128,61 @@ test("configure saves target, IP mode, SNMPv3 credential presence, timeout, and 
   await page.reload();
   await expect(page.getByText("192.0.2.203").first()).toBeVisible();
   await expect(page.getByText("SNMPv3").first()).toBeVisible();
+});
+
+test("configure manages lab profiles and persistent hardware tabs", async ({ page }) => {
+  await page.goto("/configure");
+
+  await expect(page.getByRole("tab", { name: /Lab/ })).toBeVisible();
+  for (const tab of ["Cisco", "Server / iLO", "Internal Storage", "ESXi", "NetApp", "vCenter"]) {
+    await expect(page.getByRole("tab", { name: new RegExp(tab) })).toBeVisible();
+  }
+
+  await expect(page.getByText("Bench Lab A uses 192.168.1.0/24")).toBeVisible();
+  await page.getByRole("tab", { name: /NetApp/ }).click();
+  await expect(page.getByLabel("Cluster management IP")).toHaveValue("192.168.1.220");
+  await expect(page.getByLabel("NFS LIF IPs")).toHaveValue("192.168.1.230, 192.168.1.231");
+
+  await page.getByRole("tab", { name: /Lab/ }).click();
+  await page.getByRole("button", { name: "New profile" }).click();
+  await page.getByLabel("Lab name").fill("Bench Lab B");
+  await page.getByLabel("Subnet CIDR").fill("192.168.50.0/24");
+  await page.locator(".cc-check-card").filter({ hasText: "NetApp" }).getByRole("checkbox").uncheck();
+  await page.getByRole("button", { name: "Save lab profile" }).click();
+  await expect(page.getByText("Lab profile save in progress")).toBeVisible();
+
+  await expect(page.getByText("Lab profile Bench Lab B saved.")).toBeVisible();
+  await page.getByRole("tab", { name: /Server \/ iLO/ }).click();
+  await expect(page.getByLabel("iLO management IP")).toHaveValue("192.168.50.201");
+  await expect(page.getByLabel("iLO UID / username")).toBeVisible();
+  await expect(page.getByLabel("iLO password")).toHaveAttribute("type", "password");
+  await page.getByRole("button", { name: "Fill missing defaults" }).click();
+  await expect(page.getByLabel("Detected iLO firmware")).toHaveValue("HPE iLO: 2.80");
+  await expect(page.getByLabel("Firmware baseline")).toHaveValue("2.91");
+  await page.getByRole("tab", { name: /Internal Storage/ }).click();
+  await expect(page.getByLabel("Storage UID / username")).toBeVisible();
+  await expect(page.getByLabel("Storage password")).toHaveAttribute("type", "password");
+  await expect(page.getByLabel("Target controller")).toBeVisible();
+  await page.getByRole("button", { name: "Fill missing defaults" }).click();
+  await expect(page.getByLabel("Target controller")).toHaveValue("Smart Array");
+  await expect(page.getByLabel("Detected controller firmware")).toHaveValue("HPE Smart Array: 8.32");
+  await expect(page.getByRole("heading", { exact: true, name: "Drive Allocation List" })).toBeVisible();
+  await expect(page.getByLabel("ESXi drive count")).toHaveValue("2");
+  await expect(page.getByLabel("ESXi RAID")).toHaveValue("RAID1");
+  await expect(page.getByLabel("Storage drive bays")).toHaveValue("3, 4, 5, 6");
+  await expect(page.getByLabel("Storage RAID")).toHaveValue("RAID5");
+  await page.getByLabel("Storage drive count").fill("5");
+  await page.getByLabel("Storage drive bays").fill("3, 4, 5, 6, 7");
+  await expect(page.getByLabel("Storage drive count")).toHaveValue("5");
+  await page.getByRole("tab", { name: /NetApp/ }).click();
+  await expect(page.getByText("This hardware is excluded from the active lab profile.")).toBeVisible();
+
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByRole("tab", { name: /Lab/ }).click();
+  await page.getByRole("button", { name: "Delete profile" }).click();
+  await expect(page.getByText("Lab profile delete in progress")).toBeVisible();
+  await expect(page.getByText("Saved lab profile deleted.")).toBeVisible();
+  await expect(page.getByLabel("Active lab profile")).toHaveValue("runtime");
 });
 
 test("newer local fallback config survives an older backend snapshot on reload", async ({ page }) => {
@@ -249,6 +305,7 @@ test("run page has one Run button and writes latest result", async ({ page }) =>
     response.request().method() === "POST"
   );
   await page.getByRole("button", { name: /^Run$/ }).click();
+  await expect(page.getByText("Safe run in progress")).toBeVisible();
   await expect((await runResponse).ok()).toBeTruthy();
   expect(actionRequests).toEqual(["config:192.0.2.203", "run"]);
   await expect(page.getByText("Safe read-only/report-only action completed.").first()).toBeVisible();
@@ -283,7 +340,7 @@ test("visible action buttons ignore duplicate clicks while work is in flight", a
     ) {
       actionRequests.push("run");
     }
-    if (url.pathname === "/api/v1/lab/firmware-inventory") {
+    if (url.pathname === "/api/v1/lab/firmware-inventory/refresh") {
       actionRequests.push("firmware-check");
     }
   });
@@ -330,7 +387,7 @@ test("run and firmware check sync unsaved current config before backend actions"
     ) {
       actionRequests.push("run");
     }
-    if (url.pathname === "/api/v1/lab/firmware-inventory") {
+    if (url.pathname === "/api/v1/lab/firmware-inventory/refresh") {
       actionRequests.push("firmware-check");
     }
   });
@@ -413,7 +470,7 @@ test("firmware page checks visibility, validates, and gates upgrade confirmation
       const body = request.postDataJSON() as Partial<ControlCenterConfigMock>;
       actionRequests.push(`config:${body.target ?? ""}`);
     }
-    if (url.pathname === "/api/v1/lab/firmware-inventory") {
+    if (url.pathname === "/api/v1/lab/firmware-inventory/refresh") {
       actionRequests.push("firmware-check");
     }
     if (url.pathname === "/api/v1/providers/netapp-ontap/ontap-upgrade/validate") {
@@ -435,6 +492,37 @@ test("firmware page checks visibility, validates, and gates upgrade confirmation
 
   await page.goto("/firmware");
 
+  await expect(page.getByRole("tab", { name: /Overview/ })).toBeVisible();
+  for (const tab of ["Cisco", "Server / iLO", "Internal Storage", "ESXi", "NetApp", "vCenter"]) {
+    await expect(page.getByRole("tab", { name: new RegExp(tab) })).toBeVisible();
+  }
+  await page.getByRole("tab", { name: /Server \/ iLO/ }).click();
+  await expect(page.getByRole("heading", { exact: true, name: "Server / iLO Firmware" })).toBeVisible();
+  await expect(page.getByRole("heading", { exact: true, name: "iLO Firmware" })).toBeVisible();
+  await expect(page.getByText("192.168.1.11").first()).toBeVisible();
+  await expect(page.getByRole("cell", { exact: true, name: "Current" })).toBeVisible();
+  await expect(page.getByRole("cell", { exact: true, name: "Should be" })).toBeVisible();
+  await expect(page.getByText("Not reported").first()).toBeVisible();
+  await expect(page.getByRole("button", { name: "Run" })).toBeVisible();
+  await expect(page.getByText("NetApp ONTAP")).toHaveCount(0);
+  const iloCheckResponse = page.waitForResponse((response) => response.url().includes("/api/v1/lab/firmware-inventory/refresh"));
+  await page.getByRole("button", { name: "Run" }).click();
+  await expect(page.getByText("Firmware check in progress")).toBeVisible();
+  await expect((await iloCheckResponse).ok()).toBeTruthy();
+  expect(actionRequests.splice(0)).toEqual(["config:192.168.1.11", "firmware-check"]);
+  await expect(page.getByText("iLO 5 v3.19")).toBeVisible();
+  await expect(page.getByRole("cell", { exact: true, name: "U32 v3.30 (07/31/2024)" })).toBeVisible();
+  await expect(page.getByText("52.26.3-5379").first()).toBeVisible();
+  await expect(page.getByText("8.36")).toBeVisible();
+  await page.goto("/configure");
+  await page.getByLabel("Target host, IP, or range").fill("192.0.2.203");
+  await page.getByRole("button", { name: "Save / apply config" }).click();
+  actionRequests.length = 0;
+  await page.goto("/firmware");
+  await page.getByRole("tab", { name: /vCenter/ }).click();
+  await expect(page.getByText("This hardware is excluded from the active lab profile.")).toBeVisible();
+  await page.getByRole("tab", { name: /Overview/ }).click();
+
   await expect(page.getByRole("heading", { exact: true, name: "Firmware" })).toBeVisible();
   await expect(page.getByRole("heading", { exact: true, name: "Firmware Visibility" })).toBeVisible();
   await expect(page.getByRole("heading", { exact: true, name: "Firmware Upgrade" })).toBeVisible();
@@ -448,6 +536,7 @@ test("firmware page checks visibility, validates, and gates upgrade confirmation
 
   const checkResponse = page.waitForResponse((response) => response.url().includes("/api/v1/lab/firmware-inventory"));
   await page.getByRole("button", { name: "Check Firmware" }).click();
+  await expect(page.getByText("Firmware check in progress")).toBeVisible();
   await expect((await checkResponse).ok()).toBeTruthy();
   expect(actionRequests.splice(0)).toEqual(["config:192.0.2.203", "firmware-check"]);
   await expect(page.getByText("Firmware check succeeded")).toBeVisible();
@@ -461,6 +550,7 @@ test("firmware page checks visibility, validates, and gates upgrade confirmation
     response.url().includes("/api/v1/providers/netapp-ontap/ontap-upgrade/validate")
   );
   await page.getByRole("button", { name: "Validate Firmware" }).click();
+  await expect(page.getByText("Firmware validation in progress")).toBeVisible();
   await expect((await validateResponse).ok()).toBeTruthy();
   expect(actionRequests.splice(0)).toEqual(["config:192.0.2.203", "firmware-validate"]);
   await expect(page.getByText("Firmware validation succeeded")).toBeVisible();
@@ -481,6 +571,7 @@ test("firmware page checks visibility, validates, and gates upgrade confirmation
     response.request().method() === "POST"
   );
   await page.getByRole("button", { name: "Start Firmware Upgrade" }).click();
+  await expect(page.getByText("Firmware upgrade monitoring in progress")).toBeVisible();
   await expect((await upgradeResponse).ok()).toBeTruthy();
   expect(actionRequests.splice(0)).toEqual(["config:192.0.2.203", "firmware-upgrade"]);
   expect(upgradePayloads).toHaveLength(1);
@@ -515,11 +606,27 @@ test("firmware page checks visibility, validates, and gates upgrade confirmation
   await expect(page.getByText("Firmware upgrade blocked").first()).toBeVisible();
 });
 
+test("firmware picker exposes separate HPE iLO BIOS and controller choices", async ({ page }) => {
+  await page.goto("/firmware");
+
+  await expect(page.getByRole("option", { name: "HPE iLO firmware: 2.80 -> 2.91" })).toBeAttached();
+  await expect(
+    page.getByRole("option", { name: "HPE BIOS firmware: U32 v3.30 (07/31/2024) -> U46 v2.64 (04/01/2026)" })
+  ).toBeAttached();
+  await expect(page.getByRole("option", { name: "HPE controller firmware - Smart Array: 8.32 -> 8.36" })).toBeAttached();
+
+  await page.getByLabel("Firmware path").selectOption("HPE Smart Array:hpe_smart_array_firmware:8.36");
+  await expect(page.getByText("Selected component")).toBeVisible();
+  await expect(page.getByText("HPE controller firmware - Smart Array", { exact: true })).toBeVisible();
+  await expect(page.getByText("Selected package/file")).toBeVisible();
+  await expect(page.getByText("smart-array-8.36.fwpkg").first()).toBeVisible();
+});
+
 test("firmware check blocks invalid current config before backend inventory", async ({ page }) => {
   const actionRequests: string[] = [];
   page.on("request", (request) => {
     const url = new URL(request.url());
-    if (url.pathname === "/api/v1/lab/firmware-inventory") {
+    if (url.pathname === "/api/v1/lab/firmware-inventory/refresh") {
       actionRequests.push("firmware-check");
     }
   });
@@ -541,11 +648,8 @@ test("firmware page load and path selection do not auto-start upgrade", async ({
   const upgradeRequests: string[] = [];
   page.on("request", (request) => {
     const url = new URL(request.url());
-    if (
-      url.pathname === "/api/v1/workflows/actions/netapp.ontap-upgrade-apply/run" &&
-      request.method() === "POST"
-    ) {
-      upgradeRequests.push("firmware-upgrade");
+    if (url.pathname.includes("/api/v1/workflows/actions/") && url.pathname.endsWith("/run") && request.method() === "POST") {
+      upgradeRequests.push(url.pathname);
     }
   });
 
@@ -556,7 +660,7 @@ test("firmware page load and path selection do not auto-start upgrade", async ({
 
   await page.getByLabel("Firmware path").selectOption(hpeUpgradePathValue);
   await expect(
-    page.getByText("Backend firmware upgrade integration is pending for this selected firmware path.").first()
+    page.getByText("Upgrade backend integration is pending for this selected firmware path.").first()
   ).toBeVisible();
   await expect(page.getByRole("button", { name: "Start Firmware Upgrade" })).toBeDisabled();
   expect(upgradeRequests).toEqual([]);
@@ -651,11 +755,12 @@ test("firmware upgrade stays disabled when no backend apply action exists", asyn
   await expect(page.getByText("Firmware validation succeeded")).toBeVisible();
 
   await page.getByLabel("Require explicit operator confirmation before any firmware upgrade request is sent.").check();
-  await page.getByLabel("Confirmation phrase").fill("RUN FIRMWARE UPGRADE");
+  await page.getByLabel("Confirmation phrase").fill("run");
 
   await expect(page.getByRole("button", { name: "Start Firmware Upgrade" })).toBeDisabled();
+  await expect(page.getByText("run").first()).toBeVisible();
   await expect(
-    page.getByText("Backend firmware upgrade integration is pending for this selected firmware path.")
+    page.getByText("Backend action firmware.hpe-upgrade-apply is not available in the workflow catalog.")
   ).toBeVisible();
   expect(actionRequests).toEqual([]);
 });
@@ -694,6 +799,7 @@ test("settings and logs remain top-level control-center pages", async ({ page })
   await page.getByLabel("Default SNMP version").selectOption("v3");
   await page.getByLabel("Logging verbosity").selectOption("debug");
   await page.getByRole("button", { name: "Save settings" }).click();
+  await expect(page.getByText("Settings save in progress")).toBeVisible();
   await expect(page.getByText("Settings saved")).toBeVisible();
 
   await page.getByLabel("Firmware repository/source").fill("token=not-allowed");
@@ -709,6 +815,8 @@ test("settings and logs remain top-level control-center pages", async ({ page })
 async function installApiMocks(page: Page) {
   let controlConfig = controlCenterConfig();
   let controlSettings = controlCenterSettings();
+  let labProfiles = labProfileList();
+  let labProfileCounter = 2;
   let selectedFirmwareFiles: Record<string, string> = {};
 
   await page.route("**/*", async (route) => {
@@ -747,6 +855,7 @@ async function installApiMocks(page: Page) {
     }
     if (url.pathname === "/api/v1/control-center/config" && request.method() === "PUT") {
       controlConfig = controlCenterConfig(request.postDataJSON() as Partial<ControlCenterConfigMock>);
+      await sleep(120);
       return json(route, controlConfig);
     }
     if (url.pathname === "/api/v1/control-center/settings" && request.method() === "GET") {
@@ -756,7 +865,44 @@ async function installApiMocks(page: Page) {
       controlSettings = controlCenterSettings(
         request.postDataJSON() as Partial<ControlCenterSettingsMock>
       );
+      await sleep(120);
       return json(route, controlSettings);
+    }
+    if (url.pathname === "/api/v1/lab/profiles" && request.method() === "GET") {
+      return json(route, labProfiles);
+    }
+    if (url.pathname === "/api/v1/lab/profiles" && request.method() === "POST") {
+      const profile = labProfileFromWrite(`lab-${labProfileCounter++}`, request.postDataJSON() as Record<string, unknown>, true);
+      labProfiles = labProfileList(profile.id, [...labProfiles.profiles.map((item) => ({ ...item, active: false })), profile]);
+      await sleep(120);
+      return json(route, profile, 201);
+    }
+    const activateMatch = url.pathname.match(/^\/api\/v1\/lab\/profiles\/([^/]+)\/activate$/);
+    if (activateMatch && request.method() === "POST") {
+      labProfiles = labProfileList(activateMatch[1], labProfiles.profiles);
+      await sleep(120);
+      return json(route, labProfiles);
+    }
+    const profileMatch = url.pathname.match(/^\/api\/v1\/lab\/profiles\/([^/]+)$/);
+    if (profileMatch && request.method() === "PUT") {
+      const profile = labProfileFromWrite(
+        profileMatch[1],
+        request.postDataJSON() as Record<string, unknown>,
+        labProfiles.active_profile.id === profileMatch[1]
+      );
+      labProfiles = labProfileList(
+        labProfiles.active_profile.id === profile.id ? profile.id : labProfiles.active_profile.id,
+        labProfiles.profiles.map((item) => (item.id === profile.id ? profile : item))
+      );
+      await sleep(120);
+      return json(route, profile);
+    }
+    if (profileMatch && request.method() === "DELETE") {
+      const remaining = labProfiles.profiles.filter((profile) => profile.id !== profileMatch[1]);
+      const nextActiveId = labProfiles.active_profile.id === profileMatch[1] ? "runtime" : labProfiles.active_profile.id;
+      labProfiles = labProfileList(nextActiveId, remaining);
+      await sleep(120);
+      return json(route, labProfiles);
     }
     if (url.pathname === "/api/v1/firmware/summary") {
       return json(route, firmwareSummaries());
@@ -769,19 +915,26 @@ async function installApiMocks(page: Page) {
       selectedFirmwareFiles = payload.selected_files ?? {};
       return json(route, firmwareFileSelections(selectedFirmwareFiles));
     }
-    if (url.pathname === "/api/v1/lab/firmware-inventory") {
+    if (url.pathname === "/api/v1/lab/firmware-inventory" && request.method() === "GET") {
+      return json(route, firmwareInventory());
+    }
+    if (url.pathname === "/api/v1/lab/firmware-inventory/refresh" && request.method() === "POST") {
+      await sleep(160);
       return json(route, firmwareInventory());
     }
     if (url.pathname === "/api/v1/lab/firmware-compliance") {
       return json(route, firmwareCompliance(selectedFirmwareFiles));
     }
     if (url.pathname === "/api/v1/providers/netapp-ontap/ontap-upgrade/validate" && request.method() === "POST") {
+      await sleep(160);
       return json(route, firmwareCompliance(selectedFirmwareFiles));
     }
     if (url.pathname === "/api/v1/workflows/actions/build-verification.run-full/run" && request.method() === "POST") {
+      await sleep(160);
       return json(route, workflowActionRun("build-verification.run-full", "Run Full Verification", "completed"));
     }
     if (url.pathname === "/api/v1/workflows/actions/netapp.ontap-upgrade-apply/run" && request.method() === "POST") {
+      await sleep(160);
       return json(route, workflowActionRun("netapp.ontap-upgrade-apply", "Upgrade ONTAP", "blocked"));
     }
 
@@ -789,8 +942,12 @@ async function installApiMocks(page: Page) {
   });
 }
 
-function json(route: Route, body: unknown) {
-  return route.fulfill({ contentType: "application/json", body: JSON.stringify(body) });
+function json(route: Route, body: unknown, status = 200) {
+  return route.fulfill({ contentType: "application/json", status, body: JSON.stringify(body) });
+}
+
+function sleep(milliseconds: number) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
 async function chooseSegment(page: Page, label: string, option: string) {
@@ -883,6 +1040,200 @@ function controlCenterSettings(overrides: Partial<ControlCenterSettingsMock> = {
   };
 }
 
+function labProfileList(activeId = "lab-1", profiles = [labProfile()]) {
+  const runtime = labProfile({
+    active: activeId === "runtime",
+    id: "runtime",
+    name: "Runtime environment",
+    source: "runtime_env"
+  });
+  const activeProfiles = profiles.map((profile) => ({ ...profile, active: profile.id === activeId }));
+  const activeProfile = activeId === "runtime" ? runtime : activeProfiles.find((profile) => profile.id === activeId) ?? runtime;
+  return {
+    active_context: {
+      active_profile: activeProfile,
+      control_host_network: {
+        classification: "not_checked",
+        message: "Control host subnet visibility is not checked.",
+        status: "not_checked"
+      },
+      disabled_features: activeProfile.features.netapp_enabled ? {} : { netapp: "NetApp excluded by lab profile." },
+      enabled_features: activeProfile.features,
+      fix_guidance: [],
+      mismatch_warnings: [],
+      not_in_scope_stages: activeProfile.features.netapp_enabled ? [] : ["netapp"],
+      resolved_address_plan: activeProfile.address_plan,
+      runtime_profile: runtime,
+      topology: activeProfile.profile_topology
+    },
+    active_profile: activeProfile,
+    mock_only: true,
+    next_safe_action: "Select or save a lab profile before running profile-based work.",
+    profiles: activeProfiles,
+    runtime_profile: runtime,
+    store_path: ".local/lab-profiles.json",
+    subnet_options: [
+      {
+        cidr_suffix: "/24",
+        default_topology: "high_address_lab",
+        label: "/24 (254 usable IPs)",
+        netapp_disabled_reason: null,
+        netapp_supported: true,
+        prefix: 24,
+        usable_hosts: 254
+      },
+      {
+        cidr_suffix: "/26",
+        default_topology: "compact_edge_lab",
+        label: "/26 (62 usable IPs)",
+        netapp_disabled_reason: "NetApp high-address defaults require a /24 or larger lab subnet.",
+        netapp_supported: false,
+        prefix: 26,
+        usable_hosts: 62
+      }
+    ]
+  };
+}
+
+function labProfile(overrides: Record<string, unknown> = {}) {
+  const addressPlan = {
+    ansible_control_host: "192.168.1.205",
+    cisco_management: "192.168.1.204",
+    esxi_management: "192.168.1.203",
+    ilo: "192.168.1.201",
+    ilo_initial: "192.168.1.11",
+    netapp_cluster_mgmt: "192.168.1.220",
+    netapp_controller_a_sp: "192.168.1.210",
+    netapp_controller_b_sp: "192.168.1.211",
+    netapp_iscsi_lifs: ["192.168.1.240", "192.168.1.241"],
+    netapp_nfs_lifs: ["192.168.1.230", "192.168.1.231"],
+    netapp_node_a_mgmt: "192.168.1.221",
+    netapp_node_b_mgmt: "192.168.1.222",
+    netapp_svm_mgmt: "192.168.1.223",
+    server_embedded_nic: "192.168.1.202",
+    subnet: "192.168.1.0/24"
+  };
+  const features = {
+    block_legacy_protocols: true,
+    build_verification_enabled: true,
+    disable_ipv6: true,
+    enable_dns: true,
+    enable_ntp: true,
+    enable_snmp: false,
+    firmware_gate_enabled: true,
+    netapp_disabled_reason: null,
+    netapp_enabled: true,
+    storage_protocol: "nfs",
+    vcenter_disabled_reason: "vCenter excluded by lab profile.",
+    vcenter_enabled: false
+  };
+  return {
+    active: true,
+    address_plan: addressPlan,
+    created_at: checkedAt,
+    description: "Default test lab profile.",
+    devices: {
+      cisco: addressPlan.cisco_management,
+      enabled: {
+        cisco: true,
+        esxi: true,
+        ilo: true,
+        netapp: true,
+        server: true,
+        storage: true,
+        vcenter: false
+      },
+      esxi: addressPlan.esxi_management,
+      ilo: addressPlan.ilo,
+      netapp: {
+        cluster_mgmt: addressPlan.netapp_cluster_mgmt,
+        controller_a_sp: addressPlan.netapp_controller_a_sp,
+        controller_b_sp: addressPlan.netapp_controller_b_sp,
+        iscsi_lifs: addressPlan.netapp_iscsi_lifs,
+        nfs_lifs: addressPlan.netapp_nfs_lifs,
+        node_a_mgmt: addressPlan.netapp_node_a_mgmt,
+        node_b_mgmt: addressPlan.netapp_node_b_mgmt,
+        status: "in_scope",
+        svm_mgmt: addressPlan.netapp_svm_mgmt
+      },
+      switch_primary: addressPlan.cisco_management,
+      vcenter: null
+    },
+    dns: ["192.168.1.1"],
+    features,
+    fix_guidance: [],
+    gateway: "192.168.1.1",
+    global_settings: {
+      dns_servers: ["192.168.1.1"],
+      domain_name: null,
+      gateway: "192.168.1.1",
+      mtu: 1500,
+      netapp_disabled_reason: null,
+      netapp_enabled: true,
+      ntp_servers: ["192.168.1.1"],
+      subnet_prefix: 24,
+      timezone: null,
+      vlan_id: "1",
+      vcenter_enabled: false
+    },
+    history: [],
+    id: "lab-1",
+    last_selected_at: checkedAt,
+    mismatch_warnings: [],
+    mtu: 1500,
+    name: "Bench Lab A",
+    not_in_scope_stages: [],
+    ntp: ["192.168.1.1"],
+    profile_topology: "high_address_lab",
+    resolved_address_plan: addressPlan,
+    source: "saved",
+    subnet_cidr: "192.168.1.0/24",
+    updated_at: checkedAt,
+    version: 1,
+    vlan_id: "1",
+    ...overrides
+  };
+}
+
+function labProfileFromWrite(id: string, payload: Record<string, unknown>, active: boolean) {
+  const addressPlan = {
+    ...(labProfile().address_plan as Record<string, unknown>),
+    ...((payload.address_plan as Record<string, unknown> | undefined) ?? {})
+  };
+  const features = {
+    ...(labProfile().features as Record<string, unknown>),
+    ...((payload.features as Record<string, unknown> | undefined) ?? {})
+  };
+  const globalSettings = {
+    ...(labProfile().global_settings as Record<string, unknown>),
+    ...((payload.global_settings as Record<string, unknown> | undefined) ?? {})
+  };
+  const devices = {
+    ...(labProfile().devices as Record<string, unknown>),
+    ...((payload.devices as Record<string, unknown> | undefined) ?? {})
+  };
+  return labProfile({
+    active,
+    address_plan: addressPlan,
+    description: payload.description ?? "",
+    devices,
+    dns: payload.dns ?? [],
+    features,
+    gateway: payload.gateway ?? globalSettings.gateway ?? null,
+    global_settings: globalSettings,
+    id,
+    last_selected_at: checkedAt,
+    mtu: payload.mtu ?? globalSettings.mtu ?? null,
+    name: payload.name ?? "Saved lab profile",
+    ntp: payload.ntp ?? [],
+    profile_topology: payload.profile_topology ?? "high_address_lab",
+    resolved_address_plan: addressPlan,
+    subnet_cidr: payload.subnet_cidr ?? addressPlan.subnet ?? null,
+    updated_at: checkedAt,
+    vlan_id: payload.vlan_id ?? globalSettings.vlan_id ?? null
+  });
+}
+
 function firmwareSummaries() {
   return [
     {
@@ -945,6 +1296,126 @@ function firmwareSummaries() {
           selection_source: "test",
           source_type: "cached_live",
           target_version: "2.91"
+        }
+      ]
+    },
+    {
+      apply_enabled: false,
+      approved_versions: [{ label: "Approved", status: "approved", version: "U46 v2.64 (04/01/2026)" }],
+      blocker: null,
+      compliance_status: "needs_upgrade",
+      component_type: "server_firmware",
+      current_versions: [{ label: "BIOS", status: "needs_upgrade", version: "U32 v3.30 (07/31/2024)" }],
+      device_id: "ilo",
+      disabled_reason: "Backend guarded apply action is not registered.",
+      estimated_impact: "BIOS firmware requires a maintenance window and reboot.",
+      evidence_artifacts: ["artifacts/codex-runs/firmware-inventory-report.md"],
+      freshness: "live",
+      label: "HPE BIOS",
+      last_scanned: checkedAt,
+      next_action: "Validate BIOS firmware evidence; upgrade remains disabled until backend apply exists.",
+      package_available: true,
+      package_name: "U46_2.64_04_01_2026.fwpkg",
+      path_status: "direct",
+      prechecks_required: ["BIOS firmware prechecks"],
+      reboot_required: true,
+      required_intermediate_versions: [],
+      scan_action_id: "ilo.firmware-inventory",
+      severity: "yellow",
+      source_type: "cached_live",
+      target_version: "U46 v2.64 (04/01/2026)",
+      upgrade_center_link: "/firmware?device=ilo",
+      upgrade_paths: [
+        {
+          apply_enabled: false,
+          baseline_source: "real-lab.yml",
+          candidate_files: [],
+          component_id: "hpe_bios_version",
+          component_label: "BIOS",
+          current_version: "U32 v3.30 (07/31/2024)",
+          device_label: "HPE BIOS",
+          disabled_reason: "Backend guarded apply action is not registered.",
+          equipment_label: "Server",
+          equipment_type: "server_firmware",
+          estimated_impact: "BIOS firmware requires a maintenance window and reboot.",
+          evidence_artifacts: ["artifacts/codex-runs/firmware-inventory-report.md"],
+          freshness: "live",
+          last_checked: checkedAt,
+          missing_evidence: [],
+          next_action: "Validate BIOS firmware evidence; upgrade remains disabled until backend apply exists.",
+          package_available: true,
+          package_name: "U46_2.64_04_01_2026.fwpkg",
+          package_version: "U46 v2.64 (04/01/2026)",
+          path_status: "direct",
+          prechecks_required: ["BIOS firmware prechecks"],
+          reboot_required: true,
+          required_intermediate_versions: [],
+          scan_action_id: "ilo.firmware-inventory",
+          selected_file_name: "U46_2.64_04_01_2026.fwpkg",
+          selected_file_path: null,
+          selection_source: "test",
+          source_type: "cached_live",
+          target_version: "U46 v2.64 (04/01/2026)"
+        }
+      ]
+    },
+    {
+      apply_enabled: true,
+      approved_versions: [{ label: "Approved", status: "approved", version: "8.36" }],
+      blocker: null,
+      compliance_status: "needs_upgrade",
+      component_type: "storage_controller_firmware",
+      current_versions: [{ label: "Smart Array firmware", status: "needs_upgrade", version: "8.32" }],
+      device_id: "raid",
+      disabled_reason: "Backend guarded apply action is not registered.",
+      estimated_impact: "Storage controller firmware requires maintenance approval.",
+      evidence_artifacts: ["artifacts/codex-runs/firmware-inventory-report.md"],
+      freshness: "live",
+      label: "HPE Smart Array",
+      last_scanned: checkedAt,
+      next_action: "Validate storage controller firmware evidence; upgrade remains disabled until backend apply exists.",
+      package_available: true,
+      package_name: "smart-array-8.36.fwpkg",
+      path_status: "direct",
+      prechecks_required: ["Storage controller firmware prechecks"],
+      reboot_required: true,
+      required_intermediate_versions: [],
+      scan_action_id: "raid.firmware-inventory",
+      severity: "yellow",
+      source_type: "cached_live",
+      target_version: "8.36",
+      upgrade_center_link: "/firmware?device=raid",
+      upgrade_paths: [
+        {
+          apply_enabled: false,
+          baseline_source: "real-lab.yml",
+          candidate_files: [],
+          component_id: "hpe_smart_array_firmware",
+          component_label: "Smart Array",
+          current_version: "8.32",
+          device_label: "HPE Smart Array",
+          disabled_reason: "Backend guarded apply action is not registered.",
+          equipment_label: "Internal Storage",
+          equipment_type: "storage_controller_firmware",
+          estimated_impact: "Storage controller firmware requires maintenance approval.",
+          evidence_artifacts: ["artifacts/codex-runs/firmware-inventory-report.md"],
+          freshness: "live",
+          last_checked: checkedAt,
+          missing_evidence: [],
+          next_action: "Validate storage controller firmware evidence; upgrade remains disabled until backend apply exists.",
+          package_available: true,
+          package_name: "smart-array-8.36.fwpkg",
+          package_version: "8.36",
+          path_status: "direct",
+          prechecks_required: ["Storage controller firmware prechecks"],
+          reboot_required: true,
+          required_intermediate_versions: [],
+          scan_action_id: "raid.firmware-inventory",
+          selected_file_name: "smart-array-8.36.fwpkg",
+          selected_file_path: null,
+          selection_source: "test",
+          source_type: "cached_live",
+          target_version: "8.36"
         }
       ]
     },
@@ -1034,9 +1505,34 @@ function firmwareInventory() {
     blockers: [],
     checked_at: checkedAt,
     freshness: "live",
+    live_inventory: {
+      ilo: {
+        bios_version: "U32 v3.30 (07/31/2024)",
+        controllers: [
+          {
+            adapter_type: "Smart Array",
+            firmware_version: "52.26.3-5379",
+            health: "OK",
+            id: "0",
+            location: "Slot 0",
+            model: "HPE Smart Array P408i-a SR Gen10",
+            name: "Smart Array Controller",
+            protocol: "SAS",
+            state: "Enabled"
+          }
+        ],
+        ilo_firmware: "iLO 5 v3.19",
+        smart_array_firmware: "52.26.3-5379",
+        status: "ok"
+      }
+    },
     message: "Firmware inventory loaded from backend summary.",
     provider_id: "firmware-compliance",
+    provider_warnings: {
+      ilo: []
+    },
     report_artifacts: ["artifacts/codex-runs/firmware-inventory-report.md"],
+    recheck_command: "make provider-lab-firmware-inventory",
     source_type: "cached_live",
     status: "ok",
     warnings: []

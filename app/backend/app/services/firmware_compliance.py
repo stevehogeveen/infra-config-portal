@@ -213,9 +213,18 @@ UPGRADE_COMPONENT_META = {
 }
 
 
-def get_firmware_inventory(*, refresh_live: bool = False) -> dict[str, Any]:
+def get_firmware_inventory(
+    *,
+    refresh_live: bool = False,
+    target_override: str | None = None,
+    refresh_scope: str = "full",
+) -> dict[str, Any]:
+    include_other_providers = _refresh_scope_includes_other_providers(refresh_scope)
     if refresh_live:
-        _refresh_live_inventory()
+        _refresh_live_inventory(
+            target_override=target_override,
+            include_other_providers=include_other_providers,
+        )
     ilo_probe, ilo_checked_at = get_probe_result("ilo-redfish")
     cisco_probe, cisco_checked_at = get_probe_result("cisco-ansible")
     cisco_console_probe, cisco_console_checked_at = get_probe_result("cisco-console")
@@ -233,6 +242,10 @@ def get_firmware_inventory(*, refresh_live: bool = False) -> dict[str, Any]:
         "message": "Firmware inventory collected from cached/live provider evidence and local media metadata.",
         "provider_mode": settings.provider_mode,
         "checked_at": datetime.now(UTC).isoformat(),
+        "requested_targets": {
+            "ilo": _clean_inventory_target(target_override),
+            "ilo_source": "control_center_target" if _clean_inventory_target(target_override) else None,
+        },
         "live_inventory": {
             "ilo": _ilo_versions(ilo_probe if isinstance(ilo_probe, dict) else {}),
             "cisco": cisco_versions,
@@ -255,18 +268,34 @@ def get_firmware_inventory(*, refresh_live: bool = False) -> dict[str, Any]:
     }
     if not isinstance(ilo_probe, dict):
         inventory["warnings"].append("No cached iLO firmware inventory is available.")
-    if not cisco_versions.get("ios_xe_version") and not settings.cisco_mgmt_configured:
+    else:
+        ilo_status = _optional_status(ilo_probe.get("status"))
+        if ilo_status in {"blocked", "failed"}:
+            inventory["status"] = ilo_status
+            inventory["message"] = str(
+                ilo_probe.get("message")
+                or "iLO firmware inventory did not complete."
+            )
+            inventory["blockers"].extend(
+                _string_list(ilo_probe.get("blockers")) or [inventory["message"]]
+            )
+    if include_other_providers and not cisco_versions.get("ios_xe_version") and not settings.cisco_mgmt_configured:
         inventory["warnings"].append("Cisco management is not configured yet; run Cisco firmware inventory from console.")
     netapp_runtime_state = get_netapp_runtime_state()
-    if not netapp_runtime_state.get("configured"):
+    if include_other_providers and not netapp_runtime_state.get("configured"):
         inventory["warnings"].append("NetApp firmware inventory is waiting for live setup validation.")
     source_type = "live_cached" if any(inventory["last_probe_times"].values()) else "not_checked"
+    recheck_command = (
+        "make provider-lab-hpe-firmware-inventory"
+        if not include_other_providers
+        else "make provider-lab-firmware-inventory"
+    )
     return _sanitize(
         attach_status_source(
             inventory,
             source_type=source_type,
             checked_at=inventory["checked_at"] if source_type == "live_cached" else None,
-            recheck_command="make provider-lab-firmware-inventory",
+            recheck_command=recheck_command,
             evidence_artifacts=[str(INVENTORY_REPORT.relative_to(REPO_ROOT))],
         )
     )
@@ -410,7 +439,7 @@ def write_firmware_reports(*, refresh_live: bool = False, scope: str = "full") -
     inventory = get_firmware_inventory(refresh_live=refresh_live)
     compliance = get_firmware_compliance(refresh_live=False, scope=scope)
     CODEX_RUN_DIR.mkdir(parents=True, exist_ok=True)
-    INVENTORY_REPORT.write_text(_inventory_markdown(inventory), encoding="utf-8")
+    write_firmware_inventory_report(inventory)
     COMPLIANCE_REPORT.write_text(_compliance_markdown(compliance), encoding="utf-8")
     COMPLIANCE_SUMMARY.write_text(json.dumps(_summary(compliance), indent=2) + "\n", encoding="utf-8")
     if compliance.get("waiver", {}).get("active"):
@@ -418,6 +447,13 @@ def write_firmware_reports(*, refresh_live: bool = False, scope: str = "full") -
     elif WAIVER_REPORT.exists():
         WAIVER_REPORT.unlink()
     return compliance
+
+
+def write_firmware_inventory_report(inventory: dict[str, Any] | None = None) -> dict[str, Any]:
+    inventory = inventory or get_firmware_inventory(refresh_live=False)
+    CODEX_RUN_DIR.mkdir(parents=True, exist_ok=True)
+    INVENTORY_REPORT.write_text(_inventory_markdown(inventory), encoding="utf-8")
+    return inventory
 
 
 def write_waiver_report() -> dict[str, Any]:
@@ -470,18 +506,57 @@ def load_firmware_waiver() -> dict[str, Any]:
     }
 
 
-def _refresh_live_inventory() -> None:
-    if settings.provider_mode != "local-lab-readwrite":
-        return
+def _refresh_live_inventory(*, target_override: str | None = None, include_other_providers: bool = True) -> None:
     from app.providers.cisco_ansible import CiscoAnsibleAdapter
     from app.providers.cisco_console import CiscoConsoleAdapter
-    from app.providers.ilo_redfish import IloRedfishAdapter
+    from app.providers.ilo_redfish import IloRedfishAdapter, IloRedfishConfig
 
-    IloRedfishAdapter(provider_mode="local-lab-readwrite").probe()
+    IloRedfishAdapter(
+        provider_mode=settings.provider_mode,
+        config=_ilo_refresh_config(target_override, config_cls=IloRedfishConfig),
+    ).probe()
+    if settings.provider_mode != "local-lab-readwrite" or not include_other_providers:
+        return
     if settings.cisco_mgmt_configured:
         CiscoAnsibleAdapter(provider_mode="local-lab-readwrite").probe()
     else:
         CiscoConsoleAdapter(provider_mode="local-lab-readwrite").firmware_inventory()
+
+
+def _refresh_scope_includes_other_providers(refresh_scope: str) -> bool:
+    return str(refresh_scope or "full").strip().lower() not in {"ilo", "hpe"}
+
+
+def _ilo_refresh_config(target_override: str | None, *, config_cls: type) -> Any:
+    base = config_cls.from_settings()
+    target = _clean_inventory_target(target_override)
+    if not target:
+        return base
+    fallback_hosts: list[str] = []
+    fallback_sources: list[str] = []
+    for host, source in ((base.host, base.host_source), *zip(base.fallback_hosts, base.fallback_host_sources, strict=False)):
+        clean_host = _clean_inventory_target(host)
+        if not clean_host or clean_host == target or clean_host in fallback_hosts:
+            continue
+        fallback_hosts.append(clean_host)
+        fallback_sources.append(source)
+    return config_cls(
+        host=target,
+        username=base.username,
+        password=base.password,
+        verify_tls=base.verify_tls,
+        timeout_seconds=base.timeout_seconds,
+        host_source="control_center_target",
+        fallback_hosts=tuple(fallback_hosts),
+        fallback_host_sources=tuple(fallback_sources),
+    )
+
+
+def _clean_inventory_target(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
 
 
 def _classify_component(
@@ -571,7 +646,33 @@ def _ilo_versions(probe: dict[str, Any]) -> dict[str, Any]:
         or legacy_identity.get("current_firmware"),
         "bios_version": _first(systems, ("BiosVersion", "bios_version", "BIOSVersion")) or _firmware_match(firmware, "bios"),
         "smart_array_firmware": _first(controllers, ("FirmwareVersion", "firmware_version", "Version")) or _firmware_match(firmware, "smart"),
+        "controllers": _ilo_controller_inventory(controllers),
     }
+
+
+def _ilo_controller_inventory(controllers: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for index, controller in enumerate(controllers, start=1):
+        firmware_version = _first([controller], ("FirmwareVersion", "firmware_version", "Version"))
+        status = controller.get("Status") if isinstance(controller.get("Status"), dict) else {}
+        rows.append(
+            {
+                "id": _string_or_none(controller.get("Id")) or f"controller-{index}",
+                "name": _string_or_none(controller.get("Name"))
+                or _string_or_none(controller.get("Model"))
+                or _string_or_none(controller.get("ProductName"))
+                or f"Storage controller {index}",
+                "model": _string_or_none(controller.get("Model")) or _string_or_none(controller.get("ProductName")),
+                "firmware_version": firmware_version,
+                "health": _string_or_none(status.get("Health")),
+                "state": _string_or_none(status.get("State")),
+                "location": _string_or_none(controller.get("Location")),
+                "protocol": _string_or_none(controller.get("ControllerProtocol")),
+                "adapter_type": _string_or_none(controller.get("AdapterType")),
+                "odata_id": _string_or_none(controller.get("@odata.id")),
+            }
+        )
+    return rows
 
 
 def _cisco_versions(probe: dict[str, Any]) -> dict[str, Any]:
@@ -1240,6 +1341,7 @@ def _firmware_upgrade_path(
     source = _path_source_info(component_id, inventory, current_version, checked_at)
     evidence = _path_evidence_artifacts(component_id)
     required_intermediates = _string_list((baseline_component or {}).get("required_intermediate_versions"))
+    pending_intermediates = _pending_required_intermediate_versions(current_version, required_intermediates)
     missing_evidence = _missing_path_evidence(
         current_version=current_version,
         target_version=target.get("target_version"),
@@ -1252,7 +1354,7 @@ def _firmware_upgrade_path(
         target_version=target.get("target_version"),
         target_kind=target.get("target_kind"),
         package_available=bool(package),
-        required_intermediate_versions=required_intermediates,
+        required_intermediate_versions=pending_intermediates,
         missing_evidence=missing_evidence,
     )
     disabled_reason = _path_disabled_reason(
@@ -1284,6 +1386,7 @@ def _firmware_upgrade_path(
             "candidate_files": candidate_files,
             "path_status": status,
             "required_intermediate_versions": required_intermediates,
+            "pending_intermediate_versions": pending_intermediates,
             "prechecks_required": list(meta["prechecks_required"]),
             "reboot_required": bool(meta["reboot_required"]),
             "estimated_impact": meta["estimated_impact"],
@@ -1394,9 +1497,21 @@ def _path_status(
         return "blocked"
     if required_intermediate_versions:
         return "staged"
+    if component_id in {"hpe_bios_version", "hpe_smart_array_firmware"}:
+        return "direct"
     if component_id in {"cisco_ios_xe_version", "hpe_ilo_firmware", "netapp_ontap_version", "esxi_version", "vcenter_vcsa_version"}:
         return "manual_review"
     return "manual_review" if missing_evidence else "unknown"
+
+
+def _pending_required_intermediate_versions(current_version: str | None, required_intermediates: list[str]) -> list[str]:
+    if not current_version:
+        return required_intermediates
+    pending: list[str] = []
+    for intermediate in required_intermediates:
+        if _compare_versions(current_version, intermediate) < 0:
+            pending.append(intermediate)
+    return pending
 
 
 def _path_disabled_reason(
@@ -1422,7 +1537,7 @@ def _path_disabled_reason(
     if freshness in {"stale", "historical", "not_checked", "unknown"}:
         return "Apply disabled: evidence is not fresh live inventory."
     if path_status in {"direct", "staged"}:
-        return "Apply disabled: confirmation gates and vendor path validation are not implemented in this lane."
+        return "Apply disabled until guarded apply gates and vendor executor validation are present."
     if missing_evidence:
         return f"Manual review required: missing {', '.join(missing_evidence)}."
     return f"Manual review required before {UPGRADE_COMPONENT_META[component_id]['component_label']} can be actionable."
@@ -1579,7 +1694,7 @@ def _package_hints(component_id: str) -> tuple[str, ...]:
         "cisco_ios_xe_version": ("cisco-ios-xe", "cisco", "iosxe", "cat9k"),
         "hpe_ilo_firmware": ("hpe-ilo", "ilo", "hpe-spp", "hpe-sum"),
         "hpe_bios_version": ("hpe-spp", "hpe-sum", "bios"),
-        "hpe_smart_array_firmware": ("hpe-spp", "hpe-sum", "smart-array", "raid"),
+        "hpe_smart_array_firmware": ("hpe-spp", "hpe-sum", "smart-array", "smartarray", "raid", "p408", "hpe_sr"),
         "esxi_version": ("vmware-esxi", "esxi"),
         "netapp_ontap_version": ("netapp-ontap", "ontap"),
         "vcenter_vcsa_version": ("vmware-vcenter", "vcsa", "vcenter"),
@@ -1598,6 +1713,7 @@ def _package_score_for_component(
     text = " ".join(
         str(value)
         for value in [
+            item.get("file_name"),
             item.get("placeholder_name"),
             item.get("category"),
             item.get("extension"),
@@ -1642,6 +1758,11 @@ def _path_source_info(
     checked_at: str,
 ) -> dict[str, str | None]:
     report_versions = _firmware_inventory_report_versions()
+    if component_id in {"hpe_ilo_firmware", "hpe_bios_version", "hpe_smart_array_firmware"}:
+        device_id = "raid" if component_id == "hpe_smart_array_firmware" else "ilo"
+        hpe = _component_source_info(device_id, inventory)
+        if current_version and hpe["source_type"] in {"cached_live", "live_provider"}:
+            return {"source_type": hpe["source_type"], "freshness": hpe["freshness"], "last_checked": hpe["last_scanned"]}
     if component_id in {"hpe_ilo_firmware", "hpe_bios_version", "hpe_smart_array_firmware"} and report_versions.get("checked_at"):
         return {
             "source_type": "historical_evidence",

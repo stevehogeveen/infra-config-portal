@@ -11,17 +11,18 @@ components:
   - id: hpe_bios_version
     device: HPE Server
     label: HPE BIOS version
-    minimum: null
-    approved: []
+    minimum: "2.64"
+    approved: ["U46 v2.64 (04/01/2026)"]
     unknown_policy: warning
-    next_action: "Confirm BIOS version from iLO Redfish system inventory or the server console before configuration."
+    next_action: "Use the Gen10 SPP U46 BIOS package v2.64 (04/01/2026) as the approved target after live inventory and vendor prechecks."
   - id: hpe_smart_array_firmware
     device: HPE Smart Array
     label: HPE Smart Array controller firmware
-    minimum: null
-    approved: []
+    minimum: "8.00"
+    approved: ["8.00"]
+    required_intermediate_versions: ["5.61"]
     unknown_policy: warning
-    next_action: "Run HPE storage discovery and compare controller firmware with the approved SPP for this host."
+    next_action: "For the P408i-a SR Gen10 controller, stage the 5.61 bridge package if the current firmware is below 5.61, then apply the Gen10 SPP HPE_SR_Gen10_8.00_A.fwpkg package after live inventory and vendor prechecks."
   - id: cisco_ios_xe_version
     device: Cisco
     label: Cisco IOS XE version

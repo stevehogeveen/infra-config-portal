@@ -20,7 +20,7 @@ def record_probe_result(provider_id: str, result: dict[str, Any]) -> dict[str, A
 
 
 def get_probe_result(provider_id: str) -> tuple[dict[str, Any] | None, str | None]:
-    result = _PROBE_RESULTS.get(provider_id) or _read_probe_result(provider_id)
+    result = _newest_probe_result(_PROBE_RESULTS.get(provider_id), _read_probe_result(provider_id))
     if result is None:
         return None, None
     _PROBE_RESULTS[provider_id] = result
@@ -53,6 +53,30 @@ def _read_probe_result(provider_id: str) -> dict[str, Any] | None:
     except (OSError, ValueError):
         return None
     return value if isinstance(value, dict) else None
+
+
+def _newest_probe_result(memory: dict[str, Any] | None, disk: dict[str, Any] | None) -> dict[str, Any] | None:
+    if memory is None:
+        return disk
+    if disk is None:
+        return memory
+    memory_checked_at = _parse_checked_at(memory.get("checked_at"))
+    disk_checked_at = _parse_checked_at(disk.get("checked_at"))
+    if disk_checked_at and (memory_checked_at is None or disk_checked_at > memory_checked_at):
+        return disk
+    return memory
+
+
+def _parse_checked_at(value: Any) -> datetime | None:
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
 
 
 def _cache_path(provider_id: str) -> Path:

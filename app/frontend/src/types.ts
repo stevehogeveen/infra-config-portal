@@ -497,6 +497,7 @@ export type LabSubnetOption = {
 };
 
 export type LabProfileDevices = {
+  [key: string]: unknown;
   gateway?: string | null;
   switch_primary?: string | null;
   switch_secondary?: string | null;
@@ -999,6 +1000,10 @@ export type WorkflowActionRunRequest = {
   confirmation_phrase?: string;
   confirmed_gates?: string[];
   control_config?: Record<string, unknown>;
+  selected_component_id?: string | null;
+  selected_component_label?: string | null;
+  selected_firmware?: string | null;
+  selected_target?: string | null;
 };
 
 export type WorkflowStage = {

@@ -1998,6 +1998,74 @@ def test_ilo_config_includes_saved_first_access_candidate(monkeypatch) -> None:
     ]
 
 
+def test_ilo_config_uses_profile_initial_ip_as_first_access_fallback(monkeypatch) -> None:
+    monkeypatch.setenv("ILO_TEST_HOST", "192.168.1.201")
+    create_lab_profile(
+        {
+            "name": "Uplands_Lab",
+            "address_plan": {
+                "subnet": "192.168.1.0/24",
+                "ilo": "192.168.1.201",
+                "ilo_initial": "192.168.1.11",
+                "server_embedded_nic": "192.168.1.202",
+                "esxi_management": "192.168.1.203",
+                "cisco_management": "192.168.1.204",
+                "ansible_control_host": "192.168.1.205",
+            },
+        }
+    )
+
+    config = IloRedfishConfig.from_settings()
+
+    assert config.host == "192.168.1.201"
+    assert config.host_source == "active_lab_profile"
+    assert config.fallback_hosts == ("192.168.1.11",)
+    assert config.fallback_host_sources == ("active_lab_profile_ilo_initial",)
+    assert config.target_candidates == [
+        {"host": "192.168.1.201", "source": "active_lab_profile"},
+        {"host": "192.168.1.11", "source": "active_lab_profile_ilo_initial"},
+    ]
+
+
+def test_ilo_config_keeps_profile_initial_when_control_access_duplicates_profile_host(monkeypatch) -> None:
+    monkeypatch.setenv("ILO_TEST_HOST", "192.168.1.201")
+    create_lab_profile(
+        {
+            "name": "Uplands_Lab",
+            "address_plan": {
+                "subnet": "192.168.1.0/24",
+                "ilo": "192.168.1.201",
+                "ilo_initial": "192.168.1.11",
+                "server_embedded_nic": "192.168.1.202",
+                "esxi_management": "192.168.1.203",
+                "cisco_management": "192.168.1.204",
+                "ansible_control_host": "192.168.1.205",
+            },
+        }
+    )
+    update_control_access_config(
+        "ilo",
+        {
+            "first_time_configuring": True,
+            "original_dhcp_ip": "192.168.1.201",
+            "username_reference": "local-admin",
+            "password_configured": True,
+            "password_reference_label": "local secret ref",
+        },
+    )
+
+    config = IloRedfishConfig.from_settings()
+
+    assert config.host == "192.168.1.201"
+    assert config.host_source == "active_lab_profile"
+    assert config.fallback_hosts == ("192.168.1.11",)
+    assert config.fallback_host_sources == ("active_lab_profile_ilo_initial",)
+    assert config.target_candidates == [
+        {"host": "192.168.1.201", "source": "active_lab_profile"},
+        {"host": "192.168.1.11", "source": "active_lab_profile_ilo_initial"},
+    ]
+
+
 def test_ilo_setup_apply_blocks_hostname_patch_in_local_readonly(
     db_session,
     monkeypatch,

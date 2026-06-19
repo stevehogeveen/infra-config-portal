@@ -44,6 +44,7 @@ from app.schemas import (
     ControlCenterLogWrite,
     ControlCenterSettingsRead,
     ControlCenterSettingsWrite,
+    FirmwareInventoryRefreshCreate,
     FirmwareFileSelectionsRead,
     FirmwareFileSelectionsWrite,
     FirmwareSummaryRead,
@@ -179,6 +180,7 @@ from app.services.lab_profiles import (
     activate_lab_profile,
     apply_active_profile_to_runtime_env,
     create_lab_profile,
+    delete_lab_profile,
     list_lab_profiles,
     update_lab_profile,
 )
@@ -687,6 +689,11 @@ def read_firmware_inventory() -> dict:
     return get_firmware_inventory(refresh_live=False)
 
 
+@router.post("/lab/firmware-inventory/refresh", response_model=ProviderProbeResultRead)
+def refresh_firmware_inventory(payload: FirmwareInventoryRefreshCreate) -> dict:
+    return get_firmware_inventory(refresh_live=True, target_override=payload.target, refresh_scope="ilo")
+
+
 @router.get("/lab/firmware-compliance", response_model=ProviderProbeResultRead)
 def read_firmware_compliance(scope: str = Query("full", pattern="^(hpe|cisco|netapp|full)$")) -> dict:
     return get_firmware_compliance(refresh_live=False, scope=scope)
@@ -798,6 +805,16 @@ def create_lab_profile_route(payload: LabProfileWrite) -> LabProfileRead:
 def update_lab_profile_route(profile_id: str, payload: LabProfileWrite) -> LabProfileRead:
     try:
         return update_lab_profile(profile_id, payload.model_dump(exclude_unset=True))
+    except LabProfileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Lab profile not found") from exc
+    except LabProfileError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.delete("/lab/profiles/{profile_id}", response_model=LabProfileListRead)
+def delete_lab_profile_route(profile_id: str) -> LabProfileListRead:
+    try:
+        return delete_lab_profile(profile_id)
     except LabProfileNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Lab profile not found") from exc
     except LabProfileError as exc:

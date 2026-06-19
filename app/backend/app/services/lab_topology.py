@@ -374,7 +374,7 @@ def _devices(
             "iscsi_lifs": list(plan.get("netapp_iscsi_lifs") or []),
             "status": "in_scope",
         }
-    return {
+    normalized = {
         "gateway": gateway,
         "switch_primary": plan.get("cisco_management"),
         "switch_secondary": switch_secondary,
@@ -388,6 +388,10 @@ def _devices(
         "netapp": netapp,
         "vcenter": _clean_string(overrides.get("vcenter")) if features["vcenter_enabled"] else None,
     }
+    for key, value in overrides.items():
+        if key not in normalized:
+            normalized[key] = value
+    return normalized
 
 
 def _validate_topology_fit(network: IPv4Network, topology: str) -> None:
