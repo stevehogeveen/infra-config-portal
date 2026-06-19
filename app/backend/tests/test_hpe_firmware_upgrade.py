@@ -45,6 +45,10 @@ def test_hpe_firmware_apply_reports_current_without_executor_blocker(monkeypatch
     assert result["upgrade_writes_attempted"] is False
 
 
+def test_hpe_bios_expected_package_name_uses_bios_family_target() -> None:
+    assert hpe._bios_package_name("U32 v3.66 (04/01/2026)") == "U32_3.66_04_01_2026.fwpkg"
+
+
 def _hpe_compliance() -> dict:
     return {
         "status": "needs_upgrade",

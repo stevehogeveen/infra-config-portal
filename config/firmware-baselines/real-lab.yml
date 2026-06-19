@@ -11,10 +11,12 @@ components:
   - id: hpe_bios_version
     device: HPE Server
     label: HPE BIOS version
-    minimum: "2.64"
-    approved: ["U46 v2.64 (04/01/2026)"]
+    minimum: null
+    approved: []
+    minimum_by_family: ["U30=3.66", "U31=3.66", "U32=3.66", "U33=3.66", "U34=3.66", "U37=3.66", "U38=3.66", "U39=3.66", "U40=3.66", "U41=3.66", "U45=3.66", "U46=2.64", "U47=2.64", "U50=2.64", "U56=2.64", "U60=2.64", "U61=2.64", "U64=2.64", "A40=3.72", "A41=3.72", "A42=4.04", "A43=4.04", "A46=4.04", "A47=4.04", "A48=4.04"]
+    approved_by_family: ["U32=U32 v3.66 (04/01/2026)", "U46=U46 v2.64 (04/01/2026)", "U47=U47 v2.64 (04/01/2026)", "A42=A42 v4.04 (04/02/2026)", "A43=A43 v4.04 (04/02/2026)", "A46=A46 v4.04 (04/02/2026)", "A47=A47 v4.04 (04/02/2026)", "A48=A48 v4.04 (04/02/2026)"]
     unknown_policy: warning
-    next_action: "Use the Gen10 SPP U46 BIOS package v2.64 (04/01/2026) as the approved target after live inventory and vendor prechecks."
+    next_action: "Use the SPP BIOS package that matches the detected BIOS family, for example U32_3.66_04_01_2026.fwpkg for DL360 Gen10 U32 systems, U46_2.64_04_01_2026.fwpkg for matching Gen10 Plus U46 systems, or the matching A-family package for Gen11 systems."
   - id: hpe_smart_array_firmware
     device: HPE Smart Array
     label: HPE Smart Array controller firmware

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -33,7 +34,7 @@ HPE_UPGRADE_ORDER = (
 SPP_PACKAGE_HINTS = {
     "hpe_ilo_firmware": "ilo5_319.fwpkg",
     "hpe_smart_array_firmware": "HPE_SR_Gen10_8.00_A.fwpkg",
-    "hpe_bios_version": "U46_2.64_04_01_2026.fwpkg",
+    "hpe_bios_version": "Detected BIOS-family package from SPP, such as U32_3.66_04_01_2026.fwpkg.",
 }
 
 
@@ -204,7 +205,7 @@ def _step_for_component(component_id: str, component: dict[str, Any] | None, pat
         "path_status": path_status,
         "package_available": package_available,
         "package_name": package_name,
-        "expected_spp_file": SPP_PACKAGE_HINTS.get(component_id),
+        "expected_spp_file": _expected_spp_file(component_id, path),
         "selected_file_name": _known(path, "selected_file_name"),
         "selected_file_path": _known(path, "selected_file_path"),
         "reboot_required": bool((path or {}).get("reboot_required")),
@@ -262,6 +263,25 @@ def _order_note(component_id: str) -> str:
     if component_id == "hpe_smart_array_firmware":
         return "Controller package before BIOS so storage firmware is staged before the final reboot step."
     return "BIOS last because it is the reboot-driving package for this inventory."
+
+
+def _expected_spp_file(component_id: str, path: dict[str, Any] | None) -> str | None:
+    selected_file = _known(path, "selected_file_name")
+    if component_id == "hpe_bios_version" and selected_file and selected_file.lower().endswith(".fwpkg"):
+        return selected_file
+    if component_id == "hpe_bios_version":
+        return _bios_package_name(_known(path, "target_version") or _known(path, "current_version")) or SPP_PACKAGE_HINTS.get(component_id)
+    return SPP_PACKAGE_HINTS.get(component_id)
+
+
+def _bios_package_name(version: str | None) -> str | None:
+    if not version:
+        return None
+    match = re.search(r"\b([A-Z]\d{2})\s+v?(\d+(?:\.\d+)+)\s+\((\d{2})/(\d{2})/(\d{4})\)", version)
+    if not match:
+        return None
+    family, version_number, month, day, year = match.groups()
+    return f"{family}_{version_number}_{month}_{day}_{year}.fwpkg"
 
 
 def _apply_command(component_id: str | None = None) -> str:

@@ -565,6 +565,7 @@ def _classify_component(
     waiver: dict[str, Any],
 ) -> dict[str, Any]:
     current = _current_version_for(baseline_component["id"], inventory)
+    baseline_component = _component_with_family_target(baseline_component, current)
     minimum = baseline_component.get("minimum")
     approved = baseline_component.get("approved") or []
     status = "passed"
@@ -609,6 +610,65 @@ def _classify_component(
         "next_action": baseline_component.get("next_action") or "Review firmware baseline and live inventory.",
         "waiver_applied": status == "waived",
     }
+
+
+def _component_with_family_target(baseline_component: dict[str, Any] | None, current_version: str | None) -> dict[str, Any]:
+    component = dict(baseline_component or {})
+    if component.get("id") != "hpe_bios_version":
+        return component
+    family = _bios_family(current_version)
+    if not family:
+        return component
+    minimum_by_family = _family_value_map(component.get("minimum_by_family"))
+    approved_by_family = _family_value_map(component.get("approved_by_family"))
+    if family in minimum_by_family:
+        component["minimum"] = minimum_by_family[family]
+    if family in approved_by_family:
+        component["approved"] = [approved_by_family[family]]
+    return component
+
+
+def _has_component_target_baseline(baseline_component: dict[str, Any] | None) -> bool:
+    component = baseline_component or {}
+    return bool(
+        component.get("minimum")
+        or component.get("approved")
+        or component.get("minimum_by_family")
+        or component.get("approved_by_family")
+    )
+
+
+def _family_value_map(value: Any) -> dict[str, str]:
+    mapping: dict[str, str] = {}
+    for item in _string_list(value):
+        if "=" not in item:
+            continue
+        family, target = item.split("=", 1)
+        family = family.strip().upper()
+        target = target.strip()
+        if family and target:
+            mapping[family] = target
+    return mapping
+
+
+def _bios_family(value: Any) -> str | None:
+    text = str(value or "").strip().upper()
+    match = re.search(r"\b([A-Z]\d{2})\b", text)
+    return match.group(1) if match else None
+
+
+def _bios_package_family(item: dict[str, Any]) -> str | None:
+    text = " ".join(
+        str(value)
+        for value in (
+            item.get("file_name"),
+            item.get("placeholder_name"),
+            item.get("detected_product"),
+        )
+        if value
+    )
+    match = re.search(r"\b([A-Z]\d{2})_", text.upper())
+    return match.group(1) if match else None
 
 
 def _current_version_for(component_id: str, inventory: dict[str, Any]) -> str | None:
@@ -1335,7 +1395,7 @@ def _firmware_upgrade_path(
 ) -> dict[str, Any]:
     meta = UPGRADE_COMPONENT_META[component_id]
     current_version = _path_current_version(component_id, component)
-    target = _path_target(component_id, baseline_component, media_items)
+    target = _path_target(component_id, baseline_component, media_items, current_version=current_version)
     package = _package_for_component(component_id, current_version, target.get("target_version"), media_items)
     candidate_files = _candidate_files_for_component(component_id, current_version, target.get("target_version"), media_items)
     source = _path_source_info(component_id, inventory, current_version, checked_at)
@@ -1424,6 +1484,7 @@ def _path_target(
     component_id: str,
     baseline_component: dict[str, Any] | None,
     media_items: list[dict[str, Any]],
+    current_version: str | None = None,
 ) -> dict[str, str | None]:
     if component_id == "netapp_ontap_version":
         upgrade = _netapp_upgrade_versions()
@@ -1449,6 +1510,7 @@ def _path_target(
             "baseline_source": target.get("source"),
             "target_kind": "exact" if target.get("version") else None,
         }
+    baseline_component = _component_with_family_target(baseline_component or {}, current_version)
     approved = [str(value) for value in (baseline_component or {}).get("approved") or [] if value]
     if approved:
         return {
@@ -1572,7 +1634,7 @@ def _missing_path_evidence(
         missing.append("target baseline")
     if component_id == "cisco_bootloader_rommon" and not current_version:
         missing.append("ROMMON/bootloader inventory")
-    if component_id in {"hpe_bios_version", "hpe_smart_array_firmware"} and not (baseline_component or {}).get("minimum") and not (baseline_component or {}).get("approved"):
+    if component_id in {"hpe_bios_version", "hpe_smart_array_firmware"} and not _has_component_target_baseline(baseline_component):
         missing.append("approved HPE baseline")
     if component_id.startswith("netapp_") and component_id != "netapp_ontap_version":
         if not current_version:
@@ -1693,7 +1755,7 @@ def _package_hints(component_id: str) -> tuple[str, ...]:
     return {
         "cisco_ios_xe_version": ("cisco-ios-xe", "cisco", "iosxe", "cat9k"),
         "hpe_ilo_firmware": ("hpe-ilo", "ilo", "hpe-spp", "hpe-sum"),
-        "hpe_bios_version": ("hpe-spp", "hpe-sum", "bios"),
+        "hpe_bios_version": ("hpe-spp", "hpe-sum", "bios", "fwpkg"),
         "hpe_smart_array_firmware": ("hpe-spp", "hpe-sum", "smart-array", "smartarray", "raid", "p408", "hpe_sr"),
         "esxi_version": ("vmware-esxi", "esxi"),
         "netapp_ontap_version": ("netapp-ontap", "ontap"),
@@ -1736,6 +1798,13 @@ def _package_score_for_component(
             score -= 2
     if component_id == "hpe_ilo_firmware" and current_version and "ilo 5" in current_version.lower() and "ilo5" in generation_hints:
         score += 3
+    if component_id == "hpe_bios_version":
+        current_family = _bios_family(current_version)
+        package_family = _bios_package_family(item)
+        if current_family and package_family == current_family:
+            score += 12
+        elif current_family and package_family and package_family != current_family:
+            score -= 8
     version = _known_version_or_none(item.get("version_hint"))
     target = target_version.replace(">=", "").strip() if target_version else None
     if version and target and _compare_versions(version, target) == 0:

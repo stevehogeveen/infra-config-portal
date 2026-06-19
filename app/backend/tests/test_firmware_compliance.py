@@ -346,6 +346,38 @@ def test_missing_baseline_becomes_manual_review(monkeypatch, firmware_settings) 
     assert "approved HPE baseline" in path["missing_evidence"]
 
 
+def test_hpe_bios_uses_detected_rom_family_for_target_and_package(monkeypatch, firmware_settings, tmp_path) -> None:
+    media_root = tmp_path / "artifacts" / "Media"
+    media_root.mkdir(parents=True)
+    u32 = media_root / "U32_3.66_04_01_2026.fwpkg"
+    u46 = media_root / "U46_2.64_04_01_2026.fwpkg"
+    u32.write_bytes(b"u32 bios")
+    u46.write_bytes(b"u46 bios")
+    firmware_settings.media_inventory_dirs = (str(media_root),)
+    monkeypatch.setattr(fc, "settings", firmware_settings)
+    monkeypatch.setattr(fc, "_media_directories", lambda: [media_root])
+    monkeypatch.setattr(mi, "DEFAULT_MEDIA_ROOT", media_root)
+    monkeypatch.setattr(fc, "load_firmware_baseline", lambda: _baseline(_bios_family_component()))
+    record_probe_result("ilo-redfish", {"provider_id": "ilo-redfish", "status": "ok", "systems": [{"BiosVersion": "U32 v3.30"}]})
+
+    u32_result = fc.get_firmware_compliance(scope="hpe")
+    u32_path = _path_for(u32_result, "hpe_bios_version")
+
+    assert u32_path["target_version"] == "U32 v3.66 (04/01/2026)"
+    assert u32_path["selected_file_name"] == "U32_3.66_04_01_2026.fwpkg"
+    assert u32_path["path_status"] == "direct"
+
+    clear_probe_results()
+    record_probe_result("ilo-redfish", {"provider_id": "ilo-redfish", "status": "ok", "systems": [{"BiosVersion": "U46 v1.80"}]})
+
+    u46_result = fc.get_firmware_compliance(scope="hpe")
+    u46_path = _path_for(u46_result, "hpe_bios_version")
+
+    assert u46_path["target_version"] == "U46 v2.64 (04/01/2026)"
+    assert u46_path["selected_file_name"] == "U46_2.64_04_01_2026.fwpkg"
+    assert u46_path["path_status"] == "direct"
+
+
 def test_missing_package_blocks_upgrade_apply(monkeypatch, firmware_settings) -> None:
     monkeypatch.setattr(fc, "settings", firmware_settings)
     monkeypatch.setattr(fc, "load_firmware_baseline", lambda: _baseline(_component("hpe_ilo_firmware", approved=["3.19"])))
@@ -1031,3 +1063,10 @@ def _component(
         "unknown_policy": unknown_policy,
         "next_action": "Review firmware.",
     }
+
+
+def _bios_family_component() -> dict:
+    component = _component("hpe_bios_version", unknown_policy="warning")
+    component["minimum_by_family"] = ["U32=3.66", "U46=2.64"]
+    component["approved_by_family"] = ["U32=U32 v3.66 (04/01/2026)", "U46=U46 v2.64 (04/01/2026)"]
+    return component
