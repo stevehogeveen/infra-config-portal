@@ -37,6 +37,7 @@ BLOCKING_STATUSES = {"blocked", "unknown"}
 VALID_STATUSES = {"passed", "blocked", "warning", "not_configured_yet", "unknown", "waived"}
 VALID_SCOPES = {"hpe", "cisco", "netapp", "full"}
 FIRMWARE_SUMMARY_STALE_AFTER_SECONDS = 24 * 60 * 60
+FIRMWARE_SUMMARY_HISTORICAL_STALE_AFTER_SECONDS = 7 * 24 * 60 * 60
 SCOPE_COMPONENT_PREFIXES = {
     "hpe": ("hpe_",),
     "cisco": ("cisco_",),
@@ -2105,7 +2106,12 @@ def _freshness(source_type: str, checked_at: str | None) -> str:
     if not checked_at or source_type == "not_checked":
         return "not_checked"
     parsed = _parse_datetime(checked_at)
-    if parsed and (datetime.now(UTC) - parsed).total_seconds() > FIRMWARE_SUMMARY_STALE_AFTER_SECONDS:
+    stale_after_seconds = (
+        FIRMWARE_SUMMARY_HISTORICAL_STALE_AFTER_SECONDS
+        if source_type == "historical_evidence"
+        else FIRMWARE_SUMMARY_STALE_AFTER_SECONDS
+    )
+    if parsed and (datetime.now(UTC) - parsed).total_seconds() > stale_after_seconds:
         return "stale"
     if source_type == "historical_evidence":
         return "historical"

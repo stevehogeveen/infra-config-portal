@@ -23,7 +23,7 @@ def get_netapp_console_readiness() -> dict[str, Any]:
     prerequisites = _prerequisites()
     readiness_buckets = _readiness_buckets()
     observations = get_netapp_observations()
-    runtime_state = get_netapp_runtime_state()
+    runtime_state = _runtime_state_for_mode()
     live_configured = bool(runtime_state.get("configured"))
     observation_summary = summarize_netapp_observations(observations)
     observation_blockers = netapp_observation_blockers(observations)
@@ -116,7 +116,7 @@ def _planned_targets() -> dict[str, Any]:
 
 
 def _current_discovered_targets() -> dict[str, Any]:
-    runtime_state = get_netapp_runtime_state()
+    runtime_state = _runtime_state_for_mode()
     if runtime_state.get("configured"):
         detected = (
             runtime_state.get("detected_management_ips")
@@ -145,6 +145,30 @@ def _current_discovered_targets() -> dict[str, Any]:
         "controller_sp": {"controller_a": None, "controller_b": None},
         "management_ips": {"cluster": None, "node_a": None, "node_b": None, "svm": None},
         "iscsi_lif_range": {"start": None, "end": None, "addresses": []},
+    }
+
+
+def _runtime_state_for_mode() -> dict[str, Any]:
+    if settings.provider_mode in REAL_CONTACT_MODES:
+        return get_netapp_runtime_state()
+    return {
+        "provider_id": PROVIDER_ID,
+        "device_role": "storage-controller",
+        "checked_at": None,
+        "configured": False,
+        "configured_state": "not_detected",
+        "source": "none",
+        "manual_env_flag_required": False,
+        "console": {},
+        "management": {},
+        "api": {},
+        "storage": {},
+        "detected_management_ips": {},
+        "detected_storage_protocol_readiness": {},
+        "last_successful_probe_at": None,
+        "last_report_path": None,
+        "confidence": "low",
+        "blockers": ["NetApp live runtime state is not read in mock mode."],
     }
 
 
