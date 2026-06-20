@@ -843,10 +843,11 @@ def test_cisco_setup_readiness_is_plan_only_until_management_bootstrap() -> None
     assert readiness["next_safe_action"] == (
         "Select a console candidate and run prompt readiness check."
     )
-    assert "conf t" in readiness["disabled_actions"]
-    assert "write memory" in readiness["disabled_actions"]
+    assert "ungated console writes" in readiness["disabled_actions"]
     assert "reload" in readiness["disabled_actions"]
     assert "raw running-config backup" in readiness["disabled_actions"]
+    assert readiness["lab_builder_flow"]["console"]["adapter"] == "Prolific USB serial adapter"
+    assert readiness["lab_builder_flow"]["file_transfer"]["preferred_protocol"] == "SCP"
     assert "Configure Terminal" not in encoded
     assert "/probe" not in encoded
 
@@ -1182,6 +1183,7 @@ def test_cisco_console_bootstrap_plan_uses_real_lab_target(
     assert plan["confirmation_phrase"] == CONFIRMATION_PHRASE
     assert plan["apply_enabled"] is False
     assert plan["serial_writes_attempted"] is False
+    assert plan["guarded_executor"] == "python app/backend/scripts/cisco_real_lab_workflow.py --apply"
     assert "write erase" in plan["destructive_actions_disabled"]
     assert "erase startup-config" in plan["destructive_actions_disabled"]
     assert "reload" in plan["destructive_actions_disabled"]

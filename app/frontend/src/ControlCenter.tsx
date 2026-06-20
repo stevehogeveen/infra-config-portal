@@ -286,12 +286,14 @@ type ControlCenterContext = {
   saveConfig: () => Promise<boolean>;
   saveSettings: () => Promise<boolean>;
   selectedAction: WorkflowAction | null;
+  selectedRunActionId: string;
   selectedFirmware: string;
   selectedPath: FirmwareUpgradePath | null;
   selectedPathId: string;
   selectedUpgradeAction: WorkflowAction | null;
   setConfig: (value: ControlConfig | ((current: ControlConfig) => ControlConfig)) => void;
   setCredentialDraft: (value: CredentialDraft | ((current: CredentialDraft) => CredentialDraft)) => void;
+  setSelectedRunActionId: (value: string) => void;
   setSelectedFirmware: (value: string) => void;
   setSelectedPathId: (value: string) => void;
   setSettings: (value: ControlSettings | ((current: ControlSettings) => ControlSettings)) => void;
@@ -366,6 +368,7 @@ export default function ControlCenter() {
   const [selectedFirmware, setSelectedFirmware] = useState(() => firmwareSelectionAdapter.load()?.selectedFirmware ?? "");
   const [upgradeConfirmationAccepted, setUpgradeConfirmationAccepted] = useState(false);
   const [upgradeConfirmationPhraseState, setUpgradeConfirmationPhrase] = useState("");
+  const [selectedRunActionId, setSelectedRunActionId] = useState("");
 
   const configEditedRef = useRef(false);
   const settingsEditedRef = useRef(false);
@@ -379,7 +382,11 @@ export default function ControlCenter() {
   const firmwareCheckInFlightRef = useRef(false);
   const firmwareGateInFlightRef = useRef(false);
 
-  const selectedAction = useMemo(() => runAdapter.selectAction(actions), [actions]);
+  const defaultSelectedAction = useMemo(() => runAdapter.selectAction(actions), [actions]);
+  const selectedAction = useMemo(
+    () => actions.find((action) => action.action_id === selectedRunActionId) ?? defaultSelectedAction,
+    [actions, defaultSelectedAction, selectedRunActionId]
+  );
   const firmwarePaths = useMemo(() => collectFirmwarePaths(firmware.summaries), [firmware.summaries]);
   const selectedPath = useMemo(
     () => firmwarePaths.find((path) => firmwarePathId(path) === selectedPathId) ?? null,
@@ -407,6 +414,12 @@ export default function ControlCenter() {
   useEffect(() => {
     void refreshControlCenter();
   }, []);
+
+  useEffect(() => {
+    if (!actions.length) return;
+    if (selectedRunActionId && actions.some((action) => action.action_id === selectedRunActionId)) return;
+    setSelectedRunActionId(defaultSelectedAction?.action_id ?? "");
+  }, [actions, defaultSelectedAction?.action_id, selectedRunActionId]);
 
   useEffect(() => {
     if (firmwareSelectionEditedRef.current || selectedPathId || selectedFirmware.trim()) return;
@@ -1207,12 +1220,14 @@ export default function ControlCenter() {
     saveConfig,
     saveSettings,
     selectedAction,
+    selectedRunActionId,
     selectedFirmware,
     selectedPath,
     selectedPathId,
     selectedUpgradeAction,
     setConfig: updateConfig,
     setCredentialDraft: updateCredentialDraft,
+    setSelectedRunActionId,
     setSelectedFirmware: updateSelectedFirmware,
     setSelectedPathId,
     setSettings: updateSettings,
@@ -1876,16 +1891,22 @@ function DeviceAddressFields({ context, fields }: { context: ControlCenterContex
 function DeviceSpecificFields({ context, deviceKey }: { context: ControlCenterContext; deviceKey: ProfileDeviceKey }) {
   if (deviceKey === "cisco") {
     return (
-      <div className="cc-form-grid">
-        <DeviceCredentialFields context={context} deviceKey={deviceKey} usernameLabel="Switch UID / username" passwordLabel="Switch password" />
-        <DeviceDetailField context={context} deviceKey={deviceKey} field="enable_password" label="Enable password" placeholder="Optional enable secret" type="password" />
-        <DeviceDetailField context={context} deviceKey={deviceKey} field="hostname" label="Switch hostname" placeholder="lab-switch-01" />
-        <DeviceDetailField context={context} deviceKey={deviceKey} field="management_vlan" label="Management VLAN" placeholder={context.profileEditor.vlanId || "1"} />
-        <DeviceDetailField context={context} deviceKey={deviceKey} field="console_port" label="Console port" placeholder="/dev/ttyUSB0" />
-        <DeviceDetailField context={context} deviceKey={deviceKey} field="console_baud" label="Console baud" placeholder="9600 or 115200" />
-        <DeviceDetailField context={context} deviceKey={deviceKey} field="snmp_location" label="SNMP location" placeholder="Lab rack" />
-        <DeviceDetailField context={context} deviceKey={deviceKey} field="snmp_contact" label="SNMP contact" placeholder="Operator reference" />
-      </div>
+      <>
+        <div className="cc-form-grid">
+          <DeviceCredentialFields context={context} deviceKey={deviceKey} usernameLabel="Switch UID / username" passwordLabel="Switch password" />
+          <DeviceDetailField context={context} deviceKey={deviceKey} field="enable_password" label="Enable password" placeholder="Optional enable secret" type="password" />
+          <DeviceDetailField context={context} deviceKey={deviceKey} field="hostname" label="Switch hostname" placeholder="lab-switch-01" />
+          <DeviceDetailField context={context} deviceKey={deviceKey} field="management_vlan" label="Management VLAN" placeholder={context.profileEditor.vlanId || "10"} />
+          <DeviceDetailField context={context} deviceKey={deviceKey} field="console_port" label="Console port" placeholder="/dev/serial/by-id/usb-Prolific_Technology_Inc._USB-Serial_Controller_D-if00-port0" />
+          <DeviceDetailField context={context} deviceKey={deviceKey} field="console_baud" label="Console baud" placeholder="9600" />
+          <DeviceDetailField context={context} deviceKey={deviceKey} field="bootstrap_access_ports" label="Bootstrap access ports" placeholder="Gi1/0/1, Gi1/0/2" />
+          <DeviceDetailField context={context} deviceKey={deviceKey} field="file_transfer_protocol" label="File transfer protocol" placeholder="SCP" />
+          <DeviceDetailField context={context} deviceKey={deviceKey} field="ios_image" label="IOS XE image" placeholder="cat9k_iosxe.*.SPA.bin" />
+          <DeviceDetailField context={context} deviceKey={deviceKey} field="snmp_location" label="SNMP location" placeholder="Lab rack" />
+          <DeviceDetailField context={context} deviceKey={deviceKey} field="snmp_contact" label="SNMP contact" placeholder="Operator reference" />
+        </div>
+        <CiscoBootstrapFlowPanel context={context} />
+      </>
     );
   }
   if (deviceKey === "server") {
@@ -1966,6 +1987,44 @@ function DeviceSpecificFields({ context, deviceKey }: { context: ControlCenterCo
       <DeviceDetailField context={context} deviceKey={deviceKey} field="datastore" label="Datastore" placeholder="NetApp-NFS" />
       <DeviceDetailField context={context} deviceKey={deviceKey} field="folder" label="VM folder" placeholder="Lab Builds" />
       <DeviceDetailField context={context} deviceKey={deviceKey} field="esxi_attach_policy" label="ESXi attach policy" placeholder="Attach configured ESXi hosts" />
+    </div>
+  );
+}
+
+function CiscoBootstrapFlowPanel({ context }: { context: ControlCenterContext }) {
+  const editor = context.profileEditor;
+  const consolePort = deviceDetailValue(editor, "cisco", "console_port") || "/dev/serial/by-id/usb-Prolific_Technology_Inc._USB-Serial_Controller_D-if00-port0";
+  const baud = deviceDetailValue(editor, "cisco", "console_baud") || "9600";
+  const managementIp = editor.addressPlan.cisco_management || "192.168.1.204";
+  const vlan = deviceDetailValue(editor, "cisco", "management_vlan") || editor.vlanId || "10";
+  const image = deviceDetailValue(editor, "cisco", "ios_image") || "Select IOS XE image";
+  const protocol = deviceDetailValue(editor, "cisco", "file_transfer_protocol") || "SCP";
+  return (
+    <div className="cc-subpanel">
+      <div className="cc-panel-head">
+        <SectionTitle icon={<TerminalSquare size={18} />} title="Cisco Console Bootstrap" />
+        <StatusPill status="planned" />
+      </div>
+      <FactList
+        facts={[
+          ["Console", `${consolePort} @ ${baud}`],
+          ["First contact", "Prolific serial adapter, newline wakeup, terminal length 0, show version"],
+          ["Management SVI", `Vlan${vlan} / ${managementIp}`],
+          ["Access path", deviceDetailValue(editor, "cisco", "bootstrap_access_ports") || "Gi1/0/1 plus detected lab ports"],
+          ["File transfer", `${protocol.toUpperCase()} over TCP/22 after ip scp server enable`],
+          ["Image", image],
+          ["Guarded executor", "app/backend/scripts/cisco_real_lab_workflow.py --apply"]
+        ]}
+      />
+      <div className="cc-code" aria-label="Cisco bootstrap sequence">
+        {[
+          "discover console -> confirm privileged EXEC",
+          `configure Vlan${vlan} ${managementIp}/24`,
+          "generate SSH host key -> enable SSH v2 -> enable SCP server",
+          "validate ping + SSH/SCP TCP/22",
+          "copy IOS XE image to flash -> verify file before install planning"
+        ].join("\n")}
+      </div>
     </div>
   );
 }
@@ -2130,6 +2189,8 @@ function StorageDriveAllocationList({ context }: { context: ControlCenterContext
 function RunPage({ context }: { context: ControlCenterContext }) {
   const running = context.runStatus === "running";
   const runDisabled = running || context.configSaving;
+  const runActions = runCenterActions(context.actions);
+  const selectedAction = context.selectedAction;
   return (
     <Page title="Run">
       <section className="cc-panel cc-run-panel">
@@ -2142,10 +2203,24 @@ function RunPage({ context }: { context: ControlCenterContext }) {
               ["SNMP", snmpVersionLabel(context.config.snmpVersion)],
               ["Credentials", credentialConfigLabel(context.config)],
               ["Timeout / retry", `${context.config.timeoutSeconds}s / ${context.config.retryCount}`],
-              ["Backend action", context.selectedAction?.label ?? "Safe placeholder"],
-              ["Action source", context.selectedAction?.source_type ?? "todo_placeholder"]
+              ["Backend action", selectedAction?.label ?? "Safe placeholder"],
+              ["Action source", selectedAction?.source_type ?? "todo_placeholder"]
             ]}
           />
+          <ActionRow>
+            <Link className="cc-button secondary" to="/configure">
+              <SlidersHorizontal size={16} />
+              Configure devices
+            </Link>
+            <Link className="cc-button secondary" to="/firmware">
+              <UploadCloud size={16} />
+              Firmware
+            </Link>
+            <Link className="cc-button secondary" to="/results">
+              <FileText size={16} />
+              Reports
+            </Link>
+          </ActionRow>
         </div>
         <button className="cc-big-run primary" disabled={runDisabled} onClick={() => void context.runSelectedAction()} type="button">
           <Play size={20} />
@@ -2155,6 +2230,39 @@ function RunPage({ context }: { context: ControlCenterContext }) {
 
       {!context.selectedAction && <Banner tone="warn">Backend run integration is pending. The placeholder does not contact providers.</Banner>}
       {context.runError && <Banner tone="bad">{context.runError}</Banner>}
+
+      <section className="cc-panel">
+        <SectionTitle icon={<ClipboardList size={18} />} title="Run Queue" />
+        <div className="cc-run-action-list">
+          {runActions.map((action) => (
+            <button
+              className={action.action_id === context.selectedRunActionId ? "is-selected" : ""}
+              key={action.action_id}
+              onClick={() => context.setSelectedRunActionId(action.action_id)}
+              type="button"
+            >
+              <div>
+                <strong>{action.label}</strong>
+                <span>{action.stage_label} / {action.provider}</span>
+              </div>
+              <StatusPill status={action.current_availability || action.last_run_status || "not_checked"} />
+            </button>
+          ))}
+        </div>
+      </section>
+
+      <section className="cc-panel">
+        <SectionTitle icon={<TerminalSquare size={18} />} title="Evidence" />
+        <FactList
+          facts={[
+            ["Selected action", selectedAction?.action_id ?? "none"],
+            ["Mode", selectedAction?.mode ?? "not_available"],
+            ["Last run", selectedAction?.last_run_status ?? "not_checked"],
+            ["Command", selectedAction?.command ?? "not_available"]
+          ]}
+        />
+        <EvidenceList action={selectedAction} />
+      </section>
 
       <section className="cc-panel">
         <SectionTitle icon={<FileText size={18} />} title="Latest Result Preview" />
@@ -2167,6 +2275,68 @@ function RunPage({ context }: { context: ControlCenterContext }) {
       </section>
     </Page>
   );
+}
+
+const runCenterPreferredActionIds = [
+  "netapp.console-autodiscovery",
+  "netapp.console-read-state",
+  "netapp.console-login-state",
+  "netapp.nfs-vcenter-readiness",
+  "esxi.netapp-datastore-preview",
+  "esxi.netapp-datastore-validate",
+  "esxi.vm-deploy-preview",
+  "esxi.vm-deploy-validate",
+  "vcenter.install-readiness",
+  "vcenter.install-plan",
+  "vcenter.install-preview",
+  "vcenter.attach-esxi-preview",
+  "vcenter.post-attach-validation",
+  "build-verification.run-full",
+  "lab-validation.summary"
+];
+
+function runCenterActions(actions: WorkflowAction[]): WorkflowAction[] {
+  const byId = new Map(actions.map((action) => [action.action_id, action]));
+  const preferred = runCenterPreferredActionIds.map((id) => byId.get(id)).filter((action): action is WorkflowAction => Boolean(action));
+  const extra = actions
+    .filter(
+      (action) =>
+        !runCenterPreferredActionIds.includes(action.action_id) &&
+        ["netapp-ontap", "esxi-readonly", "vcenter"].includes(action.provider)
+    )
+    .slice(0, 8);
+  return [...preferred, ...extra];
+}
+
+function EvidenceList({ action }: { action: WorkflowAction | null }) {
+  const artifacts = uniqueStrings([
+    ...(action?.reports ?? []),
+    ...(action?.evidence_artifacts ?? []),
+    ...(action?.last_run_trace?.report_artifacts ?? [])
+  ]);
+  const consoleArtifacts = [
+    "artifacts/codex-runs/netapp-console-autodiscovery-report.md",
+    "artifacts/codex-runs/netapp-console-state-report.md",
+    "artifacts/codex-runs/netapp-console-login-state-report.md",
+    "artifacts/codex-runs/netapp-console-state-redacted.json",
+    "artifacts/codex-runs/netapp-console-login-state-redacted.json"
+  ];
+  const visible = uniqueStrings([...consoleArtifacts, ...artifacts]).slice(0, 10);
+  if (!visible.length) return <EmptyState title="No evidence linked" detail="Run a backend action to collect reports and traces." />;
+  return (
+    <ul className="cc-evidence-list">
+      {visible.map((artifact) => (
+        <li key={artifact}>
+          <FileText size={15} />
+          <span>{artifact}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function uniqueStrings(values: string[]): string[] {
+  return values.filter((value, index, array) => value && array.indexOf(value) === index);
 }
 
 function FirmwarePage({ context }: { context: ControlCenterContext }) {
@@ -2280,12 +2450,45 @@ function FirmwareDeviceTab({
           </>
         ) : (
           <>
+            {definition.key === "cisco" && <CiscoFirmwareTransferPanel context={context} />}
             <FirmwareVisibilitySection context={context} deviceKey={definition.key} />
             <FirmwareUpgradeSection context={context} deviceKey={definition.key} />
           </>
         )
       )}
     </>
+  );
+}
+
+function CiscoFirmwareTransferPanel({ context }: { context: ControlCenterContext }) {
+  const editor = context.profileEditor;
+  const paths = firmwarePathsForDevice(collectFirmwarePaths(context.firmware.summaries), "cisco");
+  const firstPath = paths[0] ?? null;
+  const managementIp = editor.addressPlan.cisco_management || "192.168.1.204";
+  const consolePort = deviceDetailValue(editor, "cisco", "console_port") || "/dev/serial/by-id/usb-Prolific_Technology_Inc._USB-Serial_Controller_D-if00-port0";
+  const baud = deviceDetailValue(editor, "cisco", "console_baud") || "9600";
+  const image = deviceDetailValue(editor, "cisco", "ios_image") || firstPath?.selected_file_name || firstPath?.package_name || firstPath?.target_version || "Select IOS XE image";
+  const protocol = deviceDetailValue(editor, "cisco", "file_transfer_protocol") || "SCP";
+  return (
+    <section className="cc-panel">
+      <div className="cc-panel-head">
+        <SectionTitle icon={<UploadCloud size={18} />} title="Cisco Image Transfer" />
+        <StatusPill status={paths.length ? "ready" : "not_checked"} />
+      </div>
+      <FactList
+        facts={[
+          ["Console bootstrap", `${consolePort} @ ${baud}`],
+          ["Management target", managementIp],
+          ["Transfer protocol", `${protocol.toUpperCase()} after SSH/SCP bootstrap`],
+          ["Image selection", image],
+          ["Upgrade paths", paths.length ? `${paths.length} Cisco path${paths.length === 1 ? "" : "s"} reported` : "No Cisco path reported"],
+          ["Verification", "Validate TCP/22, copy to flash, verify file, then plan install/reload separately"]
+        ]}
+      />
+      <Banner tone="info">
+        The Cisco transfer path is console bootstrap first, then SSH/SCP to the switch management IP.
+      </Banner>
+    </section>
   );
 }
 
@@ -2408,14 +2611,18 @@ function FirmwareVisibilitySection({ context, deviceKey }: { context: ControlCen
 function FirmwareUpgradeSection({ context, deviceKey }: { context: ControlCenterContext; deviceKey?: ProfileDeviceKey }) {
   const allFirmwarePaths = collectFirmwarePaths(context.firmware.summaries);
   const firmwarePaths = deviceKey ? firmwarePathsForDevice(allFirmwarePaths, deviceKey) : allFirmwarePaths;
+  const currentNoUpgrade = firmwareDeviceHasNoUpgrade(firmwarePaths, deviceKey);
   const selectedPathInScope = !deviceKey || Boolean(context.selectedPath && firmwarePathMatchesDevice(context.selectedPath, deviceKey));
-  const selectedPathForPanel = selectedPathInScope ? context.selectedPath : null;
+  const currentPathForPanel = currentNoUpgrade ? firmwarePaths.find((path) => path.path_status === "current") ?? null : null;
+  const selectedPathForPanel = selectedPathInScope ? context.selectedPath : currentPathForPanel;
   const firmwareTarget = deviceKey ? firmwareTargetForDevice(context.profileEditor, deviceKey) : "";
   const configForPanel = configWithTargetOverride(context.config, firmwareTarget);
   const supportedActionId = supportedUpgradeActionId(selectedPathForPanel);
-  const backendPending = Boolean(selectedPathForPanel && (!supportedActionId || !context.selectedUpgradeAction));
+  const backendPending = Boolean(selectedPathForPanel && !currentNoUpgrade && (!supportedActionId || !context.selectedUpgradeAction));
   const validationBlockers = selectedPathInScope
     ? firmwareValidateBlockers({ config: configForPanel, selectedFirmware: context.selectedFirmware, selectedPath: selectedPathForPanel })
+    : currentNoUpgrade
+    ? []
     : [`Select a ${profileDeviceLabel(deviceKey!)} firmware path before validation.`];
   const upgradeBlockers = selectedPathInScope
     ? firmwareStartBlockers({
@@ -2427,6 +2634,8 @@ function FirmwareUpgradeSection({ context, deviceKey }: { context: ControlCenter
         selectedUpgradeAction: selectedPathForPanel ? context.selectedUpgradeAction : null,
         validation: context.latestFirmwareValidation
       })
+    : currentNoUpgrade
+    ? []
     : [`Select a ${profileDeviceLabel(deviceKey!)} firmware path before starting an upgrade.`];
   const expectedPhrase = upgradeConfirmationPhrase(selectedPathForPanel, selectedPathForPanel ? context.selectedUpgradeAction : null);
   const validateDisabled =
@@ -2506,48 +2715,53 @@ function FirmwareUpgradeSection({ context, deviceKey }: { context: ControlCenter
 
       {!firmwarePaths.length && <Banner tone="warn">Firmware summary backend has not exposed upgrade paths for this tab yet.</Banner>}
       {backendPending && <Banner tone="warn">Upgrade backend integration is pending for this selected firmware path.</Banner>}
+      {currentNoUpgrade && <Banner tone="good">Firmware is current for this device. No upgrade path needs action.</Banner>}
       {selectedPathForPanel && <FirmwarePathSummary path={selectedPathForPanel} />}
 
-      <ActionRow>
-        <button disabled={validateDisabled} onClick={() => void context.validateFirmware(firmwareTarget)} type="button">
-          <ShieldCheck size={16} />
-          {context.upgradeStatus === "validating" ? "Validating" : context.configSaving ? "Saving config" : "Validate Firmware"}
-        </button>
-      </ActionRow>
-      {validationBlockers.length > 0 && <IssueList title="Validation blockers" items={validationBlockers} />}
+      {!currentNoUpgrade && (
+        <>
+          <ActionRow>
+            <button disabled={validateDisabled} onClick={() => void context.validateFirmware(firmwareTarget)} type="button">
+              <ShieldCheck size={16} />
+              {context.upgradeStatus === "validating" ? "Validating" : context.configSaving ? "Saving config" : "Validate Firmware"}
+            </button>
+          </ActionRow>
+          {validationBlockers.length > 0 && <IssueList title="Validation blockers" items={validationBlockers} />}
 
-      <div className="cc-confirm-box">
-        <div>
-          <strong>Confirmation Required</strong>
-          <p>Start Firmware Upgrade stays blocked until validation matches the current config, firmware selection, confirmation phrase, and backend gates.</p>
-        </div>
-        <label className="cc-check-field">
-          <input
-            aria-label="Require explicit operator confirmation before any firmware upgrade request is sent."
-            checked={context.upgradeConfirmationAccepted}
-            onChange={(event) => context.setUpgradeConfirmationAccepted(event.target.checked)}
-            type="checkbox"
-          />
-          <span>I confirm this firmware upgrade request is intentional and the listed backend gates are satisfied.</span>
-        </label>
-        <p>
-          Required phrase: <code>{expectedPhrase}</code>
-        </p>
-        <label className="cc-field">
-          <span>Confirmation phrase</span>
-          <input
-            onChange={(event) => context.setUpgradeConfirmationPhrase(event.target.value)}
-            placeholder={expectedPhrase}
-            type="text"
-            value={context.upgradeConfirmationPhrase}
-          />
-        </label>
-        {upgradeBlockers.length > 0 && <IssueList title="Upgrade blockers" items={upgradeBlockers} />}
-        <button className="primary danger-action" disabled={startDisabled} onClick={() => void context.startFirmwareUpgrade(firmwareTarget)} type="button">
-          <UploadCloud size={16} />
-          {context.upgradeStatus === "upgrading" ? "Upgrade Running" : context.configSaving ? "Saving config" : "Start Firmware Upgrade"}
-        </button>
-      </div>
+          <div className="cc-confirm-box">
+            <div>
+              <strong>Confirmation Required</strong>
+              <p>Start Firmware Upgrade stays blocked until validation matches the current config, firmware selection, confirmation phrase, and backend gates.</p>
+            </div>
+            <label className="cc-check-field">
+              <input
+                aria-label="Require explicit operator confirmation before any firmware upgrade request is sent."
+                checked={context.upgradeConfirmationAccepted}
+                onChange={(event) => context.setUpgradeConfirmationAccepted(event.target.checked)}
+                type="checkbox"
+              />
+              <span>I confirm this firmware upgrade request is intentional and the listed backend gates are satisfied.</span>
+            </label>
+            <p>
+              Required phrase: <code>{expectedPhrase}</code>
+            </p>
+            <label className="cc-field">
+              <span>Confirmation phrase</span>
+              <input
+                onChange={(event) => context.setUpgradeConfirmationPhrase(event.target.value)}
+                placeholder={expectedPhrase}
+                type="text"
+                value={context.upgradeConfirmationPhrase}
+              />
+            </label>
+            {upgradeBlockers.length > 0 && <IssueList title="Upgrade blockers" items={upgradeBlockers} />}
+            <button className="primary danger-action" disabled={startDisabled} onClick={() => void context.startFirmwareUpgrade(firmwareTarget)} type="button">
+              <UploadCloud size={16} />
+              {context.upgradeStatus === "upgrading" ? "Upgrade Running" : context.configSaving ? "Saving config" : "Start Firmware Upgrade"}
+            </button>
+          </div>
+        </>
+      )}
     </section>
   );
 }
@@ -2980,6 +3194,14 @@ function firmwarePathsForDevice(paths: FirmwareUpgradePath[], deviceKey: Profile
   return paths.filter((path) => firmwarePathMatchesDevice(path, deviceKey));
 }
 
+function firmwareDeviceHasNoUpgrade(paths: FirmwareUpgradePath[], deviceKey?: ProfileDeviceKey): boolean {
+  if (!paths.length) return false;
+  return paths.every((path) => {
+    if (path.path_status === "current") return true;
+    return Boolean(deviceKey === "cisco" && path.component_id === "cisco_bootloader_rommon" && path.path_status === "manual_review");
+  });
+}
+
 function firmwareSummaryMatchesDevice(summary: FirmwareSummary, deviceKey: ProfileDeviceKey): boolean {
   return firmwareTextMatchesDevice(
     [
@@ -3016,7 +3238,7 @@ function firmwareTextMatchesDevice(value: string, deviceKey: ProfileDeviceKey): 
   if (deviceKey === "server") {
     return /\bilo\b|hpe.*ilo|server|bios|management_firmware/.test(text) && !/smart array|raid|storage|disk|drive|controller/.test(text);
   }
-  if (deviceKey === "cisco") return /cisco|switch|nx-os|ios|rommon/.test(text);
+  if (deviceKey === "cisco") return /cisco|switch|nx-?os|ios ?xe|iosxe|rommon|(^|[^a-z0-9])ios([^a-z0-9]|$)/.test(text);
   if (deviceKey === "esxi") return /esxi|vmware|hypervisor/.test(text);
   if (deviceKey === "vcenter") return /vcenter|vcentre/.test(text);
   return false;

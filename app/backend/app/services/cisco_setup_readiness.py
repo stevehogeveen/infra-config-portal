@@ -15,14 +15,20 @@ PROVIDER_ID = "cisco-setup"
 REAL_LAB_DETAILS = REPO_ROOT / "artifacts" / "codex-runs" / "cisco-4h-lab-run-details-redacted.json"
 NEXT_SAFE_ACTION = "Select a console candidate and run prompt readiness check."
 DISABLED_ACTIONS = [
-    "conf t",
-    "write memory",
     "reload",
     "erase/copy",
-    "VLAN/interface/user/password changes",
-    "enable SSH/SCP",
-    "real config apply",
     "raw running-config backup",
+    "ungated console writes",
+    "ungated IOS image copy",
+]
+GUARDED_BOOTSTRAP_ACTIONS = [
+    "console discovery through local serial or ser2net",
+    "privileged EXEC confirmation",
+    "management VLAN/IP bootstrap on Vlan10",
+    "SSH key generation and SSH v2 enablement",
+    "SCP server enablement for IOS image transfer",
+    "startup-config save after bootstrap",
+    "post-apply VLAN, route, SSH, and SCP validation",
 ]
 
 
@@ -219,10 +225,11 @@ def get_cisco_setup_readiness(
             "planned_only": True,
             "apply_enabled": False,
             "summary": (
-                "SSH/SCP readiness can be planned after console bootstrap design, "
-                "but will not be enabled by this task."
+                "SSH/SCP readiness is established by the guarded Cisco real-lab bootstrap, "
+                "then validated over TCP/22 before image transfer work."
             ),
         },
+        "lab_builder_flow": _lab_builder_flow_summary(target_ip),
         "real_lab_run": real_lab_run,
         "ansible": {
             "status": "blocked"
@@ -253,6 +260,38 @@ def get_cisco_setup_readiness(
         "warnings": warnings,
         "disabled_actions": DISABLED_ACTIONS,
         "next_safe_action": next_safe_action,
+    }
+
+
+def _lab_builder_flow_summary(target_ip: str | None) -> dict[str, Any]:
+    return {
+        "source": "Recovered from the legacy Lab Builder Cisco workflow and current real-lab script.",
+        "console": {
+            "adapter": "Prolific USB serial adapter",
+            "baud": 9600,
+            "stable_path_hint": "/dev/serial/by-id/usb-Prolific_Technology_Inc._USB-Serial_Controller_D-if00-port0",
+            "fallback_path_hint": "/dev/ttyUSB0",
+            "first_contact": "Send newline, then verify Cisco identity with terminal length 0 and show version.",
+        },
+        "bootstrap": {
+            "management_ip": target_ip,
+            "management_vlan": "10",
+            "management_interface": "Vlan10",
+            "access_ports": "Gi1/0/1 plus configured or detected lab access ports",
+            "guarded_actions": GUARDED_BOOTSTRAP_ACTIONS,
+        },
+        "file_transfer": {
+            "preferred_protocol": "SCP",
+            "enable_command": "ip scp server enable",
+            "transport": "SSH/SCP over TCP/22 after console bootstrap",
+            "next_step": "Select the IOS XE image, validate SSH/SCP reachability, copy the image to flash, then verify the file before install/reload planning.",
+        },
+        "real_lab_command": (
+            "PROVIDER_MODE=local-lab-readwrite LAB_ACKNOWLEDGE_REAL_HARDWARE=true "
+            "LAB_ENVIRONMENT=isolated-real-lab LAB_ACKNOWLEDGE_DEVICE_RECONFIGURATION=true "
+            "LAB_ACKNOWLEDGE_DATA_LOSS_RISK=true LAB_ACKNOWLEDGE_LAB_ONLY=true "
+            "python app/backend/scripts/cisco_real_lab_workflow.py --apply"
+        ),
     }
 
 

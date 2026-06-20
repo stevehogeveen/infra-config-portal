@@ -1064,6 +1064,7 @@ export type CiscoSetupReadiness = {
     apply_enabled: boolean;
     summary: string;
   };
+  lab_builder_flow: Record<string, unknown>;
   ansible: {
     status: string;
     enabled: boolean;
@@ -1140,6 +1141,7 @@ export type CiscoConsoleBootstrapPlan = {
   blockers: string[];
   warnings: string[];
   confirmation_phrase: string;
+  guarded_executor?: string | null;
   next_safe_action: string;
 };
 

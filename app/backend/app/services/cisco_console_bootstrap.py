@@ -53,8 +53,9 @@ def build_cisco_console_bootstrap_plan() -> dict[str, Any]:
         "prompt_checked_at": prompt_checked_at,
         "summary": [
             f"Target for this run is {TARGET_IP}{TARGET_PREFIX}.",
-            "Preview only by default; no console answers or commands are sent by this plan.",
-            "Real apply requires environment gates, exact confirmation phrase, recent prompt readiness, and complete requirements.",
+            "This API plan is preview-only; no console answers or commands are sent by this endpoint.",
+            "The guarded real-lab executor is app/backend/scripts/cisco_real_lab_workflow.py --apply.",
+            "Real apply requires local-lab-readwrite gates, recent prompt readiness, complete requirements, and local credentials.",
             "Destructive wipe/reset is separate and disabled.",
         ],
         "intended_steps": _intended_steps(flow),
@@ -72,10 +73,11 @@ def build_cisco_console_bootstrap_plan() -> dict[str, Any]:
         "destructive_actions_disabled": DISABLED_DESTRUCTIVE_ACTIONS,
         "blockers": blockers,
         "warnings": [
-            "This scaffold does not execute serial writes yet; a future executor must keep the same gates.",
-            "No write memory, reload, erase, copy, raw config backup, firmware, or destructive operation is included.",
+            "The API endpoint is a planning/stub surface; use the guarded Cisco real-lab workflow for serial writes.",
+            "No reload, erase, raw config backup, firmware install, or destructive operation is included.",
         ],
         "confirmation_phrase": CONFIRMATION_PHRASE,
+        "guarded_executor": "python app/backend/scripts/cisco_real_lab_workflow.py --apply",
         "next_safe_action": "Review the preview, run prompt readiness, and keep apply disabled unless all gates pass.",
     }
 

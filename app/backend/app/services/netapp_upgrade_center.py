@@ -6,6 +6,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+import httpx
+
 from app.core.config import settings
 from app.providers.action_policy import LOCAL_LAB_READWRITE_MODE, current_lab_action_policy
 from app.providers.base import ProviderAction
@@ -87,6 +89,7 @@ def build_netapp_upgrade_inventory(*, write_report: bool = True) -> dict[str, An
         configured_target or _recommended_target(current_version, local_packages),
         blockers,
     )
+    component_firmware = _component_firmware_inventory(configured=configured, access_configured=access_configured)
     payload = {
         "provider_id": PROVIDER_ID,
         "action": "ontap-upgrade-inventory",
@@ -108,17 +111,8 @@ def build_netapp_upgrade_inventory(*, write_report: bool = True) -> dict[str, An
         "local_image_packages": local_packages,
         "media_inventory_mode": media_inventory.mode,
         "media_warnings": list(media_inventory.warnings),
-        "sp_bmc_firmware": {
-            "status": "not_checked" if not configured else "manual_review",
-            "source_type": "not_checked",
-            "reboot_recommended_before_upgrade": None,
-            "note": "SP/BMC firmware status is reported when ONTAP management access is available.",
-        },
-        "disk_shelf_firmware": {
-            "status": "not_checked" if not configured else "manual_review",
-            "source_type": "not_checked",
-            "note": "Disk and shelf firmware status is reported when ONTAP management access is available.",
-        },
+        "sp_bmc_firmware": component_firmware["sp_bmc_firmware"],
+        "disk_shelf_firmware": component_firmware["disk_shelf_firmware"],
         "upgrade_readiness_state": "blocked" if blockers else "ready_for_plan",
         "supported_path_state": supported_path_state,
         "blockers": blockers,
@@ -584,6 +578,161 @@ def _inventory_warnings(mode: str, local_packages: list[dict[str, Any]]) -> list
     return warnings
 
 
+def _component_firmware_inventory(*, configured: bool, access_configured: bool) -> dict[str, Any]:
+    if not configured:
+        status = "not_checked"
+        reason = "NetApp is not configured; component firmware inventory was not attempted."
+        source_type = "not_checked"
+        return {
+            "sp_bmc_firmware": _sp_bmc_firmware_payload(status=status, source_type=source_type, reason=reason),
+            "disk_shelf_firmware": _disk_shelf_firmware_payload(status=status, source_type=source_type, reason=reason),
+        }
+    if not access_configured:
+        status = "manual_review"
+        reason = "NetApp API access values are missing; component firmware inventory was not attempted."
+        source_type = "not_checked"
+        return {
+            "sp_bmc_firmware": _sp_bmc_firmware_payload(status=status, source_type=source_type, reason=reason),
+            "disk_shelf_firmware": _disk_shelf_firmware_payload(status=status, source_type=source_type, reason=reason),
+        }
+
+    nodes = _ontap_get_records("/api/cluster/nodes?fields=name,service_processor")
+    disks = _ontap_get_records("/api/storage/disks?fields=name,model,firmware_version,type")
+    shelves = _ontap_get_records("/api/storage/shelves?fields=*")
+    node_versions = _unique_optional(
+        _nested_string(node, ("service_processor", "firmware_version"))
+        for node in nodes["records"]
+    )
+    disk_versions = _unique_optional(
+        _string_or_none(disk.get("firmware_version"))
+        for disk in disks["records"]
+    )
+    shelf_versions = _unique_optional(
+        _string_or_none(fru.get("firmware_version"))
+        for shelf in shelves["records"]
+        for fru in shelf.get("frus") or []
+        if isinstance(fru, dict)
+    )
+    source_type = "live_probe" if not (nodes["error"] or disks["error"] or shelves["error"]) else "partial_live_probe"
+    return {
+        "sp_bmc_firmware": _sp_bmc_firmware_payload(
+            status="ready" if node_versions else "manual_review",
+            source_type=source_type if node_versions else "not_checked",
+            versions=node_versions,
+            node_count=len(nodes["records"]),
+            reason=nodes["error"] or None,
+        ),
+        "disk_shelf_firmware": _disk_shelf_firmware_payload(
+            status="ready" if disk_versions or shelf_versions else "manual_review",
+            source_type=source_type if disk_versions or shelf_versions else "not_checked",
+            disk_versions=disk_versions,
+            shelf_versions=shelf_versions,
+            disk_count=len(disks["records"]),
+            shelf_count=len(shelves["records"]),
+            reason=disks["error"] or shelves["error"] or None,
+        ),
+    }
+
+
+def _sp_bmc_firmware_payload(
+    *,
+    status: str,
+    source_type: str,
+    versions: list[str] | None = None,
+    node_count: int = 0,
+    reason: str | None = None,
+) -> dict[str, Any]:
+    versions = versions or []
+    return {
+        "status": status,
+        "source_type": source_type,
+        "current_version": ", ".join(versions) if versions else None,
+        "versions": versions,
+        "node_count": node_count,
+        "reboot_recommended_before_upgrade": None,
+        "note": reason or "SP/BMC firmware was collected from ONTAP node service processor inventory.",
+    }
+
+
+def _disk_shelf_firmware_payload(
+    *,
+    status: str,
+    source_type: str,
+    disk_versions: list[str] | None = None,
+    shelf_versions: list[str] | None = None,
+    disk_count: int = 0,
+    shelf_count: int = 0,
+    reason: str | None = None,
+) -> dict[str, Any]:
+    disk_versions = disk_versions or []
+    shelf_versions = shelf_versions or []
+    return {
+        "status": status,
+        "source_type": source_type,
+        "disk_current_version": ", ".join(disk_versions) if disk_versions else None,
+        "shelf_current_version": ", ".join(shelf_versions) if shelf_versions else None,
+        "disk_versions": disk_versions,
+        "shelf_versions": shelf_versions,
+        "disk_count": disk_count,
+        "shelf_count": shelf_count,
+        "note": reason or "Disk and shelf firmware were collected from ONTAP storage inventory.",
+    }
+
+
+def _ontap_get_records(path: str) -> dict[str, Any]:
+    try:
+        response = _ontap_get(path, verify=settings.netapp_api_verify_tls)
+    except (httpx.HTTPError, OSError) as exc:
+        first_error = exc.__class__.__name__
+        if not settings.netapp_api_verify_tls:
+            return {"records": [], "error": f"ONTAP REST GET failed with {first_error}."}
+        try:
+            response = _ontap_get(path, verify=False)
+        except (httpx.HTTPError, OSError) as fallback_exc:
+            return {
+                "records": [],
+                "error": (
+                    f"ONTAP REST GET failed with {first_error}; "
+                    f"TLS-disabled local-lab fallback failed with {fallback_exc.__class__.__name__}."
+                ),
+            }
+    if not 200 <= response.status_code < 300:
+        return {"records": [], "error": f"ONTAP REST GET returned HTTP {response.status_code}."}
+    try:
+        payload = response.json()
+    except ValueError:
+        return {"records": [], "error": "ONTAP REST GET returned non-JSON response."}
+    records = payload.get("records") if isinstance(payload, dict) else None
+    return {"records": [item for item in records or [] if isinstance(item, dict)], "error": None}
+
+
+def _ontap_get(path: str, *, verify: bool) -> httpx.Response:
+    host = settings.netapp_cluster_mgmt_ip
+    if not host or not settings.netapp_api_username or not settings.netapp_api_password:
+        raise OSError("NetApp API host or access values are missing.")
+    with httpx.Client(
+        verify=verify,
+        timeout=8.0,
+        trust_env=False,
+        auth=(settings.netapp_api_username, settings.netapp_api_password),
+    ) as client:
+        return client.get(f"https://{host}{path}", headers={"Accept": "application/json"})
+
+
+def _nested_string(payload: dict[str, Any], path: tuple[str, ...]) -> str | None:
+    current: Any = payload
+    for key in path:
+        if not isinstance(current, dict):
+            return None
+        current = current.get(key)
+    return _string_or_none(current)
+
+
+def _string_or_none(value: Any) -> str | None:
+    text = str(value).strip() if value is not None else ""
+    return text or None
+
+
 def _expected_upgrade_actions(target_version: str | None, selected_package: dict[str, Any] | None) -> list[dict[str, Any]]:
     package_label = selected_package.get("redacted_label") if selected_package else "no-package-selected"
     return [
@@ -873,3 +1022,7 @@ def _now() -> str:
 
 def _unique(values: list[str]) -> list[str]:
     return list(dict.fromkeys(values))
+
+
+def _unique_optional(values: Any) -> list[str]:
+    return list(dict.fromkeys(str(value) for value in values if value))

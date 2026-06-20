@@ -1019,7 +1019,12 @@ def _vcenter_deployment_values(
         "management_ip": settings.vcenter_management_ip,
         "subnet_cidr": settings.vcenter_subnet_cidr or _clean_value(plan.get("subnet")) or settings.lab_subnet_cidr,
         "gateway": settings.vcenter_gateway or _clean_value(global_settings.get("gateway")) or _clean_value(active_profile.get("gateway")),
-        "dns_servers": _first_non_empty_list(settings.vcenter_dns_servers, global_settings.get("dns_servers"), active_profile.get("dns")),
+        "dns_servers": _first_non_empty_list(
+            settings.vcenter_dns_servers,
+            os.getenv("LAB_DNS_SERVERS", ""),
+            global_settings.get("dns_servers"),
+            active_profile.get("dns"),
+        ),
         "ntp_servers": _first_non_empty_list(settings.vcenter_ntp_servers, global_settings.get("ntp_servers"), active_profile.get("ntp")),
         "time_sync_mode": _vcenter_time_sync_mode(),
         "sso_domain": settings.vcenter_sso_domain,

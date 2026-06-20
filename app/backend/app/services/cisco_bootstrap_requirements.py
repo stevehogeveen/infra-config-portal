@@ -180,12 +180,21 @@ def build_cisco_bootstrap_requirements(
             "configured": True,
             "planned_only": True,
             "apply_enabled": False,
-            "summary": "SSH/SCP policy is planned only and will not be enabled by this workflow.",
+            "summary": (
+                "SSH/SCP is enabled only by the guarded Cisco real-lab bootstrap, "
+                "then used for IOS image transfer after TCP/22 validation."
+            ),
+            "guarded_enable_command": "ip scp server enable",
+            "preferred_transfer_protocol": "SCP",
         },
         "save_behavior": {
             "configured": True,
             "enabled": False,
-            "summary": "Save behavior is disabled for now; write memory is not allowed.",
+            "summary": (
+                "The ordinary requirements page does not save config; the guarded "
+                "real-lab bootstrap saves after the reviewed management commands."
+            ),
+            "guarded_save_command": "write memory",
         },
         "confirmation_requirements": {
             "configured": _confirmations_defined(

@@ -262,6 +262,47 @@ def test_upgrade_inventory_uses_console_version_before_cluster_management(monkey
     assert any("cluster management" in blocker for blocker in payload["blockers"])
 
 
+def test_upgrade_inventory_collects_component_firmware_from_readonly_ontap_rest(monkeypatch) -> None:
+    _patch_upgrade_runtime(monkeypatch, configured=True)
+    _patch_upgrade_settings(monkeypatch, current_version="9.17.1", target_version="9.17.1")
+    _patch_media(monkeypatch, [_ontap_media(version_hint="9.17.1")])
+
+    def records(path: str) -> dict[str, object]:
+        if path.startswith("/api/cluster/nodes"):
+            return {
+                "records": [
+                    {"service_processor": {"firmware_version": "20.11"}},
+                    {"service_processor": {"firmware_version": "20.11"}},
+                ],
+                "error": None,
+            }
+        if path.startswith("/api/storage/disks"):
+            return {"records": [{"firmware_version": "NA02"}, {"firmware_version": "NA02"}], "error": None}
+        if path.startswith("/api/storage/shelves"):
+            return {
+                "records": [
+                    {
+                        "frus": [
+                            {"firmware_version": "0310"},
+                            {"firmware_version": "0310"},
+                        ]
+                    }
+                ],
+                "error": None,
+            }
+        return {"records": [], "error": "unexpected path"}
+
+    monkeypatch.setattr(netapp_upgrade_center, "_ontap_get_records", records)
+
+    payload = netapp_upgrade_center.build_netapp_upgrade_inventory(write_report=False)
+
+    assert payload["status"] == "ready"
+    assert payload["sp_bmc_firmware"]["status"] == "ready"
+    assert payload["sp_bmc_firmware"]["current_version"] == "20.11"
+    assert payload["disk_shelf_firmware"]["disk_current_version"] == "NA02"
+    assert payload["disk_shelf_firmware"]["shelf_current_version"] == "0310"
+
+
 def test_upgrade_apply_disabled_before_setup(monkeypatch) -> None:
     _patch_upgrade_runtime(monkeypatch, configured=False)
     _patch_upgrade_settings(monkeypatch)

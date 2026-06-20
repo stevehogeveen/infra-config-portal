@@ -1307,6 +1307,7 @@ class CiscoSetupReadinessRead(BaseModel):
     password_recovery: dict[str, Any] = Field(default_factory=dict)
     bootstrap_preview: dict[str, Any]
     ssh_scp_readiness: dict[str, Any]
+    lab_builder_flow: dict[str, Any] = Field(default_factory=dict)
     ansible: dict[str, Any]
     backup_report: dict[str, Any]
     setup_wizard_plan: dict[str, Any] | None = None
@@ -1383,6 +1384,7 @@ class CiscoConsoleBootstrapPlanRead(BaseModel):
     blockers: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     confirmation_phrase: str
+    guarded_executor: str | None = None
     next_safe_action: str
 
 

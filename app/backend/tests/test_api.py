@@ -1683,10 +1683,12 @@ def test_cisco_setup_readiness_endpoint_is_read_only_preview(client: TestClient)
     assert payload["backup_report"]["backup_enabled"] is True
     assert payload["backup_report"]["report_placeholder_enabled"] is False
     assert "Raw running-config is not persisted" in payload["backup_report"]["summary"]
+    assert payload["lab_builder_flow"]["console"]["adapter"] == "Prolific USB serial adapter"
+    assert payload["lab_builder_flow"]["file_transfer"]["preferred_protocol"] == "SCP"
     assert payload["next_safe_action"] == (
         "Select a console candidate and run prompt readiness check."
     )
-    assert "real config apply" in payload["disabled_actions"]
+    assert "ungated console writes" in payload["disabled_actions"]
 
     encoded = response.text
     assert "/probe" not in encoded
@@ -1836,6 +1838,7 @@ def test_cisco_console_bootstrap_plan_endpoint_is_preview_only(
     assert payload["target"]["netmask"] == "255.255.255.0"
     assert payload["apply_enabled"] is False
     assert payload["execution_supported"] is False
+    assert payload["guarded_executor"] == "python app/backend/scripts/cisco_real_lab_workflow.py --apply"
     assert payload["confirmation_phrase"] == "APPLY CISCO CONSOLE BOOTSTRAP 192.168.1.204"
     assert "write erase" in payload["destructive_actions_disabled"]
     assert "erase startup-config" in payload["destructive_actions_disabled"]

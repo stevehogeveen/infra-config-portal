@@ -24,6 +24,7 @@ def clear_probe_cache(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr(fc, "INVENTORY_REPORT", tmp_path / "firmware-inventory-report.md")
     monkeypatch.setattr(fc, "NETAPP_ONTAP_UPGRADE_VALIDATION_JSON", tmp_path / "netapp-ontap-upgrade-validation-redacted.json")
     monkeypatch.setattr(fc, "NETAPP_ONTAP_UPGRADE_PLAN_JSON", tmp_path / "netapp-ontap-upgrade-plan-redacted.json")
+    monkeypatch.setattr(fc, "NETAPP_ONTAP_UPGRADE_INVENTORY_JSON", tmp_path / "netapp-upgrade-inventory-redacted.json")
     monkeypatch.setattr(fc, "ESXI_MANAGEMENT_VALIDATION_REPORT", tmp_path / "esxi-post-recovery-validation-report.md")
     monkeypatch.setattr(fc, "VCENTER_POST_INSTALL_VALIDATION_JSON", tmp_path / "vcenter-post-install-validation-redacted.json")
     monkeypatch.setattr(fc, "VCENTER_POST_ATTACH_VALIDATION_JSON", tmp_path / "vcenter-post-attach-validation-redacted.json")
@@ -32,6 +33,7 @@ def clear_probe_cache(monkeypatch, tmp_path) -> None:
         "latest_console_ontap_version",
         lambda: {"version": None, "source": "not_available", "checked_at": None},
     )
+    monkeypatch.setattr(fc, "get_netapp_runtime_state", lambda: {"configured": False})
 
 
 @pytest.fixture()
@@ -786,16 +788,29 @@ def test_firmware_summary_includes_cisco_ios_xe_from_report(monkeypatch, firmwar
             "source": "console-user-exec-show-version",
             "ios_xe_version": "17.15.05",
             "bootloader_rommon": None,
-            "checked_at": "2026-06-11T16:06:26+00:00",
+            "checked_at": "2026-06-19T16:06:26+00:00",
         },
     )
-    monkeypatch.setattr(fc, "load_firmware_baseline", lambda: _baseline(_component("cisco_ios_xe_version", minimum="17.9")))
+    monkeypatch.setattr(
+        fc,
+        "load_firmware_baseline",
+        lambda: _baseline(
+            _component("cisco_ios_xe_version", minimum="17.9"),
+            _component("cisco_bootloader_rommon", unknown_policy="warning"),
+        ),
+    )
 
     compliance = fc.get_firmware_compliance(scope="cisco")
     summary = _summary_for(fc.get_firmware_summaries(compliance=compliance), "cisco")
 
     assert summary["current_versions"][0]["version"] == "17.15.05"
     assert summary["compliance_status"] == "current"
+    assert summary["severity"] == "green"
+    assert summary["blocker"] is None
+    assert summary["approved_versions"][0]["version"] == "17.15.05"
+    assert summary["path_status"] == "current"
+    assert summary["target_version"] == "Cisco IOS XE: 17.15.05"
+    assert summary["disabled_reason"] == "No upgrade is needed; apply stays disabled."
     assert summary["source_type"] == "historical_evidence"
 
 

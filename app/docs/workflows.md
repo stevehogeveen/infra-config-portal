@@ -212,6 +212,17 @@ network/portgroup. Secret values stay in `.env.local.real-lab` or the operator
 environment and reports show only configured/missing status. The preview target
 writes redacted plan artifacts and does not start `vcsa-deploy`.
 
+## Hardware Power-Down
+
+The current real-lab power-down sequence is VM shutdown, HPE/ESXi host shutdown
+through iLO, then NetApp ONTAP halt followed by NetApp BMC host power-off. Do
+not treat ONTAP `LOADER` as full controller power-off. The NetApp BMC must
+report `Host Power is off` before the software-controlled NetApp power-down is
+complete.
+
+See `app/docs/netapp-powerdown-runbook.md` for the corrected NetApp BMC serial
+sequence and the standby fan/LED expectation.
+
 ## Golden State
 
 The Golden State page at `/golden-state` productizes the known-good real-lab

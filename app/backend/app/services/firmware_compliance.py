@@ -29,6 +29,7 @@ VCENTER_NETAPP_READINESS_REPORT = CODEX_RUN_DIR / "vcenter-netapp-readiness-repo
 ESXI_POST_RECOVERY_VALIDATION_JSON = CODEX_RUN_DIR / "esxi-post-recovery-validation-redacted.json"
 NETAPP_ONTAP_UPGRADE_VALIDATION_JSON = CODEX_RUN_DIR / "netapp-ontap-upgrade-validation-redacted.json"
 NETAPP_ONTAP_UPGRADE_PLAN_JSON = CODEX_RUN_DIR / "netapp-ontap-upgrade-plan-redacted.json"
+NETAPP_ONTAP_UPGRADE_INVENTORY_JSON = CODEX_RUN_DIR / "netapp-upgrade-inventory-redacted.json"
 VCENTER_POST_INSTALL_VALIDATION_JSON = CODEX_RUN_DIR / "vcenter-post-install-validation-redacted.json"
 VCENTER_POST_ATTACH_VALIDATION_JSON = CODEX_RUN_DIR / "vcenter-post-attach-validation-redacted.json"
 
@@ -862,10 +863,13 @@ def _firmware_inventory_report_versions() -> dict[str, Any]:
 def _netapp_upgrade_versions() -> dict[str, Any]:
     validation = _read_json_artifact(NETAPP_ONTAP_UPGRADE_VALIDATION_JSON)
     plan = _read_json_artifact(NETAPP_ONTAP_UPGRADE_PLAN_JSON)
+    inventory = _read_json_artifact(NETAPP_ONTAP_UPGRADE_INVENTORY_JSON)
     source = "netapp-ontap-upgrade-validation"
     payload = validation if validation.get("current_version") or validation.get("target_version") else plan
     if payload is plan:
         source = "netapp-ontap-upgrade-plan"
+    disk_shelf = inventory.get("disk_shelf_firmware") if isinstance(inventory.get("disk_shelf_firmware"), dict) else {}
+    sp_bmc = inventory.get("sp_bmc_firmware") if isinstance(inventory.get("sp_bmc_firmware"), dict) else {}
     return {
         "source": source,
         "checked_at": _string_or_none(payload.get("checked_at")),
@@ -874,6 +878,12 @@ def _netapp_upgrade_versions() -> dict[str, Any]:
         "selected_package": payload.get("selected_package") if isinstance(payload.get("selected_package"), dict) else {},
         "status": _string_or_none(payload.get("status")),
         "validation_passed": bool(payload.get("validation_passed")),
+        "disk_firmware": _known_version_or_none(disk_shelf.get("disk_current_version")),
+        "shelf_firmware": _known_version_or_none(disk_shelf.get("shelf_current_version")),
+        "sp_bmc_firmware": _known_version_or_none(sp_bmc.get("current_version")),
+        "component_source": "netapp-ontap-upgrade-inventory"
+        if disk_shelf.get("disk_current_version") or disk_shelf.get("shelf_current_version") or sp_bmc.get("current_version")
+        else None,
     }
 
 
@@ -912,9 +922,10 @@ def _netapp_versions(probe: dict[str, Any]) -> dict[str, Any]:
         else upgrade_versions.get("source")
         if upgrade_versions.get("current_version")
         else console_version.get("source"),
-        "disk_firmware": os.getenv("NETAPP_CURRENT_DISK_FIRMWARE"),
-        "shelf_firmware": os.getenv("NETAPP_CURRENT_SHELF_FIRMWARE"),
-        "sp_bmc_firmware": os.getenv("NETAPP_CURRENT_SP_BMC_FIRMWARE"),
+        "disk_firmware": os.getenv("NETAPP_CURRENT_DISK_FIRMWARE") or upgrade_versions.get("disk_firmware"),
+        "shelf_firmware": os.getenv("NETAPP_CURRENT_SHELF_FIRMWARE") or upgrade_versions.get("shelf_firmware"),
+        "sp_bmc_firmware": os.getenv("NETAPP_CURRENT_SP_BMC_FIRMWARE") or upgrade_versions.get("sp_bmc_firmware"),
+        "component_firmware_source": upgrade_versions.get("component_source"),
     }
 
 
@@ -1121,9 +1132,11 @@ def _summary_approved_versions(components: list[dict[str, Any]]) -> list[dict[st
     for component in components:
         label = _summary_component_label(component)
         minimum = component.get("required_version")
+        current = component.get("current_version")
         approved = [str(value) for value in component.get("approved_versions") or [] if value]
         if minimum:
-            rows.append({"label": label, "version": f">= {minimum}", "status": "minimum"})
+            version = current if _component_satisfies_minimum(component) else f">= {minimum}"
+            rows.append({"label": label, "version": version, "status": "minimum"})
         for value in approved:
             rows.append({"label": label, "version": value, "status": "approved"})
         if not minimum and not approved:
@@ -1158,16 +1171,37 @@ def _summary_component_label(component: dict[str, Any]) -> str:
 def _summary_compliance_status(components: list[dict[str, Any]]) -> str:
     if not components:
         return "cannot_verify"
-    statuses = [str(component.get("status") or "unknown") for component in components]
+    decisive = _summary_decisive_components(components)
+    statuses = [str(component.get("status") or "unknown") for component in decisive]
     if all(status == "not_configured_yet" for status in statuses):
         return "not_configured"
-    if any(_component_is_below_baseline(component) for component in components):
+    if any(_component_is_below_baseline(component) for component in decisive):
         return "needs_upgrade"
     if any(status in {"blocked", "warning", "unknown", "not_configured_yet"} for status in statuses):
         return "cannot_verify"
-    if not any(component.get("current_version") for component in components):
+    if not any(component.get("current_version") for component in decisive):
         return "cannot_verify"
     return "current"
+
+
+def _summary_decisive_components(components: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    decisive = [
+        component
+        for component in components
+        if not (
+            component.get("id") == "cisco_bootloader_rommon"
+            and component.get("status") == "warning"
+            and not component.get("required_version")
+            and not component.get("approved_versions")
+        )
+    ]
+    return decisive or components
+
+
+def _component_satisfies_minimum(component: dict[str, Any]) -> bool:
+    current = _known_version_or_none(component.get("current_version"))
+    minimum = _known_version_or_none(component.get("required_version"))
+    return bool(current and minimum and _version_satisfies_target(current, f">= {minimum}", "minimum"))
 
 
 def _component_is_below_baseline(component: dict[str, Any]) -> bool:
@@ -1181,7 +1215,7 @@ def _summary_severity(compliance_status: str, freshness: str) -> str:
         return "gray"
     if compliance_status == "cannot_verify":
         return "yellow"
-    if freshness in {"stale", "historical"}:
+    if freshness == "stale":
         return "yellow"
     return "green"
 
@@ -1197,7 +1231,7 @@ def _summary_blocker(
         component = next((item for item in components if _component_is_below_baseline(item)), None)
         return str(component.get("reason") if component else "below baseline")
     if compliance_status == "current":
-        if source["freshness"] in {"stale", "historical"}:
+        if source["freshness"] == "stale":
             return "stale evidence only"
         return None
     manual_review = _manual_review_message(components)
@@ -1520,6 +1554,12 @@ def _path_target(
         }
     minimum = _known_version_or_none((baseline_component or {}).get("minimum"))
     if minimum:
+        if current_version and _version_satisfies_target(current_version, f">= {minimum}", "minimum"):
+            return {
+                "target_version": current_version,
+                "baseline_source": f"{_rel(BASELINE_PATH)} minimum satisfied",
+                "target_kind": "exact",
+            }
         return {
             "target_version": f">= {minimum}",
             "baseline_source": f"{_rel(BASELINE_PATH)} minimum",
@@ -1926,7 +1966,7 @@ def _summary_path_rollup(paths: list[dict[str, Any]]) -> dict[str, Any]:
     statuses = [str(path.get("path_status") or "unknown") for path in paths]
     status = _rollup_path_status(statuses)
     package = next((path for path in paths if path.get("package_available")), None)
-    disabled = next((path.get("disabled_reason") for path in paths if path.get("path_status") != "current"), None)
+    disabled = None if status == "current" else next((path.get("disabled_reason") for path in paths if path.get("path_status") != "current"), None)
     return {
         "upgrade_paths": paths,
         "path_status": status,
@@ -1952,7 +1992,9 @@ def _summary_path_rollup(paths: list[dict[str, Any]]) -> dict[str, Any]:
             )
         ),
         "reboot_required": any(path.get("reboot_required") for path in paths),
-        "estimated_impact": next((path.get("estimated_impact") for path in paths if path.get("path_status") != "current"), None)
+        "estimated_impact": "No upgrade impact expected while current."
+        if status == "current"
+        else next((path.get("estimated_impact") for path in paths if path.get("path_status") != "current"), None)
         or "No upgrade impact expected while current.",
         "apply_enabled": any(path.get("apply_enabled") for path in paths),
         "disabled_reason": str(disabled or "No upgrade is needed; apply stays disabled."),
@@ -1960,6 +2002,8 @@ def _summary_path_rollup(paths: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def _rollup_path_status(statuses: list[str]) -> str:
+    if statuses and all(status in {"current", "manual_review"} for status in statuses) and "current" in statuses:
+        return "current"
     for status in ("blocked", "staged", "direct", "unknown", "manual_review"):
         if status in statuses:
             return status
