@@ -1439,11 +1439,19 @@ function ProfileDeviceSummary({ context }: { context: ControlCenterContext }) {
           ["Profile state", profile?.source ? sourceLabel(profile.source) : "Draft or unavailable"]
         ]}
       />
-      <div className="cc-device-list">
+      <div className="cc-equipment-table" role="table" aria-label="Profile device state">
+        <div className="cc-equipment-table-row is-head" role="row">
+          <span role="columnheader">Equipment</span>
+          <span role="columnheader">Address</span>
+          <span role="columnheader">State</span>
+        </div>
         {rows.map((row) => (
-          <div className={row.included ? "" : "is-excluded"} key={row.label}>
-            <strong>{row.label}</strong>
-            <span>{row.included ? row.address || "Included, IP not set" : "Excluded from this profile"}</span>
+          <div className={`cc-equipment-table-row ${row.included ? "" : "is-excluded"}`} key={row.label} role="row">
+            <strong role="cell">{row.label}</strong>
+            <span role="cell">{row.included ? row.address || "IP not set" : "Excluded"}</span>
+            <span role="cell">
+              <StatusPill status={row.included ? (row.address ? "ready" : "not_checked") : "excluded"} />
+            </span>
           </div>
         ))}
       </div>
@@ -2232,36 +2240,26 @@ function RunPage({ context }: { context: ControlCenterContext }) {
       {context.runError && <Banner tone="bad">{context.runError}</Banner>}
 
       <section className="cc-panel">
-        <SectionTitle icon={<ClipboardList size={18} />} title="Run Queue" />
-        <div className="cc-run-action-list">
-          {runActions.map((action) => (
-            <button
-              className={action.action_id === context.selectedRunActionId ? "is-selected" : ""}
-              key={action.action_id}
-              onClick={() => context.setSelectedRunActionId(action.action_id)}
-              type="button"
-            >
-              <div>
-                <strong>{action.label}</strong>
-                <span>{action.stage_label} / {action.provider}</span>
-              </div>
-              <StatusPill status={action.current_availability || action.last_run_status || "not_checked"} />
-            </button>
-          ))}
+        <SectionTitle icon={<ClipboardList size={18} />} title="Run Workbench" />
+        <div className="cc-run-workbench">
+          <div className="cc-run-action-list" aria-label="Run queue">
+            {runActions.map((action) => (
+              <button
+                className={action.action_id === context.selectedRunActionId ? "is-selected" : ""}
+                key={action.action_id}
+                onClick={() => context.setSelectedRunActionId(action.action_id)}
+                type="button"
+              >
+                <div>
+                  <strong>{action.label}</strong>
+                  <span>{action.stage_label} / {action.provider}</span>
+                </div>
+                <StatusPill status={action.current_availability || action.last_run_status || "not_checked"} />
+              </button>
+            ))}
+          </div>
+          <RunActionDetail action={selectedAction} />
         </div>
-      </section>
-
-      <section className="cc-panel">
-        <SectionTitle icon={<TerminalSquare size={18} />} title="Evidence" />
-        <FactList
-          facts={[
-            ["Selected action", selectedAction?.action_id ?? "none"],
-            ["Mode", selectedAction?.mode ?? "not_available"],
-            ["Last run", selectedAction?.last_run_status ?? "not_checked"],
-            ["Command", selectedAction?.command ?? "not_available"]
-          ]}
-        />
-        <EvidenceList action={selectedAction} />
       </section>
 
       <section className="cc-panel">
@@ -2271,7 +2269,7 @@ function RunPage({ context }: { context: ControlCenterContext }) {
 
       <section className="cc-panel">
         <SectionTitle icon={<History size={18} />} title="Run Activity" />
-        <ActivityList logs={runEventLogs(context)} />
+        <ActivityList limit={10} logs={runEventLogs(context)} />
       </section>
     </Page>
   );
@@ -2306,6 +2304,29 @@ function runCenterActions(actions: WorkflowAction[]): WorkflowAction[] {
     )
     .slice(0, 8);
   return [...preferred, ...extra];
+}
+
+function RunActionDetail({ action }: { action: WorkflowAction | null }) {
+  return (
+    <aside className="cc-run-detail" aria-label="Selected run action details">
+      <div className="cc-run-detail-head">
+        <SectionTitle icon={<TerminalSquare size={18} />} title="Selected Action" />
+        <StatusPill status={action?.current_availability || action?.last_run_status || "not_checked"} />
+      </div>
+      <FactList
+        facts={[
+          ["Action", action?.action_id ?? "none"],
+          ["Mode", action?.mode ?? "not_available"],
+          ["Last run", action?.last_run_status ?? "not_checked"],
+          ["Command", action?.command ?? "not_available"]
+        ]}
+      />
+      <details className="cc-details cc-compact-details">
+        <summary>Evidence artifacts</summary>
+        <EvidenceList action={action} />
+      </details>
+    </aside>
+  );
 }
 
 function EvidenceList({ action }: { action: WorkflowAction | null }) {
@@ -2400,7 +2421,7 @@ function FirmwarePage({ context }: { context: ControlCenterContext }) {
           <FirmwareUpgradeSection context={context} />
           <section className="cc-panel">
             <SectionTitle icon={<History size={18} />} title="Firmware Events" />
-            <ActivityList logs={firmwareEventLogs(context)} />
+            <ActivityList limit={10} logs={firmwareEventLogs(context)} />
           </section>
         </>
       ) : (
@@ -2660,21 +2681,26 @@ function FirmwareUpgradeSection({ context, deviceKey }: { context: ControlCenter
         <StatusPill status={context.upgradeStatus} />
       </div>
 
-      <FactList
-        facts={[
-          ["Target", configForPanel.target || "Not configured"],
-          ["Current firmware", selectedPathForPanel ? displayValue(selectedPathForPanel.current_version) : "Select firmware path"],
-          ["Selected firmware/image/version", selectedPathForPanel ? context.selectedFirmware || "Missing" : "Missing"],
-          ["Compatibility check", validationStatusLabel(context)],
-          ["Readiness status", firmwareReadinessLabel(context)],
-          ["Progress", firmwareProgressLabel(context)],
-          ["Backend status/progress", context.firmwareRuntime.message],
-          ["Next safe action", context.firmwareRuntime.nextSafeAction],
-          ["Backend action", selectedPathForPanel ? context.selectedUpgradeAction?.label ?? "Integration pending" : "Select firmware path"],
-          ["Backend gates", selectedPathForPanel ? firmwareBackendGateLabel(context) : "Select firmware path"],
-          ["Status source", firmwareRuntimeSourceLabel(context.firmwareRuntime)]
-        ]}
-      />
+      <div className="cc-snapshot-grid" aria-label="Firmware upgrade snapshot">
+        <SnapshotItem label="Target" value={configForPanel.target || "Not configured"} />
+        <SnapshotItem label="Current" value={selectedPathForPanel ? displayValue(selectedPathForPanel.current_version) : "Select path"} />
+        <SnapshotItem label="Selected" value={selectedPathForPanel ? context.selectedFirmware || "Missing" : "Missing"} />
+        <SnapshotItem label="Readiness" value={firmwareReadinessLabel(context)} />
+        <SnapshotItem label="Backend gates" value={selectedPathForPanel ? firmwareBackendGateLabel(context) : "Select path"} />
+      </div>
+      <details className="cc-details cc-compact-details">
+        <summary>Backend status details</summary>
+        <FactList
+          facts={[
+            ["Compatibility check", validationStatusLabel(context)],
+            ["Progress", firmwareProgressLabel(context)],
+            ["Backend status/progress", context.firmwareRuntime.message],
+            ["Next safe action", context.firmwareRuntime.nextSafeAction],
+            ["Backend action", selectedPathForPanel ? context.selectedUpgradeAction?.label ?? "Integration pending" : "Select firmware path"],
+            ["Status source", firmwareRuntimeSourceLabel(context.firmwareRuntime)]
+          ]}
+        />
+      </details>
       {context.firmwareRuntime.blockers.length > 0 && (
         <IssueList title="Backend firmware status blockers" items={context.firmwareRuntime.blockers} />
       )}
@@ -2924,6 +2950,15 @@ function StatusPill({ status }: { status: string }) {
   return <span className={`cc-pill ${toneClass(status)}`}>{statusLabel(status)}</span>;
 }
 
+function SnapshotItem({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="cc-snapshot-item">
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
+  );
+}
+
 function FactList({ facts }: { facts: Array<[string, string]> }) {
   return (
     <dl className="cc-facts">
@@ -3011,10 +3046,10 @@ function IssueList({ items, title, tone = "bad" }: { items: string[]; title: str
   );
 }
 
-function ActivityList({ logs }: { logs: ControlLogEntry[] }) {
+function ActivityList({ limit = 80, logs }: { limit?: number; logs: ControlLogEntry[] }) {
   const visible = uniqueLogs(logs)
     .sort((first, second) => Date.parse(second.timestamp) - Date.parse(first.timestamp))
-    .slice(0, 80);
+    .slice(0, limit);
   if (!visible.length) return <EmptyState title="No logs yet" detail="Major config, run, firmware, and settings events appear here." />;
   return (
     <ol className="cc-activity">
