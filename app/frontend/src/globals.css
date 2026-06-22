@@ -1,0 +1,84 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Dark theme — infra portal */
+    --background: 222 47% 7%;
+    --foreground: 213 31% 91%;
+
+    --card: 223 40% 9%;
+    --card-foreground: 213 31% 91%;
+
+    --popover: 223 40% 9%;
+    --popover-foreground: 213 31% 91%;
+
+    --primary: 217 91% 60%;
+    --primary-foreground: 222 47% 7%;
+
+    --secondary: 222 40% 15%;
+    --secondary-foreground: 213 31% 91%;
+
+    --muted: 222 40% 11%;
+    --muted-foreground: 215 20% 45%;
+
+    --accent: 222 40% 15%;
+    --accent-foreground: 213 31% 91%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 213 31% 91%;
+
+    --border: 222 30% 14%;
+    --input: 222 30% 14%;
+    --ring: 217 91% 60%;
+
+    --radius: 0.5rem;
+  }
+
+  * {
+    border-color: hsl(var(--border));
+  }
+
+  body {
+    background-color: hsl(var(--background));
+    color: hsl(var(--foreground));
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+}
+
+/* ─── Layout shell ───────────────────────────────────────── */
+.shell-sidebar {
+  background-color: hsl(222 40% 8%);
+  border-right: 1px solid hsl(var(--border));
+}
+
+/* ─── Nav link states ────────────────────────────────────── */
+.nav-link {
+  @apply flex items-center gap-2.5 px-2.5 py-[7px] rounded-md text-[12.5px] font-medium
+         transition-colors duration-100 no-underline select-none;
+}
+.nav-link:hover {
+  @apply bg-white/[0.05] text-slate-200;
+}
+.nav-link-active {
+  @apply bg-blue-600/15 text-blue-400;
+}
+.nav-link-inactive {
+  @apply text-slate-400;
+}
+
+/* ─── Mode toggle ────────────────────────────────────────── */
+.mode-toggle-track {
+  @apply inline-flex items-center rounded-md border border-border bg-muted p-0.5;
+}
+.mode-toggle-btn {
+  @apply flex items-center gap-1.5 rounded px-3 py-1 text-[11px] font-medium
+         transition-colors duration-100;
+}
+.mode-toggle-btn-active {
+  @apply bg-card text-foreground shadow-sm;
+}
+.mode-toggle-btn-inactive {
+  @apply text-muted-foreground hover:text-foreground;
+}
