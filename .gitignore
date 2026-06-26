@@ -1,5 +1,6 @@
 artifacts/real-lab/
 artifacts/screenshots/
+app/artifacts/
 app/frontend/artifacts/screenshots/
 app/frontend/test-results/
 artifacts/codex-runs/
