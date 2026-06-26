@@ -224,7 +224,7 @@ test("renders the new top-level navigation and pages", async ({ page }) => {
   await page.goto("/lab-setup");
   await expect(page).toHaveURL(/\/overview/);
   await page.goto("/network");
-  await expect(page.getByRole("heading", { name: "Network" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Network", exact: true })).toBeVisible();
   await page.goto("/server");
   await expect(page.getByRole("heading", { name: "Server" })).toBeVisible();
   await page.goto("/storage");
@@ -249,26 +249,26 @@ test("renders the new top-level navigation and pages", async ({ page }) => {
 test("overview shows active setup, lab values, and access without dashboard clutter", async ({ page }) => {
   await page.goto("/overview");
 
-  const workspace = page.locator("section[aria-label='Current view']").first();
-  const objects = workspace.locator("[aria-label='Objects']");
-  const detail = workspace.locator("[aria-label='Selected object detail']");
+  const overview = page.locator("section[aria-label='Overview reference']");
 
-  await expect(workspace.getByRole("heading", { name: "Current state and targets" })).toBeVisible();
-  await expect(objects).toContainText("Active Lab Setup");
-  await expect(objects).toContainText("Cisco");
-  await expect(objects).toContainText("iLO");
-  await expect(objects).toContainText("NetApp");
-  await expect(detail).toContainText("Runtime Lab");
-  await expect(detail).toContainText("192.168.1.0/24");
+  await expect(overview.getByRole("heading", { name: "Readiness at a glance" })).toBeVisible();
+  await expect(overview).toContainText("Active blockers");
+  await expect(overview).toContainText("Server ready");
+  await expect(overview).toContainText("Firmware compliance");
+  await expect(overview).toContainText("VM requests");
+  await expect(overview).toContainText("HPE iLO");
+  await expect(overview).toContainText("Cisco Switch");
+  await expect(overview).toContainText("NetApp ONTAP");
+  await expect(overview).toContainText("Current State:");
+  await expect(overview).toContainText("Target:");
+  await expect(overview).toContainText("Gap:");
+  await expect(overview).toContainText("Next safe actions");
+  await expect(overview).toContainText("Firmware Compliance");
+  await expect(overview).toContainText("Active Blockers");
+  await expect(overview).toContainText("192.168.1.204");
+  await expect(overview).toContainText("192.168.1.201");
+  await expect(overview).toContainText("192.168.1.220");
   await expect(page.locator("nav").getByText("Edit Config")).toBeVisible();
-
-  await workspace.getByRole("button", { name: /Cisco/ }).click();
-  await expect(detail).toContainText("192.168.1.204");
-  await workspace.getByRole("button", { name: /iLO/ }).click();
-  await expect(detail).toContainText("192.168.1.201");
-  await workspace.getByRole("button", { name: /NetApp/ }).click();
-  await expect(detail).toContainText("192.168.1.220");
-  await expect(page.getByText("netapp_nfs_ds01").first()).toBeVisible();
 
   await expect(page.getByRole("heading", { name: "Lab Values" })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Currently Accessible" })).toHaveCount(0);
@@ -297,10 +297,30 @@ test("each side tab exposes contextual settings and a dedicated run button", asy
   }
 });
 
+test("network shows switch access, settings, and blockers without proof clutter", async ({ page }) => {
+  await page.goto("/network");
+
+  const network = page.locator("section[aria-label='Network reference']");
+
+  await expect(network.getByRole("heading", { name: "Network readiness at a glance" })).toBeVisible();
+  await expect(network).toContainText("Switch status");
+  await expect(network).toContainText("Access paths");
+  await expect(network).toContainText("DNS / NTP");
+  await expect(network).toContainText("Cisco firmware");
+  await expect(network).toContainText("Cisco Switch");
+  await expect(network).toContainText("Console");
+  await expect(network).toContainText("SSH / SCP");
+  await expect(network).toContainText("Current State:");
+  await expect(network).toContainText("Target:");
+  await expect(network).toContainText("Gap:");
+  await expect(network).toContainText("Next safe actions");
+  await expect(network).toContainText("Network Settings");
+  await expect(network).toContainText("Active Blockers");
+  await expect(network).toContainText("192.168.1.204");
+});
+
 test("operator pages expose a current view with refresh or fix guidance", async ({ page }) => {
   const pages = [
-    "/overview",
-    "/network",
     "/server",
     "/storage",
     "/virtualization",
@@ -393,9 +413,23 @@ test("firmware table renders upgrade path states", async ({ page }) => {
   await expect(detail).toContainText("cat9k_iosxe.17.12.01.SPA.bin");
   await expect(detail).toContainText("Selected by user");
   await expect(page.getByText("1 saved")).toBeVisible();
+  const selectionClear = page.waitForRequest((request) =>
+    request.url().includes("/api/v1/firmware/file-selections") &&
+    request.method() === "PUT"
+  );
+  const selectionClearResponse = page.waitForResponse((response) =>
+    response.url().includes("/api/v1/firmware/file-selections") &&
+    response.request().method() === "PUT"
+  );
+  await detail.getByRole("combobox", { name: /Cisco Switch IOS XE firmware file/ }).selectOption("");
+  const selectionClearPayload = selectionClear.then((request) => request.postDataJSON() as { selected_files: Record<string, string> });
+  await expect((await selectionClearResponse).ok()).toBeTruthy();
+  await expect(await selectionClearPayload).toEqual({ selected_files: {} });
+  await expect(detail).toContainText("Auto-selected");
+  await expect(page.getByText("Not saved")).toBeVisible();
   await page.getByRole("button", { name: "Rescan Files" }).click();
-  await expect(detail).toContainText("cat9k_iosxe.17.12.01.SPA.bin");
-  await expect(detail).toContainText("Selected by user");
+  await expect(detail).toContainText("cat9k_iosxe.17.15.05.SPA.bin");
+  await expect(detail).toContainText("Auto-selected");
   await expect(workspace.getByRole("button", { name: "Scan" })).toHaveCount(0);
   await expect(workspace.getByRole("button", { name: "Validate Path" })).toHaveCount(0);
   await expect(workspace.getByRole("button", { name: "Upgrade" })).toHaveCount(0);
@@ -485,6 +519,74 @@ test("safe read-only page action still invokes the workflow runner", async ({ pa
   await page.getByRole("button", { name: "Run Validation" }).click();
   await expect((await runResponse).ok()).toBeTruthy();
   await expect(page.getByText(/Run Full Verification:/)).toBeVisible();
+});
+
+test("workflow runner surfaces plain-text API errors", async ({ page }) => {
+  await page.route("**/api/v1/workflows/actions/build-verification.run-full/run", (route) =>
+    route.fulfill({
+      body: "workflow runner temporarily unavailable",
+      contentType: "text/plain",
+      status: 503
+    })
+  );
+  await page.goto("/validation");
+
+  const runResponse = page.waitForResponse((response) =>
+    response.url().includes("/api/v1/workflows/actions/build-verification.run-full/run")
+  );
+  await page.getByRole("button", { name: "Run Validation" }).click();
+
+  await expect((await runResponse).status()).toBe(503);
+  await expect(page.getByText("workflow runner temporarily unavailable")).toBeVisible();
+});
+
+test("workflow runner surfaces primitive array API detail errors", async ({ page }) => {
+  await page.route("**/api/v1/workflows/actions/build-verification.run-full/run", (route) =>
+    route.fulfill({
+      body: JSON.stringify({ detail: ["first blocker", "second blocker"] }),
+      contentType: "application/json",
+      status: 422
+    })
+  );
+  await page.goto("/validation");
+
+  const runResponse = page.waitForResponse((response) =>
+    response.url().includes("/api/v1/workflows/actions/build-verification.run-full/run")
+  );
+  await page.getByRole("button", { name: "Run Validation" }).click();
+
+  await expect((await runResponse).status()).toBe(422);
+  await expect(page.getByText("first blocker; second blocker")).toBeVisible();
+});
+
+test("workflow runner surfaces malformed JSON API responses", async ({ page }) => {
+  await page.route("**/api/v1/workflows/actions/build-verification.run-full/run", (route) =>
+    route.fulfill({
+      body: "{not valid json",
+      contentType: "application/json",
+      status: 200
+    })
+  );
+  await page.goto("/validation");
+
+  const runResponse = page.waitForResponse((response) =>
+    response.url().includes("/api/v1/workflows/actions/build-verification.run-full/run")
+  );
+  await page.getByRole("button", { name: "Run Validation" }).click();
+
+  await expect((await runResponse).status()).toBe(200);
+  await expect(page.getByText("Invalid JSON response from /api/v1/workflows/actions/build-verification.run-full/run.")).toBeVisible();
+});
+
+test("workflow runner surfaces network API failures", async ({ page }) => {
+  await page.route("**/api/v1/workflows/actions/build-verification.run-full/run", (route) =>
+    route.abort("failed")
+  );
+  await page.goto("/validation");
+
+  await page.getByRole("button", { name: "Run Validation" }).click();
+
+  await expect(page.getByText("Network error while requesting /api/v1/workflows/actions/build-verification.run-full/run.")).toBeVisible();
 });
 
 async function installApiMocks(page: Page) {

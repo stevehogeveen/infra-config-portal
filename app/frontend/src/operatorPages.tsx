@@ -18,6 +18,20 @@ import { createContext, ReactNode, useContext, useEffect, useMemo, useState } fr
 import { Link, useLocation } from "react-router-dom";
 
 import { api } from "./api";
+import {
+  ActionLink,
+  BlockerItem,
+  Card,
+  CardContent,
+  CardFooter,
+  CardHeader,
+  CompactTable,
+  CompactTableCell,
+  CompactTableHeader,
+  CompactTableRow,
+  StatusBadge,
+  type StatusBadgeStatus
+} from "./components/ui";
 import type {
   FirmwareFileCandidate,
   FirmwareFileSelections,
@@ -435,8 +449,8 @@ export function OperatorOverviewPage({
   return (
     <OperatorPage title="Overview">
       <PageStatusHeader
-        description="This page shows what the app can currently access."
-        helper="Change values here if your lab uses different IPs. Advanced proof is hidden unless you need it."
+        description="A clean operator view of readiness, blockers, and the next safe action."
+        helper="Use this page first. Detailed current-state proof stays collapsed unless you need it."
         icon={<Gauge size={26} />}
         runConfig={{
           label: "Refresh Access",
@@ -449,10 +463,17 @@ export function OperatorOverviewPage({
         tabId="overview"
         title="Overview"
       />
-      <Feedback loading={loading && !validation} error={error || labProfileError} />
+      <Feedback loading={loading && !workspaceRows.length} error={error || labProfileError} />
       {labProfileLoading && <Feedback loading />}
-      <OperatorWorkspace currentView={currentView} rows={workspaceRows} />
-      <AdvancedDrawer title="Advanced details" summary={noProofText}>
+      <OverviewReferencePanel
+        accessRows={accessRows}
+        currentView={currentView}
+        firmwareSummaries={firmwareSummaries}
+        inventoryRows={inventoryRows}
+        workspaceRows={workspaceRows}
+      />
+      <AdvancedDrawer title="Advanced proof" summary={noProofText}>
+        <OperatorWorkspace currentView={currentView} rows={workspaceRows} compact />
         <InventoryTable rows={inventoryRows} />
         <ValidationProofList items={validation?.validation_items ?? []} proofLinks={validation?.proof_links.length ?? 0} />
         <ConfigValueList
@@ -611,8 +632,18 @@ export function OperatorNetworkPage({ labProfileState }: OperatorPageProps) {
         title="Network"
       />
       <Feedback loading={loading && !ciscoReadiness} error={error} />
-      <OperatorWorkspace currentView={currentView} rows={networkRows} />
+      <NetworkReferencePanel
+        address={address}
+        ciscoReadiness={ciscoReadiness}
+        consoleState={consoleState}
+        currentView={currentView}
+        features={features}
+        firmwareSummaries={firmwareSummaries}
+        global={global}
+        networkRows={networkRows}
+      />
       <AdvancedDrawer title="Network proof" summary={noProofText}>
+        <OperatorWorkspace currentView={currentView} rows={networkRows} compact />
         <ConfigValueList
           values={[
             { label: "Firmware", value: firmwareVersion(firmwareSummaries, "cisco") },
@@ -1116,7 +1147,7 @@ export function OperatorFirmwareUpgradesPage({ labProfileState }: OperatorPagePr
   }
 
   async function saveFileSelection(componentId: string, fileName: string) {
-    const nextSelections = { ...selectedFiles, [componentId]: fileName };
+    const nextSelections = nextFirmwareFileSelections(selectedFiles, componentId, fileName);
     setSelectedFiles(nextSelections);
     setSelectionError("");
     setSavingSelection(true);
@@ -1616,7 +1647,7 @@ function PageStatusHeader({
       <header className="operator-status-header">
         <div className="operator-status-icon">{icon}</div>
         <div className="operator-status-main">
-          <p className="operator-kicker">Lab Builder</p>
+          <p className="operator-kicker">Infra Config</p>
           <h1>{title}</h1>
           <p>{description}</p>
           <span>{helper}</span>
@@ -1673,11 +1704,13 @@ function PageStatusHeader({
 }
 
 function OperatorWorkspace({
+  compact = false,
   currentView,
   emptyDetail,
   renderDetailExtra,
   rows
 }: {
+  compact?: boolean;
   currentView: CurrentViewModel;
   emptyDetail?: string;
   renderDetailExtra?: (row: OperatorObjectRow) => ReactNode;
@@ -1695,7 +1728,7 @@ function OperatorWorkspace({
   const counts = workspaceCounts(rows);
 
   return (
-    <section className="operator-console" aria-label="Current view">
+    <Card aria-label="Current view" className={compact ? "operator-console compact" : "operator-console"} hover={false}>
       <div className="operator-console-head">
         <div>
           <p className="operator-kicker">Current View</p>
@@ -1777,8 +1810,605 @@ function OperatorWorkspace({
           <code>{currentView.recheckCommand}</code>
         </div>
       )}
+    </Card>
+  );
+}
+
+function OverviewReferencePanel({
+  accessRows,
+  currentView,
+  firmwareSummaries,
+  inventoryRows,
+  workspaceRows
+}: {
+  accessRows: AccessRow[];
+  currentView: CurrentViewModel;
+  firmwareSummaries: FirmwareSummary[];
+  inventoryRows: InventoryRow[];
+  workspaceRows: OperatorObjectRow[];
+}) {
+  const counts = workspaceCounts(workspaceRows);
+  const activeIssues = overviewIssues(currentView);
+  const providerCards = overviewProviderCards({ accessRows, inventoryRows, workspaceRows });
+  const firmwareRows = overviewFirmwareRows(firmwareSummaries, inventoryRows);
+  const safeActions = overviewSafeActions(currentView, providerCards);
+
+  return (
+    <section className="overview-reference" aria-label="Overview reference">
+      <div className="overview-reference-head">
+        <div>
+          <p className="operator-kicker">Operator console</p>
+          <h2>Readiness at a glance</h2>
+        </div>
+        <StatusBadge label="Redesigned view" status="safe-to-run" />
+      </div>
+      <div className="overview-stat-grid" aria-label="Readiness summary">
+        <OverviewStatCard
+          label="Active blockers"
+          meta={`${currentView.warnings.length} warnings`}
+          status={currentView.blockers.length ? "blocked" : currentView.warnings.length ? "needs-attention" : "ready"}
+          value={String(currentView.blockers.length)}
+        />
+        <OverviewStatCard
+          label="Server ready"
+          meta={`${counts.warning} need review`}
+          status={counts.blocked ? "blocked" : counts.warning ? "needs-attention" : "ready"}
+          value={`${counts.ready}/${workspaceRows.length}`}
+        />
+        <OverviewStatCard
+          label="Firmware compliance"
+          meta={firmwareRows.length ? `${firmwareRows.length} components tracked` : "No scan loaded"}
+          status={firmwareRows.some((row) => statusTone(row.status) === "blocked") ? "blocked" : firmwareRows.some((row) => statusTone(row.status) === "warning") ? "needs-attention" : firmwareRows.length ? "ready" : "not-configured"}
+          value={firmwareRows.length ? `${firmwareRows.filter((row) => statusTone(row.status) === "ready").length}/${firmwareRows.length}` : "Not checked"}
+        />
+        <OverviewStatCard
+          label="VM requests"
+          meta={currentView.source}
+          status={statusBadgeStatus(currentView.status)}
+          value="0"
+        />
+      </div>
+
+      <div className="overview-panel-head">
+        <div>
+          <p className="operator-kicker">Provider status</p>
+          <h2>Hardware and access</h2>
+        </div>
+        <StatusBadge label={`${providerCards.length} targets`} status="plan-only" />
+      </div>
+      <div className="overview-provider-grid">
+        {providerCards.map((provider) => (
+          <Card className="overview-provider-card" key={provider.name}>
+            <CardHeader>
+              <div>
+                <p className="operator-kicker">{provider.role}</p>
+                <h3>{provider.name}</h3>
+              </div>
+              <StatusBadge label={displayStatus(provider.status)} status={statusBadgeStatus(provider.status)} />
+            </CardHeader>
+            <CardContent>
+              <dl className="overview-fact-list">
+                <div>
+                  <dt>{provider.primaryLabel}</dt>
+                  <dd>{provider.target}</dd>
+                </div>
+                <div>
+                  <dt>{provider.secondaryLabel}</dt>
+                  <dd>{provider.version}</dd>
+                </div>
+                <div>
+                  <dt>Setup</dt>
+                  <dd>{provider.setupState}</dd>
+                </div>
+              </dl>
+              <div className="overview-current-state-box">
+                <p><strong>Current State:</strong> {provider.currentState}</p>
+                <p><strong>Target:</strong> {provider.targetState}</p>
+                <p><strong>Gap:</strong> {provider.gap}</p>
+                <p><strong>Blocked by:</strong> {provider.blockedBy}</p>
+              </div>
+            </CardContent>
+            <CardFooter>
+              <ActionLink to={provider.to}>{provider.actionLabel}</ActionLink>
+            </CardFooter>
+          </Card>
+        ))}
+      </div>
+
+      <section className="overview-safe-actions" aria-label="Next safe actions">
+        <p className="operator-kicker">Next safe actions</p>
+        <ul>
+          {safeActions.map((action) => (
+            <li key={action}>{action}</li>
+          ))}
+        </ul>
+      </section>
+
+      <div className="overview-bottom-grid">
+        <Card className="overview-firmware-panel" hover={false}>
+          <CardHeader>
+            <div>
+              <h2>Firmware Compliance</h2>
+            </div>
+            <span>{firmwareRows.filter((row) => statusTone(row.status) !== "ready").length} of {firmwareRows.length} devices outdated</span>
+          </CardHeader>
+          <CompactTable>
+            <CompactTableHeader>
+              <CompactTableCell>Device</CompactTableCell>
+              <CompactTableCell>Current</CompactTableCell>
+              <CompactTableCell>Target</CompactTableCell>
+              <CompactTableCell>Status</CompactTableCell>
+            </CompactTableHeader>
+            <tbody>
+              {firmwareRows.map((row) => (
+                <CompactTableRow key={row.device}>
+                  <CompactTableCell><strong>{row.device}</strong></CompactTableCell>
+                  <CompactTableCell>{row.version}</CompactTableCell>
+                  <CompactTableCell>{row.target}</CompactTableCell>
+                  <CompactTableCell><StatusBadge label={displayStatus(row.status)} status={statusBadgeStatus(row.status)} /></CompactTableCell>
+                </CompactTableRow>
+              ))}
+            </tbody>
+          </CompactTable>
+        </Card>
+
+        <Card className="overview-blockers-panel" hover={false}>
+          <CardHeader>
+            <div>
+              <h2>Active Blockers</h2>
+            </div>
+            <span>{activeIssues.length} open</span>
+          </CardHeader>
+          <CardContent>
+            <div className="overview-blocker-list">
+              {activeIssues.length ? (
+                activeIssues.slice(0, 3).map((issue) => (
+                  <BlockerItem
+                    code={issue.code}
+                    key={`${issue.code}-${issue.message}`}
+                    message={issue.message}
+                    severity={issue.severity}
+                  />
+                ))
+              ) : (
+                <div className="overview-clear-state">
+                  <StatusBadge status="ready" />
+                  <span>No active blockers are loaded for the current view.</span>
+                </div>
+              )}
+            </div>
+          </CardContent>
+          <CardFooter>
+            <ActionLink to="/validation">Open validation</ActionLink>
+          </CardFooter>
+        </Card>
+      </div>
     </section>
   );
+}
+
+function OverviewStatCard({
+  label,
+  meta,
+  status,
+  value
+}: {
+  label: string;
+  meta: string;
+  status: StatusBadgeStatus;
+  value: string;
+}) {
+  return (
+    <Card className="overview-stat-card">
+      <span>{label}</span>
+      <strong>{value}</strong>
+      <div>
+        <StatusBadge status={status} />
+        <small>{meta}</small>
+      </div>
+    </Card>
+  );
+}
+
+function NetworkReferencePanel({
+  address,
+  ciscoReadiness,
+  consoleState,
+  currentView,
+  features,
+  firmwareSummaries,
+  global,
+  networkRows
+}: {
+  address: LabAddressPlan;
+  ciscoReadiness: ProviderProbeResult | null;
+  consoleState: Record<string, unknown>;
+  currentView: CurrentViewModel;
+  features: LabProfileFeatures | null;
+  firmwareSummaries: FirmwareSummary[];
+  global: LabProfile["global_settings"] | null;
+  networkRows: OperatorObjectRow[];
+}) {
+  const counts = workspaceCounts(networkRows);
+  const networkStatus = asString(ciscoReadiness?.status) || (address.cisco_management ? "ready" : "not_configured_yet");
+  const managementConfigured = asBoolean(ciscoReadiness?.management_configured);
+  const consoleStatus = asString(consoleState.status) || "not_checked";
+  const ciscoFirmware = firmwareVersion(firmwareSummaries, "cisco");
+  const settingsRows = networkSettingsRows({ ciscoFirmware, features, global });
+  const issues = networkIssues(currentView, ciscoReadiness);
+  const nextSafeAction = humanize(asString(ciscoReadiness?.next_safe_action) || "Run Test Switch.");
+
+  const providerCards = [
+    {
+      actionLabel: "Test switch",
+      blockedBy: currentView.blockers[0] || currentView.warnings[0] || nextSafeAction,
+      facts: [
+        ["Mgmt IP", displayAddress(address.cisco_management)],
+        ["Readiness", displayStatus(networkStatus)],
+        ["Firmware", ciscoFirmware]
+      ],
+      gap: nextSafeAction,
+      name: "Cisco Switch",
+      role: "Switch management",
+      status: networkStatus,
+      targetState: displayAddress(address.cisco_management),
+      to: "/network",
+      currentState: asString(ciscoReadiness?.message) || currentView.summary
+    },
+    {
+      actionLabel: "Open settings",
+      blockedBy: consoleStatus === "ready" ? "No console blocker loaded" : "Console path needs confirmation",
+      facts: [
+        ["Selected path", displayValue(asString(consoleState.selected_path))],
+        ["Effective path", displayValue(asString(consoleState.effective_path))],
+        ["Status", displayStatus(consoleStatus)]
+      ],
+      gap: "Open Settings if the console path is wrong.",
+      name: "Console",
+      role: "First contact",
+      status: consoleStatus,
+      targetState: displayValue(asString(consoleState.selected_path) || asString(consoleState.effective_path)),
+      to: "/settings",
+      currentState: displayStatus(consoleStatus)
+    },
+    {
+      actionLabel: "Validate access",
+      blockedBy: managementConfigured ? "No SSH blocker loaded" : "Management access has not been confirmed",
+      facts: [
+        ["SSH/SCP", boolStateLabel(managementConfigured)],
+        ["Secrets", "Configured or missing only"],
+        ["Target", displayAddress(address.cisco_management)]
+      ],
+      gap: "Run Test Switch after fixing connectivity or credentials.",
+      name: "SSH / SCP",
+      role: "Access guard",
+      status: managementConfigured ? "ready" : "not_checked",
+      targetState: displayAddress(address.cisco_management),
+      to: "/network",
+      currentState: boolStateLabel(managementConfigured)
+    }
+  ];
+
+  return (
+    <section className="overview-reference" aria-label="Network reference">
+      <div className="overview-reference-head">
+        <div>
+          <p className="operator-kicker">Operator console</p>
+          <h2>Network readiness at a glance</h2>
+        </div>
+        <StatusBadge label="Redesigned view" status="safe-to-run" />
+      </div>
+      <div className="overview-stat-grid" aria-label="Network summary">
+        <OverviewStatCard
+          label="Switch status"
+          meta={displayAddress(address.cisco_management)}
+          status={statusBadgeStatus(networkStatus)}
+          value={displayStatus(networkStatus)}
+        />
+        <OverviewStatCard
+          label="Access paths"
+          meta={`${counts.ready} ready, ${counts.warning + counts.blocked} need review`}
+          status={counts.blocked ? "blocked" : counts.warning ? "needs-attention" : counts.ready ? "ready" : "not-configured"}
+          value={`${counts.ready}/${networkRows.length}`}
+        />
+        <OverviewStatCard
+          label="DNS / NTP"
+          meta={`NTP ${enabledLabel(features?.enable_ntp)}`}
+          status={featureStatus(features, "enable_dns") === "ready" && featureStatus(features, "enable_ntp") === "ready" ? "ready" : "needs-attention"}
+          value={features?.enable_dns || features?.enable_ntp ? "Enabled" : "Review"}
+        />
+        <OverviewStatCard
+          label="Cisco firmware"
+          meta="Firmware evidence"
+          status={ciscoFirmware === "Not checked" ? "needs-attention" : "ready"}
+          value={ciscoFirmware}
+        />
+      </div>
+
+      <div className="overview-panel-head">
+        <div>
+          <p className="operator-kicker">Network status</p>
+          <h2>Switch access and saved settings</h2>
+        </div>
+        <StatusBadge label={`${issues.length} open`} status={issues.length ? "needs-attention" : "ready"} />
+      </div>
+      <div className="overview-provider-grid">
+        {providerCards.map((provider) => (
+          <Card className="overview-provider-card" key={provider.name}>
+            <CardHeader>
+              <div>
+                <p className="operator-kicker">{provider.role}</p>
+                <h3>{provider.name}</h3>
+              </div>
+              <StatusBadge label={displayStatus(provider.status)} status={statusBadgeStatus(provider.status)} />
+            </CardHeader>
+            <CardContent>
+              <dl className="overview-fact-list">
+                {provider.facts.map(([label, value]) => (
+                  <div key={`${provider.name}-${label}`}>
+                    <dt>{label}</dt>
+                    <dd>{value}</dd>
+                  </div>
+                ))}
+              </dl>
+              <div className="overview-current-state-box">
+                <p><strong>Current State:</strong> {provider.currentState}</p>
+                <p><strong>Target:</strong> {provider.targetState}</p>
+                <p><strong>Gap:</strong> {provider.gap}</p>
+                <p><strong>Blocked by:</strong> {provider.blockedBy}</p>
+              </div>
+            </CardContent>
+            <CardFooter>
+              <ActionLink to={provider.to}>{provider.actionLabel}</ActionLink>
+            </CardFooter>
+          </Card>
+        ))}
+      </div>
+
+      <section className="overview-safe-actions" aria-label="Next safe actions">
+        <p className="operator-kicker">Next safe actions</p>
+        <ul>
+          <li>{nextSafeAction}</li>
+          <li>Open Settings if the console path or saved network defaults are wrong.</li>
+          <li>Open Firmware Upgrades for Cisco firmware evidence before risky changes.</li>
+        </ul>
+      </section>
+
+      <div className="overview-bottom-grid">
+        <Card className="overview-firmware-panel" hover={false}>
+          <CardHeader>
+            <div>
+              <h2>Network Settings</h2>
+            </div>
+            <span>{settingsRows.length} tracked</span>
+          </CardHeader>
+          <CompactTable>
+            <CompactTableHeader>
+              <CompactTableCell>Item</CompactTableCell>
+              <CompactTableCell>Current</CompactTableCell>
+              <CompactTableCell>Status</CompactTableCell>
+              <CompactTableCell>Source</CompactTableCell>
+            </CompactTableHeader>
+            <tbody>
+              {settingsRows.map((row) => (
+                <CompactTableRow key={row.item}>
+                  <CompactTableCell><strong>{row.item}</strong></CompactTableCell>
+                  <CompactTableCell>{row.current}</CompactTableCell>
+                  <CompactTableCell><StatusBadge label={displayStatus(row.status)} status={statusBadgeStatus(row.status)} /></CompactTableCell>
+                  <CompactTableCell>{row.source}</CompactTableCell>
+                </CompactTableRow>
+              ))}
+            </tbody>
+          </CompactTable>
+        </Card>
+
+        <Card className="overview-blockers-panel" hover={false}>
+          <CardHeader>
+            <div>
+              <h2>Active Blockers</h2>
+            </div>
+            <span>{issues.length} open</span>
+          </CardHeader>
+          <CardContent>
+            <div className="overview-blocker-list">
+              {issues.length ? (
+                issues.slice(0, 4).map((issue) => (
+                  <BlockerItem
+                    code={issue.code}
+                    key={`${issue.code}-${issue.message}`}
+                    message={issue.message}
+                    severity={issue.severity}
+                  />
+                ))
+              ) : (
+                <div className="overview-clear-state">
+                  <StatusBadge status="ready" />
+                  <span>No active network blockers are loaded for the current view.</span>
+                </div>
+              )}
+            </div>
+          </CardContent>
+          <CardFooter>
+            <ActionLink to="/validation">Open validation</ActionLink>
+          </CardFooter>
+        </Card>
+      </div>
+    </section>
+  );
+}
+
+function networkSettingsRows({
+  ciscoFirmware,
+  features,
+  global
+}: {
+  ciscoFirmware: string;
+  features: LabProfileFeatures | null;
+  global: LabProfile["global_settings"] | null;
+}) {
+  return [
+    { current: displayValue(global?.vlan_id), item: "VLAN", source: "Saved setup", status: global?.vlan_id ? "ready" : "not_checked" },
+    { current: listLabel(global?.dns_servers), item: "DNS", source: "Saved setup", status: featureStatus(features, "enable_dns") },
+    { current: listLabel(global?.ntp_servers), item: "NTP", source: "Saved setup", status: featureStatus(features, "enable_ntp") },
+    { current: enabledLabel(features?.enable_snmp), item: "SNMP", source: "Saved setup", status: featureStatus(features, "enable_snmp") },
+    { current: displayValue(global?.mtu), item: "MTU", source: "Saved setup", status: global?.mtu ? "ready" : "not_checked" },
+    { current: ciscoFirmware, item: "Cisco Firmware", source: "Firmware files", status: ciscoFirmware === "Not checked" ? "not_checked" : "ready" }
+  ];
+}
+
+function networkIssues(currentView: CurrentViewModel, ciscoReadiness: ProviderProbeResult | null) {
+  const blockers = [...currentView.blockers, ...stringArray(ciscoReadiness?.blockers)];
+  const warnings = [...currentView.warnings, ...stringArray(ciscoReadiness?.warnings)];
+  const unique = new Set<string>();
+  const issues: Array<{ code: string; message: string; severity: "critical" | "warning" }> = [];
+  blockers.forEach((message) => {
+    const text = humanize(message);
+    const key = `critical-${text}`;
+    if (text && !unique.has(key)) {
+      unique.add(key);
+      issues.push({ code: "NETWORK_BLOCKER", message: text, severity: "critical" });
+    }
+  });
+  warnings.forEach((message) => {
+    const text = humanize(message);
+    const key = `warning-${text}`;
+    if (text && !unique.has(key)) {
+      unique.add(key);
+      issues.push({ code: "NETWORK_WARNING", message: text, severity: "warning" });
+    }
+  });
+  return issues;
+}
+
+function overviewProviderCards({
+  accessRows,
+  inventoryRows,
+  workspaceRows
+}: {
+  accessRows: AccessRow[];
+  inventoryRows: InventoryRow[];
+  workspaceRows: OperatorObjectRow[];
+}): Array<{
+  actionLabel: string;
+  blockedBy: string;
+  currentState: string;
+  gap: string;
+  name: string;
+  nextAction: string;
+  primaryLabel: string;
+  role: string;
+  secondaryLabel: string;
+  setupState: string;
+  status: string;
+  target: string;
+  targetState: string;
+  to: string;
+  version: string;
+}> {
+  const byAccessName = new Map(accessRows.map((row) => [row.item.toLowerCase(), row]));
+  const byInventoryName = new Map(inventoryRows.map((row) => [row.item.toLowerCase(), row]));
+  const byWorkspaceName = new Map(workspaceRows.map((row) => [row.title.toLowerCase(), row]));
+  return [
+    overviewProviderCard("HPE iLO", "Server management", "/server", "View details", byAccessName, byInventoryName, byWorkspaceName, "hpe ilo", "ilo"),
+    overviewProviderCard("Cisco Switch", "Network", "/network", "Bootstrap", byAccessName, byInventoryName, byWorkspaceName, "cisco switch", "cisco"),
+    overviewProviderCard("NetApp ONTAP", "Storage", "/storage", "Setup wizard", byAccessName, byInventoryName, byWorkspaceName, "netapp ontap", "netapp")
+  ];
+}
+
+function overviewProviderCard(
+  name: string,
+  role: string,
+  to: string,
+  actionLabel: string,
+  accessRows: Map<string, AccessRow>,
+  inventoryRows: Map<string, InventoryRow>,
+  workspaceRows: Map<string, OperatorObjectRow>,
+  inventoryKey = name.toLowerCase(),
+  accessKey = name.toLowerCase()
+) {
+  const access = accessRows.get(accessKey);
+  const inventory = inventoryRows.get(inventoryKey);
+  const workspace = workspaceRows.get(name.toLowerCase()) ?? workspaceRows.get(accessKey) ?? workspaceRows.get(name.replace(/ switch| ontap/i, "").toLowerCase());
+  const detailValue = (label: string) => workspace?.details.find((detail) => detail.label.toLowerCase() === label.toLowerCase())?.value;
+  const status = access?.status || inventory?.status || workspace?.status || "not_checked";
+  const target = access?.target || inventory?.accessTarget || workspace?.target || "Not set up yet";
+  const version = inventory?.version || "Not checked";
+  const setupState = access?.appSees || workspace?.source || "Not verified";
+  const currentState = `${displayStatus(status)}${version && version !== "Not checked" ? `, ${version}` : ""}`;
+  const targetState = detailValue("Target") || target;
+  const gap = access?.needs || workspace?.nextAction || "Review current state";
+  return {
+    actionLabel,
+    blockedBy: gap === "Nothing right now" ? "No blocker loaded" : gap,
+    currentState,
+    gap,
+    name,
+    nextAction: access?.needs || workspace?.nextAction || "Review current state",
+    primaryLabel: name.includes("Cisco") ? "Console" : name.includes("NetApp") ? "Cluster Mgmt" : "Host",
+    role,
+    secondaryLabel: name.includes("Cisco") ? "Mgmt IP" : name.includes("NetApp") ? "ONTAP Version" : "iLO Version",
+    setupState,
+    status,
+    target,
+    targetState,
+    to,
+    version
+  };
+}
+
+function overviewFirmwareRows(firmwareSummaries: FirmwareSummary[], inventoryRows: InventoryRow[]) {
+  const firmwareByKey = new Map(
+    firmwareSummaries.flatMap((summary) =>
+      [summary.device_id, summary.label, summary.component_type]
+        .map((value) => asString(value).toLowerCase())
+        .filter(Boolean)
+        .map((key) => [key, summary] as const)
+    )
+  );
+  return inventoryRows.map((row) => {
+    const key = row.item.toLowerCase();
+    const summary = firmwareByKey.get(key) || firmwareByKey.get(row.role.toLowerCase()) || firmwareSummaries.find((candidate) => row.item.toLowerCase().includes(candidate.component_type.toLowerCase()));
+    const status = asString(summary?.compliance_status) || asString(summary?.path_status) || row.status || "not_checked";
+    return {
+      action: statusTone(status) === "ready" ? "Review" : "Plan",
+      device: row.item,
+      status,
+      target: summary?.target_version || "Not set up yet",
+      version: row.version
+    };
+  });
+}
+
+function overviewSafeActions(
+  currentView: CurrentViewModel,
+  providerCards: Array<{ blockedBy: string; name: string; to: string }>
+): string[] {
+  return uniqueStrings([
+    ...providerCards.map((provider) => provider.blockedBy).filter((text) => text && text !== "No blocker loaded"),
+    currentView.fixSteps[0],
+    currentView.summary
+  ])
+    .slice(0, 3)
+    .map((text) => humanize(text));
+}
+
+function overviewIssues(currentView: CurrentViewModel): Array<{ code: string; message: string; severity: "critical" | "warning" }> {
+  return [
+    ...currentView.blockers.map((message, index) => ({
+      code: `BLOCKER_${index + 1}`,
+      message: humanize(message),
+      severity: "critical" as const
+    })),
+    ...currentView.warnings.map((message, index) => ({
+      code: `WARNING_${index + 1}`,
+      message: humanize(message),
+      severity: "warning" as const
+    }))
+  ];
+}
+
+function firstMeaningfulText(values: Array<string | null | undefined>): string {
+  return values.map((value) => (value ?? "").trim()).find(Boolean) ?? "Review current state.";
 }
 
 function SummaryMetric({ label, status, value }: { label: string; status?: string; value: string }) {
@@ -1803,10 +2433,12 @@ function IssueList({ blockers, warnings }: { blockers: string[]; warnings: strin
     <div className="operator-issue-list">
       <strong>Needs attention</strong>
       {issues.map((issue) => (
-        <div key={`${issue.status}-${issue.text}`}>
-          <SimpleStatusPill status={issue.status} />
-          <span>{humanize(issue.text)}</span>
-        </div>
+        <BlockerItem
+          code={issue.status}
+          key={`${issue.status}-${issue.text}`}
+          message={humanize(issue.text)}
+          severity={issue.status === "blocked" ? "critical" : "warning"}
+        />
       ))}
     </div>
   );
@@ -2023,7 +2655,7 @@ function AdditionalTabActions({
 
 function InventoryTable({ rows }: { rows: InventoryRow[] }) {
   return (
-    <section className="operator-section" aria-label="Hardware and software inventory">
+    <Card aria-label="Hardware and software inventory" className="operator-section" hover={false}>
       <div className="operator-section-head">
         <div>
           <p className="operator-kicker">Inventory</p>
@@ -2031,33 +2663,29 @@ function InventoryTable({ rows }: { rows: InventoryRow[] }) {
         </div>
         <span>{rows.length} items</span>
       </div>
-      <div className="operator-table-wrap">
-        <table className="operator-table inventory-table">
-          <thead>
-            <tr>
-              <th>Item</th>
-              <th>Role</th>
-              <th>Access target</th>
-              <th>Version</th>
-              <th>Status</th>
-              <th>Source</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row) => (
-              <tr key={row.item}>
-                <td><strong>{row.item}</strong></td>
-                <td>{row.role}</td>
-                <td>{row.accessTarget}</td>
-                <td>{row.version}</td>
-                <td><SimpleStatusPill status={row.status} /></td>
-                <td>{row.source}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </section>
+      <CompactTable className="inventory-table">
+        <CompactTableHeader>
+          <CompactTableCell>Item</CompactTableCell>
+          <CompactTableCell>Role</CompactTableCell>
+          <CompactTableCell>Access target</CompactTableCell>
+          <CompactTableCell>Version</CompactTableCell>
+          <CompactTableCell>Status</CompactTableCell>
+          <CompactTableCell>Source</CompactTableCell>
+        </CompactTableHeader>
+        <tbody>
+          {rows.map((row) => (
+            <CompactTableRow key={row.item}>
+              <CompactTableCell><strong>{row.item}</strong></CompactTableCell>
+              <CompactTableCell>{row.role}</CompactTableCell>
+              <CompactTableCell>{row.accessTarget}</CompactTableCell>
+              <CompactTableCell>{row.version}</CompactTableCell>
+              <CompactTableCell><SimpleStatusPill status={row.status} /></CompactTableCell>
+              <CompactTableCell>{row.source}</CompactTableCell>
+            </CompactTableRow>
+          ))}
+        </tbody>
+      </CompactTable>
+    </Card>
   );
 }
 
@@ -2177,7 +2805,27 @@ function AdvancedDrawer({
 }
 
 function SimpleStatusPill({ status }: { status: string }) {
-  return <span className={`simple-status-pill ${statusTone(status)}`}>{displayStatus(status)}</span>;
+  return <StatusBadge className="simple-status-pill" label={displayStatus(status)} status={statusBadgeStatus(status)} />;
+}
+
+function statusBadgeStatus(status: string): StatusBadgeStatus {
+  const normalized = status.toLowerCase();
+  if (["ready", "success", "completed", "current", "configured", "enabled", "valid", "safe_to_run", "ready_to_upgrade"].includes(normalized)) {
+    return normalized === "safe_to_run" ? "safe-to-run" : "ready";
+  }
+  if (["blocked", "failed", "error", "critical", "not_accessible"].includes(normalized)) {
+    return "blocked";
+  }
+  if (["warning", "warn", "needs_review", "needs_attention", "outdated", "partial", "pending"].includes(normalized)) {
+    return "needs-attention";
+  }
+  if (["offline", "unreachable"].includes(normalized)) {
+    return "offline";
+  }
+  if (["plan_only", "planned"].includes(normalized)) {
+    return "plan-only";
+  }
+  return "not-configured";
 }
 
 function Feedback({ error, loading }: { error?: string; loading?: boolean }) {
@@ -2642,6 +3290,21 @@ function selectionSourceLabel(source: string): string {
   if (source === "auto") return "Auto-selected";
   if (source === "user") return "Selected by user";
   return "No file selected";
+}
+
+function nextFirmwareFileSelections(
+  current: Record<string, string>,
+  componentId: string,
+  fileName: string
+): Record<string, string> {
+  const nextSelections = { ...current };
+  const cleanFileName = fileName.trim();
+  if (cleanFileName) {
+    nextSelections[componentId] = cleanFileName;
+  } else {
+    delete nextSelections[componentId];
+  }
+  return nextSelections;
 }
 
 function selectionStatusLabel(fileSelections: FirmwareFileSelections | null, saving: boolean): string {
