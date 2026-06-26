@@ -1,4 +1,4 @@
-import {
+[Resource from github at repo://stevehogeveen/infra-config-portal/sha/b73d27394f527243352246e0dab1c399918a28ca/contents/app/frontend/src/App.tsx] import {
   Activity,
   AlertTriangle,
   Ban,
@@ -31,6 +31,7 @@ import { createPortal } from "react-dom";
 import { Link, Navigate, NavLink, Route as RouterRoute, Routes, useLocation, useNavigate, useParams } from "react-router-dom";
 
 import { api } from "./api";
+import { cn } from "./lib/utils";
 import {
   OperatorFirmwareUpgradesPage,
   OperatorNetworkPage,
@@ -822,7 +823,7 @@ function AppShell({
   }, [location.pathname, location.search]);
 
   return (
-    <div className="app-shell">
+    <div className="flex h-screen overflow-hidden bg-background text-foreground">
       <SidebarNav
         drawerOpen={drawerOpen}
         health={health}
@@ -832,34 +833,49 @@ function AppShell({
         labProfileState={labProfileState}
         onClose={() => setDrawerOpen(false)}
       />
-      {drawerOpen && <button className="sidebar-scrim" aria-label="Close navigation" onClick={() => setDrawerOpen(false)} type="button" />}
-      <main className="content">
-        <div className="mobile-shell-bar">
-          <button aria-label="Open navigation" onClick={() => setDrawerOpen(true)} type="button">
+      {drawerOpen && (
+        <button
+          className="fixed inset-0 z-20 bg-black/50 lg:hidden"
+          aria-label="Close navigation"
+          onClick={() => setDrawerOpen(false)}
+          type="button"
+        />
+      )}
+      <div className="flex flex-1 flex-col overflow-hidden">
+        <div className="flex items-center gap-3 border-b border-border bg-card px-4 py-2.5 lg:hidden">
+          <button
+            className="flex items-center gap-2 text-sm text-muted-foreground"
+            aria-label="Open navigation"
+            onClick={() => setDrawerOpen(true)}
+            type="button"
+          >
             <Menu size={18} />
-            Menu
+            <span>Menu</span>
           </button>
-          <span>Lab Builder</span>
+          <span className="text-sm font-medium text-foreground">Lab Builder</span>
         </div>
         {health?.dev_test_banner && <DevTestBanner message={health.dev_test_banner} />}
-        <div className="operator-mode-bar">
-          <div className="shell-action-row">
-            <ModeToggle />
-          </div>
+        <div className="border-b border-border bg-card px-5 py-2">
+          <ModeToggle />
         </div>
-        {children}
-      </main>
+        <main className="flex-1 overflow-y-auto">
+          {children}
+        </main>
+      </div>
     </div>
   );
 }
 
 function DevTestBanner({ message }: { message: string }) {
   return (
-    <section className="dev-test-banner" aria-label="Development test mode warning">
-      <AlertTriangle size={18} />
+    <section
+      className="flex items-start gap-3 border-b border-amber-900/40 bg-amber-950/30 px-5 py-3 text-amber-300"
+      aria-label="Development test mode warning"
+    >
+      <AlertTriangle size={15} className="mt-0.5 shrink-0" />
       <div>
-        <strong>Dev/Test Mode</strong>
-        <p>{humanizeDevTestBanner(message)}</p>
+        <strong className="text-[12px] font-semibold">Dev/Test Mode</strong>
+        <p className="text-[11px] text-amber-400/80">{humanizeDevTestBanner(message)}</p>
       </div>
     </section>
   );
@@ -875,23 +891,23 @@ function humanizeDevTestBanner(message: string): string {
 function ModeToggle() {
   const { setUiMode, uiMode } = useUiMode();
   return (
-    <div className="mode-toggle" role="group" aria-label="Display mode">
+    <div className="mode-toggle-track" role="group" aria-label="Display mode">
       <button
         aria-pressed={uiMode === "simple"}
-        className={uiMode === "simple" ? "active" : ""}
+        className={cn("mode-toggle-btn", uiMode === "simple" ? "mode-toggle-btn-active" : "mode-toggle-btn-inactive")}
         onClick={() => setUiMode("simple")}
         type="button"
       >
-        <ClipboardList size={16} />
+        <ClipboardList size={13} />
         Operator
       </button>
       <button
         aria-pressed={uiMode === "advanced"}
-        className={uiMode === "advanced" ? "active" : ""}
+        className={cn("mode-toggle-btn", uiMode === "advanced" ? "mode-toggle-btn-active" : "mode-toggle-btn-inactive")}
         onClick={() => setUiMode("advanced")}
         type="button"
       >
-        <Wrench size={16} />
+        <Wrench size={13} />
         Advanced
       </button>
     </div>
@@ -921,48 +937,90 @@ function SidebarNav({
   const modeStatus = providerMode === "mock" ? "test_fixture" : healthError ? "unavailable" : providerMode;
 
   return (
-    <aside className={drawerOpen ? "sidebar open" : "sidebar"} aria-label="Primary navigation">
-      <div className="sidebar-top">
-        <Link className="brand" to="/overview">
-          <Server size={22} />
-          <span>
-            Lab Builder
-            <small>Infra Config Portal</small>
-          </span>
-        </Link>
-        <button className="sidebar-close" aria-label="Close navigation" onClick={onClose} type="button">
-          <X size={18} />
+    <aside
+      className={cn(
+        "shell-sidebar fixed inset-y-0 left-0 z-30 flex w-52 flex-col transition-transform duration-200",
+        "lg:relative lg:translate-x-0",
+        drawerOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
+      )}
+      aria-label="Primary navigation"
+    >
+      {/* Brand */}
+      <div className="flex items-center gap-2.5 border-b border-border px-4 py-3.5">
+        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-gradient-to-br from-blue-500 to-indigo-600">
+          <Server size={13} className="text-white" />
+        </div>
+        <div className="min-w-0">
+          <div className="text-[13px] font-semibold leading-tight text-slate-100">Lab Builder</div>
+          <div className="text-[10px] leading-tight text-muted-foreground">infra-config-portal</div>
+        </div>
+        <button
+          className="ml-auto shrink-0 text-muted-foreground hover:text-foreground lg:hidden"
+          aria-label="Close navigation"
+          onClick={onClose}
+          type="button"
+        >
+          <X size={16} />
         </button>
       </div>
-      <nav>
-        <NavItem to="/overview" icon={<Gauge size={18} />} label="Overview" />
-        <NavItem to="/network" icon={<Route size={18} />} label="Network" />
-        <NavItem to="/server" icon={<Server size={18} />} label="Server" />
-        <NavItem to="/storage" icon={<HardDrive size={18} />} label="Storage" />
-        <NavItem to="/virtualization" icon={<Layers size={18} />} label="Virtualization" />
-        <NavItem to="/firmware-upgrades" icon={<ShieldCheck size={18} />} label="Firmware Upgrades" />
-        <NavItem to="/validation" icon={<CheckCircle2 size={18} />} label="Validation" />
-        <NavItem to="/config" icon={<Pencil size={18} />} label="Edit Config" />
-        <NavItem to="/settings" icon={<Settings size={18} />} label="Settings" />
+
+      {/* Nav groups */}
+      <nav className="flex-1 space-y-4 overflow-y-auto px-2 py-3">
+        <div>
+          <div className="mb-1 px-2.5 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+            Lab
+          </div>
+          <NavItem to="/overview" icon={<Gauge size={14} />} label="Overview" />
+          <NavItem to="/config" icon={<Pencil size={14} />} label="Lab Setup" />
+          <NavItem to="/requests" icon={<ClipboardList size={14} />} label="VM Requests" />
+        </div>
+
+        <div>
+          <div className="mb-1 px-2.5 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+            Infrastructure
+          </div>
+          <NavItem to="/network" icon={<Route size={14} />} label="Network" />
+          <NavItem to="/server" icon={<Server size={14} />} label="Server" />
+          <NavItem to="/storage" icon={<HardDrive size={14} />} label="Storage" />
+          <NavItem to="/virtualization" icon={<Layers size={14} />} label="Virtualization" />
+        </div>
+
+        <div>
+          <div className="mb-1 px-2.5 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+            Operations
+          </div>
+          <NavItem to="/firmware-upgrades" icon={<ShieldCheck size={14} />} label="Firmware" />
+          <NavItem to="/validation" icon={<CheckCircle2 size={14} />} label="Validation" />
+          <NavItem to="/audit-events" icon={<History size={14} />} label="Audit Log" />
+          <NavItem to="/media" icon={<FileText size={14} />} label="Media" />
+        </div>
+
+        <div>
+          <div className="mb-1 px-2.5 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+            Admin
+          </div>
+          <NavItem to="/settings" icon={<Settings size={14} />} label="Settings" />
+        </div>
       </nav>
-      <div className="sidebar-profile">
-        <div className="sidebar-profile-head">
-          <span>{modeLabel}</span>
+
+      {/* Footer: mode + active profile */}
+      <div className="space-y-2 border-t border-border p-3">
+        <div className="flex items-center justify-between">
+          <span className="text-[10px] text-muted-foreground">{modeLabel}</span>
           <StatusBadge status={modeStatus} />
         </div>
-        <strong>{activeProfile?.name ?? (labProfileLoading ? "Loading setup" : "No active setup")}</strong>
-        <dl>
-          <div>
-            <dt>Subnet</dt>
-            <dd>{displayAddress(activeProfile?.address_plan.subnet)}</dd>
+        <div className="truncate text-[11px] font-medium text-slate-300">
+          {activeProfile?.name ?? (labProfileLoading ? "Loading…" : "No active setup")}
+        </div>
+        {activeProfile && (
+          <div className="text-[10px] font-mono text-muted-foreground">
+            {displayAddress(activeProfile.address_plan.subnet)}
           </div>
-          <div>
-            <dt>Source</dt>
-            <dd>{activeProfile ? labelize(activeProfile.source) : "Unavailable"}</dd>
-          </div>
-        </dl>
+        )}
         {(labProfileError || healthError) && (
-          <p>{labProfileError ? "Profile status unavailable." : "Backend health unavailable."}</p>
+          <p className="text-[10px] text-destructive">
+            {labProfileError ? "Profile unavailable." : "Backend unavailable."}
+          </p>
         )}
       </div>
     </aside>
@@ -981,9 +1039,9 @@ function NavItem({
   issueBadge?: ReportPageBadge;
 }) {
   return (
-    <NavLink to={to} className={({ isActive }) => (isActive ? "nav-item active" : "nav-item")}>
+    <NavLink to={to} className={({ isActive }) => cn("nav-link", isActive ? "nav-link-active" : "nav-link-inactive")}>
       {icon}
-      <span className="nav-item-label">{label}</span>
+      <span className="flex-1 truncate">{label}</span>
       <IssueNavBadge badge={issueBadge} />
     </NavLink>
   );
@@ -992,14 +1050,21 @@ function NavItem({
 function IssueNavBadge({ badge }: { badge?: ReportPageBadge }) {
   if (!badge) return null;
   if (badge.status === "success" || badge.status === "warning") return null;
-  const className = `issue-nav-badge issue-tone-${badge.status}`;
+  const toneClass =
+    badge.status === "critical"
+      ? "bg-red-900/40 text-red-400"
+      : "bg-muted text-muted-foreground";
   const label =
     badge.status === "critical"
-      ? `Blocked ${badge.critical || badge.count}`
+      ? String(badge.critical || badge.count)
       : badge.status === "not_configured_yet"
-        ? "Not configured"
+        ? "–"
         : badge.label;
-  return <span className={className}>{label}</span>;
+  return (
+    <span className={cn("shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold", toneClass)}>
+      {label}
+    </span>
+  );
 }
 
 function ActiveLabSelector({
@@ -7295,7 +7360,7 @@ function LabProfileManager({
                     >
                       <div>
                         <strong>{profile.name}</strong>
-                        <span>{labelize(profile.profile_topology)} · {displayAddress(profile.address_plan.subnet)}</span>
+                        <span>{labelize(profile.profile_topology)} Â· {displayAddress(profile.address_plan.subnet)}</span>
                       </div>
                       <StatusBadge status={profile.active ? "current" : "available"} />
                       <div className="lab-profile-row-actions">
@@ -21354,3 +21419,4 @@ function formatDateTime(value: string) {
 }
 
 export default App;
+
