@@ -8186,6 +8186,13 @@ th.ui-compact-table-cell {
     min-width: 0;
   }
 
+  .operator-page,
+  .operator-status-header,
+  .config-drawer-page {
+    max-width: calc(100vw - 36px);
+    width: 100%;
+  }
+
   .run-center-tabs button {
     min-width: 188px;
   }
@@ -8782,5 +8789,11 @@ th.ui-compact-table-cell {
 
   .advanced-drawer summary small {
     grid-column: 1 / -1;
+  }
+
+  .config-drawer.config-drawer-page {
+    max-width: calc(100vw - 36px);
+    min-width: 0;
+    width: 100%;
   }
 }

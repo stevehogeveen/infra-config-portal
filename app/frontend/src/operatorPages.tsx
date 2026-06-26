@@ -791,8 +791,18 @@ export function OperatorServerPage({ labProfileState }: OperatorPageProps) {
         title="Server"
       />
       <Feedback loading={loading && !providers.length} error={error} />
-      <OperatorWorkspace currentView={currentView} rows={serverRows} />
+      <OperatorReferencePanel
+        actionLabel="Open firmware"
+        actionTo="/firmware-upgrades"
+        ariaLabel="Server reference"
+        currentView={currentView}
+        rows={serverRows}
+        subtitle="iLO, RAID, ESXi"
+        tableTitle="Server Signals"
+        title="Server readiness at a glance"
+      />
       <AdvancedDrawer title="Server proof" summary={noProofText}>
+        <OperatorWorkspace currentView={currentView} rows={serverRows} compact />
         <ConfigValueList
           values={[
             { label: "RAID warnings", value: String(stringArray(raidPlan?.warnings).length) },
@@ -942,8 +952,18 @@ export function OperatorStoragePage({ labProfileState }: OperatorPageProps) {
         title="Storage"
       />
       <Feedback loading={loading && !netappPlan} error={error} />
-      <OperatorWorkspace currentView={currentView} rows={storageRows} />
+      <OperatorReferencePanel
+        actionLabel="Open validation"
+        actionTo="/validation"
+        ariaLabel="Storage reference"
+        currentView={currentView}
+        rows={storageRows}
+        subtitle="ONTAP, NFS, datastore"
+        tableTitle="Storage Signals"
+        title="Storage readiness at a glance"
+      />
       <AdvancedDrawer title="Storage proof" summary={noProofText}>
+        <OperatorWorkspace currentView={currentView} rows={storageRows} compact />
         <ConfigValueList
           values={[
             { label: "NetApp blockers", value: String(stringArray(netappPlan?.blockers).length) },
@@ -1095,8 +1115,18 @@ export function OperatorVirtualizationPage({ labProfileState }: OperatorPageProp
         title="Virtualization"
       />
       <Feedback loading={loading && !vcenterNetapp} error={error} />
-      <OperatorWorkspace currentView={currentView} rows={virtualizationRows} />
+      <OperatorReferencePanel
+        actionLabel="Open validation"
+        actionTo="/validation"
+        ariaLabel="Virtualization reference"
+        currentView={currentView}
+        rows={virtualizationRows}
+        subtitle="vCenter, ESXi attach, inventory"
+        tableTitle="Virtualization Signals"
+        title="Virtualization readiness at a glance"
+      />
       <AdvancedDrawer title="Virtualization proof" summary={noProofText}>
+        <OperatorWorkspace currentView={currentView} rows={virtualizationRows} compact />
         <ConfigValueList
           values={[
             { label: "vCenter source", value: sourceLabel(vcenterNetapp) },
@@ -1194,6 +1224,34 @@ export function OperatorFirmwareUpgradesPage({ labProfileState }: OperatorPagePr
     })),
     [currentView.checkedAt, currentView.freshness, rows]
   );
+  const renderFirmwareDetailExtra = (selected: OperatorObjectRow) => {
+    const row = rows.find((candidate) => `firmware-${candidate.componentId}` === selected.id);
+    if (!row) return null;
+    return (
+      <div className="firmware-detail-control">
+        <Field label="Selected firmware file">
+          <select
+            aria-label={`${row.equipment} ${row.component} firmware file`}
+            onChange={(event) => void saveFileSelection(row.componentId, event.target.value)}
+            value={selectedFiles[row.componentId] ?? row.selectedFileName}
+          >
+            <option value="">No file selected</option>
+            {selectedFiles[row.componentId] && !row.candidateFiles.some((candidate) => candidate.file_name === selectedFiles[row.componentId]) ? (
+              <option value={selectedFiles[row.componentId]}>{selectedFiles[row.componentId]}</option>
+            ) : null}
+            {row.candidateFiles.map((candidate) => (
+              <option key={`${row.componentId}-${candidate.file_name}-${candidate.file_path ?? ""}`} value={candidate.file_name}>
+                {candidate.file_name}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <p className="operator-muted">
+          {row.selectedFileName || "No file selected"} / {selectionSourceLabel(row.selectionSource)}
+        </p>
+      </div>
+    );
+  };
 
   return (
     <OperatorPage title="Firmware Upgrades">
@@ -1213,37 +1271,15 @@ export function OperatorFirmwareUpgradesPage({ labProfileState }: OperatorPagePr
         title="Firmware Upgrades"
       />
       <Feedback loading={loading && !firmwareSummaries.length} error={error} />
-      <OperatorWorkspace
+      <OperatorReferencePanel
         currentView={currentView}
+        actionLabel="Open media"
+        actionTo="/media"
+        ariaLabel="Firmware reference"
         rows={firmwareWorkspaceRows}
-        renderDetailExtra={(selected) => {
-          const row = rows.find((candidate) => `firmware-${candidate.componentId}` === selected.id);
-          if (!row) return null;
-          return (
-            <div className="firmware-detail-control">
-              <Field label="Selected firmware file">
-                <select
-                  aria-label={`${row.equipment} ${row.component} firmware file`}
-                  onChange={(event) => void saveFileSelection(row.componentId, event.target.value)}
-                  value={selectedFiles[row.componentId] ?? row.selectedFileName}
-                >
-                  <option value="">No file selected</option>
-                  {selectedFiles[row.componentId] && !row.candidateFiles.some((candidate) => candidate.file_name === selectedFiles[row.componentId]) ? (
-                    <option value={selectedFiles[row.componentId]}>{selectedFiles[row.componentId]}</option>
-                  ) : null}
-                  {row.candidateFiles.map((candidate) => (
-                    <option key={`${row.componentId}-${candidate.file_name}-${candidate.file_path ?? ""}`} value={candidate.file_name}>
-                      {candidate.file_name}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-              <p className="operator-muted">
-                {row.selectedFileName || "No file selected"} / {selectionSourceLabel(row.selectionSource)}
-              </p>
-            </div>
-          );
-        }}
+        subtitle="Images and compliance"
+        tableTitle="Firmware Components"
+        title="Firmware readiness at a glance"
       />
       <AdditionalTabActions
         actions={actions}
@@ -1264,6 +1300,12 @@ export function OperatorFirmwareUpgradesPage({ labProfileState }: OperatorPagePr
       />
       <Feedback loading={false} error={selectionError} />
       <AdvancedDrawer title="Firmware proof" summary={noProofText}>
+        <OperatorWorkspace
+          currentView={currentView}
+          rows={firmwareWorkspaceRows}
+          renderDetailExtra={renderFirmwareDetailExtra}
+          compact
+        />
         <ValidationProofList
           items={[]}
           proofLinks={firmwareSummaries.reduce((count, summary) => count + summary.evidence_artifacts.length, 0)}
@@ -1371,7 +1413,16 @@ export function OperatorValidationPage({ labProfileState }: OperatorPageProps) {
         title="Validation"
       />
       <Feedback loading={loading && !validation} error={error} />
-      <OperatorWorkspace currentView={currentView} rows={validationRows} />
+      <OperatorReferencePanel
+        actionLabel="Generate handoff"
+        actionTo="/validation"
+        ariaLabel="Validation reference"
+        currentView={currentView}
+        rows={validationRows}
+        subtitle="Golden State and proof"
+        tableTitle="Validation Signals"
+        title="Validation readiness at a glance"
+      />
       <AdditionalTabActions
         actions={actions}
         buttons={[
@@ -1382,6 +1433,7 @@ export function OperatorValidationPage({ labProfileState }: OperatorPageProps) {
         title="Handoff"
       />
       <AdvancedDrawer title="Validation proof" summary={noProofText}>
+        <OperatorWorkspace currentView={currentView} rows={validationRows} compact />
         <ValidationProofList items={validation?.validation_items ?? []} proofLinks={validation?.proof_links.length ?? 0} />
         <ConfigValueList
           values={[
@@ -1546,8 +1598,18 @@ export function OperatorSettingsPage({
         title="Settings"
       />
       <Feedback loading={loading && !activeProfile} error={error || labProfileError} />
-      <OperatorWorkspace currentView={currentView} rows={settingsRows} />
+      <OperatorReferencePanel
+        actionLabel="Edit config"
+        actionTo="/config"
+        ariaLabel="Settings reference"
+        currentView={currentView}
+        rows={settingsRows}
+        subtitle="Setup, runtime, credentials"
+        tableTitle="Settings Signals"
+        title="Settings readiness at a glance"
+      />
       <AdvancedDrawer title="Settings proof" summary={noProofText}>
+        <OperatorWorkspace currentView={currentView} rows={settingsRows} compact />
         <ConfigValueList
           values={[
             { label: "Feature toggles", value: featureToggleSummary(features) },
@@ -1811,6 +1873,179 @@ function OperatorWorkspace({
         </div>
       )}
     </Card>
+  );
+}
+
+function OperatorReferencePanel({
+  actionLabel,
+  actionTo,
+  ariaLabel,
+  currentView,
+  rows,
+  subtitle,
+  tableTitle,
+  title
+}: {
+  actionLabel: string;
+  actionTo: string;
+  ariaLabel: string;
+  currentView: CurrentViewModel;
+  rows: OperatorObjectRow[];
+  subtitle: string;
+  tableTitle: string;
+  title: string;
+}) {
+  const counts = workspaceCounts(rows);
+  const visibleRows = rows.slice(0, 3);
+  const issues = operatorReferenceIssues(currentView, rows);
+  const safeActions = operatorReferenceActions(currentView, rows);
+
+  return (
+    <section className="overview-reference" aria-label={ariaLabel}>
+      <div className="overview-reference-head">
+        <div>
+          <p className="operator-kicker">Operator console</p>
+          <h2>{title}</h2>
+        </div>
+        <StatusBadge label="Redesigned view" status="safe-to-run" />
+      </div>
+
+      <div className="overview-stat-grid" aria-label={`${title} summary`}>
+        <OverviewStatCard
+          label="Current status"
+          meta={currentView.source}
+          status={statusBadgeStatus(currentView.status)}
+          value={displayStatus(currentView.status)}
+        />
+        <OverviewStatCard
+          label="Ready objects"
+          meta={`${counts.warning + counts.blocked} need review`}
+          status={counts.blocked ? "blocked" : counts.warning ? "needs-attention" : counts.ready ? "ready" : "not-configured"}
+          value={`${counts.ready}/${rows.length}`}
+        />
+        <OverviewStatCard
+          label="Active blockers"
+          meta={`${currentView.warnings.length} warnings`}
+          status={currentView.blockers.length ? "blocked" : currentView.warnings.length ? "needs-attention" : "ready"}
+          value={String(currentView.blockers.length)}
+        />
+        <OverviewStatCard
+          label="Last checked"
+          meta={currentView.freshness}
+          status={freshnessStatus(currentView.freshness) === "ready" ? "ready" : "plan-only"}
+          value={currentView.checkedAt}
+        />
+      </div>
+
+      <div className="overview-panel-head">
+        <div>
+          <p className="operator-kicker">{subtitle}</p>
+          <h2>Current state and targets</h2>
+        </div>
+        <StatusBadge label={`${rows.length} tracked`} status="plan-only" />
+      </div>
+      <div className="overview-provider-grid">
+        {visibleRows.map((row) => (
+          <Card className="overview-provider-card" key={row.id}>
+            <CardHeader>
+              <div>
+                <p className="operator-kicker">{row.type}</p>
+                <h3>{row.title}</h3>
+              </div>
+              <StatusBadge label={displayStatus(row.status)} status={statusBadgeStatus(row.status)} />
+            </CardHeader>
+            <CardContent>
+              <dl className="overview-fact-list">
+                {operatorReferenceFacts(row, currentView).map((fact) => (
+                  <div key={`${row.id}-${fact.label}`}>
+                    <dt>{fact.label}</dt>
+                    <dd>{fact.value}</dd>
+                  </div>
+                ))}
+              </dl>
+              <div className="overview-current-state-box">
+                <p><strong>Current State:</strong> {row.summary}</p>
+                <p><strong>Target:</strong> {row.target}</p>
+                <p><strong>Gap:</strong> {row.nextAction}</p>
+                <p><strong>Blocked by:</strong> {row.blockers?.[0] || row.warnings?.[0] || currentView.blockers[0] || currentView.warnings[0] || "No blocker loaded"}</p>
+              </div>
+            </CardContent>
+            <CardFooter>
+              <ActionLink to={actionTo}>{actionLabel}</ActionLink>
+            </CardFooter>
+          </Card>
+        ))}
+      </div>
+
+      <section className="overview-safe-actions" aria-label="Next safe actions">
+        <p className="operator-kicker">Next safe actions</p>
+        <ul>
+          {safeActions.map((action) => (
+            <li key={action}>{action}</li>
+          ))}
+        </ul>
+      </section>
+
+      <div className="overview-bottom-grid">
+        <Card className="overview-firmware-panel" hover={false}>
+          <CardHeader>
+            <div>
+              <h2>{tableTitle}</h2>
+            </div>
+            <span>{rows.length} tracked</span>
+          </CardHeader>
+          <CompactTable>
+            <CompactTableHeader>
+              <CompactTableCell>Object</CompactTableCell>
+              <CompactTableCell>Current</CompactTableCell>
+              <CompactTableCell>Target</CompactTableCell>
+              <CompactTableCell>Status</CompactTableCell>
+            </CompactTableHeader>
+            <tbody>
+              {rows.map((row) => (
+                <CompactTableRow key={row.id}>
+                  <CompactTableCell><strong>{row.title}</strong></CompactTableCell>
+                  <CompactTableCell>{row.summary}</CompactTableCell>
+                  <CompactTableCell>{row.target}</CompactTableCell>
+                  <CompactTableCell><StatusBadge label={displayStatus(row.status)} status={statusBadgeStatus(row.status)} /></CompactTableCell>
+                </CompactTableRow>
+              ))}
+            </tbody>
+          </CompactTable>
+        </Card>
+
+        <Card className="overview-blockers-panel" hover={false}>
+          <CardHeader>
+            <div>
+              <h2>Active Blockers</h2>
+            </div>
+            <span>{issues.length} open</span>
+          </CardHeader>
+          <CardContent>
+            <div className="overview-blocker-list">
+              {issues.length ? (
+                issues.slice(0, 4).map((issue) => (
+                  <BlockerItem
+                    code={issue.code}
+                    key={`${issue.code}-${issue.message}`}
+                    message={issue.message}
+                    severity={issue.severity}
+                  />
+                ))
+              ) : (
+                <div className="overview-clear-state">
+                  <StatusBadge status="ready" />
+                  <span>No active blockers are loaded for the current view.</span>
+                </div>
+              )}
+            </div>
+          </CardContent>
+          <CardFooter>
+            <ActionLink to="/validation">Open validation</ActionLink>
+          </CardFooter>
+        </Card>
+      </div>
+    </section>
   );
 }
 
@@ -2275,6 +2510,62 @@ function networkIssues(currentView: CurrentViewModel, ciscoReadiness: ProviderPr
     if (text && !unique.has(key)) {
       unique.add(key);
       issues.push({ code: "NETWORK_WARNING", message: text, severity: "warning" });
+    }
+  });
+  return issues;
+}
+
+function operatorReferenceActions(currentView: CurrentViewModel, rows: OperatorObjectRow[]): string[] {
+  const actions = [
+    ...currentView.fixSteps,
+    ...rows.map((row) => row.nextAction)
+  ]
+    .map((action) => humanize(action))
+    .filter((action) => action && action !== "Not set up yet");
+  return Array.from(new Set(actions)).slice(0, 3).length
+    ? Array.from(new Set(actions)).slice(0, 3)
+    : ["Refresh this page, then review the advanced proof if the state still looks wrong."];
+}
+
+function operatorReferenceFacts(row: OperatorObjectRow, currentView: CurrentViewModel): ConfigValue[] {
+  const facts = row.details.length
+    ? row.details.slice(0, 6)
+    : [
+        { label: "Target", value: row.target },
+        { label: "Source", value: row.source || currentView.source },
+        { label: "Checked", value: row.checkedAt || currentView.checkedAt }
+      ];
+  return facts.map((fact) => ({
+    ...fact,
+    value: fact.value || "Not set up yet"
+  }));
+}
+
+function operatorReferenceIssues(currentView: CurrentViewModel, rows: OperatorObjectRow[]) {
+  const blockers = [
+    ...currentView.blockers,
+    ...rows.flatMap((row) => row.blockers ?? [])
+  ];
+  const warnings = [
+    ...currentView.warnings,
+    ...rows.flatMap((row) => row.warnings ?? [])
+  ];
+  const unique = new Set<string>();
+  const issues: Array<{ code: string; message: string; severity: "critical" | "warning" }> = [];
+  blockers.forEach((message) => {
+    const text = humanize(message);
+    const key = `critical-${text}`;
+    if (text && !unique.has(key)) {
+      unique.add(key);
+      issues.push({ code: "ACTIVE_BLOCKER", message: text, severity: "critical" });
+    }
+  });
+  warnings.forEach((message) => {
+    const text = humanize(message);
+    const key = `warning-${text}`;
+    if (text && !unique.has(key)) {
+      unique.add(key);
+      issues.push({ code: "WARNING", message: text, severity: "warning" });
     }
   });
   return issues;
