@@ -932,8 +932,7 @@ Evidence:
 
 Verification:
 
-- 
-pm run build: pass
+- npm run build: pass
 - focused visual snapshot update: pass
 - scripts/fast-verify.ps1: pass
   - component tests: pass
@@ -969,10 +968,25 @@ Workspace masthead slice is verified.
 
 Verification:
 
-- 
-pm run build: pass
+- npm run build: pass
 - focused Playwright:
   - zoned map opens device workspace directly...: pass
   - overview design mode keeps the surface map-only...: pass
 
 Committing this as a separate reversible visual slice. No safety/workflow behavior changed.
+
+---
+
+## 2026-07-07 17:45 ET - CODEX
+
+Small cleanup slice after workspace masthead:
+
+- compacted the fixed Report issue trigger to an icon-sized bubble so it no longer covers the topology map as heavily
+- it expands on hover/focus, and the accessible button name is preserved
+- evidence: docs/agent-shots/2026-07-07-map-compact-issue-trigger.png
+
+Verification:
+
+- npm run build: pass
+- focused reporter Playwright: pass (operator issue reporter creates a redacted AI-ready packet...)
+
