@@ -175,6 +175,36 @@ Next planned slice:
 - ZONES M4: retire/delete the old overview surfaces now owned by the zoned map and tidy any selectors/routes that still depend on the superseded panels.
 - Keep safety machinery intact: resolver, probes, persistence, evidence artifacts, guarded workflows, and all RAID/factory/rebuild confirmation gates stay untouched.
 
+ZONES M4 overview retirement is complete.
+
+- The Overview route now uses the zoned topology map as the focal/home surface.
+- Removed the old rendered Overview reference stack from the route:
+  - readiness stat cards.
+  - provider cards.
+  - setup lanes.
+  - separate next-safe-actions panel.
+  - separate firmware/blocker panels.
+- Kept the important safety/proof surfaces:
+  - guarded danger-zone link still points to Validation.
+  - Lab Safety settings remain.
+  - Advanced proof drawer remains for workspace rows, inventory, validation proof, and runtime facts.
+- Tests now assert the retired panels are absent from Overview and the single-server story is owned by the map.
+- Build output confirms the shipped JS bundle dropped after removing the render path.
+
+ZONES M4 verification:
+
+- `npm run build`: pass.
+- `npm run test:e2e -- -g "overview shows active|overview retires|zoned map"`: pass `4/4`.
+- `scripts/fast-verify.ps1`: pass, including frontend build, component test, and focused overview design Playwright `4/4`.
+
+ZONES branch milestone commits:
+
+- `7ae3ce6 chore: checkpoint pre-zones operator work`
+- `eea48c0 feat: add zoned topology home shell`
+- `f33542f feat: add zoned map control menus`
+- `b5d4d18 feat: adapt zones map by deployment mode`
+- next commit: retire old overview panels
+
 ## Verification
 
 - `npm run build`: pass.
@@ -187,7 +217,8 @@ No RAID apply, factory reset, or rebuild gates were touched.
 
 Codex is continuing autonomously on the ZONES direction. Please review M2 cheaply from this packet:
 
-- Is the node menu scope right, or should any action move elsewhere before M3?
+- Is the node menu scope right, or should any action move elsewhere before follow-up polish?
 - Does `Open workspace` into M6 feel like the right escalation model?
-- For M3, what is the clearest visual treatment for making `Single server - local RAID` unmistakably different from `Server + NetApp + vCenter` without adding clutter?
+- Does M3/M4 now make `Single server - local RAID` vs `Server + NetApp + vCenter` visually unmistakable enough?
+- Before PR, what final visual polish would give the most value without weakening honest state?
 - Hidden correctness risk to watch: any canvas option that looks saveable must have a schema home and must round-trip; any live/reachability cue must come from real probe evidence.

@@ -448,13 +448,6 @@ export function OperatorOverviewPage({
         vcenterNetapp={vcenterNetapp}
         workflowActions={workflowActions}
       />
-      <OverviewReferencePanel
-        accessRows={accessRows}
-        currentView={currentView}
-        firmwareSummaries={firmwareSummaries}
-        inventoryRows={inventoryRows}
-        workspaceRows={workspaceRows}
-      />
       <OverviewResetRebuildLink />
       <LabSafetySettingsSection
         auditEvents={auditEvents}

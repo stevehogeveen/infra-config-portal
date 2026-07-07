@@ -263,33 +263,11 @@ test("overview shows active setup, lab values, and access without dashboard clut
   await expect(topology.getByLabel("Current lab links")).toContainText(/NFS 10G path|iSCSI 10G planned/);
   await expect(topology).toContainText("checks ready");
 
-  const overview = page.locator("section[aria-label='Overview reference']");
-
-  await expect(overview.getByRole("heading", { name: "Readiness at a glance" })).toBeVisible();
-  await expect(overview).toContainText("Active blockers");
-  await expect(overview).toContainText("Server ready");
-  await expect(overview).toContainText("Firmware compliance");
-  await expect(overview).toContainText("VM requests");
-  await expect(overview).toContainText("Server + NetApp + vCenter");
-  await expect(overview).toContainText("HPE iLO");
-  await expect(overview).toContainText("Cisco Switch");
-  await expect(overview).toContainText("NetApp ONTAP");
-  await expect(overview).toContainText("Current State:");
-  await expect(overview).toContainText("Target:");
-  await expect(overview).toContainText("Gap:");
-  await expect(overview).toContainText("Setup lanes");
-  await expect(overview).toContainText("Server Access");
-  await expect(overview).toContainText("RAID And Local Storage");
-  await expect(overview).toContainText("Cisco Network");
-  await expect(overview).toContainText("ONTAP Storage");
-  await expect(overview).toContainText("vCenter And VM Handoff");
-  await expect(overview.locator("details.setup-lane-details").first()).toContainText("Additional options");
-  await expect(overview).toContainText("Next safe actions");
-  await expect(overview).toContainText("Firmware Compliance");
-  await expect(overview).toContainText("Active Blockers");
-  await expect(overview).toContainText("192.168.1.204");
-  await expect(overview).toContainText("192.168.1.201");
-  await expect(overview).toContainText("192.168.1.220");
+  await expect(page.locator("section[aria-label='Overview reference']")).toHaveCount(0);
+  await expect(page.locator("section[aria-label='Scenario setup lanes']")).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Readiness at a glance" })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Firmware Compliance" })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Active Blockers" })).toHaveCount(0);
   await expect(page.locator("nav").getByText("Edit Config")).toHaveCount(0);
   await expect(page.locator("nav").getByText("Settings")).toHaveCount(0);
   await expect(page.getByText("Real lab").first()).toBeVisible();
@@ -583,23 +561,14 @@ test("overview design mode switches scenario drafts without committing hardware"
   await expect(rack).toContainText("vCenter VCSA");
 });
 
-test("overview setup lanes distinguish single-server local storage from shared storage", async ({ page }) => {
+test("overview retires setup lanes in favor of the single-server map", async ({ page }) => {
   labProfileScenario = "single";
   await page.goto("/overview");
 
-  const lanes = page.locator("section[aria-label='Scenario setup lanes']");
-  await expect(lanes).toContainText("Single server + local ESXi storage");
-  await expect(lanes).toContainText("Local datastore");
-
-  const ontapLane = lanes.locator(".setup-lane-card").filter({ hasText: "ONTAP Storage" });
-  await expect(ontapLane).toContainText("Plan Only");
-  await expect(ontapLane).toContainText("Out of scope for this scenario.");
-  await expect(ontapLane).toContainText("No action required for local-storage scenario.");
-
-  const vcenterLane = lanes.locator(".setup-lane-card").filter({ hasText: "vCenter And VM Handoff" });
-  await expect(vcenterLane).toContainText("Plan Only");
-  await expect(vcenterLane).toContainText("Optional for this scenario.");
-  await expect(vcenterLane).toContainText("No action required unless vCenter is selected.");
+  const topology = page.locator("section[aria-label='Living lab topology']");
+  await expect(topology.getByLabel("Deployment mode")).toContainText("Single server - local RAID");
+  await expect(topology.getByLabel("Local RAID mode summary")).toContainText("No NetApp or vCenter nodes are in this active profile.");
+  await expect(page.locator("section[aria-label='Scenario setup lanes']")).toHaveCount(0);
 });
 
 test("storage page switches to local datastore guidance for single-server setup", async ({ page }) => {
