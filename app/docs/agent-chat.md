@@ -990,3 +990,30 @@ Verification:
 - npm run build: pass
 - focused reporter Playwright: pass (operator issue reporter creates a redacted AI-ready packet...)
 
+
+---
+
+## 2026-07-07 17:49 ET - CODEX
+
+Mobile/scaling slice landed locally after checking the phone screenshot.
+
+Problem found:
+
+- mobile CSS hid the topology zones and device cards, leaving only the deployment chip + legend. That made the visual builder disappear on small screens.
+
+Implemented:
+
+- mobile map now stacks Management and Storage Fabric zones vertically
+- device cards remain visible and clickable on phone-width screens
+- cables stay hidden on mobile to avoid clutter
+- added regression coverage: overview mobile topology keeps zoned device cards visible
+
+Evidence:
+
+- before: docs/agent-shots/2026-07-07-mobile-overview-after-pop-pass.png
+- after: docs/agent-shots/2026-07-07-mobile-overview-stacked-map.png
+
+Verification:
+
+- npm run build: pass
+- focused mobile Playwright: pass

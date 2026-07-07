@@ -13787,7 +13787,7 @@ button.design-ilo-port:hover {
   .lab-topology-canvas,
   .lab-topology-canvas.single-server {
     display: grid;
-    gap: 10px;
+    gap: 12px;
     min-height: 0;
     padding: 76px 12px 12px;
   }
@@ -13796,8 +13796,30 @@ button.design-ilo-port:hover {
     display: none;
   }
 
+  .topology-map-plane {
+    display: grid;
+    gap: 12px;
+    grid-template-rows: auto;
+    inset: auto;
+    position: relative;
+    transform: none !important;
+  }
+
   .topology-zone {
-    display: none;
+    border-color: rgba(203, 213, 225, 0.72);
+    display: flex;
+    min-height: 0;
+    overflow: visible;
+  }
+
+  .topology-zone > span {
+    margin: 12px 12px 8px;
+  }
+
+  .topology-zone-node-flow {
+    gap: 10px;
+    grid-template-columns: 1fr;
+    padding: 10px 12px 14px;
   }
 
   .topology-system-chip {
@@ -13818,6 +13840,15 @@ button.design-ilo-port:hover {
   .topology-node-wrap:hover {
     transform: none;
     width: auto;
+  }
+
+  .topology-node {
+    min-height: 0;
+    transform: none;
+  }
+
+  .topology-node:hover {
+    transform: none;
   }
 
   .topology-workspace-drawer {

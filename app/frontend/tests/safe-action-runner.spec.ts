@@ -451,6 +451,18 @@ test("overview design mode map surface stays stable and scalable", async ({ page
   });
 });
 
+test("overview mobile topology keeps zoned device cards visible", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 860 });
+  await page.goto("/overview");
+
+  const map = page.locator("div[aria-label='Zoned lab map']");
+  await expect(map).toBeVisible();
+  await expect(map.getByLabel("Management zone devices")).toContainText("Cisco switch");
+  await expect(map.getByLabel("Management zone devices")).toContainText("HPE iLO");
+  await expect(map.getByLabel("Storage fabric zone devices")).toContainText("HPE DL360 Gen10");
+  await expect(map.getByLabel("Storage fabric zone devices")).toContainText("NetApp ONTAP");
+});
+
 test("overview design mode switches scenario drafts without committing hardware", async ({ page }) => {
   await page.goto("/overview");
 
