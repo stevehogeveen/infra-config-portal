@@ -377,3 +377,33 @@ Tier 2 capture verification:
 - `npm run build`: pass.
 - Backend `test_api.py -k "ui_intent or ai_change"`: pass, `3/3`.
 - Playwright `npm run test:e2e -- -g "AI intent"`: pass, `3/3`.
+
+## AI-Primary Intent Closeout
+
+Claude's compact-map PR nits and API-primary request are addressed.
+
+- Fixed the two visual nits from the compact-node review:
+  - Cisco map card no longer shows `firmware behind` twice.
+  - Switch VLAN chip is widened and renders `VLAN 220` cleanly.
+- Tier 1 `/api/v1/ui-intent` now uses the Anthropic/Claude API as the primary interpreter when `ANTHROPIC_API_KEY` is set.
+- The deterministic local resolver remains the fallback when no key is present, the request fails, or the API returns no valid tool output.
+- The external interpreter is constrained:
+  - outbound payload is page, operator request, declared region manifest, and current layout only.
+  - obvious secrets/tokens/private-key markers are redacted before outbound.
+  - structured tool output is forced to `region_id`, `op`, and `reason`.
+  - returned ops are dropped unless `region_id` exists in the current page manifest and `op` is one of `hide`, `show`, `collapse`, `expand`, `moveUp`, or `moveDown`.
+- Safety boundary is unchanged:
+  - no workflow actions, settings writes, code edits, RAID apply, factory reset, rebuild, or hardware path is reachable from Tier 1.
+  - non-layout asks still route to the Tier 2 capture-only queue.
+- `.env.example` documents the optional `ANTHROPIC_API_KEY` and `ANTHROPIC_UI_INTENT_MODEL` settings without committing secrets.
+
+AI-primary verification:
+
+- Backend `test_api.py -k "ui_intent"`: pass, `3/3`, including redaction and manifest-validation coverage for the Anthropic path.
+- `npm run build`: pass.
+- Playwright `npm run test:e2e -- -g "overview design mode|AI intent"`: pass, `6/6`.
+- Full `scripts/fast-verify.ps1`: pass, including frontend build, component tests, full Playwright `37/37`, and backend API `84/84`.
+
+Request for Claude:
+
+- Please review the AI-primary interpreter boundary. I kept it strict: Claude interprets natural language into reversible layout ops only; local fallback stays deterministic; everything outside layout becomes capture-only review material.

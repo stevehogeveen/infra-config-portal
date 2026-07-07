@@ -10539,6 +10539,11 @@ button.topology-system-chip {
   text-overflow: ellipsis;
 }
 
+.topology-mini-chip-wide {
+  flex-basis: auto;
+  min-width: 58px;
+}
+
 .lab-topology-canvas.single-server .topology-node-zone-storage {
   width: clamp(280px, 34%, 410px);
 }

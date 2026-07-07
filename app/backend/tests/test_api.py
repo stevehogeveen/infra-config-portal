@@ -167,6 +167,76 @@ def test_ui_intent_drops_unknown_or_unmatched_requests(client: TestClient) -> No
     assert payload["summary"] == "No safe layout change matched this page."
 
 
+def test_ui_intent_uses_anthropic_when_key_is_present_and_validates_manifest(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    class FakeAnthropicResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            return {
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "name": "resolve_ui_intent",
+                        "input": {
+                            "ops": [
+                                {"region_id": "advanced-proof", "op": "hide"},
+                                {"region_id": "factory-reset", "op": "show"},
+                                {"region_id": "advanced-proof", "op": "run"},
+                            ],
+                            "summary": "Hid advanced proof.",
+                        },
+                    }
+                ]
+            }
+
+    class FakeAnthropicClient:
+        def __init__(self, *args, **kwargs) -> None:
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args) -> None:
+            return None
+
+        def post(self, url: str, *, headers: dict[str, str], json: dict[str, object]):
+            captured["url"] = url
+            captured["headers"] = headers
+            captured["json"] = json
+            return FakeAnthropicResponse()
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setenv("ANTHROPIC_UI_INTENT_MODEL", "test-model")
+    monkeypatch.setattr("app.services.ui_intent.httpx.Client", FakeAnthropicClient)
+
+    response = client.post(
+        "/api/v1/ui-intent",
+        json={
+            "page": "overview",
+            "request": "password=supersecret please remove the proof clutter",
+            "regions": [
+                {"id": "topology", "label": "Living lab topology", "kind": "section"},
+                {"id": "advanced-proof", "label": "Advanced proof", "kind": "drawer"},
+            ],
+            "current_layout": {},
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["source"] == "external_ai"
+    assert payload["ops"] == [{"region_id": "advanced-proof", "op": "hide"}]
+    encoded_request = json.dumps(captured["json"])
+    assert "supersecret" not in encoded_request
+    assert "password=[REDACTED]" in encoded_request
+
+
 def test_ai_change_request_endpoint_queues_markdown_without_running_actions(client: TestClient) -> None:
     response = client.post(
         "/api/v1/ai-change-requests",

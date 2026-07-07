@@ -4683,7 +4683,6 @@ function LabTopologyMap({
       meta: firmwareBehind ? "firmware behind" : undefined,
       page: "/network",
       status: ciscoStatus,
-      tag: firmwareBehind ? "firmware behind" : undefined,
       title: "Cisco switch - core-switch-01 - C9300",
       tone: topologyTone(ciscoStatus),
       zone: "management"
@@ -5063,7 +5062,7 @@ function TopologyMiniFaceplate({
       <span className="topology-mini-faceplate">
         <span className="topology-mini-led" />
         {Array.from({ length: 10 }, (_, index) => <span className="topology-mini-port" key={index} />)}
-        <span className="topology-mini-chip">VLAN {settings.storage_vlan || "220"}</span>
+        <span className="topology-mini-chip topology-mini-chip-wide">VLAN {settings.storage_vlan || "220"}</span>
       </span>
     );
   }
