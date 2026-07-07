@@ -302,6 +302,35 @@ test("overview shows active setup, lab values, and access without dashboard clut
   await expect(page.getByText("Artifact")).toHaveCount(0);
 });
 
+test("zoned map opens node and system scoped controls", async ({ page }) => {
+  await page.goto("/overview");
+
+  const topology = page.locator("section[aria-label='Living lab topology']");
+  await topology.getByRole("button", { name: "Cisco switch node controls" }).click();
+
+  const nodeMenu = topology.getByLabel("Cisco switch node menu");
+  await expect(nodeMenu).toBeVisible();
+  await expect(nodeMenu).toContainText("Set deployment mode");
+  await expect(nodeMenu).toContainText("Assign IP block");
+  await expect(nodeMenu).toContainText("Run test (read-only)");
+  await expect(nodeMenu).toContainText("Switch profile");
+  await expect(nodeMenu).toContainText("Open workspace");
+
+  await nodeMenu.getByRole("button", { name: "Open workspace" }).click();
+  const composer = page.locator("div[aria-label='Design mode rack composer']");
+  await expect(composer).toBeVisible();
+  await expect(composer.getByLabel("Cisco switch workspace")).toBeVisible();
+
+  await page.getByRole("button", { name: "Operate" }).click();
+  await topology.getByLabel("Deployment mode").click();
+  const systemMenu = topology.getByLabel("System scope menu");
+  await expect(systemMenu).toBeVisible();
+  await expect(systemMenu).toContainText("Set deployment mode");
+  await expect(systemMenu).toContainText("Site subnet");
+  await expect(systemMenu).toContainText("Switch profile");
+  await expect(systemMenu).toContainText("Validation");
+});
+
 test("overview flags saved subnet mismatch and links to subnet editing", async ({ page }) => {
   healthHostIpv4Addresses = ["10.10.8.99", "172.20.10.3"];
   await page.goto("/overview");

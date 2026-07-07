@@ -8152,9 +8152,102 @@ th.ui-compact-table-cell {
   left: 50%;
   padding: 8px 14px;
   position: absolute;
+  text-align: left;
   top: 18px;
   transform: translateX(-50%);
   z-index: 4;
+}
+
+button.topology-system-chip {
+  cursor: pointer;
+  font: inherit;
+}
+
+.topology-system-chip:hover,
+.topology-system-chip[aria-expanded="true"] {
+  border-color: rgba(94, 234, 212, 0.82);
+  box-shadow: 0 0 0 3px rgba(20, 184, 166, 0.18), 0 18px 40px rgba(0, 0, 0, 0.28);
+}
+
+.topology-map-menu {
+  background: rgba(248, 250, 252, 0.98);
+  border: 1px solid rgba(148, 163, 184, 0.72);
+  border-radius: 10px;
+  box-shadow: 0 24px 56px rgba(0, 0, 0, 0.32);
+  color: var(--ink);
+  display: grid;
+  gap: 6px;
+  min-width: 210px;
+  padding: 9px;
+  position: absolute;
+  z-index: 7;
+}
+
+.topology-map-menu strong {
+  color: #0f172a;
+  font-size: 12px;
+  line-height: 1.2;
+  padding: 4px 6px 6px;
+}
+
+.topology-map-menu a,
+.topology-map-menu button {
+  align-items: center;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  color: #334155;
+  cursor: pointer;
+  display: flex;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 850;
+  min-height: 32px;
+  padding: 7px 8px;
+  text-align: left;
+  text-decoration: none;
+}
+
+.topology-map-menu a:hover,
+.topology-map-menu button:hover {
+  background: #eef6ff;
+  border-color: #bfdbfe;
+  color: #0f172a;
+}
+
+.topology-map-menu button:disabled {
+  background: #f8fafc;
+  color: #94a3b8;
+  cursor: not-allowed;
+}
+
+.topology-system-menu {
+  left: 50%;
+  top: 78px;
+  transform: translateX(-50%);
+}
+
+.topology-map-action-status {
+  border-radius: 999px;
+  bottom: 18px;
+  color: #f8fafc;
+  font-size: 12px;
+  font-weight: 800;
+  left: 50%;
+  max-width: min(720px, calc(100% - 48px));
+  overflow-wrap: anywhere;
+  padding: 8px 13px;
+  position: absolute;
+  transform: translateX(-50%);
+  z-index: 8;
+}
+
+.topology-map-action-status.is-ok {
+  background: rgba(15, 118, 110, 0.92);
+}
+
+.topology-map-action-status.is-error {
+  background: rgba(153, 27, 27, 0.92);
 }
 
 .topology-system-chip strong {
@@ -9930,21 +10023,54 @@ th.ui-compact-table-cell {
   border-radius: 10px;
   box-shadow: 0 24px 50px rgba(0, 0, 0, 0.26);
   color: var(--ink);
+  cursor: pointer;
   display: grid;
+  font: inherit;
   gap: 5px;
   min-height: 102px;
   padding: 12px 36px 12px 14px;
-  position: absolute;
+  position: relative;
+  text-align: left;
   text-decoration: none;
   transition: transform 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease;
-  width: clamp(230px, 24%, 310px);
-  z-index: 2;
+  width: 100%;
 }
 
 .topology-node:hover {
   border-color: #94a3b8;
   box-shadow: 0 16px 30px rgba(15, 23, 42, 0.1);
+}
+
+.topology-node[aria-expanded="true"] {
+  border-color: #5eead4;
+  box-shadow: 0 0 0 3px rgba(20, 184, 166, 0.16), 0 24px 50px rgba(0, 0, 0, 0.3);
+}
+
+.topology-node-wrap {
+  position: absolute;
+  transition: transform 0.16s ease;
+  width: clamp(230px, 24%, 310px);
+  z-index: 2;
+}
+
+.topology-node-wrap.is-menu-open {
+  z-index: 9;
+}
+
+.topology-node-wrap:hover {
   transform: translateY(-2px);
+}
+
+.topology-node-menu {
+  left: 50%;
+  top: calc(100% + 10px);
+  transform: translateX(-50%);
+}
+
+.topology-node-datastore .topology-node-menu,
+.topology-node-localDatastore .topology-node-menu {
+  bottom: calc(100% + 10px);
+  top: auto;
 }
 
 .topology-node-title {
@@ -10059,9 +10185,12 @@ th.ui-compact-table-cell {
 }
 
 .topology-node-vcenter {
-  border-color: #14b8a6;
   left: clamp(46px, 7%, 110px);
   top: 82px;
+}
+
+.topology-node-vcenter .topology-node {
+  border-color: #14b8a6;
 }
 
 .topology-node-vcenter:hover {
@@ -12818,7 +12947,14 @@ th.ui-compact-table-cell {
     transform: none;
   }
 
-  .topology-node,
+  .topology-system-menu {
+    left: 12px;
+    right: 12px;
+    top: 74px;
+    transform: none;
+  }
+
+  .topology-node-wrap,
   .topology-node-cisco,
   .topology-node-server,
   .topology-node-netapp,
@@ -12833,12 +12969,24 @@ th.ui-compact-table-cell {
     width: auto;
   }
 
-  .topology-node:hover,
+  .topology-node-wrap:hover,
   .topology-node-cisco:hover,
   .topology-node-datastore:hover,
   .topology-node-vcenter:hover,
   .lab-topology-canvas.single-server .topology-node-server:hover {
     transform: none;
+  }
+
+  .topology-node-menu,
+  .topology-node-datastore .topology-node-menu,
+  .topology-node-localDatastore .topology-node-menu {
+    bottom: auto;
+    left: auto;
+    margin-top: 8px;
+    position: relative;
+    top: auto;
+    transform: none;
+    width: 100%;
   }
 
   .topology-pill {

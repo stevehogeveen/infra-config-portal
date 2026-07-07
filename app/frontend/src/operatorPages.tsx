@@ -4194,6 +4194,14 @@ function LabTopologyMap({
   const runtimeClass = runtimeReady ? (realRuntime ? "topology-pill-live" : "topology-pill-test") : "topology-pill-runtime-unknown";
   const subnetState = topologySubnetState(address.subnet, health);
   const [topologyMode, setTopologyMode] = useState<TopologyMode>("operate");
+  const [selectedMapNodeId, setSelectedMapNodeId] = useState("");
+  const [systemMenuOpen, setSystemMenuOpen] = useState(false);
+  const [workspaceTarget, setWorkspaceTarget] = useState<DesignPartId>("switch");
+  const [mapActionStatus, setMapActionStatus] = useState<{ error: string; message: string; runningActionId: string }>({
+    error: "",
+    message: "",
+    runningActionId: ""
+  });
   const ciscoStatus = topologyStatusFromAccess(accessRows, "Cisco");
   const iloStatus = topologyStatusFromAccess(accessRows, "iLO");
   const esxiStatus = topologyStatusFromAccess(accessRows, "ESXi");
@@ -4295,6 +4303,41 @@ function LabTopologyMap({
   ].filter((status) => status === "ready" || status === "created").length;
   const checkCount = nodes.length + links.length;
   const nextAction = topologyNextAction({ currentView, datastoreStatus, netappInScope, netappStatus, serverStatus, storageProtocol });
+  const selectedMapNode = nodes.find((node) => node.id === selectedMapNodeId) ?? null;
+  const selectedMapNodeAction = selectedMapNode
+    ? topologyMapNodeAction(selectedMapNode.id, workflowActions, { netappInScope, storageProtocol, vcenterInScope })
+    : null;
+
+  async function runMapNodeReadOnlyTest(node: TopologyNode) {
+    const action = topologyMapNodeAction(node.id, workflowActions, { netappInScope, storageProtocol, vcenterInScope });
+    if (!action) {
+      setMapActionStatus({ error: `No read-only test is registered for ${node.title}.`, message: "", runningActionId: "" });
+      return;
+    }
+    if (!["read_only", "report_only"].includes(action.mode)) {
+      setMapActionStatus({ error: "Only read-only or report-only actions can run from the zoned map.", message: "", runningActionId: "" });
+      return;
+    }
+    setMapActionStatus({ error: "", message: "", runningActionId: action.action_id });
+    try {
+      const result = await api.runWorkflowAction(action.action_id);
+      setMapActionStatus({
+        error: "",
+        message: `${node.title}: ${displayStatus(result.status)}. ${result.summary || result.next_action || "Read-only check complete."}`,
+        runningActionId: ""
+      });
+      await onReload();
+    } catch (err) {
+      setMapActionStatus({ error: `${node.title}: ${errorMessage(err)}`, message: "", runningActionId: "" });
+    }
+  }
+
+  function openNodeWorkspace(nodeId: string) {
+    setWorkspaceTarget(topologyNodeFaceplatePart(nodeId, netappInScope));
+    setSelectedMapNodeId("");
+    setSystemMenuOpen(false);
+    setTopologyMode("design");
+  }
 
   return (
     <section className="lab-topology-map" aria-label="Living lab topology">
@@ -4350,10 +4393,28 @@ function LabTopologyMap({
           <div className="topology-zone topology-zone-storage" aria-hidden="true">
             <span>{netappInScope ? "Storage fabric" : "Local RAID"}</span>
           </div>
-          <div className="topology-system-chip" aria-label="Deployment mode">
+          <button
+            className="topology-system-chip"
+            aria-expanded={systemMenuOpen}
+            aria-label="Deployment mode"
+            onClick={() => {
+              setSystemMenuOpen((open) => !open);
+              setSelectedMapNodeId("");
+            }}
+            type="button"
+          >
             <strong>{netappInScope ? "Server + NetApp + vCenter" : "Single server - local RAID"}</strong>
             <span>{netappInScope ? `${storageProtocol.toUpperCase()} storage path` : "NetApp and vCenter out of scope"}</span>
-          </div>
+          </button>
+          {systemMenuOpen && (
+            <div className="topology-system-menu topology-map-menu" aria-label="System scope menu">
+              <strong>System scope</strong>
+              <button type="button" onClick={() => setTopologyMode("design")}>Set deployment mode</button>
+              <Link to="/network#network-profile">Site subnet</Link>
+              <Link to="/network#network-profile">Switch profile</Link>
+              <Link to="/validation">Validation</Link>
+            </div>
+          )}
           <svg className="lab-topology-links" viewBox="0 0 1000 620" role="img" aria-label="Current lab links">
             {links.map((link) => (
               <g className={`topology-link topology-link-${link.status}`} key={link.id}>
@@ -4363,22 +4424,57 @@ function LabTopologyMap({
             ))}
           </svg>
           {nodes.map((node) => (
-            <Link className={`topology-node topology-node-${node.position} topology-node-${node.tone}`} key={node.id} to={node.page}>
-              <span className="topology-node-dot" aria-hidden="true" />
-              <span className="topology-node-faceplate" aria-hidden="true">
-                <DesignFaceplateVisual
-                  compact
-                  partId={topologyNodeFaceplatePart(node.id, netappInScope)}
-                  settings={topologyNodeFaceplateSettings(node.id, address, storageProtocol, netappInScope)}
-                  storageProtocol={netappInScope ? storageProtocol : "local"}
-                />
-              </span>
-              <span className="topology-node-title">{node.icon}<strong>{node.title}</strong></span>
-              <span className="topology-node-details">{node.details}</span>
-              {node.meta && <span className="topology-node-meta">{node.meta}</span>}
-              {node.tag && <span className="topology-node-tag">{node.tag}</span>}
-            </Link>
+            <div
+              className={`topology-node-wrap topology-node-${node.position} ${selectedMapNodeId === node.id ? "is-menu-open" : ""}`}
+              key={node.id}
+            >
+              <button
+                aria-expanded={selectedMapNodeId === node.id}
+                aria-label={`${node.title} node controls`}
+                className={`topology-node topology-node-${node.tone}`}
+                onClick={() => {
+                  setSelectedMapNodeId((current) => (current === node.id ? "" : node.id));
+                  setSystemMenuOpen(false);
+                }}
+                type="button"
+              >
+                <span className="topology-node-dot" aria-hidden="true" />
+                <span className="topology-node-faceplate" aria-hidden="true">
+                  <DesignFaceplateVisual
+                    compact
+                    partId={topologyNodeFaceplatePart(node.id, netappInScope)}
+                    settings={topologyNodeFaceplateSettings(node.id, address, storageProtocol, netappInScope)}
+                    storageProtocol={netappInScope ? storageProtocol : "local"}
+                  />
+                </span>
+                <span className="topology-node-title">{node.icon}<strong>{node.title}</strong></span>
+                <span className="topology-node-details">{node.details}</span>
+                {node.meta && <span className="topology-node-meta">{node.meta}</span>}
+                {node.tag && <span className="topology-node-tag">{node.tag}</span>}
+              </button>
+              {selectedMapNodeId === node.id && (
+                <div className="topology-node-menu topology-map-menu" aria-label={`${node.title} node menu`}>
+                  <strong>{node.title}</strong>
+                  <button type="button" onClick={() => openNodeWorkspace(node.id)}>Set deployment mode</button>
+                  <Link to="/network#network-profile">Assign IP block</Link>
+                  <button
+                    disabled={mapActionStatus.runningActionId === selectedMapNodeAction?.action_id || !selectedMapNodeAction}
+                    onClick={() => void runMapNodeReadOnlyTest(node)}
+                    type="button"
+                  >
+                    {mapActionStatus.runningActionId === selectedMapNodeAction?.action_id ? "Testing..." : "Run test (read-only)"}
+                  </button>
+                  <Link to="/network#network-profile">Switch profile</Link>
+                  <button type="button" onClick={() => openNodeWorkspace(node.id)}>Open workspace</button>
+                </div>
+              )}
+            </div>
           ))}
+          {(mapActionStatus.message || mapActionStatus.error) && (
+            <div className={`topology-map-action-status ${mapActionStatus.error ? "is-error" : "is-ok"}`} role="status">
+              {mapActionStatus.error || mapActionStatus.message}
+            </div>
+          )}
         </div>
       ) : (
         <LabDesignComposer
@@ -4386,6 +4482,7 @@ function LabTopologyMap({
           address={address}
           features={features}
           health={health}
+          initialSelectedDevice={workspaceTarget}
           onReload={onReload}
           subnetState={subnetState}
           workflowActions={workflowActions}
@@ -4411,6 +4508,17 @@ function topologyNodeFaceplatePart(nodeId: string, netappInScope: boolean): Desi
   if (nodeId === "vcenter") return "vcenter";
   if (nodeId === "datastore") return netappInScope ? "netapp" : "server-gen10";
   return "server-gen10";
+}
+
+function topologyMapNodeAction(
+  nodeId: string,
+  workflowActions: WorkflowAction[],
+  scope: { netappInScope: boolean; storageProtocol: string; vcenterInScope: boolean }
+): WorkflowAction | null {
+  const partId = topologyNodeFaceplatePart(nodeId, scope.netappInScope);
+  return topologyDeviceSafeActions(partId, workflowActions, scope).find((action) =>
+    ["read_only", "report_only"].includes(action.mode)
+  ) ?? null;
 }
 
 function topologyNodeFaceplateSettings(nodeId: string, address: LabAddressPlan, storageProtocol: string, netappInScope: boolean): Record<string, string> {
@@ -4447,6 +4555,7 @@ function LabDesignComposer({
   address,
   features,
   health,
+  initialSelectedDevice,
   onReload,
   subnetState,
   workflowActions
@@ -4455,6 +4564,7 @@ function LabDesignComposer({
   address: LabAddressPlan;
   features: LabProfileFeatures | null;
   health?: HealthLike;
+  initialSelectedDevice?: DesignPartId;
   onReload: () => Promise<void> | void;
   subnetState: TopologySubnetState;
   workflowActions: WorkflowAction[];
@@ -4508,7 +4618,7 @@ function LabDesignComposer({
   const [connectionSettings, setConnectionSettings] = useState<ConnectionSettings>(() =>
     topologyReadConnectionSettingsDraft(draftKey, defaultConnectionSettings)
   );
-  const [selectedDevice, setSelectedDevice] = useState<DesignPartId>("switch");
+  const [selectedDevice, setSelectedDevice] = useState<DesignPartId>(initialSelectedDevice ?? "switch");
   const [selectedFaceplateElement, setSelectedFaceplateElement] = useState("Switch port 1");
   const [selectedLane, setSelectedLane] = useState<DesignLaneId>("management");
   const [selectedConnection, setSelectedConnection] = useState<DesignConnectionId>("switch-server");
@@ -4589,6 +4699,12 @@ function LabDesignComposer({
   useEffect(() => {
     setDraftScenario(committedScenario);
   }, [committedScenario]);
+
+  useEffect(() => {
+    if (initialSelectedDevice) {
+      setSelectedDevice(initialSelectedDevice);
+    }
+  }, [initialSelectedDevice]);
 
   useEffect(() => {
     const nextSubnet = asString(address.subnet);

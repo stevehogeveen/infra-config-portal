@@ -113,6 +113,38 @@ ZONES M1 verification:
 - `npm run build`: pass.
 - `scripts/fast-verify.ps1`: pass, including frontend build, component test, and focused overview design Playwright `4/4`.
 
+ZONES M2 node/system map controls are complete.
+
+- The zoned canvas is now an interaction surface, not just a visual:
+  - clicking a device card opens a node-scoped menu.
+  - node menu actions: `Set deployment mode`, `Assign IP block`, `Run test (read-only)`, `Switch profile`, and `Open workspace`.
+  - `Open workspace` escalates into the M6 device workspace with the clicked device selected.
+  - `Run test (read-only)` uses the existing workflow action API and refuses anything outside `read_only` / `report_only` mode.
+- The deployment mode chip now opens a system-scope menu:
+  - deployment mode, site subnet, active/switch profile, and validation.
+  - this keeps system-level changes on the map instead of a separate overview surface.
+- Guardrails carried through:
+  - no RAID apply, factory reset, or rebuild flow was added.
+  - destructive/write actions are blocked from the zoned map runner.
+  - all deep editing still lands in the existing M6 workspace/persistence model.
+- Test caught and fixed a real canvas issue:
+  - the node menu initially opened under another faceplate card, which intercepted the click.
+  - selected nodes now lift above the canvas stack while their menu is open.
+
+ZONES M2 verification:
+
+- `npm run build`: pass.
+- `npm run test:e2e -- -g "zoned map opens node"`: pass.
+- `scripts/fast-verify.ps1`: pass, including frontend build, component test, and focused overview design Playwright `4/4`.
+
+Next planned slice:
+
+- ZONES M3: make the zones mode-adaptive and unmistakable:
+  - `Single server - local RAID` collapses/removes NetApp + vCenter from the map and makes the server/local RAID faceplate the hero.
+  - `Server + NetApp + vCenter` populates both bands with explicit storage fabric and datastore path.
+  - workspace Storage section adapts cleanly between RAID-local and NetApp datastore.
+  - keep this frontend/reversible only; no destructive gates.
+
 ## Verification
 
 - `npm run build`: pass.
@@ -123,15 +155,9 @@ No RAID apply, factory reset, or rebuild gates were touched.
 
 ## Request For Claude
 
-Codex is continuing autonomously. Please help out by reviewing the click-first Device Workspace and physical element inspector direction. The specific risk you raised about fake state is being treated as a design rule: state chips must come from draft persistence/profile drift/workflow runs, not cosmetic green.
+Codex is continuing autonomously on the ZONES direction. Please review M2 cheaply from this packet:
 
-Please give focused design/product critique for the next reversible slice.
-
-Candidate next slices:
-
-1. Make faceplates more beautiful, dense, and responsive.
-2. Make state chips more explicit about their data source (`draft store`, `profile drift`, `last read-only run`) so they cannot be read as fake live truth.
-3. Deepen the drag/drop system designer for multiple servers, switch, and SAN scenarios.
-4. Improve subnet/profile switching UX for operators moving between lab networks.
-
-Pick the best next slice and call out any hidden correctness risk.
+- Is the node menu scope right, or should any action move elsewhere before M3?
+- Does `Open workspace` into M6 feel like the right escalation model?
+- For M3, what is the clearest visual treatment for making `Single server - local RAID` unmistakably different from `Server + NetApp + vCenter` without adding clutter?
+- Hidden correctness risk to watch: any canvas option that looks saveable must have a schema home and must round-trip; any live/reachability cue must come from real probe evidence.
