@@ -4110,7 +4110,7 @@ type TopologyNode = {
   id: string;
   meta?: string;
   page: string;
-  position: "cisco" | "server" | "netapp" | "datastore" | "vm" | "localDatastore";
+  position: "cisco" | "server" | "netapp" | "datastore" | "vcenter" | "localDatastore";
   status: string;
   tag?: string;
   title: string;
@@ -4277,13 +4277,13 @@ function LabTopologyMap({
     nodes.push({
       details: vcenterInScope ? "vCenter inventory" : "direct ESXi inventory",
       icon: <Layers size={17} />,
-      id: "vm",
+      id: "vcenter",
       meta: topologyVmMeta(vcenterNetapp, vcenterInScope),
       page: "/virtualization",
-      position: "vm",
+      position: "vcenter",
       status: vmStatus,
       tag: topologyVmTag(vcenterNetapp, vcenterInScope),
-      title: vmName,
+      title: vcenterInScope ? "vCenter VCSA" : vmName,
       tone: topologyTone(vmStatus, "created")
     });
   }
@@ -4323,7 +4323,7 @@ function LabTopologyMap({
           <div className="lab-topology-pills" aria-label="Topology status">
             <span className={`topology-pill ${runtimeClass}`}><CheckCircle2 size={14} /> {runtimeLabel}</span>
             <span className={`topology-pill topology-pill-subnet-${subnetState.status}`}><Route size={14} /> {subnetState.label}</span>
-            <span className="topology-pill">{readyChecks} of {checkCount} checks green</span>
+            <span className="topology-pill">{readyChecks} of {checkCount} checks ready</span>
             <Link className="topology-pill topology-pill-link" to="/network#network-profile">Update subnet</Link>
           </div>
         </div>
@@ -4340,7 +4340,20 @@ function LabTopologyMap({
       )}
 
       {topologyMode === "operate" ? (
-        <div className={`lab-topology-canvas ${netappInScope ? "has-netapp" : "single-server"}`}>
+        <div
+          className={`lab-topology-canvas zones-canvas ${netappInScope ? "has-netapp" : "single-server"}`}
+          aria-label="Zoned lab map"
+        >
+          <div className="topology-zone topology-zone-management" aria-hidden="true">
+            <span>Management</span>
+          </div>
+          <div className="topology-zone topology-zone-storage" aria-hidden="true">
+            <span>{netappInScope ? "Storage fabric" : "Local RAID"}</span>
+          </div>
+          <div className="topology-system-chip" aria-label="Deployment mode">
+            <strong>{netappInScope ? "Server + NetApp + vCenter" : "Single server - local RAID"}</strong>
+            <span>{netappInScope ? `${storageProtocol.toUpperCase()} storage path` : "NetApp and vCenter out of scope"}</span>
+          </div>
           <svg className="lab-topology-links" viewBox="0 0 1000 620" role="img" aria-label="Current lab links">
             {links.map((link) => (
               <g className={`topology-link topology-link-${link.status}`} key={link.id}>
@@ -4352,6 +4365,14 @@ function LabTopologyMap({
           {nodes.map((node) => (
             <Link className={`topology-node topology-node-${node.position} topology-node-${node.tone}`} key={node.id} to={node.page}>
               <span className="topology-node-dot" aria-hidden="true" />
+              <span className="topology-node-faceplate" aria-hidden="true">
+                <DesignFaceplateVisual
+                  compact
+                  partId={topologyNodeFaceplatePart(node.id, netappInScope)}
+                  settings={topologyNodeFaceplateSettings(node.id, address, storageProtocol, netappInScope)}
+                  storageProtocol={netappInScope ? storageProtocol : "local"}
+                />
+              </span>
               <span className="topology-node-title">{node.icon}<strong>{node.title}</strong></span>
               <span className="topology-node-details">{node.details}</span>
               {node.meta && <span className="topology-node-meta">{node.meta}</span>}
@@ -4382,6 +4403,43 @@ function LabTopologyMap({
       </div>
     </section>
   );
+}
+
+function topologyNodeFaceplatePart(nodeId: string, netappInScope: boolean): DesignPartId {
+  if (nodeId === "cisco") return "switch";
+  if (nodeId === "netapp") return "netapp";
+  if (nodeId === "vcenter") return "vcenter";
+  if (nodeId === "datastore") return netappInScope ? "netapp" : "server-gen10";
+  return "server-gen10";
+}
+
+function topologyNodeFaceplateSettings(nodeId: string, address: LabAddressPlan, storageProtocol: string, netappInScope: boolean): Record<string, string> {
+  if (nodeId === "cisco") {
+    return {
+      management_ip: displayAddress(address.cisco_management),
+      ports: "mgmt uplink, ESXi vmkernel, storage fabric",
+      storage_vlan: netappInScope ? "220" : "local"
+    };
+  }
+  if (nodeId === "netapp") {
+    return {
+      controller_ports: "e0a/e0b",
+      protocol: storageProtocol.toUpperCase(),
+      nfs_lifs: address.netapp_nfs_lifs.map(displayAddress).join(", "),
+      iscsi_lifs: address.netapp_iscsi_lifs.map(displayAddress).join(", ")
+    };
+  }
+  if (nodeId === "vcenter") {
+    return {
+      datastore: netappInScope ? "NetApp datastore" : "direct ESXi",
+      role: "inventory"
+    };
+  }
+  return {
+    drive_bays: "8 bays",
+    raid_boot: "RAID1",
+    raid_data: netappInScope ? "shared datastore" : "RAID6 local datastore"
+  };
 }
 
 function LabDesignComposer({
@@ -5633,53 +5691,65 @@ function topologyLinks({
     {
       from: "cisco",
       id: "link-cisco-server",
-      label: "management path",
-      labelX: 315,
-      labelY: 155,
-      path: "M 500 105 C 410 140 280 145 155 205",
+      label: "mgmt 1G",
+      labelX: 390,
+      labelY: 276,
+      path: "M 650 155 C 595 210 470 245 300 320",
       status: topologyLinkStatus(serverStatus),
       to: "server"
     }
   ];
+  if (vmInScope) {
+    links.push({
+      from: "vcenter",
+      id: "link-vcenter-cisco",
+      label: "vSphere API",
+      labelX: 455,
+      labelY: 105,
+      path: "M 290 135 C 390 92 540 92 650 135",
+      status: topologyLinkStatus(vmStatus, "created"),
+      to: "cisco"
+    });
+  }
   if (netappInScope) {
     links.push(
       {
         from: "cisco",
         id: "link-cisco-netapp",
-        label: "storage network",
+        label: "storage VLAN",
         labelX: 690,
-        labelY: 155,
-        path: "M 500 105 C 590 140 720 145 845 205",
+        labelY: 276,
+        path: "M 650 180 C 705 235 750 270 765 320",
         status: topologyLinkStatus(netappStatus),
         to: "netapp"
       },
       {
         from: "server",
         id: "link-server-netapp",
-        label: storageProtocol === "iscsi" ? "iscsi ready - no session" : "nfs data path",
-        labelX: 500,
-        labelY: 222,
-        path: "M 155 235 C 320 195 680 195 845 235",
+        label: storageProtocol === "iscsi" ? "iSCSI 10G planned" : "NFS 10G path",
+        labelX: 535,
+        labelY: 405,
+        path: "M 300 395 C 430 350 650 350 765 395",
         status: topologyLinkStatus(datastoreStatus, "warning"),
         to: "netapp"
       },
       {
         from: "server",
         id: "link-server-datastore",
-        label: storageProtocol === "iscsi" ? "datastore planned" : "nfs mounted",
-        labelX: 310,
-        labelY: 348,
-        path: "M 155 300 C 255 360 390 375 500 360",
+        label: storageProtocol === "iscsi" ? "VMFS planned" : "datastore mount",
+        labelX: 395,
+        labelY: 512,
+        path: "M 300 455 C 360 505 430 525 500 510",
         status: topologyLinkStatus(datastoreStatus),
         to: "datastore"
       },
       {
         from: "netapp",
         id: "link-netapp-datastore",
-        label: "export / lifs",
-        labelX: 690,
-        labelY: 348,
-        path: "M 845 300 C 745 360 610 375 500 360",
+        label: "export / LIFs",
+        labelX: 660,
+        labelY: 512,
+        path: "M 765 455 C 700 505 600 525 500 510",
         status: topologyLinkStatus(datastoreStatus),
         to: "datastore"
       }
@@ -5689,23 +5759,11 @@ function topologyLinks({
       from: "server",
       id: "link-server-local-datastore",
       label: "local datastore",
-      labelX: 500,
-      labelY: 286,
-      path: "M 155 245 C 320 300 610 300 790 245",
+      labelX: 520,
+      labelY: 470,
+      path: "M 405 410 C 455 455 565 455 620 410",
       status: topologyLinkStatus(datastoreStatus || serverStatus),
       to: "datastore"
-    });
-  }
-  if (vmInScope) {
-    links.push({
-      from: "datastore",
-      id: "link-datastore-vm",
-      label: "vm placement",
-      labelX: netappInScope ? 585 : 610,
-      labelY: netappInScope ? 462 : 405,
-      path: netappInScope ? "M 500 405 C 500 445 500 485 500 510" : "M 790 295 C 700 390 610 470 500 510",
-      status: topologyLinkStatus(vmStatus, "created"),
-      to: "vm"
     });
   }
   return links;

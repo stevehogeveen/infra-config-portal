@@ -251,6 +251,18 @@ test("renders the new top-level navigation and pages", async ({ page }) => {
 test("overview shows active setup, lab values, and access without dashboard clutter", async ({ page }) => {
   await page.goto("/overview");
 
+  const topology = page.locator("section[aria-label='Living lab topology']");
+  await expect(topology.getByLabel("Zoned lab map")).toBeVisible();
+  await expect(topology.getByLabel("Deployment mode")).toContainText("Server + NetApp + vCenter");
+  await expect(topology.getByLabel("Zoned lab map")).toContainText("Management");
+  await expect(topology.getByLabel("Zoned lab map")).toContainText("Storage fabric");
+  await expect(topology.getByLabel("Zoned lab map")).toContainText("vCenter VCSA");
+  await expect(topology.getByLabel("Zoned lab map")).toContainText("Cisco switch");
+  await expect(topology.getByLabel("Zoned lab map")).toContainText("HPE DL360 Gen10");
+  await expect(topology.getByLabel("Zoned lab map")).toContainText("NetApp ONTAP");
+  await expect(topology.getByLabel("Current lab links")).toContainText(/NFS 10G path|iSCSI 10G planned/);
+  await expect(topology).toContainText("checks ready");
+
   const overview = page.locator("section[aria-label='Overview reference']");
 
   await expect(overview.getByRole("heading", { name: "Readiness at a glance" })).toBeVisible();

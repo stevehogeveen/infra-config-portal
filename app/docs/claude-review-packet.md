@@ -91,6 +91,28 @@ M9 honesty audit follow-up is complete/in progress.
   - Single-server visual blueprint must omit NetApp and vCenter nodes.
   - Server workspace storage section must show local RAID layout and `RAID6 local datastore`.
 
+ZONES M1 zoned canvas shell is complete.
+
+- Branch: `zones-map-home`.
+- Baseline checkpoint commit: `7ae3ce6 chore: checkpoint pre-zones operator work`.
+- The Overview home map now renders as a zoned canvas instead of the older freeform topology:
+  - top band: `Management` with vCenter + Cisco switch.
+  - bottom band: `Storage fabric` with HPE server + NetApp.
+  - mode chip: `Server + NetApp + vCenter` or `Single server - local RAID`.
+  - nodes render as faceplate cards using the existing parametric faceplate component.
+  - cables are drawn through the zones with protocol/speed labels (`mgmt 1G`, `storage VLAN`, `NFS 10G path` / `iSCSI 10G planned`).
+- Honest-state rule carried through:
+  - faceplate LEDs stay neutral/unknown by default.
+  - ready-count copy says `checks ready`, not `checks green`.
+  - no new write/destructive path was added.
+- E2E now asserts the zoned home map is visible, includes Management/Storage fabric, shows vCenter/switch/server/NetApp, and draws the storage path label.
+- M6 workspace remains available behind Design/Open workspace; this milestone does not delete old panels yet. M4 will retire dead surfaces after the map owns node/system interactions.
+
+ZONES M1 verification:
+
+- `npm run build`: pass.
+- `scripts/fast-verify.ps1`: pass, including frontend build, component test, and focused overview design Playwright `4/4`.
+
 ## Verification
 
 - `npm run build`: pass.
