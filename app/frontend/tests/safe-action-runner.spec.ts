@@ -293,6 +293,22 @@ test("zoned map opens device workspace directly and keeps system scoped controls
 
   await page.locator("div[aria-label='Device workspace overlay']").getByRole("button", { name: "Close" }).click();
   await expect(page.locator("div[aria-label='Device workspace overlay']")).toHaveCount(0);
+  await topology.getByRole("button", { name: "Open HPE iLO workspace" }).click();
+  const iloOverlay = page.locator("div[aria-label='Device workspace overlay']");
+  const iloWorkspace = iloOverlay.locator("section[aria-label='HPE iLO workspace']");
+  await expect(iloWorkspace).toBeVisible();
+  await expect(iloWorkspace).toContainText("out-of-band server management");
+  await expect(iloWorkspace.getByLabel("HPE iLO Network")).toContainText("iLO IP");
+  await expect(iloWorkspace.getByLabel("HPE iLO Access")).toContainText("Credential status");
+  await expect(iloWorkspace.getByLabel("Credential status")).toHaveValue("unknown until iLO Auth Live Check runs");
+  await expect(iloWorkspace.getByLabel("HPE iLO schema inventory")).toContainText("iLO IP");
+  await expect(iloWorkspace.getByLabel("HPE iLO schema inventory")).toContainText("device_settings.ilo.management_ip -> address_plan.ilo");
+  await expect(iloOverlay.locator("section[aria-label='HPE iLO safe checks and next actions']")).toContainText("iLO Live Check");
+  await expect(iloOverlay.locator("section[aria-label='HPE iLO safe checks and next actions']")).toContainText("iLO Auth Live Check");
+  await expect(iloOverlay.locator("section[aria-label='HPE iLO safe checks and next actions']")).toContainText("iLO Inventory Read");
+  await expect(iloOverlay.locator("section[aria-label='HPE iLO safe checks and next actions']")).not.toContainText("Reset Server Power");
+  await iloOverlay.getByRole("button", { name: "Close" }).click();
+  await expect(page.locator("div[aria-label='Device workspace overlay']")).toHaveCount(0);
   await page.getByRole("button", { name: "Operate" }).click();
   await topology.getByLabel("Deployment mode").click();
   const systemMenu = topology.getByLabel("System scope menu");
@@ -313,6 +329,7 @@ test("zoned map makes single-server local RAID mode unmistakable", async ({ page
   await expect(map).toContainText("Local RAID");
   await expect(map.getByLabel("Local RAID mode summary")).toContainText("Server-local RAID is the storage fabric");
   await expect(map).toContainText("HPE DL360 Gen10");
+  await expect(map).toContainText("HPE iLO");
   await expect(map).toContainText("Cisco switch");
   await expect(map).not.toContainText("NetApp ONTAP");
   await expect(map).not.toContainText("vCenter VCSA");
@@ -349,6 +366,7 @@ test("overview design mode keeps the surface map-only until a node opens the wor
   await expect(topology.getByLabel("Map viewport controls")).toContainText("100%");
   await expect(topology.getByLabel("Map viewport controls").getByRole("button", { name: "Fit" })).toBeVisible();
   await expect(topology.getByLabel("Management zone devices")).toContainText("Cisco switch");
+  await expect(topology.getByLabel("Management zone devices")).toContainText("HPE iLO");
   await expect(topology.getByLabel("Storage fabric zone devices")).toContainText("HPE DL360 Gen10");
   await expect(topology.getByLabel("Storage fabric zone devices")).toContainText("NetApp ONTAP");
 
@@ -411,6 +429,7 @@ test("overview design mode map surface stays stable and scalable", async ({ page
   await expect(map).toBeVisible();
   await expect(page.locator("section[aria-label='Design topology blueprint']")).toHaveCount(0);
   await expect(map.getByLabel("Management zone devices")).toContainText("Cisco switch");
+  await expect(map.getByLabel("Management zone devices")).toContainText("HPE iLO");
   await expect(map.getByLabel("Storage fabric zone devices")).toContainText("NetApp ONTAP");
   await expect(map).toHaveScreenshot("overview-design-map.png", {
     animations: "disabled",
@@ -1727,6 +1746,7 @@ function workflowActions() {
     readAction("cisco.discover-console", "Refresh Cisco Console", "cisco", "cisco"),
     readAction("ilo.reachability", "iLO Live Check", "ilo", "ilo-redfish"),
     readAction("ilo.auth", "iLO Auth Live Check", "ilo", "ilo-redfish"),
+    readAction("ilo.inventory", "iLO Inventory Read", "ilo", "ilo-redfish"),
     readAction("esxi.management-validation", "ESXi Live Check", "esxi", "esxi"),
     readAction("esxi.ssh-api-check", "ESXi SSH/API Live Check", "esxi", "esxi"),
     readAction("esxi.iscsi-datastore-preview", "Preview ESXi iSCSI Datastore", "esxi", "esxi"),

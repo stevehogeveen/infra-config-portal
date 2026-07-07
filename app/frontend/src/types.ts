@@ -621,7 +621,7 @@ export type LabProfileRuntimeApply = {
 
 export type TopologyDesignScenario = "server_netapp_direct" | "server_netapp_vcenter" | "single_server_local_storage";
 
-export type TopologyDesignPlacement = "switch" | "server-gen10" | "server-gen10plus" | "netapp" | "vcenter" | "windows";
+export type TopologyDesignPlacement = "switch" | "ilo" | "server-gen10" | "server-gen10plus" | "netapp" | "vcenter" | "windows";
 
 export type TopologyDesignDraft = {
   id: string;

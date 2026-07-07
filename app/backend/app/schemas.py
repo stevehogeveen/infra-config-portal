@@ -622,9 +622,12 @@ class TopologyDesignDraftWrite(BaseModel):
     @field_validator("device_settings")
     @classmethod
     def validate_topology_design_device_settings(cls, value: dict[str, dict[str, str]]) -> dict[str, dict[str, str]]:
-        allowed_parts = {"switch", "server-gen10", "server-gen10plus", "netapp", "vcenter", "windows"}
+        allowed_parts = {"switch", "ilo", "server-gen10", "server-gen10plus", "netapp", "vcenter", "windows"}
         allowed_fields = {
+            "access_state",
             "datastore",
+            "credential_state",
+            "firmware",
             "gateway",
             "iscsi_lifs",
             "management_ip",
@@ -632,11 +635,14 @@ class TopologyDesignDraftWrite(BaseModel):
             "name",
             "nfs_lifs",
             "notes",
+            "power_state",
             "ports",
             "protocol",
             "raid_boot",
             "raid_data",
+            "reachability",
             "role",
+            "safe_checks",
             "san_ports",
             "storage_vlan",
             "vm_network",

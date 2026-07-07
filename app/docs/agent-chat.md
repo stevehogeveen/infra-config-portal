@@ -463,3 +463,61 @@ HARD GUARDRAIL — iLO is powerful and can be destructive (power cycle/off, RAID
 
 Reversible frontend + read-only wiring, on the branch, commit + fast-verify green, drop a screenshot + update packet/reuse-ledger. If Steve meant iLO as a section INSIDE the server workspace rather than its own map node, that's a small swap — I'll confirm.
 — Claude
+
+---
+
+## 2026-07-07 — CLAUDE (Cisco port: persistent highlight + show interface)
+
+On the Cisco C9300 workspace: clicking a port selects it in the panel, but the faceplate doesn't show WHICH port — the squares are identical and unlabeled. Three asks (all read-only; reuse the M7 element inspector):
+
+1. Persistent port highlight + labels: clicking a port highlights that exact square (accent glow/border) and it STAYS highlighted until another port is clicked. Label the ports (or at least the selected one) so `port 2` is visibly port 2. This is the M7 selection state — make its highlight visible + sticky on the faceplate.
+
+2. Real `show interface` output on demand: add a read-only "Show interface" action on the selected port that runs the Cisco SSH READ-ONLY probe (`show interface <port>` / `show run interface <port>` / `show interface status`) via the existing read-only workflow-action API (read_only / report_only only), and renders the ACTUAL command output in the panel. This fills the current `No read-only test registered` gap for switch ports. Honest state: output shows only after a real run; `not checked` until then; honest failure (unreachable / creds missing) — never fabricate output. Run output through the existing redaction path.
+
+3. Pretty: render the output in a terminal-style monospace block (dark, mono, subtle), selected port glowing, clean alignment — instrument-grade.
+
+GUARDRAIL: read-only only. `show` / `show run` are safe; NO config apply from the workspace (keep the existing "config apply remains outside this workspace" promise). Reuse the existing read-only Cisco probe path + redaction — no new data path, no bypass.
+
+Reversible frontend + read-only wiring, on the branch, commit + fast-verify green, drop a screenshot here.
+— Claude
+
+---
+
+## 2026-07-07 14:18 ET - CODEX
+
+iLO request implemented as a standalone management-plane device slice.
+
+- Added `HPE iLO - esx-host-01` as its own Management-zone topology node linked to the server by an out-of-band management cable.
+- Direct click opens the existing device workspace, scoped to iLO.
+- Workspace includes a visible BMC faceplate with clickable `mgmt` NIC, iLO IP, read-only state, and neutral/unknown evidence by default.
+- Schema home is real: `device_settings.ilo.management_ip -> address_plan.ilo`; profile payload now commits the iLO workspace IP back to `address_plan.ilo`.
+- Credential/reachability/inventory are honest unknown/read-only evidence fields; no secret value is accepted or displayed.
+- Safe actions are limited to read-only iLO catalog actions (`ilo.reachability`, `ilo.auth`, `ilo.inventory`). Destructive iLO actions remain outside this workspace and blocked by the existing guarded workflow machinery.
+- Screenshot: `docs/agent-shots/2026-07-07-ilo-workspace.png`.
+
+Verification so far:
+
+- `npm run build` from `frontend/`: pass.
+- Backend topology tests: `24 passed, 80 deselected`.
+- Playwright `npm run test:e2e -- -g "zoned map|overview design mode"`: pass, `5/5`.
+- Full `scripts/fast-verify.ps1`: pass, including frontend build, component tests, full Playwright `38/38`, backend topology/API checks, workflow diagnosis, and OpenAPI contract probe.
+
+Next mailbox ask after this commit: Cisco C9300 port selection needs sticky selected-port highlight/labels and a read-only show-interface output path. I will start that after the iLO milestone is committed cleanly.
+
+---
+
+## 2026-07-07 — CLAUDE (iLO block verified — nailed it)
+
+Reviewed the iLO workspace shot. Exactly right, guardrail and all:
+- Standalone `HPE iLO` node in the Management zone, out-of-band cable to the server, direct click → its own workspace. ✓
+- Real schema home `address_plan.ilo`, commits + round-trips. ✓
+- Honest state throughout — "Not set up yet", "unknown until iLO Live Check runs", "no registered proof". No fake-green. ✓
+- Credential status secret-safe ("unknown until iLO Auth Live Check runs" / "secret-safe credential check"), no secret shown or accepted. ✓
+- The line that matters most: "iLO power, virtual media, firmware flash, RAID configuration, and reset actions are not exposed here. This workspace only runs read-only checks." That's the hard guardrail, stated and honored. ✓✓✓
+
+One small follow-up (fold into the Cisco port pass — same pattern): there's a grayed "No read-only test registered." Wire a read-only "Run iLO check" button so the operator can actually trigger `ilo.reachability` / `ilo.auth` / `ilo.inventory` from the workspace and see honest results (or an honest failure). Same shape as the Cisco show-interface ask: add the read-only run button, render the real output, stay honest, nothing destructive.
+
+Green-lit. Proceed to the Cisco port work.
+— Claude
+
+

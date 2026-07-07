@@ -568,7 +568,7 @@ function IntentRegion({
 const overviewIntentRegions: UiIntentRegion[] = [
   { id: "topology", label: "Living lab topology", kind: "section" },
   { id: "reset-rebuild", label: "Reset and rebuild entry", kind: "section" },
-  { id: "lab-safety", label: "Lab safety settings", kind: "section" },
+  { id: "lab-safety", label: "Lab safety gates", kind: "section" },
   { id: "advanced-proof", label: "Advanced proof", kind: "drawer", collapsible: true }
 ];
 
@@ -4654,7 +4654,7 @@ type TopologyMode = "operate" | "design";
 
 type TopologyDesignScenario = "server_netapp_vcenter" | "server_netapp_direct" | "single_server_local_storage";
 
-type DesignPartId = "switch" | "server-gen10" | "server-gen10plus" | "netapp" | "vcenter" | "windows";
+type DesignPartId = "switch" | "ilo" | "server-gen10" | "server-gen10plus" | "netapp" | "vcenter" | "windows";
 
 type RackSlotId = "u1" | "u2" | "u3" | "u4" | "virtual";
 type DesignLaneId = "management" | "storage" | "virtualization";
@@ -4743,7 +4743,18 @@ function LabTopologyMap({
       zone: "management"
     },
     {
-      details: `ESXi ${displayAddress(address.esxi_management)} - iLO ${displayAddress(address.ilo)}`,
+      details: `BMC ${displayAddress(address.ilo)}`,
+      icon: <Gauge size={17} />,
+      id: "ilo",
+      meta: "out-of-band management",
+      page: "/server",
+      status: iloStatus,
+      title: "HPE iLO - esx-host-01",
+      tone: topologyTone(iloStatus),
+      zone: "management"
+    },
+    {
+      details: `ESXi ${displayAddress(address.esxi_management)} - host compute`,
       icon: <Server size={18} />,
       id: "server",
       meta: netappInScope ? "shared storage path" : "local storage path",
@@ -4797,7 +4808,7 @@ function LabTopologyMap({
     });
   }
 
-  const links = topologyLinks({ datastoreStatus, netappInScope, netappStatus, serverStatus, storageProtocol, vmInScope, vmStatus });
+  const links = topologyLinks({ datastoreStatus, iloStatus, netappInScope, netappStatus, serverStatus, storageProtocol, vmInScope, vmStatus });
   const readyChecks = [
     ...nodes.map((node) => node.tone),
     ...links.map((link) => link.status)
@@ -5042,6 +5053,15 @@ function TopologyMiniFaceplate({
       </span>
     );
   }
+  if (partId === "ilo") {
+    return (
+      <span className="topology-mini-faceplate">
+        <span className="topology-mini-led" />
+        <span className="topology-mini-port" />
+        <span className="topology-mini-chip topology-mini-chip-wide">iLO</span>
+      </span>
+    );
+  }
   if (partId === "server-gen10" || partId === "server-gen10plus") {
     const bayCount = clampNumber(parseFirstInteger(settings.drive_bays), 4, 8, 8);
     return (
@@ -5076,6 +5096,7 @@ function TopologyMiniFaceplate({
 
 function topologyStableNodeLabel(nodeId: string): string {
   if (nodeId === "cisco") return "Cisco switch";
+  if (nodeId === "ilo") return "HPE iLO";
   if (nodeId === "server") return "HPE DL360 Gen10";
   if (nodeId === "netapp") return "NetApp ONTAP";
   if (nodeId === "vcenter") return "vCenter VCSA";
@@ -5084,6 +5105,7 @@ function topologyStableNodeLabel(nodeId: string): string {
 
 function topologyNodeFaceplatePart(nodeId: string, netappInScope: boolean): DesignPartId {
   if (nodeId === "cisco") return "switch";
+  if (nodeId === "ilo") return "ilo";
   if (nodeId === "netapp") return "netapp";
   if (nodeId === "vcenter") return "vcenter";
   if (nodeId === "datastore") return netappInScope ? "netapp" : "server-gen10";
@@ -5110,6 +5132,13 @@ function topologyNodeFaceplateSettings(nodeId: string, address: LabAddressPlan, 
     return {
       datastore: netappInScope ? "NetApp datastore" : "direct ESXi",
       role: "inventory"
+    };
+  }
+  if (nodeId === "ilo") {
+    return {
+      management_ip: displayAddress(address.ilo),
+      access_state: "credential status only",
+      safe_checks: "reachability, auth, inventory"
     };
   }
   return {
@@ -6375,6 +6404,7 @@ function LabDesignComposer({
 
 function topologyLinks({
   datastoreStatus,
+  iloStatus,
   netappInScope,
   netappStatus,
   serverStatus,
@@ -6383,6 +6413,7 @@ function topologyLinks({
   vmStatus
 }: {
   datastoreStatus: string;
+  iloStatus: string;
   netappInScope: boolean;
   netappStatus: string;
   serverStatus: string;
@@ -6395,10 +6426,20 @@ function topologyLinks({
       from: "cisco",
       id: "link-cisco-server",
       label: "mgmt 1G",
-      labelX: 390,
-      labelY: 276,
+      labelX: 320,
+      labelY: 292,
       path: "M 650 155 C 595 210 470 245 300 320",
       status: topologyLinkStatus(serverStatus),
+      to: "server"
+    },
+    {
+      from: "ilo",
+      id: "link-ilo-server",
+      label: "oob mgmt",
+      labelX: 340,
+      labelY: 220,
+      path: "M 390 155 C 360 205 330 260 300 320",
+      status: topologyLinkStatus(iloStatus),
       to: "server"
     }
   ];
@@ -6504,6 +6545,7 @@ function topologyDesignParts({
 }): DesignPart[] {
   return [
     { id: "switch", label: "Cisco switch", meta: "network control", rackUnits: "1U", state: "placed" },
+    { id: "ilo", label: "HPE iLO", meta: "out-of-band mgmt", rackUnits: "BMC", state: "placed" },
     { id: "server-gen10", label: "DL360 Gen10", meta: "8 SFF bays", rackUnits: "1U", state: "placed" },
     { id: "server-gen10plus", label: "DL360 Gen10+", meta: "alternate server", rackUnits: "1U", state: "available" },
     { id: "netapp", label: "NetApp ONTAP", meta: "SAN / NAS", rackUnits: "2U", state: netappInScope ? "placed" : "draft" },
@@ -6562,6 +6604,16 @@ function topologyDefaultDeviceSettings({
       acl_lanes: "MGMT-IN, STORAGE-NFS-IN, DROP-ALL",
       port_profiles: "trunk uplinks, access mgmt, storage VLAN tagged",
       san_ports: netappInScope ? "storage ports tagged for NFS/iSCSI" : "not in scope"
+    },
+    ilo: {
+      name: "HPE iLO",
+      management_ip: displayAddress(address.ilo),
+      gateway,
+      credential_state: "unknown until iLO Auth Live Check runs",
+      reachability: "unknown until iLO Live Check runs",
+      firmware: "read by iLO Inventory",
+      power_state: "read-only inventory only",
+      notes: "No power, firmware flash, virtual media, RAID, or reset action is exposed here."
     },
     "server-gen10": {
       name: "HPE DL360 Gen10",
@@ -7146,16 +7198,17 @@ function firstOpenRackSlot(placements: Record<RackSlotId, DesignPartId | null>, 
 function topologyCanPlacePart(partId: DesignPartId, slot: RackSlotId): boolean {
   if (partId === "vcenter" || partId === "windows") return slot === "virtual";
   if (slot === "virtual") return false;
+  if (partId === "ilo") return slot === "u1";
   if (partId === "netapp") return slot === "u3";
   return true;
 }
 
 function topologyKnownDesignPart(value: string): value is DesignPartId {
-  return ["switch", "server-gen10", "server-gen10plus", "netapp", "vcenter", "windows"].includes(value);
+  return ["switch", "ilo", "server-gen10", "server-gen10plus", "netapp", "vcenter", "windows"].includes(value);
 }
 
 function topologyKnownDeviceParts(): DesignPartId[] {
-  return ["switch", "server-gen10", "server-gen10plus", "netapp", "vcenter", "windows"];
+  return ["switch", "ilo", "server-gen10", "server-gen10plus", "netapp", "vcenter", "windows"];
 }
 
 function topologyKnownLanes(): DesignLaneId[] {
@@ -7295,6 +7348,7 @@ function topologyWorkspaceNextAction(actions: WorkflowAction[], readinessRows: A
 }
 
 function topologyDeviceModelLabel(partId: DesignPartId): string {
+  if (partId === "ilo") return "HPE iLO";
   if (partId === "server-gen10") return "HPE DL360 Gen10";
   if (partId === "server-gen10plus") return "HPE DL360 Gen10+";
   if (partId === "switch") return "Cisco Catalyst";
@@ -7305,6 +7359,7 @@ function topologyDeviceModelLabel(partId: DesignPartId): string {
 
 function topologyDeviceRoleLabel(partId: DesignPartId, scenario: TopologyDesignScenario, storageProtocol: string): string {
   if (partId === "switch") return "fabric and VLAN control";
+  if (partId === "ilo") return "out-of-band server management";
   if (partId === "server-gen10" || partId === "server-gen10plus") {
     return scenario === "single_server_local_storage" ? "ESXi with local RAID" : `ESXi ${storageProtocol.toUpperCase()} consumer`;
   }
@@ -7324,7 +7379,7 @@ function topologyDeviceWorkspaceSections(
     { id: "identity", label: "Identity", summary: "Name, model, and role", keys: ["name", "role"] },
     { id: "network", label: "Network", summary: "IP, gateway, VLANs, and ports", keys: ["management_ip", "gateway", "mgmt_vlan", "storage_vlan", "ports", "port_profiles", "san_ports", "controller_ports", "vm_network"] },
     { id: "storage", label: "Storage", summary: scenario === "single_server_local_storage" ? "Local RAID and drive layout" : `${storageProtocol.toUpperCase()} datastore path`, keys: ["drive_bays", "raid_controller", "raid_boot", "raid_data", "protocol", "nfs_lifs", "iscsi_lifs", "datastore"] },
-    { id: "access", label: "Access", summary: "Credential state and guardrail notes", keys: ["bpdu_guard", "blackhole_vlan", "acl_lanes", "notes"] }
+    { id: "access", label: "Access", summary: "Credential state and guardrail notes", keys: ["credential_state", "reachability", "firmware", "power_state", "bpdu_guard", "blackhole_vlan", "acl_lanes", "notes"] }
   ];
   return sections
     .map((section) => ({
@@ -7338,6 +7393,7 @@ function topologyDeviceWorkspaceSections(
 
 function topologyDefaultFaceplateElement(partId: DesignPartId): string {
   if (partId === "switch") return "Switch port 1";
+  if (partId === "ilo") return "Management NIC";
   if (partId === "server-gen10" || partId === "server-gen10plus") return "Drive bay 1";
   if (partId === "netapp") return "controller ports";
   if (partId === "vcenter") return "vCenter appliance";
@@ -7367,6 +7423,19 @@ function topologyFaceplateElementInspector(
         { label: "Live proof", value: "Cisco SSH read-only probe or firmware inventory", source: "workflow action result" }
       ],
       summary: "Physical switch port intent, VLAN lane, and live-proof status."
+    };
+  }
+  if (partId === "ilo") {
+    return {
+      guardrail: "iLO power, virtual media, firmware flash, RAID configuration, and reset actions are not exposed here. This workspace only runs read-only checks.",
+      label,
+      rows: [
+        { label: "iLO IP", value: settings.management_ip || "not planned", source: "address_plan.ilo" },
+        { label: "Credential status", value: settings.credential_state || "unknown until iLO Auth Live Check runs", source: "secret-safe credential check" },
+        { label: "Reachability", value: settings.reachability || "unknown until iLO Live Check runs", source: "workflow action result" },
+        { label: "Inventory proof", value: settings.firmware || "read by iLO Inventory", source: "ilo.inventory" }
+      ],
+      summary: "Out-of-band management endpoint, credential status, and read-only iLO proof."
     };
   }
   if (partId === "server-gen10" || partId === "server-gen10plus") {
@@ -7501,6 +7570,32 @@ function DesignFaceplateVisual({
       </span>
     );
   }
+  if (partId === "ilo") {
+    const iloIp = settings.management_ip || "iLO IP not planned";
+    return (
+      <span className="design-faceplate-art design-faceplate-ilo-art" aria-hidden={interactive ? undefined : true} title={iloIp}>
+        <span className="design-led-strip">
+          <span className="design-led design-led-unknown" />
+          <span className="design-led design-led-plan" />
+        </span>
+        <span className="design-ilo-module">
+          <strong>HPE iLO</strong>
+          <small>Out-of-band BMC</small>
+          {interactive ? (
+            <button className="design-ilo-port" onClick={() => onElementClick?.("Management NIC")} type="button" aria-label="iLO management NIC">
+              <span />
+              mgmt
+            </button>
+          ) : (
+            <span className="design-ilo-port"><span />mgmt</span>
+          )}
+        </span>
+        <span className="design-faceplate-chip">{iloIp}</span>
+        <span className="design-faceplate-chip">read-only checks</span>
+        <span className="design-faceplate-chip">{settings.reachability || "unknown"}</span>
+      </span>
+    );
+  }
   return (
     <span className="design-faceplate-art design-faceplate-vm-art" aria-hidden="true">
       <span className="design-led design-led-plan" />
@@ -7531,6 +7626,7 @@ function splitFaceplateTokens(value: string): string[] {
 
 function designFaceplateDetail(partId: DesignPartId, address: LabAddressPlan, storageProtocol: string): string {
   if (partId === "switch") return `${displayAddress(address.cisco_management)} - vlan path`;
+  if (partId === "ilo") return `iLO ${displayAddress(address.ilo)} - BMC read-only checks`;
   if (partId === "server-gen10" || partId === "server-gen10plus") {
     return `iLO ${displayAddress(address.ilo)} - ESXi ${displayAddress(address.esxi_management)}`;
   }
@@ -7549,6 +7645,9 @@ function designPartPrimaryDetail(
 ): string {
   if (partId === "switch") {
     return `${settings.management_ip || displayAddress(address.cisco_management)} - mgmt ${settings.mgmt_vlan || "?"} / storage ${settings.storage_vlan || "?"}`;
+  }
+  if (partId === "ilo") {
+    return `${settings.management_ip || displayAddress(address.ilo)} - ${settings.reachability || "reachability unknown"}`;
   }
   if (partId === "server-gen10" || partId === "server-gen10plus") {
     return `iLO ${settings.management_ip || displayAddress(address.ilo)} - ${settings.raid_data || "storage plan"}`;
@@ -7578,6 +7677,18 @@ function topologyDeviceSettingFields(partId: DesignPartId, storageProtocol: stri
       { key: "ports", kind: "textarea", label: "Port plan" },
       { key: "san_ports", kind: "textarea", label: "SAN ports" },
       { key: "notes", kind: "textarea", label: "Notes" }
+    ];
+  }
+  if (partId === "ilo") {
+    return [
+      { key: "name", label: "Name" },
+      { key: "management_ip", label: "iLO IP" },
+      { key: "gateway", label: "Gateway" },
+      { key: "credential_state", label: "Credential status" },
+      { key: "reachability", label: "Reachability" },
+      { key: "firmware", label: "Firmware evidence" },
+      { key: "power_state", label: "Power-state evidence" },
+      { key: "notes", kind: "textarea", label: "Guardrail notes" }
     ];
   }
   if (partId === "server-gen10" || partId === "server-gen10plus") {
@@ -7657,6 +7768,7 @@ function topologyDevicePersistenceRows(
 function topologyCommittedProfilePath(partId: DesignPartId, key: string): string | null {
   if (key === "management_ip") {
     if (partId === "switch") return "address_plan.cisco_management";
+    if (partId === "ilo") return "address_plan.ilo";
     if (partId === "server-gen10" || partId === "server-gen10plus") return "address_plan.ilo";
     if (partId === "netapp") return "address_plan.netapp_cluster_mgmt";
     if (partId === "vcenter") return "address_plan.ansible_control_host";
@@ -7696,6 +7808,9 @@ function topologyDeviceMeta(partId: DesignPartId, settings: Record<string, strin
   if (partId === "switch") {
     return `mgmt VLAN ${settings.mgmt_vlan || "planned"} / storage VLAN ${settings.storage_vlan || "planned"}`;
   }
+  if (partId === "ilo") {
+    return settings.reachability || "reachability unknown";
+  }
   if (partId === "server-gen10" || partId === "server-gen10plus") {
     return `${settings.raid_boot || "boot RAID"} / ${settings.raid_data || "data RAID"}`;
   }
@@ -7715,6 +7830,13 @@ function topologyDeviceInspectorRows(
       { label: "Mgmt", value: settings.management_ip || "not planned" },
       { label: "Gateway", value: settings.gateway || "not planned" },
       { label: "VLANs", value: `${settings.mgmt_vlan || "mgmt ?"} / ${settings.storage_vlan || "storage ?"}` }
+    ];
+  }
+  if (partId === "ilo") {
+    return [
+      { label: "iLO", value: settings.management_ip || "not planned" },
+      { label: "Credentials", value: settings.credential_state || "unknown until iLO Auth Live Check runs" },
+      { label: "Proof", value: settings.reachability || "unknown until live check" }
     ];
   }
   if (partId === "server-gen10" || partId === "server-gen10plus") {
@@ -7765,7 +7887,7 @@ function topologyProfileSyncRows({
     topologySyncRow("switch-gateway", "Gateway", deviceSettings.switch?.gateway, gateway),
     topologySyncRow("switch-mgmt-vlan", "Mgmt VLAN", deviceSettings.switch?.mgmt_vlan, activeProfile?.global_settings?.vlan_id ?? activeProfile?.vlan_id ?? "100"),
     topologySyncRow("switch-storage-vlan", "Storage VLAN", deviceSettings.switch?.storage_vlan, "220"),
-    topologySyncRow("server-ilo", "Server iLO", deviceSettings["server-gen10"]?.management_ip || deviceSettings["server-gen10plus"]?.management_ip, displayAddress(address.ilo)),
+    topologySyncRow("ilo-ip", "iLO IP", deviceSettings.ilo?.management_ip || deviceSettings["server-gen10"]?.management_ip || deviceSettings["server-gen10plus"]?.management_ip, displayAddress(address.ilo)),
     topologySyncRow("storage-mode", "Storage mode", netappInScope ? storageProtocol.toUpperCase() : "LOCAL", activeProfile?.features?.storage_protocol?.toUpperCase() ?? "NFS"),
   ];
   if (netappInScope) {
@@ -7805,6 +7927,7 @@ function topologyProfilePayloadFromDraft({
   const netappInScope = draftScenario !== "single_server_local_storage";
   const vcenterInScope = draftScenario === "server_netapp_vcenter";
   const switchSettings = deviceSettings.switch ?? {};
+  const iloSettings = deviceSettings.ilo ?? {};
   const serverPart: DesignPartId = Object.values(placements).includes("server-gen10plus") ? "server-gen10plus" : "server-gen10";
   const serverModel = serverPart === "server-gen10plus" ? "gen10plus" : "gen10";
   const serverSettings = deviceSettings[serverPart] ?? {};
@@ -7825,7 +7948,7 @@ function topologyProfilePayloadFromDraft({
     ...address,
     ansible_control_host: vcenterInScope ? cleanNetworkNullable(vcenterSettings.management_ip) : null,
     cisco_management: cleanNetworkNullable(switchSettings.management_ip),
-    ilo: cleanNetworkNullable(serverSettings.management_ip),
+    ilo: cleanNetworkNullable(iloSettings.management_ip) || cleanNetworkNullable(serverSettings.management_ip),
     netapp_cluster_mgmt: netappInScope ? cleanNetworkNullable(netappSettings.management_ip) : null,
     netapp_iscsi_lifs: iscsiLifs,
     netapp_nfs_lifs: nfsLifs,
@@ -7933,8 +8056,11 @@ function topologyDevicePreferredActionIds(
   if (partId === "switch") {
     return ["cisco.validate-ssh-scp", "cisco.firmware-inventory", "cisco.current-intent-diff"];
   }
+  if (partId === "ilo") {
+    return ["ilo.reachability", "ilo.auth", "ilo.inventory"];
+  }
   if (partId === "server-gen10" || partId === "server-gen10plus") {
-    return ["ilo.readiness", "esxi.management-validation", "build-verification.toolchain-check"];
+    return ["esxi.management-validation", "raid.validate", "build-verification.toolchain-check"];
   }
   if (partId === "netapp") {
     return scope.storageProtocol === "iscsi"
@@ -7951,7 +8077,8 @@ function topologyDevicePreferredActionIds(
 
 function topologyDeviceProviderHints(partId: DesignPartId): string[] {
   if (partId === "switch") return ["cisco"];
-  if (partId === "server-gen10" || partId === "server-gen10plus") return ["ilo", "esxi", "raid"];
+  if (partId === "ilo") return ["ilo"];
+  if (partId === "server-gen10" || partId === "server-gen10plus") return ["esxi", "raid"];
   if (partId === "netapp") return ["netapp"];
   if (partId === "vcenter") return ["vcenter"];
   return ["vm", "operator"];

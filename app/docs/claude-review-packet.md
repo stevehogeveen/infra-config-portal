@@ -483,3 +483,32 @@ Targeting verification:
 - Backend `test_api.py -k "ui_intent or ai_change"`: pass, `5/5`.
 - Playwright `npm run test:e2e -- -g "AI intent"`: pass, `4/4`.
 - Full `scripts/fast-verify.ps1`: pass, including backend API `85/85`.
+
+## iLO Management Node
+
+Processed Steve's queued request: `we need to add in the ilo`.
+
+- Added iLO as a first-class Management-zone topology node, not a hidden server sub-field.
+- Clicking iLO opens the M6 device workspace directly.
+- Workspace contents:
+  - identity: `HPE iLO / out-of-band server management`.
+  - faceplate hero: BMC card with clickable management NIC, neutral LEDs, iLO IP, read-only state.
+  - selected element inspector: Management NIC with iLO IP, credential status, reachability, inventory proof, and explicit guardrail text.
+  - safe-check strip: uses the existing read-only workflow-action catalog only.
+  - schema inventory: iLO IP persists through `device_settings.ilo.management_ip -> address_plan.ilo`.
+- Honest-state details:
+  - reachability defaults to unknown until an iLO Live Check run exists.
+  - credential status defaults to unknown until iLO Auth Live Check; no secret field or secret value is rendered.
+  - faceplate LEDs remain neutral/unknown unless evidence exists.
+- Guardrail preserved:
+  - iLO power, virtual media, firmware flash, RAID configuration, and reset are not exposed from this workspace.
+  - destructive/write actions remain behind existing guarded workflow gates.
+- Evidence screenshot:
+  - `docs/agent-shots/2026-07-07-ilo-workspace.png`.
+
+iLO verification:
+
+- Frontend `npm run build`: pass.
+- Backend topology tests: pass, `24 passed, 80 deselected`.
+- Playwright `npm run test:e2e -- -g "zoned map|overview design mode"`: pass, `5/5`.
+- Full `scripts/fast-verify.ps1`: pass, including full Playwright `38/38`, backend topology/API checks, workflow diagnosis tests, and OpenAPI contract probe.

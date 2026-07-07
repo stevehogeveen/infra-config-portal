@@ -23,6 +23,7 @@ LANES = ("management", "storage", "virtualization")
 CONNECTIONS = ("switch-server", "switch-netapp", "server-netapp", "server-vm")
 PARTS = {
     "switch",
+    "ilo",
     "server-gen10",
     "server-gen10plus",
     "netapp",
@@ -31,7 +32,10 @@ PARTS = {
 }
 VM_PARTS = {"vcenter", "windows"}
 DEVICE_SETTING_KEYS = {
+    "access_state",
     "datastore",
+    "credential_state",
+    "firmware",
     "gateway",
     "acl_lanes",
     "blackhole_vlan",
@@ -44,13 +48,16 @@ DEVICE_SETTING_KEYS = {
     "name",
     "nfs_lifs",
     "notes",
+    "power_state",
     "port_profiles",
     "ports",
     "protocol",
     "raid_boot",
     "raid_controller",
     "raid_data",
+    "reachability",
     "role",
+    "safe_checks",
     "san_ports",
     "storage_vlan",
     "vm_network",
@@ -358,6 +365,15 @@ def _default_device_settings(scenario: str, subnet: str | None) -> dict[str, dic
             "port_profiles": "trunk uplinks, access mgmt, storage VLAN tagged",
             "san_ports": "storage ports tagged for NFS/iSCSI",
         },
+        "ilo": {
+            "name": "HPE iLO",
+            "management_ip": f"{base}.201",
+            "credential_state": "unknown until iLO Auth Live Check runs",
+            "reachability": "unknown until iLO Live Check runs",
+            "firmware": "read by iLO Inventory",
+            "power_state": "read-only inventory only",
+            "notes": "No power, firmware flash, virtual media, RAID, or reset action is exposed here.",
+        },
         "server-gen10": {
             "name": "HPE DL360 Gen10",
             "management_ip": f"{base}.203",
@@ -440,6 +456,8 @@ def _can_place(part: str, slot: str, scenario: str) -> bool:
         return slot == "virtual"
     if slot == "virtual":
         return False
+    if part == "ilo":
+        return slot == "u1"
     if part == "netapp":
         return scenario != "single_server_local_storage" and slot == "u3"
     return True
