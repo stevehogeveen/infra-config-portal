@@ -521,11 +521,11 @@ test("AI intent bar queues non-layout change requests without running workflows"
   await expect(page.getByText("This looks bigger than layout.")).toBeVisible();
   await page.getByRole("button", { name: "Queue change request" }).click();
 
-  await expect(page.getByText(/Queued: docs\/change-requests\//)).toBeVisible();
-  await expect(page.getByText("Queued for build loop")).toBeVisible();
-  await expect(page.getByText("Change request queued for the Claude+Codex build loop.")).toBeVisible();
+  await expect(page.getByText(/Queued: docs\/change-requests\//)).toHaveCount(0);
+  await expect(page.getByText("Sent to agent mailbox")).toBeVisible();
+  await expect(page.getByText("Sent to the Claude+Codex mailbox and saved as a review artifact.")).toBeVisible();
   await expect(page.locator(".page-intent-receipt code")).toContainText(/docs\/change-requests\/.+overview\.md/);
-  await expect(page.getByText("Review the markdown artifact, branch, implement, fast-verify, and request review before applying.")).toBeVisible();
+  await expect(page.getByText("Claude and Codex read docs/agent-chat.md; implement on a branch, fast-verify, and request review before applying.")).toBeVisible();
   await expect(page.getByText("This looks bigger than layout.")).toHaveCount(0);
 });
 
@@ -1354,8 +1354,8 @@ function uiIntentResponse(payload: Record<string, unknown>) {
 function aiChangeRequest(payload: Record<string, unknown>) {
   return {
     artifact: `docs/change-requests/20260707T161900Z-${String(payload.page || "page")}.md`,
-    message: "Change request queued for the Claude+Codex build loop.",
-    next_action: "Review the markdown artifact, branch, implement, fast-verify, and request review before applying.",
+    message: "Sent to the Claude+Codex mailbox and saved as a review artifact.",
+    next_action: "Claude and Codex read docs/agent-chat.md; implement on a branch, fast-verify, and request review before applying.",
     request_id: "20260707T161900Z",
     status: "queued"
   };

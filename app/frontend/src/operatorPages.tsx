@@ -457,7 +457,7 @@ function PageIntentBar({
         screenshot_path: null,
         target: null
       });
-      onApply([], `${response.status === "queued" ? "Queued" : displayStatus(response.status)}: ${response.artifact}`);
+      onApply([], response.message);
       setLastQueued(response);
       setQueuedRequest("");
     } catch (err) {
@@ -483,7 +483,7 @@ function PageIntentBar({
         <button disabled={!undoAvailable || busy} onClick={onUndo} type="button">Undo</button>
         <button disabled={busy} onClick={onReset} type="button">Reset</button>
       </form>
-      <p>{summary || "Layout only. This cannot change data, settings, or run lab workflows."}</p>
+      {!lastQueued && <p>{summary || "Layout only. This cannot change data, settings, or run lab workflows."}</p>}
       {queuedRequest && (
         <div className="page-intent-queue">
           <span>This looks bigger than layout. Queue it for the Claude+Codex build loop?</span>
@@ -493,7 +493,7 @@ function PageIntentBar({
       {lastQueued && (
         <div className="page-intent-receipt" role="status">
           <div>
-            <strong>Queued for build loop</strong>
+            <strong>Sent to agent mailbox</strong>
             <span>{lastQueued.message}</span>
           </div>
           <code>{lastQueued.artifact}</code>

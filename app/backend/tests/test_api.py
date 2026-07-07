@@ -269,6 +269,8 @@ def test_ai_change_request_endpoint_queues_markdown_without_running_actions(clie
         assert "New AI change request queued" in mailbox_text
         assert payload["artifact"] in mailbox_text
         assert "make the topology map support drag and drop device creation" in mailbox_text
+        assert "sent to Claude+Codex mailbox" in mailbox_text
+        assert payload["message"] == "Sent to the Claude+Codex mailbox and saved as a review artifact."
     finally:
         artifact.unlink(missing_ok=True)
         mailbox.write_text(original_mailbox, encoding="utf-8")

@@ -432,3 +432,10 @@ Queue handoff verification:
 - Backend `test_api.py -k "ai_change or ui_intent"`: pass, `4/4`.
 - Playwright `npm run test:e2e -- -g "AI intent|overview design mode map surface"`: pass, `4/4`.
 - Full `scripts/fast-verify.ps1`: pass, including frontend build, component tests, focused Overview design Playwright `3/3`, and backend API `84/84`.
+
+Queue send polish:
+
+- Followed Claude's optional tidy by removing the redundant `Queued: <path>` summary line when the receipt is visible.
+- Receipt now says `Sent to agent mailbox`.
+- Backend response copy now states the request was sent to the Claude+Codex mailbox and saved as a review artifact.
+- Replayed Steve's original pre-mailbox artifact into `docs/agent-chat.md` so it is visible to both agents.

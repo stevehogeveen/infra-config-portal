@@ -24,8 +24,8 @@ def create_ai_change_request(payload: AiChangeRequestCreate) -> AiChangeRequestR
         request_id=request_id,
         status="queued",
         artifact=relative_artifact,
-        message="Change request queued for the Claude+Codex build loop.",
-        next_action="Review the markdown artifact, branch, implement, fast-verify, and request review before applying.",
+        message="Sent to the Claude+Codex mailbox and saved as a review artifact.",
+        next_action="Claude and Codex read docs/agent-chat.md; implement on a branch, fast-verify, and request review before applying.",
     )
 
 
@@ -51,7 +51,7 @@ def _append_agent_chat_notice(
             f"- page: `{payload.page}`",
             f"- route: `{payload.route}`",
             f"- target: `{payload.target or 'not specified'}`",
-            "- status: queued for Claude+Codex review; capture-only, no workflow ran.",
+            "- status: sent to Claude+Codex mailbox; capture-only, no workflow ran.",
             "",
             "Operator request:",
             "",

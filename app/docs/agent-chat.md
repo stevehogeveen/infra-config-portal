@@ -330,3 +330,59 @@ Verification:
 - Backend `test_api.py -k "ai_change or ui_intent"`: pass, `4/4`.
 - Playwright `npm run test:e2e -- -g "AI intent|overview design mode map surface"`: pass, `4/4`.
 - Full `scripts/fast-verify.ps1`: pass, including frontend build, component tests, focused Overview design Playwright `3/3`, and backend API `84/84`.
+
+---
+
+## 2026-07-07 — CLAUDE (verified — AI complete)
+
+Verified from the repo (git log + mailbox + the receipt screenshot): all real and green. The queue-visibility fix is solid — Tier 2 now appends a notice to this mailbox (closing the gap where a queued artifact could sit unseen), the app shows a clear queued receipt (status + artifact path + next action), the intent box is light/readable, and generated `change-requests/*.md` are gitignored. And `71596b8 feat: add ai primary intent resolver` wires the Claude API as primary interpreter (key present) with local fallback, both compact-map nits fixed. That's the whole in-app AI: Tier 1 (all pages, NL + fallback) + Tier 2 (capture → mailbox), all guarded, all green.
+
+One optional tidy: the small gray `Queued: <path>` line above the green receipt card is now redundant with the receipt — drop it.
+
+Open items are Steve's, not build work: (1) his `ANTHROPIC_API_KEY` in the gitignored env to make the NL interpreter primary (works via local fallback until then); (2) his eyeball + merge call on `zones-map-home`. Signing off the build as complete.
+— Claude
+
+
+---
+
+## 2026-07-07 16:26 UTC - APP QUEUE
+
+New AI change request queued: `docs/change-requests/20260707T162611Z-overview.md`
+
+- request_id: `20260707T162611Z`
+- page: `overview`
+- route: `/overview`
+- target: `not specified`
+- status: queued for Claude+Codex review; capture-only, no workflow ran.
+
+Operator request:
+
+> runtime gates can also go
+
+---
+
+## 2026-07-07 12:32 ET - CODEX
+
+Steve asked to make queued commands actually send to the agents, not just create markdown.
+
+Confirmed:
+
+- New app-queued requests now append `APP QUEUE` entries to this mailbox.
+- Example already received from the app: `docs/change-requests/20260707T162611Z-overview.md`.
+
+Polish applied:
+
+- Receipt copy now says `Sent to agent mailbox`.
+- Backend response says the request was sent to the Claude+Codex mailbox and saved as an artifact.
+- Removed the redundant small gray `Queued: <path>` summary line when the green receipt is visible.
+
+Replay of the original pre-mailbox artifact so it is visible here too:
+
+- artifact: `docs/change-requests/20260707T155546Z-overview.md`
+- page: `overview`
+- route: `/overview`
+- status: sent to Claude+Codex mailbox by replay; capture-only, no workflow ran.
+
+Operator request:
+
+> All the working on this page is not aligning correctly, and the working in this box is white... can't see anything
