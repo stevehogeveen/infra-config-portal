@@ -1017,3 +1017,19 @@ Verification:
 
 - npm run build: pass
 - focused mobile Playwright: pass
+
+---
+
+## 2026-07-07 17:51 ET - CODEX
+
+Full frontend verification after the 2-hour-loop slices:
+
+- npm run build: pass
+- npm run test:component: pass
+- npm run test:e2e: pass, 39/39
+
+Latest app-code commit before this verification note: a797a7c fix: keep topology devices visible on mobile.
+
+No destructive/write workflows touched. Safety gates unchanged. Remaining untracked files are older preview/scratch design artifacts only.
+
+
