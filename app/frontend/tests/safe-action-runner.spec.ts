@@ -331,6 +331,22 @@ test("zoned map opens node and system scoped controls", async ({ page }) => {
   await expect(systemMenu).toContainText("Validation");
 });
 
+test("zoned map makes single-server local RAID mode unmistakable", async ({ page }) => {
+  labProfileScenario = "single";
+  await page.goto("/overview");
+
+  const topology = page.locator("section[aria-label='Living lab topology']");
+  const map = topology.getByLabel("Zoned lab map");
+  await expect(topology.getByLabel("Deployment mode")).toContainText("Single server - local RAID");
+  await expect(map).toContainText("Local RAID");
+  await expect(map.getByLabel("Local RAID mode summary")).toContainText("Server-local RAID is the storage fabric");
+  await expect(map).toContainText("HPE DL360 Gen10");
+  await expect(map).toContainText("Cisco switch");
+  await expect(map).not.toContainText("NetApp ONTAP");
+  await expect(map).not.toContainText("vCenter VCSA");
+  await expect(map).not.toContainText("Local ESXi datastore");
+});
+
 test("overview flags saved subnet mismatch and links to subnet editing", async ({ page }) => {
   healthHostIpv4Addresses = ["10.10.8.99", "172.20.10.3"];
   await page.goto("/overview");

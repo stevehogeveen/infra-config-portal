@@ -4267,18 +4267,6 @@ function LabTopologyMap({
         tone: topologyTone(datastoreStatus)
       }
     );
-  } else {
-    nodes.push({
-      details: "server-local datastore",
-      icon: <HardDrive size={17} />,
-      id: "datastore",
-      meta: "NetApp not in scope",
-      page: "/server",
-      position: "localDatastore",
-      status: ["not_setup", "not_checked"].includes(datastoreStatus) ? serverStatus : datastoreStatus,
-      title: datastoreLabel,
-      tone: topologyTone(["not_setup", "not_checked"].includes(datastoreStatus) ? serverStatus : datastoreStatus)
-    });
   }
 
   if (vmInScope) {
@@ -4413,6 +4401,15 @@ function LabTopologyMap({
               <Link to="/network#network-profile">Site subnet</Link>
               <Link to="/network#network-profile">Switch profile</Link>
               <Link to="/validation">Validation</Link>
+            </div>
+          )}
+          {!netappInScope && (
+            <div className="topology-local-raid-hero" aria-label="Local RAID mode summary">
+              <HardDrive size={15} />
+              <div>
+                <strong>Server-local RAID is the storage fabric</strong>
+                <span>No NetApp or vCenter nodes are in this active profile.</span>
+              </div>
             </div>
           )}
           <svg className="lab-topology-links" viewBox="0 0 1000 620" role="img" aria-label="Current lab links">
@@ -5068,11 +5065,29 @@ function LabDesignComposer({
       </section>
 
       <section className="design-visual-workbench" aria-label="Visual topology workbench">
-        <section className={`design-blueprint-stage ${selectedPart ? "has-workspace-selection" : ""}`} aria-label="Design topology blueprint">
+        <section
+          className={`design-blueprint-stage ${selectedPart ? "has-workspace-selection" : ""} ${netappInScope ? "is-shared-storage" : "is-local-storage"}`}
+          aria-label="Design topology blueprint"
+        >
           <div className="design-canvas-mode-chip" aria-label="Deployment archetype">
             <strong>{draftScenario === "single_server_local_storage" ? "Single server - local RAID" : "Server + NetApp + vCenter"}</strong>
             <span>{draftScenario === "single_server_local_storage" ? "Sparse local mode" : `${storageProtocol.toUpperCase()} storage fabric`}</span>
           </div>
+          <div className="design-blueprint-zone design-blueprint-zone-management" aria-hidden="true">
+            <span>Management</span>
+          </div>
+          <div className="design-blueprint-zone design-blueprint-zone-storage" aria-hidden="true">
+            <span>{netappInScope ? "Storage fabric" : "Local RAID inside server"}</span>
+          </div>
+          {!netappInScope && (
+            <div className="design-local-raid-hero" aria-label="Local RAID design summary">
+              <HardDrive size={16} />
+              <div>
+                <strong>One-server shipment mode</strong>
+                <span>Drive bays, Smart Array, and ESXi datastore stay with the server.</span>
+              </div>
+            </div>
+          )}
           <svg className="design-blueprint-links" viewBox="0 0 1000 380" role="img" aria-label="Draft design connections">
             {blueprintLinks.map((link) => (
               <g
@@ -5870,17 +5885,6 @@ function topologyLinks({
         to: "datastore"
       }
     );
-  } else {
-    links.push({
-      from: "server",
-      id: "link-server-local-datastore",
-      label: "local datastore",
-      labelX: 520,
-      labelY: 470,
-      path: "M 405 410 C 455 455 565 455 620 410",
-      status: topologyLinkStatus(datastoreStatus || serverStatus),
-      to: "datastore"
-    });
   }
   return links;
 }

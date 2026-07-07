@@ -145,6 +145,36 @@ Next planned slice:
   - workspace Storage section adapts cleanly between RAID-local and NetApp datastore.
   - keep this frontend/reversible only; no destructive gates.
 
+ZONES M3 mode-adaptive zones are complete.
+
+- Active home map now makes the two deployment archetypes visually distinct:
+  - shared mode keeps Management + Storage fabric populated with vCenter, switch, server, NetApp, datastore path.
+  - single-server mode removes NetApp, vCenter, and the separate local-datastore node from the home map.
+  - single-server mode shows a `Local RAID mode summary`: `Server-local RAID is the storage fabric`.
+  - server card is the visual hero in local mode; storage is represented inside the server, not as a second pseudo-device.
+- M6 design blueprint now mirrors the ZONES language:
+  - management and storage/local bands appear in the design workbench.
+  - local mode labels the lower band as `Local RAID inside server`.
+  - local mode adds a one-server shipment summary below the server hero.
+  - NetApp and vCenter remain absent in local-mode design unless deliberately added back through scenario/profile intent.
+- Honesty cleanup:
+  - the design blueprint device dot no longer defaults to green.
+  - neutral gray indicates no live element evidence has been probed.
+- Storage workspace behavior remains tied to existing schema/draft logic:
+  - local mode still shows `Local RAID and drive layout` and `RAID6 local datastore`.
+  - no new write/destructive path was added.
+
+ZONES M3 verification:
+
+- `npm run build`: pass.
+- `npm run test:e2e -- -g "zoned map"`: pass, including node/system controls and single-server local RAID map distinction.
+- `scripts/fast-verify.ps1`: pass, including frontend build, component test, and focused overview design Playwright `4/4`.
+
+Next planned slice:
+
+- ZONES M4: retire/delete the old overview surfaces now owned by the zoned map and tidy any selectors/routes that still depend on the superseded panels.
+- Keep safety machinery intact: resolver, probes, persistence, evidence artifacts, guarded workflows, and all RAID/factory/rebuild confirmation gates stay untouched.
+
 ## Verification
 
 - `npm run build`: pass.
