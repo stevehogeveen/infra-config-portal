@@ -4103,11 +4103,11 @@ type TopologyNode = {
   id: string;
   meta?: string;
   page: string;
-  position: "cisco" | "server" | "netapp" | "datastore" | "vcenter" | "localDatastore";
   status: string;
   tag?: string;
   title: string;
   tone: TopologyNodeTone;
+  zone: "management" | "storage";
 };
 
 type TopologyLink = {
@@ -4190,6 +4190,9 @@ function LabTopologyMap({
   const [selectedMapNodeId, setSelectedMapNodeId] = useState("");
   const [systemMenuOpen, setSystemMenuOpen] = useState(false);
   const [workspaceTarget, setWorkspaceTarget] = useState<DesignPartId>("switch");
+  const [workspaceOpen, setWorkspaceOpen] = useState(false);
+  const [mapZoom, setMapZoom] = useState(1);
+  const [mapPan, setMapPan] = useState({ x: 0, y: 0 });
   const [mapActionStatus, setMapActionStatus] = useState<{ error: string; message: string; runningActionId: string }>({
     error: "",
     message: "",
@@ -4216,11 +4219,11 @@ function LabTopologyMap({
       id: "cisco",
       meta: firmwareBehind ? "firmware behind" : undefined,
       page: "/network",
-      position: "cisco",
       status: ciscoStatus,
       tag: firmwareBehind ? "firmware behind" : undefined,
       title: "Cisco switch",
-      tone: topologyTone(ciscoStatus)
+      tone: topologyTone(ciscoStatus),
+      zone: "management"
     },
     {
       details: `ESXi ${displayAddress(address.esxi_management)} - iLO ${displayAddress(address.ilo)}`,
@@ -4228,10 +4231,10 @@ function LabTopologyMap({
       id: "server",
       meta: netappInScope ? "shared storage path" : "local storage path",
       page: "/server",
-      position: "server",
       status: serverStatus,
       title: "HPE DL360 Gen10",
-      tone: topologyTone(serverStatus)
+      tone: topologyTone(serverStatus),
+      zone: "storage"
     }
   ];
 
@@ -4243,10 +4246,10 @@ function LabTopologyMap({
         id: "netapp",
         meta: topologyNetappMeta(address, storageProtocol),
         page: "/storage",
-        position: "netapp",
         status: netappStatus,
         title: "NetApp ONTAP",
-        tone: topologyTone(netappStatus)
+        tone: topologyTone(netappStatus),
+        zone: "storage"
       },
       {
         details: `${storageProtocol.toUpperCase()} datastore - ${displayStatus(datastoreStatus).toLowerCase()}`,
@@ -4254,10 +4257,10 @@ function LabTopologyMap({
         id: "datastore",
         meta: datastoreVisibleStatus(vcenterNetapp) === "ready" ? "mounted" : "not mounted",
         page: "/storage",
-        position: "datastore",
         status: datastoreStatus,
         title: datastoreLabel,
-        tone: topologyTone(datastoreStatus)
+        tone: topologyTone(datastoreStatus),
+        zone: "storage"
       }
     );
   }
@@ -4269,11 +4272,11 @@ function LabTopologyMap({
       id: "vcenter",
       meta: topologyVmMeta(vcenterNetapp, vcenterInScope),
       page: "/virtualization",
-      position: "vcenter",
       status: vmStatus,
       tag: topologyVmTag(vcenterNetapp, vcenterInScope),
       title: vcenterInScope ? "vCenter VCSA" : vmName,
-      tone: topologyTone(vmStatus, "created")
+      tone: topologyTone(vmStatus, "created"),
+      zone: "management"
     });
   }
 
@@ -4318,6 +4321,12 @@ function LabTopologyMap({
     setSelectedMapNodeId("");
     setSystemMenuOpen(false);
     setTopologyMode("design");
+    setWorkspaceOpen(true);
+  }
+
+  function fitMapToScreen() {
+    setMapZoom(1);
+    setMapPan({ x: 0, y: 0 });
   }
 
   return (
@@ -4363,17 +4372,69 @@ function LabTopologyMap({
         </div>
       )}
 
-      {topologyMode === "operate" ? (
+      <div className="topology-map-tools" aria-label="Map viewport controls">
+        <button type="button" onClick={() => setMapZoom((value) => Math.min(1.35, Number((value + 0.1).toFixed(2))))}>Zoom in</button>
+        <button type="button" onClick={() => setMapZoom((value) => Math.max(0.75, Number((value - 0.1).toFixed(2))))}>Zoom out</button>
+        <button type="button" onClick={() => setMapPan((value) => ({ ...value, x: value.x - 36 }))}>Pan left</button>
+        <button type="button" onClick={() => setMapPan((value) => ({ ...value, x: value.x + 36 }))}>Pan right</button>
+        <button type="button" onClick={fitMapToScreen}>Fit</button>
+      </div>
+
+      <div
+        className={`lab-topology-canvas zones-canvas topology-mode-${topologyMode} ${netappInScope ? "has-netapp" : "single-server"}`}
+        aria-label="Zoned lab map"
+      >
         <div
-          className={`lab-topology-canvas zones-canvas ${netappInScope ? "has-netapp" : "single-server"}`}
-          aria-label="Zoned lab map"
+          className="topology-map-plane"
+          style={{ transform: `translate(${mapPan.x}px, ${mapPan.y}px) scale(${mapZoom})` }}
         >
-          <div className="topology-zone topology-zone-management" aria-hidden="true">
+          <div className="topology-zone topology-zone-management">
             <span>Management</span>
+            <div className="topology-zone-node-flow" aria-label="Management zone devices">
+              {nodes.filter((node) => node.zone === "management").map((node) => (
+                <TopologyMapNodeCard
+                  address={address}
+                  mapActionStatus={mapActionStatus}
+                  netappInScope={netappInScope}
+                  node={node}
+                  onOpenWorkspace={openNodeWorkspace}
+                  onRunReadOnlyTest={runMapNodeReadOnlyTest}
+                  onToggleMenu={(nodeId) => {
+                    setSelectedMapNodeId((current) => (current === nodeId ? "" : nodeId));
+                    setSystemMenuOpen(false);
+                  }}
+                  selectedMapNodeAction={selectedMapNodeAction}
+                  selectedMapNodeId={selectedMapNodeId}
+                  storageProtocol={storageProtocol}
+                  key={node.id}
+                />
+              ))}
+            </div>
           </div>
-          <div className="topology-zone topology-zone-storage" aria-hidden="true">
+          <div className="topology-zone topology-zone-storage">
             <span>{netappInScope ? "Storage fabric" : "Local RAID"}</span>
+            <div className="topology-zone-node-flow" aria-label={netappInScope ? "Storage fabric zone devices" : "Local RAID zone devices"}>
+              {nodes.filter((node) => node.zone === "storage").map((node) => (
+                <TopologyMapNodeCard
+                  address={address}
+                  mapActionStatus={mapActionStatus}
+                  netappInScope={netappInScope}
+                  node={node}
+                  onOpenWorkspace={openNodeWorkspace}
+                  onRunReadOnlyTest={runMapNodeReadOnlyTest}
+                  onToggleMenu={(nodeId) => {
+                    setSelectedMapNodeId((current) => (current === nodeId ? "" : nodeId));
+                    setSystemMenuOpen(false);
+                  }}
+                  selectedMapNodeAction={selectedMapNodeAction}
+                  selectedMapNodeId={selectedMapNodeId}
+                  storageProtocol={storageProtocol}
+                  key={node.id}
+                />
+              ))}
+            </div>
           </div>
+        </div>
           <button
             className="topology-system-chip"
             aria-expanded={systemMenuOpen}
@@ -4413,70 +4474,30 @@ function LabTopologyMap({
               </g>
             ))}
           </svg>
-          {nodes.map((node) => (
-            <div
-              className={`topology-node-wrap topology-node-${node.position} ${selectedMapNodeId === node.id ? "is-menu-open" : ""}`}
-              key={node.id}
-            >
-              <button
-                aria-expanded={selectedMapNodeId === node.id}
-                aria-label={`${node.title} node controls`}
-                className={`topology-node topology-node-${node.tone}`}
-                onClick={() => {
-                  setSelectedMapNodeId((current) => (current === node.id ? "" : node.id));
-                  setSystemMenuOpen(false);
-                }}
-                type="button"
-              >
-                <span className="topology-node-dot" aria-hidden="true" />
-                <span className="topology-node-faceplate" aria-hidden="true">
-                  <DesignFaceplateVisual
-                    compact
-                    partId={topologyNodeFaceplatePart(node.id, netappInScope)}
-                    settings={topologyNodeFaceplateSettings(node.id, address, storageProtocol, netappInScope)}
-                    storageProtocol={netappInScope ? storageProtocol : "local"}
-                  />
-                </span>
-                <span className="topology-node-title">{node.icon}<strong>{node.title}</strong></span>
-                <span className="topology-node-details">{node.details}</span>
-                {node.meta && <span className="topology-node-meta">{node.meta}</span>}
-                {node.tag && <span className="topology-node-tag">{node.tag}</span>}
-              </button>
-              {selectedMapNodeId === node.id && (
-                <div className="topology-node-menu topology-map-menu" aria-label={`${node.title} node menu`}>
-                  <strong>{node.title}</strong>
-                  <button type="button" onClick={() => openNodeWorkspace(node.id)}>Set deployment mode</button>
-                  <Link to="/network#network-profile">Assign IP block</Link>
-                  <button
-                    disabled={mapActionStatus.runningActionId === selectedMapNodeAction?.action_id || !selectedMapNodeAction}
-                    onClick={() => void runMapNodeReadOnlyTest(node)}
-                    type="button"
-                  >
-                    {mapActionStatus.runningActionId === selectedMapNodeAction?.action_id ? "Testing..." : "Run test (read-only)"}
-                  </button>
-                  <Link to="/network#network-profile">Switch profile</Link>
-                  <button type="button" onClick={() => openNodeWorkspace(node.id)}>Open workspace</button>
-                </div>
-              )}
-            </div>
-          ))}
           {(mapActionStatus.message || mapActionStatus.error) && (
             <div className={`topology-map-action-status ${mapActionStatus.error ? "is-error" : "is-ok"}`} role="status">
               {mapActionStatus.error || mapActionStatus.message}
             </div>
           )}
+      </div>
+
+      {workspaceOpen && (
+        <div className="topology-workspace-overlay" aria-label="Device workspace overlay">
+          <div className="topology-workspace-backdrop" onClick={() => setWorkspaceOpen(false)} />
+          <aside className="topology-workspace-drawer" aria-label="Device workspace drawer">
+            <button className="topology-workspace-close" type="button" onClick={() => setWorkspaceOpen(false)}>Close</button>
+            <LabDesignComposer
+              activeProfile={activeProfile}
+              address={address}
+              features={features}
+              health={health}
+              initialSelectedDevice={workspaceTarget}
+              onReload={onReload}
+              subnetState={subnetState}
+              workflowActions={workflowActions}
+            />
+          </aside>
         </div>
-      ) : (
-        <LabDesignComposer
-          activeProfile={activeProfile}
-          address={address}
-          features={features}
-          health={health}
-          initialSelectedDevice={workspaceTarget}
-          onReload={onReload}
-          subnetState={subnetState}
-          workflowActions={workflowActions}
-        />
       )}
 
       <div className="lab-topology-footer">
@@ -4489,6 +4510,73 @@ function LabTopologyMap({
         <p><span>Next safe action</span>{nextAction}</p>
       </div>
     </section>
+  );
+}
+
+function TopologyMapNodeCard({
+  address,
+  mapActionStatus,
+  netappInScope,
+  node,
+  onOpenWorkspace,
+  onRunReadOnlyTest,
+  onToggleMenu,
+  selectedMapNodeAction,
+  selectedMapNodeId,
+  storageProtocol
+}: {
+  address: LabAddressPlan;
+  mapActionStatus: { error: string; message: string; runningActionId: string };
+  netappInScope: boolean;
+  node: TopologyNode;
+  onOpenWorkspace: (nodeId: string) => void;
+  onRunReadOnlyTest: (node: TopologyNode) => void | Promise<void>;
+  onToggleMenu: (nodeId: string) => void;
+  selectedMapNodeAction: WorkflowAction | null;
+  selectedMapNodeId: string;
+  storageProtocol: string;
+}) {
+  const selected = selectedMapNodeId === node.id;
+  return (
+    <div className={`topology-node-wrap topology-node-zone-${node.zone} ${selected ? "is-menu-open" : ""}`}>
+      <button
+        aria-expanded={selected}
+        aria-label={`${node.title} node controls`}
+        className={`topology-node topology-node-${node.tone}`}
+        onClick={() => onToggleMenu(node.id)}
+        type="button"
+      >
+        <span className="topology-node-dot" aria-hidden="true" />
+        <span className="topology-node-faceplate" aria-hidden="true">
+          <DesignFaceplateVisual
+            compact
+            partId={topologyNodeFaceplatePart(node.id, netappInScope)}
+            settings={topologyNodeFaceplateSettings(node.id, address, storageProtocol, netappInScope)}
+            storageProtocol={netappInScope ? storageProtocol : "local"}
+          />
+        </span>
+        <span className="topology-node-title">{node.icon}<strong>{node.title}</strong></span>
+        <span className="topology-node-details">{node.details}</span>
+        {node.meta && <span className="topology-node-meta">{node.meta}</span>}
+        {node.tag && <span className="topology-node-tag">{node.tag}</span>}
+      </button>
+      {selected && (
+        <div className="topology-node-menu topology-map-menu" aria-label={`${node.title} node menu`}>
+          <strong>{node.title}</strong>
+          <button type="button" onClick={() => onOpenWorkspace(node.id)}>Set deployment mode</button>
+          <Link to="/network#network-profile">Assign IP block</Link>
+          <button
+            disabled={mapActionStatus.runningActionId === selectedMapNodeAction?.action_id || !selectedMapNodeAction}
+            onClick={() => void onRunReadOnlyTest(node)}
+            type="button"
+          >
+            {mapActionStatus.runningActionId === selectedMapNodeAction?.action_id ? "Testing..." : "Run test (read-only)"}
+          </button>
+          <Link to="/network#network-profile">Switch profile</Link>
+          <button type="button" onClick={() => onOpenWorkspace(node.id)}>Open workspace</button>
+        </div>
+      )}
+    </div>
   );
 }
 

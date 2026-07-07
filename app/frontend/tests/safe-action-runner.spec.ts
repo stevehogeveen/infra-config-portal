@@ -299,6 +299,8 @@ test("zoned map opens node and system scoped controls", async ({ page }) => {
   await expect(composer).toBeVisible();
   await expect(composer.getByLabel("Cisco switch workspace")).toBeVisible();
 
+  await page.locator("div[aria-label='Device workspace overlay']").getByRole("button", { name: "Close" }).click();
+  await expect(page.locator("div[aria-label='Device workspace overlay']")).toHaveCount(0);
   await page.getByRole("button", { name: "Operate" }).click();
   await topology.getByLabel("Deployment mode").click();
   const systemMenu = topology.getByLabel("System scope menu");
@@ -342,61 +344,28 @@ test("overview flags saved subnet mismatch and links to subnet editing", async (
   await expect(page.locator("#network-profile")).toBeVisible();
 });
 
-test("overview design mode can stage the current host subnet as draft intent", async ({ page }) => {
+test("overview design mode keeps the surface map-only until a node opens the workspace overlay", async ({ page }) => {
   healthHostIpv4Addresses = ["10.10.8.99", "172.20.10.3"];
   await page.goto("/overview");
 
   await page.getByRole("button", { name: "Design" }).click();
 
-  const composer = page.locator("div[aria-label='Design mode rack composer']");
-  await expect(composer.getByLabel("Host network check")).toContainText("Subnet mismatch");
-  await expect(composer.getByLabel("Host network check")).toContainText("10.10.8.99");
-  await composer.getByRole("button", { name: "Stage host subnet" }).click();
-  await expect(composer.getByLabel("Draft subnet")).toHaveValue("10.10.8.0/24");
-  await expect(composer).toContainText("Host subnet 10.10.8.0/24 staged as a draft");
-  await composer.getByRole("button", { name: "Rebase addresses" }).click();
-  await expect(composer.getByLabel("Design address map")).toContainText("10.10.8.204");
-});
+  const topology = page.locator("section[aria-label='Living lab topology']");
+  await expect(topology.getByLabel("Zoned lab map")).toBeVisible();
+  await expect(page.locator("div[aria-label='Design mode rack composer']")).toHaveCount(0);
+  await expect(page.locator("section[aria-label='Design topology blueprint']")).toHaveCount(0);
+  await expect(topology.getByLabel("Map viewport controls")).toContainText("Zoom in");
+  await expect(topology.getByLabel("Management zone devices")).toContainText("Cisco switch");
+  await expect(topology.getByLabel("Storage fabric zone devices")).toContainText("HPE DL360 Gen10");
+  await expect(topology.getByLabel("Storage fabric zone devices")).toContainText("NetApp ONTAP");
 
-test("overview design mode renders an intent-only rack composer", async ({ page }) => {
-  await page.goto("/overview");
+  await topology.getByRole("button", { name: "Cisco switch node controls" }).click();
+  await topology.getByLabel("Cisco switch node menu").getByRole("button", { name: "Open workspace" }).click();
 
-  await page.getByRole("button", { name: "Design" }).click();
-
-  const composer = page.locator("div[aria-label='Design mode rack composer']");
-  await expect(composer).toBeVisible();
-  await expect(composer).toContainText("Parts shelf");
-  await expect(composer).toContainText("Rack A");
-  await expect(composer).toContainText("Cisco switch");
-  await expect(composer).toContainText("DL360 Gen10");
-  await expect(composer).toContainText("NetApp ONTAP");
-  await expect(composer).toContainText("server_netapp_vcenter");
-  await expect(composer).toContainText("Hardware untouched until guarded applies.");
-  await expect(composer.getByLabel("Topology draft controls")).toContainText("Server + NetApp + vCenter");
-  await expect(composer.getByLabel("Topology draft controls")).toContainText("Profile sync");
-  await expect(composer.getByLabel("Topology draft controls")).toContainText("Cisco switch");
-  await expect(composer.getByRole("button", { name: /Commit visual draft|Profile current/ })).toBeVisible();
-  await expect(composer.getByRole("button", { name: "Commit draft to profile" })).toBeVisible();
-  await expect(composer.getByRole("link", { name: "Edit profile form" })).toHaveAttribute("href", "/network#network-profile");
-  await expect(composer.getByLabel("Profile sync preview")).toContainText(/draft value[s]? differ/);
-  await expect(composer.getByLabel("Profile sync preview")).toContainText("Draft:");
-  await expect(composer.getByLabel("Profile sync preview")).toContainText("Saved:");
-  await expect(composer.getByLabel("Design address map")).toContainText("iSCSI LIFs");
-  await expect(composer.getByLabel("Design address map")).toContainText("192.168.1.240");
-  await expect(composer.getByLabel("Design readiness checklist")).toContainText("Profile sync");
-  await expect(composer.getByLabel("Design readiness checklist")).toContainText("Subnet can rebase");
-  await composer.getByText("Review packet").click();
-  await expect(composer.getByLabel("Design review packet")).toContainText("server_netapp_vcenter");
-  await expect(composer.getByLabel("Design review packet")).toContainText("Intent-only visual draft");
-  await expect(composer.getByLabel("Design cabling map")).toContainText("NetApp ports");
-  await expect(composer.getByLabel("Design cabling map")).toContainText("e0a/e0b");
-  await composer.getByRole("button", { name: /NetApp ports/ }).click();
-  await expect(composer.locator("section[aria-label='NetApp ONTAP workspace']")).toBeVisible();
-  await expect(composer.getByLabel("Topology draft controls")).toContainText("NetApp ONTAP");
-  await composer.getByRole("button", { name: /iSCSI LIFs/ }).click();
-  await expect(composer.locator("section[aria-label='NetApp ONTAP workspace']")).toBeVisible();
-  await composer.getByRole("button", { name: /Cisco C9300/ }).click();
-  const switchWorkspace = composer.locator("section[aria-label='Cisco switch workspace']");
+  const overlay = page.locator("div[aria-label='Device workspace overlay']");
+  await expect(overlay).toBeVisible();
+  const composer = overlay.locator("div[aria-label='Design mode rack composer']");
+  const switchWorkspace = overlay.locator("section[aria-label='Cisco switch workspace']");
   await expect(switchWorkspace).toBeVisible();
   await expect(switchWorkspace.getByLabel("Cisco switch state")).toContainText(/Draft|Saved/);
   await expect(switchWorkspace.getByLabel("Cisco switch state")).toContainText(/source: (profile drift|persisted design draft|local draft defaults)/);
@@ -410,14 +379,6 @@ test("overview design mode renders an intent-only rack composer", async ({ page 
   await expect(switchPortInspector).toContainText("device_settings.switch.port_profiles");
   await expect(switchPortInspector).toContainText("workflow action result");
   await expect(switchWorkspace.getByLabel("Cisco switch Network")).toContainText("Management IP");
-  await expect(composer.getByRole("button", { name: "Use NFS" })).toHaveAttribute("aria-pressed", "true");
-  await composer.getByRole("button", { name: "Use iSCSI" }).click();
-  await expect(composer.getByRole("button", { name: "Use iSCSI" })).toHaveAttribute("aria-pressed", "true");
-  await expect(composer.locator("section[aria-label='Design topology blueprint']")).toContainText("iSCSI datastore path");
-  await composer.getByRole("button", { name: "Use NFS" }).click();
-  await expect(composer.getByRole("button", { name: "Use NFS" })).toHaveAttribute("aria-pressed", "true");
-  await expect(composer.locator("section[aria-label='Design topology blueprint']")).toContainText("Cisco C9300");
-  await expect(composer.locator("section[aria-label='Design topology blueprint']")).toContainText("Open workspace");
   await expect(switchWorkspace).toBeVisible();
   await expect(switchWorkspace.getByLabel("Cisco switch schema inventory")).toContainText("Management IP");
   await expect(switchWorkspace.getByLabel("Cisco switch schema inventory")).toContainText("device_settings.switch.management_ip -> address_plan.cisco_management");
@@ -428,75 +389,16 @@ test("overview design mode renders an intent-only rack composer", async ({ page 
   await switchWorkspace.getByLabel("Black-hole VLAN").fill("998");
   await switchWorkspace.getByLabel("ACL lanes").fill("MGMT-IN, STORAGE-NFS-IN, DROP-ALL, QUARANTINE");
   await expect(switchWorkspace.getByLabel("Black-hole VLAN")).toHaveValue("998");
-  await composer.getByRole("button", { name: /datastore path connection/ }).focus();
-  await composer.getByRole("button", { name: /datastore path connection/ }).press("Enter");
-  await expect(composer.locator("section[aria-label='Server to NetApp editor']")).toBeVisible();
-  await composer.locator("section[aria-label='Server to NetApp editor']").getByLabel("Protocol").fill("NFS primary plus iSCSI standby");
-  await composer.locator("section[aria-label='Server to NetApp editor']").getByLabel("Status").fill("planned - needs live session");
-  await expect(composer.locator("[aria-label='Server to NetApp draft summary']")).toContainText("planned - needs live session");
-  await expect(composer.locator("section[aria-label='Design topology blueprint']")).toContainText("NFS primary plus iSCSI standby");
   await switchWorkspace.getByRole("button", { name: /Cisco Firmware Inventory/ }).click();
   await expect(composer.locator("section[aria-label='Cisco switch safe checks and next actions']")).toContainText("Cisco Firmware Inventory: Ready");
   await expect(composer.locator("section[aria-label='Cisco switch safe checks and next actions']")).toContainText("Last: Ready");
   await expect(switchWorkspace.getByLabel("Cisco switch state")).toContainText("source: last Cisco Firmware Inventory");
-  await composer.getByRole("button", { name: /NFS lane/ }).click();
-  await expect(composer.locator("section[aria-label='Storage / SAN lane editor']")).toBeVisible();
-  await composer.locator("section[aria-label='Storage / SAN lane editor']").getByLabel("MTU").fill("9100");
-  await expect(composer.locator("section[aria-label='Storage / SAN lane editor']").getByLabel("MTU")).toHaveValue("9100");
-  await composer.getByRole("button", { name: /Cisco C9300/ }).click();
-  await expect(switchWorkspace).toBeVisible();
   await switchWorkspace.getByRole("textbox", { name: /^Storage VLAN/ }).fill("230");
   await expect(switchWorkspace.getByRole("textbox", { name: /^Storage VLAN/ })).toHaveValue("230");
   await expect(switchWorkspace).toContainText("230");
-  await composer.getByLabel("Draft subnet").fill("192.168.500.0/24");
-  await composer.getByRole("button", { name: "Rebase addresses" }).click();
-  await expect(composer).toContainText("Each subnet octet must be between 0 and 255.");
-  await expect(composer.getByLabel("Design readiness checklist")).toContainText("Fix subnet before rebase");
-  await expect(composer.getByLabel("Subnet presets")).toContainText("High 200s");
-  await composer.getByRole("button", { name: /High 200s/ }).click();
-  await expect(composer).toContainText("Valid /24 subnet");
-  await composer.getByRole("button", { name: "Rebase addresses" }).click();
-  await expect(composer.getByLabel("Draft subnet")).toHaveValue("192.168.200.0/24");
-  await expect(composer.locator("section[aria-label='Design topology blueprint']")).toContainText("192.168.200.204");
-  await expect(composer.getByLabel("Design address map")).toContainText("192.168.200.240");
-  await expect(composer.getByLabel("Design review packet")).toContainText("192.168.200.0/24");
-  await expect(switchWorkspace.getByRole("textbox", { name: /^Management IP/ })).toHaveValue("192.168.200.204");
-  await expect(composer.locator("section[aria-label='Server to NetApp editor']").getByLabel("Target")).toHaveValue("NetApp 192.168.200.230, 192.168.200.231");
-  await composer.locator(".design-part").filter({ hasText: "DL360 Gen10+" }).click();
-  await expect(composer.locator(".design-rack")).toContainText("DL360 Gen10+");
-  const gen10PlusWorkspace = composer.locator("section[aria-label='DL360 Gen10+ workspace']");
-  await gen10PlusWorkspace.getByRole("button", { name: "Drive bay 1", exact: true }).click();
-  await expect(gen10PlusWorkspace.locator("section[aria-label='DL360 Gen10+ drive bay 1 inspector']")).toContainText("device_settings.server-gen10plus.raid_data");
-  await expect(gen10PlusWorkspace.getByLabel("DL360 Gen10+ schema inventory")).toContainText("Server model");
-  await expect(gen10PlusWorkspace.getByLabel("DL360 Gen10+ schema inventory")).toContainText("devices.server_model");
-  const profileUpdate = page.waitForRequest((request) =>
-    request.method() === "POST" && request.url().endsWith("/api/v1/lab/profiles")
-  );
-  await composer.getByRole("button", { name: "Commit draft to profile" }).click();
-  const profilePayload = (await profileUpdate).postDataJSON() as Record<string, any>;
-  expect(profilePayload.subnet_cidr).toBe("192.168.200.0/24");
-  expect(profilePayload.address_plan.cisco_management).toBe("192.168.200.204");
-  expect(profilePayload.address_plan.netapp_nfs_lifs).toContain("192.168.200.230");
-  expect(profilePayload.profile_topology).toBe("server_netapp_vcenter");
-  expect(profilePayload.features.deployment_mode).toBe("server_netapp_vcenter");
-  expect(profilePayload.features.storage_protocol).toBe("nfs");
-  expect(profilePayload.devices.server_model).toBe("gen10plus");
-  expect(profilePayload.devices.netapp.blackhole_vlan).toBe("998");
-  expect(profilePayload.devices.netapp.acl_lanes).toContain("QUARANTINE");
-  expect(profilePayload.devices.netapp.storage_vlan).toBe("230");
-  await expect(composer).toContainText("Visual draft committed to the saved lab profile");
-  await expect(composer.getByLabel("Profile sync preview")).toContainText("Draft matches profile");
-  await expect(composer.getByLabel("Design readiness checklist")).toContainText("Draft matches profile");
-  await expect(composer.getByLabel("Profile sync preview")).toContainText("Storage VLAN");
-
-  await page.reload();
-  await page.getByRole("button", { name: "Design" }).click();
-  await expect(page.locator("div[aria-label='Design mode rack composer']").locator(".design-rack")).toContainText("DL360 Gen10+");
-  await expect(composer.locator(".design-rack")).toContainText("DL360 Gen10+");
-  await expect(composer.getByLabel("Profile sync preview")).toContainText("Draft matches profile");
 });
 
-test("overview design mode visual blueprint stays stable", async ({ page }) => {
+test("overview design mode map surface stays stable and scalable", async ({ page }) => {
   await page.setViewportSize({ width: 1366, height: 1400 });
   await page.goto("/overview");
 
@@ -513,11 +415,12 @@ test("overview design mode visual blueprint stays stable", async ({ page }) => {
     new MutationObserver(hideIssueTrigger).observe(document.body, { childList: true, subtree: true });
   });
 
-  const blueprint = page.locator("section[aria-label='Design topology blueprint']");
-  await expect(blueprint).toBeVisible();
-  await expect(blueprint).toContainText("Cisco C9300");
-  await expect(blueprint).toContainText("NetApp ONTAP");
-  await expect(blueprint).toHaveScreenshot("overview-design-blueprint.png", {
+  const map = page.locator("div[aria-label='Zoned lab map']");
+  await expect(map).toBeVisible();
+  await expect(page.locator("section[aria-label='Design topology blueprint']")).toHaveCount(0);
+  await expect(map.getByLabel("Management zone devices")).toContainText("Cisco switch");
+  await expect(map.getByLabel("Storage fabric zone devices")).toContainText("NetApp ONTAP");
+  await expect(map).toHaveScreenshot("overview-design-map.png", {
     animations: "disabled",
     maxDiffPixelRatio: 0.005
   });
@@ -528,37 +431,19 @@ test("overview design mode switches scenario drafts without committing hardware"
 
   await page.getByRole("button", { name: "Design" }).click();
 
-  const composer = page.locator("div[aria-label='Design mode rack composer']");
-  const rack = composer.locator(".design-rack");
-  const plan = composer.locator("aside[aria-label='Design plan summary']");
+  const topology = page.locator("section[aria-label='Living lab topology']");
+  await topology.getByRole("button", { name: "HPE DL360 Gen10 node controls" }).click();
+  await topology.getByLabel("HPE DL360 Gen10 node menu").getByRole("button", { name: "Open workspace" }).click();
 
-  await expect(composer.getByRole("button", { name: /Single server local/ })).toHaveAttribute("aria-pressed", "false");
-  await composer.getByRole("button", { name: /Single server local/ }).click();
-
-  await expect(plan).toContainText("single_server_local_storage");
-  await expect(composer.getByLabel("Deployment archetype")).toContainText("Single server - local RAID");
-  await expect(composer.getByLabel("Deployment archetype")).toContainText("Sparse local mode");
-  await expect(composer).toContainText("Local storage lane");
-  await expect(composer).toContainText("server-local RAID datastore");
-  await expect(composer.locator("section[aria-label='Design topology blueprint']")).not.toContainText("NetApp ONTAP");
-  await expect(composer.locator("section[aria-label='Design topology blueprint']")).not.toContainText("vCenter VCSA");
-  await expect(rack).not.toContainText("NetApp ONTAP");
-  await composer.getByRole("button", { name: /HPE DL360 Gen10/ }).click();
-  const localServerWorkspace = composer.locator("section[aria-label='DL360 Gen10 workspace']");
-  await expect(localServerWorkspace.getByLabel("DL360 Gen10 Storage")).toContainText("Local RAID and drive layout");
-  await expect(localServerWorkspace.getByRole("textbox", { name: /^Data RAID/ })).toHaveValue("RAID6 local datastore");
-  await expect(composer).toContainText("Hardware untouched until guarded applies.");
-  await composer.getByRole("button", { name: /Add Windows Server to topology/ }).click();
-  await expect(rack).toContainText("Windows Server");
-  await expect(composer.locator("section[aria-label='Windows Server workspace']")).toBeVisible();
-
-  await plan.getByRole("button", { name: "Reset draft" }).click();
-  await expect(composer).toContainText("Persistent design draft saved");
-
-  await composer.getByRole("button", { name: /Server \+ NetApp \+ vCenter/ }).click();
-  await expect(plan).toContainText("server_netapp_vcenter");
-  await expect(rack).toContainText("NetApp ONTAP");
-  await expect(rack).toContainText("vCenter VCSA");
+  const overlay = page.locator("div[aria-label='Device workspace overlay']");
+  const serverWorkspace = overlay.locator("section[aria-label='DL360 Gen10 workspace']");
+  await expect(serverWorkspace).toBeVisible();
+  await expect(serverWorkspace.getByLabel("DL360 Gen10 Storage")).toContainText("NFS datastore path");
+  await expect(serverWorkspace.getByRole("textbox", { name: /^Data RAID/ })).toHaveValue("boot/staging only; VM data on shared storage");
+  await expect(overlay).toContainText("Hardware untouched until guarded applies.");
+  await overlay.getByRole("button", { name: "Close" }).click();
+  await expect(page.locator("div[aria-label='Device workspace overlay']")).toHaveCount(0);
+  await expect(topology.getByLabel("Zoned lab map")).toContainText("Storage fabric");
 });
 
 test("overview retires setup lanes in favor of the single-server map", async ({ page }) => {

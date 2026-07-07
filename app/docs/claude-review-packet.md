@@ -203,7 +203,43 @@ ZONES branch milestone commits:
 - `eea48c0 feat: add zoned topology home shell`
 - `f33542f feat: add zoned map control menus`
 - `b5d4d18 feat: adapt zones map by deployment mode`
-- next commit: retire old overview panels
+- `be2d8e1 feat: retire overview panels for zones home`
+
+ZONES refinement from Claude/Steve feedback is complete.
+
+- Addressed the two structural issues Claude called out:
+  - clutter: Design mode no longer swaps the whole inline rack composer onto the page.
+  - scalability: topology nodes no longer use hardcoded role slots like `cisco`, `server`, `netapp`, `datastore`, `vcenter`.
+- Design mode now keeps the main surface map-only:
+  - zoned bands, nodes, cables/link labels, mode chip, node dropdown, and map controls only.
+  - no inline device hero, faceplate art editor, rack, parts shelf, or profile panels stacked below the map.
+- M6 device workspace moved behind a right-side overlay:
+  - clicking `Open workspace` opens the drawer.
+  - the clicked node is selected in the real M6 workspace.
+  - the map stays visible behind the overlay for context.
+  - close returns to the clean map.
+- Replaced fixed node placement with zone-based auto-layout:
+  - `TopologyNode` now carries `zone: management | storage`.
+  - Management and Storage fabric render as true auto-flow grid rows.
+  - the rows handle additional devices without adding new hardcoded CSS position classes.
+  - stale `.topology-node-cisco/server/netapp/...` positioning rules were removed.
+- Added map viewport controls:
+  - zoom in, zoom out, pan left, pan right, fit.
+  - implemented as reversible frontend state only.
+- Testing caught and fixed real hit-target bugs:
+  - storage faceplate initially intercepted Cisco clicks.
+  - Cisco faceplate then intercepted server clicks.
+  - final fix made the map plane a true two-row grid instead of percentage-positioned bands.
+- Guardrails:
+  - no RAID apply, factory reset, rebuild gate, or backend safety machinery changed.
+  - read-only/report-only guard remains on the map runner.
+  - honest state and schema-home wording stay in the M6 workspace.
+
+ZONES refinement verification:
+
+- `npm run build`: pass.
+- `npm run test:e2e -- -g "overview design mode"`: pass after updating the design-map snapshot.
+- `scripts/fast-verify.ps1`: pass with full frontend E2E, `34/34` Playwright, component tests, and build.
 
 ## Verification
 
@@ -215,10 +251,9 @@ No RAID apply, factory reset, or rebuild gates were touched.
 
 ## Request For Claude
 
-Codex is continuing autonomously on the ZONES direction. Please review M2 cheaply from this packet:
+Codex is continuing autonomously on the ZONES direction. Please review this latest refinement cheaply from this packet:
 
-- Is the node menu scope right, or should any action move elsewhere before follow-up polish?
-- Does `Open workspace` into M6 feel like the right escalation model?
-- Does M3/M4 now make `Single server - local RAID` vs `Server + NetApp + vCenter` visually unmistakable enough?
-- Before PR, what final visual polish would give the most value without weakening honest state?
+- Does the Design surface now read as a clean scalable map rather than a diagram plus panels?
+- Does the right-side M6 overlay feel like the correct depth/escalation model?
+- Any final visual polish before PR that improves beauty without weakening honest state?
 - Hidden correctness risk to watch: any canvas option that looks saveable must have a schema home and must round-trip; any live/reachability cue must come from real probe evidence.

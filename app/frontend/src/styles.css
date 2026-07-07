@@ -8091,6 +8091,40 @@ th.ui-compact-table-cell {
   width: min(100%, 1240px);
 }
 
+.topology-map-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+}
+
+.topology-map-tools button {
+  background: #ffffff;
+  border: 1px solid #dbe4ee;
+  border-radius: 999px;
+  color: #334155;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 850;
+  padding: 7px 10px;
+}
+
+.topology-map-tools button:hover {
+  border-color: #14b8a6;
+  color: #0f766e;
+}
+
+.topology-map-plane {
+  display: grid;
+  gap: 18px;
+  grid-template-rows: minmax(250px, auto) minmax(300px, 1fr);
+  inset: 70px 18px 18px;
+  position: absolute;
+  transform-origin: center center;
+  transition: transform 0.18s ease;
+  z-index: 2;
+}
+
 .lab-topology-canvas.single-server {
   background:
     linear-gradient(180deg, rgba(37, 99, 235, 0.14) 0 32%, rgba(20, 184, 166, 0.08) 32% 100%),
@@ -8103,11 +8137,16 @@ th.ui-compact-table-cell {
 .topology-zone {
   border: 1px solid rgba(148, 163, 184, 0.2);
   border-radius: 12px;
-  left: 18px;
-  pointer-events: none;
-  position: absolute;
-  right: 18px;
-  z-index: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  position: relative;
+  z-index: 1;
+}
+
+.topology-zone:has(.is-menu-open) {
+  overflow: visible;
+  z-index: 9;
 }
 
 .topology-zone span {
@@ -8126,21 +8165,27 @@ th.ui-compact-table-cell {
 
 .topology-zone-management {
   background: rgba(37, 99, 235, 0.08);
-  bottom: calc(64% + 10px);
-  top: 18px;
+  z-index: 3;
 }
 
 .topology-zone-storage {
   background: rgba(20, 184, 166, 0.08);
-  bottom: 18px;
-  top: calc(36% + 10px);
+  z-index: 2;
+}
+
+.topology-zone-node-flow {
+  align-content: center;
+  display: grid;
+  flex: 1;
+  gap: clamp(12px, 2vw, 24px);
+  grid-template-columns: repeat(auto-fit, minmax(230px, 280px));
+  justify-content: center;
+  padding: 14px clamp(18px, 4vw, 54px) 22px;
 }
 
 .lab-topology-canvas.single-server .topology-zone-storage {
   background: rgba(148, 163, 184, 0.05);
   border-style: dashed;
-  bottom: 18px;
-  top: calc(60% + 10px);
 }
 
 .topology-system-chip {
@@ -10194,9 +10239,9 @@ button.topology-system-chip {
 }
 
 .topology-node-wrap {
-  position: absolute;
+  position: relative;
   transition: transform 0.16s ease;
-  width: clamp(230px, 24%, 310px);
+  width: 100%;
   z-index: 2;
 }
 
@@ -10212,12 +10257,6 @@ button.topology-system-chip {
   left: 50%;
   top: calc(100% + 10px);
   transform: translateX(-50%);
-}
-
-.topology-node-datastore .topology-node-menu,
-.topology-node-localDatastore .topology-node-menu {
-  bottom: calc(100% + 10px);
-  top: auto;
 }
 
 .topology-node-title {
@@ -10296,52 +10335,8 @@ button.topology-system-chip {
   color: #64748b;
 }
 
-.topology-node-cisco {
-  left: 58%;
-  top: 82px;
-  transform: translateX(-50%);
-}
-
-.topology-node-cisco:hover {
-  transform: translate(-50%, -2px);
-}
-
-.topology-node-server {
-  left: clamp(46px, 7%, 110px);
-  top: 320px;
-}
-
-.topology-node-netapp {
-  right: clamp(46px, 7%, 110px);
-  top: 320px;
-}
-
-.topology-node-datastore {
-  left: 50%;
-  top: 475px;
-  transform: translateX(-50%);
-}
-
-.topology-node-datastore:hover {
-  transform: translate(-50%, -2px);
-}
-
-.topology-node-localDatastore {
-  right: clamp(58px, 8%, 120px);
-  top: 360px;
-}
-
-.topology-node-vcenter {
-  left: clamp(46px, 7%, 110px);
-  top: 82px;
-}
-
-.topology-node-vcenter .topology-node {
+.topology-node-zone-management .topology-node-created {
   border-color: #14b8a6;
-}
-
-.topology-node-vcenter:hover {
-  transform: translateY(-2px);
 }
 
 .topology-node-faceplate {
@@ -10359,15 +10354,66 @@ button.topology-system-chip {
   min-height: 34px;
 }
 
-.lab-topology-canvas.single-server .topology-node-server {
-  left: 50%;
-  top: 305px;
-  transform: translateX(-50%);
+.lab-topology-canvas.single-server .topology-node-zone-storage {
   width: clamp(280px, 34%, 410px);
 }
 
-.lab-topology-canvas.single-server .topology-node-server:hover {
-  transform: translate(-50%, -2px);
+.topology-workspace-overlay {
+  inset: 0;
+  position: fixed;
+  z-index: 80;
+}
+
+.topology-workspace-backdrop {
+  background: rgba(15, 23, 42, 0.46);
+  inset: 0;
+  position: absolute;
+}
+
+.topology-workspace-drawer {
+  background: #f8fafc;
+  box-shadow: -24px 0 60px rgba(0, 0, 0, 0.32);
+  height: 100%;
+  overflow-y: auto;
+  padding: 18px;
+  position: absolute;
+  right: 0;
+  top: 0;
+  width: min(760px, 48vw);
+}
+
+.topology-workspace-close {
+  background: #0f172a;
+  border: 1px solid #1f2937;
+  border-radius: 999px;
+  color: #f8fafc;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 900;
+  margin-bottom: 12px;
+  padding: 8px 12px;
+}
+
+.topology-workspace-drawer .lab-design-composer {
+  display: block;
+  width: 100%;
+}
+
+.topology-workspace-drawer .design-scenario-strip,
+.topology-workspace-drawer .design-control-strip,
+.topology-workspace-drawer .design-blueprint-stage,
+.topology-workspace-drawer .design-parts-shelf,
+.topology-workspace-drawer .design-plan-panel {
+  display: none;
+}
+
+.topology-workspace-drawer .design-visual-workbench {
+  display: block;
+}
+
+.topology-workspace-drawer .design-device-workspace {
+  border-radius: 12px;
+  min-height: calc(100vh - 56px);
 }
 
 .lab-topology-footer {
@@ -13121,31 +13167,12 @@ button.topology-system-chip {
   }
 
   .topology-node-wrap,
-  .topology-node-cisco,
-  .topology-node-server,
-  .topology-node-netapp,
-  .topology-node-datastore,
-  .topology-node-localDatastore,
-  .topology-node-vcenter {
-    left: auto;
-    position: relative;
-    right: auto;
-    top: auto;
+  .topology-node-wrap:hover {
     transform: none;
     width: auto;
   }
 
-  .topology-node-wrap:hover,
-  .topology-node-cisco:hover,
-  .topology-node-datastore:hover,
-  .topology-node-vcenter:hover,
-  .lab-topology-canvas.single-server .topology-node-server:hover {
-    transform: none;
-  }
-
-  .topology-node-menu,
-  .topology-node-datastore .topology-node-menu,
-  .topology-node-localDatastore .topology-node-menu {
+  .topology-node-menu {
     bottom: auto;
     left: auto;
     margin-top: 8px;
