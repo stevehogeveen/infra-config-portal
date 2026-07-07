@@ -4733,18 +4733,18 @@ function LabTopologyMap({
   const nodes: TopologyNode[] = [
     {
       details: displayAddress(address.cisco_management),
-      icon: <EthernetPort size={17} />,
+      icon: topologyIndustryIcon("switch"),
       id: "cisco",
       meta: firmwareBehind ? "firmware behind" : undefined,
       page: "/network",
       status: ciscoStatus,
-      title: "Cisco switch - core-switch-01 - C9300",
+      title: "Cisco switch - C9300 L3 core",
       tone: topologyTone(ciscoStatus),
       zone: "management"
     },
     {
       details: `BMC ${displayAddress(address.ilo)}`,
-      icon: <Gauge size={17} />,
+      icon: topologyIndustryIcon("ilo"),
       id: "ilo",
       meta: "out-of-band management",
       page: "/server",
@@ -4755,7 +4755,7 @@ function LabTopologyMap({
     },
     {
       details: `ESXi ${displayAddress(address.esxi_management)} - host compute`,
-      icon: <Server size={18} />,
+      icon: topologyIndustryIcon("server"),
       id: "server",
       meta: netappInScope ? "shared storage path" : "local storage path",
       page: "/server",
@@ -4770,7 +4770,7 @@ function LabTopologyMap({
     nodes.push(
       {
         details: `cluster ${displayAddress(address.netapp_cluster_mgmt)}`,
-        icon: <Database size={17} />,
+        icon: topologyIndustryIcon("netapp"),
         id: "netapp",
         meta: topologyNetappMeta(address, storageProtocol),
         page: "/storage",
@@ -4781,7 +4781,7 @@ function LabTopologyMap({
       },
       {
         details: `${storageProtocol.toUpperCase()} datastore - ${displayStatus(datastoreStatus).toLowerCase()}`,
-        icon: <HardDrive size={17} />,
+        icon: topologyIndustryIcon("datastore"),
         id: "datastore",
         meta: datastoreVisibleStatus(vcenterNetapp) === "ready" ? "mounted" : "not mounted",
         page: "/storage",
@@ -4796,7 +4796,7 @@ function LabTopologyMap({
   if (vmInScope) {
     nodes.push({
       details: vcenterInScope ? "vCenter inventory" : "direct ESXi inventory",
-      icon: <Layers size={17} />,
+      icon: topologyIndustryIcon(vcenterInScope ? "vcenter" : "hypervisor"),
       id: "vcenter",
       meta: topologyVmMeta(vcenterNetapp, vcenterInScope),
       page: "/virtualization",
@@ -4823,7 +4823,7 @@ function LabTopologyMap({
     setWorkspaceOpen(true);
   }
 
-  function fitMapToScreen() {
+function fitMapToScreen() {
     setMapZoom(1);
     setMapPan({ x: 0, y: 0 });
   }
@@ -4889,7 +4889,7 @@ function LabTopologyMap({
           style={{ transform: `translate(${mapPan.x}px, ${mapPan.y}px) scale(${mapZoom})` }}
         >
           <div className="topology-zone topology-zone-management">
-            <span>Management</span>
+            <span>Management plane</span>
             <div className="topology-zone-node-flow" aria-label="Management zone devices">
               {nodes.filter((node) => node.zone === "management").map((node) => (
                 <TopologyMapNodeCard
@@ -4904,7 +4904,7 @@ function LabTopologyMap({
             </div>
           </div>
           <div className="topology-zone topology-zone-storage">
-            <span>{netappInScope ? "Storage fabric" : "Local RAID"}</span>
+            <span>{netappInScope ? "Storage fabric" : "Local RAID fabric"}</span>
             <div className="topology-zone-node-flow" aria-label={netappInScope ? "Storage fabric zone devices" : "Local RAID zone devices"}>
               {nodes.filter((node) => node.zone === "storage").map((node) => (
                 <TopologyMapNodeCard
@@ -4991,6 +4991,69 @@ function LabTopologyMap({
         <p><span>Next safe action</span>{nextAction}</p>
       </div>
     </section>
+  );
+}
+
+function topologyIndustryIcon(kind: "datastore" | "hypervisor" | "ilo" | "netapp" | "server" | "switch" | "vcenter") {
+  const className = `topology-industry-symbol topology-industry-symbol-${kind}`;
+  if (kind === "switch") {
+    return (
+      <span className={className} aria-hidden="true">
+        <svg viewBox="0 0 32 32">
+          <rect x="5" y="10" width="22" height="12" rx="3" />
+          <path d="M10 16h12M16 8v16M11 8l5-4 5 4M11 24l5 4 5-4" />
+        </svg>
+      </span>
+    );
+  }
+  if (kind === "server") {
+    return (
+      <span className={className} aria-hidden="true">
+        <svg viewBox="0 0 32 32">
+          <rect x="5" y="7" width="22" height="18" rx="3" />
+          <path d="M9 12h4M15 12h4M21 12h2M9 17h4M15 17h4M21 17h2M9 22h14" />
+        </svg>
+      </span>
+    );
+  }
+  if (kind === "netapp") {
+    return (
+      <span className={className} aria-hidden="true">
+        <svg viewBox="0 0 32 32">
+          <rect x="5" y="7" width="22" height="7" rx="2" />
+          <rect x="5" y="18" width="22" height="7" rx="2" />
+          <path d="M10 10h3M10 21h3M19 10h3M19 21h3" />
+        </svg>
+      </span>
+    );
+  }
+  if (kind === "datastore") {
+    return (
+      <span className={className} aria-hidden="true">
+        <svg viewBox="0 0 32 32">
+          <ellipse cx="16" cy="8" rx="9" ry="4" />
+          <path d="M7 8v15c0 2.2 4 4 9 4s9-1.8 9-4V8M7 15c0 2.2 4 4 9 4s9-1.8 9-4" />
+        </svg>
+      </span>
+    );
+  }
+  if (kind === "ilo") {
+    return (
+      <span className={className} aria-hidden="true">
+        <svg viewBox="0 0 32 32">
+          <rect x="9" y="9" width="14" height="14" rx="3" />
+          <path d="M12 4v5M20 4v5M12 23v5M20 23v5M4 12h5M4 20h5M23 12h5M23 20h5" />
+        </svg>
+      </span>
+    );
+  }
+  return (
+    <span className={className} aria-hidden="true">
+      <svg viewBox="0 0 32 32">
+        <path d="M16 5l9 5-9 5-9-5 9-5Z" />
+        <path d="M7 16l9 5 9-5M7 22l9 5 9-5" />
+      </svg>
+    </span>
   );
 }
 
@@ -5245,6 +5308,9 @@ function LabDesignComposer({
     ? topologyDeviceInspectorRows(selectedPart.id, selectedSettings, storageProtocol)
     : [];
   const selectedSettingFields = selectedPart ? topologyDeviceSettingFields(selectedPart.id, storageProtocol) : [];
+  const selectedWorkspaceSettingFields = selectedPart?.id === "netapp"
+    ? selectedSettingFields.filter((field) => field.key !== "protocol")
+    : selectedSettingFields;
   const selectedPersistenceRows = selectedPart ? topologyDevicePersistenceRows(selectedPart.id, selectedSettingFields) : [];
   const selectedElementInspector = selectedPart
     ? topologyFaceplateElementInspector(selectedPart.id, selectedFaceplateElement, selectedSettings, storageProtocol)
@@ -5300,6 +5366,7 @@ function LabDesignComposer({
   const selectedElementOutput = selectedElementRun && selectedElementCommands.length
     ? topologyCommandOutputSummary(selectedElementRun.stdout_summary, selectedElementCommands)
     : [];
+  const selectedElementProofState = topologySelectedElementProofState(selectedElementRun, selectedElementOutput);
   const selectedSafeActionIds = selectedSafeActions.map((action) => action.action_id).join("|");
   const profileNeedsCommit = profileSyncDriftCount > 0 || activeProfile?.source !== "saved";
   const canCommitProfileDraft = Boolean(activeProfile) && !profileCommitStatus.running && profileNeedsCommit;
@@ -5789,6 +5856,23 @@ function LabDesignComposer({
               />
             </div>
 
+            {selectedPart.id === "netapp" && (
+              <section className="design-primary-setting" aria-label="NetApp storage protocol">
+                <div>
+                  <p className="operator-kicker">Storage mode</p>
+                  <h4>{storageProtocol === "iscsi" ? "iSCSI block datastore path" : "NFS datastore path"}</h4>
+                  <span>Changes the LIFs, port plan, and datastore fields shown below. Draft only until committed.</span>
+                </div>
+                <select
+                  value={storageProtocol === "iscsi" ? "iscsi" : "nfs"}
+                  onChange={(event) => updateDraftStorageProtocol(event.target.value === "iscsi" ? "iscsi" : "nfs")}
+                >
+                  <option value="nfs">NFS datastore path</option>
+                  <option value="iscsi">iSCSI block datastore path</option>
+                </select>
+              </section>
+            )}
+
             {selectedElementInspector && (
               <section className="design-element-inspector" aria-label={`${selectedPart.label} ${selectedElementInspector.label} inspector`}>
                 <div>
@@ -5797,6 +5881,13 @@ function LabDesignComposer({
                   <span>{selectedElementInspector.summary}</span>
                 </div>
                 <div className="design-element-inspector-grid">
+                  {selectedPart.id === "switch" && (
+                    <div>
+                      <span>Selected port state</span>
+                      <strong>{selectedElementProofState.label}</strong>
+                      <small>{selectedElementProofState.source}</small>
+                    </div>
+                  )}
                   {selectedElementInspector.rows.map((row) => (
                     <div key={row.label}>
                       <span>{row.label}</span>
@@ -5821,7 +5912,7 @@ function LabDesignComposer({
                       {actionRunStatus.runningActionId === selectedElementAction.action_id ? "Running show interface" : "Show interface"}
                     </button>
                     <pre className="design-terminal-output" aria-label={`${selectedPart.label} ${selectedElementInspector.label} terminal output`}>
-                      {selectedElementOutput.length ? selectedElementOutput.join("\n") : "not checked - run Show interface to capture redacted read-only output"}
+                      {selectedElementOutput.length ? selectedElementOutput.join("\n") : "Not checked yet. Run Show interface to verify this port."}
                     </pre>
                   </div>
                 )}
@@ -5836,7 +5927,7 @@ function LabDesignComposer({
                   onClick={() => void runDeviceSafeAction(selectedSafeActions[0])}
                   type="button"
                 >
-                  {actionRunStatus.runningActionId === selectedSafeActions[0].action_id ? "Running check" : `Test ${selectedPart.label}`}
+                  {actionRunStatus.runningActionId === selectedSafeActions[0].action_id ? "Running check" : topologyPrimaryActionLabel(selectedPart.id, selectedSafeActions[0])}
                 </button>
               ) : (
                 <button className="design-plan-action" disabled type="button">No read-only test registered</button>
@@ -5845,7 +5936,7 @@ function LabDesignComposer({
             </div>
 
             <div className="design-device-param-sections" aria-label={`${selectedPart.label} editable parameters`}>
-              {topologyDeviceWorkspaceSections(selectedPart.id, selectedSettingFields, draftScenario, storageProtocol).map((section) => (
+              {topologyDeviceWorkspaceSections(selectedPart.id, selectedWorkspaceSettingFields, draftScenario, storageProtocol).map((section) => (
                 <section className="design-device-param-section" key={section.id} aria-label={`${selectedPart.label} ${section.label}`}>
                   <div>
                     <p className="operator-kicker">{section.label}</p>
@@ -5861,6 +5952,14 @@ function LabDesignComposer({
                             value={deviceSettings[selectedPart.id]?.[field.key] ?? ""}
                             onChange={(event) => updateDeviceSetting(field.key, event.target.value)}
                           />
+                        ) : selectedPart.id === "netapp" && field.key === "protocol" ? (
+                          <select
+                            value={storageProtocol === "iscsi" ? "iscsi" : "nfs"}
+                            onChange={(event) => updateDraftStorageProtocol(event.target.value === "iscsi" ? "iscsi" : "nfs")}
+                          >
+                            <option value="nfs">NFS datastore path</option>
+                            <option value="iscsi">iSCSI block datastore path</option>
+                          </select>
                         ) : (
                           <input
                             value={deviceSettings[selectedPart.id]?.[field.key] ?? ""}
@@ -7446,16 +7545,53 @@ function topologyCommandOutputSummary(stdoutSummary: string | null | undefined, 
     const parsed = JSON.parse(raw) as { command_evidence?: Record<string, { captured?: boolean; stdout_summary?: unknown }> };
     const evidence = parsed.command_evidence && typeof parsed.command_evidence === "object" ? parsed.command_evidence : {};
     const lines: string[] = [];
+    const fallbackLines: string[] = [];
     for (const [command, result] of Object.entries(evidence)) {
-      if (!wanted.has(command.toLowerCase())) continue;
-      lines.push(`$ ${command}`);
+      const target = wanted.has(command.toLowerCase()) ? lines : fallbackLines;
+      target.push(`$ ${command}`);
       const summaryLines = Array.isArray(result.stdout_summary) ? result.stdout_summary.map((line) => asString(line)).filter(Boolean) : [];
-      lines.push(...(summaryLines.length ? summaryLines : [result.captured ? "captured; output redacted" : "not captured"]));
+      target.push(...(summaryLines.length ? summaryLines : [result.captured ? "Captured; command summary unavailable." : "No connection - port output not captured."]));
     }
-    return lines;
+    return lines.length ? lines : fallbackLines.length ? fallbackLines : ["No connection or configured port state captured for this port."];
   } catch {
-    return raw.split(/\r?\n/).filter(Boolean).slice(0, 16);
+    const lines = raw.split(/\r?\n/).filter(Boolean).slice(0, 16);
+    return lines.length ? lines : ["No connection or configured port state captured for this port."];
   }
+}
+
+function topologySelectedElementProofState(
+  run: WorkflowActionRun | null,
+  output: string[]
+): { label: string; source: string } {
+  if (!run) {
+    return {
+      label: "Not checked yet",
+      source: "read-only proof pending"
+    };
+  }
+  if (isProblemRun(run)) {
+    return {
+      label: `Check failed - ${displayStatus(run.status)}`,
+      source: run.summary || run.next_action || "workflow action result"
+    };
+  }
+  const hasCapturedOutput = output.some((line) => {
+    const normalized = line.toLowerCase();
+    return Boolean(normalized) &&
+      !normalized.startsWith("$ ") &&
+      !normalized.includes("no connection") &&
+      !normalized.includes("not captured");
+  });
+  return hasCapturedOutput
+    ? { label: "Read-only state captured", source: "workflow action result" }
+    : { label: "No connection detected", source: "read-only command returned no port state" };
+}
+
+function topologyPrimaryActionLabel(partId: DesignPartId, action: WorkflowAction): string {
+  if (partId === "switch" && action.action_id === "cisco.ssh-readonly-probe") return "Run Cisco read-only check";
+  if (partId === "ilo") return "Run iLO read-only check";
+  if (partId === "netapp") return "Run NetApp read-only check";
+  return `Test ${topologyPartLabel(partId)}`;
 }
 
 function topologyFaceplateElementInspector(
@@ -7774,16 +7910,18 @@ function topologyDeviceSettingFields(partId: DesignPartId, storageProtocol: stri
     ];
   }
   if (partId === "netapp") {
+    const protocolFields = storageProtocol === "iscsi"
+      ? [{ key: "iscsi_lifs", label: "Primary iSCSI LIFs" }]
+      : [{ key: "nfs_lifs", label: "Primary NFS LIFs" }];
     return [
       { key: "name", label: "Name" },
       { key: "management_ip", label: "Cluster IP" },
       { key: "gateway", label: "Gateway" },
       { key: "storage_vlan", label: "Storage VLAN" },
       { key: "protocol", label: "Storage mode" },
-      { key: "nfs_lifs", label: storageProtocol === "iscsi" ? "NFS LIFs" : "Primary NFS LIFs" },
-      { key: "iscsi_lifs", label: storageProtocol === "iscsi" ? "Primary iSCSI LIFs" : "iSCSI LIFs" },
+      ...protocolFields,
       { key: "controller_ports", label: "Controller ports" },
-      { key: "ports", kind: "textarea", label: "Port plan" },
+      { key: "ports", kind: "textarea", label: storageProtocol === "iscsi" ? "iSCSI port plan" : "NFS port plan" },
       { key: "notes", kind: "textarea", label: "Notes" }
     ];
   }
@@ -8105,7 +8243,9 @@ function topologyDeviceSafeActions(
   const safe = actions.filter((action) => ["read_only", "report_only"].includes(action.mode) && action.ui_run_supported !== false);
   const preferredIds = topologyDevicePreferredActionIds(partId, scope);
   const byId = new Map(safe.map((action) => [action.action_id, action]));
-  const selected = preferredIds.map((id) => byId.get(id)).filter(Boolean) as WorkflowAction[];
+  const selected = preferredIds
+    .map((id) => byId.get(id) ?? topologyFallbackReadOnlyAction(id))
+    .filter((action): action is WorkflowAction => Boolean(action));
   if (selected.length) return selected.slice(0, 3);
   const hints = topologyDeviceProviderHints(partId);
   return safe
@@ -8115,6 +8255,92 @@ function topologyDeviceSafeActions(
       action.action_id.toLowerCase().includes(hint)
     ))
     .slice(0, 3);
+}
+
+function topologyFallbackReadOnlyAction(actionId: string): WorkflowAction | null {
+  const labels: Record<string, { description: string; label: string; provider: string; stage: string; stage_label: string }> = {
+    "cisco.ssh-readonly-probe": {
+      description: "Run approved Cisco show commands through the existing read-only workflow endpoint.",
+      label: "Cisco SSH read-only probe",
+      provider: "cisco",
+      stage: "network",
+      stage_label: "Network"
+    },
+    "ilo.reachability": {
+      description: "Check iLO reachability through the existing read-only workflow endpoint.",
+      label: "iLO reachability",
+      provider: "ilo",
+      stage: "server",
+      stage_label: "Server"
+    },
+    "ilo.auth": {
+      description: "Check iLO credentials without exposing secrets through the existing read-only workflow endpoint.",
+      label: "iLO auth check",
+      provider: "ilo",
+      stage: "server",
+      stage_label: "Server"
+    },
+    "ilo.inventory": {
+      description: "Read iLO inventory through the existing read-only workflow endpoint.",
+      label: "iLO inventory",
+      provider: "ilo",
+      stage: "server",
+      stage_label: "Server"
+    }
+  };
+  const item = labels[actionId];
+  if (!item) return null;
+  return {
+    action_id: actionId,
+    api_endpoint: null,
+    api_method: null,
+    blockers: [],
+    category: "discover",
+    command: null,
+    current_availability: "unknown",
+    description: item.description,
+    evidence_artifacts: [],
+    guarded_run_blockers: [],
+    guarded_run_supported: false,
+    inputs: [],
+    label: item.label,
+    last_run_report: null,
+    last_run_status: "not_checked",
+    last_run_trace: {
+      action_id: actionId,
+      blockers: [],
+      command: null,
+      finished_at: null,
+      freshness: "not_checked",
+      next_action: "Run this read-only check to collect proof.",
+      report_artifacts: [],
+      run_id: "",
+      source_type: "not_checked",
+      stage_id: item.stage,
+      started_at: null,
+      status: "not_checked",
+      summary: "No run recorded for this workspace action.",
+      warnings: []
+    },
+    mode: "read_only",
+    next_action: "Run this read-only check to collect proof.",
+    outputs: [],
+    provider: item.provider,
+    reports: [],
+    required_confirmations: [],
+    required_credentials: [],
+    required_gates: [],
+    required_mode: "real_lab",
+    run_endpoint: `/api/v1/workflows/actions/${actionId}/run`,
+    runs_endpoint: `/api/v1/workflows/actions/${actionId}/runs`,
+    safety_notes: ["Read-only proof only. No configuration, power, firmware, RAID, reset, or rebuild actions are exposed here."],
+    source_type: "api_endpoint",
+    stage: item.stage,
+    stage_label: item.stage_label,
+    stale_after_seconds: 300,
+    ui_run_blockers: [],
+    ui_run_supported: true
+  };
 }
 
 function topologyDevicePreferredActionIds(

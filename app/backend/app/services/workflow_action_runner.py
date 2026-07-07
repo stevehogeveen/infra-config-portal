@@ -227,7 +227,9 @@ def _run_api_action(
     try:
         with _temporary_workflow_env(str(action["action_id"]), payload):
             action_payload = _api_action_payload(str(action["action_id"]), session, payload)
-        stdout_summary = _redacted_summary(json.dumps(_api_stdout_payload(str(action["action_id"]), action_payload), sort_keys=True))
+        action_id = str(action["action_id"])
+        summary_limit = 16000 if action_id == "cisco.ssh-readonly-probe" else 4000
+        stdout_summary = _redacted_summary(json.dumps(_api_stdout_payload(action_id, action_payload), sort_keys=True), max_chars=summary_limit)
         payload_status = str(action_payload.get("status") or "").lower() if isinstance(action_payload, dict) else ""
         status = payload_status if payload_status in {"blocked", "failed"} else "completed"
         blockers = _string_list(action_payload.get("blockers")) if isinstance(action_payload, dict) and status == "blocked" else []

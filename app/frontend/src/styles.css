@@ -8254,13 +8254,12 @@ th.ui-compact-table-cell {
 
 .lab-topology-canvas {
   background:
-    linear-gradient(180deg, rgba(37, 99, 235, 0.14) 0 36%, rgba(20, 184, 166, 0.14) 36% 100%),
-    linear-gradient(90deg, rgba(148, 163, 184, 0.12) 1px, transparent 1px),
-    linear-gradient(180deg, rgba(148, 163, 184, 0.1) 1px, transparent 1px),
-    #0f172a;
-  background-size: 100% 100%, 44px 44px, 44px 44px, auto;
-  border: 1px solid #1f2937;
-  border-radius: 12px;
+    radial-gradient(circle at 50% 48%, rgba(99, 102, 241, 0.14), transparent 29%),
+    radial-gradient(circle at 35% 68%, rgba(20, 184, 166, 0.12), transparent 25%),
+    linear-gradient(180deg, rgba(247, 251, 255, 0.98), rgba(241, 249, 248, 0.98));
+  border: 1px solid #d8e4f2;
+  border-radius: 18px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.82), 0 24px 70px rgba(31, 48, 77, 0.12);
   justify-self: center;
   min-height: clamp(560px, 54vw, 680px);
   overflow: hidden;
@@ -8325,20 +8324,19 @@ th.ui-compact-table-cell {
 
 .lab-topology-canvas.single-server {
   background:
-    linear-gradient(180deg, rgba(37, 99, 235, 0.14) 0 32%, rgba(20, 184, 166, 0.08) 32% 100%),
-    linear-gradient(90deg, rgba(148, 163, 184, 0.12) 1px, transparent 1px),
-    linear-gradient(180deg, rgba(148, 163, 184, 0.1) 1px, transparent 1px),
-    #0f172a;
+    radial-gradient(circle at 50% 48%, rgba(99, 102, 241, 0.12), transparent 29%),
+    linear-gradient(180deg, rgba(247, 251, 255, 0.98), rgba(245, 248, 252, 0.98));
   min-height: clamp(500px, 48vw, 620px);
 }
 
 .topology-zone {
-  border: 1px solid rgba(148, 163, 184, 0.18);
-  border-radius: 12px;
+  border: 1px solid transparent;
+  border-radius: 28px;
   display: flex;
   flex-direction: column;
   overflow: hidden;
   position: relative;
+  transition: background 0.17s ease, border-color 0.17s ease, box-shadow 0.17s ease;
   z-index: 1;
 }
 
@@ -8348,27 +8346,54 @@ th.ui-compact-table-cell {
 }
 
 .topology-zone > span {
-  background: rgba(15, 23, 42, 0.72);
-  border: 1px solid rgba(148, 163, 184, 0.18);
-  border-radius: 999px;
-  color: #e5e7eb;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  color: #51627a;
   display: inline-flex;
   font-size: 11px;
-  font-weight: 900;
-  letter-spacing: 0;
-  margin: 12px;
-  padding: 6px 10px;
+  font-weight: 950;
+  letter-spacing: 0.045em;
+  margin: 16px 18px 8px;
+  padding: 0;
+  position: relative;
   text-transform: uppercase;
 }
 
+.topology-zone > span::after {
+  background: currentColor;
+  content: "";
+  display: block;
+  height: 2px;
+  opacity: 0.28;
+  position: absolute;
+  left: 0;
+  top: calc(100% + 7px);
+  width: 86px;
+}
+
 .topology-zone-management {
-  background: linear-gradient(180deg, rgba(37, 99, 235, 0.1), rgba(37, 99, 235, 0.045));
+  background: linear-gradient(180deg, rgba(59, 130, 246, 0.035), rgba(59, 130, 246, 0.015));
   z-index: 3;
 }
 
 .topology-zone-storage {
-  background: linear-gradient(180deg, rgba(20, 184, 166, 0.095), rgba(20, 184, 166, 0.045));
+  background: linear-gradient(180deg, rgba(20, 184, 166, 0.018), rgba(20, 184, 166, 0.04));
   z-index: 2;
+}
+
+.topology-zone-management:has(.topology-node:hover),
+.topology-zone-management:has(.topology-node:focus-visible) {
+  background: linear-gradient(180deg, rgba(59, 130, 246, 0.15), rgba(59, 130, 246, 0.055));
+  border-color: rgba(147, 197, 253, 0.38);
+  box-shadow: inset 0 0 0 1px rgba(219, 234, 254, 0.72);
+}
+
+.topology-zone-storage:has(.topology-node:hover),
+.topology-zone-storage:has(.topology-node:focus-visible) {
+  background: linear-gradient(180deg, rgba(20, 184, 166, 0.055), rgba(20, 184, 166, 0.16));
+  border-color: rgba(94, 234, 212, 0.38);
+  box-shadow: inset 0 0 0 1px rgba(204, 251, 241, 0.72);
 }
 
 .topology-zone-node-flow {
@@ -8391,19 +8416,33 @@ th.ui-compact-table-cell {
 
 .topology-system-chip {
   align-items: start;
-  background: rgba(15, 23, 42, 0.88);
-  border: 1px solid rgba(45, 212, 191, 0.42);
+  background: rgba(255, 255, 255, 0.95);
+  border: 1px solid #d7e4f4;
   border-radius: 999px;
-  color: #ccfbf1;
+  box-shadow: 0 18px 44px rgba(30, 48, 77, 0.14);
+  color: #0f172a;
   display: inline-grid;
-  gap: 2px;
+  gap: 3px;
   left: 50%;
-  padding: 8px 14px;
+  min-width: min(360px, calc(100% - 36px));
+  padding: 10px 20px 10px 42px;
   position: absolute;
   text-align: left;
   top: 18px;
   transform: translateX(-50%);
   z-index: 4;
+}
+
+.topology-system-chip::before {
+  background: #14b8a6;
+  border-radius: 999px;
+  box-shadow: 0 0 0 5px rgba(20, 184, 166, 0.14);
+  content: "";
+  height: 10px;
+  left: 20px;
+  position: absolute;
+  top: 18px;
+  width: 10px;
 }
 
 button.topology-system-chip {
@@ -8413,8 +8452,8 @@ button.topology-system-chip {
 
 .topology-system-chip:hover,
 .topology-system-chip[aria-expanded="true"] {
-  border-color: rgba(94, 234, 212, 0.82);
-  box-shadow: 0 0 0 3px rgba(20, 184, 166, 0.18), 0 18px 40px rgba(0, 0, 0, 0.28);
+  border-color: rgba(20, 184, 166, 0.58);
+  box-shadow: 0 0 0 4px rgba(20, 184, 166, 0.12), 0 18px 42px rgba(30, 48, 77, 0.16);
 }
 
 .topology-map-menu {
@@ -8538,16 +8577,17 @@ button.topology-system-chip {
 }
 
 .topology-system-chip strong {
-  color: #f8fafc;
+  color: #0f172a;
   font-size: 12px;
   line-height: 1.1;
+  text-transform: uppercase;
 }
 
 .topology-system-chip span {
-  color: #99f6e4;
+  color: #64748b;
   font-size: 10px;
   font-weight: 850;
-  letter-spacing: 0;
+  letter-spacing: 0.015em;
   text-transform: uppercase;
 }
 
@@ -9152,6 +9192,47 @@ button.topology-system-chip {
   grid-template-columns: minmax(160px, auto) minmax(0, 1fr);
 }
 
+.design-primary-setting {
+  align-items: center;
+  background: linear-gradient(180deg, #f0fdfa, #ffffff);
+  border: 1px solid #99f6e4;
+  border-radius: 12px;
+  display: grid;
+  gap: 14px;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 280px);
+  padding: 13px;
+}
+
+.design-primary-setting h4 {
+  color: var(--ink);
+  font-size: 15px;
+  line-height: 1.15;
+  margin: 0;
+}
+
+.design-primary-setting span {
+  color: #475569;
+  display: block;
+  font-size: 12px;
+  font-weight: 750;
+  line-height: 1.35;
+  margin-top: 4px;
+}
+
+.design-primary-setting select {
+  background: #ffffff;
+  border: 1px solid #5eead4;
+  border-radius: 10px;
+  color: #0f172a;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 900;
+  min-height: 40px;
+  padding: 9px 11px;
+  width: 100%;
+}
+
 .design-element-inspector {
   background: linear-gradient(180deg, #f8fafc, #ffffff);
   border: 1px solid #cbd5e1;
@@ -9306,6 +9387,7 @@ button.topology-system-chip {
 }
 
 .design-device-setting-row input,
+.design-device-setting-row select,
 .design-device-setting-row textarea {
   background: #f8fafc;
   border: 1px solid #dbe4ee;
@@ -9316,6 +9398,12 @@ button.topology-system-chip {
   min-height: 34px;
   padding: 8px 10px;
   width: 100%;
+}
+
+.design-device-setting-row select {
+  appearance: auto;
+  cursor: pointer;
+  font-weight: 850;
 }
 
 .design-device-setting-row small {
@@ -10493,12 +10581,13 @@ button.design-ilo-port:hover {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 12.5px;
   font-weight: 800;
-  letter-spacing: 0;
+  letter-spacing: 0.015em;
   paint-order: stroke;
   pointer-events: none;
-  stroke: rgba(15, 23, 42, 0.94);
+  stroke: rgba(255, 255, 255, 0.92);
   stroke-linejoin: round;
-  stroke-width: 7px;
+  stroke-width: 6px;
+  text-transform: uppercase;
 }
 
 .topology-link-ready path {
@@ -10506,7 +10595,7 @@ button.design-ilo-port:hover {
 }
 
 .topology-link-ready text {
-  fill: #cbd5e1;
+  fill: #64748b;
 }
 
 .topology-link-warning path {
@@ -10523,7 +10612,7 @@ button.design-ilo-port:hover {
 }
 
 .topology-link-created text {
-  fill: #99f6e4;
+  fill: #0f766e;
 }
 
 .topology-link-unknown path {
@@ -10531,21 +10620,21 @@ button.design-ilo-port:hover {
 }
 
 .topology-link-unknown text {
-  fill: #cbd5e1;
+  fill: #64748b;
 }
 
 .topology-node {
-  background: rgba(248, 250, 252, 0.94);
-  border: 1px solid rgba(148, 163, 184, 0.72);
-  border-radius: 8px;
-  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.18);
+  background: rgba(255, 255, 255, 0.94);
+  border: 1px solid rgba(197, 211, 231, 0.96);
+  border-radius: 18px;
+  box-shadow: 0 20px 48px rgba(23, 34, 54, 0.12);
   color: var(--ink);
   cursor: pointer;
   display: grid;
   font: inherit;
-  gap: 6px;
-  min-height: 86px;
-  padding: 10px 30px 10px 12px;
+  gap: 8px;
+  min-height: 98px;
+  padding: 13px 34px 13px 14px;
   position: relative;
   text-align: left;
   text-decoration: none;
@@ -10554,13 +10643,14 @@ button.design-ilo-port:hover {
 }
 
 .topology-node:hover {
-  border-color: #94a3b8;
-  box-shadow: 0 16px 34px rgba(0, 0, 0, 0.22);
+  border-color: rgba(20, 184, 166, 0.82);
+  box-shadow: 0 0 0 5px rgba(20, 184, 166, 0.12), 0 32px 72px rgba(24, 43, 70, 0.2);
+  transform: scale(1.045);
 }
 
 .topology-node[aria-expanded="true"] {
-  border-color: #5eead4;
-  box-shadow: 0 0 0 3px rgba(20, 184, 166, 0.16), 0 18px 38px rgba(0, 0, 0, 0.28);
+  border-color: #14b8a6;
+  box-shadow: 0 0 0 4px rgba(20, 184, 166, 0.16), 0 22px 44px rgba(24, 43, 70, 0.22);
 }
 
 .topology-node-wrap {
@@ -10575,7 +10665,7 @@ button.design-ilo-port:hover {
 }
 
 .topology-node-wrap:hover {
-  transform: translateY(-2px);
+  transform: none;
 }
 
 .topology-node-menu {
@@ -10593,13 +10683,10 @@ button.design-ilo-port:hover {
 
 .topology-node-title strong {
   font-size: 13.5px;
+  letter-spacing: 0.01em;
   line-height: 1.2;
   overflow-wrap: anywhere;
-}
-
-.topology-node-title svg {
-  color: #334155;
-  flex: 0 0 auto;
+  text-transform: uppercase;
 }
 
 .topology-node-details,
@@ -10609,6 +10696,62 @@ button.design-ilo-port:hover {
   font-size: 11.5px;
   line-height: 1.25;
   overflow-wrap: anywhere;
+  text-transform: uppercase;
+}
+
+.topology-industry-symbol {
+  align-items: center;
+  background: #f8fafc;
+  border: 1px solid #cbd5e1;
+  border-radius: 12px;
+  color: #334155;
+  display: inline-grid;
+  flex: 0 0 auto;
+  height: 34px;
+  justify-items: center;
+  width: 34px;
+}
+
+.topology-industry-symbol svg {
+  fill: none;
+  height: 23px;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+  width: 23px;
+}
+
+.topology-industry-symbol-switch {
+  background: #eef4ff;
+  border-color: #bfd2f3;
+  color: #3538a9;
+}
+
+.topology-industry-symbol-server,
+.topology-industry-symbol-netapp {
+  background: #edfdf8;
+  border-color: #b5eadf;
+  color: #0f766e;
+}
+
+.topology-industry-symbol-datastore {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+  color: #475569;
+}
+
+.topology-industry-symbol-ilo {
+  background: #fff7ed;
+  border-color: #fed7aa;
+  color: #b45309;
+}
+
+.topology-industry-symbol-vcenter,
+.topology-industry-symbol-hypervisor {
+  background: #f0f3ff;
+  border-color: #c7d2fe;
+  color: #4f46e5;
 }
 
 .topology-node-chips {
@@ -10620,10 +10763,10 @@ button.design-ilo-port:hover {
 }
 
 .topology-node-meta {
-  background: #e0f2fe;
-  border: 1px solid #bae6fd;
+  background: #ecfeff;
+  border: 1px solid #a7f3d0;
   border-radius: 999px;
-  color: #075985;
+  color: #0f766e;
   display: inline-flex;
   font-family: inherit;
   font-size: 10.5px;
@@ -10642,6 +10785,7 @@ button.design-ilo-port:hover {
   justify-self: start;
   line-height: 1.1;
   padding: 4px 7px;
+  text-transform: uppercase;
 }
 
 .topology-node-dot {
@@ -10684,13 +10828,13 @@ button.design-ilo-port:hover {
 }
 
 .topology-node-faceplate {
-  background: linear-gradient(180deg, #1e293b, #111827);
-  border: 1px solid rgba(15, 23, 42, 0.52);
-  border-radius: 6px;
+  background: linear-gradient(180deg, #f8fafc, #eef4fb);
+  border: 1px solid rgba(203, 213, 225, 0.92);
+  border-radius: 12px;
   display: block;
   min-height: 19px;
   overflow: hidden;
-  padding: 4px 6px;
+  padding: 6px 8px;
 }
 
 .topology-mini-faceplate {
@@ -10712,8 +10856,8 @@ button.design-ilo-port:hover {
 
 .topology-mini-port,
 .topology-mini-bay {
-  background: #cbd5e1;
-  border: 1px solid rgba(248, 250, 252, 0.34);
+  background: #ffffff;
+  border: 1px solid rgba(148, 163, 184, 0.74);
   border-radius: 2px;
   flex: 0 0 auto;
   height: 8px;
@@ -10725,10 +10869,10 @@ button.design-ilo-port:hover {
 }
 
 .topology-mini-chip {
-  background: rgba(226, 232, 240, 0.12);
-  border: 1px solid rgba(226, 232, 240, 0.24);
+  background: #ffffff;
+  border: 1px solid rgba(148, 163, 184, 0.58);
   border-radius: 999px;
-  color: #dbeafe;
+  color: #334155;
   flex: 0 1 auto;
   font-size: 9px;
   font-weight: 900;
