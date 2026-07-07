@@ -276,9 +276,11 @@ def _api_action_payload(action_id: str, session: Session | None, payload: dict[s
     if action_id == "cisco.setup-readiness":
         return get_cisco_setup_readiness()
     if action_id == "cisco.ssh-readonly-probe":
-        from app.providers.cisco_ansible import CiscoAnsibleAdapter
+        from app.providers.cisco_ansible import CiscoAnsibleAdapter, _validated_extra_show_commands
 
-        return CiscoAnsibleAdapter().probe()
+        extra_commands = _validated_extra_show_commands(payload.get("cisco_commands"))
+        adapter = CiscoAnsibleAdapter()
+        return adapter.probe(extra_show_commands=extra_commands) if extra_commands else adapter.probe()
     if action_id == "cisco.current-intent-diff":
         return get_cisco_current_intent_diff()
     if action_id in {"cisco.firmware-inventory", "ilo.firmware-inventory"}:
@@ -698,14 +700,16 @@ def _api_stdout_payload(action_id: str, action_payload: Any) -> Any:
         return payload
     command_results = payload.get("command_results") if isinstance(payload.get("command_results"), dict) else {}
     evidence: dict[str, Any] = {}
-    for command in ("show version", "show interfaces status", "show vlan brief"):
+    for command in command_results.keys() if isinstance(command_results, dict) else ():
         result = command_results.get(command) if isinstance(command_results, dict) else None
         if not isinstance(result, dict):
             evidence[command] = {"captured": False}
             continue
         evidence[command] = {
             "captured": bool(result.get("captured")),
+            "command": result.get("command") or command,
             "line_count": result.get("line_count"),
+            "stdout_summary": result.get("stdout_summary") or [],
             "version_hint": result.get("version_hint"),
             "has_vlan_table_header": result.get("has_vlan_table_header"),
             "has_vlan_1": result.get("has_vlan_1"),

@@ -290,6 +290,20 @@ test("zoned map opens device workspace directly and keeps system scoped controls
   const composer = page.locator("div[aria-label='Design mode rack composer']");
   await expect(composer).toBeVisible();
   await expect(composer.getByLabel("Cisco switch workspace")).toBeVisible();
+  await composer.getByRole("button", { name: "Switch port 2" }).click();
+  const selectedPortProof = composer.getByLabel("Cisco switch port 2 read-only command output");
+  await expect(selectedPortProof).toContainText("show interface Gi1/0/2");
+  await expect(composer.getByRole("button", { name: "Switch port 2" })).toHaveClass(/selected/);
+  const showInterfaceRequest = page.waitForRequest((request) =>
+    request.url().includes("/api/v1/workflows/actions/cisco.ssh-readonly-probe/run") &&
+    request.method() === "POST"
+  );
+  await selectedPortProof.getByRole("button", { name: "Show interface" }).click();
+  expect((await showInterfaceRequest).postDataJSON()).toEqual({
+    cisco_commands: ["show interface Gi1/0/2", "show running-config interface Gi1/0/2", "show interfaces status"]
+  });
+  await expect(selectedPortProof.getByLabel("Cisco switch port 2 terminal output")).toContainText("Gi1/0/2");
+  await expect(selectedPortProof.getByLabel("Cisco switch port 2 terminal output")).toContainText("connected");
 
   await page.locator("div[aria-label='Device workspace overlay']").getByRole("button", { name: "Close" }).click();
   await expect(page.locator("div[aria-label='Device workspace overlay']")).toHaveCount(0);
@@ -1937,6 +1951,7 @@ function operatorIssuePacket(payload: Record<string, unknown>) {
 function workflowActionRun(actionId: string) {
   const isFirmwareUpgrade = actionId === "firmware.upgrade-apply-placeholder";
   const isOperatorSweep = actionId === "operator-readonly-sweep.real-lab";
+  const isCiscoShow = actionId === "cisco.ssh-readonly-probe";
   return {
     action_id: actionId,
     action_label: isFirmwareUpgrade ? "Run Upgrade Placeholder" : "Run Full Verification",
@@ -1958,7 +1973,26 @@ function workflowActionRun(actionId: string) {
     started_at: checkedAt,
     status: isFirmwareUpgrade ? "blocked" : "completed",
     stderr_summary: "",
-    stdout_summary: isFirmwareUpgrade ? "" : "verification passed",
+    stdout_summary: isFirmwareUpgrade
+      ? ""
+      : isCiscoShow
+        ? JSON.stringify({
+          command_evidence: {
+            "show interface Gi1/0/2": {
+              captured: true,
+              stdout_summary: ["Gi1/0/2 is up, line protocol is up", "Hardware is Gigabit Ethernet, address redacted"]
+            },
+            "show running-config interface Gi1/0/2": {
+              captured: true,
+              stdout_summary: ["interface Gi1/0/2", "description ilo", "switchport access vlan 10"]
+            },
+            "show interfaces status": {
+              captured: true,
+              stdout_summary: ["Gi1/0/2   ilo                connected    10         a-full  a-1000 10/100/1000BaseTX"]
+            }
+          }
+        })
+        : "verification passed",
     summary: isFirmwareUpgrade ? "Guarded action was not run because required gates were not satisfied." : "Safe read-only/report-only action completed.",
     trace_artifact: "artifacts/codex-runs/workflow-action-runs/test.json",
     warnings: isOperatorSweep

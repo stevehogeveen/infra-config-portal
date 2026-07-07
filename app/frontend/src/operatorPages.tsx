@@ -5290,6 +5290,16 @@ function LabDesignComposer({
   const selectedSafeActions = selectedPart
     ? topologyDeviceSafeActions(selectedPart.id, workflowActions, { netappInScope, storageProtocol, vcenterInScope })
     : [];
+  const selectedElementAction = selectedPart?.id === "switch"
+    ? selectedSafeActions.find((action) => action.action_id === "cisco.ssh-readonly-probe") ?? null
+    : null;
+  const selectedElementCommands = selectedPart?.id === "switch"
+    ? topologySwitchElementCommands(selectedFaceplateElement)
+    : [];
+  const selectedElementRun = selectedElementAction ? actionRunsById[selectedElementAction.action_id]?.[0] ?? null : null;
+  const selectedElementOutput = selectedElementRun && selectedElementCommands.length
+    ? topologyCommandOutputSummary(selectedElementRun.stdout_summary, selectedElementCommands)
+    : [];
   const selectedSafeActionIds = selectedSafeActions.map((action) => action.action_id).join("|");
   const profileNeedsCommit = profileSyncDriftCount > 0 || activeProfile?.source !== "saved";
   const canCommitProfileDraft = Boolean(activeProfile) && !profileCommitStatus.running && profileNeedsCommit;
@@ -5477,7 +5487,7 @@ function LabDesignComposer({
     }
   }
 
-  async function runDeviceSafeAction(action: WorkflowAction) {
+  async function runDeviceSafeAction(action: WorkflowAction, request?: WorkflowActionRunRequest) {
     if (!["read_only", "report_only"].includes(action.mode)) {
       setActionRunStatus({ error: "Only read-only or report-only actions can run from the visual designer.", message: "", runningActionId: "" });
       return;
@@ -5485,7 +5495,7 @@ function LabDesignComposer({
     setActionRunStatus({ error: "", message: "", runningActionId: action.action_id });
     setDiagnosis(null);
     try {
-      const result = await api.runWorkflowAction(action.action_id);
+      const result = await api.runWorkflowAction(action.action_id, request);
       setActionRunsById((current) => ({
         ...current,
         [action.action_id]: [result, ...(current[action.action_id] ?? [])].slice(0, 5)
@@ -5773,6 +5783,7 @@ function LabDesignComposer({
                   setDropMessage(`${selectedPart.label} ${elementLabel} selected. Inspect mapped params below; hardware untouched.`);
                 }}
                 partId={selectedPart.id}
+                selectedElement={selectedFaceplateElement}
                 settings={selectedSettings}
                 storageProtocol={storageProtocol}
               />
@@ -5795,6 +5806,25 @@ function LabDesignComposer({
                   ))}
                 </div>
                 <p>{selectedElementInspector.guardrail}</p>
+                {selectedElementAction && selectedElementCommands.length > 0 && (
+                  <div className="design-element-live-proof" aria-label={`${selectedPart.label} ${selectedElementInspector.label} read-only command output`}>
+                    <div>
+                      <span>Read-only command</span>
+                      <strong>{selectedElementCommands.join(" | ")}</strong>
+                    </div>
+                    <button
+                      className="design-plan-action"
+                      disabled={actionRunStatus.runningActionId === selectedElementAction.action_id}
+                      onClick={() => void runDeviceSafeAction(selectedElementAction, { cisco_commands: selectedElementCommands })}
+                      type="button"
+                    >
+                      {actionRunStatus.runningActionId === selectedElementAction.action_id ? "Running show interface" : "Show interface"}
+                    </button>
+                    <pre className="design-terminal-output" aria-label={`${selectedPart.label} ${selectedElementInspector.label} terminal output`}>
+                      {selectedElementOutput.length ? selectedElementOutput.join("\n") : "not checked - run Show interface to capture redacted read-only output"}
+                    </pre>
+                  </div>
+                )}
               </section>
             )}
 
@@ -7400,6 +7430,34 @@ function topologyDefaultFaceplateElement(partId: DesignPartId): string {
   return "Windows VM";
 }
 
+function topologySwitchElementCommands(elementLabel: string): string[] {
+  const match = asString(elementLabel).match(/port\s+(\d+)/i);
+  const portNumber = match ? Number(match[1]) : NaN;
+  if (!Number.isInteger(portNumber) || portNumber < 1 || portNumber > 48) return [];
+  const interfaceName = `Gi1/0/${portNumber}`;
+  return [`show interface ${interfaceName}`, `show running-config interface ${interfaceName}`, "show interfaces status"];
+}
+
+function topologyCommandOutputSummary(stdoutSummary: string | null | undefined, commands: string[]): string[] {
+  const raw = asString(stdoutSummary);
+  if (!raw) return [];
+  const wanted = new Set(commands.map((command) => command.toLowerCase()));
+  try {
+    const parsed = JSON.parse(raw) as { command_evidence?: Record<string, { captured?: boolean; stdout_summary?: unknown }> };
+    const evidence = parsed.command_evidence && typeof parsed.command_evidence === "object" ? parsed.command_evidence : {};
+    const lines: string[] = [];
+    for (const [command, result] of Object.entries(evidence)) {
+      if (!wanted.has(command.toLowerCase())) continue;
+      lines.push(`$ ${command}`);
+      const summaryLines = Array.isArray(result.stdout_summary) ? result.stdout_summary.map((line) => asString(line)).filter(Boolean) : [];
+      lines.push(...(summaryLines.length ? summaryLines : [result.captured ? "captured; output redacted" : "not captured"]));
+    }
+    return lines;
+  } catch {
+    return raw.split(/\r?\n/).filter(Boolean).slice(0, 16);
+  }
+}
+
 function topologyFaceplateElementInspector(
   partId: DesignPartId,
   elementLabel: string,
@@ -7492,6 +7550,7 @@ function DesignFaceplateVisual({
   interactive = false,
   onElementClick,
   partId,
+  selectedElement = "",
   settings,
   storageProtocol
 }: {
@@ -7499,6 +7558,7 @@ function DesignFaceplateVisual({
   interactive?: boolean;
   onElementClick?: (elementLabel: string) => void;
   partId: DesignPartId;
+  selectedElement?: string;
   settings: Record<string, string>;
   storageProtocol: string;
 }) {
@@ -7515,9 +7575,17 @@ function DesignFaceplateVisual({
         <span className="design-switch-ports">
           {ports.map((port) => (
             interactive ? (
-              <button className="design-switch-port" key={port} onClick={() => onElementClick?.(`port ${port}`)} type="button" aria-label={`Switch port ${port}`} />
+              <button
+                className={`design-switch-port ${selectedElement === `port ${port}` || selectedElement === `Switch port ${port}` ? "selected" : ""}`}
+                key={port}
+                onClick={() => onElementClick?.(`port ${port}`)}
+                type="button"
+                aria-label={`Switch port ${port}`}
+              >
+                <span>{port}</span>
+              </button>
             ) : (
-              <span className="design-switch-port" key={port} />
+              <span className="design-switch-port" key={port}><span>{port}</span></span>
             )
           ))}
         </span>
@@ -8054,7 +8122,7 @@ function topologyDevicePreferredActionIds(
   scope: { netappInScope: boolean; storageProtocol: string; vcenterInScope: boolean }
 ): string[] {
   if (partId === "switch") {
-    return ["cisco.validate-ssh-scp", "cisco.firmware-inventory", "cisco.current-intent-diff"];
+    return ["cisco.ssh-readonly-probe", "cisco.validate-ssh-scp", "cisco.firmware-inventory", "cisco.current-intent-diff"];
   }
   if (partId === "ilo") {
     return ["ilo.reachability", "ilo.auth", "ilo.inventory"];

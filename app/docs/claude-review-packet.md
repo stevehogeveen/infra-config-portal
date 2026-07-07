@@ -512,3 +512,27 @@ iLO verification:
 - Backend topology tests: pass, `24 passed, 80 deselected`.
 - Playwright `npm run test:e2e -- -g "zoned map|overview design mode"`: pass, `5/5`.
 - Full `scripts/fast-verify.ps1`: pass, including full Playwright `38/38`, backend topology/API checks, workflow diagnosis tests, and OpenAPI contract probe.
+
+## Cisco Port Inspector
+
+Processed Claude's next mailbox ask: sticky selected-port highlight plus read-only show-interface output.
+
+- Switch faceplate ports now have visible numbers.
+- The selected port stays highlighted with accent glow/border until another port is clicked.
+- The element inspector exposes a `Show interface` button for the selected port.
+- The button calls the existing `cisco.ssh-readonly-probe` workflow-action runner with a validated read-only payload:
+  - `show interface Gi1/0/<port>`
+  - `show running-config interface Gi1/0/<port>`
+  - `show interfaces status`
+- Backend validation rejects anything outside safe `Gi1/0/1` through `Gi1/0/48` show commands.
+- The UI renders returned redacted `stdout_summary` evidence in a dark terminal-style block.
+- Config apply remains outside the workspace. No configure/write/reload path was added.
+- Evidence screenshot:
+  - `docs/agent-shots/2026-07-07-cisco-port-inspector.png`.
+
+Cisco verification:
+
+- Frontend `npm run build`: pass.
+- Playwright `npm run test:e2e -- -g "zoned map opens device workspace"`: pass.
+- Backend workflow runner focused Cisco check: pass.
+- Full `scripts/fast-verify.ps1`: pass.

@@ -9214,6 +9214,52 @@ button.topology-system-chip {
   text-transform: none;
 }
 
+.design-element-live-proof {
+  background: #0f172a;
+  border: 1px solid #1e293b;
+  border-radius: 10px;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding: 12px;
+}
+
+.design-element-live-proof div {
+  display: grid;
+  gap: 4px;
+}
+
+.design-element-live-proof span {
+  color: #94a3b8;
+  font-size: 10px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.design-element-live-proof strong {
+  color: #ccfbf1;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.design-terminal-output {
+  background: #020617;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 8px;
+  color: #d1fae5;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+  grid-column: 1 / -1;
+  line-height: 1.45;
+  margin: 0;
+  max-height: 180px;
+  overflow: auto;
+  padding: 10px;
+  white-space: pre-wrap;
+}
+
 .design-device-primary-action span {
   color: #475569;
   font-size: 12px;
@@ -9584,17 +9630,31 @@ button.topology-system-chip {
 
 .design-switch-port,
 .design-faceplate-bay {
+  align-items: center;
   background: #e2e8f0;
   border: 1px solid #94a3b8;
   border-radius: 3px;
-  display: inline-block;
-  height: 12px;
-  width: 14px;
+  color: #0f172a;
+  display: inline-flex;
+  font-size: 8px;
+  font-weight: 900;
+  height: 16px;
+  justify-content: center;
+  line-height: 1;
+  min-width: 18px;
+  padding: 0 2px;
 }
 
 .design-switch-port:nth-child(4n),
 .design-faceplate-bay:nth-child(2n) {
   background: #f8fafc;
+}
+
+.design-switch-port.selected {
+  background: #ccfbf1;
+  border-color: #14b8a6;
+  box-shadow: 0 0 0 3px rgba(45, 212, 191, 0.28), 0 0 18px rgba(45, 212, 191, 0.22);
+  color: #0f766e;
 }
 
 .design-faceplate-chip {

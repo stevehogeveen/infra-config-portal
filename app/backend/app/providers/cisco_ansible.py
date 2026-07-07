@@ -218,7 +218,7 @@ class CiscoAnsibleAdapter:
             last_probe_time=last_time,
         )
 
-    def probe(self) -> dict[str, Any]:
+    def probe(self, extra_show_commands: list[str] | None = None) -> dict[str, Any]:
         if self.provider_mode not in REAL_CONTACT_MODES:
             return self._record_blocked(
                 "Set PROVIDER_MODE=local-readonly or PROVIDER_MODE=local-lab-readwrite before running Cisco Ansible probes."
@@ -276,7 +276,7 @@ class CiscoAnsibleAdapter:
         ansible_bin = which("ansible")
         inventory_bin = which("ansible-inventory")
         if not ansible_bin or not inventory_bin:
-            paramiko_result = _paramiko_show_commands(self.config, ssh_reachability)
+            paramiko_result = _paramiko_show_commands(self.config, ssh_reachability, extra_show_commands)
             if paramiko_result["status"] == "ok":
                 phases.append(
                     {
@@ -351,7 +351,7 @@ class CiscoAnsibleAdapter:
                         "message": "Running fixed read-only Cisco show commands through Ansible.",
                     }
                 )
-                for command in SAFE_SHOW_COMMANDS:
+                for command in (*SAFE_SHOW_COMMANDS, *(extra_show_commands or [])):
                     command_results[command] = _run_command(
                         [
                             ansible_bin,
@@ -477,7 +477,20 @@ def _tcp_connect(host: str, port: int, timeout_seconds: float) -> dict[str, Any]
     return {"reachable": False, "port": port, "attempts": attempts}
 
 
-def _paramiko_show_commands(config: CiscoAnsibleConfig, ssh_reachability: dict[str, Any]) -> dict[str, Any]:
+def _validated_extra_show_commands(raw_commands: Any) -> list[str]:
+    commands: list[str] = []
+    if not isinstance(raw_commands, list):
+        return commands
+    for raw in raw_commands[:4]:
+        command = str(raw or "").strip()
+        interface_match = re.fullmatch(r"show interface\s+(Gi1/0/(?:[1-9]|[1-3][0-9]|4[0-8]))", command, re.IGNORECASE)
+        run_match = re.fullmatch(r"show running-config interface\s+(Gi1/0/(?:[1-9]|[1-3][0-9]|4[0-8]))", command, re.IGNORECASE)
+        if command.lower() == "show interfaces status" or interface_match or run_match:
+            commands.append(command)
+    return commands
+
+
+def _paramiko_show_commands(config: CiscoAnsibleConfig, ssh_reachability: dict[str, Any], extra_show_commands: list[str] | None = None) -> dict[str, Any]:
     if not ssh_reachability.get("reachable"):
         return {"status": "blocked", "blockers": ["Cisco SSH is not reachable."]}
     try:
@@ -504,7 +517,7 @@ def _paramiko_show_commands(config: CiscoAnsibleConfig, ssh_reachability: dict[s
         channel = client.invoke_shell(width=160, height=80)
         _read_paramiko_channel(channel, seconds=1.5)
         command_results: dict[str, Any] = {}
-        for command in ("terminal length 0", *SAFE_SHOW_COMMANDS):
+        for command in ("terminal length 0", *SAFE_SHOW_COMMANDS, *(extra_show_commands or [])):
             channel.send(command + "\n")
             output = _read_paramiko_channel(channel, seconds=max(config.timeout_seconds, 3.0))
             command_results[command] = _paramiko_command_summary(command, output)

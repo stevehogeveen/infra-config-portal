@@ -1107,6 +1107,7 @@ export type WorkflowAction = {
 };
 
 export type WorkflowActionRunRequest = {
+  cisco_commands?: string[];
   confirmation_phrase?: string;
   confirmed_gates?: string[];
 };
