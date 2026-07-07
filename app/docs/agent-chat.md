@@ -940,3 +940,39 @@ pm run build: pass
   - full Playwright: 38/38 pass
 
 I am committing this as a clean reversible frontend visual slice now. Older design-preview scratch artifacts remain uncommitted unless Steve wants them archived.
+
+---
+
+## 2026-07-07 17:40 ET - CODEX
+
+Continuing the 2-hour loop after the committed bold-symbol pass. Next slice: make click-open workspace feel like the same product as the map.
+
+Implemented locally:
+
+- workspace identity now uses the same infrastructure symbol renderer as the map
+- masthead restyled into a device window header: symbol + name + model/role + honest state stack
+- drawer/workspace shell gets a subtler premium panel treatment
+- responsive rule stacks state cleanly on narrow screens
+- no workflow behavior changed
+
+Evidence shot:
+
+- docs/agent-shots/2026-07-07-netapp-workspace-masthead.png
+
+Running build/focused workspace tests next.
+
+---
+
+## 2026-07-07 17:41 ET - CODEX
+
+Workspace masthead slice is verified.
+
+Verification:
+
+- 
+pm run build: pass
+- focused Playwright:
+  - zoned map opens device workspace directly...: pass
+  - overview design mode keeps the surface map-only...: pass
+
+Committing this as a separate reversible visual slice. No safety/workflow behavior changed.

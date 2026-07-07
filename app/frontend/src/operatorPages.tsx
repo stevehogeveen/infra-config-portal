@@ -4994,6 +4994,15 @@ function fitMapToScreen() {
   );
 }
 
+function topologyWorkspaceIconKind(partId: DesignPartId): "datastore" | "hypervisor" | "ilo" | "netapp" | "server" | "switch" | "vcenter" {
+  if (partId === "switch") return "switch";
+  if (partId === "ilo") return "ilo";
+  if (partId === "netapp") return "netapp";
+  if (partId === "vcenter") return "vcenter";
+  if (partId === "windows") return "hypervisor";
+  return "server";
+}
+
 function topologyIndustryIcon(kind: "datastore" | "hypervisor" | "ilo" | "netapp" | "server" | "switch" | "vcenter") {
   const className = `topology-industry-symbol topology-industry-symbol-${kind}`;
   if (kind === "switch") {
@@ -5821,10 +5830,13 @@ function LabDesignComposer({
         {selectedPart && (
           <section className={`design-device-workspace design-device-workspace-${selectedPart.id}`} aria-label={`${selectedPart.label} workspace`}>
             <div className="design-device-identity">
-              <div>
-                <p className="operator-kicker">Device workspace</p>
-                <h3>{selectedSettings.name || selectedPart.label}</h3>
-                <span>{topologyDeviceModelLabel(selectedPart.id)} / {topologyDeviceRoleLabel(selectedPart.id, draftScenario, storageProtocol)}</span>
+              <div className="design-device-identity-main">
+                {topologyIndustryIcon(topologyWorkspaceIconKind(selectedPart.id))}
+                <div>
+                  <p className="operator-kicker">Device workspace</p>
+                  <h3>{selectedSettings.name || selectedPart.label}</h3>
+                  <span>{topologyDeviceModelLabel(selectedPart.id)} / {topologyDeviceRoleLabel(selectedPart.id, draftScenario, storageProtocol)}</span>
+                </div>
               </div>
               <div className="design-device-state-stack" aria-label={`${selectedPart.label} state`}>
                 <span>

@@ -9069,29 +9069,54 @@ button.topology-system-chip {
 }
 
 .design-device-workspace {
-  background: #ffffff;
+  background:
+    radial-gradient(circle at 16% 0%, rgba(20, 184, 166, 0.09), transparent 30%),
+    linear-gradient(180deg, #ffffff, #f8fbff);
   border: 1px solid #dbe4ee;
-  border-radius: 12px;
+  border-radius: 18px;
   box-shadow: 0 22px 54px rgba(15, 23, 42, 0.12);
   display: grid;
-  gap: 14px;
+  gap: 16px;
   min-height: clamp(520px, 45vw, 680px);
   min-width: 0;
-  padding: 16px;
+  padding: 18px;
 }
 
 .design-device-identity {
   align-items: start;
+  background: rgba(255, 255, 255, 0.82);
+  border: 1px solid rgba(219, 228, 238, 0.92);
+  border-radius: 16px;
+  box-shadow: 0 16px 40px rgba(31, 48, 77, 0.08);
   display: grid;
   gap: 12px;
   grid-template-columns: minmax(0, 1fr) auto;
+  padding: 14px;
+}
+
+.design-device-identity-main {
+  align-items: center;
+  display: grid;
+  gap: 13px;
+  grid-template-columns: 62px minmax(0, 1fr);
+  min-width: 0;
+}
+
+.design-device-identity-main .topology-industry-symbol {
+  height: 58px;
+  width: 58px;
+}
+
+.design-device-identity-main .topology-industry-symbol svg {
+  height: 38px;
+  width: 38px;
 }
 
 .design-device-identity h3,
 .design-device-param-section h4,
 .design-workspace-safe-strip h4 {
   color: var(--ink);
-  font-size: 18px;
+  font-size: 24px;
   line-height: 1.15;
   margin: 0;
   overflow-wrap: anywhere;
@@ -9099,7 +9124,7 @@ button.topology-system-chip {
 
 .design-device-identity span {
   color: #64748b;
-  font-size: 12px;
+  font-size: 12.5px;
   font-weight: 800;
 }
 
@@ -13790,6 +13815,15 @@ button.design-ilo-port:hover {
     margin: -14px -14px 14px;
     padding: 12px 14px;
     top: -14px;
+  }
+
+  .design-device-identity {
+    grid-template-columns: 1fr;
+  }
+
+  .design-device-state-stack,
+  .design-device-state-stack > span {
+    justify-items: start;
   }
 
   .topology-local-raid-hero {
