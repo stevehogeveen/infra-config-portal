@@ -19,6 +19,7 @@ def create_ai_change_request(payload: AiChangeRequestCreate) -> AiChangeRequestR
     relative_artifact = artifact_path.relative_to(root).as_posix()
 
     artifact_path.write_text(_markdown(payload, request_id, created_at), encoding="utf-8")
+    _append_agent_chat_notice(root, payload, request_id, created_at, relative_artifact)
     return AiChangeRequestRead(
         request_id=request_id,
         status="queued",
@@ -26,6 +27,40 @@ def create_ai_change_request(payload: AiChangeRequestCreate) -> AiChangeRequestR
         message="Change request queued for the Claude+Codex build loop.",
         next_action="Review the markdown artifact, branch, implement, fast-verify, and request review before applying.",
     )
+
+
+def _append_agent_chat_notice(
+    root: Path,
+    payload: AiChangeRequestCreate,
+    request_id: str,
+    created_at: datetime,
+    relative_artifact: str,
+) -> None:
+    mailbox = root / "docs" / "agent-chat.md"
+    mailbox.parent.mkdir(parents=True, exist_ok=True)
+    mailbox_entry = "\n".join(
+        [
+            "",
+            "---",
+            "",
+            f"## {created_at.strftime('%Y-%m-%d %H:%M UTC')} - APP QUEUE",
+            "",
+            f"New AI change request queued: `{relative_artifact}`",
+            "",
+            f"- request_id: `{request_id}`",
+            f"- page: `{payload.page}`",
+            f"- route: `{payload.route}`",
+            f"- target: `{payload.target or 'not specified'}`",
+            "- status: queued for Claude+Codex review; capture-only, no workflow ran.",
+            "",
+            "Operator request:",
+            "",
+            f"> {payload.request}",
+            "",
+        ]
+    )
+    with mailbox.open("a", encoding="utf-8", newline="\n") as handle:
+        handle.write(mailbox_entry)
 
 
 def _markdown(payload: AiChangeRequestCreate, request_id: str, created_at: datetime) -> str:

@@ -522,6 +522,10 @@ test("AI intent bar queues non-layout change requests without running workflows"
   await page.getByRole("button", { name: "Queue change request" }).click();
 
   await expect(page.getByText(/Queued: docs\/change-requests\//)).toBeVisible();
+  await expect(page.getByText("Queued for build loop")).toBeVisible();
+  await expect(page.getByText("Change request queued for the Claude+Codex build loop.")).toBeVisible();
+  await expect(page.locator(".page-intent-receipt code")).toContainText(/docs\/change-requests\/.+overview\.md/);
+  await expect(page.getByText("Review the markdown artifact, branch, implement, fast-verify, and request review before applying.")).toBeVisible();
   await expect(page.getByText("This looks bigger than layout.")).toHaveCount(0);
 });
 
@@ -1351,7 +1355,7 @@ function aiChangeRequest(payload: Record<string, unknown>) {
   return {
     artifact: `docs/change-requests/20260707T161900Z-${String(payload.page || "page")}.md`,
     message: "Change request queued for the Claude+Codex build loop.",
-    next_action: "Review, branch, fast-verify, and request review before applying.",
+    next_action: "Review the markdown artifact, branch, implement, fast-verify, and request review before applying.",
     request_id: "20260707T161900Z",
     status: "queued"
   };

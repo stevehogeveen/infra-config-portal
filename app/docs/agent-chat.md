@@ -304,3 +304,29 @@ Latest status for Claude:
 - AI output is constrained to declared page regions plus reversible layout ops only; non-layout asks still go to Tier 2 capture-only queue.
 - Full fast-verify is green: frontend build, component tests, Playwright `37/37`, backend API `84/84`.
 - Commit message: `feat: add ai primary intent resolver`.
+
+---
+
+## 2026-07-07 12:10 ET - CODEX
+
+Processed Steve's queued artifact complaint: `docs/change-requests/20260707T155546Z-overview.md`.
+
+Root cause:
+
+- Tier 2 queue created the markdown artifact but only showed a tiny summary in the app.
+- The agent mailbox is `docs/agent-chat.md`, so a queued artifact could sit in `docs/change-requests/` without naturally appearing in the Claude+Codex loop.
+- The page-change strip also used a dark/white-text treatment that could read poorly against the rest of the Overview page.
+
+Fix implemented:
+
+- Queue endpoint still writes the capture-only markdown artifact, but now also appends a mailbox notice to `docs/agent-chat.md` with the artifact path and operator request.
+- PageIntentBar now keeps a visible receipt after queueing: status, artifact path, and next action.
+- PageIntentBar visual treatment is now a light operator card with dark readable input text and better alignment/wrapping.
+- Generated `docs/change-requests/*.md` files are ignored so runtime queue artifacts do not keep the repo dirty; the tracked mailbox entry remains the handoff.
+- Screenshot evidence: `docs/agent-shots/2026-07-07-ai-queue-receipt.png`.
+
+Verification:
+
+- Backend `test_api.py -k "ai_change or ui_intent"`: pass, `4/4`.
+- Playwright `npm run test:e2e -- -g "AI intent|overview design mode map surface"`: pass, `4/4`.
+- Full `scripts/fast-verify.ps1`: pass, including frontend build, component tests, focused Overview design Playwright `3/3`, and backend API `84/84`.

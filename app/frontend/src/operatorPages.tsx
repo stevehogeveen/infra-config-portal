@@ -36,6 +36,7 @@ import {
   type StatusBadgeStatus
 } from "./components/ui";
 import type {
+  AiChangeRequest,
   AuditEvent,
   FirmwareFileCandidate,
   FirmwareFileSelections,
@@ -413,6 +414,7 @@ function PageIntentBar({
 }) {
   const [request, setRequest] = useState("");
   const [queuedRequest, setQueuedRequest] = useState("");
+  const [lastQueued, setLastQueued] = useState<AiChangeRequest | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -431,6 +433,7 @@ function PageIntentBar({
       });
       onApply(response.ops, response.summary);
       setQueuedRequest(response.ops.length ? "" : trimmed);
+      if (response.ops.length) setLastQueued(null);
       setRequest("");
     } catch (err) {
       setError(errorMessage(err));
@@ -455,6 +458,7 @@ function PageIntentBar({
         target: null
       });
       onApply([], `${response.status === "queued" ? "Queued" : displayStatus(response.status)}: ${response.artifact}`);
+      setLastQueued(response);
       setQueuedRequest("");
     } catch (err) {
       setError(errorMessage(err));
@@ -484,6 +488,16 @@ function PageIntentBar({
         <div className="page-intent-queue">
           <span>This looks bigger than layout. Queue it for the Claude+Codex build loop?</span>
           <button disabled={busy} onClick={queueChangeRequest} type="button">Queue change request</button>
+        </div>
+      )}
+      {lastQueued && (
+        <div className="page-intent-receipt" role="status">
+          <div>
+            <strong>Queued for build loop</strong>
+            <span>{lastQueued.message}</span>
+          </div>
+          <code>{lastQueued.artifact}</code>
+          <small>{lastQueued.next_action}</small>
         </div>
       )}
       {error && <div className="operator-feedback error">{error}</div>}

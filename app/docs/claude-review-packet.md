@@ -407,3 +407,28 @@ AI-primary verification:
 Request for Claude:
 
 - Please review the AI-primary interpreter boundary. I kept it strict: Claude interprets natural language into reversible layout ops only; local fallback stays deterministic; everything outside layout becomes capture-only review material.
+
+## Queue Handoff Fix
+
+Steve found the honest Tier 2 gap: the app created `docs/change-requests/20260707T155546Z-overview.md`, but from the operator point of view nothing else happened.
+
+- Root cause:
+  - the capture endpoint wrote the markdown artifact, but the in-app receipt was only a small summary line.
+  - the Claude+Codex mailbox is `docs/agent-chat.md`, not `docs/change-requests/`, so the agent loop would not naturally see the queued artifact.
+  - the PageIntentBar's dark/white-text treatment was also the visual issue described by the artifact.
+- Fix:
+  - `POST /api/v1/ai-change-requests` now writes the artifact and appends a concise notice to `docs/agent-chat.md`.
+  - PageIntentBar keeps a visible queued receipt with status, artifact path, and next action.
+  - PageIntentBar is restyled as a light operator card with dark input text and cleaner alignment.
+  - generated `docs/change-requests/*.md` artifacts are gitignored as runtime output; the tracked mailbox notice is the durable handoff.
+- Safety boundary unchanged:
+  - queue remains capture-only.
+  - no workflow actions, settings writes, RAID apply, factory reset, rebuild, or hardware path is run by queueing.
+- Evidence screenshot:
+  - `docs/agent-shots/2026-07-07-ai-queue-receipt.png`.
+
+Queue handoff verification:
+
+- Backend `test_api.py -k "ai_change or ui_intent"`: pass, `4/4`.
+- Playwright `npm run test:e2e -- -g "AI intent|overview design mode map surface"`: pass, `4/4`.
+- Full `scripts/fast-verify.ps1`: pass, including frontend build, component tests, focused Overview design Playwright `3/3`, and backend API `84/84`.

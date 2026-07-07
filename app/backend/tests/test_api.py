@@ -238,6 +238,8 @@ def test_ui_intent_uses_anthropic_when_key_is_present_and_validates_manifest(
 
 
 def test_ai_change_request_endpoint_queues_markdown_without_running_actions(client: TestClient) -> None:
+    mailbox = Path(__file__).resolve().parents[2] / "docs" / "agent-chat.md"
+    original_mailbox = mailbox.read_text(encoding="utf-8") if mailbox.exists() else ""
     response = client.post(
         "/api/v1/ai-change-requests",
         json={
@@ -263,8 +265,13 @@ def test_ai_change_request_endpoint_queues_markdown_without_running_actions(clie
         assert "capture-only" in text
         assert "drag and drop device creation" in text
         assert "does not execute code" in text
+        mailbox_text = mailbox.read_text(encoding="utf-8")
+        assert "New AI change request queued" in mailbox_text
+        assert payload["artifact"] in mailbox_text
+        assert "make the topology map support drag and drop device creation" in mailbox_text
     finally:
         artifact.unlink(missing_ok=True)
+        mailbox.write_text(original_mailbox, encoding="utf-8")
 
 
 def test_control_action_catalog_keeps_netapp_readonly_actions_runnable_when_state_blocked(
