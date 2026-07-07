@@ -325,11 +325,9 @@ test("zoned map opens device workspace directly and keeps system scoped controls
   await expect(iloOverlay.locator("section[aria-label='HPE iLO safe checks and next actions']")).not.toContainText("Reset Server Power");
   await iloOverlay.getByRole("button", { name: "Close" }).click();
   await expect(page.locator("div[aria-label='Device workspace overlay']")).toHaveCount(0);
-  await page.getByRole("button", { name: "Operate" }).click();
   await topology.getByLabel("Deployment mode").click();
   const systemMenu = topology.getByLabel("System scope menu");
   await expect(systemMenu).toBeVisible();
-  await expect(systemMenu).toContainText("Set deployment mode");
   await expect(systemMenu).toContainText("Site subnet");
   await expect(systemMenu).toContainText("Switch profile");
   await expect(systemMenu).toContainText("Validation");
@@ -362,9 +360,9 @@ test("overview flags saved subnet mismatch and links to subnet editing", async (
   await expect(topology).toContainText("Active setup targets 192.168.1.0/24");
   await expect(topology).toContainText("10.10.8.99");
 
-  const updateSubnet = topology.getByRole("link", { name: "Update subnet" });
-  await expect(updateSubnet).toHaveAttribute("href", "/network#network-profile");
-  await updateSubnet.click();
+  const editSubnet = topology.getByRole("link", { name: "Edit Network profile" });
+  await expect(editSubnet).toHaveAttribute("href", "/network#network-profile");
+  await editSubnet.click();
   await expect(page).toHaveURL(/\/network#network-profile$/);
   await expect(page.locator("#network-profile")).toBeVisible();
 });
@@ -373,14 +371,11 @@ test("overview design mode keeps the surface map-only until a node opens the wor
   healthHostIpv4Addresses = ["10.10.8.99", "172.20.10.3"];
   await page.goto("/overview");
 
-  await page.getByRole("button", { name: "Design" }).click();
-
   const topology = page.locator("section[aria-label='Living lab topology']");
   await expect(topology.getByLabel("Zoned lab map")).toBeVisible();
   await expect(page.locator("div[aria-label='Design mode rack composer']")).toHaveCount(0);
   await expect(page.locator("section[aria-label='Design topology blueprint']")).toHaveCount(0);
-  await expect(topology.getByLabel("Map viewport controls")).toContainText("100%");
-  await expect(topology.getByLabel("Map viewport controls").getByRole("button", { name: "Fit" })).toBeVisible();
+  await expect(topology.getByLabel("Map viewport controls")).toHaveCount(0);
   await expect(topology.getByLabel("Management zone devices")).toContainText("Cisco switch");
   await expect(topology.getByLabel("Management zone devices")).toContainText("HPE iLO");
   await expect(topology.getByLabel("Storage fabric zone devices")).toContainText("HPE DL360 Gen10");
@@ -428,7 +423,6 @@ test("overview design mode map surface stays stable and scalable", async ({ page
   await page.setViewportSize({ width: 1366, height: 1400 });
   await page.goto("/overview");
 
-  await page.getByRole("button", { name: "Design" }).click();
   await page.evaluate(() => {
     const hideIssueTrigger = () => {
       document.querySelectorAll("button").forEach((button) => {
@@ -467,8 +461,6 @@ test("overview mobile topology keeps zoned device cards visible", async ({ page 
 
 test("overview design mode switches scenario drafts without committing hardware", async ({ page }) => {
   await page.goto("/overview");
-
-  await page.getByRole("button", { name: "Design" }).click();
 
   const topology = page.locator("section[aria-label='Living lab topology']");
   await topology.getByRole("button", { name: "Open HPE DL360 Gen10 workspace" }).click();
@@ -514,6 +506,7 @@ test("storage page switches to local datastore guidance for single-server setup"
 
 test("overview AI intent bar hides proof reversibly and persists layout only", async ({ page }) => {
   await page.goto("/overview");
+  await page.getByRole("button", { name: "Advanced" }).click();
   await page.getByRole("button", { name: "Reset", exact: true }).click();
 
   const proofDrawer = page.locator("details.advanced-drawer").filter({ hasText: "Advanced proof" });
@@ -535,6 +528,7 @@ test("overview AI intent bar hides proof reversibly and persists layout only", a
 
 test("AI intent target picker highlights and scopes this-box apply requests", async ({ page }) => {
   await page.goto("/overview");
+  await page.getByRole("button", { name: "Advanced" }).click();
   await page.getByRole("button", { name: "Reset", exact: true }).click();
 
   const topologyRegion = page.locator("[data-region-id='topology']");
@@ -554,6 +548,7 @@ test("AI intent target picker highlights and scopes this-box apply requests", as
 test("storage AI intent bar can collapse and reset a declared page region", async ({ page }) => {
   labProfileScenario = "single";
   await page.goto("/storage");
+  await page.getByRole("button", { name: "Advanced" }).click();
   await page.getByRole("button", { name: "Reset" }).click();
 
   await expect(page.locator("section[aria-label='Storage reference']")).toBeVisible();
@@ -570,6 +565,7 @@ test("storage AI intent bar can collapse and reset a declared page region", asyn
 
 test("AI intent bar queues non-layout change requests without running workflows", async ({ page }) => {
   await page.goto("/overview");
+  await page.getByRole("button", { name: "Advanced" }).click();
   await page.getByRole("textbox", { name: "Change this page" }).fill("add drag and drop device creation to the map");
   await page.getByRole("button", { name: "Apply", exact: true }).click();
 

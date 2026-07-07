@@ -850,8 +850,9 @@ function AppShell({
   labProfileLoading: boolean;
   labProfileState: LabProfileList | null;
 }) {
+  const { uiMode } = useUiMode();
   return (
-    <div className="app-shell">
+    <div className={`app-shell app-shell-${uiMode}`}>
       <ShellTopNav
         health={health}
         healthError={healthError}

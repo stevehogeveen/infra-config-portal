@@ -1033,3 +1033,68 @@ Latest app-code commit before this verification note: a797a7c fix: keep topology
 No destructive/write workflows touched. Safety gates unchanged. Remaining untracked files are older preview/scratch design artifacts only.
 
 
+
+---
+
+## 2026-07-07 19:05 ET - CODEX
+
+Steve asks whether any buttons are now useless after the sidebar was removed and replaced with compact top navigation.
+
+Current state:
+
+- sidebar/drawer removed
+- top bar has brand, route nav, Operator/Advanced toggle, profile/status chip
+- map/workspace remains primary surface
+- full frontend verification is green, 39/39
+
+My instinct before review: candidate cleanup areas are not the top route buttons themselves, but duplicate mode/navigation affordances inside Overview: Operate/Design, map zoom/pan controls, AI layout bar actions, and maybe page-level buttons that duplicate workspace/system scope. Please review from the product/design angle: what should disappear, what should stay because it performs a real action, and what should move into the map/workspace instead?
+
+---
+
+## 2026-07-07 19:20 ET - CODEX
+
+Direct Claude prompt was sent in the Claude desktop app. Claude began answering but hit: "Server is temporarily limiting requests" while trying to read gent-chat.md.
+
+Context for Claude when rate limit clears:
+
+- App shell now uses compact top navigation; sidebar and mobile drawer are gone.
+- Routes visible across top: Overview, Network, Server, Storage, Virtualization, Firmware, Validate.
+- Right side has Operator/Advanced toggle and active setup/status chip.
+- Evidence screenshots:
+  - docs/agent-shots/2026-07-07-top-nav-overview-desktop-final.png
+  - docs/agent-shots/2026-07-07-top-nav-overview-mobile-final-v3.png
+- Commit: 7d61b0 feat: replace sidebar with compact top navigation
+- Verification before commit: build pass, component pass, Playwright 39/39 pass.
+
+Steve's question: after the sidebar removal, which buttons are now useless or should be removed/demoted/hidden?
+
+Codex candidates:
+
+- Operate / Design on Overview may be scaffolding now that clicking a device opens workspace.
+- Map viewport controls +, -, Left, Right, Fit may be too debug-like; possibly make icon-only/minimized or hide until map interaction needs it.
+- Duplicate subnet affordances: keep one primary path, likely the subnet notice/Edit Network profile, and demote/remove duplicate Update subnet chip.
+- Normal-view Change this page AI bar may belong behind Advanced or a compact Customize button.
+- Keep top route nav, Operator/Advanced, Run Refresh Access, device workspace actions, guarded validation/destructive gates, and Report Issue.
+
+---
+
+## 2026-07-07 19:39 ET - CODEX
+
+Cleanup slice completed after Steve's "Yep let's do it".
+
+Changed:
+
+- Removed the Overview Operate/Design toggle. The product rule is now simpler: click a device to open its workspace.
+- Removed visible map viewport buttons (+, -, Left, Right, Fit). The normal map surface is now just zones, devices, cables, mode chip, and workspace-on-click.
+- Removed duplicate "Update subnet" status chip. The subnet mismatch notice keeps the single "Edit Network profile" path.
+- Removed the dead "Set deployment mode" system-menu action. System scope now keeps Site subnet, Switch profile, and Validation.
+- Hid the "Change this page" AI layout bar in normal Operator mode by adding app-shell-simple; it remains available in Advanced mode.
+- Updated Playwright expectations so the tests prove those controls are gone from the operator surface and that AI layout controls still work in Advanced.
+
+Verification:
+
+- npm run build: pass
+- npm run test:e2e: pass, 39/39
+- npm run test:component: pass, 1 component test file
+
+Safety: no guarded/destructive workflows changed. RAID/factory/rebuild gates untouched.

@@ -4650,8 +4650,6 @@ type TopologySubnetState = {
   status: "matches" | "mismatch" | "unknown";
 };
 
-type TopologyMode = "operate" | "design";
-
 type TopologyDesignScenario = "server_netapp_vcenter" | "server_netapp_direct" | "single_server_local_storage";
 
 type DesignPartId = "switch" | "ilo" | "server-gen10" | "server-gen10plus" | "netapp" | "vcenter" | "windows";
@@ -4709,12 +4707,9 @@ function LabTopologyMap({
   const runtimeLabel = runtimeReady ? (realRuntime ? "Real runtime" : "Test mode") : "Checking runtime";
   const runtimeClass = runtimeReady ? (realRuntime ? "topology-pill-live" : "topology-pill-test") : "topology-pill-runtime-unknown";
   const subnetState = topologySubnetState(address.subnet, health);
-  const [topologyMode, setTopologyMode] = useState<TopologyMode>("operate");
   const [systemMenuOpen, setSystemMenuOpen] = useState(false);
   const [workspaceTarget, setWorkspaceTarget] = useState<DesignPartId>("switch");
   const [workspaceOpen, setWorkspaceOpen] = useState(false);
-  const [mapZoom, setMapZoom] = useState(1);
-  const [mapPan, setMapPan] = useState({ x: 0, y: 0 });
   const ciscoStatus = topologyStatusFromAccess(accessRows, "Cisco");
   const iloStatus = topologyStatusFromAccess(accessRows, "iLO");
   const esxiStatus = topologyStatusFromAccess(accessRows, "ESXi");
@@ -4819,13 +4814,7 @@ function LabTopologyMap({
   function openNodeWorkspace(nodeId: string) {
     setWorkspaceTarget(topologyNodeFaceplatePart(nodeId, netappInScope));
     setSystemMenuOpen(false);
-    setTopologyMode("design");
     setWorkspaceOpen(true);
-  }
-
-function fitMapToScreen() {
-    setMapZoom(1);
-    setMapPan({ x: 0, y: 0 });
   }
 
   return (
@@ -4836,27 +4825,10 @@ function fitMapToScreen() {
           <h2>{activeProfile?.name ?? "Runtime lab"} - {displayAddress(address.subnet)}</h2>
         </div>
         <div className="lab-topology-head-actions">
-          <div className="topology-mode-toggle" aria-label="Topology mode">
-            <button
-              aria-pressed={topologyMode === "operate"}
-              onClick={() => setTopologyMode("operate")}
-              type="button"
-            >
-              Operate
-            </button>
-            <button
-              aria-pressed={topologyMode === "design"}
-              onClick={() => setTopologyMode("design")}
-              type="button"
-            >
-              Design
-            </button>
-          </div>
           <div className="lab-topology-pills" aria-label="Topology status">
             <span className={`topology-pill ${runtimeClass}`}><CheckCircle2 size={14} /> {runtimeLabel}</span>
             <span className={`topology-pill topology-pill-subnet-${subnetState.status}`}><Route size={14} /> {subnetState.label}</span>
             <span className="topology-pill">{readyChecks} of {checkCount} checks ready</span>
-            <Link className="topology-pill topology-pill-link" to="/network#network-profile">Update subnet</Link>
           </div>
         </div>
       </div>
@@ -4871,23 +4843,11 @@ function fitMapToScreen() {
         </div>
       )}
 
-      <div className="topology-map-tools" aria-label="Map viewport controls">
-        <button type="button" onClick={() => setMapZoom((value) => Math.min(1.35, Number((value + 0.1).toFixed(2))))}>+</button>
-        <button type="button" onClick={() => setMapZoom((value) => Math.max(0.75, Number((value - 0.1).toFixed(2))))}>-</button>
-        <span>{Math.round(mapZoom * 100)}%</span>
-        <button type="button" onClick={() => setMapPan((value) => ({ ...value, x: value.x - 36 }))}>Left</button>
-        <button type="button" onClick={() => setMapPan((value) => ({ ...value, x: value.x + 36 }))}>Right</button>
-        <button type="button" onClick={fitMapToScreen}>Fit</button>
-      </div>
-
       <div
-        className={`lab-topology-canvas zones-canvas topology-mode-${topologyMode} ${netappInScope ? "has-netapp" : "single-server"}`}
+        className={`lab-topology-canvas zones-canvas ${netappInScope ? "has-netapp" : "single-server"}`}
         aria-label="Zoned lab map"
       >
-        <div
-          className="topology-map-plane"
-          style={{ transform: `translate(${mapPan.x}px, ${mapPan.y}px) scale(${mapZoom})` }}
-        >
+        <div className="topology-map-plane">
           <div className="topology-zone topology-zone-management">
             <span>Management plane</span>
             <div className="topology-zone-node-flow" aria-label="Management zone devices">
@@ -4934,7 +4894,6 @@ function fitMapToScreen() {
           {systemMenuOpen && (
             <div className="topology-system-menu topology-map-menu" aria-label="System scope menu">
               <strong>System scope</strong>
-              <button type="button" onClick={() => setTopologyMode("design")}>Set deployment mode</button>
               <Link to="/network#network-profile">Site subnet</Link>
               <Link to="/network#network-profile">Switch profile</Link>
               <Link to="/validation">Validation</Link>

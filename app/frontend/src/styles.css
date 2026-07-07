@@ -118,6 +118,10 @@ button:disabled {
   width: 100%;
 }
 
+.app-shell-simple .page-intent-bar {
+  display: none;
+}
+
 .shell-topbar {
   align-items: center;
   background: var(--rail);
@@ -8170,31 +8174,6 @@ th.ui-compact-table-cell {
   min-width: 0;
 }
 
-.topology-mode-toggle {
-  background: #ffffff;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  display: inline-flex;
-  padding: 3px;
-}
-
-.topology-mode-toggle button {
-  background: transparent;
-  border: 0;
-  border-radius: 999px;
-  color: #475569;
-  cursor: pointer;
-  font-size: 12px;
-  font-weight: 900;
-  min-height: 0;
-  padding: 6px 12px;
-}
-
-.topology-mode-toggle button[aria-pressed="true"] {
-  background: #0f766e;
-  color: #ffffff;
-}
-
 .topology-pill {
   align-items: center;
   background: #ffffff;
@@ -8315,50 +8294,6 @@ th.ui-compact-table-cell {
   overflow: hidden;
   position: relative;
   width: min(100%, 1240px);
-}
-
-.topology-map-tools {
-  align-items: center;
-  background: #f8fafc;
-  border: 1px solid #dbe4ee;
-  border-radius: 999px;
-  box-shadow: 0 10px 26px rgba(15, 23, 42, 0.08);
-  display: inline-flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  justify-self: center;
-  justify-content: center;
-  padding: 5px;
-}
-
-.topology-map-tools button {
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: 999px;
-  color: #334155;
-  cursor: pointer;
-  font-size: 12px;
-  font-weight: 850;
-  min-width: 34px;
-  padding: 7px 9px;
-}
-
-.topology-map-tools button:hover {
-  background: #ffffff;
-  border-color: #99f6e4;
-  color: #0f766e;
-}
-
-.topology-map-tools span {
-  background: #0f172a;
-  border-radius: 999px;
-  color: #ccfbf1;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 11px;
-  font-weight: 900;
-  min-width: 46px;
-  padding: 7px 9px;
-  text-align: center;
 }
 
 .topology-map-plane {
