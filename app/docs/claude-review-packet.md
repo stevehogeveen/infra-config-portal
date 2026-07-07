@@ -460,3 +460,26 @@ Device-click verification:
 - `npm run build`: pass.
 - Playwright `npm run test:e2e -- -g "zoned map|overview design mode"`: pass, `5/5`.
 - Full `scripts/fast-verify.ps1`: pass for changed frontend scope.
+
+## AI Request Targeting
+
+Steve called out the next honesty gap: when requests come in, the agents need to know exactly what box/surface should change.
+
+- Added `Target area` chips to `PageIntentBar`:
+  - `Whole page`.
+  - one chip per declared region in the page manifest.
+- Selecting a target highlights the matching region in the page before Apply/Queue.
+- Apply with a selected target sends only that selected region manifest to `/api/v1/ui-intent`, so `hide this box` style wording resolves against the highlighted region.
+- Queue with a selected target records the target in the change-request artifact and mailbox notice.
+- Local resolver now has a one-region scoped fallback for reversible layout ops.
+- Safety boundary unchanged:
+  - only reversible layout ops can apply.
+  - non-layout work remains capture-only.
+  - no workflow/settings/hardware/destructive path is introduced.
+- Evidence screenshot: `docs/agent-shots/2026-07-07-ai-target-highlight.png`.
+
+Targeting verification:
+
+- Backend `test_api.py -k "ui_intent or ai_change"`: pass, `5/5`.
+- Playwright `npm run test:e2e -- -g "AI intent"`: pass, `4/4`.
+- Full `scripts/fast-verify.ps1`: pass, including backend API `85/85`.

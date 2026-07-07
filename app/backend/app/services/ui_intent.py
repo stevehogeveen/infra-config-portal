@@ -61,6 +61,8 @@ def resolve_ui_intent_locally(
         ]
 
     op = _requested_op(request)
+    if op and not selected and len(allowed) == 1:
+        selected = list(allowed)
     if op and selected:
         ops = [UiIntentOpRead(region_id=region_id, op=op) for region_id in selected if region_id in allowed]
 

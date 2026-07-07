@@ -167,6 +167,27 @@ def test_ui_intent_drops_unknown_or_unmatched_requests(client: TestClient) -> No
     assert payload["summary"] == "No safe layout change matched this page."
 
 
+def test_ui_intent_applies_this_box_when_manifest_is_target_scoped(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/ui-intent",
+        json={
+            "page": "overview",
+            "request": "hide this box",
+            "regions": [
+                {"id": "topology", "label": "Living lab topology", "kind": "section"},
+            ],
+            "current_layout": {
+                "topology": {"visible": True, "collapsed": False, "order": 0},
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["source"] == "local_rules"
+    assert payload["ops"] == [{"region_id": "topology", "op": "hide"}]
+
+
 def test_ui_intent_uses_anthropic_when_key_is_present_and_validates_manifest(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
@@ -246,6 +267,7 @@ def test_ai_change_request_endpoint_queues_markdown_without_running_actions(clie
             "page": "overview",
             "route": "/overview",
             "request": "make the topology map support drag and drop device creation",
+            "target": "Living lab topology (topology)",
             "regions": [
                 {"id": "topology", "label": "Living lab topology", "kind": "section"},
             ],
@@ -264,11 +286,13 @@ def test_ai_change_request_endpoint_queues_markdown_without_running_actions(clie
         text = artifact.read_text(encoding="utf-8")
         assert "capture-only" in text
         assert "drag and drop device creation" in text
+        assert "Living lab topology (topology)" in text
         assert "does not execute code" in text
         mailbox_text = mailbox.read_text(encoding="utf-8")
         assert "New AI change request queued" in mailbox_text
         assert payload["artifact"] in mailbox_text
         assert "make the topology map support drag and drop device creation" in mailbox_text
+        assert "Living lab topology (topology)" in mailbox_text
         assert "sent to Claude+Codex mailbox" in mailbox_text
         assert payload["message"] == "Sent to the Claude+Codex mailbox and saved as a review artifact."
     finally:

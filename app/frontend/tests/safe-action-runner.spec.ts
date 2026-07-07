@@ -467,7 +467,7 @@ test("storage page switches to local datastore guidance for single-server setup"
 
 test("overview AI intent bar hides proof reversibly and persists layout only", async ({ page }) => {
   await page.goto("/overview");
-  await page.getByRole("button", { name: "Reset" }).click();
+  await page.getByRole("button", { name: "Reset", exact: true }).click();
 
   const proofDrawer = page.locator("details.advanced-drawer").filter({ hasText: "Advanced proof" });
   await expect(proofDrawer).toBeVisible();
@@ -484,6 +484,24 @@ test("overview AI intent bar hides proof reversibly and persists layout only", a
   await expect(proofDrawer).toHaveCount(0);
   await page.reload();
   await expect(proofDrawer).toHaveCount(0);
+});
+
+test("AI intent target picker highlights and scopes this-box apply requests", async ({ page }) => {
+  await page.goto("/overview");
+  await page.getByRole("button", { name: "Reset", exact: true }).click();
+
+  const topologyRegion = page.locator("[data-region-id='topology']");
+  await expect(topologyRegion).toBeVisible();
+  await page.getByRole("button", { name: "Living lab topology" }).click();
+  await expect(page.getByRole("button", { name: "Living lab topology" })).toHaveAttribute("aria-pressed", "true");
+  await expect(topologyRegion).toHaveClass(/is-intent-target/);
+
+  await page.getByRole("textbox", { name: "Change this page" }).fill("hide this box");
+  await page.getByRole("button", { name: "Apply", exact: true }).click();
+
+  await expect(page.getByText("Hid: Living lab topology.")).toBeVisible();
+  await expect(page.locator("[data-region-id='topology']")).toHaveCount(0);
+  await expect(page.locator("details.advanced-drawer").filter({ hasText: "Advanced proof" })).toBeVisible();
 });
 
 test("storage AI intent bar can collapse and reset a declared page region", async ({ page }) => {
@@ -1331,8 +1349,11 @@ function uiIntentResponse(payload: Record<string, unknown>) {
     : request.includes("show") || request.includes("restore")
       ? "show"
       : "hide";
-  const ops = selected.map((region) => ({ op, region_id: String(region.id) }));
-  const labels = selected.map((region) => String(region.label || region.id));
+  const scoped = selected.length === 0 && regions.length === 1 && ["hide", "show", "collapse", "expand", "moveUp", "moveDown"].includes(op)
+    ? regions
+    : selected;
+  const ops = scoped.map((region) => ({ op, region_id: String(region.id) }));
+  const labels = scoped.map((region) => String(region.label || region.id));
   const verb = op === "collapse" ? "Collapsed" : op === "show" ? "Showed" : "Hid";
   return {
     ops,

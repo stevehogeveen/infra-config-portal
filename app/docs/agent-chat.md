@@ -404,3 +404,62 @@ Verification:
 - `npm run build`: pass.
 - Playwright `npm run test:e2e -- -g "zoned map|overview design mode"`: pass, `5/5`.
 - `scripts/fast-verify.ps1`: pass, including frontend build, component tests, and focused Overview design Playwright `3/3`.
+
+---
+
+## 2026-07-07 17:32 UTC - APP QUEUE
+
+New AI change request queued: `docs/change-requests/20260707T173226Z-overview.md`
+
+- request_id: `20260707T173226Z`
+- page: `overview`
+- route: `/overview`
+- target: `not specified`
+- status: sent to Claude+Codex mailbox; capture-only, no workflow ran.
+
+Operator request:
+
+> we need to add in the ilo
+
+---
+
+## 2026-07-07 13:40 ET - CODEX
+
+Steve asked for request targeting so incoming AI requests show exactly what box should change.
+
+Implemented:
+
+- PageIntentBar now has a `Target area` selector with `Whole page` plus each declared page region.
+- Selecting a target highlights that region on the page before Apply/Queue.
+- Apply with a selected target sends only that region manifest to the resolver, so language like `hide this box` maps to the highlighted box.
+- Queue with a selected target writes the target into the change-request artifact/mailbox entry.
+- Local resolver now supports a one-region scoped manifest fallback for `this box` style commands.
+- Screenshot evidence: `docs/agent-shots/2026-07-07-ai-target-highlight.png`.
+
+Verification:
+
+- `npm run build`: pass.
+- Backend `test_api.py -k "ui_intent or ai_change"`: pass, `5/5`.
+- Playwright `npm run test:e2e -- -g "AI intent"`: pass, `4/4`.
+- Full `scripts/fast-verify.ps1`: pass, including frontend build, component tests, focused Overview design Playwright `3/3`, and backend API `85/85`.
+
+---
+
+## 2026-07-07 — CLAUDE (process the iLO request)
+
+Picking up Steve's queued request "we need to add in the ilo." Device-click → workspace landed well — good. Now the iLO block.
+
+iLO = the HPE server's out-of-band management controller (BMC) — its own endpoint (`address.ilo`, e.g. 192.168.1.201), own creds, separate from ESXi (in-band). It belongs on the MANAGEMENT plane. Add it as its own block:
+
+1. Map: an iLO node/block in the MANAGEMENT zone, linked to the HPE server (out-of-band mgmt link). Reuse `TopologyMapNodeCard`; place by `zone: management`.
+2. Click it → its own device workspace (the click→workspace model you just built), scoped to iLO.
+3. iLO block contents (reuse existing components — schema-home panel, three-way state chips, safe-checks):
+   - iLO IP from its real schema home (`address.ilo`), shown with the schema-home pattern.
+   - Reachability: honest — neutral/unknown until a real iLO probe runs; never fake-green.
+   - Credential status: present/valid/missing ONLY, from the real secret-safe check. Never show or accept the secret in the UI.
+   - Safe checks: read-only iLO probes only (reachable, firmware-version read, power-state read) via the existing read-only workflow-action API. No new data path.
+
+HARD GUARDRAIL — iLO is powerful and can be destructive (power cycle/off, RAID config via iLO, firmware flash, virtual-media boot). The iLO block is state + read-only/safe checks ONLY. NONE of those destructive/disruptive iLO actions fire from this block — they stay behind the guarded gates and Steve's explicit OK. Do not let the iLO block become a bypass around the RAID/factory/rebuild/power gates.
+
+Reversible frontend + read-only wiring, on the branch, commit + fast-verify green, drop a screenshot + update packet/reuse-ledger. If Steve meant iLO as a section INSIDE the server workspace rather than its own map node, that's a small swap — I'll confirm.
+— Claude

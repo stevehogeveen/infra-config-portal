@@ -319,11 +319,13 @@ function usePageIntentLayout(page: string, regions: UiIntentRegion[], profileId?
   const [layout, setLayout] = useState<PageIntentLayout>(() => readIntentLayout(storageKey, defaults));
   const [undoLayout, setUndoLayout] = useState<PageIntentLayout | null>(null);
   const [summary, setSummary] = useState("");
+  const [targetRegionId, setTargetRegionId] = useState("");
 
   useEffect(() => {
     setLayout(readIntentLayout(storageKey, defaults));
     setUndoLayout(null);
     setSummary("");
+    setTargetRegionId("");
   }, [defaults, storageKey]);
 
   useEffect(() => {
@@ -352,7 +354,7 @@ function usePageIntentLayout(page: string, regions: UiIntentRegion[], profileId?
     setSummary("Reset this page layout.");
   }
 
-  return { applyOps, layout, reset, summary, undo, undoAvailable: Boolean(undoLayout) };
+  return { applyOps, layout, reset, setTargetRegionId, summary, targetRegionId, undo, undoAvailable: Boolean(undoLayout) };
 }
 
 function readIntentLayout(key: string, defaults: PageIntentLayout): PageIntentLayout {
@@ -397,19 +399,23 @@ function PageIntentBar({
   layout,
   onApply,
   onReset,
+  onTargetRegionChange,
   onUndo,
   page,
   regions,
   summary,
+  targetRegionId,
   undoAvailable
 }: {
   layout: PageIntentLayout;
   onApply: (ops: UiIntentOp[], summary: string) => void;
   onReset: () => void;
+  onTargetRegionChange: (regionId: string) => void;
   onUndo: () => void;
   page: string;
   regions: UiIntentRegion[];
   summary: string;
+  targetRegionId: string;
   undoAvailable: boolean;
 }) {
   const [request, setRequest] = useState("");
@@ -424,11 +430,13 @@ function PageIntentBar({
     if (!trimmed || busy) return;
     setBusy(true);
     setError("");
+    const selectedRegion = regions.find((region) => region.id === targetRegionId) ?? null;
+    const scopedRegions = selectedRegion ? [selectedRegion] : regions;
     try {
       const response = await api.resolveUiIntent({
         current_layout: layout,
         page,
-        regions: regions.map(({ id, kind, label }) => ({ id, kind, label })),
+        regions: scopedRegions.map(({ id, kind, label }) => ({ id, kind, label })),
         request: trimmed
       });
       onApply(response.ops, response.summary);
@@ -447,6 +455,7 @@ function PageIntentBar({
     if (!trimmed || busy) return;
     setBusy(true);
     setError("");
+    const selectedRegion = regions.find((region) => region.id === targetRegionId) ?? null;
     try {
       const response = await api.createAiChangeRequest({
         current_layout: layout,
@@ -455,7 +464,7 @@ function PageIntentBar({
         request: trimmed,
         route: window.location.pathname,
         screenshot_path: null,
-        target: null
+        target: selectedRegion ? `${selectedRegion.label} (${selectedRegion.id})` : null
       });
       onApply([], response.message);
       setLastQueued(response);
@@ -483,6 +492,28 @@ function PageIntentBar({
         <button disabled={!undoAvailable || busy} onClick={onUndo} type="button">Undo</button>
         <button disabled={busy} onClick={onReset} type="button">Reset</button>
       </form>
+      <div className="page-intent-targets" aria-label="Target area">
+        <span>Target area</span>
+        <button
+          aria-pressed={!targetRegionId}
+          disabled={busy}
+          onClick={() => onTargetRegionChange("")}
+          type="button"
+        >
+          Whole page
+        </button>
+        {regions.map((region) => (
+          <button
+            aria-pressed={targetRegionId === region.id}
+            disabled={busy}
+            key={region.id}
+            onClick={() => onTargetRegionChange(region.id)}
+            type="button"
+          >
+            {region.label}
+          </button>
+        ))}
+      </div>
       {!lastQueued && <p>{summary || "Layout only. This cannot change data, settings, or run lab workflows."}</p>}
       {queuedRequest && (
         <div className="page-intent-queue">
@@ -511,17 +542,19 @@ function orderedIntentRegions(regions: UiIntentRegion[], layout: PageIntentLayou
 
 function IntentRegion({
   children,
+  highlighted,
   layout,
   region
 }: {
   children: ReactNode;
+  highlighted: boolean;
   layout: PageIntentLayout;
   region: UiIntentRegion;
 }) {
   const state = layout[region.id];
   if (state && !state.visible) return null;
   return (
-    <div className="page-intent-region" data-region-id={region.id}>
+    <div className={`page-intent-region ${highlighted ? "is-intent-target" : ""}`} data-region-id={region.id}>
       {state?.collapsed ? (
         <div className="page-intent-collapsed">
           <span>{region.label}</span>
@@ -771,14 +804,16 @@ export function OperatorOverviewPage({
         layout={intent.layout}
         onApply={intent.applyOps}
         onReset={intent.reset}
+        onTargetRegionChange={intent.setTargetRegionId}
         onUndo={intent.undo}
         page="overview"
         regions={overviewIntentRegions}
         summary={intent.summary}
+        targetRegionId={intent.targetRegionId}
         undoAvailable={intent.undoAvailable}
       />
       {orderedIntentRegions(overviewIntentRegions, intent.layout).map((region) => (
-        <IntentRegion key={region.id} layout={intent.layout} region={region}>
+        <IntentRegion highlighted={intent.targetRegionId === region.id} key={region.id} layout={intent.layout} region={region}>
           {overviewRegions[region.id]}
         </IntentRegion>
       ))}
@@ -1039,14 +1074,16 @@ export function OperatorNetworkPage({ labProfileState, onReloadLabProfile }: Ope
         layout={intent.layout}
         onApply={intent.applyOps}
         onReset={intent.reset}
+        onTargetRegionChange={intent.setTargetRegionId}
         onUndo={intent.undo}
         page="network"
         regions={networkIntentRegions}
         summary={intent.summary}
+        targetRegionId={intent.targetRegionId}
         undoAvailable={intent.undoAvailable}
       />
       {orderedIntentRegions(networkIntentRegions, intent.layout).map((region) => (
-        <IntentRegion key={region.id} layout={intent.layout} region={region}>
+        <IntentRegion highlighted={intent.targetRegionId === region.id} key={region.id} layout={intent.layout} region={region}>
           {networkRegions[region.id]}
         </IntentRegion>
       ))}
@@ -1248,14 +1285,16 @@ export function OperatorServerPage({ labProfileState, onReloadLabProfile }: Oper
         layout={intent.layout}
         onApply={intent.applyOps}
         onReset={intent.reset}
+        onTargetRegionChange={intent.setTargetRegionId}
         onUndo={intent.undo}
         page="server"
         regions={serverIntentRegions}
         summary={intent.summary}
+        targetRegionId={intent.targetRegionId}
         undoAvailable={intent.undoAvailable}
       />
       {orderedIntentRegions(serverIntentRegions, intent.layout).map((region) => (
-        <IntentRegion key={region.id} layout={intent.layout} region={region}>
+        <IntentRegion highlighted={intent.targetRegionId === region.id} key={region.id} layout={intent.layout} region={region}>
           {serverRegions[region.id]}
         </IntentRegion>
       ))}
@@ -2055,16 +2094,18 @@ export function OperatorStoragePage({ labProfileState, onReloadLabProfile }: Ope
         layout={intent.layout}
         onApply={intent.applyOps}
         onReset={intent.reset}
+        onTargetRegionChange={intent.setTargetRegionId}
         onUndo={intent.undo}
         page="storage"
         regions={storageIntentRegions}
         summary={intent.summary}
+        targetRegionId={intent.targetRegionId}
         undoAvailable={intent.undoAvailable}
       />
       {profileReady && (
         <>
           {orderedIntentRegions(storageIntentRegions, intent.layout).map((region) => (
-            <IntentRegion key={region.id} layout={intent.layout} region={region}>
+            <IntentRegion highlighted={intent.targetRegionId === region.id} key={region.id} layout={intent.layout} region={region}>
               {storageRegions[region.id]}
             </IntentRegion>
           ))}
@@ -2710,14 +2751,16 @@ export function OperatorVirtualizationPage({ labProfileState, onReloadLabProfile
         layout={intent.layout}
         onApply={intent.applyOps}
         onReset={intent.reset}
+        onTargetRegionChange={intent.setTargetRegionId}
         onUndo={intent.undo}
         page="virtualization"
         regions={virtualizationIntentRegions}
         summary={intent.summary}
+        targetRegionId={intent.targetRegionId}
         undoAvailable={intent.undoAvailable}
       />
       {orderedIntentRegions(virtualizationIntentRegions, intent.layout).map((region) => (
-        <IntentRegion key={region.id} layout={intent.layout} region={region}>
+        <IntentRegion highlighted={intent.targetRegionId === region.id} key={region.id} layout={intent.layout} region={region}>
           {virtualizationRegions[region.id]}
         </IntentRegion>
       ))}
@@ -3076,14 +3119,16 @@ export function OperatorFirmwareUpgradesPage({ labProfileState }: OperatorPagePr
         layout={intent.layout}
         onApply={intent.applyOps}
         onReset={intent.reset}
+        onTargetRegionChange={intent.setTargetRegionId}
         onUndo={intent.undo}
         page="firmware"
         regions={firmwareIntentRegions}
         summary={intent.summary}
+        targetRegionId={intent.targetRegionId}
         undoAvailable={intent.undoAvailable}
       />
       {orderedIntentRegions(firmwareIntentRegions, intent.layout).map((region) => (
-        <IntentRegion key={region.id} layout={intent.layout} region={region}>
+        <IntentRegion highlighted={intent.targetRegionId === region.id} key={region.id} layout={intent.layout} region={region}>
           {firmwareRegions[region.id]}
         </IntentRegion>
       ))}
@@ -3379,14 +3424,16 @@ export function OperatorValidationPage({ labProfileState }: OperatorPageProps) {
         layout={intent.layout}
         onApply={intent.applyOps}
         onReset={intent.reset}
+        onTargetRegionChange={intent.setTargetRegionId}
         onUndo={intent.undo}
         page="validation"
         regions={validationIntentRegions}
         summary={intent.summary}
+        targetRegionId={intent.targetRegionId}
         undoAvailable={intent.undoAvailable}
       />
       {orderedIntentRegions(validationIntentRegions, intent.layout).map((region) => (
-        <IntentRegion key={region.id} layout={intent.layout} region={region}>
+        <IntentRegion highlighted={intent.targetRegionId === region.id} key={region.id} layout={intent.layout} region={region}>
           {validationRegions[region.id]}
         </IntentRegion>
       ))}

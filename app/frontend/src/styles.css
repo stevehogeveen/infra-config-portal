@@ -673,6 +673,36 @@ button:disabled {
   margin: 0;
 }
 
+.page-intent-targets {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.page-intent-targets span {
+  color: #475569;
+  font-size: 12px;
+  font-weight: 900;
+  margin-right: 2px;
+  text-transform: uppercase;
+}
+
+.page-intent-targets button {
+  background: #f8fafc;
+  border: 1px solid #d8e3ef;
+  border-radius: 999px;
+  color: #334155;
+  min-height: 30px;
+  padding: 6px 10px;
+}
+
+.page-intent-targets button[aria-pressed="true"] {
+  background: #0f766e;
+  border-color: #0f766e;
+  color: #ffffff;
+}
+
 .page-intent-queue {
   align-items: center;
   background: #f0f9ff;
@@ -731,6 +761,13 @@ button:disabled {
 
 .page-intent-region {
   min-width: 0;
+}
+
+.page-intent-region.is-intent-target {
+  border-radius: 10px;
+  box-shadow: 0 0 0 3px rgba(20, 184, 166, 0.24), 0 14px 36px rgba(15, 118, 110, 0.12);
+  outline: 2px solid rgba(20, 184, 166, 0.68);
+  outline-offset: 4px;
 }
 
 .page-intent-collapsed {
