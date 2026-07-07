@@ -212,14 +212,16 @@ test.beforeEach(async ({ page }) => {
 test("renders the new top-level navigation and pages", async ({ page }) => {
   await page.goto("/overview");
 
+  await expect(page.locator("aside[aria-label='Primary navigation']")).toHaveCount(0);
+  await expect(page.locator("header[aria-label='Application header']")).toBeVisible();
   await expect(page.locator("nav .nav-item-label")).toHaveText([
     "Overview",
     "Network",
     "Server",
     "Storage",
     "Virtualization",
-    "Firmware Upgrades",
-    "Validation"
+    "Firmware",
+    "Validate"
   ]);
 
   await expect(page.getByRole("heading", { name: "Overview" })).toBeVisible();

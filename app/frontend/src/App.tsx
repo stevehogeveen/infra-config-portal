@@ -11,7 +11,6 @@ import {
   HardDrive,
   History,
   Layers,
-  Menu,
   Play,
   Plus,
   RefreshCw,
@@ -851,39 +850,17 @@ function AppShell({
   labProfileLoading: boolean;
   labProfileState: LabProfileList | null;
 }) {
-  const [drawerOpen, setDrawerOpen] = useState(false);
-  const location = useLocation();
-
-  useEffect(() => {
-    setDrawerOpen(false);
-  }, [location.pathname, location.search]);
-
   return (
     <div className="app-shell">
-      <SidebarNav
-        drawerOpen={drawerOpen}
+      <ShellTopNav
         health={health}
         healthError={healthError}
         labProfileError={labProfileError}
         labProfileLoading={labProfileLoading}
         labProfileState={labProfileState}
-        onClose={() => setDrawerOpen(false)}
       />
-      {drawerOpen && <button className="sidebar-scrim" aria-label="Close navigation" onClick={() => setDrawerOpen(false)} type="button" />}
       <main className="content">
-        <div className="mobile-shell-bar">
-          <button aria-label="Open navigation" onClick={() => setDrawerOpen(true)} type="button">
-            <Menu size={18} />
-            Menu
-          </button>
-          <span>Infra Config</span>
-        </div>
         {health?.dev_test_banner && <DevTestBanner message={health.dev_test_banner} />}
-        <div className="operator-mode-bar">
-          <div className="shell-action-row">
-            <ModeToggle />
-          </div>
-        </div>
         {children}
       </main>
       <OperatorIssueReporter />
@@ -1072,22 +1049,18 @@ function pageTitleForRoute(pathname: string) {
   return labels[segment] ?? labelize(segment);
 }
 
-function SidebarNav({
-  drawerOpen,
+function ShellTopNav({
   health,
   healthError,
   labProfileError,
   labProfileLoading,
-  labProfileState,
-  onClose
+  labProfileState
 }: {
-  drawerOpen: boolean;
   health: HealthStatus | null;
   healthError: string;
   labProfileError: string;
   labProfileLoading: boolean;
   labProfileState: LabProfileList | null;
-  onClose: () => void;
 }) {
   const activeProfile = labProfileState?.active_profile ?? null;
   const providerMode = health?.provider_mode ?? (healthError ? "unverified" : "checking");
@@ -1095,8 +1068,8 @@ function SidebarNav({
   const modeStatus = providerMode === "mock" ? "test_fixture" : healthError ? "unavailable" : providerMode;
 
   return (
-    <aside className={drawerOpen ? "sidebar open" : "sidebar"} aria-label="Primary navigation">
-      <div className="sidebar-top">
+    <header className="shell-topbar" aria-label="Application header">
+      <div className="shell-topbar-brand-row">
         <Link className="brand" to="/overview">
           <Server size={22} />
           <span>
@@ -1104,40 +1077,40 @@ function SidebarNav({
             <small>Lab operations portal</small>
           </span>
         </Link>
-        <button className="sidebar-close" aria-label="Close navigation" onClick={onClose} type="button">
-          <X size={18} />
-        </button>
       </div>
-      <nav>
+      <nav className="top-nav" aria-label="Primary navigation">
         <NavItem to="/overview" icon={<Gauge size={18} />} label="Overview" subtitle="Current readiness" />
         <NavItem to="/network" icon={<Route size={18} />} label="Network" subtitle="Cisco and access" />
         <NavItem to="/server" icon={<Server size={18} />} label="Server" subtitle="iLO, RAID, ESXi" />
         <NavItem to="/storage" icon={<HardDrive size={18} />} label="Storage" subtitle="NetApp and datastores" />
         <NavItem to="/virtualization" icon={<Layers size={18} />} label="Virtualization" subtitle="vCenter workflows" />
-        <NavItem to="/firmware-upgrades" icon={<ShieldCheck size={18} />} label="Firmware Upgrades" subtitle="Images and compliance" />
-        <NavItem to="/validation" icon={<CheckCircle2 size={18} />} label="Validation" subtitle="Proof and reports" />
+        <NavItem to="/firmware-upgrades" icon={<ShieldCheck size={18} />} label="Firmware" subtitle="Images and compliance" />
+        <NavItem to="/validation" icon={<CheckCircle2 size={18} />} label="Validate" subtitle="Proof and reports" />
       </nav>
-      <div className="sidebar-profile">
-        <div className="sidebar-profile-head">
-          <span>{modeLabel}</span>
-          <StatusBadge status={modeStatus} />
+      <div className="shell-topbar-actions">
+        <ModeToggle />
+        <div className="topbar-profile">
+          <div className="topbar-profile-head">
+            <span>{modeLabel}</span>
+            <StatusBadge status={modeStatus} />
+          </div>
+          <strong>{activeProfile?.name ?? (labProfileLoading ? "Loading setup" : "No active setup")}</strong>
+          <dl>
+            <div>
+              <dt>Subnet</dt>
+              <dd>{displayAddress(activeProfile?.address_plan.subnet)}</dd>
+            </div>
+            <div>
+              <dt>Source</dt>
+              <dd>{activeProfile ? labelize(activeProfile.source) : "Unavailable"}</dd>
+            </div>
+          </dl>
+          {(labProfileError || healthError) && (
+            <p>{labProfileError ? "Profile status unavailable." : "Backend health unavailable."}</p>
+          )}
         </div>
-        <strong>{activeProfile?.name ?? (labProfileLoading ? "Loading setup" : "No active setup")}</strong>
-        <dl>
-          <div>
-            <dt>Subnet</dt>
-            <dd>{displayAddress(activeProfile?.address_plan.subnet)}</dd>
-          </div>
-          <div>
-            <dt>Source</dt>
-            <dd>{activeProfile ? labelize(activeProfile.source) : "Unavailable"}</dd>
-          </div>
-        </dl>
-        {(labProfileError || healthError) && (
-          <p>{labProfileError ? "Profile status unavailable." : "Backend health unavailable."}</p>
-        )}
       </div>
-    </aside>
+    </header>
   );
 }
 
