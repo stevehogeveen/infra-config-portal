@@ -4663,17 +4663,11 @@ function LabTopologyMap({
   const runtimeClass = runtimeReady ? (realRuntime ? "topology-pill-live" : "topology-pill-test") : "topology-pill-runtime-unknown";
   const subnetState = topologySubnetState(address.subnet, health);
   const [topologyMode, setTopologyMode] = useState<TopologyMode>("operate");
-  const [selectedMapNodeId, setSelectedMapNodeId] = useState("");
   const [systemMenuOpen, setSystemMenuOpen] = useState(false);
   const [workspaceTarget, setWorkspaceTarget] = useState<DesignPartId>("switch");
   const [workspaceOpen, setWorkspaceOpen] = useState(false);
   const [mapZoom, setMapZoom] = useState(1);
   const [mapPan, setMapPan] = useState({ x: 0, y: 0 });
-  const [mapActionStatus, setMapActionStatus] = useState<{ error: string; message: string; runningActionId: string }>({
-    error: "",
-    message: "",
-    runningActionId: ""
-  });
   const ciscoStatus = topologyStatusFromAccess(accessRows, "Cisco");
   const iloStatus = topologyStatusFromAccess(accessRows, "iLO");
   const esxiStatus = topologyStatusFromAccess(accessRows, "ESXi");
@@ -4763,38 +4757,9 @@ function LabTopologyMap({
   ].filter((status) => status === "ready" || status === "created").length;
   const checkCount = nodes.length + links.length;
   const nextAction = topologyNextAction({ currentView, datastoreStatus, netappInScope, netappStatus, serverStatus, storageProtocol });
-  const selectedMapNode = nodes.find((node) => node.id === selectedMapNodeId) ?? null;
-  const selectedMapNodeAction = selectedMapNode
-    ? topologyMapNodeAction(selectedMapNode.id, workflowActions, { netappInScope, storageProtocol, vcenterInScope })
-    : null;
-
-  async function runMapNodeReadOnlyTest(node: TopologyNode) {
-    const action = topologyMapNodeAction(node.id, workflowActions, { netappInScope, storageProtocol, vcenterInScope });
-    if (!action) {
-      setMapActionStatus({ error: `No read-only test is registered for ${node.title}.`, message: "", runningActionId: "" });
-      return;
-    }
-    if (!["read_only", "report_only"].includes(action.mode)) {
-      setMapActionStatus({ error: "Only read-only or report-only actions can run from the zoned map.", message: "", runningActionId: "" });
-      return;
-    }
-    setMapActionStatus({ error: "", message: "", runningActionId: action.action_id });
-    try {
-      const result = await api.runWorkflowAction(action.action_id);
-      setMapActionStatus({
-        error: "",
-        message: `${node.title}: ${displayStatus(result.status)}. ${result.summary || result.next_action || "Read-only check complete."}`,
-        runningActionId: ""
-      });
-      await onReload();
-    } catch (err) {
-      setMapActionStatus({ error: `${node.title}: ${errorMessage(err)}`, message: "", runningActionId: "" });
-    }
-  }
 
   function openNodeWorkspace(nodeId: string) {
     setWorkspaceTarget(topologyNodeFaceplatePart(nodeId, netappInScope));
-    setSelectedMapNodeId("");
     setSystemMenuOpen(false);
     setTopologyMode("design");
     setWorkspaceOpen(true);
@@ -4871,17 +4836,9 @@ function LabTopologyMap({
               {nodes.filter((node) => node.zone === "management").map((node) => (
                 <TopologyMapNodeCard
                   address={address}
-                  mapActionStatus={mapActionStatus}
                   netappInScope={netappInScope}
                   node={node}
                   onOpenWorkspace={openNodeWorkspace}
-                  onRunReadOnlyTest={runMapNodeReadOnlyTest}
-                  onToggleMenu={(nodeId) => {
-                    setSelectedMapNodeId((current) => (current === nodeId ? "" : nodeId));
-                    setSystemMenuOpen(false);
-                  }}
-                  selectedMapNodeAction={selectedMapNodeAction}
-                  selectedMapNodeId={selectedMapNodeId}
                   storageProtocol={storageProtocol}
                   key={node.id}
                 />
@@ -4894,17 +4851,9 @@ function LabTopologyMap({
               {nodes.filter((node) => node.zone === "storage").map((node) => (
                 <TopologyMapNodeCard
                   address={address}
-                  mapActionStatus={mapActionStatus}
                   netappInScope={netappInScope}
                   node={node}
                   onOpenWorkspace={openNodeWorkspace}
-                  onRunReadOnlyTest={runMapNodeReadOnlyTest}
-                  onToggleMenu={(nodeId) => {
-                    setSelectedMapNodeId((current) => (current === nodeId ? "" : nodeId));
-                    setSystemMenuOpen(false);
-                  }}
-                  selectedMapNodeAction={selectedMapNodeAction}
-                  selectedMapNodeId={selectedMapNodeId}
                   storageProtocol={storageProtocol}
                   key={node.id}
                 />
@@ -4918,7 +4867,6 @@ function LabTopologyMap({
             aria-label="Deployment mode"
             onClick={() => {
               setSystemMenuOpen((open) => !open);
-              setSelectedMapNodeId("");
             }}
             type="button"
           >
@@ -4951,11 +4899,6 @@ function LabTopologyMap({
               </g>
             ))}
           </svg>
-          {(mapActionStatus.message || mapActionStatus.error) && (
-            <div className={`topology-map-action-status ${mapActionStatus.error ? "is-error" : "is-ok"}`} role="status">
-              {mapActionStatus.error || mapActionStatus.message}
-            </div>
-          )}
       </div>
 
       {workspaceOpen && (
@@ -4995,36 +4938,24 @@ function LabTopologyMap({
 
 function TopologyMapNodeCard({
   address,
-  mapActionStatus,
   netappInScope,
   node,
   onOpenWorkspace,
-  onRunReadOnlyTest,
-  onToggleMenu,
-  selectedMapNodeAction,
-  selectedMapNodeId,
   storageProtocol
 }: {
   address: LabAddressPlan;
-  mapActionStatus: { error: string; message: string; runningActionId: string };
   netappInScope: boolean;
   node: TopologyNode;
   onOpenWorkspace: (nodeId: string) => void;
-  onRunReadOnlyTest: (node: TopologyNode) => void | Promise<void>;
-  onToggleMenu: (nodeId: string) => void;
-  selectedMapNodeAction: WorkflowAction | null;
-  selectedMapNodeId: string;
   storageProtocol: string;
 }) {
-  const selected = selectedMapNodeId === node.id;
   const stableNodeLabel = topologyStableNodeLabel(node.id);
   return (
-    <div className={`topology-node-wrap topology-node-zone-${node.zone} ${selected ? "is-menu-open" : ""}`}>
+    <div className={`topology-node-wrap topology-node-zone-${node.zone}`}>
       <button
-        aria-expanded={selected}
-        aria-label={`${stableNodeLabel} node controls`}
+        aria-label={`Open ${stableNodeLabel} workspace`}
         className={`topology-node topology-node-${node.tone}`}
-        onClick={() => onToggleMenu(node.id)}
+        onClick={() => onOpenWorkspace(node.id)}
         type="button"
       >
         <span className="topology-node-dot" aria-hidden="true" />
@@ -5042,22 +4973,6 @@ function TopologyMapNodeCard({
           {node.tag && <span className="topology-node-tag">{node.tag}</span>}
         </span>
       </button>
-      {selected && (
-        <div className="topology-node-menu topology-map-menu" aria-label={`${stableNodeLabel} node menu`}>
-          <strong>{node.title}</strong>
-          <button type="button" onClick={() => onOpenWorkspace(node.id)}>Set deployment mode</button>
-          <Link to="/network#network-profile">Assign IP block</Link>
-          <button
-            disabled={mapActionStatus.runningActionId === selectedMapNodeAction?.action_id || !selectedMapNodeAction}
-            onClick={() => void onRunReadOnlyTest(node)}
-            type="button"
-          >
-            {mapActionStatus.runningActionId === selectedMapNodeAction?.action_id ? "Testing..." : "Run test (read-only)"}
-          </button>
-          <Link to="/network#network-profile">Switch profile</Link>
-          <button type="button" onClick={() => onOpenWorkspace(node.id)}>Open workspace</button>
-        </div>
-      )}
     </div>
   );
 }
@@ -5126,17 +5041,6 @@ function topologyNodeFaceplatePart(nodeId: string, netappInScope: boolean): Desi
   if (nodeId === "vcenter") return "vcenter";
   if (nodeId === "datastore") return netappInScope ? "netapp" : "server-gen10";
   return "server-gen10";
-}
-
-function topologyMapNodeAction(
-  nodeId: string,
-  workflowActions: WorkflowAction[],
-  scope: { netappInScope: boolean; storageProtocol: string; vcenterInScope: boolean }
-): WorkflowAction | null {
-  const partId = topologyNodeFaceplatePart(nodeId, scope.netappInScope);
-  return topologyDeviceSafeActions(partId, workflowActions, scope).find((action) =>
-    ["read_only", "report_only"].includes(action.mode)
-  ) ?? null;
 }
 
 function topologyNodeFaceplateSettings(nodeId: string, address: LabAddressPlan, storageProtocol: string, netappInScope: boolean): Record<string, string> {

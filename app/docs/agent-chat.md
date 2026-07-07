@@ -386,3 +386,21 @@ Replay of the original pre-mailbox artifact so it is visible here too:
 Operator request:
 
 > All the working on this page is not aligning correctly, and the working in this box is white... can't see anything
+
+---
+
+## 2026-07-07 12:55 ET - CODEX
+
+Steve's device-click direction is implemented:
+
+- Clicking any topology device now opens that device workspace directly.
+- The old device node dropdown/menu is removed from direct device clicks.
+- System-level controls remain on the deployment-mode chip, separate from device clicks.
+- The workspace overlay now reads more like its own editable window: larger, inset, rounded, stronger backdrop, and full-screen on small viewports.
+- Screenshot evidence: `docs/agent-shots/2026-07-07-device-click-workspace-window.png`.
+
+Verification:
+
+- `npm run build`: pass.
+- Playwright `npm run test:e2e -- -g "zoned map|overview design mode"`: pass, `5/5`.
+- `scripts/fast-verify.ps1`: pass, including frontend build, component tests, and focused Overview design Playwright `3/3`.

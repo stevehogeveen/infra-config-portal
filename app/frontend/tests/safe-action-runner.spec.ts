@@ -280,21 +280,13 @@ test("overview shows active setup, lab values, and access without dashboard clut
   await expect(page.getByText("Artifact")).toHaveCount(0);
 });
 
-test("zoned map opens node and system scoped controls", async ({ page }) => {
+test("zoned map opens device workspace directly and keeps system scoped controls separate", async ({ page }) => {
   await page.goto("/overview");
 
   const topology = page.locator("section[aria-label='Living lab topology']");
-  await topology.getByRole("button", { name: "Cisco switch node controls" }).click();
+  await topology.getByRole("button", { name: "Open Cisco switch workspace" }).click();
 
-  const nodeMenu = topology.getByLabel("Cisco switch node menu");
-  await expect(nodeMenu).toBeVisible();
-  await expect(nodeMenu).toContainText("Set deployment mode");
-  await expect(nodeMenu).toContainText("Assign IP block");
-  await expect(nodeMenu).toContainText("Run test (read-only)");
-  await expect(nodeMenu).toContainText("Switch profile");
-  await expect(nodeMenu).toContainText("Open workspace");
-
-  await nodeMenu.getByRole("button", { name: "Open workspace" }).click();
+  await expect(topology.getByLabel("Cisco switch node menu")).toHaveCount(0);
   const composer = page.locator("div[aria-label='Design mode rack composer']");
   await expect(composer).toBeVisible();
   await expect(composer.getByLabel("Cisco switch workspace")).toBeVisible();
@@ -360,8 +352,7 @@ test("overview design mode keeps the surface map-only until a node opens the wor
   await expect(topology.getByLabel("Storage fabric zone devices")).toContainText("HPE DL360 Gen10");
   await expect(topology.getByLabel("Storage fabric zone devices")).toContainText("NetApp ONTAP");
 
-  await topology.getByRole("button", { name: "Cisco switch node controls" }).click();
-  await topology.getByLabel("Cisco switch node menu").getByRole("button", { name: "Open workspace" }).click();
+  await topology.getByRole("button", { name: "Open Cisco switch workspace" }).click();
 
   const overlay = page.locator("div[aria-label='Device workspace overlay']");
   await expect(overlay).toBeVisible();
@@ -433,8 +424,7 @@ test("overview design mode switches scenario drafts without committing hardware"
   await page.getByRole("button", { name: "Design" }).click();
 
   const topology = page.locator("section[aria-label='Living lab topology']");
-  await topology.getByRole("button", { name: "HPE DL360 Gen10 node controls" }).click();
-  await topology.getByLabel("HPE DL360 Gen10 node menu").getByRole("button", { name: "Open workspace" }).click();
+  await topology.getByRole("button", { name: "Open HPE DL360 Gen10 workspace" }).click();
 
   const overlay = page.locator("div[aria-label='Device workspace overlay']");
   const serverWorkspace = overlay.locator("section[aria-label='DL360 Gen10 workspace']");

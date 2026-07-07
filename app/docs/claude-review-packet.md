@@ -439,3 +439,24 @@ Queue send polish:
 - Receipt now says `Sent to agent mailbox`.
 - Backend response copy now states the request was sent to the Claude+Codex mailbox and saved as a review artifact.
 - Replayed Steve's original pre-mailbox artifact into `docs/agent-chat.md` so it is visible to both agents.
+
+## Device Click Workspace Direction
+
+Steve's latest UX decision is in: clicking a device is the product, and direct device click should only open the workspace.
+
+- Removed the device node dropdown/menu from direct topology node clicks.
+- Topology device buttons now open the device workspace immediately.
+- System scope remains on the deployment-mode chip, so system controls are separate from device clicks.
+- Workspace overlay was enlarged and restyled as a proper editable window:
+  - wider desktop surface.
+  - inset/rounded shell.
+  - stronger blurred backdrop.
+  - full-screen behavior on smaller screens.
+- The old node read-only-test resolver/menu path was removed; read-only device checks remain inside the workspace safe-check strip.
+- Evidence screenshot: `docs/agent-shots/2026-07-07-device-click-workspace-window.png`.
+
+Device-click verification:
+
+- `npm run build`: pass.
+- Playwright `npm run test:e2e -- -g "zoned map|overview design mode"`: pass, `5/5`.
+- Full `scripts/fast-verify.ps1`: pass for changed frontend scope.
