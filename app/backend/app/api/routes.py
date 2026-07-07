@@ -23,6 +23,8 @@ from app.providers.registry import (
 )
 from app.schemas import (
     ApprovalCreate,
+    AiChangeRequestCreate,
+    AiChangeRequestRead,
     ArtifactRead,
     AuditEventRead,
     CatalogRead,
@@ -290,6 +292,7 @@ from app.services.netapp_upgrade_readiness import get_netapp_upgrade_readiness
 from app.services.operator_issue_packets import create_operator_issue_packet
 from app.services.readiness import get_request_readiness
 from app.services.report_center import get_report_center, get_report_summary
+from app.services.ai_change_requests import create_ai_change_request
 from app.services.ui_intent import resolve_ui_intent
 from app.services.upgrade_decision import get_ilo_upgrade_readiness
 from app.services.vcenter_netapp_readiness import (
@@ -590,6 +593,11 @@ def create_operator_issue_packet_route(payload: OperatorIssuePacketCreate) -> Op
 @router.post("/ui-intent", response_model=UiIntentResponse)
 def resolve_ui_intent_route(payload: UiIntentRequest) -> UiIntentResponse:
     return resolve_ui_intent(payload)
+
+
+@router.post("/ai-change-requests", response_model=AiChangeRequestRead)
+def create_ai_change_request_route(payload: AiChangeRequestCreate) -> AiChangeRequestRead:
+    return create_ai_change_request(payload)
 
 
 @router.get("/workflows/stages/{stage_id}", response_model=WorkflowStageRead)

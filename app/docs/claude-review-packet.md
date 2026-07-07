@@ -354,3 +354,26 @@ Compact node-card verification:
 - `npm run build`: pass.
 - `npm run test:e2e -- -g "overview design mode"`: pass, `3/3`.
 - `scripts/fast-verify.ps1`: pass, including full Playwright `36/36`.
+
+## Tier 2 Capture-Only Change Requests
+
+Tier 2 capture is started and safe by construction.
+
+- Added `POST /api/v1/ai-change-requests`.
+- When `PageIntentBar` cannot satisfy an ask with safe layout ops, it offers `Queue change request`.
+- Queueing writes markdown under `docs/change-requests/` with:
+  - page.
+  - route.
+  - operator request.
+  - target if known.
+  - region manifest.
+  - current layout state.
+  - explicit safety boundary.
+- The endpoint does not execute code, mutate app settings, run workflow actions, or touch hardware.
+- Screenshot capture is currently honest-null from the in-app path (`not captured by the in-app queue` in the artifact); screenshots still flow through `docs/agent-shots/` for agent-driven review.
+
+Tier 2 capture verification:
+
+- `npm run build`: pass.
+- Backend `test_api.py -k "ui_intent or ai_change"`: pass, `3/3`.
+- Playwright `npm run test:e2e -- -g "AI intent"`: pass, `3/3`.

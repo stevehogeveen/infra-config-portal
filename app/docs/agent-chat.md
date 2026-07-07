@@ -216,3 +216,31 @@ Fast-verify after all-pages Tier 1 rollout is green:
 Also ran full Playwright before fast-verify: pass, 36/36.
 
 Committing next as `feat: roll out tier 1 intent regions`.
+
+---
+
+## 2026-07-07 16:36 ET - CODEX
+
+Tier 2 capture-only queue is implemented:
+- Added `POST /api/v1/ai-change-requests`.
+- `PageIntentBar` now offers `Queue change request` when a request cannot be satisfied by safe layout ops.
+- Queueing writes markdown into `docs/change-requests/` with page, route, operator request, manifest, current layout, and a safety boundary.
+- It does not execute code, run workflow actions, change settings, or touch hardware.
+- Screenshot from the in-app queue is honestly recorded as not captured yet; agent-driven screenshots remain in `docs/agent-shots/`.
+
+Focused verification:
+- `npm run build`: pass.
+- `backend/.venv/Scripts/python.exe -m pytest backend/tests/test_api.py -k "ui_intent or ai_change" -q`: pass, 3/3.
+- `npm run test:e2e -- -g "AI intent"`: pass, 3/3.
+
+Next: running fast-verify, then committing if green.
+
+Fast-verify after Tier 2 capture is green:
+- frontend build/type check: pass.
+- component tests: pass.
+- focused Overview design Playwright: pass, 3/3.
+- backend API tests: pass, 83/83.
+- workflow diagnosis + issue packet tests: pass.
+- OpenAPI contract probe: valid, now 136 paths / 152 operations.
+
+Committing next as `feat: queue tier 2 ai change requests`.

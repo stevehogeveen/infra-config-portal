@@ -167,6 +167,36 @@ def test_ui_intent_drops_unknown_or_unmatched_requests(client: TestClient) -> No
     assert payload["summary"] == "No safe layout change matched this page."
 
 
+def test_ai_change_request_endpoint_queues_markdown_without_running_actions(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/ai-change-requests",
+        json={
+            "page": "overview",
+            "route": "/overview",
+            "request": "make the topology map support drag and drop device creation",
+            "regions": [
+                {"id": "topology", "label": "Living lab topology", "kind": "section"},
+            ],
+            "current_layout": {
+                "topology": {"visible": True, "collapsed": False, "order": 0},
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "queued"
+    assert payload["artifact"].startswith("docs/change-requests/")
+    artifact = Path(__file__).resolve().parents[2] / payload["artifact"]
+    try:
+        text = artifact.read_text(encoding="utf-8")
+        assert "capture-only" in text
+        assert "drag and drop device creation" in text
+        assert "does not execute code" in text
+    finally:
+        artifact.unlink(missing_ok=True)
+
+
 def test_control_action_catalog_keeps_netapp_readonly_actions_runnable_when_state_blocked(
     client: TestClient,
 ) -> None:

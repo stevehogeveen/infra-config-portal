@@ -672,6 +672,24 @@ button:disabled {
   margin: 0;
 }
 
+.page-intent-queue {
+  align-items: center;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(226, 232, 240, 0.16);
+  border-radius: 7px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: space-between;
+  padding: 8px 10px;
+}
+
+.page-intent-queue span {
+  color: #dbeafe;
+  font-size: 13px;
+  font-weight: 750;
+}
+
 .page-intent-region {
   min-width: 0;
 }

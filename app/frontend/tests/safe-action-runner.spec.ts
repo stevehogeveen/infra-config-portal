@@ -513,6 +513,18 @@ test("storage AI intent bar can collapse and reset a declared page region", asyn
   await expect(page.locator("section[aria-label='Storage reference']")).toBeVisible();
 });
 
+test("AI intent bar queues non-layout change requests without running workflows", async ({ page }) => {
+  await page.goto("/overview");
+  await page.getByRole("textbox", { name: "Change this page" }).fill("add drag and drop device creation to the map");
+  await page.getByRole("button", { name: "Apply", exact: true }).click();
+
+  await expect(page.getByText("This looks bigger than layout.")).toBeVisible();
+  await page.getByRole("button", { name: "Queue change request" }).click();
+
+  await expect(page.getByText(/Queued: docs\/change-requests\//)).toBeVisible();
+  await expect(page.getByText("This looks bigger than layout.")).toHaveCount(0);
+});
+
 test("virtualization page switches to direct ESXi guidance when vCenter is out of scope", async ({ page }) => {
   labProfileScenario = "single";
   await page.goto("/virtualization");
@@ -1290,6 +1302,9 @@ async function installApiMocks(page: Page) {
     if (url.pathname === "/api/v1/ui-intent") {
       return json(route, uiIntentResponse(request.postDataJSON() as Record<string, unknown>));
     }
+    if (url.pathname === "/api/v1/ai-change-requests") {
+      return json(route, aiChangeRequest(request.postDataJSON() as Record<string, unknown>));
+    }
     if (url.pathname === "/api/v1/workflows/actions/build-verification.run-full/run") {
       return json(route, workflowActionRun("build-verification.run-full"));
     }
@@ -1329,6 +1344,16 @@ function uiIntentResponse(payload: Record<string, unknown>) {
     ops,
     source: "local_rules",
     summary: ops.length ? `${verb}: ${labels.join(", ")}.` : "No safe layout change matched this page."
+  };
+}
+
+function aiChangeRequest(payload: Record<string, unknown>) {
+  return {
+    artifact: `docs/change-requests/20260707T161900Z-${String(payload.page || "page")}.md`,
+    message: "Change request queued for the Claude+Codex build loop.",
+    next_action: "Review, branch, fast-verify, and request review before applying.",
+    request_id: "20260707T161900Z",
+    status: "queued"
   };
 }
 

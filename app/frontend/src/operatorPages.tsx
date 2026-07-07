@@ -412,6 +412,7 @@ function PageIntentBar({
   undoAvailable: boolean;
 }) {
   const [request, setRequest] = useState("");
+  const [queuedRequest, setQueuedRequest] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -429,7 +430,32 @@ function PageIntentBar({
         request: trimmed
       });
       onApply(response.ops, response.summary);
+      setQueuedRequest(response.ops.length ? "" : trimmed);
       setRequest("");
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function queueChangeRequest() {
+    const trimmed = queuedRequest.trim();
+    if (!trimmed || busy) return;
+    setBusy(true);
+    setError("");
+    try {
+      const response = await api.createAiChangeRequest({
+        current_layout: layout,
+        page,
+        regions: regions.map(({ id, kind, label }) => ({ id, kind, label })),
+        request: trimmed,
+        route: window.location.pathname,
+        screenshot_path: null,
+        target: null
+      });
+      onApply([], `${response.status === "queued" ? "Queued" : displayStatus(response.status)}: ${response.artifact}`);
+      setQueuedRequest("");
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -454,6 +480,12 @@ function PageIntentBar({
         <button disabled={busy} onClick={onReset} type="button">Reset</button>
       </form>
       <p>{summary || "Layout only. This cannot change data, settings, or run lab workflows."}</p>
+      {queuedRequest && (
+        <div className="page-intent-queue">
+          <span>This looks bigger than layout. Queue it for the Claude+Codex build loop?</span>
+          <button disabled={busy} onClick={queueChangeRequest} type="button">Queue change request</button>
+        </div>
+      )}
       {error && <div className="operator-feedback error">{error}</div>}
     </section>
   );

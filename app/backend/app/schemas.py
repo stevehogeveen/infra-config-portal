@@ -2287,6 +2287,24 @@ class UiIntentResponse(BaseModel):
     source: Literal["local_rules", "external_ai"] | str = "local_rules"
 
 
+class AiChangeRequestCreate(BaseModel):
+    page: str = Field(min_length=1, max_length=80)
+    request: str = Field(min_length=1, max_length=1600)
+    target: str | None = Field(default=None, max_length=120)
+    route: str = Field(default="/", max_length=160)
+    regions: list[UiIntentRegionRead] = Field(default_factory=list, max_length=60)
+    current_layout: dict[str, UiIntentRegionLayoutRead] = Field(default_factory=dict)
+    screenshot_path: str | None = Field(default=None, max_length=240)
+
+
+class AiChangeRequestRead(BaseModel):
+    request_id: str
+    status: Literal["queued"] | str = "queued"
+    artifact: str
+    message: str
+    next_action: str
+
+
 class WorkflowActionRead(BaseModel):
     action_id: str
     label: str

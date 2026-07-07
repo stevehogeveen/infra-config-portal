@@ -1,6 +1,8 @@
 import type {
   ArtifactRecord,
   AuditEvent,
+  AiChangeRequest,
+  AiChangeRequestCreate,
   Catalog,
   CiscoBootstrapRequirements,
   CiscoBootstrapRequirementsUpdate,
@@ -224,6 +226,11 @@ export const api = {
     }),
   resolveUiIntent: (payload: UiIntentRequest) =>
     apiRequest<UiIntentResponse>("/api/v1/ui-intent", {
+      method: "POST",
+      body: payload
+    }),
+  createAiChangeRequest: (payload: AiChangeRequestCreate) =>
+    apiRequest<AiChangeRequest>("/api/v1/ai-change-requests", {
       method: "POST",
       body: payload
     }),

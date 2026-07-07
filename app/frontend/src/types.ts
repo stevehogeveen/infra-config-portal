@@ -134,6 +134,24 @@ export type UiIntentResponse = {
   source: "local_rules" | "external_ai" | string;
 };
 
+export type AiChangeRequestCreate = {
+  page: string;
+  request: string;
+  target?: string | null;
+  route: string;
+  regions: Array<Pick<UiIntentRegion, "id" | "label" | "kind">>;
+  current_layout: Record<string, UiIntentRegionLayout>;
+  screenshot_path?: string | null;
+};
+
+export type AiChangeRequest = {
+  request_id: string;
+  status: "queued" | string;
+  artifact: string;
+  message: string;
+  next_action: string;
+};
+
 export type ReadinessIssue = {
   code: string;
   message: string;

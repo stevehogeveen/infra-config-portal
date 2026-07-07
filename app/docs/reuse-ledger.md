@@ -20,6 +20,7 @@ Why: two agents on one codebase duplicate work fast. This is our dedupe.
 - Evidence artifacts + review packet + persistence round-trip.
 - Deployment modes + `lab_topology` subnet+offset address derivation.
 - Honest-state rule — neutral/unknown by default; green only from real evidence.
+- AI change-request queue — Tier 2 capture-only endpoint writes reviewable markdown into `docs/change-requests/`. Reuse it for non-layout in-app AI asks; it must never execute code, run workflow actions, or auto-apply changes.
 
 ## Safety machinery — reuse, NEVER rebuild or weaken
 - Guarded workflows and the RAID-apply / factory-reset / rebuild confirmation gates. Keep exactly as-is; nothing bypasses them.
