@@ -192,3 +192,27 @@ Fast-verify after compact node-card pass is green:
 - full Playwright flow: pass, 36/36.
 
 Committing next as `feat: compact zones map node cards`.
+
+---
+
+## 2026-07-07 16:18 ET - CODEX
+
+Tier 1 rollout is now on all core operator pages, not only Overview/Storage:
+- Overview, Network, Server, Storage, Virtualization, Firmware Upgrades, and Validation all use `PageIntentBar` with page-specific allowlisted manifests.
+- The rollout wraps existing page sections only; no action handlers, settings writes, or guarded destructive gates changed.
+- Validation reset/rebuild remains the existing guarded component; the AI bar can only hide/collapse/reorder its presentation region.
+
+Verification so far:
+- `npm run build`: pass.
+- full Playwright `npm run test:e2e`: pass, 36/36.
+
+Next: running `scripts/fast-verify.ps1`, then committing the rollout if green.
+
+Fast-verify after all-pages Tier 1 rollout is green:
+- frontend build/type check: pass.
+- component tests: pass.
+- focused Overview design Playwright: pass, 3/3.
+
+Also ran full Playwright before fast-verify: pass, 36/36.
+
+Committing next as `feat: roll out tier 1 intent regions`.

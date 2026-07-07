@@ -502,6 +502,44 @@ const storageIntentRegions: UiIntentRegion[] = [
   { id: "advanced-proof", label: "Storage proof", kind: "drawer", collapsible: true }
 ];
 
+const networkIntentRegions: UiIntentRegion[] = [
+  { id: "reference", label: "Network reference and Cisco driver", kind: "section" },
+  { id: "advanced-proof", label: "Network proof", kind: "drawer", collapsible: true }
+];
+
+const serverIntentRegions: UiIntentRegion[] = [
+  { id: "setup-shape", label: "Server setup shape", kind: "section" },
+  { id: "local-storage", label: "Local storage readiness", kind: "section" },
+  { id: "reference", label: "Server reference", kind: "section" },
+  { id: "configure", label: "Server configure", kind: "section" },
+  { id: "advanced-proof", label: "Server proof", kind: "drawer", collapsible: true }
+];
+
+const virtualizationIntentRegions: UiIntentRegion[] = [
+  { id: "setup-shape", label: "Virtualization setup shape", kind: "section" },
+  { id: "reference", label: "Virtualization reference", kind: "section" },
+  { id: "configure", label: "Virtualization configure", kind: "section" },
+  { id: "advanced-proof", label: "Virtualization proof", kind: "drawer", collapsible: true }
+];
+
+const firmwareIntentRegions: UiIntentRegion[] = [
+  { id: "setup-shape", label: "Firmware setup shape", kind: "section" },
+  { id: "reference", label: "Firmware reference", kind: "section" },
+  { id: "check-plan", label: "Firmware check and plan", kind: "section" },
+  { id: "ontap-upgrade", label: "ONTAP upgrade", kind: "section" },
+  { id: "media-files", label: "Firmware media files", kind: "section" },
+  { id: "advanced-proof", label: "Firmware proof", kind: "drawer", collapsible: true }
+];
+
+const validationIntentRegions: UiIntentRegion[] = [
+  { id: "setup-shape", label: "Validation setup shape", kind: "section" },
+  { id: "scenario-scope", label: "Validation scenario scope", kind: "section" },
+  { id: "reference", label: "Validation reference", kind: "section" },
+  { id: "reset-rebuild", label: "Reset and rebuild", kind: "section" },
+  { id: "smoke-handoff", label: "Real smoke and handoff", kind: "section" },
+  { id: "advanced-proof", label: "Validation proof", kind: "drawer", collapsible: true }
+];
+
 export function OperatorOverviewPage({
   health,
   labProfileError = "",
@@ -893,25 +931,21 @@ export function OperatorNetworkPage({ labProfileState, onReloadLabProfile }: Ope
     ],
     [activeProfile, address.cisco_management, ciscoReadiness, consoleState, currentView, features, firmwareSummaries, global]
   );
-
-  return (
-    <OperatorPage title="Network">
-      <PageStatusHeader
-        description="Use these live checks and guarded actions for this part of the lab."
-        helper="Cisco access, VLAN, subnet, gateway, switch access, DNS, NTP, SNMP, and MTU are grouped here."
-        icon={<Route size={26} />}
-        nextAction={humanize(asString(ciscoReadiness?.next_safe_action) || "Run Live Switch Check, then save switch config when ready.")}
-        runConfig={{
-          actionIds: ["cisco.current-intent-diff", "cisco.ssh-readonly-probe", "cisco.setup-readiness", "cisco.validate-ssh-scp", "cisco.privilege-check"],
-          actions,
-          label: "Live Switch Check",
-          onReload: load
-        }}
-        status={networkStatus}
-        tabId="network"
-        title="Network"
-      />
-      <Feedback loading={loading && !ciscoReadiness} error={error} />
+  const intent = usePageIntentLayout("network", networkIntentRegions, activeProfile?.id);
+  const networkRegions: Record<string, ReactNode> = {
+    "advanced-proof": (
+      <AdvancedDrawer title="Network proof" summary={noProofText}>
+        <OperatorWorkspace currentView={currentView} rows={networkRows} compact />
+        <ConfigValueList
+          values={[
+            { label: "Firmware", value: firmwareVersion(firmwareSummaries, "cisco") },
+            { label: "Prompt", value: displayValue(asString(objectValue(ciscoReadiness?.real_lab_run).prompt_state)) },
+            { label: "Warnings", value: String(stringArray(ciscoReadiness?.warnings).length) }
+          ]}
+        />
+      </AdvancedDrawer>
+    ),
+    reference: (
       <NetworkReferencePanel
         address={address}
         activeProfile={activeProfile}
@@ -934,16 +968,42 @@ export function OperatorNetworkPage({ labProfileState, onReloadLabProfile }: Ope
           await load();
         }}
       />
-      <AdvancedDrawer title="Network proof" summary={noProofText}>
-        <OperatorWorkspace currentView={currentView} rows={networkRows} compact />
-        <ConfigValueList
-          values={[
-            { label: "Firmware", value: firmwareVersion(firmwareSummaries, "cisco") },
-            { label: "Prompt", value: displayValue(asString(objectValue(ciscoReadiness?.real_lab_run).prompt_state)) },
-            { label: "Warnings", value: String(stringArray(ciscoReadiness?.warnings).length) }
-          ]}
-        />
-      </AdvancedDrawer>
+    )
+  };
+
+  return (
+    <OperatorPage title="Network">
+      <PageStatusHeader
+        description="Use these live checks and guarded actions for this part of the lab."
+        helper="Cisco access, VLAN, subnet, gateway, switch access, DNS, NTP, SNMP, and MTU are grouped here."
+        icon={<Route size={26} />}
+        nextAction={humanize(asString(ciscoReadiness?.next_safe_action) || "Run Live Switch Check, then save switch config when ready.")}
+        runConfig={{
+          actionIds: ["cisco.current-intent-diff", "cisco.ssh-readonly-probe", "cisco.setup-readiness", "cisco.validate-ssh-scp", "cisco.privilege-check"],
+          actions,
+          label: "Live Switch Check",
+          onReload: load
+        }}
+        status={networkStatus}
+        tabId="network"
+        title="Network"
+      />
+      <Feedback loading={loading && !ciscoReadiness} error={error} />
+      <PageIntentBar
+        layout={intent.layout}
+        onApply={intent.applyOps}
+        onReset={intent.reset}
+        onUndo={intent.undo}
+        page="network"
+        regions={networkIntentRegions}
+        summary={intent.summary}
+        undoAvailable={intent.undoAvailable}
+      />
+      {orderedIntentRegions(networkIntentRegions, intent.layout).map((region) => (
+        <IntentRegion key={region.id} layout={intent.layout} region={region}>
+          {networkRegions[region.id]}
+        </IntentRegion>
+      ))}
     </OperatorPage>
   );
 }
@@ -1064,6 +1124,61 @@ export function OperatorServerPage({ labProfileState, onReloadLabProfile }: Oper
     ],
     [address.esxi_management, address.ilo, currentView, esxiReadiness, esxiStatus, firmwareSummaries, iloStatus, raidPlan, raidStatus]
   );
+  const intent = usePageIntentLayout("server", serverIntentRegions, activeProfile?.id);
+  const serverRegions: Record<string, ReactNode> = {
+    "advanced-proof": (
+      <AdvancedDrawer title="Server proof" summary={noProofText}>
+        <OperatorWorkspace currentView={currentView} rows={serverRows} compact />
+        <ConfigValueList
+          values={[
+            { label: "RAID warnings", value: String(stringArray(raidPlan?.warnings).length) },
+            { label: "RAID controller model", value: raidControllerModels(raidPlan) },
+            { label: "ESXi blockers", value: String(stringArray(esxiReadiness?.blockers).length) },
+            { label: "Smart Array firmware", value: firmwareVersion(firmwareSummaries, "raid") }
+          ]}
+        />
+      </AdvancedDrawer>
+    ),
+    configure: (
+      <section className="overview-safe-actions" aria-label="Server configure">
+        <ServerConfigurePanel
+          activeProfile={activeProfile}
+          address={address}
+          global={global}
+          onSaved={async () => {
+            await onReloadLabProfile?.();
+            await load();
+          }}
+        />
+      </section>
+    ),
+    "local-storage": <LocalStorageReadinessCard activeProfile={activeProfile} raidPlan={raidPlan} />,
+    reference: (
+      <OperatorReferencePanel
+        actionLabel="Open firmware"
+        actionTo="/firmware-upgrades"
+        ariaLabel="Server reference"
+        currentView={currentView}
+        rows={serverRows}
+        subtitle="iLO, RAID, ESXi"
+        tableTitle="Server Signals"
+        title="Server readiness at a glance"
+      />
+    ),
+    "setup-shape": (
+      <ServerSetupShapePanel
+        activeProfile={activeProfile}
+        address={address}
+        currentView={currentView}
+        esxiReadiness={esxiReadiness}
+        esxiStatus={esxiStatus}
+        firmwareSummaries={firmwareSummaries}
+        iloStatus={iloStatus}
+        raidPlan={raidPlan}
+        raidStatus={raidStatus}
+      />
+    )
+  };
 
   return (
     <OperatorPage title="Server">
@@ -1083,50 +1198,21 @@ export function OperatorServerPage({ labProfileState, onReloadLabProfile }: Oper
         title="Server"
       />
       <Feedback loading={loading && !providers.length} error={error} />
-      <ServerSetupShapePanel
-        activeProfile={activeProfile}
-        address={address}
-        currentView={currentView}
-        esxiReadiness={esxiReadiness}
-        esxiStatus={esxiStatus}
-        firmwareSummaries={firmwareSummaries}
-        iloStatus={iloStatus}
-        raidPlan={raidPlan}
-        raidStatus={raidStatus}
+      <PageIntentBar
+        layout={intent.layout}
+        onApply={intent.applyOps}
+        onReset={intent.reset}
+        onUndo={intent.undo}
+        page="server"
+        regions={serverIntentRegions}
+        summary={intent.summary}
+        undoAvailable={intent.undoAvailable}
       />
-      <LocalStorageReadinessCard activeProfile={activeProfile} raidPlan={raidPlan} />
-      <OperatorReferencePanel
-        actionLabel="Open firmware"
-        actionTo="/firmware-upgrades"
-        ariaLabel="Server reference"
-        currentView={currentView}
-        rows={serverRows}
-        subtitle="iLO, RAID, ESXi"
-        tableTitle="Server Signals"
-        title="Server readiness at a glance"
-      />
-      <section className="overview-safe-actions" aria-label="Server configure">
-        <ServerConfigurePanel
-          activeProfile={activeProfile}
-          address={address}
-          global={global}
-          onSaved={async () => {
-            await onReloadLabProfile?.();
-            await load();
-          }}
-        />
-      </section>
-      <AdvancedDrawer title="Server proof" summary={noProofText}>
-        <OperatorWorkspace currentView={currentView} rows={serverRows} compact />
-        <ConfigValueList
-          values={[
-            { label: "RAID warnings", value: String(stringArray(raidPlan?.warnings).length) },
-            { label: "RAID controller model", value: raidControllerModels(raidPlan) },
-            { label: "ESXi blockers", value: String(stringArray(esxiReadiness?.blockers).length) },
-            { label: "Smart Array firmware", value: firmwareVersion(firmwareSummaries, "raid") }
-          ]}
-        />
-      </AdvancedDrawer>
+      {orderedIntentRegions(serverIntentRegions, intent.layout).map((region) => (
+        <IntentRegion key={region.id} layout={intent.layout} region={region}>
+          {serverRegions[region.id]}
+        </IntentRegion>
+      ))}
     </OperatorPage>
   );
 }
@@ -2500,6 +2586,61 @@ export function OperatorVirtualizationPage({ labProfileState, onReloadLabProfile
     },
     [address.esxi_management, currentView, features?.vcenter_disabled_reason, installReadiness, postAttach, postChecks, scenarioLabel, storageLabel, target, vcenterEnabled, vcenterNetapp, virtualStatus]
   );
+  const intent = usePageIntentLayout("virtualization", virtualizationIntentRegions, activeProfile?.id);
+  const virtualizationRegions: Record<string, ReactNode> = {
+    "advanced-proof": (
+      <AdvancedDrawer title="Virtualization proof" summary={noProofText}>
+        <OperatorWorkspace currentView={currentView} rows={virtualizationRows} compact />
+        <ConfigValueList
+          values={[
+            { label: "vCenter source", value: sourceLabel(vcenterNetapp) },
+            { label: "Install blockers", value: String(stringArray(installReadiness?.blockers).length) },
+            { label: "Post-attach warnings", value: String(stringArray(postAttach?.warnings).length) }
+          ]}
+        />
+      </AdvancedDrawer>
+    ),
+    configure: (
+      <section className="overview-safe-actions" aria-label="Virtualization configure">
+        <VirtualizationConfigurePanel
+          activeProfile={activeProfile}
+          address={address}
+          features={features}
+          global={global}
+          onSaved={async () => {
+            await onReloadLabProfile?.();
+            await load();
+          }}
+        />
+      </section>
+    ),
+    reference: (
+      <OperatorReferencePanel
+        actionLabel="Open validation"
+        actionTo="/validation"
+        ariaLabel="Virtualization reference"
+        currentView={currentView}
+        rows={virtualizationRows}
+        subtitle="vCenter, ESXi attach, inventory"
+        tableTitle="Virtualization Signals"
+        title="Virtualization readiness at a glance"
+      />
+    ),
+    "setup-shape": (
+      <VirtualizationSetupShapePanel
+        activeProfile={activeProfile}
+        currentView={currentView}
+        features={features}
+        installReadiness={installReadiness}
+        postAttach={postAttach}
+        storageLabel={storageLabel}
+        target={target}
+        vcenterEnabled={vcenterEnabled}
+        vcenterNetapp={vcenterNetapp}
+        virtualStatus={virtualStatus}
+      />
+    )
+  };
 
   return (
     <OperatorPage title="Virtualization">
@@ -2519,50 +2660,21 @@ export function OperatorVirtualizationPage({ labProfileState, onReloadLabProfile
         title="Virtualization"
       />
       <Feedback loading={loading && !vcenterNetapp} error={error} />
-      <VirtualizationSetupShapePanel
-        activeProfile={activeProfile}
-        currentView={currentView}
-        features={features}
-        installReadiness={installReadiness}
-        postAttach={postAttach}
-        storageLabel={storageLabel}
-        target={target}
-        vcenterEnabled={vcenterEnabled}
-        vcenterNetapp={vcenterNetapp}
-        virtualStatus={virtualStatus}
+      <PageIntentBar
+        layout={intent.layout}
+        onApply={intent.applyOps}
+        onReset={intent.reset}
+        onUndo={intent.undo}
+        page="virtualization"
+        regions={virtualizationIntentRegions}
+        summary={intent.summary}
+        undoAvailable={intent.undoAvailable}
       />
-      <OperatorReferencePanel
-        actionLabel="Open validation"
-        actionTo="/validation"
-        ariaLabel="Virtualization reference"
-        currentView={currentView}
-        rows={virtualizationRows}
-        subtitle="vCenter, ESXi attach, inventory"
-        tableTitle="Virtualization Signals"
-        title="Virtualization readiness at a glance"
-      />
-      <section className="overview-safe-actions" aria-label="Virtualization configure">
-        <VirtualizationConfigurePanel
-          activeProfile={activeProfile}
-          address={address}
-          features={features}
-          global={global}
-          onSaved={async () => {
-            await onReloadLabProfile?.();
-            await load();
-          }}
-        />
-      </section>
-      <AdvancedDrawer title="Virtualization proof" summary={noProofText}>
-        <OperatorWorkspace currentView={currentView} rows={virtualizationRows} compact />
-        <ConfigValueList
-          values={[
-            { label: "vCenter source", value: sourceLabel(vcenterNetapp) },
-            { label: "Install blockers", value: String(stringArray(installReadiness?.blockers).length) },
-            { label: "Post-attach warnings", value: String(stringArray(postAttach?.warnings).length) }
-          ]}
-        />
-      </AdvancedDrawer>
+      {orderedIntentRegions(virtualizationIntentRegions, intent.layout).map((region) => (
+        <IntentRegion key={region.id} layout={intent.layout} region={region}>
+          {virtualizationRegions[region.id]}
+        </IntentRegion>
+      ))}
     </OperatorPage>
   );
 }
@@ -2819,6 +2931,83 @@ export function OperatorFirmwareUpgradesPage({ labProfileState }: OperatorPagePr
       </div>
     );
   };
+  const intent = usePageIntentLayout("firmware", firmwareIntentRegions, activeProfile?.id);
+  const firmwareRegions: Record<string, ReactNode> = {
+    "advanced-proof": (
+      <AdvancedDrawer title="Firmware proof" summary={noProofText}>
+        <OperatorWorkspace
+          currentView={currentView}
+          rows={firmwareWorkspaceRows}
+          renderDetailExtra={renderFirmwareDetailExtra}
+          compact
+        />
+        <ValidationProofList
+          items={[]}
+          proofLinks={firmwareSummaries.reduce((count, summary) => count + summary.evidence_artifacts.length, 0)}
+        />
+      </AdvancedDrawer>
+    ),
+    "check-plan": (
+      <AdditionalTabActions
+        actions={actions}
+        buttons={[
+          { actionIds: ["firmware.compliance-check"], kind: "read", label: "Check Compliance", primary: true },
+          { actionIds: ["firmware.upgrade-plan"], kind: "read", label: "Plan Firmware Upgrade" }
+        ]}
+        defaultOpen
+        description="Check firmware compliance and generate the upgrade plan before any guarded apply."
+        onReload={load}
+        title="Firmware check and plan"
+      />
+    ),
+    "media-files": (
+      <>
+        <FirmwareFilesPanel
+          directory={mediaDirectoryLabel(media)}
+          lastScanned={files.lastScanned}
+          loading={loading}
+          onRescan={() => void load()}
+          packageCount={files.packageCount}
+          selectionStatus={selectionStatusLabel(fileSelections, savingSelection)}
+        />
+        <Feedback loading={false} error={selectionError} />
+      </>
+    ),
+    "ontap-upgrade": (
+      <AdditionalTabActions
+        actions={actions}
+        buttons={[
+          { actionIds: ["netapp.ontap-upgrade-apply"], kind: "apply", label: "Upgrade ONTAP" }
+        ]}
+        defaultOpen
+        description="Runs only when the guarded NetApp ONTAP upgrade action is enabled."
+        onReload={load}
+        title="ONTAP upgrade"
+      />
+    ),
+    reference: (
+      <OperatorReferencePanel
+        currentView={currentView}
+        actionLabel="Open media"
+        actionTo="/media"
+        ariaLabel="Firmware reference"
+        rows={firmwareWorkspaceRows}
+        subtitle="Images and compliance"
+        tableTitle="Firmware Components"
+        title="Firmware readiness at a glance"
+      />
+    ),
+    "setup-shape": (
+      <FirmwareSetupShapePanel
+        compliance={compliance}
+        files={files}
+        firmwareStatus={firmwareStatus}
+        rows={rows}
+        savingSelection={savingSelection}
+        selectedFiles={selectedFiles}
+      />
+    )
+  };
 
   return (
     <OperatorPage title="Firmware Upgrades">
@@ -2837,66 +3026,21 @@ export function OperatorFirmwareUpgradesPage({ labProfileState }: OperatorPagePr
         title="Firmware Upgrades"
       />
       <Feedback loading={loading && !firmwareSummaries.length} error={error} />
-      <FirmwareSetupShapePanel
-        compliance={compliance}
-        files={files}
-        firmwareStatus={firmwareStatus}
-        rows={rows}
-        savingSelection={savingSelection}
-        selectedFiles={selectedFiles}
+      <PageIntentBar
+        layout={intent.layout}
+        onApply={intent.applyOps}
+        onReset={intent.reset}
+        onUndo={intent.undo}
+        page="firmware"
+        regions={firmwareIntentRegions}
+        summary={intent.summary}
+        undoAvailable={intent.undoAvailable}
       />
-      <OperatorReferencePanel
-        currentView={currentView}
-        actionLabel="Open media"
-        actionTo="/media"
-        ariaLabel="Firmware reference"
-        rows={firmwareWorkspaceRows}
-        subtitle="Images and compliance"
-        tableTitle="Firmware Components"
-        title="Firmware readiness at a glance"
-      />
-      <AdditionalTabActions
-        actions={actions}
-        buttons={[
-          { actionIds: ["firmware.compliance-check"], kind: "read", label: "Check Compliance", primary: true },
-          { actionIds: ["firmware.upgrade-plan"], kind: "read", label: "Plan Firmware Upgrade" }
-        ]}
-        defaultOpen
-        description="Check firmware compliance and generate the upgrade plan before any guarded apply."
-        onReload={load}
-        title="Firmware check and plan"
-      />
-      <AdditionalTabActions
-        actions={actions}
-        buttons={[
-          { actionIds: ["netapp.ontap-upgrade-apply"], kind: "apply", label: "Upgrade ONTAP" }
-        ]}
-        defaultOpen
-        description="Runs only when the guarded NetApp ONTAP upgrade action is enabled."
-        onReload={load}
-        title="ONTAP upgrade"
-      />
-      <FirmwareFilesPanel
-        directory={mediaDirectoryLabel(media)}
-        lastScanned={files.lastScanned}
-        loading={loading}
-        onRescan={() => void load()}
-        packageCount={files.packageCount}
-        selectionStatus={selectionStatusLabel(fileSelections, savingSelection)}
-      />
-      <Feedback loading={false} error={selectionError} />
-      <AdvancedDrawer title="Firmware proof" summary={noProofText}>
-        <OperatorWorkspace
-          currentView={currentView}
-          rows={firmwareWorkspaceRows}
-          renderDetailExtra={renderFirmwareDetailExtra}
-          compact
-        />
-        <ValidationProofList
-          items={[]}
-          proofLinks={firmwareSummaries.reduce((count, summary) => count + summary.evidence_artifacts.length, 0)}
-        />
-      </AdvancedDrawer>
+      {orderedIntentRegions(firmwareIntentRegions, intent.layout).map((region) => (
+        <IntentRegion key={region.id} layout={intent.layout} region={region}>
+          {firmwareRegions[region.id]}
+        </IntentRegion>
+      ))}
     </OperatorPage>
   );
 }
@@ -3116,6 +3260,56 @@ export function OperatorValidationPage({ labProfileState }: OperatorPageProps) {
     ],
     [buildVerification, currentView, differentFromExpected, validation]
   );
+  const intent = usePageIntentLayout("validation", validationIntentRegions, activeProfile?.id);
+  const validationRegions: Record<string, ReactNode> = {
+    "advanced-proof": (
+      <AdvancedDrawer title="Validation proof" summary={noProofText}>
+        <OperatorWorkspace currentView={currentView} rows={validationRows} compact />
+        <ValidationProofList items={validation?.validation_items ?? []} proofLinks={validation?.proof_links.length ?? 0} />
+        <ConfigValueList
+          values={[
+            { label: "Source", value: sourceLabel(validation) },
+            { label: "Warnings", value: String(validation?.warnings.length ?? 0) },
+            { label: "Raw proof links", value: String(validation?.proof_links.length ?? 0) }
+          ]}
+        />
+      </AdvancedDrawer>
+    ),
+    reference: (
+      <OperatorReferencePanel
+        ariaLabel="Validation reference"
+        currentView={currentView}
+        rows={validationRows}
+        subtitle="Golden State and proof"
+        tableTitle="Validation Signals"
+        title="Validation readiness at a glance"
+      />
+    ),
+    "reset-rebuild": <LabResetRebuildPanel actions={actions} onReload={load} />,
+    "scenario-scope": <ValidationScenarioScopePanel scope={scenarioScope} />,
+    "setup-shape": (
+      <ValidationSetupShapePanel
+        buildVerification={buildVerification}
+        currentView={currentView}
+        scenarioScope={scenarioScope}
+        validation={validation}
+      />
+    ),
+    "smoke-handoff": (
+      <AdditionalTabActions
+        actions={actions}
+        buttons={[
+          { actionIds: ["provider-smoke.real-lab"], icon: <Activity size={16} />, kind: "read", label: "Run Real Provider Smoke", primary: true },
+          { actionIds: ["operator-readonly-sweep.real-lab"], icon: <CheckCircle2 size={16} />, kind: "read", label: "Run Read-Only Sweep" },
+          { actionIds: ["full-lab.handoff-report"], label: "Generate Handoff Report", onClick: async () => { await api.labValidationHandoff(); } }
+        ]}
+        defaultOpen
+        description="Run real provider smoke for low-level access, run the read-only sweep for UI workflow evidence, then generate handoff after validation has current proof links."
+        onReload={load}
+        title="Real smoke and handoff"
+      />
+    )
+  };
 
   return (
     <OperatorPage title="Validation">
@@ -3135,45 +3329,21 @@ export function OperatorValidationPage({ labProfileState }: OperatorPageProps) {
         title="Validation"
       />
       <Feedback loading={loading && !validation} error={error} />
-      <ValidationSetupShapePanel
-        buildVerification={buildVerification}
-        currentView={currentView}
-        scenarioScope={scenarioScope}
-        validation={validation}
+      <PageIntentBar
+        layout={intent.layout}
+        onApply={intent.applyOps}
+        onReset={intent.reset}
+        onUndo={intent.undo}
+        page="validation"
+        regions={validationIntentRegions}
+        summary={intent.summary}
+        undoAvailable={intent.undoAvailable}
       />
-      <ValidationScenarioScopePanel scope={scenarioScope} />
-      <OperatorReferencePanel
-        ariaLabel="Validation reference"
-        currentView={currentView}
-        rows={validationRows}
-        subtitle="Golden State and proof"
-        tableTitle="Validation Signals"
-        title="Validation readiness at a glance"
-      />
-      <LabResetRebuildPanel actions={actions} onReload={load} />
-      <AdditionalTabActions
-        actions={actions}
-        buttons={[
-          { actionIds: ["provider-smoke.real-lab"], icon: <Activity size={16} />, kind: "read", label: "Run Real Provider Smoke", primary: true },
-          { actionIds: ["operator-readonly-sweep.real-lab"], icon: <CheckCircle2 size={16} />, kind: "read", label: "Run Read-Only Sweep" },
-          { actionIds: ["full-lab.handoff-report"], label: "Generate Handoff Report", onClick: async () => { await api.labValidationHandoff(); } }
-        ]}
-        defaultOpen
-        description="Run real provider smoke for low-level access, run the read-only sweep for UI workflow evidence, then generate handoff after validation has current proof links."
-        onReload={load}
-        title="Real smoke and handoff"
-      />
-      <AdvancedDrawer title="Validation proof" summary={noProofText}>
-        <OperatorWorkspace currentView={currentView} rows={validationRows} compact />
-        <ValidationProofList items={validation?.validation_items ?? []} proofLinks={validation?.proof_links.length ?? 0} />
-        <ConfigValueList
-          values={[
-            { label: "Source", value: sourceLabel(validation) },
-            { label: "Warnings", value: String(validation?.warnings.length ?? 0) },
-            { label: "Raw proof links", value: String(validation?.proof_links.length ?? 0) }
-          ]}
-        />
-      </AdvancedDrawer>
+      {orderedIntentRegions(validationIntentRegions, intent.layout).map((region) => (
+        <IntentRegion key={region.id} layout={intent.layout} region={region}>
+          {validationRegions[region.id]}
+        </IntentRegion>
+      ))}
     </OperatorPage>
   );
 }

@@ -315,6 +315,24 @@ Request for Claude:
 
 - Please review whether the Tier 1 bar is visually quiet enough and whether Overview/Storage are the right first region manifests before we roll it across the remaining operator pages.
 
+Tier 1 rollout update:
+
+- The reusable intent bar is now on all core operator pages:
+  - Overview.
+  - Network.
+  - Server.
+  - Storage.
+  - Virtualization.
+  - Firmware Upgrades.
+  - Validation.
+- Each page has its own allowlisted manifest of existing regions.
+- The rollout only wraps existing surfaces:
+  - no action handler changes.
+  - no settings write changes.
+  - no RAID/factory/rebuild guard changes.
+  - Validation's reset/rebuild panel remains the same guarded component, merely hide/collapse/reorder-able as a presentation region.
+- Full Playwright after rollout: pass, `36/36`.
+
 ## Compact ZONES Node-Card Pass
 
 Claude's design-map review is addressed.
