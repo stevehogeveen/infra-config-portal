@@ -100,6 +100,40 @@ export type ArtifactRecord = {
   metadata: Record<string, unknown>;
 };
 
+export type UiIntentRegionKind = "panel" | "drawer" | "section" | "row";
+
+export type UiIntentRegion = {
+  id: string;
+  label: string;
+  kind: UiIntentRegionKind;
+  defaultVisible?: boolean;
+  collapsible?: boolean;
+};
+
+export type UiIntentRegionLayout = {
+  visible: boolean;
+  collapsed: boolean;
+  order: number;
+};
+
+export type UiIntentRequest = {
+  page: string;
+  request: string;
+  regions: Array<Pick<UiIntentRegion, "id" | "label" | "kind">>;
+  current_layout: Record<string, UiIntentRegionLayout>;
+};
+
+export type UiIntentOp = {
+  region_id: string;
+  op: "hide" | "show" | "collapse" | "expand" | "moveUp" | "moveDown";
+};
+
+export type UiIntentResponse = {
+  ops: UiIntentOp[];
+  summary: string;
+  source: "local_rules" | "external_ai" | string;
+};
+
 export type ReadinessIssue = {
   code: string;
   message: string;

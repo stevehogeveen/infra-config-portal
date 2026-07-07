@@ -84,6 +84,8 @@ from app.schemas import (
     ReportCenterSummaryRead,
     RequestReadinessRead,
     RequestRead,
+    UiIntentRequest,
+    UiIntentResponse,
     VMDeploymentCreate,
     VMDeploymentUpdate,
     WorkflowActionDiagnosisRead,
@@ -288,6 +290,7 @@ from app.services.netapp_upgrade_readiness import get_netapp_upgrade_readiness
 from app.services.operator_issue_packets import create_operator_issue_packet
 from app.services.readiness import get_request_readiness
 from app.services.report_center import get_report_center, get_report_summary
+from app.services.ui_intent import resolve_ui_intent
 from app.services.upgrade_decision import get_ilo_upgrade_readiness
 from app.services.vcenter_netapp_readiness import (
     get_vcenter_attach_esxi_apply,
@@ -582,6 +585,11 @@ def read_workflow_action_diagnosis(
 @router.post("/operator-issue-packets", response_model=OperatorIssuePacketRead)
 def create_operator_issue_packet_route(payload: OperatorIssuePacketCreate) -> OperatorIssuePacketRead:
     return create_operator_issue_packet(payload.model_dump())
+
+
+@router.post("/ui-intent", response_model=UiIntentResponse)
+def resolve_ui_intent_route(payload: UiIntentRequest) -> UiIntentResponse:
+    return resolve_ui_intent(payload)
 
 
 @router.get("/workflows/stages/{stage_id}", response_model=WorkflowStageRead)

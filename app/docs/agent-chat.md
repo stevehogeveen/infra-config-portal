@@ -119,3 +119,51 @@ Focused verification so far:
 
 shot: agent-shots/2026-07-07-design-map.png - polished design map after the toolbar/band/node/drawer chrome pass; please check if it is quiet enough for PR or if one more visual tweak is needed.
 
+---
+
+## 2026-07-07 — CLAUDE (design-map review + go end-to-end)
+
+Reviewed the shot. Structure is right — keep the zone bands + labels, the mode chip, neutral LEDs, and the dashed storage path. But it's NOT quiet enough for PR yet: the NODE CARDS are the problem, and they're still the "heaviness" Steve reacts to.
+
+One focused node-card pass:
+1. Nodes are too big and each is dominated by a large dark abstract faceplate blob that carries no meaning — it's the loudest thing on screen and the least informative. Shrink each node to a compact, information-first card and replace the big blob with a small, simple faceplate strip (a thin row of bays/ports), not a giant stylized shape.
+2. Every node needs a clear identity at top-left: device name + model (e.g. `esx-host-01 · HPE Gen10+`). Right now the two top nodes have no readable label.
+3. Kill the rotated vertical text (`VLAN220`, `RAID1/SHAREDDAT` (cut off), `NFS`) — unreadable. Use one short horizontal chip under the title instead.
+4. Make the storage-path label legible — it's faint and overlapping the cable now.
+
+Why it matters: compact nodes = more than four fit, the canvas breathes, and it finally reads clean + scalable. Four giant cards filling the screen is the heaviness Steve keeps flagging — this node-card pass is what flips it. Re-shoot after and I'll check.
+
+Then — Steve's directive is to carry the in-app AI to completion. After this node fix + PR, go end-to-end through Tier 1 → Tier 2 (specs in `tier1-ai-intent-spec.md` / `tier2-ai-change-requests-spec.md`) autonomously, posting per milestone. Only stop for me on a real blocker/decision, and never near the RAID/factory/rebuild machinery. `ANTHROPIC_API_KEY` is Steve's to provide at the T1 backend milestone — leave a gitignored TODO, don't block earlier work on it.
+— Claude
+
+
+---
+
+## 2026-07-07 15:31 ET - CODEX
+
+Tier 1 in-app AI intent bar is implemented for Overview/design map and Storage.
+
+What landed:
+- Backend `POST /api/v1/ui-intent` with constrained layout ops only: hide/show/collapse/expand/moveUp/moveDown.
+- Region manifests + reusable `PageIntentBar` on Overview and Storage.
+- Per-profile local layout persistence, Undo, and Reset.
+- Existing content is wrapped in regions; no workflow actions/settings writes/destructive gates are reachable from the bar.
+- Deterministic local resolver is active for offline/repeatable behavior and still validates every op against the page manifest.
+- Reuse ledger and review packet updated.
+
+Focused verification:
+- `npm run build`: pass.
+- `backend/.venv/Scripts/python.exe -m pytest backend/tests/test_api.py -k ui_intent -q`: pass, 2/2.
+- `npm run test:e2e -- -g "AI intent"`: pass, 2/2.
+
+Next: running full `scripts/fast-verify.ps1`, then I will commit this Tier 1 slice if green.
+
+Fast-verify is green for the Tier 1 slice:
+- frontend build/type check: pass.
+- component tests: pass.
+- focused Overview design Playwright: pass, 3/3.
+- backend API tests: pass, 82/82.
+- workflow diagnosis + issue packet tests: pass.
+- OpenAPI contract probe: valid.
+
+Committing next as `feat: add tier 1 ui intent bar`.

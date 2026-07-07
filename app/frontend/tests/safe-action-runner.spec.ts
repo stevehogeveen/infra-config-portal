@@ -475,6 +475,44 @@ test("storage page switches to local datastore guidance for single-server setup"
   await expect(storage).toContainText("No NetApp action is required unless the active setup changes to shared storage.");
 });
 
+test("overview AI intent bar hides proof reversibly and persists layout only", async ({ page }) => {
+  await page.goto("/overview");
+  await page.getByRole("button", { name: "Reset" }).click();
+
+  const proofDrawer = page.locator("details.advanced-drawer").filter({ hasText: "Advanced proof" });
+  await expect(proofDrawer).toBeVisible();
+  await page.getByRole("textbox", { name: "Change this page" }).fill("hide advanced proof");
+  await page.getByRole("button", { name: "Apply", exact: true }).click();
+
+  await expect(page.getByText("Hid: Advanced proof.")).toBeVisible();
+  await expect(proofDrawer).toHaveCount(0);
+  await page.getByRole("button", { name: "Undo" }).click();
+  await expect(proofDrawer).toBeVisible();
+
+  await page.getByRole("textbox", { name: "Change this page" }).fill("hide advanced proof");
+  await page.getByRole("button", { name: "Apply", exact: true }).click();
+  await expect(proofDrawer).toHaveCount(0);
+  await page.reload();
+  await expect(proofDrawer).toHaveCount(0);
+});
+
+test("storage AI intent bar can collapse and reset a declared page region", async ({ page }) => {
+  labProfileScenario = "single";
+  await page.goto("/storage");
+  await page.getByRole("button", { name: "Reset" }).click();
+
+  await expect(page.locator("section[aria-label='Storage reference']")).toBeVisible();
+  await page.getByRole("textbox", { name: "Change this page" }).fill("collapse storage reference");
+  await page.getByRole("button", { name: "Apply", exact: true }).click();
+
+  await expect(page.getByText("Storage reference").first()).toBeVisible();
+  await expect(page.getByText("Collapsed by page AI").first()).toBeVisible();
+  await expect(page.locator("section[aria-label='Storage reference']")).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Reset" }).click();
+  await expect(page.locator("section[aria-label='Storage reference']")).toBeVisible();
+});
+
 test("virtualization page switches to direct ESXi guidance when vCenter is out of scope", async ({ page }) => {
   labProfileScenario = "single";
   await page.goto("/virtualization");
@@ -1249,6 +1287,9 @@ async function installApiMocks(page: Page) {
     if (url.pathname === "/api/v1/operator-issue-packets") {
       return json(route, operatorIssuePacket(request.postDataJSON() as Record<string, unknown>));
     }
+    if (url.pathname === "/api/v1/ui-intent") {
+      return json(route, uiIntentResponse(request.postDataJSON() as Record<string, unknown>));
+    }
     if (url.pathname === "/api/v1/workflows/actions/build-verification.run-full/run") {
       return json(route, workflowActionRun("build-verification.run-full"));
     }
@@ -1267,6 +1308,28 @@ async function installApiMocks(page: Page) {
 
 function json(route: Route, body: unknown) {
   return route.fulfill({ contentType: "application/json", body: JSON.stringify(body) });
+}
+
+function uiIntentResponse(payload: Record<string, unknown>) {
+  const request = String(payload.request || "").toLowerCase();
+  const regions = Array.isArray(payload.regions) ? payload.regions as Array<Record<string, unknown>> : [];
+  const selected = regions.filter((region) => {
+    const haystack = `${region.id || ""} ${region.label || ""}`.toLowerCase();
+    return request.split(/[^a-z0-9]+/).some((token) => token.length > 3 && haystack.includes(token));
+  });
+  const op = request.includes("collapse")
+    ? "collapse"
+    : request.includes("show") || request.includes("restore")
+      ? "show"
+      : "hide";
+  const ops = selected.map((region) => ({ op, region_id: String(region.id) }));
+  const labels = selected.map((region) => String(region.label || region.id));
+  const verb = op === "collapse" ? "Collapsed" : op === "show" ? "Showed" : "Hid";
+  return {
+    ops,
+    source: "local_rules",
+    summary: ops.length ? `${verb}: ${labels.join(", ")}.` : "No safe layout change matched this page."
+  };
 }
 
 function topologyDesignDraftFixture(payload: Record<string, unknown>, source: "default" | "saved") {

@@ -53,6 +53,9 @@ import type {
   MediaInventory,
   ProviderProbeResult,
   ProviderStatus,
+  UiIntentOp,
+  UiIntentRegion,
+  UiIntentRegionLayout,
   WorkflowAction,
   WorkflowActionDiagnosis,
   WorkflowActionRun,
@@ -294,6 +297,211 @@ const emptyRunState: WorkflowRunState = {
 
 const noProofText = "Advanced proof is hidden unless you need it.";
 
+type PageIntentLayout = Record<string, UiIntentRegionLayout>;
+
+function defaultIntentLayout(regions: UiIntentRegion[]): PageIntentLayout {
+  return Object.fromEntries(
+    regions.map((region, index) => [
+      region.id,
+      {
+        collapsed: false,
+        order: index,
+        visible: region.defaultVisible ?? true
+      }
+    ])
+  );
+}
+
+function usePageIntentLayout(page: string, regions: UiIntentRegion[], profileId?: string | null) {
+  const defaults = useMemo(() => defaultIntentLayout(regions), [regions]);
+  const storageKey = `ui-intent:${profileId || "runtime"}:${page}`;
+  const [layout, setLayout] = useState<PageIntentLayout>(() => readIntentLayout(storageKey, defaults));
+  const [undoLayout, setUndoLayout] = useState<PageIntentLayout | null>(null);
+  const [summary, setSummary] = useState("");
+
+  useEffect(() => {
+    setLayout(readIntentLayout(storageKey, defaults));
+    setUndoLayout(null);
+    setSummary("");
+  }, [defaults, storageKey]);
+
+  useEffect(() => {
+    window.localStorage.setItem(storageKey, JSON.stringify(layout));
+  }, [layout, storageKey]);
+
+  function applyOps(ops: UiIntentOp[], nextSummary: string) {
+    setLayout((current) => {
+      const next = applyIntentOps(current, regions, ops);
+      setUndoLayout(current);
+      return next;
+    });
+    setSummary(nextSummary);
+  }
+
+  function undo() {
+    if (!undoLayout) return;
+    setLayout(undoLayout);
+    setUndoLayout(null);
+    setSummary("Undid the last page layout change.");
+  }
+
+  function reset() {
+    setLayout(defaults);
+    setUndoLayout(null);
+    setSummary("Reset this page layout.");
+  }
+
+  return { applyOps, layout, reset, summary, undo, undoAvailable: Boolean(undoLayout) };
+}
+
+function readIntentLayout(key: string, defaults: PageIntentLayout): PageIntentLayout {
+  try {
+    const raw = window.localStorage.getItem(key);
+    if (!raw) return defaults;
+    const parsed = JSON.parse(raw) as PageIntentLayout;
+    return Object.fromEntries(
+      Object.entries(defaults).map(([regionId, fallback]) => {
+        const saved = parsed[regionId];
+        return [
+          regionId,
+          {
+            collapsed: Boolean(saved?.collapsed),
+            order: Number.isFinite(saved?.order) ? saved.order : fallback.order,
+            visible: typeof saved?.visible === "boolean" ? saved.visible : fallback.visible
+          }
+        ];
+      })
+    );
+  } catch {
+    return defaults;
+  }
+}
+
+function applyIntentOps(layout: PageIntentLayout, regions: UiIntentRegion[], ops: UiIntentOp[]): PageIntentLayout {
+  const regionIds = new Set(regions.map((region) => region.id));
+  const next: PageIntentLayout = Object.fromEntries(Object.entries(layout).map(([key, value]) => [key, { ...value }]));
+  for (const op of ops) {
+    if (!regionIds.has(op.region_id) || !next[op.region_id]) continue;
+    if (op.op === "hide") next[op.region_id].visible = false;
+    if (op.op === "show") next[op.region_id].visible = true;
+    if (op.op === "collapse") next[op.region_id].collapsed = true;
+    if (op.op === "expand") next[op.region_id].collapsed = false;
+    if (op.op === "moveUp") next[op.region_id].order -= 1.5;
+    if (op.op === "moveDown") next[op.region_id].order += 1.5;
+  }
+  return next;
+}
+
+function PageIntentBar({
+  layout,
+  onApply,
+  onReset,
+  onUndo,
+  page,
+  regions,
+  summary,
+  undoAvailable
+}: {
+  layout: PageIntentLayout;
+  onApply: (ops: UiIntentOp[], summary: string) => void;
+  onReset: () => void;
+  onUndo: () => void;
+  page: string;
+  regions: UiIntentRegion[];
+  summary: string;
+  undoAvailable: boolean;
+}) {
+  const [request, setRequest] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const trimmed = request.trim();
+    if (!trimmed || busy) return;
+    setBusy(true);
+    setError("");
+    try {
+      const response = await api.resolveUiIntent({
+        current_layout: layout,
+        page,
+        regions: regions.map(({ id, kind, label }) => ({ id, kind, label })),
+        request: trimmed
+      });
+      onApply(response.ops, response.summary);
+      setRequest("");
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="page-intent-bar" aria-label="Change this page">
+      <form onSubmit={submit}>
+        <label htmlFor={`page-intent-${page}`}>Change this page</label>
+        <input
+          id={`page-intent-${page}`}
+          onChange={(event) => setRequest(event.target.value)}
+          placeholder="Hide advanced proof, collapse storage details, move safety up..."
+          value={request}
+        />
+        <button className="operator-primary-button" disabled={busy || !request.trim()} type="submit">
+          {busy ? "Changing..." : "Apply"}
+        </button>
+        <button disabled={!undoAvailable || busy} onClick={onUndo} type="button">Undo</button>
+        <button disabled={busy} onClick={onReset} type="button">Reset</button>
+      </form>
+      <p>{summary || "Layout only. This cannot change data, settings, or run lab workflows."}</p>
+      {error && <div className="operator-feedback error">{error}</div>}
+    </section>
+  );
+}
+
+function orderedIntentRegions(regions: UiIntentRegion[], layout: PageIntentLayout) {
+  return [...regions].sort((left, right) => (layout[left.id]?.order ?? 0) - (layout[right.id]?.order ?? 0));
+}
+
+function IntentRegion({
+  children,
+  layout,
+  region
+}: {
+  children: ReactNode;
+  layout: PageIntentLayout;
+  region: UiIntentRegion;
+}) {
+  const state = layout[region.id];
+  if (state && !state.visible) return null;
+  return (
+    <div className="page-intent-region" data-region-id={region.id}>
+      {state?.collapsed ? (
+        <div className="page-intent-collapsed">
+          <span>{region.label}</span>
+          <span>Collapsed by page AI</span>
+        </div>
+      ) : children}
+    </div>
+  );
+}
+
+const overviewIntentRegions: UiIntentRegion[] = [
+  { id: "topology", label: "Living lab topology", kind: "section" },
+  { id: "reset-rebuild", label: "Reset and rebuild entry", kind: "section" },
+  { id: "lab-safety", label: "Lab safety settings", kind: "section" },
+  { id: "advanced-proof", label: "Advanced proof", kind: "drawer", collapsible: true }
+];
+
+const storageIntentRegions: UiIntentRegion[] = [
+  { id: "scenario", label: "Storage scenario", kind: "section" },
+  { id: "reference", label: "Storage reference", kind: "section" },
+  { id: "local-readiness", label: "Local storage readiness", kind: "section" },
+  { id: "ontap-readiness", label: "NetApp ONTAP readiness", kind: "section" },
+  { id: "configure", label: "Storage configure", kind: "section" },
+  { id: "advanced-proof", label: "Storage proof", kind: "drawer", collapsible: true }
+];
+
 export function OperatorOverviewPage({
   health,
   labProfileError = "",
@@ -417,6 +625,45 @@ export function OperatorOverviewPage({
     ],
     [accessRows, activeProfile, address.subnet, currentView.checkedAt, currentView.freshness, currentView.source, labValues]
   );
+  const intent = usePageIntentLayout("overview", overviewIntentRegions, activeProfile?.id);
+  const overviewRegions: Record<string, ReactNode> = {
+    "advanced-proof": (
+      <AdvancedDrawer title="Advanced proof" summary={noProofText}>
+        <OperatorWorkspace currentView={currentView} rows={workspaceRows} compact />
+        <InventoryTable rows={inventoryRows} />
+        <ValidationProofList items={validation?.validation_items ?? []} proofLinks={validation?.proof_links.length ?? 0} />
+        <ConfigValueList
+          values={[
+            { label: "Runtime mode", value: displayStatus(runtimeStatus(health ?? null)) },
+            { label: "Build verification", value: displayStatus(buildVerification?.status ?? "not_checked") },
+            { label: "Validation rows", value: String(validation?.validation_items.length ?? 0) }
+          ]}
+        />
+      </AdvancedDrawer>
+    ),
+    "lab-safety": (
+      <LabSafetySettingsSection
+        auditEvents={auditEvents}
+        labSafety={labSafety}
+        onUpdated={load}
+      />
+    ),
+    "reset-rebuild": <OverviewResetRebuildLink />,
+    topology: (
+      <LabTopologyMap
+        accessRows={accessRows}
+        activeProfile={activeProfile}
+        address={address}
+        currentView={currentView}
+        features={features}
+        firmwareSummaries={firmwareSummaries}
+        health={health}
+        onReload={load}
+        vcenterNetapp={vcenterNetapp}
+        workflowActions={workflowActions}
+      />
+    )
+  };
 
   return (
     <OperatorPage title="Overview">
@@ -436,36 +683,21 @@ export function OperatorOverviewPage({
       />
       <Feedback loading={loading && !workspaceRows.length} error={error || labProfileError} />
       {labProfileLoading && <Feedback loading />}
-      <LabTopologyMap
-        accessRows={accessRows}
-        activeProfile={activeProfile}
-        address={address}
-        currentView={currentView}
-        features={features}
-        firmwareSummaries={firmwareSummaries}
-        health={health}
-        onReload={load}
-        vcenterNetapp={vcenterNetapp}
-        workflowActions={workflowActions}
+      <PageIntentBar
+        layout={intent.layout}
+        onApply={intent.applyOps}
+        onReset={intent.reset}
+        onUndo={intent.undo}
+        page="overview"
+        regions={overviewIntentRegions}
+        summary={intent.summary}
+        undoAvailable={intent.undoAvailable}
       />
-      <OverviewResetRebuildLink />
-      <LabSafetySettingsSection
-        auditEvents={auditEvents}
-        labSafety={labSafety}
-        onUpdated={load}
-      />
-      <AdvancedDrawer title="Advanced proof" summary={noProofText}>
-        <OperatorWorkspace currentView={currentView} rows={workspaceRows} compact />
-        <InventoryTable rows={inventoryRows} />
-        <ValidationProofList items={validation?.validation_items ?? []} proofLinks={validation?.proof_links.length ?? 0} />
-        <ConfigValueList
-          values={[
-            { label: "Runtime mode", value: displayStatus(runtimeStatus(health ?? null)) },
-            { label: "Build verification", value: displayStatus(buildVerification?.status ?? "not_checked") },
-            { label: "Validation rows", value: String(validation?.validation_items.length ?? 0) }
-          ]}
-        />
-      </AdvancedDrawer>
+      {orderedIntentRegions(overviewIntentRegions, intent.layout).map((region) => (
+        <IntentRegion key={region.id} layout={intent.layout} region={region}>
+          {overviewRegions[region.id]}
+        </IntentRegion>
+      ))}
     </OperatorPage>
   );
 }
@@ -1599,6 +1831,68 @@ export function OperatorStoragePage({ labProfileState, onReloadLabProfile }: Ope
     }
     return `${headerLabel}: ${results.length} checks completed with real provider evidence.`;
   };
+  const intent = usePageIntentLayout("storage", storageIntentRegions, activeProfile?.id);
+  const storageRegions: Record<string, ReactNode> = profileReady ? {
+    "advanced-proof": (
+      <AdvancedDrawer title="Storage proof" summary={noProofText}>
+        <OperatorWorkspace currentView={currentView} rows={storageRows} compact />
+        <ConfigValueList
+          values={[
+            { label: "NetApp blockers", value: String(stringArray(netappPlan?.blockers).length) },
+            { label: "NFS warnings", value: String(stringArray(nfsReadiness?.warnings).length) },
+            { label: "iSCSI NetApp status", value: displayStatus(asString(iscsiSetupPreview?.status) || "not_checked") },
+            { label: "iSCSI ESXi status", value: displayStatus(asString(esxiIscsiPreview?.status) || "not_checked") },
+            { label: "iSCSI blockers", value: String(iscsiBlockers.length) },
+            { label: "vCenter-NetApp source", value: sourceLabel(vcenterNetapp) }
+          ]}
+        />
+      </AdvancedDrawer>
+    ),
+    configure: (
+      <section className="overview-safe-actions" aria-label="Storage configure">
+        <StorageConfigurePanel
+          activeProfile={activeProfile}
+          address={address}
+          features={activeProfile?.features ?? null}
+          global={global}
+          onSaved={async () => {
+            await onReloadLabProfile?.();
+            await load();
+          }}
+        />
+      </section>
+    ),
+    "local-readiness": serverLocalStorage ? <LocalStorageReadinessCard activeProfile={activeProfile} raidPlan={raidPlan} /> : null,
+    "ontap-readiness": (
+      <NetAppOntapReadinessCard
+        address={address}
+        activeProfile={activeProfile}
+        consoleReadiness={consoleReadiness}
+        nfsReadiness={nfsReadiness}
+        onReload={load}
+      />
+    ),
+    reference: (
+      <OperatorReferencePanel
+        actionLabel="Open validation"
+        actionTo="/validation"
+        ariaLabel="Storage reference"
+        currentView={currentView}
+        rows={storageRows}
+        subtitle="ONTAP, NFS, iSCSI, datastore"
+        tableTitle="Storage Signals"
+        title="Storage readiness at a glance"
+      />
+    ),
+    scenario: (
+      <StorageScenarioDecisionPanel
+        address={address}
+        activeProfile={activeProfile}
+        raidPlan={raidPlan}
+        storageScenario={storageScenario}
+      />
+    )
+  } : {};
 
   return (
     <OperatorPage title="Storage">
@@ -1625,57 +1919,23 @@ export function OperatorStoragePage({ labProfileState, onReloadLabProfile }: Ope
         title="Storage"
       />
       <Feedback loading={!profileReady || (loading && !netappPlan)} error={profileReady ? error : "Loading active lab setup before storage checks."} />
+      <PageIntentBar
+        layout={intent.layout}
+        onApply={intent.applyOps}
+        onReset={intent.reset}
+        onUndo={intent.undo}
+        page="storage"
+        regions={storageIntentRegions}
+        summary={intent.summary}
+        undoAvailable={intent.undoAvailable}
+      />
       {profileReady && (
         <>
-          <StorageScenarioDecisionPanel
-            address={address}
-            activeProfile={activeProfile}
-            raidPlan={raidPlan}
-            storageScenario={storageScenario}
-          />
-          <OperatorReferencePanel
-            actionLabel="Open validation"
-            actionTo="/validation"
-            ariaLabel="Storage reference"
-            currentView={currentView}
-            rows={storageRows}
-            subtitle="ONTAP, NFS, iSCSI, datastore"
-            tableTitle="Storage Signals"
-            title="Storage readiness at a glance"
-          />
-          {serverLocalStorage && <LocalStorageReadinessCard activeProfile={activeProfile} raidPlan={raidPlan} />}
-          <NetAppOntapReadinessCard
-            address={address}
-            activeProfile={activeProfile}
-            consoleReadiness={consoleReadiness}
-            nfsReadiness={nfsReadiness}
-            onReload={load}
-          />
-          <section className="overview-safe-actions" aria-label="Storage configure">
-            <StorageConfigurePanel
-              activeProfile={activeProfile}
-              address={address}
-              features={activeProfile?.features ?? null}
-              global={global}
-              onSaved={async () => {
-                await onReloadLabProfile?.();
-                await load();
-              }}
-            />
-          </section>
-          <AdvancedDrawer title="Storage proof" summary={noProofText}>
-            <OperatorWorkspace currentView={currentView} rows={storageRows} compact />
-            <ConfigValueList
-              values={[
-                { label: "NetApp blockers", value: String(stringArray(netappPlan?.blockers).length) },
-                { label: "NFS warnings", value: String(stringArray(nfsReadiness?.warnings).length) },
-                { label: "iSCSI NetApp status", value: displayStatus(asString(iscsiSetupPreview?.status) || "not_checked") },
-                { label: "iSCSI ESXi status", value: displayStatus(asString(esxiIscsiPreview?.status) || "not_checked") },
-                { label: "iSCSI blockers", value: String(iscsiBlockers.length) },
-                { label: "vCenter-NetApp source", value: sourceLabel(vcenterNetapp) }
-              ]}
-            />
-          </AdvancedDrawer>
+          {orderedIntentRegions(storageIntentRegions, intent.layout).map((region) => (
+            <IntentRegion key={region.id} layout={intent.layout} region={region}>
+              {storageRegions[region.id]}
+            </IntentRegion>
+          ))}
         </>
       )}
     </OperatorPage>

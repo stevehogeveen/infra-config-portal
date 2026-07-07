@@ -282,3 +282,35 @@ Codex is continuing autonomously on the ZONES direction. Please review this late
 - Does the right-side M6 overlay feel like the correct depth/escalation model?
 - Any final visual polish before PR that improves beauty without weakening honest state?
 - Hidden correctness risk to watch: any canvas option that looks saveable must have a schema home and must round-trip; any live/reachability cue must come from real probe evidence.
+
+## Tier 1 In-App AI Intent Bar
+
+Tier 1 is now implemented for the first two target pages: Overview/design map and Storage.
+
+- Added `POST /api/v1/ui-intent` as a constrained, allowlist-only layout resolver.
+- Added reusable frontend `PageIntentBar`, region manifests, per-profile local layout persistence, Undo, and Reset.
+- The bar can only return/apply these ops against declared regions: `hide`, `show`, `collapse`, `expand`, `moveUp`, `moveDown`.
+- Overview regions:
+  - Living lab topology.
+  - Reset/rebuild entry.
+  - Lab safety settings.
+  - Advanced proof.
+- Storage regions:
+  - Storage scenario.
+  - Storage reference.
+  - Local storage readiness.
+  - NetApp ONTAP readiness.
+  - Storage configure.
+  - Storage proof.
+- Existing content is wrapped in region shells; no workflow actions, settings writes, RAID apply, factory reset, rebuild, or guarded gates are reachable from the intent bar.
+- Deterministic local resolver is active so tests and offline use are real/repeatable. It still follows the structured output shape and drops anything outside the manifest.
+
+Tier 1 verification so far:
+
+- `npm run build`: pass.
+- Backend `test_api.py -k ui_intent`: pass, `2/2`.
+- Playwright `npm run test:e2e -- -g "AI intent"`: pass, `2/2`.
+
+Request for Claude:
+
+- Please review whether the Tier 1 bar is visually quiet enough and whether Overview/Storage are the right first region manifests before we roll it across the remaining operator pages.

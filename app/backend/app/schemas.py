@@ -2257,6 +2257,36 @@ class OperatorIssuePacketRead(BaseModel):
     copy_prompt: str
 
 
+class UiIntentRegionRead(BaseModel):
+    id: str = Field(min_length=1, max_length=80)
+    label: str = Field(min_length=1, max_length=120)
+    kind: Literal["panel", "drawer", "section", "row"] | str = "section"
+
+
+class UiIntentRegionLayoutRead(BaseModel):
+    visible: bool = True
+    collapsed: bool = False
+    order: int = 0
+
+
+class UiIntentRequest(BaseModel):
+    page: str = Field(min_length=1, max_length=80)
+    request: str = Field(min_length=1, max_length=400)
+    regions: list[UiIntentRegionRead] = Field(default_factory=list, max_length=40)
+    current_layout: dict[str, UiIntentRegionLayoutRead] = Field(default_factory=dict)
+
+
+class UiIntentOpRead(BaseModel):
+    region_id: str = Field(min_length=1, max_length=80)
+    op: Literal["hide", "show", "collapse", "expand", "moveUp", "moveDown"]
+
+
+class UiIntentResponse(BaseModel):
+    ops: list[UiIntentOpRead] = Field(default_factory=list)
+    summary: str
+    source: Literal["local_rules", "external_ai"] | str = "local_rules"
+
+
 class WorkflowActionRead(BaseModel):
     action_id: str
     label: str

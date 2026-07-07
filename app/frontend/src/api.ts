@@ -51,6 +51,8 @@ import type {
   ReportCenter,
   RequestReadiness,
   RequestRecord,
+  UiIntentRequest,
+  UiIntentResponse,
   VMDeploymentCreate,
   VMDeploymentUpdate,
   WorkflowAction,
@@ -217,6 +219,11 @@ export const api = {
     apiRequest<WorkflowActionDiagnosis>(`/api/v1/workflows/actions/${encodeURIComponent(id)}/diagnosis`),
   createOperatorIssuePacket: (payload: OperatorIssuePacketCreate) =>
     apiRequest<OperatorIssuePacket>("/api/v1/operator-issue-packets", {
+      method: "POST",
+      body: payload
+    }),
+  resolveUiIntent: (payload: UiIntentRequest) =>
+    apiRequest<UiIntentResponse>("/api/v1/ui-intent", {
       method: "POST",
       body: payload
     }),

@@ -12,6 +12,7 @@ Why: two agents on one codebase duplicate work fast. This is our dedupe.
 - Three-way state chips with provenance (M8) — Live/Draft/Saved with a source label. Use everywhere state is shown; don't invent new status UI.
 - Schema-home inventory panel (M3) — shows the persistence path per field. Reuse to prove any field's schema home.
 - Zone auto-layout (management / storage bands, zoom/pan/fit) — the scalable map layout. Place nodes by `zone`; never re-add fixed positions.
+- `PageIntentBar` + page region manifests — Tier 1 in-app AI layout layer. Reuse this for page-level hide/show/collapse/reorder only; every page must declare an allowlisted region manifest and persist reversible layout state per profile.
 - UI atoms: `status-badge`, `blocker-item`, `action-link`, `compact-table`, `card`, `remediation-ladder`.
 
 ## Reusable logic / backend

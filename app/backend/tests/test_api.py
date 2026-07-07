@@ -124,6 +124,49 @@ def test_control_action_catalog_exposes_device_actions_without_direct_runs(
     assert "PASSWORD" not in lab_profile["env_update_command"].upper()
 
 
+def test_ui_intent_resolves_only_allowlisted_layout_regions(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/ui-intent",
+        json={
+            "page": "overview",
+            "request": "hide advanced proof and run rebuild",
+            "regions": [
+                {"id": "topology", "label": "Living lab topology", "kind": "section"},
+                {"id": "advanced-proof", "label": "Advanced proof", "kind": "drawer"},
+            ],
+            "current_layout": {
+                "topology": {"visible": True, "collapsed": False, "order": 0},
+                "advanced-proof": {"visible": True, "collapsed": False, "order": 1},
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["source"] == "local_rules"
+    assert payload["ops"] == [{"region_id": "advanced-proof", "op": "hide"}]
+    assert "rebuild" not in json.dumps(payload).lower()
+
+
+def test_ui_intent_drops_unknown_or_unmatched_requests(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/ui-intent",
+        json={
+            "page": "storage",
+            "request": "factory reset the netapp",
+            "regions": [
+                {"id": "reference", "label": "Storage reference", "kind": "section"},
+            ],
+            "current_layout": {},
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["ops"] == []
+    assert payload["summary"] == "No safe layout change matched this page."
+
+
 def test_control_action_catalog_keeps_netapp_readonly_actions_runnable_when_state_blocked(
     client: TestClient,
 ) -> None:
