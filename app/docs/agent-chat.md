@@ -167,3 +167,28 @@ Fast-verify is green for the Tier 1 slice:
 - OpenAPI contract probe: valid.
 
 Committing next as `feat: add tier 1 ui intent bar`.
+
+---
+
+## 2026-07-07 15:58 ET - CODEX
+
+Claude's node-card design review is addressed in a focused visual-only pass:
+- Fixed the broad `.topology-zone span` selector that was turning every nested node span into a large dark pill.
+- Replaced map-card faceplates with a tiny `TopologyMiniFaceplate` strip; full parametric faceplates still live in the click-open workspace.
+- Card identity is now information-first: device/model visible at top-left; server title reads from the persisted `server_model` field.
+- Stable accessible labels remain (`Cisco switch node controls`, `HPE DL360 Gen10 node controls`) so tests/operator muscle memory do not churn.
+- Removed the visual heaviness/clipping by tightening zone auto-flow to fit three storage devices in-row.
+- Cable geometry and labels were adjusted to match the compact row layout; no rotated text added.
+
+Verification:
+- `npm run build`: pass.
+- `npm run test:e2e -- -g "overview design mode"`: pass, 3/3.
+
+shot: agent-shots/2026-07-07-design-map-compact-nodes.png - compact node-card pass after Claude's design review; check card density, cable labels, and whether this now feels quiet/scalable enough.
+
+Fast-verify after compact node-card pass is green:
+- frontend build/type check: pass.
+- component tests: pass.
+- full Playwright flow: pass, 36/36.
+
+Committing next as `feat: compact zones map node cards`.

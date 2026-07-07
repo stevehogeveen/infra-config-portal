@@ -4472,6 +4472,7 @@ function LabTopologyMap({
   const storageProtocol = asString(features?.storage_protocol) || (netappInScope ? "nfs" : "local");
   const datastoreLabel = netappInScope ? datastoreName(vcenterNetapp) : "Local ESXi datastore";
   const vmName = topologyVmName(vcenterNetapp, vcenterInScope);
+  const serverModelLabel = topologyServerModelLabel(activeProfile?.devices?.server_model);
   const nodes: TopologyNode[] = [
     {
       details: displayAddress(address.cisco_management),
@@ -4481,7 +4482,7 @@ function LabTopologyMap({
       page: "/network",
       status: ciscoStatus,
       tag: firmwareBehind ? "firmware behind" : undefined,
-      title: "Cisco switch",
+      title: "Cisco switch - core-switch-01 - C9300",
       tone: topologyTone(ciscoStatus),
       zone: "management"
     },
@@ -4492,7 +4493,7 @@ function LabTopologyMap({
       meta: netappInScope ? "shared storage path" : "local storage path",
       page: "/server",
       status: serverStatus,
-      title: "HPE DL360 Gen10",
+      title: `HPE ${serverModelLabel} - esx-host-01`,
       tone: topologyTone(serverStatus),
       zone: "storage"
     }
@@ -4801,31 +4802,33 @@ function TopologyMapNodeCard({
   storageProtocol: string;
 }) {
   const selected = selectedMapNodeId === node.id;
+  const stableNodeLabel = topologyStableNodeLabel(node.id);
   return (
     <div className={`topology-node-wrap topology-node-zone-${node.zone} ${selected ? "is-menu-open" : ""}`}>
       <button
         aria-expanded={selected}
-        aria-label={`${node.title} node controls`}
+        aria-label={`${stableNodeLabel} node controls`}
         className={`topology-node topology-node-${node.tone}`}
         onClick={() => onToggleMenu(node.id)}
         type="button"
       >
         <span className="topology-node-dot" aria-hidden="true" />
+        <span className="topology-node-title">{node.icon}<strong>{node.title}</strong></span>
+        <span className="topology-node-details">{node.details}</span>
         <span className="topology-node-faceplate" aria-hidden="true">
-          <DesignFaceplateVisual
-            compact
+          <TopologyMiniFaceplate
             partId={topologyNodeFaceplatePart(node.id, netappInScope)}
             settings={topologyNodeFaceplateSettings(node.id, address, storageProtocol, netappInScope)}
             storageProtocol={netappInScope ? storageProtocol : "local"}
           />
         </span>
-        <span className="topology-node-title">{node.icon}<strong>{node.title}</strong></span>
-        <span className="topology-node-details">{node.details}</span>
-        {node.meta && <span className="topology-node-meta">{node.meta}</span>}
-        {node.tag && <span className="topology-node-tag">{node.tag}</span>}
+        <span className="topology-node-chips">
+          {node.meta && <span className="topology-node-meta">{node.meta}</span>}
+          {node.tag && <span className="topology-node-tag">{node.tag}</span>}
+        </span>
       </button>
       {selected && (
-        <div className="topology-node-menu topology-map-menu" aria-label={`${node.title} node menu`}>
+        <div className="topology-node-menu topology-map-menu" aria-label={`${stableNodeLabel} node menu`}>
           <strong>{node.title}</strong>
           <button type="button" onClick={() => onOpenWorkspace(node.id)}>Set deployment mode</button>
           <Link to="/network#network-profile">Assign IP block</Link>
@@ -4842,6 +4845,64 @@ function TopologyMapNodeCard({
       )}
     </div>
   );
+}
+
+function TopologyMiniFaceplate({
+  partId,
+  settings,
+  storageProtocol
+}: {
+  partId: DesignPartId;
+  settings: Record<string, string>;
+  storageProtocol: string;
+}) {
+  if (partId === "switch") {
+    return (
+      <span className="topology-mini-faceplate">
+        <span className="topology-mini-led" />
+        {Array.from({ length: 10 }, (_, index) => <span className="topology-mini-port" key={index} />)}
+        <span className="topology-mini-chip">VLAN {settings.storage_vlan || "220"}</span>
+      </span>
+    );
+  }
+  if (partId === "server-gen10" || partId === "server-gen10plus") {
+    const bayCount = clampNumber(parseFirstInteger(settings.drive_bays), 4, 8, 8);
+    return (
+      <span className="topology-mini-faceplate">
+        <span className="topology-mini-led" />
+        {Array.from({ length: bayCount }, (_, index) => <span className="topology-mini-bay" key={index} />)}
+        <span className="topology-mini-chip">{settings.raid_boot || "RAID1"}</span>
+      </span>
+    );
+  }
+  if (partId === "netapp") {
+    const ports = splitFaceplateTokens(settings.controller_ports || "e0a,e0b").slice(0, 2);
+    return (
+      <span className="topology-mini-faceplate">
+        <span className="topology-mini-led" />
+        <span className="topology-mini-chip">A</span>
+        {ports.map((port) => <span className="topology-mini-chip" key={`a-${port}`}>{port}</span>)}
+        <span className="topology-mini-chip">B</span>
+        {ports.map((port) => <span className="topology-mini-chip" key={`b-${port}`}>{port}</span>)}
+        <span className="topology-mini-chip">{storageProtocol.toUpperCase()}</span>
+      </span>
+    );
+  }
+  return (
+    <span className="topology-mini-faceplate">
+      <span className="topology-mini-led" />
+      <span className="topology-mini-chip">{partId === "vcenter" ? "VCSA" : "VM"}</span>
+      <span className="topology-mini-chip">{settings.datastore || settings.role || "inventory"}</span>
+    </span>
+  );
+}
+
+function topologyStableNodeLabel(nodeId: string): string {
+  if (nodeId === "cisco") return "Cisco switch";
+  if (nodeId === "server") return "HPE DL360 Gen10";
+  if (nodeId === "netapp") return "NetApp ONTAP";
+  if (nodeId === "vcenter") return "vCenter VCSA";
+  return "Topology node";
 }
 
 function topologyNodeFaceplatePart(nodeId: string, netappInScope: boolean): DesignPartId {
@@ -6195,7 +6256,7 @@ function topologyLinks({
         label: "storage VLAN",
         labelX: 690,
         labelY: 276,
-        path: "M 650 180 C 705 235 750 270 765 320",
+        path: "M 650 180 C 705 245 650 350 535 420",
         status: topologyLinkStatus(netappStatus),
         to: "netapp"
       },
@@ -6204,8 +6265,8 @@ function topologyLinks({
         id: "link-server-netapp",
         label: storageProtocol === "iscsi" ? "iSCSI 10G planned" : "NFS 10G path",
         labelX: 535,
-        labelY: 405,
-        path: "M 300 395 C 430 350 650 350 765 395",
+        labelY: 390,
+        path: "M 290 505 C 365 455 455 455 535 505",
         status: topologyLinkStatus(datastoreStatus, "warning"),
         to: "netapp"
       },
@@ -6213,9 +6274,9 @@ function topologyLinks({
         from: "server",
         id: "link-server-datastore",
         label: storageProtocol === "iscsi" ? "VMFS planned" : "datastore mount",
-        labelX: 395,
-        labelY: 512,
-        path: "M 300 455 C 360 505 430 525 500 510",
+        labelX: 485,
+        labelY: 590,
+        path: "M 300 555 C 430 625 650 625 790 555",
         status: topologyLinkStatus(datastoreStatus),
         to: "datastore"
       },
@@ -6223,9 +6284,9 @@ function topologyLinks({
         from: "netapp",
         id: "link-netapp-datastore",
         label: "export / LIFs",
-        labelX: 660,
-        labelY: 512,
-        path: "M 765 455 C 700 505 600 525 500 510",
+        labelX: 675,
+        labelY: 545,
+        path: "M 625 515 C 675 545 735 545 790 515",
         status: topologyLinkStatus(datastoreStatus),
         to: "datastore"
       }

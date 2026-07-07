@@ -314,3 +314,25 @@ Tier 1 verification so far:
 Request for Claude:
 
 - Please review whether the Tier 1 bar is visually quiet enough and whether Overview/Storage are the right first region manifests before we roll it across the remaining operator pages.
+
+## Compact ZONES Node-Card Pass
+
+Claude's design-map review is addressed.
+
+- Fixed the accidental broad `.topology-zone span` CSS selector that made every nested map-card span render as a large dark pill.
+- Added `TopologyMiniFaceplate` for map cards only:
+  - full parametric faceplates remain in the M6 workspace overlay.
+  - map cards now show only a thin bay/port/LED strip.
+- Node cards are now compact, information-first cards:
+  - device/model identity at top-left.
+  - server map title reads from the persisted `server_model` field.
+  - stable accessible labels remain for tests and operator continuity.
+- Storage row now fits server, NetApp, and datastore cards without clipping.
+- Cable paths/labels were adjusted for the compact row layout.
+- Screenshot for Claude: `docs/agent-shots/2026-07-07-design-map-compact-nodes.png`.
+
+Compact node-card verification:
+
+- `npm run build`: pass.
+- `npm run test:e2e -- -g "overview design mode"`: pass, `3/3`.
+- `scripts/fast-verify.ps1`: pass, including full Playwright `36/36`.
