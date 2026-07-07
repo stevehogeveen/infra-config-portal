@@ -4373,10 +4373,11 @@ function LabTopologyMap({
       )}
 
       <div className="topology-map-tools" aria-label="Map viewport controls">
-        <button type="button" onClick={() => setMapZoom((value) => Math.min(1.35, Number((value + 0.1).toFixed(2))))}>Zoom in</button>
-        <button type="button" onClick={() => setMapZoom((value) => Math.max(0.75, Number((value - 0.1).toFixed(2))))}>Zoom out</button>
-        <button type="button" onClick={() => setMapPan((value) => ({ ...value, x: value.x - 36 }))}>Pan left</button>
-        <button type="button" onClick={() => setMapPan((value) => ({ ...value, x: value.x + 36 }))}>Pan right</button>
+        <button type="button" onClick={() => setMapZoom((value) => Math.min(1.35, Number((value + 0.1).toFixed(2))))}>+</button>
+        <button type="button" onClick={() => setMapZoom((value) => Math.max(0.75, Number((value - 0.1).toFixed(2))))}>-</button>
+        <span>{Math.round(mapZoom * 100)}%</span>
+        <button type="button" onClick={() => setMapPan((value) => ({ ...value, x: value.x - 36 }))}>Left</button>
+        <button type="button" onClick={() => setMapPan((value) => ({ ...value, x: value.x + 36 }))}>Right</button>
         <button type="button" onClick={fitMapToScreen}>Fit</button>
       </div>
 
@@ -4485,7 +4486,10 @@ function LabTopologyMap({
         <div className="topology-workspace-overlay" aria-label="Device workspace overlay">
           <div className="topology-workspace-backdrop" onClick={() => setWorkspaceOpen(false)} />
           <aside className="topology-workspace-drawer" aria-label="Device workspace drawer">
-            <button className="topology-workspace-close" type="button" onClick={() => setWorkspaceOpen(false)}>Close</button>
+            <div className="topology-workspace-drawer-head">
+              <span>Device workspace</span>
+              <button className="topology-workspace-close" type="button" onClick={() => setWorkspaceOpen(false)}>Close</button>
+            </div>
             <LabDesignComposer
               activeProfile={activeProfile}
               address={address}

@@ -241,6 +241,31 @@ ZONES refinement verification:
 - `npm run test:e2e -- -g "overview design mode"`: pass after updating the design-map snapshot.
 - `scripts/fast-verify.ps1`: pass with full frontend E2E, `34/34` Playwright, component tests, and build.
 
+ZONES visual polish pass is complete.
+
+- Followed Claude's "one tight pass" guidance without adding new controls or behavior.
+- Map toolbar is quieter and instrument-like:
+  - compact `+ / - / 100% / Left / Right / Fit` control group.
+  - subdued pill chrome and zoom readout.
+- Zone bands are cleaner:
+  - softer management/storage tinting.
+  - single-server storage band reads intentionally empty/collapsed with a subtle dashed texture.
+- Nodes/cables are restrained:
+  - node shadows softened.
+  - cable strokes and protocol labels reduced slightly.
+  - honest neutral LEDs remain unchanged.
+- Drawer chrome is cleaner:
+  - sticky drawer header.
+  - quieter Close button.
+  - no new panels or actions.
+- Screenshot for Claude saved to `docs/agent-shots/2026-07-07-design-map.png` and posted in `docs/agent-chat.md`.
+
+ZONES visual polish verification:
+
+- `npm run build`: pass.
+- `npm run test:e2e -- -g "zoned map|overview design mode"`: pass, `5/5`.
+- `scripts/fast-verify.ps1`: pass, including frontend build, component test, and focused overview design Playwright `3/3`.
+
 ## Verification
 
 - `npm run build`: pass.
