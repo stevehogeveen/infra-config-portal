@@ -41,6 +41,7 @@ from app.schemas import (
     FirmwareFileSelectionsWrite,
     FirmwareSummaryRead,
     HpeRaidApplyCreate,
+    HpeRaidFactoryResetCreate,
     HpeRaidIntentRead,
     HpeRaidIntentWrite,
     HpeRaidPlanPreviewRead,
@@ -56,11 +57,15 @@ from app.schemas import (
     IloSetupIntentWrite,
     IloSetupPlanPreviewRead,
     IloUpgradeReadinessRead,
+    LabSafetySettingsRead,
+    LabSafetySettingsWrite,
     LabValidationSummaryRead,
     LabProfileListRead,
     LabProfileRead,
     LabProfileRuntimeApplyRead,
     LabProfileWrite,
+    TopologyDesignDraftRead,
+    TopologyDesignDraftWrite,
     MediaInventoryRead,
     NetAppConsoleReadinessRead,
     NetAppObservationRead,
@@ -68,6 +73,8 @@ from app.schemas import (
     NetAppPlanPreviewRead,
     NetAppReadinessComparisonRead,
     NetAppUpgradeReadinessRead,
+    OperatorIssuePacketCreate,
+    OperatorIssuePacketRead,
     ProviderArtifactRead,
     ProviderModeSettingsRead,
     ProviderModeSettingsWrite,
@@ -79,6 +86,7 @@ from app.schemas import (
     RequestRead,
     VMDeploymentCreate,
     VMDeploymentUpdate,
+    WorkflowActionDiagnosisRead,
     WorkflowActionRead,
     WorkflowActionRunCreate,
     WorkflowActionRunRead,
@@ -89,6 +97,7 @@ from app.services.artifacts import (
     list_request_artifacts,
     list_workflow_run_artifacts,
 )
+from app.services.audit import record_audit_event
 from app.services.cisco_bootstrap_requirements import (
     CiscoBootstrapRequirementsValidationError,
     get_cisco_bootstrap_requirements,
@@ -119,6 +128,7 @@ from app.services.lifecycle import (
     update_vm_deployment_request,
 )
 from app.services.cisco_setup_readiness import get_cisco_setup_readiness
+from app.services.cisco_current_intent import get_cisco_current_intent_diff
 from app.services.cisco_setup_wizard_plan import get_cisco_setup_wizard_plan
 from app.services.build_verification import get_lab_build_verification
 from app.services.control_actions import (
@@ -154,6 +164,11 @@ from app.services.provider_mode_settings import (
     read_provider_mode_settings,
     update_provider_mode_settings,
 )
+from app.services.lab_safety_settings import (
+    LabSafetySettingsError,
+    read_lab_safety_settings,
+    update_lab_safety_settings,
+)
 from app.services.lab_profiles import (
     LabProfileError,
     LabProfileNotFoundError,
@@ -163,10 +178,17 @@ from app.services.lab_profiles import (
     list_lab_profiles,
     update_lab_profile,
 )
+from app.services.topology_design_drafts import (
+    TopologyDesignDraftError,
+    get_topology_design_draft,
+    save_topology_design_draft,
+)
 from app.services.lab_validation import get_lab_validation_summary
 from app.services.hpe_raid import (
+    apply_hpe_raid_factory_reset,
     apply_hpe_raid_plan,
     build_hpe_raid_apply_plan,
+    build_hpe_raid_factory_reset_preview,
     build_hpe_raid_reset_plan,
     get_hpe_raid_intent,
     get_hpe_raid_plan_preview,
@@ -185,6 +207,10 @@ from app.services.esxi_netapp_datastore import (
     apply_esxi_netapp_datastore,
     build_esxi_netapp_datastore_preview,
     validate_esxi_netapp_datastore,
+)
+from app.services.esxi_iscsi_datastore import (
+    build_esxi_iscsi_datastore_preview,
+    validate_esxi_iscsi_datastore,
 )
 from app.services.esxi_vm_deploy import (
     apply_esxi_vm_deploy,
@@ -212,6 +238,7 @@ from app.services.netapp_address_plan import (
     apply_netapp_address_remediation,
     build_netapp_address_remediation_plan,
     build_netapp_address_remediation_preview,
+    diagnose_netapp_ha_node_warning,
     validate_netapp_address_remediation,
 )
 from app.services.netapp_console_readiness import get_netapp_console_readiness
@@ -233,16 +260,23 @@ from app.services.netapp_real_lab import (
     run_netapp_live_state,
     run_netapp_setup_validation,
     run_netapp_console_discovery,
+    run_netapp_console_login_state,
     run_netapp_console_read_state,
 )
 from app.services.netapp_setup_intent import (
     apply_netapp_setup,
     build_netapp_setup_preview,
+    run_netapp_post_setup_validation,
 )
 from app.services.netapp_nfs_setup import (
     apply_netapp_nfs_setup,
     build_netapp_nfs_setup_preview,
     validate_netapp_nfs_setup,
+)
+from app.services.netapp_iscsi_setup import (
+    apply_netapp_iscsi_setup,
+    build_netapp_iscsi_setup_preview,
+    validate_netapp_iscsi_setup,
 )
 from app.services.netapp_upgrade_center import (
     apply_netapp_upgrade,
@@ -251,6 +285,7 @@ from app.services.netapp_upgrade_center import (
     validate_netapp_upgrade,
 )
 from app.services.netapp_upgrade_readiness import get_netapp_upgrade_readiness
+from app.services.operator_issue_packets import create_operator_issue_packet
 from app.services.readiness import get_request_readiness
 from app.services.report_center import get_report_center, get_report_summary
 from app.services.upgrade_decision import get_ilo_upgrade_readiness
@@ -272,6 +307,7 @@ from app.services.workflow_registry import (
     list_workflow_actions,
     list_workflow_stages,
 )
+from app.services.workflow_action_diagnosis import diagnose_workflow_action
 from app.services.workflow_action_runner import (
     list_workflow_action_runs,
     run_workflow_action,
@@ -519,14 +555,33 @@ def run_workflow_action_route(
 
 
 @router.get("/workflows/actions/{action_id}/runs", response_model=list[WorkflowActionRunRead])
-def read_workflow_action_runs(action_id: str) -> list[WorkflowActionRunRead]:
+def read_workflow_action_runs(action_id: str, limit: int = Query(20, ge=1, le=100)) -> list[WorkflowActionRunRead]:
     try:
-        return list_workflow_action_runs(action_id)
+        return list_workflow_action_runs(action_id, limit=limit)
     except WorkflowRegistryNotFoundError as exc:
         raise HTTPException(
             status_code=404,
             detail={"blocker": "Workflow action not found", "action_id": action_id},
         ) from exc
+
+
+@router.get("/workflows/actions/{action_id}/diagnosis", response_model=WorkflowActionDiagnosisRead)
+def read_workflow_action_diagnosis(
+    action_id: str,
+    limit: int = Query(5, ge=1, le=10),
+) -> WorkflowActionDiagnosisRead:
+    try:
+        return diagnose_workflow_action(action_id, limit=limit)
+    except WorkflowRegistryNotFoundError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail={"blocker": "Workflow action not found", "action_id": action_id},
+        ) from exc
+
+
+@router.post("/operator-issue-packets", response_model=OperatorIssuePacketRead)
+def create_operator_issue_packet_route(payload: OperatorIssuePacketCreate) -> OperatorIssuePacketRead:
+    return create_operator_issue_packet(payload.model_dump())
 
 
 @router.get("/workflows/stages/{stage_id}", response_model=WorkflowStageRead)
@@ -558,6 +613,38 @@ def update_provider_mode_settings_route(
         return update_provider_mode_settings(payload.model_dump())
     except ProviderModeSettingsError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.get("/settings/lab-safety", response_model=LabSafetySettingsRead)
+def read_lab_safety_settings_route() -> LabSafetySettingsRead:
+    return read_lab_safety_settings()
+
+
+@router.put("/settings/lab-safety", response_model=LabSafetySettingsRead)
+def update_lab_safety_settings_route(
+    payload: LabSafetySettingsWrite,
+    fastapi_request: FastAPIRequest,
+    session: Session = Depends(get_session),
+) -> LabSafetySettingsRead:
+    update_payload = payload.model_dump(exclude_none=True)
+    try:
+        result = update_lab_safety_settings(update_payload)
+    except LabSafetySettingsError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    changed = sorted(
+        key
+        for key in update_payload
+        if key not in {"confirmation_phrase", "device_reconfiguration_confirmation_phrase"}
+    )
+    record_audit_event(
+        session,
+        actor=get_current_actor(fastapi_request),
+        event_type="settings.lab_safety.updated",
+        message="Lab safety runtime settings were updated.",
+        data={"changed_fields": changed},
+    )
+    session.commit()
+    return result
 
 
 @router.get("/control/actions", response_model=ControlActionCatalogRead)
@@ -749,12 +836,40 @@ def apply_active_lab_profile_runtime_env_route() -> LabProfileRuntimeApplyRead:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
+@router.get("/lab/topology-design-draft", response_model=TopologyDesignDraftRead)
+def read_topology_design_draft(
+    profile_id: str = Query("runtime", min_length=1, max_length=120),
+    scenario: str = Query(..., min_length=1, max_length=80),
+    subnet: str | None = Query(None, max_length=80),
+) -> TopologyDesignDraftRead:
+    try:
+        return get_topology_design_draft(profile_id=profile_id, scenario=scenario, subnet=subnet)
+    except TopologyDesignDraftError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.put("/lab/topology-design-draft", response_model=TopologyDesignDraftRead)
+def update_topology_design_draft(payload: TopologyDesignDraftWrite) -> TopologyDesignDraftRead:
+    try:
+        return save_topology_design_draft(payload.model_dump())
+    except TopologyDesignDraftError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
 @router.get(
     "/providers/cisco/setup-readiness",
     response_model=CiscoSetupReadinessRead,
 )
 def read_cisco_setup_readiness() -> CiscoSetupReadinessRead:
     return get_cisco_setup_readiness()
+
+
+@router.post(
+    "/providers/cisco/current-intent-diff",
+    response_model=ProviderProbeResultRead,
+)
+def run_cisco_current_intent_diff() -> ProviderProbeResultRead:
+    return get_cisco_current_intent_diff()
 
 
 @router.get(
@@ -998,6 +1113,27 @@ def apply_hpe_raid_route(
 
 
 @router.get(
+    "/providers/ilo-redfish/hpe-raid-factory-reset-preview",
+    response_model=ProviderProbeResultRead,
+)
+def read_hpe_raid_factory_reset_preview(
+    session: Session = Depends(get_session),
+) -> ProviderProbeResultRead:
+    return build_hpe_raid_factory_reset_preview(session)
+
+
+@router.post(
+    "/providers/ilo-redfish/hpe-raid-factory-reset-apply",
+    response_model=ProviderProbeResultRead,
+)
+def apply_hpe_raid_factory_reset_route(
+    payload: HpeRaidFactoryResetCreate,
+    session: Session = Depends(get_session),
+) -> ProviderProbeResultRead:
+    return apply_hpe_raid_factory_reset(session, payload)
+
+
+@router.get(
     "/providers/ilo-redfish/hpe-raid-pending",
     response_model=ProviderProbeResultRead,
 )
@@ -1107,6 +1243,22 @@ def run_esxi_netapp_datastore_validate_route() -> ProviderProbeResultRead:
     return validate_esxi_netapp_datastore()
 
 
+@router.post(
+    "/providers/esxi-readonly/iscsi-datastore-preview",
+    response_model=ProviderProbeResultRead,
+)
+def run_esxi_iscsi_datastore_preview_route() -> ProviderProbeResultRead:
+    return build_esxi_iscsi_datastore_preview()
+
+
+@router.post(
+    "/providers/esxi-readonly/iscsi-datastore-validate",
+    response_model=ProviderProbeResultRead,
+)
+def run_esxi_iscsi_datastore_validate_route() -> ProviderProbeResultRead:
+    return validate_esxi_iscsi_datastore()
+
+
 @router.get(
     "/providers/netapp-ontap/plan-preview",
     response_model=NetAppPlanPreviewRead,
@@ -1155,6 +1307,14 @@ def run_netapp_console_state_route() -> ProviderProbeResultRead:
     return run_netapp_console_read_state()
 
 
+@router.post(
+    "/providers/netapp-ontap/console-login-state",
+    response_model=ProviderProbeResultRead,
+)
+def run_netapp_console_login_state_route() -> ProviderProbeResultRead:
+    return run_netapp_console_login_state()
+
+
 @router.get(
     "/providers/netapp-ontap/live-state",
     response_model=ProviderProbeResultRead,
@@ -1177,6 +1337,14 @@ def run_netapp_live_state_route() -> ProviderProbeResultRead:
 )
 def run_netapp_setup_validation_route() -> ProviderProbeResultRead:
     return run_netapp_setup_validation()
+
+
+@router.post(
+    "/providers/netapp-ontap/post-setup-validation",
+    response_model=ProviderProbeResultRead,
+)
+def run_netapp_post_setup_validation_route() -> ProviderProbeResultRead:
+    return run_netapp_post_setup_validation()
 
 
 @router.get(
@@ -1225,6 +1393,14 @@ def run_netapp_address_apply_route() -> ProviderProbeResultRead:
 )
 def run_netapp_address_validate_route() -> ProviderProbeResultRead:
     return validate_netapp_address_remediation()
+
+
+@router.post(
+    "/providers/netapp-ontap/ha-node-diagnose",
+    response_model=ProviderProbeResultRead,
+)
+def run_netapp_ha_node_diagnose_route() -> ProviderProbeResultRead:
+    return diagnose_netapp_ha_node_warning()
 
 
 @router.get(
@@ -1289,6 +1465,30 @@ def run_netapp_nfs_setup_apply_route() -> ProviderProbeResultRead:
 )
 def run_netapp_nfs_setup_validate_route() -> ProviderProbeResultRead:
     return validate_netapp_nfs_setup()
+
+
+@router.get(
+    "/providers/netapp-ontap/iscsi-setup-preview",
+    response_model=ProviderProbeResultRead,
+)
+def read_netapp_iscsi_setup_preview() -> ProviderProbeResultRead:
+    return build_netapp_iscsi_setup_preview(write_report=False)
+
+
+@router.post(
+    "/providers/netapp-ontap/iscsi-setup-apply",
+    response_model=ProviderProbeResultRead,
+)
+def run_netapp_iscsi_setup_apply_route() -> ProviderProbeResultRead:
+    return apply_netapp_iscsi_setup()
+
+
+@router.post(
+    "/providers/netapp-ontap/iscsi-setup-validate",
+    response_model=ProviderProbeResultRead,
+)
+def run_netapp_iscsi_setup_validate_route() -> ProviderProbeResultRead:
+    return validate_netapp_iscsi_setup()
 
 
 @router.get(

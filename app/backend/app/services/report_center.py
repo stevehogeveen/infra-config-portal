@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from collections import Counter
@@ -29,6 +30,9 @@ from app.services.netapp_real_lab import (
     get_netapp_nfs_vcenter_readiness,
 )
 from app.services.netapp_upgrade_readiness import get_netapp_upgrade_readiness
+from app.services.json_file_store import read_json_object
+from app.services.list_utils import unique_strings
+from app.services.path_utils import path_exists, path_mtime, safe_read_text
 from app.services.status_source import status_source_metadata
 
 
@@ -37,16 +41,35 @@ Classification = str
 
 CRITICAL_CLASSIFICATIONS = {"hard_fail", "stale_config"}
 WARNING_CLASSIFICATIONS = {"blocked_by_prior_stage", "warning"}
-INFO_CLASSIFICATIONS = {"not_configured_yet"}
+INFO_CLASSIFICATIONS = {"info", "not_configured_yet"}
 SUCCESS_CLASSIFICATIONS = {"passed"}
 OPEN_STATUSES = {"open", "blocked"}
 STATUS_TTL_SECONDS = 24 * 60 * 60
+MAX_REPORT_ISSUE_ID_CHARS = 180
+REPORT_ISSUE_DIGEST_CHARS = 12
 CISCO_MANAGEMENT_FAILURE_TOKENS = (
     "SSH TCP/22 to Cisco management IP failed.",
     "SCP readiness over TCP/22 to Cisco management IP failed.",
+    "Console adapter opened across common baud rates, but no supported Cisco prompt was detected.",
+)
+CISCO_SUPERSEDED_CONSOLE_WARNING_TOKENS = (
+    "Fallback serial adapter detected. Prefer a stable /dev/serial/by-id path if available.",
+    "No stable /dev/serial/by-id console path was found.",
+)
+BENIGN_REPORT_WARNING_TOKENS = (
+    "local-lab-readwrite permits explicitly allowlisted real-lab workflow categories only.",
+    "Manual env flag not required.",
+    "Live checks are read-only and do not run NetApp setup, storage, upgrade, reboot, wipe, or apply commands.",
+    "NFS readiness is preview-only. No ONTAP, vCenter, ESXi, or storage apply action is run.",
+    "vCenter is disabled by the active lab profile; direct NetApp NFS readiness can still be validated.",
+    "Only newline and carriage return wake bytes are allowed for this NetApp console probe.",
+    "No NetApp credentials, commands, boot interrupts, or configuration actions are sent.",
+    "Serial auto-discovery includes Linux /dev serial adapters and Windows COM ports.",
 )
 CISCO_SSH_VALIDATION_REPORT = "artifacts/codex-runs/cisco-ssh-validation-report.md"
 CISCO_SCP_VALIDATION_REPORT = "artifacts/codex-runs/cisco-scp-validation-report.md"
+CISCO_CURRENT_INTENT_DIFF_JSON = "artifacts/codex-runs/cisco-current-intent-diff-redacted.json"
+CISCO_CURRENT_INTENT_DIFF_REPORT = "artifacts/codex-runs/cisco-current-intent-diff-report.md"
 
 SOURCE_LABELS = {
     "build_verification": "Build Verification",
@@ -70,8 +93,8 @@ SOURCE_LINKS = {
     "esxi": "/control-center?section=esxi",
     "netapp": "/run-center?section=netapp",
     "serial": "/control-center",
-    "toolchain": "/settings?section=toolchain",
-    "lab_profile": "/settings?section=ip-profile",
+    "toolchain": "/overview",
+    "lab_profile": "/lab-profiles",
 }
 
 RECHECK_COMMANDS = {
@@ -107,6 +130,8 @@ STATIC_ARTIFACTS = {
         "artifacts/codex-runs/cisco-console-discovery-report.md",
         "artifacts/codex-runs/cisco-console-ethernet-readiness-report.md",
         "artifacts/codex-runs/cisco-firmware-inventory-report.md",
+        CISCO_CURRENT_INTENT_DIFF_JSON,
+        CISCO_CURRENT_INTENT_DIFF_REPORT,
     ],
     "ilo": [
         "artifacts/codex-runs/ilo-local-readonly-smoke-report.md",
@@ -219,7 +244,8 @@ def get_report_center(
     if "toolchain" in source_filter:
         _ensure_source_present("toolchain", issues)
 
-    issues = [_attach_workflow_link(_sanitize_issue(issue)) for issue in _dedupe_issues(issues)]
+    issue_linker = _workflow_issue_linker()
+    issues = [_attach_workflow_link(_sanitize_issue(issue), issue_linker=issue_linker) for issue in _dedupe_issues(issues)]
     issues.sort(key=_issue_sort_key)
     for source_id in SOURCE_LABELS:
         if source_id in source_filter:
@@ -509,11 +535,11 @@ def _toolchain_issues(
             _issue(
                 source="toolchain",
                 source_stage="optional-tools",
-                classification="warning",
-                title="Optional toolchain packages need review",
+                classification="info",
+                title="Optional toolchain packages are unavailable",
                 summary=", ".join(optional_missing[:6]),
-                problem="Optional tooling is unavailable; related workflows may stay limited.",
-                next_action="Install optional tools only for workflows that are in scope.",
+                problem="Optional tooling is unavailable; fallback paths may be used for supported live checks.",
+                next_action="Install optional tools only when their workflow is intentionally in scope.",
                 source_report="artifacts/codex-runs/toolchain-availability-report.md",
                 evidence_artifacts=_existing_artifacts("toolchain"),
                 last_checked=checked_at,
@@ -755,10 +781,22 @@ def _supersede_cisco_management_failures(
         return issues
     filtered: list[dict[str, Any]] = []
     superseded = False
+    superseded_console_warning = False
     for issue in issues:
         text = f"{issue.get('summary', '')} {issue.get('problem', '')}"
-        if issue.get("source") == "cisco" and any(token in text for token in CISCO_MANAGEMENT_FAILURE_TOKENS):
+        source = issue.get("source")
+        if source == "cisco" and any(token in text for token in CISCO_MANAGEMENT_FAILURE_TOKENS):
             superseded = True
+            continue
+        if (
+            source == "cisco"
+            and (
+                any(token in text for token in CISCO_SUPERSEDED_CONSOLE_WARNING_TOKENS)
+                or str(issue.get("source_stage") or "") == "console_prompt_detection"
+            )
+        ):
+            superseded = True
+            superseded_console_warning = True
             continue
         filtered.append(issue)
     if not superseded:
@@ -769,15 +807,21 @@ def _supersede_cisco_management_failures(
             source_stage="historical-ethernet-management",
             classification="warning",
             title="Historical Cisco SSH/SCP failure superseded",
-            summary="Newer Cisco SSH and SCP validation reports are ready.",
-            problem="Older Cisco run details reported SSH/SCP failures, but newer dedicated validation reports succeeded.",
-            next_action="Use the latest Cisco validation evidence or rerun Cisco ethernet readiness if the state changes.",
+            summary="Newer Cisco management validation reports are ready.",
+            problem=(
+                "Older Cisco run details reported console-adapter warnings, but newer SSH/current-intent evidence succeeded."
+                if superseded_console_warning
+                else "Older Cisco run details reported SSH/SCP failures, but newer dedicated validation reports succeeded."
+            ),
+            next_action="Use the latest Cisco validation evidence or rerun Cisco readiness if the state changes.",
             source_report=source_report,
             evidence_artifacts=_unique(
                 [
                     *evidence_artifacts,
                     CISCO_SSH_VALIDATION_REPORT,
                     CISCO_SCP_VALIDATION_REPORT,
+                    CISCO_CURRENT_INTENT_DIFF_REPORT,
+                    CISCO_CURRENT_INTENT_DIFF_JSON,
                 ]
             ),
             last_checked=_optional_str(payload.get("checked_at")),
@@ -790,6 +834,14 @@ def _supersede_cisco_management_failures(
 
 def _cisco_ssh_scp_validations_newer_than(checked_at: str | None) -> bool:
     baseline = _parse_iso_datetime(checked_at)
+    current_intent = _read_json_artifact(CISCO_CURRENT_INTENT_DIFF_JSON)
+    if current_intent:
+        checked = _parse_iso_datetime(_optional_str(current_intent.get("checked_at")))
+        if checked and (baseline is None or checked > baseline):
+            if _optional_str(current_intent.get("source_type")) == "live_probe":
+                status = (_optional_str(current_intent.get("status")) or "").lower()
+                if status in {"ready", "warning", "completed", "passed", "ok", "succeeded"}:
+                    return True
     for report in (CISCO_SSH_VALIDATION_REPORT, CISCO_SCP_VALIDATION_REPORT):
         metadata = _read_text_status_report(report)
         if _optional_str(metadata.get("status")) not in {"ready", "passed", "completed", "ok", "succeeded"}:
@@ -1263,15 +1315,20 @@ def _blocker_warning_issues(
             )
         )
     for index, warning in enumerate(_strings(warnings), start=1):
+        benign = _is_benign_report_warning(warning)
         issues.append(
             _issue(
                 source=source,
                 source_stage=source_stage,
-                classification="warning",
-                title=f"{SOURCE_LABELS[source]} {display_status(source_stage)} needs review",
+                classification="info" if benign else "warning",
+                title=(
+                    f"{SOURCE_LABELS[source]} {display_status(source_stage)} safety note"
+                    if benign
+                    else f"{SOURCE_LABELS[source]} {display_status(source_stage)} needs review"
+                ),
                 summary=warning,
                 problem=warning,
-                next_action=next_action or "Review the warning before continuing.",
+                next_action=next_action or ("Keep this safety boundary in place." if benign else "Review the warning before continuing."),
                 source_report=source_report,
                 evidence_artifacts=evidence_artifacts,
                 last_checked=last_checked,
@@ -1280,6 +1337,11 @@ def _blocker_warning_issues(
             )
         )
     return issues
+
+
+def _is_benign_report_warning(warning: Any) -> bool:
+    text = _optional_str(warning) or ""
+    return any(token in text for token in BENIGN_REPORT_WARNING_TOKENS)
 
 
 def _issue(
@@ -1492,7 +1554,7 @@ def _status_for(classification: str, metadata: dict[str, Any]) -> str:
         return "blocked"
     if classification in {"hard_fail", "operator_action_required", "warning"}:
         return "open"
-    if classification == "not_configured_yet":
+    if classification in {"info", "not_configured_yet"}:
         return "reviewed"
     if classification == "passed":
         return "resolved"
@@ -1506,6 +1568,7 @@ def _normalize_classification(value: Any) -> str:
         "stale_config",
         "operator_action_required",
         "blocked_by_prior_stage",
+        "info",
         "not_configured_yet",
         "warning",
         "passed",
@@ -1529,7 +1592,8 @@ def _issue_sort_key(issue: dict[str, Any]) -> tuple[int, int, str, str]:
         "blocked_by_prior_stage": 3,
         "warning": 4,
         "not_configured_yet": 5,
-        "passed": 6,
+        "info": 6,
+        "passed": 7,
     }
     return (
         severity_order.get(issue["severity"], 9),
@@ -1569,11 +1633,14 @@ def _sanitize_issue(issue: dict[str, Any]) -> dict[str, Any]:
     return redact_sensitive(issue)
 
 
-def _attach_workflow_link(issue: dict[str, Any]) -> dict[str, Any]:
+def _attach_workflow_link(issue: dict[str, Any], *, issue_linker: Any | None = None) -> dict[str, Any]:
     try:
-        from app.services.workflow_registry import find_workflow_action_for_issue
+        if issue_linker is not None:
+            link = issue_linker(issue)
+        else:
+            from app.services.workflow_registry import find_workflow_action_for_issue
 
-        link = find_workflow_action_for_issue(issue)
+            link = find_workflow_action_for_issue(issue)
     except Exception:
         link = {}
     return {
@@ -1586,6 +1653,87 @@ def _attach_workflow_link(issue: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _workflow_issue_linker() -> Any:
+    try:
+        from app.services.workflow_registry import list_workflow_actions
+
+        actions = list_workflow_actions()
+    except Exception:
+        actions = []
+    report_map: dict[str, dict[str, Any]] = {}
+    provider_map: dict[str, list[dict[str, Any]]] = {}
+    stage_map: dict[str, list[dict[str, Any]]] = {}
+    for action in actions:
+        for report in action.get("reports") or []:
+            if report:
+                report_map.setdefault(str(report), action)
+        provider = str(action.get("provider") or "")
+        stage = str(action.get("stage") or "")
+        if provider:
+            provider_map.setdefault(provider, []).append(action)
+        if stage:
+            stage_map.setdefault(stage, []).append(action)
+
+    def link(issue: dict[str, Any]) -> dict[str, str | None]:
+        report_paths = _unique(
+            [
+                *_strings(issue.get("source_report")),
+                *_strings(issue.get("evidence_artifacts")),
+            ]
+        )
+        for report_path in report_paths:
+            action = report_map.get(str(report_path))
+            if action:
+                return _workflow_issue_link(action)
+        source = str(issue.get("source") or "")
+        source_stage = str(issue.get("source_stage") or "").replace("_", "-")
+        candidates = [
+            *provider_map.get(source, []),
+            *stage_map.get(_stage_for_issue_source(source), []),
+        ]
+        deduped_candidates = []
+        seen: set[str] = set()
+        for action in candidates:
+            action_id = str(action.get("action_id") or "")
+            if action_id in seen:
+                continue
+            seen.add(action_id)
+            deduped_candidates.append(action)
+        for action in deduped_candidates:
+            action_id = str(action.get("action_id") or "")
+            if source_stage and source_stage in action_id:
+                return _workflow_issue_link(action)
+        if deduped_candidates:
+            return _workflow_issue_link(deduped_candidates[0])
+        return {
+            "source_stage_id": _stage_for_issue_source(source),
+            "source_stage_label": None,
+            "source_action_id": None,
+            "source_action_label": None,
+            "source_action_link": None,
+        }
+
+    return link
+
+
+def _workflow_issue_link(action: dict[str, Any]) -> dict[str, str | None]:
+    return {
+        "source_stage_id": str(action.get("stage") or ""),
+        "source_stage_label": str(action.get("stage_label") or ""),
+        "source_action_id": str(action.get("action_id") or ""),
+        "source_action_label": str(action.get("label") or ""),
+        "source_action_link": f"/control-center?section=action-catalog&action={action.get('action_id')}",
+    }
+
+
+def _stage_for_issue_source(source: str) -> str:
+    return {
+        "build_verification": "build-verification",
+        "toolchain": "build-verification",
+        "lab_profile": "lab-profile",
+    }.get(source, source)
+
+
 def _artifact_values(payload: dict[str, Any]) -> list[str]:
     artifacts = []
     for key in ("artifacts", "reports"):
@@ -1596,7 +1744,11 @@ def _artifact_values(payload: dict[str, Any]) -> list[str]:
 
 
 def _existing_artifacts(source: str) -> list[str]:
-    return [artifact for artifact in STATIC_ARTIFACTS.get(source, []) if _repo_path(artifact).exists()]
+    existing: list[str] = []
+    for artifact in STATIC_ARTIFACTS.get(source, []):
+        if path_exists(_repo_path(artifact)):
+            existing.append(artifact)
+    return existing
 
 
 def _first_artifact(source: str) -> str | None:
@@ -1605,31 +1757,36 @@ def _first_artifact(source: str) -> str | None:
 
 
 def _latest_existing_artifact(source: str) -> str | None:
-    existing = [artifact for artifact in STATIC_ARTIFACTS.get(source, []) if _repo_path(artifact).exists()]
-    if not existing:
+    latest_artifact = None
+    latest_mtime = None
+    for artifact in STATIC_ARTIFACTS.get(source, []):
+        artifact_path = _repo_path(artifact)
+        if not path_exists(artifact_path):
+            continue
+        artifact_mtime = path_mtime(artifact_path)
+        if artifact_mtime is None:
+            continue
+        if latest_mtime is None or artifact_mtime > latest_mtime:
+            latest_artifact = artifact
+            latest_mtime = artifact_mtime
+    if latest_artifact is None:
         return _first_artifact(source)
-    return max(existing, key=lambda artifact: _repo_path(artifact).stat().st_mtime)
+    return latest_artifact
 
 
 def _read_json_artifact(path: str) -> dict[str, Any] | None:
     artifact = _repo_path(path)
-    if not artifact.exists():
+    if not path_exists(artifact):
         return None
-    try:
-        payload = json.loads(artifact.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return None
-    return payload if isinstance(payload, dict) else None
+    payload = read_json_object(artifact)
+    return payload or None
 
 
 def _read_text_status_report(path: str) -> dict[str, str | None]:
     artifact = _repo_path(path)
-    if not artifact.exists():
+    if not path_exists(artifact):
         return {"checked_at": None, "status": None}
-    try:
-        text = artifact.read_text(encoding="utf-8")
-    except OSError:
-        return {"checked_at": None, "status": None}
+    text = safe_read_text(artifact)
     checked_match = re.search(
         r"(?:Checked at:\s*`([^`]+)`|checked_at:\s*`?([^`\n]+)`?)",
         text,
@@ -1673,13 +1830,17 @@ def _dict(value: Any) -> dict[str, Any]:
 
 
 def _strings(value: Any) -> list[str]:
-    if isinstance(value, list):
-        return [str(item) for item in value if str(item)]
-    if isinstance(value, tuple):
-        return [str(item) for item in value if str(item)]
-    if isinstance(value, str) and value:
-        return [value]
-    return []
+    if value is None or value == "":
+        return []
+    if isinstance(value, dict):
+        return []
+    if isinstance(value, str):
+        values = [value]
+    elif isinstance(value, (list, tuple, set)):
+        values = list(value)
+    else:
+        values = [value]
+    return _unique(str(item).strip() for item in values if item is not None)
 
 
 def _optional_str(value: Any) -> str | None:
@@ -1690,14 +1851,21 @@ def _optional_str(value: Any) -> str | None:
 
 
 def _unique(values: Any) -> list[str]:
-    return list(dict.fromkeys(str(value) for value in values if value))
+    return unique_strings(values)
 
 
 def _issue_id(source: str, stage: str, title: str, suffix: str | None) -> str:
-    slug = re.sub(r"[^a-z0-9]+", "-", f"{source}-{stage}-{title}".lower()).strip("-")
+    raw_parts = [source, stage, title]
     if suffix:
-        slug = f"{slug}-{suffix}"
-    return slug[:180]
+        raw_parts.append(suffix)
+    raw = "-".join(raw_parts)
+    slug = re.sub(r"[^a-z0-9]+", "-", raw.lower()).strip("-") or "issue"
+    digest = hashlib.sha256(raw.encode("utf-8", errors="replace")).hexdigest()[
+        :REPORT_ISSUE_DIGEST_CHARS
+    ]
+    prefix_limit = MAX_REPORT_ISSUE_ID_CHARS - len(digest) - 1
+    prefix = slug[:prefix_limit].rstrip("-") or "issue"
+    return f"{prefix}-{digest}"
 
 
 def _now() -> str:

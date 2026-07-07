@@ -10,7 +10,6 @@ from typing import Any
 from urllib.parse import urlparse
 
 import httpx
-from dotenv import dotenv_values
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 REAL_LAB_ENV = REPO_ROOT / ".env.local.real-lab"
@@ -18,11 +17,9 @@ REPORT_DIR = REPO_ROOT / "artifacts" / "real-lab"
 CONNECT_TIMEOUT_SECONDS = 3.0
 HTTP_TIMEOUT_SECONDS = 5.0
 
-if REAL_LAB_ENV.exists():
-    for key, value in dotenv_values(REAL_LAB_ENV).items():
-        if key == "PROVIDER_MODE" or value is None or key in os.environ:
-            continue
-        os.environ[key] = value
+from app.services.env_utils import load_real_lab_env  # noqa: E402
+
+load_real_lab_env(REPO_ROOT)
 
 # Load local lab env before app imports; settings reads env at import time.
 from app.core.config import settings  # noqa: E402
@@ -33,6 +30,9 @@ from app.providers.ilo_redfish import (  # noqa: E402
     ilo_redfish_redaction_values,
 )
 from app.providers.redaction import redact_sensitive  # noqa: E402
+from app.services.json_file_store import write_json_object, write_text_value  # noqa: E402
+from app.services.list_utils import unique_preserving_order  # noqa: E402
+from app.services.path_utils import display_path, file_mode, path_exists  # noqa: E402
 
 
 def main() -> int:
@@ -41,11 +41,7 @@ def main() -> int:
     report: dict[str, Any] = {
         "checked_at": datetime.now(UTC).isoformat(),
         "provider_mode": settings.provider_mode,
-        "env_file": {
-            "path": ".env.local.real-lab",
-            "exists": REAL_LAB_ENV.exists(),
-            "mode": _file_mode(REAL_LAB_ENV),
-        },
+        "env_file": _env_file_summary(),
         "target": {
             "host_configured": bool(config.target_candidates),
             "host_source": config.host_source,
@@ -150,7 +146,7 @@ def _gate_blockers(config: IloRedfishConfig, policy: Any) -> list[str]:
     blockers.extend(policy.readonly_blockers())
     if config.missing_fields:
         blockers.append(f"Missing local iLO configuration: {', '.join(config.missing_fields)}.")
-    return list(dict.fromkeys(blockers))
+    return unique_preserving_order(blockers)
 
 
 def _candidate_reachability_summary(result: dict[str, Any]) -> dict[str, Any]:
@@ -404,10 +400,10 @@ def _write_report(report: dict[str, Any]) -> None:
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     json_path = REPORT_DIR / f"ilo-reachability-{stamp}.json"
     markdown_path = REPORT_DIR / f"ilo-reachability-{stamp}.md"
-    json_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
-    markdown_path.write_text(_markdown_report(report), encoding="utf-8")
-    print(f"report_json={json_path.relative_to(REPO_ROOT)}")
-    print(f"report_markdown={markdown_path.relative_to(REPO_ROOT)}")
+    write_json_object(json_path, report)
+    write_text_value(markdown_path, _markdown_report(report))
+    print(f"report_json={_rel(json_path)}")
+    print(f"report_markdown={_rel(markdown_path)}")
 
 
 def _markdown_report(report: dict[str, Any]) -> str:
@@ -455,9 +451,15 @@ def _markdown_report(report: dict[str, Any]) -> str:
 
 
 def _file_mode(path: Path) -> str | None:
-    if not path.exists():
-        return None
-    return oct(path.stat().st_mode & 0o777)
+    return file_mode(path)
+
+
+def _env_file_summary() -> dict[str, Any]:
+    return {
+        "path": ".env.local.real-lab",
+        "exists": path_exists(REAL_LAB_ENV),
+        "mode": _file_mode(REAL_LAB_ENV),
+    }
 
 
 def _elapsed_ms(started: float) -> int:
@@ -472,6 +474,10 @@ def _redaction_values() -> list[str | None]:
         parsed = urlparse(base_url)
         values.extend([base_url, parsed.netloc, parsed.hostname])
     return values
+
+
+def _rel(path: Path) -> str:
+    return display_path(path, REPO_ROOT)
 
 
 if __name__ == "__main__":

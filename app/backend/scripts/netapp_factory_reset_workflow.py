@@ -2,22 +2,17 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import sys
 from pathlib import Path
-
-from dotenv import dotenv_values
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 REAL_LAB_ENV = Path(__file__).resolve().parents[3] / ".env.local.real-lab"
-if REAL_LAB_ENV.exists():
-    for key, value in dotenv_values(REAL_LAB_ENV).items():
-        if value is None or key in os.environ:
-            continue
-        os.environ[key] = value
+from app.services.env_utils import load_env_file  # noqa: E402
+
+load_env_file(REAL_LAB_ENV)
 
 from app.services.netapp_factory_reset import (  # noqa: E402
     apply_netapp_factory_reset,

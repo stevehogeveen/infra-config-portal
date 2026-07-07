@@ -20,7 +20,172 @@ def test_vcenter_install_readiness_reports_incomplete_values(monkeypatch, tmp_pa
     assert "VCENTER_APPLIANCE_NAME" in result["deployment_values"]["missing_fields"]
     assert result["credential_state"]["deployment_credentials_configured"] is False
     assert result["apply_enabled"] is False
-    assert (tmp_path / "artifacts/codex-runs/vcenter-install-readiness-redacted.json").exists()
+    saved = json.loads((tmp_path / "artifacts/codex-runs/vcenter-install-readiness-redacted.json").read_text(encoding="utf-8"))
+    assert saved["action"] == result["action"]
+    assert (tmp_path / "artifacts/codex-runs/vcenter-install-readiness-report.md").read_text(encoding="utf-8").strip()
+    assert not list((tmp_path / "artifacts/codex-runs").glob("*.tmp"))
+
+
+def test_vcenter_paths_use_posix_for_repo_relative_labels(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(vcenter_netapp_readiness, "REPO_ROOT", tmp_path)
+    repo_iso = tmp_path / "artifacts" / "Media" / "vcsa.iso"
+    outside_iso = tmp_path.parent / "vcsa.iso"
+
+    assert vcenter_netapp_readiness._rel(tmp_path / "artifacts" / "codex-runs" / "report.md") == "artifacts/codex-runs/report.md"
+    assert vcenter_netapp_readiness._safe_media_path(repo_iso) == "artifacts/Media/vcsa.iso"
+    assert vcenter_netapp_readiness._safe_media_path(outside_iso) == str(outside_iso)
+
+
+def test_vcsa_deploy_candidates_are_unique_for_platform(monkeypatch, tmp_path: Path) -> None:
+    root = tmp_path / "vcsa"
+
+    monkeypatch.setattr(vcenter_netapp_readiness.os, "name", "nt")
+    windows_candidates = vcenter_netapp_readiness._vcsa_deploy_candidates(root)
+    assert list(windows_candidates) == [
+        root / "vcsa-cli-installer" / "win32" / "vcsa-deploy.exe",
+        root / "vcsa-cli-installer" / "win32" / "vcsa-deploy",
+        root / "vcsa-cli-installer" / "lin64" / "vcsa-deploy",
+    ]
+
+    monkeypatch.setattr(vcenter_netapp_readiness.os, "name", "posix")
+    posix_candidates = vcenter_netapp_readiness._vcsa_deploy_candidates(root)
+    assert list(posix_candidates) == [
+        root / "vcsa-cli-installer" / "lin64" / "vcsa-deploy",
+        root / "vcsa-cli-installer" / "win32" / "vcsa-deploy.exe",
+    ]
+
+
+def test_vcenter_json_artifact_reader_self_heals_bad_shapes(tmp_path: Path) -> None:
+    artifact = tmp_path / "vcenter-artifact.json"
+
+    artifact.write_text("{not-json", encoding="utf-8")
+    assert vcenter_netapp_readiness._read_json_artifact(artifact) == {}
+
+    artifact.write_text('["not", "an", "object"]', encoding="utf-8")
+    assert vcenter_netapp_readiness._read_json_artifact(artifact) == {}
+
+    assert vcenter_netapp_readiness._read_json_artifact(tmp_path / "missing.json") == {}
+
+
+def test_vcenter_string_list_coercion_strips_and_dedupes_values() -> None:
+    assert vcenter_netapp_readiness._coerce_string_list(
+        " 192.0.2.53,192.0.2.53, 192.0.2.54 ,, "
+    ) == ["192.0.2.53", "192.0.2.54"]
+    assert vcenter_netapp_readiness._coerce_string_list(
+        [" time.example.test ", "time.example.test", 123, "123", None]
+    ) == ["time.example.test", "123"]
+    assert vcenter_netapp_readiness._coerce_string_list(123) == []
+
+
+def test_vcenter_apply_warnings_keep_scalar_lists_whole() -> None:
+    warnings = vcenter_netapp_readiness._vcenter_apply_warnings(
+        validation={"warnings": " Post-install inventory is still syncing. "},
+        refresh_result={"errors": " Golden State refresh failed. "},
+    )
+
+    assert "Post-install inventory is still syncing." in warnings
+    assert "Golden State refresh failed." in warnings
+    assert not any(warning == "P" for warning in warnings)
+
+
+def test_vcenter_json_contains_handles_noisy_bom_and_array_output() -> None:
+    output = b'\xef\xbb\xbflog line before json\n[{"name": "Lab-DC"}, {"name": "netapp_nfs_ds01"}]'
+
+    assert vcenter_netapp_readiness._json_contains(output, "netapp_nfs_ds01") is True
+    assert vcenter_netapp_readiness._json_contains(output, "missing-datastore") is False
+
+
+def test_vcenter_attach_apply_warnings_keep_scalar_validation_warning_whole() -> None:
+    warnings = vcenter_netapp_readiness._vcenter_attach_apply_warnings(
+        operations=[],
+        validation={"warnings": " Host inventory is still refreshing. "},
+    )
+
+    assert "Host inventory is still refreshing." in warnings
+    assert not any(warning == "H" for warning in warnings)
+
+
+def test_vcenter_install_apply_blockers_keep_scalar_sources_whole(monkeypatch) -> None:
+    monkeypatch.setattr(
+        vcenter_netapp_readiness,
+        "get_vcenter_install_readiness",
+        lambda **_kwargs: {
+            "status": "blocked",
+            "blockers": " Readiness blocker. ",
+            "deployment_values": {},
+            "current_state": {},
+            "target_state": {},
+        },
+    )
+    monkeypatch.setattr(vcenter_netapp_readiness, "get_vcenter_install_plan", lambda **_kwargs: {"install_plan": {}})
+    monkeypatch.setattr(
+        vcenter_netapp_readiness,
+        "get_vcenter_install_preview",
+        lambda **_kwargs: {
+            "status": "blocked",
+            "blockers": " Preview blocker. ",
+            "install_plan": {},
+        },
+    )
+    monkeypatch.setattr(
+        vcenter_netapp_readiness,
+        "_vcenter_install_apply_gate_state",
+        lambda **_kwargs: {"blockers": []},
+    )
+
+    payload = vcenter_netapp_readiness.get_vcenter_install_apply(write_report=False)
+
+    assert "Readiness blocker." in payload["blockers"]
+    assert "Preview blocker." in payload["blockers"]
+    assert not any(blocker == "R" for blocker in payload["blockers"])
+
+
+def test_vcenter_install_gate_keeps_scalar_policy_blocker_whole(monkeypatch) -> None:
+    class ScalarPolicy:
+        def action_blockers(self, _action_id: str, _category: object) -> str:
+            return " policy blocker "
+
+    monkeypatch.setattr(vcenter_netapp_readiness, "current_lab_action_policy", lambda _mode: ScalarPolicy())
+    monkeypatch.setenv("VCENTER_INSTALL_APPLY", "true")
+    monkeypatch.setenv("VCENTER_INSTALL_CONFIRM", vcenter_netapp_readiness.VCENTER_INSTALL_CONFIRM_PHRASE)
+    monkeypatch.setenv("VCENTER_INSTALL_ALLOW_DEPLOY", "true")
+
+    gates = vcenter_netapp_readiness._vcenter_install_apply_gate_state(
+        readiness_ready=True,
+        preview_ready=True,
+    )
+
+    assert gates["blockers"] == ["policy blocker"]
+    assert "p" not in gates["blockers"]
+
+
+def test_vcenter_attach_gate_keeps_scalar_policy_blocker_whole(monkeypatch) -> None:
+    class ScalarPolicy:
+        def action_blockers(self, _action_id: str, _category: object) -> str:
+            return " policy blocker "
+
+    monkeypatch.setattr(vcenter_netapp_readiness, "current_lab_action_policy", lambda _mode: ScalarPolicy())
+    monkeypatch.setenv("VCENTER_ATTACH_ESXI_APPLY", "true")
+    monkeypatch.setenv("VCENTER_ATTACH_ESXI_CONFIRM", vcenter_netapp_readiness.VCENTER_ATTACH_ESXI_CONFIRM_PHRASE)
+    monkeypatch.setenv("VCENTER_ATTACH_ESXI_ALLOW", "true")
+
+    gates = vcenter_netapp_readiness._vcenter_attach_apply_gate_state(preview_ready=True)
+
+    assert gates["blockers"] == ["policy blocker"]
+    assert "p" not in gates["blockers"]
+
+
+def test_vcenter_artifact_value_ignores_bad_artifacts(tmp_path: Path) -> None:
+    artifact = tmp_path / "console-state.json"
+
+    artifact.write_text("{not-json", encoding="utf-8")
+    assert vcenter_netapp_readiness._artifact_value(artifact, "selected_prompt_state") is None
+
+    artifact.write_text('"cluster_setup_prompt"', encoding="utf-8")
+    assert vcenter_netapp_readiness._artifact_value(artifact, "selected_prompt_state") is None
+
+    artifact.write_text('{"selected_prompt_state": "cluster_setup_prompt"}', encoding="utf-8")
+    assert vcenter_netapp_readiness._artifact_value(artifact, "selected_prompt_state") == "cluster_setup_prompt"
 
 
 def test_vcenter_install_readiness_treats_management_ip_as_configured_target(
@@ -93,7 +258,26 @@ def test_vcenter_install_preview_uses_redacted_value_and_credential_status(
     assert result["install_plan"]["deploy_apply_enabled"] is False
     assert "super-secret" not in serialized
     assert (tmp_path / "artifacts/codex-runs/vcenter-install-preview-redacted.json").exists()
-    assert (tmp_path / "artifacts/codex-runs/vcenter-install-preview-report.md").exists()
+    assert (tmp_path / "artifacts/codex-runs/vcenter-install-preview-report.md").read_text(encoding="utf-8").strip()
+
+
+def test_vcenter_datastore_evidence_self_heals_exists_probe_errors(monkeypatch, tmp_path: Path) -> None:
+    _patch_paths(monkeypatch, tmp_path)
+    _write_datastore_validation(tmp_path)
+    artifact = tmp_path / "artifacts" / "codex-runs" / "esxi-netapp-nfs-datastore-validation-redacted.json"
+    original_exists = Path.exists
+
+    def flaky_exists(path: Path) -> bool:
+        if path == artifact:
+            raise OSError("artifact probe unavailable")
+        return original_exists(path)
+
+    monkeypatch.setattr(Path, "exists", flaky_exists)
+
+    result = vcenter_netapp_readiness._datastore_ready_check("netapp_nfs_ds01")
+
+    assert result["status"] == "ready"
+    assert result["evidence_artifacts"] == []
 
 
 def test_vcsa_deploy_is_found_under_mounted_iso(monkeypatch, tmp_path: Path) -> None:
@@ -110,6 +294,158 @@ def test_vcsa_deploy_is_found_under_mounted_iso(monkeypatch, tmp_path: Path) -> 
     assert result["status"] == "ready"
     assert result["executable"] is True
     assert result["path"] == str(deploy.resolve())
+
+
+def test_vcsa_deploy_windows_exe_is_found_under_mounted_iso(monkeypatch, tmp_path: Path) -> None:
+    mounted = tmp_path / "vcsa-iso"
+    deploy = mounted / "vcsa-cli-installer" / "win32" / "vcsa-deploy.exe"
+    deploy.parent.mkdir(parents=True)
+    deploy.write_text("@echo off\n", encoding="utf-8")
+    monkeypatch.setattr(vcenter_netapp_readiness, "settings", _settings())
+    monkeypatch.setattr(vcenter_netapp_readiness, "VCSA_MOUNT_ROOTS", (mounted,))
+    monkeypatch.setattr(vcenter_netapp_readiness.os, "name", "nt")
+
+    assert vcenter_netapp_readiness._find_vcsa_deploy() == deploy
+
+
+def test_vcenter_tool_path_skips_unavailable_local_candidate(monkeypatch, tmp_path: Path) -> None:
+    candidate = tmp_path / "Scripts" / "govc"
+    monkeypatch.setattr(vcenter_netapp_readiness, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(vcenter_netapp_readiness.sys, "executable", str(tmp_path / "Scripts" / "python.exe"))
+    monkeypatch.setattr(vcenter_netapp_readiness, "which", lambda _name: None)
+    original_is_file = Path.is_file
+
+    def locked_is_file(path: Path) -> bool:
+        if path == candidate:
+            raise OSError("locked")
+        return original_is_file(path)
+
+    monkeypatch.setattr(Path, "is_file", locked_is_file)
+
+    assert vcenter_netapp_readiness._tool_path("govc") is None
+
+
+def test_vcsa_deploy_skips_unavailable_explicit_path_and_uses_mounted_iso(monkeypatch, tmp_path: Path) -> None:
+    explicit = tmp_path / "locked" / "vcsa-deploy"
+    mounted = tmp_path / "vcsa-iso"
+    deploy = mounted / "vcsa-cli-installer" / "lin64" / "vcsa-deploy"
+    deploy.parent.mkdir(parents=True)
+    deploy.write_text("#!/bin/sh\n", encoding="utf-8")
+    monkeypatch.setattr(vcenter_netapp_readiness, "settings", _settings(vcenter_vcsa_deploy_path=str(explicit)))
+    monkeypatch.setattr(vcenter_netapp_readiness, "VCSA_MOUNT_ROOTS", (mounted,))
+    monkeypatch.setattr(vcenter_netapp_readiness, "_tool_path", lambda _name: None)
+    original_is_file = Path.is_file
+
+    def locked_is_file(path: Path) -> bool:
+        if path == explicit:
+            raise OSError("locked")
+        return original_is_file(path)
+
+    monkeypatch.setattr(Path, "is_file", locked_is_file)
+
+    assert vcenter_netapp_readiness._find_vcsa_deploy() == deploy
+
+
+def test_vcsa_iso_skips_unavailable_explicit_path_and_uses_media_dir(monkeypatch, tmp_path: Path) -> None:
+    explicit = tmp_path / "locked" / "VMware-VCSA-all-8.0.3.iso"
+    media = tmp_path / "media" / "VMware-VCSA-all-8.0.3.iso"
+    media.parent.mkdir()
+    media.write_bytes(b"vcsa")
+    monkeypatch.setattr(
+        vcenter_netapp_readiness,
+        "settings",
+        _settings(media_inventory_dirs=(str(media.parent),), vcenter_vcsa_iso_path=str(explicit)),
+    )
+    original_is_file = Path.is_file
+
+    def locked_is_file(path: Path) -> bool:
+        if path == explicit:
+            raise OSError("locked")
+        return original_is_file(path)
+
+    monkeypatch.setattr(Path, "is_file", locked_is_file)
+
+    assert vcenter_netapp_readiness._find_vcsa_iso() == media
+
+
+def test_vcsa_iso_discovery_skips_recursive_scan_errors(monkeypatch, tmp_path: Path) -> None:
+    media_root = tmp_path / "media"
+    media_root.mkdir()
+    monkeypatch.setattr(
+        vcenter_netapp_readiness,
+        "settings",
+        _settings(media_inventory_dirs=(str(media_root),), vcenter_vcsa_iso_path=None),
+    )
+    monkeypatch.setattr(vcenter_netapp_readiness, "REPO_ROOT", tmp_path)
+    original_rglob = Path.rglob
+
+    def flaky_rglob(path: Path, pattern: str):  # noqa: ANN202
+        if path == media_root:
+            raise OSError("recursive scan failed")
+        return original_rglob(path, pattern)
+
+    monkeypatch.setattr(Path, "rglob", flaky_rglob)
+
+    assert vcenter_netapp_readiness._find_vcsa_iso() is None
+
+
+def test_vcsa_mount_roots_are_platform_aware(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(vcenter_netapp_readiness.os, "name", "nt")
+    monkeypatch.setattr(vcenter_netapp_readiness.tempfile, "gettempdir", lambda: str(tmp_path))
+
+    assert vcenter_netapp_readiness._default_vcsa_mount_roots() == (tmp_path / "vcsa-iso",)
+
+    monkeypatch.setattr(vcenter_netapp_readiness.os, "name", "posix")
+
+    assert Path("/mnt/vcsa-iso") in vcenter_netapp_readiness._default_vcsa_mount_roots()
+
+
+def test_vcsa_deploy_temp_spec_chmod_failure_does_not_abort(monkeypatch, tmp_path: Path) -> None:
+    deploy = tmp_path / "vcsa-deploy"
+    deploy.write_text("#!/bin/sh\n", encoding="utf-8")
+    deploy.chmod(0o755)
+    seen: dict[str, str] = {}
+
+    def fake_chmod(_path: str, _mode: int) -> None:
+        raise OSError("chmod unavailable")
+
+    def fake_run(command, **_kwargs):  # noqa: ANN001, ANN003
+        spec_path = command[-1]
+        seen["spec"] = Path(spec_path).read_text(encoding="utf-8")
+        return SimpleNamespace(returncode=0, stdout="ok", stderr="")
+
+    monkeypatch.setattr(vcenter_netapp_readiness.os, "chmod", fake_chmod)
+    monkeypatch.setattr(vcenter_netapp_readiness.subprocess, "run", fake_run)
+
+    result = vcenter_netapp_readiness._run_vcsa_deploy(
+        {"new_vcsa": {"appliance": {"name": "vcsa01"}}},
+        str(deploy),
+    )
+
+    assert result["vcsa_deploy_attempted"] is True
+    assert result["result"] == "completed"
+    assert '"vcsa01"' in seen["spec"]
+
+
+def test_vcsa_deploy_treats_path_probe_errors_as_not_found(monkeypatch, tmp_path: Path) -> None:
+    deploy = tmp_path / "vcsa-deploy"
+    original_exists = Path.exists
+
+    def locked_exists(path: Path) -> bool:
+        if path == deploy:
+            raise OSError("deploy path unavailable")
+        return original_exists(path)
+
+    monkeypatch.setattr(Path, "exists", locked_exists)
+
+    result = vcenter_netapp_readiness._run_vcsa_deploy(
+        {"new_vcsa": {"appliance": {"name": "vcsa01"}}},
+        str(deploy),
+    )
+
+    assert result["vcsa_deploy_attempted"] is False
+    assert result["return_code"] == 127
+    assert result["result"] == "not_found"
 
 
 def test_vcenter_install_apply_refuses_without_explicit_gates(monkeypatch, tmp_path: Path) -> None:
@@ -136,7 +472,24 @@ def test_vcenter_install_apply_refuses_without_explicit_gates(monkeypatch, tmp_p
     assert result["status"] == "blocked"
     assert result["apply"]["vcsa_deploy_attempted"] is False
     assert "VCENTER_INSTALL_APPLY=true is required." in result["blockers"]
-    assert (tmp_path / "artifacts/codex-runs/vcenter-install-apply-report.md").exists()
+    assert (tmp_path / "artifacts/codex-runs/vcenter-install-apply-report.md").read_text(encoding="utf-8").strip()
+
+
+def test_vcenter_install_gate_accepts_common_true_like_env_values(monkeypatch) -> None:
+    monkeypatch.setattr(vcenter_netapp_readiness, "settings", _settings(provider_mode="local-lab-readwrite"))
+    monkeypatch.setattr(vcenter_netapp_readiness, "current_lab_action_policy", lambda _mode=None: _AllowPolicy())
+    monkeypatch.setenv("VCENTER_INSTALL_APPLY", " YES ")
+    monkeypatch.setenv("VCENTER_INSTALL_CONFIRM", "DEPLOY VCENTER")
+    monkeypatch.setenv("VCENTER_INSTALL_ALLOW_DEPLOY", "1")
+
+    result = vcenter_netapp_readiness._vcenter_install_apply_gate_state(
+        readiness_ready=True,
+        preview_ready=True,
+    )
+
+    assert result["blockers"] == []
+    assert result["flag_state"]["install_apply"] is True
+    assert result["flag_state"]["install_allow_deploy"] is True
 
 
 def test_vcenter_install_apply_runs_vcsa_deploy_and_redacts_secrets(monkeypatch, tmp_path: Path) -> None:
@@ -195,7 +548,7 @@ def test_vcenter_install_apply_runs_vcsa_deploy_and_redacts_secrets(monkeypatch,
     assert result["apply_enabled"] is True
     assert "super-secret" not in serialized
     assert (tmp_path / "artifacts/codex-runs/vcenter-install-spec-redacted.json").exists()
-    assert (tmp_path / "artifacts/codex-runs/vcenter-install-apply-unblock-final-report.md").exists()
+    assert (tmp_path / "artifacts/codex-runs/vcenter-install-apply-unblock-final-report.md").read_text(encoding="utf-8").strip()
 
 
 def test_vcsa_deploy_command_skips_esxi_tls_when_lab_tls_verify_is_disabled(monkeypatch, tmp_path: Path) -> None:
@@ -297,7 +650,7 @@ def test_vcenter_attach_preview_plans_datacenter_cluster_and_host_attach(
     assert result["attach_plan"]["steps"][2]["status"] == "will_attach"
     assert result["checks"]["esxi_certificate_thumbprint"]["status"] == "ready"
     assert "super-secret" not in serialized
-    assert (tmp_path / "artifacts/codex-runs/vcenter-attach-esxi-preview-report.md").exists()
+    assert (tmp_path / "artifacts/codex-runs/vcenter-attach-esxi-preview-report.md").read_text(encoding="utf-8").strip()
 
 
 def test_vcenter_attach_apply_refuses_without_explicit_gates(monkeypatch, tmp_path: Path) -> None:
@@ -323,7 +676,21 @@ def test_vcenter_attach_apply_refuses_without_explicit_gates(monkeypatch, tmp_pa
     assert result["status"] == "blocked"
     assert "VCENTER_ATTACH_ESXI_APPLY=true is required." in result["blockers"]
     assert not result["operations"]
-    assert (tmp_path / "artifacts/codex-runs/vcenter-attach-esxi-apply-report.md").exists()
+    assert (tmp_path / "artifacts/codex-runs/vcenter-attach-esxi-apply-report.md").read_text(encoding="utf-8").strip()
+
+
+def test_vcenter_attach_gate_accepts_common_true_like_env_values(monkeypatch) -> None:
+    monkeypatch.setattr(vcenter_netapp_readiness, "settings", _settings(provider_mode="local-lab-readwrite"))
+    monkeypatch.setattr(vcenter_netapp_readiness, "current_lab_action_policy", lambda _mode=None: _AllowPolicy())
+    monkeypatch.setenv("VCENTER_ATTACH_ESXI_APPLY", "ON")
+    monkeypatch.setenv("VCENTER_ATTACH_ESXI_CONFIRM", "ATTACH ESXI TO VCENTER")
+    monkeypatch.setenv("VCENTER_ATTACH_ESXI_ALLOW", " y ")
+
+    result = vcenter_netapp_readiness._vcenter_attach_apply_gate_state(preview_ready=True)
+
+    assert result["blockers"] == []
+    assert result["flag_state"]["attach_apply"] is True
+    assert result["flag_state"]["attach_allow"] is True
 
 
 def test_vcenter_attach_apply_runs_operations_and_redacts_secrets(monkeypatch, tmp_path: Path) -> None:
@@ -370,7 +737,7 @@ def test_vcenter_attach_apply_runs_operations_and_redacts_secrets(monkeypatch, t
         "esxi.attach",
     ]
     assert "super-secret" not in serialized
-    assert (tmp_path / "artifacts/codex-runs/vcenter-attach-esxi-datastore-final-report.md").exists()
+    assert (tmp_path / "artifacts/codex-runs/vcenter-attach-esxi-datastore-final-report.md").read_text(encoding="utf-8").strip()
 
 
 def test_vcenter_post_attach_validation_requires_host_datastore_and_vm_inventory(
@@ -390,7 +757,7 @@ def test_vcenter_post_attach_validation_requires_host_datastore_and_vm_inventory
     assert result["checks"]["esxi_visible"]["visible"] is True
     assert result["checks"]["netapp_datastore_visible"]["visible"] is True
     assert result["checks"]["vm_inventory_visible"]["count"] == 1
-    assert (tmp_path / "artifacts/codex-runs/vcenter-post-attach-validation-report.md").exists()
+    assert (tmp_path / "artifacts/codex-runs/vcenter-post-attach-validation-report.md").read_text(encoding="utf-8").strip()
 
 
 def _patch_paths(monkeypatch, tmp_path: Path) -> None:

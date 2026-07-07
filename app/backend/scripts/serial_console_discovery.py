@@ -6,22 +6,20 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from dotenv import dotenv_values
-
 REPO_ROOT = Path(__file__).resolve().parents[3]
 REAL_LAB_ENV = REPO_ROOT / ".env.local.real-lab"
 REPORT = REPO_ROOT / "artifacts" / "codex-runs" / "serial-console-discovery-report.md"
 JSON_REPORT = REPO_ROOT / "artifacts" / "codex-runs" / "serial-console-discovery-redacted.json"
 
-if REAL_LAB_ENV.exists():
-    for key, value in dotenv_values(REAL_LAB_ENV).items():
-        if value is None or key in os.environ:
-            continue
-        os.environ[key] = value
+from app.services.env_utils import load_real_lab_env  # noqa: E402
+
+load_real_lab_env(REPO_ROOT)
 
 from app.core.config import settings  # noqa: E402
 from app.providers.action_policy import REAL_CONTACT_MODES, current_lab_action_policy  # noqa: E402
 from app.providers.redaction import redact_sensitive  # noqa: E402
+from app.services.json_file_store import write_json_object, write_text_value  # noqa: E402
+from app.services.path_utils import display_path  # noqa: E402
 from app.services.serial_console_discovery import (  # noqa: E402
     SerialConsoleProbeOptions,
     discover_serial_console_candidates,
@@ -116,8 +114,8 @@ def main() -> int:
         ),
     }
     sanitized = redact_sensitive(payload, _redaction_values())
-    JSON_REPORT.write_text(json.dumps(sanitized, indent=2, default=str), encoding="utf-8")
-    REPORT.write_text(_markdown(sanitized), encoding="utf-8")
+    write_json_object(JSON_REPORT, sanitized)
+    write_text_value(REPORT, _markdown(sanitized))
     print(json.dumps(_summary(sanitized), indent=2))
     return 0
 
@@ -301,10 +299,7 @@ def _redaction_values() -> list[str]:
 
 
 def _rel(path: Path) -> str:
-    try:
-        return str(path.relative_to(REPO_ROOT))
-    except ValueError:
-        return str(path)
+    return display_path(path, REPO_ROOT)
 
 
 if __name__ == "__main__":

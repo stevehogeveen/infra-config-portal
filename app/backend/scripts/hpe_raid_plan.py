@@ -8,6 +8,8 @@ from typing import Any
 from app.providers.ilo_redfish import IloRedfishAdapter
 from app.providers.redaction import redact_sensitive
 from app.core.config import settings
+from app.services.json_file_store import write_text_value
+from app.services.path_utils import display_path
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 CODEX_RUN_DIR = REPO_ROOT / "artifacts" / "codex-runs"
@@ -32,11 +34,11 @@ def main() -> int:
         [settings.ilo_test_host, settings.ilo_test_username, settings.ilo_test_password],
     )
     CODEX_RUN_DIR.mkdir(parents=True, exist_ok=True)
-    ILO_REPORT.write_text(_ilo_report(result, sanitized), encoding="utf-8")
-    RAID_REPORT.write_text(_raid_report(sanitized), encoding="utf-8")
+    write_text_value(ILO_REPORT, _ilo_report(result, sanitized))
+    write_text_value(RAID_REPORT, _raid_report(sanitized))
     print(json.dumps(_console_summary(sanitized), indent=2))
-    print(f"ilo_report={ILO_REPORT.relative_to(REPO_ROOT)}")
-    print(f"raid_report={RAID_REPORT.relative_to(REPO_ROOT)}")
+    print(f"ilo_report={_rel(ILO_REPORT)}")
+    print(f"raid_report={_rel(RAID_REPORT)}")
     return 0
 
 
@@ -368,6 +370,10 @@ def _not_attempted() -> list[str]:
         "power action",
         "firmware update",
     ]
+
+
+def _rel(path: Path) -> str:
+    return display_path(path, REPO_ROOT)
 
 
 if __name__ == "__main__":

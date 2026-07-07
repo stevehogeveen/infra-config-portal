@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from typing import Any
 
 from app.core.config import settings
@@ -9,6 +8,10 @@ from app.providers.cisco_ansible import CiscoAnsibleAdapter
 from app.providers.cisco_console import CiscoConsoleAdapter
 from app.services.hpe_raid import REPO_ROOT
 from app.services.cisco_setup_wizard_plan import build_cisco_setup_wizard_plan
+from app.services.json_file_store import read_json_object
+from app.services.list_utils import unique_preserving_order
+from app.services.path_utils import path_state
+from app.services.provider_profile_defaults import active_cisco_network_defaults, first_configured_list
 
 PROVIDER_ID = "cisco-setup"
 REAL_LAB_DETAILS = REPO_ROOT / "artifacts" / "codex-runs" / "cisco-4h-lab-run-details-redacted.json"
@@ -34,7 +37,17 @@ def get_cisco_setup_readiness(
     ansible_status: ProviderStatus | None = None,
 ) -> dict[str, Any]:
     mode = provider_mode or settings.provider_mode
-    target_ip = planned_management_ip if planned_management_ip is not None else settings.cisco_target_ip
+    profile_defaults = active_cisco_network_defaults()
+    target_ip = (
+        planned_management_ip
+        if planned_management_ip is not None
+        else profile_defaults.get("planned_management_ip")
+        or settings.cisco_target_ip
+    )
+    planned_prefix = profile_defaults.get("planned_prefix") or settings.cisco_management_prefix
+    planned_gateway = profile_defaults.get("planned_gateway") or settings.cisco_management_gateway
+    management_vlan = profile_defaults.get("management_vlan") or settings.cisco_management_vlan
+    dns_servers = first_configured_list(profile_defaults.get("dns_servers"), list(settings.cisco_dns_servers))
     mgmt_configured = (
         management_configured
         if management_configured is not None
@@ -59,8 +72,8 @@ def get_cisco_setup_readiness(
         "safe_next_action": NEXT_SAFE_ACTION,
         "last_prompt_readiness": last_prompt_readiness,
     }
-    warnings = list(dict.fromkeys([*console.warnings, *ansible.warnings]))
-    blockers = list(dict.fromkeys([*console.blockers, *ansible.blockers]))
+    warnings = unique_preserving_order([*console.warnings, *ansible.warnings])
+    blockers = unique_preserving_order([*console.blockers, *ansible.blockers])
     setup_wizard_plan = build_cisco_setup_wizard_plan(console.last_probe_result)
     setup_wizard_detected = bool(setup_wizard_plan["setup_wizard_detected"])
     real_lab_run = _real_lab_run_summary()
@@ -98,7 +111,7 @@ def get_cisco_setup_readiness(
             "saved_kit_config_values": {
                 "summary": "Non-secret local planning values; not confirmed reachable.",
                 "planned_management_ip": target_ip,
-                "planned_prefix": settings.cisco_management_prefix,
+                "planned_prefix": planned_prefix,
                 "management_configured": mgmt_configured,
             },
             "values_ready_to_apply": {
@@ -134,11 +147,12 @@ def get_cisco_setup_readiness(
         "ethernet_readiness": {
             "management_configured": mgmt_configured,
             "planned_management_ip": target_ip,
-            "planned_prefix": settings.cisco_management_prefix,
-            "planned_gateway": bool(settings.cisco_management_gateway),
-            "management_vlan": settings.cisco_management_vlan,
+            "planned_prefix": planned_prefix,
+            "planned_gateway": bool(planned_gateway),
+            "management_vlan": management_vlan,
             "management_interface": settings.cisco_management_interface,
             "management_strategy": settings.cisco_management_strategy,
+            "dns_servers": dns_servers,
             "ssh_probe_status": "skipped" if not mgmt_configured else ansible.status,
             "ssh_probe_reason": ansible_reason,
             "bootstrap_required": not mgmt_configured,
@@ -291,15 +305,21 @@ def _bootstrap_missing_requirements(target_ip: str | None) -> list[str]:
 
 
 def _real_lab_run_summary() -> dict[str, Any]:
-    if not REAL_LAB_DETAILS.exists():
+    details_state = _details_artifact_state(REAL_LAB_DETAILS)
+    if details_state == "missing":
         return {
             "available": False,
             "status": "not-run",
             "last_blocker": "No Cisco 4h real-lab run artifact has been recorded.",
         }
-    try:
-        payload = json.loads(REAL_LAB_DETAILS.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+    if details_state == "unreadable":
+        return {
+            "available": False,
+            "status": "unreadable",
+            "last_blocker": "Cisco 4h real-lab run artifact could not be read.",
+        }
+    payload = read_json_object(REAL_LAB_DETAILS)
+    if not payload:
         return {
             "available": False,
             "status": "unreadable",
@@ -347,6 +367,10 @@ def _real_lab_run_summary() -> dict[str, Any]:
         "last_blocker": last_blocker or "No blocker recorded.",
         "artifacts": payload.get("artifacts") if isinstance(payload.get("artifacts"), dict) else {},
     }
+
+
+def _details_artifact_state(path: Any) -> str:
+    return path_state(path)
 
 
 def _save_reload_status(apply: dict[str, Any]) -> str:

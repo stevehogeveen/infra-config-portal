@@ -14,6 +14,7 @@ from app.schemas import (
     UpgradeRuleRead,
     UpgradeSubjectRead,
 )
+from app.services.list_utils import unique_preserving_order
 from app.services.media_inventory import get_media_inventory
 
 COMPATIBLE_CONFIDENCE = {"exact", "likely", "weak"}
@@ -582,10 +583,4 @@ def _generation_from_label(label: str) -> str | None:
 
 
 def _unique(values: Iterable[str]) -> list[str]:
-    seen: set[str] = set()
-    unique_values: list[str] = []
-    for value in values:
-        if value and value not in seen:
-            seen.add(value)
-            unique_values.append(value)
-    return unique_values
+    return unique_preserving_order(values, skip_falsey=True)

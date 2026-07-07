@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -9,7 +8,10 @@ from app.core.config import settings
 from app.providers.redaction import redact_sensitive
 from app.services.build_verification import get_lab_build_verification
 from app.services.firmware_compliance import get_firmware_compliance
+from app.services.json_file_store import read_json_object, write_json_object, write_text_value
+from app.services.list_utils import unique_preserving_order
 from app.services.media_inventory import get_media_inventory
+from app.services.path_utils import path_exists as _path_exists, path_mtime, repo_relative_path, safe_read_text
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 CODEX_RUN_DIR = REPO_ROOT / "artifacts" / "codex-runs"
@@ -25,7 +27,7 @@ def get_provider_lab_golden_state(*, write_report: bool = False) -> dict[str, An
     credentials = _credential_status(build_verification, live_status=live_status, rows=rows)
     drift_rows = [row for row in rows if row["drift"] != "none"]
     blockers = [blocker for row in rows for blocker in row["blockers"]]
-    warnings = list(dict.fromkeys(warning for row in rows for warning in row["warnings"]))
+    warnings = unique_preserving_order(warning for row in rows for warning in row["warnings"])
     vcenter_readiness = _vcenter_readiness(rows, credentials)
     vcenter_row = next((row for row in rows if row.get("id") == "vcenter"), {})
     workflow_actions = _workflow_actions()
@@ -67,8 +69,8 @@ def get_provider_lab_golden_state(*, write_report: bool = False) -> dict[str, An
     sanitized = redact_sensitive(payload)
     if write_report:
         CODEX_RUN_DIR.mkdir(parents=True, exist_ok=True)
-        GOLDEN_JSON.write_text(json.dumps(sanitized, indent=2) + "\n", encoding="utf-8")
-        GOLDEN_REPORT.write_text(_markdown(sanitized), encoding="utf-8")
+        write_json_object(GOLDEN_JSON, sanitized)
+        write_text_value(GOLDEN_REPORT, _markdown(sanitized))
     return sanitized
 
 
@@ -239,7 +241,7 @@ def _firmware_warnings(paths: list[dict[str, Any]], live_status: dict[str, Any])
                 next_action=path.get("next_action"),
             )
         )
-    return list(dict.fromkeys(warnings))
+    return unique_preserving_order(warnings)
 
 
 def _netapp_row(live_status: dict[str, Any]) -> dict[str, Any]:
@@ -856,7 +858,7 @@ def _stage_metadata(payload: dict[str, Any], stage_name: str) -> dict[str, Any]:
 
 def _artifact_metadata(path: str, recheck_command: str) -> dict[str, Any]:
     payload = _read_json(path)
-    exists = (REPO_ROOT / path).exists()
+    exists = _path_exists(REPO_ROOT / path)
     has_checked_at = bool(payload.get("checked_at"))
     source_type = payload.get("source_type") or (
         "live_cached" if has_checked_at else "historical_artifact" if exists else "not_checked"
@@ -874,10 +876,7 @@ def _artifact_metadata(path: str, recheck_command: str) -> dict[str, Any]:
 
 def _raid_validated() -> bool:
     path = REPO_ROOT / "artifacts/codex-runs/hpe-raid-after-reset-validation-report.md"
-    try:
-        text = path.read_text(encoding="utf-8")
-    except OSError:
-        return False
+    text = safe_read_text(path)
     return "Status: succeeded" in text and "Matches saved intent: True" in text
 
 
@@ -903,38 +902,31 @@ def _vcsa_iso_found() -> bool:
 
 
 def _read_json(path: str) -> dict[str, Any]:
-    artifact = REPO_ROOT / path
-    if not artifact.exists():
-        return {}
-    try:
-        payload = json.loads(artifact.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return {}
-    return payload if isinstance(payload, dict) else {}
+    return read_json_object(REPO_ROOT / path)
 
 
 def _existing(paths: list[str]) -> list[str]:
-    return [path for path in paths if (REPO_ROOT / path).exists()]
+    return [path for path in paths if _path_exists(REPO_ROOT / path)]
 
 
 def _last_checked(paths: list[str]) -> str | None:
-    existing = [REPO_ROOT / path for path in paths if (REPO_ROOT / path).exists()]
-    if not existing:
+    mtimes: list[float] = []
+    for path in paths:
+        artifact = REPO_ROOT / path
+        modified_at = path_mtime(artifact) if _path_exists(artifact) else None
+        if modified_at is not None:
+            mtimes.append(modified_at)
+    if not mtimes:
         return None
-    latest = max(existing, key=lambda path: path.stat().st_mtime)
-    return datetime.fromtimestamp(latest.stat().st_mtime, UTC).isoformat()
+    return datetime.fromtimestamp(max(mtimes), UTC).isoformat()
 
 
 def _proof_links(rows: list[dict[str, Any]]) -> list[dict[str, str]]:
     links: list[dict[str, str]] = []
-    seen: set[str] = set()
     for row in rows:
         for path in row.get("evidence_artifacts") or []:
-            if path in seen:
-                continue
-            seen.add(path)
             links.append({"component_id": str(row["id"]), "component_label": str(row["label"]), "path": path})
-    return links
+    return unique_preserving_order(links, key=lambda link: link["path"])
 
 
 def _markdown(payload: dict[str, Any]) -> str:
@@ -1026,7 +1018,7 @@ def _md_cell(value: Any) -> str:
 
 
 def _rel(path: Path) -> str:
-    return str(path.relative_to(REPO_ROOT))
+    return repo_relative_path(path, REPO_ROOT)
 
 
 def _now() -> str:

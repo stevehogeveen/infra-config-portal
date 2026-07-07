@@ -1,0 +1,91 @@
+{
+  "action": "vm-deploy-preview",
+  "apply_enabled": false,
+  "artifacts": {
+    "json": "artifacts/codex-runs/esxi-vm-deploy-preview-redacted.json",
+    "report": "artifacts/codex-runs/esxi-vm-deploy-preview-report.md"
+  },
+  "blockers": [],
+  "checked_at": "2026-07-01T17:19:36.257803+00:00",
+  "command_preview": [
+    "govc datastore.info -json netapp_nfs_ds01",
+    "govc import.spec template.ovf",
+    "govc import.ovf -ds netapp_nfs_ds01 -name netapp-nfs-ovf-preview-vm -options <generated-options.json> template.ovf",
+    "govc vm.info -json netapp-nfs-ovf-preview-vm"
+  ],
+  "datastore_check": {
+    "checked": true,
+    "exists": true,
+    "return_code": 0,
+    "stderr": "",
+    "summary": {
+      "accessible": true,
+      "capacity": 1024,
+      "free_space": 512,
+      "name": "netapp_nfs_ds01",
+      "type": "NFS"
+    }
+  },
+  "deployment_plan": {
+    "datastore": "netapp_nfs_ds01",
+    "disk_provisioning": "thin",
+    "netapp_nfs_datastore": "netapp_nfs_ds01",
+    "netapp_nfs_lif": "192.168.1.230",
+    "netapp_nfs_mount_path": "/esxi_datastore_01",
+    "network": "VM Network",
+    "ovf_path": "template.ovf",
+    "ovf_present": true,
+    "power_on": false,
+    "target_is_netapp_nfs": true,
+    "vm_name": "netapp-nfs-ovf-preview-vm"
+  },
+  "freshness": "current",
+  "message": "Direct ESXi OVF deployment preview generated. No VM, datastore, network, or power action was run.",
+  "mode": "local-lab-readwrite",
+  "next_safe_action": "Review the command preview and set the explicit deploy flags only when ready.",
+  "not_attempted": [
+    "VM import/create",
+    "VM power on",
+    "VM delete",
+    "datastore add/remove",
+    "network reconfiguration",
+    "ESXi host reconfiguration",
+    "vCenter operation"
+  ],
+  "provider_id": "esxi-readonly",
+  "required_flags": [
+    "PROVIDER_MODE=local-lab-readwrite",
+    "VM_DEPLOY_APPLY=true",
+    "VM_DEPLOY_CONFIRM=\"DEPLOY ESXI OVF VM\"",
+    "VM_DEPLOY_ALLOW_CREATE=true"
+  ],
+  "source_type": "live_probe",
+  "status": "preview_ready",
+  "target": {
+    "access_method": "govc",
+    "can_query": true,
+    "credential_configured": true,
+    "esxi_configured": true,
+    "esxi_host_configured": true,
+    "govc_available": true,
+    "govc_url_configured": true,
+    "missing_fields": [],
+    "provider_mode": "local-lab-readwrite",
+    "ssh_available": true,
+    "ssh_target": {
+      "can_query": true,
+      "credential_configured": true,
+      "host": "192.168.1.203",
+      "missing_fields": [],
+      "ssh_22_reachable": true,
+      "username_configured": true
+    },
+    "tls_verify": false,
+    "username_configured": true
+  },
+  "warnings": [
+    "Preview and validation use read-only govc checks; apply requires explicit deploy flags.",
+    "The VM is left powered off unless VM_DEPLOY_POWER_ON=true and its separate confirmation are provided.",
+    "Selected datastore is the NetApp NFS datastore; deployment waits until ESXi can see it."
+  ]
+}

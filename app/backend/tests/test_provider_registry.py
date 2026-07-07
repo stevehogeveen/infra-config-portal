@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import sys
@@ -16,6 +17,17 @@ from app.services.netapp_observations import (
     reset_netapp_observations,
     save_netapp_observations,
 )
+
+
+def test_netapp_real_lab_write_json_uses_atomic_store(tmp_path: Path) -> None:
+    json_path = tmp_path / "netapp-console-state.json"
+
+    netapp_real_lab._write_json(json_path, {"status": "ready", "path": tmp_path})
+
+    saved = json.loads(json_path.read_text(encoding="utf-8"))
+    assert saved["status"] == "ready"
+    assert saved["path"] == str(tmp_path)
+    assert not list(tmp_path.glob("*.tmp"))
 
 
 def test_provider_status_endpoint_reports_mock_registry(client: TestClient) -> None:
@@ -327,8 +339,13 @@ def test_netapp_ontap_upgrade_readiness_is_offline_disabled_and_redacted(
 
 def test_netapp_ontap_console_readiness_is_manual_offline_and_redacted(
     client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     reset_netapp_observations()
+    monkeypatch.setattr(
+        "app.services.netapp_console_readiness.get_netapp_runtime_state",
+        lambda: {"configured": False, "source": "none", "detected_management_ips": {}},
+    )
     response = client.get("/api/v1/providers/netapp-ontap/console-readiness")
 
     assert response.status_code == 200
@@ -425,6 +442,46 @@ def test_netapp_console_discovery_latest_reports_not_run_when_no_artifact(
     assert payload["status"] == "not_run"
     assert payload["selected_port"] is None
     assert payload["candidate_count"] == 0
+    assert not _contains_sensitive_key(payload)
+
+
+def test_netapp_console_discovery_latest_self_heals_corrupt_artifact(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    discovery_json = tmp_path / "discovery.json"
+    discovery_json.write_text("{not-json", encoding="utf-8")
+    monkeypatch.setattr(netapp_real_lab, "CONSOLE_DISCOVERY_JSON", discovery_json)
+    monkeypatch.setattr(netapp_real_lab, "CONSOLE_DISCOVERY_REPORT", tmp_path / "discovery.md")
+
+    response = client.get("/api/v1/providers/netapp-ontap/console-discovery")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["action"] == "console-discovery"
+    assert payload["status"] == "not_run"
+    assert payload["selected_port"] is None
+    assert not _contains_sensitive_key(payload)
+
+
+def test_netapp_console_state_latest_ignores_non_object_artifact(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    state_json = tmp_path / "state.json"
+    state_json.write_text("[1, 2, 3]", encoding="utf-8")
+    monkeypatch.setattr(netapp_real_lab, "CONSOLE_STATE_JSON", state_json)
+    monkeypatch.setattr(netapp_real_lab, "CONSOLE_STATE_REPORT", tmp_path / "state.md")
+
+    response = client.get("/api/v1/providers/netapp-ontap/console-read-state")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["action"] == "console-read-state"
+    assert payload["status"] == "not_run"
+    assert payload["selected_port"] is None
     assert not _contains_sensitive_key(payload)
 
 
@@ -529,6 +586,57 @@ def test_netapp_nfs_vcenter_readiness_derives_vcenter_target_from_management_ip(
     assert (tmp_path / "nfs.md").exists()
 
 
+def test_netapp_nfs_readiness_supports_direct_netapp_without_vcenter(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("LAB_PROFILE_STORE", str(tmp_path / "lab-profiles.json"))
+    create_lab_profile(
+        {
+            "name": "Direct NetApp Lab",
+            "subnet_cidr": "192.168.1.0/24",
+            "features": {
+                "deployment_mode": "server_netapp_direct",
+                "netapp_enabled": True,
+                "storage_location": "netapp_shared",
+                "storage_protocol": "nfs",
+                "vcenter_enabled": False,
+            },
+        }
+    )
+    monkeypatch.setattr(netapp_real_lab, "NFS_VCENTER_READINESS_JSON", tmp_path / "nfs.json")
+    monkeypatch.setattr(netapp_real_lab, "NFS_VCENTER_READINESS_REPORT", tmp_path / "nfs.md")
+    monkeypatch.setattr(netapp_real_lab, "get_netapp_runtime_state", lambda: {"configured": True})
+    monkeypatch.setattr(
+        netapp_real_lab,
+        "settings",
+        replace(
+            netapp_real_lab.settings,
+            provider_mode="local-lab-readwrite",
+            netapp_api_username="configured",
+            netapp_api_password="configured",
+            esxi_configured=True,
+            esxi_test_host="192.168.1.203",
+            vcenter_configured=False,
+            vcenter_host=None,
+            vcenter_management_ip=None,
+        ),
+    )
+
+    payload = netapp_real_lab.get_netapp_nfs_vcenter_readiness(check_ports=False)
+
+    assert payload["status"] == "ready"
+    assert payload["planned_nfs"]["nfs_lifs"] == ["192.168.1.230", "192.168.1.231"]
+    assert payload["targets"]["vcenter_configured"] is False
+    assert payload["targets"]["govc_available"] is False
+    assert payload["plan_preview"]["govc_preview"] == "not_in_scope"
+    assert payload["plan_preview"]["esxi_fallback_preview"].startswith("esxcli storage nfs add")
+    assert any("direct NetApp NFS readiness" in warning for warning in payload["warnings"])
+    assert not any("vCenter/govc target is not configured" in blocker for blocker in payload["blockers"])
+    assert (tmp_path / "nfs.json").exists()
+    assert (tmp_path / "nfs.md").exists()
+
+
 def test_netapp_nfs_setup_preview_is_guarded_nfs_only(client: TestClient) -> None:
     response = client.get("/api/v1/providers/netapp-ontap/nfs-setup-preview")
 
@@ -593,7 +701,7 @@ def test_netapp_observations_save_and_console_readiness_reflect_saved_values(
     response = client.put(
         "/api/v1/providers/netapp-ontap/observations",
         json=payload,
-        headers={"X-Mock-User": "netapp-operator"},
+        headers={"X-Local-User": "netapp-operator"},
     )
 
     assert response.status_code == 200
@@ -675,6 +783,54 @@ def test_netapp_observation_service_rejects_secret_shaped_notes() -> None:
         {"operator_notes": "Manual prompt reviewed."},
         updated_by="unit-test",
     )["operator_notes"] == "Manual prompt reviewed."
+
+
+def test_netapp_observation_service_normalizes_boolean_like_values() -> None:
+    reset_netapp_observations()
+
+    saved = save_netapp_observations(
+        {
+            "controller_a_console_seen": "true",
+            "controller_b_console_seen": "FALSE",
+            "controller_a_sp_cabled": 1,
+            "controller_b_sp_cabled": 0,
+            "management_network_reviewed": " yes ",
+            "planned_targets_reviewed": "off",
+            "existing_data_risk_acknowledged": None,
+        },
+        updated_by="unit-test",
+    )
+
+    assert saved["controller_a_console_seen"] is True
+    assert saved["controller_b_console_seen"] is False
+    assert saved["controller_a_sp_cabled"] is True
+    assert saved["controller_b_sp_cabled"] is False
+    assert saved["management_network_reviewed"] is True
+    assert saved["planned_targets_reviewed"] is False
+    assert saved["existing_data_risk_acknowledged"] is False
+
+
+def test_netapp_observation_service_rejects_malformed_boolean_values() -> None:
+    reset_netapp_observations()
+
+    with pytest.raises(ValueError, match="controller_a_console_seen must be a boolean"):
+        save_netapp_observations(
+            {"controller_a_console_seen": "definitely"},
+            updated_by="unit-test",
+        )
+
+
+def test_netapp_observations_api_rejects_malformed_boolean_values(
+    client: TestClient,
+) -> None:
+    reset_netapp_observations()
+
+    response = client.put(
+        "/api/v1/providers/netapp-ontap/observations",
+        json={"controller_a_console_seen": "definitely"},
+    )
+
+    assert response.status_code == 422
 
 
 def test_netapp_readiness_comparison_defaults_to_manual_unknowns_and_redacts(

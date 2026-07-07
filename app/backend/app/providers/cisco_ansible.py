@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import importlib.util
 import os
+import re
 import socket
 import subprocess
 import tempfile
@@ -17,6 +19,7 @@ from app.providers.base import ProviderAction, ProviderStatus
 from app.providers.lab_safety import current_lab_safety
 from app.providers.probe_cache import get_probe_result, record_probe_result
 from app.providers.redaction import redact_sensitive
+from app.services.temp_file_utils import remove_file_best_effort
 
 PROVIDER_ID = "cisco-ansible"
 MAX_ATTEMPTS = 3
@@ -27,6 +30,9 @@ SAFE_SHOW_COMMANDS = (
     "show interfaces status",
     "show ip interface brief",
     "show vlan brief",
+    "show running-config | include spanning-tree portfast",
+    "show running-config | include spanning-tree bpduguard",
+    "show running-config | include ip access-list|ip access-group",
 )
 
 
@@ -106,10 +112,15 @@ class CiscoAnsibleAdapter:
             not tool_availability["ansible_available"]
             or not tool_availability["ansible_inventory_available"]
         ):
-            warnings.append(
-                "Ansible CLI is not available; SSH reachability can be checked, "
-                "but inventory parsing and show commands will be blocked."
-            )
+            if tool_availability["paramiko_available"]:
+                warnings.append(
+                    "Ansible CLI is not available; using Paramiko fallback for fixed read-only Cisco show commands."
+                )
+            else:
+                warnings.append(
+                    "Ansible CLI is not available and Paramiko fallback is unavailable; SSH reachability can be checked, "
+                    "but inventory parsing and show commands will be blocked."
+                )
 
         status = "awaiting-bootstrap" if planned_target else "not-configured"
         if self.config.management_configured:
@@ -265,6 +276,38 @@ class CiscoAnsibleAdapter:
         ansible_bin = which("ansible")
         inventory_bin = which("ansible-inventory")
         if not ansible_bin or not inventory_bin:
+            paramiko_result = _paramiko_show_commands(self.config, ssh_reachability)
+            if paramiko_result["status"] == "ok":
+                phases.append(
+                    {
+                        "tag": "PLAN",
+                        "message": "Ansible CLI unavailable; running fixed read-only Cisco show commands through Paramiko.",
+                    }
+                )
+                phases.append(
+                    {
+                        "tag": "VERIFY",
+                        "message": "Cisco Paramiko read-only probe completed.",
+                    }
+                )
+                return self._record_result(
+                    {
+                        "provider_id": PROVIDER_ID,
+                        "status": "ok",
+                        "message": "Read-only Cisco SSH probe completed through Paramiko fallback.",
+                        "phases": phases,
+                        "ssh_reachability": ssh_reachability,
+                        "inventory_target": self.config.host,
+                        "ansible_control_host": self.config.control_host,
+                        "tool_availability": _tool_availability(),
+                        "fallback": "paramiko",
+                        "safe_show_commands": list(SAFE_SHOW_COMMANDS),
+                        "command_results": paramiko_result["command_results"],
+                        "not_attempted": _not_attempted_config_actions(),
+                        "warnings": ["Ansible CLI is not available; used Paramiko read-only fallback."],
+                        "blockers": [],
+                    }
+                )
             return self._record_result(
                 {
                     "provider_id": PROVIDER_ID,
@@ -279,8 +322,10 @@ class CiscoAnsibleAdapter:
                     ],
                     "ssh_reachability": ssh_reachability,
                     "tool_availability": _tool_availability(),
+                    "fallback": "paramiko",
+                    "fallback_result": paramiko_result,
                     "warnings": warnings,
-                    "blockers": ["Ansible CLI is not available."],
+                    "blockers": ["Ansible CLI is not available.", *(paramiko_result.get("blockers") or [])],
                     "not_attempted": ["Ansible inventory parse", "safe show commands"],
                 }
             )
@@ -327,7 +372,7 @@ class CiscoAnsibleAdapter:
             else:
                 command_results = {}
         finally:
-            inventory_path.unlink(missing_ok=True)
+            remove_file_best_effort(inventory_path, scrub=True)
 
         status = "ok" if not blockers else "failed"
         phases.append(
@@ -359,14 +404,7 @@ class CiscoAnsibleAdapter:
                 "inventory_parse": inventory_parse,
                 "safe_show_commands": list(SAFE_SHOW_COMMANDS),
                 "command_results": command_results,
-                "not_attempted": [
-                    "configure terminal",
-                    "write memory",
-                    "reload",
-                    "copy or erase",
-                    "VLAN, interface, user, or firmware changes",
-                    "running-config backup",
-                ],
+                "not_attempted": _not_attempted_config_actions(),
                 "warnings": warnings,
                 "blockers": blockers,
             }
@@ -439,6 +477,112 @@ def _tcp_connect(host: str, port: int, timeout_seconds: float) -> dict[str, Any]
     return {"reachable": False, "port": port, "attempts": attempts}
 
 
+def _paramiko_show_commands(config: CiscoAnsibleConfig, ssh_reachability: dict[str, Any]) -> dict[str, Any]:
+    if not ssh_reachability.get("reachable"):
+        return {"status": "blocked", "blockers": ["Cisco SSH is not reachable."]}
+    try:
+        import paramiko  # type: ignore[import-untyped]
+    except ImportError:
+        return {"status": "blocked", "blockers": ["Paramiko is not available for SSH fallback."]}
+    if not config.host or not config.username or not config.password:
+        return {"status": "blocked", "blockers": ["Cisco SSH fallback is missing host, username, or password."]}
+
+    client = paramiko.SSHClient()
+    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    try:
+        client.connect(
+            hostname=config.host,
+            port=SSH_PORT,
+            username=config.username,
+            password=config.password,
+            look_for_keys=False,
+            allow_agent=False,
+            timeout=config.timeout_seconds,
+            auth_timeout=config.timeout_seconds,
+            banner_timeout=config.timeout_seconds,
+        )
+        channel = client.invoke_shell(width=160, height=80)
+        _read_paramiko_channel(channel, seconds=1.5)
+        command_results: dict[str, Any] = {}
+        for command in ("terminal length 0", *SAFE_SHOW_COMMANDS):
+            channel.send(command + "\n")
+            output = _read_paramiko_channel(channel, seconds=max(config.timeout_seconds, 3.0))
+            command_results[command] = _paramiko_command_summary(command, output)
+            if command in SAFE_SHOW_COMMANDS and not command_results[command]["captured"]:
+                return {
+                    "status": "blocked",
+                    "command_results": command_results,
+                    "blockers": [f"Paramiko command returned no output: {command}."],
+                }
+        return {"status": "ok", "command_results": command_results, "blockers": []}
+    except Exception as exc:
+        return {"status": "blocked", "blockers": [f"Paramiko SSH fallback failed: {exc.__class__.__name__}."]}
+    finally:
+        client.close()
+
+
+def _read_paramiko_channel(channel: Any, *, seconds: float) -> str:
+    chunks: list[bytes] = []
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        if channel.recv_ready():
+            chunks.append(channel.recv(65535))
+            deadline = time.monotonic() + 0.4
+        else:
+            time.sleep(0.1)
+    return b"".join(chunks).decode("utf-8", errors="replace")
+
+
+def _paramiko_command_summary(command: str, output: str) -> dict[str, Any]:
+    lines = [line.strip() for line in output.splitlines() if line.strip()]
+    summary: dict[str, Any] = {
+        "returncode": 0 if output.strip() else 1,
+        "captured": bool(output.strip()),
+        "bytes": len(output.encode("utf-8", errors="replace")),
+        "line_count": len(lines),
+        "raw_output_redacted": True,
+        "has_vlan_table_header": bool(re.search(r"(?is)\bVLAN\s+Name\s+Status\s+Ports\b", output)),
+        "has_vlan_1": bool(re.search(r"(?m)^\s*1\s+", output)),
+        "looks_ontap": "::>" in output or "cluster " in output.lower(),
+        "stdout_summary": lines[:12],
+        "stderr_summary": "",
+        "command": command,
+    }
+    if command == "show version":
+        summary["version_hint"] = _ios_xe_version(output)
+        summary["bootloader_rommon_hint"] = _bootloader_rommon_version(output)
+    return summary
+
+
+def _ios_xe_version(output: str) -> str | None:
+    patterns = (
+        r"Cisco IOS XE Software[^,\n]*,\s*Version\s+([^,\s]+)",
+        r"Cisco IOS Software[^,\n]*,\s*Version\s+([^,\s]+)",
+        r"\bVersion\s+(\d+(?:\.\d+)+)\b",
+    )
+    for pattern in patterns:
+        match = re.search(pattern, output, re.IGNORECASE)
+        if match:
+            return match.group(1)
+    return None
+
+
+def _bootloader_rommon_version(output: str) -> str | None:
+    match = re.search(r"(?:ROMMON|BOOTLDR|BOOT LOADER)[^0-9]*(\d+(?:\.\d+)+)", output, re.IGNORECASE)
+    return match.group(1) if match else None
+
+
+def _not_attempted_config_actions() -> list[str]:
+    return [
+        "configure terminal",
+        "write memory",
+        "reload",
+        "copy or erase",
+        "VLAN, interface, user, or firmware changes",
+        "running-config backup",
+    ]
+
+
 def _write_temp_inventory(config: CiscoAnsibleConfig) -> Path:
     host_vars: dict[str, Any] = {
         "ansible_host": config.host,
@@ -471,7 +615,7 @@ def _write_temp_inventory(config: CiscoAnsibleConfig) -> Path:
             json.dump(inventory, handle)
         os.chmod(name, 0o600)
     except Exception:
-        Path(name).unlink(missing_ok=True)
+        remove_file_best_effort(name, scrub=True)
         raise
     return Path(name)
 
@@ -523,8 +667,8 @@ def _run_command(
         return result
 
 
-def _tail(value: str) -> str:
-    return value[-12000:]
+def _tail(value: str | bytes | None) -> str:
+    return _stream_text(value)[-12000:]
 
 
 def _stream_text(value: str | bytes | None) -> str:
@@ -580,6 +724,7 @@ def _tool_availability() -> dict[str, bool]:
     return {
         "ansible_available": which("ansible") is not None,
         "ansible_inventory_available": which("ansible-inventory") is not None,
+        "paramiko_available": importlib.util.find_spec("paramiko") is not None,
     }
 
 

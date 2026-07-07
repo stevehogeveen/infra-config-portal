@@ -10,7 +10,10 @@ from app.providers.redaction import redact_sensitive
 from app.core.config import settings
 from app.services.cisco_console_bootstrap import build_cisco_console_bootstrap_plan
 from app.services.cisco_setup_readiness import get_cisco_setup_readiness
+from app.services.json_file_store import write_json_object, write_text_value
 from app.services.hpe_raid import REPO_ROOT
+from app.services.list_utils import unique_strings
+from app.services.path_utils import display_path
 
 REPORT = REPO_ROOT / "artifacts" / "codex-runs" / "cisco-console-ethernet-readiness-report.md"
 DETAILS = REPO_ROOT / "artifacts" / "codex-runs" / "cisco-console-ethernet-readiness-redacted.json"
@@ -49,8 +52,8 @@ def main() -> int:
         }
     )
     REPORT.parent.mkdir(parents=True, exist_ok=True)
-    DETAILS.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
-    REPORT.write_text(_markdown(payload), encoding="utf-8")
+    write_json_object(DETAILS, payload)
+    write_text_value(REPORT, _markdown(payload))
     print(json.dumps(_summary(payload), indent=2))
     return 0 if payload["status"] in {"ready", "blocked"} else 1
 
@@ -66,24 +69,25 @@ def _overall_status(readiness: dict[str, Any], prompt_result: dict[str, Any] | N
 
 
 def _blockers(readiness: dict[str, Any], prompt_result: dict[str, Any] | None) -> list[str]:
-    blockers = list(readiness.get("blockers") or [])
+    blockers = unique_strings(readiness.get("blockers"))
     if not prompt_result:
         blockers.append("Console prompt readiness did not run.")
     elif not _prompt_is_usable(prompt_result) and not _prompt_is_recoverable_login(prompt_result):
-        blockers.extend(prompt_result.get("blockers") or ["Console prompt was not identified as an exec prompt."])
+        prompt_blockers = unique_strings(prompt_result.get("blockers"))
+        blockers.extend(prompt_blockers or ["Console prompt was not identified as an exec prompt."])
     ethernet = readiness.get("ethernet_readiness") or {}
     if not ethernet.get("ready"):
         blockers.append("Cisco Ethernet management is not configured; SSH/SCP readiness requires console bootstrap.")
-    return list(dict.fromkeys(blockers))
+    return unique_strings(blockers)
 
 
 def _warnings(readiness: dict[str, Any], prompt_result: dict[str, Any] | None) -> list[str]:
-    warnings = list(readiness.get("warnings") or [])
+    warnings = unique_strings(readiness.get("warnings"))
     if _prompt_is_recoverable_login(prompt_result):
         warnings.append(
             "Cisco console is at login prompt, but credentials are configured; run guarded privilege check when console exec is required."
         )
-    return list(dict.fromkeys(warnings))
+    return unique_strings(warnings)
 
 
 def _prompt_is_usable(prompt_result: dict[str, Any] | None) -> bool:
@@ -113,8 +117,8 @@ def _summary(payload: dict[str, Any]) -> dict[str, Any]:
         "ethernet_ready": ethernet.get("ready"),
         "management_configured": ethernet.get("management_configured"),
         "blockers": payload.get("blockers") or [],
-        "report": str(REPORT.relative_to(REPO_ROOT)),
-        "details": str(DETAILS.relative_to(REPO_ROOT)),
+        "report": _rel(REPORT),
+        "details": _rel(DETAILS),
     }
 
 
@@ -134,7 +138,7 @@ def _markdown(payload: dict[str, Any]) -> str:
     lines.extend([f"- {item}" for item in payload.get("warnings") or []] or ["- none"])
     lines.extend(["", "## Not Attempted", ""])
     lines.extend([f"- {item}" for item in payload.get("not_attempted") or []])
-    lines.extend(["", "## Redacted Details", "", f"- JSON: {DETAILS.relative_to(REPO_ROOT)}", ""])
+    lines.extend(["", "## Redacted Details", "", f"- JSON: {_rel(DETAILS)}", ""])
     return "\n".join(lines)
 
 
@@ -149,6 +153,10 @@ def _sanitize(payload: Any) -> Any:
             settings.cisco_enable_password,
         ],
     )
+
+
+def _rel(path: Any) -> str:
+    return display_path(path, REPO_ROOT)
 
 
 if __name__ == "__main__":

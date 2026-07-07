@@ -8,6 +8,7 @@ from typing import Any, Literal
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.core.enums import EnvironmentName, RequestStatus, WorkflowRunStatus
+from app.services.list_utils import unique_strings
 from app.services.netapp_observations import validate_netapp_operator_notes
 
 VM_NAME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9-]{2,62}$")
@@ -292,11 +293,7 @@ class LabAddressPlan(BaseModel):
     @field_validator("netapp_nfs_lifs", "netapp_iscsi_lifs", mode="before")
     @classmethod
     def split_lifs(cls, value: Any) -> list[str]:
-        if value is None:
-            return []
-        if isinstance(value, str):
-            return [item.strip() for item in value.split(",") if item.strip()]
-        return value
+        return _clean_unique_string_list(value)
 
     @field_validator("subnet")
     @classmethod
@@ -334,7 +331,7 @@ class LabAddressPlan(BaseModel):
     @field_validator("netapp_nfs_lifs", "netapp_iscsi_lifs")
     @classmethod
     def validate_lifs(cls, value: list[str]) -> list[str]:
-        cleaned = [item.strip() for item in value if item.strip()]
+        cleaned = _clean_unique_string_list(value)
         for item in cleaned:
             try:
                 ip_address(item)
@@ -380,11 +377,7 @@ class LabGlobalSettings(BaseModel):
     @field_validator("dns_servers", "ntp_servers", mode="before")
     @classmethod
     def split_server_list(cls, value: Any) -> list[str]:
-        if value is None:
-            return []
-        if isinstance(value, str):
-            return [item.strip() for item in value.split(",") if item.strip()]
-        return value
+        return _clean_unique_string_list(value)
 
     @field_validator("gateway")
     @classmethod
@@ -399,7 +392,7 @@ class LabGlobalSettings(BaseModel):
     @field_validator("dns_servers", "ntp_servers")
     @classmethod
     def validate_server_list(cls, value: list[str]) -> list[str]:
-        cleaned = [item.strip() for item in value if item.strip()]
+        cleaned = _clean_unique_string_list(value)
         for item in cleaned:
             try:
                 ip_address(item)
@@ -431,6 +424,7 @@ class LabProfileDevices(BaseModel):
     esxi: str | None = None
     ilo: str | None = None
     cisco: str | None = None
+    server_model: Literal["gen10", "gen10plus"] | None = None
     netapp: dict[str, Any] | None = None
     vcenter: str | None = None
 
@@ -440,9 +434,18 @@ class LabProfileFeatures(BaseModel):
 
     netapp_enabled: bool = True
     vcenter_enabled: bool = False
+    deployment_mode: Literal[
+        "server_netapp_direct",
+        "server_netapp_vcenter",
+        "single_server_local_storage",
+        "unsupported_vcenter_without_netapp",
+    ] = "server_netapp_direct"
+    deployment_label: str = Field(default="Server + NetApp direct attach", max_length=120)
+    deployment_supported: bool = False
+    storage_location: Literal["netapp_shared", "server_local"] = "netapp_shared"
     firmware_gate_enabled: bool = True
     build_verification_enabled: bool = True
-    storage_protocol: str = Field(default="nfs", max_length=40)
+    storage_protocol: Literal["nfs", "iscsi", "local", "none"] = "nfs"
     disable_ipv6: bool = True
     block_legacy_protocols: bool = True
     enable_snmp: bool = False
@@ -450,6 +453,13 @@ class LabProfileFeatures(BaseModel):
     enable_dns: bool = True
     netapp_disabled_reason: str | None = Field(default=None, max_length=300)
     vcenter_disabled_reason: str | None = Field(default=None, max_length=300)
+
+    @field_validator("deployment_mode", "storage_location", "storage_protocol", mode="before")
+    @classmethod
+    def normalize_choice(cls, value: Any) -> Any:
+        if value is None:
+            return value
+        return str(value).strip().lower()
 
 
 class LabProfileWrite(BaseModel):
@@ -487,11 +497,7 @@ class LabProfileWrite(BaseModel):
     @field_validator("dns", "ntp", mode="before")
     @classmethod
     def split_top_level_server_list(cls, value: Any) -> list[str]:
-        if value is None:
-            return []
-        if isinstance(value, str):
-            return [item.strip() for item in value.split(",") if item.strip()]
-        return value
+        return _clean_unique_string_list(value)
 
     @field_validator("*", mode="after")
     @classmethod
@@ -579,6 +585,134 @@ class LabProfileRuntimeApplyRead(BaseModel):
     lab_profiles: LabProfileListRead
 
 
+class TopologyDesignDraftWrite(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    profile_id: str = Field(min_length=1, max_length=120)
+    scenario: Literal["server_netapp_direct", "server_netapp_vcenter", "single_server_local_storage"]
+    subnet: str | None = Field(default=None, max_length=80)
+    placements: dict[str, str | None] = Field(default_factory=dict)
+    device_settings: dict[str, dict[str, str]] = Field(default_factory=dict)
+    lane_settings: dict[str, dict[str, str]] = Field(default_factory=dict)
+    connection_settings: dict[str, dict[str, str]] = Field(default_factory=dict)
+
+    @field_validator("profile_id", "scenario", "subnet", mode="before")
+    @classmethod
+    def strip_topology_design_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        text = str(value).strip()
+        return text or None
+
+    @field_validator("*", mode="after")
+    @classmethod
+    def reject_topology_design_secret_values(cls, value: Any) -> Any:
+        _reject_secret_values(value)
+        return value
+
+    @field_validator("placements")
+    @classmethod
+    def validate_topology_design_placement_keys(cls, value: dict[str, str | None]) -> dict[str, str | None]:
+        allowed = {"u1", "u2", "u3", "u4", "virtual"}
+        unknown = sorted(set(value) - allowed)
+        if unknown:
+            raise ValueError(f"placements contains unknown rack slot(s): {', '.join(unknown)}")
+        return value
+
+    @field_validator("device_settings")
+    @classmethod
+    def validate_topology_design_device_settings(cls, value: dict[str, dict[str, str]]) -> dict[str, dict[str, str]]:
+        allowed_parts = {"switch", "server-gen10", "server-gen10plus", "netapp", "vcenter", "windows"}
+        allowed_fields = {
+            "datastore",
+            "gateway",
+            "iscsi_lifs",
+            "management_ip",
+            "mgmt_vlan",
+            "name",
+            "nfs_lifs",
+            "notes",
+            "ports",
+            "protocol",
+            "raid_boot",
+            "raid_data",
+            "role",
+            "san_ports",
+            "storage_vlan",
+            "vm_network",
+        }
+        unknown_parts = sorted(set(value) - allowed_parts)
+        if unknown_parts:
+            raise ValueError(f"device_settings contains unknown device(s): {', '.join(unknown_parts)}")
+        for part, settings in value.items():
+            unknown_fields = sorted(set(settings) - allowed_fields)
+            if unknown_fields:
+                raise ValueError(f"device_settings for {part} contains unknown field(s): {', '.join(unknown_fields)}")
+            for field_name, field_value in settings.items():
+                if len(str(field_value)) > 240:
+                    raise ValueError(f"device_settings {part}.{field_name} is too long")
+        return value
+
+    @field_validator("lane_settings")
+    @classmethod
+    def validate_topology_design_lane_settings(cls, value: dict[str, dict[str, str]]) -> dict[str, dict[str, str]]:
+        allowed_lanes = {"management", "storage", "virtualization"}
+        allowed_fields = {"mtu", "notes", "protocol", "purpose", "source", "target", "vlan"}
+        unknown_lanes = sorted(set(value) - allowed_lanes)
+        if unknown_lanes:
+            raise ValueError(f"lane_settings contains unknown lane(s): {', '.join(unknown_lanes)}")
+        for lane, settings in value.items():
+            unknown_fields = sorted(set(settings) - allowed_fields)
+            if unknown_fields:
+                raise ValueError(f"lane_settings for {lane} contains unknown field(s): {', '.join(unknown_fields)}")
+            for field_name, field_value in settings.items():
+                if len(str(field_value)) > 240:
+                    raise ValueError(f"lane_settings {lane}.{field_name} is too long")
+        return value
+
+    @field_validator("connection_settings")
+    @classmethod
+    def validate_topology_design_connection_settings(cls, value: dict[str, dict[str, str]]) -> dict[str, dict[str, str]]:
+        allowed_connections = {"switch-server", "switch-netapp", "server-netapp", "server-vm"}
+        allowed_fields = {"lane", "mtu", "notes", "protocol", "source", "status", "target", "vlan"}
+        unknown_connections = sorted(set(value) - allowed_connections)
+        if unknown_connections:
+            raise ValueError(f"connection_settings contains unknown connection(s): {', '.join(unknown_connections)}")
+        for connection, settings in value.items():
+            unknown_fields = sorted(set(settings) - allowed_fields)
+            if unknown_fields:
+                raise ValueError(f"connection_settings for {connection} contains unknown field(s): {', '.join(unknown_fields)}")
+            for field_name, field_value in settings.items():
+                if len(str(field_value)) > 240:
+                    raise ValueError(f"connection_settings {connection}.{field_name} is too long")
+        return value
+
+
+class TopologyDesignPersistenceItemRead(BaseModel):
+    choice: str
+    persists_to: str
+    commit_state: str
+    hardware_effect: str
+
+
+class TopologyDesignDraftRead(BaseModel):
+    id: str
+    profile_id: str
+    scenario: str
+    subnet: str | None = None
+    placements: dict[str, str | None] = Field(default_factory=dict)
+    device_settings: dict[str, dict[str, str]] = Field(default_factory=dict)
+    lane_settings: dict[str, dict[str, str]] = Field(default_factory=dict)
+    connection_settings: dict[str, dict[str, str]] = Field(default_factory=dict)
+    source: Literal["default", "saved"]
+    draft_saved: bool
+    hardware_touched: bool = False
+    updated_at: datetime | None = None
+    store_path: str
+    message: str
+    persistence_inventory: list[TopologyDesignPersistenceItemRead] = Field(default_factory=list)
+
+
 class AuditEventRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -615,6 +749,7 @@ class MediaInventoryItemRead(BaseModel):
 class MediaInventoryRead(BaseModel):
     mode: str
     configured_directories: list[str]
+    configured_directory_paths: list[str] = Field(default_factory=list, repr=False)
     items: list[MediaInventoryItemRead]
     warnings: list[str]
 
@@ -989,6 +1124,7 @@ class HpeRaidPlanPreviewRead(BaseModel):
     current_layout: HpeStorageDiscoveryRead
     desired_intent: HpeRaidIntentRead
     planned_layout: dict[str, Any] = Field(default_factory=dict)
+    local_storage_readiness: dict[str, Any] = Field(default_factory=dict)
     impact: dict[str, Any] = Field(default_factory=dict)
     blockers: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
@@ -997,6 +1133,10 @@ class HpeRaidPlanPreviewRead(BaseModel):
 
 
 class HpeRaidApplyCreate(BaseModel):
+    confirmation_phrase: str
+
+
+class HpeRaidFactoryResetCreate(BaseModel):
     confirmation_phrase: str
 
 
@@ -1121,6 +1261,18 @@ class IloReportPreviewRead(BaseModel):
     removable_warnings: list[str] = Field(default_factory=list)
 
 
+def _clean_unique_string_list(value: Any) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        candidates = value.split(",")
+    elif isinstance(value, (list, tuple)):
+        candidates = value
+    else:
+        candidates = [value]
+    return unique_strings(candidates)
+
+
 def _reject_secret_values(value: Any) -> None:
     if isinstance(value, str):
         if SECRET_VALUE_RE.search(value):
@@ -1196,6 +1348,38 @@ class ProviderModeSettingsWrite(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     desired_mode: Literal["local-readonly", "local-lab-readwrite"]
+
+
+class LabSafetyFlagRead(BaseModel):
+    name: str
+    label: str
+    description: str
+    required: bool
+    value: str | bool | None = None
+    enabled: bool
+    source: str
+    status: str
+
+
+class LabSafetySettingsRead(BaseModel):
+    flags: list[LabSafetyFlagRead]
+    store_path: str
+    updated_at: datetime | None = None
+    confirmation_phrase: str
+    device_reconfiguration_confirmation_phrase: str
+    next_safe_action: str
+
+
+class LabSafetySettingsWrite(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    lab_environment: Literal["isolated-real-lab"] | None = None
+    lab_acknowledge_real_hardware: bool | None = None
+    lab_acknowledge_device_reconfiguration: bool | None = None
+    lab_acknowledge_data_loss_risk: bool | None = None
+    lab_acknowledge_lab_only: bool | None = None
+    confirmation_phrase: str | None = None
+    device_reconfiguration_confirmation_phrase: str | None = None
 
 
 class CiscoSetupReadinessRead(BaseModel):
@@ -1985,6 +2169,92 @@ class WorkflowActionRunRead(BaseModel):
 class WorkflowActionRunCreate(BaseModel):
     confirmation_phrase: str | None = None
     confirmed_gates: list[str] = Field(default_factory=list)
+
+
+class WorkflowActionDiagnosisEvidenceRead(BaseModel):
+    label: str
+    detail: str
+
+
+class WorkflowActionDiagnosisRecentRunRead(BaseModel):
+    run_id: str
+    status: str
+    finished_at: str | None = None
+    summary: str
+    blocker_count: int = 0
+    warning_count: int = 0
+    trace_artifact: str | None = None
+
+
+class WorkflowActionDiagnosisRead(BaseModel):
+    action_id: str
+    action_label: str
+    run_id: str | None = None
+    status: str
+    ai_enabled: bool = False
+    advisory_source: Literal["local_rules", "external_ai"] | str = "local_rules"
+    confidence: Literal["high", "medium", "low"] | str
+    probable_cause: str
+    explanation: str
+    suggested_next_action: str
+    suggested_action_id: str | None = None
+    suggested_action_safe: bool = False
+    evidence: list[WorkflowActionDiagnosisEvidenceRead] = Field(default_factory=list)
+    recent_runs: list[WorkflowActionDiagnosisRecentRunRead] = Field(default_factory=list)
+    safety_notes: list[str] = Field(default_factory=list)
+
+
+class OperatorIssuePacketCreate(BaseModel):
+    route: str = Field(default="/", max_length=160)
+    page_title: str = Field(default="", max_length=120)
+    operator_note: str = Field(default="", max_length=1600)
+    ui_context: dict[str, str] = Field(default_factory=dict)
+
+
+class OperatorIssuePacketRunRead(BaseModel):
+    run_id: str
+    action_id: str
+    stage_id: str
+    started_at: str | None = None
+    finished_at: str | None = None
+    status: str
+    source_type: str
+    freshness: str
+    command: str | None = None
+    report_artifacts: list[str] = Field(default_factory=list)
+    summary: str
+    blockers: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    next_action: str
+
+
+class OperatorIssuePacketDiagnosisRead(BaseModel):
+    action_id: str | None = None
+    status: str | None = None
+    confidence: str | None = None
+    probable_cause: str
+    suggested_next_action: str
+    suggested_action_id: str | None = None
+    suggested_action_safe: bool = False
+
+
+class OperatorIssuePacketRead(BaseModel):
+    packet_id: str
+    created_at: str
+    route: str
+    page_title: str
+    operator_note: str
+    ui_context: dict[str, str] = Field(default_factory=dict)
+    ai_enabled: bool = False
+    advisory_source: Literal["local_rules", "external_ai"] | str = "local_rules"
+    summary: str
+    recent_problem_runs: list[OperatorIssuePacketRunRead] = Field(default_factory=list)
+    diagnoses: list[OperatorIssuePacketDiagnosisRead] = Field(default_factory=list)
+    suggested_next_steps: list[str] = Field(default_factory=list)
+    safety_notes: list[str] = Field(default_factory=list)
+    artifact: str
+    markdown_artifact: str
+    copy_prompt: str
 
 
 class WorkflowActionRead(BaseModel):

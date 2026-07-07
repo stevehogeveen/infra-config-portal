@@ -18,6 +18,7 @@ from app.providers.action_policy import (
 from app.providers.base import ProviderAction, ProviderStatus
 from app.providers.probe_cache import get_probe_result, record_probe_result
 from app.providers.redaction import redact_sensitive
+from app.services.list_utils import unique_preserving_order
 
 PROVIDER_ID = "ilo-redfish"
 MAX_GET_ATTEMPTS = 3
@@ -33,6 +34,13 @@ WEB_ROOT_PATH = "/"
 INVENTORY_COLLECTION_AUTH_NEXT_ACTION = (
     "Review iLO account permissions or Redfish authentication method. No settings were changed."
 )
+
+
+class RedfishJsonDecodeError(RuntimeError):
+    def __init__(self, path: str, status_code: int) -> None:
+        super().__init__(f"Redfish GET {path} returned HTTP {status_code} with invalid JSON.")
+        self.path = path
+        self.status_code = status_code
 
 
 @dataclass(frozen=True)
@@ -93,9 +101,10 @@ class IloRedfishConfig:
             if not host:
                 continue
             clean_host = host.strip()
-            if not clean_host or clean_host in seen:
+            dedupe_key = clean_host.casefold()
+            if not clean_host or dedupe_key in seen:
                 continue
-            seen.add(clean_host)
+            seen.add(dedupe_key)
             candidates.append({"host": clean_host, "source": source})
         return candidates
 
@@ -425,6 +434,32 @@ class IloRedfishAdapter:
                     auth_method="basic",
                 )
                 _populate_inventory_result(result, client, base_url, root, requests)
+        except RedfishJsonDecodeError as exc:
+            classification = "redfish_invalid_json"
+            message = _endpoint_message(classification)
+            result.update(
+                {
+                    "status": "failed",
+                    "message": message,
+                    "endpoint_detection": {
+                        "classification": classification,
+                        "message": message,
+                        "checks": requests,
+                        "redfish_status": "invalid_json",
+                        "legacy_status": "not_checked",
+                        "web_status": "not_checked",
+                        "inventory_collection_status": "failed",
+                        "inventory_collection_classification": classification,
+                        "inventory_collection_checks": [],
+                        "auth_failure_classification": "not_checked",
+                        "auth_recovery_hint": "not_checked",
+                        "failed_path": exc.path,
+                        "failed_status_code": exc.status_code,
+                        "next_safe_action": _endpoint_next_safe_action(classification),
+                    },
+                    "blockers": [_endpoint_next_safe_action(classification)],
+                }
+            )
         except httpx.HTTPStatusError as exc:
             detection = _classify_inventory_auth_failure(
                 result.get("endpoint_detection"),
@@ -757,7 +792,7 @@ def _endpoint_check(client: httpx.Client, base_url: str, path: str) -> dict[str,
             if isinstance(payload, dict):
                 check["_json_payload"] = payload
         except ValueError:
-            check["classification"] = "redfish_http_error"
+            check["classification"] = "redfish_invalid_json"
     if response.status_code == 200 and path == LEGACY_XML_PATH:
         identity = _legacy_xml_identity(response.text)
         if identity:
@@ -1158,7 +1193,7 @@ def _inventory_collection_paths(root: dict[str, Any]) -> list[tuple[str, str]]:
         path = _odata_id(root.get(name))
         if path:
             paths.append((name, path))
-    return paths
+    return _unique_named_paths(paths)
 
 
 def _collection_access_check(
@@ -1227,6 +1262,8 @@ def _classify_endpoint_checks(checks: list[dict[str, Any]]) -> str:
         for check in checks
     ):
         return "redfish_available"
+    if any(check.get("classification") == "redfish_invalid_json" for check in checks):
+        return "redfish_invalid_json"
     if any(check.get("classification") == "network_unreachable" for check in checks):
         return "network_unreachable"
 
@@ -1308,6 +1345,7 @@ def _endpoint_message(classification: str) -> str:
             "Basic authentication was rejected or lacks sufficient inventory privilege."
         ),
         "session_auth_may_be_required": "Session authentication may be required for inventory collection.",
+        "redfish_invalid_json": "Redfish endpoint returned HTTP 200 with a non-JSON or malformed JSON body.",
         "redfish_http_error": "Redfish root returned an unexpected HTTP error.",
         "legacy_available": "Legacy iLO endpoint is available.",
         "legacy_available_redfish_not_found": "Legacy iLO endpoint is available, but Redfish root was not found.",
@@ -1335,6 +1373,9 @@ def _endpoint_next_safe_action(classification: str) -> str:
         "redfish_collection_unauthorized": INVENTORY_COLLECTION_AUTH_NEXT_ACTION,
         "basic_auth_rejected_or_insufficient_privilege": INVENTORY_COLLECTION_AUTH_NEXT_ACTION,
         "session_auth_may_be_required": INVENTORY_COLLECTION_AUTH_NEXT_ACTION,
+        "redfish_invalid_json": (
+            "Verify the target is iLO Redfish and retry GET-only detection after endpoint health is corrected."
+        ),
         "redfish_http_error": "Review iLO Redfish support and endpoint status before retrying GET-only detection.",
         "legacy_available": "Use a dedicated read-only legacy iLO discovery path if Redfish is unavailable.",
         "legacy_available_redfish_not_found": "Use legacy read-only discovery context or verify whether this iLO supports Redfish.",
@@ -1414,7 +1455,19 @@ def _get_json(
                 }
             )
             response.raise_for_status()
-            payload = response.json()
+            try:
+                payload = response.json()
+            except ValueError as exc:
+                requests.append(
+                    {
+                        "path": path,
+                        "attempt": attempt,
+                        "status": "failed",
+                        "status_code": response.status_code,
+                        "error": "invalid_json",
+                    }
+                )
+                raise RedfishJsonDecodeError(path, response.status_code) from exc
             return payload if isinstance(payload, dict) else {"value": payload}
         except (httpx.TimeoutException, httpx.TransportError) as exc:
             last_error = exc
@@ -1537,10 +1590,8 @@ def _network_collection_paths(system_payload: dict[str, Any], system_path: str) 
         if path:
             paths.append(path)
     for suffix in ("NetworkAdapters", "EthernetInterfaces"):
-        fallback = f"{system_path.rstrip('/')}/{suffix}/"
-        if fallback not in paths:
-            paths.append(fallback)
-    return paths
+        paths.append(f"{system_path.rstrip('/')}/{suffix}/")
+    return _unique_paths(paths)
 
 
 def _network_collection_members(
@@ -1552,20 +1603,31 @@ def _network_collection_members(
     try:
         collection = _get_json(client, base_url, path, requests)
     except httpx.HTTPStatusError as exc:
-        if exc.response.status_code == 404:
+        if 400 <= exc.response.status_code < 500:
             return []
         raise
     members = collection.get("Members", [])
     if not isinstance(members, list):
         return []
     results: list[dict[str, Any]] = []
-    for member in members[:16]:
-        member_path = _odata_id(member)
-        if not member_path:
-            continue
-        payload = _get_json(client, base_url, member_path, requests)
+    for member_path in _member_paths(members, limit=16):
+        try:
+            payload = _get_json(client, base_url, member_path, requests)
+        except httpx.HTTPStatusError as exc:
+            if 400 <= exc.response.status_code < 500:
+                continue
+            raise
         results.append(_network_summary(payload))
     return results
+
+
+def _member_paths(members: list[Any], *, limit: int) -> list[str]:
+    paths: list[str] = []
+    for member in members[:limit]:
+        member_path = _odata_id(member)
+        if member_path:
+            paths.append(member_path)
+    return _unique_paths(paths)
 
 
 def _network_summary(payload: dict[str, Any]) -> dict[str, Any]:
@@ -1627,10 +1689,8 @@ def _storage_collection_paths(system_payload: dict[str, Any], system_path: str) 
     if smart_storage:
         paths.append(smart_storage)
     for suffix in ("Storage", "SmartStorage"):
-        fallback = f"{system_path.rstrip('/')}/{suffix}/"
-        if fallback not in paths:
-            paths.append(fallback)
-    return paths
+        paths.append(f"{system_path.rstrip('/')}/{suffix}/")
+    return _unique_paths(paths)
 
 
 def _discover_storage_path(
@@ -1657,13 +1717,11 @@ def _discover_storage_path(
 
     members = payload.get("Members")
     if isinstance(members, list):
-        for member in members[:16]:
-            member_path = _odata_id(member)
-            if member_path:
-                _merge_storage_discovery(
-                    discovery,
-                    _discover_storage_member(client, base_url, member_path, requests),
-                )
+        for member_path in _member_paths(members, limit=16):
+            _merge_storage_discovery(
+                discovery,
+                _discover_storage_member(client, base_url, member_path, requests),
+            )
         return discovery
 
     _merge_storage_discovery(
@@ -1751,7 +1809,28 @@ def _storage_controller_collection_paths(payload: dict[str, Any]) -> list[str]:
             path = _odata_id(links.get(key))
         if path:
             paths.append(path)
-    return paths
+    return _unique_paths(paths)
+
+
+def _unique_paths(paths: list[str]) -> list[str]:
+    return unique_preserving_order(
+        (path for path in paths if _path_dedupe_key(path)),
+        key=_path_dedupe_key,
+    )
+
+
+def _unique_named_paths(paths: list[tuple[str, str]]) -> list[tuple[str, str]]:
+    return unique_preserving_order(
+        ((name, path) for name, path in paths if _path_dedupe_key(path)),
+        key=lambda item: _path_dedupe_key(item[1]),
+    )
+
+
+def _path_dedupe_key(path: str) -> str:
+    text = path.strip()
+    if text in {"", "/"}:
+        return text
+    return text.rstrip("/")
 
 
 def _storage_controller_collection(
@@ -1770,10 +1849,7 @@ def _storage_controller_collection(
     if not isinstance(members, list):
         return []
     controllers = []
-    for member in members[:16]:
-        member_path = _odata_id(member)
-        if not member_path:
-            continue
+    for member_path in _member_paths(members, limit=16):
         controllers.append(_discover_storage_member(client, base_url, member_path, requests))
     return controllers
 
@@ -1814,10 +1890,7 @@ def _storage_collection_summaries(
     if not isinstance(members, list):
         return []
     summaries = []
-    for member in members[:64]:
-        member_path = _odata_id(member)
-        if not member_path:
-            continue
+    for member_path in _member_paths(members, limit=64):
         summaries.append(summarizer(_get_json(client, base_url, member_path, requests)))
     return summaries
 

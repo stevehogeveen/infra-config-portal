@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import os
 import socket
 import time
@@ -14,7 +13,11 @@ from app.core.config import LAB_ESXI_MANAGEMENT_IP, settings
 from app.providers.action_policy import ActionCategory, LOCAL_LAB_READWRITE_MODE, current_lab_action_policy
 from app.providers.ilo_redfish import IloRedfishAdapter, IloRedfishConfig, _base_url
 from app.providers.redaction import redact_sensitive
+from app.services.env_utils import env_flag as _env_flag, env_float as _env_float
 from app.services.hpe_raid import REPO_ROOT, SYSTEM_PATH, _get_redfish_resource, _post_system_reset
+from app.services.json_file_store import write_json_object, write_text_value
+from app.services.list_utils import unique_preserving_order, unique_strings
+from app.services.path_utils import repo_relative_path
 
 CODEX_RUN_DIR = REPO_ROOT / "artifacts" / "codex-runs"
 RECOVERY_REPORT = CODEX_RUN_DIR / "esxi-reachability-remediation-report.md"
@@ -245,20 +248,20 @@ def _recovery_gates() -> dict[str, Any]:
     flag_state = {
         "provider_mode": settings.provider_mode,
         "local_lab_readwrite": settings.provider_mode == LOCAL_LAB_READWRITE_MODE,
-        "lab_allow_power_actions": os.getenv("LAB_ALLOW_POWER_ACTIONS") == "true" or policy.allow_power_actions,
-        "esxi_recovery_apply": os.getenv("ESXI_RECOVERY_APPLY") == "true",
+        "lab_allow_power_actions": _env_flag("LAB_ALLOW_POWER_ACTIONS") or policy.allow_power_actions,
+        "esxi_recovery_apply": _env_flag("ESXI_RECOVERY_APPLY"),
         "esxi_recovery_confirm": os.getenv("ESXI_RECOVERY_CONFIRM") == RECOVERY_CONFIRM_PHRASE,
-        "esxi_recovery_assume_power_off": os.getenv("ESXI_RECOVERY_ASSUME_POWER_OFF") == "true",
+        "esxi_recovery_assume_power_off": _env_flag("ESXI_RECOVERY_ASSUME_POWER_OFF"),
         "esxi_recovery_assume_power_off_confirm": (
             os.getenv("ESXI_RECOVERY_ASSUME_POWER_OFF_CONFIRM") == ASSERT_POWER_OFF_CONFIRM_PHRASE
         ),
     }
-    blockers = policy.action_blockers("ilo.power-action", ActionCategory.POWER_ACTION)
+    blockers = unique_strings(policy.action_blockers("ilo.power-action", ActionCategory.POWER_ACTION))
     if not flag_state["esxi_recovery_apply"]:
         blockers.append("ESXI_RECOVERY_APPLY=true is required.")
     if not flag_state["esxi_recovery_confirm"]:
         blockers.append(f'ESXI_RECOVERY_CONFIRM="{RECOVERY_CONFIRM_PHRASE}" is required.')
-    return {"flag_state": flag_state, "blockers": list(dict.fromkeys(blockers))}
+    return {"flag_state": flag_state, "blockers": unique_preserving_order(blockers)}
 
 
 def _recovery_blockers(
@@ -282,7 +285,7 @@ def _recovery_blockers(
             "The app can only auto-recover a verified powered-off host; current power state is not confirmed as Off."
         )
     blockers.extend(gates["blockers"])
-    return list(dict.fromkeys(blockers))
+    return unique_preserving_order(blockers)
 
 
 def _recovery_method(target: dict[str, Any], pre_system: dict[str, Any], ilo_probe: dict[str, Any]) -> dict[str, Any]:
@@ -346,8 +349,8 @@ def _power_on_and_wait(target: dict[str, Any], *, operator_asserted: bool = Fals
             "poll_checks": [],
             "esxi_https_reachable_after": False,
         }
-    deadline = time.monotonic() + float(os.getenv("ESXI_RECOVERY_WAIT_SECONDS", "300"))
-    poll_seconds = float(os.getenv("ESXI_RECOVERY_POLL_SECONDS", "15"))
+    deadline = time.monotonic() + _env_float("ESXI_RECOVERY_WAIT_SECONDS", 300.0, minimum=0.1)
+    poll_seconds = _env_float("ESXI_RECOVERY_POLL_SECONDS", 15.0, minimum=0.1)
     checks: list[dict[str, Any]] = []
     while time.monotonic() < deadline:
         check = _tcp_check(target["esxi_host"], 443)
@@ -459,7 +462,7 @@ def _warnings(target: dict[str, Any], pre_system: dict[str, Any], ilo_probe: dic
         warnings.append("iLO root is reachable, but Redfish inventory/auth is blocked for the configured account.")
     if _operator_asserted_power_off(pre_system, ilo_probe, _recovery_gates()):
         warnings.append("Operator asserted the server is off; recovery may attempt only ResetType=On without a prior power-state read.")
-    return list(dict.fromkeys(warnings))
+    return unique_preserving_order(warnings)
 
 
 def _not_attempted(apply_attempted: bool) -> list[str]:
@@ -536,8 +539,8 @@ def _markdown(payload: dict[str, Any]) -> str:
 
 def _write_payload(json_path: Path, report_path: Path, payload: dict[str, Any], markdown_builder: Any) -> None:
     CODEX_RUN_DIR.mkdir(parents=True, exist_ok=True)
-    json_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
-    report_path.write_text(markdown_builder(payload), encoding="utf-8")
+    write_json_object(json_path, payload)
+    write_text_value(report_path, markdown_builder(payload))
 
 
 def _sanitize(payload: Any) -> Any:
@@ -553,7 +556,7 @@ def _redaction_values() -> list[str]:
 
 
 def _rel(path: Path) -> str:
-    return str(path.relative_to(REPO_ROOT))
+    return repo_relative_path(path, REPO_ROOT)
 
 
 def _now() -> str:

@@ -19,7 +19,9 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.providers.action_policy import REAL_CONTACT_MODES, current_lab_action_policy
 from app.providers.redaction import redact_sensitive
+from app.services.json_file_store import read_json_object, write_json_object, write_text_value
 from app.services.lab_profiles import active_lab_profile_context
+from app.services.list_utils import unique_preserving_order
 from app.services.serial_console_discovery import (
     SerialConsoleDiscoveryPaths,
     SerialConsoleProbeOptions,
@@ -34,6 +36,7 @@ from app.services.netapp_state import (
     update_netapp_runtime_state_from_console_probe,
     validate_netapp_setup,
 )
+from app.services.path_utils import display_path, is_file, path_exists
 
 PROVIDER_ID = "netapp-ontap"
 REPO_ROOT = Path(__file__).resolve().parents[4]
@@ -260,21 +263,20 @@ def run_netapp_console_login_state() -> dict[str, Any]:
     )
     sanitized["runtime_state"] = runtime_state
     _write_json(CONSOLE_LOGIN_STATE_JSON, sanitized)
-    CONSOLE_LOGIN_STATE_REPORT.write_text(_console_login_markdown(sanitized), encoding="utf-8")
+    write_text_value(CONSOLE_LOGIN_STATE_REPORT, _console_login_markdown(sanitized))
     return sanitized
 
 
 def latest_console_ontap_version() -> dict[str, Any]:
-    try:
-        payload = json.loads(CONSOLE_LOGIN_STATE_JSON.read_text(encoding="utf-8"))
-    except (FileNotFoundError, json.JSONDecodeError):
+    payload = read_json_object(CONSOLE_LOGIN_STATE_JSON)
+    if not payload:
         return {"version": None, "source": "not_available", "checked_at": None}
-    version = _ontap_version_from_console_payload(payload if isinstance(payload, dict) else {})
+    version = _ontap_version_from_console_payload(payload)
     return {
         "version": version,
         "source": "console_read_only" if version else "not_available",
-        "checked_at": payload.get("checked_at") if isinstance(payload, dict) else None,
-        "identified_state": payload.get("identified_state") if isinstance(payload, dict) else None,
+        "checked_at": payload.get("checked_at"),
+        "identified_state": payload.get("identified_state"),
     }
 
 
@@ -364,13 +366,14 @@ def get_netapp_nfs_vcenter_readiness(*, check_ports: bool | None = None, write_r
     profile_context = active_lab_profile_context()
     features = profile_context.get("enabled_features") or {}
     plan = profile_context.get("resolved_address_plan") or {}
-    if not features.get("netapp_enabled") or not features.get("vcenter_enabled"):
+    vcenter_in_scope = features.get("vcenter_enabled") is True
+    if not features.get("netapp_enabled"):
         payload = {
             "provider_id": PROVIDER_ID,
             "action": "nfs-vcenter-readiness",
             "checked_at": checked_at,
             "status": "not_in_scope",
-            "message": "NetApp NFS/vCenter readiness is not in scope for the active lab profile.",
+            "message": "NetApp NFS readiness is not in scope for the active lab profile.",
             "mode": settings.provider_mode,
             "apply_enabled": False,
             "ontap_apply_enabled": False,
@@ -414,16 +417,16 @@ def get_netapp_nfs_vcenter_readiness(*, check_ports: bool | None = None, write_r
                 "json": _rel(NFS_VCENTER_READINESS_JSON),
             },
             "warnings": [
-                "NetApp or vCenter is disabled by the active lab profile; this is not a blocker.",
+                "NetApp is disabled by the active lab profile; this is not a blocker.",
             ],
             "blockers": [],
             "not_attempted": NOT_ATTEMPTED,
-            "next_safe_action": "Enable NetApp and vCenter in the active lab profile when this readiness lane is intentionally in scope.",
+            "next_safe_action": "Enable NetApp in the active lab profile when this readiness lane is intentionally in scope.",
         }
         sanitized = _sanitize(payload)
         if write_report:
             _write_json(NFS_VCENTER_READINESS_JSON, sanitized)
-            NFS_VCENTER_READINESS_REPORT.write_text(_nfs_vcenter_markdown(sanitized), encoding="utf-8")
+            write_text_value(NFS_VCENTER_READINESS_REPORT, _nfs_vcenter_markdown(sanitized))
         return sanitized
     netapp_live_state = (
         read_netapp_live_state(check_ports=check_ports, write_report=False)
@@ -512,19 +515,21 @@ def get_netapp_nfs_vcenter_readiness(*, check_ports: bool | None = None, write_r
         blockers.append("NetApp API credentials are missing; values must stay in .env.local.real-lab when ready.")
     if not esxi_configured:
         blockers.append("ESXi management is not configured yet; NFS datastore mount validation is blocked.")
-    if not vcenter_configured:
+    if vcenter_in_scope and not vcenter_configured:
         blockers.append("vCenter/govc target is not configured yet; vCenter datastore validation is blocked.")
-    if vcenter_configured and not vcenter_credentials_present:
+    if vcenter_in_scope and vcenter_configured and not vcenter_credentials_present:
         blockers.append("vCenter credentials are missing; values must stay in .env.local.real-lab when ready.")
-    if vcenter_configured and not govc_available:
+    if vcenter_in_scope and vcenter_configured and not govc_available:
         blockers.append("govc is not installed or not on PATH; vCenter validation cannot run.")
 
     warnings = [
         "Only one NetApp management path is connected; this is acceptable for initial console/API bring-up but not full HA validation."
         if single_management_port
         else "Multiple NetApp management paths are listed as connected.",
-        "NFS/vCenter readiness is preview-only. No ONTAP, vCenter, ESXi, or storage apply action is run.",
+        "NFS readiness is preview-only. No ONTAP, vCenter, ESXi, or storage apply action is run.",
     ]
+    if not vcenter_in_scope:
+        warnings.append("vCenter is disabled by the active lab profile; direct NetApp NFS readiness can still be validated.")
     if settings.netapp_storage_protocol.lower() != "nfs":
         warnings.append(f"NETAPP_STORAGE_PROTOCOL={settings.netapp_storage_protocol} is set; this readiness pass is for NFS.")
 
@@ -533,9 +538,7 @@ def get_netapp_nfs_vcenter_readiness(*, check_ports: bool | None = None, write_r
         "action": "nfs-vcenter-readiness",
         "checked_at": checked_at,
         "status": "blocked" if blockers else "ready",
-        "message": (
-            "NetApp NFS/vCenter readiness generated. Preview only; no changes were made."
-        ),
+        "message": "NetApp NFS readiness generated. Preview only; no changes were made.",
         "mode": settings.provider_mode,
         "apply_enabled": False,
         "ontap_apply_enabled": False,
@@ -565,10 +568,10 @@ def get_netapp_nfs_vcenter_readiness(*, check_ports: bool | None = None, write_r
             "netapp_configured_source": "live_verification" if live_configured else "not_verified",
             "legacy_netapp_configured_env": legacy_env_configured,
             "esxi_management_ip": settings.esxi_test_host,
-            "vcenter_host_configured": bool(vcenter_target_host),
+            "vcenter_host_configured": bool(vcenter_in_scope and vcenter_target_host),
             "vcenter_management_ip": settings.vcenter_management_ip,
-            "vcenter_configured": settings.vcenter_configured,
-            "govc_available": govc_available,
+            "vcenter_configured": bool(vcenter_in_scope and settings.vcenter_configured),
+            "govc_available": bool(vcenter_in_scope and govc_available),
         },
         "connectivity": connectivity,
         "plan_preview": {
@@ -580,16 +583,24 @@ def get_netapp_nfs_vcenter_readiness(*, check_ports: bool | None = None, write_r
                 "Confirm or create the ESXi datastore volume.",
                 "Confirm or create export policy and rule for the ESXi management/client network.",
             ],
-            "vcenter_steps": [
-                "Use govc after vCenter is reachable and credentials are configured.",
-                "Add or confirm the NFS datastore against the intended ESXi host or cluster.",
-                "Validate datastore visibility from ESXi/vCenter.",
-            ],
+            "vcenter_steps": (
+                [
+                    "Use govc after vCenter is reachable and credentials are configured.",
+                    "Add or confirm the NFS datastore against the intended ESXi host or cluster.",
+                    "Validate datastore visibility from ESXi/vCenter.",
+                ]
+                if vcenter_in_scope
+                else ["vCenter datastore registration is not in scope for this direct NetApp setup."]
+            ),
             "govc_preview": (
-                "govc datastore.create -type nfs "
-                f"-name {settings.netapp_nfs_datastore_name} "
-                f"-remote-host {first_nfs_lif} "
-                f"-remote-path {settings.netapp_nfs_mount_path}"
+                (
+                    "govc datastore.create -type nfs "
+                    f"-name {settings.netapp_nfs_datastore_name} "
+                    f"-remote-host {first_nfs_lif} "
+                    f"-remote-path {settings.netapp_nfs_mount_path}"
+                )
+                if vcenter_in_scope
+                else "not_in_scope"
             ),
             "esxi_fallback_preview": (
                 "esxcli storage nfs add "
@@ -606,7 +617,7 @@ def get_netapp_nfs_vcenter_readiness(*, check_ports: bool | None = None, write_r
         "blockers": blockers,
         "not_attempted": NOT_ATTEMPTED,
         "next_safe_action": (
-            "Use console/API read-only discovery to identify the NetApp state, then configure vCenter/govc before NFS datastore apply is implemented."
+            "Use console/API read-only discovery to identify the NetApp state, then resolve the listed NFS readiness blockers."
             if blockers
             else "Review the preview and keep apply disabled until an explicit NetApp NFS apply workflow is added."
         ),
@@ -614,7 +625,7 @@ def get_netapp_nfs_vcenter_readiness(*, check_ports: bool | None = None, write_r
     sanitized = _sanitize(payload)
     if write_report:
         _write_json(NFS_VCENTER_READINESS_JSON, sanitized)
-        NFS_VCENTER_READINESS_REPORT.write_text(_nfs_vcenter_markdown(sanitized), encoding="utf-8")
+        write_text_value(NFS_VCENTER_READINESS_REPORT, _nfs_vcenter_markdown(sanitized))
     return sanitized
 
 
@@ -647,7 +658,7 @@ def _run_console_probe(
     warnings = [
         "Only newline and carriage return wake bytes are allowed for this NetApp console probe.",
         "No NetApp credentials, commands, boot interrupts, or configuration actions are sent.",
-        "Serial auto-discovery includes /dev/serial/by-id/*, /dev/ttyUSB*, /dev/ttyACM*, and /dev/ttyS*.",
+        "Serial auto-discovery includes Linux /dev serial adapters and Windows COM ports.",
     ]
     if settings.netapp_console_port and not any(
         candidate.get("display_path") == settings.netapp_console_port for candidate in candidates
@@ -779,7 +790,7 @@ def _run_console_probe(
     runtime_state = update_netapp_runtime_state_from_console_probe(sanitized, session=session)
     sanitized["runtime_state"] = runtime_state
     _write_json(json_path, sanitized)
-    report_path.write_text(_console_markdown(sanitized), encoding="utf-8")
+    write_text_value(report_path, _console_markdown(sanitized))
     return sanitized
 
 
@@ -1119,14 +1130,21 @@ def _discover_console_candidates() -> list[NetAppConsoleCandidate]:
     if settings.netapp_console_port:
         paths.append(settings.netapp_console_port)
     for pattern in CONSOLE_GLOBS:
-        paths.extend(glob.glob(pattern))
-    deduped = list(dict.fromkeys(paths))
+        paths.extend(_glob_strings(pattern))
+    deduped = unique_preserving_order(paths)
     return [_candidate(path) for path in deduped]
+
+
+def _glob_strings(pattern: str) -> list[str]:
+    try:
+        return glob.glob(pattern)
+    except OSError:
+        return []
 
 
 def _candidate(path: str) -> NetAppConsoleCandidate:
     path_obj = Path(path)
-    exists = path_obj.exists()
+    exists = path_exists(path_obj)
     stable_path = path.startswith("/dev/serial/by-id/")
     readable = os.access(path, os.R_OK) if exists else False
     writable = os.access(path, os.W_OK) if exists else False
@@ -1254,7 +1272,7 @@ def _path_in_use(path: str) -> bool:
 
 def _baud_order(first_baud: int | None) -> tuple[int, ...]:
     values = [first_baud, *COMMON_NETAPP_CONSOLE_BAUDS] if first_baud else list(COMMON_NETAPP_CONSOLE_BAUDS)
-    return tuple(dict.fromkeys(int(value) for value in values if value))
+    return tuple(unique_preserving_order(int(value) for value in values if value))
 
 
 def _probe_candidate(serial_module: Any, candidate: NetAppConsoleCandidate, baud: int) -> dict[str, Any]:
@@ -1446,19 +1464,15 @@ def _tool_path(name: str) -> Path | None:
         return Path(found)
     for directory in (Path(sys.executable).parent, REPO_ROOT / ".local" / "bin"):
         candidate = directory / name
-        if candidate.exists() and candidate.is_file() and os.access(candidate, os.X_OK):
+        if is_file(candidate) and os.access(candidate, os.X_OK):
             return candidate
     return None
 
 
 def _latest_or_not_run(path: Path, *, action: str, message: str, next_safe_action: str) -> dict[str, Any]:
-    if path.exists():
-        try:
-            payload = json.loads(path.read_text(encoding="utf-8"))
-            if isinstance(payload, dict):
-                return payload
-        except (OSError, ValueError):
-            pass
+    payload = read_json_object(path)
+    if payload:
+        return payload
     return {
         "provider_id": PROVIDER_ID,
         "action": action,
@@ -1486,7 +1500,7 @@ def _report_for_action(action: str) -> Path:
 
 def _write_json(path: Path, payload: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
+    write_json_object(path, payload, default=str)
 
 
 def _sanitize(payload: dict[str, Any]) -> dict[str, Any]:
@@ -1682,10 +1696,7 @@ def _nfs_vcenter_markdown(payload: dict[str, Any]) -> str:
 
 
 def _rel(path: Path) -> str:
-    try:
-        return str(path.relative_to(REPO_ROOT))
-    except ValueError:
-        return str(path)
+    return display_path(path, REPO_ROOT)
 
 
 def _now() -> str:

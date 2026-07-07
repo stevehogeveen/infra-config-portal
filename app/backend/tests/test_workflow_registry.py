@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 from fastapi.testclient import TestClient
 
 from app.services.lab_profiles import create_lab_profile
+from app.services import workflow_registry
 from app.services.workflow_registry import (
     get_workflow_action,
     list_workflow_actions,
@@ -42,6 +45,8 @@ def test_registry_contains_expected_provider_actions() -> None:
         "cisco.privilege-check",
         "cisco.apply-bootstrap",
         "cisco.validate-ssh-scp",
+        "cisco.ssh-readonly-probe",
+        "cisco.current-intent-diff",
         "cisco.firmware-inventory",
         "ilo.reachability",
         "ilo.auth",
@@ -54,6 +59,8 @@ def test_registry_contains_expected_provider_actions() -> None:
         "raid.discovery",
         "raid.plan",
         "raid.debug",
+        "raid.factory-reset-preview",
+        "raid.factory-reset-apply",
         "raid.apply",
         "raid.pending-check",
         "raid.reset-commit",
@@ -67,6 +74,8 @@ def test_registry_contains_expected_provider_actions() -> None:
         "esxi.vm-deploy-preview",
         "esxi.vm-deploy-apply",
         "esxi.vm-deploy-validate",
+        "esxi.iscsi-datastore-preview",
+        "esxi.iscsi-datastore-validate",
         "netapp.serial-console-discovery",
         "netapp.console-autodiscovery",
         "netapp.console-read-state",
@@ -74,6 +83,9 @@ def test_registry_contains_expected_provider_actions() -> None:
         "netapp.nfs-setup-preview",
         "netapp.nfs-setup-apply",
         "netapp.nfs-setup-validate",
+        "netapp.iscsi-setup-preview",
+        "netapp.iscsi-setup-apply",
+        "netapp.iscsi-setup-validate",
         "netapp.setup-preview",
         "netapp.ontap-upgrade-inventory",
         "netapp.component-firmware-inventory",
@@ -84,6 +96,8 @@ def test_registry_contains_expected_provider_actions() -> None:
         "vcenter.attach-esxi-preview",
         "vcenter.attach-esxi-apply",
         "vcenter.post-attach-validation",
+        "provider-smoke.real-lab",
+        "operator-readonly-sweep.real-lab",
         "build-verification.live-status",
         "build-verification.run-full",
         "lab-validation.summary",
@@ -100,9 +114,11 @@ def test_destructive_actions_are_marked_correctly() -> None:
     actions = {action["action_id"]: action for action in list_workflow_actions()}
 
     assert actions["raid.apply"]["mode"] == "destructive"
+    assert actions["raid.factory-reset-apply"]["mode"] == "destructive"
     assert actions["raid.reset-commit"]["mode"] == "destructive"
     assert actions["ilo.reset-server"]["mode"] == "destructive"
     assert actions["esxi.rebuild-install"]["mode"] == "destructive"
+    assert "HPE_RAID_ALLOW_FACTORY_RESET=true" in actions["raid.factory-reset-apply"]["required_gates"]
     assert "LAB_ALLOW_POWER_ACTIONS=true" in actions["raid.reset-commit"]["required_gates"]
 
 
@@ -112,6 +128,188 @@ def test_action_reports_are_linked_to_actions_and_traces() -> None:
     assert "artifacts/codex-runs/netapp-console-state-report.md" in action["reports"]
     assert action["last_run_trace"]["action_id"] == "netapp.console-read-state"
     assert set(action["last_run_trace"]["report_artifacts"]).issubset(set(action["reports"]))
+
+
+def test_workflow_registry_report_artifacts_exclude_run_traces() -> None:
+    reports = workflow_registry._workflow_report_artifacts(
+        {
+            "report_artifacts": [
+                "artifacts/codex-runs/esxi-management-readiness-report.md",
+                "artifacts/codex-runs/workflow-action-runs/trace.json",
+                "artifacts/codex-runs/esxi-management-readiness-redacted.json",
+            ]
+        }
+    )
+
+    assert reports == [
+        "artifacts/codex-runs/esxi-management-readiness-report.md",
+        "artifacts/codex-runs/esxi-management-readiness-redacted.json",
+    ]
+
+
+def test_workflow_registry_dedupes_seeds_by_action_id_preserving_first() -> None:
+    first = workflow_registry.WorkflowActionSeed(
+        action_id="example.action",
+        label="First",
+        stage="reports",
+        provider="reports",
+        category="report",
+        mode="report_only",
+        description="First action",
+        source_type="manual_guidance",
+    )
+    duplicate = workflow_registry.WorkflowActionSeed(
+        action_id="example.action",
+        label="Duplicate",
+        stage="reports",
+        provider="reports",
+        category="report",
+        mode="report_only",
+        description="Duplicate action",
+        source_type="manual_guidance",
+    )
+    second = workflow_registry.WorkflowActionSeed(
+        action_id="example.second",
+        label="Second",
+        stage="reports",
+        provider="reports",
+        category="report",
+        mode="report_only",
+        description="Second action",
+        source_type="manual_guidance",
+    )
+
+    assert workflow_registry._dedupe_seeds([first, duplicate, second, first]) == [first, second]
+
+
+def test_workflow_registry_existing_reports_skips_paths_that_error(monkeypatch) -> None:
+    class ReportPath:
+        def __init__(self, *, exists: bool = True, exists_error: Exception | None = None) -> None:
+            self._exists = exists
+            self._exists_error = exists_error
+
+        def exists(self) -> bool:
+            if self._exists_error:
+                raise self._exists_error
+            return self._exists
+
+    class RepoRoot:
+        def __truediv__(self, report: str) -> ReportPath:
+            return reports[report]
+
+    reports = {
+        "artifacts/ready.md": ReportPath(),
+        "artifacts/locked.md": ReportPath(exists_error=OSError("locked")),
+        "artifacts/missing.md": ReportPath(exists=False),
+    }
+    monkeypatch.setattr(workflow_registry, "REPO_ROOT", RepoRoot())
+
+    assert workflow_registry._existing_reports(list(reports)) == ["artifacts/ready.md"]
+
+
+def test_workflow_registry_latest_report_skips_files_that_disappear(monkeypatch) -> None:
+    class ReportPath:
+        def __init__(self, *, mtime: float, stat_error: Exception | None = None) -> None:
+            self._mtime = mtime
+            self._stat_error = stat_error
+
+        def stat(self) -> SimpleNamespace:
+            if self._stat_error:
+                raise self._stat_error
+            return SimpleNamespace(st_mtime=self._mtime)
+
+    class RepoRoot:
+        def __truediv__(self, report: str) -> ReportPath:
+            return reports[report]
+
+    reports = {
+        "artifacts/older.md": ReportPath(mtime=1),
+        "artifacts/disappeared.md": ReportPath(mtime=999, stat_error=FileNotFoundError("gone")),
+        "artifacts/newer.md": ReportPath(mtime=2),
+    }
+    monkeypatch.setattr(workflow_registry, "REPO_ROOT", RepoRoot())
+
+    assert workflow_registry._latest_report(list(reports)) == "artifacts/newer.md"
+
+
+def test_workflow_registry_run_trace_self_heals_disappearing_last_report(monkeypatch) -> None:
+    class ReportPath:
+        def stat(self) -> SimpleNamespace:
+            raise FileNotFoundError("gone")
+
+    class RepoRoot:
+        def __truediv__(self, report: str) -> ReportPath:
+            return ReportPath()
+
+    monkeypatch.setattr(workflow_registry, "REPO_ROOT", RepoRoot())
+    seed = workflow_registry.WorkflowActionSeed(
+        action_id="example.action",
+        label="Example",
+        stage="reports",
+        provider="reports",
+        category="report",
+        mode="report_only",
+        description="Example action",
+        source_type="manual_guidance",
+    )
+
+    trace = workflow_registry._run_trace(
+        seed,
+        "artifacts/disappeared.md",
+        blockers=[],
+        availability="available",
+    )
+
+    assert trace["status"] == "not_checked"
+    assert trace["source_type"] == "not_checked"
+    assert trace["finished_at"] is None
+    assert trace["report_artifacts"] == []
+
+
+def test_workflow_registry_issue_link_keeps_scalar_evidence_artifact_whole() -> None:
+    issue = {
+        "source_report": None,
+        "evidence_artifacts": "artifacts/codex-runs/netapp-console-state-report.md",
+    }
+
+    link = workflow_registry.find_workflow_action_for_issue(issue)
+
+    assert link["source_action_id"] == "netapp.console-read-state"
+    assert link["source_stage_id"] == "netapp"
+
+
+def test_workflow_registry_stage_report_count_skips_unreadable_reports(monkeypatch) -> None:
+    class ReportPath:
+        def __init__(self, *, exists: bool = True, exists_error: Exception | None = None) -> None:
+            self._exists = exists
+            self._exists_error = exists_error
+
+        def exists(self) -> bool:
+            if self._exists_error:
+                raise self._exists_error
+            return self._exists
+
+    class RepoRoot:
+        def __truediv__(self, report: str) -> ReportPath:
+            return reports[report]
+
+    reports = {
+        "artifacts/ready.md": ReportPath(),
+        "artifacts/locked.md": ReportPath(exists_error=OSError("locked")),
+    }
+    monkeypatch.setattr(workflow_registry, "REPO_ROOT", RepoRoot())
+    stage = workflow_registry.WorkflowStageSeed(
+        stage_id="reports",
+        label="Reports",
+        order=1,
+        current_state="Reports available.",
+        desired_state="Reports available.",
+        reports=tuple(reports),
+    )
+
+    payload = workflow_registry._stage_read(stage, actions=[])
+
+    assert payload["report_count"] == 1
 
 
 def test_registry_does_not_treat_mock_or_test_state_as_real_current_state() -> None:
@@ -164,7 +362,11 @@ def test_compact_profile_marks_netapp_registry_actions_not_in_scope(
 
     assert actions["netapp.setup-preview"]["current_availability"] == "not_in_scope"
     assert "active lab profile" in actions["netapp.setup-preview"]["not_in_scope_reason"]
+    assert actions["netapp.setup-preview"]["ui_run_supported"] is False
+    assert any("active lab profile" in blocker for blocker in actions["netapp.setup-preview"]["ui_run_blockers"])
     assert actions["vcenter-netapp.readiness"]["current_availability"] == "not_in_scope"
+    assert actions["vcenter-netapp.readiness"]["ui_run_supported"] is False
+    assert any("active lab profile" in blocker for blocker in actions["vcenter-netapp.readiness"]["ui_run_blockers"])
     assert stages["netapp"]["current_state"] == "not_in_scope"
 
 
@@ -180,10 +382,54 @@ def test_write_destructive_and_unallowlisted_actions_are_not_ui_runnable() -> No
     assert actions["vcenter-netapp.datastore-apply-placeholder"]["ui_run_supported"] is False
     assert actions["vcenter.install-apply"]["mode"] == "write"
     assert actions["vcenter.install-apply"]["ui_run_supported"] is False
-    assert actions["vcenter.attach-esxi-preview"]["ui_run_supported"] is True
+    assert actions["vcenter.attach-esxi-preview"]["ui_run_supported"] is False
     assert actions["vcenter.attach-esxi-apply"]["mode"] == "write"
     assert actions["vcenter.attach-esxi-apply"]["ui_run_supported"] is False
+    assert actions["vcenter.post-attach-validation"]["ui_run_supported"] is False
+
+
+def test_vcenter_read_actions_are_ui_runnable_when_profile_enables_vcenter(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("LAB_PROFILE_STORE", str(tmp_path / "lab-profiles.json"))
+    create_lab_profile(
+        {
+            "name": "Shared vCenter Lab",
+            "features": {"netapp_enabled": True, "vcenter_enabled": True},
+            "subnet_cidr": "192.168.1.0/24",
+            "address_plan": {"subnet": "192.168.1.0/24"},
+        }
+    )
+
+    actions = {action["action_id"]: action for action in list_workflow_actions()}
+
+    assert actions["vcenter.attach-esxi-preview"]["current_availability"] == "available"
+    assert actions["vcenter.attach-esxi-preview"]["ui_run_supported"] is True
+    assert actions["vcenter.post-attach-validation"]["current_availability"] == "available"
     assert actions["vcenter.post-attach-validation"]["ui_run_supported"] is True
+
+
+def test_workflow_registry_keeps_scalar_policy_blocker_whole(monkeypatch) -> None:
+    class ScalarPolicy:
+        def action_blockers(self, _action_id, _category):
+            return " policy blocker "
+
+    monkeypatch.setattr(workflow_registry, "current_lab_action_policy", lambda: ScalarPolicy())
+    seed = workflow_registry.WorkflowActionSeed(
+        action_id="example.apply",
+        label="Example Apply",
+        stage="raid",
+        provider="hpe-ilo",
+        category="apply",
+        mode="write",
+        description="Example write action",
+        source_type="live",
+        policy_action_id="example.apply",
+        policy_category=workflow_registry.ActionCategory.STORAGE_CONFIG,
+    )
+
+    blockers = workflow_registry._blockers_for_seed(seed)
+
+    assert blockers == ["policy blocker"]
+    assert "p" not in blockers
 
 
 def test_workflow_registry_api_endpoints(client: TestClient) -> None:

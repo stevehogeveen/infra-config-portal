@@ -1,10 +1,21 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+from typing import Any
+
 from fastapi.testclient import TestClient
 
+from app.providers.base import ProviderStatus
 from app.models import IloSetupIntent
 from app.providers.probe_cache import clear_probe_results, record_probe_result
-from app.schemas import UpgradeCandidateRead, UpgradeRuleRead, UpgradeSubjectRead
+from app.schemas import (
+    IloUpgradeReadinessRead,
+    UpgradeCandidateRead,
+    UpgradeDecisionRead,
+    UpgradeRuleRead,
+    UpgradeSubjectRead,
+)
+from app.services import ilo_readiness
 from app.services.upgrade_decision import decide_upgrade
 
 
@@ -232,6 +243,49 @@ def test_ilo_readiness_summary_normalizes_readonly_state(client: TestClient) -> 
     assert payload["disabled_dangerous_actions"]
     assert all(not action["enabled"] for action in payload["disabled_dangerous_actions"])
     clear_probe_results()
+
+
+def test_ilo_readiness_summary_keeps_scalar_missing_fields_whole(monkeypatch) -> None:
+    class FakeIloRedfishAdapter:
+        def health(self) -> ProviderStatus:
+            return ProviderStatus(
+                name="HPE iLO",
+                kind="oob-management",
+                mode="local-readonly",
+                status="missing-config",
+                capabilities=[],
+                message="Missing config.",
+                configuration={
+                    "host_configured": False,
+                    "username_configured": True,
+                    "password_configured": True,
+                    "tls_verify": True,
+                    "timeout_seconds": 1.0,
+                    "missing_fields": " ILO_TEST_HOST ",
+                },
+            )
+
+    monkeypatch.setattr(ilo_readiness, "IloRedfishAdapter", FakeIloRedfishAdapter)
+    monkeypatch.setattr(ilo_readiness, "get_media_inventory", lambda: SimpleNamespace(mode="sample"))
+    monkeypatch.setattr(
+        ilo_readiness,
+        "get_ilo_upgrade_readiness",
+        lambda: IloUpgradeReadinessRead(
+            provider_id="ilo-redfish",
+            subject=_subject(current_version=None, generation=None),
+            candidates=[],
+            decision=UpgradeDecisionRead(
+                status="discovery_incomplete",
+                next_safe_action="Run read-only discovery.",
+            ),
+        ),
+    )
+    clear_probe_results()
+
+    summary = ilo_readiness.get_ilo_readiness_summary()
+
+    assert summary.connection.missing_fields == ["ILO_TEST_HOST"]
+    assert "I" not in summary.connection.missing_fields
 
 
 def test_ilo_readiness_summary_reports_inventory_collection_auth_failure(
@@ -763,6 +817,76 @@ def test_hpe_raid_intent_feeds_plan_preview(client: TestClient) -> None:
     assert any("RAID" in action for action in preview["disabled_actions"])
 
 
+def test_hpe_local_storage_recommends_simple_two_drive_layout(client: TestClient) -> None:
+    clear_probe_results()
+    record_probe_result("ilo-redfish", _storage_probe_with_drives(2))
+
+    response = client.get("/api/v1/providers/ilo-redfish/hpe-raid-plan-preview")
+
+    assert response.status_code == 200
+    readiness = response.json()["local_storage_readiness"]
+    assert readiness["status"] == "recommendation"
+    assert readiness["facts"]["usable_drive_count"] == 2
+    assert readiness["candidate_volumes"] == [
+        {
+            "name": "ESXi-local",
+            "purpose": "ESXi boot and local datastore",
+            "raid_level": "RAID1",
+            "drive_bays": ["1", "2"],
+            "spare_bays": [],
+            "size_policy": "max",
+            "bootable": True,
+        }
+    ]
+
+
+def test_hpe_local_storage_recommends_os_and_datastore_for_larger_servers(client: TestClient) -> None:
+    clear_probe_results()
+    record_probe_result("ilo-redfish", _storage_probe_with_drives(8))
+
+    response = client.get("/api/v1/providers/ilo-redfish/hpe-raid-plan-preview")
+
+    assert response.status_code == 200
+    readiness = response.json()["local_storage_readiness"]
+    assert readiness["status"] == "recommendation"
+    assert readiness["facts"]["usable_drive_count"] == 8
+    assert readiness["candidate_volumes"][0]["raid_level"] == "RAID1"
+    assert readiness["candidate_volumes"][0]["drive_bays"] == ["1", "2"]
+    assert readiness["candidate_volumes"][1]["raid_level"] == "RAID6"
+    assert readiness["candidate_volumes"][1]["drive_bays"] == ["3", "4", "5", "6", "7", "8"]
+
+
+def test_hpe_local_storage_warns_and_uses_largest_matching_drive_group(client: TestClient) -> None:
+    clear_probe_results()
+    probe = _storage_probe_with_drives(6)
+    probe["storage"]["physical_drives"][4]["CapacityBytes"] = 600 * 1000 * 1000 * 1000
+    probe["storage"]["physical_drives"][5]["MediaType"] = "SSD"
+    record_probe_result("ilo-redfish", probe)
+
+    response = client.get("/api/v1/providers/ilo-redfish/hpe-raid-plan-preview")
+
+    assert response.status_code == 200
+    readiness = response.json()["local_storage_readiness"]
+    assert readiness["status"] == "recommendation"
+    assert readiness["facts"]["usable_drive_count"] == 4
+    assert readiness["candidate_layout"]["selected_drive_bays"] == ["1", "2", "3", "4"]
+    assert any("Mixed drive media or capacity" in warning for warning in readiness["warnings"])
+
+
+def test_hpe_local_storage_blocks_failed_drives(client: TestClient) -> None:
+    clear_probe_results()
+    probe = _storage_probe_with_drives(4)
+    probe["storage"]["physical_drives"][2]["Status"] = {"Health": "Critical"}
+    record_probe_result("ilo-redfish", probe)
+
+    response = client.get("/api/v1/providers/ilo-redfish/hpe-raid-plan-preview")
+
+    assert response.status_code == 200
+    readiness = response.json()["local_storage_readiness"]
+    assert readiness["status"] == "blocked"
+    assert any("Drive health needs review" in blocker for blocker in readiness["blockers"])
+
+
 def test_hpe_raid_apply_plan_is_gated(client: TestClient) -> None:
     response = client.get("/api/v1/providers/ilo-redfish/hpe-raid-apply-plan")
 
@@ -792,6 +916,47 @@ def test_hpe_raid_intent_rejects_secret_like_values(client: TestClient) -> None:
     )
 
     assert response.status_code == 422
+
+
+def _storage_probe_with_drives(count: int) -> dict[str, Any]:
+    return {
+        "provider_id": "ilo-redfish",
+        "status": "ok",
+        "systems": [
+            {
+                "Model": "Generic rack server",
+                "PowerState": "On",
+                "Status": {"Health": "OK"},
+                "serial_number_present": True,
+            }
+        ],
+        "storage": {
+            "status": "ok",
+            "controllers": [
+                {
+                    "Id": "controller-1",
+                    "Name": "Generic RAID Controller",
+                    "Status": {"Health": "OK"},
+                }
+            ],
+            "physical_drives": [
+                {
+                    "Id": f"drive-{bay}",
+                    "Name": f"Drive {bay}",
+                    "Bay": bay,
+                    "CapacityBytes": 1200 * 1000 * 1000 * 1000,
+                    "MediaType": "HDD",
+                    "InterfaceType": "SAS",
+                    "Status": {"Health": "OK"},
+                }
+                for bay in range(1, count + 1)
+            ],
+            "logical_drives": [],
+            "warnings": [],
+        },
+        "warnings": [],
+        "blockers": [],
+    }
 
 
 def test_ilo_setup_compare_empty_intent_reports_missing_and_unknown(

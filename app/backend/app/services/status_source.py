@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from datetime import UTC, datetime
 from typing import Any
+
+from app.services.list_utils import unique_preserving_order
 
 SourceType = str
 Freshness = str
@@ -17,7 +20,7 @@ def status_source_metadata(
     checked_at: Any = None,
     stale_after_seconds: int | None = DEFAULT_STALE_AFTER_SECONDS,
     recheck_command: str | None = None,
-    evidence_artifacts: list[str] | tuple[str, ...] | None = None,
+    evidence_artifacts: Any = None,
     is_operator_visible: bool | None = None,
     now: datetime | None = None,
 ) -> dict[str, Any]:
@@ -42,7 +45,7 @@ def status_source_metadata(
             else bool(is_operator_visible)
         ),
         "recheck_command": recheck_command,
-        "evidence_artifacts": _unique(evidence_artifacts or []),
+        "evidence_artifacts": _unique(evidence_artifacts),
     }
 
 
@@ -53,7 +56,7 @@ def attach_status_source(
     checked_at: Any = None,
     stale_after_seconds: int | None = DEFAULT_STALE_AFTER_SECONDS,
     recheck_command: str | None = None,
-    evidence_artifacts: list[str] | tuple[str, ...] | None = None,
+    evidence_artifacts: Any = None,
     is_operator_visible: bool | None = None,
     now: datetime | None = None,
 ) -> dict[str, Any]:
@@ -128,5 +131,16 @@ def _datetime_iso(value: datetime | None) -> str | None:
     return value.isoformat() if value else None
 
 
-def _unique(values: list[str] | tuple[str, ...]) -> list[str]:
-    return list(dict.fromkeys(str(value) for value in values if value))
+def _unique(values: Any) -> list[str]:
+    if values is None:
+        return []
+    if isinstance(values, str):
+        candidates: Iterable[Any] = [values]
+    elif isinstance(values, Iterable):
+        candidates = values
+    else:
+        candidates = [values]
+    return unique_preserving_order(
+        (text for text in (str(value).strip() for value in candidates if value) if text),
+        skip_falsey=True,
+    )

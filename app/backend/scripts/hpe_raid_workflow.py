@@ -28,6 +28,8 @@ from app.services.hpe_raid import (
     write_hpe_raid_pending_report,
     write_hpe_raid_redfish_debug,
 )
+from app.services.json_file_store import write_text_value
+from app.services.path_utils import display_path
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 CODEX_RUN_DIR = REPO_ROOT / "artifacts" / "codex-runs"
@@ -77,9 +79,9 @@ def _run_discovery() -> int:
         }
     )
     CODEX_RUN_DIR.mkdir(parents=True, exist_ok=True)
-    DISCOVERY_REPORT.write_text(_discovery_markdown(report), encoding="utf-8")
+    write_text_value(DISCOVERY_REPORT, _discovery_markdown(report))
     print(json.dumps(_discovery_summary(report), indent=2))
-    print(f"discovery_report={DISCOVERY_REPORT.relative_to(REPO_ROOT)}")
+    print(f"discovery_report={_rel(DISCOVERY_REPORT)}")
     return 0 if result.get("status") == "ok" else 1
 
 
@@ -102,9 +104,9 @@ def _run_plan(*, default_esxi_intent: bool) -> int:
         }
     )
     CODEX_RUN_DIR.mkdir(parents=True, exist_ok=True)
-    PLAN_REPORT.write_text(_plan_markdown(report), encoding="utf-8")
+    write_text_value(PLAN_REPORT, _plan_markdown(report))
     print(json.dumps(_plan_summary(report), indent=2))
-    print(f"plan_report={PLAN_REPORT.relative_to(REPO_ROOT)}")
+    print(f"plan_report={_rel(PLAN_REPORT)}")
     return 0 if preview.status != "blocked" else 1
 
 
@@ -116,7 +118,7 @@ def _run_apply() -> int:
             HpeRaidApplyCreate(confirmation_phrase=confirmation),
         )
     print(json.dumps(_sanitize(result), indent=2))
-    print(f"apply_report={APPLY_REPORT.relative_to(REPO_ROOT)}")
+    print(f"apply_report={_rel(APPLY_REPORT)}")
     if result.get("status") == "succeeded":
         return 0
     return 2
@@ -133,14 +135,14 @@ def _run_pending() -> int:
     with SessionLocal() as session:
         report = write_hpe_raid_pending_report(session)
     print(json.dumps(_sanitize(_pending_summary(report)), indent=2))
-    print(f"pending_report={PENDING_REPORT.relative_to(REPO_ROOT)}")
+    print(f"pending_report={_rel(PENDING_REPORT)}")
     return 0
 
 
 def _run_reset() -> int:
     result = reset_server_for_raid()
     print(json.dumps(_sanitize(_reset_summary(result)), indent=2))
-    print(f"reset_report={RESET_REPORT.relative_to(REPO_ROOT)}")
+    print(f"reset_report={_rel(RESET_REPORT)}")
     return 0 if result.get("status") == "reset-requested" else 2
 
 
@@ -148,7 +150,7 @@ def _run_validate_after_reset() -> int:
     with SessionLocal() as session:
         result = validate_hpe_raid_after_reset(session)
     print(json.dumps(_sanitize(_validation_summary(result)), indent=2))
-    print(f"after_reset_validation_report={AFTER_RESET_VALIDATION_REPORT.relative_to(REPO_ROOT)}")
+    print(f"after_reset_validation_report={_rel(AFTER_RESET_VALIDATION_REPORT)}")
     return 0 if result.get("status") == "succeeded" else 1
 
 
@@ -210,7 +212,7 @@ def _discovery_summary(report: dict[str, Any]) -> dict[str, Any]:
         "controller_count": len(discovery.get("controllers") or []),
         "physical_drive_count": len(discovery.get("physical_drives") or []),
         "logical_drive_count": len(discovery.get("logical_drives") or []),
-        "report": str(DISCOVERY_REPORT.relative_to(REPO_ROOT)),
+        "report": _rel(DISCOVERY_REPORT),
     }
 
 
@@ -225,7 +227,7 @@ def _plan_summary(report: dict[str, Any]) -> dict[str, Any]:
         "destructive_actions_requested": preview.get("destructive_actions_requested"),
         "raid_apply_available": apply_plan.get("apply_enabled"),
         "confirmation_phrase": apply_plan.get("confirmation_phrase"),
-        "report": str(PLAN_REPORT.relative_to(REPO_ROOT)),
+        "report": _rel(PLAN_REPORT),
     }
 
 
@@ -387,6 +389,10 @@ def _health(payload: dict[str, Any]) -> str:
     if isinstance(status, dict):
         return str(status.get("Health") or status.get("State") or "unknown")
     return "unknown"
+
+
+def _rel(path: Path) -> str:
+    return display_path(path, REPO_ROOT)
 
 
 if __name__ == "__main__":

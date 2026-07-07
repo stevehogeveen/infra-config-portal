@@ -15,6 +15,8 @@ from app.services.build_verification import get_lab_build_verification
 from app.services.control_access import control_access_configs
 from app.services.firmware_compliance import get_firmware_compliance, get_firmware_summaries
 from app.services.lab_profiles import active_lab_profile_context, active_lab_profile_runtime_env_command
+from app.services.list_utils import unique_preserving_order, unique_strings
+from app.services.path_utils import path_exists, path_mtime
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 
@@ -208,13 +210,13 @@ def _action_read(
     for provider_id in action.provider_ids:
         provider = providers.get(provider_id)
         if provider and provider.status in {"blocked", "failed", "unavailable"}:
-            provider_blockers = provider.blockers or [provider.message]
+            provider_blockers = _string_list(provider.blockers) or _string_list(provider.message)
             if _provider_blocker_is_nonblocking_for_action(action, provider_id):
-                diagnostics.extend(str(item) for item in provider_blockers if item)
+                diagnostics.extend(provider_blockers)
             else:
                 blockers.extend(provider_blockers)
     if action.policy_action_id and action.policy_category:
-        blockers.extend(policy.action_blockers(action.policy_action_id, action.policy_category))
+        blockers.extend(_string_list(policy.action_blockers(action.policy_action_id, action.policy_category)))
 
     if blockers:
         availability = "blocked"
@@ -224,11 +226,11 @@ def _action_read(
         availability = "manual_command_required"
 
     last_report = action.report
-    report_path = REPO_ROOT / last_report if last_report else None
-    last_run_status = "report_available" if report_path and report_path.exists() else "not_run"
+    last_run_status = _report_status(last_report) if last_report else "not_run"
+    last_run_mtime = _report_mtime(last_report) if last_report else None
     last_run_at = (
-        datetime.fromtimestamp(report_path.stat().st_mtime, UTC).isoformat()
-        if report_path and report_path.exists()
+        datetime.fromtimestamp(last_run_mtime, UTC).isoformat()
+        if last_run_mtime is not None and last_run_status == "report_available"
         else None
     )
     return {
@@ -251,7 +253,7 @@ def _action_read(
         "required_flags": list(action.required_flags),
         "required_confirmations": list(action.required_confirmations),
         "availability": availability,
-        "blocker": "; ".join(dict.fromkeys(blockers)) if blockers else None,
+        "blocker": "; ".join(unique_preserving_order(blockers)) if blockers else None,
         "last_run_status": last_run_status,
         "last_run_at": last_run_at,
         "last_report": last_report,
@@ -261,7 +263,7 @@ def _action_read(
         "plan_endpoint": f"/api/v1/control/actions/{action.id}/plan",
         "run_endpoint": f"/api/v1/control/actions/{action.id}/run",
         "direct_run_supported": action.direct_run_supported,
-        "diagnostics": list(dict.fromkeys(diagnostics)),
+        "diagnostics": unique_preserving_order(diagnostics),
     }
 
 
@@ -293,7 +295,7 @@ def _section_read(
         {
             "label": label,
             "path": path,
-            "status": "available" if (REPO_ROOT / path).exists() else "not_run",
+            "status": "available" if _report_status(path) == "report_available" else "not_run",
         }
         for label, path in section.report_paths
     ]
@@ -557,6 +559,8 @@ def _control_lab_profile() -> dict[str, Any]:
     active = context["active_profile"]
     address_plan = context["resolved_address_plan"]
     global_settings = active.get("global_settings") or {}
+    dns_servers, dns_explicit = _control_profile_list_setting(active, global_settings, "dns_servers", "dns")
+    ntp_servers, ntp_explicit = _control_profile_list_setting(active, global_settings, "ntp_servers", "ntp")
     known = dict(address_plan)
     return {
         "active_profile_name": active["name"],
@@ -575,16 +579,16 @@ def _control_lab_profile() -> dict[str, Any]:
                 "cisco_management": settings.cisco_management_vlan or "Not set",
             },
             "mtu": os.getenv("LAB_MTU", "Not set"),
-            "dns": os.getenv("LAB_DNS_SERVERS")
-            or ", ".join(global_settings.get("dns_servers") or [])
-            or ", ".join(settings.cisco_dns_servers)
+            "dns": ", ".join(dns_servers)
+            or (None if dns_explicit else os.getenv("LAB_DNS_SERVERS"))
             or "Not set",
             "gateway": global_settings.get("gateway")
             or os.getenv("LAB_GATEWAY")
             or settings.cisco_management_gateway
             or "Not set",
-            "ntp": ", ".join(global_settings.get("ntp_servers") or [])
-            or os.getenv("LAB_NTP_SERVERS", "Not set"),
+            "ntp": ", ".join(ntp_servers)
+            or (None if ntp_explicit else os.getenv("LAB_NTP_SERVERS"))
+            or "Not set",
         },
         "configured_flags": {
             "CISCO_MGMT_CONFIGURED": settings.cisco_mgmt_configured,
@@ -600,8 +604,25 @@ def _control_lab_profile() -> dict[str, Any]:
         "stale_or_invalid_values": [
             str(item.get("recommended_action") or item)
             for item in context.get("mismatch_warnings") or []
-        ] or _profile_issues(address_plan, known),
+    ] or _profile_issues(address_plan, known),
     }
+
+
+def _control_profile_list_setting(
+    active: dict[str, Any],
+    global_settings: dict[str, Any],
+    global_key: str,
+    top_level_key: str,
+) -> tuple[list[str], bool]:
+    field_presence = active.get("_field_presence") if isinstance(active.get("_field_presence"), dict) else {}
+    global_keys = set(_string_list(field_presence.get("global_settings")))
+    top_level_keys = set(_string_list(field_presence.get("top_level")))
+    if global_key in global_keys:
+        return _string_list(global_settings.get(global_key)), True
+    if top_level_key in top_level_keys:
+        return _string_list(active.get(top_level_key)), True
+    values = _string_list(global_settings.get(global_key)) or _string_list(active.get(top_level_key))
+    return values, False
 
 
 def _section_not_in_scope(section_id: str, lab_profile: dict[str, Any]) -> bool:
@@ -660,19 +681,15 @@ def _firmware_summary_for_section(
                 (str(summary.get("package_name")) for summary in firmware_summaries.values() if summary.get("package_name")),
                 None,
             ),
-            "required_intermediate_versions": list(
-                dict.fromkeys(
-                    version
-                    for summary in firmware_summaries.values()
-                    for version in summary.get("required_intermediate_versions", [])
-                )
+            "required_intermediate_versions": unique_preserving_order(
+                version
+                for summary in firmware_summaries.values()
+                for version in summary.get("required_intermediate_versions", [])
             ),
-            "prechecks_required": list(
-                dict.fromkeys(
-                    check
-                    for summary in firmware_summaries.values()
-                    for check in summary.get("prechecks_required", [])
-                )
+            "prechecks_required": unique_preserving_order(
+                check
+                for summary in firmware_summaries.values()
+                for check in summary.get("prechecks_required", [])
             ),
             "reboot_required": any(summary.get("reboot_required") for summary in firmware_summaries.values()),
             "estimated_impact": _rollup_firmware_summary_impact(firmware_summaries),
@@ -891,7 +908,11 @@ def _provider_diagnostics(providers: list[ProviderStatus | None]) -> dict[str, A
 
 
 def _report_status(path: str) -> str:
-    return "report_available" if (REPO_ROOT / path).exists() else "not_run"
+    return "report_available" if path_exists(REPO_ROOT / path) else "not_run"
+
+
+def _report_mtime(path: str) -> float | None:
+    return path_mtime(REPO_ROOT / path)
 
 
 def _presence(value: Any) -> str:
@@ -917,12 +938,7 @@ def _display(value: Any) -> str:
 
 
 def _string_list(value: Any) -> list[str]:
-    if value is None:
-        return []
-    if isinstance(value, list):
-        return [str(item) for item in value if item]
-    text = str(value).strip()
-    return [text] if text else []
+    return unique_strings(value)
 
 
 def _action(
@@ -1104,6 +1120,8 @@ ACTIONS: tuple[ActionDefinition, ...] = (
         "Run iLO reachability diagnostics before auth or inventory.",
         "read-only",
         command="make provider-lab-ilo-reachability",
+        method="GET",
+        endpoint="/api/v1/providers/hpe-ilo/readiness",
         report="artifacts/codex-runs/ilo-local-lab-test-report.md",
         provider_ids=("ilo-redfish",),
     ),
@@ -1115,6 +1133,8 @@ ACTIONS: tuple[ActionDefinition, ...] = (
         "Validate iLO authentication readiness with redacted credential handling.",
         "read-only",
         command="make provider-lab-ilo-authentication",
+        method="GET",
+        endpoint="/api/v1/providers/hpe-ilo/readiness",
         provider_ids=("ilo-redfish",),
     ),
     _action(
@@ -1126,7 +1146,7 @@ ACTIONS: tuple[ActionDefinition, ...] = (
         "read-only",
         command="make provider-lab-ilo-inventory",
         method="GET",
-        endpoint="/api/v1/providers/ilo-redfish/readiness-summary",
+        endpoint="/api/v1/providers/hpe-ilo/baseline-preview",
         report="artifacts/codex-runs/ilo-real-run-report.md",
         provider_ids=("ilo-redfish",),
     ),
@@ -1348,6 +1368,8 @@ ACTIONS: tuple[ActionDefinition, ...] = (
         "Validate ESXi management endpoint after install/configuration.",
         "read-only",
         command="make provider-lab-esxi-detect-installer",
+        method="GET",
+        endpoint="/api/v1/providers/status",
         report="artifacts/codex-runs/esxi-management-readiness-report.md",
         provider_ids=("esxi-readonly",),
         required_flags=("ESXI_CONFIGURED=true",),
@@ -1520,6 +1542,8 @@ ACTIONS: tuple[ActionDefinition, ...] = (
         "Identify NetApp login or ONTAP shell state and run fixed read-only commands only after a shell is detected.",
         "read-only",
         command="make provider-lab-netapp-console-login-state",
+        method="POST",
+        endpoint="/api/v1/providers/netapp-ontap/console-login-state",
         report="artifacts/codex-runs/netapp-console-login-state-report.md",
         provider_ids=("netapp-ontap",),
     ),
@@ -1531,7 +1555,7 @@ ACTIONS: tuple[ActionDefinition, ...] = (
         "Read live NetApp state and persist the redacted result without applying changes.",
         "read-only",
         command="make provider-lab-netapp-live-state",
-        method="POST",
+        method="GET",
         endpoint="/api/v1/providers/netapp-ontap/live-state",
         report="artifacts/codex-runs/netapp-live-state-report.md",
         provider_ids=("netapp-ontap",),
@@ -1617,6 +1641,8 @@ ACTIONS: tuple[ActionDefinition, ...] = (
         "Collect read-only HA/node evidence and show the exact X20-01 blocker instead of a generic NetApp failure.",
         "read-only",
         command="make provider-lab-netapp-ha-node-diagnose",
+        method="POST",
+        endpoint="/api/v1/providers/netapp-ontap/ha-node-diagnose",
         report="artifacts/codex-runs/netapp-ha-node-remediation-report.md",
         provider_ids=("netapp-ontap",),
     ),
@@ -1824,6 +1850,8 @@ ACTIONS: tuple[ActionDefinition, ...] = (
         "Report SP/BMC, disk, and shelf firmware inventory readiness when ONTAP access is available.",
         "read-only",
         command="make provider-lab-netapp-ontap-upgrade-inventory",
+        method="GET",
+        endpoint="/api/v1/providers/netapp-ontap/ontap-upgrade/inventory",
         report="artifacts/codex-runs/netapp-upgrade-inventory-report.md",
         provider_ids=("netapp-ontap",),
     ),
@@ -2024,7 +2052,7 @@ ACTIONS: tuple[ActionDefinition, ...] = (
         "read-only",
         command="make provider-lab-firmware-compliance",
         method="GET",
-        endpoint="/api/v1/providers/ilo-redfish/upgrade-readiness",
+        endpoint="/api/v1/lab/firmware-compliance",
         report="artifacts/codex-runs/firmware-compliance-gate-final-report.md",
     ),
     _action(

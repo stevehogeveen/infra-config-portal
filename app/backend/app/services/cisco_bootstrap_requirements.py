@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import re
 from dataclasses import asdict, dataclass
 from ipaddress import ip_address
@@ -8,6 +7,13 @@ from pathlib import Path
 from typing import Any
 
 from app.core.config import settings
+from app.services.json_file_store import read_json_object, write_json_object
+from app.services.list_utils import unique_preserving_order
+from app.services.provider_profile_defaults import (
+    active_cisco_network_defaults,
+    first_configured,
+    first_configured_list,
+)
 
 PROVIDER_ID = "cisco-bootstrap-requirements"
 STATE_PATH = Path(__file__).resolve().parents[4] / ".local" / "cisco" / "bootstrap-requirements.json"
@@ -62,43 +68,55 @@ class CiscoBootstrapRequirementsInput:
 
 def get_cisco_bootstrap_requirements() -> dict[str, Any]:
     saved = _load_saved_requirements()
+    profile_defaults = active_cisco_network_defaults()
     return build_cisco_bootstrap_requirements(
-        planned_management_ip=_coalesce(saved.get("planned_management_ip"), settings.cisco_target_ip),
-        subnet_prefix=_coalesce(saved.get("subnet_prefix"), settings.cisco_management_prefix),
-        gateway=_coalesce(saved.get("gateway"), settings.cisco_management_gateway),
-        management_vlan=_coalesce(saved.get("management_vlan"), settings.cisco_management_vlan),
-        management_interface=_coalesce(
+        planned_management_ip=first_configured(
+            saved.get("planned_management_ip"),
+            profile_defaults.get("planned_management_ip"),
+            settings.cisco_target_ip,
+        ),
+        subnet_prefix=first_configured(
+            saved.get("subnet_prefix"),
+            profile_defaults.get("subnet_prefix"),
+            settings.cisco_management_prefix,
+        ),
+        gateway=first_configured(saved.get("gateway"), profile_defaults.get("gateway"), settings.cisco_management_gateway),
+        management_vlan=first_configured(
+            saved.get("management_vlan"),
+            profile_defaults.get("management_vlan"),
+            settings.cisco_management_vlan,
+        ),
+        management_interface=first_configured(
             saved.get("management_interface"),
             settings.cisco_management_interface,
         ),
-        management_strategy=_coalesce(
+        management_strategy=first_configured(
             saved.get("management_strategy"),
             settings.cisco_management_strategy,
         ),
-        hostname=_coalesce(saved.get("hostname"), settings.cisco_hostname),
-        domain_name=_coalesce(saved.get("domain_name"), settings.cisco_domain_name),
-        dns_servers=_list_value(saved.get("dns_servers")) or list(settings.cisco_dns_servers),
+        hostname=first_configured(saved.get("hostname"), settings.cisco_hostname),
+        domain_name=first_configured(saved.get("domain_name"), settings.cisco_domain_name),
+        dns_servers=first_configured_list(
+            saved.get("dns_servers") if "dns_servers" in saved else None,
+            profile_defaults.get("dns_servers"),
+            list(settings.cisco_dns_servers),
+        ),
         local_admin_username_configured=_bool_saved(
             saved.get("local_admin_username_configured"),
             bool(settings.cisco_test_username),
         ),
-        local_admin_username_reference=_coalesce(
+        local_admin_username_reference=first_configured(
             saved.get("local_admin_username_reference"),
             "local environment username configured" if settings.cisco_test_username else None,
         ),
-        operator_notes=_coalesce(saved.get("operator_notes"), None),
+        operator_notes=first_configured(saved.get("operator_notes"), None),
         management_configured=settings.cisco_mgmt_configured,
     )
 
 
 def save_cisco_bootstrap_requirements(payload: dict[str, Any]) -> dict[str, Any]:
     parsed = _validate_input(payload)
-    STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    temp_path = STATE_PATH.with_suffix(".tmp")
-    with temp_path.open("w", encoding="utf-8") as handle:
-        json.dump(asdict(parsed), handle, indent=2, sort_keys=True)
-        handle.write("\n")
-    temp_path.replace(STATE_PATH)
+    write_json_object(STATE_PATH, asdict(parsed))
     return build_cisco_bootstrap_requirements(
         planned_management_ip=parsed.planned_management_ip,
         subnet_prefix=parsed.subnet_prefix,
@@ -301,14 +319,7 @@ def _warnings(management_configured: bool) -> list[str]:
 
 
 def _load_saved_requirements() -> dict[str, Any]:
-    if not STATE_PATH.exists():
-        return {}
-    try:
-        with STATE_PATH.open("r", encoding="utf-8") as handle:
-            value = json.load(handle)
-    except (OSError, json.JSONDecodeError):
-        return {}
-    return value if isinstance(value, dict) else {}
+    return read_json_object(STATE_PATH)
 
 
 def _validate_input(payload: dict[str, Any]) -> CiscoBootstrapRequirementsInput:
@@ -353,16 +364,26 @@ def _string(value: object) -> str | None:
     return value.strip() if isinstance(value, str) and value.strip() else None
 
 
-def _coalesce(left: object, right: str | None) -> str | None:
-    return left if isinstance(left, str) and left.strip() else right
-
-
 def _list_value(value: object) -> list[str]:
-    if isinstance(value, list):
-        return [item.strip() for item in value if isinstance(item, str) and item.strip()]
+    if isinstance(value, (list, tuple, set)):
+        candidates = value
     if isinstance(value, str):
-        return [item.strip() for item in value.split(",") if item.strip()]
-    return []
+        candidates = value.split(",")
+    elif not isinstance(value, (list, tuple, set)):
+        return []
+    cleaned = [_clean_list_item(item) for item in candidates]
+    return _unique([item for item in cleaned if item])
+
+
+def _clean_list_item(value: object) -> str | None:
+    if not isinstance(value, str):
+        return None
+    text = value.strip().strip("\"'")
+    return text or None
+
+
+def _unique(values: list[str]) -> list[str]:
+    return unique_preserving_order(values)
 
 
 def _bool_saved(value: object, default: bool) -> bool:

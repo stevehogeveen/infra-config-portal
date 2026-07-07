@@ -2,16 +2,33 @@ from __future__ import annotations
 
 import json
 import os
+import re
+import socket
 import subprocess
 import sys
 import tempfile
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
+
+import paramiko
 
 from app.core.config import settings
 from app.providers.action_policy import ActionCategory, LOCAL_LAB_READWRITE_MODE, current_lab_action_policy
 from app.providers.redaction import redact_sensitive
+from app.services.env_utils import env_flag as _env_flag
+from app.services.json_file_store import write_json_object, write_text_value
+from app.services.json_utils import parse_json_object
+from app.services.list_utils import unique_preserving_order, unique_strings
+from app.services.path_utils import (
+    display_path,
+    is_directory as _is_directory,
+    is_file as _is_file,
+    path_exists as _path_exists,
+    repo_relative_path,
+    rglob_paths,
+)
+from app.services.temp_file_utils import remove_file_best_effort
 
 PROVIDER_ID = "esxi-readonly"
 REPO_ROOT = Path(__file__).resolve().parents[4]
@@ -30,6 +47,7 @@ VALIDATION_JSON = CODEX_RUN_DIR / "esxi-vm-deploy-validation-redacted.json"
 IMPORT_OPTIONS_JSON = CODEX_RUN_DIR / "esxi-vm-deploy-import-options-redacted.json"
 VM_INFO_JSON = CODEX_RUN_DIR / "esxi-vm-deploy-vm-info-redacted.json"
 DATASTORE_INFO_JSON = CODEX_RUN_DIR / "esxi-vm-deploy-datastore-info-redacted.json"
+INFLIGHT_LOCK_STALE_AFTER = timedelta(minutes=40)
 
 
 def build_esxi_vm_deploy_preview(*, write_report: bool = True) -> dict[str, Any]:
@@ -121,12 +139,34 @@ def apply_esxi_vm_deploy(*, write_report: bool = True) -> dict[str, Any]:
     }
 
     if not blocked:
-        result = _run_guarded_import(plan, target)
-        payload["apply"] = result["apply"]
-        payload["status"] = result["status"]
-        payload["message"] = result["message"]
-        payload["blockers"] = result["blockers"]
-        payload["warnings"] = [*payload["warnings"], *result["warnings"]]
+        lock_path = _inflight_lock_path(plan)
+        lock_handle, stale_lock_warning = _try_acquire_inflight_lock(lock_path, plan)
+        if lock_handle is None:
+            blocker = (
+                f"VM deploy is already in flight for `{plan['vm_name']}` on datastore `{plan['datastore']}`; "
+                "wait for the current import to finish before retrying."
+            )
+            payload["status"] = "blocked"
+            payload["message"] = "Direct ESXi OVF deploy apply was refused because an import is already in flight for this VM target."
+            payload["apply_enabled"] = False
+            payload["apply"]["in_flight_refused"] = True
+            payload["blockers"] = _unique([*payload["blockers"], blocker])
+            if stale_lock_warning:
+                payload["warnings"].append(stale_lock_warning)
+            payload["next_safe_action"] = "Wait for the current VM deploy run to finish, then validate VM inventory before retrying."
+        else:
+            try:
+                result = _run_guarded_import(plan, target)
+            finally:
+                _release_inflight_lock(lock_handle, lock_path)
+            payload["apply"] = result["apply"]
+            payload["status"] = result["status"]
+            payload["message"] = result["message"]
+            payload["blockers"] = result["blockers"]
+            payload["warnings"] = [*payload["warnings"], *result["warnings"]]
+            if stale_lock_warning:
+                payload["warnings"].append(stale_lock_warning)
+            payload["not_attempted"] = _not_attempted(payload["apply"])
 
     sanitized = _sanitize(payload)
     if write_report:
@@ -184,11 +224,11 @@ def _deployment_plan() -> dict[str, Any]:
     datastore = os.getenv("VM_DEPLOY_DATASTORE") or settings.netapp_nfs_datastore_name
     network = os.getenv("VM_DEPLOY_NETWORK", "VM Network")
     vm_name = os.getenv("VM_DEPLOY_VM_NAME", "netapp-nfs-ovf-preview-vm")
-    power_on = os.getenv("VM_DEPLOY_POWER_ON", "").strip().lower() in {"1", "true", "yes", "on"}
+    power_on = _env_flag("VM_DEPLOY_POWER_ON")
     return {
         "vm_name": vm_name,
         "ovf_path": _safe_path(ovf_path),
-        "ovf_present": bool(ovf_path and ovf_path.exists()),
+        "ovf_present": bool(ovf_path and _path_exists(ovf_path)),
         "datastore": datastore,
         "network": network,
         "disk_provisioning": os.getenv("VM_DEPLOY_DISK_PROVISIONING", "thin"),
@@ -210,15 +250,20 @@ def _target_state() -> dict[str, Any]:
         missing.append("GOVC_USERNAME or ESXI_TEST_USERNAME")
     if not env.get("GOVC_PASSWORD"):
         missing.append("GOVC_PASSWORD or ESXI_TEST_PASSWORD")
-    can_query = bool(govc and not missing and settings.esxi_configured)
+    govc_ready = bool(govc and not missing and settings.esxi_configured)
+    ssh_target = _ssh_target_state()
+    can_query = bool(govc_ready or ssh_target["can_query"])
     return {
         "provider_mode": settings.provider_mode,
         "esxi_configured": settings.esxi_configured,
         "esxi_host_configured": bool(settings.esxi_test_host),
         "govc_available": bool(govc),
+        "ssh_available": bool(ssh_target["can_query"]),
+        "access_method": "govc" if govc_ready else "ssh" if ssh_target["can_query"] else "none",
         "govc_url_configured": bool(env.get("GOVC_URL")),
         "username_configured": bool(env.get("GOVC_USERNAME")),
         "credential_configured": bool(env.get("GOVC_PASSWORD")),
+        "ssh_target": ssh_target,
         "tls_verify": settings.esxi_test_verify_tls,
         "missing_fields": missing,
         "can_query": can_query,
@@ -233,10 +278,11 @@ def _preview_blockers(plan: dict[str, Any], target: dict[str, Any], datastore: d
         blockers.append("VM_DEPLOY_DATASTORE or NETAPP_NFS_DATASTORE_NAME is required.")
     if not settings.esxi_configured:
         blockers.append("ESXI_CONFIGURED=true is required before direct ESXi VM deployment.")
-    if not target["govc_available"]:
+    if not target["govc_available"] and target.get("access_method") != "ssh":
         blockers.append("govc is not installed or not on PATH.")
-    if target["missing_fields"]:
-        blockers.append(f"Direct ESXi govc target fields are missing: {', '.join(target['missing_fields'])}.")
+    missing_fields = _string_list(target.get("missing_fields"))
+    if missing_fields:
+        blockers.append(f"Direct ESXi govc target fields are missing: {', '.join(missing_fields)}.")
     if datastore.get("checked") and not datastore.get("exists"):
         blockers.append(f"Target datastore `{plan['datastore']}` is not visible to direct ESXi govc.")
     if plan["target_is_netapp_nfs"] and not datastore.get("exists"):
@@ -249,14 +295,14 @@ def _apply_gates(plan: dict[str, Any], target: dict[str, Any], datastore: dict[s
     flag_state = {
         "provider_mode": settings.provider_mode,
         "local_lab_readwrite": settings.provider_mode == LOCAL_LAB_READWRITE_MODE,
-        "vm_deploy_apply": os.getenv("VM_DEPLOY_APPLY") == "true",
+        "vm_deploy_apply": _env_flag("VM_DEPLOY_APPLY"),
         "vm_deploy_confirm": os.getenv("VM_DEPLOY_CONFIRM") == VM_DEPLOY_CONFIRM_PHRASE,
-        "vm_deploy_allow_create": os.getenv("VM_DEPLOY_ALLOW_CREATE") == "true",
+        "vm_deploy_allow_create": _env_flag("VM_DEPLOY_ALLOW_CREATE"),
         "vm_deploy_power_on": plan["power_on"],
         "vm_deploy_power_on_confirm": os.getenv("VM_DEPLOY_POWER_ON_CONFIRM") == VM_DEPLOY_POWER_ON_CONFIRM_PHRASE,
     }
     blockers = []
-    blockers.extend(policy.action_blockers("vm.deploy-ovf", ActionCategory.VM_DEPLOY))
+    blockers.extend(_string_list(policy.action_blockers("vm.deploy-ovf", ActionCategory.VM_DEPLOY)))
     blockers.extend(_preview_blockers(plan, target, datastore))
     if not flag_state["vm_deploy_apply"]:
         blockers.append("VM_DEPLOY_APPLY=true is required.")
@@ -271,7 +317,7 @@ def _apply_gates(plan: dict[str, Any], target: dict[str, Any], datastore: dict[s
 
 def _run_guarded_import(plan: dict[str, Any], target: dict[str, Any]) -> dict[str, Any]:
     ovf_path = _resolve_ovf_path()
-    if ovf_path is None or not ovf_path.exists():
+    if ovf_path is None or not _path_exists(ovf_path):
         return {
             "status": "failed",
             "message": "Direct ESXi OVF deploy failed because the OVF template disappeared before apply.",
@@ -307,10 +353,8 @@ def _run_guarded_import(plan: dict[str, Any], target: dict[str, Any]) -> dict[st
         }
 
     options = _import_options(import_spec.get("stdout"), plan)
-    IMPORT_OPTIONS_JSON.write_text(json.dumps(_sanitize(options), indent=2) + "\n", encoding="utf-8")
-    with tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".json", delete=False) as handle:
-        json.dump(options, handle, indent=2)
-        options_path = Path(handle.name)
+    write_json_object(IMPORT_OPTIONS_JSON, _sanitize(options))
+    options_path = _write_temp_json(options, prefix="esxi-vm-deploy-options-")
     try:
         import_ovf = _run_govc(
             [
@@ -327,10 +371,7 @@ def _run_guarded_import(plan: dict[str, Any], target: dict[str, Any]) -> dict[st
             timeout=1800,
         )
     finally:
-        try:
-            options_path.unlink()
-        except OSError:
-            pass
+        remove_file_best_effort(options_path)
 
     apply_state["govc_import_ovf_attempted"] = True
     apply_state["import_ovf_return_code"] = import_ovf["return_code"]
@@ -356,11 +397,123 @@ def _run_guarded_import(plan: dict[str, Any], target: dict[str, Any]) -> dict[st
     }
 
 
-def _import_options(stdout: str | None, plan: dict[str, Any]) -> dict[str, Any]:
+def _inflight_lock_path(plan: dict[str, Any]) -> Path:
+    key = f"{plan.get('vm_name') or 'vm'}-{plan.get('datastore') or 'datastore'}"
+    slug = re.sub(r"[^A-Za-z0-9_.-]+", "-", key).strip("-")[:96] or "vm-deploy"
+    return CODEX_RUN_DIR / f"esxi-vm-deploy-inflight-{slug}.lock"
+
+
+def _try_acquire_inflight_lock(lock_path: Path, plan: dict[str, Any]) -> tuple[Any | None, str | None]:
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    stale_warning = None
+    for attempt in range(2):
+        try:
+            handle = lock_path.open("x", encoding="utf-8")
+            break
+        except FileExistsError:
+            if attempt == 0:
+                cleared, warning = _clear_stale_inflight_lock(lock_path)
+                stale_warning = warning
+                if cleared:
+                    continue
+            return None, stale_warning
     try:
-        options = json.loads(stdout or "{}")
-    except json.JSONDecodeError:
-        options = {}
+        json.dump(
+            _sanitize(
+                {
+                    "started_at": _now(),
+                    "pid": os.getpid(),
+                    "vm_name": plan.get("vm_name"),
+                    "datastore": plan.get("datastore"),
+                    "ovf_path": plan.get("ovf_path"),
+                }
+            ),
+            handle,
+        )
+        handle.flush()
+        return handle, stale_warning
+    except Exception:
+        handle.close()
+        remove_file_best_effort(lock_path)
+        raise
+
+
+def _clear_stale_inflight_lock(lock_path: Path) -> tuple[bool, str | None]:
+    try:
+        payload = json.loads(lock_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False, None
+    if not isinstance(payload, dict):
+        return False, None
+    started_at = _parse_timestamp(str(payload.get("started_at") or ""))
+    if started_at is None:
+        return False, None
+    if datetime.now(UTC) - started_at <= INFLIGHT_LOCK_STALE_AFTER:
+        return False, None
+    pid = _int_or_none(payload.get("pid"))
+    if pid is None or _process_is_running(pid):
+        return (
+            False,
+            "A VM deploy in-flight lock is older than 40 minutes, but the owning backend process could not be proven stopped; refusing a concurrent import.",
+        )
+    remove_file_best_effort(lock_path)
+    return True, "A stale VM deploy in-flight lock older than 40 minutes was cleared because its backend process is no longer running."
+
+
+def _int_or_none(value: Any) -> int | None:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _process_is_running(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    if pid == os.getpid():
+        return True
+    if sys.platform == "win32":
+        try:
+            completed = subprocess.run(
+                ["tasklist", "/FI", f"PID eq {pid}", "/FO", "CSV", "/NH"],
+                capture_output=True,
+                check=False,
+                text=True,
+                timeout=10,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            return True
+        if completed.returncode != 0:
+            return True
+        return f'"{pid}"' in completed.stdout or f",{pid}," in completed.stdout
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        return False
+    return True
+
+
+def _parse_timestamp(value: str) -> datetime | None:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
+
+
+def _release_inflight_lock(lock_handle: Any, lock_path: Path) -> None:
+    try:
+        lock_handle.close()
+    finally:
+        remove_file_best_effort(lock_path)
+
+
+def _import_options(stdout: str | None, plan: dict[str, Any]) -> dict[str, Any]:
+    options = _json_stdout_object(stdout)
     options["Name"] = plan["vm_name"]
     options["DiskProvisioning"] = plan["disk_provisioning"]
     options["PowerOn"] = plan["power_on"]
@@ -378,6 +531,8 @@ def _import_options(stdout: str | None, plan: dict[str, Any]) -> dict[str, Any]:
 
 
 def _datastore_info(plan: dict[str, Any], target: dict[str, Any]) -> dict[str, Any]:
+    if target.get("access_method") == "ssh":
+        return _ssh_datastore_info(plan, target)
     result = _run_govc(["datastore.info", "-json", plan["datastore"]], env=_govc_env(), timeout=30)
     info = {
         "checked": True,
@@ -386,11 +541,13 @@ def _datastore_info(plan: dict[str, Any], target: dict[str, Any]) -> dict[str, A
         "stderr": result["stderr"],
         "summary": _datastore_summary(result["stdout"]),
     }
-    DATASTORE_INFO_JSON.write_text(json.dumps(_sanitize(info), indent=2) + "\n", encoding="utf-8")
+    write_json_object(DATASTORE_INFO_JSON, _sanitize(info))
     return info
 
 
 def _vm_info(plan: dict[str, Any], target: dict[str, Any]) -> dict[str, Any]:
+    if target.get("access_method") == "ssh":
+        return _ssh_vm_info(plan, target)
     result = _run_govc(["vm.info", "-json", plan["vm_name"]], env=_govc_env(), timeout=30)
     info = {
         "checked": True,
@@ -399,7 +556,7 @@ def _vm_info(plan: dict[str, Any], target: dict[str, Any]) -> dict[str, Any]:
         "stderr": result["stderr"],
         "summary": _vm_summary(result["stdout"]),
     }
-    VM_INFO_JSON.write_text(json.dumps(_sanitize(info), indent=2) + "\n", encoding="utf-8")
+    write_json_object(VM_INFO_JSON, _sanitize(info))
     return info
 
 
@@ -436,9 +593,10 @@ def _govc_binary() -> str | None:
     if found:
         return found
     for directory in (Path(sys.executable).parent, REPO_ROOT / ".local" / "bin"):
-        candidate = directory / "govc"
-        if candidate.exists() and candidate.is_file():
-            return str(candidate)
+        for executable in ("govc.exe", "govc"):
+            candidate = directory / executable
+            if _is_file(candidate):
+                return str(candidate)
     return None
 
 
@@ -456,26 +614,23 @@ def _resolve_ovf_path() -> Path | None:
     configured = os.getenv("VM_DEPLOY_OVF_PATH")
     if configured:
         path = Path(configured).expanduser()
-        return path if path.exists() else path
+        return path if _path_exists(path) else path
     roots = [Path(item).expanduser() for item in settings.media_inventory_dirs]
     roots.append(DEFAULT_MEDIA_ROOT)
     for root in roots:
-        if not root.exists() or not root.is_dir():
+        if not _is_directory(root):
             continue
-        matches = sorted(root.rglob("*.ovf"), key=lambda item: str(item).lower())
+        matches = sorted(rglob_paths(root, "*.ovf"), key=lambda item: str(item).lower())
         if matches:
             return matches[0]
     return None
 
 
 def _datastore_summary(stdout: str | None) -> dict[str, Any] | None:
-    if not stdout:
+    payload = _json_stdout_object(stdout)
+    if not payload:
         return None
-    try:
-        payload = json.loads(stdout)
-    except json.JSONDecodeError:
-        return None
-    datastores = payload.get("Datastores") if isinstance(payload, dict) else None
+    datastores = payload.get("Datastores")
     if not isinstance(datastores, list) or not datastores:
         return None
     summary = datastores[0].get("Summary") if isinstance(datastores[0], dict) else None
@@ -491,13 +646,10 @@ def _datastore_summary(stdout: str | None) -> dict[str, Any] | None:
 
 
 def _vm_summary(stdout: str | None) -> dict[str, Any] | None:
-    if not stdout:
+    payload = _json_stdout_object(stdout)
+    if not payload:
         return None
-    try:
-        payload = json.loads(stdout)
-    except json.JSONDecodeError:
-        return None
-    virtual_machines = payload.get("VirtualMachines") if isinstance(payload, dict) else None
+    virtual_machines = payload.get("VirtualMachines")
     if not isinstance(virtual_machines, list) or not virtual_machines:
         return None
     vm = virtual_machines[0]
@@ -514,12 +666,129 @@ def _vm_summary(stdout: str | None) -> dict[str, Any] | None:
     }
 
 
+def _json_stdout_object(stdout: str | None) -> dict[str, Any]:
+    return parse_json_object(stdout)
+
+
 def _skipped_datastore_info() -> dict[str, Any]:
     return {"checked": False, "exists": False, "return_code": None, "stderr": None, "summary": None}
 
 
 def _skipped_vm_info() -> dict[str, Any]:
     return {"checked": False, "exists": False, "return_code": None, "stderr": None, "summary": None}
+
+
+def _ssh_target_state() -> dict[str, Any]:
+    missing = []
+    if not settings.esxi_configured:
+        missing.append("ESXI_CONFIGURED=true")
+    if not settings.esxi_test_host:
+        missing.append("ESXI_TEST_HOST")
+    if not settings.esxi_test_username:
+        missing.append("ESXI_TEST_USERNAME")
+    if not settings.esxi_test_password:
+        missing.append("ESXI_TEST_PASSWORD")
+    reachable = False
+    if not missing and settings.esxi_test_host:
+        reachable = _tcp_reachable(settings.esxi_test_host, 22)
+        if not reachable:
+            missing.append("ESXi SSH port 22")
+    return {
+        "host": settings.esxi_test_host,
+        "username_configured": bool(settings.esxi_test_username),
+        "credential_configured": bool(settings.esxi_test_password),
+        "ssh_22_reachable": reachable,
+        "missing_fields": missing,
+        "can_query": not missing,
+    }
+
+
+def _tcp_reachable(host: str, port: int) -> bool:
+    try:
+        with socket.create_connection((host, port), timeout=3.0):
+            return True
+    except OSError:
+        return False
+
+
+def _run_esxi_ssh(command: str, *, timeout: int = 30) -> dict[str, Any]:
+    if not (settings.esxi_test_host and settings.esxi_test_username and settings.esxi_test_password):
+        return {"return_code": 255, "stdout": "", "stderr": "ESXi SSH credentials are not configured."}
+    client = paramiko.SSHClient()
+    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    try:
+        client.connect(
+            hostname=settings.esxi_test_host,
+            username=settings.esxi_test_username,
+            password=settings.esxi_test_password,
+            timeout=timeout,
+            banner_timeout=timeout,
+            auth_timeout=timeout,
+            look_for_keys=False,
+            allow_agent=False,
+        )
+        _, stdout, stderr = client.exec_command(command, timeout=timeout)
+        stdout_text = stdout.read().decode(errors="replace")
+        stderr_text = stderr.read().decode(errors="replace")
+        return_code = stdout.channel.recv_exit_status()
+        return {"return_code": return_code, "stdout": stdout_text, "stderr": stderr_text}
+    except Exception as exc:
+        return {"return_code": 255, "stdout": "", "stderr": f"{exc.__class__.__name__}: {exc}"}
+    finally:
+        client.close()
+
+
+def _ssh_datastore_info(plan: dict[str, Any], target: dict[str, Any]) -> dict[str, Any]:
+    result = _run_esxi_ssh("esxcli storage nfs list", timeout=30)
+    summary = _ssh_datastore_summary(result.get("stdout"), plan["datastore"])
+    info = {
+        "checked": result["return_code"] == 0,
+        "exists": bool(summary),
+        "return_code": result["return_code"],
+        "stderr": result.get("stderr"),
+        "summary": summary,
+        "access_method": "ssh-esxcli",
+        "ssh_target": target.get("ssh_target"),
+    }
+    write_json_object(DATASTORE_INFO_JSON, _sanitize(info))
+    return info
+
+
+def _ssh_datastore_summary(stdout: Any, datastore_name: str) -> dict[str, Any] | None:
+    for line in str(stdout or "").splitlines():
+        if not line.strip() or line.lower().startswith("volume name"):
+            continue
+        columns = line.split()
+        if columns and columns[0] == datastore_name:
+            return {
+                "name": columns[0],
+                "remote_host": columns[1] if len(columns) > 1 else None,
+                "remote_path": columns[2] if len(columns) > 2 else None,
+                "accessible": True,
+                "mounted": True,
+                "type": "NFS",
+            }
+    return None
+
+
+def _ssh_vm_info(plan: dict[str, Any], target: dict[str, Any]) -> dict[str, Any]:
+    result = _run_esxi_ssh("vim-cmd vmsvc/getallvms", timeout=30)
+    exists = _ssh_vm_exists(result.get("stdout"), plan["vm_name"])
+    info = {
+        "checked": result["return_code"] == 0,
+        "exists": exists,
+        "return_code": result["return_code"],
+        "stderr": result.get("stderr"),
+        "summary": {"name": plan["vm_name"], "access_method": "ssh-vim-cmd"} if exists else None,
+        "access_method": "ssh-vim-cmd",
+        "ssh_target": target.get("ssh_target"),
+    }
+    write_json_object(VM_INFO_JSON, _sanitize(info))
+    return info
+
+
+def _ssh_vm_exists(stdout: Any, vm_name: str) -> bool:
+    return any(vm_name in line.split() for line in str(stdout or "").splitlines())
 
 
 def _required_flags(plan: dict[str, Any]) -> list[str]:
@@ -554,8 +823,9 @@ def _warnings(plan: dict[str, Any]) -> list[str]:
     return warnings
 
 
-def _not_attempted() -> list[str]:
-    return [
+def _not_attempted(apply_state: dict[str, Any] | None = None) -> list[str]:
+    apply_state = apply_state or {}
+    not_attempted = [
         "VM import/create",
         "VM power on",
         "VM delete",
@@ -564,6 +834,11 @@ def _not_attempted() -> list[str]:
         "ESXi host reconfiguration",
         "vCenter operation",
     ]
+    if apply_state.get("govc_import_ovf_attempted"):
+        not_attempted.remove("VM import/create")
+    if apply_state.get("vm_power_on_attempted"):
+        not_attempted.remove("VM power on")
+    return not_attempted
 
 
 def _markdown(payload: dict[str, Any]) -> str:
@@ -602,8 +877,23 @@ def _markdown(payload: dict[str, Any]) -> str:
 
 def _write_payload(json_path: Path, report_path: Path, payload: dict[str, Any], markdown_builder: Any) -> None:
     CODEX_RUN_DIR.mkdir(parents=True, exist_ok=True)
-    json_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
-    report_path.write_text(markdown_builder(payload), encoding="utf-8")
+    write_json_object(json_path, payload)
+    write_text_value(report_path, markdown_builder(payload))
+
+
+def _write_temp_json(payload: Any, *, prefix: str) -> Path:
+    CODEX_RUN_DIR.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(
+        "w",
+        delete=False,
+        dir=CODEX_RUN_DIR,
+        encoding="utf-8",
+        prefix=prefix[:48],
+        suffix=".json",
+    ) as handle:
+        json.dump(payload, handle, indent=2)
+        handle.write("\n")
+        return Path(handle.name)
 
 
 def _sanitize(payload: Any) -> Any:
@@ -621,19 +911,20 @@ def _redaction_values() -> list[str]:
 def _safe_path(path: Path | None) -> str | None:
     if path is None:
         return None
-    try:
-        return str(path.resolve().relative_to(REPO_ROOT))
-    except ValueError:
-        return str(path)
+    return display_path(path.resolve(), REPO_ROOT)
 
 
 def _rel(path: Path) -> str:
-    return str(path.relative_to(REPO_ROOT))
+    return repo_relative_path(path, REPO_ROOT)
 
 
 def _now() -> str:
     return datetime.now(UTC).isoformat()
 
 
-def _unique(values: list[str]) -> list[str]:
-    return list(dict.fromkeys(values))
+def _string_list(value: Any) -> list[str]:
+    return unique_strings(value)
+
+
+def _unique(values: list[Any]) -> list[Any]:
+    return unique_preserving_order(values, skip_falsey=True)

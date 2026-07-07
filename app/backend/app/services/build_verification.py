@@ -13,11 +13,22 @@ from shutil import which
 from typing import Any
 
 from app.core.config import settings
+from app.providers.probe_cache import get_probe_result
 from app.providers.redaction import redact_sensitive
 from app.services.hpe_raid import REPO_ROOT
 from app.services.lab_profiles import active_lab_profile_context
 from app.services.lab_topology import configured_runtime_values
+from app.services.json_file_store import read_json_object, write_json_object, write_text_value
+from app.services.list_utils import unique_preserving_order
 from app.services.netapp_state import get_netapp_runtime_state, read_netapp_live_state
+from app.services.path_utils import (
+    is_directory as _is_directory,
+    is_file as _is_file,
+    path_exists as _path_exists,
+    repo_relative_path,
+    rglob_paths,
+    safe_read_text,
+)
 from app.services.status_source import attach_status_source, status_source_metadata
 
 CODEX_RUN_DIR = REPO_ROOT / "artifacts" / "codex-runs"
@@ -42,6 +53,10 @@ CLASSIFICATION_ORDER = {
 }
 
 
+def _rel(path: Path) -> str:
+    return repo_relative_path(path, REPO_ROOT)
+
+
 def build_lab_build_verification(*, check_ports: bool = True) -> dict[str, Any]:
     CODEX_RUN_DIR.mkdir(parents=True, exist_ok=True)
     checked_at = datetime.now(UTC).isoformat()
@@ -59,25 +74,22 @@ def build_lab_build_verification(*, check_ports: bool = True) -> dict[str, Any]:
         profile_context=profile_context,
     )
     toolchain = build_toolchain_availability()
+    licenses = _license_checks()
     checklist = _post_build_checklist(protocols)
     failures = _failure_classification(credentials, lab_ip_profile, mtu, protocols)
     runtime_guard = _runtime_mode_guard()
     if runtime_guard:
         failures = [runtime_guard, *failures]
-    blockers = list(
-        dict.fromkeys(
-            _blocker_text_with_source(item)
-            for item in failures
-            if item["classification"]
-            in {"hard_fail", "stale_config", "operator_action_required", "blocked_by_prior_stage"}
-        )
+    blockers = unique_preserving_order(
+        _blocker_text_with_source(item)
+        for item in failures
+        if item["classification"]
+        in {"hard_fail", "stale_config", "operator_action_required", "blocked_by_prior_stage"}
     )
-    warnings = list(
-        dict.fromkeys(
-            _blocker_text_with_source(item)
-            for item in failures
-            if item["classification"] == "warning"
-        )
+    warnings = unique_preserving_order(
+        _blocker_text_with_source(item)
+        for item in failures
+        if item["classification"] == "warning"
     )
     source_type = _build_verification_source_type(check_ports=check_ports)
     certification_state = (
@@ -101,6 +113,7 @@ def build_lab_build_verification(*, check_ports: bool = True) -> dict[str, Any]:
         "lab_ip_profile": lab_ip_profile,
         "active_profile_context": profile_context,
         "credentials": credentials,
+        "licenses": licenses,
         "mtu": mtu,
         "protocols": protocols,
         "netapp_live_state": netapp_live_state,
@@ -110,15 +123,15 @@ def build_lab_build_verification(*, check_ports: bool = True) -> dict[str, Any]:
         "blockers": blockers,
         "warnings": warnings,
         "artifacts": {
-            "report": str(REPORT.relative_to(REPO_ROOT)),
-            "current_state_report": str(CURRENT_STATE_REPORT.relative_to(REPO_ROOT)),
-            "evidence_report": str(EVIDENCE_REPORT.relative_to(REPO_ROOT)),
-            "summary_json": str(SUMMARY.relative_to(REPO_ROOT)),
-            "lab_ip_profile_report": str(LAB_IP_REPORT.relative_to(REPO_ROOT)),
-            "lab_ip_profile_hardening_report": str(LAB_IP_HARDENING_REPORT.relative_to(REPO_ROOT)),
-            "classification_report": str(CLASSIFICATION_REPORT.relative_to(REPO_ROOT)),
-            "failure_case_report": str(FAILURE_CASE_REPORT.relative_to(REPO_ROOT)),
-            "toolchain_availability_report": str(TOOLCHAIN_AVAILABILITY_REPORT.relative_to(REPO_ROOT)),
+            "report": _rel(REPORT),
+            "current_state_report": _rel(CURRENT_STATE_REPORT),
+            "evidence_report": _rel(EVIDENCE_REPORT),
+            "summary_json": _rel(SUMMARY),
+            "lab_ip_profile_report": _rel(LAB_IP_REPORT),
+            "lab_ip_profile_hardening_report": _rel(LAB_IP_HARDENING_REPORT),
+            "classification_report": _rel(CLASSIFICATION_REPORT),
+            "failure_case_report": _rel(FAILURE_CASE_REPORT),
+            "toolchain_availability_report": _rel(TOOLCHAIN_AVAILABILITY_REPORT),
             "netapp_live_state_report": "artifacts/codex-runs/netapp-live-state-report.md",
             "netapp_state_automanagement_report": "artifacts/codex-runs/netapp-state-automanagement-report.md",
         },
@@ -130,22 +143,22 @@ def build_lab_build_verification(*, check_ports: bool = True) -> dict[str, Any]:
         checked_at=checked_at,
         recheck_command="make provider-lab-build-verification-live",
         evidence_artifacts=[
-            str(REPORT.relative_to(REPO_ROOT)),
-            str(CURRENT_STATE_REPORT.relative_to(REPO_ROOT)),
-            str(EVIDENCE_REPORT.relative_to(REPO_ROOT)),
-            str(SUMMARY.relative_to(REPO_ROOT)),
+            _rel(REPORT),
+            _rel(CURRENT_STATE_REPORT),
+            _rel(EVIDENCE_REPORT),
+            _rel(SUMMARY),
         ],
         is_operator_visible=source_type != "test_fixture",
     )
     sanitized = _sanitize(payload)
-    REPORT.write_text(_markdown(sanitized), encoding="utf-8")
-    CURRENT_STATE_REPORT.write_text(_current_state_markdown(sanitized), encoding="utf-8")
-    EVIDENCE_REPORT.write_text(_evidence_markdown(sanitized), encoding="utf-8")
-    LAB_IP_REPORT.write_text(_lab_ip_markdown(sanitized), encoding="utf-8")
-    LAB_IP_HARDENING_REPORT.write_text(_lab_ip_hardening_markdown(sanitized), encoding="utf-8")
-    CLASSIFICATION_REPORT.write_text(_classification_markdown(sanitized), encoding="utf-8")
-    FAILURE_CASE_REPORT.write_text(_failure_case_markdown(sanitized), encoding="utf-8")
-    SUMMARY.write_text(json.dumps(sanitized, indent=2), encoding="utf-8")
+    write_text_value(REPORT, _markdown(sanitized))
+    write_text_value(CURRENT_STATE_REPORT, _current_state_markdown(sanitized))
+    write_text_value(EVIDENCE_REPORT, _evidence_markdown(sanitized))
+    write_text_value(LAB_IP_REPORT, _lab_ip_markdown(sanitized))
+    write_text_value(LAB_IP_HARDENING_REPORT, _lab_ip_hardening_markdown(sanitized))
+    write_text_value(CLASSIFICATION_REPORT, _classification_markdown(sanitized))
+    write_text_value(FAILURE_CASE_REPORT, _failure_case_markdown(sanitized))
+    write_json_object(SUMMARY, sanitized)
     return sanitized
 
 
@@ -213,7 +226,7 @@ def build_toolchain_availability() -> dict[str, Any]:
         "managed_state": _managed_state_plan(),
         "firmware_strategy": _firmware_toolchain_strategy(),
         "artifacts": {
-            "report": str(TOOLCHAIN_AVAILABILITY_REPORT.relative_to(REPO_ROOT)),
+            "report": _rel(TOOLCHAIN_AVAILABILITY_REPORT),
         },
         "next_safe_action": (
             "Install missing required local packages before console-first lab workflows."
@@ -226,52 +239,48 @@ def build_toolchain_availability() -> dict[str, Any]:
         source_type="live_probe",
         checked_at=payload["checked_at"],
         recheck_command="make provider-lab-toolchain-check",
-        evidence_artifacts=[str(TOOLCHAIN_AVAILABILITY_REPORT.relative_to(REPO_ROOT))],
+        evidence_artifacts=[_rel(TOOLCHAIN_AVAILABILITY_REPORT)],
     )
     sanitized = _sanitize(payload)
-    TOOLCHAIN_AVAILABILITY_REPORT.write_text(_toolchain_markdown(sanitized), encoding="utf-8")
+    write_text_value(TOOLCHAIN_AVAILABILITY_REPORT, _toolchain_markdown(sanitized))
     return sanitized
 
 
 def get_lab_build_verification() -> dict[str, Any]:
-    if SUMMARY.exists():
-        try:
-            payload = json.loads(SUMMARY.read_text(encoding="utf-8"))
-            if isinstance(payload, dict):
-                if settings.provider_mode != "mock" and _cached_summary_is_test_fixture(payload):
-                    return _not_checked_build_verification(
-                        message=(
-                            "Current live Build Verification has not run in this runtime. "
-                            "The cached test-fixture summary is historical evidence only."
-                        ),
-                        evidence_artifacts=[
-                            str(REPORT.relative_to(REPO_ROOT)),
-                            str(CURRENT_STATE_REPORT.relative_to(REPO_ROOT)),
-                            str(EVIDENCE_REPORT.relative_to(REPO_ROOT)),
-                            str(SUMMARY.relative_to(REPO_ROOT)),
-                        ],
-                    )
-                if "source_type" not in payload:
-                    source_type = "test_fixture" if payload.get("provider_mode") == "mock" else "live_cached"
-                    payload = attach_status_source(
-                        payload,
-                        source_type=source_type,
-                        checked_at=payload.get("checked_at"),
-                        recheck_command="make provider-lab-build-verification-live",
-                        evidence_artifacts=[
-                            str(REPORT.relative_to(REPO_ROOT)),
-                            str(SUMMARY.relative_to(REPO_ROOT)),
-                        ],
-                        is_operator_visible=source_type != "test_fixture",
-                    )
-                    if source_type == "test_fixture":
-                        payload["certification_state"] = "test_fixture"
-                        payload["dev_test_banner"] = (
-                            "Cached Build Verification summary came from test/mock mode and cannot certify real lab results."
-                        )
-                return payload
-        except (OSError, ValueError):
-            pass
+    payload = read_json_object(SUMMARY)
+    if payload:
+        if settings.provider_mode != "mock" and _cached_summary_is_test_fixture(payload):
+            return _not_checked_build_verification(
+                message=(
+                    "Current live Build Verification has not run in this runtime. "
+                    "The cached test-fixture summary is historical evidence only."
+                ),
+                evidence_artifacts=[
+                    _rel(REPORT),
+                    _rel(CURRENT_STATE_REPORT),
+                    _rel(EVIDENCE_REPORT),
+                    _rel(SUMMARY),
+                ],
+            )
+        if "source_type" not in payload:
+            source_type = "test_fixture" if payload.get("provider_mode") == "mock" else "live_cached"
+            payload = attach_status_source(
+                payload,
+                source_type=source_type,
+                checked_at=payload.get("checked_at"),
+                recheck_command="make provider-lab-build-verification-live",
+                evidence_artifacts=[
+                    _rel(REPORT),
+                    _rel(SUMMARY),
+                ],
+                is_operator_visible=source_type != "test_fixture",
+            )
+            if source_type == "test_fixture":
+                payload["certification_state"] = "test_fixture"
+                payload["dev_test_banner"] = (
+                    "Cached Build Verification summary came from test/mock mode and cannot certify real lab results."
+                )
+        return payload
     return _not_checked_build_verification()
 
 
@@ -285,10 +294,10 @@ def _not_checked_build_verification(
     evidence_artifacts: list[str] | None = None,
 ) -> dict[str, Any]:
     artifacts = {
-        "report": str(REPORT.relative_to(REPO_ROOT)),
-        "current_state_report": str(CURRENT_STATE_REPORT.relative_to(REPO_ROOT)),
-        "evidence_report": str(EVIDENCE_REPORT.relative_to(REPO_ROOT)),
-        "summary_json": str(SUMMARY.relative_to(REPO_ROOT)),
+        "report": _rel(REPORT),
+        "current_state_report": _rel(CURRENT_STATE_REPORT),
+        "evidence_report": _rel(EVIDENCE_REPORT),
+        "summary_json": _rel(SUMMARY),
     }
     return attach_status_source(
         {
@@ -307,7 +316,6 @@ def _not_checked_build_verification(
         recheck_command="make provider-lab-build-verification-live",
         evidence_artifacts=evidence_artifacts or list(artifacts.values()),
     )
-
 
 def validate_credential_compatibility(name: str, value: str | None) -> dict[str, Any]:
     if value is None or value == "":
@@ -644,6 +652,63 @@ def _credential_checks(
     }
 
 
+def _license_checks() -> dict[str, Any]:
+    netapp_count = _netapp_license_count()
+    checks = [
+        _license_item("ESXi", "ESXI_LICENSE_KEY", bool(settings.esxi_license_key), 1 if settings.esxi_license_key else 0),
+        _license_item("vCenter", "VCENTER_LICENSE_KEY", bool(settings.vcenter_license_key), 1 if settings.vcenter_license_key else 0),
+        _license_item("NetApp ONTAP", "NETAPP_LICENSE_KEYS_FILE or NETAPP_LICENSE_KEYS", netapp_count > 0, netapp_count),
+    ]
+    return {
+        "status": "ready" if all(item["configured"] for item in checks) else "warning",
+        "classification": "passed" if all(item["configured"] for item in checks) else "warning",
+        "checks": checks,
+        "warnings": [
+            f"{item['product']} license material is not configured."
+            for item in checks
+            if not item["configured"]
+        ],
+    }
+
+
+def _license_item(product: str, field: str, configured: bool, count: int) -> dict[str, Any]:
+    return {
+        "product": product,
+        "field": field,
+        "configured": configured,
+        "license_count": count,
+        "value_redacted": True,
+        "classification": "passed" if configured else "warning",
+        "next_action": (
+            f"{product} license material is present; apply only through a guarded vendor workflow."
+            if configured
+            else f"Set {field} in an ignored local env or secret file before license apply."
+        ),
+        **status_source_metadata(
+            source_type="live_cached",
+            checked_at=datetime.now(UTC).isoformat(),
+            recheck_command="make provider-lab-build-verification-live",
+        ),
+    }
+
+
+def _netapp_license_count() -> int:
+    values = list(settings.netapp_license_keys)
+    path = Path(settings.netapp_license_keys_file) if settings.netapp_license_keys_file else None
+    if path and not path.is_absolute():
+        path = REPO_ROOT / path
+    if path and _is_file(path):
+        for line in safe_read_text(path).splitlines():
+            cleaned = line.strip()
+            if not cleaned or cleaned.startswith("#"):
+                continue
+            if cleaned.lower().startswith("license add "):
+                cleaned = cleaned.split(None, 2)[2].strip()
+            if cleaned and cleaned not in values:
+                values.append(cleaned)
+    return len(values)
+
+
 def _mtu_checks(*, profile_context: dict[str, Any] | None = None) -> dict[str, Any]:
     profile_context = profile_context or active_lab_profile_context()
     features = profile_context.get("enabled_features") or {}
@@ -797,7 +862,7 @@ def _failure_classification(
                     source_type="live_cached",
                     checked_at=datetime.now(UTC).isoformat(),
                     recheck_command="make provider-lab-build-verification-live",
-                    evidence_artifacts=[str(LAB_IP_REPORT.relative_to(REPO_ROOT))],
+                    evidence_artifacts=[_rel(LAB_IP_REPORT)],
                 ),
             }
         )
@@ -814,7 +879,7 @@ def _failure_classification(
                         source_type="live_cached",
                         checked_at=datetime.now(UTC).isoformat(),
                         recheck_command="make provider-lab-build-verification-live",
-                        evidence_artifacts=[str(REPORT.relative_to(REPO_ROOT))],
+                        evidence_artifacts=[_rel(REPORT)],
                     ),
                 }
             )
@@ -830,7 +895,7 @@ def _failure_classification(
                     source_type="live_cached",
                     checked_at=datetime.now(UTC).isoformat(),
                     recheck_command="make provider-lab-build-verification-live",
-                    evidence_artifacts=[str(REPORT.relative_to(REPO_ROOT))],
+                    evidence_artifacts=[_rel(REPORT)],
                 ),
             }
         )
@@ -871,7 +936,7 @@ def _runtime_mode_guard() -> dict[str, Any] | None:
             checked_at=datetime.now(UTC).isoformat(),
             stale_after_seconds=None,
             recheck_command="make provider-lab-build-verification-live",
-            evidence_artifacts=[str(REPORT.relative_to(REPO_ROOT))],
+            evidence_artifacts=[_rel(REPORT)],
             is_operator_visible=False,
         ),
     }
@@ -1022,12 +1087,9 @@ def _iso_media_readiness() -> dict[str, Any]:
     iso_count = 0
     for directory in settings.media_inventory_dirs:
         path = Path(directory)
-        if not path.exists() or not path.is_dir():
+        if not _is_directory(path):
             continue
-        try:
-            iso_count += sum(1 for item in path.rglob("*.iso") if item.is_file())
-        except OSError:
-            continue
+        iso_count += sum(1 for item in rglob_paths(path, "*.iso") if _is_file(item))
     configured = bool(settings.media_inventory_dirs)
     if not configured or iso_count == 0:
         return protocol_readiness(
@@ -1056,8 +1118,32 @@ def _iso_media_readiness() -> dict[str, Any]:
 
 
 def _cisco_console_readiness() -> dict[str, Any]:
+    if settings.cisco_mgmt_configured:
+        probe, checked_at = get_probe_result("cisco-ansible")
+        command_results = probe.get("command_results") if isinstance(probe, dict) else {}
+        show_version = command_results.get("show version") if isinstance(command_results, dict) else {}
+        if isinstance(probe, dict) and probe.get("status") == "ok" and isinstance(show_version, dict) and show_version.get("version_hint"):
+            return {
+                "protocol": "Cisco console",
+                "configured": True,
+                "reachable": True,
+                "required": True,
+                "status": "ready",
+                "classification": "passed",
+                "blockers": [],
+                "source": probe.get("provider_id") or "cisco-ansible",
+                "fallback": probe.get("fallback"),
+                "ios_xe_version": show_version.get("version_hint"),
+                "next_action": "Cisco management SSH proof passed; serial console remains optional break-glass evidence.",
+                **status_source_metadata(
+                    source_type="live_cached",
+                    checked_at=checked_at,
+                    recheck_command="make provider-lab-refresh-live-state",
+                    evidence_artifacts=["artifacts/codex-runs/provider-probe-cache"],
+                ),
+            }
     details = CODEX_RUN_DIR / "cisco-4h-lab-run-details-redacted.json"
-    if not details.exists():
+    if not _path_exists(details):
         return protocol_readiness(
             "Cisco console",
             configured=True,
@@ -1065,9 +1151,8 @@ def _cisco_console_readiness() -> dict[str, Any]:
             classification="operator_action_required",
             next_action="Run Cisco console discovery/prompt detection before product certification.",
         )
-    try:
-        payload = json.loads(details.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+    payload = read_json_object(details)
+    if not payload:
         return protocol_readiness(
             "Cisco console",
             configured=True,
@@ -1135,8 +1220,8 @@ def _netapp_console_readiness(*, profile_context: dict[str, Any] | None = None) 
     discovery = CODEX_RUN_DIR / "netapp-console-autodiscovery-redacted.json"
     legacy_discovery = CODEX_RUN_DIR / "netapp-console-discovery-redacted.json"
     state = CODEX_RUN_DIR / "netapp-console-state-redacted.json"
-    discovery_artifact = discovery if discovery.exists() else legacy_discovery
-    if not discovery_artifact.exists():
+    discovery_artifact = discovery if _path_exists(discovery) else legacy_discovery
+    if not _path_exists(discovery_artifact):
         return protocol_readiness(
             "NetApp console",
             configured=True,
@@ -1144,7 +1229,7 @@ def _netapp_console_readiness(*, profile_context: dict[str, Any] | None = None) 
             classification="operator_action_required",
             next_action="Run NetApp console discovery now that console cables are connected.",
         )
-    payload = _read_json_artifact(state if state.exists() else discovery_artifact)
+    payload = _read_json_artifact(state if _path_exists(state) else discovery_artifact)
     if not payload:
         return protocol_readiness(
             "NetApp console",
@@ -1209,7 +1294,7 @@ def _netapp_nfs_vcenter_readiness(*, profile_context: dict[str, Any] | None = No
             **_netapp_source_metadata(runtime_state),
         }
     path = CODEX_RUN_DIR / "netapp-nfs-vcenter-readiness-redacted.json"
-    if not path.exists():
+    if not _path_exists(path):
         return protocol_readiness(
             "NetApp NFS/vCenter",
             configured=True,
@@ -1255,11 +1340,8 @@ def _netapp_nfs_vcenter_readiness(*, profile_context: dict[str, Any] | None = No
 
 
 def _read_json_artifact(path: Path) -> dict[str, Any] | None:
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return None
-    return payload if isinstance(payload, dict) else None
+    payload = read_json_object(path)
+    return payload or None
 
 
 def _stale_artifact_evidence() -> list[dict[str, str]]:
@@ -1268,16 +1350,15 @@ def _stale_artifact_evidence() -> list[dict[str, str]]:
         CODEX_RUN_DIR / "cisco-bootstrap-apply-report.md",
         CODEX_RUN_DIR / "overnight-lab-builder-final-report.md",
     ]:
-        if not path.exists():
+        if not _path_exists(path):
             continue
-        try:
-            text = path.read_text(encoding="utf-8", errors="replace")
-        except OSError:
+        text = safe_read_text(path)
+        if not text:
             continue
         if "10.10.8." in text:
             evidence.append(
                 {
-                    "artifact": str(path.relative_to(REPO_ROOT)),
+                    "artifact": _rel(path),
                     "classification": "stale_config",
                     "next_action": "Regenerate this report after confirming the 192.168.1.0/24 lab profile.",
                 }
@@ -1375,7 +1456,7 @@ def _command_path(command: str) -> str | None:
         return path
     for directory in (Path(sys.executable).parent, REPO_ROOT / ".local" / "bin"):
         candidate = directory / command
-        if candidate.exists() and os.access(candidate, os.X_OK):
+        if _path_exists(candidate) and os.access(candidate, os.X_OK):
             return str(candidate)
     return None
 
@@ -1573,6 +1654,13 @@ def _markdown(payload: dict[str, Any]) -> str:
             f"- `{item['classification']}` `{item['field']}`: "
             f"{'configured' if item['configured'] else 'not configured'}; values redacted"
         )
+    lines.extend(["", "## License Material", ""])
+    for item in payload.get("licenses", {}).get("checks") or []:
+        lines.append(
+            f"- `{item['classification']}` `{item['product']}`: "
+            f"{'configured' if item['configured'] else 'not configured'}; "
+            f"count=`{item.get('license_count', 0)}`; values redacted"
+        )
     lines.extend(["", "## MTU Consistency", ""])
     mtu = payload.get("mtu") or {}
     lines.append(f"- Classification: `{mtu.get('classification', 'unknown')}`")
@@ -1628,7 +1716,7 @@ def _current_state_markdown(payload: dict[str, Any]) -> str:
         "## Current Blockers",
         "",
     ]
-    blockers = payload.get("blockers") or []
+    blockers = _current_report_blockers(payload)
     lines.extend(f"- {blocker}" for blocker in blockers)
     if not blockers:
         lines.append("- none")
@@ -1646,8 +1734,27 @@ def _current_state_markdown(payload: dict[str, Any]) -> str:
             f"source=`{item.get('source_type')}` freshness=`{item.get('freshness')}` "
             f"current=`{item.get('is_current')}`"
         )
+    lines.extend(["", "## Current License Material", ""])
+    for item in payload.get("licenses", {}).get("checks") or []:
+        lines.append(
+            f"- `{item.get('classification')}` `{item.get('product')}` "
+            f"configured=`{item.get('configured')}` count=`{item.get('license_count', 0)}` values=`redacted`"
+        )
     lines.extend(["", "## Safety", "", "- No secrets or raw transcripts are included.", ""])
     return "\n".join(lines)
+
+
+def _current_report_blockers(payload: dict[str, Any]) -> list[str]:
+    blockers = list(payload.get("blockers") or [])
+    for item in payload.get("protocols", {}).get("checks") or []:
+        if item.get("source_type") == "historical_artifact":
+            continue
+        if item.get("classification") in {"passed", "not_in_scope"}:
+            continue
+        protocol = item.get("protocol") or "Protocol"
+        detail = "; ".join(item.get("blockers") or []) or item.get("next_action") or "Needs operator attention."
+        blockers.append(f"{protocol}: {detail}")
+    return unique_preserving_order(str(item) for item in blockers if item)
 
 
 def _evidence_markdown(payload: dict[str, Any]) -> str:
@@ -1799,8 +1906,8 @@ def _lab_ip_markdown(payload: dict[str, Any]) -> str:
             "",
             "## Reports",
             "",
-            f"- Build verification report: `{REPORT.relative_to(REPO_ROOT)}`",
-            f"- Build verification summary: `{SUMMARY.relative_to(REPO_ROOT)}`",
+            f"- Build verification report: `{_rel(REPORT)}`",
+            f"- Build verification summary: `{_rel(SUMMARY)}`",
         ]
     )
     return "\n".join(lines)

@@ -27,6 +27,7 @@ from app.schemas import (
     IloSetupPlanPreviewRead,
     IloSetupPlanSectionRead,
 )
+from app.services.list_utils import unique_preserving_order, unique_strings
 from app.services.media_inventory import get_media_inventory
 from app.services.upgrade_decision import get_ilo_upgrade_readiness
 
@@ -1521,10 +1522,8 @@ def _redfish_endpoint_detected(probe_result: dict[str, Any] | None) -> str:
 
 
 def _string_list(value: Any) -> list[str]:
-    if not isinstance(value, list):
-        return []
-    return [item for item in value if isinstance(item, str)]
+    return unique_strings(value)
 
 
 def _unique(values: list[str]) -> list[str]:
-    return list(dict.fromkeys(values))
+    return unique_preserving_order(values)

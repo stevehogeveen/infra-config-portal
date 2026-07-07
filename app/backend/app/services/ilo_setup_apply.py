@@ -26,6 +26,7 @@ from app.providers.probe_cache import record_probe_result
 from app.providers.redaction import redact_sensitive
 from app.schemas import IloSetupApplyCreate
 from app.services.ilo_readiness import get_ilo_setup_intent
+from app.services.list_utils import unique_preserving_order, unique_strings
 
 APPLY_PROVIDER_ID = "ilo-redfish-setup-apply"
 CONFIRMATION_PHRASE = "APPLY ILO HOSTNAME SETUP"
@@ -122,7 +123,7 @@ def build_ilo_setup_apply_plan(session: Session) -> dict[str, Any]:
             "The action must be represented as an explicit workflow step.",
             "This lane only changes iLO HostName; IP, gateway, VLAN, user, firmware, power, and reset remain blocked here.",
         ],
-        "blockers": list(dict.fromkeys([*blockers, *gate_blockers])),
+        "blockers": unique_preserving_order([*blockers, *gate_blockers]),
         "warnings": warnings,
         "confirmation_phrase": CONFIRMATION_PHRASE,
         "next_safe_action": (
@@ -149,7 +150,7 @@ def apply_ilo_setup(session: Session, payload: IloSetupApplyCreate) -> dict[str,
                 "message": "iLO setup apply was blocked; no Redfish PATCH was sent.",
                 "patch_attempted": False,
                 "patch_count": 0,
-                "blockers": list(dict.fromkeys(blockers)),
+                "blockers": unique_preserving_order(blockers),
                 "warnings": plan["warnings"],
                 "checked_at": datetime.now(UTC).isoformat(),
             },
@@ -269,9 +270,11 @@ def _environment_gate_blockers(
     if settings.provider_mode == LOCAL_LAB_MODE:
         policy = current_lab_action_policy(settings.provider_mode)
         blockers.extend(
-            policy.action_blockers(
-                "ilo-redfish.manager-network-protocol-hostname",
-                ActionCategory.NETWORK_CONFIG,
+            unique_strings(
+                policy.action_blockers(
+                    "ilo-redfish.manager-network-protocol-hostname",
+                    ActionCategory.NETWORK_CONFIG,
+                )
             )
         )
     if settings.provider_mode not in {LOCAL_READONLY_MODE, LOCAL_LAB_MODE}:
@@ -287,7 +290,7 @@ def _environment_gate_blockers(
         blockers.append("LAB_TARGET_ACK must match the configured ILO_TEST_HOST value.")
     if confirmation_phrase != CONFIRMATION_PHRASE:
         blockers.append(f"Exact confirmation phrase is required: {CONFIRMATION_PHRASE}")
-    return list(dict.fromkeys(blockers))
+    return unique_preserving_order(blockers)
 
 
 def _manager_path(client: httpx.Client, base_url: str, requests: list[dict[str, Any]]) -> str:

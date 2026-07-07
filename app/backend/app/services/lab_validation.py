@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -12,9 +11,12 @@ from app.core.config import (
 from app.providers.redaction import redact_sensitive
 from app.services.build_verification import get_lab_build_verification
 from app.services.firmware_compliance import get_firmware_compliance
+from app.services.json_file_store import read_json_object, write_json_object, write_text_value
 from app.services.lab_profiles import active_lab_profile_context
+from app.services.list_utils import unique_preserving_order
 from app.services.netapp_state import get_netapp_runtime_state
 from app.services.netapp_upgrade_center import build_netapp_upgrade_plan
+from app.services.path_utils import path_exists, path_mtime, repo_relative_path
 from app.services.vcenter_netapp_readiness import get_vcenter_netapp_readiness
 from app.services.workflow_registry import list_workflow_actions
 
@@ -53,6 +55,7 @@ def get_lab_validation_summary(*, write_report: bool = False) -> dict[str, Any]:
         _netapp_ontap_item(netapp_state, actions, profile_context=profile_context),
         _netapp_upgrade_item(actions, profile_context=profile_context),
         _netapp_nfs_item(netapp_state, actions, profile_context=profile_context),
+        _esxi_iscsi_datastore_item(actions, profile_context=profile_context),
         _vcenter_netapp_item(vcenter_netapp, actions, profile_context=profile_context),
         _build_verification_item(build_verification, actions),
     ]
@@ -78,8 +81,8 @@ def get_lab_validation_summary(*, write_report: bool = False) -> dict[str, Any]:
     sanitized = redact_sensitive(payload)
     if write_report:
         CODEX_RUN_DIR.mkdir(parents=True, exist_ok=True)
-        SUMMARY_JSON.write_text(json.dumps(sanitized, indent=2), encoding="utf-8")
-        HANDOFF_REPORT.write_text(_handoff_markdown(sanitized), encoding="utf-8")
+        write_json_object(SUMMARY_JSON, sanitized)
+        write_text_value(HANDOFF_REPORT, _handoff_markdown(sanitized))
     return sanitized
 
 
@@ -100,9 +103,26 @@ def build_cisco_validation_item(
             "artifacts/codex-runs/serial-console-discovery-report.md",
             "artifacts/codex-runs/cisco-console-ethernet-readiness-report.md",
             "artifacts/codex-runs/cisco-bootstrap-apply-report.md",
+            "artifacts/codex-runs/cisco-current-intent-diff-report.md",
+            "artifacts/codex-runs/cisco-current-intent-diff-redacted.json",
         ]
     )
-    status = "ready" if ready else "partial" if artifacts else "not_checked"
+    intent_diff = _json_artifact("artifacts/codex-runs/cisco-current-intent-diff-redacted.json")
+    diff = intent_diff.get("diff") if isinstance(intent_diff.get("diff"), dict) else {}
+    drift_count = int(diff.get("drift_count") or 0) if isinstance(diff.get("drift_count") or 0, int) else 0
+    intent_status = str(intent_diff.get("status") or "")
+    has_intent_evidence = bool(intent_diff)
+    status = (
+        "blocked"
+        if ready and intent_status == "blocked"
+        else "warning"
+        if ready and (intent_status == "warning" or drift_count)
+        else "ready"
+        if ready
+        else "partial"
+        if artifacts
+        else "not_checked"
+    )
     blockers = [] if ready else [
         _blocker(
             problem="Cisco management SSH is not proven as configured yet.",
@@ -115,31 +135,111 @@ def build_cisco_validation_item(
             evidence_links=artifacts,
         )
     ]
+    if ready and intent_status == "blocked":
+        blockers = [
+            _blocker(
+                problem=str(item),
+                source="Cisco current-to-intent diff",
+                current_value="blocked",
+                expected_value="live Cisco SSH show-command evidence",
+                where_to_fix="Network / Cisco",
+                recommended_action=str(intent_diff.get("next_safe_action") or "Refresh Cisco current-to-intent diff."),
+                recheck_command="make provider-lab-cisco-current-intent-diff",
+                evidence_links=artifacts,
+            )
+            for item in intent_diff.get("blockers") or ["Cisco current-to-intent diff is blocked."]
+        ]
+    drift_warnings = _cisco_drift_warnings(intent_diff)
     return _item(
         item_id="cisco-network",
         label="Cisco Network",
         category="Network",
         status=status,
-        current_state="Management SSH is configured." if ready else "Console/ethernet readiness has not been freshly proven.",
-        desired_state=f"Cisco management reachable at {target}.",
-        setup_summary="Cisco management is ready for SSH validation." if ready else "Console-first setup evidence exists, but SSH readiness needs refresh.",
-        next_action="Validate SSH/SCP from Run Center." if ready else "Refresh Cisco ethernet readiness from Run Center.",
+        current_state=(
+            f"Management SSH is reachable; current-to-intent drift count is {drift_count}."
+            if ready and has_intent_evidence
+            else "Management SSH is configured."
+            if ready
+            else "Console/ethernet readiness has not been freshly proven."
+        ),
+        desired_state=f"Cisco management reachable at {target} and aligned to the active lab VLAN, port, and guardrail intent.",
+        setup_summary=(
+            "Cisco management is reachable, but current-to-intent drift needs review."
+            if ready and status == "warning"
+            else "Cisco management is ready for SSH validation."
+            if ready
+            else "Console-first setup evidence exists, but SSH readiness needs refresh."
+        ),
+        next_action=(
+            str(intent_diff.get("next_safe_action") or "Review VLAN/interface/guardrail drift before guarded config apply.")
+            if ready and has_intent_evidence
+            else "Validate SSH/SCP from Run Center."
+            if ready
+            else "Refresh Cisco ethernet readiness from Run Center."
+        ),
         login_hint=f"ssh admin@{target}" if ready else f"Console-first; SSH target when ready: admin@{target}",
         management_url=None,
         ssh_target=f"admin@{target}",
         proof_points=[
             "Cisco login hint uses a username label only and does not expose credentials.",
             "Console-first evidence stays in the evidence drawer.",
+            *(
+                [
+                    f"Current-to-intent drift count: {drift_count}",
+                    f"Parsed VLAN rows: {len(((intent_diff.get('current') or {}).get('vlans') or []))}",
+                    f"Parsed interface rows: {len(((intent_diff.get('current') or {}).get('ports') or []))}",
+                ]
+                if has_intent_evidence
+                else []
+            ),
         ],
         evidence_artifacts=artifacts,
-        last_checked=_last_checked(artifacts),
-        source_type="live_cached" if ready else _source_for_artifacts(artifacts),
-        freshness="current" if ready else _freshness_for_artifacts(artifacts),
+        last_checked=str(intent_diff.get("checked_at") or _last_checked(artifacts)),
+        source_type=str(intent_diff.get("source_type") or "live_cached" if ready else _source_for_artifacts(artifacts)),
+        freshness=str(intent_diff.get("freshness") or "current" if ready else _freshness_for_artifacts(artifacts)),
         blockers=blockers,
-        warnings=[] if ready else ["Historical Cisco evidence must be refreshed before handoff."],
-        recheck_command="make provider-lab-cisco-console-ethernet-readiness",
-        linked_workflow_action=_action_link(actions, "cisco.validate-ssh-scp"),
+        warnings=drift_warnings if ready and drift_warnings else [] if ready else ["Historical Cisco evidence must be refreshed before handoff."],
+        recheck_command="make provider-lab-cisco-current-intent-diff" if has_intent_evidence else "make provider-lab-cisco-console-ethernet-readiness",
+        linked_workflow_action=_action_link(actions, "cisco.current-intent-diff" if has_intent_evidence else "cisco.validate-ssh-scp"),
     )
+
+
+def _cisco_drift_warnings(intent_diff: dict[str, Any]) -> list[str]:
+    if not intent_diff:
+        return []
+    diff = intent_diff.get("diff") if isinstance(intent_diff.get("diff"), dict) else {}
+    vlan = diff.get("vlan") if isinstance(diff.get("vlan"), dict) else {}
+    guardrails = diff.get("guardrails") if isinstance(diff.get("guardrails"), dict) else {}
+    warnings: list[str] = []
+    missing_vlans = _cisco_strings(vlan.get("missing"))
+    unexpected_vlans = _cisco_strings(vlan.get("unexpected"))
+    port_drift = diff.get("ports") if isinstance(diff.get("ports"), list) else []
+    if missing_vlans:
+        warnings.append(f"Missing intended VLANs: {', '.join(missing_vlans)}.")
+    if unexpected_vlans:
+        warnings.append(f"Unexpected VLANs present: {', '.join(unexpected_vlans)}.")
+    if port_drift:
+        warnings.append(f"{len(port_drift)} Cisco port intent drift item(s) need review.")
+    for label, key in (
+        ("BPDU guard", "bpdu_guard"),
+        ("ACL lanes", "acl_lanes"),
+        ("Black-hole VLAN", "blackhole_vlan"),
+    ):
+        evidence = guardrails.get(key) if isinstance(guardrails.get(key), dict) else {}
+        if evidence.get("status") == "warning":
+            missing = _cisco_strings(evidence.get("missing"))
+            warnings.append(f"{label} guardrail drift: {', '.join(missing) if missing else 'review evidence'}.")
+        elif evidence.get("status") == "not_checked":
+            warnings.append(f"{label} guardrail evidence was not checked.")
+    return unique_preserving_order(warnings)
+
+
+def _cisco_strings(value: Any) -> list[str]:
+    if isinstance(value, list):
+        return _clean_unique_strings(value)
+    if value is None:
+        return []
+    return _clean_unique_strings([value])
 
 
 def map_validation_status(
@@ -210,10 +310,12 @@ def _lab_profile_item(
 
 def _firmware_item(actions: dict[str, dict[str, Any]]) -> dict[str, Any]:
     compliance = get_firmware_compliance(refresh_live=False, scope="full")
+    profile_context = active_lab_profile_context()
+    features = profile_context.get("enabled_features") or {}
     paths = [
         path
         for path in compliance.get("upgrade_paths", [])
-        if isinstance(path, dict)
+        if isinstance(path, dict) and _firmware_path_in_active_scope(path, features)
     ]
     review_paths = [path for path in paths if path.get("path_status") in {"manual_review", "unknown"}]
     blocked_paths = [path for path in paths if path.get("path_status") == "blocked"]
@@ -283,17 +385,15 @@ def _firmware_item(actions: dict[str, dict[str, Any]]) -> dict[str, Any]:
         ssh_target=None,
         proof_points=proof_points or ["Compliance evidence belongs in the evidence drawer."],
         evidence_artifacts=_existing(
-            list(
-                dict.fromkeys(
-                    [
-                        *artifacts,
-                        *[
-                            artifact
-                            for path in paths
-                            for artifact in path.get("evidence_artifacts") or []
-                        ],
-                    ]
-                )
+            unique_preserving_order(
+                [
+                    *artifacts,
+                    *[
+                        artifact
+                        for path in paths
+                        for artifact in path.get("evidence_artifacts") or []
+                    ],
+                ]
             )
         ),
         last_checked=_last_checked(artifacts) or compliance.get("checked_at"),
@@ -318,6 +418,16 @@ def _firmware_item(actions: dict[str, dict[str, Any]]) -> dict[str, Any]:
     )
 
 
+def _firmware_path_in_active_scope(path: dict[str, Any], features: dict[str, Any]) -> bool:
+    device = str(path.get("device") or path.get("device_id") or "").strip().lower()
+    component_id = str(path.get("component_id") or "").strip().lower()
+    if not features.get("vcenter_enabled") and (device == "vcenter" or component_id.startswith("vcenter_")):
+        return False
+    if features.get("netapp_enabled") is False and (device == "netapp" or component_id.startswith("netapp_")):
+        return False
+    return True
+
+
 def _ilo_item(actions: dict[str, dict[str, Any]]) -> dict[str, Any]:
     profile_context = active_lab_profile_context()
     plan = profile_context.get("resolved_address_plan") or {}
@@ -328,27 +438,55 @@ def _ilo_item(actions: dict[str, dict[str, Any]]) -> dict[str, Any]:
             ("ILO_TEST_PASSWORD", settings.ilo_test_password),
         ]
     )
-    artifacts = _existing(["artifacts/codex-runs/ilo-real-run-report.md", "artifacts/codex-runs/ilo-local-readonly-smoke-report.md"])
-    status = "partial" if artifacts or host else "not_configured"
+    reachability = _json_artifact("artifacts/codex-runs/ilo-real-run-redacted.json")
+    endpoint = reachability.get("endpoint_detection") if isinstance(reachability.get("endpoint_detection"), dict) else {}
+    legacy = reachability.get("legacy_identity") if isinstance(reachability.get("legacy_identity"), dict) else {}
+    artifacts = _existing(
+        [
+            "artifacts/codex-runs/ilo-real-run-report.md",
+            "artifacts/codex-runs/ilo-real-run-redacted.json",
+            "artifacts/codex-runs/ilo-local-readonly-smoke-report.md",
+        ]
+    )
+    live_ready = str(reachability.get("status") or "") == "ok" and endpoint.get("redfish_status") == "available"
+    status = "ready" if live_ready else "partial" if artifacts or host else "not_configured"
+    warnings = [
+        *([f"Credentials not configured: {', '.join(credentials_missing)}"] if credentials_missing else []),
+        *[str(item) for item in reachability.get("warnings") or []],
+    ]
     return _item(
         item_id="hpe-ilo",
         label="HPE / iLO",
         category="Management",
         status=status,
-        current_state="iLO target is known; live inventory evidence must be refreshed for handoff.",
+        current_state=(
+            str(reachability.get("message") or "Read-only iLO Redfish probe completed.")
+            if live_ready
+            else "iLO target is known; live inventory evidence must be refreshed for handoff."
+        ),
         desired_state=f"iLO reachable and authenticated at {host}.",
-        setup_summary="iLO management target is known; credentials are reported by field presence only.",
-        next_action="Run iLO reachability before auth or inventory.",
+        setup_summary=(
+            f"Redfish {endpoint.get('redfish_status')}; legacy {endpoint.get('legacy_status')}; model {legacy.get('model') or 'unknown'}."
+            if reachability
+            else "iLO management target is known; credentials are reported by field presence only."
+        ),
+        next_action=str(reachability.get("next_safe_action") or "Run iLO reachability before auth or inventory."),
         login_hint=_login_hint(f"https://{host}", credentials_missing),
         management_url=f"https://{host}",
         ssh_target=None,
-        proof_points=["Use GET-only/reachability evidence before inventory or write-capable actions."],
+        proof_points=[
+            f"Endpoint classification: {endpoint.get('classification', 'not checked')}",
+            f"Redfish status: {endpoint.get('redfish_status', 'not checked')}",
+            f"Legacy status: {endpoint.get('legacy_status', 'not checked')}",
+            f"Model: {legacy.get('model', 'unknown')}",
+            "iLO validation is GET-only and does not change power, boot, firmware, users, licenses, or network settings.",
+        ],
         evidence_artifacts=artifacts,
-        last_checked=_last_checked(artifacts),
-        source_type=_source_for_artifacts(artifacts) if artifacts else "live_cached",
-        freshness=_freshness_for_artifacts(artifacts) if artifacts else "current",
+        last_checked=str(reachability.get("checked_at") or _last_checked(artifacts)),
+        source_type=str(reachability.get("source_type") or _source_for_artifacts(artifacts) if artifacts else "live_cached"),
+        freshness=str(reachability.get("freshness") or _freshness_for_artifacts(artifacts) if artifacts else "current"),
         blockers=[],
-        warnings=[f"Credentials not configured: {', '.join(credentials_missing)}"] if credentials_missing else [],
+        warnings=warnings,
         recheck_command="make provider-lab-ilo-reachability",
         linked_workflow_action=_action_link(actions, "ilo.reachability"),
     )
@@ -356,25 +494,42 @@ def _ilo_item(actions: dict[str, dict[str, Any]]) -> dict[str, Any]:
 
 def _raid_item(actions: dict[str, dict[str, Any]]) -> dict[str, Any]:
     artifacts = _existing(["artifacts/codex-runs/hpe-raid-plan-report.md", "artifacts/codex-runs/hpe-raid-pending-report.md"])
+    plan_trace = _latest_action_trace(actions, "raid.plan")
+    pending_trace = _latest_action_trace(actions, "raid.pending-check")
+    current_trace = pending_trace if pending_trace.get("status") == "completed" else plan_trace
+    current = current_trace.get("status") == "completed" and current_trace.get("source_type") == "live_probe"
+    trace_warnings = unique_preserving_order(
+        [
+            *[str(item) for item in plan_trace.get("warnings") or []],
+            *[str(item) for item in pending_trace.get("warnings") or []],
+        ]
+    )
     return _item(
         item_id="raid-storage",
         label="RAID / Storage",
         category="Server",
         status="partial" if artifacts else "not_checked",
-        current_state="RAID evidence exists as supporting proof." if artifacts else "RAID/storage validation has not been checked.",
+        current_state=(
+            "RAID read-only evidence is current."
+            if current
+            else "RAID evidence exists as supporting proof." if artifacts else "RAID/storage validation has not been checked."
+        ),
         desired_state="Server storage layout planned and validated before ESXi handoff.",
-        setup_summary="RAID/storage evidence is supporting proof, not a primary blocker.",
-        next_action="Refresh RAID plan/pending state before ESXi install work.",
+        setup_summary="RAID/storage evidence is current supporting proof." if current else "RAID/storage evidence is supporting proof, not a primary blocker.",
+        next_action="Review current RAID plan/pending warnings before ESXi install work." if current else "Refresh RAID plan/pending state before ESXi install work.",
         login_hint="No separate login; use iLO/Smart Array workflow.",
         management_url=None,
         ssh_target=None,
-        proof_points=["RAID apply remains destructive and gated outside this page."],
+        proof_points=[
+            "RAID discovery, plan, and pending checks are read-only.",
+            "RAID apply remains destructive and gated outside this page.",
+        ],
         evidence_artifacts=artifacts,
-        last_checked=_last_checked(artifacts),
-        source_type=_source_for_artifacts(artifacts),
-        freshness=_freshness_for_artifacts(artifacts),
+        last_checked=str(current_trace.get("finished_at") or _last_checked(artifacts)),
+        source_type=str(current_trace.get("source_type") or _source_for_artifacts(artifacts)),
+        freshness=str(current_trace.get("freshness") or _freshness_for_artifacts(artifacts)),
         blockers=[],
-        warnings=["RAID evidence is historical until refreshed."] if artifacts else [],
+        warnings=trace_warnings if current else ["RAID evidence is historical until refreshed."] if artifacts else [],
         recheck_command="make provider-lab-hpe-raid-plan",
         linked_workflow_action=_action_link(actions, "raid.plan"),
     )
@@ -394,29 +549,69 @@ def _esxi_item(
             ("ESXI_TEST_PASSWORD", settings.esxi_test_password),
         ]
     )
-    artifacts = _existing(["artifacts/codex-runs/esxi-install-readiness-report.md", "artifacts/codex-runs/esxi-installer-boot-report.md"])
-    status = "partial" if artifacts or settings.esxi_configured else "not_configured"
+    validation = _json_artifact("artifacts/codex-runs/esxi-management-readiness-redacted.json")
+    https = validation.get("https_reachability") if isinstance(validation.get("https_reachability"), dict) else {}
+    ssh = validation.get("ssh_reachability") if isinstance(validation.get("ssh_reachability"), dict) else {}
+    vim = validation.get("vim_service_versions") if isinstance(validation.get("vim_service_versions"), dict) else {}
+    validation_status = str(validation.get("status") or "")
+    artifacts = _existing(
+        [
+            "artifacts/codex-runs/esxi-management-readiness-report.md",
+            "artifacts/codex-runs/esxi-management-readiness-redacted.json",
+            "artifacts/codex-runs/esxi-install-readiness-report.md",
+            "artifacts/codex-runs/esxi-installer-boot-report.md",
+        ]
+    )
+    live_ready = validation_status in {"ok", "ready", "completed"} and https.get("reachable") is True
+    status = "ready" if live_ready else "partial" if artifacts or settings.esxi_configured else "not_configured"
+    blockers = [
+        _blocker(
+            problem=str(item),
+            source="ESXi management validation",
+            current_value=validation_status or "not_checked",
+            expected_value=f"ESXi management reachable at {host}",
+            where_to_fix="Server / ESXi",
+            recommended_action=str(validation.get("next_safe_action") or "Refresh ESXi management validation."),
+            recheck_command="make provider-lab-esxi-management-validation",
+            evidence_links=artifacts,
+        )
+        for item in validation.get("blockers") or []
+    ]
+    warnings = [*([f"Credentials not configured: {', '.join(credentials_missing)}"] if credentials_missing else []), *[str(item) for item in validation.get("warnings") or []]]
     return _item(
         item_id="esxi-host",
         label="ESXi Host",
         category="Compute",
         status=status,
-        current_state="ESXi management target is known; readiness proof needs refresh.",
+        current_state=(
+            str(validation.get("message") or "ESXi management validation is current.")
+            if live_ready
+            else "ESXi management target is known; readiness proof needs refresh."
+        ),
         desired_state=f"ESXi management reachable at {host}.",
-        setup_summary="ESXi management is planned/configured enough to show the validation target.",
-        next_action="Refresh ESXi install/management readiness.",
+        setup_summary=(
+            f"HTTPS reachable: {https.get('reachable')}; SSH reachable: {ssh.get('reachable')}; VIM API versions: {vim.get('available')}."
+            if validation
+            else "ESXi management is planned/configured enough to show the validation target."
+        ),
+        next_action=str(validation.get("next_safe_action") or "Refresh ESXi install/management readiness."),
         login_hint=_login_hint(f"https://{host}", credentials_missing),
         management_url=f"https://{host}",
         ssh_target=f"root@{host}",
-        proof_points=["ESXi evidence should be refreshed before datastore handoff."],
+        proof_points=[
+            f"HTTPS reachable: {https.get('reachable', 'not checked')}",
+            f"SSH reachable: {ssh.get('reachable', 'not checked')}",
+            f"VIM service versions available: {vim.get('available', 'not checked')}",
+            "ESXi validation is read-only and does not reconfigure host, storage, network, or VMs.",
+        ],
         evidence_artifacts=artifacts,
-        last_checked=_last_checked(artifacts),
-        source_type=_source_for_artifacts(artifacts) if artifacts else "live_cached",
-        freshness=_freshness_for_artifacts(artifacts) if artifacts else "current",
-        blockers=[],
-        warnings=[f"Credentials not configured: {', '.join(credentials_missing)}"] if credentials_missing else [],
-        recheck_command="make provider-lab-esxi-install-readiness",
-        linked_workflow_action=_action_link(actions, "esxi.readiness"),
+        last_checked=str(validation.get("checked_at") or _last_checked(artifacts)),
+        source_type=str(validation.get("source_type") or _source_for_artifacts(artifacts) if artifacts else "live_cached"),
+        freshness=str(validation.get("freshness") or _freshness_for_artifacts(artifacts) if artifacts else "current"),
+        blockers=blockers,
+        warnings=warnings,
+        recheck_command="make provider-lab-esxi-management-validation",
+        linked_workflow_action=_action_link(actions, "esxi.management-validation"),
     )
 
 
@@ -695,41 +890,72 @@ def _netapp_nfs_item(
             linked_workflow_action=_action_link(actions, "vcenter-netapp.readiness"),
         )
     state = _netapp_console_state(netapp_state)
-    blocked = state == "cluster_setup_wizard" or not netapp_state.get("configured")
-    artifacts = _existing(["artifacts/codex-runs/netapp-nfs-vcenter-readiness-report.md"])
+    validation = _json_artifact("artifacts/codex-runs/netapp-nfs-setup-validation-redacted.json")
+    readiness = validation.get("readiness") if isinstance(validation.get("readiness"), dict) else {}
+    live_nfs = validation.get("live_nfs") if isinstance(validation.get("live_nfs"), dict) else {}
+    validation_status = str(validation.get("status") or "")
+    blocked = validation_status == "blocked" or (not validation_status and (state == "cluster_setup_wizard" or not netapp_state.get("configured")))
+    artifacts = _existing(
+        [
+            "artifacts/codex-runs/netapp-nfs-setup-validation-report.md",
+            "artifacts/codex-runs/netapp-nfs-vcenter-readiness-report.md",
+        ]
+    )
+    validation_blockers = [str(item) for item in validation.get("blockers") or []]
     blockers = [
         _blocker(
-            problem="NetApp NFS datastore backing volume/export is not created yet.",
+            problem=str(problem),
             source="NetApp NFS validation",
-            current_value="not created",
+            current_value=validation_status or "not created",
             expected_value=f"NFS volume/export for datastore {settings.netapp_nfs_datastore_name}",
             where_to_fix="Run Center / NetApp",
-            recommended_action="Finish NetApp ONTAP setup and NFS planning first.",
-            recheck_command="make provider-lab-vcenter-netapp-readiness",
+            recommended_action=str(validation.get("next_safe_action") or "Finish NetApp ONTAP setup and NFS planning first."),
+            recheck_command="make provider-lab-netapp-nfs-setup-validate",
             evidence_links=artifacts,
         )
-    ] if blocked else []
+        for problem in (
+            validation_blockers
+            if validation_blockers
+            else ["NetApp NFS datastore backing volume/export is not created yet."] if blocked else []
+        )
+    ]
+    nfs_checks = live_nfs.get("checks") if isinstance(live_nfs.get("checks"), dict) else {}
+    lif_checks = nfs_checks.get("planned_nfs_lifs_2049") if isinstance(nfs_checks.get("planned_nfs_lifs_2049"), list) else []
+    reachable_lifs = [
+        str(check.get("host"))
+        for check in lif_checks
+        if isinstance(check, dict) and check.get("reachable") is True and check.get("host")
+    ]
+    proof_points = [
+        f"NFS validation status: {validation_status or ('blocked' if blocked else 'ready')}",
+        f"NFS service records: {nfs_checks.get('nfs_service_records', 'not checked')}",
+        f"NFS LIFs reachable on 2049: {', '.join(reachable_lifs) if reachable_lifs else 'not checked'}",
+    ]
     return _item(
         item_id="netapp-nfs",
         label="NetApp NFS",
         category="Storage",
         status="blocked" if blocked else "ready",
-        current_state="NFS volume/export not created yet." if blocked else "NFS readiness is configured.",
+        current_state=(
+            "NFS volume/export not created yet."
+            if blocked
+            else str(validation.get("message") or readiness.get("message") or "NFS readiness is configured.")
+        ),
         desired_state=f"NFS LIFs {', '.join(settings.netapp_nfs_lifs)} export {settings.netapp_nfs_mount_path}.",
         setup_summary=f"Planned datastore backing volume `{settings.netapp_nfs_volume}` is not live yet." if blocked else "NetApp NFS is ready.",
-        next_action="Create/validate NFS after ONTAP setup completes.",
+        next_action=str(validation.get("next_safe_action") or "Validate NFS after ONTAP setup completes."),
         login_hint=f"Datastore backing target: {settings.netapp_nfs_datastore_name} via {settings.netapp_nfs_lifs[0] if settings.netapp_nfs_lifs else 'NFS LIF not configured'}",
         management_url=None,
         ssh_target=None,
-        proof_points=["NFS datastore is planned only until ONTAP/NFS proof exists."],
+        proof_points=proof_points,
         evidence_artifacts=artifacts,
-        last_checked=_last_checked(artifacts),
-        source_type=_source_for_artifacts(artifacts),
-        freshness=_freshness_for_artifacts(artifacts),
+        last_checked=str(validation.get("checked_at") or readiness.get("checked_at") or _last_checked(artifacts)),
+        source_type=str(validation.get("source_type") or readiness.get("source_type") or _source_for_artifacts(artifacts)),
+        freshness=str(validation.get("freshness") or readiness.get("freshness") or _freshness_for_artifacts(artifacts)),
         blockers=blockers,
-        warnings=[],
-        recheck_command="make provider-lab-vcenter-netapp-readiness",
-        linked_workflow_action=_action_link(actions, "vcenter-netapp.readiness"),
+        warnings=[str(item) for item in validation.get("warnings") or []],
+        recheck_command="make provider-lab-netapp-nfs-setup-validate",
+        linked_workflow_action=_action_link(actions, "netapp.nfs-setup-validate"),
     )
 
 
@@ -797,6 +1023,114 @@ def _vcenter_netapp_item(
     )
 
 
+def _esxi_iscsi_datastore_item(
+    actions: dict[str, dict[str, Any]],
+    *,
+    profile_context: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    profile_context = profile_context or active_lab_profile_context()
+    features = profile_context.get("enabled_features") or {}
+    storage_protocol = str(features.get("storage_protocol") or settings.netapp_storage_protocol or "").strip().lower()
+    in_scope_protocols = {"iscsi", "both", "nfs+iscsi", "nfs,iscsi", "shared_iscsi"}
+    if not features.get("netapp_enabled"):
+        return _not_in_scope_item(
+            item_id="esxi-iscsi-datastore",
+            label="ESXi iSCSI Datastore",
+            category="Storage",
+            reason="ESXi iSCSI datastore validation is disabled because NetApp shared storage is not in scope for the active profile.",
+            recheck_command="make provider-lab-validation",
+            linked_workflow_action=_action_link(actions, "esxi.iscsi-datastore-validate"),
+        )
+    if storage_protocol not in in_scope_protocols:
+        return _not_in_scope_item(
+            item_id="esxi-iscsi-datastore",
+            label="ESXi iSCSI Datastore",
+            category="Storage",
+            reason=f"Active storage protocol is `{storage_protocol or 'unset'}`; iSCSI is available as an option but not selected for this profile.",
+            recheck_command="make provider-lab-validation",
+            linked_workflow_action=_action_link(actions, "esxi.iscsi-datastore-validate"),
+        )
+
+    artifacts = _existing(
+        [
+            "artifacts/codex-runs/esxi-iscsi-datastore-validation-report.md",
+            "artifacts/codex-runs/esxi-iscsi-datastore-validation-redacted.json",
+            "artifacts/codex-runs/esxi-iscsi-datastore-preview-report.md",
+            "artifacts/codex-runs/esxi-iscsi-datastore-preview-redacted.json",
+        ]
+    )
+    payload = _json_artifact("artifacts/codex-runs/esxi-iscsi-datastore-validation-redacted.json")
+    if not payload:
+        payload = _json_artifact("artifacts/codex-runs/esxi-iscsi-datastore-preview-redacted.json")
+    current = payload.get("current_state") if isinstance(payload.get("current_state"), dict) else {}
+    plan = payload.get("iscsi_plan") if isinstance(payload.get("iscsi_plan"), dict) else {}
+    netapp_validation = payload.get("netapp_validation") if isinstance(payload.get("netapp_validation"), dict) else {}
+    netapp_status = str(netapp_validation.get("status") or "not_checked")
+    raw_status = str(payload.get("status") or "not_checked")
+    checked = bool(current.get("checked"))
+    datastore_name = str(plan.get("datastore_name") or "netapp_iscsi_ds01")
+    path_count = int(current.get("iscsi_path_count") or 0)
+    datastore_visible = bool(current.get("datastore_visible"))
+    blockers = [
+        _blocker(
+            problem=str(item),
+            source="ESXi iSCSI datastore validation",
+            current_value=(
+                f"NetApp {netapp_status}; ESXi paths {path_count}; datastore visible {datastore_visible}"
+                if checked
+                else "not checked"
+            ),
+            expected_value=f"NetApp iSCSI objects ready, ESXi iSCSI path active, and VMFS datastore {datastore_name} visible",
+            where_to_fix="Storage / ESXi iSCSI",
+            recommended_action=str(payload.get("next_safe_action") or "Run ESXi iSCSI preview/validation and resolve the first reported blocker."),
+            recheck_command="make provider-lab-esxi-iscsi-datastore-validate",
+            evidence_links=artifacts,
+        )
+        for item in payload.get("blockers") or []
+    ]
+    if raw_status in {"ready", "completed"} and checked and datastore_visible and not blockers:
+        status = "ready"
+    elif blockers:
+        status = "blocked"
+    elif artifacts:
+        status = "partial" if raw_status == "preview_ready" else "warning"
+    else:
+        status = "not_checked"
+    return _item(
+        item_id="esxi-iscsi-datastore",
+        label="ESXi iSCSI Datastore",
+        category="Storage",
+        status=status,
+        current_state=(
+            f"NetApp {netapp_status}; ESXi adapters {current.get('adapter_count', 0)}; "
+            f"iSCSI paths {path_count}; datastore visible {datastore_visible}."
+            if artifacts
+            else "No ESXi iSCSI datastore validation artifact exists yet."
+        ),
+        desired_state=f"VMFS datastore `{datastore_name}` visible on ESXi from NetApp iSCSI LUN.",
+        setup_summary=str(payload.get("message") or "Run a read-only ESXi iSCSI validation before any guarded attach workflow."),
+        next_action=str(payload.get("next_safe_action") or "Run ESXi iSCSI datastore validation."),
+        login_hint=f"ESXi: {settings.esxi_test_host}; iSCSI target: {plan.get('preferred_iscsi_lif') or 'not selected'}",
+        management_url=None,
+        ssh_target=f"root@{settings.esxi_test_host}" if settings.esxi_test_host else None,
+        proof_points=[
+            f"NetApp iSCSI status: {netapp_status}",
+            f"ESXi adapter count: {current.get('adapter_count', 0)}",
+            f"ESXi iSCSI path count: {path_count}",
+            f"Datastore visible: {datastore_visible}",
+            "Validation is read-only and does not add targets, rescan adapters, format VMFS, or mount datastores.",
+        ],
+        evidence_artifacts=artifacts,
+        last_checked=payload.get("checked_at") or _last_checked(artifacts),
+        source_type=str(payload.get("source_type") or _source_for_artifacts(artifacts)),
+        freshness=str(payload.get("freshness") or _freshness_for_artifacts(artifacts)),
+        blockers=blockers,
+        warnings=[str(item) for item in payload.get("warnings") or []],
+        recheck_command="make provider-lab-esxi-iscsi-datastore-validate",
+        linked_workflow_action=_action_link(actions, "esxi.iscsi-datastore-validate"),
+    )
+
+
 def _build_verification_item(build_verification: dict[str, Any], actions: dict[str, dict[str, Any]]) -> dict[str, Any]:
     artifacts = _existing(
         [
@@ -857,13 +1191,13 @@ def _item(
     login_hint: str,
     management_url: str | None,
     ssh_target: str | None,
-    proof_points: list[str],
-    evidence_artifacts: list[str],
+    proof_points: list[Any],
+    evidence_artifacts: list[Any],
     last_checked: str | None,
     source_type: str,
     freshness: str,
     blockers: list[dict[str, Any]],
-    warnings: list[str],
+    warnings: list[Any],
     recheck_command: str,
     linked_workflow_action: dict[str, Any] | None,
 ) -> dict[str, Any]:
@@ -881,14 +1215,14 @@ def _item(
         "login_hint": login_hint,
         "management_url": management_url,
         "ssh_target": ssh_target,
-        "proof_points": proof_points,
-        "evidence_artifacts": evidence_artifacts,
+        "proof_points": _clean_unique_strings(proof_points),
+        "evidence_artifacts": _clean_unique_strings(evidence_artifacts),
         "evidence_collapsed_by_default": True,
         "last_checked": last_checked,
         "source_type": source_type if source_type in {"live_probe", "live_cached", "historical_artifact", "not_checked"} else "not_checked",
         "freshness": freshness,
         "blockers": blockers,
-        "warnings": warnings,
+        "warnings": _clean_unique_strings(warnings),
         "recheck_command": recheck_command,
         "linked_workflow_action": linked_workflow_action,
     }
@@ -949,6 +1283,12 @@ def _blocker(
         "recheck_command": recheck_command,
         "evidence_links": evidence_links,
     }
+
+
+def _clean_unique_strings(values: list[Any]) -> list[str]:
+    return unique_preserving_order(
+        text for text in (str(value).strip() for value in values if value is not None) if text
+    )
 
 
 def _progress_counts(items: list[dict[str, Any]]) -> dict[str, int]:
@@ -1026,15 +1366,27 @@ def _proof_links(items: list[dict[str, Any]]) -> list[dict[str, str]]:
 
 
 def _existing(paths: list[str]) -> list[str]:
-    return [path for path in paths if (REPO_ROOT / path).exists()]
+    existing: list[str] = []
+    for path in paths:
+        if path_exists(REPO_ROOT / path):
+            existing.append(path)
+    return existing
 
 
 def _last_checked(paths: list[str]) -> str | None:
-    existing = [REPO_ROOT / path for path in paths if (REPO_ROOT / path).exists()]
-    if not existing:
+    latest_mtime = None
+    for path in paths:
+        artifact = REPO_ROOT / path
+        if not path_exists(artifact):
+            continue
+        mtime = path_mtime(artifact)
+        if mtime is None:
+            continue
+        if latest_mtime is None or mtime > latest_mtime:
+            latest_mtime = mtime
+    if latest_mtime is None:
         return None
-    latest = max(existing, key=lambda path: path.stat().st_mtime)
-    return datetime.fromtimestamp(latest.stat().st_mtime, UTC).isoformat()
+    return datetime.fromtimestamp(latest_mtime, UTC).isoformat()
 
 
 def _source_for_artifacts(paths: list[str]) -> str:
@@ -1069,6 +1421,14 @@ def _action_link(actions: dict[str, dict[str, Any]], action_id: str) -> dict[str
     }
 
 
+def _latest_action_trace(actions: dict[str, dict[str, Any]], action_id: str) -> dict[str, Any]:
+    action = actions.get(action_id)
+    if not action:
+        return {}
+    trace = action.get("last_run_trace")
+    return trace if isinstance(trace, dict) else {}
+
+
 def _netapp_console_state(state: dict[str, Any]) -> str:
     console = state.get("console") if isinstance(state.get("console"), dict) else {}
     prompt = str(console.get("prompt_state") or _json_value("artifacts/codex-runs/netapp-console-state-redacted.json", "selected_prompt_state") or "")
@@ -1089,13 +1449,7 @@ def _json_value(path: str, key: str) -> Any:
 
 def _json_artifact(path: str) -> dict[str, Any]:
     artifact = REPO_ROOT / path
-    if not artifact.exists():
-        return {}
-    try:
-        payload = json.loads(artifact.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return {}
-    return payload if isinstance(payload, dict) else {}
+    return read_json_object(artifact)
 
 
 def _vcenter_post_attach_ready(payload: dict[str, Any]) -> bool:
@@ -1186,7 +1540,7 @@ def _md_cell(value: Any) -> str:
 
 
 def _rel(path: Path) -> str:
-    return str(path.relative_to(REPO_ROOT))
+    return repo_relative_path(path, REPO_ROOT)
 
 
 def _now() -> str:

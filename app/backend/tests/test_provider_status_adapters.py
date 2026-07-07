@@ -7,8 +7,12 @@ import sys
 import types
 from pathlib import Path
 
+import httpx
 from fastapi.testclient import TestClient
 
+from app.providers import cisco_console as cisco_console_module
+from app.providers import cisco_ansible as cisco_ansible_module
+from app.providers import ilo_redfish as ilo_redfish_module
 from app.providers import esxi_readonly
 from app.providers.base import ProviderAction, ProviderStatus
 from app.providers.action_policy import ActionCategory, LabActionPolicy
@@ -27,6 +31,7 @@ from app.providers.cisco_ansible import (
     CiscoAnsibleAdapter,
     CiscoAnsibleConfig,
     _run_command,
+    _tail,
     _write_temp_inventory,
 )
 from app.providers.esxi_readonly import EsxiReadonlyAdapter, EsxiReadonlyConfig
@@ -35,8 +40,11 @@ from app.providers.lab_safety import LabSafetyState
 from app.providers.probe_cache import clear_probe_results, record_probe_result
 from app.providers.redaction import redact_sensitive
 from app.providers.registry import provider_registry
-from app.services.cisco_bootstrap_requirements import build_cisco_bootstrap_requirements
-from app.services.cisco_bootstrap_requirements import save_cisco_bootstrap_requirements
+from app.services.cisco_bootstrap_requirements import (
+    build_cisco_bootstrap_requirements,
+    get_cisco_bootstrap_requirements,
+    save_cisco_bootstrap_requirements,
+)
 from app.services.cisco_console_bootstrap import (
     CONFIRMATION_PHRASE,
     apply_cisco_console_bootstrap,
@@ -59,12 +67,59 @@ from app.services.lab_profiles import create_lab_profile
 from app.schemas import IloNetworkIntent, IloSetupApplyCreate, IloSetupIntentWrite
 
 
+def test_ilo_redfish_unique_paths_preserve_first_normalized_path() -> None:
+    assert ilo_redfish_module._unique_paths(
+        [
+            "",
+            "/redfish/v1/Systems/1/",
+            "/redfish/v1/Systems/1",
+            "/redfish/v1/Systems/2/",
+            "/",
+        ]
+    ) == ["/redfish/v1/Systems/1/", "/redfish/v1/Systems/2/", "/"]
+
+
+def test_ilo_redfish_unique_named_paths_dedupes_by_path_only() -> None:
+    assert ilo_redfish_module._unique_named_paths(
+        [
+            ("first", "/redfish/v1/Managers/1/"),
+            ("duplicate-name", "/redfish/v1/Managers/1"),
+            ("second", "/redfish/v1/Managers/2/"),
+            ("empty", ""),
+        ]
+    ) == [
+        ("first", "/redfish/v1/Managers/1/"),
+        ("second", "/redfish/v1/Managers/2/"),
+    ]
+
+
+def test_ilo_network_inventory_skips_optional_client_error(monkeypatch) -> None:
+    def fake_get_json(_client, _base_url, path, requests):
+        request = httpx.Request("GET", f"https://ilo.example{path}")
+        response = httpx.Response(400, request=request)
+        requests.append({"path": path, "status_code": 400})
+        raise httpx.HTTPStatusError("bad optional network collection", request=request, response=response)
+
+    requests: list[dict] = []
+    monkeypatch.setattr(ilo_redfish_module, "_get_json", fake_get_json)
+
+    result = ilo_redfish_module._network_collection_members(  # noqa: SLF001
+        object(),
+        "https://ilo.example",
+        "/redfish/v1/Systems/1/EthernetInterfaces/",
+        requests,
+    )
+
+    assert result == []
+    assert requests == [{"path": "/redfish/v1/Systems/1/EthernetInterfaces/", "status_code": 400}]
+
+
 def test_cisco_candidate_discovery_with_one_stable_candidate(tmp_path: Path) -> None:
     paths = _console_paths(tmp_path)
     tty = paths["dev"] / "ttyUSB0"
     tty.touch()
     stable = paths["by_id"] / "usb-Cisco_console-if00-port0"
-    stable.symlink_to(tty)
+    stable.touch()
 
     discovery = discover_cisco_console(
         CiscoConsoleConfig(port=None, baud=9600, timeout_seconds=1.0),
@@ -90,8 +145,8 @@ def test_cisco_candidate_discovery_with_multiple_stable_candidates(tmp_path: Pat
     tty1 = paths["dev"] / "ttyUSB1"
     tty0.touch()
     tty1.touch()
-    (paths["by_id"] / "usb-Cisco_console-a").symlink_to(tty0)
-    (paths["by_id"] / "usb-Cisco_console-b").symlink_to(tty1)
+    (paths["by_id"] / "usb-Cisco_console-a").touch()
+    (paths["by_id"] / "usb-Cisco_console-b").touch()
 
     discovery = discover_cisco_console(
         CiscoConsoleConfig(port=None, baud=9600, timeout_seconds=1.0),
@@ -175,6 +230,30 @@ def test_cisco_configured_port_missing_has_clear_blocker(tmp_path: Path) -> None
     assert "Configured CISCO_CONSOLE_PORT does not exist" in discovery["blockers"][0]
 
 
+def test_cisco_configured_port_self_heals_exists_probe_errors(monkeypatch, tmp_path: Path) -> None:
+    paths = _console_paths(tmp_path)
+    locked_path = paths["dev"] / "ttyUSB9"
+    original_exists = Path.exists
+
+    def locked_exists(path: Path) -> bool:
+        if path == locked_path:
+            raise OSError("configured console path unavailable")
+        return original_exists(path)
+
+    monkeypatch.setattr(Path, "exists", locked_exists)
+
+    discovery = discover_cisco_console(
+        CiscoConsoleConfig(port=str(locked_path), baud=9600, timeout_seconds=1.0),
+        _discovery_paths(paths),
+    )
+
+    assert discovery["status"] == "missing-console"
+    assert discovery["env_override"]["exists"] is False
+    assert discovery["effective_path"] is None
+    assert discovery["candidates"][0]["exists"] is False
+    assert "Configured CISCO_CONSOLE_PORT does not exist" in discovery["blockers"][0]
+
+
 def test_cisco_configured_port_permission_guidance(
     tmp_path: Path,
     monkeypatch,
@@ -254,7 +333,9 @@ def test_cisco_console_probe_redacts_blocked_prompt_sample(
     paths = _console_paths(tmp_path)
     tty = paths["dev"] / "ttyUSB0"
     tty.touch()
+    report_path = tmp_path / "cisco-console-discovery-report.md"
     _allow_readonly_lab(monkeypatch)
+    monkeypatch.setattr(cisco_console_module, "CISCO_CONSOLE_DISCOVERY_REPORT", report_path)
     _install_fake_serial(
         monkeypatch,
         ["Switch01\nWould you like to enter the initial configuration dialog? [yes/no]:"],
@@ -264,12 +345,14 @@ def test_cisco_console_probe_redacts_blocked_prompt_sample(
         provider_mode="local-readonly",
         config=CiscoConsoleConfig(port=str(tty), baud=9600, timeout_seconds=1.0),
     )
-    result = adapter.probe()
+    result = adapter.prompt_readiness()
     encoded = json.dumps(result)
 
     assert result["status"] == "blocked"
     assert result["prompt_state"] == "setup-wizard"
     assert result["prompt_sample"]["raw_text_redacted"] is True
+    assert report_path.read_text(encoding="utf-8").strip()
+    assert not list(tmp_path.glob("*.tmp"))
     assert "Switch01" not in encoded
     assert "initial configuration dialog" not in encoded
 
@@ -359,7 +442,9 @@ def test_cisco_console_firmware_inventory_parses_ios_xe_from_user_exec(
     clear_probe_results()
     tty = tmp_path / "ttyUSB0"
     tty.touch()
+    report_path = tmp_path / "cisco-firmware-inventory-report.md"
     _allow_readonly_lab(monkeypatch)
+    monkeypatch.setattr(cisco_console_module, "CISCO_FIRMWARE_INVENTORY_REPORT", report_path)
     monkeypatch.setattr(
         "app.providers.cisco_console.settings",
         _cisco_console_settings(cisco_mgmt_configured=False),
@@ -383,6 +468,8 @@ def test_cisco_console_firmware_inventory_parses_ios_xe_from_user_exec(
     assert result["prompt_state"] == "exec"
     assert result["ios_xe_version"] == "17.15.05"
     assert result["safe_show_commands"][0]["version_hint"] == "17.15.05"
+    assert report_path.read_text(encoding="utf-8").strip()
+    assert not list(tmp_path.glob("*.tmp"))
     assert b"show version\n" in writes
     assert b"enable\n" not in writes
     assert "Cisco IOS XE Software" not in encoded
@@ -575,6 +662,7 @@ def test_cisco_prompt_readiness_blocks_login_required_prompt(
     assert writes == [b"\n"]
     assert result["status"] == "blocked"
     assert result["prompt_state"] == "login-required"
+    assert result["selected_port"] == result["selected_path"]
     assert result["login_required"] is True
     assert result["credentials_configured"] is False
     assert result["prompt_ready"] is False
@@ -616,6 +704,7 @@ def test_cisco_prompt_readiness_classifies_password_prompt(
     assert writes == [b"\n"]
     assert result["status"] == "blocked"
     assert result["prompt_state"] == "password-required"
+    assert result["selected_port"] == result["selected_path"]
     assert result["prompt_classification"]["classification"] == "password_prompt"
     assert result["credentials_configured"] is True
     assert "guarded Cisco privilege/bootstrap workflow" in result["blockers"][0]
@@ -778,6 +867,12 @@ def test_cisco_ansible_run_command_can_redact_output() -> None:
     assert "device output" not in encoded
 
 
+def test_cisco_ansible_output_tail_handles_bytes_and_missing_values() -> None:
+    assert _tail(None) == ""
+    assert _tail(b"ready-\xff") == "ready-\ufffd"
+    assert _tail("x" * 12005) == "x" * 12000
+
+
 def test_cisco_ansible_inventory_targets_switch_not_control_host() -> None:
     config = CiscoAnsibleConfig(
         host="192.168.1.204",
@@ -799,6 +894,40 @@ def test_cisco_ansible_inventory_targets_switch_not_control_host() -> None:
     host_vars = inventory["all"]["hosts"]["cisco_target"]
     assert host_vars["ansible_host"] == "192.168.1.204"
     assert "192.168.1.205" not in json.dumps(inventory)
+
+
+def test_cisco_ansible_temp_inventory_cleanup_does_not_mask_write_error(monkeypatch) -> None:
+    def fail_dump(*_args, **_kwargs):  # noqa: ANN002, ANN003
+        raise TypeError("cannot serialize inventory")
+
+    cleanup_calls: list[tuple[str, bool]] = []
+
+    def locked_cleanup(path: str | Path, *, scrub: bool = False) -> bool:
+        cleanup_calls.append((str(path), scrub))
+        return False
+
+    monkeypatch.setattr(cisco_ansible_module.json, "dump", fail_dump)
+    monkeypatch.setattr(cisco_ansible_module, "remove_file_best_effort", locked_cleanup)
+
+    config = CiscoAnsibleConfig(
+        host="192.168.1.204",
+        username="switch-admin",
+        password="super-secret-password",
+        enable_password=None,
+        network_os="cisco.ios.ios",
+        connection="ansible.netcommon.network_cli",
+        timeout_seconds=1.0,
+    )
+
+    try:
+        _write_temp_inventory(config)
+    except TypeError as exc:
+        assert "cannot serialize inventory" in str(exc)
+    else:
+        raise AssertionError("_write_temp_inventory should preserve the original write error")
+
+    assert cleanup_calls
+    assert cleanup_calls[0][1] is True
 
 
 def test_cisco_setup_readiness_is_plan_only_until_management_bootstrap() -> None:
@@ -847,6 +976,44 @@ def test_cisco_setup_readiness_is_plan_only_until_management_bootstrap() -> None
     assert "raw running-config backup" in readiness["disabled_actions"]
     assert "Configure Terminal" not in encoded
     assert "/probe" not in encoded
+
+
+def test_cisco_setup_readiness_dedupes_adapter_warnings_and_blockers() -> None:
+    console = ProviderStatus(
+        name="Cisco console",
+        kind="serial",
+        mode="mock",
+        status="blocked",
+        capabilities=[],
+        message="blocked",
+        warnings=["shared warning", "console warning", "shared warning"],
+        blockers=["shared blocker", "console blocker", "shared blocker"],
+        configuration={},
+        discovery={},
+    )
+    ansible = ProviderStatus(
+        name="Cisco ansible",
+        kind="network_cli",
+        mode="mock",
+        status="blocked",
+        capabilities=[],
+        message="blocked",
+        warnings=["shared warning", "ansible warning"],
+        blockers=["shared blocker", "ansible blocker"],
+        configuration={},
+        discovery={},
+    )
+
+    readiness = get_cisco_setup_readiness(
+        provider_mode="mock",
+        planned_management_ip="192.168.1.204",
+        management_configured=False,
+        console_status=console,
+        ansible_status=ansible,
+    )
+
+    assert readiness["warnings"] == ["shared warning", "console warning", "ansible warning"]
+    assert readiness["blockers"] == ["shared blocker", "console blocker", "ansible blocker"]
 
 
 def test_cisco_setup_readiness_surfaces_no_output_prompt_guidance() -> None:
@@ -934,6 +1101,37 @@ def test_cisco_setup_readiness_surfaces_password_recovery_summary(tmp_path: Path
     assert readiness["password_recovery"]["enable_rejected"] == "yes"
     assert readiness["password_recovery"]["final_prompt_state"] == "exec"
     assert "password recovery" in readiness["password_recovery"]["next_action"].lower()
+
+
+def test_cisco_setup_readiness_tolerates_corrupt_real_lab_details(tmp_path: Path, monkeypatch) -> None:
+    details_path = tmp_path / "cisco-details.json"
+    details_path.write_text("{not valid json", encoding="utf-8")
+    monkeypatch.setattr("app.services.cisco_setup_readiness.REAL_LAB_DETAILS", details_path)
+
+    readiness = get_cisco_setup_readiness(provider_mode="mock", management_configured=False)
+
+    assert readiness["real_lab_run"]["available"] is False
+    assert readiness["real_lab_run"]["status"] == "unreadable"
+    assert readiness["password_recovery"]["needed"] is False
+
+
+def test_cisco_setup_readiness_tolerates_real_lab_details_probe_error(tmp_path: Path, monkeypatch) -> None:
+    details_path = tmp_path / "cisco-details.json"
+    monkeypatch.setattr("app.services.cisco_setup_readiness.REAL_LAB_DETAILS", details_path)
+    original_exists = Path.exists
+
+    def flaky_exists(path: Path) -> bool:
+        if path == details_path:
+            raise OSError("locked")
+        return original_exists(path)
+
+    monkeypatch.setattr(Path, "exists", flaky_exists)
+
+    readiness = get_cisco_setup_readiness(provider_mode="mock", management_configured=False)
+
+    assert readiness["real_lab_run"]["available"] is False
+    assert readiness["real_lab_run"]["status"] == "unreadable"
+    assert readiness["password_recovery"]["needed"] is False
 
 
 def test_cisco_setup_wizard_plan_unknown_state_is_safe_preview() -> None:
@@ -1087,6 +1285,55 @@ def test_cisco_bootstrap_requirements_save_non_secret_planning_state(
     assert "super-secret" not in encoded
 
 
+def test_cisco_bootstrap_requirements_dedupe_dns_values_on_save(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    state_path = tmp_path / "bootstrap-requirements.json"
+    monkeypatch.setattr("app.services.cisco_bootstrap_requirements.STATE_PATH", state_path)
+    payload = {
+        **_valid_bootstrap_payload(),
+        "dns_servers": [" 192.168.1.1 ", "", "192.168.1.1", 123, "192.168.1.2", "192.168.1.2"],
+    }
+
+    requirements = save_cisco_bootstrap_requirements(payload)
+    saved = json.loads(state_path.read_text(encoding="utf-8"))
+
+    assert saved["dns_servers"] == ["192.168.1.1", "192.168.1.2"]
+    assert requirements["requirements"]["domain_dns"]["dns_servers"] == ["192.168.1.1", "192.168.1.2"]
+
+    csv_payload = {
+        **_valid_bootstrap_payload(),
+        "dns_servers": ' "192.168.1.1" , 192.168.1.1, "192.168.1.2" ',
+    }
+    csv_requirements = save_cisco_bootstrap_requirements(csv_payload)
+    csv_saved = json.loads(state_path.read_text(encoding="utf-8"))
+
+    assert csv_saved["dns_servers"] == ["192.168.1.1", "192.168.1.2"]
+    assert csv_requirements["requirements"]["domain_dns"]["dns_servers"] == [
+        "192.168.1.1",
+        "192.168.1.2",
+    ]
+
+
+def test_cisco_bootstrap_requirements_self_heals_corrupt_state_and_writes_atomically(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    state_path = tmp_path / "bootstrap-requirements.json"
+    state_path.write_text("{not json", encoding="utf-8")
+    monkeypatch.setattr("app.services.cisco_bootstrap_requirements.STATE_PATH", state_path)
+
+    requirements = get_cisco_bootstrap_requirements()
+    assert requirements["provider_id"] == "cisco-bootstrap-requirements"
+    assert requirements["apply_enabled"] is False
+
+    save_cisco_bootstrap_requirements(_valid_bootstrap_payload())
+
+    assert json.loads(state_path.read_text(encoding="utf-8"))["planned_management_ip"] == "192.168.1.204"
+    assert list(tmp_path.glob("*.tmp")) == []
+
+
 def test_cisco_console_bootstrap_plan_uses_real_lab_target(
     tmp_path: Path,
     monkeypatch,
@@ -1164,6 +1411,73 @@ def test_cisco_console_bootstrap_plan_blocks_no_output_prompt(
     assert any("no prompt text was captured" in step for step in plan["intended_steps"])
 
 
+def test_cisco_console_bootstrap_plan_self_heals_malformed_prompt_timestamp(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    state_path = tmp_path / "bootstrap-requirements.json"
+    monkeypatch.setattr("app.services.cisco_bootstrap_requirements.STATE_PATH", state_path)
+    save_cisco_bootstrap_requirements(_valid_bootstrap_payload())
+    monkeypatch.setattr(
+        "app.services.cisco_console_bootstrap.get_probe_result",
+        lambda _provider_id: (
+            {
+                "provider_id": "cisco-console",
+                "action": "prompt-readiness",
+                "status": "ok",
+                "prompt_state": "exec",
+            },
+            123,
+        ),
+    )
+    _mock_ready_console(monkeypatch)
+
+    plan = build_cisco_console_bootstrap_plan()
+
+    assert plan["status"] == "blocked"
+    assert plan["flow"] == "direct-exec-config-mode-flow"
+    assert any("Prompt readiness must be recent" in blocker for blocker in plan["blockers"])
+
+
+def test_cisco_console_bootstrap_plan_keeps_scalar_requirement_blocker_whole(monkeypatch) -> None:
+    from app.services import cisco_console_bootstrap
+
+    _record_prompt_readiness("exec")
+    _mock_ready_console(monkeypatch)
+    requirements = {
+        "blockers": " missing bootstrap requirement ",
+        "requirements": {
+            "planned_management_ip": {"value": "192.168.1.204"},
+            "subnet_prefix": {"value": "/24"},
+            "hostname": {"value": "cisco-lab-01"},
+            "management_vlan_interface_strategy": {"interface": "Vlan8"},
+        },
+    }
+
+    blockers = cisco_console_bootstrap._plan_blockers(requirements, "exec", "exec")
+
+    assert "missing bootstrap requirement" in blockers
+    assert not any(blocker == "m" for blocker in blockers)
+
+
+def test_cisco_console_bootstrap_plan_tolerates_missing_requirement_blockers(monkeypatch) -> None:
+    from app.services import cisco_console_bootstrap
+
+    _record_prompt_readiness("exec")
+    _mock_ready_console(monkeypatch)
+    requirements = {
+        "requirements": {
+            "planned_management_ip": {"value": "192.168.1.204"},
+            "subnet_prefix": {"value": "/24"},
+        },
+    }
+
+    blockers = cisco_console_bootstrap._plan_blockers(requirements, "exec", "exec")
+
+    assert isinstance(blockers, list)
+    assert not any(blocker == "b" for blocker in blockers)
+
+
 def test_cisco_console_bootstrap_plan_blocks_login_required_prompt(
     tmp_path: Path,
     monkeypatch,
@@ -1233,6 +1547,21 @@ def test_cisco_console_bootstrap_apply_rejects_destructive_requested_actions(
     assert result["serial_writes_attempted"] is False
     assert result["commands_sent"] == []
     assert any("Destructive reset/wipe/copy/reload" in blocker for blocker in result["blockers"])
+
+
+def test_cisco_console_bootstrap_apply_keeps_scalar_plan_and_destructive_blockers_whole(monkeypatch) -> None:
+    from app.services import cisco_console_bootstrap
+
+    monkeypatch.setattr(cisco_console_bootstrap, "firmware_gate_blockers", lambda _label: " firmware blocker ")
+    plan = {"blockers": " plan blocker "}
+    payload = {"requested_actions": "reload"}
+
+    blockers = cisco_console_bootstrap._apply_gate_blockers(plan, CONFIRMATION_PHRASE, payload)
+
+    assert "plan blocker" in blockers
+    assert "firmware blocker" in blockers
+    assert any("Destructive reset/wipe/copy/reload" in blocker for blocker in blockers)
+    assert not any(blocker == "p" for blocker in blockers)
 
 
 def test_cisco_console_bootstrap_apply_requires_exact_phrase(
@@ -1376,6 +1705,23 @@ def test_esxi_tool_availability_checks_repo_local_bin(monkeypatch, tmp_path: Pat
     assert esxi_readonly._which("govc") is True
 
 
+def test_esxi_tool_availability_skips_unavailable_repo_local_bin(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(esxi_readonly, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(esxi_readonly.sys, "executable", str(tmp_path / "venv" / "Scripts" / "python.exe"))
+    candidate = tmp_path / "venv" / "Scripts" / "govc"
+    original_is_file = Path.is_file
+
+    def flaky_is_file(path: Path) -> bool:
+        if path == candidate:
+            raise OSError("candidate path unavailable")
+        return original_is_file(path)
+
+    monkeypatch.setattr(Path, "is_file", flaky_is_file)
+    monkeypatch.setattr("shutil.which", lambda _name: None)
+
+    assert esxi_readonly._which("govc") is False
+
+
 def test_cisco_management_configured_false_returns_bootstrap_status_and_skips_probe(
     monkeypatch,
 ) -> None:
@@ -1433,6 +1779,38 @@ def test_cisco_management_configured_false_without_target_returns_not_configured
     assert status.configuration["safe_next_action"] == "Use console bootstrap before Ansible SSH."
 
 
+def test_cisco_health_reports_paramiko_fallback_when_ansible_cli_missing(monkeypatch) -> None:
+    monkeypatch.setattr(cisco_ansible_module, "which", lambda _name: None)
+    monkeypatch.setattr(cisco_ansible_module.importlib.util, "find_spec", lambda name: object() if name == "paramiko" else None)
+    monkeypatch.setattr(
+        cisco_ansible_module,
+        "current_lab_safety",
+        lambda: LabSafetyState(
+            closed_loop_ack=True,
+            readonly_ack=True,
+            destructive_ack=False,
+        ),
+    )
+
+    status = CiscoAnsibleAdapter(
+        provider_mode="local-readonly",
+        config=CiscoAnsibleConfig(
+            host="192.0.2.60",
+            username="switch-admin",
+            password="super-secret-password",
+            enable_password=None,
+            network_os="cisco.ios.ios",
+            connection="ansible.netcommon.network_cli",
+            timeout_seconds=1.0,
+            management_configured=True,
+        ),
+    ).health()
+
+    assert status.configuration["paramiko_available"] is True
+    assert "using Paramiko fallback" in " ".join(status.warnings)
+    assert "show commands will be blocked" not in " ".join(status.warnings)
+
+
 def test_cisco_management_configured_true_runs_ssh_reachability(monkeypatch) -> None:
     calls: list[tuple[str, int]] = []
 
@@ -1471,6 +1849,49 @@ def test_cisco_management_configured_true_runs_ssh_reachability(monkeypatch) -> 
     assert result["blockers"] == ["Cisco SSH is not reachable."]
 
 
+def test_cisco_ansible_probe_cleanup_failure_does_not_mask_result(monkeypatch) -> None:
+    cleanup_calls: list[tuple[Path, bool]] = []
+
+    monkeypatch.setattr(
+        cisco_ansible_module,
+        "_tcp_connect",
+        lambda *_args, **_kwargs: {"reachable": True, "port": 22, "attempts": []},
+    )
+    monkeypatch.setattr(cisco_ansible_module, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(
+        cisco_ansible_module,
+        "_run_command",
+        lambda *_args, **_kwargs: {"returncode": 0, "raw_output_redacted": True},
+    )
+
+    def locked_cleanup(path: str | Path, *, scrub: bool = False) -> bool:
+        cleanup_calls.append((Path(path), scrub))
+        return False
+
+    monkeypatch.setattr(cisco_ansible_module, "remove_file_best_effort", locked_cleanup)
+
+    adapter = CiscoAnsibleAdapter(
+        provider_mode="local-readonly",
+        config=CiscoAnsibleConfig(
+            host="192.0.2.60",
+            username="switch-admin",
+            password="super-secret-password",
+            enable_password=None,
+            network_os="cisco.ios.ios",
+            connection="ansible.netcommon.network_cli",
+            timeout_seconds=1.0,
+            management_configured=True,
+        ),
+    )
+
+    result = adapter.probe()
+
+    assert result["status"] == "ok"
+    assert result["blockers"] == []
+    assert cleanup_calls
+    assert cleanup_calls[0][1] is True
+
+
 def test_cisco_console_discovery_runs_when_management_is_not_configured(
     tmp_path: Path,
 ) -> None:
@@ -1478,7 +1899,7 @@ def test_cisco_console_discovery_runs_when_management_is_not_configured(
     tty = paths["dev"] / "ttyUSB0"
     tty.touch()
     stable = paths["by_id"] / "usb-Cisco_console-if00-port0"
-    stable.symlink_to(tty)
+    stable.touch()
 
     ansible_status = CiscoAnsibleAdapter(
         provider_mode="mock",
@@ -1503,6 +1924,16 @@ def test_cisco_console_discovery_runs_when_management_is_not_configured(
     assert console_status.status == "ready"
     assert console_status.discovery is not None
     assert console_status.discovery["effective_path"] == str(stable)
+
+
+def test_cisco_baud_scan_order_dedupes_configured_first() -> None:
+    original = cisco_console_module.COMMON_CISCO_CONSOLE_BAUDS
+    try:
+        cisco_console_module.COMMON_CISCO_CONSOLE_BAUDS = (9600, 115200, 9600, 57600)
+        assert cisco_console_module._baud_scan_order(115200) == [115200, 9600, 57600]
+        assert cisco_console_module._baud_scan_order(115200, max_bauds=2) == [115200, 9600]
+    finally:
+        cisco_console_module.COMMON_CISCO_CONSOLE_BAUDS = original
 
 
 def test_provider_smoke_skips_unconfigured_management_tcp_preflight(monkeypatch) -> None:
@@ -1550,6 +1981,116 @@ def test_provider_smoke_skips_unconfigured_management_tcp_preflight(monkeypatch)
     assert result["cisco_ssh"]["configured"] is False
     assert result["cisco_ssh"]["planned_target"] is True
     assert "CISCO_MGMT_CONFIGURED=false" in result["cisco_ssh"]["reason"]
+
+
+def test_provider_lab_live_status_uses_active_python(monkeypatch) -> None:
+    live_status = _load_provider_lab_live_status_module()
+    calls: list[list[str]] = []
+    timeouts: list[int] = []
+
+    def fake_run(cmd, **kwargs):  # noqa: ANN001, ANN003
+        calls.append(list(cmd))
+        timeouts.append(kwargs["timeout"])
+        return types.SimpleNamespace(
+            returncode=0,
+            stdout=json.dumps({"status": "ready", "blockers": [], "warnings": []}),
+            stderr="",
+        )
+
+    monkeypatch.delenv("PYTHON", raising=False)
+    monkeypatch.setenv("PROVIDER_LAB_LIVE_STAGE_TIMEOUT_SECONDS", "soon")
+    monkeypatch.setattr(live_status.subprocess, "run", fake_run)
+
+    result = live_status._run_stage(
+        "example",
+        ["scripts/example.py"],
+        "artifacts/codex-runs/example-report.md",
+        {"PYTHONPATH": "."},
+    )
+
+    assert result["status"] == "ready"
+    assert calls[0][:2] == [sys.executable, "scripts/example.py"]
+    assert timeouts == [120]
+    assert live_status._rel(live_status.REPORT) == "artifacts/codex-runs/provider-lab-live-status-report.md"
+    assert live_status._rel(Path(r"C:\external\provider-lab-live-status-report.md")) == r"C:\external\provider-lab-live-status-report.md"
+
+
+def test_provider_lab_live_status_summary_uses_atomic_store(monkeypatch, tmp_path: Path) -> None:
+    live_status = _load_provider_lab_live_status_module()
+    run_dir = tmp_path / "artifacts" / "codex-runs"
+    monkeypatch.setattr(live_status, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(live_status, "CODEX_RUN_DIR", run_dir)
+    monkeypatch.setattr(live_status, "REPORT", run_dir / "provider-lab-live-status-report.md")
+    monkeypatch.setattr(live_status, "SUMMARY", run_dir / "provider-lab-live-status-redacted.json")
+    monkeypatch.setattr(live_status, "REAL_LAB_ENV", tmp_path / ".env.local.real-lab")
+    monkeypatch.setattr(live_status, "STAGES", [("example", ["scripts/example.py"], "artifacts/codex-runs/example-report.md")])
+    monkeypatch.setattr(
+        live_status,
+        "_run_stage",
+        lambda name, command, report, env: {
+            "stage": name,
+            "status": "ready",
+            "returncode": 0,
+            "source_type": "live_probe",
+            "freshness": "current",
+            "is_current": True,
+            "report": report,
+            "message": "ok",
+            "blockers": [],
+            "warnings": [],
+        },
+    )
+
+    assert live_status.main() == 0
+
+    saved = json.loads(live_status.SUMMARY.read_text(encoding="utf-8"))
+    assert saved["status"] == "ready"
+    assert live_status.REPORT.read_text(encoding="utf-8").strip()
+    assert not list(run_dir.glob("*.tmp"))
+
+
+def test_provider_smoke_tool_availability_uses_active_python(monkeypatch) -> None:
+    smoke = _load_provider_smoke_module()
+
+    monkeypatch.setattr(smoke.sys, "executable", r"C:\Python312\python.exe")
+    monkeypatch.setattr(smoke.shutil, "which", lambda _name: None)
+
+    assert smoke._tool_availability([])["python"] is True
+
+
+def test_provider_smoke_artifact_labels_are_portable(tmp_path: Path) -> None:
+    smoke = _load_provider_smoke_module()
+    report = smoke.REPO_ROOT / "artifacts" / "real-lab" / "provider-smoke.json"
+    external = tmp_path / "provider-smoke.json"
+
+    assert smoke._rel(report) == "artifacts/real-lab/provider-smoke.json"
+    assert smoke._rel(external) == str(external)
+
+
+def test_provider_smoke_report_uses_atomic_store(monkeypatch, tmp_path: Path) -> None:
+    smoke = _load_provider_smoke_module()
+    monkeypatch.setattr(smoke, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(smoke, "REPORT_DIR", tmp_path / "artifacts" / "real-lab")
+
+    smoke._write_report(
+        {
+            "checked_at": "2026-06-25T00:00:00+00:00",
+            "provider_mode": "local-readonly",
+            "preflight": {},
+            "provider_status": [],
+            "probes": [],
+            "blockers": [],
+            "warnings": [],
+        }
+    )
+
+    json_reports = list(smoke.REPORT_DIR.glob("provider-smoke-*.json"))
+    markdown_reports = list(smoke.REPORT_DIR.glob("provider-smoke-*.md"))
+    assert len(json_reports) == 1
+    assert len(markdown_reports) == 1
+    assert json.loads(json_reports[0].read_text(encoding="utf-8"))["provider_mode"] == "local-readonly"
+    assert markdown_reports[0].read_text(encoding="utf-8").strip()
+    assert not list(smoke.REPORT_DIR.glob("*.tmp"))
 
 
 def test_provider_smoke_provider_filter_limits_tcp_preflight(monkeypatch) -> None:
@@ -1827,6 +2368,70 @@ def test_hpe_raid_plan_preserves_existing_esxi_layout() -> None:
     assert "RAID create/delete/update" in plan["not_attempted"]
 
 
+def test_hpe_raid_plan_main_writes_reports_atomically(monkeypatch, tmp_path: Path, capsys) -> None:
+    raid = _load_hpe_raid_plan_module()
+    run_dir = tmp_path / "artifacts" / "codex-runs"
+    run_dir.mkdir(parents=True)
+    monkeypatch.setattr(raid, "CODEX_RUN_DIR", run_dir)
+    monkeypatch.setattr(raid, "ILO_REPORT", run_dir / "ilo-real-run-report.md")
+    monkeypatch.setattr(raid, "RAID_REPORT", run_dir / "hpe-raid-plan-report.md")
+
+    class FakeIloRedfishAdapter:
+        def __init__(self, *, provider_mode: str) -> None:
+            assert provider_mode == "local-lab-readwrite"
+
+        def probe(self) -> dict[str, object]:
+            return {
+                "status": "ok",
+                "message": "ready",
+                "service_root": {},
+                "managers": [{"FirmwareVersion": "3.19"}],
+                "systems": [{"Model": "ProLiant DL360 Gen10", "PowerState": "On"}],
+                "storage": {
+                    "controllers": [{"Model": "HPE Smart Array P408i-a SR Gen10"}],
+                    "physical_drives": [{"Id": str(index)} for index in range(8)],
+                    "logical_drives": [],
+                },
+            }
+
+    monkeypatch.setattr(raid, "IloRedfishAdapter", FakeIloRedfishAdapter)
+
+    assert raid.main() == 0
+    capsys.readouterr()
+
+    assert raid.ILO_REPORT.read_text(encoding="utf-8").strip()
+    assert raid.RAID_REPORT.read_text(encoding="utf-8").strip()
+    assert not list(run_dir.glob("*.tmp"))
+
+
+def test_hpe_raid_workflow_discovery_writes_report_atomically(monkeypatch, tmp_path: Path, capsys) -> None:
+    workflow = _load_hpe_raid_workflow_module()
+    run_dir = tmp_path / "artifacts" / "codex-runs"
+    run_dir.mkdir(parents=True)
+    monkeypatch.setattr(workflow, "CODEX_RUN_DIR", run_dir)
+    monkeypatch.setattr(workflow, "DISCOVERY_REPORT", run_dir / "hpe-raid-discovery-report.md")
+
+    class FakeIloRedfishAdapter:
+        def __init__(self, *, provider_mode: str) -> None:
+            assert provider_mode == "local-lab-readwrite"
+
+        def probe(self) -> dict[str, object]:
+            return {"status": "ok", "message": "ready", "not_attempted": []}
+
+    monkeypatch.setattr(workflow, "IloRedfishAdapter", FakeIloRedfishAdapter)
+    monkeypatch.setattr(
+        workflow,
+        "get_hpe_storage_discovery",
+        lambda: types.SimpleNamespace(model_dump=lambda: {"controllers": [], "physical_drives": []}),
+    )
+
+    assert workflow._run_discovery() == 0
+    capsys.readouterr()
+
+    assert workflow.DISCOVERY_REPORT.read_text(encoding="utf-8").strip()
+    assert not list(run_dir.glob("*.tmp"))
+
+
 def test_hpe_raid_pending_blocks_reset_when_smartstorage_reads_are_unauthorized() -> None:
     pending = _pending_summary(
         {"_http_status": 401, "_path": "/redfish/v1/Systems/1/SmartStorageConfig/"},
@@ -1946,6 +2551,72 @@ def test_ilo_config_includes_saved_first_access_candidate(monkeypatch) -> None:
     assert config.target_candidates == [
         {"host": "10.10.8.200", "source": "active_lab_profile"},
         {"host": "10.10.8.110", "source": "control_access_original_dhcp_ip"},
+    ]
+
+
+def test_ilo_target_candidates_dedupe_case_insensitive_hosts() -> None:
+    config = IloRedfishConfig(
+        host=" ILO-LAB.local ",
+        username="admin",
+        password="secret",
+        verify_tls=False,
+        timeout_seconds=3.0,
+        host_source="active_lab_profile",
+        fallback_hosts=("ilo-lab.local", "192.0.2.10", " 192.0.2.10 "),
+        fallback_host_sources=("control_access_original_dhcp_ip", "manual", "duplicate"),
+    )
+
+    assert config.target_candidates == [
+        {"host": "ILO-LAB.local", "source": "active_lab_profile"},
+        {"host": "192.0.2.10", "source": "manual"},
+    ]
+
+
+def test_ilo_redfish_collection_paths_dedupe_trailing_slash_variants() -> None:
+    root = {
+        "Managers": {"@odata.id": "/redfish/v1/Managers/"},
+        "Systems": {"@odata.id": "/redfish/v1/Managers"},
+        "Chassis": {"@odata.id": "/redfish/v1/Chassis/"},
+    }
+    system = {
+        "NetworkAdapters": {"@odata.id": "/redfish/v1/Systems/1/NetworkAdapters"},
+        "EthernetInterfaces": {"@odata.id": "/redfish/v1/Systems/1/NetworkAdapters/"},
+        "Storage": {"@odata.id": "/redfish/v1/Systems/1/Storage"},
+        "SmartStorage": {"@odata.id": "/redfish/v1/Systems/1/Storage/"},
+    }
+    controller_links = {
+        "ArrayControllers": {"@odata.id": "/redfish/v1/Systems/1/Storage/1/Controllers/"},
+        "StorageControllers": {"@odata.id": "/redfish/v1/Systems/1/Storage/1/Controllers"},
+    }
+
+    assert ilo_redfish_module._inventory_collection_paths(root) == [
+        ("Managers", "/redfish/v1/Managers/"),
+        ("Chassis", "/redfish/v1/Chassis/"),
+    ]
+    assert ilo_redfish_module._network_collection_paths(system, "/redfish/v1/Systems/1/") == [
+        "/redfish/v1/Systems/1/NetworkAdapters",
+        "/redfish/v1/Systems/1/EthernetInterfaces/",
+    ]
+    assert ilo_redfish_module._storage_collection_paths(system, "/redfish/v1/Systems/1/") == [
+        "/redfish/v1/Systems/1/Storage",
+        "/redfish/v1/Systems/1/SmartStorage/",
+    ]
+    assert ilo_redfish_module._storage_controller_collection_paths(controller_links) == [
+        "/redfish/v1/Systems/1/Storage/1/Controllers/"
+    ]
+
+
+def test_ilo_redfish_member_paths_dedupe_trailing_slash_variants() -> None:
+    members = [
+        {"@odata.id": "/redfish/v1/Systems/1/Storage/1/Drives/1/"},
+        {"@odata.id": "/redfish/v1/Systems/1/Storage/1/Drives/1"},
+        {"bad": "shape"},
+        {"@odata.id": "/redfish/v1/Systems/1/Storage/1/Drives/2"},
+    ]
+
+    assert ilo_redfish_module._member_paths(members, limit=16) == [
+        "/redfish/v1/Systems/1/Storage/1/Drives/1/",
+        "/redfish/v1/Systems/1/Storage/1/Drives/2",
     ]
 
 
@@ -2493,6 +3164,7 @@ def test_local_lab_readwrite_allows_allowlisted_lab_action_categories() -> None:
     )
     assert policy.action_allowed("netapp.svm-lif-iscsi", ActionCategory.STORAGE_CONFIG)
     assert policy.action_allowed("netapp.nfs-setup", ActionCategory.STORAGE_CONFIG)
+    assert policy.action_allowed("netapp.iscsi-setup", ActionCategory.STORAGE_CONFIG)
     assert policy.action_allowed("ilo.bios-settings", ActionCategory.BIOS_CONFIG)
     assert policy.action_allowed("ilo.boot-settings", ActionCategory.BOOT_CONFIG)
     assert policy.action_allowed("ilo.virtual-media", ActionCategory.VIRTUAL_MEDIA)
@@ -2579,6 +3251,41 @@ def test_ilo_probe_classifies_web_available_redfish_not_found(monkeypatch) -> No
     assert matrix["/"]["content_type"] == "text/html"
     assert matrix["/xmldata?item=All"]["status_code"] == 404
     assert all("super-secret-password" not in json.dumps(check) for check in detection["checks"])
+
+
+def test_ilo_probe_classifies_malformed_redfish_root_json(monkeypatch) -> None:
+    _allow_readonly_ilo_lab(monkeypatch)
+    _install_fake_httpx_client(
+        monkeypatch,
+        {
+            "/redfish/v1/": (200, "application/json", b"{not-json"),
+            "/redfish/v1": (404, "text/plain"),
+            "/": (200, "text/html"),
+            "/xmldata?item=All": (404, "text/plain"),
+        },
+    )
+    adapter = IloRedfishAdapter(
+        provider_mode="local-readonly",
+        config=IloRedfishConfig(
+            host="192.0.2.202",
+            username="local-admin",
+            password="super-secret-password",
+            verify_tls=False,
+            timeout_seconds=1.0,
+        ),
+    )
+
+    result = adapter.probe()
+
+    assert result["status"] == "failed"
+    detection = result["endpoint_detection"]
+    assert detection["classification"] == "redfish_invalid_json"
+    assert detection["redfish_status"] == "http_error"
+    assert "non-JSON or malformed JSON body" in result["message"]
+    matrix = {check["path"]: check for check in detection["checks"]}
+    assert matrix["/redfish/v1/"]["classification"] == "redfish_invalid_json"
+    assert matrix["/redfish/v1/"]["status_code"] == 200
+    assert "Verify the target is iLO Redfish" in detection["next_safe_action"]
 
 
 def test_ilo_probe_classifies_legacy_available_redfish_not_found(monkeypatch) -> None:
@@ -3017,6 +3724,54 @@ def test_ilo_probe_for_lab_target_192_168_1_202_is_get_only_and_redacted(monkeyp
     assert "super-secret-password" not in encoded
 
 
+def test_ilo_probe_reports_malformed_inventory_json_without_traceback(monkeypatch) -> None:
+    _allow_readonly_ilo_lab(monkeypatch)
+    _install_fake_httpx_client(
+        monkeypatch,
+        {
+            "/redfish/v1/": (
+                200,
+                "application/json",
+                {
+                    "@odata.id": "/redfish/v1/",
+                    "Managers": {"@odata.id": "/redfish/v1/Managers/"},
+                    "Systems": {"@odata.id": "/redfish/v1/Systems/"},
+                    "Chassis": {"@odata.id": "/redfish/v1/Chassis/"},
+                },
+            ),
+            "/redfish/v1": (200, "application/json", {"@odata.id": "/redfish/v1/"}),
+            "/": (200, "text/html"),
+            "/xmldata?item=All": (404, "text/plain"),
+            "/redfish/v1/Managers/": (200, "application/json", b"{not-json"),
+            "/redfish/v1/Systems/": (200, "application/json", {"Members": []}),
+            "/redfish/v1/Chassis/": (200, "application/json", {"Members": []}),
+        },
+    )
+    adapter = IloRedfishAdapter(
+        provider_mode="local-readonly",
+        config=IloRedfishConfig(
+            host="192.168.1.201",
+            username="Administrator",
+            password="super-secret-password",
+            verify_tls=False,
+            timeout_seconds=1.0,
+        ),
+    )
+
+    result = adapter.probe()
+
+    assert result["status"] == "failed"
+    detection = result["endpoint_detection"]
+    assert detection["classification"] == "redfish_invalid_json"
+    assert detection["failed_path"] == "/redfish/v1/Managers/"
+    assert detection["failed_status_code"] == 200
+    assert any(
+        request.get("path") == "/redfish/v1/Managers/" and request.get("error") == "invalid_json"
+        for request in result["requests"]
+    )
+    assert "super-secret-password" not in json.dumps(result)
+
+
 def test_ilo_redacts_secrets() -> None:
     secret = "super-secret-password"
     host = "ilo-lab-private.example.test"
@@ -3062,6 +3817,20 @@ def test_redaction_masks_hardware_identity_fields() -> None:
     assert "00:11:22:33:44:55" not in encoded
     assert redacted["serial_number_present"] is True
     assert redacted["mac_address_present"] is True
+
+
+def test_redaction_hides_license_values_but_keeps_counts() -> None:
+    redacted = redact_sensitive(
+        {
+            "license_key": "PRIVATE-LICENSE-KEY",
+            "netapp_license_keys": ["PRIVATE-NETAPP-KEY"],
+            "license_count": 2,
+        }
+    )
+
+    assert redacted["license_key"] == "REDACTED"
+    assert redacted["netapp_license_keys"] == "REDACTED"
+    assert redacted["license_count"] == 2
 
 
 def test_redaction_does_not_corrupt_classification_when_username_is_short() -> None:
@@ -3624,9 +4393,29 @@ def _load_provider_smoke_module() -> types.ModuleType:
     return module
 
 
+def _load_provider_lab_live_status_module() -> types.ModuleType:
+    script_path = Path(__file__).resolve().parents[1] / "scripts" / "provider_lab_live_status.py"
+    spec = importlib.util.spec_from_file_location("provider_lab_live_status_under_test", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def _load_hpe_raid_plan_module() -> types.ModuleType:
     script_path = Path(__file__).resolve().parents[1] / "scripts" / "hpe_raid_plan.py"
     spec = importlib.util.spec_from_file_location("hpe_raid_plan_under_test", script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _load_hpe_raid_workflow_module() -> types.ModuleType:
+    script_path = Path(__file__).resolve().parents[1] / "scripts" / "hpe_raid_workflow.py"
+    spec = importlib.util.spec_from_file_location("hpe_raid_workflow_under_test", script_path)
     assert spec is not None
     assert spec.loader is not None
     module = importlib.util.module_from_spec(spec)

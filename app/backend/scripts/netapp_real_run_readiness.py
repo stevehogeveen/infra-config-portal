@@ -6,28 +6,26 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from dotenv import dotenv_values
-
 REPO_ROOT = Path(__file__).resolve().parents[3]
 REAL_LAB_ENV = REPO_ROOT / ".env.local.real-lab"
 REPORT_DIR = REPO_ROOT / "artifacts" / "real-lab"
 
-if REAL_LAB_ENV.exists():
-    for key, value in dotenv_values(REAL_LAB_ENV).items():
-        if value is None or key in os.environ:
-            continue
-        os.environ[key] = value
+from app.services.env_utils import load_real_lab_env  # noqa: E402
+
+load_real_lab_env(REPO_ROOT)
 
 # Load local lab env before app imports; settings reads env at import time.
 from app.core.config import settings  # noqa: E402
 from app.providers.netapp import NetAppOntapAdapter  # noqa: E402
 from app.providers.redaction import redact_sensitive  # noqa: E402
+from app.services.json_file_store import write_json_object, write_text_value  # noqa: E402
 from app.services.netapp_artifacts import list_netapp_artifact_placeholders  # noqa: E402
 from app.services.netapp_console_readiness import get_netapp_console_readiness  # noqa: E402
 from app.services.netapp_readiness_comparison import (  # noqa: E402
     get_netapp_readiness_comparison,
 )
 from app.services.netapp_upgrade_readiness import get_netapp_upgrade_readiness  # noqa: E402
+from app.services.path_utils import file_mode, path_exists  # noqa: E402
 
 
 def main() -> int:
@@ -42,11 +40,7 @@ def main() -> int:
         "provider_id": "netapp-ontap",
         "provider_mode": settings.provider_mode,
         "safe_real_run_scope": "netapp-readiness-only",
-        "env_file": {
-            "path": ".env.local.real-lab",
-            "exists": REAL_LAB_ENV.exists(),
-            "mode": _file_mode(REAL_LAB_ENV),
-        },
+        "env_file": _env_file_summary(),
         "safety": {
             "netapp_configured": settings.netapp_configured,
             "local_readonly_ack": settings.lab_readonly_ack == "YES",
@@ -107,10 +101,16 @@ def _operator_steps() -> list[str]:
     ]
 
 
+def _env_file_summary() -> dict[str, Any]:
+    return {
+        "path": ".env.local.real-lab",
+        "exists": path_exists(REAL_LAB_ENV),
+        "mode": _file_mode(REAL_LAB_ENV),
+    }
+
+
 def _file_mode(path: Path) -> str | None:
-    if not path.exists():
-        return None
-    return oct(path.stat().st_mode & 0o777)
+    return file_mode(path)
 
 
 def _redaction_values() -> list[str]:
@@ -134,8 +134,8 @@ def _write_report(report: dict[str, Any]) -> None:
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     json_path = REPORT_DIR / f"netapp-readiness-{stamp}.json"
     markdown_path = REPORT_DIR / f"netapp-readiness-{stamp}.md"
-    json_path.write_text(json.dumps(report, indent=2, default=str), encoding="utf-8")
-    markdown_path.write_text(_markdown_report(report), encoding="utf-8")
+    write_json_object(json_path, report, default=str)
+    write_text_value(markdown_path, _markdown_report(report))
 
 
 def _markdown_report(report: dict[str, Any]) -> str:

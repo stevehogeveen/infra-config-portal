@@ -9,6 +9,7 @@ from app.providers.probe_cache import get_probe_result, record_probe_result
 from app.providers.redaction import redact_sensitive
 from app.services.cisco_bootstrap_requirements import get_cisco_bootstrap_requirements
 from app.services.firmware_compliance import firmware_gate_blockers
+from app.services.list_utils import unique_preserving_order, unique_strings
 
 PROVIDER_ID = "cisco-console-bootstrap"
 TARGET_IP = LAB_CISCO_MANAGEMENT_IP
@@ -116,7 +117,7 @@ def _apply_gate_blockers(
     confirmation_phrase: object,
     payload: dict[str, Any] | None = None,
 ) -> list[str]:
-    blockers = list(plan["blockers"])
+    blockers = _string_list(plan.get("blockers"))
     payload = payload or {}
     requested_actions = payload.get("requested_actions")
     destructive_requested = bool(payload.get("destructive_action_requested"))
@@ -124,7 +125,7 @@ def _apply_gate_blockers(
         blockers.append(
             "Destructive reset/wipe/copy/reload actions are not allowed by console bootstrap."
         )
-    blockers.extend(firmware_gate_blockers("Cisco bootstrap apply"))
+    blockers.extend(_string_list(firmware_gate_blockers("Cisco bootstrap apply")))
     if settings.provider_mode != "local-readonly":
         blockers.append("PROVIDER_MODE=local-readonly is required for guarded console apply.")
     if not settings.cisco_console_apply_enabled:
@@ -135,7 +136,7 @@ def _apply_gate_blockers(
         blockers.append(f"LAB_TARGET_ACK={TARGET_IP} is required for guarded console apply.")
     if confirmation_phrase != CONFIRMATION_PHRASE:
         blockers.append(f"Exact confirmation phrase is required: {CONFIRMATION_PHRASE}")
-    return list(dict.fromkeys(blockers))
+    return unique_preserving_order(blockers)
 
 
 def _plan_blockers(
@@ -144,7 +145,7 @@ def _plan_blockers(
     prompt_detail: str,
 ) -> list[str]:
     blockers = [
-        blocker for blocker in requirements["blockers"]
+        blocker for blocker in _string_list(requirements.get("blockers"))
         if not blocker.startswith("Bootstrap requirements are preview-only")
     ]
     target_ip = _requirement_value(requirements, "planned_management_ip")
@@ -168,7 +169,7 @@ def _plan_blockers(
             blockers.append("Configuration-mode prompt is not supported by console bootstrap planning.")
         else:
             blockers.append("Prompt state must be exec or setup-wizard for bootstrap planning.")
-    return list(dict.fromkeys(blockers))
+    return unique_preserving_order(blockers)
 
 
 def _prompt_recent() -> bool:
@@ -179,7 +180,7 @@ def _prompt_recent() -> bool:
         return False
     try:
         checked = datetime.fromisoformat(checked_at)
-    except ValueError:
+    except (TypeError, ValueError):
         return False
     if checked.tzinfo is None:
         checked = checked.replace(tzinfo=UTC)
@@ -306,10 +307,13 @@ def _object_requirement(requirements: dict[str, Any], key: str) -> dict[str, Any
 
 
 def _requests_destructive_action(value: object) -> bool:
-    if not isinstance(value, list):
-        return False
+    items = _string_list(value)
     destructive_terms = ("erase", "reload", "delete", "copy", "wipe", "write erase")
-    for item in value:
-        if isinstance(item, str) and any(term in item.lower() for term in destructive_terms):
+    for item in items:
+        if any(term in item.lower() for term in destructive_terms):
             return True
     return False
+
+
+def _string_list(value: object) -> list[str]:
+    return unique_strings(value)

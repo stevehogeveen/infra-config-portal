@@ -3,6 +3,9 @@ from __future__ import annotations
 from ipaddress import IPv4Address, IPv4Network, ip_address, ip_network
 from typing import Any
 
+from app.services.env_utils import bool_value
+from app.services.list_utils import unique_strings
+
 HIGH_ADDRESS_LAB = "high_address_lab"
 COMPACT_EDGE_LAB = "compact_edge_lab"
 CUSTOM_LAB = "custom"
@@ -18,6 +21,13 @@ VCENTER_DISABLED_COMPACT_REASON = (
 NETAPP_DISABLED_PREFIX_REASON = (
     "NetApp high-address defaults require a /24 or larger lab subnet."
 )
+DEPLOYMENT_MODE_SHARED_STORAGE = "server_netapp_vcenter"
+DEPLOYMENT_MODE_SINGLE_SERVER = "single_server_local_storage"
+DEPLOYMENT_MODE_NETAPP_DIRECT = "server_netapp_direct"
+DEPLOYMENT_MODE_UNSUPPORTED = "unsupported_vcenter_without_netapp"
+SUPPORTED_DEPLOYMENT_MODES = {DEPLOYMENT_MODE_SHARED_STORAGE, DEPLOYMENT_MODE_SINGLE_SERVER}
+NETAPP_STORAGE_PROTOCOLS = {"nfs", "iscsi"}
+LOCAL_STORAGE_PROTOCOLS = {"local", "none"}
 
 HIGH_ADDRESS_OFFSETS = {
     "gateway": 1,
@@ -299,13 +309,18 @@ def _feature_state(
     if prefix > 24 and "netapp_enabled" not in raw_features:
         netapp_enabled = False
     vcenter_enabled = _bool_value(raw_features.get("vcenter_enabled"), False)
+    deployment = _deployment_mode(netapp_enabled=netapp_enabled, vcenter_enabled=vcenter_enabled)
+    storage_protocol = _storage_protocol(raw_features.get("storage_protocol"), netapp_enabled=netapp_enabled)
     return {
         "netapp_enabled": netapp_enabled,
         "vcenter_enabled": vcenter_enabled,
+        "deployment_mode": deployment["mode"],
+        "deployment_label": deployment["label"],
+        "deployment_supported": deployment["supported"],
+        "storage_location": deployment["storage_location"],
         "firmware_gate_enabled": _bool_value(raw_features.get("firmware_gate_enabled"), True),
         "build_verification_enabled": _bool_value(raw_features.get("build_verification_enabled"), True),
-        "storage_protocol": _clean_string(raw_features.get("storage_protocol"))
-        or ("nfs" if netapp_enabled else "none"),
+        "storage_protocol": storage_protocol,
         "disable_ipv6": _bool_value(raw_features.get("disable_ipv6"), True),
         "block_legacy_protocols": _bool_value(raw_features.get("block_legacy_protocols"), True),
         "enable_snmp": _bool_value(raw_features.get("enable_snmp"), False),
@@ -318,6 +333,44 @@ def _feature_state(
         else NETAPP_DISABLED_PREFIX_REASON,
         "vcenter_disabled_reason": None if vcenter_enabled else VCENTER_DISABLED_COMPACT_REASON if compact else "vCenter is disabled by the active lab setup.",
     }
+
+
+def _deployment_mode(*, netapp_enabled: bool, vcenter_enabled: bool) -> dict[str, Any]:
+    if netapp_enabled and vcenter_enabled:
+        return {
+            "mode": DEPLOYMENT_MODE_SHARED_STORAGE,
+            "label": "Server + NetApp + vCenter",
+            "storage_location": "netapp_shared",
+            "supported": True,
+        }
+    if not netapp_enabled and not vcenter_enabled:
+        return {
+            "mode": DEPLOYMENT_MODE_SINGLE_SERVER,
+            "label": "Single server + local ESXi storage",
+            "storage_location": "server_local",
+            "supported": True,
+        }
+    if netapp_enabled:
+        return {
+            "mode": DEPLOYMENT_MODE_NETAPP_DIRECT,
+            "label": "Server + NetApp direct attach",
+            "storage_location": "netapp_shared",
+            "supported": False,
+        }
+    return {
+        "mode": DEPLOYMENT_MODE_UNSUPPORTED,
+        "label": "vCenter without NetApp shared storage",
+        "storage_location": "server_local",
+        "supported": False,
+    }
+
+
+def _storage_protocol(value: Any, *, netapp_enabled: bool) -> str:
+    protocol = (_clean_string(value) or "").lower()
+    allowed = NETAPP_STORAGE_PROTOCOLS if netapp_enabled else LOCAL_STORAGE_PROTOCOLS
+    if protocol in allowed:
+        return protocol
+    return "nfs" if netapp_enabled else "local"
 
 
 def _global_settings(
@@ -352,6 +405,9 @@ def _devices(
     features: dict[str, Any],
 ) -> dict[str, Any]:
     compact = topology == COMPACT_EDGE_LAB
+    server_model = (_clean_string(overrides.get("server_model")) or "gen10").lower()
+    if server_model not in {"gen10", "gen10plus"}:
+        server_model = "gen10"
     switch_secondary = _clean_string(overrides.get("switch_secondary"))
     ups = _clean_string(overrides.get("ups"))
     backup_storage = _clean_string(overrides.get("backup_storage"))
@@ -385,6 +441,7 @@ def _devices(
         "esxi": plan.get("esxi_management"),
         "ilo": plan.get("ilo"),
         "cisco": plan.get("cisco_management"),
+        "server_model": server_model,
         "netapp": netapp,
         "vcenter": _clean_string(overrides.get("vcenter")) if features["vcenter_enabled"] else None,
     }
@@ -465,10 +522,13 @@ def _not_in_scope_stages(features: dict[str, Any]) -> list[str]:
 
 
 def _network(value: str) -> IPv4Network:
+    cleaned = _clean_string(value)
+    if not cleaned:
+        raise LabTopologyError("subnet_cidr must be a valid IPv4 CIDR.")
     try:
-        network = ip_network(str(value), strict=False)
+        network = ip_network(cleaned, strict=False)
     except ValueError as exc:
-        raise LabTopologyError(f"subnet_cidr must be a valid IPv4 CIDR: {value}") from exc
+        raise LabTopologyError(f"subnet_cidr must be a valid IPv4 CIDR: {cleaned}") from exc
     if not isinstance(network, IPv4Network):
         raise LabTopologyError("subnet_cidr must be an IPv4 CIDR.")
     return network
@@ -523,15 +583,17 @@ def _clean_string_list(value: Any) -> list[str]:
         candidates = value
     else:
         candidates = [value]
-    return [item for item in (_clean_string(candidate) for candidate in candidates) if item]
+    return _unique_strings(item for item in (_clean_string(candidate) for candidate in candidates) if item)
+
+
+def _unique_strings(values: Any) -> list[str]:
+    return unique_strings(values)
 
 
 def _bool_value(value: Any, default: bool) -> bool:
     if value is None:
         return default
-    if isinstance(value, bool):
-        return value
-    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+    return bool_value(value)
 
 
 def _int_or_none(value: Any) -> int | None:

@@ -17,9 +17,13 @@ from app.providers.action_policy import (
     current_lab_action_policy,
 )
 from app.providers.redaction import redact_sensitive
+from app.services.env_utils import env_flag as _env_flag
+from app.services.json_file_store import read_json_object, write_json_object, write_text_value
+from app.services.list_utils import unique_preserving_order, unique_strings
 from app.services.netapp_real_lab import run_netapp_console_login_state
 from app.services.netapp_setup_intent import scan_planned_netapp_addresses
 from app.services.netapp_state import get_netapp_runtime_state
+from app.services.path_utils import display_path
 
 PROVIDER_ID = "netapp-ontap"
 REPO_ROOT = Path(__file__).resolve().parents[4]
@@ -99,9 +103,7 @@ def build_netapp_address_remediation_plan(*, write_report: bool = True) -> dict[
     }
     sanitized = _sanitize(payload)
     if write_report:
-        CODEX_RUN_DIR.mkdir(parents=True, exist_ok=True)
-        ADDRESS_PLAN_JSON.write_text(json.dumps(sanitized, indent=2), encoding="utf-8")
-        ADDRESS_PLAN_REPORT.write_text(_address_plan_markdown(sanitized), encoding="utf-8")
+        _write_payload(ADDRESS_PLAN_JSON, ADDRESS_PLAN_REPORT, sanitized, _address_plan_markdown)
     return sanitized
 
 
@@ -109,6 +111,7 @@ def build_netapp_address_remediation_preview(*, write_report: bool = True) -> di
     plan = build_netapp_address_remediation_plan(write_report=False)
     address_scan = scan_planned_netapp_addresses(enabled=True)
     command_plan = _address_command_plan(plan)
+    command_plan = _disable_address_command_plan_for_node_health(command_plan, plan)
     blockers = _address_preview_blockers(plan, address_scan, command_plan)
     payload = {
         **plan,
@@ -130,7 +133,7 @@ def build_netapp_address_remediation_preview(*, write_report: bool = True) -> di
         ],
         "blockers": blockers,
         "warnings": _unique(
-            list(plan.get("warnings") or [])
+            _string_list(plan.get("warnings"))
             + [
                 "Preview only. No ONTAP LIF, route, SVM, NFS, export, reboot, wipe, takeover, giveback, or upgrade command was sent.",
                 "Existing LIF modifies and missing LIF creates are separated so the operator can see the blast radius before apply.",
@@ -219,7 +222,7 @@ def apply_netapp_address_remediation(*, write_report: bool = True) -> dict[str, 
                 "No secrets are written to this report.",
                 "Run address validation after any applied console readdress.",
             ]
-            + list(preview.get("warnings") or [])
+            + _string_list(preview.get("warnings"))
         ),
         "artifacts": {
             "report": _rel(ADDRESS_APPLY_REPORT),
@@ -241,9 +244,16 @@ def apply_netapp_address_remediation(*, write_report: bool = True) -> dict[str, 
 def validate_netapp_address_remediation(*, write_report: bool = True) -> dict[str, Any]:
     console_state = run_netapp_console_login_state()
     plan = build_netapp_address_remediation_plan(write_report=True)
-    comparisons = list(plan.get("address_comparisons") or [])
+    comparisons = _dict_list(plan.get("address_comparisons"))
     target_checks = _target_validation_checks(plan)
+    console_facts = plan.get("console_facts") if isinstance(plan.get("console_facts"), dict) else {}
+    node_health = console_facts.get("node_health") if isinstance(console_facts.get("node_health"), dict) else {}
+    unhealthy_nodes = _string_list(node_health.get("unhealthy_nodes"))
     blockers = []
+    if unhealthy_nodes:
+        blockers.append(f"NetApp node health is not clean: {', '.join(unhealthy_nodes)}.")
+    if console_facts.get("cluster_ha_warning"):
+        blockers.append("NetApp cluster HA warning is present in fresh console output.")
     for item in comparisons:
         if item.get("status") != "match":
             blockers.append(f"{item.get('label')} is `{item.get('status')}`: current `{item.get('current') or 'unknown'}` expected `{item.get('planned') or 'not planned'}`.")
@@ -268,7 +278,7 @@ def validate_netapp_address_remediation(*, write_report: bool = True) -> dict[st
         "address_comparisons": comparisons,
         "target_checks": target_checks,
         "blockers": _unique(blockers),
-        "warnings": list(plan.get("warnings") or []),
+        "warnings": _string_list(plan.get("warnings")),
         "artifacts": {
             "report": _rel(ADDRESS_VALIDATION_REPORT),
             "json": _rel(ADDRESS_VALIDATION_JSON),
@@ -308,7 +318,7 @@ def diagnose_netapp_ha_node_warning(*, write_report: bool = True) -> dict[str, A
     )
     facts = plan.get("console_facts") if isinstance(plan.get("console_facts"), dict) else {}
     health = facts.get("node_health") if isinstance(facts.get("node_health"), dict) else {}
-    unhealthy_nodes = list(health.get("unhealthy_nodes") or [])
+    unhealthy_nodes = _string_list(health.get("unhealthy_nodes"))
     blocks_address = any(item.get("id") == "node_a_mgmt" and item.get("status") != "match" for item in plan.get("address_comparisons") or [])
     blockers = []
     if unhealthy_nodes:
@@ -372,12 +382,9 @@ def diagnose_netapp_ha_node_warning(*, write_report: bool = True) -> dict[str, A
 
 
 def latest_console_network_facts() -> dict[str, Any]:
-    try:
-        payload = json.loads(CONSOLE_LOGIN_STATE_JSON.read_text(encoding="utf-8"))
-    except (FileNotFoundError, json.JSONDecodeError):
+    payload = _console_login_state_payload()
+    if not payload:
         return _empty_console_facts("NetApp console login/read-only state has not run yet.")
-    if not isinstance(payload, dict):
-        return _empty_console_facts("NetApp console login/read-only state payload is invalid.")
 
     network_text = _command_excerpt(payload, "network_interface_summary")
     cluster_text = _command_excerpt(payload, "cluster_status")
@@ -544,8 +551,8 @@ def _address_comparisons(current: dict[str, Any], planned: dict[str, Any]) -> li
         _comparison("node_b_mgmt", "Node B management", current.get("node_b_mgmt"), planned.get("node_b_mgmt")),
         _comparison("svm_mgmt", "SVM management", current.get("svm_mgmt"), planned.get("svm_mgmt")),
     ]
-    current_lifs = list(current.get("nfs_lifs") or [])
-    planned_lifs = list(planned.get("nfs_lifs") or [])
+    current_lifs = _string_list(current.get("nfs_lifs"))
+    planned_lifs = _string_list(planned.get("nfs_lifs"))
     max_lifs = max(len(current_lifs), len(planned_lifs))
     rows.extend(
         _comparison(
@@ -601,7 +608,7 @@ def _blockers(
     comparisons: list[dict[str, Any]],
     reachability: dict[str, Any],
 ) -> list[str]:
-    blockers = list(console_facts.get("blockers") or [])
+    blockers = _string_list(console_facts.get("blockers"))
     if console_facts.get("identified_state") != "ontap_shell":
         blockers.append("NetApp console is not at an ONTAP shell; rerun guarded console login/read-only state.")
     if any(item["status"] == "mismatch" for item in comparisons):
@@ -609,8 +616,9 @@ def _blockers(
     if any(item["status"] == "missing_current" for item in comparisons if item["id"] != "svm_mgmt"):
         blockers.append("One or more current NetApp management/NFS addresses could not be read from console output.")
     health = console_facts.get("node_health") if isinstance(console_facts.get("node_health"), dict) else {}
-    if health.get("unhealthy_nodes"):
-        blockers.append(f"NetApp node health is not clean: {', '.join(health['unhealthy_nodes'])}.")
+    unhealthy_nodes = _string_list(health.get("unhealthy_nodes"))
+    if unhealthy_nodes:
+        blockers.append(f"NetApp node health is not clean: {', '.join(unhealthy_nodes)}.")
     if console_facts.get("cluster_ha_warning"):
         blockers.append("NetApp cluster HA warning is present in console output.")
     reachable_cluster = any(
@@ -685,7 +693,7 @@ def _address_command_plan(plan: dict[str, Any]) -> dict[str, Any]:
     node_lifs = current.get("node_mgmt_lifs_by_node") if isinstance(current.get("node_mgmt_lifs_by_node"), dict) else {}
     node_ips = current.get("node_mgmt_by_node") if isinstance(current.get("node_mgmt_by_node"), dict) else {}
     node_names = list(sorted(node_ips))
-    data_lifs = [item for item in list(current.get("data_lifs") or []) if isinstance(item, dict)]
+    data_lifs = _dict_list(current.get("data_lifs"))
     commands: list[dict[str, Any]] = []
 
     if current.get("cluster_mgmt") and planned.get("cluster_mgmt") and current.get("cluster_mgmt") != planned.get("cluster_mgmt"):
@@ -724,7 +732,7 @@ def _address_command_plan(plan: dict[str, Any]) -> dict[str, Any]:
             )
         )
 
-    planned_lifs = list(planned.get("nfs_lifs") or [])
+    planned_lifs = _string_list(planned.get("nfs_lifs"))
     for index, target in enumerate(planned_lifs):
         existing = data_lifs[index] if index < len(data_lifs) else None
         if existing:
@@ -844,6 +852,7 @@ def _address_preview_blockers(
     blockers = []
     if console.get("identified_state") != "ontap_shell":
         blockers.append("NetApp console is not at an ONTAP shell.")
+    blockers.extend(_node_health_apply_blockers(console))
     if address_scan.get("status") == "blocked":
         conflicts = _blocking_target_conflicts(address_scan, plan)
         if conflicts:
@@ -855,6 +864,27 @@ def _address_preview_blockers(
     return _unique(blockers)
 
 
+def _disable_address_command_plan_for_node_health(
+    command_plan: dict[str, Any],
+    plan: dict[str, Any],
+) -> dict[str, Any]:
+    console = plan.get("console_facts") if isinstance(plan.get("console_facts"), dict) else {}
+    blockers = _node_health_apply_blockers(console)
+    if not blockers:
+        return command_plan
+    disabled_commands = []
+    for item in command_plan.get("commands") or []:
+        if not isinstance(item, dict):
+            continue
+        disabled_commands.append({**item, "enabled": False})
+    return {
+        **command_plan,
+        "commands": disabled_commands,
+        "enabled_commands": [],
+        "disabled_reasons": _unique(_string_list(command_plan.get("disabled_reasons")) + blockers),
+    }
+
+
 def _blocking_target_conflicts(address_scan: dict[str, Any], plan: dict[str, Any]) -> list[dict[str, Any]]:
     current = plan.get("current_targets") if isinstance(plan.get("current_targets"), dict) else {}
     owned = {
@@ -864,7 +894,7 @@ def _blocking_target_conflicts(address_scan: dict[str, Any], plan: dict[str, Any
             current.get("node_a_mgmt"),
             current.get("node_b_mgmt"),
             current.get("svm_mgmt"),
-            *(current.get("nfs_lifs") or []),
+            *_string_list(current.get("nfs_lifs")),
         ]
         if value
     }
@@ -883,16 +913,17 @@ def _address_apply_gates(preview: dict[str, Any]) -> dict[str, Any]:
     flag_state = {
         "provider_mode": settings.provider_mode,
         "local_lab_readwrite": settings.provider_mode == LOCAL_LAB_READWRITE_MODE,
-        "netapp_address_apply": os.getenv("NETAPP_ADDRESS_APPLY") == "true",
+        "netapp_address_apply": _env_flag("NETAPP_ADDRESS_APPLY"),
         "netapp_address_confirm": os.getenv("NETAPP_ADDRESS_CONFIRM") == ADDRESS_CONFIRM_PHRASE,
-        "netapp_address_allow_console_writes": os.getenv("NETAPP_ADDRESS_ALLOW_CONSOLE_WRITES") == "true",
-        "netapp_address_allow_lif_create": os.getenv("NETAPP_ADDRESS_ALLOW_LIF_CREATE") == "true",
-        "netapp_address_accept_ha_warning": os.getenv("NETAPP_ADDRESS_ACCEPT_HA_WARNING") == "true",
+        "netapp_address_allow_console_writes": _env_flag("NETAPP_ADDRESS_ALLOW_CONSOLE_WRITES"),
+        "netapp_address_allow_lif_create": _env_flag("NETAPP_ADDRESS_ALLOW_LIF_CREATE"),
+        "netapp_address_accept_ha_warning": _env_flag("NETAPP_ADDRESS_ACCEPT_HA_WARNING"),
     }
     blockers = []
-    blockers.extend(policy.action_blockers("netapp.address-remediation", ActionCategory.NETWORK_CONFIG))
+    blockers.extend(unique_strings(policy.action_blockers("netapp.address-remediation", ActionCategory.NETWORK_CONFIG)))
     if facts.get("identified_state") != "ontap_shell":
         blockers.append("NetApp console is not at an ONTAP shell.")
+    blockers.extend(_node_health_apply_blockers(facts))
     if address_scan.get("free") is not True and _blocking_target_conflicts(address_scan, preview):
         blockers.append("Fresh pre-apply address conflict scan did not prove planned NetApp addresses are free.")
     if not _console_context().get("usable"):
@@ -910,6 +941,17 @@ def _address_apply_gates(preview: dict[str, Any]) -> dict[str, Any]:
     if not flag_state["netapp_address_allow_console_writes"]:
         blockers.append("NETAPP_ADDRESS_ALLOW_CONSOLE_WRITES=true is required.")
     return {"flag_state": flag_state, "blockers": _unique(blockers)}
+
+
+def _node_health_apply_blockers(console_facts: dict[str, Any]) -> list[str]:
+    health = console_facts.get("node_health") if isinstance(console_facts.get("node_health"), dict) else {}
+    unhealthy_nodes = _string_list(health.get("unhealthy_nodes"))
+    blockers = []
+    if unhealthy_nodes:
+        blockers.append(f"NetApp node health must be clean before address writes; unhealthy: {', '.join(unhealthy_nodes)}.")
+    if console_facts.get("cluster_ha_warning"):
+        blockers.append("NetApp cluster HA warning must be resolved before address writes.")
+    return blockers
 
 
 def _address_required_flags(command_plan: dict[str, Any] | None = None) -> list[str]:
@@ -934,10 +976,7 @@ def _redacted_commands(commands: list[str]) -> list[str]:
 
 
 def _console_context() -> dict[str, Any]:
-    try:
-        payload = json.loads(CONSOLE_LOGIN_STATE_JSON.read_text(encoding="utf-8"))
-    except (FileNotFoundError, json.JSONDecodeError):
-        payload = {}
+    payload = _console_login_state_payload()
     username = os.getenv("NETAPP_CONSOLE_USERNAME") or settings.netapp_api_username or os.getenv("NETAPP_USERNAME")
     password = os.getenv("NETAPP_CONSOLE_PASSWORD") or settings.netapp_api_password or os.getenv("NETAPP_PASSWORD")
     return {
@@ -950,9 +989,8 @@ def _console_context() -> dict[str, Any]:
 
 
 def _cluster_name_from_console() -> str:
-    try:
-        payload = json.loads(CONSOLE_LOGIN_STATE_JSON.read_text(encoding="utf-8"))
-    except (FileNotFoundError, json.JSONDecodeError):
+    payload = _console_login_state_payload()
+    if not payload:
         return settings.netapp_cluster_name or ""
     text = "\n".join(
         str(item.get("output_excerpt") or "")
@@ -965,8 +1003,12 @@ def _cluster_name_from_console() -> str:
     return settings.netapp_cluster_name or ""
 
 
+def _console_login_state_payload() -> dict[str, Any]:
+    return read_json_object(CONSOLE_LOGIN_STATE_JSON)
+
+
 def _svm_name_from_current(current: dict[str, Any]) -> str:
-    data_lifs = [item for item in list(current.get("data_lifs") or []) if isinstance(item, dict)]
+    data_lifs = _dict_list(current.get("data_lifs"))
     if data_lifs and data_lifs[0].get("vserver"):
         return str(data_lifs[0]["vserver"])
     return settings.netapp_svm_name or "esxi_svm"
@@ -982,7 +1024,7 @@ def _target_validation_checks(plan: dict[str, Any]) -> list[dict[str, Any]]:
     ]
     targets.extend(
         (f"nfs_lif_{index + 1}", f"NFS LIF {index + 1}", address, (2049,))
-        for index, address in enumerate(planned.get("nfs_lifs") or [])
+        for index, address in enumerate(_string_list(planned.get("nfs_lifs")))
     )
     checks = []
     for item_id, label, address, ports in targets:
@@ -1311,8 +1353,8 @@ def _ha_node_markdown(payload: dict[str, Any]) -> str:
 
 def _write_payload(json_path: Path, report_path: Path, payload: dict[str, Any], markdown_builder: Any) -> None:
     CODEX_RUN_DIR.mkdir(parents=True, exist_ok=True)
-    json_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
-    report_path.write_text(markdown_builder(payload), encoding="utf-8")
+    write_json_object(json_path, payload)
+    write_text_value(report_path, markdown_builder(payload))
 
 
 def _sanitize(payload: dict[str, Any]) -> dict[str, Any]:
@@ -1320,22 +1362,22 @@ def _sanitize(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def _rel(path: Path) -> str:
-    try:
-        return str(path.relative_to(REPO_ROOT))
-    except ValueError:
-        return str(path)
+    return display_path(path, REPO_ROOT)
 
 
 def _now() -> str:
     return datetime.now(UTC).isoformat()
 
 
-def _unique(values: list[str]) -> list[str]:
-    seen: set[str] = set()
-    result: list[str] = []
-    for value in values:
-        if not value or value in seen:
-            continue
-        seen.add(value)
-        result.append(value)
-    return result
+def _unique(values: Any) -> list[str]:
+    return unique_preserving_order(values, skip_falsey=True)
+
+
+def _string_list(value: Any) -> list[str]:
+    return unique_strings(value)
+
+
+def _dict_list(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, (list, tuple, set)):
+        return []
+    return [item for item in value if isinstance(item, dict)]

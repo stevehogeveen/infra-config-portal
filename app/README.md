@@ -79,8 +79,108 @@ make lint
 ```
 
 `make test` runs backend pytest and the frontend TypeScript/build check.
-`make lint` runs shell syntax checks, backend Ruff when installed in
-`backend/.venv`, and the frontend build/type check.
+`make lint` runs shell syntax checks, checks for Windows/Linux-portable
+repository paths, backend Ruff when installed in `backend/.venv`, and the
+frontend build/type check.
+Both root gates also run the fast frontend component/server-render checks:
+
+```bash
+cd app/frontend
+npm run test:component
+```
+
+These cover shared UI components without launching a browser, so Playwright can
+stay focused on real navigation, guarded-run, persistence, and visual flows.
+
+For faster Windows iteration during visual/backend feature work, use the
+diff-aware verification lane:
+
+```powershell
+cd C:\path\to\infra-config-portal\app
+.\scripts\fast-verify.ps1
+```
+
+Use `.\scripts\fast-verify.ps1 -WhatIfOnly` to preview the targeted checks, and
+use `.\scripts\fast-verify.ps1 -Full` before handoff when you want the full
+frontend/backend gate. See `docs/testing-acceleration.md` for the tiered test
+strategy, visual-regression path, and AI-assisted triage plan.
+Each executed run writes its selected plan to
+`artifacts/codex-runs/fast-verify-plan.json`. If a step fails, fast-verify
+also creates a redacted advisory QA packet unless you pass `-NoFailurePacket`.
+The plan includes `step_details` with the selected step id, routing reason, and
+command family so humans and AI triage can see why the compact lane ran.
+Validate the saved plan contract with `.\scripts\fast-verify.ps1 -ValidatePlan`.
+API route, schema, or workflow-registry changes also run a generated OpenAPI
+contract probe. Run it directly with:
+
+```powershell
+cd backend
+.\.venv\Scripts\python.exe scripts\openapi_contract_probe.py
+```
+
+The probe writes `artifacts/codex-runs/openapi-contract-probe.json` and checks
+OpenAPI operation IDs, workflow action endpoint wiring, and guard metadata
+without calling endpoints or running workflow actions.
+CI runs the same family of gates on push/PR: Linux `make test`/`make lint`,
+Windows `check-windows.ps1 -E2E`, and Windows `fast-verify.ps1 -Full`, with
+fast-verify and failure-packet artifacts uploaded for review.
+Validate all local QA artifact contracts together with:
+
+```powershell
+.\scripts\qa-artifact-health.ps1
+```
+
+The same health gate validates the QA capability audit artifact when present.
+Refresh dry-run plans plus the capability audit without running tests or
+touching hardware:
+
+```powershell
+.\scripts\qa-artifact-health.ps1 -GenerateMissingPlans
+```
+
+Real-lab smoke verification is a separate on-demand lane. Preview it first:
+
+```powershell
+.\scripts\hardware-smoke.ps1 -WhatIfOnly
+```
+
+The preview writes `artifacts/codex-runs/hardware-smoke-plan.json`; validate it
+without touching hardware:
+
+```powershell
+.\scripts\hardware-smoke.ps1 -ValidatePlan
+```
+
+Then run the default read-only provider smoke lane only after confirming the
+lab is safe to probe:
+
+```powershell
+.\scripts\hardware-smoke.ps1 -AcknowledgeReadOnly
+```
+
+Use `-Providers ilo-redfish` to narrow the run, or add
+`-IncludeOperatorSweep` for the broader read-only workflow-action evidence
+gate. The script refuses `local-lab-readwrite` unless `-AllowWriteMode` is
+explicitly present; destructive workflows still require their own exact gates.
+
+After a failing pytest, Playwright, workflow, or hardware-smoke run, create a
+redacted advisory packet for AI-assisted triage:
+
+```powershell
+.\scripts\qa-failure-packet.ps1 -Note "what looked wrong"
+```
+
+The packet is written under
+`artifacts/codex-runs/qa-failure-packets/latest.json` and `.md`. It collects
+recent local failure evidence and generates an AI-ready prompt, but it does not
+call an external AI service, run tests, trigger workflow actions, or touch
+hardware. The packet also includes structured `advisory_triage` with the
+probable failure area, evidence kinds, and a safe verification command. Validate
+the latest packet contract with:
+
+```powershell
+.\scripts\qa-failure-packet.ps1 -ValidateLatest
+```
 
 The backend pytest suite includes a local mock VM lifecycle smoke test. Run only
 that smoke test with:
@@ -121,6 +221,83 @@ make frontend-run
 
 The Vite dev server runs at `http://127.0.0.1:5173` and proxies API requests
 to `http://127.0.0.1:8001`.
+
+On Windows PowerShell, use the frontend scripts instead of the Unix-oriented
+Make/runit startup path. Start the backend and frontend from separate
+PowerShell windows:
+
+```powershell
+cd C:\path\to\infra-config-portal\app
+.\scripts\windows-doctor.ps1
+
+.\scripts\ensure-backend-venv.ps1
+.\scripts\test-backend.ps1
+.\scripts\start-backend.ps1
+```
+
+Then install and start the frontend:
+
+```powershell
+cd C:\path\to\infra-config-portal\app
+.\scripts\ensure-frontend-deps.ps1
+.\scripts\start-frontend.ps1
+```
+
+Run the Windows quality gate without Make/bash:
+
+```powershell
+.\scripts\check-windows.ps1
+```
+
+Include browser tests when Playwright browsers are installed:
+
+```powershell
+.\scripts\check-windows.ps1 -E2E
+```
+
+Install the Playwright browser used by the e2e suite:
+
+```powershell
+.\scripts\ensure-playwright-browsers.ps1 -Install
+```
+
+To pass specific pytest arguments, provide each argument as its own value:
+
+```powershell
+.\scripts\check-windows.ps1 -PytestArgs "tests/test_portable_paths.py", "-q"
+```
+
+To point the frontend at a different backend or port, pass explicit values:
+
+```powershell
+.\scripts\start-frontend.ps1 -Port 4173 -ProxyTarget http://127.0.0.1:8001
+```
+
+If dependencies are missing and network access is available, the start scripts
+can repair them directly:
+
+```powershell
+.\scripts\start-backend.ps1 -Install
+.\scripts\start-frontend.ps1 -Install
+.\scripts\check-windows.ps1 -Install
+.\scripts\check-windows.ps1 -Install -E2E
+```
+
+If npm is configured with a proxy that can reach metadata but times out on
+package tarballs, bypass it for this install:
+
+```powershell
+.\scripts\ensure-frontend-deps.ps1 -NoProxy
+.\scripts\start-frontend.ps1 -NoProxy
+.\scripts\check-windows.ps1 -Install -NoProxy
+```
+
+To run the backend on a different local port:
+
+```powershell
+.\scripts\start-backend.ps1 -Port 8010
+.\scripts\start-frontend.ps1 -ProxyTarget http://127.0.0.1:8010
+```
 
 For LAN access from another computer on the same trusted lab network, bind only
 the frontend to all interfaces and keep the backend loopback-protected behind

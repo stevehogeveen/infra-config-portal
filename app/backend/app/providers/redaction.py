@@ -7,6 +7,7 @@ from typing import Any
 SENSITIVE_KEYWORDS = (
     "authorization",
     "cookie",
+    "license",
     "password",
     "secret",
     "session",
@@ -37,6 +38,9 @@ NON_SECRET_EVIDENCE_KEYS = {
     "enable_commands_attempted",
     "enable_password_sources_configured",
     "enable_password_sources_tried",
+    "license_count",
+    "licenses",
+    "licenses.checks.license_count",
     "password_recovery_guidance_report",
     "password_prompt_seen",
     "settings.cisco_enable_password",

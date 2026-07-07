@@ -197,6 +197,36 @@ export type ProviderModeSettingsWrite = {
   desired_mode: ProviderModeOption["mode"];
 };
 
+export type LabSafetyFlag = {
+  name: string;
+  label: string;
+  description: string;
+  required: boolean;
+  value: string | boolean | null;
+  enabled: boolean;
+  source: string;
+  status: string;
+};
+
+export type LabSafetySettings = {
+  flags: LabSafetyFlag[];
+  store_path: string;
+  updated_at: string | null;
+  confirmation_phrase: string;
+  device_reconfiguration_confirmation_phrase: string;
+  next_safe_action: string;
+};
+
+export type LabSafetySettingsWrite = {
+  lab_environment?: "isolated-real-lab" | null;
+  lab_acknowledge_real_hardware?: boolean | null;
+  lab_acknowledge_device_reconfiguration?: boolean | null;
+  lab_acknowledge_data_loss_risk?: boolean | null;
+  lab_acknowledge_lab_only?: boolean | null;
+  confirmation_phrase?: string | null;
+  device_reconfiguration_confirmation_phrase?: string | null;
+};
+
 export type ProviderProbeResult = {
   provider_id: string;
   status: string;
@@ -418,6 +448,7 @@ export type LabProfileDevices = {
   esxi?: string | null;
   ilo?: string | null;
   cisco?: string | null;
+  server_model?: "gen10" | "gen10plus" | null;
   netapp?: Record<string, unknown> | null;
   vcenter?: string | null;
 };
@@ -425,6 +456,10 @@ export type LabProfileDevices = {
 export type LabProfileFeatures = {
   netapp_enabled: boolean;
   vcenter_enabled: boolean;
+  deployment_mode?: string;
+  deployment_label?: string;
+  deployment_supported?: boolean;
+  storage_location?: string;
   firmware_gate_enabled: boolean;
   build_verification_enabled: boolean;
   storage_protocol: string;
@@ -530,6 +565,43 @@ export type LabProfileRuntimeApply = {
   message: string;
   next_action: string;
   lab_profiles: LabProfileList;
+};
+
+export type TopologyDesignScenario = "server_netapp_direct" | "server_netapp_vcenter" | "single_server_local_storage";
+
+export type TopologyDesignPlacement = "switch" | "server-gen10" | "server-gen10plus" | "netapp" | "vcenter" | "windows";
+
+export type TopologyDesignDraft = {
+  id: string;
+  profile_id: string;
+  scenario: TopologyDesignScenario;
+  subnet: string | null;
+  placements: Record<string, TopologyDesignPlacement | null>;
+  device_settings: Record<string, Record<string, string>>;
+  lane_settings: Record<string, Record<string, string>>;
+  connection_settings: Record<string, Record<string, string>>;
+  source: "default" | "saved";
+  draft_saved: boolean;
+  hardware_touched: boolean;
+  updated_at: string | null;
+  store_path: string;
+  message: string;
+  persistence_inventory: Array<{
+    choice: string;
+    persists_to: string;
+    commit_state: string;
+    hardware_effect: string;
+  }>;
+};
+
+export type TopologyDesignDraftWrite = {
+  profile_id: string;
+  scenario: TopologyDesignScenario;
+  subnet?: string | null;
+  placements: Record<string, TopologyDesignPlacement | null>;
+  device_settings?: Record<string, Record<string, string>>;
+  lane_settings?: Record<string, Record<string, string>>;
+  connection_settings?: Record<string, Record<string, string>>;
 };
 
 export type ControlActionClassification = "read-only" | "write" | "destructive" | "upgrade";
@@ -865,6 +937,84 @@ export type WorkflowActionRun = {
   blockers: string[];
   warnings: string[];
   next_action: string;
+};
+
+export type WorkflowActionDiagnosis = {
+  action_id: string;
+  action_label: string;
+  run_id: string | null;
+  status: string;
+  ai_enabled: boolean;
+  advisory_source: "local_rules" | "external_ai" | string;
+  confidence: "high" | "medium" | "low" | string;
+  probable_cause: string;
+  explanation: string;
+  suggested_next_action: string;
+  suggested_action_id: string | null;
+  suggested_action_safe: boolean;
+  evidence: Array<{
+    label: string;
+    detail: string;
+  }>;
+  recent_runs: Array<{
+    run_id: string;
+    status: string;
+    finished_at: string | null;
+    summary: string;
+    blocker_count: number;
+    warning_count: number;
+    trace_artifact: string | null;
+  }>;
+  safety_notes: string[];
+};
+
+export type OperatorIssuePacketCreate = {
+  route: string;
+  page_title: string;
+  operator_note: string;
+  ui_context?: Record<string, string>;
+};
+
+export type OperatorIssuePacket = {
+  packet_id: string;
+  created_at: string;
+  route: string;
+  page_title: string;
+  operator_note: string;
+  ui_context: Record<string, string>;
+  ai_enabled: boolean;
+  advisory_source: "local_rules" | "external_ai" | string;
+  summary: string;
+  recent_problem_runs: Array<{
+    run_id: string;
+    action_id: string;
+    stage_id: string;
+    started_at: string | null;
+    finished_at: string | null;
+    status: string;
+    source_type: string;
+    freshness: string;
+    command: string | null;
+    report_artifacts: string[];
+    summary: string;
+    blockers: string[];
+    warnings: string[];
+    next_action: string;
+  }>;
+  diagnoses: Array<{
+    action_id: string | null;
+    status: string | null;
+    confidence: string | null;
+    probable_cause: string;
+    suggested_next_action: string;
+    suggested_action_id: string | null;
+    suggested_action_safe: boolean;
+  }>;
+  suggested_next_steps: string[];
+  safety_notes: string[];
+  artifact: string;
+  markdown_artifact: string;
+  copy_prompt: string;
 };
 
 export type WorkflowAction = {
@@ -1239,6 +1389,7 @@ export type MediaInventoryItem = {
 export type MediaInventory = {
   mode: string;
   configured_directories: string[];
+  configured_directory_paths: string[];
   items: MediaInventoryItem[];
   warnings: string[];
 };

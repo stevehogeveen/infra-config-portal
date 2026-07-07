@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import os
 import re
 from copy import deepcopy
@@ -14,12 +13,14 @@ from app.core.config import (
     settings,
 )
 from app.providers.redaction import redact_sensitive
+from app.services.env_utils import read_env_file_values as read_dotenv_values
+from app.services.json_file_store import read_json_object, write_json_object, write_text_value
+from app.services.list_utils import unique_strings
+from app.services.path_utils import display_path, path_exists, safe_read_text
 from app.services.lab_topology import (
     HIGH_ADDRESS_LAB,
     LabTopologyError,
-    configured_runtime_values,
     derive_lab_topology,
-    runtime_configured_address_plan,
     topology_for_prefix,
 )
 
@@ -106,6 +107,7 @@ def create_lab_profile(payload: dict[str, Any]) -> dict[str, Any]:
         "name": payload["name"],
         "description": payload.get("description") or "",
         **_profile_component_fields(components),
+        "field_presence": _profile_field_presence(payload),
         "source": "saved",
         "version": 1,
         "created_at": now,
@@ -140,12 +142,14 @@ def update_lab_profile(profile_id: str, payload: dict[str, Any]) -> dict[str, An
             "features": deepcopy(profile.get("features") or {}),
             "global_settings": deepcopy(profile.get("global_settings") or {}),
             "address_plan": deepcopy(profile.get("address_plan") or {}),
+            "field_presence": deepcopy(profile.get("field_presence") or {}),
         }
     )
     components = _normalize_profile_components(payload)
     profile["name"] = payload["name"]
     profile["description"] = payload.get("description") or ""
     profile.update(_profile_component_fields(components))
+    profile["field_presence"] = _profile_field_presence(payload)
     profile["version"] = int(profile.get("version", 1)) + 1
     profile["updated_at"] = now
     _write_store(store)
@@ -282,10 +286,7 @@ def _runtime_env_path() -> Path:
 
 
 def _path_label(path: Path) -> str:
-    try:
-        return str(path.relative_to(REPO_ROOT))
-    except ValueError:
-        return str(path)
+    return display_path(path, REPO_ROOT)
 
 
 def _runtime_env_changes_for_context(context: dict[str, Any]) -> tuple[dict[str, str], set[str]]:
@@ -315,7 +316,15 @@ def _runtime_env_changes_for_context(context: dict[str, Any]) -> tuple[dict[str,
         ("dns_servers", "LAB_DNS_SERVERS"),
         ("ntp_servers", "LAB_NTP_SERVERS"),
     ):
-        value = _profile_value(global_settings.get(source_key) or active.get(source_key))
+        value = _profile_value(
+            _profile_list_value(
+                active.get("_field_presence") if isinstance(active.get("_field_presence"), dict) else {},
+                global_settings,
+                source_key,
+                active,
+                source_key.removesuffix("_servers"),
+            )
+        )
         if value:
             updates[env_key] = value
         else:
@@ -350,17 +359,20 @@ def _write_runtime_env(
         for key in removals
         if key in RUNTIME_ENV_ALLOWED_KEYS and (key in current or os.environ.get(key) is not None)
     )
-    if not updated_keys and not removed_keys:
+    lines = _read_text_lines(path)
+    has_duplicate_managed_keys = _has_duplicate_managed_env_keys(lines)
+    if not updated_keys and not removed_keys and not has_duplicate_managed_keys:
         return [], []
 
     path.parent.mkdir(parents=True, exist_ok=True)
-    lines = path.read_text(encoding="utf-8").splitlines() if path.exists() else []
     seen: set[str] = set()
     next_lines: list[str] = []
     for line in lines:
         key = _env_line_key(line)
         if key is None or key not in RUNTIME_ENV_ALLOWED_KEYS:
             next_lines.append(line)
+            continue
+        if key in seen:
             continue
         if key in removals:
             seen.add(key)
@@ -370,26 +382,94 @@ def _write_runtime_env(
             seen.add(key)
             continue
         next_lines.append(line)
+        seen.add(key)
 
     if next_lines and next_lines[-1].strip():
         next_lines.append("")
     for key in sorted(updates):
         if key in RUNTIME_ENV_ALLOWED_KEYS and key not in seen:
             next_lines.append(f"{key}={updates[key]}")
-    path.write_text("\n".join(next_lines).rstrip() + "\n", encoding="utf-8")
+    write_text_value(path, "\n".join(next_lines).rstrip() + "\n")
     return updated_keys, removed_keys
 
 
+def _read_text_lines(path: Path) -> list[str]:
+    if not path_exists(path):
+        return []
+    return safe_read_text(path).splitlines()
+
+
 def _read_env_file_values(path: Path) -> dict[str, str]:
-    if not path.exists():
+    try:
+        values = read_dotenv_values(path)
+    except (OSError, UnicodeDecodeError, ValueError):
         return {}
-    values: dict[str, str] = {}
-    for line in path.read_text(encoding="utf-8").splitlines():
+    return {key: value for key, value in values.items() if key in RUNTIME_ENV_ALLOWED_KEYS}
+
+
+def _has_duplicate_managed_env_keys(lines: list[str]) -> bool:
+    seen: set[str] = set()
+    for line in lines:
         key = _env_line_key(line)
-        if key is None:
+        if key is None or key not in RUNTIME_ENV_ALLOWED_KEYS:
             continue
-        values[key] = line.split("=", maxsplit=1)[1].strip().strip("\"'")
-    return values
+        if key in seen:
+            return True
+        seen.add(key)
+    return False
+
+
+def _runtime_env_file_values() -> dict[str, str]:
+    try:
+        return _read_env_file_values(_runtime_env_path())
+    except OSError:
+        return {}
+
+
+def _runtime_env_value(name: str) -> str | None:
+    value = _clean_string(os.getenv(name))
+    if value is not None:
+        return value
+    return _clean_string(_runtime_env_file_values().get(name))
+
+
+def _runtime_configured_address_plan() -> dict[str, Any]:
+    return {
+        "subnet": _runtime_env_value("LAB_SUBNET_CIDR"),
+        "ilo": _runtime_env_value("ILO_TEST_HOST"),
+        "server_embedded_nic": _runtime_env_value("SERVER_EMBEDDED_NIC_IP"),
+        "esxi_management": _runtime_env_value("ESXI_TEST_HOST"),
+        "cisco_management": _runtime_env_value("CISCO_TARGET_IP") or _runtime_env_value("ANSIBLE_CISCO_HOST"),
+        "ansible_control_host": _runtime_env_value("ANSIBLE_CONTROL_HOST"),
+        "netapp_controller_a_sp": _runtime_env_value("NETAPP_CONTROLLER_A_SP"),
+        "netapp_controller_b_sp": _runtime_env_value("NETAPP_CONTROLLER_B_SP"),
+        "netapp_cluster_mgmt": _runtime_env_value("NETAPP_CLUSTER_MGMT_IP"),
+        "netapp_node_a_mgmt": _runtime_env_value("NETAPP_NODE_A_MGMT_IP"),
+        "netapp_node_b_mgmt": _runtime_env_value("NETAPP_NODE_B_MGMT_IP"),
+        "netapp_svm_mgmt": _runtime_env_value("NETAPP_SVM_MGMT_IP"),
+        "netapp_nfs_lifs": _clean_string_list(_runtime_env_value("NETAPP_NFS_LIFS")),
+        "netapp_iscsi_lifs": _clean_string_list(_runtime_env_value("NETAPP_ISCSI_LIFS")),
+    }
+
+
+def _configured_runtime_values() -> dict[str, Any]:
+    return {
+        "subnet": _runtime_env_value("LAB_SUBNET_CIDR"),
+        "ilo": _runtime_env_value("ILO_TEST_HOST"),
+        "server_embedded_nic": _runtime_env_value("SERVER_EMBEDDED_NIC_IP"),
+        "esxi_management": _runtime_env_value("ESXI_TEST_HOST"),
+        "cisco_management": _runtime_env_value("CISCO_TARGET_IP"),
+        "ansible_cisco_inventory_target": _runtime_env_value("ANSIBLE_CISCO_HOST"),
+        "ansible_control_host": _runtime_env_value("ANSIBLE_CONTROL_HOST"),
+        "netapp_controller_a_sp": _runtime_env_value("NETAPP_CONTROLLER_A_SP"),
+        "netapp_controller_b_sp": _runtime_env_value("NETAPP_CONTROLLER_B_SP"),
+        "netapp_cluster_mgmt": _runtime_env_value("NETAPP_CLUSTER_MGMT_IP"),
+        "netapp_node_a_mgmt": _runtime_env_value("NETAPP_NODE_A_MGMT_IP"),
+        "netapp_node_b_mgmt": _runtime_env_value("NETAPP_NODE_B_MGMT_IP"),
+        "netapp_svm_mgmt": _runtime_env_value("NETAPP_SVM_MGMT_IP"),
+        "netapp_nfs_lifs": ",".join(_clean_string_list(_runtime_env_value("NETAPP_NFS_LIFS"))) or None,
+        "netapp_iscsi_lifs": ",".join(_clean_string_list(_runtime_env_value("NETAPP_ISCSI_LIFS"))) or None,
+    }
 
 
 def _env_line_key(line: str) -> str | None:
@@ -407,21 +487,11 @@ def _store_path() -> Path:
 
 
 def _store_path_label() -> str:
-    path = _store_path()
-    try:
-        return str(path.relative_to(REPO_ROOT))
-    except ValueError:
-        return str(path)
+    return display_path(_store_path(), REPO_ROOT)
 
 
 def _read_store() -> dict[str, Any]:
-    path = _store_path()
-    if not path.exists():
-        return {"active_profile_id": None, "profiles": []}
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return {"active_profile_id": None, "profiles": []}
+    payload = read_json_object(_store_path())
     profiles = payload.get("profiles") if isinstance(payload, dict) else []
     active_profile_id = payload.get("active_profile_id") if isinstance(payload, dict) else None
     return {
@@ -431,10 +501,8 @@ def _read_store() -> dict[str, Any]:
 
 
 def _write_store(store: dict[str, Any]) -> None:
-    path = _store_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
     sanitized = redact_sensitive(store)
-    path.write_text(json.dumps(sanitized, indent=2, sort_keys=True), encoding="utf-8")
+    write_json_object(_store_path(), sanitized)
 
 
 def _find_profile(store: dict[str, Any], profile_id: str) -> dict[str, Any]:
@@ -484,6 +552,7 @@ def _profile_read(profile: dict[str, Any], *, active: bool) -> dict[str, Any]:
                 "name": str(item.get("name") or ""),
                 "description": str(item.get("description") or ""),
                 **_profile_component_fields(revision_components),
+                "_field_presence": deepcopy(item.get("field_presence") or {}),
             }
         )
     return {
@@ -491,6 +560,7 @@ def _profile_read(profile: dict[str, Any], *, active: bool) -> dict[str, Any]:
         "name": str(profile.get("name") or "Unnamed lab"),
         "description": str(profile.get("description") or ""),
         **_profile_component_fields(components),
+        "_field_presence": deepcopy(profile.get("field_presence") or {}),
         "resolved_address_plan": components["resolved_address_plan"],
         "not_in_scope_stages": components["not_in_scope_stages"],
         "mismatch_warnings": list(profile.get("mismatch_warnings") or []),
@@ -583,7 +653,7 @@ def _runtime_mismatch_guidance(
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     expected_plan = active.get("resolved_address_plan") or active.get("address_plan") or {}
     features = active.get("features") if isinstance(active.get("features"), dict) else {}
-    configured = configured_runtime_values()
+    configured = _configured_runtime_values()
     env_fields = {
         "subnet": "LAB_SUBNET_CIDR",
         "ilo": "ILO_TEST_HOST",
@@ -666,11 +736,11 @@ def _runtime_address_plan() -> dict[str, Any]:
 def _runtime_profile_components() -> dict[str, Any]:
     netapp_enabled_override = _env_bool_or_none("LAB_PROFILE_NETAPP_ENABLED")
     global_settings = {
-        "gateway": _clean_string(os.getenv("LAB_GATEWAY")) or settings.cisco_management_gateway,
-        "dns_servers": _clean_string_list(os.getenv("LAB_DNS_SERVERS")) or list(settings.cisco_dns_servers),
-        "ntp_servers": _clean_string_list(os.getenv("LAB_NTP_SERVERS")),
+        "gateway": _runtime_env_value("LAB_GATEWAY") or settings.cisco_management_gateway,
+        "dns_servers": _clean_string_list(_runtime_env_value("LAB_DNS_SERVERS")) or list(settings.cisco_dns_servers),
+        "ntp_servers": _clean_string_list(_runtime_env_value("LAB_NTP_SERVERS")),
         "vlan_id": settings.cisco_management_vlan,
-        "mtu": os.getenv("LAB_MTU"),
+        "mtu": _runtime_env_value("LAB_MTU"),
     }
     features = {
         "vcenter_enabled": settings.vcenter_configured,
@@ -680,11 +750,11 @@ def _runtime_profile_components() -> dict[str, Any]:
         features["netapp_enabled"] = netapp_enabled_override
     elif settings.netapp_configured:
         features["netapp_enabled"] = True
-    address_plan = runtime_configured_address_plan()
+    address_plan = _runtime_configured_address_plan()
     if not address_plan.get("subnet"):
         address_plan["subnet"] = settings.lab_subnet_cidr or LAB_SUBNET_CIDR
     payload = {
-        "profile_topology": _clean_string(os.getenv("LAB_PROFILE_TOPOLOGY")),
+        "profile_topology": _runtime_env_value("LAB_PROFILE_TOPOLOGY"),
         "subnet_cidr": address_plan.get("subnet"),
         "global_settings": global_settings,
         "address_plan": address_plan,
@@ -748,6 +818,22 @@ def _profile_component_fields(components: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _profile_field_presence(payload: dict[str, Any]) -> dict[str, Any]:
+    global_settings = payload.get("global_settings") if isinstance(payload.get("global_settings"), dict) else {}
+    address_plan = payload.get("address_plan") if isinstance(payload.get("address_plan"), dict) else {}
+    devices = payload.get("devices") if isinstance(payload.get("devices"), dict) else {}
+    return {
+        "top_level": sorted(
+            key
+            for key in ("gateway", "dns", "ntp", "vlan_id", "mtu", "subnet_cidr")
+            if key in payload
+        ),
+        "global_settings": sorted(global_settings.keys()),
+        "address_plan": sorted(address_plan.keys()),
+        "devices": sorted(devices.keys()),
+    }
+
+
 def _normalize_address_plan(value: dict[str, Any]) -> dict[str, Any]:
     string_fields = [
         "subnet",
@@ -769,9 +855,9 @@ def _normalize_address_plan(value: dict[str, Any]) -> dict[str, Any]:
         raw_lifs = value.get(list_field) or []
         if isinstance(raw_lifs, str):
             raw_lifs = [item.strip() for item in raw_lifs.split(",")]
-        normalized[list_field] = [
+        normalized[list_field] = _unique_strings(
             item for item in (_clean_string(item) for item in raw_lifs) if item
-        ]
+        )
     return normalized
 
 
@@ -792,7 +878,25 @@ def _clean_string_list(value: Any) -> list[str]:
         candidates = value
     else:
         candidates = [value]
-    return [item for item in (_clean_string(candidate) for candidate in candidates) if item]
+    return _unique_strings(item for item in (_clean_string(candidate) for candidate in candidates) if item)
+
+
+def _profile_list_value(
+    field_presence: dict[str, Any],
+    primary: dict[str, Any],
+    primary_key: str,
+    fallback: dict[str, Any],
+    fallback_key: str,
+) -> list[str] | None:
+    global_keys = set(_clean_string_list(field_presence.get("global_settings")))
+    top_level_keys = set(_clean_string_list(field_presence.get("top_level")))
+    if primary_key in global_keys:
+        return _clean_string_list(primary.get(primary_key))
+    if fallback_key in top_level_keys:
+        return _clean_string_list(fallback.get(fallback_key))
+    primary_items = _clean_string_list(primary.get(primary_key))
+    fallback_items = _clean_string_list(fallback.get(fallback_key))
+    return primary_items or fallback_items or None
 
 
 def _clean_string(value: Any) -> str | None:
@@ -802,8 +906,12 @@ def _clean_string(value: Any) -> str | None:
     return text or None
 
 
+def _unique_strings(values: Any) -> list[str]:
+    return unique_strings(values)
+
+
 def _env_bool_or_none(name: str) -> bool | None:
-    value = _clean_string(os.getenv(name))
+    value = _runtime_env_value(name)
     if value is None:
         return None
     return value.lower() in {"1", "true", "yes", "on"}

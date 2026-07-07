@@ -1,0 +1,13 @@
+{
+  "checked": true,
+  "exists": true,
+  "return_code": 0,
+  "stderr": "",
+  "summary": {
+    "accessible": true,
+    "capacity": 1024,
+    "free_space": 512,
+    "name": "netapp_nfs_ds01",
+    "type": "NFS"
+  }
+}

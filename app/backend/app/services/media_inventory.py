@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import os
 import re
 from pathlib import Path
 
 from app.core.config import settings
 from app.schemas import MediaInventoryItemRead, MediaInventoryRead
+from app.services.path_utils import directory_state, file_size, file_state, rglob_paths_or_none
 
 MEDIA_INVENTORY_LIMIT = 200
 REPO_ROOT = Path(__file__).resolve().parents[4]
@@ -42,9 +44,20 @@ def get_media_inventory(
 ) -> MediaInventoryRead:
     configured_directories = directories if directories is not None else settings.media_inventory_dirs
     if not configured_directories:
+        if settings.provider_mode != "mock":
+            return MediaInventoryRead(
+                mode="unavailable",
+                configured_directories=[],
+                configured_directory_paths=[],
+                items=[],
+                warnings=[
+                    "MEDIA_INVENTORY_DIRS is not configured; no real media inventory was returned."
+                ],
+            )
         return MediaInventoryRead(
             mode="sample",
             configured_directories=[],
+            configured_directory_paths=[],
             items=SAMPLE_MEDIA_ITEMS,
             warnings=[
                 "MEDIA_INVENTORY_DIRS is not configured; returning mock sample media metadata."
@@ -55,28 +68,32 @@ def get_media_inventory(
     warnings: list[str] = []
     scanned_count = 0
 
-    configured_directory_labels = [
-        f"configured-directory-{index}"
-        for index, _ in enumerate(configured_directories, start=1)
-    ]
+    configured_directory_entries, duplicate_count = _configured_directory_entries(configured_directories)
+    configured_directory_labels = [source_label for _path, source_label in configured_directory_entries]
+    configured_directory_paths = [str(path) for path, _source_label in configured_directory_entries]
+    if duplicate_count:
+        warnings.append(f"{duplicate_count} duplicate configured media director{'y was' if duplicate_count == 1 else 'ies were'} ignored.")
 
-    for directory, source_label in zip(configured_directories, configured_directory_labels):
-        path = Path(directory).expanduser()
-        if not path.exists():
+    for path, source_label in configured_directory_entries:
+        path_state = directory_state(path)
+        if path_state == "missing":
             warnings.append(f"{source_label} does not exist.")
             continue
-        if not path.is_dir():
+        if path_state == "not_directory":
             warnings.append(f"{source_label} is not a directory.")
             continue
-
-        try:
-            entries = sorted(
-                (entry for entry in path.rglob("*") if not entry.is_symlink() and entry.is_file()),
-                key=lambda item: str(item.relative_to(path)).lower(),
-            )
-        except OSError:
+        if path_state == "unreadable":
             warnings.append(f"{source_label} could not be read.")
             continue
+
+        entries, unreadable_count = _media_file_entries(path)
+        if entries is None:
+            warnings.append(f"{source_label} could not be read.")
+            continue
+        if unreadable_count:
+            warnings.append(
+                f"{source_label} contained {unreadable_count} file{'s' if unreadable_count != 1 else ''} that could not be read."
+            )
 
         scanned_count += 1
         for entry in entries:
@@ -85,25 +102,77 @@ def get_media_inventory(
                     f"Media inventory truncated at {MEDIA_INVENTORY_LIMIT} local files."
                 )
                 break
-            items.append(_inventory_item(entry, len(items) + 1, source_label))
+            item = _inventory_item(entry, len(items) + 1, source_label)
+            if item is None:
+                warnings.append(f"{source_label} contained a file that could not be read.")
+                continue
+            items.append(item)
 
     return MediaInventoryRead(
         mode="local" if scanned_count else "unavailable",
         configured_directories=configured_directory_labels,
+        configured_directory_paths=configured_directory_paths,
         items=items,
         warnings=warnings,
     )
 
 
-def _inventory_item(path: Path, index: int, source_label: str) -> MediaInventoryItemRead:
+def _configured_directory_entries(configured_directories: tuple[str, ...]) -> tuple[list[tuple[Path, str]], int]:
+    entries: list[tuple[Path, str]] = []
+    seen: set[str] = set()
+    duplicate_count = 0
+    for directory in configured_directories:
+        path = Path(directory).expanduser()
+        key = _directory_identity(path)
+        if key in seen:
+            duplicate_count += 1
+            continue
+        seen.add(key)
+        entries.append((path, f"configured-directory-{len(entries) + 1}"))
+    return entries, duplicate_count
+
+
+def _media_file_entries(path: Path) -> tuple[list[Path] | None, int]:
+    entries: list[Path] = []
+    unreadable_count = 0
+    candidates = rglob_paths_or_none(path, "*")
+    if candidates is None:
+        return None, 0
+    for entry in candidates:
+        try:
+            if entry.is_symlink():
+                continue
+        except OSError:
+            unreadable_count += 1
+            continue
+        entry_state = file_state(entry)
+        if entry_state == "file":
+            entries.append(entry)
+        elif entry_state == "unreadable":
+            unreadable_count += 1
+    return sorted(entries, key=lambda item: str(item.relative_to(path)).lower()), unreadable_count
+
+
+def _directory_identity(path: Path) -> str:
+    try:
+        resolved = path.resolve(strict=False)
+    except OSError:
+        resolved = path.absolute()
+    return os.path.normcase(os.path.normpath(str(resolved)))
+
+
+def _inventory_item(path: Path, index: int, source_label: str) -> MediaInventoryItemRead | None:
     extension = _extension(path)
     category = _category_for_extension(extension)
     hints = _safe_media_hints(path.name)
     exact_metadata = _repo_media_metadata(path, hints)
+    size_bytes = file_size(path)
+    if size_bytes is None:
+        return None
     return MediaInventoryItemRead(
         placeholder_name=f"{category}-{index}{extension}",
         extension=extension,
-        size_bytes=path.stat().st_size,
+        size_bytes=size_bytes,
         category=category,
         source=source_label,
         actual_name_redacted=not bool(exact_metadata),

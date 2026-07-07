@@ -79,6 +79,28 @@ make frontend-run
 The backend runs at `http://127.0.0.1:8001`. The Vite frontend runs at
 `http://127.0.0.1:5173` and proxies API requests to the backend.
 
+Windows PowerShell does not require Make or bash for the common local gate.
+From `app/`, run:
+
+```powershell
+.\scripts\windows-doctor.ps1
+.\scripts\check-windows.ps1
+```
+
+To include browser-based frontend coverage:
+
+```powershell
+.\scripts\ensure-playwright-browsers.ps1 -Install
+.\scripts\check-windows.ps1 -E2E
+```
+
+If npm is configured with a proxy that times out while fetching package
+tarballs, use the script-level bypass for dependency repair:
+
+```powershell
+.\scripts\check-windows.ps1 -Install -NoProxy
+```
+
 ### Operational Mode
 
 The Settings page includes an Operational Mode panel. Runtime options are
@@ -454,7 +476,18 @@ make lint
 
 `make test` runs backend pytest and the frontend TypeScript/build check.
 `make lint` runs backend Ruff only when it is installed in `app/backend/.venv`,
-then runs the frontend build/type check.
+checks for Windows/Linux-portable repository paths, then runs the frontend
+build/type check.
+
+CI runs the same Linux Make gate on Ubuntu and the PowerShell gate on Windows
+through `.github/workflows/ci.yml`.
+
+On Windows without Make/bash, run the equivalent PowerShell gate from `app/`:
+
+```powershell
+.\scripts\check-windows.ps1
+.\scripts\check-windows.ps1 -E2E
+```
 
 The backend pytest suite includes a mock-only VM lifecycle smoke test. To run
 that smoke coverage directly:

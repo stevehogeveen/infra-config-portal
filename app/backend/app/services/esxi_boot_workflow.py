@@ -4,6 +4,7 @@ import json
 import os
 import socket
 import subprocess
+import sys
 import time
 from datetime import UTC, datetime
 from pathlib import Path
@@ -16,7 +17,19 @@ from app.core.config import settings
 from app.providers.ilo_redfish import IloRedfishConfig, ilo_redfish_redaction_values
 from app.providers.action_policy import ActionCategory, current_lab_action_policy
 from app.providers.redaction import redact_sensitive
+from app.services.env_utils import env_int
 from app.services.firmware_compliance import firmware_gate_blockers
+from app.services.json_file_store import read_json_object, write_json_object, write_text_value
+from app.services.list_utils import unique_strings
+from app.services.path_utils import (
+    is_directory as _is_directory,
+    is_file as _is_file,
+    file_size as _file_size,
+    path_exists as _path_exists,
+    path_mtime as _path_mtime,
+    repo_relative_path,
+    safe_read_text,
+)
 from app.services.hpe_raid import (
     REPO_ROOT,
     SYSTEM_PATH,
@@ -43,8 +56,18 @@ RESET_TYPE = "ForceRestart"
 POWER_ON_RESET_TYPE = "On"
 
 
+def _rel(path: Path) -> str:
+    return repo_relative_path(path, REPO_ROOT)
+
+
+def _subprocess_group_kwargs() -> dict[str, Any]:
+    if os.name == "nt":
+        return {"creationflags": getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)}
+    return {"start_new_session": True}
+
+
 def prepare_esxi_media_url() -> dict[str, Any]:
-    gate_blockers = firmware_gate_blockers("ESXi install media preparation")
+    gate_blockers = _string_list(firmware_gate_blockers("ESXi install media preparation"))
     if gate_blockers:
         return _write_report(
             MEDIA_URL_REPORT,
@@ -60,7 +83,7 @@ def prepare_esxi_media_url() -> dict[str, Any]:
     CODEX_RUN_DIR.mkdir(parents=True, exist_ok=True)
     selected = _select_esxi_iso()
     bind_host = os.getenv("ESXI_MEDIA_HTTP_BIND", "0.0.0.0")
-    port = int(os.getenv("ESXI_MEDIA_HTTP_PORT", str(DEFAULT_MEDIA_PORT)))
+    port = env_int("ESXI_MEDIA_HTTP_PORT", DEFAULT_MEDIA_PORT, minimum=1)
     advertised_host = os.getenv("ESXI_MEDIA_HTTP_HOST") or _source_ip_for_ilo()
     base_url = os.getenv("ESXI_MEDIA_BASE_URL")
     server = {"managed": False, "status": "not_required", "pid": None, "log": None}
@@ -85,17 +108,17 @@ def prepare_esxi_media_url() -> dict[str, Any]:
             "server": server,
             "blockers": blockers,
             "warnings": _media_url_warnings(base_url),
-            "report": str(MEDIA_URL_REPORT.relative_to(REPO_ROOT)),
+            "report": _rel(MEDIA_URL_REPORT),
             "next_safe_action": "Insert the selected ISO through iLO VirtualMedia." if status == "ready" else "Fix media URL reachability before virtual media insert.",
         }
     )
-    MEDIA_URL_REPORT.write_text(_markdown("ESXi Media URL Report", report), encoding="utf-8")
+    write_text_value(MEDIA_URL_REPORT, _markdown("ESXi Media URL Report", report))
     return report
 
 
 def insert_esxi_virtual_media() -> dict[str, Any]:
     policy_blockers = _action_blockers("ilo.virtual-media", ActionCategory.VIRTUAL_MEDIA)
-    policy_blockers.extend(firmware_gate_blockers("ESXi virtual media insert"))
+    policy_blockers.extend(_string_list(firmware_gate_blockers("ESXi virtual media insert")))
     if policy_blockers:
         return _write_report(
             VIRTUAL_MEDIA_REPORT,
@@ -147,16 +170,16 @@ def insert_esxi_virtual_media() -> dict[str, Any]:
         "inserted": inserted,
         "blockers": [] if status == "inserted" else ["Virtual media state does not show inserted ISO after insert action."],
         "warnings": [],
-        "report": str(VIRTUAL_MEDIA_REPORT.relative_to(REPO_ROOT)),
+        "report": _rel(VIRTUAL_MEDIA_REPORT),
         "next_safe_action": "Set one-time boot target to virtual CD/DVD." if status == "inserted" else "Resolve VirtualMedia insert state before boot override.",
     }
-    VIRTUAL_MEDIA_STATE.write_text(json.dumps(_sanitize(result), indent=2), encoding="utf-8")
+    write_json_object(VIRTUAL_MEDIA_STATE, _sanitize(result))
     return _write_report(VIRTUAL_MEDIA_REPORT, "ESXi Virtual Media Report", result)
 
 
 def eject_esxi_virtual_media() -> dict[str, Any]:
     policy_blockers = _action_blockers("ilo.virtual-media", ActionCategory.VIRTUAL_MEDIA)
-    policy_blockers.extend(firmware_gate_blockers("ESXi virtual media eject"))
+    policy_blockers.extend(_string_list(firmware_gate_blockers("ESXi virtual media eject")))
     if policy_blockers:
         return _write_report(
             VIRTUAL_MEDIA_EJECT_REPORT,
@@ -251,16 +274,16 @@ def eject_esxi_virtual_media() -> dict[str, Any]:
         "ejected": status in {"ejected", "already_ejected"},
         "blockers": [] if status in {"ejected", "already_ejected"} else ["Virtual media state still shows inserted media after eject action."],
         "warnings": [],
-        "report": str(VIRTUAL_MEDIA_EJECT_REPORT.relative_to(REPO_ROOT)),
+        "report": _rel(VIRTUAL_MEDIA_EJECT_REPORT),
         "next_safe_action": "Confirm ESXi is running from installed boot media and rerun ESXi readiness.",
     }
-    VIRTUAL_MEDIA_STATE.write_text(json.dumps(_sanitize(result), indent=2), encoding="utf-8")
+    write_json_object(VIRTUAL_MEDIA_STATE, _sanitize(result))
     return _write_report(VIRTUAL_MEDIA_EJECT_REPORT, "ESXi Virtual Media Eject Report", result)
 
 
 def set_esxi_one_time_boot() -> dict[str, Any]:
     policy_blockers = _action_blockers("ilo.boot-settings", ActionCategory.BOOT_CONFIG)
-    policy_blockers.extend(firmware_gate_blockers("ESXi one-time boot"))
+    policy_blockers.extend(_string_list(firmware_gate_blockers("ESXi one-time boot")))
     if policy_blockers:
         return _write_report(
             ONE_TIME_BOOT_REPORT,
@@ -276,7 +299,7 @@ def set_esxi_one_time_boot() -> dict[str, Any]:
 
     before = _get_redfish_resource(SYSTEM_PATH)
     before_summary = _boot_summary(before)
-    BOOT_SETTINGS_BEFORE.write_text(json.dumps(_sanitize(before_summary), indent=2), encoding="utf-8")
+    write_json_object(BOOT_SETTINGS_BEFORE, _sanitize(before_summary))
     target = _preferred_boot_target(before_summary.get("target_allowable_values") or [])
     if not target:
         return _write_report(
@@ -295,7 +318,7 @@ def set_esxi_one_time_boot() -> dict[str, Any]:
     patch = _patch_system_boot({"Boot": {"BootSourceOverrideEnabled": "Once", "BootSourceOverrideTarget": target}})
     after = _get_redfish_resource(SYSTEM_PATH)
     after_summary = _boot_summary(after)
-    BOOT_SETTINGS_AFTER.write_text(json.dumps(_sanitize(after_summary), indent=2), encoding="utf-8")
+    write_json_object(BOOT_SETTINGS_AFTER, _sanitize(after_summary))
     status = "set" if after_summary.get("boot_source_override_enabled") == "Once" and after_summary.get("boot_source_override_target") == target else "blocked"
     return _write_report(
         ONE_TIME_BOOT_REPORT,
@@ -310,7 +333,7 @@ def set_esxi_one_time_boot() -> dict[str, Any]:
             "after": after_summary,
             "blockers": [] if status == "set" else ["Boot override after state does not match requested one-time CD/DVD boot."],
             "warnings": [],
-            "report": str(ONE_TIME_BOOT_REPORT.relative_to(REPO_ROOT)),
+            "report": _rel(ONE_TIME_BOOT_REPORT),
             "next_safe_action": "Run controlled server reset to boot the ESXi installer." if status == "set" else "Resolve boot override state before reset.",
         },
     )
@@ -318,7 +341,7 @@ def set_esxi_one_time_boot() -> dict[str, Any]:
 
 def reset_for_esxi_installer_boot() -> dict[str, Any]:
     policy_blockers = _action_blockers("ilo.power-action", ActionCategory.POWER_ACTION)
-    policy_blockers.extend(firmware_gate_blockers("ESXi installer reset"))
+    policy_blockers.extend(_string_list(firmware_gate_blockers("ESXi installer reset")))
     if policy_blockers:
         return _write_report(
             INSTALLER_BOOT_REPORT,
@@ -394,7 +417,7 @@ def reset_for_esxi_installer_boot() -> dict[str, Any]:
             "installer_detection": detection,
             "blockers": blockers,
             "warnings": warnings,
-            "report": str(INSTALLER_BOOT_REPORT.relative_to(REPO_ROOT)),
+            "report": _rel(INSTALLER_BOOT_REPORT),
             "next_safe_action": "Use console or manual KVM observation to continue ESXi installer if Redfish detection is indeterminate.",
         },
     )
@@ -434,7 +457,7 @@ def detect_esxi_installer_boot_status() -> dict[str, Any]:
             "installer_detection": detection,
             "blockers": [],
             "warnings": warnings,
-            "report": str(INSTALLER_BOOT_REPORT.relative_to(REPO_ROOT)),
+            "report": _rel(INSTALLER_BOOT_REPORT),
             "next_safe_action": (
                 "Continue with Cisco console and Ethernet bootstrap readiness."
                 if status in {"boot_requested", "installed_esxi"}
@@ -456,20 +479,31 @@ def esxi_boot_workflow_summary() -> dict[str, Any]:
 
 def _select_esxi_iso() -> dict[str, Any]:
     explicit = os.getenv("ESXI_INSTALL_ISO") or os.getenv("ESXI_ISO_PATH")
-    directories = [Path(item).expanduser().resolve() for item in settings.media_inventory_dirs]
+    directories = [
+        directory
+        for directory in (_resolve_media_path(Path(item)) for item in settings.media_inventory_dirs)
+        if directory is not None
+    ]
     if explicit:
-        path = Path(explicit).expanduser().resolve()
+        path = _resolve_media_path(Path(explicit))
+        if path is None:
+            raise RuntimeError("Selected ESXi ISO path could not be resolved.")
         if not _is_under_any(path, directories):
             raise RuntimeError("Selected ESXi ISO must be under MEDIA_INVENTORY_DIRS.")
-        if not path.is_file() or path.suffix.lower() != ".iso":
+        size_bytes = _iso_size_bytes(path)
+        if size_bytes is None or path.suffix.lower() != ".iso":
             raise RuntimeError("Selected ESXi ISO path is not an ISO file.")
-        return {"path": path, "directory": path.parent, "size_bytes": path.stat().st_size, "selection": "explicit-env"}
+        return {"path": path, "directory": path.parent, "size_bytes": size_bytes, "selection": "explicit-env"}
 
     candidates: list[Path] = []
     for directory in directories:
-        if not directory.is_dir():
+        try:
+            if not _is_directory(directory):
+                continue
+            entries = list(directory.iterdir())
+        except OSError:
             continue
-        candidates.extend(path for path in directory.iterdir() if path.is_file() and path.suffix.lower() == ".iso" and "esxi" in path.name.lower())
+        candidates.extend(path for path in entries if _is_esxi_iso_candidate(path))
     if not candidates:
         raise RuntimeError("No ESXi ISO was found under MEDIA_INVENTORY_DIRS.")
 
@@ -479,15 +513,38 @@ def _select_esxi_iso() -> dict[str, Any]:
         hpe = 1 if "hpe" in lowered else 0
         return (preferred + hpe, path.name.lower())
 
-    selected = sorted(candidates, key=score, reverse=True)[0]
-    return {"path": selected, "directory": selected.parent, "size_bytes": selected.stat().st_size, "selection": "preferred-esxi-8"}
+    for selected in sorted(candidates, key=score, reverse=True):
+        size_bytes = _iso_size_bytes(selected)
+        if size_bytes is not None:
+            return {"path": selected, "directory": selected.parent, "size_bytes": size_bytes, "selection": "preferred-esxi-8"}
+    raise RuntimeError("Selected ESXi ISO could not be read.")
+
+
+def _resolve_media_path(path: Path) -> Path | None:
+    try:
+        return path.expanduser().resolve()
+    except OSError:
+        return None
+
+
+def _is_esxi_iso_candidate(path: Path) -> bool:
+    try:
+        return _is_file(path) and path.suffix.lower() == ".iso" and "esxi" in path.name.lower()
+    except OSError:
+        return False
+
+
+def _iso_size_bytes(path: Path) -> int | None:
+    if not _is_file(path):
+        return None
+    return _file_size(path)
 
 
 def _ensure_media_server(directory: Path, bind_host: str, port: int) -> dict[str, Any]:
     if _port_open("127.0.0.1", port):
         return {"managed": False, "status": "existing-listener", "pid": None, "log": None, "bind": bind_host, "port": port}
     command = [
-        os.getenv("PYTHON", "python3"),
+        os.getenv("PYTHON") or sys.executable,
         "-m",
         "http.server",
         str(port),
@@ -497,14 +554,17 @@ def _ensure_media_server(directory: Path, bind_host: str, port: int) -> dict[str
         str(directory),
     ]
     log = MEDIA_SERVER_LOG.open("ab")
-    process = subprocess.Popen(command, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
-    MEDIA_SERVER_PID.write_text(str(process.pid), encoding="utf-8")
+    try:
+        process = subprocess.Popen(command, stdout=log, stderr=subprocess.STDOUT, **_subprocess_group_kwargs())
+    finally:
+        log.close()
+    write_text_value(MEDIA_SERVER_PID, str(process.pid))
     deadline = time.monotonic() + 5
     while time.monotonic() < deadline:
         if _port_open("127.0.0.1", port):
-            return {"managed": True, "status": "started", "pid": process.pid, "log": str(MEDIA_SERVER_LOG.relative_to(REPO_ROOT)), "bind": bind_host, "port": port}
+            return {"managed": True, "status": "started", "pid": process.pid, "log": _rel(MEDIA_SERVER_LOG), "bind": bind_host, "port": port}
         time.sleep(0.2)
-    return {"managed": True, "status": "start-pending", "pid": process.pid, "log": str(MEDIA_SERVER_LOG.relative_to(REPO_ROOT)), "bind": bind_host, "port": port}
+    return {"managed": True, "status": "start-pending", "pid": process.pid, "log": _rel(MEDIA_SERVER_LOG), "bind": bind_host, "port": port}
 
 
 def _validate_media_url(url: str, expected_size: int) -> dict[str, Any]:
@@ -599,8 +659,8 @@ def _patch_system_boot(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def _wait_for_ilo(*, require_powered: bool = False) -> dict[str, Any]:
-    timeout_seconds = int(os.getenv("ESXI_INSTALL_BOOT_WAIT_SECONDS", "900"))
-    poll_seconds = int(os.getenv("ESXI_INSTALL_BOOT_POLL_SECONDS", "20"))
+    timeout_seconds = env_int("ESXI_INSTALL_BOOT_WAIT_SECONDS", 900, minimum=1)
+    poll_seconds = env_int("ESXI_INSTALL_BOOT_POLL_SECONDS", 20, minimum=1)
     started = time.monotonic()
     attempts = 0
     last_error: dict[str, Any] | None = None
@@ -738,9 +798,11 @@ def _preferred_boot_target(values: list[Any]) -> str | None:
 
 
 def _report_summary(path: Path) -> dict[str, Any]:
-    if not path.exists():
-        return {"status": "not_run", "report": str(path.relative_to(REPO_ROOT))}
-    text = path.read_text(encoding="utf-8", errors="replace")
+    if not _path_exists(path):
+        return {"status": "not_run", "report": _rel(path)}
+    text = safe_read_text(path)
+    if not text:
+        return {"status": "not_run", "report": _rel(path)}
     status = "unknown"
     message = ""
     for line in text.splitlines():
@@ -748,14 +810,23 @@ def _report_summary(path: Path) -> dict[str, Any]:
             status = line.split(":", 1)[1].strip()
         if line.startswith("- message:"):
             message = line.split(":", 1)[1].strip()
-    return {"status": status, "message": message, "report": str(path.relative_to(REPO_ROOT))}
+    return {"status": status, "message": message, "report": _rel(path)}
 
 
 def _latest_report_summary(*paths: Path) -> dict[str, Any]:
-    existing = [path for path in paths if path.exists()]
-    if not existing:
+    latest = None
+    latest_mtime = None
+    for path in paths:
+        if not _path_exists(path):
+            continue
+        mtime = _path_mtime(path)
+        if mtime is None:
+            continue
+        if latest_mtime is None or mtime > latest_mtime:
+            latest = path
+            latest_mtime = mtime
+    if latest is None:
         return _report_summary(paths[0])
-    latest = max(existing, key=lambda path: path.stat().st_mtime)
     return _report_summary(latest)
 
 
@@ -769,22 +840,17 @@ def _virtual_media_action_target(body: dict[str, Any], path: str, action: str) -
 
 
 def _latest_virtual_media_path() -> str | None:
-    if not VIRTUAL_MEDIA_STATE.exists():
-        return None
-    try:
-        payload = json.loads(VIRTUAL_MEDIA_STATE.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return None
+    payload = read_json_object(VIRTUAL_MEDIA_STATE)
     device = payload.get("device") if isinstance(payload, dict) else None
     path = device.get("path") if isinstance(device, dict) else None
     return path if isinstance(path, str) else None
 
 
 def _write_report(path: Path, title: str, payload: dict[str, Any]) -> dict[str, Any]:
-    payload = {**payload, "report": str(path.relative_to(REPO_ROOT))}
+    payload = {**payload, "report": _rel(path)}
     sanitized = _sanitize(payload)
     CODEX_RUN_DIR.mkdir(parents=True, exist_ok=True)
-    path.write_text(_markdown(title, sanitized), encoding="utf-8")
+    write_text_value(path, _markdown(title, sanitized))
     return sanitized
 
 
@@ -802,7 +868,11 @@ def _markdown(title: str, payload: dict[str, Any]) -> str:
 
 
 def _action_blockers(action_id: str, category: ActionCategory) -> list[str]:
-    return current_lab_action_policy(settings.provider_mode).action_blockers(action_id, category)
+    return _string_list(current_lab_action_policy(settings.provider_mode).action_blockers(action_id, category))
+
+
+def _string_list(value: Any) -> list[str]:
+    return unique_strings(value)
 
 
 def _selected_iso_summary(selected: dict[str, Any]) -> dict[str, Any]:

@@ -36,11 +36,11 @@ import {
   OperatorNetworkPage,
   OperatorOverviewPage,
   OperatorServerPage,
-  OperatorSettingsPage,
   OperatorStoragePage,
   OperatorTabStateProvider,
   OperatorValidationPage,
-  OperatorVirtualizationPage
+  OperatorVirtualizationPage,
+  SettingsGlobalProfilePanel
 } from "./operatorPages";
 import type {
   ArtifactRecord,
@@ -92,6 +92,7 @@ import type {
   NetAppPlanPreview,
   NetAppReadinessComparison,
   NetAppUpgradeReadiness,
+  OperatorIssuePacket,
   ProviderModeSettings,
   ProviderModeSettingsWrite,
   ProviderAction,
@@ -253,6 +254,8 @@ type HealthStatus = {
   provider_mode: string;
   operator_runtime_mode?: string;
   expected_runtime_mode?: string;
+  lab_subnet_cidr?: string | null;
+  host_ipv4_addresses?: string[];
   dev_test_banner?: string | null;
   status: string;
 };
@@ -678,22 +681,34 @@ function App() {
     }
   }
 
-  useEffect(() => {
-    loadLabProfileState();
-    loadReportIssues();
-  }, []);
+  async function loadHealth() {
+    try {
+      const nextHealth = await api.health();
+      setHealth(nextHealth);
+      setHealthError("");
+    } catch (err) {
+      setHealth(null);
+      setHealthError((err as Error).message);
+    }
+  }
 
   useEffect(() => {
-    api
-      .health()
-      .then((nextHealth) => {
-        setHealth(nextHealth);
-        setHealthError("");
-      })
-      .catch((err: Error) => {
-        setHealth(null);
-        setHealthError(err.message);
-      });
+    let ignore = false;
+    async function loadStartup() {
+      await loadLabProfileState();
+      if (ignore) return;
+      await loadHealth();
+      if (ignore) return;
+      window.setTimeout(() => {
+        if (!ignore) {
+          void loadReportIssues();
+        }
+      }, 500);
+    }
+    void loadStartup();
+    return () => {
+      ignore = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -737,16 +752,49 @@ function App() {
                     labProfileError={labProfileError}
                     labProfileLoading={labProfileLoading}
                     labProfileState={labProfileState}
+                    onReloadLabProfile={loadLabProfileState}
                   />
                 }
               />
-              <RouterRoute path="/network" element={<OperatorNetworkPage labProfileState={labProfileState} />} />
-              <RouterRoute path="/server" element={<OperatorServerPage labProfileState={labProfileState} />} />
-              <RouterRoute path="/storage" element={<OperatorStoragePage labProfileState={labProfileState} />} />
-              <RouterRoute path="/virtualization" element={<OperatorVirtualizationPage labProfileState={labProfileState} />} />
+              <RouterRoute
+                path="/network"
+                element={
+                  <OperatorNetworkPage
+                    labProfileState={labProfileState}
+                    onReloadLabProfile={loadLabProfileState}
+                  />
+                }
+              />
+              <RouterRoute
+                path="/server"
+                element={
+                  <OperatorServerPage
+                    labProfileState={labProfileState}
+                    onReloadLabProfile={loadLabProfileState}
+                  />
+                }
+              />
+              <RouterRoute
+                path="/storage"
+                element={
+                  <OperatorStoragePage
+                    labProfileState={labProfileState}
+                    onReloadLabProfile={loadLabProfileState}
+                  />
+                }
+              />
+              <RouterRoute
+                path="/virtualization"
+                element={
+                  <OperatorVirtualizationPage
+                    labProfileState={labProfileState}
+                    onReloadLabProfile={loadLabProfileState}
+                  />
+                }
+              />
               <RouterRoute path="/firmware-upgrades" element={<OperatorFirmwareUpgradesPage labProfileState={labProfileState} />} />
               <RouterRoute path="/validation" element={<OperatorValidationPage labProfileState={labProfileState} />} />
-              <RouterRoute path="/config" element={<ActiveLabConfigDrawer embedded />} />
+              <RouterRoute path="/config" element={<Navigate to="/overview" replace />} />
               <RouterRoute path="/dashboard" element={<Navigate to="/overview" replace />} />
               <RouterRoute path="/lab-setup" element={<Navigate to="/overview" replace />} />
               <RouterRoute path="/hardware" element={<Navigate to="/overview" replace />} />
@@ -758,18 +806,7 @@ function App() {
               <RouterRoute path="/verification" element={<Navigate to="/validation" replace />} />
               <RouterRoute path="/lab-validation" element={<Navigate to="/validation" replace />} />
               <RouterRoute path="/reports" element={<Navigate to="/validation" replace />} />
-              <RouterRoute
-                path="/settings"
-                element={
-                  <OperatorSettingsPage
-                    health={health}
-                    labProfileError={labProfileError}
-                    labProfileLoading={labProfileLoading}
-                    labProfileState={labProfileState}
-                    onReloadLabProfile={loadLabProfileState}
-                  />
-                }
-              />
+              <RouterRoute path="/settings" element={<Navigate to="/overview" replace />} />
               <RouterRoute path="/requests" element={<RequestListPage />} />
               <RouterRoute path="/requests/new" element={<NewRequest />} />
               <RouterRoute path="/requests/:id" element={<RequestDetail />} />
@@ -839,7 +876,7 @@ function AppShell({
             <Menu size={18} />
             Menu
           </button>
-          <span>Lab Builder</span>
+          <span>Infra Config</span>
         </div>
         {health?.dev_test_banner && <DevTestBanner message={health.dev_test_banner} />}
         <div className="operator-mode-bar">
@@ -849,6 +886,7 @@ function AppShell({
         </div>
         {children}
       </main>
+      <OperatorIssueReporter />
     </div>
   );
 }
@@ -898,6 +936,142 @@ function ModeToggle() {
   );
 }
 
+function OperatorIssueReporter() {
+  const location = useLocation();
+  const [open, setOpen] = useState(false);
+  const [note, setNote] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [copying, setCopying] = useState(false);
+  const [error, setError] = useState("");
+  const [packet, setPacket] = useState<OperatorIssuePacket | null>(null);
+  const route = `${location.pathname}${location.search}`;
+  const pageTitle = pageTitleForRoute(location.pathname);
+
+  useEffect(() => {
+    setOpen(false);
+    setError("");
+    setPacket(null);
+  }, [route]);
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    setSubmitting(true);
+    setError("");
+    setPacket(null);
+    try {
+      setPacket(await api.createOperatorIssuePacket({
+        operator_note: note,
+        page_title: pageTitle,
+        route,
+        ui_context: {
+          page: pageTitle,
+          path: location.pathname,
+          query: location.search || "none",
+          viewport: `${window.innerWidth}x${window.innerHeight}`
+        }
+      }));
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function copyPrompt() {
+    if (!packet) return;
+    setCopying(true);
+    try {
+      await navigator.clipboard.writeText(packet.copy_prompt);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      window.setTimeout(() => setCopying(false), 600);
+    }
+  }
+
+  return (
+    <>
+      <button className="operator-issue-trigger" onClick={() => setOpen(true)} type="button">
+        <AlertTriangle size={16} />
+        Report issue
+      </button>
+      {open && createPortal(
+        <div className="operator-issue-overlay" role="dialog" aria-modal="true" aria-label="Report testing issue">
+          <form className="operator-issue-panel" onSubmit={submit}>
+            <div className="operator-issue-head">
+              <div>
+                <p className="operator-kicker">Testing feedback</p>
+                <h2>Report what broke</h2>
+              </div>
+              <button aria-label="Close issue reporter" onClick={() => setOpen(false)} type="button">
+                <X size={18} />
+              </button>
+            </div>
+            <div className="operator-issue-route">
+              <span>{pageTitle}</span>
+              <code>{route}</code>
+            </div>
+            <label className="operator-issue-note">
+              <span>What went wrong?</span>
+              <textarea
+                maxLength={1600}
+                onChange={(event) => setNote(event.target.value)}
+                placeholder="Example: I clicked Run Validation, it said done, but the storage check still looks blocked."
+                value={note}
+              />
+            </label>
+            {error && <p className="operator-feedback error">{error}</p>}
+            {packet && (
+              <div className="operator-issue-result" aria-label="Generated issue packet">
+                <strong>{packet.summary}</strong>
+                <span>Packet: {packet.artifact}</span>
+                <span>Markdown: {packet.markdown_artifact}</span>
+                <ul>
+                  {packet.suggested_next_steps.slice(0, 3).map((step) => (
+                    <li key={step}>{step}</li>
+                  ))}
+                </ul>
+                <button className="secondary-button" onClick={() => void copyPrompt()} type="button">
+                  <Copy size={15} />
+                  {copying ? "Copied" : "Copy AI prompt"}
+                </button>
+              </div>
+            )}
+            <div className="operator-issue-actions">
+              <button className="secondary-button" onClick={() => setOpen(false)} type="button">
+                Cancel
+              </button>
+              <button disabled={submitting} type="submit">
+                <Send size={15} />
+                {submitting ? "Building packet" : "Create packet"}
+              </button>
+            </div>
+          </form>
+        </div>,
+        document.body
+      )}
+    </>
+  );
+}
+
+function pageTitleForRoute(pathname: string) {
+  const segment = pathname.split("/").filter(Boolean)[0] || "overview";
+  const labels: Record<string, string> = {
+    "firmware-upgrades": "Firmware Upgrades",
+    "lab-profiles": "Lab Profiles",
+    "audit-events": "Audit Events",
+    media: "Media",
+    network: "Network",
+    overview: "Overview",
+    requests: "Requests",
+    server: "Server",
+    storage: "Storage",
+    validation: "Validation",
+    virtualization: "Virtualization"
+  };
+  return labels[segment] ?? labelize(segment);
+}
+
 function SidebarNav({
   drawerOpen,
   health,
@@ -926,8 +1100,8 @@ function SidebarNav({
         <Link className="brand" to="/overview">
           <Server size={22} />
           <span>
-            Lab Builder
-            <small>Infra Config Portal</small>
+            Infra Config
+            <small>Lab operations portal</small>
           </span>
         </Link>
         <button className="sidebar-close" aria-label="Close navigation" onClick={onClose} type="button">
@@ -935,15 +1109,13 @@ function SidebarNav({
         </button>
       </div>
       <nav>
-        <NavItem to="/overview" icon={<Gauge size={18} />} label="Overview" />
-        <NavItem to="/network" icon={<Route size={18} />} label="Network" />
-        <NavItem to="/server" icon={<Server size={18} />} label="Server" />
-        <NavItem to="/storage" icon={<HardDrive size={18} />} label="Storage" />
-        <NavItem to="/virtualization" icon={<Layers size={18} />} label="Virtualization" />
-        <NavItem to="/firmware-upgrades" icon={<ShieldCheck size={18} />} label="Firmware Upgrades" />
-        <NavItem to="/validation" icon={<CheckCircle2 size={18} />} label="Validation" />
-        <NavItem to="/config" icon={<Pencil size={18} />} label="Edit Config" />
-        <NavItem to="/settings" icon={<Settings size={18} />} label="Settings" />
+        <NavItem to="/overview" icon={<Gauge size={18} />} label="Overview" subtitle="Current readiness" />
+        <NavItem to="/network" icon={<Route size={18} />} label="Network" subtitle="Cisco and access" />
+        <NavItem to="/server" icon={<Server size={18} />} label="Server" subtitle="iLO, RAID, ESXi" />
+        <NavItem to="/storage" icon={<HardDrive size={18} />} label="Storage" subtitle="NetApp and datastores" />
+        <NavItem to="/virtualization" icon={<Layers size={18} />} label="Virtualization" subtitle="vCenter workflows" />
+        <NavItem to="/firmware-upgrades" icon={<ShieldCheck size={18} />} label="Firmware Upgrades" subtitle="Images and compliance" />
+        <NavItem to="/validation" icon={<CheckCircle2 size={18} />} label="Validation" subtitle="Proof and reports" />
       </nav>
       <div className="sidebar-profile">
         <div className="sidebar-profile-head">
@@ -973,17 +1145,22 @@ function NavItem({
   to,
   icon,
   label,
+  subtitle,
   issueBadge
 }: {
   to: string;
   icon: ReactNode;
   label: string;
+  subtitle?: string;
   issueBadge?: ReportPageBadge;
 }) {
   return (
     <NavLink to={to} className={({ isActive }) => (isActive ? "nav-item active" : "nav-item")}>
       {icon}
-      <span className="nav-item-label">{label}</span>
+      <span className="nav-item-text">
+        <span className="nav-item-label">{label}</span>
+        {subtitle && <small>{subtitle}</small>}
+      </span>
       <IssueNavBadge badge={issueBadge} />
     </NavLink>
   );
@@ -1072,549 +1249,6 @@ function ActiveLabSelector({
       {error && <p className="active-lab-error">{error}</p>}
       {runtimeApplyMessage && <p className="active-lab-success">{runtimeApplyMessage}</p>}
     </section>
-  );
-}
-
-function ActiveLabConfigDrawer({
-  embedded = false,
-  onClose
-}: {
-  embedded?: boolean;
-  onClose?: () => void;
-}) {
-  const { activeProfile, loading, onActivate, onReload } = useLabProfileContext();
-  const [form, setForm] = useState<LabProfileFormState>(() =>
-    activeProfile ? labProfileFormFrom(activeProfile) : blankLabProfileForm()
-  );
-  const [configIpMode, setConfigIpMode] = useState<"ipv4" | "ipv6" | "both">(() =>
-    form.globalSettings.disableIpv6 ? "ipv4" : "both"
-  );
-  const [configSettingsOpen, setConfigSettingsOpen] = useState(false);
-  const [configSection, setConfigSection] = useState<ConfigEditorSectionId>("setup");
-  const [configSnmpVersion, setConfigSnmpVersion] = useState<"v2" | "v3">("v2");
-  const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState("");
-  const [error, setError] = useState("");
-  const profileKey = `${activeProfile?.id ?? "none"}:${activeProfile?.version ?? "0"}`;
-  const subnetPrefix = parseSubnetPrefix(form.globalSettings.subnetPrefix);
-  const netappEnabled = labNetAppSupported(subnetPrefix);
-  const configFormId = embedded ? "active-lab-config-form" : undefined;
-
-  useEffect(() => {
-    const nextForm = activeProfile ? labProfileFormFrom(activeProfile) : blankLabProfileForm();
-    setForm(nextForm);
-    setConfigIpMode(nextForm.globalSettings.disableIpv6 ? "ipv4" : "both");
-    setConfigSnmpVersion("v2");
-    setConfigSection("setup");
-    setMessage("");
-    setError("");
-  }, [profileKey, activeProfile]);
-
-  function updateGlobal<K extends keyof LabGlobalSettingsFormState>(key: K, value: LabGlobalSettingsFormState[K]) {
-    setForm((current) => ({ ...current, globalSettings: { ...current.globalSettings, [key]: value } }));
-  }
-
-  function updateAddress(key: LabAddressScalarKey, value: string) {
-    if (key === "subnet") {
-      setForm((current) => applyLabSubnetChoice(current, value, current.globalSettings.subnetPrefix));
-      return;
-    }
-    setForm((current) => ({
-      ...current,
-      addresses: {
-        ...current.addresses,
-        [key]: value
-      }
-    }));
-  }
-
-  function updatePrefix(value: string) {
-    setForm((current) => applyLabSubnetChoice(current, current.addresses.subnet || defaultLabSubnet, value));
-  }
-
-  function updateConfigIpMode(value: "ipv4" | "ipv6" | "both") {
-    setConfigIpMode(value);
-    updateGlobal("disableIpv6", value === "ipv4");
-  }
-
-  function updateConfigSnmpVersion(value: "v2" | "v3") {
-    setConfigSnmpVersion(value);
-    updateGlobal("enableSnmp", true);
-  }
-
-  async function submit(event: FormEvent) {
-    event.preventDefault();
-    setBusy(true);
-    setMessage("");
-    setError("");
-    try {
-      const payload = labProfilePayload(form);
-      if (activeProfile?.source === "saved") {
-        await api.updateLabProfile(activeProfile.id, payload);
-      } else {
-        const saved = await api.createLabProfile({
-          ...payload,
-          name: payload.name || "Saved lab setup"
-        });
-        await onActivate(saved.id);
-      }
-      await onReload();
-      setMessage("Active lab setup saved.");
-    } catch (err) {
-      setError((err as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  const configSections: Array<{
-    description: string;
-    detail: string;
-    id: ConfigEditorSectionId;
-    label: string;
-    status: string;
-  }> = [
-    {
-      description: "Name, subnet, gateway, and profile description.",
-      detail: `${displayAddress(form.addresses.subnet)} / ${form.globalSettings.subnetPrefix ? `/${form.globalSettings.subnetPrefix}` : "subnet size missing"}`,
-      id: "setup",
-      label: "Setup",
-      status: form.name && form.addresses.subnet ? "ready" : "not_configured_yet"
-    },
-    {
-      description: "DNS, NTP, domain, VLAN, MTU, storage protocol, and toggles.",
-      detail: `${form.globalSettings.enableDns ? "DNS" : "DNS off"} / ${form.globalSettings.enableNtp ? "NTP" : "NTP off"} / ${form.globalSettings.enableSnmp ? "SNMP" : "SNMP off"}`,
-      id: "network",
-      label: "Network Defaults",
-      status: form.globalSettings.gateway ? "ready" : "not_configured_yet"
-    },
-    {
-      description: "Management addresses for iLO, ESXi, Cisco, and the control host.",
-      detail: `${displayAddress(form.addresses.ilo)} / ${displayAddress(form.addresses.cisco_management)}`,
-      id: "devices",
-      label: "Devices",
-      status: labCoreAddressFields
-        .filter((field) => field.key !== "ilo_initial")
-        .every((field) => form.addresses[field.key])
-        ? "ready"
-        : "not_configured_yet"
-    },
-    {
-      description: "NetApp controller, cluster, SVM, NFS, and iSCSI addresses.",
-      detail: netappEnabled ? displayAddress(form.addresses.netapp_cluster_mgmt) : "Not in current subnet scope",
-      id: "netapp",
-      label: "NetApp",
-      status: netappEnabled ? (form.addresses.netapp_cluster_mgmt ? "ready" : "not_configured_yet") : "disabled"
-    }
-  ];
-  const activeConfigSection = configSections.find((section) => section.id === configSection) ?? configSections[0];
-  const saveActionText = activeProfile?.source === "saved" ? "Run Save Config" : "Run Save As Lab Setup";
-  const drawerSaveActionText = activeProfile?.source === "saved" ? "Save Config" : "Save As Lab Setup";
-  const saveState = busy ? "running" : error ? "failed" : message ? "completed" : activeProfile ? "ready" : "not_configured_yet";
-  const resultText = busy ? "Saving config" : error || message || "Not run yet";
-
-  const editor = (
-    <aside className={embedded ? "config-drawer config-drawer-page" : "config-drawer"} aria-label="Edit active lab setup">
-      {!embedded && (
-        <div className="config-drawer-head">
-          <div>
-            <p className="eyebrow">Active Lab Setup</p>
-            <h2>Edit Config</h2>
-          </div>
-          <button className="icon-button" aria-label="Close config editor" onClick={onClose} type="button">
-            <X size={18} />
-          </button>
-        </div>
-      )}
-      <form className="config-drawer-form config-editor-form" id={configFormId} onSubmit={submit}>
-        <section className="config-current-strip" aria-label="Current view">
-          <div>
-            <span>Active setup</span>
-            <strong>{activeProfile?.name ?? "No active setup"}</strong>
-            <small>{activeProfile ? labelize(activeProfile.source) : "Create or save a setup"}</small>
-          </div>
-          <div>
-            <span>Subnet</span>
-            <strong>{displayAddress(form.addresses.subnet)}</strong>
-            <small>/{form.globalSettings.subnetPrefix || "?"}</small>
-          </div>
-          <div>
-            <span>IP mode</span>
-            <strong>{configIpMode === "ipv4" ? "IPv4" : configIpMode === "ipv6" ? "IPv6" : "Both"}</strong>
-            <small>Tab setting</small>
-          </div>
-          <div>
-            <span>SNMP</span>
-            <strong>{form.globalSettings.enableSnmp ? (configSnmpVersion === "v2" ? "SNMPv2" : "SNMPv3") : "Disabled"}</strong>
-            <small>Network default</small>
-          </div>
-          <div>
-            <span>Last result</span>
-            <strong>{resultText}</strong>
-            <small>{busy ? "Run in progress" : "Run Save Config when ready"}</small>
-          </div>
-          <StatusBadge status={saveState} />
-        </section>
-        <div className="config-editor-workspace">
-          <nav className="config-section-list" aria-label="Config sections">
-            {configSections.map((section) => (
-              <button
-                aria-current={configSection === section.id ? "page" : undefined}
-                className={configSection === section.id ? "config-section-tab active" : "config-section-tab"}
-                key={section.id}
-                onClick={() => setConfigSection(section.id)}
-                type="button"
-              >
-                <span>
-                  <strong>{section.label}</strong>
-                  <small>{section.description}</small>
-                </span>
-                <span>
-                  <em>{section.detail}</em>
-                  <StatusBadge status={section.status} />
-                </span>
-              </button>
-            ))}
-          </nav>
-          <section className="config-section-panel" aria-label="Config section editor">
-            <div className="config-section-panel-head">
-              <div>
-                <p className="operator-kicker">Edit Section</p>
-                <h3>{activeConfigSection.label}</h3>
-                <p>{activeConfigSection.description}</p>
-              </div>
-              <StatusBadge status={activeConfigSection.status} />
-            </div>
-            {configSection === "setup" && (
-              <div className="config-drawer-grid">
-                <Field label="Name">
-                  <input
-                    disabled={loading || busy}
-                    onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
-                    value={form.name}
-                  />
-                </Field>
-                <Field label="Description">
-                  <textarea
-                    disabled={loading || busy}
-                    onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))}
-                    value={form.description}
-                  />
-                </Field>
-                <Field label="Subnet">
-                  <input
-                    disabled={loading || busy}
-                    onChange={(event) => updateAddress("subnet", event.target.value)}
-                    value={form.addresses.subnet}
-                  />
-                </Field>
-                <Field label="Subnet size">
-                  <select
-                    disabled={loading || busy}
-                    onChange={(event) => updatePrefix(event.target.value)}
-                    value={form.globalSettings.subnetPrefix}
-                  >
-                    {defaultLabSubnetOptions().map((option) => (
-                      <option key={option.prefix} value={option.prefix}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                </Field>
-                <Field label="Gateway">
-                  <input
-                    disabled={loading || busy}
-                    onChange={(event) => updateGlobal("gateway", event.target.value)}
-                    value={form.globalSettings.gateway}
-                  />
-                </Field>
-              </div>
-            )}
-            {configSection === "network" && (
-              <>
-                <div className="config-drawer-grid">
-                  <Field label="DNS">
-                    <input
-                      disabled={loading || busy}
-                      onChange={(event) => updateGlobal("dnsServers", event.target.value)}
-                      value={form.globalSettings.dnsServers}
-                    />
-                  </Field>
-                  <Field label="NTP">
-                    <input
-                      disabled={loading || busy}
-                      onChange={(event) => updateGlobal("ntpServers", event.target.value)}
-                      value={form.globalSettings.ntpServers}
-                    />
-                  </Field>
-                  <Field label="Domain">
-                    <input
-                      disabled={loading || busy}
-                      onChange={(event) => updateGlobal("domainName", event.target.value)}
-                      value={form.globalSettings.domainName}
-                    />
-                  </Field>
-                  <Field label="Timezone">
-                    <input
-                      disabled={loading || busy}
-                      onChange={(event) => updateGlobal("timezone", event.target.value)}
-                      value={form.globalSettings.timezone}
-                    />
-                  </Field>
-                  <Field label="VLAN">
-                    <input
-                      disabled={loading || busy}
-                      onChange={(event) => updateGlobal("vlanId", event.target.value)}
-                      value={form.globalSettings.vlanId}
-                    />
-                  </Field>
-                  <Field label="MTU">
-                    <input
-                      disabled={loading || busy}
-                      inputMode="numeric"
-                      onChange={(event) => updateGlobal("mtu", event.target.value)}
-                      value={form.globalSettings.mtu}
-                    />
-                  </Field>
-                  <Field label="Storage protocol">
-                    <select
-                      disabled={loading || busy || !netappEnabled}
-                      onChange={(event) => updateGlobal("storageProtocol", event.target.value)}
-                      value={form.globalSettings.storageProtocol}
-                    >
-                      <option value="nfs">NFS</option>
-                      <option value="iscsi">iSCSI</option>
-                      <option value="none">Local only</option>
-                    </select>
-                  </Field>
-                </div>
-                <div className="config-toggle-grid">
-                  <label className="checkbox-line">
-                    <input
-                      checked={form.globalSettings.enableDns}
-                      disabled={loading || busy}
-                      onChange={(event) => updateGlobal("enableDns", event.target.checked)}
-                      type="checkbox"
-                    />
-                    <span>DNS</span>
-                  </label>
-                  <label className="checkbox-line">
-                    <input
-                      checked={form.globalSettings.enableNtp}
-                      disabled={loading || busy}
-                      onChange={(event) => updateGlobal("enableNtp", event.target.checked)}
-                      type="checkbox"
-                    />
-                    <span>NTP</span>
-                  </label>
-                  <label className="checkbox-line">
-                    <input
-                      checked={form.globalSettings.enableSnmp}
-                      disabled={loading || busy}
-                      onChange={(event) => updateGlobal("enableSnmp", event.target.checked)}
-                      type="checkbox"
-                    />
-                    <span>SNMP</span>
-                  </label>
-                  <label className="checkbox-line">
-                    <input
-                      checked={!form.globalSettings.disableIpv6}
-                      disabled={loading || busy}
-                      onChange={(event) => updateGlobal("disableIpv6", !event.target.checked)}
-                      type="checkbox"
-                    />
-                    <span>Allow IPv6</span>
-                  </label>
-                  <label className="checkbox-line">
-                    <input
-                      checked={form.globalSettings.blockLegacyProtocols}
-                      disabled={loading || busy}
-                      onChange={(event) => updateGlobal("blockLegacyProtocols", event.target.checked)}
-                      type="checkbox"
-                    />
-                    <span>Block legacy protocols</span>
-                  </label>
-                  <label className="checkbox-line">
-                    <input
-                      checked={form.globalSettings.vcenterEnabled}
-                      disabled={loading || busy || !netappEnabled}
-                      onChange={(event) => updateGlobal("vcenterEnabled", event.target.checked)}
-                      type="checkbox"
-                    />
-                    <span>vCenter</span>
-                  </label>
-                </div>
-              </>
-            )}
-            {configSection === "devices" && (
-              <div className="config-drawer-grid">
-                {labCoreAddressFields.map((field) => (
-                  <Field key={`drawer-${field.key}`} label={field.label}>
-                    <input
-                      disabled={loading || busy}
-                      onChange={(event) => updateAddress(field.key, event.target.value)}
-                      value={form.addresses[field.key]}
-                    />
-                  </Field>
-                ))}
-              </div>
-            )}
-            {configSection === "netapp" && (
-              netappEnabled ? (
-                <div className="config-drawer-grid">
-                  {labNetAppAddressFields.map((field) => (
-                    <Field key={`drawer-${field.key}`} label={field.label}>
-                      <input
-                        disabled={loading || busy}
-                        onChange={(event) => updateAddress(field.key, event.target.value)}
-                        value={form.addresses[field.key]}
-                      />
-                    </Field>
-                  ))}
-                  <Field label="NFS LIFs">
-                    <input
-                      disabled={loading || busy}
-                      onChange={(event) => setForm((current) => ({ ...current, netappNfsLifs: event.target.value }))}
-                      value={form.netappNfsLifs}
-                    />
-                  </Field>
-                  <Field label="iSCSI LIFs">
-                    <input
-                      disabled={loading || busy}
-                      onChange={(event) => setForm((current) => ({ ...current, netappIscsiLifs: event.target.value }))}
-                      value={form.netappIscsiLifs}
-                    />
-                  </Field>
-                </div>
-              ) : (
-                <div className="config-section-empty">
-                  <strong>NetApp is outside the selected subnet scope.</strong>
-                  <p>{netappDisabledForSubnetReason}</p>
-                  <button onClick={() => setConfigSection("setup")} type="button">
-                    Edit subnet size
-                  </button>
-                </div>
-              )
-            )}
-          </section>
-        </div>
-        {(message || error) && <p className={error ? "form-error" : "active-lab-success"}>{error || message}</p>}
-        {!embedded && (
-          <div className="config-drawer-actions">
-            <button disabled={busy || loading} type="submit" className="primary">
-              <Save size={16} />
-              {busy ? "Saving" : drawerSaveActionText}
-            </button>
-            <button disabled={busy} onClick={onClose} type="button">
-              Close
-            </button>
-          </div>
-        )}
-      </form>
-    </aside>
-  );
-
-  if (embedded) {
-    return (
-      <div className="operator-page config-route-page" data-page-title="Edit Config">
-        <header className="operator-status-header">
-          <div className="operator-status-icon"><Pencil size={26} /></div>
-          <div className="operator-status-main">
-            <p className="operator-kicker">Lab Builder</p>
-            <h1>Edit Config</h1>
-            <p>Change the active lab setup, network defaults, device addresses, and scoped feature toggles.</p>
-            <span>Saved values drive every side tab. Secret values are not shown here.</span>
-          </div>
-          <div className="operator-status-side">
-            <div>
-              <span>Status</span>
-              <strong>{activeProfile ? "Active setup loaded" : "No active setup"}</strong>
-            </div>
-            <div className="operator-header-actions">
-              <button
-                aria-controls="settings-drawer-config"
-                aria-expanded={configSettingsOpen}
-                onClick={() => setConfigSettingsOpen(true)}
-                type="button"
-              >
-                <Settings size={16} />
-                Settings
-              </button>
-              <button className="primary" disabled={busy || loading} form={configFormId} type="submit">
-                <Play size={16} />
-                {busy ? "Running" : saveActionText}
-              </button>
-            </div>
-          </div>
-        </header>
-        {configSettingsOpen && (
-          <section className="tab-settings-drawer" id="settings-drawer-config" aria-label="Edit Config settings">
-            <div className="tab-settings-drawer-head">
-              <div>
-                <p className="operator-kicker">Tab Settings</p>
-                <h2>Edit Config Settings</h2>
-                <p className="operator-muted">These settings affect config editing and the next save from this tab.</p>
-              </div>
-              <button className="icon-button" aria-label="Close settings" onClick={() => setConfigSettingsOpen(false)} type="button">
-                <X size={18} />
-              </button>
-            </div>
-            <div className="tab-settings-controls">
-              <Field label="IP mode">
-                <select aria-label="IP mode" onChange={(event) => updateConfigIpMode(event.target.value as "ipv4" | "ipv6" | "both")} value={configIpMode}>
-                  <option value="ipv4">IPv4</option>
-                  <option value="ipv6">IPv6</option>
-                  <option value="both">Both</option>
-                </select>
-              </Field>
-              <Field label="SNMP version">
-                <select aria-label="SNMP version" onChange={(event) => updateConfigSnmpVersion(event.target.value as "v2" | "v3")} value={configSnmpVersion}>
-                  <option value="v2">SNMPv2</option>
-                  <option value="v3">SNMPv3</option>
-                </select>
-              </Field>
-            </div>
-            <div className="tab-settings-advanced">
-              <label className="checkbox-line">
-                <input
-                  checked={form.globalSettings.blockLegacyProtocols}
-                  disabled={loading || busy}
-                  onChange={(event) => updateGlobal("blockLegacyProtocols", event.target.checked)}
-                  type="checkbox"
-                />
-                <span>
-                  <strong>Block legacy protocols</strong>
-                  <small>Keep insecure fallback protocols disabled in generated config.</small>
-                </span>
-              </label>
-              <label className="checkbox-line">
-                <input
-                  checked={form.globalSettings.enableSnmp}
-                  disabled={loading || busy}
-                  onChange={(event) => updateGlobal("enableSnmp", event.target.checked)}
-                  type="checkbox"
-                />
-                <span>
-                  <strong>Enable SNMP</strong>
-                  <small>Selected protocol version is held as UI state until backend persistence exists.</small>
-                </span>
-              </label>
-            </div>
-            <p className="tab-settings-note">
-              TODO: persist IPv6-only mode and SNMP version after the lab profile schema accepts those fields. Saving now preserves the existing IPv6 allowed/disabled flag and SNMP enabled flag.
-            </p>
-          </section>
-        )}
-        {editor}
-      </div>
-    );
-  }
-
-  return (
-    <div className="config-drawer-layer" role="presentation">
-      <button className="config-drawer-scrim" aria-label="Close config editor" onClick={onClose} type="button" />
-      {editor}
-    </div>
   );
 }
 
@@ -1716,7 +1350,7 @@ function ProfileMismatchWarning({ state }: { state: LabProfileList | null }) {
         <strong>Setup mismatch: live runtime uses different values</strong>
         <p>
           Normal setup switching does not require editing `.env`. For live checks only, align the runtime
-          values with the selected lab setup from Settings, then restart the backend.
+          values with the selected lab setup, then restart the backend.
         </p>
         <ul>
           {mismatches.slice(0, 4).map((item) => (
@@ -1727,9 +1361,9 @@ function ProfileMismatchWarning({ state }: { state: LabProfileList | null }) {
             </li>
           ))}
         </ul>
-        <Link className="button-link" to="/settings">
+        <Link className="button-link" to="/lab-profiles">
           <Layers size={16} />
-          Open Settings
+          Open Saved Setups
         </Link>
       </div>
     </section>
@@ -7067,6 +6701,10 @@ function LabProfilesPage({
         onReload={onReload}
         state={state}
       />
+      <SettingsGlobalProfilePanel
+        activeProfile={state?.active_profile ?? null}
+        onSaved={onReload}
+      />
     </Page>
   );
 }
@@ -8728,9 +8366,9 @@ function SectionProfileConfigEditor({
             <Save size={14} />
             {saving ? "Saving" : activeProfile?.source === "saved" ? "Save setup values" : "Create saved setup"}
           </button>
-          <Link className="button-link small-button" to="/settings">
+          <Link className="button-link small-button" to="/lab-profiles">
             <Pencil size={14} />
-            Settings
+            Saved setups
           </Link>
         </div>
       </form>
@@ -8972,9 +8610,9 @@ function GlobalConfigEditor({
             <Save size={14} />
             {saving ? "Saving" : "Save global config"}
           </button>
-          <Link className="button-link small-button" to="/settings">
+          <Link className="button-link small-button" to="/lab-profiles">
             <Pencil size={14} />
-            Settings
+            Saved setups
           </Link>
         </div>
       </form>
@@ -10067,9 +9705,9 @@ function ControlAccessConfigTile({
               <Save size={16} />
               {busy ? "Saving" : "Save Access & IP Config"}
             </button>
-            <Link className="button-link" to="/settings">
+            <Link className="button-link" to="/lab-profiles">
               <Pencil size={16} />
-              Edit IP Profile
+              Edit saved setup
             </Link>
           </div>
         </div>
@@ -14082,7 +13720,7 @@ function SettingsPage({
               <LabAddressSummary profile={activeProfile} />
             </AdvancedDetails>
           ) : (
-            <EmptyState title="No active lab setup" detail="Load or create a saved lab setup from Edit Config." />
+            <EmptyState title="No active lab setup" detail="Load or create a saved lab setup from Saved Lab Setups." />
           )}
         </section>
       )}
@@ -20128,7 +19766,7 @@ function PageHeader({
   return (
     <header className="page-header">
       <div className="page-title-block">
-        <p className="eyebrow">Lab Builder</p>
+        <p className="eyebrow">Infra Config</p>
         <h1>{title}</h1>
         {description && <p>{description}</p>}
         {issueArea && <PageIssueIndicator badge={issueBadge} />}

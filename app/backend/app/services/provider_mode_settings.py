@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import os
 from datetime import UTC, datetime
 from pathlib import Path
@@ -8,6 +7,9 @@ from typing import Any
 
 from app.core.config import settings
 from app.providers.redaction import redact_sensitive
+from app.services.env_utils import read_env_file_values
+from app.services.json_file_store import read_json_object, write_json_object, write_text_value
+from app.services.path_utils import display_path
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 PROVIDER_MODE_OPTIONS = {
@@ -111,44 +113,28 @@ def _read_desired_mode() -> str | None:
 
 
 def _read_store() -> dict[str, Any]:
-    path = _store_path()
-    if not path.exists():
-        return {}
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return {}
-    return payload if isinstance(payload, dict) else {}
+    return read_json_object(_store_path())
 
 
 def _write_store(store: dict[str, Any]) -> None:
-    path = _store_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(redact_sensitive(store), indent=2, sort_keys=True), encoding="utf-8")
+    write_json_object(_store_path(), redact_sensitive(store))
 
 
 def _write_env_file(mode: str) -> None:
     path = _env_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(f"PROVIDER_MODE={mode}\n", encoding="utf-8")
+    write_text_value(path, f"PROVIDER_MODE={mode}\n")
 
 
 def _read_env_mode() -> str | None:
     path = _env_path()
-    if not path.exists():
-        return None
     try:
-        for line in path.read_text(encoding="utf-8").splitlines():
-            key, separator, value = line.partition("=")
-            if separator and key.strip() == "PROVIDER_MODE":
-                return value.strip()
+        return read_env_file_values(path).get("PROVIDER_MODE")
     except OSError:
         return None
-    return None
 
 
 def _clean_mode(value: Any) -> str | None:
-    mode = str(value or "").strip()
+    mode = str(value or "").strip().strip("\"'")
     return mode if mode in PROVIDER_MODE_OPTIONS else None
 
 
@@ -167,7 +153,4 @@ def _env_path() -> Path:
 
 
 def _path_label(path: Path) -> str:
-    try:
-        return str(path.relative_to(REPO_ROOT))
-    except ValueError:
-        return str(path)
+    return display_path(path, REPO_ROOT)

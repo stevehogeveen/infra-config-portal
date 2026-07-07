@@ -13,9 +13,11 @@ from app.services.hpe_raid import (
     REPO_ROOT,
     SYSTEM_PATH,
     _get_redfish_resource,
+    _rel,
     _response_summary,
     write_hpe_raid_pending_report,
 )
+from app.services.json_file_store import write_text_value
 from app.services.media_inventory import get_media_inventory
 from app.services.esxi_boot_workflow import esxi_boot_workflow_summary
 
@@ -78,7 +80,7 @@ def get_esxi_install_readiness(session: Session) -> dict[str, Any]:
         "raid_validation": {
             "status": raid_validation.get("status"),
             "message": raid_validation.get("message"),
-            "report": raid_validation.get("report") or str(PENDING_REPORT.relative_to(REPO_ROOT)),
+            "report": raid_validation.get("report") or _rel(PENDING_REPORT),
             "matches_saved_intent": (
                 raid_validation.get("validation", {}).get("matches")
                 if isinstance(raid_validation.get("validation"), dict)
@@ -90,12 +92,12 @@ def get_esxi_install_readiness(session: Session) -> dict[str, Any]:
         "requests": requests,
         "blockers": blockers,
         "warnings": warnings,
-        "report": str(ESXI_INSTALL_READINESS_REPORT.relative_to(REPO_ROOT)),
+        "report": _rel(ESXI_INSTALL_READINESS_REPORT),
         "next_safe_action": _next_safe_action(status, boot_workflow),
     }
     sanitized = _sanitize(report)
     CODEX_RUN_DIR.mkdir(parents=True, exist_ok=True)
-    ESXI_INSTALL_READINESS_REPORT.write_text(_readiness_markdown(sanitized), encoding="utf-8")
+    write_text_value(ESXI_INSTALL_READINESS_REPORT, _readiness_markdown(sanitized))
     return sanitized
 
 
@@ -107,7 +109,7 @@ def _raid_validation_snapshot(session: Session) -> dict[str, Any]:
     return {
         "status": status,
         "message": "RAID live layout matches saved intent." if matches else pending_report.get("message"),
-        "report": str(PENDING_REPORT.relative_to(REPO_ROOT)),
+        "report": _rel(PENDING_REPORT),
         "validation": {
             "matches": matches,
             "pending_config_exists": pending.get("pending_config_exists"),

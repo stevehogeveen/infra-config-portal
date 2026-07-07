@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import os
 import socket
 from collections.abc import Callable
@@ -16,6 +15,8 @@ from app.core.config import settings
 from app.core.database import SessionLocal, init_database
 from app.models import ProviderRuntimeState
 from app.providers.redaction import redact_sensitive
+from app.services.json_file_store import read_json_object, write_json_object, write_text_value
+from app.services.path_utils import display_path
 from app.services.status_source import attach_status_source
 
 PROVIDER_ID = "netapp-ontap"
@@ -115,6 +116,7 @@ def read_netapp_live_state(
     session: Session | None = None,
     reachable: Callable[[str | None, int, bool], bool | None] | None = None,
     api_getter: Callable[[], dict[str, Any]] | None = None,
+    storage_probe_getter: Callable[[str], dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     current = get_netapp_runtime_state(session=session)
     reachable = reachable or _reachable
@@ -131,7 +133,21 @@ def read_netapp_live_state(
     elif check_ports and management_rest is not True:
         api_probe = _api_probe_not_attempted("Cluster management REST is not reachable.")
 
-    storage = _storage_protocol_readiness()
+    storage_probe = storage_probe_getter
+    if storage_probe is None and api_getter is None:
+        storage_probe = _storage_protocol_service_probe
+    storage = _storage_protocol_readiness(
+        reachable=reachable,
+        check_ports=check_ports,
+        api_authenticated=api_probe.get("authenticated") is True,
+        service_probe_getter=storage_probe,
+    )
+    protocol_options = _storage_protocol_options(
+        reachable=reachable,
+        check_ports=check_ports,
+        api_authenticated=api_probe.get("authenticated") is True,
+        service_probe_getter=storage_probe,
+    )
     state = _classify_live_state(
         cached_state=current,
         management_rest=management_rest,
@@ -177,6 +193,7 @@ def read_netapp_live_state(
             "reason": api_probe.get("reason"),
         },
         "storage": storage,
+        "protocol_options": protocol_options,
         "detected_management_ips": _detected_management_ips(management_rest),
         "detected_storage_protocol_readiness": storage,
         "last_successful_probe_at": checked_at.isoformat() if configured else current.get("last_successful_probe_at"),
@@ -210,7 +227,7 @@ def read_netapp_live_state(
     snapshot = _persist_live_state(sanitized, checked_at=checked_at, session=session)
     if write_report:
         CODEX_RUN_DIR.mkdir(parents=True, exist_ok=True)
-        LIVE_STATE_REPORT.write_text(_live_state_markdown(sanitized), encoding="utf-8")
+        write_text_value(LIVE_STATE_REPORT, _live_state_markdown(sanitized))
         _write_automanagement_report(snapshot)
         _write_console_last_known_good(snapshot)
     return sanitized
@@ -262,6 +279,7 @@ def _persist_live_state(payload: dict[str, Any], *, checked_at: datetime, sessio
             "management": payload.get("management") or {},
             "api": payload.get("api") or {},
             "storage": payload.get("storage") or {},
+            "protocol_options": payload.get("protocol_options") or {},
             "verified_at": checked_at.isoformat() if configured else None,
             "evidence_report_path": record.last_report_path,
             "detected_management_ips": payload.get("detected_management_ips") or {},
@@ -325,6 +343,7 @@ def _record_to_payload(record: ProviderRuntimeState | None) -> dict[str, Any]:
         "management": data.get("management") or {},
         "api": data.get("api") or {},
         "storage": data.get("storage") or {},
+        "protocol_options": data.get("protocol_options") or {},
         "verified_at": data.get("verified_at"),
         "evidence_report_path": data.get("evidence_report_path") or record.last_report_path,
         "detected_management_ips": data.get("detected_management_ips") or {},
@@ -442,9 +461,19 @@ def _live_state_blockers(
     return blockers
 
 
-def _storage_protocol_readiness() -> dict[str, Any]:
+def _storage_protocol_readiness(
+    *,
+    reachable: Callable[[str | None, int, bool], bool | None] | None = None,
+    check_ports: bool = False,
+    api_authenticated: bool = False,
+    service_probe_getter: Callable[[str], dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     protocol = settings.netapp_storage_protocol.lower()
-    blockers = []
+    blockers: list[str] = []
+    warnings: list[str] = []
+    checks: dict[str, Any] = {}
+    reachable = reachable or _reachable
+    service_probe: dict[str, Any] = {"status": "not_checked", "reason": "Protocol service probe was not requested."}
     if protocol == "nfs":
         if not settings.netapp_nfs_lifs:
             blockers.append("No NetApp NFS LIFs are planned or detected.")
@@ -452,19 +481,171 @@ def _storage_protocol_readiness() -> dict[str, Any]:
             blockers.append("NetApp NFS mount path is missing.")
         if not settings.netapp_nfs_datastore_name:
             blockers.append("NetApp NFS datastore name is missing.")
+        if check_ports:
+            checks["nfs_lifs_2049"] = _data_lif_port_checks(settings.netapp_nfs_lifs, 2049, reachable)
+            blockers.extend(_blocked_lif_messages(checks["nfs_lifs_2049"], "NFS"))
     elif protocol == "iscsi":
         if not settings.netapp_iscsi_lifs:
             blockers.append("No NetApp iSCSI LIFs are planned or detected.")
+        if check_ports:
+            checks["iscsi_lifs_3260"] = _data_lif_port_checks(settings.netapp_iscsi_lifs, 3260, reachable)
+            blockers.extend(_blocked_lif_messages(checks["iscsi_lifs_3260"], "iSCSI"))
     else:
         blockers.append(f"Unsupported NetApp storage protocol `{settings.netapp_storage_protocol}`.")
+    if protocol in {"nfs", "iscsi"} and check_ports:
+        if api_authenticated and service_probe_getter is not None:
+            service_probe = service_probe_getter(protocol)
+            checks[f"{protocol}_service"] = service_probe
+            if service_probe.get("enabled") is False:
+                blockers.append(
+                    f"NetApp {_protocol_label(protocol)} service is not enabled for SVM `{_netapp_svm_name()}`."
+                )
+            elif service_probe.get("status") == "blocked":
+                blockers.append(
+                    str(service_probe.get("reason") or f"NetApp {_protocol_label(protocol)} service readiness could not be verified.")
+                )
+        elif api_authenticated:
+            warnings.append("NetApp protocol service was not checked by this run.")
+        else:
+            blockers.append("NetApp API authentication is required to verify protocol service licensing.")
     return {
         "protocol": protocol,
         "ready": not blockers,
         "source": "bootstrap_profile_and_live_api_validation",
         "nfs_lifs_detected": list(settings.netapp_nfs_lifs) if protocol == "nfs" else [],
         "iscsi_lifs_detected": list(settings.netapp_iscsi_lifs) if protocol == "iscsi" else [],
-        "blockers": blockers,
+        "service_enabled": service_probe.get("enabled"),
+        "service_status": service_probe.get("status"),
+        "checks": checks,
+        "blockers": _unique_strings(blockers),
+        "warnings": _unique_strings(warnings),
     }
+
+
+def _storage_protocol_options(
+    *,
+    reachable: Callable[[str | None, int, bool], bool | None],
+    check_ports: bool,
+    api_authenticated: bool,
+    service_probe_getter: Callable[[str], dict[str, Any]] | None,
+) -> dict[str, Any]:
+    options = {}
+    for protocol, lifs, port in (
+        ("nfs", list(settings.netapp_nfs_lifs), 2049),
+        ("iscsi", list(settings.netapp_iscsi_lifs), 3260),
+    ):
+        checks = _data_lif_port_checks(lifs, port, reachable) if check_ports and lifs else []
+        service_probe: dict[str, Any] = {"status": "not_checked", "enabled": None}
+        blockers = []
+        if not lifs:
+            blockers.append(f"No NetApp {_protocol_label(protocol)} LIFs are planned.")
+        blockers.extend(_blocked_lif_messages(checks, _protocol_label(protocol)))
+        if check_ports and api_authenticated and service_probe_getter is not None:
+            service_probe = service_probe_getter(protocol)
+            if service_probe.get("enabled") is False:
+                blockers.append(f"NetApp {_protocol_label(protocol)} service is not enabled for SVM `{_netapp_svm_name()}`.")
+            elif service_probe.get("status") == "blocked":
+                blockers.append(str(service_probe.get("reason") or f"NetApp {_protocol_label(protocol)} service readiness could not be verified."))
+        elif check_ports and not api_authenticated:
+            blockers.append("NetApp API authentication is required to verify protocol service licensing.")
+        options[protocol] = {
+            "protocol": protocol,
+            "label": _protocol_label(protocol),
+            "active": settings.netapp_storage_protocol.lower() == protocol,
+            "lifs": lifs,
+            "port": port,
+            "checks": checks,
+            "reachable_lif_count": len([item for item in checks if item.get("reachable") is True]),
+            "service_enabled": service_probe.get("enabled"),
+            "service_status": service_probe.get("status"),
+            "ready": not blockers,
+            "blockers": _unique_strings(blockers),
+            "warnings": [],
+        }
+    return options
+
+
+def _storage_protocol_service_probe(protocol: str) -> dict[str, Any]:
+    svm_name = _netapp_svm_name()
+    paths = {
+        "nfs": f"/api/protocols/nfs/services?svm.name={svm_name}&fields=svm.name,enabled,protocol.v3_enabled",
+        "iscsi": f"/api/protocols/san/iscsi/services?svm.name={svm_name}&fields=svm.name,enabled,target.name",
+    }
+    path = paths.get(protocol)
+    if not path:
+        return {"status": "blocked", "enabled": False, "reason": f"Unsupported NetApp storage protocol `{protocol}`."}
+    try:
+        response = _ontap_api_get(path, verify=settings.netapp_api_verify_tls)
+    except (httpx.HTTPError, OSError) as exc:
+        if not settings.netapp_api_verify_tls:
+            return {"status": "blocked", "enabled": False, "reason": f"NetApp {_protocol_label(protocol)} service check failed with {exc.__class__.__name__}."}
+        try:
+            response = _ontap_api_get(path, verify=False)
+        except (httpx.HTTPError, OSError) as fallback_exc:
+            return {
+                "status": "blocked",
+                "enabled": False,
+                "reason": f"NetApp {_protocol_label(protocol)} service check failed with {exc.__class__.__name__}; TLS-disabled fallback failed with {fallback_exc.__class__.__name__}.",
+            }
+    if response.status_code != 200:
+        return {
+            "status": "blocked",
+            "enabled": False,
+            "http_status": response.status_code,
+            "reason": f"NetApp {_protocol_label(protocol)} service check returned HTTP {response.status_code}.",
+        }
+    try:
+        records = (response.json() or {}).get("records") or []
+    except ValueError:
+        return {"status": "blocked", "enabled": False, "reason": f"NetApp {_protocol_label(protocol)} service check returned invalid JSON."}
+    enabled = bool(records) and any(record.get("enabled", True) is not False for record in records if isinstance(record, dict))
+    return {
+        "status": "ready" if enabled else "blocked",
+        "enabled": enabled,
+        "record_count": len(records),
+        "svm_name": svm_name,
+        "reason": None if enabled else f"No enabled NetApp {_protocol_label(protocol)} service record was found for SVM `{svm_name}`.",
+    }
+
+
+def _data_lif_port_checks(
+    lifs: tuple[str, ...],
+    port: int,
+    reachable: Callable[[str | None, int, bool], bool | None],
+) -> list[dict[str, Any]]:
+    checks = []
+    for lif in lifs:
+        result = reachable(lif, port, True)
+        checks.append({"address": lif, "port": port, "reachable": result})
+    return checks
+
+
+def _blocked_lif_messages(checks: list[dict[str, Any]], label: str) -> list[str]:
+    messages = []
+    for check in checks:
+        if check.get("reachable") is False:
+            messages.append(f"{label} LIF `{check.get('address')}` is not accepting TCP/{check.get('port')}.")
+        elif check.get("reachable") is None:
+            messages.append(f"{label} LIF `{check.get('address')}` TCP/{check.get('port')} was not checked.")
+    return messages
+
+
+def _netapp_svm_name() -> str:
+    return settings.netapp_svm_name or "esxi_svm"
+
+
+def _protocol_label(protocol: str) -> str:
+    return "iSCSI" if protocol == "iscsi" else protocol.upper()
+
+
+def _unique_strings(items: list[str]) -> list[str]:
+    seen = set()
+    result = []
+    for item in items:
+        if item and item not in seen:
+            seen.add(item)
+            result.append(item)
+    return result
 
 
 def _safe_ontap_api_probe() -> dict[str, Any]:
@@ -505,9 +686,16 @@ def _safe_ontap_api_probe() -> dict[str, Any]:
 
 
 def _ontap_api_cluster_get(host: str, *, verify: bool) -> httpx.Response:
+    return _ontap_api_get("/api/cluster?fields=version", verify=verify, host=host)
+
+
+def _ontap_api_get(path: str, *, verify: bool, host: str | None = None) -> httpx.Response:
+    target = host or settings.netapp_cluster_mgmt_ip
+    if not target or not settings.netapp_api_username or not settings.netapp_api_password:
+        raise ValueError("NetApp API target or access values are missing.")
     with httpx.Client(verify=verify, timeout=3.0, trust_env=False) as client:
         return client.get(
-            f"https://{host}/api/cluster?fields=version",
+            f"https://{target}{path}",
             auth=(settings.netapp_api_username, settings.netapp_api_password),
             headers={"Accept": "application/json"},
         )
@@ -579,13 +767,12 @@ def _write_console_last_known_good(snapshot: dict[str, Any]) -> None:
             "redaction_applied": True,
         }
     )
-    CODEX_RUN_DIR.mkdir(parents=True, exist_ok=True)
-    CONSOLE_LAST_KNOWN_GOOD_JSON.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    write_json_object(CONSOLE_LAST_KNOWN_GOOD_JSON, payload)
 
 
 def _write_automanagement_report(snapshot: dict[str, Any]) -> None:
     CODEX_RUN_DIR.mkdir(parents=True, exist_ok=True)
-    AUTOMANAGEMENT_REPORT.write_text(_automanagement_markdown(snapshot), encoding="utf-8")
+    write_text_value(AUTOMANAGEMENT_REPORT, _automanagement_markdown(snapshot))
 
 
 def _live_state_markdown(payload: dict[str, Any]) -> str:
@@ -617,6 +804,7 @@ def _live_state_markdown(payload: dict[str, Any]) -> str:
         f"- Cluster SSH 22 reachable: `{management.get('ssh_22_reachable')}`",
         f"- API authenticated: `{api.get('authenticated')}`",
         f"- Storage protocol: `{storage.get('protocol') or 'unknown'}` ready=`{storage.get('ready')}`",
+        f"- Protocol service: `{storage.get('service_status') or 'not_checked'}` enabled=`{storage.get('service_enabled')}`",
         "",
         "## Blockers",
     ]
@@ -748,13 +936,8 @@ def _is_stable_microchip_console(port: str | None, prompt_state: str | None) -> 
 
 
 def _read_json(path: Path) -> dict[str, Any] | None:
-    if not path.exists():
-        return None
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return None
-    return payload if isinstance(payload, dict) else None
+    payload = read_json_object(path)
+    return payload if payload else None
 
 
 def _state_artifacts() -> dict[str, str]:
@@ -766,10 +949,7 @@ def _state_artifacts() -> dict[str, str]:
 
 
 def _rel(path: Path) -> str:
-    try:
-        return str(path.relative_to(REPO_ROOT))
-    except ValueError:
-        return str(path)
+    return display_path(path, REPO_ROOT)
 
 
 def _optional_report(payload: dict[str, Any]) -> str | None:

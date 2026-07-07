@@ -2,8 +2,6 @@ PYTHON ?= python3
 BACKEND_DIR := backend
 FRONTEND_DIR := frontend
 VENV := $(BACKEND_DIR)/.venv
-PIP := $(VENV)/bin/pip
-PY := $(VENV)/bin/python
 REPO_ROOT := $(abspath ..)
 PROVIDER_MODE ?= local-lab-readwrite
 PROVIDER_SMOKE_PROVIDERS ?=
@@ -12,6 +10,9 @@ FRONTEND_PORT ?= 5173
 BACKEND_HOST ?= 127.0.0.1
 FRONTEND_HOST ?= 127.0.0.1
 APP_PROXY_TARGET ?= http://127.0.0.1:$(BACKEND_PORT)
+BACKEND_SCRIPT_PY := $$(if [ -x .venv/bin/python ]; then echo .venv/bin/python; elif [ -x .venv/Scripts/python.exe ]; then echo .venv/Scripts/python.exe; else echo $(PYTHON); fi)
+BACKEND_VENV_PY := $$(if [ -x .venv/bin/python ]; then echo .venv/bin/python; elif [ -x .venv/Scripts/python.exe ]; then echo .venv/Scripts/python.exe; else echo $(PYTHON); fi)
+VENV_PY := $$(if [ -x $(VENV)/bin/python ]; then echo $(VENV)/bin/python; elif [ -x $(VENV)/Scripts/python.exe ]; then echo $(VENV)/Scripts/python.exe; else echo $(PYTHON); fi)
 
 .PHONY: backend-venv backend-run backend-test frontend-install frontend-run up down start start-lan stop restart restart-lan status check codex-audit codex-task codex-next codex-resume test dev lint provider-smoke provider-smoke-ilo-readonly provider-smoke-ilo-local-lab provider-inventory-ilo-local-lab provider-lab-live-status provider-lab-refresh-live-state provider-lab-build-verification-live provider-lab-ilo-reachability provider-lab-ilo-authentication provider-lab-ilo-inventory provider-lab-ilo-readiness provider-lab-firmware-inventory provider-lab-firmware-cisco-inventory provider-lab-cisco-firmware-cisco-inventory provider-lab-firmware-compliance provider-lab-firmware-compliance-scope-cisco provider-lab-firmware-compliance-scope-hpe provider-lab-firmware-compliance-scope-full provider-lab-firmware-waiver-check provider-lab-hpe-storage-discovery provider-lab-hpe-raid-discovery provider-lab-hpe-raid-plan provider-lab-hpe-raid-debug provider-lab-hpe-raid-pending provider-lab-server-reset-for-raid provider-lab-hpe-raid-validate-after-reset provider-lab-esxi-install-readiness provider-lab-esxi-media-url provider-lab-esxi-insert-virtual-media provider-lab-esxi-eject-virtual-media provider-lab-esxi-one-time-boot provider-lab-esxi-reset-installer-boot provider-lab-esxi-detect-installer provider-lab-esxi-recover-management provider-lab-esxi-post-recovery-validation provider-lab-esxi-netapp-datastore-preview provider-lab-esxi-netapp-datastore-apply provider-lab-esxi-netapp-datastore-validate provider-lab-esxi-vm-deploy-preview provider-lab-esxi-vm-deploy-apply provider-lab-esxi-vm-deploy-validate provider-lab-cisco-console-ethernet-readiness provider-lab-cisco-console-recovery provider-lab-cisco-privilege-check provider-lab-cisco-vlan10-bootstrap-fix provider-lab-cisco-vlan10-bootstrap-apply provider-lab-full-rebuild-summary provider-lab-full-rebuild provider-lab-build-verification provider-lab-golden-state provider-lab-validation provider-lab-vcenter-netapp-readiness provider-lab-vcenter-netapp-datastore-plan provider-lab-vcenter-install-readiness provider-lab-vcenter-install-plan provider-lab-vcenter-install-preview provider-lab-toolchain-check provider-lab-hpe-raid-apply provider-lab-serial-console-discovery provider-lab-netapp-console-autodiscovery provider-lab-netapp-console-discovery provider-lab-netapp-console-read-state provider-lab-netapp-console-login-state provider-lab-netapp-live-state provider-lab-netapp-validate-setup provider-lab-netapp-nfs-vcenter-readiness netapp-real-readiness
 .PHONY: provider-lab-netapp-setup-baseline provider-lab-netapp-setup-plan provider-lab-netapp-setup-preview provider-lab-netapp-setup-apply provider-lab-netapp-post-setup-validation provider-lab-netapp-address-plan provider-lab-netapp-address-preview provider-lab-netapp-address-apply provider-lab-netapp-address-validate provider-lab-netapp-ha-node-diagnose provider-lab-netapp-factory-reset-preview provider-lab-netapp-factory-reset-apply provider-lab-netapp-factory-reset-validate provider-lab-netapp-nfs-setup-preview provider-lab-netapp-nfs-setup-apply provider-lab-netapp-nfs-setup-validate provider-lab-netapp-ontap-upgrade-inventory provider-lab-netapp-ontap-upgrade-plan provider-lab-netapp-ontap-upgrade-validate provider-lab-netapp-ontap-upgrade-apply
@@ -19,14 +20,14 @@ APP_PROXY_TARGET ?= http://127.0.0.1:$(BACKEND_PORT)
 
 backend-venv:
 	$(PYTHON) -m venv $(VENV)
-	$(PIP) install --upgrade pip
-	$(PIP) install -r $(BACKEND_DIR)/requirements.txt
+	$(VENV_PY) -m pip install --upgrade pip
+	$(VENV_PY) -m pip install -r $(BACKEND_DIR)/requirements.txt
 
 backend-run:
-	cd $(BACKEND_DIR) && .venv/bin/uvicorn app.main:app --reload --host $(BACKEND_HOST) --port $(BACKEND_PORT)
+	cd $(BACKEND_DIR) && $(BACKEND_VENV_PY) -m uvicorn app.main:app --reload --host $(BACKEND_HOST) --port $(BACKEND_PORT)
 
 backend-test:
-	cd $(BACKEND_DIR) && PROVIDER_MODE=mock .venv/bin/pytest -q
+	cd $(BACKEND_DIR) && PROVIDER_MODE=mock $(BACKEND_VENV_PY) -m pytest -q
 
 frontend-install:
 	cd $(FRONTEND_DIR) && npm install
@@ -64,15 +65,15 @@ codex-audit codex-task codex-next codex-resume test dev lint:
 
 .PHONY: backend-smoke smoke
 backend-smoke:
-	cd backend && PROVIDER_MODE=mock .venv/bin/pytest -q tests/test_smoke_vm_lifecycle.py
+	cd backend && PROVIDER_MODE=mock $(BACKEND_VENV_PY) -m pytest -q tests/test_smoke_vm_lifecycle.py
 
 smoke: backend-smoke
 
 provider-smoke:
-	cd backend && PROVIDER_MODE="$(PROVIDER_MODE)" PROVIDER_SMOKE_PROVIDERS="$(PROVIDER_SMOKE_PROVIDERS)" PYTHONPATH=. $$(if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi) scripts/provider_smoke.py
+	cd backend && PROVIDER_MODE="$(PROVIDER_MODE)" PROVIDER_SMOKE_PROVIDERS="$(PROVIDER_SMOKE_PROVIDERS)" PROVIDER_SMOKE_REQUIRE_REAL="$(PROVIDER_SMOKE_REQUIRE_REAL)" PYTHONPATH=. $(BACKEND_SCRIPT_PY) scripts/provider_smoke.py
 
 provider-lab-live-status:
-	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $$(if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi) scripts/provider_lab_live_status.py
+	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $(BACKEND_SCRIPT_PY) scripts/provider_lab_live_status.py
 
 provider-lab-refresh-live-state: provider-lab-live-status
 
@@ -87,7 +88,7 @@ provider-smoke-ilo-local-lab:
 provider-inventory-ilo-local-lab: provider-smoke-ilo-local-lab
 
 provider-lab-ilo-reachability:
-	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $$(if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi) scripts/ilo_real_reachability.py
+	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $(BACKEND_SCRIPT_PY) scripts/ilo_real_reachability.py
 
 provider-lab-ilo-authentication:
 	$(MAKE) provider-smoke PROVIDER_MODE=local-lab-readwrite PROVIDER_SMOKE_PROVIDERS=ilo-redfish
@@ -99,240 +100,240 @@ provider-lab-ilo-readiness:
 	$(MAKE) provider-smoke PROVIDER_MODE=local-lab-readwrite PROVIDER_SMOKE_PROVIDERS=ilo-redfish
 
 provider-lab-firmware-inventory:
-	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $$(if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi) scripts/firmware_compliance.py inventory
+	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $(BACKEND_SCRIPT_PY) scripts/firmware_compliance.py inventory
 
 provider-lab-firmware-cisco-inventory:
-	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $$(if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi) scripts/firmware_compliance.py cisco-inventory
+	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $(BACKEND_SCRIPT_PY) scripts/firmware_compliance.py cisco-inventory
 
 provider-lab-cisco-firmware-cisco-inventory: provider-lab-firmware-cisco-inventory
 
 provider-lab-firmware-compliance:
-	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $$(if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi) scripts/firmware_compliance.py compliance
+	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $(BACKEND_SCRIPT_PY) scripts/firmware_compliance.py compliance
 
 provider-lab-firmware-compliance-scope-cisco:
-	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $$(if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi) scripts/firmware_compliance.py compliance --scope cisco
+	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $(BACKEND_SCRIPT_PY) scripts/firmware_compliance.py compliance --scope cisco
 
 provider-lab-firmware-compliance-scope-hpe:
-	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $$(if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi) scripts/firmware_compliance.py compliance --scope hpe
+	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $(BACKEND_SCRIPT_PY) scripts/firmware_compliance.py compliance --scope hpe
 
 provider-lab-firmware-compliance-scope-full:
-	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $$(if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi) scripts/firmware_compliance.py compliance --scope full
+	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $(BACKEND_SCRIPT_PY) scripts/firmware_compliance.py compliance --scope full
 
 provider-lab-firmware-waiver-check:
-	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $$(if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi) scripts/firmware_compliance.py waiver-check
+	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $(BACKEND_SCRIPT_PY) scripts/firmware_compliance.py waiver-check
 
 provider-lab-hpe-storage-discovery:
-	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $$(if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi) scripts/hpe_raid_workflow.py discovery
+	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $(BACKEND_SCRIPT_PY) scripts/hpe_raid_workflow.py discovery
 
 provider-lab-hpe-raid-discovery:
-	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $$(if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi) scripts/hpe_raid_workflow.py discovery
+	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $(BACKEND_SCRIPT_PY) scripts/hpe_raid_workflow.py discovery
 
 provider-lab-hpe-raid-plan:
-	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $$(if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi) scripts/hpe_raid_workflow.py plan --default-esxi-intent
+	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $(BACKEND_SCRIPT_PY) scripts/hpe_raid_workflow.py plan --default-esxi-intent
 
 provider-lab-hpe-raid-debug:
-	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $$(if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi) scripts/hpe_raid_workflow.py debug
+	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $(BACKEND_SCRIPT_PY) scripts/hpe_raid_workflow.py debug
 
 provider-lab-hpe-raid-pending:
-	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $$(if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi) scripts/hpe_raid_workflow.py pending
+	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $(BACKEND_SCRIPT_PY) scripts/hpe_raid_workflow.py pending
 
 provider-lab-server-reset-for-raid:
-	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. HPE_RAID_ALLOW_RESET="$${HPE_RAID_ALLOW_RESET:-}" HPE_RAID_RESET_CONFIRM="$${HPE_RAID_RESET_CONFIRM:-}" LAB_ALLOW_POWER_ACTIONS="$${LAB_ALLOW_POWER_ACTIONS:-}" $$(if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi) scripts/hpe_raid_workflow.py reset
+	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. HPE_RAID_ALLOW_RESET="$${HPE_RAID_ALLOW_RESET:-}" HPE_RAID_RESET_CONFIRM="$${HPE_RAID_RESET_CONFIRM:-}" LAB_ALLOW_POWER_ACTIONS="$${LAB_ALLOW_POWER_ACTIONS:-}" $(BACKEND_SCRIPT_PY) scripts/hpe_raid_workflow.py reset
 
 provider-lab-hpe-raid-validate-after-reset:
-	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. HPE_RAID_VALIDATE_WAIT_SECONDS="$${HPE_RAID_VALIDATE_WAIT_SECONDS:-900}" HPE_RAID_VALIDATE_POLL_SECONDS="$${HPE_RAID_VALIDATE_POLL_SECONDS:-20}" $$(if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi) scripts/hpe_raid_workflow.py validate-after-reset
+	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. HPE_RAID_VALIDATE_WAIT_SECONDS="$${HPE_RAID_VALIDATE_WAIT_SECONDS:-900}" HPE_RAID_VALIDATE_POLL_SECONDS="$${HPE_RAID_VALIDATE_POLL_SECONDS:-20}" $(BACKEND_SCRIPT_PY) scripts/hpe_raid_workflow.py validate-after-reset
 
 provider-lab-esxi-install-readiness:
-	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $$(if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi) scripts/esxi_install_workflow.py
+	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $(BACKEND_SCRIPT_PY) scripts/esxi_install_workflow.py
 
 provider-lab-esxi-media-url:
-	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $$(if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi) scripts/esxi_boot_workflow.py media-url
+	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $(BACKEND_SCRIPT_PY) scripts/esxi_boot_workflow.py media-url
 
 provider-lab-esxi-insert-virtual-media:
-	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $$(if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi) scripts/esxi_boot_workflow.py insert-virtual-media
+	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $(BACKEND_SCRIPT_PY) scripts/esxi_boot_workflow.py insert-virtual-media
 
 provider-lab-esxi-eject-virtual-media:
-	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $$(if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi) scripts/esxi_boot_workflow.py eject-virtual-media
+	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $(BACKEND_SCRIPT_PY) scripts/esxi_boot_workflow.py eject-virtual-media
 
 provider-lab-esxi-one-time-boot:
-	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $$(if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi) scripts/esxi_boot_workflow.py one-time-boot
+	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $(BACKEND_SCRIPT_PY) scripts/esxi_boot_workflow.py one-time-boot
 
 provider-lab-esxi-reset-installer-boot:
-	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. ESXI_INSTALL_BOOT_WAIT_SECONDS="$${ESXI_INSTALL_BOOT_WAIT_SECONDS:-900}" ESXI_INSTALL_BOOT_POLL_SECONDS="$${ESXI_INSTALL_BOOT_POLL_SECONDS:-20}" $$(if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi) scripts/esxi_boot_workflow.py reset-installer-boot
+	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. ESXI_INSTALL_BOOT_WAIT_SECONDS="$${ESXI_INSTALL_BOOT_WAIT_SECONDS:-900}" ESXI_INSTALL_BOOT_POLL_SECONDS="$${ESXI_INSTALL_BOOT_POLL_SECONDS:-20}" $(BACKEND_SCRIPT_PY) scripts/esxi_boot_workflow.py reset-installer-boot
 
 provider-lab-esxi-detect-installer:
-	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $$(if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi) scripts/esxi_boot_workflow.py detect-installer
+	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $(BACKEND_SCRIPT_PY) scripts/esxi_boot_workflow.py detect-installer
 
 provider-lab-esxi-recover-management:
-	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. LAB_ALLOW_POWER_ACTIONS="$${LAB_ALLOW_POWER_ACTIONS:-}" ESXI_RECOVERY_APPLY="$${ESXI_RECOVERY_APPLY:-}" ESXI_RECOVERY_CONFIRM="$${ESXI_RECOVERY_CONFIRM:-}" ESXI_RECOVERY_WAIT_SECONDS="$${ESXI_RECOVERY_WAIT_SECONDS:-300}" $$(if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi) scripts/esxi_management_recovery.py recover
+	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. LAB_ALLOW_POWER_ACTIONS="$${LAB_ALLOW_POWER_ACTIONS:-}" ESXI_RECOVERY_APPLY="$${ESXI_RECOVERY_APPLY:-}" ESXI_RECOVERY_CONFIRM="$${ESXI_RECOVERY_CONFIRM:-}" ESXI_RECOVERY_WAIT_SECONDS="$${ESXI_RECOVERY_WAIT_SECONDS:-300}" $(BACKEND_SCRIPT_PY) scripts/esxi_management_recovery.py recover
 
 provider-lab-esxi-post-recovery-validation:
-	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $$(if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi) scripts/esxi_management_recovery.py validate
+	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $(BACKEND_SCRIPT_PY) scripts/esxi_management_recovery.py validate
 
 provider-lab-esxi-netapp-datastore-preview:
-	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $$(if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi) scripts/esxi_netapp_datastore_workflow.py preview
+	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $(BACKEND_SCRIPT_PY) scripts/esxi_netapp_datastore_workflow.py preview
 
 provider-lab-esxi-netapp-datastore-apply:
-	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. ESXI_NETAPP_DATASTORE_APPLY="$${ESXI_NETAPP_DATASTORE_APPLY:-}" ESXI_NETAPP_DATASTORE_CONFIRM="$${ESXI_NETAPP_DATASTORE_CONFIRM:-}" $$(if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi) scripts/esxi_netapp_datastore_workflow.py apply
+	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. ESXI_NETAPP_DATASTORE_APPLY="$${ESXI_NETAPP_DATASTORE_APPLY:-}" ESXI_NETAPP_DATASTORE_CONFIRM="$${ESXI_NETAPP_DATASTORE_CONFIRM:-}" $(BACKEND_SCRIPT_PY) scripts/esxi_netapp_datastore_workflow.py apply
 
 provider-lab-esxi-netapp-datastore-validate:
-	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $$(if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi) scripts/esxi_netapp_datastore_workflow.py validate
+	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $(BACKEND_SCRIPT_PY) scripts/esxi_netapp_datastore_workflow.py validate
 
 provider-lab-esxi-vm-deploy-preview:
-	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $$(if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi) scripts/esxi_vm_deploy_workflow.py preview
+	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $(BACKEND_SCRIPT_PY) scripts/esxi_vm_deploy_workflow.py preview
 
 provider-lab-esxi-vm-deploy-apply:
-	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. VM_DEPLOY_APPLY="$${VM_DEPLOY_APPLY:-}" VM_DEPLOY_CONFIRM="$${VM_DEPLOY_CONFIRM:-}" VM_DEPLOY_ALLOW_CREATE="$${VM_DEPLOY_ALLOW_CREATE:-}" VM_DEPLOY_POWER_ON="$${VM_DEPLOY_POWER_ON:-}" VM_DEPLOY_POWER_ON_CONFIRM="$${VM_DEPLOY_POWER_ON_CONFIRM:-}" $$(if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi) scripts/esxi_vm_deploy_workflow.py apply
+	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. VM_DEPLOY_APPLY="$${VM_DEPLOY_APPLY:-}" VM_DEPLOY_CONFIRM="$${VM_DEPLOY_CONFIRM:-}" VM_DEPLOY_ALLOW_CREATE="$${VM_DEPLOY_ALLOW_CREATE:-}" VM_DEPLOY_POWER_ON="$${VM_DEPLOY_POWER_ON:-}" VM_DEPLOY_POWER_ON_CONFIRM="$${VM_DEPLOY_POWER_ON_CONFIRM:-}" $(BACKEND_SCRIPT_PY) scripts/esxi_vm_deploy_workflow.py apply
 
 provider-lab-esxi-vm-deploy-validate:
-	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $$(if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi) scripts/esxi_vm_deploy_workflow.py validate
+	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $(BACKEND_SCRIPT_PY) scripts/esxi_vm_deploy_workflow.py validate
 
 provider-lab-cisco-console-ethernet-readiness:
-	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $$(if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi) scripts/cisco_console_ethernet_readiness.py
+	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $(BACKEND_SCRIPT_PY) scripts/cisco_console_ethernet_readiness.py
 
 provider-lab-cisco-console-recovery:
-	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $$(if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi) scripts/cisco_real_lab_workflow.py
+	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $(BACKEND_SCRIPT_PY) scripts/cisco_real_lab_workflow.py
 
 provider-lab-cisco-privilege-check:
-	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $$(if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi) scripts/cisco_real_lab_workflow.py
+	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $(BACKEND_SCRIPT_PY) scripts/cisco_real_lab_workflow.py
 
 provider-lab-cisco-vlan10-bootstrap-fix:
-	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $$(if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi) scripts/cisco_real_lab_workflow.py
+	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $(BACKEND_SCRIPT_PY) scripts/cisco_real_lab_workflow.py
 
 provider-lab-cisco-vlan10-bootstrap-apply:
-	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $$(if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi) scripts/cisco_real_lab_workflow.py --apply
+	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $(BACKEND_SCRIPT_PY) scripts/cisco_real_lab_workflow.py --apply
 
 provider-lab-full-rebuild-summary:
-	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $$(if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi) scripts/full_device_rebuild_summary.py
+	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $(BACKEND_SCRIPT_PY) scripts/full_device_rebuild_summary.py
 
 provider-lab-full-rebuild:
-	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $$(if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi) scripts/full_device_rebuild_workflow.py
+	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $(BACKEND_SCRIPT_PY) scripts/full_device_rebuild_workflow.py
 
 provider-lab-build-verification:
-	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $$(if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi) scripts/build_verification.py
+	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $(BACKEND_SCRIPT_PY) scripts/build_verification.py
 
 provider-lab-golden-state:
-	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $$(if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi) scripts/provider_lab_golden_state.py
+	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $(BACKEND_SCRIPT_PY) scripts/provider_lab_golden_state.py
 
 provider-lab-validation:
-	cd backend && PROVIDER_MODE="$(PROVIDER_MODE)" PYTHONPATH=. $$(if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi) scripts/lab_validation.py
+	cd backend && PROVIDER_MODE="$(PROVIDER_MODE)" PYTHONPATH=. $(BACKEND_SCRIPT_PY) scripts/lab_validation.py
 
 provider-lab-vcenter-netapp-readiness:
-	cd backend && PROVIDER_MODE=local-readonly PYTHONPATH=. $$(if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi) scripts/vcenter_netapp_readiness.py readiness
+	cd backend && PROVIDER_MODE=local-readonly PYTHONPATH=. $(BACKEND_SCRIPT_PY) scripts/vcenter_netapp_readiness.py readiness
 
 provider-lab-vcenter-netapp-datastore-plan:
-	cd backend && PROVIDER_MODE=local-readonly PYTHONPATH=. $$(if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi) scripts/vcenter_netapp_readiness.py datastore-plan
+	cd backend && PROVIDER_MODE=local-readonly PYTHONPATH=. $(BACKEND_SCRIPT_PY) scripts/vcenter_netapp_readiness.py datastore-plan
 
 provider-lab-vcenter-install-readiness:
-	cd backend && PROVIDER_MODE=local-readonly PYTHONPATH=. $$(if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi) scripts/vcenter_netapp_readiness.py install-readiness
+	cd backend && PROVIDER_MODE=local-readonly PYTHONPATH=. $(BACKEND_SCRIPT_PY) scripts/vcenter_netapp_readiness.py install-readiness
 
 provider-lab-vcenter-install-plan:
-	cd backend && PROVIDER_MODE=local-readonly PYTHONPATH=. $$(if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi) scripts/vcenter_netapp_readiness.py install-plan
+	cd backend && PROVIDER_MODE=local-readonly PYTHONPATH=. $(BACKEND_SCRIPT_PY) scripts/vcenter_netapp_readiness.py install-plan
 
 provider-lab-vcenter-install-preview:
-	cd backend && PROVIDER_MODE=local-readonly PYTHONPATH=. $$(if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi) scripts/vcenter_netapp_readiness.py install-preview
+	cd backend && PROVIDER_MODE=local-readonly PYTHONPATH=. $(BACKEND_SCRIPT_PY) scripts/vcenter_netapp_readiness.py install-preview
 
 provider-lab-vcenter-install-apply:
-	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. VCENTER_INSTALL_APPLY="$${VCENTER_INSTALL_APPLY:-}" VCENTER_INSTALL_CONFIRM="$${VCENTER_INSTALL_CONFIRM:-}" VCENTER_INSTALL_ALLOW_DEPLOY="$${VCENTER_INSTALL_ALLOW_DEPLOY:-}" $$(if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi) scripts/vcenter_netapp_readiness.py install-apply
+	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. VCENTER_INSTALL_APPLY="$${VCENTER_INSTALL_APPLY:-}" VCENTER_INSTALL_CONFIRM="$${VCENTER_INSTALL_CONFIRM:-}" VCENTER_INSTALL_ALLOW_DEPLOY="$${VCENTER_INSTALL_ALLOW_DEPLOY:-}" $(BACKEND_SCRIPT_PY) scripts/vcenter_netapp_readiness.py install-apply
 
 provider-lab-vcenter-attach-esxi-preview:
-	cd backend && PROVIDER_MODE=local-readonly PYTHONPATH=. $$(if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi) scripts/vcenter_netapp_readiness.py attach-esxi-preview
+	cd backend && PROVIDER_MODE=local-readonly PYTHONPATH=. $(BACKEND_SCRIPT_PY) scripts/vcenter_netapp_readiness.py attach-esxi-preview
 
 provider-lab-vcenter-attach-esxi-apply:
-	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. VCENTER_ATTACH_ESXI_APPLY="$${VCENTER_ATTACH_ESXI_APPLY:-}" VCENTER_ATTACH_ESXI_CONFIRM="$${VCENTER_ATTACH_ESXI_CONFIRM:-}" VCENTER_ATTACH_ESXI_ALLOW="$${VCENTER_ATTACH_ESXI_ALLOW:-}" $$(if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi) scripts/vcenter_netapp_readiness.py attach-esxi-apply
+	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. VCENTER_ATTACH_ESXI_APPLY="$${VCENTER_ATTACH_ESXI_APPLY:-}" VCENTER_ATTACH_ESXI_CONFIRM="$${VCENTER_ATTACH_ESXI_CONFIRM:-}" VCENTER_ATTACH_ESXI_ALLOW="$${VCENTER_ATTACH_ESXI_ALLOW:-}" $(BACKEND_SCRIPT_PY) scripts/vcenter_netapp_readiness.py attach-esxi-apply
 
 provider-lab-vcenter-post-attach-validation:
-	cd backend && PROVIDER_MODE=local-readonly PYTHONPATH=. $$(if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi) scripts/vcenter_netapp_readiness.py post-attach-validation
+	cd backend && PROVIDER_MODE=local-readonly PYTHONPATH=. $(BACKEND_SCRIPT_PY) scripts/vcenter_netapp_readiness.py post-attach-validation
 
 provider-lab-toolchain-check:
-	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $$(if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi) scripts/toolchain_availability.py
+	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $(BACKEND_SCRIPT_PY) scripts/toolchain_availability.py
 
 provider-lab-hpe-raid-apply:
-	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. HPE_RAID_ALLOW_DESTRUCTIVE="$${HPE_RAID_ALLOW_DESTRUCTIVE:-}" HPE_RAID_APPLY_CONFIRM="$${HPE_RAID_APPLY_CONFIRM:-}" $$(if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi) scripts/hpe_raid_workflow.py apply
+	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. HPE_RAID_ALLOW_DESTRUCTIVE="$${HPE_RAID_ALLOW_DESTRUCTIVE:-}" HPE_RAID_APPLY_CONFIRM="$${HPE_RAID_APPLY_CONFIRM:-}" $(BACKEND_SCRIPT_PY) scripts/hpe_raid_workflow.py apply
 
 provider-lab-serial-console-discovery:
-	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $$(if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi) scripts/serial_console_discovery.py
+	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $(BACKEND_SCRIPT_PY) scripts/serial_console_discovery.py
 
 provider-lab-netapp-console-autodiscovery:
-	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $$(if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi) scripts/netapp_real_lab_workflow.py console-autodiscovery
+	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $(BACKEND_SCRIPT_PY) scripts/netapp_real_lab_workflow.py console-autodiscovery
 
 provider-lab-netapp-console-discovery:
-	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $$(if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi) scripts/netapp_real_lab_workflow.py console-autodiscovery
+	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $(BACKEND_SCRIPT_PY) scripts/netapp_real_lab_workflow.py console-autodiscovery
 
 provider-lab-netapp-console-read-state:
-	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $$(if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi) scripts/netapp_real_lab_workflow.py console-read-state
+	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $(BACKEND_SCRIPT_PY) scripts/netapp_real_lab_workflow.py console-read-state
 
 provider-lab-netapp-console-login-state:
-	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $$(if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi) scripts/netapp_real_lab_workflow.py console-login-state
+	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $(BACKEND_SCRIPT_PY) scripts/netapp_real_lab_workflow.py console-login-state
 
 provider-lab-netapp-live-state:
-	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $$(if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi) scripts/netapp_real_lab_workflow.py live-state
+	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $(BACKEND_SCRIPT_PY) scripts/netapp_real_lab_workflow.py live-state
 
 provider-lab-netapp-validate-setup:
-	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $$(if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi) scripts/netapp_real_lab_workflow.py validate-setup
+	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $(BACKEND_SCRIPT_PY) scripts/netapp_real_lab_workflow.py validate-setup
 
 provider-lab-netapp-nfs-vcenter-readiness:
-	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $$(if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi) scripts/netapp_real_lab_workflow.py nfs-vcenter-readiness
+	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $(BACKEND_SCRIPT_PY) scripts/netapp_real_lab_workflow.py nfs-vcenter-readiness
 
 provider-lab-netapp-setup-baseline:
-	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $$(if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi) scripts/netapp_setup_workflow.py baseline
+	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $(BACKEND_SCRIPT_PY) scripts/netapp_setup_workflow.py baseline
 
 provider-lab-netapp-setup-plan:
-	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $$(if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi) scripts/netapp_setup_workflow.py plan
+	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $(BACKEND_SCRIPT_PY) scripts/netapp_setup_workflow.py plan
 
 provider-lab-netapp-setup-preview:
-	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $$(if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi) scripts/netapp_setup_workflow.py preview
+	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $(BACKEND_SCRIPT_PY) scripts/netapp_setup_workflow.py preview
 
 provider-lab-netapp-setup-apply:
-	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. NETAPP_SETUP_APPLY="$${NETAPP_SETUP_APPLY:-}" NETAPP_SETUP_CONFIRM="$${NETAPP_SETUP_CONFIRM:-}" NETAPP_SETUP_ALLOW_CLUSTER_CREATE="$${NETAPP_SETUP_ALLOW_CLUSTER_CREATE:-}" $$(if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi) scripts/netapp_setup_workflow.py apply
+	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. NETAPP_SETUP_APPLY="$${NETAPP_SETUP_APPLY:-}" NETAPP_SETUP_CONFIRM="$${NETAPP_SETUP_CONFIRM:-}" NETAPP_SETUP_ALLOW_CLUSTER_CREATE="$${NETAPP_SETUP_ALLOW_CLUSTER_CREATE:-}" $(BACKEND_SCRIPT_PY) scripts/netapp_setup_workflow.py apply
 
 provider-lab-netapp-post-setup-validation:
-	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $$(if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi) scripts/netapp_setup_workflow.py post-setup-validation
+	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $(BACKEND_SCRIPT_PY) scripts/netapp_setup_workflow.py post-setup-validation
 
 provider-lab-netapp-address-plan:
-	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $$(if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi) scripts/netapp_address_plan.py plan
+	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $(BACKEND_SCRIPT_PY) scripts/netapp_address_plan.py plan
 
 provider-lab-netapp-address-preview:
-	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $$(if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi) scripts/netapp_address_plan.py preview
+	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $(BACKEND_SCRIPT_PY) scripts/netapp_address_plan.py preview
 
 provider-lab-netapp-address-apply:
-	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. NETAPP_ADDRESS_APPLY="$${NETAPP_ADDRESS_APPLY:-}" NETAPP_ADDRESS_CONFIRM="$${NETAPP_ADDRESS_CONFIRM:-}" NETAPP_ADDRESS_ALLOW_CONSOLE_WRITES="$${NETAPP_ADDRESS_ALLOW_CONSOLE_WRITES:-}" NETAPP_ADDRESS_ALLOW_LIF_CREATE="$${NETAPP_ADDRESS_ALLOW_LIF_CREATE:-}" NETAPP_ADDRESS_ACCEPT_HA_WARNING="$${NETAPP_ADDRESS_ACCEPT_HA_WARNING:-}" $$(if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi) scripts/netapp_address_plan.py apply
+	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. NETAPP_ADDRESS_APPLY="$${NETAPP_ADDRESS_APPLY:-}" NETAPP_ADDRESS_CONFIRM="$${NETAPP_ADDRESS_CONFIRM:-}" NETAPP_ADDRESS_ALLOW_CONSOLE_WRITES="$${NETAPP_ADDRESS_ALLOW_CONSOLE_WRITES:-}" NETAPP_ADDRESS_ALLOW_LIF_CREATE="$${NETAPP_ADDRESS_ALLOW_LIF_CREATE:-}" NETAPP_ADDRESS_ACCEPT_HA_WARNING="$${NETAPP_ADDRESS_ACCEPT_HA_WARNING:-}" $(BACKEND_SCRIPT_PY) scripts/netapp_address_plan.py apply
 
 provider-lab-netapp-address-validate:
-	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $$(if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi) scripts/netapp_address_plan.py validate
+	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $(BACKEND_SCRIPT_PY) scripts/netapp_address_plan.py validate
 
 provider-lab-netapp-ha-node-diagnose:
-	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $$(if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi) scripts/netapp_address_plan.py ha-diagnose
+	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $(BACKEND_SCRIPT_PY) scripts/netapp_address_plan.py ha-diagnose
 
 provider-lab-netapp-factory-reset-preview:
-	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $$(if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi) scripts/netapp_factory_reset_workflow.py preview
+	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $(BACKEND_SCRIPT_PY) scripts/netapp_factory_reset_workflow.py preview
 
 provider-lab-netapp-factory-reset-apply:
-	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. NETAPP_FACTORY_RESET_APPLY="$${NETAPP_FACTORY_RESET_APPLY:-}" NETAPP_FACTORY_RESET_CONFIRM="$${NETAPP_FACTORY_RESET_CONFIRM:-}" NETAPP_FACTORY_RESET_EXECUTOR_ENABLED="$${NETAPP_FACTORY_RESET_EXECUTOR_ENABLED:-}" $$(if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi) scripts/netapp_factory_reset_workflow.py apply
+	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. NETAPP_FACTORY_RESET_APPLY="$${NETAPP_FACTORY_RESET_APPLY:-}" NETAPP_FACTORY_RESET_CONFIRM="$${NETAPP_FACTORY_RESET_CONFIRM:-}" NETAPP_FACTORY_RESET_EXECUTOR_ENABLED="$${NETAPP_FACTORY_RESET_EXECUTOR_ENABLED:-}" $(BACKEND_SCRIPT_PY) scripts/netapp_factory_reset_workflow.py apply
 
 provider-lab-netapp-factory-reset-validate:
-	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $$(if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi) scripts/netapp_factory_reset_workflow.py validate
+	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $(BACKEND_SCRIPT_PY) scripts/netapp_factory_reset_workflow.py validate
 
 provider-lab-netapp-nfs-setup-preview:
-	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $$(if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi) scripts/netapp_nfs_setup_workflow.py preview
+	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $(BACKEND_SCRIPT_PY) scripts/netapp_nfs_setup_workflow.py preview
 
 provider-lab-netapp-nfs-setup-apply:
-	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. NETAPP_NFS_SETUP_APPLY="$${NETAPP_NFS_SETUP_APPLY:-}" NETAPP_NFS_SETUP_CONFIRM="$${NETAPP_NFS_SETUP_CONFIRM:-}" NETAPP_NFS_SETUP_ALLOW_STORAGE_CREATE="$${NETAPP_NFS_SETUP_ALLOW_STORAGE_CREATE:-}" $$(if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi) scripts/netapp_nfs_setup_workflow.py apply
+	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. NETAPP_NFS_SETUP_APPLY="$${NETAPP_NFS_SETUP_APPLY:-}" NETAPP_NFS_SETUP_CONFIRM="$${NETAPP_NFS_SETUP_CONFIRM:-}" NETAPP_NFS_SETUP_ALLOW_STORAGE_CREATE="$${NETAPP_NFS_SETUP_ALLOW_STORAGE_CREATE:-}" $(BACKEND_SCRIPT_PY) scripts/netapp_nfs_setup_workflow.py apply
 
 provider-lab-netapp-nfs-setup-validate:
-	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $$(if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi) scripts/netapp_nfs_setup_workflow.py validate
+	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $(BACKEND_SCRIPT_PY) scripts/netapp_nfs_setup_workflow.py validate
 
 provider-lab-netapp-ontap-upgrade-inventory:
-	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $$(if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi) scripts/netapp_ontap_upgrade_workflow.py inventory
+	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $(BACKEND_SCRIPT_PY) scripts/netapp_ontap_upgrade_workflow.py inventory
 
 provider-lab-netapp-ontap-upgrade-plan:
-	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $$(if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi) scripts/netapp_ontap_upgrade_workflow.py plan
+	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $(BACKEND_SCRIPT_PY) scripts/netapp_ontap_upgrade_workflow.py plan
 
 provider-lab-netapp-ontap-upgrade-validate:
-	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $$(if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi) scripts/netapp_ontap_upgrade_workflow.py validate
+	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. $(BACKEND_SCRIPT_PY) scripts/netapp_ontap_upgrade_workflow.py validate
 
 provider-lab-netapp-ontap-upgrade-apply:
-	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. NETAPP_ONTAP_UPGRADE_APPLY="$${NETAPP_ONTAP_UPGRADE_APPLY:-}" NETAPP_ONTAP_UPGRADE_CONFIRM="$${NETAPP_ONTAP_UPGRADE_CONFIRM:-}" NETAPP_ONTAP_UPGRADE_VALIDATION_WAIVER="$${NETAPP_ONTAP_UPGRADE_VALIDATION_WAIVER:-}" NETAPP_ONTAP_UPGRADE_WAIVER_CONFIRM="$${NETAPP_ONTAP_UPGRADE_WAIVER_CONFIRM:-}" $$(if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi) scripts/netapp_ontap_upgrade_workflow.py apply
+	cd backend && PROVIDER_MODE=local-lab-readwrite PYTHONPATH=. NETAPP_ONTAP_UPGRADE_APPLY="$${NETAPP_ONTAP_UPGRADE_APPLY:-}" NETAPP_ONTAP_UPGRADE_CONFIRM="$${NETAPP_ONTAP_UPGRADE_CONFIRM:-}" NETAPP_ONTAP_UPGRADE_VALIDATION_WAIVER="$${NETAPP_ONTAP_UPGRADE_VALIDATION_WAIVER:-}" NETAPP_ONTAP_UPGRADE_WAIVER_CONFIRM="$${NETAPP_ONTAP_UPGRADE_WAIVER_CONFIRM:-}" $(BACKEND_SCRIPT_PY) scripts/netapp_ontap_upgrade_workflow.py apply
 
 netapp-real-readiness:
-	cd backend && PROVIDER_MODE="$(PROVIDER_MODE)" PYTHONPATH=. $$(if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi) scripts/netapp_real_run_readiness.py
+	cd backend && PROVIDER_MODE="$(PROVIDER_MODE)" PYTHONPATH=. $(BACKEND_SCRIPT_PY) scripts/netapp_real_run_readiness.py

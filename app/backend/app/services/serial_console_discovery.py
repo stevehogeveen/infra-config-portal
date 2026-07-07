@@ -1,21 +1,36 @@
 from __future__ import annotations
 
 import glob
-import grp
 import os
-import pwd
 import re
-import signal
 import stat
 import subprocess
 import threading
 import time
-from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from queue import Queue
 from shutil import which
-from typing import Any
+from typing import Any, Callable
+
+from app.services.list_utils import unique_preserving_order
+from app.services.path_utils import path_exists, path_stat
+
+try:
+    import grp
+except ImportError:  # pragma: no cover - exercised on Windows
+    grp = None  # type: ignore[assignment]
+
+try:
+    import pwd
+except ImportError:  # pragma: no cover - exercised on Windows
+    pwd = None  # type: ignore[assignment]
+
+try:
+    import winreg
+except ImportError:  # pragma: no cover - exercised on non-Windows
+    winreg = None  # type: ignore[assignment]
 
 
 COMMON_SERIAL_BAUDS = (9600, 115200, 19200, 38400, 57600)
@@ -82,14 +97,16 @@ def discover_serial_console_candidates(
     paths = paths or SerialConsoleDiscoveryPaths()
     now = time.time()
     discovered: list[tuple[str, str]] = []
-    for path in sorted(glob.glob(paths.by_id_glob)):
+    for path in _glob_strings(paths.by_id_glob):
         discovered.append((path, "by-id"))
-    for path in sorted(glob.glob(paths.usb_glob)):
+    for path in _glob_strings(paths.usb_glob):
         discovered.append((path, "ttyUSB"))
-    for path in sorted(glob.glob(paths.acm_glob)):
+    for path in _glob_strings(paths.acm_glob):
         discovered.append((path, "ttyACM"))
-    for path in sorted(glob.glob(paths.ttys_glob)):
+    for path in _glob_strings(paths.ttys_glob):
         discovered.append((path, "ttyS"))
+    for path in _windows_serial_ports():
+        discovered.append((path, "windows-com"))
     if configured_hint:
         discovered.insert(0, (configured_hint, _path_type(configured_hint)))
 
@@ -120,6 +137,33 @@ def discover_serial_console_candidates(
     )
 
 
+def _glob_strings(pattern: str) -> list[str]:
+    try:
+        return sorted(glob.glob(pattern))
+    except OSError:
+        return []
+
+
+def _windows_serial_ports() -> list[str]:
+    if os.name != "nt" or winreg is None:
+        return []
+    ports: list[str] = []
+    try:
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"HARDWARE\DEVICEMAP\SERIALCOMM") as key:
+            index = 0
+            while True:
+                try:
+                    _name, value, _value_type = winreg.EnumValue(key, index)
+                except OSError:
+                    break
+                index += 1
+                if isinstance(value, str) and _is_windows_com_port(value):
+                    ports.append(value.upper())
+    except OSError:
+        return []
+    return _sort_windows_com_ports(unique_preserving_order(ports))
+
+
 def inspect_serial_console_candidate(
     path: str,
     *,
@@ -131,18 +175,19 @@ def inspect_serial_console_candidate(
     device_hint: str | None = None,
 ) -> dict[str, Any]:
     now = now or time.time()
-    path_obj = Path(path)
-    exists = path_obj.exists()
     path_type = path_type or _path_type(path)
-    resolved_path = str(path_obj.resolve(strict=False)) if exists else None
-    stat_result = _stat_path(path_obj) if exists else None
-    readable = os.access(path, os.R_OK) if exists else False
-    writable = os.access(path, os.W_OK) if exists else False
+    is_windows_com = _is_windows_com_port(path)
+    path_obj = Path(path)
+    exists = True if is_windows_com else path_exists(path_obj)
+    resolved_path = None if is_windows_com else (str(path_obj.resolve(strict=False)) if exists else None)
+    stat_result = None if is_windows_com else (_stat_path(path_obj) if exists else None)
+    readable = True if is_windows_com else (os.access(path, os.R_OK) if exists else False)
+    writable = True if is_windows_com else (os.access(path, os.W_OK) if exists else False)
     modified_time = _iso_from_timestamp(stat_result.st_mtime) if stat_result else None
     modified_age_seconds = int(max(now - stat_result.st_mtime, 0)) if stat_result else None
-    in_use_state = _in_use_state(path) if exists else _not_in_use_state("missing")
-    udevadm = _udevadm_info(path) if collect_details and exists else _tool_unavailable("not-collected")
-    setserial = _setserial_info(path) if collect_details and exists else _tool_unavailable("not-collected")
+    in_use_state = _windows_com_in_use_state() if is_windows_com else (_in_use_state(path) if exists else _not_in_use_state("missing"))
+    udevadm = _tool_unavailable("windows-com-port") if is_windows_com else (_udevadm_info(path) if collect_details and exists else _tool_unavailable("not-collected"))
+    setserial = _tool_unavailable("windows-com-port") if is_windows_com else (_setserial_info(path) if collect_details and exists else _tool_unavailable("not-collected"))
     dmesg_info = (
         _dmesg_clues(path, resolved_path, dmesg or _tool_unavailable("not-collected"))
         if collect_details
@@ -228,7 +273,7 @@ def serial_candidate_selectable(candidate: dict[str, Any]) -> bool:
 
 def serial_baud_order(configured_baud: int | None, common_bauds: tuple[int, ...] = COMMON_SERIAL_BAUDS) -> tuple[int, ...]:
     values = [configured_baud, *common_bauds] if configured_baud else list(common_bauds)
-    return tuple(dict.fromkeys(int(value) for value in values if value))
+    return tuple(unique_preserving_order(int(value) for value in values if value))
 
 
 def _bounded_probe_candidates(
@@ -293,72 +338,17 @@ def probe_serial_candidate(
     path = str(candidate["display_path"])
     wake_sequences = options.wake_sequences or SERIAL_WAKE_SEQUENCES
     try:
-        with _serial_attempt_deadline(max(options.timeout_seconds * 2, 3.0)):
-            with serial_module.Serial(
-                port=path,
-                baudrate=baud,
-                timeout=max(min(options.timeout_seconds / 20, 0.08), 0.03),
-                write_timeout=max(min(options.timeout_seconds, 1.0), 0.1),
-            ) as conn:
-                _safe_reset_input(conn)
-                chunks: list[bytes] = []
-                sequence_reads: list[dict[str, Any]] = []
-                for sequence_name, payload in wake_sequences:
-                    conn.write(payload)
-                    read_bytes = _read_serial_bytes(
-                        conn,
-                        window=max(min(options.timeout_seconds / 8, 0.2), 0.08),
-                        max_bytes=options.max_bytes - sum(len(chunk) for chunk in chunks),
-                    )
-                    chunks.append(read_bytes)
-                    sequence_reads.append(
-                        {
-                            "sequence": sequence_name,
-                            "wake_bytes_sent": len(payload),
-                            "bytes_read": len(read_bytes),
-                        }
-                    )
-                for index, window in enumerate(_read_windows(options.timeout_seconds), start=1):
-                    read_bytes = _read_serial_bytes(
-                        conn,
-                        window=window,
-                        max_bytes=options.max_bytes - sum(len(chunk) for chunk in chunks),
-                    )
-                    chunks.append(read_bytes)
-                    sequence_reads.append(
-                        {
-                            "sequence": f"read-window-{index}",
-                            "wake_bytes_sent": 0,
-                            "bytes_read": len(read_bytes),
-                        }
-                    )
-                    if sum(len(chunk) for chunk in chunks) >= options.max_bytes:
-                        break
-
-                raw = b"".join(chunks)
-                text = raw.decode("utf-8", errors="replace")
-                classification = classify_serial_console_text(text, device_hint=options.device_hint)
-                return {
-                    "path": path,
-                    "baud": baud,
-                    "started_at": started_at,
-                    "status": "checked",
-                    "bytes": len(raw),
-                    "captured": bool(raw),
-                    "classification": classification["classification"],
-                    "classification_detail": classification,
-                    "device_type": classification["device_type"],
-                    "prompt_state": classification["prompt_state"],
-                    "prompt_label": classification["prompt_label"],
-                    "confidence": classification["confidence"],
-                    "signals": classification["signals"],
-                    "output_excerpt": redacted_printable_preview(text),
-                    "raw_output_redacted": True,
-                    "sequence_reads": sequence_reads,
-                    "blocker": None
-                    if _classification_is_selectable(classification, options.device_hint)
-                    else _classification_blocker(classification),
-                }
+        return _run_with_deadline(
+            lambda: _probe_serial_candidate_inner(
+                serial_module,
+                path,
+                baud,
+                started_at=started_at,
+                wake_sequences=wake_sequences,
+                options=options,
+            ),
+            timeout_seconds=max(options.timeout_seconds * 2, 3.0),
+        )
     except Exception as exc:  # pragma: no cover - hardware dependent
         classification = _serial_error_classification(exc)
         return {
@@ -380,6 +370,102 @@ def probe_serial_candidate(
             "sequence_reads": [],
             "blocker": _serial_error_summary(exc),
         }
+
+
+def _probe_serial_candidate_inner(
+    serial_module: Any,
+    path: str,
+    baud: int,
+    *,
+    started_at: str,
+    wake_sequences: tuple[tuple[str, bytes], ...],
+    options: SerialConsoleProbeOptions,
+) -> dict[str, Any]:
+    with serial_module.Serial(
+        port=path,
+        baudrate=baud,
+        timeout=max(min(options.timeout_seconds / 20, 0.08), 0.03),
+        write_timeout=max(min(options.timeout_seconds, 1.0), 0.1),
+    ) as conn:
+        _safe_reset_input(conn)
+        chunks: list[bytes] = []
+        sequence_reads: list[dict[str, Any]] = []
+        for sequence_name, payload in wake_sequences:
+            conn.write(payload)
+            read_bytes = _read_serial_bytes(
+                conn,
+                window=max(min(options.timeout_seconds / 8, 0.2), 0.08),
+                max_bytes=options.max_bytes - sum(len(chunk) for chunk in chunks),
+            )
+            chunks.append(read_bytes)
+            sequence_reads.append(
+                {
+                    "sequence": sequence_name,
+                    "wake_bytes_sent": len(payload),
+                    "bytes_read": len(read_bytes),
+                }
+            )
+        for index, window in enumerate(_read_windows(options.timeout_seconds), start=1):
+            read_bytes = _read_serial_bytes(
+                conn,
+                window=window,
+                max_bytes=options.max_bytes - sum(len(chunk) for chunk in chunks),
+            )
+            chunks.append(read_bytes)
+            sequence_reads.append(
+                {
+                    "sequence": f"read-window-{index}",
+                    "wake_bytes_sent": 0,
+                    "bytes_read": len(read_bytes),
+                }
+            )
+            if sum(len(chunk) for chunk in chunks) >= options.max_bytes:
+                break
+
+        raw = b"".join(chunks)
+        text = raw.decode("utf-8", errors="replace")
+        classification = classify_serial_console_text(text, device_hint=options.device_hint)
+        return {
+            "path": path,
+            "baud": baud,
+            "started_at": started_at,
+            "status": "checked",
+            "bytes": len(raw),
+            "captured": bool(raw),
+            "classification": classification["classification"],
+            "classification_detail": classification,
+            "device_type": classification["device_type"],
+            "prompt_state": classification["prompt_state"],
+            "prompt_label": classification["prompt_label"],
+            "confidence": classification["confidence"],
+            "signals": classification["signals"],
+            "output_excerpt": redacted_printable_preview(text),
+            "raw_output_redacted": True,
+            "sequence_reads": sequence_reads,
+            "blocker": None
+            if _classification_is_selectable(classification, options.device_hint)
+            else _classification_blocker(classification),
+        }
+
+
+def _run_with_deadline(func: Callable[[], dict[str, Any]], *, timeout_seconds: float) -> dict[str, Any]:
+    result_queue: Queue[tuple[str, dict[str, Any] | BaseException]] = Queue(maxsize=1)
+
+    def _target() -> None:
+        try:
+            result_queue.put(("result", func()))
+        except BaseException as exc:  # noqa: BLE001
+            result_queue.put(("error", exc))
+
+    thread = threading.Thread(target=_target, daemon=True)
+    thread.start()
+    thread.join(max(timeout_seconds, 0.1))
+    if thread.is_alive():
+        raise TimeoutError("serial probe attempt timed out")
+    kind, value = result_queue.get()
+    if kind == "error":
+        raise value
+    return value  # type: ignore[return-value]
 
 
 def classify_serial_console_text(text: str, *, device_hint: str | None = None) -> dict[str, Any]:
@@ -511,6 +597,9 @@ def _rank_candidate(
     if path_type == "by-id":
         rank = 0
         reasons.append("stable /dev/serial/by-id path")
+    elif path_type == "windows-com":
+        rank = 120 + _windows_com_number(path)
+        reasons.append("Windows COM serial candidate")
     elif path_type in {"ttyUSB", "ttyACM"}:
         rank = 100
         reasons.append(f"{path_type} USB serial fallback")
@@ -559,6 +648,8 @@ def _candidate_recommendation(candidate: dict[str, Any]) -> str:
     path_type = candidate.get("path_type")
     if path_type == "by-id":
         return "preferred-stable-path"
+    if path_type == "windows-com":
+        return "windows-com-candidate"
     if path_type in {"ttyUSB", "ttyACM"}:
         return "usb-serial-candidate"
     if path_type == "ttyS":
@@ -572,6 +663,8 @@ def _candidate_confidence(candidate: dict[str, Any]) -> str:
     path_type = candidate.get("path_type")
     if path_type == "by-id":
         return "high"
+    if path_type == "windows-com":
+        return "medium"
     if path_type in {"ttyUSB", "ttyACM"}:
         return "medium"
     if path_type == "ttyS" and _fresh_ttys(candidate, time.time()):
@@ -631,6 +724,8 @@ def _fresh_ttys(candidate: dict[str, Any], now: float) -> bool:
 
 def _path_type(path: str) -> str:
     name = Path(path).name
+    if _is_windows_com_port(path):
+        return "windows-com"
     if path.startswith("/dev/serial/by-id/") or "/serial/by-id/" in path:
         return "by-id"
     if name.startswith("ttyUSB"):
@@ -652,14 +747,41 @@ def _ttys_number(path: str) -> int:
         return 0
 
 
-def _stat_path(path: Path) -> os.stat_result | None:
+def _is_windows_com_port(path: str) -> bool:
+    return bool(re.fullmatch(r"(?i)COM\d+", path.strip()))
+
+
+def _windows_com_number(path: str) -> int:
+    match = re.fullmatch(r"(?i)COM(\d+)", path.strip())
+    if not match:
+        return 999
     try:
-        return path.stat()
-    except OSError:
-        return None
+        return int(match.group(1))
+    except ValueError:
+        return 999
+
+
+def _sort_windows_com_ports(ports: list[str]) -> list[str]:
+    return sorted(ports, key=lambda value: (_windows_com_number(value), value))
+
+
+def _windows_com_in_use_state() -> dict[str, Any]:
+    return {
+        "state": "not_in_use",
+        "checked_with": [],
+        "unavailable_tools": ["fuser", "lsof"],
+        "pids": [],
+        "reason": "Windows COM ports are checked by opening them during probe.",
+    }
+
+
+def _stat_path(path: Path) -> os.stat_result | None:
+    return path_stat(path)
 
 
 def _owner_name(stat_result: os.stat_result) -> str:
+    if pwd is None:
+        return str(stat_result.st_uid)
     try:
         return pwd.getpwuid(stat_result.st_uid).pw_name
     except KeyError:
@@ -667,6 +789,8 @@ def _owner_name(stat_result: os.stat_result) -> str:
 
 
 def _group_name(stat_result: os.stat_result) -> str:
+    if grp is None:
+        return str(stat_result.st_gid)
     try:
         return grp.getgrgid(stat_result.st_gid).gr_name
     except KeyError:
@@ -712,7 +836,12 @@ def _in_use_state(path: str) -> dict[str, Any]:
         if result.returncode == 0:
             pids.extend(_parse_pids(result.stdout))
     if pids:
-        return {"state": "in_use", "checked_with": checked, "unavailable_tools": unavailable, "pids": sorted(set(pids))}
+        return {
+            "state": "in_use",
+            "checked_with": checked,
+            "unavailable_tools": unavailable,
+            "pids": unique_preserving_order(pids),
+        }
     if checked:
         return {"state": "not_in_use", "checked_with": checked, "unavailable_tools": unavailable, "pids": []}
     return {"state": "unavailable", "checked_with": [], "unavailable_tools": unavailable, "pids": []}
@@ -896,6 +1025,8 @@ def _classification_blocker(classification: dict[str, Any]) -> str:
 
 def _serial_error_classification(exc: Exception) -> dict[str, Any]:
     text = str(exc).lower()
+    if isinstance(exc, TimeoutError) or "timed out" in text or "timeout" in text:
+        return _classification("serial_timeout", "unknown", "serial_timeout", "Serial probe timed out", "low", ["serial probe timed out"])
     if "permission" in text or "access denied" in text:
         return _classification("permission_denied", "unknown", "permission_denied", "Permission denied", "low", ["serial open denied"])
     if "busy" in text or "in use" in text or "resource temporarily unavailable" in text:
@@ -910,25 +1041,6 @@ def _serial_error_summary(exc: Exception) -> str:
     if not detail:
         return exc.__class__.__name__
     return f"{exc.__class__.__name__}: {_short_text(detail)}"
-
-
-@contextmanager
-def _serial_attempt_deadline(seconds: float):
-    if threading.current_thread() is not threading.main_thread() or not hasattr(signal, "SIGALRM"):
-        yield
-        return
-
-    def _timeout(_signum, _frame) -> None:  # noqa: ANN001
-        raise TimeoutError("serial probe attempt timed out")
-
-    previous_handler = signal.getsignal(signal.SIGALRM)
-    signal.signal(signal.SIGALRM, _timeout)
-    previous_timer = signal.setitimer(signal.ITIMER_REAL, max(seconds, 0.5))
-    try:
-        yield
-    finally:
-        signal.setitimer(signal.ITIMER_REAL, *previous_timer)
-        signal.signal(signal.SIGALRM, previous_handler)
 
 
 def _classification(

@@ -3,11 +3,16 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import sys
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from dotenv import dotenv_values
+from app.services.env_utils import env_int, read_env_file_values
+from app.services.json_file_store import write_json_object, write_text_value
+from app.services.json_utils import parse_json_object
+from app.services.list_utils import unique_preserving_order
+from app.services.path_utils import display_path
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 BACKEND_ROOT = REPO_ROOT / "app" / "backend"
@@ -80,7 +85,7 @@ def main() -> int:
         "provider_mode": "local-lab-readwrite",
         "message": "Real lab live status refresh completed with redacted stage summaries.",
         "stages": stages,
-        "blockers": list(dict.fromkeys(blockers)),
+        "blockers": unique_preserving_order(blockers),
         "warnings": [
             warning
             for stage in stages
@@ -89,8 +94,8 @@ def main() -> int:
         ],
         "evidence_artifacts": [report for _name, _command, report in STAGES],
         "artifacts": {
-            "report": str(REPORT.relative_to(REPO_ROOT)),
-            "summary_json": str(SUMMARY.relative_to(REPO_ROOT)),
+            "report": _rel(REPORT),
+            "summary_json": _rel(SUMMARY),
         },
         "next_safe_action": (
             "Review the blocked live stage reports, then rerun `make provider-lab-refresh-live-state`."
@@ -98,18 +103,17 @@ def main() -> int:
             else "Run Build Verification before claiming certification."
         ),
     }
-    SUMMARY.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
-    REPORT.write_text(_markdown(payload), encoding="utf-8")
+    write_json_object(SUMMARY, payload)
+    write_text_value(REPORT, _markdown(payload))
     print(json.dumps(_console_summary(payload), indent=2))
     return 0
 
 
 def _run_stage(name: str, command: list[str], report: str, env: dict[str, str]) -> dict[str, Any]:
-    python = ".venv/bin/python" if (BACKEND_ROOT / ".venv" / "bin" / "python").exists() else "python3"
-    timeout = int(os.getenv("PROVIDER_LAB_LIVE_STAGE_TIMEOUT_SECONDS", "120"))
+    timeout = env_int("PROVIDER_LAB_LIVE_STAGE_TIMEOUT_SECONDS", 120, minimum=1)
     try:
         result = subprocess.run(
-            [python, *command],
+            [_python_executable(), *command],
             cwd=BACKEND_ROOT,
             env=env,
             capture_output=True,
@@ -153,21 +157,22 @@ def _run_stage(name: str, command: list[str], report: str, env: dict[str, str]) 
 
 def _real_lab_env() -> dict[str, str]:
     env = os.environ.copy()
-    if REAL_LAB_ENV.exists():
-        for key, value in dotenv_values(REAL_LAB_ENV).items():
-            if value is not None and key != "PROVIDER_MODE":
-                env[key] = value
+    env.update(read_env_file_values(REAL_LAB_ENV, skip_keys={"PROVIDER_MODE"}))
     env["PROVIDER_MODE"] = "local-lab-readwrite"
     env["PYTHONPATH"] = "."
     return env
 
 
 def _parse_json(stdout: str) -> dict[str, Any]:
-    try:
-        payload = json.loads(stdout.strip())
-    except (ValueError, json.JSONDecodeError):
-        return {}
-    return payload if isinstance(payload, dict) else {}
+    return parse_json_object(stdout)
+
+
+def _python_executable() -> str:
+    return os.getenv("PYTHON") or sys.executable
+
+
+def _rel(path: Path) -> str:
+    return display_path(path, REPO_ROOT)
 
 
 def _console_summary(payload: dict[str, Any]) -> dict[str, Any]:

@@ -18,6 +18,7 @@ from app.schemas import (
     IloReportArtifactPlaceholderRead,
 )
 from app.services.lab_profiles import active_lab_profile_context
+from app.services.list_utils import unique_preserving_order
 
 HPE_ILO_BASELINE_PROVIDER_ID = "hpe-ilo"
 APPLY_REASON = (
@@ -782,4 +783,4 @@ def _clean(value: Any) -> str | None:
 
 
 def _unique(values: list[str]) -> list[str]:
-    return list(dict.fromkeys(value for value in values if value))
+    return unique_preserving_order(values, skip_falsey=True)

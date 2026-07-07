@@ -1,0 +1,11 @@
+{
+  "DiskProvisioning": "thin",
+  "Name": "netapp-nfs-ovf-preview-vm",
+  "NetworkMapping": [
+    {
+      "Name": "VM Network",
+      "Network": "VM Network"
+    }
+  ],
+  "PowerOn": false
+}

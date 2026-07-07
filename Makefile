@@ -4,6 +4,7 @@
 .PHONY: provider-lab-vcenter-attach-esxi-preview provider-lab-vcenter-attach-esxi-apply provider-lab-vcenter-post-attach-validation
 
 REPO_ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
+PYTHON ?= python3
 TASK ?= .codex/tasks/001-backend-vm-request-lifecycle.md
 CODEX_SANDBOX_MODE ?= workspace-write
 CODEX_APPROVAL_POLICY ?= never
@@ -29,6 +30,7 @@ codex-resume: check-repo-root
 
 test: check-repo-root
 	$(MAKE) -C $(REPO_ROOT)/app backend-test PROVIDER_MODE=mock
+	cd $(REPO_ROOT)/app/frontend && PROVIDER_MODE=mock npm run test:component
 	cd $(REPO_ROOT)/app/frontend && PROVIDER_MODE=mock npm run build
 
 dev: check-repo-root
@@ -53,14 +55,16 @@ app-status app-check: check-repo-root
 	$(REPO_ROOT)/runit status
 
 lint: check-repo-root
+	PROVIDER_MODE=mock $(PYTHON) $(REPO_ROOT)/scripts/check-portable-paths.py
 	PROVIDER_MODE=mock bash -n $(REPO_ROOT)/runit
 	PROVIDER_MODE=mock bash -n $(REPO_ROOT)/scripts/*.sh
-	PROVIDER_MODE=mock python3 -c "import pathlib, tomllib; tomllib.loads(pathlib.Path('$(REPO_ROOT)/.codex/config.toml').read_text())"
+	PROVIDER_MODE=mock $(PYTHON) -c "import pathlib, tomllib; tomllib.loads(pathlib.Path('$(REPO_ROOT)/.codex/config.toml').read_text())"
 	@if [ -x $(REPO_ROOT)/app/backend/.venv/bin/ruff ]; then \
 		PROVIDER_MODE=mock $(REPO_ROOT)/app/backend/.venv/bin/ruff check $(REPO_ROOT)/app/backend; \
 	else \
 		echo "Backend lint: ruff is configured but not installed in app/backend/.venv; skipping."; \
 	fi
+	cd $(REPO_ROOT)/app/frontend && PROVIDER_MODE=mock npm run test:component
 	cd $(REPO_ROOT)/app/frontend && PROVIDER_MODE=mock npm run build
 
 .PHONY: backend-smoke smoke
@@ -71,7 +75,7 @@ backend-smoke:
 smoke: backend-smoke
 
 provider-smoke: check-repo-root
-	$(MAKE) -C $(REPO_ROOT)/app provider-smoke PROVIDER_MODE="$(PROVIDER_MODE)"
+	$(MAKE) -C $(REPO_ROOT)/app provider-smoke PROVIDER_MODE="$(PROVIDER_MODE)" PROVIDER_SMOKE_PROVIDERS="$(PROVIDER_SMOKE_PROVIDERS)" PROVIDER_SMOKE_REQUIRE_REAL="$(PROVIDER_SMOKE_REQUIRE_REAL)"
 
 provider-lab-live-status: check-repo-root
 	$(MAKE) -C $(REPO_ROOT)/app provider-lab-live-status
