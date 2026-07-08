@@ -286,7 +286,10 @@ test("zoned map opens device workspace directly and keeps system scoped controls
   await page.goto("/overview");
 
   const topology = page.locator("section[aria-label='Living lab topology']");
-  await topology.getByRole("button", { name: "Open Cisco switch workspace" }).click();
+  const ciscoNode = topology.getByRole("button", { name: "Open Cisco switch workspace" });
+  await ciscoNode.click();
+  await expect(ciscoNode).toHaveAttribute("aria-current", "true");
+  await expect(topology.getByLabel("Zoned lab map")).toHaveAttribute("data-workspace-open", "true");
 
   await expect(topology.getByLabel("Cisco switch node menu")).toHaveCount(0);
   const composer = page.locator("div[aria-label='Design mode rack composer']");
@@ -309,6 +312,8 @@ test("zoned map opens device workspace directly and keeps system scoped controls
 
   await page.locator("div[aria-label='Device workspace overlay']").getByRole("button", { name: "Close" }).click();
   await expect(page.locator("div[aria-label='Device workspace overlay']")).toHaveCount(0);
+  await expect(ciscoNode).not.toHaveAttribute("aria-current", "true");
+  await expect(topology.getByLabel("Zoned lab map")).not.toHaveAttribute("data-workspace-open", "true");
   await topology.getByRole("button", { name: "Open HPE iLO workspace" }).click();
   const iloOverlay = page.locator("div[aria-label='Device workspace overlay']");
   const iloWorkspace = iloOverlay.locator("section[aria-label='HPE iLO workspace']");

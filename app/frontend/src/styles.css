@@ -8303,8 +8303,13 @@ th.ui-compact-table-cell {
   inset: 70px 18px 18px;
   position: absolute;
   transform-origin: center center;
-  transition: transform 0.18s ease;
+  transition: filter 0.18s ease, opacity 0.18s ease, transform 0.18s ease;
   z-index: 2;
+}
+
+.lab-topology-canvas[data-workspace-open="true"] .topology-map-plane {
+  filter: saturate(0.8);
+  opacity: 0.74;
 }
 
 .lab-topology-canvas.single-server {
@@ -10668,6 +10673,12 @@ button.design-ilo-port:hover {
   box-shadow: 0 0 0 4px rgba(20, 184, 166, 0.16), 0 22px 44px rgba(24, 43, 70, 0.22);
 }
 
+.topology-node[aria-current="true"] {
+  border-color: var(--node-accent, #14b8a6);
+  box-shadow: 0 0 0 6px var(--node-accent-ring, rgba(20, 184, 166, 0.16)), 0 36px 82px rgba(14, 35, 58, 0.28);
+  transform: scale(1.04);
+}
+
 .topology-node:has(.topology-industry-symbol-switch) {
   --node-accent: #4f46e5;
   --node-accent-ring: rgba(79, 70, 229, 0.14);
@@ -10705,6 +10716,16 @@ button.design-ilo-port:hover {
   transition: transform 0.16s ease;
   width: 100%;
   z-index: 2;
+}
+
+.lab-topology-canvas[data-workspace-open="true"] .topology-node-wrap:not(.is-selected) {
+  opacity: 0.48;
+}
+
+.topology-node-wrap.is-selected {
+  opacity: 1;
+  transform: translateY(-3px);
+  z-index: 12;
 }
 
 .topology-node-wrap.is-menu-open {
@@ -10954,7 +10975,7 @@ button.design-ilo-port:hover {
 
 .topology-workspace-backdrop {
   backdrop-filter: blur(3px);
-  background: rgba(15, 23, 42, 0.52);
+  background: linear-gradient(90deg, rgba(15, 23, 42, 0.28) 0%, rgba(15, 23, 42, 0.44) 48%, rgba(15, 23, 42, 0.62) 100%);
   inset: 0;
   position: absolute;
 }
@@ -10970,7 +10991,7 @@ button.design-ilo-port:hover {
   position: absolute;
   right: 14px;
   top: 14px;
-  width: min(980px, 72vw);
+  width: min(900px, 52vw);
 }
 
 .topology-workspace-drawer-head {

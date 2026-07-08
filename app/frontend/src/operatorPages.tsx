@@ -4709,6 +4709,7 @@ function LabTopologyMap({
   const subnetState = topologySubnetState(address.subnet, health);
   const [systemMenuOpen, setSystemMenuOpen] = useState(false);
   const [workspaceTarget, setWorkspaceTarget] = useState<DesignPartId>("switch");
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [workspaceOpen, setWorkspaceOpen] = useState(false);
   const ciscoStatus = topologyStatusFromAccess(accessRows, "Cisco");
   const iloStatus = topologyStatusFromAccess(accessRows, "iLO");
@@ -4813,8 +4814,14 @@ function LabTopologyMap({
 
   function openNodeWorkspace(nodeId: string) {
     setWorkspaceTarget(topologyNodeFaceplatePart(nodeId, netappInScope));
+    setSelectedNodeId(nodeId);
     setSystemMenuOpen(false);
     setWorkspaceOpen(true);
+  }
+
+  function closeNodeWorkspace() {
+    setWorkspaceOpen(false);
+    setSelectedNodeId(null);
   }
 
   return (
@@ -4846,6 +4853,7 @@ function LabTopologyMap({
       <div
         className={`lab-topology-canvas zones-canvas ${netappInScope ? "has-netapp" : "single-server"}`}
         aria-label="Zoned lab map"
+        data-workspace-open={workspaceOpen ? "true" : undefined}
       >
         <div className="topology-map-plane">
           <div className="topology-zone topology-zone-management">
@@ -4857,6 +4865,7 @@ function LabTopologyMap({
                   netappInScope={netappInScope}
                   node={node}
                   onOpenWorkspace={openNodeWorkspace}
+                  selected={selectedNodeId === node.id}
                   storageProtocol={storageProtocol}
                   key={node.id}
                 />
@@ -4872,6 +4881,7 @@ function LabTopologyMap({
                   netappInScope={netappInScope}
                   node={node}
                   onOpenWorkspace={openNodeWorkspace}
+                  selected={selectedNodeId === node.id}
                   storageProtocol={storageProtocol}
                   key={node.id}
                 />
@@ -4920,11 +4930,11 @@ function LabTopologyMap({
 
       {workspaceOpen && (
         <div className="topology-workspace-overlay" aria-label="Device workspace overlay">
-          <div className="topology-workspace-backdrop" onClick={() => setWorkspaceOpen(false)} />
+          <div className="topology-workspace-backdrop" onClick={closeNodeWorkspace} />
           <aside className="topology-workspace-drawer" aria-label="Device workspace drawer">
             <div className="topology-workspace-drawer-head">
               <span>Device workspace</span>
-              <button className="topology-workspace-close" type="button" onClick={() => setWorkspaceOpen(false)}>Close</button>
+              <button className="topology-workspace-close" type="button" onClick={closeNodeWorkspace}>Close</button>
             </div>
             <LabDesignComposer
               activeProfile={activeProfile}
@@ -5030,18 +5040,21 @@ function TopologyMapNodeCard({
   netappInScope,
   node,
   onOpenWorkspace,
+  selected,
   storageProtocol
 }: {
   address: LabAddressPlan;
   netappInScope: boolean;
   node: TopologyNode;
   onOpenWorkspace: (nodeId: string) => void;
+  selected: boolean;
   storageProtocol: string;
 }) {
   const stableNodeLabel = topologyStableNodeLabel(node.id);
   return (
-    <div className={`topology-node-wrap topology-node-zone-${node.zone}`}>
+    <div className={`topology-node-wrap topology-node-zone-${node.zone} ${selected ? "is-selected" : ""}`}>
       <button
+        aria-current={selected ? "true" : undefined}
         aria-label={`Open ${stableNodeLabel} workspace`}
         className={`topology-node topology-node-${node.tone}`}
         onClick={() => onOpenWorkspace(node.id)}

@@ -1098,3 +1098,27 @@ Verification:
 - npm run test:component: pass, 1 component test file
 
 Safety: no guarded/destructive workflows changed. RAID/factory/rebuild gates untouched.
+
+---
+
+## 2026-07-07 19:55 ET - CODEX
+
+Interaction polish slice completed after the control-surface cleanup.
+
+Changed:
+
+- Opening a device workspace now marks the clicked device as selected on the map with real `aria-current` state.
+- The canvas exposes `data-workspace-open` while the drawer is active, letting the map recede and the selected device stay visually lifted.
+- Non-selected nodes dim while the workspace is open, reinforcing "this device is the product" without adding new buttons.
+- Workspace drawer is narrower on desktop (`min(900px, 52vw)`) so the map remains visible as context; mobile keeps the existing full-screen drawer override.
+- Backdrop is now a directional gradient, lighter over the map and darker behind the drawer.
+- Playwright now asserts selected-node state appears on open and clears on close.
+
+Verification:
+
+- npm run build: pass
+- focused topology Playwright: pass, 3/3
+- npm run test:e2e: pass, 39/39
+- npm run test:component: pass
+
+Safety: frontend-only polish. No guarded/destructive workflows changed. RAID/factory/rebuild gates untouched.
