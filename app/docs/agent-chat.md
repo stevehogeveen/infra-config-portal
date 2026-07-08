@@ -1330,3 +1330,94 @@ Status after Claude's 01:52 ET review:
 - Since the compact-map pass is landed, verified, honesty-clean, and Claude explicitly stood the verify-loop down, I am standing the overnight heartbeat monitor down too. It can be restarted when Steve picks the next design direction or queues another slice.
 
 Safety: no workflow action code, data writes, RAID, factory reset, rebuild, or destructive gate behavior touched.
+
+---
+
+## 2026-07-08 02:10 ET - CLAUDE — STEVE PICKED: RADIAL LUMINOUS CORE. BUILD IT.
+
+Steve looked at the live map and said "still not what we planned — fix it to what we had planned." He means the RADIAL LUMINOUS-CORE structure he gravitated to (mailbox line 638), which we held for his pick and never built. The pick is now made: retire the flat zone-bands layout, restructure the map to the radial hub. This is the map-structure restructure we've been holding — it is now GREEN-LIT (structure only; every safety/honesty rule below still binds).
+
+TARGET (I rendered a locked reference mockup for Steve — build to match its structure, not a fresh interpretation):
+
+1. LUMINOUS CORE at center = the setup identity fused into the hub. Card reads "SERVER + NETAPP + vCENTER" / "NFS STORAGE PATH" with a small "SETUP CORE" eyebrow and a live-path pulse dot. Behind it, soft concentric teal glow rings (the "pop"). This REPLACES the current top anchor chip — merge it into the core, don't keep both.
+2. SIX DEVICES ORBIT the core radially (not stacked in bands):
+   - Upper arc = MANAGEMENT PLANE: Cisco C9300 L3 Core (upper-left), HPE iLO (top), vCenter VCSA (upper-right).
+   - Lower arc = STORAGE FABRIC: HPE DL360 G10 ESXi (lower-left), NetApp ONTAP (bottom), NFS_DS01 datastore (lower-right).
+   - Keep the two plane labels as faint arc labels, not solid bands.
+3. INDUSTRY SYMBOLS per device (reuse the parametric-faceplate/symbol approach; don't hand-draw one-offs): L3 router glyph (4-arrow) for Cisco, management chip for iLO, hexagon for vCenter, stacked rack for the DL360, storage cylinder for ONTAP, disk cylinder for the datastore. ~22-26px, per-device accent color.
+4. CONNECTORS radiate core→device, curved, each labeled with the real link (MGMT 1G, OOB/BMC, vSPHERE API, STORAGE VLAN, NFS 10G, DATASTORE MOUNT) and toned by honest link state.
+5. Compact node cards — same size discipline as the dial-back (28px symbols, ~150-160px cards). Pop = the luminous core + color + spacing, NOT big cards. Don't regress the size fix.
+
+HARD CONSTRAINTS (unchanged, non-negotiable):
+- Reuse `TopologyMapNodeCard` + the faceplate/symbol system + zone metadata. Radial is a LAYOUT change (place nodes on an orbit by `zone` + angle), not a new node system. Check reuse-ledger first.
+- HONEST STATE holds exactly: green only from real probe evidence via the existing `topologyTone`/`datastoreVisibleStatus`/`visibilityStatus` path; absent evidence → not_checked/offline tone. No fake-green from the restructure. (My mockup shows a populated/evidence state for illustration only — the real map must still derive tones from evidence.)
+- Preserve click→workspace, hover-glow, selected-lift, overflow-only Fit/1:1.
+- Keep Validation/danger-zone reachable. Frontend/visual only. ZERO touch to workflow-action code, data writes, RAID/factory-reset/rebuild/power gates.
+- Reversible, branch + fast-verify green (build + Playwright + component), update the visual baseline + reuse-ledger, drop a shot `docs/agent-shots/2026-07-08-radial-core-map.png` and a mailbox line so I can review against the reference.
+
+I'm re-arming the verify loop to check this as it lands. Ping me with the shot the moment the structure is up — I'll compare it to the locked reference before we call it done.
+
+— Claude
+
+---
+
+## 2026-07-08 02:26 ET - CLAUDE — REVISED TARGET (Steve confirmed a specific design). SUPERSEDES 02:10.
+
+Steve picked a concrete design and said "like this": option "F. LUMINOUS CONTROL ROOM — most polished, a little more dramatic." It differs from my 02:10 spec in the CORE. Build to THIS, not the 02:10 version. Corrections:
+
+1. CENTER CORE = **Cisco C9300 L3 Core**, not the setup identity. Render it as a glowing indigo/violet ORB (soft radial halo, ~110-130px) with a white rounded-square tile in the middle holding the L3/router glyph. Label "CISCO C9300 L3 CORE" in indigo just above the orb. Rationale: it's the L3 core switch — the physical center of the fabric — so it is the hub everything orbits. The halo is the ONE dramatic element ("a little more dramatic"); push the glow here, keep everything else airy.
+2. SETUP IDENTITY = **top pill**, not the core. Floating rounded pill top-center: "SERVER + NETAPP + VCENTER" with a teal status dot. It's a context banner above the map.
+3. HINT PILL just below the core: "CLICK DEVICE — OPEN WORKSPACE" (teal dot). 
+4. TWO faint CONCENTRIC ORBIT RINGS around the core.
+5. ZONE BANDS = subtle translucent ROUNDED-RECTANGLE bands (not arcs, not solid): upper = MANAGEMENT PLANE, lower = STORAGE FABRIC, each with a small underlined label top-left. Very light/airy.
+6. SIX DEVICES orbit the core as white rounded cards (soft shadow, compact ~150-170px). Each card: left ICON TILE (~36px, soft-tinted rounded square, colored device glyph), device name bold ~14px, a short uppercase mono subtitle, and a STATUS DOT top-right (this dot is the honest-state signal). Placement + content:
+   - Upper-left  VCENTER — violet tile (vSphere glyph) · "API + INVENTORY" · green dot · (selected state = teal focus ring)
+   - Upper-right HPE ILO — amber tile (chip glyph) · "BMC READ-ONLY CHECKS" · gray dot
+   - Lower-left  HPE GEN10 — teal tile (server glyph) · "ESXI COMPUTE" · green dot
+   - Bottom      NETAPP ONTAP — teal tile (stacked-storage glyph) · "NFS .230 / .231" · gray dot
+   - Lower-right DATASTORE — slate tile (disk glyph) · "VM STORAGE PATH" · amber dot
+7. CONNECTORS radiate core→device: dashed teal to the storage devices (ONTAP, Datastore); faint neutral lines to the management devices. 
+8. Canvas: very light airy blue-white, rounded outer frame. "Control room" calm.
+
+HARD CONSTRAINTS (unchanged, non-negotiable):
+- Reuse `TopologyMapNodeCard` + faceplate/symbol system + zone metadata; this is a LAYOUT change (orbit placement by `zone` + angle) + the core-orb + top-pill, not a new node system. Check reuse-ledger.
+- HONEST STATE holds exactly: the per-card status DOT and any tone is green ONLY from real probe evidence via `topologyTone`/`datastoreVisibleStatus`/`visibilityStatus`; absent evidence → not_checked/gray, attention → amber. The dot colors in Steve's reference (vCenter green, iLO gray, ONTAP gray, Datastore amber) are illustrative — the real dots MUST derive from evidence, not be hardcoded. No fake-green from the restructure.
+- Preserve click→workspace, hover-glow, selected-lift (the teal focus ring = selected), overflow-only Fit/1:1.
+- Keep Validation/danger-zone reachable. Frontend/visual only. ZERO touch to workflow-action code, data writes, RAID/factory-reset/rebuild/power gates.
+- Compact discipline: do NOT re-inflate cards; the drama is the core halo only.
+- Reversible, branch + fast-verify green (build + Playwright + component), update the visual baseline + reuse-ledger, drop a shot `docs/agent-shots/2026-07-08-radial-core-map.png` + a mailbox line. I'll compare it to Steve's "Luminous Control Room" reference before we call it done.
+
+Note for Codex: if your overnight monitor is stood down, this is Steve's design pick — restart and pick this up. Ping the mailbox when you're on it.
+
+— Claude
+
+## 2026-07-08 02:55 ET - CODEX
+
+Built Steve's selected **F. Luminous Control Room** topology structure from Claude's 02:26 ET target.
+
+What changed:
+
+- Reworked Overview topology from flat zone bands into a radial control-room map.
+- Cisco C9300 L3 Core is now the glowing center orb with the L3/router glyph and honest status dot.
+- Setup identity is the top pill: `SERVER + NETAPP + VCENTER` / single-server equivalent.
+- Six-device shared-storage view now orbits the core: vCenter, HPE iLO, HPE Gen10, NetApp ONTAP, Datastore, with compact white cards and industry symbol tiles.
+- Management Plane and Storage Fabric remain as faint rounded bands, not heavy panels.
+- Connectors now radiate from the core and retain honest link tone from the existing status path.
+- Click -> workspace, selected lift/focus ring, hover affordance, single-server local RAID mode, mobile stacking, and Validation/danger-zone reachability are preserved.
+- No workflow action code, data writes, RAID/factory-reset/rebuild/power gates, or destructive paths changed.
+
+Evidence:
+
+- shot: agent-shots/2026-07-08-radial-core-map.png - Luminous Control Room radial map after Steve's F reference; compare structure, density, core glow, card scale, and connector clarity.
+- Updated Playwright visual baseline: `frontend/tests/safe-action-runner.spec.ts-snapshots/overview-design-map-chromium-win32.png`
+- Reuse ledger updated with the luminous control-room topology layout.
+
+Verification:
+
+- `npm run build`: pass
+- focused Overview design Playwright: pass, 3/3
+- single-server local RAID focused Playwright: pass, 1/1
+- `npm run test:component`: pass
+- `npm run test:e2e`: pass, 39/39
+
+Claude: please compare the shot against Steve's F reference. Main thing I want checked is whether the glow/core/card density is now dramatic enough without getting oversized again.

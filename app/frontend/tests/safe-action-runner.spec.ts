@@ -258,9 +258,9 @@ test("overview shows active setup, lab values, and access without dashboard clut
   await expect(topology.getByLabel("Deployment mode")).toContainText("Server + NetApp + vCenter");
   await expect(topology.getByLabel("Zoned lab map")).toContainText("Management");
   await expect(topology.getByLabel("Zoned lab map")).toContainText("Storage fabric");
-  await expect(topology.getByLabel("Zoned lab map")).toContainText("vCenter VCSA");
-  await expect(topology.getByLabel("Zoned lab map")).toContainText("Cisco switch");
-  await expect(topology.getByLabel("Zoned lab map")).toContainText("HPE DL360 Gen10");
+  await expect(topology.getByLabel("Zoned lab map")).toContainText("vCenter");
+  await expect(topology.getByLabel("Zoned lab map")).toContainText("Cisco C9300 L3 Core");
+  await expect(topology.getByLabel("Zoned lab map")).toContainText("HPE Gen10");
   await expect(topology.getByLabel("Zoned lab map")).toContainText("NetApp ONTAP");
   await expect(topology.getByLabel("Current lab links")).toContainText(/NFS 10G path|iSCSI 10G planned/);
   await expect(topology).toContainText("checks ready");
@@ -348,11 +348,11 @@ test("zoned map makes single-server local RAID mode unmistakable", async ({ page
   await expect(topology.getByLabel("Deployment mode")).toContainText("Single server - local RAID");
   await expect(map).toContainText("Local RAID");
   await expect(map.getByLabel("Local RAID mode summary")).toContainText("Server-local RAID is the storage fabric");
-  await expect(map).toContainText("HPE DL360 Gen10");
+  await expect(map).toContainText("HPE Gen10");
   await expect(map).toContainText("HPE iLO");
-  await expect(map).toContainText("Cisco switch");
+  await expect(map).toContainText("Cisco C9300 L3 Core");
   await expect(map).not.toContainText("NetApp ONTAP");
-  await expect(map).not.toContainText("vCenter VCSA");
+  await expect(map.getByRole("button", { name: "Open vCenter VCSA workspace" })).toHaveCount(0);
   await expect(map).not.toContainText("Local ESXi datastore");
 });
 
@@ -383,9 +383,9 @@ test("overview design mode keeps the surface map-only until a node opens the wor
   await expect(page.locator("section[aria-label='Design topology blueprint']")).toHaveCount(0);
   await expect(topology.getByLabel("Map viewport controls")).toHaveCount(0);
   await expect(topology.getByRole("button", { name: "Fit map to viewport" })).toHaveCount(0);
-  await expect(topology.getByLabel("Management zone devices")).toContainText("Cisco switch");
+  await expect(topology.getByLabel("Zoned lab map")).toContainText("Cisco C9300 L3 Core");
   await expect(topology.getByLabel("Management zone devices")).toContainText("HPE iLO");
-  await expect(topology.getByLabel("Storage fabric zone devices")).toContainText("HPE DL360 Gen10");
+  await expect(topology.getByLabel("Storage fabric zone devices")).toContainText("HPE Gen10");
   await expect(topology.getByLabel("Storage fabric zone devices")).toContainText("NetApp ONTAP");
 
   await topology.getByRole("button", { name: "Open Cisco switch workspace" }).click();
@@ -445,7 +445,7 @@ test("overview design mode map surface stays stable and scalable", async ({ page
   const map = page.locator("div[aria-label='Zoned lab map']");
   await expect(map).toBeVisible();
   await expect(page.locator("section[aria-label='Design topology blueprint']")).toHaveCount(0);
-  await expect(map.getByLabel("Management zone devices")).toContainText("Cisco switch");
+  await expect(map).toContainText("Cisco C9300 L3 Core");
   await expect(map.getByLabel("Management zone devices")).toContainText("HPE iLO");
   await expect(map.getByLabel("Storage fabric zone devices")).toContainText("NetApp ONTAP");
   await expect(map).toHaveScreenshot("overview-design-map.png", {
@@ -460,9 +460,9 @@ test("overview mobile topology keeps zoned device cards visible", async ({ page 
 
   const map = page.locator("div[aria-label='Zoned lab map']");
   await expect(map).toBeVisible();
-  await expect(map.getByLabel("Management zone devices")).toContainText("Cisco switch");
+  await expect(map).toContainText("Cisco C9300 L3 Core");
   await expect(map.getByLabel("Management zone devices")).toContainText("HPE iLO");
-  await expect(map.getByLabel("Storage fabric zone devices")).toContainText("HPE DL360 Gen10");
+  await expect(map.getByLabel("Storage fabric zone devices")).toContainText("HPE Gen10");
   await expect(map.getByLabel("Storage fabric zone devices")).toContainText("NetApp ONTAP");
 });
 

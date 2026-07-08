@@ -4729,35 +4729,35 @@ function LabTopologyMap({
   const serverModelLabel = topologyServerModelLabel(activeProfile?.devices?.server_model);
   const nodes: TopologyNode[] = [
     {
-      details: displayAddress(address.cisco_management),
+      details: "L3 core switch",
       icon: topologyIndustryIcon("switch"),
       id: "cisco",
       meta: firmwareBehind ? "firmware behind" : undefined,
       page: "/network",
       status: ciscoStatus,
-      title: "Cisco switch - C9300 L3 core",
+      title: "Cisco C9300 L3 Core",
       tone: topologyTone(ciscoStatus),
       zone: "management"
     },
     {
-      details: `BMC ${displayAddress(address.ilo)}`,
+      details: "BMC read-only checks",
       icon: topologyIndustryIcon("ilo"),
       id: "ilo",
-      meta: "out-of-band management",
+      meta: displayAddress(address.ilo),
       page: "/server",
       status: iloStatus,
-      title: "HPE iLO - esx-host-01",
+      title: "HPE iLO",
       tone: topologyTone(iloStatus),
       zone: "management"
     },
     {
-      details: `ESXi ${displayAddress(address.esxi_management)} - host compute`,
+      details: netappInScope ? "ESXi compute" : "local RAID compute",
       icon: topologyIndustryIcon("server"),
       id: "server",
-      meta: netappInScope ? "shared storage path" : "local storage path",
+      meta: serverModelLabel,
       page: "/server",
       status: serverStatus,
-      title: `HPE ${serverModelLabel} - esx-host-01`,
+      title: `HPE ${serverModelLabel.replace(/^DL360\s+/i, "")}`,
       tone: topologyTone(serverStatus),
       zone: "storage"
     }
@@ -4766,10 +4766,10 @@ function LabTopologyMap({
   if (netappInScope) {
     nodes.push(
       {
-        details: `cluster ${displayAddress(address.netapp_cluster_mgmt)}`,
+        details: topologyNetappOrbitDetails(address, storageProtocol),
         icon: topologyIndustryIcon("netapp"),
         id: "netapp",
-        meta: topologyNetappMeta(address, storageProtocol),
+        meta: displayAddress(address.netapp_cluster_mgmt),
         page: "/storage",
         status: netappStatus,
         title: "NetApp ONTAP",
@@ -4777,13 +4777,13 @@ function LabTopologyMap({
         zone: "storage"
       },
       {
-        details: `${storageProtocol.toUpperCase()} datastore - ${displayStatus(datastoreStatus).toLowerCase()}`,
+        details: "VM storage path",
         icon: topologyIndustryIcon("datastore"),
         id: "datastore",
         meta: datastoreVisibleStatus(vcenterNetapp) === "ready" ? "mounted" : "not mounted",
         page: "/storage",
         status: datastoreStatus,
-        title: datastoreLabel,
+        title: "Datastore",
         tone: topologyTone(datastoreStatus),
         zone: "storage"
       }
@@ -4792,20 +4792,23 @@ function LabTopologyMap({
 
   if (vmInScope) {
     nodes.push({
-      details: vcenterInScope ? "vCenter inventory" : "direct ESXi inventory",
+      details: vcenterInScope ? "API + inventory" : "direct ESXi inventory",
       icon: topologyIndustryIcon(vcenterInScope ? "vcenter" : "hypervisor"),
       id: "vcenter",
       meta: topologyVmMeta(vcenterNetapp, vcenterInScope),
       page: "/virtualization",
       status: vmStatus,
       tag: topologyVmTag(vcenterNetapp, vcenterInScope),
-      title: vcenterInScope ? "vCenter VCSA" : vmName,
+      title: vcenterInScope ? "vCenter" : vmName,
       tone: topologyTone(vmStatus, "created"),
       zone: "management"
     });
   }
 
   const links = topologyLinks({ datastoreStatus, iloStatus, netappInScope, netappStatus, serverStatus, storageProtocol, vmInScope, vmStatus });
+  const ciscoNode = nodes.find((node) => node.id === "cisco");
+  const managementOrbitNodes = nodes.filter((node) => node.zone === "management" && node.id !== "cisco");
+  const storageOrbitNodes = nodes.filter((node) => node.zone === "storage");
   const readyChecks = [
     ...nodes.map((node) => node.tone),
     ...links.map((link) => link.status)
@@ -4880,28 +4883,25 @@ function LabTopologyMap({
         ref={mapCanvasRef}
       >
         <div className="topology-map-plane" ref={mapPlaneRef}>
-          <div className="topology-zone topology-zone-management">
+          <div className="topology-zone topology-zone-management topology-zone-band" aria-hidden="true">
             <span>Management plane</span>
-            <div className="topology-zone-node-flow" aria-label="Management zone devices">
-              {nodes.filter((node) => node.zone === "management").map((node) => (
-                <TopologyMapNodeCard
-                  address={address}
-                  netappInScope={netappInScope}
-                  node={node}
-                  onOpenWorkspace={openNodeWorkspace}
-                  selected={selectedNodeId === node.id}
-                  storageProtocol={storageProtocol}
-                  key={node.id}
-                />
-              ))}
-            </div>
           </div>
-          <div className="topology-zone topology-zone-storage">
+          <div className="topology-zone topology-zone-storage topology-zone-band" aria-hidden="true">
             <span>{netappInScope ? "Storage fabric" : "Local RAID fabric"}</span>
-            <div className="topology-zone-node-flow" aria-label={netappInScope ? "Storage fabric zone devices" : "Local RAID zone devices"}>
-              {nodes.filter((node) => node.zone === "storage").map((node) => (
+          </div>
+          <div className="topology-orbit-rings" aria-hidden="true" />
+          {ciscoNode && (
+            <TopologyCoreButton
+              node={ciscoNode}
+              onOpenWorkspace={openNodeWorkspace}
+              selected={selectedNodeId === ciscoNode.id}
+            />
+          )}
+          <div className="topology-zone-node-flow topology-orbit-node-flow topology-management-orbit" aria-label="Management zone devices">
+            {managementOrbitNodes.map((node) => (
                 <TopologyMapNodeCard
                   address={address}
+                  className={`topology-orbit-node topology-orbit-${node.id}`}
                   netappInScope={netappInScope}
                   node={node}
                   onOpenWorkspace={openNodeWorkspace}
@@ -4910,7 +4910,20 @@ function LabTopologyMap({
                   key={node.id}
                 />
               ))}
-            </div>
+          </div>
+          <div className="topology-zone-node-flow topology-orbit-node-flow topology-storage-orbit" aria-label={netappInScope ? "Storage fabric zone devices" : "Local RAID zone devices"}>
+            {storageOrbitNodes.map((node) => (
+                <TopologyMapNodeCard
+                  address={address}
+                  className={`topology-orbit-node topology-orbit-${node.id}`}
+                  netappInScope={netappInScope}
+                  node={node}
+                  onOpenWorkspace={openNodeWorkspace}
+                  selected={selectedNodeId === node.id}
+                  storageProtocol={storageProtocol}
+                  key={node.id}
+                />
+              ))}
           </div>
         </div>
           {mapOverflowing && (
@@ -4935,6 +4948,10 @@ function LabTopologyMap({
             <strong>{netappInScope ? "Server + NetApp + vCenter" : "Single server - local RAID"}</strong>
             <span>{netappInScope ? `${storageProtocol.toUpperCase()} storage path` : "NetApp and vCenter out of scope"}</span>
           </button>
+          <div className="topology-core-hint" aria-hidden="true">
+            <span />
+            Click device - open workspace
+          </div>
           {systemMenuOpen && (
             <div className="topology-system-menu topology-map-menu" aria-label="System scope menu">
               <strong>System scope</strong>
@@ -5071,6 +5088,7 @@ function topologyIndustryIcon(kind: "datastore" | "hypervisor" | "ilo" | "netapp
 
 function TopologyMapNodeCard({
   address,
+  className = "",
   netappInScope,
   node,
   onOpenWorkspace,
@@ -5078,6 +5096,7 @@ function TopologyMapNodeCard({
   storageProtocol
 }: {
   address: LabAddressPlan;
+  className?: string;
   netappInScope: boolean;
   node: TopologyNode;
   onOpenWorkspace: (nodeId: string) => void;
@@ -5086,7 +5105,7 @@ function TopologyMapNodeCard({
 }) {
   const stableNodeLabel = topologyStableNodeLabel(node.id);
   return (
-    <div className={`topology-node-wrap topology-node-zone-${node.zone} ${selected ? "is-selected" : ""}`}>
+    <div className={`topology-node-wrap topology-node-zone-${node.zone} ${className} ${selected ? "is-selected" : ""}`}>
       <button
         aria-current={selected ? "true" : undefined}
         aria-label={`Open ${stableNodeLabel} workspace`}
@@ -5108,6 +5127,35 @@ function TopologyMapNodeCard({
           {node.meta && <span className="topology-node-meta">{node.meta}</span>}
           {node.tag && <span className="topology-node-tag">{node.tag}</span>}
         </span>
+      </button>
+    </div>
+  );
+}
+
+function TopologyCoreButton({
+  node,
+  onOpenWorkspace,
+  selected
+}: {
+  node: TopologyNode;
+  onOpenWorkspace: (nodeId: string) => void;
+  selected: boolean;
+}) {
+  const stableNodeLabel = topologyStableNodeLabel(node.id);
+  return (
+    <div className={`topology-core-wrap ${selected ? "is-selected" : ""}`}>
+      <button
+        aria-current={selected ? "true" : undefined}
+        aria-label={`Open ${stableNodeLabel} workspace`}
+        className={`topology-core-button topology-node-${node.tone}`}
+        onClick={() => onOpenWorkspace(node.id)}
+        type="button"
+      >
+        <span className="topology-core-label">{node.title}</span>
+        <span className="topology-core-orb" aria-hidden="true">
+          <span className="topology-core-tile">{node.icon}</span>
+        </span>
+        <span className="topology-core-status" aria-hidden="true" />
       </button>
     </div>
   );
@@ -6573,21 +6621,21 @@ function topologyLinks({
       from: "cisco",
       id: "link-cisco-server",
       label: "mgmt 1G",
-      labelX: 320,
-      labelY: 292,
-      path: "M 650 155 C 595 210 470 245 300 320",
+      labelX: 330,
+      labelY: 392,
+      path: "M 500 322 C 420 358 332 396 220 448",
       status: topologyLinkStatus(serverStatus),
       to: "server"
     },
     {
-      from: "ilo",
-      id: "link-ilo-server",
-      label: "oob mgmt",
-      labelX: 340,
-      labelY: 220,
-      path: "M 390 155 C 360 205 330 260 300 320",
+      from: "cisco",
+      id: "link-cisco-ilo",
+      label: "OOB / BMC",
+      labelX: 635,
+      labelY: 218,
+      path: "M 512 286 C 566 232 628 178 725 138",
       status: topologyLinkStatus(iloStatus),
-      to: "server"
+      to: "ilo"
     }
   ];
   if (vmInScope) {
@@ -6595,9 +6643,9 @@ function topologyLinks({
       from: "vcenter",
       id: "link-vcenter-cisco",
       label: "vSphere API",
-      labelX: 455,
-      labelY: 105,
-      path: "M 290 135 C 390 92 540 92 650 135",
+      labelX: 360,
+      labelY: 218,
+      path: "M 488 286 C 430 230 365 174 275 138",
       status: topologyLinkStatus(vmStatus, "created"),
       to: "cisco"
     });
@@ -6608,40 +6656,20 @@ function topologyLinks({
         from: "cisco",
         id: "link-cisco-netapp",
         label: "storage VLAN",
-        labelX: 690,
-        labelY: 276,
-        path: "M 650 180 C 705 245 650 350 535 420",
+        labelX: 560,
+        labelY: 508,
+        path: "M 500 365 C 500 410 500 450 500 500",
         status: topologyLinkStatus(netappStatus),
         to: "netapp"
       },
       {
-        from: "server",
-        id: "link-server-netapp",
+        from: "cisco",
+        id: "link-cisco-storage-path",
         label: storageProtocol === "iscsi" ? "iSCSI 10G planned" : "NFS 10G path",
-        labelX: 535,
-        labelY: 390,
-        path: "M 290 505 C 365 455 455 455 535 505",
+        labelX: 670,
+        labelY: 384,
+        path: "M 524 325 C 610 362 695 402 785 448",
         status: topologyLinkStatus(datastoreStatus, "warning"),
-        to: "netapp"
-      },
-      {
-        from: "server",
-        id: "link-server-datastore",
-        label: storageProtocol === "iscsi" ? "VMFS planned" : "datastore mount",
-        labelX: 485,
-        labelY: 590,
-        path: "M 300 555 C 430 625 650 625 790 555",
-        status: topologyLinkStatus(datastoreStatus),
-        to: "datastore"
-      },
-      {
-        from: "netapp",
-        id: "link-netapp-datastore",
-        label: "export / LIFs",
-        labelX: 675,
-        labelY: 545,
-        path: "M 625 515 C 675 545 735 545 790 515",
-        status: topologyLinkStatus(datastoreStatus),
         to: "datastore"
       }
     );
@@ -8777,6 +8805,15 @@ function topologyNetappMeta(address: LabAddressPlan, storageProtocol: string): s
   const nfs = address.netapp_nfs_lifs?.length ? `nfs ${address.netapp_nfs_lifs.map((item) => `.${item.split(".").pop()}`).join(" / ")}` : "";
   const iscsi = address.netapp_iscsi_lifs?.length ? `iscsi x${address.netapp_iscsi_lifs.length}` : "";
   return [nfs, iscsi, storageProtocol === "iscsi" ? "block ready path" : ""].filter(Boolean).join(" - ") || "storage targets planned";
+}
+
+function topologyNetappOrbitDetails(address: LabAddressPlan, storageProtocol: string): string {
+  if (storageProtocol === "iscsi") {
+    return address.netapp_iscsi_lifs?.length ? `iSCSI x${address.netapp_iscsi_lifs.length}` : "iSCSI targets";
+  }
+  return address.netapp_nfs_lifs?.length
+    ? `NFS ${address.netapp_nfs_lifs.map((item) => `.${item.split(".").pop()}`).join(" / ")}`
+    : "NFS LIFs";
 }
 
 function topologyVmName(probe: ProviderProbeResult | null, vcenterInScope: boolean): string {
