@@ -4708,6 +4708,10 @@ function LabTopologyMap({
   const [workspaceTarget, setWorkspaceTarget] = useState<DesignPartId>("switch");
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [workspaceOpen, setWorkspaceOpen] = useState(false);
+  const [mapFitEnabled, setMapFitEnabled] = useState(false);
+  const [mapOverflowing, setMapOverflowing] = useState(false);
+  const mapCanvasRef = useRef<HTMLDivElement | null>(null);
+  const mapPlaneRef = useRef<HTMLDivElement | null>(null);
   const ciscoStatus = topologyStatusFromAccess(accessRows, "Cisco");
   const iloStatus = topologyStatusFromAccess(accessRows, "iLO");
   const esxiStatus = topologyStatusFromAccess(accessRows, "ESXi");
@@ -4809,6 +4813,28 @@ function LabTopologyMap({
   const checkCount = nodes.length + links.length;
   const nextAction = topologyNextAction({ currentView, datastoreStatus, netappInScope, netappStatus, serverStatus, storageProtocol });
 
+  useEffect(() => {
+    const canvas = mapCanvasRef.current;
+    const plane = mapPlaneRef.current;
+    if (!canvas || !plane) return;
+    const canvasEl = canvas;
+    const planeEl = plane;
+
+    function measureOverflow() {
+      const canvasBox = canvasEl.getBoundingClientRect();
+      const planeBox = planeEl.getBoundingClientRect();
+      const overflowing = planeBox.width > canvasBox.width - 36 || planeBox.height > canvasBox.height - 88;
+      setMapOverflowing(overflowing);
+      if (!overflowing) setMapFitEnabled(false);
+    }
+
+    measureOverflow();
+    const observer = new ResizeObserver(measureOverflow);
+    observer.observe(canvasEl);
+    observer.observe(planeEl);
+    return () => observer.disconnect();
+  }, [links.length, netappInScope, nodes.length, workspaceOpen]);
+
   function openNodeWorkspace(nodeId: string) {
     setWorkspaceTarget(topologyNodeFaceplatePart(nodeId, netappInScope));
     setSelectedNodeId(nodeId);
@@ -4848,11 +4874,12 @@ function LabTopologyMap({
       )}
 
       <div
-        className={`lab-topology-canvas zones-canvas ${netappInScope ? "has-netapp" : "single-server"}`}
+        className={`lab-topology-canvas zones-canvas ${netappInScope ? "has-netapp" : "single-server"} ${mapFitEnabled ? "is-fit" : ""}`}
         aria-label="Zoned lab map"
         data-workspace-open={workspaceOpen ? "true" : undefined}
+        ref={mapCanvasRef}
       >
-        <div className="topology-map-plane">
+        <div className="topology-map-plane" ref={mapPlaneRef}>
           <div className="topology-zone topology-zone-management">
             <span>Management plane</span>
             <div className="topology-zone-node-flow" aria-label="Management zone devices">
@@ -4886,6 +4913,16 @@ function LabTopologyMap({
             </div>
           </div>
         </div>
+          {mapOverflowing && (
+            <button
+              className="topology-map-fit-button"
+              onClick={() => setMapFitEnabled((enabled) => !enabled)}
+              type="button"
+              aria-label={mapFitEnabled ? "Reset map zoom" : "Fit map to viewport"}
+            >
+              {mapFitEnabled ? "1:1" : "Fit"}
+            </button>
+          )}
           <button
             className="topology-system-chip"
             aria-expanded={systemMenuOpen}
