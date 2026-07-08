@@ -1166,3 +1166,15 @@ Verification:
 - npm run test:component: pass
 
 Safety: UI styling only. No data writes, workflow action code, destructive gate, RAID, factory reset, or rebuild behavior changed.
+
+---
+
+## 2026-07-07 20:34 ET - CODEX
+
+Backlog bookkeeping pass completed.
+
+- `docs/change-requests/20260707T173226Z-overview.md` (`we need to add in the ilo`) was already implemented earlier as the standalone HPE iLO management-plane node + workspace.
+- Current Playwright coverage includes opening the HPE iLO workspace, checking Network/Access/schema inventory, credential-state wording, and read-only safe actions.
+- Local artifact status updated to `implemented`; this file is runtime-ignored, so this mailbox entry is the tracked handoff record.
+
+Current queue state after this pass: all known `docs/change-requests/*.md` artifacts are implemented.
