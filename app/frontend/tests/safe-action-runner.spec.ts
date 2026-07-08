@@ -255,7 +255,7 @@ test("overview shows active setup, lab values, and access without dashboard clut
 
   const topology = page.locator("section[aria-label='Living lab topology']");
   await expect(topology.getByLabel("Zoned lab map")).toBeVisible();
-  await expect(topology.getByLabel("Deployment mode")).toContainText("Server + NetApp + vCenter");
+  await expect(topology.getByLabel("System setup picker").getByRole("button", { name: "Open system setup picker" })).toContainText("SRV+NETAPP+VCENTER");
   await expect(topology.getByLabel("Zoned lab map")).toContainText("Management");
   await expect(topology.getByLabel("Zoned lab map")).toContainText("Storage fabric");
   await expect(topology.getByLabel("Zoned lab map")).toContainText("vCenter");
@@ -331,12 +331,13 @@ test("zoned map opens device workspace directly and keeps system scoped controls
   await expect(iloOverlay.locator("section[aria-label='HPE iLO safe checks and next actions']")).not.toContainText("Reset Server Power");
   await iloOverlay.getByRole("button", { name: "Close" }).click();
   await expect(page.locator("div[aria-label='Device workspace overlay']")).toHaveCount(0);
-  await topology.getByLabel("Deployment mode").click();
-  const systemMenu = topology.getByLabel("System scope menu");
-  await expect(systemMenu).toBeVisible();
-  await expect(systemMenu).toContainText("Site subnet");
-  await expect(systemMenu).toContainText("Switch profile");
-  await expect(systemMenu).toContainText("Validation");
+  await topology.getByLabel("System setup picker").getByRole("button", { name: "Open system setup picker" }).click();
+  const systemPlan = topology.getByLabel("Setup and IP plan");
+  await expect(systemPlan).toBeVisible();
+  await expect(systemPlan).toContainText("Setup & IP plan");
+  await expect(systemPlan.getByRole("button", { name: "Switch" })).toBeVisible();
+  await expect(systemPlan.getByRole("button", { name: "New" })).toBeVisible();
+  await expect(systemPlan).toContainText("does not probe or reconfigure any device");
 });
 
 test("zoned map makes single-server local RAID mode unmistakable", async ({ page }) => {
@@ -345,7 +346,7 @@ test("zoned map makes single-server local RAID mode unmistakable", async ({ page
 
   const topology = page.locator("section[aria-label='Living lab topology']");
   const map = topology.getByLabel("Zoned lab map");
-  await expect(topology.getByLabel("Deployment mode")).toContainText("Single server - local RAID");
+  await expect(topology.getByLabel("System setup picker").getByRole("button", { name: "Open system setup picker" })).toContainText("LOCAL RAID");
   await expect(map).toContainText("Local RAID");
   await expect(map.getByLabel("Local RAID mode summary")).toContainText("Server-local RAID is the storage fabric");
   await expect(map).toContainText("HPE Gen10");
@@ -371,6 +372,32 @@ test("overview flags saved subnet mismatch and links to subnet editing", async (
   await editSubnet.click();
   await expect(page).toHaveURL(/\/network#network-profile$/);
   await expect(page.locator("#network-profile")).toBeVisible();
+});
+
+test("living topology creates a subnet-derived system setup without running workflows", async ({ page }) => {
+  let workflowRunAttempted = false;
+  await page.route("**/api/v1/workflows/actions/*/run", async (route) => {
+    workflowRunAttempted = true;
+    await route.continue();
+  });
+
+  await page.goto("/overview");
+
+  const topology = page.locator("section[aria-label='Living lab topology']");
+  const picker = topology.locator("section[aria-label='System setup picker']");
+  await expect(picker).toContainText("Runtime Lab");
+  await picker.getByRole("button", { name: "Open system setup picker" }).click();
+  await picker.getByRole("button", { name: "New" }).click();
+
+  await picker.getByLabel("New setup name").fill("Bench 200 Lab");
+  await picker.getByLabel("Subnet CIDR").fill("192.168.200.0/24");
+  await expect(picker.getByLabel("Derived IP preview")).toContainText("192.168.200.204");
+  await expect(picker.getByLabel("Derived IP preview")).toContainText("192.168.200.230");
+
+  await picker.getByRole("button", { name: "Create setup" }).click();
+  await expect(topology).toContainText("Bench 200 Lab");
+  await expect(topology).toContainText("192.168.200.0/24");
+  expect(workflowRunAttempted).toBe(false);
 });
 
 test("overview design mode keeps the surface map-only until a node opens the workspace overlay", async ({ page }) => {
@@ -488,7 +515,7 @@ test("overview retires setup lanes in favor of the single-server map", async ({ 
   await page.goto("/overview");
 
   const topology = page.locator("section[aria-label='Living lab topology']");
-  await expect(topology.getByLabel("Deployment mode")).toContainText("Single server - local RAID");
+  await expect(topology.getByLabel("System setup picker").getByRole("button", { name: "Open system setup picker" })).toContainText("LOCAL RAID");
   await expect(topology.getByLabel("Local RAID mode summary")).toContainText("No NetApp or vCenter nodes are in this active profile.");
   await expect(page.locator("section[aria-label='Scenario setup lanes']")).toHaveCount(0);
 });

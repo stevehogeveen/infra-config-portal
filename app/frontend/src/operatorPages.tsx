@@ -772,6 +772,7 @@ export function OperatorOverviewPage({
         features={features}
         firmwareSummaries={firmwareSummaries}
         health={health}
+        labProfileState={labProfileState}
         onReload={load}
         vcenterNetapp={vcenterNetapp}
         workflowActions={workflowActions}
@@ -4681,6 +4682,7 @@ function LabTopologyMap({
   features,
   firmwareSummaries,
   health,
+  labProfileState,
   onReload,
   vcenterNetapp,
   workflowActions
@@ -4692,6 +4694,7 @@ function LabTopologyMap({
   features: LabProfileFeatures | null;
   firmwareSummaries: FirmwareSummary[];
   health?: HealthLike;
+  labProfileState: LabProfileList | null;
   onReload: () => Promise<void> | void;
   vcenterNetapp: ProviderProbeResult | null;
   workflowActions: WorkflowAction[];
@@ -4704,7 +4707,6 @@ function LabTopologyMap({
   const runtimeLabel = runtimeReady ? (realRuntime ? "Real runtime" : "Test mode") : "Checking runtime";
   const runtimeClass = runtimeReady ? (realRuntime ? "topology-pill-live" : "topology-pill-test") : "topology-pill-runtime-unknown";
   const subnetState = topologySubnetState(address.subnet, health);
-  const [systemMenuOpen, setSystemMenuOpen] = useState(false);
   const [workspaceTarget, setWorkspaceTarget] = useState<DesignPartId>("switch");
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [workspaceOpen, setWorkspaceOpen] = useState(false);
@@ -4841,7 +4843,6 @@ function LabTopologyMap({
   function openNodeWorkspace(nodeId: string) {
     setWorkspaceTarget(topologyNodeFaceplatePart(nodeId, netappInScope));
     setSelectedNodeId(nodeId);
-    setSystemMenuOpen(false);
     setWorkspaceOpen(true);
   }
 
@@ -4926,6 +4927,13 @@ function LabTopologyMap({
               ))}
           </div>
         </div>
+          <SystemSetupPicker
+            activeProfile={activeProfile}
+            address={address}
+            features={features}
+            labProfileState={labProfileState}
+            onChanged={onReload}
+          />
           {mapOverflowing && (
             <button
               className="topology-map-fit-button"
@@ -4936,30 +4944,10 @@ function LabTopologyMap({
               {mapFitEnabled ? "1:1" : "Fit"}
             </button>
           )}
-          <button
-            className="topology-system-chip"
-            aria-expanded={systemMenuOpen}
-            aria-label="Deployment mode"
-            onClick={() => {
-              setSystemMenuOpen((open) => !open);
-            }}
-            type="button"
-          >
-            <strong>{netappInScope ? "Server + NetApp + vCenter" : "Single server - local RAID"}</strong>
-            <span>{netappInScope ? `${storageProtocol.toUpperCase()} storage path` : "NetApp and vCenter out of scope"}</span>
-          </button>
           <div className="topology-core-hint" aria-hidden="true">
             <span />
             Click device - open workspace
           </div>
-          {systemMenuOpen && (
-            <div className="topology-system-menu topology-map-menu" aria-label="System scope menu">
-              <strong>System scope</strong>
-              <Link to="/network#network-profile">Site subnet</Link>
-              <Link to="/network#network-profile">Switch profile</Link>
-              <Link to="/validation">Validation</Link>
-            </div>
-          )}
           {!netappInScope && (
             <div className="topology-local-raid-hero" aria-label="Local RAID mode summary">
               <HardDrive size={15} />
@@ -5012,6 +5000,362 @@ function LabTopologyMap({
       </div>
     </section>
   );
+}
+
+type SystemSetupPanelMode = "switch" | "new";
+
+function SystemSetupPicker({
+  activeProfile,
+  address,
+  features,
+  labProfileState,
+  onChanged
+}: {
+  activeProfile: LabProfile | null;
+  address: LabAddressPlan;
+  features: LabProfileFeatures | null;
+  labProfileState: LabProfileList | null;
+  onChanged: () => Promise<void> | void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [panelMode, setPanelMode] = useState<SystemSetupPanelMode>("switch");
+  const pickerRef = useRef<HTMLElement | null>(null);
+  const profileOptions = useMemo(() => systemSetupProfileOptions(labProfileState, activeProfile), [activeProfile, labProfileState]);
+  const currentScenario = topologyScenarioFromProfile(activeProfile, features);
+  const [selectedProfileId, setSelectedProfileId] = useState(activeProfile?.id ?? "runtime");
+  const [newName, setNewName] = useState(() => systemSetupDefaultName(activeProfile));
+  const [newSubnet, setNewSubnet] = useState(() => displayAddress(address.subnet) === "Not set up yet" ? "192.168.200.0/24" : displayAddress(address.subnet));
+  const [newScenario, setNewScenario] = useState<TopologyDesignScenario>(currentScenario);
+  const [status, setStatus] = useState<{ kind: "idle" | "running" | "ok" | "error"; message: string }>({ kind: "idle", message: "" });
+
+  useEffect(() => {
+    setSelectedProfileId(activeProfile?.id ?? "runtime");
+    setNewName(systemSetupDefaultName(activeProfile));
+    setNewSubnet(displayAddress(address.subnet) === "Not set up yet" ? "192.168.200.0/24" : displayAddress(address.subnet));
+    setNewScenario(currentScenario);
+  }, [activeProfile?.id, activeProfile?.name, address.subnet, currentScenario]);
+
+  useEffect(() => {
+    if (!open) return;
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") setOpen(false);
+    }
+    function closeOnPointer(event: PointerEvent) {
+      const target = event.target;
+      if (target instanceof Node && pickerRef.current && !pickerRef.current.contains(target)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener("keydown", closeOnEscape);
+    document.addEventListener("pointerdown", closeOnPointer);
+    return () => {
+      document.removeEventListener("keydown", closeOnEscape);
+      document.removeEventListener("pointerdown", closeOnPointer);
+    };
+  }, [open]);
+
+  const subnetValidation = topologySubnetDraftValidation(newSubnet);
+  const previewAddress = topologyAddressPlanForSubnet(address, cleanNetworkNullable(newSubnet));
+  const previewRows = systemSetupPreviewRows(previewAddress, newScenario);
+  const savedCount = Math.max(0, profileOptions.filter((profile) => profile.source === "saved").length);
+  const selectedProfile = profileOptions.find((profile) => profile.id === selectedProfileId) ?? profileOptions[0] ?? null;
+  const canCreate = Boolean(activeProfile && newName.trim() && subnetValidation.status !== "error" && status.kind !== "running");
+  const canActivate = Boolean(selectedProfileId && selectedProfileId !== (activeProfile?.id ?? "runtime") && status.kind !== "running");
+
+  async function activateSelectedProfile() {
+    if (!selectedProfile || status.kind === "running") return;
+    setStatus({ kind: "running", message: "Switching active setup. No hardware action is running." });
+    try {
+      await api.activateLabProfile(selectedProfile.id);
+      await onChanged();
+      setStatus({ kind: "ok", message: `Switched to ${selectedProfile.name} - device status is unknown until a check runs.` });
+      setOpen(false);
+    } catch (err) {
+      setStatus({ kind: "error", message: errorMessage(err) });
+    }
+  }
+
+  async function createAndActivate() {
+    if (!activeProfile || !canCreate) return;
+    setStatus({ kind: "running", message: "Creating saved setup from subnet plan. Hardware remains untouched." });
+    try {
+      const created = await api.createLabProfile(systemSetupProfilePayload({
+        address: previewAddress,
+        name: newName,
+        scenario: newScenario,
+        sourceProfile: activeProfile
+      }));
+      await api.activateLabProfile(created.id);
+      await onChanged();
+      setStatus({ kind: "ok", message: `Created ${created.name} - device status is unknown until a check runs.` });
+      setOpen(false);
+    } catch (err) {
+      setStatus({ kind: "error", message: errorMessage(err) });
+    }
+  }
+
+  return (
+    <section className={`system-setup-picker ${open ? "is-open" : ""}`} aria-label="System setup picker" ref={pickerRef}>
+      <button
+        aria-label="Open system setup picker"
+        aria-expanded={open}
+        className="system-setup-strip"
+        onClick={() => setOpen((value) => !value)}
+        type="button"
+      >
+        <span className="system-setup-dot" aria-hidden="true" />
+        <span className="system-setup-eyebrow">Setup</span>
+        <strong>{activeProfile?.name ?? "Runtime Lab"}</strong>
+        <code>{displayAddress(address.subnet)}</code>
+        <span className="system-setup-mode">{topologyScenarioShortLabel(currentScenario)}</span>
+        <span className="system-setup-chevron" aria-hidden="true">Open</span>
+      </button>
+
+      {open && (
+        <div className="system-setup-panel" role="dialog" aria-label="Setup and IP plan">
+          <div className="system-setup-panel-head">
+            <div>
+              <span>Setup & IP plan</span>
+              <strong>{panelMode === "switch" ? "Choose saved setup" : "Create from subnet"}</strong>
+            </div>
+            <div className="system-setup-tabs" role="group" aria-label="Setup picker mode">
+              <button
+                aria-pressed={panelMode === "switch"}
+                className={panelMode === "switch" ? "is-active" : ""}
+                onClick={() => setPanelMode("switch")}
+                type="button"
+              >
+                Switch
+              </button>
+              <button
+                aria-pressed={panelMode === "new"}
+                className={panelMode === "new" ? "is-active" : ""}
+                onClick={() => setPanelMode("new")}
+                type="button"
+              >
+                New
+              </button>
+            </div>
+          </div>
+
+          {panelMode === "switch" ? (
+            <div className="system-setup-pane" aria-label="Saved setups">
+              <div className="system-setup-list">
+                {profileOptions.map((profile) => {
+                  const profileScenario = topologyScenarioFromProfile(profile, profile.features);
+                  const profileSubnet = displayAddress(profile.resolved_address_plan?.subnet ?? profile.address_plan.subnet ?? profile.subnet_cidr);
+                  const isActive = profile.id === (activeProfile?.id ?? "runtime");
+                  const isSelected = profile.id === selectedProfileId;
+                  return (
+                    <button
+                      aria-pressed={isSelected}
+                      className={`system-setup-row ${isSelected ? "is-selected" : ""}`}
+                      key={profile.id}
+                      onClick={() => setSelectedProfileId(profile.id)}
+                      type="button"
+                    >
+                      <span>
+                        <strong>{profile.name}</strong>
+                        <small>{profileSubnet} - {topologyScenarioShortLabel(profileScenario)} - {systemSetupLastLabel(profile)}</small>
+                      </span>
+                      <em>{isActive ? "Active" : profile.source === "saved" ? "Saved" : "Runtime"}</em>
+                    </button>
+                  );
+                })}
+              </div>
+              <button className="system-setup-primary" disabled={!canActivate} onClick={activateSelectedProfile} type="button">
+                Activate setup
+              </button>
+              <p className="system-setup-muted">{savedCount} saved setup{savedCount === 1 ? "" : "s"}. History stays attached to each saved profile.</p>
+            </div>
+          ) : (
+            <div className="system-setup-pane system-setup-new" aria-label="Create setup from subnet">
+              <label>
+                <span>New setup name</span>
+                <input value={newName} onChange={(event) => setNewName(event.target.value)} />
+              </label>
+              <label>
+                <span>Deployment mode</span>
+                <select value={newScenario} onChange={(event) => setNewScenario(event.target.value as TopologyDesignScenario)}>
+                  {topologyDesignScenarios().map((scenario) => (
+                    <option key={scenario.id} value={scenario.id}>{scenario.label}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                <span>Subnet CIDR</span>
+                <input value={newSubnet} onChange={(event) => setNewSubnet(event.target.value)} placeholder="192.168.200.0/24" />
+              </label>
+              <p className={`system-setup-validation system-setup-validation-${subnetValidation.status}`}>
+                {subnetValidation.detail} Entering a subnet auto-fills planned IPs only.
+              </p>
+              <div className="system-setup-preview" aria-label="Derived IP preview">
+                <div className="system-setup-preview-head">
+                  <strong>Planned IPs</strong>
+                  <span>Auto-derived from subnet</span>
+                </div>
+                <div>
+                  {previewRows.map((row) => (
+                    <span className={`system-setup-preview-chip system-setup-preview-${row.status}`} key={row.label}>
+                      <small>{row.label}</small>
+                      <code>{row.value}</code>
+                      <em>{row.status === "out" ? "Out" : row.status === "optional" ? "Optional" : "Planned"}</em>
+                    </span>
+                  ))}
+                </div>
+                <p>+ NetApp SVM, node, controller, and iSCSI addresses are saved in the full plan when in scope.</p>
+              </div>
+              <button className="system-setup-primary" disabled={!canCreate} onClick={createAndActivate} type="button">
+                Create setup
+              </button>
+            </div>
+          )}
+
+          <p className="system-setup-footnote">
+            Selects which saved setup and IP plan you are working on. It does not probe or reconfigure any device.
+          </p>
+
+          {status.message && (
+            <p className={`system-setup-status system-setup-status-${status.kind}`} role="status">
+              {status.message}
+            </p>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function systemSetupDefaultName(activeProfile: LabProfile | null): string {
+  const base = activeProfile?.name?.replace(/\s+\(copy\)$/i, "").trim() || "Lab system";
+  return `${base} copy`;
+}
+
+function systemSetupProfileOptions(state: LabProfileList | null, activeProfile: LabProfile | null): LabProfile[] {
+  const options = [state?.runtime_profile, ...(state?.profiles ?? []), activeProfile].filter(Boolean) as LabProfile[];
+  const seen = new Set<string>();
+  return options.filter((profile) => {
+    if (seen.has(profile.id)) return false;
+    seen.add(profile.id);
+    return true;
+  });
+}
+
+function systemSetupLastLabel(profile: LabProfile): string {
+  const latestHistory = (profile.history ?? []).slice(-1)[0];
+  if (latestHistory) return `revision v${latestHistory.version}`;
+  const selected = asString(profile.last_selected_at);
+  if (selected) return "last selected";
+  return profile.source === "saved" ? "saved profile" : "runtime profile";
+}
+
+function systemSetupPreviewRows(address: LabAddressPlan, scenario: TopologyDesignScenario): Array<{ label: string; status: string; value: string }> {
+  const netappInScope = scenario !== "single_server_local_storage";
+  const vcenterInScope = scenario === "server_netapp_vcenter";
+  return [
+    { label: "iLO", status: "planned", value: displayAddress(address.ilo) },
+    { label: "Cisco mgmt", status: "planned", value: displayAddress(address.cisco_management) },
+    { label: "ESXi", status: "planned", value: displayAddress(address.esxi_management) },
+    { label: "NetApp cluster", status: netappInScope ? "planned" : "out", value: netappInScope ? displayAddress(address.netapp_cluster_mgmt) : "Out of scope" },
+    { label: "NFS LIFs", status: netappInScope ? "planned" : "out", value: netappInScope ? address.netapp_nfs_lifs.map(displayAddress).join(", ") || "Not set up yet" : "Out of scope" },
+    { label: "vCenter / control", status: vcenterInScope ? "planned" : "optional", value: vcenterInScope ? displayAddress(address.ansible_control_host) : "Direct ESXi path" }
+  ];
+}
+
+function systemSetupProfilePayload({
+  address,
+  name,
+  scenario,
+  sourceProfile
+}: {
+  address: LabAddressPlan;
+  name: string;
+  scenario: TopologyDesignScenario;
+  sourceProfile: LabProfile;
+}): LabProfileWrite {
+  const netappInScope = scenario !== "single_server_local_storage";
+  const vcenterInScope = scenario === "server_netapp_vcenter";
+  const subnet = cleanNetworkNullable(address.subnet ?? sourceProfile.address_plan.subnet ?? sourceProfile.subnet_cidr);
+  const subnetPrefix = networkPrefixFromCidr(subnet) ?? sourceProfile.global_settings.subnet_prefix ?? 24;
+  const profileTopology = systemSetupProfileTopologyForSubnet(subnet);
+  const gateway = topologyGatewayFromSubnet(subnet);
+  const addressPlan: LabAddressPlan = {
+    ...address,
+    ansible_control_host: vcenterInScope ? cleanNetworkNullable(address.ansible_control_host) : null,
+    cisco_management: cleanNetworkNullable(address.cisco_management),
+    esxi_management: cleanNetworkNullable(address.esxi_management),
+    ilo: cleanNetworkNullable(address.ilo),
+    ilo_initial: cleanNetworkNullable(address.ilo_initial),
+    netapp_cluster_mgmt: netappInScope ? cleanNetworkNullable(address.netapp_cluster_mgmt) : null,
+    netapp_controller_a_sp: netappInScope ? cleanNetworkNullable(address.netapp_controller_a_sp) : null,
+    netapp_controller_b_sp: netappInScope ? cleanNetworkNullable(address.netapp_controller_b_sp) : null,
+    netapp_iscsi_lifs: netappInScope ? address.netapp_iscsi_lifs : [],
+    netapp_nfs_lifs: netappInScope ? address.netapp_nfs_lifs : [],
+    netapp_node_a_mgmt: netappInScope ? cleanNetworkNullable(address.netapp_node_a_mgmt) : null,
+    netapp_node_b_mgmt: netappInScope ? cleanNetworkNullable(address.netapp_node_b_mgmt) : null,
+    netapp_svm_mgmt: netappInScope ? cleanNetworkNullable(address.netapp_svm_mgmt) : null,
+    server_embedded_nic: cleanNetworkNullable(address.server_embedded_nic),
+    subnet
+  };
+  const storageProtocol = netappInScope ? (sourceProfile.features.storage_protocol === "iscsi" ? "iscsi" : "nfs") : "local";
+  const features: LabProfileFeatures = {
+    ...sourceProfile.features,
+    deployment_label: topologyScenarioLabel(scenario),
+    deployment_mode: scenario,
+    deployment_supported: true,
+    netapp_disabled_reason: netappInScope ? null : "Single-server profile uses server-local storage.",
+    netapp_enabled: netappInScope,
+    storage_location: netappInScope ? "netapp_shared" : "server_local",
+    storage_protocol: storageProtocol,
+    vcenter_disabled_reason: vcenterInScope ? null : "vCenter is out of scope for this setup.",
+    vcenter_enabled: vcenterInScope
+  };
+  const globalSettings = {
+    ...sourceProfile.global_settings,
+    gateway,
+    netapp_disabled_reason: features.netapp_disabled_reason,
+    netapp_enabled: netappInScope,
+    subnet_prefix: subnetPrefix,
+    vcenter_enabled: vcenterInScope
+  };
+  return {
+    address_plan: addressPlan,
+    description: `Created from ${sourceProfile.name}. Profile/IP planning only; no hardware action was run.`,
+    devices: {
+      ...(sourceProfile.devices ?? {}),
+      cisco: addressPlan.cisco_management,
+      esxi: addressPlan.esxi_management,
+      gateway,
+      ilo: addressPlan.ilo,
+      netapp: netappInScope
+        ? {
+            cluster_mgmt: addressPlan.netapp_cluster_mgmt,
+            controller_a_sp: addressPlan.netapp_controller_a_sp,
+            controller_b_sp: addressPlan.netapp_controller_b_sp,
+            iscsi_lifs: addressPlan.netapp_iscsi_lifs,
+            nfs_lifs: addressPlan.netapp_nfs_lifs
+          }
+        : null,
+      switch_primary: addressPlan.cisco_management,
+      utility_vm: addressPlan.ansible_control_host,
+      vcenter: vcenterInScope ? addressPlan.ansible_control_host : null
+    },
+    dns: sourceProfile.dns,
+    features,
+    gateway,
+    global_settings: globalSettings,
+    mtu: sourceProfile.mtu,
+    name: name.trim(),
+    ntp: sourceProfile.ntp,
+    profile_topology: profileTopology,
+    subnet_cidr: subnet,
+    vlan_id: sourceProfile.vlan_id
+  };
+}
+
+function systemSetupProfileTopologyForSubnet(subnet: string | null): string {
+  const prefix = networkPrefixFromCidr(subnet);
+  return prefix && prefix > 24 ? "compact_edge_lab" : "high_address_lab";
 }
 
 function topologyWorkspaceIconKind(partId: DesignPartId): "datastore" | "hypervisor" | "ilo" | "netapp" | "server" | "switch" | "vcenter" {
@@ -6709,6 +7053,12 @@ function topologyScenarioFromProfile(
 
 function topologyScenarioLabel(scenario: TopologyDesignScenario): string {
   return topologyDesignScenarios().find((item) => item.id === scenario)?.label ?? scenario;
+}
+
+function topologyScenarioShortLabel(scenario: TopologyDesignScenario): string {
+  if (scenario === "single_server_local_storage") return "LOCAL RAID";
+  if (scenario === "server_netapp_direct") return "SRV+NETAPP";
+  return "SRV+NETAPP+VCENTER";
 }
 
 function topologyDesignParts({

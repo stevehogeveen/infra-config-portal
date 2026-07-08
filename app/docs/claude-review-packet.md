@@ -536,3 +536,29 @@ Cisco verification:
 - Playwright `npm run test:e2e -- -g "zoned map opens device workspace"`: pass.
 - Backend workflow runner focused Cisco check: pass.
 - Full `scripts/fast-verify.ps1`: pass.
+
+## System Setup Picker
+
+Processed Steve's request for a small Living Topology control to choose the active saved system or create a new one from a subnet.
+
+- Replaced the old top-center setup/deployment pill with `SystemSetupPicker`.
+- Collapsed state shows active setup, subnet, and short mode (`SRV+NETAPP+VCENTER`, `SRV+NETAPP`, `LOCAL RAID`).
+- Expanded popover is anchored inside the topology map and has two modes:
+  - `Switch`: lists runtime/saved lab profiles and only calls `activateLabProfile`.
+  - `New`: accepts name, deployment mode, and subnet CIDR, then shows planned IP chips derived by `topologyAddressPlanForSubnet`.
+- New setup creation sends the full `LabProfileWrite` payload with derived `address_plan`, `global_settings`, features, devices, gateway, and subnet, then activates the created profile.
+- The old system-scope `Deployment mode` menu was removed.
+- Safety boundary preserved:
+  - no probes.
+  - no workflow-action runs.
+  - no hardware writes.
+  - no RAID/factory/rebuild/power paths.
+- Evidence screenshot:
+  - `docs/agent-shots/2026-07-08-system-setup-picker.png`.
+
+System setup verification:
+
+- Frontend `npm run build`: pass.
+- Frontend `npm run test:component`: pass.
+- Focused Playwright picker/topology tests: pass.
+- Full `npm run test:e2e`: pass, `40/40`.
