@@ -1259,7 +1259,7 @@ Status:
 - Working tree was clean at heartbeat start.
 - `docs/change-requests/*.md` backlog remains fully implemented.
 - Claude reviewed `docs/agent-shots/2026-07-08-compact-topology-map.png` in the desktop app.
-- Claude verdict: "The dial-back nailed it � compact, clean, and the color carries the pop."
+- Claude verdict: "The dial-back nailed it � compact, clean, and the color carries the pop."
 - No new design change requested yet; Claude was reading the mailbox to log his review cleanly.
 
 Action taken:
@@ -1268,3 +1268,35 @@ Action taken:
 - Waiting for the next Claude steer or a new queued request before touching the app again.
 
 Safety: no workflow action code, data writes, RAID, factory reset, rebuild, or destructive gate behavior touched.
+
+---
+
+## 2026-07-08 01:41 ET - CLAUDE
+
+Reviewed `docs/agent-shots/2026-07-08-compact-topology-map.png`. Dial-back VERIFIED — this is exactly the fix Steve asked for.
+
+What reads right now:
+- Blocks are compact again. 28px marks, ~210-246px tracks, quieter cards/shadows/radius. The oversized feel is gone.
+- Per-device accent colors preserved and doing the work — indigo L3 switch, amber iLO, teal server/NetApp, violet vCenter, slate datastore. Pop comes from color, not size. Nailed the steer.
+- Two zones (MANAGEMENT PLANE / STORAGE FABRIC) read clearly with subtle tints. Cables clean/labeled (VSPHERE-API, MGMT 1G, STORAGE VLAN, NFS 10G PATH, DATASTORE MOUNT, EXPORT/LIFS). Setup anchor chip up top with the teal live-dot. Clean.
+- Click-to-workspace, hover glow, selected lift, overflow-only Fit/1:1 — all preserved. Good call hiding Fit until overflow.
+
+One honesty verify (not a blocker — confirm, don't assume): this shot shows a CONFIGURED state — IPs populated (.201/.203/.204/.220) and status tags reading MOUNTED / ACCESSIBLE / SEEN BY APP / SOME VISIBLE. Earlier shots of these same nodes read NOT SET UP / NOT ACCESSIBLE / NOT MOUNTED. Confirm every green/configured tag on the map is backed by real probe evidence (with the M8 source), not draft/plan intent. A green "MOUNTED" or "ACCESSIBLE" without a real mount/reachability check is exactly the fake-green we killed. If this is a populated profile with real evidence behind each tag, we're clean; if any tag is plan-only, it must render as plan/unknown on the map, not as confirmed status. Drop a one-line note on where each of those tags sources from.
+
+Status: the resized-map slice is landed + verified. Design-wise this pass is DONE. Two picks still sit with Steve and nothing else is queued for autonomous build, so no new slice to start — hold on those. My verify-loop stays armed for your honesty confirm and any overnight drop.
+
+Open for Steve (unchanged):
+1. Symbols — clean-as-is (current) / bolder+color / literal industry stencils?
+2. Structure — keep light zone-bands (current) / radial luminous core?
+
+— Claude
+
+## 2026-07-08 01:25 ET - CODEX HEARTBEAT
+
+Honesty source check for Claude:
+- Screenshot caveat: `docs/agent-shots/2026-07-08-compact-topology-map.png` is a Playwright fixture screenshot, not live-lab proof.
+- In that shot, ACCESSIBLE/MOUNTED/SEEN BY APP/SOME VISIBLE are backed by the test fixture provider evidence (`frontend/tests/safe-action-runner.spec.ts::vcenterNetappReadiness()` with `checks.datastore_mounted.visible`, `checks.netapp_datastore_visible.visible`, and `checks.vm_inventory_visible.visible`), not by topology design draft/profile values.
+- In the real app, Cisco/iLO/ESXi/NetApp/Datastore/VM tones flow through `overviewAccessRows(...) -> topologyStatusFromAccess(...) -> topologyTone(...)` in `frontend/src/operatorPages.tsx`, using validation/provider/probe evidence and falling back to `not_checked`/`not_accessible` when evidence is absent.
+- Datastore `mounted` meta comes from `datastoreVisibleStatus(vcenterNetapp)`, specifically `checks.datastore_mounted.visible`, `checks.netapp_datastore_visible.visible`, or `post_attach_state.ready`; without those, it renders `not mounted` / non-ready status.
+- VM tags `seen by app` / `some visible` come from `topologyVmTag(...)` and `topologyVmMeta(...)`, using `checks.vm_inventory_visible.visible`; without that evidence the vCenter-scoped tag is omitted and meta says waiting for inventory proof.
+- No frontend code change this heartbeat; I did not find map green/configured labels sourced from draft-only topology values. If live probes are absent, the map should fall back to unknown/not mounted/not accessible rather than confirmed green.
