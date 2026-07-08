@@ -1144,3 +1144,25 @@ Verification:
 - npm run test:component: pass
 
 Safety: UI declutter only. No workflow action code, destructive gate, RAID, factory reset, or rebuild behavior changed.
+
+---
+
+## 2026-07-07 20:28 ET - CODEX
+
+Processed queued request `docs/change-requests/20260707T155546Z-overview.md` (white/low-contrast box + alignment complaint).
+
+Changed:
+
+- Normal Operator mode already hides the AI intent box, so the old white box is no longer on the everyday Overview surface.
+- Restyled the Advanced `Change this page` bar as a compact high-contrast tool strip.
+- Input, placeholder, target chips, queue prompt, and receipt remain readable; behavior unchanged.
+- This is CSS-only polish for the in-app AI control surface.
+
+Verification:
+
+- npm run build: pass
+- AI-focused Playwright: pass, 4/4
+- npm run test:e2e: pass, 39/39
+- npm run test:component: pass
+
+Safety: UI styling only. No data writes, workflow action code, destructive gate, RAID, factory reset, or rebuild behavior changed.

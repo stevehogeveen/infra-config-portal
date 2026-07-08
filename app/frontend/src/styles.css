@@ -647,14 +647,16 @@ button:disabled {
 }
 
 .page-intent-bar {
-  background: #ffffff;
-  border: 1px solid #d8e3ef;
-  border-radius: 8px;
-  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.08);
-  color: #18212f;
+  background:
+    linear-gradient(135deg, rgba(15, 23, 42, 0.98), rgba(30, 41, 59, 0.96)),
+    radial-gradient(circle at 12% 20%, rgba(20, 184, 166, 0.18), transparent 30%);
+  border: 1px solid rgba(100, 116, 139, 0.5);
+  border-radius: 10px;
+  box-shadow: 0 14px 34px rgba(15, 23, 42, 0.16);
+  color: #e2e8f0;
   display: grid;
-  gap: 10px;
-  padding: 12px;
+  gap: 9px;
+  padding: 10px;
 }
 
 .page-intent-bar form {
@@ -665,7 +667,7 @@ button:disabled {
 }
 
 .page-intent-bar label {
-  color: #0f172a;
+  color: #e2e8f0;
   font-size: 13px;
   font-weight: 800;
   letter-spacing: 0;
@@ -673,16 +675,16 @@ button:disabled {
 }
 
 .page-intent-bar input {
-  background: #f8fafc;
-  border: 1px solid #cbd5e1;
+  background: rgba(15, 23, 42, 0.72);
+  border: 1px solid rgba(148, 163, 184, 0.64);
   border-radius: 7px;
-  color: #0f172a;
+  color: #f8fafc;
   min-height: 38px;
   padding: 8px 10px;
 }
 
 .page-intent-bar input::placeholder {
-  color: #64748b;
+  color: #94a3b8;
 }
 
 .page-intent-bar button {
@@ -695,8 +697,9 @@ button:disabled {
 }
 
 .page-intent-bar button:not(.operator-primary-button) {
-  background: #f8fafc;
-  color: #334155;
+  background: rgba(248, 250, 252, 0.1);
+  border-color: rgba(148, 163, 184, 0.5);
+  color: #dbeafe;
 }
 
 .page-intent-bar button:disabled {
@@ -705,7 +708,7 @@ button:disabled {
 }
 
 .page-intent-bar p {
-  color: #64748b;
+  color: #cbd5e1;
   font-size: 13px;
   margin: 0;
 }
@@ -718,7 +721,7 @@ button:disabled {
 }
 
 .page-intent-targets span {
-  color: #475569;
+  color: #cbd5e1;
   font-size: 12px;
   font-weight: 900;
   margin-right: 2px;
@@ -726,10 +729,10 @@ button:disabled {
 }
 
 .page-intent-targets button {
-  background: #f8fafc;
-  border: 1px solid #d8e3ef;
+  background: rgba(248, 250, 252, 0.08);
+  border: 1px solid rgba(148, 163, 184, 0.44);
   border-radius: 999px;
-  color: #334155;
+  color: #e2e8f0;
   min-height: 30px;
   padding: 6px 10px;
 }
