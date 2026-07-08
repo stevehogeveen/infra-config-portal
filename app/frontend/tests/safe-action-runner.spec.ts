@@ -267,6 +267,7 @@ test("overview shows active setup, lab values, and access without dashboard clut
 
   await expect(page.locator("section[aria-label='Overview reference']")).toHaveCount(0);
   await expect(page.locator("section[aria-label='Scenario setup lanes']")).toHaveCount(0);
+  await expect(page.locator("[data-region-id='lab-safety']")).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Readiness at a glance" })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Firmware Compliance" })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Active Blockers" })).toHaveCount(0);

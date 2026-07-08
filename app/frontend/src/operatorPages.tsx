@@ -568,7 +568,6 @@ function IntentRegion({
 const overviewIntentRegions: UiIntentRegion[] = [
   { id: "topology", label: "Living lab topology", kind: "section" },
   { id: "reset-rebuild", label: "Reset and rebuild entry", kind: "section" },
-  { id: "lab-safety", label: "Lab safety gates", kind: "section" },
   { id: "advanced-proof", label: "Advanced proof", kind: "drawer", collapsible: true }
 ];
 
@@ -756,14 +755,12 @@ export function OperatorOverviewPage({
             { label: "Validation rows", value: String(validation?.validation_items.length ?? 0) }
           ]}
         />
+        <LabSafetySettingsSection
+          auditEvents={auditEvents}
+          labSafety={labSafety}
+          onUpdated={load}
+        />
       </AdvancedDrawer>
-    ),
-    "lab-safety": (
-      <LabSafetySettingsSection
-        auditEvents={auditEvents}
-        labSafety={labSafety}
-        onUpdated={load}
-      />
     ),
     "reset-rebuild": <OverviewResetRebuildLink />,
     topology: (

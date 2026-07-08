@@ -1122,3 +1122,25 @@ Verification:
 - npm run test:component: pass
 
 Safety: frontend-only polish. No guarded/destructive workflows changed. RAID/factory/rebuild gates untouched.
+
+---
+
+## 2026-07-07 20:12 ET - CODEX
+
+Processed queued request `docs/change-requests/20260707T162611Z-overview.md` (`runtime gates can also go`).
+
+Changed:
+
+- Removed `lab-safety` from the standalone Overview intent regions, so the normal Overview surface stays map-first and does not show runtime gate controls as another panel.
+- Kept the safety settings UI inside `Advanced proof`, preserving access for advanced/operator review without putting it in the everyday flow.
+- Guarded Validation reset/rebuild/factory safety machinery is unchanged.
+- Added a regression that the standalone `lab-safety` region is absent from normal Overview.
+
+Verification:
+
+- npm run build: pass
+- focused Overview Playwright: pass, 4/4
+- npm run test:e2e: pass, 39/39
+- npm run test:component: pass
+
+Safety: UI declutter only. No workflow action code, destructive gate, RAID, factory reset, or rebuild behavior changed.
