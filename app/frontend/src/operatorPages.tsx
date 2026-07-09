@@ -5116,7 +5116,7 @@ function SystemSetupPicker({
           <div className="system-setup-panel-head">
             <div>
               <span>Setup & IP plan</span>
-              <strong>{panelMode === "switch" ? "Choose saved setup" : "Create from subnet"}</strong>
+              <small>{panelMode === "switch" ? "Pick a saved system or create a subnet-derived plan." : "Name it, choose the shape, enter a subnet. No probes or writes."}</small>
             </div>
           </div>
           <div className="system-setup-tabs" role="group" aria-label="Setup picker mode">
@@ -5179,14 +5179,23 @@ function SystemSetupPicker({
                 <span>New setup name</span>
                 <input value={newName} onChange={(event) => setNewName(event.target.value)} />
               </label>
-              <label>
+              <div className="system-setup-mode-field" role="group" aria-label="Deployment mode">
                 <span>Deployment mode</span>
-                <select value={newScenario} onChange={(event) => setNewScenario(event.target.value as TopologyDesignScenario)}>
+                <div className="system-setup-mode-options">
                   {topologyDesignScenarios().map((scenario) => (
-                    <option key={scenario.id} value={scenario.id}>{scenario.label}</option>
+                    <button
+                      aria-pressed={newScenario === scenario.id}
+                      className={newScenario === scenario.id ? "is-active" : ""}
+                      key={scenario.id}
+                      onClick={() => setNewScenario(scenario.id)}
+                      type="button"
+                    >
+                      <strong>{scenario.label}</strong>
+                      <small>{scenario.detail}</small>
+                    </button>
                   ))}
-                </select>
-              </label>
+                </div>
+              </div>
               <label>
                 <span>Subnet CIDR</span>
                 <input value={newSubnet} onChange={(event) => setNewSubnet(event.target.value)} placeholder="192.168.200.0/24" />
