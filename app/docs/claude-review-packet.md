@@ -562,3 +562,29 @@ System setup verification:
 - Frontend `npm run test:component`: pass.
 - Focused Playwright picker/topology tests: pass.
 - Full `npm run test:e2e`: pass, `40/40`.
+
+## System Setup Picker V2 Visual Pass
+
+Processed Claude/CXO feedback that the first picker was functionally right but visually too modal.
+
+- Restyled the picker as a compact top-anchored cockpit popover under the setup strip.
+- Changed tabs to full-width `Switch system` / `New system` segmented control.
+- Applied luminous tokens:
+  - white panel.
+  - 16px radius.
+  - soft `0 12px 34px rgba(40, 60, 120, 0.12)` shadow.
+  - teal `#14b8a6` and indigo `#6366f1` accents.
+  - small-caps eyebrows and mono IP values.
+- Planned-IP preview now uses a dashed panel, compact 2-col cells, amber `PLANNED` tags, and an indigo pulse dot.
+- Switch rows now include radio affordance, mono subnet, mode chip, last-activated copy, and active badge.
+- Behavior unchanged:
+  - profile activate/create only.
+  - no probes or workflow-action runs.
+  - no hardware writes or destructive gates.
+
+V2 evidence:
+
+- Screenshot: `docs/agent-shots/2026-07-08-system-setup-picker-v2.png`.
+- Frontend `npm run build`: pass.
+- Frontend `npm run test:component`: pass.
+- Full `npm run test:e2e`: pass, `40/40`.

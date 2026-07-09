@@ -5118,24 +5118,24 @@ function SystemSetupPicker({
               <span>Setup & IP plan</span>
               <strong>{panelMode === "switch" ? "Choose saved setup" : "Create from subnet"}</strong>
             </div>
-            <div className="system-setup-tabs" role="group" aria-label="Setup picker mode">
-              <button
-                aria-pressed={panelMode === "switch"}
-                className={panelMode === "switch" ? "is-active" : ""}
-                onClick={() => setPanelMode("switch")}
-                type="button"
-              >
-                Switch
-              </button>
-              <button
-                aria-pressed={panelMode === "new"}
-                className={panelMode === "new" ? "is-active" : ""}
-                onClick={() => setPanelMode("new")}
-                type="button"
-              >
-                New
-              </button>
-            </div>
+          </div>
+          <div className="system-setup-tabs" role="group" aria-label="Setup picker mode">
+            <button
+              aria-pressed={panelMode === "switch"}
+              className={panelMode === "switch" ? "is-active" : ""}
+              onClick={() => setPanelMode("switch")}
+              type="button"
+            >
+              Switch system
+            </button>
+            <button
+              aria-pressed={panelMode === "new"}
+              className={panelMode === "new" ? "is-active" : ""}
+              onClick={() => setPanelMode("new")}
+              type="button"
+            >
+              New system
+            </button>
           </div>
 
           {panelMode === "switch" ? (
@@ -5154,17 +5154,22 @@ function SystemSetupPicker({
                       onClick={() => setSelectedProfileId(profile.id)}
                       type="button"
                     >
-                      <span>
+                      <span className="system-setup-row-radio" aria-hidden="true" />
+                      <span className="system-setup-row-main">
                         <strong>{profile.name}</strong>
-                        <small>{profileSubnet} - {topologyScenarioShortLabel(profileScenario)} - {systemSetupLastLabel(profile)}</small>
+                        <span>
+                          <code>{profileSubnet}</code>
+                          <small>{topologyScenarioShortLabel(profileScenario)}</small>
+                        </span>
+                        <small>{systemSetupLastLabel(profile)}</small>
                       </span>
-                      <em>{isActive ? "Active" : profile.source === "saved" ? "Saved" : "Runtime"}</em>
+                      <em className={isActive ? "system-setup-active-badge" : ""}>{isActive ? "Active" : profile.source === "saved" ? "Saved" : "Runtime"}</em>
                     </button>
                   );
                 })}
               </div>
               <button className="system-setup-primary" disabled={!canActivate} onClick={activateSelectedProfile} type="button">
-                Activate setup
+                Activate system
               </button>
               <p className="system-setup-muted">{savedCount} saved setup{savedCount === 1 ? "" : "s"}. History stays attached to each saved profile.</p>
             </div>
@@ -5191,10 +5196,10 @@ function SystemSetupPicker({
               </p>
               <div className="system-setup-preview" aria-label="Derived IP preview">
                 <div className="system-setup-preview-head">
-                  <strong>Planned IPs</strong>
+                  <span className="system-setup-preview-title"><i aria-hidden="true" /> <strong>Planned IPs</strong></span>
                   <span>Auto-derived from subnet</span>
                 </div>
-                <div>
+                <div className="system-setup-preview-grid">
                   {previewRows.map((row) => (
                     <span className={`system-setup-preview-chip system-setup-preview-${row.status}`} key={row.label}>
                       <small>{row.label}</small>
@@ -5203,7 +5208,6 @@ function SystemSetupPicker({
                     </span>
                   ))}
                 </div>
-                <p>+ NetApp SVM, node, controller, and iSCSI addresses are saved in the full plan when in scope.</p>
               </div>
               <button className="system-setup-primary" disabled={!canCreate} onClick={createAndActivate} type="button">
                 Create setup
@@ -5245,7 +5249,7 @@ function systemSetupLastLabel(profile: LabProfile): string {
   const latestHistory = (profile.history ?? []).slice(-1)[0];
   if (latestHistory) return `revision v${latestHistory.version}`;
   const selected = asString(profile.last_selected_at);
-  if (selected) return "last selected";
+  if (selected) return `last activated ${selected.slice(0, 10)}`;
   return profile.source === "saved" ? "saved profile" : "runtime profile";
 }
 

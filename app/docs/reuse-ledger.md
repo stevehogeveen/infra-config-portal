@@ -8,7 +8,7 @@ Why: two agents on one codebase duplicate work fast. This is our dedupe.
 - Parametric faceplate — renders any device from existing params (`drive_bays`, `ports`, `controller_ports`, RAID, VLAN, protocol). Use for every device type; don't hand-draw device art.
 - `TopologyMapNodeCard` — the zoned-map node card. Reuse for any node on the map.
 - Luminous control-room topology layout — radial map surface using the existing `TopologyMapNodeCard`, honest-state tone classes, zone metadata, and center `TopologyCoreButton`. Reuse/extend this layout for map polish; don't reintroduce fixed-slot band layouts or duplicate node cards.
-- `SystemSetupStrip/Panel` — the top-center Living Topology setup picker. Reuse it for active lab-profile selection and subnet-derived IP planning; do not add another setup/history header or duplicate profile switcher.
+- `SystemSetupStrip/Panel` — the top-center Living Topology setup picker. Reuse it for active lab-profile selection and subnet-derived IP planning; do not add another setup/history header or duplicate profile switcher. Visual tokens: compact anchored white panel, 16px radius, `0 12px 34px rgba(40, 60, 120, 0.12)`, teal `#14b8a6`, indigo `#6366f1`, dashed planned-IP panel, amber planned tags.
 - Device workspace overlay (M6) — the click-open right-side drawer for deep editing. This is THE escalation surface; route all deep detail here, don't spawn new panels.
 - Physical element inspector (M7) — click a faceplate port/bay/controller → inline inspector mapped to schema fields. Extend it for new element types.
 - Three-way state chips with provenance (M8) — Live/Draft/Saved with a source label. Use everywhere state is shown; don't invent new status UI.
