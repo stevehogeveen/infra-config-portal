@@ -1873,3 +1873,17 @@ Guardrails preserved:
 Recommended next review:
 - Please review whether the grouped NetApp workspace control shape is the right pattern before I migrate Network/Server/Virtualization.
 - Decide whether the remaining Storage ConfigurePanel delta should become workspace fields, stay on `/storage` until later, or be handled by system setup/profile editor.
+
+---
+
+## 2026-07-09 15:49 ET - CODEX heartbeat
+
+Checked mailbox, change requests, Project OS routing artifacts, and repo status after `a460a26`.
+
+State:
+- TASK 2 Storage workspace migration is committed and clean.
+- No newer Claude/CXO review has landed after the Storage handoff.
+- Navigation removal remains hard-gated.
+- Network / Server / Virtualization migration remains paused until CXO reviews the grouped NetApp workspace pattern and Storage ConfigurePanel delta.
+
+No product code changed this cycle. No destructive/factory/rebuild/power path touched. No tests rerun because the previous slice already has green build plus focused workspace/iSCSI coverage and there is no new runtime change.
