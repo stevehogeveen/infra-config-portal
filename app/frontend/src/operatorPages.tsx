@@ -5224,6 +5224,7 @@ function LabTopologyMap({
             labProfileState={labProfileState}
             onChanged={onReload}
           />
+          <TopologySystemSafetyStrip onReload={onReload} />
           {mapOverflowing && (
             <button
               className="topology-map-fit-button"
@@ -5269,6 +5270,7 @@ function LabTopologyMap({
               activeProfile={activeProfile}
               address={address}
               features={features}
+              firmwareSummaries={firmwareSummaries}
               health={health}
               initialSelectedDevice={workspaceTarget}
               onReload={onReload}
@@ -5289,6 +5291,332 @@ function LabTopologyMap({
         <p><span>Next safe action</span>{nextAction}</p>
       </div>
     </section>
+  );
+}
+
+type CiscoWorkspaceAction = {
+  detail: string;
+  icon: ReactNode;
+  id: string;
+  label: string;
+  run: () => Promise<WorkflowActionRun | ProviderProbeResult>;
+};
+
+function CiscoWorkspaceNetworkControls({
+  address,
+  firmwareSummaries,
+  onReload,
+  workflowActions
+}: {
+  address: LabAddressPlan;
+  firmwareSummaries: FirmwareSummary[];
+  onReload: () => Promise<void> | void;
+  workflowActions: WorkflowAction[];
+}) {
+  const [runState, setRunState] = useState<WorkflowRunState>(emptyRunState);
+  const [setupReadiness, setSetupReadiness] = useState<ProviderProbeResult | null>(null);
+  const [sshProbe, setSshProbe] = useState<ProviderProbeResult | null>(null);
+  const [intentDiff, setIntentDiff] = useState<ProviderProbeResult | null>(null);
+  const [workflowRunsById, setWorkflowRunsById] = useState<Record<string, WorkflowActionRun[]>>({});
+  const ciscoFirmware = firmwareVersion(firmwareSummaries, "cisco");
+  const byId = useMemo(() => new Map(workflowActions.map((action) => [action.action_id, action])), [workflowActions]);
+  const actionIds = [
+    "cisco.ssh-readonly-probe",
+    "cisco.validate-ssh-scp",
+    "cisco.firmware-inventory",
+    "cisco.current-intent-diff",
+    "cisco.setup-readiness",
+    "cisco.privilege-check"
+  ];
+  const actionKey = actionIds.join("|");
+
+  useEffect(() => {
+    let ignore = false;
+    safeApi(api.ciscoSetupReadiness, null).then((nextReadiness) => {
+      if (!ignore) {
+        setSetupReadiness(nextReadiness as ProviderProbeResult | null);
+      }
+    });
+    return () => {
+      ignore = true;
+    };
+  }, [address.cisco_management]);
+
+  useEffect(() => {
+    let ignore = false;
+    Promise.all(
+      actionIds.map(async (actionId) => [actionId, await safeApi(() => api.workflowActionRuns(actionId), [] as WorkflowActionRun[])] as const)
+    ).then((entries) => {
+      if (!ignore) {
+        setWorkflowRunsById(Object.fromEntries(entries));
+      }
+    });
+    return () => {
+      ignore = true;
+    };
+  }, [actionKey]);
+
+  async function runWorkflowCheck(actionId: string): Promise<WorkflowActionRun> {
+    const result = await api.runWorkflowAction(actionId);
+    setWorkflowRunsById((current) => ({
+      ...current,
+      [actionId]: [result, ...(current[actionId] ?? [])].slice(0, 5)
+    }));
+    return result;
+  }
+
+  async function runCombinedRefresh(): Promise<ProviderProbeResult> {
+    setSshProbe({
+      provider_id: "cisco-ansible",
+      status: "running",
+      message: "Reading live Cisco SSH and current-intent state.",
+      checked_at: new Date().toISOString(),
+      warnings: [],
+      blockers: []
+    });
+    setIntentDiff({
+      provider_id: "cisco-ansible",
+      status: "running",
+      message: "Reading live Cisco current-to-intent state.",
+      checked_at: new Date().toISOString(),
+      warnings: [],
+      blockers: []
+    });
+    const [nextSshProbe, nextIntentDiff, nextReadiness] = await Promise.all([
+      api.ciscoSshProbe(),
+      api.ciscoCurrentIntentDiff(),
+      safeApi(api.ciscoSetupReadiness, null)
+    ]);
+    setSshProbe(nextSshProbe);
+    setIntentDiff(nextIntentDiff);
+    setSetupReadiness(nextReadiness as ProviderProbeResult | null);
+    return nextIntentDiff;
+  }
+
+  const actions: CiscoWorkspaceAction[] = [
+    {
+      detail: "Run the same direct probe + current-to-intent diff refresh used by the Network driver.",
+      icon: <RefreshCw size={14} />,
+      id: "cisco.refresh-live-evidence",
+      label: "Refresh live evidence",
+      run: runCombinedRefresh
+    },
+    {
+      detail: "Approved show commands through the workflow runner.",
+      icon: <Play size={14} />,
+      id: "cisco.ssh-readonly-probe",
+      label: byId.get("cisco.ssh-readonly-probe")?.label || "Cisco SSH read-only probe",
+      run: () => runWorkflowCheck("cisco.ssh-readonly-probe")
+    },
+    {
+      detail: "Prove SSH/SCP readiness without changing switch config.",
+      icon: <ShieldCheck size={14} />,
+      id: "cisco.validate-ssh-scp",
+      label: byId.get("cisco.validate-ssh-scp")?.label || "Validate SSH/SCP",
+      run: () => runWorkflowCheck("cisco.validate-ssh-scp")
+    },
+    {
+      detail: "Inventory IOS XE and related firmware evidence.",
+      icon: <Layers size={14} />,
+      id: "cisco.firmware-inventory",
+      label: byId.get("cisco.firmware-inventory")?.label || "Cisco Firmware Inventory",
+      run: () => runWorkflowCheck("cisco.firmware-inventory")
+    },
+    {
+      detail: "Compare live read-only state to the saved network intent.",
+      icon: <Route size={14} />,
+      id: "cisco.current-intent-diff",
+      label: byId.get("cisco.current-intent-diff")?.label || "Cisco Current Intent Diff",
+      run: () => runWorkflowCheck("cisco.current-intent-diff")
+    },
+    {
+      detail: "Read setup readiness, console, credential, and prompt boundaries.",
+      icon: <CheckCircle2 size={14} />,
+      id: "cisco.setup-readiness",
+      label: byId.get("cisco.setup-readiness")?.label || "Cisco Access Live Check",
+      run: () => runWorkflowCheck("cisco.setup-readiness")
+    },
+    {
+      detail: "Confirm privilege level before any guarded config path can be considered.",
+      icon: <ShieldCheck size={14} />,
+      id: "cisco.privilege-check",
+      label: byId.get("cisco.privilege-check")?.label || "Privilege Check",
+      run: () => runWorkflowCheck("cisco.privilege-check")
+    }
+  ];
+  const readOnlyPrimary = actions.slice(0, 3);
+  const readOnlyMore = actions.slice(3);
+  const latestWorkflowRun = actionIds
+    .flatMap((id) => workflowRunsById[id] ?? [])
+    .sort((a, b) => asString(b.finished_at || b.started_at).localeCompare(asString(a.finished_at || a.started_at)))[0] ?? null;
+  const evidenceRows = [
+    {
+      detail: "Saved setup",
+      label: "Management IP",
+      status: address.cisco_management ? "planned" : "not_checked",
+      value: displayAddress(address.cisco_management)
+    },
+    {
+      detail: sourceLabel(setupReadiness),
+      label: "Setup readiness",
+      status: asString(setupReadiness?.status) || (setupReadiness ? "ready" : "not_checked"),
+      value: asString(setupReadiness?.message) || asString(setupReadiness?.next_safe_action) || "Not checked"
+    },
+    {
+      detail: sourceLabel(sshProbe),
+      label: "SSH probe",
+      status: asString(sshProbe?.status) || "not_checked",
+      value: asString(sshProbe?.message) || "No live SSH probe run from workspace"
+    },
+    {
+      detail: sourceLabel(intentDiff),
+      label: "Intent diff",
+      status: asString(intentDiff?.status) || "not_checked",
+      value: asString(intentDiff?.message) || "No current-to-intent diff run from workspace"
+    },
+    {
+      detail: "Firmware summary",
+      label: "Firmware",
+      status: ciscoFirmware === "Not checked" ? "not_checked" : "ready",
+      value: ciscoFirmware
+    },
+    {
+      detail: latestWorkflowRun ? "Workflow action run" : "Workflow history",
+      label: "Last workflow",
+      status: latestWorkflowRun?.status || "not_checked",
+      value: latestWorkflowRun ? `${latestWorkflowRun.action_id}: ${displayStatus(latestWorkflowRun.status)}` : "No workspace workflow run yet"
+    }
+  ];
+
+  async function runWorkspaceNetworkAction(action: CiscoWorkspaceAction) {
+    setRunState({ error: "", message: "", runningActionId: action.id });
+    try {
+      const result = await action.run();
+      await onReload();
+      const status = asString(result.status) || "completed";
+      const message = "summary" in result
+        ? asString(result.summary) || asString(result.next_action)
+        : asString(result.message) || asString(result.next_safe_action);
+      setRunState({
+        error: "",
+        message: `${action.label}: ${displayStatus(status)}. ${message}`,
+        runningActionId: ""
+      });
+    } catch (err) {
+      setRunState({ error: errorMessage(err), message: "", runningActionId: "" });
+    }
+  }
+
+  function renderActionButton(action: CiscoWorkspaceAction) {
+    const running = runState.runningActionId === action.id;
+    return (
+      <button disabled={running} key={action.id} onClick={() => void runWorkspaceNetworkAction(action)} type="button">
+        {action.icon}
+        <span>{running ? "Running" : action.label}</span>
+        <small>{action.detail}</small>
+      </button>
+    );
+  }
+
+  return (
+    <section className="network-workspace-controls" aria-label="Cisco workspace network controls">
+      <div className="network-workspace-controls-head">
+        <div>
+          <p className="operator-kicker">Network controls</p>
+          <h4>Cisco read-only checks</h4>
+          <span>Network-page checks moved into the switch workspace. Unknown stays gray until a real check runs.</span>
+        </div>
+        <StatusBadge label="Read-only" status="safe-to-run" />
+      </div>
+
+      <div className="network-workspace-evidence-grid">
+        {evidenceRows.map((row) => (
+          <div key={row.label}>
+            <span>{row.label}</span>
+            <strong>{row.value}</strong>
+            <small>{row.detail}</small>
+            <SimpleStatusPill status={row.status} />
+          </div>
+        ))}
+      </div>
+
+      <div className="network-workspace-action-groups">
+        <section className="network-workspace-action-group">
+          <div>
+            <p className="operator-kicker">Read-only checks</p>
+            <h5>Live switch proof</h5>
+          </div>
+          <div className="network-workspace-action-buttons">
+            {readOnlyPrimary.map(renderActionButton)}
+          </div>
+          <details>
+            <summary>More read-only checks</summary>
+            <div className="network-workspace-action-buttons">
+              {readOnlyMore.map(renderActionButton)}
+            </div>
+          </details>
+        </section>
+      </div>
+
+      {(runState.message || runState.error) && (
+        <p className={runState.error ? "operator-action-message error" : "operator-action-message success"}>
+          {runState.error || runState.message}
+        </p>
+      )}
+    </section>
+  );
+}
+
+function TopologySystemSafetyStrip({
+  onReload
+}: {
+  onReload: () => Promise<void> | void;
+}) {
+  const [labSafety, setLabSafety] = useState<LabSafetySettings | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  async function loadSafety() {
+    setError("");
+    setLoading(true);
+    try {
+      setLabSafety(await api.labSafetySettings());
+    } catch (err) {
+      setError(errorMessage(err));
+      setLabSafety(null);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function refreshAfterUpdate() {
+    await loadSafety();
+    await onReload();
+  }
+
+  useEffect(() => {
+    void loadSafety();
+  }, []);
+
+  const ready = labSafetyReady(labSafety);
+  const missing = (labSafety?.flags ?? []).filter((flag) => flag.required && !flag.enabled).length;
+
+  return (
+    <details className="topology-system-safety" aria-label="System lab safety gates">
+      <summary>
+        <span>
+          <ShieldCheck size={14} />
+          <strong>Lab safety</strong>
+          <small>{loading ? "Checking gates" : error ? "Unavailable" : ready ? "Ready for real-lab checks" : `${missing} gate${missing === 1 ? "" : "s"} missing`}</small>
+        </span>
+        <StatusBadge label={ready ? "Ready" : "Gated"} status={ready ? "ready" : "blocked"} />
+      </summary>
+      <div className="topology-system-safety-panel">
+        <p>System-wide real-lab gates stay here, not inside a single device workspace.</p>
+        {error && <div className="operator-feedback error">{error}</div>}
+        <LabSafetyControls labSafety={labSafety} onUpdated={refreshAfterUpdate} />
+      </div>
+    </details>
   );
 }
 
@@ -5925,6 +6253,7 @@ function LabDesignComposer({
   activeProfile,
   address,
   features,
+  firmwareSummaries,
   health,
   initialSelectedDevice,
   onReload,
@@ -5934,6 +6263,7 @@ function LabDesignComposer({
   activeProfile: LabProfile | null;
   address: LabAddressPlan;
   features: LabProfileFeatures | null;
+  firmwareSummaries: FirmwareSummary[];
   health?: HealthLike;
   initialSelectedDevice?: DesignPartId;
   onReload: () => Promise<void> | void;
@@ -6595,6 +6925,15 @@ function LabDesignComposer({
               />
             )}
 
+            {selectedPart.id === "switch" && (
+              <CiscoWorkspaceNetworkControls
+                address={designAddress}
+                firmwareSummaries={firmwareSummaries}
+                onReload={onReload}
+                workflowActions={workflowActions}
+              />
+            )}
+
             {selectedElementInspector && (
               <section className="design-element-inspector" aria-label={`${selectedPart.label} ${selectedElementInspector.label} inspector`}>
                 <div>
@@ -6742,7 +7081,7 @@ function LabDesignComposer({
               {diagnosis && <WorkflowDiagnosisCard diagnosis={diagnosis} />}
             </section>
 
-            <details className="design-schema-inventory">
+            <details className="design-schema-inventory" open>
               <summary>
                 <span>Schema homes</span>
                 <strong>{selectedPersistenceRows.length} mapped parameters</strong>
@@ -10164,8 +10503,6 @@ function NetworkReferencePanel({
       <section className="overview-safe-actions" aria-label="Next safe actions">
         <RealLabPrerequisitesPanel
           items={prerequisites}
-          labSafety={labSafety}
-          onUpdated={onLabSafetyUpdated}
         />
       </section>
 
@@ -10242,13 +10579,9 @@ function NetworkReferencePanel({
 }
 
 function RealLabPrerequisitesPanel({
-  items,
-  labSafety,
-  onUpdated
+  items
 }: {
   items: RealLabPrerequisite[];
-  labSafety: LabSafetySettings | null;
-  onUpdated: () => Promise<void>;
 }) {
   const missing = items.filter((item) => item.status !== "ready").length;
   return (
@@ -10272,7 +10605,6 @@ function RealLabPrerequisitesPanel({
             </div>
           ))}
         </div>
-        <LabSafetyControls labSafety={labSafety} onUpdated={onUpdated} />
       </CardContent>
     </Card>
   );

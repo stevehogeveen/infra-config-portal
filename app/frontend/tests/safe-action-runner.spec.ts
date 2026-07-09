@@ -287,6 +287,8 @@ test("zoned map opens device workspace directly and keeps system scoped controls
   await page.goto("/overview");
 
   const topology = page.locator("section[aria-label='Living lab topology']");
+  await expect(topology.getByLabel("System lab safety gates")).toBeVisible();
+  await expect(topology.getByLabel("System lab safety gates")).toContainText("Lab safety");
   const ciscoNode = topology.getByRole("button", { name: "Open Cisco switch workspace" });
   await ciscoNode.click();
   await expect(ciscoNode).toHaveAttribute("aria-current", "true");
@@ -296,6 +298,24 @@ test("zoned map opens device workspace directly and keeps system scoped controls
   const composer = page.locator("div[aria-label='Design mode rack composer']");
   await expect(composer).toBeVisible();
   await expect(composer.getByLabel("Cisco switch workspace")).toBeVisible();
+  const networkControls = composer.getByLabel("Cisco workspace network controls");
+  await expect(networkControls).toBeVisible();
+  await expect(networkControls).toContainText("Read-only checks");
+  await expect(networkControls).toContainText("Refresh live evidence");
+  await networkControls.getByText("More read-only checks").click();
+  await expect(networkControls).toContainText("Privilege Check");
+  const ciscoProbeRequest = page.waitForRequest((request) =>
+    request.url().includes("/api/v1/providers/cisco-ansible/probe") &&
+    request.method() === "POST"
+  );
+  const ciscoDiffRequest = page.waitForRequest((request) =>
+    request.url().includes("/api/v1/providers/cisco/current-intent-diff") &&
+    request.method() === "POST"
+  );
+  await networkControls.getByRole("button", { name: /Refresh live evidence/ }).click();
+  await ciscoProbeRequest;
+  await ciscoDiffRequest;
+  await expect(networkControls).toContainText("Cisco current-to-intent diff completed");
   await composer.getByRole("button", { name: "Switch port 2" }).click();
   const selectedPortProof = composer.getByLabel("Cisco switch port 2 read-only command output");
   await expect(selectedPortProof).toContainText("show interface Gi1/0/2");
@@ -439,6 +459,7 @@ test("overview design mode keeps the surface map-only until a node opens the wor
   await expect(topology.getByLabel("Management zone devices")).toContainText("HPE iLO");
   await expect(topology.getByLabel("Storage fabric zone devices")).toContainText("HPE Gen10");
   await expect(topology.getByLabel("Storage fabric zone devices")).toContainText("NetApp ONTAP");
+  await expect(topology.getByLabel("System lab safety gates")).toContainText("Lab safety");
 
   await topology.getByRole("button", { name: "Open Cisco switch workspace" }).click();
 
@@ -723,7 +744,7 @@ test("network shows switch access, settings, and blockers without proof clutter"
   await expect(network).toContainText("Hardware contact gates");
   await expect(network).toContainText("Console adapter");
   await expect(network).toContainText("Real hardware acknowledgement");
-  await expect(network).toContainText("ACKNOWLEDGE DEVICE RECONFIGURATION");
+  await expect(network).not.toContainText("ACKNOWLEDGE DEVICE RECONFIGURATION");
   await expect(network).toContainText("Network Settings");
   await expect(network).toContainText("Active Blockers");
   await expect(network).toContainText("192.168.1.204");
