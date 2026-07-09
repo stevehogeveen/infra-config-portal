@@ -9782,6 +9782,226 @@ th.ui-compact-table-cell {
   width: 100%;
 }
 
+.netapp-workspace-controls {
+  background: linear-gradient(180deg, #ffffff, #f8fbff);
+  border: 1px solid #dbe4ee;
+  border-radius: 12px;
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+  scroll-margin-top: 86px;
+}
+
+.netapp-workspace-controls-head {
+  align-items: start;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.netapp-workspace-controls h4,
+.netapp-workspace-controls h5 {
+  color: var(--ink);
+  line-height: 1.15;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.netapp-workspace-controls h4 {
+  font-size: 15px;
+}
+
+.netapp-workspace-controls h5 {
+  font-size: 13px;
+}
+
+.netapp-workspace-controls-head span,
+.netapp-workspace-guarded-apply span {
+  color: #475569;
+  display: block;
+  font-size: 12px;
+  font-weight: 750;
+  line-height: 1.35;
+  margin-top: 4px;
+}
+
+.netapp-workspace-evidence-grid {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.netapp-workspace-evidence-grid > div {
+  background: #f8fafc;
+  border: 1px solid #e5e9ef;
+  border-radius: 9px;
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  padding: 9px;
+}
+
+.netapp-workspace-evidence-grid span,
+.netapp-workspace-gate-grid span {
+  color: #64748b;
+  font-size: 10px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.netapp-workspace-evidence-grid strong,
+.netapp-workspace-evidence-grid small,
+.netapp-workspace-gate-grid strong,
+.netapp-workspace-gate-grid small {
+  overflow-wrap: anywhere;
+}
+
+.netapp-workspace-evidence-grid strong,
+.netapp-workspace-gate-grid strong {
+  color: var(--ink);
+  font-size: 11px;
+  line-height: 1.25;
+}
+
+.netapp-workspace-evidence-grid small,
+.netapp-workspace-gate-grid small {
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 750;
+  line-height: 1.35;
+}
+
+.netapp-workspace-action-groups {
+  display: grid;
+  gap: 10px;
+}
+
+.netapp-workspace-action-group {
+  border: 1px solid #e5e9ef;
+  border-radius: 10px;
+  display: grid;
+  gap: 9px;
+  padding: 10px;
+}
+
+.netapp-workspace-action-buttons {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.netapp-workspace-action-buttons button {
+  align-items: start;
+  background: #f8fafc;
+  border: 1px solid #dbe4ee;
+  border-radius: 8px;
+  color: var(--ink);
+  cursor: pointer;
+  display: grid;
+  gap: 3px 7px;
+  grid-template-columns: 18px minmax(0, 1fr);
+  min-height: 58px;
+  padding: 8px;
+  text-align: left;
+}
+
+.netapp-workspace-action-buttons button:hover,
+.netapp-workspace-action-buttons button:focus-visible {
+  border-color: #14b8a6;
+  box-shadow: 0 0 0 3px rgba(20, 184, 166, 0.12);
+  outline: none;
+}
+
+.netapp-workspace-action-buttons button:disabled,
+.netapp-workspace-guarded-button:disabled {
+  cursor: progress;
+  opacity: 0.72;
+}
+
+.netapp-workspace-action-buttons svg {
+  color: #0f766e;
+  margin-top: 1px;
+}
+
+.netapp-workspace-action-buttons span {
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 1.2;
+}
+
+.netapp-workspace-action-buttons small {
+  color: #64748b;
+  font-size: 10.5px;
+  grid-column: 2;
+  line-height: 1.3;
+}
+
+.netapp-workspace-action-group details {
+  display: grid;
+  gap: 8px;
+}
+
+.netapp-workspace-action-group summary {
+  color: #0f766e;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.netapp-workspace-action-group details .netapp-workspace-action-buttons {
+  margin-top: 8px;
+}
+
+.netapp-workspace-guarded-apply {
+  background: #fffbeb;
+  border: 1px solid #fcd34d;
+  border-radius: 12px;
+  display: grid;
+  gap: 10px;
+  padding: 11px;
+}
+
+.netapp-workspace-gate-grid {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.netapp-workspace-gate-grid > div {
+  background: rgba(255, 255, 255, 0.74);
+  border: 1px solid #fde68a;
+  border-radius: 8px;
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 8px;
+}
+
+.netapp-workspace-guarded-button {
+  align-items: center;
+  background: #7c2d12;
+  border: 1px solid #9a3412;
+  border-radius: 10px;
+  color: #ffffff;
+  cursor: pointer;
+  display: inline-flex;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 900;
+  gap: 8px;
+  justify-content: center;
+  min-height: 38px;
+  padding: 9px 12px;
+  width: fit-content;
+}
+
+.netapp-workspace-guarded-button:hover,
+.netapp-workspace-guarded-button:focus-visible {
+  box-shadow: 0 0 0 4px rgba(251, 146, 60, 0.22);
+  outline: none;
+}
+
 .design-element-inspector {
   background: linear-gradient(180deg, #f8fafc, #ffffff);
   border: 1px solid #cbd5e1;

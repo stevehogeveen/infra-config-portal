@@ -2486,6 +2486,296 @@ function NetAppOntapReadinessCard({
   );
 }
 
+function NetAppWorkspaceStorageControls({
+  activeProfile,
+  address,
+  onReload,
+  storageProtocol
+}: {
+  activeProfile: LabProfile | null;
+  address: LabAddressPlan;
+  onReload: () => Promise<void> | void;
+  storageProtocol: string;
+}) {
+  const [runState, setRunState] = useState<WorkflowRunState>(emptyRunState);
+  const [consoleReadiness, setConsoleReadiness] = useState<ProviderProbeResult | null>(null);
+  const [liveState, setLiveState] = useState<ProviderProbeResult | null>(null);
+  const [setupPreview, setSetupPreview] = useState<ProviderProbeResult | null>(null);
+  const [nfsValidation, setNfsValidation] = useState<ProviderProbeResult | null>(null);
+  const [iscsiSetup, setIscsiSetup] = useState<ProviderProbeResult | null>(null);
+  const [esxiIscsiDatastore, setEsxiIscsiDatastore] = useState<ProviderProbeResult | null>(null);
+  const activeStorageProtocol = storageProtocol === "iscsi" ? "iscsi" : "nfs";
+  const iscsiFlagState = objectValue(iscsiSetup?.flag_state);
+  const iscsiApplyState = objectValue(iscsiSetup?.apply);
+  const iscsiRequiredFlags = stringArray(iscsiSetup?.required_flags);
+  const gateRows = [
+    ["Read/write mode", asBoolean(iscsiFlagState.local_lab_readwrite)],
+    ["Apply flag", asBoolean(iscsiFlagState.netapp_iscsi_setup_apply)],
+    ["Confirm phrase", asBoolean(iscsiFlagState.netapp_iscsi_setup_confirm)],
+    ["Storage create", asBoolean(iscsiFlagState.netapp_iscsi_setup_allow_storage_create)]
+  ] as const;
+  const gateEvaluated = Object.keys(iscsiFlagState).length > 0;
+  const gateReadyCount = gateRows.filter(([, ready]) => ready).length;
+  const applyEvidence = [
+    `ONTAP writes ${asBoolean(iscsiApplyState.ontap_writes_attempted) ? "attempted" : "not attempted"}`,
+    `ESXi writes ${asBoolean(iscsiApplyState.esxi_writes_attempted) ? "attempted" : "not attempted"}`,
+    `vCenter writes ${asBoolean(iscsiApplyState.vcenter_writes_attempted) ? "attempted" : "not attempted"}`
+  ];
+  const evidenceRows = [
+    {
+      detail: sourceLabel(consoleReadiness),
+      label: "Console",
+      status: asString(consoleReadiness?.status) || "not_checked",
+      value: asString(objectValue(objectValue(consoleReadiness?.runtime_state).console).prompt_label) || asString(consoleReadiness?.selected_prompt_label) || "Not checked"
+    },
+    {
+      detail: sourceLabel(liveState),
+      label: "Protocols",
+      status: asString(liveState?.status) || "not_checked",
+      value: asString(liveState?.message) || "Live protocol state not read"
+    },
+    {
+      detail: sourceLabel(setupPreview),
+      label: "Setup preview",
+      status: asString(setupPreview?.status) || "not_checked",
+      value: asString(setupPreview?.message) || "Setup plan not previewed"
+    },
+    {
+      detail: sourceLabel(nfsValidation),
+      label: "NFS validate",
+      status: asString(nfsValidation?.status) || "not_checked",
+      value: asString(nfsValidation?.message) || listLabel(address.netapp_nfs_lifs)
+    },
+    {
+      detail: sourceLabel(iscsiSetup),
+      label: "NetApp iSCSI",
+      status: asString(iscsiSetup?.status) || "not_checked",
+      value: asString(iscsiSetup?.message) || listLabel(address.netapp_iscsi_lifs)
+    },
+    {
+      detail: sourceLabel(esxiIscsiDatastore),
+      label: "ESXi iSCSI",
+      status: asString(esxiIscsiDatastore?.status) || "not_checked",
+      value: asString(esxiIscsiDatastore?.message) || "Datastore path not validated"
+    }
+  ];
+  const actions: Array<{
+    detail: string;
+    icon: ReactNode;
+    id: string;
+    label: string;
+    run: () => Promise<ProviderProbeResult>;
+  }> = [
+    { detail: "Discover console path and saved observation state.", icon: <RefreshCw size={14} />, id: "console-discovery", label: "Discover Console", run: api.runNetappConsoleDiscovery },
+    { detail: "Read controller console state without configuring ONTAP.", icon: <Play size={14} />, id: "console-read", label: "Read Console", run: api.runNetappConsoleReadState },
+    { detail: "Check whether console login state is usable.", icon: <ShieldCheck size={14} />, id: "console-login", label: "Check Login State", run: api.runNetappConsoleLoginState },
+    { detail: "Read ONTAP protocol/service readiness.", icon: <Route size={14} />, id: "protocols", label: "Check Protocols", run: api.runNetappLiveState },
+    { detail: "Validate cluster setup prerequisites.", icon: <ShieldCheck size={14} />, id: "setup-validate", label: "Validate Setup", run: api.validateNetappSetup },
+    { detail: "Validate the NFS setup path before datastore work.", icon: <ShieldCheck size={14} />, id: "nfs-validate", label: "Validate NFS", run: api.validateNetappNfsSetup },
+    { detail: "Preview ONTAP setup intent; no writes.", icon: <Route size={14} />, id: "setup-preview", label: "Setup Preview", run: api.netappSetupPreview },
+    { detail: "Preview LUN, igroup, LIF, and initiator plan.", icon: <Route size={14} />, id: "iscsi-preview", label: "Preview iSCSI", run: api.netappIscsiSetupPreview },
+    { detail: "Preview ESXi adapter/session/datastore state.", icon: <Route size={14} />, id: "esxi-iscsi-preview", label: "Preview ESXi iSCSI", run: api.esxiIscsiDatastorePreview },
+    { detail: "Validate NetApp iSCSI without making it a casual apply.", icon: <ShieldCheck size={14} />, id: "iscsi-validate", label: "Validate iSCSI", run: api.validateNetappIscsiSetup },
+    { detail: "Validate ESXi datastore visibility after preview.", icon: <ShieldCheck size={14} />, id: "esxi-iscsi-validate", label: "Validate ESXi iSCSI", run: api.validateEsxiIscsiDatastore }
+  ];
+  const readOnlyPrimary = actions.slice(0, 3);
+  const readOnlyMore = actions.slice(3, 6);
+  const previewActions = actions.slice(6, 9);
+  const validationActions = actions.slice(9, 11);
+
+  async function refreshEvidence() {
+    const [nextConsole, nextLive, nextSetup, nextNfs, nextIscsi, nextEsxiIscsi] = await Promise.all([
+      safeApi(api.netappConsoleReadiness, null),
+      safeApi(api.netappLiveState, null),
+      safeApi(api.netappSetupPreview, null),
+      safeApi(api.netappNfsVcenterReadiness, null),
+      safeApi(api.netappIscsiSetupPreview, null),
+      safeApi(api.esxiIscsiDatastorePreview, null)
+    ]);
+    setConsoleReadiness(nextConsole as ProviderProbeResult | null);
+    setLiveState(nextLive as ProviderProbeResult | null);
+    setSetupPreview(nextSetup as ProviderProbeResult | null);
+    setNfsValidation(nextNfs as ProviderProbeResult | null);
+    setIscsiSetup(nextIscsi as ProviderProbeResult | null);
+    setEsxiIscsiDatastore(nextEsxiIscsi as ProviderProbeResult | null);
+  }
+
+  useEffect(() => {
+    let ignore = false;
+    Promise.all([
+      safeApi(api.netappConsoleReadiness, null),
+      safeApi(api.netappLiveState, null),
+      safeApi(api.netappSetupPreview, null),
+      safeApi(api.netappNfsVcenterReadiness, null),
+      safeApi(api.netappIscsiSetupPreview, null),
+      safeApi(api.esxiIscsiDatastorePreview, null)
+    ]).then(([nextConsole, nextLive, nextSetup, nextNfs, nextIscsi, nextEsxiIscsi]) => {
+      if (ignore) return;
+      setConsoleReadiness(nextConsole as ProviderProbeResult | null);
+      setLiveState(nextLive as ProviderProbeResult | null);
+      setSetupPreview(nextSetup as ProviderProbeResult | null);
+      setNfsValidation(nextNfs as ProviderProbeResult | null);
+      setIscsiSetup(nextIscsi as ProviderProbeResult | null);
+      setEsxiIscsiDatastore(nextEsxiIscsi as ProviderProbeResult | null);
+    });
+    return () => {
+      ignore = true;
+    };
+  }, [activeProfile?.id]);
+
+  async function runWorkspaceStorageAction(action: typeof actions[number]) {
+    setRunState({ error: "", message: "", runningActionId: action.id });
+    try {
+      const result = await action.run();
+      await refreshEvidence();
+      if (action.id.startsWith("console")) setConsoleReadiness(result);
+      if (action.id === "protocols") setLiveState(result);
+      if (action.id === "setup-preview" || action.id === "setup-validate") setSetupPreview(result);
+      if (action.id === "nfs-validate") setNfsValidation(result);
+      if (action.id === "iscsi-preview" || action.id === "iscsi-validate") setIscsiSetup(result);
+      if (action.id.startsWith("esxi-iscsi")) setEsxiIscsiDatastore(result);
+      await onReload();
+      setRunState({
+        error: "",
+        message: `${action.label}: ${displayStatus(asString(result.status) || "completed")}. ${asString(result.message) || asString(result.next_safe_action)}`,
+        runningActionId: ""
+      });
+    } catch (err) {
+      setRunState({ error: errorMessage(err), message: "", runningActionId: "" });
+    }
+  }
+
+  async function runGuardedIscsiApply() {
+    setRunState({ error: "", message: "", runningActionId: "iscsi-apply" });
+    try {
+      const result = await api.runNetappIscsiSetupApply();
+      await refreshEvidence();
+      setIscsiSetup(result);
+      await onReload();
+      setRunState({
+        error: "",
+        message: `Apply iSCSI gate evaluated: ${displayStatus(asString(result.status) || "completed")}. ${asString(result.message) || asString(result.next_safe_action)}`,
+        runningActionId: ""
+      });
+    } catch (err) {
+      setRunState({ error: errorMessage(err), message: "", runningActionId: "" });
+    }
+  }
+
+  function renderActionButton(action: typeof actions[number]) {
+    const running = runState.runningActionId === action.id;
+    return (
+      <button disabled={running} key={action.id} onClick={() => void runWorkspaceStorageAction(action)} type="button">
+        {action.icon}
+        <span>{running ? "Running" : action.label}</span>
+        <small>{action.detail}</small>
+      </button>
+    );
+  }
+
+  return (
+    <section className="netapp-workspace-controls" aria-label="NetApp workspace storage controls">
+      <div className="netapp-workspace-controls-head">
+        <div>
+          <p className="operator-kicker">Storage controls</p>
+          <h4>{activeStorageProtocol === "iscsi" ? "iSCSI and ONTAP checks" : "NFS and ONTAP checks"}</h4>
+          <span>These are the Storage-page controls moved into the device workspace. Unknown stays gray until a real check runs.</span>
+        </div>
+        <StatusBadge label={activeStorageProtocol.toUpperCase()} status="plan-only" />
+      </div>
+
+      <div className="netapp-workspace-evidence-grid">
+        {evidenceRows.map((row) => (
+          <div key={row.label}>
+            <span>{row.label}</span>
+            <strong>{row.value}</strong>
+            <small>{row.detail}</small>
+            <SimpleStatusPill status={row.status} />
+          </div>
+        ))}
+      </div>
+
+      <div className="netapp-workspace-action-groups">
+        <section className="netapp-workspace-action-group">
+          <div>
+            <p className="operator-kicker">Read-only checks</p>
+            <h5>Console and protocol proof</h5>
+          </div>
+          <div className="netapp-workspace-action-buttons">
+            {readOnlyPrimary.map(renderActionButton)}
+          </div>
+          <details>
+            <summary>More read-only checks</summary>
+            <div className="netapp-workspace-action-buttons">
+              {readOnlyMore.map(renderActionButton)}
+            </div>
+          </details>
+        </section>
+
+        <section className="netapp-workspace-action-group">
+          <div>
+            <p className="operator-kicker">Setup previews</p>
+            <h5>Plan only, no writes</h5>
+          </div>
+          <div className="netapp-workspace-action-buttons">
+            {previewActions.map(renderActionButton)}
+          </div>
+        </section>
+
+        <section className="netapp-workspace-action-group">
+          <div>
+            <p className="operator-kicker">Validations</p>
+            <h5>Protocol and datastore proof</h5>
+          </div>
+          <div className="netapp-workspace-action-buttons">
+            {validationActions.map(renderActionButton)}
+          </div>
+        </section>
+      </div>
+
+      <section className="netapp-workspace-guarded-apply" aria-label="Guarded iSCSI apply">
+        <div>
+          <p className="operator-kicker">Guarded write</p>
+          <h5>Apply iSCSI stays behind the existing backend gate</h5>
+          <span>Runs the same guarded endpoint as Storage. If flags or confirmation are missing, the backend returns blockers and no write should proceed.</span>
+        </div>
+        <div className="netapp-workspace-gate-grid">
+          <div>
+            <span>Required flags</span>
+            <strong>{iscsiRequiredFlags.length ? `${iscsiRequiredFlags.length} reported` : "Not loaded"}</strong>
+            <small>{iscsiRequiredFlags.join(" | ") || "Run Preview iSCSI or guarded Apply to load real gate requirements."}</small>
+          </div>
+          <div>
+            <span>Gate state</span>
+            <strong>{gateEvaluated ? `${gateReadyCount}/${gateRows.length} satisfied` : "Unknown"}</strong>
+            <small>{gateEvaluated ? gateRows.map(([label, ready]) => `${label}: ${ready ? "ready" : "blocked"}`).join(" | ") : "Not evaluated by backend yet."}</small>
+          </div>
+          <div>
+            <span>Write evidence</span>
+            <strong>{asString(iscsiSetup?.action) === "iscsi-setup-apply" ? "Apply response captured" : "No apply response"}</strong>
+            <small>{applyEvidence.join(" | ")}</small>
+          </div>
+        </div>
+        <button
+          className="netapp-workspace-guarded-button"
+          disabled={runState.runningActionId === "iscsi-apply"}
+          onClick={() => void runGuardedIscsiApply()}
+          type="button"
+        >
+          <ShieldCheck size={14} />
+          <span>{runState.runningActionId === "iscsi-apply" ? "Checking gate" : "Apply iSCSI (guarded)"}</span>
+        </button>
+      </section>
+
+      {(runState.message || runState.error) && (
+        <p className={runState.error ? "operator-action-message error" : "operator-action-message success"}>
+          {runState.error || runState.message}
+        </p>
+      )}
+    </section>
+  );
+}
+
 export function OperatorVirtualizationPage({ labProfileState, onReloadLabProfile }: OperatorPageProps) {
   const activeProfile = activeLabProfile(labProfileState);
   const address = activeAddressPlan(activeProfile);
@@ -6294,6 +6584,15 @@ function LabDesignComposer({
                   <option value="iscsi">iSCSI block datastore path</option>
                 </select>
               </section>
+            )}
+
+            {selectedPart.id === "netapp" && (
+              <NetAppWorkspaceStorageControls
+                activeProfile={activeProfile}
+                address={designAddress}
+                onReload={onReload}
+                storageProtocol={storageProtocol}
+              />
             )}
 
             {selectedElementInspector && (

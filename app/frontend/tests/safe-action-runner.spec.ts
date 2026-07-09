@@ -331,6 +331,31 @@ test("zoned map opens device workspace directly and keeps system scoped controls
   await expect(iloOverlay.locator("section[aria-label='HPE iLO safe checks and next actions']")).not.toContainText("Reset Server Power");
   await iloOverlay.getByRole("button", { name: "Close" }).click();
   await expect(page.locator("div[aria-label='Device workspace overlay']")).toHaveCount(0);
+
+  await topology.getByRole("button", { name: "Open NetApp ONTAP workspace" }).click();
+  const netappOverlay = page.locator("div[aria-label='Device workspace overlay']");
+  const netappWorkspace = netappOverlay.locator("section[aria-label='NetApp ONTAP workspace']");
+  await expect(netappWorkspace.getByLabel("NetApp workspace storage controls")).toBeVisible();
+  await expect(netappWorkspace.getByLabel("NetApp workspace storage controls")).toContainText("Read-only checks");
+  await expect(netappWorkspace.getByLabel("NetApp workspace storage controls")).toContainText("Setup previews");
+  await expect(netappWorkspace.getByLabel("NetApp workspace storage controls")).toContainText("Validations");
+  await netappWorkspace.getByText("More read-only checks").click();
+  await expect(netappWorkspace.getByLabel("NetApp workspace storage controls")).toContainText("Check Protocols");
+  const guardedIscsi = netappWorkspace.getByLabel("Guarded iSCSI apply");
+  await expect(guardedIscsi).toContainText("existing backend gate");
+  await expect(guardedIscsi.getByRole("button", { name: /Apply iSCSI/ })).toBeVisible();
+  await expect(netappOverlay.locator("section[aria-label='NetApp ONTAP safe checks and next actions']")).not.toContainText("Apply iSCSI");
+  const guardedApplyRequest = page.waitForRequest((request) =>
+    request.url().includes("/api/v1/providers/netapp-ontap/iscsi-setup-apply") &&
+    request.method() === "POST"
+  );
+  await guardedIscsi.getByRole("button", { name: /Apply iSCSI/ }).click();
+  await guardedApplyRequest;
+  await expect(guardedIscsi).toContainText("1/4 satisfied");
+  await expect(guardedIscsi).toContainText("ONTAP writes not attempted");
+  await netappOverlay.getByRole("button", { name: "Close" }).click();
+  await expect(page.locator("div[aria-label='Device workspace overlay']")).toHaveCount(0);
+
   await topology.getByLabel("System setup picker").getByRole("button", { name: "Open system setup picker" }).click();
   const systemPlan = topology.getByLabel("Setup and IP plan");
   await expect(systemPlan).toBeVisible();
