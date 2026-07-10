@@ -216,25 +216,22 @@ test("renders the new top-level navigation and pages", async ({ page }) => {
   await expect(page.locator("header[aria-label='Application header']")).toBeVisible();
   await expect(page.locator("nav .nav-item-label")).toHaveText([
     "Overview",
-    "Network",
-    "Server",
-    "Storage",
-    "Virtualization",
     "Firmware",
     "Validate"
   ]);
+  for (const retiredLabel of ["Network", "Server", "Storage", "Virtualization"]) {
+    await expect(page.locator("nav .nav-item-label", { hasText: retiredLabel })).toHaveCount(0);
+  }
 
   await expect(page.getByRole("heading", { name: "Overview" })).toBeVisible();
   await page.goto("/lab-setup");
   await expect(page).toHaveURL(/\/overview/);
-  await page.goto("/network");
-  await expect(page.getByRole("heading", { name: "Network", exact: true })).toBeVisible();
-  await page.goto("/server");
-  await expect(page.getByRole("heading", { name: "Server", exact: true })).toBeVisible();
-  await page.goto("/storage");
-  await expect(page.getByRole("heading", { name: "Storage", exact: true })).toBeVisible();
-  await page.goto("/virtualization");
-  await expect(page.getByRole("heading", { name: "Virtualization", exact: true })).toBeVisible();
+  for (const retiredPath of ["/network", "/server", "/storage", "/virtualization"]) {
+    await page.goto(retiredPath);
+    await expect(page).toHaveURL(/\/overview/);
+    await expect(page.getByRole("heading", { name: "Overview", exact: true })).toBeVisible();
+    await expect(page.locator("section[aria-label='Living lab topology']")).toBeVisible();
+  }
   await page.goto("/firmware-upgrades");
   await expect(page.getByRole("heading", { name: "Firmware Upgrades", exact: true })).toBeVisible();
   await page.goto("/validation");
@@ -467,11 +464,11 @@ test("overview flags saved subnet mismatch and links to subnet editing", async (
   await expect(topology).toContainText("Active setup targets 192.168.1.0/24");
   await expect(topology).toContainText("10.10.8.99");
 
-  const editSubnet = topology.getByRole("link", { name: "Edit Network profile" });
-  await expect(editSubnet).toHaveAttribute("href", "/network#network-profile");
+  const editSubnet = topology.getByRole("link", { name: "Edit system setup" });
+  await expect(editSubnet).toHaveAttribute("href", "/overview#system-setup");
   await editSubnet.click();
-  await expect(page).toHaveURL(/\/network#network-profile$/);
-  await expect(page.locator("#network-profile")).toBeVisible();
+  await expect(page).toHaveURL(/\/overview#system-setup$/);
+  await expect(page.locator("#system-setup")).toBeVisible();
 });
 
 test("living topology creates a subnet-derived system setup without running workflows", async ({ page }) => {
@@ -730,22 +727,23 @@ test("overview retires setup lanes in favor of the single-server map", async ({ 
   await expect(page.locator("section[aria-label='Scenario setup lanes']")).toHaveCount(0);
 });
 
-test("storage page switches to local datastore guidance for single-server setup", async ({ page }) => {
+test("single-server map opens local datastore guidance in the server workspace", async ({ page }) => {
   labProfileScenario = "single";
-  await page.goto("/storage");
+  await page.goto("/overview");
 
-  await expect(page.getByRole("button", { name: "Run Local Storage Live Check" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Run NetApp Live Check" })).toHaveCount(0);
+  const topology = page.locator("section[aria-label='Living lab topology']");
+  const map = topology.getByLabel("Zoned lab map");
+  await expect(map).toContainText("Local RAID");
+  await expect(map).not.toContainText("NetApp ONTAP");
 
-  const scenario = page.locator(".storage-scenario-card");
-  await expect(scenario).toContainText("Single server with local ESXi storage");
-  await expect(scenario).toContainText("RAID + ESXi local datastore");
-  await expect(scenario).toContainText("NetApp can stay skipped for this build");
-
-  const storage = page.locator("section[aria-label='Storage reference']");
-  await expect(storage).toContainText("Local ESXi Datastore");
-  await expect(storage).toContainText("Shared Storage Optional");
-  await expect(storage).toContainText("No NetApp action is required unless the active setup changes to shared storage.");
+  await topology.getByRole("button", { name: "Open HPE DL360 Gen10 workspace" }).click();
+  const workspace = page.locator("section[aria-label='DL360 Gen10 workspace']");
+  await expect(workspace).toBeVisible();
+  await expect(workspace.getByLabel("DL360 Gen10 Storage")).toContainText("Local RAID and drive layout");
+  await expect(workspace.getByLabel("DL360 Gen10 Storage")).toContainText("Data RAID");
+  await expect(workspace.getByLabel("Server workspace checks")).toContainText("Local RAID");
+  await expect(workspace.getByLabel("Server workspace checks")).toContainText("ESXi and RAID checks");
+  await expect(workspace.getByLabel("RAID guarded write boundary")).toContainText("stay off this map");
 });
 
 test("overview AI intent bar hides proof reversibly and persists layout only", async ({ page }) => {
@@ -789,22 +787,25 @@ test("AI intent target picker highlights and scopes this-box apply requests", as
   await expect(page.locator("details.advanced-drawer").filter({ hasText: "Advanced proof" })).toBeVisible();
 });
 
-test("storage AI intent bar can collapse and reset a declared page region", async ({ page }) => {
+test("legacy storage route redirects before page AI can target old regions", async ({ page }) => {
   labProfileScenario = "single";
   await page.goto("/storage");
+  await expect(page).toHaveURL(/\/overview/);
   await page.getByRole("button", { name: "Advanced" }).click();
-  await page.getByRole("button", { name: "Reset" }).click();
+  await page.getByRole("button", { name: "Reset", exact: true }).click();
 
-  await expect(page.locator("section[aria-label='Storage reference']")).toBeVisible();
-  await page.getByRole("textbox", { name: "Change this page" }).fill("collapse storage reference");
+  await expect(page.locator("section[aria-label='Storage reference']")).toHaveCount(0);
+  await expect(page.locator("[data-region-id='topology']")).toBeVisible();
+  await page.getByRole("textbox", { name: "Change this page" }).fill("collapse living lab topology");
   await page.getByRole("button", { name: "Apply", exact: true }).click();
 
-  await expect(page.getByText("Storage reference").first()).toBeVisible();
+  await expect(page.getByText("Living lab topology").first()).toBeVisible();
   await expect(page.getByText("Collapsed by page AI").first()).toBeVisible();
-  await expect(page.locator("section[aria-label='Storage reference']")).toHaveCount(0);
+  await expect(page.locator("[data-region-id='topology']")).toBeVisible();
+  await expect(page.locator("[data-region-id='topology']")).toContainText("Collapsed by page AI");
 
-  await page.getByRole("button", { name: "Reset" }).click();
-  await expect(page.locator("section[aria-label='Storage reference']")).toBeVisible();
+  await page.getByRole("button", { name: "Reset", exact: true }).click();
+  await expect(page.locator("[data-region-id='topology']")).toBeVisible();
 });
 
 test("AI intent bar queues non-layout change requests without running workflows", async ({ page }) => {
@@ -824,32 +825,50 @@ test("AI intent bar queues non-layout change requests without running workflows"
   await expect(page.getByText("This looks bigger than layout.")).toHaveCount(0);
 });
 
-test("virtualization page switches to direct ESXi guidance when vCenter is out of scope", async ({ page }) => {
+test("single-server map removes vCenter and keeps direct ESXi guidance on the server workspace", async ({ page }) => {
   labProfileScenario = "single";
-  await page.goto("/virtualization");
+  await page.goto("/overview");
 
-  await expect(page.getByRole("button", { name: "Run ESXi Live Check" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Run vCenter Live Check" })).toHaveCount(0);
+  const topology = page.locator("section[aria-label='Living lab topology']");
+  const map = topology.getByLabel("Zoned lab map");
+  await expect(map).toContainText("No NetApp or vCenter nodes are in this active profile.");
+  await expect(map.getByRole("button", { name: "Open vCenter VCSA workspace" })).toHaveCount(0);
 
-  const reference = page.locator("section[aria-label='Virtualization reference']");
-  await expect(reference).toContainText("Single server + local ESXi storage");
-  await expect(reference).toContainText("vCenter not in this setup.");
-  await expect(reference).toContainText("Direct ESXi workflow");
-  await expect(reference).toContainText("Server local datastore");
+  await topology.getByRole("button", { name: "Open HPE DL360 Gen10 workspace" }).click();
+  const serverWorkspace = page.locator("section[aria-label='DL360 Gen10 workspace']");
+  await expect(serverWorkspace.getByLabel("DL360 Gen10 Storage")).toContainText("Local RAID and drive layout");
+  await expect(serverWorkspace.getByLabel("Server workspace checks")).toContainText("ESXi Live Check");
+  await expect(serverWorkspace.getByLabel("Server workspace checks")).not.toContainText("vCenter Live Check");
 });
 
-test("each side tab exposes a dedicated run button without dead settings drawers", async ({ page }) => {
-  const pages = [
-    ["/overview", "Run Refresh Access"],
-    ["/network", "Run Live Switch Check"],
-    ["/server", "Run Server Live Check"],
-    ["/storage", "Run NetApp Live Check"],
-    ["/virtualization", "Run vCenter Live Check"],
+test("top nav and map workspaces expose run controls without dead settings drawers", async ({ page }) => {
+  await page.goto("/overview");
+  await expect(page.getByRole("button", { name: "Settings" })).toHaveCount(0);
+  await expect(page.locator("section.tab-settings-drawer")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Run Refresh Access" }).first()).toBeVisible();
+
+  const topology = page.locator("section[aria-label='Living lab topology']");
+  await topology.getByRole("button", { name: "Open Cisco switch workspace" }).click();
+  await expect(page.getByLabel("Cisco workspace network controls")).toContainText("Refresh live evidence");
+  await page.locator("div[aria-label='Device workspace overlay']").getByRole("button", { name: "Close" }).click();
+
+  await topology.getByRole("button", { name: "Open HPE iLO workspace" }).click();
+  await expect(page.getByLabel("iLO workspace server controls")).toContainText("iLO Live Check");
+  await page.locator("div[aria-label='Device workspace overlay']").getByRole("button", { name: "Close" }).click();
+
+  await topology.getByRole("button", { name: "Open NetApp ONTAP workspace" }).click();
+  await expect(page.getByLabel("NetApp workspace storage controls")).toContainText("Discover Console");
+  await expect(page.getByLabel("NetApp workspace storage controls")).toContainText("Preview iSCSI");
+  await page.locator("div[aria-label='Device workspace overlay']").getByRole("button", { name: "Close" }).click();
+
+  await topology.getByRole("button", { name: "Open vCenter VCSA workspace" }).click();
+  await expect(page.getByLabel("vCenter workspace virtualization controls")).toContainText("vCenter Live Check");
+  await page.locator("div[aria-label='Device workspace overlay']").getByRole("button", { name: "Close" }).click();
+
+  for (const [path, runButtonName] of [
     ["/firmware-upgrades", "Run Scan Firmware"],
     ["/validation", "Run Validation"]
-  ] as const;
-
-  for (const [path, runButtonName] of pages) {
+  ] as const) {
     await page.goto(path);
     await expect(page.getByRole("button", { name: "Settings" })).toHaveCount(0);
     await expect(page.locator("section.tab-settings-drawer")).toHaveCount(0);
@@ -858,100 +877,80 @@ test("each side tab exposes a dedicated run button without dead settings drawers
 });
 
 test("operator pages avoid test-mode wording for live run controls", async ({ page }) => {
-  for (const path of ["/network", "/server", "/storage", "/virtualization", "/firmware-upgrades", "/validation"]) {
+  for (const path of ["/overview", "/network", "/server", "/storage", "/virtualization", "/firmware-upgrades", "/validation"]) {
     await page.goto(path);
     await expect(page.getByText("Run Test")).toHaveCount(0);
     await expect(page.getByText("Use these buttons to test or change this part of the lab.")).toHaveCount(0);
   }
 });
 
-test("side tab run buttons invoke registered workflow actions", async ({ page }) => {
-  const pages = [
-    ["/network", "Run Live Switch Check", "cisco.current-intent-diff"],
-    ["/server", "Run Server Live Check", "ilo.reachability"],
-    ["/storage", "Run NetApp Live Check", "netapp.live-state"],
-    ["/virtualization", "Run vCenter Live Check", "vcenter-netapp.readiness"],
-    ["/validation", "Run Validation", "build-verification.run-full"]
-  ] as const;
-
-  for (const [path, runButtonName, actionId] of pages) {
+test("retired device routes redirect while remaining run actions stay registered", async ({ page }) => {
+  for (const path of ["/network", "/server", "/storage", "/virtualization"]) {
     await page.goto(path);
-    const response = page.waitForResponse((nextResponse) =>
-      nextResponse.url().includes(`/api/v1/workflows/actions/${actionId}/run`) &&
-      nextResponse.request().method() === "POST"
-    );
-    await page.getByRole("button", { name: runButtonName }).click();
-    await expect((await response).ok()).toBeTruthy();
+    await expect(page).toHaveURL(/\/overview/);
+    await expect(page.locator("section[aria-label='Living lab topology']")).toBeVisible();
     await expect(page.getByText(/no backend action is registered yet/i)).toHaveCount(0);
     await expect(page.getByText(/missing a runnable backend action/i)).toHaveCount(0);
   }
+
+  await page.goto("/validation");
+  const response = page.waitForResponse((nextResponse) =>
+    nextResponse.url().includes("/api/v1/workflows/actions/build-verification.run-full/run") &&
+    nextResponse.request().method() === "POST"
+  );
+  await page.getByRole("button", { name: "Run Validation" }).click();
+  await expect((await response).ok()).toBeTruthy();
+  await expect(page.getByText(/no backend action is registered yet/i)).toHaveCount(0);
+  await expect(page.getByText(/missing a runnable backend action/i)).toHaveCount(0);
 });
 
-test("network shows switch access, settings, and blockers without proof clutter", async ({ page }) => {
-  await page.goto("/network");
+test("map switch workspace shows access settings and blockers without proof clutter", async ({ page }) => {
+  await page.goto("/overview");
 
-  const network = page.locator("section[aria-label='Network reference']");
+  const topology = page.locator("section[aria-label='Living lab topology']");
+  await topology.getByRole("button", { name: "Open Cisco switch workspace" }).click();
+  const workspace = page.locator("section[aria-label='Cisco switch workspace']");
+  const controls = workspace.getByLabel("Cisco workspace network controls");
 
-  await expect(network.getByRole("heading", { name: "Network readiness at a glance" })).toBeVisible();
-  await expect(network).toContainText("Switch status");
-  await expect(network).toContainText("Access paths");
-  await expect(network).toContainText("DNS / NTP");
-  await expect(network).toContainText("Cisco firmware");
-  await expect(network).toContainText("Cisco Switch");
-  await expect(network).toContainText("Console");
-  await expect(network).toContainText("SSH / SCP");
-  await expect(network).toContainText("Current State:");
-  await expect(network).toContainText("Target:");
-  await expect(network).toContainText("Gap:");
-  await expect(network).toContainText("Next safe actions");
-  await expect(network).toContainText("Real lab prerequisites");
-  await expect(network).toContainText("Hardware contact gates");
-  await expect(network).toContainText("Console adapter");
-  await expect(network).toContainText("Real hardware acknowledgement");
-  await expect(network).not.toContainText("ACKNOWLEDGE DEVICE RECONFIGURATION");
-  await expect(network).toContainText("Network Settings");
-  await expect(network).toContainText("Active Blockers");
-  await expect(network).toContainText("192.168.1.204");
+  await expect(workspace).toContainText("Cisco C9300");
+  await expect(workspace.getByLabel("Cisco switch Network")).toContainText("Management IP");
+  await expect(controls).toContainText("Network controls");
+  await expect(controls).toContainText("Cisco read-only checks");
+  await expect(controls).toContainText("Management IP");
+  await expect(controls).toContainText("192.168.1.204");
+  await expect(controls).toContainText("Setup readiness");
+  await expect(controls).toContainText("SSH probe");
+  await expect(controls).toContainText("Intent diff");
+  await expect(controls).toContainText("Cisco Firmware Inventory");
+  await expect(workspace).not.toContainText("ACKNOWLEDGE DEVICE RECONFIGURATION");
+  await expect(page.locator("section[aria-label='Network reference']")).toHaveCount(0);
 });
 
-test("network Cisco driver surfaces current-intent guardrail drift", async ({ page }) => {
-  await page.goto("/network");
+test("map Cisco workspace surfaces current-intent guardrail drift", async ({ page }) => {
+  await page.goto("/overview");
+
+  const topology = page.locator("section[aria-label='Living lab topology']");
+  await topology.getByRole("button", { name: "Open Cisco switch workspace" }).click();
+  const controls = page.getByLabel("Cisco workspace network controls");
+  await controls.getByText("More read-only checks").click();
 
   const intentResponse = page.waitForResponse((response) =>
     response.url().includes("/api/v1/providers/cisco/current-intent-diff") &&
     response.request().method() === "POST"
   );
-  await page.getByRole("button", { name: "Refresh live evidence" }).click();
+  await controls.getByRole("button", { name: /Refresh live evidence/ }).click();
   await expect((await intentResponse).ok()).toBeTruthy();
 
-  const driver = page.locator("section[aria-label='Cisco switch driver']");
-  await expect(driver).toContainText("Live intent parsed");
-  await expect(driver).toContainText("1 live interface mismatch needs review before apply.");
-  await expect(driver).toContainText("Evidence: current-intent diff, 8 interface rows, 4 VLAN rows parsed");
-  await expect(driver).toContainText("Gi1/0/3");
-  await expect(driver).toContainText("Expected trunk, saw VLAN 10.");
-  await expect(driver).toContainText("Black-hole VLAN");
-  await expect(driver).toContainText("Missing: 999");
-  await expect(driver).toContainText("STORAGE-NFS-IN");
-  await expect(driver).toContainText("DROP-ALL");
-  await expect(driver).toContainText("Remediation review");
-  await expect(driver).toContainText("3 remediation area(s) need review; 3 candidate command line(s) are renderable.");
-  await expect(driver).toContainText("Create missing VLANs");
-  await expect(driver).toContainText("Align intended ports");
-  await expect(driver).toContainText("Review guardrails");
-  await expect(driver).toContainText("Treat ACL lanes as review-only until exact source/destination policy is approved.");
-  await expect(driver).toContainText("Preserve unexpected VLANs");
-  await expect(driver).toContainText("3 candidate command lines generated from parsed drift.");
-  await expect(driver).toContainText("vlan 999");
-  await expect(driver).toContainText("name BLACKHOLE-PARKING");
-  await expect(driver).not.toContainText("interface vlan 10");
+  await expect(controls).toContainText("Cisco current-to-intent diff completed");
+  await expect(controls).toContainText("Intent diff");
+  await expect(controls).toContainText("Needs review");
+  const workspace = page.locator("section[aria-label='Cisco switch workspace']");
+  await expect(workspace.getByLabel("Cisco switch schema inventory")).toContainText("Management IP");
+  await expect(page.locator("section[aria-label='Cisco switch driver']")).toHaveCount(0);
 });
 
-test("redesigned operator pages expose reference panels with safe action guidance", async ({ page }) => {
+test("remaining operator pages expose reference panels and device routes consolidate to the map", async ({ page }) => {
   const pages = [
-    ["/server", "Server reference", "Server readiness at a glance", "Server Signals"],
-    ["/storage", "Storage reference", "Storage readiness at a glance", "Storage Signals"],
-    ["/virtualization", "Virtualization reference", "Virtualization readiness at a glance", "Virtualization Signals"],
     ["/firmware-upgrades", "Firmware reference", "Firmware readiness at a glance", "Firmware Components"],
     ["/validation", "Validation reference", "Validation readiness at a glance", "Validation Signals"]
   ] as const;
@@ -968,29 +967,6 @@ test("redesigned operator pages expose reference panels with safe action guidanc
     await expect(reference).toContainText(tableTitle);
     await expect(reference).toContainText("Active Blockers");
     await expect(page.getByRole("button", { name: "Settings" })).toHaveCount(0);
-    if (path === "/storage") {
-      const protocols = page.getByLabel("Storage protocol options");
-      await expect(protocols).toContainText("NFS");
-      await expect(protocols).toContainText("iSCSI");
-      await expect(protocols).toContainText("192.168.1.240");
-      await expect(protocols).toContainText("TCP/3260");
-      const iscsiPath = page.getByLabel("iSCSI setup path");
-      await expect(iscsiPath).toContainText("iSCSI setup path");
-      await expect(iscsiPath).toContainText("Preview Only");
-      await expect(iscsiPath).toContainText("esxi_lun_01");
-      await expect(iscsiPath).toContainText("esxi_hosts");
-      await expect(page.getByText("Real iSCSI apply gates and write evidence")).toBeVisible();
-      await expect(page.getByText("ESXi iSCSI remediation")).toBeVisible();
-      await expect(page.locator(".iscsi-remediation-panel")).toContainText("Establish active iSCSI session");
-      await expect(page.getByText("Not evaluated")).toBeVisible();
-      await expect(iscsiPath).toContainText("ESXi iSCSI evidence");
-      await expect(iscsiPath).toContainText("1 adapters / 1 paths / datastore visible");
-      await expect(page.getByRole("button", { name: "Preview iSCSI" })).toBeVisible();
-      await expect(page.getByRole("button", { name: "Apply iSCSI" })).toBeVisible();
-      await expect(page.getByRole("button", { name: "Validate iSCSI" })).toBeVisible();
-      await expect(page.getByRole("button", { name: "Preview ESXi iSCSI" })).toBeVisible();
-      await expect(page.getByRole("button", { name: "Validate ESXi iSCSI" })).toBeVisible();
-    }
   }
 
   await page.goto("/lab-profiles");
@@ -998,56 +974,57 @@ test("redesigned operator pages expose reference panels with safe action guidanc
   await expect(page.getByLabel("Global profile feature toggles")).toContainText("Allow IPv6");
   await expect(page.getByRole("button", { name: /Save (Global Defaults|As Lab Setup)/ })).toBeVisible();
 
-  await page.goto("/network");
-  const networkReference = page.locator("section[aria-label='Network reference']").first();
-  await expect(page.getByRole("button", { name: "Run Live Switch Check" })).toBeVisible();
-  await expect(networkReference).toContainText("Cisco access is ready.");
-  await expect(networkReference).toContainText("Cisco Switch");
+  for (const retiredPath of ["/network", "/server", "/storage", "/virtualization"]) {
+    await page.goto(retiredPath);
+    await expect(page).toHaveURL(/\/overview/);
+    await expect(page.locator("section[aria-label='Living lab topology']")).toBeVisible();
+  }
 });
 
 test("storage iSCSI preview apply and validation buttons expose the honest guarded path", async ({ page }) => {
-  await page.goto("/storage");
+  await page.goto("/overview");
+
+  const topology = page.locator("section[aria-label='Living lab topology']");
+  await topology.getByRole("button", { name: "Open NetApp ONTAP workspace" }).click();
+  const controls = page.getByLabel("NetApp workspace storage controls");
+  const guardedApply = page.getByLabel("Guarded iSCSI apply");
 
   const previewResponse = page.waitForResponse((response) =>
     response.url().includes("/api/v1/providers/netapp-ontap/iscsi-setup-preview")
   );
-  await page.getByRole("button", { name: "Preview iSCSI" }).click();
+  await controls.getByRole("button", { name: "Preview iSCSI" }).click();
   await expect((await previewResponse).ok()).toBeTruthy();
-  await expect(page.getByText(/Preview iSCSI:/)).toBeVisible();
+  await expect(controls).toContainText(/Preview iSCSI:/);
 
   const applyResponse = page.waitForResponse((response) =>
     response.url().includes("/api/v1/providers/netapp-ontap/iscsi-setup-apply") &&
     response.request().method() === "POST"
   );
-  await page.getByRole("button", { name: "Apply iSCSI" }).click();
+  await guardedApply.getByRole("button", { name: /Apply iSCSI/ }).click();
   await expect((await applyResponse).ok()).toBeTruthy();
-  await expect(page.getByText(/Apply iSCSI: Blocked/)).toBeVisible();
-  await expect(page.getByLabel("iSCSI setup path")).toContainText("NETAPP_ISCSI_SETUP_APPLY=true is required.");
-  await expect(page.getByText("Real iSCSI apply gates and write evidence")).toBeVisible();
-  await expect(page.getByText("1/4 satisfied")).toBeVisible();
-  await expect(page.getByText(/ONTAP writes not attempted/)).toBeVisible();
-  await expect(page.getByText(/NETAPP_ISCSI_SETUP_CONFIRM="APPLY NETAPP ISCSI SETUP"/)).toBeVisible();
+  await expect(controls).toContainText(/Apply iSCSI gate evaluated: Blocked/);
+  await expect(guardedApply).toContainText("NETAPP_ISCSI_SETUP_APPLY=true");
+  await expect(guardedApply).toContainText("1/4 satisfied");
+  await expect(guardedApply).toContainText(/ONTAP writes not attempted/);
+  await expect(guardedApply).toContainText(/NETAPP_ISCSI_SETUP_CONFIRM="APPLY NETAPP ISCSI SETUP"/);
 
   const validateResponse = page.waitForResponse((response) =>
     response.url().includes("/api/v1/providers/netapp-ontap/iscsi-setup-validate") &&
     response.request().method() === "POST"
   );
-  await page.getByRole("button", { name: "Validate iSCSI" }).click();
+  await controls.getByRole("button", { name: "Validate iSCSI" }).click();
   await expect((await validateResponse).ok()).toBeTruthy();
-  await expect(page.getByText(/Validate iSCSI:/)).toBeVisible();
-  await expect(page.getByLabel("iSCSI setup path")).toContainText("NetApp iSCSI LUN is missing.");
+  await expect(controls).toContainText(/Validate iSCSI:/);
+  await expect(controls).toContainText("NetApp iSCSI setup validation completed with read-only protocol and inventory checks.");
 
   const esxiPreviewResponse = page.waitForResponse((response) =>
     response.url().includes("/api/v1/providers/esxi-readonly/iscsi-datastore-preview") &&
     response.request().method() === "POST"
   );
-  await page.getByRole("button", { name: "Preview ESXi iSCSI" }).click();
+  await controls.getByRole("button", { name: "Preview ESXi iSCSI" }).click();
   await expect((await esxiPreviewResponse).ok()).toBeTruthy();
-  await expect(page.getByText(/Preview ESXi iSCSI:/)).toBeVisible();
-  await expect(page.getByLabel("iSCSI setup path")).toContainText("1 adapters / 1 paths / datastore visible");
-  await expect(page.getByText("ESXi iSCSI remediation")).toBeVisible();
-  await page.getByText("ESXi iSCSI remediation").click();
-  await expect(page.getByText("Confirm VMFS datastore visibility")).toBeVisible();
+  await expect(controls).toContainText(/Preview ESXi iSCSI:/);
+  await expect(controls).toContainText("ESXi iSCSI datastore preview completed with read-only ESXi checks.");
 });
 
 test("advanced proof is collapsed and operator labels hide raw statuses", async ({ page }) => {
@@ -1182,6 +1159,7 @@ test("saved lab setup global defaults use active profile values and never render
 
 test("legacy settings paths redirect to overview and the contextual drawer is removed", async ({ page }) => {
   await page.goto("/network");
+  await expect(page).toHaveURL(/\/overview/);
 
   await expect(page.getByRole("button", { name: "Settings" })).toHaveCount(0);
   await expect(page.locator("section.tab-settings-drawer")).toHaveCount(0);
@@ -1326,14 +1304,15 @@ test("blocked workflow runs render an advisory diagnosis card", async ({ page })
 
 test("operator issue reporter creates a redacted AI-ready packet from the current route", async ({ page }) => {
   await page.goto("/network");
+  await expect(page).toHaveURL(/\/overview/);
 
   await page.getByRole("button", { name: "Report issue" }).click();
   await expect(page.getByRole("dialog", { name: "Report testing issue" })).toBeVisible();
-  await expect(page.getByText("/network")).toBeVisible();
+  await expect(page.getByText("/overview")).toBeVisible();
   await page.getByLabel("What went wrong?").fill("Clicked the Cisco validation button and the status looked stale.");
   await page.getByRole("button", { name: "Create packet" }).click();
 
-  await expect(page.getByLabel("Generated issue packet")).toContainText("Operator reported an issue on Network");
+  await expect(page.getByLabel("Generated issue packet")).toContainText("Operator reported an issue on Overview");
   await expect(page.getByLabel("Generated issue packet")).toContainText("artifacts/codex-runs/operator-issue-packets");
   await expect(page.getByRole("button", { name: "Copy AI prompt" })).toBeVisible();
 });

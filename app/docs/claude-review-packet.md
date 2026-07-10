@@ -588,3 +588,24 @@ V2 evidence:
 - Frontend `npm run build`: pass.
 - Frontend `npm run test:component`: pass.
 - Full `npm run test:e2e`: pass, `40/40`.
+
+## Final Nav Consolidation
+
+Processed Claude/CXO greenlight to retire the device-specific tabs after the Advanced Fields honesty gate.
+
+- Top nav is now exactly `Overview / Firmware / Validate`.
+- `/network`, `/server`, `/storage`, and `/virtualization` redirect to `/overview`.
+- The topology map is the single device door; clicking a device opens the workspace overlay.
+- System/config edits remain centralized in System Setup advanced fields.
+- Active stale cross-links and topology metadata now point to `/overview#topology-map` or `/overview#system-setup`.
+- Firmware and Validation remain routed dedicated pages.
+- Retired page component bodies remain in place for reversible rollback but are not routed or advertised.
+- Tests were updated to prove retired route redirects, workspace run-control reachability, guarded iSCSI discipline, and no dead settings drawers.
+- No probes, hardware writes, guarded writes, RAID/factory/rebuild/power, Cisco apply, NetApp apply, or destructive surfaces were touched.
+
+Final nav evidence:
+
+- Screenshot: `docs/agent-shots/20260710T014615Z-final-three-item-nav.png`.
+- Frontend `npm run build`: pass.
+- Frontend `npm run test:component`: pass, `1/1`.
+- Full `npm run test:e2e`: pass, `42/42`.

@@ -32,13 +32,9 @@ import { Link, Navigate, NavLink, Route as RouterRoute, Routes, useLocation, use
 import { api } from "./api";
 import {
   OperatorFirmwareUpgradesPage,
-  OperatorNetworkPage,
   OperatorOverviewPage,
-  OperatorServerPage,
-  OperatorStoragePage,
   OperatorTabStateProvider,
   OperatorValidationPage,
-  OperatorVirtualizationPage,
   SettingsGlobalProfilePanel
 } from "./operatorPages";
 import type {
@@ -755,42 +751,10 @@ function App() {
                   />
                 }
               />
-              <RouterRoute
-                path="/network"
-                element={
-                  <OperatorNetworkPage
-                    labProfileState={labProfileState}
-                    onReloadLabProfile={loadLabProfileState}
-                  />
-                }
-              />
-              <RouterRoute
-                path="/server"
-                element={
-                  <OperatorServerPage
-                    labProfileState={labProfileState}
-                    onReloadLabProfile={loadLabProfileState}
-                  />
-                }
-              />
-              <RouterRoute
-                path="/storage"
-                element={
-                  <OperatorStoragePage
-                    labProfileState={labProfileState}
-                    onReloadLabProfile={loadLabProfileState}
-                  />
-                }
-              />
-              <RouterRoute
-                path="/virtualization"
-                element={
-                  <OperatorVirtualizationPage
-                    labProfileState={labProfileState}
-                    onReloadLabProfile={loadLabProfileState}
-                  />
-                }
-              />
+              <RouterRoute path="/network" element={<Navigate to="/overview" replace />} />
+              <RouterRoute path="/server" element={<Navigate to="/overview" replace />} />
+              <RouterRoute path="/storage" element={<Navigate to="/overview" replace />} />
+              <RouterRoute path="/virtualization" element={<Navigate to="/overview" replace />} />
               <RouterRoute path="/firmware-upgrades" element={<OperatorFirmwareUpgradesPage labProfileState={labProfileState} />} />
               <RouterRoute path="/validation" element={<OperatorValidationPage labProfileState={labProfileState} />} />
               <RouterRoute path="/config" element={<Navigate to="/overview" replace />} />
@@ -1081,10 +1045,6 @@ function ShellTopNav({
       </div>
       <nav className="top-nav" aria-label="Primary navigation">
         <NavItem to="/overview" icon={<Gauge size={18} />} label="Overview" subtitle="Current readiness" />
-        <NavItem to="/network" icon={<Route size={18} />} label="Network" subtitle="Cisco and access" />
-        <NavItem to="/server" icon={<Server size={18} />} label="Server" subtitle="iLO, RAID, ESXi" />
-        <NavItem to="/storage" icon={<HardDrive size={18} />} label="Storage" subtitle="NetApp and datastores" />
-        <NavItem to="/virtualization" icon={<Layers size={18} />} label="Virtualization" subtitle="vCenter workflows" />
         <NavItem to="/firmware-upgrades" icon={<ShieldCheck size={18} />} label="Firmware" subtitle="Images and compliance" />
         <NavItem to="/validation" icon={<CheckCircle2 size={18} />} label="Validate" subtitle="Proof and reports" />
       </nav>

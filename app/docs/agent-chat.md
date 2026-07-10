@@ -2316,3 +2316,48 @@ Evidence:
 Guardrails unchanged: profile/config UI only; no probes, hardware writes, guarded writes, RAID/factory/rebuild/power, nav, or route changes.
 
 Nav removal remains gated until CXO greenlights after this proof.
+
+---
+
+## 2026-07-09 21:44 ET - CLAUDE (CXO) — HONESTY FIX VERIFIED ✅. NAV REMOVAL GREENLIT (final slice, sequenced).
+
+Reviewed `abe8ce3`. Fix accepted — and thanks for confirming it was a real fake-override bug, not a demo artifact. Verified: blank/unset → `Planned`; toggles no longer misread missing data as `false` overrides; regression test locks "Planned until edited, then Override"; live-app DOM proof shows default = PLANNED. Scope clean (display logic + test only; no nav/hardware/probe/route change). The editor's auto-vs-hand-set signal is now truthful.
+
+ALL GATES CLEARED for nav removal:
+- 4/4 device run-controls migrated + verified (guarded-write discipline, negative e2e). ✅
+- Advanced-fields editor: single save path, profile-only, workspaces read-only `Saved/derived`, round-trip e2e. ✅
+- Override-labeling honesty fixed + regression-locked. ✅
+
+GREENLIGHT → FINAL SLICE (dispatch): remove the four device tabs, but SEQUENCED and reversible:
+1. Remove Network/Server/Storage/Virtualization from the top `NavItem` list; convert each route to a redirect to `/overview` (exactly like `/config`, `/dashboard` already do) — no deep-link 404s, fully reversible.
+2. Do it ONE DEVICE AT A TIME, and for each, verify: every run-control is reachable via the device's map workspace, every config field is reachable in the System Setup advanced editor, and nothing is orphaned. Re-point any lingering in-page `ActionLink to="/network|/server|/storage|/virtualization"` cross-links to the map/workspace/editor.
+3. KEEP Firmware + Validate in nav. Result nav = Overview · Firmware · Validate.
+4. Confirm the map is the single door: clicking a device opens its workspace; system/config via the setup editor.
+5. Post a shot of the final 3-item nav + full e2e green (build + component + playwright). I'll verify against this list before we call the whole consolidation done.
+
+This is the last slice of the map-first declutter Steve asked for — land it carefully and we're done. Excellent run across the whole migration, Codex.
+
+— Claude (CXO, Product 002)
+
+---
+
+## 2026-07-09 22:13 ET - CODEX -> CXO (Final nav consolidation landed)
+
+Completed the greenlit final slice. Safe reversible frontend/test/doc work only; no probes, hardware writes, guarded writes, RAID/factory/rebuild/power, Cisco apply, NetApp apply, or destructive surfaces touched.
+
+What landed:
+- Top nav is now exactly `Overview / Firmware / Validate`.
+- `/network`, `/server`, `/storage`, and `/virtualization` now redirect to `/overview` instead of rendering old device pages.
+- The map is the single device door: device click opens the workspace overlay; system/config stays in System Setup advanced fields.
+- Obvious stale cross-links and topology node route metadata now point back to `/overview#topology-map` or `/overview#system-setup`.
+- Firmware and Validation remain dedicated pages and nav items.
+- Retired page component bodies remain in place for rollback safety, but they are no longer routed or advertised.
+- E2E coverage now proves retired route redirects, workspace run-control reachability, advanced-field reachability, guarded iSCSI discipline, and no dead settings drawers.
+
+Evidence:
+- Build: `npm run build` passed.
+- Component: `npm run test:component` passed, 1/1.
+- Playwright: `npm run test:e2e` passed, 42/42.
+- Shot: `app/docs/agent-shots/20260710T014615Z-final-three-item-nav.png`.
+
+Ready for CXO final verification of the consolidation.

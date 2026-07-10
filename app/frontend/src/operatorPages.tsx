@@ -172,10 +172,6 @@ function useOperatorTabState() {
 }
 
 function tabFromPath(pathname: string): OperatorTabId {
-  if (pathname.startsWith("/network")) return "network";
-  if (pathname.startsWith("/server")) return "server";
-  if (pathname.startsWith("/storage")) return "storage";
-  if (pathname.startsWith("/virtualization")) return "virtualization";
   if (pathname.startsWith("/firmware")) return "firmware";
   if (pathname.startsWith("/validation")) return "validation";
   return "overview";
@@ -1406,7 +1402,7 @@ function ServerSetupShapePanel({
 
         <div className="server-action-strip" aria-label="Server actions">
           <ActionLink to="/firmware-upgrades">Firmware</ActionLink>
-          <ActionLink to="/storage">Storage mode</ActionLink>
+          <ActionLink to="/overview#topology-map">Open map workspace</ActionLink>
           <ActionLink to="/validation">Validation</ActionLink>
         </div>
 
@@ -1417,9 +1413,9 @@ function ServerSetupShapePanel({
           statusLabel={displayStatus(optionalStatus)}
           steps={[
             {
-              detail: localServer ? "No NetApp step is required for the server-local path." : "Storage page owns NFS or iSCSI readiness.",
+              detail: localServer ? "No NetApp step is required for the server-local path." : "The NetApp workspace owns NFS or iSCSI readiness.",
               label: "Storage handoff",
-              nextAction: localServer ? "Keep shared storage collapsed unless the scenario changes." : "Open Storage and validate the selected protocol.",
+              nextAction: localServer ? "Keep shared storage collapsed unless the scenario changes." : "Open the NetApp workspace from the map and validate the selected protocol.",
               status: localServer ? "plan-only" : "needs-attention"
             },
             {
@@ -3742,8 +3738,7 @@ function VirtualizationSetupShapePanel({
         />
 
         <div className="server-action-strip" aria-label="Virtualization actions">
-          <ActionLink to="/server">Server</ActionLink>
-          <ActionLink to="/storage">Storage</ActionLink>
+          <ActionLink to="/overview#topology-map">Open map workspace</ActionLink>
           <ActionLink to="/validation">Validation</ActionLink>
         </div>
 
@@ -4396,7 +4391,7 @@ function ValidationSetupShapePanel({
         <div className="server-action-strip" aria-label="Validation actions">
           <ActionLink to="/overview">Overview</ActionLink>
           <ActionLink to="/audit-events">Audit Log</ActionLink>
-          <ActionLink to="/storage">Storage</ActionLink>
+          <ActionLink to="/overview#topology-map">Map workspace</ActionLink>
         </div>
 
         <RemediationLadder
@@ -5605,7 +5600,7 @@ function LabTopologyMap({
       icon: topologyIndustryIcon("switch"),
       id: "cisco",
       meta: firmwareBehind ? "firmware behind" : undefined,
-      page: "/network",
+      page: "/overview#topology-map",
       status: ciscoStatus,
       title: "Cisco C9300 L3 Core",
       tone: topologyTone(ciscoStatus),
@@ -5616,7 +5611,7 @@ function LabTopologyMap({
       icon: topologyIndustryIcon("ilo"),
       id: "ilo",
       meta: displayAddress(address.ilo),
-      page: "/server",
+      page: "/overview#topology-map",
       status: iloStatus,
       title: "HPE iLO",
       tone: topologyTone(iloStatus),
@@ -5627,7 +5622,7 @@ function LabTopologyMap({
       icon: topologyIndustryIcon("server"),
       id: "server",
       meta: serverModelLabel,
-      page: "/server",
+      page: "/overview#topology-map",
       status: serverStatus,
       title: `HPE ${serverModelLabel.replace(/^DL360\s+/i, "")}`,
       tone: topologyTone(serverStatus),
@@ -5642,7 +5637,7 @@ function LabTopologyMap({
         icon: topologyIndustryIcon("netapp"),
         id: "netapp",
         meta: displayAddress(address.netapp_cluster_mgmt),
-        page: "/storage",
+        page: "/overview#topology-map",
         status: netappStatus,
         title: "NetApp ONTAP",
         tone: topologyTone(netappStatus),
@@ -5653,7 +5648,7 @@ function LabTopologyMap({
         icon: topologyIndustryIcon("datastore"),
         id: "datastore",
         meta: datastoreVisibleStatus(vcenterNetapp) === "ready" ? "mounted" : "not mounted",
-        page: "/storage",
+        page: "/overview#topology-map",
         status: datastoreStatus,
         title: "Datastore",
         tone: topologyTone(datastoreStatus),
@@ -5668,7 +5663,7 @@ function LabTopologyMap({
       icon: topologyIndustryIcon(vcenterInScope ? "vcenter" : "hypervisor"),
       id: "vcenter",
       meta: topologyVmMeta(vcenterNetapp, vcenterInScope),
-      page: "/virtualization",
+      page: "/overview#topology-map",
       status: vmStatus,
       tag: topologyVmTag(vcenterNetapp, vcenterInScope),
       title: vcenterInScope ? "vCenter" : vmName,
@@ -5722,7 +5717,7 @@ function LabTopologyMap({
   }
 
   return (
-    <section className="lab-topology-map" aria-label="Living lab topology">
+    <section className="lab-topology-map" id="topology-map" aria-label="Living lab topology">
       <div className="lab-topology-head">
         <div>
           <p className="operator-kicker">Living topology</p>
@@ -5743,7 +5738,7 @@ function LabTopologyMap({
             <strong>{subnetState.status === "mismatch" ? "Subnet mismatch" : "Subnet not proven"}</strong>
             <span>{subnetState.detail}</span>
           </div>
-          <Link to="/network#network-profile">Edit Network profile</Link>
+          <Link to="/overview#system-setup">Edit system setup</Link>
         </div>
       )}
 
@@ -6423,7 +6418,7 @@ function SystemSetupPicker({
   }
 
   return (
-    <section className={`system-setup-picker ${open ? "is-open" : ""}`} aria-label="System setup picker" ref={pickerRef}>
+    <section className={`system-setup-picker ${open ? "is-open" : ""}`} id="system-setup" aria-label="System setup picker" ref={pickerRef}>
       <button
         aria-label="Open system setup picker"
         aria-expanded={open}
@@ -8390,7 +8385,7 @@ function LabDesignComposer({
             </div>
           </section>
         )}
-        <Link className="design-plan-secondary" to="/network#network-profile">Edit profile form</Link>
+        <Link className="design-plan-secondary" to="/overview#system-setup">Edit system setup</Link>
         <button className="design-plan-secondary" onClick={resetDraft} type="button">Reset draft</button>
         <section className="design-subnet-rebase" aria-label="Subnet rebase">
           <label>
@@ -11075,7 +11070,7 @@ function OverviewReferencePanel({
                 <p><strong>Blocked by:</strong> {provider.blockedBy}</p>
               </div>
             </CardContent>
-            {provider.to !== "/network" && (
+            {provider.to && (
               <CardFooter>
                 <ActionLink to={provider.to}>{provider.actionLabel}</ActionLink>
               </CardFooter>
@@ -11207,7 +11202,7 @@ function SetupLanesPanel({
   const lanes: SetupLane[] = [
     setupLane({
       access: ilo,
-      actionLabel: "Open Server",
+      actionLabel: "Open map workspace",
       advanced: valuesForLabels(labValues, ["iLO IP", "Subnet", "Gateway", "DNS", "NTP"]),
       basics: [
         { label: "Access", value: targetOrUnset(ilo) },
@@ -11217,13 +11212,13 @@ function SetupLanesPanel({
       current: ilo?.appSees ?? "Not checked",
       intended: "iLO reachable, credentials saved, firmware evidence current.",
       need: "Server management access before destructive setup or firmware work.",
-      nextAction: laneNextAction(ilo, "Open Server and run Test Server."),
+      nextAction: laneNextAction(ilo, "Open the iLO or server workspace from the map and run read-only checks."),
       title: "Server Access",
-      to: "/server",
+      to: "/overview#topology-map",
       validation: firstBlocker || "Validation will confirm iLO access and firmware evidence."
     }),
     setupLane({
-      actionLabel: "Open Server",
+      actionLabel: "Open map workspace",
       advanced: [
         { label: "Local storage mode", value: isSingleServer ? "Primary datastore path" : "Boot and staging only" },
         { label: "Drive count", value: "Detected by RAID preview" },
@@ -11235,18 +11230,18 @@ function SetupLanesPanel({
         { label: "Scenario", value: storageLocation },
         { label: "Dependency", value: "Finish before ESXi install" }
       ],
-      current: "RAID readiness is checked from the Server page.",
+      current: "RAID readiness is checked from the server workspace and Validation.",
       intended: isSingleServer ? "Local datastore sized for the VM payload." : "Reliable boot volume plus shared storage handoff.",
       need: "Pick a storage posture that matches whether the server ships alone or stays attached to NetApp.",
-      nextAction: "Open Server, run RAID preview, then apply only after drive layout is confirmed.",
+      nextAction: "Open the server workspace for read-only RAID checks; apply remains guarded in Validation.",
       status: isSingleServer ? statusForAccess(esxi) : statusBadgeForTone(firmwareStatus),
       title: "RAID And Local Storage",
-      to: "/server",
+      to: "/overview#topology-map",
       validation: "Server page validates controller, drive count, and destructive safety acknowledgement."
     }),
     setupLane({
       access: cisco,
-      actionLabel: "Open Network",
+      actionLabel: "Open map workspace",
       advanced: valuesForLabels(labValues, ["Cisco IP", "VLAN", "MTU", "Gateway"]),
       basics: [
         { label: "Management", value: targetOrUnset(cisco) },
@@ -11256,14 +11251,14 @@ function SetupLanesPanel({
       current: cisco?.appSees ?? "Not checked",
       intended: "Switch reachable with management, VLANs, and safe edge-port defaults.",
       need: "Network needs to be predictable before hosts and storage attach to it.",
-      nextAction: laneNextAction(cisco, "Open Network and run Live Switch Check."),
+      nextAction: laneNextAction(cisco, "Open the Cisco workspace from the map and run Live Switch Check."),
       title: "Cisco Network",
-      to: "/network",
+      to: "/overview#topology-map",
       validation: "Network validation checks management IP, console path, and saved switch intent."
     }),
     setupLane({
       access: esxi,
-      actionLabel: "Open Virtualization",
+      actionLabel: "Open map workspace",
       advanced: valuesForLabels(labValues, ["ESXi IP", "Datastore name", "NTP", "DNS"]),
       basics: [
         { label: "Management", value: targetOrUnset(esxi) },
@@ -11273,14 +11268,14 @@ function SetupLanesPanel({
       current: esxi?.appSees ?? "Not checked",
       intended: "ESXi reachable, licensed, networked, and pointed at the chosen datastore.",
       need: "Hypervisor setup must match the deployment scenario.",
-      nextAction: laneNextAction(esxi, "Open Virtualization and run vCenter or host live checks."),
+      nextAction: laneNextAction(esxi, "Open the ESXi or vCenter workspace from the map and run live checks."),
       title: "ESXi Host",
-      to: "/virtualization",
+      to: "/overview#topology-map",
       validation: datastore?.status === "accessible" ? "Datastore is visible." : "Validation will check host access and datastore visibility."
     }),
     setupLane({
       access: netapp,
-      actionLabel: "Open Storage",
+      actionLabel: "Open map workspace",
       advanced: valuesForLabels(labValues, ["NetApp cluster IP", "NetApp NFS LIF", "NetApp console", "Datastore name"]),
       basics: [
         { label: "Mode", value: isSingleServer ? "Not required for single-server local storage" : "Shared storage" },
@@ -11290,15 +11285,15 @@ function SetupLanesPanel({
       current: isSingleServer ? "Out of scope for this scenario." : netapp?.appSees ?? "Not checked",
       intended: isSingleServer ? "Skipped unless operator chooses shared storage." : "ONTAP licensed, LIFs reachable, export or iSCSI path ready.",
       need: isSingleServer ? "No NetApp step is needed for the single-server build." : "Shared datastore must be ready before VM placement.",
-      nextAction: isSingleServer ? "No action required for local-storage scenario." : laneNextAction(netapp, "Open Storage and run NetApp Live Check."),
+      nextAction: isSingleServer ? "No action required for local-storage scenario." : laneNextAction(netapp, "Open the NetApp workspace from the map and run NetApp Live Check."),
       status: isSingleServer ? "plan_only" : statusForAccess(netapp),
       title: "ONTAP Storage",
-      to: "/storage",
+      to: "/overview#topology-map",
       validation: isSingleServer ? "Marked not applicable by scenario." : "Storage validation checks management, NFS, iSCSI, and datastore mount state."
     }),
     setupLane({
       access: vcenter,
-      actionLabel: "Open Virtualization",
+      actionLabel: "Open map workspace",
       advanced: valuesForLabels(labValues, ["vCenter IP", "Datastore name", "Feature toggles"]),
       basics: [
         { label: "Mode", value: isSingleServer ? "Optional" : "Shared lab control plane" },
@@ -11308,10 +11303,10 @@ function SetupLanesPanel({
       current: isSingleServer ? "Optional for this scenario." : vcenter?.appSees ?? "Not checked",
       intended: isSingleServer ? "Only configure if the build needs centralized management." : "vCenter sees host, datastore, and VM inventory.",
       need: isSingleServer ? "Keep hidden unless this server needs vCenter before shipment." : "vCenter is the cleanest place to validate VM portability.",
-      nextAction: isSingleServer ? "No action required unless vCenter is selected." : laneNextAction(vcenter, "Open Virtualization and run vCenter Live Check."),
+      nextAction: isSingleServer ? "No action required unless vCenter is selected." : laneNextAction(vcenter, "Open the vCenter workspace from the map and run vCenter Live Check."),
       status: isSingleServer ? "plan_only" : statusForAccess(vcenter),
       title: "vCenter And VM Handoff",
-      to: "/virtualization",
+      to: "/overview#topology-map",
       validation: "Validation confirms inventory visibility and datastore attachment."
     })
   ];
@@ -11473,7 +11468,7 @@ function NetworkReferencePanel({
 
   const providerCards = [
     {
-      actionLabel: "Live switch check",
+      actionLabel: "Open workspace",
       blockedBy: currentView.blockers[0] || currentView.warnings[0] || nextSafeAction,
       facts: [
         ["Mgmt IP", displayAddress(address.cisco_management)],
@@ -11485,7 +11480,7 @@ function NetworkReferencePanel({
       role: "Switch management",
       status: networkStatus,
       targetState: displayAddress(address.cisco_management),
-      to: "/network",
+      to: "/overview#topology-map",
       currentState: asString(ciscoReadiness?.message) || currentView.summary
     },
     {
@@ -11505,7 +11500,7 @@ function NetworkReferencePanel({
       currentState: displayStatus(consoleStatus)
     },
     {
-      actionLabel: "Validate access",
+      actionLabel: "Open workspace",
       blockedBy: managementConfigured ? "No SSH blocker loaded" : "Management access has not been confirmed",
       facts: [
         ["SSH/SCP", boolStateLabel(managementConfigured)],
@@ -11517,7 +11512,7 @@ function NetworkReferencePanel({
       role: "Access guard",
       status: managementConfigured ? "ready" : "not_checked",
       targetState: displayAddress(address.cisco_management),
-      to: "/network",
+      to: "/overview#topology-map",
       currentState: boolStateLabel(managementConfigured)
     }
   ];
@@ -11591,7 +11586,7 @@ function NetworkReferencePanel({
                 <p><strong>Blocked by:</strong> {provider.blockedBy}</p>
               </div>
             </CardContent>
-            {provider.to !== "/network" && (
+            {provider.to && (
               <CardFooter>
                 <ActionLink to={provider.to}>{provider.actionLabel}</ActionLink>
               </CardFooter>
@@ -13913,9 +13908,9 @@ function overviewProviderCards({
   const byInventoryName = new Map(inventoryRows.map((row) => [row.item.toLowerCase(), row]));
   const byWorkspaceName = new Map(workspaceRows.map((row) => [row.title.toLowerCase(), row]));
   return [
-    overviewProviderCard("HPE iLO", "Server management", "/server", "View details", byAccessName, byInventoryName, byWorkspaceName, "hpe ilo", "ilo"),
-    overviewProviderCard("Cisco Switch", "Network", "/network", "Bootstrap", byAccessName, byInventoryName, byWorkspaceName, "cisco switch", "cisco"),
-    overviewProviderCard("NetApp ONTAP", "Storage", "/storage", "Setup wizard", byAccessName, byInventoryName, byWorkspaceName, "netapp ontap", "netapp")
+    overviewProviderCard("HPE iLO", "Server management", "/overview#topology-map", "Open workspace", byAccessName, byInventoryName, byWorkspaceName, "hpe ilo", "ilo"),
+    overviewProviderCard("Cisco Switch", "Network", "/overview#topology-map", "Open workspace", byAccessName, byInventoryName, byWorkspaceName, "cisco switch", "cisco"),
+    overviewProviderCard("NetApp ONTAP", "Storage", "/overview#topology-map", "Open workspace", byAccessName, byInventoryName, byWorkspaceName, "netapp ontap", "netapp")
   ];
 }
 
