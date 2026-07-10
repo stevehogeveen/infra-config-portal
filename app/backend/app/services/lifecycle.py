@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.core.enums import ApprovalDecision, RequestStatus, WorkflowRunStatus
 from app.models import Approval, Request, VMDeploymentRequest, Workflow, WorkflowRun
-from app.providers.base import SourceOfTruthAdapter, VsphereAdapter
+from app.providers.base import SourceOfTruthAdapter, VsphereAdapter, validate_vm_deployment_plan_contract
 from app.providers.registry import provider_registry
 from app.schemas import ApprovalCreate, VMDeploymentCreate, VMDeploymentUpdate
 from app.services.audit import record_audit_event
@@ -378,6 +378,11 @@ def plan_request(
 
     workflow = _get_or_create_workflow(session)
     plan = vsphere.plan_vm_deployment(request)
+    contract_errors = validate_vm_deployment_plan_contract(plan, request)
+    if contract_errors:
+        raise ExecutionPreflightError(
+            "Provider plan contract failed: " + "; ".join(contract_errors)
+        )
     request_intent = build_request_intent(request)
     plan = {
         **plan,

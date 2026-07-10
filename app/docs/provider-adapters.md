@@ -461,6 +461,27 @@ plan and result object from adapters and persist them.
 Workflow lifecycle code depends on adapter protocols and accepts injected
 adapters for tests. Default local execution uses the mock registry.
 
+## VM Deployment Plan Contract
+
+`VsphereAdapter.plan_vm_deployment()` must return a JSON object that is safe to
+persist before any execution path can see it. The lifecycle service validates
+this contract before creating a planned workflow run.
+
+Required plan fields:
+
+- `dry_run=true`
+- `mock_only=true`
+- non-empty `provider`
+- non-empty `workflow`
+- matching `request_id`
+- `review_before_execute.required=true`
+- at least one named `steps` entry
+- at least one staged `stage_events` entry
+
+Plan payloads must not contain secret-like keys such as passwords, credentials,
+tokens, authorization headers, cookies, or secrets. A contract failure raises an
+execution preflight error and leaves the request in its prior approved state.
+
 ## Real Adapter Requirements
 
 A real provider adapter must:
