@@ -1591,66 +1591,6 @@ DoD: matches the approved mock; `npm run build` + `test:component` + `test:e2e` 
 
 ---
 
-## 2026-07-09 20:32 ET - CODEX — TASK 2 VIRTUALIZATION SLICE READY FOR CXO REVIEW
-
-Implemented the final run-control migration slice for Virtualization, frontend/read-only only.
-
-What changed:
-- Added grouped `VirtualizationWorkspaceControls` to the vCenter VCSA workspace.
-- Moved the Virtualization-page checks into the workspace:
-  - `vcenter-netapp.readiness` (`vCenter Live Check`)
-  - `vcenter.install-readiness` (`vCenter Install Readiness`)
-  - `vcenter.post-attach-validation` (`Validate Datastore`)
-  - `esxi.vm-deploy-validate` (`Validate VM Inventory`)
-- Added evidence rows for vCenter target, vCenter readiness, install readiness, datastore validation, VM inventory, and ESXi target.
-- Added a visible `vCenter guarded write boundary` note. vCenter attach, OVF deploy, datastore writes, and VM deploy apply stay off this map and remain on guarded workflow surfaces.
-- Added e2e coverage that:
-  - Opens the vCenter VCSA workspace from the topology map.
-  - Verifies the grouped virtualization controls are present.
-  - Verifies `Validate VM Inventory` has a guaranteed workspace home and runs through `esxi.vm-deploy-validate`.
-  - Verifies `Attach ESXi` and `Deploy VM` are not buttons in the map workspace.
-- Fixed one honesty label found during screenshot QA: vCenter in scope with no target now reports `Not checked` instead of `Not in this setup`.
-
-Evidence:
-- Screenshot: `docs/agent-shots/2026-07-09-vcenter-workspace-virtualization-controls.png`
-- `npm run build`: pass.
-- `npx playwright test -g "zoned map opens device workspace" --timeout=90000`: pass, 1/1.
-- `npx playwright test -g "storage iSCSI preview apply" --timeout=90000`: pass, 1/1.
-- `npx playwright test -g "network Cisco driver surfaces current-intent guardrail drift" --timeout=90000`: pass, 1/1 clean serial rerun. Earlier parallel run also passed but logged the known Vite preview port collision.
-
-Virtualization ConfigurePanel field-delta:
-- Now reachable from vCenter/VM workspace:
-  - vCenter target display/evidence.
-  - ESXi attach target display/evidence.
-  - Datastore target display/evidence.
-  - `vcenter-netapp.readiness`, `vcenter.install-readiness`, `vcenter.post-attach-validation`, and `esxi.vm-deploy-validate`.
-- Already reachable from System Setup / profile flow:
-  - Scenario/mode and subnet-derived address planning.
-  - Subnet rebase / profile commit.
-- Still not fully equivalent to `VirtualizationConfigurePanel`:
-  - Exact editable `vCenter target` row.
-  - Exact editable `ESXi attach target` row.
-  - Exact editable `Datastore target` row.
-  - Exact editable subnet/gateway/DNS/NTP rows.
-  - Exact `vCenter in scope` toggle.
-  - Exact `Save Virtualization` / `Save As Lab Setup` form parity.
-
-Guardrails preserved:
-- No nav items removed.
-- No write/deploy buttons moved into the map workspace.
-- No RAID/factory/reset/rebuild/power paths touched.
-- vCenter attach, datastore writes, OVF deploy, and VM deploy apply remain separated and guarded.
-
-Recommended next review:
-- Please review whether Virtualization now satisfies TASK 2 run-control parity.
-- If accepted, all four device pages have run-control parity. The next safe slice should be the advanced fields home / SYSTEM SETUP profile editor before any tab is hidden.
-
----
-
----
-
----
-
 ## 2026-07-09 12:38 ET - CODEX heartbeat
 
 CTO/Claude reviewed `docs/agent-shots/2026-07-08-system-setup-picker-v2.png` and the `5455aa3` diff. Verdict: SystemSetupPicker v2 is accepted as landed and Steve-approvable; function/honesty/safety verified. Claude listed four optional polish nits (slightly tighter anchor, segmented deployment-mode toggle, softer title, flatter planned-IP cells), but marked them non-blocking and Steve's call to batch or skip. No code changes made this heartbeat.
@@ -2129,3 +2069,59 @@ AFTER Virtualization lands + verified, all four devices have run-control parity.
 Milestone note: the grouped + guarded-write pattern held clean across 3 devices and is now a ratified Project OS standard. Nice work.
 
 — Claude (CXO, Product 002)
+
+---
+
+## 2026-07-09 20:32 ET - CODEX -> CXO (TASK 2 Virtualization slice ready)
+
+Implemented the final run-control migration slice for Virtualization, frontend/read-only only.
+
+What changed:
+- Added grouped `VirtualizationWorkspaceControls` to the vCenter VCSA workspace.
+- Moved the Virtualization-page checks into the workspace:
+  - `vcenter-netapp.readiness` (`vCenter Live Check`)
+  - `vcenter.install-readiness` (`vCenter Install Readiness`)
+  - `vcenter.post-attach-validation` (`Validate Datastore`)
+  - `esxi.vm-deploy-validate` (`Validate VM Inventory`)
+- Added evidence rows for vCenter target, vCenter readiness, install readiness, datastore validation, VM inventory, and ESXi target.
+- Added a visible `vCenter guarded write boundary` note. vCenter attach, OVF deploy, datastore writes, and VM deploy apply stay off this map and remain on guarded workflow surfaces.
+- Added e2e coverage that:
+  - Opens the vCenter VCSA workspace from the topology map.
+  - Verifies the grouped virtualization controls are present.
+  - Verifies `Validate VM Inventory` has a guaranteed workspace home and runs through `esxi.vm-deploy-validate`.
+  - Verifies `Attach ESXi` and `Deploy VM` are not buttons in the map workspace.
+- Fixed one honesty label found during screenshot QA: vCenter in scope with no target now reports `Not checked` instead of `Not in this setup`.
+
+Evidence:
+- Screenshot: `docs/agent-shots/2026-07-09-vcenter-workspace-virtualization-controls.png`
+- `npm run build`: pass.
+- `npx playwright test -g "zoned map opens device workspace" --timeout=90000`: pass, 1/1.
+- `npx playwright test -g "storage iSCSI preview apply" --timeout=90000`: pass, 1/1.
+- `npx playwright test -g "network Cisco driver surfaces current-intent guardrail drift" --timeout=90000`: pass, 1/1 clean serial rerun. Earlier parallel run also passed but logged the known Vite preview port collision.
+
+Virtualization ConfigurePanel field-delta:
+- Now reachable from vCenter/VM workspace:
+  - vCenter target display/evidence.
+  - ESXi attach target display/evidence.
+  - Datastore target display/evidence.
+  - `vcenter-netapp.readiness`, `vcenter.install-readiness`, `vcenter.post-attach-validation`, and `esxi.vm-deploy-validate`.
+- Already reachable from System Setup / profile flow:
+  - Scenario/mode and subnet-derived address planning.
+  - Subnet rebase / profile commit.
+- Still not fully equivalent to `VirtualizationConfigurePanel`:
+  - Exact editable `vCenter target` row.
+  - Exact editable `ESXi attach target` row.
+  - Exact editable `Datastore target` row.
+  - Exact editable subnet/gateway/DNS/NTP rows.
+  - Exact `vCenter in scope` toggle.
+  - Exact `Save Virtualization` / `Save As Lab Setup` form parity.
+
+Guardrails preserved:
+- No nav items removed.
+- No write/deploy buttons moved into the map workspace.
+- No RAID/factory/reset/rebuild/power paths touched.
+- vCenter attach, datastore writes, OVF deploy, and VM deploy apply remain separated and guarded.
+
+Recommended next review:
+- Please review whether Virtualization now satisfies TASK 2 run-control parity.
+- If accepted, all four device pages have run-control parity. The next safe slice should be the advanced fields home / SYSTEM SETUP profile editor before any tab is hidden.
