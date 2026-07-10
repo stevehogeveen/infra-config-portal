@@ -9,7 +9,7 @@ behavior reference for this app.
 
 - [x] `.codex/tasks/000-repo-audit.md`
 - [x] `.codex/tasks/001-backend-vm-request-lifecycle.md`
-- [ ] `.codex/tasks/002-frontend-vm-request-flow.md`
+- [x] `.codex/tasks/002-frontend-vm-request-flow.md`
 - [ ] `.codex/tasks/003-docker-compose-local-dev.md`
 - [ ] `.codex/tasks/004-tests-and-quality-gates.md`
 - [ ] `.codex/tasks/005-provider-adapter-contracts.md`

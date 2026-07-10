@@ -8,6 +8,7 @@ import types
 from pathlib import Path
 
 import httpx
+import pytest
 from fastapi.testclient import TestClient
 
 from app.providers import cisco_console as cisco_console_module
@@ -65,6 +66,11 @@ from app.services.hpe_raid import (
 from app.services.control_access import update_control_access_config
 from app.services.lab_profiles import create_lab_profile
 from app.schemas import IloNetworkIntent, IloSetupApplyCreate, IloSetupIntentWrite
+
+
+@pytest.fixture(autouse=True)
+def _isolate_windows_serial_ports(monkeypatch) -> None:
+    monkeypatch.setattr("app.services.serial_console_discovery._windows_serial_ports", lambda: [])
 
 
 def test_ilo_redfish_unique_paths_preserve_first_normalized_path() -> None:
@@ -2084,12 +2090,16 @@ def test_provider_smoke_report_uses_atomic_store(monkeypatch, tmp_path: Path) ->
         }
     )
 
-    json_reports = list(smoke.REPORT_DIR.glob("provider-smoke-*.json"))
-    markdown_reports = list(smoke.REPORT_DIR.glob("provider-smoke-*.md"))
+    json_reports = [path for path in smoke.REPORT_DIR.glob("provider-smoke-*.json") if path.name != "provider-smoke-latest.json"]
+    markdown_reports = [path for path in smoke.REPORT_DIR.glob("provider-smoke-*.md") if path.name != "provider-smoke-latest.md"]
+    latest_json = smoke.REPORT_DIR / "provider-smoke-latest.json"
+    latest_markdown = smoke.REPORT_DIR / "provider-smoke-latest.md"
     assert len(json_reports) == 1
     assert len(markdown_reports) == 1
     assert json.loads(json_reports[0].read_text(encoding="utf-8"))["provider_mode"] == "local-readonly"
+    assert json.loads(latest_json.read_text(encoding="utf-8"))["provider_mode"] == "local-readonly"
     assert markdown_reports[0].read_text(encoding="utf-8").strip()
+    assert latest_markdown.read_text(encoding="utf-8").strip()
     assert not list(smoke.REPORT_DIR.glob("*.tmp"))
 
 

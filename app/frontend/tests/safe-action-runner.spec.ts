@@ -1317,6 +1317,75 @@ test("operator issue reporter creates a redacted AI-ready packet from the curren
   await expect(page.getByRole("button", { name: "Copy AI prompt" })).toBeVisible();
 });
 
+test("request detail shows mock lifecycle guardrails before planning", async ({ page }) => {
+  const request = {
+    created_at: checkedAt,
+    environment: "dev",
+    expiry_date: "2026-12-31",
+    id: "req-vm-1",
+    notes: "Need a short-lived app test VM.",
+    owner: "platform-team",
+    request_type: "vm_deploy",
+    requester: "local-dev-user",
+    site: "lab-a",
+    status: "approved",
+    updated_at: checkedAt,
+    vm_deploy: {
+      cluster: "compute-a",
+      cpu: 2,
+      datastore: null,
+      disk_gb: 80,
+      memory_gb: 8,
+      network: "dev-vlan-100",
+      storage_tier: "silver",
+      template: "ubuntu-24.04",
+      vm_name: "app-dev-001"
+    }
+  };
+  await page.route("**/api/v1/catalog", (route) =>
+    json(route, {
+      clusters_by_site: { "lab-a": ["compute-a"] },
+      datastores: ["ds-lab-a-01"],
+      environments: ["dev", "test", "prod"],
+      networks: [{ environments: ["dev"], name: "dev-vlan-100", vlan_id: 100 }],
+      sites: ["lab-a"],
+      storage_tiers: ["bronze", "silver", "gold"],
+      templates: ["ubuntu-24.04"]
+    })
+  );
+  await page.route("**/api/v1/requests/req-vm-1/readiness", (route) =>
+    json(route, {
+      blockers: [],
+      current_status: "approved",
+      next_action: "plan",
+      ready_for_approval: false,
+      ready_for_execute: false,
+      ready_for_plan: true,
+      ready_for_submit: false,
+      request_id: "req-vm-1",
+      summary: "Approved request is ready for mock dry-run planning.",
+      warnings: []
+    })
+  );
+  await page.route("**/api/v1/requests/req-vm-1/artifacts", (route) => json(route, []));
+  await page.route("**/api/v1/requests/req-vm-1", (route) => json(route, request));
+
+  await page.goto("/requests/req-vm-1");
+
+  const guardrails = page.getByLabel("VM request lifecycle guardrails");
+  await expect(guardrails).toBeVisible();
+  await expect(guardrails).toContainText("Current state");
+  await expect(guardrails).toContainText("approved");
+  await expect(guardrails).toContainText("Next safe action");
+  await expect(guardrails).toContainText("plan");
+  await expect(guardrails).toContainText("Mock-only boundary");
+  await expect(guardrails).toContainText("No provider changes");
+  await expect(guardrails).toContainText("Creates a mock-only dry-run plan");
+  await expect(guardrails).toContainText("do not call vCenter, ESXi, storage, network, IPAM, or provider endpoints");
+  await expect(page.getByRole("button", { name: "Plan" })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Execute" })).toBeDisabled();
+});
+
 test("workflow runner surfaces plain-text API errors", async ({ page }) => {
   await page.route("**/api/v1/workflows/actions/build-verification.run-full/run", (route) =>
     route.fulfill({

@@ -6330,6 +6330,59 @@ textarea {
   color: #8a5d00;
 }
 
+.lifecycle-guardrail-panel > p {
+  color: #475569;
+  font-size: 13px;
+  line-height: 1.5;
+  margin: 12px 0 0;
+}
+
+.lifecycle-guardrail-summary {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.lifecycle-guardrail-summary > div,
+.lifecycle-guardrail-steps article {
+  background: #f8fafc;
+  border: 1px solid #dfe4ea;
+  border-radius: 6px;
+  padding: 10px;
+}
+
+.lifecycle-guardrail-summary span,
+.lifecycle-guardrail-steps span,
+.lifecycle-guardrail-steps small {
+  color: #64748b;
+  display: block;
+  font-size: 12px;
+}
+
+.lifecycle-guardrail-summary strong,
+.lifecycle-guardrail-steps strong {
+  color: #0f172a;
+  display: block;
+  font-size: 14px;
+  margin-top: 4px;
+}
+
+.lifecycle-guardrail-steps {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-top: 14px;
+}
+
+.lifecycle-guardrail-steps article.ready {
+  background: #f0fdf4;
+  border-color: #9bd6b3;
+}
+
+.lifecycle-guardrail-steps article.ready strong {
+  color: #166534;
+}
+
 .readiness-head {
   align-items: flex-start;
   display: flex;
@@ -14379,6 +14432,8 @@ button.design-ilo-port:hover {
   }
 
   .lifecycle-action-grid,
+  .lifecycle-guardrail-summary,
+  .lifecycle-guardrail-steps,
   .artifact-grid,
   .provider-fact-grid,
   .firmware-inline-grid,
@@ -14524,6 +14579,8 @@ button.design-ilo-port:hover {
     .active-lab-strip,
     .stage-list,
     .lifecycle-action-grid,
+    .lifecycle-guardrail-summary,
+    .lifecycle-guardrail-steps,
     .handoff-summary,
     .artifact-grid,
     .provider-fact-grid,

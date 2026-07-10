@@ -7,9 +7,18 @@ from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 from app.core.config import settings
 from app.providers.action_policy import ActionCategory
 from app.services import esxi_boot_workflow, esxi_install_readiness, hpe_raid
+
+
+@pytest.fixture(autouse=True)
+def _isolate_esxi_media_env(monkeypatch) -> None:
+    monkeypatch.delenv("ESXI_INSTALL_ISO", raising=False)
+    monkeypatch.delenv("ESXI_ISO_PATH", raising=False)
+    monkeypatch.delenv("ESXI_MEDIA_BASE_URL", raising=False)
 
 
 def test_prepare_esxi_media_url_keeps_scalar_firmware_blocker_whole(monkeypatch, tmp_path: Path) -> None:

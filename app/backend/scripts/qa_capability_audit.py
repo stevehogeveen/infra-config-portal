@@ -69,9 +69,9 @@ CAPABILITIES: tuple[dict[str, Any], ...] = (
         "id": "visual-regression",
         "requirement": "Stable visual product surfaces have screenshot regression coverage.",
         "checks": (
-            ("app/frontend/tests/safe-action-runner.spec.ts", ("overview design mode visual blueprint", "toHaveScreenshot")),
+            ("app/frontend/tests/safe-action-runner.spec.ts", ("overview design mode map surface stays stable and scalable", "toHaveScreenshot")),
             (
-                "app/frontend/tests/safe-action-runner.spec.ts-snapshots/overview-design-blueprint-chromium-win32.png",
+                "app/frontend/tests/safe-action-runner.spec.ts-snapshots/overview-design-map-chromium-win32.png",
                 (),
             ),
         ),

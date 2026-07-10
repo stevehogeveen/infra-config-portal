@@ -5865,6 +5865,7 @@ function RequestDetail() {
     >
       <Feedback error={error} />
       <ReadinessPanel readiness={readiness} />
+      <LifecycleGuardrails readiness={readiness} request={request} />
       <section className="detail-grid">
         <Info label="Request ID" value={request.id} />
         <Info label="Requester" value={request.requester} />
@@ -5984,6 +5985,73 @@ function ReadinessPanel({ readiness }: { readiness: RequestReadiness | null }) {
       <div className="issue-grid">
         <IssueList empty="No blockers." issues={readiness.blockers} title="Blockers" />
         <IssueList empty="No warnings." issues={readiness.warnings} title="Warnings" />
+      </div>
+    </section>
+  );
+}
+
+function LifecycleGuardrails({
+  readiness,
+  request
+}: {
+  readiness: RequestReadiness | null;
+  request: RequestRecord;
+}) {
+  const nextAction = readiness?.next_action && readiness.next_action !== "none"
+    ? readiness.next_action
+    : nextActionForStatus(request.status);
+  const gates = [
+    {
+      detail: "Locks the draft intent for lifecycle validation.",
+      label: "Submit",
+      ready: Boolean(readiness?.ready_for_submit)
+    },
+    {
+      detail: "Records a human approval decision before planning.",
+      label: "Approval",
+      ready: Boolean(readiness?.ready_for_approval)
+    },
+    {
+      detail: "Creates a mock-only dry-run plan for operator review.",
+      label: "Plan",
+      ready: Boolean(readiness?.ready_for_plan)
+    },
+    {
+      detail: "Requires a persisted preview plan that still matches the request.",
+      label: "Execute",
+      ready: Boolean(readiness?.ready_for_execute)
+    }
+  ];
+
+  return (
+    <section className="panel lifecycle-guardrail-panel" aria-label="VM request lifecycle guardrails">
+      <PanelTitle icon={<ShieldCheck size={18} />} title="Lifecycle Guardrails" />
+      <div className="lifecycle-guardrail-summary">
+        <div>
+          <span>Current state</span>
+          <strong>{labelize(request.status)}</strong>
+        </div>
+        <div>
+          <span>Next safe action</span>
+          <strong>{labelize(nextAction)}</strong>
+        </div>
+        <div>
+          <span>Mock-only boundary</span>
+          <strong>No provider changes</strong>
+        </div>
+      </div>
+      <p>
+        VM requests must move through submit, approval, and mock dry-run planning before execute is available.
+        These controls stay on the mocked lifecycle API and do not call vCenter, ESXi, storage, network, IPAM, or provider endpoints.
+      </p>
+      <div className="lifecycle-guardrail-steps">
+        {gates.map((gate) => (
+          <article className={gate.ready ? "ready" : ""} key={gate.label}>
+            <span>{gate.label}</span>
+            <strong>{gate.ready ? "Ready" : "Waiting"}</strong>
+            <small>{gate.detail}</small>
+          </article>
+        ))}
       </div>
     </section>
   );
