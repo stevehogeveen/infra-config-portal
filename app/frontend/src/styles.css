@@ -8678,6 +8678,176 @@ th.ui-compact-table-cell {
   cursor: not-allowed;
 }
 
+.system-setup-advanced {
+  background: rgba(248, 250, 252, 0.76);
+  border: 1px solid rgba(203, 213, 225, 0.84);
+  border-radius: 14px;
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.system-setup-advanced > summary,
+.system-setup-advanced-group > summary {
+  align-items: center;
+  cursor: pointer;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+  list-style: none;
+  min-width: 0;
+  padding: 10px 11px;
+}
+
+.system-setup-advanced > summary::-webkit-details-marker,
+.system-setup-advanced-group > summary::-webkit-details-marker {
+  display: none;
+}
+
+.system-setup-advanced > summary span,
+.system-setup-advanced-group > summary span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.system-setup-advanced > summary strong,
+.system-setup-advanced-group > summary strong {
+  color: #0f172a;
+  font-size: 12px;
+  font-weight: 950;
+  line-height: 1.2;
+}
+
+.system-setup-advanced > summary small,
+.system-setup-advanced-group > summary small,
+.system-setup-advanced-field small,
+.system-setup-advanced-actions span {
+  color: #64748b;
+  font-size: 10.5px;
+  font-weight: 800;
+  line-height: 1.3;
+}
+
+.system-setup-advanced > summary em,
+.system-setup-advanced-field em,
+.system-setup-advanced-toggles em {
+  border-radius: 999px;
+  font-size: 9px;
+  font-style: normal;
+  font-weight: 950;
+  letter-spacing: 0.05em;
+  padding: 3px 7px;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.system-setup-advanced > summary em,
+.system-setup-advanced-field.is-derived em,
+.system-setup-advanced-toggles .is-derived em {
+  background: #fef3c7;
+  border: 1px solid #fde68a;
+  color: #92400e;
+}
+
+.system-setup-advanced-field.is-override em,
+.system-setup-advanced-toggles .is-override em {
+  background: #dcfce7;
+  border: 1px solid #86efac;
+  color: #166534;
+}
+
+.system-setup-advanced-form {
+  border-top: 1px solid rgba(203, 213, 225, 0.68);
+  display: grid;
+  gap: 9px;
+  padding: 0 10px 10px;
+}
+
+.system-setup-advanced-group {
+  background: rgba(255, 255, 255, 0.76);
+  border: 1px solid rgba(226, 232, 240, 0.8);
+  border-radius: 12px;
+  min-width: 0;
+}
+
+.system-setup-advanced-grid {
+  border-top: 1px solid rgba(226, 232, 240, 0.7);
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  padding: 9px;
+}
+
+.system-setup-advanced-field {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.system-setup-advanced-field span {
+  align-items: center;
+  display: flex;
+  gap: 6px;
+  justify-content: space-between;
+  min-width: 0;
+}
+
+.system-setup-advanced-field span:first-child {
+  color: #475569;
+  font-size: 10.5px;
+  font-weight: 950;
+  line-height: 1.2;
+}
+
+.system-setup-advanced-field input,
+.system-setup-advanced-field select {
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  color: #0f172a;
+  font: inherit;
+  font-size: 12px;
+  min-width: 0;
+  padding: 7px 9px;
+}
+
+.system-setup-advanced-field.is-override input,
+.system-setup-advanced-field.is-override select {
+  border-color: rgba(22, 163, 74, 0.46);
+  box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.08);
+}
+
+.system-setup-advanced-toggles {
+  align-content: start;
+  display: grid;
+  gap: 7px;
+}
+
+.system-setup-advanced-toggles label {
+  align-items: center;
+  background: #ffffff;
+  border: 1px solid rgba(203, 213, 225, 0.86);
+  border-radius: 10px;
+  display: grid;
+  gap: 7px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  padding: 8px;
+}
+
+.system-setup-advanced-toggles span {
+  color: #0f172a;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.system-setup-advanced-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+
 .system-setup-validation {
   color: #475569;
   font-size: 12px;
@@ -8815,6 +8985,21 @@ th.ui-compact-table-cell {
 .system-setup-status-error {
   background: #fff1f2;
   color: #be123c;
+}
+
+.design-provenance-chip {
+  background: #eef6fb;
+  border: 1px solid #d7e7f7;
+  border-radius: 999px;
+  color: #0f766e;
+  display: inline-flex;
+  font-size: 9px;
+  font-weight: 950;
+  letter-spacing: 0.04em;
+  margin-right: 6px;
+  padding: 2px 6px;
+  text-transform: uppercase;
+  white-space: nowrap;
 }
 
 @keyframes system-setup-dot-pulse {
@@ -10421,6 +10606,15 @@ th.ui-compact-table-cell {
   appearance: auto;
   cursor: pointer;
   font-weight: 850;
+}
+
+.design-device-setting-row.is-profile-owned input,
+.design-device-setting-row.is-profile-owned select,
+.design-device-setting-row.is-profile-owned textarea {
+  background: #eef7f5;
+  border-color: #bfe9df;
+  color: #0f3d39;
+  cursor: default;
 }
 
 .design-device-setting-row small {

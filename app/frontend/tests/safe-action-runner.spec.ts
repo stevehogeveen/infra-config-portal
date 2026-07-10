@@ -500,6 +500,62 @@ test("living topology creates a subnet-derived system setup without running work
   expect(workflowRunAttempted).toBe(false);
 });
 
+test("system setup advanced fields round-trip shared and device rows through the profile", async ({ page }) => {
+  await page.goto("/overview");
+
+  const topology = page.locator("section[aria-label='Living lab topology']");
+  const picker = topology.locator("section[aria-label='System setup picker']");
+  await picker.getByRole("button", { name: "Open system setup picker" }).click();
+
+  const panel = picker.getByRole("dialog", { name: "Setup and IP plan" });
+  const advanced = panel.locator("details[aria-label='Advanced fields']");
+  await advanced.locator(":scope > summary").click();
+  const sharedServices = advanced.locator("details.system-setup-advanced-group").filter({ hasText: "Shared services" });
+  const networkSwitch = advanced.locator("details.system-setup-advanced-group").filter({ hasText: "Network / Switch" });
+  await sharedServices.locator(":scope > summary").click();
+  await networkSwitch.locator(":scope > summary").click();
+
+  await advanced.getByLabel("Advanced DNS servers").fill("192.168.1.1, 192.168.1.53");
+  await advanced.getByLabel("Advanced Cisco mgmt IP").fill("192.168.1.214");
+  await expect(advanced).toContainText("Override");
+
+  const createProfileRequest = page.waitForRequest((request) => {
+    const url = new URL(request.url());
+    return request.method() === "POST" && url.pathname === "/api/v1/lab/profiles";
+  });
+  await advanced.getByRole("button", { name: "Save as lab setup" }).click();
+  const request = await createProfileRequest;
+  const payload = request.postDataJSON() as Record<string, any>;
+  expect(payload.address_plan.cisco_management).toBe("192.168.1.214");
+  expect(payload.global_settings.dns_servers).toEqual(["192.168.1.1", "192.168.1.53"]);
+  await expect(panel).toContainText("Advanced profile fields saved");
+
+  await page.reload();
+  const reloadedTopology = page.locator("section[aria-label='Living lab topology']");
+  const reloadedPicker = reloadedTopology.locator("section[aria-label='System setup picker']");
+  await reloadedPicker.getByRole("button", { name: "Open system setup picker" }).click();
+  const reloadedPanel = reloadedPicker.getByRole("dialog", { name: "Setup and IP plan" });
+  const reloadedAdvanced = reloadedPanel.locator("details[aria-label='Advanced fields']");
+  await reloadedAdvanced.locator(":scope > summary").click();
+  await reloadedAdvanced.locator("details.system-setup-advanced-group").filter({ hasText: "Shared services" }).locator(":scope > summary").click();
+  await reloadedAdvanced.locator("details.system-setup-advanced-group").filter({ hasText: "Network / Switch" }).locator(":scope > summary").click();
+  await expect(reloadedAdvanced.getByLabel("Advanced DNS servers")).toHaveValue("192.168.1.1, 192.168.1.53");
+  await expect(reloadedAdvanced.getByLabel("Advanced Cisco mgmt IP")).toHaveValue("192.168.1.214");
+
+  await reloadedPicker.getByRole("button", { name: "Open system setup picker" }).click();
+  await reloadedTopology.getByRole("button", { name: "Open Cisco switch workspace" }).click();
+  const overlay = page.locator("div[aria-label='Device workspace overlay']");
+  const switchWorkspace = overlay.locator("section[aria-label='Cisco switch workspace']");
+  const switchNetwork = switchWorkspace.getByLabel("Cisco switch Network");
+  await expect(switchNetwork).toContainText("Management IP");
+  const managementInput = switchNetwork.getByLabel("Management IP");
+  await expect(managementInput).toBeVisible();
+  await expect(managementInput).toHaveValue("192.168.1.214");
+  await expect(managementInput).toHaveAttribute("readonly", "");
+  await expect(switchNetwork).toContainText("Saved / derived");
+  await expect(switchNetwork).toContainText("edit it in System Setup advanced fields");
+});
+
 test("overview design mode keeps the surface map-only until a node opens the workspace overlay", async ({ page }) => {
   healthHostIpv4Addresses = ["10.10.8.99", "172.20.10.3"];
   await page.goto("/overview");
@@ -1334,6 +1390,7 @@ async function installApiMocks(page: Page) {
         updated_at: checkedAt
       };
       savedProfile = profile;
+      activeProfiles = activeLabProfilesFromProfile(savedProfile);
       return json(route, profile);
     }
     if (url.pathname.startsWith("/api/v1/lab/profiles/") && url.pathname.endsWith("/activate")) {

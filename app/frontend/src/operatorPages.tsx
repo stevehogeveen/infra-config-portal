@@ -6202,6 +6202,53 @@ function TopologySystemSafetyStrip({
 
 type SystemSetupPanelMode = "switch" | "new";
 
+type SystemSetupAdvancedEditState = {
+  ciscoManagement: string;
+  datastoreTarget: string;
+  dnsServers: string;
+  enableDns: boolean;
+  enableNtp: boolean;
+  enableSnmp: boolean;
+  enableVcenter: boolean;
+  esxiManagement: string;
+  gateway: string;
+  ilo: string;
+  iloInitial: string;
+  iscsiLifs: string;
+  mtu: string;
+  netappClusterMgmt: string;
+  netappControllerASp: string;
+  netappControllerBSp: string;
+  netappNodeAMgmt: string;
+  netappNodeBMgmt: string;
+  netappSvmMgmt: string;
+  nfsLifs: string;
+  ntpServers: string;
+  serverEmbeddedNic: string;
+  storageProtocol: string;
+  subnet: string;
+  vcenterTarget: string;
+  vlanId: string;
+};
+
+type SystemSetupAdvancedTextKey = {
+  [K in keyof SystemSetupAdvancedEditState]: SystemSetupAdvancedEditState[K] extends string ? K : never;
+}[keyof SystemSetupAdvancedEditState];
+
+type SystemSetupAdvancedField = {
+  inputMode?: "numeric";
+  key: SystemSetupAdvancedTextKey;
+  label: string;
+  note: string;
+};
+
+type SystemSetupAdvancedGroup = {
+  fields: SystemSetupAdvancedField[];
+  id: string;
+  label: string;
+  summary: string;
+};
+
 function SystemSetupPicker({
   activeProfile,
   address,
@@ -6224,6 +6271,9 @@ function SystemSetupPicker({
   const [newName, setNewName] = useState(() => systemSetupDefaultName(activeProfile));
   const [newSubnet, setNewSubnet] = useState(() => displayAddress(address.subnet) === "Not set up yet" ? "192.168.200.0/24" : displayAddress(address.subnet));
   const [newScenario, setNewScenario] = useState<TopologyDesignScenario>(currentScenario);
+  const [advancedEdit, setAdvancedEdit] = useState<SystemSetupAdvancedEditState>(() =>
+    systemSetupAdvancedEditStateFrom(activeProfile, address, features)
+  );
   const [status, setStatus] = useState<{ kind: "idle" | "running" | "ok" | "error"; message: string }>({ kind: "idle", message: "" });
 
   useEffect(() => {
@@ -6231,6 +6281,7 @@ function SystemSetupPicker({
     setNewName(systemSetupDefaultName(activeProfile));
     setNewSubnet(displayAddress(address.subnet) === "Not set up yet" ? "192.168.200.0/24" : displayAddress(address.subnet));
     setNewScenario(currentScenario);
+    setAdvancedEdit(systemSetupAdvancedEditStateFrom(activeProfile, address, features));
   }, [activeProfile?.id, activeProfile?.name, address.subnet, currentScenario]);
 
   useEffect(() => {
@@ -6257,8 +6308,19 @@ function SystemSetupPicker({
   const previewRows = systemSetupPreviewRows(previewAddress, newScenario);
   const savedCount = Math.max(0, profileOptions.filter((profile) => profile.source === "saved").length);
   const selectedProfile = profileOptions.find((profile) => profile.id === selectedProfileId) ?? profileOptions[0] ?? null;
+  const advancedDerived = useMemo(
+    () => systemSetupAdvancedDerivedState(advancedEdit.subnet || address.subnet, activeProfile, features),
+    [activeProfile, address.subnet, advancedEdit.subnet, features]
+  );
+  const advancedGroups = useMemo(() => systemSetupAdvancedGroups(), []);
+  const advancedOverrideCount = systemSetupAdvancedOverrideCount(advancedEdit, advancedDerived);
   const canCreate = Boolean(activeProfile && newName.trim() && subnetValidation.status !== "error" && status.kind !== "running");
   const canActivate = Boolean(selectedProfileId && selectedProfileId !== (activeProfile?.id ?? "runtime") && status.kind !== "running");
+  const canSaveAdvanced = Boolean(activeProfile && status.kind !== "running");
+
+  function updateAdvanced<K extends keyof SystemSetupAdvancedEditState>(key: K, value: SystemSetupAdvancedEditState[K]) {
+    setAdvancedEdit((current) => ({ ...current, [key]: value }));
+  }
 
   async function activateSelectedProfile() {
     if (!selectedProfile || status.kind === "running") return;
@@ -6290,6 +6352,47 @@ function SystemSetupPicker({
     } catch (err) {
       setStatus({ kind: "error", message: errorMessage(err) });
     }
+  }
+
+  async function saveAdvancedFields(event: FormEvent) {
+    event.preventDefault();
+    if (!activeProfile || status.kind === "running") return;
+    setStatus({ kind: "running", message: "Saving advanced profile fields. Hardware remains untouched." });
+    try {
+      const payload = systemSetupAdvancedProfilePayload(activeProfile, advancedEdit);
+      if (activeProfile.source === "saved") {
+        await api.updateLabProfile(activeProfile.id, payload);
+      } else {
+        const saved = await api.createLabProfile(payload);
+        await api.activateLabProfile(saved.id);
+      }
+      await onChanged();
+      setStatus({ kind: "ok", message: "Advanced profile fields saved. Map state will re-derive from the saved setup; live checks still need to be run separately." });
+    } catch (err) {
+      setStatus({ kind: "error", message: errorMessage(err) });
+    }
+  }
+
+  function renderAdvancedField(field: SystemSetupAdvancedField) {
+    const value = advancedEdit[field.key];
+    const derivedValue = advancedDerived[field.key];
+    const isOverride = systemSetupAdvancedIsOverride(value, derivedValue);
+    return (
+      <label className={`system-setup-advanced-field ${isOverride ? "is-override" : "is-derived"}`} key={field.key}>
+        <span>
+          {field.label}
+          <em>{isOverride ? "Override" : "Planned"}</em>
+        </span>
+        <input
+          aria-label={`Advanced ${field.label}`}
+          inputMode={field.inputMode}
+          placeholder={derivedValue || "Derived from setup"}
+          value={value}
+          onChange={(event) => updateAdvanced(field.key, event.target.value)}
+        />
+        <small>Derived: {derivedValue || "not derived"} - {field.note}</small>
+      </label>
+    );
   }
 
   return (
@@ -6422,6 +6525,92 @@ function SystemSetupPicker({
             </div>
           )}
 
+          <details className="system-setup-advanced" aria-label="Advanced fields">
+            <summary>
+              <span>
+                <strong>Advanced fields</strong>
+                <small>{advancedOverrideCount ? `${advancedOverrideCount} override${advancedOverrideCount === 1 ? "" : "s"} staged` : "Collapsed by default; subnet-derived unless overridden."}</small>
+              </span>
+              <em>{advancedOverrideCount ? "OVERRIDE" : "PLANNED"}</em>
+            </summary>
+            <form className="system-setup-advanced-form" onSubmit={saveAdvancedFields}>
+              <p className="system-setup-muted">
+                Profile/config editing only. These values save the lab setup; no probes, hardware writes, guarded writes, power, reset, factory, or rebuild actions run here.
+              </p>
+              {advancedGroups.map((group) => (
+                <details className="system-setup-advanced-group" key={group.id}>
+                  <summary>
+                    <span>
+                      <strong>{group.label}</strong>
+                      <small>{group.summary}</small>
+                    </span>
+                  </summary>
+                  <div className="system-setup-advanced-grid">
+                    {group.fields.map(renderAdvancedField)}
+                    {group.id === "storage" && (
+                      <label className={`system-setup-advanced-field ${advancedEdit.storageProtocol === advancedDerived.storageProtocol ? "is-derived" : "is-override"}`}>
+                        <span>Storage protocol <em>{advancedEdit.storageProtocol === advancedDerived.storageProtocol ? "Planned" : "Override"}</em></span>
+                        <select
+                          aria-label="Advanced Storage protocol"
+                          value={advancedEdit.storageProtocol}
+                          onChange={(event) => updateAdvanced("storageProtocol", event.target.value)}
+                        >
+                          <option value="nfs">NFS</option>
+                          <option value="iscsi">iSCSI</option>
+                          <option value="local">Local RAID</option>
+                        </select>
+                        <small>Derived: {advancedDerived.storageProtocol || "nfs"} - Protocol intent only; apply remains guarded elsewhere.</small>
+                      </label>
+                    )}
+                    {group.id === "services" && (
+                      <div className="system-setup-advanced-toggles" aria-label="Advanced service toggles">
+                        {([
+                          ["enableDns", "DNS", advancedDerived.enableDns],
+                          ["enableNtp", "NTP", advancedDerived.enableNtp],
+                          ["enableSnmp", "SNMP", advancedDerived.enableSnmp]
+                        ] as Array<["enableDns" | "enableNtp" | "enableSnmp", string, boolean]>).map(([typedKey, label, derived]) => {
+                          const isOverride = advancedEdit[typedKey] !== derived;
+                          return (
+                            <label className={isOverride ? "is-override" : "is-derived"} key={typedKey}>
+                              <input
+                                aria-label={`Advanced ${label} toggle`}
+                                checked={advancedEdit[typedKey]}
+                                onChange={(event) => updateAdvanced(typedKey, event.target.checked)}
+                                type="checkbox"
+                              />
+                              <span>{label}</span>
+                              <em>{isOverride ? "Override" : "Planned"}</em>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    )}
+                    {group.id === "virtualization" && (
+                      <div className="system-setup-advanced-toggles" aria-label="Advanced virtualization toggles">
+                        <label className={advancedEdit.enableVcenter === advancedDerived.enableVcenter ? "is-derived" : "is-override"}>
+                          <input
+                            aria-label="Advanced vCenter in scope toggle"
+                            checked={advancedEdit.enableVcenter}
+                            onChange={(event) => updateAdvanced("enableVcenter", event.target.checked)}
+                            type="checkbox"
+                          />
+                          <span>vCenter in scope</span>
+                          <em>{advancedEdit.enableVcenter === advancedDerived.enableVcenter ? "Planned" : "Override"}</em>
+                        </label>
+                      </div>
+                    )}
+                  </div>
+                </details>
+              ))}
+              <div className="system-setup-advanced-actions">
+                <button className="system-setup-primary" disabled={!canSaveAdvanced} type="submit">
+                  {status.kind === "running" ? "Saving" : activeProfile?.source === "saved" ? "Save advanced fields" : "Save as lab setup"}
+                </button>
+                <span>One profile commit. Workspaces remain display/test only.</span>
+              </div>
+            </form>
+          </details>
+
           <p className="system-setup-footnote">
             Selects which saved setup and IP plan you are working on. It does not probe or reconfigure any device.
           </p>
@@ -6471,6 +6660,287 @@ function systemSetupPreviewRows(address: LabAddressPlan, scenario: TopologyDesig
     { label: "NFS LIFs", status: netappInScope ? "planned" : "out", value: netappInScope ? address.netapp_nfs_lifs.map(displayAddress).join(", ") || "Not set up yet" : "Out of scope" },
     { label: "vCenter / control", status: vcenterInScope ? "planned" : "optional", value: vcenterInScope ? displayAddress(address.ansible_control_host) : "Direct ESXi path" }
   ];
+}
+
+function systemSetupAdvancedEditStateFrom(
+  activeProfile: LabProfile | null,
+  address: LabAddressPlan,
+  features: LabProfileFeatures | null
+): SystemSetupAdvancedEditState {
+  const global = activeProfile?.global_settings ?? null;
+  const devices = activeProfile?.devices ?? {};
+  const netappDevice = devices.netapp && typeof devices.netapp === "object" ? devices.netapp : {};
+  return {
+    ciscoManagement: address.cisco_management ?? "",
+    datastoreTarget: asString(netappDevice.datastore_target) || asString(netappDevice.datastore),
+    dnsServers: (global?.dns_servers ?? activeProfile?.dns ?? []).join(", "),
+    enableDns: Boolean(features?.enable_dns),
+    enableNtp: Boolean(features?.enable_ntp),
+    enableSnmp: Boolean(features?.enable_snmp),
+    enableVcenter: Boolean(features?.vcenter_enabled),
+    esxiManagement: address.esxi_management ?? "",
+    gateway: global?.gateway ?? activeProfile?.gateway ?? "",
+    ilo: address.ilo ?? "",
+    iloInitial: address.ilo_initial ?? "",
+    iscsiLifs: address.netapp_iscsi_lifs.join(", "),
+    mtu: global?.mtu !== null && global?.mtu !== undefined ? String(global.mtu) : activeProfile?.mtu ? String(activeProfile.mtu) : "",
+    netappClusterMgmt: address.netapp_cluster_mgmt ?? "",
+    netappControllerASp: address.netapp_controller_a_sp ?? "",
+    netappControllerBSp: address.netapp_controller_b_sp ?? "",
+    netappNodeAMgmt: address.netapp_node_a_mgmt ?? "",
+    netappNodeBMgmt: address.netapp_node_b_mgmt ?? "",
+    netappSvmMgmt: address.netapp_svm_mgmt ?? "",
+    nfsLifs: address.netapp_nfs_lifs.join(", "),
+    ntpServers: (global?.ntp_servers ?? activeProfile?.ntp ?? []).join(", "),
+    serverEmbeddedNic: address.server_embedded_nic ?? "",
+    storageProtocol: features?.storage_protocol === "iscsi" ? "iscsi" : features?.storage_protocol === "local" ? "local" : "nfs",
+    subnet: address.subnet ?? activeProfile?.subnet_cidr ?? "",
+    vcenterTarget: asString(devices.vcenter),
+    vlanId: global?.vlan_id ?? activeProfile?.vlan_id ?? ""
+  };
+}
+
+function systemSetupAdvancedDerivedState(
+  subnet: string | null,
+  activeProfile: LabProfile | null,
+  features: LabProfileFeatures | null
+): SystemSetupAdvancedEditState {
+  const plan = systemSetupDerivedAddressPlan(cleanNetworkNullable(subnet) ?? activeProfile?.subnet_cidr ?? activeProfile?.address_plan.subnet ?? "192.168.1.0/24");
+  const gateway = topologyGatewayFromSubnet(plan.subnet);
+  const storageProtocol = features?.storage_protocol === "iscsi" ? "iscsi" : features?.storage_protocol === "local" ? "local" : "nfs";
+  return {
+    ciscoManagement: plan.cisco_management ?? "",
+    datastoreTarget: storageProtocol === "local" ? "local_esxi_datastore" : "netapp_nfs_ds01",
+    dnsServers: activeProfile?.global_settings.dns_servers?.join(", ") || activeProfile?.dns?.join(", ") || gateway,
+    enableDns: features?.enable_dns ?? true,
+    enableNtp: features?.enable_ntp ?? true,
+    enableSnmp: features?.enable_snmp ?? false,
+    enableVcenter: features?.vcenter_enabled ?? true,
+    esxiManagement: plan.esxi_management ?? "",
+    gateway,
+    ilo: plan.ilo ?? "",
+    iloInitial: plan.ilo_initial ?? "",
+    iscsiLifs: plan.netapp_iscsi_lifs.join(", "),
+    mtu: activeProfile?.global_settings.mtu !== null && activeProfile?.global_settings.mtu !== undefined ? String(activeProfile.global_settings.mtu) : activeProfile?.mtu ? String(activeProfile.mtu) : "1500",
+    netappClusterMgmt: plan.netapp_cluster_mgmt ?? "",
+    netappControllerASp: plan.netapp_controller_a_sp ?? "",
+    netappControllerBSp: plan.netapp_controller_b_sp ?? "",
+    netappNodeAMgmt: plan.netapp_node_a_mgmt ?? "",
+    netappNodeBMgmt: plan.netapp_node_b_mgmt ?? "",
+    netappSvmMgmt: plan.netapp_svm_mgmt ?? "",
+    nfsLifs: plan.netapp_nfs_lifs.join(", "),
+    ntpServers: activeProfile?.global_settings.ntp_servers?.join(", ") || activeProfile?.ntp?.join(", ") || gateway,
+    serverEmbeddedNic: plan.server_embedded_nic ?? "",
+    storageProtocol,
+    subnet: plan.subnet ?? "",
+    vcenterTarget: plan.ansible_control_host ?? "",
+    vlanId: activeProfile?.global_settings.vlan_id ?? activeProfile?.vlan_id ?? "100"
+  };
+}
+
+function systemSetupDerivedAddressPlan(subnet: string | null): LabAddressPlan {
+  const base = topologySubnetBase(subnet);
+  const at = (offset: number) => base ? `${base}.${offset}` : null;
+  return {
+    ansible_control_host: at(205),
+    cisco_management: at(204),
+    esxi_management: at(203),
+    ilo: at(201),
+    ilo_initial: at(201),
+    netapp_cluster_mgmt: at(220),
+    netapp_controller_a_sp: at(210),
+    netapp_controller_b_sp: at(211),
+    netapp_iscsi_lifs: [240, 241, 242, 243].map(at).filter(Boolean) as string[],
+    netapp_nfs_lifs: [230, 231].map(at).filter(Boolean) as string[],
+    netapp_node_a_mgmt: at(221),
+    netapp_node_b_mgmt: at(222),
+    netapp_svm_mgmt: at(223),
+    server_embedded_nic: at(202),
+    subnet: cleanNetworkNullable(subnet)
+  };
+}
+
+function systemSetupAdvancedGroups(): SystemSetupAdvancedGroup[] {
+  return [
+    {
+      fields: [
+        { key: "subnet", label: "Subnet", note: "Primary profile subnet; changes the derived plan." },
+        { key: "gateway", label: "Gateway", note: "Shared gateway for the lab profile." },
+        { inputMode: "numeric", key: "mtu", label: "MTU", note: "Shared MTU override." }
+      ],
+      id: "addressing",
+      label: "Shared addressing",
+      summary: "Subnet, gateway, and MTU."
+    },
+    {
+      fields: [
+        { key: "dnsServers", label: "DNS servers", note: "Comma-separated profile DNS servers." },
+        { key: "ntpServers", label: "NTP servers", note: "Comma-separated profile NTP servers." }
+      ],
+      id: "services",
+      label: "Shared services",
+      summary: "DNS, NTP, and service toggles."
+    },
+    {
+      fields: [
+        { key: "ciscoManagement", label: "Cisco mgmt IP", note: "Switch management address." },
+        { key: "vlanId", label: "VLAN", note: "Default management VLAN." }
+      ],
+      id: "network",
+      label: "Network / Switch",
+      summary: "Cisco management and VLAN overrides."
+    },
+    {
+      fields: [
+        { key: "ilo", label: "iLO IP", note: "Saved iLO/BMC address." },
+        { key: "iloInitial", label: "Initial iLO IP", note: "Factory/default iLO address when needed." },
+        { key: "serverEmbeddedNic", label: "Embedded NIC", note: "Server embedded NIC planning address." },
+        { key: "esxiManagement", label: "ESXi mgmt IP", note: "Shared with virtualization attach target." }
+      ],
+      id: "server",
+      label: "Server / iLO / ESXi",
+      summary: "Server management addresses."
+    },
+    {
+      fields: [
+        { key: "netappClusterMgmt", label: "Cluster mgmt", note: "ONTAP cluster management IP." },
+        { key: "netappSvmMgmt", label: "SVM mgmt", note: "Storage VM management IP." },
+        { key: "netappNodeAMgmt", label: "Node A mgmt", note: "Controller/node A management IP." },
+        { key: "netappNodeBMgmt", label: "Node B mgmt", note: "Controller/node B management IP." },
+        { key: "netappControllerASp", label: "Controller A SP", note: "Controller A service processor IP." },
+        { key: "netappControllerBSp", label: "Controller B SP", note: "Controller B service processor IP." },
+        { key: "nfsLifs", label: "NFS LIFs", note: "Comma-separated NFS data LIFs." },
+        { key: "iscsiLifs", label: "iSCSI LIFs", note: "Comma-separated iSCSI data LIFs." },
+        { key: "datastoreTarget", label: "Datastore target", note: "Datastore name visible to ESXi/vCenter." }
+      ],
+      id: "storage",
+      label: "Storage / NetApp",
+      summary: "ONTAP management, protocols, and datastore."
+    },
+    {
+      fields: [
+        { key: "vcenterTarget", label: "vCenter target", note: "VCSA or SDK target; apply/deploy remains guarded elsewhere." }
+      ],
+      id: "virtualization",
+      label: "Virtualization",
+      summary: "vCenter scope and target."
+    }
+  ];
+}
+
+function systemSetupAdvancedNormalize(value: unknown): string {
+  return asString(value)
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .join(",")
+    .toLowerCase();
+}
+
+function systemSetupAdvancedIsOverride(value: unknown, derived: unknown): boolean {
+  return systemSetupAdvancedNormalize(value) !== systemSetupAdvancedNormalize(derived);
+}
+
+function systemSetupAdvancedOverrideCount(edit: SystemSetupAdvancedEditState, derived: SystemSetupAdvancedEditState): number {
+  return (Object.keys(edit) as Array<keyof SystemSetupAdvancedEditState>)
+    .filter((key) => edit[key] !== derived[key] && (typeof edit[key] === "boolean" || systemSetupAdvancedIsOverride(edit[key], derived[key])))
+    .length;
+}
+
+function systemSetupHostFromTarget(value: string): string | null {
+  const cleaned = cleanNetworkNullable(value);
+  if (!cleaned) return null;
+  try {
+    return new URL(cleaned).hostname || cleaned;
+  } catch {
+    return cleaned.replace(/^https?:\/\//, "").replace(/\/sdk\/?$/, "");
+  }
+}
+
+function systemSetupAdvancedProfilePayload(profile: LabProfile, edit: SystemSetupAdvancedEditState): LabProfileWrite {
+  const subnet = cleanNetworkNullable(edit.subnet);
+  const subnetPrefix = networkPrefixFromCidr(subnet) ?? profile.global_settings.subnet_prefix ?? 24;
+  const gateway = cleanNetworkNullable(edit.gateway);
+  const mtu = parseNetworkMtu(edit.mtu);
+  const dnsServers = splitNetworkList(edit.dnsServers);
+  const ntpServers = splitNetworkList(edit.ntpServers);
+  const storageProtocol = edit.storageProtocol === "iscsi" ? "iscsi" : edit.storageProtocol === "local" ? "local" : "nfs";
+  const vcenterTarget = cleanNetworkNullable(edit.vcenterTarget);
+  const vcenterHost = systemSetupHostFromTarget(edit.vcenterTarget);
+  const netappDevice = profile.devices?.netapp && typeof profile.devices.netapp === "object" ? profile.devices.netapp : {};
+  const addressPlan: LabAddressPlan = {
+    ...profile.address_plan,
+    ansible_control_host: vcenterHost,
+    cisco_management: cleanNetworkNullable(edit.ciscoManagement),
+    esxi_management: cleanNetworkNullable(edit.esxiManagement),
+    ilo: cleanNetworkNullable(edit.ilo),
+    ilo_initial: cleanNetworkNullable(edit.iloInitial),
+    netapp_cluster_mgmt: cleanNetworkNullable(edit.netappClusterMgmt),
+    netapp_controller_a_sp: cleanNetworkNullable(edit.netappControllerASp),
+    netapp_controller_b_sp: cleanNetworkNullable(edit.netappControllerBSp),
+    netapp_iscsi_lifs: splitNetworkList(edit.iscsiLifs),
+    netapp_nfs_lifs: splitNetworkList(edit.nfsLifs),
+    netapp_node_a_mgmt: cleanNetworkNullable(edit.netappNodeAMgmt),
+    netapp_node_b_mgmt: cleanNetworkNullable(edit.netappNodeBMgmt),
+    netapp_svm_mgmt: cleanNetworkNullable(edit.netappSvmMgmt),
+    server_embedded_nic: cleanNetworkNullable(edit.serverEmbeddedNic),
+    subnet
+  };
+  const features: LabProfileFeatures = {
+    ...profile.features,
+    enable_dns: edit.enableDns,
+    enable_ntp: edit.enableNtp,
+    enable_snmp: edit.enableSnmp,
+    storage_protocol: storageProtocol,
+    vcenter_disabled_reason: edit.enableVcenter ? null : "vCenter is disabled by the active lab setup.",
+    vcenter_enabled: edit.enableVcenter
+  };
+  const globalSettings = {
+    ...profile.global_settings,
+    dns_servers: dnsServers,
+    gateway,
+    mtu,
+    ntp_servers: ntpServers,
+    subnet_prefix: subnetPrefix,
+    vcenter_enabled: edit.enableVcenter,
+    vlan_id: cleanNetworkNullable(edit.vlanId)
+  };
+  return {
+    address_plan: addressPlan,
+    description: profile.description,
+    devices: {
+      ...(profile.devices ?? {}),
+      cisco: addressPlan.cisco_management,
+      esxi: addressPlan.esxi_management,
+      gateway,
+      ilo: addressPlan.ilo,
+      netapp: {
+        ...netappDevice,
+        cluster_mgmt: addressPlan.netapp_cluster_mgmt,
+        controller_a_sp: addressPlan.netapp_controller_a_sp,
+        controller_b_sp: addressPlan.netapp_controller_b_sp,
+        datastore_target: cleanNetworkNullable(edit.datastoreTarget),
+        iscsi_lifs: addressPlan.netapp_iscsi_lifs,
+        nfs_lifs: addressPlan.netapp_nfs_lifs,
+        node_a_mgmt: addressPlan.netapp_node_a_mgmt,
+        node_b_mgmt: addressPlan.netapp_node_b_mgmt,
+        svm_mgmt: addressPlan.netapp_svm_mgmt
+      },
+      switch_primary: addressPlan.cisco_management,
+      utility_vm: addressPlan.ansible_control_host,
+      vcenter: edit.enableVcenter ? vcenterTarget : null
+    },
+    dns: dnsServers,
+    features,
+    gateway,
+    global_settings: globalSettings,
+    mtu,
+    name: profile.source === "saved" ? profile.name : "Local lab setup",
+    ntp: ntpServers,
+    profile_topology: profile.profile_topology,
+    subnet_cidr: subnet,
+    vlan_id: cleanNetworkNullable(edit.vlanId)
+  };
 }
 
 function systemSetupProfilePayload({
@@ -7605,32 +8075,48 @@ function LabDesignComposer({
                     <h4>{section.summary}</h4>
                   </div>
                   <div className="design-device-setting-rows">
-                    {section.fields.map((field) => (
-                      <label className="design-device-setting-row" key={field.key}>
-                        <span>{field.label}</span>
-                        {field.kind === "textarea" ? (
-                          <textarea
-                            rows={2}
-                            value={deviceSettings[selectedPart.id]?.[field.key] ?? ""}
-                            onChange={(event) => updateDeviceSetting(field.key, event.target.value)}
-                          />
-                        ) : selectedPart.id === "netapp" && field.key === "protocol" ? (
-                          <select
-                            value={storageProtocol === "iscsi" ? "iscsi" : "nfs"}
-                            onChange={(event) => updateDraftStorageProtocol(event.target.value === "iscsi" ? "iscsi" : "nfs")}
-                          >
-                            <option value="nfs">NFS datastore path</option>
-                            <option value="iscsi">iSCSI block datastore path</option>
-                          </select>
-                        ) : (
-                          <input
-                            value={deviceSettings[selectedPart.id]?.[field.key] ?? ""}
-                            onChange={(event) => updateDeviceSetting(field.key, event.target.value)}
-                          />
-                        )}
-                        <small>{topologyCommittedProfilePath(selectedPart.id, field.key) ? "Draft edit / saved on commit / live verified by test" : "Draft-only visual intent / live unknown"}</small>
-                      </label>
-                    ))}
+                    {section.fields.map((field) => {
+                      const profilePath = topologyCommittedProfilePath(selectedPart.id, field.key);
+                      const profileOwned = Boolean(profilePath);
+                      return (
+                        <label className={`design-device-setting-row ${profileOwned ? "is-profile-owned" : "is-draft-owned"}`} key={field.key}>
+                          <span>{field.label}</span>
+                          {field.kind === "textarea" ? (
+                            <textarea
+                              readOnly={profileOwned}
+                              rows={2}
+                              value={deviceSettings[selectedPart.id]?.[field.key] ?? ""}
+                              onChange={(event) => {
+                                if (!profileOwned) updateDeviceSetting(field.key, event.target.value);
+                              }}
+                            />
+                          ) : selectedPart.id === "netapp" && field.key === "protocol" ? (
+                            <select
+                              disabled={profileOwned}
+                              value={storageProtocol === "iscsi" ? "iscsi" : "nfs"}
+                              onChange={(event) => {
+                                if (!profileOwned) updateDraftStorageProtocol(event.target.value === "iscsi" ? "iscsi" : "nfs");
+                              }}
+                            >
+                              <option value="nfs">NFS datastore path</option>
+                              <option value="iscsi">iSCSI block datastore path</option>
+                            </select>
+                          ) : (
+                            <input
+                              readOnly={profileOwned}
+                              value={deviceSettings[selectedPart.id]?.[field.key] ?? ""}
+                              onChange={(event) => {
+                                if (!profileOwned) updateDeviceSetting(field.key, event.target.value);
+                              }}
+                            />
+                          )}
+                          <small>
+                            <span className="design-provenance-chip">{profileOwned ? "Saved / derived" : "Draft only"}</span>
+                            {profileOwned ? " Profile-owned value; edit it in System Setup advanced fields." : " Visual intent only; live unknown."}
+                          </small>
+                        </label>
+                      );
+                    })}
                   </div>
                 </section>
               ))}
@@ -9629,13 +10115,9 @@ function topologyCommittedProfilePath(partId: DesignPartId, key: string): string
   }
   if (key === "gateway") return "global_settings.gateway";
   if (partId === "switch" && key === "mgmt_vlan") return "global_settings.vlan_id";
-  if (partId === "switch" && key === "storage_vlan") return "devices.netapp.storage_vlan";
-  if (partId === "switch" && key === "blackhole_vlan") return "devices.netapp.blackhole_vlan";
-  if (partId === "switch" && key === "acl_lanes") return "devices.netapp.acl_lanes";
   if (partId === "netapp" && key === "nfs_lifs") return "address_plan.netapp_nfs_lifs";
   if (partId === "netapp" && key === "iscsi_lifs") return "address_plan.netapp_iscsi_lifs";
   if (partId === "netapp" && key === "protocol") return "features.storage_protocol";
-  if (partId === "netapp" && key === "controller_ports") return "devices.netapp.controller_ports";
   if (partId === "vcenter" && key === "datastore") return "devices.vcenter";
   return null;
 }
