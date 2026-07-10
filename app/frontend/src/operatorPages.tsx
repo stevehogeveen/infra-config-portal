@@ -42,6 +42,7 @@ import type {
   FirmwareFileSelections,
   FirmwareSummary,
   FirmwareUpgradePath,
+  HpeRaidPlanPreview,
   LabAddressPlan,
   LabProfile,
   LabProfileFeatures,
@@ -2766,6 +2767,323 @@ function NetAppWorkspaceStorageControls({
           <span>{runState.runningActionId === "iscsi-apply" ? "Checking gate" : "Apply iSCSI (guarded)"}</span>
         </button>
       </section>
+
+      {(runState.message || runState.error) && (
+        <p className={runState.error ? "operator-action-message error" : "operator-action-message success"}>
+          {runState.error || runState.message}
+        </p>
+      )}
+    </section>
+  );
+}
+
+type ServerWorkspaceControlScope = "ilo" | "server";
+
+type ServerRaidPlanEvidence = ProviderProbeResult | HpeRaidPlanPreview;
+
+type ServerWorkspaceAction = {
+  detail: string;
+  icon: ReactNode;
+  id: string;
+  label: string;
+  run: () => Promise<WorkflowActionRun | ProviderProbeResult | HpeRaidPlanPreview>;
+};
+
+function ServerWorkspaceControls({
+  activeProfile,
+  address,
+  localStorageMode,
+  onReload,
+  scope,
+  workflowActions
+}: {
+  activeProfile: LabProfile | null;
+  address: LabAddressPlan;
+  localStorageMode: boolean;
+  onReload: () => Promise<void> | void;
+  scope: ServerWorkspaceControlScope;
+  workflowActions: WorkflowAction[];
+}) {
+  const [runState, setRunState] = useState<WorkflowRunState>(emptyRunState);
+  const [workflowRunsById, setWorkflowRunsById] = useState<Record<string, WorkflowActionRun[]>>({});
+  const [esxiReadiness, setEsxiReadiness] = useState<ProviderProbeResult | null>(null);
+  const [raidPlan, setRaidPlan] = useState<ServerRaidPlanEvidence | null>(null);
+  const [raidPending, setRaidPending] = useState<ProviderProbeResult | null>(null);
+  const byId = useMemo(() => new Map(workflowActions.map((action) => [action.action_id, action])), [workflowActions]);
+  const workflowActionIds = scope === "ilo"
+    ? ["ilo.reachability", "ilo.auth", "ilo.inventory"]
+    : ["esxi.management-validation", "raid.validate"];
+  const workflowActionKey = workflowActionIds.join("|");
+
+  useEffect(() => {
+    let ignore = false;
+    Promise.all(
+      workflowActionIds.map(async (actionId) => [actionId, await safeApi(() => api.workflowActionRuns(actionId), [] as WorkflowActionRun[])] as const)
+    ).then((entries) => {
+      if (!ignore) {
+        setWorkflowRunsById(Object.fromEntries(entries));
+      }
+    });
+    return () => {
+      ignore = true;
+    };
+  }, [workflowActionKey]);
+
+  useEffect(() => {
+    if (scope !== "server") return;
+    let ignore = false;
+    Promise.all([
+      safeApi(api.esxiInstallReadiness, null),
+      safeApi(api.hpeRaidPlanPreview, null),
+      safeApi(api.hpeRaidPending, null)
+    ]).then(([nextEsxi, nextRaidPlan, nextRaidPending]) => {
+      if (ignore) return;
+      setEsxiReadiness(nextEsxi as ProviderProbeResult | null);
+      setRaidPlan(nextRaidPlan as ServerRaidPlanEvidence | null);
+      setRaidPending(nextRaidPending as ProviderProbeResult | null);
+    });
+    return () => {
+      ignore = true;
+    };
+  }, [activeProfile?.id, scope]);
+
+  async function runWorkflowCheck(actionId: string): Promise<WorkflowActionRun> {
+    const result = await api.runWorkflowAction(actionId);
+    setWorkflowRunsById((current) => ({
+      ...current,
+      [actionId]: [result, ...(current[actionId] ?? [])].slice(0, 5)
+    }));
+    return result;
+  }
+
+  async function runRaidPlan(): Promise<HpeRaidPlanPreview> {
+    const result = await api.hpeRaidPlanPreview();
+    setRaidPlan(result);
+    return result;
+  }
+
+  async function runRaidPending(): Promise<ProviderProbeResult> {
+    const result = await api.hpeRaidPending();
+    setRaidPending(result);
+    return result;
+  }
+
+  async function runEsxiReadiness(): Promise<ProviderProbeResult> {
+    const result = await api.esxiInstallReadiness();
+    setEsxiReadiness(result);
+    return result;
+  }
+
+  const iloActions: ServerWorkspaceAction[] = [
+    {
+      detail: "Read iLO reachability through the existing read-only workflow.",
+      icon: <RefreshCw size={14} />,
+      id: "ilo.reachability",
+      label: byId.get("ilo.reachability")?.label || "iLO Live Check",
+      run: () => runWorkflowCheck("ilo.reachability")
+    },
+    {
+      detail: "Check credential usability without showing the secret.",
+      icon: <ShieldCheck size={14} />,
+      id: "ilo.auth",
+      label: byId.get("ilo.auth")?.label || "iLO Auth Live Check",
+      run: () => runWorkflowCheck("ilo.auth")
+    },
+    {
+      detail: "Read server inventory through iLO/Redfish.",
+      icon: <Server size={14} />,
+      id: "ilo.inventory",
+      label: byId.get("ilo.inventory")?.label || "iLO Inventory Read",
+      run: () => runWorkflowCheck("ilo.inventory")
+    }
+  ];
+
+  const serverActions: ServerWorkspaceAction[] = [
+    {
+      detail: "Validate ESXi management readiness without changing the host.",
+      icon: <Gauge size={14} />,
+      id: "esxi.management-validation",
+      label: byId.get("esxi.management-validation")?.label || "ESXi Live Check",
+      run: async () => {
+        const result = await runWorkflowCheck("esxi.management-validation");
+        await safeApi(runEsxiReadiness, null);
+        return result;
+      }
+    },
+    {
+      detail: "Validate the Smart Array/RAID state through the read-only workflow.",
+      icon: <ShieldCheck size={14} />,
+      id: "raid.validate",
+      label: byId.get("raid.validate")?.label || "Validate RAID",
+      run: () => runWorkflowCheck("raid.validate")
+    },
+    {
+      detail: "Preview desired RAID layout only. This does not create, delete, apply, or reset anything.",
+      icon: <HardDrive size={14} />,
+      id: "raid.plan",
+      label: "Preview RAID",
+      run: runRaidPlan
+    },
+    {
+      detail: "Check pending RAID/reset state without committing the plan.",
+      icon: <RefreshCw size={14} />,
+      id: "raid.pending-check",
+      label: "Check RAID Pending",
+      run: runRaidPending
+    }
+  ];
+
+  const latestWorkflowRun = workflowActionIds
+    .flatMap((id) => workflowRunsById[id] ?? [])
+    .sort((a, b) => asString(b.finished_at || b.started_at).localeCompare(asString(a.finished_at || a.started_at)))[0] ?? null;
+  const latestRunFor = (actionId: string) => workflowRunsById[actionId]?.[0] ?? null;
+  const evidenceRows = scope === "ilo"
+    ? [
+        {
+          detail: "Saved setup",
+          label: "iLO IP",
+          status: address.ilo ? "planned" : "not_checked",
+          value: displayAddress(address.ilo)
+        },
+        {
+          detail: latestRunFor("ilo.reachability") ? "Workflow action run" : "Workflow history",
+          label: "Reachability",
+          status: latestRunFor("ilo.reachability")?.status || "not_checked",
+          value: latestRunFor("ilo.reachability") ? displayStatus(latestRunFor("ilo.reachability")?.status || "completed") : "No workspace run yet"
+        },
+        {
+          detail: latestRunFor("ilo.auth") ? "Workflow action run" : "Workflow history",
+          label: "Auth",
+          status: latestRunFor("ilo.auth")?.status || "not_checked",
+          value: latestRunFor("ilo.auth") ? displayStatus(latestRunFor("ilo.auth")?.status || "completed") : "No credential check run yet"
+        },
+        {
+          detail: latestRunFor("ilo.inventory") ? "Workflow action run" : "Workflow history",
+          label: "Inventory",
+          status: latestRunFor("ilo.inventory")?.status || "not_checked",
+          value: latestRunFor("ilo.inventory") ? displayStatus(latestRunFor("ilo.inventory")?.status || "completed") : "No inventory read yet"
+        }
+      ]
+    : [
+        {
+          detail: "Saved setup",
+          label: "ESXi IP",
+          status: address.esxi_management ? "planned" : "not_checked",
+          value: displayAddress(address.esxi_management)
+        },
+        {
+          detail: sourceLabel(esxiReadiness),
+          label: "ESXi readiness",
+          status: asString(esxiReadiness?.status) || "not_checked",
+          value: asString(esxiReadiness?.message) || asString(esxiReadiness?.next_safe_action) || "No ESXi readiness check run yet"
+        },
+        {
+          detail: sourceLabel(raidPlan),
+          label: "RAID plan",
+          status: asString(raidPlan?.status) || "not_checked",
+          value: asString(objectValue(raidPlan).message) || asString(raidPlan?.next_safe_action) || raidLayoutLabel(raidPlan)
+        },
+        {
+          detail: sourceLabel(raidPending),
+          label: "RAID pending",
+          status: asString(raidPending?.status) || "not_checked",
+          value: asString(raidPending?.message) || "Pending state not checked"
+        },
+        {
+          detail: latestWorkflowRun ? "Workflow action run" : "Workflow history",
+          label: "Last workflow",
+          status: latestWorkflowRun?.status || "not_checked",
+          value: latestWorkflowRun ? `${latestWorkflowRun.action_id}: ${displayStatus(latestWorkflowRun.status)}` : "No server workflow run yet"
+        }
+      ];
+  const primaryActions = scope === "ilo" ? iloActions : serverActions.slice(0, 2);
+  const planActions = scope === "server" ? serverActions.slice(2) : [];
+
+  async function runServerWorkspaceAction(action: ServerWorkspaceAction) {
+    setRunState({ error: "", message: "", runningActionId: action.id });
+    try {
+      const result = await action.run();
+      await onReload();
+      const status = asString(result.status) || "completed";
+      const message = "summary" in result
+        ? asString(result.summary) || asString(result.next_action)
+        : asString(objectValue(result).message) || asString(result.next_safe_action);
+      setRunState({
+        error: "",
+        message: `${action.label}: ${displayStatus(status)}. ${message}`,
+        runningActionId: ""
+      });
+    } catch (err) {
+      setRunState({ error: errorMessage(err), message: "", runningActionId: "" });
+    }
+  }
+
+  function renderActionButton(action: ServerWorkspaceAction) {
+    const running = runState.runningActionId === action.id;
+    return (
+      <button disabled={running} key={action.id} onClick={() => void runServerWorkspaceAction(action)} type="button">
+        {action.icon}
+        <span>{running ? "Running" : action.label}</span>
+        <small>{action.detail}</small>
+      </button>
+    );
+  }
+
+  return (
+    <section className="netapp-workspace-controls server-workspace-controls" aria-label={scope === "ilo" ? "iLO workspace server controls" : "Server workspace checks"}>
+      <div className="netapp-workspace-controls-head server-workspace-controls-head">
+        <div>
+          <p className="operator-kicker">{scope === "ilo" ? "iLO controls" : "Server controls"}</p>
+          <h4>{scope === "ilo" ? "iLO read-only checks" : "ESXi and RAID checks"}</h4>
+          <span>{scope === "ilo" ? "Server access checks moved into the iLO workspace. Unknown stays gray until a real workflow run." : "Read-only ESXi and RAID checks moved into the server workspace. RAID apply/reset/factory actions stay on Validation."}</span>
+        </div>
+        <StatusBadge label={scope === "ilo" ? "Read-only" : localStorageMode ? "Local RAID" : "Boot/staging"} status="safe-to-run" />
+      </div>
+
+      <div className="netapp-workspace-evidence-grid server-workspace-evidence-grid">
+        {evidenceRows.map((row) => (
+          <div key={row.label}>
+            <span>{row.label}</span>
+            <strong>{row.value}</strong>
+            <small>{row.detail}</small>
+            <SimpleStatusPill status={row.status} />
+          </div>
+        ))}
+      </div>
+
+      <div className="netapp-workspace-action-groups server-workspace-action-groups">
+        <section className="netapp-workspace-action-group server-workspace-action-group">
+          <div>
+            <p className="operator-kicker">Read-only checks</p>
+            <h5>{scope === "ilo" ? "Access and inventory proof" : "Host and controller proof"}</h5>
+          </div>
+          <div className="netapp-workspace-action-buttons server-workspace-action-buttons">
+            {primaryActions.map(renderActionButton)}
+          </div>
+        </section>
+
+        {planActions.length > 0 && (
+          <section className="netapp-workspace-action-group server-workspace-action-group">
+            <div>
+              <p className="operator-kicker">Plan only</p>
+              <h5>Local RAID checks, no apply</h5>
+            </div>
+            <div className="netapp-workspace-action-buttons server-workspace-action-buttons">
+              {planActions.map(renderActionButton)}
+            </div>
+          </section>
+        )}
+      </div>
+
+      {scope === "server" && (
+        <div className="netapp-workspace-guarded-apply server-workspace-guarded-note" aria-label="RAID guarded write boundary">
+          <div>
+            <p className="operator-kicker">Guarded write boundary</p>
+            <h5>RAID apply, reset, create, delete, factory, and rebuild stay off this map</h5>
+            <span>Use Validation for the existing guarded workflows. This workspace only proves readiness and previews the plan.</span>
+          </div>
+        </div>
+      )}
 
       {(runState.message || runState.error) && (
         <p className={runState.error ? "operator-action-message error" : "operator-action-message success"}>
@@ -6930,6 +7248,17 @@ function LabDesignComposer({
                 address={designAddress}
                 firmwareSummaries={firmwareSummaries}
                 onReload={onReload}
+                workflowActions={workflowActions}
+              />
+            )}
+
+            {(selectedPart.id === "ilo" || selectedPart.id === "server-gen10" || selectedPart.id === "server-gen10plus") && (
+              <ServerWorkspaceControls
+                activeProfile={activeProfile}
+                address={designAddress}
+                localStorageMode={draftScenario === "single_server_local_storage"}
+                onReload={onReload}
+                scope={selectedPart.id === "ilo" ? "ilo" : "server"}
                 workflowActions={workflowActions}
               />
             )}
@@ -14062,15 +14391,16 @@ function credentialSummary(probe: ProviderProbeResult | null): string {
   return "Missing or not checked";
 }
 
-function raidLayoutLabel(probe: ProviderProbeResult | null): string {
-  const desired = objectValue(probe?.desired_intent);
+function raidLayoutLabel(probe: unknown): string {
+  const evidence = objectValue(probe);
+  const desired = objectValue(evidence.desired_intent);
   const volumes = Array.isArray(desired.volumes) ? desired.volumes : [];
   if (volumes.length) return `${volumes.length} volume${volumes.length === 1 ? "" : "s"} planned`;
-  return displayStatus(asString(probe?.status) || "not_checked");
+  return displayStatus(asString(evidence.status) || "not_checked");
 }
 
-function raidControllerModels(probe: ProviderProbeResult | null): string {
-  const currentLayout = objectValue(probe?.current_layout);
+function raidControllerModels(probe: unknown): string {
+  const currentLayout = objectValue(objectValue(probe).current_layout);
   const controllers = recordArray(currentLayout.controllers);
   const models = controllers
     .map((controller) => asString(controller.Model) || asString(controller.model) || asString(controller.Name) || asString(controller.name))

@@ -345,11 +345,42 @@ test("zoned map opens device workspace directly and keeps system scoped controls
   await expect(iloWorkspace.getByLabel("Credential status")).toHaveValue("unknown until iLO Auth Live Check runs");
   await expect(iloWorkspace.getByLabel("HPE iLO schema inventory")).toContainText("iLO IP");
   await expect(iloWorkspace.getByLabel("HPE iLO schema inventory")).toContainText("device_settings.ilo.management_ip -> address_plan.ilo");
+  const iloServerControls = iloWorkspace.getByLabel("iLO workspace server controls");
+  await expect(iloServerControls).toBeVisible();
+  await expect(iloServerControls).toContainText("iLO read-only checks");
+  await expect(iloServerControls).toContainText("iLO Live Check");
+  await expect(iloServerControls).toContainText("iLO Auth Live Check");
+  await expect(iloServerControls).toContainText("iLO Inventory Read");
   await expect(iloOverlay.locator("section[aria-label='HPE iLO safe checks and next actions']")).toContainText("iLO Live Check");
   await expect(iloOverlay.locator("section[aria-label='HPE iLO safe checks and next actions']")).toContainText("iLO Auth Live Check");
   await expect(iloOverlay.locator("section[aria-label='HPE iLO safe checks and next actions']")).toContainText("iLO Inventory Read");
   await expect(iloOverlay.locator("section[aria-label='HPE iLO safe checks and next actions']")).not.toContainText("Reset Server Power");
   await iloOverlay.getByRole("button", { name: "Close" }).click();
+  await expect(page.locator("div[aria-label='Device workspace overlay']")).toHaveCount(0);
+
+  await topology.getByRole("button", { name: "Open HPE DL360 Gen10 workspace" }).click();
+  const serverOverlay = page.locator("div[aria-label='Device workspace overlay']");
+  const serverWorkspace = serverOverlay.locator("section[aria-label='DL360 Gen10 workspace']");
+  await expect(serverWorkspace).toBeVisible();
+  const serverControls = serverWorkspace.getByLabel("Server workspace checks");
+  await expect(serverControls).toBeVisible();
+  await expect(serverControls).toContainText("ESXi and RAID checks");
+  await expect(serverControls).toContainText("ESXi Live Check");
+  await expect(serverControls).toContainText("Validate RAID");
+  await expect(serverControls).toContainText("Preview RAID");
+  await expect(serverControls).toContainText("Check RAID Pending");
+  await expect(serverControls.getByLabel("RAID guarded write boundary")).toContainText("stay off this map");
+  await expect(serverOverlay).not.toContainText("Reset HPE RAID");
+  await expect(serverOverlay).not.toContainText("Reset Server Power");
+  await expect(serverOverlay).not.toContainText("Rebuild ESXi Host");
+  const raidPendingRequest = page.waitForRequest((request) =>
+    request.url().includes("/api/v1/providers/ilo-redfish/hpe-raid-pending") &&
+    request.method() === "GET"
+  );
+  await serverControls.getByRole("button", { name: /Check RAID Pending/ }).click();
+  await raidPendingRequest;
+  await expect(serverControls).toContainText("No pending RAID changes");
+  await serverOverlay.getByRole("button", { name: "Close" }).click();
   await expect(page.locator("div[aria-label='Device workspace overlay']")).toHaveCount(0);
 
   await topology.getByRole("button", { name: "Open NetApp ONTAP workspace" }).click();
@@ -1360,6 +1391,9 @@ async function installApiMocks(page: Page) {
     }
     if (url.pathname === "/api/v1/providers/ilo-redfish/hpe-raid-plan-preview") {
       return json(route, hpeRaidPlanPreview());
+    }
+    if (url.pathname === "/api/v1/providers/ilo-redfish/hpe-raid-pending") {
+      return json(route, hpeRaidPending());
     }
     if (url.pathname === "/api/v1/providers/ilo-redfish/esxi-install-readiness") {
       return json(route, esxiInstallReadiness());
@@ -2399,6 +2433,18 @@ function hpeRaidPlanPreview() {
     destructive_actions_requested: false,
     message: "RAID layout is ready.",
     planned_layout: {},
+    provider_id: "ilo-redfish",
+    status: "ready",
+    warnings: []
+  };
+}
+
+function hpeRaidPending() {
+  return {
+    blockers: [],
+    checked_at: checkedAt,
+    message: "No pending RAID changes.",
+    next_safe_action: "Preview RAID before any guarded apply or reset.",
     provider_id: "ilo-redfish",
     status: "ready",
     warnings: []
