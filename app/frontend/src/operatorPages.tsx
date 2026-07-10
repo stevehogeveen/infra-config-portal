@@ -6275,6 +6275,33 @@ function SystemSetupPicker({
     systemSetupAdvancedEditStateFrom(activeProfile, address, features)
   );
   const [status, setStatus] = useState<{ kind: "idle" | "running" | "ok" | "error"; message: string }>({ kind: "idle", message: "" });
+  const advancedProfileResetKey = [
+    activeProfile?.id ?? "none",
+    activeProfile?.version ?? "0",
+    activeProfile?.updated_at ?? "",
+    activeProfile?.source ?? "",
+    address.subnet ?? "",
+    address.cisco_management ?? "",
+    address.esxi_management ?? "",
+    address.ilo ?? "",
+    address.ilo_initial ?? "",
+    address.server_embedded_nic ?? "",
+    address.ansible_control_host ?? "",
+    address.netapp_cluster_mgmt ?? "",
+    address.netapp_controller_a_sp ?? "",
+    address.netapp_controller_b_sp ?? "",
+    address.netapp_node_a_mgmt ?? "",
+    address.netapp_node_b_mgmt ?? "",
+    address.netapp_svm_mgmt ?? "",
+    address.netapp_nfs_lifs.join(","),
+    address.netapp_iscsi_lifs.join(","),
+    String(features?.enable_dns ?? ""),
+    String(features?.enable_ntp ?? ""),
+    String(features?.enable_snmp ?? ""),
+    String(features?.vcenter_enabled ?? ""),
+    features?.storage_protocol ?? "",
+    currentScenario
+  ].join("|");
 
   useEffect(() => {
     setSelectedProfileId(activeProfile?.id ?? "runtime");
@@ -6282,7 +6309,7 @@ function SystemSetupPicker({
     setNewSubnet(displayAddress(address.subnet) === "Not set up yet" ? "192.168.200.0/24" : displayAddress(address.subnet));
     setNewScenario(currentScenario);
     setAdvancedEdit(systemSetupAdvancedEditStateFrom(activeProfile, address, features));
-  }, [activeProfile?.id, activeProfile?.name, address.subnet, currentScenario]);
+  }, [advancedProfileResetKey]);
 
   useEffect(() => {
     if (!open) return;
@@ -6674,10 +6701,10 @@ function systemSetupAdvancedEditStateFrom(
     ciscoManagement: address.cisco_management ?? "",
     datastoreTarget: asString(netappDevice.datastore_target) || asString(netappDevice.datastore),
     dnsServers: (global?.dns_servers ?? activeProfile?.dns ?? []).join(", "),
-    enableDns: Boolean(features?.enable_dns),
-    enableNtp: Boolean(features?.enable_ntp),
-    enableSnmp: Boolean(features?.enable_snmp),
-    enableVcenter: Boolean(features?.vcenter_enabled),
+    enableDns: features?.enable_dns ?? true,
+    enableNtp: features?.enable_ntp ?? true,
+    enableSnmp: features?.enable_snmp ?? false,
+    enableVcenter: features?.vcenter_enabled ?? Boolean(devices.vcenter),
     esxiManagement: address.esxi_management ?? "",
     gateway: global?.gateway ?? activeProfile?.gateway ?? "",
     ilo: address.ilo ?? "",
@@ -6715,7 +6742,7 @@ function systemSetupAdvancedDerivedState(
     enableDns: features?.enable_dns ?? true,
     enableNtp: features?.enable_ntp ?? true,
     enableSnmp: features?.enable_snmp ?? false,
-    enableVcenter: features?.vcenter_enabled ?? true,
+    enableVcenter: features?.vcenter_enabled ?? Boolean(activeProfile?.devices?.vcenter),
     esxiManagement: plan.esxi_management ?? "",
     gateway,
     ilo: plan.ilo ?? "",
@@ -6838,7 +6865,9 @@ function systemSetupAdvancedNormalize(value: unknown): string {
 }
 
 function systemSetupAdvancedIsOverride(value: unknown, derived: unknown): boolean {
-  return systemSetupAdvancedNormalize(value) !== systemSetupAdvancedNormalize(derived);
+  const normalizedValue = systemSetupAdvancedNormalize(value);
+  if (!normalizedValue) return false;
+  return normalizedValue !== systemSetupAdvancedNormalize(derived);
 }
 
 function systemSetupAdvancedOverrideCount(edit: SystemSetupAdvancedEditState, derived: SystemSetupAdvancedEditState): number {

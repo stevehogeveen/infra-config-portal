@@ -556,6 +556,59 @@ test("system setup advanced fields round-trip shared and device rows through the
   await expect(switchNetwork).toContainText("edit it in System Setup advanced fields");
 });
 
+test("system setup advanced fields keep blank profile values planned until edited", async ({ page }) => {
+  const blankProfile = JSON.parse(JSON.stringify(labProfiles().active_profile)) as Record<string, any>;
+  blankProfile.dns = [];
+  blankProfile.ntp = [];
+  blankProfile.vlan_id = null;
+  blankProfile.mtu = null;
+  blankProfile.devices = { ...blankProfile.devices, vcenter: null };
+  blankProfile.address_plan = { ...blankProfile.address_plan, ilo_initial: null };
+  blankProfile.global_settings = {
+    ...blankProfile.global_settings,
+    dns_servers: [],
+    mtu: null,
+    ntp_servers: [],
+    vcenter_enabled: false,
+    vlan_id: null
+  };
+  blankProfile.features = {
+    ...blankProfile.features,
+    vcenter_disabled_reason: "vCenter is disabled by the active lab setup.",
+    vcenter_enabled: false
+  };
+  delete blankProfile.features.enable_dns;
+  delete blankProfile.features.enable_ntp;
+  delete blankProfile.features.vcenter_enabled;
+  const blankProfileState = activeLabProfilesFromProfile(blankProfile);
+  await page.route("**/api/v1/lab/profiles", async (route) => {
+    if (route.request().method() === "GET") {
+      return json(route, blankProfileState);
+    }
+    return route.fallback();
+  });
+
+  await page.goto("/overview");
+
+  const topology = page.locator("section[aria-label='Living lab topology']");
+  const picker = topology.locator("section[aria-label='System setup picker']");
+  await picker.getByRole("button", { name: "Open system setup picker" }).click();
+  const advanced = picker.getByRole("dialog", { name: "Setup and IP plan" }).locator("details[aria-label='Advanced fields']");
+  await advanced.locator(":scope > summary").click();
+  await advanced.locator("details.system-setup-advanced-group").filter({ hasText: "Shared services" }).locator(":scope > summary").click();
+
+  const dnsRow = advanced.locator("label.system-setup-advanced-field").filter({ hasText: "DNS servers" });
+  await expect(advanced.locator(":scope > summary")).toContainText("PLANNED");
+  await expect(advanced.locator(":scope > summary")).not.toContainText("override staged");
+  await expect(dnsRow).toContainText("Planned");
+  await expect(dnsRow).not.toContainText("Override");
+  await expect(advanced.getByLabel("Advanced DNS servers")).toHaveAttribute("placeholder", "192.168.1.1");
+
+  await advanced.getByLabel("Advanced DNS servers").fill("192.168.1.53");
+  await expect(dnsRow).toContainText("Override");
+  await expect(advanced.locator(":scope > summary")).toContainText("1 override staged");
+});
+
 test("overview design mode keeps the surface map-only until a node opens the workspace overlay", async ({ page }) => {
   healthHostIpv4Addresses = ["10.10.8.99", "172.20.10.3"];
   await page.goto("/overview");
