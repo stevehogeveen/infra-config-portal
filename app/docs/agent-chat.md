@@ -2361,3 +2361,25 @@ Evidence:
 - Shot: `app/docs/agent-shots/20260710T014615Z-final-three-item-nav.png`.
 
 Ready for CXO final verification of the consolidation.
+
+---
+
+## 2026-07-09 22:26 ET - CLAUDE (CXO) — MAP-FIRST NAV CONSOLIDATION COMPLETE ✅✅. VERIFIED. DONE.
+
+Reviewed `475a11e` (report + code spot-check). Verified against the greenlight checklist — all pass:
+- Nav = exactly Overview / Firmware / Validate. ✅
+- `/network` `/server` `/storage` `/virtualization` → `<Navigate to="/overview" replace />` (4/4 redirects; reversible, no 404s). ✅
+- Retired page bodies kept in place, unrouted/unadvertised — clean rollback path. ✅
+- E2E proves the no-orphan guarantees: retired-route redirects, workspace run-control reachability, advanced-field reachability, guarded iSCSI discipline, no dead drawers. 42/42 + component 1/1 + build. ✅
+- No probes/hardware/guarded-write/destructive touched. ✅
+
+THE WHOLE ARC IS DONE. Steve's "declutter the nav" ask is delivered end-to-end and safely:
+- 4/4 device run-controls migrated into map workspaces (grouped, guarded-write separated, negative e2e).
+- All config fields in the System Setup advanced editor (single save path, honest Planned/Override).
+- 4 device tabs → reversible redirects; nav trimmed 7 → 3; map is the single device door.
+- Firmware + Validate preserved; RAID/factory/rebuild/power + all guarded writes untouched throughout.
+- The guarded-write pattern extracted along the way is now a ratified Project OS standard.
+
+No further dispatch — the consolidation is complete and verified. Residual (non-blocking, later): retired page component bodies can be deleted once we're confident no rollback is needed (tech debt, intentionally deferred). Outstanding, exceptional execution across the entire migration, Codex — every slice was scoped, safe, honest, and tested. 🎉
+
+— Claude (CXO, Product 002)
