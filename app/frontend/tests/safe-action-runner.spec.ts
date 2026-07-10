@@ -407,6 +407,30 @@ test("zoned map opens device workspace directly and keeps system scoped controls
   await netappOverlay.getByRole("button", { name: "Close" }).click();
   await expect(page.locator("div[aria-label='Device workspace overlay']")).toHaveCount(0);
 
+  await topology.getByRole("button", { name: "Open vCenter VCSA workspace" }).click();
+  const vcenterOverlay = page.locator("div[aria-label='Device workspace overlay']");
+  const vcenterWorkspace = vcenterOverlay.locator("section[aria-label='vCenter VCSA workspace']");
+  await expect(vcenterWorkspace).toBeVisible();
+  const virtualizationControls = vcenterWorkspace.getByLabel("vCenter workspace virtualization controls");
+  await expect(virtualizationControls).toBeVisible();
+  await expect(virtualizationControls).toContainText("vCenter and VM checks");
+  await expect(virtualizationControls).toContainText("vCenter Live Check");
+  await expect(virtualizationControls).toContainText("vCenter Install Readiness");
+  await expect(virtualizationControls).toContainText("Validate Datastore");
+  await expect(virtualizationControls).toContainText("Validate VM Inventory");
+  await expect(virtualizationControls.getByLabel("vCenter guarded write boundary")).toContainText("stay off this map");
+  await expect(vcenterOverlay.getByRole("button", { name: /Attach ESXi/ })).toHaveCount(0);
+  await expect(vcenterOverlay.getByRole("button", { name: /Deploy VM/ })).toHaveCount(0);
+  const vmValidationRequest = page.waitForRequest((request) =>
+    request.url().includes("/api/v1/workflows/actions/esxi.vm-deploy-validate/run") &&
+    request.method() === "POST"
+  );
+  await virtualizationControls.getByRole("button", { name: /Validate VM Inventory/ }).click();
+  await vmValidationRequest;
+  await expect(virtualizationControls).toContainText("Validate VM Inventory: Ready");
+  await vcenterOverlay.getByRole("button", { name: "Close" }).click();
+  await expect(page.locator("div[aria-label='Device workspace overlay']")).toHaveCount(0);
+
   await topology.getByLabel("System setup picker").getByRole("button", { name: "Open system setup picker" }).click();
   const systemPlan = topology.getByLabel("Setup and IP plan");
   await expect(systemPlan).toBeVisible();
@@ -1895,6 +1919,7 @@ function workflowActions() {
     readAction("netapp.console-autodiscovery", "Refresh NetApp Consoles", "netapp", "netapp-ontap"),
     readAction("netapp.component-firmware-inventory", "Refresh ONTAP", "netapp", "netapp-ontap"),
     readAction("vcenter-netapp.readiness", "vCenter Live Check", "vcenter", "vcenter"),
+    readAction("vcenter.install-readiness", "vCenter Install Readiness", "vcenter", "vcenter"),
     readAction("vcenter.post-attach-validation", "Validate Datastore", "vcenter", "vcenter"),
     readAction("esxi.vm-deploy-validate", "Validate VM Inventory", "esxi", "esxi"),
     readAction("firmware.inventory", "Scan All Firmware", "firmware-upgrade", "firmware"),

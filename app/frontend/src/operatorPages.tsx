@@ -3094,6 +3094,268 @@ function ServerWorkspaceControls({
   );
 }
 
+type VirtualizationWorkspaceAction = {
+  detail: string;
+  icon: ReactNode;
+  id: string;
+  label: string;
+  run: () => Promise<WorkflowActionRun>;
+};
+
+function VirtualizationWorkspaceControls({
+  activeProfile,
+  address,
+  features,
+  onReload,
+  workflowActions
+}: {
+  activeProfile: LabProfile | null;
+  address: LabAddressPlan;
+  features: LabProfileFeatures | null;
+  onReload: () => Promise<void> | void;
+  workflowActions: WorkflowAction[];
+}) {
+  const [runState, setRunState] = useState<WorkflowRunState>(emptyRunState);
+  const [workflowRunsById, setWorkflowRunsById] = useState<Record<string, WorkflowActionRun[]>>({});
+  const [vcenterNetapp, setVcenterNetapp] = useState<ProviderProbeResult | null>(null);
+  const [installReadiness, setInstallReadiness] = useState<ProviderProbeResult | null>(null);
+  const [postAttach, setPostAttach] = useState<ProviderProbeResult | null>(null);
+  const byId = useMemo(() => new Map(workflowActions.map((action) => [action.action_id, action])), [workflowActions]);
+  const vcenterInScope = features?.vcenter_enabled !== false;
+  const actionIds = vcenterInScope
+    ? ["vcenter-netapp.readiness", "vcenter.install-readiness", "vcenter.post-attach-validation", "esxi.vm-deploy-validate"]
+    : ["esxi.vm-deploy-validate"];
+  const actionKey = actionIds.join("|");
+
+  useEffect(() => {
+    let ignore = false;
+    Promise.all(
+      actionIds.map(async (actionId) => [actionId, await safeApi(() => api.workflowActionRuns(actionId), [] as WorkflowActionRun[])] as const)
+    ).then((entries) => {
+      if (!ignore) {
+        setWorkflowRunsById(Object.fromEntries(entries));
+      }
+    });
+    return () => {
+      ignore = true;
+    };
+  }, [actionKey]);
+
+  useEffect(() => {
+    let ignore = false;
+    if (!vcenterInScope) {
+      setVcenterNetapp(null);
+      setInstallReadiness(null);
+      setPostAttach(null);
+      return () => {
+        ignore = true;
+      };
+    }
+    Promise.all([
+      safeApi(api.vcenterNetappReadiness, null),
+      safeApi(api.vcenterInstallReadiness, null),
+      safeApi(api.vcenterPostAttachValidation, null)
+    ]).then(([nextVcenterNetapp, nextInstallReadiness, nextPostAttach]) => {
+      if (ignore) return;
+      setVcenterNetapp(nextVcenterNetapp as ProviderProbeResult | null);
+      setInstallReadiness(nextInstallReadiness as ProviderProbeResult | null);
+      setPostAttach(nextPostAttach as ProviderProbeResult | null);
+    });
+    return () => {
+      ignore = true;
+    };
+  }, [activeProfile?.id, vcenterInScope]);
+
+  async function refreshVcenterEvidence() {
+    if (!vcenterInScope) return;
+    const [nextVcenterNetapp, nextInstallReadiness, nextPostAttach] = await Promise.all([
+      safeApi(api.vcenterNetappReadiness, null),
+      safeApi(api.vcenterInstallReadiness, null),
+      safeApi(api.vcenterPostAttachValidation, null)
+    ]);
+    setVcenterNetapp(nextVcenterNetapp as ProviderProbeResult | null);
+    setInstallReadiness(nextInstallReadiness as ProviderProbeResult | null);
+    setPostAttach(nextPostAttach as ProviderProbeResult | null);
+  }
+
+  async function runWorkflowCheck(actionId: string): Promise<WorkflowActionRun> {
+    const result = await api.runWorkflowAction(actionId);
+    setWorkflowRunsById((current) => ({
+      ...current,
+      [actionId]: [result, ...(current[actionId] ?? [])].slice(0, 5)
+    }));
+    if (actionId.startsWith("vcenter")) {
+      await refreshVcenterEvidence();
+    }
+    return result;
+  }
+
+  const latestRunFor = (actionId: string) => workflowRunsById[actionId]?.[0] ?? null;
+  const postChecks = objectValue(postAttach?.checks);
+  const target = vcenterAddress(vcenterNetapp || installReadiness, activeProfile);
+  const evidenceRows = [
+    {
+      detail: vcenterInScope ? "Saved profile / readiness target" : asString(features?.vcenter_disabled_reason) || "vCenter disabled by this setup",
+      label: "vCenter target",
+      status: vcenterInScope ? target !== "Not set up yet" ? "planned" : "not_checked" : "not_in_scope",
+      value: vcenterInScope ? target : "Not in this mode"
+    },
+    {
+      detail: sourceLabel(vcenterNetapp),
+      label: "vCenter readiness",
+      status: asString(vcenterNetapp?.status) || latestRunFor("vcenter-netapp.readiness")?.status || "not_checked",
+      value: asString(vcenterNetapp?.message) || latestRunFor("vcenter-netapp.readiness")?.summary || "No vCenter live check run yet"
+    },
+    {
+      detail: sourceLabel(installReadiness),
+      label: "Install readiness",
+      status: asString(installReadiness?.status) || latestRunFor("vcenter.install-readiness")?.status || "not_checked",
+      value: asString(installReadiness?.message) || latestRunFor("vcenter.install-readiness")?.summary || "No install readiness check run yet"
+    },
+    {
+      detail: sourceLabel(postAttach),
+      label: "Datastore validation",
+      status: datastoreVisibleStatus(vcenterNetapp || postAttach),
+      value: asString(postAttach?.message) || datastoreName(vcenterNetapp || postAttach)
+    },
+    {
+      detail: latestRunFor("esxi.vm-deploy-validate") ? "Workflow action run" : "Workflow history",
+      label: "VM inventory",
+      status: latestRunFor("esxi.vm-deploy-validate")?.status || visibilityStatus(postChecks.vm_inventory_visible),
+      value: latestRunFor("esxi.vm-deploy-validate")
+        ? displayStatus(latestRunFor("esxi.vm-deploy-validate")?.status || "completed")
+        : visibilityLabel(postChecks.vm_inventory_visible)
+    },
+    {
+      detail: "Saved setup",
+      label: "ESXi target",
+      status: address.esxi_management ? "planned" : "not_checked",
+      value: displayAddress(address.esxi_management)
+    }
+  ];
+
+  const actions: VirtualizationWorkspaceAction[] = [
+    {
+      detail: "Read vCenter, ESXi attach, and datastore visibility evidence.",
+      icon: <RefreshCw size={14} />,
+      id: "vcenter-netapp.readiness",
+      label: byId.get("vcenter-netapp.readiness")?.label || "vCenter Live Check",
+      run: () => runWorkflowCheck("vcenter-netapp.readiness")
+    },
+    {
+      detail: "Validate install values and credentials without deploying VCSA.",
+      icon: <ShieldCheck size={14} />,
+      id: "vcenter.install-readiness",
+      label: byId.get("vcenter.install-readiness")?.label || "vCenter Install Readiness",
+      run: () => runWorkflowCheck("vcenter.install-readiness")
+    },
+    {
+      detail: "Validate datastore and post-attach state after storage or vCenter changes.",
+      icon: <Database size={14} />,
+      id: "vcenter.post-attach-validation",
+      label: byId.get("vcenter.post-attach-validation")?.label || "Validate Datastore",
+      run: () => runWorkflowCheck("vcenter.post-attach-validation")
+    },
+    {
+      detail: "Validate VM inventory/deployment prerequisites without creating a VM.",
+      icon: <Layers size={14} />,
+      id: "esxi.vm-deploy-validate",
+      label: byId.get("esxi.vm-deploy-validate")?.label || "Validate VM Inventory",
+      run: () => runWorkflowCheck("esxi.vm-deploy-validate")
+    }
+  ];
+  const vcenterActions = vcenterInScope ? actions.slice(0, 3) : [];
+  const vmActions = actions.slice(3);
+
+  async function runVirtualizationWorkspaceAction(action: VirtualizationWorkspaceAction) {
+    setRunState({ error: "", message: "", runningActionId: action.id });
+    try {
+      const result = await action.run();
+      await onReload();
+      setRunState({
+        error: "",
+        message: `${action.label}: ${displayStatus(result.status)}. ${result.summary || result.next_action}`,
+        runningActionId: ""
+      });
+    } catch (err) {
+      setRunState({ error: errorMessage(err), message: "", runningActionId: "" });
+    }
+  }
+
+  function renderActionButton(action: VirtualizationWorkspaceAction) {
+    const running = runState.runningActionId === action.id;
+    return (
+      <button disabled={running} key={action.id} onClick={() => void runVirtualizationWorkspaceAction(action)} type="button">
+        {action.icon}
+        <span>{running ? "Running" : action.label}</span>
+        <small>{action.detail}</small>
+      </button>
+    );
+  }
+
+  return (
+    <section className="netapp-workspace-controls virtualization-workspace-controls" aria-label="vCenter workspace virtualization controls">
+      <div className="netapp-workspace-controls-head virtualization-workspace-controls-head">
+        <div>
+          <p className="operator-kicker">Virtualization controls</p>
+          <h4>{vcenterInScope ? "vCenter and VM checks" : "Direct ESXi VM checks"}</h4>
+          <span>{vcenterInScope ? "Virtualization-page checks moved into the vCenter workspace. Unknown stays gray until a real run." : "This setup has no vCenter node; VM validation remains reachable from this workspace strip."}</span>
+        </div>
+        <StatusBadge label={vcenterInScope ? "vCenter" : "Direct ESXi"} status={vcenterInScope ? "safe-to-run" : "plan-only"} />
+      </div>
+
+      <div className="netapp-workspace-evidence-grid virtualization-workspace-evidence-grid">
+        {evidenceRows.map((row) => (
+          <div key={row.label}>
+            <span>{row.label}</span>
+            <strong>{row.value}</strong>
+            <small>{row.detail}</small>
+            <SimpleStatusPill status={row.status} />
+          </div>
+        ))}
+      </div>
+
+      <div className="netapp-workspace-action-groups virtualization-workspace-action-groups">
+        {vcenterActions.length > 0 && (
+          <section className="netapp-workspace-action-group virtualization-workspace-action-group">
+            <div>
+              <p className="operator-kicker">Read-only checks</p>
+              <h5>vCenter and datastore proof</h5>
+            </div>
+            <div className="netapp-workspace-action-buttons virtualization-workspace-action-buttons">
+              {vcenterActions.map(renderActionButton)}
+            </div>
+          </section>
+        )}
+
+        <section className="netapp-workspace-action-group virtualization-workspace-action-group">
+          <div>
+            <p className="operator-kicker">VM validation</p>
+            <h5>Inventory and deployment prerequisites</h5>
+          </div>
+          <div className="netapp-workspace-action-buttons virtualization-workspace-action-buttons">
+            {vmActions.map(renderActionButton)}
+          </div>
+        </section>
+      </div>
+
+      <div className="netapp-workspace-guarded-apply virtualization-workspace-guarded-note" aria-label="vCenter guarded write boundary">
+        <div>
+          <p className="operator-kicker">Guarded write boundary</p>
+          <h5>vCenter attach, OVF deploy, datastore writes, and VM deploy apply stay off this map</h5>
+          <span>Use the existing guarded workflow surfaces for apply/deploy work. This workspace only proves readiness and validation state.</span>
+        </div>
+      </div>
+
+      {(runState.message || runState.error) && (
+        <p className={runState.error ? "operator-action-message error" : "operator-action-message success"}>
+          {runState.error || runState.message}
+        </p>
+      )}
+    </section>
+  );
+}
+
 export function OperatorVirtualizationPage({ labProfileState, onReloadLabProfile }: OperatorPageProps) {
   const activeProfile = activeLabProfile(labProfileState);
   const address = activeAddressPlan(activeProfile);
@@ -7259,6 +7521,16 @@ function LabDesignComposer({
                 localStorageMode={draftScenario === "single_server_local_storage"}
                 onReload={onReload}
                 scope={selectedPart.id === "ilo" ? "ilo" : "server"}
+                workflowActions={workflowActions}
+              />
+            )}
+
+            {selectedPart.id === "vcenter" && (
+              <VirtualizationWorkspaceControls
+                activeProfile={activeProfile}
+                address={designAddress}
+                features={features}
+                onReload={onReload}
                 workflowActions={workflowActions}
               />
             )}
