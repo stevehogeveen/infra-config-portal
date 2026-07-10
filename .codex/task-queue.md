@@ -13,4 +13,4 @@ behavior reference for this app.
 - [x] `.codex/tasks/003-docker-compose-local-dev.md`
 - [x] `.codex/tasks/004-tests-and-quality-gates.md`
 - [x] `.codex/tasks/005-provider-adapter-contracts.md`
-- [ ] `.codex/tasks/006-roadmap-next-workflows.md`
+- [x] `.codex/tasks/006-roadmap-next-workflows.md`

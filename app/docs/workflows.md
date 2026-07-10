@@ -1,5 +1,9 @@
 # Workflows
 
+The forward workflow sequence is tracked in
+[`roadmap-next-workflows.md`](roadmap-next-workflows.md). It keeps future work
+mock-first and dependency-ordered after the VM deployment MVP.
+
 ## Saved Lab Profile Selection
 
 Lab profile selection mirrors the Lab Builder kit pattern at a smaller scope:
