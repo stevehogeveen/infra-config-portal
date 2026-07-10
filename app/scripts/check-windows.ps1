@@ -51,6 +51,15 @@ Invoke-Step "Frontend dependencies" {
   & (Join-Path $PSScriptRoot "ensure-frontend-deps.ps1") -ForceInstall:$Install -CheckOnly:(!$Install) -NoProxy:$NoProxy
 }
 
+Invoke-Step "Frontend component tests" {
+  Push-Location $frontendRoot
+  try {
+    npm run test:component
+  } finally {
+    Pop-Location
+  }
+}
+
 Invoke-Step "Frontend build" {
   Push-Location $frontendRoot
   try {

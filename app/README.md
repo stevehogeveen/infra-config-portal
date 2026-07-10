@@ -91,6 +91,9 @@ npm run test:component
 
 These cover shared UI components without launching a browser, so Playwright can
 stay focused on real navigation, guarded-run, persistence, and visual flows.
+On Windows without Make, `.\scripts\check-windows.ps1` runs the same mocked
+backend tests, portable path check, frontend component tests, and frontend
+build from `app/`.
 
 For faster Windows iteration during visual/backend feature work, use the
 diff-aware verification lane:

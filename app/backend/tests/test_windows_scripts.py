@@ -176,6 +176,14 @@ def test_root_makefile_runs_frontend_component_tests_before_build() -> None:
     assert makefile.index("npm run test:component") < makefile.index("npm run build")
 
 
+def test_windows_check_runs_frontend_component_tests_before_build() -> None:
+    script = (APP_SCRIPTS / "check-windows.ps1").read_text(encoding="utf-8")
+
+    assert 'Invoke-Step "Frontend component tests"' in script
+    assert "npm run test:component" in script
+    assert script.index("npm run test:component") < script.index("npm run build")
+
+
 def test_esxi_wrapper_scripts_use_shared_env_loader_before_service_imports() -> None:
     scripts = {
         "esxi_netapp_datastore_workflow.py": "from app.services.esxi_netapp_datastore import",

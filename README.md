@@ -87,6 +87,9 @@ From `app/`, run:
 .\scripts\check-windows.ps1
 ```
 
+`check-windows.ps1` runs the Windows doctor, backend tests, portable path
+checks, frontend component tests, and frontend build with mocked providers.
+
 To include browser-based frontend coverage:
 
 ```powershell
