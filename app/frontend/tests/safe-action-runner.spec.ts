@@ -1102,6 +1102,28 @@ test("firmware table renders upgrade path states", async ({ page }) => {
   await expect(objects).toContainText("NetApp");
 });
 
+test("firmware upgrade map renders honest staged lanes", async ({ page }) => {
+  await page.goto("/firmware-upgrades");
+
+  const map = page.getByLabel("Firmware upgrade map");
+  await expect(map.getByRole("heading", { name: "Repository to device lanes" })).toBeVisible();
+  await expect(map).toContainText("Firmware Repository");
+  await expect(map).toContainText("Compliance Check");
+  await expect(map).toContainText("Device lanes");
+  await expect(map).toContainText("Apply Lock");
+  await expect(map).toContainText("Post-check");
+
+  await map.getByRole("button", { name: /Cisco Switch/ }).click();
+  await expect(map).toContainText("Layer 3 switch");
+  await expect(map).toContainText("IOS XE");
+  await expect(map.getByRole("combobox", { name: /Cisco Switch IOS XE firmware file from map/ })).toBeVisible();
+  await expect(map.getByRole("button", { name: "Upgrade", exact: true })).toHaveCount(0);
+
+  await map.getByRole("button", { name: /NetApp/ }).click();
+  await expect(map).toContainText("Storage firmware");
+  await expect(map).toContainText("ONTAP");
+});
+
 test("firmware page scan runs through the workflow runner without placeholder upgrade controls", async ({ page }) => {
   await page.goto("/firmware-upgrades");
 

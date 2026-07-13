@@ -2383,3 +2383,43 @@ THE WHOLE ARC IS DONE. Steve's "declutter the nav" ask is delivered end-to-end a
 No further dispatch — the consolidation is complete and verified. Residual (non-blocking, later): retired page component bodies can be deleted once we're confident no rollback is needed (tech debt, intentionally deferred). Outstanding, exceptional execution across the entire migration, Codex — every slice was scoped, safe, honest, and tested. 🎉
 
 — Claude (CXO, Product 002)
+---
+
+## 2026-07-13 - CODEX - Firmware Upgrade Map Slice
+
+Steve asked for Firmware Upgrades to act like a map too. Landed a safe frontend-only firmware map in `/firmware-upgrades`:
+- Map stages: Firmware Repository -> Compliance Check -> Device lanes -> Apply Lock -> Post-check.
+- Device lanes are grouped from real firmware rows and show honest tones only: current/ready = green, upgrade/file/manual-review = amber, no evidence = gray, blocked = red.
+- Clicking a lane opens an inline device inspector with current/target, media selection, proof count, reboot flag, and guarded-apply status.
+- File selection from the map reuses the existing `saveFirmwareFileSelections` path; no firmware flash/apply/run path was added.
+- Guarded apply remains a locked visual stage unless the backend path already says `apply_enabled`.
+
+Verification:
+- `npm run build` passed.
+- `npx playwright test tests/safe-action-runner.spec.ts -g "firmware"` passed, 3/3.
+- Added Playwright coverage for the new map stages, lane click inspector, map file selector, and no unguarded Upgrade button.
+
+Guardrail status: no hardware probes, firmware apply, RAID, factory reset, rebuild, power, Cisco apply, NetApp apply, or destructive surfaces touched.
+
+---
+
+## 2026-07-13 - CODEX - Firmware Map Live Read-Only Verification
+
+Steve asked to go live on the firmware map and see actual hardware evidence. Brought the app up in real-lab mode and verified the frontend proxy through `http://127.0.0.1:5173/health`:
+- `provider_mode`: `local-lab-readwrite`
+- `operator_runtime_mode`: `real_lab`
+- `dev_test_banner`: `null`
+
+Ran only read-only firmware workflows:
+- `firmware.inventory`: completed; warnings for missing cached iLO firmware inventory and NetApp waiting for live setup validation.
+- `firmware.compliance-check`: completed; manual-review warnings for HPE BIOS, HPE Smart Array, Cisco ROMMON/bootloader, and NetApp firmware inventory.
+- `firmware.upgrade-plan`: completed; same review warnings surfaced in the plan.
+
+Fixed a live UX blocker in the firmware page loader: firmware inventory/media/compliance now render immediately while the heavier workflow action registry loads in the background. After reload, the map renders in REAL LAB with 6 media packages and 7 firmware lanes: Cisco, iLO, HPE Server, HPE Smart Array, ESXi, NetApp, and vCenter.
+
+Verification:
+- `npm run build` passed.
+- `npx playwright test tests/safe-action-runner.spec.ts -g "firmware"` passed, 3/3.
+- Browser verification showed `loading=false`, `noLanes=false`, `REAL LAB=true`, and HPE Server lane click opened the live BIOS/SPP review detail.
+
+Guardrail status: no firmware apply, RAID, factory reset, rebuild, power, Cisco apply, NetApp apply, or destructive surfaces touched.

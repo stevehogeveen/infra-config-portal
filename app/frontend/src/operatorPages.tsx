@@ -3786,9 +3786,10 @@ export function OperatorFirmwareUpgradesPage({ labProfileState }: OperatorPagePr
   async function load() {
     setError("");
     setLoading(true);
-    try {
-      const nextActions = await safeApi(api.workflowActions, [] as WorkflowAction[]);
+    void safeApi(api.workflowActions, [] as WorkflowAction[]).then((nextActions) => {
       setActions(Array.isArray(nextActions) ? nextActions : []);
+    });
+    try {
       const [nextSummaries, nextMedia, nextCompliance, nextSelections] = await Promise.all([
         safeApi(api.firmwareSummary, [] as FirmwareSummary[]),
         safeApi(api.mediaInventory, null),
@@ -3954,6 +3955,7 @@ export function OperatorFirmwareUpgradesPage({ labProfileState }: OperatorPagePr
         compliance={compliance}
         files={files}
         firmwareStatus={firmwareStatus}
+        onFileSelection={saveFileSelection}
         rows={rows}
         savingSelection={savingSelection}
         selectedFiles={selectedFiles}
@@ -4003,6 +4005,7 @@ function FirmwareSetupShapePanel({
   compliance,
   files,
   firmwareStatus,
+  onFileSelection,
   rows,
   savingSelection,
   selectedFiles
@@ -4010,30 +4013,49 @@ function FirmwareSetupShapePanel({
   compliance: ProviderProbeResult | null;
   files: { lastScanned: string; packageCount: number };
   firmwareStatus: string;
+  onFileSelection: (componentId: string, fileName: string) => void;
   rows: FirmwareTableRow[];
   savingSelection: boolean;
   selectedFiles: Record<string, string>;
 }) {
+  const [selectedDeviceId, setSelectedDeviceId] = useState("");
   const selectedCount = Object.keys(selectedFiles).length;
   const needsSelection = rows.filter((row) => row.pathStatus !== "current" && !row.selectedFileName).length;
   const readyToUpgrade = rows.filter((row) => ["ready_to_upgrade", "ready", "upgrade_available"].includes(row.pathStatus)).length;
+  const applyEnabled = rows.filter((row) => row.applyEnabled).length;
   const mediaStatus = files.packageCount ? "ready" : "not_checked";
   const selectionStatus = savingSelection ? "needs_attention" : needsSelection ? "needs_attention" : rows.length ? "ready" : "not_checked";
   const upgradeGuardStatus = readyToUpgrade ? "safe_to_run" : "not_checked";
   const ladderStatus = statusBadgeStatus(firmwareStatus);
   const summary = asString(compliance?.message) || (rows.length ? "Firmware workflow is based on scanned inventory, media matching, and selected files." : "Scan firmware to load component inventory and upgrade paths.");
+  const devices = useMemo(() => firmwareMapDevices(rows), [rows]);
+  const selectedDevice = devices.find((device) => device.id === selectedDeviceId) ?? devices[0] ?? null;
 
   return (
     <Card className="firmware-setup-card" hover={false}>
       <CardHeader>
         <div>
-          <p className="operator-kicker">Firmware setup shape</p>
-          <h2>Check, Select, Plan, Upgrade</h2>
-          <p>Firmware upgrades stay gated until media, compliance, file selection, and guarded apply prechecks line up.</p>
+          <p className="operator-kicker">Firmware upgrade map</p>
+          <h2>Scan, Select, Plan, Guarded Upgrade</h2>
+          <p>Touch a device lane to inspect its firmware path. The map uses scanned evidence, selected media, and backend guardrails only.</p>
         </div>
         <StatusBadge label={displayStatus(firmwareStatus)} status={ladderStatus} />
       </CardHeader>
       <CardContent>
+        <FirmwareUpgradeMap
+          applyEnabled={applyEnabled}
+          compliance={compliance}
+          devices={devices}
+          files={files}
+          needsSelection={needsSelection}
+          onFileSelection={onFileSelection}
+          onSelectDevice={setSelectedDeviceId}
+          readyToUpgrade={readyToUpgrade}
+          savingSelection={savingSelection}
+          selectedDevice={selectedDevice}
+          selectedFiles={selectedFiles}
+        />
+
         <div className="firmware-setup-grid" aria-label="Firmware setup intent">
           <div>
             <span>Needed</span>
@@ -4125,6 +4147,221 @@ function FirmwareSetupShapePanel({
         />
       </CardContent>
     </Card>
+  );
+}
+
+function FirmwareUpgradeMap({
+  applyEnabled,
+  compliance,
+  devices,
+  files,
+  needsSelection,
+  onFileSelection,
+  onSelectDevice,
+  readyToUpgrade,
+  savingSelection,
+  selectedDevice,
+  selectedFiles
+}: {
+  applyEnabled: number;
+  compliance: ProviderProbeResult | null;
+  devices: FirmwareMapDevice[];
+  files: { lastScanned: string; packageCount: number };
+  needsSelection: number;
+  onFileSelection: (componentId: string, fileName: string) => void;
+  onSelectDevice: (deviceId: string) => void;
+  readyToUpgrade: number;
+  savingSelection: boolean;
+  selectedDevice: FirmwareMapDevice | null;
+  selectedFiles: Record<string, string>;
+}) {
+  const complianceStatus = asString(compliance?.status) || "not_checked";
+  const mapStatus = strongestStatus([complianceStatus, ...devices.flatMap((device) => device.rows.map((row) => row.pathStatus))]);
+  const applyStatus = applyEnabled ? "manual_review" : readyToUpgrade ? "manual_review" : "not_checked";
+  const nextAction =
+    asString(compliance?.next_safe_action) ||
+    (needsSelection ? "Select matching firmware files for the amber lanes." : readyToUpgrade ? "Run Plan Firmware Upgrade before any guarded apply." : "Run Scan Firmware to refresh the map.");
+
+  return (
+    <section className="firmware-map-shell" aria-label="Firmware upgrade map">
+      <div className="firmware-map-head">
+        <div>
+          <span className="firmware-map-eyebrow">Living firmware map</span>
+          <h3>Repository to device lanes</h3>
+          <p>Media, compliance, selections, plan, and guarded apply are shown as one upgrade path.</p>
+        </div>
+        <div className="firmware-map-legend" aria-label="Firmware map legend">
+          <span><i className="is-ready" /> Current</span>
+          <span><i className="is-warning" /> Needs action</span>
+          <span><i className="is-neutral" /> Not probed</span>
+          <span><i className="is-locked" /> Guarded</span>
+        </div>
+      </div>
+
+      <div className="firmware-map-canvas">
+        <div className={`firmware-map-stage ${firmwareMapToneClass(files.packageCount ? "ready" : "not_checked")}`}>
+          <div className="firmware-map-stage-icon"><HardDrive size={22} /></div>
+          <span>Source</span>
+          <strong>Firmware Repository</strong>
+          <small>{files.packageCount ? `${files.packageCount} package${files.packageCount === 1 ? "" : "s"}` : "No media evidence"}</small>
+        </div>
+
+        <div className="firmware-map-link" aria-hidden="true" />
+
+        <div className={`firmware-map-stage ${firmwareMapToneClass(complianceStatus)}`}>
+          <div className="firmware-map-stage-icon"><ShieldCheck size={22} /></div>
+          <span>Gate</span>
+          <strong>Compliance Check</strong>
+          <small>{displayStatus(complianceStatus)}</small>
+        </div>
+
+        <div className="firmware-map-link" aria-hidden="true" />
+
+        <div className="firmware-map-device-zone">
+          <div className="firmware-map-zone-label">
+            <span>Device lanes</span>
+            <strong>{devices.length ? `${devices.length} upgrade lane${devices.length === 1 ? "" : "s"}` : "Scan needed"}</strong>
+          </div>
+          <div className="firmware-map-device-grid">
+            {devices.length ? devices.map((device) => (
+              <button
+                aria-pressed={selectedDevice?.id === device.id}
+                className={`firmware-map-node ${firmwareMapToneClass(device.status)} ${selectedDevice?.id === device.id ? "selected" : ""}`}
+                key={device.id}
+                onClick={() => onSelectDevice(device.id)}
+                type="button"
+              >
+                <span className="firmware-map-node-icon">{firmwareMapDeviceIcon(device.kind)}</span>
+                <span className="firmware-map-node-copy">
+                  <strong>{device.label}</strong>
+                  <small>{device.summary}</small>
+                </span>
+                <StatusBadge label={displayStatus(device.status)} status={statusBadgeStatus(device.status)} />
+                <span className="firmware-map-component-strip">
+                  {device.rows.slice(0, 4).map((row) => (
+                    <i className={firmwareMapToneClass(row.pathStatus)} key={row.componentId} title={`${row.component}: ${displayStatus(row.pathStatus)}`} />
+                  ))}
+                </span>
+              </button>
+            )) : (
+              <div className="firmware-map-empty">
+                <ShieldCheck size={20} />
+                <strong>No firmware lanes loaded</strong>
+                <span>Run Scan Firmware to build the map from inventory and media evidence.</span>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="firmware-map-link" aria-hidden="true" />
+
+        <div className={`firmware-map-stage ${firmwareMapToneClass(applyStatus)} guarded`}>
+          <div className="firmware-map-stage-icon"><Ban size={22} /></div>
+          <span>Guard</span>
+          <strong>Apply Lock</strong>
+          <small>{applyEnabled ? `${applyEnabled} guarded apply enabled` : "No apply path open"}</small>
+        </div>
+
+        <div className="firmware-map-link" aria-hidden="true" />
+
+        <div className={`firmware-map-stage ${firmwareMapToneClass(mapStatus)}`}>
+          <div className="firmware-map-stage-icon"><CheckCircle2 size={22} /></div>
+          <span>Proof</span>
+          <strong>Post-check</strong>
+          <small>{files.lastScanned}</small>
+        </div>
+      </div>
+
+      <FirmwareMapInspector
+        device={selectedDevice}
+        nextAction={nextAction}
+        onFileSelection={onFileSelection}
+        savingSelection={savingSelection}
+        selectedFiles={selectedFiles}
+      />
+    </section>
+  );
+}
+
+function FirmwareMapInspector({
+  device,
+  nextAction,
+  onFileSelection,
+  savingSelection,
+  selectedFiles
+}: {
+  device: FirmwareMapDevice | null;
+  nextAction: string;
+  onFileSelection: (componentId: string, fileName: string) => void;
+  savingSelection: boolean;
+  selectedFiles: Record<string, string>;
+}) {
+  if (!device) {
+    return (
+      <div className="firmware-map-inspector">
+        <div>
+          <span>Inspector</span>
+          <strong>No device selected</strong>
+        </div>
+        <p>Run Scan Firmware to load device lanes, then click a lane to inspect versions and media selections.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="firmware-map-inspector">
+      <div className="firmware-map-inspector-head">
+        <div>
+          <span>{device.kindLabel}</span>
+          <strong>{device.label}</strong>
+          <p>{device.summary}</p>
+        </div>
+        <StatusBadge label={displayStatus(device.status)} status={statusBadgeStatus(device.status)} />
+      </div>
+
+      <div className="firmware-map-inspector-grid">
+        {device.rows.map((row) => (
+          <article className={`firmware-map-component ${firmwareMapToneClass(row.pathStatus)}`} key={row.componentId}>
+            <div className="firmware-map-component-main">
+              <div>
+                <span>{row.component}</span>
+                <strong>{`${row.current} -> ${row.target}`}</strong>
+              </div>
+              <StatusBadge label={displayStatus(row.pathStatus)} status={statusBadgeStatus(row.pathStatus)} />
+            </div>
+            <div className="firmware-map-component-facts">
+              <span>Media: {row.selectedFileName || "Not selected"}</span>
+              <span>Proof: {row.evidenceArtifacts.length || 0}</span>
+              <span>{row.rebootRequired ? "Reboot expected" : "No reboot flag"}</span>
+            </div>
+            <Field label="Firmware file">
+              <select
+                aria-label={`${row.equipment} ${row.component} firmware file from map`}
+                disabled={savingSelection}
+                onChange={(event) => onFileSelection(row.componentId, event.target.value)}
+                value={selectedFiles[row.componentId] ?? row.selectedFileName}
+              >
+                <option value="">No file selected</option>
+                {selectedFiles[row.componentId] && !row.candidateFiles.some((candidate) => candidate.file_name === selectedFiles[row.componentId]) ? (
+                  <option value={selectedFiles[row.componentId]}>{selectedFiles[row.componentId]}</option>
+                ) : null}
+                {row.candidateFiles.map((candidate) => (
+                  <option key={`${row.componentId}-${candidate.file_name}-${candidate.file_path ?? ""}`} value={candidate.file_name}>
+                    {candidate.file_name}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <p>{row.applyEnabled ? "Guarded apply is enabled by backend policy for this path." : row.disabledReason || row.action}</p>
+          </article>
+        ))}
+      </div>
+
+      <div className="firmware-map-next-action">
+        <span>Next safe action</span>
+        <strong>{humanize(nextAction)}</strong>
+      </div>
+    </div>
   );
 }
 
@@ -14338,16 +14575,106 @@ function InventoryTable({ rows }: { rows: InventoryRow[] }) {
 
 type FirmwareTableRow = {
   action: string;
+  applyEnabled: boolean;
   candidateFiles: FirmwareFileCandidate[];
   component: string;
   componentId: string;
   current: string;
+  disabledReason: string;
   equipment: string;
+  evidenceArtifacts: string[];
+  estimatedImpact: string;
   pathStatus: string;
+  prechecksRequired: string[];
+  rebootRequired: boolean;
   selectedFileName: string;
   selectionSource: string;
   target: string;
 };
+
+type FirmwareMapDevice = {
+  id: string;
+  kind: "server" | "switch" | "storage" | "virtualization" | "device";
+  kindLabel: string;
+  label: string;
+  rows: FirmwareTableRow[];
+  status: string;
+  summary: string;
+};
+
+function firmwareMapDevices(rows: FirmwareTableRow[]): FirmwareMapDevice[] {
+  const grouped = new Map<string, FirmwareTableRow[]>();
+  for (const row of rows) {
+    const key = firmwareMapDeviceKey(row);
+    grouped.set(key, [...(grouped.get(key) ?? []), row]);
+  }
+  return Array.from(grouped.entries()).map(([key, deviceRows]) => {
+    const kind = firmwareMapDeviceKind(deviceRows);
+    const status = firmwareMapDeviceStatus(deviceRows);
+    const currentCount = deviceRows.filter((row) => row.pathStatus === "current").length;
+    const upgradeCount = deviceRows.filter((row) => ["ready_to_upgrade", "upgrade_available"].includes(row.pathStatus)).length;
+    const missingCount = deviceRows.filter((row) => ["file_needed", "scan_needed", "not_setup"].includes(row.pathStatus)).length;
+    return {
+      id: `${kind}-${key}`,
+      kind,
+      kindLabel: firmwareMapKindLabel(kind),
+      label: deviceRows[0]?.equipment || "Firmware device",
+      rows: deviceRows,
+      status,
+      summary: `${currentCount}/${deviceRows.length} current${upgradeCount ? `, ${upgradeCount} upgrade path${upgradeCount === 1 ? "" : "s"}` : ""}${missingCount ? `, ${missingCount} need evidence` : ""}`
+    };
+  });
+}
+
+function firmwareMapDeviceKey(row: FirmwareTableRow): string {
+  const normalizedEquipment = row.equipment.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  return normalizedEquipment || row.componentId;
+}
+
+function firmwareMapDeviceKind(rows: FirmwareTableRow[]): FirmwareMapDevice["kind"] {
+  const text = rows.map((row) => `${row.componentId} ${row.component} ${row.equipment}`).join(" ").toLowerCase();
+  if (text.includes("cisco") || text.includes("ios xe") || text.includes("switch")) return "switch";
+  if (text.includes("netapp") || text.includes("ontap") || text.includes("shelf")) return "storage";
+  if (text.includes("vcenter") || text.includes("vcsa") || text.includes("esxi")) return "virtualization";
+  if (text.includes("hpe") || text.includes("ilo") || text.includes("bios") || text.includes("smart array")) return "server";
+  return "device";
+}
+
+function firmwareMapKindLabel(kind: FirmwareMapDevice["kind"]): string {
+  if (kind === "switch") return "Layer 3 switch";
+  if (kind === "server") return "Server firmware";
+  if (kind === "storage") return "Storage firmware";
+  if (kind === "virtualization") return "Virtualization image";
+  return "Firmware device";
+}
+
+function firmwareMapDeviceStatus(rows: FirmwareTableRow[]): string {
+  const tones = rows.map((row) => firmwareMapTone(row.pathStatus));
+  if (tones.includes("blocked")) return "blocked";
+  if (tones.includes("warning")) return rows.some((row) => row.pathStatus === "upgrade_available") ? "upgrade_available" : "warning";
+  if (tones.length && tones.every((tone) => tone === "ready")) return "current";
+  return "not_checked";
+}
+
+function firmwareMapTone(status: string): "ready" | "warning" | "blocked" | "neutral" {
+  const normalized = status.toLowerCase();
+  if (["current", "ready", "safe_to_run", "completed", "success"].includes(normalized)) return "ready";
+  if (["blocked", "failed", "error", "critical", "hard_fail"].includes(normalized)) return "blocked";
+  if (["upgrade_available", "ready_to_upgrade", "file_needed", "manual_review", "needs_attention", "warning", "partial"].includes(normalized)) return "warning";
+  return "neutral";
+}
+
+function firmwareMapToneClass(status: string): string {
+  return `is-${firmwareMapTone(status)}`;
+}
+
+function firmwareMapDeviceIcon(kind: FirmwareMapDevice["kind"]): ReactNode {
+  if (kind === "switch") return <Route size={22} />;
+  if (kind === "server") return <Server size={22} />;
+  if (kind === "storage") return <Database size={22} />;
+  if (kind === "virtualization") return <Layers size={22} />;
+  return <Activity size={22} />;
+}
 
 function FirmwareFilesPanel({
   directory,
@@ -14913,12 +15240,18 @@ function firmwareRows(
     const selectedFileName = selectedOverride ?? path.selected_file_name ?? path.package_name ?? "";
     return [{
       action: simpleFirmwareAction(path),
+      applyEnabled: Boolean(path.apply_enabled),
       candidateFiles,
       component: firmwareComponentLabel(path),
       componentId: path.component_id,
       current: displayValue(path.current_version),
+      disabledReason: path.disabled_reason ?? "",
       equipment: path.equipment_label || path.device_label || summary?.label || "Equipment",
+      estimatedImpact: path.estimated_impact ?? "Review required",
+      evidenceArtifacts: path.evidence_artifacts ?? [],
       pathStatus: simpleFirmwareStatus(path, selectedFileName),
+      prechecksRequired: path.prechecks_required ?? [],
+      rebootRequired: Boolean(path.reboot_required),
       selectedFileName,
       selectionSource: selectedOverride !== undefined ? "user" : path.selection_source ?? (selectedFileName ? "auto" : "none"),
       target: displayValue(path.target_version ?? selectedFileName ?? path.package_name ?? "Review required")
