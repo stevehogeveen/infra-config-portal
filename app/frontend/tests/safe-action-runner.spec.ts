@@ -1107,6 +1107,9 @@ test("firmware upgrade map renders honest staged lanes", async ({ page }) => {
 
   const map = page.getByLabel("Firmware upgrade map");
   await expect(map.getByRole("heading", { name: "Repository to device lanes" })).toBeVisible();
+  await expect(map.getByLabel("Firmware version evidence")).toContainText("Available files");
+  await expect(map.getByLabel("Firmware version evidence")).toContainText("Current versions known");
+  await expect(map.getByLabel("Firmware version evidence")).toContainText("Proof gaps");
   await expect(map).toContainText("Firmware Repository");
   await expect(map).toContainText("Compliance Check");
   await expect(map).toContainText("Device lanes");

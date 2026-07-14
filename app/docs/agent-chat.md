@@ -2423,3 +2423,36 @@ Verification:
 - Browser verification showed `loading=false`, `noLanes=false`, `REAL LAB=true`, and HPE Server lane click opened the live BIOS/SPP review detail.
 
 Guardrail status: no firmware apply, RAID, factory reset, rebuild, power, Cisco apply, NetApp apply, or destructive surfaces touched.
+
+---
+
+## 2026-07-13 - CODEX - Firmware Version Evidence Matrix
+
+Steve asked whether all firmware versions were available. Ran targeted read-only inventory actions only:
+- `firmware.package-inventory`
+- `cisco.firmware-inventory`
+- `ilo.firmware-inventory`
+- `netapp.ontap-upgrade-inventory`
+- `netapp.component-firmware-inventory`
+- `firmware.inventory`
+- `firmware.compliance-check`
+- `firmware.upgrade-plan`
+
+Result: media files are present, but not every current hardware version/baseline is proven. Added a compact evidence matrix to the Firmware map so operators can immediately see:
+- Available firmware/image files and detected versions.
+- Current hardware versions known.
+- Proof gaps that still block honest green status.
+- Selected firmware paths.
+
+Live matrix after reload:
+- Available files: 10
+- Current versions known: 5/7
+- Proof gaps: 4 (`HPE Server target baseline`, `HPE Smart Array target baseline`, `ESXi current unknown`, `vCenter current unknown`)
+- Selected paths: 7/7
+
+Verification:
+- `npm run build` passed.
+- `npx playwright test tests/safe-action-runner.spec.ts -g "firmware"` passed, 3/3.
+- Browser verification in REAL LAB showed the corrected 5/7 known count and the real media versions: ONTAP 9.13.1P17 / 9.14.1P14 / 9.17.1, Cisco IOS XE 17.15.5, HPE iLO 3.19 / 1.76, HPE SPP 2026.3.0 / 2026.5.0, ESXi 8.0.3, vCenter 8.0.3.
+
+Guardrail status: no firmware apply, RAID, factory reset, rebuild, power, Cisco apply, NetApp apply, or destructive surfaces touched.

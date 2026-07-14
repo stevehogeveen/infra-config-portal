@@ -53,6 +53,7 @@ import type {
   LabValidationItem,
   LabValidationSummary,
   MediaInventory,
+  MediaInventoryItem,
   ProviderProbeResult,
   ProviderStatus,
   UiIntentOp,
@@ -3951,12 +3952,13 @@ export function OperatorFirmwareUpgradesPage({ labProfileState }: OperatorPagePr
       />
     ),
     "setup-shape": (
-      <FirmwareSetupShapePanel
-        compliance={compliance}
-        files={files}
-        firmwareStatus={firmwareStatus}
-        onFileSelection={saveFileSelection}
-        rows={rows}
+        <FirmwareSetupShapePanel
+          compliance={compliance}
+          files={files}
+          firmwareStatus={firmwareStatus}
+          media={media}
+          onFileSelection={saveFileSelection}
+          rows={rows}
         savingSelection={savingSelection}
         selectedFiles={selectedFiles}
       />
@@ -4005,6 +4007,7 @@ function FirmwareSetupShapePanel({
   compliance,
   files,
   firmwareStatus,
+  media,
   onFileSelection,
   rows,
   savingSelection,
@@ -4013,6 +4016,7 @@ function FirmwareSetupShapePanel({
   compliance: ProviderProbeResult | null;
   files: { lastScanned: string; packageCount: number };
   firmwareStatus: string;
+  media: MediaInventory | null;
   onFileSelection: (componentId: string, fileName: string) => void;
   rows: FirmwareTableRow[];
   savingSelection: boolean;
@@ -4029,6 +4033,7 @@ function FirmwareSetupShapePanel({
   const ladderStatus = statusBadgeStatus(firmwareStatus);
   const summary = asString(compliance?.message) || (rows.length ? "Firmware workflow is based on scanned inventory, media matching, and selected files." : "Scan firmware to load component inventory and upgrade paths.");
   const devices = useMemo(() => firmwareMapDevices(rows), [rows]);
+  const mediaPackages = useMemo(() => firmwareMediaPackages(media), [media]);
   const selectedDevice = devices.find((device) => device.id === selectedDeviceId) ?? devices[0] ?? null;
 
   return (
@@ -4047,6 +4052,7 @@ function FirmwareSetupShapePanel({
           compliance={compliance}
           devices={devices}
           files={files}
+          mediaPackages={mediaPackages}
           needsSelection={needsSelection}
           onFileSelection={onFileSelection}
           onSelectDevice={setSelectedDeviceId}
@@ -4155,6 +4161,7 @@ function FirmwareUpgradeMap({
   compliance,
   devices,
   files,
+  mediaPackages,
   needsSelection,
   onFileSelection,
   onSelectDevice,
@@ -4167,6 +4174,7 @@ function FirmwareUpgradeMap({
   compliance: ProviderProbeResult | null;
   devices: FirmwareMapDevice[];
   files: { lastScanned: string; packageCount: number };
+  mediaPackages: FirmwareMediaPackage[];
   needsSelection: number;
   onFileSelection: (componentId: string, fileName: string) => void;
   onSelectDevice: (deviceId: string) => void;
@@ -4197,6 +4205,8 @@ function FirmwareUpgradeMap({
           <span><i className="is-locked" /> Guarded</span>
         </div>
       </div>
+
+      <FirmwareEvidenceMatrix devices={devices} mediaPackages={mediaPackages} />
 
       <div className="firmware-map-canvas">
         <div className={`firmware-map-stage ${firmwareMapToneClass(files.packageCount ? "ready" : "not_checked")}`}>
@@ -4280,6 +4290,79 @@ function FirmwareUpgradeMap({
         selectedFiles={selectedFiles}
       />
     </section>
+  );
+}
+
+function FirmwareEvidenceMatrix({
+  devices,
+  mediaPackages
+}: {
+  devices: FirmwareMapDevice[];
+  mediaPackages: FirmwareMediaPackage[];
+}) {
+  const rows = devices.flatMap((device) => device.rows);
+  const knownRows = rows.filter((row) => !isUnknownFirmwareValue(row.current));
+  const gapRows = rows.filter((row) => (row.missingEvidence ?? []).length || isUnknownFirmwareValue(row.current) || row.pathStatus === "manual_review");
+  const selectedRows = rows.filter((row) => row.selectedFileName);
+
+  return (
+    <div className="firmware-evidence-matrix" aria-label="Firmware version evidence">
+      <article>
+        <div>
+          <span>Available files</span>
+          <strong>{mediaPackages.length}</strong>
+        </div>
+        <div className="firmware-evidence-pills">
+          {mediaPackages.length ? mediaPackages.map((item) => (
+            <span key={item.id} title={item.fileName}>
+              {item.product} <b>{item.version}</b>
+            </span>
+          )) : (
+            <em>No firmware media found</em>
+          )}
+        </div>
+      </article>
+
+      <article>
+        <div>
+          <span>Current versions known</span>
+          <strong>{knownRows.length}/{rows.length || 0}</strong>
+        </div>
+        <div className="firmware-evidence-pills">
+          {knownRows.length ? knownRows.slice(0, 8).map((row) => (
+            <span key={`known-${row.componentId}`}>
+              {row.equipment} <b>{row.current}</b>
+            </span>
+          )) : (
+            <em>Run inventory to collect hardware versions</em>
+          )}
+        </div>
+      </article>
+
+      <article>
+        <div>
+          <span>Proof gaps</span>
+          <strong>{gapRows.length}</strong>
+        </div>
+        <div className="firmware-evidence-pills is-warning-list">
+          {gapRows.length ? gapRows.slice(0, 8).map((row) => (
+            <span key={`gap-${row.componentId}`} title={row.missingEvidence.join(", ") || row.action}>
+              {row.equipment} <b>{firmwareGapLabel(row)}</b>
+            </span>
+          )) : (
+            <em>No evidence gaps found</em>
+          )}
+        </div>
+      </article>
+
+      <article>
+        <div>
+          <span>Selected paths</span>
+          <strong>{selectedRows.length}/{rows.length || 0}</strong>
+        </div>
+        <p>Files can be present while the current device version or approved baseline still needs proof.</p>
+      </article>
+    </div>
   );
 }
 
@@ -14584,12 +14667,20 @@ type FirmwareTableRow = {
   equipment: string;
   evidenceArtifacts: string[];
   estimatedImpact: string;
+  missingEvidence: string[];
   pathStatus: string;
   prechecksRequired: string[];
   rebootRequired: boolean;
   selectedFileName: string;
   selectionSource: string;
   target: string;
+};
+
+type FirmwareMediaPackage = {
+  fileName: string;
+  id: string;
+  product: string;
+  version: string;
 };
 
 type FirmwareMapDevice = {
@@ -14674,6 +14765,48 @@ function firmwareMapDeviceIcon(kind: FirmwareMapDevice["kind"]): ReactNode {
   if (kind === "storage") return <Database size={22} />;
   if (kind === "virtualization") return <Layers size={22} />;
   return <Activity size={22} />;
+}
+
+function firmwareMediaPackages(media: MediaInventory | null): FirmwareMediaPackage[] {
+  const packages = (media?.items ?? [])
+    .filter((item) => item.category === "firmware" || item.category === "iso")
+    .map((item) => firmwareMediaPackage(item));
+  const seen = new Set<string>();
+  return packages.filter((item) => {
+    if (seen.has(item.id)) return false;
+    seen.add(item.id);
+    return true;
+  });
+}
+
+function firmwareMediaPackage(item: MediaInventoryItem): FirmwareMediaPackage {
+  const product = humanize(
+    item.detected_product ||
+    item.product_hints?.[0] ||
+    item.detected_vendor ||
+    item.category ||
+    "firmware"
+  );
+  const version = item.detected_version || item.version_hint || "version unknown";
+  const fileName = item.file_name || item.placeholder_name;
+  return {
+    fileName,
+    id: `${fileName}-${version}`,
+    product,
+    version
+  };
+}
+
+function isUnknownFirmwareValue(value: string): boolean {
+  const normalized = value.trim().toLowerCase();
+  return !normalized || ["unknown", "not checked", "not probed", "not set up yet", "review required", "none"].includes(normalized);
+}
+
+function firmwareGapLabel(row: FirmwareTableRow): string {
+  if (isUnknownFirmwareValue(row.current)) return "current unknown";
+  if ((row.missingEvidence ?? []).length) return row.missingEvidence[0];
+  if (row.pathStatus === "manual_review") return "baseline review";
+  return row.action;
 }
 
 function FirmwareFilesPanel({
@@ -15250,6 +15383,7 @@ function firmwareRows(
       estimatedImpact: path.estimated_impact ?? "Review required",
       evidenceArtifacts: path.evidence_artifacts ?? [],
       pathStatus: simpleFirmwareStatus(path, selectedFileName),
+      missingEvidence: path.missing_evidence ?? [],
       prechecksRequired: path.prechecks_required ?? [],
       rebootRequired: Boolean(path.reboot_required),
       selectedFileName,

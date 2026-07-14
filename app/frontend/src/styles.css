@@ -4135,6 +4135,86 @@ textarea {
   margin: 0;
 }
 
+.firmware-evidence-matrix {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: 1.25fr 1.1fr 1.1fr 0.9fr;
+}
+
+.firmware-evidence-matrix article {
+  background: rgba(15, 23, 42, 0.62);
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 12px;
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px;
+}
+
+.firmware-evidence-matrix article > div:first-child {
+  align-items: baseline;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+}
+
+.firmware-evidence-matrix span {
+  color: #a9bbd2;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.firmware-evidence-matrix strong {
+  color: #f8fafc;
+  font-size: 20px;
+  line-height: 1;
+}
+
+.firmware-evidence-matrix p {
+  color: #cbd5e1;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.45;
+  margin: 0;
+}
+
+.firmware-evidence-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-height: 96px;
+  overflow: auto;
+}
+
+.firmware-evidence-pills span,
+.firmware-evidence-pills em {
+  background: rgba(248, 250, 252, 0.92);
+  border: 1px solid rgba(203, 213, 225, 0.72);
+  border-radius: 999px;
+  color: #334155;
+  display: inline-flex;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 850;
+  gap: 5px;
+  line-height: 1.2;
+  max-width: 100%;
+  padding: 6px 8px;
+  text-transform: none;
+}
+
+.firmware-evidence-pills span b {
+  color: #0f766e;
+  font-weight: 950;
+  overflow-wrap: anywhere;
+}
+
+.firmware-evidence-pills.is-warning-list span b {
+  color: #b45309;
+}
+
 .firmware-map-legend {
   align-items: center;
   background: rgba(15, 23, 42, 0.68);
@@ -4456,6 +4536,10 @@ textarea {
 }
 
 @media (max-width: 1180px) {
+  .firmware-evidence-matrix {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .firmware-map-canvas {
     grid-template-columns: 1fr;
   }
@@ -4482,6 +4566,10 @@ textarea {
 @media (max-width: 760px) {
   .firmware-map-head,
   .firmware-map-inspector-head {
+    grid-template-columns: 1fr;
+  }
+
+  .firmware-evidence-matrix {
     grid-template-columns: 1fr;
   }
 
