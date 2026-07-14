@@ -3772,7 +3772,6 @@ function VirtualizationSetupShapePanel({
 }
 
 export function OperatorFirmwareUpgradesPage({ labProfileState }: OperatorPageProps) {
-  const activeProfile = activeLabProfile(labProfileState);
   const [actions, setActions] = useState<WorkflowAction[]>([]);
   const [firmwareSummaries, setFirmwareSummaries] = useState<FirmwareSummary[]>([]);
   const [media, setMedia] = useState<MediaInventory | null>(null);
@@ -3835,135 +3834,6 @@ export function OperatorFirmwareUpgradesPage({ labProfileState }: OperatorPagePr
   ]);
   const rows = firmwareRows(firmwareSummaries, compliance, selectedFiles);
   const files = firmwareFilesInfo(media, compliance);
-  const currentView = firmwareCurrentView({ compliance, files, rows });
-  const firmwareWorkspaceRows = useMemo<OperatorObjectRow[]>(
-    () => rows.map((row) => ({
-      checkedAt: currentView.checkedAt,
-      details: [
-        { label: "Current", value: row.current },
-        { label: "Target", value: row.target },
-        { label: "Selected file", value: row.selectedFileName || "No file selected", source: selectionSourceLabel(row.selectionSource) },
-        { label: "Candidate files", value: String(row.candidateFiles.length) }
-      ],
-      freshness: currentView.freshness,
-      id: `firmware-${row.componentId}`,
-      nextAction: row.action,
-      source: "Firmware inventory",
-      status: row.pathStatus,
-      summary: `${row.equipment} / ${row.component}`,
-      target: row.target,
-      title: row.equipment,
-      type: row.component
-    })),
-    [currentView.checkedAt, currentView.freshness, rows]
-  );
-  const renderFirmwareDetailExtra = (selected: OperatorObjectRow) => {
-    const row = rows.find((candidate) => `firmware-${candidate.componentId}` === selected.id);
-    if (!row) return null;
-    return (
-      <div className="firmware-detail-control">
-        <Field label="Selected firmware file">
-          <select
-            aria-label={`${row.equipment} ${row.component} firmware file`}
-            onChange={(event) => void saveFileSelection(row.componentId, event.target.value)}
-            value={selectedFiles[row.componentId] ?? row.selectedFileName}
-          >
-            <option value="">No file selected</option>
-            {selectedFiles[row.componentId] && !row.candidateFiles.some((candidate) => candidate.file_name === selectedFiles[row.componentId]) ? (
-              <option value={selectedFiles[row.componentId]}>{selectedFiles[row.componentId]}</option>
-            ) : null}
-            {row.candidateFiles.map((candidate) => (
-              <option key={`${row.componentId}-${candidate.file_name}-${candidate.file_path ?? ""}`} value={candidate.file_name}>
-                {candidate.file_name}
-              </option>
-            ))}
-          </select>
-        </Field>
-        <p className="operator-muted">
-          {row.selectedFileName || "No file selected"} / {selectionSourceLabel(row.selectionSource)}
-        </p>
-      </div>
-    );
-  };
-  const intent = usePageIntentLayout("firmware", firmwareIntentRegions, activeProfile?.id);
-  const firmwareRegions: Record<string, ReactNode> = {
-    "advanced-proof": (
-      <AdvancedDrawer title="Firmware proof" summary={noProofText}>
-        <OperatorWorkspace
-          currentView={currentView}
-          rows={firmwareWorkspaceRows}
-          renderDetailExtra={renderFirmwareDetailExtra}
-          compact
-        />
-        <ValidationProofList
-          items={[]}
-          proofLinks={firmwareSummaries.reduce((count, summary) => count + summary.evidence_artifacts.length, 0)}
-        />
-      </AdvancedDrawer>
-    ),
-    "check-plan": (
-      <AdditionalTabActions
-        actions={actions}
-        buttons={[
-          { actionIds: ["firmware.compliance-check"], kind: "read", label: "Check Compliance", primary: true },
-          { actionIds: ["firmware.upgrade-plan"], kind: "read", label: "Plan Firmware Upgrade" }
-        ]}
-        defaultOpen
-        description="Check firmware compliance and generate the upgrade plan before any guarded apply."
-        onReload={load}
-        title="Firmware check and plan"
-      />
-    ),
-    "media-files": (
-      <>
-        <FirmwareFilesPanel
-          directory={mediaDirectoryLabel(media)}
-          lastScanned={files.lastScanned}
-          loading={loading}
-          onRescan={() => void load()}
-          packageCount={files.packageCount}
-          selectionStatus={selectionStatusLabel(fileSelections, savingSelection)}
-        />
-        <Feedback loading={false} error={selectionError} />
-      </>
-    ),
-    "ontap-upgrade": (
-      <AdditionalTabActions
-        actions={actions}
-        buttons={[
-          { actionIds: ["netapp.ontap-upgrade-apply"], kind: "apply", label: "Upgrade ONTAP" }
-        ]}
-        defaultOpen
-        description="Runs only when the guarded NetApp ONTAP upgrade action is enabled."
-        onReload={load}
-        title="ONTAP upgrade"
-      />
-    ),
-    reference: (
-      <OperatorReferencePanel
-        currentView={currentView}
-        actionLabel="Open media"
-        actionTo="/media"
-        ariaLabel="Firmware reference"
-        rows={firmwareWorkspaceRows}
-        subtitle="Images and compliance"
-        tableTitle="Firmware Components"
-        title="Firmware readiness at a glance"
-      />
-    ),
-    "setup-shape": (
-        <FirmwareSetupShapePanel
-          compliance={compliance}
-          files={files}
-          firmwareStatus={firmwareStatus}
-          media={media}
-          onFileSelection={saveFileSelection}
-          rows={rows}
-        savingSelection={savingSelection}
-        selectedFiles={selectedFiles}
-      />
-    )
-  };
 
   return (
     <OperatorPage title="Firmware Upgrades">
@@ -3982,56 +3852,51 @@ export function OperatorFirmwareUpgradesPage({ labProfileState }: OperatorPagePr
         title="Firmware Upgrades"
       />
       <Feedback loading={loading && !firmwareSummaries.length} error={error} />
-      <PageIntentBar
-        layout={intent.layout}
-        onApply={intent.applyOps}
-        onReset={intent.reset}
-        onTargetRegionChange={intent.setTargetRegionId}
-        onUndo={intent.undo}
-        page="firmware"
-        regions={firmwareIntentRegions}
-        summary={intent.summary}
-        targetRegionId={intent.targetRegionId}
-        undoAvailable={intent.undoAvailable}
+      <Feedback loading={false} error={selectionError} />
+      <FirmwareSetupShapePanel
+        actions={actions}
+        compliance={compliance}
+        files={files}
+        firmwareStatus={firmwareStatus}
+        media={media}
+        onFileSelection={saveFileSelection}
+        onReload={load}
+        rows={rows}
+        savingSelection={savingSelection}
+        selectedFiles={selectedFiles}
       />
-      {orderedIntentRegions(firmwareIntentRegions, intent.layout).map((region) => (
-        <IntentRegion highlighted={intent.targetRegionId === region.id} key={region.id} layout={intent.layout} region={region}>
-          {firmwareRegions[region.id]}
-        </IntentRegion>
-      ))}
     </OperatorPage>
   );
 }
 
 function FirmwareSetupShapePanel({
+  actions,
   compliance,
   files,
   firmwareStatus,
   media,
   onFileSelection,
+  onReload,
   rows,
   savingSelection,
   selectedFiles
 }: {
+  actions: WorkflowAction[];
   compliance: ProviderProbeResult | null;
   files: { lastScanned: string; packageCount: number };
   firmwareStatus: string;
   media: MediaInventory | null;
   onFileSelection: (componentId: string, fileName: string) => void;
+  onReload: () => Promise<void> | void;
   rows: FirmwareTableRow[];
   savingSelection: boolean;
   selectedFiles: Record<string, string>;
 }) {
   const [selectedDeviceId, setSelectedDeviceId] = useState("");
-  const selectedCount = Object.keys(selectedFiles).length;
   const needsSelection = rows.filter((row) => row.pathStatus !== "current" && !row.selectedFileName).length;
   const readyToUpgrade = rows.filter((row) => ["ready_to_upgrade", "ready", "upgrade_available"].includes(row.pathStatus)).length;
   const applyEnabled = rows.filter((row) => row.applyEnabled).length;
-  const mediaStatus = files.packageCount ? "ready" : "not_checked";
-  const selectionStatus = savingSelection ? "needs_attention" : needsSelection ? "needs_attention" : rows.length ? "ready" : "not_checked";
-  const upgradeGuardStatus = readyToUpgrade ? "safe_to_run" : "not_checked";
   const ladderStatus = statusBadgeStatus(firmwareStatus);
-  const summary = asString(compliance?.message) || (rows.length ? "Firmware workflow is based on scanned inventory, media matching, and selected files." : "Scan firmware to load component inventory and upgrade paths.");
   const devices = useMemo(() => firmwareMapDevices(rows), [rows]);
   const mediaPackages = useMemo(() => firmwareMediaPackages(media), [media]);
   const selectedDevice = devices.find((device) => device.id === selectedDeviceId) ?? devices[0] ?? null;
@@ -4046,6 +3911,7 @@ function FirmwareSetupShapePanel({
         </div>
         <StatusBadge label={displayStatus(firmwareStatus)} status={ladderStatus} />
       </CardHeader>
+      <FirmwareMapActionStrip actions={actions} onReload={onReload} />
       <CardContent>
         <FirmwareUpgradeMap
           applyEnabled={applyEnabled}
@@ -4061,98 +3927,159 @@ function FirmwareSetupShapePanel({
           selectedDevice={selectedDevice}
           selectedFiles={selectedFiles}
         />
-
-        <div className="firmware-setup-grid" aria-label="Firmware setup intent">
-          <div>
-            <span>Needed</span>
-            <strong>Known-good firmware baseline</strong>
-          </div>
-          <div>
-            <span>Current</span>
-            <strong>{summary}</strong>
-          </div>
-          <div>
-            <span>Intent</span>
-            <strong>{rows.length ? `${rows.length} component${rows.length === 1 ? "" : "s"} tracked` : "Scan inventory first"}</strong>
-          </div>
-          <div>
-            <span>Validation</span>
-            <strong>{readyToUpgrade ? `${readyToUpgrade} path${readyToUpgrade === 1 ? "" : "s"} ready or available` : "Plan before any upgrade"}</strong>
-          </div>
-        </div>
-
-        <RemediationLadder
-          className="firmware-remediation-panel"
-          defaultOpen={ladderStatus !== "ready"}
-          emptyStep={{
-            detail: "No firmware inventory has been loaded yet.",
-            label: "Load firmware evidence",
-            nextAction: "Run Scan Firmware.",
-            status: "not-configured"
-          }}
-          status={ladderStatus}
-          statusLabel={displayStatus(firmwareStatus)}
-          steps={[
-            {
-              detail: `${files.packageCount} media package${files.packageCount === 1 ? "" : "s"} seen`,
-              label: "Media inventory",
-              nextAction: files.packageCount ? "Use selected files or rescan after adding media." : "Put firmware media in artifacts/Media, then scan.",
-              status: statusBadgeStatus(mediaStatus)
-            },
-            {
-              detail: displayStatus(asString(compliance?.status) || "not_checked"),
-              label: "Compliance check",
-              nextAction: humanize(asString(compliance?.next_safe_action) || "Run Check Compliance."),
-              status: statusBadgeStatus(asString(compliance?.status) || "not_checked")
-            },
-            {
-              detail: selectedCount ? `${selectedCount} selected` : "No selected firmware files",
-              label: "File selection",
-              nextAction: needsSelection ? "Select the matching firmware file for each upgrade path." : "Keep selections saved before planning.",
-              status: statusBadgeStatus(selectionStatus)
-            },
-            {
-              detail: readyToUpgrade ? `${readyToUpgrade} guarded path${readyToUpgrade === 1 ? "" : "s"}` : "No guarded upgrade path ready yet",
-              label: "Plan and upgrade",
-              nextAction: "Run Plan Firmware Upgrade before any guarded apply.",
-              status: statusBadgeStatus(upgradeGuardStatus)
-            }
-          ]}
-          summary={summary}
-          title="Firmware setup path"
-        />
-
-        <div className="server-action-strip" aria-label="Firmware actions">
-          <ActionLink to="/media">Media</ActionLink>
-          <ActionLink to="/validation">Validation</ActionLink>
-          <ActionLink to="/audit-events">Audit Log</ActionLink>
-        </div>
-
-        <RemediationLadder
-          className="firmware-optional-handoff"
-          defaultOpen={false}
-          status="plan-only"
-          statusLabel="Guarded"
-          steps={[
-            {
-              detail: "ONTAP upgrade stays behind its dedicated guarded action.",
-              label: "NetApp ONTAP",
-              nextAction: "Run Plan Firmware Upgrade, then use Upgrade ONTAP only when enabled.",
-              status: "plan-only"
-            },
-            {
-              detail: "HPE and Cisco firmware are evidence and planning only here; no app-side flash/apply action is exposed yet.",
-              label: "Server and switch",
-              nextAction: "Use selected files for planning, then wait for a real guarded device-specific apply workflow before flashing.",
-              status: "plan-only"
-            }
-          ]}
-          summary="Device-specific upgrade applies remain collapsed until an operator is deliberately planning a guarded write."
-          title="Optional guarded apply handoff"
-          tone="optional"
-        />
       </CardContent>
     </Card>
+  );
+}
+
+function FirmwareMapActionStrip({
+  actions,
+  onReload
+}: {
+  actions: WorkflowAction[];
+  onReload: () => Promise<void> | void;
+}) {
+  const [runState, setRunState] = useState<WorkflowRunState>(emptyRunState);
+  const [diagnosis, setDiagnosis] = useState<WorkflowActionDiagnosis | null>(null);
+  const [diagnosisLoading, setDiagnosisLoading] = useState(false);
+  const [recoveredActions, setRecoveredActions] = useState<WorkflowAction[]>([]);
+  const effectiveActions = actions.length ? actions : recoveredActions;
+  const byId = useMemo(() => new Map(effectiveActions.map((action) => [action.action_id, action])), [effectiveActions]);
+  const actionRegistryLoading = effectiveActions.length === 0;
+  const buttons: RunButtonDefinition[] = [
+    { actionIds: ["firmware.compliance-check"], kind: "read", label: "Check Compliance", primary: true },
+    { actionIds: ["firmware.upgrade-plan"], kind: "read", label: "Plan Firmware Upgrade" },
+    { icon: <HardDrive size={16} />, kind: "link", label: "Open Media", to: "/media" },
+    { actionIds: ["netapp.ontap-upgrade-apply"], kind: "apply", label: "Upgrade ONTAP" }
+  ];
+
+  useEffect(() => {
+    if (actions.length || recoveredActions.length) return;
+    let ignore = false;
+    void api.workflowActions()
+      .then((nextActions) => {
+        if (!ignore) {
+          setRecoveredActions(Array.isArray(nextActions) ? nextActions : []);
+        }
+      })
+      .catch(() => {
+        if (!ignore) {
+          setRecoveredActions([]);
+        }
+      });
+    return () => {
+      ignore = true;
+    };
+  }, [actions.length, recoveredActions.length]);
+
+  async function loadWorkflowDiagnosis(actionId: string) {
+    setDiagnosisLoading(true);
+    try {
+      setDiagnosis(await api.workflowActionDiagnosis(actionId));
+    } catch {
+      setDiagnosis(null);
+    } finally {
+      setDiagnosisLoading(false);
+    }
+  }
+
+  async function runAction(action: WorkflowAction, request?: WorkflowActionRunRequest) {
+    setRunState({ error: "", message: "", runningActionId: action.action_id });
+    setDiagnosis(null);
+    try {
+      const result = await api.runWorkflowAction(action.action_id, request);
+      setRunState({
+        error: "",
+        message: workflowRunMessage(action, result),
+        runningActionId: ""
+      });
+      if (isProblemRun(result)) {
+        await loadWorkflowDiagnosis(action.action_id);
+      }
+      await onReload();
+    } catch (err) {
+      setRunState({ error: errorMessage(err), message: "", runningActionId: "" });
+    }
+  }
+
+  async function runActionById(actionId: string, label: string) {
+    setRunState({ error: "", message: "", runningActionId: actionId });
+    setDiagnosis(null);
+    try {
+      const result = await api.runWorkflowAction(actionId);
+      setRunState({
+        error: "",
+        message: workflowRunResultMessage(label, result),
+        runningActionId: ""
+      });
+      if (isProblemRun(result)) {
+        await loadWorkflowDiagnosis(actionId);
+      }
+      await onReload();
+    } catch (err) {
+      setRunState({ error: errorMessage(err), message: "", runningActionId: "" });
+    }
+  }
+
+  return (
+    <section className="firmware-map-action-strip" aria-label="Firmware map actions">
+      <div>
+        <span>Map controls</span>
+        <strong>Read-only checks stay here. Apply remains locked.</strong>
+      </div>
+      <div className="page-run-buttons">
+        {buttons.map((button) => {
+          if (button.to) {
+            return (
+              <Link className={button.primary ? "button-link primary" : "button-link"} key={button.label} to={button.to}>
+                {button.icon ?? <Play size={16} />}
+                {button.label}
+              </Link>
+            );
+          }
+          const action = firstAction(byId, button.actionIds ?? []);
+          const fallbackActionId = !action && button.kind === "read" ? button.actionIds?.[0] ?? "" : "";
+          const guardedFallbackReason = !action && (button.kind === "write" || button.kind === "apply")
+            ? "Needs guarded confirmation before changes are allowed."
+            : "";
+          const reason = button.disabledReason || guardedFallbackReason || (fallbackActionId ? "" : actionRegistryLoading ? "Loading action registry..." : disabledReasonFor(button, action));
+          const enabled = !reason && (Boolean(action) || Boolean(fallbackActionId));
+          const running = action
+            ? runState.runningActionId === action.action_id
+            : fallbackActionId
+              ? runState.runningActionId === fallbackActionId
+              : false;
+          return (
+            <div className="run-button-wrap" key={button.label}>
+              <button
+                className={button.primary ? "primary" : ""}
+                disabled={!enabled || running}
+                onClick={() => {
+                  if (action) {
+                    void runAction(action);
+                  } else if (fallbackActionId) {
+                    void runActionById(fallbackActionId, button.label);
+                  }
+                }}
+                title={reason || button.label}
+                type="button"
+              >
+                {reason ? <Ban size={16} /> : <Play size={16} />}
+                {running ? "Running" : button.label}
+              </button>
+              {reason && <span>{reason}</span>}
+            </div>
+          );
+        })}
+      </div>
+      {(runState.message || runState.error) && (
+        <p className={runState.error ? "operator-action-message error" : "operator-action-message"}>
+          {runState.error || runState.message}
+        </p>
+      )}
+      {diagnosisLoading && <p className="operator-action-message">Preparing advisory diagnosis...</p>}
+      {diagnosis && <WorkflowDiagnosisCard diagnosis={diagnosis} />}
+    </section>
   );
 }
 

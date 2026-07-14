@@ -1045,36 +1045,36 @@ test("advanced proof is collapsed and operator labels hide raw statuses", async 
   await expect(page.getByText("local-lab-readwrite")).toHaveCount(0);
 });
 
-test("firmware table renders upgrade path states", async ({ page }) => {
+test("firmware map is the only primary firmware surface", async ({ page }) => {
   await page.goto("/firmware-upgrades");
 
-  await expect(page.getByRole("heading", { name: "Firmware Files" })).toBeVisible();
-  await expect(page.getByLabel("Firmware Files").getByText("/home/administrator/infra-config-portal/artifacts/Media")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Rescan Files" }).first()).toBeVisible();
-  await expect(page.getByRole("link", { name: "Open Media Inventory" })).toBeVisible();
+  await expect(page.getByText("Change this page")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Firmware setup shape" })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Firmware Files" })).toHaveCount(0);
+  await expect(page.locator("details[aria-label='Firmware check and plan']")).toHaveCount(0);
+  await expect(page.locator("details.advanced-drawer")).toHaveCount(0);
+  await expect(page.getByText("Firmware setup path")).toHaveCount(0);
+  await expect(page.getByText("Optional guarded apply handoff")).toHaveCount(0);
 
-  const advanced = page.locator("details.advanced-drawer").first();
-  await advanced.getByText("Firmware proof").click();
-  const workspace = advanced.locator("[aria-label='Current view']").first();
-  const objects = workspace.locator("[aria-label='Objects']");
-  const detail = workspace.locator("[aria-label='Selected object detail']");
+  const actions = page.getByLabel("Firmware map actions");
+  await expect(actions.getByRole("button", { name: "Check Compliance" })).toBeVisible();
+  await expect(actions.getByRole("button", { name: "Plan Firmware Upgrade" })).toBeVisible();
+  await expect(actions.getByRole("link", { name: "Open Media" })).toBeVisible();
 
-  await expect(objects).toContainText("Cisco Switch");
-  await expect(detail).toContainText("Cisco Switch");
-  await expect(detail).toContainText("IOS XE");
-  await expect(detail).toContainText("17.15.05");
-  await expect(detail).toContainText("Needs review");
-  await expect(detail).toContainText("cat9k_iosxe.17.15.05.SPA.bin");
-  await expect(detail).toContainText("Auto-selected");
+  const map = page.getByLabel("Firmware upgrade map");
+  await map.getByRole("button", { name: /Cisco Switch/ }).click();
+  await expect(map).toContainText("Layer 3 switch");
+  await expect(map).toContainText("IOS XE");
+  await expect(map).toContainText("17.15.05");
+  await expect(map).toContainText("cat9k_iosxe.17.15.05.SPA.bin");
+  const detail = map;
   const selectionSave = page.waitForResponse((response) =>
     response.url().includes("/api/v1/firmware/file-selections") &&
     response.request().method() === "PUT"
   );
-  await detail.getByRole("combobox", { name: /Cisco Switch IOS XE firmware file/ }).selectOption("cat9k_iosxe.17.12.01.SPA.bin");
+  await detail.getByRole("combobox", { name: /Cisco Switch IOS XE firmware file from map/ }).selectOption("cat9k_iosxe.17.12.01.SPA.bin");
   await expect((await selectionSave).ok()).toBeTruthy();
   await expect(detail).toContainText("cat9k_iosxe.17.12.01.SPA.bin");
-  await expect(detail).toContainText("Selected by user");
-  await expect(page.getByText("1 saved")).toBeVisible();
   const selectionClear = page.waitForRequest((request) =>
     request.url().includes("/api/v1/firmware/file-selections") &&
     request.method() === "PUT"
@@ -1083,23 +1083,20 @@ test("firmware table renders upgrade path states", async ({ page }) => {
     response.url().includes("/api/v1/firmware/file-selections") &&
     response.request().method() === "PUT"
   );
-  await detail.getByRole("combobox", { name: /Cisco Switch IOS XE firmware file/ }).selectOption("");
+  await detail.getByRole("combobox", { name: /Cisco Switch IOS XE firmware file from map/ }).selectOption("");
   const selectionClearPayload = selectionClear.then((request) => request.postDataJSON() as { selected_files: Record<string, string> });
   await expect((await selectionClearResponse).ok()).toBeTruthy();
   await expect(await selectionClearPayload).toEqual({ selected_files: {} });
-  await expect(detail).toContainText("Auto-selected");
-  await expect(page.getByText("Not saved")).toBeVisible();
-  await page.getByRole("button", { name: "Rescan Files" }).click();
   await expect(detail).toContainText("cat9k_iosxe.17.15.05.SPA.bin");
-  await expect(detail).toContainText("Auto-selected");
-  await expect(workspace.getByRole("button", { name: "Scan" })).toHaveCount(0);
-  await expect(workspace.getByRole("button", { name: "Validate Path" })).toHaveCount(0);
-  await expect(workspace.getByRole("button", { name: "Upgrade" })).toHaveCount(0);
+
+  await expect(map.getByRole("button", { name: "Scan" })).toHaveCount(0);
+  await expect(map.getByRole("button", { name: "Validate Path" })).toHaveCount(0);
+  await expect(map.getByRole("button", { name: "Upgrade", exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Validate Upgrade Path" })).toHaveCount(0);
 
-  await objects.getByRole("button", { name: /HPE Server.*Smart Array/ }).click();
+  await map.getByRole("button", { name: /HPE Server/ }).click();
   await expect(detail).toContainText("SPP2024.03.00.iso");
-  await expect(objects).toContainText("NetApp");
+  await expect(map).toContainText("NetApp");
 });
 
 test("firmware upgrade map renders honest staged lanes", async ({ page }) => {
@@ -1142,7 +1139,8 @@ test("firmware page scan runs through the workflow runner without placeholder up
     response.url().includes("/api/v1/workflows/actions/firmware.compliance-check/run") &&
     response.request().method() === "POST"
   );
-  await page.locator("details[aria-label='Firmware check and plan']").getByRole("button", { name: "Check Compliance" }).click();
+  const actions = page.getByLabel("Firmware map actions");
+  await actions.getByRole("button", { name: "Check Compliance" }).click();
   await expect((await complianceResponse).ok()).toBeTruthy();
   await expect(page.getByText(/Check Compliance:/)).toBeVisible();
 
@@ -1150,7 +1148,7 @@ test("firmware page scan runs through the workflow runner without placeholder up
     response.url().includes("/api/v1/workflows/actions/firmware.upgrade-plan/run") &&
     response.request().method() === "POST"
   );
-  await page.locator("details[aria-label='Firmware check and plan']").getByRole("button", { name: "Plan Firmware Upgrade" }).click();
+  await actions.getByRole("button", { name: "Plan Firmware Upgrade" }).click();
   await expect((await planResponse).ok()).toBeTruthy();
   await expect(page.getByText(/Plan Upgrade:/)).toBeVisible();
 

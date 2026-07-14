@@ -2426,6 +2426,30 @@ Guardrail status: no firmware apply, RAID, factory reset, rebuild, power, Cisco 
 
 ---
 
+## 2026-07-13 - CODEX - Firmware Page Declutter Pass
+
+Steve called out that the Firmware page had the right map idea but too much useless bottom clutter. Removed the old page-layout editor and retired the redundant Firmware-only lower surfaces from the route:
+- No `Change this page` layout bar.
+- No old Firmware reference/check-plan/media/proof drawers.
+- No duplicate `Firmware setup path` ladder.
+- No `Optional guarded apply handoff` block.
+- No extra media/validation/audit link strip below the map.
+
+Kept useful actions as a compact map control strip:
+- Check Compliance
+- Plan Firmware Upgrade
+- Open Media
+- Upgrade ONTAP remains visible but disabled behind guarded confirmation.
+
+Verification:
+- `npm run build` passed.
+- `npx playwright test tests/safe-action-runner.spec.ts -g "firmware"` passed, 3/3.
+- Live browser check in REAL LAB confirmed the old bottom labels/details are gone and the page ends at the map inspector.
+
+Guardrail status: no firmware apply, RAID, factory reset, rebuild, power, Cisco apply, NetApp apply, or destructive surfaces touched.
+
+---
+
 ## 2026-07-13 - CODEX - Firmware Version Evidence Matrix
 
 Steve asked whether all firmware versions were available. Ran targeted read-only inventory actions only:
@@ -2456,3 +2480,25 @@ Verification:
 - Browser verification in REAL LAB showed the corrected 5/7 known count and the real media versions: ONTAP 9.13.1P17 / 9.14.1P14 / 9.17.1, Cisco IOS XE 17.15.5, HPE iLO 3.19 / 1.76, HPE SPP 2026.3.0 / 2026.5.0, ESXi 8.0.3, vCenter 8.0.3.
 
 Guardrail status: no firmware apply, RAID, factory reset, rebuild, power, Cisco apply, NetApp apply, or destructive surfaces touched.
+
+---
+
+## 2026-07-13 - CLAUDE (CXO) — LIVE OVERVIEW WALKTHROUGH (read the running app @ :5173). Findings + fix dispatch.
+
+Steve had me walk the live app. Screenshots time out on the animated map, so I reviewed the live DOM/state of `/overview`. The nav consolidation reads great in production — Overview/Firmware/Validate only, LabSafetyControls correctly homed at SYSTEM scope on the map ("gates stay here, not inside a single device workspace"), danger zone off the everyday path (Validation link), honest-state everywhere (Not set up yet / Not accessible / Blocked / Previous proof / Saved-setup vs Live), advanced proof collapsed by default, system setup picker as the top strip, Tier-1 "Change this page" bar with the honest "layout only" note. Excellent shape.
+
+CXO findings to fix (priority order):
+
+1. HIGH — DANGLING "OPEN STORAGE" NEXT-SAFE-ACTION. Overview's Next-safe-action reads "Open Storage and refresh NetApp live readiness…", but `/storage` was removed in the consolidation (now redirects to /overview). The operator is told to open a page that no longer exists in nav. FIX: repoint that copy to the NetApp device workspace (click NetApp on the map / `/overview#topology-map` → NetApp), not "Open Storage". Grep for the next-safe-action string + any other "Open <RemovedTab>" copy that survived the migration and repoint them all. Frontend copy-only, reversible.
+
+2. DUPLICATE SAFETY GATES — the 5 real-lab gates render twice: "System lab safety gates" on the map AND "Lab safety settings / Real lab gates and audit trail" in Advanced proof (the latter carries the audit timestamp). Confirm this is intentional layering (quick control vs full audit) and that both read from the SAME source so they can't drift. If they share state, add a one-line note; if not, unify the source.
+
+3. vCENTER MAP NODE IS CLUTTERED — its card crams "Direct ESXi VM / direct ESXi inventory / VCSA / NetApp datastore / direct host path / created by this app" into one node, noisy next to the clean Cisco/iLO/NetApp cards. Trim to a clear name + one honest status line; push the rest into the workspace.
+
+4. COUNT MISMATCH — header shows "4 of 11 checks ready"; objects panel shows "3 ready / 8 objects". Checks != objects, but two different "ready" numbers confuse. Either label what each counts or reconcile.
+
+DISPATCH: Start with #1 (the dangling Open-Storage pointer — clearest bug). Then #2 confirm/unify. #3 and #4 are polish. All frontend/copy-scoped, reversible, keep honest-state, fast-verify green, no destructive/guarded path. Post a note + shot when #1 lands and I'll verify against the live app.
+
+Also: great firmware-map work — I'll walk /firmware-upgrades and /validation on the next hourly pass and review those too.
+
+— Claude (CXO, Product 002)
