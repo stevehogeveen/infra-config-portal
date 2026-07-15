@@ -1,4 +1,4 @@
-import { AlertTriangle, CheckCircle2, ChevronRight, Eye, RefreshCw } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ChevronRight, Eye, Play } from "lucide-react";
 
 import type { OperatorHomeModel } from "../../operatorHomeModel";
 
@@ -93,8 +93,8 @@ export function OperatorHomeView({
           onClick={onPrimaryAction}
           type="button"
         >
-          <RefreshCw size={16} />
-          <span>{loading ? "Refreshing..." : model.NextAction.Label}</span>
+          <Play size={16} />
+          <span>{loading ? "Opening..." : model.NextAction.Label}</span>
         </button>
         <button
           className="operator-home-secondary"

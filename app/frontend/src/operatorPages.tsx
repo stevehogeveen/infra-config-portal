@@ -19,6 +19,7 @@ import { createContext, FormEvent, ReactNode, useContext, useEffect, useMemo, us
 import { Link, useLocation } from "react-router-dom";
 
 import { api } from "./api";
+import { LabBuildJourney } from "./components/operator/LabBuildJourney";
 import { OperatorHomeView } from "./components/operator/OperatorHomeView";
 import {
   ActionLink,
@@ -44,6 +45,8 @@ import type {
   FirmwareSummary,
   FirmwareUpgradePath,
   HpeRaidPlanPreview,
+  LabBuildPlan,
+  LabBuildRun,
   LabAddressPlan,
   LabProfile,
   LabProfileFeatures,
@@ -639,60 +642,133 @@ export function OperatorOverviewPage({
   const [auditEvents, setAuditEvents] = useState<AuditEvent[]>([]);
   const [labSafety, setLabSafety] = useState<LabSafetySettings | null>(null);
   const [workflowActions, setWorkflowActions] = useState<WorkflowAction[]>([]);
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const [detailsLoaded, setDetailsLoaded] = useState(false);
+  const [detailsLoading, setDetailsLoading] = useState(false);
+  const [buildJourneyOpen, setBuildJourneyOpen] = useState(false);
+  const [buildPlan, setBuildPlan] = useState<LabBuildPlan | null>(null);
+  const [buildRun, setBuildRun] = useState<LabBuildRun | null>(null);
+  const [buildLoading, setBuildLoading] = useState(false);
+  const [buildError, setBuildError] = useState("");
 
   async function load() {
     setError("");
-    setLoading(true);
     try {
       const [
         nextProviders,
         nextValidation,
         nextFirmware,
         nextVcenterNetapp,
-        nextBuildVerification,
-        nextCiscoReadiness,
-        nextNetappConsole,
-        nextLabSafety,
-        nextAuditEvents,
-        nextWorkflowActions
+        nextBuildVerification
       ] = await Promise.all([
         safeApi(api.providers, [] as ProviderStatus[]),
         safeApi(api.labValidation, null),
         safeApi(api.firmwareSummary, [] as FirmwareSummary[]),
         safeApi(api.vcenterNetappReadiness, null),
-        safeApi(api.buildVerification, null),
-        safeApi(api.ciscoSetupReadiness, null),
-        safeApi(api.netappConsoleReadiness, null),
-        safeApi(api.labSafetySettings, null),
-        safeApi(() => api.auditEvents(8000), [] as AuditEvent[]),
-        safeApi(api.workflowActions, [] as WorkflowAction[])
+        safeApi(api.buildVerification, null)
       ]);
       setProviders(Array.isArray(nextProviders) ? nextProviders : []);
       setValidation(nextValidation);
       setFirmwareSummaries(Array.isArray(nextFirmware) ? nextFirmware : []);
       setVcenterNetapp(nextVcenterNetapp);
       setBuildVerification(nextBuildVerification);
-      setCiscoReadiness(nextCiscoReadiness as ProviderProbeResult | null);
-      setNetappConsole(nextNetappConsole as ProviderProbeResult | null);
-      setLabSafety(nextLabSafety as LabSafetySettings | null);
-      setAuditEvents(Array.isArray(nextAuditEvents) ? nextAuditEvents : []);
-      setWorkflowActions(Array.isArray(nextWorkflowActions) ? nextWorkflowActions : []);
       if (onReloadLabProfile) {
         await onReloadLabProfile();
       }
     } catch (err) {
       setError(errorMessage(err));
-    } finally {
-      setLoading(false);
     }
   }
 
   useEffect(() => {
     void load();
   }, []);
+
+  async function openBuildJourney() {
+    setBuildJourneyOpen(true);
+    setBuildLoading(true);
+    setBuildError("");
+    try {
+      const [nextPlan, latestRun] = await Promise.all([api.labBuildPlan(), safeApi(api.latestLabBuildRun, null)]);
+      setBuildPlan(nextPlan);
+      setBuildRun(latestRun && ["running", "waiting", "failed"].includes(latestRun.status) ? latestRun : null);
+    } catch (err) {
+      setBuildError(errorMessage(err));
+    } finally {
+      setBuildLoading(false);
+    }
+  }
+
+  async function loadDetails() {
+    setDetailsLoading(true);
+    setError("");
+    try {
+      const [nextCiscoReadiness, nextNetappConsole, nextLabSafety, nextAuditEvents, nextWorkflowActions] = await Promise.all([
+        safeApi(api.ciscoSetupReadiness, null),
+        safeApi(api.netappConsoleReadiness, null),
+        safeApi(api.labSafetySettings, null),
+        safeApi(() => api.auditEvents(8000), [] as AuditEvent[]),
+        safeApi(api.workflowActions, [] as WorkflowAction[])
+      ]);
+      setCiscoReadiness(nextCiscoReadiness as ProviderProbeResult | null);
+      setNetappConsole(nextNetappConsole as ProviderProbeResult | null);
+      setLabSafety(nextLabSafety as LabSafetySettings | null);
+      setAuditEvents(Array.isArray(nextAuditEvents) ? nextAuditEvents : []);
+      setWorkflowActions(Array.isArray(nextWorkflowActions) ? nextWorkflowActions : []);
+      setDetailsLoaded(true);
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setDetailsLoading(false);
+    }
+  }
+
+  function toggleDetails() {
+    const opening = !detailsOpen;
+    setDetailsOpen(opening);
+    if (opening && !detailsLoaded && !detailsLoading) {
+      void loadDetails();
+    }
+  }
+
+  async function startBuild() {
+    setBuildLoading(true);
+    setBuildError("");
+    try {
+      setBuildRun(await api.startLabBuild());
+    } catch (err) {
+      setBuildError(errorMessage(err));
+    } finally {
+      setBuildLoading(false);
+    }
+  }
+
+  async function resumeBuild() {
+    if (!buildRun) return;
+    setBuildLoading(true);
+    setBuildError("");
+    try {
+      setBuildRun(await api.resumeLabBuild(buildRun.run_id));
+    } catch (err) {
+      setBuildError(errorMessage(err));
+    } finally {
+      setBuildLoading(false);
+    }
+  }
+
+  async function retryBuildStep(stepId: string) {
+    if (!buildRun) return;
+    setBuildLoading(true);
+    setBuildError("");
+    try {
+      setBuildRun(await api.retryLabBuildStep(buildRun.run_id, stepId));
+    } catch (err) {
+      setBuildError(errorMessage(err));
+    } finally {
+      setBuildLoading(false);
+    }
+  }
 
   const inventoryRows = useMemo(
     () => buildInventoryRows({ address, firmwareSummaries, providers, validation, vcenterNetapp }),
@@ -770,23 +846,42 @@ export function OperatorOverviewPage({
       <LabSafetySettingsSection
         auditEvents={auditEvents}
         labSafety={labSafety}
-        onUpdated={load}
+        onUpdated={loadDetails}
       />
     </AdvancedDrawer>
   );
 
   return (
     <OperatorPage title="Overview">
-      <OperatorHomeView
-        detailsOpen={detailsOpen}
-        error={error || labProfileError}
-        loading={loading || labProfileLoading}
-        model={operatorHome}
-        onPrimaryAction={() => void load()}
-        onViewDetails={() => setDetailsOpen((open) => !open)}
-      />
-      {detailsOpen && (
+      {buildJourneyOpen ? (
+        <LabBuildJourney
+          error={buildError}
+          loading={buildLoading}
+          onClose={() => setBuildJourneyOpen(false)}
+          onOpenDetails={() => {
+            setBuildJourneyOpen(false);
+            setDetailsOpen(true);
+            if (!detailsLoaded && !detailsLoading) void loadDetails();
+          }}
+          onResume={() => void resumeBuild()}
+          onRetry={(stepId) => void retryBuildStep(stepId)}
+          onStart={() => void startBuild()}
+          plan={buildPlan}
+          run={buildRun}
+        />
+      ) : (
+        <OperatorHomeView
+          detailsOpen={detailsOpen}
+          error={error || labProfileError}
+          loading={labProfileLoading}
+          model={operatorHome}
+          onPrimaryAction={() => void openBuildJourney()}
+          onViewDetails={toggleDetails}
+        />
+      )}
+      {!buildJourneyOpen && detailsOpen && (
         <section className="operator-home-details" aria-label="Operator Details">
+          {detailsLoading && <p className="operator-home-feedback">Loading device workspaces...</p>}
           <LabTopologyMap
             accessRows={accessRows}
             activeProfile={activeProfile}

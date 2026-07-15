@@ -2177,6 +2177,82 @@ class WorkflowActionRunCreate(BaseModel):
     confirmed_gates: list[str] = Field(default_factory=list)
 
 
+class LabBuildStepRead(BaseModel):
+    step_id: str
+    order: int
+    label: str
+    description: str
+    status: Literal[
+        "not_started",
+        "preflight",
+        "ready",
+        "running",
+        "waiting",
+        "succeeded",
+        "warning",
+        "failed",
+        "skipped",
+        "blocked",
+    ] | str
+    summary: str
+    operator_message: str
+    technical_details: str = ""
+    suggested_action: str
+    can_retry: bool = False
+    depends_on: list[str] = Field(default_factory=list)
+    provides: list[str] = Field(default_factory=list)
+    action_id: str
+    action_mode: str
+    operator_path: str
+    rationale: str | None = None
+    started_at: str | None = None
+    finished_at: str | None = None
+    action_run_id: str | None = None
+
+
+class LabBuildPlanRead(BaseModel):
+    kit_id: str
+    kit_name: str
+    deployment_mode: str
+    status: str
+    headline: str
+    supporting_message: str
+    blockers: list[str] = Field(default_factory=list)
+    steps: list[LabBuildStepRead] = Field(default_factory=list)
+    primary_action: str
+
+
+class LabBuildProgressRead(BaseModel):
+    completed: int
+    total: int
+    percent: int
+
+
+class LabBuildCountsRead(BaseModel):
+    completed: int
+    warnings: int
+    failed: int
+
+
+class LabBuildRunRead(BaseModel):
+    run_id: str
+    kit_id: str
+    kit_name: str
+    deployment_mode: str
+    status: str
+    headline: str
+    operator_message: str
+    suggested_action: str
+    started_at: str
+    updated_at: str
+    finished_at: str | None = None
+    current_step_id: str | None = None
+    steps: list[LabBuildStepRead] = Field(default_factory=list)
+    progress: LabBuildProgressRead
+    counts: LabBuildCountsRead
+    report_artifact: str | None = None
+
+
 class WorkflowActionDiagnosisEvidenceRead(BaseModel):
     label: str
     detail: str

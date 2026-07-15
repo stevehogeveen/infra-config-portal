@@ -1112,6 +1112,80 @@ export type WorkflowActionRunRequest = {
   confirmed_gates?: string[];
 };
 
+export type LabBuildStepStatus =
+  | "not_started"
+  | "preflight"
+  | "ready"
+  | "running"
+  | "waiting"
+  | "succeeded"
+  | "warning"
+  | "failed"
+  | "skipped"
+  | "blocked"
+  | string;
+
+export type LabBuildStep = {
+  step_id: string;
+  order: number;
+  label: string;
+  description: string;
+  status: LabBuildStepStatus;
+  summary: string;
+  operator_message: string;
+  technical_details: string;
+  suggested_action: string;
+  can_retry: boolean;
+  depends_on: string[];
+  provides: string[];
+  action_id: string;
+  action_mode: string;
+  operator_path: string;
+  rationale: string | null;
+  started_at: string | null;
+  finished_at: string | null;
+  action_run_id: string | null;
+};
+
+export type LabBuildPlan = {
+  kit_id: string;
+  kit_name: string;
+  deployment_mode: string;
+  status: string;
+  headline: string;
+  supporting_message: string;
+  blockers: string[];
+  steps: LabBuildStep[];
+  primary_action: string;
+};
+
+export type LabBuildRun = {
+  run_id: string;
+  kit_id: string;
+  kit_name: string;
+  deployment_mode: string;
+  status: string;
+  headline: string;
+  operator_message: string;
+  suggested_action: string;
+  started_at: string;
+  updated_at: string;
+  finished_at: string | null;
+  current_step_id: string | null;
+  steps: LabBuildStep[];
+  progress: {
+    completed: number;
+    total: number;
+    percent: number;
+  };
+  counts: {
+    completed: number;
+    warnings: number;
+    failed: number;
+  };
+  report_artifact: string | null;
+};
+
 export type WorkflowStage = {
   stage_id: string;
   label: string;

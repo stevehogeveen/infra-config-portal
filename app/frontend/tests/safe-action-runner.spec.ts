@@ -265,6 +265,7 @@ test("operator home answers the next action without dashboard clutter", async ({
   await expect(home.getByLabel("Canonical readiness result")).toHaveCount(1);
   await expect(home.getByTestId("operator-home-primary-action")).toHaveCount(1);
   await expect(home.getByTestId("operator-home-primary-action")).toBeVisible();
+  await expect(home.getByTestId("operator-home-primary-action")).toContainText("Review Build Plan");
   await expect(home.getByTestId("operator-home-view-details")).toHaveCount(1);
   await expect(home.getByLabel("Compact device summary")).toContainText("devices ready");
   await expect(home.getByLabel("Actionable blockers")).toContainText("Firmware needs proof");
@@ -297,6 +298,76 @@ test("operator home answers the next action without dashboard clutter", async ({
   await expect(home).not.toContainText("console");
   await expect(home).not.toContainText(/CISCO_[A-Z_]+/);
   await expect(page.getByText("Change this page")).toHaveCount(0);
+});
+
+test("operator home opens one ordered build plan with one primary action", async ({ page }) => {
+  await page.goto("/overview");
+  await page.getByTestId("operator-home-primary-action").click();
+
+  const journey = page.getByTestId("lab-build-journey");
+  const plan = journey.getByLabel("Build Plan");
+  await expect(journey).toBeVisible();
+  await expect(page.getByTestId("operator-home")).toHaveCount(0);
+  await expect(plan.getByRole("heading", { name: "This lab is ready to follow one ordered build plan." })).toBeVisible();
+  await expect(plan.getByLabel("Ordered build steps").getByRole("listitem")).toHaveCount(4);
+  await expect(plan).toContainText("Shared storage must be ready before the compute host can use it.");
+  await expect(plan.getByTestId("lab-build-primary-action")).toHaveCount(1);
+  await expect(plan.getByTestId("lab-build-primary-action")).toContainText("Start Build");
+  await expect(plan).not.toContainText("provider");
+  await expect(plan).not.toContainText("payload");
+  await expect(plan).not.toContainText("dependency graph");
+});
+
+test("build plan keeps its next action visible without mobile overflow", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/overview");
+  await page.getByTestId("operator-home-primary-action").click();
+
+  const journey = page.getByTestId("lab-build-journey");
+  await expect(journey.getByTestId("lab-build-primary-action")).toBeVisible();
+  await expect(journey.getByTestId("lab-build-primary-action")).toContainText("Start Build");
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  expect(overflow).toBeLessThanOrEqual(1);
+});
+
+test("run console pauses at a guarded change without exposing duplicate consoles", async ({ page }) => {
+  await page.goto("/overview");
+  await page.getByTestId("operator-home-primary-action").click();
+  await page.getByTestId("lab-build-primary-action").click();
+
+  const journey = page.getByTestId("lab-build-journey");
+  const runConsole = journey.getByLabel("Run Console");
+  await expect(runConsole).toBeVisible();
+  await expect(runConsole).toContainText("Step 3 of 4");
+  await expect(runConsole).toContainText("Waiting for approval: Configure the management network.");
+  await expect(runConsole.getByTestId("lab-build-primary-action")).toHaveCount(1);
+  await expect(runConsole.getByTestId("lab-build-primary-action")).toContainText("Open Details");
+  await expect(runConsole.locator("details.lab-build-advanced")).not.toHaveAttribute("open");
+  await expect(runConsole.getByLabel("Technical build log")).not.toBeVisible();
+  await expect(page.getByText("Operator Console")).toHaveCount(0);
+
+  await runConsole.getByTestId("lab-build-primary-action").click();
+  await expect(page.getByTestId("lab-build-journey")).toHaveCount(0);
+  await expect(page.locator("section[aria-label='Living lab topology']")).toBeVisible();
+});
+
+test("failed build shows one completion report and retry only when safe", async ({ page }) => {
+  await page.route("**/api/v1/lab-build/runs", (route) => json(route, labBuildFailedRun()));
+  await page.goto("/overview");
+  await page.getByTestId("operator-home-primary-action").click();
+  await page.getByTestId("lab-build-primary-action").click();
+
+  const report = page.getByLabel("Completion Report");
+  await expect(report).toBeVisible();
+  await expect(report.getByLabel("Build result counts")).toHaveCount(1);
+  await expect(report.getByLabel("Build result counts").getByText("Completed", { exact: true })).toHaveCount(1);
+  await expect(report.getByLabel("Build result counts").getByText("Warnings", { exact: true })).toHaveCount(1);
+  await expect(report.getByLabel("Build result counts").getByText("Failed", { exact: true })).toHaveCount(1);
+  await expect(report).toContainText("Check the management connection and retry.");
+  await expect(report.getByText(/PROVIDER_MODE/)).not.toBeVisible();
+  await expect(report.getByTestId("lab-build-primary-action")).toHaveCount(1);
+  await expect(report.getByTestId("lab-build-primary-action")).toContainText("Retry Check");
+  await expect(report.getByLabel("Technical build log")).not.toBeVisible();
 });
 
 test("operator details is the only entry to topology and proof from overview", async ({ page }) => {
@@ -1531,6 +1602,7 @@ async function installApiMocks(page: Page) {
   let labSafety = labSafetySettings();
   let activeProfiles = activeLabProfilesFixture();
   let savedProfile: Record<string, unknown> | null = null;
+  let labBuildRun: Record<string, unknown> | null = null;
   const topologyDesignDrafts = new Map<string, Record<string, unknown>>();
   await page.route("**/*", async (route) => {
     const request = route.request();
@@ -1608,6 +1680,27 @@ async function installApiMocks(page: Page) {
     }
     if (url.pathname === "/api/v1/requests") {
       return json(route, []);
+    }
+    if (url.pathname === "/api/v1/lab-build/plan") {
+      return json(route, labBuildPlan());
+    }
+    if (url.pathname === "/api/v1/lab-build/runs/latest") {
+      return json(route, labBuildRun);
+    }
+    if (url.pathname === "/api/v1/lab-build/runs" && request.method() === "POST") {
+      labBuildRun = labBuildWaitingRun();
+      return json(route, labBuildRun);
+    }
+    if (url.pathname.endsWith("/resume") && url.pathname.startsWith("/api/v1/lab-build/runs/")) {
+      labBuildRun = labBuildCompletedRun();
+      return json(route, labBuildRun);
+    }
+    if (url.pathname.includes("/api/v1/lab-build/runs/") && url.pathname.endsWith("/retry")) {
+      labBuildRun = labBuildWaitingRun({ retryReady: true });
+      return json(route, labBuildRun);
+    }
+    if (url.pathname.startsWith("/api/v1/lab-build/runs/")) {
+      return json(route, labBuildRun ?? labBuildWaitingRun());
     }
     if (url.pathname === "/api/v1/workflow-runs") {
       return json(route, []);
@@ -1746,6 +1839,234 @@ async function installApiMocks(page: Page) {
 
 function json(route: Route, body: unknown) {
   return route.fulfill({ contentType: "application/json", body: JSON.stringify(body) });
+}
+
+function labBuildPlan() {
+  return {
+    blockers: [],
+    deployment_mode: "Server + shared storage + central management",
+    headline: "This lab is ready to follow one ordered build plan.",
+    kit_id: "runtime-profile",
+    kit_name: "Runtime Lab",
+    primary_action: "Start Build",
+    status: "ready",
+    steps: labBuildSteps(),
+    supporting_message: "4 steps will run in dependency order and pause at guarded changes."
+  };
+}
+
+function labBuildSteps() {
+  return [
+    labBuildStep({
+      action_id: "lab-profile.validate-ip-profile",
+      label: "Check lab addresses",
+      order: 1,
+      provides: ["lab-profile"],
+      step_id: "profile"
+    }),
+    labBuildStep({
+      action_id: "firmware.compliance-check",
+      depends_on: ["lab-profile"],
+      label: "Check firmware readiness",
+      order: 2,
+      provides: ["firmware-ready"],
+      step_id: "firmware"
+    }),
+    labBuildStep({
+      action_id: "cisco.apply-bootstrap",
+      action_mode: "write",
+      depends_on: ["lab-profile", "firmware-ready"],
+      description: "Prepare the switch so the remaining devices can use the management network.",
+      label: "Configure the management network",
+      operator_path: "/network",
+      order: 3,
+      provides: ["mgmt-network"],
+      step_id: "network",
+      suggested_action: "Open Network Setup, approve the guarded change, then resume this build."
+    }),
+    labBuildStep({
+      action_id: "esxi.netapp-datastore-apply",
+      action_mode: "write",
+      depends_on: ["mgmt-network"],
+      description: "Make shared storage available to the compute host.",
+      label: "Connect shared storage to the compute host",
+      operator_path: "/virtualization",
+      order: 4,
+      provides: ["datastore"],
+      rationale: "Shared storage must be ready before the compute host can use it.",
+      step_id: "datastore"
+    })
+  ];
+}
+
+function labBuildStep(overrides: Record<string, unknown> = {}) {
+  return {
+    action_id: "test.action",
+    action_mode: "read_only",
+    action_run_id: null,
+    can_retry: true,
+    depends_on: [],
+    description: "Complete this build step.",
+    finished_at: null,
+    label: "Build step",
+    operator_message: "Waiting for the build to start.",
+    operator_path: "/overview",
+    order: 1,
+    provides: [],
+    rationale: null,
+    started_at: null,
+    status: "not_started",
+    step_id: "step",
+    suggested_action: "Correct the issue and retry.",
+    summary: "not_started",
+    technical_details: "",
+    ...overrides
+  };
+}
+
+function labBuildWaitingRun({ retryReady = false }: { retryReady?: boolean } = {}) {
+  const steps = labBuildSteps();
+  steps[0] = labBuildStep({
+    ...steps[0],
+    action_run_id: "action:profile",
+    finished_at: checkedAt,
+    operator_message: "Check lab addresses completed.",
+    started_at: checkedAt,
+    status: "succeeded",
+    summary: "complete",
+    technical_details: "{\"status\":\"completed\"}"
+  });
+  steps[1] = labBuildStep({
+    ...steps[1],
+    action_run_id: "action:firmware",
+    finished_at: checkedAt,
+    operator_message: "Check firmware readiness completed.",
+    started_at: checkedAt,
+    status: "succeeded",
+    summary: "complete",
+    technical_details: "{\"status\":\"completed\"}"
+  });
+  steps[2] = labBuildStep({
+    ...steps[2],
+    operator_message: retryReady
+      ? "Ready to check the management network again."
+      : "Waiting for approval: Configure the management network.",
+    started_at: checkedAt,
+    status: retryReady ? "not_started" : "waiting",
+    summary: retryReady ? "not_started" : "operator_approval_required",
+    technical_details: "Action remains protected by its existing confirmation and safety gates."
+  });
+  steps[3] = labBuildStep({
+    ...steps[3],
+    operator_message: "Blocked by: Configure the management network.",
+    status: "blocked",
+    summary: "dependency_not_ready"
+  });
+  return {
+    counts: { completed: 2, failed: 1, warnings: 0 },
+    current_step_id: "network",
+    deployment_mode: "Server + shared storage + central management",
+    finished_at: null,
+    headline: retryReady ? "Configure the management network is ready to retry." : "Waiting at step 3 of 4.",
+    kit_id: "runtime-profile",
+    kit_name: "Runtime Lab",
+    operator_message: steps[2].operator_message,
+    progress: { completed: 2, percent: 50, total: 4 },
+    report_artifact: null,
+    run_id: "lab-build:test",
+    started_at: checkedAt,
+    status: "waiting",
+    steps,
+    suggested_action: String(steps[2].suggested_action),
+    updated_at: checkedAt
+  };
+}
+
+function labBuildCompletedRun() {
+  const steps = labBuildSteps().map((step) => labBuildStep({
+    ...step,
+    action_run_id: `action:${step.step_id}`,
+    finished_at: checkedAt,
+    operator_message: `${step.label} completed.`,
+    started_at: checkedAt,
+    status: "succeeded",
+    summary: "complete",
+    technical_details: "{\"status\":\"completed\"}"
+  }));
+  return {
+    counts: { completed: 4, failed: 0, warnings: 0 },
+    current_step_id: null,
+    deployment_mode: "Server + shared storage + central management",
+    finished_at: checkedAt,
+    headline: "Lab build completed.",
+    kit_id: "runtime-profile",
+    kit_name: "Runtime Lab",
+    operator_message: "The selected kit completed every build step.",
+    progress: { completed: 4, percent: 100, total: 4 },
+    report_artifact: "artifacts/codex-runs/lab-build-runs/lab-build-test.md",
+    run_id: "lab-build:test",
+    started_at: checkedAt,
+    status: "completed",
+    steps,
+    suggested_action: "Review and export the completion report.",
+    updated_at: checkedAt
+  };
+}
+
+function labBuildFailedRun() {
+  const steps = labBuildSteps();
+  steps[0] = labBuildStep({
+    ...steps[0],
+    action_run_id: "action:profile",
+    finished_at: checkedAt,
+    operator_message: "Check lab addresses completed.",
+    started_at: checkedAt,
+    status: "succeeded",
+    summary: "complete"
+  });
+  steps[1] = labBuildStep({
+    ...steps[1],
+    action_run_id: "action:firmware",
+    finished_at: checkedAt,
+    operator_message: "Check firmware readiness failed.",
+    started_at: checkedAt,
+    status: "failed",
+    suggested_action: "Check the management connection and retry.",
+    summary: "failed",
+    technical_details: "{\"blockers\":[\"PROVIDER_MODE is unavailable\"]}"
+  });
+  steps[2] = labBuildStep({
+    ...steps[2],
+    can_retry: false,
+    operator_message: "Blocked by: Check firmware readiness.",
+    status: "blocked",
+    summary: "dependency_not_ready"
+  });
+  steps[3] = labBuildStep({
+    ...steps[3],
+    can_retry: false,
+    operator_message: "Blocked by: Configure the management network.",
+    status: "blocked",
+    summary: "dependency_not_ready"
+  });
+  return {
+    counts: { completed: 1, failed: 3, warnings: 0 },
+    current_step_id: "firmware",
+    deployment_mode: "Server + shared storage + central management",
+    finished_at: checkedAt,
+    headline: "Build stopped at step 2 of 4.",
+    kit_id: "runtime-profile",
+    kit_name: "Runtime Lab",
+    operator_message: "Check firmware readiness failed.",
+    progress: { completed: 1, percent: 25, total: 4 },
+    report_artifact: null,
+    run_id: "lab-build:failed",
+    started_at: checkedAt,
+    status: "failed",
+    steps,
+    suggested_action: "Check the management connection and retry.",
+    updated_at: checkedAt
+  };
 }
 
 function uiIntentResponse(payload: Record<string, unknown>) {

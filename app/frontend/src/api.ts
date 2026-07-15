@@ -29,6 +29,8 @@ import type {
   IloUpgradeReadiness,
   LabSafetySettings,
   LabSafetySettingsWrite,
+  LabBuildPlan,
+  LabBuildRun,
   LabValidationSummary,
   LabProfile,
   LabProfileList,
@@ -219,6 +221,25 @@ export const api = {
     apiRequest<WorkflowActionRun[]>(`/api/v1/workflows/actions/${encodeURIComponent(id)}/runs`),
   workflowActionDiagnosis: (id: string) =>
     apiRequest<WorkflowActionDiagnosis>(`/api/v1/workflows/actions/${encodeURIComponent(id)}/diagnosis`),
+  labBuildPlan: () => apiRequest<LabBuildPlan>("/api/v1/lab-build/plan"),
+  latestLabBuildRun: () => apiRequest<LabBuildRun | null>("/api/v1/lab-build/runs/latest"),
+  startLabBuild: () =>
+    apiRequest<LabBuildRun>("/api/v1/lab-build/runs", {
+      method: "POST",
+      timeoutMs: 120000
+    }),
+  labBuildRun: (id: string) =>
+    apiRequest<LabBuildRun>(`/api/v1/lab-build/runs/${encodeURIComponent(id)}`),
+  resumeLabBuild: (id: string) =>
+    apiRequest<LabBuildRun>(`/api/v1/lab-build/runs/${encodeURIComponent(id)}/resume`, {
+      method: "POST",
+      timeoutMs: 120000
+    }),
+  retryLabBuildStep: (runId: string, stepId: string) =>
+    apiRequest<LabBuildRun>(
+      `/api/v1/lab-build/runs/${encodeURIComponent(runId)}/steps/${encodeURIComponent(stepId)}/retry`,
+      { method: "POST" }
+    ),
   createOperatorIssuePacket: (payload: OperatorIssuePacketCreate) =>
     apiRequest<OperatorIssuePacket>("/api/v1/operator-issue-packets", {
       method: "POST",

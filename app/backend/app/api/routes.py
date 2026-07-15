@@ -66,6 +66,8 @@ from app.schemas import (
     LabProfileRead,
     LabProfileRuntimeApplyRead,
     LabProfileWrite,
+    LabBuildPlanRead,
+    LabBuildRunRead,
     TopologyDesignDraftRead,
     TopologyDesignDraftWrite,
     MediaInventoryRead,
@@ -188,6 +190,19 @@ from app.services.topology_design_drafts import (
     save_topology_design_draft,
 )
 from app.services.lab_validation import get_lab_validation_summary
+from app.services.lab_build_engine import (
+    LabBuildPlanError,
+    LabBuildRunNotFoundError,
+    LabBuildRunStateError,
+    LabBuildStepNotFoundError,
+    LabBuildStepRetryError,
+    get_lab_build_plan,
+    get_lab_build_run,
+    get_latest_lab_build_run,
+    resume_lab_build,
+    retry_lab_build_step,
+    start_lab_build,
+)
 from app.services.hpe_raid import (
     apply_hpe_raid_factory_reset,
     apply_hpe_raid_plan,
@@ -530,6 +545,64 @@ def read_workflow_runs(session: Session = Depends(get_session)) -> list[Workflow
 @router.get("/workflows/stages", response_model=list[WorkflowStageRead])
 def read_workflow_stages() -> list[WorkflowStageRead]:
     return list_workflow_stages()
+
+
+@router.get("/lab-build/plan", response_model=LabBuildPlanRead)
+def read_lab_build_plan() -> LabBuildPlanRead:
+    try:
+        return get_lab_build_plan()
+    except LabBuildPlanError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.post("/lab-build/runs", response_model=LabBuildRunRead)
+def create_lab_build_run(session: Session = Depends(get_session)) -> LabBuildRunRead:
+    try:
+        return start_lab_build(session)
+    except LabBuildPlanError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.get("/lab-build/runs/latest", response_model=LabBuildRunRead | None)
+def read_latest_lab_build_run() -> LabBuildRunRead | None:
+    return get_latest_lab_build_run()
+
+
+@router.get("/lab-build/runs/{run_id}", response_model=LabBuildRunRead)
+def read_lab_build_run(run_id: str) -> LabBuildRunRead:
+    try:
+        return get_lab_build_run(run_id)
+    except LabBuildRunNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Lab build run not found") from exc
+
+
+@router.post("/lab-build/runs/{run_id}/resume", response_model=LabBuildRunRead)
+def resume_lab_build_run(
+    run_id: str,
+    session: Session = Depends(get_session),
+) -> LabBuildRunRead:
+    try:
+        return resume_lab_build(run_id, session)
+    except LabBuildRunNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Lab build run not found") from exc
+    except LabBuildRunStateError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.post("/lab-build/runs/{run_id}/steps/{step_id}/retry", response_model=LabBuildRunRead)
+def retry_lab_build_run_step(
+    run_id: str,
+    step_id: str,
+    session: Session = Depends(get_session),
+) -> LabBuildRunRead:
+    try:
+        return retry_lab_build_step(run_id, step_id, session)
+    except LabBuildRunNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Lab build run not found") from exc
+    except LabBuildStepNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Lab build step not found") from exc
+    except LabBuildStepRetryError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @router.get("/workflows/actions", response_model=list[WorkflowActionRead])

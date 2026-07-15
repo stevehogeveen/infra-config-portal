@@ -32,7 +32,7 @@ export type OperatorHomeAttentionItem = {
 export type OperatorHomeNextAction = {
   Enabled: boolean;
   Label: string;
-  Target: "refresh" | "details" | "validation";
+  Target: "build" | "details";
 };
 
 export type OperatorHomeProgress = {
@@ -79,7 +79,6 @@ export function buildOperatorHomeModel({
   const readyCount = deviceSummary.filter((item) => !item.NeedsAttention).length;
   const totalCount = Math.max(deviceSummary.length, 1);
   const displayState = operatorDisplayState({ attentionItems, buildVerification, validation });
-  const primaryAttention = attentionItems[0];
   const headline = operatorHeadline({ attentionItems, displayState, profile });
   const supportingMessage = operatorSupportingMessage({
     attentionCount: attentionItems.length,
@@ -89,7 +88,6 @@ export function buildOperatorHomeModel({
     subnet: address.subnet,
     totalCount
   });
-  const nextActionLabel = primaryAttention?.Action || cleanOperatorAction(validation?.next_action) || "Refresh readiness";
 
   return {
     KitName: kitName,
@@ -100,9 +98,9 @@ export function buildOperatorHomeModel({
     DeviceSummary: deviceSummary,
     AttentionItems: attentionItems,
     NextAction: {
-      Enabled: true,
-      Label: nextActionLabel,
-      Target: primaryAttention ? "details" : validation?.next_action ? "validation" : "refresh"
+      Enabled: Boolean(profile),
+      Label: profile ? "Review Build Plan" : "Select a kit",
+      Target: profile ? "build" : "details"
     },
     Progress: {
       Label: `${readyCount} of ${totalCount} devices ready`,
