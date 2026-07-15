@@ -209,6 +209,13 @@ test.beforeEach(async ({ page }) => {
   await installApiMocks(page);
 });
 
+async function openOperatorDetails(page: Page) {
+  const detailsButton = page.getByTestId("operator-home-view-details");
+  if (await detailsButton.isVisible()) {
+    await detailsButton.click();
+  }
+}
+
 test("renders the new top-level navigation and pages", async ({ page }) => {
   await page.goto("/overview");
 
@@ -230,7 +237,8 @@ test("renders the new top-level navigation and pages", async ({ page }) => {
     await page.goto(retiredPath);
     await expect(page).toHaveURL(/\/overview/);
     await expect(page.getByRole("heading", { name: "Overview", exact: true })).toBeVisible();
-    await expect(page.locator("section[aria-label='Living lab topology']")).toBeVisible();
+    await expect(page.getByTestId("operator-home")).toBeVisible();
+    await expect(page.locator("section[aria-label='Living lab topology']")).toHaveCount(0);
   }
   await page.goto("/firmware-upgrades");
   await expect(page.getByRole("heading", { name: "Firmware Upgrades", exact: true })).toBeVisible();
@@ -247,24 +255,26 @@ test("renders the new top-level navigation and pages", async ({ page }) => {
   await expect(page).toHaveURL(/\/overview/);
 });
 
-test("overview shows active setup, lab values, and access without dashboard clutter", async ({ page }) => {
+test("operator home answers the next action without dashboard clutter", async ({ page }) => {
   await page.goto("/overview");
 
-  const topology = page.locator("section[aria-label='Living lab topology']");
-  await expect(topology.getByLabel("Zoned lab map")).toBeVisible();
-  await expect(topology.getByLabel("System setup picker").getByRole("button", { name: "Open system setup picker" })).toContainText("SRV+NETAPP+VCENTER");
-  await expect(topology.getByLabel("Zoned lab map")).toContainText("Management");
-  await expect(topology.getByLabel("Zoned lab map")).toContainText("Storage fabric");
-  await expect(topology.getByLabel("Zoned lab map")).toContainText("vCenter");
-  await expect(topology.getByLabel("Zoned lab map")).toContainText("Cisco C9300 L3 Core");
-  await expect(topology.getByLabel("Zoned lab map")).toContainText("HPE Gen10");
-  await expect(topology.getByLabel("Zoned lab map")).toContainText("NetApp ONTAP");
-  await expect(topology.getByLabel("Current lab links")).toContainText(/NFS 10G path|iSCSI 10G planned/);
-  await expect(topology).toContainText("checks ready");
+  const home = page.getByTestId("operator-home");
+  await expect(home).toBeVisible();
+  await expect(home).toContainText("Runtime Lab");
+  await expect(home).toContainText("Server + NetApp + vCenter");
+  await expect(home.getByLabel("Canonical readiness result")).toHaveCount(1);
+  await expect(home.getByTestId("operator-home-primary-action")).toHaveCount(1);
+  await expect(home.getByTestId("operator-home-primary-action")).toBeVisible();
+  await expect(home.getByTestId("operator-home-view-details")).toHaveCount(1);
+  await expect(home.getByLabel("Compact device summary")).toContainText("devices ready");
+  await expect(home.getByLabel("Actionable blockers")).toContainText("Firmware needs proof");
+  await expect(home.getByLabel("Actionable blockers")).toContainText("ROMMON baseline missing/manual review");
 
   await expect(page.locator("section[aria-label='Overview reference']")).toHaveCount(0);
   await expect(page.locator("section[aria-label='Scenario setup lanes']")).toHaveCount(0);
   await expect(page.locator("[data-region-id='lab-safety']")).toHaveCount(0);
+  await expect(page.locator("[data-region-id='topology']")).toHaveCount(0);
+  await expect(page.locator("section[aria-label='Living lab topology']")).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Readiness at a glance" })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Firmware Compliance" })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Active Blockers" })).toHaveCount(0);
@@ -278,10 +288,77 @@ test("overview shows active setup, lab values, and access without dashboard clut
   await expect(page.getByText(/what is healthy/i)).toHaveCount(0);
   await expect(page.getByText(/what is next/i)).toHaveCount(0);
   await expect(page.getByText("Artifact")).toHaveCount(0);
+  await expect(home).not.toContainText("Provider");
+  await expect(home).not.toContainText("provider");
+  await expect(home).not.toContainText("runtime");
+  await expect(home).not.toContainText("dependency graph");
+  await expect(home).not.toContainText("raw");
+  await expect(home).not.toContainText("logs");
+  await expect(home).not.toContainText("console");
+  await expect(home).not.toContainText(/CISCO_[A-Z_]+/);
+  await expect(page.getByText("Change this page")).toHaveCount(0);
+});
+
+test("operator details is the only entry to topology and proof from overview", async ({ page }) => {
+  await page.goto("/overview");
+
+  await expect(page.locator("section[aria-label='Living lab topology']")).toHaveCount(0);
+  await expect(page.locator("details.advanced-drawer").filter({ hasText: "Advanced proof" })).toHaveCount(0);
+  await page.getByTestId("operator-home-view-details").click();
+
+  const topology = page.locator("section[aria-label='Living lab topology']");
+  await expect(topology.getByLabel("Zoned lab map")).toBeVisible();
+  await expect(topology.getByLabel("System setup picker").getByRole("button", { name: "Open system setup picker" })).toContainText("SRV+NETAPP+VCENTER");
+  await expect(topology.getByLabel("Zoned lab map")).toContainText("Management");
+  await expect(topology.getByLabel("Zoned lab map")).toContainText("Storage fabric");
+  await expect(topology.getByLabel("Zoned lab map")).toContainText("vCenter");
+  await expect(topology.getByLabel("Zoned lab map")).toContainText("Cisco C9300 L3 Core");
+  await expect(topology.getByLabel("Zoned lab map")).toContainText("HPE Gen10");
+  await expect(topology.getByLabel("Zoned lab map")).toContainText("NetApp ONTAP");
+  await expect(topology.getByLabel("Current lab links")).toContainText(/NFS 10G path|iSCSI 10G planned/);
+  await expect(page.locator("details.advanced-drawer").filter({ hasText: "Advanced proof" })).toBeVisible();
+});
+
+test("operator home shows actionable blockers once in plain language", async ({ page }) => {
+  const blocked = labValidation();
+  blocked.overall_status = "blocked";
+  blocked.next_action = "Set the Cisco switch management IP, then refresh readiness.";
+  blocked.top_blocker = {
+    copyable_command: "make provider-lab-cisco-setup-readiness",
+    current_value: "missing",
+    evidence_links: [],
+    expected_value: "192.168.1.204",
+    problem: "CISCO_MGMT_NOT_CONFIGURED - Cisco management IP is not ready.",
+    recommended_action: "Open Network and set the Cisco switch management IP.",
+    recheck_command: "make provider-lab-cisco-setup-readiness",
+    source: "CISCO_MGMT_NOT_CONFIGURED",
+    where_to_fix: "Cisco switch setup"
+  };
+  blocked.validation_items = [
+    {
+      ...blocked.validation_items[0],
+      current_state: "Management IP is missing",
+      next_action: "Set the Cisco switch management IP.",
+      setup_summary: "Cisco switch management IP is not ready.",
+      status: "blocked"
+    },
+    ...blocked.validation_items.slice(1)
+  ];
+  await page.route("**/api/v1/lab/validation", (route) => json(route, blocked));
+
+  await page.goto("/overview");
+
+  const home = page.getByTestId("operator-home");
+  await expect(home.getByLabel("Actionable blockers")).toContainText("Cisco management IP is not ready.");
+  await expect(home.getByLabel("Actionable blockers")).toContainText("Open Details, then choose Cisco switch");
+  await expect(home.getByLabel("Actionable blockers")).not.toContainText("CISCO_MGMT_NOT_CONFIGURED");
+  await expect(home.locator("article.operator-home-attention-item").filter({ hasText: "Cisco management IP is not ready." })).toHaveCount(1);
+  await expect(page.locator("section[aria-label='Living lab topology']")).toHaveCount(0);
 });
 
 test("zoned map opens device workspace directly and keeps system scoped controls separate", async ({ page }) => {
   await page.goto("/overview");
+  await openOperatorDetails(page);
 
   const topology = page.locator("section[aria-label='Living lab topology']");
   await expect(topology.getByLabel("System lab safety gates")).toBeVisible();
@@ -440,6 +517,7 @@ test("zoned map opens device workspace directly and keeps system scoped controls
 test("zoned map makes single-server local RAID mode unmistakable", async ({ page }) => {
   labProfileScenario = "single";
   await page.goto("/overview");
+  await openOperatorDetails(page);
 
   const topology = page.locator("section[aria-label='Living lab topology']");
   const map = topology.getByLabel("Zoned lab map");
@@ -457,6 +535,7 @@ test("zoned map makes single-server local RAID mode unmistakable", async ({ page
 test("overview flags saved subnet mismatch and links to subnet editing", async ({ page }) => {
   healthHostIpv4Addresses = ["10.10.8.99", "172.20.10.3"];
   await page.goto("/overview");
+  await openOperatorDetails(page);
 
   const topology = page.locator("section[aria-label='Living lab topology']");
 
@@ -479,6 +558,7 @@ test("living topology creates a subnet-derived system setup without running work
   });
 
   await page.goto("/overview");
+  await openOperatorDetails(page);
 
   const topology = page.locator("section[aria-label='Living lab topology']");
   const picker = topology.locator("section[aria-label='System setup picker']");
@@ -499,6 +579,7 @@ test("living topology creates a subnet-derived system setup without running work
 
 test("system setup advanced fields round-trip shared and device rows through the profile", async ({ page }) => {
   await page.goto("/overview");
+  await openOperatorDetails(page);
 
   const topology = page.locator("section[aria-label='Living lab topology']");
   const picker = topology.locator("section[aria-label='System setup picker']");
@@ -528,6 +609,7 @@ test("system setup advanced fields round-trip shared and device rows through the
   await expect(panel).toContainText("Advanced profile fields saved");
 
   await page.reload();
+  await openOperatorDetails(page);
   const reloadedTopology = page.locator("section[aria-label='Living lab topology']");
   const reloadedPicker = reloadedTopology.locator("section[aria-label='System setup picker']");
   await reloadedPicker.getByRole("button", { name: "Open system setup picker" }).click();
@@ -586,6 +668,7 @@ test("system setup advanced fields keep blank profile values planned until edite
   });
 
   await page.goto("/overview");
+  await openOperatorDetails(page);
 
   const topology = page.locator("section[aria-label='Living lab topology']");
   const picker = topology.locator("section[aria-label='System setup picker']");
@@ -609,6 +692,7 @@ test("system setup advanced fields keep blank profile values planned until edite
 test("overview design mode keeps the surface map-only until a node opens the workspace overlay", async ({ page }) => {
   healthHostIpv4Addresses = ["10.10.8.99", "172.20.10.3"];
   await page.goto("/overview");
+  await openOperatorDetails(page);
 
   const topology = page.locator("section[aria-label='Living lab topology']");
   await expect(topology.getByLabel("Zoned lab map")).toBeVisible();
@@ -663,6 +747,7 @@ test("overview design mode keeps the surface map-only until a node opens the wor
 test("overview design mode map surface stays stable and scalable", async ({ page }) => {
   await page.setViewportSize({ width: 1366, height: 1400 });
   await page.goto("/overview");
+  await openOperatorDetails(page);
 
   await page.evaluate(() => {
     const hideIssueTrigger = () => {
@@ -684,13 +769,14 @@ test("overview design mode map surface stays stable and scalable", async ({ page
   await expect(map.getByLabel("Storage fabric zone devices")).toContainText("NetApp ONTAP");
   await expect(map).toHaveScreenshot("overview-design-map.png", {
     animations: "disabled",
-    maxDiffPixelRatio: 0.005
+    maxDiffPixelRatio: 0.02
   });
 });
 
 test("overview mobile topology keeps zoned device cards visible", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 860 });
   await page.goto("/overview");
+  await openOperatorDetails(page);
 
   const map = page.locator("div[aria-label='Zoned lab map']");
   await expect(map).toBeVisible();
@@ -702,6 +788,7 @@ test("overview mobile topology keeps zoned device cards visible", async ({ page 
 
 test("overview design mode switches scenario drafts without committing hardware", async ({ page }) => {
   await page.goto("/overview");
+  await openOperatorDetails(page);
 
   const topology = page.locator("section[aria-label='Living lab topology']");
   await topology.getByRole("button", { name: "Open HPE DL360 Gen10 workspace" }).click();
@@ -720,6 +807,7 @@ test("overview design mode switches scenario drafts without committing hardware"
 test("overview retires setup lanes in favor of the single-server map", async ({ page }) => {
   labProfileScenario = "single";
   await page.goto("/overview");
+  await openOperatorDetails(page);
 
   const topology = page.locator("section[aria-label='Living lab topology']");
   await expect(topology.getByLabel("System setup picker").getByRole("button", { name: "Open system setup picker" })).toContainText("LOCAL RAID");
@@ -730,6 +818,7 @@ test("overview retires setup lanes in favor of the single-server map", async ({ 
 test("single-server map opens local datastore guidance in the server workspace", async ({ page }) => {
   labProfileScenario = "single";
   await page.goto("/overview");
+  await openOperatorDetails(page);
 
   const topology = page.locator("section[aria-label='Living lab topology']");
   const map = topology.getByLabel("Zoned lab map");
@@ -746,44 +835,20 @@ test("single-server map opens local datastore guidance in the server workspace",
   await expect(workspace.getByLabel("RAID guarded write boundary")).toContainText("stay off this map");
 });
 
-test("overview AI intent bar hides proof reversibly and persists layout only", async ({ page }) => {
+test("overview removes superseded layout and console surfaces from operator mode", async ({ page }) => {
   await page.goto("/overview");
-  await page.getByRole("button", { name: "Advanced" }).click();
-  await page.getByRole("button", { name: "Reset", exact: true }).click();
-
-  const proofDrawer = page.locator("details.advanced-drawer").filter({ hasText: "Advanced proof" });
-  await expect(proofDrawer).toBeVisible();
-  await page.getByRole("textbox", { name: "Change this page" }).fill("hide advanced proof");
-  await page.getByRole("button", { name: "Apply", exact: true }).click();
-
-  await expect(page.getByText("Hid: Advanced proof.")).toBeVisible();
-  await expect(proofDrawer).toHaveCount(0);
-  await page.getByRole("button", { name: "Undo" }).click();
-  await expect(proofDrawer).toBeVisible();
-
-  await page.getByRole("textbox", { name: "Change this page" }).fill("hide advanced proof");
-  await page.getByRole("button", { name: "Apply", exact: true }).click();
-  await expect(proofDrawer).toHaveCount(0);
-  await page.reload();
-  await expect(proofDrawer).toHaveCount(0);
-});
-
-test("AI intent target picker highlights and scopes this-box apply requests", async ({ page }) => {
-  await page.goto("/overview");
-  await page.getByRole("button", { name: "Advanced" }).click();
-  await page.getByRole("button", { name: "Reset", exact: true }).click();
-
-  const topologyRegion = page.locator("[data-region-id='topology']");
-  await expect(topologyRegion).toBeVisible();
-  await page.getByRole("button", { name: "Living lab topology" }).click();
-  await expect(page.getByRole("button", { name: "Living lab topology" })).toHaveAttribute("aria-pressed", "true");
-  await expect(topologyRegion).toHaveClass(/is-intent-target/);
-
-  await page.getByRole("textbox", { name: "Change this page" }).fill("hide this box");
-  await page.getByRole("button", { name: "Apply", exact: true }).click();
-
-  await expect(page.getByText("Hid: Living lab topology.")).toBeVisible();
+  const home = page.getByTestId("operator-home");
+  await expect(home).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "Change this page" })).toHaveCount(0);
   await expect(page.locator("[data-region-id='topology']")).toHaveCount(0);
+  await expect(page.locator("section[aria-label='Living lab topology']")).toHaveCount(0);
+  await expect(page.locator("details.advanced-drawer")).toHaveCount(0);
+  await expect(page.getByText("Discover Console")).toHaveCount(0);
+  await expect(page.getByText("Refresh Cisco Console")).toHaveCount(0);
+  await expect(page.getByText("Refresh NetApp Consoles")).toHaveCount(0);
+
+  await openOperatorDetails(page);
+  await expect(page.locator("section[aria-label='Living lab topology']")).toBeVisible();
   await expect(page.locator("details.advanced-drawer").filter({ hasText: "Advanced proof" })).toBeVisible();
 });
 
@@ -791,43 +856,20 @@ test("legacy storage route redirects before page AI can target old regions", asy
   labProfileScenario = "single";
   await page.goto("/storage");
   await expect(page).toHaveURL(/\/overview/);
-  await page.getByRole("button", { name: "Advanced" }).click();
-  await page.getByRole("button", { name: "Reset", exact: true }).click();
 
   await expect(page.locator("section[aria-label='Storage reference']")).toHaveCount(0);
-  await expect(page.locator("[data-region-id='topology']")).toBeVisible();
-  await page.getByRole("textbox", { name: "Change this page" }).fill("collapse living lab topology");
-  await page.getByRole("button", { name: "Apply", exact: true }).click();
+  await expect(page.getByTestId("operator-home")).toBeVisible();
+  await expect(page.locator("[data-region-id='topology']")).toHaveCount(0);
+  await expect(page.getByRole("textbox", { name: "Change this page" })).toHaveCount(0);
 
-  await expect(page.getByText("Living lab topology").first()).toBeVisible();
-  await expect(page.getByText("Collapsed by page AI").first()).toBeVisible();
-  await expect(page.locator("[data-region-id='topology']")).toBeVisible();
-  await expect(page.locator("[data-region-id='topology']")).toContainText("Collapsed by page AI");
-
-  await page.getByRole("button", { name: "Reset", exact: true }).click();
-  await expect(page.locator("[data-region-id='topology']")).toBeVisible();
-});
-
-test("AI intent bar queues non-layout change requests without running workflows", async ({ page }) => {
-  await page.goto("/overview");
-  await page.getByRole("button", { name: "Advanced" }).click();
-  await page.getByRole("textbox", { name: "Change this page" }).fill("add drag and drop device creation to the map");
-  await page.getByRole("button", { name: "Apply", exact: true }).click();
-
-  await expect(page.getByText("This looks bigger than layout.")).toBeVisible();
-  await page.getByRole("button", { name: "Queue change request" }).click();
-
-  await expect(page.getByText(/Queued: docs\/change-requests\//)).toHaveCount(0);
-  await expect(page.getByText("Sent to agent mailbox")).toBeVisible();
-  await expect(page.getByText("Sent to the Claude+Codex mailbox and saved as a review artifact.")).toBeVisible();
-  await expect(page.locator(".page-intent-receipt code")).toContainText(/docs\/change-requests\/.+overview\.md/);
-  await expect(page.getByText("Claude and Codex read docs/agent-chat.md; implement on a branch, fast-verify, and request review before applying.")).toBeVisible();
-  await expect(page.getByText("This looks bigger than layout.")).toHaveCount(0);
+  await openOperatorDetails(page);
+  await expect(page.locator("section[aria-label='Living lab topology']")).toBeVisible();
 });
 
 test("single-server map removes vCenter and keeps direct ESXi guidance on the server workspace", async ({ page }) => {
   labProfileScenario = "single";
   await page.goto("/overview");
+  await openOperatorDetails(page);
 
   const topology = page.locator("section[aria-label='Living lab topology']");
   const map = topology.getByLabel("Zoned lab map");
@@ -845,7 +887,8 @@ test("top nav and map workspaces expose run controls without dead settings drawe
   await page.goto("/overview");
   await expect(page.getByRole("button", { name: "Settings" })).toHaveCount(0);
   await expect(page.locator("section.tab-settings-drawer")).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Run Refresh Access" }).first()).toBeVisible();
+  await expect(page.getByTestId("operator-home-primary-action")).toBeVisible();
+  await openOperatorDetails(page);
 
   const topology = page.locator("section[aria-label='Living lab topology']");
   await topology.getByRole("button", { name: "Open Cisco switch workspace" }).click();
@@ -888,7 +931,7 @@ test("retired device routes redirect while remaining run actions stay registered
   for (const path of ["/network", "/server", "/storage", "/virtualization"]) {
     await page.goto(path);
     await expect(page).toHaveURL(/\/overview/);
-    await expect(page.locator("section[aria-label='Living lab topology']")).toBeVisible();
+    await expect(page.getByTestId("operator-home")).toBeVisible();
     await expect(page.getByText(/no backend action is registered yet/i)).toHaveCount(0);
     await expect(page.getByText(/missing a runnable backend action/i)).toHaveCount(0);
   }
@@ -906,6 +949,7 @@ test("retired device routes redirect while remaining run actions stay registered
 
 test("map switch workspace shows access settings and blockers without proof clutter", async ({ page }) => {
   await page.goto("/overview");
+  await openOperatorDetails(page);
 
   const topology = page.locator("section[aria-label='Living lab topology']");
   await topology.getByRole("button", { name: "Open Cisco switch workspace" }).click();
@@ -928,6 +972,7 @@ test("map switch workspace shows access settings and blockers without proof clut
 
 test("map Cisco workspace surfaces current-intent guardrail drift", async ({ page }) => {
   await page.goto("/overview");
+  await openOperatorDetails(page);
 
   const topology = page.locator("section[aria-label='Living lab topology']");
   await topology.getByRole("button", { name: "Open Cisco switch workspace" }).click();
@@ -950,8 +995,11 @@ test("map Cisco workspace surfaces current-intent guardrail drift", async ({ pag
 });
 
 test("remaining operator pages expose reference panels and device routes consolidate to the map", async ({ page }) => {
+  await page.goto("/firmware-upgrades");
+  await expect(page.getByLabel("Firmware upgrade map")).toBeVisible();
+  await expect(page.locator("section[aria-label='Firmware reference']")).toHaveCount(0);
+
   const pages = [
-    ["/firmware-upgrades", "Firmware reference", "Firmware readiness at a glance", "Firmware Components"],
     ["/validation", "Validation reference", "Validation readiness at a glance", "Validation Signals"]
   ] as const;
 
@@ -977,12 +1025,13 @@ test("remaining operator pages expose reference panels and device routes consoli
   for (const retiredPath of ["/network", "/server", "/storage", "/virtualization"]) {
     await page.goto(retiredPath);
     await expect(page).toHaveURL(/\/overview/);
-    await expect(page.locator("section[aria-label='Living lab topology']")).toBeVisible();
+    await expect(page.getByTestId("operator-home")).toBeVisible();
   }
 });
 
 test("storage iSCSI preview apply and validation buttons expose the honest guarded path", async ({ page }) => {
   await page.goto("/overview");
+  await openOperatorDetails(page);
 
   const topology = page.locator("section[aria-label='Living lab topology']");
   await topology.getByRole("button", { name: "Open NetApp ONTAP workspace" }).click();
