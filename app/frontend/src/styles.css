@@ -13070,6 +13070,283 @@ button.design-ilo-port:hover {
   text-align: right;
 }
 
+.operator-home {
+  background:
+    linear-gradient(140deg, rgba(20, 184, 166, 0.09), transparent 32%),
+    linear-gradient(315deg, rgba(59, 130, 246, 0.1), transparent 34%),
+    #ffffff;
+  border: 1px solid #d7e3ef;
+  border-radius: 8px;
+  box-shadow: 0 18px 42px rgba(15, 23, 42, 0.08);
+  display: grid;
+  gap: 18px;
+  padding: 22px;
+}
+
+.operator-home-main,
+.operator-home-actions {
+  align-items: center;
+  display: flex;
+  gap: 14px;
+  justify-content: space-between;
+  min-width: 0;
+}
+
+.operator-home-copy,
+.operator-home-state > div {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.operator-home-copy h1,
+.operator-home-state h2 {
+  color: var(--ink);
+  line-height: 1.08;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.operator-home-copy h1 {
+  font-size: 20px;
+}
+
+.operator-home-copy strong {
+  color: var(--ink);
+  font-size: 30px;
+  line-height: 1.05;
+  overflow-wrap: anywhere;
+}
+
+.operator-home-copy span,
+.operator-home-state p,
+.operator-home-device-summary p,
+.operator-home-feedback {
+  color: #50627a;
+  font-size: 14px;
+  line-height: 1.45;
+  margin: 0;
+}
+
+.operator-home-progress {
+  background: rgba(255, 255, 255, 0.78);
+  border: 1px solid #dbe6f2;
+  border-radius: 8px;
+  display: grid;
+  gap: 8px;
+  min-width: 210px;
+  padding: 10px 12px;
+}
+
+.operator-home-progress span {
+  color: #334155;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.operator-home-progress progress {
+  accent-color: #0f766e;
+  height: 9px;
+  width: 100%;
+}
+
+.operator-home-state {
+  align-items: center;
+  background: rgba(248, 250, 252, 0.82);
+  border: 1px solid #dbe6f2;
+  border-radius: 8px;
+  display: grid;
+  gap: 14px;
+  grid-template-columns: 46px minmax(0, 1fr);
+  padding: 16px;
+}
+
+.operator-home-state > svg {
+  color: #0f766e;
+}
+
+.operator-home-blocked .operator-home-state > svg {
+  color: #b42318;
+}
+
+.operator-home-needs_attention .operator-home-state > svg,
+.operator-home-not_checked .operator-home-state > svg {
+  color: #b7791f;
+}
+
+.operator-home-state h2 {
+  font-size: 26px;
+}
+
+.operator-home-device-summary {
+  align-items: start;
+  display: grid;
+  gap: 14px;
+  grid-template-columns: minmax(150px, 0.24fr) minmax(0, 1fr);
+}
+
+.operator-home-device-summary > div {
+  background: #f8fafc;
+  border: 1px solid #dbe6f2;
+  border-radius: 8px;
+  display: grid;
+  gap: 2px;
+  padding: 14px;
+}
+
+.operator-home-device-summary > div strong {
+  color: var(--ink);
+  font-size: 32px;
+  line-height: 1;
+}
+
+.operator-home-device-summary > div span {
+  color: #50627a;
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.operator-home-device-summary ul {
+  display: grid;
+  gap: 8px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.operator-home-device-summary li {
+  align-items: center;
+  background: #fff7ed;
+  border: 1px solid #fed7aa;
+  border-radius: 8px;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(120px, 0.8fr) minmax(88px, 0.4fr) minmax(0, 1fr);
+  padding: 10px 12px;
+}
+
+.operator-home-device-summary li strong,
+.operator-home-attention-item h3 {
+  color: var(--ink);
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.operator-home-device-summary li span {
+  color: #92400e;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.operator-home-device-summary li small,
+.operator-home-attention-item small {
+  color: #50627a;
+  font-size: 12px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.operator-home-attention {
+  display: grid;
+  gap: 10px;
+}
+
+.operator-home-attention > p {
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  border-radius: 8px;
+  color: #166534;
+  font-size: 13px;
+  font-weight: 850;
+  margin: 0;
+  padding: 10px 12px;
+}
+
+.operator-home-attention-item {
+  background: #fff7ed;
+  border: 1px solid #fed7aa;
+  border-radius: 8px;
+  display: grid;
+  gap: 5px;
+  padding: 12px;
+}
+
+.operator-home-attention-item.blocking {
+  background: #fff1f2;
+  border-color: #fecdd3;
+}
+
+.operator-home-attention-item > span {
+  color: #9a3412;
+  font-size: 11px;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.operator-home-attention-item.blocking > span {
+  color: #be123c;
+}
+
+.operator-home-attention-item p {
+  color: #334155;
+  font-size: 14px;
+  line-height: 1.4;
+  margin: 0;
+}
+
+.operator-home-feedback {
+  background: #f8fafc;
+  border: 1px solid #dbe6f2;
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
+.operator-home-feedback.error {
+  background: #fff1f2;
+  border-color: #fecdd3;
+  color: #be123c;
+}
+
+.operator-home-actions {
+  justify-content: flex-start;
+}
+
+.operator-home-primary,
+.operator-home-secondary {
+  align-items: center;
+  border-radius: 8px;
+  display: inline-flex;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 900;
+  gap: 8px;
+  min-height: 40px;
+  padding: 10px 14px;
+}
+
+.operator-home-primary {
+  background: #0f766e;
+  border: 1px solid #0f766e;
+  color: #ffffff;
+}
+
+.operator-home-primary:disabled {
+  cursor: not-allowed;
+  opacity: 0.64;
+}
+
+.operator-home-secondary {
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  color: #0f172a;
+}
+
+.operator-home-details {
+  display: grid;
+  gap: 16px;
+}
+
 .overview-current-state-box {
   background: #ffffff;
   border: 1px solid var(--border);
@@ -14730,6 +15007,8 @@ button.design-ilo-port:hover {
   .overview-stat-grid,
   .overview-provider-grid,
   .overview-reference-grid,
+  .operator-home-device-summary,
+  .operator-home-device-summary li,
   .setup-lane-grid,
   .cisco-driver-grid,
   .cisco-driver-metrics,
@@ -14741,6 +15020,22 @@ button.design-ilo-port:hover {
   .cisco-driver-head {
     align-items: start;
     flex-direction: column;
+  }
+
+  .operator-home-main,
+  .operator-home-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .operator-home-progress {
+    min-width: 0;
+  }
+
+  .operator-home-primary,
+  .operator-home-secondary {
+    justify-content: center;
+    width: 100%;
   }
 
   .cisco-sync-strip {
@@ -15051,6 +15346,18 @@ button.design-ilo-port:hover {
   .config-drawer-page {
     max-width: calc(100vw - 36px);
     width: 100%;
+  }
+
+  .operator-home {
+    padding: 16px;
+  }
+
+  .operator-home-state {
+    grid-template-columns: 1fr;
+  }
+
+  .operator-home-state > svg {
+    justify-self: start;
   }
 
   .lab-safety-control {

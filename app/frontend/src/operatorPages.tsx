@@ -19,6 +19,7 @@ import { createContext, FormEvent, ReactNode, useContext, useEffect, useMemo, us
 import { Link, useLocation } from "react-router-dom";
 
 import { api } from "./api";
+import { OperatorHomeView } from "./components/operator/OperatorHomeView";
 import {
   ActionLink,
   BlockerItem,
@@ -64,6 +65,7 @@ import type {
   WorkflowActionRun,
   WorkflowActionRunRequest
 } from "./types";
+import { buildOperatorHomeModel } from "./operatorHomeModel";
 
 type HealthLike = {
   expected_runtime_mode?: string;
@@ -639,6 +641,7 @@ export function OperatorOverviewPage({
   const [workflowActions, setWorkflowActions] = useState<WorkflowAction[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [detailsOpen, setDetailsOpen] = useState(false);
 
   async function load() {
     setError("");
@@ -704,6 +707,19 @@ export function OperatorOverviewPage({
     [address, ciscoReadiness, providers, validation, vcenterNetapp]
   );
   const currentView = overviewCurrentView({ buildVerification, providers, validation });
+  const operatorHome = useMemo(
+    () => buildOperatorHomeModel({
+      address,
+      buildVerification,
+      features,
+      firmwareSummaries,
+      profile: activeProfile,
+      providers,
+      validation,
+      vcenterNetapp
+    }),
+    [activeProfile, address, buildVerification, features, firmwareSummaries, providers, validation, vcenterNetapp]
+  );
   const workspaceRows = useMemo<OperatorObjectRow[]>(
     () => [
       {
@@ -739,80 +755,54 @@ export function OperatorOverviewPage({
     ],
     [accessRows, activeProfile, address.subnet, currentView.checkedAt, currentView.freshness, currentView.source, labValues]
   );
-  const intent = usePageIntentLayout("overview", overviewIntentRegions, activeProfile?.id);
-  const overviewRegions: Record<string, ReactNode> = {
-    "advanced-proof": (
-      <AdvancedDrawer title="Advanced proof" summary={noProofText}>
-        <OperatorWorkspace currentView={currentView} rows={workspaceRows} compact />
-        <InventoryTable rows={inventoryRows} />
-        <ValidationProofList items={validation?.validation_items ?? []} proofLinks={validation?.proof_links.length ?? 0} />
-        <ConfigValueList
-          values={[
-            { label: "Runtime mode", value: displayStatus(runtimeStatus(health ?? null)) },
-            { label: "Build verification", value: displayStatus(buildVerification?.status ?? "not_checked") },
-            { label: "Validation rows", value: String(validation?.validation_items.length ?? 0) }
-          ]}
-        />
-        <LabSafetySettingsSection
-          auditEvents={auditEvents}
-          labSafety={labSafety}
-          onUpdated={load}
-        />
-      </AdvancedDrawer>
-    ),
-    "reset-rebuild": <OverviewResetRebuildLink />,
-    topology: (
-      <LabTopologyMap
-        accessRows={accessRows}
-        activeProfile={activeProfile}
-        address={address}
-        currentView={currentView}
-        features={features}
-        firmwareSummaries={firmwareSummaries}
-        health={health}
-        labProfileState={labProfileState}
-        onReload={load}
-        vcenterNetapp={vcenterNetapp}
-        workflowActions={workflowActions}
+  const advancedProof = (
+    <AdvancedDrawer title="Advanced proof" summary={noProofText}>
+      <OperatorWorkspace currentView={currentView} rows={workspaceRows} compact />
+      <InventoryTable rows={inventoryRows} />
+      <ValidationProofList items={validation?.validation_items ?? []} proofLinks={validation?.proof_links.length ?? 0} />
+      <ConfigValueList
+        values={[
+          { label: "Lab mode", value: displayStatus(runtimeStatus(health ?? null)) },
+          { label: "Build verification", value: displayStatus(buildVerification?.status ?? "not_checked") },
+          { label: "Validation rows", value: String(validation?.validation_items.length ?? 0) }
+        ]}
       />
-    )
-  };
+      <LabSafetySettingsSection
+        auditEvents={auditEvents}
+        labSafety={labSafety}
+        onUpdated={load}
+      />
+    </AdvancedDrawer>
+  );
 
   return (
     <OperatorPage title="Overview">
-      <PageStatusHeader
-        description="A clean operator view of readiness, blockers, and the next safe action."
-        helper="Use this page first. Detailed current-state proof stays collapsed unless you need it."
-        icon={<Gauge size={26} />}
-        runConfig={{
-          label: "Refresh Access",
-          onRun: async () => {
-            await load();
-            return "Refresh Access: current view refreshed.";
-          }
-        }}
-        tabId="overview"
-        title="Overview"
+      <OperatorHomeView
+        detailsOpen={detailsOpen}
+        error={error || labProfileError}
+        loading={loading || labProfileLoading}
+        model={operatorHome}
+        onPrimaryAction={() => void load()}
+        onViewDetails={() => setDetailsOpen((open) => !open)}
       />
-      <Feedback loading={loading && !workspaceRows.length} error={error || labProfileError} />
-      {labProfileLoading && <Feedback loading />}
-      <PageIntentBar
-        layout={intent.layout}
-        onApply={intent.applyOps}
-        onReset={intent.reset}
-        onTargetRegionChange={intent.setTargetRegionId}
-        onUndo={intent.undo}
-        page="overview"
-        regions={overviewIntentRegions}
-        summary={intent.summary}
-        targetRegionId={intent.targetRegionId}
-        undoAvailable={intent.undoAvailable}
-      />
-      {orderedIntentRegions(overviewIntentRegions, intent.layout).map((region) => (
-        <IntentRegion highlighted={intent.targetRegionId === region.id} key={region.id} layout={intent.layout} region={region}>
-          {overviewRegions[region.id]}
-        </IntentRegion>
-      ))}
+      {detailsOpen && (
+        <section className="operator-home-details" aria-label="Operator Details">
+          <LabTopologyMap
+            accessRows={accessRows}
+            activeProfile={activeProfile}
+            address={address}
+            currentView={currentView}
+            features={features}
+            firmwareSummaries={firmwareSummaries}
+            health={health}
+            labProfileState={labProfileState}
+            onReload={load}
+            vcenterNetapp={vcenterNetapp}
+            workflowActions={workflowActions}
+          />
+          {advancedProof}
+        </section>
+      )}
     </OperatorPage>
   );
 }
