@@ -16,7 +16,7 @@ import {
   Wrench
 } from "lucide-react";
 import { createContext, FormEvent, ReactNode, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 
 import { api } from "./api";
 import { LabBuildJourney } from "./components/operator/LabBuildJourney";
@@ -628,6 +628,9 @@ export function OperatorOverviewPage({
   labProfileState,
   onReloadLabProfile
 }: OperatorPageProps) {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const buildJourneyOpen = new URLSearchParams(location.search).get("view") === "run";
   const activeProfile = activeLabProfile(labProfileState);
   const address = activeAddressPlan(activeProfile);
   const global = activeProfile?.global_settings ?? null;
@@ -646,7 +649,6 @@ export function OperatorOverviewPage({
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [detailsLoaded, setDetailsLoaded] = useState(false);
   const [detailsLoading, setDetailsLoading] = useState(false);
-  const [buildJourneyOpen, setBuildJourneyOpen] = useState(false);
   const [buildPlan, setBuildPlan] = useState<LabBuildPlan | null>(null);
   const [buildRun, setBuildRun] = useState<LabBuildRun | null>(null);
   const [buildLoading, setBuildLoading] = useState(false);
@@ -685,8 +687,19 @@ export function OperatorOverviewPage({
     void load();
   }, []);
 
+  useEffect(() => {
+    if (buildJourneyOpen) {
+      void openBuildJourney();
+    }
+  }, [buildJourneyOpen, activeProfile?.id]);
+
+  useEffect(() => {
+    if (!buildJourneyOpen && !detailsLoaded && !detailsLoading) {
+      void loadDetails();
+    }
+  }, [buildJourneyOpen, detailsLoaded, detailsLoading]);
+
   async function openBuildJourney() {
-    setBuildJourneyOpen(true);
     setBuildLoading(true);
     setBuildError("");
     setBuildPlan(null);
@@ -894,9 +907,9 @@ export function OperatorOverviewPage({
         <LabBuildJourney
           error={buildError}
           loading={buildLoading}
-          onClose={() => setBuildJourneyOpen(false)}
+          onClose={() => navigate("/overview")}
           onOpenDetails={() => {
-            setBuildJourneyOpen(false);
+            navigate("/overview");
             setDetailsOpen(true);
             if (!detailsLoaded && !detailsLoading) void loadDetails();
           }}
@@ -909,18 +922,15 @@ export function OperatorOverviewPage({
           run={buildRun}
         />
       ) : (
-        <OperatorHomeView
-          detailsOpen={detailsOpen}
-          error={error || labProfileError}
-          loading={labProfileLoading}
-          model={operatorHome}
-          onPrimaryAction={() => void openBuildJourney()}
-          onViewDetails={toggleDetails}
-        />
-      )}
-      {!buildJourneyOpen && detailsOpen && (
-        <section className="operator-home-details" aria-label="Operator Details">
-          {detailsLoading && <p className="operator-home-feedback">Loading device workspaces...</p>}
+        <>
+          <OperatorHomeView
+            detailsOpen={detailsOpen}
+            error={error || labProfileError}
+            loading={labProfileLoading}
+            model={operatorHome}
+            onPrimaryAction={() => navigate("/overview?view=run")}
+            onViewDetails={toggleDetails}
+          />
           <LabTopologyMap
             accessRows={accessRows}
             activeProfile={activeProfile}
@@ -937,6 +947,11 @@ export function OperatorOverviewPage({
             vcenterNetapp={vcenterNetapp}
             workflowActions={workflowActions}
           />
+        </>
+      )}
+      {!buildJourneyOpen && detailsOpen && (
+        <section className="operator-home-details" aria-label="Operator Details">
+          {detailsLoading && <p className="operator-home-feedback">Loading device workspaces...</p>}
           {advancedProof}
         </section>
       )}
@@ -5948,7 +5963,7 @@ function LabTopologyMap({
   const vmInScope = vcenterInScope || netappInScope;
   const runtimeReady = Boolean(health);
   const realRuntime = health?.operator_runtime_mode === "real_lab" || health?.provider_mode === "local-lab-readwrite";
-  const runtimeLabel = runtimeReady ? (realRuntime ? "Real runtime" : "Test mode") : "Checking runtime";
+  const runtimeLabel = runtimeReady ? (realRuntime ? "Real lab" : "Test mode") : "Checking lab";
   const runtimeClass = runtimeReady ? (realRuntime ? "topology-pill-live" : "topology-pill-test") : "topology-pill-runtime-unknown";
   const subnetState = topologySubnetState(address.subnet, health);
   const [workspaceTarget, setWorkspaceTarget] = useState<DesignPartId>("switch");
@@ -6059,7 +6074,6 @@ function LabTopologyMap({
     ...links.map((link) => link.status)
   ].filter((status) => status === "ready" || status === "created").length;
   const checkCount = nodes.length + links.length;
-  const nextAction = topologyNextAction({ currentView, datastoreStatus, netappInScope, netappStatus, serverStatus, storageProtocol });
 
   useEffect(() => {
     const canvas = mapCanvasRef.current;
@@ -6245,7 +6259,6 @@ function LabTopologyMap({
           <span><i className="legend-line legend-created" /> created by the app</span>
           <span><i className="legend-dot legend-offline" /> offline or unknown</span>
         </div>
-        <p><span>Next safe action</span>{nextAction}</p>
       </div>
     </section>
   );
@@ -11300,35 +11313,6 @@ function topologyVmMeta(probe: ProviderProbeResult | null, vcenterInScope: boole
   const inventory = objectValue(checks.vm_inventory_visible);
   if (asBoolean(inventory.visible)) return `${asString(inventory.count) || "some"} visible`;
   return vcenterInScope ? "waiting for inventory proof" : "direct host path";
-}
-
-function topologyNextAction({
-  currentView,
-  datastoreStatus,
-  netappInScope,
-  netappStatus,
-  serverStatus,
-  storageProtocol
-}: {
-  currentView: CurrentViewModel;
-  datastoreStatus: string;
-  netappInScope: boolean;
-  netappStatus: string;
-  serverStatus: string;
-  storageProtocol: string;
-}): string {
-  if (topologyTone(serverStatus) !== "ready") {
-    return "Open the HPE server workspace and refresh iLO, ESXi, and local storage readiness.";
-  }
-  if (netappInScope && topologyTone(netappStatus) !== "ready") {
-    return "Open the NetApp workspace and refresh live readiness after the controllers are powered on.";
-  }
-  if (netappInScope && topologyTone(datastoreStatus) !== "ready") {
-    return storageProtocol === "iscsi"
-      ? "Establish the ESXi iSCSI session when you are ready; required non-iSCSI paths are green."
-      : "Mount or validate the NetApp datastore from the NetApp workspace.";
-  }
-  return currentView.fixSteps[0] || currentView.summary || "Continue with Validation when the topology matches the active setup.";
 }
 
 function OverviewReferencePanel({

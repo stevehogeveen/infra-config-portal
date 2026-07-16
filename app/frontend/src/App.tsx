@@ -7,7 +7,6 @@ import {
   Copy,
   FileText,
   Pencil,
-  Gauge,
   HardDrive,
   History,
   Layers,
@@ -27,7 +26,7 @@ import {
 } from "lucide-react";
 import { createContext, FormEvent, ReactNode, SetStateAction, useContext, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
-import { Link, Navigate, NavLink, Route as RouterRoute, Routes, useLocation, useNavigate, useParams } from "react-router-dom";
+import { Link, Navigate, Route as RouterRoute, Routes, useLocation, useNavigate, useParams } from "react-router-dom";
 
 import { api } from "./api";
 import {
@@ -579,6 +578,7 @@ type LabProfileContextValue = {
   error: string;
   loading: boolean;
   onActivate: (profileId: string) => Promise<void>;
+  onCreate: (kitName: string) => Promise<void>;
   onApplyRuntimeEnv: () => Promise<void>;
   onReload: () => Promise<void>;
   runtimeApplyLoading: boolean;
@@ -592,6 +592,7 @@ const LabProfileContext = createContext<LabProfileContextValue>({
   error: "",
   loading: false,
   onActivate: async () => {},
+  onCreate: async () => {},
   onApplyRuntimeEnv: async () => {},
   onReload: async () => {},
   runtimeApplyLoading: false,
@@ -676,6 +677,27 @@ function App() {
     }
   }
 
+  async function createLabKit(kitName: string) {
+    const name = kitName.trim();
+    if (!name) {
+      setLabProfileError("Enter a kit name before creating it.");
+      return;
+    }
+    setLabProfileError("");
+    setRuntimeApplyMessage("");
+    setLabProfileLoading(true);
+    try {
+      const form = blankLabProfileForm();
+      form.name = name;
+      const created = await api.createLabProfile(labProfilePayload(form));
+      setLabProfileState(await api.activateLabProfile(created.id));
+    } catch (err) {
+      setLabProfileError((err as Error).message);
+    } finally {
+      setLabProfileLoading(false);
+    }
+  }
+
   async function loadHealth() {
     try {
       const nextHealth = await api.health();
@@ -719,6 +741,7 @@ function App() {
           error: labProfileError,
           loading: labProfileLoading,
           onActivate: activateLabProfile,
+          onCreate: createLabKit,
           onApplyRuntimeEnv: applyActiveLabProfileRuntimeEnv,
           onReload: loadLabProfileState,
           runtimeApplyLoading,
@@ -729,13 +752,7 @@ function App() {
       <ReportIssuesContext.Provider
         value={{ reportIssues, reportIssuesError, reportIssuesLoading, reloadReportIssues: loadReportIssues }}
       >
-        <AppShell
-          health={health}
-          healthError={healthError}
-          labProfileError={labProfileError}
-          labProfileLoading={labProfileLoading}
-          labProfileState={labProfileState}
-        >
+        <AppShell health={health}>
           <OperatorTabStateProvider>
             <Routes>
               <RouterRoute path="/" element={<Navigate to="/overview" replace />} />
@@ -801,29 +818,15 @@ function App() {
 
 function AppShell({
   children,
-  health,
-  healthError,
-  labProfileError,
-  labProfileLoading,
-  labProfileState
+  health
 }: {
   children: ReactNode;
   health: HealthStatus | null;
-  healthError: string;
-  labProfileError: string;
-  labProfileLoading: boolean;
-  labProfileState: LabProfileList | null;
 }) {
   const { uiMode } = useUiMode();
   return (
     <div className={`app-shell app-shell-${uiMode}`}>
-      <ShellTopNav
-        health={health}
-        healthError={healthError}
-        labProfileError={labProfileError}
-        labProfileLoading={labProfileLoading}
-        labProfileState={labProfileState}
-      />
+      <NavigationSpine />
       <main className="content">
         {health?.dev_test_banner && <DevTestBanner message={health.dev_test_banner} />}
         {children}
@@ -1014,103 +1017,113 @@ function pageTitleForRoute(pathname: string) {
   return labels[segment] ?? labelize(segment);
 }
 
-function ShellTopNav({
-  health,
-  healthError,
-  labProfileError,
-  labProfileLoading,
-  labProfileState
-}: {
-  health: HealthStatus | null;
-  healthError: string;
-  labProfileError: string;
-  labProfileLoading: boolean;
-  labProfileState: LabProfileList | null;
-}) {
-  const activeProfile = labProfileState?.active_profile ?? null;
-  const providerMode = health?.provider_mode ?? (healthError ? "unverified" : "checking");
-  const modeLabel = displayModeLabel(providerMode);
-  const modeStatus = providerMode === "mock" ? "test_fixture" : healthError ? "unavailable" : providerMode;
+const setupSpineItems = [
+  { label: "iLO", to: "/overview#topology-map" },
+  { label: "Storage", to: "/overview#topology-map" },
+  { label: "ESXi", to: "/overview#topology-map" },
+  { label: "Windows", to: "/overview#topology-map" },
+  { label: "Cisco", to: "/overview#topology-map" },
+  { label: "NetApp", to: "/overview#topology-map" },
+  { label: "OVF", to: "/overview#topology-map" },
+  { label: "Firmware", to: "/firmware-upgrades" },
+  { label: "Global", to: "/lab-profiles" }
+];
+
+function NavigationSpine() {
+  const location = useLocation();
+  const { activeProfile, error, loading, onActivate, onCreate, state } = useLabProfileContext();
+  const [newKitName, setNewKitName] = useState("");
+  const runSelected = location.pathname === "/overview" && new URLSearchParams(location.search).get("view") === "run";
+  const setupSelected = ["/firmware-upgrades", "/lab-profiles"].includes(location.pathname) || (
+    location.pathname === "/overview" && location.hash === "#topology-map"
+  );
+  const overviewSelected = location.pathname === "/overview" && !runSelected && !setupSelected;
+  const options = state ? [state.runtime_profile, ...state.profiles] : [];
+
+  async function createKit(event: FormEvent) {
+    event.preventDefault();
+    const name = newKitName.trim();
+    if (!name) return;
+    await onCreate(name);
+    setNewKitName("");
+  }
 
   return (
-    <header className="shell-topbar" aria-label="Application header">
-      <div className="shell-topbar-brand-row">
+    <aside className="navigation-spine" aria-label="Lab Builder navigation">
+      <header className="navigation-spine-header">
         <Link className="brand" to="/overview">
           <Server size={22} />
           <span>
-            Infra Config
-            <small>Lab operations portal</small>
+            Lab Builder
+            <small>Infrastructure setup</small>
           </span>
         </Link>
-      </div>
-      <nav className="top-nav" aria-label="Primary navigation">
-        <NavItem to="/overview" icon={<Gauge size={18} />} label="Overview" subtitle="Current readiness" />
-        <NavItem to="/firmware-upgrades" icon={<ShieldCheck size={18} />} label="Firmware" subtitle="Images and compliance" />
-        <NavItem to="/validation" icon={<CheckCircle2 size={18} />} label="Validate" subtitle="Proof and reports" />
-      </nav>
-      <div className="shell-topbar-actions">
-        <ModeToggle />
-        <div className="topbar-profile">
-          <div className="topbar-profile-head">
-            <span>{modeLabel}</span>
-            <StatusBadge status={modeStatus} />
+        <section className="spine-kit-manager" aria-label="Kit management">
+          <p>Selected kit</p>
+          <strong data-testid="spine-selected-kit">{activeProfile?.name ?? (loading ? "Loading kit" : "No selected kit")}</strong>
+          <label>
+            <span>Switch kit</span>
+            <select
+              aria-label="Switch kit"
+              disabled={loading || options.length === 0}
+              onChange={(event) => void onActivate(event.target.value)}
+              value={activeProfile?.id ?? ""}
+            >
+              {options.map((profile) => (
+                <option key={profile.id} value={profile.id}>{profile.name}</option>
+              ))}
+            </select>
+          </label>
+          <form onSubmit={createKit}>
+            <label>
+              <span>New kit name</span>
+              <input
+                aria-label="New kit name"
+                disabled={loading}
+                maxLength={80}
+                onChange={(event) => setNewKitName(event.target.value)}
+                placeholder="New kit name"
+                value={newKitName}
+              />
+            </label>
+            <button disabled={loading || !newKitName.trim()} type="submit">
+              <Plus size={15} />
+              Create kit
+            </button>
+          </form>
+          {error && <small role="alert">{error}</small>}
+        </section>
+      </header>
+
+      <nav className="spine-phases" aria-label="Build phases">
+        <section className={overviewSelected ? "spine-phase active" : "spine-phase"} data-spine-phase="overview">
+          <Link aria-current={overviewSelected ? "page" : undefined} className="spine-phase-link" to="/overview">
+            <Layers size={18} />
+            <span><strong>Overview</strong><small>Current kit status</small></span>
+          </Link>
+        </section>
+        <section className={setupSelected ? "spine-phase active" : "spine-phase"} data-spine-phase="setup">
+          <div className="spine-phase-label">
+            <Wrench size={18} />
+            <span><strong>Setup</strong><small>Equipment and defaults</small></span>
           </div>
-          <strong>{activeProfile?.name ?? (labProfileLoading ? "Loading setup" : "No active setup")}</strong>
-          <dl>
-            <div>
-              <dt>Subnet</dt>
-              <dd>{displayAddress(activeProfile?.address_plan.subnet)}</dd>
-            </div>
-            <div>
-              <dt>Source</dt>
-              <dd>{activeProfile ? labelize(activeProfile.source) : "Unavailable"}</dd>
-            </div>
-          </dl>
-          {(labProfileError || healthError) && (
-            <p>{labProfileError ? "Profile status unavailable." : "Backend health unavailable."}</p>
-          )}
-        </div>
-      </div>
-    </header>
-  );
-}
+          <ul className="spine-setup-links" aria-label="Setup modules">
+            {setupSpineItems.map((item) => (
+              <li key={item.label}><Link to={item.to}>{item.label}</Link></li>
+            ))}
+          </ul>
+        </section>
+        <section className={runSelected ? "spine-phase active" : "spine-phase"} data-spine-phase="run">
+          <Link aria-current={runSelected ? "page" : undefined} className="spine-phase-link" to="/overview?view=run">
+            <Play size={18} />
+            <span><strong>Run</strong><small>Build journey</small></span>
+          </Link>
+        </section>
+      </nav>
 
-function NavItem({
-  to,
-  icon,
-  label,
-  subtitle,
-  issueBadge
-}: {
-  to: string;
-  icon: ReactNode;
-  label: string;
-  subtitle?: string;
-  issueBadge?: ReportPageBadge;
-}) {
-  return (
-    <NavLink to={to} className={({ isActive }) => (isActive ? "nav-item active" : "nav-item")}>
-      {icon}
-      <span className="nav-item-text">
-        <span className="nav-item-label">{label}</span>
-        {subtitle && <small>{subtitle}</small>}
-      </span>
-      <IssueNavBadge badge={issueBadge} />
-    </NavLink>
+      <footer className="navigation-spine-footer"><ModeToggle /></footer>
+    </aside>
   );
-}
-
-function IssueNavBadge({ badge }: { badge?: ReportPageBadge }) {
-  if (!badge) return null;
-  if (badge.status === "success" || badge.status === "warning") return null;
-  const className = `issue-nav-badge issue-tone-${badge.status}`;
-  const label =
-    badge.status === "critical"
-      ? `Blocked ${badge.critical || badge.count}`
-      : badge.status === "not_configured_yet"
-        ? "Not configured"
-        : badge.label;
-  return <span className={className}>{label}</span>;
 }
 
 function ActiveLabSelector({

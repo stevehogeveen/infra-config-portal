@@ -216,21 +216,34 @@ async function openOperatorDetails(page: Page) {
   }
 }
 
-test("renders the new top-level navigation and pages", async ({ page }) => {
+test("renders exactly the three-phase navigation spine and removes the old top nav", async ({ page }) => {
   await page.goto("/overview");
 
-  await expect(page.locator("aside[aria-label='Primary navigation']")).toHaveCount(0);
-  await expect(page.locator("header[aria-label='Application header']")).toBeVisible();
-  await expect(page.locator("nav .nav-item-label")).toHaveText([
-    "Overview",
+  const spine = page.locator("aside[aria-label='Lab Builder navigation']");
+  await expect(spine).toBeVisible();
+  await expect(spine.locator("[data-spine-phase]")).toHaveCount(3);
+  await expect(spine.locator("[data-spine-phase] > :first-child strong")).toHaveText(["Overview", "Setup", "Run"]);
+  await expect(spine.getByLabel("Setup modules").getByRole("link")).toHaveText([
+    "iLO",
+    "Storage",
+    "ESXi",
+    "Windows",
+    "Cisco",
+    "NetApp",
+    "OVF",
     "Firmware",
-    "Validate"
+    "Global"
   ]);
-  for (const retiredLabel of ["Network", "Server", "Storage", "Virtualization"]) {
-    await expect(page.locator("nav .nav-item-label", { hasText: retiredLabel })).toHaveCount(0);
-  }
+  await expect(page.locator("header[aria-label='Application header']")).toHaveCount(0);
+  await expect(page.locator("nav.top-nav")).toHaveCount(0);
+  await expect(spine.locator("[data-spine-phase='overview']")).toHaveClass(/active/);
 
   await expect(page.getByRole("heading", { name: "Overview" })).toBeVisible();
+  await spine.locator("[data-spine-phase='run']").getByRole("link", { name: /Run/ }).click();
+  await expect(page).toHaveURL(/\/overview\?view=run/);
+  await expect(page.getByTestId("lab-build-journey")).toBeVisible();
+  await expect(spine.locator("[data-spine-phase='run']")).toHaveClass(/active/);
+
   await page.goto("/lab-setup");
   await expect(page).toHaveURL(/\/overview/);
   for (const retiredPath of ["/network", "/server", "/storage", "/virtualization"]) {
@@ -238,10 +251,11 @@ test("renders the new top-level navigation and pages", async ({ page }) => {
     await expect(page).toHaveURL(/\/overview/);
     await expect(page.getByRole("heading", { name: "Overview", exact: true })).toBeVisible();
     await expect(page.getByTestId("operator-home")).toBeVisible();
-    await expect(page.locator("section[aria-label='Living lab topology']")).toHaveCount(0);
+    await expect(page.locator("section[aria-label='Living lab topology']")).toBeVisible();
   }
   await page.goto("/firmware-upgrades");
   await expect(page.getByRole("heading", { name: "Firmware Upgrades", exact: true })).toBeVisible();
+  await expect(spine.locator("[data-spine-phase='setup']")).toHaveClass(/active/);
   await page.goto("/validation");
   await expect(page.getByRole("heading", { name: "Validation", exact: true })).toBeVisible();
   await page.goto("/config");
@@ -253,6 +267,27 @@ test("renders the new top-level navigation and pages", async ({ page }) => {
 
   await page.goto("/control-center");
   await expect(page).toHaveURL(/\/overview/);
+});
+
+test("kit create and switch update the selected kit across surfaces", async ({ page }) => {
+  await page.goto("/overview");
+
+  const spine = page.locator("aside[aria-label='Lab Builder navigation']");
+  await expect(spine.getByTestId("spine-selected-kit")).toHaveText("Runtime Lab");
+  await expect(page.getByTestId("operator-home")).toContainText("Runtime Lab");
+
+  await spine.getByLabel("New kit name").fill("Field Kit 204");
+  await spine.getByRole("button", { name: "Create kit" }).click();
+  await expect(spine.getByTestId("spine-selected-kit")).toHaveText("Field Kit 204");
+  await expect(page.getByTestId("operator-home")).toContainText("Field Kit 204");
+
+  await page.goto("/firmware-upgrades");
+  await expect(spine.getByTestId("spine-selected-kit")).toHaveText("Field Kit 204");
+  await spine.getByLabel("Switch kit").selectOption("runtime");
+  await expect(spine.getByTestId("spine-selected-kit")).toHaveText("Runtime Lab");
+
+  await page.goto("/overview");
+  await expect(page.getByTestId("operator-home")).toContainText("Runtime Lab");
 });
 
 test("operator home answers the next action without dashboard clutter", async ({ page }) => {
@@ -275,7 +310,9 @@ test("operator home answers the next action without dashboard clutter", async ({
   await expect(page.locator("section[aria-label='Scenario setup lanes']")).toHaveCount(0);
   await expect(page.locator("[data-region-id='lab-safety']")).toHaveCount(0);
   await expect(page.locator("[data-region-id='topology']")).toHaveCount(0);
-  await expect(page.locator("section[aria-label='Living lab topology']")).toHaveCount(0);
+  await expect(page.locator("section[aria-label='Living lab topology']")).toBeVisible();
+  await expect(page.getByTestId("lab-build-journey")).toHaveCount(0);
+  await expect(page.getByLabel("Ordered build steps")).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Readiness at a glance" })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Firmware Compliance" })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Active Blockers" })).toHaveCount(0);
@@ -403,14 +440,14 @@ test("failed build shows one completion report and retry only when safe", async 
   await expect(report.getByLabel("Technical build log")).not.toBeVisible();
 });
 
-test("operator details is the only entry to topology and proof from overview", async ({ page }) => {
+test("operator home shows the topology while Details remains the proof entry", async ({ page }) => {
   await page.goto("/overview");
 
-  await expect(page.locator("section[aria-label='Living lab topology']")).toHaveCount(0);
+  const topology = page.locator("section[aria-label='Living lab topology']");
+  await expect(topology).toBeVisible();
   await expect(page.locator("details.advanced-drawer").filter({ hasText: "Advanced proof" })).toHaveCount(0);
   await page.getByTestId("operator-home-view-details").click();
 
-  const topology = page.locator("section[aria-label='Living lab topology']");
   await expect(topology.getByLabel("Zoned lab map")).toBeVisible();
   await expect(topology.getByLabel("System setup picker").getByRole("button", { name: "Open system setup picker" })).toContainText("SRV+NETAPP+VCENTER");
   await expect(topology.getByLabel("Zoned lab map")).toContainText("Management");
@@ -457,7 +494,7 @@ test("operator home shows actionable blockers once in plain language", async ({ 
   await expect(home.getByLabel("Actionable blockers")).toContainText("Open Details, then choose Cisco switch");
   await expect(home.getByLabel("Actionable blockers")).not.toContainText("CISCO_MGMT_NOT_CONFIGURED");
   await expect(home.locator("article.operator-home-attention-item").filter({ hasText: "Cisco management IP is not ready." })).toHaveCount(1);
-  await expect(page.locator("section[aria-label='Living lab topology']")).toHaveCount(0);
+  await expect(page.locator("section[aria-label='Living lab topology']")).toBeVisible();
 });
 
 test("zoned map opens device workspace directly and keeps system scoped controls separate", async ({ page }) => {
@@ -628,7 +665,7 @@ test("zoned map opens device workspace directly and keeps system scoped controls
   await expect(systemPlan).toContainText("does not probe or reconfigure any device");
 });
 
-test("topology directs storage exceptions to the NetApp workspace", async ({ page }) => {
+test("topology does not duplicate the phase-aware next action", async ({ page }) => {
   const validation = labValidation();
   validation.validation_items = validation.validation_items.map((item) => (
     item.id === "netapp"
@@ -645,9 +682,9 @@ test("topology directs storage exceptions to the NetApp workspace", async ({ pag
   await page.goto("/overview");
   await openOperatorDetails(page);
 
-  const nextAction = page.locator("section[aria-label='Living lab topology'] .lab-topology-footer");
-  await expect(nextAction).toContainText("Open the NetApp workspace");
-  await expect(nextAction).not.toContainText("Open Storage");
+  const topology = page.locator("section[aria-label='Living lab topology']");
+  await expect(topology.locator(".lab-topology-footer")).not.toContainText("Next safe action");
+  await expect(page.getByTestId("operator-home-primary-action")).toHaveCount(1);
 });
 
 test("zoned map makes single-server local RAID mode unmistakable", async ({ page }) => {
@@ -835,7 +872,7 @@ test("overview design mode keeps the surface map-only until a node opens the wor
   await expect(page.locator("div[aria-label='Design mode rack composer']")).toHaveCount(0);
   await expect(page.locator("section[aria-label='Design topology blueprint']")).toHaveCount(0);
   await expect(topology.getByLabel("Map viewport controls")).toHaveCount(0);
-  await expect(topology.getByRole("button", { name: "Fit map to viewport" })).toHaveCount(0);
+  await expect(topology.getByRole("button", { name: "Fit map to viewport" })).toBeVisible();
   await expect(topology.getByLabel("Zoned lab map")).toContainText("Cisco C9300 L3 Core");
   await expect(topology.getByLabel("Management zone devices")).toContainText("HPE iLO");
   await expect(topology.getByLabel("Storage fabric zone devices")).toContainText("HPE Gen10");
@@ -977,14 +1014,13 @@ test("overview removes superseded layout and console surfaces from operator mode
   await expect(home).toBeVisible();
   await expect(page.getByRole("textbox", { name: "Change this page" })).toHaveCount(0);
   await expect(page.locator("[data-region-id='topology']")).toHaveCount(0);
-  await expect(page.locator("section[aria-label='Living lab topology']")).toHaveCount(0);
+  await expect(page.locator("section[aria-label='Living lab topology']")).toBeVisible();
   await expect(page.locator("details.advanced-drawer")).toHaveCount(0);
   await expect(page.getByText("Discover Console")).toHaveCount(0);
   await expect(page.getByText("Refresh Cisco Console")).toHaveCount(0);
   await expect(page.getByText("Refresh NetApp Consoles")).toHaveCount(0);
 
   await openOperatorDetails(page);
-  await expect(page.locator("section[aria-label='Living lab topology']")).toBeVisible();
   await expect(page.locator("details.advanced-drawer").filter({ hasText: "Advanced proof" })).toBeVisible();
 });
 
@@ -1019,7 +1055,7 @@ test("single-server map removes vCenter and keeps direct ESXi guidance on the se
   await expect(serverWorkspace.getByLabel("Server workspace checks")).not.toContainText("vCenter Live Check");
 });
 
-test("top nav and map workspaces expose run controls without dead settings drawers", async ({ page }) => {
+test("navigation spine and map workspaces expose run controls without dead settings drawers", async ({ page }) => {
   await page.goto("/overview");
   await expect(page.getByRole("button", { name: "Settings" })).toHaveCount(0);
   await expect(page.locator("section.tab-settings-drawer")).toHaveCount(0);
@@ -1703,6 +1739,10 @@ async function installApiMocks(page: Page) {
       activeProfiles = activeLabProfilesFromProfile(savedProfile);
       return json(route, profile);
     }
+    if (url.pathname === "/api/v1/lab/profiles/runtime/activate") {
+      activeProfiles = activeLabProfilesFixture();
+      return json(route, activeProfiles);
+    }
     if (url.pathname.startsWith("/api/v1/lab/profiles/") && url.pathname.endsWith("/activate")) {
       if (savedProfile) {
         activeProfiles = activeLabProfilesFromProfile(savedProfile);
@@ -1722,9 +1762,6 @@ async function installApiMocks(page: Page) {
         activeProfiles = activeLabProfilesFromProfile(savedProfile);
         return json(route, savedProfile);
       }
-      return json(route, savedProfile ? activeProfiles : activeLabProfilesFixture());
-    }
-    if (url.pathname === "/api/v1/lab/profiles/runtime/activate") {
       return json(route, savedProfile ? activeProfiles : activeLabProfilesFixture());
     }
     if (url.pathname === "/api/v1/lab/topology-design-draft") {
@@ -3997,7 +4034,6 @@ function activeLabProfilesFromProfile(profile: Record<string, unknown>) {
   state.active_context.enabled_features = normalizedProfile.features;
   state.active_context.resolved_address_plan = resolvedAddressPlan;
   state.active_context.topology = normalizedProfile.profile_topology;
-  state.runtime_profile = normalizedProfile;
   state.profiles = [normalizedProfile];
   return state;
 }
