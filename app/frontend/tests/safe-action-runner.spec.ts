@@ -467,6 +467,16 @@ test("zoned map opens device workspace directly and keeps system scoped controls
   const topology = page.locator("section[aria-label='Living lab topology']");
   await expect(topology.getByLabel("System lab safety gates")).toBeVisible();
   await expect(topology.getByLabel("System lab safety gates")).toContainText("Lab safety");
+  await expect(page.locator(".lab-safety-controls")).toHaveCount(1);
+  await expect(page.getByLabel("Lab safety settings")).toContainText("Change gates only from Lab safety in the map");
+  await expect(topology.getByLabel("Topology status")).toContainText("topology items ready");
+  const topologyNextAction = topology.locator(".lab-topology-footer");
+  await expect(topologyNextAction).not.toContainText(/Open (Storage|Network|Server|Virtualization)/);
+  await expect(page.locator(".operator-object-list-head").first()).toContainText(/objects ready/);
+  const vcenterNode = topology.getByRole("button", { name: "Open vCenter VCSA workspace" });
+  await expect(vcenterNode).toContainText("Central management");
+  await expect(vcenterNode).not.toContainText("direct ESXi inventory");
+  await expect(vcenterNode).not.toContainText("created by this app");
   const ciscoNode = topology.getByRole("button", { name: "Open Cisco switch workspace" });
   await ciscoNode.click();
   await expect(ciscoNode).toHaveAttribute("aria-current", "true");
@@ -616,6 +626,28 @@ test("zoned map opens device workspace directly and keeps system scoped controls
   await expect(systemPlan.getByRole("button", { name: "Switch" })).toBeVisible();
   await expect(systemPlan.getByRole("button", { name: "New" })).toBeVisible();
   await expect(systemPlan).toContainText("does not probe or reconfigure any device");
+});
+
+test("topology directs storage exceptions to the NetApp workspace", async ({ page }) => {
+  const validation = labValidation();
+  validation.validation_items = validation.validation_items.map((item) => (
+    item.id === "netapp"
+      ? { ...item, current_state: "Not reachable", next_action: "Refresh NetApp readiness.", status: "blocked" }
+      : item
+  ));
+  await page.route("**/api/v1/lab/validation", (route) => json(route, validation));
+  await page.route("**/api/v1/providers/status", (route) => json(route, [
+    providerStatus("cisco-console", "Cisco", "network", "ready"),
+    providerStatus("ilo-redfish", "HPE iLO", "server", "ready"),
+    providerStatus("esxi-readonly", "ESXi", "virtualization", "ready"),
+    providerStatus("netapp-ontap", "NetApp ONTAP", "storage", "blocked")
+  ]));
+  await page.goto("/overview");
+  await openOperatorDetails(page);
+
+  const nextAction = page.locator("section[aria-label='Living lab topology'] .lab-topology-footer");
+  await expect(nextAction).toContainText("Open the NetApp workspace");
+  await expect(nextAction).not.toContainText("Open Storage");
 });
 
 test("zoned map makes single-server local RAID mode unmistakable", async ({ page }) => {

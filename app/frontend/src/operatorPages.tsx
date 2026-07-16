@@ -841,7 +841,7 @@ export function OperatorOverviewPage({
         details: labValues,
         freshness: "Operator config",
         id: "active-setup",
-        nextAction: "Use the relevant page Configure panel if any saved lab value is wrong.",
+        nextAction: "Open the relevant device workspace if any saved lab value is wrong.",
         source: activeProfile ? "Saved setup" : "Not checked",
         status: activeProfile ? "ready" : "not_configured_yet",
         summary: `${activeProfile?.name ?? "No active setup"} / ${displayAddress(address.subnet)}`,
@@ -884,7 +884,6 @@ export function OperatorOverviewPage({
       <LabSafetySettingsSection
         auditEvents={auditEvents}
         labSafety={labSafety}
-        onUpdated={loadDetails}
       />
     </AdvancedDrawer>
   );
@@ -931,7 +930,10 @@ export function OperatorOverviewPage({
             firmwareSummaries={firmwareSummaries}
             health={health}
             labProfileState={labProfileState}
+            labSafety={labSafety}
             onReload={load}
+            onSafetyUpdated={loadDetails}
+            safetyLoading={detailsLoading}
             vcenterNetapp={vcenterNetapp}
             workflowActions={workflowActions}
           />
@@ -1545,9 +1547,9 @@ function ServerSetupShapePanel({
               status: localServer ? "plan-only" : "needs-attention"
             },
             {
-              detail: localServer ? "vCenter is optional before shipment." : "Virtualization page owns host registration and VM portability.",
+              detail: localServer ? "vCenter is optional before shipment." : "The vCenter workspace owns host registration and VM portability.",
               label: "Virtualization handoff",
-              nextAction: localServer ? "Open Virtualization only if the build requires vCenter." : "Open Virtualization after the datastore is ready.",
+              nextAction: localServer ? "Open the vCenter workspace only if the build requires central management." : "Open the vCenter workspace after the datastore is ready.",
               status: localServer ? "plan-only" : "needs-attention"
             }
           ]}
@@ -3883,7 +3885,7 @@ function VirtualizationSetupShapePanel({
             {
               detail: storageLabel,
               label: "Storage dependency",
-              nextAction: "Open Storage when datastore readiness changes.",
+              nextAction: "Open the NetApp workspace when datastore readiness changes.",
               status: "plan-only"
             }
           ]}
@@ -5618,8 +5620,8 @@ function OperatorWorkspace({
       <div className="operator-workspace-grid">
         <div className="operator-object-list" aria-label="Objects">
           <div className="operator-object-list-head">
-            <span>{rows.length} objects</span>
-            <strong>{rows.filter((row) => statusTone(row.status) === "ready").length} ready</strong>
+            <span>Object inventory</span>
+            <strong>{rows.filter((row) => statusTone(row.status) === "ready").length} of {rows.length} objects ready</strong>
           </div>
           {rows.map((row) => (
             <button
@@ -5862,7 +5864,6 @@ type TopologyNode = {
   meta?: string;
   page: string;
   status: string;
-  tag?: string;
   title: string;
   tone: TopologyNodeTone;
   zone: "management" | "storage";
@@ -5920,7 +5921,10 @@ function LabTopologyMap({
   firmwareSummaries,
   health,
   labProfileState,
+  labSafety,
   onReload,
+  onSafetyUpdated,
+  safetyLoading,
   vcenterNetapp,
   workflowActions
 }: {
@@ -5932,7 +5936,10 @@ function LabTopologyMap({
   firmwareSummaries: FirmwareSummary[];
   health?: HealthLike;
   labProfileState: LabProfileList | null;
+  labSafety: LabSafetySettings | null;
   onReload: () => Promise<void> | void;
+  onSafetyUpdated: () => Promise<void>;
+  safetyLoading: boolean;
   vcenterNetapp: ProviderProbeResult | null;
   workflowActions: WorkflowAction[];
 }) {
@@ -6031,13 +6038,12 @@ function LabTopologyMap({
 
   if (vmInScope) {
     nodes.push({
-      details: vcenterInScope ? "API + inventory" : "direct ESXi inventory",
+      details: vcenterInScope ? "Central management" : "Direct host management",
       icon: topologyIndustryIcon(vcenterInScope ? "vcenter" : "hypervisor"),
       id: "vcenter",
       meta: topologyVmMeta(vcenterNetapp, vcenterInScope),
       page: "/overview#topology-map",
       status: vmStatus,
-      tag: topologyVmTag(vcenterNetapp, vcenterInScope),
       title: vcenterInScope ? "vCenter" : vmName,
       tone: topologyTone(vmStatus, "created"),
       zone: "management"
@@ -6099,7 +6105,7 @@ function LabTopologyMap({
           <div className="lab-topology-pills" aria-label="Topology status">
             <span className={`topology-pill ${runtimeClass}`}><CheckCircle2 size={14} /> {runtimeLabel}</span>
             <span className={`topology-pill topology-pill-subnet-${subnetState.status}`}><Route size={14} /> {subnetState.label}</span>
-            <span className="topology-pill">{readyChecks} of {checkCount} checks ready</span>
+            <span className="topology-pill">{readyChecks} of {checkCount} topology items ready</span>
           </div>
         </div>
       </div>
@@ -6171,7 +6177,11 @@ function LabTopologyMap({
             labProfileState={labProfileState}
             onChanged={onReload}
           />
-          <TopologySystemSafetyStrip onReload={onReload} />
+          <TopologySystemSafetyStrip
+            labSafety={labSafety}
+            loading={safetyLoading}
+            onUpdated={onSafetyUpdated}
+          />
           {mapOverflowing && (
             <button
               className="topology-map-fit-button"
@@ -6515,36 +6525,14 @@ function CiscoWorkspaceNetworkControls({
 }
 
 function TopologySystemSafetyStrip({
-  onReload
+  labSafety,
+  loading,
+  onUpdated
 }: {
-  onReload: () => Promise<void> | void;
+  labSafety: LabSafetySettings | null;
+  loading: boolean;
+  onUpdated: () => Promise<void>;
 }) {
-  const [labSafety, setLabSafety] = useState<LabSafetySettings | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-
-  async function loadSafety() {
-    setError("");
-    setLoading(true);
-    try {
-      setLabSafety(await api.labSafetySettings());
-    } catch (err) {
-      setError(errorMessage(err));
-      setLabSafety(null);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function refreshAfterUpdate() {
-    await loadSafety();
-    await onReload();
-  }
-
-  useEffect(() => {
-    void loadSafety();
-  }, []);
-
   const ready = labSafetyReady(labSafety);
   const missing = (labSafety?.flags ?? []).filter((flag) => flag.required && !flag.enabled).length;
 
@@ -6554,14 +6542,13 @@ function TopologySystemSafetyStrip({
         <span>
           <ShieldCheck size={14} />
           <strong>Lab safety</strong>
-          <small>{loading ? "Checking gates" : error ? "Unavailable" : ready ? "Ready for real-lab checks" : `${missing} gate${missing === 1 ? "" : "s"} missing`}</small>
+          <small>{loading ? "Checking gates" : !labSafety ? "Unavailable" : ready ? "Ready for real-lab checks" : `${missing} gate${missing === 1 ? "" : "s"} missing`}</small>
         </span>
         <StatusBadge label={ready ? "Ready" : "Gated"} status={ready ? "ready" : "blocked"} />
       </summary>
       <div className="topology-system-safety-panel">
         <p>System-wide real-lab gates stay here, not inside a single device workspace.</p>
-        {error && <div className="operator-feedback error">{error}</div>}
-        <LabSafetyControls labSafety={labSafety} onUpdated={refreshAfterUpdate} />
+        <LabSafetyControls labSafety={labSafety} onUpdated={onUpdated} />
       </div>
     </details>
   );
@@ -7546,7 +7533,6 @@ function TopologyMapNodeCard({
         </span>
         <span className="topology-node-chips">
           {node.meta && <span className="topology-node-meta">{node.meta}</span>}
-          {node.tag && <span className="topology-node-tag">{node.tag}</span>}
         </span>
       </button>
     </div>
@@ -11203,7 +11189,7 @@ function topologySubnetState(subnet: string | null, health?: HealthLike): Topolo
   const hostIps = (health?.host_ipv4_addresses ?? []).map((item) => asString(item)).filter(Boolean);
   if (!plannedSubnet) {
     return {
-      detail: "No active lab subnet is saved. Open Network and save the subnet before trusting topology status.",
+      detail: "No active lab subnet is saved. Open system setup and save the subnet before trusting topology status.",
       label: "Subnet missing",
       status: "unknown"
     };
@@ -11316,13 +11302,6 @@ function topologyVmMeta(probe: ProviderProbeResult | null, vcenterInScope: boole
   return vcenterInScope ? "waiting for inventory proof" : "direct host path";
 }
 
-function topologyVmTag(probe: ProviderProbeResult | null, vcenterInScope: boolean): string | undefined {
-  const checks = objectValue(probe?.checks);
-  const inventory = objectValue(checks.vm_inventory_visible);
-  if (asBoolean(inventory.visible)) return "seen by app";
-  return vcenterInScope ? undefined : "created by this app";
-}
-
 function topologyNextAction({
   currentView,
   datastoreStatus,
@@ -11338,12 +11317,16 @@ function topologyNextAction({
   serverStatus: string;
   storageProtocol: string;
 }): string {
-  if (topologyTone(serverStatus) !== "ready") return "Open Server and refresh iLO, ESXi, and local storage readiness.";
-  if (netappInScope && topologyTone(netappStatus) !== "ready") return "Open Storage and refresh NetApp live readiness after the controllers are powered on.";
+  if (topologyTone(serverStatus) !== "ready") {
+    return "Open the HPE server workspace and refresh iLO, ESXi, and local storage readiness.";
+  }
+  if (netappInScope && topologyTone(netappStatus) !== "ready") {
+    return "Open the NetApp workspace and refresh live readiness after the controllers are powered on.";
+  }
   if (netappInScope && topologyTone(datastoreStatus) !== "ready") {
     return storageProtocol === "iscsi"
       ? "Establish the ESXi iSCSI session when you are ready; required non-iSCSI paths are green."
-      : "Mount or validate the NetApp datastore from Storage.";
+      : "Mount or validate the NetApp datastore from the NetApp workspace.";
   }
   return currentView.fixSteps[0] || currentView.summary || "Continue with Validation when the topology matches the active setup.";
 }
@@ -13870,12 +13853,10 @@ function networkPrefixFromCidr(value: string | null): number | null {
 
 function LabSafetySettingsSection({
   auditEvents,
-  labSafety,
-  onUpdated
+  labSafety
 }: {
   auditEvents: AuditEvent[];
   labSafety: LabSafetySettings | null;
-  onUpdated: () => Promise<void>;
 }) {
   const safetyEvents = auditEvents.filter((event) => event.event_type === "settings.lab_safety.updated").slice(0, 5);
   return (
@@ -13883,7 +13864,7 @@ function LabSafetySettingsSection({
       <div className="overview-panel-head">
         <div>
           <p className="operator-kicker">Global safety</p>
-          <h2>Real lab gates and audit trail</h2>
+          <h2>Real lab gate state and audit trail</h2>
         </div>
         <StatusBadge
           label={labSafetyReady(labSafety) ? "Ready" : labSafety ? "Complete gates" : "Unavailable"}
@@ -13894,12 +13875,18 @@ function LabSafetySettingsSection({
         <Card className="network-prereq-panel" hover={false}>
           <CardHeader>
             <div>
-              <h3>Runtime gate state</h3>
+              <h3>System-scope gate state</h3>
               <p>{labSafety?.updated_at ? `Updated ${formatDateTime(labSafety.updated_at)}` : "Using boot environment defaults."}</p>
             </div>
           </CardHeader>
           <CardContent>
-            <LabSafetyControls labSafety={labSafety} onUpdated={onUpdated} />
+            <div className="overview-clear-state">
+              <StatusBadge
+                label={labSafetyReady(labSafety) ? "Ready" : labSafety ? "Gated" : "Unavailable"}
+                status={labSafetyReady(labSafety) ? "ready" : "blocked"}
+              />
+              <span>Change gates only from Lab safety in the map. This audit view reads the same saved gate state.</span>
+            </div>
           </CardContent>
         </Card>
         <LabSafetyAuditList events={safetyEvents} />
