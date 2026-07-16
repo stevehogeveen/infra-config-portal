@@ -63,6 +63,20 @@ revision/profile/evidence contract are stopped and must be restarted from a new 
 - The existing device workspace, firmware, validation, and safety-gate browser suite
   remains the regression gate for this slice.
 
+The hardened branch passed the cumulative Windows fast-verification gate with frontend
+build and component checks, 51 Playwright journeys, 85 backend API tests, 10 workflow
+diagnosis tests, a valid OpenAPI contract with 142 paths and 158 operations, and all 10
+declared QA capabilities satisfied.
+
+## Fresh Launch
+
+Windows operators can start the backend and frontend with
+`app/scripts/start-lab-builder.ps1`. The launcher waits for backend health and Operator
+Home, honors the explicit/environment/saved operational-mode precedence, records owned
+processes, and has a matching verified-process stop command. A separate safe-mock Compose
+lane preserves the repository path contract and persistent local/evidence mounts; Linux
+CI performs the authoritative fresh-container health and Operator Home smoke.
+
 ## Known Boundary
 
 The iSCSI plan uses the existing host-side validation action because the repository does
