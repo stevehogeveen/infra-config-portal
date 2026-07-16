@@ -5,7 +5,16 @@ import re
 from datetime import UTC, datetime
 from pathlib import Path
 
+from app.providers.redaction import redact_sensitive
 from app.schemas import AiChangeRequestCreate, AiChangeRequestRead
+
+
+MAILBOX_IDENTITY_VALUE_RE = re.compile(
+    r"(?i)\b(hostname|fqdn|customer|client|account|serial(?:_?number)?|ip(?:_?address)?)"
+    r"(\s*[=:]\s*)([^,\s;]+)"
+)
+MAILBOX_EMAIL_RE = re.compile(r"(?i)\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b")
+MAILBOX_IPV4_RE = re.compile(r"(?<![\d.])(?:\d{1,3}\.){3}\d{1,3}(?![\d.])")
 
 
 def create_ai_change_request(payload: AiChangeRequestCreate) -> AiChangeRequestRead:
@@ -38,6 +47,10 @@ def _append_agent_chat_notice(
 ) -> None:
     mailbox = root / "docs" / "agent-chat.md"
     mailbox.parent.mkdir(parents=True, exist_ok=True)
+    safe_page = _mailbox_safe_text(payload.page)
+    safe_route = _mailbox_safe_text(payload.route)
+    safe_target = _mailbox_safe_text(payload.target or "not specified")
+    safe_request = _mailbox_safe_text(payload.request)
     mailbox_entry = "\n".join(
         [
             "",
@@ -48,19 +61,26 @@ def _append_agent_chat_notice(
             f"New AI change request queued: `{relative_artifact}`",
             "",
             f"- request_id: `{request_id}`",
-            f"- page: `{payload.page}`",
-            f"- route: `{payload.route}`",
-            f"- target: `{payload.target or 'not specified'}`",
+            f"- page: `{safe_page}`",
+            f"- route: `{safe_route}`",
+            f"- target: `{safe_target}`",
             "- status: sent to Claude+Codex mailbox; capture-only, no workflow ran.",
             "",
             "Operator request:",
             "",
-            f"> {payload.request}",
+            f"> {safe_request}",
             "",
         ]
     )
     with mailbox.open("a", encoding="utf-8", newline="\n") as handle:
         handle.write(mailbox_entry)
+
+
+def _mailbox_safe_text(value: str) -> str:
+    redacted = str(redact_sensitive(value))
+    redacted = MAILBOX_IDENTITY_VALUE_RE.sub(r"\1\2REDACTED", redacted)
+    redacted = MAILBOX_EMAIL_RE.sub("REDACTED_EMAIL", redacted)
+    return MAILBOX_IPV4_RE.sub("REDACTED_IP", redacted)
 
 
 def _markdown(payload: AiChangeRequestCreate, request_id: str, created_at: datetime) -> str:
