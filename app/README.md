@@ -225,9 +225,28 @@ make frontend-run
 The Vite dev server runs at `http://127.0.0.1:5173` and proxies API requests
 to `http://127.0.0.1:8001`.
 
-On Windows PowerShell, use the frontend scripts instead of the Unix-oriented
-Make/runit startup path. Start the backend and frontend from separate
-PowerShell windows:
+On Windows PowerShell, use the native scripts instead of the Unix-oriented
+Make/runit startup path. For a fresh one-command launch:
+
+```powershell
+cd C:\path\to\infra-config-portal\app
+.\scripts\start-lab-builder.ps1
+```
+
+The launcher starts hidden backend and frontend processes, waits for both HTTP
+surfaces, opens `http://127.0.0.1:5173/overview`, and records only the processes
+it owns under repo-root `.local\windows-runtime`. It uses an explicit `-Mode`
+first, then an existing `PROVIDER_MODE`, then the mode saved by the app in
+`.local\app-mode.env`, and otherwise fails safely to `mock`.
+
+Stop only that owned Windows session with:
+
+```powershell
+.\scripts\stop-lab-builder.ps1
+```
+
+Use separate PowerShell windows when foreground logs or independent process
+control are useful:
 
 ```powershell
 cd C:\path\to\infra-config-portal\app
@@ -300,6 +319,12 @@ To run the backend on a different local port:
 ```powershell
 .\scripts\start-backend.ps1 -Port 8010
 .\scripts\start-frontend.ps1 -ProxyTarget http://127.0.0.1:8010
+```
+
+The one-command equivalent is:
+
+```powershell
+.\scripts\start-lab-builder.ps1 -BackendPort 8010 -FrontendPort 5174 -NoBrowser
 ```
 
 For LAN access from another computer on the same trusted lab network, bind only

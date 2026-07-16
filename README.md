@@ -83,6 +83,18 @@ Windows PowerShell does not require Make or bash for the common local gate.
 From `app/`, run:
 
 ```powershell
+.\scripts\start-lab-builder.ps1
+```
+
+This starts the backend and frontend, verifies both HTTP surfaces, and opens
+Operator Home. It honors an explicit mode, an existing `PROVIDER_MODE`, or the
+mode saved by the app in `.local\app-mode.env`; otherwise it starts safely in
+mock mode. Stop only the processes owned by that launch with
+`.\scripts\stop-lab-builder.ps1`.
+
+Run the Windows quality gate separately:
+
+```powershell
 .\scripts\windows-doctor.ps1
 .\scripts\check-windows.ps1
 ```

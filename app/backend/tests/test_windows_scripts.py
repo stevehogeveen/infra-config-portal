@@ -65,6 +65,41 @@ def test_start_scripts_preflight_port_conflicts() -> None:
         assert "rerun with -Port <free-port>" in script
 
 
+def test_backend_start_uses_explicit_env_saved_mode_precedence() -> None:
+    script = (APP_SCRIPTS / "start-backend.ps1").read_text(encoding="utf-8")
+
+    requested_index = script.index("if ($RequestedMode")
+    environment_index = script.index("if ($env:PROVIDER_MODE")
+    saved_index = script.index('$modePath = Join-Path $RepositoryRoot ".local\\app-mode.env"')
+    fallback_index = script.index('return "mock"')
+
+    assert requested_index < environment_index < saved_index < fallback_index
+    assert '$env:PROVIDER_MODE = Resolve-ProviderMode' in script
+    assert 'ValidateSet("", "mock", "local-readonly", "local-lab-readwrite")' in script
+
+
+def test_one_command_windows_launcher_is_owned_and_fail_closed() -> None:
+    launcher = (APP_SCRIPTS / "start-lab-builder.ps1").read_text(encoding="utf-8")
+    stopper = (APP_SCRIPTS / "stop-lab-builder.ps1").read_text(encoding="utf-8")
+
+    assert "Wait-HttpReady" in launcher
+    assert "/health" in launcher
+    assert "/overview" in launcher
+    assert "Start-Process" in launcher
+    assert "-WindowStyle Hidden" in launcher
+    assert "Stop-OwnedProcess -Process $frontendProcess" in launcher
+    assert "Stop-OwnedProcess -Process $backendProcess" in launcher
+    assert 'schema_version = "lab-builder-windows-runtime/v1"' in launcher
+    assert "backend_started_at" in launcher
+    assert "frontend_started_at" in launcher
+    assert "taskkill.exe /PID $Process.Id /T /F" in launcher
+
+    assert "Refusing to stop process" in stopper
+    assert "start time does not match" in stopper
+    assert "taskkill.exe /PID $processId /T /F" in stopper
+    assert 'Remove-Item -LiteralPath $pidPath -Force' in stopper
+
+
 def test_hardware_smoke_script_keeps_real_lab_lane_explicit() -> None:
     script = (APP_SCRIPTS / "hardware-smoke.ps1").read_text(encoding="utf-8")
 
