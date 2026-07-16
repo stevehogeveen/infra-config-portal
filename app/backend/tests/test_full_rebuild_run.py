@@ -130,6 +130,21 @@ def test_live_stage_keeps_scalar_blocker_and_warning_whole(monkeypatch, tmp_path
     assert result["warnings"] == ["retry later"]
 
 
+def test_live_stage_timeout_preserves_safe_output_tail(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("FULL_REBUILD_STAGE_TIMEOUT_SECONDS", "2")
+
+    def fake_run(cmd: list[str], **_kwargs: Any) -> subprocess.CompletedProcess[str]:
+        raise subprocess.TimeoutExpired(cmd, 2, output=b"ready-\xff", stderr=None)
+
+    monkeypatch.setattr(full_rebuild_run.subprocess, "run", fake_run)
+
+    result = full_rebuild_run._run_live_stage(["scripts/example.py"], tmp_path / "example.md")
+
+    assert result["status"] == "blocked"
+    assert result["returncode"] == 124
+    assert result["summary"] == {"stdout_tail": "ready-\ufffd", "stderr_tail": ""}
+
+
 def test_combined_stage_dedupes_blockers_and_warnings() -> None:
     result = full_rebuild_run._combined_stage(
         "combined",

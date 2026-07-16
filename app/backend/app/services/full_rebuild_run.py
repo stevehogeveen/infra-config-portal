@@ -319,6 +319,16 @@ def _run_live_stage(command: list[str], report: Path) -> dict[str, Any]:
     }
 
 
+def _stream_text(value: str | bytes | None) -> str:
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+    return value or ""
+
+
+def _tail(value: str, *, max_chars: int = 4000) -> str:
+    return value[-max_chars:]
+
+
 def _combined_stage(message: str, stage_items: list[dict[str, Any]]) -> dict[str, Any]:
     blockers = [blocker for stage in stage_items for blocker in unique_strings(stage.get("blockers"))]
     warnings = [warning for stage in stage_items for warning in unique_strings(stage.get("warnings"))]

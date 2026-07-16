@@ -75,6 +75,16 @@ def _definitions(*, middle_mode: str = "read_only") -> tuple[BuildStepDefinition
     )
 
 
+def _completed_runner(action_id: str, _session: Any, _payload: Any) -> dict[str, Any]:
+    return {
+        "run_id": action_id,
+        "status": "completed",
+        "summary": "complete",
+        "blockers": [],
+        "warnings": [],
+    }
+
+
 @pytest.fixture(autouse=True)
 def isolate_build_runs(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setenv("LAB_BUILD_RUN_DIR", str(tmp_path / "lab-build-runs"))
@@ -411,13 +421,7 @@ def test_action_result_secrets_are_redacted_before_persistence() -> None:
 
 def test_guarded_evidence_cannot_be_reused_across_builds(monkeypatch: pytest.MonkeyPatch) -> None:
     definitions = _definitions(middle_mode="write")
-    runner = lambda action_id, _session, _payload: {
-        "run_id": action_id,
-        "status": "completed",
-        "summary": "complete",
-        "blockers": [],
-        "warnings": [],
-    }
+    runner = _completed_runner
     first = start_lab_build(context=_context(), definitions=definitions, action_runner=runner)
     second = start_lab_build(context=_context(), definitions=definitions, action_runner=runner)
     trace = {
@@ -455,13 +459,7 @@ def test_guarded_evidence_cannot_be_reused_across_builds(monkeypatch: pytest.Mon
 
 def test_stale_revision_and_profile_change_are_rejected() -> None:
     definitions = _definitions(middle_mode="write")
-    runner = lambda action_id, _session, _payload: {
-        "run_id": action_id,
-        "status": "completed",
-        "summary": "complete",
-        "blockers": [],
-        "warnings": [],
-    }
+    runner = _completed_runner
     run = start_lab_build(context=_context(), definitions=definitions, action_runner=runner)
 
     with pytest.raises(LabBuildRunStateError, match="changed after the page"):
@@ -509,13 +507,7 @@ def test_dependency_blocked_step_cannot_be_retried_directly() -> None:
 
 
 def test_stale_running_lease_recovers_as_retryable_failure() -> None:
-    runner = lambda action_id, _session, _payload: {
-        "run_id": action_id,
-        "status": "completed",
-        "summary": "complete",
-        "blockers": [],
-        "warnings": [],
-    }
+    runner = _completed_runner
     run = start_lab_build(context=_context(), definitions=_definitions(), action_runner=runner)
     stored = lab_build_engine._load_run(run["run_id"])
     stored.update({"status": "running", "current_step_id": "first", "finished_at": None})
@@ -537,13 +529,7 @@ def test_stale_running_lease_recovers_as_retryable_failure() -> None:
 
 
 def test_latest_run_is_scoped_to_the_selected_kit() -> None:
-    runner = lambda action_id, _session, _payload: {
-        "run_id": action_id,
-        "status": "completed",
-        "summary": "complete",
-        "blockers": [],
-        "warnings": [],
-    }
+    runner = _completed_runner
     first_context = _context()
     second_context = _context()
     second_context["active_profile"]["id"] = "kit-2"
@@ -612,13 +598,7 @@ def test_concurrent_resume_executes_downstream_step_once(monkeypatch: pytest.Mon
 
 
 def test_legacy_active_run_fails_closed_during_recovery() -> None:
-    runner = lambda action_id, _session, _payload: {
-        "run_id": action_id,
-        "status": "completed",
-        "summary": "complete",
-        "blockers": [],
-        "warnings": [],
-    }
+    runner = _completed_runner
     run = start_lab_build(
         context=_context(),
         definitions=_definitions(middle_mode="write"),

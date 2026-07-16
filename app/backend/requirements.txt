@@ -7,5 +7,6 @@ pydantic==2.11.5
 pytest==8.3.5
 python-dotenv==1.1.0
 pyserial==3.5
+ruff==0.15.21
 SQLAlchemy==2.0.41
 uvicorn[standard]==0.34.3

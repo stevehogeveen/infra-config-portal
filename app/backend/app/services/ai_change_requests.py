@@ -70,7 +70,7 @@ def _markdown(payload: AiChangeRequestCreate, request_id: str, created_at: datet
         [
             f"# AI change request {request_id}",
             "",
-            f"- status: queued",
+            "- status: queued",
             f"- created_at: {created_at.isoformat()}",
             f"- page: {payload.page}",
             f"- route: {payload.route}",
