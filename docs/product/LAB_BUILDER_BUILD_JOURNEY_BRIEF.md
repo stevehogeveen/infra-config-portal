@@ -1,7 +1,12 @@
 # Lab Builder Vertical Slice — Unified Engine and the Build Journey
 
-Status: proposed (CXO brief for Codex)
-Depends on: `docs/product/LAB_BUILDER_SIMPLICITY_CONTRACT.md`, Operator Home (PR #2)
+Status: delivered (historical CXO implementation brief)
+Depends on: `docs/product/LAB_BUILDER_SIMPLICITY_CONTRACT.md`, Operator Home
+
+Implementation record: `docs/product/LAB_BUILDER_BUILD_JOURNEY_IMPLEMENTATION.md`
+
+This brief records the approved product intent and acceptance criteria. The implementation
+record owns current behavior, reliability boundaries, API details, and verification evidence.
 
 ## Goal
 
