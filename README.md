@@ -141,8 +141,11 @@ docker compose up --build
 Compose starts local PostgreSQL, the FastAPI backend, and the Vite frontend in
 `PROVIDER_MODE=mock`. This lane is for safe local UI/API development only: it
 does not read `.env.local.real-lab`, does not call real provider APIs, and does
-not enable real-lab apply paths. The frontend waits for the backend health check
-before starting.
+not enable real-lab apply paths. The container keeps the repository path shape
+expected by shared config and scripts, persists repo-root `.local` and
+`artifacts`, and proxies browser API calls through the frontend so LAN clients
+do not accidentally call their own loopback address. The frontend waits for the
+backend health check before starting.
 
 Use the `runit`/Make workflow above, not Docker Compose, when intentionally
 working in `local-readonly` or `local-lab-readwrite` runtime mode.

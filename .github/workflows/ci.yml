@@ -25,6 +25,18 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
         working-directory: app/frontend
+      - name: Validate Compose contract
+        run: docker compose config --quiet
+        working-directory: app
+      - name: Smoke fresh Compose launch
+        shell: bash
+        working-directory: app
+        run: |
+          set -euo pipefail
+          trap 'docker compose down --volumes --remove-orphans' EXIT
+          docker compose up --detach --build --wait --wait-timeout 180
+          curl --fail --silent http://127.0.0.1:8001/health | python -c 'import json,sys; value=json.load(sys.stdin); assert value["status"] == "ok"; assert value["provider_mode"] == "mock"'
+          curl --fail --silent http://127.0.0.1:5173/overview >/dev/null
       - name: Run Linux test gate
         run: make test
       - name: Run Linux lint gate
