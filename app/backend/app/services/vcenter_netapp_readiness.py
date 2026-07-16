@@ -66,7 +66,7 @@ VCENTER_ATTACH_ESXI_TIMEOUT_SECONDS = 900
 
 
 def _default_vcsa_mount_roots() -> tuple[Path, ...]:
-    if os.name == "nt":
+    if _is_windows_platform():
         return (Path(tempfile.gettempdir()) / "vcsa-iso",)
     return (
         Path("/tmp/vcsa-iso"),
@@ -74,6 +74,10 @@ def _default_vcsa_mount_roots() -> tuple[Path, ...]:
         Path("/media/vcsa-iso"),
         Path("/run/media/vcsa-iso"),
     )
+
+
+def _is_windows_platform() -> bool:
+    return os.name == "nt"
 
 
 VCSA_MOUNT_ROOTS = _default_vcsa_mount_roots()
@@ -2124,7 +2128,7 @@ def _find_vcsa_deploy() -> Path | None:
 
 def _vcsa_deploy_candidates(root: Path) -> tuple[Path, ...]:
     installer_root = root / "vcsa-cli-installer"
-    if os.name == "nt":
+    if _is_windows_platform():
         preferred = (
             installer_root / "win32" / "vcsa-deploy.exe",
             installer_root / "win32" / "vcsa-deploy",

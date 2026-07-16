@@ -303,7 +303,7 @@ def test_vcsa_deploy_windows_exe_is_found_under_mounted_iso(monkeypatch, tmp_pat
     deploy.write_text("@echo off\n", encoding="utf-8")
     monkeypatch.setattr(vcenter_netapp_readiness, "settings", _settings())
     monkeypatch.setattr(vcenter_netapp_readiness, "VCSA_MOUNT_ROOTS", (mounted,))
-    monkeypatch.setattr(vcenter_netapp_readiness.os, "name", "nt")
+    monkeypatch.setattr(vcenter_netapp_readiness, "_is_windows_platform", lambda: True)
 
     assert vcenter_netapp_readiness._find_vcsa_deploy() == deploy
 
@@ -390,12 +390,12 @@ def test_vcsa_iso_discovery_skips_recursive_scan_errors(monkeypatch, tmp_path: P
 
 
 def test_vcsa_mount_roots_are_platform_aware(monkeypatch, tmp_path: Path) -> None:
-    monkeypatch.setattr(vcenter_netapp_readiness.os, "name", "nt")
+    monkeypatch.setattr(vcenter_netapp_readiness, "_is_windows_platform", lambda: True)
     monkeypatch.setattr(vcenter_netapp_readiness.tempfile, "gettempdir", lambda: str(tmp_path))
 
     assert vcenter_netapp_readiness._default_vcsa_mount_roots() == (tmp_path / "vcsa-iso",)
 
-    monkeypatch.setattr(vcenter_netapp_readiness.os, "name", "posix")
+    monkeypatch.setattr(vcenter_netapp_readiness, "_is_windows_platform", lambda: False)
 
     assert Path("/mnt/vcsa-iso") in vcenter_netapp_readiness._default_vcsa_mount_roots()
 

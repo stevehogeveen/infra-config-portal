@@ -8,6 +8,7 @@ import uuid
 from contextlib import contextmanager
 from dataclasses import asdict, is_dataclass
 from datetime import UTC, datetime
+from pathlib import PureWindowsPath
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -1151,9 +1152,13 @@ def _resolve_subprocess_executable(command: tuple[str, ...]) -> tuple[str, ...]:
     if not command:
         return command
     executable = command[0]
-    if os.path.isabs(executable) or not any(separator in executable for separator in ("/", "\\")):
+    if (
+        os.path.isabs(executable)
+        or PureWindowsPath(executable).is_absolute()
+        or not any(separator in executable for separator in ("/", "\\"))
+    ):
         return command
-    candidate = REPO_ROOT / executable
+    candidate = REPO_ROOT.joinpath(*executable.replace("\\", "/").split("/"))
     if _path_exists(candidate):
         return (str(candidate), *command[1:])
     return command

@@ -64,7 +64,7 @@ def _cache_dir_exists() -> bool:
 
 
 def _cache_files() -> list[Path]:
-    return glob_paths(CACHE_DIR, "*.json")
+    return sorted(glob_paths(CACHE_DIR, "*.json"), key=lambda path: path.as_posix())
 
 
 def _cache_key(provider_id: str) -> str:
