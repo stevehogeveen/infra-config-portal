@@ -34,15 +34,15 @@ if ((Test-Path $python) -and -not (Test-Python $python)) {
 }
 
 if (-not (Test-Path $python)) {
-  $systemPython = Get-Command py -ErrorAction SilentlyContinue
-  if ($systemPython -and (Test-Python "py" @("-3"))) {
-    & py -3 -m venv $venvRoot
+  $pythonCommand = Get-Command python -ErrorAction SilentlyContinue
+  if ($pythonCommand -and (Test-Python "python")) {
+    & python -m venv $venvRoot
   } else {
-    $pythonCommand = Get-Command python -ErrorAction SilentlyContinue
-    if (-not $pythonCommand -or -not (Test-Python "python")) {
+    $pythonLauncher = Get-Command py -ErrorAction SilentlyContinue
+    if (-not $pythonLauncher -or -not (Test-Python "py" @("-3"))) {
       throw "Python was not found. Install Python 3 or add it to PATH, then rerun this script."
     }
-    & python -m venv $venvRoot
+    & py -3 -m venv $venvRoot
   }
 }
 

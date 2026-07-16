@@ -47,6 +47,17 @@ def test_backend_venv_script_self_heals_broken_venv() -> None:
     assert "Remove-Item -LiteralPath $resolvedVenv.Path -Recurse -Force" in script
 
 
+def test_backend_venv_prefers_workflow_python_before_launcher_fallback() -> None:
+    script = (APP_SCRIPTS / "ensure-backend-venv.ps1").read_text(encoding="utf-8")
+
+    path_python = script.index("Get-Command python")
+    path_venv = script.index("& python -m venv")
+    launcher_python = script.index("$pythonLauncher = Get-Command py")
+    launcher_venv = script.index("& py -3 -m venv")
+
+    assert path_python < path_venv < launcher_python < launcher_venv
+
+
 def test_windows_doctor_accepts_backend_venv_python() -> None:
     script = (APP_SCRIPTS / "windows-doctor.ps1").read_text(encoding="utf-8")
 

@@ -12,6 +12,12 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 APP_ROOT = REPO_ROOT / "app"
 
 
+def test_backend_requirements_include_direct_ssh_runtime_dependency() -> None:
+    requirements = (APP_ROOT / "backend" / "requirements.txt").read_text(encoding="utf-8").splitlines()
+
+    assert "paramiko==5.0.0" in requirements
+
+
 def test_backend_image_preserves_repository_layout_and_excludes_local_state() -> None:
     dockerfile = (APP_ROOT / "backend" / "Dockerfile").read_text(encoding="utf-8")
     dockerignore = (REPO_ROOT / ".dockerignore").read_text(encoding="utf-8").splitlines()
