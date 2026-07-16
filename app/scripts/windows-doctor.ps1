@@ -48,7 +48,10 @@ Write-Check "npm" ([bool]$npm) ($(if ($npm) { & npm --version } else { "npm is n
 
 $npmProxy = if ($npm) { npm config get proxy } else { $null }
 $npmHttpsProxy = if ($npm) { npm config get https-proxy } else { $null }
-$proxyValues = @($npmProxy, $npmHttpsProxy) | Where-Object { $_ -and $_ -ne "null" -and $_ -ne "undefined" }
+$proxyValues = @(
+  @($npmProxy, $npmHttpsProxy) |
+    Where-Object { $_ -and $_ -ne "null" -and $_ -ne "undefined" }
+)
 $proxyDetail = if ($proxyValues.Count) {
   "proxy configured; use -NoProxy if npm tarball downloads time out"
 } else {

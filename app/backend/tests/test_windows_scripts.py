@@ -65,6 +65,13 @@ def test_windows_doctor_accepts_backend_venv_python() -> None:
     assert "Python 3 is not on PATH and backend venv is not ready" in script
 
 
+def test_windows_doctor_preserves_empty_proxy_results_as_an_array() -> None:
+    script = (APP_SCRIPTS / "windows-doctor.ps1").read_text(encoding="utf-8")
+
+    assert "$proxyValues = @(" in script
+    assert "$proxyDetail = if ($proxyValues.Count)" in script
+
+
 def test_start_scripts_preflight_port_conflicts() -> None:
     backend = (APP_SCRIPTS / "start-backend.ps1").read_text(encoding="utf-8")
     frontend = (APP_SCRIPTS / "start-frontend.ps1").read_text(encoding="utf-8")
