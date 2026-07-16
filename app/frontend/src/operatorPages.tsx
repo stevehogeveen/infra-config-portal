@@ -6044,14 +6044,7 @@ function LabTopologyMap({
   }
 
   const links = topologyLinks({ datastoreStatus, iloStatus, netappInScope, netappStatus, serverStatus, storageProtocol, vmInScope, vmStatus });
-  const ciscoNode = nodes.find((node) => node.id === "cisco");
-  const managementOrbitNodes = nodes.filter((node) => node.zone === "management" && node.id !== "cisco");
   const storageOrbitNodes = nodes.filter((node) => node.zone === "storage");
-  const readyChecks = [
-    ...nodes.map((node) => node.tone),
-    ...links.map((link) => link.status)
-  ].filter((status) => status === "ready" || status === "created").length;
-  const checkCount = nodes.length + links.length;
   useEffect(() => {
     const canvas = mapCanvasRef.current;
     const plane = mapPlaneRef.current;
@@ -6096,7 +6089,6 @@ function LabTopologyMap({
           <div className="lab-topology-pills" aria-label="Topology status">
             <span className={`topology-pill ${runtimeClass}`}><CheckCircle2 size={14} /> {runtimeLabel}</span>
             <span className={`topology-pill topology-pill-subnet-${subnetState.status}`}><Route size={14} /> {subnetState.label}</span>
-            <span className="topology-pill">{readyChecks} of {checkCount} topology items ready</span>
           </div>
         </div>
       </div>
@@ -6112,28 +6104,20 @@ function LabTopologyMap({
       )}
 
       <div
-        className={`lab-topology-canvas zones-canvas ${netappInScope ? "has-netapp" : "single-server"} ${mapFitEnabled ? "is-fit" : ""}`}
+        className={`lab-topology-canvas zones-canvas map-first-canvas ${netappInScope ? "has-netapp" : "single-server"} ${mapFitEnabled ? "is-fit" : ""}`}
         aria-label="Zoned lab map"
         data-workspace-open={workspaceOpen ? "true" : undefined}
         ref={mapCanvasRef}
       >
         <div className="topology-map-plane" ref={mapPlaneRef}>
           <div className="topology-zone topology-zone-management topology-zone-band" aria-hidden="true">
-            <span>Management plane</span>
+            <span>Management network</span>
           </div>
           <div className="topology-zone topology-zone-storage topology-zone-band" aria-hidden="true">
-            <span>{netappInScope ? "Storage fabric" : "Local RAID fabric"}</span>
+            <span>{netappInScope ? "Storage & compute" : "Local RAID"}</span>
           </div>
-          <div className="topology-orbit-rings" aria-hidden="true" />
-          {ciscoNode && (
-            <TopologyCoreButton
-              node={ciscoNode}
-              onOpenWorkspace={openNodeWorkspace}
-              selected={selectedNodeId === ciscoNode.id}
-            />
-          )}
           <div className="topology-zone-node-flow topology-orbit-node-flow topology-management-orbit" aria-label="Management zone devices">
-            {managementOrbitNodes.map((node) => (
+            {nodes.filter((node) => node.zone === "management").map((node) => (
                 <TopologyMapNodeCard
                   address={address}
                   className={`topology-orbit-node topology-orbit-${node.id}`}
@@ -6171,10 +6155,6 @@ function LabTopologyMap({
               {mapFitEnabled ? "1:1" : "Fit"}
             </button>
           )}
-          <div className="topology-core-hint" aria-hidden="true">
-            <span />
-            Click device - open workspace
-          </div>
           {!netappInScope && (
             <div className="topology-local-raid-hero" aria-label="Local RAID mode summary">
               <HardDrive size={15} />
@@ -6219,10 +6199,9 @@ function LabTopologyMap({
 
       <div className="lab-topology-footer">
         <div className="topology-legend" aria-label="Topology legend">
-          <span><i className="legend-line legend-ready" /> verified live</span>
-          <span><i className="legend-line legend-warning" /> ready, not active</span>
-          <span><i className="legend-line legend-created" /> created by the app</span>
-          <span><i className="legend-dot legend-offline" /> offline or unknown</span>
+          <span><i className="legend-dot legend-ready" /> Ready</span>
+          <span><i className="legend-dot legend-warning" /> Blocked</span>
+          <span><i className="legend-dot legend-offline" /> Not checked</span>
         </div>
       </div>
     </section>
@@ -7501,6 +7480,7 @@ function TopologyMapNodeCard({
       >
         <span className="topology-node-dot" aria-hidden="true" />
         <span className="topology-node-title">{node.icon}<strong>{node.title}</strong></span>
+        <span className="topology-node-state">{topologyNodeStateLabel(node.tone)}</span>
         <span className="topology-node-details">{node.details}</span>
         <span className="topology-node-faceplate" aria-hidden="true">
           <TopologyMiniFaceplate
@@ -7515,6 +7495,12 @@ function TopologyMapNodeCard({
       </button>
     </div>
   );
+}
+
+function topologyNodeStateLabel(tone: TopologyNodeTone): string {
+  if (tone === "ready") return "Ready";
+  if (tone === "warning") return "Blocked";
+  return "Not checked";
 }
 
 function TopologyCoreButton({

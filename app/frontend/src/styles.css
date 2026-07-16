@@ -16881,11 +16881,13 @@ button.design-ilo-port:hover {
   .lab-topology-canvas.zones-canvas,
   .lab-topology-canvas.zones-canvas.single-server {
     min-height: 0;
+    padding: 14px 12px 12px;
   }
 
   .lab-topology-canvas.zones-canvas .topology-map-plane {
     display: grid;
     gap: 12px;
+    inset: auto;
     min-height: 0;
     min-width: 0;
   }
@@ -17394,4 +17396,122 @@ button.design-ilo-port:hover {
 }
 .operator-rail-feedback.error {
   color: #c6432b;
+}
+
+/* Map-first device surface: the devices are the focal objects, not a luminous hub. */
+.lab-topology-canvas.map-first-canvas .topology-map-plane {
+  display: block;
+  inset: 78px 22px 24px;
+  min-width: 0;
+}
+
+.map-first-canvas .topology-orbit-rings,
+.map-first-canvas .topology-core-wrap,
+.map-first-canvas .topology-core-hint {
+  display: none;
+}
+
+.map-first-canvas .topology-zone-node-flow {
+  display: grid;
+  gap: 14px;
+  inset: auto;
+  pointer-events: none;
+  position: absolute;
+  z-index: 5;
+}
+
+.map-first-canvas .topology-management-orbit {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  left: 4%;
+  right: 4%;
+  top: 11%;
+}
+
+.map-first-canvas .topology-storage-orbit {
+  bottom: 8%;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  left: 4%;
+  right: 4%;
+}
+
+.lab-topology-canvas.map-first-canvas .topology-orbit-node,
+.lab-topology-canvas.map-first-canvas .topology-orbit-node.is-selected,
+.lab-topology-canvas.map-first-canvas .topology-orbit-node:hover {
+  bottom: auto;
+  left: auto;
+  position: relative;
+  right: auto;
+  top: auto;
+  transform: none;
+  width: auto;
+}
+
+.map-first-canvas .topology-orbit-node .topology-node {
+  min-height: 112px;
+}
+
+.map-first-canvas .topology-node-state {
+  color: #64748b;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  padding-left: 48px;
+  text-transform: uppercase;
+}
+
+.map-first-canvas .topology-node-warning .topology-node-state {
+  color: #b45309;
+}
+
+.map-first-canvas .topology-node-ready .topology-node-state {
+  color: #15803d;
+}
+
+.lab-topology-map .legend-dot {
+  background: #94a3b8;
+  border-radius: 999px;
+  display: inline-block;
+  height: 8px;
+  margin-right: 5px;
+  width: 8px;
+}
+
+.lab-topology-map .legend-dot.legend-ready {
+  background: #16a34a;
+}
+
+.lab-topology-map .legend-dot.legend-warning {
+  background: #d97706;
+}
+
+.map-first-canvas .lab-topology-links {
+  opacity: 0.62;
+}
+
+@media (max-width: 1120px) {
+  .lab-topology-canvas.map-first-canvas .topology-map-plane {
+    display: grid;
+    gap: 12px;
+    inset: auto;
+    position: relative;
+  }
+
+  .map-first-canvas .topology-zone-node-flow,
+  .map-first-canvas .topology-management-orbit,
+  .map-first-canvas .topology-storage-orbit {
+    display: grid;
+    gap: 10px;
+    grid-template-columns: 1fr;
+    inset: auto;
+    padding: 0 12px 4px;
+    position: relative;
+  }
+
+  .lab-topology-canvas.map-first-canvas .topology-orbit-node,
+  .lab-topology-canvas.map-first-canvas .topology-orbit-node.is-selected,
+  .lab-topology-canvas.map-first-canvas .topology-orbit-node:hover {
+    position: relative;
+    transform: none;
+    width: auto;
+  }
 }

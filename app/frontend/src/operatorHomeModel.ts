@@ -137,6 +137,13 @@ function buildDeviceSummary({
       target: displayAddress(address.cisco_management)
     }),
     deviceSummaryRow({
+      detail: "Out-of-band server management checks",
+      name: "HPE iLO",
+      role: "Server management",
+      status: statusFor({ providers, tokens: ["ilo", "hpe"], validation }),
+      target: displayAddress(address.ilo)
+    }),
+    deviceSummaryRow({
       detail: "Server management, ESXi, and local storage checks",
       name: "HPE server",
       role: "Server",
@@ -147,6 +154,18 @@ function buildDeviceSummary({
       target: displayAddress(address.ilo || address.esxi_management)
     })
   ];
+
+  if (vcenterInScope || netappInScope) {
+    rows.push(
+      deviceSummaryRow({
+        detail: vcenterInScope ? "Central virtualization management" : "Direct host management",
+        name: vcenterInScope ? "vCenter" : "ESXi host",
+        role: "Virtualization",
+        status: stringValue(vcenterNetapp?.status) || statusFor({ providers, tokens: ["vcenter", "esxi"], validation }),
+        target: vcenterTarget(vcenterNetapp)
+      })
+    );
+  }
 
   if (netappInScope) {
     rows.push(
@@ -167,7 +186,7 @@ function buildDeviceSummary({
     );
   }
 
-  if (vcenterInScope) {
+  if (vcenterInScope && !netappInScope) {
     rows.push(
       deviceSummaryRow({
         detail: "VM inventory and control path",

@@ -311,7 +311,7 @@ test("map-first overview makes the topology the home surface", async ({ page }) 
   await expect(layout.locator(".operator-home-map-column")).toHaveCount(1);
   await expect(layout.locator(".operator-home-rail")).toHaveCount(1);
   await expect(map.getByLabel("Zoned lab map")).toContainText("Management");
-  await expect(map.getByLabel("Zoned lab map")).toContainText("Storage fabric");
+  await expect(map.getByLabel("Zoned lab map")).toContainText("Storage & compute");
   await expect(map.getByLabel("Current lab links")).toBeVisible();
   await expect(rail.getByTestId("operator-home-primary-action")).toHaveCount(1);
   await expect(rail.locator(".operator-rail-primary")).toHaveCount(1);
@@ -432,7 +432,7 @@ test("operator details opens proof without hiding the map", async ({ page }) => 
   const topology = page.locator("section[aria-label='Living lab topology']");
   await expect(topology.getByLabel("Zoned lab map")).toBeVisible();
   await expect(topology.getByLabel("Zoned lab map")).toContainText("Management");
-  await expect(topology.getByLabel("Zoned lab map")).toContainText("Storage fabric");
+  await expect(topology.getByLabel("Zoned lab map")).toContainText("Storage & compute");
   await expect(topology.getByLabel("Zoned lab map")).toContainText("vCenter");
   await expect(topology.getByLabel("Zoned lab map")).toContainText("Cisco C9300 L3 Core");
   await expect(topology.getByLabel("Zoned lab map")).toContainText("HPE Gen10");
@@ -483,7 +483,7 @@ test("zoned map opens the device workspace directly", async ({ page }) => {
   await openOperatorDetails(page);
 
   const topology = page.locator("section[aria-label='Living lab topology']");
-  await expect(topology.getByLabel("Topology status")).toContainText("topology items ready");
+  await expect(topology.getByLabel("Topology status")).not.toContainText("topology items ready");
   const topologyNextAction = topology.locator(".lab-topology-footer");
   await expect(topologyNextAction).not.toContainText(/Open (Storage|Network|Server|Virtualization)/);
   const vcenterNode = topology.getByRole("button", { name: "Open vCenter VCSA workspace" });
@@ -942,7 +942,7 @@ test("overview design mode switches scenario drafts without committing hardware"
   await expect(overlay).toContainText("Hardware untouched until guarded applies.");
   await overlay.getByRole("button", { name: "Close" }).click();
   await expect(page.locator("div[aria-label='Device workspace overlay']")).toHaveCount(0);
-  await expect(topology.getByLabel("Zoned lab map")).toContainText("Storage fabric");
+  await expect(topology.getByLabel("Zoned lab map")).toContainText("Storage & compute");
 });
 
 test("overview retires setup lanes in favor of the single-server map", async ({ page }) => {
