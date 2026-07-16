@@ -12,3 +12,5 @@ artifacts/ui-audit/
 artifacts/Media/
 ilorest_logs/
 app/backend/ilorest_logs/
+app/.codex-run-logs/
+/tmp/

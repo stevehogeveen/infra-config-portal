@@ -1144,7 +1144,7 @@ def test_topology_design_draft_api_rejects_secret_shaped_payloads(
             "placements": {
                 "u1": "switch",
                 "u2": "server-gen10",
-                "password": "P@ssw0rd",
+                "password": "not-a-real-secret",
             },
         },
     )
