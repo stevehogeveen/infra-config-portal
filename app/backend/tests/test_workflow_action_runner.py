@@ -6,6 +6,7 @@ import sys
 import subprocess
 import time
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -892,13 +893,12 @@ def test_guarded_action_runs_with_exact_confirmation_and_gates(
     def fail_subprocess(*_args, **_kwargs):  # noqa: ANN002, ANN003
         raise AssertionError("RAID apply should run through the in-process API runner on Windows.")
 
-    captured_env: dict[str, str | None] = {}
+    captured_context: dict[str, object] = {}
 
-    def fake_apply_raid_plan(session: Session, request: object) -> dict:
+    def fake_apply_raid_plan(session: Session, request: object, *, guarded_context: object) -> dict:
         assert session is db_session
         assert request.confirmation_phrase == "APPLY HPE RAID PLAN"
-        captured_env["HPE_RAID_ALLOW_DESTRUCTIVE"] = os.environ.get("HPE_RAID_ALLOW_DESTRUCTIVE")
-        captured_env["HPE_RAID_APPLY_CONFIRM"] = os.environ.get("HPE_RAID_APPLY_CONFIRM")
+        captured_context["context"] = guarded_context
         return {"status": "completed", "provider_id": "hpe-raid-apply"}
 
     monkeypatch.setattr(workflow_action_runner, "_run_subprocess", fail_subprocess)
@@ -922,10 +922,10 @@ def test_guarded_action_runs_with_exact_confirmation_and_gates(
     assert result["executed"] is True
     assert result["return_code"] == 0
     assert result["command"] == "POST /api/v1/providers/ilo-redfish/hpe-raid-apply"
-    assert captured_env == {
-        "HPE_RAID_ALLOW_DESTRUCTIVE": "true",
-        "HPE_RAID_APPLY_CONFIRM": "APPLY HPE RAID PLAN",
-    }
+    context = captured_context["context"]
+    assert context.action_id == "raid.apply"
+    assert context.gate_value("HPE_RAID_ALLOW_DESTRUCTIVE") == "true"
+    assert context.confirmation_phrase == "APPLY HPE RAID PLAN"
     assert "Guarded workflow action completed" in result["summary"]
 
 
@@ -948,15 +948,12 @@ def test_guarded_action_ignores_unregistered_env_gates(
         action["current_availability"] = "manual_command_required"
         return action
 
-    captured_env: dict[str, str | None] = {}
+    captured_context: dict[str, object] = {}
 
-    def fake_apply_raid_plan(session: Session, request: object) -> dict:
+    def fake_apply_raid_plan(session: Session, request: object, *, guarded_context: object) -> dict:
         assert session is db_session
         assert request.confirmation_phrase == "APPLY HPE RAID PLAN"
-        captured_env["HPE_RAID_ALLOW_DESTRUCTIVE"] = os.environ.get("HPE_RAID_ALLOW_DESTRUCTIVE")
-        captured_env["HPE_RAID_APPLY_CONFIRM"] = os.environ.get("HPE_RAID_APPLY_CONFIRM")
-        captured_env["PYTHONPATH"] = os.environ.get("PYTHONPATH")
-        captured_env["LAB_ALLOW_FACTORY_RESET"] = os.environ.get("LAB_ALLOW_FACTORY_RESET")
+        captured_context["context"] = guarded_context
         return {"status": "completed", "provider_id": "hpe-raid-apply"}
 
     monkeypatch.delenv("PYTHONPATH", raising=False)
@@ -978,12 +975,12 @@ def test_guarded_action_ignores_unregistered_env_gates(
     )
 
     assert result["status"] == "completed"
-    assert captured_env == {
-        "HPE_RAID_ALLOW_DESTRUCTIVE": "true",
-        "HPE_RAID_APPLY_CONFIRM": "APPLY HPE RAID PLAN",
-        "PYTHONPATH": None,
-        "LAB_ALLOW_FACTORY_RESET": None,
-    }
+    context = captured_context["context"]
+    assert context.gate_value("HPE_RAID_ALLOW_DESTRUCTIVE") == "true"
+    assert context.gate_value("PYTHONPATH") is None
+    assert context.gate_value("LAB_ALLOW_FACTORY_RESET") is None
+    assert os.environ.get("PYTHONPATH") is None
+    assert os.environ.get("LAB_ALLOW_FACTORY_RESET") is None
 
 
 def test_factory_reset_rebuild_actions_are_in_process_api_runners() -> None:
@@ -1013,7 +1010,7 @@ def test_factory_reset_rebuild_actions_are_in_process_api_runners() -> None:
         assert action["source_type"] == "api_endpoint"
 
 
-def test_netapp_iscsi_apply_maps_confirmation_phrase_to_env(monkeypatch, db_session) -> None:
+def test_netapp_iscsi_apply_uses_request_local_confirmation_context(monkeypatch, db_session) -> None:
     def get_unblocked_action(action_id: str) -> dict:
         action = workflow_registry.get_workflow_action(action_id)
         action["blockers"] = []
@@ -1025,13 +1022,10 @@ def test_netapp_iscsi_apply_maps_confirmation_phrase_to_env(monkeypatch, db_sess
     def fail_subprocess(*_args, **_kwargs):  # noqa: ANN002, ANN003
         raise AssertionError("NetApp iSCSI apply should run through the in-process API runner on Windows.")
 
-    captured_env: dict[str, str | None] = {}
+    captured_context: dict[str, object] = {}
 
-    def fake_apply_iscsi_setup() -> dict:
-        captured_env["PROVIDER_MODE"] = os.environ.get("PROVIDER_MODE")
-        captured_env["NETAPP_ISCSI_SETUP_APPLY"] = os.environ.get("NETAPP_ISCSI_SETUP_APPLY")
-        captured_env["NETAPP_ISCSI_SETUP_CONFIRM"] = os.environ.get("NETAPP_ISCSI_SETUP_CONFIRM")
-        captured_env["NETAPP_ISCSI_SETUP_ALLOW_STORAGE_CREATE"] = os.environ.get("NETAPP_ISCSI_SETUP_ALLOW_STORAGE_CREATE")
+    def fake_apply_iscsi_setup(*, guarded_context: object) -> dict:
+        captured_context["context"] = guarded_context
         return {"status": "completed", "provider_id": "netapp-ontap", "action": "iscsi-setup-apply"}
 
     monkeypatch.setattr(workflow_action_runner, "_run_subprocess", fail_subprocess)
@@ -1054,12 +1048,47 @@ def test_netapp_iscsi_apply_maps_confirmation_phrase_to_env(monkeypatch, db_sess
     assert result["status"] == "completed"
     assert result["executed"] is True
     assert result["command"] == "POST /api/v1/providers/netapp-ontap/iscsi-setup-apply"
-    assert captured_env == {
-        "PROVIDER_MODE": "local-lab-readwrite",
-        "NETAPP_ISCSI_SETUP_APPLY": "true",
-        "NETAPP_ISCSI_SETUP_CONFIRM": "APPLY NETAPP ISCSI SETUP",
-        "NETAPP_ISCSI_SETUP_ALLOW_STORAGE_CREATE": "true",
+    context = captured_context["context"]
+    assert context.action_id == "netapp.iscsi-setup-apply"
+    assert context.confirmation_phrase == "APPLY NETAPP ISCSI SETUP"
+    assert context.gate_value("PROVIDER_MODE") == "local-lab-readwrite"
+    assert context.gate_value("NETAPP_ISCSI_SETUP_APPLY") == "true"
+    assert context.gate_value("NETAPP_ISCSI_SETUP_ALLOW_STORAGE_CREATE") == "true"
+
+
+def test_concurrent_workflow_requests_do_not_share_confirmations() -> None:
+    actions = {
+        "netapp.iscsi-setup-apply": workflow_registry.get_workflow_action("netapp.iscsi-setup-apply"),
+        "netapp.nfs-setup-apply": workflow_registry.get_workflow_action("netapp.nfs-setup-apply"),
     }
+
+    payloads = {
+        "netapp.iscsi-setup-apply": {
+            "confirmation_phrase": "APPLY NETAPP ISCSI SETUP",
+            "confirmed_gates": actions["netapp.iscsi-setup-apply"]["required_gates"],
+        },
+        "netapp.nfs-setup-apply": {
+            "confirmation_phrase": "APPLY NETAPP NFS SETUP",
+            "confirmed_gates": actions["netapp.nfs-setup-apply"]["required_gates"],
+        },
+    }
+
+    def run(action_id: str):  # noqa: ANN202
+        return workflow_action_runner._guarded_action_context(action_id, payloads[action_id])
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        contexts = {action_id: context for action_id, context in zip(actions, pool.map(run, actions))}
+
+    for action_id, expected_phrase in (
+        ("netapp.iscsi-setup-apply", "APPLY NETAPP ISCSI SETUP"),
+        ("netapp.nfs-setup-apply", "APPLY NETAPP NFS SETUP"),
+    ):
+        context = contexts[action_id]
+        assert context.confirmation_phrase == expected_phrase
+        assert context.action_id == action_id
+        assert context.confirmed_gates
+    assert os.environ.get("NETAPP_ISCSI_SETUP_CONFIRM") is None
+    assert os.environ.get("NETAPP_NFS_SETUP_CONFIRM") is None
 
 
 def test_raid_factory_reset_apply_reaches_safe_refusing_endpoint(monkeypatch, db_session) -> None:
@@ -1081,8 +1110,9 @@ def test_raid_factory_reset_apply_reaches_safe_refusing_endpoint(monkeypatch, db
             "next_action": "Review blocked factory-reset apply report.",
         }
 
-    def fake_apply(_session, request) -> dict:
+    def fake_apply(_session, request, *, guarded_context) -> dict:  # noqa: ANN001
         assert request.confirmation_phrase == "FACTORY RESET HPE RAID"
+        assert guarded_context.confirmation_phrase == "FACTORY RESET HPE RAID"
         return {
             "status": "blocked",
             "blockers": ["No implemented HPE SmartStorage logical-drive delete/factory-reset executor exists yet."],
@@ -1128,12 +1158,10 @@ def test_netapp_setup_apply_injects_gates_without_subprocess(monkeypatch, tmp_pa
     def fail_subprocess(*_args, **_kwargs):  # noqa: ANN002, ANN003
         raise AssertionError("NetApp setup apply should run through the in-process API runner on Windows.")
 
-    captured_env: dict[str, str | None] = {}
+    captured_context: dict[str, object] = {}
 
-    def fake_apply_netapp_setup() -> dict:
-        captured_env["NETAPP_SETUP_APPLY"] = os.environ.get("NETAPP_SETUP_APPLY")
-        captured_env["NETAPP_SETUP_ALLOW_CLUSTER_CREATE"] = os.environ.get("NETAPP_SETUP_ALLOW_CLUSTER_CREATE")
-        captured_env["NETAPP_SETUP_CONFIRM"] = os.environ.get("NETAPP_SETUP_CONFIRM")
+    def fake_apply_netapp_setup(*, guarded_context) -> dict:  # noqa: ANN001
+        captured_context["context"] = guarded_context
         return {"status": "completed", "provider_id": "netapp-setup-apply"}
 
     monkeypatch.setattr(workflow_action_runner, "get_workflow_action", get_unblocked_action)
@@ -1152,11 +1180,10 @@ def test_netapp_setup_apply_injects_gates_without_subprocess(monkeypatch, tmp_pa
     assert result["executed"] is True
     assert result["return_code"] == 0
     assert result["command"] == "POST /api/v1/providers/netapp-ontap/setup-apply"
-    assert captured_env == {
-        "NETAPP_SETUP_APPLY": "true",
-        "NETAPP_SETUP_ALLOW_CLUSTER_CREATE": "true",
-        "NETAPP_SETUP_CONFIRM": "APPLY NETAPP CLUSTER SETUP",
-    }
+    context = captured_context["context"]
+    assert context.confirmation_phrase == "APPLY NETAPP CLUSTER SETUP"
+    assert context.gate_value("NETAPP_SETUP_APPLY") == "true"
+    assert context.gate_value("NETAPP_SETUP_ALLOW_CLUSTER_CREATE") == "true"
 
 
 def test_netapp_console_login_state_runs_in_process_api(monkeypatch, tmp_path: Path) -> None:

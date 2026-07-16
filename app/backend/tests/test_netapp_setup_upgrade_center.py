@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import builtins
 from dataclasses import replace
 from pathlib import Path
 
@@ -301,6 +302,7 @@ def test_iscsi_setup_preview_surfaces_lif_plan_without_apply(monkeypatch) -> Non
     )
     monkeypatch.setattr(netapp_iscsi_setup, "settings", settings_override)
     monkeypatch.setenv("ESXI_ISCSI_INITIATOR_IQNS", "iqn.1998-01.com.vmware:host-a, iqn.1998-01.com.vmware:host-b")
+    monkeypatch.setattr(netapp_iscsi_setup, "_iscsi_inventory", lambda _plan: _missing_iscsi_inventory())
 
     payload = netapp_iscsi_setup.build_netapp_iscsi_setup_preview(write_report=False)
 
@@ -376,6 +378,80 @@ def test_iscsi_setup_apply_refuses_without_flags_before_writes(monkeypatch) -> N
     assert "NETAPP_ISCSI_SETUP_APPLY=true is required." in payload["blockers"]
     assert 'NETAPP_ISCSI_SETUP_CONFIRM="APPLY NETAPP ISCSI SETUP" is required.' in payload["blockers"]
     assert "NETAPP_ISCSI_SETUP_ALLOW_STORAGE_CREATE=true is required." in payload["blockers"]
+
+
+def test_iscsi_mock_mode_makes_zero_ssh_or_ontap_contact(monkeypatch) -> None:
+    _patch_iscsi_runtime(monkeypatch, protocol_ready=False)
+    monkeypatch.setattr(netapp_iscsi_setup, "settings", replace(settings, provider_mode="mock"))
+    monkeypatch.delenv("ESXI_ISCSI_INITIATOR_IQNS", raising=False)
+    original_import = builtins.__import__
+
+    def guarded_import(name, *args, **kwargs):  # noqa: ANN001
+        if name == "paramiko":
+            raise AssertionError("mock mode imported Paramiko")
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", guarded_import)
+    monkeypatch.setattr(
+        netapp_iscsi_setup,
+        "_ontap_get",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("mock mode contacted ONTAP")),
+    )
+
+    payload = netapp_iscsi_setup.build_netapp_iscsi_setup_preview(write_report=False)
+
+    assert payload["current_state"]["status"] == "not_checked"
+    assert payload["current_state"]["checked"] is False
+    assert payload["iscsi_plan"]["initiator_discovery"]["status"] == "not_checked"
+    assert payload["iscsi_plan"]["initiator_discovery"]["checked"] is False
+    assert payload["blockers"]
+
+
+def test_configured_iscsi_iqns_require_no_hardware_contact(monkeypatch) -> None:
+    monkeypatch.setattr(netapp_iscsi_setup, "settings", replace(settings, provider_mode="mock"))
+    monkeypatch.setenv("ESXI_ISCSI_INITIATOR_IQNS", "iqn.1998-01.com.vmware:configured-host")
+    original_import = builtins.__import__
+
+    def guarded_import(name, *args, **kwargs):  # noqa: ANN001
+        if name == "paramiko":
+            raise AssertionError("configured IQNs imported Paramiko")
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", guarded_import)
+
+    iqns, evidence = netapp_iscsi_setup._esxi_initiator_iqns()
+
+    assert iqns == ["iqn.1998-01.com.vmware:configured-host"]
+    assert evidence == {"source": "ESXI_ISCSI_INITIATOR_IQNS", "status": "configured"}
+
+
+def test_iscsi_partial_write_failure_preserves_evidence(monkeypatch) -> None:
+    inventory_after_lun = {**_missing_iscsi_inventory(), "lun": {"exists": True}}
+    monkeypatch.setattr(netapp_iscsi_setup, "_create_lun", lambda _plan: None)
+    monkeypatch.setattr(netapp_iscsi_setup, "_iscsi_inventory", lambda _plan: inventory_after_lun)
+    monkeypatch.setattr(
+        netapp_iscsi_setup,
+        "_create_igroup",
+        lambda _plan: (_ for _ in ()).throw(ValueError("igroup create failed")),
+    )
+
+    result = netapp_iscsi_setup._ensure_iscsi_lun_igroup_map(
+        {"lun_path": "/vol/esxi/esxi_lun_01", "igroup_name": "esxi_hosts"},
+        _missing_iscsi_inventory(),
+    )
+
+    assert result["status"] == "failed"
+    assert result["ontap_writes_attempted"] is True
+    assert result["transcript_summary"][0] == "Created LUN /vol/esxi/esxi_lun_01."
+    assert "igroup create failed" in result["transcript_summary"][-1]
+
+
+def test_iscsi_markdown_matches_json_write_evidence() -> None:
+    applied = {"apply": {"ontap_writes_attempted": True}}
+
+    assert "- ONTAP writes attempted: `True`" in netapp_iscsi_setup._apply_markdown(applied)
+    assert "- ONTAP writes attempted: `False`" in netapp_iscsi_setup._preview_markdown({})
+    assert "- ONTAP writes attempted: `False`" in netapp_iscsi_setup._validation_markdown({})
 
 
 def test_nfs_setup_apply_refuses_without_flags(monkeypatch) -> None:

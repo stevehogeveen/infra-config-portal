@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import os
 import time
 from datetime import UTC, datetime
 from pathlib import Path
@@ -22,8 +21,9 @@ from app.providers.ilo_redfish import (
 )
 from app.providers.probe_cache import get_probe_result
 from app.providers.redaction import redact_sensitive
-from app.services.env_utils import env_flag as _env_flag, env_int as _env_int
+from app.services.env_utils import env_int as _env_int
 from app.services.firmware_compliance import firmware_gate_blockers
+from app.services.guarded_action_context import GuardedActionContext, guarded_confirmation, guarded_flag
 from app.services.json_file_store import read_json_object, write_json_object, write_text_value
 from app.services.list_utils import unique_preserving_order, unique_strings
 from app.services.path_utils import path_exists, repo_relative_path
@@ -292,10 +292,21 @@ def build_hpe_raid_factory_reset_preview(session: Session) -> dict[str, Any]:
 def apply_hpe_raid_factory_reset(
     session: Session,
     payload: HpeRaidFactoryResetCreate,
+    *,
+    guarded_context: GuardedActionContext | None = None,
 ) -> dict[str, Any]:
     started_at = datetime.now(UTC).isoformat()
     preview = build_hpe_raid_factory_reset_preview(session)
-    blockers = _factory_reset_blockers(preview, confirmation_phrase=payload.confirmation_phrase)
+    confirmation_phrase = (
+        guarded_context.confirmation_phrase
+        if guarded_context is not None and guarded_context.action_id == "raid.factory-reset-apply"
+        else payload.confirmation_phrase
+    )
+    blockers = _factory_reset_blockers(
+        preview,
+        confirmation_phrase=confirmation_phrase or "",
+        guarded_context=guarded_context,
+    )
     if not preview.get("executor_available"):
         blockers.append(
             "No implemented HPE SmartStorage logical-drive delete/factory-reset executor exists yet."
@@ -324,10 +335,21 @@ def apply_hpe_raid_factory_reset(
 def apply_hpe_raid_plan(
     session: Session,
     payload: HpeRaidApplyCreate,
+    *,
+    guarded_context: GuardedActionContext | None = None,
 ) -> dict[str, Any]:
     IloRedfishAdapter(provider_mode="local-lab-readwrite").probe()
     preview = get_hpe_raid_plan_preview(session)
-    blockers = _apply_blockers(preview, confirmation_phrase=payload.confirmation_phrase)
+    confirmation_phrase = (
+        guarded_context.confirmation_phrase
+        if guarded_context is not None and guarded_context.action_id == "raid.apply"
+        else payload.confirmation_phrase
+    )
+    blockers = _apply_blockers(
+        preview,
+        confirmation_phrase=confirmation_phrase or "",
+        guarded_context=guarded_context,
+    )
     started_at = datetime.now(UTC).isoformat()
     if blockers:
         result = {
@@ -512,10 +534,10 @@ def build_hpe_raid_reset_plan() -> dict[str, Any]:
     }
 
 
-def reset_server_for_raid() -> dict[str, Any]:
+def reset_server_for_raid(*, guarded_context: GuardedActionContext | None = None) -> dict[str, Any]:
     started_at = datetime.now(UTC).isoformat()
     before = _server_reset_observation()
-    blockers = _reset_blockers()
+    blockers = _reset_blockers(guarded_context=guarded_context)
     if blockers:
         result = {
             "provider_id": PROVIDER_ID,
@@ -598,6 +620,7 @@ def _apply_blockers(
     preview: HpeRaidPlanPreviewRead,
     *,
     confirmation_phrase: str,
+    guarded_context: GuardedActionContext | None = None,
 ) -> list[str]:
     blockers = []
     policy = current_lab_action_policy(settings.provider_mode)
@@ -605,7 +628,7 @@ def _apply_blockers(
     blockers.extend(_string_list(firmware_gate_blockers("HPE RAID apply")))
     if confirmation_phrase != CONFIRMATION_PHRASE:
         blockers.append(f"Exact confirmation phrase is required: {CONFIRMATION_PHRASE}")
-    if not _env_flag("HPE_RAID_ALLOW_DESTRUCTIVE"):
+    if not guarded_flag("HPE_RAID_ALLOW_DESTRUCTIVE", action_id="raid.apply", context=guarded_context):
         blockers.append("HPE_RAID_ALLOW_DESTRUCTIVE=true is required for destructive RAID apply.")
     blockers.extend(_string_list(preview.blockers))
     if not preview.desired_intent.volumes:
@@ -621,26 +644,31 @@ def _factory_reset_blockers(
     preview: dict[str, Any],
     *,
     confirmation_phrase: str,
+    guarded_context: GuardedActionContext | None = None,
 ) -> list[str]:
     blockers = []
     policy = current_lab_action_policy(settings.provider_mode)
     blockers.extend(_string_list(policy.action_blockers(FACTORY_RESET_ACTION_ID, ActionCategory.FACTORY_RESET)))
     if confirmation_phrase != FACTORY_RESET_CONFIRMATION_PHRASE:
         blockers.append(f"Exact confirmation phrase is required: {FACTORY_RESET_CONFIRMATION_PHRASE}")
-    if not _env_flag("HPE_RAID_ALLOW_FACTORY_RESET"):
+    if not guarded_flag(
+        "HPE_RAID_ALLOW_FACTORY_RESET", action_id="raid.factory-reset-apply", context=guarded_context
+    ):
         blockers.append("HPE_RAID_ALLOW_FACTORY_RESET=true is required for HPE RAID factory reset.")
     blockers.extend(_string_list(preview.get("blockers")))
     return _unique(blockers)
 
 
-def _reset_blockers() -> list[str]:
+def _reset_blockers(*, guarded_context: GuardedActionContext | None = None) -> list[str]:
     blockers = []
     policy = current_lab_action_policy(settings.provider_mode)
     blockers.extend(_string_list(policy.action_blockers(RESET_ACTION_ID, ActionCategory.POWER_ACTION)))
     blockers.extend(_string_list(firmware_gate_blockers("HPE RAID reset")))
-    if not _env_flag("HPE_RAID_ALLOW_RESET"):
+    if not guarded_flag("HPE_RAID_ALLOW_RESET", action_id="raid.reset-commit", context=guarded_context):
         blockers.append("HPE_RAID_ALLOW_RESET=true is required for server reset.")
-    if os.getenv("HPE_RAID_RESET_CONFIRM", "") != RESET_CONFIRMATION_PHRASE:
+    if guarded_confirmation(
+        "HPE_RAID_RESET_CONFIRM", action_id="raid.reset-commit", context=guarded_context
+    ) != RESET_CONFIRMATION_PHRASE:
         blockers.append(f"Exact confirmation phrase is required: {RESET_CONFIRMATION_PHRASE}")
     return _unique(blockers)
 

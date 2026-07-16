@@ -17,6 +17,7 @@ from app.core.config import settings
 from app.providers.action_policy import ActionCategory, LOCAL_LAB_READWRITE_MODE, current_lab_action_policy
 from app.providers.redaction import redact_sensitive
 from app.services.env_utils import env_flag as _env_flag
+from app.services.guarded_action_context import GuardedActionContext, guarded_confirmation, guarded_flag
 from app.services.json_file_store import write_json_object, write_text_value
 from app.services.json_utils import parse_json_object
 from app.services.list_utils import unique_preserving_order, unique_strings
@@ -89,11 +90,13 @@ def build_esxi_vm_deploy_preview(*, write_report: bool = True) -> dict[str, Any]
     return sanitized
 
 
-def apply_esxi_vm_deploy(*, write_report: bool = True) -> dict[str, Any]:
+def apply_esxi_vm_deploy(
+    *, write_report: bool = True, guarded_context: GuardedActionContext | None = None
+) -> dict[str, Any]:
     plan = _deployment_plan()
     target = _target_state()
     datastore = _datastore_info(plan, target) if target["can_query"] and plan["datastore"] else _skipped_datastore_info()
-    gates = _apply_gates(plan, target, datastore)
+    gates = _apply_gates(plan, target, datastore, guarded_context=guarded_context)
     blocked = bool(gates["blockers"])
     payload = {
         "provider_id": PROVIDER_ID,
@@ -290,14 +293,27 @@ def _preview_blockers(plan: dict[str, Any], target: dict[str, Any], datastore: d
     return _unique(blockers)
 
 
-def _apply_gates(plan: dict[str, Any], target: dict[str, Any], datastore: dict[str, Any]) -> dict[str, Any]:
+def _apply_gates(
+    plan: dict[str, Any],
+    target: dict[str, Any],
+    datastore: dict[str, Any],
+    *,
+    guarded_context: GuardedActionContext | None = None,
+) -> dict[str, Any]:
     policy = current_lab_action_policy(settings.provider_mode)
     flag_state = {
         "provider_mode": settings.provider_mode,
         "local_lab_readwrite": settings.provider_mode == LOCAL_LAB_READWRITE_MODE,
-        "vm_deploy_apply": _env_flag("VM_DEPLOY_APPLY"),
-        "vm_deploy_confirm": os.getenv("VM_DEPLOY_CONFIRM") == VM_DEPLOY_CONFIRM_PHRASE,
-        "vm_deploy_allow_create": _env_flag("VM_DEPLOY_ALLOW_CREATE"),
+        "vm_deploy_apply": guarded_flag(
+            "VM_DEPLOY_APPLY", action_id="esxi.vm-deploy-apply", context=guarded_context
+        ),
+        "vm_deploy_confirm": guarded_confirmation(
+            "VM_DEPLOY_CONFIRM", action_id="esxi.vm-deploy-apply", context=guarded_context
+        )
+        == VM_DEPLOY_CONFIRM_PHRASE,
+        "vm_deploy_allow_create": guarded_flag(
+            "VM_DEPLOY_ALLOW_CREATE", action_id="esxi.vm-deploy-apply", context=guarded_context
+        ),
         "vm_deploy_power_on": plan["power_on"],
         "vm_deploy_power_on_confirm": os.getenv("VM_DEPLOY_POWER_ON_CONFIRM") == VM_DEPLOY_POWER_ON_CONFIRM_PHRASE,
     }

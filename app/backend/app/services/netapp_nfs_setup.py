@@ -11,7 +11,7 @@ import httpx
 from app.core.config import settings
 from app.providers.action_policy import ActionCategory, LOCAL_LAB_READWRITE_MODE, current_lab_action_policy
 from app.providers.redaction import redact_sensitive
-from app.services.env_utils import env_flag as _env_flag
+from app.services.guarded_action_context import GuardedActionContext, guarded_confirmation, guarded_flag
 from app.services.json_file_store import write_json_object, write_text_value
 from app.services.lab_profiles import active_lab_profile_context
 from app.services.list_utils import unique_preserving_order, unique_strings
@@ -77,11 +77,13 @@ def build_netapp_nfs_setup_preview(*, write_report: bool = True) -> dict[str, An
     return sanitized
 
 
-def apply_netapp_nfs_setup(*, write_report: bool = True) -> dict[str, Any]:
+def apply_netapp_nfs_setup(
+    *, write_report: bool = True, guarded_context: GuardedActionContext | None = None
+) -> dict[str, Any]:
     checked_at = _now()
     runtime_state = get_netapp_runtime_state()
     plan = _nfs_plan()
-    gates = _apply_gates(runtime_state, plan)
+    gates = _apply_gates(runtime_state, plan, guarded_context=guarded_context)
     blocked = bool(gates["blockers"])
     rest_apply = _rest_apply_not_attempted("Apply gates blocked before ONTAP REST session started.")
     if not blocked:
@@ -236,14 +238,26 @@ def _preview_blockers(runtime_state: dict[str, Any], plan: dict[str, Any]) -> li
     return _unique(blockers)
 
 
-def _apply_gates(runtime_state: dict[str, Any], plan: dict[str, Any]) -> dict[str, Any]:
+def _apply_gates(
+    runtime_state: dict[str, Any],
+    plan: dict[str, Any],
+    *,
+    guarded_context: GuardedActionContext | None = None,
+) -> dict[str, Any]:
     policy = current_lab_action_policy(settings.provider_mode)
     flag_state = {
         "provider_mode": settings.provider_mode,
         "local_lab_readwrite": settings.provider_mode == LOCAL_LAB_READWRITE_MODE,
-        "netapp_nfs_setup_apply": _env_flag("NETAPP_NFS_SETUP_APPLY"),
-        "netapp_nfs_setup_confirm": os.getenv("NETAPP_NFS_SETUP_CONFIRM") == NFS_SETUP_CONFIRM_PHRASE,
-        "netapp_nfs_setup_allow_storage_create": _env_flag("NETAPP_NFS_SETUP_ALLOW_STORAGE_CREATE"),
+        "netapp_nfs_setup_apply": guarded_flag(
+            "NETAPP_NFS_SETUP_APPLY", action_id="netapp.nfs-setup-apply", context=guarded_context
+        ),
+        "netapp_nfs_setup_confirm": guarded_confirmation(
+            "NETAPP_NFS_SETUP_CONFIRM", action_id="netapp.nfs-setup-apply", context=guarded_context
+        )
+        == NFS_SETUP_CONFIRM_PHRASE,
+        "netapp_nfs_setup_allow_storage_create": guarded_flag(
+            "NETAPP_NFS_SETUP_ALLOW_STORAGE_CREATE", action_id="netapp.nfs-setup-apply", context=guarded_context
+        ),
     }
     blockers = []
     blockers.extend(_string_list(policy.action_blockers("netapp.nfs-setup", ActionCategory.STORAGE_CONFIG)))

@@ -11,7 +11,7 @@ from typing import Any
 from app.core.config import settings
 from app.providers.action_policy import LOCAL_LAB_READWRITE_MODE, current_lab_action_policy
 from app.providers.redaction import redact_sensitive
-from app.services.env_utils import env_flag as _env_flag
+from app.services.guarded_action_context import GuardedActionContext, guarded_confirmation, guarded_flag
 from app.services.json_file_store import write_json_object, write_text_value
 from app.services.lab_profiles import active_lab_profile_context
 from app.services.list_utils import unique_preserving_order, unique_strings
@@ -153,7 +153,9 @@ def build_netapp_setup_preview(*, run_address_scan: bool = False, write_report: 
     )
 
 
-def apply_netapp_setup(*, write_report: bool = True) -> dict[str, Any]:
+def apply_netapp_setup(
+    *, write_report: bool = True, guarded_context: GuardedActionContext | None = None
+) -> dict[str, Any]:
     if not _netapp_in_scope():
         payload = _not_in_scope_payload(
             "setup-apply",
@@ -168,7 +170,7 @@ def apply_netapp_setup(*, write_report: bool = True) -> dict[str, Any]:
     detected_state = _detected_setup_state(runtime_state)
     intent = get_netapp_setup_intent()
     address_scan = scan_planned_netapp_addresses(enabled=True)
-    gates = _setup_apply_gates(detected_state, intent, address_scan)
+    gates = _setup_apply_gates(detected_state, intent, address_scan, guarded_context=guarded_context)
     blocked = bool(gates["blockers"])
     payload = {
         "provider_id": PROVIDER_ID,
@@ -490,13 +492,22 @@ def _setup_apply_gates(
     detected_state: str,
     intent: dict[str, Any],
     address_scan: dict[str, Any],
+    *,
+    guarded_context: GuardedActionContext | None = None,
 ) -> dict[str, Any]:
     policy = current_lab_action_policy(settings.provider_mode)
     flag_state = {
         "provider_mode": settings.provider_mode,
-        "netapp_setup_apply": _env_flag("NETAPP_SETUP_APPLY"),
-        "netapp_setup_confirm": os.getenv("NETAPP_SETUP_CONFIRM") == SETUP_CONFIRM_PHRASE,
-        "netapp_setup_allow_cluster_create": _env_flag("NETAPP_SETUP_ALLOW_CLUSTER_CREATE"),
+        "netapp_setup_apply": guarded_flag(
+            "NETAPP_SETUP_APPLY", action_id="netapp.setup-apply", context=guarded_context
+        ),
+        "netapp_setup_confirm": guarded_confirmation(
+            "NETAPP_SETUP_CONFIRM", action_id="netapp.setup-apply", context=guarded_context
+        )
+        == SETUP_CONFIRM_PHRASE,
+        "netapp_setup_allow_cluster_create": guarded_flag(
+            "NETAPP_SETUP_ALLOW_CLUSTER_CREATE", action_id="netapp.setup-apply", context=guarded_context
+        ),
         "local_lab_readwrite": settings.provider_mode == LOCAL_LAB_READWRITE_MODE,
     }
     blockers = []

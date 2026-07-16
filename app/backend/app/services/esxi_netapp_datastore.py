@@ -11,7 +11,7 @@ import paramiko
 from app.core.config import settings
 from app.providers.action_policy import ActionCategory, LOCAL_LAB_READWRITE_MODE, current_lab_action_policy
 from app.providers.redaction import redact_sensitive
-from app.services.env_utils import env_flag as _env_flag
+from app.services.guarded_action_context import GuardedActionContext, guarded_confirmation, guarded_flag
 from app.services.esxi_vm_deploy import _govc_binary, _govc_env, _run_govc
 from app.services.json_file_store import write_json_object, write_text_value
 from app.services.json_utils import parse_json_object
@@ -72,11 +72,13 @@ def build_esxi_netapp_datastore_preview(*, write_report: bool = True) -> dict[st
     return sanitized
 
 
-def apply_esxi_netapp_datastore(*, write_report: bool = True) -> dict[str, Any]:
+def apply_esxi_netapp_datastore(
+    *, write_report: bool = True, guarded_context: GuardedActionContext | None = None
+) -> dict[str, Any]:
     plan = _mount_plan()
     target = _target_state()
     current = _datastore_info(plan) if target["can_query"] else _skipped_datastore_info()
-    gates = _apply_gates(plan, target, current)
+    gates = _apply_gates(plan, target, current, guarded_context=guarded_context)
     apply_result = {
         "govc_datastore_create_attempted": False,
         "govc_datastore_remove_attempted": False,
@@ -407,13 +409,24 @@ def _target_blocker(target: dict[str, Any]) -> str:
     return "ESXi govc target is not ready."
 
 
-def _apply_gates(plan: dict[str, Any], target: dict[str, Any], current: dict[str, Any]) -> dict[str, Any]:
+def _apply_gates(
+    plan: dict[str, Any],
+    target: dict[str, Any],
+    current: dict[str, Any],
+    *,
+    guarded_context: GuardedActionContext | None = None,
+) -> dict[str, Any]:
     policy = current_lab_action_policy(settings.provider_mode)
     flag_state = {
         "provider_mode": settings.provider_mode,
         "local_lab_readwrite": settings.provider_mode == LOCAL_LAB_READWRITE_MODE,
-        "datastore_apply": _env_flag("ESXI_NETAPP_DATASTORE_APPLY"),
-        "datastore_confirm": os.getenv("ESXI_NETAPP_DATASTORE_CONFIRM") == DATASTORE_CONFIRM_PHRASE,
+        "datastore_apply": guarded_flag(
+            "ESXI_NETAPP_DATASTORE_APPLY", action_id="esxi.netapp-datastore-apply", context=guarded_context
+        ),
+        "datastore_confirm": guarded_confirmation(
+            "ESXI_NETAPP_DATASTORE_CONFIRM", action_id="esxi.netapp-datastore-apply", context=guarded_context
+        )
+        == DATASTORE_CONFIRM_PHRASE,
     }
     blockers = _string_list(policy.action_blockers("esxi.datastore-vswitch-vmkernel", ActionCategory.STORAGE_CONFIG))
     blockers.extend(_preview_blockers(plan, target, current))

@@ -11,7 +11,7 @@ import httpx
 from app.core.config import settings
 from app.providers.action_policy import ActionCategory, LOCAL_LAB_READWRITE_MODE, current_lab_action_policy
 from app.providers.redaction import redact_sensitive
-from app.services.env_utils import env_flag as _env_flag
+from app.services.guarded_action_context import GuardedActionContext, guarded_confirmation, guarded_flag
 from app.services.json_file_store import write_json_object, write_text_value
 from app.services.list_utils import unique_preserving_order, unique_strings
 from app.services.netapp_state import get_netapp_runtime_state
@@ -36,7 +36,7 @@ def build_netapp_iscsi_setup_preview(*, write_report: bool = True) -> dict[str, 
     plan = _iscsi_plan(runtime_state)
     protocol = _iscsi_protocol_option(runtime_state)
     inventory = _iscsi_inventory(plan)
-    blockers = _preview_blockers(runtime_state, plan)
+    blockers = _preview_blockers(runtime_state, plan, inventory)
     payload = {
         "provider_id": PROVIDER_ID,
         "action": "iscsi-setup-preview",
@@ -78,12 +78,16 @@ def build_netapp_iscsi_setup_preview(*, write_report: bool = True) -> dict[str, 
     return sanitized
 
 
-def apply_netapp_iscsi_setup(*, write_report: bool = True) -> dict[str, Any]:
+def apply_netapp_iscsi_setup(
+    *,
+    write_report: bool = True,
+    guarded_context: GuardedActionContext | None = None,
+) -> dict[str, Any]:
     runtime_state = get_netapp_runtime_state()
     plan = _iscsi_plan(runtime_state)
     protocol = _iscsi_protocol_option(runtime_state)
     inventory = _iscsi_inventory(plan)
-    gates = _apply_gates(runtime_state, plan, protocol)
+    gates = _apply_gates(runtime_state, plan, protocol, inventory, guarded_context=guarded_context)
     apply_result = _rest_apply_not_attempted("Apply gates blocked before ONTAP REST write session started.")
     if not gates["blockers"]:
         apply_result = _ensure_iscsi_lun_igroup_map(plan, inventory)
@@ -231,6 +235,15 @@ def _esxi_initiator_iqns() -> tuple[list[str], dict[str, Any]]:
     configured = _csv_env("ESXI_ISCSI_INITIATOR_IQNS")
     if configured:
         return configured, {"source": "ESXI_ISCSI_INITIATOR_IQNS", "status": "configured"}
+    policy = current_lab_action_policy(settings.provider_mode)
+    policy_blockers = _string_list(policy.action_blockers("netapp.iscsi-setup", ActionCategory.READONLY))
+    if policy_blockers:
+        return [], {
+            "source": "live_esxi_ssh",
+            "status": "not_checked",
+            "checked": False,
+            "blockers": policy_blockers,
+        }
     missing = []
     if not settings.esxi_test_host:
         missing.append("ESXI_TEST_HOST")
@@ -319,6 +332,15 @@ def _iscsi_protocol_option(runtime_state: dict[str, Any]) -> dict[str, Any]:
 
 
 def _iscsi_inventory(plan: dict[str, Any]) -> dict[str, Any]:
+    policy = current_lab_action_policy(settings.provider_mode)
+    policy_blockers = _string_list(policy.action_blockers("netapp.iscsi-setup", ActionCategory.READONLY))
+    if policy_blockers:
+        return {
+            "checked": False,
+            "source": "ontap_rest",
+            "status": "not_checked",
+            "blockers": policy_blockers,
+        }
     if not _api_access_present():
         return {
             "checked": False,
@@ -499,7 +521,11 @@ def _q(value: Any) -> str:
     return quote(str(value or ""), safe="")
 
 
-def _preview_blockers(runtime_state: dict[str, Any], plan: dict[str, Any]) -> list[str]:
+def _preview_blockers(
+    runtime_state: dict[str, Any],
+    plan: dict[str, Any],
+    inventory: dict[str, Any],
+) -> list[str]:
     blockers = []
     if not runtime_state.get("configured"):
         blockers.append("NetApp ONTAP cluster is not live-configured yet; iSCSI setup is blocked by prior cluster setup.")
@@ -509,6 +535,8 @@ def _preview_blockers(runtime_state: dict[str, Any], plan: dict[str, Any]) -> li
         blockers.append("NetApp iSCSI setup plan has missing required fields.")
     if not plan["initiator_iqns"]:
         blockers.append("ESXI_ISCSI_INITIATOR_IQNS is required before any future guarded igroup apply.")
+    blockers.extend(_string_list((plan.get("initiator_discovery") or {}).get("blockers")))
+    blockers.extend(_string_list(inventory.get("blockers")))
     return _unique(blockers)
 
 
@@ -518,18 +546,19 @@ def _validation_blockers(
     protocol: dict[str, Any],
     inventory: dict[str, Any] | None = None,
 ) -> list[str]:
-    blockers = _preview_blockers(runtime_state, plan)
+    inventory = inventory or _iscsi_inventory(plan)
+    blockers = _preview_blockers(runtime_state, plan, inventory)
     blockers.extend(_string_list(protocol.get("blockers")))
     if not protocol.get("ready"):
         blockers.append("NetApp iSCSI protocol option is not ready yet.")
-    inventory = inventory or _iscsi_inventory(plan)
-    for label, item in (
-        ("LUN", inventory.get("lun")),
-        ("igroup", inventory.get("igroup")),
-        ("LUN map", inventory.get("lun_map")),
-    ):
-        if not isinstance(item, dict) or not item.get("exists"):
-            blockers.append(f"NetApp iSCSI {label} is missing.")
+    if inventory.get("checked"):
+        for label, item in (
+            ("LUN", inventory.get("lun")),
+            ("igroup", inventory.get("igroup")),
+            ("LUN map", inventory.get("lun_map")),
+        ):
+            if not isinstance(item, dict) or not item.get("exists"):
+                blockers.append(f"NetApp iSCSI {label} is missing.")
     return _unique(blockers)
 
 
@@ -565,18 +594,32 @@ def _rest_preview(plan: dict[str, Any]) -> list[dict[str, Any]]:
     ]
 
 
-def _apply_gates(runtime_state: dict[str, Any], plan: dict[str, Any], protocol: dict[str, Any]) -> dict[str, Any]:
+def _apply_gates(
+    runtime_state: dict[str, Any],
+    plan: dict[str, Any],
+    protocol: dict[str, Any],
+    inventory: dict[str, Any],
+    *,
+    guarded_context: GuardedActionContext | None = None,
+) -> dict[str, Any]:
     policy = current_lab_action_policy(settings.provider_mode)
     flag_state = {
         "provider_mode": settings.provider_mode,
         "local_lab_readwrite": settings.provider_mode == LOCAL_LAB_READWRITE_MODE,
-        "netapp_iscsi_setup_apply": _env_flag("NETAPP_ISCSI_SETUP_APPLY"),
-        "netapp_iscsi_setup_confirm": os.getenv("NETAPP_ISCSI_SETUP_CONFIRM") == ISCSI_SETUP_CONFIRM_PHRASE,
-        "netapp_iscsi_setup_allow_storage_create": _env_flag("NETAPP_ISCSI_SETUP_ALLOW_STORAGE_CREATE"),
+        "netapp_iscsi_setup_apply": guarded_flag(
+            "NETAPP_ISCSI_SETUP_APPLY", action_id="netapp.iscsi-setup-apply", context=guarded_context
+        ),
+        "netapp_iscsi_setup_confirm": guarded_confirmation(
+            "NETAPP_ISCSI_SETUP_CONFIRM", action_id="netapp.iscsi-setup-apply", context=guarded_context
+        )
+        == ISCSI_SETUP_CONFIRM_PHRASE,
+        "netapp_iscsi_setup_allow_storage_create": guarded_flag(
+            "NETAPP_ISCSI_SETUP_ALLOW_STORAGE_CREATE", action_id="netapp.iscsi-setup-apply", context=guarded_context
+        ),
     }
     blockers: list[str] = []
     blockers.extend(_string_list(policy.action_blockers("netapp.iscsi-setup", ActionCategory.STORAGE_CONFIG)))
-    blockers.extend(_preview_blockers(runtime_state, plan))
+    blockers.extend(_preview_blockers(runtime_state, plan, inventory))
     blockers.extend(_string_list(protocol.get("blockers")))
     if not protocol.get("ready"):
         blockers.append("NetApp iSCSI protocol option is not ready yet.")
@@ -616,7 +659,12 @@ def _ensure_iscsi_lun_igroup_map(plan: dict[str, Any], inventory: dict[str, Any]
         else:
             transcript.append(f"Existing LUN map found for {plan.get('lun_path')} and {plan.get('igroup_name')}.")
     except (httpx.HTTPError, OSError, ValueError) as exc:
-        return _rest_apply_failed(f"NetApp iSCSI apply failed: {exc.__class__.__name__}: {exc}")
+        reason = f"NetApp iSCSI apply failed: {exc.__class__.__name__}: {exc}"
+        return _rest_apply_failed(
+            reason,
+            ontap_writes_attempted=writes_attempted,
+            transcript_summary=[*transcript, reason],
+        )
 
     return {
         "status": "applied" if writes_attempted else "ready",
@@ -714,13 +762,18 @@ def _rest_apply_not_attempted(reason: str) -> dict[str, Any]:
     }
 
 
-def _rest_apply_failed(reason: str) -> dict[str, Any]:
+def _rest_apply_failed(
+    reason: str,
+    *,
+    ontap_writes_attempted: bool,
+    transcript_summary: list[str],
+) -> dict[str, Any]:
     return {
         "status": "failed",
         "message": reason,
-        "ontap_writes_attempted": False,
+        "ontap_writes_attempted": ontap_writes_attempted,
         "blockers": [reason],
-        "transcript_summary": [reason],
+        "transcript_summary": transcript_summary,
     }
 
 
@@ -764,6 +817,8 @@ def _validation_markdown(payload: dict[str, Any]) -> str:
 def _common_markdown(title: str, payload: dict[str, Any]) -> str:
     plan = payload.get("iscsi_plan") or {}
     protocol = payload.get("protocol_readiness") or {}
+    apply_evidence = payload.get("apply") if isinstance(payload.get("apply"), dict) else {}
+    ontap_writes_attempted = bool(apply_evidence.get("ontap_writes_attempted"))
     lines = [
         f"# {title}",
         "",
@@ -772,7 +827,7 @@ def _common_markdown(title: str, payload: dict[str, Any]) -> str:
         f"- Apply enabled: `{payload.get('apply_enabled')}`",
         f"- Configured state: `{payload.get('configured_state')}`",
         f"- API access present: `{payload.get('api_access_present')}`",
-        "- ONTAP writes attempted: `False`",
+        f"- ONTAP writes attempted: `{ontap_writes_attempted}`",
         "- ESXi/vCenter writes attempted: `False`",
         "",
         "## iSCSI Plan",

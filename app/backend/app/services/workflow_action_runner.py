@@ -5,7 +5,6 @@ import os
 import signal
 import subprocess
 import uuid
-from contextlib import contextmanager
 from dataclasses import asdict, is_dataclass
 from datetime import UTC, datetime
 from pathlib import PureWindowsPath
@@ -22,6 +21,7 @@ from app.services.build_verification import get_lab_build_verification
 from app.services.firmware_compliance import get_firmware_compliance, get_firmware_inventory, write_waiver_report
 from app.services.full_rebuild_run import get_full_rebuild_summary
 from app.services.golden_state import get_provider_lab_golden_state
+from app.services.guarded_action_context import GuardedActionContext
 from app.schemas import HpeRaidApplyCreate, HpeRaidFactoryResetCreate
 from app.services.hpe_raid import (
     apply_hpe_raid_factory_reset,
@@ -242,9 +242,9 @@ def _run_api_action(
     payload: dict[str, Any],
 ) -> dict[str, Any]:
     try:
-        with _temporary_workflow_env(str(action["action_id"]), payload):
-            action_payload = _api_action_payload(str(action["action_id"]), session, payload)
         action_id = str(action["action_id"])
+        guarded_context = _guarded_action_context(action_id, payload)
+        action_payload = _api_action_payload(action_id, session, payload, guarded_context=guarded_context)
         summary_limit = 16000 if action_id == "cisco.ssh-readonly-probe" else 4000
         stdout_summary = _redacted_summary(json.dumps(_api_stdout_payload(action_id, action_payload), sort_keys=True), max_chars=summary_limit)
         payload_status = str(action_payload.get("status") or "").lower() if isinstance(action_payload, dict) else ""
@@ -288,7 +288,13 @@ def _run_api_action(
         )
 
 
-def _api_action_payload(action_id: str, session: Session | None, payload: dict[str, Any] | None = None) -> Any:
+def _api_action_payload(
+    action_id: str,
+    session: Session | None,
+    payload: dict[str, Any] | None = None,
+    *,
+    guarded_context: GuardedActionContext | None = None,
+) -> Any:
     payload = payload or {}
     if action_id == "cisco.discover-console":
         return CiscoConsoleAdapter().prompt_readiness()
@@ -335,6 +341,7 @@ def _api_action_payload(action_id: str, session: Session | None, payload: dict[s
         return apply_hpe_raid_plan(
             session,
             HpeRaidApplyCreate(confirmation_phrase=_string_or_none(payload.get("confirmation_phrase")) or ""),
+            guarded_context=guarded_context,
         )
     if action_id == "raid.factory-reset-preview":
         if session is None:
@@ -346,9 +353,10 @@ def _api_action_payload(action_id: str, session: Session | None, payload: dict[s
         return apply_hpe_raid_factory_reset(
             session,
             HpeRaidFactoryResetCreate(confirmation_phrase=_string_or_none(payload.get("confirmation_phrase")) or ""),
+            guarded_context=guarded_context,
         )
     if action_id == "raid.reset-commit":
-        return reset_server_for_raid()
+        return reset_server_for_raid(guarded_context=guarded_context)
     if action_id == "esxi.readiness":
         if session is None:
             raise WorkflowActionRunNotFoundError("ESXi readiness requires a database session.")
@@ -370,7 +378,7 @@ def _api_action_payload(action_id: str, session: Session | None, payload: dict[s
     if action_id == "esxi.netapp-datastore-preview":
         return build_esxi_netapp_datastore_preview()
     if action_id == "esxi.netapp-datastore-apply":
-        return apply_esxi_netapp_datastore()
+        return apply_esxi_netapp_datastore(guarded_context=guarded_context)
     if action_id == "esxi.netapp-datastore-validate":
         return validate_esxi_netapp_datastore()
     if action_id == "esxi.iscsi-datastore-preview":
@@ -380,7 +388,7 @@ def _api_action_payload(action_id: str, session: Session | None, payload: dict[s
     if action_id == "esxi.vm-deploy-preview":
         return build_esxi_vm_deploy_preview()
     if action_id == "esxi.vm-deploy-apply":
-        return apply_esxi_vm_deploy()
+        return apply_esxi_vm_deploy(guarded_context=guarded_context)
     if action_id == "netapp.live-state":
         return run_netapp_live_state()
     if action_id == "netapp.console-autodiscovery":
@@ -396,7 +404,7 @@ def _api_action_payload(action_id: str, session: Session | None, payload: dict[s
     if action_id == "netapp.setup-preview":
         return build_netapp_setup_preview(run_address_scan=False, write_report=False)
     if action_id == "netapp.setup-apply":
-        return apply_netapp_setup()
+        return apply_netapp_setup(guarded_context=guarded_context)
     if action_id == "netapp.post-setup-validation":
         return run_netapp_post_setup_validation()
     if action_id == "netapp.address-plan":
@@ -410,19 +418,19 @@ def _api_action_payload(action_id: str, session: Session | None, payload: dict[s
     if action_id == "netapp.factory-reset-preview":
         return build_netapp_factory_reset_preview()
     if action_id == "netapp.factory-reset-apply":
-        return apply_netapp_factory_reset()
+        return apply_netapp_factory_reset(guarded_context=guarded_context)
     if action_id == "netapp.factory-reset-validate":
         return validate_netapp_factory_reset()
     if action_id == "netapp.nfs-setup-preview":
         return build_netapp_nfs_setup_preview(write_report=False)
     if action_id == "netapp.nfs-setup-apply":
-        return apply_netapp_nfs_setup()
+        return apply_netapp_nfs_setup(guarded_context=guarded_context)
     if action_id == "netapp.nfs-setup-validate":
         return validate_netapp_nfs_setup()
     if action_id == "netapp.iscsi-setup-preview":
         return build_netapp_iscsi_setup_preview(write_report=False)
     if action_id == "netapp.iscsi-setup-apply":
-        return apply_netapp_iscsi_setup()
+        return apply_netapp_iscsi_setup(guarded_context=guarded_context)
     if action_id == "netapp.iscsi-setup-validate":
         return validate_netapp_iscsi_setup()
     if action_id == "esxi.vm-deploy-validate":
@@ -959,24 +967,8 @@ def _compact_datastore_payload(payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-@contextmanager
-def _temporary_workflow_env(action_id: str, payload: dict[str, Any]):
-    overrides = _workflow_env_overrides(action_id, payload)
-    previous = {key: os.environ.get(key) for key in overrides}
-    try:
-        for key, value in overrides.items():
-            os.environ[key] = value
-        yield
-    finally:
-        for key, value in previous.items():
-            if value is None:
-                os.environ.pop(key, None)
-            else:
-                os.environ[key] = value
-
-
-def _workflow_env_overrides(action_id: str, payload: dict[str, Any]) -> dict[str, str]:
-    overrides: dict[str, str] = {}
+def _guarded_action_context(action_id: str, payload: dict[str, Any]) -> GuardedActionContext:
+    confirmed_gates: list[tuple[str, str]] = []
     action = get_workflow_action(action_id)
     allowed_env_gates = {
         gate.strip()
@@ -992,23 +984,12 @@ def _workflow_env_overrides(action_id: str, payload: dict[str, Any]) -> dict[str
         key, value = gate.split("=", 1)
         key = key.strip()
         if key:
-            overrides[key] = _strip_optional_quotes(value.strip())
-    confirmation_phrase = _string_or_none(payload.get("confirmation_phrase"))
-    if confirmation_phrase:
-        confirmation_env = {
-            "netapp.factory-reset-apply": "NETAPP_FACTORY_RESET_CONFIRM",
-            "netapp.setup-apply": "NETAPP_SETUP_CONFIRM",
-            "netapp.nfs-setup-apply": "NETAPP_NFS_SETUP_CONFIRM",
-            "netapp.iscsi-setup-apply": "NETAPP_ISCSI_SETUP_CONFIRM",
-            "esxi.netapp-datastore-apply": "ESXI_NETAPP_DATASTORE_CONFIRM",
-            "esxi.vm-deploy-apply": "VM_DEPLOY_CONFIRM",
-            "raid.apply": "HPE_RAID_APPLY_CONFIRM",
-            "raid.factory-reset-apply": "HPE_RAID_FACTORY_RESET_CONFIRM",
-            "raid.reset-commit": "HPE_RAID_RESET_CONFIRM",
-        }.get(action_id)
-        if confirmation_env:
-            overrides[confirmation_env] = confirmation_phrase
-    return overrides
+            confirmed_gates.append((key, _strip_optional_quotes(value.strip())))
+    return GuardedActionContext(
+        action_id=action_id,
+        confirmed_gates=tuple(confirmed_gates),
+        confirmation_phrase=_string_or_none(payload.get("confirmation_phrase")),
+    )
 
 
 def _strip_optional_quotes(value: str) -> str:

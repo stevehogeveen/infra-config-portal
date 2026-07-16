@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -9,6 +8,7 @@ from app.core.config import settings
 from app.providers.action_policy import ActionCategory, current_lab_action_policy
 from app.providers.redaction import redact_sensitive
 from app.services.env_utils import env_flag as _env_flag
+from app.services.guarded_action_context import GuardedActionContext, guarded_confirmation, guarded_flag
 from app.services.netapp_address_plan import (
     ADDRESS_VALIDATION_REPORT,
     CODEX_RUN_DIR,
@@ -82,9 +82,11 @@ def build_netapp_factory_reset_preview(*, write_report: bool = True) -> dict[str
     return sanitized
 
 
-def apply_netapp_factory_reset(*, write_report: bool = True) -> dict[str, Any]:
+def apply_netapp_factory_reset(
+    *, write_report: bool = True, guarded_context: GuardedActionContext | None = None
+) -> dict[str, Any]:
     preview = build_netapp_factory_reset_preview(write_report=True)
-    gates = _apply_gates()
+    gates = _apply_gates(guarded_context=guarded_context)
     blocked = bool(gates["blockers"])
     status = "blocked" if blocked else "not_implemented"
     payload = {
@@ -146,13 +148,18 @@ def validate_netapp_factory_reset(*, write_report: bool = True) -> dict[str, Any
     return sanitized
 
 
-def _apply_gates() -> dict[str, Any]:
+def _apply_gates(*, guarded_context: GuardedActionContext | None = None) -> dict[str, Any]:
     policy = current_lab_action_policy(settings.provider_mode)
     flag_state = {
         "provider_mode": settings.provider_mode,
         "lab_allow_factory_reset": policy.allow_factory_reset,
-        "netapp_factory_reset_apply": _env_flag("NETAPP_FACTORY_RESET_APPLY"),
-        "netapp_factory_reset_confirm": os.getenv("NETAPP_FACTORY_RESET_CONFIRM") == FACTORY_RESET_CONFIRM_PHRASE,
+        "netapp_factory_reset_apply": guarded_flag(
+            "NETAPP_FACTORY_RESET_APPLY", action_id="netapp.factory-reset-apply", context=guarded_context
+        ),
+        "netapp_factory_reset_confirm": guarded_confirmation(
+            "NETAPP_FACTORY_RESET_CONFIRM", action_id="netapp.factory-reset-apply", context=guarded_context
+        )
+        == FACTORY_RESET_CONFIRM_PHRASE,
         "netapp_factory_reset_executor_enabled": _env_flag("NETAPP_FACTORY_RESET_EXECUTOR_ENABLED"),
     }
     blockers = []
