@@ -302,7 +302,9 @@ test("operator home answers the next action without dashboard clutter", async ({
 
 test("operator home opens one ordered build plan with one primary action", async ({ page }) => {
   await page.goto("/overview");
+  const latestRequest = page.waitForRequest((request) => request.url().includes("/api/v1/lab-build/runs/latest"));
   await page.getByTestId("operator-home-primary-action").click();
+  expect(new URL((await latestRequest).url()).searchParams.get("kit_id")).toBe("runtime-profile");
 
   const journey = page.getByTestId("lab-build-journey");
   const plan = journey.getByLabel("Build Plan");
@@ -341,14 +343,45 @@ test("run console pauses at a guarded change without exposing duplicate consoles
   await expect(runConsole).toContainText("Step 3 of 4");
   await expect(runConsole).toContainText("Waiting for approval: Configure the management network.");
   await expect(runConsole.getByTestId("lab-build-primary-action")).toHaveCount(1);
-  await expect(runConsole.getByTestId("lab-build-primary-action")).toContainText("Open Details");
+  await expect(runConsole.getByTestId("lab-build-primary-action")).toContainText("Continue Build");
+  await expect(runConsole.getByRole("button", { name: "Open Details" })).toHaveCount(1);
   await expect(runConsole.locator("details.lab-build-advanced")).not.toHaveAttribute("open");
   await expect(runConsole.getByLabel("Technical build log")).not.toBeVisible();
   await expect(page.getByText("Operator Console")).toHaveCount(0);
 
-  await runConsole.getByTestId("lab-build-primary-action").click();
+  await runConsole.getByRole("button", { name: "Open Details" }).click();
   await expect(page.getByTestId("lab-build-journey")).toHaveCount(0);
   await expect(page.locator("section[aria-label='Living lab topology']")).toBeVisible();
+});
+
+test("guarded build continuation submits exact waiting evidence", async ({ page }) => {
+  await page.goto("/overview");
+  await page.getByTestId("operator-home-primary-action").click();
+  await page.getByTestId("lab-build-primary-action").click();
+
+  const resumeRequest = page.waitForRequest((request) => (
+    decodeURIComponent(new URL(request.url()).pathname).endsWith("/lab-build:test/resume")
+  ));
+  await page.getByLabel("Run Console").getByTestId("lab-build-primary-action").click();
+  const payload = (await resumeRequest).postDataJSON() as Record<string, unknown>;
+
+  expect(payload).toEqual({
+    action_run_id: "workflow-action:cisco.apply-bootstrap:test",
+    run_revision: 8,
+    waiting_nonce: "waiting-nonce-1234567890"
+  });
+  await expect(page.getByLabel("Completion Report")).toBeVisible();
+});
+
+test("running builds can only refresh status", async ({ page }) => {
+  await page.route("**/api/v1/lab-build/runs/latest?*", (route) => json(route, labBuildRunningRun()));
+  await page.goto("/overview");
+  await page.getByTestId("operator-home-primary-action").click();
+
+  const console = page.getByLabel("Run Console");
+  await expect(console.getByTestId("lab-build-primary-action")).toContainText("Refresh Status");
+  await expect(console.getByRole("button", { name: "Resume Build" })).toHaveCount(0);
+  await expect(console.getByRole("button", { name: "Continue Build" })).toHaveCount(0);
 });
 
 test("failed build shows one completion report and retry only when safe", async ({ page }) => {
@@ -1831,7 +1864,8 @@ async function installApiMocks(page: Page) {
       return json(route, workflowActionRun(actionIdFromRunPath(url.pathname)));
     }
     if (url.pathname.endsWith("/runs")) {
-      return json(route, []);
+      const actionId = url.pathname.match(/\/api\/v1\/workflows\/actions\/(.+)\/runs$/)?.[1] ?? "";
+      return json(route, actionId === "cisco.apply-bootstrap" ? [workflowActionRun(actionId)] : []);
     }
     return json(route, {});
   });
@@ -1909,6 +1943,8 @@ function labBuildStep(overrides: Record<string, unknown> = {}) {
     description: "Complete this build step.",
     finished_at: null,
     label: "Build step",
+    lease_expires_at: null,
+    optional: false,
     operator_message: "Waiting for the build to start.",
     operator_path: "/overview",
     order: 1,
@@ -1920,6 +1956,7 @@ function labBuildStep(overrides: Record<string, unknown> = {}) {
     suggested_action: "Correct the issue and retry.",
     summary: "not_started",
     technical_details: "",
+    waiting_nonce: null,
     ...overrides
   };
 }
@@ -1954,7 +1991,8 @@ function labBuildWaitingRun({ retryReady = false }: { retryReady?: boolean } = {
     started_at: checkedAt,
     status: retryReady ? "not_started" : "waiting",
     summary: retryReady ? "not_started" : "operator_approval_required",
-    technical_details: "Action remains protected by its existing confirmation and safety gates."
+    technical_details: "Action remains protected by its existing confirmation and safety gates.",
+    waiting_nonce: retryReady ? null : "waiting-nonce-1234567890"
   });
   steps[3] = labBuildStep({
     ...steps[3],
@@ -1973,6 +2011,7 @@ function labBuildWaitingRun({ retryReady = false }: { retryReady?: boolean } = {
     operator_message: steps[2].operator_message,
     progress: { completed: 2, percent: 50, total: 4 },
     report_artifact: null,
+    revision: retryReady ? 9 : 8,
     run_id: "lab-build:test",
     started_at: checkedAt,
     status: "waiting",
@@ -2004,12 +2043,33 @@ function labBuildCompletedRun() {
     operator_message: "The selected kit completed every build step.",
     progress: { completed: 4, percent: 100, total: 4 },
     report_artifact: "artifacts/codex-runs/lab-build-runs/lab-build-test.md",
+    revision: 12,
     run_id: "lab-build:test",
     started_at: checkedAt,
     status: "completed",
     steps,
     suggested_action: "Review and export the completion report.",
     updated_at: checkedAt
+  };
+}
+
+function labBuildRunningRun() {
+  const run = labBuildWaitingRun();
+  const steps = run.steps as Array<Record<string, unknown>>;
+  steps[2] = {
+    ...steps[2],
+    lease_expires_at: "2099-01-01T00:00:00Z",
+    operator_message: "Configure the management network is running.",
+    status: "running",
+    summary: "running",
+    waiting_nonce: null
+  };
+  return {
+    ...run,
+    headline: "Building the lab.",
+    operator_message: "The current check is still running.",
+    revision: 9,
+    status: "running"
   };
 }
 
@@ -2060,6 +2120,7 @@ function labBuildFailedRun() {
     operator_message: "Check firmware readiness failed.",
     progress: { completed: 1, percent: 25, total: 4 },
     report_artifact: null,
+    revision: 7,
     run_id: "lab-build:failed",
     started_at: checkedAt,
     status: "failed",

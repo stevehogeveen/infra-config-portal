@@ -1,6 +1,6 @@
 # Lab Builder Build Journey Implementation
 
-Status: implemented vertical slice
+Status: implemented and reliability hardened
 Branch: `unified-build-journey`
 Depends on: Operator Home simplicity slice
 
@@ -8,6 +8,8 @@ Depends on: Operator Home simplicity slice
 
 - One kit-level workflow engine owns dependency ordering, step lifecycle, pause/resume,
   retry invalidation, persisted run state, and completion reports.
+- Persisted runs carry an incrementing revision, selected-kit fingerprint, waiting nonce,
+  and execution lease so stale or concurrent mutations fail closed.
 - Provider action results are normalized into status, summary, operator message,
   technical details, suggested action, and retry eligibility.
 - Fixed kit plans adapt to local RAID, shared storage, NFS or iSCSI, and central
@@ -24,29 +26,40 @@ Depends on: Operator Home simplicity slice
 Read-only and report-only steps may advance automatically. Existing write,
 destructive, rebuild, reset, RAID, and upgrade actions are never invoked by the engine
 without their existing guarded workflow. The run enters `Waiting`, points the operator
-to Details, and resumes only after a new successful action trace proves that guarded
-step completed.
+to Details, and continues only when the operator submits the exact action run created
+after that wait began. The trace must match the selected kit and its saved profile, and
+one guarded trace cannot satisfy two builds. Failed guarded results remain failed.
 
 Retrying a safe step resets every downstream capability to not ready before execution
-can continue. A failed run cannot use the resume endpoint as an implicit retry.
+continues immediately. A failed run cannot use the resume endpoint as an implicit retry,
+and a dependency-blocked child cannot retry its owning step. Required skipped steps block
+the run; only explicitly optional steps count as complete when skipped.
+
+Safe actions use a 30-minute persisted execution lease. A run recovered after that lease
+expires becomes a retryable interrupted failure. Active runs saved before the hardened
+revision/profile/evidence contract are stopped and must be restarted from a new plan.
 
 ## API
 
 - `GET /api/v1/lab-build/plan`
 - `POST /api/v1/lab-build/runs`
-- `GET /api/v1/lab-build/runs/latest`
+- `GET /api/v1/lab-build/runs/latest?kit_id={kit_id}`
 - `GET /api/v1/lab-build/runs/{run_id}`
 - `POST /api/v1/lab-build/runs/{run_id}/resume`
+  - automatic retry body: `{ "run_revision": 12 }`
+  - guarded body: `{ "run_revision": 12, "action_run_id": "...", "waiting_nonce": "..." }`
 - `POST /api/v1/lab-build/runs/{run_id}/steps/{step_id}/retry`
 
 ## Verification
 
 - Backend engine acceptance tests cover ordering, the complete lifecycle, named
   blockers, suggested actions, retry eligibility, downstream invalidation,
-  pause/resume, explicit retry boundaries, and redacted exceptions.
+  pause/resume, kit-bound evidence, evidence reuse rejection, concurrent resume,
+  stale revision and lease recovery, required versus optional skips, legacy recovery,
+  and result redaction.
 - Browser tests cover one primary action, first-viewport action visibility, mobile
-  overflow, guarded waiting, one completion report, retry visibility, and hidden
-  technical diagnostics.
+  overflow, kit-scoped recovery, exact guarded continuation payloads, refresh-only
+  running states, one completion report, retry visibility, and hidden diagnostics.
 - The existing device workspace, firmware, validation, and safety-gate browser suite
   remains the regression gate for this slice.
 

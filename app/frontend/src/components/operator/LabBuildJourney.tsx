@@ -17,6 +17,8 @@ export function LabBuildJourney({
   loading,
   onClose,
   onOpenDetails,
+  onRefresh,
+  onReload,
   onResume,
   onRetry,
   onStart,
@@ -27,6 +29,8 @@ export function LabBuildJourney({
   loading?: boolean;
   onClose: () => void;
   onOpenDetails: () => void;
+  onRefresh: () => void;
+  onReload: () => void;
   onResume: () => void;
   onRetry: (stepId: string) => void;
   onStart: () => void;
@@ -48,13 +52,27 @@ export function LabBuildJourney({
         </button>
       </header>
 
-      {error && <p className="lab-build-feedback error">{error}</p>}
+      {error && <p className="lab-build-feedback error" role="alert">{error}</p>}
       {!plan && !run ? (
-        <div className="lab-build-loading"><Clock3 size={20} /> Loading the build plan...</div>
+        error && !loading ? (
+          <div className="lab-build-actions">
+            <button className="lab-build-primary" data-testid="lab-build-primary-action" onClick={onReload} type="button">
+              <RotateCcw size={17} /> Retry Loading
+            </button>
+          </div>
+        ) : (
+          <div className="lab-build-loading"><Clock3 size={20} /> Loading the build plan...</div>
+        )
       ) : isComplete && run ? (
         <CompletionReport loading={loading} onClose={onClose} onOpenDetails={onOpenDetails} onRetry={onRetry} run={run} />
       ) : run ? (
-        <RunConsole loading={loading} onOpenDetails={onOpenDetails} onResume={onResume} run={run} />
+        <RunConsole
+          loading={loading}
+          onOpenDetails={onOpenDetails}
+          onRefresh={onRefresh}
+          onResume={onResume}
+          run={run}
+        />
       ) : plan ? (
         <BuildPlan loading={loading} onStart={onStart} plan={plan} />
       ) : null}
@@ -115,17 +133,21 @@ function BuildPlan({ loading, onStart, plan }: { loading?: boolean; onStart: () 
 function RunConsole({
   loading,
   onOpenDetails,
+  onRefresh,
   onResume,
   run
 }: {
   loading?: boolean;
   onOpenDetails: () => void;
+  onRefresh: () => void;
   onResume: () => void;
   run: LabBuildRun;
 }) {
   const current = currentStep(run);
-  const actionLabel = run.status === "waiting" && current?.action_mode !== "read_only" ? "Open Details" : "Resume Build";
-  const action = actionLabel === "Open Details" ? onOpenDetails : onResume;
+  const isRunning = run.status === "running";
+  const isGuardedWait = run.status === "waiting" && current && !isSafeAutomaticStep(current);
+  const actionLabel = isRunning ? "Refresh Status" : isGuardedWait ? "Continue Build" : "Resume Build";
+  const action = isRunning ? onRefresh : onResume;
 
   return (
     <div className="lab-run-console" aria-label="Run Console">
@@ -160,9 +182,14 @@ function RunConsole({
 
       <div className="lab-build-actions">
         <button className="lab-build-primary" data-testid="lab-build-primary-action" disabled={loading} onClick={action} type="button">
-          {actionLabel === "Open Details" ? <ShieldCheck size={17} /> : <Play size={17} />}
+          {isRunning ? <RotateCcw size={17} /> : isGuardedWait ? <ShieldCheck size={17} /> : <Play size={17} />}
           {loading ? "Checking..." : actionLabel}
         </button>
+        {isGuardedWait && (
+          <button className="lab-build-secondary" onClick={onOpenDetails} type="button">
+            Open Details
+          </button>
+        )}
       </div>
     </div>
   );

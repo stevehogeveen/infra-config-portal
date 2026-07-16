@@ -47,8 +47,13 @@ def test_read_only_action_can_run_and_save_trace(
     assert result["source_type"] == "live_probe"
     assert result["freshness"] == "current"
     assert result["not_mock"] is True
+    assert result["lab_profile_id"]
+    assert len(result["lab_profile_fingerprint"]) == 64
     assert result["trace_artifact"]
     assert list(tmp_path.glob("*.json"))
+    assert workflow_action_run_store.workflow_action_run_trace(
+        result["action_id"], result["run_id"]
+    )["run_id"] == result["run_id"]
 
 
 def test_api_action_serializes_dataclass_provider_status(monkeypatch, tmp_path: Path) -> None:

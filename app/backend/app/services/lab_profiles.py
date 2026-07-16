@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 import re
 from copy import deepcopy
@@ -261,6 +263,19 @@ def active_lab_profile_context(profile: dict[str, Any] | None = None) -> dict[st
         "mismatch_warnings": warnings,
         "fix_guidance": guidance,
     }
+
+
+def lab_profile_context_fingerprint(context: dict[str, Any]) -> str:
+    active_profile = context.get("active_profile")
+    profile = dict(active_profile) if isinstance(active_profile, dict) else {}
+    profile.pop("mismatch_warnings", None)
+    profile.pop("fix_guidance", None)
+    payload = {
+        "active_profile": profile,
+        "enabled_features": context.get("enabled_features"),
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
 
 
 def lab_subnet_options() -> list[dict[str, Any]]:

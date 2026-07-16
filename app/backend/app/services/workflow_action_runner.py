@@ -34,7 +34,11 @@ from app.services.hpe_raid import (
     write_hpe_raid_pending_report,
 )
 from app.services.ilo_baseline import get_ilo_baseline_preview, get_ilo_baseline_readiness
-from app.services.lab_profiles import list_lab_profiles
+from app.services.lab_profiles import (
+    active_lab_profile_context,
+    lab_profile_context_fingerprint,
+    list_lab_profiles,
+)
 from app.services.lab_validation import get_lab_validation_summary
 from app.services.cisco_setup_readiness import get_cisco_setup_readiness
 from app.services.cisco_current_intent import get_cisco_current_intent_diff
@@ -130,7 +134,7 @@ def run_workflow_action(
     run_id = f"workflow-action:{action_id}:{uuid.uuid4().hex[:12]}"
     if blockers:
         result = _blocked_result(action, run_id, started_at, blockers)
-        return save_workflow_action_run_trace(result)
+        return _save_profile_bound_trace(result)
 
     spec = get_workflow_action_execution_spec(action_id)
     if spec is None:
@@ -140,7 +144,7 @@ def run_workflow_action(
             started_at,
             ["No read-only UI runner allowlist entry exists for this action yet."],
         )
-        return save_workflow_action_run_trace(result)
+        return _save_profile_bound_trace(result)
 
     if spec.kind == "api":
         result = _run_api_action(action, run_id, started_at, session, payload)
@@ -154,7 +158,19 @@ def run_workflow_action(
             *_string_list(result.get("report_artifacts")),
         ]
     )
-    return save_workflow_action_run_trace(result)
+    return _save_profile_bound_trace(result)
+
+
+def _save_profile_bound_trace(result: dict[str, Any]) -> dict[str, Any]:
+    context = active_lab_profile_context()
+    profile = context.get("active_profile") if isinstance(context.get("active_profile"), dict) else {}
+    return save_workflow_action_run_trace(
+        {
+            **result,
+            "lab_profile_id": str(profile.get("id") or "runtime-profile"),
+            "lab_profile_fingerprint": lab_profile_context_fingerprint(context),
+        }
+    )
 
 
 def list_workflow_action_runs(action_id: str, *, limit: int = 20) -> list[dict[str, Any]]:

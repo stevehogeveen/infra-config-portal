@@ -1136,6 +1136,7 @@ export type LabBuildStep = {
   technical_details: string;
   suggested_action: string;
   can_retry: boolean;
+  optional: boolean;
   depends_on: string[];
   provides: string[];
   action_id: string;
@@ -1145,6 +1146,8 @@ export type LabBuildStep = {
   started_at: string | null;
   finished_at: string | null;
   action_run_id: string | null;
+  waiting_nonce: string | null;
+  lease_expires_at: string | null;
 };
 
 export type LabBuildPlan = {
@@ -1161,6 +1164,7 @@ export type LabBuildPlan = {
 
 export type LabBuildRun = {
   run_id: string;
+  revision: number;
   kit_id: string;
   kit_name: string;
   deployment_mode: string;
@@ -1184,6 +1188,12 @@ export type LabBuildRun = {
     failed: number;
   };
   report_artifact: string | null;
+};
+
+export type LabBuildResumeRequest = {
+  action_run_id?: string;
+  run_revision: number;
+  waiting_nonce?: string;
 };
 
 export type WorkflowStage = {

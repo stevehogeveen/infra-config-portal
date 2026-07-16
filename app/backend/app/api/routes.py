@@ -67,6 +67,7 @@ from app.schemas import (
     LabProfileRuntimeApplyRead,
     LabProfileWrite,
     LabBuildPlanRead,
+    LabBuildResumeCreate,
     LabBuildRunRead,
     TopologyDesignDraftRead,
     TopologyDesignDraftWrite,
@@ -564,8 +565,8 @@ def create_lab_build_run(session: Session = Depends(get_session)) -> LabBuildRun
 
 
 @router.get("/lab-build/runs/latest", response_model=LabBuildRunRead | None)
-def read_latest_lab_build_run() -> LabBuildRunRead | None:
-    return get_latest_lab_build_run()
+def read_latest_lab_build_run(kit_id: str | None = None) -> LabBuildRunRead | None:
+    return get_latest_lab_build_run(kit_id=kit_id)
 
 
 @router.get("/lab-build/runs/{run_id}", response_model=LabBuildRunRead)
@@ -579,10 +580,17 @@ def read_lab_build_run(run_id: str) -> LabBuildRunRead:
 @router.post("/lab-build/runs/{run_id}/resume", response_model=LabBuildRunRead)
 def resume_lab_build_run(
     run_id: str,
+    payload: LabBuildResumeCreate,
     session: Session = Depends(get_session),
 ) -> LabBuildRunRead:
     try:
-        return resume_lab_build(run_id, session)
+        return resume_lab_build(
+            run_id,
+            session,
+            action_run_id=payload.action_run_id,
+            run_revision=payload.run_revision,
+            waiting_nonce=payload.waiting_nonce,
+        )
     except LabBuildRunNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Lab build run not found") from exc
     except LabBuildRunStateError as exc:

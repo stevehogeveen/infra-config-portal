@@ -689,8 +689,11 @@ export function OperatorOverviewPage({
     setBuildJourneyOpen(true);
     setBuildLoading(true);
     setBuildError("");
+    setBuildPlan(null);
+    setBuildRun(null);
     try {
-      const [nextPlan, latestRun] = await Promise.all([api.labBuildPlan(), safeApi(api.latestLabBuildRun, null)]);
+      const nextPlan = await api.labBuildPlan();
+      const latestRun = await api.latestLabBuildRun(nextPlan.kit_id);
       setBuildPlan(nextPlan);
       setBuildRun(latestRun && ["running", "waiting", "failed"].includes(latestRun.status) ? latestRun : null);
     } catch (err) {
@@ -749,7 +752,28 @@ export function OperatorOverviewPage({
     setBuildLoading(true);
     setBuildError("");
     try {
-      setBuildRun(await api.resumeLabBuild(buildRun.run_id));
+      const step = buildRun.steps.find((candidate) => candidate.step_id === buildRun.current_step_id);
+      if (!step) throw new Error("The current build step is unavailable. Refresh the build status.");
+      if (step.status === "not_started" && ["read_only", "report_only"].includes(step.action_mode)) {
+        setBuildRun(await api.resumeLabBuild(buildRun.run_id, { run_revision: buildRun.revision }));
+        return;
+      }
+      if (step.status !== "waiting" || !step.waiting_nonce) {
+        throw new Error("This build is not waiting for a completed guarded action.");
+      }
+      const evidence = (await api.workflowActionRuns(step.action_id)).find((trace) => {
+        const finished = new Date(trace.finished_at || trace.started_at).getTime();
+        const waiting = new Date(step.started_at || "").getTime();
+        return Number.isFinite(finished) && Number.isFinite(waiting) && finished >= waiting;
+      });
+      if (!evidence) {
+        throw new Error("Complete the guarded action in Details, then continue this build.");
+      }
+      setBuildRun(await api.resumeLabBuild(buildRun.run_id, {
+        action_run_id: evidence.run_id,
+        run_revision: buildRun.revision,
+        waiting_nonce: step.waiting_nonce
+      }));
     } catch (err) {
       setBuildError(errorMessage(err));
     } finally {
@@ -762,7 +786,21 @@ export function OperatorOverviewPage({
     setBuildLoading(true);
     setBuildError("");
     try {
-      setBuildRun(await api.retryLabBuildStep(buildRun.run_id, stepId));
+      const reset = await api.retryLabBuildStep(buildRun.run_id, stepId);
+      setBuildRun(await api.resumeLabBuild(reset.run_id, { run_revision: reset.revision }));
+    } catch (err) {
+      setBuildError(errorMessage(err));
+    } finally {
+      setBuildLoading(false);
+    }
+  }
+
+  async function refreshBuild() {
+    if (!buildRun) return;
+    setBuildLoading(true);
+    setBuildError("");
+    try {
+      setBuildRun(await api.labBuildRun(buildRun.run_id));
     } catch (err) {
       setBuildError(errorMessage(err));
     } finally {
@@ -863,6 +901,8 @@ export function OperatorOverviewPage({
             setDetailsOpen(true);
             if (!detailsLoaded && !detailsLoading) void loadDetails();
           }}
+          onRefresh={() => void refreshBuild()}
+          onReload={() => void openBuildJourney()}
           onResume={() => void resumeBuild()}
           onRetry={(stepId) => void retryBuildStep(stepId)}
           onStart={() => void startBuild()}

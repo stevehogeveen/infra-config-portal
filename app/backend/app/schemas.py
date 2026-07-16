@@ -2199,6 +2199,7 @@ class LabBuildStepRead(BaseModel):
     technical_details: str = ""
     suggested_action: str
     can_retry: bool = False
+    optional: bool = False
     depends_on: list[str] = Field(default_factory=list)
     provides: list[str] = Field(default_factory=list)
     action_id: str
@@ -2208,6 +2209,8 @@ class LabBuildStepRead(BaseModel):
     started_at: str | None = None
     finished_at: str | None = None
     action_run_id: str | None = None
+    waiting_nonce: str | None = None
+    lease_expires_at: str | None = None
 
 
 class LabBuildPlanRead(BaseModel):
@@ -2234,8 +2237,15 @@ class LabBuildCountsRead(BaseModel):
     failed: int
 
 
+class LabBuildResumeCreate(BaseModel):
+    action_run_id: str | None = Field(default=None, min_length=1, max_length=240)
+    run_revision: int = Field(ge=1)
+    waiting_nonce: str | None = Field(default=None, min_length=16, max_length=128)
+
+
 class LabBuildRunRead(BaseModel):
     run_id: str
+    revision: int
     kit_id: str
     kit_name: str
     deployment_mode: str

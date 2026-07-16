@@ -31,6 +31,7 @@ import type {
   LabSafetySettingsWrite,
   LabBuildPlan,
   LabBuildRun,
+  LabBuildResumeRequest,
   LabValidationSummary,
   LabProfile,
   LabProfileList,
@@ -222,7 +223,8 @@ export const api = {
   workflowActionDiagnosis: (id: string) =>
     apiRequest<WorkflowActionDiagnosis>(`/api/v1/workflows/actions/${encodeURIComponent(id)}/diagnosis`),
   labBuildPlan: () => apiRequest<LabBuildPlan>("/api/v1/lab-build/plan"),
-  latestLabBuildRun: () => apiRequest<LabBuildRun | null>("/api/v1/lab-build/runs/latest"),
+  latestLabBuildRun: (kitId: string) =>
+    apiRequest<LabBuildRun | null>(`/api/v1/lab-build/runs/latest?kit_id=${encodeURIComponent(kitId)}`),
   startLabBuild: () =>
     apiRequest<LabBuildRun>("/api/v1/lab-build/runs", {
       method: "POST",
@@ -230,9 +232,10 @@ export const api = {
     }),
   labBuildRun: (id: string) =>
     apiRequest<LabBuildRun>(`/api/v1/lab-build/runs/${encodeURIComponent(id)}`),
-  resumeLabBuild: (id: string) =>
+  resumeLabBuild: (id: string, payload: LabBuildResumeRequest) =>
     apiRequest<LabBuildRun>(`/api/v1/lab-build/runs/${encodeURIComponent(id)}/resume`, {
       method: "POST",
+      body: payload,
       timeoutMs: 120000
     }),
   retryLabBuildStep: (runId: string, stepId: string) =>

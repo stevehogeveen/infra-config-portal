@@ -50,6 +50,19 @@ def latest_workflow_action_run_trace(action_id: str) -> dict[str, Any] | None:
     return traces[0] if traces else None
 
 
+def workflow_action_run_trace(action_id: str, run_id: str) -> dict[str, Any] | None:
+    pattern = f"*__{_filename_slug(action_id)}__*.json"
+    for path in _trace_paths_newest_first(pattern):
+        trace = _read_trace(path)
+        if (
+            trace
+            and trace.get("action_id") == action_id
+            and str(trace.get("run_id") or "") == run_id
+        ):
+            return trace
+    return None
+
+
 def latest_workflow_action_run_traces_by_action() -> dict[str, dict[str, Any]]:
     latest: dict[str, dict[str, Any]] = {}
     for path in _trace_paths("*.json"):
