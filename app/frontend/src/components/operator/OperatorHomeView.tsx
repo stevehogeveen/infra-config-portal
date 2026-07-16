@@ -31,6 +31,8 @@ export function OperatorHomeView({
       aria-label="Operator Home status and next action"
       data-testid="operator-home"
     >
+      <h1 className="operator-rail-eyebrow">Overview</h1>
+
       <div className="operator-rail-card operator-rail-state">
         <div className="operator-rail-state-row">
           <span className="operator-rail-state-ic" aria-hidden="true">
