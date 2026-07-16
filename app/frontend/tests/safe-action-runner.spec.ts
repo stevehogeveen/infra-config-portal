@@ -262,14 +262,13 @@ test("operator home answers the next action without dashboard clutter", async ({
   await expect(home).toBeVisible();
   await expect(home).toContainText("Current Lab");
   await expect(home).toContainText("Server + NetApp + vCenter");
-  await expect(home.getByLabel("Canonical readiness result")).toHaveCount(1);
+  await expect(home.getByRole("img", { name: /ready, .*blocked, .*not checked/ })).toHaveCount(1);
   await expect(home.getByTestId("operator-home-primary-action")).toHaveCount(1);
   await expect(home.getByTestId("operator-home-primary-action")).toBeVisible();
   await expect(home.getByTestId("operator-home-primary-action")).toContainText("Review Build Plan");
   await expect(home.getByTestId("operator-home-view-details")).toHaveCount(1);
-  await expect(home.getByLabel("Compact device summary")).toContainText("devices ready");
-  await expect(home.getByLabel("Actionable blockers")).toContainText("Firmware needs proof");
-  await expect(home.getByLabel("Actionable blockers")).toContainText("ROMMON baseline missing/manual review");
+  await expect(home.getByLabel("Needs your attention")).toContainText("Firmware needs proof");
+  await expect(home.getByLabel("Needs your attention")).toContainText("ROMMON baseline missing/manual review");
 
   await expect(page.locator("section[aria-label='Overview reference']")).toHaveCount(0);
   await expect(page.locator("section[aria-label='Scenario setup lanes']")).toHaveCount(0);
@@ -315,7 +314,7 @@ test("map-first overview makes the topology the home surface", async ({ page }) 
   await expect(map.getByLabel("Zoned lab map")).toContainText("Storage fabric");
   await expect(map.getByLabel("Current lab links")).toBeVisible();
   await expect(rail.getByTestId("operator-home-primary-action")).toHaveCount(1);
-  await expect(rail.locator(".operator-home-primary")).toHaveCount(1);
+  await expect(rail.locator(".operator-rail-primary")).toHaveCount(1);
   await expect(page.getByTestId("lab-build-journey")).toHaveCount(0);
   await expect(rail).not.toContainText(/provider|runtime|payload/i);
 });
@@ -472,10 +471,10 @@ test("operator home shows actionable blockers once in plain language", async ({ 
   await page.goto("/overview");
 
   const home = page.getByTestId("operator-home");
-  await expect(home.getByLabel("Actionable blockers")).toContainText("Cisco management IP is not ready.");
-  await expect(home.getByLabel("Actionable blockers")).toContainText("Open Details, then choose Cisco switch");
-  await expect(home.getByLabel("Actionable blockers")).not.toContainText("CISCO_MGMT_NOT_CONFIGURED");
-  await expect(home.locator("article.operator-home-attention-item").filter({ hasText: "Cisco management IP is not ready." })).toHaveCount(1);
+  await expect(home.getByLabel("Needs your attention")).toContainText("Cisco management IP is not ready.");
+  await expect(home.getByLabel("Needs your attention")).toContainText("Open Details, then choose Cisco switch");
+  await expect(home.getByLabel("Needs your attention")).not.toContainText("CISCO_MGMT_NOT_CONFIGURED");
+  await expect(home.locator(".operator-rail-blocker").filter({ hasText: "Cisco management IP is not ready." })).toHaveCount(1);
   await expect(page.locator("section[aria-label='Living lab topology']")).toBeVisible();
 });
 
@@ -653,7 +652,7 @@ test("topology directs storage exceptions to the NetApp workspace", async ({ pag
   await openOperatorDetails(page);
 
   const home = page.getByTestId("operator-home");
-  await expect(home.getByLabel("Actionable blockers")).toContainText(/NetApp|not reachable|Refresh/i);
+  await expect(home.getByLabel("Needs your attention")).toContainText(/NetApp|not reachable|Refresh/i);
   await expect(page.locator("section[aria-label='Living lab topology'] .lab-topology-footer")).not.toContainText("Open Storage");
 });
 

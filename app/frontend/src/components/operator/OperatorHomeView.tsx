@@ -1,4 +1,4 @@
-import { AlertTriangle, CheckCircle2, ChevronRight, Eye, Play } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ChevronRight, Eye, Pencil } from "lucide-react";
 
 import type { OperatorHomeModel } from "../../operatorHomeModel";
 
@@ -18,100 +18,94 @@ export function OperatorHomeView({
   onViewDetails: () => void;
 }) {
   const attentionDevices = model.DeviceSummary.filter((item) => item.NeedsAttention);
-  const healthyCount = model.DeviceSummary.length - attentionDevices.length;
+  const total = Math.max(0, model.Progress.Total);
+  const ready = Math.max(0, Math.min(model.Progress.Ready, total));
+  const blocked = Math.max(0, Math.min(attentionDevices.length, total - ready));
+  const unchecked = Math.max(0, total - ready - blocked);
+  const pct = (n: number) => (total > 0 ? `${(n / total) * 100}%` : "0%");
+  const stateTone = model.DisplayState === "ready" ? "ready" : blocked > 0 ? "blocked" : "attention";
 
   return (
-    <section className={`operator-home operator-home-${model.DisplayState}`} aria-label="Operator Home" data-testid="operator-home">
-      <div className="operator-home-main">
-        <div className="operator-home-copy">
-          <p className="operator-kicker">Selected kit</p>
-          <h1>Overview</h1>
-          <strong>{model.KitName}</strong>
-          <span>{model.CurrentPhase}</span>
+    <section
+      className={`operator-rail operator-rail-${stateTone}`}
+      aria-label="Operator Home status and next action"
+      data-testid="operator-home"
+    >
+      <div className="operator-rail-card operator-rail-state">
+        <div className="operator-rail-state-row">
+          <span className="operator-rail-state-ic" aria-hidden="true">
+            {stateTone === "ready" ? <CheckCircle2 size={20} /> : <AlertTriangle size={20} />}
+          </span>
+          <div>
+            <p className="operator-rail-eyebrow">Current state</p>
+            <h2>{model.Headline}</h2>
+          </div>
         </div>
-        <div className="operator-home-progress" aria-label="Canonical readiness result">
-          <span>{model.Progress.Label}</span>
-          <progress max={model.Progress.Total} value={model.Progress.Ready} aria-label="Readiness progress" />
+        <p className="operator-rail-msg">{model.SupportingMessage}</p>
+        <div className="operator-rail-meter">
+          <div className="operator-rail-meter-label">
+            <span>Readiness</span>
+            <span className="operator-rail-mono">{ready} / {total} ready</span>
+          </div>
+          <div
+            className="operator-rail-track"
+            role="img"
+            aria-label={`${ready} ready, ${blocked} blocked, ${unchecked} not checked`}
+          >
+            <i className="ready" style={{ width: pct(ready) }} />
+            <i className="blocked" style={{ width: pct(blocked) }} />
+            <i className="unchecked" style={{ width: pct(unchecked) }} />
+          </div>
         </div>
       </div>
 
-      <div className="operator-home-state">
-        <StateIcon state={model.DisplayState} />
-        <div>
-          <p className="operator-kicker">Current state</p>
-          <h2>{model.Headline}</h2>
-          <p>{model.SupportingMessage}</p>
-        </div>
-      </div>
-
-      <div className="operator-home-device-summary" aria-label="Compact device summary">
-        <div>
-          <strong>{healthyCount}</strong>
-          <span>{healthyCount === 1 ? "device ready" : "devices ready"}</span>
-        </div>
-        {attentionDevices.length === 0 ? (
-          <p>No device-specific exceptions are open.</p>
-        ) : (
-          <ul>
-            {attentionDevices.map((item) => (
-              <li key={`${item.Name}-${item.Role}`}>
-                <strong>{item.Name}</strong>
-                <span>{item.State}</span>
-                <small>{item.Detail}</small>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-
-      <div className="operator-home-attention" aria-label="Actionable blockers">
-        {model.AttentionItems.length === 0 ? (
-          <p>Nothing needs operator action right now.</p>
-        ) : (
-          model.AttentionItems.map((item) => (
-            <article className={`operator-home-attention-item ${item.Severity}`} key={item.Id}>
-              <span>{item.Severity === "blocking" ? "Action required" : "Review"}</span>
-              <h3>{item.Label}</h3>
-              <p>{item.Explanation}</p>
-              <small>{item.Action}</small>
-            </article>
-          ))
-        )}
-      </div>
-
-      {(loading || error) && (
-        <p className={error ? "operator-home-feedback error" : "operator-home-feedback"}>
-          {error || "Refreshing readiness..."}
-        </p>
-      )}
-
-      <div className="operator-home-actions">
+      <div className="operator-rail-card operator-rail-next">
+        <p className="operator-rail-eyebrow">Next action</p>
         <button
-          className="operator-home-primary"
+          className="operator-rail-primary"
           data-testid="operator-home-primary-action"
           disabled={!model.NextAction.Enabled || loading}
           onClick={onPrimaryAction}
           type="button"
         >
-          <Play size={16} />
+          <Pencil size={16} />
           <span>{loading ? "Opening..." : model.NextAction.Label}</span>
         </button>
         <button
-          className="operator-home-secondary"
+          className="operator-rail-ghost"
           data-testid="operator-home-view-details"
           onClick={onViewDetails}
           type="button"
         >
-          <Eye size={16} />
-          <span>{detailsOpen ? "Hide Details" : "View Details"}</span>
+          <Eye size={15} />
+          <span>{detailsOpen ? "Hide device details" : "View all device details"}</span>
           <ChevronRight size={15} />
         </button>
       </div>
+
+      <div className="operator-rail-card operator-rail-blockers" aria-label="Needs your attention">
+        <h3>Needs your attention</h3>
+        {model.AttentionItems.length === 0 ? (
+          <p className="operator-rail-clear">Nothing needs operator action right now.</p>
+        ) : (
+          model.AttentionItems.map((item) => (
+            <div className="operator-rail-blocker" key={item.Id}>
+              <span className={`operator-rail-bic ${item.Severity === "blocking" ? "blocked" : "unchecked"}`} />
+              <div>
+                <b>{item.Label}</b>
+                <div className="operator-rail-why">{item.Explanation}</div>
+                <div className="operator-rail-fix">{item.Action}</div>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+
+      {(loading || error) && (
+        <p className={error ? "operator-rail-feedback error" : "operator-rail-feedback"}>
+          {error || "Refreshing readiness..."}
+        </p>
+      )}
     </section>
   );
-}
-
-function StateIcon({ state }: { state: OperatorHomeModel["DisplayState"] }) {
-  if (state === "ready") return <CheckCircle2 aria-hidden="true" size={30} />;
-  return <AlertTriangle aria-hidden="true" size={30} />;
 }

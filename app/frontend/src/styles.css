@@ -17180,3 +17180,218 @@ button.design-ilo-port:hover {
     width: 100%;
   }
 }
+
+/* Map-first Overview: operator status rail (matches map-first redesign mockup) */
+.operator-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+.operator-rail-card {
+  background: #ffffff;
+  border: 1px solid #dce1e7;
+  border-radius: 14px;
+  box-shadow: 0 1px 2px rgba(20, 30, 45, 0.05), 0 6px 20px rgba(20, 30, 45, 0.06);
+  padding: 16px;
+}
+.operator-rail-eyebrow {
+  font-family: ui-monospace, "Cascadia Code", "SF Mono", "Segoe UI Mono", Consolas, monospace;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #727e8c;
+  font-weight: 600;
+  margin: 0;
+}
+.operator-rail-mono {
+  font-family: ui-monospace, "Cascadia Code", "SF Mono", "Segoe UI Mono", Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+}
+.operator-rail-state {
+  border-left: 3px solid #c6432b;
+}
+.operator-rail-ready .operator-rail-state {
+  border-left-color: #1f9d5b;
+}
+.operator-rail-attention .operator-rail-state {
+  border-left-color: #c08419;
+}
+.operator-rail-state-row {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+}
+.operator-rail-state-ic {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  flex: none;
+  background: #f7e2dd;
+  color: #c6432b;
+}
+.operator-rail-ready .operator-rail-state-ic {
+  background: #e4f4ea;
+  color: #1f9d5b;
+}
+.operator-rail-attention .operator-rail-state-ic {
+  background: #f8eeda;
+  color: #c08419;
+}
+.operator-rail-state h2 {
+  font-size: 17px;
+  margin: 2px 0 0;
+  letter-spacing: -0.01em;
+}
+.operator-rail-msg {
+  color: #4a5563;
+  font-size: 13px;
+  margin: 9px 0 0;
+  line-height: 1.5;
+}
+.operator-rail-meter {
+  margin-top: 13px;
+}
+.operator-rail-meter-label {
+  display: flex;
+  justify-content: space-between;
+  font-family: ui-monospace, "Cascadia Code", "SF Mono", Consolas, monospace;
+  font-size: 11px;
+  color: #727e8c;
+  margin-bottom: 6px;
+}
+.operator-rail-track {
+  height: 7px;
+  border-radius: 99px;
+  background: #e9ecf0;
+  overflow: hidden;
+  display: flex;
+  gap: 2px;
+}
+.operator-rail-track i {
+  height: 100%;
+  display: block;
+}
+.operator-rail-track i.ready {
+  background: #1f9d5b;
+}
+.operator-rail-track i.blocked {
+  background: #c6432b;
+}
+.operator-rail-track i.unchecked {
+  background: #cad1d9;
+}
+.operator-rail-next {
+  background: linear-gradient(160deg, #ffffff, #eef1f4);
+}
+.operator-rail-next .operator-rail-eyebrow {
+  display: block;
+  margin-bottom: 8px;
+}
+.operator-rail-primary {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  background: #0c7a80;
+  color: #ffffff;
+  border: 0;
+  border-radius: 10px;
+  padding: 13px 16px;
+  font-size: 14.5px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(12, 122, 128, 0.4);
+}
+.operator-rail-primary:hover:not(:disabled) {
+  filter: brightness(1.06);
+}
+.operator-rail-primary:disabled {
+  background: #e9ecf0;
+  color: #727e8c;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+.operator-rail-ghost {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 9px;
+  background: none;
+  border: 1px solid #cad1d9;
+  color: #4a5563;
+  border-radius: 10px;
+  padding: 10px 16px;
+  font-size: 13.5px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.operator-rail-ghost:hover {
+  color: #182029;
+  border-color: #727e8c;
+}
+.operator-rail-blockers h3 {
+  font-size: 12px;
+  font-family: ui-monospace, "Cascadia Code", "SF Mono", Consolas, monospace;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: #727e8c;
+  margin: 0 0 11px;
+}
+.operator-rail-clear {
+  font-size: 13px;
+  color: #4a5563;
+  margin: 0;
+}
+.operator-rail-blocker {
+  display: flex;
+  gap: 11px;
+  padding: 11px 0;
+  border-top: 1px solid #dce1e7;
+}
+.operator-rail-blockers h3 + .operator-rail-blocker {
+  border-top: 0;
+  padding-top: 0;
+}
+.operator-rail-bic {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-top: 5px;
+  flex: none;
+}
+.operator-rail-bic.blocked {
+  background: #c6432b;
+}
+.operator-rail-bic.unchecked {
+  background: transparent;
+  box-shadow: inset 0 0 0 2px #8a94a2;
+}
+.operator-rail-blocker b {
+  font-size: 13.5px;
+  display: block;
+}
+.operator-rail-why {
+  font-size: 12.5px;
+  color: #4a5563;
+  margin: 2px 0 4px;
+  line-height: 1.5;
+}
+.operator-rail-fix {
+  font-size: 12px;
+  color: #727e8c;
+  line-height: 1.5;
+}
+.operator-rail-feedback {
+  font-size: 12px;
+  color: #727e8c;
+  margin: 0;
+}
+.operator-rail-feedback.error {
+  color: #c6432b;
+}
