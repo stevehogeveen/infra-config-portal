@@ -8744,6 +8744,30 @@ th.ui-compact-table-cell {
   padding: 18px;
 }
 
+.operator-home-layout {
+  align-items: start;
+  display: grid;
+  gap: 18px;
+  grid-template-columns: minmax(0, 1.65fr) minmax(320px, 0.7fr);
+  min-width: 0;
+}
+
+.operator-home-map-column,
+.operator-home-rail {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+
+.operator-home-map-column .lab-topology-map {
+  min-height: 720px;
+}
+
+.operator-home-rail .operator-home {
+  position: sticky;
+  top: 18px;
+}
+
 .lab-topology-head {
   align-items: flex-start;
   display: grid;
@@ -13345,6 +13369,20 @@ button.design-ilo-port:hover {
 .operator-home-details {
   display: grid;
   gap: 16px;
+}
+
+@media (max-width: 1080px) {
+  .operator-home-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .operator-home-map-column .lab-topology-map {
+    min-height: 0;
+  }
+
+  .operator-home-rail .operator-home {
+    position: static;
+  }
 }
 
 .lab-build-journey {

@@ -909,36 +909,37 @@ export function OperatorOverviewPage({
           run={buildRun}
         />
       ) : (
-        <OperatorHomeView
-          detailsOpen={detailsOpen}
-          error={error || labProfileError}
-          loading={labProfileLoading}
-          model={operatorHome}
-          onPrimaryAction={() => void openBuildJourney()}
-          onViewDetails={toggleDetails}
-        />
-      )}
-      {!buildJourneyOpen && detailsOpen && (
-        <section className="operator-home-details" aria-label="Operator Details">
-          {detailsLoading && <p className="operator-home-feedback">Loading device workspaces...</p>}
-          <LabTopologyMap
-            accessRows={accessRows}
-            activeProfile={activeProfile}
-            address={address}
-            currentView={currentView}
-            features={features}
-            firmwareSummaries={firmwareSummaries}
-            health={health}
-            labProfileState={labProfileState}
-            labSafety={labSafety}
-            onReload={load}
-            onSafetyUpdated={loadDetails}
-            safetyLoading={detailsLoading}
-            vcenterNetapp={vcenterNetapp}
-            workflowActions={workflowActions}
-          />
-          {advancedProof}
-        </section>
+        <div className="operator-home-layout">
+          <div className="operator-home-map-column">
+            {detailsLoading && <p className="operator-home-feedback">Refreshing device status...</p>}
+            <LabTopologyMap
+              accessRows={accessRows}
+              activeProfile={activeProfile}
+              address={address}
+              features={features}
+              firmwareSummaries={firmwareSummaries}
+              health={health}
+              onReload={load}
+              vcenterNetapp={vcenterNetapp}
+              workflowActions={workflowActions}
+            />
+          </div>
+          <aside className="operator-home-rail" aria-label="Operator Home status and next action">
+            <OperatorHomeView
+              detailsOpen={detailsOpen}
+              error={error || labProfileError}
+              loading={labProfileLoading}
+              model={operatorHome}
+              onPrimaryAction={() => void openBuildJourney()}
+              onViewDetails={toggleDetails}
+            />
+            {detailsOpen && (
+              <section className="operator-home-details" aria-label="Operator Details">
+                {advancedProof}
+              </section>
+            )}
+          </aside>
+        </div>
       )}
     </OperatorPage>
   );
@@ -5916,30 +5917,20 @@ function LabTopologyMap({
   accessRows,
   activeProfile,
   address,
-  currentView,
   features,
   firmwareSummaries,
   health,
-  labProfileState,
-  labSafety,
   onReload,
-  onSafetyUpdated,
-  safetyLoading,
   vcenterNetapp,
   workflowActions
 }: {
   accessRows: AccessRow[];
   activeProfile: LabProfile | null;
   address: LabAddressPlan;
-  currentView: CurrentViewModel;
   features: LabProfileFeatures | null;
   firmwareSummaries: FirmwareSummary[];
   health?: HealthLike;
-  labProfileState: LabProfileList | null;
-  labSafety: LabSafetySettings | null;
   onReload: () => Promise<void> | void;
-  onSafetyUpdated: () => Promise<void>;
-  safetyLoading: boolean;
   vcenterNetapp: ProviderProbeResult | null;
   workflowActions: WorkflowAction[];
 }) {
@@ -5948,7 +5939,9 @@ function LabTopologyMap({
   const vmInScope = vcenterInScope || netappInScope;
   const runtimeReady = Boolean(health);
   const realRuntime = health?.operator_runtime_mode === "real_lab" || health?.provider_mode === "local-lab-readwrite";
-  const runtimeLabel = runtimeReady ? (realRuntime ? "Real runtime" : "Test mode") : "Checking runtime";
+  const runtimeLabel = runtimeReady
+    ? (realRuntime ? "Live lab - read-only checks" : "Test mode - no hardware touched")
+    : "Checking status";
   const runtimeClass = runtimeReady ? (realRuntime ? "topology-pill-live" : "topology-pill-test") : "topology-pill-runtime-unknown";
   const subnetState = topologySubnetState(address.subnet, health);
   const [workspaceTarget, setWorkspaceTarget] = useState<DesignPartId>("switch");
@@ -6059,8 +6052,6 @@ function LabTopologyMap({
     ...links.map((link) => link.status)
   ].filter((status) => status === "ready" || status === "created").length;
   const checkCount = nodes.length + links.length;
-  const nextAction = topologyNextAction({ currentView, datastoreStatus, netappInScope, netappStatus, serverStatus, storageProtocol });
-
   useEffect(() => {
     const canvas = mapCanvasRef.current;
     const plane = mapPlaneRef.current;
@@ -6098,8 +6089,8 @@ function LabTopologyMap({
     <section className="lab-topology-map" id="topology-map" aria-label="Living lab topology">
       <div className="lab-topology-head">
         <div>
-          <p className="operator-kicker">Living topology</p>
-          <h2>{activeProfile?.name ?? "Runtime lab"} - {displayAddress(address.subnet)}</h2>
+            <p className="operator-kicker">Lab topology</p>
+          <h2>{nodes.length} devices - subnet {displayAddress(address.subnet)}</h2>
         </div>
         <div className="lab-topology-head-actions">
           <div className="lab-topology-pills" aria-label="Topology status">
@@ -6170,18 +6161,6 @@ function LabTopologyMap({
               ))}
           </div>
         </div>
-          <SystemSetupPicker
-            activeProfile={activeProfile}
-            address={address}
-            features={features}
-            labProfileState={labProfileState}
-            onChanged={onReload}
-          />
-          <TopologySystemSafetyStrip
-            labSafety={labSafety}
-            loading={safetyLoading}
-            onUpdated={onSafetyUpdated}
-          />
           {mapOverflowing && (
             <button
               className="topology-map-fit-button"
@@ -6245,7 +6224,6 @@ function LabTopologyMap({
           <span><i className="legend-line legend-created" /> created by the app</span>
           <span><i className="legend-dot legend-offline" /> offline or unknown</span>
         </div>
-        <p><span>Next safe action</span>{nextAction}</p>
       </div>
     </section>
   );
@@ -11300,35 +11278,6 @@ function topologyVmMeta(probe: ProviderProbeResult | null, vcenterInScope: boole
   const inventory = objectValue(checks.vm_inventory_visible);
   if (asBoolean(inventory.visible)) return `${asString(inventory.count) || "some"} visible`;
   return vcenterInScope ? "waiting for inventory proof" : "direct host path";
-}
-
-function topologyNextAction({
-  currentView,
-  datastoreStatus,
-  netappInScope,
-  netappStatus,
-  serverStatus,
-  storageProtocol
-}: {
-  currentView: CurrentViewModel;
-  datastoreStatus: string;
-  netappInScope: boolean;
-  netappStatus: string;
-  serverStatus: string;
-  storageProtocol: string;
-}): string {
-  if (topologyTone(serverStatus) !== "ready") {
-    return "Open the HPE server workspace and refresh iLO, ESXi, and local storage readiness.";
-  }
-  if (netappInScope && topologyTone(netappStatus) !== "ready") {
-    return "Open the NetApp workspace and refresh live readiness after the controllers are powered on.";
-  }
-  if (netappInScope && topologyTone(datastoreStatus) !== "ready") {
-    return storageProtocol === "iscsi"
-      ? "Establish the ESXi iSCSI session when you are ready; required non-iSCSI paths are green."
-      : "Mount or validate the NetApp datastore from the NetApp workspace.";
-  }
-  return currentView.fixSteps[0] || currentView.summary || "Continue with Validation when the topology matches the active setup.";
 }
 
 function OverviewReferencePanel({
