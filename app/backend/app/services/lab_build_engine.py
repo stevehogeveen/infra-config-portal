@@ -380,14 +380,29 @@ def _kit_step_definitions(context: dict[str, Any]) -> tuple[BuildStepDefinition,
                 ),
                 BuildStepDefinition(
                     "datastore",
-                    "Connect shared storage to the compute host",
-                    "Make the selected shared storage available to the compute host.",
+                    (
+                        "Confirm the iSCSI datastore is attached"
+                        if storage_protocol == "iscsi"
+                        else "Connect shared storage to the compute host"
+                    ),
+                    (
+                        "Check that the iSCSI datastore is attached to the compute host. "
+                        "Attaching it is a manual step in Virtualization Setup; this app "
+                        "validates the connection but does not apply it."
+                        if storage_protocol == "iscsi"
+                        else "Make the selected shared storage available to the compute host."
+                    ),
                     "esxi.iscsi-datastore-validate" if storage_protocol == "iscsi" else "esxi.netapp-datastore-apply",
                     "read_only" if storage_protocol == "iscsi" else "write",
                     ("hypervisor", "shared-storage"),
                     ("datastore",),
                     "/virtualization",
-                    "Open Virtualization Setup, finish the storage connection, then retry.",
+                    (
+                        "Attach the iSCSI datastore in Virtualization Setup yourself, then retry. "
+                        "This app validates the connection but does not apply it."
+                        if storage_protocol == "iscsi"
+                        else "Open Virtualization Setup, finish the storage connection, then retry."
+                    ),
                     rationale="Shared storage must be ready before the compute host can use it.",
                 ),
             ]
@@ -527,10 +542,7 @@ def _advance_run(
         if blocker:
             step.update(
                 {
-                    "status": "blocked",
-                    "summary": "dependency_not_ready",
-                    "operator_message": f"Blocked by: {blocker}.",
-                    "technical_details": "A declared build capability is not currently available.",
+                    **_dependency_block_update(blocker),
                     "finished_at": _now(),
                 }
             )
@@ -674,17 +686,44 @@ def _trace_matches_run(trace: dict[str, Any], run: dict[str, Any]) -> bool:
     )
 
 
-def _dependency_blocker(step: dict[str, Any], steps: list[dict[str, Any]]) -> str | None:
-    owners = {
-        capability: candidate
-        for candidate in steps
-        for capability in _string_list(candidate.get("provides"))
-    }
+def _dependency_blocker(step: dict[str, Any], steps: list[dict[str, Any]]) -> dict[str, Any] | None:
+    required = set(_string_list(step.get("depends_on")))
+    ordered_steps = sorted(steps, key=lambda item: int(item.get("order") or 0))
+    owned_capabilities: set[str] = set()
+    for candidate in ordered_steps:
+        for capability in _string_list(candidate.get("provides")):
+            owned_capabilities.add(capability)
+            if capability in required and candidate.get("status") not in SUCCESS_STATUSES:
+                return {
+                    "label": str(candidate.get("label") or capability.replace("-", " ")),
+                    "step_id": str(candidate.get("step_id") or ""),
+                    "capability": capability,
+                }
     for capability in _string_list(step.get("depends_on")):
-        owner = owners.get(capability)
-        if not owner or owner.get("status") not in SUCCESS_STATUSES:
-            return str(owner.get("label") if owner else capability.replace("-", " "))
+        if capability not in owned_capabilities:
+            return {
+                "label": capability.replace("-", " "),
+                "step_id": None,
+                "capability": capability,
+            }
     return None
+
+
+def _dependency_block_update(blocker: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "status": "blocked",
+        "summary": "dependency_not_ready",
+        "operator_message": f"Blocked by: {blocker['label']}.",
+        "technical_details": json.dumps(
+            {
+                "blocked_by": {
+                    "step_id": blocker.get("step_id"),
+                    "capability": blocker["capability"],
+                }
+            },
+            indent=2,
+        ),
+    }
 
 
 def _stop_run(run: dict[str, Any], step: dict[str, Any], status: BuildRunStatus) -> dict[str, Any]:
@@ -717,10 +756,7 @@ def _mark_downstream_blocked(run: dict[str, Any], current: dict[str, Any]) -> No
             continue
         step.update(
             {
-                "status": "blocked",
-                "summary": "dependency_not_ready",
-                "operator_message": f"Blocked by: {blocker}.",
-                "technical_details": "A declared build capability is not currently available.",
+                **_dependency_block_update(blocker),
                 "finished_at": None,
             }
         )

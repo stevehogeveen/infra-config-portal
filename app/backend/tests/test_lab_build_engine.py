@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from pathlib import Path
@@ -100,6 +101,51 @@ def test_build_plan_topologically_orders_declared_capabilities() -> None:
     assert LabBuildPlanRead.model_validate(plan).kit_name == "Toronto lab kit"
 
 
+def test_iscsi_datastore_plan_is_explicitly_manual_and_read_only() -> None:
+    context = _context()
+    context["enabled_features"] = {
+        "netapp_enabled": True,
+        "vcenter_enabled": False,
+        "storage_protocol": "iscsi",
+    }
+
+    plan = get_lab_build_plan(context=context)
+    datastore = next(step for step in plan["steps"] if step["step_id"] == "datastore")
+
+    assert datastore["label"] == "Confirm the iSCSI datastore is attached"
+    assert datastore["description"] == (
+        "Check that the iSCSI datastore is attached to the compute host. "
+        "Attaching it is a manual step in Virtualization Setup; this app "
+        "validates the connection but does not apply it."
+    )
+    assert datastore["suggested_action"] == (
+        "Attach the iSCSI datastore in Virtualization Setup yourself, then retry. "
+        "This app validates the connection but does not apply it."
+    )
+    assert datastore["action_id"] == "esxi.iscsi-datastore-validate"
+    assert datastore["action_mode"] == "read_only"
+    assert "applied" not in datastore["description"].lower()
+    assert "applied" not in datastore["suggested_action"].lower()
+
+
+def test_nfs_datastore_plan_copy_and_write_action_are_unchanged() -> None:
+    context = _context()
+    context["enabled_features"] = {
+        "netapp_enabled": True,
+        "vcenter_enabled": False,
+        "storage_protocol": "nfs",
+    }
+
+    plan = get_lab_build_plan(context=context)
+    datastore = next(step for step in plan["steps"] if step["step_id"] == "datastore")
+
+    assert datastore["label"] == "Connect shared storage to the compute host"
+    assert datastore["description"] == "Make the selected shared storage available to the compute host."
+    assert datastore["suggested_action"] == "Open Virtualization Setup, finish the storage connection, then retry."
+    assert datastore["action_id"] == "esxi.netapp-datastore-apply"
+    assert datastore["action_mode"] == "write"
+
+
 def test_kit_moves_through_full_lifecycle_end_to_end(monkeypatch: pytest.MonkeyPatch) -> None:
     seen: list[tuple[str, str]] = []
     first_step_statuses: list[str] = []
@@ -162,8 +208,71 @@ def test_failed_step_blocks_named_downstream_step_and_exposes_suggested_action()
     assert run["steps"][0]["suggested_action"] == "Check the network and retry."
     assert run["steps"][1]["status"] == "blocked"
     assert run["steps"][1]["operator_message"] == "Blocked by: Prepare network."
+    assert json.loads(run["steps"][1]["technical_details"])["blocked_by"] == {
+        "step_id": "first",
+        "capability": "network",
+    }
     assert "PROVIDER_MODE" not in run["steps"][0]["operator_message"]
     assert "PROVIDER_MODE" in run["steps"][0]["technical_details"]
+    assert "blocked_by" not in json.loads(run["steps"][0]["technical_details"])
+
+
+def test_dependency_block_names_earliest_unmet_step_in_plan_order() -> None:
+    definitions = (
+        BuildStepDefinition(
+            "first-prerequisite",
+            "First prerequisite",
+            "Prepare the first prerequisite.",
+            "test.first-prerequisite",
+            "read_only",
+            (),
+            ("first-capability",),
+            "/network",
+            "Fix the first prerequisite and retry.",
+        ),
+        BuildStepDefinition(
+            "second-prerequisite",
+            "Second prerequisite",
+            "Prepare the second prerequisite.",
+            "test.second-prerequisite",
+            "read_only",
+            (),
+            ("second-capability",),
+            "/storage",
+            "Fix the second prerequisite and retry.",
+        ),
+        BuildStepDefinition(
+            "dependent",
+            "Use both prerequisites",
+            "Continue after both prerequisites are ready.",
+            "test.dependent",
+            "read_only",
+            ("second-capability", "first-capability"),
+            ("complete",),
+            "/validation",
+            "Fix the named prerequisite and retry.",
+        ),
+    )
+
+    run = start_lab_build(
+        context=_context(),
+        definitions=definitions,
+        action_runner=lambda action_id, _session, _payload: {
+            "run_id": action_id,
+            "status": "failed",
+            "summary": "failed",
+            "blockers": ["check failed"],
+            "warnings": [],
+        },
+    )
+
+    dependent = next(step for step in run["steps"] if step["step_id"] == "dependent")
+    assert dependent["operator_message"] == "Blocked by: First prerequisite."
+    assert "first-capability" not in dependent["operator_message"]
+    assert json.loads(dependent["technical_details"])["blocked_by"] == {
+        "step_id": "first-prerequisite",
+        "capability": "first-capability",
+    }
 
 
 def test_retry_resets_downstream_readiness_before_resume() -> None:
