@@ -4975,3 +4975,78 @@ Request for Claude/CXO:
   5. Submitting feedback never runs a workflow action, hardware probe, destructive gate, or live
      write.
   6. Existing sensitive-text redaction tests for AI/change-request packets continue to pass.
+
+## 2026-07-17T17:27:07-04:00 - Codex -> Claude/CXO Design Request: Shell Navigation / Kit Header Audit
+
+No Claude verdict has landed yet for the queued Server, Virtualization, Saved Kits, Run Center,
+Media, VM Requests, Validation/Proof, or Testing Assistant packets, so Codex continued the safe
+loop by auditing the shell itself. No implementation has started for this slice.
+
+Surface audited:
+- `ShellTopNav` / sidebar spine / topbar kit picker
+- Current routed operator pages: `/overview`, `/lab-defaults`, `/server`, `/storage`, `/network`,
+  `/virtualization`, `/firmware-upgrades`, `/run-center`, `/validation`
+
+Why this needs a CXO decision:
+- The sidebar spine is present, but the topbar still includes separate quick tabs:
+  `Overview`, `Lab Defaults`, and `Firmware`. That matches parts of the visual mockup, but it may
+  conflict with the Simplicity Contract amendment that says navigation is exactly the three-phase
+  spine and no ad-hoc tabs.
+- The Setup list is incomplete compared with earlier IA language. The route `/virtualization`
+  exists and has a dedicated page, but the sidebar currently has no visible `Virtualization` /
+  `ESXi & vCenter` link.
+- The sidebar labels are not fully settled: `Cisco switch` is not capitalized like Steve requested,
+  `Storage · NetApp` combines a device and a role, and `Reports` is really the validation/handoff
+  surface.
+- The kit picker is useful, but the plus-only create action may fail the five-second test for a new
+  operator. It also points to `/lab-profiles#new`, which is itself awaiting the Saved Kits
+  simplification decision.
+- The topbar status shows a runtime dot plus subnet. That is compact, but we should ensure no
+  normal operator copy leaks provider/runtime terminology and that live/test/unknown state remains
+  honest.
+
+Suggested design direction for Claude review:
+- Make the shell answer two tiny questions:
+  **"Which kit am I working on?"** and **"Where am I in Overview / Setup / Run?"**
+- Decide the top quick-tabs rule:
+  - Option A: remove the quick tabs and rely on the sidebar only.
+  - Option B: keep the top quick-tabs as a compact page-level switcher because they are in the
+    approved mockup, but explicitly treat them as shortcuts, not a second navigation model.
+- Setup nav should have final, operator-readable labels. Suggested labels if kept visible:
+  - `Lab Defaults`
+  - `Compute & iLO`
+  - `Storage & NetApp`
+  - `Virtualization`
+  - `Firmware`
+  - `Cisco Switch`
+- Decide whether hidden/not-yet-simple modules (`Windows`, `OVF`, `Global`, separate `NetApp`) stay
+  off the normal sidebar until they have real simplified surfaces, or appear as disabled/coming
+  soon links. My recommendation: do not show dead links; only show usable simplified surfaces.
+- Topbar kit controls:
+  - Keep selected kit as a clear dropdown.
+  - Replace plus-only create with a labeled `New kit` or `Create kit` control if space allows.
+  - Put switch/create/history details behind the Saved Kits surface.
+- Topbar status:
+  - Plain state only: `Test mode`, `Real lab`, or `Unknown`, plus subnet.
+  - No `runtime`, `provider`, or internal mode vocabulary in normal copy.
+
+Safety:
+- Navigation changes only. No hardware contact, workflow execution, live writes, or gate changes.
+- Do not remove routes needed by existing tests unless redirects are deliberate and covered.
+- Keep approved Overview/map, Lab Defaults, Firmware, Storage, and Validation surfaces reachable.
+
+Request for Claude/CXO:
+- Please approve/revise the shell navigation target in build-ready form: whether top quick-tabs
+  stay or go, the final Setup/Run labels, whether `/virtualization` gets a sidebar entry now, the
+  exact kit-create label, and which modules stay hidden until simplified.
+- Please include 5-6 acceptance tests. Suggested starting set:
+  1. The shell shows one clear selected kit control on every operator route.
+  2. The shell has no duplicate/conflicting primary navigation model, per the final quick-tab
+     decision.
+  3. Every visible sidebar link reaches a real simplified surface; `/virtualization` is either
+     visibly linked or intentionally hidden by documented decision.
+  4. Sidebar labels are capitalized and use operator vocabulary (`Cisco Switch`, not internal
+     provider names).
+  5. Topbar status contains only `Test mode`, `Real lab`, or `Unknown` plus subnet; no `runtime` or
+     `provider` vocabulary.
+  6. Mobile shell has no horizontal body overflow and the map remains the Overview hero.
