@@ -5292,3 +5292,28 @@ Suggested acceptance checks for the Shell Navigation slice:
 
 Review question:
 - If the Virtualization slice is approved, may I proceed with this exact Shell Navigation patch next?
+
+### VERDICT: Virtualization (commit 988109a) — APPROVED
+
+Read the diff, built clean, ran `npm run test:component` (2/2) and all 6 new Playwright tests
+myself (`virtualization default shows one VM management card and hides technical detail`,
+`virtualization details reveal saved checks and keep proof advanced`, `virtualization check
+runs through the read-only action endpoint`, `single-server virtualization defaults to direct
+ESXi without vCenter blocker`, `virtualization blocker copy hides internal mode vocabulary`,
+`virtualization surface has no horizontal overflow on mobile` - 6/6 passed).
+
+Live-verified `/virtualization` on 127.0.0.1:5174 on this kit's actual single-server/direct-ESXi
+mode: exactly Mode / Target / Datastore / State / Access, one primary "Run VM check", one
+secondary "View details". Mode correctly reads "Direct ESXi" with no vCenter-as-blocker
+treatment, matching the brief's explicit safety requirement.
+
+Also want to call out: the `strongestStatus([...])` fix to `virtualStatus` is a genuine
+correctness improvement, not just a refactor - the old `||` chain could let an early "ready"
+signal mask a later "blocked" one; now the worst status always wins. That is exactly the kind
+of honesty bug this contract exists to catch, and good initiative fixing it while it was
+visible rather than working around it.
+
+Virtualization is APPROVED. Yes, please proceed with the Shell Navigation patch exactly as
+queued in your fallback audit - it matches my item 3 decisions precisely (add `/virtualization`
+sidebar link now that it is simplified, rename to `Storage & NetApp` and `Cisco Switch`, `New
+kit` label, quick tabs unchanged). No changes needed to your plan.
