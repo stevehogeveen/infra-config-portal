@@ -3348,3 +3348,27 @@ UI, since that is where this pattern lived undetected. Report each finding as: f
 the two divergent computations, and whether they can currently disagree. Do not fix inline;
 return the list here for CXO triage, same as the readiness-count bug was triaged before the fix
 was scoped.
+
+### 2026-07-17 - CODEX - map-first UI implementation
+
+Implemented the first frontend pass from `docs/product/LAB_BUILDER_MAP_FIRST_REDESIGN_BRIEF.md`.
+The firmware route now replaces the retired firmware map with a concise four-column decision
+table: Device, Current version, Target version, and Action. Each row keeps real file-selection
+data, shows Upgrade or Bypass, and uses the existing `firmware.upgrade-plan` workflow for the
+guarded planning path. The old repository/compliance/apply-lock/post-check presentation is no
+longer rendered on the operator route. The shell header was also tightened to the calm light
+map-first treatment from the reference.
+
+Changed:
+- `app/frontend/src/operatorPages.tsx`
+- `app/frontend/src/styles.css`
+- `app/frontend/tests/safe-action-runner.spec.ts`
+
+Verification: TypeScript build and component tests pass. Playwright test discovery passes, but
+the configured E2E runner expects `npm` to launch port 4173 and cannot run in this Windows
+environment where npm is unavailable; the persistent app remains live on 5174/8012 for manual
+inspection. No backend, live hardware, iSCSI, or destructive gate changed.
+
+Review question for Claude/CXO: does this firmware table now match the intended simplicity bar,
+or should the next reversible slice move the same visual treatment into the map-first Overview
+header before adding Lab Defaults?

@@ -1050,7 +1050,7 @@ test("top nav and map workspaces expose run controls without dead settings drawe
   await page.locator("div[aria-label='Device workspace overlay']").getByRole("button", { name: "Close" }).click();
 
   for (const [path, runButtonName] of [
-    ["/firmware-upgrades", "Run Scan Firmware"],
+    ["/firmware-upgrades", "Check versions"],
     ["/validation", "Run Validation"]
   ] as const) {
     await page.goto(path);
@@ -1137,7 +1137,7 @@ test("map Cisco workspace surfaces current-intent guardrail drift", async ({ pag
 
 test("remaining operator pages expose reference panels and device routes consolidate to the map", async ({ page }) => {
   await page.goto("/firmware-upgrades");
-  await expect(page.getByLabel("Firmware upgrade map")).toBeVisible();
+  await expect(page.getByLabel("Firmware version decisions")).toBeVisible();
   await expect(page.locator("section[aria-label='Firmware reference']")).toHaveCount(0);
 
   const pages = [
@@ -1235,120 +1235,45 @@ test("advanced proof is collapsed and operator labels hide raw statuses", async 
   await expect(page.getByText("local-lab-readwrite")).toHaveCount(0);
 });
 
-test("firmware map is the only primary firmware surface", async ({ page }) => {
+test("firmware decisions replace the retired map with four operator columns", async ({ page }) => {
   await page.goto("/firmware-upgrades");
 
-  await expect(page.getByText("Change this page")).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Firmware setup shape" })).toHaveCount(0);
-  await expect(page.getByRole("heading", { name: "Firmware Files" })).toHaveCount(0);
-  await expect(page.locator("details[aria-label='Firmware check and plan']")).toHaveCount(0);
-  await expect(page.locator("details.advanced-drawer")).toHaveCount(0);
-  await expect(page.getByText("Firmware setup path")).toHaveCount(0);
-  await expect(page.getByText("Optional guarded apply handoff")).toHaveCount(0);
-
-  const actions = page.getByLabel("Firmware map actions");
-  await expect(actions.getByRole("button", { name: "Check Compliance" })).toBeVisible();
-  await expect(actions.getByRole("button", { name: "Plan Firmware Upgrade" })).toBeVisible();
-  await expect(actions.getByRole("link", { name: "Open Media" })).toBeVisible();
-
-  const map = page.getByLabel("Firmware upgrade map");
-  await map.getByRole("button", { name: /Cisco Switch/ }).click();
-  await expect(map).toContainText("Layer 3 switch");
-  await expect(map).toContainText("IOS XE");
-  await expect(map).toContainText("17.15.05");
-  await expect(map).toContainText("cat9k_iosxe.17.15.05.SPA.bin");
-  const detail = map;
-  const selectionSave = page.waitForResponse((response) =>
-    response.url().includes("/api/v1/firmware/file-selections") &&
-    response.request().method() === "PUT"
-  );
-  await detail.getByRole("combobox", { name: /Cisco Switch IOS XE firmware file from map/ }).selectOption("cat9k_iosxe.17.12.01.SPA.bin");
-  await expect((await selectionSave).ok()).toBeTruthy();
-  await expect(detail).toContainText("cat9k_iosxe.17.12.01.SPA.bin");
-  const selectionClear = page.waitForRequest((request) =>
-    request.url().includes("/api/v1/firmware/file-selections") &&
-    request.method() === "PUT"
-  );
-  const selectionClearResponse = page.waitForResponse((response) =>
-    response.url().includes("/api/v1/firmware/file-selections") &&
-    response.request().method() === "PUT"
-  );
-  await detail.getByRole("combobox", { name: /Cisco Switch IOS XE firmware file from map/ }).selectOption("");
-  const selectionClearPayload = selectionClear.then((request) => request.postDataJSON() as { selected_files: Record<string, string> });
-  await expect((await selectionClearResponse).ok()).toBeTruthy();
-  await expect(await selectionClearPayload).toEqual({ selected_files: {} });
-  await expect(detail).toContainText("cat9k_iosxe.17.15.05.SPA.bin");
-
-  await expect(map.getByRole("button", { name: "Scan" })).toHaveCount(0);
-  await expect(map.getByRole("button", { name: "Validate Path" })).toHaveCount(0);
-  await expect(map.getByRole("button", { name: "Upgrade", exact: true })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Validate Upgrade Path" })).toHaveCount(0);
-
-  await map.getByRole("button", { name: /HPE Server/ }).click();
-  await expect(detail).toContainText("SPP2024.03.00.iso");
-  await expect(map).toContainText("NetApp");
+  await expect(page.getByRole("heading", { name: /Keep every device on the expected version/ })).toBeVisible();
+  const table = page.getByLabel("Firmware version decisions");
+  await expect(table.getByRole("columnheader")).toHaveCount(4);
+  await expect(table.getByRole("columnheader", { name: "Device" })).toBeVisible();
+  await expect(table.getByRole("columnheader", { name: "Current version" })).toBeVisible();
+  await expect(table.getByRole("columnheader", { name: "Target version" })).toBeVisible();
+  await expect(table.getByRole("columnheader", { name: "Action" })).toBeVisible();
+  await expect(page.getByLabel("Firmware upgrade map")).toHaveCount(0);
+  await expect(page.getByText("Firmware Repository")).toHaveCount(0);
+  await expect(table).toContainText("Cisco Switch");
+  await expect(table).toContainText("17.15.05");
+  await expect(table.getByRole("button", { name: "Upgrade", exact: true }).first()).toBeVisible();
+  await expect(table.getByRole("button", { name: "Bypass", exact: true }).first()).toBeVisible();
 });
 
-test("firmware upgrade map renders honest staged lanes", async ({ page }) => {
+test("firmware decisions keep target and action copy honest", async ({ page }) => {
   await page.goto("/firmware-upgrades");
 
-  const map = page.getByLabel("Firmware upgrade map");
-  await expect(map.getByRole("heading", { name: "Repository to device lanes" })).toBeVisible();
-  await expect(map.getByLabel("Firmware version evidence")).toContainText("Available files");
-  await expect(map.getByLabel("Firmware version evidence")).toContainText("Current versions known");
-  await expect(map.getByLabel("Firmware version evidence")).toContainText("Proof gaps");
-  await expect(map).toContainText("Firmware Repository");
-  await expect(map).toContainText("Compliance Check");
-  await expect(map).toContainText("Device lanes");
-  await expect(map).toContainText("Apply Lock");
-  await expect(map).toContainText("Post-check");
-
-  await map.getByRole("button", { name: /Cisco Switch/ }).click();
-  await expect(map).toContainText("Layer 3 switch");
-  await expect(map).toContainText("IOS XE");
-  await expect(map.getByRole("combobox", { name: /Cisco Switch IOS XE firmware file from map/ })).toBeVisible();
-  await expect(map.getByRole("button", { name: "Upgrade", exact: true })).toHaveCount(0);
-
-  await map.getByRole("button", { name: /NetApp/ }).click();
-  await expect(map).toContainText("Storage firmware");
-  await expect(map).toContainText("ONTAP");
+  const table = page.getByLabel("Firmware version decisions");
+  await expect(table).toContainText("Upgrade available");
+  await expect(table).toContainText("Bypass");
+  await expect(page.getByText("Apply Lock")).toHaveCount(0);
+  await expect(page.getByText("Post-check")).toHaveCount(0);
 });
 
-test("firmware page scan runs through the workflow runner without placeholder upgrade controls", async ({ page }) => {
+test("firmware version check still uses the guarded workflow runner", async ({ page }) => {
   await page.goto("/firmware-upgrades");
 
   const scanResponse = page.waitForResponse((response) =>
     response.url().includes("/api/v1/workflows/actions/firmware.inventory/run") &&
     response.request().method() === "POST"
   );
-  await page.getByRole("button", { name: "Run Scan Firmware" }).click();
+  await page.getByRole("button", { name: "Check versions" }).click();
   await expect((await scanResponse).ok()).toBeTruthy();
-  await expect(page.getByText(/Scan All Firmware:/)).toBeVisible();
-
-  const complianceResponse = page.waitForResponse((response) =>
-    response.url().includes("/api/v1/workflows/actions/firmware.compliance-check/run") &&
-    response.request().method() === "POST"
-  );
-  const actions = page.getByLabel("Firmware map actions");
-  await actions.getByRole("button", { name: "Check Compliance" }).click();
-  await expect((await complianceResponse).ok()).toBeTruthy();
-  await expect(page.getByText(/Check Compliance:/)).toBeVisible();
-
-  const planResponse = page.waitForResponse((response) =>
-    response.url().includes("/api/v1/workflows/actions/firmware.upgrade-plan/run") &&
-    response.request().method() === "POST"
-  );
-  await actions.getByRole("button", { name: "Plan Firmware Upgrade" }).click();
-  await expect((await planResponse).ok()).toBeTruthy();
-  await expect(page.getByText(/Plan Upgrade:/)).toBeVisible();
-
   await expect(page.getByText("Protected firmware action")).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Upgrade", exact: true })).toHaveCount(0);
-  const ontapUpgrade = page.getByRole("button", { name: "Upgrade ONTAP" });
-  await expect(ontapUpgrade).toBeVisible();
-  await expect(ontapUpgrade).toBeDisabled();
-  await expect(ontapUpgrade).toHaveAttribute("title", /guarded (workflow registration|confirmation)/i);
-  await expect(page.getByText(/Run Upgrade Placeholder/)).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Upgrade", exact: true }).first()).toBeVisible();
 });
 
 test("media inventory displays actual file names when exposed by the backend", async ({ page }) => {

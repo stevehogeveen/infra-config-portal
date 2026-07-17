@@ -3963,38 +3963,168 @@ export function OperatorFirmwareUpgradesPage({ labProfileState }: OperatorPagePr
   const rows = firmwareRows(firmwareSummaries, compliance, selectedFiles);
   const files = firmwareFilesInfo(media, compliance);
 
+  async function planUpgrade() {
+    const action = actions.find((candidate) => candidate.action_id === "firmware.upgrade-plan");
+    if (!action) {
+      setSelectionError("Upgrade planning is not available until the action list is loaded.");
+      return;
+    }
+    setSelectionError("");
+    try {
+      await api.runWorkflowAction(action.action_id);
+      setSelectionError("");
+      setError("");
+      await load();
+    } catch (err) {
+      setSelectionError(errorMessage(err));
+    }
+  }
+
   return (
     <OperatorPage title="Firmware Upgrades">
-      <PageStatusHeader
-        description="Firmware files are read from the local media folder."
-        helper="Choose the file for each device. Upgrade stays gated until the path is validated."
-        icon={<ShieldCheck size={26} />}
-        runConfig={{
-          actionIds: ["firmware.inventory", "firmware.compliance-check"],
-          actions,
-          label: "Scan Firmware",
-          onReload: load
-        }}
-        status={firmwareStatus}
-        tabId="firmware"
-        title="Firmware Upgrades"
-      />
+      <section className="firmware-simple-header" aria-labelledby="firmware-simple-title">
+        <div>
+          <p className="operator-kicker">Setup / Firmware</p>
+          <h1 id="firmware-simple-title">Keep every device on the expected version.</h1>
+          <p>Check the current version, compare it with the target, then upgrade or leave it as-is.</p>
+        </div>
+        <RunCheckButton actionIds={["firmware.inventory", "firmware.compliance-check"]} actions={actions} label="Check versions" onReload={load} />
+      </section>
       <Feedback loading={loading && !firmwareSummaries.length} error={error} />
       <Feedback loading={false} error={selectionError} />
-      <FirmwareSetupShapePanel
+      <FirmwareSimpleTable
         actions={actions}
-        compliance={compliance}
-        files={files}
-        firmwareStatus={firmwareStatus}
-        media={media}
         onFileSelection={saveFileSelection}
-        onReload={load}
         rows={rows}
         savingSelection={savingSelection}
         selectedFiles={selectedFiles}
+        onPlanUpgrade={planUpgrade}
       />
+      <p className="firmware-simple-footer">Upgrade asks for confirmation before it can touch hardware. Bypass leaves the device as-is and records your choice.</p>
     </OperatorPage>
   );
+}
+
+function FirmwareSimpleTable({
+  actions,
+  onFileSelection,
+  onPlanUpgrade,
+  rows,
+  savingSelection,
+  selectedFiles
+}: {
+  actions: WorkflowAction[];
+  onFileSelection: (componentId: string, fileName: string) => void;
+  onPlanUpgrade: () => Promise<void>;
+  rows: FirmwareTableRow[];
+  savingSelection: boolean;
+  selectedFiles: Record<string, string>;
+}) {
+  const [decisions, setDecisions] = useState<Record<string, "upgrade" | "bypass">>({});
+  const hasPlanAction = actions.some((action) => action.action_id === "firmware.upgrade-plan");
+
+  if (!rows.length) {
+    return (
+      <section className="firmware-simple-empty" aria-label="Firmware versions">
+        <ShieldCheck size={24} />
+        <strong>No device versions loaded yet.</strong>
+        <span>Check versions to compare the lab hardware with its targets.</span>
+      </section>
+    );
+  }
+
+  return (
+    <section className="firmware-simple-table-shell" aria-label="Firmware version decisions">
+      <div className="firmware-simple-table-head">
+        <div>
+          <span className="operator-kicker">Firmware decisions</span>
+          <h2>What should each device be?</h2>
+        </div>
+        <span className="firmware-simple-status">{rows.filter((row) => row.pathStatus === "current").length} current - {rows.length} devices</span>
+      </div>
+      <div className="firmware-simple-table-wrap">
+        <table className="firmware-simple-table">
+          <thead>
+            <tr><th>Device</th><th>Current version</th><th>Target version</th><th>Action</th></tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => {
+              const decision = decisions[row.componentId];
+              const current = row.current || "Not checked";
+              const target = row.target || "Not set";
+              const currentState = row.pathStatus === "current";
+              const canUpgrade = !currentState && row.pathStatus !== "scan_needed" && Boolean(row.selectedFileName || selectedFiles[row.componentId]) && hasPlanAction;
+              const reason = currentState ? "Already current" : row.disabledReason || (row.pathStatus === "scan_needed" ? "Check versions first" : "Choose a matching file");
+              return (
+                <tr key={row.componentId}>
+                  <td>
+                    <div className="firmware-simple-device">
+                      <span className="firmware-simple-device-icon"><Server size={18} /></span>
+                      <span><strong>{row.equipment}</strong><small>{row.component}</small></span>
+                    </div>
+                  </td>
+                  <td className="firmware-version">{current}</td>
+                  <td>
+                    <div className="firmware-target-version"><strong>{target}</strong><small>{currentState ? "Already current" : row.pathStatus === "scan_needed" ? "Scan to compare" : "Upgrade available"}</small></div>
+                  </td>
+                  <td>
+                    {decision ? (
+                      <div className="firmware-decision-pill">
+                        <span>{decision === "upgrade" ? "Upgrade planned" : "Bypassed - left as-is"}</span>
+                        <button onClick={() => setDecisions((previous) => { const next = { ...previous }; delete next[row.componentId]; return next; })} type="button">Undo</button>
+                      </div>
+                    ) : (
+                      <div className="firmware-row-actions">
+                        <button className="firmware-upgrade-button" disabled={!canUpgrade} onClick={() => { setDecisions((previous) => ({ ...previous, [row.componentId]: "upgrade" })); void onPlanUpgrade(); }} title={canUpgrade ? "Create the guarded upgrade plan" : reason} type="button">Upgrade</button>
+                        <button className="firmware-bypass-button" onClick={() => setDecisions((previous) => ({ ...previous, [row.componentId]: "bypass" }))} type="button">Bypass</button>
+                      </div>
+                    )}
+                    {!decision && !canUpgrade && <small className="firmware-row-reason">{reason}</small>}
+                    {!currentState && (
+                      <select aria-label={`${row.equipment} ${row.component} firmware file`} disabled={savingSelection} onChange={(event) => onFileSelection(row.componentId, event.target.value)} value={selectedFiles[row.componentId] ?? row.selectedFileName}>
+                        <option value="">Choose file</option>
+                        {row.candidateFiles.map((candidate) => <option key={`${row.componentId}-${candidate.file_name}`} value={candidate.file_name}>{candidate.file_name}</option>)}
+                      </select>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+function RunCheckButton({
+  actionIds,
+  actions,
+  label,
+  onReload
+}: {
+  actionIds: string[];
+  actions: WorkflowAction[];
+  label: string;
+  onReload: () => Promise<void> | void;
+}) {
+  const [running, setRunning] = useState(false);
+  const action = actionIds.map((id) => actions.find((candidate) => candidate.action_id === id)).find(Boolean) ?? null;
+
+  async function run() {
+    if (!action) return;
+    setRunning(true);
+    try {
+      await api.runWorkflowAction(action.action_id);
+      await onReload();
+    } catch {
+      // The page-level feedback owns API errors; keep the button usable when a check fails.
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  return <button className="primary firmware-check-button" disabled={!action || running} onClick={() => void run()} type="button"><RefreshCw size={16} />{running ? "Checking..." : label}</button>;
 }
 
 function FirmwareSetupShapePanel({

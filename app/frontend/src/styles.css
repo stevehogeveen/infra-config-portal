@@ -15392,6 +15392,276 @@ button.design-ilo-port:hover {
   padding: 12px;
 }
 
+.firmware-simple-header {
+  align-items: end;
+  display: flex;
+  gap: 24px;
+  justify-content: space-between;
+  margin: 8px 0 22px;
+}
+
+.firmware-simple-header h1 {
+  color: var(--ink);
+  font-size: clamp(24px, 3vw, 38px);
+  letter-spacing: 0;
+  line-height: 1.08;
+  margin: 4px 0 8px;
+  max-width: 720px;
+}
+
+.firmware-simple-header p:not(.operator-kicker) {
+  color: var(--muted);
+  font-size: 15px;
+  margin: 0;
+}
+
+.firmware-check-button {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.firmware-simple-table-shell {
+  background: #ffffff;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 16px 34px rgba(15, 23, 42, 0.07);
+  overflow: hidden;
+}
+
+.firmware-simple-table-head {
+  align-items: end;
+  background: #f8fafc;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  justify-content: space-between;
+  padding: 18px 22px;
+}
+
+.firmware-simple-table-head h2 {
+  color: var(--ink);
+  font-size: 18px;
+  margin: 4px 0 0;
+}
+
+.firmware-simple-status {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.firmware-simple-table-wrap {
+  overflow-x: auto;
+}
+
+.firmware-simple-table {
+  border-collapse: collapse;
+  min-width: 760px;
+  width: 100%;
+}
+
+.firmware-simple-table th,
+.firmware-simple-table td {
+  border-bottom: 1px solid #e2e8f0;
+  padding: 16px 22px;
+  text-align: left;
+  vertical-align: middle;
+}
+
+.firmware-simple-table th {
+  color: #64748b;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.firmware-simple-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.firmware-simple-device,
+.firmware-target-version,
+.firmware-row-actions,
+.firmware-decision-pill {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+}
+
+.firmware-simple-device-icon {
+  align-items: center;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  color: #2563eb;
+  display: inline-flex;
+  height: 34px;
+  justify-content: center;
+  width: 34px;
+}
+
+.firmware-simple-device strong,
+.firmware-target-version strong {
+  color: var(--ink);
+  display: block;
+  font-size: 14px;
+}
+
+.firmware-simple-device small,
+.firmware-target-version small,
+.firmware-row-reason {
+  color: var(--muted);
+  display: block;
+  font-size: 12px;
+  margin-top: 4px;
+}
+
+.firmware-version {
+  color: var(--ink);
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.firmware-row-actions button,
+.firmware-decision-pill button {
+  border-radius: 7px;
+  font-size: 12px;
+  font-weight: 800;
+  padding: 7px 10px;
+}
+
+.firmware-upgrade-button {
+  background: #0f766e;
+  border: 1px solid #0f766e;
+  color: #ffffff;
+}
+
+.firmware-upgrade-button:disabled {
+  background: #cbd5e1;
+  border-color: #cbd5e1;
+  color: #64748b;
+  cursor: not-allowed;
+}
+
+.firmware-bypass-button,
+.firmware-decision-pill button {
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  color: #334155;
+}
+
+.firmware-decision-pill {
+  background: #ecfdf5;
+  border: 1px solid #a7f3d0;
+  border-radius: 8px;
+  color: #047857;
+  font-size: 12px;
+  font-weight: 800;
+  padding: 6px 8px;
+  white-space: nowrap;
+}
+
+.firmware-simple-table select {
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  color: #334155;
+  font-size: 12px;
+  margin-top: 8px;
+  max-width: 220px;
+  padding: 6px 8px;
+}
+
+.firmware-simple-footer {
+  color: #64748b;
+  font-size: 13px;
+  line-height: 1.5;
+  margin: 14px 2px 0;
+}
+
+.firmware-simple-empty {
+  align-items: center;
+  background: #ffffff;
+  border: 1px dashed #cbd5e1;
+  border-radius: 12px;
+  color: #64748b;
+  display: grid;
+  gap: 8px;
+  justify-items: center;
+  padding: 56px 24px;
+  text-align: center;
+}
+
+.firmware-simple-empty strong {
+  color: var(--ink);
+}
+
+/* The operator shell follows the map-first reference: calm header, product name, and compact context. */
+.shell-topbar {
+  background: rgba(255, 255, 255, 0.96);
+  border-bottom-color: #dbe4ee;
+  box-shadow: 0 8px 24px rgba(30, 64, 96, 0.08);
+  color: var(--ink);
+}
+
+.brand {
+  color: var(--ink);
+}
+
+.brand > svg {
+  color: var(--teal);
+}
+
+.brand small {
+  color: var(--muted);
+}
+
+.nav-item {
+  color: #64748b;
+}
+
+.nav-item.active {
+  background: #e6fffb;
+  border-color: #99f6e4;
+  color: #115e59;
+}
+
+.nav-item:hover {
+  background: #f0fdfa;
+  color: #115e59;
+}
+
+.topbar-profile {
+  background: #f8fafc;
+  border-color: #dbe4ee;
+}
+
+.topbar-profile-head > span,
+.topbar-profile dt {
+  color: #64748b;
+}
+
+.topbar-profile strong,
+.topbar-profile dd {
+  color: var(--ink);
+}
+
+@media (max-width: 720px) {
+  .firmware-simple-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .firmware-check-button {
+    align-self: flex-start;
+  }
+
+  .firmware-simple-table-head {
+    align-items: start;
+    flex-direction: column;
+    gap: 6px;
+  }
+}
+
 @media (max-width: 980px) {
   .app-shell {
     grid-template-columns: 1fr;
