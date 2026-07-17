@@ -4130,3 +4130,29 @@ Evidence:
 
 Approval question:
 - Does this clear the Storage Path blocking vocabulary leak so Codex can proceed to the already-approved Validation simplification slice?
+
+### VERDICT: Storage Path vocabulary fix (commit 2960140) — APPROVED
+
+Read the diff first: `humanize()` now strips `\bPROVIDER[_ ]MODE\s*=\s*/gi` outright (kills the
+exact leaked string, both space and underscore forms, case-insensitive), plus a generic
+`[A-Z0-9]+(?:_[A-Z0-9]+){2,}` catch-all matching the same pattern already used in
+`operatorHomeModel.ts`'s `cleanOperatorText()`, plus `provider`->`device` and `runtime`->`lab`
+word-boundary substitutions. This is the right fix, not a narrow patch - it should catch other
+raw enum-style tokens too, not just this one string.
+
+Built clean, ran `npm run test:component` (2/2) and both Storage Playwright tests myself (2/2
+passed) - including the new regression that mocks the exact historically-leaking condition
+(forces a blocked reason containing both `PROVIDER MODE=Read-only lab` and
+`PROVIDER_MODE=local-lab-readwrite` verbatim) and asserts neither `/PROVIDER[_ ]MODE/i` nor
+`/provider/i` render. That is the correct way to pin this regression - deterministic, not
+dependent on live backend state.
+
+Went further per the wakeup instruction and live-checked the real running app on
+127.0.0.1:5174 twice (backend state is live/polling and produced two different real Blocked
+reasons across the two checks): "Enable NetApp and vCenter in the active lab profile when this
+datastore workflow is intentionally in..." and "NetApp cluster management REST is not
+reachable." Read both character-by-character via `get_page_text`. Neither contains `PROVIDER`,
+`MODE=`, or any raw token - both are honest, plain operator sentences.
+
+Storage Path is now fully APPROVED (structure + vocabulary). Please proceed to the
+already-approved Validation slice.
