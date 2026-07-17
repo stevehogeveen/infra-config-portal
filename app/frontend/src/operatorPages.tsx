@@ -300,6 +300,7 @@ const emptyRunState: WorkflowRunState = {
 };
 
 const noProofText = "Advanced proof is hidden unless you need it.";
+const networkSwitchCheckActionIds = ["cisco.setup-readiness", "cisco.ssh-readonly-probe", "cisco.current-intent-diff"];
 
 type PageIntentLayout = Record<string, UiIntentRegionLayout>;
 
@@ -1269,6 +1270,8 @@ export function OperatorNetworkPage({ labProfileState, onReloadLabProfile }: Ope
   const [labSafety, setLabSafety] = useState<LabSafetySettings | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [runState, setRunState] = useState<WorkflowRunState>(emptyRunState);
 
   async function refreshCiscoSshProbe() {
       setCiscoSshProbe({
@@ -1432,83 +1435,270 @@ export function OperatorNetworkPage({ labProfileState, onReloadLabProfile }: Ope
     ],
     [activeProfile, address.cisco_management, ciscoReadiness, consoleState, currentView, features, firmwareSummaries, global]
   );
-  const intent = usePageIntentLayout("network", networkIntentRegions, activeProfile?.id);
-  const networkRegions: Record<string, ReactNode> = {
-    "advanced-proof": (
-      <AdvancedDrawer title="Network proof" summary={noProofText}>
-        <OperatorWorkspace currentView={currentView} rows={networkRows} compact />
-        <ConfigValueList
-          values={[
-            { label: "Firmware", value: firmwareVersion(firmwareSummaries, "cisco") },
-            { label: "Prompt", value: displayValue(asString(objectValue(ciscoReadiness?.real_lab_run).prompt_state)) },
-            { label: "Warnings", value: String(stringArray(ciscoReadiness?.warnings).length) }
-          ]}
-        />
-      </AdvancedDrawer>
-    ),
-    reference: (
-      <NetworkReferencePanel
-        address={address}
-        activeProfile={activeProfile}
-        ciscoReadiness={ciscoReadiness}
-        ciscoIntentDiff={ciscoIntentDiff}
-        ciscoSshProbe={ciscoSshProbe}
-        consoleState={consoleState}
-        currentView={currentView}
-        features={features}
-        firmwareSummaries={firmwareSummaries}
-        global={global}
-        labSafety={labSafety}
-        networkRows={networkRows}
-        onCiscoSshRefresh={refreshCiscoSshProbe}
-        onLabSafetyUpdated={load}
-        onLabProfileSaved={async () => {
-          if (onReloadLabProfile) {
-            await onReloadLabProfile();
-          }
-          await load();
-        }}
-      />
-    )
+  const ciscoFirmware = firmwareVersion(firmwareSummaries, "cisco");
+  const settingsRows = networkSettingsRows({ ciscoFirmware, features, global });
+  const prerequisites = realLabPrerequisites(ciscoReadiness, consoleState, currentView, labSafety);
+  const ciscoDriver = ciscoDriverPlan({ address, activeProfile, ciscoIntentDiff, ciscoReadiness, ciscoSshProbe, features, global });
+  const byActionId = useMemo(() => new Map(actions.map((action) => [action.action_id, action])), [actions]);
+  const switchRunConfig: TabRunConfig = {
+    actionIds: networkSwitchCheckActionIds,
+    actions,
+    kind: "read",
+    label: "Run switch check",
+    onReload: load
   };
+  const switchAction = firstRunnableAction(byActionId, networkSwitchCheckActionIds, switchRunConfig);
+  const switchFallbackActionId = fallbackRunActionId(switchRunConfig, switchAction);
+  const switchDisabledReason = switchAction
+    ? disabledReasonForRunConfig(switchRunConfig, switchAction)
+    : switchFallbackActionId
+      ? ""
+      : disabledReasonForRunConfig(switchRunConfig, switchAction);
+  const switchAccess = networkSwitchAccessCardModel({
+    address,
+    ciscoReadiness,
+    consoleState,
+    currentView,
+    networkStatus
+  });
+
+  async function runSwitchCheck() {
+    const actionId = switchAction?.action_id ?? switchFallbackActionId;
+    if (!actionId || switchDisabledReason || runState.runningActionId) return;
+    setRunState({ error: "", message: "", runningActionId: actionId });
+    try {
+      const result = await api.runWorkflowAction(actionId);
+      setRunState({
+        error: "",
+        message: switchAction ? workflowRunMessage(switchAction, result) : workflowRunResultMessage("Run switch check", result),
+        runningActionId: ""
+      });
+      await load();
+    } catch (err) {
+      setRunState({ error: errorMessage(err), message: "", runningActionId: "" });
+    }
+  }
 
   return (
     <OperatorPage title="Network">
-      <PageStatusHeader
-        description="Use these live checks and guarded actions for this part of the lab."
-        helper="Cisco access, VLAN, subnet, gateway, switch access, DNS, NTP, SNMP, and MTU are grouped here."
-        icon={<Route size={26} />}
-        nextAction={humanize(asString(ciscoReadiness?.next_safe_action) || "Run Live Switch Check, then save switch config when ready.")}
-        runConfig={{
-          actionIds: ["cisco.current-intent-diff", "cisco.ssh-readonly-probe", "cisco.setup-readiness", "cisco.validate-ssh-scp", "cisco.privilege-check"],
-          actions,
-          label: "Live Switch Check",
-          onReload: load
-        }}
-        status={networkStatus}
-        tabId="network"
-        title="Network"
-      />
+      <div className="operator-surface-heading">
+        <p className="operator-kicker">Setup</p>
+        <h1>Network</h1>
+        <p>Can the Cisco switch be reached, and what one safe check should run next?</p>
+      </div>
       <Feedback loading={loading && !ciscoReadiness} error={error} />
-      <PageIntentBar
-        layout={intent.layout}
-        onApply={intent.applyOps}
-        onReset={intent.reset}
-        onTargetRegionChange={intent.setTargetRegionId}
-        onUndo={intent.undo}
-        page="network"
-        regions={networkIntentRegions}
-        summary={intent.summary}
-        targetRegionId={intent.targetRegionId}
-        undoAvailable={intent.undoAvailable}
-      />
-      {orderedIntentRegions(networkIntentRegions, intent.layout).map((region) => (
-        <IntentRegion highlighted={intent.targetRegionId === region.id} key={region.id} layout={intent.layout} region={region}>
-          {networkRegions[region.id]}
-        </IntentRegion>
-      ))}
+      <section className="network-access-surface" aria-label="Switch Access">
+        <Card className="network-access-card" hover={false}>
+          <CardHeader>
+            <div>
+              <p className="operator-kicker">Switch access</p>
+              <h2>{switchAccess.switchName}</h2>
+            </div>
+            <StatusBadge label={switchAccess.stateLabel} status={switchAccess.badgeStatus} />
+          </CardHeader>
+          <CardContent>
+            <dl className="network-access-fields">
+              <div>
+                <dt>Switch</dt>
+                <dd>{switchAccess.switchName}</dd>
+              </div>
+              <div>
+                <dt>Management IP</dt>
+                <dd>{switchAccess.managementIp}</dd>
+              </div>
+              <div>
+                <dt>State</dt>
+                <dd>{switchAccess.stateLabel}</dd>
+              </div>
+              <div>
+                <dt>Access</dt>
+                <dd>{switchAccess.accessLabel}</dd>
+              </div>
+            </dl>
+            {switchAccess.reason && (
+              <div className="network-access-reason" role="note">
+                <strong>Needs attention</strong>
+                <span>{switchAccess.reason}</span>
+              </div>
+            )}
+            {runState.message && <div className="operator-feedback network-access-feedback">{runState.message}</div>}
+            {runState.error && <div className="operator-feedback error network-access-feedback">{runState.error}</div>}
+          </CardContent>
+          <CardFooter>
+            <div className="network-access-actions">
+              <button
+                className="operator-primary-button"
+                disabled={Boolean(switchDisabledReason) || Boolean(runState.runningActionId)}
+                onClick={() => void runSwitchCheck()}
+                title={switchDisabledReason || "Run switch check"}
+                type="button"
+              >
+                <RefreshCw size={16} />
+                {runState.runningActionId ? "Checking" : "Run switch check"}
+              </button>
+              <button
+                aria-expanded={detailsOpen}
+                className="secondary-button"
+                onClick={() => setDetailsOpen((current) => !current)}
+                type="button"
+              >
+                View details
+              </button>
+            </div>
+          </CardFooter>
+        </Card>
+      </section>
+      {detailsOpen && (
+        <section className="network-details" aria-label="Network details">
+          <div className="network-details-grid">
+            <Card className="network-details-card" hover={false}>
+              <CardHeader>
+                <div>
+                  <p className="operator-kicker">Details</p>
+                  <h2>Switch settings and access paths</h2>
+                </div>
+                <StatusBadge label={displayStatus(networkStatus)} status={statusBadgeStatus(networkStatus)} />
+              </CardHeader>
+              <CardContent>
+                <ConfigValueList
+                  values={[
+                    { label: "Management IP", value: displayAddress(address.cisco_management), source: "Saved setup" },
+                    { label: "Console path", value: displayValue(asString(consoleState.selected_path) || asString(consoleState.effective_path)), source: "Saved setup" },
+                    { label: "SSH/SCP", value: boolStateLabel(asBoolean(ciscoReadiness?.management_configured)), source: "Read-only check" },
+                    { label: "Prompt", value: displayValue(asString(objectValue(ciscoReadiness?.real_lab_run).prompt_state)), source: "Read-only check" },
+                    { label: "Firmware", value: ciscoFirmware, source: "Firmware files" }
+                  ]}
+                />
+              </CardContent>
+            </Card>
+            <Card className="network-details-card" hover={false}>
+              <CardHeader>
+                <div>
+                  <p className="operator-kicker">Saved settings</p>
+                  <h2>Network values</h2>
+                </div>
+                <span>{settingsRows.length} tracked</span>
+              </CardHeader>
+              <CompactTable>
+                <CompactTableHeader>
+                  <CompactTableCell>Item</CompactTableCell>
+                  <CompactTableCell>Current</CompactTableCell>
+                  <CompactTableCell>Status</CompactTableCell>
+                </CompactTableHeader>
+                <tbody>
+                  {settingsRows.map((row) => (
+                    <CompactTableRow key={row.item}>
+                      <CompactTableCell><strong>{row.item}</strong></CompactTableCell>
+                      <CompactTableCell>{row.current}</CompactTableCell>
+                      <CompactTableCell><StatusBadge label={displayStatus(row.status)} status={statusBadgeStatus(row.status)} /></CompactTableCell>
+                    </CompactTableRow>
+                  ))}
+                </tbody>
+              </CompactTable>
+            </Card>
+            <NetworkConfigurePanel
+              activeProfile={activeProfile}
+              address={address}
+              features={features}
+              global={global}
+              onSaved={async () => {
+                if (onReloadLabProfile) {
+                  await onReloadLabProfile();
+                }
+                await load();
+              }}
+            />
+            <details className="network-advanced-switch-plan">
+              <summary>
+                <span>
+                  <span className="operator-kicker">Advanced</span>
+                  <strong>Advanced switch plan</strong>
+                  <small>VLANs, ports, guardrails, drift, and candidate config stay here.</small>
+                </span>
+              </summary>
+              <CiscoDriverPanel plan={ciscoDriver} onRefresh={refreshCiscoSshProbe} />
+            </details>
+            <AdvancedDrawer title="Network proof" summary={noProofText}>
+              <OperatorWorkspace currentView={currentView} rows={networkRows} compact />
+              <ConfigValueList
+                values={[
+                  { label: "Firmware", value: ciscoFirmware },
+                  { label: "Prompt", value: displayValue(asString(objectValue(ciscoReadiness?.real_lab_run).prompt_state)) },
+                  { label: "Warnings", value: String(stringArray(ciscoReadiness?.warnings).length) }
+                ]}
+              />
+              <RealLabPrerequisitesPanel items={prerequisites} />
+            </AdvancedDrawer>
+          </div>
+        </section>
+      )}
     </OperatorPage>
   );
+}
+
+function networkSwitchAccessCardModel({
+  address,
+  ciscoReadiness,
+  consoleState,
+  currentView,
+  networkStatus
+}: {
+  address: LabAddressPlan;
+  ciscoReadiness: ProviderProbeResult | null;
+  consoleState: Record<string, unknown>;
+  currentView: CurrentViewModel;
+  networkStatus: string;
+}) {
+  const stateLabel = networkSwitchStateLabel(networkStatus, Boolean(ciscoReadiness), address.cisco_management);
+  const accessLabel = networkSwitchAccessLabel(ciscoReadiness, consoleState);
+  const reason = stateLabel === "Blocked"
+    ? humanize(
+      !address.cisco_management
+        ? "Set the Cisco management IP before running the switch check."
+        : currentView.blockers[0] ||
+          stringArray(ciscoReadiness?.blockers)[0] ||
+          asString(ciscoReadiness?.next_safe_action) ||
+          asString(ciscoReadiness?.message) ||
+          "Switch access needs attention before network setup can continue."
+    )
+    : "";
+
+  return {
+    accessLabel,
+    badgeStatus: networkSwitchBadgeStatus(stateLabel),
+    managementIp: displayAddress(address.cisco_management),
+    reason,
+    stateLabel,
+    switchName: "Cisco C9300"
+  };
+}
+
+function networkSwitchStateLabel(status: string, readinessLoaded: boolean, managementIp: string | null | undefined): "Ready" | "Blocked" | "Not checked" {
+  if (!managementIp) return "Blocked";
+  const normalized = status.toLowerCase();
+  if (["ready", "ok", "passed", "safe-to-run", "safe_to_run", "success"].includes(normalized)) return "Ready";
+  if (!readinessLoaded || !normalized || ["not_checked", "unknown", "running"].includes(normalized)) return "Not checked";
+  return "Blocked";
+}
+
+function networkSwitchBadgeStatus(label: "Ready" | "Blocked" | "Not checked"): StatusBadgeStatus {
+  if (label === "Ready") return "ready";
+  if (label === "Blocked") return "blocked";
+  return "not-configured";
+}
+
+function networkSwitchAccessLabel(ciscoReadiness: ProviderProbeResult | null, consoleState: Record<string, unknown>): "Console ready" | "SSH ready" | "Needs sign-in" | "Not checked" {
+  const consoleStatus = asString(consoleState.status).toLowerCase();
+  if (["ready", "ok", "detected", "connected", "present"].includes(consoleStatus)) return "Console ready";
+  if (asBoolean(ciscoReadiness?.management_configured)) return "SSH ready";
+  if (!ciscoReadiness) return "Not checked";
+  const text = [
+    asString(ciscoReadiness.message),
+    asString(ciscoReadiness.next_safe_action),
+    ...stringArray(ciscoReadiness.blockers)
+  ].join(" ").toLowerCase();
+  if (/(credential|password|username|sign[- ]?in|login|secret|auth)/i.test(text)) return "Needs sign-in";
+  return "Not checked";
 }
 
 export function OperatorServerPage({ labProfileState, onReloadLabProfile }: OperatorPageProps) {

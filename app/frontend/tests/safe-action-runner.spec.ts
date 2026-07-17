@@ -1196,11 +1196,9 @@ test("operator pages avoid test-mode wording for live run controls", async ({ pa
   }
 });
 
-test("retired device routes redirect while remaining run actions stay registered", async ({ page }) => {
+test("setup pages load while remaining run actions stay registered", async ({ page }) => {
   for (const path of ["/network", "/server", "/storage", "/virtualization"]) {
     await page.goto(path);
-    await expect(page).toHaveURL(/\/overview/);
-    await expect(page.getByTestId("operator-home")).toBeVisible();
     await expect(page.getByText(/no backend action is registered yet/i)).toHaveCount(0);
     await expect(page.getByText(/missing a runnable backend action/i)).toHaveCount(0);
   }
@@ -1214,6 +1212,81 @@ test("retired device routes redirect while remaining run actions stay registered
   await expect((await response).ok()).toBeTruthy();
   await expect(page.getByText(/no backend action is registered yet/i)).toHaveCount(0);
   await expect(page.getByText(/missing a runnable backend action/i)).toHaveCount(0);
+});
+
+test("network default shows one switch access card and hides technical detail", async ({ page }) => {
+  await page.goto("/network");
+
+  const access = page.getByLabel("Switch Access");
+  await expect(access.getByRole("heading", { name: "Cisco C9300" })).toBeVisible();
+  await expect(access.locator("dt")).toHaveText(["Switch", "Management IP", "State", "Access"]);
+  await expect(access.getByRole("button", { name: "Run switch check" })).toBeVisible();
+  await expect(access.getByRole("button", { name: "View details" })).toBeVisible();
+  await expect(page.locator("section[aria-label='Network details']")).toHaveCount(0);
+  await expect(page.getByText("Switch configuration cockpit")).toHaveCount(0);
+  await expect(page.getByText("Current versus intent")).toHaveCount(0);
+  await expect(page.getByText("VLANs and gateways")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /Apply Bootstrap/i })).toHaveCount(0);
+});
+
+test("network details reveal saved settings and nested advanced switch plan", async ({ page }) => {
+  await page.goto("/network");
+  await page.getByLabel("Switch Access").getByRole("button", { name: "View details" }).click();
+
+  const details = page.locator("section[aria-label='Network details']");
+  await expect(details).toBeVisible();
+  await expect(details).toContainText("VLAN");
+  await expect(details).toContainText("DNS");
+  await expect(details).toContainText("NTP");
+  await expect(details).toContainText("SNMP");
+  await expect(details).toContainText("MTU");
+  await expect(details).toContainText("SSH/SCP");
+  await expect(details).toContainText("Firmware");
+
+  const advanced = page.locator("details.network-advanced-switch-plan");
+  await expect(advanced.locator(":scope > summary")).toContainText("Advanced switch plan");
+  await expect(page.locator("section[aria-label='Cisco switch driver']")).toBeHidden();
+  await advanced.locator(":scope > summary").click();
+  await expect(page.locator("section[aria-label='Cisco switch driver']")).toBeVisible();
+});
+
+test("network switch check runs through the read-only action endpoint", async ({ page }) => {
+  await page.goto("/network");
+
+  const runResponse = page.waitForResponse((response) =>
+    response.url().includes("/api/v1/workflows/actions/cisco.setup-readiness/run") &&
+    response.request().method() === "POST"
+  );
+  await page.getByLabel("Switch Access").getByRole("button", { name: "Run switch check" }).click();
+  await expect((await runResponse).ok()).toBeTruthy();
+  await expect(page.getByLabel("Switch Access")).toContainText("Cisco Access Live Check:");
+});
+
+test("network blocker copy hides internal mode vocabulary", async ({ page }) => {
+  await page.route("**/api/v1/providers/cisco/setup-readiness", (route) => json(route, {
+    ...ciscoSetupReadiness(),
+    blockers: ["PROVIDER_MODE=local-lab-readwrite runtime missing credential"],
+    management_configured: false,
+    message: "PROVIDER MODE=mock runtime provider credential is missing.",
+    next_safe_action: "PROVIDER MODE=mock runtime provider password missing.",
+    status: "blocked"
+  }));
+
+  await page.goto("/network");
+  const access = page.getByLabel("Switch Access");
+  await expect(access).toContainText("Needs attention");
+  const text = await access.textContent();
+  expect(text ?? "").not.toMatch(/PROVIDER[_ ]MODE/i);
+  expect(text ?? "").not.toMatch(/\bprovider\b/i);
+  expect(text ?? "").not.toMatch(/\bruntime\b/i);
+});
+
+test("network surface has no horizontal overflow on mobile", async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 800 });
+  await page.goto("/network");
+
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+  expect(overflow).toBeLessThanOrEqual(1);
 });
 
 test("map switch workspace shows access settings and blockers without proof clutter", async ({ page }) => {
@@ -1468,9 +1541,7 @@ test("saved lab setup global defaults use active profile values and never render
 });
 
 test("legacy settings paths redirect to overview and the contextual drawer is removed", async ({ page }) => {
-  await page.goto("/network");
-  await expect(page).toHaveURL(/\/overview/);
-
+  await page.goto("/overview");
   await expect(page.getByRole("button", { name: "Settings" })).toHaveCount(0);
   await expect(page.locator("section.tab-settings-drawer")).toHaveCount(0);
 

@@ -14254,6 +14254,166 @@ button.design-ilo-port:hover {
   margin: 0;
 }
 
+.network-access-surface,
+.network-details {
+  margin: 0 auto 24px;
+  max-width: 1410px;
+  padding: 0 32px;
+}
+
+.network-access-card {
+  border-color: #d6e0e8;
+  box-shadow: 0 10px 26px rgba(34, 58, 80, .06);
+}
+
+.network-access-card h2 {
+  color: #102238;
+  font-size: clamp(24px, 2.3vw, 34px);
+  letter-spacing: 0;
+  margin: 4px 0 0;
+}
+
+.network-access-fields {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 0;
+}
+
+.network-access-fields > div {
+  background: #f7fafc;
+  border: 1px solid #dbe4ef;
+  border-radius: 10px;
+  display: grid;
+  gap: 7px;
+  min-height: 82px;
+  padding: 14px;
+}
+
+.network-access-fields dt {
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.network-access-fields dd {
+  color: #102238;
+  font-size: 16px;
+  font-weight: 850;
+  line-height: 1.25;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.network-access-reason {
+  background: #fff7ed;
+  border: 1px solid #fed7aa;
+  border-radius: 10px;
+  color: #7c2d12;
+  display: grid;
+  gap: 5px;
+  margin-top: 14px;
+  padding: 13px 14px;
+}
+
+.network-access-reason strong {
+  font-size: 12px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.network-access-reason span {
+  color: #334155;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.network-access-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
+  width: 100%;
+}
+
+.network-access-actions .operator-primary-button {
+  width: auto;
+}
+
+.network-access-actions .secondary-button {
+  background: #f7fafc;
+  border: 1px solid #cbd6e1;
+  color: #334961;
+}
+
+.network-access-feedback {
+  margin-top: 14px;
+}
+
+.network-details,
+.network-details-grid {
+  display: grid;
+  gap: 16px;
+}
+
+.network-details-card {
+  border-color: #d6e0e8;
+}
+
+.network-advanced-switch-plan {
+  background: #f8fafc;
+  border: 1px solid #d8e3ec;
+  border-radius: 14px;
+  padding: 16px;
+}
+
+.network-advanced-switch-plan > summary {
+  align-items: center;
+  color: #102238;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  list-style: none;
+}
+
+.network-advanced-switch-plan > summary::-webkit-details-marker {
+  display: none;
+}
+
+.network-advanced-switch-plan > summary::after {
+  color: #70839a;
+  content: "Open";
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.network-advanced-switch-plan[open] > summary::after {
+  content: "Close";
+}
+
+.network-advanced-switch-plan > summary > span {
+  display: grid;
+  gap: 4px;
+}
+
+.network-advanced-switch-plan > summary strong {
+  font-size: 18px;
+}
+
+.network-advanced-switch-plan > summary small {
+  color: #64748b;
+  font-weight: 650;
+}
+
+.network-advanced-switch-plan .cisco-driver-panel {
+  margin-top: 16px;
+}
+
 .validation-readiness-surface,
 .validation-details,
 .validation-danger-zone {
@@ -16138,6 +16298,8 @@ button.design-ilo-port:hover {
   .lab-defaults-form,
   .lab-defaults-devices-card,
   .lab-defaults-advanced,
+  .network-access-surface,
+  .network-details,
   .validation-readiness-surface,
   .validation-details,
   .validation-danger-zone { padding-left: 16px; padding-right: 16px; }
@@ -17417,6 +17579,20 @@ button.design-ilo-port:hover {
 @media (max-width: 760px) {
   .operator-page {
     gap: 14px;
+  }
+
+  .network-access-fields {
+    grid-template-columns: 1fr;
+  }
+
+  .network-access-actions {
+    justify-content: stretch;
+  }
+
+  .network-access-actions .operator-primary-button,
+  .network-access-actions .secondary-button {
+    justify-content: center;
+    width: 100%;
   }
 
   .operator-status-header {
