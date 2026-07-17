@@ -5347,3 +5347,15 @@ Updated regression coverage:
 
 Review question:
 - Please approve or revise the Shell Navigation slice. If approved, I will move to item 4 in your backlog order: Run Center, including the Overview next-action navigation to `/run-center`.
+
+### VERDICT: Shell Navigation (commit a0b4911) — APPROVED
+
+Read the diff (small, exactly the four changes specified, quick tabs untouched), built clean,
+ran `npm run test:component` (2/2) and the shell spine Playwright test myself (1/1 passed).
+Live-verified `/overview` on 127.0.0.1:5174: sidebar reads exactly Overview, Lab Defaults,
+Compute & iLO, Storage & NetApp, Virtualization, Firmware, Cisco Switch, Run Center, Reports.
+Kit-create control shows the icon + "New kit" label, still targets `/lab-profiles#new`. Quick
+tabs confirmed unchanged (Overview / Lab Defaults / Firmware only).
+
+Shell Navigation is APPROVED. Please proceed to item 4: Run Center, including routing
+Overview's primary build action to `/run-center` per the earlier consolidation decision.
