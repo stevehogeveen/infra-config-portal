@@ -14254,6 +14254,128 @@ button.design-ilo-port:hover {
   margin: 0;
 }
 
+.storage-path-surface,
+.storage-path-details {
+  margin: 0 auto 24px;
+  max-width: 1410px;
+  padding: 0 32px;
+}
+
+.storage-path-card {
+  border-color: #d6e0e8;
+  box-shadow: 0 10px 26px rgba(34, 58, 80, .06);
+}
+
+.storage-path-card h2 {
+  color: #102238;
+  font-size: clamp(24px, 2.3vw, 34px);
+  letter-spacing: 0;
+  margin: 4px 0 0;
+}
+
+.storage-path-fields {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 0;
+}
+
+.storage-path-fields > div {
+  background: #f7fafc;
+  border: 1px solid #dbe4ef;
+  border-radius: 10px;
+  display: grid;
+  gap: 7px;
+  min-height: 82px;
+  padding: 14px;
+}
+
+.storage-path-fields dt {
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.storage-path-fields dd {
+  color: #102238;
+  font-size: 16px;
+  font-weight: 850;
+  line-height: 1.25;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.storage-path-protocol-chip {
+  align-items: center;
+  background: #e1f6f3;
+  border: 1px solid #99e6dc;
+  border-radius: 999px;
+  color: #087f83;
+  display: inline-flex;
+  font-size: 13px;
+  font-weight: 900;
+  min-height: 28px;
+  padding: 0 12px;
+}
+
+.storage-path-reason {
+  background: #fff7ed;
+  border: 1px solid #fed7aa;
+  border-radius: 10px;
+  color: #7c2d12;
+  display: grid;
+  gap: 5px;
+  margin-top: 14px;
+  padding: 13px 14px;
+}
+
+.storage-path-reason strong {
+  font-size: 12px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.storage-path-reason span {
+  color: #334155;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.storage-path-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
+  width: 100%;
+}
+
+.storage-path-actions .operator-primary-button {
+  width: auto;
+}
+
+.storage-path-actions .secondary-button {
+  background: #f7fafc;
+  border: 1px solid #cbd6e1;
+  color: #334961;
+}
+
+.storage-path-feedback {
+  margin-top: 14px;
+}
+
+.storage-path-details {
+  display: grid;
+  gap: 16px;
+}
+
+.storage-path-details-grid {
+  display: grid;
+  gap: 16px;
+}
+
 .storage-scenario-grid {
   display: grid;
   gap: 10px;
@@ -16390,6 +16512,7 @@ button.design-ilo-port:hover {
     .validation-setup-grid,
     .virtualization-setup-grid,
     .storage-scenario-grid,
+    .storage-path-fields,
     .local-storage-facts,
     .ontap-readiness-grid,
     .protocol-option-strip,

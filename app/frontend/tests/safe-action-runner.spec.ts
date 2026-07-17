@@ -1077,18 +1077,52 @@ test("overview removes superseded layout and console surfaces from operator mode
   await expect(page.locator("details.advanced-drawer").filter({ hasText: "Advanced proof" })).toBeVisible();
 });
 
-test("legacy storage route redirects before page AI can target old regions", async ({ page }) => {
+test("storage page defaults to one storage path card and hides protocol internals", async ({ page }) => {
+  await page.goto("/storage");
+
+  const storagePath = page.getByLabel("Storage Path");
+  await expect(storagePath).toBeVisible();
+  await expect(storagePath).toContainText("Active path");
+  await expect(storagePath).toContainText("Protocol");
+  await expect(storagePath).toContainText("Target datastore");
+  await expect(storagePath).toContainText("State");
+  await expect(storagePath).toContainText("NetApp shared storage");
+  await expect(storagePath).toContainText("NFS");
+
+  await expect(page.locator(".storage-path-actions .operator-primary-button")).toHaveCount(1);
+  await expect(page.locator(".storage-path-actions .operator-primary-button")).toContainText("Run storage check");
+  await expect(page.getByRole("button", { name: "Change storage path" })).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "Change this page" })).toHaveCount(0);
+  await expect(page.locator("section[aria-label='Storage reference']")).toHaveCount(0);
+  await expect(page.getByText("LIF")).toHaveCount(0);
+  await expect(page.getByText("SVM")).toHaveCount(0);
+  await expect(page.getByText("target portal")).toHaveCount(0);
+  await expect(page.getByText("igroup")).toHaveCount(0);
+  await expect(page.getByText("VMFS")).toHaveCount(0);
+  await expect(storagePath.getByRole("button", { name: /Apply iSCSI/ })).toHaveCount(0);
+  await expect(storagePath.getByRole("button", { name: /factory|reset/i })).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Change storage path" }).click();
+  const details = page.getByLabel("Storage path details");
+  await expect(details).toBeVisible();
+  await expect(details.getByLabel("Storage reference")).toBeVisible();
+  await expect(details).toContainText(/LIF|SVM|VMFS|igroup|target portal/);
+
+  await page.setViewportSize({ width: 375, height: 900 });
+  await page.goto("/storage");
+  const noBodyOverflow = await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth);
+  expect(noBodyOverflow).toBeTruthy();
+});
+
+test("single-server storage page shows local path without shared storage clutter", async ({ page }) => {
   labProfileScenario = "single";
   await page.goto("/storage");
-  await expect(page).toHaveURL(/\/overview/);
 
+  const storagePath = page.getByLabel("Storage Path");
+  await expect(storagePath).toContainText("Server-local RAID");
+  await expect(storagePath).toContainText("Local");
+  await expect(storagePath).not.toContainText("NetApp shared storage");
   await expect(page.locator("section[aria-label='Storage reference']")).toHaveCount(0);
-  await expect(page.getByTestId("operator-home")).toBeVisible();
-  await expect(page.locator("[data-region-id='topology']")).toHaveCount(0);
-  await expect(page.getByRole("textbox", { name: "Change this page" })).toHaveCount(0);
-
-  await openOperatorDetails(page);
-  await expect(page.locator("section[aria-label='Living lab topology']")).toBeVisible();
 });
 
 test("single-server map removes vCenter and keeps direct ESXi guidance on the server workspace", async ({ page }) => {
@@ -1219,7 +1253,7 @@ test("map Cisco workspace surfaces current-intent guardrail drift", async ({ pag
   await expect(page.locator("section[aria-label='Cisco switch driver']")).toHaveCount(0);
 });
 
-test("remaining operator pages expose reference panels and device routes consolidate to the map", async ({ page }) => {
+test("remaining operator pages expose simplified setup surfaces without old settings controls", async ({ page }) => {
   await page.goto("/firmware-upgrades");
   await expect(page.getByLabel("Firmware version decisions")).toBeVisible();
   await expect(page.locator("section[aria-label='Firmware reference']")).toHaveCount(0);
@@ -1247,10 +1281,11 @@ test("remaining operator pages expose reference panels and device routes consoli
   await expect(page.getByLabel("Global profile feature toggles")).toContainText("Allow IPv6");
   await expect(page.getByRole("button", { name: /Save (Global Defaults|As Lab Setup)/ })).toBeVisible();
 
-  for (const retiredPath of ["/network", "/server", "/storage", "/virtualization"]) {
-    await page.goto(retiredPath);
-    await expect(page).toHaveURL(/\/overview/);
-    await expect(page.getByTestId("operator-home")).toBeVisible();
+  for (const setupPath of ["/network", "/server", "/storage", "/virtualization"]) {
+    await page.goto(setupPath);
+    await expect(page).toHaveURL(new RegExp(`${setupPath}$`));
+    await expect(page.locator("main")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Settings" })).toHaveCount(0);
   }
 });
 

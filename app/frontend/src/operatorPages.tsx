@@ -2231,6 +2231,8 @@ export function OperatorStoragePage({ labProfileState, onReloadLabProfile }: Ope
   const [firmwareSummaries, setFirmwareSummaries] = useState<FirmwareSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [runState, setRunState] = useState<WorkflowRunState>(emptyRunState);
 
   async function load() {
     setError("");
@@ -2422,7 +2424,6 @@ export function OperatorStoragePage({ labProfileState, onReloadLabProfile }: Ope
     }
     return `${headerLabel}: ${results.length} checks completed with real provider evidence.`;
   };
-  const intent = usePageIntentLayout("storage", storageIntentRegions, activeProfile?.id);
   const storageRegions: Record<string, ReactNode> = profileReady ? {
     "advanced-proof": (
       <AdvancedDrawer title="Storage proof" summary={noProofText}>
@@ -2484,55 +2485,151 @@ export function OperatorStoragePage({ labProfileState, onReloadLabProfile }: Ope
       />
     )
   } : {};
+  const storagePath = storagePathCardModel({
+    activeProtocol: activeStorageProtocol,
+    pageStatus,
+    serverLocalStorage,
+    storageNextAction,
+    storageScenario,
+    vcenterNetapp
+  });
+
+  async function runDefaultStorageCheck() {
+    if (!profileReady || runState.runningActionId) return;
+    setRunState({ error: "", message: "", runningActionId: "storage-path-check" });
+    try {
+      const message = await runStorageChecks();
+      setRunState({ error: "", message, runningActionId: "" });
+      await load();
+    } catch (err) {
+      setRunState({ error: errorMessage(err), message: "", runningActionId: "" });
+    }
+  }
 
   return (
     <OperatorPage title="Storage">
-      <PageStatusHeader
-        description="Use these live checks and guarded actions for this part of the lab."
-        helper={serverLocalStorage
-          ? "This setup uses server-local ESXi storage. NetApp shared storage stays visible as an optional path, not the required path."
-          : "NetApp access, ONTAP, NFS LIFs, volume, export policy, and datastore readiness are grouped here."}
-        icon={<HardDrive size={26} />}
-        nextAction={profileReady ? humanize(storageNextAction || "Validate storage readiness before datastore work.") : "Load the active lab setup before running storage checks."}
-        runConfig={profileReady ? {
-          actionIds: headerActionIds,
-          actions,
-          label: headerLabel,
-          onRun: runStorageChecks,
-          onReload: load
-        } : {
-          actions: [],
-          disabledReason: "Active lab setup is still loading.",
-          label: headerLabel
-        }}
-        status={profileReady ? pageStatus : "not_checked"}
-        tabId="storage"
-        title="Storage"
-      />
-      <Feedback loading={!profileReady || (loading && !netappPlan)} error={profileReady ? error : "Loading active lab setup before storage checks."} />
-      <PageIntentBar
-        layout={intent.layout}
-        onApply={intent.applyOps}
-        onReset={intent.reset}
-        onTargetRegionChange={intent.setTargetRegionId}
-        onUndo={intent.undo}
-        page="storage"
-        regions={storageIntentRegions}
-        summary={intent.summary}
-        targetRegionId={intent.targetRegionId}
-        undoAvailable={intent.undoAvailable}
-      />
-      {profileReady && (
-        <>
-          {orderedIntentRegions(storageIntentRegions, intent.layout).map((region) => (
-            <IntentRegion highlighted={intent.targetRegionId === region.id} key={region.id} layout={intent.layout} region={region}>
-              {storageRegions[region.id]}
-            </IntentRegion>
-          ))}
-        </>
+      <div className="operator-surface-heading">
+        <p className="operator-kicker">Setup</p>
+        <h1>Storage</h1>
+        <p>Which storage path this kit uses, and what to do next.</p>
+      </div>
+      <Feedback loading={!profileReady || loading} error={profileReady ? error : "Loading active lab setup before storage checks."} />
+      <section className="storage-path-surface" aria-label="Storage Path">
+        <Card className="storage-path-card" hover={false}>
+          <CardHeader>
+            <div>
+              <p className="operator-kicker">Storage path</p>
+              <h2>{storagePath.activePath}</h2>
+            </div>
+            <StatusBadge label={storagePath.stateLabel} status={storagePath.badgeStatus} />
+          </CardHeader>
+          <CardContent>
+            <dl className="storage-path-fields">
+              <div>
+                <dt>Active path</dt>
+                <dd>{storagePath.activePath}</dd>
+              </div>
+              <div>
+                <dt>Protocol</dt>
+                <dd><span className="storage-path-protocol-chip">{storagePath.protocol}</span></dd>
+              </div>
+              <div>
+                <dt>Target datastore</dt>
+                <dd>{storagePath.targetDatastore}</dd>
+              </div>
+              <div>
+                <dt>State</dt>
+                <dd>{storagePath.stateLabel}</dd>
+              </div>
+            </dl>
+            {storagePath.reason && (
+              <div className="storage-path-reason" role="note">
+                <strong>Needs attention</strong>
+                <span>{storagePath.reason}</span>
+              </div>
+            )}
+            {runState.message && <div className="operator-feedback storage-path-feedback">{runState.message}</div>}
+            {runState.error && <div className="operator-feedback error storage-path-feedback">{runState.error}</div>}
+          </CardContent>
+          <CardFooter>
+            <div className="storage-path-actions">
+              <button
+                className="operator-primary-button"
+                disabled={!profileReady || Boolean(runState.runningActionId)}
+                onClick={() => void runDefaultStorageCheck()}
+                type="button"
+              >
+                <RefreshCw size={16} />
+                {runState.runningActionId ? "Checking" : "Run storage check"}
+              </button>
+              <button
+                aria-expanded={detailsOpen}
+                className="secondary-button"
+                onClick={() => setDetailsOpen((current) => !current)}
+                type="button"
+              >
+                Change storage path
+              </button>
+            </div>
+          </CardFooter>
+        </Card>
+      </section>
+      {detailsOpen && profileReady && (
+        <section className="storage-path-details" aria-label="Storage path details">
+          <div className="storage-path-details-grid">
+            {storageRegions.scenario}
+            {storageRegions.configure}
+            {serverLocalStorage ? storageRegions["local-readiness"] : storageRegions["ontap-readiness"]}
+            {storageRegions.reference}
+            {storageRegions["advanced-proof"]}
+          </div>
+        </section>
       )}
     </OperatorPage>
   );
+}
+
+function storagePathCardModel({
+  activeProtocol,
+  pageStatus,
+  serverLocalStorage,
+  storageNextAction,
+  storageScenario,
+  vcenterNetapp
+}: {
+  activeProtocol: string;
+  pageStatus: string;
+  serverLocalStorage: boolean;
+  storageNextAction: string;
+  storageScenario: StorageScenarioModel;
+  vcenterNetapp: ProviderProbeResult | null;
+}) {
+  const normalizedStatus = pageStatus.toLowerCase();
+  const stateLabel = storagePathStateLabel(normalizedStatus);
+  const protocol = serverLocalStorage ? "Local" : activeProtocol === "iscsi" ? "iSCSI" : "NFS";
+  const targetDatastore = serverLocalStorage
+    ? storageScenario.datastoreTarget
+    : datastoreVisibleStatus(vcenterNetapp) === "ready" ? datastoreName(vcenterNetapp) : "Not mounted";
+  return {
+    activePath: serverLocalStorage ? "Server-local RAID" : "NetApp shared storage",
+    badgeStatus: storagePathBadgeStatus(stateLabel),
+    protocol,
+    reason: stateLabel === "Blocked" ? humanize(storageNextAction || "Storage needs attention before datastore work.") : "",
+    stateLabel,
+    targetDatastore
+  };
+}
+
+function storagePathStateLabel(status: string): "Ready" | "Blocked" | "Not checked" {
+  if (["ready", "safe-to-run", "plan_only"].includes(status)) return "Ready";
+  if (["not_checked", "unknown"].includes(status)) return "Not checked";
+  return "Blocked";
+}
+
+function storagePathBadgeStatus(label: "Ready" | "Blocked" | "Not checked"): StatusBadgeStatus {
+  if (label === "Ready") return "ready";
+  if (label === "Blocked") return "blocked";
+  return "not-configured";
 }
 
 function NetAppOntapReadinessCard({
