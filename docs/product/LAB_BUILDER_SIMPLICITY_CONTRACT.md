@@ -53,3 +53,24 @@ A new operator should be able to look at the default screen for five seconds and
 - what single action to take next
 
 If they need to open Details to answer any of those, the operator surface failed.
+
+## Amendment 1: Navigation Spine
+
+Recorded deliberately (CXO), superseding the earlier absolute "no new top-level navigation."
+The product grew real Setup and Run phases, so a stable navigation spine now aids
+discoverability instead of causing sprawl. See `LAB_BUILDER_IA_ALIGNMENT_BRIEF.md`.
+
+Permitted navigation is exactly one fixed three-phase spine:
+
+- **Overview** — the Operator Home dashboard (status, map, one next action).
+- **Setup** — the setup modules (iLO, Storage, ESXi, Windows, Cisco, NetApp, OVF, Firmware,
+  Global). Details tier.
+- **Run** — Run Center (the build journey) and Reports.
+
+Rules that still bind:
+
+- No navigation beyond this spine. No ad-hoc tabs. No per-device surface on Operator Home.
+- Operator Home still obeys the Four-Question Information Budget and shows one primary action.
+- The build step list lives in Run Center, never on the Overview dashboard.
+- Every other section of this contract (tiers, one fact/one owner, operator vocabulary,
+  exceptions over inventory, replace-don't-add, five-second test) is unchanged.
