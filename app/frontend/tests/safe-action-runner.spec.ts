@@ -1256,6 +1256,8 @@ test("firmware decisions replace the retired map with four operator columns", as
   await expect(table).toContainText("17.15.05");
   await expect(table.getByRole("button", { name: "Upgrade", exact: true }).first()).toBeVisible();
   await expect(table.getByRole("button", { name: "Bypass", exact: true }).first()).toBeVisible();
+  await expect(table.locator("select")).toHaveCount(0);
+  await expect(table).toContainText(/upgrades available - .* current - .* not checked/);
 });
 
 test("firmware decisions keep target and action copy honest", async ({ page }) => {
@@ -1264,6 +1266,8 @@ test("firmware decisions keep target and action copy honest", async ({ page }) =
   const table = page.getByLabel("Firmware version decisions");
   await expect(table).toContainText("Upgrade available");
   await expect(table).toContainText("Bypass");
+  await expect(table).not.toContainText("cisco-ios-xe-firmware.bin");
+  await expect(table).not.toContainText("P95170_001_gen10spp");
   await expect(page.getByText("Apply Lock")).toHaveCount(0);
   await expect(page.getByText("Post-check")).toHaveCount(0);
 });

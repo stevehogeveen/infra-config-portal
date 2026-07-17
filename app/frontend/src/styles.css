@@ -15530,6 +15530,14 @@ button.design-ilo-port:hover {
   padding: 7px 10px;
 }
 
+.firmware-decision-state {
+  color: #087c55;
+  display: block;
+  font-size: 11px;
+  font-weight: 800;
+  margin-top: 6px;
+}
+
 .firmware-upgrade-button {
   background: #0f766e;
   border: 1px solid #0f766e;

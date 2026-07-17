@@ -3951,12 +3951,9 @@ function VirtualizationSetupShapePanel({
 export function OperatorFirmwareUpgradesPage({ labProfileState }: OperatorPageProps) {
   const [actions, setActions] = useState<WorkflowAction[]>([]);
   const [firmwareSummaries, setFirmwareSummaries] = useState<FirmwareSummary[]>([]);
-  const [media, setMedia] = useState<MediaInventory | null>(null);
   const [compliance, setCompliance] = useState<ProviderProbeResult | null>(null);
-  const [fileSelections, setFileSelections] = useState<FirmwareFileSelections | null>(null);
   const [selectedFiles, setSelectedFiles] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
-  const [savingSelection, setSavingSelection] = useState(false);
   const [error, setError] = useState("");
   const [selectionError, setSelectionError] = useState("");
 
@@ -3967,37 +3964,18 @@ export function OperatorFirmwareUpgradesPage({ labProfileState }: OperatorPagePr
       setActions(Array.isArray(nextActions) ? nextActions : []);
     });
     try {
-      const [nextSummaries, nextMedia, nextCompliance, nextSelections] = await Promise.all([
+      const [nextSummaries, nextCompliance, nextSelections] = await Promise.all([
         safeApi(api.firmwareSummary, [] as FirmwareSummary[]),
-        safeApi(api.mediaInventory, null),
         safeApi(api.firmwareCompliance, null),
         safeApi(api.firmwareFileSelections, null)
       ]);
       setFirmwareSummaries(Array.isArray(nextSummaries) ? nextSummaries : []);
-      setMedia(nextMedia);
       setCompliance(nextCompliance);
-      setFileSelections(nextSelections);
       setSelectedFiles(nextSelections?.selected_files ?? {});
     } catch (err) {
       setError(errorMessage(err));
     } finally {
       setLoading(false);
-    }
-  }
-
-  async function saveFileSelection(componentId: string, fileName: string) {
-    const nextSelections = nextFirmwareFileSelections(selectedFiles, componentId, fileName);
-    setSelectedFiles(nextSelections);
-    setSelectionError("");
-    setSavingSelection(true);
-    try {
-      const saved = await api.saveFirmwareFileSelections({ selected_files: nextSelections });
-      setFileSelections(saved);
-      setSelectedFiles(saved.selected_files);
-    } catch (err) {
-      setSelectionError(errorMessage(err));
-    } finally {
-      setSavingSelection(false);
     }
   }
 
@@ -4010,7 +3988,6 @@ export function OperatorFirmwareUpgradesPage({ labProfileState }: OperatorPagePr
     ...firmwareSummaries.map((summary) => summary.compliance_status || summary.path_status || "not_checked")
   ]);
   const rows = firmwareRows(firmwareSummaries, compliance, selectedFiles);
-  const files = firmwareFilesInfo(media, compliance);
 
   async function planUpgrade() {
     const action = actions.find((candidate) => candidate.action_id === "firmware.upgrade-plan");
@@ -4043,9 +4020,7 @@ export function OperatorFirmwareUpgradesPage({ labProfileState }: OperatorPagePr
       <Feedback loading={false} error={selectionError} />
       <FirmwareSimpleTable
         actions={actions}
-        onFileSelection={saveFileSelection}
         rows={rows}
-        savingSelection={savingSelection}
         selectedFiles={selectedFiles}
         onPlanUpgrade={planUpgrade}
       />
@@ -4056,17 +4031,13 @@ export function OperatorFirmwareUpgradesPage({ labProfileState }: OperatorPagePr
 
 function FirmwareSimpleTable({
   actions,
-  onFileSelection,
   onPlanUpgrade,
   rows,
-  savingSelection,
   selectedFiles
 }: {
   actions: WorkflowAction[];
-  onFileSelection: (componentId: string, fileName: string) => void;
   onPlanUpgrade: () => Promise<void>;
   rows: FirmwareTableRow[];
-  savingSelection: boolean;
   selectedFiles: Record<string, string>;
 }) {
   const [decisions, setDecisions] = useState<Record<string, "upgrade" | "bypass">>({});
@@ -4089,7 +4060,7 @@ function FirmwareSimpleTable({
           <span className="operator-kicker">Firmware decisions</span>
           <h2>What should each device be?</h2>
         </div>
-        <span className="firmware-simple-status">{rows.filter((row) => row.pathStatus === "current").length} current - {rows.length} devices</span>
+        <span className="firmware-simple-status">{firmwareDecisionSummary(rows)}</span>
       </div>
       <div className="firmware-simple-table-wrap">
         <table className="firmware-simple-table">
@@ -4102,8 +4073,8 @@ function FirmwareSimpleTable({
               const current = row.current || "Not checked";
               const target = row.target || "Not set";
               const currentState = row.pathStatus === "current";
-              const canUpgrade = !currentState && row.pathStatus !== "scan_needed" && Boolean(row.selectedFileName || selectedFiles[row.componentId]) && hasPlanAction;
-              const reason = currentState ? "Already current" : row.disabledReason || (row.pathStatus === "scan_needed" ? "Check versions first" : "Choose a matching file");
+              const canUpgrade = !currentState && row.pathStatus !== "scan_needed" && hasPlanAction;
+              const reason = firmwareDecisionReason(row, currentState);
               return (
                 <tr key={row.componentId}>
                   <td>
@@ -4114,27 +4085,14 @@ function FirmwareSimpleTable({
                   </td>
                   <td className="firmware-version">{current}</td>
                   <td>
-                    <div className="firmware-target-version"><strong>{target}</strong><small>{currentState ? "Already current" : row.pathStatus === "scan_needed" ? "Scan to compare" : "Upgrade available"}</small></div>
+                    <div className="firmware-target-version"><strong>{target}</strong><small>{reason}</small></div>
                   </td>
                   <td>
-                    {decision ? (
-                      <div className="firmware-decision-pill">
-                        <span>{decision === "upgrade" ? "Upgrade planned" : "Bypassed - left as-is"}</span>
-                        <button onClick={() => setDecisions((previous) => { const next = { ...previous }; delete next[row.componentId]; return next; })} type="button">Undo</button>
-                      </div>
-                    ) : (
-                      <div className="firmware-row-actions">
-                        <button className="firmware-upgrade-button" disabled={!canUpgrade} onClick={() => { setDecisions((previous) => ({ ...previous, [row.componentId]: "upgrade" })); void onPlanUpgrade(); }} title={canUpgrade ? "Create the guarded upgrade plan" : reason} type="button">Upgrade</button>
-                        <button className="firmware-bypass-button" onClick={() => setDecisions((previous) => ({ ...previous, [row.componentId]: "bypass" }))} type="button">Bypass</button>
-                      </div>
-                    )}
-                    {!decision && !canUpgrade && <small className="firmware-row-reason">{reason}</small>}
-                    {!currentState && (
-                      <select aria-label={`${row.equipment} ${row.component} firmware file`} disabled={savingSelection} onChange={(event) => onFileSelection(row.componentId, event.target.value)} value={selectedFiles[row.componentId] ?? row.selectedFileName}>
-                        <option value="">Choose file</option>
-                        {row.candidateFiles.map((candidate) => <option key={`${row.componentId}-${candidate.file_name}`} value={candidate.file_name}>{candidate.file_name}</option>)}
-                      </select>
-                    )}
+                    <div className="firmware-row-actions">
+                      <button aria-pressed={decision === "upgrade"} className="firmware-upgrade-button" disabled={!canUpgrade} onClick={() => { setDecisions((previous) => ({ ...previous, [row.componentId]: "upgrade" })); void onPlanUpgrade(); }} title={canUpgrade ? "Start guarded upgrade planning" : "Upgrade unavailable"} type="button">Upgrade</button>
+                      <button aria-pressed={decision === "bypass"} className="firmware-bypass-button" onClick={() => setDecisions((previous) => ({ ...previous, [row.componentId]: "bypass" }))} type="button">Bypass</button>
+                    </div>
+                    {decision && <small className="firmware-decision-state">{decision === "upgrade" ? "Upgrade planned" : "Bypassed"}</small>}
                   </td>
                 </tr>
               );
@@ -4144,6 +4102,16 @@ function FirmwareSimpleTable({
       </div>
     </section>
   );
+}
+
+function firmwareDecisionReason(row: FirmwareTableRow, current: boolean): string {
+  if (current) return "Already current";
+  if (row.pathStatus === "scan_needed") return "Check versions first";
+  const raw = row.disabledReason.trim();
+  if (!raw) return "Upgrade available";
+  if (/missing target|baseline/i.test(raw)) return "Target not set";
+  if (/manual review/i.test(raw)) return "Review baseline";
+  return humanize(raw.replace(/[.:]+$/, "")).slice(0, 52);
 }
 
 function RunCheckButton({
@@ -15541,9 +15509,26 @@ function firmwareRows(
       rebootRequired: Boolean(path.reboot_required),
       selectedFileName,
       selectionSource: selectedOverride !== undefined ? "user" : path.selection_source ?? (selectedFileName ? "auto" : "none"),
-      target: displayValue(path.target_version ?? selectedFileName ?? path.package_name ?? "Review required")
+      target: cleanFirmwareTargetVersion(path.target_version, selectedFileName || path.package_name || "")
     }];
   });
+}
+
+function firmwareDecisionSummary(rows: FirmwareTableRow[]): string {
+  const upgrades = rows.filter((row) => ["ready_to_upgrade", "upgrade_available"].includes(row.pathStatus)).length;
+  const current = rows.filter((row) => row.pathStatus === "current").length;
+  const notChecked = rows.filter((row) => row.pathStatus === "scan_needed").length;
+  return `${upgrades} upgrades available - ${current} current - ${notChecked} not checked`;
+}
+
+function cleanFirmwareTargetVersion(target: unknown, packageName: string): string {
+  const rawTarget = displayValue(target);
+  if (/^\d+(?:\.\d+){1,4}$/.test(rawTarget)) return rawTarget;
+  const rawVersion = rawTarget.match(/\d+(?:\.\d+){1,3}/)?.[0];
+  if (rawVersion) return rawVersion;
+  const versionSource = packageName || rawTarget;
+  const match = versionSource.match(/(?:^|[_-])(\d+\.\d+(?:\.\d+){1,3})(?=[._-]|$)/);
+  return match?.[1] ?? "Not set";
 }
 
 function firmwareUpgradePaths(
