@@ -948,50 +948,297 @@ export function OperatorOverviewPage({
 export function OperatorLabDefaultsPage({ labProfileState, onReloadLabProfile }: OperatorPageProps) {
   const activeProfile = activeLabProfile(labProfileState);
   const address = activeAddressPlan(activeProfile);
-  const features = activeProfile?.features ?? null;
   const global = activeProfile?.global_settings ?? null;
-  const expectedDevices = [
-    ["Cisco Switch", true, displayAddress(address.cisco_management)],
-    ["HPE Gen10 compute + iLO", true, displayAddress(address.ilo)],
-    ["Storage · NetApp", Boolean(features?.netapp_enabled), displayAddress(address.netapp_cluster_mgmt)],
-    ["vCenter", Boolean(features?.vcenter_enabled), displayAddress(activeProfile?.devices?.vcenter)]
-  ] as const;
+  const profileKey = `${activeProfile?.id ?? "none"}:${activeProfile?.version ?? 0}:${activeProfile?.source ?? "missing"}`;
+  const [edit, setEdit] = useState<SettingsProfileEditState>(() => settingsProfileEditStateFrom(activeProfile));
+  const [deviceToggles, setDeviceToggles] = useState<Record<string, boolean>>(() => labDefaultsDeviceToggles(activeProfile));
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
+  const expectedDevices = labDefaultsDeviceRows(activeProfile, deviceToggles);
+  const usernameSaved = false;
+  const passwordSaved = false;
+
+  useEffect(() => {
+    setEdit(settingsProfileEditStateFrom(activeProfile));
+    setDeviceToggles(labDefaultsDeviceToggles(activeProfile));
+    setAdvancedOpen(false);
+    setError("");
+    setMessage("");
+  }, [profileKey, activeProfile]);
+
+  function update<K extends keyof SettingsProfileEditState>(key: K, value: SettingsProfileEditState[K]) {
+    setEdit((current) => ({ ...current, [key]: value }));
+  }
+
+  function toggleDevice(deviceId: string) {
+    setDeviceToggles((current) => {
+      const nextIncluded = !current[deviceId];
+      if (deviceId === "vcenter") {
+        setEdit((editCurrent) => ({ ...editCurrent, enableVcenter: nextIncluded }));
+      }
+      return { ...current, [deviceId]: nextIncluded };
+    });
+  }
+
+  async function saveDefaults(event: FormEvent) {
+    event.preventDefault();
+    if (!activeProfile) {
+      setError("Load the active lab setup before saving defaults.");
+      return;
+    }
+    setBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      const payload = labDefaultsProfilePayload(activeProfile, edit, deviceToggles);
+      if (activeProfile.source === "saved") {
+        await api.updateLabProfile(activeProfile.id, payload);
+      } else {
+        const saved = await api.createLabProfile(payload);
+        await api.activateLabProfile(saved.id);
+      }
+      await (onReloadLabProfile ?? (async () => {}))();
+      setMessage("Lab defaults saved.");
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <OperatorPage title="Lab Defaults">
       <div className="operator-surface-heading">
         <p className="operator-kicker">Setup</p>
         <h1>Lab Defaults</h1>
-        <p>Shared values this kit reuses everywhere. Set them once instead of repeating them on each device page.</p>
+        <p>Shared values this kit reuses everywhere: the network, sign-ins, and which devices are expected.</p>
       </div>
-      <div className="lab-defaults-grid">
-        <Card className="lab-defaults-network-card" hover={false}>
-          <CardHeader><div><h2>Network</h2><p className="muted">The address range every device in this kit lives on.</p></div><StatusBadge label={activeProfile ? "Saved" : "Not set"} status={activeProfile ? "ready" : "not-configured"} /></CardHeader>
-          <CardContent>
-            <dl className="lab-defaults-facts">
-              <div><dt>Subnet</dt><dd>{displayAddress(address.subnet)}</dd></div>
-              <div><dt>Gateway</dt><dd>{displayAddress(global?.gateway)}</dd></div>
-              <div><dt>DNS server</dt><dd>{displayAddress(global?.dns_servers?.[0])}</dd></div>
-            </dl>
-          </CardContent>
-        </Card>
-        <SettingsGlobalProfilePanel activeProfile={activeProfile} onSaved={onReloadLabProfile ?? (async () => {})} />
-      </div>
+      <form className="lab-defaults-form" onSubmit={saveDefaults}>
+        <div className="lab-defaults-grid">
+          <Card aria-label="Network defaults" className="lab-defaults-network-card" hover={false}>
+            <CardHeader>
+              <div>
+                <h2>Network</h2>
+                <p className="muted">The address range every device in this kit lives on.</p>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <dl className="lab-defaults-facts">
+                <div>
+                  <dt>Subnet</dt>
+                  <dd><span>{displayAddress(address.subnet)}</span><StatusBadge {...labDefaultsValueStatus(address.subnet)} /></dd>
+                </div>
+                <div>
+                  <dt>Gateway</dt>
+                  <dd><span>{displayAddress(global?.gateway)}</span><StatusBadge {...labDefaultsValueStatus(global?.gateway)} /></dd>
+                </div>
+                <div>
+                  <dt>DNS server</dt>
+                  <dd><span>{displayAddress(global?.dns_servers?.[0])}</span><StatusBadge {...labDefaultsValueStatus(global?.dns_servers?.[0])} /></dd>
+                </div>
+              </dl>
+              <label className="lab-defaults-select-field">
+                <span>Storage protocol</span>
+                <select
+                  aria-label="Storage protocol"
+                  disabled={busy || !activeProfile}
+                  onChange={(event) => update("storageProtocol", event.target.value)}
+                  value={labDefaultsStorageProtocolValue(edit.storageProtocol)}
+                >
+                  <option value="nfs">NFS</option>
+                  <option value="iscsi">iSCSI</option>
+                  <option value="local">Local</option>
+                </select>
+              </label>
+            </CardContent>
+          </Card>
+          <Card aria-label="Shared sign-in" className="lab-defaults-signin-card" hover={false}>
+            <CardHeader>
+              <div>
+                <h2>Shared sign-in</h2>
+                <p className="muted">Reused when a device doesn't have its own. Enter the actual password on the device page, not here.</p>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <dl className="lab-defaults-facts">
+                <div>
+                  <dt>Username</dt>
+                  <dd><span>{usernameSaved ? "saved reference" : "set on device page"}</span><StatusBadge {...labDefaultsBooleanStatus(usernameSaved)} /></dd>
+                </div>
+                <div>
+                  <dt>Password</dt>
+                  <dd><span className="lab-defaults-secret-placeholder">{passwordSaved ? "******" : "not set"}</span><StatusBadge {...labDefaultsBooleanStatus(passwordSaved)} /></dd>
+                </div>
+              </dl>
+            </CardContent>
+          </Card>
+        </div>
+        {error && <div className="operator-feedback error lab-defaults-feedback">{error}</div>}
+        {message && <div className="operator-feedback lab-defaults-feedback">{message}</div>}
+        <div className="lab-defaults-actions">
+          <button className="operator-primary-button" disabled={busy || !activeProfile} type="submit">
+            <Save size={16} />
+            {busy ? "Saving" : "Save defaults"}
+          </button>
+        </div>
+      </form>
       <Card className="lab-defaults-devices-card" hover={false}>
         <CardHeader><div><h2>Expected devices</h2><p className="muted">Turn a device off here and it disappears from the map and the build.</p></div></CardHeader>
         <CardContent>
-          <div className="lab-defaults-device-list">
-            {expectedDevices.map(([name, enabled, target]) => (
-              <div className="lab-defaults-device-row" key={name}>
-                <span className={`device-presence-dot ${enabled ? "on" : "off"}`} />
-                <div><strong>{name}</strong><small>{target}</small></div>
-                <span className={`lab-defaults-device-state ${enabled ? "enabled" : "disabled"}`}>{enabled ? "Included" : "Not included"}</span>
+          <div className="lab-defaults-device-list" aria-label="Expected devices">
+            {expectedDevices.map((device) => (
+              <div className="lab-defaults-device-row" key={device.id}>
+                <span className={`device-presence-dot ${device.enabled ? "on" : "off"}`} />
+                <div>
+                  <strong>{device.name}</strong>
+                  <small>{device.detail} - {device.target}</small>
+                </div>
+                <span className={`lab-defaults-device-state ${device.enabled ? "enabled" : "disabled"}`}>{device.enabled ? "Included" : "Not included"}</span>
+                <button
+                  aria-checked={device.enabled}
+                  aria-label={`Toggle ${device.name}`}
+                  className={`lab-defaults-device-toggle ${device.enabled ? "enabled" : "disabled"}`}
+                  onClick={() => toggleDevice(device.id)}
+                  role="switch"
+                  type="button"
+                >
+                  <span />
+                </button>
               </div>
             ))}
           </div>
         </CardContent>
       </Card>
+      <details className="lab-defaults-advanced" onToggle={(event) => setAdvancedOpen(event.currentTarget.open)} open={advancedOpen}>
+        <summary>Advanced</summary>
+        {advancedOpen && (
+          <form aria-label="Advanced lab default fields" className="lab-defaults-advanced-form" onSubmit={saveDefaults}>
+            <div className="lab-defaults-advanced-grid">
+              <Field label="Setup name">
+                <input disabled={busy || !activeProfile} onChange={(event) => update("name", event.target.value)} value={edit.name} />
+              </Field>
+              <Field label="Description">
+                <input disabled={busy || !activeProfile} onChange={(event) => update("description", event.target.value)} value={edit.description} />
+              </Field>
+              <Field label="Domain">
+                <input disabled={busy || !activeProfile} onChange={(event) => update("domainName", event.target.value)} value={edit.domainName} />
+              </Field>
+              <Field label="Timezone">
+                <input disabled={busy || !activeProfile} onChange={(event) => update("timezone", event.target.value)} value={edit.timezone} />
+              </Field>
+            </div>
+            <div className="network-config-toggles lab-defaults-feature-toggles" aria-label="Global profile feature toggles">
+              <label><input checked={edit.enableDns} disabled={busy || !activeProfile} onChange={(event) => update("enableDns", event.target.checked)} type="checkbox" /><span>DNS</span></label>
+              <label><input checked={edit.enableNtp} disabled={busy || !activeProfile} onChange={(event) => update("enableNtp", event.target.checked)} type="checkbox" /><span>NTP</span></label>
+              <label><input checked={edit.enableSnmp} disabled={busy || !activeProfile} onChange={(event) => update("enableSnmp", event.target.checked)} type="checkbox" /><span>SNMP</span></label>
+              <label><input checked={!edit.disableIpv6} disabled={busy || !activeProfile} onChange={(event) => update("disableIpv6", !event.target.checked)} type="checkbox" /><span>Allow IPv6</span></label>
+              <label><input checked={edit.blockLegacyProtocols} disabled={busy || !activeProfile} onChange={(event) => update("blockLegacyProtocols", event.target.checked)} type="checkbox" /><span>Block legacy protocols</span></label>
+              <label><input checked={edit.enableVcenter} disabled={busy || !activeProfile} onChange={(event) => update("enableVcenter", event.target.checked)} type="checkbox" /><span>vCenter in scope</span></label>
+            </div>
+            <div className="lab-defaults-advanced-actions">
+              <button className="secondary-button" disabled={busy || !activeProfile} type="submit">
+                {busy ? "Saving" : "Save advanced defaults"}
+              </button>
+            </div>
+          </form>
+        )}
+      </details>
     </OperatorPage>
   );
+}
+
+function labDefaultsStorageProtocolValue(value: string): string {
+  if (value === "none") return "local";
+  return value || "nfs";
+}
+
+function labDefaultsValueStatus(value: unknown): { label: string; status: StatusBadgeStatus } {
+  const text = asString(value);
+  return text ? { label: "Saved", status: "ready" } : { label: "Not set", status: "not-configured" };
+}
+
+function labDefaultsBooleanStatus(value: boolean): { label: string; status: StatusBadgeStatus } {
+  return value ? { label: "Saved", status: "ready" } : { label: "Not set", status: "not-configured" };
+}
+
+function labDefaultsDeviceToggles(profile: LabProfile | null): Record<string, boolean> {
+  const address = activeAddressPlan(profile);
+  return {
+    cisco: Boolean(profile && (profile.devices?.cisco ?? address.cisco_management)),
+    netapp: Boolean(profile?.features?.netapp_enabled ?? profile?.global_settings?.netapp_enabled),
+    server: Boolean(profile && (profile.devices?.ilo ?? profile.devices?.esxi ?? address.ilo ?? address.esxi_management)),
+    vcenter: Boolean(profile?.features?.vcenter_enabled ?? profile?.global_settings?.vcenter_enabled)
+  };
+}
+
+function labDefaultsDeviceRows(profile: LabProfile | null, toggles: Record<string, boolean>) {
+  const address = activeAddressPlan(profile);
+  return [
+    {
+      detail: "C9300 - L3 core",
+      enabled: Boolean(toggles.cisco),
+      id: "cisco",
+      name: "Cisco Switch",
+      target: displayAddress(address.cisco_management)
+    },
+    {
+      detail: "ESXi compute + iLO",
+      enabled: Boolean(toggles.server),
+      id: "server",
+      name: "HPE Gen10 compute + iLO",
+      target: displayAddress(address.ilo)
+    },
+    {
+      detail: "Storage - NetApp",
+      enabled: Boolean(toggles.netapp),
+      id: "netapp",
+      name: "NetApp ONTAP",
+      target: displayAddress(address.netapp_cluster_mgmt)
+    },
+    {
+      detail: "VM management",
+      enabled: Boolean(toggles.vcenter),
+      id: "vcenter",
+      name: "vCenter",
+      target: displayAddress(profile?.devices?.vcenter)
+    }
+  ];
+}
+
+function labDefaultsProfilePayload(profile: LabProfile, edit: SettingsProfileEditState, toggles: Record<string, boolean>): LabProfileWrite {
+  const address = activeAddressPlan(profile);
+  const payload = settingsProfilePayload(profile, edit);
+  const netappEnabled = Boolean(toggles.netapp);
+  const vcenterEnabled = Boolean(toggles.vcenter);
+  const ciscoEnabled = Boolean(toggles.cisco);
+  const serverEnabled = Boolean(toggles.server);
+  return {
+    ...payload,
+    devices: {
+      ...payload.devices,
+      cisco: ciscoEnabled ? profile.devices?.cisco ?? address.cisco_management : null,
+      esxi: serverEnabled ? profile.devices?.esxi ?? address.esxi_management : null,
+      ilo: serverEnabled ? profile.devices?.ilo ?? address.ilo : null,
+      netapp: netappEnabled ? profile.devices?.netapp ?? null : null,
+      vcenter: vcenterEnabled ? profile.devices?.vcenter ?? null : null
+    },
+    features: {
+      ...profile.features,
+      ...payload.features,
+      netapp_disabled_reason: netappEnabled ? null : "NetApp is disabled by Lab Defaults.",
+      netapp_enabled: netappEnabled,
+      vcenter_disabled_reason: vcenterEnabled ? null : "vCenter is disabled by Lab Defaults.",
+      vcenter_enabled: vcenterEnabled
+    },
+    global_settings: {
+      ...payload.global_settings,
+      netapp_disabled_reason: netappEnabled ? null : "NetApp is disabled by Lab Defaults.",
+      netapp_enabled: netappEnabled,
+      vcenter_enabled: vcenterEnabled
+    }
+  };
 }
 
 function OverviewResetRebuildLink() {

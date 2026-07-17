@@ -260,6 +260,46 @@ test("renders the map-first operator spine and pages", async ({ page }) => {
   await expect(page).toHaveURL(/\/overview/);
 });
 
+test("lab defaults keeps shared values simple and hides advanced policy by default", async ({ page }) => {
+  await page.goto("/lab-defaults");
+
+  await expect(page.getByRole("heading", { name: "Lab Defaults", exact: true })).toBeVisible();
+  const network = page.getByLabel("Network defaults");
+  await expect(network.getByRole("heading", { name: "Network" })).toBeVisible();
+  await expect(network.getByLabel("Storage protocol")).toBeVisible();
+  await expect(network).toContainText("Subnet");
+  await expect(network).toContainText("Gateway");
+  await expect(network).toContainText("DNS server");
+
+  const signIn = page.getByLabel("Shared sign-in");
+  await expect(signIn.getByRole("heading", { name: "Shared sign-in" })).toBeVisible();
+  await expect(signIn).toContainText("Username");
+  await expect(signIn).toContainText("Password");
+  await expect(signIn).toContainText("Enter the actual password on the device page, not here.");
+  await expect(signIn).not.toContainText("P@ssw0rd");
+  await expect(signIn.locator("input[type='password']")).toHaveCount(0);
+
+  await expect(page.locator(".lab-defaults-actions .operator-primary-button")).toHaveCount(1);
+  await expect(page.locator(".lab-defaults-actions .operator-primary-button")).toContainText("Save defaults");
+  await expect(page.getByRole("heading", { name: "Shared profile policy" })).toHaveCount(0);
+  await expect(page.getByText("Setup name")).toHaveCount(0);
+  await expect(page.getByText("Allow IPv6")).toHaveCount(0);
+
+  const devices = page.getByLabel("Expected devices");
+  await expect(devices.getByRole("switch")).toHaveCount(4);
+  const ciscoToggle = devices.getByRole("switch", { name: "Toggle Cisco Switch" });
+  await expect(ciscoToggle).toHaveAttribute("aria-checked", "true");
+  await ciscoToggle.click();
+  await expect(ciscoToggle).toHaveAttribute("aria-checked", "false");
+  await expect(devices.locator(".lab-defaults-device-row").filter({ hasText: "Cisco Switch" })).toContainText("Not included");
+
+  await page.locator(".lab-defaults-advanced summary").click();
+  await expect(page.getByLabel("Advanced lab default fields")).toBeVisible();
+  await expect(page.getByLabel("Global profile feature toggles")).toContainText("Allow IPv6");
+  await expect(page.locator(".lab-defaults-advanced .operator-primary-button")).toHaveCount(0);
+  await expect(page.locator(".lab-defaults-advanced .secondary-button")).toHaveCount(1);
+});
+
 test("operator home answers the next action without dashboard clutter", async ({ page }) => {
   await page.goto("/overview");
 
