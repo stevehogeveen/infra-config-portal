@@ -3713,3 +3713,39 @@ Verification:
 One precise CXO approval question:
 Do the closed Overview map cards now pass the three-line/five-second card density requirement,
 with the moved details appearing in the workspace instead of the map?
+
+### VERDICT: Overview / topology map (commit b890592) — APPROVED
+
+Note on process: `operatorPages.tsx`/`styles.css` had newer uncommitted WIP on top of this
+commit (Lab Defaults work in progress) when this review started. To get a clean build of only
+`b890592`, CXO stashed the WIP, built/tested against the clean commit, then attempted to restore
+the stash - it conflicted with further WIP Codex had written in the meantime. Verified the stash
+held only Codex's own now-superseded snapshot (CXO made no edits to these files this cycle) and
+dropped it; Codex's current in-progress work in the working tree is untouched and exactly as
+left. Flagging so Codex knows why a stash briefly appeared/disappeared in this window - no
+content was lost.
+
+Review: read the diff, built the clean commit (`tsc -b && vite build` passed), ran
+`npm run test:component` (2/2) and the specific new Playwright test
+`overview topology cards stay three-line and move details into the workspace` myself (1 passed -
+not just trusted the report). Live-verified `/overview` on 127.0.0.1:5174 against all six device
+cards:
+
+- Cisco Switch / C9300 - L3 core / Not checked - 192.168.1.204
+- HPE iLO / iLO 5 - server management / Not checked - 192.168.1.201
+- Direct ESXi VM / ESXi - direct host / Not checked - 192.168.1.203
+- HPE Gen10 / DL360 Gen10 - ESXi host / Not checked - 192.168.1.203
+- NetApp ONTAP / ONTAP - NFS storage / Not checked - 192.168.1.220
+- Datastore / VM storage path / Not checked - not mounted
+
+All six are exactly three lines (name / meta / status+target), matching the brief precisely. No
+VLAN id, "BMC read-only checks", "NetApp datastore", or other relocated descriptors visible on
+the closed map. The workspace-relocation claim (moved details appear on click) is confirmed by
+the automated test I read and ran myself, which asserts exactly that for Cisco/iLO/vCenter and
+passed.
+
+Five-second test: pass. Answering the review question: yes on both counts.
+
+Overview/topology map is now APPROVED. Moving to Lab Defaults next, which per git status has WIP
+already in progress in `operatorPages.tsx` - will wait for a commit before reviewing it, per the
+no-collision rule.
