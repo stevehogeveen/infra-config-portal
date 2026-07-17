@@ -12,6 +12,7 @@ import type {
 export type OperatorHomeDisplayState = "ready" | "needs_attention" | "blocked" | "not_checked";
 
 export type OperatorHomeDeviceSummaryItem = {
+  Blocked: boolean;
   Detail: string;
   Name: string;
   NeedsAttention: boolean;
@@ -36,7 +37,9 @@ export type OperatorHomeNextAction = {
 };
 
 export type OperatorHomeProgress = {
+  Blocked: number;
   Label: string;
+  NotChecked: number;
   Ready: number;
   Total: number;
 };
@@ -78,6 +81,8 @@ export function buildOperatorHomeModel({
   const deviceSummary = buildDeviceSummary({ address, features, firmwareSummaries, providers, validation, vcenterNetapp });
   const attentionItems = buildAttentionItems({ firmwareSummaries, profile, validation });
   const readyCount = deviceSummary.filter((item) => !item.NeedsAttention).length;
+  const blockedCount = deviceSummary.filter((item) => item.Blocked).length;
+  const notCheckedCount = Math.max(0, deviceSummary.length - readyCount - blockedCount);
   const totalCount = Math.max(deviceSummary.length, 1);
   const displayState = operatorDisplayState({ attentionItems, buildVerification, validation });
   const headline = operatorHeadline({ attentionItems, displayState, profile });
@@ -104,7 +109,9 @@ export function buildOperatorHomeModel({
       Target: profile ? "build" : "details"
     },
     Progress: {
+      Blocked: blockedCount,
       Label: `${readyCount} of ${totalCount} devices ready`,
+      NotChecked: notCheckedCount,
       Ready: readyCount,
       Total: totalCount
     }
@@ -215,6 +222,7 @@ function deviceSummaryRow({
   target: string;
 }): OperatorHomeDeviceSummaryItem {
   return {
+    Blocked: statusIsBlocking(status),
     Detail: detail || "No detail available yet",
     Name: name,
     NeedsAttention: !statusIsHealthy(status),
@@ -404,6 +412,10 @@ function strongestStatus(statuses: string[]): string {
 
 function statusIsHealthy(status: string): boolean {
   return ["accessible", "ready", "ok", "completed", "passed", "success", "current"].includes((status || "").toLowerCase());
+}
+
+function statusIsBlocking(status: string): boolean {
+  return ["blocked", "failed", "critical", "hard_fail", "error"].includes((status || "").toLowerCase());
 }
 
 function displayStatus(status: string): string {

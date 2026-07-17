@@ -17,10 +17,9 @@ export function OperatorHomeView({
   onPrimaryAction: () => void;
   onViewDetails: () => void;
 }) {
-  const attentionDevices = model.DeviceSummary.filter((item) => item.NeedsAttention);
   const total = Math.max(0, model.Progress.Total);
   const ready = Math.max(0, Math.min(model.Progress.Ready, total));
-  const blocked = Math.max(0, Math.min(attentionDevices.length, total - ready));
+  const blocked = Math.max(0, Math.min(model.Progress.Blocked, total - ready));
   const unchecked = Math.max(0, total - ready - blocked);
   const pct = (n: number) => (total > 0 ? `${(n / total) * 100}%` : "0%");
   const stateTone = model.DisplayState === "ready" ? "ready" : blocked > 0 ? "blocked" : "attention";
