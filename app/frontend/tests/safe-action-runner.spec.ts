@@ -324,6 +324,45 @@ test("map-first overview makes the topology the home surface", async ({ page }) 
   await expect(rail).not.toContainText(/provider|runtime|payload/i);
 });
 
+test("overview topology cards stay three-line and move details into the workspace", async ({ page }) => {
+  await page.goto("/overview");
+  await openOperatorDetails(page);
+
+  const topology = page.locator("section[aria-label='Living lab topology']");
+  const zonedMap = topology.getByLabel("Zoned lab map");
+  const cards = topology.locator(".topology-orbit-node .topology-node");
+  await expect(cards).toHaveCount(6);
+
+  for (let index = 0; index < 6; index += 1) {
+    const card = cards.nth(index);
+    await expect(card.locator(":scope > .topology-node-title")).toHaveCount(1);
+    await expect(card.locator(":scope > .topology-node-details")).toHaveCount(1);
+    await expect(card.locator(":scope > .topology-node-status-row")).toHaveCount(1);
+    await expect(card.locator(":scope > .topology-node-faceplate")).toHaveCount(0);
+    await expect(card.locator(":scope > .topology-node-chips")).toHaveCount(0);
+  }
+
+  await expect(zonedMap).not.toContainText("BMC read-only checks");
+  await expect(zonedMap).not.toContainText("Direct host management");
+  await expect(zonedMap).not.toContainText("direct host path");
+  await expect(zonedMap).not.toContainText("NetApp datastore");
+  await expect(zonedMap).not.toContainText("VLAN 220");
+
+  await topology.getByRole("button", { name: "Open Cisco switch workspace" }).click();
+  let overlay = page.locator("div[aria-label='Device workspace overlay']");
+  await expect(overlay.getByLabel("Cisco switch map details")).toContainText("VLAN 220");
+  await overlay.getByRole("button", { name: "Close" }).click();
+
+  await topology.getByRole("button", { name: "Open HPE iLO workspace" }).click();
+  overlay = page.locator("div[aria-label='Device workspace overlay']");
+  await expect(overlay.getByLabel("HPE iLO map details")).toContainText("BMC read-only checks");
+  await overlay.getByRole("button", { name: "Close" }).click();
+
+  await topology.getByRole("button", { name: "Open vCenter VCSA workspace" }).click();
+  overlay = page.locator("div[aria-label='Device workspace overlay']");
+  await expect(overlay.getByLabel("vCenter VCSA map details")).toContainText("NetApp datastore");
+});
+
 test("operator home opens one ordered build plan with one primary action", async ({ page }) => {
   await page.goto("/overview");
   const latestRequest = page.waitForRequest((request) => request.url().includes("/api/v1/lab-build/runs/latest"));
@@ -439,7 +478,7 @@ test("operator details opens proof without hiding the map", async ({ page }) => 
   await expect(topology.getByLabel("Zoned lab map")).toContainText("Management");
   await expect(topology.getByLabel("Zoned lab map")).toContainText("Storage & compute");
   await expect(topology.getByLabel("Zoned lab map")).toContainText("vCenter");
-  await expect(topology.getByLabel("Zoned lab map")).toContainText("Cisco C9300 L3 Core");
+  await expect(topology.getByLabel("Zoned lab map")).toContainText("Cisco Switch");
   await expect(topology.getByLabel("Zoned lab map")).toContainText("HPE Gen10");
   await expect(topology.getByLabel("Zoned lab map")).toContainText("NetApp ONTAP");
   await expect(topology.getByLabel("Current lab links")).toContainText(/NFS 10G path|iSCSI 10G planned/);
@@ -492,7 +531,7 @@ test("zoned map opens the device workspace directly", async ({ page }) => {
   const topologyNextAction = topology.locator(".lab-topology-footer");
   await expect(topologyNextAction).not.toContainText(/Open (Storage|Network|Server|Virtualization)/);
   const vcenterNode = topology.getByRole("button", { name: "Open vCenter VCSA workspace" });
-  await expect(vcenterNode).toContainText("Central management");
+  await expect(vcenterNode).toContainText("VCSA - VM management");
   await expect(vcenterNode).not.toContainText("direct ESXi inventory");
   await expect(vcenterNode).not.toContainText("created by this app");
   const ciscoNode = topology.getByRole("button", { name: "Open Cisco switch workspace" });
@@ -673,7 +712,7 @@ test("zoned map makes single-server local RAID mode unmistakable", async ({ page
   await expect(map.getByLabel("Local RAID mode summary")).toContainText("Server-local RAID is the storage fabric");
   await expect(map).toContainText("HPE Gen10");
   await expect(map).toContainText("HPE iLO");
-  await expect(map).toContainText("Cisco C9300 L3 Core");
+  await expect(map).toContainText("Cisco Switch");
   await expect(map).not.toContainText("NetApp ONTAP");
   await expect(map.getByRole("button", { name: "Open vCenter VCSA workspace" })).toHaveCount(0);
   await expect(map).not.toContainText("Local ESXi datastore");
@@ -847,7 +886,7 @@ test("overview design mode keeps the surface map-only until a node opens the wor
   await expect(page.locator("section[aria-label='Design topology blueprint']")).toHaveCount(0);
   await expect(topology.getByLabel("Map viewport controls")).toHaveCount(0);
   await expect(topology.getByRole("button", { name: "Fit map to viewport" })).toHaveCount(0);
-  await expect(topology.getByLabel("Zoned lab map")).toContainText("Cisco C9300 L3 Core");
+  await expect(topology.getByLabel("Zoned lab map")).toContainText("Cisco Switch");
   await expect(topology.getByLabel("Management zone devices")).toContainText("HPE iLO");
   await expect(topology.getByLabel("Storage fabric zone devices")).toContainText("HPE Gen10");
   await expect(topology.getByLabel("Storage fabric zone devices")).toContainText("NetApp ONTAP");
@@ -910,7 +949,7 @@ test("overview design mode map surface stays stable and scalable", async ({ page
   const map = page.locator("div[aria-label='Zoned lab map']");
   await expect(map).toBeVisible();
   await expect(page.locator("section[aria-label='Design topology blueprint']")).toHaveCount(0);
-  await expect(map).toContainText("Cisco C9300 L3 Core");
+  await expect(map).toContainText("Cisco Switch");
   await expect(map.getByLabel("Management zone devices")).toContainText("HPE iLO");
   await expect(map.getByLabel("Storage fabric zone devices")).toContainText("NetApp ONTAP");
   await expect(map).toHaveScreenshot("overview-design-map.png", {
@@ -926,7 +965,7 @@ test("overview mobile topology keeps zoned device cards visible", async ({ page 
 
   const map = page.locator("div[aria-label='Zoned lab map']");
   await expect(map).toBeVisible();
-  await expect(map).toContainText("Cisco C9300 L3 Core");
+  await expect(map).toContainText("Cisco Switch");
   await expect(map.getByLabel("Management zone devices")).toContainText("HPE iLO");
   await expect(map.getByLabel("Storage fabric zone devices")).toContainText("HPE Gen10");
   await expect(map.getByLabel("Storage fabric zone devices")).toContainText("NetApp ONTAP");

@@ -10634,6 +10634,24 @@ th.ui-compact-table-cell {
   box-shadow: 0 0 0 3px rgba(45, 212, 191, 0.22);
 }
 
+.design-workspace-map-details {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.design-workspace-map-details span {
+  background: #f8fafc;
+  border: 1px solid #dbe4ee;
+  border-radius: 999px;
+  color: #475569;
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 1.1;
+  padding: 6px 9px;
+}
+
 .design-device-primary-action {
   align-items: center;
   display: grid;
@@ -12718,6 +12736,39 @@ button.design-ilo-port:hover {
 
 .topology-node-created .topology-node-dot {
   background: #94a3b8;
+}
+
+.topology-node-status-row {
+  align-items: center;
+  color: #64748b;
+  display: flex;
+  gap: 6px;
+  min-width: 0;
+  padding-left: 40px;
+}
+
+.topology-node-status-row .topology-node-dot {
+  flex: 0 0 auto;
+  position: static;
+}
+
+.topology-node-status-row .topology-node-state {
+  flex: 0 0 auto;
+}
+
+.topology-node-status-row .topology-node-meta {
+  background: transparent;
+  border: 0;
+  color: #64748b;
+  display: inline;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 9.5px;
+  font-weight: 800;
+  min-width: 0;
+  overflow: hidden;
+  padding: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .topology-node-offline {
@@ -17847,12 +17898,16 @@ button.design-ilo-port:hover {
   min-height: 112px;
 }
 
+.map-first-canvas .topology-node-status-row {
+  padding-left: 48px;
+}
+
 .map-first-canvas .topology-node-state {
   color: #64748b;
   font-size: 10px;
   font-weight: 800;
   letter-spacing: 0.08em;
-  padding-left: 48px;
+  padding-left: 0;
   text-transform: uppercase;
 }
 

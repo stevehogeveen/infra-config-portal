@@ -6105,28 +6105,23 @@ function LabTopologyMap({
   const datastoreStatus = topologyStatusFromAccess(accessRows, "Datastore");
   const vmStatus = topologyStatusFromAccess(accessRows, "VM inventory");
   const serverStatus = topologyWorstStatus([iloStatus, esxiStatus]);
-  const firmwareBehind = firmwareSummaries.some((item) => {
-    const status = asString(item.compliance_status) || asString(item.path_status) || asString(item.severity);
-    return ["warning", "blocked"].includes(statusTone(status));
-  });
   const storageProtocol = asString(features?.storage_protocol) || (netappInScope ? "nfs" : "local");
   const datastoreLabel = netappInScope ? datastoreName(vcenterNetapp) : "Local ESXi datastore";
-  const vmName = topologyVmName(vcenterNetapp, vcenterInScope);
   const serverModelLabel = topologyServerModelLabel(activeProfile?.devices?.server_model);
   const nodes: TopologyNode[] = [
     {
-      details: "L3 core switch",
+      details: "C9300 - L3 core",
       icon: topologyIndustryIcon("switch"),
       id: "cisco",
-      meta: firmwareBehind ? "firmware behind" : undefined,
+      meta: displayAddress(address.cisco_management),
       page: "/overview#topology-map",
       status: ciscoStatus,
-      title: "Cisco C9300 L3 Core",
+      title: "Cisco Switch",
       tone: topologyTone(ciscoStatus),
       zone: "management"
     },
     {
-      details: "BMC read-only checks",
+      details: "iLO 5 - server management",
       icon: topologyIndustryIcon("ilo"),
       id: "ilo",
       meta: displayAddress(address.ilo),
@@ -6137,10 +6132,10 @@ function LabTopologyMap({
       zone: "management"
     },
     {
-      details: netappInScope ? "ESXi compute" : "local RAID compute",
+      details: `${serverModelLabel} - ${netappInScope ? "ESXi host" : "local RAID host"}`,
       icon: topologyIndustryIcon("server"),
       id: "server",
-      meta: serverModelLabel,
+      meta: displayAddress(address.esxi_management),
       page: "/overview#topology-map",
       status: serverStatus,
       title: `HPE ${serverModelLabel.replace(/^DL360\s+/i, "")}`,
@@ -6152,7 +6147,7 @@ function LabTopologyMap({
   if (netappInScope) {
     nodes.push(
       {
-        details: topologyNetappOrbitDetails(address, storageProtocol),
+        details: `ONTAP - ${storageProtocol.toUpperCase()} storage`,
         icon: topologyIndustryIcon("netapp"),
         id: "netapp",
         meta: displayAddress(address.netapp_cluster_mgmt),
@@ -6178,13 +6173,13 @@ function LabTopologyMap({
 
   if (vmInScope) {
     nodes.push({
-      details: vcenterInScope ? "Central management" : "Direct host management",
+      details: vcenterInScope ? "VCSA - VM management" : "ESXi - direct host",
       icon: topologyIndustryIcon(vcenterInScope ? "vcenter" : "hypervisor"),
       id: "vcenter",
-      meta: topologyVmMeta(vcenterNetapp, vcenterInScope),
+      meta: topologyVmMapTarget(vcenterNetapp, vcenterInScope, address),
       page: "/overview#topology-map",
       status: vmStatus,
-      title: vcenterInScope ? "vCenter" : vmName,
+      title: vcenterInScope ? "vCenter" : "Direct ESXi VM",
       tone: topologyTone(vmStatus, "created"),
       zone: "management"
     });
@@ -6266,13 +6261,10 @@ function LabTopologyMap({
           <div className="topology-zone-node-flow topology-orbit-node-flow topology-management-orbit" aria-label="Management zone devices">
             {nodes.filter((node) => node.zone === "management").map((node) => (
                 <TopologyMapNodeCard
-                  address={address}
                   className={`topology-orbit-node topology-orbit-${node.id}`}
-                  netappInScope={netappInScope}
                   node={node}
                   onOpenWorkspace={openNodeWorkspace}
                   selected={selectedNodeId === node.id}
-                  storageProtocol={storageProtocol}
                   key={node.id}
                 />
               ))}
@@ -6280,13 +6272,10 @@ function LabTopologyMap({
           <div className="topology-zone-node-flow topology-orbit-node-flow topology-storage-orbit" aria-label={netappInScope ? "Storage fabric zone devices" : "Local RAID zone devices"}>
             {storageOrbitNodes.map((node) => (
                 <TopologyMapNodeCard
-                  address={address}
                   className={`topology-orbit-node topology-orbit-${node.id}`}
-                  netappInScope={netappInScope}
                   node={node}
                   onOpenWorkspace={openNodeWorkspace}
                   selected={selectedNodeId === node.id}
-                  storageProtocol={storageProtocol}
                   key={node.id}
                 />
               ))}
@@ -7599,21 +7588,15 @@ function topologyIndustryIcon(kind: "datastore" | "hypervisor" | "ilo" | "netapp
 }
 
 function TopologyMapNodeCard({
-  address,
   className = "",
-  netappInScope,
   node,
   onOpenWorkspace,
-  selected,
-  storageProtocol
+  selected
 }: {
-  address: LabAddressPlan;
   className?: string;
-  netappInScope: boolean;
   node: TopologyNode;
   onOpenWorkspace: (nodeId: string) => void;
   selected: boolean;
-  storageProtocol: string;
 }) {
   const stableNodeLabel = topologyStableNodeLabel(node.id);
   return (
@@ -7625,18 +7608,11 @@ function TopologyMapNodeCard({
         onClick={() => onOpenWorkspace(node.id)}
         type="button"
       >
-        <span className="topology-node-dot" aria-hidden="true" />
         <span className="topology-node-title">{node.icon}<strong>{node.title}</strong></span>
-        <span className="topology-node-state">{topologyNodeStateLabel(node.tone)}</span>
         <span className="topology-node-details">{node.details}</span>
-        <span className="topology-node-faceplate" aria-hidden="true">
-          <TopologyMiniFaceplate
-            partId={topologyNodeFaceplatePart(node.id, netappInScope)}
-            settings={topologyNodeFaceplateSettings(node.id, address, storageProtocol, netappInScope)}
-            storageProtocol={netappInScope ? storageProtocol : "local"}
-          />
-        </span>
-        <span className="topology-node-chips">
+        <span className="topology-node-status-row">
+          <span className="topology-node-dot" aria-hidden="true" />
+          <span className="topology-node-state">{topologyNodeStateLabel(node.tone)}</span>
           {node.meta && <span className="topology-node-meta">{node.meta}</span>}
         </span>
       </button>
@@ -7679,65 +7655,6 @@ function TopologyCoreButton({
   );
 }
 
-function TopologyMiniFaceplate({
-  partId,
-  settings,
-  storageProtocol
-}: {
-  partId: DesignPartId;
-  settings: Record<string, string>;
-  storageProtocol: string;
-}) {
-  if (partId === "switch") {
-    return (
-      <span className="topology-mini-faceplate">
-        <span className="topology-mini-led" />
-        {Array.from({ length: 10 }, (_, index) => <span className="topology-mini-port" key={index} />)}
-        <span className="topology-mini-chip topology-mini-chip-wide">VLAN {settings.storage_vlan || "220"}</span>
-      </span>
-    );
-  }
-  if (partId === "ilo") {
-    return (
-      <span className="topology-mini-faceplate">
-        <span className="topology-mini-led" />
-        <span className="topology-mini-port" />
-        <span className="topology-mini-chip topology-mini-chip-wide">iLO</span>
-      </span>
-    );
-  }
-  if (partId === "server-gen10" || partId === "server-gen10plus") {
-    const bayCount = clampNumber(parseFirstInteger(settings.drive_bays), 4, 8, 8);
-    return (
-      <span className="topology-mini-faceplate">
-        <span className="topology-mini-led" />
-        {Array.from({ length: bayCount }, (_, index) => <span className="topology-mini-bay" key={index} />)}
-        <span className="topology-mini-chip">{settings.raid_boot || "RAID1"}</span>
-      </span>
-    );
-  }
-  if (partId === "netapp") {
-    const ports = splitFaceplateTokens(settings.controller_ports || "e0a,e0b").slice(0, 2);
-    return (
-      <span className="topology-mini-faceplate">
-        <span className="topology-mini-led" />
-        <span className="topology-mini-chip">A</span>
-        {ports.map((port) => <span className="topology-mini-chip" key={`a-${port}`}>{port}</span>)}
-        <span className="topology-mini-chip">B</span>
-        {ports.map((port) => <span className="topology-mini-chip" key={`b-${port}`}>{port}</span>)}
-        <span className="topology-mini-chip">{storageProtocol.toUpperCase()}</span>
-      </span>
-    );
-  }
-  return (
-    <span className="topology-mini-faceplate">
-      <span className="topology-mini-led" />
-      <span className="topology-mini-chip">{partId === "vcenter" ? "VCSA" : "VM"}</span>
-      <span className="topology-mini-chip">{settings.datastore || settings.role || "inventory"}</span>
-    </span>
-  );
-}
-
 function topologyStableNodeLabel(nodeId: string): string {
   if (nodeId === "cisco") return "Cisco switch";
   if (nodeId === "ilo") return "HPE iLO";
@@ -7754,42 +7671,6 @@ function topologyNodeFaceplatePart(nodeId: string, netappInScope: boolean): Desi
   if (nodeId === "vcenter") return "vcenter";
   if (nodeId === "datastore") return netappInScope ? "netapp" : "server-gen10";
   return "server-gen10";
-}
-
-function topologyNodeFaceplateSettings(nodeId: string, address: LabAddressPlan, storageProtocol: string, netappInScope: boolean): Record<string, string> {
-  if (nodeId === "cisco") {
-    return {
-      management_ip: displayAddress(address.cisco_management),
-      ports: "mgmt uplink, ESXi vmkernel, storage fabric",
-      storage_vlan: netappInScope ? "220" : "local"
-    };
-  }
-  if (nodeId === "netapp") {
-    return {
-      controller_ports: "e0a/e0b",
-      protocol: storageProtocol.toUpperCase(),
-      nfs_lifs: address.netapp_nfs_lifs.map(displayAddress).join(", "),
-      iscsi_lifs: address.netapp_iscsi_lifs.map(displayAddress).join(", ")
-    };
-  }
-  if (nodeId === "vcenter") {
-    return {
-      datastore: netappInScope ? "NetApp datastore" : "direct ESXi",
-      role: "inventory"
-    };
-  }
-  if (nodeId === "ilo") {
-    return {
-      management_ip: displayAddress(address.ilo),
-      access_state: "credential status only",
-      safe_checks: "reachability, auth, inventory"
-    };
-  }
-  return {
-    drive_bays: "8 bays",
-    raid_boot: "RAID1",
-    raid_data: netappInScope ? "shared datastore" : "RAID6 local datastore"
-  };
 }
 
 function LabDesignComposer({
@@ -7938,6 +7819,9 @@ function LabDesignComposer({
   });
   const selectedSafeActions = selectedPart
     ? topologyDeviceSafeActions(selectedPart.id, workflowActions, { netappInScope, storageProtocol, vcenterInScope })
+    : [];
+  const selectedOverviewDetails = selectedPart
+    ? topologyWorkspaceMapDetails(selectedPart.id, selectedSettings, draftScenario, storageProtocol)
     : [];
   const selectedElementAction = selectedPart?.id === "switch"
     ? selectedSafeActions.find((action) => action.action_id === "cisco.ssh-readonly-probe") ?? null
@@ -8441,6 +8325,12 @@ function LabDesignComposer({
                 storageProtocol={storageProtocol}
               />
             </div>
+
+            {selectedOverviewDetails.length > 0 && (
+              <div className="design-workspace-map-details" aria-label={`${selectedPart.label} map details`}>
+                {selectedOverviewDetails.map((detail) => <span key={detail}>{detail}</span>)}
+              </div>
+            )}
 
             {selectedPart.id === "netapp" && (
               <section className="design-primary-setting" aria-label="NetApp storage protocol">
@@ -10124,6 +10014,28 @@ function topologyDeviceRoleLabel(partId: DesignPartId, scenario: TopologyDesignS
   return "guest workload";
 }
 
+function topologyWorkspaceMapDetails(
+  partId: DesignPartId,
+  settings: Record<string, string>,
+  scenario: TopologyDesignScenario,
+  storageProtocol: string
+): string[] {
+  if (partId === "switch") {
+    return [
+      "L3 core switch",
+      `VLAN ${settings.storage_vlan || "220"}`
+    ];
+  }
+  if (partId === "ilo") return ["BMC read-only checks"];
+  if (partId === "vcenter") {
+    return scenario === "single_server_local_storage"
+      ? ["Direct host management", "direct host path"]
+      : ["NetApp datastore", `${storageProtocol.toUpperCase()} storage path`];
+  }
+  if (partId === "netapp") return ["NetApp datastore", `${storageProtocol.toUpperCase()} fabric`];
+  return [];
+}
+
 function topologyDeviceWorkspaceSections(
   partId: DesignPartId,
   fields: Array<{ key: string; kind?: "textarea"; label: string }>,
@@ -11384,33 +11296,11 @@ function topologyNetappMeta(address: LabAddressPlan, storageProtocol: string): s
   return [nfs, iscsi, storageProtocol === "iscsi" ? "block ready path" : ""].filter(Boolean).join(" - ") || "storage targets planned";
 }
 
-function topologyNetappOrbitDetails(address: LabAddressPlan, storageProtocol: string): string {
-  if (storageProtocol === "iscsi") {
-    return address.netapp_iscsi_lifs?.length ? `iSCSI x${address.netapp_iscsi_lifs.length}` : "iSCSI targets";
-  }
-  return address.netapp_nfs_lifs?.length
-    ? `NFS ${address.netapp_nfs_lifs.map((item) => `.${item.split(".").pop()}`).join(" / ")}`
-    : "NFS LIFs";
-}
-
-function topologyVmName(probe: ProviderProbeResult | null, vcenterInScope: boolean): string {
-  const deploymentPlan = objectValue(probe?.deployment_plan);
-  const vmCheck = objectValue(probe?.vm_check);
-  const checks = objectValue(probe?.checks);
-  const inventory = objectValue(checks.vm_inventory_visible);
-  return (
-    asString(deploymentPlan.vm_name) ||
-    asString(vmCheck.name) ||
-    asString(inventory.vm_name) ||
-    (vcenterInScope ? "vCenter VM inventory" : "Direct ESXi VM")
-  );
-}
-
-function topologyVmMeta(probe: ProviderProbeResult | null, vcenterInScope: boolean): string {
+function topologyVmMapTarget(probe: ProviderProbeResult | null, vcenterInScope: boolean, address: LabAddressPlan): string {
   const checks = objectValue(probe?.checks);
   const inventory = objectValue(checks.vm_inventory_visible);
   if (asBoolean(inventory.visible)) return `${asString(inventory.count) || "some"} visible`;
-  return vcenterInScope ? "waiting for inventory proof" : "direct host path";
+  return vcenterInScope ? displayAddress(address.ansible_control_host) : displayAddress(address.esxi_management);
 }
 
 function OverviewReferencePanel({
