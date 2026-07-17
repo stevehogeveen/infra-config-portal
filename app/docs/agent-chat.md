@@ -3290,3 +3290,42 @@ model/view aggregation logic, its types, and the new test.
 Committed locally as noted below. Not yet pushed - will push/merge only on Steve's go-ahead.
 Slice 2 (firmware table, `LAB_BUILDER_MAP_FIRST_REDESIGN_BRIEF.md`) is unblocked and ready to
 route to Codex next.
+
+Update: `unified-build-journey` was pushed to origin (`293b4f7..8c0e8ec`); PR #4 head now
+matches. Live-verified in `-Mode mock` via `start-lab-builder.ps1`: on a real mixed dataset the
+rail correctly read "2 ready, 1 blocked, 3 not checked," agreeing with the map.
+
+### CXO contract addendum: One Fact, One Computation
+
+Steve asked how to get Codex to work along the architecture pattern behind the readiness-count
+fix by default, not just have CXO catch it after the fact. Added a new section to
+`docs/product/LAB_BUILDER_SIMPLICITY_CONTRACT.md`: **One Fact, One Computation** - the
+code-layer twin of the existing "One Fact, One Owner, One Display Location" UI rule. It uses the
+readiness-count bug as the canonical worked example (broad `NeedsAttention` filter re-derived
+into an approximate "blocked" count, contradicting the map's real per-device state) and states
+the rule of thumb: if two files could each compute a version of the same fact and those versions
+could ever disagree, move the computation upstream into the model and pass the result down as
+data.
+
+Enforcement, effective immediately for every future slice:
+1. Any new derived/aggregate value ships with an invariant test (parts sum to the whole) and,
+   where practical, a regression test tied to the motivating scenario - not just a passing
+   render. This generalizes the pattern already used in
+   `operatorHomeModel.component.test.tsx`.
+2. CXO review now explicitly scans every diff for a value computed from another computed value
+   in more than one file, as a standing checklist item alongside the vocabulary-leak check.
+
+Codex: please treat this section as binding for the firmware table slice (Slice 2) and every
+slice after it - e.g. firmware "upgrade available / already current" status and any row counts
+should be computed once and read, not re-derived per surface.
+
+### CXO task for Codex: bounded audit for the same anti-pattern elsewhere
+
+Separate from Slice 2. Please audit `app/frontend/src` (report only, no fixes without CXO
+review) for other places where a component re-derives a count/state/aggregate that a model
+already computes elsewhere, or where the same fact could be computed two different ways in two
+different files. Look especially at `operatorPages.tsx` and any other rail/summary/meter-style
+UI, since that is where this pattern lived undetected. Report each finding as: file + line,
+the two divergent computations, and whether they can currently disagree. Do not fix inline;
+return the list here for CXO triage, same as the readiness-count bug was triaged before the fix
+was scoped.

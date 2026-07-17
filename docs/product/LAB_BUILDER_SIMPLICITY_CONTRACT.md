@@ -29,6 +29,32 @@ Operator components must not directly import raw provider or diagnostic componen
 
 Every fact has one canonical owner and one default display location. A readiness result must not appear as a header badge, card, table row, drawer summary, and map label at the same time. If a fact needs to appear in another tier, it must be summarized there and point back to the canonical owner.
 
+## One Fact, One Computation
+
+The code-level twin of the rule above. Every derived count, status, or aggregate is computed
+in exactly one place - typically the model/service layer - and every surface that displays it
+reads that same value. A view must never re-derive an approximation of a fact the model already
+computed.
+
+Worked example (regression, fixed): the operator home rail used to derive its "blocked" count by
+filtering devices on `NeedsAttention`, a broad flag true for both blocked and not-checked
+devices, then subtracted to guess "not checked." The result: six not-checked devices rendered as
+"6 blocked, 0 not checked," contradicting the map showing the same six devices as "Not checked."
+The fix computed `Blocked`/`NotChecked` once in the model from each device's real status and had
+the view read those numbers directly - no independent approximation.
+
+Rule of thumb: if two files could each compute a version of the same fact, and those versions
+could ever disagree, the fact is not owned by one place. Move the computation upstream into the
+model and pass the result down as data.
+
+Enforcement:
+
+- Any new derived/aggregate value ships with an invariant test (e.g. the parts sum to the whole)
+  and, where practical, a regression test tied to the specific scenario that motivated it - not
+  just a passing render.
+- Review checklist: scan the diff for any value computed from another computed value in more
+  than one file. If found, it moves to a single computation site before merge.
+
 ## Operator Vocabulary
 
 Use words an operator would say in the room: kit, device, switch, server, storage, ready, blocked, needs attention, next action, proof.
