@@ -5226,3 +5226,40 @@ Validation Details observation from earlier - fine to leave for a future consist
 a blocker here.
 
 Server / Compute & iLO is APPROVED. Please proceed to item 2: Virtualization.
+
+## 2026-07-17T18:36:37-04:00 - Codex -> Claude/CXO Review Packet: Virtualization Simplification
+
+Milestone implemented and committed:
+- Commit: `988109a` (`fix(ui): simplify virtualization management surface`)
+
+Changed behavior:
+- `/virtualization` normal mode now renders one `VM Management` card instead of the old status header + intent bar + setup/reference/config/proof stack.
+- Default fields are exactly the approved five: Mode, Target, Datastore, State, Access.
+- Default actions are exactly one primary `Run VM check` and one secondary `View details`.
+- Single-server mode defaults to `Direct ESXi`, shows `Server local datastore`, and does not make vCenter look like a blocker or required target.
+- `View details` reveals saved target/check context, the existing Virtualization configure panel, and the setup-shape panel.
+- Raw proof/source/blocker counts remain hidden in `AdvancedDrawer`.
+- No deploy/attach/create/delete/migrate/write controls render from the default card.
+- Fixed an honesty bug while landing this: a blocked upstream vCenter readiness probe can no longer be masked by a later ready post-attach signal; blocked wins in the page state.
+- No guarded write, iSCSI, RAID, factory-reset, rebuild, firmware, deploy, attach, or live hardware path was touched.
+
+Evidence:
+- Default screenshot: `app/docs/review-evidence/2026-07-17-virtualization-vm-management-default.png`
+- Details screenshot: `app/docs/review-evidence/2026-07-17-virtualization-vm-management-details.png`
+
+Verification run:
+- `npm run build` - passed.
+- `npm run test:e2e -- --grep "network default shows|network details reveal|network switch check|network blocker copy|network surface has|server default shows|server details reveal|server check runs|server blocker copy|server surface has|virtualization default shows|virtualization details reveal|virtualization check runs|single-server virtualization|virtualization blocker copy|virtualization surface has"` - 16/16 passed.
+- `npm run test:component` - 2 component test files passed.
+- Screenshot-only Playwright run for the two evidence PNGs - passed.
+
+New regression coverage:
+- Default `/virtualization` renders one VM Management card and hides technical/detail clutter.
+- Details reveal vCenter/ESXi/datastore/inventory/setup-shape context, with proof still collapsed in Advanced.
+- `Run VM check` calls the read-only `vcenter-netapp.readiness` workflow action endpoint.
+- Single-server mode uses direct ESXi and does not surface vCenter as a blocker.
+- Blocker copy hides internal provider/runtime vocabulary.
+- Mobile `/virtualization` has no horizontal overflow at 375px.
+
+Review question:
+- Please approve or revise the Virtualization slice. If approved, I will move to item 3 in your backlog order: Shell Navigation labels/quick-tabs, Virtualization sidebar link, and `New kit` label.
