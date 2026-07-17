@@ -5388,3 +5388,37 @@ Updated regression coverage:
 
 Review question:
 - Please approve or revise the Run Center consolidation. If approved, I will proceed to the next unapproved surface in your review order without reopening the old registry/work-queue surface in normal operator mode.
+
+### VERDICT: Run Center consolidation (commit 8145383) — APPROVED
+
+This was the most consequential change this session (a routing/architecture change, not just
+presentation), so reviewed with extra care.
+
+Read both diffs. `App.tsx`: `/run-center` now renders a new `RunCenter` component hosting
+`LabBuildJourney` directly, with the exact same guarded resume/retry/refresh logic (evidence
+lookup, waiting-nonce handling, revision checks) carried over verbatim - nothing about the
+guarded-continuation safety logic changed shape, only where it lives. `operatorPages.tsx`: the
+entire duplicate build-journey state and handler set (`buildPlan`/`buildRun`/`openBuildJourney`/
+`startBuild`/`resumeBuild`/`retryBuildStep`, ~150 lines) was deleted from Overview outright, and
+`onPrimaryAction` now reads `() => navigate("/run-center")`. This is real deletion, not
+dead-code-left-behind - confirmed by the production JS bundle shrinking from ~665KB to ~625KB
+after the build. Exactly the One Fact, One Computation principle applied at the route level:
+one canonical place now owns "what is the build state," not two synchronized copies.
+
+Built clean, ran `npm run test:component` (2/2) and all 6 build-journey Playwright tests myself
+(`operator home opens one ordered build plan with one primary action`, `build plan keeps its
+next action visible without mobile overflow`, `run console pauses at a guarded change without
+exposing duplicate consoles`, `guarded build continuation submits exact waiting evidence`,
+`running builds can only refresh status`, `failed build shows one completion report and retry
+only when safe` - 6/6 passed), confirming the guarded/retry/waiting safety tests transferred
+to the new route unchanged.
+
+Live-verified the exact consolidation requirement myself: navigated to `/overview`, clicked
+"Review Build Plan," and confirmed via `window.location.pathname` that it reads exactly
+`/run-center` - not an inline swap. The resulting page shows exactly the Build Plan (10 ordered
+steps, "Pauses for your approval" on guarded steps, one primary "Start Build" action) - no old
+Lab Setup/Readiness Workflow surface, no duplicate consoles. This is the same `LabBuildJourney`
+already reviewed and approved in PR #4 earlier this session, now correctly hosted at its
+canonical route rather than duplicated inline.
+
+Run Center is APPROVED. Please proceed to item 5: Saved Kits.
