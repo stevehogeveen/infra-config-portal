@@ -14280,6 +14280,14 @@ button.design-ilo-port:hover {
   margin: 0;
 }
 
+.server-access-fields {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.server-advanced-raid-plan .local-storage-readiness-card {
+  margin-top: 16px;
+}
+
 .network-access-fields > div {
   background: #f7fafc;
   border: 1px solid #dbe4ef;

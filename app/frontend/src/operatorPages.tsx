@@ -301,6 +301,7 @@ const emptyRunState: WorkflowRunState = {
 
 const noProofText = "Advanced proof is hidden unless you need it.";
 const networkSwitchCheckActionIds = ["cisco.setup-readiness", "cisco.ssh-readonly-probe", "cisco.current-intent-diff"];
+const serverCheckActionIds = ["ilo.reachability", "ilo.auth", "ilo.inventory", "esxi.management-validation", "raid.validate"];
 
 type PageIntentLayout = Record<string, UiIntentRegionLayout>;
 
@@ -587,14 +588,6 @@ const storageIntentRegions: UiIntentRegion[] = [
 const networkIntentRegions: UiIntentRegion[] = [
   { id: "reference", label: "Network reference and Cisco driver", kind: "section" },
   { id: "advanced-proof", label: "Network proof", kind: "drawer", collapsible: true }
-];
-
-const serverIntentRegions: UiIntentRegion[] = [
-  { id: "setup-shape", label: "Server setup shape", kind: "section" },
-  { id: "local-storage", label: "Local storage readiness", kind: "section" },
-  { id: "reference", label: "Server reference", kind: "section" },
-  { id: "configure", label: "Server configure", kind: "section" },
-  { id: "advanced-proof", label: "Server proof", kind: "drawer", collapsible: true }
 ];
 
 const virtualizationIntentRegions: UiIntentRegion[] = [
@@ -1712,6 +1705,8 @@ export function OperatorServerPage({ labProfileState, onReloadLabProfile }: Oper
   const [esxiReadiness, setEsxiReadiness] = useState<ProviderProbeResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [runState, setRunState] = useState<WorkflowRunState>(emptyRunState);
 
   async function load() {
     setError("");
@@ -1743,6 +1738,7 @@ export function OperatorServerPage({ labProfileState, onReloadLabProfile }: Oper
   const iloStatus = providerStatus(providers, ["ilo", "redfish"]) || "not_checked";
   const esxiStatus = asString(esxiReadiness?.status) || providerStatus(providers, ["esxi"]) || "not_checked";
   const raidStatus = asString(raidPlan?.status) || "not_checked";
+  const serverStatus = strongestStatus([iloStatus, esxiStatus, raidStatus]);
   const currentView = serverCurrentView({ address, esxiReadiness, iloStatus, raidPlan, raidStatus });
   const serverRows = useMemo<OperatorObjectRow[]>(
     () => [
@@ -1817,98 +1813,306 @@ export function OperatorServerPage({ labProfileState, onReloadLabProfile }: Oper
     ],
     [address.esxi_management, address.ilo, currentView, esxiReadiness, esxiStatus, firmwareSummaries, iloStatus, raidPlan, raidStatus]
   );
-  const intent = usePageIntentLayout("server", serverIntentRegions, activeProfile?.id);
-  const serverRegions: Record<string, ReactNode> = {
-    "advanced-proof": (
-      <AdvancedDrawer title="Server proof" summary={noProofText}>
-        <OperatorWorkspace currentView={currentView} rows={serverRows} compact />
-        <ConfigValueList
-          values={[
-            { label: "RAID warnings", value: String(stringArray(raidPlan?.warnings).length) },
-            { label: "RAID controller model", value: raidControllerModels(raidPlan) },
-            { label: "ESXi blockers", value: String(stringArray(esxiReadiness?.blockers).length) },
-            { label: "Smart Array firmware", value: firmwareVersion(firmwareSummaries, "raid") }
-          ]}
-        />
-      </AdvancedDrawer>
-    ),
-    configure: (
-      <section className="overview-safe-actions" aria-label="Server configure">
-        <ServerConfigurePanel
-          activeProfile={activeProfile}
-          address={address}
-          global={global}
-          onSaved={async () => {
-            await onReloadLabProfile?.();
-            await load();
-          }}
-        />
-      </section>
-    ),
-    "local-storage": <LocalStorageReadinessCard activeProfile={activeProfile} raidPlan={raidPlan} />,
-    reference: (
-      <OperatorReferencePanel
-        actionLabel="Open firmware"
-        actionTo="/firmware-upgrades"
-        ariaLabel="Server reference"
-        currentView={currentView}
-        rows={serverRows}
-        subtitle="iLO, RAID, ESXi"
-        tableTitle="Server Signals"
-        title="Server readiness at a glance"
-      />
-    ),
-    "setup-shape": (
-      <ServerSetupShapePanel
-        activeProfile={activeProfile}
-        address={address}
-        currentView={currentView}
-        esxiReadiness={esxiReadiness}
-        esxiStatus={esxiStatus}
-        firmwareSummaries={firmwareSummaries}
-        iloStatus={iloStatus}
-        raidPlan={raidPlan}
-        raidStatus={raidStatus}
-      />
-    )
+  const byActionId = useMemo(() => new Map(actions.map((action) => [action.action_id, action])), [actions]);
+  const serverRunConfig: TabRunConfig = {
+    actionIds: serverCheckActionIds,
+    actions,
+    kind: "read",
+    label: "Run server check",
+    onReload: load
   };
+  const serverAction = firstRunnableAction(byActionId, serverCheckActionIds, serverRunConfig);
+  const serverFallbackActionId = fallbackRunActionId(serverRunConfig, serverAction);
+  const serverDisabledReason = serverAction
+    ? disabledReasonForRunConfig(serverRunConfig, serverAction)
+    : serverFallbackActionId
+      ? ""
+      : disabledReasonForRunConfig(serverRunConfig, serverAction);
+  const computeAccess = serverComputeAccessCardModel({
+    activeProfile,
+    address,
+    currentView,
+    esxiReadiness,
+    iloStatus,
+    raidPlan,
+    raidStatus,
+    serverStatus
+  });
+  const servicePack = servicePackSummary(firmwareSummaries);
+  const firmwareStatus = servicePack === "Scan needed" ? "not_checked" : "ready";
+  const serverDetailRows = [
+    { current: displayAddress(address.ilo), item: "iLO access", status: iloStatus },
+    { current: displayAddress(address.esxi_management), item: "ESXi management", status: esxiStatus },
+    { current: raidLayoutLabel(raidPlan), item: "Local storage", status: raidStatus },
+    { current: servicePack, item: "Firmware", status: firmwareStatus }
+  ];
+
+  async function runServerCheck() {
+    const actionId = serverAction?.action_id ?? serverFallbackActionId;
+    if (!actionId || serverDisabledReason || runState.runningActionId) return;
+    setRunState({ error: "", message: "", runningActionId: actionId });
+    try {
+      const result = await api.runWorkflowAction(actionId);
+      setRunState({
+        error: "",
+        message: serverAction ? workflowRunMessage(serverAction, result) : workflowRunResultMessage("Run server check", result),
+        runningActionId: ""
+      });
+      await load();
+    } catch (err) {
+      setRunState({ error: errorMessage(err), message: "", runningActionId: "" });
+    }
+  }
 
   return (
     <OperatorPage title="Server">
-      <PageStatusHeader
-        description="Use these live checks and guarded actions for this part of the lab."
-        helper="iLO, DL360 server, RAID layout, and ESXi access are grouped here."
-        icon={<Server size={26} />}
-        nextAction={humanize(asString(esxiReadiness?.next_safe_action) || "Run iLO and ESXi live checks, then validate RAID when storage layout is ready.")}
-        runConfig={{
-          actionIds: ["ilo.reachability", "ilo.auth", "ilo.inventory", "esxi.management-validation", "raid.validate"],
-          actions,
-          label: "Server Live Check",
-          onReload: load
-        }}
-        status={strongestStatus([iloStatus, esxiStatus, raidStatus])}
-        tabId="server"
-        title="Server"
-      />
+      <div className="operator-surface-heading">
+        <p className="operator-kicker">Setup</p>
+        <h1>Compute & iLO</h1>
+        <p>Can the compute host be reached, and what one safe server check should run next?</p>
+      </div>
       <Feedback loading={loading && !providers.length} error={error} />
-      <PageIntentBar
-        layout={intent.layout}
-        onApply={intent.applyOps}
-        onReset={intent.reset}
-        onTargetRegionChange={intent.setTargetRegionId}
-        onUndo={intent.undo}
-        page="server"
-        regions={serverIntentRegions}
-        summary={intent.summary}
-        targetRegionId={intent.targetRegionId}
-        undoAvailable={intent.undoAvailable}
-      />
-      {orderedIntentRegions(serverIntentRegions, intent.layout).map((region) => (
-        <IntentRegion highlighted={intent.targetRegionId === region.id} key={region.id} layout={intent.layout} region={region}>
-          {serverRegions[region.id]}
-        </IntentRegion>
-      ))}
+      <section className="network-access-surface server-access-surface" aria-label="Compute Access">
+        <Card className="network-access-card server-access-card" hover={false}>
+          <CardHeader>
+            <div>
+              <p className="operator-kicker">Compute access</p>
+              <h2>{computeAccess.host}</h2>
+            </div>
+            <StatusBadge label={computeAccess.stateLabel} status={computeAccess.badgeStatus} />
+          </CardHeader>
+          <CardContent>
+            <dl className="network-access-fields server-access-fields">
+              <div>
+                <dt>Host</dt>
+                <dd>{computeAccess.host}</dd>
+              </div>
+              <div>
+                <dt>iLO IP</dt>
+                <dd>{computeAccess.iloIp}</dd>
+              </div>
+              <div>
+                <dt>ESXi IP</dt>
+                <dd>{computeAccess.esxiIp}</dd>
+              </div>
+              <div>
+                <dt>State</dt>
+                <dd>{computeAccess.stateLabel}</dd>
+              </div>
+              <div>
+                <dt>Storage role</dt>
+                <dd>{computeAccess.storageRole}</dd>
+              </div>
+            </dl>
+            {computeAccess.reason && (
+              <div className="network-access-reason" role="note">
+                <strong>Needs attention</strong>
+                <span>{computeAccess.reason}</span>
+              </div>
+            )}
+            {runState.message && <div className="operator-feedback network-access-feedback">{runState.message}</div>}
+            {runState.error && <div className="operator-feedback error network-access-feedback">{runState.error}</div>}
+          </CardContent>
+          <CardFooter>
+            <div className="network-access-actions server-access-actions">
+              <button
+                className="operator-primary-button"
+                disabled={Boolean(serverDisabledReason) || Boolean(runState.runningActionId)}
+                onClick={() => void runServerCheck()}
+                title={serverDisabledReason || "Run server check"}
+                type="button"
+              >
+                <RefreshCw size={16} />
+                {runState.runningActionId ? "Checking" : "Run server check"}
+              </button>
+              <button
+                aria-expanded={detailsOpen}
+                className="secondary-button"
+                onClick={() => setDetailsOpen((current) => !current)}
+                type="button"
+              >
+                View details
+              </button>
+            </div>
+          </CardFooter>
+        </Card>
+      </section>
+      {detailsOpen && (
+        <section className="network-details server-details" aria-label="Compute details">
+          <div className="network-details-grid server-details-grid">
+            <Card className="network-details-card" hover={false}>
+              <CardHeader>
+                <div>
+                  <p className="operator-kicker">Details</p>
+                  <h2>Access and saved addresses</h2>
+                </div>
+                <StatusBadge label={displayStatus(serverStatus)} status={statusBadgeStatus(serverStatus)} />
+              </CardHeader>
+              <CardContent>
+                <ConfigValueList
+                  values={[
+                    { label: "Host", value: computeAccess.host, source: "Saved setup" },
+                    { label: "iLO IP", value: computeAccess.iloIp, source: "Saved setup", status: iloStatus },
+                    { label: "ESXi IP", value: computeAccess.esxiIp, source: "Saved setup", status: esxiStatus },
+                    { label: "Storage role", value: computeAccess.storageRole, source: "Saved setup" },
+                    { label: "Next check", value: humanize(asString(esxiReadiness?.next_safe_action) || "Run server check.") }
+                  ]}
+                />
+              </CardContent>
+            </Card>
+            <Card className="network-details-card" hover={false}>
+              <CardHeader>
+                <div>
+                  <p className="operator-kicker">Saved signals</p>
+                  <h2>Server checks</h2>
+                </div>
+                <span>{serverDetailRows.length} tracked</span>
+              </CardHeader>
+              <CompactTable>
+                <CompactTableHeader>
+                  <CompactTableCell>Item</CompactTableCell>
+                  <CompactTableCell>Current</CompactTableCell>
+                  <CompactTableCell>Status</CompactTableCell>
+                </CompactTableHeader>
+                <tbody>
+                  {serverDetailRows.map((row) => (
+                    <CompactTableRow key={row.item}>
+                      <CompactTableCell><strong>{row.item}</strong></CompactTableCell>
+                      <CompactTableCell>{row.current}</CompactTableCell>
+                      <CompactTableCell><StatusBadge label={displayStatus(row.status)} status={statusBadgeStatus(row.status)} /></CompactTableCell>
+                    </CompactTableRow>
+                  ))}
+                </tbody>
+              </CompactTable>
+            </Card>
+            <section className="overview-safe-actions" aria-label="Server configure">
+              <ServerConfigurePanel
+                activeProfile={activeProfile}
+                address={address}
+                global={global}
+                onSaved={async () => {
+                  await onReloadLabProfile?.();
+                  await load();
+                }}
+              />
+            </section>
+            <ServerSetupShapePanel
+              activeProfile={activeProfile}
+              address={address}
+              currentView={currentView}
+              esxiReadiness={esxiReadiness}
+              esxiStatus={esxiStatus}
+              firmwareSummaries={firmwareSummaries}
+              iloStatus={iloStatus}
+              raidPlan={raidPlan}
+              raidStatus={raidStatus}
+            />
+            <details className="network-advanced-switch-plan server-advanced-raid-plan">
+              <summary>
+                <span>
+                  <span className="operator-kicker">Advanced</span>
+                  <strong>Advanced RAID plan</strong>
+                  <small>Drive layout, local datastore readiness, and RAID recommendation stay one level deeper.</small>
+                </span>
+              </summary>
+              <LocalStorageReadinessCard activeProfile={activeProfile} raidPlan={raidPlan} />
+            </details>
+            <AdvancedDrawer title="Server proof" summary={noProofText}>
+              <OperatorWorkspace currentView={currentView} rows={serverRows} compact />
+              <ConfigValueList
+                values={[
+                  { label: "RAID warnings", value: String(stringArray(raidPlan?.warnings).length) },
+                  { label: "RAID controller model", value: raidControllerModels(raidPlan) },
+                  { label: "ESXi blockers", value: String(stringArray(esxiReadiness?.blockers).length) },
+                  { label: "Storage firmware", value: firmwareVersion(firmwareSummaries, "raid") }
+                ]}
+              />
+            </AdvancedDrawer>
+          </div>
+        </section>
+      )}
     </OperatorPage>
+  );
+}
+
+function serverComputeAccessCardModel({
+  activeProfile,
+  address,
+  currentView,
+  esxiReadiness,
+  iloStatus,
+  raidPlan,
+  raidStatus,
+  serverStatus
+}: {
+  activeProfile: LabProfile | null;
+  address: LabAddressPlan;
+  currentView: CurrentViewModel;
+  esxiReadiness: ProviderProbeResult | null;
+  iloStatus: string;
+  raidPlan: ProviderProbeResult | null;
+  raidStatus: string;
+  serverStatus: string;
+}) {
+  const hasTarget = Boolean(address.ilo || address.esxi_management);
+  const stateLabel = serverComputeStateLabel(serverStatus, hasTarget);
+  const localMode = activeProfile?.features?.storage_location === "server_local" || activeProfile?.features?.netapp_enabled === false;
+  const reason = stateLabel === "Blocked"
+    ? serverComputeReason({ address, currentView, esxiReadiness, raidPlan, raidStatus })
+    : "";
+
+  return {
+    badgeStatus: serverComputeBadgeStatus(stateLabel),
+    esxiIp: displayAddress(address.esxi_management),
+    host: `HPE ${topologyServerModelLabel(activeProfile?.devices?.server_model)}`,
+    iloIp: displayAddress(address.ilo),
+    reason,
+    stateLabel,
+    storageRole: localMode ? "Local RAID datastore" : "Shared datastore host"
+  };
+}
+
+function serverComputeStateLabel(status: string, hasTarget: boolean): "Ready" | "Blocked" | "Not checked" {
+  if (!hasTarget) return "Blocked";
+  const normalized = status.toLowerCase();
+  if (["ready", "ok", "passed", "safe-to-run", "safe_to_run", "success"].includes(normalized)) return "Ready";
+  if (!normalized || ["not_checked", "unknown", "running"].includes(normalized)) return "Not checked";
+  return "Blocked";
+}
+
+function serverComputeBadgeStatus(label: "Ready" | "Blocked" | "Not checked"): StatusBadgeStatus {
+  if (label === "Ready") return "ready";
+  if (label === "Blocked") return "needs-attention";
+  return "not-configured";
+}
+
+function serverComputeReason({
+  address,
+  currentView,
+  esxiReadiness,
+  raidPlan,
+  raidStatus
+}: {
+  address: LabAddressPlan;
+  currentView: CurrentViewModel;
+  esxiReadiness: ProviderProbeResult | null;
+  raidPlan: ProviderProbeResult | null;
+  raidStatus: string;
+}) {
+  if (!address.ilo && !address.esxi_management) {
+    return "Set the iLO and ESXi addresses before running the server check.";
+  }
+  if (!address.ilo) return "Set the iLO address before running the server check.";
+  if (!address.esxi_management) return "Set the ESXi address before running the server check.";
+  return humanize(
+    currentView.blockers[0] ||
+      stringArray(esxiReadiness?.blockers)[0] ||
+      stringArray(raidPlan?.blockers)[0] ||
+      stringArray(raidPlan?.warnings)[0] ||
+      asString(esxiReadiness?.next_safe_action) ||
+      asString(esxiReadiness?.message) ||
+      (raidStatus && !statusIsReady(raidStatus) ? "Run server check before planning local storage." : "") ||
+      "Server access needs attention before setup can continue."
   );
 }
 

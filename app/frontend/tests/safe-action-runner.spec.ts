@@ -1289,6 +1289,85 @@ test("network surface has no horizontal overflow on mobile", async ({ page }) =>
   expect(overflow).toBeLessThanOrEqual(1);
 });
 
+test("server default shows one compute access card and hides technical detail", async ({ page }) => {
+  await page.goto("/server");
+
+  const access = page.getByLabel("Compute Access");
+  await expect(access.getByRole("heading", { name: "HPE DL360 Gen10" })).toBeVisible();
+  await expect(access.locator("dt")).toHaveText(["Host", "iLO IP", "ESXi IP", "State", "Storage role"]);
+  await expect(access.getByRole("button", { name: "Run server check" })).toBeVisible();
+  await expect(access.getByRole("button", { name: "View details" })).toBeVisible();
+  await expect(access.locator(".operator-primary-button")).toHaveCount(1);
+
+  await expect(page.locator("section[aria-label='Compute details']")).toHaveCount(0);
+  await expect(page.getByRole("textbox", { name: "Change this page" })).toHaveCount(0);
+  await expect(page.getByText("Server setup shape")).toHaveCount(0);
+  await expect(page.getByText("Local Storage Readiness")).toHaveCount(0);
+  await expect(page.getByText("Server readiness at a glance")).toHaveCount(0);
+  await expect(page.getByText("RAID controller model")).toHaveCount(0);
+  await expect(access).not.toContainText(/\bprovider\b/i);
+  await expect(access).not.toContainText(/\bruntime\b/i);
+  await expect(access.getByRole("button", { name: /reset|rebuild|apply/i })).toHaveCount(0);
+});
+
+test("server details reveal saved checks and nested advanced RAID plan", async ({ page }) => {
+  await page.goto("/server");
+  await page.getByLabel("Compute Access").getByRole("button", { name: "View details" }).click();
+
+  const details = page.locator("section[aria-label='Compute details']");
+  await expect(details).toBeVisible();
+  await expect(details).toContainText("iLO access");
+  await expect(details).toContainText("ESXi management");
+  await expect(details).toContainText("Local storage");
+  await expect(details).toContainText("Firmware");
+  await expect(details.getByLabel("Server configure")).toBeVisible();
+
+  const advanced = page.locator("details.server-advanced-raid-plan");
+  await expect(advanced.locator(":scope > summary")).toContainText("Advanced RAID plan");
+  await expect(page.locator(".local-storage-readiness-card")).toBeHidden();
+  await advanced.locator(":scope > summary").click();
+  await expect(page.locator(".local-storage-readiness-card")).toBeVisible();
+  await expect(page.locator(".local-storage-readiness-card")).toContainText("Local Storage Readiness");
+});
+
+test("server check runs through the read-only action endpoint", async ({ page }) => {
+  await page.goto("/server");
+
+  const runResponse = page.waitForResponse((response) =>
+    response.url().includes("/api/v1/workflows/actions/ilo.reachability/run") &&
+    response.request().method() === "POST"
+  );
+  await page.getByLabel("Compute Access").getByRole("button", { name: "Run server check" }).click();
+  await expect((await runResponse).ok()).toBeTruthy();
+  await expect(page.getByLabel("Compute Access")).toContainText("iLO Live Check:");
+});
+
+test("server blocker copy hides internal mode vocabulary", async ({ page }) => {
+  await page.route("**/api/v1/providers/ilo-redfish/esxi-install-readiness", (route) => json(route, {
+    ...esxiInstallReadiness(),
+    blockers: ["PROVIDER_MODE=local-lab-readwrite runtime provider credential is missing."],
+    message: "PROVIDER MODE=mock runtime provider credential is missing.",
+    next_safe_action: "PROVIDER_MODE=mock runtime provider password missing.",
+    status: "blocked"
+  }));
+
+  await page.goto("/server");
+  const access = page.getByLabel("Compute Access");
+  await expect(access).toContainText("Needs attention");
+  const text = await access.textContent();
+  expect(text ?? "").not.toMatch(/PROVIDER[_ ]MODE/i);
+  expect(text ?? "").not.toMatch(/\bprovider\b/i);
+  expect(text ?? "").not.toMatch(/\bruntime\b/i);
+});
+
+test("server surface has no horizontal overflow on mobile", async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 800 });
+  await page.goto("/server");
+
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+  expect(overflow).toBeLessThanOrEqual(1);
+});
+
 test("map switch workspace shows access settings and blockers without proof clutter", async ({ page }) => {
   await page.goto("/overview");
   await openOperatorDetails(page);
