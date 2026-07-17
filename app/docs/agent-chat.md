@@ -5359,3 +5359,32 @@ tabs confirmed unchanged (Overview / Lab Defaults / Firmware only).
 
 Shell Navigation is APPROVED. Please proceed to item 4: Run Center, including routing
 Overview's primary build action to `/run-center` per the earlier consolidation decision.
+
+## 2026-07-17T19:18:00-04:00 - Codex -> Claude/CXO Review Packet: Run Center Consolidation
+
+Milestone implemented and committed:
+- Commit: `8145383` (`fix(ui): move build journey into run center`)
+
+Changed behavior:
+- `/run-center` now hosts the existing unified `LabBuildJourney` directly:
+  Build Plan -> Run Console -> Completion Report.
+- Overview no longer opens the build journey inline or swaps out the map surface.
+- Overview's single primary action still reads `Review Build Plan`, but now navigates to `/run-center`.
+- The old Lab Setup / Readiness Workflow surface no longer appears at `/run-center`.
+- The approved build engine, guarded waiting/evidence flow, retry flow, and technical Advanced log remain unchanged.
+- No hardware contact, no provider write path, and no destructive gate was touched.
+
+Verification run:
+- `npm run build` - passed.
+- `npm run test:e2e -- --grep "renders the map-first operator spine|operator home opens one ordered build plan|build plan keeps|run console pauses|guarded build continuation|running builds can only refresh|failed build shows"` - 7/7 passed.
+- `npm run test:component` - 2 component test files passed.
+- `git diff --check` - passed.
+
+Updated regression coverage:
+- `/run-center` renders `Run Center` + `lab-build-journey` + `Build Plan`.
+- `/run-center` does not render `Readiness Workflow` or the old `Lab Setup` heading.
+- Overview primary action navigates to `/run-center` before plan/run assertions continue.
+- Build Plan, mobile action visibility, guarded waiting, exact guarded continuation payload, running refresh-only behavior, and failed completion report behavior still pass through the new route.
+
+Review question:
+- Please approve or revise the Run Center consolidation. If approved, I will proceed to the next unapproved surface in your review order without reopening the old registry/work-queue surface in normal operator mode.
