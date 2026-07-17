@@ -3466,3 +3466,116 @@ CXO review plan once Codex reports back: read the actual diff, run `npm run buil
 `npm run test:component`, live-verify `/firmware-upgrades` in the browser against the mockup,
 and confirm no destructive/live-hardware gate or the iSCSI read-only boundary was touched.
 Please note which commit to review and keep the change scoped to the firmware page.
+
+CLAUDE CXO SESSION STARTED — 2026-07-17T14:30:00Z
+
+Two-hour CXO/Codex design run, per Steve's instruction. Roles: Claude/CXO owns visual design,
+operator-language critique, simplification, layouts, mockups, and approval verdicts. Codex owns
+production implementation, tests, screenshots, commits, fixes. CXO will not edit production
+files while Codex is implementing; design direction and verdicts go here in the mailbox.
+Governing docs: `LAB_BUILDER_MAP_FIRST_REDESIGN_BRIEF.md`, `LAB_BUILDER_SIMPLICITY_CONTRACT.md`.
+Visual authority: https://claude.ai/code/artifact/aae929b5-c565-48bd-b5ff-4a98cbaee824
+Review order: Overview/map, Lab Defaults, Firmware, Compute & iLO, Cisco/network,
+Storage/NetApp, ESXi/vCenter/OVF, Run Center, Validation/reports, Mobile/responsive.
+Current branch `unified-build-journey`, live app confirmed up at 127.0.0.1:5174.
+
+No unread review packet is posted yet, but commit `47bcbd2 fix(ui): keep firmware decisions
+operator-simple` and `3879de0 test(e2e): launch vite with the active node runtime` landed since
+the last CXO note - inspecting `47bcbd2` now as the de facto first review of this session
+against the four firmware requirements above.
+
+### VERDICT: Firmware page (commit 47bcbd2) — APPROVED
+
+Reviewed the diff, ran `npm run build` (clean), and live-verified `/firmware-upgrades` on
+127.0.0.1:5174 against all four requirements - not diff-only, per the hard rule:
+
+1. Action cell: every row (Cisco, iLO, HPE Server, HPE Smart Array, ESXi, NetApp, vCenter) shows
+   exactly `Upgrade` / `Bypass`. No sentence-length labels - disabled rows read "Upgrade
+   unavailable", enabled rows (HPE Server, HPE Smart Array) read "Start guarded upgrade
+   planning". No duplicated sentence anywhere.
+2. Target version column: clean strings only across all seven rows (`17.9`, `3.19`,
+   `2026.05.00.00`, `8.0.3`, `9.14`) - confirmed no raw filename renders anywhere on the page.
+3. No inline file picker: confirmed absent from every row; the only combobox on the page is the
+   unrelated header kit-picker.
+4. One summary line: "2 upgrades available - 4 current - 1 not checked", computed once, matches
+   the mockup's format.
+
+Also confirmed intact: guarded-confirmation footer ("Upgrade asks for confirmation before it can
+touch hardware. Bypass leaves the device as-is and records the choice.") - no gate weakened, no
+hardware contact implied.
+
+Five-second test: pass. Each row reads left to right - what it is, what it's running, what it
+should be, upgrade or leave it - with no paragraph required.
+
+Moving to the next unapproved surface per review order: Overview/topology map (#1) has had
+extensive prior CXO review this branch but was never given a formal session verdict - auditing
+it fresh now against the mockup before moving to Lab Defaults (#2), which has not been reviewed
+yet at all.
+
+### VERDICT: Overview / topology map — CHANGES REQUIRED (device card density)
+
+Live-checked 127.0.0.1:5174/overview against the mockup. The spine is right: map is the
+dominant first element, zone bands present, right rail is exactly the four-question budget
+(current state, one readiness meter, one primary action "Review Build Plan" + secondary "View
+all device details", "Needs your attention"), readiness meter correctly reads "0 ready, 0
+blocked, 6 not checked" agreeing with all six "Not checked" map nodes, no vocabulary leaks
+found, one primary action confirmed. Do not touch any of that.
+
+Gap: device cards on the map carry more lines than the mockup and read denser than the
+five-second bar allows. Current live content per card, e.g.:
+- Cisco: "Cisco C9300 L3 Core" / "Not checked" / "L3 core switch" / "VLAN 220" (4 lines)
+- HPE iLO: "HPE iLO" / "Not checked" / "BMC read-only checks" / "iLO" / "192.168.1.201" (5 lines)
+- Direct ESXi VM: "Direct ESXi VM" / "Not checked" / "Direct host management" / "VCSA" /
+  "NetApp datastore" / "direct host path" (6 lines)
+
+The mockup card is 3 lines: name, one meta line (model/role), status + target
+(IP or "not mounted"). Reference screenshot Overview panel, Cisco Switch card: "Cisco Switch" /
+"C9300 · L3 core" / green dot "READY" · "10.20.7.2".
+
+Design brief:
+
+Operator question being answered: for each device, what is it and is it ready.
+
+What must be removed or demoted: collapse each card's role/protocol tags into one meta line.
+Cisco: drop the separate "L3 core switch" line (redundant with "C9300 · L3 core" model text)
+and the "VLAN 220" line - VLAN is Details-tier, not Overview-tier. HPE iLO: drop "BMC read-only
+checks" and the bare "iLO" tag as separate lines - fold role into one meta line. Direct ESXi VM:
+drop "Direct host management", "VCSA", and "NetApp datastore" as separate lines - three
+descriptive tags on one card is Details-tier inventory, not an Overview glance.
+
+Exact layout and hierarchy per card (3 lines only):
+1. Device name (e.g. "Cisco Switch", not the full "Cisco C9300 L3 Core" model string).
+2. One meta line: `<model> - <role>` (e.g. "C9300 - L3 core", "iLO 5 - server management",
+   "VCSA - VM management").
+3. Status row: colored dot + state word (Ready/Blocked/Not checked) + target (IP address, or
+   "not mounted"/"not created yet" when absent).
+
+Exact labels/copy: state words stay exactly "Ready" / "Blocked" / "Not checked" (already
+correct, do not change). Meta line uses the device's real model/role data already available in
+`buildDeviceSummary` (`Role`, `Target`) - no new API calls.
+
+Single primary action: unchanged - "Review Build Plan" stays the one primary rail action. Cards
+remain clickable to open the device workspace (unchanged), that click is not a competing primary
+action since it opens Details, matching the existing pattern.
+
+Details and Advanced content: VLAN id, protocol/role descriptors ("BMC read-only checks",
+"Direct host management", "NetApp datastore", "direct host path") move into the device workspace
+overlay that already opens on card click - do not delete this data, relocate it.
+
+Desktop and mobile: card must still fit its existing card width at 3 lines without wrapping
+awkwardly; on mobile (375px) the same 3-line card applies, no additional truncation logic needed
+since the line count itself is the fix.
+
+Acceptance tests:
+1. Every device card on Overview renders exactly 3 text lines (name, meta, status+target) -
+   assert line/element count per card, not just presence of text.
+2. The relocated descriptors (VLAN id, "BMC read-only checks", "Direct host management",
+   "NetApp datastore", "direct host path") still appear in the device workspace opened by
+   clicking the card - assert they are NOT present on the closed Overview map and ARE present
+   after opening the workspace.
+3. Readiness meter and "Needs your attention" behavior unchanged - existing tests continue to
+   pass.
+4. No horizontal overflow at 375px (existing mobile test continues to pass).
+
+CXO will not edit `operatorPages.tsx`/`App.tsx` while this is open. Waiting for Codex's
+implementation packet before approving Overview.
