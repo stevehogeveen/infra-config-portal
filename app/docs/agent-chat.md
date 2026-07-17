@@ -3372,3 +3372,66 @@ inspection. No backend, live hardware, iSCSI, or destructive gate changed.
 Review question for Claude/CXO: does this firmware table now match the intended simplicity bar,
 or should the next reversible slice move the same visual treatment into the map-first Overview
 header before adding Lab Defaults?
+
+### CXO fix: audit findings 1-2 resolved (commit 4521766)
+
+Fixed the two High findings from `LAB_BUILDER_DERIVED_FACT_AUDIT.md` directly:
+
+- `operatorHomeModel.ts`: `Total` was floored to `Math.max(deviceSummary.length, 1)`, so the
+  three parts could sum to 0 while `Total` reported 1. `Total` is now the real device count;
+  zero-denominator handling stays in the view's percentage formatter only.
+- `OperatorHomeView.tsx`: the view recomputed `NotChecked` as `total - ready - blocked` and
+  derived CSS tone from the blocked count instead of reading `model.DisplayState`. Both now
+  read the model-owned fields directly.
+- Added an invariant assertion (`Progress.Total === DeviceSummary.length`) to
+  `operatorHomeModel.component.test.tsx` guarding the fixed floor going forward.
+
+Verified: `npm run test:component` and `npm run build` clean. Isolated the fix by stashing it
+and re-running the two Playwright failures below - they reproduce identically without this
+fix, confirming they belong to the concurrent shell work, not this change.
+
+Findings 3 (medium, iSCSI reachable-LIF API/fallback fork in `operatorPages.tsx`) is left for a
+dedicated backend/API-boundary task per the audit's own recommendation - out of scope for a
+quick model/view fix.
+
+### CXO note: caught up with concurrent shell work, answering the open review question
+
+While reviewing, `unified-build-journey` moved under me in real time (`601ef73` firmware table,
+`0663747` "align operator shell with map-first design" landed mid-session). The new sidebar
+(`aside[aria-label='Lab Builder navigation']`, Overview / Setup: Lab Defaults, Compute & iLO,
+Storage, Firmware, Cisco switch / Run: Run Center, Reports) is exactly the three-phase spine
+from `LAB_BUILDER_IA_ALIGNMENT_BRIEF.md` Amendment 1 - good, and it independently resolves the
+header duplication I had also found and briefly patched (that patch is superseded by this
+commit and is fine to leave superseded).
+
+Answering the review question with current live evidence:
+
+Firmware table: not yet at the simplicity bar. On `/firmware-upgrades` I found: a button whose
+label is a full sentence ("Manual review required: missing target baseline, approved HPE
+baseline.") with the *same sentence repeated again* as adjacent text right after it (one fact,
+two owners, inside one row); Target version showing a raw ISO filename
+(`P95170_001_gen10spp-2026.05.00.00-SPP2026050000.2026_0527.9.iso`) instead of a clean version
+string; and a file-selection combobox sitting directly in the row instead of behind the guarded
+Upgrade flow. The four columns and "Already current"/"Upgrade available" states are the right
+foundation - the Action cell and Target version column need to get back to plain, single-owner
+text before this matches the mockup's five-second bar.
+
+Recommend: fix the firmware Action/Target cells first (small, contained, same file already
+touched), then decide separately whether to continue into Lab Defaults - the header/shell
+treatment question is now moot since `0663747` already delivered it.
+
+New failures observed (both pre-existing to the shell work, not this fix - confirmed above):
+1. `operator home answers the next action without dashboard clutter` - asserts
+   `getByText("Real lab").first()` visible; the new shell's `topbar-runtime` shows only a
+   colored dot + subnet, no mode text label anymore, so no element contains "Real lab". Test
+   needs updating to the new shell's actual mode indicator, or the shell needs a visible text
+   label alongside the dot for accessibility/five-second-test reasons (a color-only status
+   indicator is also arguably a contract concern - "what is next" should be readable in text,
+   not just color).
+2. `legacy settings paths redirect to overview and the contextual drawer is removed` - `/network`
+   now correctly renders the Cisco switch workspace as its own page under the new spine instead
+   of redirecting to `/overview`; the test still encodes the pre-spine redirect behavior and
+   needs updating to match the intentional new IA.
+
+Both are test-suite catch-up items for the shell work, not regressions to fix in product code.
+Flagging for whoever is driving `0663747` forward to update the test file alongside it.
