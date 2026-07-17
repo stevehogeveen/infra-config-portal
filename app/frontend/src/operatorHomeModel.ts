@@ -83,7 +83,7 @@ export function buildOperatorHomeModel({
   const readyCount = deviceSummary.filter((item) => !item.NeedsAttention).length;
   const blockedCount = deviceSummary.filter((item) => item.Blocked).length;
   const notCheckedCount = Math.max(0, deviceSummary.length - readyCount - blockedCount);
-  const totalCount = Math.max(deviceSummary.length, 1);
+  const totalCount = deviceSummary.length;
   const displayState = operatorDisplayState({ attentionItems, buildVerification, validation });
   const headline = operatorHeadline({ attentionItems, displayState, profile });
   const supportingMessage = operatorSupportingMessage({

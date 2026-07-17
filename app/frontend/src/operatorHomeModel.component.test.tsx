@@ -157,4 +157,7 @@ function readinessCountsAlwaysSumToTotal() {
   });
 
   assert.equal(model.Progress.Ready + model.Progress.Blocked + model.Progress.NotChecked, model.DeviceSummary.length);
+  // Total must equal the real device count, never a forced non-zero floor - a forced
+  // floor would let "0 of 1 devices ready" render for zero devices.
+  assert.equal(model.Progress.Total, model.DeviceSummary.length);
 }

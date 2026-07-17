@@ -17,12 +17,12 @@ export function OperatorHomeView({
   onPrimaryAction: () => void;
   onViewDetails: () => void;
 }) {
-  const total = Math.max(0, model.Progress.Total);
-  const ready = Math.max(0, Math.min(model.Progress.Ready, total));
-  const blocked = Math.max(0, Math.min(model.Progress.Blocked, total - ready));
-  const unchecked = Math.max(0, total - ready - blocked);
+  const total = model.Progress.Total;
+  const ready = model.Progress.Ready;
+  const blocked = model.Progress.Blocked;
+  const unchecked = model.Progress.NotChecked;
   const pct = (n: number) => (total > 0 ? `${(n / total) * 100}%` : "0%");
-  const stateTone = model.DisplayState === "ready" ? "ready" : blocked > 0 ? "blocked" : "attention";
+  const stateTone = model.DisplayState === "needs_attention" || model.DisplayState === "not_checked" ? "attention" : model.DisplayState;
 
   return (
     <section
