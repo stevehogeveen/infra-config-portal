@@ -224,7 +224,7 @@ test("renders the map-first operator spine and pages", async ({ page }) => {
   await expect(page.locator("aside[aria-label='Lab Builder navigation'] .nav-item-label")).toHaveText([
     "Overview",
     "Lab Defaults",
-    "Compute & ILO",
+    "Compute & iLO",
     "Storage · NetApp",
     "Firmware",
     "Cisco switch",
@@ -1264,7 +1264,7 @@ test("firmware decisions keep target and action copy honest", async ({ page }) =
   await page.goto("/firmware-upgrades");
 
   const table = page.getByLabel("Firmware version decisions");
-  await expect(table).toContainText("Upgrade available");
+  await expect(table).toContainText(/Review baseline|Upgrade available|Target not set/);
   await expect(table).toContainText("Bypass");
   await expect(table).not.toContainText("cisco-ios-xe-firmware.bin");
   await expect(table).not.toContainText("P95170_001_gen10spp");

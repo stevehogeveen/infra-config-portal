@@ -4109,7 +4109,7 @@ function firmwareDecisionReason(row: FirmwareTableRow, current: boolean): string
   if (row.pathStatus === "scan_needed") return "Check versions first";
   const raw = row.disabledReason.trim();
   if (!raw) return "Upgrade available";
-  if (/missing target|baseline/i.test(raw)) return "Target not set";
+  if (/missing target|baseline/i.test(raw)) return row.target === "Not set" ? "Target not set" : "Review baseline";
   if (/manual review/i.test(raw)) return "Review baseline";
   return humanize(raw.replace(/[.:]+$/, "")).slice(0, 52);
 }
@@ -15515,7 +15515,7 @@ function firmwareRows(
 }
 
 function firmwareDecisionSummary(rows: FirmwareTableRow[]): string {
-  const upgrades = rows.filter((row) => ["ready_to_upgrade", "upgrade_available"].includes(row.pathStatus)).length;
+  const upgrades = rows.filter((row) => row.pathStatus !== "current" && row.pathStatus !== "scan_needed" && row.target !== "Not set").length;
   const current = rows.filter((row) => row.pathStatus === "current").length;
   const notChecked = rows.filter((row) => row.pathStatus === "scan_needed").length;
   return `${upgrades} upgrades available - ${current} current - ${notChecked} not checked`;
@@ -15527,7 +15527,7 @@ function cleanFirmwareTargetVersion(target: unknown, packageName: string): strin
   const rawVersion = rawTarget.match(/\d+(?:\.\d+){1,3}/)?.[0];
   if (rawVersion) return rawVersion;
   const versionSource = packageName || rawTarget;
-  const match = versionSource.match(/(?:^|[_-])(\d+\.\d+(?:\.\d+){1,3})(?=[._-]|$)/);
+  const match = versionSource.match(/[_-](\d+\.\d+(?:\.\d+){1,3})(?=[._-]|$)/) || versionSource.match(/\d+\.\d+(?:\.\d+){1,3}/);
   return match?.[1] ?? "Not set";
 }
 
