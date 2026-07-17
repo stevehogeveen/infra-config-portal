@@ -16,10 +16,9 @@ import {
   Wrench
 } from "lucide-react";
 import { createContext, FormEvent, ReactNode, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 
 import { api } from "./api";
-import { LabBuildJourney } from "./components/operator/LabBuildJourney";
 import { OperatorHomeView } from "./components/operator/OperatorHomeView";
 import {
   ActionLink,
@@ -45,8 +44,6 @@ import type {
   FirmwareSummary,
   FirmwareUpgradePath,
   HpeRaidPlanPreview,
-  LabBuildPlan,
-  LabBuildRun,
   LabAddressPlan,
   LabProfile,
   LabProfileFeatures,
@@ -624,6 +621,7 @@ export function OperatorOverviewPage({
   labProfileState,
   onReloadLabProfile
 }: OperatorPageProps) {
+  const navigate = useNavigate();
   const activeProfile = activeLabProfile(labProfileState);
   const address = activeAddressPlan(activeProfile);
   const global = activeProfile?.global_settings ?? null;
@@ -642,11 +640,6 @@ export function OperatorOverviewPage({
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [detailsLoaded, setDetailsLoaded] = useState(false);
   const [detailsLoading, setDetailsLoading] = useState(false);
-  const [buildJourneyOpen, setBuildJourneyOpen] = useState(false);
-  const [buildPlan, setBuildPlan] = useState<LabBuildPlan | null>(null);
-  const [buildRun, setBuildRun] = useState<LabBuildRun | null>(null);
-  const [buildLoading, setBuildLoading] = useState(false);
-  const [buildError, setBuildError] = useState("");
 
   async function load() {
     setError("");
@@ -681,24 +674,6 @@ export function OperatorOverviewPage({
     void load();
   }, []);
 
-  async function openBuildJourney() {
-    setBuildJourneyOpen(true);
-    setBuildLoading(true);
-    setBuildError("");
-    setBuildPlan(null);
-    setBuildRun(null);
-    try {
-      const nextPlan = await api.labBuildPlan();
-      const latestRun = await api.latestLabBuildRun(nextPlan.kit_id);
-      setBuildPlan(nextPlan);
-      setBuildRun(latestRun && ["running", "waiting", "failed"].includes(latestRun.status) ? latestRun : null);
-    } catch (err) {
-      setBuildError(errorMessage(err));
-    } finally {
-      setBuildLoading(false);
-    }
-  }
-
   async function loadDetails() {
     setDetailsLoading(true);
     setError("");
@@ -728,79 +703,6 @@ export function OperatorOverviewPage({
     setDetailsOpen(opening);
     if (opening && !detailsLoaded && !detailsLoading) {
       void loadDetails();
-    }
-  }
-
-  async function startBuild() {
-    setBuildLoading(true);
-    setBuildError("");
-    try {
-      setBuildRun(await api.startLabBuild());
-    } catch (err) {
-      setBuildError(errorMessage(err));
-    } finally {
-      setBuildLoading(false);
-    }
-  }
-
-  async function resumeBuild() {
-    if (!buildRun) return;
-    setBuildLoading(true);
-    setBuildError("");
-    try {
-      const step = buildRun.steps.find((candidate) => candidate.step_id === buildRun.current_step_id);
-      if (!step) throw new Error("The current build step is unavailable. Refresh the build status.");
-      if (step.status === "not_started" && ["read_only", "report_only"].includes(step.action_mode)) {
-        setBuildRun(await api.resumeLabBuild(buildRun.run_id, { run_revision: buildRun.revision }));
-        return;
-      }
-      if (step.status !== "waiting" || !step.waiting_nonce) {
-        throw new Error("This build is not waiting for a completed guarded action.");
-      }
-      const evidence = (await api.workflowActionRuns(step.action_id)).find((trace) => {
-        const finished = new Date(trace.finished_at || trace.started_at).getTime();
-        const waiting = new Date(step.started_at || "").getTime();
-        return Number.isFinite(finished) && Number.isFinite(waiting) && finished >= waiting;
-      });
-      if (!evidence) {
-        throw new Error("Complete the guarded action in Details, then continue this build.");
-      }
-      setBuildRun(await api.resumeLabBuild(buildRun.run_id, {
-        action_run_id: evidence.run_id,
-        run_revision: buildRun.revision,
-        waiting_nonce: step.waiting_nonce
-      }));
-    } catch (err) {
-      setBuildError(errorMessage(err));
-    } finally {
-      setBuildLoading(false);
-    }
-  }
-
-  async function retryBuildStep(stepId: string) {
-    if (!buildRun) return;
-    setBuildLoading(true);
-    setBuildError("");
-    try {
-      const reset = await api.retryLabBuildStep(buildRun.run_id, stepId);
-      setBuildRun(await api.resumeLabBuild(reset.run_id, { run_revision: reset.revision }));
-    } catch (err) {
-      setBuildError(errorMessage(err));
-    } finally {
-      setBuildLoading(false);
-    }
-  }
-
-  async function refreshBuild() {
-    if (!buildRun) return;
-    setBuildLoading(true);
-    setBuildError("");
-    try {
-      setBuildRun(await api.labBuildRun(buildRun.run_id));
-    } catch (err) {
-      setBuildError(errorMessage(err));
-    } finally {
-      setBuildLoading(false);
     }
   }
 
@@ -886,57 +788,37 @@ export function OperatorOverviewPage({
 
   return (
     <OperatorPage title="Overview">
-      {buildJourneyOpen ? (
-        <LabBuildJourney
-          error={buildError}
-          loading={buildLoading}
-          onClose={() => setBuildJourneyOpen(false)}
-          onOpenDetails={() => {
-            setBuildJourneyOpen(false);
-            setDetailsOpen(true);
-            if (!detailsLoaded && !detailsLoading) void loadDetails();
-          }}
-          onRefresh={() => void refreshBuild()}
-          onReload={() => void openBuildJourney()}
-          onResume={() => void resumeBuild()}
-          onRetry={(stepId) => void retryBuildStep(stepId)}
-          onStart={() => void startBuild()}
-          plan={buildPlan}
-          run={buildRun}
-        />
-      ) : (
-        <div className="operator-home-layout">
-          <div className="operator-home-map-column">
-            {detailsLoading && <p className="operator-home-feedback">Refreshing device status...</p>}
-            <LabTopologyMap
-              accessRows={accessRows}
-              activeProfile={activeProfile}
-              address={address}
-              features={features}
-              firmwareSummaries={firmwareSummaries}
-              health={health}
-              onReload={load}
-              vcenterNetapp={vcenterNetapp}
-              workflowActions={workflowActions}
-            />
-          </div>
-          <aside className="operator-home-rail" aria-label="Operator Home status and next action">
-            <OperatorHomeView
-              detailsOpen={detailsOpen}
-              error={error || labProfileError}
-              loading={labProfileLoading}
-              model={operatorHome}
-              onPrimaryAction={() => void openBuildJourney()}
-              onViewDetails={toggleDetails}
-            />
-            {detailsOpen && (
-              <section className="operator-home-details" aria-label="Operator Details">
-                {advancedProof}
-              </section>
-            )}
-          </aside>
+      <div className="operator-home-layout">
+        <div className="operator-home-map-column">
+          {detailsLoading && <p className="operator-home-feedback">Refreshing device status...</p>}
+          <LabTopologyMap
+            accessRows={accessRows}
+            activeProfile={activeProfile}
+            address={address}
+            features={features}
+            firmwareSummaries={firmwareSummaries}
+            health={health}
+            onReload={load}
+            vcenterNetapp={vcenterNetapp}
+            workflowActions={workflowActions}
+          />
         </div>
-      )}
+        <aside className="operator-home-rail" aria-label="Operator Home status and next action">
+          <OperatorHomeView
+            detailsOpen={detailsOpen}
+            error={error || labProfileError}
+            loading={labProfileLoading}
+            model={operatorHome}
+            onPrimaryAction={() => navigate("/run-center")}
+            onViewDetails={toggleDetails}
+          />
+          {detailsOpen && (
+            <section className="operator-home-details" aria-label="Operator Details">
+              {advancedProof}
+            </section>
+          )}
+        </aside>
+      </div>
     </OperatorPage>
   );
 }

@@ -250,6 +250,12 @@ test("renders the map-first operator spine and pages", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Lab Defaults", exact: true })).toBeVisible();
   await page.goto("/firmware-upgrades");
   await expect(page.getByRole("heading", { name: "Keep every device on the expected version.", exact: true })).toBeVisible();
+  await page.goto("/run-center");
+  await expect(page.getByRole("heading", { name: "Run Center", exact: true })).toBeVisible();
+  await expect(page.getByTestId("lab-build-journey")).toBeVisible();
+  await expect(page.getByLabel("Build Plan")).toBeVisible();
+  await expect(page.getByText("Readiness Workflow")).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Lab Setup", exact: true })).toHaveCount(0);
   await page.goto("/validation");
   await expect(page.getByRole("heading", { name: "Validation", exact: true })).toBeVisible();
   await page.goto("/config");
@@ -410,6 +416,7 @@ test("operator home opens one ordered build plan with one primary action", async
   await page.goto("/overview");
   const latestRequest = page.waitForRequest((request) => request.url().includes("/api/v1/lab-build/runs/latest"));
   await page.getByTestId("operator-home-primary-action").click();
+  await expect(page).toHaveURL(/\/run-center$/);
   expect(new URL((await latestRequest).url()).searchParams.get("kit_id")).toBe("runtime-profile");
 
   const journey = page.getByTestId("lab-build-journey");
@@ -430,6 +437,7 @@ test("build plan keeps its next action visible without mobile overflow", async (
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/overview");
   await page.getByTestId("operator-home-primary-action").click();
+  await expect(page).toHaveURL(/\/run-center$/);
 
   const journey = page.getByTestId("lab-build-journey");
   await expect(journey.getByTestId("lab-build-primary-action")).toBeVisible();
@@ -441,6 +449,7 @@ test("build plan keeps its next action visible without mobile overflow", async (
 test("run console pauses at a guarded change without exposing duplicate consoles", async ({ page }) => {
   await page.goto("/overview");
   await page.getByTestId("operator-home-primary-action").click();
+  await expect(page).toHaveURL(/\/run-center$/);
   await page.getByTestId("lab-build-primary-action").click();
 
   const journey = page.getByTestId("lab-build-journey");
@@ -456,6 +465,7 @@ test("run console pauses at a guarded change without exposing duplicate consoles
   await expect(page.getByText("Operator Console")).toHaveCount(0);
 
   await runConsole.getByRole("button", { name: "Open Details" }).click();
+  await expect(page).toHaveURL(/\/overview$/);
   await expect(page.getByTestId("lab-build-journey")).toHaveCount(0);
   await expect(page.locator("section[aria-label='Living lab topology']")).toBeVisible();
 });
@@ -463,6 +473,7 @@ test("run console pauses at a guarded change without exposing duplicate consoles
 test("guarded build continuation submits exact waiting evidence", async ({ page }) => {
   await page.goto("/overview");
   await page.getByTestId("operator-home-primary-action").click();
+  await expect(page).toHaveURL(/\/run-center$/);
   await page.getByTestId("lab-build-primary-action").click();
 
   const resumeRequest = page.waitForRequest((request) => (
@@ -483,6 +494,7 @@ test("running builds can only refresh status", async ({ page }) => {
   await page.route("**/api/v1/lab-build/runs/latest?*", (route) => json(route, labBuildRunningRun()));
   await page.goto("/overview");
   await page.getByTestId("operator-home-primary-action").click();
+  await expect(page).toHaveURL(/\/run-center$/);
 
   const console = page.getByLabel("Run Console");
   await expect(console.getByTestId("lab-build-primary-action")).toContainText("Refresh Status");
@@ -494,6 +506,7 @@ test("failed build shows one completion report and retry only when safe", async 
   await page.route("**/api/v1/lab-build/runs", (route) => json(route, labBuildFailedRun()));
   await page.goto("/overview");
   await page.getByTestId("operator-home-primary-action").click();
+  await expect(page).toHaveURL(/\/run-center$/);
   await page.getByTestId("lab-build-primary-action").click();
 
   const report = page.getByLabel("Completion Report");

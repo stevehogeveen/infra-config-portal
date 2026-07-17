@@ -31,6 +31,7 @@ import { createPortal } from "react-dom";
 import { Link, Navigate, NavLink, Route as RouterRoute, Routes, useLocation, useNavigate, useParams } from "react-router-dom";
 
 import { api } from "./api";
+import { LabBuildJourney } from "./components/operator/LabBuildJourney";
 import {
   OperatorFirmwareUpgradesPage,
   OperatorLabDefaultsPage,
@@ -75,6 +76,8 @@ import type {
   IloSetupIntentWrite,
   IloSetupPlanPreview,
   IloUpgradeReadiness,
+  LabBuildPlan,
+  LabBuildRun,
   LabValidationItem,
   LabValidationSummary,
   LabAddressPlan,
@@ -770,7 +773,7 @@ function App() {
               <RouterRoute path="/dashboard" element={<Navigate to="/overview" replace />} />
               <RouterRoute path="/lab-setup" element={<Navigate to="/overview" replace />} />
               <RouterRoute path="/hardware" element={<Navigate to="/overview" replace />} />
-              <RouterRoute path="/run-center" element={<LabSetupPage />} />
+              <RouterRoute path="/run-center" element={<RunCenter />} />
               <RouterRoute path="/control-center" element={<Navigate to="/overview" replace />} />
               <RouterRoute path="/firmware" element={<Navigate to="/firmware-upgrades" replace />} />
               <RouterRoute path="/golden-state" element={<Navigate to="/validation" replace />} />
@@ -1934,6 +1937,129 @@ function ActiveLabSetupOverview({ state }: { state: LabProfileList | null }) {
 }
 
 function RunCenter() {
+  const navigate = useNavigate();
+  const [plan, setPlan] = useState<LabBuildPlan | null>(null);
+  const [run, setRun] = useState<LabBuildRun | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  async function loadBuildJourney() {
+    setLoading(true);
+    setError("");
+    setPlan(null);
+    setRun(null);
+    try {
+      const nextPlan = await api.labBuildPlan();
+      const latestRun = await api.latestLabBuildRun(nextPlan.kit_id);
+      setPlan(nextPlan);
+      setRun(latestRun && ["running", "waiting", "failed"].includes(latestRun.status) ? latestRun : null);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function startBuild() {
+    setLoading(true);
+    setError("");
+    try {
+      setRun(await api.startLabBuild());
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function resumeBuild() {
+    if (!run) return;
+    setLoading(true);
+    setError("");
+    try {
+      const step = run.steps.find((candidate) => candidate.step_id === run.current_step_id);
+      if (!step) throw new Error("The current build step is unavailable. Refresh the build status.");
+      if (step.status === "not_started" && ["read_only", "report_only"].includes(step.action_mode)) {
+        setRun(await api.resumeLabBuild(run.run_id, { run_revision: run.revision }));
+        return;
+      }
+      if (step.status !== "waiting" || !step.waiting_nonce) {
+        throw new Error("This build is not waiting for a completed guarded action.");
+      }
+      const evidence = (await api.workflowActionRuns(step.action_id)).find((trace) => {
+        const finished = new Date(trace.finished_at || trace.started_at).getTime();
+        const waiting = new Date(step.started_at || "").getTime();
+        return Number.isFinite(finished) && Number.isFinite(waiting) && finished >= waiting;
+      });
+      if (!evidence) {
+        throw new Error("Complete the guarded action in Details, then continue this build.");
+      }
+      setRun(await api.resumeLabBuild(run.run_id, {
+        action_run_id: evidence.run_id,
+        run_revision: run.revision,
+        waiting_nonce: step.waiting_nonce
+      }));
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function retryBuildStep(stepId: string) {
+    if (!run) return;
+    setLoading(true);
+    setError("");
+    try {
+      const reset = await api.retryLabBuildStep(run.run_id, stepId);
+      setRun(await api.resumeLabBuild(reset.run_id, { run_revision: reset.revision }));
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function refreshBuild() {
+    if (!run) return;
+    setLoading(true);
+    setError("");
+    try {
+      setRun(await api.labBuildRun(run.run_id));
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void loadBuildJourney();
+  }, []);
+
+  return (
+    <Page
+      description="Follow this kit's ordered build plan, continue safe checks, and review the completion report."
+      title="Run Center"
+    >
+      <LabBuildJourney
+        error={error}
+        loading={loading}
+        onClose={() => navigate("/overview")}
+        onOpenDetails={() => navigate("/overview")}
+        onRefresh={() => void refreshBuild()}
+        onReload={() => void loadBuildJourney()}
+        onResume={() => void resumeBuild()}
+        onRetry={(stepId) => void retryBuildStep(stepId)}
+        onStart={() => void startBuild()}
+        plan={plan}
+        run={run}
+      />
+    </Page>
+  );
+}
+
+function LegacyWorkflowRunCenter() {
   const { isAdvancedMode } = useUiMode();
   const { activeContext, activeProfile } = useLabProfileContext();
   const netappInScope = activeContext?.enabled_features.netapp_enabled ?? activeProfile?.features.netapp_enabled ?? true;
