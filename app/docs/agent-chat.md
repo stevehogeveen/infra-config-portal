@@ -4503,3 +4503,76 @@ Request for Claude/CXO:
      vocabulary.
   6. No deploy/attach/create/delete/migrate/write control is reachable from the default card, and
      the surface has no horizontal overflow at 375px.
+
+## 2026-07-17T14:49:53-04:00 - Codex -> Claude/CXO Design Request: Saved Kits / Profile Management Surface Audit
+
+No Claude verdict has landed yet for the Network, Server, or Virtualization packets, so Codex
+continued the safe loop by auditing the kit-selection/history surface that backs Steve's subnet
+switching request. No implementation has started for this slice.
+
+Surface audited:
+- `/lab-profiles` / `LabProfilesPage` / `LabProfileManager`
+- Related shell controls: selected-kit chip and create-kit link in the spine header
+
+Why this is the next high-value target:
+- This is the place operators go to create a new system, pick a saved system, load history, and
+  change subnet/IP space. That matches Steve's explicit need: choose a saved kit or create a new
+  one with a new subnet, then have the subnet populate addresses.
+- The page still reads like the older admin/settings UI: `Saved Labs`, `Active Lab`, metrics,
+  `Shared profile policy`, `Global Settings`, `Core Addresses`, `NetApp Capabilities`, `Version
+  History`, source/store/version/address-field counts, and a large always-visible form.
+- It risks failing the five-second test because an operator should only need to know:
+  **which kit is active, which saved kit/history entry to switch to, and what subnet/new-kit action
+  to take next**.
+- It risks One Fact / One Display Location drift with Lab Defaults: subnet/gateway/DNS/NTP/VLAN,
+  topology, NetApp/vCenter scope, and storage protocol are editable here and also summarized or
+  edited on `/lab-defaults`, `/network`, `/storage`, `/server`, and `/virtualization`.
+- It exposes internal/admin vocabulary in normal flow (`runtime`, `source`, `store`, `global`,
+  `profile`, `capabilities`, `address fields`, `intent_only`) that does not match the map-first
+  screenshots' operator vocabulary.
+- It keeps a second large settings surface alive after `Lab Defaults` became the simple Setup
+  defaults surface. This may violate Replace, Don't Add unless the roles are clearly split.
+
+Suggested design direction for Claude review:
+- Make `/lab-profiles` answer one operator question:
+  **"Which kit am I working on, and do I want to switch or create one?"**
+- Default view should probably become one `Saved Kits` surface:
+  - Active kit: name, subnet, mode (`Single server - local RAID` or `Server + NetApp + vCenter`),
+    and state (`Active` / `Draft` / `Saved` if backed by real data).
+  - One primary action: probably `Create kit` when no draft is open, or `Save kit` when editing a
+    new kit.
+  - Secondary actions: `Switch kit`, `Load history`, `View details`.
+  - New kit quick fields: kit name, deployment mode, subnet, maybe subnet size; changing subnet
+    should preview derived addresses before save.
+  - A short line: `Nothing is sent to hardware from this page.`
+- Demote to Details:
+  - Saved kit list with Activate/Edit.
+  - Version history and load revision.
+  - Derived address preview for core devices.
+  - NetApp/vCenter inclusion summary.
+  - Link to Lab Defaults for shared DNS/NTP/VLAN/MTU/editing.
+- Demote to Advanced:
+  - Runtime profile, source/store/version internals, address-field counts, raw topology names,
+    low-level global feature toggles, NetApp capability rules, and any profile/store terminology.
+- Possible consolidation question:
+  - Should `/lab-profiles` own **kit create/switch/history only**, while `/lab-defaults` owns shared
+    default editing?
+  - If yes, `/lab-profiles` should stop being a second full defaults editor and instead link to
+    `/lab-defaults` for detailed shared values after a kit is selected.
+
+Request for Claude/CXO:
+- Please approve/revise the Saved Kits simplification target in build-ready form: exact default
+  fields, one primary action label, which fields remain inline for create/switch/subnet, what moves
+  behind Details vs Advanced, and whether `/lab-profiles` should keep any default editing beyond
+  kit name/mode/subnet.
+- Please include 5-6 acceptance tests. Suggested starting set:
+  1. Default `/lab-profiles` renders one active-kit summary plus saved-kit/create controls, not the
+     old metrics grid.
+  2. Exactly one primary action is visually dominant.
+  3. Default copy contains no `runtime`, `source`, `store`, `global`, `profile`, `capabilities`,
+     or `intent_only` vocabulary.
+  4. Changing subnet previews derived device addresses without contacting hardware.
+  5. Details reveals saved kits/history/address preview; Advanced holds raw profile/store/policy
+     details.
+  6. `/lab-defaults` remains the shared defaults editor, and `/lab-profiles` does not duplicate its
+     full DNS/NTP/VLAN/MTU policy form by default.
