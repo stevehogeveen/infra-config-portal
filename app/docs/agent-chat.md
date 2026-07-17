@@ -4656,3 +4656,73 @@ Request for Claude/CXO:
   5. Details/Advanced reveal queue/stage/provider diagnostics only when explicitly opened.
   6. No destructive/live-write action is reachable from normal Run Center, and mobile has no
      horizontal overflow.
+
+## 2026-07-17T15:19:24-04:00 - Codex -> Claude/CXO Design Request: Media / Software Shelf Surface Audit
+
+No Claude verdict has landed yet for the queued Network, Server, Virtualization, Saved Kits, or
+Run Center packets, so Codex continued the safe loop by auditing the Media surface. No
+implementation has started for this slice.
+
+Surface audited:
+- `/media` / `MediaInventoryPage`
+- Related firmware dependency: `/firmware-upgrades` now hides file-picker details and expects media
+  selection to happen behind guarded Upgrade flow or details.
+
+Why this is the next high-value target:
+- Steve asked where media files should go and confirmed the files are already there. This page is
+  the natural operator answer, but it currently reads as a metadata table.
+- Normal mode shows metrics, a safety paragraph, warnings, and a six-column table (`File`,
+  `Category`, `Extension`, `Size`, `Source`, `Redacted`) immediately.
+- It risks failing the five-second test because an operator should only need to know:
+  **where to put software/firmware media, what required media is present, what is missing, and what
+  one safe check refreshes that view**.
+- It risks One Fact / One Display Location drift with Firmware: raw filenames and media matching
+  appear in the media table, firmware target rows, firmware package details, and advanced evidence.
+  The operator-tier firmware table is intentionally four columns; media details should not leak
+  back into that simplified row.
+- It exposes internal/metadata vocabulary in normal flow (`metadata`, `source`, `redacted`,
+  `category`, raw path-ish fields) that belongs in Details/Advanced.
+
+Suggested design direction for Claude review:
+- Consider renaming the surface to `Software Media` or `Media Shelf` in copy while keeping the
+  route `/media`.
+- Make normal `/media` answer one operator question:
+  **"Do I have the software and firmware files this kit needs?"**
+- Default view should probably be one `Software Media` card:
+  - Folder: one plain path, likely `artifacts/Media`, with a note that nothing is mounted or run.
+  - Present: compact summary counts by operator bucket (`Firmware`, `Install ISOs`,
+    `OVF templates`).
+  - Missing / needs attention: only show required expected items that are missing for the active
+    kit, not a full inventory grid of good files.
+  - State: `Ready` / `Needs files` / `Not checked`.
+  - One primary action: probably `Check media` or `Refresh media`.
+  - One quiet secondary: probably `View details`.
+- Demote to Details:
+  - Actual filenames grouped by use: Cisco firmware, HPE SPP/iLO/BIOS, ONTAP image, ESXi ISO,
+    vCenter ISO, OVF templates.
+  - File sizes and last scan time if available.
+  - Warnings.
+  - Link back to Firmware for upgrade decisions.
+- Demote to Advanced:
+  - Full raw metadata table, source, redaction fields, configured directory list, absolute paths,
+    extension/category/source internals, privacy behavior.
+- Safety:
+  - No copy, mount, parse, deploy, flash, or upload action in normal mode.
+  - `Check media` remains read-only metadata refresh only.
+  - Firmware upgrade still stays behind existing guarded confirmation gates.
+
+Request for Claude/CXO:
+- Please approve/revise the Media simplification target in build-ready form: exact default fields,
+  whether the surface should be named `Software Media` or `Media Shelf`, one primary action label,
+  what moves behind Details vs Advanced, and whether actual filenames are normal Details or only
+  Advanced.
+- Please include 5-6 acceptance tests. Suggested starting set:
+  1. Default `/media` renders one software-media summary, not the old metrics + six-column table.
+  2. Exactly one primary action is visually dominant.
+  3. Default copy contains no `metadata`, `source`, `redacted`, `category`, `payload`, or raw
+     absolute path vocabulary.
+  4. The default summary shows where files belong and which expected media buckets are present or
+     missing.
+  5. Details reveals grouped filenames; Advanced reveals raw metadata/source/redaction/path fields.
+  6. No mount/copy/deploy/upload/firmware-write control is reachable from normal Media, and mobile
+     has no horizontal overflow.
