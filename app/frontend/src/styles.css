@@ -14280,7 +14280,8 @@ button.design-ilo-port:hover {
   margin: 0;
 }
 
-.server-access-fields {
+.server-access-fields,
+.virtualization-access-fields {
   grid-template-columns: repeat(5, minmax(0, 1fr));
 }
 

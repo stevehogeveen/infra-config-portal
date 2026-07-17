@@ -1368,6 +1368,98 @@ test("server surface has no horizontal overflow on mobile", async ({ page }) => 
   expect(overflow).toBeLessThanOrEqual(1);
 });
 
+test("virtualization default shows one VM management card and hides technical detail", async ({ page }) => {
+  await page.goto("/virtualization");
+
+  const vm = page.getByLabel("VM Management");
+  await expect(vm.getByRole("heading", { name: "vCenter managed" })).toBeVisible();
+  await expect(vm.locator("dt")).toHaveText(["Mode", "Target", "Datastore", "State", "Access"]);
+  await expect(vm.getByRole("button", { name: "Run VM check" })).toBeVisible();
+  await expect(vm.getByRole("button", { name: "View details" })).toBeVisible();
+  await expect(vm.locator(".operator-primary-button")).toHaveCount(1);
+
+  await expect(page.locator("section[aria-label='VM details']")).toHaveCount(0);
+  await expect(page.getByRole("textbox", { name: "Change this page" })).toHaveCount(0);
+  await expect(page.getByText("Virtualization setup shape")).toHaveCount(0);
+  await expect(page.getByText("Virtualization readiness at a glance")).toHaveCount(0);
+  await expect(page.getByText("vCenter source")).toHaveCount(0);
+  await expect(vm.getByRole("button", { name: /deploy|attach|create|delete|migrate|write/i })).toHaveCount(0);
+  const text = await vm.textContent();
+  expect(text ?? "").not.toMatch(/\bprovider\b/i);
+  expect(text ?? "").not.toMatch(/\bruntime\b/i);
+  expect(text ?? "").not.toMatch(/\bpayload\b/i);
+  expect(text ?? "").not.toMatch(/\bpost-attach\b/i);
+  expect(text ?? "").not.toMatch(/\bsource\b/i);
+  expect(text ?? "").not.toMatch(/\bfreshness\b/i);
+});
+
+test("virtualization details reveal saved checks and keep proof advanced", async ({ page }) => {
+  await page.goto("/virtualization");
+  await page.getByLabel("VM Management").getByRole("button", { name: "View details" }).click();
+
+  const details = page.locator("section[aria-label='VM details']");
+  await expect(details).toBeVisible();
+  await expect(details).toContainText("vCenter target");
+  await expect(details).toContainText("Datastore");
+  await expect(details).toContainText("VM inventory");
+  await expect(details.getByLabel("Virtualization configure")).toBeVisible();
+  await expect(details).toContainText("Virtualization setup shape");
+  await expect(page.getByText("vCenter source")).toBeHidden();
+
+  const advanced = page.locator("details.advanced-drawer").filter({ hasText: "Virtualization proof" });
+  await advanced.locator(":scope > summary").click();
+  await expect(page.getByText("vCenter source")).toBeVisible();
+});
+
+test("virtualization check runs through the read-only action endpoint", async ({ page }) => {
+  await page.goto("/virtualization");
+
+  const runResponse = page.waitForResponse((response) =>
+    response.url().includes("/api/v1/workflows/actions/vcenter-netapp.readiness/run") &&
+    response.request().method() === "POST"
+  );
+  await page.getByLabel("VM Management").getByRole("button", { name: "Run VM check" }).click();
+  await expect((await runResponse).ok()).toBeTruthy();
+  await expect(page.getByLabel("VM Management")).toContainText("vCenter Live Check:");
+});
+
+test("single-server virtualization defaults to direct ESXi without vCenter blocker", async ({ page }) => {
+  labProfileScenario = "single";
+  await page.goto("/virtualization");
+
+  const vm = page.getByLabel("VM Management");
+  await expect(vm).toContainText("Direct ESXi");
+  await expect(vm).toContainText("Server local datastore");
+  await expect(vm).not.toContainText("vCenter");
+  await expect(vm).not.toContainText(/blocker|required/i);
+});
+
+test("virtualization blocker copy hides internal mode vocabulary", async ({ page }) => {
+  await page.route("**/api/v1/lab/vcenter-netapp/readiness", (route) => json(route, {
+    ...vcenterNetappReadiness(),
+    blockers: ["PROVIDER_MODE=local-lab-readwrite runtime provider credential is missing."],
+    message: "PROVIDER MODE=mock runtime provider credential is missing.",
+    next_safe_action: "PROVIDER_MODE=mock runtime provider password missing.",
+    status: "blocked"
+  }));
+
+  await page.goto("/virtualization");
+  const vm = page.getByLabel("VM Management");
+  await expect(vm).toContainText("Needs attention");
+  const text = await vm.textContent();
+  expect(text ?? "").not.toMatch(/PROVIDER[_ ]MODE/i);
+  expect(text ?? "").not.toMatch(/\bprovider\b/i);
+  expect(text ?? "").not.toMatch(/\bruntime\b/i);
+});
+
+test("virtualization surface has no horizontal overflow on mobile", async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 800 });
+  await page.goto("/virtualization");
+
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+  expect(overflow).toBeLessThanOrEqual(1);
+});
+
 test("map switch workspace shows access settings and blockers without proof clutter", async ({ page }) => {
   await page.goto("/overview");
   await openOperatorDetails(page);

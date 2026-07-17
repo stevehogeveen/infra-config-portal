@@ -302,6 +302,8 @@ const emptyRunState: WorkflowRunState = {
 const noProofText = "Advanced proof is hidden unless you need it.";
 const networkSwitchCheckActionIds = ["cisco.setup-readiness", "cisco.ssh-readonly-probe", "cisco.current-intent-diff"];
 const serverCheckActionIds = ["ilo.reachability", "ilo.auth", "ilo.inventory", "esxi.management-validation", "raid.validate"];
+const vcenterVmCheckActionIds = ["vcenter-netapp.readiness", "vcenter.install-readiness", "vcenter.post-attach-validation", "esxi.vm-deploy-validate"];
+const directVmCheckActionIds = ["esxi.management-validation", "esxi.vm-deploy-validate"];
 
 type PageIntentLayout = Record<string, UiIntentRegionLayout>;
 
@@ -4282,6 +4284,8 @@ export function OperatorVirtualizationPage({ labProfileState, onReloadLabProfile
   const [postAttach, setPostAttach] = useState<ProviderProbeResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [runState, setRunState] = useState<WorkflowRunState>(emptyRunState);
 
   async function load() {
     setError("");
@@ -4316,21 +4320,16 @@ export function OperatorVirtualizationPage({ labProfileState, onReloadLabProfile
   }, [vcenterEnabled]);
 
   const virtualStatus = vcenterEnabled
-    ? asString(postAttach?.status) || asString(vcenterNetapp?.status) || asString(installReadiness?.status) || "not_checked"
+    ? strongestStatus([
+        asString(postAttach?.status) || "not_checked",
+        asString(vcenterNetapp?.status) || "not_checked",
+        asString(installReadiness?.status) || "not_checked"
+      ])
     : "not_checked";
   const target = vcenterTarget(vcenterNetapp || installReadiness, activeProfile);
   const postChecks = objectValue(postAttach?.checks);
   const currentView = virtualizationCurrentView({ activeProfile, features, installReadiness, postAttach, vcenterNetapp });
-  const virtualizationRunLabel = vcenterEnabled ? "vCenter Live Check" : "ESXi Live Check";
-  const virtualizationActionIds = vcenterEnabled
-    ? ["vcenter-netapp.readiness", "vcenter.install-readiness", "vcenter.post-attach-validation", "esxi.vm-deploy-validate"]
-    : ["esxi.management-validation", "esxi.vm-deploy-validate"];
-  const virtualizationHelper = vcenterEnabled
-    ? "vCenter, ESXi attach, datastore visibility, VM inventory, and OVF deployment are grouped here."
-    : "This setup uses direct ESXi operations; vCenter checks are held out of scope until the profile enables vCenter.";
-  const virtualizationNextAction = vcenterEnabled
-    ? humanize(asString(vcenterNetapp?.next_safe_action) || "Run vCenter Live Check, then validate datastore and VM inventory visibility.")
-    : "Run ESXi Live Check, then validate the VM deployment path for this scenario.";
+  const virtualizationActionIds = vcenterEnabled ? vcenterVmCheckActionIds : directVmCheckActionIds;
   const virtualizationRows = useMemo<OperatorObjectRow[]>(
     () => {
       const baseRows: OperatorObjectRow[] = [
@@ -4453,98 +4452,309 @@ export function OperatorVirtualizationPage({ labProfileState, onReloadLabProfile
     },
     [address.esxi_management, currentView, features?.vcenter_disabled_reason, installReadiness, postAttach, postChecks, scenarioLabel, storageLabel, target, vcenterEnabled, vcenterNetapp, virtualStatus]
   );
-  const intent = usePageIntentLayout("virtualization", virtualizationIntentRegions, activeProfile?.id);
-  const virtualizationRegions: Record<string, ReactNode> = {
-    "advanced-proof": (
-      <AdvancedDrawer title="Virtualization proof" summary={noProofText}>
-        <OperatorWorkspace currentView={currentView} rows={virtualizationRows} compact />
-        <ConfigValueList
-          values={[
-            { label: "vCenter source", value: sourceLabel(vcenterNetapp) },
-            { label: "Install blockers", value: String(stringArray(installReadiness?.blockers).length) },
-            { label: "Post-attach warnings", value: String(stringArray(postAttach?.warnings).length) }
-          ]}
-        />
-      </AdvancedDrawer>
-    ),
-    configure: (
-      <section className="overview-safe-actions" aria-label="Virtualization configure">
-        <VirtualizationConfigurePanel
-          activeProfile={activeProfile}
-          address={address}
-          features={features}
-          global={global}
-          onSaved={async () => {
-            await onReloadLabProfile?.();
-            await load();
-          }}
-        />
-      </section>
-    ),
-    reference: (
-      <OperatorReferencePanel
-        actionLabel="Open validation"
-        actionTo="/validation"
-        ariaLabel="Virtualization reference"
-        currentView={currentView}
-        rows={virtualizationRows}
-        subtitle="vCenter, ESXi attach, inventory"
-        tableTitle="Virtualization Signals"
-        title="Virtualization readiness at a glance"
-      />
-    ),
-    "setup-shape": (
-      <VirtualizationSetupShapePanel
-        activeProfile={activeProfile}
-        currentView={currentView}
-        features={features}
-        installReadiness={installReadiness}
-        postAttach={postAttach}
-        storageLabel={storageLabel}
-        target={target}
-        vcenterEnabled={vcenterEnabled}
-        vcenterNetapp={vcenterNetapp}
-        virtualStatus={virtualStatus}
-      />
-    )
+  const byActionId = useMemo(() => new Map(actions.map((action) => [action.action_id, action])), [actions]);
+  const vmRunConfig: TabRunConfig = {
+    actionIds: virtualizationActionIds,
+    actions,
+    kind: "read",
+    label: "Run VM check",
+    onReload: load
   };
+  const vmAction = firstRunnableAction(byActionId, virtualizationActionIds, vmRunConfig);
+  const vmFallbackActionId = fallbackRunActionId(vmRunConfig, vmAction);
+  const vmDisabledReason = vmAction
+    ? disabledReasonForRunConfig(vmRunConfig, vmAction)
+    : vmFallbackActionId
+      ? ""
+      : disabledReasonForRunConfig(vmRunConfig, vmAction);
+  const vmManagement = virtualizationVmManagementCardModel({
+    activeProfile,
+    address,
+    currentView,
+    installReadiness,
+    postAttach,
+    storageLabel,
+    target,
+    vcenterEnabled,
+    vcenterNetapp,
+    virtualStatus
+  });
+  const virtualizationDetailRows = [
+    { current: vmManagement.target, item: vcenterEnabled ? "vCenter target" : "ESXi target", status: virtualStatus },
+    { current: vmManagement.datastore, item: "Datastore", status: vcenterEnabled ? datastoreVisibleStatus(vcenterNetapp || postAttach) : "not_checked" },
+    { current: vcenterEnabled ? visibilityLabel(postChecks.vm_inventory_visible) : "Direct ESXi inventory", item: "VM inventory", status: vcenterEnabled ? visibilityStatus(postChecks.vm_inventory_visible) : "not_checked" },
+    { current: "Guarded until validation passes", item: "VM deployment", status: "not_checked" }
+  ];
+
+  async function runVmCheck() {
+    const actionId = vmAction?.action_id ?? vmFallbackActionId;
+    if (!actionId || vmDisabledReason || runState.runningActionId) return;
+    setRunState({ error: "", message: "", runningActionId: actionId });
+    try {
+      const result = await api.runWorkflowAction(actionId);
+      setRunState({
+        error: "",
+        message: vmAction ? workflowRunMessage(vmAction, result) : workflowRunResultMessage("Run VM check", result),
+        runningActionId: ""
+      });
+      await load();
+    } catch (err) {
+      setRunState({ error: errorMessage(err), message: "", runningActionId: "" });
+    }
+  }
 
   return (
     <OperatorPage title="Virtualization">
-      <PageStatusHeader
-        description="Use these live checks and guarded actions for this part of the lab."
-        helper={virtualizationHelper}
-        icon={<Layers size={26} />}
-        nextAction={virtualizationNextAction}
-        runConfig={{
-          actionIds: virtualizationActionIds,
-          actions,
-          label: virtualizationRunLabel,
-          onReload: load
-        }}
-        status={virtualStatus}
-        tabId="virtualization"
-        title="Virtualization"
-      />
+      <div className="operator-surface-heading">
+        <p className="operator-kicker">Setup</p>
+        <h1>Virtualization</h1>
+        <p>Can this kit manage VMs through the right target, datastore, and access path?</p>
+      </div>
       <Feedback loading={loading && !vcenterNetapp} error={error} />
-      <PageIntentBar
-        layout={intent.layout}
-        onApply={intent.applyOps}
-        onReset={intent.reset}
-        onTargetRegionChange={intent.setTargetRegionId}
-        onUndo={intent.undo}
-        page="virtualization"
-        regions={virtualizationIntentRegions}
-        summary={intent.summary}
-        targetRegionId={intent.targetRegionId}
-        undoAvailable={intent.undoAvailable}
-      />
-      {orderedIntentRegions(virtualizationIntentRegions, intent.layout).map((region) => (
-        <IntentRegion highlighted={intent.targetRegionId === region.id} key={region.id} layout={intent.layout} region={region}>
-          {virtualizationRegions[region.id]}
-        </IntentRegion>
-      ))}
+      <section className="network-access-surface virtualization-access-surface" aria-label="VM Management">
+        <Card className="network-access-card virtualization-access-card" hover={false}>
+          <CardHeader>
+            <div>
+              <p className="operator-kicker">VM management</p>
+              <h2>{vmManagement.mode}</h2>
+            </div>
+            <StatusBadge label={vmManagement.stateLabel} status={vmManagement.badgeStatus} />
+          </CardHeader>
+          <CardContent>
+            <dl className="network-access-fields virtualization-access-fields">
+              <div>
+                <dt>Mode</dt>
+                <dd>{vmManagement.mode}</dd>
+              </div>
+              <div>
+                <dt>Target</dt>
+                <dd>{vmManagement.target}</dd>
+              </div>
+              <div>
+                <dt>Datastore</dt>
+                <dd>{vmManagement.datastore}</dd>
+              </div>
+              <div>
+                <dt>State</dt>
+                <dd>{vmManagement.stateLabel}</dd>
+              </div>
+              <div>
+                <dt>Access</dt>
+                <dd>{vmManagement.access}</dd>
+              </div>
+            </dl>
+            {vmManagement.reason && (
+              <div className="network-access-reason" role="note">
+                <strong>Needs attention</strong>
+                <span>{vmManagement.reason}</span>
+              </div>
+            )}
+            {runState.message && <div className="operator-feedback network-access-feedback">{runState.message}</div>}
+            {runState.error && <div className="operator-feedback error network-access-feedback">{runState.error}</div>}
+          </CardContent>
+          <CardFooter>
+            <div className="network-access-actions virtualization-access-actions">
+              <button
+                className="operator-primary-button"
+                disabled={Boolean(vmDisabledReason) || Boolean(runState.runningActionId)}
+                onClick={() => void runVmCheck()}
+                title={vmDisabledReason || "Run VM check"}
+                type="button"
+              >
+                <RefreshCw size={16} />
+                {runState.runningActionId ? "Checking" : "Run VM check"}
+              </button>
+              <button
+                aria-expanded={detailsOpen}
+                className="secondary-button"
+                onClick={() => setDetailsOpen((current) => !current)}
+                type="button"
+              >
+                View details
+              </button>
+            </div>
+          </CardFooter>
+        </Card>
+      </section>
+      {detailsOpen && (
+        <section className="network-details virtualization-details" aria-label="VM details">
+          <div className="network-details-grid virtualization-details-grid">
+            <Card className="network-details-card" hover={false}>
+              <CardHeader>
+                <div>
+                  <p className="operator-kicker">Details</p>
+                  <h2>VM path and saved target</h2>
+                </div>
+                <StatusBadge label={vmManagement.stateLabel} status={vmManagement.badgeStatus} />
+              </CardHeader>
+              <CardContent>
+                <ConfigValueList
+                  values={[
+                    { label: "Mode", value: vmManagement.mode, source: "Saved setup" },
+                    { label: "Target", value: vmManagement.target, source: "Saved setup", status: virtualStatus },
+                    { label: "Datastore", value: vmManagement.datastore, source: "Saved setup" },
+                    { label: "Access", value: vmManagement.access },
+                    { label: "Next check", value: vmManagement.nextAction }
+                  ]}
+                />
+              </CardContent>
+            </Card>
+            <Card className="network-details-card" hover={false}>
+              <CardHeader>
+                <div>
+                  <p className="operator-kicker">Saved signals</p>
+                  <h2>Virtualization checks</h2>
+                </div>
+                <span>{virtualizationDetailRows.length} tracked</span>
+              </CardHeader>
+              <CompactTable>
+                <CompactTableHeader>
+                  <CompactTableCell>Item</CompactTableCell>
+                  <CompactTableCell>Current</CompactTableCell>
+                  <CompactTableCell>Status</CompactTableCell>
+                </CompactTableHeader>
+                <tbody>
+                  {virtualizationDetailRows.map((row) => (
+                    <CompactTableRow key={row.item}>
+                      <CompactTableCell><strong>{row.item}</strong></CompactTableCell>
+                      <CompactTableCell>{row.current}</CompactTableCell>
+                      <CompactTableCell><StatusBadge label={displayStatus(row.status)} status={statusBadgeStatus(row.status)} /></CompactTableCell>
+                    </CompactTableRow>
+                  ))}
+                </tbody>
+              </CompactTable>
+            </Card>
+            <section className="overview-safe-actions" aria-label="Virtualization configure">
+              <VirtualizationConfigurePanel
+                activeProfile={activeProfile}
+                address={address}
+                features={features}
+                global={global}
+                onSaved={async () => {
+                  await onReloadLabProfile?.();
+                  await load();
+                }}
+              />
+            </section>
+            <VirtualizationSetupShapePanel
+              activeProfile={activeProfile}
+              currentView={currentView}
+              features={features}
+              installReadiness={installReadiness}
+              postAttach={postAttach}
+              storageLabel={storageLabel}
+              target={target}
+              vcenterEnabled={vcenterEnabled}
+              vcenterNetapp={vcenterNetapp}
+              virtualStatus={virtualStatus}
+            />
+            <AdvancedDrawer title="Virtualization proof" summary={noProofText}>
+              <OperatorWorkspace currentView={currentView} rows={virtualizationRows} compact />
+              <ConfigValueList
+                values={[
+                  { label: "vCenter source", value: sourceLabel(vcenterNetapp) },
+                  { label: "Install blockers", value: String(stringArray(installReadiness?.blockers).length) },
+                  { label: "Post-attach warnings", value: String(stringArray(postAttach?.warnings).length) }
+                ]}
+              />
+            </AdvancedDrawer>
+          </div>
+        </section>
+      )}
     </OperatorPage>
+  );
+}
+
+function virtualizationVmManagementCardModel({
+  activeProfile,
+  address,
+  currentView,
+  installReadiness,
+  postAttach,
+  storageLabel,
+  target,
+  vcenterEnabled,
+  vcenterNetapp,
+  virtualStatus
+}: {
+  activeProfile: LabProfile | null;
+  address: LabAddressPlan;
+  currentView: CurrentViewModel;
+  installReadiness: ProviderProbeResult | null;
+  postAttach: ProviderProbeResult | null;
+  storageLabel: string;
+  target: string;
+  vcenterEnabled: boolean;
+  vcenterNetapp: ProviderProbeResult | null;
+  virtualStatus: string;
+}) {
+  const stateLabel = virtualizationVmStateLabel(virtualStatus, vcenterEnabled ? target : address.esxi_management);
+  const mode = vcenterEnabled ? "vCenter managed" : "Direct ESXi";
+  const access = vcenterEnabled
+    ? credentialSummary(vcenterNetapp || installReadiness)
+    : asString(activeProfile?.devices?.esxi) || address.esxi_management
+      ? "Saved target"
+      : "Missing or not checked";
+  const reason = stateLabel === "Blocked"
+    ? virtualizationVmReason({ address, currentView, installReadiness, postAttach, vcenterEnabled, vcenterNetapp })
+    : "";
+  const nextAction = vcenterEnabled
+    ? humanize(asString(vcenterNetapp?.next_safe_action) || asString(installReadiness?.next_safe_action) || "Run VM check.")
+    : "Run VM check against the ESXi host; vCenter is not required for this setup.";
+
+  return {
+    access,
+    badgeStatus: virtualizationVmBadgeStatus(stateLabel),
+    datastore: vcenterEnabled ? datastoreName(vcenterNetapp || postAttach) : storageLabel,
+    mode,
+    nextAction,
+    reason,
+    stateLabel,
+    target: vcenterEnabled ? target : displayAddress(address.esxi_management)
+  };
+}
+
+function virtualizationVmStateLabel(status: string, target: string | null | undefined): "Ready" | "Blocked" | "Not checked" {
+  if (!target) return "Blocked";
+  const normalized = status.toLowerCase();
+  if (["ready", "ok", "passed", "safe-to-run", "safe_to_run", "success"].includes(normalized)) return "Ready";
+  if (!normalized || ["not_checked", "unknown", "running"].includes(normalized)) return "Not checked";
+  return "Blocked";
+}
+
+function virtualizationVmBadgeStatus(label: "Ready" | "Blocked" | "Not checked"): StatusBadgeStatus {
+  if (label === "Ready") return "ready";
+  if (label === "Blocked") return "needs-attention";
+  return "not-configured";
+}
+
+function virtualizationVmReason({
+  address,
+  currentView,
+  installReadiness,
+  postAttach,
+  vcenterEnabled,
+  vcenterNetapp
+}: {
+  address: LabAddressPlan;
+  currentView: CurrentViewModel;
+  installReadiness: ProviderProbeResult | null;
+  postAttach: ProviderProbeResult | null;
+  vcenterEnabled: boolean;
+  vcenterNetapp: ProviderProbeResult | null;
+}) {
+  if (!vcenterEnabled && !address.esxi_management) {
+    return "Set the ESXi address before running the VM check.";
+  }
+  return humanize(
+    currentView.blockers[0] ||
+      stringArray(postAttach?.blockers)[0] ||
+      stringArray(vcenterNetapp?.blockers)[0] ||
+      stringArray(installReadiness?.blockers)[0] ||
+      asString(postAttach?.next_safe_action) ||
+      asString(vcenterNetapp?.next_safe_action) ||
+      asString(installReadiness?.next_safe_action) ||
+      (vcenterEnabled ? "Run VM check before using the vCenter path." : "Run VM check before validating direct ESXi VM deployment.")
   );
 }
 
@@ -16844,7 +17054,13 @@ function virtualizationCurrentView({
   const scenarioLabel = deploymentScenarioLabel(features);
   const storageLabel = storageLocationLabel(features);
   const postChecks = objectValue(postAttach?.checks);
-  const status = vcenterEnabled ? asString(postAttach?.status) || asString(vcenterNetapp?.status) || asString(installReadiness?.status) || "not_checked" : "not_checked";
+  const status = vcenterEnabled
+    ? strongestStatus([
+        asString(postAttach?.status) || "not_checked",
+        asString(vcenterNetapp?.status) || "not_checked",
+        asString(installReadiness?.status) || "not_checked"
+      ])
+    : "not_checked";
   return currentViewModel({
     available: Boolean(postAttach?.checked_at || vcenterNetapp?.checked_at || installReadiness?.checked_at),
     details: vcenterEnabled
