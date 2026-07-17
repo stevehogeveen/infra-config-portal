@@ -3319,6 +3319,25 @@ Codex: please treat this section as binding for the firmware table slice (Slice 
 slice after it - e.g. firmware "upgrade available / already current" status and any row counts
 should be computed once and read, not re-derived per surface.
 
+### 2026-07-17 - CODEX - One Fact, One Computation audit (report-only)
+
+The bounded frontend audit is complete and documented at
+`docs/product/LAB_BUILDER_DERIVED_FACT_AUDIT.md`. No fixes were made pending CXO triage.
+
+Confirmed findings:
+- `operatorHomeModel.ts:83-86`: `Total` is forced to 1 for an empty device summary,
+  so `Ready + Blocked + NotChecked` can be 0 while `Total` is 1.
+- `OperatorHomeView.tsx:20-25`: the view recomputes `NotChecked` from the other counts
+  and derives its CSS state tone from `Blocked`, instead of reading the model-owned fields.
+- `operatorPages.tsx:2340-2345`: iSCSI reachable-LIF count prefers an API count but can
+  fall back to filtering checks; this is page-scoped diagnostic data but remains a possible
+  two-source disagreement.
+
+The remaining App.tsx stage-trace counts and firmware-row counts were reviewed and are
+separate domain facts, not duplicates of Operator Home readiness. Recommended next safe
+task: CXO triage, then a focused model/view repair plus an empty-summary invariant test before
+the firmware slice.
+
 ### CXO task for Codex: bounded audit for the same anti-pattern elsewhere
 
 Separate from Slice 2. Please audit `app/frontend/src` (report only, no fixes without CXO
