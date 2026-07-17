@@ -945,6 +945,55 @@ export function OperatorOverviewPage({
   );
 }
 
+export function OperatorLabDefaultsPage({ labProfileState, onReloadLabProfile }: OperatorPageProps) {
+  const activeProfile = activeLabProfile(labProfileState);
+  const address = activeAddressPlan(activeProfile);
+  const features = activeProfile?.features ?? null;
+  const global = activeProfile?.global_settings ?? null;
+  const expectedDevices = [
+    ["Cisco Switch", true, displayAddress(address.cisco_management)],
+    ["HPE Gen10 compute + iLO", true, displayAddress(address.ilo)],
+    ["Storage · NetApp", Boolean(features?.netapp_enabled), displayAddress(address.netapp_cluster_mgmt)],
+    ["vCenter", Boolean(features?.vcenter_enabled), displayAddress(activeProfile?.devices?.vcenter)]
+  ] as const;
+  return (
+    <OperatorPage title="Lab Defaults">
+      <div className="operator-surface-heading">
+        <p className="operator-kicker">Setup</p>
+        <h1>Lab Defaults</h1>
+        <p>Shared values this kit reuses everywhere. Set them once instead of repeating them on each device page.</p>
+      </div>
+      <div className="lab-defaults-grid">
+        <Card className="lab-defaults-network-card" hover={false}>
+          <CardHeader><div><h2>Network</h2><p className="muted">The address range every device in this kit lives on.</p></div><StatusBadge label={activeProfile ? "Saved" : "Not set"} status={activeProfile ? "ready" : "not-configured"} /></CardHeader>
+          <CardContent>
+            <dl className="lab-defaults-facts">
+              <div><dt>Subnet</dt><dd>{displayAddress(address.subnet)}</dd></div>
+              <div><dt>Gateway</dt><dd>{displayAddress(global?.gateway)}</dd></div>
+              <div><dt>DNS server</dt><dd>{displayAddress(global?.dns_servers?.[0])}</dd></div>
+            </dl>
+          </CardContent>
+        </Card>
+        <SettingsGlobalProfilePanel activeProfile={activeProfile} onSaved={onReloadLabProfile ?? (async () => {})} />
+      </div>
+      <Card className="lab-defaults-devices-card" hover={false}>
+        <CardHeader><div><h2>Expected devices</h2><p className="muted">Turn a device off here and it disappears from the map and the build.</p></div></CardHeader>
+        <CardContent>
+          <div className="lab-defaults-device-list">
+            {expectedDevices.map(([name, enabled, target]) => (
+              <div className="lab-defaults-device-row" key={name}>
+                <span className={`device-presence-dot ${enabled ? "on" : "off"}`} />
+                <div><strong>{name}</strong><small>{target}</small></div>
+                <span className={`lab-defaults-device-state ${enabled ? "enabled" : "disabled"}`}>{enabled ? "Included" : "Not included"}</span>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+    </OperatorPage>
+  );
+}
+
 function OverviewResetRebuildLink() {
   return (
     <section className="operator-section overview-danger-link" aria-label="Factory reset danger link">

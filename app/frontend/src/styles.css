@@ -15662,6 +15662,125 @@ button.design-ilo-port:hover {
   }
 }
 
+/* Map-first operator shell: the map owns the home surface, the spine owns navigation. */
+.app-shell {
+  background: #f4f6f8;
+  grid-template-columns: 292px minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.shell-sidebar {
+  background: #ffffff;
+  border-right: 1px solid #dbe2e8;
+  grid-column: 1;
+  grid-row: 1 / 3;
+  min-height: 100vh;
+  padding: 26px 18px;
+  position: sticky;
+  top: 0;
+  z-index: 60;
+}
+
+.sidebar-brand {
+  align-items: center;
+  color: #102238;
+  display: flex;
+  gap: 12px;
+  margin: 3px 12px 34px;
+}
+
+.sidebar-brand-mark {
+  align-items: center;
+  background: #087f83;
+  border-radius: 10px;
+  color: #fff;
+  display: inline-flex;
+  height: 40px;
+  justify-content: center;
+  width: 40px;
+}
+
+.sidebar-brand b,
+.sidebar-brand small { display: block; }
+.sidebar-brand b { font-size: 17px; letter-spacing: -.02em; }
+.sidebar-brand small { color: #6a7c91; font-size: 10px; letter-spacing: .12em; margin-top: 3px; text-transform: uppercase; }
+.sidebar-nav { display: grid; gap: 4px; }
+.sidebar-nav .nav-item { border-radius: 9px; color: #243b53; min-height: 42px; padding: 8px 14px; }
+.sidebar-nav .nav-item.active { background: #dceff0; border-color: transparent; color: #056f74; }
+.sidebar-nav .nav-item:hover { background: #eef6f6; color: #056f74; }
+.sidebar-nav .nav-item-text small { display: none; }
+.sidebar-section-label { color: #718096; font-size: 11px; font-weight: 900; letter-spacing: .16em; margin: 24px 12px 6px; text-transform: uppercase; }
+
+.shell-topbar {
+  background: #ffffff;
+  border-bottom: 1px solid #dbe2e8;
+  box-shadow: none;
+  color: #102238;
+  grid-column: 2;
+  grid-row: 1;
+  min-height: 76px;
+  padding: 16px 32px;
+  position: sticky;
+}
+
+.kit-picker-wrap { align-items: center; display: flex; gap: 7px; min-width: 230px; }
+.kit-picker { appearance: none; background: #fff; border: 1px solid #d6dee7; border-radius: 999px; color: #182b41; font-size: 15px; font-weight: 800; min-height: 42px; padding: 0 38px 0 18px; }
+.kit-create-link { align-items: center; background: #e5f2f2; border-radius: 50%; color: #087f83; display: inline-flex; font-size: 22px; height: 32px; justify-content: center; width: 32px; }
+.quick-tab { color: #3d526b; font-size: 14px; padding: 10px 17px; }
+.quick-tab.active { background: #fff; border-radius: 10px; box-shadow: 0 1px 5px rgba(20, 43, 64, .12); color: #102238; font-weight: 800; }
+.topbar-runtime { align-items: center; color: #60758d; display: flex; font-size: 12px; font-weight: 700; gap: 7px; }
+.runtime-dot { background: #a0aec0; border-radius: 50%; height: 8px; width: 8px; }
+.runtime-dot-local-lab-readwrite, .runtime-dot-real_lab { background: #17a673; }
+.topbar-inline-error { color: #bd3b2d; font-size: 11px; font-weight: 800; }
+.shell-topbar .mode-toggle { background: #fff; }
+.content { background: #f4f6f8; grid-column: 2; grid-row: 2; min-width: 0; }
+
+.operator-surface-heading { margin: 28px auto 22px; max-width: 1410px; padding: 0 32px; }
+.operator-surface-heading h1 { color: #102238; font-size: clamp(30px, 3vw, 42px); letter-spacing: -.04em; margin: 5px 0 9px; }
+.operator-surface-heading > p:last-child { color: #5b6f86; font-size: 16px; line-height: 1.45; margin: 0; max-width: 670px; }
+.lab-defaults-grid { display: grid; gap: 20px; grid-template-columns: repeat(2, minmax(0, 1fr)); margin: 0 auto 20px; max-width: 1410px; padding: 0 32px; }
+.lab-defaults-network-card, .lab-defaults-grid .settings-global-profile-panel, .lab-defaults-devices-card { border-color: #d6e0e8; box-shadow: 0 8px 20px rgba(34, 58, 80, .05); }
+.lab-defaults-facts { display: grid; gap: 14px; margin: 0; }
+.lab-defaults-facts div { background: #e9edf1; border-radius: 9px; display: flex; justify-content: space-between; padding: 13px 15px; }
+.lab-defaults-facts dt { color: #5e7187; font-size: 12px; }
+.lab-defaults-facts dd { color: #102238; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 13px; font-weight: 700; margin: 0; }
+.lab-defaults-devices-card { margin: 0 auto 40px; max-width: 1410px; }
+.lab-defaults-device-list { display: grid; }
+.lab-defaults-device-row { align-items: center; border-bottom: 1px solid #e2e8ee; display: flex; gap: 14px; min-height: 62px; }
+.lab-defaults-device-row:last-child { border-bottom: 0; }
+.lab-defaults-device-row div { display: grid; gap: 3px; flex: 1; }
+.lab-defaults-device-row small { color: #60758d; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+.device-presence-dot { border: 2px solid #087f83; border-radius: 50%; height: 16px; width: 16px; }
+.device-presence-dot.on { background: #087f83; box-shadow: 0 0 0 5px #e0f3f2; }
+.device-presence-dot.off { border-color: #a0aec0; }
+.lab-defaults-device-state { border-radius: 999px; font-size: 11px; font-weight: 800; padding: 5px 10px; }
+.lab-defaults-device-state.enabled { background: #e3f7ef; color: #087c55; }
+.lab-defaults-device-state.disabled { background: #edf1f4; color: #687b90; }
+
+@media (max-width: 900px) {
+  .app-shell { grid-template-columns: 76px minmax(0, 1fr); }
+  .shell-sidebar { padding: 20px 10px; }
+  .sidebar-brand { justify-content: center; margin: 0 0 24px; }
+  .sidebar-brand > span:last-child, .sidebar-nav .nav-item-text, .sidebar-section-label { display: none; }
+  .sidebar-nav .nav-item { justify-content: center; padding: 10px; }
+  .shell-topbar { gap: 12px; padding: 12px 18px; }
+  .topbar-runtime { display: none; }
+  .lab-defaults-grid { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 640px) {
+  .app-shell { display: block; }
+  .shell-sidebar { border-bottom: 1px solid #dbe2e8; border-right: 0; min-height: auto; padding: 10px 14px; position: static; }
+  .sidebar-brand { justify-content: flex-start; margin: 0 0 10px; }
+  .sidebar-brand > span:last-child { display: block; }
+  .sidebar-nav { display: flex; gap: 5px; overflow-x: auto; }
+  .sidebar-nav .nav-item-text, .sidebar-section-label { display: none; }
+  .sidebar-nav .nav-item { min-width: 42px; }
+  .shell-topbar { display: flex; flex-wrap: wrap; min-height: auto; padding: 10px 14px; }
+  .top-nav { order: 3; width: 100%; }
+  .operator-surface-heading, .lab-defaults-grid, .lab-defaults-devices-card { padding-left: 16px; padding-right: 16px; }
+}
+
 @media (max-width: 980px) {
   .app-shell {
     grid-template-columns: 1fr;

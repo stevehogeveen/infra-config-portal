@@ -5,6 +5,7 @@ import {
   CheckCircle2,
   ClipboardList,
   Copy,
+  Database,
   FileText,
   Pencil,
   Gauge,
@@ -32,9 +33,14 @@ import { Link, Navigate, NavLink, Route as RouterRoute, Routes, useLocation, use
 import { api } from "./api";
 import {
   OperatorFirmwareUpgradesPage,
+  OperatorLabDefaultsPage,
+  OperatorNetworkPage,
   OperatorOverviewPage,
+  OperatorServerPage,
+  OperatorStoragePage,
   OperatorTabStateProvider,
   OperatorValidationPage,
+  OperatorVirtualizationPage,
   SettingsGlobalProfilePanel
 } from "./operatorPages";
 import type {
@@ -735,6 +741,8 @@ function App() {
           labProfileError={labProfileError}
           labProfileLoading={labProfileLoading}
           labProfileState={labProfileState}
+          onActivateLabProfile={activateLabProfile}
+          onReloadLabProfile={loadLabProfileState}
         >
           <OperatorTabStateProvider>
             <Routes>
@@ -751,17 +759,18 @@ function App() {
                   />
                 }
               />
-              <RouterRoute path="/network" element={<Navigate to="/overview" replace />} />
-              <RouterRoute path="/server" element={<Navigate to="/overview" replace />} />
-              <RouterRoute path="/storage" element={<Navigate to="/overview" replace />} />
-              <RouterRoute path="/virtualization" element={<Navigate to="/overview" replace />} />
+              <RouterRoute path="/network" element={<OperatorNetworkPage labProfileState={labProfileState} onReloadLabProfile={loadLabProfileState} />} />
+              <RouterRoute path="/server" element={<OperatorServerPage labProfileState={labProfileState} onReloadLabProfile={loadLabProfileState} />} />
+              <RouterRoute path="/storage" element={<OperatorStoragePage labProfileState={labProfileState} onReloadLabProfile={loadLabProfileState} />} />
+              <RouterRoute path="/virtualization" element={<OperatorVirtualizationPage labProfileState={labProfileState} onReloadLabProfile={loadLabProfileState} />} />
+              <RouterRoute path="/lab-defaults" element={<OperatorLabDefaultsPage labProfileState={labProfileState} onReloadLabProfile={loadLabProfileState} />} />
               <RouterRoute path="/firmware-upgrades" element={<OperatorFirmwareUpgradesPage labProfileState={labProfileState} />} />
               <RouterRoute path="/validation" element={<OperatorValidationPage labProfileState={labProfileState} />} />
               <RouterRoute path="/config" element={<Navigate to="/overview" replace />} />
               <RouterRoute path="/dashboard" element={<Navigate to="/overview" replace />} />
               <RouterRoute path="/lab-setup" element={<Navigate to="/overview" replace />} />
               <RouterRoute path="/hardware" element={<Navigate to="/overview" replace />} />
-              <RouterRoute path="/run-center" element={<Navigate to="/overview" replace />} />
+              <RouterRoute path="/run-center" element={<LabSetupPage />} />
               <RouterRoute path="/control-center" element={<Navigate to="/overview" replace />} />
               <RouterRoute path="/firmware" element={<Navigate to="/firmware-upgrades" replace />} />
               <RouterRoute path="/golden-state" element={<Navigate to="/validation" replace />} />
@@ -805,7 +814,9 @@ function AppShell({
   healthError,
   labProfileError,
   labProfileLoading,
-  labProfileState
+  labProfileState,
+  onActivateLabProfile,
+  onReloadLabProfile
 }: {
   children: ReactNode;
   health: HealthStatus | null;
@@ -813,6 +824,8 @@ function AppShell({
   labProfileError: string;
   labProfileLoading: boolean;
   labProfileState: LabProfileList | null;
+  onActivateLabProfile: (profileId: string) => Promise<void>;
+  onReloadLabProfile: () => Promise<void>;
 }) {
   const { uiMode } = useUiMode();
   return (
@@ -823,6 +836,8 @@ function AppShell({
         labProfileError={labProfileError}
         labProfileLoading={labProfileLoading}
         labProfileState={labProfileState}
+        onActivateLabProfile={onActivateLabProfile}
+        onReloadLabProfile={onReloadLabProfile}
       />
       <main className="content">
         {health?.dev_test_banner && <DevTestBanner message={health.dev_test_banner} />}
@@ -1019,59 +1034,69 @@ function ShellTopNav({
   healthError,
   labProfileError,
   labProfileLoading,
-  labProfileState
+  labProfileState,
+  onActivateLabProfile,
+  onReloadLabProfile
 }: {
   health: HealthStatus | null;
   healthError: string;
   labProfileError: string;
   labProfileLoading: boolean;
   labProfileState: LabProfileList | null;
+  onActivateLabProfile: (profileId: string) => Promise<void>;
+  onReloadLabProfile: () => Promise<void>;
 }) {
   const activeProfile = labProfileState?.active_profile ?? null;
   const providerMode = health?.provider_mode ?? (healthError ? "unverified" : "checking");
-  const modeLabel = displayModeLabel(providerMode);
-  const modeStatus = providerMode === "mock" ? "test_fixture" : healthError ? "unavailable" : providerMode;
+  const modeStatus = healthError ? "unavailable" : providerMode;
 
+  const profiles = [labProfileState?.runtime_profile, ...(labProfileState?.profiles ?? [])].filter(Boolean) as LabProfile[];
   return (
-    <header className="shell-topbar" aria-label="Application header">
-      <div className="shell-topbar-brand-row">
-        <Link className="brand" to="/overview">
-          <Server size={22} />
-          <span>
-            Infra Config
-            <small>Lab operations portal</small>
-          </span>
+    <>
+      <aside className="shell-sidebar" aria-label="Lab Builder navigation">
+        <Link className="sidebar-brand" to="/overview">
+          <span className="sidebar-brand-mark"><Server size={24} /></span>
+          <span><b>Lab Builder</b><small>Operator</small></span>
         </Link>
-      </div>
-      <nav className="top-nav" aria-label="Primary navigation">
-        <NavItem to="/overview" icon={<Gauge size={18} />} label="Overview" subtitle="Current readiness" />
-        <NavItem to="/firmware-upgrades" icon={<ShieldCheck size={18} />} label="Firmware" subtitle="Images and compliance" />
-        <NavItem to="/validation" icon={<CheckCircle2 size={18} />} label="Validate" subtitle="Proof and reports" />
-      </nav>
-      <div className="shell-topbar-actions">
-        <ModeToggle />
-        <div className="topbar-profile">
-          <div className="topbar-profile-head">
-            <span>{modeLabel}</span>
-            <StatusBadge status={modeStatus} />
-          </div>
-          <strong>{activeProfile?.name ?? (labProfileLoading ? "Loading setup" : "No active setup")}</strong>
-          <dl>
-            <div>
-              <dt>Subnet</dt>
-              <dd>{displayAddress(activeProfile?.address_plan.subnet)}</dd>
-            </div>
-            <div>
-              <dt>Source</dt>
-              <dd>{activeProfile ? labelize(activeProfile.source) : "Unavailable"}</dd>
-            </div>
-          </dl>
-          {(labProfileError || healthError) && (
-            <p>{labProfileError ? "Profile status unavailable." : "Backend health unavailable."}</p>
-          )}
+        <nav className="sidebar-nav" aria-label="Primary navigation">
+          <NavItem to="/overview" icon={<Gauge size={18} />} label="Overview" />
+          <p className="sidebar-section-label">Setup</p>
+          <NavItem to="/lab-defaults" icon={<Settings size={17} />} label="Lab Defaults" />
+          <NavItem to="/server" icon={<Server size={17} />} label="Compute & iLO" />
+          <NavItem to="/storage" icon={<Database size={17} />} label="Storage · NetApp" />
+          <NavItem to="/firmware-upgrades" icon={<ShieldCheck size={17} />} label="Firmware" />
+          <NavItem to="/network" icon={<Route size={17} />} label="Cisco switch" />
+          <p className="sidebar-section-label">Run</p>
+          <NavItem to="/run-center" icon={<Play size={17} />} label="Run Center" />
+          <NavItem to="/validation" icon={<FileText size={17} />} label="Reports" />
+        </nav>
+      </aside>
+      <header className="shell-topbar" aria-label="Application header">
+        <div className="kit-picker-wrap">
+          <label className="sr-only" htmlFor="active-kit-picker">Selected lab kit</label>
+          <select
+            className="kit-picker"
+            id="active-kit-picker"
+            value={activeProfile?.id ?? ""}
+            onChange={(event) => { void onActivateLabProfile(event.target.value); }}
+          >
+            {profiles.length === 0 && <option value="">No kit selected</option>}
+            {profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name}</option>)}
+          </select>
+          <Link className="kit-create-link" to="/lab-profiles#new" aria-label="Create a new lab kit">+</Link>
         </div>
-      </div>
-    </header>
+        <nav className="top-nav" aria-label="Quick navigation">
+          <NavLink to="/overview" className={({ isActive }) => isActive ? "quick-tab active" : "quick-tab"}>Overview</NavLink>
+          <NavLink to="/lab-defaults" className={({ isActive }) => isActive ? "quick-tab active" : "quick-tab"}>Lab Defaults</NavLink>
+          <NavLink to="/firmware-upgrades" className={({ isActive }) => isActive ? "quick-tab active" : "quick-tab"}>Firmware</NavLink>
+        </nav>
+        <div className="shell-topbar-actions">
+          <div className="topbar-runtime"><span className={`runtime-dot runtime-dot-${modeStatus}`} />{activeProfile ? displayAddress(activeProfile.address_plan.subnet) : "No subnet"}</div>
+          <ModeToggle />
+          {(labProfileError || healthError) && <span className="topbar-inline-error">{labProfileError ? "Kit unavailable" : "Status unavailable"}</span>}
+        </div>
+      </header>
+    </>
   );
 }
 
