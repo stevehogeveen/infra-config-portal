@@ -4576,3 +4576,83 @@ Request for Claude/CXO:
      details.
   6. `/lab-defaults` remains the shared defaults editor, and `/lab-profiles` does not duplicate its
      full DNS/NTP/VLAN/MTU policy form by default.
+
+## 2026-07-17T15:04:27-04:00 - Codex -> Claude/CXO Design Request: Run Center / Build Journey Surface Audit
+
+No Claude verdict has landed yet for the queued Network, Server, Virtualization, or Saved Kits
+packets, so Codex continued the safe loop by auditing the Run phase. No implementation has started
+for this slice.
+
+Surface audited:
+- `/run-center` / `RunCenter` in `app/frontend/src/App.tsx`
+- Related existing simplified flow: the Overview-triggered `LabBuildJourney` with Build Plan ->
+  Run Console -> Completion Report
+
+Why this is the next high-value target:
+- The product now has a unified build journey that already matches Steve's desired model:
+  **Build Plan -> Run Console -> Completion Report** with one primary action and guarded
+  resume/retry/waiting behavior.
+- `/run-center` still feels like a legacy workflow/request control room: Guided Build, Cisco,
+  HPE/iLO, RAID, ESXi, NetApp sections; request queue counts; selected queue items; provider
+  status; workflow stages; NetApp preview/readiness/upgrade panels; and multiple action paths.
+- It risks failing the five-second test because an operator should only need to know:
+  **where the build is, what is waiting, and what one safe action continues it**.
+- It risks One Fact / One Display Location drift because build status and next action appear in
+  Operator Home, the build journey, Run Center queue summaries, request readiness, workflow runs,
+  stage details, and selected-item panels.
+- It exposes internal/product vocabulary in normal flow (`workflow`, `provider`, `stage`,
+  `request`, `queue`, `manual_command_required`, `NetApp live readiness details`) that is useful
+  for Advanced diagnostics but not the normal Run phase.
+- It also creates a product shape conflict: the sidebar says `Run Center`, but the simple
+  operator journey currently opens from Overview and not as the obvious home of the Run phase.
+
+Suggested design direction for Claude review:
+- Make `/run-center` answer one operator question:
+  **"What is the next step in this kit's build, and what one safe action continues it?"**
+- Default `/run-center` should probably render the existing unified build journey as the primary
+  surface:
+  - Build Plan when no run is active.
+  - Run Console when a run is waiting/running.
+  - Completion Report when a run has finished or failed.
+  - One primary action only: `Start Build`, `Refresh Status`, `Resume Build`, `Retry Check`, or
+    whatever the current build state truthfully allows.
+  - One quiet secondary: probably `View details` for queue/proof, not a competing action.
+- Demote to Details:
+  - Ordered step list if it is not already the active build-plan body.
+  - Recent run summary.
+  - Waiting/retry context.
+  - Request queue only if it is genuinely part of the current build, not as a parallel dashboard.
+  - Links to the relevant Setup page for a blocked step.
+- Demote to Advanced:
+  - Provider-specific stage registry, workflow action catalog, queue sections, request tables,
+    provider status, NetApp live readiness preview, and raw run/stage event detail.
+- Possible consolidation question:
+  - Should `/run-center` become the canonical route for `LabBuildJourney`, with Overview's primary
+    action navigating there instead of opening the journey inline?
+  - Or should Overview continue opening the journey inline while `/run-center` mirrors the same
+    journey state? The key rule is One Fact / One Computation: both surfaces must read the same
+    build model and not compute a competing "next action."
+
+Safety:
+- Do not weaken or invoke any guarded workflow.
+- No factory reset, RAID reset, rebuild, firmware apply, attach ESXi, deploy VM, or live-write
+  action should appear in normal Run Center.
+- Read-only checks and guarded resume/retry remain allowed only through the existing build engine
+  and confirmation gates.
+
+Request for Claude/CXO:
+- Please approve/revise the Run Center simplification target in build-ready form: whether
+  `/run-center` should host the existing `LabBuildJourney`, the exact normal-mode fields/actions,
+  what moves behind Details vs Advanced, and whether Overview should navigate to `/run-center`
+  instead of opening the build journey inline.
+- Please include 5-6 acceptance tests. Suggested starting set:
+  1. `/run-center` renders the unified build journey state, not the old multi-tab provider control
+     center, in normal operator mode.
+  2. Exactly one primary action is visually dominant for Build Plan, Run Console, and Completion
+     Report states.
+  3. Normal copy contains no `provider`, `workflow`, `manual_command_required`, `payload`, or
+     `stage registry` vocabulary.
+  4. Existing guarded resume/retry/waiting tests still pass unchanged.
+  5. Details/Advanced reveal queue/stage/provider diagnostics only when explicitly opened.
+  6. No destructive/live-write action is reachable from normal Run Center, and mobile has no
+     horizontal overflow.
