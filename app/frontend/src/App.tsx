@@ -41,8 +41,7 @@ import {
   OperatorStoragePage,
   OperatorTabStateProvider,
   OperatorValidationPage,
-  OperatorVirtualizationPage,
-  SettingsGlobalProfilePanel
+  OperatorVirtualizationPage
 } from "./operatorPages";
 import type {
   ArtifactRecord,
@@ -6841,7 +6840,7 @@ function LabProfilesPage({
 
   return (
     <Page
-      title="Saved Lab Setups"
+      title="Saved Kits"
       actions={
         <>
           <button onClick={onReload} disabled={loading}>
@@ -6855,12 +6854,7 @@ function LabProfilesPage({
         error={error}
         loading={loading}
         onActivateProfile={activateProfile}
-        onReload={onReload}
         state={state}
-      />
-      <SettingsGlobalProfilePanel
-        activeProfile={state?.active_profile ?? null}
-        onSaved={onReload}
       />
     </Page>
   );
@@ -6870,15 +6864,11 @@ function LabProfileManager({
   error,
   loading,
   onActivateProfile,
-  onReload,
-  showMetrics = true,
   state
 }: {
   error: string;
   loading: boolean;
   onActivateProfile: (profileId: string) => Promise<void>;
-  onReload: () => Promise<void>;
-  showMetrics?: boolean;
   state: LabProfileList | null;
 }) {
   const [selectedProfileId, setSelectedProfileId] = useState("");
@@ -6898,37 +6888,28 @@ function LabProfileManager({
   const netappSupported = labNetAppSupported(selectedSubnetPrefix);
   const netappDisabledReason =
     selectedSubnetOption?.netapp_disabled_reason ??
-    "NetApp capabilities are disabled for this subnet size.";
+    "Single-server kits use local server disks, so NetApp and vCenter are not included for this address range.";
+  const createMode = deploymentModeForForm(form);
+  const detailProfile = selectedProfile ?? activeProfile;
+  const draftPayload = labProfilePayload({
+    ...form,
+    name: form.name.trim() || "New kit"
+  });
+  const draftPlan = draftPayload.address_plan;
+  const activeKitName = activeProfile?.source === "runtime_env" ? "Current Lab" : activeProfile?.name ?? "";
+  const activeKitState = activeProfile?.source === "saved" ? "Saved and active" : "Current app values";
 
   useEffect(() => {
     if (!state || formInitialized) return;
-    const initialProfile =
-      state.active_profile.source === "saved" ? state.active_profile : state.profiles[0] ?? null;
-    if (initialProfile) {
-      setSelectedProfileId(initialProfile.id);
-      setForm(labProfileFormFrom(initialProfile));
-    }
+    const initialProfile = state.profiles.find((profile) => profile.active) ?? state.profiles[0] ?? null;
+    setSelectedProfileId(initialProfile?.id ?? "");
+    setForm(blankLabProfileForm());
     setFormInitialized(true);
   }, [formInitialized, state]);
 
   function startNewProfile() {
     setSelectedProfileId("");
     setForm(blankLabProfileForm());
-    setFormInitialized(true);
-    setSaveError("");
-  }
-
-  function loadProfile(profile: LabProfile) {
-    setSelectedProfileId(profile.id);
-    setForm(labProfileFormFrom(profile));
-    setFormInitialized(true);
-    setSaveError("");
-  }
-
-  function loadRuntimeProfile() {
-    if (!state) return;
-    setSelectedProfileId("");
-    setForm(labProfileFormFrom(state.runtime_profile));
     setFormInitialized(true);
     setSaveError("");
   }
@@ -6941,59 +6922,30 @@ function LabProfileManager({
     setForm((current) => applyLabSubnetChoice(current, subnet, current.globalSettings.subnetPrefix));
   }
 
-  function updateGlobalSetting<K extends keyof LabGlobalSettingsFormState>(
-    key: K,
-    value: LabGlobalSettingsFormState[K]
-  ) {
-    setForm((current) => ({
-      ...current,
-      globalSettings: {
-        ...current.globalSettings,
-        [key]: value
-      }
-    }));
+  function updateDeploymentMode(mode: "shared" | "local") {
+    setForm((current) => {
+      const next = applyLabSubnetChoice(current, current.addresses.subnet, mode === "local" ? "29" : "24");
+      return {
+        ...next,
+        globalSettings: {
+          ...next.globalSettings,
+          storageProtocol: mode === "local" ? "none" : "nfs",
+          vcenterEnabled: mode === "shared"
+        }
+      };
+    });
   }
 
-  function updateAddress(key: LabAddressInputKey, value: string) {
-    setForm((current) => ({
-      ...current,
-      addresses: {
-        ...current.addresses,
-        [key]: value
-      }
-    }));
-  }
-
-  async function saveProfile(event: FormEvent) {
+  async function createKit(event: FormEvent) {
     event.preventDefault();
     setSaveError("");
-    const action = selectedProfile ? "update" : "create";
-    setBusyAction(action);
-    try {
-      const payload = labProfilePayload(form);
-      const saved = selectedProfile
-        ? await api.updateLabProfile(selectedProfile.id, payload)
-        : await api.createLabProfile(payload);
-      setSelectedProfileId(saved.id);
-      setForm(labProfileFormFrom(saved));
-      setFormInitialized(true);
-      await onReload();
-    } catch (err) {
-      setSaveError((err as Error).message);
-    } finally {
-      setBusyAction("");
-    }
-  }
-
-  async function saveAsNew() {
-    setSaveError("");
-    setBusyAction("create");
+    setBusyAction("create-kit");
     try {
       const saved = await api.createLabProfile(labProfilePayload(form));
       setSelectedProfileId(saved.id);
-      setForm(labProfileFormFrom(saved));
+      setForm(blankLabProfileForm());
       setFormInitialized(true);
-      await onReload();
+      await onActivateProfile(saved.id);
     } catch (err) {
       setSaveError((err as Error).message);
     } finally {
@@ -7018,394 +6970,257 @@ function LabProfileManager({
       <Feedback loading={loading && !state} error={error} />
       {state && activeProfile && (
         <>
-          {showMetrics && (
-            <section className="metric-grid lab-profile-metrics">
-              <Metric label="Saved Labs" value={state.profiles.length} icon={<Layers size={18} />} />
-              <Metric
-                label="Active Version"
-                value={activeProfile.version}
-                icon={<History size={18} />}
-              />
-              <Metric
-                label="Active History"
-                value={activeProfile.history.length}
-                icon={<ClipboardList size={18} />}
-              />
-              <Metric
-                label="Address Fields"
-                value={labAddressFields.length + 1}
-                icon={<Route size={18} />}
-              />
-              <Metric label="Subnet Sizes" value={subnetOptions.length} icon={<Route size={18} />} />
-            </section>
-          )}
-
-          <section className="panel active-lab-panel">
+          <section className="panel saved-kits-home" data-testid="saved-kits-home">
             <div className="readiness-head">
-              <PanelTitle icon={<Layers size={18} />} title="Active Lab" />
-              <StatusBadge status={activeProfile.source === "runtime_env" ? "local" : "current"} />
+              <div>
+                <PanelTitle icon={<Layers size={18} />} title="Selected kit" />
+                <p className="muted">Pick the kit for this lab, or create one from a subnet preview.</p>
+              </div>
+              <StatusBadge status="current" />
             </div>
-            <div className="provider-fact-grid compact">
-              <ProviderFact label="Name" value={activeProfile.name} />
-              <ProviderFact label="Source" value={labelize(activeProfile.source)} />
-              <ProviderFact label="Version" value={`v${activeProfile.version}`} />
-              <ProviderFact label="Store" value={state.store_path} />
+            <div className="saved-kits-summary">
+              <div>
+                <span>Kit</span>
+                <strong>{activeKitName}</strong>
+              </div>
+              <div>
+                <span>Subnet</span>
+                <strong>{displayAddress((activeProfile.resolved_address_plan ?? activeProfile.address_plan).subnet)}</strong>
+              </div>
+              <div>
+                <span>Build type</span>
+                <strong>{deploymentModeForProfile(activeProfile)}</strong>
+              </div>
+              <div>
+                <span>State</span>
+                <strong>{activeKitState}</strong>
+              </div>
             </div>
-            <LabAddressSummary profile={activeProfile} />
-            <div className="action-row">
-              <button
-                disabled={busyAction === "activate-runtime" || activeProfile.id === "runtime"}
-                onClick={() => activateProfile("runtime")}
-                type="button"
-              >
-                <Server size={16} />
-                Runtime
-              </button>
-              <button onClick={loadRuntimeProfile} type="button">
-                <Pencil size={16} />
-                Load Runtime
-              </button>
-            </div>
+            <p className="saved-kits-boundary">This page only changes saved kit selection and new-kit values. Live checks and build actions stay in Run Center.</p>
           </section>
 
-          <div className="lab-profile-layout">
-            <section className="panel">
-              <PanelTitle icon={<Layers size={18} />} title="Saved Labs" />
-              <div className="action-row">
-                <button onClick={startNewProfile} type="button">
-                  <Plus size={16} />
-                  New Lab
-                </button>
-              </div>
+          <div className="saved-kits-layout">
+            <section className="panel saved-kits-switch" aria-label="Switch kit">
+              <PanelTitle icon={<CheckCircle2 size={18} />} title="Switch kit" />
               {state.profiles.length ? (
-                <div className="lab-profile-list">
-                  {state.profiles.map((profile) => (
-                    <article
-                      className={
-                        profile.id === selectedProfileId
-                          ? "lab-profile-row selected"
-                          : "lab-profile-row"
-                      }
-                      key={profile.id}
+                <div className="saved-kits-switch-controls">
+                  <Field label="Saved kit">
+                    <select
+                      onChange={(event) => setSelectedProfileId(event.target.value)}
+                      value={selectedProfileId}
                     >
-                      <div>
-                        <strong>{profile.name}</strong>
-                        <span>{labelize(profile.profile_topology)} · {displayAddress(profile.address_plan.subnet)}</span>
-                      </div>
-                      <StatusBadge status={profile.active ? "current" : "available"} />
-                      <div className="lab-profile-row-actions">
-                        <button onClick={() => loadProfile(profile)} type="button">
-                          <Pencil size={16} />
-                          Edit
-                        </button>
-                        <button
-                          disabled={profile.active || busyAction === `activate-${profile.id}`}
-                          onClick={() => activateProfile(profile.id)}
-                          type="button"
-                        >
-                          <CheckCircle2 size={16} />
-                          Activate
-                        </button>
-                      </div>
-                    </article>
-                  ))}
+                      {state.profiles.map((profile) => (
+                        <option key={profile.id} value={profile.id}>
+                          {profile.name} - {displayAddress(profile.address_plan.subnet)}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                  <button
+                    disabled={!selectedProfile || selectedProfile.active || Boolean(busyAction)}
+                    onClick={() => selectedProfile && activateProfile(selectedProfile.id)}
+                    type="button"
+                  >
+                    <CheckCircle2 size={16} />
+                    Use this kit
+                  </button>
                 </div>
               ) : (
-                <p className="muted">No saved lab setups.</p>
+                <p className="muted">No saved kits yet. Create one from the subnet preview.</p>
               )}
+              <p className="muted">Shared DNS, NTP, VLAN, and MTU settings live in <Link to="/lab-defaults">Lab Defaults</Link>.</p>
             </section>
 
-            <section className="panel">
-              <PanelTitle
-                icon={<Save size={18} />}
-                title={selectedProfile ? `Edit ${selectedProfile.name}` : "Create Lab"}
-              />
-              <form className="lab-profile-form" onSubmit={saveProfile}>
-                <section className="lab-profile-form-section">
-                  <div className="lab-profile-form-grid">
-                    <Field label="Name">
-                      <input
-                        minLength={2}
-                        onChange={(event) => setForm({ ...form, name: event.target.value })}
-                        required
-                        value={form.name}
-                      />
-                    </Field>
-                    <Field label="Description">
-                      <textarea
-                        onChange={(event) =>
-                          setForm({ ...form, description: event.target.value })
-                        }
-                        value={form.description}
-                      />
-                    </Field>
-                  </div>
-                </section>
-
-                <section className="lab-profile-form-section">
-                  <div className="readiness-head compact-head">
-                    <strong>Global Settings</strong>
-                    <StatusBadge status={netappSupported ? "available" : "blocked"} />
-                  </div>
-                  <div className="lab-profile-form-grid">
-                    <Field label="Subnet Size">
-                      <select
-                        onChange={(event) => updateSubnetPrefix(event.target.value)}
-                        value={form.globalSettings.subnetPrefix}
-                      >
-                        {subnetOptions.map((option) => (
-                          <option key={option.prefix} value={option.prefix}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </select>
-                    </Field>
-                    <Field label="Topology">
-                      <select
-                        onChange={(event) => setForm({ ...form, profileTopology: event.target.value })}
-                        value={form.profileTopology}
-                      >
-                        <option value="high_address_lab">High-address /24</option>
-                        <option value="compact_edge_lab">Compact edge</option>
-                        <option value="custom">Custom</option>
-                      </select>
-                    </Field>
-                    <Field label={labSubnetField.label}>
-                      <input
-                        inputMode="decimal"
-                        onChange={(event) => updateSubnetNetwork(event.target.value)}
-                        value={form.addresses.subnet}
-                      />
-                    </Field>
-                    <Field label="Gateway">
-                      <input
-                        inputMode="decimal"
-                        onChange={(event) => updateGlobalSetting("gateway", event.target.value)}
-                        value={form.globalSettings.gateway}
-                      />
-                    </Field>
-                    <Field label="Domain">
-                      <input
-                        onChange={(event) => updateGlobalSetting("domainName", event.target.value)}
-                        value={form.globalSettings.domainName}
-                      />
-                    </Field>
-                    <Field label="DNS Servers">
-                      <input
-                        inputMode="decimal"
-                        onChange={(event) => updateGlobalSetting("dnsServers", event.target.value)}
-                        value={form.globalSettings.dnsServers}
-                      />
-                    </Field>
-                    <Field label="NTP Servers">
-                      <input
-                        inputMode="decimal"
-                        onChange={(event) => updateGlobalSetting("ntpServers", event.target.value)}
-                        value={form.globalSettings.ntpServers}
-                      />
-                    </Field>
-                    <Field label="Timezone">
-                      <input
-                        onChange={(event) => updateGlobalSetting("timezone", event.target.value)}
-                        value={form.globalSettings.timezone}
-                      />
-                    </Field>
-                    <Field label="VLAN ID">
-                      <input
-                        inputMode="numeric"
-                        onChange={(event) => updateGlobalSetting("vlanId", event.target.value)}
-                        value={form.globalSettings.vlanId}
-                      />
-                    </Field>
-                    <Field label="MTU">
-                      <input
-                        inputMode="numeric"
-                        onChange={(event) => updateGlobalSetting("mtu", event.target.value)}
-                        value={form.globalSettings.mtu}
-                      />
-                    </Field>
-                    <Field label="vCenter">
-                      <label className="checkbox-line">
-                        <input
-                          checked={form.globalSettings.vcenterEnabled && netappSupported}
-                          disabled={!netappSupported}
-                          onChange={(event) => updateGlobalSetting("vcenterEnabled", event.target.checked)}
-                          type="checkbox"
-                        />
-                        <span>{netappSupported ? "Include vCenter readiness" : "Not in scope for compact profile"}</span>
-                      </label>
-                    </Field>
-                    <Field label="Storage Protocol">
-                      <select
-                        disabled={!netappSupported}
-                        onChange={(event) => updateGlobalSetting("storageProtocol", event.target.value)}
-                        value={form.globalSettings.storageProtocol}
-                      >
-                        <option value="nfs">NFS</option>
-                        <option value="iscsi">iSCSI</option>
-                        <option value="none">Local only</option>
-                      </select>
-                    </Field>
-                  </div>
-                  <div className="global-policy-grid">
-                    <label className="checkbox-line">
-                      <input
-                        checked={form.globalSettings.enableDns}
-                        onChange={(event) => updateGlobalSetting("enableDns", event.target.checked)}
-                        type="checkbox"
-                      />
-                      <span>DNS assigned globally</span>
-                    </label>
-                    <label className="checkbox-line">
-                      <input
-                        checked={form.globalSettings.enableNtp}
-                        onChange={(event) => updateGlobalSetting("enableNtp", event.target.checked)}
-                        type="checkbox"
-                      />
-                      <span>NTP assigned globally</span>
-                    </label>
-                    <label className="checkbox-line">
-                      <input
-                        checked={form.globalSettings.enableSnmp}
-                        onChange={(event) => updateGlobalSetting("enableSnmp", event.target.checked)}
-                        type="checkbox"
-                      />
-                      <span>SNMP assigned globally</span>
-                    </label>
-                    <label className="checkbox-line">
-                      <input
-                        checked={form.globalSettings.disableIpv6}
-                        onChange={(event) => updateGlobalSetting("disableIpv6", event.target.checked)}
-                        type="checkbox"
-                      />
-                      <span>Disable IPv6 globally</span>
-                    </label>
-                  </div>
-                </section>
-
-                <section className="lab-profile-form-section">
-                  <div className="readiness-head compact-head">
-                    <strong>Core Addresses</strong>
-                    <StatusBadge status="intent_only" />
-                  </div>
-                  <div className="lab-profile-form-grid">
-                    {labCoreAddressFields.map((field) => (
-                      <Field key={field.key} label={field.label}>
-                        <input
-                          inputMode="decimal"
-                          onChange={(event) => updateAddress(field.key, event.target.value)}
-                          value={form.addresses[field.key]}
-                        />
-                      </Field>
-                    ))}
-                  </div>
-                </section>
-
-                <section className="lab-profile-form-section">
-                  <div className="readiness-head compact-head">
-                    <strong>NetApp Capabilities</strong>
-                    <StatusBadge status={netappSupported ? "available" : "blocked"} />
-                  </div>
-                  {netappSupported ? (
-                    <div className="lab-profile-form-grid">
-                      {labNetAppAddressFields.map((field) => (
-                        <Field key={field.key} label={field.label}>
-                          <input
-                            inputMode="decimal"
-                            onChange={(event) => updateAddress(field.key, event.target.value)}
-                            value={form.addresses[field.key]}
-                          />
-                        </Field>
+            <section className="panel saved-kits-create" aria-label="Create kit">
+              <PanelTitle icon={<Save size={18} />} title="Create kit" />
+              <form className="lab-profile-form saved-kits-create-form" onSubmit={createKit}>
+                <div className="lab-profile-form-grid">
+                  <Field label="Kit name">
+                    <input
+                      minLength={2}
+                      onChange={(event) => setForm({ ...form, name: event.target.value })}
+                      required
+                      value={form.name}
+                    />
+                  </Field>
+                  <Field label="Build type">
+                    <select
+                      onChange={(event) => updateDeploymentMode(event.target.value === "local" ? "local" : "shared")}
+                      value={createMode}
+                    >
+                      <option value="shared">Server + NetApp + vCenter</option>
+                      <option value="local">Single server - local RAID</option>
+                    </select>
+                  </Field>
+                  <Field label={labSubnetField.label}>
+                    <input
+                      inputMode="decimal"
+                      onChange={(event) => updateSubnetNetwork(event.target.value)}
+                      value={form.addresses.subnet}
+                    />
+                  </Field>
+                  <Field label="Address range">
+                    <select
+                      onChange={(event) => updateSubnetPrefix(event.target.value)}
+                      value={form.globalSettings.subnetPrefix}
+                    >
+                      {subnetOptions.map((option) => (
+                        <option key={option.prefix} value={option.prefix}>
+                          {option.label}
+                        </option>
                       ))}
-                      <Field label="NetApp NFS LIFs">
-                        <input
-                          inputMode="decimal"
-                          onChange={(event) =>
-                            setForm({ ...form, netappNfsLifs: event.target.value })
-                          }
-                          value={form.netappNfsLifs}
-                        />
-                      </Field>
-                      <Field label="NetApp iSCSI LIFs">
-                        <input
-                          inputMode="decimal"
-                          onChange={(event) =>
-                            setForm({ ...form, netappIscsiLifs: event.target.value })
-                          }
-                          value={form.netappIscsiLifs}
-                        />
-                      </Field>
-                    </div>
-                  ) : (
-                    <div className="provider-callout netapp-capability-disabled">
-                      <StatusBadge status="not_in_scope" />
-                      <strong>NetApp and vCenter not in scope for /{form.globalSettings.subnetPrefix}</strong>
-                      <p>{netappDisabledReason}</p>
-                    </div>
-                  )}
-                </section>
+                    </select>
+                  </Field>
+                </div>
+                <div className="saved-kits-preview" aria-label="Derived address preview">
+                  <strong>Preview from subnet</strong>
+                  <div>
+                    <span>Cisco Switch</span>
+                    <b>{displayAddress(draftPlan.cisco_management)}</b>
+                  </div>
+                  <div>
+                    <span>HPE iLO</span>
+                    <b>{displayAddress(draftPlan.ilo)}</b>
+                  </div>
+                  <div>
+                    <span>ESXi</span>
+                    <b>{displayAddress(draftPlan.esxi_management)}</b>
+                  </div>
+                  <div>
+                    <span>{netappSupported ? "NetApp" : "Local storage"}</span>
+                    <b>{netappSupported ? displayAddress(draftPlan.netapp_cluster_mgmt) : "Server disks"}</b>
+                  </div>
+                </div>
+                {!netappSupported && <p className="saved-kits-note">{netappDisabledReason}</p>}
                 <Feedback error={saveError} />
                 <div className="form-actions">
-                  {selectedProfile && (
-                    <button
-                      disabled={Boolean(busyAction)}
-                      onClick={saveAsNew}
-                      type="button"
-                    >
-                      <Plus size={16} />
-                      Save New
-                    </button>
-                  )}
+                  <button onClick={startNewProfile} type="button">
+                    <Plus size={16} />
+                    Clear
+                  </button>
                   <button className="primary" disabled={Boolean(busyAction)} type="submit">
                     <Save size={16} />
-                    {selectedProfile ? "Update Profile" : "Create Profile"}
+                    Create kit
                   </button>
                 </div>
               </form>
             </section>
           </div>
 
-          <section className="panel">
-            <PanelTitle icon={<History size={18} />} title="Version History" />
-            {selectedProfile && selectedProfile.history.length ? (
-              <table>
-                <thead>
-                  <tr>
-                    <th>Version</th>
-                    <th>Saved</th>
-                    <th>Name</th>
-                    <th>Subnet</th>
-                    <th>Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {selectedProfile.history.map((revision) => (
-                    <tr key={`${selectedProfile.id}-${revision.version}-${revision.saved_at}`}>
-                      <td>v{revision.version}</td>
-                      <td>{formatDateTime(revision.saved_at)}</td>
-                      <td>{revision.name}</td>
-                      <td>{displayAddress(revision.address_plan.subnet)}</td>
-                      <td>
+          <AdvancedDetails
+            className="section-details saved-kits-details"
+            summary="Saved kit details, history, and address preview"
+            title="Saved kit details"
+          >
+            <section className="saved-kits-detail-grid">
+              <div>
+                <h3>Saved kits</h3>
+                {state.profiles.length ? (
+                  <div className="lab-profile-list">
+                    {state.profiles.map((profile) => (
+                      <article
+                        className={profile.id === selectedProfileId ? "lab-profile-row selected" : "lab-profile-row"}
+                        key={profile.id}
+                      >
+                        <div>
+                          <strong>{profile.name}</strong>
+                          <span>{deploymentModeForProfile(profile)} - {displayAddress(profile.address_plan.subnet)}</span>
+                        </div>
+                        <StatusBadge status={profile.active ? "current" : "available"} />
                         <button
-                          className="small-button"
-                          onClick={() => setForm(labProfileFormFrom(revision))}
+                          disabled={profile.active || busyAction === `activate-${profile.id}`}
+                          onClick={() => activateProfile(profile.id)}
                           type="button"
                         >
-                          Load
+                          <CheckCircle2 size={16} />
+                          Use
                         </button>
-                      </td>
+                      </article>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="muted">No saved kits yet.</p>
+                )}
+              </div>
+              <div>
+                <h3>Address preview</h3>
+                {detailProfile ? <KitAddressPreview profile={detailProfile} /> : <p className="muted">Select a kit to inspect addresses.</p>}
+              </div>
+            </section>
+            <section>
+              <h3>History</h3>
+              {detailProfile && detailProfile.history.length ? (
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Saved</th>
+                      <th>Name</th>
+                      <th>Subnet</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            ) : (
-              <p className="muted">No previous versions for the selected saved lab.</p>
-            )}
-          </section>
+                  </thead>
+                  <tbody>
+                    {detailProfile.history.map((revision) => (
+                      <tr key={`${detailProfile.id}-${revision.version}-${revision.saved_at}`}>
+                        <td>{formatDateTime(revision.saved_at)}</td>
+                        <td>{revision.name}</td>
+                        <td>{displayAddress(revision.address_plan.subnet)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <p className="muted">No earlier saved versions for this kit.</p>
+              )}
+            </section>
+          </AdvancedDetails>
+
+          <AdvancedDetails
+            className="section-details saved-kits-advanced"
+            summary="Advanced kit metadata"
+            title="Advanced kit metadata"
+          >
+            <div className="provider-fact-grid compact">
+              <ProviderFact label="Active ID" value={activeProfile.id} />
+              <ProviderFact label="Version" value={`v${activeProfile.version}`} />
+              <ProviderFact label="Storage path" value={state.store_path} />
+              <ProviderFact label="Raw origin" value={labelize(activeProfile.source)} />
+              <ProviderFact label="Saved count" value={String(state.profiles.length)} />
+              <ProviderFact label="History count" value={String(activeProfile.history.length)} />
+            </div>
+          </AdvancedDetails>
         </>
       )}
     </>
   );
+
+}
+
+function KitAddressPreview({ profile }: { profile: LabProfile }) {
+  const plan = profile.resolved_address_plan ?? profile.address_plan;
+  return (
+    <div className="provider-fact-grid compact lab-address-summary">
+      <ProviderFact label="Subnet" value={displayAddress(plan.subnet)} />
+      <ProviderFact label="Gateway" value={displayAddress(profile.global_settings.gateway)} />
+      <ProviderFact label="Cisco" value={displayAddress(plan.cisco_management)} />
+      <ProviderFact label="HPE iLO" value={displayAddress(plan.ilo)} />
+      <ProviderFact label="ESXi" value={displayAddress(plan.esxi_management)} />
+      <ProviderFact label="NetApp" value={profile.features.netapp_enabled ? displayAddress(plan.netapp_cluster_mgmt) : "Not included"} />
+      <ProviderFact label="vCenter" value={profile.features.vcenter_enabled ? "Included" : "Not included"} />
+      <ProviderFact label="Storage" value={profile.features.storage_protocol ? String(profile.features.storage_protocol).toUpperCase() : "Local"} />
+    </div>
+  );
+}
+
+function deploymentModeForForm(form: LabProfileFormState): "shared" | "local" {
+  return labNetAppSupported(parseSubnetPrefix(form.globalSettings.subnetPrefix)) && form.globalSettings.storageProtocol !== "none"
+    ? "shared"
+    : "local";
+}
+
+function deploymentModeForProfile(profile: LabProfile): string {
+  return profile.features.netapp_enabled === false || profile.features.storage_protocol === "none"
+    ? "Single server - local RAID"
+    : "Server + NetApp + vCenter";
 }
 
 function LabAddressSummary({ profile }: { profile: LabProfile }) {

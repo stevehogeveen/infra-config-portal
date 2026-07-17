@@ -3691,6 +3691,83 @@ textarea {
   grid-template-columns: minmax(300px, 0.8fr) minmax(0, 1.2fr);
 }
 
+.saved-kits-home,
+.saved-kits-switch,
+.saved-kits-create,
+.saved-kits-details,
+.saved-kits-advanced {
+  max-width: 100%;
+}
+
+.saved-kits-summary {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.saved-kits-summary div,
+.saved-kits-preview div {
+  background: #f8fafc;
+  border: 1px solid #e1e7ef;
+  border-radius: 8px;
+  display: grid;
+  gap: 5px;
+  padding: 12px;
+}
+
+.saved-kits-summary span,
+.saved-kits-preview span {
+  color: #657184;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0;
+}
+
+.saved-kits-summary strong,
+.saved-kits-preview b {
+  color: #102033;
+  overflow-wrap: anywhere;
+}
+
+.saved-kits-boundary,
+.saved-kits-note {
+  color: #56647a;
+  margin: 12px 0 0;
+}
+
+.saved-kits-layout {
+  display: grid;
+  gap: 20px;
+  grid-template-columns: minmax(280px, 0.75fr) minmax(0, 1.25fr);
+}
+
+.saved-kits-switch-controls {
+  align-items: end;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.saved-kits-create-form .lab-profile-form-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.saved-kits-preview {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.saved-kits-preview > strong {
+  grid-column: 1 / -1;
+}
+
+.saved-kits-detail-grid {
+  display: grid;
+  gap: 20px;
+  grid-template-columns: minmax(280px, 0.9fr) minmax(0, 1.1fr);
+}
+
 .lab-setup-workflow-section {
   display: grid;
   gap: 16px;
@@ -16599,6 +16676,10 @@ button.design-ilo-port:hover {
   .dashboard-grid,
   .lab-profile-layout,
   .lab-profile-form-grid,
+  .saved-kits-layout,
+  .saved-kits-summary,
+  .saved-kits-preview,
+  .saved-kits-detail-grid,
   .request-filter-grid,
   .audit-filter-grid,
   .artifact-filter-grid,
@@ -16656,6 +16737,11 @@ button.design-ilo-port:hover {
   .iscsi-gates-grid,
   .provider-action-layout {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .saved-kits-switch-controls,
+  .saved-kits-create-form .lab-profile-form-grid {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .run-choice-card {
@@ -16838,6 +16924,10 @@ button.design-ilo-port:hover {
     .dashboard-grid,
     .lab-profile-layout,
     .lab-profile-form-grid,
+    .saved-kits-layout,
+    .saved-kits-summary,
+    .saved-kits-preview,
+    .saved-kits-detail-grid,
     .request-filter-grid,
     .audit-filter-grid,
     .artifact-filter-grid,

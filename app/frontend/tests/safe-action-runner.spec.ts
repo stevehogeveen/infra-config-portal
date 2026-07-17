@@ -309,6 +309,54 @@ test("lab defaults keeps shared values simple and hides advanced policy by defau
   await expect(page.locator(".lab-defaults-advanced .secondary-button")).toHaveCount(1);
 });
 
+test("saved kits only manages kit selection and subnet-derived creation", async ({ page }) => {
+  await page.goto("/lab-profiles");
+
+  await expect(page.getByRole("heading", { name: "Saved Kits", exact: true })).toBeVisible();
+  const home = page.getByTestId("saved-kits-home");
+  await expect(home).toBeVisible();
+  await expect(home).toContainText("Current Lab");
+  await expect(home).toContainText("Server + NetApp + vCenter");
+  await expect(home).not.toContainText(/runtime|source|store|global|profile|capabilities|intent_only/i);
+
+  const createPanel = page.getByLabel("Create kit");
+  await expect(createPanel.getByRole("heading", { name: "Create kit" })).toBeVisible();
+  await expect(createPanel.locator(".primary")).toHaveCount(1);
+  await expect(createPanel.locator(".primary")).toContainText("Create kit");
+  await expect(createPanel).not.toContainText(/runtime|source|store|global|profile|capabilities|intent_only/i);
+  await expect(page.locator(".lab-profile-metrics")).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Global Settings" })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Core Addresses" })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "NetApp Capabilities" })).toHaveCount(0);
+  await expect(page.getByText("Save as lab setup")).toHaveCount(0);
+
+  await createPanel.getByLabel("Kit name").fill("Rack 08 Edge Lab");
+  await createPanel.getByLabel("Subnet CIDR").fill("192.168.210.0/24");
+  const preview = createPanel.getByLabel("Derived address preview");
+  await expect(preview).toContainText("192.168.210.204");
+  await expect(preview).toContainText("192.168.210.201");
+  await expect(preview).toContainText("192.168.210.203");
+  await expect(preview).toContainText("192.168.210.220");
+
+  const createProfileRequest = page.waitForRequest((request) => {
+    const url = new URL(request.url());
+    return request.method() === "POST" && url.pathname === "/api/v1/lab/profiles";
+  });
+  await createPanel.getByRole("button", { name: "Create kit" }).click();
+  const request = await createProfileRequest;
+  const payload = request.postDataJSON() as Record<string, any>;
+  expect(payload.name).toBe("Rack 08 Edge Lab");
+  expect(payload.address_plan.subnet).toBe("192.168.210.0/24");
+  expect(payload.address_plan.cisco_management).toBe("192.168.210.204");
+  expect(payload.address_plan.netapp_cluster_mgmt).toBe("192.168.210.220");
+
+  await expect(home).toContainText("Rack 08 Edge Lab");
+  await expect(home).toContainText("Saved and active");
+  const switchPanel = page.getByLabel("Switch kit");
+  await expect(switchPanel.getByLabel("Saved kit")).toHaveValue("visual-profile");
+  await expect(switchPanel.getByText("Lab Defaults")).toBeVisible();
+});
+
 test("operator home answers the next action without dashboard clutter", async ({ page }) => {
   await page.goto("/overview");
 
@@ -1560,9 +1608,12 @@ test("remaining operator pages expose simplified setup surfaces without old sett
   await expect(details.locator("details.advanced-drawer")).not.toHaveAttribute("open", "");
 
   await page.goto("/lab-profiles");
-  await expect(page.getByRole("heading", { name: "Shared profile policy" })).toBeVisible();
-  await expect(page.getByLabel("Global profile feature toggles")).toContainText("Allow IPv6");
-  await expect(page.getByRole("button", { name: /Save (Global Defaults|As Lab Setup)/ })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Saved Kits", exact: true })).toBeVisible();
+  await expect(page.getByTestId("saved-kits-home")).toBeVisible();
+  await expect(page.getByLabel("Create kit").locator(".primary")).toContainText("Create kit");
+  await expect(page.getByRole("heading", { name: "Shared profile policy" })).toHaveCount(0);
+  await expect(page.getByLabel("Global profile feature toggles")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /Save (Global Defaults|As Lab Setup)/ })).toHaveCount(0);
 
   await expect(page.getByRole("button", { name: "Settings" })).toHaveCount(0);
 });
@@ -1719,9 +1770,9 @@ test("media inventory displays actual file names when exposed by the backend", a
 test("saved lab setup global defaults use active profile values and never render secret material", async ({ page }) => {
   await page.goto("/lab-profiles");
 
-  await expect(page.getByText("Runtime Lab").first()).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Shared profile policy" })).toBeVisible();
-  await expect(page.getByLabel("Global profile feature toggles")).toContainText("Block legacy protocols");
+  await expect(page.getByTestId("saved-kits-home")).toContainText("Current Lab");
+  await expect(page.getByRole("heading", { name: "Shared profile policy" })).toHaveCount(0);
+  await expect(page.getByLabel("Global profile feature toggles")).toHaveCount(0);
   await expect(page.locator("nav").getByText("Settings")).toHaveCount(0);
   await expect(page.getByText("Secret values are hidden")).toHaveCount(0);
   await expect(page.locator("input[type='password']")).toHaveCount(0);
