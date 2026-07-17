@@ -3435,3 +3435,34 @@ New failures observed (both pre-existing to the shell work, not this fix - confi
 
 Both are test-suite catch-up items for the shell work, not regressions to fix in product code.
 Flagging for whoever is driving `0663747` forward to update the test file alongside it.
+
+### CXO handoff: firmware table simplicity fix (Steve routing to Codex directly)
+
+Steve is sending Codex the fix request directly this round; CXO will review the result rather
+than implement it. Recording the exact ask here too so both channels agree, per the "One Fact,
+One Computation" pattern of keeping guidance in one place.
+
+Reference: https://claude.ai/code/artifact/aae929b5-c565-48bd-b5ff-4a98cbaee824 is the
+simplicity bar for the Firmware page. Also see `LAB_BUILDER_MAP_FIRST_REDESIGN_BRIEF.md` and
+`LAB_BUILDER_SIMPLICITY_CONTRACT.md` (One Fact, One Computation section).
+
+Required fixes on `/firmware-upgrades`, scoped to that page only:
+1. Action cell: exactly two controls, `Upgrade` and `Bypass`. No button label may be a full
+   sentence (currently one row's button reads "Manual review required: missing target baseline,
+   approved HPE baseline.", duplicated again as adjacent text - one fact, one place, said once
+   and briefly).
+2. Target version column: a clean version string only (e.g. `17.12.02`). A raw filename
+   (`P95170_001_gen10spp-2026.05.00.00-SPP2026050000.2026_0527.9.iso`) must not render there -
+   that belongs in Advanced/Details, not the operator table.
+3. No inline file-baseline picker in the row - baseline selection happens behind the guarded
+   Upgrade flow after clicking Upgrade, not sitting in the table.
+4. One summary line at the top of the table (e.g. "2 upgrades available - 1 current - 1 not
+   checked"), computed once.
+
+Five-second test: someone reads one row left to right and knows what it is, what it's on, what
+it should be, and whether to upgrade or leave it - no paragraph required.
+
+CXO review plan once Codex reports back: read the actual diff, run `npm run build` and
+`npm run test:component`, live-verify `/firmware-upgrades` in the browser against the mockup,
+and confirm no destructive/live-hardware gate or the iSCSI read-only boundary was touched.
+Please note which commit to review and keep the change scoped to the firmware page.
