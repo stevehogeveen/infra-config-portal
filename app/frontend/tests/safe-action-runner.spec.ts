@@ -225,15 +225,18 @@ test("renders the map-first operator spine and pages", async ({ page }) => {
     "Overview",
     "Lab Defaults",
     "Compute & iLO",
-    "Storage · NetApp",
+    "Storage & NetApp",
+    "Virtualization",
     "Firmware",
-    "Cisco switch",
+    "Cisco Switch",
     "Run Center",
     "Reports"
   ]);
-  await expect(page.getByRole("navigation", { name: "Quick navigation" })).toContainText("Overview");
-  await expect(page.getByRole("navigation", { name: "Quick navigation" })).toContainText("Lab Defaults");
-  await expect(page.getByRole("navigation", { name: "Quick navigation" })).toContainText("Firmware");
+  const quickNavigation = page.getByRole("navigation", { name: "Quick navigation" });
+  await expect(quickNavigation.locator("a")).toHaveText(["Overview", "Lab Defaults", "Firmware"]);
+  await expect(page.getByRole("link", { name: "Create a new lab kit" })).toContainText("New kit");
+  await expect(page.getByRole("link", { name: "Create a new lab kit" })).toHaveAttribute("href", "/lab-profiles#new");
+  await expect(page.locator("aside[aria-label='Lab Builder navigation']")).not.toContainText(/Windows|OVF|Global/);
 
   await expect(page.getByRole("heading", { name: "Overview" })).toBeVisible();
   await page.goto("/lab-setup");

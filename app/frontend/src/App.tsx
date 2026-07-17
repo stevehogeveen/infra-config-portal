@@ -1063,9 +1063,10 @@ function ShellTopNav({
           <p className="sidebar-section-label">Setup</p>
           <NavItem to="/lab-defaults" icon={<Settings size={17} />} label="Lab Defaults" />
           <NavItem to="/server" icon={<Server size={17} />} label="Compute & iLO" />
-          <NavItem to="/storage" icon={<Database size={17} />} label="Storage · NetApp" />
+          <NavItem to="/storage" icon={<Database size={17} />} label="Storage & NetApp" />
+          <NavItem to="/virtualization" icon={<Layers size={17} />} label="Virtualization" />
           <NavItem to="/firmware-upgrades" icon={<ShieldCheck size={17} />} label="Firmware" />
-          <NavItem to="/network" icon={<Route size={17} />} label="Cisco switch" />
+          <NavItem to="/network" icon={<Route size={17} />} label="Cisco Switch" />
           <p className="sidebar-section-label">Run</p>
           <NavItem to="/run-center" icon={<Play size={17} />} label="Run Center" />
           <NavItem to="/validation" icon={<FileText size={17} />} label="Reports" />
@@ -1083,7 +1084,10 @@ function ShellTopNav({
             {profiles.length === 0 && <option value="">No kit selected</option>}
             {profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name}</option>)}
           </select>
-          <Link className="kit-create-link" to="/lab-profiles#new" aria-label="Create a new lab kit">+</Link>
+          <Link className="kit-create-link" to="/lab-profiles#new" aria-label="Create a new lab kit">
+            <Plus size={14} />
+            <span>New kit</span>
+          </Link>
         </div>
         <nav className="top-nav" aria-label="Quick navigation">
           <NavLink to="/overview" className={({ isActive }) => isActive ? "quick-tab active" : "quick-tab"}>Overview</NavLink>
