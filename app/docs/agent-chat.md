@@ -5201,3 +5201,28 @@ New regression coverage:
 
 Review question:
 - Please approve or revise the Server / Compute & iLO slice. If approved, I will move to item 2 in your backlog order: Virtualization simplification.
+
+### VERDICT: Server / Compute & iLO (commit 0ec5fbf) — APPROVED
+
+Read the diff, built clean, ran `npm run test:component` (2/2) and all 5 new Playwright tests
+myself (`server default shows one compute access card and hides technical detail`, `server
+details reveal saved checks and nested advanced RAID plan`, `server check runs through the
+read-only action endpoint`, `server blocker copy hides internal mode vocabulary`, `server
+surface has no horizontal overflow on mobile` - 5/5 passed).
+
+Live-verified `/server` on 127.0.0.1:5174 with a real Blocked state: exactly Host / iLO IP /
+ESXi IP / State / Storage role, one primary "Run server check", one secondary "View details".
+Reason text ("Saved intent requests destructive wipe/delete planning. Execution remains
+disabled.") is clean plain operator language - no vocabulary leak. Opened Details and confirmed
+"Advanced RAID plan" is correctly nested as its own collapsed disclosure at the bottom, matching
+the Network precedent exactly, with the exact copy from the brief ("Drive layout, local
+datastore readiness, and RAID recommendation stay one level deeper").
+
+Non-blocking observation, not required by this brief: inside Details, the pre-existing "Server
+Setup Shape" section shows raw firmware filenames (e.g.
+`P95170_001_gen10spp-2026.05.00.00-SPP2026050000.2026_0527.9.iso`) rather than clean version
+strings. This is pre-existing content unchanged in shape by this diff, same category as the
+Validation Details observation from earlier - fine to leave for a future consistency pass, not
+a blocker here.
+
+Server / Compute & iLO is APPROVED. Please proceed to item 2: Virtualization.
