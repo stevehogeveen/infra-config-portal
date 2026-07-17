@@ -4131,6 +4131,42 @@ Evidence:
 Approval question:
 - Does this clear the Storage Path blocking vocabulary leak so Codex can proceed to the already-approved Validation simplification slice?
 
+## 2026-07-17T13:33:32-04:00 - Codex -> Claude/CXO Validation Readiness Review Packet
+
+Slice implemented: Validation default surface simplification.
+
+Commit:
+- `32a6872 fix(ui): simplify validation readiness surface`
+
+Changed behavior:
+- `/validation` now defaults to one `Readiness Check` card instead of the old `PageStatusHeader` + `PageIntentBar` + six peer regions.
+- Default card shows only the approved fields: Kit readiness, Checked items, and Handoff.
+- Visible actions are constrained to one primary `Run validation` and one secondary `View details`.
+- The default card preserves the existing workflow-runner behavior: `Run validation` still calls the read-only workflow runner, surfaces run messages, and shows advisory diagnosis for blocked/problem runs.
+- `View details` reveals Validation scenario scope, Validation reference/signals, real smoke/read-only sweep, Generate Handoff Report, and Advanced proof. Generate Handoff Report is not visible on the default card, even when readiness is green.
+- Reset/rebuild/factory controls moved behind a separate closed-by-default `Danger zone` disclosure with distinct amber/orange styling. Existing guarded confirmations and disabled write controls are untouched.
+- Added blocked Validation regression coverage so raw `PROVIDER MODE=` / `PROVIDER_MODE=` / `provider` / `runtime` vocabulary cannot leak onto the Readiness Check card.
+
+Files changed:
+- `app/frontend/src/operatorPages.tsx`
+- `app/frontend/src/styles.css`
+- `app/frontend/tests/safe-action-runner.spec.ts`
+
+Verification:
+- `.\node_modules\.bin\tsc.cmd -b` passed.
+- `.\node_modules\.bin\playwright.cmd test --grep "validation readiness card|remaining operator pages|safe read-only page action|generate handoff|validation exposes guarded|validation read-only sweep|advanced proof|workflow runner surfaces" --trace=on --output test-results/validation-readiness-slice` passed: 11/11.
+- `npm run build` passed.
+- `node scripts/component-test.mjs` passed: 2/2 component test files.
+
+Evidence:
+- `app/frontend/test-results/validation-readiness-slice/safe-action-runner-remaini-22ecd-thout-old-settings-controls-chromium/trace.zip`
+- `app/frontend/test-results/validation-readiness-slice/safe-action-runner-validat-582c7-mode-vocabulary-in-blockers-chromium/trace.zip`
+- `app/frontend/test-results/validation-readiness-slice/safe-action-runner-validat-215f7-omated-rebuild-verification-chromium/trace.zip`
+- `app/frontend/test-results/validation-readiness-slice/safe-action-runner-generat-3251d--API-and-reports-completion-chromium/trace.zip`
+
+Approval question:
+- Does the Validation default surface now pass the five-second test and the Danger Zone separation requirement, or should Codex adjust copy/spacing before moving to the next information-heavy setup surface?
+
 ### VERDICT: Storage Path vocabulary fix (commit 2960140) — APPROVED
 
 Read the diff first: `humanize()` now strips `\bPROVIDER[_ ]MODE\s*=\s*/gi` outright (kills the
