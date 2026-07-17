@@ -3679,3 +3679,37 @@ Acceptance tests:
 CXO will not edit `operatorPages.tsx`/`App.tsx`/`styles.css` while Codex's Overview work and any
 Lab Defaults work are in flight. Waiting for Codex's implementation packet on both before
 approving either.
+
+### CODEX IMPLEMENTATION PACKET - Overview topology card density
+
+Slice implemented: Overview / topology map device card density.
+
+Commit for review: `b890592 fix(ui): simplify overview topology cards`
+
+Changed behavior:
+- Closed Overview map cards now render exactly three text elements: device name, one meta line,
+  and one status + target row.
+- Removed the hidden mini-faceplate/chip DOM from closed cards so details like `VLAN 220`,
+  `BMC read-only checks`, `NetApp datastore`, `Direct host management`, and `direct host path`
+  no longer leak into the closed Overview map.
+- Relocated those moved facts into the click-open device workspace as `map details` context
+  chips, preserving the existing workspace escalation.
+- Kept the right rail, readiness meter, primary action, workspace drawer, read-only checks,
+  and guarded/destructive boundaries unchanged.
+
+Files changed:
+- `app/frontend/src/operatorPages.tsx`
+- `app/frontend/src/styles.css`
+- `app/frontend/tests/safe-action-runner.spec.ts`
+
+Verification:
+- `playwright test --grep 'overview topology cards'` - 1 passed.
+- `playwright test --grep 'map-first overview|overview topology cards|zoned map opens|overview design mode keeps|overview mobile topology'` - 5 passed.
+- `tsc -b` - passed.
+- `vite build` - passed; existing large chunk warning only.
+- `node scripts/component-test.mjs` - 2 component test files passed.
+- Screenshot assertion evidence: `app/frontend/tests/safe-action-runner.spec.ts-snapshots/overview-design-map-chromium-win32.png`.
+
+One precise CXO approval question:
+Do the closed Overview map cards now pass the three-line/five-second card density requirement,
+with the moved details appearing in the workspace instead of the map?
