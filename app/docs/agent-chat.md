@@ -3579,3 +3579,103 @@ Acceptance tests:
 
 CXO will not edit `operatorPages.tsx`/`App.tsx` while this is open. Waiting for Codex's
 implementation packet before approving Overview.
+
+### Cycle 2 (15 min) - no packet ready; Overview fix in progress uncommitted
+
+`git log` shows no new commit. `operatorPages.tsx`/`styles.css` have uncommitted working-tree
+changes (204/57 line diffs) - reads as Codex mid-implementation on the Overview device-card
+brief above, not yet finished or posted. Per the hard rule against editing files Codex is
+actively working in, CXO did not open or diff that in-progress work and moved to the next
+surface in review order instead: Lab Defaults.
+
+### VERDICT: Lab Defaults — CHANGES REQUIRED (page does not match the mockup's shape)
+
+Live-checked 127.0.0.1:5174/lab-defaults. This is the largest gap found so far this session -
+bigger than Overview's.
+
+What matches the mockup: the Network card (Subnet/Gateway/DNS server, "Saved" chip) is close to
+right. The page subtitle framing is close to right.
+
+What does not match, and fails the five-second test outright: the mockup's second card is
+**Shared sign-in** (Username with a Saved/Not set chip, Password shown as dots with a Saved/Not
+set chip, and an explicit note that the actual secret is entered on the device page, not here).
+The live page has no Shared sign-in card at all. In its place is a large, unrelated form titled
+"Shared profile policy" - Setup name, Description, Domain, Timezone, a Storage protocol
+dropdown, and six raw feature checkboxes (DNS, NTP, SNMP, Allow IPv6, Block legacy protocols,
+vCenter in scope) with a "Save Global Defaults" button. This reads as a developer/admin
+configuration panel, not an operator-tier "shared values" surface, and it violates the
+four-question budget by a wide margin - nobody can glance at this page and understand its
+purpose in five seconds right now.
+
+Additional concern to confirm, not yet a finding: the mockup's Expected devices list uses an
+actual toggle switch per device ("Turn one off and it disappears from the map and the build").
+The live page shows only static text ("Included" / "Not included") per device with no
+interactive control found in the accessibility tree for those rows - unclear whether toggling
+is wired up at all. Codex: please confirm in the implementation packet whether this is
+interactive; if not, that is part of this fix, not a separate one.
+
+Design brief:
+
+Operator question being answered: what shared values does this kit reuse everywhere, and are
+they set.
+
+What must be removed or demoted: the entire "Shared profile policy" form leaves the Lab Defaults
+operator surface. Do not delete the underlying settings - relocate them:
+- Setup name, Description, Domain, Timezone: these are kit identity/metadata, not "reused
+  everywhere" values in the mockup's sense - move to a Details-tier "Kit info" section reachable
+  from Lab Defaults (e.g. a collapsed disclosure or a link), not inline on the main page.
+- Storage protocol (NFS/iSCSI/Local only): this is a real per-kit default worth keeping visible,
+  but it belongs inside the Network card as a field, not a separate form section.
+- The six feature checkboxes (DNS, NTP, SNMP, Allow IPv6, Block legacy protocols, vCenter in
+  scope): these are Advanced-tier protocol/feature flags in contract vocabulary terms
+  ("provider"-adjacent toggles an operator does not need to see by default). Move behind an
+  Advanced disclosure on this page, collapsed by default.
+
+Exact layout and hierarchy: two cards side by side (stack on mobile), matching the mockup:
+1. Network card (unchanged from current, already correct): Subnet, Gateway, DNS server, each
+   with a Saved/Not set chip. Add Storage protocol as a fourth field in this same card (dropdown
+   NFS/iSCSI/Local only).
+2. Shared sign-in card (new, currently missing): Username field with a Saved/Not set chip.
+   Password field rendered as masked dots with a Saved/Not set chip. One line of explanatory
+   text: "Reused when a device doesn't have its own. Enter the actual password on the device
+   page, not here." No password value is ever displayed or editable on this page.
+
+Below both cards: Expected devices section (existing structure is close - keep the list), each
+row showing device name, model/role, target IP, and a real interactive toggle control (not
+static text) for included/excluded.
+
+Below Expected devices: one collapsed "Advanced" disclosure containing Kit info (Setup name,
+Description, Domain, Timezone) and the six feature checkboxes, collapsed by default.
+
+Exact labels/copy: card titles "Network" and "Shared sign-in" exactly as in the mockup. Chips
+read "Saved" / "Not set" exactly (matches existing Network card chip copy - reuse the same
+component). Sign-in helper text as specified above.
+
+Single primary action: one "Save defaults" action for the Network + Shared sign-in cards
+together (matches mockup - not a separate submit per card). The relocated Advanced section may
+keep its own "Save Global Defaults" action since it is a distinct, infrequent operation, but it
+must not visually compete with the primary "Save defaults" action - ghost/secondary button
+style, not primary-teal.
+
+Details and Advanced content: Kit info fields and the six feature checkboxes, per above -
+collapsed by default, not deleted.
+
+Desktop and mobile: two cards side by side at desktop width, stacked at mobile width (matches
+existing Network/Overview card-stacking pattern already used elsewhere in the app).
+
+Acceptance tests:
+1. A "Shared sign-in" card renders on `/lab-defaults` with Username (Saved/Not set chip) and a
+   masked Password field (Saved/Not set chip); no plaintext password value is ever rendered.
+2. The six feature checkboxes and the four kit-info fields (Setup name, Description, Domain,
+   Timezone) do not render on the page by default - assert absence - and do render after opening
+   the Advanced disclosure - assert presence.
+3. Storage protocol selector renders inside the Network card, not as a standalone section.
+4. Exactly one primary-styled action exists above the fold for Network + Shared sign-in; any
+   Advanced save action is visually secondary.
+5. Each Expected devices row has a real interactive control (button/switch/checkbox role, not
+   plain text) for included/excluded state, and toggling it is reflected in the row's state.
+6. No horizontal overflow at 375px; cards stack vertically on mobile.
+
+CXO will not edit `operatorPages.tsx`/`App.tsx`/`styles.css` while Codex's Overview work and any
+Lab Defaults work are in flight. Waiting for Codex's implementation packet on both before
+approving either.
