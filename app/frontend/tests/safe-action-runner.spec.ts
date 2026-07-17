@@ -1078,6 +1078,13 @@ test("overview removes superseded layout and console surfaces from operator mode
 });
 
 test("storage page defaults to one storage path card and hides protocol internals", async ({ page }) => {
+  await page.route("**/api/v1/providers/netapp-ontap/nfs-vcenter-readiness", (route) => json(route, {
+    ...netappNfsVcenterReadiness(),
+    message: "NetApp NFS datastore cannot be checked yet.",
+    next_safe_action: "PROVIDER MODE=Read-only lab or PROVIDER_MODE=local-lab-readwrite is required before opening a real NetApp console.",
+    status: "blocked"
+  }));
+
   await page.goto("/storage");
 
   const storagePath = page.getByLabel("Storage Path");
@@ -1088,6 +1095,9 @@ test("storage page defaults to one storage path card and hides protocol internal
   await expect(storagePath).toContainText("State");
   await expect(storagePath).toContainText("NetApp shared storage");
   await expect(storagePath).toContainText("NFS");
+  await expect(storagePath.getByText(/Needs attention/)).toBeVisible();
+  await expect(storagePath).not.toContainText(/PROVIDER[_ ]MODE/i);
+  await expect(storagePath).not.toContainText(/provider/i);
 
   await expect(page.locator(".storage-path-actions .operator-primary-button")).toHaveCount(1);
   await expect(page.locator(".storage-path-actions .operator-primary-button")).toContainText("Run storage check");

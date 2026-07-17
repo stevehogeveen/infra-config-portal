@@ -16559,13 +16559,16 @@ function displayStatus(status: string): string {
 function humanize(value: string): string {
   if (!value) return "";
   return value
+    .replace(/\bPROVIDER[_ ]MODE\s*=\s*/gi, "")
+    .replace(/[A-Z0-9]+(?:_[A-Z0-9]+){2,}/g, (match) => labelize(match.toLowerCase()))
     .replace(/not_configured_yet/g, "Not set up yet")
     .replace(/not_configured/g, "Not set up yet")
     .replace(/manual_review/g, "Needs review")
     .replace(/local-lab-readwrite/g, "Real lab")
     .replace(/local-readonly/g, "Read-only lab")
-    .replace(/Provider mode/g, "Mode")
-    .replace(/provider mode/g, "mode")
+    .replace(/\bprovider mode\b/gi, "lab mode")
+    .replace(/\bprovider\b/gi, "device")
+    .replace(/\bruntime\b/gi, "lab")
     .replace(/Artifact/g, "Proof")
     .replace(/artifact/g, "proof")
     .replace(/Workflow action/g, "Action")
