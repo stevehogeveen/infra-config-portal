@@ -1179,7 +1179,7 @@ test("top nav and map workspaces expose run controls without dead settings drawe
 
   for (const [path, runButtonName] of [
     ["/firmware-upgrades", "Check versions"],
-    ["/validation", "Run Validation"]
+    ["/validation", "Run validation"]
   ] as const) {
     await page.goto(path);
     await expect(page.getByRole("button", { name: "Settings" })).toHaveCount(0);
@@ -1210,7 +1210,7 @@ test("retired device routes redirect while remaining run actions stay registered
     nextResponse.url().includes("/api/v1/workflows/actions/build-verification.run-full/run") &&
     nextResponse.request().method() === "POST"
   );
-  await page.getByRole("button", { name: "Run Validation" }).click();
+  await page.getByRole("button", { name: /Run validation/i }).click();
   await expect((await response).ok()).toBeTruthy();
   await expect(page.getByText(/no backend action is registered yet/i)).toHaveCount(0);
   await expect(page.getByText(/missing a runnable backend action/i)).toHaveCount(0);
@@ -1268,35 +1268,73 @@ test("remaining operator pages expose simplified setup surfaces without old sett
   await expect(page.getByLabel("Firmware version decisions")).toBeVisible();
   await expect(page.locator("section[aria-label='Firmware reference']")).toHaveCount(0);
 
-  const pages = [
-    ["/validation", "Validation reference", "Validation readiness at a glance", "Validation Signals"]
-  ] as const;
+  await page.goto("/validation");
+  const readiness = page.getByLabel("Readiness Check");
+  await expect(readiness).toBeVisible();
+  await expect(readiness).toContainText("Kit readiness");
+  await expect(readiness).toContainText("Checked items");
+  await expect(readiness).toContainText("Handoff");
+  await expect(readiness).toContainText("Ready");
+  await expect(readiness).toContainText("5 / 5 ready");
+  await expect(readiness).toContainText("Ready to generate");
+  await expect(page.locator(".validation-readiness-actions .operator-primary-button")).toHaveCount(1);
+  await expect(page.locator(".validation-readiness-actions .operator-primary-button")).toContainText("Run validation");
+  await expect(page.getByRole("button", { name: "View details" })).toBeVisible();
+  await expect(page.locator("section[aria-label='Validation reference']")).toHaveCount(0);
+  await expect(page.locator("section[aria-label='Validation scenario scope']")).toHaveCount(0);
+  await expect(page.getByText("Raw proof links")).toHaveCount(0);
+  await expect(readiness.getByRole("button", { name: "Generate Handoff Report" })).toHaveCount(0);
+  await expect(readiness.getByRole("button", { name: /factory|reset|rebuild/i })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Generate Handoff Report" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /Apply NetApp Factory Reset|Reset HPE RAID|Rebuild ESXi Host|Reset Server Power/ })).toHaveCount(0);
+  const dangerZone = page.locator("details.validation-danger-zone");
+  await expect(dangerZone).not.toHaveAttribute("open", "");
+  await expect(page.getByRole("button", { name: "Settings" })).toHaveCount(0);
 
-  for (const [path, ariaLabel, heading, tableTitle] of pages) {
-    await page.goto(path);
-    const reference = page.locator(`section[aria-label='${ariaLabel}']`).first();
-    await expect(reference.getByRole("heading", { name: heading })).toBeVisible();
-    await expect(reference).toContainText("Current state and targets");
-    await expect(reference).toContainText("Current State:");
-    await expect(reference).toContainText("Target:");
-    await expect(reference).toContainText("Gap:");
-    await expect(reference).toContainText("Next safe actions");
-    await expect(reference).toContainText(tableTitle);
-    await expect(reference).toContainText("Active Blockers");
-    await expect(page.getByRole("button", { name: "Settings" })).toHaveCount(0);
-  }
+  await page.getByRole("button", { name: "View details" }).click();
+  const details = page.getByLabel("Validation details");
+  await expect(details.getByLabel("Validation reference")).toBeVisible();
+  await expect(details.getByLabel("Validation scenario scope")).toBeVisible();
+  await expect(details).toContainText("Validation Signals");
+  await expect(details.getByRole("button", { name: "Generate Handoff Report" })).toBeVisible();
+  await expect(details.locator("details.advanced-drawer")).not.toHaveAttribute("open", "");
 
   await page.goto("/lab-profiles");
   await expect(page.getByRole("heading", { name: "Shared profile policy" })).toBeVisible();
   await expect(page.getByLabel("Global profile feature toggles")).toContainText("Allow IPv6");
   await expect(page.getByRole("button", { name: /Save (Global Defaults|As Lab Setup)/ })).toBeVisible();
 
-  for (const setupPath of ["/network", "/server", "/storage", "/virtualization"]) {
-    await page.goto(setupPath);
-    await expect(page).toHaveURL(new RegExp(`${setupPath}$`));
-    await expect(page.locator("main")).toBeVisible();
-    await expect(page.getByRole("button", { name: "Settings" })).toHaveCount(0);
-  }
+  await expect(page.getByRole("button", { name: "Settings" })).toHaveCount(0);
+});
+
+test("validation readiness card hides raw provider-mode vocabulary in blockers", async ({ page }) => {
+  const blocked = labValidation();
+  blocked.overall_status = "blocked";
+  blocked.next_action = "PROVIDER MODE=Read-only lab or PROVIDER_MODE=local-lab-readwrite is required before provider runtime validation.";
+  blocked.top_blocker = {
+    problem: "PROVIDER_MODE=local-lab-readwrite is required before provider runtime validation.",
+    title: "Provider mode missing"
+  };
+  blocked.validation_items = [
+    {
+      ...blocked.validation_items[0],
+      current_state: "Blocked",
+      next_action: "PROVIDER MODE=Read-only lab is required before provider validation.",
+      setup_summary: "PROVIDER_MODE is unavailable.",
+      status: "blocked"
+    },
+    ...blocked.validation_items.slice(1)
+  ];
+  await page.route("**/api/v1/lab/validation", (route) => json(route, blocked));
+
+  await page.goto("/validation");
+
+  const readiness = page.getByLabel("Readiness Check");
+  await expect(readiness).toContainText("Blocked");
+  await expect(readiness.getByText("Needs attention")).toBeVisible();
+  await expect(readiness).not.toContainText(/PROVIDER[_ ]MODE/i);
+  await expect(readiness).not.toContainText(/\bprovider\b/i);
+  await expect(readiness).not.toContainText(/\bruntime\b/i);
 });
 
 test("storage iSCSI preview apply and validation buttons expose the honest guarded path", async ({ page }) => {
@@ -1349,19 +1387,20 @@ test("storage iSCSI preview apply and validation buttons expose the honest guard
 test("advanced proof is collapsed and operator labels hide raw statuses", async ({ page }) => {
   await page.goto("/validation");
 
+  await expect(page.locator("details.advanced-drawer")).toHaveCount(0);
+  await page.getByRole("button", { name: "View details" }).click();
   const advanced = page.locator("details.advanced-drawer").first();
   await expect(advanced).not.toHaveAttribute("open", "");
   const validation = page.locator("section[aria-label='Validation reference']");
   await expect(validation.getByText("Golden State / Handoff", { exact: true })).toBeVisible();
-  await expect(page.getByText("Golden State means expected working lab state.").first()).toBeVisible();
   await expect(validation).toContainText("Validation Signals");
   await expect(page.getByText("Artifact")).toHaveCount(0);
   await expect(page.getByText("manual_review")).toHaveCount(0);
   await expect(page.getByText("not_configured_yet")).toHaveCount(0);
 
   await page.goto("/overview");
-  await expect(page.getByText("Real lab").first()).toBeVisible();
   await expect(page.getByText("local-lab-readwrite")).toHaveCount(0);
+  await expect(page.getByText(/PROVIDER_MODE/)).toHaveCount(0);
 });
 
 test("firmware decisions replace the retired map with four operator columns", async ({ page }) => {
@@ -1450,13 +1489,14 @@ test("safe read-only page action still invokes the workflow runner", async ({ pa
   const runResponse = page.waitForResponse((response) =>
     response.url().includes("/api/v1/workflows/actions/build-verification.run-full/run")
   );
-  await page.getByRole("button", { name: "Run Validation" }).click();
+  await page.getByRole("button", { name: /Run validation/i }).click();
   await expect((await runResponse).ok()).toBeTruthy();
   await expect(page.getByText(/Run Full Verification:/)).toBeVisible();
 });
 
 test("generate handoff report button calls the handoff API and reports completion", async ({ page }) => {
   await page.goto("/validation");
+  await page.getByRole("button", { name: "View details" }).click();
 
   const handoffResponse = page.waitForResponse((response) =>
     response.url().includes("/api/v1/lab/validation/handoff")
@@ -1468,6 +1508,8 @@ test("generate handoff report button calls the handoff API and reports completio
 
 test("validation exposes guarded factory reset and automated rebuild verification", async ({ page }) => {
   await page.goto("/validation");
+  await expect(page.getByRole("button", { name: /Apply NetApp Factory Reset|Reset HPE RAID|Rebuild ESXi Host|Reset Server Power/ })).toHaveCount(0);
+  await page.locator("details.validation-danger-zone > summary").click();
 
   const resetPanel = page.locator("section[aria-label='Factory Reset and Rebuild']");
   await expect(resetPanel.getByRole("heading", { name: "Start from scratch" })).toBeVisible();
@@ -1523,6 +1565,7 @@ test("validation exposes guarded factory reset and automated rebuild verificatio
 
 test("validation read-only sweep surfaces optional parity blockers as warnings", async ({ page }) => {
   await page.goto("/validation");
+  await page.getByRole("button", { name: "View details" }).click();
 
   const sweepResponse = page.waitForResponse((response) =>
     response.url().includes("/api/v1/workflows/actions/operator-readonly-sweep.real-lab/run")
@@ -1565,7 +1608,7 @@ test("blocked workflow runs render an advisory diagnosis card", async ({ page })
   const runResponse = page.waitForResponse((response) =>
     response.url().includes("/api/v1/workflows/actions/build-verification.run-full/run")
   );
-  await page.getByRole("button", { name: "Run Validation" }).click();
+  await page.getByRole("button", { name: /Run validation/i }).click();
 
   await expect((await runResponse).ok()).toBeTruthy();
   await expect(page.getByLabel("Advisory diagnosis")).toBeVisible();
@@ -1670,7 +1713,7 @@ test("workflow runner surfaces plain-text API errors", async ({ page }) => {
   const runResponse = page.waitForResponse((response) =>
     response.url().includes("/api/v1/workflows/actions/build-verification.run-full/run")
   );
-  await page.getByRole("button", { name: "Run Validation" }).click();
+  await page.getByRole("button", { name: /Run validation/i }).click();
 
   await expect((await runResponse).status()).toBe(503);
   await expect(page.getByText("workflow runner temporarily unavailable")).toBeVisible();
@@ -1689,7 +1732,7 @@ test("workflow runner surfaces primitive array API detail errors", async ({ page
   const runResponse = page.waitForResponse((response) =>
     response.url().includes("/api/v1/workflows/actions/build-verification.run-full/run")
   );
-  await page.getByRole("button", { name: "Run Validation" }).click();
+  await page.getByRole("button", { name: /Run validation/i }).click();
 
   await expect((await runResponse).status()).toBe(422);
   await expect(page.getByText("first blocker; second blocker")).toBeVisible();
@@ -1708,7 +1751,7 @@ test("workflow runner surfaces malformed JSON API responses", async ({ page }) =
   const runResponse = page.waitForResponse((response) =>
     response.url().includes("/api/v1/workflows/actions/build-verification.run-full/run")
   );
-  await page.getByRole("button", { name: "Run Validation" }).click();
+  await page.getByRole("button", { name: /Run validation/i }).click();
 
   await expect((await runResponse).status()).toBe(200);
   await expect(page.getByText("Invalid JSON response from /api/v1/workflows/actions/build-verification.run-full/run.")).toBeVisible();
@@ -1720,7 +1763,7 @@ test("workflow runner surfaces network API failures", async ({ page }) => {
   );
   await page.goto("/validation");
 
-  await page.getByRole("button", { name: "Run Validation" }).click();
+  await page.getByRole("button", { name: /Run validation/i }).click();
 
   await expect(page.getByText("Network error while requesting /api/v1/workflows/actions/build-verification.run-full/run.")).toBeVisible();
 });

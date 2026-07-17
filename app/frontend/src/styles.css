@@ -14254,6 +14254,161 @@ button.design-ilo-port:hover {
   margin: 0;
 }
 
+.validation-readiness-surface,
+.validation-details,
+.validation-danger-zone {
+  margin: 0 auto 24px;
+  max-width: 1410px;
+  padding: 0 32px;
+}
+
+.validation-readiness-card {
+  border-color: #d6e0e8;
+  box-shadow: 0 10px 26px rgba(34, 58, 80, .06);
+}
+
+.validation-readiness-card h2 {
+  color: #102238;
+  font-size: clamp(24px, 2.3vw, 34px);
+  letter-spacing: 0;
+  margin: 4px 0 0;
+}
+
+.validation-readiness-fields {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 0;
+}
+
+.validation-readiness-fields > div {
+  background: #f7fafc;
+  border: 1px solid #dbe4ef;
+  border-radius: 10px;
+  display: grid;
+  gap: 7px;
+  min-height: 82px;
+  padding: 14px;
+}
+
+.validation-readiness-fields dt {
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.validation-readiness-fields dd {
+  color: #102238;
+  font-size: 16px;
+  font-weight: 850;
+  line-height: 1.25;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.validation-readiness-reason {
+  background: #fff7ed;
+  border: 1px solid #fed7aa;
+  border-radius: 10px;
+  color: #7c2d12;
+  display: grid;
+  gap: 5px;
+  margin-top: 14px;
+  padding: 13px 14px;
+}
+
+.validation-readiness-reason strong {
+  font-size: 12px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.validation-readiness-reason span {
+  color: #334155;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.validation-readiness-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
+  width: 100%;
+}
+
+.validation-readiness-actions .operator-primary-button {
+  width: auto;
+}
+
+.validation-readiness-actions .secondary-button {
+  background: #f7fafc;
+  border: 1px solid #cbd6e1;
+  color: #334961;
+}
+
+.validation-readiness-feedback {
+  margin-top: 14px;
+}
+
+.validation-details {
+  display: grid;
+  gap: 16px;
+}
+
+.validation-details-grid {
+  display: grid;
+  gap: 16px;
+}
+
+.validation-danger-zone {
+  background: #fff7ed;
+  border: 1px solid #fdba74;
+  border-radius: 14px;
+  box-shadow: 0 12px 28px rgba(154, 52, 18, .08);
+  padding-bottom: 16px;
+  padding-top: 16px;
+}
+
+.validation-danger-zone summary {
+  align-items: center;
+  color: #7c2d12;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  list-style: none;
+}
+
+.validation-danger-zone summary::-webkit-details-marker {
+  display: none;
+}
+
+.validation-danger-zone summary span {
+  display: grid;
+  gap: 4px;
+}
+
+.validation-danger-zone summary strong {
+  color: #7c2d12;
+  font-size: 18px;
+}
+
+.validation-danger-zone summary small {
+  color: #9a3412;
+  font-weight: 650;
+}
+
+.validation-danger-zone[open] {
+  border-color: #f97316;
+}
+
+.validation-danger-zone > div {
+  margin-top: 14px;
+}
+
 .storage-path-surface,
 .storage-path-details {
   margin: 0 auto 24px;
@@ -15979,7 +16134,13 @@ button.design-ilo-port:hover {
   .sidebar-nav .nav-item { min-width: 42px; }
   .shell-topbar { display: flex; flex-wrap: wrap; min-height: auto; padding: 10px 14px; }
   .top-nav { order: 3; width: 100%; }
-  .operator-surface-heading, .lab-defaults-form, .lab-defaults-devices-card, .lab-defaults-advanced { padding-left: 16px; padding-right: 16px; }
+  .operator-surface-heading,
+  .lab-defaults-form,
+  .lab-defaults-devices-card,
+  .lab-defaults-advanced,
+  .validation-readiness-surface,
+  .validation-details,
+  .validation-danger-zone { padding-left: 16px; padding-right: 16px; }
 }
 
 @media (max-width: 980px) {
@@ -16510,6 +16671,7 @@ button.design-ilo-port:hover {
     .server-setup-grid,
     .firmware-setup-grid,
     .validation-setup-grid,
+    .validation-readiness-fields,
     .virtualization-setup-grid,
     .storage-scenario-grid,
     .storage-path-fields,

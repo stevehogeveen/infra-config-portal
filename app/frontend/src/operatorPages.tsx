@@ -5002,6 +5002,10 @@ export function OperatorValidationPage({ labProfileState }: OperatorPageProps) {
   const [vcenterNetapp, setVcenterNetapp] = useState<ProviderProbeResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [runState, setRunState] = useState<WorkflowRunState>(emptyRunState);
+  const [diagnosis, setDiagnosis] = useState<WorkflowActionDiagnosis | null>(null);
+  const [diagnosisLoading, setDiagnosisLoading] = useState(false);
 
   async function load() {
     setError("");
@@ -5080,7 +5084,17 @@ export function OperatorValidationPage({ labProfileState }: OperatorPageProps) {
     ],
     [buildVerification, currentView, differentFromExpected, validation]
   );
-  const intent = usePageIntentLayout("validation", validationIntentRegions, activeProfile?.id);
+  const validationActionIds = ["build-verification.run-full", "full-lab.validation", "lab-validation.summary"];
+  const validationRunConfig: TabRunConfig = { actionIds: validationActionIds, actions, label: "Validation" };
+  const validationActionById = useMemo(() => new Map(actions.map((action) => [action.action_id, action])), [actions]);
+  const validationAction = firstRunnableAction(validationActionById, validationActionIds, validationRunConfig);
+  const validationFallbackActionId = fallbackRunActionId(validationRunConfig, validationAction);
+  const validationDisabledReason = validationAction
+    ? disabledReasonForRunConfig(validationRunConfig, validationAction)
+    : validationFallbackActionId
+      ? ""
+      : disabledReasonForRunConfig(validationRunConfig, null);
+  const validationCard = validationReadinessCardModel(validation);
   const validationRegions: Record<string, ReactNode> = {
     "advanced-proof": (
       <AdvancedDrawer title="Validation proof" summary={noProofText}>
@@ -5131,43 +5145,172 @@ export function OperatorValidationPage({ labProfileState }: OperatorPageProps) {
     )
   };
 
+  async function runDefaultValidation() {
+    if (validationDisabledReason || runState.runningActionId) return;
+    const actionId = validationAction?.action_id ?? validationFallbackActionId;
+    if (!actionId) return;
+    setDiagnosis(null);
+    setRunState({ error: "", message: "Validation is running.", runningActionId: actionId });
+    try {
+      const result = await api.runWorkflowAction(actionId);
+      setRunState({
+        error: "",
+        message: validationAction ? workflowRunMessage(validationAction, result) : workflowRunResultMessage("Validation", result),
+        runningActionId: ""
+      });
+      if (isProblemRun(result)) {
+        await loadValidationDiagnosis(actionId);
+      }
+      await load();
+    } catch (err) {
+      setRunState({ error: errorMessage(err), message: "", runningActionId: "" });
+    }
+  }
+
+  async function loadValidationDiagnosis(actionId: string) {
+    setDiagnosisLoading(true);
+    try {
+      setDiagnosis(await api.workflowActionDiagnosis(actionId));
+    } catch {
+      setDiagnosis(null);
+    } finally {
+      setDiagnosisLoading(false);
+    }
+  }
+
   return (
     <OperatorPage title="Validation">
-      <PageStatusHeader
-        description="Use these live checks and guarded actions for this part of the lab."
-        helper="Golden State means expected working lab state. Advanced proof is hidden unless you need it."
-        icon={<CheckCircle2 size={26} />}
-        nextAction={humanize(validation?.next_action || "Run validation, then generate the handoff.")}
-        runConfig={{
-          actionIds: ["build-verification.run-full", "full-lab.validation", "lab-validation.summary"],
-          actions,
-          label: "Validation",
-          onReload: load
-        }}
-        status={validation?.overall_status ?? "not_checked"}
-        tabId="validation"
-        title="Validation"
-      />
+      <div className="operator-surface-heading">
+        <p className="operator-kicker">Run</p>
+        <h1>Validation</h1>
+        <p>Is this kit ready to hand off, and what is the one check to run next?</p>
+      </div>
       <Feedback loading={loading && !validation} error={error} />
-      <PageIntentBar
-        layout={intent.layout}
-        onApply={intent.applyOps}
-        onReset={intent.reset}
-        onTargetRegionChange={intent.setTargetRegionId}
-        onUndo={intent.undo}
-        page="validation"
-        regions={validationIntentRegions}
-        summary={intent.summary}
-        targetRegionId={intent.targetRegionId}
-        undoAvailable={intent.undoAvailable}
-      />
-      {orderedIntentRegions(validationIntentRegions, intent.layout).map((region) => (
-        <IntentRegion highlighted={intent.targetRegionId === region.id} key={region.id} layout={intent.layout} region={region}>
-          {validationRegions[region.id]}
-        </IntentRegion>
-      ))}
+      <section className="validation-readiness-surface" aria-label="Readiness Check">
+        <Card className="validation-readiness-card" hover={false}>
+          <CardHeader>
+            <div>
+              <p className="operator-kicker">Readiness check</p>
+              <h2>Kit handoff readiness</h2>
+            </div>
+            <StatusBadge label={validationCard.kitReadiness} status={validationCard.badgeStatus} />
+          </CardHeader>
+          <CardContent>
+            <dl className="validation-readiness-fields">
+              <div>
+                <dt>Kit readiness</dt>
+                <dd>{validationCard.kitReadiness}</dd>
+              </div>
+              <div>
+                <dt>Checked items</dt>
+                <dd>{validationCard.checkedItems}</dd>
+              </div>
+              <div>
+                <dt>Handoff</dt>
+                <dd>{validationCard.handoff}</dd>
+              </div>
+            </dl>
+            {validationCard.reason && (
+              <div className="validation-readiness-reason" role="note">
+                <strong>Needs attention</strong>
+                <span>{validationCard.reason}</span>
+              </div>
+            )}
+            {runState.message && <div className="operator-feedback validation-readiness-feedback">{runState.message}</div>}
+            {runState.error && <div className="operator-feedback error validation-readiness-feedback">{runState.error}</div>}
+            {diagnosisLoading && <p className="operator-action-message">Preparing advisory diagnosis...</p>}
+            {diagnosis && <WorkflowDiagnosisCard diagnosis={diagnosis} />}
+          </CardContent>
+          <CardFooter>
+            <div className="validation-readiness-actions">
+              <button
+                className="operator-primary-button"
+                disabled={Boolean(validationDisabledReason) || Boolean(runState.runningActionId)}
+                onClick={() => void runDefaultValidation()}
+                title={validationDisabledReason || "Run validation"}
+                type="button"
+              >
+                <CheckCircle2 size={16} />
+                {runState.runningActionId ? "Running" : "Run validation"}
+              </button>
+              <button
+                aria-expanded={detailsOpen}
+                className="secondary-button"
+                onClick={() => setDetailsOpen((current) => !current)}
+                type="button"
+              >
+                {detailsOpen ? "Hide details" : "View details"}
+              </button>
+            </div>
+            {validationDisabledReason && <span className="run-button-safety-note">{validationDisabledReason}</span>}
+          </CardFooter>
+        </Card>
+      </section>
+
+      {detailsOpen && (
+        <section className="validation-details" aria-label="Validation details">
+          <div className="validation-details-grid">
+            {validationRegions["scenario-scope"]}
+            {validationRegions.reference}
+            {validationRegions["smoke-handoff"]}
+            {validationRegions["advanced-proof"]}
+          </div>
+        </section>
+      )}
+
+      <details className="validation-danger-zone" aria-label="Danger zone">
+        <summary>
+          <span>
+            <span className="operator-kicker danger">Danger zone</span>
+            <strong>Reset and rebuild controls</strong>
+            <small>Closed by default. These workflows stay behind existing guarded confirmations.</small>
+          </span>
+        </summary>
+        <div>
+          {validationRegions["reset-rebuild"]}
+        </div>
+      </details>
     </OperatorPage>
   );
+}
+
+function validationReadinessCardModel(validation: LabValidationSummary | null) {
+  const items = validation?.validation_items ?? [];
+  const readyCount = items.filter((item) => ["ready", "ok", "passed", "completed"].includes(item.status)).length;
+  const totalCount = items.length;
+  const status = validation?.overall_status || (validation ? strongestStatus(items.map((item) => item.status)) : "not_checked");
+  const kitReadiness = validationReadinessStateLabel(status);
+  const firstIssue = items.find((item) => !["ready", "ok", "passed", "completed"].includes(item.status));
+  const reason = kitReadiness === "Blocked"
+    ? humanize(
+      validation?.top_blocker?.problem ||
+      validation?.next_action ||
+      firstIssue?.next_action ||
+      firstIssue?.setup_summary ||
+      firstIssue?.current_state ||
+      "Validation needs attention."
+    )
+    : "";
+  return {
+    badgeStatus: validationReadinessBadgeStatus(kitReadiness),
+    checkedItems: `${readyCount} / ${totalCount} ready`,
+    handoff: validation?.handoff_report ? "Ready to generate" : "Not ready",
+    kitReadiness,
+    reason
+  };
+}
+
+function validationReadinessStateLabel(status: string): "Ready" | "Blocked" | "Not checked" {
+  const normalized = status.toLowerCase();
+  if (["ready", "ok", "passed", "completed", "success"].includes(normalized)) return "Ready";
+  if (!normalized || ["not_checked", "unknown", "not_configured", "not_configured_yet"].includes(normalized)) return "Not checked";
+  return "Blocked";
+}
+
+function validationReadinessBadgeStatus(label: "Ready" | "Blocked" | "Not checked"): StatusBadgeStatus {
+  if (label === "Ready") return "ready";
+  if (label === "Blocked") return "blocked";
+  return "not-configured";
 }
 
 function ValidationSetupShapePanel({
