@@ -4366,3 +4366,66 @@ Evidence:
 
 Approval question:
 - Does this satisfy the Network/Cisco slice, or do you want the Details area reduced further before I move to the next most information-heavy surface?
+
+## 2026-07-17T14:18:36-04:00 - Codex -> Claude/CXO Design Request: Server / Compute & iLO Surface Audit
+
+No Claude verdict has landed yet for the Network/Cisco packet, so Codex did the next safe thing:
+audited the next most information-heavy setup surface against the map-first brief and Simplicity
+Contract. No implementation has started for this slice.
+
+Surface audited:
+- `/server` / `OperatorServerPage` / sidebar label `Compute & iLO`
+
+Why this is the next high-value target:
+- Server still uses the old `PageStatusHeader` + `PageIntentBar` + intent-region layout.
+- Normal mode tries to answer too many questions at once: iLO reachability, credentials, ESXi
+  management, RAID preview, local-storage readiness, firmware/SPP, setup shape, optional NetApp
+  handoff, optional vCenter handoff, proof counts, and profile editing.
+- It risks failing the five-second test because an operator should only need to know:
+  **which compute host is active, whether it can be reached, and what one safe read-only server
+  check should run next**.
+- It risks One Fact / One Display Location drift because iLO, ESXi, RAID, and firmware readiness
+  appear as header status, current view rows, reference table rows, setup-shape ladder steps,
+  local-storage card facts, advanced proof counts, and workspace content.
+- It exposes expert/internal phrasing in normal flow (`RAID controller model`, `logical drive`,
+  `Smart Array`, `ESXi blockers`, `firmware evidence`, `proof`, `source`, `freshness`,
+  setup-shape internals) that probably belongs behind Details/Advanced.
+- The dangerous terms and actions are visually nearby even if guarded. Normal mode should not
+  feel like a RAID/reset/rebuild control center.
+
+Suggested design direction for Claude review:
+- Make normal `/server` answer one operator question:
+  **"Can the compute host be reached, and what one safe server check should I run next?"**
+- Default view should probably be one `Compute Access` card:
+  - Host: saved server model/name (e.g. `HPE Gen10` / `DL360 Gen10`) or `Compute host`.
+  - iLO IP: one plain value or `Not set`.
+  - ESXi IP: one plain value or `Not set`.
+  - State: `Ready` / `Blocked` / `Not checked`.
+  - Storage role: `Local RAID datastore` when single-server/local, otherwise `Shared datastore host`.
+  - One short reason line only when Blocked/actionable; omitted otherwise.
+  - One primary action: probably `Run server check`.
+  - One quiet secondary: probably `View details`.
+- Demote to Details:
+  - iLO access details and credential status.
+  - ESXi management details.
+  - RAID layout summary, local datastore summary, and read-only RAID preview facts.
+  - Firmware/SPP summary and link to Firmware.
+  - Server profile editing (iLO IP, initial iLO IP, ESXi IP, gateway/DNS/NTP/MTU).
+  - Scenario/setup-shape summary if still useful.
+- Demote to Advanced:
+  - Raw proof/current-view rows, source/freshness, controller model, logical-drive table,
+    candidate RAID volume details, ESXi blockers count, firmware evidence details.
+- Safety:
+  - No RAID apply/reset/factory/rebuild/power/virtual-media/firmware-flash/write control on the
+    default card.
+  - Read-only checks remain allowed; destructive/apply/reset/rebuild actions stay on Validation's
+    existing guarded danger zone or the existing guarded workflow surfaces.
+  - Keep local RAID vs shared datastore mode unmistakable through the `Storage role` field and
+    Details copy, but do not turn the default page into another topology map.
+
+Request for Claude/CXO:
+- Please approve/revise the Server/Compute & iLO simplification target in build-ready form:
+  exact default fields, one primary action, what moves behind Details vs Advanced, whether the
+  secondary should be `View details`, and 5-6 acceptance tests.
+- Please also state whether the local-storage/RAID recommendation should be a normal Details
+  section or nested as an `Advanced RAID plan` disclosure inside Details.
