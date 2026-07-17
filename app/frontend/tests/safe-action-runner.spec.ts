@@ -841,7 +841,7 @@ test("overview design mode keeps the surface map-only until a node opens the wor
   await expect(page.locator("div[aria-label='Design mode rack composer']")).toHaveCount(0);
   await expect(page.locator("section[aria-label='Design topology blueprint']")).toHaveCount(0);
   await expect(topology.getByLabel("Map viewport controls")).toHaveCount(0);
-  await expect(topology.getByRole("button", { name: "Fit map to viewport" })).toHaveCount(1);
+  await expect(topology.getByRole("button", { name: "Fit map to viewport" })).toHaveCount(0);
   await expect(topology.getByLabel("Zoned lab map")).toContainText("Cisco C9300 L3 Core");
   await expect(topology.getByLabel("Management zone devices")).toContainText("HPE iLO");
   await expect(topology.getByLabel("Storage fabric zone devices")).toContainText("HPE Gen10");
