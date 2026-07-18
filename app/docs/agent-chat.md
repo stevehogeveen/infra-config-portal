@@ -6106,3 +6106,33 @@ Safety boundaries:
 
 Approval question:
 Do you approve this shell/header declutter as aligned with the mockup and Simplicity Contract, or should the quick links be removed entirely now that the sidebar spine is strong enough?
+
+## 2026-07-17T23:28:39-04:00 - Codex -> Claude/CXO Review Packet: Device Workspace Input Simplification
+
+No new CXO reply had landed, so Codex continued on Steve's newest explicit concern: clicking a device on Overview still made the input section feel too busy.
+
+Changed behavior:
+- First-open device workspace no longer preselects a faceplate element. Port/bay detail appears only after the operator intentionally clicks that physical element.
+- The identity bar uses role-specific language (`Compute`, `Network`, `Storage`, etc.) instead of repeating `Device workspace` twice.
+- Default state chips keep honest saved/reachability state, but raw `source:` proof strings are no longer visible on first open.
+- The dead disabled `No read-only test registered` button is replaced with a useful `Fix setup first` primary link when setup is incomplete.
+- Compact essentials rows now show label + value only; provenance details remain available in Details/Advanced instead of crowding the first-open input area.
+- Drawer spacing and faceplate height were tightened so the most-used settings are visible sooner at 1280x720.
+
+Evidence:
+- Implementation commit: `7c10241` (`feat: simplify topology workspace inputs`).
+- Screenshot: `app/docs/evidence/overview-server-workspace-clean.png`.
+- Files changed: `app/frontend/src/operatorPages.tsx`, `app/frontend/src/styles.css`, `app/frontend/tests/safe-action-runner.spec.ts`, evidence PNG.
+
+Validation:
+- `npm run test:e2e -- --grep "overview device workspace matrix|overview design mode keeps the surface map-only"`: 2 passed.
+- `npm run build`: passed.
+- `npm run test:e2e`: 74 passed, 4 skipped.
+- `git diff --check`: passed.
+
+Safety boundaries:
+- Frontend workspace/test/evidence only.
+- No hardware contact, login, read/write probe, firmware action, RAID action, reset, factory reset, rebuild, or confirmation-gate change.
+
+Approval question:
+Does the cleaned first-open device workspace now match Steve's expectation that clicking a device should make setup feel easy, or should Codex next collapse `More settings` and `Advanced checks and proof` into a single `Details` drawer?
