@@ -933,6 +933,8 @@ test("overview device workspace matrix keeps default inputs concise", async ({ p
     const workspace = overlay.locator(`section[aria-label='${item.workspace} workspace']`);
     await expect(workspace, `${item.workspace} workspace opens`).toBeVisible();
     await expect(workspace.locator(":scope > .design-device-primary-action .design-plan-action"), `${item.workspace} has one default action`).toHaveCount(1);
+    await expect(workspace.locator(".design-selected-element-note"), `${item.workspace} waits for an element click before showing element detail`).toHaveCount(0);
+    await expect(workspace, `${item.workspace} avoids dead default actions`).not.toContainText("No read-only test registered");
     await expect(workspace.getByLabel(`${item.workspace} essentials`), `${item.workspace} shows essentials`).toBeVisible();
     for (const essential of item.essentials) {
       await expect(workspace.getByLabel(`${item.workspace} essentials`), `${item.workspace} essential ${essential}`).toContainText(essential);
@@ -1165,8 +1167,9 @@ test("overview design mode keeps the surface map-only until a node opens the wor
   const switchWorkspace = overlay.locator("section[aria-label='Cisco switch workspace']");
   await expect(switchWorkspace).toBeVisible();
   await expect(switchWorkspace.getByLabel("Cisco switch state")).toContainText(/Draft|Saved/);
-  await expect(switchWorkspace.getByLabel("Cisco switch state")).toContainText(/source: (profile drift|persisted design draft|local draft defaults)/);
-  await expect(switchWorkspace.getByLabel("Cisco switch state")).toContainText("source: no read-only run yet");
+  await expect(switchWorkspace.getByLabel("Cisco switch state")).toContainText("Saved setup");
+  await expect(switchWorkspace.getByLabel("Cisco switch state")).toContainText("Run a check to verify");
+  await expect(switchWorkspace.getByLabel("Cisco switch state")).not.toContainText("source:");
   await expect(switchWorkspace.getByLabel("Cisco switch interactive faceplate")).toBeVisible();
   await switchWorkspace.getByRole("button", { name: "Switch port 1", exact: true }).click();
   await expect(switchWorkspace.locator(".design-selected-element-note")).toContainText("port 1");
@@ -1193,7 +1196,7 @@ test("overview design mode keeps the surface map-only until a node opens the wor
   await switchWorkspace.getByRole("button", { name: /Cisco Firmware Inventory/ }).click();
   await expect(advanced.locator("section[aria-label='Cisco switch safe checks and next actions']")).toContainText("Cisco Firmware Inventory: Ready");
   await expect(advanced.locator("section[aria-label='Cisco switch safe checks and next actions']")).toContainText("Last: Ready");
-  await expect(switchWorkspace.getByLabel("Cisco switch state")).toContainText("source: last Cisco Firmware Inventory");
+  await expect(switchWorkspace.getByLabel("Cisco switch state")).not.toContainText("source:");
   const networkStorageVlan = switchWorkspace.getByLabel("Cisco switch Network").getByRole("textbox", { name: /^Storage VLAN/ });
   await networkStorageVlan.fill("230");
   await expect(networkStorageVlan).toHaveValue("230");

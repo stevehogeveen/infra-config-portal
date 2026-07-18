@@ -8838,7 +8838,7 @@ function LabDesignComposer({
     topologyReadConnectionSettingsDraft(draftKey, defaultConnectionSettings)
   );
   const [selectedDevice, setSelectedDevice] = useState<DesignPartId>(initialSelectedDevice ?? "switch");
-  const [selectedFaceplateElement, setSelectedFaceplateElement] = useState("Switch port 1");
+  const [selectedFaceplateElement, setSelectedFaceplateElement] = useState(() => workspaceOnly ? "" : "Switch port 1");
   const [selectedLane, setSelectedLane] = useState<DesignLaneId>("management");
   const [selectedConnection, setSelectedConnection] = useState<DesignConnectionId>("switch-server");
   const [dropMessage, setDropMessage] = useState("Loading persisted design draft. Commit profile settings before operating hardware.");
@@ -8870,7 +8870,7 @@ function LabDesignComposer({
     ? selectedSettingFields.filter((field) => field.key !== "protocol")
     : selectedSettingFields;
   const selectedPersistenceRows = selectedPart ? topologyDevicePersistenceRows(selectedPart.id, selectedSettingFields) : [];
-  const selectedElementInspector = selectedPart
+  const selectedElementInspector = selectedPart && (!workspaceOnly || selectedFaceplateElement)
     ? topologyFaceplateElementInspector(selectedPart.id, selectedFaceplateElement, selectedSettings, storageProtocol)
     : null;
   const scenario = topologyScenarioLabel(draftScenario);
@@ -9038,8 +9038,8 @@ function LabDesignComposer({
   }, [placements, selectedPart]);
 
   useEffect(() => {
-    setSelectedFaceplateElement(topologyDefaultFaceplateElement(selectedDevice));
-  }, [selectedDevice]);
+    setSelectedFaceplateElement(workspaceOnly ? "" : topologyDefaultFaceplateElement(selectedDevice));
+  }, [selectedDevice, workspaceOnly]);
 
   useEffect(() => {
     if (blueprintLinks.some((link) => link.id === selectedConnection)) return;
@@ -9435,7 +9435,7 @@ function LabDesignComposer({
               <div className="design-device-identity-main">
                 {topologyIndustryIcon(topologyWorkspaceIconKind(selectedPart.id))}
                 <div>
-                  <p className="operator-kicker">Device workspace</p>
+                  <p className="operator-kicker">{workspaceOnly ? topologyDeviceWorkspaceKicker(selectedPart.id) : "Device workspace"}</p>
                   <h3>{selectedSettings.name || selectedPart.label}</h3>
                   <span>{topologyDeviceModelLabel(selectedPart.id)} / {topologyDeviceRoleLabel(selectedPart.id, draftScenario, storageProtocol)}</span>
                 </div>
@@ -9445,13 +9445,13 @@ function LabDesignComposer({
                   <strong className={`design-state-chip ${topologyWorkspaceStateTone(draftDirty, profileSyncDriftCount, draftPersistence)}`}>
                     {topologyWorkspaceStateLabel(draftDirty, profileSyncDriftCount, draftPersistence)}
                   </strong>
-                  <small>{topologyWorkspaceStateSource(draftDirty, profileSyncDriftCount, draftPersistence)}</small>
+                  <small>{workspaceOnly ? "Saved setup" : topologyWorkspaceStateSource(draftDirty, profileSyncDriftCount, draftPersistence)}</small>
                 </span>
                 <span>
                   <strong className={`design-state-chip ${topologyWorkspaceReachabilityTone(selectedSafeActions, actionRunsById)}`}>
                     {topologyWorkspaceReachabilityLabel(selectedSafeActions, actionRunsById)}
                   </strong>
-                  <small>{topologyWorkspaceReachabilitySource(selectedSafeActions, actionRunsById)}</small>
+                  <small>{workspaceOnly ? "Run a check to verify" : topologyWorkspaceReachabilitySource(selectedSafeActions, actionRunsById)}</small>
                 </span>
               </div>
             </div>
@@ -9595,6 +9595,8 @@ function LabDesignComposer({
                 >
                   {actionRunStatus.runningActionId === selectedSafeActions[0].action_id ? "Running check" : topologyPrimaryActionLabel(selectedPart.id, selectedSafeActions[0])}
                 </button>
+              ) : workspaceOnly ? (
+                <Link className="design-plan-action" to="/lab-defaults">Fix setup first</Link>
               ) : (
                 <button className="design-plan-action" disabled type="button">No read-only test registered</button>
               )}
@@ -11273,6 +11275,15 @@ function topologyDeviceRoleLabel(partId: DesignPartId, scenario: TopologyDesignS
   if (partId === "netapp") return `${storageProtocol.toUpperCase()} shared storage`;
   if (partId === "vcenter") return "inventory and portability";
   return "guest workload";
+}
+
+function topologyDeviceWorkspaceKicker(partId: DesignPartId): string {
+  if (partId === "switch") return "Network";
+  if (partId === "ilo") return "Server access";
+  if (partId === "server-gen10" || partId === "server-gen10plus") return "Compute";
+  if (partId === "netapp") return "Storage";
+  if (partId === "vcenter") return "Virtualization";
+  return "Device";
 }
 
 function topologyWorkspaceMapDetails(

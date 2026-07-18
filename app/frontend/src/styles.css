@@ -11600,6 +11600,10 @@ th.ui-compact-table-cell {
   grid-column: 2;
 }
 
+.design-device-setting-rows.compact .design-device-setting-row small {
+  display: none;
+}
+
 .design-workspace-safe-strip {
   background: #f8fafc;
   border: 1px solid #dbe4ee;
@@ -13255,7 +13259,18 @@ button.design-ilo-port:hover {
 
 .topology-workspace-drawer .design-device-workspace {
   border-radius: 14px;
+  gap: 12px;
   min-height: calc(100vh - 86px);
+  padding: 14px;
+}
+
+.topology-workspace-drawer .design-device-identity {
+  padding: 12px;
+}
+
+.topology-workspace-drawer .design-device-hero {
+  min-height: 124px;
+  padding: 12px;
 }
 
 .lab-topology-footer {
