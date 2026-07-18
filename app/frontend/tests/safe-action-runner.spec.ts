@@ -273,7 +273,15 @@ test("renders the map-first operator spine and pages", async ({ page }) => {
   await page.goto("/overview");
 
   await expect(page.locator("aside[aria-label='Lab Builder navigation']")).toBeVisible();
-  await expect(page.locator("header[aria-label='Application header']")).toBeVisible();
+  const header = page.locator("header[aria-label='Application header']");
+  await expect(header).toBeVisible();
+  const activeKitLabelBox = await header.locator("label[for='active-kit-picker']").boundingBox();
+  expect(activeKitLabelBox?.width ?? 0).toBeLessThanOrEqual(1);
+  expect(activeKitLabelBox?.height ?? 0).toBeLessThanOrEqual(1);
+  await expect(header.locator(".shell-topbar-actions .top-nav")).toBeVisible();
+  await expect(header.getByLabel("Lab provider mode")).toHaveCount(0);
+  await expect(page.locator("aside[aria-label='Lab Builder navigation']").getByLabel("Lab provider mode")).toBeVisible();
+  await expect(page.locator("aside[aria-label='Lab Builder navigation']").getByLabel("Lab provider mode")).not.toContainText("No subnet");
   await expect(page.locator("aside[aria-label='Lab Builder navigation'] .nav-item-label")).toHaveText([
     "Overview",
     "Lab Defaults",

@@ -1237,6 +1237,7 @@ function ShellTopNav({
   onActivateLabProfile: (profileId: string) => Promise<void>;
   onReloadLabProfile: () => Promise<void>;
 }) {
+  const { uiMode } = useUiMode();
   const activeProfile = labProfileState?.active_profile ?? null;
   const providerMode = health?.provider_mode ?? (healthError ? "unverified" : "checking");
   const modeStatus = healthError ? "unavailable" : providerMode;
@@ -1249,6 +1250,14 @@ function ShellTopNav({
           <span className="sidebar-brand-mark"><Server size={24} /></span>
           <span><b>Lab Builder</b><small>Operator</small></span>
         </Link>
+        <div className={`sidebar-runtime sidebar-runtime-${uiMode}`} aria-label="Lab provider mode">
+          <span className={`runtime-dot runtime-dot-${modeStatus}`} />
+          <span>{displayModeLabel(providerMode)}</span>
+          {uiMode === "advanced" && <>
+            <span aria-hidden="true">-</span>
+            <span className="sidebar-runtime-subnet">{activeProfile ? displayAddress(activeProfile.address_plan.subnet) : "No subnet"}</span>
+          </>}
+        </div>
         <nav className="sidebar-nav" aria-label="Primary navigation">
           <NavItem to="/overview" icon={<Gauge size={18} />} label="Overview" />
           <p className="sidebar-section-label">Setup</p>
@@ -1280,18 +1289,12 @@ function ShellTopNav({
             <span>New kit</span>
           </Link>
         </div>
-        <nav className="top-nav" aria-label="Quick navigation">
-          <NavLink to="/overview" className={({ isActive }) => isActive ? "quick-tab active" : "quick-tab"}>Overview</NavLink>
-          <NavLink to="/lab-defaults" className={({ isActive }) => isActive ? "quick-tab active" : "quick-tab"}>Lab Defaults</NavLink>
-          <NavLink to="/firmware-upgrades" className={({ isActive }) => isActive ? "quick-tab active" : "quick-tab"}>Firmware</NavLink>
-        </nav>
         <div className="shell-topbar-actions">
-          <div className="topbar-runtime">
-            <span className={`runtime-dot runtime-dot-${modeStatus}`} />
-            <span>{displayModeLabel(providerMode)}</span>
-            <span aria-hidden="true">-</span>
-            <span>{activeProfile ? displayAddress(activeProfile.address_plan.subnet) : "No subnet"}</span>
-          </div>
+          <nav className="top-nav" aria-label="Quick navigation">
+            <NavLink to="/overview" className={({ isActive }) => isActive ? "quick-tab active" : "quick-tab"}>Overview</NavLink>
+            <NavLink to="/lab-defaults" className={({ isActive }) => isActive ? "quick-tab active" : "quick-tab"}>Lab Defaults</NavLink>
+            <NavLink to="/firmware-upgrades" className={({ isActive }) => isActive ? "quick-tab active" : "quick-tab"}>Firmware</NavLink>
+          </nav>
           <ModeToggle />
           {(labProfileError || healthError) && <span className="topbar-inline-error">{labProfileError ? "Kit unavailable" : "Status unavailable"}</span>}
         </div>
