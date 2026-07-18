@@ -1260,18 +1260,8 @@ test("overview device workspace matrix keeps default inputs concise", async ({ p
     await expect(essentials.locator(".design-provenance-chip"), `${item.workspace} keeps provenance out of the simple setup block`).toHaveCount(0);
     await expect(essentials, `${item.workspace} keeps identity in the hero, not the setup form`).not.toContainText("Name");
     const quickPanel = workspace.getByLabel(`${item.workspace} quick setup fields`);
-    await expect(quickPanel, `${item.workspace} exposes a compact setup-change affordance`).toBeVisible();
-    await expect(quickPanel, `${item.workspace} quick fields use setup wording`).toContainText("Change setup");
-    await expect(quickPanel, `${item.workspace} quick fields stay narrowly scoped`).toContainText("Planning fields");
-    await expect(quickPanel, `${item.workspace} quick edits start closed on first click`).not.toHaveAttribute("open", "");
-    expect(await quickPanel.locator(".design-device-setting-row").count(), `${item.workspace} keeps quick fields tiny`).toBeLessThanOrEqual(2);
-    const quickInputs = quickPanel.locator("input, select, textarea");
-    if (await quickInputs.count()) {
-      await expect(quickInputs.first(), `${item.workspace} hides edit controls until Change setup intent`).not.toBeVisible();
-      await quickPanel.locator(":scope > summary").click();
-      await expect(quickInputs.first(), `${item.workspace} reveals the first quick edit field after Change setup intent`).toBeVisible();
-    }
-    await expect(quickPanel.locator(".design-provenance-chip"), `${item.workspace} removes repeated per-field state chips from quick fields`).toHaveCount(0);
+    await expect(quickPanel, `${item.workspace} keeps setup edits behind More device details`).not.toBeVisible();
+    await expect(workspace.locator(":scope > details.design-device-quick-edit"), `${item.workspace} has no top-level quick edit drawer`).toHaveCount(0);
     for (const essential of item.essentials) {
       await expect(essentials, `${item.workspace} essential ${essential}`).toContainText(essential);
     }
@@ -1308,6 +1298,18 @@ test("overview device workspace matrix keeps default inputs concise", async ({ p
     await detailsDrawer.locator(":scope > summary").click();
     await expect(workspace.getByLabel(`${item.workspace} port and bay inspector`), `${item.workspace} faceplate inspector lives inside details`).toBeVisible();
     await expect(detailsDrawer.locator("input, select, textarea").first(), `${item.workspace} details stay inspect-only before edit intent`).not.toBeVisible();
+    await expect(quickPanel, `${item.workspace} exposes setup changes only after details intent`).toBeVisible();
+    await expect(quickPanel, `${item.workspace} quick fields use setup wording`).toContainText("Change setup");
+    await expect(quickPanel, `${item.workspace} quick fields stay narrowly scoped`).toContainText("Planning fields");
+    await expect(quickPanel, `${item.workspace} quick edits start closed inside details`).not.toHaveAttribute("open", "");
+    expect(await quickPanel.locator(".design-device-setting-row").count(), `${item.workspace} keeps quick fields tiny`).toBeLessThanOrEqual(2);
+    const quickInputs = quickPanel.locator("input, select, textarea");
+    if (await quickInputs.count()) {
+      await expect(quickInputs.first(), `${item.workspace} hides edit controls until Change setup intent`).not.toBeVisible();
+      await quickPanel.locator(":scope > summary").click();
+      await expect(quickInputs.first(), `${item.workspace} reveals the first quick edit field after Change setup intent`).toBeVisible();
+    }
+    await expect(quickPanel.locator(".design-provenance-chip"), `${item.workspace} removes repeated per-field state chips from quick fields`).toHaveCount(0);
     const moreSetupFields = detailsDrawer.getByLabel(`${item.workspace} more setup fields`);
     const editGroups = moreSetupFields.locator(":scope .design-device-edit-group-button");
     await expect(moreSetupFields, `${item.workspace} keeps less-common fields one click deeper`).toBeVisible();

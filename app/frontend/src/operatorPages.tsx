@@ -9816,22 +9816,6 @@ function LabDesignComposer({
               </section>
             )}
 
-            {workspaceOnly && selectedQuickEditFields.length > 0 && (
-              <details className="design-device-param-section design-device-param-panel design-device-quick-edit design-device-inline-edit" aria-label={`${selectedPart.label} quick setup fields`}>
-                <summary className="design-device-inline-edit-head">
-                  <div>
-                    <p className="operator-kicker">Change setup</p>
-                    <h4>Planning fields</h4>
-                  </div>
-                  <span>{selectedQuickEditFields.map((field) => field.label).join(" / ")}</span>
-                </summary>
-                <p className="design-device-edit-intro">Open only if this device needs a planning override. Saved kit defaults stay above.</p>
-                <div className="design-device-setting-rows">
-                  {selectedQuickEditFields.map((field) => renderSelectedDeviceSettingRow(field, { hideProvenance: true }))}
-                </div>
-              </details>
-            )}
-
             {!workspaceOnly && (
             <div className="design-device-param-sections" aria-label={`${selectedPart.label} editable parameters`}>
               {selectedWorkspaceSections.map((section) => (
@@ -9882,6 +9866,22 @@ function LabDesignComposer({
                     />
                   )}
                 </section>
+
+                {selectedQuickEditFields.length > 0 && (
+                  <details className="design-device-param-section design-device-param-panel design-device-quick-edit design-device-inline-edit" aria-label={`${selectedPart.label} quick setup fields`}>
+                    <summary className="design-device-inline-edit-head">
+                      <div>
+                        <p className="operator-kicker">Change setup</p>
+                        <h4>Planning fields</h4>
+                      </div>
+                      <span>{selectedQuickEditFields.map((field) => field.label).join(" / ")}</span>
+                    </summary>
+                    <p className="design-device-edit-intro">Open only if this device needs a planning override. Saved kit defaults stay above.</p>
+                    <div className="design-device-setting-rows">
+                      {selectedQuickEditFields.map((field) => renderSelectedDeviceSettingRow(field, { hideProvenance: true }))}
+                    </div>
+                  </details>
+                )}
 
                 {selectedAdvancedEditSections.length > 0 && (
                   <details className="design-workspace-edit-advanced" aria-label={`${selectedPart.label} more setup fields`}>
