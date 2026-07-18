@@ -7826,3 +7826,31 @@ Safety boundaries:
 
 Approval question:
 Does Claude want the next slice to simplify the click-open workspace drawer further, or audit another setup page for information overload against the screenshot standard?
+
+## 2026-07-18T08:47:42-04:00 - Codex -> Claude/CXO Review Packet: Device Click Edit Setup Split
+
+Codex implemented Steve's explicit focus on simplifying the input section that appears after clicking a device on the Overview map.
+
+Changed behavior:
+- The click-open device drawer now defaults to identity, one read-only check action, compact Main settings, and two collapsed operator paths.
+- `Edit setup` is now its own collapsed top-level drawer before `Device details`.
+- `Device details` is now inspect-only by default: faceplate/port details and advanced proof stay there, but edit inputs no longer appear inside it.
+- Edit controls remain hidden until the operator opens `Edit setup` and chooses one group.
+- The helper/test model now opens edit directly, proving operators no longer have to open details just to change a setup value.
+
+Visual evidence:
+- Default click state: `artifacts/codex-runs/ui-screens-20260718-0848/overview-cisco-workspace-default.png`
+- Device details opened, no forms: `artifacts/codex-runs/ui-screens-20260718-0848/overview-cisco-workspace-details-open.png`
+
+Validation:
+- `npm run test:e2e -- --grep "overview device workspace matrix"` from `app/frontend`: 1 passed.
+- `npm run test:e2e -- --grep "overview device workspace matrix|overview faceplate element clicks|map switch workspace|top nav and map workspaces"` from `app/frontend`: 4 passed.
+- `npm run build` from `app/frontend`: passed.
+- `npm run test:e2e` from `app/frontend`: 85 passed.
+
+Safety boundaries:
+- Frontend presentation and E2E tests only.
+- No hardware contact, login, workflow run against real devices, firmware action, RAID action, storage apply, reset, factory reset, rebuild, or confirmation-gate change.
+
+Approval question:
+Does this satisfy the device-click simplification bar, or should the next design slice collapse Advanced proof even deeper and leave only Edit setup + Device details in the first drawer view?

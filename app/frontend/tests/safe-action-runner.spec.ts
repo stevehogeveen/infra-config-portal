@@ -232,13 +232,6 @@ async function openWorkspaceAdvanced(page: Page, workspaceName: string) {
 
 async function openWorkspaceEditGroup(page: Page, workspaceName: string, groupName: string) {
   const workspace = page.locator(`section[aria-label='${workspaceName} workspace']`);
-  const details = workspace.getByLabel(`${workspaceName} details`);
-  if (await details.isVisible()) {
-    const isOpen = await details.evaluate((node) => (node as HTMLDetailsElement).open);
-    if (!isOpen) {
-      await details.locator(":scope > summary").click();
-    }
-  }
   const editSettings = workspace.getByLabel(`${workspaceName} edit settings`);
   const isEditOpen = await editSettings.evaluate((node) => (node as HTMLDetailsElement).open);
   if (!isEditOpen) {
@@ -1043,8 +1036,13 @@ test("overview device workspace matrix keeps default inputs concise", async ({ p
       await expect(workspace.getByLabel("NetApp storage protocol"), "NetApp storage mode is folded into essentials").toHaveCount(0);
     }
     await expect(workspace.locator(":scope > details.design-workspace-details"), `${item.workspace} has one top-level details drawer`).toHaveCount(1);
+    await expect(workspace.locator(":scope > details.design-workspace-edit-settings"), `${item.workspace} has one top-level edit drawer`).toHaveCount(1);
     const detailsDrawer = workspace.getByLabel(`${item.workspace} details`);
+    const editSettings = workspace.getByLabel(`${item.workspace} edit settings`);
     await expect(detailsDrawer, `${item.workspace} details start closed`).not.toHaveAttribute("open", "");
+    await expect(editSettings, `${item.workspace} edit setup is available without opening details`).toBeVisible();
+    await expect(editSettings, `${item.workspace} edit setup starts closed`).not.toHaveAttribute("open", "");
+    await expect(editSettings.locator("input, select, textarea"), `${item.workspace} keeps edit controls unmounted before edit intent`).toHaveCount(0);
     await expect(workspace.locator(":scope > details.design-faceplate-disclosure"), `${item.workspace} removes the old separate faceplate drawer`).toHaveCount(0);
     await expect(workspace.getByLabel(`${item.workspace} interactive faceplate`), `${item.workspace} does not show the faceplate before intent`).not.toBeVisible();
     const setupBeforeFaceplate = await workspace.evaluate((node) => {
@@ -1058,6 +1056,8 @@ test("overview device workspace matrix keeps default inputs concise", async ({ p
     await expect(workspace.locator(":scope > details.design-workspace-details > summary"), `${item.workspace} details summary replaces the old faceplate label`).not.toContainText("Inspect ports and bays");
     await expect(workspace.locator(":scope > details.design-workspace-details > summary"), `${item.workspace} details summary replaces the old details label`).not.toContainText("View details");
     await expect(workspace.locator(":scope > details.design-workspace-advanced"), `${item.workspace} does not expose advanced as a second top-level drawer`).toHaveCount(0);
+    await expect(workspace.locator(":scope > details.design-workspace-edit-settings > summary"), `${item.workspace} edit summary is plain`).toContainText("Edit setup");
+    await expect(workspace.locator(":scope > details.design-workspace-edit-settings > summary"), `${item.workspace} edit summary avoids generic settings wording`).not.toContainText("Edit settings");
     await expect(workspace.locator(".design-workspace-map-details"), `${item.workspace} keeps chip details out of the default drawer`).toHaveCount(0);
     await expect(workspace, `${item.workspace} retires the old extra settings label`).not.toContainText("More settings");
     await expect(overlay.locator(".design-scenario-strip"), `${item.workspace} does not render hidden scenario cards in the drawer`).toHaveCount(0);
@@ -1065,10 +1065,8 @@ test("overview device workspace matrix keeps default inputs concise", async ({ p
     await expect(overlay.locator(".design-blueprint-stage"), `${item.workspace} does not render the hidden topology designer in the drawer`).toHaveCount(0);
     await detailsDrawer.locator(":scope > summary").click();
     await expect(workspace.getByLabel(`${item.workspace} port and bay inspector`), `${item.workspace} faceplate inspector lives inside details`).toBeVisible();
-    const editSettings = workspace.getByLabel(`${item.workspace} edit settings`);
-    await expect(editSettings, `${item.workspace} edit settings are available inside details`).toBeVisible();
-    await expect(editSettings, `${item.workspace} edit settings stay closed until explicitly requested`).not.toHaveAttribute("open", "");
-    await expect(editSettings.locator("input, select, textarea"), `${item.workspace} keeps edit controls unmounted before edit intent`).toHaveCount(0);
+    await expect(detailsDrawer.locator(".design-workspace-edit-settings"), `${item.workspace} details do not contain edit inputs`).toHaveCount(0);
+    await expect(detailsDrawer.locator("input, select, textarea"), `${item.workspace} details stay inspect-only`).toHaveCount(0);
     await editSettings.locator(":scope > summary").click();
     const editGroups = editSettings.locator(":scope .design-device-edit-group-button");
     await expect(editSettings.locator(":scope > summary"), `${item.workspace} edit summary stays short`).toContainText("Choose one group");

@@ -12916,14 +12916,16 @@ button.design-ilo-port:hover {
   padding: 2px 0;
 }
 
-.topology-workspace-drawer .design-workspace-details:not([open]) {
+.topology-workspace-drawer .design-workspace-details:not([open]),
+.topology-workspace-drawer .design-workspace-edit-settings:not([open]) {
   background: transparent;
   border: 0;
   gap: 0;
   padding: 0;
 }
 
-.topology-workspace-drawer .design-workspace-details:not([open]) > summary {
+.topology-workspace-drawer .design-workspace-details:not([open]) > summary,
+.topology-workspace-drawer .design-workspace-edit-settings:not([open]) > summary {
   background: #ffffff;
   border: 1px solid #cbd7e4;
   border-radius: 999px;
@@ -12934,7 +12936,8 @@ button.design-ilo-port:hover {
   width: max-content;
 }
 
-.topology-workspace-drawer .design-workspace-details:not([open]) > summary span {
+.topology-workspace-drawer .design-workspace-details:not([open]) > summary span,
+.topology-workspace-drawer .design-workspace-edit-settings:not([open]) > summary span {
   color: var(--primary);
 }
 
