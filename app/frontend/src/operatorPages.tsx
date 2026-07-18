@@ -14129,62 +14129,82 @@ function StorageConfigurePanel({
       </CardHeader>
       <CardContent>
         <form className="network-config-form" onSubmit={save}>
-          <div className="storage-config-primary-grid">
-            <Field label="Active protocol">
-              <select value={edit.storageProtocol} onChange={(event) => update("storageProtocol", event.target.value)}>
-                <option value="nfs">NFS</option>
-                <option value="iscsi">iSCSI</option>
-              </select>
-            </Field>
-            <Field label="Cluster mgmt">
-              <input value={edit.clusterMgmt} onChange={(event) => update("clusterMgmt", event.target.value)} />
-            </Field>
-            <Field label={activeLifLabel}>
-              <input value={activeLifValue} onChange={(event) => updateActiveLifs(event.target.value)} />
-            </Field>
+          <div className="storage-config-summary design-device-summary" aria-label="Storage setup summary">
+            <div>
+              <span>Active protocol</span>
+              <strong>{activeProtocolLabel}</strong>
+            </div>
+            <div>
+              <span>Cluster mgmt</span>
+              <strong>{displayValue(edit.clusterMgmt)}</strong>
+            </div>
+            <div>
+              <span>{activeLifLabel}</span>
+              <strong>{displayValue(activeLifValue)}</strong>
+            </div>
           </div>
-          <details className="storage-config-more">
+          <details className="storage-config-more storage-config-edit">
             <summary>
-              <span>More storage addresses</span>
-              <small>{activeProtocolLabel} stays primary; node, SP, subnet, and alternate protocol live here.</small>
+              <span>Edit storage values</span>
+              <small>Only updates the saved setup. No hardware touched.</small>
             </summary>
-            <div className="storage-config-more-grid">
-              <Field label="Node A mgmt">
-                <input value={edit.nodeAMgmt} onChange={(event) => update("nodeAMgmt", event.target.value)} />
+            <div className="storage-config-more-grid storage-config-edit-grid">
+              <Field label="Active protocol">
+                <select value={edit.storageProtocol} onChange={(event) => update("storageProtocol", event.target.value)}>
+                  <option value="nfs">NFS</option>
+                  <option value="iscsi">iSCSI</option>
+                </select>
               </Field>
-              <Field label="Node B mgmt">
-                <input value={edit.nodeBMgmt} onChange={(event) => update("nodeBMgmt", event.target.value)} />
+              <Field label="Cluster mgmt">
+                <input value={edit.clusterMgmt} onChange={(event) => update("clusterMgmt", event.target.value)} />
               </Field>
-              <Field label="SVM mgmt">
-                <input value={edit.svmMgmt} onChange={(event) => update("svmMgmt", event.target.value)} />
+              <Field label={activeLifLabel}>
+                <input value={activeLifValue} onChange={(event) => updateActiveLifs(event.target.value)} />
               </Field>
-              <Field label="Controller A SP">
-                <input value={edit.controllerASp} onChange={(event) => update("controllerASp", event.target.value)} />
-              </Field>
-              <Field label="Controller B SP">
-                <input value={edit.controllerBSp} onChange={(event) => update("controllerBSp", event.target.value)} />
-              </Field>
-              <Field label={alternateLifLabel}>
-                <input value={alternateLifValue} onChange={(event) => updateAlternateLifs(event.target.value)} />
-              </Field>
-              <Field label="Subnet">
-                <input value={edit.subnet} onChange={(event) => update("subnet", event.target.value)} />
-              </Field>
-              <Field label="Gateway">
-                <input value={edit.gateway} onChange={(event) => update("gateway", event.target.value)} />
-              </Field>
-              <Field label="MTU">
-                <input inputMode="numeric" value={edit.mtu} onChange={(event) => update("mtu", event.target.value)} />
-              </Field>
+              <details className="storage-config-more storage-config-addresses">
+                <summary>
+                  <span>More storage addresses</span>
+                  <small>{activeProtocolLabel} stays primary; node, SP, subnet, and alternate protocol live here.</small>
+                </summary>
+                <div className="storage-config-more-grid">
+                  <Field label="Node A mgmt">
+                    <input value={edit.nodeAMgmt} onChange={(event) => update("nodeAMgmt", event.target.value)} />
+                  </Field>
+                  <Field label="Node B mgmt">
+                    <input value={edit.nodeBMgmt} onChange={(event) => update("nodeBMgmt", event.target.value)} />
+                  </Field>
+                  <Field label="SVM mgmt">
+                    <input value={edit.svmMgmt} onChange={(event) => update("svmMgmt", event.target.value)} />
+                  </Field>
+                  <Field label="Controller A SP">
+                    <input value={edit.controllerASp} onChange={(event) => update("controllerASp", event.target.value)} />
+                  </Field>
+                  <Field label="Controller B SP">
+                    <input value={edit.controllerBSp} onChange={(event) => update("controllerBSp", event.target.value)} />
+                  </Field>
+                  <Field label={alternateLifLabel}>
+                    <input value={alternateLifValue} onChange={(event) => updateAlternateLifs(event.target.value)} />
+                  </Field>
+                  <Field label="Subnet">
+                    <input value={edit.subnet} onChange={(event) => update("subnet", event.target.value)} />
+                  </Field>
+                  <Field label="Gateway">
+                    <input value={edit.gateway} onChange={(event) => update("gateway", event.target.value)} />
+                  </Field>
+                  <Field label="MTU">
+                    <input inputMode="numeric" value={edit.mtu} onChange={(event) => update("mtu", event.target.value)} />
+                  </Field>
+                </div>
+              </details>
+              <div className="network-config-actions">
+                <button className="operator-primary-button" disabled={busy || !activeProfile} type="submit">
+                  {busy ? "Saving..." : "Save storage setup"}
+                </button>
+                {message && <span className="operator-success-text">{message}</span>}
+                {error && <span className="operator-error-text">{error}</span>}
+              </div>
             </div>
           </details>
-          <div className="network-config-actions">
-            <button className="operator-primary-button" disabled={busy || !activeProfile} type="submit">
-              {busy ? "Saving..." : "Save storage setup"}
-            </button>
-            {message && <span className="operator-success-text">{message}</span>}
-            {error && <span className="operator-error-text">{error}</span>}
-          </div>
         </form>
       </CardContent>
     </Card>
