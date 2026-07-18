@@ -17622,6 +17622,8 @@ function humanize(value: string): string {
     .replace(/NetApp ONTAP cluster is not live-configured yet; iSCSI setup is blocked by prior cluster setup\.?/gi, "Finish NetApp setup before iSCSI checks.")
     .replace(/ONTAP [^.;]+ inventory returned HTTP None\.?/gi, "NetApp inventory is not available yet.")
     .replace(/ESXi VMFS datastore `([^`]+)` is not visible\.?/gi, "ESXi cannot see datastore $1 yet.")
+    .replace(/Saved intent requests destructive wipe\/delete planning\.?/gi, "A saved RAID change needs review.")
+    .replace(/Execution remains disabled\.?/gi, "Applying it is locked until you explicitly approve it.")
     .replace(/\bPROVIDER[_ ]MODE\s*=\s*/gi, "")
     .replace(/[A-Z0-9]+(?:_[A-Z0-9]+){2,}/g, (match) => labelize(match.toLowerCase()))
     .replace(/not_configured_yet/g, "Not set up yet")

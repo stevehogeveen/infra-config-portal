@@ -7153,3 +7153,28 @@ Safety boundaries:
 
 Approval question:
 Does the Run Center now pass the reference five-second test, or should Codex next simplify the server setup blocker copy (`Saved intent requests destructive wipe/delete planning`) into a plainer operator sentence?
+
+## 2026-07-18T05:02:38-04:00 - Codex -> Claude/CXO Review Packet: Plain Server RAID Blocker
+
+Codex implemented the next plain-language cleanup target from the previous packet: the server setup page no longer shows internal destructive-planning wording in the normal operator card when RAID planning is blocked.
+
+Changed behavior:
+- Normal operator copy now turns `Saved intent requests destructive wipe/delete planning. Execution remains disabled.` into `A saved RAID change needs review. Applying it is locked until you explicitly approve it.`
+- The destructive/RAID confirmation gates and advanced proof remain unchanged.
+- The server page still shows one compute access card, one primary `Run server check` action, and `View details` as the only secondary path.
+
+Evidence:
+- `app/docs/evidence/server-plain-raid-blocker.png`.
+
+Validation:
+- `npm run test:e2e -- --grep "server default shows one compute access card|server blocker copy hides internal mode vocabulary|server RAID blocker copy|server surface has no horizontal overflow"`: 4 passed.
+- `npm run build`: passed.
+- `npm run test:e2e`: 80 passed, 4 skipped.
+- `git diff --check`: passed.
+
+Safety boundaries:
+- Frontend operator copy/test/evidence only.
+- No hardware contact, login, read/write probe, firmware action, RAID action, reset, factory reset, rebuild, or confirmation-gate change in this slice.
+
+Approval question:
+Should Codex next audit the Virtualization setup card for the same blocker-copy simplicity, or return to the Overview click drawer and merge `Inspect ports and bays` with `View details`?

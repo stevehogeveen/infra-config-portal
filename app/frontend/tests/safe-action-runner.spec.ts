@@ -1846,6 +1846,21 @@ test("server blocker copy hides internal mode vocabulary", async ({ page }) => {
   expect(text ?? "").not.toMatch(/\bruntime\b/i);
 });
 
+test("server RAID blocker copy is plain in operator mode", async ({ page }) => {
+  await page.route("**/api/v1/providers/ilo-redfish/hpe-raid-plan-preview", (route) => json(route, {
+    ...hpeRaidPlanPreview(),
+    blockers: ["Saved intent requests destructive wipe/delete planning. Execution remains disabled."],
+    message: "Saved intent requests destructive wipe/delete planning. Execution remains disabled.",
+    status: "blocked"
+  }));
+
+  await page.goto("/server");
+  const access = page.getByLabel("Compute Access");
+  await expect(access).toContainText("A saved RAID change needs review. Applying it is locked until you explicitly approve it.");
+  await expect(access).not.toContainText("destructive wipe/delete planning");
+  await expect(access).not.toContainText("Execution remains disabled");
+});
+
 test("server surface has no horizontal overflow on mobile", async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 800 });
   await page.goto("/server");
