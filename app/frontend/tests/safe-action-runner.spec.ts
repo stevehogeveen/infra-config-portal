@@ -3345,6 +3345,12 @@ test("validation exposes guarded factory reset and automated rebuild verificatio
   await expect(resetPanel).toContainText("NetApp factory reset");
   await expect(resetPanel).toContainText("HPE RAID reset");
   await expect(resetPanel).toContainText("ESXi rebuild");
+  await expect(resetPanel.getByRole("button", { name: "Run Full Lab Build Plan" })).toHaveCount(0);
+  await expect(resetPanel.getByRole("button", { name: "Apply NetApp Factory Reset" })).toHaveCount(0);
+
+  const planAndVerify = resetPanel.getByLabel("Plan and verify");
+  await expect(planAndVerify).not.toHaveAttribute("open", "");
+  await planAndVerify.locator(":scope > summary").click();
 
   const buildPlanResponse = page.waitForResponse((response) =>
     response.url().includes("/api/v1/workflows/actions/full-lab.build-plan/run") &&
@@ -3359,6 +3365,9 @@ test("validation exposes guarded factory reset and automated rebuild verificatio
   );
   await resetPanel.getByRole("button", { name: "Run Golden-State Repair Plan" }).click();
   await expect((await repairPlanResponse).ok()).toBeTruthy();
+  const deviceResetControls = resetPanel.getByLabel("Device reset controls");
+  await expect(deviceResetControls).not.toHaveAttribute("open", "");
+  await deviceResetControls.locator(":scope > summary").click();
 
   const previewResponse = page.waitForResponse((response) =>
     response.url().includes("/api/v1/workflows/actions/netapp.factory-reset-preview/run") &&

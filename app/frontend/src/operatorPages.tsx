@@ -6332,7 +6332,6 @@ function LabResetRebuildPanel({
           { actionIds: ["full-lab.repair"], icon: <RefreshCw size={16} />, label: "Run Golden-State Repair Plan" },
           { actionIds: ["full-lab.validation"], icon: <CheckCircle2 size={16} />, label: "Run Full Lab Validation" }
         ]}
-        defaultOpen
         description="Read-only automation for rebuilding from a known plan."
         onReload={onReload}
         title="Plan and verify"
@@ -6349,7 +6348,6 @@ function LabResetRebuildPanel({
           { actionIds: ["ilo.reset-server"], icon: <Ban size={16} />, kind: "apply", label: "Reset Server Power" },
           { actionIds: ["netapp.factory-reset-validate"], icon: <CheckCircle2 size={16} />, kind: "read", label: "Validate NetApp Factory Reset" }
         ]}
-        defaultOpen
         description="Guarded controls stay here, separated from daily readiness. HPE RAID apply currently refuses until the delete/recreate executor is proven."
         onReload={onReload}
         title="Device reset controls"
