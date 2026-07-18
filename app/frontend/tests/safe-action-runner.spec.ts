@@ -1183,7 +1183,7 @@ test("overview device workspace matrix keeps default inputs concise", async ({ p
     await expect(quickPanel, `${item.workspace} exposes common planning fields without a second click`).toBeVisible();
     await expect(quickPanel, `${item.workspace} quick fields use setup wording`).toContainText("Edit setup");
     await expect(quickPanel, `${item.workspace} quick fields stay narrowly scoped`).toContainText("Planning fields");
-    expect(await quickPanel.locator(".design-device-setting-row").count(), `${item.workspace} keeps quick fields tiny`).toBeLessThanOrEqual(3);
+    expect(await quickPanel.locator(".design-device-setting-row").count(), `${item.workspace} keeps quick fields tiny`).toBeLessThanOrEqual(2);
     const quickInputs = quickPanel.locator("input, select, textarea");
     if (await quickInputs.count()) {
       await expect(quickInputs.first(), `${item.workspace} reveals the first quick edit field immediately`).toBeVisible();
@@ -1588,7 +1588,8 @@ test("overview design mode keeps the surface map-only until a node opens the wor
   await expect(quickSetup.locator(".design-device-edit-intro")).toHaveText("Change only the device-specific values an operator usually needs first.");
   await expect(quickSetup).toContainText("Port plan");
   await expect(quickSetup).toContainText("BPDU guard");
-  expect(await quickSetup.locator(".design-device-setting-row").count()).toBeLessThanOrEqual(3);
+  await expect(quickSetup).not.toContainText("Port profiles");
+  expect(await quickSetup.locator(".design-device-setting-row").count()).toBeLessThanOrEqual(2);
   await expect(quickSetup.locator("input, select, textarea").first()).toBeVisible();
   const moreSetupFields = switchWorkspace.getByLabel("Cisco switch more setup fields");
   await expect(moreSetupFields).toBeVisible();

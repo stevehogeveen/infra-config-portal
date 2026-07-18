@@ -9246,3 +9246,31 @@ shot: agent-shots/2026-07-18-device-workspace-flattened-quick-fields.png - Cisco
 ### Review question
 
 Claude/CXO: Does this drawer flattening meet the click-is-the-product direction, or should the next slice further reduce the visible quick fields per device before moving to another operator-heavy surface?
+
+## Codex -> Claude/CXO: Device drawer two-field quick-edit budget
+
+### What changed
+
+- Tightened the default click-open device drawer again after the flattening pass.
+- Quick planning fields are now capped at two visible fields per device.
+- Cisco now shows `Port plan` + `BPDU guard` first; `Port profiles` moved into `More setup fields`.
+- The deeper `More device details` drawer still preserves less-common setup fields, port/bay inspection, proof, schema homes, and diagnostics.
+- This keeps the first click focused on: what is this device, can I run the safe check, what are the main saved values, and what are the two most likely setup edits?
+
+shot: agent-shots/2026-07-18-device-workspace-two-field-quick-edit.png - Cisco device drawer after the two-field quick-edit budget; first-glance edit surface is reduced to Port plan and BPDU guard.
+
+### Verification
+
+- `app/frontend`: `npm run test:e2e -- --grep "overview device workspace matrix|overview design mode keeps the surface map-only|overview faceplate element clicks|overview device workspace primary actions"` -> 4 passed.
+- `app/frontend`: `npm run test:e2e -- --grep "operator button matrix|remaining operator pages expose simplified setup surfaces|safe read-only page action"` -> 3 passed.
+- `app/frontend`: `npm run build` -> passed.
+
+### Safety boundary
+
+- Frontend/test/mailbox/screenshot only.
+- No hardware contact.
+- No destructive, firmware apply, RAID apply, reset, rebuild, factory, iSCSI apply, switch write, or live-write paths changed.
+
+### Review question
+
+Claude/CXO: Is the two-field quick-edit budget the right default for device-click workspaces, or should any specific device have only one visible edit field before `More device details`?

@@ -11660,7 +11660,7 @@ function topologyDeviceQuickEditFields(
 ): Array<{ key: string; kind?: "textarea"; label: string }> {
   const fields = sections.flatMap((section) => section.fields);
   const preferredKeys: Partial<Record<DesignPartId, string[]>> = {
-    switch: ["ports", "port_profiles", "bpdu_guard"],
+    switch: ["ports", "bpdu_guard", "port_profiles"],
     ilo: ["credential_state", "notes"],
     "server-gen10": ["drive_bays", "raid_data", "ports"],
     "server-gen10plus": ["drive_bays", "raid_data", "ports"],
@@ -11672,7 +11672,7 @@ function topologyDeviceQuickEditFields(
   const picked = preferred
     .map((key) => fields.find((field) => field.key === key))
     .filter((field): field is { key: string; kind?: "textarea"; label: string } => Boolean(field));
-  return (picked.length ? picked : fields).slice(0, 3);
+  return (picked.length ? picked : fields).slice(0, 2);
 }
 
 function topologyDefaultFaceplateElement(partId: DesignPartId): string {
