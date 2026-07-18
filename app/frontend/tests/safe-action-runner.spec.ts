@@ -1980,7 +1980,8 @@ test("storage page defaults to one storage path card and hides protocol internal
   await expect(detailSections).toContainText("Setup");
   await expect(detailSections).toContainText("Readiness");
   await expect(detailSections).toContainText("Proof");
-  await expect(detailSections.getByRole("button", { name: /Readiness/ })).toHaveAttribute("aria-pressed", "true");
+  await expect(detailSections.getByLabel("Storage detail section", { exact: true })).toHaveValue("readiness");
+  await expect(detailSections.getByRole("button")).toHaveCount(0);
   await expect(details.locator(".storage-path-detail-panel")).toHaveCount(1);
   const pathMap = details.getByLabel("Storage path map");
   await expect(pathMap).toBeVisible();
@@ -1997,8 +1998,8 @@ test("storage page defaults to one storage path card and hides protocol internal
   await expect(details.getByRole("button", { name: "Apply iSCSI" })).toHaveCount(0);
   await expect(details.locator(".iscsi-gates-grid")).not.toBeVisible();
   await expect(details.getByLabel("Advanced storage actions")).toHaveCount(0);
-  await detailSections.getByRole("button", { name: /Setup/ }).click();
-  await expect(detailSections.getByRole("button", { name: /Setup/ })).toHaveAttribute("aria-pressed", "true");
+  await detailSections.getByLabel("Storage detail section", { exact: true }).selectOption("setup");
+  await expect(detailSections.getByLabel("Storage detail section", { exact: true })).toHaveValue("setup");
   const storageConfigure = details.getByLabel("Storage configure");
   await expect(storageConfigure).toBeVisible();
   await expect(storageConfigure.getByLabel("Active protocol")).toBeVisible();
@@ -2014,7 +2015,7 @@ test("storage page defaults to one storage path card and hides protocol internal
   await expect(storageConfigure.getByLabel("Controller A SP")).toBeVisible();
   await expect(storageConfigure.getByLabel("Subnet")).toBeVisible();
   await expect(details.getByLabel("ONTAP readiness")).toHaveCount(0);
-  await detailSections.getByRole("button", { name: /Proof/ }).click();
+  await detailSections.getByLabel("Storage detail section", { exact: true }).selectOption("proof");
   const storageProof = details.locator("details.advanced-drawer").filter({ hasText: "Storage proof" });
   await expect(storageProof).not.toHaveAttribute("open", "");
   await storageProof.locator(":scope > summary").click();
@@ -2326,19 +2327,20 @@ test("network details reveal saved settings and nested advanced switch plan", as
   await expect(detailSections).toContainText("Setup");
   await expect(detailSections).toContainText("Plan");
   await expect(detailSections).toContainText("Proof");
-  await expect(detailSections.getByRole("button", { name: /Access/ })).toHaveAttribute("aria-pressed", "true");
+  await expect(detailSections.getByLabel("Network detail section", { exact: true })).toHaveValue("access");
+  await expect(detailSections.getByRole("button")).toHaveCount(0);
   await expect(details.locator(".network-detail-panel")).toHaveCount(1);
   await expect(details).toContainText("SSH/SCP");
   await expect(details).toContainText("Firmware");
   await expect(details.getByLabel("Network configure")).toHaveCount(0);
-  await detailSections.getByRole("button", { name: /Values/ }).click();
-  await expect(detailSections.getByRole("button", { name: /Values/ })).toHaveAttribute("aria-pressed", "true");
+  await detailSections.getByLabel("Network detail section", { exact: true }).selectOption("values");
+  await expect(detailSections.getByLabel("Network detail section", { exact: true })).toHaveValue("values");
   await expect(details).toContainText("VLAN");
   await expect(details).toContainText("DNS");
   await expect(details).toContainText("NTP");
   await expect(details).toContainText("SNMP");
   await expect(details).toContainText("MTU");
-  await detailSections.getByRole("button", { name: /Setup/ }).click();
+  await detailSections.getByLabel("Network detail section", { exact: true }).selectOption("setup");
   const networkConfigure = details.getByLabel("Network configure");
   await expect(networkConfigure).toBeVisible();
   await expect(networkConfigure.getByRole("textbox", { exact: true, name: "Cisco mgmt IP" })).toBeVisible();
@@ -2356,7 +2358,7 @@ test("network details reveal saved settings and nested advanced switch plan", as
   await expect(networkConfigure.getByRole("textbox", { exact: true, name: "MTU" })).toBeVisible();
   await expect(networkConfigure.getByLabel("Network feature toggles")).toBeVisible();
 
-  await detailSections.getByRole("button", { name: /Plan/ }).click();
+  await detailSections.getByLabel("Network detail section", { exact: true }).selectOption("plan");
   await expect(page.getByLabel("Switch port map")).toBeVisible();
   await expect(page.getByLabel("Switch port plan summary")).toContainText("Active ports");
   await expect(page.getByLabel("Switch port plan summary")).toContainText("Parking VLAN");
@@ -2450,17 +2452,18 @@ test("server details reveal saved checks and nested advanced RAID plan", async (
   await expect(detailSections).toContainText("Path");
   await expect(detailSections).toContainText("RAID");
   await expect(detailSections).toContainText("Proof");
-  await expect(detailSections.getByRole("button", { name: /Access/ })).toHaveAttribute("aria-pressed", "true");
+  await expect(detailSections.getByLabel("Compute detail section", { exact: true })).toHaveValue("access");
+  await expect(detailSections.getByRole("button")).toHaveCount(0);
   await expect(details.locator(".server-detail-panel")).toHaveCount(1);
   await expect(details).toContainText("iLO IP");
   await expect(details).toContainText("ESXi IP");
   await expect(details.getByLabel("Server configure")).toHaveCount(0);
-  await detailSections.getByRole("button", { name: /Checks/ }).click();
+  await detailSections.getByLabel("Compute detail section", { exact: true }).selectOption("checks");
   await expect(details).toContainText("iLO access");
   await expect(details).toContainText("ESXi management");
   await expect(details).toContainText("Local storage");
   await expect(details).toContainText("Firmware");
-  await detailSections.getByRole("button", { name: /Setup/ }).click();
+  await detailSections.getByLabel("Compute detail section", { exact: true }).selectOption("setup");
   const serverConfigure = details.getByLabel("Server configure");
   await expect(serverConfigure).toBeVisible();
   await expect(serverConfigure.getByRole("textbox", { exact: true, name: "iLO IP" })).toBeVisible();
@@ -2477,7 +2480,7 @@ test("server details reveal saved checks and nested advanced RAID plan", async (
   await expect(serverConfigure.getByRole("textbox", { exact: true, name: "DNS servers" })).toBeVisible();
   await expect(serverConfigure.getByRole("textbox", { exact: true, name: "NTP servers" })).toBeVisible();
   await expect(serverConfigure.getByRole("textbox", { exact: true, name: "MTU" })).toBeVisible();
-  await detailSections.getByRole("button", { name: /Path/ }).click();
+  await detailSections.getByLabel("Compute detail section", { exact: true }).selectOption("path");
   const pathPanel = details.getByLabel("Compute path");
   await expect(pathPanel.getByRole("heading", { name: /Single Server Local VM Path|Server With Shared Storage Path/ })).toBeVisible();
   await expect(pathPanel.getByLabel("Server path summary")).toBeVisible();
@@ -2493,7 +2496,7 @@ test("server details reveal saved checks and nested advanced RAID plan", async (
   await expect(pathPanel.getByText("Server setup path")).toBeVisible();
   await expect(pathPanel.getByText("Optional shared-lab handoff")).toBeVisible();
 
-  await detailSections.getByRole("button", { name: /RAID/ }).click();
+  await detailSections.getByLabel("Compute detail section", { exact: true }).selectOption("raid");
   await expect(page.getByLabel("Server drive bay map")).toBeVisible();
   await expect(page.getByLabel("Server drive map summary")).toContainText("Drive bays");
   await expect(page.getByLabel("Server drive map summary")).toContainText("Planned volumes");
@@ -2608,16 +2611,17 @@ test("virtualization details reveal saved checks and keep proof advanced", async
   await expect(detailSections).toContainText("Setup");
   await expect(detailSections).toContainText("Shape");
   await expect(detailSections).toContainText("Proof");
-  await expect(detailSections.getByRole("button", { name: /Path/ })).toHaveAttribute("aria-pressed", "true");
+  await expect(detailSections.getByLabel("VM detail section", { exact: true })).toHaveValue("path");
+  await expect(detailSections.getByRole("button")).toHaveCount(0);
   await expect(details.locator(".virtualization-detail-panel")).toHaveCount(1);
   await expect(details).toContainText("Target");
   await expect(details).toContainText("Next check");
   await expect(details.getByLabel("Virtualization configure")).toHaveCount(0);
-  await detailSections.getByRole("button", { name: /Checks/ }).click();
+  await detailSections.getByLabel("VM detail section", { exact: true }).selectOption("checks");
   await expect(details).toContainText("vCenter target");
   await expect(details).toContainText("Datastore");
   await expect(details).toContainText("VM inventory");
-  await detailSections.getByRole("button", { name: /Setup/ }).click();
+  await detailSections.getByLabel("VM detail section", { exact: true }).selectOption("setup");
   const virtualizationConfigure = details.getByLabel("Virtualization configure");
   await expect(virtualizationConfigure).toBeVisible();
   await expect(virtualizationConfigure.getByLabel("vCenter target")).toBeVisible();
@@ -2632,11 +2636,11 @@ test("virtualization details reveal saved checks and keep proof advanced", async
   await expect(virtualizationConfigure.getByLabel("Gateway")).toBeVisible();
   await expect(virtualizationConfigure.getByLabel("DNS servers")).toBeVisible();
   await expect(virtualizationConfigure.getByLabel("NTP servers")).toBeVisible();
-  await detailSections.getByRole("button", { name: /Shape/ }).click();
+  await detailSections.getByLabel("VM detail section", { exact: true }).selectOption("shape");
   await expect(details).toContainText("Virtualization setup shape");
   await expect(page.getByText("vCenter source")).toBeHidden();
 
-  await detailSections.getByRole("button", { name: /Proof/ }).click();
+  await detailSections.getByLabel("VM detail section", { exact: true }).selectOption("proof");
   const advanced = page.locator("details.advanced-drawer").filter({ hasText: "Virtualization proof" });
   await advanced.locator(":scope > summary").click();
   await expect(page.getByText("vCenter source")).toBeVisible();
@@ -2847,7 +2851,7 @@ test("details-tier proof buttons outside overview keep read-only and guarded bou
   await page.goto("/network");
   await page.getByLabel("Switch Access").getByRole("button", { name: "View details" }).click();
   const networkSections = page.getByLabel("Network detail sections");
-  await networkSections.getByRole("button", { name: /Plan/ }).click();
+  await networkSections.getByLabel("Network detail section", { exact: true }).selectOption("plan");
   const ciscoAdvanced = page.locator("details.network-advanced-switch-plan");
   await ciscoAdvanced.locator(":scope > summary").click();
   const ciscoDriver = page.getByLabel("Cisco switch driver");
@@ -2870,7 +2874,7 @@ test("details-tier proof buttons outside overview keep read-only and guarded bou
   await page.goto("/storage");
   await page.getByRole("button", { name: "View storage details" }).click();
   const storageDetails = page.getByLabel("Storage path details");
-  await storageDetails.getByLabel("Storage detail sections").getByRole("button", { name: /Proof/ }).click();
+  await storageDetails.getByLabel("Storage detail section", { exact: true }).selectOption("proof");
   const storageProof = storageDetails.locator("details.advanced-drawer").filter({ hasText: "Storage proof" });
   await storageProof.locator(":scope > summary").click();
   const storageActions = storageDetails.getByLabel("Advanced storage actions");

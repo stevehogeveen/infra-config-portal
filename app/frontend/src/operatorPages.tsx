@@ -1507,26 +1507,25 @@ export function OperatorNetworkPage({ labProfileState, onReloadLabProfile }: Ope
       </section>
       {detailsOpen && (
         <section className="network-details" aria-label="Network details">
-          <div className="network-detail-switcher" aria-label="Network detail sections">
-            {[
+          {(() => {
+            const sections = [
               { id: "access" as NetworkDetailSectionId, label: "Access", summary: "IP, console, SSH" },
               { id: "values" as NetworkDetailSectionId, label: "Values", summary: "VLAN, DNS, NTP, MTU" },
               { id: "setup" as NetworkDetailSectionId, label: "Setup", summary: "Saved network fields" },
               { id: "plan" as NetworkDetailSectionId, label: "Plan", summary: "Ports, guardrails, drift" },
               { id: "proof" as NetworkDetailSectionId, label: "Proof", summary: "Advanced evidence" }
-            ].map((section) => (
-              <button
-                aria-pressed={activeDetailSection === section.id}
-                className={activeDetailSection === section.id ? "is-selected" : ""}
-                key={section.id}
-                onClick={() => setActiveDetailSection(section.id)}
-                type="button"
-              >
-                <span>{section.label}</span>
-                <strong>{section.summary}</strong>
-              </button>
-            ))}
-          </div>
+            ];
+            const selectedSection = sections.find((section) => section.id === activeDetailSection) ?? sections[0];
+            return (
+              <label className="network-detail-switcher detail-topic-selector" aria-label="Network detail sections">
+                <span>Detail view</span>
+                <select aria-label="Network detail section" onChange={(event) => setActiveDetailSection(event.target.value as NetworkDetailSectionId)} value={activeDetailSection}>
+                  {sections.map((section) => <option key={section.id} value={section.id}>{section.label}</option>)}
+                </select>
+                <strong>{selectedSection.summary}</strong>
+              </label>
+            );
+          })()}
           <div className="network-detail-panel" aria-label={`Network ${activeDetailSection}`}>
             {activeDetailSection === "access" && (
             <Card className="network-details-card" hover={false}>
@@ -1944,27 +1943,26 @@ export function OperatorServerPage({ labProfileState, onReloadLabProfile }: Oper
       </section>
       {detailsOpen && (
         <section className="network-details server-details" aria-label="Compute details">
-          <div className="network-detail-switcher server-detail-switcher" aria-label="Compute detail sections">
-            {[
+          {(() => {
+            const sections = [
               { id: "access" as ServerDetailSectionId, label: "Access", summary: "iLO, ESXi, next check" },
               { id: "checks" as ServerDetailSectionId, label: "Checks", summary: "Storage and firmware signals" },
               { id: "setup" as ServerDetailSectionId, label: "Setup", summary: "Saved compute fields" },
               { id: "path" as ServerDetailSectionId, label: "Path", summary: "Local vs shared handoff" },
               { id: "raid" as ServerDetailSectionId, label: "RAID", summary: "Advanced local storage" },
               { id: "proof" as ServerDetailSectionId, label: "Proof", summary: "Advanced evidence" }
-            ].map((section) => (
-              <button
-                aria-pressed={activeDetailSection === section.id}
-                className={activeDetailSection === section.id ? "is-selected" : ""}
-                key={section.id}
-                onClick={() => setActiveDetailSection(section.id)}
-                type="button"
-              >
-                <span>{section.label}</span>
-                <strong>{section.summary}</strong>
-              </button>
-            ))}
-          </div>
+            ];
+            const selectedSection = sections.find((section) => section.id === activeDetailSection) ?? sections[0];
+            return (
+              <label className="network-detail-switcher server-detail-switcher detail-topic-selector" aria-label="Compute detail sections">
+                <span>Detail view</span>
+                <select aria-label="Compute detail section" onChange={(event) => setActiveDetailSection(event.target.value as ServerDetailSectionId)} value={activeDetailSection}>
+                  {sections.map((section) => <option key={section.id} value={section.id}>{section.label}</option>)}
+                </select>
+                <strong>{selectedSection.summary}</strong>
+              </label>
+            );
+          })()}
           <div className="network-detail-panel server-detail-panel" aria-label={`Compute ${activeDetailSection}`}>
             {activeDetailSection === "access" && (
             <Card className="network-details-card" hover={false}>
@@ -3222,20 +3220,13 @@ export function OperatorStoragePage({ labProfileState, onReloadLabProfile }: Ope
       </section>
       {detailsOpen && profileReady && (
         <section className="storage-path-details" aria-label="Storage path details">
-          <div className="storage-path-detail-switcher" aria-label="Storage detail sections">
-            {storageDetailSections.map((section) => (
-              <button
-                aria-pressed={selectedStorageDetailSection?.id === section.id}
-                className={selectedStorageDetailSection?.id === section.id ? "is-selected" : ""}
-                key={section.id}
-                onClick={() => setActiveDetailSection(section.id)}
-                type="button"
-              >
-                <span>{section.label}</span>
-                <strong>{section.summary}</strong>
-              </button>
-            ))}
-          </div>
+          <label className="storage-path-detail-switcher detail-topic-selector" aria-label="Storage detail sections">
+            <span>Detail view</span>
+            <select aria-label="Storage detail section" onChange={(event) => setActiveDetailSection(event.target.value as StorageDetailSectionId)} value={activeDetailSection}>
+              {storageDetailSections.map((section) => <option key={section.id} value={section.id}>{section.label}</option>)}
+            </select>
+            <strong>{selectedStorageDetailSection?.summary}</strong>
+          </label>
           {selectedStorageDetailSection && (
             <div className="storage-path-detail-panel" aria-label={`Storage ${selectedStorageDetailSection.label}`}>
               {selectedStorageDetailSection.panel}
@@ -4970,26 +4961,25 @@ export function OperatorVirtualizationPage({ labProfileState, onReloadLabProfile
       </section>
       {detailsOpen && (
         <section className="network-details virtualization-details" aria-label="VM details">
-          <div className="network-detail-switcher virtualization-detail-switcher" aria-label="VM detail sections">
-            {[
+          {(() => {
+            const sections = [
               { id: "path" as VirtualizationDetailSectionId, label: "Path", summary: "Mode, target, datastore" },
               { id: "checks" as VirtualizationDetailSectionId, label: "Checks", summary: "VM and datastore signals" },
               { id: "setup" as VirtualizationDetailSectionId, label: "Setup", summary: "Saved virtualization fields" },
               { id: "shape" as VirtualizationDetailSectionId, label: "Shape", summary: "Direct ESXi or vCenter" },
               { id: "proof" as VirtualizationDetailSectionId, label: "Proof", summary: "Advanced evidence" }
-            ].map((section) => (
-              <button
-                aria-pressed={activeDetailSection === section.id}
-                className={activeDetailSection === section.id ? "is-selected" : ""}
-                key={section.id}
-                onClick={() => setActiveDetailSection(section.id)}
-                type="button"
-              >
-                <span>{section.label}</span>
-                <strong>{section.summary}</strong>
-              </button>
-            ))}
-          </div>
+            ];
+            const selectedSection = sections.find((section) => section.id === activeDetailSection) ?? sections[0];
+            return (
+              <label className="network-detail-switcher virtualization-detail-switcher detail-topic-selector" aria-label="VM detail sections">
+                <span>Detail view</span>
+                <select aria-label="VM detail section" onChange={(event) => setActiveDetailSection(event.target.value as VirtualizationDetailSectionId)} value={activeDetailSection}>
+                  {sections.map((section) => <option key={section.id} value={section.id}>{section.label}</option>)}
+                </select>
+                <strong>{selectedSection.summary}</strong>
+              </label>
+            );
+          })()}
           <div className="network-detail-panel virtualization-detail-panel" aria-label={`VM ${activeDetailSection}`}>
             {activeDetailSection === "path" && (
             <Card className="network-details-card" hover={false}>
