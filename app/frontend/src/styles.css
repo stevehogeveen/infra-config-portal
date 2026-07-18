@@ -14899,13 +14899,15 @@ button.design-ilo-port:hover {
   gap: 16px;
 }
 
-.storage-path-detail-switcher {
+.storage-path-detail-switcher,
+.network-detail-switcher {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
 }
 
-.storage-path-detail-switcher button {
+.storage-path-detail-switcher button,
+.network-detail-switcher button {
   align-items: flex-start;
   background: #f8fafc;
   border: 1px solid #dbe4ee;
@@ -14919,25 +14921,29 @@ button.design-ilo-port:hover {
   text-align: left;
 }
 
-.storage-path-detail-switcher button span {
+.storage-path-detail-switcher button span,
+.network-detail-switcher button span {
   font-size: 12px;
   font-weight: 900;
 }
 
-.storage-path-detail-switcher button strong {
+.storage-path-detail-switcher button strong,
+.network-detail-switcher button strong {
   color: #64748b;
   font-size: 11px;
   font-weight: 800;
   line-height: 1.25;
 }
 
-.storage-path-detail-switcher button.is-selected {
+.storage-path-detail-switcher button.is-selected,
+.network-detail-switcher button.is-selected {
   background: #ffffff;
   border-color: var(--primary);
   box-shadow: 0 0 0 3px rgba(0, 132, 142, 0.12);
 }
 
-.storage-path-detail-panel {
+.storage-path-detail-panel,
+.network-detail-panel {
   display: grid;
   gap: 16px;
 }

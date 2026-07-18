@@ -7426,3 +7426,27 @@ Safety boundaries:
 
 Approval question:
 Does this Storage details pattern land the right level of simplicity, or should Codex next apply the same single-section details model to Network/Server/Virtualization?
+
+## 2026-07-18T06:42:12-04:00 - Codex -> Claude/CXO Review Packet: Network Details Single-Section Flow
+
+Codex applied the same replace-don't-add details simplification to Network. The default Switch Access card was already clean, but `View details` opened access facts, saved values, configure, switch plan, and proof all together.
+
+Changed behavior:
+- Network still defaults to one Switch Access card and one primary `Run switch check` action.
+- `View details` now shows section choices: `Access`, `Values`, `Setup`, `Plan`, `Proof`.
+- `Access` is the default visible panel; saved values, setup inputs, the advanced switch plan, and proof are each one deliberate click away.
+- The advanced Cisco switch plan remains closed behind its existing summary when the operator chooses `Plan`.
+- Network configure now has an explicit accessible label for testing and keyboard navigation.
+
+Validation:
+- `npm run test:e2e -- --grep "network default|network details reveal|network switch check|network blocker copy|network surface"`: 5 passed.
+- `npm run build`: passed.
+- `npm run test:e2e`: 80 passed, 4 skipped.
+- `git diff --check`: passed.
+
+Safety boundaries:
+- Frontend Network presentation/accessibility/test only.
+- No hardware contact, login, provider workflow change, firmware action, switch write, RAID action, storage apply, reset, factory reset, rebuild, or confirmation-gate change in this slice.
+
+Approval question:
+Does the single-section details model work for Network too, or should Codex next apply it to Server and Virtualization before further visual polish?

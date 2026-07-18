@@ -1147,6 +1147,7 @@ export function OperatorNetworkPage({ labProfileState, onReloadLabProfile }: Ope
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const [activeDetailSection, setActiveDetailSection] = useState<NetworkDetailSectionId>("access");
   const [runState, setRunState] = useState<WorkflowRunState>(emptyRunState);
 
   async function refreshCiscoSshProbe() {
@@ -1422,7 +1423,28 @@ export function OperatorNetworkPage({ labProfileState, onReloadLabProfile }: Ope
       </section>
       {detailsOpen && (
         <section className="network-details" aria-label="Network details">
-          <div className="network-details-grid">
+          <div className="network-detail-switcher" aria-label="Network detail sections">
+            {[
+              { id: "access" as NetworkDetailSectionId, label: "Access", summary: "IP, console, SSH" },
+              { id: "values" as NetworkDetailSectionId, label: "Values", summary: "VLAN, DNS, NTP, MTU" },
+              { id: "setup" as NetworkDetailSectionId, label: "Setup", summary: "Saved network fields" },
+              { id: "plan" as NetworkDetailSectionId, label: "Plan", summary: "Ports, guardrails, drift" },
+              { id: "proof" as NetworkDetailSectionId, label: "Proof", summary: "Advanced evidence" }
+            ].map((section) => (
+              <button
+                aria-pressed={activeDetailSection === section.id}
+                className={activeDetailSection === section.id ? "is-selected" : ""}
+                key={section.id}
+                onClick={() => setActiveDetailSection(section.id)}
+                type="button"
+              >
+                <span>{section.label}</span>
+                <strong>{section.summary}</strong>
+              </button>
+            ))}
+          </div>
+          <div className="network-detail-panel" aria-label={`Network ${activeDetailSection}`}>
+            {activeDetailSection === "access" && (
             <Card className="network-details-card" hover={false}>
               <CardHeader>
                 <div>
@@ -1443,6 +1465,8 @@ export function OperatorNetworkPage({ labProfileState, onReloadLabProfile }: Ope
                 />
               </CardContent>
             </Card>
+            )}
+            {activeDetailSection === "values" && (
             <Card className="network-details-card" hover={false}>
               <CardHeader>
                 <div>
@@ -1468,6 +1492,8 @@ export function OperatorNetworkPage({ labProfileState, onReloadLabProfile }: Ope
                 </tbody>
               </CompactTable>
             </Card>
+            )}
+            {activeDetailSection === "setup" && (
             <NetworkConfigurePanel
               activeProfile={activeProfile}
               address={address}
@@ -1480,6 +1506,8 @@ export function OperatorNetworkPage({ labProfileState, onReloadLabProfile }: Ope
                 await load();
               }}
             />
+            )}
+            {activeDetailSection === "plan" && (
             <details className="network-advanced-switch-plan">
               <summary>
                 <span>
@@ -1490,6 +1518,8 @@ export function OperatorNetworkPage({ labProfileState, onReloadLabProfile }: Ope
               </summary>
               <CiscoDriverPanel plan={ciscoDriver} onRefresh={refreshCiscoSshProbe} />
             </details>
+            )}
+            {activeDetailSection === "proof" && (
             <AdvancedDrawer title="Network proof" summary={noProofText}>
               <OperatorWorkspace currentView={currentView} rows={networkRows} compact />
               <ConfigValueList
@@ -1501,12 +1531,15 @@ export function OperatorNetworkPage({ labProfileState, onReloadLabProfile }: Ope
               />
               <RealLabPrerequisitesPanel items={prerequisites} />
             </AdvancedDrawer>
+            )}
           </div>
         </section>
       )}
     </OperatorPage>
   );
 }
+
+type NetworkDetailSectionId = "access" | "values" | "setup" | "plan" | "proof";
 
 function networkSwitchAccessCardModel({
   address,
@@ -14289,7 +14322,7 @@ function NetworkConfigurePanel({
   }
 
   return (
-    <Card className="network-config-panel" hover={false} id="network-profile">
+    <Card aria-label="Network configure" className="network-config-panel" hover={false} id="network-profile">
       <CardHeader>
         <div>
           <p className="operator-kicker">Configure</p>

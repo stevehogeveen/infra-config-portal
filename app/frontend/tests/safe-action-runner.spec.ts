@@ -1783,14 +1783,28 @@ test("network details reveal saved settings and nested advanced switch plan", as
 
   const details = page.locator("section[aria-label='Network details']");
   await expect(details).toBeVisible();
+  const detailSections = details.getByLabel("Network detail sections");
+  await expect(detailSections).toContainText("Access");
+  await expect(detailSections).toContainText("Values");
+  await expect(detailSections).toContainText("Setup");
+  await expect(detailSections).toContainText("Plan");
+  await expect(detailSections).toContainText("Proof");
+  await expect(detailSections.getByRole("button", { name: /Access/ })).toHaveAttribute("aria-pressed", "true");
+  await expect(details.locator(".network-detail-panel")).toHaveCount(1);
+  await expect(details).toContainText("SSH/SCP");
+  await expect(details).toContainText("Firmware");
+  await expect(details.getByLabel("Network configure")).toHaveCount(0);
+  await detailSections.getByRole("button", { name: /Values/ }).click();
+  await expect(detailSections.getByRole("button", { name: /Values/ })).toHaveAttribute("aria-pressed", "true");
   await expect(details).toContainText("VLAN");
   await expect(details).toContainText("DNS");
   await expect(details).toContainText("NTP");
   await expect(details).toContainText("SNMP");
   await expect(details).toContainText("MTU");
-  await expect(details).toContainText("SSH/SCP");
-  await expect(details).toContainText("Firmware");
+  await detailSections.getByRole("button", { name: /Setup/ }).click();
+  await expect(details.getByLabel("Network configure")).toBeVisible();
 
+  await detailSections.getByRole("button", { name: /Plan/ }).click();
   const advanced = page.locator("details.network-advanced-switch-plan");
   await expect(advanced.locator(":scope > summary")).toContainText("Advanced switch plan");
   await expect(page.locator("section[aria-label='Cisco switch driver']")).toBeHidden();
