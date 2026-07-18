@@ -14113,8 +14113,8 @@ function StorageConfigurePanel({
     <Card className="network-config-panel" hover={false} id="storage-profile">
       <CardHeader>
         <div>
-          <p className="operator-kicker">Configure</p>
-          <h2>Storage lab profile</h2>
+          <p className="operator-kicker">Setup</p>
+          <h2>Storage setup</h2>
         </div>
         <StatusBadge label={edit.storageProtocol.toUpperCase()} status="ready" />
       </CardHeader>
@@ -14129,9 +14129,6 @@ function StorageConfigurePanel({
             </Field>
             <Field label="Cluster mgmt">
               <input value={edit.clusterMgmt} onChange={(event) => update("clusterMgmt", event.target.value)} />
-            </Field>
-            <Field label="SVM mgmt">
-              <input value={edit.svmMgmt} onChange={(event) => update("svmMgmt", event.target.value)} />
             </Field>
             <Field label={activeLifLabel}>
               <input value={activeLifValue} onChange={(event) => updateActiveLifs(event.target.value)} />
@@ -14148,6 +14145,9 @@ function StorageConfigurePanel({
               </Field>
               <Field label="Node B mgmt">
                 <input value={edit.nodeBMgmt} onChange={(event) => update("nodeBMgmt", event.target.value)} />
+              </Field>
+              <Field label="SVM mgmt">
+                <input value={edit.svmMgmt} onChange={(event) => update("svmMgmt", event.target.value)} />
               </Field>
               <Field label="Controller A SP">
                 <input value={edit.controllerASp} onChange={(event) => update("controllerASp", event.target.value)} />
@@ -14171,7 +14171,7 @@ function StorageConfigurePanel({
           </details>
           <div className="network-config-actions">
             <button className="operator-primary-button" disabled={busy || !activeProfile} type="submit">
-              {busy ? "Saving..." : activeProfile?.source === "saved" ? "Save Storage" : "Save As Lab Setup"}
+              {busy ? "Saving..." : "Save storage setup"}
             </button>
             {message && <span className="operator-success-text">{message}</span>}
             {error && <span className="operator-error-text">{error}</span>}
@@ -14241,13 +14241,9 @@ function ServerConfigurePanel({
     <Card className="network-config-panel" hover={false}>
       <CardHeader>
         <div>
-          <p className="operator-kicker">Configure</p>
-          <h2>Server lab profile</h2>
+          <p className="operator-kicker">Setup</p>
+          <h2>Compute setup</h2>
         </div>
-        <StatusBadge
-          label={activeProfile?.source === "saved" ? "Saved profile" : "Save as profile"}
-          status={activeProfile ? "ready" : "not-configured"}
-        />
       </CardHeader>
       <CardContent>
         <form className="network-config-form" onSubmit={save}>
@@ -14258,19 +14254,19 @@ function ServerConfigurePanel({
             <Field label="ESXi mgmt IP">
               <input value={edit.esxiManagement} onChange={(event) => update("esxiManagement", event.target.value)} />
             </Field>
-            <Field label="Initial iLO IP">
-              <input value={edit.iloInitial} onChange={(event) => update("iloInitial", event.target.value)} />
-            </Field>
-            <Field label="Embedded NIC">
-              <input value={edit.serverEmbeddedNic} onChange={(event) => update("serverEmbeddedNic", event.target.value)} />
-            </Field>
           </div>
           <details className="server-config-more">
             <summary>
-              <span>More compute network defaults</span>
-              <small>Use Lab Defaults unless the host needs its own subnet, gateway, DNS, NTP, or MTU.</small>
+              <span>More compute values</span>
+              <small>Factory iLO, embedded NIC, and overrides live here.</small>
             </summary>
             <div className="server-config-more-grid">
+              <Field label="Initial iLO IP">
+                <input value={edit.iloInitial} onChange={(event) => update("iloInitial", event.target.value)} />
+              </Field>
+              <Field label="Embedded NIC">
+                <input value={edit.serverEmbeddedNic} onChange={(event) => update("serverEmbeddedNic", event.target.value)} />
+              </Field>
               <Field label="Subnet">
                 <input value={edit.subnet} onChange={(event) => update("subnet", event.target.value)} />
               </Field>
@@ -14290,7 +14286,7 @@ function ServerConfigurePanel({
           </details>
           <div className="network-config-actions">
             <button className="operator-primary-button" disabled={busy || !activeProfile} type="submit">
-              {busy ? "Saving..." : activeProfile?.source === "saved" ? "Save Server" : "Save As Lab Setup"}
+              {busy ? "Saving..." : "Save compute setup"}
             </button>
             {message && <span className="operator-success-text">{message}</span>}
             {error && <span className="operator-error-text">{error}</span>}

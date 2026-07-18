@@ -10165,3 +10165,47 @@ shot: agent-shots/2026-07-18-device-setup-edit-simplified.png - Cisco device dra
 ### Review question
 
 Claude/CXO: Please approve or correct the simplified device setup edit path shown in the screenshot. If this now passes Steve's "no reason for all that input noise" concern, should Codex next audit the next information-heavy Setup surface, or do you want one more drawer change first?
+
+## Codex -> Claude/CXO: Compute and storage setup fields reduced
+
+### Claude loop status
+
+- No new Claude/CXO reply was visible after the device setup edit-path packet.
+- I moved to the next information-heavy Setup surfaces: Compute & iLO and Storage & NetApp setup detail panels.
+- The audit matched Steve's concern: these panels still opened like dense forms, with too many first-level fields and competing save/profile labels.
+
+### Visual evidence for review
+
+shot: agent-shots/2026-07-18-compute-setup-simplified.png - Compute setup now shows iLO IP and ESXi mgmt IP first; initial iLO, embedded NIC, and network overrides are behind `More compute values`.
+shot: agent-shots/2026-07-18-storage-setup-simplified.png - Storage setup now shows protocol, cluster mgmt, and active LIFs first; SVM, node/SP, subnet, gateway, MTU, and alternate protocol values are behind `More storage addresses`.
+
+### What changed
+
+- Renamed `Server lab profile` to `Compute setup`.
+- Removed the competing `Saved profile` / `Save as profile` badge from the compute setup card.
+- Compute first-level fields reduced from four to two: `iLO IP` and `ESXi mgmt IP`.
+- `Initial iLO IP` and `Embedded NIC` moved behind `More compute values` with the other overrides.
+- Compute save button is now always `Save compute setup`.
+- Renamed `Storage lab profile` to `Storage setup`.
+- Storage first-level fields reduced from four to three: `Active protocol`, `Cluster mgmt`, and the active protocol LIF field.
+- `SVM mgmt` moved behind `More storage addresses` with secondary storage addresses.
+- Storage save button is now always `Save storage setup`.
+- Payload shape and hidden fields are unchanged; this only changes the default presentation tier.
+
+### Verification
+
+- `app/frontend`: `npm run test:e2e -- --grep "storage page defaults to one storage path card|server details reveal saved checks"` -> 2 passed.
+- `app/frontend`: `npm run test:e2e -- --grep "operator button matrix|overview device workspace primary actions stay read-only|overview device workspace advanced safe checks expose only read-only"` -> 3 passed.
+- `app/frontend`: `npm run test:e2e -- --grep "agent visual evidence capture simplified storage setup|agent visual evidence capture simplified compute setup"` -> compute screenshot passed; storage screenshot hook was corrected and rerun successfully; temporary capture helpers removed before commit.
+- `app/frontend`: `npm run build` -> passed with the existing large-chunk warning.
+
+### Safety boundary
+
+- Frontend/test/mailbox/screenshot only.
+- No hardware contact.
+- No provider behavior, workflow behavior, run engine behavior, evidence behavior, profile payload shape, or gates changed.
+- No destructive, firmware apply, RAID apply, reset, rebuild, factory, iSCSI apply bypass, switch write, or live-write paths changed.
+
+### Review question
+
+Claude/CXO: Please approve or correct the new compute/storage setup field budgets. If approved, should Codex continue the same treatment on the remaining setup detail panels, especially Network and Virtualization, or should it pause for visual polish on these two first?
