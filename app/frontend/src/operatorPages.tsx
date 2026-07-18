@@ -2758,6 +2758,7 @@ export function OperatorStoragePage({ labProfileState, onReloadLabProfile }: Ope
     activeProtocol: activeStorageProtocol,
     pageStatus,
     serverLocalStorage,
+    storageBlocker: currentView.blockers[0] || "",
     storageNextAction,
     storageScenario,
     vcenterNetapp
@@ -2857,6 +2858,7 @@ function storagePathCardModel({
   activeProtocol,
   pageStatus,
   serverLocalStorage,
+  storageBlocker,
   storageNextAction,
   storageScenario,
   vcenterNetapp
@@ -2864,6 +2866,7 @@ function storagePathCardModel({
   activeProtocol: string;
   pageStatus: string;
   serverLocalStorage: boolean;
+  storageBlocker: string;
   storageNextAction: string;
   storageScenario: StorageScenarioModel;
   vcenterNetapp: ProviderProbeResult | null;
@@ -2878,7 +2881,7 @@ function storagePathCardModel({
     activePath: serverLocalStorage ? "Server-local RAID" : "NetApp shared storage",
     badgeStatus: storagePathBadgeStatus(stateLabel),
     protocol,
-    reason: stateLabel === "Blocked" ? humanize(storageNextAction || "Storage needs attention before datastore work.") : "",
+    reason: stateLabel === "Blocked" ? humanize(storageBlocker || storageNextAction || "Storage needs attention before datastore work.") : "",
     stateLabel,
     targetDatastore
   };
@@ -17552,6 +17555,19 @@ function displayStatus(status: string): string {
 function humanize(value: string): string {
   if (!value) return "";
   return value
+    .replace(/Cisco SSH is not reachable\.?/gi, "Cisco switch cannot be reached over SSH.")
+    .replace(/Cisco read-only output missing:\s*show vlan brief\.?/gi, "Cisco VLAN check needs a reachable SSH session.")
+    .replace(/Cisco read-only output missing:\s*show interfaces status\.?/gi, "Cisco port check needs a reachable SSH session.")
+    .replace(/PROVIDER MODE=Read-only lab or PROVIDER_MODE=local-lab-readwrite is required before opening a real NetApp console\.?/gi, "Choose Read-only lab or Real lab before checking NetApp storage.")
+    .replace(/NetApp cluster management REST is not reachable\.?/gi, "NetApp management is not reachable.")
+    .replace(/Cluster management REST is not reachable\.?/gi, "NetApp management is not reachable.")
+    .replace(/NFS LIF `([^`]+)` is not accepting TCP\/2049\.?/gi, "NFS address $1 is not reachable.")
+    .replace(/iSCSI LIF `([^`]+)` is not accepting TCP\/3260\.?/gi, "iSCSI address $1 is not reachable.")
+    .replace(/NetApp API authentication is required to verify protocol service licensing\.?/gi, "NetApp sign-in is needed to verify protocol licensing.")
+    .replace(/No live NetApp configured state exists yet; run Validate NetApp Setup\.?/gi, "Run NetApp validation after management is reachable.")
+    .replace(/NetApp ONTAP cluster is not live-configured yet; iSCSI setup is blocked by prior cluster setup\.?/gi, "Finish NetApp setup before iSCSI checks.")
+    .replace(/ONTAP [^.;]+ inventory returned HTTP None\.?/gi, "NetApp inventory is not available yet.")
+    .replace(/ESXi VMFS datastore `([^`]+)` is not visible\.?/gi, "ESXi cannot see datastore $1 yet.")
     .replace(/\bPROVIDER[_ ]MODE\s*=\s*/gi, "")
     .replace(/[A-Z0-9]+(?:_[A-Z0-9]+){2,}/g, (match) => labelize(match.toLowerCase()))
     .replace(/not_configured_yet/g, "Not set up yet")

@@ -1470,6 +1470,10 @@ test("overview removes superseded layout and console surfaces from operator mode
 test("storage page defaults to one storage path card and hides protocol internals", async ({ page }) => {
   await page.route("**/api/v1/providers/netapp-ontap/nfs-vcenter-readiness", (route) => json(route, {
     ...netappNfsVcenterReadiness(),
+    blockers: [
+      "NetApp cluster management REST is not reachable.",
+      "NFS LIF `192.168.1.230` is not accepting TCP/2049."
+    ],
     message: "NetApp NFS datastore cannot be checked yet.",
     next_safe_action: "PROVIDER MODE=Read-only lab or PROVIDER_MODE=local-lab-readwrite is required before opening a real NetApp console.",
     status: "blocked"
@@ -1488,6 +1492,9 @@ test("storage page defaults to one storage path card and hides protocol internal
   await expect(storagePath).toContainText("NetApp shared storage");
   await expect(storagePath).toContainText("NFS");
   await expect(storagePath.getByText(/Needs attention/)).toBeVisible();
+  await expect(storagePath).toContainText("NetApp management is not reachable");
+  await expect(storagePath).not.toContainText("REST is not reachable");
+  await expect(storagePath).not.toContainText("TCP/2049");
   await expect(storagePath).not.toContainText(/PROVIDER[_ ]MODE/i);
   await expect(storagePath).not.toContainText(/provider/i);
 
@@ -1719,7 +1726,7 @@ test("network switch check runs through the read-only action endpoint", async ({
 test("network blocker copy hides internal mode vocabulary", async ({ page }) => {
   await page.route("**/api/v1/providers/cisco/setup-readiness", (route) => json(route, {
     ...ciscoSetupReadiness(),
-    blockers: ["PROVIDER_MODE=local-lab-readwrite runtime missing credential"],
+    blockers: ["Cisco SSH is not reachable.", "PROVIDER_MODE=local-lab-readwrite runtime missing credential"],
     management_configured: false,
     message: "PROVIDER MODE=mock runtime provider credential is missing.",
     next_safe_action: "PROVIDER MODE=mock runtime provider password missing.",
@@ -1729,6 +1736,8 @@ test("network blocker copy hides internal mode vocabulary", async ({ page }) => 
   await page.goto("/network");
   const access = page.getByLabel("Switch Access");
   await expect(access).toContainText("Needs attention");
+  await expect(access).toContainText("Cisco switch cannot be reached over SSH");
+  await expect(access).not.toContainText("Cisco SSH is not reachable");
   const text = await access.textContent();
   expect(text ?? "").not.toMatch(/PROVIDER[_ ]MODE/i);
   expect(text ?? "").not.toMatch(/\bprovider\b/i);

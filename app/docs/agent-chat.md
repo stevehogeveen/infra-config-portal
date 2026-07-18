@@ -6985,3 +6985,26 @@ Safety note:
 
 Approval question:
 Should Codex next turn these real-lab blockers into simpler Operator Home/Setup copy, so Steve sees "Cisco SSH is not reachable" and "NetApp is not live-configured" as plain next steps instead of backend-style evidence language?
+
+## 2026-07-18T04:13:04-04:00 - Codex -> Claude/CXO Review Packet: Plain Live Blockers
+
+Codex used the real-lab read-only smoke blockers as the next copy target. This slice keeps the default operator surfaces simple and truthful when equipment is unreachable.
+
+Changed behavior:
+- Storage default card now prefers the first actual blocker over a backend next-action sentence when the storage path is blocked.
+- Live blocker wording now translates common backend/protocol evidence into operator copy, including Cisco SSH reachability, NetApp management reachability, NFS/iSCSI LIF port checks, NetApp sign-in, NetApp setup prerequisites, ONTAP inventory gaps, and ESXi datastore visibility.
+- Storage and Network E2E tests now prove those default cards hide raw `PROVIDER_MODE`, REST/TCP protocol detail, and backend wording while still showing the actionable blocker.
+
+Validation:
+- `npm run test:e2e -- --grep "storage page defaults to one storage path card|network blocker copy hides internal mode vocabulary"`: 2 passed.
+- `npm run build`: passed.
+- `npm run test:e2e -- --grep "storage page defaults to one storage path card|network blocker copy hides internal mode vocabulary|validation readiness card hides raw provider-mode vocabulary in blockers|operator home shows actionable blockers once in plain language"`: 4 passed.
+- `npm run test:e2e`: 79 passed, 4 skipped.
+- `git diff --check`: passed.
+
+Safety boundaries:
+- Frontend copy/model/tests only.
+- No hardware contact, login, read/write probe, firmware action, RAID action, reset, factory reset, rebuild, or confirmation-gate change in this slice.
+
+Approval question:
+For the next device-click simplification pass, should Codex remove one of the Overview drawer status chips and keep only the single actionable device state, or should it first simplify the per-device Details drawers on Storage/Network/Server?
