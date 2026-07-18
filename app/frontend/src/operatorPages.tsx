@@ -797,7 +797,11 @@ export function OperatorOverviewPage({
             features={features}
             firmwareSummaries={firmwareSummaries}
             health={health}
-            onReload={load}
+            labProfileState={labProfileState}
+            onReload={async () => {
+              await onReloadLabProfile?.();
+              await load();
+            }}
             vcenterNetapp={vcenterNetapp}
             workflowActions={workflowActions}
           />
@@ -6788,6 +6792,7 @@ function LabTopologyMap({
   features,
   firmwareSummaries,
   health,
+  labProfileState,
   onReload,
   vcenterNetapp,
   workflowActions
@@ -6798,6 +6803,7 @@ function LabTopologyMap({
   features: LabProfileFeatures | null;
   firmwareSummaries: FirmwareSummary[];
   health?: HealthLike;
+  labProfileState: LabProfileList | null;
   onReload: () => Promise<void> | void;
   vcenterNetapp: ProviderProbeResult | null;
   workflowActions: WorkflowAction[];
@@ -6949,6 +6955,13 @@ function LabTopologyMap({
           <h2>{nodes.length} devices - subnet {displayAddress(address.subnet)}</h2>
         </div>
         <div className="lab-topology-head-actions">
+          <SystemSetupPicker
+            activeProfile={activeProfile}
+            address={address}
+            features={features}
+            labProfileState={labProfileState}
+            onChanged={onReload}
+          />
           <div className="lab-topology-pills" aria-label="Topology status">
             <span className={`topology-pill ${runtimeClass}`}><CheckCircle2 size={14} /> {runtimeLabel}</span>
             <span className={`topology-pill topology-pill-subnet-${subnetState.status}`}><Route size={14} /> {subnetState.label}</span>
@@ -8948,9 +8961,9 @@ function LabDesignComposer({
     const states = selectedEditWorkspaceSection.fields.map((field) => Boolean(topologyCommittedProfilePath(selectedPart.id, field.key)));
     const hasSaved = states.some(Boolean);
     const hasDraftOnly = states.some((state) => !state);
-    if (hasSaved && hasDraftOnly) return "Saved / derived values are read-only here; draft-only fields are visual plan only.";
-    if (hasSaved) return "Saved / derived values are read-only here.";
-    return hasDraftOnly ? "Draft-only fields are visual plan only." : "";
+    if (hasSaved && hasDraftOnly) return "Saved values come from System Setup. Draft-only fields are planning notes.";
+    if (hasSaved) return "Saved values come from System Setup.";
+    return hasDraftOnly ? "Draft-only fields are planning notes." : "";
   }
 
   return (

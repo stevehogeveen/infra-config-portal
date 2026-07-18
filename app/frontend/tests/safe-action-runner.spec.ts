@@ -1190,7 +1190,7 @@ test("zoned map makes single-server local RAID mode unmistakable", async ({ page
   await expect(map).not.toContainText("Local ESXi datastore");
 });
 
-test.skip("overview flags saved subnet mismatch and links to subnet editing", async ({ page }) => {
+test("overview flags saved subnet mismatch and links to subnet editing", async ({ page }) => {
   healthHostIpv4Addresses = ["10.10.8.99", "172.20.10.3"];
   await page.goto("/overview");
   await openOperatorDetails(page);
@@ -1208,7 +1208,7 @@ test.skip("overview flags saved subnet mismatch and links to subnet editing", as
   await expect(page.locator("#system-setup")).toBeVisible();
 });
 
-test.skip("living topology creates a subnet-derived system setup without running workflows", async ({ page }) => {
+test("living topology creates a subnet-derived system setup without running workflows", async ({ page }) => {
   let workflowRunAttempted = false;
   await page.route("**/api/v1/workflows/actions/*/run", async (route) => {
     workflowRunAttempted = true;
@@ -1235,7 +1235,7 @@ test.skip("living topology creates a subnet-derived system setup without running
   expect(workflowRunAttempted).toBe(false);
 });
 
-test.skip("system setup advanced fields round-trip shared and device rows through the profile", async ({ page }) => {
+test("system setup advanced fields round-trip shared and device rows through the profile", async ({ page }) => {
   await page.goto("/overview");
   await openOperatorDetails(page);
 
@@ -1282,18 +1282,15 @@ test.skip("system setup advanced fields round-trip shared and device rows throug
   await reloadedPicker.getByRole("button", { name: "Open system setup picker" }).click();
   await reloadedTopology.getByRole("button", { name: "Open Cisco switch workspace" }).click();
   const overlay = page.locator("div[aria-label='Device workspace overlay']");
-  const switchWorkspace = overlay.locator("section[aria-label='Cisco switch workspace']");
+  await expect(overlay.locator("section[aria-label='Cisco switch workspace']")).toBeVisible();
   const switchNetwork = await openWorkspaceEditGroup(page, "Cisco switch", "Network");
   await expect(switchNetwork).toContainText("Management IP");
-  const managementInput = switchNetwork.getByLabel("Management IP");
-  await expect(managementInput).toBeVisible();
-  await expect(managementInput).toHaveValue("192.168.1.214");
-  await expect(managementInput).toHaveAttribute("readonly", "");
-  await expect(switchNetwork).toContainText("Saved / derived");
-  await expect(switchNetwork).toContainText("edit it in System Setup advanced fields");
+  await expect(switchNetwork).toContainText("192.168.1.214");
+  await expect(switchNetwork.getByRole("textbox", { name: "Management IP" })).toHaveCount(0);
+  await expect(switchNetwork).toContainText("Saved values come from System Setup");
 });
 
-test.skip("system setup advanced fields keep blank profile values planned until edited", async ({ page }) => {
+test("system setup advanced fields keep blank profile values planned until edited", async ({ page }) => {
   const blankProfile = JSON.parse(JSON.stringify(labProfiles().active_profile)) as Record<string, any>;
   blankProfile.dns = [];
   blankProfile.ntp = [];

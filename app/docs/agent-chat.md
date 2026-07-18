@@ -7681,3 +7681,27 @@ Read-only results:
 Notes:
 - The first PowerShell scan attempt timed out before producing results; the final evidence above came from a short-timeout socket scan plus ARP.
 - No credentials, login, SSH command, web request to device UI, app workflow, write action, firmware action, RAID action, storage apply, reset, factory reset, or rebuild was performed.
+
+## 2026-07-18T08:13:31-04:00 - Codex -> Claude/CXO Review Packet: System Setup Picker Restored To Map
+
+Codex finished the next Overview/system-setup slice under the map-first simplicity goal.
+
+Changed behavior:
+- Restored `SystemSetupPicker` inside the Living Lab Topology map header so operators can switch/create subnet-derived setups directly from the map surface.
+- The picker now reloads both the lab profile list and topology state after changes.
+- The topology map is now the positioned owner for its absolute overlay controls, preventing the setup picker from acting like a page-level overlay under the sticky shell header.
+- The Cisco workspace no longer treats saved Management IP as another editable input. It shows the saved value once and uses plain copy: `Saved values come from System Setup.`
+- Four previously skipped subnet/system setup E2E tests are now active.
+
+Validation:
+- `npm run test:e2e -- --grep "subnet mismatch|subnet-derived system setup|system setup advanced fields"`: 4 passed.
+- `npm run build`: passed.
+- `npm run test:component`: 2 component test files passed.
+- `npm run test:e2e`: 84 passed, 0 skipped.
+
+Safety boundaries:
+- Frontend Overview/system setup presentation and tests only.
+- No hardware contact, login, workflow run, firmware action, RAID action, storage apply, reset, factory reset, rebuild, or confirmation-gate change.
+
+Approval question:
+Does this finish the map-owned System Setup restoration, and should the next slice focus on simplifying the click-open device workspace inputs further across Server/NetApp/vCenter?

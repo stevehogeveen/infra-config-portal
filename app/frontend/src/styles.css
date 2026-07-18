@@ -8413,6 +8413,8 @@ th.ui-compact-table-cell {
   gap: 14px;
   overflow: hidden;
   padding: 18px;
+  position: relative;
+  scroll-margin-top: 96px;
 }
 
 .operator-home-layout {
@@ -8486,6 +8488,7 @@ th.ui-compact-table-cell {
   max-width: calc(100% - 32px);
   pointer-events: auto;
   position: absolute;
+  scroll-margin-top: 96px;
   top: 24px;
   transform: translateX(-50%);
   width: min(660px, calc(100% - 32px));
