@@ -7369,6 +7369,7 @@ function LabTopologyMap({
     });
   }
 
+  const selectedTopologyNode = nodes.find((node) => node.id === selectedNodeId) ?? null;
   const links = topologyLinks({ datastoreStatus, iloStatus, netappInScope, netappStatus, serverStatus, storageProtocol, vmInScope, vmStatus });
   const storageOrbitNodes = nodes.filter((node) => node.zone === "storage");
   useEffect(() => {
@@ -7518,6 +7519,8 @@ function LabTopologyMap({
               initialSelectedDevice={workspaceTarget}
               onReload={onReload}
               subnetState={subnetState}
+              workspaceNodeStatus={selectedTopologyNode?.status}
+              workspaceNodeTone={selectedTopologyNode?.tone}
               workspaceOnly
               workflowActions={workflowActions}
             />
@@ -8874,6 +8877,8 @@ function LabDesignComposer({
   initialSelectedDevice,
   onReload,
   subnetState,
+  workspaceNodeStatus,
+  workspaceNodeTone,
   workspaceOnly = false,
   workflowActions
 }: {
@@ -8885,6 +8890,8 @@ function LabDesignComposer({
   initialSelectedDevice?: DesignPartId;
   onReload: () => Promise<void> | void;
   subnetState: TopologySubnetState;
+  workspaceNodeStatus?: string;
+  workspaceNodeTone?: TopologyNodeTone;
   workspaceOnly?: boolean;
   workflowActions: WorkflowAction[];
 }) {
@@ -9612,10 +9619,10 @@ function LabDesignComposer({
               <div className="design-device-state-stack" aria-label={`${selectedPart.label} state`}>
                 {workspaceOnly ? (
                   <span>
-                    <strong className={`design-state-chip ${topologyWorkspaceReachabilityTone(selectedSafeActions, actionRunsById)}`}>
-                      {topologyWorkspaceOperatorStateLabel(selectedSafeActions, actionRunsById)}
+                    <strong className={`design-state-chip ${topologyWorkspaceReachabilityTone(selectedSafeActions, actionRunsById, workspaceNodeTone)}`}>
+                      {topologyWorkspaceOperatorStateLabel(selectedSafeActions, actionRunsById, workspaceNodeTone)}
                     </strong>
-                    <small>{topologyWorkspaceOperatorStateSource(selectedSafeActions, actionRunsById)}</small>
+                    <small>{topologyWorkspaceOperatorStateSource(selectedSafeActions, actionRunsById, workspaceNodeTone, workspaceNodeStatus)}</small>
                   </span>
                 ) : (
                   <>
@@ -11522,31 +11529,44 @@ function topologyWorkspaceReachabilitySource(
 
 function topologyWorkspaceOperatorStateLabel(
   actions: WorkflowAction[],
-  runsById: Record<string, WorkflowActionRun[]>
+  runsById: Record<string, WorkflowActionRun[]>,
+  fallbackTone?: TopologyNodeTone
 ): string {
   const latestRun = actions.map((action) => runsById[action.action_id]?.[0]).find(Boolean);
-  if (!latestRun) return "Not checked";
+  if (!latestRun) {
+    if (fallbackTone) return topologyNodeStateLabel(fallbackTone);
+    return "Not checked";
+  }
   const status = displayStatus(latestRun.status).toLowerCase();
   return /ready|ok|success|passed|completed/.test(status) ? "Reachable" : "Needs review";
 }
 
 function topologyWorkspaceOperatorStateSource(
   actions: WorkflowAction[],
-  runsById: Record<string, WorkflowActionRun[]>
+  runsById: Record<string, WorkflowActionRun[]>,
+  fallbackTone?: TopologyNodeTone,
+  fallbackStatus?: string
 ): string {
   const latestAction = actions.find((action) => runsById[action.action_id]?.[0]);
   if (latestAction) return `Last check: ${latestAction.label}`;
+  if (fallbackTone) {
+    const status = displayStatus(fallbackStatus || topologyNodeStateLabel(fallbackTone));
+    return `Map status: ${status}`;
+  }
   if (!actions.length) return "No read-only check yet";
   return "Run a check to verify";
 }
 
 function topologyWorkspaceReachabilityTone(
   actions: WorkflowAction[],
-  runsById: Record<string, WorkflowActionRun[]>
+  runsById: Record<string, WorkflowActionRun[]>,
+  fallbackTone?: TopologyNodeTone
 ): string {
   const label = topologyWorkspaceReachabilityLabel(actions, runsById);
   if (label.includes("Reachable")) return "live";
   if (label.includes("review")) return "warning";
+  if (fallbackTone === "ready" || fallbackTone === "created") return "live";
+  if (fallbackTone === "warning") return "warning";
   return "unknown";
 }
 

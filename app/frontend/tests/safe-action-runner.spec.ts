@@ -1250,14 +1250,24 @@ test("overview device workspace matrix keeps default inputs concise", async ({ p
   ];
 
   for (const item of cases) {
-    await topology.getByRole("button", { name: item.button }).click();
+    const nodeButton = topology.getByRole("button", { name: item.button });
+    const nodeText = (await nodeButton.textContent()) ?? "";
+    const expectedMapState = nodeText.includes("Blocked")
+      ? "Blocked"
+      : nodeText.includes("Ready")
+        ? "Ready"
+        : "Not checked";
+    await nodeButton.click();
     const overlay = page.locator("div[aria-label='Device workspace overlay']");
     const workspace = overlay.locator(`section[aria-label='${item.workspace} workspace']`);
     await expect(workspace, `${item.workspace} workspace opens`).toBeVisible();
     await expect(overlay.locator(".topology-workspace-drawer-head"), `${item.workspace} drawer uses setup wording`).toContainText("Device setup");
     await expect(overlay.locator(".topology-workspace-drawer-head"), `${item.workspace} drawer avoids workspace chrome copy`).not.toContainText("Device workspace");
     await expect(workspace.locator(":scope > .design-device-primary-action .design-plan-action"), `${item.workspace} has one default action`).toHaveCount(1);
-    await expect(workspace.locator(":scope .design-device-state-stack .design-state-chip"), `${item.workspace} shows one operator state`).toHaveCount(1);
+    const workspaceState = workspace.locator(":scope .design-device-state-stack");
+    await expect(workspaceState.locator(".design-state-chip"), `${item.workspace} shows one operator state`).toHaveCount(1);
+    await expect(workspaceState.locator(".design-state-chip"), `${item.workspace} first-click state matches the map card`).toContainText(expectedMapState);
+    await expect(workspaceState, `${item.workspace} explains state source without implying a fresh probe`).toContainText("Map status");
     await expect(workspace.locator(":scope .design-device-state-stack"), `${item.workspace} keeps saved/draft bookkeeping out of default state`).not.toContainText("Saved setup");
     await expect(workspace.locator(":scope .design-device-state-stack"), `${item.workspace} keeps saved/draft bookkeeping out of default state`).not.toContainText("Draft");
     await expect(workspace.locator(":scope > .design-device-primary-action"), `${item.workspace} does not leak internal readiness rows`).not.toContainText("Draft store");
