@@ -982,6 +982,9 @@ test("overview device workspace matrix keeps default inputs concise", async ({ p
     await expect(overlay.locator(".topology-workspace-drawer-head"), `${item.workspace} drawer uses setup wording`).toContainText("Device setup");
     await expect(overlay.locator(".topology-workspace-drawer-head"), `${item.workspace} drawer avoids workspace chrome copy`).not.toContainText("Device workspace");
     await expect(workspace.locator(":scope > .design-device-primary-action .design-plan-action"), `${item.workspace} has one default action`).toHaveCount(1);
+    await expect(workspace.locator(":scope .design-device-state-stack .design-state-chip"), `${item.workspace} shows one operator state`).toHaveCount(1);
+    await expect(workspace.locator(":scope .design-device-state-stack"), `${item.workspace} keeps saved/draft bookkeeping out of default state`).not.toContainText("Saved setup");
+    await expect(workspace.locator(":scope .design-device-state-stack"), `${item.workspace} keeps saved/draft bookkeeping out of default state`).not.toContainText("Draft");
     await expect(workspace.locator(":scope > .design-device-primary-action"), `${item.workspace} does not leak internal readiness rows`).not.toContainText("Draft store");
     await expect(workspace.locator(".design-workspace-boundary"), `${item.workspace} keeps the safety boundary concise`).toContainText("Checks here are read-only");
     await expect(workspace.locator(".design-selected-element-note"), `${item.workspace} waits for an element click before showing element detail`).toHaveCount(0);
@@ -1295,9 +1298,10 @@ test("overview design mode keeps the surface map-only until a node opens the wor
   const composer = overlay.locator("div[aria-label='Device workspace composer']");
   const switchWorkspace = overlay.locator("section[aria-label='Cisco switch workspace']");
   await expect(switchWorkspace).toBeVisible();
-  await expect(switchWorkspace.getByLabel("Cisco switch state")).toContainText(/Draft|Saved/);
-  await expect(switchWorkspace.getByLabel("Cisco switch state")).toContainText("Saved setup");
+  await expect(switchWorkspace.getByLabel("Cisco switch state").locator(".design-state-chip")).toHaveCount(1);
+  await expect(switchWorkspace.getByLabel("Cisco switch state")).toContainText("Not checked");
   await expect(switchWorkspace.getByLabel("Cisco switch state")).toContainText("Run a check to verify");
+  await expect(switchWorkspace.getByLabel("Cisco switch state")).not.toContainText(/Draft|Saved/);
   await expect(switchWorkspace.getByLabel("Cisco switch state")).not.toContainText("source:");
   await expect(switchWorkspace.getByLabel("Cisco switch interactive faceplate")).toBeVisible();
   await switchWorkspace.getByRole("button", { name: "Switch port 1", exact: true }).click();

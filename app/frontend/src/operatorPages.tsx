@@ -9451,18 +9451,29 @@ function LabDesignComposer({
                 </div>
               </div>
               <div className="design-device-state-stack" aria-label={`${selectedPart.label} state`}>
-                <span>
-                  <strong className={`design-state-chip ${topologyWorkspaceStateTone(draftDirty, profileSyncDriftCount, draftPersistence)}`}>
-                    {topologyWorkspaceStateLabel(draftDirty, profileSyncDriftCount, draftPersistence)}
-                  </strong>
-                  <small>{workspaceOnly ? "Saved setup" : topologyWorkspaceStateSource(draftDirty, profileSyncDriftCount, draftPersistence)}</small>
-                </span>
-                <span>
-                  <strong className={`design-state-chip ${topologyWorkspaceReachabilityTone(selectedSafeActions, actionRunsById)}`}>
-                    {topologyWorkspaceReachabilityLabel(selectedSafeActions, actionRunsById)}
-                  </strong>
-                  <small>{workspaceOnly ? "Run a check to verify" : topologyWorkspaceReachabilitySource(selectedSafeActions, actionRunsById)}</small>
-                </span>
+                {workspaceOnly ? (
+                  <span>
+                    <strong className={`design-state-chip ${topologyWorkspaceReachabilityTone(selectedSafeActions, actionRunsById)}`}>
+                      {topologyWorkspaceOperatorStateLabel(selectedSafeActions, actionRunsById)}
+                    </strong>
+                    <small>{topologyWorkspaceOperatorStateSource(selectedSafeActions, actionRunsById)}</small>
+                  </span>
+                ) : (
+                  <>
+                    <span>
+                      <strong className={`design-state-chip ${topologyWorkspaceStateTone(draftDirty, profileSyncDriftCount, draftPersistence)}`}>
+                        {topologyWorkspaceStateLabel(draftDirty, profileSyncDriftCount, draftPersistence)}
+                      </strong>
+                      <small>{topologyWorkspaceStateSource(draftDirty, profileSyncDriftCount, draftPersistence)}</small>
+                    </span>
+                    <span>
+                      <strong className={`design-state-chip ${topologyWorkspaceReachabilityTone(selectedSafeActions, actionRunsById)}`}>
+                        {topologyWorkspaceReachabilityLabel(selectedSafeActions, actionRunsById)}
+                      </strong>
+                      <small>{topologyWorkspaceReachabilitySource(selectedSafeActions, actionRunsById)}</small>
+                    </span>
+                  </>
+                )}
               </div>
             </div>
 
@@ -11258,6 +11269,26 @@ function topologyWorkspaceReachabilitySource(
   if (latestAction) return `source: last ${latestAction.label}`;
   if (!actions.length) return "source: no registered proof";
   return "source: no read-only run yet";
+}
+
+function topologyWorkspaceOperatorStateLabel(
+  actions: WorkflowAction[],
+  runsById: Record<string, WorkflowActionRun[]>
+): string {
+  const latestRun = actions.map((action) => runsById[action.action_id]?.[0]).find(Boolean);
+  if (!latestRun) return "Not checked";
+  const status = displayStatus(latestRun.status).toLowerCase();
+  return /ready|ok|success|passed|completed/.test(status) ? "Reachable" : "Needs review";
+}
+
+function topologyWorkspaceOperatorStateSource(
+  actions: WorkflowAction[],
+  runsById: Record<string, WorkflowActionRun[]>
+): string {
+  const latestAction = actions.find((action) => runsById[action.action_id]?.[0]);
+  if (latestAction) return `Last check: ${latestAction.label}`;
+  if (!actions.length) return "No read-only check yet";
+  return "Run a check to verify";
 }
 
 function topologyWorkspaceReachabilityTone(

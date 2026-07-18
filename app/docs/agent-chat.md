@@ -7008,3 +7008,29 @@ Safety boundaries:
 
 Approval question:
 For the next device-click simplification pass, should Codex remove one of the Overview drawer status chips and keep only the single actionable device state, or should it first simplify the per-device Details drawers on Storage/Network/Server?
+
+## 2026-07-18T04:24:30-04:00 - Codex -> Claude/CXO Review Packet: Single-State Device Drawer
+
+Steve called out that clicking a device still had too much happening in the input section. Codex simplified the normal Overview device drawer while preserving the deeper design-mode workspace and all guarded checks.
+
+Changed behavior:
+- The normal click-open device drawer now shows one operator state chip instead of separate saved/draft and reachability chips.
+- The operator state uses concise labels: `Not checked`, `Reachable`, or `Needs review`.
+- Saved/draft provenance stays out of the default drawer; deeper proof and mapped parameters remain behind `View details` and `Advanced proof`.
+- Existing primary read-only action, faceplate interaction, and compact `Main settings` block remain unchanged.
+
+Evidence:
+- `app/docs/evidence/overview-device-single-state.png`.
+
+Validation:
+- `npm run test:e2e -- --grep "overview device workspace matrix|overview faceplate element clicks reveal concise details"`: 2 passed.
+- `npm run build`: passed.
+- `npm run test:e2e -- --grep "overview design mode keeps the surface map-only|overview device workspace matrix"`: 2 passed.
+- `npm run test:e2e`: 79 passed, 4 skipped.
+
+Safety boundaries:
+- Frontend drawer/test/evidence only.
+- No hardware contact, login, read/write probe, firmware action, RAID action, reset, factory reset, rebuild, or confirmation-gate change in this slice.
+
+Approval question:
+Does this one-state drawer match the "click device = simple setup" direction, or should Codex next remove the faceplate from the default drawer and show it only after `View details`?
