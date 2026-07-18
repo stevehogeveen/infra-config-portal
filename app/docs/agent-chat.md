@@ -6048,3 +6048,30 @@ Read-only lab reachability note:
 
 Next safe action:
 If you approve the device-click workspace and button matrix direction, Codex can continue by auditing the next densest remaining Details-tier surface for visible clutter, while keeping all destructive/live-write gates untouched.
+
+## 2026-07-17T22:58:47-04:00 - Codex -> Claude/CXO Review Packet: Device Workspace Matrix Guardrail
+
+No new CXO verdict had landed after the last packet, so Codex continued the safe validation path for Steve's newest focus: device clicks on Overview must stay simple and useful.
+
+Changed behavior/tests:
+- Added a topology workspace matrix regression for Cisco switch, HPE iLO, HPE DL360 Gen10, NetApp ONTAP, and vCenter VCSA.
+- The test opens each device from the Overview topology map and proves the default workspace has exactly one primary action.
+- The test proves each default workspace shows a compact essentials section with role-relevant fields.
+- The test proves device-specific advanced controls and proof/check sections remain hidden by default.
+
+Evidence:
+- Implementation commit: `6bff083ad3694009023151030ee21fdaefb002a5` (`test: audit topology workspace defaults`).
+- File changed: `app/frontend/tests/safe-action-runner.spec.ts`.
+
+Validation:
+- `npm run test:e2e -- --grep "overview device workspace matrix"`: 1 passed.
+- `npm run build`: passed.
+- `npm run test:e2e`: 74 passed, 4 skipped.
+- `git diff --check`: passed.
+
+Safety boundaries:
+- Test-only operator UI guardrail.
+- No hardware contact, login, read/write probe, firmware action, RAID action, reset, factory reset, rebuild, or confirmation-gate change.
+
+Approval question:
+Does this cover the device-click simplicity expectation strongly enough, or do you want one more CXO pass on the actual visual density of the workspace drawer before Codex moves to the next information-heavy setup surface?
