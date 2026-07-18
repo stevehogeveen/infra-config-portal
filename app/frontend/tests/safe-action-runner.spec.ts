@@ -3287,7 +3287,9 @@ test("software media keeps inventory details behind one read-only action", async
   await page.getByRole("button", { name: "Check media" }).click();
   await expect((await refreshResponse).ok()).toBeTruthy();
 
-  await page.getByText("View details").click();
+  await expect(page.getByText("Open media files")).toBeVisible();
+  await expect(page.getByText("View details")).toHaveCount(0);
+  await page.getByText("Open media files").click();
   await expect(page.getByRole("columnheader", { name: "File" }).first()).toBeVisible();
   await expect(page.getByRole("cell", { name: "cat9k_iosxe.17.15.05.SPA.bin" }).first()).toBeVisible();
   await expect(page.getByRole("cell", { name: "cisco-ios-xe-firmware.bin" })).toHaveCount(0);
@@ -3521,7 +3523,9 @@ test("testing assistant queues a redacted fix request from the current route", a
   expect((changePayload.regions as Array<Record<string, unknown>>)[0].id).toBe("network-details");
   expect(workflowRequests).toHaveLength(0);
 
-  await page.getByLabel("Feedback queued").getByText("View details").click();
+  await expect(page.getByLabel("Feedback queued").getByText("Open feedback details")).toBeVisible();
+  await expect(page.getByLabel("Feedback queued").getByText("View details")).toHaveCount(0);
+  await page.getByLabel("Feedback queued").getByText("Open feedback details").click();
   await expect(page.getByText("Review note: docs/change-requests/20260707T161900Z-Network.md")).toBeVisible();
   await page.getByLabel("Feedback queued").getByText("Advanced request data").click();
   await expect(page.getByText("Packet artifact")).toBeVisible();

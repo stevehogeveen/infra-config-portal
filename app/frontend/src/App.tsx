@@ -1059,7 +1059,7 @@ function OperatorIssueReporter() {
                 <span>{packet.summary}</span>
                 <span>Codex and Claude can review this from the mailbox.</span>
                 <details className="operator-issue-details">
-                  <summary>View details</summary>
+                  <summary>Open feedback details</summary>
                   <ul>
                     {packet.suggested_next_steps.slice(0, 3).map((step) => (
                       <li key={step}>{step}</li>
@@ -7025,7 +7025,7 @@ function MediaInventoryPage() {
           <AdvancedDetails
             className="section-details software-media-details"
             summary="Actual filenames and media attention items"
-            title="View details"
+            title="Open media files"
           >
             {warnings.length > 0 && (
               <section className="software-media-attention" aria-label="Media attention items">
