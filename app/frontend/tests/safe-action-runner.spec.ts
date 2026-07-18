@@ -1932,6 +1932,7 @@ test("operator button matrix keeps default actions simple and safe", async ({ pa
 
 test("operator primary check buttons run only expected read-only workflows", async ({ page }) => {
   const forbiddenActionIds = /^(raid\.apply|raid\.reset-commit|esxi\.rebuild-install|ilo\.reset-server|netapp\.factory-reset-apply|netapp\.setup-apply|firmware\.upgrade-apply-placeholder|cisco\.apply-bootstrap|vcenter\.attach-esxi-apply|esxi\.netapp-datastore-apply|esxi\.vm-deploy-apply)$/;
+  const actionCatalog = new Map(workflowActions().map((action) => [String(action.action_id), action]));
   const capturedActionIds: string[] = [];
 
   page.on("request", (request) => {
@@ -1983,6 +1984,13 @@ test("operator primary check buttons run only expected read-only workflows", asy
   ];
 
   for (const surface of cases) {
+    for (const actionId of surface.expectedActionIds) {
+      const action = actionCatalog.get(actionId);
+      expect(action, `${surface.label} primary action ${actionId} is registered in the workflow catalog`).toBeTruthy();
+      expect(["read_only", "report_only"], `${surface.label} primary action ${actionId} is cataloged as safe to run`)
+        .toContain(String(action?.mode));
+      expect(action?.ui_run_supported, `${surface.label} primary action ${actionId} is UI runnable only as a safe action`).toBeTruthy();
+    }
     capturedActionIds.length = 0;
     await page.goto(surface.path);
     await surface.click();
@@ -4274,6 +4282,9 @@ function workflowActions() {
     readAction("esxi.iscsi-datastore-validate", "Validate ESXi iSCSI Datastore", "esxi", "esxi"),
     readAction("raid.validate", "Validate RAID", "raid", "ilo-redfish"),
     readAction("netapp.live-state", "NetApp Live Check", "netapp", "netapp-ontap"),
+    readAction("netapp.validate-setup", "Validate NetApp Setup", "netapp", "netapp-ontap"),
+    readAction("netapp.iscsi-setup-preview", "Preview NetApp iSCSI", "netapp", "netapp-ontap"),
+    readAction("netapp.iscsi-setup-validate", "Validate NetApp iSCSI", "netapp", "netapp-ontap"),
     readAction("netapp.nfs-setup-validate", "Validate NFS", "netapp", "netapp-ontap"),
     readAction("netapp.console-autodiscovery", "Refresh NetApp Consoles", "netapp", "netapp-ontap"),
     readAction("netapp.component-firmware-inventory", "Refresh ONTAP", "netapp", "netapp-ontap"),
