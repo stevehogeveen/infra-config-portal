@@ -5679,7 +5679,7 @@ export function OperatorValidationPage({ labProfileState }: OperatorPageProps) {
         <h1>Validation</h1>
         <p>Is this kit ready to hand off, and what is the one check to run next?</p>
       </div>
-      <Feedback loading={loading && !validation} error={error} />
+      <Feedback loading={loading && Boolean(activeProfile) && !validation} error={error} />
       <section className="validation-readiness-surface" aria-label="Readiness Check">
         <Card className="validation-readiness-card" hover={false}>
           <CardHeader>

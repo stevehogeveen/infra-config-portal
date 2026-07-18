@@ -1986,6 +1986,19 @@ test("validation readiness card hides raw provider-mode vocabulary in blockers",
   await expect(readiness).not.toContainText(/\bruntime\b/i);
 });
 
+test("validation no-kit state does not show stale loading feedback", async ({ page }) => {
+  labProfileScenario = "none";
+  await page.route("**/api/v1/lab/validation", async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    return json(route, labValidationNotChecked());
+  });
+
+  await page.goto("/validation");
+
+  await expect(page.getByLabel("Readiness Check")).toBeVisible();
+  await expect(page.locator(".operator-feedback", { hasText: "Loading" })).toHaveCount(0);
+});
+
 test("storage iSCSI preview apply and validation buttons expose the honest guarded path", async ({ page }) => {
   await page.goto("/overview");
   await openOperatorDetails(page);
