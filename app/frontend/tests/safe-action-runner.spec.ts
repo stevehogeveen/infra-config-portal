@@ -223,6 +223,29 @@ async function openWorkspaceAdvanced(page: Page, workspaceName: string) {
   return advanced;
 }
 
+async function visibleMainText(page: Page) {
+  return page.locator("main.content").evaluate((root) => {
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    const chunks: string[] = [];
+    let node = walker.nextNode();
+    while (node) {
+      const parent = node.parentElement;
+      if (parent) {
+        const closedDetails = parent.closest("details:not([open])");
+        const insideClosedDetailsBody = closedDetails && !parent.closest("summary");
+        let visible = !insideClosedDetailsBody;
+        for (let element: Element | null = parent; visible && element && element !== root; element = element.parentElement) {
+          const style = window.getComputedStyle(element);
+          visible = style.display !== "none" && style.visibility !== "hidden";
+        }
+        if (visible) chunks.push(node.textContent || "");
+      }
+      node = walker.nextNode();
+    }
+    return chunks.join(" ").replace(/\s+/g, " ").trim();
+  });
+}
+
 async function expectResponsiveShell(page: Page, path: string, viewport: { width: number; height: number }) {
   await page.setViewportSize(viewport);
   await page.goto(path);
@@ -1366,6 +1389,32 @@ test("top nav and map workspaces expose run controls without dead settings drawe
     await expect(page.getByRole("button", { name: "Settings" })).toHaveCount(0);
     await expect(page.locator("section.tab-settings-drawer")).toHaveCount(0);
     await expect(page.getByRole("button", { name: runButtonName }).first()).toBeVisible();
+  }
+});
+
+test("operator button matrix keeps default actions simple and safe", async ({ page }) => {
+  const forbiddenDefaultCopy = /ACKNOWLEDGE|NETAPP_ISCSI_SETUP|APPLY NETAPP ISCSI SETUP|Apply iSCSI|Factory reset|Reset HPE RAID|Rebuild ESXi|PROVIDER_MODE|PROVIDER MODE/i;
+  const surfaces: Array<{ label: string; path: string; primary: () => ReturnType<Page["locator"]> }> = [
+    { label: "Overview", path: "/overview", primary: () => page.getByTestId("operator-home-primary-action") },
+    { label: "Lab Defaults", path: "/lab-defaults", primary: () => page.locator(".lab-defaults-actions .operator-primary-button") },
+    { label: "Network", path: "/network", primary: () => page.getByLabel("Switch Access").locator(".operator-primary-button") },
+    { label: "Server", path: "/server", primary: () => page.getByLabel("Compute Access").locator(".operator-primary-button") },
+    { label: "Storage", path: "/storage", primary: () => page.locator(".storage-path-actions .operator-primary-button") },
+    { label: "Virtualization", path: "/virtualization", primary: () => page.getByLabel("VM Management").locator(".operator-primary-button") },
+    { label: "Firmware", path: "/firmware-upgrades", primary: () => page.getByRole("button", { name: "Check versions" }) },
+    { label: "Software Media", path: "/media", primary: () => page.locator(".page-actions .primary") },
+    { label: "Validation", path: "/validation", primary: () => page.locator(".validation-readiness-actions .operator-primary-button") },
+    { label: "Run Center", path: "/run-center", primary: () => page.getByTestId("lab-build-primary-action") }
+  ];
+
+  for (const surface of surfaces) {
+    await page.goto(surface.path);
+    const primary = surface.primary();
+    await expect(primary, `${surface.label} has one primary action`).toHaveCount(1);
+    await expect(primary.first(), `${surface.label} primary action is visible`).toBeVisible();
+    const label = await primary.first().evaluate((element) => (element.textContent || "").replace(/\s+/g, " ").trim());
+    expect(label, `${surface.label} primary action has a short label`).toMatch(/^[^.!?]{1,36}$/);
+    expect(await visibleMainText(page), `${surface.label} hides guarded/destructive copy by default`).not.toMatch(forbiddenDefaultCopy);
   }
 });
 
