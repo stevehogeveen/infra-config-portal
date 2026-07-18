@@ -5836,3 +5836,94 @@ Safety boundaries:
 
 Approval question:
 Do you approve the final mobile/responsive sweep and the full nine-item simplification scope as complete?
+
+### VERDICT: Final mobile/responsive sweep (commit 0b170d6) — APPROVED
+
+Read the diff: the fix is exactly the classic flex-overflow correction (`min-width: 0` on the
+flex child, `overflow-wrap: anywhere` on the text) plus a proper two-column mobile grid for
+Lab Defaults' device rows - minimal, correct, no impact on any other approved surface's layout.
+The new test (`operator surfaces stay responsive across mobile and desktop widths`) is
+genuinely rigorous: all 11 approved routes checked at both 375px and 1440px, asserting no
+document/body horizontal overflow, plus a mobile header-height budget (<=220px or 25% of
+viewport height) - this is a real, load-bearing regression test, not a token check.
+
+Built clean, ran `npm run test:component` (2/2) and the new sweep test myself (1/1, covering
+all 11 routes x 2 widths). Then went further and independently live-verified at 375px myself,
+outside the test harness, on the exact page that broke (`/lab-defaults`) plus two more
+(`/firmware-upgrades`, `/storage`): all three read `docWidth === bodyWidth === innerWidth ===
+375` - zero overflow, confirmed via direct DOM measurement, not just trusting the test. Also
+checked `/overview` specifically for the "map stays the hero" requirement: header height
+~175px (well under budget, down from the ~242px I flagged as a real problem in my very first
+walkthrough of this app), topology map visible and positioned immediately after the header -
+still the dominant first element at mobile width.
+
+Final mobile/responsive sweep is APPROVED. Item 9 done - all nine implementation-order items
+are now complete.
+
+---
+
+## SESSION SUMMARY - Lab Builder CXO/Codex Design Review (2026-07-17, ~7 hours total across the
+2-hour + 6-hour extension)
+
+**Approved surfaces (14, all verified via diff read + isolated build + tests run personally +
+live browser verification, not review-by-report):**
+1. Firmware (four-column decision table, no vocabulary leaks, honest upgrade/bypass states)
+2. Overview / topology map (map-first hero, 3-line device cards, honest not-checked states)
+3. Lab Defaults (Network + Shared sign-in cards, Advanced-tier policy form, real device toggles)
+4. Storage Path (one card, one primary action, PROVIDER_MODE vocabulary leak found and fixed)
+5. Validation Readiness (Handoff stays in Details always, Danger Zone visually separated)
+6. Network/Cisco (Switch Access card, Advanced switch plan nesting)
+7. Server/Compute & iLO (Advanced RAID plan nesting, matches Network precedent)
+8. Virtualization (VM Management card, single-server mode never shows vCenter as a blocker,
+   real strongestStatus() honesty-bug fix)
+9. Shell Navigation (final sidebar labels, Virtualization link added, "New kit" control)
+10. Run Center consolidation (route-level One Fact/One Computation - Overview now navigates to
+    the canonical `/run-center` instead of duplicating build-journey state inline)
+11. Saved Kits (kit create/switch/history only; Lab Defaults remains the sole shared-defaults
+    editor - Replace, Don't Add enforced)
+12. Software Media (renamed, four-field card, raw metadata demoted to Advanced)
+13. Testing Assistant (redacted queue-a-fix-request flow, no hardware action)
+14. Validation/Audit route-gate (Advanced-only for `/audit-events` and `/workflow-runs/:id`)
+
+**Deferred, not implemented (intentionally out of scope this session):**
+- VM Requests / `/requests*` - never part of the original ten-item review order; revisit once
+  this scope is proven end to end.
+- Validation/Reports "Handoff Readiness" refinement - a real, well-scoped improvement (dynamic
+  primary action based on readiness/handoff state) surfaced late in the session; good candidate
+  for the next design pass, not started here.
+
+**Unresolved design issues:** none blocking. Two non-blocking observations logged during review
+(pre-existing raw firmware filenames inside Server's "Server Setup Shape" Details sub-section;
+Validation's Details tier is dense and could get its own future simplification pass) - both
+explicitly scoped as future work, not defects in what was approved.
+
+**Process notes worth carrying forward:**
+- A real `PROVIDER_MODE=...` vocabulary leak was found live on Storage Path, root-caused
+  precisely, fixed, and the fix pattern (three-token regex: `PROVIDER MODE=`/`PROVIDER_MODE=`/
+  bare `provider`/`runtime`) was proactively reapplied by Codex on every subsequent surface from
+  Network onward without being asked again each time.
+- Backend redaction hardening (three commits, different author identity, likely a parallel
+  pass) closed a real gap in Testing Assistant's queued free-text payload - flagged for the
+  record, outside this session's frontend scope, appears additive/protective only.
+- Mid-session, reviewing a commit while newer uncommitted work existed in the same files
+  required stashing to get a clean isolated build; the stash conflicted with further work
+  written during the stash window and was resolved safely (confirmed it held nothing unique,
+  dropped it, left Codex's newer work untouched) - worth remembering this pattern if it recurs.
+- Codex's "safe fallback" behavior (auditing and queuing the next surface with a full proposed
+  direction whenever no verdict had landed yet, rather than stalling) kept the whole session
+  moving and produced consistently high-quality, build-ready proposals that needed approval and
+  minor refinement more often than rewriting from scratch.
+
+**Recommended next steps:**
+1. Merge this branch's accumulated work (verify no other pending review packets exist first).
+2. Next design pass: implement the deferred Validation/Reports "Handoff Readiness" refinement.
+3. Revisit VM Requests scope only after the above is stable.
+4. Consider a lightweight pass on Details-tier density (Server, Validation) flagged as
+   non-blocking observations above.
+
+**Overall verdict: APPROVED.** The full nine-item Lab Builder simplicity pass is complete. Every
+approved surface was verified against the mockup, the Simplicity Contract, and the five-second
+test - not approved from tests or reports alone in any case this session.
+
+Thank you for the disciplined back-and-forth throughout - this was a genuinely productive
+review cycle.
