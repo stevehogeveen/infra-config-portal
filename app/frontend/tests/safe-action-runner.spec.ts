@@ -1854,6 +1854,53 @@ test("network default shows one switch access card and hides technical detail", 
   await expect(page.getByRole("button", { name: /Apply Bootstrap/i })).toHaveCount(0);
 });
 
+test("setup defaults keep detail, edit, and proof surfaces behind the secondary button", async ({ page }) => {
+  const surfaces = [
+    {
+      cardLabel: "Switch Access",
+      detailLabel: "Network details",
+      hiddenCopy: [/Switch configuration cockpit/i, /Current versus intent/i, /VLANs and gateways/i, /Apply Bootstrap/i],
+      path: "/network",
+      primaryName: "Run switch check"
+    },
+    {
+      cardLabel: "Compute Access",
+      detailLabel: "Compute details",
+      hiddenCopy: [/Server checks/i, /Server configure/i, /Advanced RAID plan/i, /Server proof/i],
+      path: "/server",
+      primaryName: "Run server check"
+    },
+    {
+      cardLabel: "Storage Path",
+      detailLabel: "Storage path details",
+      hiddenCopy: [/Storage readiness/i, /Storage proof/i, /Advanced storage actions/i, /Apply iSCSI/i],
+      path: "/storage",
+      primaryName: "Run storage check"
+    },
+    {
+      cardLabel: "VM Management",
+      detailLabel: "VM details",
+      hiddenCopy: [/Virtualization checks/i, /Virtualization configure/i, /Virtualization setup shape/i, /Virtualization proof/i],
+      path: "/virtualization",
+      primaryName: "Run VM check"
+    }
+  ];
+
+  for (const surface of surfaces) {
+    await page.goto(surface.path);
+    const mainText = await visibleMainText(page);
+    const card = page.getByLabel(surface.cardLabel);
+    await expect(card, `${surface.cardLabel} card is the default operator surface`).toBeVisible();
+    await expect(card.locator(".operator-primary-button"), `${surface.cardLabel} exposes one primary action`).toHaveCount(1);
+    await expect(card.getByRole("button", { name: surface.primaryName })).toBeVisible();
+    await expect(card.getByRole("button", { name: /View/i })).toHaveCount(1);
+    await expect(page.getByLabel(surface.detailLabel), `${surface.detailLabel} stays closed by default`).toHaveCount(0);
+    for (const hiddenCopy of surface.hiddenCopy) {
+      expect(mainText, `${surface.path} keeps ${hiddenCopy} out of the default view`).not.toMatch(hiddenCopy);
+    }
+  }
+});
+
 test("network no-kit state does not show stale loading feedback", async ({ page }) => {
   labProfileScenario = "none";
   await page.route("**/api/v1/providers/cisco-ios-xe/setup-readiness", async (route) => {
