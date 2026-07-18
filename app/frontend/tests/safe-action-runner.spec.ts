@@ -2206,7 +2206,7 @@ test("operator button matrix keeps default actions simple and safe", async ({ pa
     { label: "Overview", path: "/overview", primary: () => page.getByTestId("operator-home-primary-action") },
     { label: "Lab Defaults", path: "/setup/defaults", primary: () => page.locator(".lab-defaults-actions .operator-primary-button") },
     { label: "Network", path: "/network", primary: () => page.locator("section[aria-label='Cisco switch workspace'] > .design-device-primary-action .design-plan-action") },
-    { label: "Server", path: "/server", primary: () => page.getByLabel("Compute Access").locator(".operator-primary-button") },
+    { label: "Server", path: "/server", primary: () => page.locator("section[aria-label='DL360 Gen10 workspace'] > .design-device-primary-action .design-plan-action") },
     { label: "Storage", path: "/storage", primary: () => page.locator(".storage-path-actions .operator-primary-button") },
     { label: "Virtualization", path: "/virtualization", primary: () => page.getByLabel("VM Management").locator(".operator-primary-button") },
     { label: "Firmware", path: "/firmware-upgrades", primary: () => page.getByRole("button", { name: "Check versions" }) },
@@ -2246,8 +2246,8 @@ test("operator primary check buttons run only expected read-only workflows", asy
       path: "/network"
     },
     {
-      click: () => page.getByLabel("Compute Access").getByRole("button", { name: "Run server check" }).click(),
-      expectedActionIds: ["ilo.reachability"],
+      click: () => page.locator("section[aria-label='DL360 Gen10 workspace'] > .design-device-primary-action").getByRole("button", { name: "Test DL360 Gen10" }).click(),
+      expectedActionIds: ["esxi.management-validation"],
       label: "Server",
       path: "/server"
     },
@@ -2352,14 +2352,6 @@ test("network default opens canonical Cisco workspace and hides retired network 
 test("setup defaults keep detail, edit, and proof surfaces behind the secondary button", async ({ page }) => {
   const surfaces = [
     {
-      cardLabel: "Compute Access",
-      detailLabel: "Compute details",
-      hiddenCopy: [/Server checks/i, /Server configure/i, /Advanced RAID plan/i, /Server proof/i],
-      path: "/server",
-      primaryName: "Run server check",
-      secondaryName: "Open compute details"
-    },
-    {
       cardLabel: "Storage Path",
       detailLabel: "Storage path details",
       hiddenCopy: [/Storage readiness/i, /Storage proof/i, /Advanced storage actions/i, /Apply iSCSI/i],
@@ -2386,6 +2378,16 @@ test("setup defaults keep detail, edit, and proof surfaces behind the secondary 
   await expect(page.getByLabel("Switch Access")).toHaveCount(0);
   await expect(page.getByLabel("Network details")).toHaveCount(0);
   expect(await visibleMainText(page), "/network keeps old Network tabs out of the default view").not.toMatch(/Switch configuration cockpit|Current versus intent|VLANs and gateways|Apply Bootstrap/i);
+
+  await page.goto("/server");
+  const serverWorkspace = page.locator("section[aria-label='DL360 Gen10 workspace']");
+  await expect(serverWorkspace).toBeVisible();
+  await expect(serverWorkspace.locator(":scope > .design-device-primary-action .design-plan-action"), "Server workspace exposes one primary action").toHaveCount(1);
+  await expect(serverWorkspace.getByRole("button", { name: "Test DL360 Gen10" })).toBeVisible();
+  await expect(serverWorkspace.getByLabel("Server workspace checks"), "Server proof stays behind Evidence and diagnostics").not.toBeVisible();
+  await expect(page.getByLabel("Compute Access")).toHaveCount(0);
+  await expect(page.getByLabel("Compute details")).toHaveCount(0);
+  expect(await visibleMainText(page), "/server keeps old Compute tabs out of the default view").not.toMatch(/Server checks|Server configure|Advanced RAID plan|Server proof|Run server check/i);
 
   for (const surface of surfaces) {
     await page.goto(surface.path);
@@ -2492,131 +2494,77 @@ test("network surface has no horizontal overflow on mobile", async ({ page }) =>
   expect(overflow).toBeLessThanOrEqual(1);
 });
 
-test("server default shows one compute access card and hides technical detail", async ({ page }) => {
+test("server default opens canonical Compute workspace and hides retired server panels", async ({ page }) => {
   await page.goto("/server");
 
-  const access = page.getByLabel("Compute Access");
-  await expect(access.getByRole("heading", { name: "HPE DL360 Gen10" })).toBeVisible();
-  await expect(access.locator("dt")).toHaveText(["Host", "iLO IP", "ESXi IP", "Storage role"]);
-  await expect(access.locator(".ui-card-header")).toContainText(/Blocked|Ready|Not checked/);
-  await expect(access.getByRole("button", { name: "Run server check" })).toBeVisible();
-  await expect(access.getByRole("button", { name: "Open compute details" })).toBeVisible();
-  await expect(access.getByRole("button", { name: "View details" })).toHaveCount(0);
-  await expect(access.locator(".operator-primary-button")).toHaveCount(1);
-  await expect(access.locator(".ui-card-content .server-access-actions")).toBeVisible();
-  await expect(access.locator(".ui-card-footer")).toHaveCount(0);
-
+  const launcher = page.getByLabel("Compute and iLO setup launcher");
+  const workspace = page.locator("section[aria-label='DL360 Gen10 workspace']");
+  await expect(launcher).toBeVisible();
+  await expect(workspace).toBeVisible();
+  await expect(workspace.getByRole("heading", { name: "DL360 Gen10" })).toBeVisible();
   await expect(page.locator(".operator-feedback", { hasText: "Loading" })).toHaveCount(0);
+  await expect(page.getByLabel("Compute and iLO launcher summary")).toContainText("iLO IP");
+  await expect(page.getByLabel("Compute and iLO launcher summary")).toContainText("ESXi IP");
+  await expect(page.getByLabel("Compute and iLO launcher summary")).toContainText("Storage path");
+  await expect(page.getByLabel("Compute and iLO launcher summary")).toContainText("Service Pack");
+  await expect(workspace.getByLabel("DL360 Gen10 main setup fields")).toContainText("iLO IP");
+  await expect(workspace.getByLabel("DL360 Gen10 main setup fields")).toContainText("ESXi IP");
+  await expect(workspace.getByLabel("DL360 Gen10 credential setup")).toContainText("Reference only");
+  await expect(workspace.locator(":scope > .design-device-primary-action .design-plan-action")).toHaveCount(1);
+  await expect(workspace.getByRole("button", { name: "Test DL360 Gen10" })).toBeVisible();
+  await expect(workspace.getByLabel("Server workspace checks")).not.toBeVisible();
+  await expect(page.locator(".operator-feedback", { hasText: "Loading" })).toHaveCount(0);
+  await expect(page.getByLabel("Compute Access")).toHaveCount(0);
   await expect(page.locator("section[aria-label='Compute details']")).toHaveCount(0);
   await expect(page.getByRole("textbox", { name: "Change this page" })).toHaveCount(0);
   await expect(page.getByText("Server setup shape")).toHaveCount(0);
   await expect(page.getByText("Local Storage Readiness")).toHaveCount(0);
   await expect(page.getByText("Server readiness at a glance")).toHaveCount(0);
   await expect(page.getByText("RAID controller model")).toHaveCount(0);
-  await expect(access).not.toContainText(/\bprovider\b/i);
-  await expect(access).not.toContainText(/\bruntime\b/i);
-  await expect(access.getByRole("button", { name: /reset|rebuild|apply/i })).toHaveCount(0);
+  await expect(workspace).not.toContainText(/\bprovider\b/i);
+  await expect(workspace).not.toContainText(/\bruntime\b/i);
+  await expect(workspace.getByRole("button", { name: /reset|rebuild|apply/i })).toHaveCount(0);
 });
 
-test("server details reveal saved checks and nested advanced RAID plan", async ({ page }) => {
+test("server workspace reveals migrated setup, storage path, service pack, and RAID evidence", async ({ page }) => {
   await page.goto("/server");
-  await page.getByLabel("Compute Access").getByRole("button", { name: "Open compute details" }).click();
 
-  const details = page.locator("section[aria-label='Compute details']");
-  await expect(details).toBeVisible();
-  const detailSections = details.getByLabel("Compute detail sections");
-  await expect(detailSections).toContainText("Access");
-  await expect(detailSections).toContainText("Checks");
-  await expect(detailSections).toContainText("Setup");
-  await expect(detailSections).toContainText("Path");
-  await expect(detailSections).toContainText("RAID");
-  await expect(detailSections).toContainText("Proof");
-  await expect(detailSections.getByLabel("Compute detail section", { exact: true })).toHaveValue("access");
-  await expect(detailSections.getByRole("button")).toHaveCount(0);
-  await expect(details.locator(".server-detail-panel")).toHaveCount(1);
-  await expect(details).toContainText("iLO IP");
-  await expect(details).toContainText("ESXi IP");
-  await expect(details.getByLabel("Server configure")).toHaveCount(0);
-  await detailSections.getByLabel("Compute detail section", { exact: true }).selectOption("checks");
-  await expect(details).toContainText("iLO access");
-  await expect(details).toContainText("ESXi management");
-  await expect(details).toContainText("Local storage");
-  await expect(details).toContainText("Firmware");
-  await detailSections.getByLabel("Compute detail section", { exact: true }).selectOption("setup");
-  const serverConfigure = details.getByLabel("Server configure");
-  await expect(serverConfigure).toBeVisible();
-  await expect(serverConfigure).toContainText("Compute setup");
-  const computeSummary = serverConfigure.getByLabel("Compute setup summary");
-  await expect(computeSummary).toBeVisible();
-  await expect(computeSummary).toContainText("iLO IP");
-  await expect(computeSummary).toContainText("ESXi mgmt IP");
-  await expect(computeSummary).toContainText("Embedded NIC");
-  await expect(serverConfigure.getByRole("textbox", { exact: true, name: "iLO IP" })).toBeHidden();
-  await expect(serverConfigure.getByRole("textbox", { exact: true, name: "ESXi mgmt IP" })).toBeHidden();
-  await expect(serverConfigure.getByRole("textbox", { exact: true, name: "Initial iLO IP" })).toBeHidden();
-  await expect(serverConfigure.getByRole("textbox", { exact: true, name: "Embedded NIC" })).toBeHidden();
-  await expect(serverConfigure.getByRole("textbox", { exact: true, name: "Subnet" })).toBeHidden();
-  await expect(serverConfigure.getByRole("textbox", { exact: true, name: "Gateway" })).toBeHidden();
-  await expect(serverConfigure.getByRole("textbox", { exact: true, name: "DNS servers" })).toBeHidden();
-  await expect(serverConfigure.getByRole("button", { name: "Save compute setup" })).toBeHidden();
-  await expect(serverConfigure.getByText("Edit compute values")).toBeVisible();
-  await serverConfigure.getByText("Edit compute values").click();
-  await expect(serverConfigure.getByRole("textbox", { exact: true, name: "iLO IP" })).toBeVisible();
-  await expect(serverConfigure.getByRole("textbox", { exact: true, name: "ESXi mgmt IP" })).toBeVisible();
-  await expect(serverConfigure.getByRole("button", { name: "Save compute setup" })).toHaveCount(1);
-  await expect(serverConfigure.getByText("Save As Lab Setup")).toHaveCount(0);
-  await expect(serverConfigure.getByText("Save as profile")).toHaveCount(0);
-  await expect(serverConfigure.getByText("More compute values")).toBeVisible();
-  await serverConfigure.getByText("More compute values").click();
-  await expect(serverConfigure.getByRole("textbox", { exact: true, name: "Initial iLO IP" })).toBeVisible();
-  await expect(serverConfigure.getByRole("textbox", { exact: true, name: "Embedded NIC" })).toBeVisible();
-  await expect(serverConfigure.getByRole("textbox", { exact: true, name: "Subnet" })).toBeVisible();
-  await expect(serverConfigure.getByRole("textbox", { exact: true, name: "Gateway" })).toBeVisible();
-  await expect(serverConfigure.getByRole("textbox", { exact: true, name: "DNS servers" })).toBeVisible();
-  await expect(serverConfigure.getByRole("textbox", { exact: true, name: "NTP servers" })).toBeVisible();
-  await expect(serverConfigure.getByRole("textbox", { exact: true, name: "MTU" })).toBeVisible();
-  await detailSections.getByLabel("Compute detail section", { exact: true }).selectOption("path");
-  const pathPanel = details.getByLabel("Compute path");
-  await expect(pathPanel.getByRole("heading", { name: /Single Server Local VM Path|Server With Shared Storage Path/ })).toBeVisible();
-  await expect(pathPanel.getByLabel("Server path summary")).toBeVisible();
-  await expect(pathPanel.locator(".server-path-summary > div")).toHaveCount(3);
-  await expect(pathPanel.locator(".server-path-summary span")).toHaveText(["Needed", "Current", "Next"]);
-  await expect(pathPanel.getByLabel("Server actions")).toContainText("Open map workspace");
-  const pathDetails = pathPanel.getByLabel("Server path details");
-  await expect(pathDetails).toBeVisible();
-  await expect(pathDetails).not.toHaveAttribute("open", "");
-  await expect(pathPanel.getByText("Server setup path")).not.toBeVisible();
-  await expect(pathPanel.getByText("Optional shared-lab handoff")).not.toBeVisible();
-  await pathDetails.locator(":scope > summary").click();
-  await expect(pathPanel.getByText("Server setup path")).toBeVisible();
-  await expect(pathPanel.getByText("Optional shared-lab handoff")).toBeVisible();
+  const workspace = page.locator("section[aria-label='DL360 Gen10 workspace']");
+  await expect(workspace.getByLabel("DL360 Gen10 main setup fields")).toContainText("iLO IP");
+  await expect(workspace.getByLabel("DL360 Gen10 main setup fields")).toContainText("ESXi IP");
+  await expect(workspace.getByLabel("DL360 Gen10 credential setup")).toContainText("Server access sign-in");
+  await expect(workspace.getByLabel("DL360 Gen10 credential setup")).toContainText("ILO_TEST_PASSWORD");
+  await expect(workspace.getByLabel("DL360 Gen10 credential setup")).toContainText("ESXI_TEST_PASSWORD");
+  await expect(workspace.getByLabel("DL360 Gen10 edit settings")).toContainText("More settings");
+  const storageGroup = await openWorkspaceEditGroup(page, "DL360 Gen10", "Storage");
+  await expect(storageGroup).toContainText("RAID controller");
+  await expect(storageGroup).toContainText("Boot RAID");
+  await expect(storageGroup).not.toContainText("Data RAID");
+  await expect(workspace.getByLabel("Server workspace checks")).not.toBeVisible();
 
-  await detailSections.getByLabel("Compute detail section", { exact: true }).selectOption("raid");
-  await expect(page.getByLabel("Server drive bay map")).toBeVisible();
-  await expect(page.getByLabel("Server drive map summary")).toContainText("Drive bays");
-  await expect(page.getByLabel("Server drive map summary")).toContainText("Planned volumes");
-  await page.getByLabel("Planned server drive bays").getByRole("button", { name: /Bay 3/ }).click();
-  await expect(page.getByLabel("Selected drive bay plan")).toContainText("Bay 3");
-  await expect(page.getByLabel("Selected drive bay plan")).toContainText("datastore");
-  await expect(page.getByLabel("Selected drive bay plan")).toContainText("Real storage changes still require confirmation");
-  const advanced = page.locator("details.server-advanced-raid-plan");
-  await expect(advanced.locator(":scope > summary")).toContainText("Advanced RAID proof");
-  await expect(page.locator(".local-storage-readiness-card")).toBeHidden();
-  await advanced.locator(":scope > summary").click();
-  await expect(page.locator(".local-storage-readiness-card")).toBeVisible();
-  await expect(page.locator(".local-storage-readiness-card")).toContainText("Local Storage Readiness");
+  const advanced = await openWorkspaceAdvanced(page, "DL360 Gen10");
+  const serverControls = advanced.getByLabel("Server workspace checks");
+  await expect(serverControls).toBeVisible();
+  await expect(serverControls).toContainText("ESXi and RAID checks");
+  await expect(serverControls).toContainText("Validate RAID");
+  await expect(serverControls).toContainText("Preview RAID");
+  await expect(serverControls).toContainText("Check RAID Pending");
+  await expect(serverControls).toContainText("HPE Service Pack");
+  await expect(serverControls).toContainText("Storage path");
+  await expect(serverControls.getByLabel("RAID guarded write boundary")).toContainText("stay off this map");
+  await expect(page.getByRole("button", { name: /Reset HPE RAID|Apply RAID|Rebuild ESXi/i })).toHaveCount(0);
 });
 
-test("server check runs through the read-only action endpoint", async ({ page }) => {
+test("server workspace primary check runs through the ESXi read-only action endpoint", async ({ page }) => {
   await page.goto("/server");
 
   const runResponse = page.waitForResponse((response) =>
-    response.url().includes("/api/v1/workflows/actions/ilo.reachability/run") &&
+    response.url().includes("/api/v1/workflows/actions/esxi.management-validation/run") &&
     response.request().method() === "POST"
   );
-  await page.getByLabel("Compute Access").getByRole("button", { name: "Run server check" }).click();
+  await page.locator("section[aria-label='DL360 Gen10 workspace'] > .design-device-primary-action").getByRole("button", { name: "Test DL360 Gen10" }).click();
   await expect((await runResponse).ok()).toBeTruthy();
-  await expect(page.getByLabel("Compute Access")).toContainText("iLO Live Check:");
+  await expect(page.locator("section[aria-label='DL360 Gen10 workspace']")).toContainText("ESXi Live Check:");
 });
 
 test("server blocker copy hides internal mode vocabulary", async ({ page }) => {
@@ -2629,15 +2577,16 @@ test("server blocker copy hides internal mode vocabulary", async ({ page }) => {
   }));
 
   await page.goto("/server");
-  const access = page.getByLabel("Compute Access");
-  await expect(access).toContainText("Needs attention");
-  const text = await access.textContent();
+  const workspace = page.locator("section[aria-label='DL360 Gen10 workspace']");
+  await expect(workspace).toBeVisible();
+  await expect(workspace.getByLabel("Server workspace checks")).not.toBeVisible();
+  const text = await visibleMainText(page);
   expect(text ?? "").not.toMatch(/PROVIDER[_ ]MODE/i);
   expect(text ?? "").not.toMatch(/\bprovider\b/i);
   expect(text ?? "").not.toMatch(/\bruntime\b/i);
 });
 
-test("server RAID blocker copy is plain in operator mode", async ({ page }) => {
+test("server RAID blocker copy stays out of default operator mode", async ({ page }) => {
   await page.route("**/api/v1/providers/ilo-redfish/hpe-raid-plan-preview", (route) => json(route, {
     ...hpeRaidPlanPreview(),
     blockers: ["Saved intent requests destructive wipe/delete planning. Execution remains disabled."],
@@ -2646,10 +2595,11 @@ test("server RAID blocker copy is plain in operator mode", async ({ page }) => {
   }));
 
   await page.goto("/server");
-  const access = page.getByLabel("Compute Access");
-  await expect(access).toContainText("A saved RAID change needs review. Applying it is locked until you explicitly approve it.");
-  await expect(access).not.toContainText("destructive wipe/delete planning");
-  await expect(access).not.toContainText("Execution remains disabled");
+  const workspace = page.locator("section[aria-label='DL360 Gen10 workspace']");
+  await expect(workspace).toBeVisible();
+  await expect(workspace.getByLabel("Server workspace checks")).not.toBeVisible();
+  const text = await visibleMainText(page);
+  expect(text).not.toMatch(/destructive wipe\/delete planning|Execution remains disabled|Applying it is locked/i);
 });
 
 test("server surface has no horizontal overflow on mobile", async ({ page }) => {

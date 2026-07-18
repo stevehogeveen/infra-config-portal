@@ -1367,37 +1367,25 @@ function networkSwitchAccessLabel(ciscoReadiness: ProviderProbeResult | null, co
   return "Not checked";
 }
 
-export function OperatorServerPage({ labProfileState, onReloadLabProfile }: OperatorPageProps) {
+export function OperatorServerPage({ health, labProfileState, onReloadLabProfile }: OperatorPageProps) {
   const activeProfile = activeLabProfile(labProfileState);
   const address = activeAddressPlan(activeProfile);
-  const global = activeProfile?.global_settings ?? null;
-  const [actions, setActions] = useState<WorkflowAction[]>([]);
-  const [providers, setProviders] = useState<ProviderStatus[]>([]);
+  const features = activeProfile?.features ?? null;
+  const [workflowActions, setWorkflowActions] = useState<WorkflowAction[]>([]);
   const [firmwareSummaries, setFirmwareSummaries] = useState<FirmwareSummary[]>([]);
-  const [raidPlan, setRaidPlan] = useState<ProviderProbeResult | null>(null);
-  const [esxiReadiness, setEsxiReadiness] = useState<ProviderProbeResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [detailsOpen, setDetailsOpen] = useState(false);
-  const [activeDetailSection, setActiveDetailSection] = useState<ServerDetailSectionId>("access");
-  const [runState, setRunState] = useState<WorkflowRunState>(emptyRunState);
 
-  async function load() {
+  async function loadWorkspaceData() {
     setError("");
     setLoading(true);
     try {
-      const [nextActions, nextProviders, nextFirmware, nextRaidPlan, nextEsxiReadiness] = await Promise.all([
+      const [nextActions, nextFirmware] = await Promise.all([
         safeApi(api.workflowActions, [] as WorkflowAction[]),
-        safeApi(api.providers, [] as ProviderStatus[]),
-        safeApi(api.firmwareSummary, [] as FirmwareSummary[]),
-        safeApi(api.hpeRaidPlanPreview, null),
-        safeApi(api.esxiInstallReadiness, null)
+        safeApi(api.firmwareSummary, [] as FirmwareSummary[])
       ]);
-      setActions(Array.isArray(nextActions) ? nextActions : []);
-      setProviders(Array.isArray(nextProviders) ? nextProviders : []);
+      setWorkflowActions(Array.isArray(nextActions) ? nextActions : []);
       setFirmwareSummaries(Array.isArray(nextFirmware) ? nextFirmware : []);
-      setRaidPlan(nextRaidPlan as ProviderProbeResult | null);
-      setEsxiReadiness(nextEsxiReadiness);
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -1405,346 +1393,62 @@ export function OperatorServerPage({ labProfileState, onReloadLabProfile }: Oper
     }
   }
 
-  useEffect(() => {
-    void load();
-  }, []);
-
-  const iloStatus = providerStatus(providers, ["ilo", "redfish"]) || "not_checked";
-  const esxiStatus = asString(esxiReadiness?.status) || providerStatus(providers, ["esxi"]) || "not_checked";
-  const raidStatus = asString(raidPlan?.status) || "not_checked";
-  const serverStatus = strongestStatus([iloStatus, esxiStatus, raidStatus]);
-  const currentView = serverCurrentView({ address, esxiReadiness, iloStatus, raidPlan, raidStatus });
-  const serverRows = useMemo<OperatorObjectRow[]>(
-    () => [
-      {
-        checkedAt: currentView.checkedAt,
-        details: [
-          { label: "URL", value: address.ilo ? `https://${address.ilo}` : "Not set up yet" },
-          { label: "Credentials", value: "Configured or missing only" },
-          { label: "Power actions", value: "Guarded" }
-        ],
-        freshness: currentView.freshness,
-        id: "ilo",
-        nextAction: "Run Server Live Check before inventory or firmware work.",
-        source: currentView.source,
-        status: iloStatus,
-        summary: "HPE iLO management endpoint for the server.",
-        target: address.ilo ? `https://${address.ilo}` : "Not set up yet",
-        title: "HPE iLO",
-        type: "Management"
-      },
-      {
-        checkedAt: currentView.checkedAt,
-        details: [
-          { label: "Management IP", value: displayAddress(address.esxi_management), source: "Saved setup" },
-          { label: "Next safe action", value: humanize(asString(esxiReadiness?.next_safe_action) || "Validate ESXi after any server change.") }
-        ],
-        freshness: currentView.freshness,
-        id: "esxi",
-        nextAction: humanize(asString(esxiReadiness?.next_safe_action) || "Run Server Live Check."),
-        source: currentView.source,
-        status: esxiStatus,
-        summary: asString(esxiReadiness?.message) || "ESXi management readiness.",
-        target: displayAddress(address.esxi_management),
-        title: "ESXi Management",
-        type: "Hypervisor"
-      },
-      {
-        checkedAt: currentView.checkedAt,
-        details: [
-          { label: "Layout", value: raidLayoutLabel(raidPlan), status: raidStatus },
-          { label: "Controller", value: raidControllerModels(raidPlan) },
-          { label: "Warnings", value: String(stringArray(raidPlan?.warnings).length) }
-        ],
-        freshness: currentView.freshness,
-        id: "raid",
-        nextAction: "Validate RAID after storage layout changes.",
-        source: sourceLabel(raidPlan),
-        status: raidStatus,
-        summary: "Smart Array plan and current storage controller state.",
-        target: raidLayoutLabel(raidPlan),
-        title: "RAID Layout",
-        type: "Storage controller",
-        warnings: stringArray(raidPlan?.warnings)
-      },
-      {
-        checkedAt: currentView.checkedAt,
-        details: [
-          { label: "Service Pack", value: servicePackSummary(firmwareSummaries), source: "Firmware files" },
-          { label: "iLO / BIOS", value: firmwareVersion(firmwareSummaries, "ilo") },
-          { label: "Smart Array", value: firmwareVersion(firmwareSummaries, "raid") }
-        ],
-        freshness: currentView.freshness,
-        id: "hpe-firmware",
-        nextAction: "Open Firmware Upgrades to select the HPE Service Pack file.",
-        source: "Firmware files",
-        status: servicePackSummary(firmwareSummaries) === "Scan needed" ? "not_checked" : "ready",
-        summary: "HPE Service Pack, BIOS, iLO, and Smart Array firmware context.",
-        target: servicePackSummary(firmwareSummaries),
-        title: "HPE Firmware",
-        type: "Firmware"
-      }
-    ],
-    [address.esxi_management, address.ilo, currentView, esxiReadiness, esxiStatus, firmwareSummaries, iloStatus, raidPlan, raidStatus]
-  );
-  const byActionId = useMemo(() => new Map(actions.map((action) => [action.action_id, action])), [actions]);
-  const serverRunConfig: TabRunConfig = {
-    actionIds: serverCheckActionIds,
-    actions,
-    kind: "read",
-    label: "Run server check",
-    onReload: load
-  };
-  const serverAction = firstRunnableAction(byActionId, serverCheckActionIds, serverRunConfig);
-  const serverFallbackActionId = fallbackRunActionId(serverRunConfig, serverAction);
-  const serverDisabledReason = serverAction
-    ? disabledReasonForRunConfig(serverRunConfig, serverAction)
-    : serverFallbackActionId
-      ? ""
-      : disabledReasonForRunConfig(serverRunConfig, serverAction);
-  const computeAccess = serverComputeAccessCardModel({
-    activeProfile,
-    address,
-    currentView,
-    esxiReadiness,
-    iloStatus,
-    raidPlan,
-    raidStatus,
-    serverStatus
-  });
-  const servicePack = servicePackSummary(firmwareSummaries);
-  const firmwareStatus = servicePack === "Scan needed" ? "not_checked" : "ready";
-  const serverDetailRows = [
-    { current: displayAddress(address.ilo), item: "iLO access", status: iloStatus },
-    { current: displayAddress(address.esxi_management), item: "ESXi management", status: esxiStatus },
-    { current: raidLayoutLabel(raidPlan), item: "Local storage", status: raidStatus },
-    { current: servicePack, item: "Firmware", status: firmwareStatus }
-  ];
-
-  async function runServerCheck() {
-    const actionId = serverAction?.action_id ?? serverFallbackActionId;
-    if (!actionId || serverDisabledReason || runState.runningActionId) return;
-    setRunState({ error: "", message: "", runningActionId: actionId });
-    try {
-      const result = await api.runWorkflowAction(actionId);
-      setRunState({
-        error: "",
-        message: serverAction ? workflowRunMessage(serverAction, result) : workflowRunResultMessage("Run server check", result),
-        runningActionId: ""
-      });
-      await load();
-    } catch (err) {
-      setRunState({ error: errorMessage(err), message: "", runningActionId: "" });
+  async function reloadWorkspace() {
+    if (onReloadLabProfile) {
+      await onReloadLabProfile();
     }
+    await loadWorkspaceData();
   }
 
+  useEffect(() => {
+    void loadWorkspaceData();
+  }, []);
+
+  const serverModel = asString(activeProfile?.devices?.server_model).toLowerCase();
+  const serverPart: DesignPartId = serverModel === "gen10plus" || serverModel === "gen10+" ? "server-gen10plus" : "server-gen10";
+  const serverModelLabel = topologyServerModelLabel(activeProfile?.devices?.server_model);
+  const localStorageMode = features?.storage_location === "server_local" || features?.netapp_enabled === false;
+  const servicePack = servicePackSummary(firmwareSummaries);
+  const subnetState = topologySubnetState(address.subnet, health);
+  const workspaceTone: TopologyNodeTone = subnetState.status === "matches" ? "ready" : subnetState.status === "mismatch" ? "warning" : "unknown";
+
   return (
-    <OperatorPage title="Server">
-      <div className="operator-surface-heading">
+    <OperatorPage title="Compute & iLO">
+      <div className="operator-surface-heading server-workspace-heading">
         <p className="operator-kicker">Setup</p>
         <h1>Compute & iLO</h1>
-        <p>Can the compute host be reached, and what one safe server check should run next?</p>
+        <p>Set the host values once, then run read-only iLO, ESXi, and RAID checks from the server workspace.</p>
       </div>
-      <Feedback loading={loading && !activeProfile} error={error} />
-      <section className="network-access-surface server-access-surface" aria-label="Compute Access">
-        <Card className="network-access-card server-access-card" hover={false}>
-          <CardHeader>
-            <div>
-              <p className="operator-kicker">Compute access</p>
-              <h2>{computeAccess.host}</h2>
-            </div>
-            <StatusBadge label={computeAccess.stateLabel} status={computeAccess.badgeStatus} />
-          </CardHeader>
-          <CardContent>
-            <dl className="network-access-fields server-access-fields">
-              <div>
-                <dt>Host</dt>
-                <dd>{computeAccess.host}</dd>
-              </div>
-              <div>
-                <dt>iLO IP</dt>
-                <dd>{computeAccess.iloIp}</dd>
-              </div>
-              <div>
-                <dt>ESXi IP</dt>
-                <dd>{computeAccess.esxiIp}</dd>
-              </div>
-              <div>
-                <dt>Storage role</dt>
-                <dd>{computeAccess.storageRole}</dd>
-              </div>
-            </dl>
-            {computeAccess.reason && (
-              <div className="network-access-reason" role="note">
-                <strong>Needs attention</strong>
-                <span>{computeAccess.reason}</span>
-              </div>
-            )}
-            <div className="network-access-actions server-access-actions">
-              <button
-                className="operator-primary-button"
-                disabled={Boolean(serverDisabledReason) || Boolean(runState.runningActionId)}
-                onClick={() => void runServerCheck()}
-                title={serverDisabledReason || "Run server check"}
-                type="button"
-              >
-                <RefreshCw size={16} />
-                {runState.runningActionId ? "Checking" : "Run server check"}
-              </button>
-              <button
-                aria-expanded={detailsOpen}
-                className="secondary-button"
-                onClick={() => setDetailsOpen((current) => !current)}
-                type="button"
-              >
-                {detailsOpen ? "Hide compute details" : "Open compute details"}
-              </button>
-            </div>
-            {runState.message && <div className="operator-feedback network-access-feedback">{runState.message}</div>}
-            {runState.error && <div className="operator-feedback error network-access-feedback">{runState.error}</div>}
-          </CardContent>
-        </Card>
-      </section>
-      {detailsOpen && (
-        <section className="network-details server-details" aria-label="Compute details">
-          {(() => {
-            const sections = [
-              { id: "access" as ServerDetailSectionId, label: "Access", summary: "iLO, ESXi, next check" },
-              { id: "checks" as ServerDetailSectionId, label: "Checks", summary: "Storage and firmware signals" },
-              { id: "setup" as ServerDetailSectionId, label: "Setup", summary: "Saved compute fields" },
-              { id: "path" as ServerDetailSectionId, label: "Path", summary: "Local vs shared handoff" },
-              { id: "raid" as ServerDetailSectionId, label: "RAID", summary: "Advanced local storage" },
-              { id: "proof" as ServerDetailSectionId, label: "Proof", summary: "Advanced evidence" }
-            ];
-            const selectedSection = sections.find((section) => section.id === activeDetailSection) ?? sections[0];
-            return (
-              <label className="network-detail-switcher server-detail-switcher detail-topic-selector" aria-label="Compute detail sections">
-                <span>Detail view</span>
-                <select aria-label="Compute detail section" onChange={(event) => setActiveDetailSection(event.target.value as ServerDetailSectionId)} value={activeDetailSection}>
-                  {sections.map((section) => <option key={section.id} value={section.id}>{section.label}</option>)}
-                </select>
-                <strong>{selectedSection.summary}</strong>
-              </label>
-            );
-          })()}
-          <div className="network-detail-panel server-detail-panel" aria-label={`Compute ${activeDetailSection}`}>
-            {activeDetailSection === "access" && (
-            <Card className="network-details-card" hover={false}>
-              <CardHeader>
-                <div>
-                  <p className="operator-kicker">Details</p>
-                  <h2>Access and saved addresses</h2>
-                </div>
-                <StatusBadge label={displayStatus(serverStatus)} status={statusBadgeStatus(serverStatus)} />
-              </CardHeader>
-              <CardContent>
-                <ConfigValueList
-                  values={[
-                    { label: "Host", value: computeAccess.host, source: "Saved setup" },
-                    { label: "iLO IP", value: computeAccess.iloIp, source: "Saved setup", status: iloStatus },
-                    { label: "ESXi IP", value: computeAccess.esxiIp, source: "Saved setup", status: esxiStatus },
-                    { label: "Storage role", value: computeAccess.storageRole, source: "Saved setup" },
-                    { label: "Next check", value: humanize(asString(esxiReadiness?.next_safe_action) || "Run server check.") }
-                  ]}
-                />
-              </CardContent>
-            </Card>
-            )}
-            {activeDetailSection === "checks" && (
-            <Card className="network-details-card" hover={false}>
-              <CardHeader>
-                <div>
-                  <p className="operator-kicker">Saved signals</p>
-                  <h2>Server checks</h2>
-                </div>
-                <span>{serverDetailRows.length} tracked</span>
-              </CardHeader>
-              <CompactTable>
-                <CompactTableHeader>
-                  <CompactTableCell>Item</CompactTableCell>
-                  <CompactTableCell>Current</CompactTableCell>
-                  <CompactTableCell>Status</CompactTableCell>
-                </CompactTableHeader>
-                <tbody>
-                  {serverDetailRows.map((row) => (
-                    <CompactTableRow key={row.item}>
-                      <CompactTableCell><strong>{row.item}</strong></CompactTableCell>
-                      <CompactTableCell>{row.current}</CompactTableCell>
-                      <CompactTableCell><StatusBadge label={displayStatus(row.status)} status={statusBadgeStatus(row.status)} /></CompactTableCell>
-                    </CompactTableRow>
-                  ))}
-                </tbody>
-              </CompactTable>
-            </Card>
-            )}
-            {activeDetailSection === "setup" && (
-            <section className="overview-safe-actions" aria-label="Server configure">
-              <ServerConfigurePanel
-                activeProfile={activeProfile}
-                address={address}
-                global={global}
-                onSaved={async () => {
-                  await onReloadLabProfile?.();
-                  await load();
-                }}
-              />
-            </section>
-            )}
-            {activeDetailSection === "path" && (
-            <ServerSetupShapePanel
-              activeProfile={activeProfile}
-              address={address}
-              currentView={currentView}
-              esxiReadiness={esxiReadiness}
-              esxiStatus={esxiStatus}
-              firmwareSummaries={firmwareSummaries}
-              iloStatus={iloStatus}
-              raidPlan={raidPlan}
-              raidStatus={raidStatus}
-            />
-            )}
-            {activeDetailSection === "raid" && (
-            <>
-              <Card className="network-details-card server-drive-map-card" hover={false}>
-                <CardHeader>
-                  <div>
-                    <p className="operator-kicker">RAID plan</p>
-                    <h2>Server drive map</h2>
-                  </div>
-                  <StatusBadge label={displayStatus(raidStatus)} status={statusBadgeStatus(raidStatus)} />
-                </CardHeader>
-                <CardContent>
-                  <ServerDriveMapPlan activeProfile={activeProfile} raidPlan={raidPlan} />
-                </CardContent>
-              </Card>
-              <details className="network-advanced-switch-plan server-advanced-raid-plan">
-                <summary>
-                  <span>
-                    <span className="operator-kicker">Advanced</span>
-                    <strong>Advanced RAID proof</strong>
-                    <small>Local datastore readiness and RAID recommendation stay one level deeper.</small>
-                  </span>
-                </summary>
-                <LocalStorageReadinessCard activeProfile={activeProfile} raidPlan={raidPlan} />
-              </details>
-            </>
-            )}
-            {activeDetailSection === "proof" && (
-            <AdvancedDrawer title="Server proof" summary={noProofText}>
-              <OperatorWorkspace currentView={currentView} rows={serverRows} compact />
-              <ConfigValueList
-                values={[
-                  { label: "RAID warnings", value: String(stringArray(raidPlan?.warnings).length) },
-                  { label: "RAID controller model", value: raidControllerModels(raidPlan) },
-                  { label: "ESXi blockers", value: String(stringArray(esxiReadiness?.blockers).length) },
-                  { label: "Storage firmware", value: firmwareVersion(firmwareSummaries, "raid") }
-                ]}
-              />
-            </AdvancedDrawer>
-            )}
+      <Feedback loading={loading && !workflowActions.length} error={error} />
+      <section className="server-compute-workspace-shell" aria-label="Compute and iLO setup launcher">
+        <div className="server-compute-workspace-summary" aria-label="Compute and iLO launcher summary">
+          <div>
+            <p className="operator-kicker">Compute setup</p>
+            <h2>{serverModelLabel} workspace</h2>
+            <span>Daily setup stays here. Raw proof and guarded actions stay behind Details or Validation.</span>
           </div>
-        </section>
-      )}
+          <div className="server-compute-workspace-facts">
+            <span><strong>iLO IP</strong>{displayAddress(address.ilo)}</span>
+            <span><strong>ESXi IP</strong>{displayAddress(address.esxi_management)}</span>
+            <span><strong>Storage path</strong>{localStorageMode ? "Server-local RAID" : "Shared datastore"}</span>
+            <span><strong>Service Pack</strong>{servicePack}</span>
+          </div>
+        </div>
+        <LabDesignComposer
+          activeProfile={activeProfile}
+          address={address}
+          features={features}
+          firmwareSummaries={firmwareSummaries}
+          health={health}
+          initialSelectedDevice={serverPart}
+          onReload={reloadWorkspace}
+          subnetState={subnetState}
+          workspaceNodeStatus={subnetState.status}
+          workspaceNodeTone={workspaceTone}
+          workspaceOnly
+          workflowActions={workflowActions}
+        />
+      </section>
     </OperatorPage>
   );
 }
@@ -3756,6 +3460,7 @@ type ServerWorkspaceAction = {
 function ServerWorkspaceControls({
   activeProfile,
   address,
+  firmwareSummaries,
   localStorageMode,
   onReload,
   scope,
@@ -3763,6 +3468,7 @@ function ServerWorkspaceControls({
 }: {
   activeProfile: LabProfile | null;
   address: LabAddressPlan;
+  firmwareSummaries: FirmwareSummary[];
   localStorageMode: boolean;
   onReload: () => Promise<void> | void;
   scope: ServerWorkspaceControlScope;
@@ -3901,6 +3607,9 @@ function ServerWorkspaceControls({
     .flatMap((id) => workflowRunsById[id] ?? [])
     .sort((a, b) => asString(b.finished_at || b.started_at).localeCompare(asString(a.finished_at || a.started_at)))[0] ?? null;
   const latestRunFor = (actionId: string) => workflowRunsById[actionId]?.[0] ?? null;
+  const servicePack = servicePackSummary(firmwareSummaries);
+  const storagePathLabel = localStorageMode ? "Server-local RAID datastore" : "Shared datastore host";
+  const storagePathDetail = localStorageMode ? "Local storage build" : "Boot/staging RAID, VM data on shared storage";
   const evidenceRows = scope === "ilo"
     ? [
         {
@@ -3952,6 +3661,18 @@ function ServerWorkspaceControls({
           label: "RAID pending",
           status: asString(raidPending?.status) || "not_checked",
           value: asString(raidPending?.message) || "Pending state not checked"
+        },
+        {
+          detail: "Firmware files",
+          label: "HPE Service Pack",
+          status: servicePack === "Scan needed" ? "not_checked" : "ready",
+          value: servicePack
+        },
+        {
+          detail: storagePathDetail,
+          label: "Storage path",
+          status: "planned",
+          value: storagePathLabel
         },
         {
           detail: latestWorkflowRun ? "Workflow action run" : "Workflow history",
@@ -9439,6 +9160,7 @@ function LabDesignComposer({
               <ServerWorkspaceControls
                 activeProfile={activeProfile}
                 address={designAddress}
+                firmwareSummaries={firmwareSummaries}
                 localStorageMode={draftScenario === "single_server_local_storage"}
                 onReload={onReload}
                 scope={selectedPart.id === "ilo" ? "ilo" : "server"}
@@ -9707,6 +9429,7 @@ function LabDesignComposer({
                       <ServerWorkspaceControls
                         activeProfile={activeProfile}
                         address={designAddress}
+                        firmwareSummaries={firmwareSummaries}
                         localStorageMode={draftScenario === "single_server_local_storage"}
                         onReload={onReload}
                         scope={selectedPart.id === "ilo" ? "ilo" : "server"}
@@ -10559,6 +10282,7 @@ function topologyDefaultDeviceSettings({
     "server-gen10": {
       name: "HPE DL360 Gen10",
       management_ip: displayAddress(address.ilo),
+      esxi_management: displayAddress(address.esxi_management),
       gateway,
       drive_bays: "discover with iLO / Smart Array",
       raid_controller: "Smart Array discovered",
@@ -10570,6 +10294,7 @@ function topologyDefaultDeviceSettings({
     "server-gen10plus": {
       name: "HPE DL360 Gen10+",
       management_ip: displayAddress(address.ilo),
+      esxi_management: displayAddress(address.esxi_management),
       gateway,
       drive_bays: "discover with iLO / Smart Array",
       raid_controller: "Smart Array discovered",
@@ -11393,7 +11118,7 @@ function topologyDeviceWorkspaceSections(
   const pick = (keys: string[]) => fields.filter((field) => keys.includes(field.key));
   const sections = [
     { id: "identity", label: "Identity", summary: "Name, model, and role", keys: ["name", "role"] },
-    { id: "network", label: "Network", summary: "IP, gateway, VLANs, and ports", keys: ["management_ip", "gateway", "mgmt_vlan", "storage_vlan", "ports", "port_profiles", "san_ports", "controller_ports", "vm_network"] },
+    { id: "network", label: "Network", summary: "IP, gateway, VLANs, and ports", keys: ["management_ip", "esxi_management", "gateway", "mgmt_vlan", "storage_vlan", "ports", "port_profiles", "san_ports", "controller_ports", "vm_network"] },
     { id: "storage", label: "Storage", summary: scenario === "single_server_local_storage" ? "Local RAID and drive layout" : `${storageProtocol.toUpperCase()} datastore path`, keys: ["drive_bays", "raid_controller", "raid_boot", "raid_data", "protocol", "nfs_lifs", "iscsi_lifs", "datastore"] },
     { id: "access", label: "Access", summary: "Credential state and guardrail notes", keys: ["credential_state", "reachability", "firmware", "power_state", "bpdu_guard", "blackhole_vlan", "acl_lanes", "notes"] }
   ];
@@ -11417,11 +11142,11 @@ function topologyDeviceEssentialFields(
     switch: ["management_ip", "storage_vlan"],
     ilo: ["management_ip"],
     "server-gen10": scenario === "single_server_local_storage"
-      ? ["management_ip", "raid_controller", "raid_data"]
-      : ["management_ip", "storage_vlan"],
+      ? ["management_ip", "esxi_management", "raid_data"]
+      : ["management_ip", "esxi_management", "storage_vlan"],
     "server-gen10plus": scenario === "single_server_local_storage"
-      ? ["management_ip", "raid_controller", "raid_data"]
-      : ["management_ip", "storage_vlan"],
+      ? ["management_ip", "esxi_management", "raid_data"]
+      : ["management_ip", "esxi_management", "storage_vlan"],
     netapp: storageProtocol === "iscsi"
       ? ["management_ip", "protocol"]
       : ["management_ip", "protocol"],
@@ -12031,6 +11756,7 @@ function topologyDeviceSettingFields(partId: DesignPartId, storageProtocol: stri
     return [
       { key: "name", label: "Name" },
       { key: "management_ip", label: "iLO IP" },
+      { key: "esxi_management", label: "ESXi IP" },
       { key: "gateway", label: "Gateway" },
       { key: "drive_bays", label: "Drive bays" },
       { key: "raid_controller", label: "RAID controller" },
@@ -12111,6 +11837,7 @@ function topologyCommittedProfilePath(partId: DesignPartId, key: string): string
     if (partId === "netapp") return "address_plan.netapp_cluster_mgmt";
     if (partId === "vcenter") return "address_plan.ansible_control_host";
   }
+  if ((partId === "server-gen10" || partId === "server-gen10plus") && key === "esxi_management") return "address_plan.esxi_management";
   if (key === "gateway") return "global_settings.gateway";
   if (partId === "switch" && key === "mgmt_vlan") return "global_settings.vlan_id";
   if (partId === "netapp" && key === "nfs_lifs") return "address_plan.netapp_nfs_lifs";
@@ -12144,6 +11871,9 @@ function topologyResolvedProfileOwnedSettingValue(
     if (partId === "ilo" || partId === "server-gen10" || partId === "server-gen10plus") return display(address.ilo);
     if (partId === "netapp") return display(address.netapp_cluster_mgmt);
     if (partId === "vcenter") return display(address.ansible_control_host);
+  }
+  if ((partId === "server-gen10" || partId === "server-gen10plus") && key === "esxi_management") {
+    return display(address.esxi_management);
   }
   if (key === "gateway") {
     return display(activeProfile?.global_settings?.gateway ?? activeProfile?.gateway ?? topologyGatewayFromSubnet(address.subnet));
@@ -12270,6 +12000,7 @@ function topologyProfileSyncRows({
     topologySyncRow("switch-mgmt-vlan", "Mgmt VLAN", deviceSettings.switch?.mgmt_vlan, activeProfile?.global_settings?.vlan_id ?? activeProfile?.vlan_id ?? "100"),
     topologySyncRow("switch-storage-vlan", "Storage VLAN", deviceSettings.switch?.storage_vlan, "220"),
     topologySyncRow("ilo-ip", "iLO IP", deviceSettings.ilo?.management_ip || deviceSettings["server-gen10"]?.management_ip || deviceSettings["server-gen10plus"]?.management_ip, displayAddress(address.ilo)),
+    topologySyncRow("esxi-ip", "ESXi IP", deviceSettings["server-gen10"]?.esxi_management || deviceSettings["server-gen10plus"]?.esxi_management, displayAddress(address.esxi_management)),
     topologySyncRow("storage-mode", "Storage mode", netappInScope ? storageProtocol.toUpperCase() : "LOCAL", activeProfile?.features?.storage_protocol?.toUpperCase() ?? "NFS"),
   ];
   if (netappInScope) {
@@ -12330,6 +12061,7 @@ function topologyProfilePayloadFromDraft({
     ...address,
     ansible_control_host: vcenterInScope ? cleanNetworkNullable(vcenterSettings.management_ip) : null,
     cisco_management: cleanNetworkNullable(switchSettings.management_ip),
+    esxi_management: cleanNetworkNullable(serverSettings.esxi_management) || cleanNetworkNullable(address.esxi_management),
     ilo: cleanNetworkNullable(iloSettings.management_ip) || cleanNetworkNullable(serverSettings.management_ip),
     netapp_cluster_mgmt: netappInScope ? cleanNetworkNullable(netappSettings.management_ip) : null,
     netapp_iscsi_lifs: iscsiLifs,
@@ -12364,7 +12096,7 @@ function topologyProfilePayloadFromDraft({
     devices: {
       ...(activeProfile.devices ?? {}),
       cisco: addressPlan.cisco_management,
-      esxi: activeProfile.devices?.esxi ?? activeProfile.address_plan.esxi_management,
+      esxi: addressPlan.esxi_management,
       gateway,
       ilo: addressPlan.ilo,
       server_model: serverModel,
