@@ -979,6 +979,8 @@ test("overview device workspace matrix keeps default inputs concise", async ({ p
     const overlay = page.locator("div[aria-label='Device workspace overlay']");
     const workspace = overlay.locator(`section[aria-label='${item.workspace} workspace']`);
     await expect(workspace, `${item.workspace} workspace opens`).toBeVisible();
+    await expect(overlay.locator(".topology-workspace-drawer-head"), `${item.workspace} drawer uses setup wording`).toContainText("Device setup");
+    await expect(overlay.locator(".topology-workspace-drawer-head"), `${item.workspace} drawer avoids workspace chrome copy`).not.toContainText("Device workspace");
     await expect(workspace.locator(":scope > .design-device-primary-action .design-plan-action"), `${item.workspace} has one default action`).toHaveCount(1);
     await expect(workspace.locator(".design-selected-element-note"), `${item.workspace} waits for an element click before showing element detail`).toHaveCount(0);
     await expect(workspace, `${item.workspace} avoids dead default actions`).not.toContainText("No read-only test registered");
@@ -999,6 +1001,7 @@ test("overview device workspace matrix keeps default inputs concise", async ({ p
     }
     await expect(workspace.locator(":scope > details.design-workspace-details"), `${item.workspace} has one top-level details drawer`).toHaveCount(1);
     await expect(workspace.locator(":scope > details.design-workspace-details > summary"), `${item.workspace} details summary is plain`).toContainText("View details");
+    await expect(workspace.locator(":scope > details.design-workspace-details > summary"), `${item.workspace} details summary does not jam two labels together`).not.toContainText("Settings and proof");
     await expect(workspace.locator(":scope > details.design-workspace-advanced"), `${item.workspace} does not expose advanced as a second top-level drawer`).toHaveCount(0);
     await expect(workspace.locator(".design-workspace-map-details"), `${item.workspace} keeps chip details out of the default drawer`).toHaveCount(0);
     await expect(workspace, `${item.workspace} retires the old extra settings label`).not.toContainText("More settings");

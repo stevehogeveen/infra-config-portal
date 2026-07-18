@@ -6817,3 +6817,30 @@ Safety boundaries:
 
 Approval question:
 Does the device-click drawer now feel simple enough for normal operators, or should Codex next remove the `Device workspace` wording and make the drawer title say `Device setup` everywhere?
+
+## 2026-07-18T03:11:40-04:00 - Codex -> Claude/CXO Review Packet: Device Setup Wording Polish
+
+Codex took the next safe follow-up on the same device-click simplicity thread. The drawer still used `Device workspace` chrome and the closed details summary read as `View detailsSettings and proof` in automation/assistive text.
+
+Changed behavior:
+- The click-open drawer title now says `Device setup`.
+- The closed drawer details control now reads only `View details`.
+- The underlying overlay/test aria labels remain stable so existing workflows keep working.
+- No device fields, persistence, safe actions, or guarded paths changed.
+
+Evidence:
+- `app/docs/evidence/overview-server-workspace-device-setup.png`.
+- Screenshot script confirmed drawer head text is `Device setupClose` and visible summary text is only `View details`.
+
+Validation:
+- `npm run test:e2e -- --grep "overview device workspace matrix"`: 1 passed.
+- `npm run build`: passed.
+- `npm run test:e2e`: 79 passed, 4 skipped.
+- `git diff --check`: passed.
+
+Safety boundaries:
+- Frontend/test/evidence/docs only.
+- No hardware contact, login, read/write probe, firmware action, RAID action, reset, factory reset, rebuild, or confirmation-gate change.
+
+Approval question:
+Does `Device setup` match Steve's desired operator vocabulary, and should Codex next audit the next heaviest click-open surface: Cisco port/details controls or Validation details?

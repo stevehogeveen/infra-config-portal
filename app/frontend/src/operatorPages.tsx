@@ -7393,7 +7393,7 @@ function LabTopologyMap({
           <div className="topology-workspace-backdrop" onClick={closeNodeWorkspace} />
           <aside className="topology-workspace-drawer" aria-label="Device workspace drawer">
             <div className="topology-workspace-drawer-head">
-              <span>Device workspace</span>
+              <span>Device setup</span>
               <button className="topology-workspace-close" type="button" onClick={closeNodeWorkspace}>Close</button>
             </div>
             <LabDesignComposer
@@ -9644,7 +9644,6 @@ function LabDesignComposer({
               <details className="design-workspace-details design-workspace-details-combined" aria-label={`${selectedPart.label} details`}>
                 <summary>
                   <span>View details</span>
-                  <strong>Settings and proof</strong>
                 </summary>
                 {selectedDetailWorkspaceSections.length > 0 && (
                   <div className="design-device-param-sections" aria-label={`${selectedPart.label} detailed parameters`}>
