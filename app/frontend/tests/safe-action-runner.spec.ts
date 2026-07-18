@@ -544,6 +544,9 @@ test("operator home gives a clear kit action when no kit is selected", async ({ 
   const home = page.getByTestId("operator-home");
   const primary = home.getByTestId("operator-home-primary-action");
   await expect(home).toContainText("Choose a lab kit before running setup.");
+  await expect(home).toContainText("Select or create a kit to load the address plan and readiness checks.");
+  await expect(home).not.toContainText("No kit selected is in");
+  await expect(home).toContainText("Select or create a kit before checking readiness.");
   await expect(primary).toHaveCount(1);
   await expect(primary).toBeEnabled();
   await expect(primary).toContainText("Create or select a kit");

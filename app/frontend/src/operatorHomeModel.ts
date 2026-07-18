@@ -89,6 +89,7 @@ export function buildOperatorHomeModel({
   const supportingMessage = operatorSupportingMessage({
     attentionCount: attentionItems.length,
     currentPhase,
+    hasProfile: Boolean(profile),
     kitName,
     readyCount,
     subnet: address.subnet,
@@ -247,7 +248,7 @@ function buildAttentionItems({
     items.push({
       Action: "Create or select a lab kit.",
       Device: "Lab kit",
-      Explanation: "No active kit is selected, so readiness cannot be trusted yet.",
+      Explanation: "Select or create a kit before checking readiness.",
       Id: "kit-not-selected",
       Label: "Choose a kit",
       Severity: "blocking"
@@ -343,6 +344,7 @@ function operatorHeadline({
 function operatorSupportingMessage({
   attentionCount,
   currentPhase,
+  hasProfile,
   kitName,
   readyCount,
   subnet,
@@ -350,11 +352,15 @@ function operatorSupportingMessage({
 }: {
   attentionCount: number;
   currentPhase: string;
+  hasProfile: boolean;
   kitName: string;
   readyCount: number;
   subnet: string | null;
   totalCount: number;
 }): string {
+  if (!hasProfile) {
+    return "Select or create a kit to load the address plan and readiness checks.";
+  }
   const scope = subnet ? `${kitName} on ${subnet}` : kitName;
   const attentionVerb = attentionCount === 1 ? "needs" : "need";
   const attention = attentionCount ? `${attentionCount} item${attentionCount === 1 ? "" : "s"} ${attentionVerb} attention.` : "No actionable blockers are shown.";
