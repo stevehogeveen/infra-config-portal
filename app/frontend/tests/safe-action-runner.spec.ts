@@ -216,6 +216,13 @@ async function openOperatorDetails(page: Page) {
   }
 }
 
+async function openWorkspaceAdvanced(page: Page, workspaceName: string) {
+  const workspace = page.locator(`section[aria-label='${workspaceName} workspace']`);
+  const advanced = workspace.getByLabel(`${workspaceName} advanced checks and proof`);
+  await advanced.locator(":scope > summary").click();
+  return advanced;
+}
+
 async function expectResponsiveShell(page: Page, path: string, viewport: { width: number; height: number }) {
   await page.setViewportSize(viewport);
   await page.goto(path);
@@ -703,10 +710,16 @@ test("zoned map opens the device workspace directly", async ({ page }) => {
   await expect(topology.getByLabel("Zoned lab map")).toHaveAttribute("data-workspace-open", "true");
 
   await expect(topology.getByLabel("Cisco switch node menu")).toHaveCount(0);
-  const composer = page.locator("div[aria-label='Design mode rack composer']");
+  const composer = page.locator("div[aria-label='Device workspace composer']");
   await expect(composer).toBeVisible();
-  await expect(composer.getByLabel("Cisco switch workspace")).toBeVisible();
-  const networkControls = composer.getByLabel("Cisco workspace network controls");
+  const switchWorkspace = composer.getByLabel("Cisco switch workspace");
+  await expect(switchWorkspace).toBeVisible();
+  await expect(switchWorkspace.getByLabel("Cisco switch essentials")).toContainText("Management IP");
+  await expect(switchWorkspace.getByLabel("Cisco switch essentials")).toContainText("Storage VLAN");
+  await expect(switchWorkspace.locator(":scope > .design-device-primary-action .design-plan-action")).toHaveCount(1);
+  await expect(switchWorkspace.getByLabel("Cisco workspace network controls")).not.toBeVisible();
+  const switchAdvanced = await openWorkspaceAdvanced(page, "Cisco switch");
+  const networkControls = switchAdvanced.getByLabel("Cisco workspace network controls");
   await expect(networkControls).toBeVisible();
   await expect(networkControls).toContainText("Read-only checks");
   await expect(networkControls).toContainText("Refresh live evidence");
@@ -725,19 +738,9 @@ test("zoned map opens the device workspace directly", async ({ page }) => {
   await ciscoDiffRequest;
   await expect(networkControls).toContainText("Cisco current-to-intent diff completed");
   await composer.getByRole("button", { name: "Switch port 2" }).click();
-  const selectedPortProof = composer.getByLabel("Cisco switch port 2 read-only command output");
-  await expect(selectedPortProof).toContainText("show interface Gi1/0/2");
+  await expect(switchWorkspace.locator(".design-selected-element-note")).toContainText("port 2");
+  await expect(switchWorkspace.locator(".design-selected-element-note")).toContainText("Physical switch port intent");
   await expect(composer.getByRole("button", { name: "Switch port 2" })).toHaveClass(/selected/);
-  const showInterfaceRequest = page.waitForRequest((request) =>
-    request.url().includes("/api/v1/workflows/actions/cisco.ssh-readonly-probe/run") &&
-    request.method() === "POST"
-  );
-  await selectedPortProof.getByRole("button", { name: "Show interface" }).click();
-  expect((await showInterfaceRequest).postDataJSON()).toEqual({
-    cisco_commands: ["show interface Gi1/0/2", "show running-config interface Gi1/0/2", "show interfaces status"]
-  });
-  await expect(selectedPortProof.getByLabel("Cisco switch port 2 terminal output")).toContainText("Gi1/0/2");
-  await expect(selectedPortProof.getByLabel("Cisco switch port 2 terminal output")).toContainText("connected");
 
   await page.locator("div[aria-label='Device workspace overlay']").getByRole("button", { name: "Close" }).click();
   await expect(page.locator("div[aria-label='Device workspace overlay']")).toHaveCount(0);
@@ -748,12 +751,16 @@ test("zoned map opens the device workspace directly", async ({ page }) => {
   const iloWorkspace = iloOverlay.locator("section[aria-label='HPE iLO workspace']");
   await expect(iloWorkspace).toBeVisible();
   await expect(iloWorkspace).toContainText("out-of-band server management");
-  await expect(iloWorkspace.getByLabel("HPE iLO Network")).toContainText("iLO IP");
-  await expect(iloWorkspace.getByLabel("HPE iLO Access")).toContainText("Credential status");
-  await expect(iloWorkspace.getByLabel("Credential status")).toHaveValue("unknown until iLO Auth Live Check runs");
-  await expect(iloWorkspace.getByLabel("HPE iLO schema inventory")).toContainText("iLO IP");
-  await expect(iloWorkspace.getByLabel("HPE iLO schema inventory")).toContainText("device_settings.ilo.management_ip -> address_plan.ilo");
-  const iloServerControls = iloWorkspace.getByLabel("iLO workspace server controls");
+  await expect(iloWorkspace.getByLabel("HPE iLO essentials")).toContainText("iLO IP");
+  await expect(iloWorkspace.getByLabel("HPE iLO essentials")).toContainText("Credential status");
+  await expect(iloWorkspace.getByLabel("HPE iLO essentials").getByLabel("Credential status")).toHaveValue("unknown until iLO Auth Live Check runs");
+  await expect(iloWorkspace.getByLabel("iLO workspace server controls")).not.toBeVisible();
+  const iloAdvanced = await openWorkspaceAdvanced(page, "HPE iLO");
+  const iloSchema = iloAdvanced.locator(".design-schema-inventory");
+  await iloSchema.locator(":scope > summary").click();
+  await expect(iloAdvanced.getByLabel("HPE iLO schema inventory")).toContainText("iLO IP");
+  await expect(iloAdvanced.getByLabel("HPE iLO schema inventory")).toContainText("device_settings.ilo.management_ip -> address_plan.ilo");
+  const iloServerControls = iloAdvanced.getByLabel("iLO workspace server controls");
   await expect(iloServerControls).toBeVisible();
   await expect(iloServerControls).toContainText("iLO read-only checks");
   await expect(iloServerControls).toContainText("iLO Live Check");
@@ -770,7 +777,10 @@ test("zoned map opens the device workspace directly", async ({ page }) => {
   const serverOverlay = page.locator("div[aria-label='Device workspace overlay']");
   const serverWorkspace = serverOverlay.locator("section[aria-label='DL360 Gen10 workspace']");
   await expect(serverWorkspace).toBeVisible();
-  const serverControls = serverWorkspace.getByLabel("Server workspace checks");
+  await expect(serverWorkspace.getByLabel("DL360 Gen10 essentials")).toContainText("Storage VLAN");
+  await expect(serverWorkspace.getByLabel("Server workspace checks")).not.toBeVisible();
+  const serverAdvanced = await openWorkspaceAdvanced(page, "DL360 Gen10");
+  const serverControls = serverAdvanced.getByLabel("Server workspace checks");
   await expect(serverControls).toBeVisible();
   await expect(serverControls).toContainText("ESXi and RAID checks");
   await expect(serverControls).toContainText("ESXi Live Check");
@@ -794,13 +804,17 @@ test("zoned map opens the device workspace directly", async ({ page }) => {
   await topology.getByRole("button", { name: "Open NetApp ONTAP workspace" }).click();
   const netappOverlay = page.locator("div[aria-label='Device workspace overlay']");
   const netappWorkspace = netappOverlay.locator("section[aria-label='NetApp ONTAP workspace']");
-  await expect(netappWorkspace.getByLabel("NetApp workspace storage controls")).toBeVisible();
-  await expect(netappWorkspace.getByLabel("NetApp workspace storage controls")).toContainText("Read-only checks");
-  await expect(netappWorkspace.getByLabel("NetApp workspace storage controls")).toContainText("Setup previews");
-  await expect(netappWorkspace.getByLabel("NetApp workspace storage controls")).toContainText("Validations");
-  await netappWorkspace.getByText("More read-only checks").click();
-  await expect(netappWorkspace.getByLabel("NetApp workspace storage controls")).toContainText("Check Protocols");
-  const guardedIscsi = netappWorkspace.getByLabel("Guarded iSCSI apply");
+  await expect(netappWorkspace.getByLabel("NetApp ONTAP essentials")).toContainText("Cluster IP");
+  await expect(netappWorkspace.getByLabel("NetApp workspace storage controls")).not.toBeVisible();
+  const netappAdvanced = await openWorkspaceAdvanced(page, "NetApp ONTAP");
+  const netappControls = netappAdvanced.getByLabel("NetApp workspace storage controls");
+  await expect(netappControls).toBeVisible();
+  await expect(netappControls).toContainText("Read-only checks");
+  await expect(netappControls).toContainText("Setup previews");
+  await expect(netappControls).toContainText("Validations");
+  await netappAdvanced.getByText("More read-only checks").click();
+  await expect(netappControls).toContainText("Check Protocols");
+  const guardedIscsi = netappAdvanced.getByLabel("Guarded iSCSI apply");
   await expect(guardedIscsi).toContainText("existing backend gate");
   await expect(guardedIscsi.getByRole("button", { name: /Apply iSCSI/ })).toBeVisible();
   await expect(netappOverlay.locator("section[aria-label='NetApp ONTAP safe checks and next actions']")).not.toContainText("Apply iSCSI");
@@ -819,7 +833,10 @@ test("zoned map opens the device workspace directly", async ({ page }) => {
   const vcenterOverlay = page.locator("div[aria-label='Device workspace overlay']");
   const vcenterWorkspace = vcenterOverlay.locator("section[aria-label='vCenter VCSA workspace']");
   await expect(vcenterWorkspace).toBeVisible();
-  const virtualizationControls = vcenterWorkspace.getByLabel("vCenter workspace virtualization controls");
+  await expect(vcenterWorkspace.getByLabel("vCenter VCSA essentials")).toContainText("Datastore");
+  await expect(vcenterWorkspace.getByLabel("vCenter workspace virtualization controls")).not.toBeVisible();
+  const vcenterAdvanced = await openWorkspaceAdvanced(page, "vCenter VCSA");
+  const virtualizationControls = vcenterAdvanced.getByLabel("vCenter workspace virtualization controls");
   await expect(virtualizationControls).toBeVisible();
   await expect(virtualizationControls).toContainText("vCenter and VM checks");
   await expect(virtualizationControls).toContainText("vCenter Live Check");
@@ -1058,7 +1075,7 @@ test("overview design mode keeps the surface map-only until a node opens the wor
 
   const overlay = page.locator("div[aria-label='Device workspace overlay']");
   await expect(overlay).toBeVisible();
-  const composer = overlay.locator("div[aria-label='Design mode rack composer']");
+  const composer = overlay.locator("div[aria-label='Device workspace composer']");
   const switchWorkspace = overlay.locator("section[aria-label='Cisco switch workspace']");
   await expect(switchWorkspace).toBeVisible();
   await expect(switchWorkspace.getByLabel("Cisco switch state")).toContainText(/Draft|Saved/);
@@ -1066,29 +1083,34 @@ test("overview design mode keeps the surface map-only until a node opens the wor
   await expect(switchWorkspace.getByLabel("Cisco switch state")).toContainText("source: no read-only run yet");
   await expect(switchWorkspace.getByLabel("Cisco switch interactive faceplate")).toBeVisible();
   await switchWorkspace.getByRole("button", { name: "Switch port 1", exact: true }).click();
-  await expect(composer).toContainText("Cisco switch port 1 selected");
-  const switchPortInspector = switchWorkspace.locator("section[aria-label='Cisco switch port 1 inspector']");
-  await expect(switchPortInspector).toBeVisible();
-  await expect(switchPortInspector).toContainText("device_settings.switch.ports");
-  await expect(switchPortInspector).toContainText("device_settings.switch.port_profiles");
-  await expect(switchPortInspector).toContainText("workflow action result");
-  await expect(switchWorkspace.getByLabel("Cisco switch Network")).toContainText("Management IP");
+  await expect(switchWorkspace.locator(".design-selected-element-note")).toContainText("port 1");
+  await expect(switchWorkspace.locator(".design-selected-element-note")).toContainText("Physical switch port intent");
+  await expect(switchWorkspace.getByLabel("Cisco switch essentials")).toContainText("Management IP");
+  await expect(switchWorkspace.getByLabel("Cisco switch essentials")).toContainText("Storage VLAN");
+  await expect(switchWorkspace.getByLabel("Cisco workspace network controls")).not.toBeVisible();
   await expect(switchWorkspace).toBeVisible();
-  await expect(switchWorkspace.getByLabel("Cisco switch schema inventory")).toContainText("Management IP");
-  await expect(switchWorkspace.getByLabel("Cisco switch schema inventory")).toContainText("device_settings.switch.management_ip -> address_plan.cisco_management");
-  await expect(switchWorkspace.getByLabel("Cisco switch schema inventory")).toContainText("Draft-only visual intent");
-  await expect(composer.locator("section[aria-label='Cisco switch safe checks and next actions']")).toContainText("Cisco Firmware Inventory");
+  const details = switchWorkspace.getByLabel("Cisco switch details");
+  await details.locator(":scope > summary").click();
+  await expect(switchWorkspace.getByLabel("Cisco switch Network")).toContainText("Management IP");
   await expect(switchWorkspace).toContainText("fabric and VLAN control");
   await expect(switchWorkspace.getByLabel("BPDU guard")).toHaveValue("enabled on edge access ports");
   await switchWorkspace.getByLabel("Black-hole VLAN").fill("998");
   await switchWorkspace.getByLabel("ACL lanes").fill("MGMT-IN, STORAGE-NFS-IN, DROP-ALL, QUARANTINE");
   await expect(switchWorkspace.getByLabel("Black-hole VLAN")).toHaveValue("998");
+  const advanced = await openWorkspaceAdvanced(page, "Cisco switch");
+  const schema = advanced.locator(".design-schema-inventory");
+  await schema.locator(":scope > summary").click();
+  await expect(advanced.getByLabel("Cisco switch schema inventory")).toContainText("Management IP");
+  await expect(advanced.getByLabel("Cisco switch schema inventory")).toContainText("device_settings.switch.management_ip -> address_plan.cisco_management");
+  await expect(advanced.getByLabel("Cisco switch schema inventory")).toContainText("Draft-only visual intent");
+  await expect(advanced.locator("section[aria-label='Cisco switch safe checks and next actions']")).toContainText("Cisco Firmware Inventory");
   await switchWorkspace.getByRole("button", { name: /Cisco Firmware Inventory/ }).click();
-  await expect(composer.locator("section[aria-label='Cisco switch safe checks and next actions']")).toContainText("Cisco Firmware Inventory: Ready");
-  await expect(composer.locator("section[aria-label='Cisco switch safe checks and next actions']")).toContainText("Last: Ready");
+  await expect(advanced.locator("section[aria-label='Cisco switch safe checks and next actions']")).toContainText("Cisco Firmware Inventory: Ready");
+  await expect(advanced.locator("section[aria-label='Cisco switch safe checks and next actions']")).toContainText("Last: Ready");
   await expect(switchWorkspace.getByLabel("Cisco switch state")).toContainText("source: last Cisco Firmware Inventory");
-  await switchWorkspace.getByRole("textbox", { name: /^Storage VLAN/ }).fill("230");
-  await expect(switchWorkspace.getByRole("textbox", { name: /^Storage VLAN/ })).toHaveValue("230");
+  const networkStorageVlan = switchWorkspace.getByLabel("Cisco switch Network").getByRole("textbox", { name: /^Storage VLAN/ });
+  await networkStorageVlan.fill("230");
+  await expect(networkStorageVlan).toHaveValue("230");
   await expect(switchWorkspace).toContainText("230");
 });
 
@@ -1165,8 +1187,9 @@ test("overview design mode switches scenario drafts without committing hardware"
   const overlay = page.locator("div[aria-label='Device workspace overlay']");
   const serverWorkspace = overlay.locator("section[aria-label='DL360 Gen10 workspace']");
   await expect(serverWorkspace).toBeVisible();
+  await serverWorkspace.getByLabel("DL360 Gen10 details").locator(":scope > summary").click();
   await expect(serverWorkspace.getByLabel("DL360 Gen10 Storage")).toContainText("NFS datastore path");
-  await expect(serverWorkspace.getByRole("textbox", { name: /^Data RAID/ })).toHaveValue("boot/staging only; VM data on shared storage");
+  await expect(serverWorkspace.getByLabel("DL360 Gen10 Storage").getByRole("textbox", { name: /^Data RAID/ })).toHaveValue("boot/staging only; VM data on shared storage");
   await expect(overlay).toContainText("Hardware untouched until guarded applies.");
   await overlay.getByRole("button", { name: "Close" }).click();
   await expect(page.locator("div[aria-label='Device workspace overlay']")).toHaveCount(0);
@@ -1197,11 +1220,16 @@ test("single-server map opens local datastore guidance in the server workspace",
   await topology.getByRole("button", { name: "Open HPE DL360 Gen10 workspace" }).click();
   const workspace = page.locator("section[aria-label='DL360 Gen10 workspace']");
   await expect(workspace).toBeVisible();
+  await expect(workspace.getByLabel("DL360 Gen10 essentials")).toContainText("Data RAID");
+  await expect(workspace.getByLabel("Server workspace checks")).not.toBeVisible();
+  const details = workspace.getByLabel("DL360 Gen10 details");
+  await details.locator(":scope > summary").click();
   await expect(workspace.getByLabel("DL360 Gen10 Storage")).toContainText("Local RAID and drive layout");
   await expect(workspace.getByLabel("DL360 Gen10 Storage")).toContainText("Data RAID");
-  await expect(workspace.getByLabel("Server workspace checks")).toContainText("Local RAID");
-  await expect(workspace.getByLabel("Server workspace checks")).toContainText("ESXi and RAID checks");
-  await expect(workspace.getByLabel("RAID guarded write boundary")).toContainText("stay off this map");
+  const advanced = await openWorkspaceAdvanced(page, "DL360 Gen10");
+  await expect(advanced.getByLabel("Server workspace checks")).toContainText("Local RAID");
+  await expect(advanced.getByLabel("Server workspace checks")).toContainText("ESXi and RAID checks");
+  await expect(advanced.getByLabel("RAID guarded write boundary")).toContainText("stay off this map");
 });
 
 test("overview removes superseded layout and console surfaces from operator mode", async ({ page }) => {
@@ -1291,9 +1319,13 @@ test("single-server map removes vCenter and keeps direct ESXi guidance on the se
 
   await topology.getByRole("button", { name: "Open HPE DL360 Gen10 workspace" }).click();
   const serverWorkspace = page.locator("section[aria-label='DL360 Gen10 workspace']");
+  await expect(serverWorkspace.getByLabel("DL360 Gen10 essentials")).toContainText("Data RAID");
+  await expect(serverWorkspace.getByLabel("Server workspace checks")).not.toBeVisible();
+  await serverWorkspace.getByLabel("DL360 Gen10 details").locator(":scope > summary").click();
   await expect(serverWorkspace.getByLabel("DL360 Gen10 Storage")).toContainText("Local RAID and drive layout");
-  await expect(serverWorkspace.getByLabel("Server workspace checks")).toContainText("ESXi Live Check");
-  await expect(serverWorkspace.getByLabel("Server workspace checks")).not.toContainText("vCenter Live Check");
+  const advanced = await openWorkspaceAdvanced(page, "DL360 Gen10");
+  await expect(advanced.getByLabel("Server workspace checks")).toContainText("ESXi Live Check");
+  await expect(advanced.getByLabel("Server workspace checks")).not.toContainText("vCenter Live Check");
 });
 
 test("top nav and map workspaces expose run controls without dead settings drawers", async ({ page }) => {
@@ -1305,20 +1337,25 @@ test("top nav and map workspaces expose run controls without dead settings drawe
 
   const topology = page.locator("section[aria-label='Living lab topology']");
   await topology.getByRole("button", { name: "Open Cisco switch workspace" }).click();
-  await expect(page.getByLabel("Cisco workspace network controls")).toContainText("Refresh live evidence");
+  await expect(page.getByLabel("Cisco workspace network controls")).not.toBeVisible();
+  await expect((await openWorkspaceAdvanced(page, "Cisco switch")).getByLabel("Cisco workspace network controls")).toContainText("Refresh live evidence");
   await page.locator("div[aria-label='Device workspace overlay']").getByRole("button", { name: "Close" }).click();
 
   await topology.getByRole("button", { name: "Open HPE iLO workspace" }).click();
-  await expect(page.getByLabel("iLO workspace server controls")).toContainText("iLO Live Check");
+  await expect(page.getByLabel("iLO workspace server controls")).not.toBeVisible();
+  await expect((await openWorkspaceAdvanced(page, "HPE iLO")).getByLabel("iLO workspace server controls")).toContainText("iLO Live Check");
   await page.locator("div[aria-label='Device workspace overlay']").getByRole("button", { name: "Close" }).click();
 
   await topology.getByRole("button", { name: "Open NetApp ONTAP workspace" }).click();
-  await expect(page.getByLabel("NetApp workspace storage controls")).toContainText("Discover Console");
-  await expect(page.getByLabel("NetApp workspace storage controls")).toContainText("Preview iSCSI");
+  await expect(page.getByLabel("NetApp workspace storage controls")).not.toBeVisible();
+  const netappAdvanced = await openWorkspaceAdvanced(page, "NetApp ONTAP");
+  await expect(netappAdvanced.getByLabel("NetApp workspace storage controls")).toContainText("Discover Console");
+  await expect(netappAdvanced.getByLabel("NetApp workspace storage controls")).toContainText("Preview iSCSI");
   await page.locator("div[aria-label='Device workspace overlay']").getByRole("button", { name: "Close" }).click();
 
   await topology.getByRole("button", { name: "Open vCenter VCSA workspace" }).click();
-  await expect(page.getByLabel("vCenter workspace virtualization controls")).toContainText("vCenter Live Check");
+  await expect(page.getByLabel("vCenter workspace virtualization controls")).not.toBeVisible();
+  await expect((await openWorkspaceAdvanced(page, "vCenter VCSA")).getByLabel("vCenter workspace virtualization controls")).toContainText("vCenter Live Check");
   await page.locator("div[aria-label='Device workspace overlay']").getByRole("button", { name: "Close" }).click();
 
   for (const [path, runButtonName] of [
@@ -1612,10 +1649,15 @@ test("map switch workspace shows access settings and blockers without proof clut
   const topology = page.locator("section[aria-label='Living lab topology']");
   await topology.getByRole("button", { name: "Open Cisco switch workspace" }).click();
   const workspace = page.locator("section[aria-label='Cisco switch workspace']");
-  const controls = workspace.getByLabel("Cisco workspace network controls");
 
   await expect(workspace).toContainText("Cisco C9300");
+  await expect(workspace.getByLabel("Cisco switch essentials")).toContainText("Management IP");
+  await expect(workspace.getByLabel("Cisco switch essentials").getByLabel("Management IP")).toHaveValue("192.168.1.204");
+  await expect(workspace.getByLabel("Cisco workspace network controls")).not.toBeVisible();
+  await workspace.getByLabel("Cisco switch details").locator(":scope > summary").click();
   await expect(workspace.getByLabel("Cisco switch Network")).toContainText("Management IP");
+  const advanced = await openWorkspaceAdvanced(page, "Cisco switch");
+  const controls = advanced.getByLabel("Cisco workspace network controls");
   await expect(controls).toContainText("Network controls");
   await expect(controls).toContainText("Cisco read-only checks");
   await expect(controls).toContainText("Management IP");
@@ -1634,7 +1676,8 @@ test("map Cisco workspace surfaces current-intent guardrail drift", async ({ pag
 
   const topology = page.locator("section[aria-label='Living lab topology']");
   await topology.getByRole("button", { name: "Open Cisco switch workspace" }).click();
-  const controls = page.getByLabel("Cisco workspace network controls");
+  const advanced = await openWorkspaceAdvanced(page, "Cisco switch");
+  const controls = advanced.getByLabel("Cisco workspace network controls");
   await controls.getByText("More read-only checks").click();
 
   const intentResponse = page.waitForResponse((response) =>
@@ -1647,8 +1690,9 @@ test("map Cisco workspace surfaces current-intent guardrail drift", async ({ pag
   await expect(controls).toContainText("Cisco current-to-intent diff completed");
   await expect(controls).toContainText("Intent diff");
   await expect(controls).toContainText("Needs review");
-  const workspace = page.locator("section[aria-label='Cisco switch workspace']");
-  await expect(workspace.getByLabel("Cisco switch schema inventory")).toContainText("Management IP");
+  const schema = advanced.locator(".design-schema-inventory");
+  await schema.locator(":scope > summary").click();
+  await expect(advanced.getByLabel("Cisco switch schema inventory")).toContainText("Management IP");
   await expect(page.locator("section[aria-label='Cisco switch driver']")).toHaveCount(0);
 });
 
@@ -1748,8 +1792,9 @@ test("storage iSCSI preview apply and validation buttons expose the honest guard
 
   const topology = page.locator("section[aria-label='Living lab topology']");
   await topology.getByRole("button", { name: "Open NetApp ONTAP workspace" }).click();
-  const controls = page.getByLabel("NetApp workspace storage controls");
-  const guardedApply = page.getByLabel("Guarded iSCSI apply");
+  const advanced = await openWorkspaceAdvanced(page, "NetApp ONTAP");
+  const controls = advanced.getByLabel("NetApp workspace storage controls");
+  const guardedApply = advanced.getByLabel("Guarded iSCSI apply");
 
   const previewResponse = page.waitForResponse((response) =>
     response.url().includes("/api/v1/providers/netapp-ontap/iscsi-setup-preview")
@@ -1797,7 +1842,7 @@ test("advanced proof is collapsed and operator labels hide raw statuses", async 
   const advanced = page.locator("details.advanced-drawer").first();
   await expect(advanced).not.toHaveAttribute("open", "");
   await expect(page.getByText("Golden State / Handoff", { exact: true })).toHaveCount(0);
-  await advanced.locator("summary").click();
+  await advanced.locator(":scope > summary").click();
   const validation = page.locator("section[aria-label='Validation reference']");
   await expect(validation.getByText("Golden State / Handoff", { exact: true })).toBeVisible();
   await expect(validation).toContainText("Validation Signals");

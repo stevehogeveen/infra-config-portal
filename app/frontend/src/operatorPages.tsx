@@ -7418,6 +7418,7 @@ function LabTopologyMap({
               initialSelectedDevice={workspaceTarget}
               onReload={onReload}
               subnetState={subnetState}
+              workspaceOnly
               workflowActions={workflowActions}
             />
           </aside>
@@ -8773,6 +8774,7 @@ function LabDesignComposer({
   initialSelectedDevice,
   onReload,
   subnetState,
+  workspaceOnly = false,
   workflowActions
 }: {
   activeProfile: LabProfile | null;
@@ -8783,6 +8785,7 @@ function LabDesignComposer({
   initialSelectedDevice?: DesignPartId;
   onReload: () => Promise<void> | void;
   subnetState: TopologySubnetState;
+  workspaceOnly?: boolean;
   workflowActions: WorkflowAction[];
 }) {
   const committedScenario = topologyScenarioFromProfile(activeProfile, features);
@@ -8913,6 +8916,12 @@ function LabDesignComposer({
     : [];
   const selectedOverviewDetails = selectedPart
     ? topologyWorkspaceMapDetails(selectedPart.id, selectedSettings, draftScenario, storageProtocol)
+    : [];
+  const selectedWorkspaceSections = selectedPart
+    ? topologyDeviceWorkspaceSections(selectedPart.id, selectedWorkspaceSettingFields, draftScenario, storageProtocol)
+    : [];
+  const selectedEssentialFields = selectedPart
+    ? topologyDeviceEssentialFields(selectedPart.id, selectedWorkspaceSettingFields, draftScenario, storageProtocol)
     : [];
   const selectedElementAction = selectedPart?.id === "switch"
     ? selectedSafeActions.find((action) => action.action_id === "cisco.ssh-readonly-probe") ?? null
@@ -9238,8 +9247,52 @@ function LabDesignComposer({
     }
   }
 
+  function renderSelectedDeviceSettingRow(field: { key: string; kind?: "textarea"; label: string }) {
+    if (!selectedPart) return null;
+    const profilePath = topologyCommittedProfilePath(selectedPart.id, field.key);
+    const profileOwned = Boolean(profilePath);
+    return (
+      <label className={`design-device-setting-row ${profileOwned ? "is-profile-owned" : "is-draft-owned"}`} key={field.key}>
+        <span>{field.label}</span>
+        {field.kind === "textarea" ? (
+          <textarea
+            readOnly={profileOwned}
+            rows={2}
+            value={deviceSettings[selectedPart.id]?.[field.key] ?? ""}
+            onChange={(event) => {
+              if (!profileOwned) updateDeviceSetting(field.key, event.target.value);
+            }}
+          />
+        ) : selectedPart.id === "netapp" && field.key === "protocol" ? (
+          <select
+            disabled={profileOwned}
+            value={storageProtocol === "iscsi" ? "iscsi" : "nfs"}
+            onChange={(event) => {
+              if (!profileOwned) updateDraftStorageProtocol(event.target.value === "iscsi" ? "iscsi" : "nfs");
+            }}
+          >
+            <option value="nfs">NFS datastore path</option>
+            <option value="iscsi">iSCSI block datastore path</option>
+          </select>
+        ) : (
+          <input
+            readOnly={profileOwned}
+            value={deviceSettings[selectedPart.id]?.[field.key] ?? ""}
+            onChange={(event) => {
+              if (!profileOwned) updateDeviceSetting(field.key, event.target.value);
+            }}
+          />
+        )}
+        <small>
+          <span className="design-provenance-chip">{profileOwned ? "Saved / derived" : "Draft only"}</span>
+          {profileOwned ? " Profile-owned value; edit it in System Setup advanced fields." : " Visual intent only; live unknown."}
+        </small>
+      </label>
+    );
+  }
+
   return (
-    <div className="lab-design-composer" aria-label="Design mode rack composer">
+    <div className={`lab-design-composer ${workspaceOnly ? "is-workspace-only" : ""}`} aria-label={workspaceOnly ? "Device workspace composer" : "Design mode rack composer"}>
       <section className="design-scenario-strip" aria-label="Design setup scenarios">
         {topologyDesignScenarios().map((item) => (
           <button
@@ -9440,7 +9493,7 @@ function LabDesignComposer({
               </section>
             )}
 
-            {selectedPart.id === "netapp" && (
+            {!workspaceOnly && selectedPart.id === "netapp" && (
               <NetAppWorkspaceStorageControls
                 activeProfile={activeProfile}
                 address={designAddress}
@@ -9449,7 +9502,7 @@ function LabDesignComposer({
               />
             )}
 
-            {selectedPart.id === "switch" && (
+            {!workspaceOnly && selectedPart.id === "switch" && (
               <CiscoWorkspaceNetworkControls
                 address={designAddress}
                 firmwareSummaries={firmwareSummaries}
@@ -9458,7 +9511,7 @@ function LabDesignComposer({
               />
             )}
 
-            {(selectedPart.id === "ilo" || selectedPart.id === "server-gen10" || selectedPart.id === "server-gen10plus") && (
+            {!workspaceOnly && (selectedPart.id === "ilo" || selectedPart.id === "server-gen10" || selectedPart.id === "server-gen10plus") && (
               <ServerWorkspaceControls
                 activeProfile={activeProfile}
                 address={designAddress}
@@ -9469,7 +9522,7 @@ function LabDesignComposer({
               />
             )}
 
-            {selectedPart.id === "vcenter" && (
+            {!workspaceOnly && selectedPart.id === "vcenter" && (
               <VirtualizationWorkspaceControls
                 activeProfile={activeProfile}
                 address={designAddress}
@@ -9479,7 +9532,14 @@ function LabDesignComposer({
               />
             )}
 
-            {selectedElementInspector && (
+            {workspaceOnly && selectedElementInspector && (
+              <p className="design-selected-element-note">
+                <strong>{selectedElementInspector.label}</strong>
+                <span>{selectedElementInspector.summary}</span>
+              </p>
+            )}
+
+            {!workspaceOnly && selectedElementInspector && (
               <section className="design-element-inspector" aria-label={`${selectedPart.label} ${selectedElementInspector.label} inspector`}>
                 <div>
                   <p className="operator-kicker">Selected element</p>
@@ -9541,61 +9601,168 @@ function LabDesignComposer({
               <span>{topologyWorkspaceNextAction(selectedSafeActions, designReadinessRows)}</span>
             </div>
 
+            {workspaceOnly && selectedEssentialFields.length > 0 && (
+              <section className="design-device-essentials" aria-label={`${selectedPart.label} essentials`}>
+                <div>
+                  <p className="operator-kicker">Essentials</p>
+                  <h4>Most-used settings</h4>
+                  <span>Everything else is in Details or Advanced.</span>
+                </div>
+                <div className="design-device-setting-rows compact">
+                  {selectedEssentialFields.map((field) => renderSelectedDeviceSettingRow(field))}
+                </div>
+              </section>
+            )}
+
+            {!workspaceOnly && (
             <div className="design-device-param-sections" aria-label={`${selectedPart.label} editable parameters`}>
-              {topologyDeviceWorkspaceSections(selectedPart.id, selectedWorkspaceSettingFields, draftScenario, storageProtocol).map((section) => (
+              {selectedWorkspaceSections.map((section) => (
                 <section className="design-device-param-section" key={section.id} aria-label={`${selectedPart.label} ${section.label}`}>
                   <div>
                     <p className="operator-kicker">{section.label}</p>
                     <h4>{section.summary}</h4>
                   </div>
                   <div className="design-device-setting-rows">
-                    {section.fields.map((field) => {
-                      const profilePath = topologyCommittedProfilePath(selectedPart.id, field.key);
-                      const profileOwned = Boolean(profilePath);
-                      return (
-                        <label className={`design-device-setting-row ${profileOwned ? "is-profile-owned" : "is-draft-owned"}`} key={field.key}>
-                          <span>{field.label}</span>
-                          {field.kind === "textarea" ? (
-                            <textarea
-                              readOnly={profileOwned}
-                              rows={2}
-                              value={deviceSettings[selectedPart.id]?.[field.key] ?? ""}
-                              onChange={(event) => {
-                                if (!profileOwned) updateDeviceSetting(field.key, event.target.value);
-                              }}
-                            />
-                          ) : selectedPart.id === "netapp" && field.key === "protocol" ? (
-                            <select
-                              disabled={profileOwned}
-                              value={storageProtocol === "iscsi" ? "iscsi" : "nfs"}
-                              onChange={(event) => {
-                                if (!profileOwned) updateDraftStorageProtocol(event.target.value === "iscsi" ? "iscsi" : "nfs");
-                              }}
-                            >
-                              <option value="nfs">NFS datastore path</option>
-                              <option value="iscsi">iSCSI block datastore path</option>
-                            </select>
-                          ) : (
-                            <input
-                              readOnly={profileOwned}
-                              value={deviceSettings[selectedPart.id]?.[field.key] ?? ""}
-                              onChange={(event) => {
-                                if (!profileOwned) updateDeviceSetting(field.key, event.target.value);
-                              }}
-                            />
-                          )}
-                          <small>
-                            <span className="design-provenance-chip">{profileOwned ? "Saved / derived" : "Draft only"}</span>
-                            {profileOwned ? " Profile-owned value; edit it in System Setup advanced fields." : " Visual intent only; live unknown."}
-                          </small>
-                        </label>
-                      );
-                    })}
+                    {section.fields.map((field) => renderSelectedDeviceSettingRow(field))}
                   </div>
                 </section>
               ))}
             </div>
+            )}
 
+            {workspaceOnly && selectedWorkspaceSections.length > 0 && (
+              <details className="design-workspace-details" aria-label={`${selectedPart.label} details`}>
+                <summary>
+                  <span>More settings</span>
+                  <strong>{selectedWorkspaceSections.reduce((total, section) => total + section.fields.length, 0)} fields</strong>
+                </summary>
+                <div className="design-device-param-sections" aria-label={`${selectedPart.label} detailed parameters`}>
+                  {selectedWorkspaceSections.map((section) => (
+                    <section className="design-device-param-section" key={section.id} aria-label={`${selectedPart.label} ${section.label}`}>
+                      <div>
+                        <p className="operator-kicker">{section.label}</p>
+                        <h4>{section.summary}</h4>
+                      </div>
+                      <div className="design-device-setting-rows">
+                        {section.fields.map((field) => renderSelectedDeviceSettingRow(field))}
+                      </div>
+                    </section>
+                  ))}
+                </div>
+              </details>
+            )}
+
+            {workspaceOnly && (
+              <details className="design-workspace-advanced" aria-label={`${selectedPart.label} advanced checks and proof`}>
+                <summary>
+                  <span>Advanced checks and proof</span>
+                  <strong>Read-only evidence, schema homes, and diagnostic output</strong>
+                </summary>
+
+                {selectedPart.id === "netapp" && (
+                  <NetAppWorkspaceStorageControls
+                    activeProfile={activeProfile}
+                    address={designAddress}
+                    onReload={onReload}
+                    storageProtocol={storageProtocol}
+                  />
+                )}
+
+                {selectedPart.id === "switch" && (
+                  <CiscoWorkspaceNetworkControls
+                    address={designAddress}
+                    firmwareSummaries={firmwareSummaries}
+                    onReload={onReload}
+                    workflowActions={workflowActions}
+                  />
+                )}
+
+                {(selectedPart.id === "ilo" || selectedPart.id === "server-gen10" || selectedPart.id === "server-gen10plus") && (
+                  <ServerWorkspaceControls
+                    activeProfile={activeProfile}
+                    address={designAddress}
+                    localStorageMode={draftScenario === "single_server_local_storage"}
+                    onReload={onReload}
+                    scope={selectedPart.id === "ilo" ? "ilo" : "server"}
+                    workflowActions={workflowActions}
+                  />
+                )}
+
+                {selectedPart.id === "vcenter" && (
+                  <VirtualizationWorkspaceControls
+                    activeProfile={activeProfile}
+                    address={designAddress}
+                    features={features}
+                    onReload={onReload}
+                    workflowActions={workflowActions}
+                  />
+                )}
+
+                <section className="design-workspace-safe-strip" aria-label={`${selectedPart.label} safe checks and next actions`}>
+                  <div>
+                    <p className="operator-kicker">Safe checks & next actions</p>
+                    <h4>Scoped to {selectedPart.label}</h4>
+                  </div>
+                  <div className="design-readiness-list compact">
+                    <div>
+                      {designReadinessRows.slice(0, 4).map((row) => (
+                        <span className={`design-readiness-pill ${row.status}`} key={row.label}>
+                          <strong>{row.label}</strong>
+                          <small>{row.detail}</small>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                  {selectedSafeActions.length ? (
+                    <div className="design-device-action-list compact">
+                      {selectedSafeActions.map((action) => {
+                        const running = actionRunStatus.runningActionId === action.action_id;
+                        const latestRun = actionRunsById[action.action_id]?.[0] ?? null;
+                        return (
+                          <button
+                            disabled={running}
+                            key={action.action_id}
+                            onClick={() => void runDeviceSafeAction(action)}
+                            type="button"
+                          >
+                            <Play size={14} />
+                            <span>{running ? "Running" : action.label}</span>
+                            <small>{latestRun ? `Last: ${displayStatus(latestRun.status)}` : "Read-only check"}</small>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p className="operator-action-message">No read-only check is registered for this device yet.</p>
+                  )}
+                  {(actionRunStatus.message || actionRunStatus.error) && (
+                    <p className={actionRunStatus.error ? "operator-action-message error" : "operator-action-message success"}>
+                      {actionRunStatus.error || actionRunStatus.message}
+                    </p>
+                  )}
+                  {diagnosisLoading && <p className="operator-action-message">Preparing advisory diagnosis...</p>}
+                  {diagnosis && <WorkflowDiagnosisCard diagnosis={diagnosis} />}
+                </section>
+
+                <details className="design-schema-inventory">
+                  <summary>
+                    <span>Schema homes</span>
+                    <strong>{selectedPersistenceRows.length} mapped parameters</strong>
+                  </summary>
+                  <div className="design-schema-list" aria-label={`${selectedPart.label} schema inventory`}>
+                    {selectedPersistenceRows.map((row) => (
+                      <div className={`design-schema-row design-schema-row-${row.commitState}`} key={row.id}>
+                        <span>{row.label}</span>
+                        <strong>{row.persistsTo}</strong>
+                        <small>{row.commitLabel}</small>
+                      </div>
+                    ))}
+                  </div>
+                </details>
+              </details>
+            )}
+
+            {!workspaceOnly && (
             <section className="design-workspace-safe-strip" aria-label={`${selectedPart.label} safe checks and next actions`}>
               <div>
                 <p className="operator-kicker">Safe checks & next actions</p>
@@ -9641,7 +9808,9 @@ function LabDesignComposer({
               {diagnosisLoading && <p className="operator-action-message">Preparing advisory diagnosis...</p>}
               {diagnosis && <WorkflowDiagnosisCard diagnosis={diagnosis} />}
             </section>
+            )}
 
+            {!workspaceOnly && (
             <details className="design-schema-inventory" open>
               <summary>
                 <span>Schema homes</span>
@@ -9657,6 +9826,7 @@ function LabDesignComposer({
                 ))}
               </div>
             </details>
+            )}
           </section>
         )}
       </section>
@@ -11148,6 +11318,34 @@ function topologyDeviceWorkspaceSections(
       summary: section.summary
     }))
     .filter((section) => section.fields.length > 0);
+}
+
+function topologyDeviceEssentialFields(
+  partId: DesignPartId,
+  fields: Array<{ key: string; kind?: "textarea"; label: string }>,
+  scenario: TopologyDesignScenario,
+  storageProtocol: string
+): Array<{ key: string; kind?: "textarea"; label: string }> {
+  const preferredKeys: Partial<Record<DesignPartId, string[]>> = {
+    switch: ["name", "management_ip", "mgmt_vlan", "storage_vlan", "ports"],
+    ilo: ["name", "management_ip", "credential_state", "reachability", "firmware"],
+    "server-gen10": scenario === "single_server_local_storage"
+      ? ["name", "management_ip", "drive_bays", "raid_controller", "raid_data"]
+      : ["name", "management_ip", "storage_vlan", "ports", "notes"],
+    "server-gen10plus": scenario === "single_server_local_storage"
+      ? ["name", "management_ip", "drive_bays", "raid_controller", "raid_data"]
+      : ["name", "management_ip", "storage_vlan", "ports", "notes"],
+    netapp: storageProtocol === "iscsi"
+      ? ["name", "management_ip", "storage_vlan", "iscsi_lifs", "controller_ports"]
+      : ["name", "management_ip", "storage_vlan", "nfs_lifs", "controller_ports"],
+    vcenter: ["name", "management_ip", "datastore", "vm_network", "role"],
+    windows: ["name", "vm_network", "role", "notes"]
+  };
+  const priority = preferredKeys[partId] ?? [];
+  const picked = priority
+    .map((key) => fields.find((field) => field.key === key))
+    .filter((field): field is { key: string; kind?: "textarea"; label: string } => Boolean(field));
+  return (picked.length ? picked : fields).slice(0, 5);
 }
 
 function topologyDefaultFaceplateElement(partId: DesignPartId): string {

@@ -10233,6 +10233,11 @@ th.ui-compact-table-cell {
   width: min(100%, 1480px);
 }
 
+.lab-design-composer.is-workspace-only {
+  display: block;
+  width: 100%;
+}
+
 .design-scenario-strip {
   display: grid;
   gap: 10px;
@@ -11407,6 +11412,103 @@ th.ui-compact-table-cell {
   font-size: 12px;
   font-weight: 750;
   line-height: 1.35;
+}
+
+.design-device-essentials {
+  background: #ffffff;
+  border: 1px solid #dbe4ee;
+  border-radius: 12px;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.06);
+  display: grid;
+  gap: 12px;
+  padding: 13px;
+}
+
+.design-device-essentials h4 {
+  color: var(--ink);
+  font-size: 15px;
+  line-height: 1.15;
+  margin: 0;
+}
+
+.design-device-essentials span,
+.design-selected-element-note span {
+  color: #64748b;
+  display: block;
+  font-size: 12px;
+  font-weight: 750;
+  line-height: 1.35;
+  margin-top: 4px;
+}
+
+.design-selected-element-note {
+  align-items: center;
+  background: #f8fafc;
+  border: 1px solid #dbe4ee;
+  border-radius: 10px;
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 10px 12px;
+}
+
+.design-selected-element-note strong {
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.design-workspace-details,
+.design-workspace-advanced {
+  background: #ffffff;
+  border: 1px solid #dbe4ee;
+  border-radius: 12px;
+  display: grid;
+  gap: 12px;
+  padding: 10px;
+}
+
+.design-workspace-advanced {
+  background: #f8fafc;
+}
+
+.design-workspace-details summary,
+.design-workspace-advanced summary {
+  align-items: center;
+  color: var(--ink);
+  cursor: pointer;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+  list-style: none;
+  min-height: 36px;
+}
+
+.design-workspace-details summary::-webkit-details-marker,
+.design-workspace-advanced summary::-webkit-details-marker {
+  display: none;
+}
+
+.design-workspace-details summary span,
+.design-workspace-advanced summary span {
+  color: #0f172a;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.design-workspace-details summary strong,
+.design-workspace-advanced summary strong {
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 850;
+  line-height: 1.25;
+  text-align: right;
+}
+
+.design-workspace-details[open] summary,
+.design-workspace-advanced[open] summary {
+  border-bottom: 1px solid #e5e9ef;
+  margin-bottom: 2px;
+  padding-bottom: 10px;
 }
 
 .design-device-param-sections {
