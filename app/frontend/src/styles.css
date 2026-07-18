@@ -1507,14 +1507,15 @@ button:disabled {
 }
 
 .operator-issue-route span,
-.operator-issue-note span {
+.operator-issue-note span,
+.operator-issue-target legend {
   color: #526787;
   font-size: 12px;
   font-weight: 900;
   text-transform: uppercase;
 }
 
-.operator-issue-route code {
+.operator-issue-route strong {
   color: #0f172a;
   font-size: 13px;
   overflow-wrap: anywhere;
@@ -1533,6 +1534,31 @@ button:disabled {
   min-height: 112px;
   padding: 10px;
   resize: vertical;
+}
+
+.operator-issue-target {
+  border: 1px solid #dbe4ef;
+  border-radius: 8px;
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 10px;
+}
+
+.operator-issue-target label {
+  align-items: center;
+  color: #334155;
+  display: flex;
+  font-size: 13px;
+  font-weight: 800;
+  gap: 8px;
+}
+
+.operator-issue-boundary {
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 800;
+  margin: 0;
 }
 
 .operator-issue-result {
@@ -1560,6 +1586,51 @@ button:disabled {
 .operator-issue-result ul {
   margin: 0;
   padding-left: 18px;
+}
+
+.operator-issue-details {
+  border: 1px solid #cde8df;
+  border-radius: 8px;
+  padding: 0;
+}
+
+.operator-issue-details summary {
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 900;
+  list-style: none;
+  padding: 10px 12px;
+}
+
+.operator-issue-details summary::-webkit-details-marker {
+  display: none;
+}
+
+.operator-issue-details > ul,
+.operator-issue-details > span,
+.operator-issue-details > dl,
+.operator-issue-details > table,
+.operator-issue-details > button {
+  margin: 0 12px 12px;
+}
+
+.operator-issue-details dl {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(110px, 0.45fr) minmax(0, 1fr);
+}
+
+.operator-issue-details dt {
+  color: #526787;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.operator-issue-details dd {
+  color: #0f172a;
+  font-size: 12px;
+  margin: 0;
+  overflow-wrap: anywhere;
 }
 
 .operator-issue-actions {

@@ -1947,19 +1947,54 @@ test("blocked workflow runs render an advisory diagnosis card", async ({ page })
   await expect(page.getByLabel("Advisory diagnosis")).toContainText("Diagnosis is advisory and does not execute workflow actions.");
 });
 
-test("operator issue reporter creates a redacted AI-ready packet from the current route", async ({ page }) => {
+test("testing assistant queues a redacted fix request from the current route", async ({ page }) => {
+  const workflowRequests: string[] = [];
+  page.on("request", (request) => {
+    if (request.url().includes("/api/v1/workflows/actions/")) {
+      workflowRequests.push(request.url());
+    }
+  });
+
   await page.goto("/network");
-  await expect(page).toHaveURL(/\/overview/);
+  await expect(page).toHaveURL(/\/network/);
 
   await page.getByRole("button", { name: "Report issue" }).click();
-  await expect(page.getByRole("dialog", { name: "Report testing issue" })).toBeVisible();
-  await expect(page.getByText("/overview")).toBeVisible();
+  await expect(page.getByRole("dialog", { name: "Testing Assistant" })).toBeVisible();
+  await expect(page.getByText("/network")).toBeVisible();
+  await expect(page.getByText("No hardware action is run from this report.")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Queue fix request" })).toBeDisabled();
+  await expect(page.getByLabel("Network details")).toBeVisible();
+  await page.getByLabel("Network details").check();
   await page.getByLabel("What went wrong?").fill("Clicked the Cisco validation button and the status looked stale.");
-  await page.getByRole("button", { name: "Create packet" }).click();
+  const packetRequest = page.waitForRequest((request) =>
+    request.url().includes("/api/v1/operator-issue-packets") && request.method() === "POST"
+  );
+  const changeRequest = page.waitForRequest((request) =>
+    request.url().includes("/api/v1/ai-change-requests") && request.method() === "POST"
+  );
+  await page.getByRole("button", { name: "Queue fix request" }).click();
 
-  await expect(page.getByLabel("Generated issue packet")).toContainText("Operator reported an issue on Overview");
-  await expect(page.getByLabel("Generated issue packet")).toContainText("artifacts/codex-runs/operator-issue-packets");
-  await expect(page.getByRole("button", { name: "Copy AI prompt" })).toBeVisible();
+  const packetPayload = (await packetRequest).postDataJSON() as Record<string, unknown>;
+  const changePayload = (await changeRequest).postDataJSON() as Record<string, unknown>;
+  await expect(page.getByLabel("Feedback queued")).toContainText("Feedback queued");
+  await expect(page.getByLabel("Feedback queued")).toContainText("Operator reported an issue on Network");
+  const summaryText = (await page.locator(".operator-issue-result > span").allTextContents()).join(" ");
+  expect(summaryText).not.toContain("artifacts/codex-runs/operator-issue-packets");
+  await expect(page.getByRole("button", { name: "Copy handoff" })).toHaveCount(0);
+  expect(packetPayload.route).toBe("/network");
+  expect(String((packetPayload.ui_context as Record<string, unknown>).target)).toContain("Network details");
+  expect(changePayload.route).toBe("/network");
+  expect(changePayload.target).toContain("Network details");
+  expect(Array.isArray(changePayload.regions)).toBeTruthy();
+  expect((changePayload.regions as Array<Record<string, unknown>>)).toHaveLength(1);
+  expect((changePayload.regions as Array<Record<string, unknown>>)[0].id).toBe("network-details");
+  expect(workflowRequests).toHaveLength(0);
+
+  await page.getByLabel("Feedback queued").getByText("View details").click();
+  await expect(page.getByText("Review note: docs/change-requests/20260707T161900Z-Network.md")).toBeVisible();
+  await page.getByLabel("Feedback queued").getByText("Advanced request data").click();
+  await expect(page.getByText("Packet artifact")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Copy handoff" })).toBeVisible();
 });
 
 test("request detail shows mock lifecycle guardrails before planning", async ({ page }) => {

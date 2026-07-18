@@ -46,6 +46,7 @@ import {
 import type {
   ArtifactRecord,
   AuditEvent,
+  AiChangeRequest,
   Catalog,
   CiscoBootstrapRequirements,
   CiscoBootstrapRequirementsUpdate,
@@ -110,6 +111,8 @@ import type {
   RequestRecord,
   RequestStatus,
   UiDisplayMode,
+  UiIntentRegion,
+  UiIntentRegionLayout,
   VMDeploymentCreate,
   VMDeploymentUpdate,
   WorkflowAction,
@@ -899,36 +902,60 @@ function OperatorIssueReporter() {
   const location = useLocation();
   const [open, setOpen] = useState(false);
   const [note, setNote] = useState("");
+  const [targetRegionId, setTargetRegionId] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [copying, setCopying] = useState(false);
   const [error, setError] = useState("");
   const [packet, setPacket] = useState<OperatorIssuePacket | null>(null);
+  const [queued, setQueued] = useState<AiChangeRequest | null>(null);
   const route = `${location.pathname}${location.search}`;
   const pageTitle = pageTitleForRoute(location.pathname);
+  const regions = issueReporterRegionsForRoute(location.pathname);
+  const selectedRegion = regions.find((region) => region.id === targetRegionId) ?? null;
 
   useEffect(() => {
     setOpen(false);
     setError("");
     setPacket(null);
+    setQueued(null);
+    setTargetRegionId("");
   }, [route]);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
+    const trimmed = note.trim();
+    if (!trimmed || submitting) return;
     setSubmitting(true);
     setError("");
     setPacket(null);
+    setQueued(null);
+    const selectedRegions = selectedRegion ? [selectedRegion] : regions;
+    const currentLayout = issueReporterLayoutForRegions(regions);
+    const targetLabel = selectedRegion ? `${selectedRegion.label} (${selectedRegion.id})` : regions.length ? "This whole page" : null;
     try {
-      setPacket(await api.createOperatorIssuePacket({
-        operator_note: note,
+      const nextPacket = await api.createOperatorIssuePacket({
+        operator_note: trimmed,
         page_title: pageTitle,
         route,
         ui_context: {
           page: pageTitle,
           path: location.pathname,
           query: location.search || "none",
+          target: targetLabel || "none",
           viewport: `${window.innerWidth}x${window.innerHeight}`
         }
-      }));
+      });
+      const changeRequest = await api.createAiChangeRequest({
+        current_layout: currentLayout,
+        page: pageTitle,
+        regions: selectedRegions.map(({ id, kind, label }) => ({ id, kind, label })),
+        request: trimmed,
+        route,
+        screenshot_path: null,
+        target: targetLabel
+      });
+      setPacket(nextPacket);
+      setQueued(changeRequest);
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -955,12 +982,12 @@ function OperatorIssueReporter() {
         Report issue
       </button>
       {open && createPortal(
-        <div className="operator-issue-overlay" role="dialog" aria-modal="true" aria-label="Report testing issue">
+        <div className="operator-issue-overlay" role="dialog" aria-modal="true" aria-label="Testing Assistant">
           <form className="operator-issue-panel" onSubmit={submit}>
             <div className="operator-issue-head">
               <div>
                 <p className="operator-kicker">Testing feedback</p>
-                <h2>Report what broke</h2>
+                <h2>Testing Assistant</h2>
               </div>
               <button aria-label="Close issue reporter" onClick={() => setOpen(false)} type="button">
                 <X size={18} />
@@ -968,7 +995,7 @@ function OperatorIssueReporter() {
             </div>
             <div className="operator-issue-route">
               <span>{pageTitle}</span>
-              <code>{route}</code>
+              <strong>{route}</strong>
             </div>
             <label className="operator-issue-note">
               <span>What went wrong?</span>
@@ -979,30 +1006,96 @@ function OperatorIssueReporter() {
                 value={note}
               />
             </label>
+            {regions.length > 0 && (
+              <fieldset className="operator-issue-target">
+                <legend>Where did it happen?</legend>
+                <label>
+                  <input
+                    checked={!targetRegionId}
+                    name="operator-issue-target"
+                    onChange={() => setTargetRegionId("")}
+                    type="radio"
+                  />
+                  This whole page
+                </label>
+                {regions.map((region) => (
+                  <label key={region.id}>
+                    <input
+                      checked={targetRegionId === region.id}
+                      name="operator-issue-target"
+                      onChange={() => setTargetRegionId(region.id)}
+                      type="radio"
+                    />
+                    {region.label}
+                  </label>
+                ))}
+              </fieldset>
+            )}
+            <p className="operator-issue-boundary">No hardware action is run from this report.</p>
             {error && <p className="operator-feedback error">{error}</p>}
-            {packet && (
-              <div className="operator-issue-result" aria-label="Generated issue packet">
-                <strong>{packet.summary}</strong>
-                <span>Packet: {packet.artifact}</span>
-                <span>Markdown: {packet.markdown_artifact}</span>
-                <ul>
-                  {packet.suggested_next_steps.slice(0, 3).map((step) => (
-                    <li key={step}>{step}</li>
-                  ))}
-                </ul>
-                <button className="secondary-button" onClick={() => void copyPrompt()} type="button">
-                  <Copy size={15} />
-                  {copying ? "Copied" : "Copy AI prompt"}
-                </button>
+            {packet && queued && (
+              <div className="operator-issue-result" aria-label="Feedback queued">
+                <strong>Feedback queued</strong>
+                <span>{packet.summary}</span>
+                <span>Codex and Claude can review this from the mailbox.</span>
+                <details className="operator-issue-details">
+                  <summary>View details</summary>
+                  <ul>
+                    {packet.suggested_next_steps.slice(0, 3).map((step) => (
+                      <li key={step}>{step}</li>
+                    ))}
+                  </ul>
+                  <span>Review note: {queued.artifact}</span>
+                  <span>{queued.next_action}</span>
+                </details>
+                <details className="operator-issue-details operator-issue-advanced">
+                  <summary>Advanced request data</summary>
+                  <dl>
+                    <dt>Packet ID</dt>
+                    <dd>{packet.packet_id}</dd>
+                    <dt>Request ID</dt>
+                    <dd>{queued.request_id}</dd>
+                    <dt>Packet artifact</dt>
+                    <dd>{packet.artifact}</dd>
+                    <dt>Markdown artifact</dt>
+                    <dd>{packet.markdown_artifact}</dd>
+                    <dt>Target</dt>
+                    <dd>{targetLabelForIssueReporter(packet.ui_context.target)}</dd>
+                  </dl>
+                  {packet.recent_problem_runs.length > 0 && (
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Run</th>
+                          <th>Status</th>
+                          <th>Command</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {packet.recent_problem_runs.map((run) => (
+                          <tr key={run.run_id}>
+                            <td>{run.run_id}</td>
+                            <td>{run.status}</td>
+                            <td>{run.command || "-"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                  <button className="secondary-button" onClick={() => void copyPrompt()} type="button">
+                    <Copy size={15} />
+                    {copying ? "Copied" : "Copy handoff"}
+                  </button>
+                </details>
               </div>
             )}
             <div className="operator-issue-actions">
               <button className="secondary-button" onClick={() => setOpen(false)} type="button">
                 Cancel
               </button>
-              <button disabled={submitting} type="submit">
+              <button disabled={submitting || !note.trim()} type="submit">
                 <Send size={15} />
-                {submitting ? "Building packet" : "Create packet"}
+                {submitting ? "Queueing" : "Queue fix request"}
               </button>
             </div>
           </form>
@@ -1011,6 +1104,83 @@ function OperatorIssueReporter() {
       )}
     </>
   );
+}
+
+function issueReporterRegionsForRoute(pathname: string): UiIntentRegion[] {
+  const segment = pathname.split("/").filter(Boolean)[0] || "overview";
+  const routeRegions: Record<string, UiIntentRegion[]> = {
+    "firmware-upgrades": [
+      { id: "firmware-table", label: "Firmware table", kind: "section" },
+      { id: "firmware-actions", label: "Upgrade or bypass actions", kind: "section" }
+    ],
+    "lab-defaults": [
+      { id: "network-defaults", label: "Network defaults", kind: "section" },
+      { id: "shared-sign-in", label: "Shared sign-in", kind: "section" },
+      { id: "expected-devices", label: "Expected devices", kind: "section" }
+    ],
+    "lab-profiles": [
+      { id: "saved-kit", label: "Saved kit", kind: "section" },
+      { id: "new-kit", label: "New kit", kind: "section" },
+      { id: "address-preview", label: "Address preview", kind: "section" }
+    ],
+    media: [
+      { id: "software-media", label: "Software Media card", kind: "section" },
+      { id: "media-details", label: "Media details", kind: "drawer", collapsible: true }
+    ],
+    network: [
+      { id: "network-check", label: "Cisco switch check", kind: "section" },
+      { id: "network-details", label: "Network details", kind: "drawer", collapsible: true }
+    ],
+    overview: [
+      { id: "topology", label: "Lab topology map", kind: "section" },
+      { id: "current-state", label: "Current state", kind: "section" },
+      { id: "next-action", label: "Next action", kind: "section" }
+    ],
+    "run-center": [
+      { id: "build-plan", label: "Build plan", kind: "section" },
+      { id: "run-console", label: "Run console", kind: "section" },
+      { id: "completion-report", label: "Completion report", kind: "section" }
+    ],
+    server: [
+      { id: "compute-sign-in", label: "Compute sign-in", kind: "section" },
+      { id: "server-checks", label: "Server checks", kind: "section" },
+      { id: "server-details", label: "Server details", kind: "drawer", collapsible: true }
+    ],
+    storage: [
+      { id: "storage-scenario", label: "Storage scenario", kind: "section" },
+      { id: "storage-checks", label: "Storage checks", kind: "section" },
+      { id: "storage-details", label: "Storage details", kind: "drawer", collapsible: true }
+    ],
+    validation: [
+      { id: "readiness-check", label: "Readiness check", kind: "section" },
+      { id: "handoff-details", label: "Handoff details", kind: "drawer", collapsible: true },
+      { id: "danger-zone", label: "Protected reset area", kind: "drawer", collapsible: true }
+    ],
+    virtualization: [
+      { id: "virtualization-check", label: "Virtualization check", kind: "section" },
+      { id: "datastore-path", label: "Datastore path", kind: "section" },
+      { id: "virtualization-details", label: "Virtualization details", kind: "drawer", collapsible: true }
+    ]
+  };
+  return routeRegions[segment] ?? [];
+}
+
+function issueReporterLayoutForRegions(regions: UiIntentRegion[]): Record<string, UiIntentRegionLayout> {
+  return Object.fromEntries(
+    regions.map((region, index) => [
+      region.id,
+      {
+        collapsed: Boolean(region.collapsible),
+        order: index,
+        visible: region.defaultVisible ?? true
+      }
+    ])
+  );
+}
+
+function targetLabelForIssueReporter(value: string | undefined): string {
+  if (!value || value === "none") return "No target selected";
+  return value;
 }
 
 function pageTitleForRoute(pathname: string) {
