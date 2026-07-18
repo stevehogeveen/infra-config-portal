@@ -16483,7 +16483,9 @@ button.design-ilo-port:hover {
 .lab-defaults-device-list { display: grid; }
 .lab-defaults-device-row { align-items: center; border-bottom: 1px solid #e2e8ee; display: flex; gap: 14px; min-height: 62px; }
 .lab-defaults-device-row:last-child { border-bottom: 0; }
-.lab-defaults-device-row div { display: grid; gap: 3px; flex: 1; }
+.lab-defaults-device-row div { display: grid; gap: 3px; flex: 1; min-width: 0; }
+.lab-defaults-device-row strong,
+.lab-defaults-device-row small { overflow-wrap: anywhere; }
 .lab-defaults-device-row small { color: #60758d; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
 .device-presence-dot { border: 2px solid #087f83; border-radius: 50%; height: 16px; width: 16px; }
 .device-presence-dot.on { background: #087f83; box-shadow: 0 0 0 5px #e0f3f2; }
@@ -16534,6 +16536,17 @@ button.design-ilo-port:hover {
   .validation-readiness-surface,
   .validation-details,
   .validation-danger-zone { padding-left: 16px; padding-right: 16px; }
+  .lab-defaults-device-row {
+    align-items: center;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    padding: 10px 0;
+  }
+  .lab-defaults-device-state { justify-self: start; }
+  .lab-defaults-device-toggle {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+  }
 }
 
 @media (max-width: 980px) {

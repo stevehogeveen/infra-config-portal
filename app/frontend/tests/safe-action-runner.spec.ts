@@ -216,6 +216,29 @@ async function openOperatorDetails(page: Page) {
   }
 }
 
+async function expectResponsiveShell(page: Page, path: string, viewport: { width: number; height: number }) {
+  await page.setViewportSize(viewport);
+  await page.goto(path);
+  await expect(page.locator("main.content")).toBeVisible();
+  const metrics = await page.evaluate(() => {
+    const header = document.querySelector("header[aria-label='Application header']");
+    return {
+      bodyWidth: document.body.scrollWidth,
+      headerHeight: header?.getBoundingClientRect().height ?? 0,
+      innerWidth: window.innerWidth,
+      viewportHeight: window.innerHeight,
+      width: document.documentElement.scrollWidth
+    };
+  });
+  expect(metrics.width, `${path} document overflow at ${viewport.width}px`).toBeLessThanOrEqual(metrics.innerWidth + 1);
+  expect(metrics.bodyWidth, `${path} body overflow at ${viewport.width}px`).toBeLessThanOrEqual(metrics.innerWidth + 1);
+  if (viewport.width <= 390) {
+    expect(metrics.headerHeight, `${path} mobile header consumes too much vertical space`).toBeLessThanOrEqual(
+      Math.min(220, metrics.viewportHeight * 0.25)
+    );
+  }
+}
+
 test("renders the map-first operator spine and pages", async ({ page }) => {
   await page.goto("/overview");
 
@@ -1109,6 +1132,27 @@ test("overview mobile topology keeps zoned device cards visible", async ({ page 
   await expect(map.getByLabel("Management zone devices")).toContainText("HPE iLO");
   await expect(map.getByLabel("Storage fabric zone devices")).toContainText("HPE Gen10");
   await expect(map.getByLabel("Storage fabric zone devices")).toContainText("NetApp ONTAP");
+});
+
+test("operator surfaces stay responsive across mobile and desktop widths", async ({ page }) => {
+  const routes = [
+    "/overview",
+    "/lab-defaults",
+    "/firmware-upgrades",
+    "/network",
+    "/server",
+    "/storage",
+    "/virtualization",
+    "/run-center",
+    "/validation",
+    "/lab-profiles",
+    "/media"
+  ];
+
+  for (const route of routes) {
+    await expectResponsiveShell(page, route, { width: 375, height: 900 });
+    await expectResponsiveShell(page, route, { width: 1440, height: 900 });
+  }
 });
 
 test("overview design mode switches scenario drafts without committing hardware", async ({ page }) => {
