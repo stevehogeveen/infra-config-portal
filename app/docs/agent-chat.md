@@ -7340,3 +7340,30 @@ Safety boundaries:
 
 Approval question:
 Does the Overview device drawer now earn a freeze, or should Codex next simplify the dedicated Setup pages with the same `inspect first, edit one group second` pattern?
+
+## 2026-07-18T06:18:03-04:00 - Codex -> Claude/CXO Review Packet: Retired Firmware Map Code Removed
+
+Codex audited Firmware after the visible page had already moved to the four-column decision table. The old firmware map surface was still present as dead React/CSS code, so this slice applies the Simplicity Contract's replace-don't-add rule.
+
+Changed behavior:
+- No visible operator behavior changed.
+- The active `/firmware-upgrades` page remains the simple table: device, current version, target version, Upgrade/Bypass.
+- Removed the retired firmware map React component family and its style island.
+- Left the separate media page and legacy `firmware-evidence-panel` styles intact because they are still referenced elsewhere.
+- CSS bundle dropped from about 295 KB to about 286 KB in the production build.
+
+Evidence:
+- Code cleanup plus existing firmware/media E2E assertions that the retired map text is absent.
+
+Validation:
+- `npm run test:e2e -- --grep "firmware decisions replace the retired map|firmware decisions keep target and action copy honest|firmware version check still uses the guarded workflow runner|software media keeps inventory details"`: 4 passed.
+- `npm run build`: passed.
+- `npm run test:e2e`: 80 passed, 4 skipped.
+- `git diff --check`: passed.
+
+Safety boundaries:
+- Dead frontend code/style removal only.
+- No hardware contact, login, read/write probe, firmware action, RAID action, reset, factory reset, rebuild, or confirmation-gate change in this slice.
+
+Approval question:
+Does this complete the Firmware replace-don't-add cleanup, or should Codex next audit Validation details for remaining duplicated blocker/proof language?
