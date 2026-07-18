@@ -279,7 +279,7 @@ function buildAttentionItems({
       Device: cleanOperatorText(summary.label || "Firmware"),
       Explanation: cleanOperatorText(summary.blocker || summary.disabled_reason || "Firmware readiness still needs proof."),
       Id: `firmware-${summary.device_id}`,
-      Label: "Firmware needs proof",
+      Label: firmwareAttentionLabel(summary),
       Severity: status === "blocked" ? "blocking" : "warning"
     });
   }
@@ -297,6 +297,11 @@ function attentionFromValidationItem(item: LabValidationItem): OperatorHomeAtten
     Label: cleanOperatorText(item.label || "Lab item"),
     Severity: severity
   };
+}
+
+function firmwareAttentionLabel(summary: FirmwareSummary): string {
+  const device = cleanOperatorText(summary.label || summary.device_id || "Firmware");
+  return `${device} firmware`;
 }
 
 function operatorDisplayState({

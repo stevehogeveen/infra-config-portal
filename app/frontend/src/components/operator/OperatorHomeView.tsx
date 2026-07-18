@@ -90,16 +90,20 @@ export function OperatorHomeView({
         {model.AttentionItems.length === 0 ? (
           <p className="operator-rail-clear">Nothing needs operator action right now.</p>
         ) : (
-          model.AttentionItems.map((item) => (
-            <div className="operator-rail-blocker" key={item.Id}>
-              <span className={`operator-rail-bic ${item.Severity === "blocking" ? "blocked" : "unchecked"}`} />
-              <div>
-                <b>{item.Label}</b>
-                <div className="operator-rail-why">{item.Explanation}</div>
-                <div className="operator-rail-fix">{item.Action}</div>
+          model.AttentionItems.map((item) => {
+            const explanation = uniqueOperatorAttentionText(item.Explanation, [item.Label]);
+            const action = uniqueOperatorAttentionText(item.Action, [item.Label, item.Explanation]);
+            return (
+              <div className="operator-rail-blocker" key={item.Id}>
+                <span className={`operator-rail-bic ${item.Severity === "blocking" ? "blocked" : "unchecked"}`} />
+                <div>
+                  <b>{item.Label}</b>
+                  {explanation && <div className="operator-rail-why">{explanation}</div>}
+                  {action && <div className="operator-rail-fix">{action}</div>}
+                </div>
               </div>
-            </div>
-          ))
+            );
+          })
         )}
       </div>
 
@@ -110,4 +114,15 @@ export function OperatorHomeView({
       )}
     </section>
   );
+}
+
+function uniqueOperatorAttentionText(value: string, previousValues: string[]): string {
+  const text = value.trim();
+  if (!text) return "";
+  const normalized = normalizeAttentionText(text);
+  return previousValues.some((previous) => normalizeAttentionText(previous) === normalized) ? "" : text;
+}
+
+function normalizeAttentionText(value: string): string {
+  return value.toLowerCase().replace(/\s+/g, " ").replace(/[.!?]+$/g, "").trim();
 }

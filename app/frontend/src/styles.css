@@ -13314,6 +13314,17 @@ button.design-ilo-port:hover {
   padding: 10px 12px;
 }
 
+.topology-workspace-drawer .design-workspace-boundary {
+  background: #f8fafc;
+  border: 1px solid #dbe4ee;
+  border-radius: 999px;
+  color: #475569;
+  font-size: 11px;
+  font-weight: 850;
+  margin: 0;
+  padding: 7px 10px;
+}
+
 .topology-workspace-drawer .design-faceplate-netapp,
 .topology-workspace-drawer .design-faceplate-ilo-art {
   min-height: 74px;

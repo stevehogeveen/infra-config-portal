@@ -9292,6 +9292,7 @@ function LabDesignComposer({
 
   return (
     <div className={`lab-design-composer ${workspaceOnly ? "is-workspace-only" : ""}`} aria-label={workspaceOnly ? "Device workspace composer" : "Design mode rack composer"}>
+      {!workspaceOnly && (
       <section className="design-scenario-strip" aria-label="Design setup scenarios">
         {topologyDesignScenarios().map((item) => (
           <button
@@ -9311,7 +9312,9 @@ function LabDesignComposer({
           </button>
         ))}
       </section>
+      )}
 
+      {!workspaceOnly && (
       <section className="design-control-strip" aria-label="Topology draft controls">
         <div>
           <span>Scenario</span>
@@ -9351,8 +9354,10 @@ function LabDesignComposer({
           {profileCommitStatus.running ? "Committing" : profileNeedsCommit ? "Commit visual draft" : "Profile current"}
         </button>
       </section>
+      )}
 
-      <section className="design-visual-workbench" aria-label="Visual topology workbench">
+      <section className={`design-visual-workbench ${workspaceOnly ? "is-workspace-only" : ""}`} aria-label={workspaceOnly ? "Selected device setup" : "Visual topology workbench"}>
+        {!workspaceOnly && (
         <section
           className={`design-blueprint-stage ${selectedPart ? "has-workspace-selection" : ""} ${netappInScope ? "is-shared-storage" : "is-local-storage"}`}
           aria-label="Design topology blueprint"
@@ -9427,6 +9432,7 @@ function LabDesignComposer({
             </button>
           ))}
         </section>
+        )}
 
         {selectedPart && (
           <section className={`design-device-workspace design-device-workspace-${selectedPart.id}`} aria-label={`${selectedPart.label} workspace`}>
@@ -9468,6 +9474,10 @@ function LabDesignComposer({
                 storageProtocol={storageProtocol}
               />
             </div>
+
+            {workspaceOnly && (
+              <p className="design-workspace-boundary">Read-only checks only. Hardware untouched until guarded applies.</p>
+            )}
 
             {!workspaceOnly && selectedOverviewDetails.length > 0 && (
               <div className="design-workspace-map-details" aria-label={`${selectedPart.label} map details`}>
@@ -9831,6 +9841,7 @@ function LabDesignComposer({
         )}
       </section>
 
+      {!workspaceOnly && (
       <aside className="design-parts-shelf" aria-label="Parts shelf">
         <div>
           <p className="operator-kicker">Parts shelf</p>
@@ -9868,7 +9879,9 @@ function LabDesignComposer({
           ))}
         </div>
       </aside>
+      )}
 
+      {!workspaceOnly && (
       <div className="design-rack-stage">
         <div className="design-rack-head">
           <div>
@@ -9948,7 +9961,9 @@ function LabDesignComposer({
           ))}
         </div>
       </div>
+      )}
 
+      {!workspaceOnly && (
       <aside className="design-plan-panel" aria-label="Design plan summary">
         <div>
           <p className="operator-kicker">Plan check</p>
@@ -10319,6 +10334,7 @@ function LabDesignComposer({
           </section>
         )}
       </aside>
+      )}
     </div>
   );
 }
@@ -15621,15 +15637,18 @@ function overviewSafeActions(
 }
 
 function overviewIssues(currentView: CurrentViewModel): Array<{ code: string; message: string; severity: "critical" | "warning" }> {
+  const blockers = uniqueStrings(currentView.blockers.map((message) => humanize(message)).filter(Boolean));
+  const warnings = uniqueStrings(currentView.warnings.map((message) => humanize(message)).filter(Boolean))
+    .filter((message) => !blockers.includes(message));
   return [
-    ...currentView.blockers.map((message, index) => ({
+    ...blockers.map((message, index) => ({
       code: `BLOCKER_${index + 1}`,
-      message: humanize(message),
+      message,
       severity: "critical" as const
     })),
-    ...currentView.warnings.map((message, index) => ({
+    ...warnings.map((message, index) => ({
       code: `WARNING_${index + 1}`,
-      message: humanize(message),
+      message,
       severity: "warning" as const
     }))
   ];

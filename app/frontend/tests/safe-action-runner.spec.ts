@@ -473,8 +473,10 @@ test("operator home answers the next action without dashboard clutter", async ({
   await expect(home.getByTestId("operator-home-primary-action")).toBeVisible();
   await expect(home.getByTestId("operator-home-primary-action")).toContainText("Review Build Plan");
   await expect(home.getByTestId("operator-home-view-details")).toHaveCount(1);
-  await expect(home.getByLabel("Needs your attention")).toContainText("Firmware needs proof");
+  await expect(home.getByLabel("Needs your attention")).toContainText("Cisco firmware");
+  await expect(home.getByLabel("Needs your attention")).toContainText("HPE Storage firmware");
   await expect(home.getByLabel("Needs your attention")).toContainText("ROMMON baseline missing/manual review");
+  await expect(home.getByLabel("Needs your attention").getByText("Firmware needs proof")).toHaveCount(0);
 
   await expect(page.locator("section[aria-label='Overview reference']")).toHaveCount(0);
   await expect(page.locator("section[aria-label='Scenario setup lanes']")).toHaveCount(0);
@@ -1000,6 +1002,9 @@ test("overview device workspace matrix keeps default inputs concise", async ({ p
     await expect(workspace.locator(":scope > details.design-workspace-advanced"), `${item.workspace} does not expose advanced as a second top-level drawer`).toHaveCount(0);
     await expect(workspace.locator(".design-workspace-map-details"), `${item.workspace} keeps chip details out of the default drawer`).toHaveCount(0);
     await expect(workspace, `${item.workspace} retires the old extra settings label`).not.toContainText("More settings");
+    await expect(overlay.locator(".design-scenario-strip"), `${item.workspace} does not render hidden scenario cards in the drawer`).toHaveCount(0);
+    await expect(overlay.locator(".design-control-strip"), `${item.workspace} does not render hidden draft controls in the drawer`).toHaveCount(0);
+    await expect(overlay.locator(".design-blueprint-stage"), `${item.workspace} does not render the hidden topology designer in the drawer`).toHaveCount(0);
     const detailsDrawer = workspace.getByLabel(`${item.workspace} details`);
     await expect(detailsDrawer, `${item.workspace} details start closed`).not.toHaveAttribute("open", "");
     await detailsDrawer.locator(":scope > summary").click();

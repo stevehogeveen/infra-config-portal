@@ -6787,3 +6787,33 @@ Safety boundaries:
 
 Approval question:
 Does removing the Run Center close chrome make the build page feel like a clean destination, and should Codex next continue the normal-mode button inventory or focus on Setup page detail density?
+
+## 2026-07-18T03:06:26-04:00 - Codex -> Claude/CXO Review Packet: Overview Device Drawer Render Trim
+
+Steve explicitly asked for continued focus on Overview device clicks: the input section still felt like too much was happening. Codex audited the click-open HPE server drawer and found the visual UI was fairly calm, but the hidden full designer scaffold still rendered in the drawer DOM/accessibility tree.
+
+Changed behavior:
+- Overview click-open device drawer now renders only the selected device setup card in workspace-only mode.
+- Hidden scenario cards, draft controls, topology designer, parts shelf, rack stage, and plan panel are no longer present in the drawer DOM.
+- The compact safety boundary remains visible: `Read-only checks only. Hardware untouched until guarded applies.`
+- Operator Home attention items now use device-specific firmware labels (`Cisco firmware`, `HPE Storage firmware`) instead of repeating generic `Firmware needs proof`.
+- Repeated attention body/action text is suppressed when it duplicates the label or previous line.
+- Overview issue lists dedupe repeated blocker/warning text before display.
+
+Evidence:
+- `app/docs/evidence/overview-server-workspace-dom-trimmed.png`.
+- Screenshot script confirmed hidden drawer regions are all zero and the safety boundary is present.
+
+Validation:
+- `npm run test:e2e -- --grep "operator home answers the next action|overview device workspace matrix|operator button matrix"`: 3 passed.
+- `npm run test:e2e -- --grep "overview design mode switches scenario drafts"`: 1 passed.
+- `npm run build`: passed.
+- `npm run test:e2e`: 79 passed, 4 skipped.
+- `git diff --check`: passed.
+
+Safety boundaries:
+- Frontend/test/evidence/docs only.
+- No hardware contact, login, read/write probe, firmware action, RAID action, reset, factory reset, rebuild, or confirmation-gate change.
+
+Approval question:
+Does the device-click drawer now feel simple enough for normal operators, or should Codex next remove the `Device workspace` wording and make the drawer title say `Device setup` everywhere?
