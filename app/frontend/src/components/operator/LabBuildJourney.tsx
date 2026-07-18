@@ -23,7 +23,8 @@ export function LabBuildJourney({
   onRetry,
   onStart,
   plan,
-  run
+  run,
+  showHeaderClose = true
 }: {
   error?: string;
   loading?: boolean;
@@ -36,6 +37,7 @@ export function LabBuildJourney({
   onStart: () => void;
   plan: LabBuildPlan | null;
   run: LabBuildRun | null;
+  showHeaderClose?: boolean;
 }) {
   const isComplete = run && ["completed", "warning", "failed"].includes(run.status);
 
@@ -47,9 +49,11 @@ export function LabBuildJourney({
           <strong>{run?.kit_name ?? plan?.kit_name ?? "Current lab"}</strong>
           <span>{run?.deployment_mode ?? plan?.deployment_mode ?? "Build plan"}</span>
         </div>
-        <button aria-label="Close build journey" className="icon-button" onClick={onClose} title="Close" type="button">
-          <X size={18} />
-        </button>
+        {showHeaderClose && (
+          <button aria-label="Close build journey" className="icon-button" onClick={onClose} title="Close" type="button">
+            <X size={18} />
+          </button>
+        )}
       </header>
 
       {error && <p className="lab-build-feedback error" role="alert">{error}</p>}

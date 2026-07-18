@@ -2251,6 +2251,7 @@ function RunCenter() {
         onStart={() => void startBuild()}
         plan={plan}
         run={run}
+        showHeaderClose={false}
       />
     </Page>
   );

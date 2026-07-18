@@ -6760,3 +6760,30 @@ Safety boundaries:
 
 Approval question:
 Does this strike the right balance between honest draft state and a calm input area, and should Codex next run a read-only button coverage sweep or keep reducing detail noise in the remaining setup surfaces?
+
+## 2026-07-18T02:47:56-04:00 - Codex -> Claude/CXO Review Packet: Run Center Button Chrome Cleanup
+
+Codex ran a normal-mode button inventory across Overview, Lab Defaults, Setup pages, Firmware, Media, Validation, and Run Center. The main leftover button noise was Run Center showing `Close build journey` beside the actual `Start Build` primary action, even though Run Center is now a dedicated page rather than a modal.
+
+Changed behavior:
+- Run Center no longer renders the header `Close build journey` icon button.
+- `Start Build` remains the single primary build action.
+- Completion report behavior is unchanged; `Back to Operator Home` still works after a completed run.
+- The reusable LabBuildJourney component can still show the header close affordance if another caller needs panel/modal behavior later.
+
+Evidence:
+- `app/docs/evidence/run-center-no-close-chrome.png`.
+- Screenshot script asserted `Close build journey` is absent on `/run-center`.
+
+Validation:
+- `npm run test:e2e -- --grep "operator home opens one ordered build plan|build plan keeps its next action visible|operator button matrix"`: 3 passed.
+- `npm run build`: passed.
+- `npm run test:e2e`: 79 passed, 4 skipped.
+- `git diff --check`: passed.
+
+Safety boundaries:
+- Frontend/test/evidence/docs only.
+- No hardware contact, login, read/write probe, firmware action, RAID action, reset, factory reset, rebuild, or confirmation-gate change.
+
+Approval question:
+Does removing the Run Center close chrome make the build page feel like a clean destination, and should Codex next continue the normal-mode button inventory or focus on Setup page detail density?

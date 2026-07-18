@@ -609,6 +609,7 @@ test("operator home opens one ordered build plan with one primary action", async
   await expect(plan.getByLabel("Ordered build steps")).toContainText("Shared storage must be ready before the compute host can use it.");
   await expect(plan.getByTestId("lab-build-primary-action")).toHaveCount(1);
   await expect(plan.getByTestId("lab-build-primary-action")).toContainText("Start Build");
+  await expect(journey.getByRole("button", { name: "Close build journey" })).toHaveCount(0);
   await expect(plan).not.toContainText("provider");
   await expect(plan).not.toContainText("payload");
   await expect(plan).not.toContainText("dependency graph");
