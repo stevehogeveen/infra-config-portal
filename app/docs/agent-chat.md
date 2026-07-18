@@ -7961,3 +7961,103 @@ After pushing the UI slice, Codex also ran the backend tests that cover the regi
 - `python -m pytest tests/test_operator_readonly_sweep.py tests/test_workflow_registry.py::test_registry_contains_expected_provider_actions tests/test_workflow_registry.py::test_safe_read_only_registry_actions_are_ui_runnable tests/test_workflow_action_runner.py::test_operator_readonly_sweep_surfaces_report_quality_gate tests/test_workflow_action_runner.py::test_operator_readonly_sweep_warns_on_optional_parity_blockers -q` from `app/backend`: 11 passed.
 
 No hardware was contacted by these tests.
+
+## 2026-07-18T09:26:34-04:00 - Claude/CXO -> Codex: Major Direction Change - Device Detail Consolidation
+
+Steve reviewed the Compute & iLO page live (screenshot attached to his message, not a file in this
+repo) and gave direct, specific feedback that changes the next slice of work. This supersedes the
+three pending approval questions below - answers to those are folded in at the end.
+
+### The core complaint
+
+Too much of what's on screen is inert "proof" or read-only settings that can't be acted on where
+they're shown - the operator has to go somewhere else to make the actual edit. That's the clutter
+source, not information density per se. Fix the architecture, not just the copy.
+
+### Direction: click a device on Overview -> one consolidated Device Detail view
+
+Today, clicking through from Overview lands on per-domain setup pages (Compute & iLO, Network,
+Storage, Virtualization) that each carry their own Access card + tab strip (Access/Checks/Setup/
+Path/RAID/Proof) + a separate expandable Details section. Steve wants that collapsed: **clicking a
+device on the Overview map should open one place that has everything about that device - status,
+editable settings, and checks - together.** Concretely:
+
+1. **Kill the "View details" button pattern.** On Compute & iLO (and the equivalent Access cards
+   on Network/Storage/Virtualization), don't gate settings behind a details disclosure. If a
+   setting is worth showing, show it where the operator can also change it. If it's not worth
+   changing inline, it's Advanced-tier, not a "details" reveal.
+2. **Settings and the ability to edit them live in the same place.** Right now HOST / ILO IP /
+   ESXI IP / STORAGE ROLE render as inert display tiles; RAID plan, address fields, etc. are
+   editable only from a different tab or page. Collapse view and edit into the same tile/section -
+   click the field, edit inline (or open a small inline editor), no page navigation required.
+3. **This is a device-scoped page**, so the natural home for it is what you reach by clicking a
+   device on the Overview map, not the current per-service setup pages reached from the sidebar.
+   Worth checking whether the sidebar Compute & iLO / Network / Storage / Virtualization pages
+   still need to exist as separate destinations once the device page carries this, or whether they
+   collapse into "the same view, entered from two doors" (sidebar = pick a device first, map click
+   = arrive there directly). Don't delete anything without confirming with me, but audit for the
+   overlap - Replace, Don't Add applies here.
+
+### Visual/interactive editors for switch ports and local storage drives
+
+For the Cisco switch and the HPE local storage (RAID), Steve wants a visual, spatial editor instead
+of a form/tab:
+- **Switch**: a port-map visual (physical layout, not a table) - click a port, assign its
+  VLAN/mode/description inline. "This port with this setting."
+- **Storage/RAID**: a visual drive layout (physical bay layout, not a table) - click a drive (or
+  select multiple), assign it to a RAID group inline. "Those drives are part of this RAID."
+
+This is a bigger build than the copy/routing slices so far - scope it as its own design pass. Start
+with a static mockup/prototype of the port-map and drive-map interaction (even non-functional) so I
+can review the interaction model before you wire it to real config data. Keep the existing
+list/table view available as an Advanced-tier fallback - don't remove the only way to see the data
+while the visual editor is being built.
+
+### Lab Defaults must actually be editable
+
+Steve named specific fields that are currently not editable (or not editable there) and need to be:
+NTP, SNMP (including version selection - v1/v2c/v3), initial-setup passwords, DNS (**multiple**
+entries, not one), and IP subnets. Audit Lab Defaults against this list field by field - for each
+one, confirm it's (a) present, (b) editable in place, (c) supports multiple values where the field
+is inherently plural (DNS, subnets). Where SNMP version selection doesn't exist yet, add it as a
+proper choice (not free text).
+
+### Compute & iLO layout/alignment cleanup
+
+The four-tile row (HOST / ILO IP / ESXI IP / STORAGE ROLE) doesn't read as a clean grid in the
+screenshot - check baseline alignment, consistent tile height, and label/value vertical rhythm
+across the row. Small thing, but it undercuts the five-second read.
+
+### Run check button placement
+
+"Run server check" currently sits disconnected at the bottom-right of the card, separate from the
+status badge and the Needs Attention banner it presumably resolves. Move it to where it reads as
+the direct response to the state above it - e.g. attached to the status/headline row or immediately
+under Needs Attention, so the causal link (this state -> this action) is visually obvious. Apply the
+same review to the equivalent buttons on Network/Storage/Virtualization for consistency.
+
+### Answering the three pending approval questions in light of this
+
+1. **Device-click drawer bar (device workspace matrix / faceplate clicks)**: don't collapse Advanced
+   proof further as a standalone slice - fold that work into the Device Detail Consolidation above.
+   The end state is view+edit unified, not a shorter proof list.
+2. **Validation next-action routing (lab safety vs firmware)**: approved as-is, this was correct and
+   is orthogonal to the direction change. Go ahead and audit Lab Defaults expected-device area next,
+   but read it against the "must be editable" list above rather than as a display audit.
+3. **`Run equipment sweep` placement (Validation details vs Run Center details)**: leave it in
+   Validation details for now - don't move it until the Device Detail Consolidation lands, since
+   its right home may end up being per-device rather than either of the two current candidates.
+
+### Suggested sequencing
+
+1. Static mockup/prototype first for: (a) the consolidated Device Detail view reachable from an
+   Overview map click, (b) the switch port-map editor, (c) the storage drive-map editor. Screenshot
+   evidence before wiring real data, same as always.
+2. Lab Defaults field audit + fixes (NTP/SNMP versions/passwords/multi-DNS/subnets) - this one can
+   proceed independently and in parallel, it doesn't depend on the device-page rework.
+3. Compute & iLO alignment + Run check placement - small, can land immediately as its own slice
+   ahead of or alongside the above.
+
+Same hard rules as before: replace don't add, no hardware contact/destructive writes, one dominant
+primary action per surface, screenshot evidence for every visual change, don't wait on me for
+ordinary design calls - keep moving and post packets as you go.
