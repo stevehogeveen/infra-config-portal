@@ -9330,7 +9330,7 @@ function LabDesignComposer({
                   <details className="design-workspace-edit-settings" aria-label={`${selectedPart.label} edit settings`}>
                     <summary>
                       <span>Edit settings</span>
-                      <strong>{selectedDetailWorkspaceSections.length} setup groups</strong>
+                      <strong>Choose one group</strong>
                     </summary>
                     <div className="design-device-edit-group-picker" aria-label={`${selectedPart.label} edit groups`}>
                       {selectedDetailWorkspaceSections.map((section) => (
@@ -9342,19 +9342,17 @@ function LabDesignComposer({
                           type="button"
                         >
                           <span>{section.label}</span>
-                          <strong>{section.fields.length} values</strong>
                         </button>
                       ))}
                     </div>
                     {selectedEditWorkspaceSection ? (
                       <section className="design-device-param-section design-device-param-panel" aria-label={`${selectedPart.label} ${selectedEditWorkspaceSection.label}`}>
-                        <p>{selectedEditWorkspaceSection.summary}</p>
                         <div className="design-device-setting-rows">
                           {selectedEditWorkspaceSection.fields.map((field) => renderSelectedDeviceSettingRow(field))}
                         </div>
                       </section>
                     ) : (
-                      <p className="design-device-edit-empty">Choose one setup group to edit. Saved values stay untouched until a field changes.</p>
+                      <p className="design-device-edit-empty">Pick one group to edit.</p>
                     )}
                   </details>
                 )}

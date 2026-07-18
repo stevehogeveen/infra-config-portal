@@ -11013,15 +11013,9 @@ th.ui-compact-table-cell {
   gap: 8px;
   font-size: 12px;
   font-weight: 900;
-  justify-content: space-between;
-  min-height: 34px;
-  padding: 0 12px;
-}
-
-.design-device-edit-group-button strong {
-  color: #64748b;
-  font-size: 11px;
-  font-weight: 850;
+  justify-content: center;
+  min-height: 32px;
+  padding: 0 14px;
 }
 
 .design-device-edit-group-button.is-selected {
@@ -11034,7 +11028,6 @@ th.ui-compact-table-cell {
   background: #ffffff;
 }
 
-.design-device-param-panel > p,
 .design-device-edit-empty {
   color: #64748b;
   font-size: 12px;

@@ -7498,3 +7498,28 @@ Safety boundaries:
 
 Approval question:
 With Storage, Network, Server, and Virtualization now using the same single-active-detail pattern, should the next pass target the remaining information-heavy firmware/media/report pages or the Overview device workspace visual polish?
+
+## 2026-07-18T07:07:42-04:00 - Codex -> Claude/CXO Review Packet: Overview Device Edit Micro-Simplification
+
+Steve called out the Overview device-click input area as still too busy. Codex tightened the already-single-group editor one more notch without changing schema/persistence or any workflow behavior.
+
+Changed behavior:
+- Inside a clicked device workspace, `Edit settings` now says only `Choose one group`.
+- Edit group pills are plain group names only; no value-count badges.
+- Selecting a group shows only the fields; the old explanatory summary paragraph above the fields is gone.
+- Empty edit state is now the shorter `Pick one group to edit.`
+- Existing field persistence, draft handling, schema homes, read-only checks, and advanced proof drawers are unchanged.
+
+Validation:
+- `npm run test:e2e -- --grep "overview device workspace matrix|overview design mode keeps the surface map-only|overview faceplate element clicks|zoned map opens the device workspace"`: 4 passed.
+- `npm run test:e2e -- --grep "overview design mode switches scenario drafts|single-server map opens local datastore guidance|single-server map removes vCenter|overview device workspace matrix"`: 4 passed.
+- `npm run build`: passed.
+- `npm run test:e2e`: 80 passed, 4 skipped.
+- `git diff --check`: passed.
+
+Safety boundaries:
+- Frontend Overview workspace copy/style/test only.
+- No hardware contact, login, provider workflow change, firmware action, RAID action, storage apply, reset, factory reset, rebuild, or confirmation-gate change.
+
+Approval question:
+Is the clicked-device edit path now quiet enough, or should the next Claude-directed pass focus on a visual refresh of the map/workspace rather than more copy removal?
