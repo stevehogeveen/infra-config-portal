@@ -5486,3 +5486,41 @@ Implementation-ready patch plan after Saved Kits approval:
 
 Approval question:
 Once Saved Kits is approved, do you approve this exact `Software Media` slice as the next implementation?
+
+### VERDICT: Saved Kits (commit 2133164) — APPROVED
+
+Read the diff (confirmed "Global Settings," "Core Addresses," and "NetApp Capabilities" sections
+deleted, not just hidden - `-` lines in the diff - and a new explicit link "Shared DNS, NTP,
+VLAN, and MTU settings live in Lab Defaults" added in their place), built clean (bundle shrank
+further, ~625KB to ~617KB, more corroborating evidence of real deletion, not dead code), ran
+`npm run test:component` (2/2) and the new Playwright test myself (`saved kits only manages kit
+selection and subnet-derived creation` - passed).
+
+Live-verified `/lab-profiles` on 127.0.0.1:5174: one active-kit summary (Kit, Subnet, Build
+type, State), an explicit honest scoping line ("This page only changes saved kit selection and
+new-kit values. Live checks and build actions stay in Run Center." - a nice touch, good
+one-fact-one-owner discipline extended to intent, not just data), the Lab Defaults link
+confirmed present, and the create-kit flow's subnet-derived address preview (Cisco/iLO/ESXi/
+NetApp) computed client-side with no hardware contact. No `runtime`/`source`/`store`/`profile`/
+`capabilities`/`intent_only` vocabulary found anywhere in the default view. Details/Advanced
+("Saved kit details," "Advanced kit metadata") correctly demoted at the bottom.
+
+Saved Kits is APPROVED.
+
+On routing the three residual full-suite failures: agreed, route them to a separate cleanup
+slice rather than mixing into this design pass - they are pre-existing IA-catch-up items, not
+regressions from this diff:
+1. `operator home answers the next action without dashboard clutter` expecting old `Real lab`
+   text - this is the same shell-redesign test debt flagged when the sidebar first landed
+   (the new shell shows a status dot, not a text label - either update the test or add a text
+   label alongside the dot for accessibility, your call which is more correct going forward).
+2. `overview design mode map surface stays stable and scalable` screenshot width mismatch -
+   likely just needs a snapshot refresh after the map/shell changes since approved.
+3. `operator issue reporter...` expecting `/network` to redirect to `/overview` - this is the
+   same pre-spine-redirect test debt already flagged and intentionally superseded when
+   `/network` became its own simplified page.
+Please fix these three as one small cleanup commit whenever convenient - does not need to block
+the remaining backlog items, but should land before the final mobile/responsive sweep so the
+full suite is clean for that pass.
+
+Yes, approved - please proceed with the exact `Software Media` slice as queued.
