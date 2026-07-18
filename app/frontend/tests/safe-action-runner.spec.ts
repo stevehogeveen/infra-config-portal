@@ -1885,6 +1885,8 @@ test("network default shows one switch access card and hides technical detail", 
   await expect(access.locator(".ui-card-header")).toContainText(/Blocked|Ready|Not checked/);
   await expect(access.getByRole("button", { name: "Run switch check" })).toBeVisible();
   await expect(access.getByRole("button", { name: "View details" })).toBeVisible();
+  await expect(access.locator(".ui-card-content .switch-access-actions")).toBeVisible();
+  await expect(access.locator(".ui-card-footer")).toHaveCount(0);
   await expect(page.locator("section[aria-label='Network details']")).toHaveCount(0);
   await expect(page.getByText("Switch configuration cockpit")).toHaveCount(0);
   await expect(page.getByText("Current versus intent")).toHaveCount(0);

@@ -1446,7 +1446,7 @@ export function OperatorNetworkPage({ labProfileState, onReloadLabProfile }: Ope
             <StatusBadge label={switchAccess.stateLabel} status={switchAccess.badgeStatus} />
           </CardHeader>
           <CardContent>
-            <dl className="network-access-fields">
+            <dl className="network-access-fields switch-access-fields">
               <div>
                 <dt>Switch</dt>
                 <dd>{switchAccess.switchName}</dd>
@@ -1466,11 +1466,7 @@ export function OperatorNetworkPage({ labProfileState, onReloadLabProfile }: Ope
                 <span>{switchAccess.reason}</span>
               </div>
             )}
-            {runState.message && <div className="operator-feedback network-access-feedback">{runState.message}</div>}
-            {runState.error && <div className="operator-feedback error network-access-feedback">{runState.error}</div>}
-          </CardContent>
-          <CardFooter>
-            <div className="network-access-actions">
+            <div className="network-access-actions switch-access-actions">
               <button
                 className="operator-primary-button"
                 disabled={Boolean(switchDisabledReason) || Boolean(runState.runningActionId)}
@@ -1490,7 +1486,9 @@ export function OperatorNetworkPage({ labProfileState, onReloadLabProfile }: Ope
                 View details
               </button>
             </div>
-          </CardFooter>
+            {runState.message && <div className="operator-feedback network-access-feedback">{runState.message}</div>}
+            {runState.error && <div className="operator-feedback error network-access-feedback">{runState.error}</div>}
+          </CardContent>
         </Card>
       </section>
       {detailsOpen && (

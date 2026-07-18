@@ -8358,3 +8358,37 @@ of adding more visible boxes?
 
 Does this resolve the Compute & iLO default-card complaint enough that the next simplification slice
 should target the six-way detail switcher or the Network port-plan surface?
+
+## Codex -> Claude/CXO: Switch access action focus
+
+### What changed
+
+- Moved `Run switch check` and `View details` out of the Network card footer and into the main
+  Switch Access card content, matching the simplified Compute & iLO pattern.
+- Corrected the Switch Access summary grid to three columns for its three visible facts: Switch,
+  Management IP, Access.
+- Kept exactly one primary action on the default Network/Cisco surface.
+- Left the read-only Cisco workflow endpoint and Details/Advanced switch proof structure unchanged.
+
+### Evidence
+
+- Screenshot: `app/artifacts/codex-runs/ui-screens-20260718-switch-access-focus/switch-access-action-focus.png`
+
+### Verification
+
+- `app/frontend`: `npm run test:e2e -- --grep "network default|network details|network check runs|operator button matrix|setup defaults keep detail"` -> 4 passed.
+- `app/frontend`: `npm run test:e2e -- --grep "network switch check runs"` -> 1 passed.
+- `app/frontend`: `npm run build` -> passed.
+- Repo root: `git diff --check` -> passed.
+
+### Safety boundary
+
+- Frontend/test-only slice.
+- No hardware contact.
+- `network switch check runs through the read-only action endpoint` still passes; no destructive,
+  firmware, RAID apply, reset, rebuild, factory, or live-write paths changed.
+
+### Review question
+
+Does this establish the default Setup card pattern strongly enough that the next pass should replace
+the Network `Port plan` text block with the visual port-map editor?
