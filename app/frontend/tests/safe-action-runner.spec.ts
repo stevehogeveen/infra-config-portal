@@ -244,7 +244,15 @@ async function openWorkspaceEditGroup(page: Page, workspaceName: string, groupNa
   if (!isEditOpen) {
     await editSettings.locator(":scope > summary").click();
   }
-  const groupButton = editSettings.locator(".design-device-edit-group-button").filter({ hasText: groupName }).first();
+  const moreSetupFields = editSettings.getByLabel(`${workspaceName} more setup fields`);
+  const groupHost = await moreSetupFields.count() ? moreSetupFields : editSettings;
+  if (await moreSetupFields.count()) {
+    const isMoreOpen = await moreSetupFields.evaluate((node) => (node as HTMLDetailsElement).open);
+    if (!isMoreOpen) {
+      await moreSetupFields.locator(":scope > summary").click();
+    }
+  }
+  const groupButton = groupHost.locator(".design-device-edit-group-button").filter({ hasText: groupName }).first();
   if (await groupButton.getAttribute("aria-pressed") !== "true") {
     await groupButton.click();
   }
@@ -1151,28 +1159,39 @@ test("overview device workspace matrix keeps default inputs concise", async ({ p
     const editSettings = detailsDrawer.getByLabel(`${item.workspace} edit settings`);
     await expect(editSettings, `${item.workspace} edit setup is available inside details`).toBeVisible();
     await expect(editSettings, `${item.workspace} edit setup starts closed`).not.toHaveAttribute("open", "");
-    await expect(editSettings.locator("input, select, textarea"), `${item.workspace} keeps edit controls unmounted before edit intent`).toHaveCount(0);
-    await expect(detailsDrawer.locator("input, select, textarea"), `${item.workspace} details stay inspect-only before edit intent`).toHaveCount(0);
+    await expect(editSettings.locator("input, select, textarea").first(), `${item.workspace} keeps edit controls hidden before edit intent`).not.toBeVisible();
+    await expect(detailsDrawer.locator("input, select, textarea").first(), `${item.workspace} details stay inspect-only before edit intent`).not.toBeVisible();
     await editSettings.locator(":scope > summary").click();
-    const editGroups = editSettings.locator(":scope .design-device-edit-group-button");
+    const quickPanel = editSettings.getByLabel(`${item.workspace} quick setup fields`);
+    const quickInputs = quickPanel.locator("input, select, textarea");
+    const moreSetupFields = editSettings.getByLabel(`${item.workspace} more setup fields`);
+    const editGroups = moreSetupFields.locator(":scope .design-device-edit-group-button");
     await expect(editSettings.locator(":scope > summary"), `${item.workspace} edit summary stays short`).toContainText("Edit setup");
     await expect(editSettings.locator(":scope > summary"), `${item.workspace} edit summary uses planning-field framing`).toContainText("Planning fields only");
     await expect(editSettings.locator(":scope > summary"), `${item.workspace} edit summary drops counts`).not.toContainText("setup groups");
-    await expect(editSettings.locator(".design-device-edit-intro"), `${item.workspace} edit intro explains what changed`).toHaveText("Pick one area. Saved kit values stay above.");
-    await expect(editGroups.first(), `${item.workspace} exposes edit group choices after edit intent`).toBeVisible();
+    await expect(editSettings.locator(".design-device-edit-intro"), `${item.workspace} edit intro explains what changed`).toHaveText("Most-used planning fields. Saved kit values stay above.");
+    await expect(quickPanel, `${item.workspace} opens edit setup on quick fields`).toBeVisible();
+    expect(await quickPanel.locator(".design-device-setting-row").count(), `${item.workspace} keeps quick fields tiny`).toBeLessThanOrEqual(3);
+    if (await quickInputs.count()) {
+      await expect(quickInputs.first(), `${item.workspace} reveals the first quick edit field immediately`).toBeVisible();
+    }
+    await expect(moreSetupFields, `${item.workspace} keeps less-common fields one click deeper`).toBeVisible();
+    await expect(moreSetupFields, `${item.workspace} advanced setup fields start closed`).not.toHaveAttribute("open", "");
+    await expect(editGroups.first(), `${item.workspace} keeps edit group choices hidden until more-fields intent`).not.toBeVisible();
+    await moreSetupFields.locator(":scope > summary").click();
+    await expect(editGroups.first(), `${item.workspace} exposes edit group choices after more-fields intent`).toBeVisible();
     await expect(editGroups.locator("strong"), `${item.workspace} edit groups avoid value-count badges`).toHaveCount(0);
     await expect(editGroups.locator("small").first(), `${item.workspace} edit groups explain each area`).toBeVisible();
-    await expect(editSettings.locator(".design-device-edit-empty"), `${item.workspace} starts edit mode with no group selected`).toBeVisible();
-    await expect(editSettings.locator(".design-device-edit-empty"), `${item.workspace} empty edit prompt is short`).toHaveText("Pick one area to edit.");
-    await expect(editSettings.locator("input, select, textarea").first(), `${item.workspace} keeps edit controls hidden until a group is chosen`).not.toBeVisible();
+    await expect(moreSetupFields.locator(".design-device-edit-empty"), `${item.workspace} starts expanded extra fields with no group selected`).toBeVisible();
+    await expect(moreSetupFields.locator(".design-device-edit-empty"), `${item.workspace} empty edit prompt is short`).toHaveText("Pick one area to edit.");
     await editGroups.first().click();
-    const activePanel = editSettings.locator(".design-device-param-panel");
+    const activePanel = moreSetupFields.locator(".design-device-param-panel");
     await expect(activePanel, `${item.workspace} renders one active edit group`).toHaveCount(1);
     expect((await activePanel.textContent())?.trim().length ?? 0, `${item.workspace} active edit panel has content`).toBeGreaterThan(0);
     await expect(activePanel.locator(".design-device-edit-note"), `${item.workspace} has one group-level state note`).toHaveCount(1);
     await expect(activePanel.locator(".design-provenance-chip"), `${item.workspace} removes repeated per-field state chips`).toHaveCount(0);
     await expect(activePanel.locator(".design-device-setting-row.is-profile-owned"), `${item.workspace} does not duplicate saved fields inside edit groups`).toHaveCount(0);
-    const activePanelInputs = editSettings.locator(".design-device-param-panel input, .design-device-param-panel select, .design-device-param-panel textarea");
+    const activePanelInputs = moreSetupFields.locator(".design-device-param-panel input, .design-device-param-panel select, .design-device-param-panel textarea");
     if (await activePanelInputs.count()) {
       await expect(activePanelInputs.first(), `${item.workspace} reveals edit controls after group intent`).toBeVisible();
     }
@@ -1500,24 +1519,35 @@ test("overview design mode keeps the surface map-only until a node opens the wor
   await editSettings.locator(":scope > summary").click();
   await expect(editSettings.locator(":scope > summary")).toContainText("Planning fields only");
   await expect(editSettings.locator(":scope > summary")).not.toContainText("setup groups");
-  await expect(editSettings.locator(".design-device-edit-intro")).toHaveText("Pick one area. Saved kit values stay above.");
-  await expect(editSettings.getByLabel("Cisco switch edit groups")).toContainText("Network");
-  await expect(editSettings.getByLabel("Cisco switch edit groups")).toContainText("Access");
-  await expect(editSettings.locator(".design-device-edit-group-button strong")).toHaveCount(0);
-  await expect(editSettings.locator(".design-device-edit-empty")).toHaveText("Pick one area to edit.");
-  await expect(editSettings.locator(".design-device-param-panel")).toHaveCount(0);
+  await expect(editSettings.locator(".design-device-edit-intro")).toHaveText("Most-used planning fields. Saved kit values stay above.");
+  const quickSetup = editSettings.getByLabel("Cisco switch quick setup fields");
+  await expect(quickSetup).toBeVisible();
+  await expect(quickSetup).toContainText("Port plan");
+  await expect(quickSetup).toContainText("BPDU guard");
+  expect(await quickSetup.locator(".design-device-setting-row").count()).toBeLessThanOrEqual(3);
+  await expect(quickSetup.locator("input, select, textarea").first()).toBeVisible();
+  const moreSetupFields = editSettings.getByLabel("Cisco switch more setup fields");
+  await expect(moreSetupFields).toBeVisible();
+  await expect(moreSetupFields).not.toHaveAttribute("open", "");
+  await expect(moreSetupFields.getByLabel("Cisco switch edit groups")).not.toBeVisible();
+  await moreSetupFields.locator(":scope > summary").click();
+  await expect(moreSetupFields.getByLabel("Cisco switch edit groups")).toContainText("Network");
+  await expect(moreSetupFields.getByLabel("Cisco switch edit groups")).toContainText("Access");
+  await expect(moreSetupFields.locator(".design-device-edit-group-button strong")).toHaveCount(0);
+  await expect(moreSetupFields.locator(".design-device-edit-empty")).toHaveText("Pick one area to edit.");
+  await expect(moreSetupFields.locator(".design-device-param-panel")).toHaveCount(0);
   const networkGroup = await openWorkspaceEditGroup(page, "Cisco switch", "Network");
   await expect(networkGroup).not.toContainText("Management IP");
   await expect(networkGroup).not.toContainText("Storage VLAN");
-  await expect(networkGroup).toContainText("Port plan");
+  await expect(networkGroup).toContainText("SAN ports");
   await expect(networkGroup).not.toContainText("IP, gateway, VLANs, and ports");
   await expect(networkGroup).toContainText("Only planning fields are editable here");
   await expect(networkGroup.locator(".design-device-edit-note")).toHaveCount(1);
   await expect(networkGroup.locator(".design-provenance-chip")).toHaveCount(0);
-  await expect(editSettings.locator(".design-device-param-panel")).toHaveCount(1);
+  await expect(moreSetupFields.locator(".design-device-param-panel")).toHaveCount(1);
   const accessGroup = await openWorkspaceEditGroup(page, "Cisco switch", "Access");
-  await expect(editSettings.locator(".design-device-param-panel")).toHaveCount(1);
-  await expect(accessGroup.getByLabel("BPDU guard")).toHaveValue("enabled on edge access ports");
+  await expect(moreSetupFields.locator(".design-device-param-panel")).toHaveCount(1);
+  await expect(quickSetup.getByLabel("BPDU guard")).toHaveValue("enabled on edge access ports");
   await accessGroup.getByLabel("Black-hole VLAN").fill("998");
   await accessGroup.getByLabel("ACL lanes").fill("MGMT-IN, STORAGE-NFS-IN, DROP-ALL, QUARANTINE");
   await expect(accessGroup.getByLabel("Black-hole VLAN")).toHaveValue("998");

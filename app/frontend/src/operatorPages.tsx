@@ -9031,7 +9031,17 @@ function LabDesignComposer({
       }))
       .filter((section) => section.fields.length > 0)
     : selectedWorkspaceSections;
-  const selectedEditWorkspaceSection = selectedDetailWorkspaceSections.find((section) => section.id === selectedEditGroupId) ?? null;
+  const selectedQuickEditFields = selectedPart
+    ? topologyDeviceQuickEditFields(selectedPart.id, selectedDetailWorkspaceSections)
+    : [];
+  const selectedQuickEditFieldKeys = new Set(selectedQuickEditFields.map((field) => field.key));
+  const selectedAdvancedEditSections = selectedDetailWorkspaceSections
+    .map((section) => ({
+      ...section,
+      fields: section.fields.filter((field) => !selectedQuickEditFieldKeys.has(field.key))
+    }))
+    .filter((section) => section.fields.length > 0);
+  const selectedEditWorkspaceSection = selectedAdvancedEditSections.find((section) => section.id === selectedEditGroupId) ?? null;
   const selectedEditFields = selectedPart && selectedEditWorkspaceSection
     ? selectedEditWorkspaceSection.fields
     : [];
@@ -9836,34 +9846,51 @@ function LabDesignComposer({
                       <span>Edit setup</span>
                       <strong>Planning fields only</strong>
                     </summary>
-                    <p className="design-device-edit-intro">Pick one area. Saved kit values stay above.</p>
-                    <div className="design-device-edit-group-picker" aria-label={`${selectedPart.label} edit groups`}>
-                      {selectedDetailWorkspaceSections.map((section) => (
-                        <button
-                          aria-pressed={selectedEditWorkspaceSection?.id === section.id}
-                          className={`design-device-edit-group-button ${selectedEditWorkspaceSection?.id === section.id ? "is-selected" : ""}`}
-                          key={section.id}
-                          onClick={() => setSelectedEditGroupId((current) => current === section.id ? "" : section.id)}
-                          type="button"
-                        >
-                          <span>{section.label}</span>
-                          <small>{section.summary}</small>
-                        </button>
-                      ))}
-                    </div>
-                    {selectedEditWorkspaceSection ? (
-                      <section className="design-device-param-section design-device-param-panel" aria-label={`${selectedPart.label} ${selectedEditWorkspaceSection.label}`}>
-                        {selectedEditGroupNote() && <p className="design-device-edit-note">{selectedEditGroupNote()}</p>}
+                    <p className="design-device-edit-intro">Most-used planning fields. Saved kit values stay above.</p>
+                    {selectedQuickEditFields.length > 0 ? (
+                      <section className="design-device-param-section design-device-param-panel design-device-quick-edit" aria-label={`${selectedPart.label} quick setup fields`}>
                         <div className="design-device-setting-rows">
-                          {selectedEditFields.length > 0 ? (
-                            selectedEditFields.map((field) => renderSelectedDeviceSettingRow(field, { hideProvenance: workspaceOnly }))
-                          ) : (
-                            <p className="design-device-edit-empty">Saved values are shown in Main settings.</p>
-                          )}
+                          {selectedQuickEditFields.map((field) => renderSelectedDeviceSettingRow(field, { hideProvenance: workspaceOnly }))}
                         </div>
                       </section>
                     ) : (
-                      <p className="design-device-edit-empty">Pick one area to edit.</p>
+                      <p className="design-device-edit-empty">No quick planning fields for this device.</p>
+                    )}
+                    {selectedAdvancedEditSections.length > 0 && (
+                      <details className="design-workspace-edit-advanced" aria-label={`${selectedPart.label} more setup fields`}>
+                        <summary>
+                          <span>More setup fields</span>
+                          <strong>Less common planning values</strong>
+                        </summary>
+                        <div className="design-device-edit-group-picker" aria-label={`${selectedPart.label} edit groups`}>
+                          {selectedAdvancedEditSections.map((section) => (
+                            <button
+                              aria-pressed={selectedEditWorkspaceSection?.id === section.id}
+                              className={`design-device-edit-group-button ${selectedEditWorkspaceSection?.id === section.id ? "is-selected" : ""}`}
+                              key={section.id}
+                              onClick={() => setSelectedEditGroupId((current) => current === section.id ? "" : section.id)}
+                              type="button"
+                            >
+                              <span>{section.label}</span>
+                              <small>{section.summary}</small>
+                            </button>
+                          ))}
+                        </div>
+                        {selectedEditWorkspaceSection ? (
+                          <section className="design-device-param-section design-device-param-panel" aria-label={`${selectedPart.label} ${selectedEditWorkspaceSection.label}`}>
+                            {selectedEditGroupNote() && <p className="design-device-edit-note">{selectedEditGroupNote()}</p>}
+                            <div className="design-device-setting-rows">
+                              {selectedEditFields.length > 0 ? (
+                                selectedEditFields.map((field) => renderSelectedDeviceSettingRow(field, { hideProvenance: workspaceOnly }))
+                              ) : (
+                                <p className="design-device-edit-empty">Saved values are shown in Main settings.</p>
+                              )}
+                            </div>
+                          </section>
+                        ) : (
+                          <p className="design-device-edit-empty">Pick one area to edit.</p>
+                        )}
+                      </details>
                     )}
                   </details>
                 )}
@@ -11608,6 +11635,27 @@ function topologyDeviceEssentialFields(
     .map((key) => fields.find((field) => field.key === key))
     .filter((field): field is { key: string; kind?: "textarea"; label: string } => Boolean(field));
   return (picked.length ? picked : fields).slice(0, 5);
+}
+
+function topologyDeviceQuickEditFields(
+  partId: DesignPartId,
+  sections: Array<{ fields: Array<{ key: string; kind?: "textarea"; label: string }>; id: string }>
+): Array<{ key: string; kind?: "textarea"; label: string }> {
+  const fields = sections.flatMap((section) => section.fields);
+  const preferredKeys: Partial<Record<DesignPartId, string[]>> = {
+    switch: ["ports", "port_profiles", "bpdu_guard"],
+    ilo: ["credential_state", "notes"],
+    "server-gen10": ["drive_bays", "raid_data", "ports"],
+    "server-gen10plus": ["drive_bays", "raid_data", "ports"],
+    netapp: ["controller_ports", "ports", "storage_vlan"],
+    vcenter: ["vm_network", "role"],
+    windows: ["vm_network", "role"]
+  };
+  const preferred = preferredKeys[partId] ?? [];
+  const picked = preferred
+    .map((key) => fields.find((field) => field.key === key))
+    .filter((field): field is { key: string; kind?: "textarea"; label: string } => Boolean(field));
+  return (picked.length ? picked : fields).slice(0, 3);
 }
 
 function topologyDefaultFaceplateElement(partId: DesignPartId): string {
