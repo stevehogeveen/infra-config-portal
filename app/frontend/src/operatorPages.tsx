@@ -5992,7 +5992,7 @@ function validationFixTarget(item: LabValidationItem | undefined, blockerText = 
   if (textIncludes(text, ["netapp", "storage", "datastore", "nfs", "iscsi"])) return { label: "Fix storage path", to: "/storage" };
   if (textIncludes(text, ["esxi", "vcenter", "virtualization", "vm"])) return { label: "Fix virtualization", to: "/virtualization" };
   if (textIncludes(text, ["firmware", "upgrade"])) return { label: "Fix firmware", to: "/firmware-upgrades" };
-  return { label: "Fix lab defaults", to: "/lab-defaults" };
+  return { label: "Fix lab defaults", to: "/setup/defaults" };
 }
 
 function validationReadinessStateLabel(status: string): "Ready" | "Blocked" | "Not checked" {
@@ -9775,7 +9775,7 @@ function LabDesignComposer({
                   {actionRunStatus.runningActionId === selectedSafeActions[0].action_id ? "Running check" : topologyPrimaryActionLabel(selectedPart.id, selectedSafeActions[0])}
                 </button>
               ) : workspaceOnly ? (
-                <Link className="design-plan-action" to="/lab-defaults">Fix setup first</Link>
+                <Link className="design-plan-action" to="/setup/defaults">Fix setup first</Link>
               ) : (
                 <button className="design-plan-action" disabled type="button">No read-only test registered</button>
               )}
