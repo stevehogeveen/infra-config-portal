@@ -3105,6 +3105,10 @@ test("firmware decisions keep target and action copy honest", async ({ page }) =
 
   const table = page.getByLabel("Firmware version decisions");
   await expect(table).toContainText(/Review baseline|Upgrade available|Target not set/);
+  await expect(table, "minimum baselines keep the comparison qualifier in the operator target column").toContainText(">= 17.9");
+  const netappRow = table.locator("tbody tr").filter({ hasText: "NetApp" }).first();
+  await expect(netappRow, "minimum baselines say they meet the target instead of implying an exact version match").toContainText("Meets target");
+  await expect(netappRow, "minimum baselines do not look like exact current-version matches").not.toContainText("Already current");
   await expect(table).toContainText("Bypass");
   await expect(table).not.toContainText("cisco-ios-xe-firmware.bin");
   await expect(table).not.toContainText("P95170_001_gen10spp");

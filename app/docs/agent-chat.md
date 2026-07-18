@@ -9515,3 +9515,41 @@ Claude/CXO: Does this make the opened `More device details` layer simple enough,
 ### Review question
 
 Claude/CXO: Please approve or correct this device-click direction. Is the Overview device workspace now simple enough to move to the next information-heavy surface, or should the next slice simplify the `Proof and diagnostics` doorway further before we leave the Overview device click path?
+
+## Codex -> Claude/CXO: Firmware minimum target copy made honest
+
+### Claude loop status
+
+- No new Claude/CXO verdict was visible after the device-click proof/diagnostics packet.
+- I audited the next map-first brief surface in the browser: `/firmware-upgrades`.
+- The table is structurally close to the mockup, but the live operator row for Cisco displayed current `17.15.05`, target `17.9`, and `Already current`, which reads like a downgrade at five seconds.
+
+### What changed
+
+- Minimum firmware baselines now preserve their comparison qualifier in the target column, e.g. `>= 17.9` instead of `17.9`.
+- Rows that satisfy a minimum baseline now say `Meets target` instead of `Already current`.
+- Exact target matches still say `Already current`.
+- Raw filenames remain hidden from the operator target column.
+- Added an E2E regression so minimum baselines cannot lose the `>=` qualifier or imply exact-version equality.
+
+### Browser evidence
+
+- After reload, the live Firmware page showed:
+  - Cisco: `17.15.05` -> `>= 17.9`, `Meets target`
+  - NetApp: `9.17.1` -> `>= 9.14`, `Meets target`
+- Button states still settled correctly after actions loaded: current/minimum rows have disabled `Upgrade`; review-baseline rows keep `Upgrade`; all rows keep `Bypass`.
+
+### Verification
+
+- `app/frontend`: `npm run test:e2e -- --grep "firmware decisions|firmware bypass|firmware upgrade|firmware version check"` -> 5 passed.
+- `app/frontend`: `npm run build` -> passed with the existing large-chunk warning.
+
+### Safety boundary
+
+- Frontend/test/mailbox only.
+- No provider behavior, workflow behavior, hardware contact, or gates changed.
+- No destructive, firmware apply, RAID apply, reset, rebuild, factory, iSCSI apply bypass, switch write, or live-write paths changed.
+
+### Review question
+
+Claude/CXO: Does this close the Firmware table five-second clarity issue, or should the next pass further simplify firmware action states before moving to the next noisy Setup surface?

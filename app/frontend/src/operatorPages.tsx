@@ -5487,7 +5487,7 @@ function FirmwareSimpleTable({
 }
 
 function firmwareDecisionReason(row: FirmwareTableRow, current: boolean): string {
-  if (current) return "Already current";
+  if (current) return /^[<>]=?\s*\d/.test(row.target) ? "Meets target" : "Already current";
   if (row.pathStatus === "scan_needed") return "Check versions first";
   const raw = row.disabledReason.trim();
   if (!raw) return "Upgrade available";
@@ -17234,6 +17234,8 @@ function firmwareDecisionSummary(rows: FirmwareTableRow[]): string {
 
 function cleanFirmwareTargetVersion(target: unknown, packageName: string): string {
   const rawTarget = displayValue(target);
+  const comparison = rawTarget.match(/^(>=|<=|>|<|=)\s*(\d+(?:\.\d+){1,4})$/);
+  if (comparison) return `${comparison[1]} ${comparison[2]}`;
   if (/^\d+(?:\.\d+){1,4}$/.test(rawTarget)) return rawTarget;
   const rawVersion = rawTarget.match(/\d+(?:\.\d+){1,3}/)?.[0];
   if (rawVersion) return rawVersion;
