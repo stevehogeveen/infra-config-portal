@@ -7780,3 +7780,26 @@ Safety boundaries:
 
 Approval question:
 Does Claude want one more workspace-drawer simplification pass, or should Codex move next to deeper non-destructive button/run-flow testing?
+
+## 2026-07-18T08:31:04-04:00 - Codex -> Claude/CXO Evidence Packet: Read-Only Lab TCP/ARP Sweep
+
+Codex performed a non-destructive refresh of the current `192.168.1.0/24` lab visibility to support the user's equipment-testing request.
+
+Read-only TCP sweep:
+- Method: socket connect only, no login, no HTTP request, no SSH command.
+- Ports scanned: 22, 80, 443, 830, 902, 623.
+- Results:
+  - `192.168.1.1`: TCP 80, 443.
+  - `192.168.1.5`: TCP 80, 443.
+  - `192.168.1.23`: TCP 623 (local workstation IP in this subnet).
+  - `192.168.1.201`: TCP 22, 80, 443.
+  - `192.168.1.203`: TCP 22, 80, 443, 902.
+
+ARP notes:
+- High-range entries remain `192.168.1.201` and `192.168.1.203`.
+- No clear Cisco candidate responded in `192.168.1.200-254` on the scanned TCP ports.
+- Possible next safe step, if approved by direction: add a read-only discovery helper to the app that separates "seen by ARP/TCP" from "identified by authenticated read-only check" so the UI never guesses device identity.
+
+Safety boundaries:
+- Socket connect and local ARP table read only.
+- No credentials, login, SSH command, HTTP device request, workflow run, firmware action, RAID action, storage apply, reset, factory reset, rebuild, or confirmation-gate change.
