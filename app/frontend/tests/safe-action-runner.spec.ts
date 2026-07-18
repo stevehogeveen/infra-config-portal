@@ -1960,8 +1960,7 @@ test("remaining operator pages expose simplified setup surfaces without old sett
   await expect(readiness.getByRole("button", { name: /factory|reset|rebuild/i })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Generate Handoff Report" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: /Apply NetApp Factory Reset|Reset HPE RAID|Rebuild ESXi Host|Reset Server Power/ })).toHaveCount(0);
-  const dangerZone = page.locator("details.validation-danger-zone");
-  await expect(dangerZone).not.toHaveAttribute("open", "");
+  await expect(page.locator("details.validation-danger-zone")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Settings" })).toHaveCount(0);
 
   await page.getByRole("button", { name: "View details" }).click();
@@ -2244,6 +2243,9 @@ test("create handoff report primary action calls the handoff API and reports com
 test("validation exposes guarded factory reset and automated rebuild verification", async ({ page }) => {
   await page.goto("/validation");
   await expect(page.getByRole("button", { name: /Apply NetApp Factory Reset|Reset HPE RAID|Rebuild ESXi Host|Reset Server Power/ })).toHaveCount(0);
+  await expect(page.locator("details.validation-danger-zone")).toHaveCount(0);
+  await page.getByRole("button", { name: "Advanced" }).click();
+  await expect(page.locator("details.validation-danger-zone")).toHaveCount(1);
   await page.locator("details.validation-danger-zone > summary").click();
 
   const resetPanel = page.locator("section[aria-label='Factory Reset and Rebuild']");
@@ -2300,6 +2302,7 @@ test("validation exposes guarded factory reset and automated rebuild verificatio
 
 test("validation details do not expose optional smoke controls in normal reports", async ({ page }) => {
   await page.goto("/validation");
+  await expect(page.locator("details.validation-danger-zone")).toHaveCount(0);
   await page.getByRole("button", { name: "View details" }).click();
 
   const details = page.getByLabel("Validation details");

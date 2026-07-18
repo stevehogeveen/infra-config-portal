@@ -770,7 +770,7 @@ function App() {
               <RouterRoute path="/virtualization" element={<OperatorVirtualizationPage labProfileState={labProfileState} onReloadLabProfile={loadLabProfileState} />} />
               <RouterRoute path="/lab-defaults" element={<OperatorLabDefaultsPage labProfileState={labProfileState} onReloadLabProfile={loadLabProfileState} />} />
               <RouterRoute path="/firmware-upgrades" element={<OperatorFirmwareUpgradesPage labProfileState={labProfileState} />} />
-              <RouterRoute path="/validation" element={<OperatorValidationPage labProfileState={labProfileState} />} />
+              <RouterRoute path="/validation" element={<OperatorValidationPage isAdvancedMode={uiMode === "advanced"} labProfileState={labProfileState} />} />
               <RouterRoute path="/config" element={<Navigate to="/overview" replace />} />
               <RouterRoute path="/dashboard" element={<Navigate to="/overview" replace />} />
               <RouterRoute path="/lab-setup" element={<Navigate to="/overview" replace />} />

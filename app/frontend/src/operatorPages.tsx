@@ -78,6 +78,7 @@ type HealthLike = {
 
 type OperatorPageProps = {
   health?: HealthLike;
+  isAdvancedMode?: boolean;
   labProfileError?: string;
   labProfileLoading?: boolean;
   labProfileState: LabProfileList | null;
@@ -5480,7 +5481,7 @@ function FirmwareMapInspector({
   );
 }
 
-export function OperatorValidationPage({ labProfileState }: OperatorPageProps) {
+export function OperatorValidationPage({ isAdvancedMode = false, labProfileState }: OperatorPageProps) {
   const activeProfile = activeLabProfile(labProfileState);
   const [actions, setActions] = useState<WorkflowAction[]>([]);
   const [validation, setValidation] = useState<LabValidationSummary | null>(null);
@@ -5679,7 +5680,7 @@ export function OperatorValidationPage({ labProfileState }: OperatorPageProps) {
         <h1>Validation</h1>
         <p>Is this kit ready to hand off, and what is the one check to run next?</p>
       </div>
-      <Feedback loading={loading && Boolean(activeProfile) && !validation} error={error} />
+      <Feedback loading={false} error={error} />
       <section className="validation-readiness-surface" aria-label="Readiness Check">
         <Card className="validation-readiness-card" hover={false}>
           <CardHeader>
@@ -5794,18 +5795,20 @@ export function OperatorValidationPage({ labProfileState }: OperatorPageProps) {
         </section>
       )}
 
-      <details className="validation-danger-zone" aria-label="Danger zone">
-        <summary>
-          <span>
-            <span className="operator-kicker danger">Danger zone</span>
-            <strong>Reset and rebuild controls</strong>
-            <small>Closed by default. These workflows stay behind existing guarded confirmations.</small>
-          </span>
-        </summary>
-        <div>
-          {resetRebuildPanel}
-        </div>
-      </details>
+      {isAdvancedMode && (
+        <details className="validation-danger-zone" aria-label="Danger zone">
+          <summary>
+            <span>
+              <span className="operator-kicker danger">Danger zone</span>
+              <strong>Reset and rebuild controls</strong>
+              <small>Closed by default. These workflows stay behind existing guarded confirmations.</small>
+            </span>
+          </summary>
+          <div>
+            {resetRebuildPanel}
+          </div>
+        </details>
+      )}
     </OperatorPage>
   );
 }

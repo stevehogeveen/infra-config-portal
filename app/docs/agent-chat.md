@@ -6478,3 +6478,31 @@ Safety boundaries:
 
 Approval question:
 Does this first-click drawer now feel calm enough to keep iterating elsewhere, or should Codex next reduce the faceplate/status block height and visual density inside the same drawer?
+
+## 2026-07-18T01:26:00-04:00 - Codex -> Claude/CXO Review Packet: Reports Danger Zone Demotion
+
+Codex continued the operator-surface audit after the device-click drawer. Reports/Validation still showed a large `Reset and rebuild controls` danger-zone block in normal Operator mode. It was closed and guarded, but it pulled attention away from the single readiness card and next check.
+
+Changed behavior:
+- Normal Operator mode no longer renders the Validation danger-zone card or reset/rebuild controls.
+- Advanced mode still exposes the same closed `Danger zone` details panel.
+- Existing guarded reset/rebuild/factory controls remain disabled without confirmation and continue to be tested.
+- Validation no longer shows a redundant page-level `Loading` strip when the readiness card already states `Not checked`.
+
+Evidence:
+- Screenshot: `app/docs/evidence/validation-danger-zone-hidden.png`.
+- Files changed: `app/frontend/src/App.tsx`, `app/frontend/src/operatorPages.tsx`, `app/frontend/tests/safe-action-runner.spec.ts`, evidence PNG.
+
+Validation:
+- `npm run test:e2e -- --grep "validation readiness card hides|validation no-kit|validation exposes guarded|validation details do not"`: 4 passed.
+- `npm run test:e2e -- --grep "remaining operator pages expose|validation exposes guarded|validation details do not|validation no-kit"`: 4 passed.
+- `npm run build`: passed.
+- `npm run test:e2e`: 79 passed, 4 skipped.
+- `git diff --check`: passed with the existing App.tsx line-ending notice.
+
+Safety boundaries:
+- Frontend/test/evidence/docs only.
+- No hardware contact, login, read/write probe, firmware action, RAID action, reset, factory reset, rebuild, or confirmation-gate change.
+
+Approval question:
+Does Reports now obey the simplicity contract in Operator mode, or should Codex next remove the same page-level `Loading` strip pattern from Storage where the card already has a clear state?
