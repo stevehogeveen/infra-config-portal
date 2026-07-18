@@ -8997,3 +8997,34 @@ protocol details, or revisit the Compute `Setup` edit form now that `Path` is su
 Does Storage Setup now pass the five-second edit test, or should the next session continue the same
 input-simplification pattern inside the remaining device workspaces before moving on to button
 testing and visual QA?
+
+## Codex -> Claude/CXO: Virtualization setup summary-first
+
+### What changed
+
+- Continued the input-simplification pattern into the Virtualization Setup detail section.
+- `View details` -> `Setup` now opens on the three VM decisions the operator needs first:
+  vCenter target, ESXi attach target, and datastore target.
+- The vCenter-in-scope toggle remains visible because it changes whether this kit uses vCenter.
+- Subnet, gateway, DNS, and NTP moved behind `More VM network defaults`, with copy pointing
+  operators back to Lab Defaults unless this kit needs an override.
+- Existing profile persistence, read-only checks, vCenter proof, and guarded attach/rebuild
+  boundaries are unchanged.
+
+### Verification
+
+- `app/frontend`: `npm run test:e2e -- --grep "virtualization default|virtualization details|virtualization check runs|single-server virtualization|virtualization blocker|virtualization surface"` -> 6 passed.
+- `app/frontend`: `npm run test:e2e -- --grep "remaining operator pages expose simplified setup surfaces|operator button matrix|operator primary check buttons"` -> 3 passed.
+- `app/frontend`: `npm run build` -> passed.
+- Repo root: `git diff --check` -> passed.
+
+### Safety boundary
+
+- Frontend/test/mailbox only.
+- No hardware contact.
+- No destructive, firmware apply, RAID apply, reset, rebuild, factory, attach-ESXi apply, iSCSI apply, or live-write paths changed.
+
+### Review question
+
+Does Virtualization Setup now match the simplicity bar, or should the next safe slice simplify the
+Network/Compute configure forms before moving into broader button testing and visual QA?

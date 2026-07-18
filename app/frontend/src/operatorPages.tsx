@@ -13914,27 +13914,17 @@ function VirtualizationConfigurePanel({
       </CardHeader>
       <CardContent>
         <form className="network-config-form" onSubmit={save}>
-          <Field label="vCenter target">
-            <input value={edit.vcenterTarget} onChange={(event) => update("vcenterTarget", event.target.value)} />
-          </Field>
-          <Field label="ESXi attach target">
-            <input value={edit.esxiTarget} onChange={(event) => update("esxiTarget", event.target.value)} />
-          </Field>
-          <Field label="Datastore target">
-            <input value={edit.datastoreTarget} onChange={(event) => update("datastoreTarget", event.target.value)} />
-          </Field>
-          <Field label="Subnet">
-            <input value={edit.subnet} onChange={(event) => update("subnet", event.target.value)} />
-          </Field>
-          <Field label="Gateway">
-            <input value={edit.gateway} onChange={(event) => update("gateway", event.target.value)} />
-          </Field>
-          <Field label="DNS servers">
-            <input value={edit.dnsServers} onChange={(event) => update("dnsServers", event.target.value)} />
-          </Field>
-          <Field label="NTP servers">
-            <input value={edit.ntpServers} onChange={(event) => update("ntpServers", event.target.value)} />
-          </Field>
+          <div className="virtualization-config-primary-grid">
+            <Field label="vCenter target">
+              <input value={edit.vcenterTarget} onChange={(event) => update("vcenterTarget", event.target.value)} />
+            </Field>
+            <Field label="ESXi attach target">
+              <input value={edit.esxiTarget} onChange={(event) => update("esxiTarget", event.target.value)} />
+            </Field>
+            <Field label="Datastore target">
+              <input value={edit.datastoreTarget} onChange={(event) => update("datastoreTarget", event.target.value)} />
+            </Field>
+          </div>
           <div className="network-config-toggles" aria-label="Virtualization feature toggles">
             <label>
               <input
@@ -13945,6 +13935,26 @@ function VirtualizationConfigurePanel({
               <span>vCenter in scope</span>
             </label>
           </div>
+          <details className="virtualization-config-more">
+            <summary>
+              <span>More VM network defaults</span>
+              <small>Use Lab Defaults unless this kit needs virtualization-specific network values.</small>
+            </summary>
+            <div className="virtualization-config-more-grid">
+              <Field label="Subnet">
+                <input value={edit.subnet} onChange={(event) => update("subnet", event.target.value)} />
+              </Field>
+              <Field label="Gateway">
+                <input value={edit.gateway} onChange={(event) => update("gateway", event.target.value)} />
+              </Field>
+              <Field label="DNS servers">
+                <input value={edit.dnsServers} onChange={(event) => update("dnsServers", event.target.value)} />
+              </Field>
+              <Field label="NTP servers">
+                <input value={edit.ntpServers} onChange={(event) => update("ntpServers", event.target.value)} />
+              </Field>
+            </div>
+          </details>
           <div className="network-config-actions">
             <button className="operator-primary-button" disabled={busy || !activeProfile} type="submit">
               {busy ? "Saving..." : activeProfile?.source === "saved" ? "Save Virtualization" : "Save As Lab Setup"}

@@ -16330,25 +16330,35 @@ button.design-ilo-port:hover {
 }
 
 .storage-config-primary-grid,
-.storage-config-more {
+.storage-config-more,
+.virtualization-config-primary-grid,
+.virtualization-config-more {
   grid-column: 1 / -1;
 }
 
 .storage-config-primary-grid,
-.storage-config-more-grid {
+.storage-config-more-grid,
+.virtualization-config-primary-grid,
+.virtualization-config-more-grid {
   display: grid;
   gap: 12px;
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
-.storage-config-more {
+.virtualization-config-primary-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.storage-config-more,
+.virtualization-config-more {
   background: #f8fafc;
   border: 1px solid #dbe4ee;
   border-radius: 12px;
   padding: 0;
 }
 
-.storage-config-more > summary {
+.storage-config-more > summary,
+.virtualization-config-more > summary {
   align-items: center;
   color: #334961;
   cursor: pointer;
@@ -16360,17 +16370,20 @@ button.design-ilo-port:hover {
   padding: 12px 14px;
 }
 
-.storage-config-more > summary::-webkit-details-marker {
+.storage-config-more > summary::-webkit-details-marker,
+.virtualization-config-more > summary::-webkit-details-marker {
   display: none;
 }
 
-.storage-config-more > summary span {
+.storage-config-more > summary span,
+.virtualization-config-more > summary span {
   color: #102238;
   font-size: 13px;
   font-weight: 900;
 }
 
-.storage-config-more > summary small {
+.storage-config-more > summary small,
+.virtualization-config-more > summary small {
   color: #64748b;
   font-size: 12px;
   font-weight: 800;
@@ -16378,7 +16391,8 @@ button.design-ilo-port:hover {
   text-align: right;
 }
 
-.storage-config-more-grid {
+.storage-config-more-grid,
+.virtualization-config-more-grid {
   border-top: 1px solid #e2e8ee;
   padding: 14px;
 }
@@ -17951,16 +17965,20 @@ button.design-ilo-port:hover {
   }
 
   .storage-config-primary-grid,
-  .storage-config-more-grid {
+  .storage-config-more-grid,
+  .virtualization-config-primary-grid,
+  .virtualization-config-more-grid {
     grid-template-columns: 1fr;
   }
 
-  .storage-config-more > summary {
+  .storage-config-more > summary,
+  .virtualization-config-more > summary {
     align-items: flex-start;
     flex-direction: column;
   }
 
-  .storage-config-more > summary small {
+  .storage-config-more > summary small,
+  .virtualization-config-more > summary small {
     text-align: left;
   }
 
