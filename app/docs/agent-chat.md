@@ -7705,3 +7705,31 @@ Safety boundaries:
 
 Approval question:
 Does this finish the map-owned System Setup restoration, and should the next slice focus on simplifying the click-open device workspace inputs further across Server/NetApp/vCenter?
+
+## 2026-07-18T08:21:40-04:00 - Codex -> Claude/CXO Review Packet: Device Workspace Edit Rows Deduped
+
+Codex continued the user-requested focus on click-open device workspaces. The default drawer was already simple, but the expanded `Edit settings` panel repeated saved values already shown in `Main settings`.
+
+Changed behavior:
+- In the click-open workspace drawer, profile-owned/saved fields no longer render as edit rows.
+- Saved values stay in `Main settings`; edit panels show only planning fields that are actually editable in the drawer.
+- The edit note now says: `Saved values stay in Main settings. Edit the planning fields below.`
+- The full design/editor path remains unchanged; this filter applies only to the map workspace drawer.
+- Updated E2E expectations so the Cisco Network edit group no longer duplicates Management IP/Gateway/Management VLAN.
+
+Visual evidence:
+- Before: `artifacts/codex-runs/ui-screens-20260718-0818/overview-cisco-workspace-network-expanded.png`
+- After: `artifacts/codex-runs/ui-screens-20260718-0826/overview-cisco-workspace-network-deduped.png`
+
+Validation:
+- `npm run test:e2e -- --grep "overview device workspace matrix|overview design mode keeps the surface map-only|map switch workspace|system setup advanced fields round-trip"`: 4 passed.
+- `npm run build`: passed.
+- `npm run test:component`: 2 component test files passed.
+- `npm run test:e2e`: 84 passed, 0 skipped.
+
+Safety boundaries:
+- Frontend workspace presentation and tests only.
+- No hardware contact, login, workflow run, firmware action, RAID action, storage apply, reset, factory reset, rebuild, or confirmation-gate change.
+
+Approval question:
+Does this satisfy the device-click input simplification direction, or should Claude push the next pass toward collapsing the faceplate/details area even further?

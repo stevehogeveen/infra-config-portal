@@ -1283,11 +1283,14 @@ test("system setup advanced fields round-trip shared and device rows through the
   await reloadedTopology.getByRole("button", { name: "Open Cisco switch workspace" }).click();
   const overlay = page.locator("div[aria-label='Device workspace overlay']");
   await expect(overlay.locator("section[aria-label='Cisco switch workspace']")).toBeVisible();
+  await expect(overlay.getByLabel("Cisco switch essentials")).toContainText("Management IP");
+  await expect(overlay.getByLabel("Cisco switch essentials")).toContainText("192.168.1.214");
   const switchNetwork = await openWorkspaceEditGroup(page, "Cisco switch", "Network");
-  await expect(switchNetwork).toContainText("Management IP");
-  await expect(switchNetwork).toContainText("192.168.1.214");
+  await expect(switchNetwork).not.toContainText("Management IP");
+  await expect(switchNetwork).not.toContainText("192.168.1.214");
   await expect(switchNetwork.getByRole("textbox", { name: "Management IP" })).toHaveCount(0);
-  await expect(switchNetwork).toContainText("Saved values come from System Setup");
+  await expect(switchNetwork).toContainText("Saved values stay in Main settings");
+  await expect(switchNetwork).toContainText("Storage VLAN");
 });
 
 test("system setup advanced fields keep blank profile values planned until edited", async ({ page }) => {
@@ -1393,8 +1396,10 @@ test("overview design mode keeps the surface map-only until a node opens the wor
   await expect(editSettings.locator(".design-device-edit-empty")).toHaveText("Pick one group to edit.");
   await expect(editSettings.locator(".design-device-param-panel")).toHaveCount(0);
   const networkGroup = await openWorkspaceEditGroup(page, "Cisco switch", "Network");
-  await expect(networkGroup).toContainText("Management IP");
+  await expect(networkGroup).not.toContainText("Management IP");
+  await expect(networkGroup).toContainText("Storage VLAN");
   await expect(networkGroup).not.toContainText("IP, gateway, VLANs, and ports");
+  await expect(networkGroup).toContainText("Saved values stay in Main settings");
   await expect(networkGroup.locator(".design-device-edit-note")).toHaveCount(1);
   await expect(networkGroup.locator(".design-provenance-chip")).toHaveCount(0);
   await expect(editSettings.locator(".design-device-param-panel")).toHaveCount(1);
@@ -2113,7 +2118,9 @@ test("map switch workspace shows access settings and blockers without proof clut
   await expect(workspace.getByLabel("Cisco switch essentials")).toContainText("192.168.1.204");
   await expect(workspace.getByLabel("Cisco workspace network controls")).not.toBeVisible();
   await workspace.getByLabel("Cisco switch details").locator(":scope > summary").click();
-  await expect(await openWorkspaceEditGroup(page, "Cisco switch", "Network")).toContainText("Management IP");
+  const networkGroup = await openWorkspaceEditGroup(page, "Cisco switch", "Network");
+  await expect(networkGroup).not.toContainText("Management IP");
+  await expect(networkGroup).toContainText("Storage VLAN");
   const advanced = await openWorkspaceAdvanced(page, "Cisco switch");
   const controls = advanced.getByLabel("Cisco workspace network controls");
   await expect(controls).toContainText("Network controls");

@@ -8568,6 +8568,9 @@ function LabDesignComposer({
     ? selectedWorkspaceSections.filter((section) => section.id !== "identity")
     : selectedWorkspaceSections;
   const selectedEditWorkspaceSection = selectedDetailWorkspaceSections.find((section) => section.id === selectedEditGroupId) ?? null;
+  const selectedEditFields = selectedPart && selectedEditWorkspaceSection
+    ? selectedEditWorkspaceSection.fields.filter((field) => !workspaceOnly || !topologyCommittedProfilePath(selectedPart.id, field.key))
+    : [];
   const selectedEssentialFields = selectedPart
     ? topologyDeviceEssentialFields(selectedPart.id, selectedWorkspaceSettingFields, draftScenario, storageProtocol)
     : [];
@@ -8961,6 +8964,8 @@ function LabDesignComposer({
     const states = selectedEditWorkspaceSection.fields.map((field) => Boolean(topologyCommittedProfilePath(selectedPart.id, field.key)));
     const hasSaved = states.some(Boolean);
     const hasDraftOnly = states.some((state) => !state);
+    if (workspaceOnly && hasSaved && hasDraftOnly) return "Saved values stay in Main settings. Edit the planning fields below.";
+    if (workspaceOnly && hasSaved) return "Saved values stay in Main settings. Change them in System Setup.";
     if (hasSaved && hasDraftOnly) return "Saved values come from System Setup. Draft-only fields are planning notes.";
     if (hasSaved) return "Saved values come from System Setup.";
     return hasDraftOnly ? "Draft-only fields are planning notes." : "";
@@ -9374,7 +9379,11 @@ function LabDesignComposer({
                       <section className="design-device-param-section design-device-param-panel" aria-label={`${selectedPart.label} ${selectedEditWorkspaceSection.label}`}>
                         {selectedEditGroupNote() && <p className="design-device-edit-note">{selectedEditGroupNote()}</p>}
                         <div className="design-device-setting-rows">
-                          {selectedEditWorkspaceSection.fields.map((field) => renderSelectedDeviceSettingRow(field, { hideProvenance: workspaceOnly }))}
+                          {selectedEditFields.length > 0 ? (
+                            selectedEditFields.map((field) => renderSelectedDeviceSettingRow(field, { hideProvenance: workspaceOnly }))
+                          ) : (
+                            <p className="design-device-edit-empty">Saved values are shown in Main settings.</p>
+                          )}
                         </div>
                       </section>
                     ) : (
