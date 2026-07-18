@@ -10345,6 +10345,43 @@ th.ui-compact-table-cell {
   box-shadow: 0 0 0 3px rgba(45, 212, 191, 0.22);
 }
 
+.design-device-live-editor {
+  background: linear-gradient(180deg, #f8fcfd 0%, #ffffff 100%);
+  border: 1px solid #cfe2ea;
+  border-radius: 12px;
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+}
+
+.design-device-live-editor-head {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.design-device-live-editor-head h4,
+.design-device-live-editor-head p {
+  margin: 0;
+}
+
+.design-device-live-editor-head h4 {
+  color: var(--ink);
+  font-size: 14px;
+}
+
+.design-device-live-editor-head > span {
+  background: #ecfeff;
+  border: 1px solid #99f6e4;
+  border-radius: 999px;
+  color: #0f766e;
+  font-size: 11px;
+  font-weight: 900;
+  padding: 6px 9px;
+  white-space: nowrap;
+}
+
 .design-workspace-map-details {
   align-items: center;
   display: flex;
@@ -10368,6 +10405,33 @@ th.ui-compact-table-cell {
   display: grid;
   gap: 10px;
   grid-template-columns: minmax(160px, auto) minmax(0, 1fr);
+}
+
+.design-device-core-settings > div:first-child {
+  align-items: start;
+}
+
+.design-device-core-settings > div:first-child span {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 750;
+  line-height: 1.35;
+}
+
+.design-device-save-row {
+  align-items: center;
+  border-top: 1px solid #e5e9ef;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(120px, auto) minmax(0, 1fr);
+  padding-top: 10px;
+}
+
+.design-device-save-row span {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 750;
+  line-height: 1.35;
 }
 
 .design-primary-setting {
@@ -13241,6 +13305,19 @@ button.design-ilo-port:hover {
   color: #64748b;
   font-size: 12px;
   font-weight: 850;
+}
+
+.topology-workspace-drawer .design-device-core-settings > div:first-child {
+  align-items: start;
+  display: grid;
+  gap: 3px;
+  justify-content: stretch;
+}
+
+.topology-workspace-drawer .design-device-core-settings h4 {
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 900;
 }
 
 .topology-workspace-drawer .design-device-setting-rows.compact {

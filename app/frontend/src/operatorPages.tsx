@@ -8937,7 +8937,9 @@ function LabDesignComposer({
     topologyReadConnectionSettingsDraft(draftKey, defaultConnectionSettings)
   );
   const [selectedDevice, setSelectedDevice] = useState<DesignPartId>(initialSelectedDevice ?? "switch");
-  const [selectedFaceplateElement, setSelectedFaceplateElement] = useState(() => workspaceOnly ? "" : "Switch port 1");
+  const [selectedFaceplateElement, setSelectedFaceplateElement] = useState(() =>
+    topologyDefaultFaceplateElement(initialSelectedDevice ?? "switch")
+  );
   const [selectedEditGroupId, setSelectedEditGroupId] = useState("");
   const [selectedLane, setSelectedLane] = useState<DesignLaneId>("management");
   const [selectedConnection, setSelectedConnection] = useState<DesignConnectionId>("switch-server");
@@ -9168,7 +9170,7 @@ function LabDesignComposer({
   }, [placements, selectedPart]);
 
   useEffect(() => {
-    setSelectedFaceplateElement(workspaceOnly ? "" : topologyDefaultFaceplateElement(selectedDevice));
+    setSelectedFaceplateElement(topologyDefaultFaceplateElement(selectedDevice));
   }, [selectedDevice, workspaceOnly]);
 
   useEffect(() => {
@@ -9383,20 +9385,21 @@ function LabDesignComposer({
     }
   }
 
-  function renderSelectedDeviceSettingRow(field: { key: string; kind?: "textarea"; label: string }, options?: { hideProvenance?: boolean; readOnlyDisplay?: boolean }) {
+  function renderSelectedDeviceSettingRow(field: { key: string; kind?: "textarea"; label: string }, options?: { allowProfileDraftEdit?: boolean; hideProvenance?: boolean; readOnlyDisplay?: boolean; useResolvedDraftFallback?: boolean }) {
     if (!selectedPart) return null;
     const profilePath = topologyCommittedProfilePath(selectedPart.id, field.key);
     const profileOwned = Boolean(profilePath);
     const draftValue = deviceSettings[selectedPart.id]?.[field.key] ?? "";
-    const resolvedValue = options?.readOnlyDisplay && profileOwned
+    const resolvedValue = (options?.readOnlyDisplay || options?.useResolvedDraftFallback) && profileOwned
       ? topologyResolvedProfileOwnedSettingValue(selectedPart.id, field.key, {
         activeProfile,
         address: designAddress,
         storageProtocol
       })
       : "";
-    const value = resolvedValue || draftValue;
-    if (options?.readOnlyDisplay || (workspaceOnly && profileOwned)) {
+    const value = draftValue || resolvedValue;
+    const profileLocked = profileOwned && !options?.allowProfileDraftEdit;
+    if (options?.readOnlyDisplay || (workspaceOnly && profileLocked)) {
       return (
         <div className={`design-device-setting-row ${profileOwned ? "is-profile-owned" : "is-draft-owned"} is-readonly-value`} key={field.key}>
           <span>{field.label}</span>
@@ -9409,19 +9412,19 @@ function LabDesignComposer({
         <span>{field.label}</span>
         {field.kind === "textarea" ? (
           <textarea
-            readOnly={profileOwned}
+            readOnly={profileLocked}
             rows={2}
             value={value}
             onChange={(event) => {
-              if (!profileOwned) updateDeviceSetting(field.key, event.target.value);
+              if (!profileLocked) updateDeviceSetting(field.key, event.target.value);
             }}
           />
         ) : selectedPart.id === "netapp" && field.key === "protocol" ? (
           <select
-            disabled={profileOwned}
+            disabled={profileLocked}
             value={storageProtocol === "iscsi" ? "iscsi" : "nfs"}
             onChange={(event) => {
-              if (!profileOwned) updateDraftStorageProtocol(event.target.value === "iscsi" ? "iscsi" : "nfs");
+              if (!profileLocked) updateDraftStorageProtocol(event.target.value === "iscsi" ? "iscsi" : "nfs");
             }}
           >
             <option value="nfs">NFS datastore path</option>
@@ -9429,10 +9432,10 @@ function LabDesignComposer({
           </select>
         ) : (
           <input
-            readOnly={profileOwned}
+            readOnly={profileLocked}
             value={value}
             onChange={(event) => {
-              if (!profileOwned) updateDeviceSetting(field.key, event.target.value);
+              if (!profileLocked) updateDeviceSetting(field.key, event.target.value);
             }}
           />
         )}
@@ -9651,6 +9654,45 @@ function LabDesignComposer({
               </div>
             )}
 
+            {workspaceOnly && selectedElementInspector && (
+              <section className="design-device-live-editor" aria-label={`${selectedPart.label} visual setup editor`}>
+                <div className="design-device-live-editor-head">
+                  <div>
+                    <p className="operator-kicker">Visual setup</p>
+                    <h4>{usesElementAssignmentPreview(selectedPart.id) ? "Click the physical part to plan it" : "Device faceplate"}</h4>
+                  </div>
+                  <span>Plan only. Hardware untouched.</span>
+                </div>
+                <div className="design-device-hero" aria-label={`${selectedPart.label} interactive faceplate`}>
+                  <DesignFaceplateVisual
+                    interactive
+                    onElementClick={(elementLabel) => {
+                      setSelectedFaceplateElement(elementLabel);
+                      setDropMessage(`${selectedPart.label} ${elementLabel} selected. Edit the saved plan here; hardware untouched.`);
+                    }}
+                    partId={selectedPart.id}
+                    selectedElement={selectedFaceplateElement}
+                    settings={selectedSettings}
+                    storageProtocol={storageProtocol}
+                  />
+                </div>
+                {selectedElementInspector && !usesElementAssignmentPreview(selectedPart.id) && (
+                  <p className="design-selected-element-note">
+                    <strong>{selectedElementInspector.label}</strong>
+                    <span>{selectedElementInspector.summary}</span>
+                  </p>
+                )}
+                {selectedElementInspector && (
+                  <ElementAssignmentPreview
+                    elementLabel={selectedElementInspector.label}
+                    elementSummary={selectedElementInspector.summary}
+                    partId={selectedPart.id}
+                    settings={selectedSettings}
+                  />
+                )}
+              </section>
+            )}
+
             {!workspaceOnly && selectedOverviewDetails.length > 0 && (
               <div className="design-workspace-map-details" aria-label={`${selectedPart.label} map details`}>
                 {selectedOverviewDetails.map((detail) => <span key={detail}>{detail}</span>)}
@@ -9780,25 +9822,98 @@ function LabDesignComposer({
             </div>
 
             {workspaceOnly && selectedEssentialFields.length > 0 && (
-              <section className="design-device-essentials" aria-label={`${selectedPart.label} essentials`}>
+              <section className="design-device-essentials design-device-core-settings" aria-label={`${selectedPart.label} essentials`}>
                 <div>
                   <p className="operator-kicker">Setup</p>
-                  <h4>At a glance</h4>
+                  <h4>Main settings</h4>
+                  <span>Edit the values this device actually uses. Save updates the lab profile only.</span>
                 </div>
-                <div className="design-device-setup-snapshot" aria-label={`${selectedPart.label} setup snapshot`}>
-                  <div className="design-device-setup-faceplate" aria-label={`${selectedPart.label} compact faceplate`}>
-                    <DesignFaceplateVisual
-                      compact
-                      partId={selectedPart.id}
-                      settings={selectedSettings}
-                      storageProtocol={storageProtocol}
-                    />
-                  </div>
-                  <div className="design-device-setting-rows compact">
-                    {selectedEssentialFields.map((field) => renderSelectedDeviceSettingRow(field, { hideProvenance: true, readOnlyDisplay: true }))}
-                  </div>
+                <div className="design-device-setting-rows compact" aria-label={`${selectedPart.label} main setup fields`}>
+                  {selectedEssentialFields.map((field) => renderSelectedDeviceSettingRow(field, {
+                    allowProfileDraftEdit: true,
+                    hideProvenance: true,
+                    useResolvedDraftFallback: true
+                  }))}
+                </div>
+                <div className="design-device-save-row" aria-label={`${selectedPart.label} save planned setup`}>
+                  <button
+                    className="design-plan-secondary"
+                    disabled={!canCommitProfileDraft}
+                    onClick={() => void commitDraftToProfile()}
+                    type="button"
+                  >
+                    {profileCommitStatus.running ? "Saving" : profileNeedsCommit ? "Save planned setup" : "Saved"}
+                  </button>
+                  <span>{profileCommitStatus.error || profileCommitStatus.message || "No hardware touched by setup saves."}</span>
                 </div>
               </section>
+            )}
+
+            {workspaceOnly && (selectedQuickEditFields.length > 0 || selectedAdvancedEditSections.length > 0) && (
+              <details className="design-workspace-edit-settings design-workspace-edit-settings-promoted" aria-label={`${selectedPart.label} edit settings`} open>
+                <summary>
+                  <span>More settings</span>
+                  <strong>Draft only</strong>
+                </summary>
+                {selectedQuickEditFields.length > 0 && (
+                  <section className="design-device-param-section design-device-param-panel design-device-quick-edit design-device-inline-edit" aria-label={`${selectedPart.label} quick setup fields`}>
+                    <div className="design-device-inline-edit-head">
+                      <div>
+                        <p className="operator-kicker">Common changes</p>
+                        <h4>{selectedQuickEditFields.map((field) => field.label).join(" / ")}</h4>
+                      </div>
+                      <span>Hardware untouched</span>
+                    </div>
+                    <div className="design-device-setting-rows compact">
+                      {selectedQuickEditFields.map((field) => renderSelectedDeviceSettingRow(field, {
+                        allowProfileDraftEdit: true,
+                        hideProvenance: true,
+                        useResolvedDraftFallback: true
+                      }))}
+                    </div>
+                  </section>
+                )}
+                {selectedAdvancedEditSections.length > 0 && (
+                  <details className="design-workspace-edit-advanced" aria-label={`${selectedPart.label} more setup fields`}>
+                    <summary>
+                      <span>Advanced planned fields</span>
+                      <strong>Optional</strong>
+                    </summary>
+                    <div className="design-device-edit-group-picker" aria-label={`${selectedPart.label} edit groups`}>
+                      {selectedAdvancedEditSections.map((section) => (
+                        <button
+                          aria-pressed={selectedEditWorkspaceSection?.id === section.id}
+                          className={`design-device-edit-group-button ${selectedEditWorkspaceSection?.id === section.id ? "is-selected" : ""}`}
+                          key={section.id}
+                          onClick={() => setSelectedEditGroupId((current) => current === section.id ? "" : section.id)}
+                          type="button"
+                        >
+                          <span>{section.label}</span>
+                          <small>{section.summary}</small>
+                        </button>
+                      ))}
+                    </div>
+                    {selectedEditWorkspaceSection ? (
+                      <section className="design-device-param-section design-device-param-panel" aria-label={`${selectedPart.label} ${selectedEditWorkspaceSection.label}`}>
+                        {selectedEditGroupNote() && <p className="design-device-edit-note">{selectedEditGroupNote()}</p>}
+                        <div className="design-device-setting-rows">
+                          {selectedEditFields.length > 0 ? (
+                            selectedEditFields.map((field) => renderSelectedDeviceSettingRow(field, {
+                              allowProfileDraftEdit: true,
+                              hideProvenance: workspaceOnly,
+                              useResolvedDraftFallback: true
+                            }))
+                          ) : (
+                            <p className="design-device-edit-empty">Saved values are shown above.</p>
+                          )}
+                        </div>
+                      </section>
+                    ) : (
+                      <p className="design-device-edit-empty">Pick a section.</p>
+                    )}
+                  </details>
+                )}
+              </details>
             )}
 
             {!workspaceOnly && (
@@ -9824,113 +9939,9 @@ function LabDesignComposer({
                 key={`${selectedPart.id}-workspace-details`}
               >
                 <summary>
-                  <span>More device details</span>
+                  <span>Evidence and diagnostics</span>
+                  <strong>Read-only proof</strong>
                 </summary>
-                <section className="design-device-details-inspector" aria-label={`${selectedPart.label} port and bay inspector`}>
-                  <div className="design-device-hero design-device-hero-after-setup" aria-label={`${selectedPart.label} interactive faceplate`}>
-                    <DesignFaceplateVisual
-                      interactive
-                      onElementClick={(elementLabel) => {
-                        setSelectedFaceplateElement(elementLabel);
-                        setDropMessage(`${selectedPart.label} ${elementLabel} selected. Inspect mapped params below; hardware untouched.`);
-                      }}
-                      partId={selectedPart.id}
-                      selectedElement={selectedFaceplateElement}
-                      settings={selectedSettings}
-                      storageProtocol={storageProtocol}
-                    />
-                  </div>
-                  {selectedElementInspector && !usesElementAssignmentPreview(selectedPart.id) && (
-                    <p className="design-selected-element-note">
-                      <strong>{selectedElementInspector.label}</strong>
-                      <span>{selectedElementInspector.summary}</span>
-                    </p>
-                  )}
-                  {selectedElementInspector && (
-                    <ElementAssignmentPreview
-                      elementLabel={selectedElementInspector.label}
-                      elementSummary={selectedElementInspector.summary}
-                      partId={selectedPart.id}
-                      settings={selectedSettings}
-                    />
-                  )}
-                </section>
-
-                {(selectedQuickEditFields.length > 0 || selectedAdvancedEditSections.length > 0) && (
-                  <details className="design-workspace-edit-settings" aria-label={`${selectedPart.label} edit settings`}>
-                    <summary>
-                      <span>Plan setup changes</span>
-                      <strong>Draft only</strong>
-                    </summary>
-                    {selectedQuickEditFields.length > 0 && (
-                      <section className="design-device-param-section design-device-param-panel design-device-quick-edit design-device-inline-edit" aria-label={`${selectedPart.label} quick setup fields`}>
-                        <div className="design-device-inline-edit-head">
-                          <div>
-                            <p className="operator-kicker">Common changes</p>
-                            <h4>{selectedQuickEditFields.map((field) => field.label).join(" / ")}</h4>
-                          </div>
-                          <span>Draft summary</span>
-                        </div>
-                        <div
-                          className="design-device-setting-rows compact design-device-edit-summary"
-                          aria-label={`${selectedPart.label} planned setup summary`}
-                        >
-                          {selectedQuickEditFields.map((field) => renderSelectedDeviceSettingRow(field, {
-                            hideProvenance: true,
-                            readOnlyDisplay: true
-                          }))}
-                        </div>
-                        <details className="design-device-edit-values" aria-label={`${selectedPart.label} edit draft values`}>
-                          <summary>
-                            <span>Edit draft values</span>
-                            <strong>Hardware untouched</strong>
-                          </summary>
-                          <p className="design-device-edit-intro">Only updates the saved plan.</p>
-                          <div className="design-device-setting-rows">
-                            {selectedQuickEditFields.map((field) => renderSelectedDeviceSettingRow(field, { hideProvenance: true }))}
-                          </div>
-                        </details>
-                      </section>
-                    )}
-                    {selectedAdvancedEditSections.length > 0 && (
-                      <details className="design-workspace-edit-advanced" aria-label={`${selectedPart.label} more setup fields`}>
-                        <summary>
-                          <span>More planned fields</span>
-                          <strong>Optional</strong>
-                        </summary>
-                        <div className="design-device-edit-group-picker" aria-label={`${selectedPart.label} edit groups`}>
-                          {selectedAdvancedEditSections.map((section) => (
-                            <button
-                              aria-pressed={selectedEditWorkspaceSection?.id === section.id}
-                              className={`design-device-edit-group-button ${selectedEditWorkspaceSection?.id === section.id ? "is-selected" : ""}`}
-                              key={section.id}
-                              onClick={() => setSelectedEditGroupId((current) => current === section.id ? "" : section.id)}
-                              type="button"
-                            >
-                              <span>{section.label}</span>
-                              <small>{section.summary}</small>
-                            </button>
-                          ))}
-                        </div>
-                        {selectedEditWorkspaceSection ? (
-                          <section className="design-device-param-section design-device-param-panel" aria-label={`${selectedPart.label} ${selectedEditWorkspaceSection.label}`}>
-                            {selectedEditGroupNote() && <p className="design-device-edit-note">{selectedEditGroupNote()}</p>}
-                            <div className="design-device-setting-rows">
-                              {selectedEditFields.length > 0 ? (
-                                selectedEditFields.map((field) => renderSelectedDeviceSettingRow(field, { hideProvenance: workspaceOnly }))
-                              ) : (
-                                <p className="design-device-edit-empty">Saved values are shown in At a glance.</p>
-                              )}
-                            </div>
-                          </section>
-                        ) : (
-                          <p className="design-device-edit-empty">Pick a section.</p>
-                        )}
-                      </details>
-                    )}
-                  </details>
-                )}
-
                 <details className="design-workspace-proof-door" aria-label={`${selectedPart.label} proof and diagnostics`}>
                   <summary>
                     <span>Evidence</span>
