@@ -982,11 +982,15 @@ test("overview device workspace matrix keeps default inputs concise", async ({ p
     await expect(overlay.locator(".topology-workspace-drawer-head"), `${item.workspace} drawer uses setup wording`).toContainText("Device setup");
     await expect(overlay.locator(".topology-workspace-drawer-head"), `${item.workspace} drawer avoids workspace chrome copy`).not.toContainText("Device workspace");
     await expect(workspace.locator(":scope > .design-device-primary-action .design-plan-action"), `${item.workspace} has one default action`).toHaveCount(1);
+    await expect(workspace.locator(":scope > .design-device-primary-action"), `${item.workspace} does not leak internal readiness rows`).not.toContainText("Draft store");
+    await expect(workspace.locator(".design-workspace-boundary"), `${item.workspace} keeps the safety boundary concise`).toContainText("Checks here are read-only");
     await expect(workspace.locator(".design-selected-element-note"), `${item.workspace} waits for an element click before showing element detail`).toHaveCount(0);
     await expect(workspace, `${item.workspace} avoids dead default actions`).not.toContainText("No read-only test registered");
     const essentials = workspace.getByLabel(`${item.workspace} essentials`);
     await expect(essentials, `${item.workspace} shows essentials`).toBeVisible();
     await expect(essentials, `${item.workspace} names the compact setup block`).toContainText("Setup");
+    await expect(essentials, `${item.workspace} uses operator language for setup values`).toContainText("Main settings");
+    await expect(essentials, `${item.workspace} avoids internal value labels`).not.toContainText("Primary values");
     await expect(essentials, `${item.workspace} removes instructional setup copy`).not.toContainText("Everything else is in Details");
     expect(await essentials.locator(".design-device-setting-row").count(), `${item.workspace} keeps essentials compact`).toBeLessThanOrEqual(3);
     await expect(essentials, `${item.workspace} keeps identity in the hero, not the setup form`).not.toContainText("Name");
@@ -1404,7 +1408,7 @@ test("overview design mode switches scenario drafts without committing hardware"
   await serverWorkspace.getByLabel("DL360 Gen10 details").locator(":scope > summary").click();
   await expect(serverWorkspace.getByLabel("DL360 Gen10 Storage")).toContainText("NFS datastore path");
   await expect(serverWorkspace.getByLabel("DL360 Gen10 Storage").getByRole("textbox", { name: /^Data RAID/ })).toHaveValue("boot/staging only; VM data on shared storage");
-  await expect(overlay).toContainText("Hardware untouched until guarded applies.");
+  await expect(overlay).toContainText("Checks here are read-only. Apply steps stay behind confirmations.");
   await overlay.getByRole("button", { name: "Close" }).click();
   await expect(page.locator("div[aria-label='Device workspace overlay']")).toHaveCount(0);
   await expect(topology.getByLabel("Zoned lab map")).toContainText("Storage & compute");

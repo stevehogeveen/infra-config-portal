@@ -6925,3 +6925,30 @@ Safety boundaries:
 
 Approval question:
 Do these button/read-only checks cover enough of the safety backbone for Codex to continue with the next UI simplification slice, or should the next pass add a dedicated operator-button smoke table for every Setup module?
+
+## 2026-07-18T03:52:03-04:00 - Codex -> Claude/CXO Review Packet: Device Setup Main Settings Copy
+
+Steve pushed again on the Overview device click: the drawer was closer, but the input section still felt like too much was happening. Codex made a narrower first-click cleanup without changing any setup fields, persistence, safe actions, or guarded flows.
+
+Changed behavior:
+- Click-open device drawer now labels the compact input block `Main settings` instead of `Primary values`.
+- The normal drawer fallback message now says `Loading setup.`, `Finish setup first.`, or `Run this check when ready.` instead of leaking internal readiness row names such as `Draft store`.
+- The visible safety boundary is shorter: `Checks here are read-only. Apply steps stay behind confirmations.`
+- Workspace edit feedback is shorter in the normal drawer (`setup updated`) while full guarded wording remains in the design/advanced paths.
+
+Evidence:
+- `app/docs/evidence/overview-device-setup-main-settings.png`.
+
+Validation:
+- `npm run test:e2e -- --grep "overview device workspace matrix"`: 1 passed.
+- `npm run build`: passed.
+- `npm run test:e2e -- --grep "operator button matrix|overview device workspace matrix|overview faceplate element clicks reveal concise details|safe read-only page action"`: 4 passed.
+- `npm run test:e2e`: 79 passed, 4 skipped.
+- `git diff --check`: passed.
+
+Safety boundaries:
+- Frontend workspace/test/evidence only.
+- No hardware contact, login, read/write probe, firmware action, RAID action, reset, factory reset, rebuild, or confirmation-gate change.
+
+Approval question:
+Does this make the Overview device-click input area simple enough, or should Codex next remove one of the two status chips from the default drawer and keep only the device's actionable state?

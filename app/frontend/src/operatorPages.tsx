@@ -9075,7 +9075,9 @@ function LabDesignComposer({
     if (!selectedPart) return;
     setDeviceSettings((current) => topologyUpdateDeviceSetting(current, defaultDeviceSettings, selectedPart.id, key, value));
     setDraftDirty(true);
-    setDropMessage(`${selectedPart.label} draft updated. Hardware untouched until guarded applies.`);
+    setDropMessage(workspaceOnly
+      ? `${selectedPart.label} setup updated.`
+      : `${selectedPart.label} draft updated. Hardware untouched until guarded applies.`);
   }
 
   function updateLaneSetting(key: string, value: string) {
@@ -9476,7 +9478,7 @@ function LabDesignComposer({
             </div>
 
             {workspaceOnly && (
-              <p className="design-workspace-boundary">Read-only checks only. Hardware untouched until guarded applies.</p>
+              <p className="design-workspace-boundary">Checks here are read-only. Apply steps stay behind confirmations.</p>
             )}
 
             {!workspaceOnly && selectedOverviewDetails.length > 0 && (
@@ -9609,14 +9611,16 @@ function LabDesignComposer({
               ) : (
                 <button className="design-plan-action" disabled type="button">No read-only test registered</button>
               )}
-              <span>{topologyWorkspaceNextAction(selectedSafeActions, designReadinessRows)}</span>
+              <span>{workspaceOnly
+                ? topologyWorkspaceOperatorHint(selectedSafeActions, designReadinessRows)
+                : topologyWorkspaceNextAction(selectedSafeActions, designReadinessRows)}</span>
             </div>
 
             {workspaceOnly && selectedEssentialFields.length > 0 && (
               <section className="design-device-essentials" aria-label={`${selectedPart.label} essentials`}>
                 <div>
                   <p className="operator-kicker">Setup</p>
-                  <h4>Primary values</h4>
+                  <h4>Main settings</h4>
                 </div>
                 <div className="design-device-setting-rows compact">
                   {selectedEssentialFields.map((field) => renderSelectedDeviceSettingRow(field))}
@@ -11267,6 +11271,17 @@ function topologyWorkspaceNextAction(actions: WorkflowAction[], readinessRows: A
   if (actions[0]) return `${actions[0].label} is the next read-only check.`;
   const issue = readinessRows.find((row) => row.status !== "ready");
   return issue ? `${issue.label}: ${issue.detail}` : "Review profile sync, then run Validation.";
+}
+
+function topologyWorkspaceOperatorHint(actions: WorkflowAction[], readinessRows: Array<{ detail: string; label: string; status: string }>): string {
+  if (actions[0]) return "Run this check when ready.";
+  const issue = readinessRows.find((row) => row.status !== "ready");
+  if (!issue) return "Open Validation when setup looks right.";
+  if (/draft store/i.test(issue.label)) {
+    return /loading/i.test(issue.detail) ? "Loading setup." : "Finish setup first.";
+  }
+  if (/profile sync/i.test(issue.label)) return "Save setup before checks.";
+  return "Finish setup first.";
 }
 
 function topologyDeviceModelLabel(partId: DesignPartId): string {
