@@ -1073,6 +1073,8 @@ test("overview device workspace matrix keeps default inputs concise", async ({ p
     const activePanel = editSettings.locator(".design-device-param-panel");
     await expect(activePanel, `${item.workspace} renders one active edit group`).toHaveCount(1);
     expect((await activePanel.textContent())?.trim().length ?? 0, `${item.workspace} active edit panel has content`).toBeGreaterThan(0);
+    await expect(activePanel.locator(".design-device-edit-note"), `${item.workspace} has one group-level state note`).toHaveCount(1);
+    await expect(activePanel.locator(".design-provenance-chip"), `${item.workspace} removes repeated per-field state chips`).toHaveCount(0);
     const activePanelInputs = editSettings.locator(".design-device-param-panel input, .design-device-param-panel select, .design-device-param-panel textarea");
     if (await activePanelInputs.count()) {
       await expect(activePanelInputs.first(), `${item.workspace} reveals edit controls after group intent`).toBeVisible();
@@ -1387,6 +1389,8 @@ test("overview design mode keeps the surface map-only until a node opens the wor
   const networkGroup = await openWorkspaceEditGroup(page, "Cisco switch", "Network");
   await expect(networkGroup).toContainText("Management IP");
   await expect(networkGroup).not.toContainText("IP, gateway, VLANs, and ports");
+  await expect(networkGroup.locator(".design-device-edit-note")).toHaveCount(1);
+  await expect(networkGroup.locator(".design-provenance-chip")).toHaveCount(0);
   await expect(editSettings.locator(".design-device-param-panel")).toHaveCount(1);
   const accessGroup = await openWorkspaceEditGroup(page, "Cisco switch", "Access");
   await expect(editSettings.locator(".design-device-param-panel")).toHaveCount(1);

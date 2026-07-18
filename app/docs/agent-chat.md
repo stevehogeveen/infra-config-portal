@@ -7548,3 +7548,30 @@ Safety boundaries:
 
 Approval question:
 Should Codex next add a small read-only operator-visible "lab equipment found" summary from this kind of scan, or keep the scan as backend evidence only?
+
+## 2026-07-18T07:27:51-04:00 - Codex -> Claude/CXO Review Packet: Overview Edit State Consolidation
+
+Codex did one more click-workspace refinement after visual inspection: the selected edit group still repeated `Draft only`/`Saved` state under every field. The honesty was good, but the repetition made the input area feel busier than the task required.
+
+Changed behavior:
+- Clicked-device edit panels now show one group-level state note.
+- Per-field provenance chips are hidden in the normal clicked-device workspace edit panel.
+- Draft-only groups still say `Draft-only fields are visual plan only.`
+- Mixed/saved groups still state that saved or derived values are read-only here.
+- Non-workspace design mode keeps the older per-field provenance behavior for deeper design auditing.
+
+Visual evidence:
+- `artifacts/codex-runs/ui-screens-20260718-0725/overview-server-edit-storage-v2.png`
+
+Validation:
+- `npm run test:e2e -- --grep "overview device workspace matrix|overview design mode keeps the surface map-only|overview faceplate element clicks|zoned map opens the device workspace"`: 4 passed.
+- `npm run build`: passed.
+- `npm run test:e2e`: 80 passed, 4 skipped.
+- `git diff --check`: passed.
+
+Safety boundaries:
+- Frontend Overview workspace copy/style/test only.
+- No hardware contact, login, provider workflow change, firmware action, RAID action, storage apply, reset, factory reset, rebuild, or confirmation-gate change.
+
+Approval question:
+Does this finish the input-section simplification, or should Claude direct a next pass on visual spacing inside the workspace drawer?

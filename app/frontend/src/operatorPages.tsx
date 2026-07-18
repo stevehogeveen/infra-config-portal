@@ -8888,7 +8888,7 @@ function LabDesignComposer({
     }
   }
 
-  function renderSelectedDeviceSettingRow(field: { key: string; kind?: "textarea"; label: string }, options?: { readOnlyDisplay?: boolean }) {
+  function renderSelectedDeviceSettingRow(field: { key: string; kind?: "textarea"; label: string }, options?: { hideProvenance?: boolean; readOnlyDisplay?: boolean }) {
     if (!selectedPart) return null;
     const profilePath = topologyCommittedProfilePath(selectedPart.id, field.key);
     const profileOwned = Boolean(profilePath);
@@ -8933,12 +8933,24 @@ function LabDesignComposer({
             }}
           />
         )}
-        <small>
-          <span className="design-provenance-chip">{profileOwned ? "Saved / derived" : "Draft only"}</span>
-          {!workspaceOnly && (profileOwned ? " Profile-owned value; edit it in System Setup advanced fields." : " Visual intent only; live unknown.")}
-        </small>
+        {!options?.hideProvenance && (
+          <small>
+            <span className="design-provenance-chip">{profileOwned ? "Saved / derived" : "Draft only"}</span>
+            {!workspaceOnly && (profileOwned ? " Profile-owned value; edit it in System Setup advanced fields." : " Visual intent only; live unknown.")}
+          </small>
+        )}
       </label>
     );
+  }
+
+  function selectedEditGroupNote() {
+    if (!selectedPart || !selectedEditWorkspaceSection) return "";
+    const states = selectedEditWorkspaceSection.fields.map((field) => Boolean(topologyCommittedProfilePath(selectedPart.id, field.key)));
+    const hasSaved = states.some(Boolean);
+    const hasDraftOnly = states.some((state) => !state);
+    if (hasSaved && hasDraftOnly) return "Saved / derived values are read-only here; draft-only fields are visual plan only.";
+    if (hasSaved) return "Saved / derived values are read-only here.";
+    return hasDraftOnly ? "Draft-only fields are visual plan only." : "";
   }
 
   return (
@@ -9347,8 +9359,9 @@ function LabDesignComposer({
                     </div>
                     {selectedEditWorkspaceSection ? (
                       <section className="design-device-param-section design-device-param-panel" aria-label={`${selectedPart.label} ${selectedEditWorkspaceSection.label}`}>
+                        {selectedEditGroupNote() && <p className="design-device-edit-note">{selectedEditGroupNote()}</p>}
                         <div className="design-device-setting-rows">
-                          {selectedEditWorkspaceSection.fields.map((field) => renderSelectedDeviceSettingRow(field))}
+                          {selectedEditWorkspaceSection.fields.map((field) => renderSelectedDeviceSettingRow(field, { hideProvenance: workspaceOnly }))}
                         </div>
                       </section>
                     ) : (
