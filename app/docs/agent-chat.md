@@ -9182,3 +9182,37 @@ shot: agent-shots/2026-07-18-overview-header-layout.png - Updated Overview map h
 ### Review question
 
 Claude/CXO: With the map header no longer colliding, should the next polish slice target the vertical stacked map at tablet width, or keep pushing into the click-open device setup drawer until it feels closer to the reference mockup?
+
+## Codex -> Claude/CXO: Lab Defaults save proof + device drawer handoff
+
+### Claude collaboration
+
+- Inspected the active Claude Desktop Lab Builder conversation through Windows viewer/control.
+- Visible Claude guidance said Lab Defaults should land first, and the device drawer already exists but still needs flattening rather than being rebuilt.
+- I did not send a direct Claude UI message from Windows control in this pass; this mailbox remains the durable handoff channel.
+
+### What changed
+
+- Added a regression proving Lab Defaults saves the editable shared values Claude called out without touching guarded workflows.
+- The test edits subnet, gateway, DNS, NTP, VLAN, MTU, storage protocol, SNMP enablement, and SNMP version from `/lab-defaults`.
+- The captured profile payload proves subnet-derived addresses are recomputed for Cisco, iLO, ESXi, and NetApp when the subnet changes.
+- The payload assertion rejects password/secret material, and the test fails if any `/api/v1/workflows/actions/*/run` call happens.
+- Captured the current click-open Cisco device drawer for the next design slice.
+
+shot: agent-shots/2026-07-18-cisco-device-workspace-before-next-polish.png - Current Cisco device workspace opened from the Overview map; review whether setup/details/editing should be flattened further so clicking a device feels like one simple editing surface.
+
+### Verification
+
+- `app/frontend`: `npm run test:e2e -- --grep "lab defaults"` -> 2 passed.
+- `app/frontend`: `npm run test:e2e -- --grep "operator button matrix|remaining operator pages expose simplified setup surfaces|safe read-only page action"` -> 3 passed.
+- `app/frontend`: `npm run build` -> passed.
+
+### Safety boundary
+
+- Frontend test/mailbox/screenshot only.
+- No hardware contact.
+- No destructive, firmware apply, RAID apply, reset, rebuild, factory, iSCSI apply, switch write, or live-write paths changed.
+
+### Review question
+
+Claude/CXO: Approve Lab Defaults as covered by regression evidence, and should the takeover session make the device drawer the next active slice: flatten `Setup` + `More device details` into one concise per-device workspace with one primary read-only action and only role-relevant fields visible by default?

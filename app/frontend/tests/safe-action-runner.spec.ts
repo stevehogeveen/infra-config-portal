@@ -461,6 +461,55 @@ test("lab defaults keeps shared values simple and hides advanced policy by defau
   await expect(page.locator(".lab-defaults-advanced .secondary-button")).toHaveCount(1);
 });
 
+test("lab defaults saves editable network and service defaults without secrets or workflows", async ({ page }) => {
+  let workflowRunAttempted = false;
+  await page.route("**/api/v1/workflows/actions/*/run", async (route) => {
+    workflowRunAttempted = true;
+    await route.continue();
+  });
+
+  await page.goto("/lab-defaults");
+
+  const network = page.getByLabel("Network defaults");
+  await network.getByRole("textbox", { name: "Subnet" }).fill("192.168.210.0/24");
+  await network.getByRole("textbox", { name: "Gateway" }).fill("192.168.210.1");
+  await network.getByRole("textbox", { name: "DNS servers" }).fill("192.168.210.1, 1.1.1.1");
+  await network.getByText("More network defaults").click();
+  await network.getByRole("textbox", { name: "NTP servers" }).fill("192.168.210.1, 0.pool.ntp.org");
+  await network.getByRole("textbox", { name: "VLAN" }).fill("120");
+  await network.getByRole("textbox", { name: "MTU" }).fill("9000");
+  await network.getByLabel("Storage protocol").selectOption("iscsi");
+
+  const signIn = page.getByLabel("Shared sign-in");
+  await signIn.getByText("More service defaults").click();
+  await signIn.getByRole("checkbox", { name: "SNMP" }).check();
+  await signIn.getByLabel("SNMP version").selectOption("v3");
+
+  const createProfileRequest = page.waitForRequest((request) => {
+    const url = new URL(request.url());
+    return request.method() === "POST" && url.pathname === "/api/v1/lab/profiles";
+  });
+  await page.locator(".lab-defaults-actions .operator-primary-button").click();
+  const request = await createProfileRequest;
+  const payload = request.postDataJSON() as Record<string, any>;
+
+  expect(payload.address_plan.subnet).toBe("192.168.210.0/24");
+  expect(payload.address_plan.cisco_management).toBe("192.168.210.204");
+  expect(payload.address_plan.ilo).toBe("192.168.210.201");
+  expect(payload.address_plan.esxi_management).toBe("192.168.210.203");
+  expect(payload.address_plan.netapp_cluster_mgmt).toBe("192.168.210.220");
+  expect(payload.global_settings.gateway).toBe("192.168.210.1");
+  expect(payload.global_settings.dns_servers).toEqual(["192.168.210.1", "1.1.1.1"]);
+  expect(payload.global_settings.ntp_servers).toEqual(["192.168.210.1", "0.pool.ntp.org"]);
+  expect(payload.global_settings.vlan_id).toBe("120");
+  expect(payload.global_settings.mtu).toBe(9000);
+  expect(payload.global_settings.snmp_version).toBe("v3");
+  expect(payload.features.enable_snmp).toBe(true);
+  expect(payload.features.storage_protocol).toBe("iscsi");
+  expect(JSON.stringify(payload)).not.toMatch(/password|secret|P@ssw0rd/i);
+  expect(workflowRunAttempted).toBe(false);
+});
+
 test("saved kits only manages kit selection and subnet-derived creation", async ({ page }) => {
   await page.goto("/lab-profiles");
 
