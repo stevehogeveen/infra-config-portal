@@ -14054,15 +14054,7 @@ button.design-ilo-port:hover {
   font-size: 16px;
 }
 
-.lab-build-next ol {
-  display: grid;
-  gap: 10px;
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.lab-build-next li {
+.lab-build-next-row {
   align-items: start;
   background: #ffffff;
   border: 1px solid #dbe6f2;
@@ -14073,11 +14065,11 @@ button.design-ilo-port:hover {
   padding: 12px;
 }
 
-.lab-build-next svg {
+.lab-build-next-row svg {
   color: #94a3b8;
 }
 
-.lab-build-next li > div {
+.lab-build-next-row > div {
   display: grid;
   gap: 3px;
 }

@@ -128,23 +128,21 @@ function BuildPlan({ loading, onStart, plan }: { loading?: boolean; onStart: () 
         </div>
       )}
 
-      <section className="lab-build-next" aria-label="Next build steps">
+      <section className="lab-build-next" aria-label="Next build step">
         <div>
-          <p className="operator-kicker">Next checks</p>
-          <strong>{summary.nextSteps.length ? "Start here" : "No checks are queued"}</strong>
+          <p className="operator-kicker">Next checkpoint</p>
+          <strong>{summary.nextStep ? "Start here" : "No checks are queued"}</strong>
         </div>
-        <ol>
-          {summary.nextSteps.map((step) => (
-            <li key={step.step_id}>
-              <StepMarker status={step.status} />
-              <div>
-                <span>Step {step.order}</span>
-                <strong>{step.label}</strong>
-                {!isSafeAutomaticStep(step) && <small>Needs approval</small>}
-              </div>
-            </li>
-          ))}
-        </ol>
+        {summary.nextStep && (
+          <div className="lab-build-next-row">
+            <StepMarker status={summary.nextStep.status} />
+            <div>
+              <span>Step {summary.nextStep.order}</span>
+              <strong>{summary.nextStep.label}</strong>
+              <small>{isSafeAutomaticStep(summary.nextStep) ? "Runs automatically" : "Pauses for your approval"}</small>
+            </div>
+          </div>
+        )}
       </section>
 
       <details className="lab-build-advanced lab-build-step-details">
@@ -176,7 +174,7 @@ function summarizeBuildPlan(plan: LabBuildPlan) {
     approvalStops,
     automaticSteps,
     message: `${total} checks are ready. ${approvalStops} ${approvalStops === 1 ? "step pauses" : "steps pause"} for your approval.`,
-    nextSteps: plan.steps.slice(0, 3),
+    nextStep: plan.steps[0] ?? null,
     total
   };
 }
