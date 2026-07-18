@@ -16507,6 +16507,7 @@ button.design-ilo-port:hover {
 .storage-config-summary,
 .server-config-primary-grid,
 .server-config-more,
+.server-config-summary,
 .network-config-primary-grid,
 .network-config-more,
 .virtualization-config-primary-grid,
@@ -16528,6 +16529,10 @@ button.design-ilo-port:hover {
 }
 
 .storage-config-summary {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.server-config-summary {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 

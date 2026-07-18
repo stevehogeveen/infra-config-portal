@@ -14276,50 +14276,70 @@ function ServerConfigurePanel({
       </CardHeader>
       <CardContent>
         <form className="network-config-form" onSubmit={save}>
-          <div className="server-config-primary-grid">
-            <Field label="iLO IP">
-              <input value={edit.ilo} onChange={(event) => update("ilo", event.target.value)} />
-            </Field>
-            <Field label="ESXi mgmt IP">
-              <input value={edit.esxiManagement} onChange={(event) => update("esxiManagement", event.target.value)} />
-            </Field>
+          <div className="server-config-summary design-device-summary" aria-label="Compute setup summary">
+            <div>
+              <span>iLO IP</span>
+              <strong>{displayValue(edit.ilo)}</strong>
+            </div>
+            <div>
+              <span>ESXi mgmt IP</span>
+              <strong>{displayValue(edit.esxiManagement)}</strong>
+            </div>
+            <div>
+              <span>Embedded NIC</span>
+              <strong>{displayValue(edit.serverEmbeddedNic)}</strong>
+            </div>
           </div>
-          <details className="server-config-more">
+          <details className="server-config-more server-config-edit">
             <summary>
-              <span>More compute values</span>
-              <small>Factory iLO, embedded NIC, and overrides live here.</small>
+              <span>Edit compute values</span>
+              <small>Only updates the saved setup. No hardware touched.</small>
             </summary>
-            <div className="server-config-more-grid">
-              <Field label="Initial iLO IP">
-                <input value={edit.iloInitial} onChange={(event) => update("iloInitial", event.target.value)} />
+            <div className="server-config-more-grid server-config-edit-grid">
+              <Field label="iLO IP">
+                <input value={edit.ilo} onChange={(event) => update("ilo", event.target.value)} />
               </Field>
-              <Field label="Embedded NIC">
-                <input value={edit.serverEmbeddedNic} onChange={(event) => update("serverEmbeddedNic", event.target.value)} />
+              <Field label="ESXi mgmt IP">
+                <input value={edit.esxiManagement} onChange={(event) => update("esxiManagement", event.target.value)} />
               </Field>
-              <Field label="Subnet">
-                <input value={edit.subnet} onChange={(event) => update("subnet", event.target.value)} />
-              </Field>
-              <Field label="Gateway">
-                <input value={edit.gateway} onChange={(event) => update("gateway", event.target.value)} />
-              </Field>
-              <Field label="DNS servers">
-                <input value={edit.dnsServers} onChange={(event) => update("dnsServers", event.target.value)} />
-              </Field>
-              <Field label="NTP servers">
-                <input value={edit.ntpServers} onChange={(event) => update("ntpServers", event.target.value)} />
-              </Field>
-              <Field label="MTU">
-                <input inputMode="numeric" value={edit.mtu} onChange={(event) => update("mtu", event.target.value)} />
-              </Field>
+              <details className="server-config-more server-config-overrides">
+                <summary>
+                  <span>More compute values</span>
+                  <small>Factory iLO, embedded NIC, and network overrides live here.</small>
+                </summary>
+                <div className="server-config-more-grid">
+                  <Field label="Initial iLO IP">
+                    <input value={edit.iloInitial} onChange={(event) => update("iloInitial", event.target.value)} />
+                  </Field>
+                  <Field label="Embedded NIC">
+                    <input value={edit.serverEmbeddedNic} onChange={(event) => update("serverEmbeddedNic", event.target.value)} />
+                  </Field>
+                  <Field label="Subnet">
+                    <input value={edit.subnet} onChange={(event) => update("subnet", event.target.value)} />
+                  </Field>
+                  <Field label="Gateway">
+                    <input value={edit.gateway} onChange={(event) => update("gateway", event.target.value)} />
+                  </Field>
+                  <Field label="DNS servers">
+                    <input value={edit.dnsServers} onChange={(event) => update("dnsServers", event.target.value)} />
+                  </Field>
+                  <Field label="NTP servers">
+                    <input value={edit.ntpServers} onChange={(event) => update("ntpServers", event.target.value)} />
+                  </Field>
+                  <Field label="MTU">
+                    <input inputMode="numeric" value={edit.mtu} onChange={(event) => update("mtu", event.target.value)} />
+                  </Field>
+                </div>
+              </details>
+              <div className="network-config-actions">
+                <button className="operator-primary-button" disabled={busy || !activeProfile} type="submit">
+                  {busy ? "Saving..." : "Save compute setup"}
+                </button>
+                {message && <span className="operator-success-text">{message}</span>}
+                {error && <span className="operator-error-text">{error}</span>}
+              </div>
             </div>
           </details>
-          <div className="network-config-actions">
-            <button className="operator-primary-button" disabled={busy || !activeProfile} type="submit">
-              {busy ? "Saving..." : "Save compute setup"}
-            </button>
-            {message && <span className="operator-success-text">{message}</span>}
-            {error && <span className="operator-error-text">{error}</span>}
-          </div>
         </form>
       </CardContent>
     </Card>
