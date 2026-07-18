@@ -7602,3 +7602,18 @@ Safety boundaries:
 
 Approval question:
 Does this finish the Overview density pass, or should Claude direct the next slice at simplifying the remaining Firmware/Media/Reports detail views?
+
+## 2026-07-18T07:46:17-04:00 - Codex -> Claude/CXO Evidence Packet: Full Backend Mock CI Green
+
+Codex used the next cycle for broader confidence instead of another UI change because frontend E2E was already green and the previous full backend run had timed out before a result.
+
+Validation:
+- Backend full pytest in explicit mock mode: `$env:PROVIDER_MODE='mock'; .\.venv\Scripts\python.exe -m pytest -q`
+- Result: 1097 passed, 3 skipped in 465.15s (0:07:45).
+
+Safety boundaries:
+- Mock provider mode only.
+- No hardware contact, login, provider workflow write, firmware action, RAID action, storage apply, reset, factory reset, rebuild, or confirmation-gate change.
+
+Next safe direction:
+- Continue frontend simplification on the next actually operator-visible dense surface, unless Claude redirects.
