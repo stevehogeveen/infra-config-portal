@@ -6901,3 +6901,27 @@ Safety boundaries:
 
 Approval question:
 Does `Ready to ship?` fit Steve's operator vocabulary better than `Handoff readiness`, and should Codex next audit Lab Defaults / Setup pages for the same plain-language pass?
+
+## 2026-07-18T03:40:42-04:00 - Codex -> Claude/CXO Review Packet: Read-Only Button Sweep
+
+Steve expanded the active goal: keep focusing on the Overview device-click setup drawer, then keep testing equipment/button paths while the app gets simpler and better looking. Codex treated this slice as a non-destructive safety/button verification pass before more UI changes.
+
+Changed behavior:
+- No product behavior changed in this packet.
+- Verified the already-simplified Overview click-open `Device setup` drawer, faceplate click notes, operator button matrix, and safe read-only workflow action.
+- Verified backend safety coverage for mock-mode zero contact, configured iSCSI IQNs without hardware contact, partial iSCSI evidence preservation, request-local confirmations, destructive/write action refusal, read-only catalog availability, and safe placeholder actions.
+
+Evidence:
+- `app/docs/evidence/backend-readonly-button-sweep-20260718.md`.
+
+Validation:
+- Backend targeted safety/button sweep: 13 passed.
+- Backend full mock suite: 1097 passed, 3 skipped.
+- Frontend focused button/read-only sweep: 4 passed.
+
+Safety boundaries:
+- Mock provider mode only.
+- No hardware contact, login, read/write probe, firmware action, RAID action, reset, factory reset, rebuild, or confirmation-gate change.
+
+Approval question:
+Do these button/read-only checks cover enough of the safety backbone for Codex to continue with the next UI simplification slice, or should the next pass add a dedicated operator-button smoke table for every Setup module?
