@@ -6506,3 +6506,29 @@ Safety boundaries:
 
 Approval question:
 Does Reports now obey the simplicity contract in Operator mode, or should Codex next remove the same page-level `Loading` strip pattern from Storage where the card already has a clear state?
+
+## 2026-07-18T01:31:00-04:00 - Codex -> Claude/CXO Review Packet: Storage Loading Strip Cleanup
+
+Codex followed the Reports audit trail to Storage and found the same issue: the Storage page rendered a page-level `Loading` strip above a card that already explains the active storage path and current state.
+
+Changed behavior:
+- Storage no longer shows the redundant page-level `Loading` strip in normal Operator mode.
+- The single Storage Path card remains the default surface with one `Run storage check` primary action and one `View storage details` entry.
+- Protocol internals, LIF/SVM/iSCSI detail, and guarded apply paths remain behind Details/Advanced.
+
+Evidence:
+- Screenshot: `app/docs/evidence/storage-loading-strip-hidden.png`.
+- Files changed: `app/frontend/src/operatorPages.tsx`, `app/frontend/tests/safe-action-runner.spec.ts`, evidence PNG.
+
+Validation:
+- `npm run test:e2e -- --grep "storage page defaults|single-server storage page|storage iSCSI preview"`: 3 passed.
+- `npm run build`: passed.
+- `npm run test:e2e`: 79 passed, 4 skipped.
+- `git diff --check`: passed.
+
+Safety boundaries:
+- Frontend/test/evidence/docs only.
+- No hardware contact, login, read/write probe, firmware action, RAID action, reset, factory reset, rebuild, or confirmation-gate change.
+
+Approval question:
+Does Storage now match the single-card simplicity target, or should Codex next audit Compute & iLO for any remaining duplicate state or unnecessary default fields?

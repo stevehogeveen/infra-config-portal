@@ -2792,7 +2792,7 @@ export function OperatorStoragePage({ labProfileState, onReloadLabProfile }: Ope
         <h1>Storage</h1>
         <p>Which storage path this kit uses, and what to do next.</p>
       </div>
-      <Feedback loading={!profileReady || loading} error={profileReady ? error : "Loading active lab setup before storage checks."} />
+      <Feedback loading={false} error={profileReady ? error : ""} />
       <section className="storage-path-surface" aria-label="Storage Path">
         <Card className="storage-path-card" hover={false}>
           <CardHeader>

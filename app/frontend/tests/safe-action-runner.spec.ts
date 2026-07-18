@@ -1452,6 +1452,7 @@ test("storage page defaults to one storage path card and hides protocol internal
 
   const storagePath = page.getByLabel("Storage Path");
   await expect(storagePath).toBeVisible();
+  await expect(page.locator(".operator-feedback", { hasText: "Loading" })).toHaveCount(0);
   await expect(storagePath).toContainText("Active path");
   await expect(storagePath).toContainText("Protocol");
   await expect(storagePath).toContainText("Target datastore");
