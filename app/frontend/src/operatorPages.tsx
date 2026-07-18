@@ -1363,7 +1363,7 @@ export function OperatorNetworkPage({ labProfileState, onReloadLabProfile }: Ope
         <h1>Network</h1>
         <p>Can the Cisco switch be reached, and what one safe check should run next?</p>
       </div>
-      <Feedback loading={loading && !ciscoReadiness} error={error} />
+      <Feedback loading={loading && Boolean(activeProfile) && !ciscoReadiness} error={error} />
       <section className="network-access-surface" aria-label="Switch Access">
         <Card className="network-access-card" hover={false}>
           <CardHeader>

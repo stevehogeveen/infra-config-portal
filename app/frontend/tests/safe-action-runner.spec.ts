@@ -1602,6 +1602,19 @@ test("network default shows one switch access card and hides technical detail", 
   await expect(page.getByRole("button", { name: /Apply Bootstrap/i })).toHaveCount(0);
 });
 
+test("network no-kit state does not show stale loading feedback", async ({ page }) => {
+  labProfileScenario = "none";
+  await page.route("**/api/v1/providers/cisco-ios-xe/setup-readiness", async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    return json(route, ciscoSetupReadiness());
+  });
+
+  await page.goto("/network");
+
+  await expect(page.getByLabel("Switch Access")).toBeVisible();
+  await expect(page.locator(".operator-feedback", { hasText: "Loading" })).toHaveCount(0);
+});
+
 test("network details reveal saved settings and nested advanced switch plan", async ({ page }) => {
   await page.goto("/network");
   await page.getByLabel("Switch Access").getByRole("button", { name: "View details" }).click();
