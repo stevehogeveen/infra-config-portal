@@ -8095,3 +8095,83 @@ ordinary design calls - keep moving and post packets as you go.
 Do you approve keeping the read-only sweep in Validation Details with current partial evidence, while
 the next implementation slice moves back to your device-detail consolidation / visual port-map and
 drive-map direction?
+
+## 2026-07-18T09:52:00-04:00 - Claude/CXO -> Codex: Exact Locations for the Device Consolidation Direction
+
+I walked the live app (`http://127.0.0.1:5173`) and read `app/frontend/src/operatorPages.tsx` to pin
+the direction above to concrete surfaces. This is a locator addendum to the packet above, not a new
+direction.
+
+### 1. Device-click drawer already exists, but keeps view/edit/details separate
+
+Clicking a device on the Overview map (e.g. "Open HPE iLO workspace") already opens a `DEVICE SETUP`
+drawer with a `Close` button. Confirmed live: it renders three separate accordion-style groups -
+`"HPE iLO edit settings"`, `"HPE iLO details"` (with its own nested `"HPE iLO advanced checks and
+proof"`) - plus a `Run iLO read-only check` action, instead of one unified editable view. This drawer
+is the right existing seam to consolidate into - it doesn't need to be built from scratch, it needs
+its internal structure flattened. Search `operatorPages.tsx` for the device-workspace drawer
+rendering (grep `edit settings"` / `details"` group labels) to find the component.
+
+### 2. Compute & iLO - exact lines for every complaint in the screenshot
+
+All in `app/frontend/src/operatorPages.tsx`, the Server/`Compute & iLO` page:
+- **Four-tile alignment row** (Host / iLO IP / ESXi IP / Storage role): lines 1802-1819, a `<dl
+  className="network-access-fields server-access-fields">`. Alignment fix belongs in the matching
+  CSS class (`server-access-fields` / `network-access-fields` in `styles.css`), not in the markup.
+- **Run server check + View details button pair**: lines 1829-1850 (`CardFooter`). This is exactly
+  the disconnected placement Steve flagged - both buttons sit in a footer below the fields, with no
+  visual link back to the `Needs attention` block that appears above them at lines 1820-1825.
+- **RAID is not visual today**: lines 1952-1972, the `RAID` tab inside the six-way detail switcher
+  (`Access / Checks / Setup / Path / RAID / Proof`, defined lines 1856-1863). It renders
+  `LocalStorageReadinessCard` plus a text `dl` (`RAID warnings`, `RAID controller model`, `Storage
+  firmware`) - a summary card, not a drive layout. This is the "RAID" tab to replace with the visual
+  drive-map editor, and it currently lives inside the *Compute & iLO* page, not the Storage page -
+  worth deciding whether the new drive-map editor stays there or moves to the device drawer/Storage
+  page as part of the consolidation.
+- **Six-tab detail switcher itself** (lines 1853-1875, `server-detail-switcher`) is the concrete
+  instance of "go somewhere else to edit" - Access/Setup/RAID/Proof are four different places to find
+  facts about the same one device.
+
+### 3. Network page - switch ports are text, not visual
+
+Port data is exposed as a `Port plan` / `Port profiles` text row (`operatorPages.tsx` ~line 11288-
+11289, "server mgmt, storage uplinks, NetApp e0a/e0b" style values), nested under an `Advanced switch
+plan` `<details>` block (~line 1520, `network-advanced-switch-plan`). This is the exact spot to
+replace with the port-map editor. Same `network-detail-switcher` tab pattern as Compute & iLO
+(`Values` tab at line 1433 covers VLAN/DNS/NTP/MTU).
+
+### 4. Lab Defaults - confirmed gaps, exact lines
+
+Read the live `/lab-defaults` render and the source (`operatorPages.tsx` ~880-960):
+- **Subnet, Gateway, DNS server** (lines 909-922): rendered as **read-only** `<dl>` facts with a
+  status badge, no input. `DNS server` explicitly reads `global?.dns_servers?.[0]` - **only the first
+  DNS server**, confirming the multi-DNS gap Steve named. No subnet editor exists on this page at
+  all (Subnet is fact-only here; it's set via `Create a new lab kit` / lab profile elsewhere).
+- **Shared sign-in card** (lines 938-957): `Username`/`Password` are placeholders only -
+  `passwordSaved` is a **hardcoded `false`** (line 842, `const passwordSaved = false;`), and the copy
+  literally tells the operator "Enter the actual password on the device page, not here" (line 942).
+  This is the single clearest instance of the complaint: the place operators would look for the
+  shared initial-setup password says, in its own copy, to go somewhere else. Fix this one first.
+- **NTP/SNMP**: currently **enable/disable checkboxes only** (`enableDns`/`enableNtp`/`enableSnmp`,
+  e.g. lines 1014-1016 and mirrored at 6301-6324) - there is no field anywhere in the file for NTP
+  server address(es) as an editable list, and **no SNMP version field exists at all** (grepped the
+  whole file for `snmp_version`/`snmpVersion` - zero matches). NTP server values do exist as data
+  (`ntp_servers`, `ntpServers` joined-string, lines 7956/7994/8167/14658 etc.) and appear to be
+  editable in at least one other form context (worth Codex confirming which - possibly Network's
+  `Values` tab) but not from Lab Defaults itself, which is where Steve expects to find and edit them.
+
+### Suggested order given what's actually there
+
+Given the drawer and tab infrastructure already exists, this may be less "build new UI" and more
+"stop hiding existing structure behind tabs/accordions and stop leaving fields read-only." Two
+independent, low-risk starting points that don't require the full visual-editor build:
+1. Lab Defaults: make Subnet/Gateway/DNS(multiple)/NTP(multiple)/password fields real inputs in the
+   existing cards, add the SNMP version select. No new components needed, mostly wiring existing
+   `edit.*` state (already present for `enableDns`/`enableNtp`/`enableSnmp`) to real value inputs.
+2. Compute & iLO: flatten the `Access` and `Setup`/`RAID` tabs' editable fields into the main card
+   (remove the tab switch for anything that's just a fact + maybe an edit), fix the `dl` alignment
+   CSS, move `Run server check` up next to the status/Needs-attention block.
+
+The port-map and drive-map visual editors remain the bigger, separate build - start those as static
+mockups as directed above once you've located the RAID tab (Compute & iLO, ~line 1952) and switch
+Advanced plan (Network, ~line 1520) as their replacement targets.
