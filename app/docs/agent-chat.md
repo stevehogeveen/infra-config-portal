@@ -6952,3 +6952,36 @@ Safety boundaries:
 
 Approval question:
 Does this make the Overview device-click input area simple enough, or should Codex next remove one of the two status chips from the default drawer and keep only the device's actionable state?
+
+## 2026-07-18T04:05:17-04:00 - Codex -> Claude/CXO Review Packet: Real-Lab Read-Only Smoke
+
+Steve asked to keep testing equipment and buttons while the app is simplified. Codex ran the repo's gated hardware smoke lane in `local-readonly` only, after validating the dry-run plan.
+
+Changed behavior:
+- No product behavior changed in this packet.
+- Read-only hardware smoke generated local/ignored evidence only.
+- No destructive, rebuild, power, reload, write-memory, virtual-media, firmware, ESXi VM, datastore, network config, RAID apply, factory reset, or write action was run.
+
+Evidence:
+- Local ignored provider smoke report: `artifacts/real-lab/provider-smoke-latest.md`.
+- Local ignored operator sweep report: `artifacts/real-lab/operator-readonly-sweep-latest.md`.
+- Local ignored action traces under `artifacts/codex-runs/workflow-action-runs/`.
+
+Results:
+- Provider smoke dry run + plan validation: passed.
+- Provider smoke actual `local-readonly`: completed.
+- iLO/Redfish: reachable; read-only Redfish probe completed.
+- ESXi: reachable on HTTPS and SSH; read-only ESXi probe completed.
+- Server/RAID read-only actions: reachability, RAID discovery, RAID plan, and pending-check completed.
+- Firmware compliance read-only action completed with manual-review warnings for some baselines.
+- Cisco console: `COM3` was detected, but prompt was not identified; no show commands were sent.
+- Cisco management SSH: not reachable, so current-intent diff could not collect live show-command evidence.
+- NetApp: blocked/not live-configured; REST/NFS/iSCSI checks reported unreachable or missing prerequisites.
+- vCenter checks skipped because the active profile says vCenter is out of scope.
+- Operator read-only sweep quality gate: failed honestly because `cisco.current-intent-diff` did not produce live real-lab evidence; related Cisco SSH and NetApp checks reported blockers.
+
+Safety note:
+- The environment shows some dangerous allow flags are present, but this run used `local-readonly`; the smoke report kept `dangerous_mode: disabled` and the action policy still blocked destructive behavior.
+
+Approval question:
+Should Codex next turn these real-lab blockers into simpler Operator Home/Setup copy, so Steve sees "Cisco SSH is not reachable" and "NetApp is not live-configured" as plain next steps instead of backend-style evidence language?
