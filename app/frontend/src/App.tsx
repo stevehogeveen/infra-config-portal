@@ -7005,10 +7005,6 @@ function MediaInventoryPage() {
             <span>Missing/needs attention</span>
             <strong>{attentionLabel}</strong>
           </div>
-          <div>
-            <span>State</span>
-            <strong>{state.label}</strong>
-          </div>
         </div>
         <p className="software-media-boundary">Check media reads filenames only. Upgrade, mount, copy, and deploy actions stay behind their own protected flows.</p>
       </section>
