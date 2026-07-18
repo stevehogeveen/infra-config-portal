@@ -1343,12 +1343,14 @@ test("overview device workspace matrix keeps default inputs concise", async ({ p
     await expect(workspace.getByLabel(`${item.workspace} port and bay inspector`), `${item.workspace} faceplate inspector lives inside details`).toBeVisible();
     await expect(detailsDrawer.locator("input, select, textarea").first(), `${item.workspace} details stay inspect-only before edit intent`).not.toBeVisible();
     await expect(editSettings, `${item.workspace} exposes one edit doorway after device details intent`).toBeVisible();
+    await expect(editSettings.locator(":scope > summary"), `${item.workspace} edit doorway uses operator wording`).toContainText("Change setup");
+    await expect(editSettings.locator(":scope > summary"), `${item.workspace} edit doorway says controls are closed`).toContainText("Closed until needed");
     await expect(editSettings, `${item.workspace} edit settings starts closed`).not.toHaveAttribute("open", "");
     await expect(quickPanel, `${item.workspace} keeps setup fields hidden until edit intent`).not.toBeVisible();
     await editSettings.locator(":scope > summary").click();
     await expect(quickPanel, `${item.workspace} exposes setup changes only after edit intent`).toBeVisible();
-    await expect(quickPanel, `${item.workspace} quick fields use setup wording`).toContainText("Change setup");
-    await expect(quickPanel, `${item.workspace} quick fields stay narrowly scoped`).toContainText("Planning fields");
+    await expect(quickPanel, `${item.workspace} quick fields use action wording`).toContainText("Quick change");
+    await expect(quickPanel, `${item.workspace} quick fields stay narrowly scoped`).toContainText("Two fields or less");
     await expect(quickPanel, `${item.workspace} quick edits start closed inside details`).not.toHaveAttribute("open", "");
     expect(await quickPanel.locator(".design-device-setting-row").count(), `${item.workspace} keeps quick fields tiny`).toBeLessThanOrEqual(2);
     const quickInputs = quickPanel.locator("input, select, textarea");
@@ -1769,8 +1771,10 @@ test("overview design mode keeps the surface map-only until a node opens the wor
   await expect(quickSetup).not.toBeVisible();
   await editSettings.locator(":scope > summary").click();
   await expect(quickSetup).toBeVisible();
-  await expect(quickSetup).toContainText("Change setup");
-  await expect(quickSetup).toContainText("Planning fields");
+  await expect(editSettings.locator(":scope > summary")).toContainText("Change setup");
+  await expect(editSettings.locator(":scope > summary")).toContainText("Closed until needed");
+  await expect(quickSetup).toContainText("Quick change");
+  await expect(quickSetup).toContainText("Two fields or less");
   await expect(quickSetup).not.toHaveAttribute("open", "");
   await expect(quickSetup.locator(".design-device-edit-intro")).not.toBeVisible();
   await expect(quickSetup).toContainText("Port plan");
@@ -1779,7 +1783,7 @@ test("overview design mode keeps the surface map-only until a node opens the wor
   expect(await quickSetup.locator(".design-device-setting-row").count()).toBeLessThanOrEqual(2);
   await expect(quickSetup.locator("input, select, textarea").first()).not.toBeVisible();
   await quickSetup.locator(":scope > summary").click();
-  await expect(quickSetup.locator(".design-device-edit-intro")).toHaveText("Open only if this device needs a planning override. Saved kit defaults stay above.");
+  await expect(quickSetup.locator(".design-device-edit-intro")).toHaveText("Only for a planning override. Saved values stay above.");
   await expect(quickSetup.locator("input, select, textarea").first()).toBeVisible();
   const moreSetupFields = switchWorkspace.getByLabel("Cisco switch more setup fields");
   await expect(moreSetupFields).toBeVisible();

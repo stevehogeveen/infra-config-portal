@@ -9865,19 +9865,19 @@ function LabDesignComposer({
                 {(selectedQuickEditFields.length > 0 || selectedAdvancedEditSections.length > 0) && (
                   <details className="design-workspace-edit-settings" aria-label={`${selectedPart.label} edit settings`}>
                     <summary>
-                      <span>Edit settings</span>
-                      <strong>Planning changes</strong>
+                      <span>Change setup</span>
+                      <strong>Closed until needed</strong>
                     </summary>
                     {selectedQuickEditFields.length > 0 && (
                       <details className="design-device-param-section design-device-param-panel design-device-quick-edit design-device-inline-edit" aria-label={`${selectedPart.label} quick setup fields`}>
                         <summary className="design-device-inline-edit-head">
                           <div>
-                            <p className="operator-kicker">Change setup</p>
-                            <h4>Planning fields</h4>
+                            <p className="operator-kicker">Quick change</p>
+                            <h4>Two fields or less</h4>
                           </div>
                           <span>{selectedQuickEditFields.map((field) => field.label).join(" / ")}</span>
                         </summary>
-                        <p className="design-device-edit-intro">Open only if this device needs a planning override. Saved kit defaults stay above.</p>
+                        <p className="design-device-edit-intro">Only for a planning override. Saved values stay above.</p>
                         <div className="design-device-setting-rows">
                           {selectedQuickEditFields.map((field) => renderSelectedDeviceSettingRow(field, { hideProvenance: true }))}
                         </div>
