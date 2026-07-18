@@ -2028,16 +2028,30 @@ export function OperatorServerPage({ labProfileState, onReloadLabProfile }: Oper
             />
             )}
             {activeDetailSection === "raid" && (
-            <details className="network-advanced-switch-plan server-advanced-raid-plan">
-              <summary>
-                <span>
-                  <span className="operator-kicker">Advanced</span>
-                  <strong>Advanced RAID plan</strong>
-                  <small>Drive layout, local datastore readiness, and RAID recommendation stay one level deeper.</small>
-                </span>
-              </summary>
-              <LocalStorageReadinessCard activeProfile={activeProfile} raidPlan={raidPlan} />
-            </details>
+            <>
+              <Card className="network-details-card server-drive-map-card" hover={false}>
+                <CardHeader>
+                  <div>
+                    <p className="operator-kicker">RAID plan</p>
+                    <h2>Server drive map</h2>
+                  </div>
+                  <StatusBadge label={displayStatus(raidStatus)} status={statusBadgeStatus(raidStatus)} />
+                </CardHeader>
+                <CardContent>
+                  <ServerDriveMapPlan activeProfile={activeProfile} raidPlan={raidPlan} />
+                </CardContent>
+              </Card>
+              <details className="network-advanced-switch-plan server-advanced-raid-plan">
+                <summary>
+                  <span>
+                    <span className="operator-kicker">Advanced</span>
+                    <strong>Advanced RAID proof</strong>
+                    <small>Local datastore readiness and RAID recommendation stay one level deeper.</small>
+                  </span>
+                </summary>
+                <LocalStorageReadinessCard activeProfile={activeProfile} raidPlan={raidPlan} />
+              </details>
+            </>
             )}
             {activeDetailSection === "proof" && (
             <AdvancedDrawer title="Server proof" summary={noProofText}>
@@ -2358,6 +2372,140 @@ function LocalStorageReadinessCard({
       </CardFooter>
     </Card>
   );
+}
+
+type ServerDriveBayPlan = {
+  bay: string;
+  role: string;
+  volume: string;
+  raid: string;
+  status: StatusBadgeStatus;
+};
+
+function ServerDriveMapPlan({
+  activeProfile,
+  raidPlan
+}: {
+  activeProfile: LabProfile | null;
+  raidPlan: ProviderProbeResult | null;
+}) {
+  const readiness = objectValue(raidPlan?.local_storage_readiness);
+  const facts = objectValue(readiness.facts);
+  const candidateVolumes = driveMapVolumes(raidPlan);
+  const bayCount = clampNumber(
+    Number(asString(facts.physical_drive_count) || asString(facts.usable_drive_count)) || driveMapBayCount(candidateVolumes),
+    4,
+    12,
+    8
+  );
+  const [selectedBay, setSelectedBay] = useState("1");
+  const bays = serverDriveBayPlans(candidateVolumes, bayCount);
+  const selected = bays.find((bay) => bay.bay === selectedBay) ?? bays[0];
+  const readyBays = bays.filter((bay) => bay.status === "ready").length;
+  const localMode = activeProfile?.features?.storage_location === "server_local";
+  const scenario = localMode ? "Single-server local storage" : "Shared datastore host";
+
+  return (
+    <section className="server-drive-map-plan" aria-label="Server drive bay map">
+      <div className="server-drive-map-summary" aria-label="Server drive map summary">
+        <div>
+          <span>Drive bays</span>
+          <strong>{bayCount}</strong>
+        </div>
+        <div>
+          <span>Planned volumes</span>
+          <strong>{candidateVolumes.length || "Not checked"}</strong>
+        </div>
+        <div>
+          <span>Ready bays</span>
+          <strong>{readyBays}/{bays.length}</strong>
+        </div>
+        <div>
+          <span>Storage mode</span>
+          <strong>{scenario}</strong>
+        </div>
+      </div>
+
+      <div className="server-drive-shelf" aria-label="Planned server drive bays">
+        {bays.map((bay) => (
+          <button
+            aria-pressed={selected.bay === bay.bay}
+            className={`server-drive-bay-tile is-${bay.status}`}
+            key={bay.bay}
+            onClick={() => setSelectedBay(bay.bay)}
+            type="button"
+          >
+            <span>Bay {bay.bay}</span>
+            <strong>{bay.role}</strong>
+            <small>{bay.raid}</small>
+          </button>
+        ))}
+      </div>
+
+      <article className="server-drive-selected-plan" aria-label="Selected drive bay plan">
+        <div>
+          <p className="operator-kicker">Selected drive bay</p>
+          <h3>Bay {selected.bay}</h3>
+          <span>{selected.volume}</span>
+        </div>
+        <StatusBadge label={displayStatus(selected.status)} status={selected.status} />
+        <dl>
+          <div>
+            <dt>Role</dt>
+            <dd>{selected.role}</dd>
+          </div>
+          <div>
+            <dt>Volume</dt>
+            <dd>{selected.volume}</dd>
+          </div>
+          <div>
+            <dt>RAID</dt>
+            <dd>{selected.raid}</dd>
+          </div>
+          <div>
+            <dt>State</dt>
+            <dd>{displayStatus(selected.status)}</dd>
+          </div>
+        </dl>
+        <p>This is a plan only. Real storage changes still require confirmation.</p>
+      </article>
+    </section>
+  );
+}
+
+function driveMapVolumes(raidPlan: ProviderProbeResult | null): Array<Record<string, unknown>> {
+  const readiness = objectValue(raidPlan?.local_storage_readiness);
+  const candidateVolumes = recordArray(readiness.candidate_volumes);
+  if (candidateVolumes.length) return candidateVolumes;
+  const desired = objectValue(raidPlan?.desired_intent);
+  return recordArray(desired.volumes);
+}
+
+function driveMapBayCount(volumes: Array<Record<string, unknown>>): number {
+  const bayNumbers = volumes.flatMap((volume) => stringArray(volume.drive_bays).map((bay) => Number.parseInt(bay, 10))).filter(Number.isFinite);
+  if (bayNumbers.length) return Math.max(...bayNumbers);
+  return volumes.length > 1 ? 8 : 4;
+}
+
+function serverDriveBayPlans(volumes: Array<Record<string, unknown>>, bayCount: number): ServerDriveBayPlan[] {
+  const bootVolume = volumes.find((volume) => asBoolean(volume.bootable) || /boot|os|esxi/i.test(asString(volume.purpose) || asString(volume.name)));
+  const dataVolume = volumes.find((volume) => volume !== bootVolume) ?? volumes[0];
+  const bootBays = new Set(stringArray(bootVolume?.drive_bays).length ? stringArray(bootVolume?.drive_bays) : ["1", "2"]);
+  const dataBays = new Set(stringArray(dataVolume?.drive_bays));
+  return Array.from({ length: bayCount }, (_, index) => {
+    const bay = String(index + 1);
+    const boot = Boolean(bootVolume) && bootBays.has(bay);
+    const data = Boolean(dataVolume) && (dataBays.size ? dataBays.has(bay) : !boot);
+    const volume = boot ? bootVolume : data ? dataVolume : null;
+    const raid = displayValue(asString(volume?.raid_level) || (boot ? "RAID1" : data ? "RAID6" : "Unassigned"));
+    return {
+      bay,
+      raid,
+      role: boot ? "Boot mirror" : data ? "Data set" : "Unassigned",
+      status: volume ? "ready" : "plan-only",
+      volume: displayValue(asString(volume?.name) || asString(volume?.purpose) || (boot ? "ESXi boot" : data ? "VM datastore" : "No volume planned"))
+    };
+  });
 }
 
 function LocalStorageFact({ label, value }: { label: string; value: string }) {

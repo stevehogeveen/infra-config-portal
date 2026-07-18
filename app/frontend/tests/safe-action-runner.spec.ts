@@ -2089,8 +2089,15 @@ test("server details reveal saved checks and nested advanced RAID plan", async (
   await expect(details.getByLabel("Server configure")).toBeVisible();
 
   await detailSections.getByRole("button", { name: /RAID/ }).click();
+  await expect(page.getByLabel("Server drive bay map")).toBeVisible();
+  await expect(page.getByLabel("Server drive map summary")).toContainText("Drive bays");
+  await expect(page.getByLabel("Server drive map summary")).toContainText("Planned volumes");
+  await page.getByLabel("Planned server drive bays").getByRole("button", { name: /Bay 3/ }).click();
+  await expect(page.getByLabel("Selected drive bay plan")).toContainText("Bay 3");
+  await expect(page.getByLabel("Selected drive bay plan")).toContainText("datastore");
+  await expect(page.getByLabel("Selected drive bay plan")).toContainText("Real storage changes still require confirmation");
   const advanced = page.locator("details.server-advanced-raid-plan");
-  await expect(advanced.locator(":scope > summary")).toContainText("Advanced RAID plan");
+  await expect(advanced.locator(":scope > summary")).toContainText("Advanced RAID proof");
   await expect(page.locator(".local-storage-readiness-card")).toBeHidden();
   await advanced.locator(":scope > summary").click();
   await expect(page.locator(".local-storage-readiness-card")).toBeVisible();

@@ -14744,6 +14744,167 @@ button.design-ilo-port:hover {
   grid-column: 1 / -1;
 }
 
+.server-drive-map-card .ui-card-content {
+  display: grid;
+  gap: 14px;
+}
+
+.server-drive-map-plan {
+  display: grid;
+  gap: 14px;
+}
+
+.server-drive-map-summary {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.server-drive-map-summary > div {
+  background: #f7fafc;
+  border: 1px solid #dbe4ef;
+  border-radius: 10px;
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+}
+
+.server-drive-map-summary span,
+.server-drive-selected-plan dt {
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.server-drive-map-summary strong {
+  color: #102238;
+  font-size: 18px;
+  overflow-wrap: anywhere;
+}
+
+.server-drive-shelf {
+  background:
+    linear-gradient(180deg, rgba(15, 23, 42, .98), rgba(30, 41, 59, .96));
+  border: 1px solid #1e293b;
+  border-radius: 16px;
+  display: grid;
+  gap: 9px;
+  grid-template-columns: repeat(auto-fit, minmax(92px, 1fr));
+  padding: 16px;
+}
+
+.server-drive-bay-tile {
+  background: #e8f0f7;
+  border: 2px solid transparent;
+  border-radius: 9px;
+  color: #102238;
+  cursor: pointer;
+  display: grid;
+  gap: 4px;
+  min-height: 90px;
+  padding: 10px;
+  text-align: left;
+  transition: border-color .16s ease, box-shadow .16s ease, transform .16s ease;
+}
+
+.server-drive-bay-tile:hover,
+.server-drive-bay-tile[aria-pressed="true"] {
+  border-color: #14b8a6;
+  box-shadow: 0 0 0 3px rgba(20, 184, 166, .22);
+  transform: translateY(-1px);
+}
+
+.server-drive-bay-tile span {
+  font: 900 11px/1 ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+.server-drive-bay-tile strong {
+  font-size: 12px;
+  line-height: 1.15;
+}
+
+.server-drive-bay-tile small {
+  color: #475569;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.server-drive-bay-tile.is-ready {
+  background: #dcfce7;
+}
+
+.server-drive-bay-tile.is-plan-only,
+.server-drive-bay-tile.is-safe-to-run {
+  background: #e0f2fe;
+}
+
+.server-drive-bay-tile.is-needs-attention {
+  background: #fef3c7;
+}
+
+.server-drive-bay-tile.is-blocked {
+  background: #fee2e2;
+}
+
+.server-drive-selected-plan {
+  background: #ffffff;
+  border: 1px solid #cfe2ea;
+  border-radius: 12px;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding: 14px;
+}
+
+.server-drive-selected-plan h3,
+.server-drive-selected-plan p {
+  margin: 0;
+}
+
+.server-drive-selected-plan h3 {
+  color: #102238;
+  font-size: 20px;
+  letter-spacing: 0;
+}
+
+.server-drive-selected-plan > div:first-child span,
+.server-drive-selected-plan > p {
+  color: #475569;
+  font-size: 13px;
+  font-weight: 750;
+  line-height: 1.4;
+}
+
+.server-drive-selected-plan dl {
+  display: grid;
+  gap: 10px;
+  grid-column: 1 / -1;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 0;
+}
+
+.server-drive-selected-plan dl > div {
+  background: #f8fafc;
+  border: 1px solid #dbe4ef;
+  border-radius: 9px;
+  display: grid;
+  gap: 5px;
+  padding: 10px;
+}
+
+.server-drive-selected-plan dd {
+  color: #102238;
+  font-weight: 850;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.server-drive-selected-plan > p {
+  grid-column: 1 / -1;
+}
+
 .network-advanced-switch-plan {
   background: #f8fafc;
   border: 1px solid #d8e3ec;
@@ -18201,7 +18362,12 @@ button.design-ilo-port:hover {
   }
 
   .switch-port-plan-summary,
+  .server-drive-map-summary,
   .switch-port-selected-plan dl {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .server-drive-selected-plan dl {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
@@ -18226,12 +18392,22 @@ button.design-ilo-port:hover {
   }
 
   .switch-port-plan-summary,
+  .server-drive-map-summary,
   .switch-port-selected-plan,
+  .server-drive-selected-plan,
   .switch-port-selected-plan dl {
     grid-template-columns: 1fr;
   }
 
+  .server-drive-selected-plan dl {
+    grid-template-columns: 1fr;
+  }
+
   .switch-port-map {
+    grid-template-columns: repeat(auto-fit, minmax(76px, 1fr));
+  }
+
+  .server-drive-shelf {
     grid-template-columns: repeat(auto-fit, minmax(76px, 1fr));
   }
 

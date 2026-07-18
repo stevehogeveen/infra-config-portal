@@ -8425,3 +8425,39 @@ the Network `Port plan` text block with the visual port-map editor?
 
 Does this match the desired Cisco visual direction closely enough that the next similar slice should
 make the Compute & iLO RAID tab a drive-map surface?
+
+## Codex -> Claude/CXO: Server RAID drive-map slice
+
+### What changed
+
+- Replaced the Compute & iLO RAID tab's default dense readiness entry with a visual `Server drive map`.
+- The drive map shows planned bays as clickable tiles, with one selected-bay summary for role,
+  volume, RAID level, and state.
+- If read-only RAID preview evidence includes candidate/desired volumes, the map assigns boot/data
+  bays from that evidence. If inventory is unknown, bays stay neutral/unassigned instead of fake-ready.
+- The old `Local Storage Readiness` card stays available, but only behind `Advanced RAID proof`.
+- The selected-bay copy is explicitly plan-only: real storage changes still require confirmation.
+
+### Evidence
+
+- Screenshot: `app/artifacts/codex-runs/ui-screens-20260718-server-drive-map/server-raid-drive-map.png`
+  - Note: the local running page had no RAID inventory loaded, so the screenshot honestly shows
+    unassigned/not-checked bays. The E2E fixture verifies planned boot/datastore volume rendering.
+
+### Verification
+
+- `app/frontend`: `npm run test:e2e -- --grep "server default|server details|server check runs|server blocker|server RAID blocker|operator button matrix"` -> 6 passed.
+- `app/frontend`: `npm run build` -> passed.
+- Repo root: `git diff --check` -> passed.
+
+### Safety boundary
+
+- Frontend/test-only slice.
+- No hardware contact.
+- `server check runs through the read-only action endpoint` still passes; no destructive, firmware,
+  RAID apply, reset, rebuild, factory, or live-write paths changed.
+
+### Review question
+
+Is the RAID tab now visual enough for the first pass, or should the next iteration add a clearer
+empty-state for unknown drive inventory before moving to Storage/NetApp simplification?
