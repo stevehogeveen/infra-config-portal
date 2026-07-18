@@ -33,7 +33,7 @@ export type OperatorHomeAttentionItem = {
 export type OperatorHomeNextAction = {
   Enabled: boolean;
   Label: string;
-  Target: "build" | "details";
+  Target: "build" | "details" | "kit";
 };
 
 export type OperatorHomeProgress = {
@@ -104,9 +104,9 @@ export function buildOperatorHomeModel({
     DeviceSummary: deviceSummary,
     AttentionItems: attentionItems,
     NextAction: {
-      Enabled: Boolean(profile),
-      Label: profile ? "Review Build Plan" : "Select a kit",
-      Target: profile ? "build" : "details"
+      Enabled: true,
+      Label: profile ? "Review Build Plan" : "Create or select a kit",
+      Target: profile ? "build" : "kit"
     },
     Progress: {
       Blocked: blockedCount,

@@ -1,7 +1,7 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
 
 const checkedAt = "2026-06-09T21:00:00Z";
-let labProfileScenario: "shared" | "single" = "shared";
+let labProfileScenario: "none" | "shared" | "single" = "shared";
 let healthHostIpv4Addresses = ["192.168.1.99"];
 
 const safeAction = workflowAction({
@@ -496,6 +496,22 @@ test("operator home answers the next action without dashboard clutter", async ({
   await expect(home).not.toContainText("console");
   await expect(home).not.toContainText(/CISCO_[A-Z_]+/);
   await expect(page.getByText("Change this page")).toHaveCount(0);
+});
+
+test("operator home gives a clear kit action when no kit is selected", async ({ page }) => {
+  labProfileScenario = "none";
+  await page.goto("/overview");
+
+  const home = page.getByTestId("operator-home");
+  const primary = home.getByTestId("operator-home-primary-action");
+  await expect(home).toContainText("Choose a lab kit before running setup.");
+  await expect(primary).toHaveCount(1);
+  await expect(primary).toBeEnabled();
+  await expect(primary).toContainText("Create or select a kit");
+  await expect(primary).not.toContainText("Opening");
+
+  await primary.click();
+  await expect(page).toHaveURL(/\/lab-profiles#new$/);
 });
 
 test("map-first overview makes the topology the home surface", async ({ page }) => {
@@ -4842,7 +4858,22 @@ function singleServerLabProfiles() {
   return state;
 }
 
+function noActiveLabProfiles() {
+  const state = JSON.parse(JSON.stringify(labProfiles()));
+  return {
+    ...state,
+    active_profile: null,
+    active_context: {
+      ...state.active_context,
+      active_profile: null
+    },
+    profiles: [],
+    runtime_profile: null
+  };
+}
+
 function activeLabProfilesFixture() {
+  if (labProfileScenario === "none") return noActiveLabProfiles();
   return labProfileScenario === "single" ? singleServerLabProfiles() : labProfiles();
 }
 

@@ -23,6 +23,7 @@ export function OperatorHomeView({
   const unchecked = model.Progress.NotChecked;
   const pct = (n: number) => (total > 0 ? `${(n / total) * 100}%` : "0%");
   const stateTone = model.DisplayState === "needs_attention" || model.DisplayState === "not_checked" ? "attention" : model.DisplayState;
+  const primaryBusy = loading && model.NextAction.Target === "build";
 
   return (
     <section
@@ -65,12 +66,12 @@ export function OperatorHomeView({
         <button
           className="operator-rail-primary"
           data-testid="operator-home-primary-action"
-          disabled={!model.NextAction.Enabled || loading}
+          disabled={!model.NextAction.Enabled || primaryBusy}
           onClick={onPrimaryAction}
           type="button"
         >
           <Pencil size={16} />
-          <span>{loading ? "Opening..." : model.NextAction.Label}</span>
+          <span>{primaryBusy ? "Opening..." : model.NextAction.Label}</span>
         </button>
         <button
           className="operator-rail-ghost"

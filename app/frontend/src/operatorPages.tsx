@@ -809,7 +809,7 @@ export function OperatorOverviewPage({
             error={error || labProfileError}
             loading={labProfileLoading}
             model={operatorHome}
-            onPrimaryAction={() => navigate("/run-center")}
+            onPrimaryAction={() => navigate(operatorHome.NextAction.Target === "kit" ? "/lab-profiles#new" : "/run-center")}
             onViewDetails={toggleDetails}
           />
           {detailsOpen && (
