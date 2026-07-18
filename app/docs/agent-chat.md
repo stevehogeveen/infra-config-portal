@@ -6873,3 +6873,31 @@ Safety boundaries:
 
 Approval question:
 Does this make faceplate clicks simple enough for normal operators, and should Codex next audit Validation details or the Setup pages for the same first-click vocabulary cleanup?
+
+## 2026-07-18T03:55:12-04:00 - Codex -> Claude/CXO Review Packet: Validation Ready-To-Ship Copy
+
+Codex audited Validation as the next heavy operator surface after the Overview device-click pass. The page was structurally clean, but normal mode still used handoff/proof-heavy wording around the main card.
+
+Changed behavior:
+- Validation normal card now asks `Ready to ship?`.
+- Ready headline is `Ready to ship`.
+- Report actions are short: `Review report` and `Create report`.
+- The create-report action still calls the same handoff API and reports `Report is ready.`
+- Details now say `Kit readiness details` and `Report files`.
+- Advanced proof, validation reference, raw proof links, and danger-zone reset/rebuild controls remain hidden by default.
+
+Evidence:
+- `app/docs/evidence/validation-ready-to-ship-copy.md`.
+
+Validation:
+- `npm run test:e2e -- --grep "remaining operator pages expose simplified setup surfaces|create report primary action|safe read-only page action|validation readiness card hides raw provider-mode|validation no-kit state|advanced proof is collapsed|validation details do not expose"`: 7 passed.
+- `npm run build`: passed.
+- `npm run test:e2e`: 79 passed, 4 skipped.
+- `git diff --check`: passed.
+
+Safety boundaries:
+- Frontend/test/evidence/docs only.
+- No hardware contact, login, read/write probe, firmware action, RAID action, reset, factory reset, rebuild, or confirmation-gate change.
+
+Approval question:
+Does `Ready to ship?` fit Steve's operator vocabulary better than `Handoff readiness`, and should Codex next audit Lab Defaults / Setup pages for the same plain-language pass?

@@ -5540,7 +5540,7 @@ export function OperatorValidationPage({ isAdvancedMode = false, labProfileState
         details: [
           { label: "Different from expected", value: String(differentFromExpected), status: differentFromExpected ? "warning" : "ready" },
           { label: "Build verification", value: displayStatus(buildVerification?.status ?? "not_checked"), status: buildVerification?.status ?? "not_checked" },
-          { label: "Handoff", value: validation?.handoff_report ? "Ready to generate" : "Not generated", status: validation?.handoff_report ? "ready" : "not_checked" }
+          { label: "Report", value: validation?.handoff_report ? "Ready to review" : "Not created", status: validation?.handoff_report ? "ready" : "not_checked" }
         ],
         freshness: currentView.freshness,
         id: "handoff",
@@ -5627,12 +5627,12 @@ export function OperatorValidationPage({ isAdvancedMode = false, labProfileState
   async function createHandoffReport() {
     if (runState.runningActionId) return;
     setDiagnosis(null);
-    setRunState({ error: "", message: "Creating handoff report.", runningActionId: "full-lab.handoff-report" });
+    setRunState({ error: "", message: "Creating report.", runningActionId: "full-lab.handoff-report" });
     try {
       await api.labValidationHandoff();
       setRunState({
         error: "",
-        message: "Handoff report is ready.",
+        message: "Report is ready.",
         runningActionId: ""
       });
       await load();
@@ -5662,15 +5662,15 @@ export function OperatorValidationPage({ isAdvancedMode = false, labProfileState
       <div className="operator-surface-heading">
         <p className="operator-kicker">Run</p>
         <h1>Validation</h1>
-        <p>Is this kit ready to hand off, and what is the one check to run next?</p>
+        <p>Is this kit ready to ship, and what is the one check to run next?</p>
       </div>
       <Feedback loading={false} error={error} />
       <section className="validation-readiness-surface" aria-label="Readiness Check">
         <Card className="validation-readiness-card" hover={false}>
           <CardHeader>
             <div>
-              <p className="operator-kicker">Reports</p>
-              <h2>Handoff readiness</h2>
+              <p className="operator-kicker">Final check</p>
+              <h2>Ready to ship?</h2>
             </div>
             <StatusBadge label={validationCard.state} status={validationCard.badgeStatus} />
           </CardHeader>
@@ -5679,7 +5679,7 @@ export function OperatorValidationPage({ isAdvancedMode = false, labProfileState
               <h3>{validationCard.headline}</h3>
               <p>{validationCard.supportingMessage}</p>
             </div>
-            <div className="handoff-readiness-meter" aria-label="Handoff readiness meter">
+            <div className="handoff-readiness-meter" aria-label="Kit readiness meter">
               <div>
                 <span>Readiness</span>
                 <strong>{validationCard.meterText}</strong>
@@ -5747,7 +5747,7 @@ export function OperatorValidationPage({ isAdvancedMode = false, labProfileState
 
       {detailsOpen && (
         <section className="validation-details" aria-label="Validation details">
-          <div className="handoff-details-panel" aria-label="Handoff readiness details">
+          <div className="handoff-details-panel" aria-label="Kit readiness details">
             <article>
               <span>What was checked</span>
               <strong>{validationCard.checkedSummary}</strong>
@@ -5770,7 +5770,7 @@ export function OperatorValidationPage({ isAdvancedMode = false, labProfileState
               <p>{validationCard.changeDetail}</p>
             </article>
             <article>
-              <span>Handoff files</span>
+              <span>Report files</span>
               <strong>{validationCard.handoffSummary}</strong>
               <p>{validationCard.handoffDetail}</p>
             </article>
@@ -5826,21 +5826,21 @@ function validationReadinessCardModel(validation: LabValidationSummary | null) {
   const meterPercent = totalCount ? Math.round((readyCount / totalCount) * 100) : 0;
   const warnings = (validation?.warnings ?? []).map((warning) => humanize(warning)).filter(Boolean);
   const headline = state === "Ready"
-    ? "Ready to hand off"
+    ? "Ready to ship"
     : state === "Blocked"
       ? "Needs one fix"
       : "Not checked";
   const supportingMessage = state === "Ready"
     ? handoffReady
-      ? "All required checks are ready and the handoff report exists."
-      : "All required checks are ready. Create the handoff report before closing the kit."
+      ? "All required checks are ready and the report exists."
+      : "All required checks are ready. Create the report before closing the kit."
     : state === "Blocked"
-      ? blockerText || "One item needs attention before this kit can be handed off."
-      : "Run validation to see whether this kit is ready to hand off.";
+      ? blockerText || "One item needs attention before this kit can ship."
+      : "Run validation to see whether this kit is ready.";
   const primaryAction: ValidationPrimaryAction = state === "Ready"
     ? handoffReady
-      ? { kind: "review-handoff", label: "Review handoff" }
-      : { kind: "create-handoff", label: "Create handoff report" }
+      ? { kind: "review-handoff", label: "Review report" }
+      : { kind: "create-handoff", label: "Create report" }
     : state === "Blocked"
       ? { kind: "fix", label: firstFix.label, to: firstFix.to }
       : { kind: "run-validation", label: "Run validation" };
@@ -5852,7 +5852,7 @@ function validationReadinessCardModel(validation: LabValidationSummary | null) {
         ? "Nothing is marked ready until validation runs."
         : "",
     badgeStatus: validationReadinessBadgeStatus(state),
-    changeDetail: warnings[0] || (blockerText ? `First fix: ${blockerText}` : "No handoff blockers are currently reported."),
+    changeDetail: warnings[0] || (blockerText ? `First fix: ${blockerText}` : "No blockers are currently reported."),
     changeSummary: warnings.length ? `${warnings.length} warning${warnings.length === 1 ? "" : "s"} need review` : exceptions.length ? "One fix is blocking handoff" : "No changes need attention",
     checkedSummary: totalCount ? `${readyCount} of ${totalCount} checks are ready` : "No checks have run yet",
     exceptions,
@@ -5861,7 +5861,7 @@ function validationReadinessCardModel(validation: LabValidationSummary | null) {
       : state === "Ready"
         ? "Create the report from this page when the kit is ready."
         : "A report is created after validation is ready.",
-    handoffSummary: handoffReady ? "Handoff report is ready" : "No handoff report yet",
+    handoffSummary: handoffReady ? "Report is ready" : "No report yet",
     headline,
     meterPercent,
     meterText: `${readyCount} / ${totalCount} ready`,
@@ -5929,7 +5929,7 @@ function ValidationSetupShapePanel({
         <div>
           <p className="operator-kicker">Validation setup shape</p>
           <h2>Prove, Repair, Handoff</h2>
-          <p>Validation turns the selected lab scenario into proof-backed readiness, reset/rebuild evidence, and handoff output.</p>
+          <p>Validation turns the selected lab scenario into clear readiness, reset/rebuild evidence, and final report output.</p>
         </div>
         <StatusBadge label={displayStatus(overallStatus)} status={ladderStatus} />
       </CardHeader>
@@ -17374,7 +17374,7 @@ function validationCurrentView({
       "Use the top blocker as the first fix before generating handoff."
     ],
     recheckCommand: "make provider-lab-build-verification",
-    scanDetail: "Run Validation refreshes the current blocker list and produces a proof-backed handoff view.",
+    scanDetail: "Run Validation refreshes the current blocker list and prepares the final report view.",
     scanLabel: "Run Validation",
     signals: [validation, buildVerification, vcenterNetapp],
     status: validation?.overall_status ?? "not_checked",

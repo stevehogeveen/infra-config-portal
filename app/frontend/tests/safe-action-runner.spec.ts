@@ -1587,7 +1587,7 @@ test("top nav and map workspaces expose run controls without dead settings drawe
 
   for (const [path, runButtonName] of [
     ["/firmware-upgrades", "Check versions"],
-    ["/validation", "Review handoff"]
+    ["/validation", "Review report"]
   ] as const) {
     await page.goto(path);
     await expect(page.getByRole("button", { name: "Settings" })).toHaveCount(0);
@@ -1983,13 +1983,13 @@ test("remaining operator pages expose simplified setup surfaces without old sett
   await page.goto("/validation");
   const readiness = page.getByLabel("Readiness Check");
   await expect(readiness).toBeVisible();
-  await expect(readiness).toContainText("Handoff readiness");
-  await expect(readiness).toContainText("Ready to hand off");
+  await expect(readiness).toContainText("Ready to ship?");
+  await expect(readiness).toContainText("Ready to ship");
   await expect(readiness).toContainText("5 / 5 ready");
   await expect(readiness.getByText("5 / 5 ready")).toHaveCount(1);
-  await expect(readiness).toContainText("All required checks are ready and the handoff report exists.");
+  await expect(readiness).toContainText("All required checks are ready and the report exists.");
   await expect(page.locator(".validation-readiness-actions .operator-primary-button")).toHaveCount(1);
-  await expect(page.locator(".validation-readiness-actions .operator-primary-button")).toContainText("Review handoff");
+  await expect(page.locator(".validation-readiness-actions .operator-primary-button")).toContainText("Review report");
   await expect(page.getByRole("button", { name: "Run validation" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "View details" })).toBeVisible();
   await expect(page.locator("section[aria-label='Validation reference']")).toHaveCount(0);
@@ -2004,17 +2004,17 @@ test("remaining operator pages expose simplified setup surfaces without old sett
 
   await page.getByRole("button", { name: "View details" }).click();
   const details = page.getByLabel("Validation details");
-  await expect(details.getByLabel("Handoff readiness details")).toBeVisible();
+  await expect(details.getByLabel("Kit readiness details")).toBeVisible();
   await expect(details).toContainText("What was checked");
   await expect(details).toContainText("What changed");
-  await expect(details).toContainText("Handoff files");
+  await expect(details).toContainText("Report files");
   await expect(details).not.toContainText("Validation Signals");
   await expect(details).not.toContainText("Golden State");
   await expect(details).not.toContainText(/\bprovider\b/i);
   await expect(details).not.toContainText(/\bruntime\b/i);
   await expect(details).not.toContainText(/\bpayload\b/i);
   await expect(details).not.toContainText(/\braw\b/i);
-  await expect(details.getByRole("button", { name: "Create handoff report" })).toHaveCount(0);
+  await expect(details.getByRole("button", { name: "Create report" })).toHaveCount(0);
   await expect(details.locator("details.advanced-drawer")).not.toHaveAttribute("open", "");
   await details.locator("details.advanced-drawer > summary").click();
   await expect(details.getByLabel("Validation reference")).toBeVisible();
@@ -2265,7 +2265,7 @@ test("safe read-only page action still invokes the workflow runner", async ({ pa
   await expect(page.getByText(/Run Full Verification:/)).toBeVisible();
 });
 
-test("create handoff report primary action calls the handoff API and reports completion", async ({ page }) => {
+test("create report primary action calls the handoff API and reports completion", async ({ page }) => {
   const readyWithoutReport = labValidation();
   readyWithoutReport.handoff_report = "";
   await page.route("**/api/v1/lab/validation", (route) => json(route, readyWithoutReport));
@@ -2274,9 +2274,9 @@ test("create handoff report primary action calls the handoff API and reports com
   const handoffResponse = page.waitForResponse((response) =>
     response.url().includes("/api/v1/lab/validation/handoff")
   );
-  await page.getByRole("button", { name: "Create handoff report" }).click();
+  await page.getByRole("button", { name: "Create report" }).click();
   await expect((await handoffResponse).ok()).toBeTruthy();
-  await expect(page.getByText("Handoff report is ready.")).toBeVisible();
+  await expect(page.getByText("Report is ready.")).toBeVisible();
 });
 
 test("validation exposes guarded factory reset and automated rebuild verification", async ({ page }) => {
