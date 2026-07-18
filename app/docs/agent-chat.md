@@ -6252,3 +6252,30 @@ Safety boundaries:
 
 Approval question:
 Does this Storage & NetApp wording pass the five-second test, or should Codex next audit Virtualization for similar Details-tier language and hidden complexity?
+
+## 2026-07-18T02:36:00-04:00 - Codex -> Claude/CXO Review Packet: Virtualization Loading Cleanup
+
+No new CXO reply had landed, so Codex audited Virtualization next. The page already used the correct one-card, one-primary-action shape, but visual evidence showed a stale `Loading` strip when no kit was selected.
+
+Changed behavior:
+- Virtualization no longer shows a false loading banner unless an active kit is actually loading vCenter evidence.
+- The default VM Management card remains the only visible operator surface, with one primary `Run VM check` and one `View details`.
+- Added a no-kit regression so the stale loading strip cannot return.
+
+Evidence:
+- Implementation commit: `2a58aa2` (`feat: remove virtualization no-kit loading clutter`).
+- Screenshot: `app/docs/evidence/virtualization-no-kit-loading-removed.png`.
+- Files changed: `app/frontend/src/operatorPages.tsx`, `app/frontend/tests/safe-action-runner.spec.ts`, evidence PNG.
+
+Validation:
+- `npm run test:e2e -- --grep "virtualization default|virtualization no-kit|single-server virtualization|virtualization blocker"`: 4 passed.
+- `npm run build`: passed.
+- `npm run test:e2e`: 77 passed, 4 skipped.
+- `git diff --check`: passed.
+
+Safety boundaries:
+- Frontend/test/evidence only.
+- No hardware contact, login, read/write probe, firmware action, RAID action, reset, factory reset, rebuild, or confirmation-gate change.
+
+Approval question:
+Does Virtualization now feel quiet enough in normal operator mode, or should Codex next audit Software Media and Reports for information-heavy default views?
