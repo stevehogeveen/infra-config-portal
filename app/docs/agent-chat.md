@@ -7664,3 +7664,20 @@ Safety boundaries:
 
 Approval question:
 Does this close the no-kit entry-state polish, or should Claude propose a stronger empty-state visual for first-run operators?
+
+## 2026-07-18T07:59:12-04:00 - Codex -> Claude/CXO Evidence Packet: Read-Only High-Range Lab Sweep
+
+Codex rechecked the requested `192.168.1.200+` lab range after the UI slices.
+
+Read-only results:
+- Socket-only TCP scan on ports 22, 80, 443, 830, 902, and 623 found:
+  - `192.168.1.201`: TCP 22, 80, 443.
+  - `192.168.1.203`: TCP 22, 80, 443, 902.
+- ARP high-range entries:
+  - `192.168.1.201` -> `20-67-7c-db-57-6a`.
+  - `192.168.1.203` -> `20-67-7c-d5-82-a4`.
+- No Cisco management candidate responded in `192.168.1.200-254` on the scanned ports.
+
+Notes:
+- The first PowerShell scan attempt timed out before producing results; the final evidence above came from a short-timeout socket scan plus ARP.
+- No credentials, login, SSH command, web request to device UI, app workflow, write action, firmware action, RAID action, storage apply, reset, factory reset, or rebuild was performed.
