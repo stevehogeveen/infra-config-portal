@@ -2799,6 +2799,105 @@ test("validation details runs the registered read-only equipment sweep", async (
   ).toEqual(["operator-readonly-sweep.real-lab"]);
 });
 
+test("details-tier proof buttons outside overview keep read-only and guarded boundaries", async ({ page }) => {
+  const providerPosts: string[] = [];
+  const workflowPosts: string[] = [];
+  page.on("request", (request) => {
+    if (request.method() !== "POST") return;
+    const url = new URL(request.url());
+    if (url.pathname.match(/^\/api\/v1\/workflows\/actions\/.+\/run$/)) {
+      workflowPosts.push(actionIdFromRunPath(url.pathname));
+    }
+    if (url.pathname.startsWith("/api/v1/providers/")) {
+      providerPosts.push(url.pathname);
+    }
+  });
+
+  await page.goto("/network");
+  await page.getByLabel("Switch Access").getByRole("button", { name: "View details" }).click();
+  const networkSections = page.getByLabel("Network detail sections");
+  await networkSections.getByRole("button", { name: /Plan/ }).click();
+  const ciscoAdvanced = page.locator("details.network-advanced-switch-plan");
+  await ciscoAdvanced.locator(":scope > summary").click();
+  const ciscoDriver = page.getByLabel("Cisco switch driver");
+  const refreshButton = ciscoDriver.getByRole("button", { name: /Refresh live evidence/ });
+  await expect(refreshButton).toBeEnabled();
+  const ciscoProbeResponse = page.waitForResponse((response) =>
+    response.url().includes("/api/v1/providers/cisco-ansible/probe") &&
+    response.request().method() === "POST"
+  );
+  const ciscoIntentResponse = page.waitForResponse((response) =>
+    response.url().includes("/api/v1/providers/cisco/current-intent-diff") &&
+    response.request().method() === "POST"
+  );
+  await refreshButton.click();
+  await expect((await ciscoProbeResponse).ok()).toBeTruthy();
+  await expect((await ciscoIntentResponse).ok()).toBeTruthy();
+  await expect(ciscoDriver.getByRole("button", { name: /Apply|Write|Bootstrap/i })).toHaveCount(0);
+  await expect(ciscoDriver).toContainText("before any guarded apply");
+
+  await page.goto("/storage");
+  await page.getByRole("button", { name: "View storage details" }).click();
+  const storageDetails = page.getByLabel("Storage path details");
+  await storageDetails.getByLabel("Storage detail sections").getByRole("button", { name: /Proof/ }).click();
+  const storageProof = storageDetails.locator("details.advanced-drawer").filter({ hasText: "Storage proof" });
+  await storageProof.locator(":scope > summary").click();
+  const storageActions = storageDetails.getByLabel("Advanced storage actions");
+  await expect(storageActions).toBeVisible();
+  await storageActions.locator(":scope > summary").click();
+
+  const previewResponse = page.waitForResponse((response) =>
+    response.url().includes("/api/v1/providers/netapp-ontap/iscsi-setup-preview")
+  );
+  await storageActions.getByRole("button", { name: "Preview iSCSI" }).click();
+  await expect((await previewResponse).ok()).toBeTruthy();
+  await expect(storageDetails).toContainText(/Preview iSCSI:/);
+
+  const applyResponse = page.waitForResponse((response) =>
+    response.url().includes("/api/v1/providers/netapp-ontap/iscsi-setup-apply") &&
+    response.request().method() === "POST"
+  );
+  await storageActions.getByRole("button", { name: "Apply iSCSI" }).click();
+  await expect((await applyResponse).ok()).toBeTruthy();
+  await expect(storageDetails).toContainText(/Apply iSCSI: Blocked/);
+  await expect(storageDetails).toContainText(/ONTAP writes not attempted/);
+
+  const validateResponse = page.waitForResponse((response) =>
+    response.url().includes("/api/v1/providers/netapp-ontap/iscsi-setup-validate") &&
+    response.request().method() === "POST"
+  );
+  await storageActions.getByRole("button", { name: "Validate iSCSI" }).click();
+  await expect((await validateResponse).ok()).toBeTruthy();
+  await expect(storageDetails).toContainText(/Validate iSCSI:/);
+
+  const esxiPreviewResponse = page.waitForResponse((response) =>
+    response.url().includes("/api/v1/providers/esxi-readonly/iscsi-datastore-preview") &&
+    response.request().method() === "POST"
+  );
+  await storageActions.getByRole("button", { name: "Preview ESXi iSCSI" }).click();
+  await expect((await esxiPreviewResponse).ok()).toBeTruthy();
+  await expect(storageDetails).toContainText(/Preview ESXi iSCSI:/);
+
+  const esxiValidateResponse = page.waitForResponse((response) =>
+    response.url().includes("/api/v1/providers/esxi-readonly/iscsi-datastore-validate") &&
+    response.request().method() === "POST"
+  );
+  await storageActions.getByRole("button", { name: "Validate ESXi iSCSI" }).click();
+  await expect((await esxiValidateResponse).ok()).toBeTruthy();
+  await expect(storageDetails).toContainText(/Validate ESXi iSCSI:/);
+
+  expect(providerPosts, "details-tier buttons use provider read/proof or guarded-gate endpoints")
+    .toEqual(expect.arrayContaining([
+      "/api/v1/providers/cisco-ansible/probe",
+      "/api/v1/providers/cisco/current-intent-diff",
+      "/api/v1/providers/netapp-ontap/iscsi-setup-apply",
+      "/api/v1/providers/netapp-ontap/iscsi-setup-validate",
+      "/api/v1/providers/esxi-readonly/iscsi-datastore-preview",
+      "/api/v1/providers/esxi-readonly/iscsi-datastore-validate"
+    ]));
+  expect(workflowPosts, "details-tier proof buttons do not start guarded workflow actions").toEqual([]);
+});
+
 test("validation readiness card hides raw provider-mode vocabulary in blockers", async ({ page }) => {
   const blocked = labValidation();
   blocked.overall_status = "blocked";
