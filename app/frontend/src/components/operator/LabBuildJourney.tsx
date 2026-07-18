@@ -81,13 +81,15 @@ export function LabBuildJourney({
 }
 
 function BuildPlan({ loading, onStart, plan }: { loading?: boolean; onStart: () => void; plan: LabBuildPlan }) {
+  const summary = summarizeBuildPlan(plan);
+
   return (
     <div className="lab-build-plan" aria-label="Build Plan">
       <div className="lab-build-intro-row">
         <div className="lab-build-intro">
           <p className="operator-kicker">Build Plan</p>
           <h1>{plan.headline}</h1>
-          <p>{plan.supporting_message}</p>
+          <p>{summary.message}</p>
         </div>
         <button
           className="lab-build-primary"
@@ -101,6 +103,21 @@ function BuildPlan({ loading, onStart, plan }: { loading?: boolean; onStart: () 
         </button>
       </div>
 
+      <dl className="lab-build-summary" aria-label="Plan summary">
+        <div>
+          <dt>Checks</dt>
+          <dd>{summary.total}</dd>
+        </div>
+        <div>
+          <dt>Needs approval</dt>
+          <dd>{summary.approvalStops}</dd>
+        </div>
+        <div>
+          <dt>Automatic</dt>
+          <dd>{summary.automaticSteps}</dd>
+        </div>
+      </dl>
+
       {plan.blockers.length > 0 && (
         <div className="lab-build-blocker" role="alert">
           <AlertTriangle size={18} />
@@ -111,23 +128,57 @@ function BuildPlan({ loading, onStart, plan }: { loading?: boolean; onStart: () 
         </div>
       )}
 
-      <ol className="lab-build-hallway" aria-label="Ordered build steps">
-        {plan.steps.map((step) => (
-          <li key={step.step_id}>
-            <StepMarker status={step.status} />
-            <div>
-              <span>Step {step.order}</span>
-              <strong>{step.label}</strong>
-              <p>{step.description}</p>
-              {step.rationale && <small>{step.rationale}</small>}
-              {!isSafeAutomaticStep(step) && <small className="lab-build-pause">Pauses for your approval</small>}
-            </div>
-          </li>
-        ))}
-      </ol>
+      <section className="lab-build-next" aria-label="Next build steps">
+        <div>
+          <p className="operator-kicker">Next checks</p>
+          <strong>{summary.nextSteps.length ? "Start here" : "No checks are queued"}</strong>
+        </div>
+        <ol>
+          {summary.nextSteps.map((step) => (
+            <li key={step.step_id}>
+              <StepMarker status={step.status} />
+              <div>
+                <span>Step {step.order}</span>
+                <strong>{step.label}</strong>
+                {!isSafeAutomaticStep(step) && <small>Needs approval</small>}
+              </div>
+            </li>
+          ))}
+        </ol>
+      </section>
 
+      <details className="lab-build-advanced lab-build-step-details">
+        <summary>View full build sequence</summary>
+        <ol className="lab-build-hallway" aria-label="Ordered build steps">
+          {plan.steps.map((step) => (
+            <li key={step.step_id}>
+              <StepMarker status={step.status} />
+              <div>
+                <span>Step {step.order}</span>
+                <strong>{step.label}</strong>
+                <p>{step.description}</p>
+                {step.rationale && <small>{step.rationale}</small>}
+                {!isSafeAutomaticStep(step) && <small className="lab-build-pause">Pauses for your approval</small>}
+              </div>
+            </li>
+          ))}
+        </ol>
+      </details>
     </div>
   );
+}
+
+function summarizeBuildPlan(plan: LabBuildPlan) {
+  const total = plan.steps.length;
+  const approvalStops = plan.steps.filter((step) => !isSafeAutomaticStep(step)).length;
+  const automaticSteps = total - approvalStops;
+  return {
+    approvalStops,
+    automaticSteps,
+    message: `${total} checks are ready. ${approvalStops} ${approvalStops === 1 ? "step pauses" : "steps pause"} for your approval.`,
+    nextSteps: plan.steps.slice(0, 3),
+    total
+  };
 }
 
 function RunConsole({

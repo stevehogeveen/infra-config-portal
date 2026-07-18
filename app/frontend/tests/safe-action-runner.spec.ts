@@ -592,8 +592,14 @@ test("operator home opens one ordered build plan with one primary action", async
   await expect(journey).toBeVisible();
   await expect(page.getByTestId("operator-home")).toHaveCount(0);
   await expect(plan.getByRole("heading", { name: "This lab is ready to follow one ordered build plan." })).toBeVisible();
+  await expect(plan.getByLabel("Plan summary")).toContainText("4");
+  await expect(plan.getByLabel("Next build steps").getByRole("listitem")).toHaveCount(3);
+  await expect(plan.getByLabel("Next build steps")).toContainText("Configure the management network");
+  await expect(plan.getByLabel("Ordered build steps")).not.toBeVisible();
+  await plan.getByText("View full build sequence").click();
+  await expect(plan.getByLabel("Ordered build steps")).toBeVisible();
   await expect(plan.getByLabel("Ordered build steps").getByRole("listitem")).toHaveCount(4);
-  await expect(plan).toContainText("Shared storage must be ready before the compute host can use it.");
+  await expect(plan.getByLabel("Ordered build steps")).toContainText("Shared storage must be ready before the compute host can use it.");
   await expect(plan.getByTestId("lab-build-primary-action")).toHaveCount(1);
   await expect(plan.getByTestId("lab-build-primary-action")).toContainText("Start Build");
   await expect(plan).not.toContainText("provider");
