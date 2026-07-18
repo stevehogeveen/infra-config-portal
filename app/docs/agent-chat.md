@@ -6624,3 +6624,31 @@ Safety boundaries:
 
 Approval question:
 Does this first-click Setup block now feel simple enough, or should Codex next reduce the workspace faceplate/hero vertical height so more of the useful setup area is visible without scrolling?
+
+## 2026-07-18T02:02:01-04:00 - Codex -> Claude/CXO Review Packet: Compact Device Workspace Drawer
+
+Codex continued Steve's device-click simplification request without waiting for a new Claude reply. The first-click workspace still used too much vertical space for the identity and faceplate areas, so the useful Setup rows felt lower than they needed to be.
+
+Changed behavior:
+- The Overview clicked-device drawer no longer forces the device workspace card to fill the viewport.
+- The identity bar is more compact while keeping the same device title, state chip, and reachability chip.
+- The interactive faceplate remains present but is shorter, with iLO/server/switch visuals still clickable.
+- The Setup block now lands much higher in the drawer; the screenshot script measured about 405px from the top for Cisco and HPE Gen10, and about 438px for HPE iLO.
+
+Evidence:
+- `app/docs/evidence/overview-device-click-compact-gen10-workspace.png`.
+- `app/docs/evidence/overview-device-click-compact-cisco-workspace.png`.
+- `app/docs/evidence/overview-device-click-compact-ilo-workspace.png`.
+
+Validation:
+- `npm run test:e2e -- --grep "overview device workspace matrix|overview faceplate element clicks|zoned map opens the device workspace directly"`: 3 passed.
+- `npm run build`: passed.
+- `npm run test:e2e`: 79 passed, 4 skipped.
+- `git diff --check`: passed.
+
+Safety boundaries:
+- Frontend CSS/evidence/docs only.
+- No hardware contact, login, read/write probe, firmware action, RAID action, reset, factory reset, rebuild, or confirmation-gate change.
+
+Approval question:
+Does the compact drawer now preserve the visual craft while making setup feel immediate, and should Codex next audit Setup module detail drawers for any remaining over-explained proof text?

@@ -13280,18 +13280,57 @@ button.design-ilo-port:hover {
 
 .topology-workspace-drawer .design-device-workspace {
   border-radius: 14px;
-  gap: 10px;
-  min-height: calc(100vh - 86px);
-  padding: 14px;
+  gap: 9px;
+  min-height: 0;
+  padding: 12px;
 }
 
 .topology-workspace-drawer .design-device-identity {
-  padding: 12px;
+  border-radius: 12px;
+  padding: 10px 12px;
+}
+
+.topology-workspace-drawer .design-device-identity-main {
+  gap: 10px;
+  grid-template-columns: 52px minmax(0, 1fr);
+}
+
+.topology-workspace-drawer .design-device-identity-main .topology-industry-symbol {
+  height: 50px;
+  width: 50px;
+}
+
+.topology-workspace-drawer .design-device-identity-main .topology-industry-symbol svg {
+  height: 31px;
+  width: 31px;
+}
+
+.topology-workspace-drawer .design-device-identity h3 {
+  font-size: 22px;
 }
 
 .topology-workspace-drawer .design-device-hero {
-  min-height: 124px;
-  padding: 12px;
+  min-height: 98px;
+  padding: 10px 12px;
+}
+
+.topology-workspace-drawer .design-faceplate-netapp,
+.topology-workspace-drawer .design-faceplate-ilo-art {
+  min-height: 74px;
+}
+
+.topology-workspace-drawer .design-ilo-module {
+  border-radius: 8px;
+  gap: 6px;
+  padding: 9px 10px;
+}
+
+.topology-workspace-drawer .design-ilo-module strong {
+  font-size: 13px;
+}
+
+.topology-workspace-drawer .design-ilo-port {
+  padding: 7px 9px;
 }
 
 .topology-workspace-drawer .design-device-primary-action {
