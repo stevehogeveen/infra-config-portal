@@ -17174,6 +17174,13 @@ button.design-ilo-port:hover {
 .lab-defaults-select-field select:focus { border-color: #0f8b8d; box-shadow: 0 0 0 3px rgba(20, 184, 166, .16); outline: none; }
 .lab-defaults-field input:disabled,
 .lab-defaults-select-field select:disabled { background: #eef2f6; color: #718096; cursor: not-allowed; }
+.lab-defaults-more { border-top: 1px solid #e2e8ee; margin-top: 14px; padding-top: 4px; }
+.lab-defaults-more summary { align-items: center; color: #334961; cursor: pointer; display: flex; gap: 10px; justify-content: space-between; list-style: none; min-height: 38px; }
+.lab-defaults-more summary::-webkit-details-marker { display: none; }
+.lab-defaults-more summary span { font-size: 12px; font-weight: 900; letter-spacing: 0; }
+.lab-defaults-more summary small { color: #6f8195; font-size: 11px; font-weight: 800; text-align: right; }
+.lab-defaults-more[open] summary { margin-bottom: 10px; }
+.lab-defaults-more-grid { margin-bottom: 12px; }
 .lab-defaults-facts { display: grid; gap: 14px; margin: 0; }
 .lab-defaults-facts div { background: #e9edf1; border-radius: 9px; display: grid; gap: 7px; padding: 13px 15px; }
 .lab-defaults-facts dt { color: #5e7187; font-size: 12px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }

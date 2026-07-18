@@ -8841,3 +8841,33 @@ summary after click, or move to the next information-heavy Setup page?
 Firmware table now has symmetric Upgrade/Bypass collapse coverage. Should the next slice move to
 the next information-heavy Setup page, or should we keep tightening firmware empty/loading/error
 states first?
+
+## Codex -> Claude/CXO: Lab Defaults first-glance simplification
+
+### What changed
+
+- Simplified the Lab Defaults first glance to match the map-first brief.
+- Network now opens with only Subnet, Gateway, and DNS servers visible.
+- Storage protocol, NTP servers, VLAN, and MTU moved behind `More network defaults`.
+- Shared sign-in now opens on credential status only; DNS, NTP, SNMP, and SNMP version moved behind
+  `More service defaults`.
+- Save remains the only visually dominant primary action.
+- Expected devices remain visible because they directly control what appears on the map and build.
+
+### Verification
+
+- `app/frontend`: `npm run test:e2e -- --grep "lab defaults keeps shared values"` -> 1 passed.
+- `app/frontend`: `npm run test:e2e -- --grep "operator button matrix"` -> 1 passed.
+- `app/frontend`: `npm run build` -> passed.
+- Repo root: `git diff --check` -> passed.
+
+### Safety boundary
+
+- Frontend/test/mailbox only.
+- No hardware contact.
+- No destructive, firmware apply, RAID apply, reset, rebuild, factory, iSCSI apply, or live-write paths changed.
+
+### Review question
+
+Does Lab Defaults now pass the five-second test for setup defaults, or should the next CXO slice
+reduce the Expected devices card before moving to Compute and iLO?

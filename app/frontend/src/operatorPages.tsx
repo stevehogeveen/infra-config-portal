@@ -942,51 +942,59 @@ export function OperatorLabDefaultsPage({ labProfileState, onReloadLabProfile }:
                     value={edit.dnsServers}
                   />
                 </label>
-                <label className="lab-defaults-field lab-defaults-field-wide">
-                  <span>NTP servers</span>
-                  <input
-                    aria-label="NTP servers"
-                    disabled={busy || !activeProfile}
-                    onChange={(event) => update("ntpServers", event.target.value)}
-                    placeholder="192.168.1.1"
-                    value={edit.ntpServers}
-                  />
-                </label>
-                <label className="lab-defaults-field">
-                  <span>VLAN</span>
-                  <input
-                    aria-label="VLAN"
-                    disabled={busy || !activeProfile}
-                    onChange={(event) => update("vlanId", event.target.value)}
-                    placeholder="100"
-                    value={edit.vlanId}
-                  />
-                </label>
-                <label className="lab-defaults-field">
-                  <span>MTU</span>
-                  <input
-                    aria-label="MTU"
-                    disabled={busy || !activeProfile}
-                    inputMode="numeric"
-                    onChange={(event) => update("mtu", event.target.value)}
-                    placeholder="1500"
-                    value={edit.mtu}
-                  />
-                </label>
               </div>
-              <label className="lab-defaults-select-field">
-                <span>Storage protocol</span>
-                <select
-                  aria-label="Storage protocol"
-                  disabled={busy || !activeProfile}
-                  onChange={(event) => update("storageProtocol", event.target.value)}
-                  value={labDefaultsStorageProtocolValue(edit.storageProtocol)}
-                >
-                  <option value="nfs">NFS</option>
-                  <option value="iscsi">iSCSI</option>
-                  <option value="local">Local</option>
-                </select>
-              </label>
+              <details className="lab-defaults-more">
+                <summary>
+                  <span>More network defaults</span>
+                  <small>Storage, NTP, VLAN, and MTU</small>
+                </summary>
+                <div className="lab-defaults-input-grid lab-defaults-more-grid">
+                  <label className="lab-defaults-field lab-defaults-field-wide">
+                    <span>NTP servers</span>
+                    <input
+                      aria-label="NTP servers"
+                      disabled={busy || !activeProfile}
+                      onChange={(event) => update("ntpServers", event.target.value)}
+                      placeholder="192.168.1.1"
+                      value={edit.ntpServers}
+                    />
+                  </label>
+                  <label className="lab-defaults-field">
+                    <span>VLAN</span>
+                    <input
+                      aria-label="VLAN"
+                      disabled={busy || !activeProfile}
+                      onChange={(event) => update("vlanId", event.target.value)}
+                      placeholder="100"
+                      value={edit.vlanId}
+                    />
+                  </label>
+                  <label className="lab-defaults-field">
+                    <span>MTU</span>
+                    <input
+                      aria-label="MTU"
+                      disabled={busy || !activeProfile}
+                      inputMode="numeric"
+                      onChange={(event) => update("mtu", event.target.value)}
+                      placeholder="1500"
+                      value={edit.mtu}
+                    />
+                  </label>
+                </div>
+                <label className="lab-defaults-select-field">
+                  <span>Storage protocol</span>
+                  <select
+                    aria-label="Storage protocol"
+                    disabled={busy || !activeProfile}
+                    onChange={(event) => update("storageProtocol", event.target.value)}
+                    value={labDefaultsStorageProtocolValue(edit.storageProtocol)}
+                  >
+                    <option value="nfs">NFS</option>
+                    <option value="iscsi">iSCSI</option>
+                    <option value="local">Local</option>
+                  </select>
+                </label>
+              </details>
             </CardContent>
           </Card>
           <Card aria-label="Shared sign-in" className="lab-defaults-signin-card" hover={false}>
@@ -1006,32 +1014,38 @@ export function OperatorLabDefaultsPage({ labProfileState, onReloadLabProfile }:
                   </dd>
                 </div>
               </dl>
-              <div className="lab-defaults-service-row" aria-label="Shared service defaults">
-                <label className="lab-defaults-service-toggle">
-                  <input checked={edit.enableDns} disabled={busy || !activeProfile} onChange={(event) => update("enableDns", event.target.checked)} type="checkbox" />
-                  <span>DNS</span>
+              <details className="lab-defaults-more">
+                <summary>
+                  <span>More service defaults</span>
+                  <small>DNS, NTP, SNMP</small>
+                </summary>
+                <div className="lab-defaults-service-row" aria-label="Shared service defaults">
+                  <label className="lab-defaults-service-toggle">
+                    <input checked={edit.enableDns} disabled={busy || !activeProfile} onChange={(event) => update("enableDns", event.target.checked)} type="checkbox" />
+                    <span>DNS</span>
+                  </label>
+                  <label className="lab-defaults-service-toggle">
+                    <input checked={edit.enableNtp} disabled={busy || !activeProfile} onChange={(event) => update("enableNtp", event.target.checked)} type="checkbox" />
+                    <span>NTP</span>
+                  </label>
+                  <label className="lab-defaults-service-toggle">
+                    <input checked={edit.enableSnmp} disabled={busy || !activeProfile} onChange={(event) => update("enableSnmp", event.target.checked)} type="checkbox" />
+                    <span>SNMP</span>
+                  </label>
+                </div>
+                <label className="lab-defaults-select-field">
+                  <span>SNMP version</span>
+                  <select
+                    aria-label="SNMP version"
+                    disabled={busy || !activeProfile || !edit.enableSnmp}
+                    onChange={(event) => update("snmpVersion", event.target.value)}
+                    value={edit.snmpVersion}
+                  >
+                    <option value="v2c">v2c</option>
+                    <option value="v3">v3</option>
+                  </select>
                 </label>
-                <label className="lab-defaults-service-toggle">
-                  <input checked={edit.enableNtp} disabled={busy || !activeProfile} onChange={(event) => update("enableNtp", event.target.checked)} type="checkbox" />
-                  <span>NTP</span>
-                </label>
-                <label className="lab-defaults-service-toggle">
-                  <input checked={edit.enableSnmp} disabled={busy || !activeProfile} onChange={(event) => update("enableSnmp", event.target.checked)} type="checkbox" />
-                  <span>SNMP</span>
-                </label>
-              </div>
-              <label className="lab-defaults-select-field">
-                <span>SNMP version</span>
-                <select
-                  aria-label="SNMP version"
-                  disabled={busy || !activeProfile || !edit.enableSnmp}
-                  onChange={(event) => update("snmpVersion", event.target.value)}
-                  value={edit.snmpVersion}
-                >
-                  <option value="v2c">v2c</option>
-                  <option value="v3">v3</option>
-                </select>
-              </label>
+              </details>
             </CardContent>
           </Card>
         </div>
