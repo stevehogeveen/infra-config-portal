@@ -2122,6 +2122,11 @@ test("validation readiness card hides raw provider-mode vocabulary in blockers",
   await expect(readiness).not.toContainText(/PROVIDER[_ ]MODE/i);
   await expect(readiness).not.toContainText(/\bprovider\b/i);
   await expect(readiness).not.toContainText(/\bruntime\b/i);
+
+  await page.getByRole("button", { name: "View details" }).click();
+  const details = page.getByLabel("Validation details");
+  await expect(details).not.toContainText(/\bprovider\b/i);
+  await expect(details).not.toContainText(/\bruntime\b/i);
 });
 
 test("validation no-kit state does not show stale loading feedback", async ({ page }) => {

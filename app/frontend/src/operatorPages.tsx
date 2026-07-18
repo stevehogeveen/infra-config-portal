@@ -2693,7 +2693,7 @@ export function OperatorStoragePage({ labProfileState, onReloadLabProfile }: Ope
       const detail = first.result.blockers[0] || first.result.next_action || first.result.summary || displayStatus(first.result.status);
       return `${headerLabel}: ${results.length} checks run; ${blocked.length} need attention. ${label}: ${humanize(detail)}`;
     }
-    return `${headerLabel}: ${results.length} checks completed with real provider evidence.`;
+    return `${headerLabel}: ${results.length} checks completed with device evidence.`;
   };
   const storageRegions: Record<string, ReactNode> = profileReady ? {
     "advanced-proof": (
@@ -5976,8 +5976,8 @@ function ValidationSetupShapePanel({
             },
             {
               detail: displayStatus(buildVerification?.status ?? "not_checked"),
-              label: "Real smoke evidence",
-              nextAction: "Run real provider smoke and read-only sweep before handoff.",
+              label: "Live-device evidence",
+              nextAction: "Run the live-device smoke check and read-only sweep before handoff.",
               status: statusBadgeStatus(buildVerification?.status ?? "not_checked")
             },
             {
@@ -17196,7 +17196,7 @@ function overviewCurrentView({
     scanLabel: "Run Validation",
     signals: [validation, buildVerification, ...providers],
     status,
-    summary: validation?.top_blocker?.problem || validation?.next_action || "The overview uses validation and provider status as its current view."
+    summary: validation?.top_blocker?.problem || validation?.next_action || "The overview uses validation and device status as its current view."
   });
 }
 

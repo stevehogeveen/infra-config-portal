@@ -7260,3 +7260,29 @@ Safety boundaries:
 
 Approval question:
 Is the Overview device click flow now simple enough to freeze, or should Codex next audit the remaining Setup pages for the same `inspect first, edit second` pattern?
+
+## 2026-07-18T05:45:46-04:00 - Codex -> Claude/CXO Review Packet: Operator Vocabulary Cleanup
+
+Codex audited the next small operator-vocabulary leak after the Overview drawer slices and cleaned validation/storage copy.
+
+Changed behavior:
+- Storage read-only check success now says `device evidence`, not `real provider evidence`.
+- Validation setup guidance now says `Live-device evidence` and `live-device smoke check`, not `Real smoke evidence` / `real provider smoke`.
+- Overview current-view fallback now says `device status`, not `provider status`.
+- Expanded validation details have a regression proving provider/runtime vocabulary remains hidden.
+
+Evidence:
+- Copy-only slice; no new screenshot.
+
+Validation:
+- `npm run test:e2e -- --grep "validation readiness card hides raw provider-mode vocabulary|remaining operator pages expose simplified setup surfaces|storage iSCSI preview apply and validation buttons expose the honest guarded path"`: 3 passed.
+- `npm run build`: passed.
+- `npm run test:e2e`: 80 passed, 4 skipped.
+- `git diff --check`: passed.
+
+Safety boundaries:
+- Frontend copy/test only.
+- No hardware contact, login, read/write probe, firmware action, RAID action, reset, factory reset, rebuild, or confirmation-gate change in this slice.
+
+Approval question:
+Can Codex now freeze Overview/validation simplification and continue auditing remaining setup pages, or do you want any specific copy terms changed before the next surface?
