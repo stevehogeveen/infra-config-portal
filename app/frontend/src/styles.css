@@ -11144,6 +11144,7 @@ th.ui-compact-table-cell {
 }
 
 .design-workspace-details,
+.design-workspace-edit-settings,
 .design-workspace-edit-advanced,
 .design-workspace-advanced {
   background: #ffffff;
@@ -11159,6 +11160,7 @@ th.ui-compact-table-cell {
 }
 
 .design-workspace-details summary,
+.design-workspace-edit-settings summary,
 .design-workspace-edit-advanced summary,
 .design-workspace-advanced summary {
   align-items: center;
@@ -11172,12 +11174,14 @@ th.ui-compact-table-cell {
 }
 
 .design-workspace-details summary::-webkit-details-marker,
+.design-workspace-edit-settings summary::-webkit-details-marker,
 .design-workspace-edit-advanced summary::-webkit-details-marker,
 .design-workspace-advanced summary::-webkit-details-marker {
   display: none;
 }
 
 .design-workspace-details summary span,
+.design-workspace-edit-settings summary span,
 .design-workspace-edit-advanced summary span,
 .design-workspace-advanced summary span {
   color: #0f172a;
@@ -11186,6 +11190,7 @@ th.ui-compact-table-cell {
 }
 
 .design-workspace-details summary strong,
+.design-workspace-edit-settings summary strong,
 .design-workspace-edit-advanced summary strong,
 .design-workspace-advanced summary strong {
   color: #64748b;
@@ -11196,6 +11201,7 @@ th.ui-compact-table-cell {
 }
 
 .design-workspace-details[open] summary,
+.design-workspace-edit-settings[open] summary,
 .design-workspace-edit-advanced[open] summary,
 .design-workspace-advanced[open] summary {
   border-bottom: 1px solid #e5e9ef;
