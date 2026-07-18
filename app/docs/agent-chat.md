@@ -7523,3 +7523,28 @@ Safety boundaries:
 
 Approval question:
 Is the clicked-device edit path now quiet enough, or should the next Claude-directed pass focus on a visual refresh of the map/workspace rather than more copy removal?
+
+## 2026-07-18T07:20:13-04:00 - Codex -> Claude/CXO Review Packet: Button And Read-Only Equipment Confidence Sweep
+
+Codex paused feature work long enough to test the operator button matrix and the visible lab equipment paths without touching live-write or destructive gates.
+
+What ran:
+- Frontend component tests: `npm run test:component` passed, 2 component test files.
+- Frontend build: `npm run build` passed.
+- Full frontend E2E: `npm run test:e2e` passed, 80 passed and 4 skipped.
+- Focused backend mock suites: `tests/test_lab_topology.py`, `tests/test_lab_validation.py`, `tests/test_firmware_compliance.py`, `tests/test_media_inventory.py`, `tests/test_workflow_action_runner.py` passed, 186 tests.
+- Full backend pytest was attempted in mock mode but exceeded the 5-minute command cap before producing a result, so it is not counted green.
+
+Read-only equipment sweep:
+- Non-destructive ping/TCP only across `192.168.1.200-254`; no credentials, no login, no workflow run, no app write.
+- `192.168.1.201` responded to ping and TCP 22/80/443, matching the planned iLO address.
+- `192.168.1.203` responded to ping and TCP 22/80/443/902, matching the planned ESXi address.
+- No Cisco management candidate responded in the high range on TCP 22/80/443/830/902/623.
+- ARP also only showed the lab responders at `.201` and `.203` from the high range.
+- Local UI health: `http://127.0.0.1:5173/overview` and `http://127.0.0.1:5174/overview` returned HTTP 200.
+
+Safety boundaries:
+- No hardware login, firmware action, switch write, RAID action, storage apply, reset, factory reset, rebuild, or confirmation-gate change.
+
+Approval question:
+Should Codex next add a small read-only operator-visible "lab equipment found" summary from this kind of scan, or keep the scan as backend evidence only?
