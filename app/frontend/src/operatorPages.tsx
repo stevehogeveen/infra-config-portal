@@ -8999,11 +8999,17 @@ function LabDesignComposer({
         ...section,
         fields: section.fields.filter((field) => !selectedEssentialFieldKeys.has(field.key))
       }))
+      .map((section) => ({
+        ...section,
+        fields: selectedPart
+          ? section.fields.filter((field) => !topologyCommittedProfilePath(selectedPart.id, field.key))
+          : section.fields
+      }))
       .filter((section) => section.fields.length > 0)
     : selectedWorkspaceSections;
   const selectedEditWorkspaceSection = selectedDetailWorkspaceSections.find((section) => section.id === selectedEditGroupId) ?? null;
   const selectedEditFields = selectedPart && selectedEditWorkspaceSection
-    ? selectedEditWorkspaceSection.fields.filter((field) => !workspaceOnly || !topologyCommittedProfilePath(selectedPart.id, field.key))
+    ? selectedEditWorkspaceSection.fields
     : [];
   const selectedElementAction = selectedPart?.id === "switch"
     ? selectedSafeActions.find((action) => action.action_id === "cisco.ssh-readonly-probe") ?? null
@@ -9392,14 +9398,9 @@ function LabDesignComposer({
 
   function selectedEditGroupNote() {
     if (!selectedPart || !selectedEditWorkspaceSection) return "";
+    if (workspaceOnly) return "Only planning fields are editable here. Saved kit values stay in Main settings.";
     const states = selectedEditWorkspaceSection.fields.map((field) => Boolean(topologyCommittedProfilePath(selectedPart.id, field.key)));
-    const hasSaved = states.some(Boolean);
-    const hasDraftOnly = states.some((state) => !state);
-    if (workspaceOnly && hasSaved && hasDraftOnly) return "Saved values stay in Main settings. Edit the planning fields below.";
-    if (workspaceOnly && hasSaved) return "Saved values stay in Main settings. Change them in System Setup.";
-    if (hasSaved && hasDraftOnly) return "Saved values come from System Setup. Draft-only fields are planning notes.";
-    if (hasSaved) return "Saved values come from System Setup.";
-    return hasDraftOnly ? "Draft-only fields are planning notes." : "";
+    return states.some(Boolean) ? "Saved values come from System Setup. Draft-only fields are planning notes." : "Draft-only fields are planning notes.";
   }
 
   return (
@@ -9748,8 +9749,9 @@ function LabDesignComposer({
               <details className="design-workspace-edit-settings" aria-label={`${selectedPart.label} edit settings`}>
                 <summary>
                   <span>Edit setup</span>
-                  <strong>Choose one group</strong>
+                  <strong>Planning fields only</strong>
                 </summary>
+                <p className="design-device-edit-intro">Pick one area. Saved kit values stay above.</p>
                 <div className="design-device-edit-group-picker" aria-label={`${selectedPart.label} edit groups`}>
                   {selectedDetailWorkspaceSections.map((section) => (
                     <button
@@ -9760,6 +9762,7 @@ function LabDesignComposer({
                       type="button"
                     >
                       <span>{section.label}</span>
+                      <small>{section.summary}</small>
                     </button>
                   ))}
                 </div>
@@ -9775,7 +9778,7 @@ function LabDesignComposer({
                     </div>
                   </section>
                 ) : (
-                  <p className="design-device-edit-empty">Pick one group to edit.</p>
+                  <p className="design-device-edit-empty">Pick one area to edit.</p>
                 )}
               </details>
             )}

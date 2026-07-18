@@ -1082,12 +1082,15 @@ test("overview device workspace matrix keeps default inputs concise", async ({ p
     await expect(detailsDrawer.locator("input, select, textarea"), `${item.workspace} details stay inspect-only`).toHaveCount(0);
     await editSettings.locator(":scope > summary").click();
     const editGroups = editSettings.locator(":scope .design-device-edit-group-button");
-    await expect(editSettings.locator(":scope > summary"), `${item.workspace} edit summary stays short`).toContainText("Choose one group");
+    await expect(editSettings.locator(":scope > summary"), `${item.workspace} edit summary stays short`).toContainText("Edit setup");
+    await expect(editSettings.locator(":scope > summary"), `${item.workspace} edit summary uses planning-field framing`).toContainText("Planning fields only");
     await expect(editSettings.locator(":scope > summary"), `${item.workspace} edit summary drops counts`).not.toContainText("setup groups");
+    await expect(editSettings.locator(".design-device-edit-intro"), `${item.workspace} edit intro explains what changed`).toHaveText("Pick one area. Saved kit values stay above.");
     await expect(editGroups.first(), `${item.workspace} exposes edit group choices after edit intent`).toBeVisible();
     await expect(editGroups.locator("strong"), `${item.workspace} edit groups avoid value-count badges`).toHaveCount(0);
+    await expect(editGroups.locator("small").first(), `${item.workspace} edit groups explain each area`).toBeVisible();
     await expect(editSettings.locator(".design-device-edit-empty"), `${item.workspace} starts edit mode with no group selected`).toBeVisible();
-    await expect(editSettings.locator(".design-device-edit-empty"), `${item.workspace} empty edit prompt is short`).toHaveText("Pick one group to edit.");
+    await expect(editSettings.locator(".design-device-edit-empty"), `${item.workspace} empty edit prompt is short`).toHaveText("Pick one area to edit.");
     await expect(editSettings.locator("input, select, textarea").first(), `${item.workspace} keeps edit controls hidden until a group is chosen`).not.toBeVisible();
     await editGroups.first().click();
     const activePanel = editSettings.locator(".design-device-param-panel");

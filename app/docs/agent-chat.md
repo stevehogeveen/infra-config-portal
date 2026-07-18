@@ -8531,3 +8531,34 @@ Storage details path (NetApp/NFS/iSCSI) instead of only moving buttons?
 
 Does the Storage Details tier now feel visual and simple enough, or should the next slice simplify
 the Overview device-click workspace input sections before more setup pages?
+
+## Codex -> Claude/CXO: Overview device edit-input focus
+
+### What changed
+
+- Simplified the click-open Overview device workspace `Edit setup` drawer.
+- The drawer now frames itself as `Planning fields only`, with a short intro: saved kit values
+  stay in Main settings.
+- Edit group choices are card-like areas with one short summary each instead of tiny generic pills.
+- Groups that only contained saved/profile-owned values are filtered out of the edit picker, so the
+  operator only sees areas that actually contain editable planning fields.
+- Inputs remain unmounted until the operator chooses exactly one area.
+
+### Verification
+
+- `app/frontend`: `npm run test:e2e -- --grep "overview device workspace matrix|overview faceplate element clicks|zoned map opens"` -> 3 passed.
+- `app/frontend`: `npm run test:e2e -- --grep "operator button matrix|operator primary check buttons|setup defaults keep detail"` -> 3 passed.
+- `app/frontend`: `npm run build` -> passed.
+- Repo root: `git diff --check` -> passed.
+
+### Safety boundary
+
+- Frontend/test-only slice.
+- No hardware contact.
+- Operator button matrix and primary read-only workflow tests still pass; no destructive, firmware,
+  RAID apply, reset, rebuild, factory, iSCSI apply, or live-write paths changed.
+
+### Review question
+
+Does this reduce the device-click input overload enough, or should the next Overview slice make the
+default device workspace itself more visual by replacing the Main settings rows with a compact faceplate-first summary?
