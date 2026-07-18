@@ -9454,7 +9454,7 @@ function LabDesignComposer({
 
   function selectedEditGroupNote() {
     if (!selectedPart || !selectedEditWorkspaceSection) return "";
-    if (workspaceOnly) return "Only planning fields are editable here. Saved values stay in At a glance.";
+    if (workspaceOnly) return "Draft-only planning fields live here. Saved values stay above.";
     const states = selectedEditWorkspaceSection.fields.map((field) => Boolean(topologyCommittedProfilePath(selectedPart.id, field.key)));
     return states.some(Boolean) ? "Saved values come from System Setup. Draft-only fields are planning notes." : "Draft-only fields are planning notes.";
   }
@@ -9865,29 +9865,29 @@ function LabDesignComposer({
                 {(selectedQuickEditFields.length > 0 || selectedAdvancedEditSections.length > 0) && (
                   <details className="design-workspace-edit-settings" aria-label={`${selectedPart.label} edit settings`}>
                     <summary>
-                      <span>Change setup</span>
-                      <strong>Closed until needed</strong>
+                      <span>Plan setup changes</span>
+                      <strong>Draft only</strong>
                     </summary>
                     {selectedQuickEditFields.length > 0 && (
-                      <details className="design-device-param-section design-device-param-panel design-device-quick-edit design-device-inline-edit" aria-label={`${selectedPart.label} quick setup fields`}>
-                        <summary className="design-device-inline-edit-head">
+                      <section className="design-device-param-section design-device-param-panel design-device-quick-edit design-device-inline-edit" aria-label={`${selectedPart.label} quick setup fields`}>
+                        <div className="design-device-inline-edit-head">
                           <div>
-                            <p className="operator-kicker">Quick change</p>
-                            <h4>Two fields or less</h4>
+                            <p className="operator-kicker">Common changes</p>
+                            <h4>{selectedQuickEditFields.map((field) => field.label).join(" / ")}</h4>
                           </div>
-                          <span>{selectedQuickEditFields.map((field) => field.label).join(" / ")}</span>
-                        </summary>
-                        <p className="design-device-edit-intro">Only for a planning override. Saved values stay above.</p>
+                          <span>Draft values</span>
+                        </div>
+                        <p className="design-device-edit-intro">Only updates the saved plan. Hardware stays untouched.</p>
                         <div className="design-device-setting-rows">
                           {selectedQuickEditFields.map((field) => renderSelectedDeviceSettingRow(field, { hideProvenance: true }))}
                         </div>
-                      </details>
+                      </section>
                     )}
                     {selectedAdvancedEditSections.length > 0 && (
                       <details className="design-workspace-edit-advanced" aria-label={`${selectedPart.label} more setup fields`}>
                         <summary>
-                          <span>Advanced setup</span>
-                          <strong>Only when needed</strong>
+                          <span>More planned fields</span>
+                          <strong>Optional</strong>
                         </summary>
                         <div className="design-device-edit-group-picker" aria-label={`${selectedPart.label} edit groups`}>
                           {selectedAdvancedEditSections.map((section) => (
@@ -9915,7 +9915,7 @@ function LabDesignComposer({
                             </div>
                           </section>
                         ) : (
-                          <p className="design-device-edit-empty">Choose one section.</p>
+                          <p className="design-device-edit-empty">Pick a section.</p>
                         )}
                       </details>
                     )}
