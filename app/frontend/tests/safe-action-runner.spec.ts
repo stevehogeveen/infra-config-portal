@@ -1253,15 +1253,29 @@ test("overview faceplate element clicks reveal concise details only after intent
     const elementNote = workspace.locator(".design-selected-element-note");
     if (item.editor) {
       const editor = workspace.getByLabel(item.editor);
+      const configure = editor.getByText("Configure planned assignment");
       await expect(elementNote, `${item.workspace} merges selected-element copy into the editor`).toHaveCount(0);
-      await expect(editor, `${item.workspace} shows the visual assignment editor`).toBeVisible();
+      await expect(editor, `${item.workspace} shows the visual assignment summary`).toBeVisible();
       await expect(editor, `${item.workspace} keeps the selected-element explanation in one place`).toContainText(item.note);
       await expect(editor, `${item.workspace} keeps assignment editing separate from guarded actions`).not.toContainText(/apply|factory|reset|rebuild/i);
+      await expect(configure, `${item.workspace} makes planning edits explicit`).toBeVisible();
       if (item.editor === "Switch port assignment") {
+        await expect(editor.getByLabel("Selected switch port summary")).toContainText("Mode");
+        await expect(editor.getByLabel("Selected switch port summary")).toContainText("VLAN");
+        await expect(editor.getByLabel("Port mode")).not.toBeVisible();
+        await expect(editor.getByLabel("Port VLAN")).not.toBeVisible();
+        await expect(editor.getByLabel("Port description")).not.toBeVisible();
+        await configure.click();
         await expect(editor.getByLabel("Port mode")).toBeVisible();
         await expect(editor.getByLabel("Port VLAN")).toBeVisible();
         await expect(editor.getByLabel("Port description")).toBeVisible();
       } else {
+        await expect(editor.getByLabel("Selected drive bay summary")).toContainText("Role");
+        await expect(editor.getByLabel("Selected drive bay summary")).toContainText("RAID group");
+        await expect(editor.getByLabel("Drive role")).not.toBeVisible();
+        await expect(editor.getByLabel("RAID group")).not.toBeVisible();
+        await expect(editor.getByLabel("Drive bay note")).not.toBeVisible();
+        await configure.click();
         await expect(editor.getByLabel("Drive role")).toBeVisible();
         await expect(editor.getByLabel("RAID group")).toBeVisible();
         await expect(editor.getByLabel("Drive bay note")).toBeVisible();

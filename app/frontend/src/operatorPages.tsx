@@ -11842,24 +11842,44 @@ function ElementAssignmentPreview({
           <span>{elementSummary}</span>
           <small className="design-element-assignment-safe-note">This is a plan only. Real switch changes still require confirmation.</small>
         </div>
-        <div className="design-element-assignment-grid">
-          <label>
+        <div className="design-element-assignment-facts" aria-label="Selected switch port summary">
+          <div>
             <span>Mode</span>
-            <select aria-label="Port mode" defaultValue={portMode}>
-              <option value="access">Access</option>
-              <option value="storage">Storage trunk</option>
-              <option value="trunk">Uplink trunk</option>
-            </select>
-          </label>
-          <label>
+            <strong>{portMode === "storage" ? "Storage trunk" : portMode === "trunk" ? "Uplink trunk" : "Access"}</strong>
+          </div>
+          <div>
             <span>VLAN</span>
-            <input aria-label="Port VLAN" defaultValue={vlan} />
-          </label>
-          <label className="wide">
+            <strong>{vlan}</strong>
+          </div>
+          <div>
             <span>Description</span>
-            <input aria-label="Port description" defaultValue={`${elementLabel} - ${settings.ports || "planned connection"}`} />
-          </label>
+            <strong>{elementLabel} - {settings.ports || "planned connection"}</strong>
+          </div>
         </div>
+        <details className="design-element-configure" aria-label="Switch port planning fields">
+          <summary>
+            <span>Configure planned assignment</span>
+            <strong>Optional fields</strong>
+          </summary>
+          <div className="design-element-assignment-grid">
+            <label>
+              <span>Mode</span>
+              <select aria-label="Port mode" defaultValue={portMode}>
+                <option value="access">Access</option>
+                <option value="storage">Storage trunk</option>
+                <option value="trunk">Uplink trunk</option>
+              </select>
+            </label>
+            <label>
+              <span>VLAN</span>
+              <input aria-label="Port VLAN" defaultValue={vlan} />
+            </label>
+            <label className="wide">
+              <span>Description</span>
+              <input aria-label="Port description" defaultValue={`${elementLabel} - ${settings.ports || "planned connection"}`} />
+            </label>
+          </div>
+        </details>
       </section>
     );
   }
@@ -11873,29 +11893,49 @@ function ElementAssignmentPreview({
           <span>{elementSummary}</span>
           <small className="design-element-assignment-safe-note">This is a plan only. Real storage changes still require confirmation.</small>
         </div>
-        <div className="design-element-assignment-grid">
-          <label>
+        <div className="design-element-assignment-facts" aria-label="Selected drive bay summary">
+          <div>
             <span>Role</span>
-            <select aria-label="Drive role" defaultValue={bayRole}>
-              <option value="boot">Boot mirror</option>
-              <option value="data">Data set</option>
-              <option value="spare">Hot spare</option>
-              <option value="unused">Unused</option>
-            </select>
-          </label>
-          <label>
+            <strong>{bayRole === "boot" ? "Boot mirror" : "Data set"}</strong>
+          </div>
+          <div>
             <span>RAID group</span>
-            <select aria-label="RAID group" defaultValue={bayRole === "boot" ? "boot" : "data"}>
-              <option value="boot">{settings.raid_boot || "RAID1 boot"}</option>
-              <option value="data">{settings.raid_data || "RAID6 local datastore"}</option>
-              <option value="spare">Global hot spare</option>
-            </select>
-          </label>
-          <label className="wide">
+            <strong>{bayRole === "boot" ? settings.raid_boot || "RAID1 boot" : settings.raid_data || "RAID6 local datastore"}</strong>
+          </div>
+          <div>
             <span>Bay note</span>
-            <input aria-label="Drive bay note" defaultValue={`${elementLabel} - ${settings.drive_bays || "planned drive bay"}`} />
-          </label>
+            <strong>{elementLabel} - {settings.drive_bays || "planned drive bay"}</strong>
+          </div>
         </div>
+        <details className="design-element-configure" aria-label="Drive bay planning fields">
+          <summary>
+            <span>Configure planned assignment</span>
+            <strong>Optional fields</strong>
+          </summary>
+          <div className="design-element-assignment-grid">
+            <label>
+              <span>Role</span>
+              <select aria-label="Drive role" defaultValue={bayRole}>
+                <option value="boot">Boot mirror</option>
+                <option value="data">Data set</option>
+                <option value="spare">Hot spare</option>
+                <option value="unused">Unused</option>
+              </select>
+            </label>
+            <label>
+              <span>RAID group</span>
+              <select aria-label="RAID group" defaultValue={bayRole === "boot" ? "boot" : "data"}>
+                <option value="boot">{settings.raid_boot || "RAID1 boot"}</option>
+                <option value="data">{settings.raid_data || "RAID6 local datastore"}</option>
+                <option value="spare">Global hot spare</option>
+              </select>
+            </label>
+            <label className="wide">
+              <span>Bay note</span>
+              <input aria-label="Drive bay note" defaultValue={`${elementLabel} - ${settings.drive_bays || "planned drive bay"}`} />
+            </label>
+          </div>
+        </details>
       </section>
     );
   }

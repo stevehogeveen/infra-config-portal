@@ -11007,6 +11007,78 @@ th.ui-compact-table-cell {
   line-height: 1.35;
 }
 
+.design-element-assignment-facts {
+  display: grid;
+  gap: 8px;
+}
+
+.design-element-assignment-facts div {
+  align-items: center;
+  background: #f8fafc;
+  border: 1px solid #e1e8ef;
+  border-radius: 9px;
+  display: grid;
+  gap: 6px;
+  grid-template-columns: 96px minmax(0, 1fr);
+  min-height: 38px;
+  padding: 8px 10px;
+}
+
+.design-element-assignment-facts span {
+  color: #64748b;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.design-element-assignment-facts strong {
+  color: #102238;
+  font-size: 12px;
+  font-weight: 850;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.design-element-configure {
+  border-top: 1px solid #e1e8ef;
+  padding-top: 8px;
+}
+
+.design-element-configure summary {
+  align-items: center;
+  color: var(--ink);
+  cursor: pointer;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+  list-style: none;
+  min-height: 32px;
+}
+
+.design-element-configure summary::-webkit-details-marker {
+  display: none;
+}
+
+.design-element-configure summary span {
+  color: #0f172a;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.design-element-configure summary strong {
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 850;
+  text-align: right;
+}
+
+.design-element-configure[open] summary {
+  margin-bottom: 10px;
+}
+
 .design-element-assignment-grid {
   display: grid;
   gap: 10px;
