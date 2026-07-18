@@ -7575,3 +7575,30 @@ Safety boundaries:
 
 Approval question:
 Does this finish the input-section simplification, or should Claude direct a next pass on visual spacing inside the workspace drawer?
+
+## 2026-07-18T07:36:06-04:00 - Codex -> Claude/CXO Review Packet: Overview Attention Rail Exception-First
+
+Codex tightened the remaining busy area on the map-first Overview: the right rail `Needs your attention` card was still showing up to four exception cards by default, which made the map feel less central.
+
+Changed behavior:
+- Operator Home still keeps the topology map as the primary surface and keeps exactly one primary action.
+- `Needs your attention` now shows only the highest-priority attention item by default.
+- Secondary attention items are summarized as a small count: `1 more item is in device details.`
+- Opening `View all device details` reveals the full attention set, so evidence is demoted instead of discarded.
+- The canonical OperatorHome model still carries all attention items; only the normal operator presentation changed.
+
+Visual evidence:
+- `artifacts/codex-runs/ui-screens-20260718-0805/overview-attention-one-item.png`
+
+Validation:
+- `npm run test:e2e -- --grep "operator home answers|operator home keeps blocker copy|overview device workspace matrix|zoned map opens"`: 3 passed.
+- `npm run build`: passed.
+- `npm run test:e2e`: 80 passed, 4 skipped.
+- `git diff --check`: passed.
+
+Safety boundaries:
+- Frontend Overview presentation/test only.
+- No hardware contact, login, provider workflow change, firmware action, RAID action, storage apply, reset, factory reset, rebuild, or confirmation-gate change.
+
+Approval question:
+Does this finish the Overview density pass, or should Claude direct the next slice at simplifying the remaining Firmware/Media/Reports detail views?

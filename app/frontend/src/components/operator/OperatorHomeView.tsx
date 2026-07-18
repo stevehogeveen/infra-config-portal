@@ -24,6 +24,8 @@ export function OperatorHomeView({
   const pct = (n: number) => (total > 0 ? `${(n / total) * 100}%` : "0%");
   const stateTone = model.DisplayState === "needs_attention" || model.DisplayState === "not_checked" ? "attention" : model.DisplayState;
   const primaryBusy = loading && model.NextAction.Target === "build";
+  const visibleAttentionItems = detailsOpen ? model.AttentionItems : model.AttentionItems.slice(0, 1);
+  const hiddenAttentionCount = Math.max(model.AttentionItems.length - visibleAttentionItems.length, 0);
 
   return (
     <section
@@ -90,20 +92,27 @@ export function OperatorHomeView({
         {model.AttentionItems.length === 0 ? (
           <p className="operator-rail-clear">Nothing needs operator action right now.</p>
         ) : (
-          model.AttentionItems.map((item) => {
-            const explanation = uniqueOperatorAttentionText(item.Explanation, [item.Label]);
-            const action = uniqueOperatorAttentionText(item.Action, [item.Label, item.Explanation]);
-            return (
-              <div className="operator-rail-blocker" key={item.Id}>
-                <span className={`operator-rail-bic ${item.Severity === "blocking" ? "blocked" : "unchecked"}`} />
-                <div>
-                  <b>{item.Label}</b>
-                  {explanation && <div className="operator-rail-why">{explanation}</div>}
-                  {action && <div className="operator-rail-fix">{action}</div>}
+          <>
+            {visibleAttentionItems.map((item) => {
+              const explanation = uniqueOperatorAttentionText(item.Explanation, [item.Label]);
+              const action = uniqueOperatorAttentionText(item.Action, [item.Label, item.Explanation]);
+              return (
+                <div className="operator-rail-blocker" key={item.Id}>
+                  <span className={`operator-rail-bic ${item.Severity === "blocking" ? "blocked" : "unchecked"}`} />
+                  <div>
+                    <b>{item.Label}</b>
+                    {explanation && <div className="operator-rail-why">{explanation}</div>}
+                    {action && <div className="operator-rail-fix">{action}</div>}
+                  </div>
                 </div>
-              </div>
-            );
-          })
+              );
+            })}
+            {hiddenAttentionCount > 0 && (
+              <p className="operator-rail-more">
+                {hiddenAttentionCount} more {hiddenAttentionCount === 1 ? "item is" : "items are"} in device details.
+              </p>
+            )}
+          </>
         )}
       </div>
 

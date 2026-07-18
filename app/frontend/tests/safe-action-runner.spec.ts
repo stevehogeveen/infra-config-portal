@@ -497,10 +497,16 @@ test("operator home answers the next action without dashboard clutter", async ({
   await expect(home.getByTestId("operator-home-primary-action")).toBeVisible();
   await expect(home.getByTestId("operator-home-primary-action")).toContainText("Review Build Plan");
   await expect(home.getByTestId("operator-home-view-details")).toHaveCount(1);
-  await expect(home.getByLabel("Needs your attention")).toContainText("Cisco firmware");
-  await expect(home.getByLabel("Needs your attention")).toContainText("HPE Storage firmware");
-  await expect(home.getByLabel("Needs your attention")).toContainText("ROMMON baseline missing/manual review");
-  await expect(home.getByLabel("Needs your attention").getByText("Firmware needs proof")).toHaveCount(0);
+  const attention = home.getByLabel("Needs your attention");
+  await expect(attention).toContainText("Cisco firmware");
+  await expect(attention.locator(".operator-rail-blocker")).toHaveCount(1);
+  await expect(attention).not.toContainText("HPE Storage firmware");
+  await expect(attention).toContainText("ROMMON baseline missing/manual review");
+  await expect(attention).toContainText(/more items? .*device details/i);
+  await expect(attention.getByText("Firmware needs proof")).toHaveCount(0);
+  await home.getByTestId("operator-home-view-details").click();
+  await expect(attention).toContainText("HPE Storage firmware");
+  await expect(attention).toContainText("ROMMON baseline missing/manual review");
 
   await expect(page.locator("section[aria-label='Overview reference']")).toHaveCount(0);
   await expect(page.locator("section[aria-label='Scenario setup lanes']")).toHaveCount(0);
