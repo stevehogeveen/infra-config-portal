@@ -2236,6 +2236,7 @@ function RunCenter() {
   return (
     <Page
       description="Follow this kit's ordered build plan, continue safe checks, and review the completion report."
+      eyebrow="Run"
       title="Run Center"
     >
       <LabBuildJourney
@@ -6938,6 +6939,7 @@ function ProviderArtifactCard({ artifact }: { artifact: NetAppProviderArtifact }
 }
 
 function MediaInventoryPage() {
+  const { isAdvancedMode } = useUiMode();
   const [inventory, setInventory] = useState<MediaInventory | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
@@ -6974,6 +6976,7 @@ function MediaInventoryPage() {
   return (
     <Page
       title="Software Media"
+      eyebrow="Setup"
       description="Files this kit can use, checked without copying, mounting, or deploying them."
       primaryAction={{
         disabled: loading,
@@ -7056,40 +7059,42 @@ function MediaInventoryPage() {
               <p className="muted">No software media files were found in the selected folder.</p>
             )}
           </AdvancedDetails>
-          <AdvancedDetails
-            className="section-details software-media-advanced"
-            summary="Raw media inventory fields for diagnostics"
-            title="Advanced media metadata"
-          >
-            <div className="software-media-raw-grid">
-              <ProviderFact label="Inventory mode" value={labelize(inventory.mode)} />
-              <ProviderFact label="Configured folders" value={String(inventory.configured_directories.length)} />
-              <ProviderFact label="Items" value={String(items.length)} />
-              <ProviderFact label="Warnings" value={String(warnings.length)} />
-            </div>
-            <table>
-              <thead>
-                <tr>
-                  <th>File</th>
-                  <th>Category</th>
-                  <th>Extension</th>
-                  <th>Source</th>
-                  <th>Redacted</th>
-                </tr>
-              </thead>
-              <tbody>
-                {items.map((item) => (
-                  <tr key={`advanced-${mediaInventoryItemName(item)}-${item.placeholder_name}-${item.source}`}>
-                    <td>{mediaInventoryItemName(item)}</td>
-                    <td>{item.category}</td>
-                    <td>{item.extension || "-"}</td>
-                    <td>{item.source}</td>
-                    <td>{yesNo(item.actual_name_redacted)}</td>
+          {isAdvancedMode && (
+            <AdvancedDetails
+              className="section-details software-media-advanced"
+              summary="Raw media inventory fields for diagnostics"
+              title="Advanced media metadata"
+            >
+              <div className="software-media-raw-grid">
+                <ProviderFact label="Inventory mode" value={labelize(inventory.mode)} />
+                <ProviderFact label="Configured folders" value={String(inventory.configured_directories.length)} />
+                <ProviderFact label="Items" value={String(items.length)} />
+                <ProviderFact label="Warnings" value={String(warnings.length)} />
+              </div>
+              <table>
+                <thead>
+                  <tr>
+                    <th>File</th>
+                    <th>Category</th>
+                    <th>Extension</th>
+                    <th>Source</th>
+                    <th>Redacted</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </AdvancedDetails>
+                </thead>
+                <tbody>
+                  {items.map((item) => (
+                    <tr key={`advanced-${mediaInventoryItemName(item)}-${item.placeholder_name}-${item.source}`}>
+                      <td>{mediaInventoryItemName(item)}</td>
+                      <td>{item.category}</td>
+                      <td>{item.extension || "-"}</td>
+                      <td>{item.source}</td>
+                      <td>{yesNo(item.actual_name_redacted)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </AdvancedDetails>
+          )}
         </>
       )}
     </Page>
@@ -19972,6 +19977,7 @@ function Page({
   activeSection,
   children,
   description,
+  eyebrow = "Infra Config",
   issueArea,
   onSectionChange,
   primaryAction,
@@ -19982,6 +19988,7 @@ function Page({
   activeSection?: string;
   children: ReactNode;
   description?: string;
+  eyebrow?: string;
   issueArea?: ReportIssueAreaId;
   onSectionChange?: (sectionId: string) => void;
   primaryAction?: PrimaryAction;
@@ -19993,6 +20000,7 @@ function Page({
       <PageHeader
         actions={actions}
         description={description}
+        eyebrow={eyebrow}
         issueArea={issueArea}
         primaryAction={primaryAction}
         title={title}
@@ -20008,12 +20016,14 @@ function Page({
 function PageHeader({
   actions,
   description,
+  eyebrow,
   issueArea,
   primaryAction,
   title
 }: {
   actions?: ReactNode;
   description?: string;
+  eyebrow: string;
   issueArea?: ReportIssueAreaId;
   primaryAction?: PrimaryAction;
   title: string;
@@ -20040,7 +20050,7 @@ function PageHeader({
   return (
     <header className="page-header">
       <div className="page-title-block">
-        <p className="eyebrow">Infra Config</p>
+        <p className="eyebrow">{eyebrow}</p>
         <h1>{title}</h1>
         {description && <p>{description}</p>}
         {issueArea && <PageIssueIndicator badge={issueBadge} />}

@@ -6421,3 +6421,31 @@ Safety boundaries:
 
 Approval question:
 Does the clicked-device workspace now feel simple enough by default, or should the next slice simplify the device faceplate/status strip before moving to another page?
+
+## 2026-07-18T01:03:00-04:00 - Codex -> Claude/CXO Review Packet: Phase Labels and Media Diagnostics
+
+No new CXO reply had landed, so Codex tightened two small operator-orientation issues found while continuing the app-wide simplicity pass.
+
+Changed behavior:
+- Run Center now identifies itself as the `Run` phase instead of the generic `Infra Config` eyebrow.
+- Software Media now identifies itself as the `Setup` phase.
+- Normal operator mode no longer renders the raw `Advanced media metadata` diagnostics at all; it appears only after switching to Advanced.
+- The existing Software Media default remains one `Check media` primary action plus one `View details` entry for actual filenames.
+
+Evidence:
+- Screenshot: `app/docs/evidence/run-center-plan-summary.png`.
+- Screenshot: `app/docs/evidence/software-media-phase-label.png`.
+- Files changed: `app/frontend/src/App.tsx`, `app/frontend/tests/safe-action-runner.spec.ts`, evidence PNGs.
+
+Validation:
+- `npm run test:e2e -- --grep "operator home opens one ordered build plan|software media keeps"`: 2 passed.
+- `npm run build`: passed.
+- `npm run test:e2e`: 79 passed, 4 skipped.
+- `git diff --check`: passed with the existing App.tsx line-ending notice.
+
+Safety boundaries:
+- Frontend/test/evidence/docs only.
+- No hardware contact, login, read/write probe, firmware action, RAID action, reset, factory reset, rebuild, or confirmation-gate change.
+
+Approval question:
+Does this phase-label and Software Media diagnostics cleanup match the map-first simplicity contract, and should Codex next simplify the heaviest remaining clicked-device workspace section or the Reports danger-zone visibility?

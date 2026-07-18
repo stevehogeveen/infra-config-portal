@@ -589,6 +589,7 @@ test("operator home opens one ordered build plan with one primary action", async
 
   const journey = page.getByTestId("lab-build-journey");
   const plan = journey.getByLabel("Build Plan");
+  await expect(page.locator(".page-title-block .eyebrow")).toHaveText("Run");
   await expect(journey).toBeVisible();
   await expect(page.getByTestId("operator-home")).toHaveCount(0);
   await expect(plan.getByRole("heading", { name: "This lab is ready to follow one ordered build plan." })).toBeVisible();
@@ -2149,6 +2150,7 @@ test("software media keeps inventory details behind one read-only action", async
   await page.goto("/media");
 
   await expect(page.locator("h1", { hasText: "Software Media" })).toBeVisible();
+  await expect(page.locator(".page-title-block .eyebrow")).toHaveText("Setup");
   await expect(page.getByTestId("software-media-home")).toContainText("Folder");
   await expect(page.getByTestId("software-media-home")).toContainText("1 file");
   await expect(page.getByTestId("software-media-home")).toContainText("Ready");
@@ -2159,6 +2161,7 @@ test("software media keeps inventory details behind one read-only action", async
   await expect(page.getByRole("columnheader", { name: "Source" })).toHaveCount(0);
   await expect(page.getByText("media_inventory")).toHaveCount(0);
   await expect(page.getByRole("cell", { name: "cat9k_iosxe.17.15.05.SPA.bin" })).toHaveCount(0);
+  await expect(page.getByText("Advanced media metadata")).toHaveCount(0);
 
   const refreshResponse = page.waitForResponse((response) =>
     response.url().includes("/api/v1/media-inventory") && response.request().method() === "GET"
@@ -2172,8 +2175,11 @@ test("software media keeps inventory details behind one read-only action", async
   await expect(page.getByRole("cell", { name: "cisco-ios-xe-firmware.bin" })).toHaveCount(0);
   await expect(page.getByRole("columnheader", { name: "Source" })).toHaveCount(0);
 
-  await page.getByText("Advanced media metadata").click();
-  await expect(page.getByRole("columnheader", { name: "Source" }).first()).toBeVisible();
+  await page.getByRole("button", { name: "Advanced" }).click();
+  const advancedMediaMetadata = page.locator("details.software-media-advanced");
+  await expect(advancedMediaMetadata).toBeVisible();
+  await expect(advancedMediaMetadata).toHaveAttribute("open", "");
+  await expect(advancedMediaMetadata.getByRole("columnheader", { name: "Source" })).toBeVisible();
 });
 
 test("saved lab setup global defaults use active profile values and never render secret material", async ({ page }) => {
