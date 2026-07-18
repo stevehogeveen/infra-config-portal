@@ -13999,54 +13999,74 @@ function VirtualizationConfigurePanel({
       </CardHeader>
       <CardContent>
         <form className="network-config-form" onSubmit={save}>
-          <div className="virtualization-config-primary-grid">
-            <Field label="vCenter target">
-              <input value={edit.vcenterTarget} onChange={(event) => update("vcenterTarget", event.target.value)} />
-            </Field>
-            <Field label="Datastore target">
-              <input value={edit.datastoreTarget} onChange={(event) => update("datastoreTarget", event.target.value)} />
-            </Field>
+          <div className="virtualization-config-summary design-device-summary" aria-label="Virtualization setup summary">
+            <div>
+              <span>vCenter target</span>
+              <strong>{displayValue(edit.vcenterTarget)}</strong>
+            </div>
+            <div>
+              <span>Datastore target</span>
+              <strong>{displayValue(edit.datastoreTarget)}</strong>
+            </div>
+            <div>
+              <span>vCenter scope</span>
+              <strong>{edit.enableVcenter ? "In scope" : "Plan only"}</strong>
+            </div>
           </div>
-          <div className="network-config-toggles" aria-label="Virtualization feature toggles">
-            <label>
-              <input
-                checked={edit.enableVcenter}
-                onChange={(event) => update("enableVcenter", event.target.checked)}
-                type="checkbox"
-              />
-              <span>vCenter in scope</span>
-            </label>
-          </div>
-          <details className="virtualization-config-more">
+          <details className="virtualization-config-more virtualization-config-edit">
             <summary>
-              <span>More virtualization values</span>
-              <small>ESXi attach, subnet, gateway, DNS, and NTP live here.</small>
+              <span>Edit virtualization values</span>
+              <small>Only updates the saved setup. No hardware touched.</small>
             </summary>
-            <div className="virtualization-config-more-grid">
-              <Field label="ESXi attach target">
-                <input value={edit.esxiTarget} onChange={(event) => update("esxiTarget", event.target.value)} />
+            <div className="virtualization-config-more-grid virtualization-config-edit-grid">
+              <Field label="vCenter target">
+                <input value={edit.vcenterTarget} onChange={(event) => update("vcenterTarget", event.target.value)} />
               </Field>
-              <Field label="Subnet">
-                <input value={edit.subnet} onChange={(event) => update("subnet", event.target.value)} />
+              <Field label="Datastore target">
+                <input value={edit.datastoreTarget} onChange={(event) => update("datastoreTarget", event.target.value)} />
               </Field>
-              <Field label="Gateway">
-                <input value={edit.gateway} onChange={(event) => update("gateway", event.target.value)} />
-              </Field>
-              <Field label="DNS servers">
-                <input value={edit.dnsServers} onChange={(event) => update("dnsServers", event.target.value)} />
-              </Field>
-              <Field label="NTP servers">
-                <input value={edit.ntpServers} onChange={(event) => update("ntpServers", event.target.value)} />
-              </Field>
+              <div className="network-config-toggles" aria-label="Virtualization feature toggles">
+                <label>
+                  <input
+                    checked={edit.enableVcenter}
+                    onChange={(event) => update("enableVcenter", event.target.checked)}
+                    type="checkbox"
+                  />
+                  <span>vCenter in scope</span>
+                </label>
+              </div>
+              <details className="virtualization-config-more virtualization-config-values">
+                <summary>
+                  <span>More virtualization values</span>
+                  <small>ESXi attach, subnet, gateway, DNS, and NTP live here.</small>
+                </summary>
+                <div className="virtualization-config-more-grid">
+                  <Field label="ESXi attach target">
+                    <input value={edit.esxiTarget} onChange={(event) => update("esxiTarget", event.target.value)} />
+                  </Field>
+                  <Field label="Subnet">
+                    <input value={edit.subnet} onChange={(event) => update("subnet", event.target.value)} />
+                  </Field>
+                  <Field label="Gateway">
+                    <input value={edit.gateway} onChange={(event) => update("gateway", event.target.value)} />
+                  </Field>
+                  <Field label="DNS servers">
+                    <input value={edit.dnsServers} onChange={(event) => update("dnsServers", event.target.value)} />
+                  </Field>
+                  <Field label="NTP servers">
+                    <input value={edit.ntpServers} onChange={(event) => update("ntpServers", event.target.value)} />
+                  </Field>
+                </div>
+              </details>
+              <div className="network-config-actions">
+                <button className="operator-primary-button" disabled={busy || !activeProfile} type="submit">
+                  {busy ? "Saving..." : "Save virtualization setup"}
+                </button>
+                {message && <span className="operator-success-text">{message}</span>}
+                {error && <span className="operator-error-text">{error}</span>}
+              </div>
             </div>
           </details>
-          <div className="network-config-actions">
-            <button className="operator-primary-button" disabled={busy || !activeProfile} type="submit">
-              {busy ? "Saving..." : "Save virtualization setup"}
-            </button>
-            {message && <span className="operator-success-text">{message}</span>}
-            {error && <span className="operator-error-text">{error}</span>}
-          </div>
         </form>
       </CardContent>
     </Card>

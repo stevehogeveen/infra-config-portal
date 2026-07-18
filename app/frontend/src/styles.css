@@ -16512,7 +16512,8 @@ button.design-ilo-port:hover {
 .network-config-more,
 .network-config-summary,
 .virtualization-config-primary-grid,
-.virtualization-config-more {
+.virtualization-config-more,
+.virtualization-config-summary {
   grid-column: 1 / -1;
 }
 
@@ -16543,6 +16544,10 @@ button.design-ilo-port:hover {
 
 .virtualization-config-primary-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.virtualization-config-summary {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .storage-config-more,
