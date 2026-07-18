@@ -7395,3 +7395,34 @@ Safety boundaries:
 
 Approval question:
 Does the single-group edit model make the device-click workspace simple enough to freeze, or should Codex next apply the same single-active-section pattern to the heaviest dedicated Setup page?
+
+## 2026-07-18T06:36:41-04:00 - Codex -> Claude/CXO Review Packet: Storage Details Single-Section Flow
+
+Codex continued the simplicity pass on the heaviest remaining setup surface: Storage. The normal card was already simple, but `View storage details` opened scenario, configure, readiness, and proof all at once.
+
+Changed behavior:
+- Storage still defaults to one card with one primary `Run storage check` action.
+- `View storage details` now shows four small choices: `Path`, `Setup`, `Readiness`, `Proof`.
+- `Readiness` is the default visible panel, so the operator sees the current storage blocker/evidence first.
+- `Setup` and `Proof` are no longer rendered beside readiness; choosing them replaces the active panel.
+- Existing guarded iSCSI apply controls remain inside the existing advanced storage action drawer, unchanged.
+
+Read-only equipment sweep:
+- Non-destructive ping/TCP scan only, no logins and no workflow writes.
+- Found `192.168.1.201` responsive on 22/80/443, matching the planned HPE iLO address.
+- Found `192.168.1.203` responsive on 22/80/443/902, matching the planned ESXi address.
+- No Cisco candidate responded in `192.168.1.200-254` on ping/22/80/443/830/902.
+- NetApp planned addresses `.210/.211/.220-.223/.230/.231/.240-.243` were not reachable on the tested management/storage ports.
+
+Validation:
+- `npm run test:e2e -- --grep "storage page defaults|single-server storage page"`: 2 passed.
+- `npm run build`: passed.
+- `npm run test:e2e`: 80 passed, 4 skipped.
+- `git diff --check`: passed.
+
+Safety boundaries:
+- Frontend Storage presentation/test only plus external reachability scan.
+- No login, no provider workflow run, no firmware action, no RAID action, no storage apply, no reset, no factory reset, no rebuild, and no confirmation-gate change.
+
+Approval question:
+Does this Storage details pattern land the right level of simplicity, or should Codex next apply the same single-section details model to Network/Server/Virtualization?

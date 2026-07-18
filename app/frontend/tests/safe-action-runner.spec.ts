@@ -1589,7 +1589,15 @@ test("storage page defaults to one storage path card and hides protocol internal
   await page.getByRole("button", { name: "View storage details" }).click();
   const details = page.getByLabel("Storage path details");
   await expect(details).toBeVisible();
+  const detailSections = details.getByLabel("Storage detail sections");
+  await expect(detailSections).toContainText("Path");
+  await expect(detailSections).toContainText("Setup");
+  await expect(detailSections).toContainText("Readiness");
+  await expect(detailSections).toContainText("Proof");
+  await expect(detailSections.getByRole("button", { name: /Readiness/ })).toHaveAttribute("aria-pressed", "true");
+  await expect(details.locator(".storage-path-detail-panel")).toHaveCount(1);
   await expect(details.getByLabel("ONTAP readiness")).toContainText(/LIF|VMFS|igroup|target portal/);
+  await expect(details.getByLabel("Storage configure")).toHaveCount(0);
   await expect(details.getByLabel("Storage reference")).not.toBeVisible();
   await expect(details.getByRole("button", { name: "Apply iSCSI" })).toHaveCount(0);
   await expect(details.locator(".iscsi-gates-grid")).not.toBeVisible();
@@ -1597,6 +1605,11 @@ test("storage page defaults to one storage path card and hides protocol internal
   await expect(advancedStorageActions).toBeVisible();
   await advancedStorageActions.locator(":scope > summary").click();
   await expect(advancedStorageActions.getByRole("button", { name: "Apply iSCSI" })).toBeVisible();
+  await detailSections.getByRole("button", { name: /Setup/ }).click();
+  await expect(detailSections.getByRole("button", { name: /Setup/ })).toHaveAttribute("aria-pressed", "true");
+  await expect(details.getByLabel("Storage configure")).toBeVisible();
+  await expect(details.getByLabel("ONTAP readiness")).toHaveCount(0);
+  await detailSections.getByRole("button", { name: /Proof/ }).click();
   const storageProof = details.locator("details.advanced-drawer").filter({ hasText: "Storage proof" });
   await expect(storageProof).not.toHaveAttribute("open", "");
   await storageProof.locator(":scope > summary").click();

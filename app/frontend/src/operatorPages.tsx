@@ -2501,6 +2501,7 @@ export function OperatorStoragePage({ labProfileState, onReloadLabProfile }: Ope
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const [activeDetailSection, setActiveDetailSection] = useState<StorageDetailSectionId>("readiness");
   const [runState, setRunState] = useState<WorkflowRunState>(emptyRunState);
 
   async function load() {
@@ -2752,6 +2753,36 @@ export function OperatorStoragePage({ labProfileState, onReloadLabProfile }: Ope
       />
     )
   } : {};
+  const storageReadinessPanel = serverLocalStorage ? storageRegions["local-readiness"] : storageRegions["ontap-readiness"];
+  const storageDetailSections = profileReady ? [
+    {
+      id: "path" as StorageDetailSectionId,
+      label: "Path",
+      panel: storageRegions.scenario,
+      summary: serverLocalStorage ? "Local RAID vs shared storage" : "NFS/iSCSI path decision"
+    },
+    {
+      id: "setup" as StorageDetailSectionId,
+      label: "Setup",
+      panel: storageRegions.configure,
+      summary: "Saved values and expected devices"
+    },
+    {
+      id: "readiness" as StorageDetailSectionId,
+      label: "Readiness",
+      panel: storageReadinessPanel,
+      summary: serverLocalStorage ? "Local RAID evidence" : "NetApp and datastore evidence"
+    },
+    {
+      id: "proof" as StorageDetailSectionId,
+      label: "Proof",
+      panel: storageRegions["advanced-proof"],
+      summary: "Advanced evidence and raw links"
+    }
+  ].filter((section) => Boolean(section.panel)) : [];
+  const selectedStorageDetailSection = storageDetailSections.find((section) => section.id === activeDetailSection)
+    ?? storageDetailSections.find((section) => section.id === "readiness")
+    ?? storageDetailSections[0];
   const storagePath = storagePathCardModel({
     activeProtocol: activeStorageProtocol,
     pageStatus,
@@ -2840,17 +2871,32 @@ export function OperatorStoragePage({ labProfileState, onReloadLabProfile }: Ope
       </section>
       {detailsOpen && profileReady && (
         <section className="storage-path-details" aria-label="Storage path details">
-          <div className="storage-path-details-grid">
-            {storageRegions.scenario}
-            {storageRegions.configure}
-            {serverLocalStorage ? storageRegions["local-readiness"] : storageRegions["ontap-readiness"]}
-            {storageRegions["advanced-proof"]}
+          <div className="storage-path-detail-switcher" aria-label="Storage detail sections">
+            {storageDetailSections.map((section) => (
+              <button
+                aria-pressed={selectedStorageDetailSection?.id === section.id}
+                className={selectedStorageDetailSection?.id === section.id ? "is-selected" : ""}
+                key={section.id}
+                onClick={() => setActiveDetailSection(section.id)}
+                type="button"
+              >
+                <span>{section.label}</span>
+                <strong>{section.summary}</strong>
+              </button>
+            ))}
           </div>
+          {selectedStorageDetailSection && (
+            <div className="storage-path-detail-panel" aria-label={`Storage ${selectedStorageDetailSection.label}`}>
+              {selectedStorageDetailSection.panel}
+            </div>
+          )}
         </section>
       )}
     </OperatorPage>
   );
 }
+
+type StorageDetailSectionId = "path" | "setup" | "readiness" | "proof";
 
 function storagePathCardModel({
   activeProtocol,
