@@ -11968,7 +11968,7 @@ th.ui-compact-table-cell {
   align-items: center;
   display: grid;
   gap: 12px;
-  grid-template-columns: auto minmax(180px, 1fr) auto auto auto;
+  grid-template-columns: auto minmax(180px, 1fr);
   min-height: 116px;
 }
 
@@ -11981,6 +11981,7 @@ th.ui-compact-table-cell {
   display: grid;
   gap: 7px;
   grid-template-columns: minmax(72px, auto) minmax(110px, 1fr) auto;
+  min-width: 0;
   padding: 12px;
 }
 
@@ -12021,6 +12022,8 @@ th.ui-compact-table-cell {
 
 button.design-ilo-port {
   cursor: pointer;
+  position: relative;
+  z-index: 1;
 }
 
 button.design-ilo-port:hover {
@@ -13249,6 +13252,7 @@ button.design-ilo-port:hover {
 .topology-workspace-drawer .design-control-strip,
 .topology-workspace-drawer .design-blueprint-stage,
 .topology-workspace-drawer .design-parts-shelf,
+.topology-workspace-drawer .design-rack-stage,
 .topology-workspace-drawer .design-plan-panel {
   display: none;
 }

@@ -218,6 +218,13 @@ async function openOperatorDetails(page: Page) {
 
 async function openWorkspaceAdvanced(page: Page, workspaceName: string) {
   const workspace = page.locator(`section[aria-label='${workspaceName} workspace']`);
+  const details = workspace.getByLabel(`${workspaceName} details`);
+  if (await details.isVisible()) {
+    const isOpen = await details.evaluate((node) => (node as HTMLDetailsElement).open);
+    if (!isOpen) {
+      await details.locator(":scope > summary").click();
+    }
+  }
   const advanced = workspace.getByLabel(`${workspaceName} advanced checks and proof`);
   await advanced.locator(":scope > summary").click();
   return advanced;
@@ -955,8 +962,60 @@ test("overview device workspace matrix keeps default inputs concise", async ({ p
     for (const essential of item.essentials) {
       await expect(workspace.getByLabel(`${item.workspace} essentials`), `${item.workspace} essential ${essential}`).toContainText(essential);
     }
+    await expect(workspace.locator(":scope > details.design-workspace-details"), `${item.workspace} has one top-level details drawer`).toHaveCount(1);
+    await expect(workspace.locator(":scope > details.design-workspace-advanced"), `${item.workspace} does not expose advanced as a second top-level drawer`).toHaveCount(0);
+    await expect(workspace, `${item.workspace} retires the old extra settings label`).not.toContainText("More settings");
+    await expect(workspace.getByLabel(`${item.workspace} details`), `${item.workspace} details start closed`).not.toHaveAttribute("open", "");
     await expect(workspace.getByLabel(item.advancedControl), `${item.workspace} advanced controls are hidden by default`).not.toBeVisible();
     await expect(workspace.getByLabel(`${item.workspace} advanced checks and proof`), `${item.workspace} advanced proof is closed`).not.toHaveAttribute("open", "");
+    await expect(overlay.locator(".design-parts-shelf"), `${item.workspace} hides the retired parts shelf`).not.toBeVisible();
+    await expect(overlay.locator(".design-rack-stage"), `${item.workspace} hides the retired rack composer`).not.toBeVisible();
+    await expect(overlay.locator(".design-plan-panel"), `${item.workspace} hides the retired plan panel`).not.toBeVisible();
+    await overlay.getByRole("button", { name: "Close" }).click();
+    await expect(page.locator("div[aria-label='Device workspace overlay']")).toHaveCount(0);
+  }
+});
+
+test("overview faceplate element clicks reveal concise details only after intent", async ({ page }) => {
+  await page.goto("/overview");
+  await openOperatorDetails(page);
+
+  const topology = page.locator("section[aria-label='Living lab topology']");
+  const cases = [
+    {
+      button: "Open Cisco switch workspace",
+      click: "Switch port 1",
+      note: "Physical switch port intent",
+      workspace: "Cisco switch"
+    },
+    {
+      button: "Open HPE iLO workspace",
+      click: "iLO management NIC",
+      note: "Out-of-band management endpoint",
+      workspace: "HPE iLO"
+    },
+    {
+      button: "Open HPE DL360 Gen10 workspace",
+      click: "Drive bay 1",
+      note: "Bay-level storage intent",
+      workspace: "DL360 Gen10"
+    },
+    {
+      button: "Open NetApp ONTAP workspace",
+      click: "e0a",
+      note: "Controller-port and protocol intent",
+      workspace: "NetApp ONTAP"
+    }
+  ];
+
+  for (const item of cases) {
+    await topology.getByRole("button", { name: item.button }).click();
+    const overlay = page.locator("div[aria-label='Device workspace overlay']");
+    const workspace = overlay.locator(`section[aria-label='${item.workspace} workspace']`);
+    await expect(workspace.locator(".design-selected-element-note"), `${item.workspace} starts without element noise`).toHaveCount(0);
+    await workspace.getByRole("button", { name: item.click, exact: true }).first().click();
+    await expect(workspace.locator(".design-selected-element-note"), `${item.workspace} shows a compact element note`).toContainText(item.note);
+    await expect(workspace.getByLabel(`${item.workspace} advanced checks and proof`), `${item.workspace} still keeps proof hidden`).not.toBeVisible();
     await overlay.getByRole("button", { name: "Close" }).click();
     await expect(page.locator("div[aria-label='Device workspace overlay']")).toHaveCount(0);
   }
