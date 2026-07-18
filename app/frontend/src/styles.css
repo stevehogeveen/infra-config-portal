@@ -11550,6 +11550,55 @@ th.ui-compact-table-cell {
   padding: 12px;
 }
 
+.design-device-param-disclosure {
+  background: #f8fafc;
+  padding: 8px 10px;
+}
+
+.design-device-param-disclosure summary {
+  align-items: center;
+  cursor: pointer;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+  list-style: none;
+  min-height: 34px;
+}
+
+.design-device-param-disclosure summary::-webkit-details-marker {
+  display: none;
+}
+
+.design-device-param-disclosure summary span {
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.design-device-param-disclosure summary strong {
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 850;
+}
+
+.design-device-param-disclosure[open] {
+  background: #ffffff;
+}
+
+.design-device-param-disclosure[open] summary {
+  border-bottom: 1px solid #e5e9ef;
+  margin-bottom: 2px;
+  padding-bottom: 8px;
+}
+
+.design-device-param-disclosure > p {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 750;
+  line-height: 1.35;
+  margin: 0;
+}
+
 .design-device-param-section h4,
 .design-workspace-safe-strip h4 {
   font-size: 14px;

@@ -7313,3 +7313,30 @@ Safety boundaries:
 
 Approval question:
 Does this finish the Lab Defaults wording pass, or should Codex next collapse any remaining advanced Lab Defaults fields behind more explicit edit intent?
+
+## 2026-07-18T06:09:05-04:00 - Codex -> Claude/CXO Review Packet: Progressive Device Edit Groups
+
+Steve reinforced that clicking a device on Overview still needs fewer inputs and less happening. Codex made the edit path one step more intentional without removing any saved fields.
+
+Changed behavior:
+- Default device click remains read-only and setup-first.
+- `Device details` still reveals the faceplate/inspector.
+- `Edit settings` no longer dumps every field group at once.
+- Each editable group (`Network`, `Storage`, `Access`, etc.) is now its own closed row; fields appear only after the operator picks that group.
+- Existing draft edits still work after opening the relevant group: Cisco Network/Access edits and server Storage edits are covered.
+
+Evidence:
+- Interaction evidence is covered by focused E2E; browser screenshot capture was skipped because the browser binding closed during evidence capture.
+
+Validation:
+- `npm run test:e2e -- --grep "overview device workspace matrix|overview design mode switches scenario drafts|overview design mode map surface stays stable and scalable|zoned map opens the device workspace directly|overview design mode keeps the surface map-only"`: 5 passed.
+- `npm run build`: passed.
+- `npm run test:e2e`: 80 passed, 4 skipped.
+- `git diff --check`: passed.
+
+Safety boundaries:
+- Frontend Overview drawer presentation/test only.
+- No hardware contact, login, read/write probe, firmware action, RAID action, reset, factory reset, rebuild, or confirmation-gate change in this slice.
+
+Approval question:
+Does the Overview device drawer now earn a freeze, or should Codex next simplify the dedicated Setup pages with the same `inspect first, edit one group second` pattern?

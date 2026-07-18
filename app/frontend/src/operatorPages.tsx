@@ -9686,17 +9686,18 @@ function LabDesignComposer({
                       <span>Edit settings</span>
                       <strong>{selectedDetailWorkspaceSections.length} setup groups</strong>
                     </summary>
-                    <div className="design-device-param-sections" aria-label={`${selectedPart.label} detailed parameters`}>
+                    <div className="design-device-param-sections is-progressive-edit" aria-label={`${selectedPart.label} detailed parameters`}>
                       {selectedDetailWorkspaceSections.map((section) => (
-                        <section className="design-device-param-section" key={section.id} aria-label={`${selectedPart.label} ${section.label}`}>
-                          <div>
-                            <p className="operator-kicker">{section.label}</p>
-                            <h4>{section.summary}</h4>
-                          </div>
+                        <details className="design-device-param-section design-device-param-disclosure" key={section.id} aria-label={`${selectedPart.label} ${section.label}`}>
+                          <summary>
+                            <span>{section.label}</span>
+                            <strong>{section.fields.length} values</strong>
+                          </summary>
+                          <p>{section.summary}</p>
                           <div className="design-device-setting-rows">
                             {section.fields.map((field) => renderSelectedDeviceSettingRow(field))}
                           </div>
-                        </section>
+                        </details>
                       ))}
                     </div>
                   </details>
