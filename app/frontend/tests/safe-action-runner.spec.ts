@@ -269,6 +269,42 @@ test("renders the map-first operator spine and pages", async ({ page }) => {
   await expect(page).toHaveURL(/\/overview/);
 });
 
+test("advanced-only audit and workflow proof routes stay off the operator surface", async ({ page }) => {
+  await page.goto("/audit-events");
+  await expect(page).toHaveURL(/\/validation$/);
+  await expect(page.getByRole("heading", { name: "Validation", exact: true })).toBeVisible();
+  await expect(page.getByText("Audit Filters")).toHaveCount(0);
+
+  await page.goto("/workflow-runs/advanced-run-1");
+  await expect(page).toHaveURL(/\/validation$/);
+  await expect(page.getByRole("heading", { name: "Validation", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Workflow Run", exact: true })).toHaveCount(0);
+
+  for (const path of ["/reports", "/validation-reports", "/artifacts"]) {
+    await page.goto(path);
+    await expect(page).toHaveURL(/\/validation$/);
+    await expect(page.getByRole("heading", { name: "Validation", exact: true })).toBeVisible();
+  }
+});
+
+test("advanced mode can still inspect audit events and workflow run proof", async ({ page }) => {
+  await page.addInitScript(() => {
+    window.localStorage.setItem("infra-config-operator-ui-mode", "advanced");
+  });
+
+  await page.goto("/audit-events");
+  await expect(page).toHaveURL(/\/audit-events$/);
+  await expect(page.getByRole("heading", { name: "Audit Events", exact: true })).toBeVisible();
+  await expect(page.getByText("Audit Filters")).toBeVisible();
+
+  await page.goto("/workflow-runs/advanced-run-1");
+  await expect(page).toHaveURL(/\/workflow-runs\/advanced-run-1$/);
+  await expect(page.getByRole("heading", { name: "Workflow Run", exact: true })).toBeVisible();
+  await expect(page.getByText("advanced-run-1")).toBeVisible();
+  await expect(page.getByText("Local Preview Safety")).toBeVisible();
+  await expect(page.getByText("Plan Summary")).toBeVisible();
+});
+
 test("lab defaults keeps shared values simple and hides advanced policy by default", async ({ page }) => {
   await page.goto("/lab-defaults");
 
@@ -2239,6 +2275,12 @@ async function installApiMocks(page: Page) {
     if (url.pathname.startsWith("/api/v1/lab-build/runs/")) {
       return json(route, labBuildRun ?? labBuildWaitingRun());
     }
+    if (url.pathname.match(/^\/api\/v1\/workflow-runs\/[^/]+\/artifacts$/)) {
+      return json(route, workflowRunArtifacts());
+    }
+    if (url.pathname.match(/^\/api\/v1\/workflow-runs\/[^/]+$/)) {
+      return json(route, workflowRunDetail(url.pathname.split("/").pop() || "advanced-run-1"));
+    }
     if (url.pathname === "/api/v1/workflow-runs") {
       return json(route, []);
     }
@@ -2869,6 +2911,100 @@ function auditEvents() {
       request_id: null,
       to_status: null,
       workflow_run_id: null
+    }
+  ];
+}
+
+function workflowRunDetail(id = "advanced-run-1") {
+  return {
+    created_at: checkedAt,
+    error_message: null,
+    id,
+    plan_json: {
+      request_intent: {
+        site: "Lab",
+        vm: {
+          cluster: "Edge Cluster",
+          cpu: 2,
+          datastore: "netapp_nfs_ds01",
+          disk_gb: 80,
+          memory_gb: 8,
+          network: "VM Network",
+          template: "Windows Server 2022",
+          vm_name: "w2k22-preview"
+        }
+      },
+      review_before_execute: {
+        message: "Advanced review can inspect the preview proof without changing operator mode.",
+        status: "ready"
+      },
+      stage_events: [
+        {
+          message: "Read-only validation proof was collected.",
+          stage: "validation",
+          status: "completed"
+        }
+      ],
+      steps: [
+        {
+          name: "Collect validation proof",
+          status: "completed",
+          target: "Lab Builder"
+        }
+      ],
+      summary: "Preview plan for advanced route proof."
+    },
+    provider: "local-preview",
+    request_id: "request-advanced-1",
+    result_json: {
+      executed_steps: [
+        {
+          name: "Collect validation proof",
+          status: "completed",
+          target: "Lab Builder"
+        }
+      ],
+      message: "Advanced route proof completed.",
+      mock_task_id: "task-advanced-1",
+      mock_vm_id: "vm-advanced-1",
+      provider: "local-preview",
+      stage_events: [
+        {
+          message: "Preview proof finished.",
+          stage: "validation",
+          status: "completed"
+        }
+      ]
+    },
+    status: "completed",
+    updated_at: checkedAt,
+    workflow_id: "workflow-advanced-1",
+    workflow_slug: "advanced-proof-route"
+  };
+}
+
+function workflowRunArtifacts() {
+  return [
+    {
+      created_at: checkedAt,
+      description: "Redacted local proof artifact for the advanced route gate.",
+      downloadable: false,
+      download_url: null,
+      id: "artifact-advanced-route",
+      kind: "proof",
+      metadata: {
+        event_count: 1,
+        provider: "local-preview",
+        run_status: "completed",
+        step_count: 1
+      },
+      mock_only: true,
+      redacted: true,
+      request_id: "request-advanced-1",
+      status: "completed",
+      title: "Advanced route proof",
+      updated_at: checkedAt,
+      workflow_run_id: "advanced-run-1"
     }
   ];
 }

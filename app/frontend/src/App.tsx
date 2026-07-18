@@ -787,7 +787,14 @@ function App() {
               <RouterRoute path="/requests" element={<RequestListPage />} />
               <RouterRoute path="/requests/new" element={<NewRequest />} />
               <RouterRoute path="/requests/:id" element={<RequestDetail />} />
-              <RouterRoute path="/workflow-runs/:id" element={<WorkflowRunDetail />} />
+              <RouterRoute
+                path="/workflow-runs/:id"
+                element={
+                  <AdvancedRouteGate>
+                    <WorkflowRunDetail />
+                  </AdvancedRouteGate>
+                }
+              />
               <RouterRoute
                 path="/lab-profiles"
                 element={
@@ -800,7 +807,14 @@ function App() {
                   />
                 }
               />
-              <RouterRoute path="/audit-events" element={<AuditEvents />} />
+              <RouterRoute
+                path="/audit-events"
+                element={
+                  <AdvancedRouteGate>
+                    <AuditEvents />
+                  </AdvancedRouteGate>
+                }
+              />
               <RouterRoute path="/artifacts" element={<Navigate to="/validation" replace />} />
               <RouterRoute path="/media" element={<MediaInventoryPage />} />
               <RouterRoute path="/providers" element={<Navigate to="/overview" replace />} />
@@ -811,6 +825,11 @@ function App() {
       </LabProfileContext.Provider>
     </UiModeContext.Provider>
   );
+}
+
+function AdvancedRouteGate({ children }: { children: ReactNode }) {
+  const { isAdvancedMode } = useUiMode();
+  return isAdvancedMode ? <>{children}</> : <Navigate to="/validation" replace />;
 }
 
 function AppShell({
@@ -1267,7 +1286,12 @@ function ShellTopNav({
           <NavLink to="/firmware-upgrades" className={({ isActive }) => isActive ? "quick-tab active" : "quick-tab"}>Firmware</NavLink>
         </nav>
         <div className="shell-topbar-actions">
-          <div className="topbar-runtime"><span className={`runtime-dot runtime-dot-${modeStatus}`} />{activeProfile ? displayAddress(activeProfile.address_plan.subnet) : "No subnet"}</div>
+          <div className="topbar-runtime">
+            <span className={`runtime-dot runtime-dot-${modeStatus}`} />
+            <span>{displayModeLabel(providerMode)}</span>
+            <span aria-hidden="true">-</span>
+            <span>{activeProfile ? displayAddress(activeProfile.address_plan.subnet) : "No subnet"}</span>
+          </div>
           <ModeToggle />
           {(labProfileError || healthError) && <span className="topbar-inline-error">{labProfileError ? "Kit unavailable" : "Status unavailable"}</span>}
         </div>
