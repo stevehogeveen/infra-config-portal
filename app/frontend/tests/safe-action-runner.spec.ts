@@ -1746,6 +1746,72 @@ test("operator button matrix keeps default actions simple and safe", async ({ pa
   }
 });
 
+test("operator primary check buttons run only expected read-only workflows", async ({ page }) => {
+  const forbiddenActionIds = /^(raid\.apply|raid\.reset-commit|esxi\.rebuild-install|ilo\.reset-server|netapp\.factory-reset-apply|netapp\.setup-apply|firmware\.upgrade-apply-placeholder|cisco\.apply-bootstrap|vcenter\.attach-esxi-apply|esxi\.netapp-datastore-apply|esxi\.vm-deploy-apply)$/;
+  const capturedActionIds: string[] = [];
+
+  page.on("request", (request) => {
+    if (request.method() !== "POST") return;
+    const url = new URL(request.url());
+    if (!url.pathname.match(/^\/api\/v1\/workflows\/actions\/.+\/run$/)) return;
+    capturedActionIds.push(actionIdFromRunPath(url.pathname));
+  });
+
+  const cases: Array<{ click: () => Promise<void>; expectedActionIds: string[]; label: string; path: string }> = [
+    {
+      click: () => page.getByLabel("Switch Access").getByRole("button", { name: "Run switch check" }).click(),
+      expectedActionIds: ["cisco.setup-readiness"],
+      label: "Network",
+      path: "/network"
+    },
+    {
+      click: () => page.getByLabel("Compute Access").getByRole("button", { name: "Run server check" }).click(),
+      expectedActionIds: ["ilo.reachability"],
+      label: "Server",
+      path: "/server"
+    },
+    {
+      click: () => page.getByLabel("Storage Path").getByRole("button", { name: "Run storage check" }).click(),
+      expectedActionIds: [
+        "netapp.live-state",
+        "netapp.validate-setup",
+        "netapp.setup-preview",
+        "netapp.nfs-setup-validate",
+        "netapp.iscsi-setup-preview",
+        "netapp.iscsi-setup-validate",
+        "esxi.iscsi-datastore-preview"
+      ],
+      label: "Storage",
+      path: "/storage"
+    },
+    {
+      click: () => page.getByLabel("VM Management").getByRole("button", { name: "Run VM check" }).click(),
+      expectedActionIds: ["vcenter-netapp.readiness"],
+      label: "Virtualization",
+      path: "/virtualization"
+    },
+    {
+      click: () => page.getByRole("button", { name: "Check versions" }).click(),
+      expectedActionIds: ["firmware.inventory"],
+      label: "Firmware",
+      path: "/firmware-upgrades"
+    }
+  ];
+
+  for (const surface of cases) {
+    capturedActionIds.length = 0;
+    await page.goto(surface.path);
+    await surface.click();
+    await expect.poll(
+      () => capturedActionIds.length,
+      { message: `${surface.label} runs only its expected primary workflow action count`, timeout: 5000 }
+    ).toBe(surface.expectedActionIds.length);
+    expect(capturedActionIds, `${surface.label} never starts guarded/write actions from the default primary button`)
+      .not.toEqual(expect.arrayContaining([expect.stringMatching(forbiddenActionIds)]));
+    expect([...capturedActionIds].sort(), `${surface.label} primary button target`).toEqual([...surface.expectedActionIds].sort());
+  }
+});
+
 test("operator pages avoid test-mode wording for live run controls", async ({ page }) => {
   for (const path of ["/overview", "/network", "/server", "/storage", "/virtualization", "/firmware-upgrades", "/validation"]) {
     await page.goto(path);

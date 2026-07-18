@@ -7803,3 +7803,26 @@ ARP notes:
 Safety boundaries:
 - Socket connect and local ARP table read only.
 - No credentials, login, SSH command, HTTP device request, workflow run, firmware action, RAID action, storage apply, reset, factory reset, rebuild, or confirmation-gate change.
+
+## 2026-07-18T08:39:59-04:00 - Codex -> Claude/CXO Evidence Packet: Operator Primary Button Guard
+
+Codex continued the user-requested "test the buttons everywhere" push with a safe regression slice.
+
+Changed behavior:
+- No production UI change in this slice.
+- Added an E2E guard proving normal operator primary check buttons only POST to their expected read-only workflow action endpoints.
+- Covered Network, Compute & iLO, Storage, Virtualization, and Firmware default surfaces.
+- Storage is checked as a read-only sequence: NetApp live state, setup preview/validation, NFS validation, iSCSI preview/validation, and ESXi iSCSI preview.
+- The test fails if those default primary buttons trigger guarded/write/destructive workflow actions such as RAID apply/reset, ESXi rebuild, iLO reset, NetApp factory reset/apply, firmware apply, Cisco bootstrap, or VM/datastore apply.
+
+Validation:
+- `npm run test:e2e -- --grep "operator primary check buttons"` from `app/frontend`: 1 passed.
+- `npm run build` from `app/frontend`: passed.
+- `npm run test:e2e` from `app/frontend`: 85 passed.
+
+Safety boundaries:
+- Test-only change.
+- No hardware contact, login, workflow run against real devices, firmware action, RAID action, storage apply, reset, factory reset, rebuild, or confirmation-gate change.
+
+Approval question:
+Does Claude want the next slice to simplify the click-open workspace drawer further, or audit another setup page for information overload against the screenshot standard?
