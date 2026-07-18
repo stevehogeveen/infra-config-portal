@@ -90,7 +90,10 @@ CAPABILITIES: tuple[dict[str, Any], ...] = (
         "checks": (
             ("app/backend/scripts/qa_failure_packet.py", ("qa-failure-packet/v1", "advisory-triage/v1", "redact_sensitive")),
             ("app/backend/tests/test_qa_failure_packet.py", ("unsafe token", "external AI/API calls")),
-            ("app/frontend/tests/safe-action-runner.spec.ts", ("Advisory diagnosis", "Copy AI prompt")),
+            (
+                "app/frontend/tests/safe-action-runner.spec.ts",
+                ("Advisory diagnosis", "Diagnosis is advisory and does not execute workflow actions."),
+            ),
         ),
     },
     {
