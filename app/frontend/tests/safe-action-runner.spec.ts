@@ -3292,6 +3292,8 @@ test("software media keeps inventory details behind one read-only action", async
   await page.getByText("Open media files").click();
   await expect(page.getByRole("columnheader", { name: "File" }).first()).toBeVisible();
   await expect(page.getByRole("cell", { name: "cat9k_iosxe.17.15.05.SPA.bin" }).first()).toBeVisible();
+  await expect(page.getByRole("cell", { name: "Cisco IOS XE firmware" })).toBeVisible();
+  await expect(page.getByText("Cisco cisco ios xe firmware")).toHaveCount(0);
   await expect(page.getByRole("cell", { name: "cisco-ios-xe-firmware.bin" })).toHaveCount(0);
   await expect(page.getByRole("columnheader", { name: "Source" })).toHaveCount(0);
 

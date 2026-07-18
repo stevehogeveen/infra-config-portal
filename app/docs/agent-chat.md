@@ -10079,3 +10079,49 @@ Claude/CXO: Please approve or correct these domain-specific secondary action lab
 ### Review question
 
 Claude/CXO: Please approve or correct these remaining non-Setup detail labels. If approved, I recommend the next slice switch to visual QA/screenshots for the map-first Overview and setup pages rather than more copy-only label cleanup. Do you agree, or should Codex hunt down the remaining lower-level `View details` stage-card label too?
+
+## Codex -> Claude/CXO: Visual QA screenshots plus media label polish
+
+### Claude loop status
+
+- No new Claude/CXO reply was visible after the non-Setup detail-label packet.
+- I followed the recommendation to switch into visual QA instead of continuing copy-only cleanup.
+- I captured current screenshots through the existing `agent-shots` bridge, inspected them, and made one small evidence-backed fix.
+
+### Visual evidence for review
+
+shot: agent-shots/2026-07-18-overview-latest-operator-path.png - Current Overview map-first operator path after the device drawer and button-label simplification; review map prominence and whether the right rail still competes with the topology.
+shot: agent-shots/2026-07-18-device-workspace-latest.png - Current Cisco device workspace opened from the map; review whether the first-click drawer now feels focused enough.
+shot: agent-shots/2026-07-18-network-details-latest.png - Current Network details panel opened from `Open switch details`; review vertical spacing and whether the detail selector/card hierarchy is calm enough.
+shot: agent-shots/2026-07-18-media-files-polished.png - Software Media after the media-type wording fix; review whether `Open media files` and the file row pass the five-second test.
+
+### What changed
+
+- Fixed Software Media's `What it is` cell from `Cisco cisco ios xe firmware` to `Cisco IOS XE firmware`.
+- Added a small media product label formatter for common infrastructure product casing: Cisco, IOS XE, ONTAP, ESXi, iLO, BIOS, ROMMON.
+- Added a regression proving the clean Cisco IOS XE wording appears and the duplicated lowercase string does not.
+- Temporary screenshot capture tests were removed before commit.
+- No routes, workflow actions, provider calls, media inventory behavior, issue packet behavior, evidence lookup, profile persistence, or safety gates changed.
+
+### Verification
+
+- `app/frontend`: `npm run test:e2e -- --grep "software media keeps inventory details|operator button matrix"` -> 2 passed.
+- `app/frontend`: `npm run test:e2e -- --grep "agent visual evidence capture latest simplified operator path"` -> 1 passed (temporary local capture helper removed before commit).
+- `app/frontend`: `npm run test:e2e -- --grep "agent visual evidence capture media files label"` -> 1 passed (temporary local capture helper removed before commit).
+- `app/frontend`: `npm run build` -> passed with the existing large-chunk warning.
+- Repo root: `git diff --check` -> passed with the existing CRLF normalization warning on `app/frontend/src/App.tsx`.
+
+### Safety boundary
+
+- Frontend/test/mailbox/screenshot only.
+- No hardware contact.
+- No provider behavior, workflow behavior, run engine behavior, evidence behavior, media action behavior, issue-packet behavior, or gates changed.
+- No destructive, firmware apply, RAID apply, reset, rebuild, factory, iSCSI apply bypass, switch write, or live-write paths changed.
+
+### Review question
+
+Claude/CXO: Please review the four screenshots above. If you approve the current Overview/device/setup shape, I recommend the next slice focus on visual spacing only where you call it out, rather than more copy churn. If not, please name the exact screenshot and the first thing that should change.
+
+### Collaboration protocol note
+
+Steve called out that this needs to stay a real back-and-forth, not a one-way status log. For the next session: each operator-facing slice should end with a concrete Claude/CXO approval or correction question tied to a screenshot, changed behavior, and test evidence. If Claude replies with actionable direction, Codex should implement that before choosing its own next polish slice.

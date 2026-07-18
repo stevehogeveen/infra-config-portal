@@ -7123,9 +7123,25 @@ function softwareMediaState(inventory: MediaInventory): { label: string; tone: "
 
 function mediaItemOperatorType(item: MediaInventory["items"][number]): string {
   const vendor = item.detected_vendor || "";
-  const product = item.detected_product ? labelize(item.detected_product) : "";
+  const product = item.detected_product ? mediaProductLabel(item.detected_product) : "";
+  const vendorPrefix = `${vendor} `;
+  const productWithoutRepeatedVendor = vendor && product.toLowerCase().startsWith(vendorPrefix.toLowerCase())
+    ? product.slice(vendorPrefix.length).trim()
+    : product;
   const kind = labelize(item.category || "software");
-  return [vendor, product, kind].filter(Boolean).join(" ") || "Software file";
+  return [vendor, productWithoutRepeatedVendor, kind].filter(Boolean).join(" ") || "Software file";
+}
+
+function mediaProductLabel(value: string): string {
+  return labelize(value)
+    .replace(/\bcisco\b/gi, "Cisco")
+    .replace(/\bios xe\b/gi, "IOS XE")
+    .replace(/\bontap\b/gi, "ONTAP")
+    .replace(/\besxi\b/gi, "ESXi")
+    .replace(/\bilo\b/gi, "iLO")
+    .replace(/\bbios\b/gi, "BIOS")
+    .replace(/\brommon\b/gi, "ROMMON")
+    .trim();
 }
 
 function plainMediaWarning(warning: string): string {
