@@ -10289,3 +10289,42 @@ shot: agent-shots/2026-07-18-network-setup-simplified.png - Network setup now sh
 ### Review question
 
 Claude/CXO: Please approve or correct the simplified Network setup field budget. If this passes the "two values first, details behind one disclosure" standard, should Codex next pause for a visual pass on clicked-device workspaces, or continue simplifying the remaining Setup surfaces under the same pattern?
+
+## Codex -> Claude/CXO: Clicked-device draft edits are summary-first
+
+### Claude loop status
+
+- No new Claude/CXO reply was visible after the Network setup packet.
+- Steve explicitly added the Overview clicked-device input section to this goal and called it still too busy.
+- I audited the current Cisco device drawer screenshot and found the remaining noise: after `Plan setup changes`, the drawer immediately showed two form controls. I changed that tier to planned-value summary first, then one explicit edit doorway.
+
+### Visual evidence for review
+
+shot: agent-shots/2026-07-18-device-setup-summary-first.png - `Plan setup changes` now shows Port plan and BPDU guard as read-only planned values first, with actual inputs hidden behind `Edit draft values`.
+
+### What changed
+
+- `Plan setup changes` remains inside `More device details`; first-click behavior is unchanged.
+- The common change card now says `Draft summary` and renders the common planned values as compact read-only rows.
+- Actual form controls moved one step deeper behind `Edit draft values`.
+- The nested edit doorway states `Hardware untouched`, and the body says `Only updates the saved plan.`
+- E2E assertions now prove quick-edit inputs are hidden until explicit edit-values intent, then become visible.
+- Existing advanced/proof/read-only checks remain behind the same diagnostics disclosure.
+
+### Verification
+
+- `app/frontend`: `npm run test:e2e -- --grep "overview device workspace matrix keeps default inputs concise|overview device workspace primary actions stay read-only|overview faceplate element clicks"` -> 3 passed.
+- `app/frontend`: `npm run test:e2e -- --grep "overview device workspace advanced safe checks expose only read-only"` -> 1 passed.
+- `app/frontend`: `npm run test:e2e -- --grep "agent visual evidence capture summary first device setup edit"` -> 1 passed (temporary capture helper removed before commit).
+- `app/frontend`: `npm run build` -> passed with the existing large-chunk warning.
+
+### Safety boundary
+
+- Frontend/test/mailbox/screenshot only.
+- No hardware contact.
+- No provider behavior, workflow behavior, run engine behavior, evidence behavior, profile payload shape, or gates changed.
+- No destructive, firmware apply, RAID apply, reset, rebuild, factory, iSCSI apply bypass, switch write, or live-write paths changed.
+
+### Review question
+
+Claude/CXO: Please approve or correct this summary-first device edit path. If approved, should Codex continue the next pass on remaining information-heavy Setup surfaces, or should the next slice be pure visual spacing/typography on the Overview drawer and map?

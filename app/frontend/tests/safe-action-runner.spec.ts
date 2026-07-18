@@ -1350,11 +1350,18 @@ test("overview device workspace matrix keeps default inputs concise", async ({ p
     await editSettings.locator(":scope > summary").click();
     await expect(quickPanel, `${item.workspace} exposes setup changes only after edit intent`).toBeVisible();
     await expect(quickPanel, `${item.workspace} quick fields use simpler planning wording`).toContainText("Common changes");
-    await expect(quickPanel, `${item.workspace} quick fields state draft value scope`).toContainText("Draft values");
-    expect(await quickPanel.locator(".design-device-setting-row").count(), `${item.workspace} keeps quick fields tiny`).toBeLessThanOrEqual(2);
+    await expect(quickPanel, `${item.workspace} quick fields start as a summary`).toContainText("Draft summary");
+    const plannedSummary = quickPanel.getByLabel(`${item.workspace} planned setup summary`);
+    expect(await plannedSummary.locator(".design-device-setting-row").count(), `${item.workspace} keeps quick summary tiny`).toBeLessThanOrEqual(2);
     const quickInputs = quickPanel.locator("input, select, textarea");
+    await expect(plannedSummary, `${item.workspace} shows planned values before inputs`).toBeVisible();
+    await expect(quickInputs.first(), `${item.workspace} hides quick edit inputs until explicit edit intent`).not.toBeVisible();
+    const editDraftValues = quickPanel.getByLabel(`${item.workspace} edit draft values`);
+    await expect(editDraftValues, `${item.workspace} exposes one edit-values doorway`).toBeVisible();
+    await expect(editDraftValues.locator(":scope > summary"), `${item.workspace} edit doorway names the action`).toContainText("Edit draft values");
+    await editDraftValues.locator(":scope > summary").click();
     if (await quickInputs.count()) {
-      await expect(quickInputs.first(), `${item.workspace} reveals the first quick edit field after one edit intent`).toBeVisible();
+      await expect(quickInputs.first(), `${item.workspace} reveals the first quick edit field after edit-values intent`).toBeVisible();
     }
     await expect(quickPanel.locator(".design-provenance-chip"), `${item.workspace} removes repeated per-field state chips from quick fields`).toHaveCount(0);
     const moreSetupFields = detailsDrawer.getByLabel(`${item.workspace} more setup fields`);
@@ -1779,13 +1786,19 @@ test("overview design mode keeps the surface map-only until a node opens the wor
   await expect(editSettings.locator(":scope > summary")).toContainText("Plan setup changes");
   await expect(editSettings.locator(":scope > summary")).toContainText("Draft only");
   await expect(quickSetup).toContainText("Common changes");
-  await expect(quickSetup).toContainText("Draft values");
-  await expect(quickSetup.locator(".design-device-edit-intro")).toBeVisible();
+  await expect(quickSetup).toContainText("Draft summary");
   await expect(quickSetup).toContainText("Port plan");
   await expect(quickSetup).toContainText("BPDU guard");
   await expect(quickSetup).not.toContainText("Port profiles");
-  expect(await quickSetup.locator(".design-device-setting-row").count()).toBeLessThanOrEqual(2);
-  await expect(quickSetup.locator(".design-device-edit-intro")).toHaveText("Only updates the saved plan. Hardware stays untouched.");
+  const plannedSummary = quickSetup.getByLabel("Cisco switch planned setup summary");
+  expect(await plannedSummary.locator(".design-device-setting-row").count()).toBeLessThanOrEqual(2);
+  await expect(plannedSummary).toBeVisible();
+  await expect(quickSetup.locator("input, select, textarea").first()).not.toBeVisible();
+  const editDraftValues = quickSetup.getByLabel("Cisco switch edit draft values");
+  await expect(editDraftValues.locator(":scope > summary")).toContainText("Edit draft values");
+  await expect(editDraftValues.locator(":scope > summary")).toContainText("Hardware untouched");
+  await editDraftValues.locator(":scope > summary").click();
+  await expect(quickSetup.locator(".design-device-edit-intro")).toHaveText("Only updates the saved plan.");
   await expect(quickSetup.locator("input, select, textarea").first()).toBeVisible();
   const moreSetupFields = switchWorkspace.getByLabel("Cisco switch more setup fields");
   await expect(moreSetupFields).toBeVisible();

@@ -9875,12 +9875,27 @@ function LabDesignComposer({
                             <p className="operator-kicker">Common changes</p>
                             <h4>{selectedQuickEditFields.map((field) => field.label).join(" / ")}</h4>
                           </div>
-                          <span>Draft values</span>
+                          <span>Draft summary</span>
                         </div>
-                        <p className="design-device-edit-intro">Only updates the saved plan. Hardware stays untouched.</p>
-                        <div className="design-device-setting-rows">
-                          {selectedQuickEditFields.map((field) => renderSelectedDeviceSettingRow(field, { hideProvenance: true }))}
+                        <div
+                          className="design-device-setting-rows compact design-device-edit-summary"
+                          aria-label={`${selectedPart.label} planned setup summary`}
+                        >
+                          {selectedQuickEditFields.map((field) => renderSelectedDeviceSettingRow(field, {
+                            hideProvenance: true,
+                            readOnlyDisplay: true
+                          }))}
                         </div>
+                        <details className="design-device-edit-values" aria-label={`${selectedPart.label} edit draft values`}>
+                          <summary>
+                            <span>Edit draft values</span>
+                            <strong>Hardware untouched</strong>
+                          </summary>
+                          <p className="design-device-edit-intro">Only updates the saved plan.</p>
+                          <div className="design-device-setting-rows">
+                            {selectedQuickEditFields.map((field) => renderSelectedDeviceSettingRow(field, { hideProvenance: true }))}
+                          </div>
+                        </details>
                       </section>
                     )}
                     {selectedAdvancedEditSections.length > 0 && (
