@@ -9348,7 +9348,7 @@ function LabDesignComposer({
     const value = deviceSettings[selectedPart.id]?.[field.key] ?? "";
     if (options?.readOnlyDisplay || (workspaceOnly && profileOwned)) {
       return (
-        <div className="design-device-setting-row is-profile-owned is-readonly-value" key={field.key}>
+        <div className={`design-device-setting-row ${profileOwned ? "is-profile-owned" : "is-draft-owned"} is-readonly-value`} key={field.key}>
           <span>{field.label}</span>
           <strong>{value || "Not planned"}</strong>
         </div>
@@ -9739,8 +9739,18 @@ function LabDesignComposer({
                   <p className="operator-kicker">Setup</p>
                   <h4>Main settings</h4>
                 </div>
-                <div className="design-device-setting-rows compact">
-                  {selectedEssentialFields.map((field) => renderSelectedDeviceSettingRow(field, { hideProvenance: true }))}
+                <div className="design-device-setup-snapshot" aria-label={`${selectedPart.label} setup snapshot`}>
+                  <div className="design-device-setup-faceplate" aria-label={`${selectedPart.label} compact faceplate`}>
+                    <DesignFaceplateVisual
+                      compact
+                      partId={selectedPart.id}
+                      settings={selectedSettings}
+                      storageProtocol={storageProtocol}
+                    />
+                  </div>
+                  <div className="design-device-setting-rows compact">
+                    {selectedEssentialFields.map((field) => renderSelectedDeviceSettingRow(field, { hideProvenance: true, readOnlyDisplay: true }))}
+                  </div>
                 </div>
               </section>
             )}

@@ -1030,13 +1030,12 @@ test("overview device workspace matrix keeps default inputs concise", async ({ p
     await expect(essentials, `${item.workspace} uses operator language for setup values`).toContainText("Main settings");
     await expect(essentials, `${item.workspace} avoids internal value labels`).not.toContainText("Primary values");
     await expect(essentials, `${item.workspace} removes instructional setup copy`).not.toContainText("Everything else is in Details");
+    await expect(essentials.getByLabel(`${item.workspace} setup snapshot`), `${item.workspace} shows a faceplate-first setup snapshot`).toBeVisible();
+    await expect(essentials.getByLabel(`${item.workspace} compact faceplate`), `${item.workspace} shows a compact device faceplate`).toBeVisible();
     expect(await essentials.locator(".design-device-setting-row").count(), `${item.workspace} keeps essentials compact`).toBeLessThanOrEqual(3);
-    const draftEssentialRows = essentials.locator(".design-device-setting-row.is-draft-owned");
     const essentialInputs = essentials.locator("input, select, textarea");
-    await expect(essentialInputs, `${item.workspace} only renders controls for draft-owned essentials`).toHaveCount(await draftEssentialRows.count());
-    if (await essentialInputs.count()) {
-      await expect(essentialInputs.first(), `${item.workspace} lets operators edit draft essentials in place`).toBeVisible();
-    }
+    await expect(essentialInputs, `${item.workspace} keeps Main settings read-only; edits happen through Edit setup`).toHaveCount(0);
+    await expect(essentials.locator(".design-device-setting-row.is-readonly-value"), `${item.workspace} renders summary values instead of form controls`).toHaveCount(await essentials.locator(".design-device-setting-row").count());
     await expect(essentials.locator(".design-provenance-chip"), `${item.workspace} keeps provenance out of the simple setup block`).toHaveCount(0);
     await expect(essentials, `${item.workspace} keeps identity in the hero, not the setup form`).not.toContainText("Name");
     for (const essential of item.essentials) {
@@ -1057,13 +1056,13 @@ test("overview device workspace matrix keeps default inputs concise", async ({ p
     await expect(editSettings, `${item.workspace} edit setup starts closed`).not.toHaveAttribute("open", "");
     await expect(editSettings.locator("input, select, textarea"), `${item.workspace} keeps edit controls unmounted before edit intent`).toHaveCount(0);
     await expect(workspace.locator(":scope > details.design-faceplate-disclosure"), `${item.workspace} removes the old separate faceplate drawer`).toHaveCount(0);
-    await expect(workspace.getByLabel(`${item.workspace} interactive faceplate`), `${item.workspace} does not show the faceplate before intent`).not.toBeVisible();
-    const setupBeforeFaceplate = await workspace.evaluate((node) => {
+    await expect(workspace.getByLabel(`${item.workspace} interactive faceplate`), `${item.workspace} does not show the interactive faceplate before intent`).not.toBeVisible();
+    const setupBeforeInteractiveFaceplate = await workspace.evaluate((node) => {
       const setup = node.querySelector(".design-device-essentials");
       const faceplate = node.querySelector(".design-device-hero");
       return Boolean(setup && faceplate && (setup.compareDocumentPosition(faceplate) & Node.DOCUMENT_POSITION_FOLLOWING));
     });
-    expect(setupBeforeFaceplate, `${item.workspace} keeps setup before the faceplate`).toBeTruthy();
+    expect(setupBeforeInteractiveFaceplate, `${item.workspace} keeps setup before the interactive faceplate`).toBeTruthy();
     await expect(workspace.locator(":scope > details.design-workspace-details > summary"), `${item.workspace} details summary is plain`).toContainText("Device details");
     await expect(workspace.locator(":scope > details.design-workspace-details > summary"), `${item.workspace} details summary does not jam two labels together`).not.toContainText("Settings and proof");
     await expect(workspace.locator(":scope > details.design-workspace-details > summary"), `${item.workspace} details summary replaces the old faceplate label`).not.toContainText("Inspect ports and bays");

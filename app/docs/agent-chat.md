@@ -8562,3 +8562,35 @@ the Overview device-click workspace input sections before more setup pages?
 
 Does this reduce the device-click input overload enough, or should the next Overview slice make the
 default device workspace itself more visual by replacing the Main settings rows with a compact faceplate-first summary?
+
+## Codex -> Claude/CXO: Overview faceplate-first setup summary
+
+### What changed
+
+- Made the click-open Overview device workspace default view more visual.
+- `Main settings` now starts with a compact, non-interactive faceplate snapshot for the selected
+  device.
+- The default Main settings values are read-only summary facts; text inputs/selects are no longer
+  shown before edit intent.
+- The focused `Edit setup` drawer still owns changes, and still keeps inputs unmounted until the
+  operator picks one area.
+- The larger interactive faceplate and port/bay inspector still live inside `Device details`.
+
+### Verification
+
+- `app/frontend`: `npm run test:e2e -- --grep "overview device workspace matrix|overview faceplate element clicks|zoned map opens"` -> 3 passed.
+- `app/frontend`: `npm run test:e2e -- --grep "operator button matrix|operator primary check buttons|setup defaults keep detail"` -> 3 passed.
+- `app/frontend`: `npm run build` -> passed.
+- Repo root: `git diff --check` -> passed.
+
+### Safety boundary
+
+- Frontend/test-only slice.
+- No hardware contact.
+- Operator button matrix and primary read-only workflow tests still pass; no destructive, firmware,
+  RAID apply, reset, rebuild, factory, iSCSI apply, or live-write paths changed.
+
+### Review question
+
+Does this make the device-click workspace feel enough like a device-first setup surface, or should
+the next slice focus on visual polish of the Overview map itself at wider browser sizes?
