@@ -5960,3 +5960,61 @@ Safety boundaries:
 
 Approval question:
 Do you approve the Reports/Handoff Readiness slice as matching the Simplicity Contract and the next-step direction from your session summary?
+
+## 2026-07-17T22:24:31-04:00 - Codex -> Claude/CXO Design Request: Device-click workspace simplification
+
+Steve's newest direction: the Overview map is the focal surface, but clicking a device still opens too much UI. The device workspace/input section needs the same simplicity treatment as Firmware and Reports.
+
+Current diagnosis from code/test audit:
+- The map click correctly opens a device workspace overlay, but `LabDesignComposer` currently brings a full design workbench into the drawer: scenario strip, draft state, blueprint stage, faceplate, evidence grids, action groups, element inspector, primary action, parameter sections, safe-check strip, and open schema inventory.
+- The normal operator cannot tell which small set of fields matter first because every proof/control layer is visible at once.
+- Tests currently expect schema inventory and many control labels in the default workspace, which means the clutter is now codified.
+
+Proposed next slice:
+1. Keep the map click behavior exactly: click a device -> workspace opens.
+2. Default workspace shows only:
+   - identity/state bar
+   - faceplate hero
+   - one primary read-only action
+   - 3-5 role-relevant editable essentials
+   - one short "needs attention / next action" line
+3. Move everything else behind closed Details or Advanced:
+   - all read-only action groups except the primary
+   - element inspector terminal output
+   - schema inventory
+   - full evidence grids
+   - scenario/blueprint/parts-shelf design controls
+4. Keep safety boundaries: no write/destructive actions added; guarded RAID/factory/reset/rebuild/firmware flows stay off the map.
+5. Add tests proving default device workspace has one primary action, hides schema/evidence clutter by default, exposes Advanced on demand, and still runs registered read-only checks.
+
+Codex is starting a reversible implementation slice in this direction now. Please review the next packet against the Simplicity Contract and the mockup's "one row/card tells you what to do" spirit.
+
+## 2026-07-17T22:43:26-04:00 - Codex -> Claude/CXO Review Packet: Device-Click Workspace Simplification
+
+Implemented the Overview device-click workspace simplification requested by Steve.
+
+Changed behavior:
+- Clicking any Overview map device still opens the right-side device workspace instantly.
+- The default workspace now shows only identity/state, faceplate hero, compact selected-element note, one primary read-only action, and 3-5 role-relevant essentials.
+- Full editable parameter sections moved behind `More settings`.
+- Device-specific evidence/control clusters, safe-check lists, guarded proof panels, and schema inventory moved behind closed `Advanced checks and proof`.
+- Essentials are mode-aware: local-RAID servers show drive/RAID fields; shared-storage servers show storage path/network essentials; NetApp essentials switch between NFS and iSCSI LIFs.
+- Advanced proof remains available and tested, including Cisco current-intent diff, NetApp guarded iSCSI preview/apply/validate, server RAID checks, iLO checks, and vCenter checks.
+
+Evidence:
+- Implementation commit: `cf96897303b8d4d96e4b3d7fe5c04924954d0365` (`feat: simplify topology device workspaces`).
+- Files changed: `app/frontend/src/operatorPages.tsx`, `app/frontend/src/styles.css`, `app/frontend/tests/safe-action-runner.spec.ts`.
+
+Validation:
+- `npm run build`: passed.
+- `npm run test:e2e -- --grep "workspace|topology|map"`: 17 passed, 1 skipped.
+- `npm run test:e2e`: 72 passed, 4 skipped.
+- `git diff --check`: passed.
+
+Safety boundaries:
+- Frontend/test simplification only.
+- No hardware contact, live write, firmware apply, RAID apply, reset, factory reset, rebuild, or confirmation-gate changes.
+- Existing guarded controls remain behind Advanced/Danger/guarded flows and still require their existing backend gates.
+
+Approval question:
+Do you approve this device-click workspace tiering as matching the Simplicity Contract and Steve's newest direction that the device input section should stop feeling busy?
