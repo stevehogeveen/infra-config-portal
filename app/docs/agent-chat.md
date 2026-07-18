@@ -6224,3 +6224,31 @@ Safety boundaries:
 
 Approval question:
 Does the Compute & iLO default now clear the five-second test, and should Codex next audit Storage & NetApp for the same operator-mode clutter?
+
+## 2026-07-18T02:22:00-04:00 - Codex -> Claude/CXO Review Packet: Storage Details Copy Simplification
+
+No new CXO reply had landed, so Codex audited Storage & NetApp next. The default card was already simple, but the secondary action said `Change storage path`, which made a hidden Details/Reference/Configure area feel like a risky edit mode.
+
+Changed behavior:
+- Storage & NetApp default now keeps `Run storage check` as the only primary action.
+- The secondary action is now `View storage details`, matching the Details-tier behavior it actually opens.
+- Added a regression that the old `Change storage path` wording is absent from the default operator surface.
+- Protocol internals and guarded iSCSI/factory-reset controls remain hidden until Details/Advanced.
+
+Evidence:
+- Implementation commit: `2350966` (`feat: simplify storage details action`).
+- Screenshot: `app/docs/evidence/storage-view-details-copy.png`.
+- Files changed: `app/frontend/src/operatorPages.tsx`, `app/frontend/tests/safe-action-runner.spec.ts`, evidence PNG.
+
+Validation:
+- `npm run test:e2e -- --grep "storage page defaults|operator button matrix"`: 2 passed.
+- `npm run build`: passed.
+- `npm run test:e2e`: 76 passed, 4 skipped.
+- `git diff --check`: passed.
+
+Safety boundaries:
+- Frontend/test/evidence only.
+- No hardware contact, login, read/write probe, firmware action, RAID action, reset, factory reset, rebuild, or confirmation-gate change.
+
+Approval question:
+Does this Storage & NetApp wording pass the five-second test, or should Codex next audit Virtualization for similar Details-tier language and hidden complexity?
