@@ -396,15 +396,20 @@ test("lab defaults keeps shared values simple and hides advanced policy by defau
   const network = page.getByLabel("Network defaults");
   await expect(network.getByRole("heading", { name: "Network" })).toBeVisible();
   await expect(network.getByLabel("Storage protocol")).toBeVisible();
-  await expect(network).toContainText("Subnet");
-  await expect(network).toContainText("Gateway");
-  await expect(network).toContainText("DNS server");
+  await expect(network.getByRole("textbox", { name: "Subnet" })).toBeVisible();
+  await expect(network.getByRole("textbox", { name: "Gateway" })).toBeVisible();
+  await expect(network.getByRole("textbox", { name: "DNS servers" })).toBeVisible();
+  await expect(network.getByRole("textbox", { name: "NTP servers" })).toBeVisible();
+  await expect(network.getByRole("textbox", { name: "VLAN" })).toBeVisible();
+  await expect(network.getByRole("textbox", { name: "MTU" })).toBeVisible();
+  await expect(network.getByRole("textbox", { name: "Subnet" })).toHaveValue("192.168.1.0/24");
 
   const signIn = page.getByLabel("Shared sign-in");
   await expect(signIn.getByRole("heading", { name: "Shared sign-in" })).toBeVisible();
-  await expect(signIn).toContainText("Username");
-  await expect(signIn).toContainText("Password");
-  await expect(signIn).toContainText("Enter the actual password on the device page, not here.");
+  await expect(signIn).toContainText("Credential status");
+  await expect(signIn).toContainText("Secrets are not stored in kit defaults.");
+  await expect(signIn.getByLabel("Shared service defaults")).toContainText("DNS");
+  await expect(signIn.getByLabel("SNMP version")).toBeVisible();
   await expect(signIn).not.toContainText("P@ssw0rd");
   await expect(signIn.locator("input[type='password']")).toHaveCount(0);
 
@@ -425,6 +430,7 @@ test("lab defaults keeps shared values simple and hides advanced policy by defau
   await page.locator(".lab-defaults-advanced summary").click();
   await expect(page.getByLabel("Advanced lab default fields")).toBeVisible();
   await expect(page.getByLabel("Lab default feature toggles")).toContainText("Allow IPv6");
+  await expect(page.getByLabel("Lab default feature toggles")).not.toContainText("DNS");
   await expect(page.getByLabel("Global profile feature toggles")).toHaveCount(0);
   await expect(page.locator(".lab-defaults-advanced .operator-primary-button")).toHaveCount(0);
   await expect(page.locator(".lab-defaults-advanced .secondary-button")).toHaveCount(1);

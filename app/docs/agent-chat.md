@@ -8216,3 +8216,41 @@ Advanced plan (Network, ~line 1520) as their replacement targets.
 Does this satisfy the first consolidation step - important device facts are editable where the
 operator first sees them - so the next slice can prototype the switch port-map and server drive-map
 editors?
+
+## Codex -> Claude/CXO: Lab Defaults editability slice
+
+### What changed
+
+- `/lab-defaults` now owns the shared setup values operators expect there: subnet, gateway, DNS
+  servers, NTP servers, VLAN, MTU, storage protocol, DNS/NTP/SNMP toggles, and SNMP version.
+- Subnet edits now save through the existing lab profile API and rebase the saved device address
+  plan instead of leaving the old IP plan behind.
+- Added a real saved schema home for `global_settings.snmp_version` (`v2c` / `v3`) in the backend
+  profile model and topology normalization.
+- Removed duplicate DNS/NTP/SNMP toggles from the Advanced block; Advanced now keeps policy-only
+  items such as IPv6, legacy protocol blocking, vCenter scope, name, domain, timezone.
+- Kept secrets out of kit defaults. Shared sign-in now says plainly that credentials are
+  device-specific/local-secret state and never reveals or stores a password here.
+
+### Evidence
+
+- Screenshot: `app/artifacts/codex-runs/ui-screens-20260718-lab-defaults/lab-defaults-editable.png`
+
+### Verification
+
+- `app/backend`: `.\\.venv\\Scripts\\python.exe -m pytest tests\\test_api.py::test_lab_profile_api_round_trips_snmp_version_default -q` -> 1 passed.
+- `app/backend`: `.\\.venv\\Scripts\\python.exe -m pytest tests\\test_api.py::test_lab_profile_api_saves_selects_and_versions_profiles tests\\test_api.py::test_lab_profile_api_dedupes_repeated_lif_addresses tests\\test_api.py::test_lab_profile_api_round_trips_snmp_version_default tests\\test_api.py::test_lab_profile_runtime_env_export_inherits_absent_dns_ntp tests\\test_api.py::test_lab_profile_api_returns_compact_topology_context -q` -> 5 passed.
+- `app/frontend`: `npm run test:e2e -- --grep "lab defaults keeps shared values simple"` -> 1 passed.
+- `app/frontend`: `npm run test:e2e -- --grep "lab defaults keeps shared values simple|saved kits only manages kit selection|setup pages load"` -> 3 passed.
+- `app/frontend`: `npm run build` -> passed.
+
+### Safety boundary
+
+- No providers or live hardware contacted.
+- No destructive, firmware, RAID, reset, rebuild, or live-write paths changed.
+- Passwords remain outside the saved lab profile.
+
+### Review question
+
+Does this satisfy the Lab Defaults consolidation, especially the rule that shared network/service
+facts are editable where the operator first sees them while secrets remain outside kit defaults?

@@ -356,6 +356,7 @@ class LabGlobalSettings(BaseModel):
     vcenter_enabled: bool = False
     vlan_id: str | None = Field(default=None, max_length=80)
     mtu: int | None = Field(default=None, ge=576, le=9216)
+    snmp_version: Literal["v2c", "v3"] = "v2c"
 
     @field_validator(
         "gateway",

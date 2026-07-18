@@ -16545,14 +16545,28 @@ button.design-ilo-port:hover {
 .lab-defaults-form { margin: 0 auto 20px; max-width: 1410px; padding: 0 32px; }
 .lab-defaults-grid { display: grid; gap: 20px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .lab-defaults-network-card, .lab-defaults-signin-card, .lab-defaults-devices-card, .lab-defaults-advanced { border-color: #d6e0e8; box-shadow: 0 8px 20px rgba(34, 58, 80, .05); }
+.lab-defaults-input-grid { display: grid; gap: 12px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.lab-defaults-field { background: #f8fafc; border: 1px solid #dbe4ee; border-radius: 9px; display: grid; gap: 7px; padding: 11px 12px; }
+.lab-defaults-field-wide { grid-column: 1 / -1; }
+.lab-defaults-field span,
+.lab-defaults-select-field span { color: #5e7187; font-size: 11px; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }
+.lab-defaults-field input,
+.lab-defaults-select-field select { background: #fff; border: 1px solid #cbd6e1; border-radius: 8px; color: #102238; font: 800 14px/1.25 ui-monospace, SFMono-Regular, Consolas, monospace; min-height: 40px; min-width: 0; padding: 0 11px; width: 100%; }
+.lab-defaults-field input:focus,
+.lab-defaults-select-field select:focus { border-color: #0f8b8d; box-shadow: 0 0 0 3px rgba(20, 184, 166, .16); outline: none; }
+.lab-defaults-field input:disabled,
+.lab-defaults-select-field select:disabled { background: #eef2f6; color: #718096; cursor: not-allowed; }
 .lab-defaults-facts { display: grid; gap: 14px; margin: 0; }
 .lab-defaults-facts div { background: #e9edf1; border-radius: 9px; display: grid; gap: 7px; padding: 13px 15px; }
 .lab-defaults-facts dt { color: #5e7187; font-size: 12px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
 .lab-defaults-facts dd { align-items: center; color: #102238; display: flex; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 13px; font-weight: 700; gap: 10px; justify-content: space-between; margin: 0; min-width: 0; }
 .lab-defaults-facts dd > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lab-defaults-secret-facts { margin-bottom: 14px; }
 .lab-defaults-secret-placeholder { color: #5e7187; letter-spacing: .08em; }
 .lab-defaults-select-field { color: #243a52; display: grid; font-size: 13px; font-weight: 800; gap: 8px; margin-top: 16px; }
-.lab-defaults-select-field select { background: #fff; border: 1px solid #cbd6e1; border-radius: 9px; color: #102238; font: 700 14px/1.2 inherit; min-height: 42px; padding: 0 12px; }
+.lab-defaults-service-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.lab-defaults-service-toggle { align-items: center; background: #f8fafc; border: 1px solid #dbe4ee; border-radius: 999px; color: #243a52; display: inline-flex; font-size: 12px; font-weight: 900; gap: 7px; min-height: 34px; padding: 0 12px; }
+.lab-defaults-service-toggle input { accent-color: #0f8b8d; }
 .lab-defaults-actions { display: flex; justify-content: flex-end; margin-top: 16px; }
 .lab-defaults-actions .operator-primary-button { width: auto; }
 .lab-defaults-feedback { margin: 12px 0 0; }
@@ -16590,7 +16604,7 @@ button.design-ilo-port:hover {
   .sidebar-brand > span:last-child, .sidebar-runtime, .sidebar-nav .nav-item-text, .sidebar-section-label { display: none; }
   .sidebar-nav .nav-item { justify-content: center; padding: 10px; }
   .shell-topbar { gap: 12px; padding: 12px 18px; }
-  .lab-defaults-grid, .lab-defaults-advanced-grid { grid-template-columns: 1fr; }
+  .lab-defaults-grid, .lab-defaults-input-grid, .lab-defaults-advanced-grid { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 640px) {

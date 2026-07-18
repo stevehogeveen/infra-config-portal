@@ -1005,6 +1005,37 @@ def test_lab_profile_api_dedupes_repeated_lif_addresses(
     assert payload["address_plan"]["netapp_nfs_lifs"] == ["192.0.2.23", "192.0.2.24"]
 
 
+def test_lab_profile_api_round_trips_snmp_version_default(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    monkeypatch.setenv("LAB_PROFILE_STORE", str(tmp_path / "lab-profiles.json"))
+
+    created = client.post(
+        "/api/v1/lab/profiles",
+        json={
+            "name": "SNMP Default Lab",
+            "features": {"enable_snmp": True},
+            "global_settings": {
+                "gateway": "192.0.2.1",
+                "snmp_version": "v3",
+            },
+            "address_plan": {"subnet": "192.0.2.0/24"},
+        },
+    )
+
+    assert created.status_code == 201
+    profile_id = created.json()["id"]
+    assert created.json()["global_settings"]["snmp_version"] == "v3"
+
+    listed = client.get("/api/v1/lab/profiles")
+    assert listed.status_code == 200
+    active = listed.json()["active_profile"]
+    assert active["id"] == profile_id
+    assert active["global_settings"]["snmp_version"] == "v3"
+
+
 def test_topology_design_draft_api_persists_without_hardware_effect(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,

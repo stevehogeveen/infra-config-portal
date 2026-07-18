@@ -393,6 +393,7 @@ def _global_settings(
         "vcenter_enabled": bool(features["vcenter_enabled"]),
         "vlan_id": _clean_string(source.get("vlan_id")),
         "mtu": _int_or_none(source.get("mtu")),
+        "snmp_version": _snmp_version(source.get("snmp_version")),
     }
 
 
@@ -572,6 +573,11 @@ def _clean_string(value: Any) -> str | None:
         return None
     text = str(value).strip()
     return text or None
+
+
+def _snmp_version(value: Any) -> str:
+    version = (_clean_string(value) or "v2c").lower()
+    return version if version in {"v2c", "v3"} else "v2c"
 
 
 def _clean_string_list(value: Any) -> list[str]:

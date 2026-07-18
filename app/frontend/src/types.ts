@@ -477,6 +477,7 @@ export type LabGlobalSettings = {
   vcenter_enabled: boolean;
   vlan_id: string | null;
   mtu: number | null;
+  snmp_version?: "v2c" | "v3" | null;
 };
 
 export type LabSubnetOption = {
