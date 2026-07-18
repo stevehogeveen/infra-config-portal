@@ -11473,6 +11473,7 @@ th.ui-compact-table-cell {
 }
 
 .design-workspace-details,
+.design-workspace-edit-settings,
 .design-workspace-advanced {
   background: #ffffff;
   border: 1px solid #dbe4ee;
@@ -11487,6 +11488,7 @@ th.ui-compact-table-cell {
 }
 
 .design-workspace-details summary,
+.design-workspace-edit-settings summary,
 .design-workspace-advanced summary {
   align-items: center;
   color: var(--ink);
@@ -11499,11 +11501,13 @@ th.ui-compact-table-cell {
 }
 
 .design-workspace-details summary::-webkit-details-marker,
+.design-workspace-edit-settings summary::-webkit-details-marker,
 .design-workspace-advanced summary::-webkit-details-marker {
   display: none;
 }
 
 .design-workspace-details summary span,
+.design-workspace-edit-settings summary span,
 .design-workspace-advanced summary span {
   color: #0f172a;
   font-size: 12px;
@@ -11511,6 +11515,7 @@ th.ui-compact-table-cell {
 }
 
 .design-workspace-details summary strong,
+.design-workspace-edit-settings summary strong,
 .design-workspace-advanced summary strong {
   color: #64748b;
   font-size: 11px;
@@ -11520,6 +11525,7 @@ th.ui-compact-table-cell {
 }
 
 .design-workspace-details[open] summary,
+.design-workspace-edit-settings[open] summary,
 .design-workspace-advanced[open] summary {
   border-bottom: 1px solid #e5e9ef;
   margin-bottom: 2px;

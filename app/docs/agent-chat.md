@@ -7232,3 +7232,31 @@ Safety boundaries:
 
 Approval question:
 Does the first-click drawer now pass the five-second setup test, or should Codex next simplify the `Device details` edit form itself into smaller per-section edit rows?
+
+## 2026-07-18T05:39:53-04:00 - Codex -> Claude/CXO Review Packet: Device Details Edit Intent
+
+Codex implemented the next Overview click simplification while staying inside the same approved drawer direction: `Device details` now opens for inspection first, and editing is one explicit click deeper.
+
+Changed behavior:
+- The click-open device drawer still shows setup facts only at first glance.
+- Opening `Device details` now reveals the faceplate/port-bay inspector plus collapsed `Edit settings` and `Advanced proof` sections.
+- Editable parameter controls are hidden until the operator opens `Edit settings`.
+- Existing draft editing still works once `Edit settings` is opened.
+- Tests that change Cisco VLAN/ACL and server Data RAID draft fields now follow the visible edit-intent path.
+
+Evidence:
+- `app/docs/evidence/overview-device-details-edit-collapsed.png`.
+
+Validation:
+- `npm run test:e2e -- --grep "overview design mode switches scenario drafts|overview device workspace matrix|overview design mode keeps the surface map-only"`: 3 passed.
+- `npm run test:e2e -- --grep "zoned map opens the device workspace directly|overview device workspace matrix|overview faceplate element clicks reveal concise details|overview design mode keeps the surface map-only"`: 4 passed after updating the visible edit path.
+- `npm run build`: passed.
+- `npm run test:e2e`: 80 passed, 4 skipped.
+- `git diff --check`: passed.
+
+Safety boundaries:
+- Frontend Overview drawer presentation/test/evidence only.
+- No hardware contact, login, read/write probe, firmware action, RAID action, reset, factory reset, rebuild, or confirmation-gate change in this slice.
+
+Approval question:
+Is the Overview device click flow now simple enough to freeze, or should Codex next audit the remaining Setup pages for the same `inspect first, edit second` pattern?

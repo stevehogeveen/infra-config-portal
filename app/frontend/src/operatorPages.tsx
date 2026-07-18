@@ -9681,19 +9681,25 @@ function LabDesignComposer({
                 </section>
 
                 {selectedDetailWorkspaceSections.length > 0 && (
-                  <div className="design-device-param-sections" aria-label={`${selectedPart.label} detailed parameters`}>
-                    {selectedDetailWorkspaceSections.map((section) => (
-                      <section className="design-device-param-section" key={section.id} aria-label={`${selectedPart.label} ${section.label}`}>
-                        <div>
-                          <p className="operator-kicker">{section.label}</p>
-                          <h4>{section.summary}</h4>
-                        </div>
-                        <div className="design-device-setting-rows">
-                          {section.fields.map((field) => renderSelectedDeviceSettingRow(field))}
-                        </div>
-                      </section>
-                    ))}
-                  </div>
+                  <details className="design-workspace-edit-settings" aria-label={`${selectedPart.label} edit settings`}>
+                    <summary>
+                      <span>Edit settings</span>
+                      <strong>{selectedDetailWorkspaceSections.length} setup groups</strong>
+                    </summary>
+                    <div className="design-device-param-sections" aria-label={`${selectedPart.label} detailed parameters`}>
+                      {selectedDetailWorkspaceSections.map((section) => (
+                        <section className="design-device-param-section" key={section.id} aria-label={`${selectedPart.label} ${section.label}`}>
+                          <div>
+                            <p className="operator-kicker">{section.label}</p>
+                            <h4>{section.summary}</h4>
+                          </div>
+                          <div className="design-device-setting-rows">
+                            {section.fields.map((field) => renderSelectedDeviceSettingRow(field))}
+                          </div>
+                        </section>
+                      ))}
+                    </div>
+                  </details>
                 )}
 
                 <details className="design-workspace-advanced" aria-label={`${selectedPart.label} advanced checks and proof`}>

@@ -1032,6 +1032,13 @@ test("overview device workspace matrix keeps default inputs concise", async ({ p
     await expect(overlay.locator(".design-blueprint-stage"), `${item.workspace} does not render the hidden topology designer in the drawer`).toHaveCount(0);
     await detailsDrawer.locator(":scope > summary").click();
     await expect(workspace.getByLabel(`${item.workspace} port and bay inspector`), `${item.workspace} faceplate inspector lives inside details`).toBeVisible();
+    const editSettings = workspace.getByLabel(`${item.workspace} edit settings`);
+    await expect(editSettings, `${item.workspace} edit settings are available inside details`).toBeVisible();
+    await expect(editSettings, `${item.workspace} edit settings stay closed until explicitly requested`).not.toHaveAttribute("open", "");
+    expect(await editSettings.locator("input, select, textarea").count(), `${item.workspace} keeps editing available one click deeper`).toBeGreaterThan(0);
+    await expect(editSettings.locator("input, select, textarea").first(), `${item.workspace} hides edit controls after opening details`).not.toBeVisible();
+    await editSettings.locator(":scope > summary").click();
+    await expect(editSettings.locator("input, select, textarea").first(), `${item.workspace} reveals edit controls after edit intent`).toBeVisible();
     await expect(detailsDrawer.locator(`section[aria-label='${item.workspace} Identity']`), `${item.workspace} does not repeat identity in details`).toHaveCount(0);
     await expect(detailsDrawer, `${item.workspace} details do not repeat name/model copy`).not.toContainText("Name, model, and role");
     await expect(detailsDrawer, `${item.workspace} details avoid repeated live-unknown microcopy`).not.toContainText("Visual intent only; live unknown");
@@ -1332,6 +1339,9 @@ test("overview design mode keeps the surface map-only until a node opens the wor
   const details = switchWorkspace.getByLabel("Cisco switch details");
   await expect(switchWorkspace.getByLabel("Cisco switch Network")).toContainText("Management IP");
   await expect(switchWorkspace).toContainText("fabric and VLAN control");
+  const editSettings = switchWorkspace.getByLabel("Cisco switch edit settings");
+  await expect(editSettings).not.toHaveAttribute("open", "");
+  await editSettings.locator(":scope > summary").click();
   await expect(switchWorkspace.getByLabel("BPDU guard")).toHaveValue("enabled on edge access ports");
   await switchWorkspace.getByLabel("Black-hole VLAN").fill("998");
   await switchWorkspace.getByLabel("ACL lanes").fill("MGMT-IN, STORAGE-NFS-IN, DROP-ALL, QUARANTINE");
@@ -1428,6 +1438,7 @@ test("overview design mode switches scenario drafts without committing hardware"
   await expect(serverWorkspace).toBeVisible();
   await serverWorkspace.getByLabel("DL360 Gen10 details").locator(":scope > summary").click();
   await expect(serverWorkspace.getByLabel("DL360 Gen10 Storage")).toContainText("NFS datastore path");
+  await serverWorkspace.getByLabel("DL360 Gen10 edit settings").locator(":scope > summary").click();
   await expect(serverWorkspace.getByLabel("DL360 Gen10 Storage").getByRole("textbox", { name: /^Data RAID/ })).toHaveValue("boot/staging only; VM data on shared storage");
   await expect(overlay).toContainText("Checks here are read-only. Apply steps stay behind confirmations.");
   await overlay.getByRole("button", { name: "Close" }).click();
