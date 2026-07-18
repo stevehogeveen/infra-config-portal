@@ -964,6 +964,64 @@ test("zoned map opens the device workspace directly", async ({ page }) => {
 
 });
 
+test("overview device workspace primary actions stay read-only", async ({ page }) => {
+  const forbiddenActionIds = /^(raid\.apply|raid\.reset-commit|esxi\.rebuild-install|ilo\.reset-server|netapp\.factory-reset-apply|netapp\.setup-apply|firmware\.upgrade-apply-placeholder|cisco\.apply-bootstrap|vcenter\.attach-esxi-apply|esxi\.netapp-datastore-apply|esxi\.vm-deploy-apply)$/;
+  const capturedActionIds: string[] = [];
+  page.on("request", (request) => {
+    if (request.method() !== "POST") return;
+    const url = new URL(request.url());
+    if (!url.pathname.match(/^\/api\/v1\/workflows\/actions\/.+\/run$/)) return;
+    capturedActionIds.push(actionIdFromRunPath(url.pathname));
+  });
+
+  await page.goto("/overview");
+  await openOperatorDetails(page);
+
+  const topology = page.locator("section[aria-label='Living lab topology']");
+  const cases = [
+    { actionId: "cisco.ssh-readonly-probe", label: "Cisco switch", open: "Open Cisco switch workspace", workspace: "Cisco switch" },
+    { actionId: "ilo.reachability", label: "HPE iLO", open: "Open HPE iLO workspace", workspace: "HPE iLO" },
+    { actionId: "esxi.management-validation", label: "HPE DL360 Gen10", open: "Open HPE DL360 Gen10 workspace", workspace: "DL360 Gen10" },
+    { actionId: "netapp.setup-preview", label: "NetApp ONTAP", open: "Open NetApp ONTAP workspace", workspace: "NetApp ONTAP" },
+    { actionId: "vcenter-netapp.readiness", label: "vCenter VCSA", open: "Open vCenter VCSA workspace", workspace: "vCenter VCSA" }
+  ];
+
+  for (const item of cases) {
+    capturedActionIds.length = 0;
+    await topology.getByRole("button", { name: item.open }).click();
+    const overlay = page.locator("div[aria-label='Device workspace overlay']");
+    const workspace = overlay.locator(`section[aria-label='${item.workspace} workspace']`);
+    await expect(workspace).toBeVisible();
+    await expect(workspace).toContainText("Checks here are read-only. Apply steps stay behind confirmations.");
+
+    const primary = workspace.locator(":scope > .design-device-primary-action button");
+    await expect(primary, `${item.label} workspace has one primary action`).toHaveCount(1);
+    await expect(primary, `${item.label} workspace primary action is visible`).toBeVisible();
+    const primaryText = await primary.evaluate((element) => (element.textContent || "").replace(/\s+/g, " ").trim());
+    expect(primaryText, `${item.label} workspace primary action stays short and non-destructive`)
+      .toMatch(/^(Run|Test) [^.!?]{1,34}$/);
+    expect(primaryText, `${item.label} workspace primary action hides guarded verbs`)
+      .not.toMatch(/apply|factory|reset|rebuild|upgrade/i);
+
+    const request = page.waitForRequest((candidate) =>
+      candidate.method() === "POST" &&
+      actionIdFromRunPath(new URL(candidate.url()).pathname) === item.actionId
+    );
+    await primary.click();
+    await request;
+    await expect.poll(
+      () => capturedActionIds.length,
+      { message: `${item.label} workspace starts one workflow action`, timeout: 5000 }
+    ).toBe(1);
+    expect(capturedActionIds, `${item.label} workspace never starts guarded/write actions`)
+      .not.toEqual(expect.arrayContaining([expect.stringMatching(forbiddenActionIds)]));
+    expect(capturedActionIds, `${item.label} workspace primary action target`).toEqual([item.actionId]);
+
+    await overlay.getByRole("button", { name: "Close" }).click();
+    await expect(page.locator("div[aria-label='Device workspace overlay']")).toHaveCount(0);
+  }
+});
+
 test("overview device workspace matrix keeps default inputs concise", async ({ page }) => {
   await page.goto("/overview");
   await openOperatorDetails(page);

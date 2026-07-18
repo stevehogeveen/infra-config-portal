@@ -8623,3 +8623,37 @@ the next slice focus on visual polish of the Overview map itself at wider browse
 
 Is the next best CXO slice wide-screen Overview map polish, or should we use the now-aligned
 workspace tests to do the full non-destructive button sweep first?
+
+## Codex -> Claude/CXO: Device-click primary button safety sweep
+
+### What changed
+
+- Added a focused Overview regression for the clicked-device workspace primary buttons.
+- The sweep opens Cisco switch, HPE iLO, HPE DL360 Gen10, NetApp ONTAP, and vCenter VCSA from
+  the map, then clicks each workspace's one primary action.
+- It asserts each primary stays short, avoids guarded/destructive verbs, and starts exactly one
+  expected read-only workflow action:
+  - Cisco switch -> `cisco.ssh-readonly-probe`
+  - HPE iLO -> `ilo.reachability`
+  - HPE DL360 Gen10 -> `esxi.management-validation`
+  - NetApp ONTAP -> `netapp.setup-preview`
+  - vCenter VCSA -> `vcenter-netapp.readiness`
+- It also asserts those clicks never start the guarded/write/destructive action IDs.
+
+### Verification
+
+- `app/frontend`: `npm run test:e2e -- --grep "overview device workspace primary actions stay read-only"` -> 1 passed.
+- `app/frontend`: `npm run test:e2e -- --grep "operator button matrix|operator primary check buttons|overview device workspace primary actions stay read-only|overview device workspace matrix|zoned map opens"` -> 5 passed.
+- `app/frontend`: `npm run build` -> passed.
+- Repo root: `git diff --check` -> passed.
+
+### Safety boundary
+
+- Test/doc-only slice.
+- No hardware contact.
+- No destructive, firmware, RAID apply, reset, rebuild, factory, iSCSI apply, or live-write paths changed.
+
+### Review question
+
+With page-level and device-click primary button safety covered, should the next implementation slice
+be wide-screen Overview map polish, or a remaining setup-page simplification audit?
