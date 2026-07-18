@@ -1424,19 +1424,20 @@ test("overview design mode keeps the surface map-only until a node opens the wor
   const editSettings = switchWorkspace.getByLabel("Cisco switch edit settings");
   await expect(editSettings).not.toHaveAttribute("open", "");
   await editSettings.locator(":scope > summary").click();
-  await expect(editSettings.locator(":scope > summary")).toContainText("Choose one group");
+  await expect(editSettings.locator(":scope > summary")).toContainText("Planning fields only");
   await expect(editSettings.locator(":scope > summary")).not.toContainText("setup groups");
+  await expect(editSettings.locator(".design-device-edit-intro")).toHaveText("Pick one area. Saved kit values stay above.");
   await expect(editSettings.getByLabel("Cisco switch edit groups")).toContainText("Network");
   await expect(editSettings.getByLabel("Cisco switch edit groups")).toContainText("Access");
   await expect(editSettings.locator(".design-device-edit-group-button strong")).toHaveCount(0);
-  await expect(editSettings.locator(".design-device-edit-empty")).toHaveText("Pick one group to edit.");
+  await expect(editSettings.locator(".design-device-edit-empty")).toHaveText("Pick one area to edit.");
   await expect(editSettings.locator(".design-device-param-panel")).toHaveCount(0);
   const networkGroup = await openWorkspaceEditGroup(page, "Cisco switch", "Network");
   await expect(networkGroup).not.toContainText("Management IP");
   await expect(networkGroup).not.toContainText("Storage VLAN");
   await expect(networkGroup).toContainText("Port plan");
   await expect(networkGroup).not.toContainText("IP, gateway, VLANs, and ports");
-  await expect(networkGroup).toContainText("Saved values stay in Main settings");
+  await expect(networkGroup).toContainText("Only planning fields are editable here");
   await expect(networkGroup.locator(".design-device-edit-note")).toHaveCount(1);
   await expect(networkGroup.locator(".design-provenance-chip")).toHaveCount(0);
   await expect(editSettings.locator(".design-device-param-panel")).toHaveCount(1);
@@ -1457,10 +1458,8 @@ test("overview design mode keeps the surface map-only until a node opens the wor
   await expect(advanced.locator("section[aria-label='Cisco switch safe checks and next actions']")).toContainText("Cisco Firmware Inventory: Ready");
   await expect(advanced.locator("section[aria-label='Cisco switch safe checks and next actions']")).toContainText("Last: Ready");
   await expect(switchWorkspace.getByLabel("Cisco switch state")).not.toContainText("source:");
-  const essentialStorageVlan = switchWorkspace.getByLabel("Cisco switch essentials").getByRole("textbox", { name: /^Storage VLAN/ });
-  await essentialStorageVlan.fill("230");
-  await expect(essentialStorageVlan).toHaveValue("230");
-  await expect(switchWorkspace).toContainText("230");
+  await expect(switchWorkspace.getByLabel("Cisco switch essentials").getByRole("textbox", { name: /^Storage VLAN/ })).toHaveCount(0);
+  await expect(switchWorkspace.getByLabel("Cisco switch essentials").locator(".design-device-setting-row.is-readonly-value")).toHaveCount(3);
 });
 
 test("overview design mode map surface stays stable and scalable", async ({ page }) => {
