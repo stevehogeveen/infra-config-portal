@@ -9924,14 +9924,14 @@ function LabDesignComposer({
 
                 <details className="design-workspace-proof-door" aria-label={`${selectedPart.label} proof and diagnostics`}>
                   <summary>
-                    <span>Proof and diagnostics</span>
-                    <strong>Read-only checks stay tucked away</strong>
+                    <span>Evidence</span>
+                    <strong>Read-only checks stay hidden</strong>
                   </summary>
 
                   <details className="design-workspace-advanced" aria-label={`${selectedPart.label} advanced checks and proof`}>
                     <summary>
-                      <span>Advanced proof</span>
-                      <strong>Read-only checks, schema homes, and diagnostics</strong>
+                      <span>Diagnostics</span>
+                      <strong>Schema homes and raw check output</strong>
                     </summary>
 
                     {selectedPart.id === "netapp" && (
