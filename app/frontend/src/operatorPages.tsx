@@ -4272,6 +4272,7 @@ export function OperatorVirtualizationPage({ labProfileState, onReloadLabProfile
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const [activeDetailSection, setActiveDetailSection] = useState<VirtualizationDetailSectionId>("path");
   const [runState, setRunState] = useState<WorkflowRunState>(emptyRunState);
 
   async function load() {
@@ -4561,7 +4562,28 @@ export function OperatorVirtualizationPage({ labProfileState, onReloadLabProfile
       </section>
       {detailsOpen && (
         <section className="network-details virtualization-details" aria-label="VM details">
-          <div className="network-details-grid virtualization-details-grid">
+          <div className="network-detail-switcher virtualization-detail-switcher" aria-label="VM detail sections">
+            {[
+              { id: "path" as VirtualizationDetailSectionId, label: "Path", summary: "Mode, target, datastore" },
+              { id: "checks" as VirtualizationDetailSectionId, label: "Checks", summary: "VM and datastore signals" },
+              { id: "setup" as VirtualizationDetailSectionId, label: "Setup", summary: "Saved virtualization fields" },
+              { id: "shape" as VirtualizationDetailSectionId, label: "Shape", summary: "Direct ESXi or vCenter" },
+              { id: "proof" as VirtualizationDetailSectionId, label: "Proof", summary: "Advanced evidence" }
+            ].map((section) => (
+              <button
+                aria-pressed={activeDetailSection === section.id}
+                className={activeDetailSection === section.id ? "is-selected" : ""}
+                key={section.id}
+                onClick={() => setActiveDetailSection(section.id)}
+                type="button"
+              >
+                <span>{section.label}</span>
+                <strong>{section.summary}</strong>
+              </button>
+            ))}
+          </div>
+          <div className="network-detail-panel virtualization-detail-panel" aria-label={`VM ${activeDetailSection}`}>
+            {activeDetailSection === "path" && (
             <Card className="network-details-card" hover={false}>
               <CardHeader>
                 <div>
@@ -4582,6 +4604,8 @@ export function OperatorVirtualizationPage({ labProfileState, onReloadLabProfile
                 />
               </CardContent>
             </Card>
+            )}
+            {activeDetailSection === "checks" && (
             <Card className="network-details-card" hover={false}>
               <CardHeader>
                 <div>
@@ -4607,6 +4631,8 @@ export function OperatorVirtualizationPage({ labProfileState, onReloadLabProfile
                 </tbody>
               </CompactTable>
             </Card>
+            )}
+            {activeDetailSection === "setup" && (
             <section className="overview-safe-actions" aria-label="Virtualization configure">
               <VirtualizationConfigurePanel
                 activeProfile={activeProfile}
@@ -4619,6 +4645,8 @@ export function OperatorVirtualizationPage({ labProfileState, onReloadLabProfile
                 }}
               />
             </section>
+            )}
+            {activeDetailSection === "shape" && (
             <VirtualizationSetupShapePanel
               activeProfile={activeProfile}
               currentView={currentView}
@@ -4631,6 +4659,8 @@ export function OperatorVirtualizationPage({ labProfileState, onReloadLabProfile
               vcenterNetapp={vcenterNetapp}
               virtualStatus={virtualStatus}
             />
+            )}
+            {activeDetailSection === "proof" && (
             <AdvancedDrawer title="Virtualization proof" summary={noProofText}>
               <OperatorWorkspace currentView={currentView} rows={virtualizationRows} compact />
               <ConfigValueList
@@ -4641,12 +4671,15 @@ export function OperatorVirtualizationPage({ labProfileState, onReloadLabProfile
                 ]}
               />
             </AdvancedDrawer>
+            )}
           </div>
         </section>
       )}
     </OperatorPage>
   );
 }
+
+type VirtualizationDetailSectionId = "path" | "checks" | "setup" | "shape" | "proof";
 
 function virtualizationVmManagementCardModel({
   activeProfile,

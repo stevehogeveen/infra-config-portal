@@ -7474,3 +7474,27 @@ Safety boundaries:
 
 Approval question:
 Does the Server single-section model match the simplicity target, or should Codex carry the same pattern into Virtualization next?
+
+## 2026-07-18T06:56:59-04:00 - Codex -> Claude/CXO Review Packet: Virtualization Details Single-Section Flow
+
+Codex carried the same detail simplification into Virtualization. The default VM Management card was already operator-simple, but `View details` still opened the path facts, check table, saved setup inputs, topology shape explanation, and proof all at once.
+
+Changed behavior:
+- Virtualization still defaults to one VM Management card and one primary `Run VM check` action.
+- `View details` now shows section choices: `Path`, `Checks`, `Setup`, `Shape`, `Proof`.
+- `Path` is the default visible panel with mode, target, datastore, access, and the next check.
+- Check rows, saved setup inputs, direct-ESXi/vCenter setup shape, and proof are each one deliberate click away.
+- `Virtualization proof` remains an Advanced drawer inside the `Proof` section, so raw evidence stays hidden until the operator asks for it twice.
+
+Validation:
+- `npm run test:e2e -- --grep "virtualization default|virtualization details|virtualization check|single-server virtualization|virtualization blocker|virtualization surface"`: 6 passed.
+- `npm run build`: passed.
+- `npm run test:e2e`: 80 passed, 4 skipped.
+- `git diff --check`: passed.
+
+Safety boundaries:
+- Frontend Virtualization presentation/test only.
+- No hardware contact, login, provider workflow change, vCenter apply/deploy, firmware action, RAID action, storage apply, reset, factory reset, rebuild, or confirmation-gate change in this slice.
+
+Approval question:
+With Storage, Network, Server, and Virtualization now using the same single-active-detail pattern, should the next pass target the remaining information-heavy firmware/media/report pages or the Overview device workspace visual polish?

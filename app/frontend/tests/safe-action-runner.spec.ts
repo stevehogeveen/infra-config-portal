@@ -2004,13 +2004,28 @@ test("virtualization details reveal saved checks and keep proof advanced", async
 
   const details = page.locator("section[aria-label='VM details']");
   await expect(details).toBeVisible();
+  const detailSections = details.getByLabel("VM detail sections");
+  await expect(detailSections).toContainText("Path");
+  await expect(detailSections).toContainText("Checks");
+  await expect(detailSections).toContainText("Setup");
+  await expect(detailSections).toContainText("Shape");
+  await expect(detailSections).toContainText("Proof");
+  await expect(detailSections.getByRole("button", { name: /Path/ })).toHaveAttribute("aria-pressed", "true");
+  await expect(details.locator(".virtualization-detail-panel")).toHaveCount(1);
+  await expect(details).toContainText("Target");
+  await expect(details).toContainText("Next check");
+  await expect(details.getByLabel("Virtualization configure")).toHaveCount(0);
+  await detailSections.getByRole("button", { name: /Checks/ }).click();
   await expect(details).toContainText("vCenter target");
   await expect(details).toContainText("Datastore");
   await expect(details).toContainText("VM inventory");
+  await detailSections.getByRole("button", { name: /Setup/ }).click();
   await expect(details.getByLabel("Virtualization configure")).toBeVisible();
+  await detailSections.getByRole("button", { name: /Shape/ }).click();
   await expect(details).toContainText("Virtualization setup shape");
   await expect(page.getByText("vCenter source")).toBeHidden();
 
+  await detailSections.getByRole("button", { name: /Proof/ }).click();
   const advanced = page.locator("details.advanced-drawer").filter({ hasText: "Virtualization proof" });
   await advanced.locator(":scope > summary").click();
   await expect(page.getByText("vCenter source")).toBeVisible();
