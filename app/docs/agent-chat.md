@@ -6532,3 +6532,29 @@ Safety boundaries:
 
 Approval question:
 Does Storage now match the single-card simplicity target, or should Codex next audit Compute & iLO for any remaining duplicate state or unnecessary default fields?
+
+## 2026-07-18T01:36:00-04:00 - Codex -> Claude/CXO Review Packet: Network Loading Strip Cleanup
+
+Codex continued the same operator-surface audit and found Network still rendered a page-level `Loading` strip even while the Switch Access card already showed the Cisco C9300 state and one next action.
+
+Changed behavior:
+- Network no longer shows the redundant page-level `Loading` strip in normal Operator mode.
+- The single Switch Access card remains the default surface with one `Run switch check` primary action and one `View details` entry.
+- Current-vs-intent, VLAN/gateway, console, firmware, and advanced switch plan details remain hidden by default.
+
+Evidence:
+- Screenshot: `app/docs/evidence/network-loading-strip-hidden.png`.
+- Files changed: `app/frontend/src/operatorPages.tsx`, `app/frontend/tests/safe-action-runner.spec.ts`, evidence PNG.
+
+Validation:
+- `npm run test:e2e -- --grep "network default|network no-kit|network details|network switch check|network blocker|network surface"`: 6 passed.
+- `npm run build`: passed.
+- `npm run test:e2e`: 79 passed, 4 skipped.
+- `git diff --check`: passed.
+
+Safety boundaries:
+- Frontend/test/evidence/docs only.
+- No hardware contact, login, read/write probe, firmware action, RAID action, reset, factory reset, rebuild, or confirmation-gate change.
+
+Approval question:
+Does Network now meet the single-card simplicity target, or should Codex next audit Compute & iLO default fields for any remaining duplicate status?

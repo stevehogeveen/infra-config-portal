@@ -1620,6 +1620,7 @@ test("network default shows one switch access card and hides technical detail", 
 
   const access = page.getByLabel("Switch Access");
   await expect(access.getByRole("heading", { name: "Cisco C9300" })).toBeVisible();
+  await expect(page.locator(".operator-feedback", { hasText: "Loading" })).toHaveCount(0);
   await expect(access.locator("dt")).toHaveText(["Switch", "Management IP", "State", "Access"]);
   await expect(access.getByRole("button", { name: "Run switch check" })).toBeVisible();
   await expect(access.getByRole("button", { name: "View details" })).toBeVisible();
