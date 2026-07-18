@@ -15394,6 +15394,129 @@ button.design-ilo-port:hover {
   gap: 16px;
 }
 
+.storage-path-map-card {
+  border-color: #d6e4ef;
+}
+
+.storage-flow-map {
+  align-items: stretch;
+  background:
+    linear-gradient(90deg, rgba(8, 127, 131, .05), rgba(37, 99, 235, .04)),
+    radial-gradient(circle at 15px 15px, rgba(100, 116, 139, .16) 1px, transparent 1.5px);
+  background-size: auto, 18px 18px;
+  border: 1px solid #dbe6f2;
+  border-radius: 14px;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(145px, 1fr) 64px minmax(145px, 1fr) 64px minmax(145px, 1fr) 64px minmax(145px, 1fr);
+  overflow-x: auto;
+  padding: 16px;
+}
+
+.storage-flow-node {
+  background: #ffffff;
+  border: 1px solid #d7e2ed;
+  border-radius: 12px;
+  box-shadow: 0 12px 24px rgba(30, 54, 80, .06);
+  display: grid;
+  gap: 6px;
+  min-width: 145px;
+  padding: 14px;
+}
+
+.storage-flow-icon {
+  align-items: center;
+  background: #eef6f8;
+  border: 1px solid #d1e7ed;
+  border-radius: 10px;
+  color: #087f83;
+  display: inline-flex;
+  height: 38px;
+  justify-content: center;
+  width: 38px;
+}
+
+.storage-flow-node > span:not(.storage-flow-icon),
+.storage-flow-node small,
+.storage-path-map-summary span,
+.storage-path-map-summary small {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 850;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.storage-flow-node > span:not(.storage-flow-icon),
+.storage-path-map-summary span {
+  text-transform: uppercase;
+}
+
+.storage-flow-node strong,
+.storage-path-map-summary strong {
+  color: var(--ink);
+  font-size: 15px;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.storage-flow-link {
+  align-items: center;
+  color: #64748b;
+  display: flex;
+  font-size: 11px;
+  font-weight: 900;
+  justify-content: center;
+  min-width: 64px;
+  position: relative;
+  text-transform: uppercase;
+}
+
+.storage-flow-link::before {
+  background-image: linear-gradient(90deg, #94a3b8 50%, transparent 0);
+  background-size: 10px 2px;
+  content: "";
+  height: 2px;
+  left: 0;
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.storage-flow-link.ready::before {
+  background: #14a76c;
+}
+
+.storage-flow-link.blocked::before {
+  background-image: linear-gradient(90deg, #d24d3f 40%, transparent 0);
+}
+
+.storage-flow-link span {
+  background: #f8fafc;
+  border: 1px solid #dbe6f2;
+  border-radius: 999px;
+  padding: 3px 8px;
+  position: relative;
+}
+
+.storage-path-map-summary {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-top: 14px;
+}
+
+.storage-path-map-summary > div {
+  background: #f8fafc;
+  border: 1px solid #dbe4ef;
+  border-radius: 10px;
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  padding: 12px;
+}
+
 .storage-scenario-grid {
   display: grid;
   gap: 10px;
@@ -17624,6 +17747,7 @@ button.design-ilo-port:hover {
     .virtualization-setup-grid,
     .storage-scenario-grid,
     .storage-path-fields,
+    .storage-path-map-summary,
     .local-storage-facts,
     .ontap-readiness-grid,
     .protocol-option-strip,

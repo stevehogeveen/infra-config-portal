@@ -8494,3 +8494,40 @@ empty-state for unknown drive inventory before moving to Storage/NetApp simplifi
 
 Does this complete the default Setup-card pattern pass, so the next slice should visualize the
 Storage details path (NetApp/NFS/iSCSI) instead of only moving buttons?
+
+## Codex -> Claude/CXO: Storage details path-map slice
+
+### What changed
+
+- Replaced the default Storage Details readiness panel with a visual `Storage path map`.
+- The map shows the operator path as device cards: ESXi host -> Cisco switch -> NetApp ONTAP ->
+  Datastore, with honest status pills and the active protocol label between hops.
+- Kept the default details tier free of raw protocol internals: LIF, VMFS, igroup, target portal,
+  guarded iSCSI actions, and write evidence are no longer visible in the first Readiness panel.
+- Moved the dense `NetApp access path` / ONTAP / NFS / iSCSI proof into the existing `Storage proof`
+  Advanced drawer.
+- The guarded `Apply iSCSI` control is still present only under Advanced proof, unchanged.
+
+### Evidence
+
+- E2E regression now asserts the Readiness panel shows `Storage path map`, device flow, Cisco,
+  NetApp, Datastore, and `Next check`.
+- E2E regression also asserts raw storage proof terms stay hidden until `Proof` is opened.
+
+### Verification
+
+- `app/frontend`: `npm run test:e2e -- --grep "storage page defaults|single-server storage|operator button matrix|operator primary check buttons"` -> 4 passed.
+- `app/frontend`: `npm run build` -> passed.
+- Repo root: `git diff --check` -> passed.
+
+### Safety boundary
+
+- Frontend/test-only slice.
+- No hardware contact.
+- `operator primary check buttons run only expected read-only workflows` still passes; no destructive,
+  firmware, RAID apply, reset, rebuild, factory, iSCSI apply, or live-write paths changed.
+
+### Review question
+
+Does the Storage Details tier now feel visual and simple enough, or should the next slice simplify
+the Overview device-click workspace input sections before more setup pages?

@@ -1658,15 +1658,21 @@ test("storage page defaults to one storage path card and hides protocol internal
   await expect(detailSections).toContainText("Proof");
   await expect(detailSections.getByRole("button", { name: /Readiness/ })).toHaveAttribute("aria-pressed", "true");
   await expect(details.locator(".storage-path-detail-panel")).toHaveCount(1);
-  await expect(details.getByLabel("ONTAP readiness")).toContainText(/LIF|VMFS|igroup|target portal/);
+  const pathMap = details.getByLabel("Storage path map");
+  await expect(pathMap).toBeVisible();
+  await expect(pathMap).toContainText("Storage path map");
+  await expect(pathMap.getByLabel("Storage path device flow")).toBeVisible();
+  await expect(pathMap).toContainText("Cisco switch");
+  await expect(pathMap).toContainText("NetApp ONTAP");
+  await expect(pathMap).toContainText("Datastore");
+  await expect(pathMap).toContainText("Next check");
+  await expect(details.getByLabel("ONTAP readiness")).toHaveCount(0);
+  await expect(details).not.toContainText(/LIF|VMFS|igroup|target portal/);
   await expect(details.getByLabel("Storage configure")).toHaveCount(0);
   await expect(details.getByLabel("Storage reference")).not.toBeVisible();
   await expect(details.getByRole("button", { name: "Apply iSCSI" })).toHaveCount(0);
   await expect(details.locator(".iscsi-gates-grid")).not.toBeVisible();
-  const advancedStorageActions = details.getByLabel("Advanced storage actions");
-  await expect(advancedStorageActions).toBeVisible();
-  await advancedStorageActions.locator(":scope > summary").click();
-  await expect(advancedStorageActions.getByRole("button", { name: "Apply iSCSI" })).toBeVisible();
+  await expect(details.getByLabel("Advanced storage actions")).toHaveCount(0);
   await detailSections.getByRole("button", { name: /Setup/ }).click();
   await expect(detailSections.getByRole("button", { name: /Setup/ })).toHaveAttribute("aria-pressed", "true");
   await expect(details.getByLabel("Storage configure")).toBeVisible();
@@ -1675,6 +1681,11 @@ test("storage page defaults to one storage path card and hides protocol internal
   const storageProof = details.locator("details.advanced-drawer").filter({ hasText: "Storage proof" });
   await expect(storageProof).not.toHaveAttribute("open", "");
   await storageProof.locator(":scope > summary").click();
+  await expect(details.getByLabel("ONTAP readiness")).toContainText(/LIF|VMFS|igroup|target portal/);
+  const advancedStorageActions = details.getByLabel("Advanced storage actions");
+  await expect(advancedStorageActions).toBeVisible();
+  await advancedStorageActions.locator(":scope > summary").click();
+  await expect(advancedStorageActions.getByRole("button", { name: "Apply iSCSI" })).toBeVisible();
   await expect(details.getByLabel("Storage reference")).toBeVisible();
 
   await page.setViewportSize({ width: 375, height: 900 });

@@ -15,7 +15,7 @@ import {
   ShieldCheck,
   Wrench
 } from "lucide-react";
-import { createContext, FormEvent, ReactNode, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, FormEvent, Fragment, ReactNode, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 
 import { api } from "./api";
@@ -2993,9 +2993,27 @@ export function OperatorStoragePage({ labProfileState, onReloadLabProfile }: Ope
     }
     return `${headerLabel}: ${results.length} checks completed with device evidence.`;
   };
+  const storagePath = storagePathCardModel({
+    activeProtocol: activeStorageProtocol,
+    pageStatus,
+    serverLocalStorage,
+    storageBlocker: currentView.blockers[0] || "",
+    storageNextAction,
+    storageScenario,
+    vcenterNetapp
+  });
   const storageRegions: Record<string, ReactNode> = profileReady ? {
     "advanced-proof": (
       <AdvancedDrawer title="Storage proof" summary={noProofText}>
+        {!serverLocalStorage && (
+          <NetAppOntapReadinessCard
+            address={address}
+            activeProfile={activeProfile}
+            consoleReadiness={consoleReadiness}
+            nfsReadiness={nfsReadiness}
+            onReload={load}
+          />
+        )}
         <OperatorWorkspace currentView={currentView} rows={storageRows} compact />
         <ConfigValueList
           values={[
@@ -3050,9 +3068,21 @@ export function OperatorStoragePage({ labProfileState, onReloadLabProfile }: Ope
         raidPlan={raidPlan}
         storageScenario={storageScenario}
       />
+    ),
+    "shared-path-map": (
+      <StorageSharedPathMapCard
+        activeProtocol={activeStorageProtocol}
+        address={address}
+        esxiIscsiPreview={esxiIscsiPreview}
+        iscsiSetupPreview={iscsiSetupPreview}
+        netappPlan={netappPlan}
+        nfsReadiness={nfsReadiness}
+        storagePath={storagePath}
+        vcenterNetapp={vcenterNetapp}
+      />
     )
   } : {};
-  const storageReadinessPanel = serverLocalStorage ? storageRegions["local-readiness"] : storageRegions["ontap-readiness"];
+  const storageReadinessPanel = serverLocalStorage ? storageRegions["local-readiness"] : storageRegions["shared-path-map"];
   const storageDetailSections = profileReady ? [
     {
       id: "path" as StorageDetailSectionId,
@@ -3082,15 +3112,6 @@ export function OperatorStoragePage({ labProfileState, onReloadLabProfile }: Ope
   const selectedStorageDetailSection = storageDetailSections.find((section) => section.id === activeDetailSection)
     ?? storageDetailSections.find((section) => section.id === "readiness")
     ?? storageDetailSections[0];
-  const storagePath = storagePathCardModel({
-    activeProtocol: activeStorageProtocol,
-    pageStatus,
-    serverLocalStorage,
-    storageBlocker: currentView.blockers[0] || "",
-    storageNextAction,
-    storageScenario,
-    vcenterNetapp
-  });
 
   async function runDefaultStorageCheck() {
     if (!profileReady || runState.runningActionId) return;
@@ -3238,6 +3259,132 @@ function storagePathBadgeStatus(label: "Ready" | "Blocked" | "Not checked"): Sta
   if (label === "Ready") return "ready";
   if (label === "Blocked") return "blocked";
   return "not-configured";
+}
+
+function StorageSharedPathMapCard({
+  activeProtocol,
+  address,
+  esxiIscsiPreview,
+  iscsiSetupPreview,
+  netappPlan,
+  nfsReadiness,
+  storagePath,
+  vcenterNetapp
+}: {
+  activeProtocol: string;
+  address: LabAddressPlan;
+  esxiIscsiPreview: ProviderProbeResult | null;
+  iscsiSetupPreview: ProviderProbeResult | null;
+  netappPlan: ProviderProbeResult | null;
+  nfsReadiness: ProviderProbeResult | null;
+  storagePath: ReturnType<typeof storagePathCardModel>;
+  vcenterNetapp: ProviderProbeResult | null;
+}) {
+  const protocol = activeProtocol === "iscsi" ? "iSCSI" : "NFS";
+  const activeStorageAddresses = activeProtocol === "iscsi" ? address.netapp_iscsi_lifs : address.netapp_nfs_lifs;
+  const protocolStatus = activeProtocol === "iscsi"
+    ? strongestStatus([asString(iscsiSetupPreview?.status), asString(esxiIscsiPreview?.status)])
+    : asString(nfsReadiness?.status) || "not_checked";
+  const datastoreStatus = datastoreVisibleStatus(vcenterNetapp);
+  const attention = uniqueStrings([
+    storagePath.reason,
+    ...stringArray(nfsReadiness?.blockers),
+    ...stringArray(netappPlan?.blockers),
+    ...stringArray(iscsiSetupPreview?.blockers),
+    ...stringArray(esxiIscsiPreview?.blockers),
+    ...stringArray(vcenterNetapp?.blockers)
+  ]).map(humanize).find(Boolean) || "";
+  const nextCheck = humanize(
+    asString(nfsReadiness?.next_safe_action) ||
+    asString(netappPlan?.next_safe_action) ||
+    asString(vcenterNetapp?.next_safe_action) ||
+    "Run storage check from the card above."
+  );
+  const nodes = [
+    {
+      detail: displayAddress(address.esxi_management),
+      icon: <Server size={18} />,
+      label: "ESXi host",
+      status: activeProtocol === "iscsi" ? asString(esxiIscsiPreview?.status) || "not_checked" : protocolStatus,
+      sublabel: "Compute"
+    },
+    {
+      detail: "Storage fabric",
+      icon: <EthernetPort size={18} />,
+      label: "Cisco switch",
+      status: activeStorageAddresses.length ? "planned" : "not_configured_yet",
+      sublabel: "Path"
+    },
+    {
+      detail: displayAddress(address.netapp_cluster_mgmt),
+      icon: <Database size={18} />,
+      label: "NetApp ONTAP",
+      status: asString(netappPlan?.status) || "not_checked",
+      sublabel: "Storage"
+    },
+    {
+      detail: storagePath.targetDatastore,
+      icon: <HardDrive size={18} />,
+      label: "Datastore",
+      status: datastoreStatus,
+      sublabel: "VM storage"
+    }
+  ];
+
+  return (
+    <Card aria-label="Storage path map" className="operator-section storage-path-map-card" hover={false}>
+      <CardHeader>
+        <div>
+          <p className="operator-kicker">Readiness</p>
+          <h2>Storage path map</h2>
+        </div>
+        <StatusBadge className="simple-status-pill" label={storagePath.stateLabel} status={storagePath.badgeStatus} />
+      </CardHeader>
+      <CardContent>
+        <div className="storage-flow-map" aria-label="Storage path device flow">
+          {nodes.map((node, index) => (
+            <Fragment key={node.label}>
+              <div className="storage-flow-node">
+                <span className="storage-flow-icon">{node.icon}</span>
+                <span>{node.sublabel}</span>
+                <strong>{node.label}</strong>
+                <small>{node.detail}</small>
+                <SimpleStatusPill status={node.status} />
+              </div>
+              {index < nodes.length - 1 && (
+                <div className={`storage-flow-link ${statusBadgeStatus(node.status) === "blocked" ? "blocked" : statusBadgeStatus(node.status) === "ready" ? "ready" : ""}`}>
+                  <span>{protocol}</span>
+                </div>
+              )}
+            </Fragment>
+          ))}
+        </div>
+        <div className="storage-path-map-summary">
+          <div>
+            <span>Active protocol</span>
+            <strong>{protocol}</strong>
+            <small>{activeStorageAddresses.length ? `${activeStorageAddresses.length} storage address${activeStorageAddresses.length === 1 ? "" : "es"} saved` : "No storage addresses saved yet"}</small>
+          </div>
+          <div>
+            <span>Datastore</span>
+            <strong>{storagePath.targetDatastore}</strong>
+            <small>{displayStatus(datastoreStatus)}</small>
+          </div>
+          <div>
+            <span>Next check</span>
+            <strong>{storagePath.stateLabel === "Ready" ? "Keep proof current" : "Refresh storage proof"}</strong>
+            <small>{nextCheck}</small>
+          </div>
+        </div>
+        {attention && (
+          <div className="operator-mini-alert" role="status">
+            <strong>Needs attention</strong>
+            <span>{attention}</span>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
 }
 
 function NetAppOntapReadinessCard({
