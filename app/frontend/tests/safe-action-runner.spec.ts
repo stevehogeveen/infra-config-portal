@@ -1006,6 +1006,12 @@ test("overview device workspace matrix keeps default inputs concise", async ({ p
     if (item.workspace === "NetApp ONTAP") {
       await expect(workspace.getByLabel("NetApp storage protocol"), "NetApp storage mode is folded into essentials").toHaveCount(0);
     }
+    const setupBeforeFaceplate = await workspace.evaluate((node) => {
+      const setup = node.querySelector(".design-device-essentials");
+      const faceplate = node.querySelector(".design-device-hero");
+      return Boolean(setup && faceplate && (setup.compareDocumentPosition(faceplate) & Node.DOCUMENT_POSITION_FOLLOWING));
+    });
+    expect(setupBeforeFaceplate, `${item.workspace} keeps setup before the faceplate`).toBeTruthy();
     await expect(workspace.locator(":scope > details.design-workspace-details"), `${item.workspace} has one top-level details drawer`).toHaveCount(1);
     await expect(workspace.locator(":scope > details.design-workspace-details > summary"), `${item.workspace} details summary is plain`).toContainText("View details");
     await expect(workspace.locator(":scope > details.design-workspace-details > summary"), `${item.workspace} details summary does not jam two labels together`).not.toContainText("Settings and proof");

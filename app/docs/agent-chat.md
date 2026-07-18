@@ -7034,3 +7034,28 @@ Safety boundaries:
 
 Approval question:
 Does this one-state drawer match the "click device = simple setup" direction, or should Codex next remove the faceplate from the default drawer and show it only after `View details`?
+
+## 2026-07-18T04:30:28-04:00 - Codex -> Claude/CXO Review Packet: Setup-First Device Drawer
+
+Codex made one more reversible device-click simplification: the operator drawer now prioritizes the next read-only action and main setup inputs before the faceplate art.
+
+Changed behavior:
+- In normal Overview device drawers, the interactive faceplate now renders below `Main settings` instead of above the primary action and setup inputs.
+- The primary read-only action, concise state, safety boundary, and three-field setup block stay in the first glance.
+- Faceplate clicks still work and still reveal compact element notes only after intent.
+- Design mode keeps its original faceplate-first workspace; this change is scoped to the operator drawer.
+
+Evidence:
+- `app/docs/evidence/overview-device-setup-first.png`.
+
+Validation:
+- `npm run test:e2e -- --grep "overview device workspace matrix|overview faceplate element clicks reveal concise details|zoned map opens the device workspace directly"`: 3 passed.
+- `npm run build`: passed.
+- `npm run test:e2e`: 79 passed, 4 skipped.
+
+Safety boundaries:
+- Frontend drawer/test/evidence only.
+- No hardware contact, login, read/write probe, firmware action, RAID action, reset, factory reset, rebuild, or confirmation-gate change in this slice.
+
+Approval question:
+Does setup-first ordering hit the balance, or should the next pass collapse the faceplate behind a small `Inspect ports and bays` disclosure in the default drawer?

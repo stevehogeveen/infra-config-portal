@@ -9477,19 +9477,21 @@ function LabDesignComposer({
               </div>
             </div>
 
-            <div className="design-device-hero" aria-label={`${selectedPart.label} interactive faceplate`}>
-              <DesignFaceplateVisual
-                interactive
-                onElementClick={(elementLabel) => {
-                  setSelectedFaceplateElement(elementLabel);
-                  setDropMessage(`${selectedPart.label} ${elementLabel} selected. Inspect mapped params below; hardware untouched.`);
-                }}
-                partId={selectedPart.id}
-                selectedElement={selectedFaceplateElement}
-                settings={selectedSettings}
-                storageProtocol={storageProtocol}
-              />
-            </div>
+            {!workspaceOnly && (
+              <div className="design-device-hero" aria-label={`${selectedPart.label} interactive faceplate`}>
+                <DesignFaceplateVisual
+                  interactive
+                  onElementClick={(elementLabel) => {
+                    setSelectedFaceplateElement(elementLabel);
+                    setDropMessage(`${selectedPart.label} ${elementLabel} selected. Inspect mapped params below; hardware untouched.`);
+                  }}
+                  partId={selectedPart.id}
+                  selectedElement={selectedFaceplateElement}
+                  settings={selectedSettings}
+                  storageProtocol={storageProtocol}
+                />
+              </div>
+            )}
 
             {workspaceOnly && (
               <p className="design-workspace-boundary">Checks here are read-only. Apply steps stay behind confirmations.</p>
@@ -9555,13 +9557,6 @@ function LabDesignComposer({
                 onReload={onReload}
                 workflowActions={workflowActions}
               />
-            )}
-
-            {workspaceOnly && selectedElementInspector && (
-              <p className="design-selected-element-note">
-                <strong>{selectedElementInspector.label}</strong>
-                <span>{selectedElementInspector.summary}</span>
-              </p>
             )}
 
             {!workspaceOnly && selectedElementInspector && (
@@ -9640,6 +9635,29 @@ function LabDesignComposer({
                   {selectedEssentialFields.map((field) => renderSelectedDeviceSettingRow(field))}
                 </div>
               </section>
+            )}
+
+            {workspaceOnly && (
+              <div className="design-device-hero design-device-hero-after-setup" aria-label={`${selectedPart.label} interactive faceplate`}>
+                <DesignFaceplateVisual
+                  interactive
+                  onElementClick={(elementLabel) => {
+                    setSelectedFaceplateElement(elementLabel);
+                    setDropMessage(`${selectedPart.label} ${elementLabel} selected. Inspect mapped params below; hardware untouched.`);
+                  }}
+                  partId={selectedPart.id}
+                  selectedElement={selectedFaceplateElement}
+                  settings={selectedSettings}
+                  storageProtocol={storageProtocol}
+                />
+              </div>
+            )}
+
+            {workspaceOnly && selectedElementInspector && (
+              <p className="design-selected-element-note">
+                <strong>{selectedElementInspector.label}</strong>
+                <span>{selectedElementInspector.summary}</span>
+              </p>
             )}
 
             {!workspaceOnly && (
