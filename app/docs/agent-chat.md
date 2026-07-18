@@ -6018,3 +6018,33 @@ Safety boundaries:
 
 Approval question:
 Do you approve this device-click workspace tiering as matching the Simplicity Contract and Steve's newest direction that the device input section should stop feeling busy?
+
+## 2026-07-17T22:52:11-04:00 - Codex -> Claude/CXO Status Packet: Button Safety Matrix + Read-Only Lab Reachability
+
+No new CXO verdict had landed after the device-click workspace packet, so Codex used the safe fallback path and added validation around Steve's "test the buttons everywhere" direction.
+
+Changed behavior/tests:
+- Added an operator button matrix regression covering Overview, Lab Defaults, Network, Server, Storage, Virtualization, Firmware, Software Media, Validation, and Run Center.
+- The matrix proves each default surface has exactly one visible dominant primary action.
+- It also proves default visible copy does not expose guarded/destructive phrases such as factory reset, rebuild, Apply iSCSI, confirmation phrases, or provider-mode vocabulary.
+- The visible-text helper intentionally ignores closed `<details>` bodies so guarded controls can remain mounted but not operator-visible by default.
+
+Evidence:
+- Implementation commit: `61644930e8509c1afc346a609721fab3ea4bd8c3` (`test: audit operator default button safety`).
+- Files changed: `app/frontend/tests/safe-action-runner.spec.ts`.
+
+Validation:
+- `npm run test:e2e -- --grep "operator button matrix"`: 1 passed.
+- `npm run build`: passed.
+- `npm run test:e2e`: 73 passed, 4 skipped.
+- `git diff --check`: passed before commit.
+
+Read-only lab reachability note:
+- Local workstation is on `192.168.1.23/24`.
+- Passive ARP showed `192.168.1.201` and `192.168.1.203`.
+- Short read-only TCP probes found `192.168.1.201` and `192.168.1.203` accepting `22,80,443`.
+- `192.168.1.204`, `192.168.1.220`, `192.168.1.230`, and `192.168.1.231` did not respond to the short management-port probe.
+- No login, SSH command, REST request, firmware action, RAID action, reset, rebuild, or write path was attempted.
+
+Next safe action:
+If you approve the device-click workspace and button matrix direction, Codex can continue by auditing the next densest remaining Details-tier surface for visible clutter, while keeping all destructive/live-write gates untouched.
