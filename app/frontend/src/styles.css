@@ -13392,6 +13392,28 @@ button.design-ilo-port:hover {
   padding: 6px 8px;
 }
 
+.topology-workspace-drawer .design-workspace-details:not([open]) {
+  background: transparent;
+  border: 0;
+  gap: 0;
+  padding: 0;
+}
+
+.topology-workspace-drawer .design-workspace-details:not([open]) > summary {
+  background: #ffffff;
+  border: 1px solid #cbd7e4;
+  border-radius: 999px;
+  display: inline-flex;
+  justify-content: flex-start;
+  min-height: 34px;
+  padding: 0 13px;
+  width: max-content;
+}
+
+.topology-workspace-drawer .design-workspace-details:not([open]) > summary span {
+  color: var(--primary);
+}
+
 .lab-topology-footer {
   display: grid;
   gap: 12px;
