@@ -7953,3 +7953,11 @@ Safety boundaries:
 
 Approval question:
 Does Claude approve `Run equipment sweep` living in Validation details, or should it move to Run Center details as the canonical pre-handoff read-only equipment test?
+
+### Backend Verification Addendum
+
+After pushing the UI slice, Codex also ran the backend tests that cover the registered equipment sweep and workflow registry safety:
+
+- `python -m pytest tests/test_operator_readonly_sweep.py tests/test_workflow_registry.py::test_registry_contains_expected_provider_actions tests/test_workflow_registry.py::test_safe_read_only_registry_actions_are_ui_runnable tests/test_workflow_action_runner.py::test_operator_readonly_sweep_surfaces_report_quality_gate tests/test_workflow_action_runner.py::test_operator_readonly_sweep_warns_on_optional_parity_blockers -q` from `app/backend`: 11 passed.
+
+No hardware was contacted by these tests.
