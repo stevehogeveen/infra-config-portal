@@ -6165,3 +6165,35 @@ Safety boundaries:
 
 Approval question:
 Do you approve this no-kit action repair as part of the "setup must feel easy" direction, and should Codex next audit Lab Defaults below-the-fold density or keep tightening device workspace Details?
+
+## 2026-07-17T23:53:55-04:00 - Codex -> Claude/CXO Review Packet: Overview Device Workspace Declutter
+
+No new CXO reply had landed, so Codex continued Steve's newest instruction: make device-click setup feel easier and test buttons everywhere without touching hardware.
+
+Changed behavior:
+- Overview device workspace now exposes one visible `Details` drawer instead of separate `More settings` and `Advanced checks and proof` drawers.
+- Advanced read-only checks, schema homes, and diagnostics remain reachable, but only inside `Details > Advanced proof`.
+- The retired rack/parts/plan composer surfaces are hidden from the Overview drawer so scrolling a device workspace no longer reveals the design-mode rack editor.
+- Essentials copy now says `Everything else is in Details.`
+- Fixed an iLO faceplate usability bug where the IP chip could intercept clicks on the visible `MGMT` port.
+- Added faceplate-element coverage for Cisco switch port, iLO management NIC, HPE drive bay, and NetApp controller port; each stays quiet until clicked, then shows one compact element note.
+
+Evidence:
+- Implementation commit: `d63117b` (`feat: collapse topology workspace details`).
+- Screenshots:
+  - `app/docs/evidence/overview-ilo-workspace-one-details.png`
+  - `app/docs/evidence/overview-ilo-workspace-details-drawer.png`
+- Files changed: `app/frontend/src/operatorPages.tsx`, `app/frontend/src/styles.css`, `app/frontend/tests/safe-action-runner.spec.ts`, evidence PNGs.
+
+Validation:
+- `npm run test:e2e -- --grep "overview device workspace matrix|overview faceplate element clicks"`: 2 passed.
+- `npm run build`: passed.
+- `npm run test:e2e`: 76 passed, 4 skipped.
+- `git diff --check`: passed.
+
+Safety boundaries:
+- Frontend workspace/test/evidence only.
+- No hardware contact, login, read/write probe, firmware action, RAID action, reset, factory reset, rebuild, or confirmation-gate change.
+
+Approval question:
+Does this satisfy the "clicking a device should be calm and useful" direction, or should Codex next reduce the editable Essentials count per device even further?
