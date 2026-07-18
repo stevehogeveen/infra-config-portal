@@ -6743,82 +6743,185 @@ function ProviderArtifactCard({ artifact }: { artifact: NetAppProviderArtifact }
 function MediaInventoryPage() {
   const [inventory, setInventory] = useState<MediaInventory | null>(null);
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    api.mediaInventory().then(setInventory).catch((err: Error) => setError(err.message));
+    void checkMedia();
   }, []);
 
+  async function checkMedia() {
+    setLoading(true);
+    setError("");
+    try {
+      setInventory(await api.mediaInventory());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Media check failed.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   const items = inventory?.items ?? [];
+  const state = inventory ? softwareMediaState(inventory) : { label: "Not checked", tone: "neutral" };
+  const warnings = inventory?.warnings ?? [];
+  const folder = inventory ? softwareMediaFolder(inventory) : "Not checked";
+  const presentLabel = `${items.length} ${items.length === 1 ? "file" : "files"}`;
+  const attentionLabel = warnings.length
+    ? `${warnings.length} ${warnings.length === 1 ? "item" : "items"} need attention`
+    : items.length
+      ? "None"
+      : "No files found";
 
   return (
-    <Page title="Media Inventory" actions={inventory ? <StatusBadge status={inventory.mode} /> : null}>
-      <Feedback loading={!inventory && !error} error={error} />
+    <Page
+      title="Software Media"
+      description="Files this kit can use, checked without copying, mounting, or deploying them."
+      primaryAction={{
+        disabled: loading,
+        icon: <RefreshCw size={16} />,
+        label: "Check media",
+        onClick: checkMedia
+      }}
+    >
+      <Feedback loading={loading && !inventory && !error} error={error} />
       {inventory && (
         <>
-          <section className="metric-grid">
-            <Metric label="Items" value={items.length} icon={<HardDrive size={18} />} />
-            <Metric label="ISO" value={items.filter((item) => item.category === "iso").length} icon={<ClipboardList size={18} />} />
-            <Metric label="OVF/OVA" value={items.filter((item) => ["ovf", "ova"].includes(item.category)).length} icon={<Layers size={18} />} />
-            <Metric label="Firmware" value={items.filter((item) => item.category === "firmware").length} icon={<ShieldCheck size={18} />} />
-          </section>
-          <section className="panel safety-note">
-            <PanelTitle icon={<ShieldCheck size={18} />} title="Metadata-Only Safety" />
-            <p>
-              Media inventory shows local media filenames when the backend can safely expose them, and redacts names for
-              sources that require privacy. It does not copy, mount, parse, or deploy local media.
-            </p>
-          </section>
-          {inventory.warnings.length > 0 && (
-            <section className="panel">
-              <PanelTitle icon={<AlertTriangle size={18} />} title="Warnings" />
-              <div className="issue-list">
-                {inventory.warnings.map((warning) => (
-                  <article className="issue issue-warning" key={warning}>
-                    <div>
-                      <AlertTriangle size={16} />
-                      <strong>media_inventory</strong>
-                    </div>
-                    <p>{warning}</p>
-                  </article>
-                ))}
+          <section className="panel software-media-home" data-testid="software-media-home">
+            <div className="software-media-heading">
+              <PanelTitle icon={<HardDrive size={18} />} title="Software Media" />
+              <span className={`simple-status-pill ${state.tone}`}>{state.label}</span>
+            </div>
+            <div className="software-media-summary" aria-label="Software media summary">
+              <div>
+                <span>Folder</span>
+                <strong>{folder}</strong>
               </div>
-            </section>
-          )}
-          <section className="panel">
-            <PanelTitle icon={<HardDrive size={18} />} title="Local Metadata" />
+              <div>
+                <span>Present</span>
+                <strong>{presentLabel}</strong>
+              </div>
+              <div>
+                <span>Missing/needs attention</span>
+                <strong>{attentionLabel}</strong>
+              </div>
+              <div>
+                <span>State</span>
+                <strong>{state.label}</strong>
+              </div>
+            </div>
+            <p className="software-media-boundary">Check media reads filenames only. Upgrade, mount, copy, and deploy actions stay behind their own protected flows.</p>
+          </section>
+          <AdvancedDetails
+            className="section-details software-media-details"
+            summary="Actual filenames and media attention items"
+            title="View details"
+          >
+            {warnings.length > 0 && (
+              <section className="software-media-attention" aria-label="Media attention items">
+                <h3>Needs attention</h3>
+                <div className="issue-list">
+                  {warnings.map((warning) => (
+                    <article className="issue issue-warning" key={warning}>
+                      <div>
+                        <AlertTriangle size={16} />
+                        <strong>Media folder</strong>
+                      </div>
+                      <p>{plainMediaWarning(warning)}</p>
+                    </article>
+                  ))}
+                </div>
+              </section>
+            )}
             {items.length ? (
               <table>
                 <thead>
                   <tr>
                     <th>File</th>
-                    <th>Category</th>
-                    <th>Extension</th>
+                    <th>What it is</th>
+                    <th>Version</th>
                     <th>Size</th>
-                    <th>Source</th>
-                    <th>Redacted</th>
                   </tr>
                 </thead>
                 <tbody>
                   {items.map((item) => (
                     <tr key={`${mediaInventoryItemName(item)}-${item.placeholder_name}-${item.source}`}>
                       <td>{mediaInventoryItemName(item)}</td>
-                      <td>{item.category}</td>
-                      <td>{item.extension || "-"}</td>
+                      <td>{mediaItemOperatorType(item)}</td>
+                      <td>{item.detected_version || item.version_hint || "-"}</td>
                       <td>{formatBytes(item.size_bytes)}</td>
-                      <td>{item.source}</td>
-                      <td>{yesNo(item.actual_name_redacted)}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             ) : (
-              <p className="muted">No media metadata found.</p>
+              <p className="muted">No software media files were found in the selected folder.</p>
             )}
-          </section>
+          </AdvancedDetails>
+          <AdvancedDetails
+            className="section-details software-media-advanced"
+            summary="Raw media inventory fields for diagnostics"
+            title="Advanced media metadata"
+          >
+            <div className="software-media-raw-grid">
+              <ProviderFact label="Inventory mode" value={labelize(inventory.mode)} />
+              <ProviderFact label="Configured folders" value={String(inventory.configured_directories.length)} />
+              <ProviderFact label="Items" value={String(items.length)} />
+              <ProviderFact label="Warnings" value={String(warnings.length)} />
+            </div>
+            <table>
+              <thead>
+                <tr>
+                  <th>File</th>
+                  <th>Category</th>
+                  <th>Extension</th>
+                  <th>Source</th>
+                  <th>Redacted</th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((item) => (
+                  <tr key={`advanced-${mediaInventoryItemName(item)}-${item.placeholder_name}-${item.source}`}>
+                    <td>{mediaInventoryItemName(item)}</td>
+                    <td>{item.category}</td>
+                    <td>{item.extension || "-"}</td>
+                    <td>{item.source}</td>
+                    <td>{yesNo(item.actual_name_redacted)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </AdvancedDetails>
         </>
       )}
     </Page>
   );
+}
+
+function softwareMediaFolder(inventory: MediaInventory): string {
+  return inventory.configured_directories[0] || inventory.configured_directory_paths[0] || "Not set";
+}
+
+function softwareMediaState(inventory: MediaInventory): { label: string; tone: "blocked" | "neutral" | "ready" | "warning" } {
+  if (inventory.warnings.length > 0) return { label: "Needs attention", tone: "warning" };
+  if (!inventory.items.length) return { label: "Needs media", tone: "blocked" };
+  return { label: "Ready", tone: "ready" };
+}
+
+function mediaItemOperatorType(item: MediaInventory["items"][number]): string {
+  const vendor = item.detected_vendor || "";
+  const product = item.detected_product ? labelize(item.detected_product) : "";
+  const kind = labelize(item.category || "software");
+  return [vendor, product, kind].filter(Boolean).join(" ") || "Software file";
+}
+
+function plainMediaWarning(warning: string): string {
+  const stripped = warning
+    .replace(/media[_ -]?inventory:?/gi, "Media folder")
+    .replace(/configured[_ -]?director(?:y|ies)/gi, "media folder")
+    .replace(/source/gi, "folder")
+    .replace(/_/g, " ")
+    .trim();
+  return stripped || "Media folder needs attention.";
 }
 
 function LabProfilesPage({

@@ -1759,12 +1759,34 @@ test("firmware version check still uses the guarded workflow runner", async ({ p
   await expect(page.getByRole("button", { name: "Upgrade", exact: true }).first()).toBeVisible();
 });
 
-test("media inventory displays actual file names when exposed by the backend", async ({ page }) => {
+test("software media keeps inventory details behind one read-only action", async ({ page }) => {
   await page.goto("/media");
 
+  await expect(page.locator("h1", { hasText: "Software Media" })).toBeVisible();
+  await expect(page.getByTestId("software-media-home")).toContainText("Folder");
+  await expect(page.getByTestId("software-media-home")).toContainText("1 file");
+  await expect(page.getByTestId("software-media-home")).toContainText("Ready");
+  await expect(page.locator(".page-actions .primary")).toHaveCount(1);
+  await expect(page.getByRole("button", { name: "Check media" })).toBeVisible();
+  await expect(page.getByRole("columnheader", { name: "File" })).toHaveCount(0);
+  await expect(page.getByRole("columnheader", { name: "Source" })).toHaveCount(0);
+  await expect(page.getByText("media_inventory")).toHaveCount(0);
+  await expect(page.getByRole("cell", { name: "cat9k_iosxe.17.15.05.SPA.bin" })).toHaveCount(0);
+
+  const refreshResponse = page.waitForResponse((response) =>
+    response.url().includes("/api/v1/media-inventory") && response.request().method() === "GET"
+  );
+  await page.getByRole("button", { name: "Check media" }).click();
+  await expect((await refreshResponse).ok()).toBeTruthy();
+
+  await page.getByText("View details").click();
   await expect(page.getByRole("columnheader", { name: "File" }).first()).toBeVisible();
   await expect(page.getByRole("cell", { name: "cat9k_iosxe.17.15.05.SPA.bin" }).first()).toBeVisible();
   await expect(page.getByRole("cell", { name: "cisco-ios-xe-firmware.bin" })).toHaveCount(0);
+  await expect(page.getByRole("columnheader", { name: "Source" })).toHaveCount(0);
+
+  await page.getByText("Advanced media metadata").click();
+  await expect(page.getByRole("columnheader", { name: "Source" }).first()).toBeVisible();
 });
 
 test("saved lab setup global defaults use active profile values and never render secret material", async ({ page }) => {

@@ -3768,6 +3768,68 @@ textarea {
   grid-template-columns: minmax(280px, 0.9fr) minmax(0, 1.1fr);
 }
 
+.software-media-home,
+.software-media-details,
+.software-media-advanced {
+  max-width: 100%;
+}
+
+.software-media-heading {
+  align-items: center;
+  display: flex;
+  gap: 14px;
+  justify-content: space-between;
+}
+
+.software-media-summary {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: 1.5fr repeat(3, minmax(0, 1fr));
+  margin-top: 18px;
+}
+
+.software-media-summary div,
+.software-media-raw-grid .provider-fact {
+  background: #f8fafc;
+  border: 1px solid #e1e7ef;
+  border-radius: 8px;
+  display: grid;
+  gap: 5px;
+  padding: 12px;
+}
+
+.software-media-summary span {
+  color: #657184;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0;
+}
+
+.software-media-summary strong {
+  color: #102033;
+  overflow-wrap: anywhere;
+}
+
+.software-media-boundary {
+  color: #56647a;
+  margin: 14px 0 0;
+}
+
+.software-media-attention {
+  margin-bottom: 18px;
+}
+
+.software-media-attention h3 {
+  margin-top: 0;
+}
+
+.software-media-raw-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-bottom: 18px;
+}
+
 .lab-setup-workflow-section {
   display: grid;
   gap: 16px;
@@ -16680,6 +16742,8 @@ button.design-ilo-port:hover {
   .saved-kits-summary,
   .saved-kits-preview,
   .saved-kits-detail-grid,
+  .software-media-summary,
+  .software-media-raw-grid,
   .request-filter-grid,
   .audit-filter-grid,
   .artifact-filter-grid,
@@ -16928,6 +16992,8 @@ button.design-ilo-port:hover {
     .saved-kits-summary,
     .saved-kits-preview,
     .saved-kits-detail-grid,
+    .software-media-summary,
+    .software-media-raw-grid,
     .request-filter-grid,
     .audit-filter-grid,
     .artifact-filter-grid,
