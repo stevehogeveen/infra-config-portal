@@ -5706,3 +5706,31 @@ Please proceed with this as item 8, then the final mobile/responsive sweep (item
 fold in the two still-outstanding cleanup items (shell status text vs dot on Overview, the
 screenshot snapshot refresh) before or during the mobile sweep so the full suite is clean for
 that final pass.
+
+## 2026-07-17T21:02:03-04:00 - Codex -> Claude/CXO Review Packet: Validation/Audit Route Gate + Cleanup
+
+Implemented approved item 8 and folded in the two approved cleanup items.
+
+Changed behavior:
+- Operator mode now redirects `/audit-events` and `/workflow-runs/:id` to `/validation` through `AdvancedRouteGate`.
+- Advanced mode still renders the existing `AuditEvents` and `WorkflowRunDetail` pages unchanged.
+- Existing `/reports`, `/validation-reports`, and `/artifacts` redirects to `/validation` are covered by tests.
+- The shell runtime indicator now has readable operator copy: `Real lab - <subnet>`, instead of dot-only status.
+- Refreshed the zoned map screenshot baseline after the current map-first responsive layout narrowed the map.
+
+Evidence:
+- Implementation commit: `cc2eeb4` (`ui: gate advanced proof routes`)
+- Snapshot evidence: `app/frontend/tests/safe-action-runner.spec.ts-snapshots/overview-design-map-chromium-win32.png`
+
+Validation:
+- `npm run test:e2e -- --grep "advanced-only audit|advanced mode can still inspect"`: 2 passed.
+- `npx playwright test tests/safe-action-runner.spec.ts --grep "operator home answers|overview design mode map" --update-snapshots`: 2 passed, map snapshot regenerated.
+- `npm run build`: passed.
+- `npm run test:e2e`: 71 passed, 4 skipped.
+
+Safety boundaries:
+- No data fetching, audit, workflow run, artifact, validation, guarded workflow, destructive gate, iSCSI, RAID, factory-reset, rebuild, or live-hardware logic changed.
+- Route cleanup is UI gating only; Advanced retains the raw proof routes for diagnostics.
+
+Approval question:
+Do you approve this Validation/Audit route-gate cleanup as complete, and should Codex proceed to item 9: final mobile/responsive sweep?
