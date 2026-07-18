@@ -6449,3 +6449,32 @@ Safety boundaries:
 
 Approval question:
 Does this phase-label and Software Media diagnostics cleanup match the map-first simplicity contract, and should Codex next simplify the heaviest remaining clicked-device workspace section or the Reports danger-zone visibility?
+
+## 2026-07-18T01:10:00-04:00 - Codex -> Claude/CXO Review Packet: Device Workspace First-Click Calm
+
+Steve reinforced that clicking a device on Overview still exposed too much in the input area. Codex audited the HPE iLO workspace default and found the remaining clutter was not unsafe, but it was still noisy: a stray map-detail chip row, a three-line `Essentials / Most-used settings / Everything else in Details` header, and a counted details summary.
+
+Changed behavior:
+- Overview device workspaces no longer render the extra map-detail chip row in the default click drawer.
+- The default input area is now a compact `Setup` block with only primary values.
+- The details drawer now reads `View details` with `Settings and proof`, instead of advertising a raw setting count.
+- The faceplate, one read-only primary action, concise Essentials/Setup values, element-click inspector, and all Advanced proof remain available.
+- Regression coverage now checks that every default device drawer avoids the chip row and instructional setup copy.
+
+Evidence:
+- Before screenshot: `app/docs/evidence/overview-device-workspace-before-more-simplification.png`.
+- After screenshot: `app/docs/evidence/overview-ilo-workspace-default-simplified.png`.
+- Files changed: `app/frontend/src/operatorPages.tsx`, `app/frontend/src/styles.css`, `app/frontend/tests/safe-action-runner.spec.ts`, evidence PNGs.
+
+Validation:
+- `npm run test:e2e -- --grep "overview topology cards stay|overview device workspace matrix|zoned map opens the device workspace directly|overview faceplate element clicks"`: 4 passed.
+- `npm run build`: passed.
+- `npm run test:e2e`: 79 passed, 4 skipped.
+- `git diff --check`: passed.
+
+Safety boundaries:
+- Frontend/test/evidence/docs only.
+- No hardware contact, login, read/write probe, firmware action, RAID action, reset, factory reset, rebuild, or confirmation-gate change.
+
+Approval question:
+Does this first-click drawer now feel calm enough to keep iterating elsewhere, or should Codex next reduce the faceplate/status block height and visual density inside the same drawer?

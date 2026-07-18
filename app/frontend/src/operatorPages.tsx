@@ -9479,7 +9479,7 @@ function LabDesignComposer({
               />
             </div>
 
-            {selectedOverviewDetails.length > 0 && (
+            {!workspaceOnly && selectedOverviewDetails.length > 0 && (
               <div className="design-workspace-map-details" aria-label={`${selectedPart.label} map details`}>
                 {selectedOverviewDetails.map((detail) => <span key={detail}>{detail}</span>)}
               </div>
@@ -9615,9 +9615,8 @@ function LabDesignComposer({
             {workspaceOnly && selectedEssentialFields.length > 0 && (
               <section className="design-device-essentials" aria-label={`${selectedPart.label} essentials`}>
                 <div>
-                  <p className="operator-kicker">Essentials</p>
-                  <h4>Most-used settings</h4>
-                  <span>Everything else is in Details.</span>
+                  <p className="operator-kicker">Setup</p>
+                  <h4>Primary values</h4>
                 </div>
                 <div className="design-device-setting-rows compact">
                   {selectedEssentialFields.map((field) => renderSelectedDeviceSettingRow(field))}
@@ -9644,8 +9643,8 @@ function LabDesignComposer({
             {workspaceOnly && (
               <details className="design-workspace-details design-workspace-details-combined" aria-label={`${selectedPart.label} details`}>
                 <summary>
-                  <span>Details</span>
-                  <strong>{selectedWorkspaceSections.reduce((total, section) => total + section.fields.length, 0)} settings plus proof</strong>
+                  <span>View details</span>
+                  <strong>Settings and proof</strong>
                 </summary>
                 {selectedWorkspaceSections.length > 0 && (
                   <div className="design-device-param-sections" aria-label={`${selectedPart.label} detailed parameters`}>

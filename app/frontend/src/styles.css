@@ -13280,7 +13280,7 @@ button.design-ilo-port:hover {
 
 .topology-workspace-drawer .design-device-workspace {
   border-radius: 14px;
-  gap: 12px;
+  gap: 10px;
   min-height: calc(100vh - 86px);
   padding: 14px;
 }
@@ -13292,6 +13292,54 @@ button.design-ilo-port:hover {
 .topology-workspace-drawer .design-device-hero {
   min-height: 124px;
   padding: 12px;
+}
+
+.topology-workspace-drawer .design-device-primary-action {
+  gap: 8px;
+  grid-template-columns: minmax(150px, auto) minmax(0, 1fr);
+}
+
+.topology-workspace-drawer .design-device-essentials {
+  border-radius: 10px;
+  box-shadow: none;
+  gap: 8px;
+  padding: 10px 12px;
+}
+
+.topology-workspace-drawer .design-device-essentials > div:first-child {
+  align-items: baseline;
+  border-bottom: 1px solid #eef2f7;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+  padding-bottom: 6px;
+}
+
+.topology-workspace-drawer .design-device-essentials h4 {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.topology-workspace-drawer .design-device-setting-rows.compact {
+  gap: 0;
+}
+
+.topology-workspace-drawer .design-device-setting-row {
+  grid-template-columns: 106px minmax(0, 1fr);
+  min-height: 38px;
+  padding-top: 6px;
+}
+
+.topology-workspace-drawer .design-device-setting-row input,
+.topology-workspace-drawer .design-device-setting-row select,
+.topology-workspace-drawer .design-device-setting-row textarea {
+  padding: 6px 8px;
+}
+
+.topology-workspace-drawer .design-device-setting-row.is-readonly-value strong {
+  border-radius: 8px;
+  padding: 6px 8px;
 }
 
 .lab-topology-footer {

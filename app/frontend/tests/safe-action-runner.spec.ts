@@ -567,17 +567,20 @@ test("overview topology cards stay three-line and move details into the workspac
 
   await topology.getByRole("button", { name: "Open Cisco switch workspace" }).click();
   let overlay = page.locator("div[aria-label='Device workspace overlay']");
-  await expect(overlay.getByLabel("Cisco switch map details")).toContainText("VLAN 220");
+  await expect(overlay.getByLabel("Cisco switch map details")).toHaveCount(0);
+  await expect(overlay.getByLabel("Cisco switch essentials")).toContainText("Storage VLAN");
   await overlay.getByRole("button", { name: "Close" }).click();
 
   await topology.getByRole("button", { name: "Open HPE iLO workspace" }).click();
   overlay = page.locator("div[aria-label='Device workspace overlay']");
-  await expect(overlay.getByLabel("HPE iLO map details")).toContainText("BMC read-only checks");
+  await expect(overlay.getByLabel("HPE iLO map details")).toHaveCount(0);
+  await expect(overlay.getByLabel("HPE iLO workspace")).toContainText("out-of-band server management");
   await overlay.getByRole("button", { name: "Close" }).click();
 
   await topology.getByRole("button", { name: "Open vCenter VCSA workspace" }).click();
   overlay = page.locator("div[aria-label='Device workspace overlay']");
-  await expect(overlay.getByLabel("vCenter VCSA map details")).toContainText("NetApp datastore");
+  await expect(overlay.getByLabel("vCenter VCSA map details")).toHaveCount(0);
+  await expect(overlay.getByLabel("vCenter VCSA essentials")).toContainText("Datastore");
 });
 
 test("operator home opens one ordered build plan with one primary action", async ({ page }) => {
@@ -975,6 +978,8 @@ test("overview device workspace matrix keeps default inputs concise", async ({ p
     await expect(workspace, `${item.workspace} avoids dead default actions`).not.toContainText("No read-only test registered");
     const essentials = workspace.getByLabel(`${item.workspace} essentials`);
     await expect(essentials, `${item.workspace} shows essentials`).toBeVisible();
+    await expect(essentials, `${item.workspace} names the compact setup block`).toContainText("Setup");
+    await expect(essentials, `${item.workspace} removes instructional setup copy`).not.toContainText("Everything else is in Details");
     expect(await essentials.locator(".design-device-setting-row").count(), `${item.workspace} keeps essentials compact`).toBeLessThanOrEqual(4);
     for (const essential of item.essentials) {
       await expect(essentials, `${item.workspace} essential ${essential}`).toContainText(essential);
@@ -983,7 +988,9 @@ test("overview device workspace matrix keeps default inputs concise", async ({ p
       await expect(essentials, `${item.workspace} hides proof field ${hiddenEssential}`).not.toContainText(hiddenEssential);
     }
     await expect(workspace.locator(":scope > details.design-workspace-details"), `${item.workspace} has one top-level details drawer`).toHaveCount(1);
+    await expect(workspace.locator(":scope > details.design-workspace-details > summary"), `${item.workspace} details summary is plain`).toContainText("View details");
     await expect(workspace.locator(":scope > details.design-workspace-advanced"), `${item.workspace} does not expose advanced as a second top-level drawer`).toHaveCount(0);
+    await expect(workspace.locator(".design-workspace-map-details"), `${item.workspace} keeps chip details out of the default drawer`).toHaveCount(0);
     await expect(workspace, `${item.workspace} retires the old extra settings label`).not.toContainText("More settings");
     await expect(workspace.getByLabel(`${item.workspace} details`), `${item.workspace} details start closed`).not.toHaveAttribute("open", "");
     await expect(workspace.getByLabel(item.advancedControl), `${item.workspace} advanced controls are hidden by default`).not.toBeVisible();
