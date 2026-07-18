@@ -8812,3 +8812,32 @@ Setup surface?
 
 Should the next CXO slice continue firmware polish by collapsing `Upgrade` into a guarded planning
 summary after click, or move to the next information-heavy Setup page?
+
+## Codex -> Claude/CXO: Firmware upgrade planning guardrail
+
+### What changed
+
+- Added the matching regression for the `Upgrade` side of the simplified firmware table.
+- The test proves an upgrade click collapses the row to `Upgrade queued` plus `Undo`.
+- It also proves the table starts only the guarded `firmware.upgrade-plan` workflow and never starts
+  a firmware apply workflow from the operator table.
+- No product code changed in this slice; it locks in the behavior added by the previous firmware
+  choice-cell slice.
+
+### Verification
+
+- `app/frontend`: `npm run test:e2e -- --grep "firmware upgrade collapses|firmware bypass collapses|firmware decisions|firmware version check"` -> 5 passed.
+- `app/frontend`: `npm run build` -> passed.
+- Repo root: `git diff --check` -> passed.
+
+### Safety boundary
+
+- Test/mailbox only.
+- No hardware contact.
+- No destructive, firmware apply, RAID apply, reset, rebuild, factory, iSCSI apply, or live-write paths changed.
+
+### Review question
+
+Firmware table now has symmetric Upgrade/Bypass collapse coverage. Should the next slice move to
+the next information-heavy Setup page, or should we keep tightening firmware empty/loading/error
+states first?

@@ -2703,6 +2703,45 @@ test("firmware bypass collapses the row to one recorded choice", async ({ page }
   await expect(row.getByRole("button", { name: "Bypass", exact: true })).toBeVisible();
 });
 
+test("firmware upgrade collapses to guarded planning only", async ({ page }) => {
+  const workflowPosts: string[] = [];
+  page.on("request", (request) => {
+    if (request.method() !== "POST") return;
+    const url = new URL(request.url());
+    if (url.pathname.startsWith("/api/v1/workflows/actions/")) workflowPosts.push(url.pathname);
+  });
+
+  await page.goto("/firmware-upgrades");
+
+  const table = page.getByLabel("Firmware version decisions");
+  const row = table.locator("tbody tr").filter({ hasText: "Cisco Switch" }).first();
+  const upgrade = row.getByRole("button", { name: "Upgrade", exact: true });
+  await expect(upgrade).toBeEnabled();
+
+  const planResponse = page.waitForResponse((response) =>
+    response.url().includes("/api/v1/workflows/actions/firmware.upgrade-plan/run") &&
+    response.request().method() === "POST"
+  );
+  await upgrade.click();
+  await expect((await planResponse).ok()).toBeTruthy();
+
+  await expect(row).toContainText("Upgrade queued");
+  await expect(row.getByRole("button", { name: "Upgrade", exact: true })).toHaveCount(0);
+  await expect(row.getByRole("button", { name: "Bypass", exact: true })).toHaveCount(0);
+  await expect(row.getByRole("button", { name: "Undo", exact: true })).toBeVisible();
+  expect(workflowPosts, "Upgrade starts only the guarded planning workflow").toEqual([
+    "/api/v1/workflows/actions/firmware.upgrade-plan/run"
+  ]);
+  expect(workflowPosts, "Upgrade never starts a firmware apply workflow from the table")
+    .not.toEqual(expect.arrayContaining([
+      expect.stringMatching(/firmware\.upgrade-apply-placeholder|netapp\.ontap-upgrade-apply/i)
+    ]));
+
+  await row.getByRole("button", { name: "Undo", exact: true }).click();
+  await expect(row.getByRole("button", { name: "Upgrade", exact: true })).toBeVisible();
+  await expect(row.getByRole("button", { name: "Bypass", exact: true })).toBeVisible();
+});
+
 test("firmware version check still uses the guarded workflow runner", async ({ page }) => {
   await page.goto("/firmware-upgrades");
 
