@@ -9886,8 +9886,8 @@ function LabDesignComposer({
                     {selectedAdvancedEditSections.length > 0 && (
                       <details className="design-workspace-edit-advanced" aria-label={`${selectedPart.label} more setup fields`}>
                         <summary>
-                          <span>More setup fields</span>
-                          <strong>Less common planning values</strong>
+                          <span>Advanced setup</span>
+                          <strong>Only when needed</strong>
                         </summary>
                         <div className="design-device-edit-group-picker" aria-label={`${selectedPart.label} edit groups`}>
                           {selectedAdvancedEditSections.map((section) => (
@@ -9915,7 +9915,7 @@ function LabDesignComposer({
                             </div>
                           </section>
                         ) : (
-                          <p className="design-device-edit-empty">Pick one area to edit.</p>
+                          <p className="design-device-edit-empty">Choose one section.</p>
                         )}
                       </details>
                     )}

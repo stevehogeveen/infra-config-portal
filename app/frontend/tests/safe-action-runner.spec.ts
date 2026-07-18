@@ -1363,6 +1363,8 @@ test("overview device workspace matrix keeps default inputs concise", async ({ p
     const moreSetupFields = detailsDrawer.getByLabel(`${item.workspace} more setup fields`);
     const editGroups = moreSetupFields.locator(":scope .design-device-edit-group-button");
     await expect(moreSetupFields, `${item.workspace} keeps less-common fields one click deeper`).toBeVisible();
+    await expect(moreSetupFields.locator(":scope > summary"), `${item.workspace} advanced setup doorway is explicit`).toContainText("Advanced setup");
+    await expect(moreSetupFields.locator(":scope > summary"), `${item.workspace} advanced setup doorway stays calm`).toContainText("Only when needed");
     await expect(moreSetupFields, `${item.workspace} advanced setup fields start closed`).not.toHaveAttribute("open", "");
     await expect(editGroups.first(), `${item.workspace} keeps edit group choices hidden until more-fields intent`).not.toBeVisible();
     await moreSetupFields.locator(":scope > summary").click();
@@ -1370,7 +1372,7 @@ test("overview device workspace matrix keeps default inputs concise", async ({ p
     await expect(editGroups.locator("strong"), `${item.workspace} edit groups avoid value-count badges`).toHaveCount(0);
     await expect(editGroups.locator("small").first(), `${item.workspace} edit groups explain each area`).toBeVisible();
     await expect(moreSetupFields.locator(".design-device-edit-empty"), `${item.workspace} starts expanded extra fields with no group selected`).toBeVisible();
-    await expect(moreSetupFields.locator(".design-device-edit-empty"), `${item.workspace} empty edit prompt is short`).toHaveText("Pick one area to edit.");
+    await expect(moreSetupFields.locator(".design-device-edit-empty"), `${item.workspace} empty edit prompt is short`).toHaveText("Choose one section.");
     await editGroups.first().click();
     const activePanel = moreSetupFields.locator(".design-device-param-panel");
     await expect(activePanel, `${item.workspace} renders one active edit group`).toHaveCount(1);
@@ -1787,13 +1789,15 @@ test("overview design mode keeps the surface map-only until a node opens the wor
   await expect(quickSetup.locator("input, select, textarea").first()).toBeVisible();
   const moreSetupFields = switchWorkspace.getByLabel("Cisco switch more setup fields");
   await expect(moreSetupFields).toBeVisible();
+  await expect(moreSetupFields.locator(":scope > summary")).toContainText("Advanced setup");
+  await expect(moreSetupFields.locator(":scope > summary")).toContainText("Only when needed");
   await expect(moreSetupFields).not.toHaveAttribute("open", "");
   await expect(moreSetupFields.getByLabel("Cisco switch edit groups")).not.toBeVisible();
   await moreSetupFields.locator(":scope > summary").click();
   await expect(moreSetupFields.getByLabel("Cisco switch edit groups")).toContainText("Network");
   await expect(moreSetupFields.getByLabel("Cisco switch edit groups")).toContainText("Access");
   await expect(moreSetupFields.locator(".design-device-edit-group-button strong")).toHaveCount(0);
-  await expect(moreSetupFields.locator(".design-device-edit-empty")).toHaveText("Pick one area to edit.");
+  await expect(moreSetupFields.locator(".design-device-edit-empty")).toHaveText("Choose one section.");
   await expect(moreSetupFields.locator(".design-device-param-panel")).toHaveCount(0);
   const networkGroup = await openWorkspaceEditGroup(page, "Cisco switch", "Network");
   await expect(networkGroup).not.toContainText("Management IP");
