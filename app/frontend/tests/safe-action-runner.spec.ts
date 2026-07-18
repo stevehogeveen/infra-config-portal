@@ -1437,7 +1437,8 @@ test("storage page defaults to one storage path card and hides protocol internal
 
   await expect(page.locator(".storage-path-actions .operator-primary-button")).toHaveCount(1);
   await expect(page.locator(".storage-path-actions .operator-primary-button")).toContainText("Run storage check");
-  await expect(page.getByRole("button", { name: "Change storage path" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "View storage details" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Change storage path" })).toHaveCount(0);
   await expect(page.getByRole("textbox", { name: "Change this page" })).toHaveCount(0);
   await expect(page.locator("section[aria-label='Storage reference']")).toHaveCount(0);
   await expect(page.getByText("LIF")).toHaveCount(0);
@@ -1448,7 +1449,7 @@ test("storage page defaults to one storage path card and hides protocol internal
   await expect(storagePath.getByRole("button", { name: /Apply iSCSI/ })).toHaveCount(0);
   await expect(storagePath.getByRole("button", { name: /factory|reset/i })).toHaveCount(0);
 
-  await page.getByRole("button", { name: "Change storage path" }).click();
+  await page.getByRole("button", { name: "View storage details" }).click();
   const details = page.getByLabel("Storage path details");
   await expect(details).toBeVisible();
   await expect(details.getByLabel("Storage reference")).toBeVisible();

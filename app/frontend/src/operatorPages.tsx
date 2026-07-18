@@ -2846,7 +2846,7 @@ export function OperatorStoragePage({ labProfileState, onReloadLabProfile }: Ope
                 onClick={() => setDetailsOpen((current) => !current)}
                 type="button"
               >
-                Change storage path
+                View storage details
               </button>
             </div>
           </CardFooter>
