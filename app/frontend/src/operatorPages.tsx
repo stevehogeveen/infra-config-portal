@@ -15300,13 +15300,9 @@ function NetworkConfigurePanel({
     <Card aria-label="Network configure" className="network-config-panel" hover={false} id="network-profile">
       <CardHeader>
         <div>
-          <p className="operator-kicker">Configure</p>
-          <h2>Network lab profile</h2>
+          <p className="operator-kicker">Setup</p>
+          <h2>Network setup</h2>
         </div>
-        <StatusBadge
-          label={activeProfile?.source === "saved" ? "Saved profile" : "Save as profile"}
-          status={activeProfile ? "ready" : "not-configured"}
-        />
       </CardHeader>
       <CardContent>
         <form className="network-config-form" onSubmit={save}>
@@ -15316,20 +15312,6 @@ function NetworkConfigurePanel({
                 value={edit.ciscoManagement}
                 onChange={(event) => update("ciscoManagement", event.target.value)}
                 placeholder="192.168.1.204"
-              />
-            </Field>
-            <Field label="Subnet">
-              <input
-                value={edit.subnet}
-                onChange={(event) => update("subnet", event.target.value)}
-                placeholder="192.168.1.0/24"
-              />
-            </Field>
-            <Field label="Gateway">
-              <input
-                value={edit.gateway}
-                onChange={(event) => update("gateway", event.target.value)}
-                placeholder="192.168.1.1"
               />
             </Field>
             <Field label="VLAN">
@@ -15342,10 +15324,24 @@ function NetworkConfigurePanel({
           </div>
           <details className="network-config-more">
             <summary>
-              <span>More network services</span>
-              <small>DNS, NTP, SNMP, and MTU stay available without crowding the switch setup.</small>
+              <span>More network values</span>
+              <small>Subnet, gateway, DNS, NTP, SNMP, and MTU live here.</small>
             </summary>
             <div className="network-config-more-grid">
+              <Field label="Subnet">
+                <input
+                  value={edit.subnet}
+                  onChange={(event) => update("subnet", event.target.value)}
+                  placeholder="192.168.1.0/24"
+                />
+              </Field>
+              <Field label="Gateway">
+                <input
+                  value={edit.gateway}
+                  onChange={(event) => update("gateway", event.target.value)}
+                  placeholder="192.168.1.1"
+                />
+              </Field>
               <Field label="DNS servers">
                 <input
                   value={edit.dnsServers}
@@ -15399,8 +15395,8 @@ function NetworkConfigurePanel({
           {error && <div className="operator-feedback error">{error}</div>}
           {message && <div className="operator-feedback">{message}</div>}
           <div className="network-config-actions">
-            <button className="secondary-button" disabled={busy || !activeProfile} type="submit">
-              {busy ? "Saving" : activeProfile?.source === "saved" ? "Save Network Config" : "Save As Lab Setup"}
+            <button className="operator-primary-button" disabled={busy || !activeProfile} type="submit">
+              {busy ? "Saving..." : "Save network setup"}
             </button>
           </div>
         </form>
