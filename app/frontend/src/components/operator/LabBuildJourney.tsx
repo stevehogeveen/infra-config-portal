@@ -107,20 +107,11 @@ function BuildPlan({ loading, onStart, plan }: { loading?: boolean; onStart: () 
         </button>
       </div>
 
-      <dl className="lab-build-summary" aria-label="Plan summary">
-        <div>
-          <dt>Checks</dt>
-          <dd>{summary.total}</dd>
-        </div>
-        <div>
-          <dt>Needs approval</dt>
-          <dd>{summary.approvalStops}</dd>
-        </div>
-        <div>
-          <dt>Automatic</dt>
-          <dd>{summary.automaticSteps}</dd>
-        </div>
-      </dl>
+      <p className="lab-build-summary" aria-label="Plan summary">
+        <strong>{summary.total} checks</strong>
+        <span>{summary.approvalStops} {summary.approvalStops === 1 ? "needs" : "need"} approval</span>
+        <span>{summary.automaticSteps} automatic</span>
+      </p>
 
       {plan.blockers.length > 0 && (
         <div className="lab-build-blocker" role="alert">
@@ -177,7 +168,7 @@ function summarizeBuildPlan(plan: LabBuildPlan) {
   return {
     approvalStops,
     automaticSteps,
-    message: `${total} checks are ready. ${approvalStops} ${approvalStops === 1 ? "step pauses" : "steps pause"} for your approval.`,
+    message: "Start the checks here. Guarded steps pause before anything touches hardware.",
     nextStep: plan.steps[0] ?? null,
     total
   };

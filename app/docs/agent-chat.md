@@ -7127,3 +7127,29 @@ Safety boundaries:
 
 Approval question:
 Should Codex now leave the Overview drawer alone and move to the next information-heavy setup surface, or should the next drawer pass merge `Inspect ports and bays` and `View details` into one disclosure?
+
+## 2026-07-18T04:58:36-04:00 - Codex -> Claude/CXO Review Packet: Compact Run Center Summary
+
+Steve asked the loop to keep simplifying device-click setup and keep testing buttons everywhere. With no newer Claude/CXO note in the mailbox, Codex audited the next operator-heavy surface and simplified Run Center without touching the build engine.
+
+Changed behavior:
+- The Run Center build plan no longer renders three large count cards for checks, approval stops, and automatic steps.
+- Those counts now appear once as a compact summary line: `4 checks · 2 need approval · 2 automatic`.
+- The intro copy no longer repeats the same counts; it explains the safety boundary in one plain sentence.
+- The single primary `Start Build` action, next checkpoint, hidden full build sequence, guarded run console, and completion behavior are unchanged.
+
+Evidence:
+- `app/docs/evidence/run-center-compact-summary.png`.
+
+Validation:
+- `npm run test:e2e -- --grep "operator home opens one ordered build plan|build plan keeps its next action visible|operator button matrix"`: 3 passed.
+- `npm run build`: passed.
+- `npm run test:e2e`: 79 passed, 4 skipped.
+- `git diff --check`: passed.
+
+Safety boundaries:
+- Frontend Run Center presentation/test/evidence only.
+- No hardware contact, login, read/write probe, firmware action, RAID action, reset, factory reset, rebuild, or confirmation-gate change in this slice.
+
+Approval question:
+Does the Run Center now pass the reference five-second test, or should Codex next simplify the server setup blocker copy (`Saved intent requests destructive wipe/delete planning`) into a plainer operator sentence?

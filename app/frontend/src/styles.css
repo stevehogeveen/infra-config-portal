@@ -14028,33 +14028,32 @@ button.design-ilo-port:hover {
 }
 
 .lab-build-summary {
-  display: grid;
-  gap: 10px;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: center;
+  color: #53627a;
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 13px;
+  gap: 8px;
   margin: 0;
 }
 
-.lab-build-summary > div {
-  background: #f8fafc;
-  border: 1px solid #dbe6f2;
-  border-radius: 8px;
-  display: grid;
-  gap: 4px;
-  padding: 13px 14px;
-}
-
-.lab-build-summary dt {
-  color: #64748b;
-  font-size: 11px;
-  font-weight: 900;
-  text-transform: uppercase;
-}
-
-.lab-build-summary dd {
+.lab-build-summary strong {
   color: #0f172a;
-  font-size: 24px;
   font-weight: 900;
-  margin: 0;
+}
+
+.lab-build-summary span {
+  align-items: center;
+  display: inline-flex;
+  gap: 8px;
+}
+
+.lab-build-summary span::before {
+  background: #cbd5e1;
+  border-radius: 999px;
+  content: "";
+  height: 4px;
+  width: 4px;
 }
 
 .lab-build-blocker,

@@ -598,7 +598,9 @@ test("operator home opens one ordered build plan with one primary action", async
   await expect(journey).toBeVisible();
   await expect(page.getByTestId("operator-home")).toHaveCount(0);
   await expect(plan.getByRole("heading", { name: "This lab is ready to follow one ordered build plan." })).toBeVisible();
-  await expect(plan.getByLabel("Plan summary")).toContainText("4");
+  await expect(plan.getByLabel("Plan summary")).toContainText("4 checks");
+  await expect(plan.locator(".lab-build-summary > div")).toHaveCount(0);
+  await expect(plan).not.toContainText("checks are ready");
   await expect(plan.getByLabel("Next build step")).toContainText("Check lab addresses");
   await expect(plan.getByLabel("Next build step")).toContainText("Runs automatically");
   await expect(plan.getByLabel("Next build step").getByRole("listitem")).toHaveCount(0);
