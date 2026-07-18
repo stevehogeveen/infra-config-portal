@@ -9284,7 +9284,7 @@ function LabDesignComposer({
         )}
         <small>
           <span className="design-provenance-chip">{profileOwned ? "Saved / derived" : "Draft only"}</span>
-          {profileOwned ? " Profile-owned value; edit it in System Setup advanced fields." : " Visual intent only; live unknown."}
+          {!workspaceOnly && (profileOwned ? " Profile-owned value; edit it in System Setup advanced fields." : " Visual intent only; live unknown.")}
         </small>
       </label>
     );

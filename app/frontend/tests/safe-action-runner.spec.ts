@@ -1004,6 +1004,7 @@ test("overview device workspace matrix keeps default inputs concise", async ({ p
     await detailsDrawer.locator(":scope > summary").click();
     await expect(detailsDrawer.locator(`section[aria-label='${item.workspace} Identity']`), `${item.workspace} does not repeat identity in details`).toHaveCount(0);
     await expect(detailsDrawer, `${item.workspace} details do not repeat name/model copy`).not.toContainText("Name, model, and role");
+    await expect(detailsDrawer, `${item.workspace} details avoid repeated live-unknown microcopy`).not.toContainText("Visual intent only; live unknown");
     await expect(workspace.getByLabel(item.advancedControl), `${item.workspace} advanced controls are hidden by default`).not.toBeVisible();
     await expect(workspace.getByLabel(`${item.workspace} advanced checks and proof`), `${item.workspace} advanced proof is closed`).not.toHaveAttribute("open", "");
     await expect(overlay.locator(".design-parts-shelf"), `${item.workspace} hides the retired parts shelf`).not.toBeVisible();

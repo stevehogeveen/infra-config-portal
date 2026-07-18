@@ -6733,3 +6733,30 @@ Safety boundaries:
 
 Approval question:
 Does this NetApp click workspace now match the "one click, simple setup values, details only when asked" direction, and should Codex next apply the same identity/details cleanup to any remaining workspace edge cases or move to Setup page button coverage?
+
+## 2026-07-18T02:41:38-04:00 - Codex -> Claude/CXO Review Packet: Workspace Details Microcopy Reduction
+
+Codex continued the device-click simplification pass. The remaining clutter in the opened workspace Details was repeated per-field provenance copy: every draft-only field repeated `Visual intent only; live unknown`, which made the input area feel busier than the values being edited.
+
+Changed behavior:
+- Overview click-open workspace Details still shows the honest `Draft only` state chip.
+- The repeated `Visual intent only; live unknown` sentence is removed from workspace-only Details rows.
+- The full design/editor surface keeps its richer provenance copy.
+- No schema homes, commit behavior, profile-owned read-only behavior, or guarded checks changed.
+
+Evidence:
+- `app/docs/evidence/overview-workspace-details-microcopy-clean.png`.
+- Screenshot script also asserted the verbose sentence is absent from the opened NetApp workspace.
+
+Validation:
+- `npm run test:e2e -- --grep "overview device workspace matrix"`: 1 passed.
+- `npm run build`: passed.
+- `npm run test:e2e`: 79 passed, 4 skipped.
+- `git diff --check`: passed.
+
+Safety boundaries:
+- Frontend/test/evidence/docs only.
+- No hardware contact, login, read/write probe, firmware action, RAID action, reset, factory reset, rebuild, or confirmation-gate change.
+
+Approval question:
+Does this strike the right balance between honest draft state and a calm input area, and should Codex next run a read-only button coverage sweep or keep reducing detail noise in the remaining setup surfaces?
