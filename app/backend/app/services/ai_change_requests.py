@@ -84,22 +84,37 @@ def _mailbox_safe_text(value: str) -> str:
 
 
 def _markdown(payload: AiChangeRequestCreate, request_id: str, created_at: datetime) -> str:
-    regions = [{"id": region.id, "label": region.label, "kind": region.kind} for region in payload.regions]
-    layout = {key: value.model_dump() for key, value in payload.current_layout.items()}
+    safe_page = _mailbox_safe_text(payload.page)
+    safe_route = _mailbox_safe_text(payload.route)
+    safe_target = _mailbox_safe_text(payload.target or "not specified")
+    safe_screenshot = _mailbox_safe_text(payload.screenshot_path or "not captured by the in-app queue")
+    safe_request = _mailbox_safe_text(payload.request)
+    regions = [
+        {
+            "id": _mailbox_safe_text(region.id),
+            "label": _mailbox_safe_text(region.label),
+            "kind": _mailbox_safe_text(region.kind),
+        }
+        for region in payload.regions
+    ]
+    layout = {
+        _mailbox_safe_text(key): value.model_dump()
+        for key, value in payload.current_layout.items()
+    }
     return "\n".join(
         [
             f"# AI change request {request_id}",
             "",
             "- status: queued",
             f"- created_at: {created_at.isoformat()}",
-            f"- page: {payload.page}",
-            f"- route: {payload.route}",
-            f"- target: {payload.target or 'not specified'}",
-            f"- screenshot: {payload.screenshot_path or 'not captured by the in-app queue'}",
+            f"- page: {safe_page}",
+            f"- route: {safe_route}",
+            f"- target: {safe_target}",
+            f"- screenshot: {safe_screenshot}",
             "",
             "## Operator Request",
             "",
-            payload.request,
+            safe_request,
             "",
             "## Safety Boundary",
             "",
