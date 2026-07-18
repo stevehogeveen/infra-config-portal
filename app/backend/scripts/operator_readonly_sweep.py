@@ -52,6 +52,7 @@ ACTION_GROUPS = (
 def main() -> int:
     profile_state = _profile_state()
     selected_actions = _selected_actions(profile_state)
+    runnable_action_count = len([item for item in selected_actions if item["status"] != "skipped"])
     report: dict[str, Any] = {
         "checked_at": datetime.now(UTC).isoformat(),
         "provider_mode": settings.provider_mode,
@@ -71,11 +72,14 @@ def main() -> int:
         print(json.dumps(redact_sensitive(report, _redaction_values()), indent=2))
         return 2
 
+    _write_progress_report(report, runnable_action_count)
     for item in selected_actions:
         if item["status"] == "skipped":
             continue
         report["results"].append(_run_action(item["action_id"], item["label"], item["stage"], optional=bool(item.get("optional"))))
+        _write_progress_report(report, runnable_action_count)
 
+    report["finished_at"] = datetime.now(UTC).isoformat()
     report["quality_gate"] = _quality_gate(report)
     _write_report(report)
     print(json.dumps(redact_sensitive(report, _redaction_values()), indent=2))
@@ -242,6 +246,29 @@ def _quality_gate(report: dict[str, Any]) -> dict[str, Any]:
         "optional_blocked_actions": [item.get("action_id") for item in optional_blocked],
         "warning_actions": [item.get("action_id") for item in warnings],
     }
+
+
+def _write_progress_report(report: dict[str, Any], runnable_action_count: int) -> None:
+    completed_count = len([item for item in report.get("results", []) if isinstance(item, dict)])
+    progress_report = {
+        **report,
+        "last_progress_at": datetime.now(UTC).isoformat(),
+        "quality_gate": {
+            "status": "running",
+            "message": (
+                "Read-only equipment sweep is running; "
+                f"{completed_count} of {runnable_action_count} selected check(s) have finished. "
+                "This partial report is current if the safe action runner times out."
+            ),
+            "completed_actions": [
+                _dict(item).get("action_id")
+                for item in report.get("results", [])
+                if _dict(item).get("action_id")
+            ],
+            "remaining_count": max(runnable_action_count - completed_count, 0),
+        },
+    }
+    _write_report(progress_report)
 
 
 def _stdout_payload(result: dict[str, Any]) -> dict[str, Any]:

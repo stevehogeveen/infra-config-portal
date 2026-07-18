@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 
 SCRIPT_PATH = Path(__file__).resolve().parents[1] / "scripts" / "operator_readonly_sweep.py"
@@ -181,6 +182,80 @@ def test_run_action_surfaces_payload_blockers_from_failed_api_result(monkeypatch
     assert result["evidence_freshness"] == "current"
     assert result["blockers"] == ["For lab/self-signed iLO, set ILO_TEST_VERIFY_TLS=false locally and retry."]
     assert result["warnings"] == ["TLS verification failed during endpoint detection."]
+
+
+def test_main_writes_current_progress_report_before_and_after_each_action(monkeypatch) -> None:
+    writes: list[dict] = []
+
+    def fake_write_report(report):
+        writes.append(json.loads(json.dumps(report)))
+
+    def fake_run_action(action_id, label, stage, *, optional=False):
+        return {
+            "action_id": action_id,
+            "label": label,
+            "optional": optional,
+            "stage": stage,
+            "status": "completed",
+            "not_mock": True,
+            "source_type": "live_probe",
+            "blockers": [],
+            "warnings": [],
+        }
+
+    monkeypatch.setattr(
+        operator_readonly_sweep,
+        "settings",
+        SimpleNamespace(provider_mode=operator_readonly_sweep.LOCAL_READONLY_MODE),
+    )
+    monkeypatch.setattr(operator_readonly_sweep, "_profile_state", lambda: _profile_state())
+    monkeypatch.setattr(
+        operator_readonly_sweep,
+        "_selected_actions",
+        lambda _state: [
+            {
+                "action_id": "cisco.ssh-readonly-probe",
+                "label": "Cisco SSH read-only show commands",
+                "optional": False,
+                "optional_reason": "",
+                "stage": "network",
+                "status": "selected",
+                "skip_reason": "",
+            },
+            {
+                "action_id": "netapp.live-state",
+                "label": "NetApp live state",
+                "optional": False,
+                "optional_reason": "",
+                "stage": "storage",
+                "status": "selected",
+                "skip_reason": "",
+            },
+            {
+                "action_id": "vcenter-netapp.readiness",
+                "label": "vCenter NetApp readiness",
+                "optional": False,
+                "optional_reason": "",
+                "stage": "virtualization",
+                "status": "skipped",
+                "skip_reason": "vCenter is out of scope for the active lab profile.",
+            },
+        ],
+    )
+    monkeypatch.setattr(operator_readonly_sweep, "_run_action", fake_run_action)
+    monkeypatch.setattr(operator_readonly_sweep, "_write_report", fake_write_report)
+    monkeypatch.setattr(operator_readonly_sweep, "_redaction_values", lambda: [])
+
+    exit_code = operator_readonly_sweep.main()
+
+    assert exit_code == 0
+    assert [item["quality_gate"]["status"] for item in writes] == ["running", "running", "running", "completed"]
+    assert writes[0]["quality_gate"]["remaining_count"] == 2
+    assert writes[0]["quality_gate"]["completed_actions"] == []
+    assert writes[1]["quality_gate"]["completed_actions"] == ["cisco.ssh-readonly-probe"]
+    assert writes[2]["quality_gate"]["completed_actions"] == ["cisco.ssh-readonly-probe", "netapp.live-state"]
+    assert "partial report is current" in writes[1]["quality_gate"]["message"]
+    assert writes[-1]["finished_at"]
 
 
 def _profile_state(*, netapp_enabled: bool = True, storage_protocol: str = "nfs") -> dict:
