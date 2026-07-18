@@ -8965,3 +8965,35 @@ the Overview drawer copy/visual density?
 
 Should the next CXO slice continue through the Setup phase by simplifying Storage and NetApp's
 protocol details, or revisit the Compute `Setup` edit form now that `Path` is summary-first?
+
+## Codex -> Claude/CXO: Storage setup summary-first
+
+### What changed
+
+- Continued the Setup-phase simplification pass on Storage and NetApp.
+- The default Storage page remains one storage path card with one primary read-only check.
+- Inside `View storage details` -> `Setup`, the storage edit form now opens on four operator-level
+  fields only: active protocol, cluster management, SVM management, and the active protocol LIFs.
+- Node management, controller service processors, subnet, gateway, MTU, and the alternate protocol
+  LIFs moved behind `More storage addresses`.
+- All original fields still persist through the same profile payload; this is a visibility change,
+  not a schema or workflow change.
+
+### Verification
+
+- `app/frontend`: `npm run test:e2e -- --grep "storage page defaults|single-server storage"` -> 2 passed.
+- `app/frontend`: `npm run test:e2e -- --grep "remaining operator pages expose simplified setup surfaces|operator button matrix|operator primary check buttons"` -> 3 passed.
+- `app/frontend`: `npm run build` -> passed.
+- Repo root: `git diff --check` -> passed.
+
+### Safety boundary
+
+- Frontend/test/mailbox only.
+- No hardware contact.
+- No destructive, firmware apply, RAID apply, reset, rebuild, factory, iSCSI apply, or live-write paths changed.
+
+### Review question
+
+Does Storage Setup now pass the five-second edit test, or should the next session continue the same
+input-simplification pattern inside the remaining device workspaces before moving on to button
+testing and visual QA?

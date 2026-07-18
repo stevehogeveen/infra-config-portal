@@ -14015,6 +14015,14 @@ function StorageConfigurePanel({
     }
   }
 
+  const activeProtocolLabel = edit.storageProtocol === "iscsi" ? "iSCSI" : "NFS";
+  const activeLifLabel = edit.storageProtocol === "iscsi" ? "iSCSI LIFs" : "NFS LIFs";
+  const activeLifValue = edit.storageProtocol === "iscsi" ? edit.iscsiLifs : edit.nfsLifs;
+  const updateActiveLifs = (value: string) => update(edit.storageProtocol === "iscsi" ? "iscsiLifs" : "nfsLifs", value);
+  const alternateLifLabel = edit.storageProtocol === "iscsi" ? "NFS LIFs" : "iSCSI LIFs";
+  const alternateLifValue = edit.storageProtocol === "iscsi" ? edit.nfsLifs : edit.iscsiLifs;
+  const updateAlternateLifs = (value: string) => update(edit.storageProtocol === "iscsi" ? "nfsLifs" : "iscsiLifs", value);
+
   return (
     <Card className="network-config-panel" hover={false} id="storage-profile">
       <CardHeader>
@@ -14026,45 +14034,55 @@ function StorageConfigurePanel({
       </CardHeader>
       <CardContent>
         <form className="network-config-form" onSubmit={save}>
-          <Field label="Active protocol">
-            <select value={edit.storageProtocol} onChange={(event) => update("storageProtocol", event.target.value)}>
-              <option value="nfs">NFS</option>
-              <option value="iscsi">iSCSI</option>
-            </select>
-          </Field>
-          <Field label="Cluster mgmt">
-            <input value={edit.clusterMgmt} onChange={(event) => update("clusterMgmt", event.target.value)} />
-          </Field>
-          <Field label="SVM mgmt">
-            <input value={edit.svmMgmt} onChange={(event) => update("svmMgmt", event.target.value)} />
-          </Field>
-          <Field label="Node A mgmt">
-            <input value={edit.nodeAMgmt} onChange={(event) => update("nodeAMgmt", event.target.value)} />
-          </Field>
-          <Field label="Node B mgmt">
-            <input value={edit.nodeBMgmt} onChange={(event) => update("nodeBMgmt", event.target.value)} />
-          </Field>
-          <Field label="Controller A SP">
-            <input value={edit.controllerASp} onChange={(event) => update("controllerASp", event.target.value)} />
-          </Field>
-          <Field label="Controller B SP">
-            <input value={edit.controllerBSp} onChange={(event) => update("controllerBSp", event.target.value)} />
-          </Field>
-          <Field label="NFS LIFs">
-            <input value={edit.nfsLifs} onChange={(event) => update("nfsLifs", event.target.value)} />
-          </Field>
-          <Field label="iSCSI LIFs">
-            <input value={edit.iscsiLifs} onChange={(event) => update("iscsiLifs", event.target.value)} />
-          </Field>
-          <Field label="Subnet">
-            <input value={edit.subnet} onChange={(event) => update("subnet", event.target.value)} />
-          </Field>
-          <Field label="Gateway">
-            <input value={edit.gateway} onChange={(event) => update("gateway", event.target.value)} />
-          </Field>
-          <Field label="MTU">
-            <input inputMode="numeric" value={edit.mtu} onChange={(event) => update("mtu", event.target.value)} />
-          </Field>
+          <div className="storage-config-primary-grid">
+            <Field label="Active protocol">
+              <select value={edit.storageProtocol} onChange={(event) => update("storageProtocol", event.target.value)}>
+                <option value="nfs">NFS</option>
+                <option value="iscsi">iSCSI</option>
+              </select>
+            </Field>
+            <Field label="Cluster mgmt">
+              <input value={edit.clusterMgmt} onChange={(event) => update("clusterMgmt", event.target.value)} />
+            </Field>
+            <Field label="SVM mgmt">
+              <input value={edit.svmMgmt} onChange={(event) => update("svmMgmt", event.target.value)} />
+            </Field>
+            <Field label={activeLifLabel}>
+              <input value={activeLifValue} onChange={(event) => updateActiveLifs(event.target.value)} />
+            </Field>
+          </div>
+          <details className="storage-config-more">
+            <summary>
+              <span>More storage addresses</span>
+              <small>{activeProtocolLabel} stays primary; node, SP, subnet, and alternate protocol live here.</small>
+            </summary>
+            <div className="storage-config-more-grid">
+              <Field label="Node A mgmt">
+                <input value={edit.nodeAMgmt} onChange={(event) => update("nodeAMgmt", event.target.value)} />
+              </Field>
+              <Field label="Node B mgmt">
+                <input value={edit.nodeBMgmt} onChange={(event) => update("nodeBMgmt", event.target.value)} />
+              </Field>
+              <Field label="Controller A SP">
+                <input value={edit.controllerASp} onChange={(event) => update("controllerASp", event.target.value)} />
+              </Field>
+              <Field label="Controller B SP">
+                <input value={edit.controllerBSp} onChange={(event) => update("controllerBSp", event.target.value)} />
+              </Field>
+              <Field label={alternateLifLabel}>
+                <input value={alternateLifValue} onChange={(event) => updateAlternateLifs(event.target.value)} />
+              </Field>
+              <Field label="Subnet">
+                <input value={edit.subnet} onChange={(event) => update("subnet", event.target.value)} />
+              </Field>
+              <Field label="Gateway">
+                <input value={edit.gateway} onChange={(event) => update("gateway", event.target.value)} />
+              </Field>
+              <Field label="MTU">
+                <input inputMode="numeric" value={edit.mtu} onChange={(event) => update("mtu", event.target.value)} />
+              </Field>
+            </div>
+          </details>
           <div className="network-config-actions">
             <button className="operator-primary-button" disabled={busy || !activeProfile} type="submit">
               {busy ? "Saving..." : activeProfile?.source === "saved" ? "Save Storage" : "Save As Lab Setup"}

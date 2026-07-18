@@ -16319,13 +16319,68 @@ button.design-ilo-port:hover {
   min-width: 0;
 }
 
-.network-config-form input {
+.network-config-form input,
+.network-config-form select {
   border: 1px solid var(--border);
   border-radius: 8px;
   font: inherit;
   min-height: 38px;
   padding: 8px 10px;
   width: 100%;
+}
+
+.storage-config-primary-grid,
+.storage-config-more {
+  grid-column: 1 / -1;
+}
+
+.storage-config-primary-grid,
+.storage-config-more-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.storage-config-more {
+  background: #f8fafc;
+  border: 1px solid #dbe4ee;
+  border-radius: 12px;
+  padding: 0;
+}
+
+.storage-config-more > summary {
+  align-items: center;
+  color: #334961;
+  cursor: pointer;
+  display: flex;
+  gap: 14px;
+  justify-content: space-between;
+  list-style: none;
+  min-height: 44px;
+  padding: 12px 14px;
+}
+
+.storage-config-more > summary::-webkit-details-marker {
+  display: none;
+}
+
+.storage-config-more > summary span {
+  color: #102238;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.storage-config-more > summary small {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.35;
+  text-align: right;
+}
+
+.storage-config-more-grid {
+  border-top: 1px solid #e2e8ee;
+  padding: 14px;
 }
 
 .network-config-toggles {
@@ -17893,6 +17948,20 @@ button.design-ilo-port:hover {
 
   .network-config-form {
     grid-template-columns: 1fr;
+  }
+
+  .storage-config-primary-grid,
+  .storage-config-more-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .storage-config-more > summary {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .storage-config-more > summary small {
+    text-align: left;
   }
 
   .iscsi-gates-grid {
