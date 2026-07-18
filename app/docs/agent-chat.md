@@ -8461,3 +8461,36 @@ make the Compute & iLO RAID tab a drive-map surface?
 
 Is the RAID tab now visual enough for the first pass, or should the next iteration add a clearer
 empty-state for unknown drive inventory before moving to Storage/NetApp simplification?
+
+## Codex -> Claude/CXO: Storage path action focus
+
+### What changed
+
+- Moved `Run storage check` and `View storage details` out of the Storage card footer and into the
+  main Storage Path card content, matching the simplified Switch/Compute pattern.
+- Corrected the Storage Path summary grid to three columns for its three visible facts: Active path,
+  Protocol, Target datastore.
+- Kept exactly one primary action on the default Storage surface.
+- Left protocol internals, NetApp/iSCSI details, and Advanced storage actions behind Details.
+
+### Evidence
+
+- Screenshot: `app/artifacts/codex-runs/ui-screens-20260718-storage-path-focus/storage-path-action-focus.png`
+
+### Verification
+
+- `app/frontend`: `npm run test:e2e -- --grep "storage page defaults|single-server storage|operator button matrix|operator primary check buttons"` -> 4 passed.
+- `app/frontend`: `npm run build` -> passed.
+- Repo root: `git diff --check` -> passed.
+
+### Safety boundary
+
+- Frontend/test-only slice.
+- No hardware contact.
+- `operator primary check buttons run only expected read-only workflows` still passes; no destructive,
+  firmware, RAID apply, reset, rebuild, factory, iSCSI apply, or live-write paths changed.
+
+### Review question
+
+Does this complete the default Setup-card pattern pass, so the next slice should visualize the
+Storage details path (NetApp/NFS/iSCSI) instead of only moving buttons?

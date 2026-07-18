@@ -1634,6 +1634,8 @@ test("storage page defaults to one storage path card and hides protocol internal
 
   await expect(page.locator(".storage-path-actions .operator-primary-button")).toHaveCount(1);
   await expect(page.locator(".storage-path-actions .operator-primary-button")).toContainText("Run storage check");
+  await expect(storagePath.locator(".ui-card-content .storage-path-actions")).toBeVisible();
+  await expect(storagePath.locator(".ui-card-footer")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "View storage details" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Change storage path" })).toHaveCount(0);
   await expect(page.getByRole("textbox", { name: "Change this page" })).toHaveCount(0);

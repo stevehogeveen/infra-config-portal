@@ -3142,10 +3142,6 @@ export function OperatorStoragePage({ labProfileState, onReloadLabProfile }: Ope
                 <span>{storagePath.reason}</span>
               </div>
             )}
-            {runState.message && <div className="operator-feedback storage-path-feedback">{runState.message}</div>}
-            {runState.error && <div className="operator-feedback error storage-path-feedback">{runState.error}</div>}
-          </CardContent>
-          <CardFooter>
             <div className="storage-path-actions">
               <button
                 className="operator-primary-button"
@@ -3165,7 +3161,9 @@ export function OperatorStoragePage({ labProfileState, onReloadLabProfile }: Ope
                 View storage details
               </button>
             </div>
-          </CardFooter>
+            {runState.message && <div className="operator-feedback storage-path-feedback">{runState.message}</div>}
+            {runState.error && <div className="operator-feedback error storage-path-feedback">{runState.error}</div>}
+          </CardContent>
         </Card>
       </section>
       {detailsOpen && profileReady && (

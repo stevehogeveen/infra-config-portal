@@ -15249,7 +15249,7 @@ button.design-ilo-port:hover {
 .storage-path-fields {
   display: grid;
   gap: 12px;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   margin: 0;
 }
 
@@ -15321,7 +15321,8 @@ button.design-ilo-port:hover {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
-  justify-content: flex-end;
+  justify-content: flex-start;
+  margin-top: 14px;
   width: 100%;
 }
 
