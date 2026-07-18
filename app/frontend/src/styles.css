@@ -10434,6 +10434,80 @@ th.ui-compact-table-cell {
   line-height: 1.35;
 }
 
+.design-device-credential-card {
+  background: linear-gradient(180deg, #fffdf7, #ffffff);
+  border: 1px solid #f3dca5;
+  border-radius: 14px;
+  box-shadow: 0 14px 34px rgba(146, 106, 20, .08);
+  display: grid;
+  gap: 13px;
+  padding: 14px;
+}
+
+.design-device-credential-head {
+  align-items: start;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.design-device-credential-head h4 {
+  color: var(--ink);
+  font-size: 15px;
+  line-height: 1.15;
+  margin: 0;
+}
+
+.design-device-credential-head span,
+.design-device-credential-note {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 750;
+  line-height: 1.4;
+}
+
+.design-device-credential-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.design-device-credential-field {
+  display: grid;
+  gap: 6px;
+}
+
+.design-device-credential-field.wide {
+  grid-column: 1 / -1;
+}
+
+.design-device-credential-field span {
+  color: #334155;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.design-device-credential-field input {
+  background: #fff;
+  border: 1px solid #d9e2ec;
+  border-radius: 10px;
+  color: #0f172a;
+  font-size: 13px;
+  font-weight: 800;
+  min-height: 42px;
+  padding: 9px 11px;
+}
+
+.design-device-credential-note {
+  background: #fff7e6;
+  border: 1px solid #f4d38b;
+  border-radius: 10px;
+  margin: 0;
+  padding: 10px 11px;
+}
+
 .design-primary-setting {
   align-items: center;
   background: linear-gradient(180deg, #f0fdfa, #ffffff);

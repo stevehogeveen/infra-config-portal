@@ -447,8 +447,11 @@ test("lab defaults keeps shared values simple and hides advanced policy by defau
 
   const signIn = page.getByLabel("Shared sign-in");
   await expect(signIn.getByRole("heading", { name: "Shared sign-in" })).toBeVisible();
-  await expect(signIn).toContainText("Credential status");
+  await expect(signIn).toContainText("Password location");
   await expect(signIn).toContainText("Secrets are not stored in kit defaults.");
+  await expect(signIn).toContainText("Click a device on Overview to set its own sign-in");
+  await expect(signIn).toContainText("Set per device");
+  await expect(signIn).toContainText("Default username");
   await expect(signIn.getByText("More service defaults")).toHaveCount(0);
   await expect(signIn.getByLabel("Shared service defaults")).toHaveCount(0);
   await expect(signIn.getByLabel("SNMP version")).toHaveCount(0);
@@ -1215,6 +1218,7 @@ test("overview device workspace matrix keeps default inputs concise", async ({ p
   const cases: Array<{
     advancedControl: string;
     button: string;
+    credentialSetup?: boolean;
     essentials: string[];
     hiddenEssentials?: string[];
     workspace: string;
@@ -1222,6 +1226,7 @@ test("overview device workspace matrix keeps default inputs concise", async ({ p
     {
       advancedControl: "Cisco workspace network controls",
       button: "Open Cisco switch workspace",
+      credentialSetup: true,
       essentials: ["Management IP", "Storage VLAN"],
       hiddenEssentials: ["Management VLAN"],
       workspace: "Cisco switch"
@@ -1229,6 +1234,7 @@ test("overview device workspace matrix keeps default inputs concise", async ({ p
     {
       advancedControl: "iLO workspace server controls",
       button: "Open HPE iLO workspace",
+      credentialSetup: true,
       essentials: ["iLO IP"],
       hiddenEssentials: ["Name", "Credential status", "Reachability", "Firmware evidence"],
       workspace: "HPE iLO"
@@ -1236,6 +1242,7 @@ test("overview device workspace matrix keeps default inputs concise", async ({ p
     {
       advancedControl: "Server workspace checks",
       button: "Open HPE DL360 Gen10 workspace",
+      credentialSetup: true,
       essentials: ["iLO IP", "Storage VLAN"],
       workspace: "DL360 Gen10"
     },
@@ -1303,6 +1310,24 @@ test("overview device workspace matrix keeps default inputs concise", async ({ p
     await expect(essentials.locator(".design-device-setting-row.is-readonly-value"), `${item.workspace} no longer turns main setup into proof-only rows`).toHaveCount(0);
     await expect(essentials.locator(".design-provenance-chip"), `${item.workspace} keeps provenance out of the simple setup block`).toHaveCount(0);
     await expect(essentials, `${item.workspace} keeps identity in the hero, not the setup form`).not.toContainText("Name");
+    const credentialSetup = workspace.getByLabel(`${item.workspace} credential setup`);
+    if (item.credentialSetup) {
+      await expect(credentialSetup, `${item.workspace} exposes device-scoped credential setup`).toBeVisible();
+      await expect(credentialSetup, `${item.workspace} points away from Lab Defaults secrets`).toContainText("Lab Defaults");
+      await expect(credentialSetup, `${item.workspace} explains local secret handling`).toContainText("not written to Lab Defaults");
+      await expect(credentialSetup.getByRole("textbox", { name: `${item.workspace} username` }), `${item.workspace} has a username field`).toBeVisible();
+      await expect(credentialSetup.getByLabel(`${item.workspace} setup password`), `${item.workspace} has a local-only password field`).toHaveAttribute("type", "password");
+      await expect(credentialSetup.getByRole("textbox", { name: `${item.workspace} password reference` }), `${item.workspace} has a non-secret reference field`).toBeVisible();
+      if (item.workspace === "Cisco switch") {
+        await credentialSetup.getByLabel(`${item.workspace} setup password`).fill("never-save-this-secret");
+        await credentialSetup.getByRole("textbox", { name: `${item.workspace} password reference` }).fill("local cisco credential");
+        await expect(credentialSetup).toContainText("Staged locally");
+        const serializedDrafts = await page.evaluate(() => JSON.stringify(window.localStorage));
+        expect(serializedDrafts).not.toContain("never-save-this-secret");
+      }
+    } else {
+      await expect(credentialSetup, `${item.workspace} does not invent credential setup before design review`).toHaveCount(0);
+    }
     const quickPanel = workspace.getByLabel(`${item.workspace} quick setup fields`);
     await expect(workspace.getByLabel(`${item.workspace} save planned setup`), `${item.workspace} has an in-workspace save row`).toContainText("No hardware touched by setup saves.");
     await expect(workspace.locator(":scope > details.design-workspace-edit-settings"), `${item.workspace} promotes the edit drawer to the workspace top level`).toHaveCount(1);

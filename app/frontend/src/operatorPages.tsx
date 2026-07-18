@@ -1027,16 +1027,23 @@ export function OperatorLabDefaultsPage({ labProfileState, onReloadLabProfile }:
             <CardHeader>
               <div>
                 <h2>Shared sign-in</h2>
-                <p className="muted">Secrets are not stored in kit defaults. Device workspaces show credential status without revealing values.</p>
+                <p className="muted">Secrets are not stored in kit defaults. Click a device on Overview to set its own sign-in; this page only keeps non-secret conventions.</p>
               </div>
             </CardHeader>
             <CardContent>
               <dl className="lab-defaults-facts lab-defaults-secret-facts">
                 <div>
-                  <dt>Credential status</dt>
+                  <dt>Password location</dt>
                   <dd>
-                    <span>{sharedCredentialsSaved ? "saved secret reference" : "device-specific"}</span>
-                    <StatusBadge label={sharedCredentialsSaved ? "Saved" : "Not saved here"} status={sharedCredentialsSaved ? "ready" : "not-configured"} />
+                    <span>{sharedCredentialsSaved ? "saved secret reference" : "device workspaces"}</span>
+                    <StatusBadge label={sharedCredentialsSaved ? "Saved" : "Set per device"} status={sharedCredentialsSaved ? "ready" : "plan-only"} />
+                  </dd>
+                </div>
+                <div>
+                  <dt>Default username</dt>
+                  <dd>
+                    <span>Use each device workspace</span>
+                    <StatusBadge label="Not secret" status="ready" />
                   </dd>
                 </div>
               </dl>
@@ -7225,6 +7232,11 @@ type DesignPart = {
 };
 
 type DeviceSettings = Record<DesignPartId, Record<string, string>>;
+type DeviceCredentialDraft = {
+  password: string;
+  passwordReference: string;
+  username: string;
+};
 type LaneSettings = Record<DesignLaneId, Record<string, string>>;
 type ConnectionSettings = Record<DesignConnectionId, Record<string, string>>;
 
@@ -8954,6 +8966,7 @@ function LabDesignComposer({
     running: false
   });
   const [actionRunStatus, setActionRunStatus] = useState<{ error: string; message: string; runningActionId: string }>({ error: "", message: "", runningActionId: "" });
+  const [credentialDrafts, setCredentialDrafts] = useState<Record<string, DeviceCredentialDraft>>({});
   const [actionRunsById, setActionRunsById] = useState<Record<string, WorkflowActionRun[]>>({});
   const [diagnosis, setDiagnosis] = useState<WorkflowActionDiagnosis | null>(null);
   const [diagnosisLoading, setDiagnosisLoading] = useState(false);
@@ -8964,6 +8977,10 @@ function LabDesignComposer({
   const blueprintLinks = topologyDesignBlueprintLinks({ connectionSettings, netappInScope, vcenterInScope });
   const selectedPart = parts.find((part) => part.id === selectedDevice) ?? parts[0];
   const selectedSettings = selectedPart ? deviceSettings[selectedPart.id] ?? {} : {};
+  const selectedCredentialSpec = selectedPart ? topologyDeviceCredentialSpec(selectedPart.id) : null;
+  const selectedCredentialDraft = selectedPart && selectedCredentialSpec
+    ? credentialDrafts[selectedPart.id] ?? topologyDefaultDeviceCredentialDraft(selectedPart.id)
+    : null;
   const selectedInspectorRows = selectedPart
     ? topologyDeviceInspectorRows(selectedPart.id, selectedSettings, storageProtocol)
     : [];
@@ -9224,6 +9241,21 @@ function LabDesignComposer({
     setDropMessage(workspaceOnly
       ? `${selectedPart.label} setup updated.`
       : `${selectedPart.label} draft updated. Hardware untouched until guarded applies.`);
+  }
+
+  function updateDeviceCredentialDraft(key: keyof DeviceCredentialDraft, value: string) {
+    if (!selectedPart || !selectedCredentialSpec) return;
+    setCredentialDrafts((current) => {
+      const existing = current[selectedPart.id] ?? topologyDefaultDeviceCredentialDraft(selectedPart.id);
+      return {
+        ...current,
+        [selectedPart.id]: {
+          ...existing,
+          [key]: value
+        }
+      };
+    });
+    setDropMessage(`${selectedPart.label} sign-in updated in this workspace only. Store real secrets in ${selectedCredentialSpec.secretPath}.`);
   }
 
   function updateLaneSetting(key: string, value: string) {
@@ -9846,6 +9878,57 @@ function LabDesignComposer({
                   </button>
                   <span>{profileCommitStatus.error || profileCommitStatus.message || "No hardware touched by setup saves."}</span>
                 </div>
+              </section>
+            )}
+
+            {workspaceOnly && selectedCredentialSpec && selectedCredentialDraft && (
+              <section className="design-device-credential-card" aria-label={`${selectedPart.label} credential setup`}>
+                <div className="design-device-credential-head">
+                  <div>
+                    <p className="operator-kicker">Device sign-in</p>
+                    <h4>{selectedCredentialSpec.title}</h4>
+                    <span>{selectedCredentialSpec.description}</span>
+                  </div>
+                  <StatusBadge
+                    label={selectedCredentialDraft.password ? "Staged locally" : "Reference only"}
+                    status={selectedCredentialDraft.password ? "plan-only" : "not-configured"}
+                  />
+                </div>
+                <div className="design-device-credential-grid">
+                  <label className="design-device-credential-field">
+                    <span>Username</span>
+                    <input
+                      aria-label={`${selectedPart.label} username`}
+                      autoComplete="username"
+                      onChange={(event) => updateDeviceCredentialDraft("username", event.target.value)}
+                      placeholder={selectedCredentialSpec.defaultUsername}
+                      value={selectedCredentialDraft.username}
+                    />
+                  </label>
+                  <label className="design-device-credential-field">
+                    <span>Setup password</span>
+                    <input
+                      aria-label={`${selectedPart.label} setup password`}
+                      autoComplete="new-password"
+                      onChange={(event) => updateDeviceCredentialDraft("password", event.target.value)}
+                      placeholder="Local only; never saved in Lab Defaults"
+                      type="password"
+                      value={selectedCredentialDraft.password}
+                    />
+                  </label>
+                  <label className="design-device-credential-field wide">
+                    <span>Password reference</span>
+                    <input
+                      aria-label={`${selectedPart.label} password reference`}
+                      onChange={(event) => updateDeviceCredentialDraft("passwordReference", event.target.value)}
+                      placeholder={selectedCredentialSpec.referencePlaceholder}
+                      value={selectedCredentialDraft.passwordReference}
+                    />
+                  </label>
+                </div>
+                <p className="design-device-credential-note">
+                  Passwords are device-scoped and secret-safe: this field is not written to Lab Defaults, the lab profile, topology draft, reports, or evidence. Live checks read the configured local credential path: {selectedCredentialSpec.secretPath}.
+                </p>
               </section>
             )}
 
@@ -11702,6 +11785,52 @@ function topologyDeviceEssentialFields(
     .map((key) => fields.find((field) => field.key === key))
     .filter((field): field is { key: string; kind?: "textarea"; label: string } => Boolean(field));
   return (picked.length ? picked : fields).slice(0, 5);
+}
+
+function topologyDeviceCredentialSpec(partId: DesignPartId): {
+  defaultUsername: string;
+  description: string;
+  referencePlaceholder: string;
+  secretPath: string;
+  title: string;
+} | null {
+  if (partId === "switch") {
+    return {
+      defaultUsername: "admin",
+      description: "Set the Cisco sign-in here, per device. Lab Defaults keeps no shared password.",
+      referencePlaceholder: "CISCO_TEST_PASSWORD or local switch secret reference",
+      secretPath: "CISCO_TEST_PASSWORD / CISCO_ENABLE_PASSWORD",
+      title: "Cisco switch sign-in"
+    };
+  }
+  if (partId === "ilo") {
+    return {
+      defaultUsername: "Administrator",
+      description: "Set the iLO sign-in here, per device. Lab Defaults keeps no shared password.",
+      referencePlaceholder: "ILO_TEST_PASSWORD or local iLO secret reference",
+      secretPath: "ILO_TEST_PASSWORD",
+      title: "HPE iLO sign-in"
+    };
+  }
+  if (partId === "server-gen10" || partId === "server-gen10plus") {
+    return {
+      defaultUsername: "Administrator",
+      description: "Set the server access password from this device workspace before read-only iLO or ESXi checks.",
+      referencePlaceholder: "ILO_TEST_PASSWORD or ESXI_TEST_PASSWORD reference",
+      secretPath: "ILO_TEST_PASSWORD / ESXI_TEST_PASSWORD",
+      title: "Server access sign-in"
+    };
+  }
+  return null;
+}
+
+function topologyDefaultDeviceCredentialDraft(partId: DesignPartId): DeviceCredentialDraft {
+  const spec = topologyDeviceCredentialSpec(partId);
+  return {
+    password: "",
+    passwordReference: "",
+    username: spec?.defaultUsername ?? ""
+  };
 }
 
 function topologyDeviceQuickEditFields(
