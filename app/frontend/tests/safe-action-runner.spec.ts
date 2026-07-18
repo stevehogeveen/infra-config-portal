@@ -1105,6 +1105,86 @@ test("overview device workspace primary actions stay read-only", async ({ page }
   }
 });
 
+test("overview device workspace advanced safe checks expose only read-only workflow actions", async ({ page }) => {
+  const forbiddenActionIds = /^(raid\.apply|raid\.reset-commit|esxi\.rebuild-install|ilo\.reset-server|netapp\.factory-reset-apply|netapp\.setup-apply|firmware\.upgrade-apply-placeholder|cisco\.apply-bootstrap|vcenter\.attach-esxi-apply|esxi\.netapp-datastore-apply|esxi\.vm-deploy-apply)$/;
+  const actionCatalog = new Map(workflowActions().map((action) => [String(action.action_id), action]));
+  const capturedActionIds: string[] = [];
+
+  page.on("request", (request) => {
+    if (request.method() !== "POST") return;
+    const url = new URL(request.url());
+    if (!url.pathname.match(/^\/api\/v1\/workflows\/actions\/.+\/run$/)) return;
+    capturedActionIds.push(actionIdFromRunPath(url.pathname));
+  });
+
+  await page.goto("/overview");
+  await openOperatorDetails(page);
+
+  const topology = page.locator("section[aria-label='Living lab topology']");
+  const cases: Array<{ button: string; expectedActionIds: string[]; workspace: string }> = [
+    {
+      button: "Open Cisco switch workspace",
+      expectedActionIds: ["cisco.ssh-readonly-probe", "cisco.firmware-inventory", "cisco.current-intent-diff"],
+      workspace: "Cisco switch"
+    },
+    {
+      button: "Open HPE iLO workspace",
+      expectedActionIds: ["ilo.reachability", "ilo.auth", "ilo.inventory"],
+      workspace: "HPE iLO"
+    },
+    {
+      button: "Open HPE DL360 Gen10 workspace",
+      expectedActionIds: ["esxi.management-validation", "raid.validate"],
+      workspace: "DL360 Gen10"
+    },
+    {
+      button: "Open NetApp ONTAP workspace",
+      expectedActionIds: ["netapp.setup-preview"],
+      workspace: "NetApp ONTAP"
+    },
+    {
+      button: "Open vCenter VCSA workspace",
+      expectedActionIds: ["vcenter-netapp.readiness", "vcenter.install-readiness", "vcenter.post-attach-validation"],
+      workspace: "vCenter VCSA"
+    }
+  ];
+
+  for (const item of cases) {
+    for (const actionId of item.expectedActionIds) {
+      const action = actionCatalog.get(actionId);
+      expect(action, `${item.workspace} advanced action ${actionId} exists in catalog`).toBeTruthy();
+      expect(["read_only", "report_only"], `${item.workspace} advanced action ${actionId} stays non-write`).toContain(String(action?.mode));
+      expect(action?.ui_run_supported, `${item.workspace} advanced action ${actionId} stays UI runnable only as a safe action`).toBeTruthy();
+    }
+
+    capturedActionIds.length = 0;
+    await topology.getByRole("button", { name: item.button }).click();
+    const overlay = page.locator("div[aria-label='Device workspace overlay']");
+    const advanced = await openWorkspaceAdvanced(page, item.workspace);
+    const safeChecks = advanced.getByLabel(`${item.workspace} safe checks and next actions`);
+    await expect(safeChecks, `${item.workspace} safe check list is visible only inside advanced proof`).toBeVisible();
+    await expect(safeChecks, `${item.workspace} safe checks hide guarded copy`).not.toContainText(/apply|factory|reset|rebuild|upgrade/i);
+    await expect(safeChecks.getByRole("button"), `${item.workspace} exposes exactly the safe workflow checks`).toHaveCount(item.expectedActionIds.length);
+
+    for (const button of await safeChecks.getByRole("button").all()) {
+      const text = (await button.textContent())?.replace(/\s+/g, " ").trim() ?? "";
+      expect(text, `${item.workspace} safe check button avoids guarded verbs`).not.toMatch(/apply|factory|reset|rebuild|upgrade/i);
+      await button.click();
+    }
+
+    await expect.poll(
+      () => capturedActionIds.length,
+      { message: `${item.workspace} advanced safe checks run only expected workflow count`, timeout: 5000 }
+    ).toBe(item.expectedActionIds.length);
+    expect(capturedActionIds, `${item.workspace} advanced safe checks never run guarded/write workflows`)
+      .not.toEqual(expect.arrayContaining([expect.stringMatching(forbiddenActionIds)]));
+    expect([...capturedActionIds].sort(), `${item.workspace} advanced safe check targets`).toEqual([...item.expectedActionIds].sort());
+
+    await overlay.getByRole("button", { name: "Close" }).click();
+    await expect(page.locator("div[aria-label='Device workspace overlay']")).toHaveCount(0);
+  }
+});
+
 test("overview device workspace matrix keeps default inputs concise", async ({ page }) => {
   await page.goto("/overview");
   await openOperatorDetails(page);
