@@ -2713,6 +2713,9 @@ test("software media keeps inventory details behind one read-only action", async
   await page.getByRole("button", { name: "Advanced" }).click();
   const advancedMediaMetadata = page.locator("details.software-media-advanced");
   await expect(advancedMediaMetadata).toBeVisible();
+  await expect(advancedMediaMetadata).not.toHaveAttribute("open", "");
+  await expect(advancedMediaMetadata.getByRole("columnheader", { name: "Source" })).not.toBeVisible();
+  await advancedMediaMetadata.locator(":scope > summary").click();
   await expect(advancedMediaMetadata).toHaveAttribute("open", "");
   await expect(advancedMediaMetadata.getByRole("columnheader", { name: "Source" })).toBeVisible();
 });

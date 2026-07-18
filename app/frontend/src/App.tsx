@@ -7059,6 +7059,7 @@ function MediaInventoryPage() {
           {isAdvancedMode && (
             <AdvancedDetails
               className="section-details software-media-advanced"
+              defaultOpenInAdvanced={false}
               summary="Raw media inventory fields for diagnostics"
               title="Advanced media metadata"
             >
@@ -16368,17 +16369,19 @@ function WorkflowSummary({
 function AdvancedDetails({
   children,
   className = "",
+  defaultOpenInAdvanced = true,
   summary,
   title
 }: {
   children: ReactNode;
   className?: string;
+  defaultOpenInAdvanced?: boolean;
   summary: string;
   title: string;
 }) {
   const { isAdvancedMode } = useUiMode();
   return (
-    <details className={`advanced-details ${className}`.trim()} open={isAdvancedMode ? true : undefined}>
+    <details className={`advanced-details ${className}`.trim()} open={isAdvancedMode && defaultOpenInAdvanced ? true : undefined}>
       <summary>
         <span>{title}</span>
         <small>{summary}</small>
