@@ -239,13 +239,8 @@ async function openWorkspaceEditGroup(page: Page, workspaceName: string, groupNa
       await details.locator(":scope > summary").click();
     }
   }
-  const editSettings = workspace.getByLabel(`${workspaceName} edit settings`);
-  const isEditOpen = await editSettings.evaluate((node) => (node as HTMLDetailsElement).open);
-  if (!isEditOpen) {
-    await editSettings.locator(":scope > summary").click();
-  }
-  const moreSetupFields = editSettings.getByLabel(`${workspaceName} more setup fields`);
-  const groupHost = await moreSetupFields.count() ? moreSetupFields : editSettings;
+  const moreSetupFields = workspace.getByLabel(`${workspaceName} more setup fields`);
+  const groupHost = await moreSetupFields.count() ? moreSetupFields : workspace;
   if (await moreSetupFields.count()) {
     const isMoreOpen = await moreSetupFields.evaluate((node) => (node as HTMLDetailsElement).open);
     if (!isMoreOpen) {
@@ -1180,10 +1175,20 @@ test("overview device workspace matrix keeps default inputs concise", async ({ p
     await expect(essentials.getByLabel(`${item.workspace} compact faceplate`), `${item.workspace} shows a compact device faceplate`).toBeVisible();
     expect(await essentials.locator(".design-device-setting-row").count(), `${item.workspace} keeps essentials compact`).toBeLessThanOrEqual(3);
     const essentialInputs = essentials.locator("input, select, textarea");
-    await expect(essentialInputs, `${item.workspace} keeps Main settings read-only; edits happen through More device details`).toHaveCount(0);
+    await expect(essentialInputs, `${item.workspace} keeps Main settings read-only; quick edits are a separate setup block`).toHaveCount(0);
     await expect(essentials.locator(".design-device-setting-row.is-readonly-value"), `${item.workspace} renders summary values instead of form controls`).toHaveCount(await essentials.locator(".design-device-setting-row").count());
     await expect(essentials.locator(".design-provenance-chip"), `${item.workspace} keeps provenance out of the simple setup block`).toHaveCount(0);
     await expect(essentials, `${item.workspace} keeps identity in the hero, not the setup form`).not.toContainText("Name");
+    const quickPanel = workspace.getByLabel(`${item.workspace} quick setup fields`);
+    await expect(quickPanel, `${item.workspace} exposes common planning fields without a second click`).toBeVisible();
+    await expect(quickPanel, `${item.workspace} quick fields use setup wording`).toContainText("Edit setup");
+    await expect(quickPanel, `${item.workspace} quick fields stay narrowly scoped`).toContainText("Planning fields");
+    expect(await quickPanel.locator(".design-device-setting-row").count(), `${item.workspace} keeps quick fields tiny`).toBeLessThanOrEqual(3);
+    const quickInputs = quickPanel.locator("input, select, textarea");
+    if (await quickInputs.count()) {
+      await expect(quickInputs.first(), `${item.workspace} reveals the first quick edit field immediately`).toBeVisible();
+    }
+    await expect(quickPanel.locator(".design-provenance-chip"), `${item.workspace} removes repeated per-field state chips from quick fields`).toHaveCount(0);
     for (const essential of item.essentials) {
       await expect(essentials, `${item.workspace} essential ${essential}`).toContainText(essential);
     }
@@ -1197,7 +1202,7 @@ test("overview device workspace matrix keeps default inputs concise", async ({ p
     await expect(workspace.locator(":scope > details.design-workspace-edit-settings"), `${item.workspace} has no separate top-level edit drawer`).toHaveCount(0);
     const detailsDrawer = workspace.getByLabel(`${item.workspace} details`);
     await expect(detailsDrawer, `${item.workspace} details start closed`).not.toHaveAttribute("open", "");
-    await expect(workspace.getByLabel(`${item.workspace} edit settings`), `${item.workspace} edit setup starts behind details`).not.toBeVisible();
+    await expect(workspace.getByLabel(`${item.workspace} edit settings`), `${item.workspace} removes the extra nested edit doorway`).toHaveCount(0);
     await expect(workspace.locator(":scope > details.design-faceplate-disclosure"), `${item.workspace} removes the old separate faceplate drawer`).toHaveCount(0);
     await expect(workspace.getByLabel(`${item.workspace} interactive faceplate`), `${item.workspace} does not show the interactive faceplate before intent`).not.toBeVisible();
     const setupBeforeInteractiveFaceplate = await workspace.evaluate((node) => {
@@ -1219,25 +1224,9 @@ test("overview device workspace matrix keeps default inputs concise", async ({ p
     await expect(overlay.locator(".design-blueprint-stage"), `${item.workspace} does not render the hidden topology designer in the drawer`).toHaveCount(0);
     await detailsDrawer.locator(":scope > summary").click();
     await expect(workspace.getByLabel(`${item.workspace} port and bay inspector`), `${item.workspace} faceplate inspector lives inside details`).toBeVisible();
-    const editSettings = detailsDrawer.getByLabel(`${item.workspace} edit settings`);
-    await expect(editSettings, `${item.workspace} edit setup is available inside details`).toBeVisible();
-    await expect(editSettings, `${item.workspace} edit setup starts closed`).not.toHaveAttribute("open", "");
-    await expect(editSettings.locator("input, select, textarea").first(), `${item.workspace} keeps edit controls hidden before edit intent`).not.toBeVisible();
     await expect(detailsDrawer.locator("input, select, textarea").first(), `${item.workspace} details stay inspect-only before edit intent`).not.toBeVisible();
-    await editSettings.locator(":scope > summary").click();
-    const quickPanel = editSettings.getByLabel(`${item.workspace} quick setup fields`);
-    const quickInputs = quickPanel.locator("input, select, textarea");
-    const moreSetupFields = editSettings.getByLabel(`${item.workspace} more setup fields`);
+    const moreSetupFields = detailsDrawer.getByLabel(`${item.workspace} more setup fields`);
     const editGroups = moreSetupFields.locator(":scope .design-device-edit-group-button");
-    await expect(editSettings.locator(":scope > summary"), `${item.workspace} edit summary stays short`).toContainText("Edit setup");
-    await expect(editSettings.locator(":scope > summary"), `${item.workspace} edit summary uses planning-field framing`).toContainText("Planning fields only");
-    await expect(editSettings.locator(":scope > summary"), `${item.workspace} edit summary drops counts`).not.toContainText("setup groups");
-    await expect(editSettings.locator(".design-device-edit-intro"), `${item.workspace} edit intro explains what changed`).toHaveText("Most-used planning fields. Saved kit values stay above.");
-    await expect(quickPanel, `${item.workspace} opens edit setup on quick fields`).toBeVisible();
-    expect(await quickPanel.locator(".design-device-setting-row").count(), `${item.workspace} keeps quick fields tiny`).toBeLessThanOrEqual(3);
-    if (await quickInputs.count()) {
-      await expect(quickInputs.first(), `${item.workspace} reveals the first quick edit field immediately`).toBeVisible();
-    }
     await expect(moreSetupFields, `${item.workspace} keeps less-common fields one click deeper`).toBeVisible();
     await expect(moreSetupFields, `${item.workspace} advanced setup fields start closed`).not.toHaveAttribute("open", "");
     await expect(editGroups.first(), `${item.workspace} keeps edit group choices hidden until more-fields intent`).not.toBeVisible();
@@ -1591,19 +1580,17 @@ test("overview design mode keeps the surface map-only until a node opens the wor
   await expect(switchWorkspace.getByLabel("Cisco switch essentials")).toContainText("Storage VLAN");
   await expect(switchWorkspace.getByLabel("Cisco workspace network controls")).not.toBeVisible();
   await expect(switchWorkspace).toBeVisible();
-  const editSettings = switchWorkspace.getByLabel("Cisco switch edit settings");
-  await expect(editSettings).not.toHaveAttribute("open", "");
-  await editSettings.locator(":scope > summary").click();
-  await expect(editSettings.locator(":scope > summary")).toContainText("Planning fields only");
-  await expect(editSettings.locator(":scope > summary")).not.toContainText("setup groups");
-  await expect(editSettings.locator(".design-device-edit-intro")).toHaveText("Most-used planning fields. Saved kit values stay above.");
-  const quickSetup = editSettings.getByLabel("Cisco switch quick setup fields");
+  await expect(switchWorkspace.getByLabel("Cisco switch edit settings")).toHaveCount(0);
+  const quickSetup = switchWorkspace.getByLabel("Cisco switch quick setup fields");
   await expect(quickSetup).toBeVisible();
+  await expect(quickSetup).toContainText("Edit setup");
+  await expect(quickSetup).toContainText("Planning fields");
+  await expect(quickSetup.locator(".design-device-edit-intro")).toHaveText("Change only the device-specific values an operator usually needs first.");
   await expect(quickSetup).toContainText("Port plan");
   await expect(quickSetup).toContainText("BPDU guard");
   expect(await quickSetup.locator(".design-device-setting-row").count()).toBeLessThanOrEqual(3);
   await expect(quickSetup.locator("input, select, textarea").first()).toBeVisible();
-  const moreSetupFields = editSettings.getByLabel("Cisco switch more setup fields");
+  const moreSetupFields = switchWorkspace.getByLabel("Cisco switch more setup fields");
   await expect(moreSetupFields).toBeVisible();
   await expect(moreSetupFields).not.toHaveAttribute("open", "");
   await expect(moreSetupFields.getByLabel("Cisco switch edit groups")).not.toBeVisible();

@@ -9216,3 +9216,33 @@ shot: agent-shots/2026-07-18-cisco-device-workspace-before-next-polish.png - Cur
 ### Review question
 
 Claude/CXO: Approve Lab Defaults as covered by regression evidence, and should the takeover session make the device drawer the next active slice: flatten `Setup` + `More device details` into one concise per-device workspace with one primary read-only action and only role-relevant fields visible by default?
+
+## Codex -> Claude/CXO: Device drawer quick-edit flattening
+
+### What changed
+
+- Flattened the click-open Overview device drawer one level further.
+- Common per-device planning fields now show directly in the device drawer under `Edit setup / Planning fields`.
+- Removed the extra nested `Edit setup` doorway inside `More device details`.
+- `More device details` now holds the port/bay inspector, less-common setup fields, advanced proof, schema homes, and diagnostics.
+- Main settings stay read-only and compact; quick edits are capped to the tiny role-relevant field set.
+- Removed stale CSS selectors for the retired nested edit drawer.
+
+shot: agent-shots/2026-07-18-device-workspace-flattened-quick-fields.png - Cisco device drawer after flattening; quick planning fields are visible without opening a second edit accordion, while advanced proof remains behind details.
+
+### Verification
+
+- `app/frontend`: `npm run test:e2e -- --grep "overview device workspace matrix|overview design mode keeps the surface map-only|overview faceplate element clicks|overview device workspace primary actions"` -> 4 passed.
+- `app/frontend`: `npm run test:e2e -- --grep "operator button matrix|remaining operator pages expose simplified setup surfaces|safe read-only page action"` -> 3 passed.
+- `app/frontend`: `npm run build` -> passed.
+- Repo root: `git diff --check` -> passed.
+
+### Safety boundary
+
+- Frontend/test/mailbox/screenshot only.
+- No hardware contact.
+- No destructive, firmware apply, RAID apply, reset, rebuild, factory, iSCSI apply, switch write, or live-write paths changed.
+
+### Review question
+
+Claude/CXO: Does this drawer flattening meet the click-is-the-product direction, or should the next slice further reduce the visible quick fields per device before moving to another operator-heavy surface?
