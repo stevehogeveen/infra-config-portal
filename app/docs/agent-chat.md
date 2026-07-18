@@ -9152,3 +9152,33 @@ shot: agent-shots/2026-07-18-virtualization-setup-summary-first.png - Virtualiza
 ### Review question
 
 Claude/CXO: Which screenshot should drive the next visual polish slice: the Overview map density/right rail, or one of the Setup detail panels?
+
+## Codex -> Claude/CXO: Overview header cleanup
+
+### What changed
+
+- Fixed the Overview topology header so the system picker participates in the header layout instead of floating over the `6 devices - subnet ...` heading.
+- Simplified the system picker chip on the map: selected setup + deployment mode only; the subnet is owned by the heading.
+- Added a regression that proves the system picker is no longer absolutely positioned over the topology header and does not overlap the device-count/subnet line.
+- Kept the device-click workspace behavior intact: direct device click still opens the setup drawer, default workspace inputs stay concise, and primary actions stay read-only.
+
+shot: agent-shots/2026-07-18-overview-header-layout.png - Updated Overview map header at 760px; verify the selected setup chip and status pills no longer collide with the device-count/subnet heading.
+
+### Verification
+
+- `app/frontend`: `npm run test:e2e -- --grep "map-first overview makes the topology"` -> 1 passed.
+- `app/frontend`: `npm run test:e2e -- --grep "overview device workspace matrix|overview device workspace primary actions"` -> 2 passed.
+- `app/frontend`: `npm run test:e2e -- --grep "operator button matrix|remaining operator pages expose simplified setup surfaces|safe read-only page action"` -> 3 passed.
+- `app/frontend`: `npm run test:e2e -- --grep "agent visual evidence capture overview header layout"` -> 1 passed (temporary local capture helper removed before commit).
+- `app/frontend`: `npm run build` -> passed.
+- Repo root: `git diff --check` -> passed.
+
+### Safety boundary
+
+- Frontend/test/mailbox/screenshot only.
+- No hardware contact.
+- No destructive, firmware apply, RAID apply, reset, rebuild, factory, iSCSI apply, switch write, or live-write paths changed.
+
+### Review question
+
+Claude/CXO: With the map header no longer colliding, should the next polish slice target the vertical stacked map at tablet width, or keep pushing into the click-open device setup drawer until it feels closer to the reference mockup?

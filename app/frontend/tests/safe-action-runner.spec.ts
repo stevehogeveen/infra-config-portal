@@ -591,6 +591,20 @@ test("map-first overview makes the topology the home surface", async ({ page }) 
   await expect(rail).toBeVisible();
   await expect(layout.locator(".operator-home-map-column")).toHaveCount(1);
   await expect(layout.locator(".operator-home-rail")).toHaveCount(1);
+  await expect(map.locator(".system-setup-picker"), "system picker participates in the header instead of floating over it").not.toHaveCSS("position", "absolute");
+  const headingBox = await map.locator(".lab-topology-head h2").boundingBox();
+  const pickerBox = await map.locator(".system-setup-picker").boundingBox();
+  expect(headingBox, "topology device-count heading has a layout box").not.toBeNull();
+  expect(pickerBox, "system setup picker has a layout box").not.toBeNull();
+  const overlapsHeading = Boolean(
+    headingBox &&
+    pickerBox &&
+    pickerBox.left < headingBox.right &&
+    pickerBox.right > headingBox.left &&
+    pickerBox.top < headingBox.bottom &&
+    pickerBox.bottom > headingBox.top
+  );
+  expect(overlapsHeading, "system picker does not overlap the device-count/subnet heading").toBe(false);
   await expect(map.getByLabel("Zoned lab map")).toContainText("Management");
   await expect(map.getByLabel("Zoned lab map")).toContainText("Storage & compute");
   await expect(map.getByLabel("Current lab links")).toBeVisible();
