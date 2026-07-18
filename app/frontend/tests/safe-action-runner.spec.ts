@@ -1218,7 +1218,7 @@ test("overview device workspace matrix keeps default inputs concise", async ({ p
   const cases: Array<{
     advancedControl: string;
     button: string;
-    credentialSetup?: boolean;
+    credentialReferences?: string[];
     essentials: string[];
     hiddenEssentials?: string[];
     workspace: string;
@@ -1226,7 +1226,7 @@ test("overview device workspace matrix keeps default inputs concise", async ({ p
     {
       advancedControl: "Cisco workspace network controls",
       button: "Open Cisco switch workspace",
-      credentialSetup: true,
+      credentialReferences: ["CISCO_TEST_PASSWORD", "CISCO_ENABLE_PASSWORD"],
       essentials: ["Management IP", "Storage VLAN"],
       hiddenEssentials: ["Management VLAN"],
       workspace: "Cisco switch"
@@ -1234,7 +1234,7 @@ test("overview device workspace matrix keeps default inputs concise", async ({ p
     {
       advancedControl: "iLO workspace server controls",
       button: "Open HPE iLO workspace",
-      credentialSetup: true,
+      credentialReferences: ["ILO_TEST_PASSWORD"],
       essentials: ["iLO IP"],
       hiddenEssentials: ["Name", "Credential status", "Reachability", "Firmware evidence"],
       workspace: "HPE iLO"
@@ -1242,13 +1242,14 @@ test("overview device workspace matrix keeps default inputs concise", async ({ p
     {
       advancedControl: "Server workspace checks",
       button: "Open HPE DL360 Gen10 workspace",
-      credentialSetup: true,
+      credentialReferences: ["ILO_TEST_PASSWORD", "ESXI_TEST_PASSWORD"],
       essentials: ["iLO IP", "Storage VLAN"],
       workspace: "DL360 Gen10"
     },
     {
       advancedControl: "NetApp workspace storage controls",
       button: "Open NetApp ONTAP workspace",
+      credentialReferences: ["NETAPP_API_PASSWORD", "NETAPP_CONSOLE_PASSWORD", "NETAPP_API_USERNAME"],
       essentials: ["Cluster IP", "Storage mode"],
       hiddenEssentials: ["Primary NFS LIFs"],
       workspace: "NetApp ONTAP"
@@ -1256,6 +1257,7 @@ test("overview device workspace matrix keeps default inputs concise", async ({ p
     {
       advancedControl: "vCenter workspace virtualization controls",
       button: "Open vCenter VCSA workspace",
+      credentialReferences: ["VCENTER_PASSWORD / GOVC_PASSWORD", "VCENTER_SSO_ADMIN_PASSWORD", "VCENTER_APPLIANCE_ROOT_PASSWORD"],
       essentials: ["Management IP", "Datastore"],
       workspace: "vCenter VCSA"
     }
@@ -1311,19 +1313,15 @@ test("overview device workspace matrix keeps default inputs concise", async ({ p
     await expect(essentials.locator(".design-provenance-chip"), `${item.workspace} keeps provenance out of the simple setup block`).toHaveCount(0);
     await expect(essentials, `${item.workspace} keeps identity in the hero, not the setup form`).not.toContainText("Name");
     const credentialSetup = workspace.getByLabel(`${item.workspace} credential setup`);
-    if (item.credentialSetup) {
-      await expect(credentialSetup, `${item.workspace} exposes device-scoped credential setup`).toBeVisible();
-      await expect(credentialSetup, `${item.workspace} points away from Lab Defaults secrets`).toContainText("Lab Defaults");
-      await expect(credentialSetup, `${item.workspace} explains local secret handling`).toContainText("not written to Lab Defaults");
-      await expect(credentialSetup.getByRole("textbox", { name: `${item.workspace} username` }), `${item.workspace} has a username field`).toBeVisible();
-      await expect(credentialSetup.getByLabel(`${item.workspace} setup password`), `${item.workspace} has a local-only password field`).toHaveAttribute("type", "password");
-      await expect(credentialSetup.getByRole("textbox", { name: `${item.workspace} password reference` }), `${item.workspace} has a non-secret reference field`).toBeVisible();
-      if (item.workspace === "Cisco switch") {
-        await credentialSetup.getByLabel(`${item.workspace} setup password`).fill("never-save-this-secret");
-        await credentialSetup.getByRole("textbox", { name: `${item.workspace} password reference` }).fill("local cisco credential");
-        await expect(credentialSetup).toContainText("Staged locally");
-        const serializedDrafts = await page.evaluate(() => JSON.stringify(window.localStorage));
-        expect(serializedDrafts).not.toContain("never-save-this-secret");
+    if (item.credentialReferences) {
+      await expect(credentialSetup, `${item.workspace} exposes device-scoped credential references`).toBeVisible();
+      await expect(credentialSetup, `${item.workspace} marks the sign-in block as reference-only`).toContainText("Reference only");
+      await expect(credentialSetup.locator("input, textarea, select"), `${item.workspace} does not pretend to collect credentials`).toHaveCount(0);
+      await expect(credentialSetup.locator("input[type='password']"), `${item.workspace} has no inert password field`).toHaveCount(0);
+      await expect(credentialSetup, `${item.workspace} avoids the old local password copy`).not.toContainText("setup password");
+      await expect(credentialSetup, `${item.workspace} avoids staged-secret copy without a backend secret lane`).not.toContainText("Staged locally");
+      for (const reference of item.credentialReferences) {
+        await expect(credentialSetup, `${item.workspace} credential reference ${reference}`).toContainText(reference);
       }
     } else {
       await expect(credentialSetup, `${item.workspace} does not invent credential setup before design review`).toHaveCount(0);

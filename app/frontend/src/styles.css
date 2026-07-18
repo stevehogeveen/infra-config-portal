@@ -10472,16 +10472,17 @@ th.ui-compact-table-cell {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
-.design-device-credential-field {
+.design-device-credential-reference {
+  background: #fff;
+  border: 1px solid #d9e2ec;
+  border-radius: 10px;
   display: grid;
-  gap: 6px;
+  gap: 4px;
+  min-width: 0;
+  padding: 10px 11px;
 }
 
-.design-device-credential-field.wide {
-  grid-column: 1 / -1;
-}
-
-.design-device-credential-field span {
+.design-device-credential-reference span {
   color: #334155;
   font-size: 11px;
   font-weight: 900;
@@ -10489,15 +10490,19 @@ th.ui-compact-table-cell {
   text-transform: uppercase;
 }
 
-.design-device-credential-field input {
-  background: #fff;
-  border: 1px solid #d9e2ec;
-  border-radius: 10px;
+.design-device-credential-reference strong {
   color: #0f172a;
   font-size: 13px;
-  font-weight: 800;
-  min-height: 42px;
-  padding: 9px 11px;
+  font-weight: 900;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.design-device-credential-reference small {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 750;
+  line-height: 1.35;
 }
 
 .design-device-credential-note {
