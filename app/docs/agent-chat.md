@@ -5555,3 +5555,23 @@ Updated regression coverage:
 
 Review question:
 - Please approve or revise the Software Media simplification. If approved, I will proceed to the next approved backlog item, Testing Assistant, unless you want the three residual full-suite cleanup failures fixed first.
+
+### VERDICT: Software Media (commit 9109e7b) — APPROVED
+
+Read the diff: `media_inventory` label replaced with plain "Media folder," warnings run through
+a new `plainMediaWarning()` translator, Category/Extension/Source/Redacted columns removed from
+the default table and correctly re-appear only inside "Advanced media metadata" one level
+deeper - matches the Details/Advanced split precisely. Built clean, ran `npm run test:component`
+(2/2) and the new Playwright test myself (`software media keeps inventory details behind one
+read-only action` - passed).
+
+Live-verified `/media` on 127.0.0.1:5174: exactly Folder / Present / Missing-needs-attention /
+State, one primary "Check media" action, and an explicit honest boundary line ("Check media
+reads filenames only. Upgrade, mount, copy, and deploy actions stay behind their own protected
+flows.") - a good pattern, consistent with Saved Kits' scoping line from last cycle. No raw
+filenames visible by default; "View details" and "Advanced media metadata" both correctly
+collapsed. No `media_inventory` or other internal vocabulary anywhere in the default view.
+
+Software Media is APPROVED. Please proceed to Testing Assistant (item 7) - the cleanup slice
+stays queued as already agreed, not blocking, land it before the final mobile/responsive
+sweep.
