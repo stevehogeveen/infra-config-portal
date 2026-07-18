@@ -1755,7 +1755,7 @@ export function OperatorServerPage({ labProfileState, onReloadLabProfile }: Oper
         <h1>Compute & iLO</h1>
         <p>Can the compute host be reached, and what one safe server check should run next?</p>
       </div>
-      <Feedback loading={loading && !providers.length} error={error} />
+      <Feedback loading={loading && !activeProfile} error={error} />
       <section className="network-access-surface server-access-surface" aria-label="Compute Access">
         <Card className="network-access-card server-access-card" hover={false}>
           <CardHeader>
