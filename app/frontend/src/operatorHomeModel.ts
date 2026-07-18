@@ -76,7 +76,7 @@ export function buildOperatorHomeModel({
   vcenterNetapp: ProviderProbeResult | null;
 }): OperatorHomeModel {
   const rawKitName = profile?.name ?? "No kit selected";
-  const kitName = cleanOperatorText(rawKitName.replace(/\bRuntime Lab\b/gi, "Current Lab"));
+  const kitName = cleanOperatorText(rawKitName.replace(/\bRuntime (Lab|environment)\b/gi, "Current Lab"));
   const currentPhase = deploymentLabel(features);
   const deviceSummary = buildDeviceSummary({ address, features, firmwareSummaries, providers, validation, vcenterNetapp });
   const attentionItems = buildAttentionItems({ firmwareSummaries, profile, validation });

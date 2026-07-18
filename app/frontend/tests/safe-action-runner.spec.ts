@@ -342,6 +342,8 @@ test("renders the map-first operator spine and pages", async ({ page }) => {
   ]);
   const quickNavigation = page.getByRole("navigation", { name: "Quick navigation" });
   await expect(quickNavigation.locator("a")).toHaveText(["Overview", "Lab Defaults", "Firmware"]);
+  await expect(quickNavigation.getByRole("link", { name: "Lab Defaults" })).toHaveAttribute("href", "/setup/defaults");
+  await expect(header.getByLabel("Selected lab kit")).not.toContainText(/\bruntime\b/i);
   await expect(page.getByRole("link", { name: "Create a new lab kit" })).toContainText("New kit");
   await expect(page.getByRole("link", { name: "Create a new lab kit" })).toHaveAttribute("href", "/lab-profiles#new");
   await expect(page.locator("aside[aria-label='Lab Builder navigation']")).not.toContainText(/Windows|OVF|Global/);
@@ -354,7 +356,10 @@ test("renders the map-first operator spine and pages", async ({ page }) => {
     await expect(page).toHaveURL(new RegExp(`${setupPath}$`));
     await expect(page.locator("main")).toBeVisible();
   }
+  await page.goto("/setup/defaults");
+  await expect(page.getByRole("heading", { name: "Lab Defaults", exact: true })).toBeVisible();
   await page.goto("/lab-defaults");
+  await expect(page).toHaveURL(/\/setup\/defaults$/);
   await expect(page.getByRole("heading", { name: "Lab Defaults", exact: true })).toBeVisible();
   await page.goto("/firmware-upgrades");
   await expect(page.getByRole("heading", { name: "Keep every device on the expected version.", exact: true })).toBeVisible();
@@ -414,7 +419,7 @@ test("advanced mode can still inspect audit events and workflow run proof", asyn
 });
 
 test("lab defaults keeps shared values simple and hides advanced policy by default", async ({ page }) => {
-  await page.goto("/lab-defaults");
+  await page.goto("/setup/defaults");
 
   await expect(page.getByRole("heading", { name: "Lab Defaults", exact: true })).toBeVisible();
   const network = page.getByLabel("Network defaults");
@@ -477,7 +482,7 @@ test("lab defaults saves editable network and service defaults without secrets o
     await route.continue();
   });
 
-  await page.goto("/lab-defaults");
+  await page.goto("/setup/defaults");
 
   const network = page.getByLabel("Network defaults");
   await network.getByRole("textbox", { name: "Subnet" }).fill("192.168.210.0/24");
@@ -1829,7 +1834,7 @@ test("overview mobile topology keeps zoned device cards visible", async ({ page 
 test("operator surfaces stay responsive across mobile and desktop widths", async ({ page }) => {
   const routes = [
     "/overview",
-    "/lab-defaults",
+    "/setup/defaults",
     "/firmware-upgrades",
     "/network",
     "/server",
@@ -2113,7 +2118,7 @@ test("operator button matrix keeps default actions simple and safe", async ({ pa
   const forbiddenDefaultCopy = /ACKNOWLEDGE|NETAPP_ISCSI_SETUP|APPLY NETAPP ISCSI SETUP|Apply iSCSI|Factory reset|Reset HPE RAID|Rebuild ESXi|PROVIDER_MODE|PROVIDER MODE/i;
   const surfaces: Array<{ label: string; path: string; primary: () => ReturnType<Page["locator"]> }> = [
     { label: "Overview", path: "/overview", primary: () => page.getByTestId("operator-home-primary-action") },
-    { label: "Lab Defaults", path: "/lab-defaults", primary: () => page.locator(".lab-defaults-actions .operator-primary-button") },
+    { label: "Lab Defaults", path: "/setup/defaults", primary: () => page.locator(".lab-defaults-actions .operator-primary-button") },
     { label: "Network", path: "/network", primary: () => page.getByLabel("Switch Access").locator(".operator-primary-button") },
     { label: "Server", path: "/server", primary: () => page.getByLabel("Compute Access").locator(".operator-primary-button") },
     { label: "Storage", path: "/storage", primary: () => page.locator(".storage-path-actions .operator-primary-button") },

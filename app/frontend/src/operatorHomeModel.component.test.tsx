@@ -7,6 +7,7 @@ export function run() {
   readinessCountsAgreeWithMapWhenEveryDeviceIsNotChecked();
   readinessCountsDistinguishBlockedFromNotChecked();
   readinessCountsAlwaysSumToTotal();
+  runtimeKitNameUsesOperatorVocabulary();
 }
 
 const address: LabAddressPlan = {
@@ -160,4 +161,19 @@ function readinessCountsAlwaysSumToTotal() {
   // Total must equal the real device count, never a forced non-zero floor - a forced
   // floor would let "0 of 1 devices ready" render for zero devices.
   assert.equal(model.Progress.Total, model.DeviceSummary.length);
+}
+
+function runtimeKitNameUsesOperatorVocabulary() {
+  const model = buildOperatorHomeModel({
+    address,
+    buildVerification: null,
+    features: null,
+    firmwareSummaries: [],
+    profile: { name: "Runtime environment" } as unknown as LabProfile,
+    providers: [],
+    validation: null,
+    vcenterNetapp: null
+  });
+
+  assert.equal(model.KitName, "Current Lab");
 }

@@ -768,7 +768,8 @@ function App() {
               <RouterRoute path="/server" element={<OperatorServerPage labProfileState={labProfileState} onReloadLabProfile={loadLabProfileState} />} />
               <RouterRoute path="/storage" element={<OperatorStoragePage labProfileState={labProfileState} onReloadLabProfile={loadLabProfileState} />} />
               <RouterRoute path="/virtualization" element={<OperatorVirtualizationPage labProfileState={labProfileState} onReloadLabProfile={loadLabProfileState} />} />
-              <RouterRoute path="/lab-defaults" element={<OperatorLabDefaultsPage labProfileState={labProfileState} onReloadLabProfile={loadLabProfileState} />} />
+              <RouterRoute path="/setup/defaults" element={<OperatorLabDefaultsPage labProfileState={labProfileState} onReloadLabProfile={loadLabProfileState} />} />
+              <RouterRoute path="/lab-defaults" element={<Navigate to="/setup/defaults" replace />} />
               <RouterRoute path="/firmware-upgrades" element={<OperatorFirmwareUpgradesPage labProfileState={labProfileState} />} />
               <RouterRoute path="/validation" element={<OperatorValidationPage isAdvancedMode={uiMode === "advanced"} labProfileState={labProfileState} />} />
               <RouterRoute path="/config" element={<Navigate to="/overview" replace />} />
@@ -1126,7 +1127,9 @@ function OperatorIssueReporter() {
 }
 
 function issueReporterRegionsForRoute(pathname: string): UiIntentRegion[] {
-  const segment = pathname.split("/").filter(Boolean)[0] || "overview";
+  const segment = pathname.startsWith("/setup/defaults")
+    ? "lab-defaults"
+    : pathname.split("/").filter(Boolean)[0] || "overview";
   const routeRegions: Record<string, UiIntentRegion[]> = {
     "firmware-upgrades": [
       { id: "firmware-table", label: "Firmware table", kind: "section" },
@@ -1261,7 +1264,7 @@ function ShellTopNav({
         <nav className="sidebar-nav" aria-label="Primary navigation">
           <NavItem to="/overview" icon={<Gauge size={18} />} label="Overview" />
           <p className="sidebar-section-label">Setup</p>
-          <NavItem to="/lab-defaults" icon={<Settings size={17} />} label="Lab Defaults" />
+          <NavItem to="/setup/defaults" icon={<Settings size={17} />} label="Lab Defaults" />
           <NavItem to="/server" icon={<Server size={17} />} label="Compute & iLO" />
           <NavItem to="/storage" icon={<Database size={17} />} label="Storage & NetApp" />
           <NavItem to="/virtualization" icon={<Layers size={17} />} label="Virtualization" />
@@ -1282,7 +1285,7 @@ function ShellTopNav({
             onChange={(event) => { void onActivateLabProfile(event.target.value); }}
           >
             {profiles.length === 0 && <option value="">No kit selected</option>}
-            {profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name}</option>)}
+            {profiles.map((profile) => <option key={profile.id} value={profile.id}>{displayKitName(profile)}</option>)}
           </select>
           <Link className="kit-create-link" to="/lab-profiles#new" aria-label="Create a new lab kit">
             <Plus size={14} />
@@ -1292,7 +1295,7 @@ function ShellTopNav({
         <div className="shell-topbar-actions">
           <nav className="top-nav" aria-label="Quick navigation">
             <NavLink to="/overview" className={({ isActive }) => isActive ? "quick-tab active" : "quick-tab"}>Overview</NavLink>
-            <NavLink to="/lab-defaults" className={({ isActive }) => isActive ? "quick-tab active" : "quick-tab"}>Lab Defaults</NavLink>
+            <NavLink to="/setup/defaults" className={({ isActive }) => isActive ? "quick-tab active" : "quick-tab"}>Lab Defaults</NavLink>
             <NavLink to="/firmware-upgrades" className={({ isActive }) => isActive ? "quick-tab active" : "quick-tab"}>Firmware</NavLink>
           </nav>
           <ModeToggle />
@@ -1301,6 +1304,15 @@ function ShellTopNav({
       </header>
     </>
   );
+}
+
+function displayKitName(profile: LabProfile | null | undefined): string {
+  const name = profile?.name?.trim() || "";
+  if (!name) return "No kit selected";
+  if (profile?.source === "runtime_env" || /^runtime environment$/i.test(name) || /^runtime lab$/i.test(name)) {
+    return "Current Lab";
+  }
+  return name;
 }
 
 function NavItem({
@@ -1382,7 +1394,7 @@ function ActiveLabSelector({
         >
           {options.map((profile) => (
             <option key={profile.id} value={profile.id}>
-              {profile.name}{profile.source === "runtime_env" ? " (runtime)" : ` v${profile.version}`}
+              {displayKitName(profile)}{profile.source === "runtime_env" ? "" : ` v${profile.version}`}
             </option>
           ))}
         </select>
@@ -7333,7 +7345,7 @@ function LabProfileManager({
               ) : (
                 <p className="muted">No saved kits yet. Create one from the subnet preview.</p>
               )}
-              <p className="muted">Shared DNS, NTP, VLAN, and MTU settings live in <Link to="/lab-defaults">Lab Defaults</Link>.</p>
+              <p className="muted">Shared DNS, NTP, VLAN, and MTU settings live in <Link to="/setup/defaults">Lab Defaults</Link>.</p>
             </section>
 
             <section className="panel saved-kits-create" aria-label="Create kit">
