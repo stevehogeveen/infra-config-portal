@@ -2709,6 +2709,16 @@ export function OperatorStoragePage({ labProfileState, onReloadLabProfile }: Ope
             { label: "vCenter-NetApp source", value: sourceLabel(vcenterNetapp) }
           ]}
         />
+        <OperatorReferencePanel
+          actionLabel="Open validation"
+          actionTo="/validation"
+          ariaLabel="Storage reference"
+          currentView={currentView}
+          rows={storageRows}
+          subtitle="ONTAP, NFS, iSCSI, datastore"
+          tableTitle="Storage Signals"
+          title="Storage readiness at a glance"
+        />
       </AdvancedDrawer>
     ),
     configure: (
@@ -2733,18 +2743,6 @@ export function OperatorStoragePage({ labProfileState, onReloadLabProfile }: Ope
         consoleReadiness={consoleReadiness}
         nfsReadiness={nfsReadiness}
         onReload={load}
-      />
-    ),
-    reference: (
-      <OperatorReferencePanel
-        actionLabel="Open validation"
-        actionTo="/validation"
-        ariaLabel="Storage reference"
-        currentView={currentView}
-        rows={storageRows}
-        subtitle="ONTAP, NFS, iSCSI, datastore"
-        tableTitle="Storage Signals"
-        title="Storage readiness at a glance"
       />
     ),
     scenario: (
@@ -2847,7 +2845,6 @@ export function OperatorStoragePage({ labProfileState, onReloadLabProfile }: Ope
             {storageRegions.scenario}
             {storageRegions.configure}
             {serverLocalStorage ? storageRegions["local-readiness"] : storageRegions["ontap-readiness"]}
-            {storageRegions.reference}
             {storageRegions["advanced-proof"]}
           </div>
         </section>
@@ -3217,8 +3214,8 @@ function NetAppOntapReadinessCard({
           title="ESXi iSCSI remediation"
           tone="optional"
         />
-        <details className="iscsi-gates-panel" open>
-          <summary>Real iSCSI apply gates and write evidence</summary>
+        <details className="iscsi-gates-panel">
+          <summary>iSCSI gates and write evidence</summary>
           <div className="iscsi-gates-grid">
             <div>
               <span>Required gates</span>
@@ -3245,28 +3242,31 @@ function NetAppOntapReadinessCard({
         </details>
       </CardContent>
       <CardFooter>
-        <div className="page-run-buttons">
-          {actionButtons.map((button) => {
-            const running = runState.runningActionId === button.label;
-            return (
-              <div className="run-button-wrap" key={button.label}>
-                <button
-                  disabled={running}
-                  onClick={() => void runDirectAction(button.label, button.onClick)}
-                  type="button"
-                >
-                  {button.icon}
-                  {running ? "Running" : button.label}
-                </button>
-              </div>
-            );
-          })}
-        </div>
-        {(runState.message || runState.error) && (
-          <p className={runState.error ? "operator-action-message error" : "operator-action-message"}>
-            {runState.error || runState.message}
-          </p>
-        )}
+        <details className="storage-advanced-actions" aria-label="Advanced storage actions">
+          <summary>Advanced storage actions</summary>
+          <div className="page-run-buttons">
+            {actionButtons.map((button) => {
+              const running = runState.runningActionId === button.label;
+              return (
+                <div className="run-button-wrap" key={button.label}>
+                  <button
+                    disabled={running}
+                    onClick={() => void runDirectAction(button.label, button.onClick)}
+                    type="button"
+                  >
+                    {button.icon}
+                    {running ? "Running" : button.label}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+          {(runState.message || runState.error) && (
+            <p className={runState.error ? "operator-action-message error" : "operator-action-message"}>
+              {runState.error || runState.message}
+            </p>
+          )}
+        </details>
       </CardFooter>
     </Card>
   );

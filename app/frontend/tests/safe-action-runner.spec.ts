@@ -1485,8 +1485,18 @@ test("storage page defaults to one storage path card and hides protocol internal
   await page.getByRole("button", { name: "View storage details" }).click();
   const details = page.getByLabel("Storage path details");
   await expect(details).toBeVisible();
+  await expect(details.getByLabel("ONTAP readiness")).toContainText(/LIF|VMFS|igroup|target portal/);
+  await expect(details.getByLabel("Storage reference")).not.toBeVisible();
+  await expect(details.getByRole("button", { name: "Apply iSCSI" })).toHaveCount(0);
+  await expect(details.locator(".iscsi-gates-grid")).not.toBeVisible();
+  const advancedStorageActions = details.getByLabel("Advanced storage actions");
+  await expect(advancedStorageActions).toBeVisible();
+  await advancedStorageActions.locator(":scope > summary").click();
+  await expect(advancedStorageActions.getByRole("button", { name: "Apply iSCSI" })).toBeVisible();
+  const storageProof = details.locator("details.advanced-drawer").filter({ hasText: "Storage proof" });
+  await expect(storageProof).not.toHaveAttribute("open", "");
+  await storageProof.locator(":scope > summary").click();
   await expect(details.getByLabel("Storage reference")).toBeVisible();
-  await expect(details).toContainText(/LIF|SVM|VMFS|igroup|target portal/);
 
   await page.setViewportSize({ width: 375, height: 900 });
   await page.goto("/storage");

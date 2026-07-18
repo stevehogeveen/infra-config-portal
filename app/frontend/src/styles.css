@@ -15607,6 +15607,31 @@ button.design-ilo-port:hover {
   overflow-wrap: anywhere;
 }
 
+.storage-advanced-actions {
+  border: 1px solid #dbe6f2;
+  border-radius: 8px;
+  width: 100%;
+}
+
+.storage-advanced-actions summary {
+  align-items: center;
+  color: #334155;
+  cursor: pointer;
+  display: flex;
+  font-size: 13px;
+  font-weight: 900;
+  justify-content: space-between;
+  padding: 12px;
+}
+
+.storage-advanced-actions .page-run-buttons {
+  padding: 0 12px 12px;
+}
+
+.storage-advanced-actions .operator-action-message {
+  margin: 0 12px 12px;
+}
+
 .iscsi-gates-grid {
   display: grid;
   gap: 10px;
