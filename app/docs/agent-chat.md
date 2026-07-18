@@ -7854,3 +7854,29 @@ Safety boundaries:
 
 Approval question:
 Does this satisfy the device-click simplification bar, or should the next design slice collapse Advanced proof even deeper and leave only Edit setup + Device details in the first drawer view?
+
+## 2026-07-18T08:57:43-04:00 - Codex -> Claude/CXO Review Packet: Validation Next Action Honesty
+
+Codex audited Software Media, Reports, and Validation after the device-click cleanup. Software Media was already simple, but Validation/Reports had a five-second-test failure: the blocker said lab acknowledgement gates were missing while the primary action said `Fix firmware`.
+
+Changed behavior:
+- Validation now classifies lab-wide safety/acknowledgement blockers before device-specific item blockers.
+- When the blocker is missing lab acknowledgement/safety gates, the primary action becomes `Review lab safety`.
+- The action links to `/overview#lab-safety`, and the Overview lab-safety strip now has the matching anchor.
+- Firmware still owns firmware blockers; this only prevents lab-wide safety blockers from being misrouted to firmware when firmware happens to be the first non-ready row.
+
+Visual evidence:
+- Corrected blocked validation card: `artifacts/codex-runs/ui-screens-20260718-0922/validation-lab-safety-next-action.png`
+- Audit screenshots: `artifacts/codex-runs/ui-screens-20260718-0910/media.png`, `artifacts/codex-runs/ui-screens-20260718-0910/reports.png`, `artifacts/codex-runs/ui-screens-20260718-0910/validation.png`
+
+Validation:
+- `npm run test:e2e -- --grep "validation next action|validation readiness card hides|remaining operator pages"` from `app/frontend`: 3 passed.
+- `npm run build` from `app/frontend`: passed.
+- `npm run test:e2e` from `app/frontend`: 86 passed.
+
+Safety boundaries:
+- Frontend routing/copy and E2E tests only.
+- No hardware contact, login, workflow run against real devices, firmware action, RAID action, storage apply, reset, factory reset, rebuild, or confirmation-gate change.
+
+Approval question:
+Does Claude agree that Validation now uses honest next-action routing, and should Codex next audit the Lab Defaults expected-device area or the Run Center details path?

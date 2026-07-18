@@ -5459,16 +5459,16 @@ function validationReadinessCardModel(validation: LabValidationSummary | null) {
       status: item.status
     }));
   const firstIssue = items.find((item) => !validationItemIsReady(item.status) && item.status !== "not_in_scope");
-  const firstFix = validationFixTarget(firstIssue);
-  const blockerText = humanize(
+  const rawBlockerText =
     validation?.top_blocker?.problem ||
     validation?.top_blocker?.recommended_action ||
     firstIssue?.next_action ||
     firstIssue?.setup_summary ||
     firstIssue?.current_state ||
     validation?.next_action ||
-    ""
-  );
+    "";
+  const firstFix = validationFixTarget(firstIssue, rawBlockerText);
+  const blockerText = humanize(rawBlockerText);
   const handoffReady = Boolean(validation?.handoff_report);
   const meterPercent = totalCount ? Math.round((readyCount / totalCount) * 100) : 0;
   const warnings = (validation?.warnings ?? []).map((warning) => humanize(warning)).filter(Boolean);
@@ -5528,7 +5528,11 @@ function validationItemIsReady(status: string): boolean {
   return ["ready", "ok", "passed", "completed", "success"].includes(status);
 }
 
-function validationFixTarget(item: LabValidationItem | undefined): { label: string; to: string } {
+function validationFixTarget(item: LabValidationItem | undefined, blockerText = ""): { label: string; to: string } {
+  const blocker = blockerText.toLowerCase();
+  if (textIncludes(blocker, ["acknowledge", "acknowledgement", "acknowledgment", "lab_acknowledge", "lab safety", "safety gate", "real lab gate"])) {
+    return { label: "Review lab safety", to: "/overview#lab-safety" };
+  }
   const text = `${item?.id ?? ""} ${item?.category ?? ""} ${item?.stage ?? ""} ${item?.label ?? ""}`.toLowerCase();
   if (textIncludes(text, ["cisco", "network", "switch"])) return { label: "Fix Cisco switch", to: "/network" };
   if (textIncludes(text, ["ilo", "server", "compute", "raid"])) return { label: "Fix compute access", to: "/server" };
@@ -7365,7 +7369,7 @@ function TopologySystemSafetyStrip({
   const missing = (labSafety?.flags ?? []).filter((flag) => flag.required && !flag.enabled).length;
 
   return (
-    <details className="topology-system-safety" aria-label="System lab safety gates">
+    <details className="topology-system-safety" id="lab-safety" aria-label="System lab safety gates">
       <summary>
         <span>
           <ShieldCheck size={14} />

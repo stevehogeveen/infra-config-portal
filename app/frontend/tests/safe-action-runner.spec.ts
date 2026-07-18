@@ -2321,6 +2321,37 @@ test("validation readiness card hides raw provider-mode vocabulary in blockers",
   await expect(details).not.toContainText(/\bruntime\b/i);
 });
 
+test("validation next action matches lab safety acknowledgement blockers", async ({ page }) => {
+  const blocked = labValidation();
+  blocked.overall_status = "blocked";
+  blocked.next_action = "Review firmware manual baseline after lab safety gates are complete.";
+  blocked.top_blocker = {
+    problem: "Required lab acknowledgement flags are missing before real lab probes.",
+    title: "Lab safety gates missing"
+  };
+  blocked.validation_items = [
+    {
+      ...blocked.validation_items[0],
+      category: "firmware",
+      current_state: "Blocked",
+      id: "firmware-manual-baseline",
+      label: "Firmware",
+      next_action: "Review the firmware manual baseline.",
+      setup_summary: "Firmware manual baseline needs review.",
+      status: "blocked"
+    },
+    ...blocked.validation_items.slice(1)
+  ];
+  await page.route("**/api/v1/lab/validation", (route) => json(route, blocked));
+
+  await page.goto("/validation");
+
+  const readiness = page.getByLabel("Readiness Check");
+  await expect(readiness).toContainText("Required lab acknowledgement flags are missing before real lab probes.");
+  await expect(readiness.getByRole("link", { name: "Review lab safety" })).toHaveAttribute("href", "/overview#lab-safety");
+  await expect(readiness.getByRole("link", { name: "Fix firmware" })).toHaveCount(0);
+});
+
 test("validation no-kit state does not show stale loading feedback", async ({ page }) => {
   labProfileScenario = "none";
   await page.route("**/api/v1/lab/validation", async (route) => {
