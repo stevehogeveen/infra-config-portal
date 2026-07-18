@@ -9927,111 +9927,118 @@ function LabDesignComposer({
                   </details>
                 )}
 
-                <details className="design-workspace-advanced" aria-label={`${selectedPart.label} advanced checks and proof`}>
+                <details className="design-workspace-proof-door" aria-label={`${selectedPart.label} proof and diagnostics`}>
                   <summary>
-                    <span>Advanced proof</span>
-                    <strong>Read-only checks, schema homes, and diagnostics</strong>
+                    <span>Proof and diagnostics</span>
+                    <strong>Read-only checks stay tucked away</strong>
                   </summary>
 
-                  {selectedPart.id === "netapp" && (
-                    <NetAppWorkspaceStorageControls
-                      activeProfile={activeProfile}
-                      address={designAddress}
-                      onReload={onReload}
-                      storageProtocol={storageProtocol}
-                    />
-                  )}
+                  <details className="design-workspace-advanced" aria-label={`${selectedPart.label} advanced checks and proof`}>
+                    <summary>
+                      <span>Advanced proof</span>
+                      <strong>Read-only checks, schema homes, and diagnostics</strong>
+                    </summary>
 
-                  {selectedPart.id === "switch" && (
-                    <CiscoWorkspaceNetworkControls
-                      address={designAddress}
-                      firmwareSummaries={firmwareSummaries}
-                      onReload={onReload}
-                      workflowActions={workflowActions}
-                    />
-                  )}
+                    {selectedPart.id === "netapp" && (
+                      <NetAppWorkspaceStorageControls
+                        activeProfile={activeProfile}
+                        address={designAddress}
+                        onReload={onReload}
+                        storageProtocol={storageProtocol}
+                      />
+                    )}
 
-                  {(selectedPart.id === "ilo" || selectedPart.id === "server-gen10" || selectedPart.id === "server-gen10plus") && (
-                    <ServerWorkspaceControls
-                      activeProfile={activeProfile}
-                      address={designAddress}
-                      localStorageMode={draftScenario === "single_server_local_storage"}
-                      onReload={onReload}
-                      scope={selectedPart.id === "ilo" ? "ilo" : "server"}
-                      workflowActions={workflowActions}
-                    />
-                  )}
+                    {selectedPart.id === "switch" && (
+                      <CiscoWorkspaceNetworkControls
+                        address={designAddress}
+                        firmwareSummaries={firmwareSummaries}
+                        onReload={onReload}
+                        workflowActions={workflowActions}
+                      />
+                    )}
 
-                  {selectedPart.id === "vcenter" && (
-                    <VirtualizationWorkspaceControls
-                      activeProfile={activeProfile}
-                      address={designAddress}
-                      features={features}
-                      onReload={onReload}
-                      workflowActions={workflowActions}
-                    />
-                  )}
+                    {(selectedPart.id === "ilo" || selectedPart.id === "server-gen10" || selectedPart.id === "server-gen10plus") && (
+                      <ServerWorkspaceControls
+                        activeProfile={activeProfile}
+                        address={designAddress}
+                        localStorageMode={draftScenario === "single_server_local_storage"}
+                        onReload={onReload}
+                        scope={selectedPart.id === "ilo" ? "ilo" : "server"}
+                        workflowActions={workflowActions}
+                      />
+                    )}
 
-                  <section className="design-workspace-safe-strip" aria-label={`${selectedPart.label} safe checks and next actions`}>
-                    <div>
-                      <p className="operator-kicker">Safe checks & next actions</p>
-                      <h4>Scoped to {selectedPart.label}</h4>
-                    </div>
-                    <div className="design-readiness-list compact">
+                    {selectedPart.id === "vcenter" && (
+                      <VirtualizationWorkspaceControls
+                        activeProfile={activeProfile}
+                        address={designAddress}
+                        features={features}
+                        onReload={onReload}
+                        workflowActions={workflowActions}
+                      />
+                    )}
+
+                    <section className="design-workspace-safe-strip" aria-label={`${selectedPart.label} safe checks and next actions`}>
                       <div>
-                        {designReadinessRows.slice(0, 4).map((row) => (
-                          <span className={`design-readiness-pill ${row.status}`} key={row.label}>
-                            <strong>{row.label}</strong>
-                            <small>{row.detail}</small>
-                          </span>
+                        <p className="operator-kicker">Safe checks & next actions</p>
+                        <h4>Scoped to {selectedPart.label}</h4>
+                      </div>
+                      <div className="design-readiness-list compact">
+                        <div>
+                          {designReadinessRows.slice(0, 4).map((row) => (
+                            <span className={`design-readiness-pill ${row.status}`} key={row.label}>
+                              <strong>{row.label}</strong>
+                              <small>{row.detail}</small>
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                      {selectedSafeActions.length ? (
+                        <div className="design-device-action-list compact">
+                          {selectedSafeActions.map((action) => {
+                            const running = actionRunStatus.runningActionId === action.action_id;
+                            const latestRun = actionRunsById[action.action_id]?.[0] ?? null;
+                            return (
+                              <button
+                                disabled={running}
+                                key={action.action_id}
+                                onClick={() => void runDeviceSafeAction(action)}
+                                type="button"
+                              >
+                                <Play size={14} />
+                                <span>{running ? "Running" : action.label}</span>
+                                <small>{latestRun ? `Last: ${displayStatus(latestRun.status)}` : "Read-only check"}</small>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <p className="operator-action-message">No read-only check is registered for this device yet.</p>
+                      )}
+                      {(actionRunStatus.message || actionRunStatus.error) && (
+                        <p className={actionRunStatus.error ? "operator-action-message error" : "operator-action-message success"}>
+                          {actionRunStatus.error || actionRunStatus.message}
+                        </p>
+                      )}
+                      {diagnosisLoading && <p className="operator-action-message">Preparing advisory diagnosis...</p>}
+                      {diagnosis && <WorkflowDiagnosisCard diagnosis={diagnosis} />}
+                    </section>
+
+                    <details className="design-schema-inventory">
+                      <summary>
+                        <span>Schema homes</span>
+                        <strong>{selectedPersistenceRows.length} mapped parameters</strong>
+                      </summary>
+                      <div className="design-schema-list" aria-label={`${selectedPart.label} schema inventory`}>
+                        {selectedPersistenceRows.map((row) => (
+                          <div className={`design-schema-row design-schema-row-${row.commitState}`} key={row.id}>
+                            <span>{row.label}</span>
+                            <strong>{row.persistsTo}</strong>
+                            <small>{row.commitLabel}</small>
+                          </div>
                         ))}
                       </div>
-                    </div>
-                    {selectedSafeActions.length ? (
-                      <div className="design-device-action-list compact">
-                        {selectedSafeActions.map((action) => {
-                          const running = actionRunStatus.runningActionId === action.action_id;
-                          const latestRun = actionRunsById[action.action_id]?.[0] ?? null;
-                          return (
-                            <button
-                              disabled={running}
-                              key={action.action_id}
-                              onClick={() => void runDeviceSafeAction(action)}
-                              type="button"
-                            >
-                              <Play size={14} />
-                              <span>{running ? "Running" : action.label}</span>
-                              <small>{latestRun ? `Last: ${displayStatus(latestRun.status)}` : "Read-only check"}</small>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    ) : (
-                      <p className="operator-action-message">No read-only check is registered for this device yet.</p>
-                    )}
-                    {(actionRunStatus.message || actionRunStatus.error) && (
-                      <p className={actionRunStatus.error ? "operator-action-message error" : "operator-action-message success"}>
-                        {actionRunStatus.error || actionRunStatus.message}
-                      </p>
-                    )}
-                    {diagnosisLoading && <p className="operator-action-message">Preparing advisory diagnosis...</p>}
-                    {diagnosis && <WorkflowDiagnosisCard diagnosis={diagnosis} />}
-                  </section>
-
-                  <details className="design-schema-inventory">
-                    <summary>
-                      <span>Schema homes</span>
-                      <strong>{selectedPersistenceRows.length} mapped parameters</strong>
-                    </summary>
-                    <div className="design-schema-list" aria-label={`${selectedPart.label} schema inventory`}>
-                      {selectedPersistenceRows.map((row) => (
-                        <div className={`design-schema-row design-schema-row-${row.commitState}`} key={row.id}>
-                          <span>{row.label}</span>
-                          <strong>{row.persistsTo}</strong>
-                          <small>{row.commitLabel}</small>
-                        </div>
-                      ))}
-                    </div>
+                    </details>
                   </details>
                 </details>
               </details>

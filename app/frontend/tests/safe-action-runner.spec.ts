@@ -225,6 +225,13 @@ async function openWorkspaceAdvanced(page: Page, workspaceName: string) {
       await details.locator(":scope > summary").click();
     }
   }
+  const proofDoor = workspace.getByLabel(`${workspaceName} proof and diagnostics`);
+  if (await proofDoor.count()) {
+    const isProofDoorOpen = await proofDoor.evaluate((node) => (node as HTMLDetailsElement).open);
+    if (!isProofDoorOpen) {
+      await proofDoor.locator(":scope > summary").click();
+    }
+  }
   const advanced = workspace.getByLabel(`${workspaceName} advanced checks and proof`);
   await advanced.locator(":scope > summary").click();
   return advanced;
@@ -1348,6 +1355,12 @@ test("overview device workspace matrix keeps default inputs concise", async ({ p
     await expect(detailsDrawer, `${item.workspace} details do not repeat name/model copy`).not.toContainText("Name, model, and role");
     await expect(detailsDrawer, `${item.workspace} details avoid repeated live-unknown microcopy`).not.toContainText("Visual intent only; live unknown");
     await expect(workspace.getByLabel(item.advancedControl), `${item.workspace} advanced controls are hidden by default`).not.toBeVisible();
+    const proofDoor = workspace.getByLabel(`${item.workspace} proof and diagnostics`);
+    await expect(proofDoor, `${item.workspace} keeps proof behind a separate diagnostics doorway`).toBeVisible();
+    await expect(proofDoor, `${item.workspace} proof doorway starts closed`).not.toHaveAttribute("open", "");
+    await expect(workspace.getByLabel(`${item.workspace} advanced checks and proof`), `${item.workspace} advanced proof stays hidden until diagnostics intent`).not.toBeVisible();
+    await proofDoor.locator(":scope > summary").click();
+    await expect(workspace.getByLabel(`${item.workspace} advanced checks and proof`), `${item.workspace} exposes advanced proof only after diagnostics intent`).toBeVisible();
     await expect(workspace.getByLabel(`${item.workspace} advanced checks and proof`), `${item.workspace} advanced proof is closed`).not.toHaveAttribute("open", "");
     await expect(overlay.locator(".design-parts-shelf"), `${item.workspace} hides the retired parts shelf`).not.toBeVisible();
     await expect(overlay.locator(".design-rack-stage"), `${item.workspace} hides the retired rack composer`).not.toBeVisible();
