@@ -809,7 +809,6 @@ test("zoned map opens the device workspace directly", async ({ page }) => {
   await ciscoProbeRequest;
   await ciscoDiffRequest;
   await expect(networkControls).toContainText("Cisco current-to-intent diff completed");
-  await switchWorkspace.getByLabel("Cisco switch port and bay inspector").locator(":scope > summary").click();
   await composer.getByRole("button", { name: "Switch port 2" }).click();
   await expect(switchWorkspace.locator(".design-selected-element-note")).toContainText("port 2");
   await expect(switchWorkspace.locator(".design-selected-element-note")).toContainText("which VLAN lane it belongs to");
@@ -1009,28 +1008,29 @@ test("overview device workspace matrix keeps default inputs concise", async ({ p
     if (item.workspace === "NetApp ONTAP") {
       await expect(workspace.getByLabel("NetApp storage protocol"), "NetApp storage mode is folded into essentials").toHaveCount(0);
     }
-    const inspectorDisclosure = workspace.getByLabel(`${item.workspace} port and bay inspector`);
-    await expect(inspectorDisclosure, `${item.workspace} keeps faceplate behind intent`).not.toHaveAttribute("open", "");
+    await expect(workspace.locator(":scope > details.design-workspace-details"), `${item.workspace} has one top-level details drawer`).toHaveCount(1);
+    const detailsDrawer = workspace.getByLabel(`${item.workspace} details`);
+    await expect(detailsDrawer, `${item.workspace} details start closed`).not.toHaveAttribute("open", "");
+    await expect(workspace.locator(":scope > details.design-faceplate-disclosure"), `${item.workspace} removes the old separate faceplate drawer`).toHaveCount(0);
     await expect(workspace.getByLabel(`${item.workspace} interactive faceplate`), `${item.workspace} does not show the faceplate before intent`).not.toBeVisible();
-    await expect(inspectorDisclosure.locator(":scope > summary"), `${item.workspace} uses compact inspector wording`).toContainText("Inspect ports and bays");
     const setupBeforeFaceplate = await workspace.evaluate((node) => {
       const setup = node.querySelector(".design-device-essentials");
       const faceplate = node.querySelector(".design-device-hero");
       return Boolean(setup && faceplate && (setup.compareDocumentPosition(faceplate) & Node.DOCUMENT_POSITION_FOLLOWING));
     });
     expect(setupBeforeFaceplate, `${item.workspace} keeps setup before the faceplate`).toBeTruthy();
-    await expect(workspace.locator(":scope > details.design-workspace-details"), `${item.workspace} has one top-level details drawer`).toHaveCount(1);
-    await expect(workspace.locator(":scope > details.design-workspace-details > summary"), `${item.workspace} details summary is plain`).toContainText("View details");
+    await expect(workspace.locator(":scope > details.design-workspace-details > summary"), `${item.workspace} details summary is plain`).toContainText("Device details");
     await expect(workspace.locator(":scope > details.design-workspace-details > summary"), `${item.workspace} details summary does not jam two labels together`).not.toContainText("Settings and proof");
+    await expect(workspace.locator(":scope > details.design-workspace-details > summary"), `${item.workspace} details summary replaces the old faceplate label`).not.toContainText("Inspect ports and bays");
+    await expect(workspace.locator(":scope > details.design-workspace-details > summary"), `${item.workspace} details summary replaces the old details label`).not.toContainText("View details");
     await expect(workspace.locator(":scope > details.design-workspace-advanced"), `${item.workspace} does not expose advanced as a second top-level drawer`).toHaveCount(0);
     await expect(workspace.locator(".design-workspace-map-details"), `${item.workspace} keeps chip details out of the default drawer`).toHaveCount(0);
     await expect(workspace, `${item.workspace} retires the old extra settings label`).not.toContainText("More settings");
     await expect(overlay.locator(".design-scenario-strip"), `${item.workspace} does not render hidden scenario cards in the drawer`).toHaveCount(0);
     await expect(overlay.locator(".design-control-strip"), `${item.workspace} does not render hidden draft controls in the drawer`).toHaveCount(0);
     await expect(overlay.locator(".design-blueprint-stage"), `${item.workspace} does not render the hidden topology designer in the drawer`).toHaveCount(0);
-    const detailsDrawer = workspace.getByLabel(`${item.workspace} details`);
-    await expect(detailsDrawer, `${item.workspace} details start closed`).not.toHaveAttribute("open", "");
     await detailsDrawer.locator(":scope > summary").click();
+    await expect(workspace.getByLabel(`${item.workspace} port and bay inspector`), `${item.workspace} faceplate inspector lives inside details`).toBeVisible();
     await expect(detailsDrawer.locator(`section[aria-label='${item.workspace} Identity']`), `${item.workspace} does not repeat identity in details`).toHaveCount(0);
     await expect(detailsDrawer, `${item.workspace} details do not repeat name/model copy`).not.toContainText("Name, model, and role");
     await expect(detailsDrawer, `${item.workspace} details avoid repeated live-unknown microcopy`).not.toContainText("Visual intent only; live unknown");
@@ -1082,12 +1082,12 @@ test("overview faceplate element clicks reveal concise details only after intent
     const workspace = overlay.locator(`section[aria-label='${item.workspace} workspace']`);
     await expect(workspace.locator(".design-selected-element-note"), `${item.workspace} starts without element noise`).toHaveCount(0);
     await expect(workspace.getByLabel(`${item.workspace} interactive faceplate`), `${item.workspace} starts with faceplate hidden`).not.toBeVisible();
-    await workspace.getByLabel(`${item.workspace} port and bay inspector`).locator(":scope > summary").click();
+    await workspace.getByLabel(`${item.workspace} details`).locator(":scope > summary").click();
     await workspace.getByRole("button", { name: item.click, exact: true }).first().click();
     const elementNote = workspace.locator(".design-selected-element-note");
     await expect(elementNote, `${item.workspace} shows a compact element note`).toContainText(item.note);
     await expect(elementNote, `${item.workspace} keeps default element copy operator-facing`).not.toContainText(/proof|source|device_settings|workflow|live-proof|read-only/i);
-    await expect(workspace.getByLabel(`${item.workspace} advanced checks and proof`), `${item.workspace} still keeps proof hidden`).not.toBeVisible();
+    await expect(workspace.getByLabel(`${item.workspace} advanced checks and proof`), `${item.workspace} still keeps proof closed`).not.toHaveAttribute("open", "");
     await overlay.getByRole("button", { name: "Close" }).click();
     await expect(page.locator("div[aria-label='Device workspace overlay']")).toHaveCount(0);
   }
@@ -1319,7 +1319,7 @@ test("overview design mode keeps the surface map-only until a node opens the wor
   await expect(switchWorkspace.getByLabel("Cisco switch state")).not.toContainText(/Draft|Saved/);
   await expect(switchWorkspace.getByLabel("Cisco switch state")).not.toContainText("source:");
   await expect(switchWorkspace.getByLabel("Cisco switch interactive faceplate")).not.toBeVisible();
-  await switchWorkspace.getByLabel("Cisco switch port and bay inspector").locator(":scope > summary").click();
+  await switchWorkspace.getByLabel("Cisco switch details").locator(":scope > summary").click();
   await expect(switchWorkspace.getByLabel("Cisco switch interactive faceplate")).toBeVisible();
   await switchWorkspace.getByRole("button", { name: "Switch port 1", exact: true }).click();
   await expect(switchWorkspace.locator(".design-selected-element-note")).toContainText("port 1");
@@ -1329,7 +1329,6 @@ test("overview design mode keeps the surface map-only until a node opens the wor
   await expect(switchWorkspace.getByLabel("Cisco workspace network controls")).not.toBeVisible();
   await expect(switchWorkspace).toBeVisible();
   const details = switchWorkspace.getByLabel("Cisco switch details");
-  await details.locator(":scope > summary").click();
   await expect(switchWorkspace.getByLabel("Cisco switch Network")).toContainText("Management IP");
   await expect(switchWorkspace).toContainText("fabric and VLAN control");
   await expect(switchWorkspace.getByLabel("BPDU guard")).toHaveValue("enabled on edge access ports");

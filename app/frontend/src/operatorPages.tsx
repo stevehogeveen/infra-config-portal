@@ -9637,34 +9637,6 @@ function LabDesignComposer({
               </section>
             )}
 
-            {workspaceOnly && (
-              <details className="design-faceplate-disclosure" aria-label={`${selectedPart.label} port and bay inspector`}>
-                <summary>
-                  <span>Inspect ports and bays</span>
-                </summary>
-                <div className="design-device-hero design-device-hero-after-setup" aria-label={`${selectedPart.label} interactive faceplate`}>
-                  <DesignFaceplateVisual
-                    interactive
-                    onElementClick={(elementLabel) => {
-                      setSelectedFaceplateElement(elementLabel);
-                      setDropMessage(`${selectedPart.label} ${elementLabel} selected. Inspect mapped params below; hardware untouched.`);
-                    }}
-                    partId={selectedPart.id}
-                    selectedElement={selectedFaceplateElement}
-                    settings={selectedSettings}
-                    storageProtocol={storageProtocol}
-                  />
-                </div>
-              </details>
-            )}
-
-            {workspaceOnly && selectedElementInspector && (
-              <p className="design-selected-element-note">
-                <strong>{selectedElementInspector.label}</strong>
-                <span>{selectedElementInspector.summary}</span>
-              </p>
-            )}
-
             {!workspaceOnly && (
             <div className="design-device-param-sections" aria-label={`${selectedPart.label} editable parameters`}>
               {selectedWorkspaceSections.map((section) => (
@@ -9684,8 +9656,30 @@ function LabDesignComposer({
             {workspaceOnly && (
               <details className="design-workspace-details design-workspace-details-combined" aria-label={`${selectedPart.label} details`}>
                 <summary>
-                  <span>View details</span>
+                  <span>Device details</span>
                 </summary>
+                <section className="design-device-details-inspector" aria-label={`${selectedPart.label} port and bay inspector`}>
+                  <div className="design-device-hero design-device-hero-after-setup" aria-label={`${selectedPart.label} interactive faceplate`}>
+                    <DesignFaceplateVisual
+                      interactive
+                      onElementClick={(elementLabel) => {
+                        setSelectedFaceplateElement(elementLabel);
+                        setDropMessage(`${selectedPart.label} ${elementLabel} selected. Inspect mapped params below; hardware untouched.`);
+                      }}
+                      partId={selectedPart.id}
+                      selectedElement={selectedFaceplateElement}
+                      settings={selectedSettings}
+                      storageProtocol={storageProtocol}
+                    />
+                  </div>
+                  {selectedElementInspector && (
+                    <p className="design-selected-element-note">
+                      <strong>{selectedElementInspector.label}</strong>
+                      <span>{selectedElementInspector.summary}</span>
+                    </p>
+                  )}
+                </section>
+
                 {selectedDetailWorkspaceSections.length > 0 && (
                   <div className="design-device-param-sections" aria-label={`${selectedPart.label} detailed parameters`}>
                     {selectedDetailWorkspaceSections.map((section) => (

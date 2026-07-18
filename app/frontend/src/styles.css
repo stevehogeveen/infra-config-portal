@@ -11526,6 +11526,11 @@ th.ui-compact-table-cell {
   padding-bottom: 10px;
 }
 
+.design-device-details-inspector {
+  display: grid;
+  gap: 10px;
+}
+
 .design-device-param-sections {
   display: grid;
   gap: 12px;
@@ -13412,32 +13417,6 @@ button.design-ilo-port:hover {
 
 .topology-workspace-drawer .design-workspace-details:not([open]) > summary span {
   color: var(--primary);
-}
-
-.topology-workspace-drawer .design-faceplate-disclosure {
-  background: transparent;
-  border: 0;
-  display: grid;
-  gap: 8px;
-}
-
-.topology-workspace-drawer .design-faceplate-disclosure > summary {
-  background: #f8fafc;
-  border: 1px solid #cbd7e4;
-  border-radius: 999px;
-  color: #0f766e;
-  cursor: pointer;
-  display: inline-flex;
-  font-size: 12px;
-  font-weight: 900;
-  list-style: none;
-  min-height: 34px;
-  padding: 8px 13px;
-  width: max-content;
-}
-
-.topology-workspace-drawer .design-faceplate-disclosure > summary::-webkit-details-marker {
-  display: none;
 }
 
 .lab-topology-footer {

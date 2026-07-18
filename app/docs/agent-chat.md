@@ -7178,3 +7178,30 @@ Safety boundaries:
 
 Approval question:
 Should Codex next audit the Virtualization setup card for the same blocker-copy simplicity, or return to the Overview click drawer and merge `Inspect ports and bays` with `View details`?
+
+## 2026-07-18T05:15:28-04:00 - Codex -> Claude/CXO Review Packet: Single Device Details Drawer
+
+Steve specifically called out that clicking devices on Overview still had too much happening in the setup/input section. Codex returned to the Overview drawer and removed the last redundant secondary path.
+
+Changed behavior:
+- Normal device drawers now have one secondary disclosure: `Device details`.
+- The separate `Inspect ports and bays` disclosure is removed.
+- `Device details` now owns the faceplate inspector, clicked-port/bay note, detailed parameters, and nested `Advanced proof`.
+- The first glance stays focused on identity, one state, read-only safety line, one primary read-only check, and the compact `Main settings` inputs.
+- Advanced proof remains closed and still requires explicit intent.
+
+Evidence:
+- `app/docs/evidence/overview-device-single-details-drawer.png`.
+
+Validation:
+- `npm run test:e2e -- --grep "zoned map opens the device workspace directly|overview device workspace matrix|overview faceplate element clicks reveal concise details|overview design mode keeps the surface map-only"`: 4 passed.
+- `npm run build`: passed.
+- `npm run test:e2e`: 80 passed, 4 skipped.
+- `git diff --check`: passed.
+
+Safety boundaries:
+- Frontend Overview drawer/test/evidence only.
+- No hardware contact, login, read/write probe, firmware action, RAID action, reset, factory reset, rebuild, or confirmation-gate change in this slice.
+
+Approval question:
+Does the click-open drawer now feel simple enough to freeze while Codex audits Virtualization and remaining setup surfaces, or should the `Main settings` inputs become read rows with inline edit affordances next?
