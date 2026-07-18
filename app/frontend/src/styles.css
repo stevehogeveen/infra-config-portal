@@ -14941,6 +14941,116 @@ button.design-ilo-port:hover {
   margin: 0;
 }
 
+.network-workspace-heading {
+  margin-bottom: 16px;
+}
+
+.network-cisco-workspace-shell {
+  display: grid;
+  gap: 16px;
+  margin: 0 auto 28px;
+  max-width: 1180px;
+  padding: 0 32px;
+}
+
+.network-cisco-workspace-summary {
+  align-items: center;
+  background: #ffffff;
+  border: 1px solid #dbe5ef;
+  border-radius: 14px;
+  box-shadow: 0 12px 30px rgba(15, 23, 42, .06);
+  display: grid;
+  gap: 18px;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, .52fr);
+  padding: 16px 18px;
+}
+
+.network-cisco-workspace-summary h2,
+.network-cisco-workspace-summary p,
+.network-cisco-workspace-summary span {
+  margin: 0;
+}
+
+.network-cisco-workspace-summary h2 {
+  color: #102238;
+  font-size: clamp(22px, 2vw, 30px);
+  letter-spacing: 0;
+}
+
+.network-cisco-workspace-summary span {
+  color: #475569;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.network-cisco-workspace-facts {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.network-cisco-workspace-facts span {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  color: #334155;
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 10px 12px;
+}
+
+.network-cisco-workspace-facts strong {
+  color: #64748b;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.network-cisco-workspace-shell .lab-design-composer,
+.network-cisco-workspace-shell .design-visual-workbench {
+  display: block;
+  width: 100%;
+}
+
+.network-cisco-workspace-shell .design-device-workspace {
+  border-radius: 16px;
+  box-shadow: 0 16px 36px rgba(15, 23, 42, .08);
+  min-height: 0;
+}
+
+.network-cisco-workspace-shell .design-device-identity {
+  border-radius: 14px;
+}
+
+.network-cisco-workspace-shell .design-device-identity-main {
+  grid-template-columns: 58px minmax(0, 1fr);
+}
+
+.network-cisco-workspace-shell .design-device-identity-main .topology-industry-symbol {
+  height: 56px;
+  width: 56px;
+}
+
+.network-cisco-workspace-shell .design-device-identity-main .topology-industry-symbol svg {
+  height: 34px;
+  width: 34px;
+}
+
+@media (max-width: 920px) {
+  .network-cisco-workspace-summary,
+  .network-cisco-workspace-facts {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .network-cisco-workspace-shell {
+    padding: 0 16px;
+  }
+}
+
 .network-access-surface,
 .network-details {
   margin: 0 auto 24px;

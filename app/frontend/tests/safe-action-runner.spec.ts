@@ -2205,7 +2205,7 @@ test("operator button matrix keeps default actions simple and safe", async ({ pa
   const surfaces: Array<{ label: string; path: string; primary: () => ReturnType<Page["locator"]> }> = [
     { label: "Overview", path: "/overview", primary: () => page.getByTestId("operator-home-primary-action") },
     { label: "Lab Defaults", path: "/setup/defaults", primary: () => page.locator(".lab-defaults-actions .operator-primary-button") },
-    { label: "Network", path: "/network", primary: () => page.getByLabel("Switch Access").locator(".operator-primary-button") },
+    { label: "Network", path: "/network", primary: () => page.locator("section[aria-label='Cisco switch workspace'] > .design-device-primary-action .design-plan-action") },
     { label: "Server", path: "/server", primary: () => page.getByLabel("Compute Access").locator(".operator-primary-button") },
     { label: "Storage", path: "/storage", primary: () => page.locator(".storage-path-actions .operator-primary-button") },
     { label: "Virtualization", path: "/virtualization", primary: () => page.getByLabel("VM Management").locator(".operator-primary-button") },
@@ -2240,8 +2240,8 @@ test("operator primary check buttons run only expected read-only workflows", asy
 
   const cases: Array<{ click: () => Promise<void>; expectedActionIds: string[]; label: string; path: string }> = [
     {
-      click: () => page.getByLabel("Switch Access").getByRole("button", { name: "Run switch check" }).click(),
-      expectedActionIds: ["cisco.setup-readiness"],
+      click: () => page.locator("section[aria-label='Cisco switch workspace'] > .design-device-primary-action").getByRole("button", { name: "Run Cisco read-only check" }).click(),
+      expectedActionIds: ["cisco.ssh-readonly-probe"],
       label: "Network",
       path: "/network"
     },
@@ -2327,36 +2327,30 @@ test("setup pages load while remaining run actions stay registered", async ({ pa
   await expect(page.getByText(/missing a runnable backend action/i)).toHaveCount(0);
 });
 
-test("network default shows one switch access card and hides technical detail", async ({ page }) => {
+test("network default opens canonical Cisco workspace and hides retired network forms", async ({ page }) => {
   await page.goto("/network");
 
-  const access = page.getByLabel("Switch Access");
-  await expect(access.getByRole("heading", { name: "Cisco C9300" })).toBeVisible();
+  const launcher = page.getByLabel("Cisco switch setup launcher");
+  const workspace = page.locator("section[aria-label='Cisco switch workspace']");
+  await expect(launcher).toBeVisible();
+  await expect(workspace).toBeVisible();
+  await expect(workspace.getByRole("heading", { name: "Cisco Switch" })).toBeVisible();
   await expect(page.locator(".operator-feedback", { hasText: "Loading" })).toHaveCount(0);
-  await expect(access.locator("dt")).toHaveText(["Switch", "Management IP", "Access"]);
-  await expect(access.locator(".ui-card-header")).toContainText(/Blocked|Ready|Not checked/);
-  await expect(access.getByRole("button", { name: "Run switch check" })).toBeVisible();
-  await expect(access.getByRole("button", { name: "Open switch details" })).toBeVisible();
-  await expect(access.getByRole("button", { name: "View details" })).toHaveCount(0);
-  await expect(access.locator(".ui-card-content .switch-access-actions")).toBeVisible();
-  await expect(access.locator(".ui-card-footer")).toHaveCount(0);
+  await expect(workspace.getByLabel("Cisco switch main setup fields")).toContainText("Management IP");
+  await expect(workspace.getByLabel("Cisco switch credential setup")).toContainText("Reference only");
+  await expect(workspace.locator(":scope > .design-device-primary-action .design-plan-action")).toHaveCount(1);
+  await expect(workspace.getByRole("button", { name: "Run Cisco read-only check" })).toBeVisible();
+  await expect(workspace.getByLabel("Cisco workspace network controls")).not.toBeVisible();
+  await expect(page.getByLabel("Switch Access")).toHaveCount(0);
   await expect(page.locator("section[aria-label='Network details']")).toHaveCount(0);
-  await expect(page.getByText("Switch configuration cockpit")).toHaveCount(0);
-  await expect(page.getByText("Current versus intent")).toHaveCount(0);
-  await expect(page.getByText("VLANs and gateways")).toHaveCount(0);
+  await expect(page.getByLabel("Network detail sections")).toHaveCount(0);
+  const mainText = await visibleMainText(page);
+  expect(mainText).not.toMatch(/Switch configuration cockpit|Current versus intent|VLANs and gateways/i);
   await expect(page.getByRole("button", { name: /Apply Bootstrap/i })).toHaveCount(0);
 });
 
 test("setup defaults keep detail, edit, and proof surfaces behind the secondary button", async ({ page }) => {
   const surfaces = [
-    {
-      cardLabel: "Switch Access",
-      detailLabel: "Network details",
-      hiddenCopy: [/Switch configuration cockpit/i, /Current versus intent/i, /VLANs and gateways/i, /Apply Bootstrap/i],
-      path: "/network",
-      primaryName: "Run switch check",
-      secondaryName: "Open switch details"
-    },
     {
       cardLabel: "Compute Access",
       detailLabel: "Compute details",
@@ -2383,6 +2377,16 @@ test("setup defaults keep detail, edit, and proof surfaces behind the secondary 
     }
   ];
 
+  await page.goto("/network");
+  const networkWorkspace = page.locator("section[aria-label='Cisco switch workspace']");
+  await expect(networkWorkspace).toBeVisible();
+  await expect(networkWorkspace.locator(":scope > .design-device-primary-action .design-plan-action"), "Cisco workspace exposes one primary action").toHaveCount(1);
+  await expect(networkWorkspace.getByRole("button", { name: "Run Cisco read-only check" })).toBeVisible();
+  await expect(networkWorkspace.getByLabel("Cisco workspace network controls"), "Cisco proof stays behind Evidence and diagnostics").not.toBeVisible();
+  await expect(page.getByLabel("Switch Access")).toHaveCount(0);
+  await expect(page.getByLabel("Network details")).toHaveCount(0);
+  expect(await visibleMainText(page), "/network keeps old Network tabs out of the default view").not.toMatch(/Switch configuration cockpit|Current versus intent|VLANs and gateways|Apply Bootstrap/i);
+
   for (const surface of surfaces) {
     await page.goto(surface.path);
     const mainText = await visibleMainText(page);
@@ -2408,97 +2412,59 @@ test("network no-kit state does not show stale loading feedback", async ({ page 
 
   await page.goto("/network");
 
-  await expect(page.getByLabel("Switch Access")).toBeVisible();
+  await expect(page.getByLabel("Cisco switch setup launcher")).toBeVisible();
+  await expect(page.locator("section[aria-label='Cisco switch workspace']")).toBeVisible();
   await expect(page.locator(".operator-feedback", { hasText: "Loading" })).toHaveCount(0);
 });
 
-test("network details reveal saved settings and nested advanced switch plan", async ({ page }) => {
+test("network Cisco workspace reveals migrated settings and nested read-only proof", async ({ page }) => {
   await page.goto("/network");
-  await page.getByLabel("Switch Access").getByRole("button", { name: "Open switch details" }).click();
+  const workspace = page.locator("section[aria-label='Cisco switch workspace']");
+  await expect(workspace).toBeVisible();
+  await expect(workspace.getByLabel("Cisco switch main setup fields")).toContainText("Management IP");
+  await expect(workspace.getByLabel("Cisco switch main setup fields")).toContainText("Storage VLAN");
+  await expect(workspace.getByLabel("Cisco switch credential setup")).toContainText("Cisco switch sign-in");
+  await expect(workspace.getByLabel("Cisco switch credential setup")).toContainText("CISCO_TEST_PASSWORD");
+  await expect(workspace.getByLabel("Cisco switch edit settings")).toContainText("More settings");
+  await expect(workspace.getByLabel("Cisco switch edit settings")).toContainText("BPDU guard");
+  await expect(workspace.getByLabel("Cisco switch edit settings")).toContainText("Port plan");
+  const networkFields = await openWorkspaceEditGroup(page, "Cisco switch", "Network");
+  await expect(networkFields).toContainText("Port profiles");
+  const accessFields = await openWorkspaceEditGroup(page, "Cisco switch", "Access");
+  await expect(accessFields).toContainText("Black-hole VLAN");
+  await expect(accessFields).toContainText("ACL lanes");
+  await expect(workspace.getByLabel("Cisco workspace network controls")).not.toBeVisible();
 
-  const details = page.locator("section[aria-label='Network details']");
-  await expect(details).toBeVisible();
-  const detailSections = details.getByLabel("Network detail sections");
-  await expect(detailSections).toContainText("Access");
-  await expect(detailSections).toContainText("Values");
-  await expect(detailSections).toContainText("Setup");
-  await expect(detailSections).toContainText("Plan");
-  await expect(detailSections).toContainText("Proof");
-  await expect(detailSections.getByLabel("Network detail section", { exact: true })).toHaveValue("access");
-  await expect(detailSections.getByRole("button")).toHaveCount(0);
-  await expect(details.locator(".network-detail-panel")).toHaveCount(1);
-  await expect(details).toContainText("SSH/SCP");
-  await expect(details).toContainText("Firmware");
-  await expect(details.getByLabel("Network configure")).toHaveCount(0);
-  await detailSections.getByLabel("Network detail section", { exact: true }).selectOption("values");
-  await expect(detailSections.getByLabel("Network detail section", { exact: true })).toHaveValue("values");
-  await expect(details).toContainText("VLAN");
-  await expect(details).toContainText("DNS");
-  await expect(details).toContainText("NTP");
-  await expect(details).toContainText("SNMP");
-  await expect(details).toContainText("MTU");
-  await detailSections.getByLabel("Network detail section", { exact: true }).selectOption("setup");
-  const networkConfigure = details.getByLabel("Network configure");
-  await expect(networkConfigure).toBeVisible();
-  await expect(networkConfigure).toContainText("Network setup");
-  const networkSummary = networkConfigure.getByLabel("Network setup summary");
-  await expect(networkSummary).toBeVisible();
-  await expect(networkSummary).toContainText("Cisco mgmt IP");
-  await expect(networkSummary).toContainText("VLAN");
-  await expect(networkSummary).toContainText("Subnet");
-  await expect(networkConfigure.getByRole("textbox", { exact: true, name: "Cisco mgmt IP" })).toBeHidden();
-  await expect(networkConfigure.getByRole("textbox", { exact: true, name: "VLAN" })).toBeHidden();
-  await expect(networkConfigure.getByRole("textbox", { exact: true, name: "Subnet" })).toBeHidden();
-  await expect(networkConfigure.getByRole("textbox", { exact: true, name: "Gateway" })).toBeHidden();
-  await expect(networkConfigure.getByRole("textbox", { exact: true, name: "DNS servers" })).toBeHidden();
-  await expect(networkConfigure.getByRole("textbox", { exact: true, name: "NTP servers" })).toBeHidden();
-  await expect(networkConfigure.getByRole("textbox", { exact: true, name: "MTU" })).toBeHidden();
-  await expect(networkConfigure.getByLabel("Network feature toggles")).toBeHidden();
-  await expect(networkConfigure.getByRole("button", { name: "Save network setup" })).toBeHidden();
-  await expect(networkConfigure.getByText("Edit network values")).toBeVisible();
-  await networkConfigure.getByText("Edit network values").click();
-  await expect(networkConfigure.getByRole("textbox", { exact: true, name: "Cisco mgmt IP" })).toBeVisible();
-  await expect(networkConfigure.getByRole("textbox", { exact: true, name: "VLAN" })).toBeVisible();
-  await expect(networkConfigure.getByRole("button", { name: "Save network setup" })).toHaveCount(1);
-  await expect(networkConfigure.getByText("Save Network Config")).toHaveCount(0);
-  await expect(networkConfigure.getByText("Save As Lab Setup")).toHaveCount(0);
-  await expect(networkConfigure.getByText("More network values")).toBeVisible();
-  await networkConfigure.getByText("More network values").click();
-  await expect(networkConfigure.getByRole("textbox", { exact: true, name: "Subnet" })).toBeVisible();
-  await expect(networkConfigure.getByRole("textbox", { exact: true, name: "Gateway" })).toBeVisible();
-  await expect(networkConfigure.getByRole("textbox", { exact: true, name: "DNS servers" })).toBeVisible();
-  await expect(networkConfigure.getByRole("textbox", { exact: true, name: "NTP servers" })).toBeVisible();
-  await expect(networkConfigure.getByRole("textbox", { exact: true, name: "MTU" })).toBeVisible();
-  await expect(networkConfigure.getByLabel("Network feature toggles")).toBeVisible();
-
-  await detailSections.getByLabel("Network detail section", { exact: true }).selectOption("plan");
-  await expect(page.getByLabel("Switch port map")).toBeVisible();
-  await expect(page.getByLabel("Switch port plan summary")).toContainText("Active ports");
-  await expect(page.getByLabel("Switch port plan summary")).toContainText("Parking VLAN");
-  await page.getByLabel("Planned switch ports").getByRole("button", { name: /Gi1\/0\/5/ }).click();
-  await expect(page.getByLabel("Selected switch port plan")).toContainText("Gi1/0/5");
-  await expect(page.getByLabel("Selected switch port plan")).toContainText("NetApp data path A");
-  await expect(page.getByLabel("Selected switch port plan")).toContainText("Real switch changes still require confirmation");
-  const advanced = page.locator("details.network-advanced-switch-plan");
-  await expect(advanced.locator(":scope > summary")).toContainText("Advanced switch proof");
-  await expect(page.locator("section[aria-label='Cisco switch driver']")).toBeHidden();
-  await advanced.locator(":scope > summary").click();
-  await expect(page.locator("section[aria-label='Cisco switch driver']")).toBeVisible();
+  const advanced = await openWorkspaceAdvanced(page, "Cisco switch");
+  const controls = advanced.getByLabel("Cisco workspace network controls");
+  await expect(controls).toBeVisible();
+  await expect(controls).toContainText("Network-page checks moved into the switch workspace");
+  await expect(controls).toContainText("Management IP");
+  await expect(controls).toContainText("Setup readiness");
+  await expect(controls).toContainText("SSH probe");
+  await expect(controls).toContainText("Intent diff");
+  await expect(controls).toContainText("Firmware");
+  await expect(controls).toContainText("Refresh live evidence");
+  await expect(controls).toContainText("Cisco Access Live Check");
+  const planProof = controls.getByLabel("Cisco switch plan proof");
+  await expect(planProof.locator(":scope > summary")).toContainText("Port, VLAN, and guardrail proof");
+  await planProof.locator(":scope > summary").click();
+  await expect(page.getByLabel("Cisco switch driver")).toBeVisible();
 });
 
-test("network switch check runs through the read-only action endpoint", async ({ page }) => {
+test("network primary check runs through the Cisco read-only workspace action", async ({ page }) => {
   await page.goto("/network");
 
   const runResponse = page.waitForResponse((response) =>
-    response.url().includes("/api/v1/workflows/actions/cisco.setup-readiness/run") &&
+    response.url().includes("/api/v1/workflows/actions/cisco.ssh-readonly-probe/run") &&
     response.request().method() === "POST"
   );
-  await page.getByLabel("Switch Access").getByRole("button", { name: "Run switch check" }).click();
+  await page.locator("section[aria-label='Cisco switch workspace'] > .design-device-primary-action").getByRole("button", { name: "Run Cisco read-only check" }).click();
   await expect((await runResponse).ok()).toBeTruthy();
-  await expect(page.getByLabel("Switch Access")).toContainText("Cisco Access Live Check:");
+  await expect(page.locator("section[aria-label='Cisco switch workspace']")).toContainText("Cisco SSH Read-Only Probe:");
 });
 
-test("network blocker copy hides internal mode vocabulary", async ({ page }) => {
+test("network default hides internal mode vocabulary", async ({ page }) => {
   await page.route("**/api/v1/providers/cisco/setup-readiness", (route) => json(route, {
     ...ciscoSetupReadiness(),
     blockers: ["Cisco SSH is not reachable.", "PROVIDER_MODE=local-lab-readwrite runtime missing credential"],
@@ -2509,11 +2475,10 @@ test("network blocker copy hides internal mode vocabulary", async ({ page }) => 
   }));
 
   await page.goto("/network");
-  const access = page.getByLabel("Switch Access");
-  await expect(access).toContainText("Needs attention");
-  await expect(access).toContainText("Cisco switch cannot be reached over SSH");
-  await expect(access).not.toContainText("Cisco SSH is not reachable");
-  const text = await access.textContent();
+  const workspace = page.locator("section[aria-label='Cisco switch workspace']");
+  await expect(workspace).toBeVisible();
+  await expect(workspace.getByLabel("Cisco workspace network controls")).not.toBeVisible();
+  const text = await visibleMainText(page);
   expect(text ?? "").not.toMatch(/PROVIDER[_ ]MODE/i);
   expect(text ?? "").not.toMatch(/\bprovider\b/i);
   expect(text ?? "").not.toMatch(/\bruntime\b/i);
@@ -2997,11 +2962,9 @@ test("details-tier proof buttons outside overview keep read-only and guarded bou
   });
 
   await page.goto("/network");
-  await page.getByLabel("Switch Access").getByRole("button", { name: "Open switch details" }).click();
-  const networkSections = page.getByLabel("Network detail sections");
-  await networkSections.getByLabel("Network detail section", { exact: true }).selectOption("plan");
-  const ciscoAdvanced = page.locator("details.network-advanced-switch-plan");
-  await ciscoAdvanced.locator(":scope > summary").click();
+  const ciscoAdvanced = await openWorkspaceAdvanced(page, "Cisco switch");
+  const planProof = ciscoAdvanced.getByLabel("Cisco switch plan proof");
+  await planProof.locator(":scope > summary").click();
   const ciscoDriver = page.getByLabel("Cisco switch driver");
   const refreshButton = ciscoDriver.getByRole("button", { name: /Refresh live evidence/ });
   await expect(refreshButton).toBeEnabled();
