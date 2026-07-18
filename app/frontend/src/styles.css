@@ -14572,6 +14572,178 @@ button.design-ilo-port:hover {
   border-color: #d6e0e8;
 }
 
+.switch-port-plan-card .ui-card-content {
+  display: grid;
+  gap: 14px;
+}
+
+.switch-port-plan-preview {
+  display: grid;
+  gap: 14px;
+}
+
+.switch-port-plan-preview.is-empty {
+  background: #f8fafc;
+  border: 1px solid #d8e3ec;
+  border-radius: 12px;
+  color: #64748b;
+  font-weight: 800;
+  padding: 16px;
+}
+
+.switch-port-plan-preview.is-empty p {
+  margin: 0;
+}
+
+.switch-port-plan-summary {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.switch-port-plan-summary > div {
+  background: #f7fafc;
+  border: 1px solid #dbe4ef;
+  border-radius: 10px;
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+}
+
+.switch-port-plan-summary span,
+.switch-port-selected-plan dt {
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.switch-port-plan-summary strong {
+  color: #102238;
+  font-size: 18px;
+}
+
+.switch-port-map {
+  background: #0f172a;
+  border: 1px solid #1e293b;
+  border-radius: 14px;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(auto-fit, minmax(94px, 1fr));
+  padding: 14px;
+}
+
+.switch-port-map-tile {
+  background: #e8f0f7;
+  border: 2px solid transparent;
+  border-radius: 9px;
+  color: #102238;
+  cursor: pointer;
+  display: grid;
+  gap: 4px;
+  min-height: 84px;
+  padding: 9px;
+  text-align: left;
+  transition: border-color .16s ease, box-shadow .16s ease, transform .16s ease;
+}
+
+.switch-port-map-tile:hover,
+.switch-port-map-tile[aria-pressed="true"] {
+  border-color: #14b8a6;
+  box-shadow: 0 0 0 3px rgba(20, 184, 166, .22);
+  transform: translateY(-1px);
+}
+
+.switch-port-map-tile span {
+  font: 900 11px/1 ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+.switch-port-map-tile strong {
+  font-size: 12px;
+  line-height: 1.15;
+}
+
+.switch-port-map-tile small {
+  color: #475569;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.switch-port-map-tile.is-ready {
+  background: #dcfce7;
+}
+
+.switch-port-map-tile.is-plan-only,
+.switch-port-map-tile.is-safe-to-run {
+  background: #e0f2fe;
+}
+
+.switch-port-map-tile.is-needs-attention {
+  background: #fef3c7;
+}
+
+.switch-port-map-tile.is-blocked {
+  background: #fee2e2;
+}
+
+.switch-port-selected-plan {
+  background: #ffffff;
+  border: 1px solid #cfe2ea;
+  border-radius: 12px;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding: 14px;
+}
+
+.switch-port-selected-plan h3,
+.switch-port-selected-plan p {
+  margin: 0;
+}
+
+.switch-port-selected-plan h3 {
+  color: #102238;
+  font-size: 20px;
+  letter-spacing: 0;
+}
+
+.switch-port-selected-plan > div:first-child span,
+.switch-port-selected-plan > p {
+  color: #475569;
+  font-size: 13px;
+  font-weight: 750;
+  line-height: 1.4;
+}
+
+.switch-port-selected-plan dl {
+  display: grid;
+  gap: 10px;
+  grid-column: 1 / -1;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  margin: 0;
+}
+
+.switch-port-selected-plan dl > div {
+  background: #f8fafc;
+  border: 1px solid #dbe4ef;
+  border-radius: 9px;
+  display: grid;
+  gap: 5px;
+  padding: 10px;
+}
+
+.switch-port-selected-plan dd {
+  color: #102238;
+  font-weight: 850;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.switch-port-selected-plan > p {
+  grid-column: 1 / -1;
+}
+
 .network-advanced-switch-plan {
   background: #f8fafc;
   border: 1px solid #d8e3ec;
@@ -18027,6 +18199,11 @@ button.design-ilo-port:hover {
   .config-value-list {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .switch-port-plan-summary,
+  .switch-port-selected-plan dl {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 760px) {
@@ -18046,6 +18223,16 @@ button.design-ilo-port:hover {
   .network-access-actions .secondary-button {
     justify-content: center;
     width: 100%;
+  }
+
+  .switch-port-plan-summary,
+  .switch-port-selected-plan,
+  .switch-port-selected-plan dl {
+    grid-template-columns: 1fr;
+  }
+
+  .switch-port-map {
+    grid-template-columns: repeat(auto-fit, minmax(76px, 1fr));
   }
 
   .operator-status-header {

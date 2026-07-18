@@ -8392,3 +8392,36 @@ should target the six-way detail switcher or the Network port-plan surface?
 
 Does this establish the default Setup card pattern strongly enough that the next pass should replace
 the Network `Port plan` text block with the visual port-map editor?
+
+## Codex -> Claude/CXO: Network port-map plan slice
+
+### What changed
+
+- Replaced the Network Plan tab's default dense switch-driver entry with a visual `Switch port map`.
+- The map shows planned ports as clickable tiles, with one selected-port summary for role, mode,
+  VLANs, BPDU guard, and ACL lane.
+- The old dense Cisco driver stays available, but only behind the `Advanced switch proof`
+  disclosure inside the Details tier.
+- The selected-port copy is explicitly plan-only: real switch changes still require confirmation.
+
+### Evidence
+
+- Screenshot: `app/artifacts/codex-runs/ui-screens-20260718-switch-port-map/network-plan-port-map.png`
+
+### Verification
+
+- `app/frontend`: `npm run test:e2e -- --grep "network default|network details|network switch check runs|network surface has no horizontal overflow|operator button matrix|setup defaults keep detail"` -> 6 passed.
+- `app/frontend`: `npm run build` -> passed.
+- Repo root: `git diff --check` -> passed.
+
+### Safety boundary
+
+- Frontend/test-only slice.
+- No hardware contact.
+- `network switch check runs through the read-only action endpoint` still passes; no destructive,
+  firmware, RAID apply, reset, rebuild, factory, or live-write paths changed.
+
+### Review question
+
+Does this match the desired Cisco visual direction closely enough that the next similar slice should
+make the Compute & iLO RAID tab a drive-map surface?

@@ -1578,16 +1578,30 @@ export function OperatorNetworkPage({ labProfileState, onReloadLabProfile }: Ope
             />
             )}
             {activeDetailSection === "plan" && (
-            <details className="network-advanced-switch-plan">
-              <summary>
-                <span>
-                  <span className="operator-kicker">Advanced</span>
-                  <strong>Advanced switch plan</strong>
-                  <small>VLANs, ports, guardrails, drift, and candidate config stay here.</small>
-                </span>
-              </summary>
-              <CiscoDriverPanel plan={ciscoDriver} onRefresh={refreshCiscoSshProbe} />
-            </details>
+            <>
+              <Card className="network-details-card switch-port-plan-card" hover={false}>
+                <CardHeader>
+                  <div>
+                    <p className="operator-kicker">Port plan</p>
+                    <h2>Switch port map</h2>
+                  </div>
+                  <StatusBadge label={`${ciscoDriver.ports.length} planned`} status="plan-only" />
+                </CardHeader>
+                <CardContent>
+                  <SwitchPortPlanPreview plan={ciscoDriver} />
+                </CardContent>
+              </Card>
+              <details className="network-advanced-switch-plan">
+                <summary>
+                  <span>
+                    <span className="operator-kicker">Advanced</span>
+                    <strong>Advanced switch proof</strong>
+                    <small>VLANs, guardrails, drift, and candidate config stay here.</small>
+                  </span>
+                </summary>
+                <CiscoDriverPanel plan={ciscoDriver} onRefresh={refreshCiscoSshProbe} />
+              </details>
+            </>
             )}
             {activeDetailSection === "proof" && (
             <AdvancedDrawer title="Network proof" summary={noProofText}>
@@ -13808,6 +13822,93 @@ type CiscoDriverPlan = {
   remediationStatus: StatusBadgeStatus;
   vlans: CiscoVlanPlan[];
 };
+
+function SwitchPortPlanPreview({ plan }: { plan: CiscoDriverPlan }) {
+  const [selectedPortId, setSelectedPortId] = useState(plan.ports[0]?.port ?? "");
+  const selectedPort = plan.ports.find((port) => port.port === selectedPortId) ?? plan.ports[0];
+  const activePorts = plan.ports.filter((port) => port.mode !== "disabled").length;
+  const protectedPorts = plan.ports.filter((port) => port.bpduGuard).length;
+  const reviewPorts = plan.ports.filter((port) => port.status !== "ready" && port.status !== "plan-only").length;
+
+  if (!selectedPort) {
+    return (
+      <section className="switch-port-plan-preview is-empty" aria-label="Switch port map">
+        <p>No switch ports are planned yet.</p>
+      </section>
+    );
+  }
+
+  return (
+    <section className="switch-port-plan-preview" aria-label="Switch port map">
+      <div className="switch-port-plan-summary" aria-label="Switch port plan summary">
+        <div>
+          <span>Active ports</span>
+          <strong>{activePorts}/{plan.ports.length}</strong>
+        </div>
+        <div>
+          <span>Protected ports</span>
+          <strong>{protectedPorts}</strong>
+        </div>
+        <div>
+          <span>Need review</span>
+          <strong>{reviewPorts}</strong>
+        </div>
+        <div>
+          <span>Parking VLAN</span>
+          <strong>{plan.blackHoleVlan}</strong>
+        </div>
+      </div>
+
+      <div className="switch-port-map" aria-label="Planned switch ports">
+        {plan.ports.map((port) => (
+          <button
+            aria-pressed={selectedPort.port === port.port}
+            className={`switch-port-map-tile is-${port.status}`}
+            key={port.port}
+            onClick={() => setSelectedPortId(port.port)}
+            type="button"
+          >
+            <span>{port.port}</span>
+            <strong>{port.role}</strong>
+            <small>{port.mode === "trunk" ? `Trunk ${port.trunkVlans}` : `VLAN ${port.accessVlan}`}</small>
+          </button>
+        ))}
+      </div>
+
+      <article className="switch-port-selected-plan" aria-label="Selected switch port plan">
+        <div>
+          <p className="operator-kicker">Selected port</p>
+          <h3>{selectedPort.port}</h3>
+          <span>{selectedPort.description}</span>
+        </div>
+        <StatusBadge label={displayStatus(selectedPort.status)} status={selectedPort.status} />
+        <dl>
+          <div>
+            <dt>Role</dt>
+            <dd>{selectedPort.role}</dd>
+          </div>
+          <div>
+            <dt>Mode</dt>
+            <dd>{selectedPort.mode}</dd>
+          </div>
+          <div>
+            <dt>VLANs</dt>
+            <dd>{selectedPort.mode === "trunk" ? selectedPort.trunkVlans : selectedPort.accessVlan}</dd>
+          </div>
+          <div>
+            <dt>BPDU guard</dt>
+            <dd>{selectedPort.bpduGuard ? "On" : "Off"}</dd>
+          </div>
+          <div>
+            <dt>ACL</dt>
+            <dd>{selectedPort.acl}</dd>
+          </div>
+        </dl>
+        <p>This is a plan only. Real switch changes still require confirmation.</p>
+      </article>
+    </section>
+  );
+}
 
 function CiscoDriverPanel({ plan, onRefresh }: { plan: CiscoDriverPlan; onRefresh: () => Promise<void> }) {
   const activePorts = plan.ports.filter((port) => port.mode !== "disabled").length;

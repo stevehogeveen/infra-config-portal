@@ -1982,8 +1982,15 @@ test("network details reveal saved settings and nested advanced switch plan", as
   await expect(details.getByLabel("Network configure")).toBeVisible();
 
   await detailSections.getByRole("button", { name: /Plan/ }).click();
+  await expect(page.getByLabel("Switch port map")).toBeVisible();
+  await expect(page.getByLabel("Switch port plan summary")).toContainText("Active ports");
+  await expect(page.getByLabel("Switch port plan summary")).toContainText("Parking VLAN");
+  await page.getByLabel("Planned switch ports").getByRole("button", { name: /Gi1\/0\/5/ }).click();
+  await expect(page.getByLabel("Selected switch port plan")).toContainText("Gi1/0/5");
+  await expect(page.getByLabel("Selected switch port plan")).toContainText("NetApp data path A");
+  await expect(page.getByLabel("Selected switch port plan")).toContainText("Real switch changes still require confirmation");
   const advanced = page.locator("details.network-advanced-switch-plan");
-  await expect(advanced.locator(":scope > summary")).toContainText("Advanced switch plan");
+  await expect(advanced.locator(":scope > summary")).toContainText("Advanced switch proof");
   await expect(page.locator("section[aria-label='Cisco switch driver']")).toBeHidden();
   await advanced.locator(":scope > summary").click();
   await expect(page.locator("section[aria-label='Cisco switch driver']")).toBeVisible();
