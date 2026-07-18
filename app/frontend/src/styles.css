@@ -16932,14 +16932,6 @@ button.design-ilo-port:hover {
   padding: 7px 10px;
 }
 
-.firmware-decision-state {
-  color: #087c55;
-  display: block;
-  font-size: 11px;
-  font-weight: 800;
-  margin-top: 6px;
-}
-
 .firmware-upgrade-button {
   background: #0f766e;
   border: 1px solid #0f766e;
@@ -16969,6 +16961,12 @@ button.design-ilo-port:hover {
   font-weight: 800;
   padding: 6px 8px;
   white-space: nowrap;
+}
+
+.firmware-decision-pill-bypass {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+  color: #334155;
 }
 
 .firmware-simple-table select {

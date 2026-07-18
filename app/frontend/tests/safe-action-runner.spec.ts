@@ -2676,6 +2676,33 @@ test("firmware decisions keep target and action copy honest", async ({ page }) =
   await expect(page.getByText("Post-check")).toHaveCount(0);
 });
 
+test("firmware bypass collapses the row to one recorded choice", async ({ page }) => {
+  const workflowPosts: string[] = [];
+  page.on("request", (request) => {
+    if (request.method() !== "POST") return;
+    const url = new URL(request.url());
+    if (url.pathname.startsWith("/api/v1/workflows/actions/")) workflowPosts.push(url.pathname);
+  });
+
+  await page.goto("/firmware-upgrades");
+
+  const table = page.getByLabel("Firmware version decisions");
+  const row = table.locator("tbody tr").filter({ hasText: "Cisco Switch" }).first();
+  await expect(row.getByRole("button", { name: "Upgrade", exact: true })).toBeVisible();
+  await expect(row.getByRole("button", { name: "Bypass", exact: true })).toBeVisible();
+
+  await row.getByRole("button", { name: "Bypass", exact: true }).click();
+  await expect(row).toContainText("Bypassed - left as-is");
+  await expect(row.getByRole("button", { name: "Upgrade", exact: true })).toHaveCount(0);
+  await expect(row.getByRole("button", { name: "Bypass", exact: true })).toHaveCount(0);
+  await expect(row.getByRole("button", { name: "Undo", exact: true })).toBeVisible();
+  expect(workflowPosts, "Bypass records the choice locally without starting a workflow").toEqual([]);
+
+  await row.getByRole("button", { name: "Undo", exact: true }).click();
+  await expect(row.getByRole("button", { name: "Upgrade", exact: true })).toBeVisible();
+  await expect(row.getByRole("button", { name: "Bypass", exact: true })).toBeVisible();
+});
+
 test("firmware version check still uses the guarded workflow runner", async ({ page }) => {
   await page.goto("/firmware-upgrades");
 

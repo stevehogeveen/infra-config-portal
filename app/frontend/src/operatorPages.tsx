@@ -5427,11 +5427,21 @@ function FirmwareSimpleTable({
                     <div className="firmware-target-version"><strong>{target}</strong><small>{reason}</small></div>
                   </td>
                   <td>
-                    <div className="firmware-row-actions">
-                      <button aria-pressed={decision === "upgrade"} className="firmware-upgrade-button" disabled={!canUpgrade} onClick={() => { setDecisions((previous) => ({ ...previous, [row.componentId]: "upgrade" })); void onPlanUpgrade(); }} title={canUpgrade ? "Start guarded upgrade planning" : "Upgrade unavailable"} type="button">Upgrade</button>
-                      <button aria-pressed={decision === "bypass"} className="firmware-bypass-button" onClick={() => setDecisions((previous) => ({ ...previous, [row.componentId]: "bypass" }))} type="button">Bypass</button>
-                    </div>
-                    {decision && <small className="firmware-decision-state">{decision === "upgrade" ? "Upgrade planned" : "Bypassed"}</small>}
+                    {decision ? (
+                      <div className={`firmware-decision-pill firmware-decision-pill-${decision}`} aria-live="polite">
+                        <span>{decision === "upgrade" ? "Upgrade queued" : "Bypassed - left as-is"}</span>
+                        <button onClick={() => setDecisions((previous) => {
+                          const next = { ...previous };
+                          delete next[row.componentId];
+                          return next;
+                        })} type="button">Undo</button>
+                      </div>
+                    ) : (
+                      <div className="firmware-row-actions">
+                        <button aria-pressed={false} className="firmware-upgrade-button" disabled={!canUpgrade} onClick={() => { setDecisions((previous) => ({ ...previous, [row.componentId]: "upgrade" })); void onPlanUpgrade(); }} title={canUpgrade ? "Start guarded upgrade planning" : "Upgrade unavailable"} type="button">Upgrade</button>
+                        <button aria-pressed={false} className="firmware-bypass-button" onClick={() => setDecisions((previous) => ({ ...previous, [row.componentId]: "bypass" }))} type="button">Bypass</button>
+                      </div>
+                    )}
                   </td>
                 </tr>
               );

@@ -8780,3 +8780,35 @@ first, or continue page-by-page setup simplification starting with the next nois
 Does this make clicked-device setup calm enough for the current map-first direction, or should the
 next CXO slice further reduce the contents inside `More device details` before moving to another
 Setup surface?
+
+## Codex -> Claude/CXO: Firmware choice cell collapse
+
+### What changed
+
+- Closed one remaining firmware-table gap from the map-first brief.
+- Firmware rows still show exactly four operator columns: Device, Current version, Target version,
+  and Action.
+- Before a choice, the Action cell shows only `Upgrade` and `Bypass`.
+- After choosing `Bypass`, the row now collapses to `Bypassed - left as-is` plus `Undo`, instead
+  of keeping both action buttons and adding a small extra status line.
+- The new regression proves Bypass records locally and does not start any workflow request.
+- Removed the now-unused old decision-status CSS.
+
+### Verification
+
+- `app/frontend`: `npm run test:e2e -- --grep "firmware bypass collapses|firmware decisions|firmware version check"` -> 4 passed.
+- `app/frontend`: `npm run test:e2e -- --grep "operator button matrix|operator primary check buttons|setup defaults keep detail|remaining operator pages expose simplified setup surfaces|software media keeps inventory details"` -> 5 passed before the final dead-CSS cleanup; firmware-focused tests re-ran after cleanup.
+- `app/frontend`: `npm run build` -> passed.
+- Repo root: `git diff --check` -> passed.
+
+### Safety boundary
+
+- Frontend/test/mailbox only.
+- Bypass is local UI state in this slice.
+- No hardware contact.
+- No destructive, firmware apply, RAID apply, reset, rebuild, factory, iSCSI apply, or live-write paths changed.
+
+### Review question
+
+Should the next CXO slice continue firmware polish by collapsing `Upgrade` into a guarded planning
+summary after click, or move to the next information-heavy Setup page?
