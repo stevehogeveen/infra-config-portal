@@ -11663,7 +11663,7 @@ function topologyDeviceEssentialFields(
   storageProtocol: string
 ): Array<{ key: string; kind?: "textarea"; label: string }> {
   const preferredKeys: Partial<Record<DesignPartId, string[]>> = {
-    switch: ["management_ip", "mgmt_vlan", "storage_vlan"],
+    switch: ["management_ip", "storage_vlan"],
     ilo: ["management_ip"],
     "server-gen10": scenario === "single_server_local_storage"
       ? ["management_ip", "raid_controller", "raid_data"]
@@ -11672,8 +11672,8 @@ function topologyDeviceEssentialFields(
       ? ["management_ip", "raid_controller", "raid_data"]
       : ["management_ip", "storage_vlan"],
     netapp: storageProtocol === "iscsi"
-      ? ["management_ip", "protocol", "iscsi_lifs"]
-      : ["management_ip", "protocol", "nfs_lifs"],
+      ? ["management_ip", "protocol"]
+      : ["management_ip", "protocol"],
     vcenter: ["management_ip", "datastore"],
     windows: ["vm_network", "role"]
   };

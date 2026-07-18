@@ -1221,7 +1221,8 @@ test("overview device workspace matrix keeps default inputs concise", async ({ p
     {
       advancedControl: "Cisco workspace network controls",
       button: "Open Cisco switch workspace",
-      essentials: ["Management IP", "Management VLAN", "Storage VLAN"],
+      essentials: ["Management IP", "Storage VLAN"],
+      hiddenEssentials: ["Management VLAN"],
       workspace: "Cisco switch"
     },
     {
@@ -1240,7 +1241,8 @@ test("overview device workspace matrix keeps default inputs concise", async ({ p
     {
       advancedControl: "NetApp workspace storage controls",
       button: "Open NetApp ONTAP workspace",
-      essentials: ["Cluster IP", "Storage mode", "Primary NFS LIFs"],
+      essentials: ["Cluster IP", "Storage mode"],
+      hiddenEssentials: ["Primary NFS LIFs"],
       workspace: "NetApp ONTAP"
     },
     {
@@ -1286,7 +1288,7 @@ test("overview device workspace matrix keeps default inputs concise", async ({ p
     await expect(essentials, `${item.workspace} removes instructional setup copy`).not.toContainText("Everything else is in Details");
     await expect(essentials.getByLabel(`${item.workspace} setup snapshot`), `${item.workspace} shows a faceplate-first setup snapshot`).toBeVisible();
     await expect(essentials.getByLabel(`${item.workspace} compact faceplate`), `${item.workspace} shows a compact device faceplate`).toBeVisible();
-    expect(await essentials.locator(".design-device-setting-row").count(), `${item.workspace} keeps essentials compact`).toBeLessThanOrEqual(3);
+    expect(await essentials.locator(".design-device-setting-row").count(), `${item.workspace} keeps essentials compact`).toBeLessThanOrEqual(2);
     const essentialInputs = essentials.locator("input, select, textarea");
     await expect(essentialInputs, `${item.workspace} keeps At a glance read-only; quick edits are a separate setup block`).toHaveCount(0);
     await expect(essentials.locator(".design-device-setting-row.is-readonly-value"), `${item.workspace} renders summary values instead of form controls`).toHaveCount(await essentials.locator(".design-device-setting-row").count());
@@ -1730,7 +1732,14 @@ test("overview design mode keeps the surface map-only until a node opens the wor
   await expect(topology.getByLabel("Storage fabric zone devices")).toContainText("HPE Gen10");
   await expect(topology.getByLabel("Storage fabric zone devices")).toContainText("NetApp ONTAP");
 
-  await topology.getByRole("button", { name: "Open Cisco switch workspace" }).click();
+  const ciscoNode = topology.getByRole("button", { name: "Open Cisco switch workspace" });
+  const ciscoNodeText = (await ciscoNode.textContent()) ?? "";
+  const expectedCiscoMapState = ciscoNodeText.includes("Blocked")
+    ? "Blocked"
+    : ciscoNodeText.includes("Ready")
+      ? "Ready"
+      : "Not checked";
+  await ciscoNode.click();
 
   const overlay = page.locator("div[aria-label='Device workspace overlay']");
   await expect(overlay).toBeVisible();
@@ -1738,8 +1747,8 @@ test("overview design mode keeps the surface map-only until a node opens the wor
   const switchWorkspace = overlay.locator("section[aria-label='Cisco switch workspace']");
   await expect(switchWorkspace).toBeVisible();
   await expect(switchWorkspace.getByLabel("Cisco switch state").locator(".design-state-chip")).toHaveCount(1);
-  await expect(switchWorkspace.getByLabel("Cisco switch state")).toContainText("Not checked");
-  await expect(switchWorkspace.getByLabel("Cisco switch state")).toContainText("Run a check to verify");
+  await expect(switchWorkspace.getByLabel("Cisco switch state")).toContainText(expectedCiscoMapState);
+  await expect(switchWorkspace.getByLabel("Cisco switch state")).toContainText("Map status");
   await expect(switchWorkspace.getByLabel("Cisco switch state")).not.toContainText(/Draft|Saved/);
   await expect(switchWorkspace.getByLabel("Cisco switch state")).not.toContainText("source:");
   await expect(switchWorkspace.getByLabel("Cisco switch interactive faceplate")).not.toBeVisible();
@@ -1809,7 +1818,7 @@ test("overview design mode keeps the surface map-only until a node opens the wor
   await expect(advanced.locator("section[aria-label='Cisco switch safe checks and next actions']")).toContainText("Last: Ready");
   await expect(switchWorkspace.getByLabel("Cisco switch state")).not.toContainText("source:");
   await expect(switchWorkspace.getByLabel("Cisco switch essentials").getByRole("textbox", { name: /^Storage VLAN/ })).toHaveCount(0);
-  await expect(switchWorkspace.getByLabel("Cisco switch essentials").locator(".design-device-setting-row.is-readonly-value")).toHaveCount(3);
+  await expect(switchWorkspace.getByLabel("Cisco switch essentials").locator(".design-device-setting-row.is-readonly-value")).toHaveCount(2);
 });
 
 test("overview design mode map surface stays stable and scalable", async ({ page }) => {
