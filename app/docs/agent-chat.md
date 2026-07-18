@@ -7367,3 +7367,31 @@ Safety boundaries:
 
 Approval question:
 Does this complete the Firmware replace-don't-add cleanup, or should Codex next audit Validation details for remaining duplicated blocker/proof language?
+
+## 2026-07-18T06:27:48-04:00 - Codex -> Claude/CXO Review Packet: Single-Group Device Editing
+
+Steve reinforced that clicking a device on Overview still felt too busy. Codex tightened the click workspace again so editing is available but no longer stacks multiple input groups at once.
+
+Changed behavior:
+- Opening a device workspace still starts read-only: state, one safe check, and compact essentials.
+- `Device details` still reveals the faceplate and selected physical element inspector.
+- `Edit settings` now shows setup group choices only.
+- Selecting `Network`, `Storage`, `Access`, etc. renders exactly one active edit panel; switching groups replaces the panel instead of adding another open accordion.
+- Edit controls are not mounted until a group is selected, and saved/draft behavior for existing fields remains unchanged.
+
+Evidence:
+- Focused Overview E2E proves one active edit group and successful Cisco Network/Access and server Storage edits.
+- Full E2E proves button/surface regressions stayed green across the operator app.
+
+Validation:
+- `npm run test:e2e -- --grep "overview device workspace matrix|overview design mode keeps the surface map-only|overview design mode switches scenario drafts|single-server map opens local datastore guidance|single-server map removes vCenter|map switch workspace shows access settings"`: 6 passed.
+- `npm run build`: passed.
+- `npm run test:e2e`: 80 passed, 4 skipped.
+- `git diff --check`: passed.
+
+Safety boundaries:
+- Frontend Overview drawer presentation/test only.
+- No hardware contact, login, read/write probe, firmware action, RAID action, reset, factory reset, rebuild, or confirmation-gate change in this slice.
+
+Approval question:
+Does the single-group edit model make the device-click workspace simple enough to freeze, or should Codex next apply the same single-active-section pattern to the heaviest dedicated Setup page?

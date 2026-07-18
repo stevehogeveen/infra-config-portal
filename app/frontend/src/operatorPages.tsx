@@ -8321,6 +8321,7 @@ function LabDesignComposer({
   );
   const [selectedDevice, setSelectedDevice] = useState<DesignPartId>(initialSelectedDevice ?? "switch");
   const [selectedFaceplateElement, setSelectedFaceplateElement] = useState(() => workspaceOnly ? "" : "Switch port 1");
+  const [selectedEditGroupId, setSelectedEditGroupId] = useState("");
   const [selectedLane, setSelectedLane] = useState<DesignLaneId>("management");
   const [selectedConnection, setSelectedConnection] = useState<DesignConnectionId>("switch-server");
   const [dropMessage, setDropMessage] = useState("Loading persisted design draft. Commit profile settings before operating hardware.");
@@ -8405,6 +8406,7 @@ function LabDesignComposer({
   const selectedDetailWorkspaceSections = workspaceOnly
     ? selectedWorkspaceSections.filter((section) => section.id !== "identity")
     : selectedWorkspaceSections;
+  const selectedEditWorkspaceSection = selectedDetailWorkspaceSections.find((section) => section.id === selectedEditGroupId) ?? null;
   const selectedEssentialFields = selectedPart
     ? topologyDeviceEssentialFields(selectedPart.id, selectedWorkspaceSettingFields, draftScenario, storageProtocol)
     : [];
@@ -8524,6 +8526,10 @@ function LabDesignComposer({
 
   useEffect(() => {
     setSelectedFaceplateElement(workspaceOnly ? "" : topologyDefaultFaceplateElement(selectedDevice));
+  }, [selectedDevice, workspaceOnly]);
+
+  useEffect(() => {
+    setSelectedEditGroupId("");
   }, [selectedDevice, workspaceOnly]);
 
   useEffect(() => {
@@ -9178,20 +9184,30 @@ function LabDesignComposer({
                       <span>Edit settings</span>
                       <strong>{selectedDetailWorkspaceSections.length} setup groups</strong>
                     </summary>
-                    <div className="design-device-param-sections is-progressive-edit" aria-label={`${selectedPart.label} detailed parameters`}>
+                    <div className="design-device-edit-group-picker" aria-label={`${selectedPart.label} edit groups`}>
                       {selectedDetailWorkspaceSections.map((section) => (
-                        <details className="design-device-param-section design-device-param-disclosure" key={section.id} aria-label={`${selectedPart.label} ${section.label}`}>
-                          <summary>
-                            <span>{section.label}</span>
-                            <strong>{section.fields.length} values</strong>
-                          </summary>
-                          <p>{section.summary}</p>
-                          <div className="design-device-setting-rows">
-                            {section.fields.map((field) => renderSelectedDeviceSettingRow(field))}
-                          </div>
-                        </details>
+                        <button
+                          aria-pressed={selectedEditWorkspaceSection?.id === section.id}
+                          className={`design-device-edit-group-button ${selectedEditWorkspaceSection?.id === section.id ? "is-selected" : ""}`}
+                          key={section.id}
+                          onClick={() => setSelectedEditGroupId((current) => current === section.id ? "" : section.id)}
+                          type="button"
+                        >
+                          <span>{section.label}</span>
+                          <strong>{section.fields.length} values</strong>
+                        </button>
                       ))}
                     </div>
+                    {selectedEditWorkspaceSection ? (
+                      <section className="design-device-param-section design-device-param-panel" aria-label={`${selectedPart.label} ${selectedEditWorkspaceSection.label}`}>
+                        <p>{selectedEditWorkspaceSection.summary}</p>
+                        <div className="design-device-setting-rows">
+                          {selectedEditWorkspaceSection.fields.map((field) => renderSelectedDeviceSettingRow(field))}
+                        </div>
+                      </section>
+                    ) : (
+                      <p className="design-device-edit-empty">Choose one setup group to edit. Saved values stay untouched until a field changes.</p>
+                    )}
                   </details>
                 )}
 

@@ -230,6 +230,29 @@ async function openWorkspaceAdvanced(page: Page, workspaceName: string) {
   return advanced;
 }
 
+async function openWorkspaceEditGroup(page: Page, workspaceName: string, groupName: string) {
+  const workspace = page.locator(`section[aria-label='${workspaceName} workspace']`);
+  const details = workspace.getByLabel(`${workspaceName} details`);
+  if (await details.isVisible()) {
+    const isOpen = await details.evaluate((node) => (node as HTMLDetailsElement).open);
+    if (!isOpen) {
+      await details.locator(":scope > summary").click();
+    }
+  }
+  const editSettings = workspace.getByLabel(`${workspaceName} edit settings`);
+  const isEditOpen = await editSettings.evaluate((node) => (node as HTMLDetailsElement).open);
+  if (!isEditOpen) {
+    await editSettings.locator(":scope > summary").click();
+  }
+  const groupButton = editSettings.locator(".design-device-edit-group-button").filter({ hasText: groupName }).first();
+  if (await groupButton.getAttribute("aria-pressed") !== "true") {
+    await groupButton.click();
+  }
+  const panel = workspace.getByLabel(`${workspaceName} ${groupName}`);
+  await expect(panel).toBeVisible();
+  return panel;
+}
+
 async function visibleMainText(page: Page) {
   return page.locator("main.content").evaluate((root) => {
     const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
@@ -1036,15 +1059,20 @@ test("overview device workspace matrix keeps default inputs concise", async ({ p
     const editSettings = workspace.getByLabel(`${item.workspace} edit settings`);
     await expect(editSettings, `${item.workspace} edit settings are available inside details`).toBeVisible();
     await expect(editSettings, `${item.workspace} edit settings stay closed until explicitly requested`).not.toHaveAttribute("open", "");
-    expect(await editSettings.locator("input, select, textarea").count(), `${item.workspace} keeps editing available one click deeper`).toBeGreaterThan(0);
-    await expect(editSettings.locator("input, select, textarea").first(), `${item.workspace} hides edit controls after opening details`).not.toBeVisible();
+    await expect(editSettings.locator("input, select, textarea"), `${item.workspace} keeps edit controls unmounted before edit intent`).toHaveCount(0);
     await editSettings.locator(":scope > summary").click();
-    const editGroups = editSettings.locator(":scope .design-device-param-disclosure");
-    await expect(editGroups.first(), `${item.workspace} exposes edit groups after edit intent`).toBeVisible();
+    const editGroups = editSettings.locator(":scope .design-device-edit-group-button");
+    await expect(editGroups.first(), `${item.workspace} exposes edit group choices after edit intent`).toBeVisible();
+    await expect(editSettings.locator(".design-device-edit-empty"), `${item.workspace} starts edit mode with no group selected`).toBeVisible();
     await expect(editSettings.locator("input, select, textarea").first(), `${item.workspace} keeps edit controls hidden until a group is chosen`).not.toBeVisible();
-    const firstEditGroup = editGroups.filter({ has: page.locator("input, select, textarea") }).first();
-    await firstEditGroup.locator(":scope > summary").click();
-    await expect(firstEditGroup.locator("input, select, textarea").first(), `${item.workspace} reveals edit controls after group intent`).toBeVisible();
+    await editGroups.first().click();
+    const activePanel = editSettings.locator(".design-device-param-panel");
+    await expect(activePanel, `${item.workspace} renders one active edit group`).toHaveCount(1);
+    expect((await activePanel.textContent())?.trim().length ?? 0, `${item.workspace} active edit panel has content`).toBeGreaterThan(0);
+    const activePanelInputs = editSettings.locator(".design-device-param-panel input, .design-device-param-panel select, .design-device-param-panel textarea");
+    if (await activePanelInputs.count()) {
+      await expect(activePanelInputs.first(), `${item.workspace} reveals edit controls after group intent`).toBeVisible();
+    }
     await expect(detailsDrawer.locator(`section[aria-label='${item.workspace} Identity']`), `${item.workspace} does not repeat identity in details`).toHaveCount(0);
     await expect(detailsDrawer, `${item.workspace} details do not repeat name/model copy`).not.toContainText("Name, model, and role");
     await expect(detailsDrawer, `${item.workspace} details avoid repeated live-unknown microcopy`).not.toContainText("Visual intent only; live unknown");
@@ -1240,7 +1268,7 @@ test.skip("system setup advanced fields round-trip shared and device rows throug
   await reloadedTopology.getByRole("button", { name: "Open Cisco switch workspace" }).click();
   const overlay = page.locator("div[aria-label='Device workspace overlay']");
   const switchWorkspace = overlay.locator("section[aria-label='Cisco switch workspace']");
-  const switchNetwork = switchWorkspace.getByLabel("Cisco switch Network");
+  const switchNetwork = await openWorkspaceEditGroup(page, "Cisco switch", "Network");
   await expect(switchNetwork).toContainText("Management IP");
   const managementInput = switchNetwork.getByLabel("Management IP");
   await expect(managementInput).toBeVisible();
@@ -1342,15 +1370,18 @@ test("overview design mode keeps the surface map-only until a node opens the wor
   await expect(switchWorkspace.getByLabel("Cisco switch essentials")).toContainText("Storage VLAN");
   await expect(switchWorkspace.getByLabel("Cisco workspace network controls")).not.toBeVisible();
   await expect(switchWorkspace).toBeVisible();
-  const details = switchWorkspace.getByLabel("Cisco switch details");
-  await expect(switchWorkspace.getByLabel("Cisco switch Network")).toContainText("Management IP");
-  await expect(switchWorkspace).toContainText("fabric and VLAN control");
   const editSettings = switchWorkspace.getByLabel("Cisco switch edit settings");
   await expect(editSettings).not.toHaveAttribute("open", "");
   await editSettings.locator(":scope > summary").click();
-  await switchWorkspace.getByLabel("Cisco switch Network").locator(":scope > summary").click();
-  const accessGroup = switchWorkspace.getByLabel("Cisco switch Access");
-  await accessGroup.locator(":scope > summary").click();
+  await expect(editSettings.getByLabel("Cisco switch edit groups")).toContainText("Network");
+  await expect(editSettings.getByLabel("Cisco switch edit groups")).toContainText("Access");
+  await expect(editSettings.locator(".design-device-param-panel")).toHaveCount(0);
+  const networkGroup = await openWorkspaceEditGroup(page, "Cisco switch", "Network");
+  await expect(networkGroup).toContainText("Management IP");
+  await expect(networkGroup).toContainText("IP, gateway, VLANs, and ports");
+  await expect(editSettings.locator(".design-device-param-panel")).toHaveCount(1);
+  const accessGroup = await openWorkspaceEditGroup(page, "Cisco switch", "Access");
+  await expect(editSettings.locator(".design-device-param-panel")).toHaveCount(1);
   await expect(accessGroup.getByLabel("BPDU guard")).toHaveValue("enabled on edge access ports");
   await accessGroup.getByLabel("Black-hole VLAN").fill("998");
   await accessGroup.getByLabel("ACL lanes").fill("MGMT-IN, STORAGE-NFS-IN, DROP-ALL, QUARANTINE");
@@ -1366,7 +1397,8 @@ test("overview design mode keeps the surface map-only until a node opens the wor
   await expect(advanced.locator("section[aria-label='Cisco switch safe checks and next actions']")).toContainText("Cisco Firmware Inventory: Ready");
   await expect(advanced.locator("section[aria-label='Cisco switch safe checks and next actions']")).toContainText("Last: Ready");
   await expect(switchWorkspace.getByLabel("Cisco switch state")).not.toContainText("source:");
-  const networkStorageVlan = switchWorkspace.getByLabel("Cisco switch Network").getByRole("textbox", { name: /^Storage VLAN/ });
+  const networkGroupAgain = await openWorkspaceEditGroup(page, "Cisco switch", "Network");
+  const networkStorageVlan = networkGroupAgain.getByRole("textbox", { name: /^Storage VLAN/ });
   await networkStorageVlan.fill("230");
   await expect(networkStorageVlan).toHaveValue("230");
   await expect(switchWorkspace).toContainText("230");
@@ -1446,10 +1478,9 @@ test("overview design mode switches scenario drafts without committing hardware"
   const serverWorkspace = overlay.locator("section[aria-label='DL360 Gen10 workspace']");
   await expect(serverWorkspace).toBeVisible();
   await serverWorkspace.getByLabel("DL360 Gen10 details").locator(":scope > summary").click();
-  await expect(serverWorkspace.getByLabel("DL360 Gen10 Storage")).toContainText("NFS datastore path");
-  await serverWorkspace.getByLabel("DL360 Gen10 edit settings").locator(":scope > summary").click();
-  await serverWorkspace.getByLabel("DL360 Gen10 Storage").locator(":scope > summary").click();
-  await expect(serverWorkspace.getByLabel("DL360 Gen10 Storage").getByRole("textbox", { name: /^Data RAID/ })).toHaveValue("boot/staging only; VM data on shared storage");
+  const storageGroup = await openWorkspaceEditGroup(page, "DL360 Gen10", "Storage");
+  await expect(storageGroup).toContainText("NFS datastore path");
+  await expect(storageGroup.getByRole("textbox", { name: /^Data RAID/ })).toHaveValue("boot/staging only; VM data on shared storage");
   await expect(overlay).toContainText("Checks here are read-only. Apply steps stay behind confirmations.");
   await overlay.getByRole("button", { name: "Close" }).click();
   await expect(page.locator("div[aria-label='Device workspace overlay']")).toHaveCount(0);
@@ -1484,8 +1515,9 @@ test("single-server map opens local datastore guidance in the server workspace",
   await expect(workspace.getByLabel("Server workspace checks")).not.toBeVisible();
   const details = workspace.getByLabel("DL360 Gen10 details");
   await details.locator(":scope > summary").click();
-  await expect(workspace.getByLabel("DL360 Gen10 Storage")).toContainText("Local RAID and drive layout");
-  await expect(workspace.getByLabel("DL360 Gen10 Storage")).toContainText("Data RAID");
+  const storageGroup = await openWorkspaceEditGroup(page, "DL360 Gen10", "Storage");
+  await expect(storageGroup).toContainText("Local RAID and drive layout");
+  await expect(storageGroup).toContainText("Data RAID");
   const advanced = await openWorkspaceAdvanced(page, "DL360 Gen10");
   await expect(advanced.getByLabel("Server workspace checks")).toContainText("Local RAID");
   await expect(advanced.getByLabel("Server workspace checks")).toContainText("ESXi and RAID checks");
@@ -1602,7 +1634,7 @@ test("single-server map removes vCenter and keeps direct ESXi guidance on the se
   await expect(serverWorkspace.getByLabel("DL360 Gen10 essentials")).toContainText("Data RAID");
   await expect(serverWorkspace.getByLabel("Server workspace checks")).not.toBeVisible();
   await serverWorkspace.getByLabel("DL360 Gen10 details").locator(":scope > summary").click();
-  await expect(serverWorkspace.getByLabel("DL360 Gen10 Storage")).toContainText("Local RAID and drive layout");
+  await expect(await openWorkspaceEditGroup(page, "DL360 Gen10", "Storage")).toContainText("Local RAID and drive layout");
   const advanced = await openWorkspaceAdvanced(page, "DL360 Gen10");
   await expect(advanced.getByLabel("Server workspace checks")).toContainText("ESXi Live Check");
   await expect(advanced.getByLabel("Server workspace checks")).not.toContainText("vCenter Live Check");
@@ -2004,7 +2036,7 @@ test("map switch workspace shows access settings and blockers without proof clut
   await expect(workspace.getByLabel("Cisco switch essentials")).toContainText("192.168.1.204");
   await expect(workspace.getByLabel("Cisco workspace network controls")).not.toBeVisible();
   await workspace.getByLabel("Cisco switch details").locator(":scope > summary").click();
-  await expect(workspace.getByLabel("Cisco switch Network")).toContainText("Management IP");
+  await expect(await openWorkspaceEditGroup(page, "Cisco switch", "Network")).toContainText("Management IP");
   const advanced = await openWorkspaceAdvanced(page, "Cisco switch");
   const controls = advanced.getByLabel("Cisco workspace network controls");
   await expect(controls).toContainText("Network controls");
