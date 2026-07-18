@@ -11333,19 +11333,19 @@ function topologyDeviceEssentialFields(
   storageProtocol: string
 ): Array<{ key: string; kind?: "textarea"; label: string }> {
   const preferredKeys: Partial<Record<DesignPartId, string[]>> = {
-    switch: ["name", "management_ip", "mgmt_vlan", "storage_vlan"],
-    ilo: ["name", "management_ip"],
+    switch: ["management_ip", "mgmt_vlan", "storage_vlan"],
+    ilo: ["management_ip"],
     "server-gen10": scenario === "single_server_local_storage"
-      ? ["name", "management_ip", "raid_controller", "raid_data"]
-      : ["name", "management_ip", "storage_vlan"],
+      ? ["management_ip", "raid_controller", "raid_data"]
+      : ["management_ip", "storage_vlan"],
     "server-gen10plus": scenario === "single_server_local_storage"
-      ? ["name", "management_ip", "raid_controller", "raid_data"]
-      : ["name", "management_ip", "storage_vlan"],
+      ? ["management_ip", "raid_controller", "raid_data"]
+      : ["management_ip", "storage_vlan"],
     netapp: storageProtocol === "iscsi"
-      ? ["name", "management_ip", "protocol", "iscsi_lifs"]
-      : ["name", "management_ip", "protocol", "nfs_lifs"],
-    vcenter: ["name", "management_ip", "datastore"],
-    windows: ["name", "vm_network", "role"]
+      ? ["management_ip", "iscsi_lifs"]
+      : ["management_ip", "nfs_lifs"],
+    vcenter: ["management_ip", "datastore"],
+    windows: ["vm_network", "role"]
   };
   const priority = preferredKeys[partId] ?? [];
   const picked = priority

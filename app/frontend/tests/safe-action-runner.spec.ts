@@ -938,14 +938,14 @@ test("overview device workspace matrix keeps default inputs concise", async ({ p
     {
       advancedControl: "Cisco workspace network controls",
       button: "Open Cisco switch workspace",
-      essentials: ["Management IP", "Storage VLAN"],
+      essentials: ["Management IP", "Management VLAN", "Storage VLAN"],
       workspace: "Cisco switch"
     },
     {
       advancedControl: "iLO workspace server controls",
       button: "Open HPE iLO workspace",
-      essentials: ["Name", "iLO IP"],
-      hiddenEssentials: ["Credential status", "Reachability", "Firmware evidence"],
+      essentials: ["iLO IP"],
+      hiddenEssentials: ["Name", "Credential status", "Reachability", "Firmware evidence"],
       workspace: "HPE iLO"
     },
     {
@@ -980,7 +980,8 @@ test("overview device workspace matrix keeps default inputs concise", async ({ p
     await expect(essentials, `${item.workspace} shows essentials`).toBeVisible();
     await expect(essentials, `${item.workspace} names the compact setup block`).toContainText("Setup");
     await expect(essentials, `${item.workspace} removes instructional setup copy`).not.toContainText("Everything else is in Details");
-    expect(await essentials.locator(".design-device-setting-row").count(), `${item.workspace} keeps essentials compact`).toBeLessThanOrEqual(4);
+    expect(await essentials.locator(".design-device-setting-row").count(), `${item.workspace} keeps essentials compact`).toBeLessThanOrEqual(3);
+    await expect(essentials, `${item.workspace} keeps identity in the hero, not the setup form`).not.toContainText("Name");
     for (const essential of item.essentials) {
       await expect(essentials, `${item.workspace} essential ${essential}`).toContainText(essential);
     }

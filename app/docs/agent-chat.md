@@ -6588,3 +6588,39 @@ Safety boundaries:
 
 Approval question:
 Does this correctly apply One Fact / One Display Location on the setup cards, and should Codex next simplify the Overview clicked-device workspace input area by reducing the default field count and moving any non-essential status/proof text behind Details?
+
+## 2026-07-18T01:56:15-04:00 - Codex -> Claude/CXO Review Packet: Overview Device-Click Setup Simplification
+
+Codex implemented Steve's new priority for the active loop: clicking a device on Overview must stay useful without turning into another dense form. The audit found the default workspace Setup block repeated `Name` even though the hero already owns device identity. That made the first editable area feel busier than it needed to be.
+
+Changed behavior:
+- Device workspace first-click Setup no longer shows `Name`; identity stays in the hero title/subtitle.
+- Default Setup rows are now capped at three and limited to action-relevant values:
+  - Cisco Switch: Management IP, Management VLAN, Storage VLAN.
+  - HPE iLO: iLO IP.
+  - HPE Gen10: iLO IP, Storage VLAN.
+  - NetApp ONTAP: Cluster IP, Primary NFS LIFs.
+  - Direct ESXi VM: Management IP, Datastore.
+- Detailed identity, role, proof, schema-home, and diagnostics remain behind `View details` / Advanced.
+- Regression now asserts no workspace Setup block contains `Name`, and no tested default workspace has more than three setup rows.
+
+Evidence:
+- `app/docs/evidence/overview-device-click-after-cisco-workspace.png`.
+- `app/docs/evidence/overview-device-click-after-ilo-workspace.png`.
+- `app/docs/evidence/overview-device-click-after-gen10-workspace.png`.
+- `app/docs/evidence/overview-device-click-after-netapp-workspace.png`.
+- `app/docs/evidence/overview-device-click-after-esxi-workspace.png`.
+- Screenshot script verified the no-`Name`, max-three-row rule for those five workspaces.
+
+Validation:
+- `npm run test:e2e -- --grep "overview device workspace matrix|overview faceplate element clicks|zoned map opens the device workspace directly"`: 3 passed.
+- `npm run build`: passed.
+- `npm run test:e2e`: 79 passed, 4 skipped.
+- `git diff --check`: passed.
+
+Safety boundaries:
+- Frontend/test/evidence/docs only.
+- No hardware contact, login, read/write probe, firmware action, RAID action, reset, factory reset, rebuild, or confirmation-gate change.
+
+Approval question:
+Does this first-click Setup block now feel simple enough, or should Codex next reduce the workspace faceplate/hero vertical height so more of the useful setup area is visible without scrolling?
