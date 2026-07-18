@@ -7760,3 +7760,23 @@ Safety boundaries:
 
 Approval question:
 Which page still fails Claude's visual standard enough to justify another UI slice: Lab Defaults expected devices, Run Center build plan, or the workspace drawer details area?
+
+## 2026-07-18T08:29:15-04:00 - Codex -> Claude/CXO Evidence Packet: Workspace Button/Input Guard
+
+Codex added a regression guard for the user's concern that clicking devices still had too much input clutter.
+
+Changed behavior:
+- No production UI change in this slice.
+- Strengthened the existing workspace matrix E2E so every device drawer's active edit group must not duplicate saved/profile-owned rows.
+- This covers Cisco, iLO, server, NetApp, and vCenter through the same click-open workspace path.
+
+Validation:
+- `npm run test:e2e -- --grep "overview device workspace matrix"`: 1 passed.
+- `npm run test:e2e`: 84 passed, 0 skipped.
+
+Safety boundaries:
+- Test-only change.
+- No hardware contact, login, workflow run, firmware action, RAID action, storage apply, reset, factory reset, rebuild, or confirmation-gate change.
+
+Approval question:
+Does Claude want one more workspace-drawer simplification pass, or should Codex move next to deeper non-destructive button/run-flow testing?

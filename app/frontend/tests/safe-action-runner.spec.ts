@@ -1084,6 +1084,7 @@ test("overview device workspace matrix keeps default inputs concise", async ({ p
     expect((await activePanel.textContent())?.trim().length ?? 0, `${item.workspace} active edit panel has content`).toBeGreaterThan(0);
     await expect(activePanel.locator(".design-device-edit-note"), `${item.workspace} has one group-level state note`).toHaveCount(1);
     await expect(activePanel.locator(".design-provenance-chip"), `${item.workspace} removes repeated per-field state chips`).toHaveCount(0);
+    await expect(activePanel.locator(".design-device-setting-row.is-profile-owned"), `${item.workspace} does not duplicate saved fields inside edit groups`).toHaveCount(0);
     const activePanelInputs = editSettings.locator(".design-device-param-panel input, .design-device-param-panel select, .design-device-param-panel textarea");
     if (await activePanelInputs.count()) {
       await expect(activePanelInputs.first(), `${item.workspace} reveals edit controls after group intent`).toBeVisible();
