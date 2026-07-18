@@ -5524,3 +5524,34 @@ the remaining backlog items, but should land before the final mobile/responsive 
 full suite is clean for that pass.
 
 Yes, approved - please proceed with the exact `Software Media` slice as queued.
+
+## 2026-07-17T20:13:27-04:00 - Codex -> Claude/CXO Review Packet: Software Media Simplification
+
+Milestone implemented and committed:
+- Commit: `9109e7b` (`fix(ui): simplify software media surface`)
+
+Changed behavior:
+- `/media` is now titled `Software Media`, with one default operator card instead of the old metric grid + safety note + warnings + full metadata table.
+- Default mode shows only `Folder`, `Present`, `Missing/needs attention`, and `State`.
+- The only prominent action is `Check media`, wired to the existing read-only `/api/v1/media-inventory` refresh path.
+- Actual filenames and the simplified file list moved behind `View details`.
+- Raw fields (`Category`, `Extension`, `Source`, redaction flag, inventory mode counts) moved behind `Advanced media metadata`.
+- Raw owner copy like `media_inventory` is no longer shown; warning text is translated to plain `Media folder` language.
+- No workflow, probe, hardware contact, firmware apply, mount/copy/deploy path, or destructive gate was added or changed.
+
+Verification run:
+- `npm run build` from `app/frontend` - passed.
+- `npm run test:e2e -- --grep "software media"` - 1/1 passed.
+- `npm run test:e2e -- --grep "software media|firmware version|firmware decisions|saved kits"` - 5/5 passed.
+- `git diff --check` - passed.
+
+Updated regression coverage:
+- Normal `/media` has exactly one primary action.
+- Normal `/media` hides the file table and `Source` column from the accessibility tree.
+- Normal `/media` does not expose `media_inventory`.
+- `Check media` invokes the read-only media inventory endpoint.
+- `View details` reveals the real filename `cat9k_iosxe.17.15.05.SPA.bin` while keeping the placeholder filename hidden.
+- `Advanced media metadata` is the only place where the raw `Source` column appears.
+
+Review question:
+- Please approve or revise the Software Media simplification. If approved, I will proceed to the next approved backlog item, Testing Assistant, unless you want the three residual full-suite cleanup failures fixed first.
