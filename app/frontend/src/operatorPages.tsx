@@ -5489,6 +5489,7 @@ export function OperatorValidationPage({ labProfileState }: OperatorPageProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const [advancedProofOpen, setAdvancedProofOpen] = useState(false);
   const [runState, setRunState] = useState<WorkflowRunState>(emptyRunState);
   const [diagnosis, setDiagnosis] = useState<WorkflowActionDiagnosis | null>(null);
   const [diagnosisLoading, setDiagnosisLoading] = useState(false);
@@ -5581,55 +5582,40 @@ export function OperatorValidationPage({ labProfileState }: OperatorPageProps) {
       ? ""
       : disabledReasonForRunConfig(validationRunConfig, null);
   const validationCard = validationReadinessCardModel(validation);
-  const validationRegions: Record<string, ReactNode> = {
-    "advanced-proof": (
-      <AdvancedDrawer title="Validation proof" summary={noProofText}>
-        <OperatorWorkspace currentView={currentView} rows={validationRows} compact />
-        <ValidationProofList items={validation?.validation_items ?? []} proofLinks={validation?.proof_links.length ?? 0} />
-        <ConfigValueList
-          values={[
-            { label: "Source", value: sourceLabel(validation) },
-            { label: "Warnings", value: String(validation?.warnings.length ?? 0) },
-            { label: "Raw proof links", value: String(validation?.proof_links.length ?? 0) }
-          ]}
-        />
-      </AdvancedDrawer>
-    ),
-    reference: (
-      <OperatorReferencePanel
-        ariaLabel="Validation reference"
-        currentView={currentView}
-        rows={validationRows}
-        subtitle="Golden State and proof"
-        tableTitle="Validation Signals"
-        title="Validation readiness at a glance"
-      />
-    ),
-    "reset-rebuild": <LabResetRebuildPanel actions={actions} onReload={load} />,
-    "scenario-scope": <ValidationScenarioScopePanel scope={scenarioScope} />,
-    "setup-shape": (
-      <ValidationSetupShapePanel
-        buildVerification={buildVerification}
-        currentView={currentView}
-        scenarioScope={scenarioScope}
-        validation={validation}
-      />
-    ),
-    "smoke-handoff": (
-      <AdditionalTabActions
-        actions={actions}
-        buttons={[
-          { actionIds: ["provider-smoke.real-lab"], icon: <Activity size={16} />, kind: "read", label: "Run Real Provider Smoke", primary: true },
-          { actionIds: ["operator-readonly-sweep.real-lab"], icon: <CheckCircle2 size={16} />, kind: "read", label: "Run Read-Only Sweep" },
-          { actionIds: ["full-lab.handoff-report"], label: "Generate Handoff Report", onClick: async () => { await api.labValidationHandoff(); } }
-        ]}
-        defaultOpen
-        description="Run real provider smoke for low-level access, run the read-only sweep for UI workflow evidence, then generate handoff after validation has current proof links."
-        onReload={load}
-        title="Real smoke and handoff"
-      />
-    )
-  };
+  const validationAdvancedProof = (
+    <details
+      className="advanced-drawer"
+      onToggle={(event) => setAdvancedProofOpen(event.currentTarget.open)}
+    >
+      <summary>
+        <Wrench size={16} />
+        <span>Advanced proof</span>
+        <small>{noProofText}</small>
+      </summary>
+      {advancedProofOpen && (
+        <div>
+          <OperatorReferencePanel
+            ariaLabel="Validation reference"
+            currentView={currentView}
+            rows={validationRows}
+            subtitle="Golden State and proof"
+            tableTitle="Validation Signals"
+            title="Validation readiness at a glance"
+          />
+          <OperatorWorkspace currentView={currentView} rows={validationRows} compact />
+          <ValidationProofList items={validation?.validation_items ?? []} proofLinks={validation?.proof_links.length ?? 0} />
+          <ConfigValueList
+            values={[
+              { label: "Source", value: sourceLabel(validation) },
+              { label: "Warnings", value: String(validation?.warnings.length ?? 0) },
+              { label: "Raw proof links", value: String(validation?.proof_links.length ?? 0) }
+            ]}
+          />
+        </div>
+      )}
+    </details>
+  );
+  const resetRebuildPanel = <LabResetRebuildPanel actions={actions} onReload={load} />;
 
   async function runDefaultValidation() {
     if (validationDisabledReason || runState.runningActionId) return;
@@ -5651,6 +5637,28 @@ export function OperatorValidationPage({ labProfileState }: OperatorPageProps) {
     } catch (err) {
       setRunState({ error: errorMessage(err), message: "", runningActionId: "" });
     }
+  }
+
+  async function createHandoffReport() {
+    if (runState.runningActionId) return;
+    setDiagnosis(null);
+    setRunState({ error: "", message: "Creating handoff report.", runningActionId: "full-lab.handoff-report" });
+    try {
+      await api.labValidationHandoff();
+      setRunState({
+        error: "",
+        message: "Handoff report is ready.",
+        runningActionId: ""
+      });
+      await load();
+    } catch (err) {
+      setRunState({ error: errorMessage(err), message: "", runningActionId: "" });
+    }
+  }
+
+  function reviewHandoff() {
+    setDetailsOpen(true);
+    setRunState({ error: "", message: "", runningActionId: "" });
   }
 
   async function loadValidationDiagnosis(actionId: string) {
@@ -5676,30 +5684,29 @@ export function OperatorValidationPage({ labProfileState }: OperatorPageProps) {
         <Card className="validation-readiness-card" hover={false}>
           <CardHeader>
             <div>
-              <p className="operator-kicker">Readiness check</p>
-              <h2>Kit handoff readiness</h2>
+              <p className="operator-kicker">Reports</p>
+              <h2>Handoff readiness</h2>
             </div>
-            <StatusBadge label={validationCard.kitReadiness} status={validationCard.badgeStatus} />
+            <StatusBadge label={validationCard.state} status={validationCard.badgeStatus} />
           </CardHeader>
           <CardContent>
-            <dl className="validation-readiness-fields">
+            <div className="handoff-readiness-headline">
+              <h3>{validationCard.headline}</h3>
+              <p>{validationCard.supportingMessage}</p>
+            </div>
+            <div className="handoff-readiness-meter" aria-label="Handoff readiness meter">
               <div>
-                <dt>Kit readiness</dt>
-                <dd>{validationCard.kitReadiness}</dd>
+                <span>Readiness</span>
+                <strong>{validationCard.meterText}</strong>
               </div>
-              <div>
-                <dt>Checked items</dt>
-                <dd>{validationCard.checkedItems}</dd>
+              <div className="handoff-meter-track">
+                <i style={{ width: `${validationCard.meterPercent}%` }} />
               </div>
-              <div>
-                <dt>Handoff</dt>
-                <dd>{validationCard.handoff}</dd>
-              </div>
-            </dl>
-            {validationCard.reason && (
+            </div>
+            {validationCard.attentionMessage && (
               <div className="validation-readiness-reason" role="note">
-                <strong>Needs attention</strong>
-                <span>{validationCard.reason}</span>
+                <strong>{validationCard.attentionLabel}</strong>
+                <span>{validationCard.attentionMessage}</span>
               </div>
             )}
             {runState.message && <div className="operator-feedback validation-readiness-feedback">{runState.message}</div>}
@@ -5709,16 +5716,34 @@ export function OperatorValidationPage({ labProfileState }: OperatorPageProps) {
           </CardContent>
           <CardFooter>
             <div className="validation-readiness-actions">
-              <button
-                className="operator-primary-button"
-                disabled={Boolean(validationDisabledReason) || Boolean(runState.runningActionId)}
-                onClick={() => void runDefaultValidation()}
-                title={validationDisabledReason || "Run validation"}
-                type="button"
-              >
-                <CheckCircle2 size={16} />
-                {runState.runningActionId ? "Running" : "Run validation"}
-              </button>
+              {validationCard.primaryAction.kind === "fix" ? (
+                <Link className="operator-primary-button" to={validationCard.primaryAction.to ?? "/validation"}>
+                  <Wrench size={16} />
+                  {validationCard.primaryAction.label}
+                </Link>
+              ) : (
+                <button
+                  className="operator-primary-button"
+                  disabled={
+                    Boolean(runState.runningActionId) ||
+                    (validationCard.primaryAction.kind === "run-validation" && Boolean(validationDisabledReason))
+                  }
+                  onClick={() => {
+                    if (validationCard.primaryAction.kind === "run-validation") {
+                      void runDefaultValidation();
+                    } else if (validationCard.primaryAction.kind === "create-handoff") {
+                      void createHandoffReport();
+                    } else {
+                      reviewHandoff();
+                    }
+                  }}
+                  title={validationCard.primaryAction.kind === "run-validation" ? validationDisabledReason || validationCard.primaryAction.label : validationCard.primaryAction.label}
+                  type="button"
+                >
+                  {validationCard.primaryAction.kind === "review-handoff" ? <ShieldCheck size={16} /> : <CheckCircle2 size={16} />}
+                  {runState.runningActionId ? "Running" : validationCard.primaryAction.label}
+                </button>
+              )}
               <button
                 aria-expanded={detailsOpen}
                 className="secondary-button"
@@ -5728,19 +5753,44 @@ export function OperatorValidationPage({ labProfileState }: OperatorPageProps) {
                 {detailsOpen ? "Hide details" : "View details"}
               </button>
             </div>
-            {validationDisabledReason && <span className="run-button-safety-note">{validationDisabledReason}</span>}
+            {validationCard.primaryAction.kind === "run-validation" && validationDisabledReason && (
+              <span className="run-button-safety-note">{validationDisabledReason}</span>
+            )}
           </CardFooter>
         </Card>
       </section>
 
       {detailsOpen && (
         <section className="validation-details" aria-label="Validation details">
-          <div className="validation-details-grid">
-            {validationRegions["scenario-scope"]}
-            {validationRegions.reference}
-            {validationRegions["smoke-handoff"]}
-            {validationRegions["advanced-proof"]}
+          <div className="handoff-details-panel" aria-label="Handoff readiness details">
+            <article>
+              <span>What was checked</span>
+              <strong>{validationCard.checkedSummary}</strong>
+              {validationCard.exceptions.length ? (
+                <ul className="handoff-exception-list">
+                  {validationCard.exceptions.map((item) => (
+                    <li key={item.id}>
+                      <b>{item.label}</b>
+                      <small>{item.nextAction}</small>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p>Healthy devices are summarized here; there are no exceptions to expand.</p>
+              )}
+            </article>
+            <article>
+              <span>What changed</span>
+              <strong>{validationCard.changeSummary}</strong>
+              <p>{validationCard.changeDetail}</p>
+            </article>
+            <article>
+              <span>Handoff files</span>
+              <strong>{validationCard.handoffSummary}</strong>
+              <p>{validationCard.handoffDetail}</p>
+            </article>
           </div>
+          {validationAdvancedProof}
         </section>
       )}
 
@@ -5753,7 +5803,7 @@ export function OperatorValidationPage({ labProfileState }: OperatorPageProps) {
           </span>
         </summary>
         <div>
-          {validationRegions["reset-rebuild"]}
+          {resetRebuildPanel}
         </div>
       </details>
     </OperatorPage>
@@ -5762,28 +5812,96 @@ export function OperatorValidationPage({ labProfileState }: OperatorPageProps) {
 
 function validationReadinessCardModel(validation: LabValidationSummary | null) {
   const items = validation?.validation_items ?? [];
-  const readyCount = items.filter((item) => ["ready", "ok", "passed", "completed"].includes(item.status)).length;
+  const readyCount = items.filter((item) => validationItemIsReady(item.status)).length;
   const totalCount = items.length;
   const status = validation?.overall_status || (validation ? strongestStatus(items.map((item) => item.status)) : "not_checked");
-  const kitReadiness = validationReadinessStateLabel(status);
-  const firstIssue = items.find((item) => !["ready", "ok", "passed", "completed"].includes(item.status));
-  const reason = kitReadiness === "Blocked"
-    ? humanize(
-      validation?.top_blocker?.problem ||
-      validation?.next_action ||
-      firstIssue?.next_action ||
-      firstIssue?.setup_summary ||
-      firstIssue?.current_state ||
-      "Validation needs attention."
-    )
-    : "";
+  const state = validationReadinessStateLabel(status);
+  const exceptions = items
+    .filter((item) => !validationItemIsReady(item.status) && item.status !== "not_in_scope")
+    .map((item) => ({
+      id: item.id,
+      label: item.label,
+      nextAction: humanize(item.next_action || item.setup_summary || item.current_state || "Review this item."),
+      status: item.status
+    }));
+  const firstIssue = items.find((item) => !validationItemIsReady(item.status) && item.status !== "not_in_scope");
+  const firstFix = validationFixTarget(firstIssue);
+  const blockerText = humanize(
+    validation?.top_blocker?.problem ||
+    validation?.top_blocker?.recommended_action ||
+    firstIssue?.next_action ||
+    firstIssue?.setup_summary ||
+    firstIssue?.current_state ||
+    validation?.next_action ||
+    ""
+  );
+  const handoffReady = Boolean(validation?.handoff_report);
+  const meterPercent = totalCount ? Math.round((readyCount / totalCount) * 100) : 0;
+  const warnings = (validation?.warnings ?? []).map((warning) => humanize(warning)).filter(Boolean);
+  const headline = state === "Ready"
+    ? "Ready to hand off"
+    : state === "Blocked"
+      ? "Needs one fix"
+      : "Not checked";
+  const supportingMessage = state === "Ready"
+    ? handoffReady
+      ? "All required checks are ready and the handoff report exists."
+      : "All required checks are ready. Create the handoff report before closing the kit."
+    : state === "Blocked"
+      ? blockerText || "One item needs attention before this kit can be handed off."
+      : "Run validation to see whether this kit is ready to hand off.";
+  const primaryAction: ValidationPrimaryAction = state === "Ready"
+    ? handoffReady
+      ? { kind: "review-handoff", label: "Review handoff" }
+      : { kind: "create-handoff", label: "Create handoff report" }
+    : state === "Blocked"
+      ? { kind: "fix", label: firstFix.label, to: firstFix.to }
+      : { kind: "run-validation", label: "Run validation" };
   return {
-    badgeStatus: validationReadinessBadgeStatus(kitReadiness),
-    checkedItems: `${readyCount} / ${totalCount} ready`,
-    handoff: validation?.handoff_report ? "Ready to generate" : "Not ready",
-    kitReadiness,
-    reason
+    attentionLabel: state === "Blocked" ? "Needs attention" : state === "Not checked" ? "Next check" : "",
+    attentionMessage: state === "Blocked"
+      ? blockerText || "Open the matching setup page and fix the first exception."
+      : state === "Not checked"
+        ? "Nothing is marked ready until validation runs."
+        : "",
+    badgeStatus: validationReadinessBadgeStatus(state),
+    changeDetail: warnings[0] || (blockerText ? `First fix: ${blockerText}` : "No handoff blockers are currently reported."),
+    changeSummary: warnings.length ? `${warnings.length} warning${warnings.length === 1 ? "" : "s"} need review` : exceptions.length ? "One fix is blocking handoff" : "No changes need attention",
+    checkedSummary: totalCount ? `${readyCount} of ${totalCount} checks are ready` : "No checks have run yet",
+    exceptions,
+    handoffDetail: handoffReady
+      ? "The report is available for review. Supporting proof stays in Advanced proof."
+      : state === "Ready"
+        ? "Create the report from this page when the kit is ready."
+        : "A report is created after validation is ready.",
+    handoffSummary: handoffReady ? "Handoff report is ready" : "No handoff report yet",
+    headline,
+    meterPercent,
+    meterText: `${readyCount} / ${totalCount} ready`,
+    primaryAction,
+    state,
+    supportingMessage
   };
+}
+
+type ValidationPrimaryAction =
+  | { kind: "run-validation"; label: string }
+  | { kind: "review-handoff"; label: string }
+  | { kind: "create-handoff"; label: string }
+  | { kind: "fix"; label: string; to: string };
+
+function validationItemIsReady(status: string): boolean {
+  return ["ready", "ok", "passed", "completed", "success"].includes(status);
+}
+
+function validationFixTarget(item: LabValidationItem | undefined): { label: string; to: string } {
+  const text = `${item?.id ?? ""} ${item?.category ?? ""} ${item?.stage ?? ""} ${item?.label ?? ""}`.toLowerCase();
+  if (textIncludes(text, ["cisco", "network", "switch"])) return { label: "Fix Cisco switch", to: "/network" };
+  if (textIncludes(text, ["ilo", "server", "compute", "raid"])) return { label: "Fix compute access", to: "/server" };
+  if (textIncludes(text, ["netapp", "storage", "datastore", "nfs", "iscsi"])) return { label: "Fix storage path", to: "/storage" };
+  if (textIncludes(text, ["esxi", "vcenter", "virtualization", "vm"])) return { label: "Fix virtualization", to: "/virtualization" };
+  if (textIncludes(text, ["firmware", "upgrade"])) return { label: "Fix firmware", to: "/firmware-upgrades" };
+  return { label: "Fix lab defaults", to: "/lab-defaults" };
 }
 
 function validationReadinessStateLabel(status: string): "Ready" | "Blocked" | "Not checked" {

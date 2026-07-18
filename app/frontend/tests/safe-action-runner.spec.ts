@@ -1323,7 +1323,7 @@ test("top nav and map workspaces expose run controls without dead settings drawe
 
   for (const [path, runButtonName] of [
     ["/firmware-upgrades", "Check versions"],
-    ["/validation", "Run validation"]
+    ["/validation", "Review handoff"]
   ] as const) {
     await page.goto(path);
     await expect(page.getByRole("button", { name: "Settings" })).toHaveCount(0);
@@ -1347,6 +1347,7 @@ test("setup pages load while remaining run actions stay registered", async ({ pa
     await expect(page.getByText(/missing a runnable backend action/i)).toHaveCount(0);
   }
 
+  await page.route("**/api/v1/lab/validation", (route) => json(route, labValidationNotChecked()));
   await page.goto("/validation");
   const response = page.waitForResponse((nextResponse) =>
     nextResponse.url().includes("/api/v1/workflows/actions/build-verification.run-full/run") &&
@@ -1659,14 +1660,14 @@ test("remaining operator pages expose simplified setup surfaces without old sett
   await page.goto("/validation");
   const readiness = page.getByLabel("Readiness Check");
   await expect(readiness).toBeVisible();
-  await expect(readiness).toContainText("Kit readiness");
-  await expect(readiness).toContainText("Checked items");
-  await expect(readiness).toContainText("Handoff");
-  await expect(readiness).toContainText("Ready");
+  await expect(readiness).toContainText("Handoff readiness");
+  await expect(readiness).toContainText("Ready to hand off");
   await expect(readiness).toContainText("5 / 5 ready");
-  await expect(readiness).toContainText("Ready to generate");
+  await expect(readiness.getByText("5 / 5 ready")).toHaveCount(1);
+  await expect(readiness).toContainText("All required checks are ready and the handoff report exists.");
   await expect(page.locator(".validation-readiness-actions .operator-primary-button")).toHaveCount(1);
-  await expect(page.locator(".validation-readiness-actions .operator-primary-button")).toContainText("Run validation");
+  await expect(page.locator(".validation-readiness-actions .operator-primary-button")).toContainText("Review handoff");
+  await expect(page.getByRole("button", { name: "Run validation" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "View details" })).toBeVisible();
   await expect(page.locator("section[aria-label='Validation reference']")).toHaveCount(0);
   await expect(page.locator("section[aria-label='Validation scenario scope']")).toHaveCount(0);
@@ -1681,11 +1682,21 @@ test("remaining operator pages expose simplified setup surfaces without old sett
 
   await page.getByRole("button", { name: "View details" }).click();
   const details = page.getByLabel("Validation details");
-  await expect(details.getByLabel("Validation reference")).toBeVisible();
-  await expect(details.getByLabel("Validation scenario scope")).toBeVisible();
-  await expect(details).toContainText("Validation Signals");
-  await expect(details.getByRole("button", { name: "Generate Handoff Report" })).toBeVisible();
+  await expect(details.getByLabel("Handoff readiness details")).toBeVisible();
+  await expect(details).toContainText("What was checked");
+  await expect(details).toContainText("What changed");
+  await expect(details).toContainText("Handoff files");
+  await expect(details).not.toContainText("Validation Signals");
+  await expect(details).not.toContainText("Golden State");
+  await expect(details).not.toContainText(/\bprovider\b/i);
+  await expect(details).not.toContainText(/\bruntime\b/i);
+  await expect(details).not.toContainText(/\bpayload\b/i);
+  await expect(details).not.toContainText(/\braw\b/i);
+  await expect(details.getByRole("button", { name: "Create handoff report" })).toHaveCount(0);
   await expect(details.locator("details.advanced-drawer")).not.toHaveAttribute("open", "");
+  await details.locator("details.advanced-drawer > summary").click();
+  await expect(details.getByLabel("Validation reference")).toBeVisible();
+  await expect(details).toContainText("Validation Signals");
 
   await page.goto("/lab-profiles");
   await expect(page.getByRole("heading", { name: "Saved Kits", exact: true })).toBeVisible();
@@ -1722,7 +1733,10 @@ test("validation readiness card hides raw provider-mode vocabulary in blockers",
 
   const readiness = page.getByLabel("Readiness Check");
   await expect(readiness).toContainText("Blocked");
+  await expect(readiness).toContainText("Needs one fix");
   await expect(readiness.getByText("Needs attention")).toBeVisible();
+  await expect(readiness.getByRole("link", { name: "Fix Cisco switch" })).toBeVisible();
+  await expect(readiness.getByRole("button", { name: "Run validation" })).toHaveCount(0);
   await expect(readiness).not.toContainText(/PROVIDER[_ ]MODE/i);
   await expect(readiness).not.toContainText(/\bprovider\b/i);
   await expect(readiness).not.toContainText(/\bruntime\b/i);
@@ -1782,6 +1796,8 @@ test("advanced proof is collapsed and operator labels hide raw statuses", async 
   await page.getByRole("button", { name: "View details" }).click();
   const advanced = page.locator("details.advanced-drawer").first();
   await expect(advanced).not.toHaveAttribute("open", "");
+  await expect(page.getByText("Golden State / Handoff", { exact: true })).toHaveCount(0);
+  await advanced.locator("summary").click();
   const validation = page.locator("section[aria-label='Validation reference']");
   await expect(validation.getByText("Golden State / Handoff", { exact: true })).toBeVisible();
   await expect(validation).toContainText("Validation Signals");
@@ -1895,6 +1911,8 @@ test("legacy settings paths redirect to overview and the contextual drawer is re
 });
 
 test("safe read-only page action still invokes the workflow runner", async ({ page }) => {
+  const notChecked = labValidationNotChecked();
+  await page.route("**/api/v1/lab/validation", (route) => json(route, notChecked));
   await page.goto("/validation");
 
   const runResponse = page.waitForResponse((response) =>
@@ -1905,16 +1923,18 @@ test("safe read-only page action still invokes the workflow runner", async ({ pa
   await expect(page.getByText(/Run Full Verification:/)).toBeVisible();
 });
 
-test("generate handoff report button calls the handoff API and reports completion", async ({ page }) => {
+test("create handoff report primary action calls the handoff API and reports completion", async ({ page }) => {
+  const readyWithoutReport = labValidation();
+  readyWithoutReport.handoff_report = "";
+  await page.route("**/api/v1/lab/validation", (route) => json(route, readyWithoutReport));
   await page.goto("/validation");
-  await page.getByRole("button", { name: "View details" }).click();
 
   const handoffResponse = page.waitForResponse((response) =>
     response.url().includes("/api/v1/lab/validation/handoff")
   );
-  await page.getByRole("button", { name: "Generate Handoff Report" }).click();
+  await page.getByRole("button", { name: "Create handoff report" }).click();
   await expect((await handoffResponse).ok()).toBeTruthy();
-  await expect(page.getByText("Generate Handoff Report completed.")).toBeVisible();
+  await expect(page.getByText("Handoff report is ready.")).toBeVisible();
 });
 
 test("validation exposes guarded factory reset and automated rebuild verification", async ({ page }) => {
@@ -1974,19 +1994,18 @@ test("validation exposes guarded factory reset and automated rebuild verificatio
   }
 });
 
-test("validation read-only sweep surfaces optional parity blockers as warnings", async ({ page }) => {
+test("validation details do not expose optional smoke controls in normal reports", async ({ page }) => {
   await page.goto("/validation");
   await page.getByRole("button", { name: "View details" }).click();
 
-  const sweepResponse = page.waitForResponse((response) =>
-    response.url().includes("/api/v1/workflows/actions/operator-readonly-sweep.real-lab/run")
-  );
-  await page.getByRole("button", { name: "Run Read-Only Sweep" }).click();
-  await expect((await sweepResponse).ok()).toBeTruthy();
-  await expect(page.getByText(/optional parity checks reported blockers: esxi\.iscsi-datastore-validate/i)).toBeVisible();
+  const details = page.getByLabel("Validation details");
+  await expect(details.getByRole("button", { name: "Run Read-Only Sweep" })).toHaveCount(0);
+  await expect(details.getByRole("button", { name: "Run Real Provider Smoke" })).toHaveCount(0);
+  await expect(details.getByRole("button", { name: "Generate Handoff Report" })).toHaveCount(0);
 });
 
 test("blocked workflow runs render an advisory diagnosis card", async ({ page }) => {
+  await page.route("**/api/v1/lab/validation", (route) => json(route, labValidationNotChecked()));
   await page.route("**/api/v1/workflows/actions/build-verification.run-full/run", (route) =>
     route.fulfill({
       body: JSON.stringify({
@@ -2147,6 +2166,7 @@ test("request detail shows mock lifecycle guardrails before planning", async ({ 
 });
 
 test("workflow runner surfaces plain-text API errors", async ({ page }) => {
+  await page.route("**/api/v1/lab/validation", (route) => json(route, labValidationNotChecked()));
   await page.route("**/api/v1/workflows/actions/build-verification.run-full/run", (route) =>
     route.fulfill({
       body: "workflow runner temporarily unavailable",
@@ -2166,6 +2186,7 @@ test("workflow runner surfaces plain-text API errors", async ({ page }) => {
 });
 
 test("workflow runner surfaces primitive array API detail errors", async ({ page }) => {
+  await page.route("**/api/v1/lab/validation", (route) => json(route, labValidationNotChecked()));
   await page.route("**/api/v1/workflows/actions/build-verification.run-full/run", (route) =>
     route.fulfill({
       body: JSON.stringify({ detail: ["first blocker", "second blocker"] }),
@@ -2185,6 +2206,7 @@ test("workflow runner surfaces primitive array API detail errors", async ({ page
 });
 
 test("workflow runner surfaces malformed JSON API responses", async ({ page }) => {
+  await page.route("**/api/v1/lab/validation", (route) => json(route, labValidationNotChecked()));
   await page.route("**/api/v1/workflows/actions/build-verification.run-full/run", (route) =>
     route.fulfill({
       body: "{not valid json",
@@ -2204,6 +2226,7 @@ test("workflow runner surfaces malformed JSON API responses", async ({ page }) =
 });
 
 test("workflow runner surfaces network API failures", async ({ page }) => {
+  await page.route("**/api/v1/lab/validation", (route) => json(route, labValidationNotChecked()));
   await page.route("**/api/v1/workflows/actions/build-verification.run-full/run", (route) =>
     route.abort("failed")
   );
@@ -4125,6 +4148,32 @@ function labValidation() {
     ],
     warnings: []
   };
+}
+
+function labValidationNotChecked() {
+  const validation = labValidation();
+  validation.freshness = "not_checked";
+  validation.handoff_report = "";
+  validation.next_action = "Run validation to see whether this kit is ready.";
+  validation.overall_status = "not_checked";
+  validation.progress_counts = { blocked: 0, not_configured: 0, partial: 0, ready: 0 };
+  validation.proof_links = [];
+  validation.source_type = "not_checked";
+  validation.top_blocker = null;
+  validation.validation_items = validation.validation_items.map((item) => ({
+    ...item,
+    current_state: "Not checked",
+    evidence_artifacts: [],
+    freshness: "not_checked",
+    last_checked: null,
+    next_action: "Run validation.",
+    proof_points: [],
+    setup_summary: "Not checked yet.",
+    source_type: "not_checked",
+    status: "not_checked",
+    warnings: []
+  }));
+  return validation;
 }
 
 function validationItem(id: string, label: string, category: string, summary: string, managementUrl: string) {

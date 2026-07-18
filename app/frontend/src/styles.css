@@ -14653,6 +14653,72 @@ button.design-ilo-port:hover {
   margin: 4px 0 0;
 }
 
+.handoff-readiness-headline {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.handoff-readiness-headline h3 {
+  color: #0f172a;
+  font-size: clamp(26px, 3vw, 40px);
+  letter-spacing: 0;
+  line-height: 1.05;
+  margin: 0;
+}
+
+.handoff-readiness-headline p {
+  color: #475569;
+  font-size: 15px;
+  line-height: 1.45;
+  margin: 0;
+  max-width: 780px;
+}
+
+.handoff-readiness-meter {
+  background: #f7fafc;
+  border: 1px solid #dbe4ef;
+  border-radius: 10px;
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 14px;
+}
+
+.handoff-readiness-meter > div:first-child {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.handoff-readiness-meter span,
+.handoff-details-panel article > span {
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.handoff-readiness-meter strong {
+  color: #102238;
+  font-size: 16px;
+}
+
+.handoff-meter-track {
+  background: #dde5ee;
+  border-radius: 999px;
+  height: 10px;
+  overflow: hidden;
+}
+
+.handoff-meter-track i {
+  background: #0f8b82;
+  display: block;
+  height: 100%;
+}
+
 .validation-readiness-fields {
   display: grid;
   gap: 12px;
@@ -14741,6 +14807,56 @@ button.design-ilo-port:hover {
 .validation-details-grid {
   display: grid;
   gap: 16px;
+}
+
+.handoff-details-panel {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.handoff-details-panel article {
+  background: #ffffff;
+  border: 1px solid #dfe4ea;
+  border-radius: 12px;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, .04);
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 18px;
+}
+
+.handoff-details-panel article strong {
+  color: #0f172a;
+  font-size: 18px;
+  line-height: 1.25;
+}
+
+.handoff-details-panel article p,
+.handoff-exception-list small {
+  color: #475569;
+  font-size: 14px;
+  line-height: 1.45;
+  margin: 0;
+}
+
+.handoff-exception-list {
+  display: grid;
+  gap: 10px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.handoff-exception-list li {
+  border-top: 1px solid #e2e8f0;
+  display: grid;
+  gap: 4px;
+  padding-top: 10px;
+}
+
+.handoff-exception-list b {
+  color: #9a3412;
 }
 
 .validation-danger-zone {
@@ -17094,6 +17210,7 @@ button.design-ilo-port:hover {
     .server-setup-grid,
     .firmware-setup-grid,
     .validation-setup-grid,
+    .handoff-details-panel,
     .validation-readiness-fields,
     .virtualization-setup-grid,
     .storage-scenario-grid,
