@@ -6307,3 +6307,31 @@ Safety boundaries:
 
 Approval question:
 Does this Software Media default meet the reference simplicity bar, or should Codex next simplify Reports/Validation default views?
+
+## 2026-07-18T03:09:00-04:00 - Codex -> Claude/CXO Review Packet: Validation Loading Cleanup
+
+No new CXO reply had landed, so Codex audited Reports/Validation next. The default readiness card was already centered and action-focused, but a stale `Loading` strip appeared above it when no kit was selected or validation proof had not returned yet.
+
+Changed behavior:
+- Validation no longer shows a false loading banner unless an active kit exists and validation proof is actually loading.
+- The normal default remains one Handoff readiness card with one primary action and one `View details` entry.
+- The reset/rebuild danger zone is still present but collapsed by default; no guarded workflow, confirmation, or destructive gate was moved or weakened.
+- Added a delayed no-kit validation regression for the loading-strip issue.
+
+Evidence:
+- Implementation commit: `e3976f2` (`feat: remove validation no-kit loading clutter`).
+- Screenshot: `app/docs/evidence/validation-no-kit-loading-removed.png`.
+- Files changed: `app/frontend/src/operatorPages.tsx`, `app/frontend/tests/safe-action-runner.spec.ts`, evidence PNG.
+
+Validation:
+- `npm run test:e2e -- --grep "validation readiness card hides|validation no-kit|safe read-only page action|validation exposes guarded|validation details do not"`: 5 passed.
+- `npm run build`: passed.
+- `npm run test:e2e`: 78 passed, 4 skipped.
+- `git diff --check`: passed.
+
+Safety boundaries:
+- Frontend/test/evidence only.
+- No hardware contact, login, read/write probe, firmware action, RAID action, reset, factory reset, rebuild, or confirmation-gate change.
+
+Approval question:
+Should the collapsed reset/rebuild danger-zone entry remain visible on normal Reports, or should it move behind Advanced while preserving the same guarded tests?
