@@ -1497,7 +1497,7 @@ export function OperatorNetworkPage({ labProfileState, onReloadLabProfile }: Ope
                 onClick={() => setDetailsOpen((current) => !current)}
                 type="button"
               >
-                View details
+                {detailsOpen ? "Hide switch details" : "Open switch details"}
               </button>
             </div>
             {runState.message && <div className="operator-feedback network-access-feedback">{runState.message}</div>}
@@ -1933,7 +1933,7 @@ export function OperatorServerPage({ labProfileState, onReloadLabProfile }: Oper
                 onClick={() => setDetailsOpen((current) => !current)}
                 type="button"
               >
-                View details
+                {detailsOpen ? "Hide compute details" : "Open compute details"}
               </button>
             </div>
             {runState.message && <div className="operator-feedback network-access-feedback">{runState.message}</div>}
@@ -3210,7 +3210,7 @@ export function OperatorStoragePage({ labProfileState, onReloadLabProfile }: Ope
                 onClick={() => setDetailsOpen((current) => !current)}
                 type="button"
               >
-                View storage details
+                {detailsOpen ? "Hide storage details" : "Open storage details"}
               </button>
             </div>
             {runState.message && <div className="operator-feedback storage-path-feedback">{runState.message}</div>}
@@ -4953,7 +4953,7 @@ export function OperatorVirtualizationPage({ labProfileState, onReloadLabProfile
                 onClick={() => setDetailsOpen((current) => !current)}
                 type="button"
               >
-                View details
+                {detailsOpen ? "Hide VM details" : "Open VM details"}
               </button>
             </div>
           </CardFooter>
@@ -5819,7 +5819,7 @@ export function OperatorValidationPage({ isAdvancedMode = false, labProfileState
                 onClick={() => setDetailsOpen((current) => !current)}
                 type="button"
               >
-                {detailsOpen ? "Hide details" : "View details"}
+                {detailsOpen ? "Hide report details" : "Open report details"}
               </button>
             </div>
             {validationCard.primaryAction.kind === "run-validation" && validationDisabledReason && (

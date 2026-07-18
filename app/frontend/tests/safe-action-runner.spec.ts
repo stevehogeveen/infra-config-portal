@@ -2014,7 +2014,8 @@ test("storage page defaults to one storage path card and hides protocol internal
   await expect(page.locator(".storage-path-actions .operator-primary-button")).toContainText("Run storage check");
   await expect(storagePath.locator(".ui-card-content .storage-path-actions")).toBeVisible();
   await expect(storagePath.locator(".ui-card-footer")).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "View storage details" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Open storage details" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "View storage details" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Change storage path" })).toHaveCount(0);
   await expect(page.getByRole("textbox", { name: "Change this page" })).toHaveCount(0);
   await expect(page.locator("section[aria-label='Storage reference']")).toHaveCount(0);
@@ -2026,7 +2027,7 @@ test("storage page defaults to one storage path card and hides protocol internal
   await expect(storagePath.getByRole("button", { name: /Apply iSCSI/ })).toHaveCount(0);
   await expect(storagePath.getByRole("button", { name: /factory|reset/i })).toHaveCount(0);
 
-  await page.getByRole("button", { name: "View storage details" }).click();
+  await page.getByRole("button", { name: "Open storage details" }).click();
   const details = page.getByLabel("Storage path details");
   await expect(details).toBeVisible();
   const detailSections = details.getByLabel("Storage detail sections");
@@ -2299,7 +2300,8 @@ test("network default shows one switch access card and hides technical detail", 
   await expect(access.locator("dt")).toHaveText(["Switch", "Management IP", "Access"]);
   await expect(access.locator(".ui-card-header")).toContainText(/Blocked|Ready|Not checked/);
   await expect(access.getByRole("button", { name: "Run switch check" })).toBeVisible();
-  await expect(access.getByRole("button", { name: "View details" })).toBeVisible();
+  await expect(access.getByRole("button", { name: "Open switch details" })).toBeVisible();
+  await expect(access.getByRole("button", { name: "View details" })).toHaveCount(0);
   await expect(access.locator(".ui-card-content .switch-access-actions")).toBeVisible();
   await expect(access.locator(".ui-card-footer")).toHaveCount(0);
   await expect(page.locator("section[aria-label='Network details']")).toHaveCount(0);
@@ -2316,28 +2318,32 @@ test("setup defaults keep detail, edit, and proof surfaces behind the secondary 
       detailLabel: "Network details",
       hiddenCopy: [/Switch configuration cockpit/i, /Current versus intent/i, /VLANs and gateways/i, /Apply Bootstrap/i],
       path: "/network",
-      primaryName: "Run switch check"
+      primaryName: "Run switch check",
+      secondaryName: "Open switch details"
     },
     {
       cardLabel: "Compute Access",
       detailLabel: "Compute details",
       hiddenCopy: [/Server checks/i, /Server configure/i, /Advanced RAID plan/i, /Server proof/i],
       path: "/server",
-      primaryName: "Run server check"
+      primaryName: "Run server check",
+      secondaryName: "Open compute details"
     },
     {
       cardLabel: "Storage Path",
       detailLabel: "Storage path details",
       hiddenCopy: [/Storage readiness/i, /Storage proof/i, /Advanced storage actions/i, /Apply iSCSI/i],
       path: "/storage",
-      primaryName: "Run storage check"
+      primaryName: "Run storage check",
+      secondaryName: "Open storage details"
     },
     {
       cardLabel: "VM Management",
       detailLabel: "VM details",
       hiddenCopy: [/Virtualization checks/i, /Virtualization configure/i, /Virtualization setup shape/i, /Virtualization proof/i],
       path: "/virtualization",
-      primaryName: "Run VM check"
+      primaryName: "Run VM check",
+      secondaryName: "Open VM details"
     }
   ];
 
@@ -2348,7 +2354,8 @@ test("setup defaults keep detail, edit, and proof surfaces behind the secondary 
     await expect(card, `${surface.cardLabel} card is the default operator surface`).toBeVisible();
     await expect(card.locator(".operator-primary-button"), `${surface.cardLabel} exposes one primary action`).toHaveCount(1);
     await expect(card.getByRole("button", { name: surface.primaryName })).toBeVisible();
-    await expect(card.getByRole("button", { name: /View/i })).toHaveCount(1);
+    await expect(card.getByRole("button", { name: surface.secondaryName })).toBeVisible();
+    await expect(card.getByRole("button", { name: "View details" })).toHaveCount(0);
     await expect(page.getByLabel(surface.detailLabel), `${surface.detailLabel} stays closed by default`).toHaveCount(0);
     for (const hiddenCopy of surface.hiddenCopy) {
       expect(mainText, `${surface.path} keeps ${hiddenCopy} out of the default view`).not.toMatch(hiddenCopy);
@@ -2371,7 +2378,7 @@ test("network no-kit state does not show stale loading feedback", async ({ page 
 
 test("network details reveal saved settings and nested advanced switch plan", async ({ page }) => {
   await page.goto("/network");
-  await page.getByLabel("Switch Access").getByRole("button", { name: "View details" }).click();
+  await page.getByLabel("Switch Access").getByRole("button", { name: "Open switch details" }).click();
 
   const details = page.locator("section[aria-label='Network details']");
   await expect(details).toBeVisible();
@@ -2476,7 +2483,8 @@ test("server default shows one compute access card and hides technical detail", 
   await expect(access.locator("dt")).toHaveText(["Host", "iLO IP", "ESXi IP", "Storage role"]);
   await expect(access.locator(".ui-card-header")).toContainText(/Blocked|Ready|Not checked/);
   await expect(access.getByRole("button", { name: "Run server check" })).toBeVisible();
-  await expect(access.getByRole("button", { name: "View details" })).toBeVisible();
+  await expect(access.getByRole("button", { name: "Open compute details" })).toBeVisible();
+  await expect(access.getByRole("button", { name: "View details" })).toHaveCount(0);
   await expect(access.locator(".operator-primary-button")).toHaveCount(1);
   await expect(access.locator(".ui-card-content .server-access-actions")).toBeVisible();
   await expect(access.locator(".ui-card-footer")).toHaveCount(0);
@@ -2495,7 +2503,7 @@ test("server default shows one compute access card and hides technical detail", 
 
 test("server details reveal saved checks and nested advanced RAID plan", async ({ page }) => {
   await page.goto("/server");
-  await page.getByLabel("Compute Access").getByRole("button", { name: "View details" }).click();
+  await page.getByLabel("Compute Access").getByRole("button", { name: "Open compute details" }).click();
 
   const details = page.locator("section[aria-label='Compute details']");
   await expect(details).toBeVisible();
@@ -2627,7 +2635,8 @@ test("virtualization default shows one VM management card and hides technical de
   await expect(vm.locator("dt")).toHaveText(["Mode", "Target", "Datastore", "Access"]);
   await expect(vm.locator(".ui-card-header")).toContainText(/Blocked|Ready|Not checked|Needs attention/);
   await expect(vm.getByRole("button", { name: "Run VM check" })).toBeVisible();
-  await expect(vm.getByRole("button", { name: "View details" })).toBeVisible();
+  await expect(vm.getByRole("button", { name: "Open VM details" })).toBeVisible();
+  await expect(vm.getByRole("button", { name: "View details" })).toHaveCount(0);
   await expect(vm.locator(".operator-primary-button")).toHaveCount(1);
 
   await expect(page.locator("section[aria-label='VM details']")).toHaveCount(0);
@@ -2655,7 +2664,7 @@ test("virtualization no-kit state does not show stale loading feedback", async (
 
 test("virtualization details reveal saved checks and keep proof advanced", async ({ page }) => {
   await page.goto("/virtualization");
-  await page.getByLabel("VM Management").getByRole("button", { name: "View details" }).click();
+  await page.getByLabel("VM Management").getByRole("button", { name: "Open VM details" }).click();
 
   const details = page.locator("section[aria-label='VM details']");
   await expect(details).toBeVisible();
@@ -2822,7 +2831,8 @@ test("remaining operator pages expose simplified setup surfaces without old sett
   await expect(page.locator(".validation-readiness-actions .operator-primary-button")).toHaveCount(1);
   await expect(page.locator(".validation-readiness-actions .operator-primary-button")).toContainText("Review report");
   await expect(page.getByRole("button", { name: "Run validation" })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "View details" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Open report details" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "View details" })).toHaveCount(0);
   await expect(page.locator("section[aria-label='Validation reference']")).toHaveCount(0);
   await expect(page.locator("section[aria-label='Validation scenario scope']")).toHaveCount(0);
   await expect(page.getByText("Raw proof links")).toHaveCount(0);
@@ -2834,7 +2844,7 @@ test("remaining operator pages expose simplified setup surfaces without old sett
   await expect(page.locator("details.validation-danger-zone")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Settings" })).toHaveCount(0);
 
-  await page.getByRole("button", { name: "View details" }).click();
+  await page.getByRole("button", { name: "Open report details" }).click();
   const details = page.getByLabel("Validation details");
   await expect(details.getByLabel("Kit readiness details")).toBeVisible();
   await expect(details).toContainText("What was checked");
@@ -2879,7 +2889,7 @@ test("validation details runs the registered read-only equipment sweep", async (
   await page.goto("/validation");
   await expect(page.locator(".validation-readiness-actions .operator-primary-button")).toHaveCount(1);
   await expect(page.getByRole("button", { name: "Run equipment sweep" })).toHaveCount(0);
-  await page.getByRole("button", { name: "View details" }).click();
+  await page.getByRole("button", { name: "Open report details" }).click();
   await page.getByLabel("Validation details").getByRole("button", { name: "Run equipment sweep" }).click();
 
   await expect.poll(
@@ -2903,7 +2913,7 @@ test("details-tier proof buttons outside overview keep read-only and guarded bou
   });
 
   await page.goto("/network");
-  await page.getByLabel("Switch Access").getByRole("button", { name: "View details" }).click();
+  await page.getByLabel("Switch Access").getByRole("button", { name: "Open switch details" }).click();
   const networkSections = page.getByLabel("Network detail sections");
   await networkSections.getByLabel("Network detail section", { exact: true }).selectOption("plan");
   const ciscoAdvanced = page.locator("details.network-advanced-switch-plan");
@@ -2926,7 +2936,7 @@ test("details-tier proof buttons outside overview keep read-only and guarded bou
   await expect(ciscoDriver).toContainText("before any guarded apply");
 
   await page.goto("/storage");
-  await page.getByRole("button", { name: "View storage details" }).click();
+  await page.getByRole("button", { name: "Open storage details" }).click();
   const storageDetails = page.getByLabel("Storage path details");
   await storageDetails.getByLabel("Storage detail section", { exact: true }).selectOption("proof");
   const storageProof = storageDetails.locator("details.advanced-drawer").filter({ hasText: "Storage proof" });
@@ -3019,7 +3029,7 @@ test("validation readiness card hides raw provider-mode vocabulary in blockers",
   await expect(readiness).not.toContainText(/\bprovider\b/i);
   await expect(readiness).not.toContainText(/\bruntime\b/i);
 
-  await page.getByRole("button", { name: "View details" }).click();
+  await page.getByRole("button", { name: "Open report details" }).click();
   const details = page.getByLabel("Validation details");
   await expect(details).not.toContainText(/\bprovider\b/i);
   await expect(details).not.toContainText(/\bruntime\b/i);
@@ -3121,7 +3131,7 @@ test("advanced proof is collapsed and operator labels hide raw statuses", async 
   await page.goto("/validation");
 
   await expect(page.locator("details.advanced-drawer")).toHaveCount(0);
-  await page.getByRole("button", { name: "View details" }).click();
+  await page.getByRole("button", { name: "Open report details" }).click();
   const advanced = page.locator("details.advanced-drawer").first();
   await expect(advanced).not.toHaveAttribute("open", "");
   await expect(page.getByText("Golden State / Handoff", { exact: true })).toHaveCount(0);
@@ -3418,7 +3428,7 @@ test("validation exposes guarded factory reset and automated rebuild verificatio
 test("validation details do not expose optional smoke controls in normal reports", async ({ page }) => {
   await page.goto("/validation");
   await expect(page.locator("details.validation-danger-zone")).toHaveCount(0);
-  await page.getByRole("button", { name: "View details" }).click();
+  await page.getByRole("button", { name: "Open report details" }).click();
 
   const details = page.getByLabel("Validation details");
   await expect(details.getByRole("button", { name: "Run Read-Only Sweep" })).toHaveCount(0);
