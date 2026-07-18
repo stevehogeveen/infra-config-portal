@@ -10815,9 +10815,6 @@ open tension:
    close/page refresh) - so an operator can actually get through a check without hand-editing a
    `.env` file. This is probably the more useful end state and closes the loop Steve originally
    asked for ("passwords for initial setup" that actually do something).
-   ```
-   Password (typed) - VLAN 1
-   ```
 2. **Explicitly reference-only, intentionally**: keep it as a durable convention-recording field
    only (e.g. "this is what the password *should* be, matching your `.env`, for your own
    reference/audit") and adjust the copy so it doesn't read as an active credential input - maybe
