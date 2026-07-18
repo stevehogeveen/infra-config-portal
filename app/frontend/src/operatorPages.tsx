@@ -11468,7 +11468,7 @@ function topologyFaceplateElementInspector(
         { label: "VLAN intent", value: `mgmt ${settings.mgmt_vlan || "100"} / storage ${settings.storage_vlan || "220"}`, source: "device_settings.switch.mgmt_vlan + storage_vlan" },
         { label: "Live proof", value: "Cisco SSH read-only probe or firmware inventory", source: "workflow action result" }
       ],
-      summary: "Physical switch port intent, VLAN lane, and live-proof status."
+      summary: "Shows what this port should carry and which VLAN lane it belongs to."
     };
   }
   if (partId === "ilo") {
@@ -11481,7 +11481,7 @@ function topologyFaceplateElementInspector(
         { label: "Reachability", value: settings.reachability || "unknown until iLO Live Check runs", source: "workflow action result" },
         { label: "Inventory proof", value: settings.firmware || "read by iLO Inventory", source: "ilo.inventory" }
       ],
-      summary: "Out-of-band management endpoint, credential status, and read-only iLO proof."
+      summary: "Shows the management address and whether sign-in still needs attention."
     };
   }
   if (partId === "server-gen10" || partId === "server-gen10plus") {
@@ -11494,7 +11494,7 @@ function topologyFaceplateElementInspector(
         { label: "Boot RAID", value: settings.raid_boot || "RAID1", source: `device_settings.${partId}.raid_boot` },
         { label: "Data RAID", value: settings.raid_data || "RAID6 local datastore", source: `device_settings.${partId}.raid_data` }
       ],
-      summary: "Bay-level storage intent for local RAID or shared-storage staging."
+      summary: "Shows this bay's saved RAID role and local datastore plan."
     };
   }
   if (partId === "netapp") {
@@ -11507,7 +11507,7 @@ function topologyFaceplateElementInspector(
         { label: "NFS LIFs", value: settings.nfs_lifs || "not planned", source: "address_plan.netapp_nfs_lifs" },
         { label: "iSCSI LIFs", value: settings.iscsi_lifs || "not planned", source: "address_plan.netapp_iscsi_lifs" }
       ],
-      summary: "Controller-port and protocol intent for the shared storage fabric."
+      summary: "Shows how this controller port fits the shared storage path."
     };
   }
   if (partId === "vcenter") {
@@ -11519,7 +11519,7 @@ function topologyFaceplateElementInspector(
         { label: "VM network", value: settings.vm_network || "management VLAN 100", source: "device_settings.vcenter.vm_network" },
         { label: "Role", value: settings.role || "inventory and portability", source: "device_settings.vcenter.role" }
       ],
-      summary: "Virtual appliance placement, datastore, and network intent."
+      summary: "Shows where this appliance should live and which network it uses."
     };
   }
   return {
@@ -11529,7 +11529,7 @@ function topologyFaceplateElementInspector(
       { label: "VM network", value: settings.vm_network || "management or workload VLAN", source: "device_settings.windows.vm_network" },
       { label: "Role", value: settings.role || "guest workload", source: "device_settings.windows.role" }
     ],
-    summary: "Guest workload network and role intent."
+    summary: "Shows the guest network and workload role."
   };
 }
 

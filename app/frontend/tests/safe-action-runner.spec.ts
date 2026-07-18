@@ -809,7 +809,7 @@ test("zoned map opens the device workspace directly", async ({ page }) => {
   await expect(networkControls).toContainText("Cisco current-to-intent diff completed");
   await composer.getByRole("button", { name: "Switch port 2" }).click();
   await expect(switchWorkspace.locator(".design-selected-element-note")).toContainText("port 2");
-  await expect(switchWorkspace.locator(".design-selected-element-note")).toContainText("Physical switch port intent");
+  await expect(switchWorkspace.locator(".design-selected-element-note")).toContainText("which VLAN lane it belongs to");
   await expect(composer.getByRole("button", { name: "Switch port 2" })).toHaveClass(/selected/);
 
   await page.locator("div[aria-label='Device workspace overlay']").getByRole("button", { name: "Close" }).click();
@@ -1033,25 +1033,25 @@ test("overview faceplate element clicks reveal concise details only after intent
     {
       button: "Open Cisco switch workspace",
       click: "Switch port 1",
-      note: "Physical switch port intent",
+      note: "which VLAN lane it belongs to",
       workspace: "Cisco switch"
     },
     {
       button: "Open HPE iLO workspace",
       click: "iLO management NIC",
-      note: "Out-of-band management endpoint",
+      note: "whether sign-in still needs attention",
       workspace: "HPE iLO"
     },
     {
       button: "Open HPE DL360 Gen10 workspace",
       click: "Drive bay 1",
-      note: "Bay-level storage intent",
+      note: "saved RAID role",
       workspace: "DL360 Gen10"
     },
     {
       button: "Open NetApp ONTAP workspace",
       click: "e0a",
-      note: "Controller-port and protocol intent",
+      note: "shared storage path",
       workspace: "NetApp ONTAP"
     }
   ];
@@ -1062,7 +1062,9 @@ test("overview faceplate element clicks reveal concise details only after intent
     const workspace = overlay.locator(`section[aria-label='${item.workspace} workspace']`);
     await expect(workspace.locator(".design-selected-element-note"), `${item.workspace} starts without element noise`).toHaveCount(0);
     await workspace.getByRole("button", { name: item.click, exact: true }).first().click();
-    await expect(workspace.locator(".design-selected-element-note"), `${item.workspace} shows a compact element note`).toContainText(item.note);
+    const elementNote = workspace.locator(".design-selected-element-note");
+    await expect(elementNote, `${item.workspace} shows a compact element note`).toContainText(item.note);
+    await expect(elementNote, `${item.workspace} keeps default element copy operator-facing`).not.toContainText(/proof|source|device_settings|workflow|live-proof|read-only/i);
     await expect(workspace.getByLabel(`${item.workspace} advanced checks and proof`), `${item.workspace} still keeps proof hidden`).not.toBeVisible();
     await overlay.getByRole("button", { name: "Close" }).click();
     await expect(page.locator("div[aria-label='Device workspace overlay']")).toHaveCount(0);
@@ -1296,7 +1298,7 @@ test("overview design mode keeps the surface map-only until a node opens the wor
   await expect(switchWorkspace.getByLabel("Cisco switch interactive faceplate")).toBeVisible();
   await switchWorkspace.getByRole("button", { name: "Switch port 1", exact: true }).click();
   await expect(switchWorkspace.locator(".design-selected-element-note")).toContainText("port 1");
-  await expect(switchWorkspace.locator(".design-selected-element-note")).toContainText("Physical switch port intent");
+  await expect(switchWorkspace.locator(".design-selected-element-note")).toContainText("which VLAN lane it belongs to");
   await expect(switchWorkspace.getByLabel("Cisco switch essentials")).toContainText("Management IP");
   await expect(switchWorkspace.getByLabel("Cisco switch essentials")).toContainText("Storage VLAN");
   await expect(switchWorkspace.getByLabel("Cisco workspace network controls")).not.toBeVisible();

@@ -6844,3 +6844,32 @@ Safety boundaries:
 
 Approval question:
 Does `Device setup` match Steve's desired operator vocabulary, and should Codex next audit the next heaviest click-open surface: Cisco port/details controls or Validation details?
+
+## 2026-07-18T03:30:31-04:00 - Codex -> Claude/CXO Review Packet: Faceplate Element Copy Simplification
+
+Codex continued Steve's added focus on Overview device clicks. The default click-open drawer was clean, but clicking a port/bay/NIC still produced first-click copy with diagnostics vocabulary like `live-proof status` and `read-only iLO proof`.
+
+Changed behavior:
+- Faceplate element notes now explain the selected physical element in operator language.
+- Cisco port click says what the port should carry and which VLAN lane it belongs to.
+- iLO NIC click says whether sign-in still needs attention.
+- Server bay click says the saved RAID role and local datastore plan.
+- NetApp port click says how it fits the shared storage path.
+- Advanced proof, schema homes, source paths, read-only command output, and guarded workflows remain behind `View details` / `Advanced proof`.
+
+Evidence:
+- `app/docs/evidence/overview-faceplate-element-note-copy.md`.
+
+Validation:
+- `npm run test:e2e -- --grep "overview faceplate element clicks reveal concise details"`: 1 passed.
+- `npm run test:e2e -- --grep "overview device workspace matrix|overview faceplate element clicks reveal concise details|operator button matrix"`: 3 passed.
+- `npm run build`: passed.
+- `npm run test:e2e`: 79 passed, 4 skipped.
+- `git diff --check`: passed.
+
+Safety boundaries:
+- Frontend/test/evidence/docs only.
+- No hardware contact, login, read/write probe, firmware action, RAID action, reset, factory reset, rebuild, or confirmation-gate change.
+
+Approval question:
+Does this make faceplate clicks simple enough for normal operators, and should Codex next audit Validation details or the Setup pages for the same first-click vocabulary cleanup?
