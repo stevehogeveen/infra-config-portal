@@ -1295,6 +1295,14 @@ test("overview device workspace matrix keeps default inputs concise", async ({ p
     const detailsDrawer = workspace.getByLabel(`${item.workspace} details`);
     const editSettings = workspace.getByLabel(`${item.workspace} edit settings`);
     await expect(detailsDrawer, `${item.workspace} details start closed`).not.toHaveAttribute("open", "");
+    await expect(
+      workspace.locator(":scope > details.design-workspace-details .design-device-hero-after-setup button").first(),
+      `${item.workspace} keeps port/bay buttons hidden until details intent`
+    ).not.toBeVisible();
+    await expect(
+      workspace.locator(":scope > details.design-workspace-details .design-device-action-list button").first(),
+      `${item.workspace} keeps deeper safe-check buttons hidden until diagnostics intent`
+    ).not.toBeVisible();
     await expect(editSettings, `${item.workspace} hides the edit doorway until device details intent`).not.toBeVisible();
     await expect(workspace.locator(":scope > details.design-faceplate-disclosure"), `${item.workspace} removes the old separate faceplate drawer`).toHaveCount(0);
     await expect(workspace.getByLabel(`${item.workspace} interactive faceplate`), `${item.workspace} does not show the interactive faceplate before intent`).not.toBeVisible();

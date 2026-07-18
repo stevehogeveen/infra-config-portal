@@ -11216,6 +11216,14 @@ th.ui-compact-table-cell {
   padding-bottom: 10px;
 }
 
+.design-workspace-details:not([open]) > :not(summary),
+.design-workspace-edit-settings:not([open]) > :not(summary),
+.design-workspace-edit-advanced:not([open]) > :not(summary),
+.design-workspace-proof-door:not([open]) > :not(summary),
+.design-workspace-advanced:not([open]) > :not(summary) {
+  display: none !important;
+}
+
 .design-device-details-inspector {
   display: grid;
   gap: 10px;

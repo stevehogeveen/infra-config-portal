@@ -9823,7 +9823,11 @@ function LabDesignComposer({
             )}
 
             {workspaceOnly && (
-              <details className="design-workspace-details design-workspace-details-combined" aria-label={`${selectedPart.label} details`}>
+              <details
+                className="design-workspace-details design-workspace-details-combined"
+                aria-label={`${selectedPart.label} details`}
+                key={`${selectedPart.id}-workspace-details`}
+              >
                 <summary>
                   <span>More device details</span>
                 </summary>
