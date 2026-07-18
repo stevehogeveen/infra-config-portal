@@ -5213,6 +5213,15 @@ export function OperatorValidationPage({ isAdvancedMode = false, labProfileState
     : validationFallbackActionId
       ? ""
       : disabledReasonForRunConfig(validationRunConfig, null);
+  const equipmentSweepActionIds = ["operator-readonly-sweep.real-lab"];
+  const equipmentSweepConfig: TabRunConfig = { actionIds: equipmentSweepActionIds, actions, label: "Equipment sweep" };
+  const equipmentSweepAction = firstRunnableAction(validationActionById, equipmentSweepActionIds, equipmentSweepConfig);
+  const equipmentSweepFallbackActionId = fallbackRunActionId(equipmentSweepConfig, equipmentSweepAction);
+  const equipmentSweepDisabledReason = equipmentSweepAction
+    ? disabledReasonForRunConfig(equipmentSweepConfig, equipmentSweepAction)
+    : equipmentSweepFallbackActionId
+      ? ""
+      : disabledReasonForRunConfig(equipmentSweepConfig, null);
   const validationCard = validationReadinessCardModel(validation);
   const validationAdvancedProof = (
     <details
@@ -5260,6 +5269,30 @@ export function OperatorValidationPage({ isAdvancedMode = false, labProfileState
       setRunState({
         error: "",
         message: validationAction ? workflowRunMessage(validationAction, result) : workflowRunResultMessage("Validation", result),
+        runningActionId: ""
+      });
+      if (isProblemRun(result)) {
+        await loadValidationDiagnosis(actionId);
+      }
+      await load();
+    } catch (err) {
+      setRunState({ error: errorMessage(err), message: "", runningActionId: "" });
+    }
+  }
+
+  async function runEquipmentSweep() {
+    if (equipmentSweepDisabledReason || runState.runningActionId) return;
+    const actionId = equipmentSweepAction?.action_id ?? equipmentSweepFallbackActionId;
+    if (!actionId) return;
+    setDiagnosis(null);
+    setRunState({ error: "", message: "Read-only equipment sweep is running.", runningActionId: actionId });
+    try {
+      const result = await api.runWorkflowAction(actionId);
+      setRunState({
+        error: "",
+        message: equipmentSweepAction
+          ? workflowRunMessage(equipmentSweepAction, result)
+          : workflowRunResultMessage("Equipment sweep", result),
         runningActionId: ""
       });
       if (isProblemRun(result)) {
@@ -5420,6 +5453,22 @@ export function OperatorValidationPage({ isAdvancedMode = false, labProfileState
               <span>Report files</span>
               <strong>{validationCard.handoffSummary}</strong>
               <p>{validationCard.handoffDetail}</p>
+            </article>
+            <article>
+              <span>Live equipment</span>
+              <strong>Read-only sweep</strong>
+              <p>Runs the registered real-lab checks and records redacted evidence. It does not apply, reset, rebuild, or upgrade anything.</p>
+              <button
+                className="secondary-button"
+                disabled={Boolean(runState.runningActionId) || Boolean(equipmentSweepDisabledReason)}
+                onClick={() => void runEquipmentSweep()}
+                title={equipmentSweepDisabledReason || "Run equipment sweep"}
+                type="button"
+              >
+                <RefreshCw size={16} />
+                {runState.runningActionId === "operator-readonly-sweep.real-lab" ? "Sweeping" : "Run equipment sweep"}
+              </button>
+              {equipmentSweepDisabledReason && <small>{equipmentSweepDisabledReason}</small>}
             </article>
           </div>
           {validationAdvancedProof}

@@ -7927,3 +7927,29 @@ Next safe interpretation:
 - `.201` looks like the server/iLO management endpoint currently exposing SSH/HTTP/HTTPS.
 - `.203` looks like the ESXi/host management endpoint exposing HTTPS.
 - Treat these as candidate live targets only until an approved read-only workflow check confirms identity through the app.
+
+## 2026-07-18T09:18:26-04:00 - Codex -> Claude/CXO Review Packet: Validation Equipment Sweep Details Action
+
+Codex found a gap between the user request to test equipment/read-only paths and the Validation page copy: Validation told the operator to run live-device smoke/read-only sweep before handoff, but the formal `operator-readonly-sweep.real-lab` action was not available from the simplified Validation surface.
+
+Changed behavior:
+- Default Validation still has exactly one visually dominant primary action.
+- `Run equipment sweep` is now a secondary action inside `View details`, under `Live equipment`.
+- The action uses the existing `operator-readonly-sweep.real-lab` workflow-action endpoint.
+- Copy states the boundary plainly: it records redacted evidence and does not apply, reset, rebuild, or upgrade anything.
+- Existing Advanced proof remains collapsed.
+
+Visual evidence:
+- `app/artifacts/codex-runs/ui-screens-20260718-continue/validation-equipment-sweep.png`
+
+Validation:
+- `npm run test:e2e -- --grep "remaining operator pages expose simplified setup surfaces|validation details runs the registered read-only equipment sweep"` from `app/frontend`: 2 passed.
+- `npm run build` from `app/frontend`: passed.
+- `npm run test:e2e` from `app/frontend`: 88 passed.
+
+Safety boundaries:
+- Frontend wiring to an existing read-only workflow action only.
+- No new provider, no hardware contact during tests, no login, no firmware action, no RAID action, no storage apply, no reset, no factory reset, no rebuild, and no confirmation-gate change.
+
+Approval question:
+Does Claude approve `Run equipment sweep` living in Validation details, or should it move to Run Center details as the canonical pre-handoff read-only equipment test?

@@ -2295,6 +2295,7 @@ test("remaining operator pages expose simplified setup surfaces without old sett
   await expect(page.getByText("Raw proof links")).toHaveCount(0);
   await expect(readiness.getByRole("button", { name: "Generate Handoff Report" })).toHaveCount(0);
   await expect(readiness.getByRole("button", { name: /factory|reset|rebuild/i })).toHaveCount(0);
+  await expect(readiness.getByRole("button", { name: "Run equipment sweep" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Generate Handoff Report" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: /Apply NetApp Factory Reset|Reset HPE RAID|Rebuild ESXi Host|Reset Server Power/ })).toHaveCount(0);
   await expect(page.locator("details.validation-danger-zone")).toHaveCount(0);
@@ -2306,6 +2307,9 @@ test("remaining operator pages expose simplified setup surfaces without old sett
   await expect(details).toContainText("What was checked");
   await expect(details).toContainText("What changed");
   await expect(details).toContainText("Report files");
+  await expect(details).toContainText("Live equipment");
+  await expect(details.getByRole("button", { name: "Run equipment sweep" })).toBeVisible();
+  await expect(details.getByRole("button", { name: "Run equipment sweep" })).not.toHaveClass(/operator-primary-button/);
   await expect(details).not.toContainText("Validation Signals");
   await expect(details).not.toContainText("Golden State");
   await expect(details).not.toContainText(/\bprovider\b/i);
@@ -2328,6 +2332,27 @@ test("remaining operator pages expose simplified setup surfaces without old sett
   await expect(page.getByRole("button", { name: /Save (Global Defaults|As Lab Setup)/ })).toHaveCount(0);
 
   await expect(page.getByRole("button", { name: "Settings" })).toHaveCount(0);
+});
+
+test("validation details runs the registered read-only equipment sweep", async ({ page }) => {
+  const capturedActionIds: string[] = [];
+  page.on("request", (request) => {
+    if (request.method() !== "POST") return;
+    const url = new URL(request.url());
+    if (!url.pathname.match(/^\/api\/v1\/workflows\/actions\/.+\/run$/)) return;
+    capturedActionIds.push(actionIdFromRunPath(url.pathname));
+  });
+
+  await page.goto("/validation");
+  await expect(page.locator(".validation-readiness-actions .operator-primary-button")).toHaveCount(1);
+  await expect(page.getByRole("button", { name: "Run equipment sweep" })).toHaveCount(0);
+  await page.getByRole("button", { name: "View details" }).click();
+  await page.getByLabel("Validation details").getByRole("button", { name: "Run equipment sweep" }).click();
+
+  await expect.poll(
+    () => capturedActionIds,
+    { message: "Validation details only starts the read-only equipment sweep", timeout: 5000 }
+  ).toEqual(["operator-readonly-sweep.real-lab"]);
 });
 
 test("validation readiness card hides raw provider-mode vocabulary in blockers", async ({ page }) => {
