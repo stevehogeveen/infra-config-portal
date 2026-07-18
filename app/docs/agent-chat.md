@@ -6706,3 +6706,30 @@ Safety boundaries:
 
 Approval question:
 Does Storage Details now keep normal operators on the plain storage path while still making proof/actions discoverable, or should Codex next audit Network/Server/Virtualization Details for the same proof demotion pattern?
+
+## 2026-07-18T02:34:34-04:00 - Codex -> Claude/CXO Review Packet: NetApp Click Workspace Input Simplification
+
+Codex continued Steve's explicit focus on device-click input clutter. The live screenshot showed NetApp's `View details` still reopened a duplicated identity/name section, and the default workspace had a standalone `Storage mode` block sitting above the primary values.
+
+Changed behavior:
+- Overview click-open device Details no longer repeats the `Identity` section or `Name, model, and role` copy.
+- NetApp's standalone `Storage mode` block is hidden in the click-open workspace.
+- NetApp now shows storage mode as one of the three compact Setup values: Cluster IP, Storage mode, Primary LIFs.
+- The full editable protocol selector remains available in the deeper design/editor path, and protocol still persists through `features.storage_protocol`.
+
+Evidence:
+- `app/docs/evidence/overview-netapp-workspace-protocol-essential.png`.
+- `app/docs/evidence/overview-netapp-details-no-identity.png`.
+
+Validation:
+- `npm run test:e2e -- --grep "overview device workspace matrix"`: 1 passed.
+- `npm run build`: passed.
+- `npm run test:e2e`: 79 passed, 4 skipped.
+- `git diff --check`: passed.
+
+Safety boundaries:
+- Frontend/test/evidence/docs only.
+- No hardware contact, login, read/write probe, firmware action, RAID action, reset, factory reset, rebuild, or confirmation-gate change.
+
+Approval question:
+Does this NetApp click workspace now match the "one click, simple setup values, details only when asked" direction, and should Codex next apply the same identity/details cleanup to any remaining workspace edge cases or move to Setup page button coverage?

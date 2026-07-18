@@ -960,7 +960,7 @@ test("overview device workspace matrix keeps default inputs concise", async ({ p
     {
       advancedControl: "NetApp workspace storage controls",
       button: "Open NetApp ONTAP workspace",
-      essentials: ["Cluster IP", "Primary NFS LIFs"],
+      essentials: ["Cluster IP", "Storage mode", "Primary NFS LIFs"],
       workspace: "NetApp ONTAP"
     },
     {
@@ -991,12 +991,19 @@ test("overview device workspace matrix keeps default inputs concise", async ({ p
     for (const hiddenEssential of item.hiddenEssentials ?? []) {
       await expect(essentials, `${item.workspace} hides proof field ${hiddenEssential}`).not.toContainText(hiddenEssential);
     }
+    if (item.workspace === "NetApp ONTAP") {
+      await expect(workspace.getByLabel("NetApp storage protocol"), "NetApp storage mode is folded into essentials").toHaveCount(0);
+    }
     await expect(workspace.locator(":scope > details.design-workspace-details"), `${item.workspace} has one top-level details drawer`).toHaveCount(1);
     await expect(workspace.locator(":scope > details.design-workspace-details > summary"), `${item.workspace} details summary is plain`).toContainText("View details");
     await expect(workspace.locator(":scope > details.design-workspace-advanced"), `${item.workspace} does not expose advanced as a second top-level drawer`).toHaveCount(0);
     await expect(workspace.locator(".design-workspace-map-details"), `${item.workspace} keeps chip details out of the default drawer`).toHaveCount(0);
     await expect(workspace, `${item.workspace} retires the old extra settings label`).not.toContainText("More settings");
-    await expect(workspace.getByLabel(`${item.workspace} details`), `${item.workspace} details start closed`).not.toHaveAttribute("open", "");
+    const detailsDrawer = workspace.getByLabel(`${item.workspace} details`);
+    await expect(detailsDrawer, `${item.workspace} details start closed`).not.toHaveAttribute("open", "");
+    await detailsDrawer.locator(":scope > summary").click();
+    await expect(detailsDrawer.locator(`section[aria-label='${item.workspace} Identity']`), `${item.workspace} does not repeat identity in details`).toHaveCount(0);
+    await expect(detailsDrawer, `${item.workspace} details do not repeat name/model copy`).not.toContainText("Name, model, and role");
     await expect(workspace.getByLabel(item.advancedControl), `${item.workspace} advanced controls are hidden by default`).not.toBeVisible();
     await expect(workspace.getByLabel(`${item.workspace} advanced checks and proof`), `${item.workspace} advanced proof is closed`).not.toHaveAttribute("open", "");
     await expect(overlay.locator(".design-parts-shelf"), `${item.workspace} hides the retired parts shelf`).not.toBeVisible();

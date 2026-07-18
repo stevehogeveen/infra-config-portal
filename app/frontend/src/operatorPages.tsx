@@ -8853,7 +8853,7 @@ function LabDesignComposer({
     ? topologyDeviceInspectorRows(selectedPart.id, selectedSettings, storageProtocol)
     : [];
   const selectedSettingFields = selectedPart ? topologyDeviceSettingFields(selectedPart.id, storageProtocol) : [];
-  const selectedWorkspaceSettingFields = selectedPart?.id === "netapp"
+  const selectedWorkspaceSettingFields = selectedPart?.id === "netapp" && !workspaceOnly
     ? selectedSettingFields.filter((field) => field.key !== "protocol")
     : selectedSettingFields;
   const selectedPersistenceRows = selectedPart ? topologyDevicePersistenceRows(selectedPart.id, selectedSettingFields) : [];
@@ -8907,6 +8907,9 @@ function LabDesignComposer({
   const selectedWorkspaceSections = selectedPart
     ? topologyDeviceWorkspaceSections(selectedPart.id, selectedWorkspaceSettingFields, draftScenario, storageProtocol)
     : [];
+  const selectedDetailWorkspaceSections = workspaceOnly
+    ? selectedWorkspaceSections.filter((section) => section.id !== "identity")
+    : selectedWorkspaceSections;
   const selectedEssentialFields = selectedPart
     ? topologyDeviceEssentialFields(selectedPart.id, selectedWorkspaceSettingFields, draftScenario, storageProtocol)
     : [];
@@ -9472,7 +9475,7 @@ function LabDesignComposer({
               </div>
             )}
 
-            {selectedPart.id === "netapp" && (
+            {!workspaceOnly && selectedPart.id === "netapp" && (
               <section className="design-primary-setting" aria-label="NetApp storage protocol">
                 <div>
                   <p className="operator-kicker">Storage mode</p>
@@ -9633,9 +9636,9 @@ function LabDesignComposer({
                   <span>View details</span>
                   <strong>Settings and proof</strong>
                 </summary>
-                {selectedWorkspaceSections.length > 0 && (
+                {selectedDetailWorkspaceSections.length > 0 && (
                   <div className="design-device-param-sections" aria-label={`${selectedPart.label} detailed parameters`}>
-                    {selectedWorkspaceSections.map((section) => (
+                    {selectedDetailWorkspaceSections.map((section) => (
                       <section className="design-device-param-section" key={section.id} aria-label={`${selectedPart.label} ${section.label}`}>
                         <div>
                           <p className="operator-kicker">{section.label}</p>
@@ -11342,8 +11345,8 @@ function topologyDeviceEssentialFields(
       ? ["management_ip", "raid_controller", "raid_data"]
       : ["management_ip", "storage_vlan"],
     netapp: storageProtocol === "iscsi"
-      ? ["management_ip", "iscsi_lifs"]
-      : ["management_ip", "nfs_lifs"],
+      ? ["management_ip", "protocol", "iscsi_lifs"]
+      : ["management_ip", "protocol", "nfs_lifs"],
     vcenter: ["management_ip", "datastore"],
     windows: ["vm_network", "role"]
   };
