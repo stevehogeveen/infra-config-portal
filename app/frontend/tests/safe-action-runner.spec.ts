@@ -2127,7 +2127,22 @@ test("network details reveal saved settings and nested advanced switch plan", as
   await expect(details).toContainText("SNMP");
   await expect(details).toContainText("MTU");
   await detailSections.getByRole("button", { name: /Setup/ }).click();
-  await expect(details.getByLabel("Network configure")).toBeVisible();
+  const networkConfigure = details.getByLabel("Network configure");
+  await expect(networkConfigure).toBeVisible();
+  await expect(networkConfigure.getByRole("textbox", { exact: true, name: "Cisco mgmt IP" })).toBeVisible();
+  await expect(networkConfigure.getByRole("textbox", { exact: true, name: "Subnet" })).toBeVisible();
+  await expect(networkConfigure.getByRole("textbox", { exact: true, name: "Gateway" })).toBeVisible();
+  await expect(networkConfigure.getByRole("textbox", { exact: true, name: "VLAN" })).toBeVisible();
+  await expect(networkConfigure.getByRole("textbox", { exact: true, name: "DNS servers" })).toBeHidden();
+  await expect(networkConfigure.getByRole("textbox", { exact: true, name: "NTP servers" })).toBeHidden();
+  await expect(networkConfigure.getByRole("textbox", { exact: true, name: "MTU" })).toBeHidden();
+  await expect(networkConfigure.getByLabel("Network feature toggles")).toBeHidden();
+  await expect(networkConfigure.getByText("More network services")).toBeVisible();
+  await networkConfigure.getByText("More network services").click();
+  await expect(networkConfigure.getByRole("textbox", { exact: true, name: "DNS servers" })).toBeVisible();
+  await expect(networkConfigure.getByRole("textbox", { exact: true, name: "NTP servers" })).toBeVisible();
+  await expect(networkConfigure.getByRole("textbox", { exact: true, name: "MTU" })).toBeVisible();
+  await expect(networkConfigure.getByLabel("Network feature toggles")).toBeVisible();
 
   await detailSections.getByRole("button", { name: /Plan/ }).click();
   await expect(page.getByLabel("Switch port map")).toBeVisible();

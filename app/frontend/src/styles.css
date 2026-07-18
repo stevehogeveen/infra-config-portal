@@ -16333,6 +16333,8 @@ button.design-ilo-port:hover {
 .storage-config-more,
 .server-config-primary-grid,
 .server-config-more,
+.network-config-primary-grid,
+.network-config-more,
 .virtualization-config-primary-grid,
 .virtualization-config-more {
   grid-column: 1 / -1;
@@ -16342,6 +16344,8 @@ button.design-ilo-port:hover {
 .storage-config-more-grid,
 .server-config-primary-grid,
 .server-config-more-grid,
+.network-config-primary-grid,
+.network-config-more-grid,
 .virtualization-config-primary-grid,
 .virtualization-config-more-grid {
   display: grid;
@@ -16355,6 +16359,7 @@ button.design-ilo-port:hover {
 
 .storage-config-more,
 .server-config-more,
+.network-config-more,
 .virtualization-config-more {
   background: #f8fafc;
   border: 1px solid #dbe4ee;
@@ -16364,6 +16369,7 @@ button.design-ilo-port:hover {
 
 .storage-config-more > summary,
 .server-config-more > summary,
+.network-config-more > summary,
 .virtualization-config-more > summary {
   align-items: center;
   color: #334961;
@@ -16378,12 +16384,14 @@ button.design-ilo-port:hover {
 
 .storage-config-more > summary::-webkit-details-marker,
 .server-config-more > summary::-webkit-details-marker,
+.network-config-more > summary::-webkit-details-marker,
 .virtualization-config-more > summary::-webkit-details-marker {
   display: none;
 }
 
 .storage-config-more > summary span,
 .server-config-more > summary span,
+.network-config-more > summary span,
 .virtualization-config-more > summary span {
   color: #102238;
   font-size: 13px;
@@ -16392,6 +16400,7 @@ button.design-ilo-port:hover {
 
 .storage-config-more > summary small,
 .server-config-more > summary small,
+.network-config-more > summary small,
 .virtualization-config-more > summary small {
   color: #64748b;
   font-size: 12px;
@@ -16402,6 +16411,7 @@ button.design-ilo-port:hover {
 
 .storage-config-more-grid,
 .server-config-more-grid,
+.network-config-more-grid,
 .virtualization-config-more-grid {
   border-top: 1px solid #e2e8ee;
   padding: 14px;
@@ -17978,6 +17988,8 @@ button.design-ilo-port:hover {
   .storage-config-more-grid,
   .server-config-primary-grid,
   .server-config-more-grid,
+  .network-config-primary-grid,
+  .network-config-more-grid,
   .virtualization-config-primary-grid,
   .virtualization-config-more-grid {
     grid-template-columns: 1fr;
@@ -17985,6 +17997,7 @@ button.design-ilo-port:hover {
 
   .storage-config-more > summary,
   .server-config-more > summary,
+  .network-config-more > summary,
   .virtualization-config-more > summary {
     align-items: flex-start;
     flex-direction: column;
@@ -17992,6 +18005,7 @@ button.design-ilo-port:hover {
 
   .storage-config-more > summary small,
   .server-config-more > summary small,
+  .network-config-more > summary small,
   .virtualization-config-more > summary small {
     text-align: left;
   }
