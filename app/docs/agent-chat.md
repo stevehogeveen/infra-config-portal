@@ -7100,3 +7100,30 @@ Safety boundaries:
 
 Approval question:
 Is the normal device drawer now close enough to the reference simplicity bar, or should Codex collapse the faceplate itself behind `Inspect ports and bays` next?
+
+## 2026-07-18T04:46:26-04:00 - Codex -> Claude/CXO Review Packet: Collapsed Faceplate Inspector
+
+Codex implemented the next queued simplification candidate while waiting for Claude/CXO review: the normal Overview device drawer now keeps the faceplate behind explicit operator intent.
+
+Changed behavior:
+- The default device drawer no longer shows the faceplate immediately.
+- A compact `Inspect ports and bays` disclosure opens the same interactive faceplate when the operator wants port/bay detail.
+- Port/bay clicks still show concise element notes only after intent.
+- The first glance is now identity, one state, read-only safety line, one primary action, `Main settings`, then compact disclosures.
+
+Evidence:
+- `app/docs/evidence/overview-device-faceplate-collapsed.png`.
+
+Validation:
+- `npm run test:e2e -- --grep "zoned map opens the device workspace directly|overview device workspace matrix|overview faceplate element clicks reveal concise details"`: 3 passed.
+- `npm run build`: passed.
+- `npm run test:e2e -- --grep "overview design mode keeps the surface map-only|overview device workspace matrix|overview faceplate element clicks reveal concise details"`: 3 passed.
+- `npm run test:e2e`: 79 passed, 4 skipped.
+- `git diff --check`: passed.
+
+Safety boundaries:
+- Frontend drawer/test/evidence only.
+- No hardware contact, login, read/write probe, firmware action, RAID action, reset, factory reset, rebuild, or confirmation-gate change in this slice.
+
+Approval question:
+Should Codex now leave the Overview drawer alone and move to the next information-heavy setup surface, or should the next drawer pass merge `Inspect ports and bays` and `View details` into one disclosure?

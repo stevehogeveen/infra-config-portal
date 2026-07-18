@@ -9638,19 +9638,24 @@ function LabDesignComposer({
             )}
 
             {workspaceOnly && (
-              <div className="design-device-hero design-device-hero-after-setup" aria-label={`${selectedPart.label} interactive faceplate`}>
-                <DesignFaceplateVisual
-                  interactive
-                  onElementClick={(elementLabel) => {
-                    setSelectedFaceplateElement(elementLabel);
-                    setDropMessage(`${selectedPart.label} ${elementLabel} selected. Inspect mapped params below; hardware untouched.`);
-                  }}
-                  partId={selectedPart.id}
-                  selectedElement={selectedFaceplateElement}
-                  settings={selectedSettings}
-                  storageProtocol={storageProtocol}
-                />
-              </div>
+              <details className="design-faceplate-disclosure" aria-label={`${selectedPart.label} port and bay inspector`}>
+                <summary>
+                  <span>Inspect ports and bays</span>
+                </summary>
+                <div className="design-device-hero design-device-hero-after-setup" aria-label={`${selectedPart.label} interactive faceplate`}>
+                  <DesignFaceplateVisual
+                    interactive
+                    onElementClick={(elementLabel) => {
+                      setSelectedFaceplateElement(elementLabel);
+                      setDropMessage(`${selectedPart.label} ${elementLabel} selected. Inspect mapped params below; hardware untouched.`);
+                    }}
+                    partId={selectedPart.id}
+                    selectedElement={selectedFaceplateElement}
+                    settings={selectedSettings}
+                    storageProtocol={storageProtocol}
+                  />
+                </div>
+              </details>
             )}
 
             {workspaceOnly && selectedElementInspector && (

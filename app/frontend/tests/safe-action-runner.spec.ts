@@ -807,6 +807,7 @@ test("zoned map opens the device workspace directly", async ({ page }) => {
   await ciscoProbeRequest;
   await ciscoDiffRequest;
   await expect(networkControls).toContainText("Cisco current-to-intent diff completed");
+  await switchWorkspace.getByLabel("Cisco switch port and bay inspector").locator(":scope > summary").click();
   await composer.getByRole("button", { name: "Switch port 2" }).click();
   await expect(switchWorkspace.locator(".design-selected-element-note")).toContainText("port 2");
   await expect(switchWorkspace.locator(".design-selected-element-note")).toContainText("which VLAN lane it belongs to");
@@ -1006,6 +1007,10 @@ test("overview device workspace matrix keeps default inputs concise", async ({ p
     if (item.workspace === "NetApp ONTAP") {
       await expect(workspace.getByLabel("NetApp storage protocol"), "NetApp storage mode is folded into essentials").toHaveCount(0);
     }
+    const inspectorDisclosure = workspace.getByLabel(`${item.workspace} port and bay inspector`);
+    await expect(inspectorDisclosure, `${item.workspace} keeps faceplate behind intent`).not.toHaveAttribute("open", "");
+    await expect(workspace.getByLabel(`${item.workspace} interactive faceplate`), `${item.workspace} does not show the faceplate before intent`).not.toBeVisible();
+    await expect(inspectorDisclosure.locator(":scope > summary"), `${item.workspace} uses compact inspector wording`).toContainText("Inspect ports and bays");
     const setupBeforeFaceplate = await workspace.evaluate((node) => {
       const setup = node.querySelector(".design-device-essentials");
       const faceplate = node.querySelector(".design-device-hero");
@@ -1074,6 +1079,8 @@ test("overview faceplate element clicks reveal concise details only after intent
     const overlay = page.locator("div[aria-label='Device workspace overlay']");
     const workspace = overlay.locator(`section[aria-label='${item.workspace} workspace']`);
     await expect(workspace.locator(".design-selected-element-note"), `${item.workspace} starts without element noise`).toHaveCount(0);
+    await expect(workspace.getByLabel(`${item.workspace} interactive faceplate`), `${item.workspace} starts with faceplate hidden`).not.toBeVisible();
+    await workspace.getByLabel(`${item.workspace} port and bay inspector`).locator(":scope > summary").click();
     await workspace.getByRole("button", { name: item.click, exact: true }).first().click();
     const elementNote = workspace.locator(".design-selected-element-note");
     await expect(elementNote, `${item.workspace} shows a compact element note`).toContainText(item.note);
@@ -1309,6 +1316,8 @@ test("overview design mode keeps the surface map-only until a node opens the wor
   await expect(switchWorkspace.getByLabel("Cisco switch state")).toContainText("Run a check to verify");
   await expect(switchWorkspace.getByLabel("Cisco switch state")).not.toContainText(/Draft|Saved/);
   await expect(switchWorkspace.getByLabel("Cisco switch state")).not.toContainText("source:");
+  await expect(switchWorkspace.getByLabel("Cisco switch interactive faceplate")).not.toBeVisible();
+  await switchWorkspace.getByLabel("Cisco switch port and bay inspector").locator(":scope > summary").click();
   await expect(switchWorkspace.getByLabel("Cisco switch interactive faceplate")).toBeVisible();
   await switchWorkspace.getByRole("button", { name: "Switch port 1", exact: true }).click();
   await expect(switchWorkspace.locator(".design-selected-element-note")).toContainText("port 1");
