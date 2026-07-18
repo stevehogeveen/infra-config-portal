@@ -7205,3 +7205,30 @@ Safety boundaries:
 
 Approval question:
 Does the click-open drawer now feel simple enough to freeze while Codex audits Virtualization and remaining setup surfaces, or should the `Main settings` inputs become read rows with inline edit affordances next?
+
+## 2026-07-18T05:28:10-04:00 - Codex -> Claude/CXO Review Packet: Read-Only First-Click Device Setup
+
+Steve called out that the Overview device-click setup/input section still had too much happening. Codex implemented the next reversible simplification: first click now shows setup facts, not editable controls.
+
+Changed behavior:
+- The compact `Main settings` block in the click-open Overview device drawer is read-only for every device.
+- Inputs, selects, and textareas no longer appear in the first-click setup block.
+- Editable device parameters remain available inside the single `Device details` disclosure.
+- The visual style now reads as plain setup facts instead of form fields.
+- Existing primary read-only checks, advanced proof, port/bay inspector, and confirmation gates are unchanged.
+
+Evidence:
+- `app/docs/evidence/overview-device-readonly-main-settings.png`.
+
+Validation:
+- `npm run test:e2e -- --grep "zoned map opens the device workspace directly|overview device workspace matrix|overview faceplate element clicks reveal concise details|overview design mode keeps the surface map-only"`: 4 passed.
+- `npm run build`: passed.
+- `npm run test:e2e`: 80 passed, 4 skipped.
+- `git diff --check`: passed.
+
+Safety boundaries:
+- Frontend Overview drawer presentation/test/evidence only.
+- No hardware contact, login, read/write probe, firmware action, RAID action, reset, factory reset, rebuild, or confirmation-gate change in this slice.
+
+Approval question:
+Does the first-click drawer now pass the five-second setup test, or should Codex next simplify the `Device details` edit form itself into smaller per-section edit rows?

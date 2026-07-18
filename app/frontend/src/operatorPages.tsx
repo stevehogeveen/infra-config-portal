@@ -9242,12 +9242,12 @@ function LabDesignComposer({
     }
   }
 
-  function renderSelectedDeviceSettingRow(field: { key: string; kind?: "textarea"; label: string }) {
+  function renderSelectedDeviceSettingRow(field: { key: string; kind?: "textarea"; label: string }, options?: { readOnlyDisplay?: boolean }) {
     if (!selectedPart) return null;
     const profilePath = topologyCommittedProfilePath(selectedPart.id, field.key);
     const profileOwned = Boolean(profilePath);
     const value = deviceSettings[selectedPart.id]?.[field.key] ?? "";
-    if (workspaceOnly && profileOwned) {
+    if (options?.readOnlyDisplay || (workspaceOnly && profileOwned)) {
       return (
         <div className="design-device-setting-row is-profile-owned is-readonly-value" key={field.key}>
           <span>{field.label}</span>
@@ -9632,7 +9632,7 @@ function LabDesignComposer({
                   <h4>Main settings</h4>
                 </div>
                 <div className="design-device-setting-rows compact">
-                  {selectedEssentialFields.map((field) => renderSelectedDeviceSettingRow(field))}
+                  {selectedEssentialFields.map((field) => renderSelectedDeviceSettingRow(field, { readOnlyDisplay: true }))}
                 </div>
               </section>
             )}

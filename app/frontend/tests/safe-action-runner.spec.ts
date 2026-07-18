@@ -998,6 +998,7 @@ test("overview device workspace matrix keeps default inputs concise", async ({ p
     await expect(essentials, `${item.workspace} avoids internal value labels`).not.toContainText("Primary values");
     await expect(essentials, `${item.workspace} removes instructional setup copy`).not.toContainText("Everything else is in Details");
     expect(await essentials.locator(".design-device-setting-row").count(), `${item.workspace} keeps essentials compact`).toBeLessThanOrEqual(3);
+    await expect(essentials.locator("input, select, textarea"), `${item.workspace} keeps first-click setup read-only`).toHaveCount(0);
     await expect(essentials, `${item.workspace} keeps identity in the hero, not the setup form`).not.toContainText("Name");
     for (const essential of item.essentials) {
       await expect(essentials, `${item.workspace} essential ${essential}`).toContainText(essential);
