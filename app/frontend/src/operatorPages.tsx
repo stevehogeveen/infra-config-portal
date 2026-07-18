@@ -15355,99 +15355,119 @@ function NetworkConfigurePanel({
       </CardHeader>
       <CardContent>
         <form className="network-config-form" onSubmit={save}>
-          <div className="network-config-primary-grid">
-            <Field label="Cisco mgmt IP">
-              <input
-                value={edit.ciscoManagement}
-                onChange={(event) => update("ciscoManagement", event.target.value)}
-                placeholder="192.168.1.204"
-              />
-            </Field>
-            <Field label="VLAN">
-              <input
-                value={edit.vlanId}
-                onChange={(event) => update("vlanId", event.target.value)}
-                placeholder="optional"
-              />
-            </Field>
+          <div className="network-config-summary design-device-summary" aria-label="Network setup summary">
+            <div>
+              <span>Cisco mgmt IP</span>
+              <strong>{displayValue(edit.ciscoManagement)}</strong>
+            </div>
+            <div>
+              <span>VLAN</span>
+              <strong>{displayValue(edit.vlanId)}</strong>
+            </div>
+            <div>
+              <span>Subnet</span>
+              <strong>{displayValue(edit.subnet)}</strong>
+            </div>
           </div>
-          <details className="network-config-more">
+          <details className="network-config-more network-config-edit">
             <summary>
-              <span>More network values</span>
-              <small>Subnet, gateway, DNS, NTP, SNMP, and MTU live here.</small>
+              <span>Edit network values</span>
+              <small>Only updates the saved setup. No hardware touched.</small>
             </summary>
-            <div className="network-config-more-grid">
-              <Field label="Subnet">
+            <div className="network-config-more-grid network-config-edit-grid">
+              <Field label="Cisco mgmt IP">
                 <input
-                  value={edit.subnet}
-                  onChange={(event) => update("subnet", event.target.value)}
-                  placeholder="192.168.1.0/24"
+                  value={edit.ciscoManagement}
+                  onChange={(event) => update("ciscoManagement", event.target.value)}
+                  placeholder="192.168.1.204"
                 />
               </Field>
-              <Field label="Gateway">
+              <Field label="VLAN">
                 <input
-                  value={edit.gateway}
-                  onChange={(event) => update("gateway", event.target.value)}
-                  placeholder="192.168.1.1"
-                />
-              </Field>
-              <Field label="DNS servers">
-                <input
-                  value={edit.dnsServers}
-                  onChange={(event) => update("dnsServers", event.target.value)}
-                  placeholder="comma separated"
-                />
-              </Field>
-              <Field label="NTP servers">
-                <input
-                  value={edit.ntpServers}
-                  onChange={(event) => update("ntpServers", event.target.value)}
-                  placeholder="comma separated"
-                />
-              </Field>
-              <Field label="MTU">
-                <input
-                  inputMode="numeric"
-                  value={edit.mtu}
-                  onChange={(event) => update("mtu", event.target.value)}
+                  value={edit.vlanId}
+                  onChange={(event) => update("vlanId", event.target.value)}
                   placeholder="optional"
                 />
               </Field>
-            </div>
-            <div className="network-config-toggles" aria-label="Network feature toggles">
-              <label>
-                <input
-                  checked={edit.enableDns}
-                  onChange={(event) => update("enableDns", event.target.checked)}
-                  type="checkbox"
-                />
-                <span>DNS</span>
-              </label>
-              <label>
-                <input
-                  checked={edit.enableNtp}
-                  onChange={(event) => update("enableNtp", event.target.checked)}
-                  type="checkbox"
-                />
-                <span>NTP</span>
-              </label>
-              <label>
-                <input
-                  checked={edit.enableSnmp}
-                  onChange={(event) => update("enableSnmp", event.target.checked)}
-                  type="checkbox"
-                />
-                <span>SNMP</span>
-              </label>
+              <details className="network-config-more network-config-values">
+                <summary>
+                  <span>More network values</span>
+                  <small>Subnet, gateway, DNS, NTP, SNMP, and MTU live here.</small>
+                </summary>
+                <div className="network-config-more-grid">
+                  <Field label="Subnet">
+                    <input
+                      value={edit.subnet}
+                      onChange={(event) => update("subnet", event.target.value)}
+                      placeholder="192.168.1.0/24"
+                    />
+                  </Field>
+                  <Field label="Gateway">
+                    <input
+                      value={edit.gateway}
+                      onChange={(event) => update("gateway", event.target.value)}
+                      placeholder="192.168.1.1"
+                    />
+                  </Field>
+                  <Field label="DNS servers">
+                    <input
+                      value={edit.dnsServers}
+                      onChange={(event) => update("dnsServers", event.target.value)}
+                      placeholder="comma separated"
+                    />
+                  </Field>
+                  <Field label="NTP servers">
+                    <input
+                      value={edit.ntpServers}
+                      onChange={(event) => update("ntpServers", event.target.value)}
+                      placeholder="comma separated"
+                    />
+                  </Field>
+                  <Field label="MTU">
+                    <input
+                      inputMode="numeric"
+                      value={edit.mtu}
+                      onChange={(event) => update("mtu", event.target.value)}
+                      placeholder="optional"
+                    />
+                  </Field>
+                </div>
+                <div className="network-config-toggles" aria-label="Network feature toggles">
+                  <label>
+                    <input
+                      checked={edit.enableDns}
+                      onChange={(event) => update("enableDns", event.target.checked)}
+                      type="checkbox"
+                    />
+                    <span>DNS</span>
+                  </label>
+                  <label>
+                    <input
+                      checked={edit.enableNtp}
+                      onChange={(event) => update("enableNtp", event.target.checked)}
+                      type="checkbox"
+                    />
+                    <span>NTP</span>
+                  </label>
+                  <label>
+                    <input
+                      checked={edit.enableSnmp}
+                      onChange={(event) => update("enableSnmp", event.target.checked)}
+                      type="checkbox"
+                    />
+                    <span>SNMP</span>
+                  </label>
+                </div>
+              </details>
+              <div className="network-config-actions">
+                <button className="operator-primary-button" disabled={busy || !activeProfile} type="submit">
+                  {busy ? "Saving..." : "Save network setup"}
+                </button>
+              </div>
             </div>
           </details>
           {error && <div className="operator-feedback error">{error}</div>}
           {message && <div className="operator-feedback">{message}</div>}
-          <div className="network-config-actions">
-            <button className="operator-primary-button" disabled={busy || !activeProfile} type="submit">
-              {busy ? "Saving..." : "Save network setup"}
-            </button>
-          </div>
         </form>
       </CardContent>
     </Card>
