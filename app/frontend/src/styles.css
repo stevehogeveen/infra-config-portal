@@ -10953,6 +10953,13 @@ th.ui-compact-table-cell {
   line-height: 1.35;
 }
 
+.design-element-assignment-safe-note {
+  color: #475569;
+  font-size: 12px;
+  font-weight: 750;
+  line-height: 1.35;
+}
+
 .design-element-assignment-grid {
   display: grid;
   gap: 10px;

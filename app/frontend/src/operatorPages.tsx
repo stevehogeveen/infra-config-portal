@@ -9512,7 +9512,7 @@ function LabDesignComposer({
                       storageProtocol={storageProtocol}
                     />
                   </div>
-                  {selectedElementInspector && (
+                  {selectedElementInspector && !usesElementAssignmentPreview(selectedPart.id) && (
                     <p className="design-selected-element-note">
                       <strong>{selectedElementInspector.label}</strong>
                       <span>{selectedElementInspector.summary}</span>
@@ -9521,6 +9521,7 @@ function LabDesignComposer({
                   {selectedElementInspector && (
                     <ElementAssignmentPreview
                       elementLabel={selectedElementInspector.label}
+                      elementSummary={selectedElementInspector.summary}
                       partId={selectedPart.id}
                       settings={selectedSettings}
                     />
@@ -11432,10 +11433,12 @@ function topologyFaceplateElementInspector(
 
 function ElementAssignmentPreview({
   elementLabel,
+  elementSummary,
   partId,
   settings
 }: {
   elementLabel: string;
+  elementSummary: string;
   partId: DesignPartId;
   settings: Record<string, string>;
 }) {
@@ -11444,11 +11447,12 @@ function ElementAssignmentPreview({
     const portMode = selectedNumber && selectedNumber >= 13 ? "trunk" : selectedNumber && selectedNumber >= 9 ? "storage" : "access";
     const vlan = portMode === "access" ? settings.mgmt_vlan || "100" : settings.storage_vlan || "220";
     return (
-      <section className="design-element-assignment-preview" aria-label="Switch port assignment preview">
+      <section className="design-element-assignment-preview" aria-label="Switch port assignment">
         <div className="design-element-assignment-head">
-          <p className="operator-kicker">Port editor preview</p>
+          <p className="operator-kicker">Selected port</p>
           <h5>{elementLabel}</h5>
-          <span>Plan the port here. Guarded Cisco setup handles real switch changes later.</span>
+          <span>{elementSummary}</span>
+          <small className="design-element-assignment-safe-note">This is a plan only. Real switch changes still require confirmation.</small>
         </div>
         <div className="design-element-assignment-grid">
           <label>
@@ -11474,11 +11478,12 @@ function ElementAssignmentPreview({
   if (partId === "server-gen10" || partId === "server-gen10plus") {
     const bayRole = selectedNumber && selectedNumber <= 2 ? "boot" : "data";
     return (
-      <section className="design-element-assignment-preview" aria-label="Drive bay assignment preview">
+      <section className="design-element-assignment-preview" aria-label="Drive bay assignment">
         <div className="design-element-assignment-head">
-          <p className="operator-kicker">Drive editor preview</p>
+          <p className="operator-kicker">Selected drive bay</p>
           <h5>{elementLabel}</h5>
-          <span>Plan the RAID membership here. Guarded RAID workflow handles real storage changes later.</span>
+          <span>{elementSummary}</span>
+          <small className="design-element-assignment-safe-note">This is a plan only. Real storage changes still require confirmation.</small>
         </div>
         <div className="design-element-assignment-grid">
           <label>
@@ -11507,6 +11512,10 @@ function ElementAssignmentPreview({
     );
   }
   return null;
+}
+
+function usesElementAssignmentPreview(partId: DesignPartId) {
+  return partId === "switch" || partId === "server-gen10" || partId === "server-gen10plus";
 }
 
 function DesignFaceplateVisual({

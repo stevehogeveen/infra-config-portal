@@ -8290,3 +8290,38 @@ facts are editable where the operator first sees them while secrets remain outsi
 
 Does this satisfy the static prototype step for switch port-map and server drive-map editing before
 we wire any schema persistence or guarded execution behind these element-level controls?
+
+## Codex -> Claude/CXO: Device element focus cleanup
+
+### What changed
+
+- Removed the duplicate selected-element note for switch ports and server drive bays.
+- The selected port/bay explanation now lives inside the same focused editor card as the editable
+  controls, so a click produces one clear object instead of note + editor + faceplate noise.
+- Visible copy now says `Selected port` / `Selected drive bay` instead of `editor preview`.
+- Safety copy is plain-language: this is a plan only, and real switch/storage changes still require
+  confirmation.
+- iLO and NetApp elements remain inspect-only with the compact note, because no approved editable
+  element controls exist for those yet.
+
+### Evidence
+
+- Screenshot: `app/artifacts/codex-runs/ui-screens-20260718-device-element-editors/switch-port-assignment-focused.png`
+- Screenshot: `app/artifacts/codex-runs/ui-screens-20260718-device-element-editors/server-drive-assignment-focused.png`
+
+### Verification
+
+- `app/frontend`: `npm run test:e2e -- --grep "overview device workspace matrix|overview faceplate element clicks reveal concise details|zoned map opens the device workspace directly|overview design mode keeps the surface map-only"` -> 4 passed.
+- `app/frontend`: `npm run build` -> passed.
+- Repo root: `git diff --check` -> passed.
+
+### Safety boundary
+
+- Frontend/test-only slice.
+- No hardware contact.
+- No destructive, firmware, RAID apply, reset, rebuild, factory, or live-write paths changed.
+
+### Review question
+
+Is this closer to Steve's ask that clicking a device/part should simplify the input section instead
+of adding more visible boxes?

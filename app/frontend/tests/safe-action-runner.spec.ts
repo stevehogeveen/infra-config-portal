@@ -842,8 +842,9 @@ test("zoned map opens the device workspace directly", async ({ page }) => {
   await ciscoDiffRequest;
   await expect(networkControls).toContainText("Cisco current-to-intent diff completed");
   await composer.getByRole("button", { name: "Switch port 2" }).click();
-  await expect(switchWorkspace.locator(".design-selected-element-note")).toContainText("port 2");
-  await expect(switchWorkspace.locator(".design-selected-element-note")).toContainText("which VLAN lane it belongs to");
+  await expect(switchWorkspace.locator(".design-selected-element-note")).toHaveCount(0);
+  await expect(switchWorkspace.getByLabel("Switch port assignment")).toContainText("port 2");
+  await expect(switchWorkspace.getByLabel("Switch port assignment")).toContainText("which VLAN lane it belongs to");
   await expect(composer.getByRole("button", { name: "Switch port 2" })).toHaveClass(/selected/);
 
   await page.locator("div[aria-label='Device workspace overlay']").getByRole("button", { name: "Close" }).click();
@@ -1121,7 +1122,7 @@ test("overview faceplate element clicks reveal concise details only after intent
     {
       button: "Open Cisco switch workspace",
       click: "Switch port 1",
-      editor: "Switch port assignment preview",
+      editor: "Switch port assignment",
       note: "which VLAN lane it belongs to",
       workspace: "Cisco switch"
     },
@@ -1134,7 +1135,7 @@ test("overview faceplate element clicks reveal concise details only after intent
     {
       button: "Open HPE DL360 Gen10 workspace",
       click: "Drive bay 1",
-      editor: "Drive bay assignment preview",
+      editor: "Drive bay assignment",
       note: "saved RAID role",
       workspace: "DL360 Gen10"
     },
@@ -1155,13 +1156,13 @@ test("overview faceplate element clicks reveal concise details only after intent
     await workspace.getByLabel(`${item.workspace} details`).locator(":scope > summary").click();
     await workspace.getByRole("button", { name: item.click, exact: true }).first().click();
     const elementNote = workspace.locator(".design-selected-element-note");
-    await expect(elementNote, `${item.workspace} shows a compact element note`).toContainText(item.note);
-    await expect(elementNote, `${item.workspace} keeps default element copy operator-facing`).not.toContainText(/proof|source|device_settings|workflow|live-proof|read-only/i);
     if (item.editor) {
       const editor = workspace.getByLabel(item.editor);
-      await expect(editor, `${item.workspace} shows the visual assignment editor preview`).toBeVisible();
+      await expect(elementNote, `${item.workspace} merges selected-element copy into the editor`).toHaveCount(0);
+      await expect(editor, `${item.workspace} shows the visual assignment editor`).toBeVisible();
+      await expect(editor, `${item.workspace} keeps the selected-element explanation in one place`).toContainText(item.note);
       await expect(editor, `${item.workspace} keeps assignment editing separate from guarded actions`).not.toContainText(/apply|factory|reset|rebuild/i);
-      if (item.editor === "Switch port assignment preview") {
+      if (item.editor === "Switch port assignment") {
         await expect(editor.getByLabel("Port mode")).toBeVisible();
         await expect(editor.getByLabel("Port VLAN")).toBeVisible();
         await expect(editor.getByLabel("Port description")).toBeVisible();
@@ -1171,6 +1172,8 @@ test("overview faceplate element clicks reveal concise details only after intent
         await expect(editor.getByLabel("Drive bay note")).toBeVisible();
       }
     } else {
+      await expect(elementNote, `${item.workspace} shows a compact element note`).toContainText(item.note);
+      await expect(elementNote, `${item.workspace} keeps default element copy operator-facing`).not.toContainText(/proof|source|device_settings|workflow|live-proof|read-only/i);
       await expect(workspace.locator(".design-element-assignment-preview"), `${item.workspace} stays inspect-only`).toHaveCount(0);
     }
     await expect(workspace.getByLabel(`${item.workspace} advanced checks and proof`), `${item.workspace} still keeps proof closed`).not.toHaveAttribute("open", "");
@@ -1409,8 +1412,9 @@ test("overview design mode keeps the surface map-only until a node opens the wor
   await switchWorkspace.getByLabel("Cisco switch details").locator(":scope > summary").click();
   await expect(switchWorkspace.getByLabel("Cisco switch interactive faceplate")).toBeVisible();
   await switchWorkspace.getByRole("button", { name: "Switch port 1", exact: true }).click();
-  await expect(switchWorkspace.locator(".design-selected-element-note")).toContainText("port 1");
-  await expect(switchWorkspace.locator(".design-selected-element-note")).toContainText("which VLAN lane it belongs to");
+  await expect(switchWorkspace.locator(".design-selected-element-note")).toHaveCount(0);
+  await expect(switchWorkspace.getByLabel("Switch port assignment")).toContainText("port 1");
+  await expect(switchWorkspace.getByLabel("Switch port assignment")).toContainText("which VLAN lane it belongs to");
   await expect(switchWorkspace.getByLabel("Cisco switch essentials")).toContainText("Management IP");
   await expect(switchWorkspace.getByLabel("Cisco switch essentials")).toContainText("Storage VLAN");
   await expect(switchWorkspace.getByLabel("Cisco workspace network controls")).not.toBeVisible();
