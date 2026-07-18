@@ -9755,44 +9755,6 @@ function LabDesignComposer({
               </section>
             )}
 
-            {workspaceOnly && selectedDetailWorkspaceSections.length > 0 && (
-              <details className="design-workspace-edit-settings" aria-label={`${selectedPart.label} edit settings`}>
-                <summary>
-                  <span>Edit setup</span>
-                  <strong>Planning fields only</strong>
-                </summary>
-                <p className="design-device-edit-intro">Pick one area. Saved kit values stay above.</p>
-                <div className="design-device-edit-group-picker" aria-label={`${selectedPart.label} edit groups`}>
-                  {selectedDetailWorkspaceSections.map((section) => (
-                    <button
-                      aria-pressed={selectedEditWorkspaceSection?.id === section.id}
-                      className={`design-device-edit-group-button ${selectedEditWorkspaceSection?.id === section.id ? "is-selected" : ""}`}
-                      key={section.id}
-                      onClick={() => setSelectedEditGroupId((current) => current === section.id ? "" : section.id)}
-                      type="button"
-                    >
-                      <span>{section.label}</span>
-                      <small>{section.summary}</small>
-                    </button>
-                  ))}
-                </div>
-                {selectedEditWorkspaceSection ? (
-                  <section className="design-device-param-section design-device-param-panel" aria-label={`${selectedPart.label} ${selectedEditWorkspaceSection.label}`}>
-                    {selectedEditGroupNote() && <p className="design-device-edit-note">{selectedEditGroupNote()}</p>}
-                    <div className="design-device-setting-rows">
-                      {selectedEditFields.length > 0 ? (
-                        selectedEditFields.map((field) => renderSelectedDeviceSettingRow(field, { hideProvenance: workspaceOnly }))
-                      ) : (
-                        <p className="design-device-edit-empty">Saved values are shown in Main settings.</p>
-                      )}
-                    </div>
-                  </section>
-                ) : (
-                  <p className="design-device-edit-empty">Pick one area to edit.</p>
-                )}
-              </details>
-            )}
-
             {!workspaceOnly && (
             <div className="design-device-param-sections" aria-label={`${selectedPart.label} editable parameters`}>
               {selectedWorkspaceSections.map((section) => (
@@ -9812,7 +9774,7 @@ function LabDesignComposer({
             {workspaceOnly && (
               <details className="design-workspace-details design-workspace-details-combined" aria-label={`${selectedPart.label} details`}>
                 <summary>
-                  <span>Device details</span>
+                  <span>More device details</span>
                 </summary>
                 <section className="design-device-details-inspector" aria-label={`${selectedPart.label} port and bay inspector`}>
                   <div className="design-device-hero design-device-hero-after-setup" aria-label={`${selectedPart.label} interactive faceplate`}>
@@ -9843,6 +9805,44 @@ function LabDesignComposer({
                     />
                   )}
                 </section>
+
+                {selectedDetailWorkspaceSections.length > 0 && (
+                  <details className="design-workspace-edit-settings" aria-label={`${selectedPart.label} edit settings`}>
+                    <summary>
+                      <span>Edit setup</span>
+                      <strong>Planning fields only</strong>
+                    </summary>
+                    <p className="design-device-edit-intro">Pick one area. Saved kit values stay above.</p>
+                    <div className="design-device-edit-group-picker" aria-label={`${selectedPart.label} edit groups`}>
+                      {selectedDetailWorkspaceSections.map((section) => (
+                        <button
+                          aria-pressed={selectedEditWorkspaceSection?.id === section.id}
+                          className={`design-device-edit-group-button ${selectedEditWorkspaceSection?.id === section.id ? "is-selected" : ""}`}
+                          key={section.id}
+                          onClick={() => setSelectedEditGroupId((current) => current === section.id ? "" : section.id)}
+                          type="button"
+                        >
+                          <span>{section.label}</span>
+                          <small>{section.summary}</small>
+                        </button>
+                      ))}
+                    </div>
+                    {selectedEditWorkspaceSection ? (
+                      <section className="design-device-param-section design-device-param-panel" aria-label={`${selectedPart.label} ${selectedEditWorkspaceSection.label}`}>
+                        {selectedEditGroupNote() && <p className="design-device-edit-note">{selectedEditGroupNote()}</p>}
+                        <div className="design-device-setting-rows">
+                          {selectedEditFields.length > 0 ? (
+                            selectedEditFields.map((field) => renderSelectedDeviceSettingRow(field, { hideProvenance: workspaceOnly }))
+                          ) : (
+                            <p className="design-device-edit-empty">Saved values are shown in Main settings.</p>
+                          )}
+                        </div>
+                      </section>
+                    ) : (
+                      <p className="design-device-edit-empty">Pick one area to edit.</p>
+                    )}
+                  </details>
+                )}
 
                 <details className="design-workspace-advanced" aria-label={`${selectedPart.label} advanced checks and proof`}>
                   <summary>
