@@ -6959,15 +6959,17 @@ function MediaInventoryPage() {
   }
 
   const items = inventory?.items ?? [];
-  const state = inventory ? softwareMediaState(inventory) : { label: "Not checked", tone: "neutral" };
+  const state = inventory ? softwareMediaState(inventory) : { label: loading ? "Checking" : "Not checked", tone: "neutral" };
   const warnings = inventory?.warnings ?? [];
   const folder = inventory ? softwareMediaFolder(inventory) : "Not checked";
-  const presentLabel = `${items.length} ${items.length === 1 ? "file" : "files"}`;
-  const attentionLabel = warnings.length
-    ? `${warnings.length} ${warnings.length === 1 ? "item" : "items"} need attention`
-    : items.length
-      ? "None"
-      : "No files found";
+  const presentLabel = inventory ? `${items.length} ${items.length === 1 ? "file" : "files"}` : "Not checked";
+  const attentionLabel = inventory
+    ? warnings.length
+      ? `${warnings.length} ${warnings.length === 1 ? "item" : "items"} need attention`
+      : items.length
+        ? "None"
+        : "No files found"
+    : "Run check";
 
   return (
     <Page
@@ -6976,38 +6978,38 @@ function MediaInventoryPage() {
       primaryAction={{
         disabled: loading,
         icon: <RefreshCw size={16} />,
-        label: "Check media",
+        label: loading ? "Checking" : "Check media",
         onClick: checkMedia
       }}
     >
-      <Feedback loading={loading && !inventory && !error} error={error} />
+      <Feedback loading={false} error={error} />
+      <section className="panel software-media-home" data-testid="software-media-home">
+        <div className="software-media-heading">
+          <PanelTitle icon={<HardDrive size={18} />} title="Software Media" />
+          <span className={`simple-status-pill ${state.tone}`}>{state.label}</span>
+        </div>
+        <div className="software-media-summary" aria-label="Software media summary">
+          <div>
+            <span>Folder</span>
+            <strong>{folder}</strong>
+          </div>
+          <div>
+            <span>Present</span>
+            <strong>{presentLabel}</strong>
+          </div>
+          <div>
+            <span>Missing/needs attention</span>
+            <strong>{attentionLabel}</strong>
+          </div>
+          <div>
+            <span>State</span>
+            <strong>{state.label}</strong>
+          </div>
+        </div>
+        <p className="software-media-boundary">Check media reads filenames only. Upgrade, mount, copy, and deploy actions stay behind their own protected flows.</p>
+      </section>
       {inventory && (
         <>
-          <section className="panel software-media-home" data-testid="software-media-home">
-            <div className="software-media-heading">
-              <PanelTitle icon={<HardDrive size={18} />} title="Software Media" />
-              <span className={`simple-status-pill ${state.tone}`}>{state.label}</span>
-            </div>
-            <div className="software-media-summary" aria-label="Software media summary">
-              <div>
-                <span>Folder</span>
-                <strong>{folder}</strong>
-              </div>
-              <div>
-                <span>Present</span>
-                <strong>{presentLabel}</strong>
-              </div>
-              <div>
-                <span>Missing/needs attention</span>
-                <strong>{attentionLabel}</strong>
-              </div>
-              <div>
-                <span>State</span>
-                <strong>{state.label}</strong>
-              </div>
-            </div>
-            <p className="software-media-boundary">Check media reads filenames only. Upgrade, mount, copy, and deploy actions stay behind their own protected flows.</p>
-          </section>
           <AdvancedDetails
             className="section-details software-media-details"
             summary="Actual filenames and media attention items"

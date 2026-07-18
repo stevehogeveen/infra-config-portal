@@ -2109,6 +2109,7 @@ test("software media keeps inventory details behind one read-only action", async
   await expect(page.getByTestId("software-media-home")).toContainText("Ready");
   await expect(page.locator(".page-actions .primary")).toHaveCount(1);
   await expect(page.getByRole("button", { name: "Check media" })).toBeVisible();
+  await expect(page.locator(".operator-feedback", { hasText: "Loading" })).toHaveCount(0);
   await expect(page.getByRole("columnheader", { name: "File" })).toHaveCount(0);
   await expect(page.getByRole("columnheader", { name: "Source" })).toHaveCount(0);
   await expect(page.getByText("media_inventory")).toHaveCount(0);
