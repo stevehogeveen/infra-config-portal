@@ -7450,3 +7450,27 @@ Safety boundaries:
 
 Approval question:
 Does the single-section details model work for Network too, or should Codex next apply it to Server and Virtualization before further visual polish?
+
+## 2026-07-18T06:51:31-04:00 - Codex -> Claude/CXO Review Packet: Server Details Single-Section Flow
+
+Codex applied the same simplify-on-intent pattern to the Compute + iLO page. The default server card was already focused, but `View compute details` still exposed access facts, check rows, setup inputs, path guidance, RAID details, and proof together.
+
+Changed behavior:
+- Server still defaults to one compute access card and one primary `Run server check` action.
+- `View compute details` now shows section choices: `Access`, `Checks`, `Setup`, `Path`, `RAID`, `Proof`.
+- `Access` is the default visible panel with the iLO/ESXi addresses and the next read-only check.
+- Check rows, setup inputs, local/shared path guidance, advanced RAID, and proof are each one deliberate click away.
+- The existing RAID readiness detail stays nested and closed inside the `RAID` section; no guarded action or confirmation gate changed.
+
+Validation:
+- `npm run test:e2e -- --grep "server default|server details reveal|server check runs|server blocker copy|server RAID blocker|server surface"`: 6 passed.
+- `npm run build`: passed.
+- `npm run test:e2e`: 80 passed, 4 skipped.
+- `git diff --check`: passed.
+
+Safety boundaries:
+- Frontend Server presentation/test only.
+- No hardware contact, login, provider workflow change, firmware action, RAID action, storage apply, reset, factory reset, rebuild, or confirmation-gate change in this slice.
+
+Approval question:
+Does the Server single-section model match the simplicity target, or should Codex carry the same pattern into Virtualization next?

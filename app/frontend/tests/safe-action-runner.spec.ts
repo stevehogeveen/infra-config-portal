@@ -1882,12 +1882,27 @@ test("server details reveal saved checks and nested advanced RAID plan", async (
 
   const details = page.locator("section[aria-label='Compute details']");
   await expect(details).toBeVisible();
+  const detailSections = details.getByLabel("Compute detail sections");
+  await expect(detailSections).toContainText("Access");
+  await expect(detailSections).toContainText("Checks");
+  await expect(detailSections).toContainText("Setup");
+  await expect(detailSections).toContainText("Path");
+  await expect(detailSections).toContainText("RAID");
+  await expect(detailSections).toContainText("Proof");
+  await expect(detailSections.getByRole("button", { name: /Access/ })).toHaveAttribute("aria-pressed", "true");
+  await expect(details.locator(".server-detail-panel")).toHaveCount(1);
+  await expect(details).toContainText("iLO IP");
+  await expect(details).toContainText("ESXi IP");
+  await expect(details.getByLabel("Server configure")).toHaveCount(0);
+  await detailSections.getByRole("button", { name: /Checks/ }).click();
   await expect(details).toContainText("iLO access");
   await expect(details).toContainText("ESXi management");
   await expect(details).toContainText("Local storage");
   await expect(details).toContainText("Firmware");
+  await detailSections.getByRole("button", { name: /Setup/ }).click();
   await expect(details.getByLabel("Server configure")).toBeVisible();
 
+  await detailSections.getByRole("button", { name: /RAID/ }).click();
   const advanced = page.locator("details.server-advanced-raid-plan");
   await expect(advanced.locator(":scope > summary")).toContainText("Advanced RAID plan");
   await expect(page.locator(".local-storage-readiness-card")).toBeHidden();

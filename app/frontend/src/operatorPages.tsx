@@ -1618,6 +1618,7 @@ export function OperatorServerPage({ labProfileState, onReloadLabProfile }: Oper
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const [activeDetailSection, setActiveDetailSection] = useState<ServerDetailSectionId>("access");
   const [runState, setRunState] = useState<WorkflowRunState>(emptyRunState);
 
   async function load() {
@@ -1847,7 +1848,29 @@ export function OperatorServerPage({ labProfileState, onReloadLabProfile }: Oper
       </section>
       {detailsOpen && (
         <section className="network-details server-details" aria-label="Compute details">
-          <div className="network-details-grid server-details-grid">
+          <div className="network-detail-switcher server-detail-switcher" aria-label="Compute detail sections">
+            {[
+              { id: "access" as ServerDetailSectionId, label: "Access", summary: "iLO, ESXi, next check" },
+              { id: "checks" as ServerDetailSectionId, label: "Checks", summary: "Storage and firmware signals" },
+              { id: "setup" as ServerDetailSectionId, label: "Setup", summary: "Saved compute fields" },
+              { id: "path" as ServerDetailSectionId, label: "Path", summary: "Local vs shared handoff" },
+              { id: "raid" as ServerDetailSectionId, label: "RAID", summary: "Advanced local storage" },
+              { id: "proof" as ServerDetailSectionId, label: "Proof", summary: "Advanced evidence" }
+            ].map((section) => (
+              <button
+                aria-pressed={activeDetailSection === section.id}
+                className={activeDetailSection === section.id ? "is-selected" : ""}
+                key={section.id}
+                onClick={() => setActiveDetailSection(section.id)}
+                type="button"
+              >
+                <span>{section.label}</span>
+                <strong>{section.summary}</strong>
+              </button>
+            ))}
+          </div>
+          <div className="network-detail-panel server-detail-panel" aria-label={`Compute ${activeDetailSection}`}>
+            {activeDetailSection === "access" && (
             <Card className="network-details-card" hover={false}>
               <CardHeader>
                 <div>
@@ -1868,6 +1891,8 @@ export function OperatorServerPage({ labProfileState, onReloadLabProfile }: Oper
                 />
               </CardContent>
             </Card>
+            )}
+            {activeDetailSection === "checks" && (
             <Card className="network-details-card" hover={false}>
               <CardHeader>
                 <div>
@@ -1893,6 +1918,8 @@ export function OperatorServerPage({ labProfileState, onReloadLabProfile }: Oper
                 </tbody>
               </CompactTable>
             </Card>
+            )}
+            {activeDetailSection === "setup" && (
             <section className="overview-safe-actions" aria-label="Server configure">
               <ServerConfigurePanel
                 activeProfile={activeProfile}
@@ -1904,6 +1931,8 @@ export function OperatorServerPage({ labProfileState, onReloadLabProfile }: Oper
                 }}
               />
             </section>
+            )}
+            {activeDetailSection === "path" && (
             <ServerSetupShapePanel
               activeProfile={activeProfile}
               address={address}
@@ -1915,6 +1944,8 @@ export function OperatorServerPage({ labProfileState, onReloadLabProfile }: Oper
               raidPlan={raidPlan}
               raidStatus={raidStatus}
             />
+            )}
+            {activeDetailSection === "raid" && (
             <details className="network-advanced-switch-plan server-advanced-raid-plan">
               <summary>
                 <span>
@@ -1925,6 +1956,8 @@ export function OperatorServerPage({ labProfileState, onReloadLabProfile }: Oper
               </summary>
               <LocalStorageReadinessCard activeProfile={activeProfile} raidPlan={raidPlan} />
             </details>
+            )}
+            {activeDetailSection === "proof" && (
             <AdvancedDrawer title="Server proof" summary={noProofText}>
               <OperatorWorkspace currentView={currentView} rows={serverRows} compact />
               <ConfigValueList
@@ -1936,12 +1969,15 @@ export function OperatorServerPage({ labProfileState, onReloadLabProfile }: Oper
                 ]}
               />
             </AdvancedDrawer>
+            )}
           </div>
         </section>
       )}
     </OperatorPage>
   );
 }
+
+type ServerDetailSectionId = "access" | "checks" | "setup" | "path" | "raid" | "proof";
 
 function serverComputeAccessCardModel({
   activeProfile,
