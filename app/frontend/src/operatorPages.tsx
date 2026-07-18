@@ -8617,15 +8617,22 @@ function LabDesignComposer({
   const selectedWorkspaceSections = selectedPart
     ? topologyDeviceWorkspaceSections(selectedPart.id, selectedWorkspaceSettingFields, draftScenario, storageProtocol)
     : [];
+  const selectedEssentialFields = selectedPart
+    ? topologyDeviceEssentialFields(selectedPart.id, selectedWorkspaceSettingFields, draftScenario, storageProtocol)
+    : [];
+  const selectedEssentialFieldKeys = new Set(selectedEssentialFields.map((field) => field.key));
   const selectedDetailWorkspaceSections = workspaceOnly
-    ? selectedWorkspaceSections.filter((section) => section.id !== "identity")
+    ? selectedWorkspaceSections
+      .filter((section) => section.id !== "identity")
+      .map((section) => ({
+        ...section,
+        fields: section.fields.filter((field) => !selectedEssentialFieldKeys.has(field.key))
+      }))
+      .filter((section) => section.fields.length > 0)
     : selectedWorkspaceSections;
   const selectedEditWorkspaceSection = selectedDetailWorkspaceSections.find((section) => section.id === selectedEditGroupId) ?? null;
   const selectedEditFields = selectedPart && selectedEditWorkspaceSection
     ? selectedEditWorkspaceSection.fields.filter((field) => !workspaceOnly || !topologyCommittedProfilePath(selectedPart.id, field.key))
-    : [];
-  const selectedEssentialFields = selectedPart
-    ? topologyDeviceEssentialFields(selectedPart.id, selectedWorkspaceSettingFields, draftScenario, storageProtocol)
     : [];
   const selectedElementAction = selectedPart?.id === "switch"
     ? selectedSafeActions.find((action) => action.action_id === "cisco.ssh-readonly-probe") ?? null
@@ -9361,7 +9368,7 @@ function LabDesignComposer({
                   <h4>Main settings</h4>
                 </div>
                 <div className="design-device-setting-rows compact">
-                  {selectedEssentialFields.map((field) => renderSelectedDeviceSettingRow(field, { readOnlyDisplay: true }))}
+                  {selectedEssentialFields.map((field) => renderSelectedDeviceSettingRow(field, { hideProvenance: true }))}
                 </div>
               </section>
             )}
@@ -10308,7 +10315,7 @@ function topologyDefaultDeviceSettings({
       bpdu_guard: "enabled on edge access ports",
       blackhole_vlan: "999",
       acl_lanes: "MGMT-IN, STORAGE-NFS-IN, DROP-ALL",
-      port_profiles: "trunk uplinks, access mgmt, storage VLAN tagged",
+      port_profiles: "trunk uplinks, access mgmt, storage tagged",
       san_ports: netappInScope ? "storage ports tagged for NFS/iSCSI" : "not in scope"
     },
     ilo: {
@@ -11279,7 +11286,7 @@ function topologyFaceplateElementInspector(
       label,
       rows: [
         { label: "Port plan", value: settings.ports || "server mgmt, storage uplinks, NetApp e0a/e0b", source: "device_settings.switch.ports" },
-        { label: "Port profiles", value: settings.port_profiles || "trunk uplinks, access mgmt, storage VLAN tagged", source: "device_settings.switch.port_profiles" },
+        { label: "Port profiles", value: settings.port_profiles || "trunk uplinks, access mgmt, storage tagged", source: "device_settings.switch.port_profiles" },
         { label: "VLAN intent", value: `mgmt ${settings.mgmt_vlan || "100"} / storage ${settings.storage_vlan || "220"}`, source: "device_settings.switch.mgmt_vlan + storage_vlan" },
         { label: "Live proof", value: "Cisco SSH read-only probe or firmware inventory", source: "workflow action result" }
       ],

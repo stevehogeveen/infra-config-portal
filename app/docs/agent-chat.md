@@ -8175,3 +8175,44 @@ independent, low-risk starting points that don't require the full visual-editor 
 The port-map and drive-map visual editors remain the bigger, separate build - start those as static
 mockups as directed above once you've located the RAID tab (Compute & iLO, ~line 1952) and switch
 Advanced plan (Network, ~line 1520) as their replacement targets.
+
+## Codex -> Claude/CXO: Device-click setup essentials simplified
+
+### What changed
+
+- Overview map device clicks now put editable draft-owned essentials directly in the first setup
+  card instead of making operators open a second edit drawer for the same fact.
+- Profile-owned values still render read-only in the same setup card; deeper edit groups no longer
+  duplicate those visible essentials.
+- Cisco `Storage VLAN` and single-server `Data RAID` are now edited from the default device setup
+  surface; the deeper Network/Storage groups keep only remaining planning fields such as port plan,
+  boot RAID, notes, and advanced intent.
+- Removed a duplicated `storage VLAN tagged` phrase from switch port-profile copy so Storage VLAN is
+  not repeated as both a field and prose.
+
+### Evidence
+
+- Screenshot: `app/artifacts/codex-runs/ui-screens-20260718-device-workspace/cisco-inline-setup.png`
+
+### Verification
+
+- `app/frontend`: `npm run test:e2e -- --grep "overview device workspace matrix keeps default inputs concise|single-server map opens local datastore guidance|single-server map removes vCenter|overview design mode keeps the surface map-only|map switch workspace shows access settings"` -> 5 passed.
+- `app/frontend`: `npm run build` -> passed.
+- `app/frontend`: `npm run test:e2e -- --grep "operator button matrix keeps default actions simple and safe"` -> 1 passed.
+- `app/frontend`: `npm run test:e2e -- --grep "operator primary check buttons|operator pages avoid test-mode|setup pages load|network default|server default|virtualization default|remaining operator pages|validation details runs|firmware decisions|software media|workflow runner surfaces"` -> 16 passed.
+- Full `npm run test:e2e` was attempted after the focused fixes. It reached 38 passed, then the
+  Playwright dev server refused connections for the rest of the run. The first reported failing
+  test (`operator button matrix keeps default actions simple and safe`) passed when isolated, so I
+  am treating the full-run result as a local runner/server failure and not claiming full-suite green.
+
+### Safety boundary
+
+- Frontend/test-only slice.
+- No hardware contact.
+- No destructive, firmware, RAID, reset, rebuild, or live-write paths changed.
+
+### Review question
+
+Does this satisfy the first consolidation step - important device facts are editable where the
+operator first sees them - so the next slice can prototype the switch port-map and server drive-map
+editors?

@@ -1024,7 +1024,13 @@ test("overview device workspace matrix keeps default inputs concise", async ({ p
     await expect(essentials, `${item.workspace} avoids internal value labels`).not.toContainText("Primary values");
     await expect(essentials, `${item.workspace} removes instructional setup copy`).not.toContainText("Everything else is in Details");
     expect(await essentials.locator(".design-device-setting-row").count(), `${item.workspace} keeps essentials compact`).toBeLessThanOrEqual(3);
-    await expect(essentials.locator("input, select, textarea"), `${item.workspace} keeps first-click setup read-only`).toHaveCount(0);
+    const draftEssentialRows = essentials.locator(".design-device-setting-row.is-draft-owned");
+    const essentialInputs = essentials.locator("input, select, textarea");
+    await expect(essentialInputs, `${item.workspace} only renders controls for draft-owned essentials`).toHaveCount(await draftEssentialRows.count());
+    if (await essentialInputs.count()) {
+      await expect(essentialInputs.first(), `${item.workspace} lets operators edit draft essentials in place`).toBeVisible();
+    }
+    await expect(essentials.locator(".design-provenance-chip"), `${item.workspace} keeps provenance out of the simple setup block`).toHaveCount(0);
     await expect(essentials, `${item.workspace} keeps identity in the hero, not the setup form`).not.toContainText("Name");
     for (const essential of item.essentials) {
       await expect(essentials, `${item.workspace} essential ${essential}`).toContainText(essential);
@@ -1289,7 +1295,8 @@ test("system setup advanced fields round-trip shared and device rows through the
   await expect(switchNetwork).not.toContainText("192.168.1.214");
   await expect(switchNetwork.getByRole("textbox", { name: "Management IP" })).toHaveCount(0);
   await expect(switchNetwork).toContainText("Saved values stay in Main settings");
-  await expect(switchNetwork).toContainText("Storage VLAN");
+  await expect(switchNetwork).not.toContainText("Storage VLAN");
+  await expect(switchNetwork).toContainText("Port plan");
 });
 
 test("system setup advanced fields keep blank profile values planned until edited", async ({ page }) => {
@@ -1396,7 +1403,8 @@ test("overview design mode keeps the surface map-only until a node opens the wor
   await expect(editSettings.locator(".design-device-param-panel")).toHaveCount(0);
   const networkGroup = await openWorkspaceEditGroup(page, "Cisco switch", "Network");
   await expect(networkGroup).not.toContainText("Management IP");
-  await expect(networkGroup).toContainText("Storage VLAN");
+  await expect(networkGroup).not.toContainText("Storage VLAN");
+  await expect(networkGroup).toContainText("Port plan");
   await expect(networkGroup).not.toContainText("IP, gateway, VLANs, and ports");
   await expect(networkGroup).toContainText("Saved values stay in Main settings");
   await expect(networkGroup.locator(".design-device-edit-note")).toHaveCount(1);
@@ -1419,10 +1427,9 @@ test("overview design mode keeps the surface map-only until a node opens the wor
   await expect(advanced.locator("section[aria-label='Cisco switch safe checks and next actions']")).toContainText("Cisco Firmware Inventory: Ready");
   await expect(advanced.locator("section[aria-label='Cisco switch safe checks and next actions']")).toContainText("Last: Ready");
   await expect(switchWorkspace.getByLabel("Cisco switch state")).not.toContainText("source:");
-  const networkGroupAgain = await openWorkspaceEditGroup(page, "Cisco switch", "Network");
-  const networkStorageVlan = networkGroupAgain.getByRole("textbox", { name: /^Storage VLAN/ });
-  await networkStorageVlan.fill("230");
-  await expect(networkStorageVlan).toHaveValue("230");
+  const essentialStorageVlan = switchWorkspace.getByLabel("Cisco switch essentials").getByRole("textbox", { name: /^Storage VLAN/ });
+  await essentialStorageVlan.fill("230");
+  await expect(essentialStorageVlan).toHaveValue("230");
   await expect(switchWorkspace).toContainText("230");
 });
 
@@ -1539,8 +1546,10 @@ test("single-server map opens local datastore guidance in the server workspace",
   const details = workspace.getByLabel("DL360 Gen10 details");
   await details.locator(":scope > summary").click();
   const storageGroup = await openWorkspaceEditGroup(page, "DL360 Gen10", "Storage");
-  await expect(storageGroup).toContainText("Data RAID");
-  await expect(storageGroup.getByRole("textbox", { name: /^Data RAID/ })).toHaveValue("RAID6 local datastore");
+  await expect(storageGroup).not.toContainText("Data RAID");
+  await expect(storageGroup).toContainText("Boot RAID");
+  const essentialDataRaid = workspace.getByLabel("DL360 Gen10 essentials").getByRole("textbox", { name: /^Data RAID/ });
+  await expect(essentialDataRaid).toHaveValue("RAID6 local datastore");
   const advanced = await openWorkspaceAdvanced(page, "DL360 Gen10");
   await expect(advanced.getByLabel("Server workspace checks")).toContainText("Local RAID");
   await expect(advanced.getByLabel("Server workspace checks")).toContainText("ESXi and RAID checks");
@@ -1671,7 +1680,8 @@ test("single-server map removes vCenter and keeps direct ESXi guidance on the se
   await expect(serverWorkspace.getByLabel("Server workspace checks")).not.toBeVisible();
   await serverWorkspace.getByLabel("DL360 Gen10 details").locator(":scope > summary").click();
   const storageGroup = await openWorkspaceEditGroup(page, "DL360 Gen10", "Storage");
-  await expect(storageGroup.getByRole("textbox", { name: /^Data RAID/ })).toHaveValue("RAID6 local datastore");
+  await expect(storageGroup.getByRole("textbox", { name: /^Data RAID/ })).toHaveCount(0);
+  await expect(serverWorkspace.getByLabel("DL360 Gen10 essentials").getByRole("textbox", { name: /^Data RAID/ })).toHaveValue("RAID6 local datastore");
   const advanced = await openWorkspaceAdvanced(page, "DL360 Gen10");
   await expect(advanced.getByLabel("Server workspace checks")).toContainText("ESXi Live Check");
   await expect(advanced.getByLabel("Server workspace checks")).not.toContainText("vCenter Live Check");
@@ -2232,7 +2242,8 @@ test("map switch workspace shows access settings and blockers without proof clut
   await workspace.getByLabel("Cisco switch details").locator(":scope > summary").click();
   const networkGroup = await openWorkspaceEditGroup(page, "Cisco switch", "Network");
   await expect(networkGroup).not.toContainText("Management IP");
-  await expect(networkGroup).toContainText("Storage VLAN");
+  await expect(networkGroup).not.toContainText("Storage VLAN");
+  await expect(networkGroup).toContainText("Port plan");
   const advanced = await openWorkspaceAdvanced(page, "Cisco switch");
   const controls = advanced.getByLabel("Cisco workspace network controls");
   await expect(controls).toContainText("Network controls");
