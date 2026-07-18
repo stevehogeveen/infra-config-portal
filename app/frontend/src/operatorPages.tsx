@@ -14175,33 +14175,43 @@ function ServerConfigurePanel({
       </CardHeader>
       <CardContent>
         <form className="network-config-form" onSubmit={save}>
-          <Field label="iLO IP">
-            <input value={edit.ilo} onChange={(event) => update("ilo", event.target.value)} />
-          </Field>
-          <Field label="Initial iLO IP">
-            <input value={edit.iloInitial} onChange={(event) => update("iloInitial", event.target.value)} />
-          </Field>
-          <Field label="Embedded NIC">
-            <input value={edit.serverEmbeddedNic} onChange={(event) => update("serverEmbeddedNic", event.target.value)} />
-          </Field>
-          <Field label="ESXi mgmt IP">
-            <input value={edit.esxiManagement} onChange={(event) => update("esxiManagement", event.target.value)} />
-          </Field>
-          <Field label="Subnet">
-            <input value={edit.subnet} onChange={(event) => update("subnet", event.target.value)} />
-          </Field>
-          <Field label="Gateway">
-            <input value={edit.gateway} onChange={(event) => update("gateway", event.target.value)} />
-          </Field>
-          <Field label="DNS servers">
-            <input value={edit.dnsServers} onChange={(event) => update("dnsServers", event.target.value)} />
-          </Field>
-          <Field label="NTP servers">
-            <input value={edit.ntpServers} onChange={(event) => update("ntpServers", event.target.value)} />
-          </Field>
-          <Field label="MTU">
-            <input inputMode="numeric" value={edit.mtu} onChange={(event) => update("mtu", event.target.value)} />
-          </Field>
+          <div className="server-config-primary-grid">
+            <Field label="iLO IP">
+              <input value={edit.ilo} onChange={(event) => update("ilo", event.target.value)} />
+            </Field>
+            <Field label="ESXi mgmt IP">
+              <input value={edit.esxiManagement} onChange={(event) => update("esxiManagement", event.target.value)} />
+            </Field>
+            <Field label="Initial iLO IP">
+              <input value={edit.iloInitial} onChange={(event) => update("iloInitial", event.target.value)} />
+            </Field>
+            <Field label="Embedded NIC">
+              <input value={edit.serverEmbeddedNic} onChange={(event) => update("serverEmbeddedNic", event.target.value)} />
+            </Field>
+          </div>
+          <details className="server-config-more">
+            <summary>
+              <span>More compute network defaults</span>
+              <small>Use Lab Defaults unless the host needs its own subnet, gateway, DNS, NTP, or MTU.</small>
+            </summary>
+            <div className="server-config-more-grid">
+              <Field label="Subnet">
+                <input value={edit.subnet} onChange={(event) => update("subnet", event.target.value)} />
+              </Field>
+              <Field label="Gateway">
+                <input value={edit.gateway} onChange={(event) => update("gateway", event.target.value)} />
+              </Field>
+              <Field label="DNS servers">
+                <input value={edit.dnsServers} onChange={(event) => update("dnsServers", event.target.value)} />
+              </Field>
+              <Field label="NTP servers">
+                <input value={edit.ntpServers} onChange={(event) => update("ntpServers", event.target.value)} />
+              </Field>
+              <Field label="MTU">
+                <input inputMode="numeric" value={edit.mtu} onChange={(event) => update("mtu", event.target.value)} />
+              </Field>
+            </div>
+          </details>
           <div className="network-config-actions">
             <button className="operator-primary-button" disabled={busy || !activeProfile} type="submit">
               {busy ? "Saving..." : activeProfile?.source === "saved" ? "Save Server" : "Save As Lab Setup"}
