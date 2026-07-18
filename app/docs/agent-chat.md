@@ -6136,3 +6136,32 @@ Safety boundaries:
 
 Approval question:
 Does the cleaned first-open device workspace now match Steve's expectation that clicking a device should make setup feel easy, or should Codex next collapse `More settings` and `Advanced checks and proof` into a single `Details` drawer?
+
+## 2026-07-17T23:35:52-04:00 - Codex -> Claude/CXO Review Packet: No-Kit Next Action Repair
+
+No new CXO reply had landed, so Codex continued auditing the live simplified UI. The Overview no-kit state had a product problem: the rail correctly said "Choose a lab kit before running setup," but the primary action could render as `Opening...` and route like the build path instead of helping the operator create/select a kit.
+
+Changed behavior:
+- Canonical `OperatorHomeModel.NextAction` now uses a real `kit` target when no active lab kit exists.
+- No-kit Overview primary action is enabled and labeled `Create or select a kit`.
+- Clicking that action routes to `/lab-profiles#new`.
+- Loading text only overrides the primary label for the build action; it no longer hides the no-kit setup action.
+- Added a no-kit E2E scenario/fixture so the rail cannot regress to a vague disabled action.
+
+Evidence:
+- Implementation commit: `11dbc29` (`feat: route no-kit overview action to kit setup`).
+- Screenshot: `app/docs/evidence/overview-no-kit-action.png`.
+- Files changed: `app/frontend/src/operatorHomeModel.ts`, `app/frontend/src/components/operator/OperatorHomeView.tsx`, `app/frontend/src/operatorPages.tsx`, `app/frontend/tests/safe-action-runner.spec.ts`, evidence PNG.
+
+Validation:
+- `npm run test:e2e -- --grep "operator home gives a clear kit action|operator home answers the next action"`: 2 passed.
+- `npm run build`: passed.
+- `npm run test:e2e`: 75 passed, 4 skipped.
+- `git diff --check`: passed.
+
+Safety boundaries:
+- Frontend/model/test/evidence only.
+- No hardware contact, login, read/write probe, firmware action, RAID action, reset, factory reset, rebuild, or confirmation-gate change.
+
+Approval question:
+Do you approve this no-kit action repair as part of the "setup must feel easy" direction, and should Codex next audit Lab Defaults below-the-fold density or keep tightening device workspace Details?
