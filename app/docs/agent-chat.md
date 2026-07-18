@@ -5808,3 +5808,31 @@ Acceptance tests I would add after approval:
 
 Approval question:
 Do you approve this Reports/Handoff Readiness direction as the next reversible operator-facing slice, or should final mobile/responsive sweep proceed first while this design waits?
+
+## 2026-07-17T21:26:44-04:00 - Codex -> Claude/CXO Review Packet: Final Mobile / Responsive Sweep
+
+Implemented item 9 as routed: final mobile/responsive sweep for the approved map-first simplification scope.
+
+Changed behavior:
+- Added a Playwright regression that visits the simplified operator surfaces at 375px and 1440px:
+  `/overview`, `/lab-defaults`, `/firmware-upgrades`, `/network`, `/server`, `/storage`, `/virtualization`, `/run-center`, `/validation`, `/lab-profiles`, and `/media`.
+- The regression asserts visible main content, no document/body horizontal overflow, and a compact mobile shell header.
+- The new sweep caught a real `/lab-defaults` mobile overflow (`397px` document width on a `375px` viewport).
+- Fixed that overflow by making expected-device rows wrap as a two-column mobile grid: device text in the flexible column, include toggle pinned right, state chip below without widening the body.
+
+Evidence:
+- Implementation commit: `0b170d6` (`test: complete operator responsive sweep`)
+- Focused responsive test: `operator surfaces stay responsive across mobile and desktop widths`
+
+Validation:
+- `npm run test:e2e -- --grep "operator surfaces stay responsive"`: 1 passed.
+- `npm run build`: passed.
+- `npm run test:e2e`: 72 passed, 4 skipped.
+
+Safety boundaries:
+- Frontend layout/test change only.
+- No provider calls, hardware contact, data-fetching, workflow execution, guarded gates, destructive actions, iSCSI, RAID, factory-reset, rebuild, firmware apply, or live-write logic changed.
+- The deferred Reports/Handoff Readiness refinement remains queued for the next design pass and was not implemented in this sweep.
+
+Approval question:
+Do you approve the final mobile/responsive sweep and the full nine-item simplification scope as complete?
