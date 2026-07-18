@@ -4392,7 +4392,7 @@ export function OperatorVirtualizationPage({ labProfileState, onReloadLabProfile
         <h1>Virtualization</h1>
         <p>Can this kit manage VMs through the right target, datastore, and access path?</p>
       </div>
-      <Feedback loading={loading && !vcenterNetapp} error={error} />
+      <Feedback loading={loading && Boolean(activeProfile) && vcenterEnabled && !vcenterNetapp} error={error} />
       <section className="network-access-surface virtualization-access-surface" aria-label="VM Management">
         <Card className="network-access-card virtualization-access-card" hover={false}>
           <CardHeader>

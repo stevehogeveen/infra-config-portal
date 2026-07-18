@@ -1767,6 +1767,14 @@ test("virtualization default shows one VM management card and hides technical de
   expect(text ?? "").not.toMatch(/\bfreshness\b/i);
 });
 
+test("virtualization no-kit state does not show stale loading feedback", async ({ page }) => {
+  labProfileScenario = "none";
+  await page.goto("/virtualization");
+
+  await expect(page.getByLabel("VM Management")).toBeVisible();
+  await expect(page.locator(".operator-feedback", { hasText: "Loading" })).toHaveCount(0);
+});
+
 test("virtualization details reveal saved checks and keep proof advanced", async ({ page }) => {
   await page.goto("/virtualization");
   await page.getByLabel("VM Management").getByRole("button", { name: "View details" }).click();
