@@ -11274,6 +11274,28 @@ th.ui-compact-table-cell {
   box-shadow: 0 8px 18px rgba(15, 139, 141, .06);
 }
 
+.design-device-quick-edit summary {
+  cursor: pointer;
+  list-style: none;
+}
+
+.design-device-quick-edit summary::-webkit-details-marker {
+  display: none;
+}
+
+.design-device-quick-edit:not([open]) {
+  gap: 0;
+}
+
+.design-device-quick-edit:not([open]) summary {
+  margin: -2px 0;
+}
+
+.design-device-quick-edit[open] summary {
+  border-bottom: 1px solid #e5e9ef;
+  padding-bottom: 10px;
+}
+
 .design-device-inline-edit {
   gap: 9px;
 }
