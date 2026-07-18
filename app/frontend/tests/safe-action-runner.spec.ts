@@ -1095,7 +1095,8 @@ test("overview device workspace primary actions stay read-only", async ({ page }
     const overlay = page.locator("div[aria-label='Device workspace overlay']");
     const workspace = overlay.locator(`section[aria-label='${item.workspace} workspace']`);
     await expect(workspace).toBeVisible();
-    await expect(workspace).toContainText("Checks here are read-only. Apply steps stay behind confirmations.");
+    await expect(workspace.locator(".design-workspace-boundary"), `${item.label} does not render a separate safety paragraph`).toHaveCount(0);
+    await expect(workspace.locator(":scope > .design-device-primary-action"), `${item.label} keeps the safety boundary with the action`).toContainText("Read-only check. Apply steps stay behind confirmations.");
 
     const primary = workspace.locator(":scope > .design-device-primary-action button");
     await expect(primary, `${item.label} workspace has one primary action`).toHaveCount(1);
@@ -1272,7 +1273,8 @@ test("overview device workspace matrix keeps default inputs concise", async ({ p
     await expect(workspace.locator(":scope .design-device-state-stack"), `${item.workspace} keeps saved/draft bookkeeping out of default state`).not.toContainText("Saved setup");
     await expect(workspace.locator(":scope .design-device-state-stack"), `${item.workspace} keeps saved/draft bookkeeping out of default state`).not.toContainText("Draft");
     await expect(workspace.locator(":scope > .design-device-primary-action"), `${item.workspace} does not leak internal readiness rows`).not.toContainText("Draft store");
-    await expect(workspace.locator(".design-workspace-boundary"), `${item.workspace} keeps the safety boundary concise`).toContainText("Checks here are read-only");
+    await expect(workspace.locator(".design-workspace-boundary"), `${item.workspace} removes the standalone safety paragraph`).toHaveCount(0);
+    await expect(workspace.locator(":scope > .design-device-primary-action"), `${item.workspace} keeps the safety boundary with the one action`).toContainText("Read-only check. Apply steps stay behind confirmations.");
     await expect(workspace.locator(".design-selected-element-note"), `${item.workspace} waits for an element click before showing element detail`).toHaveCount(0);
     await expect(workspace, `${item.workspace} avoids dead default actions`).not.toContainText("No read-only test registered");
     const essentials = workspace.getByLabel(`${item.workspace} essentials`);
@@ -1883,10 +1885,13 @@ test("overview design mode switches scenario drafts without committing hardware"
   await expect(serverWorkspace).toBeVisible();
   await serverWorkspace.getByLabel("DL360 Gen10 details").locator(":scope > summary").click();
   const storageGroup = await openWorkspaceEditGroup(page, "DL360 Gen10", "Storage");
-  await expect(storageGroup).toContainText("Drive bays");
   await expect(storageGroup).toContainText("RAID controller");
-  await expect(storageGroup.getByRole("textbox", { name: /^Data RAID/ })).toHaveValue("boot/staging only; VM data on shared storage");
-  await expect(overlay).toContainText("Checks here are read-only. Apply steps stay behind confirmations.");
+  await expect(storageGroup).toContainText("Boot RAID");
+  await expect(storageGroup).not.toContainText("Drive bays");
+  await expect(storageGroup.getByRole("textbox", { name: /^Data RAID/ })).toHaveCount(0);
+  await expect(serverWorkspace.getByLabel("DL360 Gen10 quick setup fields").locator("input, select, textarea").first()).not.toBeVisible();
+  await expect(overlay.locator(".design-workspace-boundary")).toHaveCount(0);
+  await expect(serverWorkspace.locator(":scope > .design-device-primary-action")).toContainText("Read-only check. Apply steps stay behind confirmations.");
   await overlay.getByRole("button", { name: "Close" }).click();
   await expect(page.locator("div[aria-label='Device workspace overlay']")).toHaveCount(0);
   await expect(topology.getByLabel("Zoned lab map")).toContainText("Storage & compute");

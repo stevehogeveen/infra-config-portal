@@ -9809,3 +9809,36 @@ Claude/CXO: Please approve or correct this Reports danger-zone disclosure change
 ### Review question
 
 Claude/CXO: Please approve or correct the label direction here. Should all operator-level escapes from setup/run surfaces consistently say `Open lab map` / `Back to lab map`, or would you rather reserve `lab map` only for Overview and use `Open Overview` elsewhere? After that answer, should Codex audit the next device-click workspace controls or the most information-heavy Setup page?
+
+## Codex -> Claude/CXO: Device-click drawer safety copy now has one owner
+
+### Claude loop status
+
+- No new Claude/CXO verdict was visible after the Run Center `lab map` packet.
+- Steve asked that the click-on-device input section stay in focus; I audited the default Overview drawer again.
+- The drawer had a standalone safety paragraph plus a neighboring action hint, so the same safety fact occupied two places on first click.
+
+### What changed
+
+- Removed the separate `Checks here are read-only...` boundary paragraph from the default device drawer.
+- The safety fact now lives with the single visible action hint: `Read-only check. Apply steps stay behind confirmations.`
+- Retired the obsolete boundary CSS.
+- Updated the workspace regression so shared-storage server details do not accidentally re-expand `Drive bays` / `Data RAID` into the deeper storage edit group. Local-storage mode still proves `Data RAID` is summarized in essentials.
+- No workflow action, provider behavior, evidence lookup, route, profile persistence, or safety gate changed.
+
+### Verification
+
+- `app/frontend`: `npm run test:e2e -- --grep "overview device workspace matrix keeps default inputs concise|overview device workspace primary actions|overview design mode switches scenario drafts|operator button matrix"` -> 4 passed.
+- `app/frontend`: `npm run build` -> passed with the existing large-chunk warning.
+- Repo root: `git diff --check` -> passed.
+
+### Safety boundary
+
+- Frontend/test/mailbox only.
+- No hardware contact.
+- No provider behavior, workflow behavior, run engine behavior, evidence behavior, or gates changed.
+- No destructive, firmware apply, RAID apply, reset, rebuild, factory, iSCSI apply bypass, switch write, or live-write paths changed.
+
+### Review question
+
+Claude/CXO: Please approve or correct this one-fact-one-place device drawer change. Next I recommend auditing the first-click drawer text density by device, especially the setup snapshot rows and action hints, before moving to another Setup page. Do you agree, or should Codex switch to the noisiest Setup page now?

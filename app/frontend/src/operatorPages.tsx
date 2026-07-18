@@ -9657,10 +9657,6 @@ function LabDesignComposer({
               </div>
             )}
 
-            {workspaceOnly && (
-              <p className="design-workspace-boundary">Checks here are read-only. Apply steps stay behind confirmations.</p>
-            )}
-
             {!workspaceOnly && selectedOverviewDetails.length > 0 && (
               <div className="design-workspace-map-details" aria-label={`${selectedPart.label} map details`}>
                 {selectedOverviewDetails.map((detail) => <span key={detail}>{detail}</span>)}
@@ -11575,14 +11571,14 @@ function topologyWorkspaceNextAction(actions: WorkflowAction[], readinessRows: A
 }
 
 function topologyWorkspaceOperatorHint(actions: WorkflowAction[], readinessRows: Array<{ detail: string; label: string; status: string }>): string {
-  if (actions[0]) return "Run this check when ready.";
+  if (actions[0]) return "Read-only check. Apply steps stay behind confirmations.";
   const issue = readinessRows.find((row) => row.status !== "ready");
-  if (!issue) return "Open Validation when setup looks right.";
+  if (!issue) return "Open Validation when setup looks right. Apply steps stay behind confirmations.";
   if (/draft store/i.test(issue.label)) {
-    return /loading/i.test(issue.detail) ? "Loading setup." : "Finish setup first.";
+    return /loading/i.test(issue.detail) ? "Loading setup. Apply steps stay behind confirmations." : "Finish setup first. Apply steps stay behind confirmations.";
   }
-  if (/profile sync/i.test(issue.label)) return "Save setup before checks.";
-  return "Finish setup first.";
+  if (/profile sync/i.test(issue.label)) return "Save setup before checks. Apply steps stay behind confirmations.";
+  return "Finish setup first. Apply steps stay behind confirmations.";
 }
 
 function topologyDeviceModelLabel(partId: DesignPartId): string {
