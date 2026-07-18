@@ -1385,10 +1385,6 @@ export function OperatorNetworkPage({ labProfileState, onReloadLabProfile }: Ope
                 <dd>{switchAccess.managementIp}</dd>
               </div>
               <div>
-                <dt>State</dt>
-                <dd>{switchAccess.stateLabel}</dd>
-              </div>
-              <div>
                 <dt>Access</dt>
                 <dd>{switchAccess.accessLabel}</dd>
               </div>
@@ -1779,10 +1775,6 @@ export function OperatorServerPage({ labProfileState, onReloadLabProfile }: Oper
               <div>
                 <dt>ESXi IP</dt>
                 <dd>{computeAccess.esxiIp}</dd>
-              </div>
-              <div>
-                <dt>State</dt>
-                <dd>{computeAccess.stateLabel}</dd>
               </div>
               <div>
                 <dt>Storage role</dt>
@@ -2815,10 +2807,6 @@ export function OperatorStoragePage({ labProfileState, onReloadLabProfile }: Ope
               <div>
                 <dt>Target datastore</dt>
                 <dd>{storagePath.targetDatastore}</dd>
-              </div>
-              <div>
-                <dt>State</dt>
-                <dd>{storagePath.stateLabel}</dd>
               </div>
             </dl>
             {storagePath.reason && (
@@ -4416,10 +4404,6 @@ export function OperatorVirtualizationPage({ labProfileState, onReloadLabProfile
               <div>
                 <dt>Datastore</dt>
                 <dd>{vmManagement.datastore}</dd>
-              </div>
-              <div>
-                <dt>State</dt>
-                <dd>{vmManagement.stateLabel}</dd>
               </div>
               <div>
                 <dt>Access</dt>

@@ -6558,3 +6558,33 @@ Safety boundaries:
 
 Approval question:
 Does Network now meet the single-card simplicity target, or should Codex next audit Compute & iLO default fields for any remaining duplicate status?
+
+## 2026-07-18T01:47:18-04:00 - Codex -> Claude/CXO Review Packet: Setup Card State Deduplication
+
+Steve added a specific emphasis for the active 10-hour loop: clicking devices on Overview still needs attention, and the input section must get simpler because there is still too much happening. Before that next device-click slice, Codex finished the current one-fact cleanup found during the setup surface audit.
+
+Changed behavior:
+- Network, Compute & iLO, Storage, and Virtualization default setup cards no longer repeat state as both a header badge and a `State` fact row.
+- The header badge is now the single owner for each setup card's state.
+- The remaining default facts are the values an operator actually needs before pressing the one primary check button.
+- Details and Advanced still retain the supporting proof and configuration data.
+
+Evidence:
+- `app/docs/evidence/setup-card-state-dedupe-network.png`.
+- `app/docs/evidence/setup-card-state-dedupe-server.png`.
+- `app/docs/evidence/setup-card-state-dedupe-storage.png`.
+- `app/docs/evidence/setup-card-state-dedupe-virtualization.png`.
+- Screenshot script also asserted none of those four cards still renders `State` as a default fact row.
+
+Validation:
+- `npm run test:e2e -- --grep "network default|server default|storage page defaults|virtualization default"`: 5 passed.
+- `npm run build`: passed.
+- `npm run test:e2e`: 79 passed, 4 skipped.
+- `git diff --check`: passed.
+
+Safety boundaries:
+- Frontend/test/evidence/docs only.
+- No hardware contact, login, read/write probe, firmware action, RAID action, reset, factory reset, rebuild, or confirmation-gate change.
+
+Approval question:
+Does this correctly apply One Fact / One Display Location on the setup cards, and should Codex next simplify the Overview clicked-device workspace input area by reducing the default field count and moving any non-essential status/proof text behind Details?

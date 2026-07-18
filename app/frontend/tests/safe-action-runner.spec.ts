@@ -1456,7 +1456,8 @@ test("storage page defaults to one storage path card and hides protocol internal
   await expect(storagePath).toContainText("Active path");
   await expect(storagePath).toContainText("Protocol");
   await expect(storagePath).toContainText("Target datastore");
-  await expect(storagePath).toContainText("State");
+  await expect(storagePath.locator("dt")).toHaveText(["Active path", "Protocol", "Target datastore"]);
+  await expect(storagePath.locator(".ui-card-header")).toContainText(/Blocked|Ready|Not checked|Needs attention/);
   await expect(storagePath).toContainText("NetApp shared storage");
   await expect(storagePath).toContainText("NFS");
   await expect(storagePath.getByText(/Needs attention/)).toBeVisible();
@@ -1621,7 +1622,8 @@ test("network default shows one switch access card and hides technical detail", 
   const access = page.getByLabel("Switch Access");
   await expect(access.getByRole("heading", { name: "Cisco C9300" })).toBeVisible();
   await expect(page.locator(".operator-feedback", { hasText: "Loading" })).toHaveCount(0);
-  await expect(access.locator("dt")).toHaveText(["Switch", "Management IP", "State", "Access"]);
+  await expect(access.locator("dt")).toHaveText(["Switch", "Management IP", "Access"]);
+  await expect(access.locator(".ui-card-header")).toContainText(/Blocked|Ready|Not checked/);
   await expect(access.getByRole("button", { name: "Run switch check" })).toBeVisible();
   await expect(access.getByRole("button", { name: "View details" })).toBeVisible();
   await expect(page.locator("section[aria-label='Network details']")).toHaveCount(0);
@@ -1709,7 +1711,8 @@ test("server default shows one compute access card and hides technical detail", 
 
   const access = page.getByLabel("Compute Access");
   await expect(access.getByRole("heading", { name: "HPE DL360 Gen10" })).toBeVisible();
-  await expect(access.locator("dt")).toHaveText(["Host", "iLO IP", "ESXi IP", "State", "Storage role"]);
+  await expect(access.locator("dt")).toHaveText(["Host", "iLO IP", "ESXi IP", "Storage role"]);
+  await expect(access.locator(".ui-card-header")).toContainText(/Blocked|Ready|Not checked/);
   await expect(access.getByRole("button", { name: "Run server check" })).toBeVisible();
   await expect(access.getByRole("button", { name: "View details" })).toBeVisible();
   await expect(access.locator(".operator-primary-button")).toHaveCount(1);
@@ -1789,7 +1792,8 @@ test("virtualization default shows one VM management card and hides technical de
 
   const vm = page.getByLabel("VM Management");
   await expect(vm.getByRole("heading", { name: "vCenter managed" })).toBeVisible();
-  await expect(vm.locator("dt")).toHaveText(["Mode", "Target", "Datastore", "State", "Access"]);
+  await expect(vm.locator("dt")).toHaveText(["Mode", "Target", "Datastore", "Access"]);
+  await expect(vm.locator(".ui-card-header")).toContainText(/Blocked|Ready|Not checked|Needs attention/);
   await expect(vm.getByRole("button", { name: "Run VM check" })).toBeVisible();
   await expect(vm.getByRole("button", { name: "View details" })).toBeVisible();
   await expect(vm.locator(".operator-primary-button")).toHaveCount(1);
