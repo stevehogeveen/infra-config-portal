@@ -9518,6 +9518,13 @@ function LabDesignComposer({
                       <span>{selectedElementInspector.summary}</span>
                     </p>
                   )}
+                  {selectedElementInspector && (
+                    <ElementAssignmentPreview
+                      elementLabel={selectedElementInspector.label}
+                      partId={selectedPart.id}
+                      settings={selectedSettings}
+                    />
+                  )}
                 </section>
 
                 <details className="design-workspace-advanced" aria-label={`${selectedPart.label} advanced checks and proof`}>
@@ -11423,6 +11430,85 @@ function topologyFaceplateElementInspector(
   };
 }
 
+function ElementAssignmentPreview({
+  elementLabel,
+  partId,
+  settings
+}: {
+  elementLabel: string;
+  partId: DesignPartId;
+  settings: Record<string, string>;
+}) {
+  const selectedNumber = parseFirstInteger(elementLabel);
+  if (partId === "switch") {
+    const portMode = selectedNumber && selectedNumber >= 13 ? "trunk" : selectedNumber && selectedNumber >= 9 ? "storage" : "access";
+    const vlan = portMode === "access" ? settings.mgmt_vlan || "100" : settings.storage_vlan || "220";
+    return (
+      <section className="design-element-assignment-preview" aria-label="Switch port assignment preview">
+        <div className="design-element-assignment-head">
+          <p className="operator-kicker">Port editor preview</p>
+          <h5>{elementLabel}</h5>
+          <span>Plan the port here. Guarded Cisco setup handles real switch changes later.</span>
+        </div>
+        <div className="design-element-assignment-grid">
+          <label>
+            <span>Mode</span>
+            <select aria-label="Port mode" defaultValue={portMode}>
+              <option value="access">Access</option>
+              <option value="storage">Storage trunk</option>
+              <option value="trunk">Uplink trunk</option>
+            </select>
+          </label>
+          <label>
+            <span>VLAN</span>
+            <input aria-label="Port VLAN" defaultValue={vlan} />
+          </label>
+          <label className="wide">
+            <span>Description</span>
+            <input aria-label="Port description" defaultValue={`${elementLabel} - ${settings.ports || "planned connection"}`} />
+          </label>
+        </div>
+      </section>
+    );
+  }
+  if (partId === "server-gen10" || partId === "server-gen10plus") {
+    const bayRole = selectedNumber && selectedNumber <= 2 ? "boot" : "data";
+    return (
+      <section className="design-element-assignment-preview" aria-label="Drive bay assignment preview">
+        <div className="design-element-assignment-head">
+          <p className="operator-kicker">Drive editor preview</p>
+          <h5>{elementLabel}</h5>
+          <span>Plan the RAID membership here. Guarded RAID workflow handles real storage changes later.</span>
+        </div>
+        <div className="design-element-assignment-grid">
+          <label>
+            <span>Role</span>
+            <select aria-label="Drive role" defaultValue={bayRole}>
+              <option value="boot">Boot mirror</option>
+              <option value="data">Data set</option>
+              <option value="spare">Hot spare</option>
+              <option value="unused">Unused</option>
+            </select>
+          </label>
+          <label>
+            <span>RAID group</span>
+            <select aria-label="RAID group" defaultValue={bayRole === "boot" ? "boot" : "data"}>
+              <option value="boot">{settings.raid_boot || "RAID1 boot"}</option>
+              <option value="data">{settings.raid_data || "RAID6 local datastore"}</option>
+              <option value="spare">Global hot spare</option>
+            </select>
+          </label>
+          <label className="wide">
+            <span>Bay note</span>
+            <input aria-label="Drive bay note" defaultValue={`${elementLabel} - ${settings.drive_bays || "planned drive bay"}`} />
+          </label>
+        </div>
+      </section>
+    );
+  }
+  return null;
+}
+
 function DesignFaceplateVisual({
   compact = false,
   interactive = false,
@@ -11484,7 +11570,13 @@ function DesignFaceplateVisual({
         <span className="design-drive-bays">
           {bayLabels.map((bay) => (
             interactive ? (
-              <button className="design-faceplate-bay" key={bay} onClick={() => onElementClick?.(`drive bay ${bay}`)} type="button" aria-label={`Drive bay ${bay}`} />
+              <button
+                className={`design-faceplate-bay ${selectedElement === `drive bay ${bay}` || selectedElement === `Drive bay ${bay}` ? "selected" : ""}`}
+                key={bay}
+                onClick={() => onElementClick?.(`drive bay ${bay}`)}
+                type="button"
+                aria-label={`Drive bay ${bay}`}
+              />
             ) : (
               <span className="design-faceplate-bay" key={bay} />
             )

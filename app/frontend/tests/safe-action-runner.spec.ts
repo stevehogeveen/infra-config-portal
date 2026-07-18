@@ -1121,6 +1121,7 @@ test("overview faceplate element clicks reveal concise details only after intent
     {
       button: "Open Cisco switch workspace",
       click: "Switch port 1",
+      editor: "Switch port assignment preview",
       note: "which VLAN lane it belongs to",
       workspace: "Cisco switch"
     },
@@ -1133,6 +1134,7 @@ test("overview faceplate element clicks reveal concise details only after intent
     {
       button: "Open HPE DL360 Gen10 workspace",
       click: "Drive bay 1",
+      editor: "Drive bay assignment preview",
       note: "saved RAID role",
       workspace: "DL360 Gen10"
     },
@@ -1155,6 +1157,22 @@ test("overview faceplate element clicks reveal concise details only after intent
     const elementNote = workspace.locator(".design-selected-element-note");
     await expect(elementNote, `${item.workspace} shows a compact element note`).toContainText(item.note);
     await expect(elementNote, `${item.workspace} keeps default element copy operator-facing`).not.toContainText(/proof|source|device_settings|workflow|live-proof|read-only/i);
+    if (item.editor) {
+      const editor = workspace.getByLabel(item.editor);
+      await expect(editor, `${item.workspace} shows the visual assignment editor preview`).toBeVisible();
+      await expect(editor, `${item.workspace} keeps assignment editing separate from guarded actions`).not.toContainText(/apply|factory|reset|rebuild/i);
+      if (item.editor === "Switch port assignment preview") {
+        await expect(editor.getByLabel("Port mode")).toBeVisible();
+        await expect(editor.getByLabel("Port VLAN")).toBeVisible();
+        await expect(editor.getByLabel("Port description")).toBeVisible();
+      } else {
+        await expect(editor.getByLabel("Drive role")).toBeVisible();
+        await expect(editor.getByLabel("RAID group")).toBeVisible();
+        await expect(editor.getByLabel("Drive bay note")).toBeVisible();
+      }
+    } else {
+      await expect(workspace.locator(".design-element-assignment-preview"), `${item.workspace} stays inspect-only`).toHaveCount(0);
+    }
     await expect(workspace.getByLabel(`${item.workspace} advanced checks and proof`), `${item.workspace} still keeps proof closed`).not.toHaveAttribute("open", "");
     await overlay.getByRole("button", { name: "Close" }).click();
     await expect(page.locator("div[aria-label='Device workspace overlay']")).toHaveCount(0);

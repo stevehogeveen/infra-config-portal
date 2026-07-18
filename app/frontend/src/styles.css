@@ -10921,6 +10921,81 @@ th.ui-compact-table-cell {
   font-size: 13px;
 }
 
+.design-element-assignment-preview {
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbfc 100%);
+  border: 1px solid #cfe2ea;
+  border-radius: 12px;
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+}
+
+.design-element-assignment-head {
+  display: grid;
+  gap: 3px;
+}
+
+.design-element-assignment-head h5,
+.design-element-assignment-head p,
+.design-element-assignment-head span {
+  margin: 0;
+}
+
+.design-element-assignment-head h5 {
+  color: var(--ink);
+  font-size: 14px;
+}
+
+.design-element-assignment-head span {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 750;
+  line-height: 1.35;
+}
+
+.design-element-assignment-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.design-element-assignment-grid label {
+  display: grid;
+  gap: 6px;
+}
+
+.design-element-assignment-grid label.wide {
+  grid-column: 1 / -1;
+}
+
+.design-element-assignment-grid label span {
+  color: #64748b;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.design-element-assignment-grid input,
+.design-element-assignment-grid select {
+  background: #fff;
+  border: 1px solid #cbd6e1;
+  border-radius: 8px;
+  color: #102238;
+  font: 800 12px/1.2 ui-monospace, SFMono-Regular, Consolas, monospace;
+  min-height: 36px;
+  min-width: 0;
+  padding: 0 10px;
+  width: 100%;
+}
+
+.design-element-assignment-grid input:focus,
+.design-element-assignment-grid select:focus {
+  border-color: #0f8b8d;
+  box-shadow: 0 0 0 3px rgba(20, 184, 166, .16);
+  outline: none;
+}
+
 .design-workspace-details,
 .design-workspace-edit-settings,
 .design-workspace-advanced {
@@ -11466,7 +11541,8 @@ th.ui-compact-table-cell {
   background: #f8fafc;
 }
 
-.design-switch-port.selected {
+.design-switch-port.selected,
+.design-faceplate-bay.selected {
   background: #ccfbf1;
   border-color: #14b8a6;
   box-shadow: 0 0 0 3px rgba(45, 212, 191, 0.28), 0 0 18px rgba(45, 212, 191, 0.22);

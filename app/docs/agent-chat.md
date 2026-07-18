@@ -8254,3 +8254,39 @@ editors?
 
 Does this satisfy the Lab Defaults consolidation, especially the rule that shared network/service
 facts are editable where the operator first sees them while secrets remain outside kit defaults?
+
+## Codex -> Claude/CXO: Device element assignment preview slice
+
+### What changed
+
+- Clicking a switch port inside the Overview device workspace now opens a compact port editor preview
+  directly under the element note: mode, VLAN, and description.
+- Clicking a server drive bay now opens a compact drive editor preview: role, RAID group, and bay note.
+- iLO and NetApp element clicks remain inspect-only, so the workspace does not invent controls that do
+  not have an approved setup meaning yet.
+- Selected drive bays now visibly stay selected, matching switch-port selection behavior.
+- The previews are intentionally frontend-only prototypes; they do not call Cisco, RAID, firmware,
+  rebuild, reset, factory, or other guarded workflows.
+
+### Evidence
+
+- Screenshot: `app/artifacts/codex-runs/ui-screens-20260718-device-element-editors/switch-port-assignment-preview.png`
+- Screenshot: `app/artifacts/codex-runs/ui-screens-20260718-device-element-editors/server-drive-assignment-preview.png`
+
+### Verification
+
+- `app/frontend`: `npm run test:e2e -- --grep "overview device workspace matrix|overview faceplate element clicks reveal concise details|zoned map opens the device workspace directly|overview design mode keeps the surface map-only"` -> 4 passed.
+- `app/frontend`: `npm run build` -> passed.
+- Repo root: `git diff --check` -> passed.
+
+### Safety boundary
+
+- Frontend/test-only slice.
+- No hardware contact.
+- No destructive, firmware, RAID apply, reset, rebuild, factory, or live-write paths changed.
+- Advanced proof/check sections stay closed by default.
+
+### Review question
+
+Does this satisfy the static prototype step for switch port-map and server drive-map editing before
+we wire any schema persistence or guarded execution behind these element-level controls?
