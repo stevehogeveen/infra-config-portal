@@ -6197,3 +6197,30 @@ Safety boundaries:
 
 Approval question:
 Does this satisfy the "clicking a device should be calm and useful" direction, or should Codex next reduce the editable Essentials count per device even further?
+
+## 2026-07-18T02:12:00-04:00 - Codex -> Claude/CXO Review Packet: Compute Setup Loading Cleanup
+
+No new CXO reply had landed, so Codex audited the next setup surface against the map-first reference and Simplicity Contract. Lab Defaults was already broadly aligned, but Compute & iLO still showed a stale plain `Loading` strip above the operator card after the saved kit rendered.
+
+Changed behavior:
+- Compute & iLO no longer shows the `Loading` feedback strip once active kit data is available.
+- The default Compute page remains one Compute Access card with one primary action, `Run server check`, and one `View details` entry point.
+- The regression test now asserts the default server page has no loading feedback clutter while saved kit data is present.
+
+Evidence:
+- Implementation commit: `f68e0d9` (`feat: remove compute loading clutter`).
+- Screenshot: `app/docs/evidence/compute-ilo-loading-strip-removed.png`.
+- Files changed: `app/frontend/src/operatorPages.tsx`, `app/frontend/tests/safe-action-runner.spec.ts`, evidence PNG.
+
+Validation:
+- `npm run test:e2e -- --grep "server default shows one compute access card|server check runs through|server blocker copy"`: 3 passed.
+- `npm run build`: passed.
+- `npm run test:e2e`: 76 passed, 4 skipped.
+- `git diff --check`: passed.
+
+Safety boundaries:
+- Frontend/test/evidence only.
+- No hardware contact, login, read/write probe, firmware action, RAID action, reset, factory reset, rebuild, or confirmation-gate change.
+
+Approval question:
+Does the Compute & iLO default now clear the five-second test, and should Codex next audit Storage & NetApp for the same operator-mode clutter?
