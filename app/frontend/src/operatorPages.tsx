@@ -946,7 +946,7 @@ export function OperatorLabDefaultsPage({ labProfileState, onReloadLabProfile }:
               <details className="lab-defaults-more">
                 <summary>
                   <span>More network defaults</span>
-                  <small>Storage, NTP, VLAN, and MTU</small>
+                  <small>Storage path, services, VLAN, and MTU</small>
                 </summary>
                 <div className="lab-defaults-input-grid lab-defaults-more-grid">
                   <label className="lab-defaults-field lab-defaults-field-wide">
@@ -994,31 +994,6 @@ export function OperatorLabDefaultsPage({ labProfileState, onReloadLabProfile }:
                     <option value="local">Local</option>
                   </select>
                 </label>
-              </details>
-            </CardContent>
-          </Card>
-          <Card aria-label="Shared sign-in" className="lab-defaults-signin-card" hover={false}>
-            <CardHeader>
-              <div>
-                <h2>Shared sign-in</h2>
-                <p className="muted">Secrets are not stored in kit defaults. Device workspaces show credential status without revealing values.</p>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <dl className="lab-defaults-facts lab-defaults-secret-facts">
-                <div>
-                  <dt>Credential status</dt>
-                  <dd>
-                    <span>{sharedCredentialsSaved ? "saved secret reference" : "device-specific"}</span>
-                    <StatusBadge label={sharedCredentialsSaved ? "Saved" : "Not saved here"} status={sharedCredentialsSaved ? "ready" : "not-configured"} />
-                  </dd>
-                </div>
-              </dl>
-              <details className="lab-defaults-more">
-                <summary>
-                  <span>More service defaults</span>
-                  <small>DNS, NTP, SNMP</small>
-                </summary>
                 <div className="lab-defaults-service-row" aria-label="Shared service defaults">
                   <label className="lab-defaults-service-toggle">
                     <input checked={edit.enableDns} disabled={busy || !activeProfile} onChange={(event) => update("enableDns", event.target.checked)} type="checkbox" />
@@ -1046,6 +1021,25 @@ export function OperatorLabDefaultsPage({ labProfileState, onReloadLabProfile }:
                   </select>
                 </label>
               </details>
+            </CardContent>
+          </Card>
+          <Card aria-label="Shared sign-in" className="lab-defaults-signin-card" hover={false}>
+            <CardHeader>
+              <div>
+                <h2>Shared sign-in</h2>
+                <p className="muted">Secrets are not stored in kit defaults. Device workspaces show credential status without revealing values.</p>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <dl className="lab-defaults-facts lab-defaults-secret-facts">
+                <div>
+                  <dt>Credential status</dt>
+                  <dd>
+                    <span>{sharedCredentialsSaved ? "saved secret reference" : "device-specific"}</span>
+                    <StatusBadge label={sharedCredentialsSaved ? "Saved" : "Not saved here"} status={sharedCredentialsSaved ? "ready" : "not-configured"} />
+                  </dd>
+                </div>
+              </dl>
             </CardContent>
           </Card>
         </div>

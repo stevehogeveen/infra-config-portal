@@ -430,11 +430,17 @@ test("lab defaults keeps shared values simple and hides advanced policy by defau
   await expect(network.getByRole("textbox", { name: "Subnet" })).toHaveValue("192.168.1.0/24");
   await expect(network.getByText("More network defaults")).toBeVisible();
   await expect(network.getByLabel("Storage protocol")).toBeHidden();
+  await expect(network.getByLabel("Shared service defaults")).toBeHidden();
+  await expect(network.getByLabel("SNMP version")).toBeHidden();
   await expect(network.getByRole("textbox", { name: "NTP servers" })).toBeHidden();
   await expect(network.getByRole("textbox", { name: "VLAN" })).toBeHidden();
   await expect(network.getByRole("textbox", { name: "MTU" })).toBeHidden();
   await network.getByText("More network defaults").click();
   await expect(network.getByLabel("Storage protocol")).toBeVisible();
+  await expect(network.getByLabel("Shared service defaults")).toContainText("DNS");
+  await expect(network.getByLabel("Shared service defaults")).toContainText("NTP");
+  await expect(network.getByLabel("Shared service defaults")).toContainText("SNMP");
+  await expect(network.getByLabel("SNMP version")).toBeVisible();
   await expect(network.getByRole("textbox", { name: "NTP servers" })).toBeVisible();
   await expect(network.getByRole("textbox", { name: "VLAN" })).toBeVisible();
   await expect(network.getByRole("textbox", { name: "MTU" })).toBeVisible();
@@ -443,12 +449,9 @@ test("lab defaults keeps shared values simple and hides advanced policy by defau
   await expect(signIn.getByRole("heading", { name: "Shared sign-in" })).toBeVisible();
   await expect(signIn).toContainText("Credential status");
   await expect(signIn).toContainText("Secrets are not stored in kit defaults.");
-  await expect(signIn.getByText("More service defaults")).toBeVisible();
-  await expect(signIn.getByLabel("Shared service defaults")).toBeHidden();
-  await expect(signIn.getByLabel("SNMP version")).toBeHidden();
-  await signIn.getByText("More service defaults").click();
-  await expect(signIn.getByLabel("Shared service defaults")).toContainText("DNS");
-  await expect(signIn.getByLabel("SNMP version")).toBeVisible();
+  await expect(signIn.getByText("More service defaults")).toHaveCount(0);
+  await expect(signIn.getByLabel("Shared service defaults")).toHaveCount(0);
+  await expect(signIn.getByLabel("SNMP version")).toHaveCount(0);
   await expect(signIn).not.toContainText("P@ssw0rd");
   await expect(signIn.locator("input[type='password']")).toHaveCount(0);
 
@@ -494,10 +497,8 @@ test("lab defaults saves editable network and service defaults without secrets o
   await network.getByRole("textbox", { name: "MTU" }).fill("9000");
   await network.getByLabel("Storage protocol").selectOption("iscsi");
 
-  const signIn = page.getByLabel("Shared sign-in");
-  await signIn.getByText("More service defaults").click();
-  await signIn.getByRole("checkbox", { name: "SNMP" }).check();
-  await signIn.getByLabel("SNMP version").selectOption("v3");
+  await network.getByRole("checkbox", { name: "SNMP" }).check();
+  await network.getByLabel("SNMP version").selectOption("v3");
 
   const createProfileRequest = page.waitForRequest((request) => {
     const url = new URL(request.url());
