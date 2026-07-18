@@ -9398,7 +9398,15 @@ function LabDesignComposer({
     if (!selectedPart) return null;
     const profilePath = topologyCommittedProfilePath(selectedPart.id, field.key);
     const profileOwned = Boolean(profilePath);
-    const value = deviceSettings[selectedPart.id]?.[field.key] ?? "";
+    const draftValue = deviceSettings[selectedPart.id]?.[field.key] ?? "";
+    const resolvedValue = options?.readOnlyDisplay && profileOwned
+      ? topologyResolvedProfileOwnedSettingValue(selectedPart.id, field.key, {
+        activeProfile,
+        address: designAddress,
+        storageProtocol
+      })
+      : "";
+    const value = resolvedValue || draftValue;
     if (options?.readOnlyDisplay || (workspaceOnly && profileOwned)) {
       return (
         <div className={`design-device-setting-row ${profileOwned ? "is-profile-owned" : "is-draft-owned"} is-readonly-value`} key={field.key}>
@@ -12274,6 +12282,54 @@ function topologyCommittedProfilePath(partId: DesignPartId, key: string): string
   if (partId === "netapp" && key === "protocol") return "features.storage_protocol";
   if (partId === "vcenter" && key === "datastore") return "devices.vcenter";
   return null;
+}
+
+function topologyResolvedProfileOwnedSettingValue(
+  partId: DesignPartId,
+  key: string,
+  {
+    activeProfile,
+    address,
+    storageProtocol
+  }: {
+    activeProfile: LabProfile | null;
+    address: LabAddressPlan;
+    storageProtocol: string;
+  }
+): string {
+  const display = (value: unknown) => {
+    const normalized = displayAddress(value).trim();
+    return ["", "not set up yet", "not planned", "not configured"].includes(normalized.toLowerCase())
+      ? ""
+      : normalized;
+  };
+  if (key === "management_ip") {
+    if (partId === "switch") return display(address.cisco_management);
+    if (partId === "ilo" || partId === "server-gen10" || partId === "server-gen10plus") return display(address.ilo);
+    if (partId === "netapp") return display(address.netapp_cluster_mgmt);
+    if (partId === "vcenter") return display(address.ansible_control_host);
+  }
+  if (key === "gateway") {
+    return display(activeProfile?.global_settings?.gateway ?? activeProfile?.gateway ?? topologyGatewayFromSubnet(address.subnet));
+  }
+  if (partId === "switch" && key === "mgmt_vlan") {
+    return asString(activeProfile?.global_settings?.vlan_id ?? activeProfile?.vlan_id);
+  }
+  if (partId === "netapp" && key === "nfs_lifs") {
+    return address.netapp_nfs_lifs.map(display).filter(Boolean).join(", ");
+  }
+  if (partId === "netapp" && key === "iscsi_lifs") {
+    return address.netapp_iscsi_lifs.map(display).filter(Boolean).join(", ");
+  }
+  if (partId === "netapp" && key === "protocol") {
+    if (storageProtocol === "iscsi") return "iSCSI primary, NFS optional";
+    if (storageProtocol === "local") return "Local storage";
+    return "NFS primary, iSCSI optional";
+  }
+  if (partId === "vcenter" && key === "datastore") {
+    return asString(activeProfile?.devices?.vcenter);
+  }
+  return "";
 }
 
 function topologyDesignBlueprintNodes(

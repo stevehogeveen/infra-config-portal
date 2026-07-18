@@ -1260,6 +1260,41 @@ test("overview device workspace matrix keeps default inputs concise", async ({ p
   }
 });
 
+test("overview device workspace resolves saved values when visual drafts are blank", async ({ page }) => {
+  await page.route("**/api/v1/lab/topology-design-draft**", (route) => {
+    const request = route.request();
+    if (request.method() !== "GET") return route.fallback();
+    const url = new URL(request.url());
+    return json(route, topologyDesignDraftFixture({
+      profile_id: url.searchParams.get("profile_id") || "runtime",
+      scenario: url.searchParams.get("scenario") || "server_netapp_vcenter",
+      subnet: url.searchParams.get("subnet") || "192.168.1.0/24",
+      device_settings: {
+        switch: {
+          management_ip: "",
+          mgmt_vlan: "",
+          ports: "server and storage ports",
+          storage_vlan: "220"
+        }
+      }
+    }, "saved"));
+  });
+
+  await page.goto("/overview");
+  await openOperatorDetails(page);
+
+  const topology = page.locator("section[aria-label='Living lab topology']");
+  await topology.getByRole("button", { name: "Open Cisco switch workspace" }).click();
+  const workspace = page.locator("section[aria-label='Cisco switch workspace']");
+  const essentials = workspace.getByLabel("Cisco switch essentials");
+
+  await expect(essentials.getByLabel("Cisco switch compact faceplate")).toBeVisible();
+  await expect(essentials, "saved Cisco IP wins over blank visual draft in Main settings").toContainText("192.168.1.204");
+  await expect(essentials, "saved management VLAN wins over blank visual draft in Main settings").toContainText("10");
+  await expect(essentials, "Main settings does not show blank draft placeholders for saved fields").not.toContainText("Not planned");
+  await expect(essentials.locator("input, select, textarea"), "resolved saved values stay read-only in the simple drawer").toHaveCount(0);
+});
+
 test("overview faceplate element clicks reveal concise details only after intent", async ({ page }) => {
   await page.goto("/overview");
   await openOperatorDetails(page);
