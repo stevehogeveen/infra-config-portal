@@ -779,12 +779,13 @@ test("run console pauses at a guarded change without exposing duplicate consoles
   await expect(runConsole).toContainText("Waiting for approval: Configure the management network.");
   await expect(runConsole.getByTestId("lab-build-primary-action")).toHaveCount(1);
   await expect(runConsole.getByTestId("lab-build-primary-action")).toContainText("Continue Build");
-  await expect(runConsole.getByRole("button", { name: "Open Details" })).toHaveCount(1);
+  await expect(runConsole.getByRole("button", { name: "Open lab map" })).toHaveCount(1);
+  await expect(runConsole.getByRole("button", { name: "Open Details" })).toHaveCount(0);
   await expect(runConsole.locator("details.lab-build-advanced")).not.toHaveAttribute("open");
   await expect(runConsole.getByLabel("Technical build log")).not.toBeVisible();
   await expect(page.getByText("Operator Console")).toHaveCount(0);
 
-  await runConsole.getByRole("button", { name: "Open Details" }).click();
+  await runConsole.getByRole("button", { name: "Open lab map" }).click();
   await expect(page).toHaveURL(/\/overview$/);
   await expect(page.getByTestId("lab-build-journey")).toHaveCount(0);
   await expect(page.locator("section[aria-label='Living lab topology']")).toBeVisible();

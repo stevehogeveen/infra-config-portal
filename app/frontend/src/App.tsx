@@ -2200,7 +2200,7 @@ function RunCenter() {
         return Number.isFinite(finished) && Number.isFinite(waiting) && finished >= waiting;
       });
       if (!evidence) {
-        throw new Error("Complete the guarded action in Details, then continue this build.");
+        throw new Error("Open the lab map and complete the guarded action, then continue this build.");
       }
       setRun(await api.resumeLabBuild(run.run_id, {
         action_run_id: evidence.run_id,

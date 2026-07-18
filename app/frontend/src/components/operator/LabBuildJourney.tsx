@@ -231,7 +231,7 @@ function RunConsole({
         </button>
         {isGuardedWait && (
           <button className="lab-build-secondary" onClick={onOpenDetails} type="button">
-            Open Details
+            Open lab map
           </button>
         )}
       </div>
@@ -254,7 +254,7 @@ function CompletionReport({
 }) {
   const exceptions = run.steps.filter((step) => ["failed", "blocked", "warning"].includes(step.status));
   const retryable = exceptions.find((step) => step.can_retry);
-  const primaryLabel = retryable ? "Retry Check" : run.status === "failed" ? "Open Details" : "Back to Operator Home";
+  const primaryLabel = retryable ? "Retry Check" : run.status === "failed" ? "Open lab map" : "Back to lab map";
   const primaryAction = retryable ? () => onRetry(retryable.step_id) : run.status === "failed" ? onOpenDetails : onClose;
 
   return (
