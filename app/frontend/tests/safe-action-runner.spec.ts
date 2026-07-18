@@ -408,7 +408,8 @@ test("lab defaults keeps shared values simple and hides advanced policy by defau
 
   await page.locator(".lab-defaults-advanced summary").click();
   await expect(page.getByLabel("Advanced lab default fields")).toBeVisible();
-  await expect(page.getByLabel("Global profile feature toggles")).toContainText("Allow IPv6");
+  await expect(page.getByLabel("Lab default feature toggles")).toContainText("Allow IPv6");
+  await expect(page.getByLabel("Global profile feature toggles")).toHaveCount(0);
   await expect(page.locator(".lab-defaults-advanced .operator-primary-button")).toHaveCount(0);
   await expect(page.locator(".lab-defaults-advanced .secondary-button")).toHaveCount(1);
 });
@@ -2086,6 +2087,7 @@ test("remaining operator pages expose simplified setup surfaces without old sett
   await expect(page.getByLabel("Create kit").locator(".primary")).toContainText("Create kit");
   await expect(page.getByRole("heading", { name: "Shared profile policy" })).toHaveCount(0);
   await expect(page.getByLabel("Global profile feature toggles")).toHaveCount(0);
+  await expect(page.getByLabel("Lab default feature toggles")).toHaveCount(0);
   await expect(page.getByRole("button", { name: /Save (Global Defaults|As Lab Setup)/ })).toHaveCount(0);
 
   await expect(page.getByRole("button", { name: "Settings" })).toHaveCount(0);
@@ -2298,6 +2300,7 @@ test("saved lab setup global defaults use active profile values and never render
   await expect(page.getByTestId("saved-kits-home")).toContainText("Current Lab");
   await expect(page.getByRole("heading", { name: "Shared profile policy" })).toHaveCount(0);
   await expect(page.getByLabel("Global profile feature toggles")).toHaveCount(0);
+  await expect(page.getByLabel("Lab default feature toggles")).toHaveCount(0);
   await expect(page.locator("nav").getByText("Settings")).toHaveCount(0);
   await expect(page.getByText("Secret values are hidden")).toHaveCount(0);
   await expect(page.locator("input[type='password']")).toHaveCount(0);

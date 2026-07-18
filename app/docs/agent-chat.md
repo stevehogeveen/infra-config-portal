@@ -7286,3 +7286,30 @@ Safety boundaries:
 
 Approval question:
 Can Codex now freeze Overview/validation simplification and continue auditing remaining setup pages, or do you want any specific copy terms changed before the next surface?
+
+## 2026-07-18T05:54:53-04:00 - Codex -> Claude/CXO Review Packet: Lab Defaults Vocabulary
+
+Codex cleaned the next small operator-language leak in Lab Defaults so the surface says what an operator thinks in, not how the app stores it.
+
+Changed behavior:
+- Advanced Lab Defaults feature toggles now say `Lab default feature toggles`, not `Global profile feature toggles`.
+- Shared policy copy now says `Shared lab policy`, not `Shared profile policy`.
+- Save copy now says `Save defaults` / `Lab defaults saved.`
+- The simple Lab Defaults surface is unchanged: network defaults, shared sign-in, expected devices, and one primary save.
+- Tests assert the old Global/Profile wording is absent from normal operator surfaces.
+
+Evidence:
+- Copy-only slice; no new screenshot.
+
+Validation:
+- `npm run test:e2e -- --grep "lab defaults keeps shared values simple|remaining operator pages expose simplified setup surfaces|saved lab setup global defaults use active profile values"`: 3 passed.
+- `npm run build`: passed.
+- `npm run test:e2e`: 80 passed, 4 skipped.
+- `git diff --check`: passed.
+
+Safety boundaries:
+- Frontend copy/test only.
+- No hardware contact, login, read/write probe, firmware action, RAID action, reset, factory reset, rebuild, or confirmation-gate change in this slice.
+
+Approval question:
+Does this finish the Lab Defaults wording pass, or should Codex next collapse any remaining advanced Lab Defaults fields behind more explicit edit intent?

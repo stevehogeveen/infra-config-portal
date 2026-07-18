@@ -1008,7 +1008,7 @@ export function OperatorLabDefaultsPage({ labProfileState, onReloadLabProfile }:
                 <input disabled={busy || !activeProfile} onChange={(event) => update("timezone", event.target.value)} value={edit.timezone} />
               </Field>
             </div>
-            <div className="network-config-toggles lab-defaults-feature-toggles" aria-label="Global profile feature toggles">
+            <div className="network-config-toggles lab-defaults-feature-toggles" aria-label="Lab default feature toggles">
               <label><input checked={edit.enableDns} disabled={busy || !activeProfile} onChange={(event) => update("enableDns", event.target.checked)} type="checkbox" /><span>DNS</span></label>
               <label><input checked={edit.enableNtp} disabled={busy || !activeProfile} onChange={(event) => update("enableNtp", event.target.checked)} type="checkbox" /><span>NTP</span></label>
               <label><input checked={edit.enableSnmp} disabled={busy || !activeProfile} onChange={(event) => update("enableSnmp", event.target.checked)} type="checkbox" /><span>SNMP</span></label>
@@ -6522,7 +6522,7 @@ export function SettingsGlobalProfilePanel({
   async function save(event: FormEvent) {
     event.preventDefault();
     if (!activeProfile) {
-      setError("Load the active lab setup before editing global defaults.");
+      setError("Load the active lab setup before editing lab defaults.");
       return;
     }
     setBusy(true);
@@ -6537,7 +6537,7 @@ export function SettingsGlobalProfilePanel({
         await api.activateLabProfile(saved.id);
       }
       await onSaved();
-      setMessage("Global lab defaults saved.");
+      setMessage("Lab defaults saved.");
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -6549,8 +6549,8 @@ export function SettingsGlobalProfilePanel({
     <Card className="network-config-panel settings-global-profile-panel" hover={false}>
       <CardHeader>
         <div>
-          <p className="operator-kicker">Global lab defaults</p>
-          <h2>Shared profile policy</h2>
+          <p className="operator-kicker">Lab defaults</p>
+          <h2>Shared lab policy</h2>
         </div>
         <StatusBadge
           label={activeProfile?.source === "saved" ? "Saved setup" : activeProfile ? "Save as setup" : "No setup"}
@@ -6598,7 +6598,7 @@ export function SettingsGlobalProfilePanel({
               <option value="none">Local only</option>
             </select>
           </Field>
-          <div className="network-config-toggles" aria-label="Global profile feature toggles">
+          <div className="network-config-toggles" aria-label="Lab default feature toggles">
             <label>
               <input
                 checked={edit.enableDns}
@@ -6658,7 +6658,7 @@ export function SettingsGlobalProfilePanel({
           <div className="network-config-actions">
             <button className="operator-primary-button" disabled={busy || !activeProfile} type="submit">
               <Save size={16} />
-              {busy ? "Saving..." : activeProfile?.source === "saved" ? "Save Global Defaults" : "Save As Lab Setup"}
+              {busy ? "Saving..." : activeProfile?.source === "saved" ? "Save defaults" : "Save As Lab Setup"}
             </button>
           </div>
         </form>
