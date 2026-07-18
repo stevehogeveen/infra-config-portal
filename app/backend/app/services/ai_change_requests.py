@@ -20,7 +20,7 @@ MAILBOX_IPV4_RE = re.compile(r"(?<![\d.])(?:\d{1,3}\.){3}\d{1,3}(?![\d.])")
 def create_ai_change_request(payload: AiChangeRequestCreate) -> AiChangeRequestRead:
     created_at = datetime.now(UTC)
     request_id = created_at.strftime("%Y%m%dT%H%M%SZ")
-    safe_page = _slug(payload.page) or "page"
+    safe_page = _slug(_mailbox_safe_text(payload.page)) or "page"
     root = Path(__file__).resolve().parents[3]
     request_dir = root / "docs" / "change-requests"
     request_dir.mkdir(parents=True, exist_ok=True)
