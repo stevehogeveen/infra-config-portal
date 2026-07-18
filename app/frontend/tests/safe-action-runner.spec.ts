@@ -812,8 +812,9 @@ test("zoned map opens the device workspace directly", async ({ page }) => {
   await expect(iloWorkspace).toBeVisible();
   await expect(iloWorkspace).toContainText("out-of-band server management");
   await expect(iloWorkspace.getByLabel("HPE iLO essentials")).toContainText("iLO IP");
-  await expect(iloWorkspace.getByLabel("HPE iLO essentials")).toContainText("Credential status");
-  await expect(iloWorkspace.getByLabel("HPE iLO essentials").getByLabel("Credential status")).toHaveValue("unknown until iLO Auth Live Check runs");
+  await expect(iloWorkspace.getByLabel("HPE iLO essentials")).not.toContainText("Credential status");
+  await expect(iloWorkspace.getByLabel("HPE iLO essentials")).not.toContainText("Reachability");
+  await expect(iloWorkspace.getByLabel("HPE iLO essentials")).not.toContainText("Firmware evidence");
   await expect(iloWorkspace.getByLabel("iLO workspace server controls")).not.toBeVisible();
   const iloAdvanced = await openWorkspaceAdvanced(page, "HPE iLO");
   const iloSchema = iloAdvanced.locator(".design-schema-inventory");
@@ -923,7 +924,13 @@ test("overview device workspace matrix keeps default inputs concise", async ({ p
   await openOperatorDetails(page);
 
   const topology = page.locator("section[aria-label='Living lab topology']");
-  const cases = [
+  const cases: Array<{
+    advancedControl: string;
+    button: string;
+    essentials: string[];
+    hiddenEssentials?: string[];
+    workspace: string;
+  }> = [
     {
       advancedControl: "Cisco workspace network controls",
       button: "Open Cisco switch workspace",
@@ -933,7 +940,8 @@ test("overview device workspace matrix keeps default inputs concise", async ({ p
     {
       advancedControl: "iLO workspace server controls",
       button: "Open HPE iLO workspace",
-      essentials: ["iLO IP", "Credential status"],
+      essentials: ["Name", "iLO IP"],
+      hiddenEssentials: ["Credential status", "Reachability", "Firmware evidence"],
       workspace: "HPE iLO"
     },
     {
@@ -945,7 +953,7 @@ test("overview device workspace matrix keeps default inputs concise", async ({ p
     {
       advancedControl: "NetApp workspace storage controls",
       button: "Open NetApp ONTAP workspace",
-      essentials: ["Cluster IP", "Controller ports"],
+      essentials: ["Cluster IP", "Primary NFS LIFs"],
       workspace: "NetApp ONTAP"
     },
     {
@@ -964,9 +972,14 @@ test("overview device workspace matrix keeps default inputs concise", async ({ p
     await expect(workspace.locator(":scope > .design-device-primary-action .design-plan-action"), `${item.workspace} has one default action`).toHaveCount(1);
     await expect(workspace.locator(".design-selected-element-note"), `${item.workspace} waits for an element click before showing element detail`).toHaveCount(0);
     await expect(workspace, `${item.workspace} avoids dead default actions`).not.toContainText("No read-only test registered");
-    await expect(workspace.getByLabel(`${item.workspace} essentials`), `${item.workspace} shows essentials`).toBeVisible();
+    const essentials = workspace.getByLabel(`${item.workspace} essentials`);
+    await expect(essentials, `${item.workspace} shows essentials`).toBeVisible();
+    expect(await essentials.locator(".design-device-setting-row").count(), `${item.workspace} keeps essentials compact`).toBeLessThanOrEqual(4);
     for (const essential of item.essentials) {
-      await expect(workspace.getByLabel(`${item.workspace} essentials`), `${item.workspace} essential ${essential}`).toContainText(essential);
+      await expect(essentials, `${item.workspace} essential ${essential}`).toContainText(essential);
+    }
+    for (const hiddenEssential of item.hiddenEssentials ?? []) {
+      await expect(essentials, `${item.workspace} hides proof field ${hiddenEssential}`).not.toContainText(hiddenEssential);
     }
     await expect(workspace.locator(":scope > details.design-workspace-details"), `${item.workspace} has one top-level details drawer`).toHaveCount(1);
     await expect(workspace.locator(":scope > details.design-workspace-advanced"), `${item.workspace} does not expose advanced as a second top-level drawer`).toHaveCount(0);
@@ -1871,7 +1884,7 @@ test("map switch workspace shows access settings and blockers without proof clut
 
   await expect(workspace).toContainText("Cisco C9300");
   await expect(workspace.getByLabel("Cisco switch essentials")).toContainText("Management IP");
-  await expect(workspace.getByLabel("Cisco switch essentials").getByLabel("Management IP")).toHaveValue("192.168.1.204");
+  await expect(workspace.getByLabel("Cisco switch essentials")).toContainText("192.168.1.204");
   await expect(workspace.getByLabel("Cisco workspace network controls")).not.toBeVisible();
   await workspace.getByLabel("Cisco switch details").locator(":scope > summary").click();
   await expect(workspace.getByLabel("Cisco switch Network")).toContainText("Management IP");

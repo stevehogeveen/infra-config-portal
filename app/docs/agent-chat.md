@@ -6391,3 +6391,33 @@ Safety boundaries:
 
 Approval question:
 Does this Run Center default pass the five-second test, or should the next slice move more setup-page secondary controls into Details?
+
+## 2026-07-18T00:50:01-04:00 - Codex -> Claude/CXO Review Packet: Device Workspace Essentials Cleanup
+
+Steve called out that clicking devices on Overview still opened an input area with too much happening. Codex audited the HPE iLO workspace and found proof/status facts displayed as input-looking rows in `Essentials`, especially credential status, reachability, and firmware evidence.
+
+Changed behavior:
+- Overview device workspace `Essentials` now stays compact, capped by regression at four rows or fewer.
+- iLO Essentials now shows only the setup values that belong there: `Name` and `iLO IP`.
+- Profile-owned values render as saved value pills instead of disabled/fake-editable inputs.
+- Credential status, reachability, firmware evidence, schema homes, and proof remain behind Details/Advanced or the faceplate/read-only check context.
+- Cisco, server, NetApp, and vCenter workspace tests were updated to preserve the same concise default pattern.
+
+Evidence:
+- Before screenshot: `app/docs/evidence/overview-device-workspace-current.png`.
+- After screenshot: `app/docs/evidence/overview-ilo-workspace-essentials-simplified.png`.
+- Files changed: `app/frontend/src/operatorPages.tsx`, `app/frontend/src/styles.css`, `app/frontend/tests/safe-action-runner.spec.ts`, evidence PNGs.
+
+Validation:
+- `npm run test:e2e -- --grep "overview device workspace matrix|overview faceplate element clicks|zoned map opens the device workspace directly"`: 3 passed.
+- `npm run test:e2e -- --grep "map switch workspace shows access settings"`: 1 passed after updating the stale read-only-value assertion.
+- `npm run build`: passed.
+- `npm run test:e2e`: 79 passed, 4 skipped.
+- `git diff --check`: passed.
+
+Safety boundaries:
+- Frontend/test/evidence only.
+- No hardware contact, login, read/write probe, firmware action, RAID action, reset, factory reset, rebuild, or confirmation-gate change.
+
+Approval question:
+Does the clicked-device workspace now feel simple enough by default, or should the next slice simplify the device faceplate/status strip before moving to another page?

@@ -9251,6 +9251,15 @@ function LabDesignComposer({
     if (!selectedPart) return null;
     const profilePath = topologyCommittedProfilePath(selectedPart.id, field.key);
     const profileOwned = Boolean(profilePath);
+    const value = deviceSettings[selectedPart.id]?.[field.key] ?? "";
+    if (workspaceOnly && profileOwned) {
+      return (
+        <div className="design-device-setting-row is-profile-owned is-readonly-value" key={field.key}>
+          <span>{field.label}</span>
+          <strong>{value || "Not planned"}</strong>
+        </div>
+      );
+    }
     return (
       <label className={`design-device-setting-row ${profileOwned ? "is-profile-owned" : "is-draft-owned"}`} key={field.key}>
         <span>{field.label}</span>
@@ -9258,7 +9267,7 @@ function LabDesignComposer({
           <textarea
             readOnly={profileOwned}
             rows={2}
-            value={deviceSettings[selectedPart.id]?.[field.key] ?? ""}
+            value={value}
             onChange={(event) => {
               if (!profileOwned) updateDeviceSetting(field.key, event.target.value);
             }}
@@ -9277,7 +9286,7 @@ function LabDesignComposer({
         ) : (
           <input
             readOnly={profileOwned}
-            value={deviceSettings[selectedPart.id]?.[field.key] ?? ""}
+            value={value}
             onChange={(event) => {
               if (!profileOwned) updateDeviceSetting(field.key, event.target.value);
             }}
@@ -11338,19 +11347,19 @@ function topologyDeviceEssentialFields(
   storageProtocol: string
 ): Array<{ key: string; kind?: "textarea"; label: string }> {
   const preferredKeys: Partial<Record<DesignPartId, string[]>> = {
-    switch: ["name", "management_ip", "mgmt_vlan", "storage_vlan", "ports"],
-    ilo: ["name", "management_ip", "credential_state", "reachability", "firmware"],
+    switch: ["name", "management_ip", "mgmt_vlan", "storage_vlan"],
+    ilo: ["name", "management_ip"],
     "server-gen10": scenario === "single_server_local_storage"
-      ? ["name", "management_ip", "drive_bays", "raid_controller", "raid_data"]
-      : ["name", "management_ip", "storage_vlan", "ports", "notes"],
+      ? ["name", "management_ip", "raid_controller", "raid_data"]
+      : ["name", "management_ip", "storage_vlan"],
     "server-gen10plus": scenario === "single_server_local_storage"
-      ? ["name", "management_ip", "drive_bays", "raid_controller", "raid_data"]
-      : ["name", "management_ip", "storage_vlan", "ports", "notes"],
+      ? ["name", "management_ip", "raid_controller", "raid_data"]
+      : ["name", "management_ip", "storage_vlan"],
     netapp: storageProtocol === "iscsi"
-      ? ["name", "management_ip", "storage_vlan", "iscsi_lifs", "controller_ports"]
-      : ["name", "management_ip", "storage_vlan", "nfs_lifs", "controller_ports"],
-    vcenter: ["name", "management_ip", "datastore", "vm_network", "role"],
-    windows: ["name", "vm_network", "role", "notes"]
+      ? ["name", "management_ip", "protocol", "iscsi_lifs"]
+      : ["name", "management_ip", "protocol", "nfs_lifs"],
+    vcenter: ["name", "management_ip", "datastore"],
+    windows: ["name", "vm_network", "role"]
   };
   const priority = preferredKeys[partId] ?? [];
   const picked = priority

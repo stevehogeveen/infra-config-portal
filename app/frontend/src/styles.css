@@ -11593,6 +11593,23 @@ th.ui-compact-table-cell {
   cursor: default;
 }
 
+.design-device-setting-row.is-readonly-value {
+  grid-template-columns: 126px minmax(0, 1fr);
+}
+
+.design-device-setting-row.is-readonly-value strong {
+  background: #eef7f5;
+  border: 1px solid #bfe9df;
+  border-radius: 999px;
+  color: #0f3d39;
+  font-size: 12px;
+  font-weight: 900;
+  line-height: 1.25;
+  min-height: 30px;
+  overflow-wrap: anywhere;
+  padding: 7px 10px;
+}
+
 .design-device-setting-row small {
   color: #64748b;
   font-size: 10px;
