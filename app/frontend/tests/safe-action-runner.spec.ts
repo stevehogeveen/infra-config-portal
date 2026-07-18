@@ -881,6 +881,61 @@ test("zoned map opens the device workspace directly", async ({ page }) => {
 
 });
 
+test("overview device workspace matrix keeps default inputs concise", async ({ page }) => {
+  await page.goto("/overview");
+  await openOperatorDetails(page);
+
+  const topology = page.locator("section[aria-label='Living lab topology']");
+  const cases = [
+    {
+      advancedControl: "Cisco workspace network controls",
+      button: "Open Cisco switch workspace",
+      essentials: ["Management IP", "Storage VLAN"],
+      workspace: "Cisco switch"
+    },
+    {
+      advancedControl: "iLO workspace server controls",
+      button: "Open HPE iLO workspace",
+      essentials: ["iLO IP", "Credential status"],
+      workspace: "HPE iLO"
+    },
+    {
+      advancedControl: "Server workspace checks",
+      button: "Open HPE DL360 Gen10 workspace",
+      essentials: ["iLO IP", "Storage VLAN"],
+      workspace: "DL360 Gen10"
+    },
+    {
+      advancedControl: "NetApp workspace storage controls",
+      button: "Open NetApp ONTAP workspace",
+      essentials: ["Cluster IP", "Controller ports"],
+      workspace: "NetApp ONTAP"
+    },
+    {
+      advancedControl: "vCenter workspace virtualization controls",
+      button: "Open vCenter VCSA workspace",
+      essentials: ["Management IP", "Datastore"],
+      workspace: "vCenter VCSA"
+    }
+  ];
+
+  for (const item of cases) {
+    await topology.getByRole("button", { name: item.button }).click();
+    const overlay = page.locator("div[aria-label='Device workspace overlay']");
+    const workspace = overlay.locator(`section[aria-label='${item.workspace} workspace']`);
+    await expect(workspace, `${item.workspace} workspace opens`).toBeVisible();
+    await expect(workspace.locator(":scope > .design-device-primary-action .design-plan-action"), `${item.workspace} has one default action`).toHaveCount(1);
+    await expect(workspace.getByLabel(`${item.workspace} essentials`), `${item.workspace} shows essentials`).toBeVisible();
+    for (const essential of item.essentials) {
+      await expect(workspace.getByLabel(`${item.workspace} essentials`), `${item.workspace} essential ${essential}`).toContainText(essential);
+    }
+    await expect(workspace.getByLabel(item.advancedControl), `${item.workspace} advanced controls are hidden by default`).not.toBeVisible();
+    await expect(workspace.getByLabel(`${item.workspace} advanced checks and proof`), `${item.workspace} advanced proof is closed`).not.toHaveAttribute("open", "");
+    await overlay.getByRole("button", { name: "Close" }).click();
+    await expect(page.locator("div[aria-label='Device workspace overlay']")).toHaveCount(0);
+  }
+});
+
 test("topology directs storage exceptions to the NetApp workspace", async ({ page }) => {
   const validation = labValidation();
   validation.validation_items = validation.validation_items.map((item) => (
