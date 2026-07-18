@@ -3870,7 +3870,7 @@ textarea {
 .software-media-summary {
   display: grid;
   gap: 12px;
-  grid-template-columns: 1.5fr repeat(3, minmax(0, 1fr));
+  grid-template-columns: minmax(260px, 2fr) repeat(2, minmax(0, 1fr));
   margin-top: 18px;
 }
 
@@ -3894,6 +3894,17 @@ textarea {
 .software-media-summary strong {
   color: #102033;
   overflow-wrap: anywhere;
+}
+
+.software-media-summary .software-media-location {
+  background: #f0fbfb;
+  border-color: #b9dddc;
+}
+
+.software-media-summary .software-media-location strong {
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  font-size: 13px;
+  line-height: 1.45;
 }
 
 .software-media-boundary {

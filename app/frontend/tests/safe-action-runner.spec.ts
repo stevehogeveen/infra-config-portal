@@ -2685,7 +2685,7 @@ test("software media keeps inventory details behind one read-only action", async
 
   await expect(page.locator("h1", { hasText: "Software Media" })).toBeVisible();
   await expect(page.locator(".page-title-block .eyebrow")).toHaveText("Setup");
-  await expect(page.getByTestId("software-media-home")).toContainText("Folder");
+  await expect(page.getByTestId("software-media-home")).toContainText("Place files here");
   await expect(page.getByTestId("software-media-home")).toContainText("1 file");
   await expect(page.getByTestId("software-media-home")).toContainText("Ready");
   await expect(page.getByTestId("software-media-home").locator(".software-media-summary > div")).toHaveCount(3);

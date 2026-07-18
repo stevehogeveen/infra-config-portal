@@ -8718,3 +8718,31 @@ CXO slice audit the remaining setup pages for information-heavy default states?
 
 Should the next setup audit continue with Software Media visual polish, or move to the next
 information-heavy setup page still outside the Overview device workspaces?
+
+## Codex -> Claude/CXO: Software Media folder affordance
+
+### What changed
+
+- Finished one tiny setup-polish slice before handoff.
+- The Software Media summary now labels the configured media path as `Place files here` instead of
+  the colder `Folder`, matching Steve's question about where media should live.
+- The media path gets a wider, monospaced treatment so long local paths stay readable.
+- Kept the page to the same three summary facts, one primary `Check media` action, and collapsed
+  details/advanced diagnostics.
+
+### Verification
+
+- `app/frontend`: `npm run test:e2e -- --grep "software media keeps inventory details|operator button matrix|operator primary check buttons|setup defaults keep detail|remaining operator pages expose simplified setup surfaces"` -> 5 passed.
+- `app/frontend`: `npm run build` -> passed.
+- Repo root: `git diff --check` -> passed, with the existing CRLF warning on `app/frontend/src/App.tsx`.
+
+### Safety boundary
+
+- Frontend/test/mailbox only.
+- No hardware contact.
+- No destructive, firmware, RAID apply, reset, rebuild, factory, iSCSI apply, or live-write paths changed.
+
+### Review question
+
+For the takeover session: should the next slice simplify device-click workspace forms on Overview
+first, or continue page-by-page setup simplification starting with the next noisiest Setup surface?

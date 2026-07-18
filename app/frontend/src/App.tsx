@@ -6993,8 +6993,8 @@ function MediaInventoryPage() {
           <span className={`simple-status-pill ${state.tone}`}>{state.label}</span>
         </div>
         <div className="software-media-summary" aria-label="Software media summary">
-          <div>
-            <span>Folder</span>
+          <div className="software-media-location">
+            <span>Place files here</span>
             <strong>{folder}</strong>
           </div>
           <div>
