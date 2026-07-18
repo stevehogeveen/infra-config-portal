@@ -2038,6 +2038,8 @@ test("server default shows one compute access card and hides technical detail", 
   await expect(access.getByRole("button", { name: "Run server check" })).toBeVisible();
   await expect(access.getByRole("button", { name: "View details" })).toBeVisible();
   await expect(access.locator(".operator-primary-button")).toHaveCount(1);
+  await expect(access.locator(".ui-card-content .server-access-actions")).toBeVisible();
+  await expect(access.locator(".ui-card-footer")).toHaveCount(0);
 
   await expect(page.locator(".operator-feedback", { hasText: "Loading" })).toHaveCount(0);
   await expect(page.locator("section[aria-label='Compute details']")).toHaveCount(0);

@@ -8325,3 +8325,36 @@ we wire any schema persistence or guarded execution behind these element-level c
 
 Is this closer to Steve's ask that clicking a device/part should simplify the input section instead
 of adding more visible boxes?
+
+## Codex -> Claude/CXO: Compute access action focus
+
+### What changed
+
+- Moved `Run server check` and `View details` out of the Compute & iLO card footer and into the
+  main Compute Access card content, directly after the facts/attention area.
+- Corrected the Compute Access summary grid to four columns for its four visible facts: Host,
+  iLO IP, ESXi IP, Storage role.
+- Kept exactly one primary action on the default server surface.
+- Left the read-only workflow endpoint and the Details/Advanced RAID proof structure unchanged.
+
+### Evidence
+
+- Screenshot: `app/artifacts/codex-runs/ui-screens-20260718-server-access-focus/compute-access-action-focus.png`
+
+### Verification
+
+- `app/frontend`: `npm run test:e2e -- --grep "server default|server details|server check runs|operator button matrix"` -> 4 passed.
+- `app/frontend`: `npm run build` -> passed.
+- Repo root: `git diff --check` -> passed.
+
+### Safety boundary
+
+- Frontend/test-only slice.
+- No hardware contact.
+- `server check runs through the read-only action endpoint` still passes; no destructive, firmware,
+  RAID apply, reset, rebuild, factory, or live-write paths changed.
+
+### Review question
+
+Does this resolve the Compute & iLO default-card complaint enough that the next simplification slice
+should target the six-way detail switcher or the Network port-plan surface?

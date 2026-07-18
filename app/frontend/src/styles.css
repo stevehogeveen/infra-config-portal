@@ -14463,9 +14463,12 @@ button.design-ilo-port:hover {
   margin: 0;
 }
 
-.server-access-fields,
 .virtualization-access-fields {
   grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.server-access-fields {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
 .server-advanced-raid-plan .local-storage-readiness-card {
@@ -14529,6 +14532,11 @@ button.design-ilo-port:hover {
   gap: 10px;
   justify-content: flex-end;
   width: 100%;
+}
+
+.server-access-actions {
+  justify-content: flex-start;
+  margin-top: 14px;
 }
 
 .network-access-actions .operator-primary-button {

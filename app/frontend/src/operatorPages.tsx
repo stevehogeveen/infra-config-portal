@@ -1891,10 +1891,6 @@ export function OperatorServerPage({ labProfileState, onReloadLabProfile }: Oper
                 <span>{computeAccess.reason}</span>
               </div>
             )}
-            {runState.message && <div className="operator-feedback network-access-feedback">{runState.message}</div>}
-            {runState.error && <div className="operator-feedback error network-access-feedback">{runState.error}</div>}
-          </CardContent>
-          <CardFooter>
             <div className="network-access-actions server-access-actions">
               <button
                 className="operator-primary-button"
@@ -1915,7 +1911,9 @@ export function OperatorServerPage({ labProfileState, onReloadLabProfile }: Oper
                 View details
               </button>
             </div>
-          </CardFooter>
+            {runState.message && <div className="operator-feedback network-access-feedback">{runState.message}</div>}
+            {runState.error && <div className="operator-feedback error network-access-feedback">{runState.error}</div>}
+          </CardContent>
         </Card>
       </section>
       {detailsOpen && (
