@@ -9454,7 +9454,7 @@ function LabDesignComposer({
 
   function selectedEditGroupNote() {
     if (!selectedPart || !selectedEditWorkspaceSection) return "";
-    if (workspaceOnly) return "Only planning fields are editable here. Saved kit values stay in Main settings.";
+    if (workspaceOnly) return "Only planning fields are editable here. Saved values stay in At a glance.";
     const states = selectedEditWorkspaceSection.fields.map((field) => Boolean(topologyCommittedProfilePath(selectedPart.id, field.key)));
     return states.some(Boolean) ? "Saved values come from System Setup. Draft-only fields are planning notes." : "Draft-only fields are planning notes.";
   }
@@ -9789,7 +9789,7 @@ function LabDesignComposer({
               <section className="design-device-essentials" aria-label={`${selectedPart.label} essentials`}>
                 <div>
                   <p className="operator-kicker">Setup</p>
-                  <h4>Main settings</h4>
+                  <h4>At a glance</h4>
                 </div>
                 <div className="design-device-setup-snapshot" aria-label={`${selectedPart.label} setup snapshot`}>
                   <div className="design-device-setup-faceplate" aria-label={`${selectedPart.label} compact faceplate`}>
@@ -9910,7 +9910,7 @@ function LabDesignComposer({
                               {selectedEditFields.length > 0 ? (
                                 selectedEditFields.map((field) => renderSelectedDeviceSettingRow(field, { hideProvenance: workspaceOnly }))
                               ) : (
-                                <p className="design-device-edit-empty">Saved values are shown in Main settings.</p>
+                                <p className="design-device-edit-empty">Saved values are shown in At a glance.</p>
                               )}
                             </div>
                           </section>

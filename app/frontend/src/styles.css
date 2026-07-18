@@ -13209,12 +13209,9 @@ button.design-ilo-port:hover {
 }
 
 .topology-workspace-drawer .design-device-setting-row.is-readonly-value strong {
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
   color: #0f172a;
-  min-height: 30px;
-  padding: 6px 8px;
+  min-height: auto;
+  padding: 0;
 }
 
 .topology-workspace-drawer .design-workspace-details:not([open]) {

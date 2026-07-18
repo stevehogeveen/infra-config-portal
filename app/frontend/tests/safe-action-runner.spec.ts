@@ -1280,14 +1280,15 @@ test("overview device workspace matrix keeps default inputs concise", async ({ p
     const essentials = workspace.getByLabel(`${item.workspace} essentials`);
     await expect(essentials, `${item.workspace} shows essentials`).toBeVisible();
     await expect(essentials, `${item.workspace} names the compact setup block`).toContainText("Setup");
-    await expect(essentials, `${item.workspace} uses operator language for setup values`).toContainText("Main settings");
+    await expect(essentials, `${item.workspace} uses snapshot language for setup values`).toContainText("At a glance");
+    await expect(essentials, `${item.workspace} avoids settings-page language on first click`).not.toContainText("Main settings");
     await expect(essentials, `${item.workspace} avoids internal value labels`).not.toContainText("Primary values");
     await expect(essentials, `${item.workspace} removes instructional setup copy`).not.toContainText("Everything else is in Details");
     await expect(essentials.getByLabel(`${item.workspace} setup snapshot`), `${item.workspace} shows a faceplate-first setup snapshot`).toBeVisible();
     await expect(essentials.getByLabel(`${item.workspace} compact faceplate`), `${item.workspace} shows a compact device faceplate`).toBeVisible();
     expect(await essentials.locator(".design-device-setting-row").count(), `${item.workspace} keeps essentials compact`).toBeLessThanOrEqual(3);
     const essentialInputs = essentials.locator("input, select, textarea");
-    await expect(essentialInputs, `${item.workspace} keeps Main settings read-only; quick edits are a separate setup block`).toHaveCount(0);
+    await expect(essentialInputs, `${item.workspace} keeps At a glance read-only; quick edits are a separate setup block`).toHaveCount(0);
     await expect(essentials.locator(".design-device-setting-row.is-readonly-value"), `${item.workspace} renders summary values instead of form controls`).toHaveCount(await essentials.locator(".design-device-setting-row").count());
     await expect(essentials.locator(".design-provenance-chip"), `${item.workspace} keeps provenance out of the simple setup block`).toHaveCount(0);
     await expect(essentials, `${item.workspace} keeps identity in the hero, not the setup form`).not.toContainText("Name");
@@ -1425,9 +1426,9 @@ test("overview device workspace resolves saved values when visual drafts are bla
   const essentials = workspace.getByLabel("Cisco switch essentials");
 
   await expect(essentials.getByLabel("Cisco switch compact faceplate")).toBeVisible();
-  await expect(essentials, "saved Cisco IP wins over blank visual draft in Main settings").toContainText("192.168.1.204");
-  await expect(essentials, "saved management VLAN wins over blank visual draft in Main settings").toContainText("10");
-  await expect(essentials, "Main settings does not show blank draft placeholders for saved fields").not.toContainText("Not planned");
+  await expect(essentials, "saved Cisco IP wins over blank visual draft in At a glance").toContainText("192.168.1.204");
+  await expect(essentials, "saved management VLAN wins over blank visual draft in At a glance").toContainText("10");
+  await expect(essentials, "At a glance does not show blank draft placeholders for saved fields").not.toContainText("Not planned");
   await expect(essentials.locator("input, select, textarea"), "resolved saved values stay read-only in the simple drawer").toHaveCount(0);
 });
 
@@ -1653,9 +1654,10 @@ test("system setup advanced fields round-trip shared and device rows through the
   await expect(switchNetwork).not.toContainText("Management IP");
   await expect(switchNetwork).not.toContainText("192.168.1.214");
   await expect(switchNetwork.getByRole("textbox", { name: "Management IP" })).toHaveCount(0);
-  await expect(switchNetwork).toContainText("Saved values stay in Main settings");
+  await expect(switchNetwork).toContainText("Saved values stay in At a glance");
   await expect(switchNetwork).not.toContainText("Storage VLAN");
-  await expect(switchNetwork).toContainText("Port plan");
+  await expect(switchNetwork).toContainText("Port profiles");
+  await expect(switchNetwork).toContainText("SAN ports");
 });
 
 test("system setup advanced fields keep blank profile values planned until edited", async ({ page }) => {
