@@ -13983,8 +13983,8 @@ function VirtualizationConfigurePanel({
     <Card className="network-config-panel" hover={false}>
       <CardHeader>
         <div>
-          <p className="operator-kicker">Configure</p>
-          <h2>Virtualization lab profile</h2>
+          <p className="operator-kicker">Setup</p>
+          <h2>Virtualization setup</h2>
         </div>
         <StatusBadge label={edit.enableVcenter ? "In scope" : "Plan only"} status={edit.enableVcenter ? "ready" : "not-configured"} />
       </CardHeader>
@@ -13993,9 +13993,6 @@ function VirtualizationConfigurePanel({
           <div className="virtualization-config-primary-grid">
             <Field label="vCenter target">
               <input value={edit.vcenterTarget} onChange={(event) => update("vcenterTarget", event.target.value)} />
-            </Field>
-            <Field label="ESXi attach target">
-              <input value={edit.esxiTarget} onChange={(event) => update("esxiTarget", event.target.value)} />
             </Field>
             <Field label="Datastore target">
               <input value={edit.datastoreTarget} onChange={(event) => update("datastoreTarget", event.target.value)} />
@@ -14013,10 +14010,13 @@ function VirtualizationConfigurePanel({
           </div>
           <details className="virtualization-config-more">
             <summary>
-              <span>More VM network defaults</span>
-              <small>Use Lab Defaults unless this kit needs virtualization-specific network values.</small>
+              <span>More virtualization values</span>
+              <small>ESXi attach, subnet, gateway, DNS, and NTP live here.</small>
             </summary>
             <div className="virtualization-config-more-grid">
+              <Field label="ESXi attach target">
+                <input value={edit.esxiTarget} onChange={(event) => update("esxiTarget", event.target.value)} />
+              </Field>
               <Field label="Subnet">
                 <input value={edit.subnet} onChange={(event) => update("subnet", event.target.value)} />
               </Field>
@@ -14033,7 +14033,7 @@ function VirtualizationConfigurePanel({
           </details>
           <div className="network-config-actions">
             <button className="operator-primary-button" disabled={busy || !activeProfile} type="submit">
-              {busy ? "Saving..." : activeProfile?.source === "saved" ? "Save Virtualization" : "Save As Lab Setup"}
+              {busy ? "Saving..." : "Save virtualization setup"}
             </button>
             {message && <span className="operator-success-text">{message}</span>}
             {error && <span className="operator-error-text">{error}</span>}

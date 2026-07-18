@@ -16445,6 +16445,12 @@ button.design-ilo-port:hover {
   width: 100%;
 }
 
+.network-config-form input[type="checkbox"] {
+  min-height: auto;
+  padding: 0;
+  width: auto;
+}
+
 .storage-config-primary-grid,
 .storage-config-more,
 .server-config-primary-grid,
@@ -16470,7 +16476,7 @@ button.design-ilo-port:hover {
 }
 
 .virtualization-config-primary-grid {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .storage-config-more,
