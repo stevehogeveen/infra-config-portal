@@ -14470,6 +14470,91 @@ button.design-ilo-port:hover {
   overflow-wrap: anywhere;
 }
 
+.server-path-summary {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.server-path-summary > div {
+  background: #f8fafc;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  display: grid;
+  gap: 5px;
+  min-height: 68px;
+  min-width: 0;
+  padding: 12px;
+}
+
+.server-path-summary span,
+.server-path-details summary span {
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.server-path-summary strong {
+  color: var(--ink);
+  font-size: 14px;
+  line-height: 1.28;
+  overflow-wrap: anywhere;
+}
+
+.server-path-attention {
+  align-items: center;
+  background: #fff7ed;
+  border: 1px solid #fed7aa;
+  border-radius: 10px;
+  color: #7c2d12;
+  display: grid;
+  gap: 4px;
+  margin-top: 12px;
+  padding: 11px 13px;
+}
+
+.server-path-attention strong {
+  font-size: 13px;
+}
+
+.server-path-attention span {
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.server-path-details {
+  border-top: 1px solid #e1e8ef;
+  margin-top: 14px;
+  padding-top: 8px;
+}
+
+.server-path-details summary {
+  align-items: center;
+  color: var(--ink);
+  cursor: pointer;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+  list-style: none;
+  min-height: 36px;
+}
+
+.server-path-details summary::-webkit-details-marker {
+  display: none;
+}
+
+.server-path-details summary strong {
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 850;
+  text-align: right;
+}
+
+.server-path-details[open] summary {
+  margin-bottom: 10px;
+}
+
 .server-remediation-panel,
 .server-optional-handoff,
 .firmware-remediation-panel,
@@ -17894,6 +17979,7 @@ button.design-ilo-port:hover {
     .provider-fact-grid,
     .provider-fact-grid.compact,
     .calm-section-grid,
+    .server-path-summary,
     .server-setup-grid,
     .firmware-setup-grid,
     .validation-setup-grid,

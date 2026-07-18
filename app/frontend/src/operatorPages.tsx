@@ -2232,19 +2232,20 @@ function ServerSetupShapePanel({
   const optionalSummary = localServer
     ? "NetApp and vCenter stay optional for this server-local shipment path."
     : "Shared storage and vCenter handoff remain part of the full lab path.";
+  const firstAttention = steps.find((step) => step.status !== "ready");
 
   return (
     <Card className="server-setup-card" hover={false}>
       <CardHeader>
         <div>
-          <p className="operator-kicker">Server setup shape</p>
+          <p className="operator-kicker">Server path</p>
           <h2>{localServer ? "Single Server Local VM Path" : "Server With Shared Storage Path"}</h2>
-          <p>{localServer ? "Build the server so it can ship with ESXi and local RAID-backed storage." : "Prepare the server for ESXi while Storage and Virtualization own the shared datastore handoff."}</p>
+          <p>{localServer ? "ESXi and local RAID stay with the server." : "Compute connects to shared storage and vCenter."}</p>
         </div>
         <StatusBadge label={displayStatus(pageStatus)} status={ladderStatus} />
       </CardHeader>
       <CardContent>
-        <div className="server-setup-grid" aria-label="Server setup intent">
+        <div className="server-path-summary" aria-label="Server path summary">
           <div>
             <span>Needed</span>
             <strong>{localServer ? "RAID-backed ESXi host" : "ESXi host for shared datastore"}</strong>
@@ -2254,24 +2255,17 @@ function ServerSetupShapePanel({
             <strong>{currentView.available ? currentView.summary : "Run Server Live Check"}</strong>
           </div>
           <div>
-            <span>Intent</span>
-            <strong>{localServer ? "Local datastore leaves with server" : storageLocationLabel(features)}</strong>
-          </div>
-          <div>
-            <span>Validation</span>
-            <strong>{validationSummary}</strong>
+            <span>Next</span>
+            <strong>{firstAttention?.nextAction || "Keep validation evidence current."}</strong>
           </div>
         </div>
 
-        <RemediationLadder
-          className="server-remediation-panel"
-          defaultOpen={!statusIsReady(pageStatus)}
-          status={ladderStatus}
-          statusLabel={displayStatus(pageStatus)}
-          steps={steps}
-          summary={validationSummary}
-          title="Server setup path"
-        />
+        {firstAttention && (
+          <div className="server-path-attention" role="status">
+            <strong>{firstAttention.label}</strong>
+            <span>{firstAttention.nextAction}</span>
+          </div>
+        )}
 
         <div className="server-action-strip" aria-label="Server actions">
           <ActionLink to="/firmware-upgrades">Firmware</ActionLink>
@@ -2279,29 +2273,54 @@ function ServerSetupShapePanel({
           <ActionLink to="/validation">Validation</ActionLink>
         </div>
 
-        <RemediationLadder
-          className="server-optional-handoff"
-          defaultOpen={false}
-          status={statusBadgeStatus(optionalStatus)}
-          statusLabel={displayStatus(optionalStatus)}
-          steps={[
-            {
-              detail: localServer ? "No NetApp step is required for the server-local path." : "The NetApp workspace owns NFS or iSCSI readiness.",
-              label: "Storage handoff",
-              nextAction: localServer ? "Keep shared storage collapsed unless the scenario changes." : "Open the NetApp workspace from the map and validate the selected protocol.",
-              status: localServer ? "plan-only" : "needs-attention"
-            },
-            {
-              detail: localServer ? "vCenter is optional before shipment." : "The vCenter workspace owns host registration and VM portability.",
-              label: "Virtualization handoff",
-              nextAction: localServer ? "Open the vCenter workspace only if the build requires central management." : "Open the vCenter workspace after the datastore is ready.",
-              status: localServer ? "plan-only" : "needs-attention"
-            }
-          ]}
-          summary={optionalSummary}
-          title="Optional shared-lab handoff"
-          tone="optional"
-        />
+        <details className="server-path-details" aria-label="Server path details">
+          <summary>
+            <span>View path details</span>
+            <strong>Readiness ladder and handoff</strong>
+          </summary>
+          <div className="server-setup-grid" aria-label="Server setup intent">
+            <div>
+              <span>Intent</span>
+              <strong>{localServer ? "Local datastore leaves with server" : storageLocationLabel(features)}</strong>
+            </div>
+            <div>
+              <span>Validation</span>
+              <strong>{validationSummary}</strong>
+            </div>
+          </div>
+          <RemediationLadder
+            className="server-remediation-panel"
+            defaultOpen={false}
+            status={ladderStatus}
+            statusLabel={displayStatus(pageStatus)}
+            steps={steps}
+            summary={validationSummary}
+            title="Server setup path"
+          />
+          <RemediationLadder
+            className="server-optional-handoff"
+            defaultOpen={false}
+            status={statusBadgeStatus(optionalStatus)}
+            statusLabel={displayStatus(optionalStatus)}
+            steps={[
+              {
+                detail: localServer ? "No NetApp step is required for the server-local path." : "The NetApp workspace owns NFS or iSCSI readiness.",
+                label: "Storage handoff",
+                nextAction: localServer ? "Keep shared storage collapsed unless the scenario changes." : "Open the NetApp workspace from the map and validate the selected protocol.",
+                status: localServer ? "plan-only" : "needs-attention"
+              },
+              {
+                detail: localServer ? "vCenter is optional before shipment." : "The vCenter workspace owns host registration and VM portability.",
+                label: "Virtualization handoff",
+                nextAction: localServer ? "Open the vCenter workspace only if the build requires central management." : "Open the vCenter workspace after the datastore is ready.",
+                status: localServer ? "plan-only" : "needs-attention"
+              }
+            ]}
+            summary={optionalSummary}
+            title="Optional shared-lab handoff"
+            tone="optional"
+          />
+        </details>
       </CardContent>
     </Card>
   );

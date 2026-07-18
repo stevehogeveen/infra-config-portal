@@ -2222,6 +2222,21 @@ test("server details reveal saved checks and nested advanced RAID plan", async (
   await expect(details).toContainText("Firmware");
   await detailSections.getByRole("button", { name: /Setup/ }).click();
   await expect(details.getByLabel("Server configure")).toBeVisible();
+  await detailSections.getByRole("button", { name: /Path/ }).click();
+  const pathPanel = details.getByLabel("Compute path");
+  await expect(pathPanel.getByRole("heading", { name: /Single Server Local VM Path|Server With Shared Storage Path/ })).toBeVisible();
+  await expect(pathPanel.getByLabel("Server path summary")).toBeVisible();
+  await expect(pathPanel.locator(".server-path-summary > div")).toHaveCount(3);
+  await expect(pathPanel.locator(".server-path-summary span")).toHaveText(["Needed", "Current", "Next"]);
+  await expect(pathPanel.getByLabel("Server actions")).toContainText("Open map workspace");
+  const pathDetails = pathPanel.getByLabel("Server path details");
+  await expect(pathDetails).toBeVisible();
+  await expect(pathDetails).not.toHaveAttribute("open", "");
+  await expect(pathPanel.getByText("Server setup path")).not.toBeVisible();
+  await expect(pathPanel.getByText("Optional shared-lab handoff")).not.toBeVisible();
+  await pathDetails.locator(":scope > summary").click();
+  await expect(pathPanel.getByText("Server setup path")).toBeVisible();
+  await expect(pathPanel.getByText("Optional shared-lab handoff")).toBeVisible();
 
   await detailSections.getByRole("button", { name: /RAID/ }).click();
   await expect(page.getByLabel("Server drive bay map")).toBeVisible();
