@@ -3765,13 +3765,12 @@ export function OperatorVirtualizationPage({ health, labProfileState, onReloadLa
           <div>
             <p className="operator-kicker">{vcenterEnabled ? "vCenter setup" : "Direct ESXi setup"}</p>
             <h2>{workspaceTitle}</h2>
-            <span>Daily setup stays here. vCenter install, OVF deploy, datastore writes, and VM deploy stay behind guarded workflows.</span>
+            <span>Choose the VM control path and run one safe check. Deploy steps stay guarded.</span>
           </div>
           <div className="virtualization-vcenter-workspace-facts">
             <span><strong>Control path</strong>{vcenterEnabled ? "vCenter" : "Direct ESXi"}</span>
             <span><strong>Target</strong>{vcenterTargetLabel}</span>
             <span><strong>Datastore</strong>{datastoreTarget}</span>
-            <span><strong>VM path</strong>{vcenterEnabled ? "vCenter inventory" : "ESXi inventory"}</span>
           </div>
         </div>
         <LabDesignComposer
