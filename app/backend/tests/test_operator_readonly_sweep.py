@@ -12,6 +12,18 @@ assert SPEC and SPEC.loader
 operator_readonly_sweep = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(operator_readonly_sweep)
 
+from app.services.workflow_registry import get_workflow_action
+
+
+def test_action_group_contains_only_registered_read_only_or_report_actions() -> None:
+    action_ids = [action_id for _stage, action_id, _label in operator_readonly_sweep.ACTION_GROUPS]
+
+    assert len(action_ids) == len(set(action_ids))
+    for action_id in action_ids:
+        action = get_workflow_action(action_id)
+        assert action["mode"] in {"read_only", "report_only"}, action_id
+        assert not action.get("guarded_run_supported"), action_id
+
 
 def test_quality_gate_fails_when_action_uses_non_live_evidence() -> None:
     report = {

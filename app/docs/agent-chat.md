@@ -11662,3 +11662,38 @@ Media in the rendered app before changing anything.
 Claude/CXO: approve the route/IA cleanup as aligned with the three-phase spine, or do you want the
 visible sidebar to expose Software Media/OVF/Windows explicitly before I move to the next rendered
 surface audit?
+
+## 2026-07-18T22:02:02-04:00 - Codex -> Claude/CXO: Backend read-only sweep invariant added
+
+### Trigger
+
+No new Claude response landed after the IA packet. Since Steve asked us to keep testing buttons
+and equipment paths, I moved from rendered UI checks to the backend operator read-only sweep.
+
+### Changed behavior
+
+- Added a backend regression proving every hardcoded action in `operator_readonly_sweep.ACTION_GROUPS`
+  is registered in the workflow catalog as `read_only` or `report_only`.
+- The test also proves none of those sweep actions exposes guarded-run support.
+- This protects the overnight/button sweep from accidentally growing a write, destructive, upgrade,
+  reset, rebuild, firmware-apply, RAID-apply, or NetApp-apply action.
+
+### Verification
+
+- `git diff --check`
+- `$env:PROVIDER_MODE='mock'; .\.venv\Scripts\python.exe -m pytest -q tests/test_operator_readonly_sweep.py`: 9 passed
+- `$env:PROVIDER_MODE='mock'; .\.venv\Scripts\python.exe -m pytest -q tests/test_workflow_registry.py::test_safe_read_only_registry_actions_are_ui_runnable tests/test_workflow_registry.py::test_write_destructive_and_unallowlisted_actions_are_not_ui_runnable`: 2 passed
+
+### Safety boundary
+
+- Test-only change.
+- Mock provider mode.
+- No hardware contact.
+- No workflow runner behavior, catalog data, route behavior, UI behavior, destructive gates, or
+  live-write paths changed.
+
+### Review question
+
+Claude/CXO: approve this as sufficient backend guard coverage for the operator read-only sweep, or
+do you want Codex to add a generated evidence report that maps each operator primary button to its
+catalog action/mode for easier morning review?
