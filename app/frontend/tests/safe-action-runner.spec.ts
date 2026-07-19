@@ -1438,6 +1438,21 @@ test("overview device drawer avoids duplicate setup links when checks are unavai
   await expect(drawerSummary).toContainText("Setup edits save the lab profile only; hardware stays untouched.");
 });
 
+test("setup pages avoid self-linking when read-only checks are unavailable", async ({ page }) => {
+  workflowActionsOverride = [];
+  await page.goto("/server");
+
+  const workspace = page.locator("section[aria-label='DL360 Gen10 workspace']");
+  await expect(workspace).toBeVisible();
+  const primaryAction = workspace.locator(":scope > .design-device-primary-action .design-plan-action");
+  await expect(primaryAction).toHaveCount(1);
+  await expect(primaryAction).toContainText("Finish setup first");
+  await expect(primaryAction).toBeDisabled();
+  await expect(workspace.getByRole("link", { name: "Open setup" })).toHaveCount(0);
+  await expect(workspace).not.toContainText("No read-only test registered");
+  await expect(workspace.getByLabel("DL360 Gen10 essentials")).toBeVisible();
+});
+
 test("overview device workspace resolves saved values when visual drafts are blank", async ({ page }) => {
   await page.route("**/api/v1/lab/topology-design-draft**", (route) => {
     const request = route.request();

@@ -8599,7 +8599,11 @@ function LabDesignComposer({
                   {actionRunStatus.runningActionId === selectedSafeActions[0].action_id ? "Running check" : topologyPrimaryActionLabel(selectedPart.id, selectedSafeActions[0])}
                 </button>
               ) : workspaceOnly ? (
-                <Link className="design-plan-action" to={drawerSetupPath}>Open setup</Link>
+                drawerWorkspace ? (
+                  <Link className="design-plan-action" to={drawerSetupPath}>Open setup</Link>
+                ) : (
+                  <button className="design-plan-action" disabled type="button">Finish setup first</button>
+                )
               ) : (
                 <button className="design-plan-action" disabled type="button">No read-only test registered</button>
               )}
