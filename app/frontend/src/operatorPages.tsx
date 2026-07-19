@@ -1368,22 +1368,34 @@ function networkSwitchAccessLabel(ciscoReadiness: ProviderProbeResult | null, co
 export function OperatorServerPage({ health, labProfileState, onReloadLabProfile }: OperatorPageProps) {
   const activeProfile = activeLabProfile(labProfileState);
   const address = activeAddressPlan(activeProfile);
+  const global = activeProfile?.global_settings ?? null;
   const features = activeProfile?.features ?? null;
   const [workflowActions, setWorkflowActions] = useState<WorkflowAction[]>([]);
+  const [providers, setProviders] = useState<ProviderStatus[]>([]);
   const [firmwareSummaries, setFirmwareSummaries] = useState<FirmwareSummary[]>([]);
+  const [raidPlan, setRaidPlan] = useState<ProviderProbeResult | null>(null);
+  const [esxiReadiness, setEsxiReadiness] = useState<ProviderProbeResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [activeDetailSection, setActiveDetailSection] = useState<ServerDetailSectionId>("access");
 
   async function loadWorkspaceData() {
     setError("");
     setLoading(true);
     try {
-      const [nextActions, nextFirmware] = await Promise.all([
+      const [nextActions, nextProviders, nextFirmware, nextRaidPlan, nextEsxiReadiness] = await Promise.all([
         safeApi(api.workflowActions, [] as WorkflowAction[]),
-        safeApi(api.firmwareSummary, [] as FirmwareSummary[])
+        safeApi(api.providers, [] as ProviderStatus[]),
+        safeApi(api.firmwareSummary, [] as FirmwareSummary[]),
+        safeApi(api.hpeRaidPlanPreview, null),
+        safeApi(api.esxiInstallReadiness, null)
       ]);
       setWorkflowActions(Array.isArray(nextActions) ? nextActions : []);
+      setProviders(Array.isArray(nextProviders) ? nextProviders : []);
       setFirmwareSummaries(Array.isArray(nextFirmware) ? nextFirmware : []);
+      setRaidPlan(nextRaidPlan as ProviderProbeResult | null);
+      setEsxiReadiness(nextEsxiReadiness);
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -1409,6 +1421,112 @@ export function OperatorServerPage({ health, labProfileState, onReloadLabProfile
   const subnetState = topologySubnetState(address.subnet, health);
   const workspaceTone: TopologyNodeTone = subnetState.status === "matches" ? "ready" : subnetState.status === "mismatch" ? "warning" : "unknown";
 
+  const iloStatus = providerStatus(providers, ["ilo", "redfish"]) || "not_checked";
+  const esxiStatus = asString(esxiReadiness?.status) || providerStatus(providers, ["esxi"]) || "not_checked";
+  const raidStatus = asString(raidPlan?.status) || "not_checked";
+  const serverStatus = strongestStatus([iloStatus, esxiStatus, raidStatus]);
+  const currentView = serverCurrentView({ address, esxiReadiness, iloStatus, raidPlan, raidStatus });
+  const serverRows = useMemo<OperatorObjectRow[]>(
+    () => [
+      {
+        checkedAt: currentView.checkedAt,
+        details: [
+          { label: "URL", value: address.ilo ? `https://${address.ilo}` : "Not set up yet" },
+          { label: "Credentials", value: "Configured or missing only" },
+          { label: "Power actions", value: "Guarded" }
+        ],
+        freshness: currentView.freshness,
+        id: "ilo",
+        nextAction: "Run Server Live Check before inventory or firmware work.",
+        source: currentView.source,
+        status: iloStatus,
+        summary: "HPE iLO management endpoint for the server.",
+        target: address.ilo ? `https://${address.ilo}` : "Not set up yet",
+        title: "HPE iLO",
+        type: "Management"
+      },
+      {
+        checkedAt: currentView.checkedAt,
+        details: [
+          { label: "Management IP", value: displayAddress(address.esxi_management), source: "Saved setup" },
+          { label: "Next safe action", value: humanize(asString(esxiReadiness?.next_safe_action) || "Validate ESXi after any server change.") }
+        ],
+        freshness: currentView.freshness,
+        id: "esxi",
+        nextAction: humanize(asString(esxiReadiness?.next_safe_action) || "Run Server Live Check."),
+        source: currentView.source,
+        status: esxiStatus,
+        summary: asString(esxiReadiness?.message) || "ESXi management readiness.",
+        target: displayAddress(address.esxi_management),
+        title: "ESXi Management",
+        type: "Hypervisor"
+      },
+      {
+        checkedAt: currentView.checkedAt,
+        details: [
+          { label: "Layout", value: raidLayoutLabel(raidPlan), status: raidStatus },
+          { label: "Controller", value: raidControllerModels(raidPlan) },
+          { label: "Warnings", value: String(stringArray(raidPlan?.warnings).length) }
+        ],
+        freshness: currentView.freshness,
+        id: "raid",
+        nextAction: "Validate RAID after storage layout changes.",
+        source: sourceLabel(raidPlan),
+        status: raidStatus,
+        summary: "Smart Array plan and current storage controller state.",
+        target: raidLayoutLabel(raidPlan),
+        title: "RAID Layout",
+        type: "Storage controller",
+        warnings: stringArray(raidPlan?.warnings)
+      },
+      {
+        checkedAt: currentView.checkedAt,
+        details: [
+          { label: "Service Pack", value: servicePackSummary(firmwareSummaries), source: "Firmware files" },
+          { label: "iLO / BIOS", value: firmwareVersion(firmwareSummaries, "ilo") },
+          { label: "Smart Array", value: firmwareVersion(firmwareSummaries, "raid") }
+        ],
+        freshness: currentView.freshness,
+        id: "hpe-firmware",
+        nextAction: "Open Firmware Upgrades to select the HPE Service Pack file.",
+        source: "Firmware files",
+        status: servicePackSummary(firmwareSummaries) === "Scan needed" ? "not_checked" : "ready",
+        summary: "HPE Service Pack, BIOS, iLO, and Smart Array firmware context.",
+        target: servicePackSummary(firmwareSummaries),
+        title: "HPE Firmware",
+        type: "Firmware"
+      }
+    ],
+    [address.esxi_management, address.ilo, currentView, esxiReadiness, esxiStatus, firmwareSummaries, iloStatus, raidPlan, raidStatus]
+  );
+  const computeAccess = serverComputeAccessCardModel({
+    activeProfile,
+    address,
+    currentView,
+    esxiReadiness,
+    iloStatus,
+    raidPlan,
+    raidStatus,
+    serverStatus
+  });
+  const servicePack = servicePackSummary(firmwareSummaries);
+  const firmwareStatus = servicePack === "Scan needed" ? "not_checked" : "ready";
+  const serverDetailRows = [
+    { current: displayAddress(address.ilo), item: "iLO access", status: iloStatus },
+    { current: displayAddress(address.esxi_management), item: "ESXi management", status: esxiStatus },
+    { current: raidLayoutLabel(raidPlan), item: "Local storage", status: raidStatus },
+    { current: servicePack, item: "Firmware", status: firmwareStatus }
+  ];
+
+  const detailSections: { id: ServerDetailSectionId; label: string; summary: string }[] = [
+    { id: "access", label: "Access", summary: "iLO, ESXi, next check" },
+    { id: "checks", label: "Checks", summary: "Storage and firmware signals" },
+    { id: "setup", label: "Setup", summary: "Saved compute fields" },
+    { id: "path", label: "Path", summary: "Local vs shared handoff" },
+    { id: "raid", label: "RAID", summary: "Advanced local storage" },
+    { id: "proof", label: "Proof", summary: "Advanced evidence" }
+  ];
+
   return (
     <OperatorPage title="Compute & iLO">
       <div className="operator-surface-heading server-workspace-heading">
@@ -1416,7 +1534,7 @@ export function OperatorServerPage({ health, labProfileState, onReloadLabProfile
         <h1>Compute & iLO</h1>
         <p>Set the host values once, then run read-only iLO, ESXi, and RAID checks from the server workspace.</p>
       </div>
-      <Feedback loading={false} error={error} />
+      <Feedback loading={loading && !activeProfile} error={error} />
       <section className="server-compute-workspace-shell" aria-label="Compute and iLO setup launcher">
         <div className="server-compute-workspace-summary" aria-label="Compute and iLO launcher summary">
           <div>
@@ -1445,6 +1563,166 @@ export function OperatorServerPage({ health, labProfileState, onReloadLabProfile
           workflowActions={workflowActions}
         />
       </section>
+
+      <section className="network-access-surface server-access-surface" aria-label="Compute Access">
+        <Card className="network-access-card server-access-card" hover={false}>
+          <CardHeader>
+            <div>
+              <p className="operator-kicker">Compute access</p>
+              <h2>{computeAccess.host}</h2>
+            </div>
+            <StatusBadge label={computeAccess.stateLabel} status={computeAccess.badgeStatus} />
+          </CardHeader>
+          <CardContent>
+            <div className="network-access-actions server-access-actions">
+              <button
+                aria-expanded={detailsOpen}
+                className="secondary-button"
+                onClick={() => setDetailsOpen((current) => !current)}
+                type="button"
+              >
+                {detailsOpen ? "Hide compute details" : "View compute details"}
+              </button>
+            </div>
+          </CardContent>
+        </Card>
+      </section>
+
+      {detailsOpen && (
+        <section className="network-details server-details" aria-label="Compute details">
+          <div className="detail-tab-strip server-detail-tab-strip" role="tablist" aria-label="Compute detail sections">
+            {detailSections.map((section) => (
+              <button
+                aria-selected={activeDetailSection === section.id}
+                className={`detail-tab ${activeDetailSection === section.id ? "is-active" : ""}`}
+                key={section.id}
+                onClick={() => setActiveDetailSection(section.id)}
+                role="tab"
+                type="button"
+              >
+                <strong>{section.label}</strong>
+                <small>{section.summary}</small>
+              </button>
+            ))}
+          </div>
+          <div className="network-detail-panel server-detail-panel" aria-label={`Compute ${activeDetailSection}`}>
+            {activeDetailSection === "access" && (
+            <Card className="network-details-card" hover={false}>
+              <CardHeader>
+                <div>
+                  <p className="operator-kicker">Details</p>
+                  <h2>Access and saved addresses</h2>
+                </div>
+                <StatusBadge label={displayStatus(serverStatus)} status={statusBadgeStatus(serverStatus)} />
+              </CardHeader>
+              <CardContent>
+                <ConfigValueList
+                  values={[
+                    { label: "Host", value: computeAccess.host, source: "Saved setup" },
+                    { label: "iLO IP", value: computeAccess.iloIp, source: "Saved setup", status: iloStatus },
+                    { label: "ESXi IP", value: computeAccess.esxiIp, source: "Saved setup", status: esxiStatus },
+                    { label: "Storage role", value: computeAccess.storageRole, source: "Saved setup" },
+                    { label: "Next check", value: humanize(asString(esxiReadiness?.next_safe_action) || "Run server check.") }
+                  ]}
+                />
+              </CardContent>
+            </Card>
+            )}
+            {activeDetailSection === "checks" && (
+            <Card className="network-details-card" hover={false}>
+              <CardHeader>
+                <div>
+                  <p className="operator-kicker">Saved signals</p>
+                  <h2>Server checks</h2>
+                </div>
+                <span>{serverDetailRows.length} tracked</span>
+              </CardHeader>
+              <CompactTable>
+                <CompactTableHeader>
+                  <CompactTableCell>Item</CompactTableCell>
+                  <CompactTableCell>Current</CompactTableCell>
+                  <CompactTableCell>Status</CompactTableCell>
+                </CompactTableHeader>
+                <tbody>
+                  {serverDetailRows.map((row) => (
+                    <CompactTableRow key={row.item}>
+                      <CompactTableCell><strong>{row.item}</strong></CompactTableCell>
+                      <CompactTableCell>{row.current}</CompactTableCell>
+                      <CompactTableCell><StatusBadge label={displayStatus(row.status)} status={statusBadgeStatus(row.status)} /></CompactTableCell>
+                    </CompactTableRow>
+                  ))}
+                </tbody>
+              </CompactTable>
+            </Card>
+            )}
+            {activeDetailSection === "setup" && (
+            <section className="overview-safe-actions" aria-label="Server configure">
+              <ServerConfigurePanel
+                activeProfile={activeProfile}
+                address={address}
+                global={global}
+                onSaved={async () => {
+                  await onReloadLabProfile?.();
+                  await loadWorkspaceData();
+                }}
+              />
+            </section>
+            )}
+            {activeDetailSection === "path" && (
+            <ServerSetupShapePanel
+              activeProfile={activeProfile}
+              address={address}
+              currentView={currentView}
+              esxiReadiness={esxiReadiness}
+              esxiStatus={esxiStatus}
+              firmwareSummaries={firmwareSummaries}
+              iloStatus={iloStatus}
+              raidPlan={raidPlan}
+              raidStatus={raidStatus}
+            />
+            )}
+            {activeDetailSection === "raid" && (
+            <>
+              <Card className="network-details-card server-drive-map-card" hover={false}>
+                <CardHeader>
+                  <div>
+                    <p className="operator-kicker">RAID plan</p>
+                    <h2>Server drive map</h2>
+                  </div>
+                  <StatusBadge label={displayStatus(raidStatus)} status={statusBadgeStatus(raidStatus)} />
+                </CardHeader>
+                <CardContent>
+                  <ServerDriveMapPlan activeProfile={activeProfile} raidPlan={raidPlan} />
+                </CardContent>
+              </Card>
+              <details className="network-advanced-switch-plan server-advanced-raid-plan">
+                <summary>
+                  <span>
+                    <span className="operator-kicker">Advanced</span>
+                    <strong>Advanced RAID proof</strong>
+                    <small>Local datastore readiness and RAID recommendation stay one level deeper.</small>
+                  </span>
+                </summary>
+                <LocalStorageReadinessCard activeProfile={activeProfile} raidPlan={raidPlan} />
+              </details>
+            </>
+            )}
+            {activeDetailSection === "proof" && (
+            <AdvancedDrawer title="Server proof" summary={noProofText}>
+              <OperatorWorkspace currentView={currentView} rows={serverRows} compact />
+              <ConfigValueList
+                values={[
+                  { label: "RAID warnings", value: String(stringArray(raidPlan?.warnings).length) },
+                  { label: "RAID controller model", value: raidControllerModels(raidPlan) },
+                  { label: "ESXi blockers", value: String(stringArray(esxiReadiness?.blockers).length) },
+                  { label: "Storage firmware", value: firmwareVersion(firmwareSummaries, "raid") }
+                ]}
+              />
+            </AdvancedDrawer>
+            )}
+          </div>
+        </section>
+      )}
     </OperatorPage>
   );
 }
@@ -8664,6 +8942,7 @@ function LabDesignComposer({
                   <ElementAssignmentPreview
                     elementLabel={selectedElementInspector.label}
                     elementSummary={selectedElementInspector.summary}
+                    onFieldChange={updateDeviceSetting}
                     partId={selectedPart.id}
                     settings={selectedSettings}
                   />
@@ -10835,11 +11114,13 @@ function topologyFaceplateElementInspector(
 function ElementAssignmentPreview({
   elementLabel,
   elementSummary,
+  onFieldChange,
   partId,
   settings
 }: {
   elementLabel: string;
   elementSummary: string;
+  onFieldChange: (key: string, value: string) => void;
   partId: DesignPartId;
   settings: Record<string, string>;
 }) {
@@ -10853,46 +11134,26 @@ function ElementAssignmentPreview({
           <p className="operator-kicker">Selected port</p>
           <h5>{elementLabel}</h5>
           <span>{elementSummary}</span>
-          <small className="design-element-assignment-safe-note">This is a plan only. Real switch changes still require confirmation.</small>
+          <small className="design-element-assignment-safe-note">Editing this plan changes the switch setup fields above. Real switch changes still require confirmation.</small>
         </div>
-        <div className="design-element-assignment-facts" aria-label="Selected switch port summary">
-          <div>
-            <span>Mode</span>
-            <strong>{portMode === "storage" ? "Storage trunk" : portMode === "trunk" ? "Uplink trunk" : "Access"}</strong>
-          </div>
-          <div>
+        <div className="design-element-assignment-grid">
+          <label>
             <span>VLAN</span>
-            <strong>{vlan}</strong>
-          </div>
-          <div>
-            <span>Description</span>
-            <strong>{elementLabel} - {settings.ports || "planned connection"}</strong>
-          </div>
+            <input
+              aria-label="Port VLAN"
+              onChange={(event) => onFieldChange(portMode === "access" ? "mgmt_vlan" : "storage_vlan", event.target.value)}
+              value={vlan}
+            />
+          </label>
+          <label className="wide">
+            <span>Port plan</span>
+            <input
+              aria-label="Port plan"
+              onChange={(event) => onFieldChange("ports", event.target.value)}
+              value={settings.ports || ""}
+            />
+          </label>
         </div>
-        <details className="design-element-configure" aria-label="Switch port planning fields">
-          <summary>
-            <span>Configure planned assignment</span>
-            <strong>Optional fields</strong>
-          </summary>
-          <div className="design-element-assignment-grid">
-            <label>
-              <span>Mode</span>
-              <select aria-label="Port mode" defaultValue={portMode}>
-                <option value="access">Access</option>
-                <option value="storage">Storage trunk</option>
-                <option value="trunk">Uplink trunk</option>
-              </select>
-            </label>
-            <label>
-              <span>VLAN</span>
-              <input aria-label="Port VLAN" defaultValue={vlan} />
-            </label>
-            <label className="wide">
-              <span>Description</span>
-              <input aria-label="Port description" defaultValue={`${elementLabel} - ${settings.ports || "planned connection"}`} />
-            </label>
-          </div>
-        </details>
       </section>
     );
   }
@@ -10904,51 +11165,26 @@ function ElementAssignmentPreview({
           <p className="operator-kicker">Selected drive bay</p>
           <h5>{elementLabel}</h5>
           <span>{elementSummary}</span>
-          <small className="design-element-assignment-safe-note">This is a plan only. Real storage changes still require confirmation.</small>
+          <small className="design-element-assignment-safe-note">Editing this plan changes the RAID setup fields above. Real storage changes still require confirmation.</small>
         </div>
-        <div className="design-element-assignment-facts" aria-label="Selected drive bay summary">
-          <div>
-            <span>Role</span>
-            <strong>{bayRole === "boot" ? "Boot mirror" : "Data set"}</strong>
-          </div>
-          <div>
-            <span>RAID group</span>
-            <strong>{bayRole === "boot" ? settings.raid_boot || "RAID1 boot" : settings.raid_data || "RAID6 local datastore"}</strong>
-          </div>
-          <div>
-            <span>Bay note</span>
-            <strong>{elementLabel} - {settings.drive_bays || "planned drive bay"}</strong>
-          </div>
+        <div className="design-element-assignment-grid">
+          <label>
+            <span>{bayRole === "boot" ? "Boot RAID group" : "Data RAID group"}</span>
+            <input
+              aria-label={bayRole === "boot" ? "Boot RAID group" : "Data RAID group"}
+              onChange={(event) => onFieldChange(bayRole === "boot" ? "raid_boot" : "raid_data", event.target.value)}
+              value={bayRole === "boot" ? settings.raid_boot || "" : settings.raid_data || ""}
+            />
+          </label>
+          <label className="wide">
+            <span>Drive bay plan</span>
+            <input
+              aria-label="Drive bay plan"
+              onChange={(event) => onFieldChange("drive_bays", event.target.value)}
+              value={settings.drive_bays || ""}
+            />
+          </label>
         </div>
-        <details className="design-element-configure" aria-label="Drive bay planning fields">
-          <summary>
-            <span>Configure planned assignment</span>
-            <strong>Optional fields</strong>
-          </summary>
-          <div className="design-element-assignment-grid">
-            <label>
-              <span>Role</span>
-              <select aria-label="Drive role" defaultValue={bayRole}>
-                <option value="boot">Boot mirror</option>
-                <option value="data">Data set</option>
-                <option value="spare">Hot spare</option>
-                <option value="unused">Unused</option>
-              </select>
-            </label>
-            <label>
-              <span>RAID group</span>
-              <select aria-label="RAID group" defaultValue={bayRole === "boot" ? "boot" : "data"}>
-                <option value="boot">{settings.raid_boot || "RAID1 boot"}</option>
-                <option value="data">{settings.raid_data || "RAID6 local datastore"}</option>
-                <option value="spare">Global hot spare</option>
-              </select>
-            </label>
-            <label className="wide">
-              <span>Bay note</span>
-              <input aria-label="Drive bay note" defaultValue={`${elementLabel} - ${settings.drive_bays || "planned drive bay"}`} />
-            </label>
-          </div>
-        </details>
       </section>
     );
   }

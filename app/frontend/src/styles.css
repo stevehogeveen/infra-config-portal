@@ -10342,16 +10342,15 @@ th.ui-compact-table-cell {
 }
 
 .design-device-hero {
-  background: linear-gradient(180deg, #0f172a, #111827);
-  border: 1px solid #1f2937;
+  background: #f8fafc;
+  border: 1px solid #dbe4ee;
   border-radius: 12px;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
   min-height: 150px;
   padding: 16px;
 }
 
 .design-device-hero .design-faceplate-art {
-  color: #e5e7eb;
+  color: #334155;
   gap: 10px;
 }
 
@@ -11264,78 +11263,6 @@ th.ui-compact-table-cell {
   line-height: 1.35;
 }
 
-.design-element-assignment-facts {
-  display: grid;
-  gap: 8px;
-}
-
-.design-element-assignment-facts div {
-  align-items: center;
-  background: #f8fafc;
-  border: 1px solid #e1e8ef;
-  border-radius: 9px;
-  display: grid;
-  gap: 6px;
-  grid-template-columns: 96px minmax(0, 1fr);
-  min-height: 38px;
-  padding: 8px 10px;
-}
-
-.design-element-assignment-facts span {
-  color: #64748b;
-  font-size: 10px;
-  font-weight: 900;
-  letter-spacing: .08em;
-  text-transform: uppercase;
-}
-
-.design-element-assignment-facts strong {
-  color: #102238;
-  font-size: 12px;
-  font-weight: 850;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.design-element-configure {
-  border-top: 1px solid #e1e8ef;
-  padding-top: 8px;
-}
-
-.design-element-configure summary {
-  align-items: center;
-  color: var(--ink);
-  cursor: pointer;
-  display: flex;
-  gap: 10px;
-  justify-content: space-between;
-  list-style: none;
-  min-height: 32px;
-}
-
-.design-element-configure summary::-webkit-details-marker {
-  display: none;
-}
-
-.design-element-configure summary span {
-  color: #0f172a;
-  font-size: 12px;
-  font-weight: 900;
-}
-
-.design-element-configure summary strong {
-  color: #64748b;
-  font-size: 11px;
-  font-weight: 850;
-  text-align: right;
-}
-
-.design-element-configure[open] summary {
-  margin-bottom: 10px;
-}
-
 .design-element-assignment-grid {
   display: grid;
   gap: 10px;
@@ -12150,10 +12077,9 @@ details.design-device-quick-edit[open] summary {
 
 .design-ilo-module {
   align-items: center;
-  background: linear-gradient(135deg, rgba(15, 23, 42, 0.94), rgba(30, 41, 59, 0.88));
-  border: 1px solid rgba(148, 163, 184, 0.38);
+  background: #f8fafc;
+  border: 1px solid #dbe4ee;
   border-radius: 10px;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
   display: grid;
   gap: 7px;
   grid-template-columns: minmax(72px, auto) minmax(110px, 1fr) auto;
@@ -12162,22 +12088,22 @@ details.design-device-quick-edit[open] summary {
 }
 
 .design-ilo-module strong {
-  color: #f8fafc;
+  color: #102238;
   font-size: 15px;
 }
 
 .design-ilo-module small {
-  color: #94a3b8;
+  color: #64748b;
   font-size: 11px;
   font-weight: 800;
 }
 
 .design-ilo-port {
   align-items: center;
-  background: #020617;
-  border: 1px solid rgba(45, 212, 191, 0.55);
+  background: #ecfeff;
+  border: 1px solid #99f6e4;
   border-radius: 8px;
-  color: #ccfbf1;
+  color: #0f766e;
   display: inline-flex;
   font-size: 11px;
   font-weight: 900;
@@ -12188,9 +12114,9 @@ details.design-device-quick-edit[open] summary {
 }
 
 .design-ilo-port span {
-  background: #64748b;
+  background: #14b8a6;
   border-radius: 3px;
-  box-shadow: 0 0 0 2px rgba(148, 163, 184, 0.2);
+  box-shadow: 0 0 0 2px rgba(20, 184, 166, 0.2);
   display: inline-block;
   height: 10px;
   width: 14px;
@@ -12203,7 +12129,8 @@ button.design-ilo-port {
 }
 
 button.design-ilo-port:hover {
-  border-color: #2dd4bf;
+  background: #ccfbf1;
+  border-color: #14b8a6;
   box-shadow: 0 0 0 3px rgba(45, 212, 191, 0.18);
 }
 
@@ -15141,7 +15068,9 @@ button.design-ilo-port:hover {
 }
 
 .network-workspace-heading {
-  margin-bottom: 16px;
+  margin: 28px auto 16px;
+  max-width: 1180px;
+  padding: 0 32px;
 }
 
 .network-cisco-workspace-shell {
@@ -15238,7 +15167,9 @@ button.design-ilo-port:hover {
 }
 
 .server-workspace-heading {
-  margin-bottom: 16px;
+  margin: 28px auto 16px;
+  max-width: 1180px;
+  padding: 0 32px;
 }
 
 .server-compute-workspace-shell {
@@ -15336,7 +15267,9 @@ button.design-ilo-port:hover {
 }
 
 .storage-workspace-heading {
-  margin-bottom: 16px;
+  margin: 28px auto 16px;
+  max-width: 1180px;
+  padding: 0 32px;
 }
 
 .storage-netapp-workspace-shell {
@@ -15434,7 +15367,9 @@ button.design-ilo-port:hover {
 }
 
 .virtualization-workspace-heading {
-  margin-bottom: 16px;
+  margin: 28px auto 16px;
+  max-width: 1180px;
+  padding: 0 32px;
 }
 
 .virtualization-vcenter-workspace-shell {
@@ -15554,6 +15489,8 @@ button.design-ilo-port:hover {
     width: calc(100vw - 36px);
   }
 
+  .network-workspace-heading,
+  .server-workspace-heading,
   .storage-workspace-heading,
   .virtualization-workspace-heading {
     max-width: calc(100vw - 36px);
@@ -15694,6 +15631,59 @@ button.design-ilo-port:hover {
 
 .network-details-card {
   border-color: #d6e0e8;
+}
+
+.detail-tab-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.detail-tab {
+  background: #ffffff;
+  border: 1px solid #dbe4ee;
+  border-radius: 10px;
+  cursor: pointer;
+  display: grid;
+  gap: 3px;
+  min-width: 148px;
+  padding: 10px 14px;
+  text-align: left;
+}
+
+.detail-tab strong {
+  color: #102238;
+  font-size: 14px;
+  font-weight: 850;
+}
+
+.detail-tab small {
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.detail-tab:hover {
+  border-color: var(--primary);
+}
+
+.detail-tab.is-active {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(0, 132, 142, 0.12);
+}
+
+.detail-tab.is-active strong {
+  color: var(--primary);
+}
+
+@media (max-width: 700px) {
+  .detail-tab-strip {
+    flex-direction: column;
+  }
+
+  .detail-tab {
+    min-width: 0;
+  }
 }
 
 .switch-port-plan-card .ui-card-content {
