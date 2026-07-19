@@ -10574,8 +10574,8 @@ function topologyDeviceDrawerFields(
   const preferredKeys: Partial<Record<DesignPartId, string[]>> = {
     switch: ["management_ip", "storage_vlan"],
     ilo: ["management_ip"],
-    "server-gen10": ["management_ip", "storage_vlan"],
-    "server-gen10plus": ["management_ip", "storage_vlan"],
+    "server-gen10": ["management_ip", "storage_vlan", "raid_data"],
+    "server-gen10plus": ["management_ip", "storage_vlan", "raid_data"],
     netapp: ["management_ip", "protocol"],
     vcenter: ["management_ip", "datastore"],
     windows: ["vm_network", "role"]
