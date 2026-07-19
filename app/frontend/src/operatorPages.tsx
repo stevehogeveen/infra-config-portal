@@ -7733,7 +7733,15 @@ function LabDesignComposer({
     : selectedSettingFields;
   const selectedPersistenceRows = selectedPart ? topologyDevicePersistenceRows(selectedPart.id, selectedSettingFields) : [];
   const drawerWorkspace = workspaceOnly && workspaceMode === "drawer";
-  const selectedElementInspector = selectedPart && (!drawerWorkspace || selectedFaceplateTouched)
+  const selectedPartUsesAssignmentPreview = selectedPart ? usesElementAssignmentPreview(selectedPart.id) : false;
+  const shouldShowSelectedElementInspector = selectedPart && (
+    selectedFaceplateTouched ||
+    (!drawerWorkspace && !selectedPartUsesAssignmentPreview)
+  );
+  const selectedFaceplateDisplayElement = selectedFaceplateTouched || !selectedPartUsesAssignmentPreview
+    ? selectedFaceplateElement
+    : "";
+  const selectedElementInspector = shouldShowSelectedElementInspector
     ? topologyFaceplateElementInspector(selectedPart.id, selectedFaceplateElement, selectedSettings, storageProtocol)
     : null;
   const scenario = topologyScenarioLabel(draftScenario);
@@ -8425,7 +8433,7 @@ function LabDesignComposer({
                     setDropMessage(`${selectedPart.label} ${elementLabel} selected. Inspect mapped params below; hardware untouched.`);
                   }}
                   partId={selectedPart.id}
-                  selectedElement={selectedFaceplateElement}
+                  selectedElement={selectedFaceplateDisplayElement}
                   settings={selectedSettings}
                   storageProtocol={storageProtocol}
                 />
@@ -8450,7 +8458,7 @@ function LabDesignComposer({
                       setDropMessage(`${selectedPart.label} ${elementLabel} selected. Edit the saved plan here; hardware untouched.`);
                     }}
                     partId={selectedPart.id}
-                    selectedElement={selectedFaceplateElement}
+                    selectedElement={selectedFaceplateDisplayElement}
                     settings={selectedSettings}
                     storageProtocol={storageProtocol}
                   />

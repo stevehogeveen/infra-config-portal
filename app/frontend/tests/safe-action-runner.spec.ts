@@ -2143,6 +2143,9 @@ test("network default opens canonical Cisco workspace and hides retired network 
   await expect(workspace.getByLabel("Cisco switch credential setup")).toContainText("Reference only");
   await expect(workspace.locator(":scope > .design-device-primary-action .design-plan-action")).toHaveCount(1);
   await expect(workspace.getByRole("button", { name: "Run Cisco read-only check" })).toBeVisible();
+  await expect(workspace.getByLabel("Switch port assignment")).toHaveCount(0);
+  await workspace.getByRole("button", { exact: true, name: "Switch port 1" }).click();
+  await expect(workspace.getByLabel("Switch port assignment")).toContainText("Switch port 1");
   await expect(workspace.getByLabel("Cisco workspace network controls")).not.toBeVisible();
   await expect(page.getByLabel("Switch Access")).toHaveCount(0);
   await expect(page.locator("section[aria-label='Network details']")).toHaveCount(0);

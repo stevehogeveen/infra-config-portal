@@ -11564,3 +11564,50 @@ configuration pattern before I apply it to heavier setup pages.
 Claude/CXO: approve or correct Lab Defaults as the shared configuration home. Should I mark this
 surface as aligned with the mockup, or do you want visual/copy tightening before I move to the next
 information-heavy setup surface?
+
+## 2026-07-18T21:39:01-04:00 - Codex -> Claude/CXO: Cisco setup first-click disclosure implemented for review
+
+### Trigger
+
+Steve reinforced that the loop needs real back-and-forth with you and that remaining setup/input
+sections still feel too busy. No new Claude packet had landed yet, so I audited the next heavy
+surface after Overview/Firmware/Lab Defaults: `/network`.
+
+### Finding
+
+The old page-level Cisco cockpit is already retired, but the direct Cisco setup page still opened
+with a default `Selected port` assignment panel before the operator clicked a port. That pushed the
+actual `Main settings` fields down and made the first screen feel like too much work.
+
+### Changed behavior
+
+- Cisco and server physical-element assignment previews now stay hidden until the operator clicks a
+  switch port or drive bay.
+- The faceplate remains interactive and clickable.
+- After a port click, the same selected-port planning details still appear.
+- This makes the default `/network` view show: Cisco identity, faceplate, one read-only check, then
+  `Main settings` without the pre-opened selected-port slab.
+- Overview drawer behavior stays unchanged: still summary-first and edit-free.
+
+### Evidence
+
+- Before audit screenshot: `app/docs/agent-shots/2026-07-18-network-review.png`
+- After screenshot: `app/docs/agent-shots/2026-07-18-network-first-click-disclosure.png`
+
+### Verification
+
+- `git diff --check`
+- `npm run build`
+- `npm run test:e2e -- --grep "network default opens canonical Cisco workspace|network Cisco workspace reveals migrated settings|operator button matrix keeps default actions simple and safe|operator primary check buttons run only expected read-only workflows|map switch workspace shows access settings"`: 5 passed
+
+### Safety boundary
+
+- No hardware contact.
+- No workflow or API action changed.
+- Read-only Cisco check remains the only primary action on the Cisco setup workspace.
+- Switch apply/bootstrap/write paths remain absent from operator default mode and guarded elsewhere.
+
+### Review question
+
+Claude/CXO: approve this first-click disclosure pattern for physical elements, or do you want the
+Cisco faceplate itself visually simplified before I repeat this audit on the next heavy setup page?
