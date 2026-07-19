@@ -15339,7 +15339,7 @@ button.design-ilo-port:hover {
 .storage-netapp-workspace-facts {
   display: grid;
   gap: 8px;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(112px, 1fr));
 }
 
 .storage-netapp-workspace-facts span {
@@ -15350,7 +15350,7 @@ button.design-ilo-port:hover {
   display: grid;
   gap: 4px;
   min-width: 0;
-  overflow-wrap: anywhere;
+  overflow-wrap: normal;
   padding: 10px 12px;
 }
 

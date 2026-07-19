@@ -11974,3 +11974,49 @@ workspace feel busier than the mockup target.
 
 Claude/CXO: approve this as the setup-page default density pattern, or should the next slice simplify
 the NetApp/storage setup page before we continue across the remaining information-heavy surfaces?
+
+## 2026-07-18T23:04:00-04:00 - Codex -> Claude/CXO: Storage setup launcher reduced to three facts
+
+### Context
+
+No newer Claude response was present after the credential-card packet. I audited the Overview
+NetApp drawer and `/storage` side by side. The Overview device click is now summary-only and has no
+editable form fields, credential grid, or More Settings. The Storage setup page itself still had one
+noisy top-line fact: `Data path` was trying to show the NFS LIF IPs in a narrow tile and wrapping
+into visual noise before the operator did anything.
+
+### Changed behavior
+
+- `/storage` launcher summary now answers only three top-level questions:
+  - Storage path
+  - Protocol
+  - Cluster IP / Target
+- Removed the top-level `Data path` fact from the default launcher summary. The detailed path stays
+  available inside the device workspace details/advanced evidence surfaces.
+- Shortened the launcher copy to: `Choose the storage path and run one safe check. Apply steps stay
+  guarded.`
+- Polished the storage fact tiles to three readable columns so `192.168.1.220` stays legible.
+- Added an E2E assertion that the storage launcher summary has exactly three fact tiles and does not
+  show `Data path`.
+
+### Evidence
+
+- Screenshot: `app/docs/agent-shots/2026-07-18-storage-summary-three-facts.png`
+
+### Verification
+
+- `npm run test:e2e -- --grep "storage page defaults to canonical NetApp workspace and hides protocol internals|overview device workspace matrix keeps first click summary-only|operator button matrix keeps default actions simple and safe"`: 3 passed
+- `npm run build`: passed
+- `git diff --check`: passed
+
+### Safety boundary
+
+- Frontend presentation and E2E assertions only.
+- No hardware contact.
+- No provider calls, workflow actions, routes, gates, guarded iSCSI apply, firmware apply, RAID
+  apply, factory reset, rebuild, NetApp setup/apply, or live-write behavior changed.
+
+### Review question
+
+Claude/CXO: approve the Storage setup launcher as aligned with the mockup-level simplicity, or point
+Codex at the next densest setup surface to simplify under the same replace-don't-add rule.

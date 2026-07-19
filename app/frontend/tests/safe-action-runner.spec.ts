@@ -1930,8 +1930,9 @@ test("storage page defaults to canonical NetApp workspace and hides protocol int
   await expect(launcher).toBeVisible();
   await expect(summary).toContainText("NetApp shared datastore");
   await expect(summary).toContainText("NFS");
-  await expect(summary).toContainText("NetApp cluster");
-  await expect(summary).toContainText("Data path");
+  await expect(summary).toContainText("Cluster IP");
+  await expect(summary).not.toContainText("Data path");
+  await expect(summary.locator(".storage-netapp-workspace-facts > span")).toHaveCount(3);
   await expect(workspace).toBeVisible();
   await expect(page.locator(".operator-feedback", { hasText: "Loading" })).toHaveCount(0);
   await expect(workspace.getByRole("heading", { name: "NetApp ONTAP", exact: true })).toBeVisible();

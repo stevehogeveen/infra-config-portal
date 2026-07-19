@@ -2225,9 +2225,7 @@ export function OperatorStoragePage({ health, labProfileState, onReloadLabProfil
   const serverPart: DesignPartId = serverModel === "gen10plus" || serverModel === "gen10+" ? "server-gen10plus" : "server-gen10";
   const workspaceTarget: DesignPartId = serverLocalStorage ? serverPart : "netapp";
   const workspaceTitle = serverLocalStorage ? `${topologyServerModelLabel(activeProfile?.devices?.server_model)} local storage workspace` : "NetApp ONTAP workspace";
-  const storageAddresses = storageProtocol === "iscsi" ? address.netapp_iscsi_lifs : address.netapp_nfs_lifs;
-  const dataPathLabel = serverLocalStorage ? "Local disks" : listLabel(storageAddresses);
-  const clusterTarget = serverLocalStorage ? "Not used" : displayAddress(address.netapp_cluster_mgmt);
+  const clusterTarget = serverLocalStorage ? "Server local" : displayAddress(address.netapp_cluster_mgmt);
   const subnetState = topologySubnetState(address.subnet, health);
   const workspaceTone: TopologyNodeTone = subnetState.status === "matches" ? "ready" : subnetState.status === "mismatch" ? "warning" : "unknown";
 
@@ -2244,13 +2242,12 @@ export function OperatorStoragePage({ health, labProfileState, onReloadLabProfil
           <div>
             <p className="operator-kicker">{serverLocalStorage ? "Local storage setup" : "Shared storage setup"}</p>
             <h2>{workspaceTitle}</h2>
-            <span>Daily setup stays here. iSCSI apply, RAID changes, and raw proof stay guarded behind Details or Validation.</span>
+            <span>Choose the storage path and run one safe check. Apply steps stay guarded.</span>
           </div>
           <div className="storage-netapp-workspace-facts">
             <span><strong>Storage path</strong>{serverLocalStorage ? "Server-local RAID" : "NetApp shared datastore"}</span>
             <span><strong>Protocol</strong>{protocolLabel}</span>
-            <span><strong>NetApp cluster</strong>{clusterTarget}</span>
-            <span><strong>Data path</strong>{dataPathLabel}</span>
+            <span><strong>{serverLocalStorage ? "Target" : "Cluster IP"}</strong>{clusterTarget}</span>
           </div>
         </div>
         <LabDesignComposer
