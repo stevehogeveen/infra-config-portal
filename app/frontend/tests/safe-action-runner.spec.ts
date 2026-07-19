@@ -2000,7 +2000,7 @@ test("overview removes superseded layout and console surfaces from operator mode
   await expect(page.locator("details.advanced-drawer").filter({ hasText: "Advanced proof" })).toBeVisible();
 });
 
-test("storage page defaults to one storage path card and hides protocol internals", async ({ page }) => {
+test("storage page defaults to canonical NetApp workspace and hides protocol internals", async ({ page }) => {
   await page.route("**/api/v1/providers/netapp-ontap/nfs-vcenter-readiness", (route) => json(route, {
     ...netappNfsVcenterReadiness(),
     blockers: [
@@ -2014,108 +2014,35 @@ test("storage page defaults to one storage path card and hides protocol internal
 
   await page.goto("/storage");
 
-  const storagePath = page.getByLabel("Storage Path");
-  await expect(storagePath).toBeVisible();
+  const launcher = page.getByLabel("Storage and NetApp setup launcher");
+  const summary = page.getByLabel("Storage and NetApp launcher summary");
+  const workspace = page.locator("section[aria-label='NetApp ONTAP workspace']");
+  await expect(launcher).toBeVisible();
+  await expect(summary).toContainText("NetApp shared datastore");
+  await expect(summary).toContainText("NFS");
+  await expect(summary).toContainText("NetApp cluster");
+  await expect(summary).toContainText("Data path");
+  await expect(workspace).toBeVisible();
   await expect(page.locator(".operator-feedback", { hasText: "Loading" })).toHaveCount(0);
-  await expect(storagePath).toContainText("Active path");
-  await expect(storagePath).toContainText("Protocol");
-  await expect(storagePath).toContainText("Target datastore");
-  await expect(storagePath.locator("dt")).toHaveText(["Active path", "Protocol", "Target datastore"]);
-  await expect(storagePath.locator(".ui-card-header")).toContainText(/Blocked|Ready|Not checked|Needs attention/);
-  await expect(storagePath).toContainText("NetApp shared storage");
-  await expect(storagePath).toContainText("NFS");
-  await expect(storagePath.getByText(/Needs attention/)).toBeVisible();
-  await expect(storagePath).toContainText("NetApp management is not reachable");
-  await expect(storagePath).not.toContainText("REST is not reachable");
-  await expect(storagePath).not.toContainText("TCP/2049");
-  await expect(storagePath).not.toContainText(/PROVIDER[_ ]MODE/i);
-  await expect(storagePath).not.toContainText(/provider/i);
-
-  await expect(page.locator(".storage-path-actions .operator-primary-button")).toHaveCount(1);
-  await expect(page.locator(".storage-path-actions .operator-primary-button")).toContainText("Run storage check");
-  await expect(storagePath.locator(".ui-card-content .storage-path-actions")).toBeVisible();
-  await expect(storagePath.locator(".ui-card-footer")).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Open storage details" })).toBeVisible();
+  await expect(workspace.getByRole("heading", { name: "NetApp ONTAP", exact: true })).toBeVisible();
+  await expect(workspace.getByLabel("NetApp ONTAP main setup fields")).toContainText("Cluster IP");
+  await expect(workspace.getByLabel("NetApp ONTAP main setup fields")).toContainText("Storage mode");
+  await expect(workspace.getByLabel("NetApp ONTAP credential setup")).toContainText("Reference only");
+  await expect(workspace.locator(":scope > .design-device-primary-action .design-plan-action")).toHaveCount(1);
+  await expect(workspace.getByRole("button", { name: "Run NetApp read-only check" })).toBeVisible();
+  await expect(workspace.getByLabel("NetApp workspace storage controls")).not.toBeVisible();
+  await expect(workspace.getByLabel("Guarded iSCSI apply")).not.toBeVisible();
+  await expect(page.getByLabel("Storage Path")).toHaveCount(0);
+  await expect(page.getByLabel("Storage path details")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Open storage details" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "View storage details" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Change storage path" })).toHaveCount(0);
   await expect(page.getByRole("textbox", { name: "Change this page" })).toHaveCount(0);
   await expect(page.locator("section[aria-label='Storage reference']")).toHaveCount(0);
-  await expect(page.getByText("LIF")).toHaveCount(0);
-  await expect(page.getByText("SVM")).toHaveCount(0);
-  await expect(page.getByText("target portal")).toHaveCount(0);
-  await expect(page.getByText("igroup")).toHaveCount(0);
-  await expect(page.getByText("VMFS")).toHaveCount(0);
-  await expect(storagePath.getByRole("button", { name: /Apply iSCSI/ })).toHaveCount(0);
-  await expect(storagePath.getByRole("button", { name: /factory|reset/i })).toHaveCount(0);
-
-  await page.getByRole("button", { name: "Open storage details" }).click();
-  const details = page.getByLabel("Storage path details");
-  await expect(details).toBeVisible();
-  const detailSections = details.getByLabel("Storage detail sections");
-  await expect(detailSections).toContainText("Path");
-  await expect(detailSections).toContainText("Setup");
-  await expect(detailSections).toContainText("Readiness");
-  await expect(detailSections).toContainText("Proof");
-  await expect(detailSections.getByLabel("Storage detail section", { exact: true })).toHaveValue("readiness");
-  await expect(detailSections.getByRole("button")).toHaveCount(0);
-  await expect(details.locator(".storage-path-detail-panel")).toHaveCount(1);
-  const pathMap = details.getByLabel("Storage path map");
-  await expect(pathMap).toBeVisible();
-  await expect(pathMap).toContainText("Storage path map");
-  await expect(pathMap.getByLabel("Storage path device flow")).toBeVisible();
-  await expect(pathMap).toContainText("Cisco switch");
-  await expect(pathMap).toContainText("NetApp ONTAP");
-  await expect(pathMap).toContainText("Datastore");
-  await expect(pathMap).toContainText("Next check");
-  await expect(details.getByLabel("ONTAP readiness")).toHaveCount(0);
-  await expect(details).not.toContainText(/LIF|VMFS|igroup|target portal/);
-  await expect(details.getByLabel("Storage configure")).toHaveCount(0);
-  await expect(details.getByLabel("Storage reference")).not.toBeVisible();
-  await expect(details.getByRole("button", { name: "Apply iSCSI" })).toHaveCount(0);
-  await expect(details.locator(".iscsi-gates-grid")).not.toBeVisible();
-  await expect(details.getByLabel("Advanced storage actions")).toHaveCount(0);
-  await detailSections.getByLabel("Storage detail section", { exact: true }).selectOption("setup");
-  await expect(detailSections.getByLabel("Storage detail section", { exact: true })).toHaveValue("setup");
-  const storageConfigure = details.getByLabel("Storage configure");
-  await expect(storageConfigure).toBeVisible();
-  await expect(storageConfigure).toContainText("Storage setup");
-  const storageSummary = storageConfigure.getByLabel("Storage setup summary");
-  await expect(storageSummary).toBeVisible();
-  await expect(storageSummary).toContainText("Active protocol");
-  await expect(storageSummary).toContainText("Cluster mgmt");
-  await expect(storageSummary).toContainText("NFS LIFs");
-  await expect(storageConfigure.getByLabel("Active protocol")).toBeHidden();
-  await expect(storageConfigure.getByLabel("Cluster mgmt")).toBeHidden();
-  await expect(storageConfigure.getByLabel("NFS LIFs")).toBeHidden();
-  await expect(storageConfigure.getByRole("button", { name: "Save storage setup" })).toBeHidden();
-  await expect(storageConfigure.getByLabel("SVM mgmt")).toBeHidden();
-  await expect(storageConfigure.getByLabel("Node A mgmt")).toBeHidden();
-  await expect(storageConfigure.getByLabel("Controller A SP")).toBeHidden();
-  await expect(storageConfigure.getByLabel("Subnet")).toBeHidden();
-  await expect(storageConfigure.getByText("Edit storage values")).toBeVisible();
-  await storageConfigure.getByText("Edit storage values").click();
-  await expect(storageConfigure.getByLabel("Active protocol")).toBeVisible();
-  await expect(storageConfigure.getByLabel("Cluster mgmt")).toBeVisible();
-  await expect(storageConfigure.getByLabel("NFS LIFs")).toBeVisible();
-  await expect(storageConfigure.getByRole("button", { name: "Save storage setup" })).toHaveCount(1);
-  await expect(storageConfigure.getByText("Save As Lab Setup")).toHaveCount(0);
-  await expect(storageConfigure.getByText("More storage addresses")).toBeVisible();
-  await storageConfigure.getByText("More storage addresses").click();
-  await expect(storageConfigure.getByLabel("Node A mgmt")).toBeVisible();
-  await expect(storageConfigure.getByLabel("SVM mgmt")).toBeVisible();
-  await expect(storageConfigure.getByLabel("Controller A SP")).toBeVisible();
-  await expect(storageConfigure.getByLabel("Subnet")).toBeVisible();
-  await expect(details.getByLabel("ONTAP readiness")).toHaveCount(0);
-  await detailSections.getByLabel("Storage detail section", { exact: true }).selectOption("proof");
-  const storageProof = details.locator("details.advanced-drawer").filter({ hasText: "Storage proof" });
-  await expect(storageProof).not.toHaveAttribute("open", "");
-  await storageProof.locator(":scope > summary").click();
-  await expect(details.getByLabel("ONTAP readiness")).toContainText(/LIF|VMFS|igroup|target portal/);
-  const advancedStorageActions = details.getByLabel("Advanced storage actions");
-  await expect(advancedStorageActions).toBeVisible();
-  await advancedStorageActions.locator(":scope > summary").click();
-  await expect(advancedStorageActions.getByRole("button", { name: "Apply iSCSI" })).toBeVisible();
-  await expect(details.getByLabel("Storage reference")).toBeVisible();
+  await expect(page.getByRole("button", { name: /Apply iSCSI/ })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /factory|reset/i })).toHaveCount(0);
+  const mainText = await visibleMainText(page);
+  expect(mainText).not.toMatch(/REST is not reachable|TCP\/2049|target portal|igroup|VMFS|PROVIDER[_ ]MODE|\bprovider\b/i);
 
   await page.setViewportSize({ width: 375, height: 900 });
   await page.goto("/storage");
@@ -2127,11 +2054,41 @@ test("single-server storage page shows local path without shared storage clutter
   labProfileScenario = "single";
   await page.goto("/storage");
 
-  const storagePath = page.getByLabel("Storage Path");
-  await expect(storagePath).toContainText("Server-local RAID");
-  await expect(storagePath).toContainText("Local");
-  await expect(storagePath).not.toContainText("NetApp shared storage");
+  const summary = page.getByLabel("Storage and NetApp launcher summary");
+  const serverWorkspace = page.locator("section[aria-label='DL360 Gen10 workspace']");
+  await expect(summary).toContainText("Server-local RAID");
+  await expect(summary).toContainText("Local");
+  await expect(summary).toContainText("Not used");
+  await expect(serverWorkspace).toBeVisible();
+  await expect(page.locator("section[aria-label='NetApp ONTAP workspace']")).toHaveCount(0);
+  await expect(summary).not.toContainText("NetApp shared datastore");
   await expect(page.locator("section[aria-label='Storage reference']")).toHaveCount(0);
+});
+
+test("storage NetApp workspace reveals migrated NFS iSCSI previews and guarded boundary", async ({ page }) => {
+  await page.goto("/storage");
+
+  const workspace = page.locator("section[aria-label='NetApp ONTAP workspace']");
+  await expect(workspace).toBeVisible();
+  await expect(workspace.getByLabel("NetApp workspace storage controls")).not.toBeVisible();
+  await expect(workspace.getByRole("button", { name: /Apply iSCSI/ })).toHaveCount(0);
+
+  const advanced = await openWorkspaceAdvanced(page, "NetApp ONTAP");
+  const controls = advanced.getByLabel("NetApp workspace storage controls");
+  await expect(controls).toBeVisible();
+  await expect(controls).toContainText("Console");
+  await expect(controls).toContainText("NFS validate");
+  await expect(controls).toContainText("NetApp iSCSI");
+  await expect(controls).toContainText("ESXi iSCSI");
+  await expect(controls).toContainText("Setup Preview");
+  await expect(controls).toContainText("Preview iSCSI");
+  await expect(controls).toContainText("Validate iSCSI");
+  await expect(controls).toContainText("Preview ESXi iSCSI");
+  await expect(controls).toContainText("Validate ESXi iSCSI");
+  const guardedApply = advanced.getByLabel("Guarded iSCSI apply");
+  await expect(guardedApply).toBeVisible();
+  await expect(guardedApply.getByRole("button", { name: /Apply iSCSI/ })).toBeVisible();
+  await expect(guardedApply).toContainText("Apply iSCSI stays behind the existing backend gate");
 });
 
 test("single-server map removes vCenter and keeps direct ESXi guidance on the server workspace", async ({ page }) => {
@@ -2207,7 +2164,7 @@ test("operator button matrix keeps default actions simple and safe", async ({ pa
     { label: "Lab Defaults", path: "/setup/defaults", primary: () => page.locator(".lab-defaults-actions .operator-primary-button") },
     { label: "Network", path: "/network", primary: () => page.locator("section[aria-label='Cisco switch workspace'] > .design-device-primary-action .design-plan-action") },
     { label: "Server", path: "/server", primary: () => page.locator("section[aria-label='DL360 Gen10 workspace'] > .design-device-primary-action .design-plan-action") },
-    { label: "Storage", path: "/storage", primary: () => page.locator(".storage-path-actions .operator-primary-button") },
+    { label: "Storage", path: "/storage", primary: () => page.locator("section[aria-label='NetApp ONTAP workspace'] > .design-device-primary-action .design-plan-action") },
     { label: "Virtualization", path: "/virtualization", primary: () => page.getByLabel("VM Management").locator(".operator-primary-button") },
     { label: "Firmware", path: "/firmware-upgrades", primary: () => page.getByRole("button", { name: "Check versions" }) },
     { label: "Software Media", path: "/media", primary: () => page.locator(".page-actions .primary") },
@@ -2252,16 +2209,8 @@ test("operator primary check buttons run only expected read-only workflows", asy
       path: "/server"
     },
     {
-      click: () => page.getByLabel("Storage Path").getByRole("button", { name: "Run storage check" }).click(),
-      expectedActionIds: [
-        "netapp.live-state",
-        "netapp.validate-setup",
-        "netapp.setup-preview",
-        "netapp.nfs-setup-validate",
-        "netapp.iscsi-setup-preview",
-        "netapp.iscsi-setup-validate",
-        "esxi.iscsi-datastore-preview"
-      ],
+      click: () => page.locator("section[aria-label='NetApp ONTAP workspace'] > .design-device-primary-action").getByRole("button", { name: "Run NetApp read-only check" }).click(),
+      expectedActionIds: ["netapp.setup-preview"],
       label: "Storage",
       path: "/storage"
     },
@@ -2352,14 +2301,6 @@ test("network default opens canonical Cisco workspace and hides retired network 
 test("setup defaults keep detail, edit, and proof surfaces behind the secondary button", async ({ page }) => {
   const surfaces = [
     {
-      cardLabel: "Storage Path",
-      detailLabel: "Storage path details",
-      hiddenCopy: [/Storage readiness/i, /Storage proof/i, /Advanced storage actions/i, /Apply iSCSI/i],
-      path: "/storage",
-      primaryName: "Run storage check",
-      secondaryName: "Open storage details"
-    },
-    {
       cardLabel: "VM Management",
       detailLabel: "VM details",
       hiddenCopy: [/Virtualization checks/i, /Virtualization configure/i, /Virtualization setup shape/i, /Virtualization proof/i],
@@ -2388,6 +2329,17 @@ test("setup defaults keep detail, edit, and proof surfaces behind the secondary 
   await expect(page.getByLabel("Compute Access")).toHaveCount(0);
   await expect(page.getByLabel("Compute details")).toHaveCount(0);
   expect(await visibleMainText(page), "/server keeps old Compute tabs out of the default view").not.toMatch(/Server checks|Server configure|Advanced RAID plan|Server proof|Run server check/i);
+
+  await page.goto("/storage");
+  const storageWorkspace = page.locator("section[aria-label='NetApp ONTAP workspace']");
+  await expect(storageWorkspace).toBeVisible();
+  await expect(storageWorkspace.locator(":scope > .design-device-primary-action .design-plan-action"), "Storage workspace exposes one primary action").toHaveCount(1);
+  await expect(storageWorkspace.getByRole("button", { name: "Run NetApp read-only check" })).toBeVisible();
+  await expect(storageWorkspace.getByLabel("NetApp workspace storage controls"), "Storage proof stays behind Evidence and diagnostics").not.toBeVisible();
+  await expect(storageWorkspace.getByLabel("Guarded iSCSI apply"), "Guarded iSCSI stays behind diagnostics").not.toBeVisible();
+  await expect(page.getByLabel("Storage Path")).toHaveCount(0);
+  await expect(page.getByLabel("Storage path details")).toHaveCount(0);
+  expect(await visibleMainText(page), "/storage keeps old Storage panels out of the default view").not.toMatch(/Storage readiness|Storage proof|Advanced storage actions|Apply iSCSI|Run storage check/i);
 
   for (const surface of surfaces) {
     await page.goto(surface.path);
@@ -2933,30 +2885,27 @@ test("details-tier proof buttons outside overview keep read-only and guarded bou
   await expect(ciscoDriver).toContainText("before any guarded apply");
 
   await page.goto("/storage");
-  await page.getByRole("button", { name: "Open storage details" }).click();
-  const storageDetails = page.getByLabel("Storage path details");
-  await storageDetails.getByLabel("Storage detail section", { exact: true }).selectOption("proof");
-  const storageProof = storageDetails.locator("details.advanced-drawer").filter({ hasText: "Storage proof" });
-  await storageProof.locator(":scope > summary").click();
-  const storageActions = storageDetails.getByLabel("Advanced storage actions");
+  const netappAdvanced = await openWorkspaceAdvanced(page, "NetApp ONTAP");
+  const storageActions = netappAdvanced.getByLabel("NetApp workspace storage controls");
+  const guardedApply = netappAdvanced.getByLabel("Guarded iSCSI apply");
   await expect(storageActions).toBeVisible();
-  await storageActions.locator(":scope > summary").click();
+  await expect(guardedApply).toBeVisible();
 
   const previewResponse = page.waitForResponse((response) =>
     response.url().includes("/api/v1/providers/netapp-ontap/iscsi-setup-preview")
   );
   await storageActions.getByRole("button", { name: "Preview iSCSI" }).click();
   await expect((await previewResponse).ok()).toBeTruthy();
-  await expect(storageDetails).toContainText(/Preview iSCSI:/);
+  await expect(storageActions).toContainText(/Preview iSCSI:/);
 
   const applyResponse = page.waitForResponse((response) =>
     response.url().includes("/api/v1/providers/netapp-ontap/iscsi-setup-apply") &&
     response.request().method() === "POST"
   );
-  await storageActions.getByRole("button", { name: "Apply iSCSI" }).click();
+  await guardedApply.getByRole("button", { name: /Apply iSCSI/ }).click();
   await expect((await applyResponse).ok()).toBeTruthy();
-  await expect(storageDetails).toContainText(/Apply iSCSI: Blocked/);
-  await expect(storageDetails).toContainText(/ONTAP writes not attempted/);
+  await expect(storageActions).toContainText(/Apply iSCSI gate evaluated: Blocked/);
+  await expect(guardedApply).toContainText(/ONTAP writes not attempted/);
 
   const validateResponse = page.waitForResponse((response) =>
     response.url().includes("/api/v1/providers/netapp-ontap/iscsi-setup-validate") &&
@@ -2964,7 +2913,7 @@ test("details-tier proof buttons outside overview keep read-only and guarded bou
   );
   await storageActions.getByRole("button", { name: "Validate iSCSI" }).click();
   await expect((await validateResponse).ok()).toBeTruthy();
-  await expect(storageDetails).toContainText(/Validate iSCSI:/);
+  await expect(storageActions).toContainText(/Validate iSCSI:/);
 
   const esxiPreviewResponse = page.waitForResponse((response) =>
     response.url().includes("/api/v1/providers/esxi-readonly/iscsi-datastore-preview") &&
@@ -2972,7 +2921,7 @@ test("details-tier proof buttons outside overview keep read-only and guarded bou
   );
   await storageActions.getByRole("button", { name: "Preview ESXi iSCSI" }).click();
   await expect((await esxiPreviewResponse).ok()).toBeTruthy();
-  await expect(storageDetails).toContainText(/Preview ESXi iSCSI:/);
+  await expect(storageActions).toContainText(/Preview ESXi iSCSI:/);
 
   const esxiValidateResponse = page.waitForResponse((response) =>
     response.url().includes("/api/v1/providers/esxi-readonly/iscsi-datastore-validate") &&
@@ -2980,7 +2929,7 @@ test("details-tier proof buttons outside overview keep read-only and guarded bou
   );
   await storageActions.getByRole("button", { name: "Validate ESXi iSCSI" }).click();
   await expect((await esxiValidateResponse).ok()).toBeTruthy();
-  await expect(storageDetails).toContainText(/Validate ESXi iSCSI:/);
+  await expect(storageActions).toContainText(/Validate ESXi iSCSI:/);
 
   expect(providerPosts, "details-tier buttons use provider read/proof or guarded-gate endpoints")
     .toEqual(expect.arrayContaining([

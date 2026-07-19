@@ -2183,55 +2183,25 @@ function storageLocalCurrentView({
   });
 }
 
-export function OperatorStoragePage({ labProfileState, onReloadLabProfile }: OperatorPageProps) {
+export function OperatorStoragePage({ health, labProfileState, onReloadLabProfile }: OperatorPageProps) {
   const activeProfile = activeLabProfile(labProfileState);
   const address = activeAddressPlan(activeProfile);
-  const global = activeProfile?.global_settings ?? null;
-  const [actions, setActions] = useState<WorkflowAction[]>([]);
-  const [netappPlan, setNetappPlan] = useState<ProviderProbeResult | null>(null);
-  const [consoleReadiness, setConsoleReadiness] = useState<ProviderProbeResult | null>(null);
-  const [nfsReadiness, setNfsReadiness] = useState<ProviderProbeResult | null>(null);
-  const [iscsiSetupPreview, setIscsiSetupPreview] = useState<ProviderProbeResult | null>(null);
-  const [esxiIscsiPreview, setEsxiIscsiPreview] = useState<ProviderProbeResult | null>(null);
-  const [vcenterNetapp, setVcenterNetapp] = useState<ProviderProbeResult | null>(null);
-  const [raidPlan, setRaidPlan] = useState<ProviderProbeResult | null>(null);
+  const features = activeProfile?.features ?? null;
+  const [workflowActions, setWorkflowActions] = useState<WorkflowAction[]>([]);
   const [firmwareSummaries, setFirmwareSummaries] = useState<FirmwareSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [detailsOpen, setDetailsOpen] = useState(false);
-  const [activeDetailSection, setActiveDetailSection] = useState<StorageDetailSectionId>("readiness");
-  const [runState, setRunState] = useState<WorkflowRunState>(emptyRunState);
 
-  async function load() {
+  async function loadWorkspaceData() {
     setError("");
     setLoading(true);
     try {
-      void safeApi(api.workflowActions, [] as WorkflowAction[]).then((nextActions) => {
-        setActions(Array.isArray(nextActions) ? nextActions : []);
-      });
-      void safeApi(api.netappConsoleReadiness, null).then((nextConsole) => {
-        setConsoleReadiness(nextConsole as ProviderProbeResult | null);
-      });
-      void safeApi(api.netappNfsVcenterReadiness, null).then((nextNfs) => {
-        setNfsReadiness(nextNfs);
-      });
-      void safeApi(api.netappIscsiSetupPreview, null).then((nextIscsiSetup) => {
-        setIscsiSetupPreview(nextIscsiSetup);
-      });
-      void safeApi(api.esxiIscsiDatastorePreview, null).then((nextEsxiIscsi) => {
-        setEsxiIscsiPreview(nextEsxiIscsi);
-      });
-      void safeApi(api.vcenterNetappReadiness, null).then((nextVcenter) => {
-        setVcenterNetapp(nextVcenter);
-      });
-      const [nextPlan, nextFirmware, nextRaidPlan] = await Promise.all([
-        safeApi(api.netappLiveState, null),
+      const [nextActions, nextFirmware] = await Promise.all([
+        safeApi(api.workflowActions, [] as WorkflowAction[]),
         safeApi(api.firmwareSummary, [] as FirmwareSummary[]),
-        safeApi(api.hpeRaidPlanPreview, null)
       ]);
-      setNetappPlan(nextPlan as ProviderProbeResult | null);
+      setWorkflowActions(Array.isArray(nextActions) ? nextActions : []);
       setFirmwareSummaries(Array.isArray(nextFirmware) ? nextFirmware : []);
-      setRaidPlan(nextRaidPlan as ProviderProbeResult | null);
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -2239,369 +2209,67 @@ export function OperatorStoragePage({ labProfileState, onReloadLabProfile }: Ope
     }
   }
 
-  useEffect(() => {
-    if (!activeProfile) return;
-    void load();
-  }, [activeProfile?.id]);
-
-  const plannedNfs = objectValue(nfsReadiness?.planned_nfs);
-  const plannedIscsi = objectValue(iscsiSetupPreview?.iscsi_plan);
-  const esxiIscsiState = objectValue(esxiIscsiPreview?.current_state);
-  const activeStorageProtocol = asString(activeProfile?.features?.storage_protocol).toLowerCase() || "nfs";
-  const iscsiSignalStatus = strongestStatus([
-    asString(iscsiSetupPreview?.status),
-    asString(esxiIscsiPreview?.status)
-  ]);
-  const iscsiStatus = address.netapp_iscsi_lifs.length
-    ? activeStorageProtocol === "iscsi" ? iscsiSignalStatus : "plan_only"
-    : "not_configured_yet";
-  const iscsiBlockers = uniqueStrings([
-    ...stringArray(iscsiSetupPreview?.blockers),
-    ...stringArray(esxiIscsiPreview?.blockers)
-  ]);
-  const iscsiWarnings = uniqueStrings([
-    ...stringArray(iscsiSetupPreview?.warnings),
-    ...stringArray(esxiIscsiPreview?.warnings)
-  ]);
-  const storageScenario = storageScenarioModel(activeProfile, raidPlan);
-  const serverLocalStorage = storageScenario.mode === "server_local";
-  const storageStatus = storagePageStatus({ netappPlan, nfsReadiness, vcenterNetapp });
-  const pageStatus = serverLocalStorage ? storageScenario.status : storageStatus;
-  const currentView = serverLocalStorage
-    ? storageLocalCurrentView({ activeProfile, raidPlan, storageScenario })
-    : storageCurrentView({ address, consoleReadiness, netappPlan, nfsReadiness, vcenterNetapp });
-  const storageNextAction = serverLocalStorage ? storageScenario.nextAction : storagePageNextAction({ netappPlan, nfsReadiness, vcenterNetapp });
-  const storageRows = useMemo<OperatorObjectRow[]>(
-    () => serverLocalStorage ? localStorageRows({ activeProfile, raidPlan, storageScenario }) : [
-      {
-        checkedAt: currentView.checkedAt,
-        details: [
-          { label: "Cluster management", value: displayAddress(address.netapp_cluster_mgmt), source: "Saved setup" },
-          { label: "SVM management", value: displayAddress(address.netapp_svm_mgmt), source: "Saved setup" },
-          { label: "ONTAP version", value: firmwareVersion(firmwareSummaries, "netapp") }
-        ],
-        freshness: currentView.freshness,
-        id: "cluster",
-        nextAction: humanize(asString(netappPlan?.next_safe_action) || "Run NetApp Live Check."),
-        source: currentView.source,
-        status: storageStatus,
-        summary: asString(netappPlan?.message) || "ONTAP management and setup readiness.",
-        target: displayAddress(address.netapp_cluster_mgmt),
-        title: "ONTAP Cluster",
-        type: "Storage"
-      },
-      {
-        checkedAt: currentView.checkedAt,
-        details: [
-          { label: "Console", value: displayValue(asString(objectValue(consoleReadiness?.runtime_state).console)) },
-          { label: "Status", value: displayStatus(asString(consoleReadiness?.status) || "not_checked"), status: asString(consoleReadiness?.status) || "not_checked" }
-        ],
-        freshness: currentView.freshness,
-        id: "console",
-        nextAction: "Review saved setup details if the console path is wrong.",
-        source: sourceLabel(consoleReadiness),
-        status: asString(consoleReadiness?.status) || "not_checked",
-        summary: "Serial console readiness for NetApp first-contact workflows.",
-        target: displayValue(asString(objectValue(consoleReadiness?.runtime_state).console)),
-        title: "Console",
-        type: "Access"
-      },
-      {
-        checkedAt: currentView.checkedAt,
-        details: [
-          { label: "NFS LIFs", value: listLabel(address.netapp_nfs_lifs), source: "Saved setup" },
-          { label: "Volume", value: displayValue(asString(plannedNfs.volume) || asString(plannedNfs.volume_name)) },
-          { label: "Export policy", value: displayValue(asString(plannedNfs.export_policy)) }
-        ],
-        freshness: currentView.freshness,
-        id: "nfs",
-        nextAction: humanize(asString(nfsReadiness?.next_safe_action) || "Validate NFS before any datastore mount action."),
-        source: sourceLabel(nfsReadiness),
-        status: asString(nfsReadiness?.status) || (address.netapp_nfs_lifs.length ? "ready" : "not_configured_yet"),
-        summary: asString(nfsReadiness?.message) || "NFS data path and export readiness.",
-        target: listLabel(address.netapp_nfs_lifs),
-        title: "NFS Data Path",
-        type: "Protocol",
-        warnings: stringArray(nfsReadiness?.warnings)
-      },
-      {
-        checkedAt: currentView.checkedAt,
-        details: [
-          { label: "iSCSI LIFs", value: listLabel(address.netapp_iscsi_lifs), source: "Saved setup" },
-          { label: "NetApp SAN", value: displayStatus(asString(iscsiSetupPreview?.status) || "not_checked"), status: asString(iscsiSetupPreview?.status) || "not_checked", source: sourceLabel(iscsiSetupPreview) },
-          { label: "ESXi datastore", value: displayStatus(asString(esxiIscsiPreview?.status) || "not_checked"), status: asString(esxiIscsiPreview?.status) || "not_checked", source: sourceLabel(esxiIscsiPreview) },
-          { label: "Target portal", value: displayValue(asString(plannedIscsi.target_portal) || asString(plannedIscsi.target_ip) || listLabel(address.netapp_iscsi_lifs)) },
-          { label: "VMFS datastore", value: displayValue(asString(esxiIscsiState.datastore_name) || asString(plannedIscsi.datastore_name)) }
-        ],
-        freshness: currentView.freshness,
-        id: "iscsi",
-        nextAction: humanize(asString(esxiIscsiPreview?.next_safe_action) || asString(iscsiSetupPreview?.next_safe_action) || "Preview iSCSI, validate NetApp iSCSI, then validate ESXi iSCSI before any guarded apply."),
-        source: firstSource([esxiIscsiPreview, iscsiSetupPreview]),
-        status: iscsiStatus,
-        summary: asString(esxiIscsiPreview?.message) || asString(iscsiSetupPreview?.message) || "iSCSI SAN path is available as a selectable storage option with separate NetApp and ESXi validation.",
-        target: listLabel(address.netapp_iscsi_lifs),
-        title: "iSCSI Data Path",
-        type: "Protocol",
-        warnings: uniqueStrings([...iscsiBlockers, ...iscsiWarnings])
-      },
-      {
-        checkedAt: currentView.checkedAt,
-        details: [
-          { label: "Datastore", value: datastoreName(vcenterNetapp), status: datastoreVisibleStatus(vcenterNetapp) },
-          { label: "vCenter-NetApp source", value: sourceLabel(vcenterNetapp) }
-        ],
-        freshness: currentView.freshness,
-        id: "datastore",
-        nextAction: humanize(asString(vcenterNetapp?.next_safe_action) || "No datastore action required."),
-        source: sourceLabel(vcenterNetapp),
-        status: datastoreVisibleStatus(vcenterNetapp),
-        summary: asString(vcenterNetapp?.message) || "Datastore visibility through vCenter.",
-        target: datastoreName(vcenterNetapp),
-        title: "vCenter Datastore",
-        type: "Readiness"
-      }
-    ],
-    [activeProfile, activeStorageProtocol, address.netapp_cluster_mgmt, address.netapp_iscsi_lifs, address.netapp_nfs_lifs, address.netapp_svm_mgmt, consoleReadiness, currentView, esxiIscsiPreview, esxiIscsiState, firmwareSummaries, iscsiBlockers, iscsiSetupPreview, iscsiStatus, iscsiWarnings, netappPlan, nfsReadiness, plannedIscsi, plannedNfs, raidPlan, serverLocalStorage, storageScenario, storageStatus, vcenterNetapp]
-  );
-  const profileReady = Boolean(activeProfile);
-  const headerActionIds = serverLocalStorage
-    ? ["raid.validate", "raid.pending-check", "raid.plan"]
-    : [
-      "netapp.live-state",
-      "netapp.validate-setup",
-      "netapp.setup-preview",
-      "netapp.nfs-setup-validate",
-      "netapp.iscsi-setup-preview",
-      "netapp.iscsi-setup-validate",
-      "esxi.iscsi-datastore-preview"
-    ];
-  const headerLabel = serverLocalStorage ? "Local Storage Live Check" : "NetApp Live Check";
-  const runStorageChecks = async () => {
-    const actionById = new Map(actions.map((action) => [action.action_id, action]));
-    const results: Array<{ action: WorkflowAction | null; result: WorkflowActionRun }> = [];
-    for (const actionId of headerActionIds) {
-      const result = await api.runWorkflowAction(actionId);
-      results.push({ action: actionById.get(actionId) ?? null, result });
+  async function reloadWorkspace() {
+    if (onReloadLabProfile) {
+      await onReloadLabProfile();
     }
-    const blocked = results.filter(({ result }) => isProblemRun(result));
-    if (blocked.length) {
-      const first = blocked[0];
-      const label = first.action ? humanWorkflowActionLabel(first.action) : humanize(first.result.action_label || first.result.action_id);
-      const detail = first.result.blockers[0] || first.result.next_action || first.result.summary || displayStatus(first.result.status);
-      return `${headerLabel}: ${results.length} checks run; ${blocked.length} need attention. ${label}: ${humanize(detail)}`;
-    }
-    return `${headerLabel}: ${results.length} checks completed with device evidence.`;
-  };
-  const storagePath = storagePathCardModel({
-    activeProtocol: activeStorageProtocol,
-    pageStatus,
-    serverLocalStorage,
-    storageBlocker: currentView.blockers[0] || "",
-    storageNextAction,
-    storageScenario,
-    vcenterNetapp
-  });
-  const storageRegions: Record<string, ReactNode> = profileReady ? {
-    "advanced-proof": (
-      <AdvancedDrawer title="Storage proof" summary={noProofText}>
-        {!serverLocalStorage && (
-          <NetAppOntapReadinessCard
-            address={address}
-            activeProfile={activeProfile}
-            consoleReadiness={consoleReadiness}
-            nfsReadiness={nfsReadiness}
-            onReload={load}
-          />
-        )}
-        <OperatorWorkspace currentView={currentView} rows={storageRows} compact />
-        <ConfigValueList
-          values={[
-            { label: "NetApp blockers", value: String(stringArray(netappPlan?.blockers).length) },
-            { label: "NFS warnings", value: String(stringArray(nfsReadiness?.warnings).length) },
-            { label: "iSCSI NetApp status", value: displayStatus(asString(iscsiSetupPreview?.status) || "not_checked") },
-            { label: "iSCSI ESXi status", value: displayStatus(asString(esxiIscsiPreview?.status) || "not_checked") },
-            { label: "iSCSI blockers", value: String(iscsiBlockers.length) },
-            { label: "vCenter-NetApp source", value: sourceLabel(vcenterNetapp) }
-          ]}
-        />
-        <OperatorReferencePanel
-          actionLabel="Open validation"
-          actionTo="/validation"
-          ariaLabel="Storage reference"
-          currentView={currentView}
-          rows={storageRows}
-          subtitle="ONTAP, NFS, iSCSI, datastore"
-          tableTitle="Storage Signals"
-          title="Storage readiness at a glance"
-        />
-      </AdvancedDrawer>
-    ),
-    configure: (
-      <section className="overview-safe-actions" aria-label="Storage configure">
-        <StorageConfigurePanel
-          activeProfile={activeProfile}
-          address={address}
-          features={activeProfile?.features ?? null}
-          global={global}
-          onSaved={async () => {
-            await onReloadLabProfile?.();
-            await load();
-          }}
-        />
-      </section>
-    ),
-    "local-readiness": serverLocalStorage ? <LocalStorageReadinessCard activeProfile={activeProfile} raidPlan={raidPlan} /> : null,
-    "ontap-readiness": (
-      <NetAppOntapReadinessCard
-        address={address}
-        activeProfile={activeProfile}
-        consoleReadiness={consoleReadiness}
-        nfsReadiness={nfsReadiness}
-        onReload={load}
-      />
-    ),
-    scenario: (
-      <StorageScenarioDecisionPanel
-        address={address}
-        activeProfile={activeProfile}
-        raidPlan={raidPlan}
-        storageScenario={storageScenario}
-      />
-    ),
-    "shared-path-map": (
-      <StorageSharedPathMapCard
-        activeProtocol={activeStorageProtocol}
-        address={address}
-        esxiIscsiPreview={esxiIscsiPreview}
-        iscsiSetupPreview={iscsiSetupPreview}
-        netappPlan={netappPlan}
-        nfsReadiness={nfsReadiness}
-        storagePath={storagePath}
-        vcenterNetapp={vcenterNetapp}
-      />
-    )
-  } : {};
-  const storageReadinessPanel = serverLocalStorage ? storageRegions["local-readiness"] : storageRegions["shared-path-map"];
-  const storageDetailSections = profileReady ? [
-    {
-      id: "path" as StorageDetailSectionId,
-      label: "Path",
-      panel: storageRegions.scenario,
-      summary: serverLocalStorage ? "Local RAID vs shared storage" : "NFS/iSCSI path decision"
-    },
-    {
-      id: "setup" as StorageDetailSectionId,
-      label: "Setup",
-      panel: storageRegions.configure,
-      summary: "Saved values and expected devices"
-    },
-    {
-      id: "readiness" as StorageDetailSectionId,
-      label: "Readiness",
-      panel: storageReadinessPanel,
-      summary: serverLocalStorage ? "Local RAID evidence" : "NetApp and datastore evidence"
-    },
-    {
-      id: "proof" as StorageDetailSectionId,
-      label: "Proof",
-      panel: storageRegions["advanced-proof"],
-      summary: "Advanced evidence and raw links"
-    }
-  ].filter((section) => Boolean(section.panel)) : [];
-  const selectedStorageDetailSection = storageDetailSections.find((section) => section.id === activeDetailSection)
-    ?? storageDetailSections.find((section) => section.id === "readiness")
-    ?? storageDetailSections[0];
-
-  async function runDefaultStorageCheck() {
-    if (!profileReady || runState.runningActionId) return;
-    setRunState({ error: "", message: "", runningActionId: "storage-path-check" });
-    try {
-      const message = await runStorageChecks();
-      setRunState({ error: "", message, runningActionId: "" });
-      await load();
-    } catch (err) {
-      setRunState({ error: errorMessage(err), message: "", runningActionId: "" });
-    }
+    await loadWorkspaceData();
   }
+
+  useEffect(() => {
+    void loadWorkspaceData();
+  }, []);
+
+  const serverLocalStorage = features?.storage_location === "server_local" || features?.netapp_enabled === false;
+  const storageProtocol = asString(features?.storage_protocol).toLowerCase() === "iscsi" ? "iscsi" : "nfs";
+  const protocolLabel = serverLocalStorage ? "Local" : storageProtocol === "iscsi" ? "iSCSI" : "NFS";
+  const serverModel = asString(activeProfile?.devices?.server_model).toLowerCase();
+  const serverPart: DesignPartId = serverModel === "gen10plus" || serverModel === "gen10+" ? "server-gen10plus" : "server-gen10";
+  const workspaceTarget: DesignPartId = serverLocalStorage ? serverPart : "netapp";
+  const workspaceTitle = serverLocalStorage ? `${topologyServerModelLabel(activeProfile?.devices?.server_model)} local storage workspace` : "NetApp ONTAP workspace";
+  const storageAddresses = storageProtocol === "iscsi" ? address.netapp_iscsi_lifs : address.netapp_nfs_lifs;
+  const dataPathLabel = serverLocalStorage ? "Local disks" : listLabel(storageAddresses);
+  const clusterTarget = serverLocalStorage ? "Not used" : displayAddress(address.netapp_cluster_mgmt);
+  const subnetState = topologySubnetState(address.subnet, health);
+  const workspaceTone: TopologyNodeTone = subnetState.status === "matches" ? "ready" : subnetState.status === "mismatch" ? "warning" : "unknown";
 
   return (
     <OperatorPage title="Storage">
-      <div className="operator-surface-heading">
+      <div className="operator-surface-heading storage-workspace-heading">
         <p className="operator-kicker">Setup</p>
-        <h1>Storage</h1>
-        <p>Which storage path this kit uses, and what to do next.</p>
+        <h1>Storage & NetApp</h1>
+        <p>Pick the storage path once, then run read-only storage checks from the device workspace.</p>
       </div>
-      <Feedback loading={false} error={profileReady ? error : ""} />
-      <section className="storage-path-surface" aria-label="Storage Path">
-        <Card className="storage-path-card" hover={false}>
-          <CardHeader>
-            <div>
-              <p className="operator-kicker">Storage path</p>
-              <h2>{storagePath.activePath}</h2>
-            </div>
-            <StatusBadge label={storagePath.stateLabel} status={storagePath.badgeStatus} />
-          </CardHeader>
-          <CardContent>
-            <dl className="storage-path-fields">
-              <div>
-                <dt>Active path</dt>
-                <dd>{storagePath.activePath}</dd>
-              </div>
-              <div>
-                <dt>Protocol</dt>
-                <dd><span className="storage-path-protocol-chip">{storagePath.protocol}</span></dd>
-              </div>
-              <div>
-                <dt>Target datastore</dt>
-                <dd>{storagePath.targetDatastore}</dd>
-              </div>
-            </dl>
-            {storagePath.reason && (
-              <div className="storage-path-reason" role="note">
-                <strong>Needs attention</strong>
-                <span>{storagePath.reason}</span>
-              </div>
-            )}
-            <div className="storage-path-actions">
-              <button
-                className="operator-primary-button"
-                disabled={!profileReady || Boolean(runState.runningActionId)}
-                onClick={() => void runDefaultStorageCheck()}
-                type="button"
-              >
-                <RefreshCw size={16} />
-                {runState.runningActionId ? "Checking" : "Run storage check"}
-              </button>
-              <button
-                aria-expanded={detailsOpen}
-                className="secondary-button"
-                onClick={() => setDetailsOpen((current) => !current)}
-                type="button"
-              >
-                {detailsOpen ? "Hide storage details" : "Open storage details"}
-              </button>
-            </div>
-            {runState.message && <div className="operator-feedback storage-path-feedback">{runState.message}</div>}
-            {runState.error && <div className="operator-feedback error storage-path-feedback">{runState.error}</div>}
-          </CardContent>
-        </Card>
+      <Feedback loading={loading && !workflowActions.length} error={error} />
+      <section className="storage-netapp-workspace-shell" aria-label="Storage and NetApp setup launcher">
+        <div className="storage-netapp-workspace-summary" aria-label="Storage and NetApp launcher summary">
+          <div>
+            <p className="operator-kicker">{serverLocalStorage ? "Local storage setup" : "Shared storage setup"}</p>
+            <h2>{workspaceTitle}</h2>
+            <span>Daily setup stays here. iSCSI apply, RAID changes, and raw proof stay guarded behind Details or Validation.</span>
+          </div>
+          <div className="storage-netapp-workspace-facts">
+            <span><strong>Storage path</strong>{serverLocalStorage ? "Server-local RAID" : "NetApp shared datastore"}</span>
+            <span><strong>Protocol</strong>{protocolLabel}</span>
+            <span><strong>NetApp cluster</strong>{clusterTarget}</span>
+            <span><strong>Data path</strong>{dataPathLabel}</span>
+          </div>
+        </div>
+        <LabDesignComposer
+          activeProfile={activeProfile}
+          address={address}
+          features={features}
+          firmwareSummaries={firmwareSummaries}
+          health={health}
+          initialSelectedDevice={workspaceTarget}
+          onReload={reloadWorkspace}
+          subnetState={subnetState}
+          workspaceNodeStatus={subnetState.status}
+          workspaceNodeTone={workspaceTone}
+          workspaceOnly
+          workflowActions={workflowActions}
+        />
       </section>
-      {detailsOpen && profileReady && (
-        <section className="storage-path-details" aria-label="Storage path details">
-          <label className="storage-path-detail-switcher detail-topic-selector" aria-label="Storage detail sections">
-            <span>Detail view</span>
-            <select aria-label="Storage detail section" onChange={(event) => setActiveDetailSection(event.target.value as StorageDetailSectionId)} value={activeDetailSection}>
-              {storageDetailSections.map((section) => <option key={section.id} value={section.id}>{section.label}</option>)}
-            </select>
-            <strong>{selectedStorageDetailSection?.summary}</strong>
-          </label>
-          {selectedStorageDetailSection && (
-            <div className="storage-path-detail-panel" aria-label={`Storage ${selectedStorageDetailSection.label}`}>
-              {selectedStorageDetailSection.panel}
-            </div>
-          )}
-        </section>
-      )}
     </OperatorPage>
   );
 }

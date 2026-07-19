@@ -766,7 +766,7 @@ function App() {
               />
               <RouterRoute path="/network" element={<OperatorNetworkPage health={health} labProfileState={labProfileState} onReloadLabProfile={loadLabProfileState} />} />
               <RouterRoute path="/server" element={<OperatorServerPage health={health} labProfileState={labProfileState} onReloadLabProfile={loadLabProfileState} />} />
-              <RouterRoute path="/storage" element={<OperatorStoragePage labProfileState={labProfileState} onReloadLabProfile={loadLabProfileState} />} />
+              <RouterRoute path="/storage" element={<OperatorStoragePage health={health} labProfileState={labProfileState} onReloadLabProfile={loadLabProfileState} />} />
               <RouterRoute path="/virtualization" element={<OperatorVirtualizationPage labProfileState={labProfileState} onReloadLabProfile={loadLabProfileState} />} />
               <RouterRoute path="/setup/defaults" element={<OperatorLabDefaultsPage labProfileState={labProfileState} onReloadLabProfile={loadLabProfileState} />} />
               <RouterRoute path="/lab-defaults" element={<Navigate to="/setup/defaults" replace />} />
