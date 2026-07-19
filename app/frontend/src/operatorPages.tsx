@@ -305,8 +305,6 @@ const emptyRunState: WorkflowRunState = {
 const noProofText = "Advanced proof is hidden unless you need it.";
 const networkSwitchCheckActionIds = ["cisco.setup-readiness", "cisco.ssh-readonly-probe", "cisco.current-intent-diff"];
 const serverCheckActionIds = ["ilo.reachability", "ilo.auth", "ilo.inventory", "esxi.management-validation", "raid.validate"];
-const vcenterVmCheckActionIds = ["vcenter-netapp.readiness", "vcenter.install-readiness", "vcenter.post-attach-validation", "esxi.vm-deploy-validate"];
-const directVmCheckActionIds = ["esxi.management-validation", "esxi.vm-deploy-validate"];
 
 type PageIntentLayout = Record<string, UiIntentRegionLayout>;
 
@@ -3709,45 +3707,26 @@ function VirtualizationWorkspaceControls({
   );
 }
 
-export function OperatorVirtualizationPage({ labProfileState, onReloadLabProfile }: OperatorPageProps) {
+export function OperatorVirtualizationPage({ health, labProfileState, onReloadLabProfile }: OperatorPageProps) {
   const activeProfile = activeLabProfile(labProfileState);
   const address = activeAddressPlan(activeProfile);
-  const global = activeProfile?.global_settings ?? null;
   const features = activeProfile?.features ?? null;
   const vcenterEnabled = features?.vcenter_enabled !== false;
-  const scenarioLabel = deploymentScenarioLabel(features);
-  const storageLabel = storageLocationLabel(features);
-  const [actions, setActions] = useState<WorkflowAction[]>([]);
-  const [vcenterNetapp, setVcenterNetapp] = useState<ProviderProbeResult | null>(null);
-  const [installReadiness, setInstallReadiness] = useState<ProviderProbeResult | null>(null);
-  const [postAttach, setPostAttach] = useState<ProviderProbeResult | null>(null);
+  const [workflowActions, setWorkflowActions] = useState<WorkflowAction[]>([]);
+  const [firmwareSummaries, setFirmwareSummaries] = useState<FirmwareSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [detailsOpen, setDetailsOpen] = useState(false);
-  const [activeDetailSection, setActiveDetailSection] = useState<VirtualizationDetailSectionId>("path");
-  const [runState, setRunState] = useState<WorkflowRunState>(emptyRunState);
 
-  async function load() {
+  async function loadWorkspaceData() {
     setError("");
     setLoading(true);
     try {
-      const [nextActions, nextVcenterNetapp, nextInstall, nextPostAttach] = vcenterEnabled
-        ? await Promise.all([
-            safeApi(api.workflowActions, [] as WorkflowAction[]),
-            safeApi(api.vcenterNetappReadiness, null),
-            safeApi(api.vcenterInstallReadiness, null),
-            safeApi(api.vcenterPostAttachValidation, null)
-          ])
-        : await Promise.all([
-            safeApi(api.workflowActions, [] as WorkflowAction[]),
-            Promise.resolve(null),
-            Promise.resolve(null),
-            Promise.resolve(null)
-          ]);
-      setActions(Array.isArray(nextActions) ? nextActions : []);
-      setVcenterNetapp(nextVcenterNetapp);
-      setInstallReadiness(nextInstall);
-      setPostAttach(nextPostAttach);
+      const [nextActions, nextFirmware] = await Promise.all([
+        safeApi(api.workflowActions, [] as WorkflowAction[]),
+        safeApi(api.firmwareSummary, [] as FirmwareSummary[])
+      ]);
+      setWorkflowActions(Array.isArray(nextActions) ? nextActions : []);
+      setFirmwareSummaries(Array.isArray(nextFirmware) ? nextFirmware : []);
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -3755,377 +3734,66 @@ export function OperatorVirtualizationPage({ labProfileState, onReloadLabProfile
     }
   }
 
-  useEffect(() => {
-    void load();
-  }, [vcenterEnabled]);
-
-  const virtualStatus = vcenterEnabled
-    ? strongestStatus([
-        asString(postAttach?.status) || "not_checked",
-        asString(vcenterNetapp?.status) || "not_checked",
-        asString(installReadiness?.status) || "not_checked"
-      ])
-    : "not_checked";
-  const target = vcenterTarget(vcenterNetapp || installReadiness, activeProfile);
-  const postChecks = objectValue(postAttach?.checks);
-  const currentView = virtualizationCurrentView({ activeProfile, features, installReadiness, postAttach, vcenterNetapp });
-  const virtualizationActionIds = vcenterEnabled ? vcenterVmCheckActionIds : directVmCheckActionIds;
-  const virtualizationRows = useMemo<OperatorObjectRow[]>(
-    () => {
-      const baseRows: OperatorObjectRow[] = [
-        {
-          checkedAt: currentView.checkedAt,
-          details: [
-            { label: "ESXi target", value: displayAddress(address.esxi_management), source: "Saved setup" },
-            { label: "Scenario", value: scenarioLabel, source: "Active profile" },
-            { label: "Storage", value: storageLabel, source: "Active profile" }
-          ],
-          freshness: currentView.freshness,
-          id: "esxi-direct",
-          nextAction: vcenterEnabled ? "Validate attach state after ESXi or vCenter changes." : "Run ESXi Live Check before VM deployment validation.",
-          source: currentView.source,
-          status: virtualStatus,
-          summary: vcenterEnabled ? "ESXi attachment and host visibility through vCenter." : "Direct ESXi host path for this setup.",
-          target: displayAddress(address.esxi_management),
-          title: vcenterEnabled ? "ESXi Attach" : "ESXi Direct",
-          type: "Control plane"
-        },
-        {
-          checkedAt: currentView.checkedAt,
-          details: [
-            {
-              label: "Datastore",
-              value: vcenterEnabled ? datastoreName(vcenterNetapp) : storageLabel,
-              status: vcenterEnabled ? datastoreVisibleStatus(vcenterNetapp || postAttach) : "not_checked"
-            },
-            {
-              label: "Visibility",
-              value: vcenterEnabled ? visibilityLabel(postChecks.netapp_datastore_visible ?? objectValue(vcenterNetapp?.checks).datastore_mounted) : "Validate through ESXi."
-            }
-          ],
-          freshness: currentView.freshness,
-          id: "datastore",
-          nextAction: vcenterEnabled ? "Validate datastore visibility after storage changes." : "Validate datastore visibility from ESXi before VM deployment.",
-          source: currentView.source,
-          status: vcenterEnabled ? datastoreVisibleStatus(vcenterNetapp || postAttach) : "not_checked",
-          summary: vcenterEnabled ? "NetApp datastore visibility through vCenter." : "Datastore validation is scoped to the direct ESXi path.",
-          target: vcenterEnabled ? datastoreName(vcenterNetapp) : storageLabel,
-          title: "Datastore",
-          type: "Storage"
-        },
-        {
-          checkedAt: currentView.checkedAt,
-          details: [
-            {
-              label: "VM inventory",
-              value: vcenterEnabled ? visibilityLabel(postChecks.vm_inventory_visible) : "Validate after ESXi storage is ready.",
-              status: vcenterEnabled ? visibilityStatus(postChecks.vm_inventory_visible) : "not_checked"
-            }
-          ],
-          freshness: currentView.freshness,
-          id: "vm-inventory",
-          nextAction: vcenterEnabled ? "Validate inventory after datastore and vCenter access are ready." : "Validate VM deployment directly against ESXi.",
-          source: currentView.source,
-          status: vcenterEnabled ? visibilityStatus(postChecks.vm_inventory_visible) : "not_checked",
-          summary: vcenterEnabled ? "VM inventory visibility for deployment validation." : "VM validation follows the direct ESXi workflow for this setup.",
-          target: vcenterEnabled ? "vCenter inventory" : "ESXi inventory",
-          title: "VM Inventory",
-          type: "Inventory"
-        },
-        {
-          checkedAt: currentView.checkedAt,
-          details: [{ label: "OVF deployment", value: "Ready after validation", status: "not_checked" }],
-          freshness: "Operator config",
-          id: "ovf",
-          nextAction: "Run validation before any guarded VM deployment.",
-          source: "Saved setup",
-          status: "not_checked",
-          summary: "Deployment action remains gated behind validation.",
-          target: "OVF deployment",
-          title: "OVF Deployment",
-          type: "Guarded action"
-        }
-      ];
-
-      if (!vcenterEnabled) {
-        return [
-          {
-            checkedAt: currentView.checkedAt,
-            details: [
-              { label: "Scenario", value: scenarioLabel, source: "Active profile" },
-              { label: "Reason", value: asString(features?.vcenter_disabled_reason) || "vCenter is disabled for this setup.", source: "Active profile" }
-            ],
-            freshness: "Operator config",
-            id: "vcenter-out-of-scope",
-            nextAction: "No vCenter action is required unless the setup changes.",
-            source: "Active profile",
-            status: "not_in_scope",
-            summary: "vCenter not in this setup.",
-            target: "Direct ESXi workflow",
-            title: "vCenter",
-            type: "Out of scope"
-          },
-          ...baseRows
-        ];
-      }
-
-      return [
-        {
-          checkedAt: currentView.checkedAt,
-          details: [
-            { label: "Target", value: target },
-            { label: "Credentials", value: credentialSummary(vcenterNetapp) },
-            { label: "Source", value: sourceLabel(vcenterNetapp || installReadiness) }
-          ],
-          freshness: currentView.freshness,
-          id: "vcenter",
-          nextAction: humanize(asString(vcenterNetapp?.next_safe_action) || "Run vCenter Live Check."),
-          source: sourceLabel(vcenterNetapp || installReadiness),
-          status: virtualStatus,
-          summary: asString(vcenterNetapp?.message) || asString(installReadiness?.message) || "vCenter endpoint and readiness.",
-          target,
-          title: "vCenter",
-          type: "Control plane"
-        },
-        ...baseRows
-      ];
-    },
-    [address.esxi_management, currentView, features?.vcenter_disabled_reason, installReadiness, postAttach, postChecks, scenarioLabel, storageLabel, target, vcenterEnabled, vcenterNetapp, virtualStatus]
-  );
-  const byActionId = useMemo(() => new Map(actions.map((action) => [action.action_id, action])), [actions]);
-  const vmRunConfig: TabRunConfig = {
-    actionIds: virtualizationActionIds,
-    actions,
-    kind: "read",
-    label: "Run VM check",
-    onReload: load
-  };
-  const vmAction = firstRunnableAction(byActionId, virtualizationActionIds, vmRunConfig);
-  const vmFallbackActionId = fallbackRunActionId(vmRunConfig, vmAction);
-  const vmDisabledReason = vmAction
-    ? disabledReasonForRunConfig(vmRunConfig, vmAction)
-    : vmFallbackActionId
-      ? ""
-      : disabledReasonForRunConfig(vmRunConfig, vmAction);
-  const vmManagement = virtualizationVmManagementCardModel({
-    activeProfile,
-    address,
-    currentView,
-    installReadiness,
-    postAttach,
-    storageLabel,
-    target,
-    vcenterEnabled,
-    vcenterNetapp,
-    virtualStatus
-  });
-  const virtualizationDetailRows = [
-    { current: vmManagement.target, item: vcenterEnabled ? "vCenter target" : "ESXi target", status: virtualStatus },
-    { current: vmManagement.datastore, item: "Datastore", status: vcenterEnabled ? datastoreVisibleStatus(vcenterNetapp || postAttach) : "not_checked" },
-    { current: vcenterEnabled ? visibilityLabel(postChecks.vm_inventory_visible) : "Direct ESXi inventory", item: "VM inventory", status: vcenterEnabled ? visibilityStatus(postChecks.vm_inventory_visible) : "not_checked" },
-    { current: "Guarded until validation passes", item: "VM deployment", status: "not_checked" }
-  ];
-
-  async function runVmCheck() {
-    const actionId = vmAction?.action_id ?? vmFallbackActionId;
-    if (!actionId || vmDisabledReason || runState.runningActionId) return;
-    setRunState({ error: "", message: "", runningActionId: actionId });
-    try {
-      const result = await api.runWorkflowAction(actionId);
-      setRunState({
-        error: "",
-        message: vmAction ? workflowRunMessage(vmAction, result) : workflowRunResultMessage("Run VM check", result),
-        runningActionId: ""
-      });
-      await load();
-    } catch (err) {
-      setRunState({ error: errorMessage(err), message: "", runningActionId: "" });
+  async function reloadWorkspace() {
+    if (onReloadLabProfile) {
+      await onReloadLabProfile();
     }
+    await loadWorkspaceData();
   }
+
+  useEffect(() => {
+    void loadWorkspaceData();
+  }, []);
+
+  const serverModel = asString(activeProfile?.devices?.server_model).toLowerCase();
+  const serverPart: DesignPartId = serverModel === "gen10plus" || serverModel === "gen10+" ? "server-gen10plus" : "server-gen10";
+  const serverModelLabel = topologyServerModelLabel(activeProfile?.devices?.server_model);
+  const workspaceTarget: DesignPartId = vcenterEnabled ? "vcenter" : serverPart;
+  const vcenterTargetLabel = vcenterEnabled ? vcenterAddress(null, activeProfile) : displayAddress(address.esxi_management);
+  const datastoreTarget = features?.storage_location === "server_local" || features?.netapp_enabled === false
+    ? "Server local datastore"
+    : datastoreName(null);
+  const workspaceTitle = vcenterEnabled ? "vCenter VCSA workspace" : `${serverModelLabel} direct ESXi workspace`;
+  const subnetState = topologySubnetState(address.subnet, health);
+  const workspaceTone: TopologyNodeTone = subnetState.status === "matches" ? "ready" : subnetState.status === "mismatch" ? "warning" : "unknown";
 
   return (
     <OperatorPage title="Virtualization">
-      <div className="operator-surface-heading">
+      <div className="operator-surface-heading virtualization-workspace-heading">
         <p className="operator-kicker">Setup</p>
         <h1>Virtualization</h1>
-        <p>Can this kit manage VMs through the right target, datastore, and access path?</p>
+        <p>Set the VM control path once, then run read-only vCenter or ESXi checks from the device workspace.</p>
       </div>
-      <Feedback loading={loading && Boolean(activeProfile) && vcenterEnabled && !vcenterNetapp} error={error} />
-      <section className="network-access-surface virtualization-access-surface" aria-label="VM Management">
-        <Card className="network-access-card virtualization-access-card" hover={false}>
-          <CardHeader>
-            <div>
-              <p className="operator-kicker">VM management</p>
-              <h2>{vmManagement.mode}</h2>
-            </div>
-            <StatusBadge label={vmManagement.stateLabel} status={vmManagement.badgeStatus} />
-          </CardHeader>
-          <CardContent>
-            <dl className="network-access-fields virtualization-access-fields">
-              <div>
-                <dt>Mode</dt>
-                <dd>{vmManagement.mode}</dd>
-              </div>
-              <div>
-                <dt>Target</dt>
-                <dd>{vmManagement.target}</dd>
-              </div>
-              <div>
-                <dt>Datastore</dt>
-                <dd>{vmManagement.datastore}</dd>
-              </div>
-              <div>
-                <dt>Access</dt>
-                <dd>{vmManagement.access}</dd>
-              </div>
-            </dl>
-            {vmManagement.reason && (
-              <div className="network-access-reason" role="note">
-                <strong>Needs attention</strong>
-                <span>{vmManagement.reason}</span>
-              </div>
-            )}
-            {runState.message && <div className="operator-feedback network-access-feedback">{runState.message}</div>}
-            {runState.error && <div className="operator-feedback error network-access-feedback">{runState.error}</div>}
-          </CardContent>
-          <CardFooter>
-            <div className="network-access-actions virtualization-access-actions">
-              <button
-                className="operator-primary-button"
-                disabled={Boolean(vmDisabledReason) || Boolean(runState.runningActionId)}
-                onClick={() => void runVmCheck()}
-                title={vmDisabledReason || "Run VM check"}
-                type="button"
-              >
-                <RefreshCw size={16} />
-                {runState.runningActionId ? "Checking" : "Run VM check"}
-              </button>
-              <button
-                aria-expanded={detailsOpen}
-                className="secondary-button"
-                onClick={() => setDetailsOpen((current) => !current)}
-                type="button"
-              >
-                {detailsOpen ? "Hide VM details" : "Open VM details"}
-              </button>
-            </div>
-          </CardFooter>
-        </Card>
-      </section>
-      {detailsOpen && (
-        <section className="network-details virtualization-details" aria-label="VM details">
-          {(() => {
-            const sections = [
-              { id: "path" as VirtualizationDetailSectionId, label: "Path", summary: "Mode, target, datastore" },
-              { id: "checks" as VirtualizationDetailSectionId, label: "Checks", summary: "VM and datastore signals" },
-              { id: "setup" as VirtualizationDetailSectionId, label: "Setup", summary: "Saved virtualization fields" },
-              { id: "shape" as VirtualizationDetailSectionId, label: "Shape", summary: "Direct ESXi or vCenter" },
-              { id: "proof" as VirtualizationDetailSectionId, label: "Proof", summary: "Advanced evidence" }
-            ];
-            const selectedSection = sections.find((section) => section.id === activeDetailSection) ?? sections[0];
-            return (
-              <label className="network-detail-switcher virtualization-detail-switcher detail-topic-selector" aria-label="VM detail sections">
-                <span>Detail view</span>
-                <select aria-label="VM detail section" onChange={(event) => setActiveDetailSection(event.target.value as VirtualizationDetailSectionId)} value={activeDetailSection}>
-                  {sections.map((section) => <option key={section.id} value={section.id}>{section.label}</option>)}
-                </select>
-                <strong>{selectedSection.summary}</strong>
-              </label>
-            );
-          })()}
-          <div className="network-detail-panel virtualization-detail-panel" aria-label={`VM ${activeDetailSection}`}>
-            {activeDetailSection === "path" && (
-            <Card className="network-details-card" hover={false}>
-              <CardHeader>
-                <div>
-                  <p className="operator-kicker">Details</p>
-                  <h2>VM path and saved target</h2>
-                </div>
-                <StatusBadge label={vmManagement.stateLabel} status={vmManagement.badgeStatus} />
-              </CardHeader>
-              <CardContent>
-                <ConfigValueList
-                  values={[
-                    { label: "Mode", value: vmManagement.mode, source: "Saved setup" },
-                    { label: "Target", value: vmManagement.target, source: "Saved setup", status: virtualStatus },
-                    { label: "Datastore", value: vmManagement.datastore, source: "Saved setup" },
-                    { label: "Access", value: vmManagement.access },
-                    { label: "Next check", value: vmManagement.nextAction }
-                  ]}
-                />
-              </CardContent>
-            </Card>
-            )}
-            {activeDetailSection === "checks" && (
-            <Card className="network-details-card" hover={false}>
-              <CardHeader>
-                <div>
-                  <p className="operator-kicker">Saved signals</p>
-                  <h2>Virtualization checks</h2>
-                </div>
-                <span>{virtualizationDetailRows.length} tracked</span>
-              </CardHeader>
-              <CompactTable>
-                <CompactTableHeader>
-                  <CompactTableCell>Item</CompactTableCell>
-                  <CompactTableCell>Current</CompactTableCell>
-                  <CompactTableCell>Status</CompactTableCell>
-                </CompactTableHeader>
-                <tbody>
-                  {virtualizationDetailRows.map((row) => (
-                    <CompactTableRow key={row.item}>
-                      <CompactTableCell><strong>{row.item}</strong></CompactTableCell>
-                      <CompactTableCell>{row.current}</CompactTableCell>
-                      <CompactTableCell><StatusBadge label={displayStatus(row.status)} status={statusBadgeStatus(row.status)} /></CompactTableCell>
-                    </CompactTableRow>
-                  ))}
-                </tbody>
-              </CompactTable>
-            </Card>
-            )}
-            {activeDetailSection === "setup" && (
-            <section className="overview-safe-actions" aria-label="Virtualization configure">
-              <VirtualizationConfigurePanel
-                activeProfile={activeProfile}
-                address={address}
-                features={features}
-                global={global}
-                onSaved={async () => {
-                  await onReloadLabProfile?.();
-                  await load();
-                }}
-              />
-            </section>
-            )}
-            {activeDetailSection === "shape" && (
-            <VirtualizationSetupShapePanel
-              activeProfile={activeProfile}
-              currentView={currentView}
-              features={features}
-              installReadiness={installReadiness}
-              postAttach={postAttach}
-              storageLabel={storageLabel}
-              target={target}
-              vcenterEnabled={vcenterEnabled}
-              vcenterNetapp={vcenterNetapp}
-              virtualStatus={virtualStatus}
-            />
-            )}
-            {activeDetailSection === "proof" && (
-            <AdvancedDrawer title="Virtualization proof" summary={noProofText}>
-              <OperatorWorkspace currentView={currentView} rows={virtualizationRows} compact />
-              <ConfigValueList
-                values={[
-                  { label: "vCenter source", value: sourceLabel(vcenterNetapp) },
-                  { label: "Install blockers", value: String(stringArray(installReadiness?.blockers).length) },
-                  { label: "Post-attach warnings", value: String(stringArray(postAttach?.warnings).length) }
-                ]}
-              />
-            </AdvancedDrawer>
-            )}
+      <Feedback loading={loading && !workflowActions.length} error={error} />
+      <section className="virtualization-vcenter-workspace-shell" aria-label="Virtualization setup launcher">
+        <div className="virtualization-vcenter-workspace-summary" aria-label="Virtualization launcher summary">
+          <div>
+            <p className="operator-kicker">{vcenterEnabled ? "vCenter setup" : "Direct ESXi setup"}</p>
+            <h2>{workspaceTitle}</h2>
+            <span>Daily setup stays here. vCenter install, OVF deploy, datastore writes, and VM deploy stay behind guarded workflows.</span>
           </div>
-        </section>
-      )}
+          <div className="virtualization-vcenter-workspace-facts">
+            <span><strong>Control path</strong>{vcenterEnabled ? "vCenter" : "Direct ESXi"}</span>
+            <span><strong>Target</strong>{vcenterTargetLabel}</span>
+            <span><strong>Datastore</strong>{datastoreTarget}</span>
+            <span><strong>VM path</strong>{vcenterEnabled ? "vCenter inventory" : "ESXi inventory"}</span>
+          </div>
+        </div>
+        <LabDesignComposer
+          activeProfile={activeProfile}
+          address={address}
+          features={features}
+          firmwareSummaries={firmwareSummaries}
+          health={health}
+          initialSelectedDevice={workspaceTarget}
+          onReload={reloadWorkspace}
+          subnetState={subnetState}
+          workspaceNodeStatus={subnetState.status}
+          workspaceNodeTone={workspaceTone}
+          workspaceOnly
+          workflowActions={workflowActions}
+        />
+      </section>
     </OperatorPage>
   );
 }

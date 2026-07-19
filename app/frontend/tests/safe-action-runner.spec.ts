@@ -2165,7 +2165,7 @@ test("operator button matrix keeps default actions simple and safe", async ({ pa
     { label: "Network", path: "/network", primary: () => page.locator("section[aria-label='Cisco switch workspace'] > .design-device-primary-action .design-plan-action") },
     { label: "Server", path: "/server", primary: () => page.locator("section[aria-label='DL360 Gen10 workspace'] > .design-device-primary-action .design-plan-action") },
     { label: "Storage", path: "/storage", primary: () => page.locator("section[aria-label='NetApp ONTAP workspace'] > .design-device-primary-action .design-plan-action") },
-    { label: "Virtualization", path: "/virtualization", primary: () => page.getByLabel("VM Management").locator(".operator-primary-button") },
+    { label: "Virtualization", path: "/virtualization", primary: () => page.locator("section[aria-label='vCenter VCSA workspace'] > .design-device-primary-action .design-plan-action") },
     { label: "Firmware", path: "/firmware-upgrades", primary: () => page.getByRole("button", { name: "Check versions" }) },
     { label: "Software Media", path: "/media", primary: () => page.locator(".page-actions .primary") },
     { label: "Validation", path: "/validation", primary: () => page.locator(".validation-readiness-actions .operator-primary-button") },
@@ -2215,7 +2215,7 @@ test("operator primary check buttons run only expected read-only workflows", asy
       path: "/storage"
     },
     {
-      click: () => page.getByLabel("VM Management").getByRole("button", { name: "Run VM check" }).click(),
+      click: () => page.locator("section[aria-label='vCenter VCSA workspace'] > .design-device-primary-action").getByRole("button", { name: "Test vCenter VCSA" }).click(),
       expectedActionIds: ["vcenter-netapp.readiness"],
       label: "Virtualization",
       path: "/virtualization"
@@ -2299,17 +2299,6 @@ test("network default opens canonical Cisco workspace and hides retired network 
 });
 
 test("setup defaults keep detail, edit, and proof surfaces behind the secondary button", async ({ page }) => {
-  const surfaces = [
-    {
-      cardLabel: "VM Management",
-      detailLabel: "VM details",
-      hiddenCopy: [/Virtualization checks/i, /Virtualization configure/i, /Virtualization setup shape/i, /Virtualization proof/i],
-      path: "/virtualization",
-      primaryName: "Run VM check",
-      secondaryName: "Open VM details"
-    }
-  ];
-
   await page.goto("/network");
   const networkWorkspace = page.locator("section[aria-label='Cisco switch workspace']");
   await expect(networkWorkspace).toBeVisible();
@@ -2341,20 +2330,15 @@ test("setup defaults keep detail, edit, and proof surfaces behind the secondary 
   await expect(page.getByLabel("Storage path details")).toHaveCount(0);
   expect(await visibleMainText(page), "/storage keeps old Storage panels out of the default view").not.toMatch(/Storage readiness|Storage proof|Advanced storage actions|Apply iSCSI|Run storage check/i);
 
-  for (const surface of surfaces) {
-    await page.goto(surface.path);
-    const mainText = await visibleMainText(page);
-    const card = page.getByLabel(surface.cardLabel);
-    await expect(card, `${surface.cardLabel} card is the default operator surface`).toBeVisible();
-    await expect(card.locator(".operator-primary-button"), `${surface.cardLabel} exposes one primary action`).toHaveCount(1);
-    await expect(card.getByRole("button", { name: surface.primaryName })).toBeVisible();
-    await expect(card.getByRole("button", { name: surface.secondaryName })).toBeVisible();
-    await expect(card.getByRole("button", { name: "View details" })).toHaveCount(0);
-    await expect(page.getByLabel(surface.detailLabel), `${surface.detailLabel} stays closed by default`).toHaveCount(0);
-    for (const hiddenCopy of surface.hiddenCopy) {
-      expect(mainText, `${surface.path} keeps ${hiddenCopy} out of the default view`).not.toMatch(hiddenCopy);
-    }
-  }
+  await page.goto("/virtualization");
+  const virtualizationWorkspace = page.locator("section[aria-label='vCenter VCSA workspace']");
+  await expect(virtualizationWorkspace).toBeVisible();
+  await expect(virtualizationWorkspace.locator(":scope > .design-device-primary-action .design-plan-action"), "Virtualization workspace exposes one primary action").toHaveCount(1);
+  await expect(virtualizationWorkspace.getByRole("button", { name: "Test vCenter VCSA" })).toBeVisible();
+  await expect(virtualizationWorkspace.getByLabel("vCenter workspace virtualization controls"), "Virtualization proof stays behind Evidence and diagnostics").not.toBeVisible();
+  await expect(page.getByLabel("VM Management")).toHaveCount(0);
+  await expect(page.getByLabel("VM details")).toHaveCount(0);
+  expect(await visibleMainText(page), "/virtualization keeps old VM panels out of the default view").not.toMatch(/Virtualization checks|Virtualization configure|Virtualization setup shape|Virtualization proof|Run VM check/i);
 });
 
 test("network no-kit state does not show stale loading feedback", async ({ page }) => {
@@ -2562,25 +2546,32 @@ test("server surface has no horizontal overflow on mobile", async ({ page }) => 
   expect(overflow).toBeLessThanOrEqual(1);
 });
 
-test("virtualization default shows one VM management card and hides technical detail", async ({ page }) => {
+test("virtualization default opens canonical vCenter workspace and hides old VM panels", async ({ page }) => {
   await page.goto("/virtualization");
 
-  const vm = page.getByLabel("VM Management");
-  await expect(vm.getByRole("heading", { name: "vCenter managed" })).toBeVisible();
-  await expect(vm.locator("dt")).toHaveText(["Mode", "Target", "Datastore", "Access"]);
-  await expect(vm.locator(".ui-card-header")).toContainText(/Blocked|Ready|Not checked|Needs attention/);
-  await expect(vm.getByRole("button", { name: "Run VM check" })).toBeVisible();
-  await expect(vm.getByRole("button", { name: "Open VM details" })).toBeVisible();
-  await expect(vm.getByRole("button", { name: "View details" })).toHaveCount(0);
-  await expect(vm.locator(".operator-primary-button")).toHaveCount(1);
-
+  const summary = page.getByLabel("Virtualization launcher summary");
+  const workspace = page.locator("section[aria-label='vCenter VCSA workspace']");
+  await expect(summary).toContainText("Control path");
+  await expect(summary).toContainText("vCenter");
+  await expect(summary).toContainText("Target");
+  await expect(summary).toContainText("Datastore");
+  await expect(summary).toContainText("VM path");
+  await expect(workspace).toBeVisible();
+  await expect(workspace.getByRole("heading", { name: "vCenter VCSA", exact: true })).toBeVisible();
+  await expect(workspace.getByLabel("vCenter VCSA main setup fields")).toContainText("Management IP");
+  await expect(workspace.getByLabel("vCenter VCSA main setup fields")).toContainText("Datastore");
+  await expect(workspace.getByLabel("vCenter VCSA credential setup")).toContainText("Reference only");
+  await expect(workspace.locator(":scope > .design-device-primary-action .design-plan-action")).toHaveCount(1);
+  await expect(workspace.getByRole("button", { name: "Test vCenter VCSA" })).toBeVisible();
+  await expect(workspace.getByLabel("vCenter workspace virtualization controls")).not.toBeVisible();
+  await expect(workspace.getByRole("button", { name: /deploy|attach|create|delete|migrate|write/i })).toHaveCount(0);
+  await expect(page.getByLabel("VM Management")).toHaveCount(0);
   await expect(page.locator("section[aria-label='VM details']")).toHaveCount(0);
   await expect(page.getByRole("textbox", { name: "Change this page" })).toHaveCount(0);
   await expect(page.getByText("Virtualization setup shape")).toHaveCount(0);
   await expect(page.getByText("Virtualization readiness at a glance")).toHaveCount(0);
   await expect(page.getByText("vCenter source")).toHaveCount(0);
-  await expect(vm.getByRole("button", { name: /deploy|attach|create|delete|migrate|write/i })).toHaveCount(0);
-  const text = await vm.textContent();
+  const text = await visibleMainText(page);
   expect(text ?? "").not.toMatch(/\bprovider\b/i);
   expect(text ?? "").not.toMatch(/\bruntime\b/i);
   expect(text ?? "").not.toMatch(/\bpayload\b/i);
@@ -2593,71 +2584,30 @@ test("virtualization no-kit state does not show stale loading feedback", async (
   labProfileScenario = "none";
   await page.goto("/virtualization");
 
-  await expect(page.getByLabel("VM Management")).toBeVisible();
+  await expect(page.getByLabel("Virtualization setup launcher")).toBeVisible();
+  await expect(page.locator("section[aria-label='vCenter VCSA workspace']")).toBeVisible();
   await expect(page.locator(".operator-feedback", { hasText: "Loading" })).toHaveCount(0);
 });
 
-test("virtualization details reveal saved checks and keep proof advanced", async ({ page }) => {
+test("virtualization vCenter workspace reveals migrated checks and guarded boundary", async ({ page }) => {
   await page.goto("/virtualization");
-  await page.getByLabel("VM Management").getByRole("button", { name: "Open VM details" }).click();
 
-  const details = page.locator("section[aria-label='VM details']");
-  await expect(details).toBeVisible();
-  const detailSections = details.getByLabel("VM detail sections");
-  await expect(detailSections).toContainText("Path");
-  await expect(detailSections).toContainText("Checks");
-  await expect(detailSections).toContainText("Setup");
-  await expect(detailSections).toContainText("Shape");
-  await expect(detailSections).toContainText("Proof");
-  await expect(detailSections.getByLabel("VM detail section", { exact: true })).toHaveValue("path");
-  await expect(detailSections.getByRole("button")).toHaveCount(0);
-  await expect(details.locator(".virtualization-detail-panel")).toHaveCount(1);
-  await expect(details).toContainText("Target");
-  await expect(details).toContainText("Next check");
-  await expect(details.getByLabel("Virtualization configure")).toHaveCount(0);
-  await detailSections.getByLabel("VM detail section", { exact: true }).selectOption("checks");
-  await expect(details).toContainText("vCenter target");
-  await expect(details).toContainText("Datastore");
-  await expect(details).toContainText("VM inventory");
-  await detailSections.getByLabel("VM detail section", { exact: true }).selectOption("setup");
-  const virtualizationConfigure = details.getByLabel("Virtualization configure");
-  await expect(virtualizationConfigure).toBeVisible();
-  await expect(virtualizationConfigure).toContainText("Virtualization setup");
-  const virtualizationSummary = virtualizationConfigure.getByLabel("Virtualization setup summary");
-  await expect(virtualizationSummary).toBeVisible();
-  await expect(virtualizationSummary).toContainText("vCenter target");
-  await expect(virtualizationSummary).toContainText("Datastore target");
-  await expect(virtualizationSummary).toContainText("vCenter scope");
-  await expect(virtualizationConfigure.getByLabel("vCenter target")).toBeHidden();
-  await expect(virtualizationConfigure.getByLabel("Datastore target")).toBeHidden();
-  await expect(virtualizationConfigure.getByLabel("ESXi attach target")).toBeHidden();
-  await expect(virtualizationConfigure.getByLabel("Subnet")).toBeHidden();
-  await expect(virtualizationConfigure.getByLabel("Gateway")).toBeHidden();
-  await expect(virtualizationConfigure.getByLabel("DNS servers")).toBeHidden();
-  await expect(virtualizationConfigure.getByLabel("Virtualization feature toggles")).toBeHidden();
-  await expect(virtualizationConfigure.getByRole("button", { name: "Save virtualization setup" })).toBeHidden();
-  await expect(virtualizationConfigure.getByText("Edit virtualization values")).toBeVisible();
-  await virtualizationConfigure.getByText("Edit virtualization values").click();
-  await expect(virtualizationConfigure.getByLabel("vCenter target")).toBeVisible();
-  await expect(virtualizationConfigure.getByLabel("Datastore target")).toBeVisible();
-  await expect(virtualizationConfigure.getByLabel("Virtualization feature toggles")).toBeVisible();
-  await expect(virtualizationConfigure.getByRole("button", { name: "Save virtualization setup" })).toHaveCount(1);
-  await expect(virtualizationConfigure.getByText("Save As Lab Setup")).toHaveCount(0);
-  await expect(virtualizationConfigure.getByText("More virtualization values")).toBeVisible();
-  await virtualizationConfigure.getByText("More virtualization values").click();
-  await expect(virtualizationConfigure.getByLabel("ESXi attach target")).toBeVisible();
-  await expect(virtualizationConfigure.getByLabel("Subnet")).toBeVisible();
-  await expect(virtualizationConfigure.getByLabel("Gateway")).toBeVisible();
-  await expect(virtualizationConfigure.getByLabel("DNS servers")).toBeVisible();
-  await expect(virtualizationConfigure.getByLabel("NTP servers")).toBeVisible();
-  await detailSections.getByLabel("VM detail section", { exact: true }).selectOption("shape");
-  await expect(details).toContainText("Virtualization setup shape");
-  await expect(page.getByText("vCenter source")).toBeHidden();
+  const workspace = page.locator("section[aria-label='vCenter VCSA workspace']");
+  await expect(workspace.getByLabel("vCenter VCSA main setup fields")).toContainText("Management IP");
+  await expect(workspace.getByLabel("vCenter VCSA main setup fields")).toContainText("Datastore");
+  await expect(workspace.getByLabel("vCenter VCSA credential setup")).toContainText("VCENTER_PASSWORD");
+  await expect(workspace.getByLabel("vCenter VCSA edit settings")).toContainText("More settings");
+  await expect(workspace.getByLabel("vCenter workspace virtualization controls")).not.toBeVisible();
 
-  await detailSections.getByLabel("VM detail section", { exact: true }).selectOption("proof");
-  const advanced = page.locator("details.advanced-drawer").filter({ hasText: "Virtualization proof" });
-  await advanced.locator(":scope > summary").click();
-  await expect(page.getByText("vCenter source")).toBeVisible();
+  const advanced = await openWorkspaceAdvanced(page, "vCenter VCSA");
+  const controls = advanced.getByLabel("vCenter workspace virtualization controls");
+  await expect(controls).toBeVisible();
+  await expect(controls).toContainText("vCenter and VM checks");
+  await expect(controls).toContainText("vCenter Live Check");
+  await expect(controls).toContainText("vCenter Install Readiness");
+  await expect(controls).toContainText("Validate Datastore");
+  await expect(controls).toContainText("Validate VM Inventory");
+  await expect(controls.getByLabel("vCenter guarded write boundary")).toContainText("stay off this map");
 });
 
 test("virtualization check runs through the read-only action endpoint", async ({ page }) => {
@@ -2665,22 +2615,25 @@ test("virtualization check runs through the read-only action endpoint", async ({
 
   const runResponse = page.waitForResponse((response) =>
     response.url().includes("/api/v1/workflows/actions/vcenter-netapp.readiness/run") &&
-    response.request().method() === "POST"
+      response.request().method() === "POST"
   );
-  await page.getByLabel("VM Management").getByRole("button", { name: "Run VM check" }).click();
+  await page.locator("section[aria-label='vCenter VCSA workspace'] > .design-device-primary-action").getByRole("button", { name: "Test vCenter VCSA" }).click();
   await expect((await runResponse).ok()).toBeTruthy();
-  await expect(page.getByLabel("VM Management")).toContainText("vCenter Live Check:");
+  await expect(page.locator("section[aria-label='vCenter VCSA workspace']")).toContainText("vCenter Live Check:");
 });
 
 test("single-server virtualization defaults to direct ESXi without vCenter blocker", async ({ page }) => {
   labProfileScenario = "single";
   await page.goto("/virtualization");
 
-  const vm = page.getByLabel("VM Management");
-  await expect(vm).toContainText("Direct ESXi");
-  await expect(vm).toContainText("Server local datastore");
-  await expect(vm).not.toContainText("vCenter");
-  await expect(vm).not.toContainText(/blocker|required/i);
+  const summary = page.getByLabel("Virtualization launcher summary");
+  const serverWorkspace = page.locator("section[aria-label='DL360 Gen10 workspace']");
+  await expect(summary).toContainText("Direct ESXi");
+  await expect(summary).toContainText("Server local datastore");
+  await expect(serverWorkspace).toBeVisible();
+  await expect(page.locator("section[aria-label='vCenter VCSA workspace']")).toHaveCount(0);
+  await expect(page.getByLabel("vCenter VCSA credential setup")).toHaveCount(0);
+  await expect(summary).not.toContainText(/blocker|required/i);
 });
 
 test("virtualization blocker copy hides internal mode vocabulary", async ({ page }) => {
@@ -2693,9 +2646,10 @@ test("virtualization blocker copy hides internal mode vocabulary", async ({ page
   }));
 
   await page.goto("/virtualization");
-  const vm = page.getByLabel("VM Management");
-  await expect(vm).toContainText("Needs attention");
-  const text = await vm.textContent();
+  const workspace = page.locator("section[aria-label='vCenter VCSA workspace']");
+  await expect(workspace).toBeVisible();
+  await expect(workspace.getByLabel("vCenter workspace virtualization controls")).not.toBeVisible();
+  const text = await visibleMainText(page);
   expect(text ?? "").not.toMatch(/PROVIDER[_ ]MODE/i);
   expect(text ?? "").not.toMatch(/\bprovider\b/i);
   expect(text ?? "").not.toMatch(/\bruntime\b/i);

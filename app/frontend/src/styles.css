@@ -15234,12 +15234,112 @@ button.design-ilo-port:hover {
   width: 34px;
 }
 
+.virtualization-workspace-heading {
+  margin-bottom: 16px;
+}
+
+.virtualization-vcenter-workspace-shell {
+  display: grid;
+  gap: 16px;
+  margin: 0 auto 28px;
+  max-width: 1180px;
+  padding: 0 32px;
+}
+
+.virtualization-vcenter-workspace-summary {
+  align-items: center;
+  background: #ffffff;
+  border: 1px solid #dbe5ef;
+  border-radius: 14px;
+  box-shadow: 0 12px 30px rgba(15, 23, 42, .06);
+  display: grid;
+  gap: 18px;
+  grid-template-columns: minmax(0, 1fr) minmax(360px, .62fr);
+  padding: 16px 18px;
+}
+
+.virtualization-vcenter-workspace-summary h2,
+.virtualization-vcenter-workspace-summary p,
+.virtualization-vcenter-workspace-summary span {
+  margin: 0;
+}
+
+.virtualization-vcenter-workspace-summary h2 {
+  color: #102238;
+  font-size: clamp(22px, 2vw, 30px);
+  letter-spacing: 0;
+}
+
+.virtualization-vcenter-workspace-summary span {
+  color: #475569;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.virtualization-vcenter-workspace-facts {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.virtualization-vcenter-workspace-facts span {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  color: #334155;
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  padding: 10px 12px;
+}
+
+.virtualization-vcenter-workspace-facts strong {
+  color: #64748b;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.virtualization-vcenter-workspace-shell .lab-design-composer,
+.virtualization-vcenter-workspace-shell .design-visual-workbench {
+  display: block;
+  width: 100%;
+}
+
+.virtualization-vcenter-workspace-shell .design-device-workspace {
+  border-radius: 16px;
+  box-shadow: 0 16px 36px rgba(15, 23, 42, .08);
+  min-height: 0;
+}
+
+.virtualization-vcenter-workspace-shell .design-device-identity {
+  border-radius: 14px;
+}
+
+.virtualization-vcenter-workspace-shell .design-device-identity-main {
+  grid-template-columns: 58px minmax(0, 1fr);
+}
+
+.virtualization-vcenter-workspace-shell .design-device-identity-main .topology-industry-symbol {
+  height: 56px;
+  width: 56px;
+}
+
+.virtualization-vcenter-workspace-shell .design-device-identity-main .topology-industry-symbol svg {
+  height: 34px;
+  width: 34px;
+}
+
 @media (max-width: 920px) {
   .network-cisco-workspace-summary,
   .server-compute-workspace-summary,
   .storage-netapp-workspace-summary,
+  .virtualization-vcenter-workspace-summary,
   .server-compute-workspace-facts,
   .storage-netapp-workspace-facts,
+  .virtualization-vcenter-workspace-facts,
   .network-cisco-workspace-facts {
     grid-template-columns: 1fr;
   }
@@ -15248,13 +15348,15 @@ button.design-ilo-port:hover {
 @media (max-width: 640px) {
   .network-cisco-workspace-shell,
   .server-compute-workspace-shell,
-  .storage-netapp-workspace-shell {
+  .storage-netapp-workspace-shell,
+  .virtualization-vcenter-workspace-shell {
     max-width: calc(100vw - 36px);
     padding: 0 16px;
     width: calc(100vw - 36px);
   }
 
-  .storage-workspace-heading {
+  .storage-workspace-heading,
+  .virtualization-workspace-heading {
     max-width: calc(100vw - 36px);
     width: calc(100vw - 36px);
   }
