@@ -8437,46 +8437,6 @@ function LabDesignComposer({
               </div>
             )}
 
-            {workspaceOnly && !drawerWorkspace && (
-              <section className="design-device-live-editor" aria-label={`${selectedPart.label} visual setup editor`}>
-                <div className="design-device-live-editor-head">
-                  <div>
-                    <p className="operator-kicker">Visual setup</p>
-                    <h4>{usesElementAssignmentPreview(selectedPart.id) ? "Click the physical part to plan it" : "Device faceplate"}</h4>
-                  </div>
-                  <span>Plan only. Hardware untouched.</span>
-                </div>
-                <div className="design-device-hero" aria-label={`${selectedPart.label} interactive faceplate`}>
-                  <DesignFaceplateVisual
-                    interactive
-                    onElementClick={(elementLabel) => {
-                      setSelectedFaceplateElement(elementLabel);
-                      setSelectedFaceplateTouched(true);
-                      setDropMessage(`${selectedPart.label} ${elementLabel} selected. Edit the saved plan here; hardware untouched.`);
-                    }}
-                    partId={selectedPart.id}
-                    selectedElement={selectedFaceplateDisplayElement}
-                    settings={selectedSettings}
-                    storageProtocol={storageProtocol}
-                  />
-                </div>
-                {selectedElementInspector && (!usesElementAssignmentPreview(selectedPart.id) || drawerWorkspace) && (
-                  <p className="design-selected-element-note">
-                    <strong>{selectedElementInspector.label}</strong>
-                    <span>{selectedElementInspector.summary}</span>
-                  </p>
-                )}
-                {selectedElementInspector && !drawerWorkspace && (
-                  <ElementAssignmentPreview
-                    elementLabel={selectedElementInspector.label}
-                    elementSummary={selectedElementInspector.summary}
-                    partId={selectedPart.id}
-                    settings={selectedSettings}
-                  />
-                )}
-              </section>
-            )}
-
             {!workspaceOnly && selectedOverviewDetails.length > 0 && (
               <div className="design-workspace-map-details" aria-label={`${selectedPart.label} map details`}>
                 {selectedOverviewDetails.map((detail) => <span key={detail}>{detail}</span>)}
@@ -8669,6 +8629,46 @@ function LabDesignComposer({
                   <span>{profileCommitStatus.error || profileCommitStatus.message || "No hardware touched by setup saves."}</span>
                 </div>
               </section>
+            )}
+
+            {workspaceOnly && !drawerWorkspace && (
+              <details className="design-device-live-editor design-device-live-editor-disclosure" aria-label={`${selectedPart.label} visual setup editor`}>
+                <summary className="design-device-live-editor-head">
+                  <div>
+                    <p className="operator-kicker">Physical layout</p>
+                    <h4>{usesElementAssignmentPreview(selectedPart.id) ? "Plan ports and bays" : "Inspect faceplate"}</h4>
+                  </div>
+                  <span>Plan only. Hardware untouched.</span>
+                </summary>
+                <div className="design-device-hero" aria-label={`${selectedPart.label} interactive faceplate`}>
+                  <DesignFaceplateVisual
+                    interactive
+                    onElementClick={(elementLabel) => {
+                      setSelectedFaceplateElement(elementLabel);
+                      setSelectedFaceplateTouched(true);
+                      setDropMessage(`${selectedPart.label} ${elementLabel} selected. Edit the saved plan here; hardware untouched.`);
+                    }}
+                    partId={selectedPart.id}
+                    selectedElement={selectedFaceplateDisplayElement}
+                    settings={selectedSettings}
+                    storageProtocol={storageProtocol}
+                  />
+                </div>
+                {selectedElementInspector && (!usesElementAssignmentPreview(selectedPart.id) || drawerWorkspace) && (
+                  <p className="design-selected-element-note">
+                    <strong>{selectedElementInspector.label}</strong>
+                    <span>{selectedElementInspector.summary}</span>
+                  </p>
+                )}
+                {selectedElementInspector && !drawerWorkspace && (
+                  <ElementAssignmentPreview
+                    elementLabel={selectedElementInspector.label}
+                    elementSummary={selectedElementInspector.summary}
+                    partId={selectedPart.id}
+                    settings={selectedSettings}
+                  />
+                )}
+              </details>
             )}
 
             {workspaceOnly && !drawerWorkspace && selectedCredentialSpec && (

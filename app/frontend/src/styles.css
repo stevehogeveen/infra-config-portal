@@ -10361,6 +10361,19 @@ th.ui-compact-table-cell {
   justify-content: space-between;
 }
 
+.design-device-live-editor-disclosure > summary {
+  cursor: pointer;
+  list-style: none;
+}
+
+.design-device-live-editor-disclosure > summary::-webkit-details-marker {
+  display: none;
+}
+
+.design-device-live-editor-disclosure:not([open]) {
+  background: #ffffff;
+}
+
 .design-device-live-editor-head h4,
 .design-device-live-editor-head p {
   margin: 0;

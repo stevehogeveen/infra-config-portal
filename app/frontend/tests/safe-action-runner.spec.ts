@@ -1522,8 +1522,18 @@ test("setup faceplate element clicks reveal concise details only after intent", 
   for (const item of cases) {
     await page.goto(item.path);
     const workspace = page.locator(`section[aria-label='${item.workspace} workspace']`);
-    await expect(workspace.getByLabel(`${item.workspace} visual setup editor`), `${item.workspace} setup page keeps the visual editor`).toBeVisible();
-    await expect(workspace.getByLabel(`${item.workspace} interactive faceplate`), `${item.workspace} setup page shows the faceplate`).toBeVisible();
+    const essentials = workspace.getByLabel(`${item.workspace} essentials`);
+    const visualEditor = workspace.getByLabel(`${item.workspace} visual setup editor`);
+    await expect(essentials, `${item.workspace} setup fields are visible before physical planning`).toBeVisible();
+    await expect(visualEditor, `${item.workspace} setup page keeps the visual editor behind intent`).toBeVisible();
+    await expect(visualEditor, `${item.workspace} uses calmer physical-layout wording`).toContainText(/Physical layout|Plan ports and bays|Inspect faceplate/);
+    await expect(visualEditor, `${item.workspace} avoids old imperative planning copy`).not.toContainText("Click the physical part to plan it");
+    await expect(workspace.getByLabel(`${item.workspace} interactive faceplate`), `${item.workspace} faceplate starts collapsed`).not.toBeVisible();
+    const essentialsBox = await essentials.boundingBox();
+    const visualBox = await visualEditor.boundingBox();
+    expect((essentialsBox?.y ?? 0), `${item.workspace} shows input fields before physical layout`).toBeLessThan(visualBox?.y ?? Number.MAX_SAFE_INTEGER);
+    await visualEditor.locator(":scope > summary").click();
+    await expect(workspace.getByLabel(`${item.workspace} interactive faceplate`), `${item.workspace} setup page shows the faceplate after intent`).toBeVisible();
     await workspace.getByRole("button", { name: item.click }).first().click();
     if (item.assignmentLabel) {
       await expect(workspace.getByLabel(item.assignmentLabel), `${item.workspace} shows concise element planning after intent`).toContainText(item.note);
