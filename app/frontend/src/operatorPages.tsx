@@ -8672,8 +8672,8 @@ function LabDesignComposer({
             )}
 
             {workspaceOnly && !drawerWorkspace && selectedCredentialSpec && (
-              <section className="design-device-credential-card" aria-label={`${selectedPart.label} credential setup`}>
-                <div className="design-device-credential-head">
+              <details className="design-device-credential-card design-device-credential-details" aria-label={`${selectedPart.label} credential setup`}>
+                <summary className="design-device-credential-head">
                   <div>
                     <p className="operator-kicker">Device sign-in</p>
                     <h4>{selectedCredentialSpec.title}</h4>
@@ -8683,7 +8683,7 @@ function LabDesignComposer({
                     label="Reference only"
                     status="plan-only"
                   />
-                </div>
+                </summary>
                 <div className="design-device-credential-grid" aria-label={`${selectedPart.label} credential references`}>
                   {selectedCredentialSpec.rows.map((row) => (
                     <div className="design-device-credential-reference" key={`${row.label}-${row.value}`}>
@@ -8696,7 +8696,7 @@ function LabDesignComposer({
                 <p className="design-device-credential-note">
                   {selectedCredentialSpec.note}
                 </p>
-              </section>
+              </details>
             )}
 
             {workspaceOnly && !drawerWorkspace && (selectedQuickEditFields.length > 0 || selectedAdvancedEditSections.length > 0) && (

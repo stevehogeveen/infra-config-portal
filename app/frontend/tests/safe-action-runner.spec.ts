@@ -270,6 +270,26 @@ async function openWorkspaceEditGroup(page: Page, workspaceName: string, groupNa
   return panel;
 }
 
+async function openCredentialReferences(page: Page, workspaceName: string, expectedReferences: string[]) {
+  const workspace = page.locator(`section[aria-label='${workspaceName} workspace']`);
+  const credentialSetup = workspace.getByLabel(`${workspaceName} credential setup`);
+  await expect(credentialSetup).toBeVisible();
+  await expect(credentialSetup).toContainText("Reference only");
+  await expect.poll(
+    () => credentialSetup.evaluate((node) => (node as HTMLDetailsElement).open),
+    { message: `${workspaceName} credential references start collapsed` }
+  ).toBe(false);
+
+  const references = workspace.getByLabel(`${workspaceName} credential references`);
+  await expect(references).not.toBeVisible();
+  await credentialSetup.locator(":scope > summary").click();
+  await expect(references).toBeVisible();
+  for (const reference of expectedReferences) {
+    await expect(references).toContainText(reference);
+  }
+  return references;
+}
+
 async function visibleMainText(page: Page) {
   return page.locator("main.content").evaluate((root) => {
     const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
@@ -2254,8 +2274,7 @@ test("network Cisco workspace reveals migrated settings and nested read-only pro
   await expect(workspace).toBeVisible();
   await expect(workspace.getByLabel("Cisco switch main setup fields")).toContainText("Management IP");
   await expect(workspace.getByLabel("Cisco switch main setup fields")).toContainText("Storage VLAN");
-  await expect(workspace.getByLabel("Cisco switch credential setup")).toContainText("Cisco switch sign-in");
-  await expect(workspace.getByLabel("Cisco switch credential setup")).toContainText("CISCO_TEST_PASSWORD");
+  await openCredentialReferences(page, "Cisco switch", ["CISCO_TEST_PASSWORD"]);
   await expect(workspace.getByLabel("Cisco switch edit settings")).toContainText("More settings");
   await expect(workspace.getByLabel("Cisco switch edit settings")).toContainText("Profile only");
   await expect.poll(
@@ -2369,9 +2388,7 @@ test("server workspace reveals migrated setup, storage path, service pack, and R
   const workspace = page.locator("section[aria-label='DL360 Gen10 workspace']");
   await expect(workspace.getByLabel("DL360 Gen10 main setup fields")).toContainText("iLO IP");
   await expect(workspace.getByLabel("DL360 Gen10 main setup fields")).toContainText("ESXi IP");
-  await expect(workspace.getByLabel("DL360 Gen10 credential setup")).toContainText("Server access sign-in");
-  await expect(workspace.getByLabel("DL360 Gen10 credential setup")).toContainText("ILO_TEST_PASSWORD");
-  await expect(workspace.getByLabel("DL360 Gen10 credential setup")).toContainText("ESXI_TEST_PASSWORD");
+  await openCredentialReferences(page, "DL360 Gen10", ["ILO_TEST_PASSWORD", "ESXI_TEST_PASSWORD"]);
   await expect(workspace.getByLabel("DL360 Gen10 edit settings")).toContainText("More settings");
   await expect(workspace.getByLabel("DL360 Gen10 edit settings")).toContainText("Profile only");
   await expect.poll(
@@ -2502,7 +2519,7 @@ test("virtualization vCenter workspace reveals migrated checks and guarded bound
   const workspace = page.locator("section[aria-label='vCenter VCSA workspace']");
   await expect(workspace.getByLabel("vCenter VCSA main setup fields")).toContainText("Management IP");
   await expect(workspace.getByLabel("vCenter VCSA main setup fields")).toContainText("Datastore");
-  await expect(workspace.getByLabel("vCenter VCSA credential setup")).toContainText("VCENTER_PASSWORD");
+  await openCredentialReferences(page, "vCenter VCSA", ["VCENTER_PASSWORD"]);
   await expect(workspace.getByLabel("vCenter VCSA edit settings")).toContainText("More settings");
   await expect(workspace.getByLabel("vCenter VCSA edit settings")).toContainText("Profile only");
   await expect.poll(

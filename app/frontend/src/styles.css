@@ -10446,9 +10446,41 @@ th.ui-compact-table-cell {
 
 .design-device-credential-head {
   align-items: start;
+  cursor: pointer;
   display: flex;
   gap: 12px;
   justify-content: space-between;
+}
+
+.design-device-credential-head::-webkit-details-marker {
+  display: none;
+}
+
+.design-device-credential-head::after {
+  align-items: center;
+  background: #fff8e7;
+  border: 1px solid #f3dca5;
+  border-radius: 999px;
+  color: #a16207;
+  content: "Show";
+  display: inline-flex;
+  flex: 0 0 auto;
+  font-size: 11px;
+  font-weight: 900;
+  height: 26px;
+  justify-content: center;
+  letter-spacing: .08em;
+  margin-top: 2px;
+  padding: 0 10px;
+  text-transform: uppercase;
+}
+
+.design-device-credential-details[open] > .design-device-credential-head::after {
+  content: "Hide";
+}
+
+.design-device-credential-details:not([open]) {
+  padding-bottom: 14px;
 }
 
 .design-device-credential-head h4 {
