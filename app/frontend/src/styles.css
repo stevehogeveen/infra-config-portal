@@ -13364,6 +13364,70 @@ button.design-ilo-port:hover {
   grid-template-columns: minmax(150px, auto) minmax(0, 1fr);
 }
 
+.topology-workspace-drawer .design-device-drawer-summary {
+  background: #ffffff;
+  border: 1px solid #dbe4ee;
+  border-radius: 12px;
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+}
+
+.topology-workspace-drawer .design-device-drawer-summary h4 {
+  color: #0f172a;
+  font-size: 15px;
+  font-weight: 900;
+  margin: 0;
+}
+
+.topology-workspace-drawer .design-device-drawer-summary span {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.topology-workspace-drawer .design-device-drawer-facts {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.topology-workspace-drawer .design-device-drawer-facts div {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding: 9px 10px;
+}
+
+.topology-workspace-drawer .design-device-drawer-facts strong {
+  color: #0f172a;
+  font-size: 13px;
+  font-weight: 900;
+  overflow-wrap: anywhere;
+}
+
+.topology-workspace-drawer .design-device-drawer-facts small {
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.topology-workspace-drawer .design-device-drawer-actions {
+  align-items: center;
+  border-top: 1px solid #edf2f7;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding-top: 10px;
+}
+
+.topology-workspace-drawer .is-drawer-workspace .design-selected-element-note {
+  margin: 0;
+}
+
 .topology-workspace-drawer .design-device-essentials {
   border-radius: 10px;
   box-shadow: none;
@@ -19856,6 +19920,11 @@ button.design-ilo-port:hover {
     margin: -14px -14px 14px;
     padding: 12px 14px;
     top: -14px;
+  }
+
+  .topology-workspace-drawer .design-device-primary-action,
+  .topology-workspace-drawer .design-device-drawer-facts {
+    grid-template-columns: 1fr;
   }
 
   .design-device-identity {

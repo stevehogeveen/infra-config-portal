@@ -6244,6 +6244,7 @@ function LabTopologyMap({
               initialSelectedDevice={workspaceTarget}
               onReload={onReload}
               subnetState={subnetState}
+              workspaceMode="drawer"
               workspaceNodeStatus={selectedTopologyNode?.status}
               workspaceNodeTone={selectedTopologyNode?.tone}
               workspaceOnly
@@ -7624,6 +7625,7 @@ function LabDesignComposer({
   initialSelectedDevice,
   onReload,
   subnetState,
+  workspaceMode = "setup",
   workspaceNodeStatus,
   workspaceNodeTone,
   workspaceOnly = false,
@@ -7637,6 +7639,7 @@ function LabDesignComposer({
   initialSelectedDevice?: DesignPartId;
   onReload: () => Promise<void> | void;
   subnetState: TopologySubnetState;
+  workspaceMode?: "drawer" | "setup";
   workspaceNodeStatus?: string;
   workspaceNodeTone?: TopologyNodeTone;
   workspaceOnly?: boolean;
@@ -7695,6 +7698,7 @@ function LabDesignComposer({
   const [selectedFaceplateElement, setSelectedFaceplateElement] = useState(() =>
     topologyDefaultFaceplateElement(initialSelectedDevice ?? "switch")
   );
+  const [selectedFaceplateTouched, setSelectedFaceplateTouched] = useState(false);
   const [selectedEditGroupId, setSelectedEditGroupId] = useState("");
   const [selectedLane, setSelectedLane] = useState<DesignLaneId>("management");
   const [selectedConnection, setSelectedConnection] = useState<DesignConnectionId>("switch-server");
@@ -7728,7 +7732,8 @@ function LabDesignComposer({
     ? selectedSettingFields.filter((field) => field.key !== "protocol")
     : selectedSettingFields;
   const selectedPersistenceRows = selectedPart ? topologyDevicePersistenceRows(selectedPart.id, selectedSettingFields) : [];
-  const selectedElementInspector = selectedPart && (!workspaceOnly || selectedFaceplateElement)
+  const drawerWorkspace = workspaceOnly && workspaceMode === "drawer";
+  const selectedElementInspector = selectedPart && (!drawerWorkspace || selectedFaceplateTouched)
     ? topologyFaceplateElementInspector(selectedPart.id, selectedFaceplateElement, selectedSettings, storageProtocol)
     : null;
   const scenario = topologyScenarioLabel(draftScenario);
@@ -7822,6 +7827,7 @@ function LabDesignComposer({
     ? topologyCommandOutputSummary(selectedElementRun.stdout_summary, selectedElementCommands)
     : [];
   const selectedElementProofState = topologySelectedElementProofState(selectedElementRun, selectedElementOutput);
+  const drawerSetupPath = selectedPart ? topologyDeviceSetupPath(selectedPart.id) : "/setup/defaults";
   const selectedSafeActionIds = selectedSafeActions.map((action) => action.action_id).join("|");
   const profileNeedsCommit = profileSyncDriftCount > 0 || activeProfile?.source !== "saved";
   const canCommitProfileDraft = Boolean(activeProfile) && !profileCommitStatus.running && profileNeedsCommit;
@@ -7927,6 +7933,7 @@ function LabDesignComposer({
 
   useEffect(() => {
     setSelectedFaceplateElement(topologyDefaultFaceplateElement(selectedDevice));
+    setSelectedFaceplateTouched(false);
   }, [selectedDevice, workspaceOnly]);
 
   useEffect(() => {
@@ -8141,6 +8148,20 @@ function LabDesignComposer({
     }
   }
 
+  function selectedDeviceFieldDisplayValue(field: { key: string; label: string }) {
+    if (!selectedPart) return "Not planned";
+    const profilePath = topologyCommittedProfilePath(selectedPart.id, field.key);
+    const draftValue = deviceSettings[selectedPart.id]?.[field.key] ?? "";
+    const resolvedValue = profilePath
+      ? topologyResolvedProfileOwnedSettingValue(selectedPart.id, field.key, {
+        activeProfile,
+        address: designAddress,
+        storageProtocol
+      })
+      : "";
+    return draftValue || resolvedValue || "Not planned";
+  }
+
   function renderSelectedDeviceSettingRow(field: { key: string; kind?: "textarea"; label: string }, options?: { allowProfileDraftEdit?: boolean; hideProvenance?: boolean; readOnlyDisplay?: boolean; useResolvedDraftFallback?: boolean }) {
     if (!selectedPart) return null;
     const profilePath = topologyCommittedProfilePath(selectedPart.id, field.key);
@@ -8213,7 +8234,7 @@ function LabDesignComposer({
   }
 
   return (
-    <div className={`lab-design-composer ${workspaceOnly ? "is-workspace-only" : ""}`} aria-label={workspaceOnly ? "Device workspace composer" : "Design mode rack composer"}>
+    <div className={`lab-design-composer ${workspaceOnly ? "is-workspace-only" : ""} ${drawerWorkspace ? "is-drawer-workspace" : ""}`} aria-label={workspaceOnly ? "Device workspace composer" : "Design mode rack composer"}>
       {!workspaceOnly && (
       <section className="design-scenario-strip" aria-label="Design setup scenarios">
         {topologyDesignScenarios().map((item) => (
@@ -8400,6 +8421,7 @@ function LabDesignComposer({
                   interactive
                   onElementClick={(elementLabel) => {
                     setSelectedFaceplateElement(elementLabel);
+                    setSelectedFaceplateTouched(true);
                     setDropMessage(`${selectedPart.label} ${elementLabel} selected. Inspect mapped params below; hardware untouched.`);
                   }}
                   partId={selectedPart.id}
@@ -8410,7 +8432,7 @@ function LabDesignComposer({
               </div>
             )}
 
-            {workspaceOnly && selectedElementInspector && (
+            {workspaceOnly && (
               <section className="design-device-live-editor" aria-label={`${selectedPart.label} visual setup editor`}>
                 <div className="design-device-live-editor-head">
                   <div>
@@ -8424,6 +8446,7 @@ function LabDesignComposer({
                     interactive
                     onElementClick={(elementLabel) => {
                       setSelectedFaceplateElement(elementLabel);
+                      setSelectedFaceplateTouched(true);
                       setDropMessage(`${selectedPart.label} ${elementLabel} selected. Edit the saved plan here; hardware untouched.`);
                     }}
                     partId={selectedPart.id}
@@ -8432,13 +8455,13 @@ function LabDesignComposer({
                     storageProtocol={storageProtocol}
                   />
                 </div>
-                {selectedElementInspector && !usesElementAssignmentPreview(selectedPart.id) && (
+                {selectedElementInspector && (!usesElementAssignmentPreview(selectedPart.id) || drawerWorkspace) && (
                   <p className="design-selected-element-note">
                     <strong>{selectedElementInspector.label}</strong>
                     <span>{selectedElementInspector.summary}</span>
                   </p>
                 )}
-                {selectedElementInspector && (
+                {selectedElementInspector && !drawerWorkspace && (
                   <ElementAssignmentPreview
                     elementLabel={selectedElementInspector.label}
                     elementSummary={selectedElementInspector.summary}
@@ -8580,7 +8603,36 @@ function LabDesignComposer({
                 : topologyWorkspaceNextAction(selectedSafeActions, designReadinessRows)}</span>
             </div>
 
-            {workspaceOnly && selectedEssentialFields.length > 0 && (
+            {drawerWorkspace && (
+              <section className="design-device-drawer-summary" aria-label={`${selectedPart.label} drawer summary`}>
+                <div>
+                  <p className="operator-kicker">Snapshot</p>
+                  <h4>Current plan</h4>
+                  <span>Use this drawer to recognize the device and run one read-only check. Open full setup to edit saved values.</span>
+                </div>
+                <div className="design-device-drawer-facts" aria-label={`${selectedPart.label} drawer facts`}>
+                  {selectedEssentialFields.slice(0, 4).map((field) => (
+                    <div key={field.key}>
+                      <span>{field.label}</span>
+                      <strong>{selectedDeviceFieldDisplayValue(field)}</strong>
+                    </div>
+                  ))}
+                  {selectedCredentialSpec && (
+                    <div>
+                      <span>Sign-in</span>
+                      <strong>Reference only</strong>
+                      <small>Credential paths stay on the setup page.</small>
+                    </div>
+                  )}
+                </div>
+                <div className="design-device-drawer-actions">
+                  <Link className="design-plan-secondary" to={drawerSetupPath}>Open full setup</Link>
+                  <span>Setup edits save the lab profile only; hardware stays untouched.</span>
+                </div>
+              </section>
+            )}
+
+            {workspaceOnly && !drawerWorkspace && selectedEssentialFields.length > 0 && (
               <section className="design-device-essentials design-device-core-settings" aria-label={`${selectedPart.label} essentials`}>
                 <div>
                   <p className="operator-kicker">Setup</p>
@@ -8608,7 +8660,7 @@ function LabDesignComposer({
               </section>
             )}
 
-            {workspaceOnly && selectedCredentialSpec && (
+            {workspaceOnly && !drawerWorkspace && selectedCredentialSpec && (
               <section className="design-device-credential-card" aria-label={`${selectedPart.label} credential setup`}>
                 <div className="design-device-credential-head">
                   <div>
@@ -8636,7 +8688,7 @@ function LabDesignComposer({
               </section>
             )}
 
-            {workspaceOnly && (selectedQuickEditFields.length > 0 || selectedAdvancedEditSections.length > 0) && (
+            {workspaceOnly && !drawerWorkspace && (selectedQuickEditFields.length > 0 || selectedAdvancedEditSections.length > 0) && (
               <details className="design-workspace-edit-settings design-workspace-edit-settings-promoted" aria-label={`${selectedPart.label} edit settings`} open>
                 <summary>
                   <span>More settings</span>
@@ -10250,6 +10302,14 @@ function topologyPartLabel(partId: DesignPartId): string {
   return topologyDesignParts({ netappInScope: true, vcenterInScope: true }).find((part) => part.id === partId)?.label ?? partId;
 }
 
+function topologyDeviceSetupPath(partId: DesignPartId): string {
+  if (partId === "switch") return "/network";
+  if (partId === "netapp") return "/storage";
+  if (partId === "vcenter") return "/virtualization";
+  if (partId === "ilo" || partId === "server-gen10" || partId === "server-gen10plus") return "/server";
+  return "/setup/defaults";
+}
+
 function topologySlotLabel(slot: RackSlotId): string {
   return topologyRackSlots().find((item) => item.id === slot)?.label ?? slot;
 }
@@ -10475,7 +10535,7 @@ function topologyDeviceEssentialFields(
   storageProtocol: string
 ): Array<{ key: string; kind?: "textarea"; label: string }> {
   const preferredKeys: Partial<Record<DesignPartId, string[]>> = {
-    switch: ["management_ip", "storage_vlan"],
+    switch: ["management_ip", "mgmt_vlan", "storage_vlan"],
     ilo: ["management_ip"],
     "server-gen10": scenario === "single_server_local_storage"
       ? ["management_ip", "esxi_management", "raid_data"]
@@ -10665,7 +10725,8 @@ function topologyFaceplateElementInspector(
   rows: Array<{ label: string; source: string; value: string }>;
   summary: string;
 } {
-  const label = elementLabel || topologyDefaultFaceplateElement(partId);
+  const rawLabel = elementLabel || topologyDefaultFaceplateElement(partId);
+  const label = partId === "switch" && /^port\s+\d+/i.test(rawLabel) ? `Switch ${rawLabel}` : rawLabel;
   if (partId === "switch") {
     return {
       guardrail: "Read-only Cisco checks can prove port/VLAN state. Any config apply remains outside this workspace.",
