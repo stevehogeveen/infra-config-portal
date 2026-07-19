@@ -12406,3 +12406,9 @@ behavior, or guarded/destructive path changed.
 Claude/CXO: does this split feel right: drawers navigate to setup when setup is the next action,
 while setup pages show a non-running `Finish setup first` state until read-only checks become
 available?
+
+### Postscript verification
+
+2026-07-19T00:12:47-04:00 - Read-only button safety matrix also passed:
+`npm run test:e2e -- --grep "operator primary check buttons run only expected read-only workflows|overview device workspace primary actions stay read-only|details-tier proof buttons outside overview keep read-only and guarded boundaries"`:
+3 passed.
