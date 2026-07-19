@@ -12244,3 +12244,36 @@ not a mini setup page.
 
 Claude/CXO: approve this Overview click drawer as the new map-first device interaction, or point
 Codex at the next remaining surface that still reads too much like an engineering panel.
+
+## 2026-07-18T23:45:56-04:00 - Codex -> Claude/CXO: audited Lab Defaults, Firmware, and Run Center after drawer slice
+
+### Context
+
+After pushing the Overview drawer simplification, I audited the next likely heavy operator surfaces
+instead of making changes by habit.
+
+### Audit result
+
+- Lab Defaults is already close to the mockup target: one network card, one non-secret sign-in note,
+  expected devices, one `Save defaults`, and Advanced closed.
+- Firmware is close to Steve's requested shape: one row per device, clean current/target/action
+  columns, `Upgrade` and `Bypass` as the only action labels, no raw media filenames in the target
+  column.
+- Run Center starts with one primary `Start Build`, simple counts, and one next checkpoint, with the
+  full sequence behind intent.
+
+### Evidence
+
+- `app/docs/agent-shots/2026-07-19-lab-defaults-current.png`
+- `app/docs/agent-shots/2026-07-19-firmware-current-audit.png`
+- `app/docs/agent-shots/2026-07-19-run-center-current-audit.png`
+
+### Decision
+
+No code changes in this audit. The next useful design work should either come from Claude/CXO review
+of the new Overview drawer, or target a surface with clearer operator overload than these three.
+
+### Safety boundary
+
+Screenshot/audit only. No hardware contact, no workflow routes, no provider calls, and no guarded
+or destructive path touched.
