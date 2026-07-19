@@ -11116,6 +11116,26 @@ th.ui-compact-table-cell {
   border-color: rgba(203, 213, 225, .28);
 }
 
+.design-device-setup-faceplate .design-faceplate-bay-boot {
+  border-bottom-color: #f59e0b;
+}
+
+.design-device-setup-faceplate .design-faceplate-bay-data {
+  border-bottom-color: #60a5fa;
+}
+
+.design-device-setup-faceplate .design-faceplate-chip-boot {
+  background: rgba(245, 158, 11, 0.16);
+  border-color: rgba(245, 158, 11, 0.45);
+  color: #fbbf24;
+}
+
+.design-device-setup-faceplate .design-faceplate-chip-data {
+  background: rgba(96, 165, 250, 0.16);
+  border-color: rgba(96, 165, 250, 0.45);
+  color: #93c5fd;
+}
+
 .design-selected-element-note {
   align-items: center;
   background: #f8fafc;
@@ -11966,6 +11986,20 @@ details.design-device-quick-edit[open] summary {
   padding: 0 2px;
 }
 
+.design-faceplate-bay {
+  border-bottom-width: 3px;
+  height: 22px;
+  min-width: 15px;
+}
+
+.design-faceplate-bay-boot {
+  border-bottom-color: #d97706;
+}
+
+.design-faceplate-bay-data {
+  border-bottom-color: #2563eb;
+}
+
 .design-switch-port:nth-child(4n),
 .design-faceplate-bay:nth-child(2n) {
   background: #f8fafc;
@@ -11979,6 +12013,14 @@ details.design-device-quick-edit[open] summary {
   color: #0f766e;
 }
 
+.design-faceplate-bay-boot.selected {
+  border-bottom-color: #d97706;
+}
+
+.design-faceplate-bay-data.selected {
+  border-bottom-color: #2563eb;
+}
+
 .design-faceplate-chip {
   background: #ecfeff;
   border: 1px solid #99f6e4;
@@ -11990,6 +12032,24 @@ details.design-device-quick-edit[open] summary {
   line-height: 1;
   max-width: 100%;
   padding: 4px 6px;
+}
+
+.design-faceplate-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.design-faceplate-chip-boot {
+  background: rgba(217, 119, 6, 0.12);
+  border-color: rgba(217, 119, 6, 0.4);
+  color: #b45309;
+}
+
+.design-faceplate-chip-data {
+  background: rgba(37, 99, 235, 0.12);
+  border-color: rgba(37, 99, 235, 0.4);
+  color: #1d4ed8;
 }
 
 .design-controller-face {
@@ -13387,30 +13447,32 @@ button.design-ilo-port:hover {
 }
 
 .topology-workspace-drawer .design-device-drawer-facts {
-  display: grid;
+  display: flex;
+  flex-wrap: wrap;
   gap: 8px;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .topology-workspace-drawer .design-device-drawer-facts div {
   background: #f8fafc;
   border: 1px solid #e2e8f0;
-  border-radius: 10px;
+  border-radius: 999px;
   display: grid;
   gap: 3px;
+  grid-template-columns: auto minmax(0, 1fr);
   min-width: 0;
-  padding: 9px 10px;
+  padding: 8px 12px;
 }
 
 .topology-workspace-drawer .design-device-drawer-facts strong {
   color: #0f172a;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 900;
   overflow-wrap: anywhere;
 }
 
 .topology-workspace-drawer .design-device-drawer-facts small {
   color: #64748b;
+  grid-column: 1 / -1;
   font-size: 11px;
   font-weight: 700;
 }

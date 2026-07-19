@@ -1336,6 +1336,9 @@ test("overview device workspace matrix keeps first click summary-only", async ({
     await expect(drawerSummary, `${item.workspace} shows a summary-only drawer snapshot`).toBeVisible();
     await expect(drawerSummary, `${item.workspace} gives a plain-language first-click purpose`).toContainText("Current plan");
     await expect(drawerSummary, `${item.workspace} points editing to the setup page`).toContainText("Open full setup to edit saved values");
+    const drawerFactCount = await drawerSummary.getByLabel(`${item.workspace} drawer facts`).locator(":scope > div").count();
+    expect(drawerFactCount, `${item.workspace} keeps the first-click fact budget tight`).toBeLessThanOrEqual(3);
+    expect(drawerFactCount, `${item.workspace} still shows the required snapshot facts`).toBeGreaterThanOrEqual(item.snapshotFields.length);
     await expect(drawerSummary.getByRole("link", { name: "Open full setup" }), `${item.workspace} links to the canonical setup page`).toHaveAttribute("href", item.setupPath);
     await expect(drawerSummary, `${item.workspace} keeps credential details summarized`).toContainText("Reference only");
     await expect(drawerSummary.locator("input, select, textarea"), `${item.workspace} first click has no editable form fields`).toHaveCount(0);
@@ -1423,7 +1426,8 @@ test("overview device workspace resolves saved values when visual drafts are bla
   const drawerSummary = workspace.getByLabel("Cisco switch drawer summary");
 
   await expect(drawerSummary, "saved Cisco IP wins over blank visual draft in the drawer snapshot").toContainText("192.168.1.204");
-  await expect(drawerSummary, "saved management VLAN wins over blank visual draft in the drawer snapshot").toContainText("10");
+  await expect(drawerSummary, "saved storage VLAN stays visible in the drawer snapshot").toContainText("220");
+  await expect(drawerSummary, "drawer hides secondary VLAN details on first click").not.toContainText("Management VLAN");
   await expect(drawerSummary, "drawer snapshot does not show blank draft placeholders for saved fields").not.toContainText("Not planned");
   await expect(drawerSummary.locator("input, select, textarea"), "resolved saved values stay read-only in the simple drawer").toHaveCount(0);
   await expect(workspace.getByLabel("Cisco switch essentials")).toHaveCount(0);
@@ -1434,28 +1438,33 @@ test("overview faceplate element clicks reveal concise details only after intent
   await openOperatorDetails(page);
 
   const topology = page.locator("section[aria-label='Living lab topology']");
-  const cases = [
+  const cases: Array<{
+    button: string;
+    click: RegExp;
+    note: string;
+    workspace: string;
+  }> = [
     {
       button: "Open Cisco switch workspace",
-      click: "Switch port 1",
+      click: /^Switch port 1$/,
       note: "which VLAN lane it belongs to",
       workspace: "Cisco switch"
     },
     {
       button: "Open HPE iLO workspace",
-      click: "iLO management NIC",
+      click: /^iLO management NIC$/,
       note: "whether sign-in still needs attention",
       workspace: "HPE iLO"
     },
     {
       button: "Open HPE DL360 Gen10 workspace",
-      click: "Drive bay 1",
+      click: /^Drive bay 1/,
       note: "saved RAID role",
       workspace: "DL360 Gen10"
     },
     {
       button: "Open NetApp ONTAP workspace",
-      click: "e0a",
+      click: /^e0a$/,
       note: "shared storage path",
       workspace: "NetApp ONTAP"
     }
@@ -1467,7 +1476,7 @@ test("overview faceplate element clicks reveal concise details only after intent
     const workspace = overlay.locator(`section[aria-label='${item.workspace} workspace']`);
     await expect(workspace.locator(".design-selected-element-note"), `${item.workspace} starts without element noise`).toHaveCount(0);
     await expect(workspace.getByLabel(`${item.workspace} interactive faceplate`), `${item.workspace} shows the faceplate on first click`).toBeVisible();
-    await workspace.getByRole("button", { name: item.click, exact: true }).first().click();
+    await workspace.getByRole("button", { name: item.click }).first().click();
     const elementNote = workspace.locator(".design-selected-element-note");
     await expect(elementNote, `${item.workspace} shows a compact element note`).toContainText(item.note);
     await expect(elementNote, `${item.workspace} keeps default element copy operator-facing`).not.toContainText(/proof|source|device_settings|workflow|live-proof|read-only/i);

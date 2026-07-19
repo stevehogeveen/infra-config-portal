@@ -7794,6 +7794,9 @@ function LabDesignComposer({
   const selectedEssentialFields = selectedPart
     ? topologyDeviceEssentialFields(selectedPart.id, selectedWorkspaceSettingFields, draftScenario, storageProtocol)
     : [];
+  const selectedDrawerFields = selectedPart
+    ? topologyDeviceDrawerFields(selectedPart.id, selectedEssentialFields)
+    : [];
   const selectedEssentialFieldKeys = new Set(selectedEssentialFields.map((field) => field.key));
   const selectedDetailWorkspaceSections = workspaceOnly
     ? selectedWorkspaceSections
@@ -8614,12 +8617,12 @@ function LabDesignComposer({
             {drawerWorkspace && (
               <section className="design-device-drawer-summary" aria-label={`${selectedPart.label} drawer summary`}>
                 <div>
-                  <p className="operator-kicker">Snapshot</p>
+                  <p className="operator-kicker">Plan snapshot</p>
                   <h4>Current plan</h4>
-                  <span>Use this drawer to recognize the device and run one read-only check. Open full setup to edit saved values.</span>
+                  <span>Recognize the device and run one read-only check. Open full setup to edit saved values.</span>
                 </div>
                 <div className="design-device-drawer-facts" aria-label={`${selectedPart.label} drawer facts`}>
-                  {selectedEssentialFields.slice(0, 4).map((field) => (
+                  {selectedDrawerFields.map((field) => (
                     <div key={field.key}>
                       <span>{field.label}</span>
                       <strong>{selectedDeviceFieldDisplayValue(field)}</strong>
@@ -10564,6 +10567,25 @@ function topologyDeviceEssentialFields(
   return (picked.length ? picked : fields).slice(0, 5);
 }
 
+function topologyDeviceDrawerFields(
+  partId: DesignPartId,
+  fields: Array<{ key: string; kind?: "textarea"; label: string }>
+): Array<{ key: string; kind?: "textarea"; label: string }> {
+  const preferredKeys: Partial<Record<DesignPartId, string[]>> = {
+    switch: ["management_ip", "storage_vlan"],
+    ilo: ["management_ip"],
+    "server-gen10": ["management_ip", "storage_vlan"],
+    "server-gen10plus": ["management_ip", "storage_vlan"],
+    netapp: ["management_ip", "protocol"],
+    vcenter: ["management_ip", "datastore"],
+    windows: ["vm_network", "role"]
+  };
+  const picked = (preferredKeys[partId] ?? [])
+    .map((key) => fields.find((field) => field.key === key))
+    .filter((field): field is { key: string; kind?: "textarea"; label: string } => Boolean(field));
+  return (picked.length ? picked : fields).slice(0, 2);
+}
+
 function topologyDeviceCredentialSpec(partId: DesignPartId): DeviceCredentialSpec | null {
   if (partId === "switch") {
     return {
@@ -10996,21 +11018,29 @@ function DesignFaceplateVisual({
           <span className="design-led design-led-draft" />
         </span>
         <span className="design-drive-bays">
-          {bayLabels.map((bay) => (
-            interactive ? (
+          {bayLabels.map((bay) => {
+            const bayRole = bay <= 2 ? "boot" : "data";
+            const selected = selectedElement === `drive bay ${bay}` || selectedElement === `Drive bay ${bay}`;
+            return interactive ? (
               <button
-                className={`design-faceplate-bay ${selectedElement === `drive bay ${bay}` || selectedElement === `Drive bay ${bay}` ? "selected" : ""}`}
+                className={`design-faceplate-bay design-faceplate-bay-${bayRole} ${selected ? "selected" : ""}`}
                 key={bay}
                 onClick={() => onElementClick?.(`Drive bay ${bay}`)}
                 type="button"
-                aria-label={`Drive bay ${bay}`}
-              />
+                aria-label={`Drive bay ${bay}, ${bayRole === "boot" ? "boot mirror" : "data set"}`}
+                title={bayRole === "boot" ? settings.raid_boot || "RAID1 boot" : settings.raid_data || "RAID6 local datastore"}
+              >
+                <span>{bay}</span>
+              </button>
             ) : (
-              <span className="design-faceplate-bay" key={bay} />
-            )
-          ))}
+              <span className={`design-faceplate-bay design-faceplate-bay-${bayRole}`} key={bay}><span>{bay}</span></span>
+            );
+          })}
         </span>
-        <span className="design-faceplate-chip">{settings.raid_boot || "RAID1"} / {settings.raid_data || "data"}</span>
+        <span className="design-faceplate-chip-row">
+          <span className="design-faceplate-chip design-faceplate-chip-boot">Bays 1-2: {settings.raid_boot || "RAID1 boot"}</span>
+          <span className="design-faceplate-chip design-faceplate-chip-data">Bays 3+: {settings.raid_data || "RAID6 local datastore"}</span>
+        </span>
       </span>
     );
   }

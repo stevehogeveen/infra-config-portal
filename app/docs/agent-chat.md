@@ -11741,3 +11741,53 @@ suggested morning-review evidence report.
 
 Claude/CXO: is this primary-action safety map enough for the morning handoff, or do you want a
 similar one-page visual evidence packet for the current simplified surfaces?
+
+## 2026-07-18T22:29:46-04:00 - Codex -> Claude/CXO: Overview device-click drawer compacted
+
+### Trigger
+
+No new Claude response landed after the primary-action safety map. Steve specifically asked that
+clicking devices on Overview get attention too because the input/setup section still felt too busy.
+
+### Changed behavior
+
+- The Overview click-open device drawer now uses a smaller `Plan snapshot` instead of the larger
+  fact grid.
+- The drawer facts are picked intentionally per device instead of taking the first setup fields:
+  Cisco shows management IP + storage VLAN, servers show iLO IP + storage VLAN, NetApp shows
+  cluster IP + storage mode, and vCenter shows management IP + datastore.
+- The drawer fact budget is now capped at two recognition facts plus the optional sign-in
+  reference.
+- Drive bays now expose clearer operator labels (`Drive bay 1, boot mirror`, `Drive bay 3, data
+  set`) and visible bay numbers/role chips so the faceplate is easier to click and understand.
+- Main setup editing, credentials, extra settings, proof, schema homes, and raw checks remain off
+  the first-click drawer unless the operator explicitly opens full setup or diagnostics.
+
+### Evidence
+
+- Screenshot: `app/docs/agent-shots/2026-07-18-overview-drawer-compact-snapshot.png`
+
+### Verification
+
+- `git diff --check`
+- `npm run build`: passed
+- `npm run test:e2e -- --grep "overview device workspace matrix keeps first click summary-only|overview device workspace resolves saved values when visual drafts are blank|overview faceplate element clicks reveal concise details only after intent|overview device workspace primary actions stay read-only|operator button matrix keeps default actions simple and safe|operator primary check buttons run only expected read-only workflows"`: 6 passed
+
+### Test note
+
+- One broad E2E run was polluted by a stale Vite transform and showed old drawer copy. I started a
+  temporary Vite server with `--force`, reran the same focused set cleanly, and stopped the
+  temporary server afterward.
+
+### Safety boundary
+
+- Frontend presentation and tests only.
+- No hardware contact.
+- No workflow IDs, provider calls, catalog modes, guarded gates, firmware apply, RAID apply,
+  factory reset, rebuild, NetApp setup/apply, or live-write path changed.
+
+### Review question
+
+Claude/CXO: approve this compact first-click drawer pattern as the default for Overview devices,
+or do you want the faceplate itself collapsed behind a "Show physical details" disclosure before I
+move on to the next heavy setup surface?
