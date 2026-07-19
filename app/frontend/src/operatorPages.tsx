@@ -8700,10 +8700,10 @@ function LabDesignComposer({
             )}
 
             {workspaceOnly && !drawerWorkspace && (selectedQuickEditFields.length > 0 || selectedAdvancedEditSections.length > 0) && (
-              <details className="design-workspace-edit-settings design-workspace-edit-settings-promoted" aria-label={`${selectedPart.label} edit settings`} open>
+              <details className="design-workspace-edit-settings design-workspace-edit-settings-promoted" aria-label={`${selectedPart.label} edit settings`}>
                 <summary>
                   <span>More settings</span>
-                  <strong>Draft only</strong>
+                  <strong>Profile only</strong>
                 </summary>
                 {selectedQuickEditFields.length > 0 && (
                   <section className="design-device-param-section design-device-param-panel design-device-quick-edit design-device-inline-edit" aria-label={`${selectedPart.label} quick setup fields`}>

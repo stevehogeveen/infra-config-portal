@@ -2257,8 +2257,13 @@ test("network Cisco workspace reveals migrated settings and nested read-only pro
   await expect(workspace.getByLabel("Cisco switch credential setup")).toContainText("Cisco switch sign-in");
   await expect(workspace.getByLabel("Cisco switch credential setup")).toContainText("CISCO_TEST_PASSWORD");
   await expect(workspace.getByLabel("Cisco switch edit settings")).toContainText("More settings");
-  await expect(workspace.getByLabel("Cisco switch edit settings")).toContainText("BPDU guard");
-  await expect(workspace.getByLabel("Cisco switch edit settings")).toContainText("Port plan");
+  await expect(workspace.getByLabel("Cisco switch edit settings")).toContainText("Profile only");
+  await expect.poll(
+    () => workspace.getByLabel("Cisco switch edit settings").evaluate((node) => (node as HTMLDetailsElement).open),
+    { message: "Cisco optional setup fields start collapsed" }
+  ).toBe(false);
+  await expect(workspace.getByLabel("Cisco switch quick setup fields")).not.toBeVisible();
+  await expect(workspace.getByLabel("Cisco switch more setup fields")).not.toBeVisible();
   const networkFields = await openWorkspaceEditGroup(page, "Cisco switch", "Network");
   await expect(networkFields).toContainText("Port profiles");
   const accessFields = await openWorkspaceEditGroup(page, "Cisco switch", "Access");
@@ -2368,6 +2373,12 @@ test("server workspace reveals migrated setup, storage path, service pack, and R
   await expect(workspace.getByLabel("DL360 Gen10 credential setup")).toContainText("ILO_TEST_PASSWORD");
   await expect(workspace.getByLabel("DL360 Gen10 credential setup")).toContainText("ESXI_TEST_PASSWORD");
   await expect(workspace.getByLabel("DL360 Gen10 edit settings")).toContainText("More settings");
+  await expect(workspace.getByLabel("DL360 Gen10 edit settings")).toContainText("Profile only");
+  await expect.poll(
+    () => workspace.getByLabel("DL360 Gen10 edit settings").evaluate((node) => (node as HTMLDetailsElement).open),
+    { message: "Server optional setup fields start collapsed" }
+  ).toBe(false);
+  await expect(workspace.getByLabel("DL360 Gen10 more setup fields")).not.toBeVisible();
   const storageGroup = await openWorkspaceEditGroup(page, "DL360 Gen10", "Storage");
   await expect(storageGroup).toContainText("RAID controller");
   await expect(storageGroup).toContainText("Boot RAID");
@@ -2493,6 +2504,12 @@ test("virtualization vCenter workspace reveals migrated checks and guarded bound
   await expect(workspace.getByLabel("vCenter VCSA main setup fields")).toContainText("Datastore");
   await expect(workspace.getByLabel("vCenter VCSA credential setup")).toContainText("VCENTER_PASSWORD");
   await expect(workspace.getByLabel("vCenter VCSA edit settings")).toContainText("More settings");
+  await expect(workspace.getByLabel("vCenter VCSA edit settings")).toContainText("Profile only");
+  await expect.poll(
+    () => workspace.getByLabel("vCenter VCSA edit settings").evaluate((node) => (node as HTMLDetailsElement).open),
+    { message: "vCenter optional setup fields start collapsed" }
+  ).toBe(false);
+  await expect(workspace.getByLabel("vCenter VCSA more setup fields")).not.toBeVisible();
   await expect(workspace.getByLabel("vCenter workspace virtualization controls")).not.toBeVisible();
 
   const advanced = await openWorkspaceAdvanced(page, "vCenter VCSA");
