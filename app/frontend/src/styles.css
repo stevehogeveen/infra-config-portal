@@ -3821,10 +3821,12 @@ textarea {
   margin: 12px 0 0;
 }
 
-.saved-kits-layout {
-  display: grid;
-  gap: 20px;
-  grid-template-columns: minmax(280px, 0.75fr) minmax(0, 1.25fr);
+.saved-kits-home-actions {
+  margin-top: 16px;
+}
+
+.saved-kits-home-actions .button-link {
+  width: fit-content;
 }
 
 .saved-kits-switch-controls {
@@ -3852,6 +3854,32 @@ textarea {
   display: grid;
   gap: 20px;
   grid-template-columns: minmax(280px, 0.9fr) minmax(0, 1.1fr);
+}
+
+.saved-kits-history-latest {
+  background: #f8fafc;
+  border: 1px solid #e1e7ef;
+  border-radius: 8px;
+  display: grid;
+  gap: 4px;
+  margin-bottom: 12px;
+  padding: 12px;
+}
+
+.saved-kits-history-latest span {
+  color: #657184;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.saved-kits-history-latest strong {
+  color: #102033;
+}
+
+.saved-kits-history-latest small {
+  color: #56647a;
 }
 
 .software-media-home,

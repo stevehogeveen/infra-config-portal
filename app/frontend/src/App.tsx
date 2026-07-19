@@ -7221,6 +7221,10 @@ function LabProfileManager({
   const [form, setForm] = useState<LabProfileFormState>(() => blankLabProfileForm());
   const [saveError, setSaveError] = useState("");
   const [busyAction, setBusyAction] = useState("");
+  const [changeKitOpen, setChangeKitOpen] = useState(false);
+  const [createKitOpen, setCreateKitOpen] = useState(false);
+  const location = useLocation();
+  const navigate = useNavigate();
   const activeProfile = state?.active_profile ?? null;
   const selectedProfile =
     state?.profiles.find((profile) => profile.id === selectedProfileId) ?? null;
@@ -7243,6 +7247,12 @@ function LabProfileManager({
   const draftPlan = draftPayload.address_plan;
   const activeKitName = activeProfile?.source === "runtime_env" ? "Current Lab" : activeProfile?.name ?? "";
   const activeKitState = activeProfile?.source === "saved" ? "Saved and active" : "Current app values";
+  const latestRevision = detailProfile?.history.length
+    ? detailProfile.history[detailProfile.history.length - 1]
+    : null;
+  const changeKitCanActivate = Boolean(changeKitOpen && selectedProfile && !selectedProfile.active);
+  const createKitIsPrimary = createKitOpen;
+  const continueKitIsPrimary = !changeKitCanActivate && !createKitIsPrimary;
 
   useEffect(() => {
     if (!state || formInitialized) return;
@@ -7251,6 +7261,13 @@ function LabProfileManager({
     setForm(blankLabProfileForm());
     setFormInitialized(true);
   }, [formInitialized, state]);
+
+  useEffect(() => {
+    if (!state) return;
+    const hasSavedKits = state.profiles.length > 0;
+    setCreateKitOpen(location.hash === "#new" || !hasSavedKits);
+    setChangeKitOpen(!activeProfile && hasSavedKits);
+  }, [activeProfile, location.hash, state]);
 
   function startNewProfile() {
     setSelectedProfileId("");
@@ -7291,6 +7308,7 @@ function LabProfileManager({
       setForm(blankLabProfileForm());
       setFormInitialized(true);
       await onActivateProfile(saved.id);
+      navigate("/overview");
     } catch (err) {
       setSaveError((err as Error).message);
     } finally {
@@ -7303,6 +7321,7 @@ function LabProfileManager({
     setBusyAction(`activate-${profileId}`);
     try {
       await onActivateProfile(profileId);
+      navigate("/overview");
     } catch (err) {
       setSaveError((err as Error).message);
     } finally {
@@ -7341,12 +7360,26 @@ function LabProfileManager({
                 <strong>{activeKitState}</strong>
               </div>
             </div>
+            <div className="form-actions saved-kits-home-actions">
+              <Link className={continueKitIsPrimary ? "button-link primary" : "button-link"} to="/overview">
+                <Route size={16} />
+                Continue with this kit
+              </Link>
+            </div>
             <p className="saved-kits-boundary">This page only changes saved kit selection and new-kit values. Live checks and build actions stay in Run Center.</p>
           </section>
 
-          <div className="saved-kits-layout">
-            <section className="panel saved-kits-switch" aria-label="Switch kit">
-              <PanelTitle icon={<CheckCircle2 size={18} />} title="Switch kit" />
+          <details
+            aria-label="Change kit"
+            className="advanced-details section-details saved-kits-switch"
+            onToggle={(event) => setChangeKitOpen(event.currentTarget.open)}
+            open={changeKitOpen}
+          >
+            <summary>
+              <span>Change kit</span>
+              <small>Pick another saved kit when you need a different lab.</small>
+            </summary>
+            <div className="advanced-details-body">
               {state.profiles.length ? (
                 <div className="saved-kits-switch-controls">
                   <Field label="Saved kit">
@@ -7362,6 +7395,7 @@ function LabProfileManager({
                     </select>
                   </Field>
                   <button
+                    className={changeKitCanActivate ? "primary" : undefined}
                     disabled={!selectedProfile || selectedProfile.active || Boolean(busyAction)}
                     onClick={() => selectedProfile && activateProfile(selectedProfile.id)}
                     type="button"
@@ -7374,10 +7408,20 @@ function LabProfileManager({
                 <p className="muted">No saved kits yet. Create one from the subnet preview.</p>
               )}
               <p className="muted">Shared DNS, NTP, VLAN, and MTU settings live in <Link to="/setup/defaults">Lab Defaults</Link>.</p>
-            </section>
+            </div>
+          </details>
 
-            <section className="panel saved-kits-create" aria-label="Create kit">
-              <PanelTitle icon={<Save size={18} />} title="Create kit" />
+          <details
+            aria-label="Create a new kit"
+            className="advanced-details section-details saved-kits-create"
+            onToggle={(event) => setCreateKitOpen(event.currentTarget.open)}
+            open={createKitOpen}
+          >
+            <summary>
+              <span>Create a new kit</span>
+              <small>Name a new lab and derive its addresses from one subnet.</small>
+            </summary>
+            <div className="advanced-details-body">
               <form className="lab-profile-form saved-kits-create-form" onSubmit={createKit}>
                 <div className="lab-profile-form-grid">
                   <Field label="Kit name">
@@ -7443,14 +7487,14 @@ function LabProfileManager({
                     <Plus size={16} />
                     Clear
                   </button>
-                  <button className="primary" disabled={Boolean(busyAction)} type="submit">
+                  <button className={createKitIsPrimary ? "primary" : undefined} disabled={Boolean(busyAction)} type="submit">
                     <Save size={16} />
                     Create kit
                   </button>
                 </div>
               </form>
-            </section>
-          </div>
+            </div>
+          </details>
 
           <AdvancedDetails
             className="section-details saved-kits-details"
@@ -7494,25 +7538,39 @@ function LabProfileManager({
             </section>
             <section>
               <h3>History</h3>
-              {detailProfile && detailProfile.history.length ? (
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Saved</th>
-                      <th>Name</th>
-                      <th>Subnet</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {detailProfile.history.map((revision) => (
-                      <tr key={`${detailProfile.id}-${revision.version}-${revision.saved_at}`}>
-                        <td>{formatDateTime(revision.saved_at)}</td>
-                        <td>{revision.name}</td>
-                        <td>{displayAddress(revision.address_plan.subnet)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              {detailProfile && latestRevision ? (
+                <>
+                  <div className="saved-kits-history-latest">
+                    <span>Latest save</span>
+                    <strong>{formatDateTime(latestRevision.saved_at)}</strong>
+                    <small>{latestRevision.name} - {displayAddress(latestRevision.address_plan.subnet)}</small>
+                  </div>
+                  <AdvancedDetails
+                    className="section-details saved-kits-full-history"
+                    defaultOpenInAdvanced={false}
+                    summary={`${detailProfile.history.length} saved versions`}
+                    title="Full history"
+                  >
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Saved</th>
+                          <th>Name</th>
+                          <th>Subnet</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {detailProfile.history.map((revision) => (
+                          <tr key={`${detailProfile.id}-${revision.version}-${revision.saved_at}`}>
+                            <td>{formatDateTime(revision.saved_at)}</td>
+                            <td>{revision.name}</td>
+                            <td>{displayAddress(revision.address_plan.subnet)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </AdvancedDetails>
+                </>
               ) : (
                 <p className="muted">No earlier saved versions for this kit.</p>
               )}

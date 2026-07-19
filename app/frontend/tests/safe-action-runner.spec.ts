@@ -587,10 +587,13 @@ test("saved kits only manages kit selection and subnet-derived creation", async 
   await expect(home).toContainText("Server + NetApp + vCenter");
   await expect(home).not.toContainText(/runtime|source|store|global|profile|capabilities|intent_only/i);
 
-  const createPanel = page.getByLabel("Create kit");
-  await expect(createPanel.getByRole("heading", { name: "Create kit" })).toBeVisible();
-  await expect(createPanel.locator(".primary")).toHaveCount(1);
-  await expect(createPanel.locator(".primary")).toContainText("Create kit");
+  const changePanel = page.locator("details[aria-label='Change kit']");
+  const createPanel = page.locator("details[aria-label='Create a new kit']");
+  await expect(changePanel).not.toHaveAttribute("open", "");
+  await expect(createPanel).toHaveAttribute("open", "");
+  await expect(page.locator(".primary:visible")).toHaveCount(1);
+  await expect(page.locator(".primary:visible")).toContainText("Create kit");
+  await expect(home.getByRole("link", { name: "Continue with this kit" })).toBeVisible();
   await expect(createPanel).not.toContainText(/runtime|source|store|global|profile|capabilities|intent_only/i);
   await expect(page.locator(".lab-profile-metrics")).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Global Settings" })).toHaveCount(0);
@@ -610,19 +613,96 @@ test("saved kits only manages kit selection and subnet-derived creation", async 
     const url = new URL(request.url());
     return request.method() === "POST" && url.pathname === "/api/v1/lab/profiles";
   });
+  const activateProfileRequest = page.waitForRequest((request) => {
+    const url = new URL(request.url());
+    return request.method() === "POST" && url.pathname === "/api/v1/lab/profiles/visual-profile/activate";
+  });
   await createPanel.getByRole("button", { name: "Create kit" }).click();
   const request = await createProfileRequest;
+  await activateProfileRequest;
   const payload = request.postDataJSON() as Record<string, any>;
   expect(payload.name).toBe("Rack 08 Edge Lab");
   expect(payload.address_plan.subnet).toBe("192.168.210.0/24");
   expect(payload.address_plan.cisco_management).toBe("192.168.210.204");
   expect(payload.address_plan.netapp_cluster_mgmt).toBe("192.168.210.220");
+  await expect(page).toHaveURL(/\/overview$/);
 
+  await page.goto("/lab-profiles");
   await expect(home).toContainText("Rack 08 Edge Lab");
   await expect(home).toContainText("Saved and active");
-  const switchPanel = page.getByLabel("Switch kit");
-  await expect(switchPanel.getByLabel("Saved kit")).toHaveValue("visual-profile");
-  await expect(switchPanel.getByText("Lab Defaults")).toBeVisible();
+  await expect(createPanel).not.toHaveAttribute("open", "");
+  await expect(changePanel).not.toHaveAttribute("open", "");
+  await expect(createPanel.getByLabel("Kit name")).not.toBeVisible();
+  await expect(page.locator(".primary:visible")).toHaveCount(1);
+  await expect(page.locator(".primary:visible")).toContainText("Continue with this kit");
+  await changePanel.locator(":scope > summary").click();
+  await expect(changePanel.getByLabel("Saved kit")).toHaveValue("visual-profile");
+  await expect(changePanel.getByText("Lab Defaults")).toBeVisible();
+});
+
+test("saved kits switch and history stay behind the selected-kit decision", async ({ page }) => {
+  const runtimeState = labProfiles();
+  const savedProfile = JSON.parse(JSON.stringify(runtimeState.active_profile)) as Record<string, any>;
+  savedProfile.id = "rack-07-edge";
+  savedProfile.active = false;
+  savedProfile.name = "Rack 07 Edge Lab";
+  savedProfile.source = "saved";
+  savedProfile.history = [
+    {
+      address_plan: savedProfile.address_plan,
+      name: "Rack 07 Edge Lab",
+      saved_at: "2026-07-16T22:00:00Z",
+      version: 1
+    },
+    {
+      address_plan: savedProfile.address_plan,
+      name: "Rack 07 Edge Lab",
+      saved_at: "2026-07-17T22:00:00Z",
+      version: 2
+    }
+  ];
+  let profileState = {
+    ...runtimeState,
+    profiles: [savedProfile]
+  };
+
+  await page.route("**/api/v1/lab/profiles/rack-07-edge/activate", async (route) => {
+    const activeSavedProfile = { ...savedProfile, active: true };
+    profileState = activeLabProfilesFromProfile(activeSavedProfile);
+    return json(route, profileState);
+  });
+  await page.route("**/api/v1/lab/profiles", async (route) => {
+    if (route.request().method() === "GET") return json(route, profileState);
+    return route.fallback();
+  });
+
+  await page.goto("/lab-profiles");
+  await expect(page.getByTestId("saved-kits-home")).toContainText("Current Lab");
+  await expect(page.locator("details[aria-label='Create a new kit']")).not.toHaveAttribute("open", "");
+  await expect(page.locator("details[aria-label='Change kit']")).not.toHaveAttribute("open", "");
+  await expect(page.locator(".primary:visible")).toHaveCount(1);
+  await expect(page.locator(".primary:visible")).toContainText("Continue with this kit");
+  await expect(page.getByRole("columnheader", { name: "Saved" })).toHaveCount(0);
+
+  const details = page.locator("details.saved-kits-details");
+  await details.locator(":scope > summary").click();
+  await expect(details.getByText("Latest save")).toBeVisible();
+  await expect(details.locator(".saved-kits-history-latest strong")).toContainText("2026");
+  await expect(details.getByRole("columnheader", { name: "Saved" })).toHaveCount(0);
+  await details.locator("details.saved-kits-full-history > summary").click();
+  await expect(details.getByRole("columnheader", { name: "Saved" })).toBeVisible();
+
+  const changePanel = page.locator("details[aria-label='Change kit']");
+  await changePanel.locator(":scope > summary").click();
+  await expect(changePanel.getByRole("button", { name: "Use this kit" })).toHaveClass(/primary/);
+  const activateRequest = page.waitForRequest((request) => {
+    const url = new URL(request.url());
+    return request.method() === "POST" && url.pathname === "/api/v1/lab/profiles/rack-07-edge/activate";
+  });
+  await changePanel.getByRole("button", { name: "Use this kit" }).click();
+  await activateRequest;
+  await expect(page).toHaveURL(/\/overview$/);
+  await expect(page.getByTestId("operator-home")).toContainText("Rack 07 Edge Lab");
 });
 
 test("operator home answers the next action without dashboard clutter", async ({ page }) => {
