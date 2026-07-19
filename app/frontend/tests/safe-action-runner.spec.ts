@@ -340,6 +340,10 @@ test("renders the map-first operator spine and pages", async ({ page }) => {
     "Run Center",
     "Reports"
   ]);
+  await expect(page.locator("aside[aria-label='Lab Builder navigation']").getByRole("link", { name: "Compute & iLO" })).toHaveAttribute("href", "/setup/ilo");
+  await expect(page.locator("aside[aria-label='Lab Builder navigation']").getByRole("link", { name: "Cisco Switch" })).toHaveAttribute("href", "/setup/cisco");
+  await expect(page.locator("aside[aria-label='Lab Builder navigation']").getByRole("link", { name: "Run Center" })).toHaveAttribute("href", "/run");
+  await expect(page.locator("aside[aria-label='Lab Builder navigation']").getByRole("link", { name: "Reports" })).toHaveAttribute("href", "/reports");
   const quickNavigation = page.getByRole("navigation", { name: "Quick navigation" });
   await expect(quickNavigation.locator("a")).toHaveText(["Overview", "Lab Defaults", "Firmware"]);
   await expect(quickNavigation.getByRole("link", { name: "Lab Defaults" })).toHaveAttribute("href", "/setup/defaults");
@@ -356,14 +360,37 @@ test("renders the map-first operator spine and pages", async ({ page }) => {
     await expect(page).toHaveURL(new RegExp(`${setupPath}$`));
     await expect(page.locator("main")).toBeVisible();
   }
+  for (const [setupPath, heading] of [
+    ["/setup/cisco", "Cisco Switch"],
+    ["/setup/ilo", "Compute & iLO"],
+    ["/setup/server", "Compute & iLO"],
+    ["/setup/storage", "Storage & NetApp"],
+    ["/setup/netapp", "Storage & NetApp"],
+    ["/setup/esxi", "Virtualization"],
+    ["/setup/windows", "Virtualization"],
+    ["/setup/media", "Software Media"],
+    ["/setup/ovf", "Software Media"]
+  ] as const) {
+    await page.goto(setupPath);
+    await expect(page).toHaveURL(new RegExp(`${setupPath}$`));
+    await expect(page.locator("main h1").filter({ hasText: heading })).toBeVisible();
+  }
   await page.goto("/setup/defaults");
+  await expect(page.getByRole("heading", { name: "Lab Defaults", exact: true })).toBeVisible();
+  await page.goto("/setup/global");
+  await expect(page).toHaveURL(/\/setup\/defaults$/);
   await expect(page.getByRole("heading", { name: "Lab Defaults", exact: true })).toBeVisible();
   await page.goto("/lab-defaults");
   await expect(page).toHaveURL(/\/setup\/defaults$/);
   await expect(page.getByRole("heading", { name: "Lab Defaults", exact: true })).toBeVisible();
   await page.goto("/firmware-upgrades");
   await expect(page.getByRole("heading", { name: "Keep every device on the expected version.", exact: true })).toBeVisible();
+  await page.goto("/setup/firmware");
+  await expect(page.getByRole("heading", { name: "Keep every device on the expected version.", exact: true })).toBeVisible();
   await page.goto("/run-center");
+  await expect(page.getByRole("heading", { name: "Run Center", exact: true })).toBeVisible();
+  await expect(page.getByTestId("lab-build-journey")).toBeVisible();
+  await page.goto("/run");
   await expect(page.getByRole("heading", { name: "Run Center", exact: true })).toBeVisible();
   await expect(page.getByTestId("lab-build-journey")).toBeVisible();
   await expect(page.getByLabel("Build Plan")).toBeVisible();

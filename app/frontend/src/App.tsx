@@ -769,6 +769,17 @@ function App() {
               <RouterRoute path="/storage" element={<OperatorStoragePage health={health} labProfileState={labProfileState} onReloadLabProfile={loadLabProfileState} />} />
               <RouterRoute path="/virtualization" element={<OperatorVirtualizationPage health={health} labProfileState={labProfileState} onReloadLabProfile={loadLabProfileState} />} />
               <RouterRoute path="/setup/defaults" element={<OperatorLabDefaultsPage labProfileState={labProfileState} onReloadLabProfile={loadLabProfileState} />} />
+              <RouterRoute path="/setup/global" element={<Navigate to="/setup/defaults" replace />} />
+              <RouterRoute path="/setup/cisco" element={<OperatorNetworkPage health={health} labProfileState={labProfileState} onReloadLabProfile={loadLabProfileState} />} />
+              <RouterRoute path="/setup/ilo" element={<OperatorServerPage health={health} labProfileState={labProfileState} onReloadLabProfile={loadLabProfileState} />} />
+              <RouterRoute path="/setup/server" element={<OperatorServerPage health={health} labProfileState={labProfileState} onReloadLabProfile={loadLabProfileState} />} />
+              <RouterRoute path="/setup/esxi" element={<OperatorVirtualizationPage health={health} labProfileState={labProfileState} onReloadLabProfile={loadLabProfileState} />} />
+              <RouterRoute path="/setup/storage" element={<OperatorStoragePage health={health} labProfileState={labProfileState} onReloadLabProfile={loadLabProfileState} />} />
+              <RouterRoute path="/setup/netapp" element={<OperatorStoragePage health={health} labProfileState={labProfileState} onReloadLabProfile={loadLabProfileState} />} />
+              <RouterRoute path="/setup/firmware" element={<OperatorFirmwareUpgradesPage labProfileState={labProfileState} />} />
+              <RouterRoute path="/setup/media" element={<MediaInventoryPage />} />
+              <RouterRoute path="/setup/ovf" element={<MediaInventoryPage />} />
+              <RouterRoute path="/setup/windows" element={<OperatorVirtualizationPage health={health} labProfileState={labProfileState} onReloadLabProfile={loadLabProfileState} />} />
               <RouterRoute path="/lab-defaults" element={<Navigate to="/setup/defaults" replace />} />
               <RouterRoute path="/firmware-upgrades" element={<OperatorFirmwareUpgradesPage labProfileState={labProfileState} />} />
               <RouterRoute path="/validation" element={<OperatorValidationPage isAdvancedMode={uiMode === "advanced"} labProfileState={labProfileState} />} />
@@ -777,6 +788,7 @@ function App() {
               <RouterRoute path="/lab-setup" element={<Navigate to="/overview" replace />} />
               <RouterRoute path="/hardware" element={<Navigate to="/overview" replace />} />
               <RouterRoute path="/run-center" element={<RunCenter />} />
+              <RouterRoute path="/run" element={<RunCenter />} />
               <RouterRoute path="/control-center" element={<Navigate to="/overview" replace />} />
               <RouterRoute path="/firmware" element={<Navigate to="/firmware-upgrades" replace />} />
               <RouterRoute path="/golden-state" element={<Navigate to="/validation" replace />} />
@@ -1265,14 +1277,14 @@ function ShellTopNav({
           <NavItem to="/overview" icon={<Gauge size={18} />} label="Overview" />
           <p className="sidebar-section-label">Setup</p>
           <NavItem to="/setup/defaults" icon={<Settings size={17} />} label="Lab Defaults" />
-          <NavItem to="/server" icon={<Server size={17} />} label="Compute & iLO" />
-          <NavItem to="/storage" icon={<Database size={17} />} label="Storage & NetApp" />
-          <NavItem to="/virtualization" icon={<Layers size={17} />} label="Virtualization" />
-          <NavItem to="/firmware-upgrades" icon={<ShieldCheck size={17} />} label="Firmware" />
-          <NavItem to="/network" icon={<Route size={17} />} label="Cisco Switch" />
+          <NavItem to="/setup/ilo" icon={<Server size={17} />} label="Compute & iLO" />
+          <NavItem to="/setup/storage" icon={<Database size={17} />} label="Storage & NetApp" />
+          <NavItem to="/setup/esxi" icon={<Layers size={17} />} label="Virtualization" />
+          <NavItem to="/setup/firmware" icon={<ShieldCheck size={17} />} label="Firmware" />
+          <NavItem to="/setup/cisco" icon={<Route size={17} />} label="Cisco Switch" />
           <p className="sidebar-section-label">Run</p>
-          <NavItem to="/run-center" icon={<Play size={17} />} label="Run Center" />
-          <NavItem to="/validation" icon={<FileText size={17} />} label="Reports" />
+          <NavItem to="/run" icon={<Play size={17} />} label="Run Center" />
+          <NavItem to="/reports" icon={<FileText size={17} />} label="Reports" />
         </nav>
       </aside>
       <header className="shell-topbar" aria-label="Application header">
