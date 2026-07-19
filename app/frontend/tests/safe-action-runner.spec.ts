@@ -2524,6 +2524,7 @@ test("virtualization default opens canonical vCenter workspace and hides old VM 
   await expect(summary).not.toContainText("VM path");
   await expect(summary.locator(".virtualization-vcenter-workspace-facts > span")).toHaveCount(3);
   await expect(workspace).toBeVisible();
+  await expect(page.locator(".operator-feedback", { hasText: "Loading" })).toHaveCount(0);
   await expect(workspace.getByRole("heading", { name: "vCenter VCSA", exact: true })).toBeVisible();
   await expect(workspace.getByLabel("vCenter VCSA main setup fields")).toContainText("Management IP");
   await expect(workspace.getByLabel("vCenter VCSA main setup fields")).toContainText("Datastore");

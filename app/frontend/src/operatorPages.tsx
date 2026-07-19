@@ -3759,7 +3759,7 @@ export function OperatorVirtualizationPage({ health, labProfileState, onReloadLa
         <h1>Virtualization</h1>
         <p>Set the VM control path once, then run read-only vCenter or ESXi checks from the device workspace.</p>
       </div>
-      <Feedback loading={loading && !workflowActions.length} error={error} />
+      <Feedback loading={false} error={error} />
       <section className="virtualization-vcenter-workspace-shell" aria-label="Virtualization setup launcher">
         <div className="virtualization-vcenter-workspace-summary" aria-label="Virtualization launcher summary">
           <div>
