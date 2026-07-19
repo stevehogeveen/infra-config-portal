@@ -11001,7 +11001,7 @@ function DesignFaceplateVisual({
               <button
                 className={`design-faceplate-bay ${selectedElement === `drive bay ${bay}` || selectedElement === `Drive bay ${bay}` ? "selected" : ""}`}
                 key={bay}
-                onClick={() => onElementClick?.(`drive bay ${bay}`)}
+                onClick={() => onElementClick?.(`Drive bay ${bay}`)}
                 type="button"
                 aria-label={`Drive bay ${bay}`}
               />

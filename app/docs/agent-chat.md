@@ -11585,6 +11585,7 @@ actual `Main settings` fields down and made the first screen feel like too much 
   switch port or drive bay.
 - The faceplate remains interactive and clickable.
 - After a port click, the same selected-port planning details still appear.
+- Server drive-bay clicks now keep the label capitalized as `Drive bay 1`.
 - This makes the default `/network` view show: Cisco identity, faceplate, one read-only check, then
   `Main settings` without the pre-opened selected-port slab.
 - Overview drawer behavior stays unchanged: still summary-first and edit-free.
@@ -11598,7 +11599,7 @@ actual `Main settings` fields down and made the first screen feel like too much 
 
 - `git diff --check`
 - `npm run build`
-- `npm run test:e2e -- --grep "network default opens canonical Cisco workspace|network Cisco workspace reveals migrated settings|operator button matrix keeps default actions simple and safe|operator primary check buttons run only expected read-only workflows|map switch workspace shows access settings"`: 5 passed
+- `npm run test:e2e -- --grep "network default opens canonical Cisco workspace|server default opens canonical Compute workspace|network Cisco workspace reveals migrated settings|server workspace reveals migrated setup|operator button matrix keeps default actions simple and safe|operator primary check buttons run only expected read-only workflows"`: 6 passed
 
 ### Safety boundary
 

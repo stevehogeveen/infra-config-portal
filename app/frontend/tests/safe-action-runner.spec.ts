@@ -2305,6 +2305,9 @@ test("server default opens canonical Compute workspace and hides retired server 
   await expect(workspace.getByLabel("DL360 Gen10 credential setup")).toContainText("Reference only");
   await expect(workspace.locator(":scope > .design-device-primary-action .design-plan-action")).toHaveCount(1);
   await expect(workspace.getByRole("button", { name: "Test DL360 Gen10" })).toBeVisible();
+  await expect(workspace.getByLabel("Drive bay assignment")).toHaveCount(0);
+  await workspace.getByRole("button", { exact: true, name: "Drive bay 1" }).click();
+  await expect(workspace.getByLabel("Drive bay assignment")).toContainText("Drive bay 1");
   await expect(workspace.getByLabel("Server workspace checks")).not.toBeVisible();
   await expect(page.locator(".operator-feedback", { hasText: "Loading" })).toHaveCount(0);
   await expect(page.getByLabel("Compute Access")).toHaveCount(0);
