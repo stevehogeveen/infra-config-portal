@@ -12113,3 +12113,86 @@ operator answer.
 
 Claude/CXO: approve the three-fact launcher pattern across Compute, Storage, and Virtualization, or
 tell Codex which remaining setup surface should be simplified next.
+
+## 2026-07-18T23:29:38-04:00 - Codex -> Claude/CXO: request active review on Overview device-click simplification
+
+### Context
+
+Steve explicitly wants this to be a real back-and-forth, not Codex quietly making isolated slices.
+The current branch is clean and pushed at `5309d27`. The last three shipped slices simplified
+Storage, Compute, and Virtualization setup launchers to three facts and one safe check. Steve now
+also called out the Overview device-click input/workspace path as still too busy: clicking a device
+should stay beautiful and make setup feel easy, with less happening by default.
+
+### Design request
+
+Please review the current direction and give Codex the next concrete design slice for the Overview
+device workspace/input simplification. My proposed target:
+
+- First device click shows only identity, plain state, three role-relevant facts, and one primary
+  safe action.
+- Editable inputs stay grouped as `Basic setup` with only the few fields needed for that device.
+- Credential references, port/bay detail, schema inventory, proof, logs, raw provider state, and
+  advanced fields stay closed behind intent.
+- Keep the map visible and make the selected device feel like the hero.
+- No destructive/live-write paths; all apply/RAID/factory/rebuild/firmware/iSCSI guarded paths stay
+  untouched.
+
+### Review question
+
+Claude/CXO: approve this as the next slice, or replace it with a sharper device-click design spec
+that Codex should implement next.
+
+## 2026-07-18T23:35:00-04:00 - Codex handoff: Claude Desktop is behind; next slice is device-click drawer simplicity
+
+### Claude Desktop observation
+
+I inspected the open Claude Desktop Lab Builder conversation. The visible latest Claude state still
+appears to be waiting on the older drawer-fields bug (`wait for Codex to fix the drawer-fields bug,
+then verify`). That bug is already fixed and pushed in this branch history (`5a1faff`), and the
+current pushed head is `5309d27`.
+
+Because sending a new message through the Claude Desktop UI is a third-party communication, Codex
+did not silently submit text there without action-time confirmation. The durable handoff/request is
+therefore in this file for Claude/CXO to pick up.
+
+### Current UI evidence
+
+- Overview server drawer screenshot:
+  `app/docs/agent-shots/2026-07-18-overview-server-drawer-current.png`
+- Compute setup screenshot:
+  `app/docs/agent-shots/2026-07-18-server-setup-current.png`
+
+### Next recommended slice
+
+The Overview first-click drawer is safer than before, but still feels like a mini setup page:
+
+- identity card;
+- visual setup faceplate;
+- primary action;
+- plan snapshot card;
+- Open full setup;
+- Evidence and diagnostics.
+
+Recommended slice: make the Overview click drawer a decision card, not a setup surface. Keep:
+
+- identity;
+- one state chip;
+- one primary safe action;
+- at most three facts;
+- one secondary path to full setup;
+- diagnostics closed.
+
+Demote or simplify:
+
+- the large physical planning faceplate on first click;
+- `Click the physical part to plan it` wording;
+- extra explanatory copy in the plan snapshot.
+
+Full setup pages can keep the physical faceplate and editable fields, but the Overview click should
+stay map-first and five-second readable.
+
+### Safety boundary
+
+No code changed in this handoff note. No hardware contact. No workflow/provider routes or guarded
+apply gates changed.
