@@ -5,14 +5,14 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
+from app.services.workflow_registry import get_workflow_action
+
 
 SCRIPT_PATH = Path(__file__).resolve().parents[1] / "scripts" / "operator_readonly_sweep.py"
 SPEC = importlib.util.spec_from_file_location("operator_readonly_sweep", SCRIPT_PATH)
 assert SPEC and SPEC.loader
 operator_readonly_sweep = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(operator_readonly_sweep)
-
-from app.services.workflow_registry import get_workflow_action
 
 
 def test_action_group_contains_only_registered_read_only_or_report_actions() -> None:
@@ -116,7 +116,6 @@ def test_quality_gate_keeps_optional_protocol_blockers_out_of_required_gate() ->
 
 def test_selected_actions_mark_inactive_shared_storage_protocol_optional() -> None:
     state = _profile_state(storage_protocol="nfs")
-
     actions = {
         item["action_id"]: item
         for item in operator_readonly_sweep._selected_actions(state)
@@ -130,7 +129,6 @@ def test_selected_actions_mark_inactive_shared_storage_protocol_optional() -> No
 
 def test_selected_actions_mark_nfs_optional_when_iscsi_is_active() -> None:
     state = _profile_state(storage_protocol="iscsi")
-
     actions = {
         item["action_id"]: item
         for item in operator_readonly_sweep._selected_actions(state)
@@ -143,7 +141,6 @@ def test_selected_actions_mark_nfs_optional_when_iscsi_is_active() -> None:
 
 def test_selected_actions_skip_netapp_when_profile_uses_local_storage() -> None:
     state = _profile_state(netapp_enabled=False, storage_protocol="local")
-
     actions = {
         item["action_id"]: item
         for item in operator_readonly_sweep._selected_actions(state)
