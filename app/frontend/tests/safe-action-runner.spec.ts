@@ -2642,7 +2642,9 @@ test("map Cisco workspace surfaces current-intent guardrail drift", async ({ pag
   const schema = advanced.locator(".design-schema-inventory");
   await schema.locator(":scope > summary").click();
   await expect(advanced.getByLabel("Cisco switch schema inventory")).toContainText("Management IP");
-  await expect(page.locator("section[aria-label='Cisco switch driver']")).toHaveCount(0);
+  await expect(controls.getByLabel("Cisco switch driver")).toHaveCount(1);
+  await expect(controls.getByLabel("Cisco switch driver")).not.toBeVisible();
+  await expect(page.locator("section[aria-label='Cisco switch workspace'] > section[aria-label='Cisco switch driver']")).toHaveCount(0);
 });
 
 test("remaining operator pages expose simplified setup surfaces without old settings controls", async ({ page }) => {
@@ -3310,7 +3312,7 @@ test("blocked workflow runs render an advisory diagnosis card", async ({ page })
 test("testing assistant queues a redacted fix request from the current route", async ({ page }) => {
   const workflowRequests: string[] = [];
   page.on("request", (request) => {
-    if (request.url().includes("/api/v1/workflows/actions/")) {
+    if (request.method() === "POST" && /\/api\/v1\/workflows\/actions\/[^/]+\/run$/.test(new URL(request.url()).pathname)) {
       workflowRequests.push(request.url());
     }
   });

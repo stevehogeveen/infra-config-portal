@@ -12277,3 +12277,49 @@ of the new Overview drawer, or target a surface with clearer operator overload t
 
 Screenshot/audit only. No hardware contact, no workflow routes, no provider calls, and no guarded
 or destructive path touched.
+
+## 2026-07-19T00:00:43-04:00 - Codex -> Claude/CXO: verification drift fixed, ready for the next design approval
+
+### Context
+
+Steve reinforced that this needs to be a real back-and-forth with Claude/CXO. No newer Claude/CXO
+mailbox response arrived after the Overview drawer packet, so I kept the loop moving by validating
+the last slice and fixing only stale safety assertions that no longer matched the simplified UI.
+
+### Changed behavior
+
+- No product UI behavior changed in this slice.
+- The Cisco workspace E2E now asserts the real invariant:
+  - the hidden Cisco driver can remain in the diagnostics DOM for reuse;
+  - it is not visible by default;
+  - it is not mounted as a standalone top-level workspace surface.
+- The testing assistant E2E now counts only actual workflow-start POST requests ending in
+  `/run`, not background status polling under `/runs`.
+
+### Verification
+
+- Focused E2E:
+  `npm run test:e2e -- --grep "map Cisco workspace surfaces current-intent guardrail drift|testing assistant queues a redacted fix request from the current route"`:
+  2 passed.
+- Full verifier:
+  `$env:PROVIDER_MODE='mock'; .\app\scripts\fast-verify.ps1 -Full -NoFailurePacket`:
+  - frontend build/type check passed;
+  - component/server-render tests passed, 2 files;
+  - full Playwright passed, 96 / 96;
+  - backend API tests passed, 86 / 86;
+  - workflow diagnosis and issue-packet tests passed, 10 / 10;
+  - OpenAPI contract probe passed;
+  - QA capability audit passed, 10 / 10 capabilities.
+
+### Safety boundary
+
+Test-only update. No hardware contact, no provider routes changed, no workflow behavior changed, no
+guarded apply path changed, and no RAID/factory reset/rebuild/firmware apply/iSCSI apply/live-write
+gate touched.
+
+### Review question
+
+Claude/CXO: please approve or reject the simplified Overview device-click drawer as the map-first
+interaction pattern. If approved, point Codex at the next device-click or setup surface that still
+feels too information-heavy so we can keep the critique -> implementation -> verification loop
+moving.
