@@ -998,11 +998,9 @@ test("zoned map opens the device workspace directly", async ({ page }) => {
   await ciscoProbeRequest;
   await ciscoDiffRequest;
   await expect(networkControls).toContainText("Cisco current-to-intent diff completed");
-  await composer.getByRole("button", { name: "Switch port 2" }).click();
-  await expect(switchWorkspace.locator(".design-selected-element-note")).toContainText("Switch port 2");
-  await expect(switchWorkspace.locator(".design-selected-element-note")).toContainText("which VLAN lane it belongs to");
+  await expect(composer.getByRole("button", { name: "Switch port 2" })).toHaveCount(0);
+  await expect(switchWorkspace.locator(".design-selected-element-note")).toHaveCount(0);
   await expect(switchWorkspace.getByLabel("Switch port assignment")).toHaveCount(0);
-  await expect(composer.getByRole("button", { name: "Switch port 2" })).toHaveClass(/selected/);
 
   await page.locator("div[aria-label='Device workspace overlay']").getByRole("button", { name: "Close" }).click();
   await expect(page.locator("div[aria-label='Device workspace overlay']")).toHaveCount(0);
@@ -1338,24 +1336,23 @@ test("overview device workspace matrix keeps first click summary-only", async ({
     await expect(workspace.locator(".design-workspace-boundary"), `${item.workspace} removes the standalone safety paragraph`).toHaveCount(0);
     await expect(workspace.locator(":scope > .design-device-primary-action"), `${item.workspace} keeps the safety boundary with the one action`).toContainText("Read-only check. Apply steps stay behind confirmations.");
     await expect(workspace, `${item.workspace} avoids dead default actions`).not.toContainText("No read-only test registered");
-    const visualEditor = workspace.getByLabel(`${item.workspace} visual setup editor`);
-    await expect(visualEditor, `${item.workspace} shows the physical editor on first click`).toBeVisible();
-    await expect(visualEditor, `${item.workspace} makes the safe planning boundary obvious`).toContainText("Plan only. Hardware untouched.");
-    await expect(workspace.getByLabel(`${item.workspace} interactive faceplate`), `${item.workspace} shows the interactive faceplate immediately`).toBeVisible();
+    await expect(workspace.getByLabel(`${item.workspace} visual setup editor`), `${item.workspace} keeps physical planning off the first-click drawer`).toHaveCount(0);
+    await expect(workspace.getByLabel(`${item.workspace} interactive faceplate`), `${item.workspace} keeps the first-click drawer decision-only`).toHaveCount(0);
+    await expect(workspace.locator(".design-selected-element-note"), `${item.workspace} starts without element planning copy`).toHaveCount(0);
 
     if (item.workspace === "Cisco switch") {
-      await expect(workspace.getByRole("button", { name: "Switch port 2" })).toBeVisible();
+      await expect(workspace.getByRole("button", { name: "Switch port 2" })).toHaveCount(0);
       await expect(workspace.getByLabel("Switch port assignment"), `${item.workspace} keeps selected port detail out of first-click drawer`).toHaveCount(0);
     }
     if (item.workspace === "DL360 Gen10") {
-      await expect(workspace.getByRole("button", { name: "Drive bay 2" })).toBeVisible();
+      await expect(workspace.getByRole("button", { name: "Drive bay 2" })).toHaveCount(0);
       await expect(workspace.getByLabel("Drive bay assignment"), `${item.workspace} keeps selected drive detail out of first-click drawer`).toHaveCount(0);
     }
 
     const drawerSummary = workspace.getByLabel(`${item.workspace} drawer summary`);
     await expect(drawerSummary, `${item.workspace} shows a summary-only drawer snapshot`).toBeVisible();
     await expect(drawerSummary, `${item.workspace} gives a plain-language first-click purpose`).toContainText("Current plan");
-    await expect(drawerSummary, `${item.workspace} points editing to the setup page`).toContainText("Open full setup to edit saved values");
+    await expect(drawerSummary, `${item.workspace} keeps drawer copy short`).toContainText("Three facts only");
     const drawerFactCount = await drawerSummary.getByLabel(`${item.workspace} drawer facts`).locator(":scope > div").count();
     expect(drawerFactCount, `${item.workspace} keeps the first-click fact budget tight`).toBeLessThanOrEqual(3);
     expect(drawerFactCount, `${item.workspace} still shows the required snapshot facts`).toBeGreaterThanOrEqual(item.snapshotFields.length);
@@ -1453,57 +1450,51 @@ test("overview device workspace resolves saved values when visual drafts are bla
   await expect(workspace.getByLabel("Cisco switch essentials")).toHaveCount(0);
 });
 
-test("overview faceplate element clicks reveal concise details only after intent", async ({ page }) => {
-  await page.goto("/overview");
-  await openOperatorDetails(page);
-
-  const topology = page.locator("section[aria-label='Living lab topology']");
+test("setup faceplate element clicks reveal concise details only after intent", async ({ page }) => {
   const cases: Array<{
-    button: string;
+    assignmentLabel?: string;
     click: RegExp;
     note: string;
+    path: string;
     workspace: string;
   }> = [
     {
-      button: "Open Cisco switch workspace",
+      assignmentLabel: "Switch port assignment",
       click: /^Switch port 1$/,
       note: "which VLAN lane it belongs to",
+      path: "/network",
       workspace: "Cisco switch"
     },
     {
-      button: "Open HPE iLO workspace",
-      click: /^iLO management NIC$/,
-      note: "whether sign-in still needs attention",
-      workspace: "HPE iLO"
-    },
-    {
-      button: "Open HPE DL360 Gen10 workspace",
+      assignmentLabel: "Drive bay assignment",
       click: /^Drive bay 1/,
       note: "saved RAID role",
+      path: "/server",
       workspace: "DL360 Gen10"
     },
     {
-      button: "Open NetApp ONTAP workspace",
       click: /^e0a$/,
       note: "shared storage path",
+      path: "/storage",
       workspace: "NetApp ONTAP"
     }
   ];
 
   for (const item of cases) {
-    await topology.getByRole("button", { name: item.button }).click();
-    const overlay = page.locator("div[aria-label='Device workspace overlay']");
-    const workspace = overlay.locator(`section[aria-label='${item.workspace} workspace']`);
-    await expect(workspace.locator(".design-selected-element-note"), `${item.workspace} starts without element noise`).toHaveCount(0);
-    await expect(workspace.getByLabel(`${item.workspace} interactive faceplate`), `${item.workspace} shows the faceplate on first click`).toBeVisible();
+    await page.goto(item.path);
+    const workspace = page.locator(`section[aria-label='${item.workspace} workspace']`);
+    await expect(workspace.getByLabel(`${item.workspace} visual setup editor`), `${item.workspace} setup page keeps the visual editor`).toBeVisible();
+    await expect(workspace.getByLabel(`${item.workspace} interactive faceplate`), `${item.workspace} setup page shows the faceplate`).toBeVisible();
     await workspace.getByRole("button", { name: item.click }).first().click();
-    const elementNote = workspace.locator(".design-selected-element-note");
-    await expect(elementNote, `${item.workspace} shows a compact element note`).toContainText(item.note);
-    await expect(elementNote, `${item.workspace} keeps default element copy operator-facing`).not.toContainText(/proof|source|device_settings|workflow|live-proof|read-only/i);
-    await expect(workspace.locator(".design-element-assignment-preview"), `${item.workspace} keeps assignment forms off the Overview drawer`).toHaveCount(0);
+    if (item.assignmentLabel) {
+      await expect(workspace.getByLabel(item.assignmentLabel), `${item.workspace} shows concise element planning after intent`).toContainText(item.note);
+      await expect(workspace.getByLabel(item.assignmentLabel), `${item.workspace} keeps element copy operator-facing`).not.toContainText(/device_settings|workflow|live-proof/i);
+    } else {
+      const elementNote = workspace.locator(".design-selected-element-note");
+      await expect(elementNote, `${item.workspace} shows a compact element note`).toContainText(item.note);
+      await expect(elementNote, `${item.workspace} keeps default element copy operator-facing`).not.toContainText(/proof|source|device_settings|workflow|live-proof|read-only/i);
+    }
     await expect(workspace.getByLabel(`${item.workspace} advanced checks and proof`), `${item.workspace} still keeps proof closed`).not.toHaveAttribute("open", "");
-    await overlay.getByRole("button", { name: "Close" }).click();
-    await expect(page.locator("div[aria-label='Device workspace overlay']")).toHaveCount(0);
   }
 });
 
@@ -1738,10 +1729,9 @@ test("overview design mode keeps the surface map-only until a node opens the wor
   await expect(switchWorkspace.getByLabel("Cisco switch state")).toContainText("Map status");
   await expect(switchWorkspace.getByLabel("Cisco switch state")).not.toContainText(/Draft|Saved/);
   await expect(switchWorkspace.getByLabel("Cisco switch state")).not.toContainText("source:");
-  await expect(switchWorkspace.getByLabel("Cisco switch interactive faceplate")).toBeVisible();
-  await switchWorkspace.getByRole("button", { name: "Switch port 1", exact: true }).click();
-  await expect(switchWorkspace.locator(".design-selected-element-note")).toContainText("Switch port 1");
-  await expect(switchWorkspace.locator(".design-selected-element-note")).toContainText("which VLAN lane it belongs to");
+  await expect(switchWorkspace.getByLabel("Cisco switch interactive faceplate")).toHaveCount(0);
+  await expect(switchWorkspace.getByRole("button", { name: "Switch port 1", exact: true })).toHaveCount(0);
+  await expect(switchWorkspace.locator(".design-selected-element-note")).toHaveCount(0);
   await expect(switchWorkspace.getByLabel("Switch port assignment")).toHaveCount(0);
   const drawerSummary = switchWorkspace.getByLabel("Cisco switch drawer summary");
   await expect(drawerSummary).toContainText("Management IP");

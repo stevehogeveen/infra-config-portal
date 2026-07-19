@@ -8437,7 +8437,7 @@ function LabDesignComposer({
               </div>
             )}
 
-            {workspaceOnly && (
+            {workspaceOnly && !drawerWorkspace && (
               <section className="design-device-live-editor" aria-label={`${selectedPart.label} visual setup editor`}>
                 <div className="design-device-live-editor-head">
                   <div>
@@ -8611,9 +8611,9 @@ function LabDesignComposer({
             {drawerWorkspace && (
               <section className="design-device-drawer-summary" aria-label={`${selectedPart.label} drawer summary`}>
                 <div>
-                  <p className="operator-kicker">Plan snapshot</p>
+                  <p className="operator-kicker">Device snapshot</p>
                   <h4>Current plan</h4>
-                  <span>Recognize the device and run one read-only check. Open full setup to edit saved values.</span>
+                  <span>Three facts only. Full setup holds edits.</span>
                 </div>
                 <div className="design-device-drawer-facts" aria-label={`${selectedPart.label} drawer facts`}>
                   {selectedDrawerFields.map((field) => (
