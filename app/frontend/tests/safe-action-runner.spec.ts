@@ -2488,8 +2488,7 @@ test("server default opens canonical Compute workspace and hides retired server 
   await expect(workspace.locator(":scope > .design-device-primary-action .design-plan-action")).toHaveCount(1);
   await expect(workspace.getByRole("button", { name: "Test DL360 Gen10" })).toBeVisible();
   await expect(workspace.getByLabel("Drive bay assignment")).toHaveCount(0);
-  await workspace.getByRole("button", { name: /^Drive bay 1/ }).click();
-  await expect(workspace.getByLabel("Drive bay assignment")).toContainText("Drive bay 1");
+  await expect(workspace.getByLabel("DL360 Gen10 interactive faceplate")).not.toBeVisible();
   await expect(workspace.getByLabel("Server workspace checks")).not.toBeVisible();
   await expect(page.locator(".operator-feedback", { hasText: "Loading" })).toHaveCount(0);
   await expect(page.getByLabel("Compute Access")).toHaveCount(0);
@@ -2635,6 +2634,34 @@ test("virtualization no-kit state does not show stale loading feedback", async (
   await expect(page.getByLabel("Virtualization setup launcher")).toBeVisible();
   await expect(page.locator("section[aria-label='vCenter VCSA workspace']")).toBeVisible();
   await expect(page.locator(".operator-feedback", { hasText: "Loading" })).toHaveCount(0);
+});
+
+test("setup surfaces hide stale loading while background checks are slow", async ({ page }) => {
+  const slowEmpty = async (route: Route) => {
+    await new Promise((resolve) => setTimeout(resolve, 5000));
+    return json(route, []);
+  };
+  await page.route("**/api/v1/workflows/actions", slowEmpty);
+  await page.route("**/api/v1/firmware/summary", slowEmpty);
+  await page.route("**/api/v1/lab/firmware-compliance**", async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 5000));
+    return json(route, null);
+  });
+  await page.route("**/api/v1/firmware/file-selections", async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 5000));
+    return json(route, { selected_files: {} });
+  });
+
+  for (const [path, heading] of [
+    ["/setup/cisco", "Cisco Switch"],
+    ["/setup/ilo", "Compute & iLO"],
+    ["/setup/storage", "Storage & NetApp"],
+    ["/setup/firmware", "Keep every device on the expected version."]
+  ] as const) {
+    await page.goto(path);
+    await expect(page.getByRole("heading", { name: heading, exact: true })).toBeVisible();
+    await expect(page.locator(".operator-feedback", { hasText: "Loading" })).toHaveCount(0);
+  }
 });
 
 test("virtualization vCenter workspace reveals migrated checks and guarded boundary", async ({ page }) => {

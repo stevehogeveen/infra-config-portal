@@ -1265,7 +1265,7 @@ export function OperatorNetworkPage({ health, labProfileState, onReloadLabProfil
         <h1>Cisco Switch</h1>
         <p>One Cisco setup workspace, whether you arrive from the sidebar or the topology map.</p>
       </div>
-      <Feedback loading={loading && !workflowActions.length} error={error} />
+      <Feedback loading={false} error={error} />
       <section className="network-cisco-workspace-shell" aria-label="Cisco switch setup launcher">
         <div className="network-cisco-workspace-summary" aria-label="Cisco switch launcher summary">
           <div>
@@ -1416,7 +1416,7 @@ export function OperatorServerPage({ health, labProfileState, onReloadLabProfile
         <h1>Compute & iLO</h1>
         <p>Set the host values once, then run read-only iLO, ESXi, and RAID checks from the server workspace.</p>
       </div>
-      <Feedback loading={loading && !workflowActions.length} error={error} />
+      <Feedback loading={false} error={error} />
       <section className="server-compute-workspace-shell" aria-label="Compute and iLO setup launcher">
         <div className="server-compute-workspace-summary" aria-label="Compute and iLO launcher summary">
           <div>
@@ -2234,7 +2234,7 @@ export function OperatorStoragePage({ health, labProfileState, onReloadLabProfil
         <h1>Storage & NetApp</h1>
         <p>Pick the storage path once, then run read-only storage checks from the device workspace.</p>
       </div>
-      <Feedback loading={loading && !workflowActions.length} error={error} />
+      <Feedback loading={false} error={error} />
       <section className="storage-netapp-workspace-shell" aria-label="Storage and NetApp setup launcher">
         <div className="storage-netapp-workspace-summary" aria-label="Storage and NetApp launcher summary">
           <div>
@@ -4093,7 +4093,7 @@ export function OperatorFirmwareUpgradesPage({ labProfileState }: OperatorPagePr
         </div>
         <RunCheckButton actionIds={["firmware.inventory", "firmware.compliance-check"]} actions={actions} label="Check versions" onReload={load} />
       </section>
-      <Feedback loading={loading && !firmwareSummaries.length} error={error} />
+      <Feedback loading={false} error={error} />
       <Feedback loading={false} error={selectionError} />
       <FirmwareSimpleTable
         actions={actions}
