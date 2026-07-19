@@ -3,6 +3,7 @@ import { expect, test, type Page, type Route } from "@playwright/test";
 const checkedAt = "2026-06-09T21:00:00Z";
 let labProfileScenario: "none" | "shared" | "single" = "shared";
 let healthHostIpv4Addresses = ["192.168.1.99"];
+let workflowActionsOverride: Record<string, unknown>[] | null = null;
 
 const safeAction = workflowAction({
   action_id: "build-verification.run-full",
@@ -206,6 +207,7 @@ const netappOntapUpgradeApplyAction = workflowAction({
 test.beforeEach(async ({ page }) => {
   labProfileScenario = "shared";
   healthHostIpv4Addresses = ["192.168.1.99"];
+  workflowActionsOverride = null;
   await installApiMocks(page);
 });
 
@@ -1412,6 +1414,28 @@ test("overview device workspace matrix keeps first click summary-only", async ({
     await overlay.getByRole("button", { name: "Close" }).click();
     await expect(page.locator("div[aria-label='Device workspace overlay']")).toHaveCount(0);
   }
+});
+
+test("overview device drawer avoids duplicate setup links when checks are unavailable", async ({ page }) => {
+  workflowActionsOverride = [];
+  await page.goto("/overview");
+  await openOperatorDetails(page);
+
+  const topology = page.locator("section[aria-label='Living lab topology']");
+  await topology.getByRole("button", { name: "Open HPE DL360 Gen10 workspace" }).click();
+
+  const overlay = page.locator("div[aria-label='Device workspace overlay']");
+  const workspace = overlay.locator("section[aria-label='DL360 Gen10 workspace']");
+  await expect(workspace).toBeVisible();
+  await expect(workspace.locator(":scope > .design-device-primary-action .design-plan-action")).toHaveCount(1);
+  await expect(workspace.getByRole("link", { name: "Open setup" })).toHaveAttribute("href", "/server");
+  await expect(workspace).not.toContainText("No read-only test registered");
+  await expect(workspace.locator("input, select, textarea")).toHaveCount(0);
+
+  const drawerSummary = workspace.getByLabel("DL360 Gen10 drawer summary");
+  await expect(drawerSummary.getByRole("link", { name: "Open full setup" })).toHaveCount(0);
+  await expect(drawerSummary.locator(".design-plan-secondary")).toHaveCount(0);
+  await expect(drawerSummary).toContainText("Setup edits save the lab profile only; hardware stays untouched.");
 });
 
 test("overview device workspace resolves saved values when visual drafts are blank", async ({ page }) => {
@@ -3630,7 +3654,7 @@ async function installApiMocks(page: Page) {
       return json(route, workflowStages());
     }
     if (url.pathname === "/api/v1/workflows/actions") {
-      return json(route, workflowActions());
+      return json(route, workflowActionsOverride ?? workflowActions());
     }
     if (url.pathname === "/api/v1/control/actions") {
       return json(route, controlCatalog());

@@ -8599,7 +8599,7 @@ function LabDesignComposer({
                   {actionRunStatus.runningActionId === selectedSafeActions[0].action_id ? "Running check" : topologyPrimaryActionLabel(selectedPart.id, selectedSafeActions[0])}
                 </button>
               ) : workspaceOnly ? (
-                <Link className="design-plan-action" to="/setup/defaults">Fix setup first</Link>
+                <Link className="design-plan-action" to={drawerSetupPath}>Open setup</Link>
               ) : (
                 <button className="design-plan-action" disabled type="button">No read-only test registered</button>
               )}
@@ -8631,7 +8631,9 @@ function LabDesignComposer({
                   )}
                 </div>
                 <div className="design-device-drawer-actions">
-                  <Link className="design-plan-secondary" to={drawerSetupPath}>Open full setup</Link>
+                  {selectedSafeActions[0] && (
+                    <Link className="design-plan-secondary" to={drawerSetupPath}>Open full setup</Link>
+                  )}
                   <span>Setup edits save the lab profile only; hardware stays untouched.</span>
                 </div>
               </section>
