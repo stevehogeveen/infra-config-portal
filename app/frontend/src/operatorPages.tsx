@@ -1406,7 +1406,6 @@ export function OperatorServerPage({ health, labProfileState, onReloadLabProfile
   const serverPart: DesignPartId = serverModel === "gen10plus" || serverModel === "gen10+" ? "server-gen10plus" : "server-gen10";
   const serverModelLabel = topologyServerModelLabel(activeProfile?.devices?.server_model);
   const localStorageMode = features?.storage_location === "server_local" || features?.netapp_enabled === false;
-  const servicePack = servicePackSummary(firmwareSummaries);
   const subnetState = topologySubnetState(address.subnet, health);
   const workspaceTone: TopologyNodeTone = subnetState.status === "matches" ? "ready" : subnetState.status === "mismatch" ? "warning" : "unknown";
 
@@ -1423,13 +1422,12 @@ export function OperatorServerPage({ health, labProfileState, onReloadLabProfile
           <div>
             <p className="operator-kicker">Compute setup</p>
             <h2>{serverModelLabel} workspace</h2>
-            <span>Daily setup stays here. Raw proof and guarded actions stay behind Details or Validation.</span>
+            <span>Set the host path and run one safe check. Firmware choices stay on the Firmware page.</span>
           </div>
           <div className="server-compute-workspace-facts">
             <span><strong>iLO IP</strong>{displayAddress(address.ilo)}</span>
             <span><strong>ESXi IP</strong>{displayAddress(address.esxi_management)}</span>
             <span><strong>Storage path</strong>{localStorageMode ? "Server-local RAID" : "Shared datastore"}</span>
-            <span><strong>Service Pack</strong>{servicePack}</span>
           </div>
         </div>
         <LabDesignComposer

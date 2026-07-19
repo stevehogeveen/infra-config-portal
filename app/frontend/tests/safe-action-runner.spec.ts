@@ -1969,7 +1969,7 @@ test("single-server storage page shows local path without shared storage clutter
   const serverWorkspace = page.locator("section[aria-label='DL360 Gen10 workspace']");
   await expect(summary).toContainText("Server-local RAID");
   await expect(summary).toContainText("Local");
-  await expect(summary).toContainText("Not used");
+  await expect(summary).toContainText("Server local");
   await expect(serverWorkspace).toBeVisible();
   await expect(page.locator("section[aria-label='NetApp ONTAP workspace']")).toHaveCount(0);
   await expect(summary).not.toContainText("NetApp shared datastore");
@@ -2360,14 +2360,16 @@ test("server default opens canonical Compute workspace and hides retired server 
   await expect(page.getByLabel("Compute and iLO launcher summary")).toContainText("iLO IP");
   await expect(page.getByLabel("Compute and iLO launcher summary")).toContainText("ESXi IP");
   await expect(page.getByLabel("Compute and iLO launcher summary")).toContainText("Storage path");
-  await expect(page.getByLabel("Compute and iLO launcher summary")).toContainText("Service Pack");
+  await expect(page.getByLabel("Compute and iLO launcher summary")).not.toContainText("Service Pack");
+  await expect(page.getByLabel("Compute and iLO launcher summary")).not.toContainText(/\\.fwpkg|\\.iso|P95170_001_gen10spp/i);
+  await expect(page.getByLabel("Compute and iLO launcher summary").locator(".server-compute-workspace-facts > span")).toHaveCount(3);
   await expect(workspace.getByLabel("DL360 Gen10 main setup fields")).toContainText("iLO IP");
   await expect(workspace.getByLabel("DL360 Gen10 main setup fields")).toContainText("ESXi IP");
   await expect(workspace.getByLabel("DL360 Gen10 credential setup")).toContainText("Reference only");
   await expect(workspace.locator(":scope > .design-device-primary-action .design-plan-action")).toHaveCount(1);
   await expect(workspace.getByRole("button", { name: "Test DL360 Gen10" })).toBeVisible();
   await expect(workspace.getByLabel("Drive bay assignment")).toHaveCount(0);
-  await workspace.getByRole("button", { exact: true, name: "Drive bay 1" }).click();
+  await workspace.getByRole("button", { name: /^Drive bay 1/ }).click();
   await expect(workspace.getByLabel("Drive bay assignment")).toContainText("Drive bay 1");
   await expect(workspace.getByLabel("Server workspace checks")).not.toBeVisible();
   await expect(page.locator(".operator-feedback", { hasText: "Loading" })).toHaveCount(0);
