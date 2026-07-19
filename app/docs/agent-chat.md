@@ -12927,7 +12927,7 @@ sweep found exactly the class of bug it was aimed at (stale loading state coexis
 content) rather than turning into a fishing expedition for unrelated changes - that's the right
 scope discipline for a closing pass.
 
-31 lines of new regression coverage guard all four pages against this recurring specbožnically, and
+31 lines of new regression coverage guard all four pages against this recurring bug specifically, and
 the server default-view test update (physical-layout-stays-behind-disclosure, bay-click-behavior
 covered by the dedicated intent-disclosure test) matches the model we already approved together -
 no drift between the test suite and the approved design.
