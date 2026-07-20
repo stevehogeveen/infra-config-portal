@@ -15068,8 +15068,8 @@ button.design-ilo-port:hover {
   margin: 0;
 }
 
-.network-workspace-heading {
-  margin: 28px auto 16px;
+.operator-surface-heading.network-workspace-heading {
+  margin: 28px 0 16px;
   max-width: 1180px;
   padding: 0 32px;
 }
@@ -15077,7 +15077,7 @@ button.design-ilo-port:hover {
 .network-cisco-workspace-shell {
   display: grid;
   gap: 16px;
-  margin: 0 auto 28px;
+  margin: 0 0 28px;
   max-width: 1180px;
   padding: 0 32px;
 }
@@ -15167,8 +15167,8 @@ button.design-ilo-port:hover {
   width: 34px;
 }
 
-.server-workspace-heading {
-  margin: 28px auto 16px;
+.operator-surface-heading.server-workspace-heading {
+  margin: 28px 0 16px;
   max-width: 1180px;
   padding: 0 32px;
 }
@@ -15176,7 +15176,7 @@ button.design-ilo-port:hover {
 .server-compute-workspace-shell {
   display: grid;
   gap: 16px;
-  margin: 0 auto 28px;
+  margin: 0 0 28px;
   max-width: 1180px;
   padding: 0 32px;
 }
@@ -15267,8 +15267,8 @@ button.design-ilo-port:hover {
   width: 34px;
 }
 
-.storage-workspace-heading {
-  margin: 28px auto 16px;
+.operator-surface-heading.storage-workspace-heading {
+  margin: 28px 0 16px;
   max-width: 1180px;
   padding: 0 32px;
 }
@@ -15276,7 +15276,7 @@ button.design-ilo-port:hover {
 .storage-netapp-workspace-shell {
   display: grid;
   gap: 16px;
-  margin: 0 auto 28px;
+  margin: 0 0 28px;
   max-width: 1180px;
   padding: 0 32px;
 }
@@ -15367,8 +15367,8 @@ button.design-ilo-port:hover {
   width: 34px;
 }
 
-.virtualization-workspace-heading {
-  margin: 28px auto 16px;
+.operator-surface-heading.virtualization-workspace-heading {
+  margin: 28px 0 16px;
   max-width: 1180px;
   padding: 0 32px;
 }
@@ -15376,7 +15376,7 @@ button.design-ilo-port:hover {
 .virtualization-vcenter-workspace-shell {
   display: grid;
   gap: 16px;
-  margin: 0 auto 28px;
+  margin: 0 0 28px;
   max-width: 1180px;
   padding: 0 32px;
 }
@@ -15501,7 +15501,7 @@ button.design-ilo-port:hover {
 
 .network-access-surface,
 .network-details {
-  margin: 0 auto 24px;
+  margin: 0 0 24px;
   max-width: 1410px;
   padding: 0 32px;
 }
@@ -16074,7 +16074,7 @@ button.design-ilo-port:hover {
 .validation-readiness-surface,
 .validation-details,
 .validation-danger-zone {
-  margin: 0 auto 24px;
+  margin: 0 0 24px;
   max-width: 1410px;
   padding: 0 32px;
 }
@@ -16344,7 +16344,7 @@ button.design-ilo-port:hover {
 
 .storage-path-surface,
 .storage-path-details {
-  margin: 0 auto 24px;
+  margin: 0 0 24px;
   max-width: 1410px;
   padding: 0 32px;
 }
@@ -18374,10 +18374,10 @@ button.design-ilo-port:hover {
 .shell-topbar .mode-toggle { background: #fff; }
 .content { background: #f4f6f8; grid-column: 2; grid-row: 2; min-width: 0; }
 
-.operator-surface-heading { margin: 28px auto 22px; max-width: 1410px; padding: 0 32px; }
+.operator-surface-heading { margin: 28px 0 22px; max-width: 1410px; padding: 0 32px; }
 .operator-surface-heading h1 { color: #102238; font-size: clamp(30px, 3vw, 42px); letter-spacing: -.04em; margin: 5px 0 9px; }
 .operator-surface-heading > p:last-child { color: #5b6f86; font-size: 16px; line-height: 1.45; margin: 0; max-width: 670px; }
-.lab-defaults-form { margin: 0 auto 20px; max-width: 1410px; padding: 0 32px; }
+.lab-defaults-form { margin: 0 0 20px; max-width: 1410px; padding: 0 32px; }
 .lab-defaults-grid { display: grid; gap: 20px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .lab-defaults-network-card, .lab-defaults-signin-card, .lab-defaults-devices-card, .lab-defaults-advanced { border-color: #d6e0e8; box-shadow: 0 8px 20px rgba(34, 58, 80, .05); }
 .lab-defaults-input-grid { display: grid; gap: 12px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -18412,7 +18412,7 @@ button.design-ilo-port:hover {
 .lab-defaults-actions { display: flex; justify-content: flex-end; margin-top: 16px; }
 .lab-defaults-actions .operator-primary-button { width: auto; }
 .lab-defaults-feedback { margin: 12px 0 0; }
-.lab-defaults-devices-card { margin: 0 auto 20px; max-width: 1410px; }
+.lab-defaults-devices-card { margin: 0 0 20px; max-width: 1410px; }
 .lab-defaults-device-list { display: grid; }
 .lab-defaults-device-row { align-items: center; border-bottom: 1px solid #e2e8ee; display: flex; gap: 14px; min-height: 62px; }
 .lab-defaults-device-row:last-child { border-bottom: 0; }
@@ -18430,7 +18430,7 @@ button.design-ilo-port:hover {
 .lab-defaults-device-toggle span { background: #fff; border-radius: 50%; box-shadow: 0 1px 4px rgba(20, 43, 64, .22); height: 24px; transform: translateX(0); transition: transform .16s ease; width: 24px; }
 .lab-defaults-device-toggle.enabled { background: #087f83; }
 .lab-defaults-device-toggle.enabled span { transform: translateX(24px); }
-.lab-defaults-advanced { background: #fff; border: 1px solid #d6e0e8; border-radius: 12px; margin: 0 auto 40px; max-width: 1410px; padding: 0; }
+.lab-defaults-advanced { background: #fff; border: 1px solid #d6e0e8; border-radius: 12px; margin: 0 0 40px; max-width: 1410px; padding: 0; }
 .lab-defaults-advanced summary { color: #334961; cursor: pointer; font-size: 13px; font-weight: 900; letter-spacing: .08em; list-style: none; padding: 18px 22px; text-transform: uppercase; }
 .lab-defaults-advanced summary::-webkit-details-marker { display: none; }
 .lab-defaults-advanced-form { border-top: 1px solid #e1e8ef; padding: 20px 22px 22px; }
