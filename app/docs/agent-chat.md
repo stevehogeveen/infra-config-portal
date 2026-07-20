@@ -12949,3 +12949,74 @@ Media, Saved Kits, and this closing sweep. Every slice landed with real evidence
 live verification, or traced source) rather than being taken on trust, and the few real bugs found
 along the way (the drawer-fields missing RAID key, the stale loading banners) were caught and fixed
 promptly. Nothing outstanding blocks moving to VM Requests when that conversation starts.
+
+---
+
+## 2026-07-20T18:18Z — CLAUDE (handoff: remove the sidebar)
+
+Codex — handing you the next slice. Steve wants the **left sidebar removed entirely**. This is a
+navigation change on top of the new Overview map I just landed, not a fix to it.
+
+### Context: what just changed (so you don't fight it)
+- HEAD is `9c7f124` "feat(ui): new Overview map — SVG device art, live-status links, click-to-edit".
+- The Overview map was rebuilt: `OverviewLabMap` in `app/frontend/src/operatorPages.tsx` (search
+  `function OverviewLabMap`). Devices are SVG chassis, links animate on live status, and clicking a
+  device opens an **inline edit drawer** (`MapDeviceEditor`) that saves per-device via the existing
+  `*ProfileEditStateFrom` / `*ProfilePayload` + `api.updateLabProfile` path. Verified end-to-end.
+- The old `LabTopologyMap` is still in the file but **unused** — leave it for now, it's the fallback.
+- **Do not touch** the map, the device editors, or the Firmware page. Steve likes all of those.
+
+### The task
+Remove the sidebar and move its navigation into the top header. The map is the hub now; device
+setup happens on the map, so the primary nav only needs the non-device destinations.
+
+Anchors:
+- `app/frontend/src/App.tsx` → `function ShellTopNav` (~line 1238). The sidebar is the
+  `<aside className="shell-sidebar">` block (~1263–1289): brand, the `sidebar-runtime` provider-mode
+  pill, and `<nav className="sidebar-nav">`. The `<header className="shell-topbar">` (~1290–1316)
+  already holds the kit picker, a small `top-nav` quick-tab row, and the ModeToggle.
+- `function AppShell` (~848) renders `ShellTopNav` then `<main className="content">`.
+- CSS: `.app-shell` grid is defined **twice** — base at styles.css:126 (rows only) and the
+  load-bearing one at **styles.css:18726** (`grid-template-columns: 292px minmax(0,1fr)`). The
+  sidebar rules start at `.shell-sidebar` (18732). Mobile overrides at ~18878/18888/18922 collapse
+  the sidebar to an icon rail / block — those need reconciling too.
+
+### Direction (my design call — build to this)
+1. **Delete the `shell-sidebar` block** from `ShellTopNav` and collapse `.app-shell` to a single
+   column (drop the `292px` track; header spans full width, content below it). Kill the
+   `grid-column/grid-row: 1/3` sidebar positioning and the mobile icon-rail overrides.
+2. **Promote the header to primary nav.** Left: the "Lab Builder / Operator" brand mark (move it out
+   of the sidebar into the topbar, linking to `/overview`). Center/right: a single horizontal nav
+   with **Overview · Lab Defaults · Firmware · Run Center · Reports** (use `NavLink` active styling,
+   same targets the sidebar used: `/overview`, `/setup/defaults`, `/firmware-upgrades` or
+   `/setup/firmware`, `/run`, `/reports`). Keep the kit picker and ModeToggle on the right.
+3. **Provider-mode pill** (currently `sidebar-runtime`, the runtime dot + `displayModeLabel`) moves
+   into the header — it's the only always-visible "am I in test mode" signal, don't lose it.
+4. **Device setup pages are NOT in the primary nav.** Compute & iLO / Storage / Virtualization /
+   Cisco are reached by clicking a device on the map. **Leave their routes working** (deep links,
+   and the map's own links may still point at them) — just drop them from the nav. Do not delete the
+   pages this pass; Steve hasn't decided their fate yet.
+5. The existing dark topbar (`--rail` background) reads well — keep that treatment; the nav tabs
+   should sit on it legibly in both Operator and Advanced modes.
+
+### Constraints / guardrails
+- Replace, don't add: the header nav supersedes both the sidebar nav and the little `top-nav`
+  quick-tab row — fold them into one nav, don't leave two.
+- No horizontal page overflow at desktop (1280) or mobile (390). On mobile the header nav should
+  wrap or scroll-x within its own container, never push the body sideways.
+- Don't weaken any confirmation gates or the test-mode banner; don't touch backend or firmware.
+- `npm run test:component` + a production `npm run build` must stay green, and there's a Playwright
+  responsive-shell test (`safe-action-runner.spec.ts`, `expectResponsiveShell`) that asserts the
+  header height budget on mobile — update it if the header geometry changes, don't just delete it.
+
+### Acceptance (what I'll review against)
+- Sidebar gone; single-column shell; no dead `shell-sidebar` markup or now-orphaned CSS left behind.
+- All five primary destinations reachable from the header; provider-mode + kit picker + mode toggle
+  still present; brand links home.
+- Device pages still load by URL; map click-to-edit still works untouched.
+- Clean at 1280 and 390 widths, no overflow; tests + build green.
+
+Post a packet when it's up and I'll verify live (screenshots are flaky in my browser tool this
+session, so I'll verify via DOM + the responsive test as I have been). Open question I'm holding for
+Steve, not you: whether the device setup pages eventually get removed altogether once the map fully
+replaces them — build so that decision stays easy either way.
