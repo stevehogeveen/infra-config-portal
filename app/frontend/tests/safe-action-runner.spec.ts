@@ -2159,17 +2159,26 @@ test("top nav and map device drawers keep setup direct without dead settings dra
   await expect(page.locator("section.tab-settings-drawer")).toHaveCount(0);
   await expect(page.getByTestId("operator-home-primary-action")).toBeVisible();
   const topology = page.getByRole("region", { name: "Lab topology" });
+  const localStorage = topology.getByLabel("Local storage offshoot from HPE iLO");
+  await expect(localStorage).toBeVisible();
+  await expect(localStorage).toContainText("Local storage");
+  await expect(localStorage).toContainText("boot / staging RAID");
+  await expect(topology.locator(".overview-link-offshoot")).toHaveCount(1);
   for (const device of [
-    { button: /^Cisco Switch,/, heading: "Cisco Switch" },
-    { button: /^HPE DL360/, heading: /^HPE DL360/ },
-    { button: /^NetApp ONTAP,/, heading: "NetApp ONTAP" },
-    { button: /^vCenter,/, heading: "vCenter" }
+    { absentField: "", button: /^Cisco Switch,/, field: "Management IP", heading: "Cisco Switch" },
+    { absentField: "ESXi IP", button: /^HPE iLO,/, field: "iLO IP", heading: "HPE iLO" },
+    { absentField: "iLO IP", button: /^ESXi Host,/, field: "ESXi IP", heading: "ESXi Host" },
+    { absentField: "", button: /^NetApp ONTAP,/, field: "Cluster mgmt IP", heading: "NetApp ONTAP" },
+    { absentField: "", button: /^vCenter,/, field: "vCenter IP", heading: "vCenter" }
   ] as const) {
     await topology.getByRole("button", { name: device.button }).click();
     const drawer = page.locator("aside.map-drawer");
     await expect(drawer).toBeVisible();
     await expect(drawer.getByRole("heading", { name: device.heading })).toBeVisible();
-    await expect(drawer.locator("input").first()).toBeVisible();
+    await expect(drawer.getByLabel(device.field, { exact: true })).toBeVisible();
+    if (device.absentField) {
+      await expect(drawer.getByLabel(device.absentField, { exact: true })).toHaveCount(0);
+    }
     await expect(drawer.getByRole("button", { name: "Save changes" })).toBeVisible();
     await drawer.getByRole("button", { name: "Close device panel" }).click();
     await expect(drawer).toHaveCount(0);
@@ -2184,6 +2193,32 @@ test("top nav and map device drawers keep setup direct without dead settings dra
     await expect(page.locator("section.tab-settings-drawer")).toHaveCount(0);
     await expect(page.getByRole("button", { name: runButtonName }).first()).toBeVisible();
   }
+});
+
+test("overview map keeps single-server local storage as an iLO offshoot", async ({ page }) => {
+  labProfileScenario = "single";
+  await page.goto("/overview");
+
+  const topology = page.getByRole("region", { name: "Lab topology" });
+  await expect(topology.getByRole("button", { name: /^HPE iLO,/ })).toBeVisible();
+  await expect(topology.getByRole("button", { name: /^ESXi Host,/ })).toBeVisible();
+  await expect(topology.getByRole("button", { name: /^NetApp ONTAP,/ })).toHaveCount(0);
+  await expect(topology.getByRole("button", { name: /^vCenter,/ })).toHaveCount(0);
+  const localStorage = topology.getByLabel("Local storage offshoot from HPE iLO");
+  await expect(localStorage).toContainText("Local storage");
+  await expect(localStorage).toContainText("primary datastore");
+  await expect(topology.locator(".overview-link-offshoot")).toHaveCount(1);
+
+  await topology.getByRole("button", { name: /^HPE iLO,/ }).click();
+  let drawer = page.locator("aside.map-drawer");
+  await expect(drawer.getByLabel("iLO IP", { exact: true })).toBeVisible();
+  await expect(drawer.getByLabel("ESXi IP", { exact: true })).toHaveCount(0);
+  await drawer.getByRole("button", { name: "Close device panel" }).click();
+
+  await topology.getByRole("button", { name: /^ESXi Host,/ }).click();
+  drawer = page.locator("aside.map-drawer");
+  await expect(drawer.getByLabel("ESXi IP", { exact: true })).toBeVisible();
+  await expect(drawer.getByLabel("iLO IP", { exact: true })).toHaveCount(0);
 });
 
 test("operator button matrix keeps default actions simple and safe", async ({ page }) => {

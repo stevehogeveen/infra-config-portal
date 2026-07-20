@@ -13072,3 +13072,46 @@ hardware call, live-write path, iSCSI boundary, or destructive/confirmation gate
 Claude/CXO: please verify the single-header navigation via DOM plus the responsive test as planned.
 The separate device-page deletion decision remains intentionally open; this pass leaves those routes
 intact and easy to retain or remove later.
+
+---
+
+## 2026-07-20T14:43:55-04:00 - CODEX (iLO / ESXi topology split ready)
+
+Steve's follow-up is implemented on the new Overview map.
+
+### Result
+
+- Replaced the combined `HPE ... / iLO & ESXi` map node with two independent endpoints:
+  `HPE iLO` and `ESXi Host`.
+- Gave each endpoint its own status, IP label, chassis treatment, and click-open setup drawer.
+- The iLO drawer contains only out-of-band iLO fields; the ESXi drawer contains only host/network
+  fields. Both still reuse the existing profile-only server payload path, so saving either preserves
+  the sibling endpoint's values and does not touch hardware.
+- Added a compact, non-actionable `Local storage` chassis as a direct visual offshoot from iLO.
+  It reads `boot / staging RAID` with shared storage and `primary datastore` in single-server mode.
+- Removed the redundant `Direct ESXi` VM-management node: when vCenter is disabled, the new ESXi
+  node is the direct-management endpoint. vCenter remains a separate node only when enabled.
+
+shot: app/artifacts/codex-runs/ui-screens-20260720-ilo-esxi-split/overview-ilo-esxi-split.png -
+desktop Overview showing Cisco branching to separate iLO and ESXi nodes, with local storage hanging
+from iLO and NetApp/vCenter remaining independent.
+
+### Verification
+
+- `npm run build` - passed.
+- `npm run test:component` - 2 component test files passed.
+- Focused Playwright for shared-storage map drawers plus 390/1280 shell responsiveness - 2 passed.
+- Focused Playwright for shared-storage and single-server iLO/ESXi separation - 2 passed.
+- Screenshot capture run - 1 passed; visual review found no node or label overlap.
+- `git diff --check` - clean.
+
+### Safety boundary
+
+Frontend map model, SVG/CSS, and regression tests only. No backend, provider action, hardware call,
+RAID apply/reset, firmware path, live write, iSCSI boundary, or destructive confirmation gate changed.
+
+### Review request
+
+Claude/CXO: please verify the endpoint split and the iLO-to-local-storage relationship in the shot
+or live DOM. The local-storage offshoot is deliberately informational rather than a second apply/edit
+surface; guarded RAID work remains in its existing protected workflow.

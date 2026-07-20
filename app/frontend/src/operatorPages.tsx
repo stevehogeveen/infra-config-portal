@@ -6237,7 +6237,7 @@ type RackSlot = {
   note: string;
 };
 
-type MapDeviceKind = "network" | "server" | "storage" | "virtualization";
+type MapDeviceKind = "network" | "ilo" | "esxi" | "storage" | "virtualization";
 
 type MapNodeModel = {
   id: string;
@@ -6265,10 +6265,12 @@ type MapEditGroup = {
 };
 
 const MAP_NODE_LAYOUT: Record<string, { x: number; y: number }> = {
-  cisco: { x: 380, y: 92 },
-  server: { x: 196, y: 232 },
-  vcenter: { x: 564, y: 232 },
-  netapp: { x: 380, y: 372 }
+  cisco: { x: 380, y: 70 },
+  ilo: { x: 150, y: 205 },
+  esxi: { x: 380, y: 225 },
+  vcenter: { x: 610, y: 205 },
+  netapp: { x: 500, y: 370 },
+  localStorage: { x: 150, y: 350 }
 };
 
 function mapDeviceEditorConfig(kind: MapDeviceKind, storageProtocol: string): { groups: MapEditGroup[] } {
@@ -6291,20 +6293,34 @@ function mapDeviceEditorConfig(kind: MapDeviceKind, storageProtocol: string): { 
       ]
     };
   }
-  if (kind === "server") {
+  if (kind === "ilo") {
     return {
       groups: [
-        { title: "Access", hint: "iLO and ESXi management", fields: [
+        { title: "Access", hint: "Out-of-band server management", fields: [
           { key: "ilo", label: "iLO IP", mono: true },
-          { key: "esxiManagement", label: "ESXi IP", mono: true }
+          { key: "iloInitial", label: "Initial iLO IP", mono: true }
         ] },
-        { title: "Provisioning", hint: "First-boot and embedded NIC", fields: [
-          { key: "iloInitial", label: "iLO initial IP", mono: true },
+        { title: "Network", hint: "Shared subnet and gateway", fields: [
+          { key: "subnet", label: "Subnet (CIDR)", mono: true },
+          { key: "gateway", label: "Gateway", mono: true }
+        ] }
+      ]
+    };
+  }
+  if (kind === "esxi") {
+    return {
+      groups: [
+        { title: "Host access", hint: "ESXi management endpoint", fields: [
+          { key: "esxiManagement", label: "ESXi IP", mono: true },
           { key: "serverEmbeddedNic", label: "Embedded NIC", mono: true }
         ] },
         { title: "Network", hint: "Shared subnet and gateway", fields: [
           { key: "subnet", label: "Subnet (CIDR)", mono: true },
           { key: "gateway", label: "Gateway", mono: true }
+        ] },
+        { title: "Services", hint: "Host name and time resolution", fields: [
+          { key: "dnsServers", label: "DNS servers", wide: true, mono: true },
+          { key: "ntpServers", label: "NTP servers", wide: true, mono: true }
         ] }
       ]
     };
@@ -6354,14 +6370,14 @@ function mapDeviceEditStateFrom(
   global: LabProfile["global_settings"] | null
 ): Record<string, string> {
   if (kind === "network") return networkProfileEditStateFrom(activeProfile, address, features, global) as unknown as Record<string, string>;
-  if (kind === "server") return serverProfileEditStateFrom(activeProfile, address, global) as unknown as Record<string, string>;
+  if (kind === "ilo" || kind === "esxi") return serverProfileEditStateFrom(activeProfile, address, global) as unknown as Record<string, string>;
   if (kind === "storage") return storageProfileEditStateFrom(activeProfile, address, features, global) as unknown as Record<string, string>;
   return virtualizationProfileEditStateFrom(activeProfile, address, features, global) as unknown as Record<string, string>;
 }
 
 function mapDeviceProfilePayload(kind: MapDeviceKind, profile: LabProfile, edit: Record<string, string>): LabProfileWrite {
   if (kind === "network") return networkProfilePayload(profile, edit as unknown as NetworkProfileEditState);
-  if (kind === "server") return serverProfilePayload(profile, edit as unknown as ServerProfileEditState);
+  if (kind === "ilo" || kind === "esxi") return serverProfilePayload(profile, edit as unknown as ServerProfileEditState);
   if (kind === "storage") return storageProfilePayload(profile, edit as unknown as StorageProfileEditState);
   return virtualizationProfilePayload(profile, edit as unknown as VirtualizationProfileEditState);
 }
@@ -6378,7 +6394,18 @@ function MapDeviceGlyph({ kind }: { kind: MapDeviceKind }) {
       </g>
     );
   }
-  if (kind === "server") {
+  if (kind === "ilo") {
+    return (
+      <g className="chassis">
+        <rect x="-38" y="-21" width="76" height="42" rx="8" className="chassis-body" />
+        <rect x="-24" y="-11" width="30" height="22" rx="4" className="ilo-chip" />
+        <path d="M -18 -5 H 0 M -18 1 H 0 M -18 7 H 0" className="ilo-chip-lines" />
+        <rect x="12" y="-10" width="14" height="10" rx="2" className="ilo-port" />
+        <circle className="status-led" cx="27" cy="11" r="4.5" />
+      </g>
+    );
+  }
+  if (kind === "esxi") {
     return (
       <g className="chassis">
         <rect x="-46" y="-21" width="92" height="42" rx="7" className="chassis-body" />
@@ -6551,7 +6578,6 @@ function OverviewLabMap({
   const global = activeProfile?.global_settings ?? null;
   const netappInScope = features?.netapp_enabled !== false;
   const vcenterInScope = features?.vcenter_enabled === true;
-  const vmInScope = vcenterInScope || netappInScope;
   const runtimeReady = Boolean(health);
   const realRuntime = health?.operator_runtime_mode === "real_lab" || health?.provider_mode === "local-lab-readwrite";
   const runtimeLabel = runtimeReady ? (realRuntime ? "Live lab · read-only checks" : "Test mode · no hardware touched") : "Checking status";
@@ -6565,7 +6591,8 @@ function OverviewLabMap({
   const esxiStatus = topologyStatusFromAccess(accessRows, "ESXi");
   const netappStatus = topologyStatusFromAccess(accessRows, "NetApp");
   const vmStatus = topologyStatusFromAccess(accessRows, "VM inventory");
-  const serverStatus = topologyWorstStatus([iloStatus, esxiStatus]);
+  const localStorageTone = topologyTone(iloStatus);
+  const localStoragePosition = MAP_NODE_LAYOUT.localStorage;
 
   const nodes: MapNodeModel[] = [
     {
@@ -6574,9 +6601,14 @@ function OverviewLabMap({
       ...MAP_NODE_LAYOUT.cisco
     },
     {
-      id: "server", kind: "server", title: `HPE ${serverModelLabel.replace(/^DL360\s+/i, "DL360 ")}`, subtitle: "Compute · iLO & ESXi",
-      meta: displayAddress(address.ilo), status: serverStatus, tone: topologyTone(serverStatus),
-      ...MAP_NODE_LAYOUT.server
+      id: "ilo", kind: "ilo", title: "HPE iLO", subtitle: `${serverModelLabel} management`,
+      meta: displayAddress(address.ilo), status: iloStatus, tone: topologyTone(iloStatus),
+      ...MAP_NODE_LAYOUT.ilo
+    },
+    {
+      id: "esxi", kind: "esxi", title: "ESXi Host", subtitle: `${serverModelLabel} compute`,
+      meta: displayAddress(address.esxi_management), status: esxiStatus, tone: topologyTone(esxiStatus),
+      ...MAP_NODE_LAYOUT.esxi
     }
   ];
   if (netappInScope) {
@@ -6586,18 +6618,12 @@ function OverviewLabMap({
       ...MAP_NODE_LAYOUT.netapp
     });
   }
-  if (vmInScope) {
+  if (vcenterInScope) {
     nodes.push({
-      id: "vcenter", kind: "virtualization", title: vcenterInScope ? "vCenter" : "Direct ESXi",
-      subtitle: vcenterInScope ? "VM management" : "Single-server VMs",
-      meta: topologyVmMapTarget(vcenterNetapp, vcenterInScope, address), status: vmStatus, tone: topologyTone(vmStatus, "created"),
+      id: "vcenter", kind: "virtualization", title: "vCenter", subtitle: "VM management",
+      meta: topologyVmMapTarget(vcenterNetapp, true, address), status: vmStatus, tone: topologyTone(vmStatus, "created"),
       ...MAP_NODE_LAYOUT.vcenter
     });
-  }
-  // Single-server (no netapp / no vcenter): drop the compute node into the center.
-  if (!netappInScope && !vmInScope) {
-    const serverNode = nodes.find((node) => node.id === "server");
-    if (serverNode) { serverNode.x = 380; serverNode.y = 300; }
   }
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -6606,11 +6632,12 @@ function OverviewLabMap({
 
   type MapLink = { from: string; to: string; status: TopologyNodeTone };
   const rawLinks: MapLink[] = [
-    { from: "cisco", to: "server", status: topologyTone(serverStatus) },
+    { from: "cisco", to: "ilo", status: topologyTone(iloStatus) },
+    { from: "cisco", to: "esxi", status: topologyTone(esxiStatus) },
     { from: "cisco", to: "vcenter", status: topologyTone(vmStatus, "created") },
-    { from: "server", to: "netapp", status: topologyTone(netappStatus) },
+    { from: "esxi", to: "netapp", status: topologyTone(netappStatus) },
     { from: "netapp", to: "vcenter", status: topologyTone(netappStatus) },
-    { from: "server", to: "vcenter", status: topologyTone(vmStatus, "created") }
+    { from: "esxi", to: "vcenter", status: topologyTone(vmStatus, "created") }
   ];
   const links = rawLinks.filter((link) => byId.has(link.from) && byId.has(link.to));
 
@@ -6661,6 +6688,10 @@ function OverviewLabMap({
         <div className="overview-map-canvas">
           <svg className="overview-map-svg" viewBox="0 0 760 460" role="img" aria-label="Device topology">
             <g className="overview-map-links">
+              <path
+                className={`overview-link overview-link-offshoot ${linkClass(localStorageTone)}`}
+                d={`M ${MAP_NODE_LAYOUT.ilo.x} ${MAP_NODE_LAYOUT.ilo.y} L ${localStoragePosition.x} ${localStoragePosition.y}`}
+              />
               {links.map((link) => {
                 const a = byId.get(link.from)!;
                 const b = byId.get(link.to)!;
@@ -6693,6 +6724,17 @@ function OverviewLabMap({
                 <text className="overview-node-meta" x="0" y="57" textAnchor="middle">{node.meta}</text>
               </g>
             ))}
+            <g
+              aria-label="Local storage offshoot from HPE iLO"
+              className={`overview-storage-offshoot ${nodeStatusClass(localStorageTone)}`}
+              transform={`translate(${localStoragePosition.x},${localStoragePosition.y})`}
+            >
+              <rect x="-38" y="-15" width="76" height="30" rx="7" className="offshoot-body" />
+              <rect x="-25" y="-7" width="42" height="14" rx="3" className="offshoot-drive" />
+              <circle cx="28" cy="0" r="3.5" className="offshoot-led" />
+              <text className="overview-node-label" x="0" y="33" textAnchor="middle">Local storage</text>
+              <text className="overview-node-meta" x="0" y="46" textAnchor="middle">{netappInScope ? "boot / staging RAID" : "primary datastore"}</text>
+            </g>
           </svg>
           <div className="overview-map-legend" aria-label="Legend">
             <span><i className="legend-ready" /> Ready</span>

@@ -8484,6 +8484,10 @@ th.ui-compact-table-cell {
   opacity: 0.75;
 }
 
+.overview-link-offshoot {
+  stroke-width: 1.4;
+}
+
 @keyframes overview-flow {
   to { stroke-dashoffset: -24; }
 }
@@ -8516,6 +8520,9 @@ th.ui-compact-table-cell {
 
 .overview-node .switch-port { fill: #cbd5e1; }
 .overview-node .switch-port.is-lit { fill: #4f46e5; }
+.overview-node .ilo-chip { fill: #0f766e; opacity: 0.16; stroke: #0f766e; stroke-width: 1; }
+.overview-node .ilo-chip-lines { fill: none; stroke: #0f766e; stroke-linecap: round; stroke-width: 1.4; }
+.overview-node .ilo-port { fill: #4f46e5; opacity: 0.72; }
 .overview-node .server-vent { fill: none; stroke: #0f766e; stroke-width: 1.5; opacity: 0.65; }
 .overview-node .server-bay { fill: #0f766e; opacity: 0.16; }
 .overview-node .server-bay-alt { opacity: 0.3; }
@@ -8567,6 +8574,13 @@ th.ui-compact-table-cell {
   font-size: 9.5px;
   font-weight: 600;
 }
+
+.overview-storage-offshoot { color: #94a3b8; }
+.overview-storage-offshoot.is-ready { color: var(--green); }
+.overview-storage-offshoot.is-blocked { color: var(--red); }
+.overview-storage-offshoot .offshoot-body { fill: var(--surface); stroke: var(--border-strong); stroke-width: 1.2; }
+.overview-storage-offshoot .offshoot-drive { fill: #0f766e; opacity: 0.2; }
+.overview-storage-offshoot .offshoot-led { fill: currentColor; stroke: var(--surface); stroke-width: 1.5; }
 
 .overview-node:focus-visible {
   outline: none;
@@ -8647,6 +8661,9 @@ th.ui-compact-table-cell {
 
 .map-drawer-glyph .chassis-body { fill: var(--surface); stroke: var(--border-strong); stroke-width: 1.4; }
 .map-drawer-glyph .switch-port { fill: #4f46e5; }
+.map-drawer-glyph .ilo-chip { fill: #0f766e; opacity: 0.2; stroke: #0f766e; stroke-width: 1; }
+.map-drawer-glyph .ilo-chip-lines { fill: none; stroke: #0f766e; stroke-linecap: round; stroke-width: 1.4; }
+.map-drawer-glyph .ilo-port { fill: #4f46e5; opacity: 0.72; }
 .map-drawer-glyph .server-bay { fill: #0f766e; opacity: 0.3; }
 .map-drawer-glyph .server-vent { fill: none; stroke: #0f766e; stroke-width: 1.5; }
 .map-drawer-glyph .storage-slot { fill: #64748b; opacity: 0.3; }
