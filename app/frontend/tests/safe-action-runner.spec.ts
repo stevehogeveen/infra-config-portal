@@ -1663,22 +1663,32 @@ test("topology directs storage exceptions to the NetApp workspace", async ({ pag
   await expect(page.locator("section[aria-label='Living lab topology'] .lab-topology-footer")).not.toContainText("Open Storage");
 });
 
-test("zoned map makes single-server local RAID mode unmistakable", async ({ page }) => {
+test("overview map makes single-server local RAID mode unmistakable", async ({ page }) => {
   labProfileScenario = "single";
   await page.goto("/overview");
   await openOperatorDetails(page);
 
-  const topology = page.locator("section[aria-label='Living lab topology']");
-  const map = topology.getByLabel("Zoned lab map");
-  await expect(topology.getByLabel("Local RAID mode summary")).toBeVisible();
-  await expect(map).toContainText("Local RAID");
-  await expect(map.getByLabel("Local RAID mode summary")).toContainText("Server-local RAID is the storage fabric");
-  await expect(map).toContainText("HPE Gen10");
+  const topology = page.getByRole("region", { name: "Lab topology" });
+  const map = topology.getByLabel("Device topology");
+  const localStorage = topology.getByRole("button", { name: "Local storage offshoot from HPE iLO" });
+  await expect(localStorage).toBeVisible();
+  await expect(localStorage).toContainText("primary datastore");
   await expect(map).toContainText("HPE iLO");
   await expect(map).toContainText("Cisco Switch");
   await expect(map).not.toContainText("NetApp ONTAP");
-  await expect(map.getByRole("button", { name: "Open vCenter VCSA workspace" })).toHaveCount(0);
-  await expect(map).not.toContainText("Local ESXi datastore");
+
+  await localStorage.click();
+  const planner = page.getByLabel("Local RAID planner drawer").locator(".local-raid-planner");
+  await expect(planner).toContainText("Drive bay RAID planner");
+  await expect(planner.getByLabel("Selectable local RAID drive bays")).toContainText("Bay 5");
+  await planner.getByRole("button", { name: /Bay 5/ }).click();
+  await planner.getByRole("button", { name: /Hot spare/ }).click();
+  await planner.getByLabel("RAID level for Datastore array").selectOption("RAID10");
+  await expect(planner.getByLabel("Local RAID group connections")).toContainText("Drive bays: 5");
+  await expect(planner.getByLabel("Local RAID draft summary")).toContainText("RAID10");
+  await planner.getByRole("button", { name: "Save visual RAID plan" }).click();
+  await expect(planner).toContainText("Hardware untouched");
+  await expect(planner).not.toContainText(/Apply RAID|Reset HPE RAID|Factory reset|Rebuild ESXi/i);
 });
 
 test("overview flags saved subnet mismatch and keeps kit changes available", async ({ page }) => {
@@ -2050,6 +2060,16 @@ test("top nav and map device drawers keep setup direct without dead settings dra
   await expect(localStorage).toBeVisible();
   await expect(localStorage).toContainText("Local storage");
   await expect(localStorage).toContainText("boot / staging RAID");
+  await localStorage.click();
+  const raidDrawer = page.getByLabel("Local RAID planner drawer");
+  await expect(raidDrawer.locator(".local-raid-planner")).toContainText("Drive bay RAID planner");
+  await expect(raidDrawer.getByLabel("Local RAID context")).toContainText("boot/staging");
+  await raidDrawer.getByRole("button", { name: /Bay 4/ }).click();
+  await raidDrawer.getByRole("button", { name: /Hot spare/ }).click();
+  await expect(raidDrawer.getByLabel("Local RAID group connections")).toContainText("Drive bays: 4");
+  await expect(raidDrawer).not.toContainText(/Apply RAID|Reset HPE RAID|Factory reset|Rebuild ESXi/i);
+  await raidDrawer.getByRole("button", { name: "Close local RAID planner" }).click();
+  await expect(raidDrawer).toHaveCount(0);
   await expect(topology.locator(".overview-link-offshoot")).toHaveCount(1);
   const overviewLinkClasses = await topology.locator(".overview-link").evaluateAll((links) => links.map((link) => link.getAttribute("class") || ""));
   expect(overviewLinkClasses.length, "legacy overview map renders connection lines").toBeGreaterThan(0);
@@ -2105,6 +2125,16 @@ test("overview map keeps single-server local storage as an iLO offshoot", async 
   await expect(localStorage).toContainText("Local storage");
   await expect(localStorage).toContainText("primary datastore");
   await expect(topology.locator(".overview-link-offshoot")).toHaveCount(1);
+  await localStorage.click();
+  const raidDrawer = page.getByLabel("Local RAID planner drawer");
+  await expect(raidDrawer.locator(".local-raid-planner")).toContainText("Server-local datastore");
+  await raidDrawer.getByRole("button", { name: /Bay 6/ }).click();
+  await raidDrawer.getByRole("button", { name: /Hot spare/ }).click();
+  await raidDrawer.getByLabel("RAID level for Datastore array").selectOption("RAID10");
+  await raidDrawer.getByRole("button", { name: "Save visual RAID plan" }).click();
+  await expect(raidDrawer).toContainText("Visual RAID plan saved");
+  await expect(raidDrawer).not.toContainText(/Apply RAID|Reset HPE RAID|Factory reset|Rebuild ESXi/i);
+  await raidDrawer.getByRole("button", { name: "Close local RAID planner" }).click();
 
   await topology.getByRole("button", { name: /^HPE iLO,/ }).click();
   let drawer = page.locator("aside.map-drawer");

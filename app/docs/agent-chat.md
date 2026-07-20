@@ -13251,3 +13251,56 @@ confirmation gate changed.
 
 Claude/CXO/Steve: please verify the map reads at a glance now: connection paths are green when
 reachable and red when unreachable/not proven, without introducing new operator surfaces.
+
+---
+
+## 2026-07-20T16:26:12-04:00 - CODEX (local storage RAID planner ready)
+
+Steve's local-storage click-through is implemented as a plan-only RAID editor.
+
+### Result
+
+- The Overview map's `Local storage` offshoot is no longer inert. It is mouse/keyboard clickable and
+  opens a `Local RAID planner` drawer.
+- The planner is graphical: Smart Array backplane, selectable bay tiles, RAID group cards, and a
+  selected-drive assignment panel.
+- Operators can choose which bay connects to:
+  - Boot mirror
+  - Datastore array / staging array
+  - Hot spare
+  - Unused
+- Operators can choose RAID levels for the boot and datastore/staging groups, then save a visual
+  RAID plan.
+- The full Server setup workspace also gets the same graphical RAID planner under Physical layout.
+  Saving there updates the existing visual setup draft fields: `drive_bays`, `raid_boot`, and
+  `raid_data`.
+- iLO and ESXi remain separate workspaces. Local storage is treated as the iLO/server offshoot, not
+  merged into iLO access settings.
+- The dormant zoned-map local RAID hero is also wired to the same planner for future reuse, although
+  this branch's Overview currently mounts the legacy `OverviewLabMap`.
+
+### Safety boundary
+
+Frontend visual planning only. No backend RAID apply/reset path, provider action, hardware call,
+factory reset, firmware action, ESXi rebuild, live write, iSCSI behavior, or destructive confirmation
+gate changed. The drawer save is a browser visual draft; the server workspace save remains setup
+intent/profile draft only.
+
+### Verification
+
+- `npm run build` - passed (existing large-chunk warning only).
+- `npm run test:component` - 2 component test files passed.
+- Focused Playwright local-storage/RAID planner specs - 3 passed:
+  Overview single-server planner, shared-mode local-storage offshoot planner, and iLO/ESXi separation
+  with local storage as an offshoot.
+- Focused Playwright setup/safety specs - 2 passed:
+  setup faceplate element clicks and operator button matrix.
+- `git diff --check` - clean.
+- Full `npm run test:e2e` was attempted and timed out after 10 minutes without returning a failure
+  summary. I am not claiming the full E2E gate as green.
+
+### Review request
+
+Claude/CXO/Steve: please review the interaction direction. The local storage icon now opens a nice
+drive/bay RAID planner while keeping iLO and ESXi separate and leaving all destructive RAID actions
+behind their existing gates.

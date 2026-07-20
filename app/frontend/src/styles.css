@@ -8541,7 +8541,20 @@ th.ui-compact-table-cell {
 .overview-storage-offshoot { color: #94a3b8; }
 .overview-storage-offshoot.is-ready { color: var(--green); }
 .overview-storage-offshoot.is-blocked { color: var(--red); }
+.overview-storage-offshoot[role="button"] {
+  cursor: pointer;
+  outline: none;
+}
+
+.overview-storage-offshoot[role="button"]:hover .offshoot-body,
+.overview-storage-offshoot[role="button"]:focus-visible .offshoot-body,
+.overview-storage-offshoot.is-selected .offshoot-body {
+  filter: drop-shadow(0 10px 18px rgba(15, 118, 110, 0.18));
+  stroke: #0f766e;
+}
+
 .overview-storage-offshoot .offshoot-body { fill: var(--surface); stroke: var(--border-strong); stroke-width: 1.2; }
+.overview-storage-offshoot .offshoot-hit-target { fill: transparent; pointer-events: all; }
 .overview-storage-offshoot .offshoot-drive { fill: #0f766e; opacity: 0.2; }
 .overview-storage-offshoot .offshoot-led { fill: currentColor; stroke: var(--surface); stroke-width: 1.5; }
 
@@ -8796,9 +8809,362 @@ th.ui-compact-table-cell {
 .map-drawer-save:hover:not(:disabled) { background: var(--teal-dark); }
 .map-drawer-save:disabled { cursor: not-allowed; opacity: 0.55; }
 
+.local-raid-drawer .map-drawer-body {
+  padding: 14px;
+}
+
+.local-raid-drawer .local-raid-context-strip,
+.local-raid-drawer .local-raid-workbench,
+.local-raid-drawer .local-raid-plan-footer {
+  grid-template-columns: 1fr;
+}
+
+.local-raid-drawer .local-raid-group-board {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.local-raid-planner {
+  background:
+    radial-gradient(circle at 12% 12%, rgba(20, 184, 166, 0.12), transparent 34%),
+    linear-gradient(180deg, #ffffff, #f7fbfc);
+  border: 1px solid #d4e3eb;
+  border-radius: 16px;
+  box-shadow: 0 16px 42px rgba(30, 48, 77, 0.08);
+  display: grid;
+  gap: 14px;
+  padding: 14px;
+}
+
+.local-raid-planner-head {
+  align-items: flex-start;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.local-raid-planner-head h4,
+.local-raid-selected-card h5 {
+  color: #0f172a;
+  letter-spacing: 0;
+  margin: 2px 0 4px;
+}
+
+.local-raid-planner-head h4 {
+  font-size: 22px;
+}
+
+.local-raid-planner-head span,
+.local-raid-selected-card > div:first-child span,
+.local-raid-plan-summary span,
+.local-raid-plan-summary small {
+  color: #475569;
+  font-size: 12px;
+  font-weight: 750;
+  line-height: 1.4;
+}
+
+.local-raid-context-strip {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.local-raid-context-strip > div,
+.local-raid-context-strip label {
+  background: rgba(248, 250, 252, 0.86);
+  border: 1px solid #dbe7ef;
+  border-radius: 12px;
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  padding: 11px;
+}
+
+.local-raid-context-strip span,
+.local-raid-group-card span,
+.local-raid-plan-summary small {
+  color: #64748b;
+  font-size: 10px;
+  font-weight: 950;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+}
+
+.local-raid-context-strip strong {
+  color: #102238;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.local-raid-context-strip select,
+.local-raid-group-card select {
+  background: #ffffff;
+  border: 1px solid #cbdbe7;
+  border-radius: 9px;
+  color: #102238;
+  font-size: 12px;
+  font-weight: 850;
+  min-height: 34px;
+  padding: 0 9px;
+}
+
+.local-raid-workbench {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: minmax(0, 1.4fr) minmax(240px, .76fr);
+}
+
+.local-raid-backplane {
+  background:
+    linear-gradient(180deg, rgba(15, 23, 42, .98), rgba(30, 41, 59, .96));
+  border: 1px solid #1e293b;
+  border-radius: 18px;
+  box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.16);
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+}
+
+.local-raid-backplane-rail {
+  align-items: center;
+  color: #cbd5e1;
+  display: flex;
+  font-size: 10px;
+  font-weight: 950;
+  gap: 10px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+
+.local-raid-backplane-rail i {
+  background: linear-gradient(90deg, #14b8a6, #f59e0b, #64748b);
+  border-radius: 999px;
+  flex: 1;
+  height: 4px;
+  opacity: .72;
+}
+
+.local-raid-bay-grid {
+  display: grid;
+  gap: 9px;
+  grid-template-columns: repeat(auto-fit, minmax(74px, 1fr));
+}
+
+.local-raid-bay {
+  background: #e8f0f7;
+  border: 2px solid transparent;
+  border-radius: 12px;
+  color: #102238;
+  cursor: pointer;
+  display: grid;
+  gap: 5px;
+  min-height: 96px;
+  padding: 10px;
+  text-align: left;
+  transition: border-color .16s ease, box-shadow .16s ease, transform .16s ease;
+}
+
+.local-raid-bay:hover,
+.local-raid-bay[aria-pressed="true"] {
+  border-color: #5eead4;
+  box-shadow: 0 0 0 4px rgba(45, 212, 191, .22);
+  transform: translateY(-1px);
+}
+
+.local-raid-bay span {
+  color: #334155;
+  font: 950 10px/1 ui-monospace, SFMono-Regular, Consolas, monospace;
+  text-transform: uppercase;
+}
+
+.local-raid-bay strong {
+  font-size: 13px;
+}
+
+.local-raid-bay small {
+  color: #475569;
+  font-size: 10.5px;
+  font-weight: 850;
+}
+
+.local-raid-bay.is-boot {
+  background: linear-gradient(180deg, #dbeafe, #bfdbfe);
+}
+
+.local-raid-bay.is-datastore {
+  background: linear-gradient(180deg, #dcfce7, #bbf7d0);
+}
+
+.local-raid-bay.is-spare {
+  background: linear-gradient(180deg, #fef3c7, #fde68a);
+}
+
+.local-raid-bay.is-unused {
+  background: linear-gradient(180deg, #f1f5f9, #e2e8f0);
+}
+
+.local-raid-selected-card {
+  background: #ffffff;
+  border: 1px solid #cfe0ea;
+  border-radius: 16px;
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+}
+
+.local-raid-selected-card h5 {
+  font-size: 24px;
+}
+
+.local-raid-assignment-buttons {
+  display: grid;
+  gap: 9px;
+}
+
+.local-raid-assign {
+  background: #f8fafc;
+  border: 1px solid #dbe7ef;
+  border-radius: 12px;
+  color: #102238;
+  cursor: pointer;
+  display: grid;
+  gap: 4px;
+  padding: 10px;
+  text-align: left;
+}
+
+.local-raid-assign[aria-pressed="true"] {
+  border-color: #0f766e;
+  box-shadow: inset 4px 0 0 #0f766e;
+}
+
+.local-raid-assign strong {
+  font-size: 12px;
+}
+
+.local-raid-assign span {
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 750;
+  line-height: 1.3;
+}
+
+.local-raid-group-board {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.local-raid-group-card {
+  background: #ffffff;
+  border: 1px solid #d8e5ed;
+  border-radius: 14px;
+  display: grid;
+  gap: 9px;
+  min-width: 0;
+  padding: 12px;
+}
+
+.local-raid-group-card.is-boot {
+  box-shadow: inset 0 4px 0 #3b82f6;
+}
+
+.local-raid-group-card.is-datastore {
+  box-shadow: inset 0 4px 0 #16a34a;
+}
+
+.local-raid-group-card.is-spare {
+  box-shadow: inset 0 4px 0 #f59e0b;
+}
+
+.local-raid-group-card.is-unused {
+  box-shadow: inset 0 4px 0 #94a3b8;
+}
+
+.local-raid-group-card > div {
+  align-items: start;
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+}
+
+.local-raid-group-card strong {
+  color: #102238;
+  font-size: 18px;
+}
+
+.local-raid-group-card p,
+.local-raid-group-card small {
+  color: #475569;
+  font-size: 11.5px;
+  font-weight: 750;
+  line-height: 1.35;
+  margin: 0;
+}
+
+.local-raid-group-card label {
+  display: grid;
+  gap: 5px;
+}
+
+.local-raid-plan-footer {
+  align-items: center;
+  background: #f8fafc;
+  border: 1px solid #dbe7ef;
+  border-radius: 14px;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding: 12px;
+}
+
+.local-raid-plan-summary {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.local-raid-plan-summary strong {
+  color: #102238;
+  font-size: 14px;
+}
+
+.local-raid-save {
+  white-space: nowrap;
+}
+
+.local-raid-plan-footer .operator-action-message {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
+.local-raid-topology-drawer {
+  max-width: min(920px, calc(100vw - 46px));
+  width: min(920px, calc(100vw - 46px));
+}
+
 @media (max-width: 960px) {
   .overview-map-stage.is-open { grid-template-columns: minmax(0, 1fr); }
   .map-field-grid { grid-template-columns: 1fr; }
+  .local-raid-workbench,
+  .local-raid-plan-footer {
+    grid-template-columns: 1fr;
+  }
+  .local-raid-context-strip,
+  .local-raid-group-board {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 560px) {
+  .local-raid-context-strip,
+  .local-raid-group-board {
+    grid-template-columns: 1fr;
+  }
+
+  .local-raid-planner {
+    padding: 11px;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -10067,15 +10433,25 @@ th.ui-compact-table-cell {
   border: 1px dashed rgba(148, 163, 184, 0.62);
   border-radius: 10px;
   color: #e5e7eb;
+  cursor: pointer;
   display: flex;
+  font: inherit;
   gap: 10px;
   left: 50%;
   padding: 10px 12px;
   position: absolute;
+  text-align: left;
   top: 480px;
   transform: translateX(-50%);
   width: min(460px, calc(100% - 48px));
   z-index: 3;
+}
+
+.topology-local-raid-hero:hover,
+.topology-local-raid-hero:focus-visible {
+  border-color: #5eead4;
+  box-shadow: 0 0 0 4px rgba(20, 184, 166, 0.18), 0 18px 44px rgba(15, 23, 42, 0.22);
+  outline: none;
 }
 
 .topology-local-raid-hero svg {

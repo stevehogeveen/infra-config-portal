@@ -2035,6 +2035,22 @@ type ServerDriveBayPlan = {
   status: StatusBadgeStatus;
 };
 
+type LocalRaidGroupId = "boot" | "datastore" | "spare" | "unused";
+
+type LocalRaidDraft = {
+  assignments: Record<string, LocalRaidGroupId>;
+  bayCount: number;
+  raidLevels: Record<"boot" | "datastore", string>;
+  selectedBay: string;
+  updatedAt?: string;
+};
+
+type LocalRaidSettingsUpdate = {
+  drive_bays: string;
+  raid_boot: string;
+  raid_data: string;
+};
+
 function ServerDriveMapPlan({
   activeProfile,
   raidPlan
@@ -2124,6 +2140,438 @@ function ServerDriveMapPlan({
       </article>
     </section>
   );
+}
+
+function LocalStorageRaidPlanner({
+  initialDraft,
+  netappInScope,
+  onCommit,
+  settings,
+  storageProtocol = "local"
+}: {
+  initialDraft?: LocalRaidDraft;
+  netappInScope: boolean;
+  onCommit?: (settings: LocalRaidSettingsUpdate, draft: LocalRaidDraft) => string | void;
+  settings?: Record<string, string>;
+  storageProtocol?: string;
+}) {
+  const [draft, setDraft] = useState<LocalRaidDraft>(() => initialDraft ?? localRaidDefaultDraft(settings, netappInScope));
+  const [message, setMessage] = useState("");
+  const selectedBay = draft.selectedBay || "1";
+  const selectedGroup = draft.assignments[selectedBay] ?? "unused";
+  const bayNumbers = Array.from({ length: draft.bayCount }, (_, index) => String(index + 1));
+  const groupIds: LocalRaidGroupId[] = ["boot", "datastore", "spare", "unused"];
+  const activeRaidGroups: Array<"boot" | "datastore"> = ["boot", "datastore"];
+  const storageModeLabel = netappInScope
+    ? `${storageProtocol.toUpperCase()} shared datastore; local disks are boot/staging`
+    : "Server-local datastore";
+
+  function updateSelectedBay(bay: string) {
+    setDraft((current) => ({ ...current, selectedBay: bay }));
+    setMessage("");
+  }
+
+  function assignSelectedBay(groupId: LocalRaidGroupId) {
+    setDraft((current) => ({
+      ...current,
+      assignments: { ...current.assignments, [current.selectedBay || "1"]: groupId }
+    }));
+    setMessage("");
+  }
+
+  function updateRaidLevel(groupId: "boot" | "datastore", raidLevel: string) {
+    setDraft((current) => ({
+      ...current,
+      raidLevels: { ...current.raidLevels, [groupId]: raidLevel }
+    }));
+    setMessage("");
+  }
+
+  function updateBayCount(nextCount: number) {
+    setDraft((current) => {
+      const bayCount = clampNumber(nextCount, 4, 12, 8);
+      const assignments: Record<string, LocalRaidGroupId> = {};
+      for (let index = 1; index <= bayCount; index += 1) {
+        assignments[String(index)] = current.assignments[String(index)] ?? localRaidDefaultGroup(index, netappInScope);
+      }
+      const selectedBayNumber = Number.parseInt(current.selectedBay, 10);
+      const selectedBay = Number.isInteger(selectedBayNumber) && selectedBayNumber >= 1 && selectedBayNumber <= bayCount
+        ? current.selectedBay
+        : "1";
+      return { ...current, assignments, bayCount, selectedBay };
+    });
+    setMessage("");
+  }
+
+  function savePlan() {
+    const nextDraft = { ...draft, updatedAt: new Date().toISOString() };
+    setDraft(nextDraft);
+    const nextSettings = localRaidSettingsFromDraft(nextDraft, netappInScope);
+    const commitMessage = onCommit?.(nextSettings, nextDraft);
+    setMessage(commitMessage || "Visual RAID plan saved. Hardware untouched.");
+  }
+
+  return (
+    <section className="local-raid-planner" aria-label="Local RAID planner">
+      <div className="local-raid-planner-head">
+        <div>
+          <p className="operator-kicker">Local storage offshoot</p>
+          <h4>Drive bay RAID planner</h4>
+          <span>Choose a drive bay, connect it to a RAID group, and tune the RAID level before any guarded storage workflow exists.</span>
+        </div>
+        <StatusBadge label="Plan only" status="plan-only" />
+      </div>
+
+      <div className="local-raid-context-strip" aria-label="Local RAID context">
+        <div>
+          <span>Mode</span>
+          <strong>{storageModeLabel}</strong>
+        </div>
+        <div>
+          <span>Controller</span>
+          <strong>{settings?.raid_controller || "Smart Array plan"}</strong>
+        </div>
+        <label>
+          <span>Drive bays</span>
+          <select
+            aria-label="Local RAID drive bay count"
+            onChange={(event) => updateBayCount(Number(event.target.value))}
+            value={String(draft.bayCount)}
+          >
+            {[4, 6, 8, 10, 12].map((count) => (
+              <option key={count} value={count}>{count} bays</option>
+            ))}
+          </select>
+        </label>
+      </div>
+
+      <div className="local-raid-workbench">
+        <div className="local-raid-backplane" aria-label="Selectable local RAID drive bays">
+          <div className="local-raid-backplane-rail" aria-hidden="true">
+            <span>Smart Array backplane</span>
+            <i />
+          </div>
+          <div className="local-raid-bay-grid">
+            {bayNumbers.map((bay) => {
+              const groupId = draft.assignments[bay] ?? "unused";
+              const meta = localRaidGroupMeta(groupId, netappInScope);
+              const raid = localRaidBayRaidLabel(groupId, draft);
+              return (
+                <button
+                  aria-pressed={selectedBay === bay}
+                  className={`local-raid-bay is-${groupId}`}
+                  key={bay}
+                  onClick={() => updateSelectedBay(bay)}
+                  title={`Bay ${bay}: ${meta.label}${raid ? `, ${raid}` : ""}`}
+                  type="button"
+                >
+                  <span>Bay {bay}</span>
+                  <strong>{meta.shortLabel}</strong>
+                  <small>{raid || meta.detail}</small>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <article className="local-raid-selected-card" aria-label="Selected local RAID drive">
+          <div>
+            <p className="operator-kicker">Selected drive</p>
+            <h5>Bay {selectedBay}</h5>
+            <span>{localRaidGroupMeta(selectedGroup, netappInScope).detail}</span>
+          </div>
+          <div className="local-raid-assignment-buttons" aria-label="Assign selected drive">
+            {groupIds.map((groupId) => {
+              const meta = localRaidGroupMeta(groupId, netappInScope);
+              return (
+                <button
+                  aria-pressed={selectedGroup === groupId}
+                  className={`local-raid-assign is-${groupId}`}
+                  key={groupId}
+                  onClick={() => assignSelectedBay(groupId)}
+                  type="button"
+                >
+                  <strong>{meta.label}</strong>
+                  <span>{meta.detail}</span>
+                </button>
+              );
+            })}
+          </div>
+        </article>
+      </div>
+
+      <div className="local-raid-group-board" aria-label="Local RAID group connections">
+        {activeRaidGroups.map((groupId) => {
+          const meta = localRaidGroupMeta(groupId, netappInScope);
+          const bays = localRaidBaysForGroup(draft, groupId);
+          return (
+            <article className={`local-raid-group-card is-${groupId}`} key={groupId}>
+              <div>
+                <span>{meta.label}</span>
+                <strong>{draft.raidLevels[groupId]}</strong>
+              </div>
+              <label>
+                <span>RAID level</span>
+                <select
+                  aria-label={`RAID level for ${meta.label}`}
+                  onChange={(event) => updateRaidLevel(groupId, event.target.value)}
+                  value={draft.raidLevels[groupId]}
+                >
+                  {localRaidLevelOptions(groupId).map((level) => (
+                    <option key={level} value={level}>{level}</option>
+                  ))}
+                </select>
+              </label>
+              <p>{meta.detail}</p>
+              <small>Connected drive bays: {bays.length ? bays.join(", ") : "none selected"}</small>
+            </article>
+          );
+        })}
+        {(["spare", "unused"] as const).map((groupId) => {
+          const meta = localRaidGroupMeta(groupId, netappInScope);
+          const bays = localRaidBaysForGroup(draft, groupId);
+          return (
+            <article className={`local-raid-group-card is-${groupId}`} key={groupId}>
+              <div>
+                <span>{meta.label}</span>
+                <strong>{bays.length || "0"}</strong>
+              </div>
+              <p>{meta.detail}</p>
+              <small>Drive bays: {bays.length ? bays.join(", ") : "none"}</small>
+            </article>
+          );
+        })}
+      </div>
+
+      <div className="local-raid-plan-footer">
+        <div className="local-raid-plan-summary" aria-label="Local RAID draft summary">
+          <strong>{localRaidPlanHeadline(draft, netappInScope)}</strong>
+          <span>{localRaidPlanDetail(draft, netappInScope)}</span>
+          <small>No hardware touched. Real RAID writes remain behind the existing guarded storage workflow.</small>
+        </div>
+        <button className="design-plan-secondary local-raid-save" onClick={savePlan} type="button">
+          Save visual RAID plan
+        </button>
+        {message && <p className="operator-action-message success">{message}</p>}
+      </div>
+    </section>
+  );
+}
+
+function LocalRaidPlannerDrawer({
+  activeProfile,
+  address,
+  features,
+  netappInScope,
+  onClose
+}: {
+  activeProfile: LabProfile | null;
+  address: LabAddressPlan;
+  features: LabProfileFeatures | null;
+  netappInScope: boolean;
+  onClose: () => void;
+}) {
+  const storageProtocol = asString(features?.storage_protocol) || (netappInScope ? "nfs" : "local");
+  const serverPart: DesignPartId = asString(activeProfile?.devices?.server_model).toLowerCase() === "gen10plus" ? "server-gen10plus" : "server-gen10";
+  const defaultSettings = topologyDefaultDeviceSettings({
+    address,
+    netappInScope,
+    storageProtocol,
+    vcenterInScope: features?.vcenter_enabled === true
+  })[serverPart];
+  const draftKey = localRaidDraftKey(activeProfile, address, netappInScope);
+  const initialDraft = localRaidReadDraft(draftKey, localRaidDefaultDraft(defaultSettings, netappInScope));
+  const [settings, setSettings] = useState<Record<string, string>>(() => ({
+    ...defaultSettings,
+    ...localRaidSettingsFromDraft(initialDraft, netappInScope)
+  }));
+
+  function commitLocalPlan(nextSettings: LocalRaidSettingsUpdate, draft: LocalRaidDraft) {
+    localRaidWriteDraft(draftKey, draft);
+    setSettings((current) => ({ ...current, ...nextSettings }));
+    return "Visual RAID plan saved to this browser draft. Hardware untouched.";
+  }
+
+  return (
+    <aside className="map-drawer local-raid-drawer" aria-label="Local RAID planner drawer">
+      <div className="map-drawer-head">
+        <div className="map-drawer-glyph map-drawer-glyph-storage" aria-hidden="true">
+          <HardDrive size={22} />
+        </div>
+        <div className="map-drawer-head-text">
+          <p className="operator-kicker">Local storage</p>
+          <h3>RAID drive planner</h3>
+          <span className="map-status-pill unknown">Plan only</span>
+        </div>
+        <button className="map-drawer-close" type="button" onClick={onClose} aria-label="Close local RAID planner">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 6l12 12M18 6L6 18" /></svg>
+        </button>
+      </div>
+      <div className="map-drawer-body">
+        <LocalStorageRaidPlanner
+          initialDraft={initialDraft}
+          netappInScope={netappInScope}
+          onCommit={commitLocalPlan}
+          settings={settings}
+          storageProtocol={storageProtocol}
+        />
+      </div>
+    </aside>
+  );
+}
+
+function localRaidDefaultDraft(settings: Record<string, string> | undefined, netappInScope: boolean): LocalRaidDraft {
+  const bayCount = clampNumber(parseFirstInteger(settings?.drive_bays), 4, 12, 8);
+  const assignments: Record<string, LocalRaidGroupId> = {};
+  for (let index = 1; index <= bayCount; index += 1) {
+    assignments[String(index)] = localRaidDefaultGroup(index, netappInScope);
+  }
+  return {
+    assignments,
+    bayCount,
+    raidLevels: {
+      boot: localRaidCleanLevel(settings?.raid_boot) || "RAID1",
+      datastore: localRaidCleanLevel(settings?.raid_data) || (netappInScope ? "RAID1" : "RAID6")
+    },
+    selectedBay: "1"
+  };
+}
+
+function localRaidDefaultGroup(bay: number, netappInScope: boolean): LocalRaidGroupId {
+  if (bay <= 2) return "boot";
+  if (netappInScope && bay > 4) return bay === 5 ? "spare" : "unused";
+  return "datastore";
+}
+
+function localRaidCleanLevel(value: unknown): string {
+  const match = asString(value).match(/RAID\s*(?:0|1|5|6|10)/i);
+  return match ? match[0].replace(/\s+/g, "").toUpperCase() : "";
+}
+
+function localRaidGroupMeta(groupId: LocalRaidGroupId, netappInScope: boolean): { detail: string; label: string; shortLabel: string } {
+  if (groupId === "boot") {
+    return {
+      detail: "ESXi boot mirror connected to Smart Array.",
+      label: "Boot mirror",
+      shortLabel: "Boot"
+    };
+  }
+  if (groupId === "datastore") {
+    return {
+      detail: netappInScope ? "Local staging / scratch volume while VM data lives on shared storage." : "Primary local VM datastore volume.",
+      label: netappInScope ? "Staging array" : "Datastore array",
+      shortLabel: netappInScope ? "Stage" : "Data"
+    };
+  }
+  if (groupId === "spare") {
+    return {
+      detail: "Reserved hot spare; not part of a logical volume.",
+      label: "Hot spare",
+      shortLabel: "Spare"
+    };
+  }
+  return {
+    detail: "Not connected to a RAID group in this visual plan.",
+    label: "Unused",
+    shortLabel: "Unused"
+  };
+}
+
+function localRaidLevelOptions(groupId: "boot" | "datastore"): string[] {
+  return groupId === "boot" ? ["RAID1", "RAID10"] : ["RAID6", "RAID5", "RAID10", "RAID1", "RAID0"];
+}
+
+function localRaidBayRaidLabel(groupId: LocalRaidGroupId, draft: LocalRaidDraft): string {
+  if (groupId === "boot" || groupId === "datastore") return draft.raidLevels[groupId];
+  return "";
+}
+
+function localRaidBaysForGroup(draft: LocalRaidDraft, groupId: LocalRaidGroupId): string[] {
+  return Object.entries(draft.assignments)
+    .filter(([, value]) => value === groupId)
+    .map(([bay]) => bay)
+    .sort((a, b) => Number(a) - Number(b));
+}
+
+function localRaidPlanHeadline(draft: LocalRaidDraft, netappInScope: boolean): string {
+  const bootCount = localRaidBaysForGroup(draft, "boot").length;
+  const dataCount = localRaidBaysForGroup(draft, "datastore").length;
+  const dataLabel = netappInScope ? "staging" : "datastore";
+  return `${bootCount} boot bay${bootCount === 1 ? "" : "s"} + ${dataCount} ${dataLabel} bay${dataCount === 1 ? "" : "s"}`;
+}
+
+function localRaidPlanDetail(draft: LocalRaidDraft, netappInScope: boolean): string {
+  const settings = localRaidSettingsFromDraft(draft, netappInScope);
+  const spareBays = localRaidBaysForGroup(draft, "spare");
+  const unusedBays = localRaidBaysForGroup(draft, "unused");
+  return [
+    settings.raid_boot,
+    settings.raid_data,
+    spareBays.length ? `spares ${spareBays.join(",")}` : "",
+    unusedBays.length ? `unused ${unusedBays.join(",")}` : ""
+  ].filter(Boolean).join(" / ");
+}
+
+function localRaidSettingsFromDraft(draft: LocalRaidDraft, netappInScope: boolean): LocalRaidSettingsUpdate {
+  const bootBays = localRaidBaysForGroup(draft, "boot");
+  const dataBays = localRaidBaysForGroup(draft, "datastore");
+  const spareBays = localRaidBaysForGroup(draft, "spare");
+  const unusedBays = localRaidBaysForGroup(draft, "unused");
+  const dataLabel = netappInScope ? "staging RAID" : "local datastore";
+  return {
+    drive_bays: [
+      `${draft.bayCount} bays`,
+      bootBays.length ? `boot ${bootBays.join(",")}` : "",
+      dataBays.length ? `${netappInScope ? "staging" : "data"} ${dataBays.join(",")}` : "",
+      spareBays.length ? `spare ${spareBays.join(",")}` : "",
+      unusedBays.length ? `unused ${unusedBays.join(",")}` : ""
+    ].filter(Boolean).join("; "),
+    raid_boot: `${draft.raidLevels.boot} boot mirror${bootBays.length ? ` (bays ${bootBays.join(",")})` : ""}`,
+    raid_data: `${draft.raidLevels.datastore} ${dataLabel}${dataBays.length ? ` (bays ${dataBays.join(",")})` : ""}`
+  };
+}
+
+function localRaidDraftKey(activeProfile: LabProfile | null, address: LabAddressPlan, netappInScope: boolean): string {
+  return `infra-config-portal:local-raid-plan:${activeProfile?.id ?? "runtime"}:${netappInScope ? "shared" : "local"}:${asString(address.subnet) || "no-subnet"}`;
+}
+
+function localRaidReadDraft(key: string, fallback: LocalRaidDraft): LocalRaidDraft {
+  if (typeof window === "undefined") return fallback;
+  try {
+    const raw = window.localStorage.getItem(key);
+    if (!raw) return fallback;
+    const parsed = JSON.parse(raw) as Partial<LocalRaidDraft>;
+    const bayCount = clampNumber(Number(parsed.bayCount) || fallback.bayCount, 4, 12, fallback.bayCount);
+    const assignments: Record<string, LocalRaidGroupId> = {};
+    for (let index = 1; index <= bayCount; index += 1) {
+      const bay = String(index);
+      const value = parsed.assignments?.[bay];
+      assignments[bay] = value === "boot" || value === "datastore" || value === "spare" || value === "unused"
+        ? value
+        : fallback.assignments[bay] ?? "unused";
+    }
+    return {
+      assignments,
+      bayCount,
+      raidLevels: {
+        boot: localRaidCleanLevel(parsed.raidLevels?.boot) || fallback.raidLevels.boot,
+        datastore: localRaidCleanLevel(parsed.raidLevels?.datastore) || fallback.raidLevels.datastore
+      },
+      selectedBay: assignments[asString(parsed.selectedBay)] ? asString(parsed.selectedBay) : "1",
+      updatedAt: asString(parsed.updatedAt) || undefined
+    };
+  } catch {
+    return fallback;
+  }
+}
+
+function localRaidWriteDraft(key: string, draft: LocalRaidDraft) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(key, JSON.stringify(draft));
+  } catch {
+    // Browser storage is best-effort; the visible plan remains available in memory.
+  }
 }
 
 function driveMapVolumes(raidPlan: ProviderProbeResult | null): Array<Record<string, unknown>> {
@@ -6611,6 +7059,7 @@ function OverviewLabMap({
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const selectedNode = nodes.find((node) => node.id === selectedId) ?? null;
+  const localStorageSelected = selectedId === "local-storage";
   const byId = new Map(nodes.map((node) => [node.id, node]));
 
   type MapLink = { from: string; to: string; status: TopologyNodeTone };
@@ -6658,7 +7107,7 @@ function OverviewLabMap({
         </div>
       )}
 
-      <div className={`overview-map-stage ${selectedNode ? "is-open" : ""}`}>
+      <div className={`overview-map-stage ${selectedNode || localStorageSelected ? "is-open" : ""}`}>
         <div className="overview-map-canvas">
           <svg className="overview-map-svg" viewBox="0 0 760 460" role="img" aria-label="Device topology">
             <g className="overview-map-links">
@@ -6702,9 +7151,16 @@ function OverviewLabMap({
             ))}
             <g
               aria-label="Local storage offshoot from HPE iLO"
-              className={`overview-storage-offshoot ${nodeStatusClass(localStorageTone)}`}
+              className={`overview-storage-offshoot ${nodeStatusClass(localStorageTone)} ${localStorageSelected ? "is-selected" : ""}`}
+              onClick={() => setSelectedId("local-storage")}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setSelectedId("local-storage"); }
+              }}
+              role="button"
+              tabIndex={0}
               transform={`translate(${localStoragePosition.x},${localStoragePosition.y})`}
             >
+              <rect x="-50" y="-23" width="100" height="84" rx="10" className="offshoot-hit-target" />
               <rect x="-38" y="-15" width="76" height="30" rx="7" className="offshoot-body" />
               <rect x="-25" y="-7" width="42" height="14" rx="3" className="offshoot-drive" />
               <circle cx="28" cy="0" r="3.5" className="offshoot-led" />
@@ -6730,6 +7186,15 @@ function OverviewLabMap({
             storageProtocol={storageProtocol}
             onClose={() => setSelectedId(null)}
             onReload={onReload}
+          />
+        )}
+        {localStorageSelected && (
+          <LocalRaidPlannerDrawer
+            activeProfile={activeProfile}
+            address={address}
+            features={features}
+            netappInScope={netappInScope}
+            onClose={() => setSelectedId(null)}
           />
         )}
       </div>
@@ -6773,6 +7238,7 @@ function LabTopologyMap({
   const [workspaceTarget, setWorkspaceTarget] = useState<DesignPartId>("switch");
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [workspaceOpen, setWorkspaceOpen] = useState(false);
+  const [localRaidPlannerOpen, setLocalRaidPlannerOpen] = useState(false);
   const [mapFitEnabled, setMapFitEnabled] = useState(false);
   const [mapOverflowing, setMapOverflowing] = useState(false);
   const mapCanvasRef = useRef<HTMLDivElement | null>(null);
@@ -6867,6 +7333,15 @@ function LabTopologyMap({
   const selectedTopologyNode = nodes.find((node) => node.id === selectedNodeId) ?? null;
   const links = topologyLinks({ datastoreStatus, iloStatus, netappInScope, netappStatus, serverStatus, storageProtocol, vmInScope, vmStatus });
   const storageOrbitNodes = nodes.filter((node) => node.zone === "storage");
+  const localRaidServerPart: DesignPartId = asString(activeProfile?.devices?.server_model).toLowerCase() === "gen10plus" ? "server-gen10plus" : "server-gen10";
+  const localRaidDefaultSettings = topologyDefaultDeviceSettings({
+    address,
+    netappInScope,
+    storageProtocol,
+    vcenterInScope
+  })[localRaidServerPart];
+  const localRaidKey = localRaidDraftKey(activeProfile, address, netappInScope);
+  const localRaidInitialDraft = localRaidReadDraft(localRaidKey, localRaidDefaultDraft(localRaidDefaultSettings, netappInScope));
   useEffect(() => {
     const canvas = mapCanvasRef.current;
     const plane = mapPlaneRef.current;
@@ -6892,12 +7367,19 @@ function LabTopologyMap({
   function openNodeWorkspace(nodeId: string) {
     setWorkspaceTarget(topologyNodeFaceplatePart(nodeId, netappInScope));
     setSelectedNodeId(nodeId);
+    setLocalRaidPlannerOpen(false);
     setWorkspaceOpen(true);
   }
 
   function closeNodeWorkspace() {
     setWorkspaceOpen(false);
     setSelectedNodeId(null);
+  }
+
+  function openLocalRaidPlanner() {
+    setWorkspaceOpen(false);
+    setSelectedNodeId(null);
+    setLocalRaidPlannerOpen(true);
   }
 
   return (
@@ -6972,13 +7454,13 @@ function LabTopologyMap({
             </button>
           )}
           {!netappInScope && (
-            <div className="topology-local-raid-hero" aria-label="Local RAID mode summary">
+            <button className="topology-local-raid-hero" aria-label="Local RAID mode summary" onClick={openLocalRaidPlanner} type="button">
               <HardDrive size={15} />
               <div>
                 <strong>Server-local RAID is the storage fabric</strong>
-                <span>No NetApp or vCenter nodes are in this active profile.</span>
+                <span>Click to choose drive bays, RAID groups, and spares. No NetApp or vCenter nodes are in scope.</span>
               </div>
-            </div>
+            </button>
           )}
           <svg className="lab-topology-links" viewBox="0 0 1000 620" role="img" aria-label="Current lab links">
             {links.map((link) => (
@@ -7017,6 +7499,28 @@ function LabTopologyMap({
               workspaceNodeTone={selectedTopologyNode?.tone}
               workspaceOnly
               workflowActions={workflowActions}
+            />
+          </aside>
+        </div>
+      )}
+
+      {localRaidPlannerOpen && (
+        <div className="topology-workspace-overlay" aria-label="Local RAID planner overlay">
+          <div className="topology-workspace-backdrop" onClick={() => setLocalRaidPlannerOpen(false)} />
+          <aside className="topology-workspace-drawer local-raid-topology-drawer" aria-label="Local RAID planner drawer">
+            <div className="topology-workspace-drawer-head">
+              <span>Local storage</span>
+              <button className="topology-workspace-close" type="button" onClick={() => setLocalRaidPlannerOpen(false)}>Close</button>
+            </div>
+            <LocalStorageRaidPlanner
+              initialDraft={localRaidInitialDraft}
+              netappInScope={netappInScope}
+              onCommit={(nextSettings, draft) => {
+                localRaidWriteDraft(localRaidKey, draft);
+                return "Visual RAID plan saved to this browser draft. Hardware untouched.";
+              }}
+              settings={localRaidDefaultSettings}
+              storageProtocol={storageProtocol}
             />
           </aside>
         </div>
@@ -8927,6 +9431,23 @@ function LabDesignComposer({
     }
   }
 
+  function updateSelectedServerRaidPlan(nextSettings: LocalRaidSettingsUpdate) {
+    if (!selectedPart || (selectedPart.id !== "server-gen10" && selectedPart.id !== "server-gen10plus")) {
+      return "Open the server workspace before saving the local RAID plan.";
+    }
+    setDeviceSettings((current) => {
+      const next = topologyNormalizeDeviceSettings(current, defaultDeviceSettings);
+      next[selectedPart.id] = {
+        ...next[selectedPart.id],
+        ...nextSettings
+      };
+      return next;
+    });
+    setDraftDirty(true);
+    setDropMessage("Local RAID plan saved to the visual setup draft. Hardware untouched until guarded applies.");
+    return "Local RAID plan saved to the visual setup draft. Hardware untouched.";
+  }
+
   function selectedDeviceFieldDisplayValue(field: { key: string; label: string }) {
     if (!selectedPart) return "Not planned";
     const profilePath = topologyCommittedProfilePath(selectedPart.id, field.key);
@@ -9441,6 +9962,14 @@ function LabDesignComposer({
                     onFieldChange={updateDeviceSetting}
                     partId={selectedPart.id}
                     settings={selectedSettings}
+                  />
+                )}
+                {(selectedPart.id === "server-gen10" || selectedPart.id === "server-gen10plus") && (
+                  <LocalStorageRaidPlanner
+                    netappInScope={netappInScope}
+                    onCommit={updateSelectedServerRaidPlan}
+                    settings={selectedSettings}
+                    storageProtocol={storageProtocol}
                   />
                 )}
               </details>
