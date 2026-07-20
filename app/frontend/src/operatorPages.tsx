@@ -795,12 +795,11 @@ export function OperatorOverviewPage({
       <div className="operator-home-layout">
         <div className="operator-home-map-column">
           {detailsLoading && <p className="operator-home-feedback">Refreshing device status...</p>}
-          <LabTopologyMap
+          <OverviewLabMap
             accessRows={accessRows}
             activeProfile={activeProfile}
             address={address}
             features={features}
-            firmwareSummaries={firmwareSummaries}
             health={health}
             labProfileState={labProfileState}
             onReload={async () => {
@@ -808,7 +807,6 @@ export function OperatorOverviewPage({
               await load();
             }}
             vcenterNetapp={vcenterNetapp}
-            workflowActions={workflowActions}
           />
         </div>
         <aside className="operator-home-rail" aria-label="Operator Home status and next action">
@@ -6238,6 +6236,488 @@ type RackSlot = {
   label: string;
   note: string;
 };
+
+type MapDeviceKind = "network" | "server" | "storage" | "virtualization";
+
+type MapNodeModel = {
+  id: string;
+  kind: MapDeviceKind;
+  title: string;
+  subtitle: string;
+  meta: string;
+  status: string;
+  tone: TopologyNodeTone;
+  x: number;
+  y: number;
+};
+
+type MapEditField = {
+  key: string;
+  label: string;
+  wide?: boolean;
+  mono?: boolean;
+};
+
+type MapEditGroup = {
+  title: string;
+  hint: string;
+  fields: MapEditField[];
+};
+
+const MAP_NODE_LAYOUT: Record<string, { x: number; y: number }> = {
+  cisco: { x: 380, y: 92 },
+  server: { x: 196, y: 232 },
+  vcenter: { x: 564, y: 232 },
+  netapp: { x: 380, y: 372 }
+};
+
+function mapDeviceEditorConfig(kind: MapDeviceKind, storageProtocol: string): { groups: MapEditGroup[] } {
+  if (kind === "network") {
+    return {
+      groups: [
+        { title: "Access", hint: "Switch management path", fields: [
+          { key: "ciscoManagement", label: "Management IP", mono: true },
+          { key: "vlanId", label: "Management VLAN", mono: true }
+        ] },
+        { title: "Network", hint: "Shared subnet and gateway", fields: [
+          { key: "subnet", label: "Subnet (CIDR)", mono: true },
+          { key: "gateway", label: "Gateway", mono: true },
+          { key: "mtu", label: "MTU", mono: true }
+        ] },
+        { title: "Services", hint: "Name and time resolution", fields: [
+          { key: "dnsServers", label: "DNS servers", wide: true, mono: true },
+          { key: "ntpServers", label: "NTP servers", wide: true, mono: true }
+        ] }
+      ]
+    };
+  }
+  if (kind === "server") {
+    return {
+      groups: [
+        { title: "Access", hint: "iLO and ESXi management", fields: [
+          { key: "ilo", label: "iLO IP", mono: true },
+          { key: "esxiManagement", label: "ESXi IP", mono: true }
+        ] },
+        { title: "Provisioning", hint: "First-boot and embedded NIC", fields: [
+          { key: "iloInitial", label: "iLO initial IP", mono: true },
+          { key: "serverEmbeddedNic", label: "Embedded NIC", mono: true }
+        ] },
+        { title: "Network", hint: "Shared subnet and gateway", fields: [
+          { key: "subnet", label: "Subnet (CIDR)", mono: true },
+          { key: "gateway", label: "Gateway", mono: true }
+        ] }
+      ]
+    };
+  }
+  if (kind === "storage") {
+    return {
+      groups: [
+        { title: "Access", hint: "Cluster and SVM management", fields: [
+          { key: "clusterMgmt", label: "Cluster mgmt IP", mono: true },
+          { key: "svmMgmt", label: "SVM mgmt IP", mono: true }
+        ] },
+        { title: "Controllers", hint: "Service processors and node mgmt", fields: [
+          { key: "controllerASp", label: "Controller A SP", mono: true },
+          { key: "controllerBSp", label: "Controller B SP", mono: true },
+          { key: "nodeAMgmt", label: "Node A mgmt", mono: true },
+          { key: "nodeBMgmt", label: "Node B mgmt", mono: true }
+        ] },
+        { title: `Data path (${storageProtocol.toUpperCase()})`, hint: "Datastore LIF targets", fields: [
+          { key: "nfsLifs", label: "NFS LIFs", wide: true, mono: true },
+          { key: "iscsiLifs", label: "iSCSI LIFs", wide: true, mono: true }
+        ] }
+      ]
+    };
+  }
+  return {
+    groups: [
+      { title: "Access", hint: "vCenter and ESXi targets", fields: [
+        { key: "vcenterTarget", label: "vCenter IP", mono: true },
+        { key: "esxiTarget", label: "ESXi host", mono: true }
+      ] },
+      { title: "Datastore", hint: "Where VMs live", fields: [
+        { key: "datastoreTarget", label: "Datastore", wide: true, mono: true }
+      ] },
+      { title: "Network", hint: "Shared subnet and gateway", fields: [
+        { key: "subnet", label: "Subnet (CIDR)", mono: true },
+        { key: "gateway", label: "Gateway", mono: true }
+      ] }
+    ]
+  };
+}
+
+function mapDeviceEditStateFrom(
+  kind: MapDeviceKind,
+  activeProfile: LabProfile | null,
+  address: LabAddressPlan,
+  features: LabProfileFeatures | null,
+  global: LabProfile["global_settings"] | null
+): Record<string, string> {
+  if (kind === "network") return networkProfileEditStateFrom(activeProfile, address, features, global) as unknown as Record<string, string>;
+  if (kind === "server") return serverProfileEditStateFrom(activeProfile, address, global) as unknown as Record<string, string>;
+  if (kind === "storage") return storageProfileEditStateFrom(activeProfile, address, features, global) as unknown as Record<string, string>;
+  return virtualizationProfileEditStateFrom(activeProfile, address, features, global) as unknown as Record<string, string>;
+}
+
+function mapDeviceProfilePayload(kind: MapDeviceKind, profile: LabProfile, edit: Record<string, string>): LabProfileWrite {
+  if (kind === "network") return networkProfilePayload(profile, edit as unknown as NetworkProfileEditState);
+  if (kind === "server") return serverProfilePayload(profile, edit as unknown as ServerProfileEditState);
+  if (kind === "storage") return storageProfilePayload(profile, edit as unknown as StorageProfileEditState);
+  return virtualizationProfilePayload(profile, edit as unknown as VirtualizationProfileEditState);
+}
+
+function MapDeviceGlyph({ kind }: { kind: MapDeviceKind }) {
+  if (kind === "network") {
+    return (
+      <g className="chassis">
+        <rect x="-48" y="-19" width="96" height="38" rx="8" className="chassis-body" />
+        {[-40, -30, -20, -10, 0, 10, 20, 30].map((cx, i) => (
+          <rect key={cx} x={cx} y="-10" width="6" height="9" rx="1.4" className={`switch-port ${i % 3 === 0 ? "is-lit" : ""}`} />
+        ))}
+        <circle className="status-led" cx="40" cy="7" r="4.5" />
+      </g>
+    );
+  }
+  if (kind === "server") {
+    return (
+      <g className="chassis">
+        <rect x="-46" y="-21" width="92" height="42" rx="7" className="chassis-body" />
+        <rect x="-38" y="-13" width="18" height="26" rx="2" className="server-vent" />
+        <rect x="-15" y="-13" width="48" height="10" rx="2" className="server-bay" />
+        <rect x="-15" y="0" width="48" height="10" rx="2" className="server-bay server-bay-alt" />
+        <circle className="status-led" cx="39" cy="9" r="4.5" />
+      </g>
+    );
+  }
+  if (kind === "storage") {
+    return (
+      <g className="chassis">
+        <rect x="-46" y="-20" width="92" height="18" rx="4" className="chassis-body" />
+        <rect x="-46" y="3" width="92" height="18" rx="4" className="chassis-body" />
+        <circle cx="-36" cy="-11" r="2.6" className="storage-dot" />
+        <circle cx="-36" cy="12" r="2.6" className="storage-dot" />
+        <rect x="-26" y="-14.5" width="44" height="7" rx="1.4" className="storage-slot" />
+        <rect x="-26" y="8.5" width="44" height="7" rx="1.4" className="storage-slot" />
+        <circle className="status-led" cx="38" cy="13" r="4.5" />
+      </g>
+    );
+  }
+  return (
+    <g className="chassis">
+      <rect x="-44" y="-23" width="88" height="46" rx="9" className="chassis-body" />
+      <path d="M -20 -6 L -6 8 L 20 -13" className="vcenter-check" />
+      <circle className="status-led" cx="35" cy="10" r="4.5" />
+    </g>
+  );
+}
+
+function MapDeviceEditor({
+  node,
+  activeProfile,
+  address,
+  features,
+  global,
+  storageProtocol,
+  onClose,
+  onReload
+}: {
+  node: MapNodeModel;
+  activeProfile: LabProfile | null;
+  address: LabAddressPlan;
+  features: LabProfileFeatures | null;
+  global: LabProfile["global_settings"] | null;
+  storageProtocol: string;
+  onClose: () => void;
+  onReload: () => Promise<void> | void;
+}) {
+  const [edit, setEdit] = useState<Record<string, string>>(() =>
+    mapDeviceEditStateFrom(node.kind, activeProfile, address, features, global)
+  );
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+  const profileKey = `${node.kind}:${activeProfile?.id ?? "none"}:${activeProfile?.version ?? 0}`;
+
+  useEffect(() => {
+    setEdit(mapDeviceEditStateFrom(node.kind, activeProfile, address, features, global));
+    setMessage("");
+    setError("");
+  }, [profileKey, address, features, global]);
+
+  const config = mapDeviceEditorConfig(node.kind, storageProtocol);
+  const statusLabel = topologyNodeStateLabel(node.tone);
+  const statusClass = node.tone === "ready" || node.tone === "created" ? "ready" : node.tone === "warning" || node.tone === "offline" ? "blocked" : "unknown";
+
+  function update(key: string, value: string) {
+    setEdit((current) => ({ ...current, [key]: value }));
+    setMessage("");
+  }
+
+  async function save() {
+    if (!activeProfile) {
+      setError("Load the active lab setup before editing device values.");
+      return;
+    }
+    setBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      const payload = mapDeviceProfilePayload(node.kind, activeProfile, edit);
+      if (activeProfile.source === "saved") {
+        await api.updateLabProfile(activeProfile.id, payload);
+      } else {
+        const saved = await api.createLabProfile(payload);
+        await api.activateLabProfile(saved.id);
+      }
+      await onReload();
+      setMessage("Saved. Hardware untouched.");
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <aside className="map-drawer" aria-label={`${node.title} setup`}>
+      <div className="map-drawer-head">
+        <div className={`map-drawer-glyph map-drawer-glyph-${node.kind}`} aria-hidden="true">
+          <svg viewBox="-52 -28 104 56" width="40" height="24"><MapDeviceGlyph kind={node.kind} /></svg>
+        </div>
+        <div className="map-drawer-head-text">
+          <p className="operator-kicker">{node.subtitle}</p>
+          <h3>{node.title}</h3>
+          <span className={`map-status-pill ${statusClass}`}>{statusLabel}</span>
+        </div>
+        <button className="map-drawer-close" type="button" onClick={onClose} aria-label="Close device panel">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 6l12 12M18 6L6 18" /></svg>
+        </button>
+      </div>
+      <div className="map-drawer-body">
+        {config.groups.map((group) => (
+          <div className="map-field-group" key={group.title}>
+            <div className="map-field-group-head">
+              <h4>{group.title}</h4>
+              <small>{group.hint}</small>
+            </div>
+            <div className="map-field-grid">
+              {group.fields.map((field) => (
+                <label className={field.wide ? "wide" : ""} key={field.key}>
+                  <span>{field.label}</span>
+                  <input
+                    className={field.mono ? "is-mono" : ""}
+                    onChange={(event) => update(field.key, event.target.value)}
+                    value={edit[field.key] ?? ""}
+                  />
+                </label>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="map-drawer-foot">
+        <span className="map-drawer-safe">Saves the plan only — hardware untouched.</span>
+        <div className="map-drawer-foot-actions">
+          {message && <span className="map-drawer-msg">{message}</span>}
+          {error && <span className="map-drawer-msg is-error">{error}</span>}
+          <button className="map-drawer-save" type="button" disabled={busy || !activeProfile} onClick={() => void save()}>
+            {busy ? "Saving…" : "Save changes"}
+          </button>
+        </div>
+      </div>
+    </aside>
+  );
+}
+
+function OverviewLabMap({
+  accessRows,
+  activeProfile,
+  address,
+  features,
+  health,
+  labProfileState,
+  onReload,
+  vcenterNetapp
+}: {
+  accessRows: AccessRow[];
+  activeProfile: LabProfile | null;
+  address: LabAddressPlan;
+  features: LabProfileFeatures | null;
+  health?: HealthLike;
+  labProfileState: LabProfileList | null;
+  onReload: () => Promise<void> | void;
+  vcenterNetapp: ProviderProbeResult | null;
+}) {
+  const global = activeProfile?.global_settings ?? null;
+  const netappInScope = features?.netapp_enabled !== false;
+  const vcenterInScope = features?.vcenter_enabled === true;
+  const vmInScope = vcenterInScope || netappInScope;
+  const runtimeReady = Boolean(health);
+  const realRuntime = health?.operator_runtime_mode === "real_lab" || health?.provider_mode === "local-lab-readwrite";
+  const runtimeLabel = runtimeReady ? (realRuntime ? "Live lab · read-only checks" : "Test mode · no hardware touched") : "Checking status";
+  const runtimeClass = runtimeReady ? (realRuntime ? "topology-pill-live" : "topology-pill-test") : "topology-pill-runtime-unknown";
+  const subnetState = topologySubnetState(address.subnet, health);
+  const storageProtocol = asString(features?.storage_protocol) || (netappInScope ? "nfs" : "local");
+  const serverModelLabel = topologyServerModelLabel(activeProfile?.devices?.server_model);
+
+  const ciscoStatus = topologyStatusFromAccess(accessRows, "Cisco");
+  const iloStatus = topologyStatusFromAccess(accessRows, "iLO");
+  const esxiStatus = topologyStatusFromAccess(accessRows, "ESXi");
+  const netappStatus = topologyStatusFromAccess(accessRows, "NetApp");
+  const vmStatus = topologyStatusFromAccess(accessRows, "VM inventory");
+  const serverStatus = topologyWorstStatus([iloStatus, esxiStatus]);
+
+  const nodes: MapNodeModel[] = [
+    {
+      id: "cisco", kind: "network", title: "Cisco Switch", subtitle: "Network fabric",
+      meta: displayAddress(address.cisco_management), status: ciscoStatus, tone: topologyTone(ciscoStatus),
+      ...MAP_NODE_LAYOUT.cisco
+    },
+    {
+      id: "server", kind: "server", title: `HPE ${serverModelLabel.replace(/^DL360\s+/i, "DL360 ")}`, subtitle: "Compute · iLO & ESXi",
+      meta: displayAddress(address.ilo), status: serverStatus, tone: topologyTone(serverStatus),
+      ...MAP_NODE_LAYOUT.server
+    }
+  ];
+  if (netappInScope) {
+    nodes.push({
+      id: "netapp", kind: "storage", title: "NetApp ONTAP", subtitle: `Shared storage · ${storageProtocol.toUpperCase()}`,
+      meta: displayAddress(address.netapp_cluster_mgmt), status: netappStatus, tone: topologyTone(netappStatus),
+      ...MAP_NODE_LAYOUT.netapp
+    });
+  }
+  if (vmInScope) {
+    nodes.push({
+      id: "vcenter", kind: "virtualization", title: vcenterInScope ? "vCenter" : "Direct ESXi",
+      subtitle: vcenterInScope ? "VM management" : "Single-server VMs",
+      meta: topologyVmMapTarget(vcenterNetapp, vcenterInScope, address), status: vmStatus, tone: topologyTone(vmStatus, "created"),
+      ...MAP_NODE_LAYOUT.vcenter
+    });
+  }
+  // Single-server (no netapp / no vcenter): drop the compute node into the center.
+  if (!netappInScope && !vmInScope) {
+    const serverNode = nodes.find((node) => node.id === "server");
+    if (serverNode) { serverNode.x = 380; serverNode.y = 300; }
+  }
+
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const selectedNode = nodes.find((node) => node.id === selectedId) ?? null;
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+
+  type MapLink = { from: string; to: string; status: TopologyNodeTone };
+  const rawLinks: MapLink[] = [
+    { from: "cisco", to: "server", status: topologyTone(serverStatus) },
+    { from: "cisco", to: "vcenter", status: topologyTone(vmStatus, "created") },
+    { from: "server", to: "netapp", status: topologyTone(netappStatus) },
+    { from: "netapp", to: "vcenter", status: topologyTone(netappStatus) },
+    { from: "server", to: "vcenter", status: topologyTone(vmStatus, "created") }
+  ];
+  const links = rawLinks.filter((link) => byId.has(link.from) && byId.has(link.to));
+
+  function linkClass(status: TopologyNodeTone): string {
+    if (status === "ready" || status === "created") return "is-active";
+    if (status === "warning" || status === "offline") return "is-blocked";
+    return "is-idle";
+  }
+
+  function nodeStatusClass(tone: TopologyNodeTone): string {
+    if (tone === "ready" || tone === "created") return "is-ready";
+    if (tone === "warning" || tone === "offline") return "is-blocked";
+    return "is-unknown";
+  }
+
+  return (
+    <section className="overview-map" aria-label="Lab topology">
+      <div className="overview-map-head">
+        <div>
+          <p className="operator-kicker">Local lab setup</p>
+          <h2>{nodes.length} devices · subnet {displayAddress(address.subnet)}</h2>
+        </div>
+        <div className="overview-map-head-actions">
+          <SystemSetupPicker
+            activeProfile={activeProfile}
+            address={address}
+            features={features}
+            labProfileState={labProfileState}
+            onChanged={onReload}
+          />
+          <div className="overview-map-pills">
+            <span className={`topology-pill ${runtimeClass}`}><CheckCircle2 size={14} /> {runtimeLabel}</span>
+            <span className={`topology-pill topology-pill-subnet-${subnetState.status}`}><Route size={14} /> {subnetState.label}</span>
+          </div>
+        </div>
+      </div>
+
+      {subnetState.status !== "matches" && (
+        <div className={`topology-subnet-notice topology-subnet-notice-${subnetState.status}`}>
+          <div>
+            <strong>{subnetState.status === "mismatch" ? "Subnet mismatch" : "Subnet not proven"}</strong>
+            <span>{subnetState.detail}</span>
+          </div>
+        </div>
+      )}
+
+      <div className={`overview-map-stage ${selectedNode ? "is-open" : ""}`}>
+        <div className="overview-map-canvas">
+          <svg className="overview-map-svg" viewBox="0 0 760 460" role="img" aria-label="Device topology">
+            <g className="overview-map-links">
+              {links.map((link) => {
+                const a = byId.get(link.from)!;
+                const b = byId.get(link.to)!;
+                return (
+                  <path
+                    key={`${link.from}-${link.to}`}
+                    className={`overview-link ${linkClass(link.status)}`}
+                    d={`M ${a.x} ${a.y} L ${b.x} ${b.y}`}
+                  />
+                );
+              })}
+            </g>
+            {nodes.map((node) => (
+              <g
+                key={node.id}
+                className={`overview-node ${nodeStatusClass(node.tone)} ${selectedId === node.id ? "is-selected" : ""} ${node.tone === "ready" || node.tone === "created" ? "is-live" : ""}`}
+                transform={`translate(${node.x},${node.y})`}
+                role="button"
+                tabIndex={0}
+                aria-label={`${node.title}, ${topologyNodeStateLabel(node.tone)}`}
+                onClick={() => setSelectedId(node.id)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setSelectedId(node.id); }
+                }}
+              >
+                <circle className="overview-node-pulse" cx="0" cy="0" r="30" />
+                <circle className="overview-node-ring" cx="0" cy="0" r="36" />
+                <MapDeviceGlyph kind={node.kind} />
+                <text className="overview-node-label" x="0" y="44" textAnchor="middle">{node.title}</text>
+                <text className="overview-node-meta" x="0" y="57" textAnchor="middle">{node.meta}</text>
+              </g>
+            ))}
+          </svg>
+          <div className="overview-map-legend" aria-label="Legend">
+            <span><i className="legend-ready" /> Ready</span>
+            <span><i className="legend-blocked" /> Blocked</span>
+            <span><i className="legend-unknown" /> Not checked</span>
+          </div>
+        </div>
+
+        {selectedNode && (
+          <MapDeviceEditor
+            key={selectedNode.id}
+            node={selectedNode}
+            activeProfile={activeProfile}
+            address={address}
+            features={features}
+            global={global}
+            storageProtocol={storageProtocol}
+            onClose={() => setSelectedId(null)}
+            onReload={onReload}
+          />
+        )}
+      </div>
+    </section>
+  );
+}
 
 function LabTopologyMap({
   accessRows,
