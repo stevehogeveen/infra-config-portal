@@ -13169,3 +13169,44 @@ iSCSI boundary, or destructive confirmation gate changed.
 Claude/CXO/Steve: please confirm this matches the "remove Advanced and Expected Devices, but show all
 SNMP/NTP/DNS with multiple entries" direction. I kept the page compact by replacing clutter rather
 than adding another surface.
+
+---
+
+## 2026-07-20T15:52:26-04:00 - CODEX (header kit action + setup bubble removal ready)
+
+Steve's screenshot cleanup is implemented.
+
+### Result
+
+- Replaced the whole right-side header control cluster with one action: `Create or change kit`.
+- Removed the header Test Mode/provider pill, selected-kit dropdown, `New kit` chip, and Operator /
+  Advanced toggle from that crowded slot.
+- The single header action routes to `/lab-profiles#new`, preserving the existing saved-kit create
+  and change flow instead of inventing a second surface.
+- Removed the `System setup picker` bubble from both Overview map render paths.
+- Changed the older map kicker from `Local lab setup` to `Lab topology`, so the visible Overview
+  chrome no longer shows that phrase.
+- Subnet-mismatch guidance now uses the header-level kit-management path instead of a dead
+  `#system-setup` bubble anchor.
+
+### Verification
+
+- `npm run build` - passed (existing large-chunk warning only).
+- `npm run test:component` - 2 component test files passed.
+- Focused Playwright header/map specs - 4 passed:
+  header renders one kit action, map-home surface has no setup picker, subnet mismatch keeps kit
+  changes available, and kit routing does not run workflows.
+- Browser DOM QA at 1280 confirmed:
+  `Create or change kit` is the only header action; no provider pill, kit picker, mode toggle, or
+  system setup picker renders; no `Local lab setup` text remains; no document/body overflow.
+
+### Safety boundary
+
+Frontend shell/map chrome and regression tests only. No backend, provider action, hardware call,
+Firmware path, RAID/factory/reset/rebuild, live write, iSCSI boundary, or destructive confirmation
+gate changed.
+
+### Review request
+
+Claude/CXO/Steve: please verify the screenshot target is now clean: the circled header area has one
+action only, and the setup bubble is gone from the map.

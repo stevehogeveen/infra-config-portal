@@ -740,12 +740,6 @@ function App() {
       >
         <AppShell
           health={health}
-          healthError={healthError}
-          labProfileError={labProfileError}
-          labProfileLoading={labProfileLoading}
-          labProfileState={labProfileState}
-          onActivateLabProfile={activateLabProfile}
-          onReloadLabProfile={loadLabProfileState}
         >
           <OperatorTabStateProvider>
             <Routes>
@@ -845,35 +839,15 @@ function AdvancedRouteGate({ children }: { children: ReactNode }) {
 
 function AppShell({
   children,
-  health,
-  healthError,
-  labProfileError,
-  labProfileLoading,
-  labProfileState,
-  onActivateLabProfile,
-  onReloadLabProfile
+  health
 }: {
   children: ReactNode;
   health: HealthStatus | null;
-  healthError: string;
-  labProfileError: string;
-  labProfileLoading: boolean;
-  labProfileState: LabProfileList | null;
-  onActivateLabProfile: (profileId: string) => Promise<void>;
-  onReloadLabProfile: () => Promise<void>;
 }) {
   const { uiMode } = useUiMode();
   return (
     <div className={`app-shell app-shell-${uiMode}`}>
-      <ShellTopNav
-        health={health}
-        healthError={healthError}
-        labProfileError={labProfileError}
-        labProfileLoading={labProfileLoading}
-        labProfileState={labProfileState}
-        onActivateLabProfile={onActivateLabProfile}
-        onReloadLabProfile={onReloadLabProfile}
-      />
+      <ShellTopNav />
       <main className="content">
         {health?.dev_test_banner && <DevTestBanner message={health.dev_test_banner} />}
         {children}
@@ -900,32 +874,6 @@ function humanizeDevTestBanner(message: string): string {
     return "Test mode is on. Real lab status, reports, and certification require Real Lab Mode.";
   }
   return humanizeAction(message);
-}
-
-function ModeToggle() {
-  const { setUiMode, uiMode } = useUiMode();
-  return (
-    <div className="mode-toggle" role="group" aria-label="Display mode">
-      <button
-        aria-pressed={uiMode === "simple"}
-        className={uiMode === "simple" ? "active" : ""}
-        onClick={() => setUiMode("simple")}
-        type="button"
-      >
-        <ClipboardList size={16} />
-        Operator
-      </button>
-      <button
-        aria-pressed={uiMode === "advanced"}
-        className={uiMode === "advanced" ? "active" : ""}
-        onClick={() => setUiMode("advanced")}
-        type="button"
-      >
-        <Wrench size={16} />
-        Advanced
-      </button>
-    </div>
-  );
 }
 
 function OperatorIssueReporter() {
@@ -1232,29 +1180,7 @@ function pageTitleForRoute(pathname: string) {
   return labels[segment] ?? labelize(segment);
 }
 
-function ShellTopNav({
-  health,
-  healthError,
-  labProfileError,
-  labProfileLoading,
-  labProfileState,
-  onActivateLabProfile,
-  onReloadLabProfile
-}: {
-  health: HealthStatus | null;
-  healthError: string;
-  labProfileError: string;
-  labProfileLoading: boolean;
-  labProfileState: LabProfileList | null;
-  onActivateLabProfile: (profileId: string) => Promise<void>;
-  onReloadLabProfile: () => Promise<void>;
-}) {
-  const { uiMode } = useUiMode();
-  const activeProfile = labProfileState?.active_profile ?? null;
-  const providerMode = health?.provider_mode ?? (healthError ? "unverified" : "checking");
-  const modeStatus = healthError ? "unavailable" : providerMode;
-
-  const profiles = [labProfileState?.runtime_profile, ...(labProfileState?.profiles ?? [])].filter(Boolean) as LabProfile[];
+function ShellTopNav() {
   return (
     <header className="shell-topbar" aria-label="Application header">
       <Link className="shell-brand" to="/overview" aria-label="Lab Builder overview">
@@ -1269,32 +1195,9 @@ function ShellTopNav({
         <NavLink to="/reports" className={({ isActive }) => isActive ? "quick-tab active" : "quick-tab"}>Reports</NavLink>
       </nav>
       <div className="shell-topbar-actions">
-        <div className={`topbar-runtime topbar-runtime-${uiMode}`} aria-label="Lab provider mode">
-          <span className={`runtime-dot runtime-dot-${modeStatus}`} />
-          <span>{displayModeLabel(providerMode)}</span>
-          {uiMode === "advanced" && <>
-            <span aria-hidden="true">-</span>
-            <span className="topbar-runtime-subnet">{activeProfile ? displayAddress(activeProfile.address_plan.subnet) : "No subnet"}</span>
-          </>}
-        </div>
-        <div className="kit-picker-wrap">
-          <label className="sr-only" htmlFor="active-kit-picker">Selected lab kit</label>
-          <select
-            className="kit-picker"
-            id="active-kit-picker"
-            value={activeProfile?.id ?? ""}
-            onChange={(event) => { void onActivateLabProfile(event.target.value); }}
-          >
-            {profiles.length === 0 && <option value="">No kit selected</option>}
-            {profiles.map((profile) => <option key={profile.id} value={profile.id}>{displayKitName(profile)}</option>)}
-          </select>
-          <Link className="kit-create-link" to="/lab-profiles#new" aria-label="Create a new lab kit">
-            <Plus size={14} />
-            <span>New kit</span>
-          </Link>
-        </div>
-        <ModeToggle />
-        {(labProfileError || healthError) && <span className="topbar-inline-error">{labProfileError ? "Kit unavailable" : "Status unavailable"}</span>}
+        <Link className="kit-manage-link" to="/lab-profiles#new" aria-label="Create or change kit">
+          Create or change kit
+        </Link>
       </div>
     </header>
   );

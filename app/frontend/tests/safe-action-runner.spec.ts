@@ -362,11 +362,6 @@ test("renders the map-first operator header and pages", async ({ page }) => {
   await expect(header.getByRole("link", { name: "Lab Builder overview" })).toHaveAttribute("href", "/overview");
   await expect(header.getByRole("link", { name: "Lab Builder overview" })).toContainText("Lab Builder");
   await expect(header.getByRole("link", { name: "Lab Builder overview" })).toContainText("Operator");
-  const activeKitLabelBox = await header.locator("label[for='active-kit-picker']").boundingBox();
-  expect(activeKitLabelBox?.width ?? 0).toBeLessThanOrEqual(1);
-  expect(activeKitLabelBox?.height ?? 0).toBeLessThanOrEqual(1);
-  await expect(header.getByLabel("Lab provider mode")).toBeVisible();
-  await expect(header.getByLabel("Lab provider mode")).not.toContainText("No subnet");
   const primaryNavigation = header.getByRole("navigation", { name: "Primary navigation" });
   await expect(primaryNavigation.locator("a")).toHaveText(["Overview", "Lab Defaults", "Firmware", "Run Center", "Reports"]);
   await expect(primaryNavigation.getByRole("link", { name: "Overview" })).toHaveAttribute("href", "/overview");
@@ -376,9 +371,13 @@ test("renders the map-first operator header and pages", async ({ page }) => {
   await expect(primaryNavigation.getByRole("link", { name: "Reports" })).toHaveAttribute("href", "/reports");
   await expect(primaryNavigation).not.toContainText(/Compute|Storage|Virtualization|Cisco/);
   await expect(page.getByRole("navigation", { name: "Quick navigation" })).toHaveCount(0);
-  await expect(header.getByLabel("Selected lab kit")).not.toContainText(/\bruntime\b/i);
-  await expect(page.getByRole("link", { name: "Create a new lab kit" })).toContainText("New kit");
-  await expect(page.getByRole("link", { name: "Create a new lab kit" })).toHaveAttribute("href", "/lab-profiles#new");
+  const headerActions = header.locator(".shell-topbar-actions");
+  await expect(headerActions.getByRole("link", { name: "Create or change kit" })).toHaveAttribute("href", "/lab-profiles#new");
+  await expect(headerActions).toHaveText("Create or change kit");
+  await expect(header.getByLabel("Lab provider mode")).toHaveCount(0);
+  await expect(header.locator("#active-kit-picker")).toHaveCount(0);
+  await expect(header.getByRole("group", { name: "Display mode" })).toHaveCount(0);
+  await expect(headerActions).not.toContainText(/Test Mode|Local lab setup|New kit|Operator|Advanced/);
   await expect(header).not.toContainText(/Windows|OVF|Global/);
 
   await expect(page.getByRole("heading", { name: "Overview" })).toBeVisible();
@@ -788,30 +787,19 @@ test("map-first overview makes the topology the home surface", async ({ page }) 
   await page.goto("/overview");
 
   const layout = page.locator(".operator-home-layout");
-  const map = layout.locator(".operator-home-map-column .lab-topology-map");
+  const mapColumn = layout.locator(".operator-home-map-column");
+  const map = mapColumn.locator("section[aria-label='Lab topology'], section[aria-label='Living lab topology']");
   const rail = layout.getByRole("complementary", { name: "Operator Home status and next action" });
 
   await expect(map).toBeVisible();
   await expect(rail).toBeVisible();
   await expect(layout.locator(".operator-home-map-column")).toHaveCount(1);
   await expect(layout.locator(".operator-home-rail")).toHaveCount(1);
-  await expect(map.locator(".system-setup-picker"), "system picker participates in the header instead of floating over it").not.toHaveCSS("position", "absolute");
-  const headingBox = await map.locator(".lab-topology-head h2").boundingBox();
-  const pickerBox = await map.locator(".system-setup-picker").boundingBox();
+  const headingBox = await map.locator("h2").first().boundingBox();
   expect(headingBox, "topology device-count heading has a layout box").not.toBeNull();
-  expect(pickerBox, "system setup picker has a layout box").not.toBeNull();
-  const overlapsHeading = Boolean(
-    headingBox &&
-    pickerBox &&
-    pickerBox.left < headingBox.right &&
-    pickerBox.right > headingBox.left &&
-    pickerBox.top < headingBox.bottom &&
-    pickerBox.bottom > headingBox.top
-  );
-  expect(overlapsHeading, "system picker does not overlap the device-count/subnet heading").toBe(false);
-  await expect(map.getByLabel("Zoned lab map")).toContainText("Management");
-  await expect(map.getByLabel("Zoned lab map")).toContainText("Storage & compute");
-  await expect(map.getByLabel("Current lab links")).toBeVisible();
+  await expect(map.locator(".system-setup-picker"), "system setup picker is retired from the map header").toHaveCount(0);
+  await expect(map).toContainText("Cisco Switch");
+  await expect(map).toContainText(/subnet 192\.168\.1\.0\/24/i);
   await expect(rail.getByTestId("operator-home-primary-action")).toHaveCount(1);
   await expect(rail.locator(".operator-rail-primary")).toHaveCount(1);
   await expect(page.getByTestId("lab-build-journey")).toHaveCount(0);
@@ -1675,25 +1663,25 @@ test("zoned map makes single-server local RAID mode unmistakable", async ({ page
   await expect(map).not.toContainText("Local ESXi datastore");
 });
 
-test("overview flags saved subnet mismatch and links to subnet editing", async ({ page }) => {
+test("overview flags saved subnet mismatch and keeps kit changes available", async ({ page }) => {
   healthHostIpv4Addresses = ["10.10.8.99", "172.20.10.3"];
   await page.goto("/overview");
   await openOperatorDetails(page);
 
-  const topology = page.locator("section[aria-label='Living lab topology']");
+  const topology = page.locator("section[aria-label='Lab topology'], section[aria-label='Living lab topology']");
 
   await expect(topology).toContainText("Subnet mismatch");
   await expect(topology).toContainText("Active setup targets 192.168.1.0/24");
   await expect(topology).toContainText("10.10.8.99");
 
-  const editSubnet = topology.getByRole("link", { name: "Edit system setup" });
-  await expect(editSubnet).toHaveAttribute("href", "/overview#system-setup");
+  const editSubnet = page.locator("header[aria-label='Application header']").getByRole("link", { name: "Create or change kit" });
+  await expect(editSubnet).toHaveAttribute("href", "/lab-profiles#new");
   await editSubnet.click();
-  await expect(page).toHaveURL(/\/overview#system-setup$/);
-  await expect(page.locator("#system-setup")).toBeVisible();
+  await expect(page).toHaveURL(/\/lab-profiles#new$/);
+  await expect(page.getByRole("heading", { name: "Saved Kits", exact: true })).toBeVisible();
 });
 
-test("living topology creates a subnet-derived system setup without running workflows", async ({ page }) => {
+test("overview routes kit changes to Saved Kits without running workflows", async ({ page }) => {
   let workflowRunAttempted = false;
   await page.route("**/api/v1/workflows/actions/*/run", async (route) => {
     workflowRunAttempted = true;
@@ -1704,131 +1692,11 @@ test("living topology creates a subnet-derived system setup without running work
   await openOperatorDetails(page);
 
   const topology = page.locator("section[aria-label='Living lab topology']");
-  const picker = topology.locator("section[aria-label='System setup picker']");
-  await expect(picker).toContainText("Runtime Lab");
-  await picker.getByRole("button", { name: "Open system setup picker" }).click();
-  await picker.getByRole("button", { name: "New" }).click();
-
-  await picker.getByLabel("New setup name").fill("Bench 200 Lab");
-  await picker.getByLabel("Subnet CIDR").fill("192.168.200.0/24");
-  await expect(picker.getByLabel("Derived IP preview")).toContainText("192.168.200.204");
-  await expect(picker.getByLabel("Derived IP preview")).toContainText("192.168.200.230");
-
-  await picker.getByRole("button", { name: "Create setup" }).click();
-  await expect(topology).toContainText("Bench 200 Lab");
-  await expect(topology).toContainText("192.168.200.0/24");
+  await expect(topology.locator("section[aria-label='System setup picker']")).toHaveCount(0);
+  await page.locator("header[aria-label='Application header']").getByRole("link", { name: "Create or change kit" }).click();
+  await expect(page).toHaveURL(/\/lab-profiles#new$/);
+  await expect(page.getByRole("heading", { name: "Saved Kits", exact: true })).toBeVisible();
   expect(workflowRunAttempted).toBe(false);
-});
-
-test("system setup advanced fields round-trip shared and device rows through the profile", async ({ page }) => {
-  await page.goto("/overview");
-  await openOperatorDetails(page);
-
-  const topology = page.locator("section[aria-label='Living lab topology']");
-  const picker = topology.locator("section[aria-label='System setup picker']");
-  await picker.getByRole("button", { name: "Open system setup picker" }).click();
-
-  const panel = picker.getByRole("dialog", { name: "Setup and IP plan" });
-  const advanced = panel.locator("details[aria-label='Advanced fields']");
-  await advanced.locator(":scope > summary").click();
-  const sharedServices = advanced.locator("details.system-setup-advanced-group").filter({ hasText: "Shared services" });
-  const networkSwitch = advanced.locator("details.system-setup-advanced-group").filter({ hasText: "Network / Switch" });
-  await sharedServices.locator(":scope > summary").click();
-  await networkSwitch.locator(":scope > summary").click();
-
-  await advanced.getByLabel("Advanced DNS servers").fill("192.168.1.1, 192.168.1.53");
-  await advanced.getByLabel("Advanced Cisco mgmt IP").fill("192.168.1.214");
-  await expect(advanced).toContainText("Override");
-
-  const createProfileRequest = page.waitForRequest((request) => {
-    const url = new URL(request.url());
-    return request.method() === "POST" && url.pathname === "/api/v1/lab/profiles";
-  });
-  await advanced.getByRole("button", { name: "Save as lab setup" }).click();
-  const request = await createProfileRequest;
-  const payload = request.postDataJSON() as Record<string, any>;
-  expect(payload.address_plan.cisco_management).toBe("192.168.1.214");
-  expect(payload.global_settings.dns_servers).toEqual(["192.168.1.1", "192.168.1.53"]);
-  await expect(panel).toContainText("Advanced profile fields saved");
-
-  await page.reload();
-  await openOperatorDetails(page);
-  const reloadedTopology = page.locator("section[aria-label='Living lab topology']");
-  const reloadedPicker = reloadedTopology.locator("section[aria-label='System setup picker']");
-  await reloadedPicker.getByRole("button", { name: "Open system setup picker" }).click();
-  const reloadedPanel = reloadedPicker.getByRole("dialog", { name: "Setup and IP plan" });
-  const reloadedAdvanced = reloadedPanel.locator("details[aria-label='Advanced fields']");
-  await reloadedAdvanced.locator(":scope > summary").click();
-  await reloadedAdvanced.locator("details.system-setup-advanced-group").filter({ hasText: "Shared services" }).locator(":scope > summary").click();
-  await reloadedAdvanced.locator("details.system-setup-advanced-group").filter({ hasText: "Network / Switch" }).locator(":scope > summary").click();
-  await expect(reloadedAdvanced.getByLabel("Advanced DNS servers")).toHaveValue("192.168.1.1, 192.168.1.53");
-  await expect(reloadedAdvanced.getByLabel("Advanced Cisco mgmt IP")).toHaveValue("192.168.1.214");
-
-  await reloadedPicker.getByRole("button", { name: "Open system setup picker" }).click();
-  await reloadedTopology.getByRole("button", { name: "Open Cisco switch workspace" }).click();
-  const overlay = page.locator("div[aria-label='Device workspace overlay']");
-  await expect(overlay.locator("section[aria-label='Cisco switch workspace']")).toBeVisible();
-  const drawerSummary = overlay.getByLabel("Cisco switch drawer summary");
-  await expect(drawerSummary).toContainText("Management IP");
-  await expect(drawerSummary).toContainText("192.168.1.214");
-  await expect(drawerSummary.getByRole("link", { name: "Open full setup" })).toHaveAttribute("href", "/network");
-  await expect(overlay.getByLabel("Cisco switch essentials")).toHaveCount(0);
-  await expect(overlay.getByLabel("Cisco switch edit settings")).toHaveCount(0);
-  await expect(overlay.getByRole("textbox", { name: "Management IP" })).toHaveCount(0);
-});
-
-test("system setup advanced fields keep blank profile values planned until edited", async ({ page }) => {
-  const blankProfile = JSON.parse(JSON.stringify(labProfiles().active_profile)) as Record<string, any>;
-  blankProfile.dns = [];
-  blankProfile.ntp = [];
-  blankProfile.vlan_id = null;
-  blankProfile.mtu = null;
-  blankProfile.devices = { ...blankProfile.devices, vcenter: null };
-  blankProfile.address_plan = { ...blankProfile.address_plan, ilo_initial: null };
-  blankProfile.global_settings = {
-    ...blankProfile.global_settings,
-    dns_servers: [],
-    mtu: null,
-    ntp_servers: [],
-    vcenter_enabled: false,
-    vlan_id: null
-  };
-  blankProfile.features = {
-    ...blankProfile.features,
-    vcenter_disabled_reason: "vCenter is disabled by the active lab setup.",
-    vcenter_enabled: false
-  };
-  delete blankProfile.features.enable_dns;
-  delete blankProfile.features.enable_ntp;
-  delete blankProfile.features.vcenter_enabled;
-  const blankProfileState = activeLabProfilesFromProfile(blankProfile);
-  await page.route("**/api/v1/lab/profiles", async (route) => {
-    if (route.request().method() === "GET") {
-      return json(route, blankProfileState);
-    }
-    return route.fallback();
-  });
-
-  await page.goto("/overview");
-  await openOperatorDetails(page);
-
-  const topology = page.locator("section[aria-label='Living lab topology']");
-  const picker = topology.locator("section[aria-label='System setup picker']");
-  await picker.getByRole("button", { name: "Open system setup picker" }).click();
-  const advanced = picker.getByRole("dialog", { name: "Setup and IP plan" }).locator("details[aria-label='Advanced fields']");
-  await advanced.locator(":scope > summary").click();
-  await advanced.locator("details.system-setup-advanced-group").filter({ hasText: "Shared services" }).locator(":scope > summary").click();
-
-  const dnsRow = advanced.locator("label.system-setup-advanced-field").filter({ hasText: "DNS servers" });
-  await expect(advanced.locator(":scope > summary")).toContainText("PLANNED");
-  await expect(advanced.locator(":scope > summary")).not.toContainText("override staged");
-  await expect(dnsRow).toContainText("Planned");
-  await expect(dnsRow).not.toContainText("Override");
-  await expect(advanced.getByLabel("Advanced DNS servers")).toHaveAttribute("placeholder", "192.168.1.1");
-
-  await advanced.getByLabel("Advanced DNS servers").fill("192.168.1.53");
-  await expect(dnsRow).toContainText("Override");
-  await expect(advanced.locator(":scope > summary")).toContainText("1 override staged");
 });
 
 test("overview design mode keeps the surface map-only until a node opens the workspace overlay", async ({ page }) => {

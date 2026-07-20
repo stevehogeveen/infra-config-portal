@@ -6639,17 +6639,10 @@ function OverviewLabMap({
     <section className="overview-map" aria-label="Lab topology">
       <div className="overview-map-head">
         <div>
-          <p className="operator-kicker">Local lab setup</p>
+          <p className="operator-kicker">Lab topology</p>
           <h2>{nodes.length} devices · subnet {displayAddress(address.subnet)}</h2>
         </div>
         <div className="overview-map-head-actions">
-          <SystemSetupPicker
-            activeProfile={activeProfile}
-            address={address}
-            features={features}
-            labProfileState={labProfileState}
-            onChanged={onReload}
-          />
           <div className="overview-map-pills">
             <span className={`topology-pill ${runtimeClass}`}><CheckCircle2 size={14} /> {runtimeLabel}</span>
             <span className={`topology-pill topology-pill-subnet-${subnetState.status}`}><Route size={14} /> {subnetState.label}</span>
@@ -6914,13 +6907,6 @@ function LabTopologyMap({
           <h2>{nodes.length} devices - subnet {displayAddress(address.subnet)}</h2>
         </div>
         <div className="lab-topology-head-actions">
-          <SystemSetupPicker
-            activeProfile={activeProfile}
-            address={address}
-            features={features}
-            labProfileState={labProfileState}
-            onChanged={onReload}
-          />
           <div className="lab-topology-pills" aria-label="Topology status">
             <span className={`topology-pill ${runtimeClass}`}><CheckCircle2 size={14} /> {runtimeLabel}</span>
             <span className={`topology-pill topology-pill-subnet-${subnetState.status}`}><Route size={14} /> {subnetState.label}</span>
@@ -6934,7 +6920,7 @@ function LabTopologyMap({
             <strong>{subnetState.status === "mismatch" ? "Subnet mismatch" : "Subnet not proven"}</strong>
             <span>{subnetState.detail}</span>
           </div>
-          <Link to="/overview#system-setup">Edit system setup</Link>
+          <Link to="/lab-profiles#new">Create or change kit</Link>
         </div>
       )}
 
@@ -9943,7 +9929,7 @@ function LabDesignComposer({
             </div>
           </section>
         )}
-        <Link className="design-plan-secondary" to="/overview#system-setup">Edit system setup</Link>
+        <Link className="design-plan-secondary" to="/lab-profiles#new">Create or change kit</Link>
         <button className="design-plan-secondary" onClick={resetDraft} type="button">Reset draft</button>
         <section className="design-subnet-rebase" aria-label="Subnet rebase">
           <label>

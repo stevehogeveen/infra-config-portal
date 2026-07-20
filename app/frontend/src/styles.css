@@ -268,18 +268,6 @@ button:disabled {
   margin: 0;
 }
 
-.shell-topbar .mode-toggle {
-  background: rgba(255, 255, 255, 0.94);
-  border-color: rgba(203, 213, 225, 0.72);
-  box-shadow: none;
-  flex: 0 0 auto;
-}
-
-.shell-topbar .mode-toggle button {
-  min-height: 32px;
-  padding: 6px 9px;
-}
-
 .content {
   min-width: 0;
   padding: 20px 24px 34px;
@@ -319,31 +307,6 @@ button:disabled {
   flex-wrap: wrap;
   gap: 10px;
   justify-content: flex-end;
-}
-
-.mode-toggle {
-  align-items: center;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  display: inline-flex;
-  gap: 4px;
-  padding: 4px;
-  box-shadow: var(--shadow);
-}
-
-.mode-toggle button {
-  background: transparent;
-  border-color: transparent;
-  color: var(--muted);
-  min-height: 36px;
-  padding: 7px 11px;
-}
-
-.mode-toggle button.active {
-  background: var(--teal);
-  border-color: var(--teal);
-  color: #ffffff;
 }
 
 .icon-button {
@@ -18711,32 +18674,25 @@ button.design-ilo-port:hover {
 }
 
 .top-nav { background: rgba(255, 255, 255, .07); border: 1px solid rgba(203, 213, 225, .14); justify-content: center; overflow-x: auto; }
-.shell-topbar-actions { gap: 8px; }
-.topbar-runtime { align-items: center; background: rgba(255, 255, 255, .08); border: 1px solid rgba(203, 213, 225, .18); border-radius: 999px; color: #cbd5e1; display: inline-flex; flex: 0 1 auto; font-size: 11px; font-weight: 850; gap: 6px; max-width: 180px; min-height: 32px; min-width: 0; overflow: hidden; padding: 0 9px; white-space: nowrap; }
-.topbar-runtime > span:not(.runtime-dot) { overflow: hidden; text-overflow: ellipsis; }
-.topbar-runtime-subnet { max-width: 82px; }
-.kit-picker-wrap { align-items: center; display: flex; flex: 0 1 auto; gap: 6px; max-width: min(100%, 270px); min-width: 0; }
-.kit-picker { appearance: none; background: #fff; border: 1px solid #d6dee7; border-radius: 999px; color: #182b41; font-size: 13px; font-weight: 800; min-height: 38px; max-width: 180px; min-width: 0; padding: 0 32px 0 14px; text-overflow: ellipsis; width: min(180px, 18vw); }
-.kit-create-link {
+.shell-topbar-actions { gap: 8px; justify-content: flex-end; }
+.kit-manage-link {
   align-items: center;
-  background: #e5f2f2;
-  border-radius: 999px;
-  color: #087f83;
+  background: #f8fafc;
+  border: 1px solid rgba(203, 213, 225, .86);
+  border-radius: 10px;
+  color: #102238;
   display: inline-flex;
-  font-size: 13px;
-  font-weight: 850;
-  gap: 5px;
-  min-height: 30px;
-  padding: 0 10px;
+  font-size: 14px;
+  font-weight: 900;
+  justify-content: center;
+  min-height: 40px;
+  padding: 0 16px;
   white-space: nowrap;
 }
+.kit-manage-link:hover { background: #e5f2f2; color: #087f83; }
 .quick-tab { border-radius: 9px; color: #cbd5e1; flex: 0 0 auto; font-size: 13px; font-weight: 750; padding: 9px 11px; white-space: nowrap; }
 .quick-tab:hover { background: rgba(255, 255, 255, .08); color: #fff; }
 .quick-tab.active { background: rgba(45, 212, 191, .18); border: 1px solid rgba(94, 234, 212, .3); box-shadow: none; color: #f0fdfa; font-weight: 850; }
-.runtime-dot { background: #a0aec0; border-radius: 50%; height: 8px; width: 8px; }
-.runtime-dot-local-lab-readwrite, .runtime-dot-real_lab { background: #17a673; }
-.topbar-inline-error { color: #fecaca; font-size: 11px; font-weight: 800; }
-.shell-topbar .mode-toggle { background: #fff; }
 .content { background: #f4f6f8; grid-column: 1; grid-row: 2; min-width: 0; }
 
 .operator-surface-heading { margin: 28px 0 22px; max-width: 1410px; padding: 0 32px; }
@@ -18805,9 +18761,7 @@ button.design-ilo-port:hover {
   .shell-topbar { gap: 8px; min-height: auto; padding: 10px 12px; }
   .shell-brand-mark { height: 34px; width: 34px; }
   .shell-topbar-actions { gap: 7px; justify-content: flex-start; }
-  .topbar-runtime { max-width: 150px; }
-  .kit-picker-wrap { flex: 1 1 230px; max-width: 100%; }
-  .kit-picker { flex: 1 1 auto; max-width: 180px; width: auto; }
+  .kit-manage-link { min-height: 38px; width: 100%; }
   .top-nav { order: 3; width: 100%; }
   .operator-surface-heading,
   .lab-defaults-form,
