@@ -321,58 +321,65 @@ async function expectResponsiveShell(page: Page, path: string, viewport: { width
   await expect(page.locator("main.content")).toBeVisible();
   const metrics = await page.evaluate(() => {
     const header = document.querySelector("header[aria-label='Application header']");
+    const primaryNavigation = document.querySelector("nav[aria-label='Primary navigation']");
+    const navRect = primaryNavigation?.getBoundingClientRect();
     return {
       bodyWidth: document.body.scrollWidth,
       headerHeight: header?.getBoundingClientRect().height ?? 0,
       innerWidth: window.innerWidth,
+      navClientWidth: primaryNavigation?.clientWidth ?? 0,
+      navLeft: navRect?.left ?? 0,
+      navLinkCount: primaryNavigation?.querySelectorAll("a").length ?? 0,
+      navOverflowX: primaryNavigation ? getComputedStyle(primaryNavigation).overflowX : "",
+      navRight: navRect?.right ?? 0,
+      navScrollWidth: primaryNavigation?.scrollWidth ?? 0,
       viewportHeight: window.innerHeight,
       width: document.documentElement.scrollWidth
     };
   });
   expect(metrics.width, `${path} document overflow at ${viewport.width}px`).toBeLessThanOrEqual(metrics.innerWidth + 1);
   expect(metrics.bodyWidth, `${path} body overflow at ${viewport.width}px`).toBeLessThanOrEqual(metrics.innerWidth + 1);
+  expect(metrics.navLinkCount, `${path} keeps all primary destinations at ${viewport.width}px`).toBe(5);
+  expect(metrics.navLeft, `${path} primary nav starts inside the viewport at ${viewport.width}px`).toBeGreaterThanOrEqual(-1);
+  expect(metrics.navRight, `${path} primary nav ends inside the viewport at ${viewport.width}px`).toBeLessThanOrEqual(metrics.innerWidth + 1);
+  if (viewport.width >= 1280) {
+    expect(metrics.navScrollWidth, `${path} primary nav fits without desktop clipping`).toBeLessThanOrEqual(metrics.navClientWidth + 1);
+  }
   if (viewport.width <= 390) {
+    expect(metrics.navOverflowX, `${path} contains mobile nav overflow`).toBe("auto");
     expect(metrics.headerHeight, `${path} mobile header consumes too much vertical space`).toBeLessThanOrEqual(
       Math.min(220, metrics.viewportHeight * 0.25)
     );
   }
 }
 
-test("renders the map-first operator spine and pages", async ({ page }) => {
+test("renders the map-first operator header and pages", async ({ page }) => {
   await page.goto("/overview");
 
-  await expect(page.locator("aside[aria-label='Lab Builder navigation']")).toBeVisible();
+  await expect(page.locator("aside[aria-label='Lab Builder navigation']")).toHaveCount(0);
   const header = page.locator("header[aria-label='Application header']");
   await expect(header).toBeVisible();
+  await expect(header.getByRole("link", { name: "Lab Builder overview" })).toHaveAttribute("href", "/overview");
+  await expect(header.getByRole("link", { name: "Lab Builder overview" })).toContainText("Lab Builder");
+  await expect(header.getByRole("link", { name: "Lab Builder overview" })).toContainText("Operator");
   const activeKitLabelBox = await header.locator("label[for='active-kit-picker']").boundingBox();
   expect(activeKitLabelBox?.width ?? 0).toBeLessThanOrEqual(1);
   expect(activeKitLabelBox?.height ?? 0).toBeLessThanOrEqual(1);
-  await expect(header.locator(".shell-topbar-actions .top-nav")).toBeVisible();
-  await expect(header.getByLabel("Lab provider mode")).toHaveCount(0);
-  await expect(page.locator("aside[aria-label='Lab Builder navigation']").getByLabel("Lab provider mode")).toBeVisible();
-  await expect(page.locator("aside[aria-label='Lab Builder navigation']").getByLabel("Lab provider mode")).not.toContainText("No subnet");
-  await expect(page.locator("aside[aria-label='Lab Builder navigation'] .nav-item-label")).toHaveText([
-    "Overview",
-    "Lab Defaults",
-    "Compute & iLO",
-    "Storage & NetApp",
-    "Virtualization",
-    "Firmware",
-    "Cisco Switch",
-    "Run Center",
-    "Reports"
-  ]);
-  await expect(page.locator("aside[aria-label='Lab Builder navigation']").getByRole("link", { name: "Compute & iLO" })).toHaveAttribute("href", "/setup/ilo");
-  await expect(page.locator("aside[aria-label='Lab Builder navigation']").getByRole("link", { name: "Cisco Switch" })).toHaveAttribute("href", "/setup/cisco");
-  await expect(page.locator("aside[aria-label='Lab Builder navigation']").getByRole("link", { name: "Run Center" })).toHaveAttribute("href", "/run");
-  await expect(page.locator("aside[aria-label='Lab Builder navigation']").getByRole("link", { name: "Reports" })).toHaveAttribute("href", "/reports");
-  const quickNavigation = page.getByRole("navigation", { name: "Quick navigation" });
-  await expect(quickNavigation.locator("a")).toHaveText(["Overview", "Lab Defaults", "Firmware"]);
-  await expect(quickNavigation.getByRole("link", { name: "Lab Defaults" })).toHaveAttribute("href", "/setup/defaults");
+  await expect(header.getByLabel("Lab provider mode")).toBeVisible();
+  await expect(header.getByLabel("Lab provider mode")).not.toContainText("No subnet");
+  const primaryNavigation = header.getByRole("navigation", { name: "Primary navigation" });
+  await expect(primaryNavigation.locator("a")).toHaveText(["Overview", "Lab Defaults", "Firmware", "Run Center", "Reports"]);
+  await expect(primaryNavigation.getByRole("link", { name: "Overview" })).toHaveAttribute("href", "/overview");
+  await expect(primaryNavigation.getByRole("link", { name: "Lab Defaults" })).toHaveAttribute("href", "/setup/defaults");
+  await expect(primaryNavigation.getByRole("link", { name: "Firmware" })).toHaveAttribute("href", "/firmware-upgrades");
+  await expect(primaryNavigation.getByRole("link", { name: "Run Center" })).toHaveAttribute("href", "/run");
+  await expect(primaryNavigation.getByRole("link", { name: "Reports" })).toHaveAttribute("href", "/reports");
+  await expect(primaryNavigation).not.toContainText(/Compute|Storage|Virtualization|Cisco/);
+  await expect(page.getByRole("navigation", { name: "Quick navigation" })).toHaveCount(0);
   await expect(header.getByLabel("Selected lab kit")).not.toContainText(/\bruntime\b/i);
   await expect(page.getByRole("link", { name: "Create a new lab kit" })).toContainText("New kit");
   await expect(page.getByRole("link", { name: "Create a new lab kit" })).toHaveAttribute("href", "/lab-profiles#new");
-  await expect(page.locator("aside[aria-label='Lab Builder navigation']")).not.toContainText(/Windows|OVF|Global/);
+  await expect(header).not.toContainText(/Windows|OVF|Global/);
 
   await expect(page.getByRole("heading", { name: "Overview" })).toBeVisible();
   await page.goto("/lab-setup");
@@ -1945,8 +1952,8 @@ test("operator surfaces stay responsive across mobile and desktop widths", async
   ];
 
   for (const route of routes) {
-    await expectResponsiveShell(page, route, { width: 375, height: 900 });
-    await expectResponsiveShell(page, route, { width: 1440, height: 900 });
+    await expectResponsiveShell(page, route, { width: 390, height: 900 });
+    await expectResponsiveShell(page, route, { width: 1280, height: 900 });
   }
 });
 
@@ -2146,35 +2153,27 @@ test("single-server map removes vCenter and keeps direct ESXi guidance on the se
   await expect(advanced.getByLabel("Server workspace checks")).not.toContainText("vCenter Live Check");
 });
 
-test("top nav and map workspaces expose run controls without dead settings drawers", async ({ page }) => {
+test("top nav and map device drawers keep setup direct without dead settings drawers", async ({ page }) => {
   await page.goto("/overview");
   await expect(page.getByRole("button", { name: "Settings" })).toHaveCount(0);
   await expect(page.locator("section.tab-settings-drawer")).toHaveCount(0);
   await expect(page.getByTestId("operator-home-primary-action")).toBeVisible();
-  await openOperatorDetails(page);
-
-  const topology = page.locator("section[aria-label='Living lab topology']");
-  await topology.getByRole("button", { name: "Open Cisco switch workspace" }).click();
-  await expect(page.getByLabel("Cisco workspace network controls")).not.toBeVisible();
-  await expect((await openWorkspaceAdvanced(page, "Cisco switch")).getByLabel("Cisco workspace network controls")).toContainText("Refresh live evidence");
-  await page.locator("div[aria-label='Device workspace overlay']").getByRole("button", { name: "Close" }).click();
-
-  await topology.getByRole("button", { name: "Open HPE iLO workspace" }).click();
-  await expect(page.getByLabel("iLO workspace server controls")).not.toBeVisible();
-  await expect((await openWorkspaceAdvanced(page, "HPE iLO")).getByLabel("iLO workspace server controls")).toContainText("iLO Live Check");
-  await page.locator("div[aria-label='Device workspace overlay']").getByRole("button", { name: "Close" }).click();
-
-  await topology.getByRole("button", { name: "Open NetApp ONTAP workspace" }).click();
-  await expect(page.getByLabel("NetApp workspace storage controls")).not.toBeVisible();
-  const netappAdvanced = await openWorkspaceAdvanced(page, "NetApp ONTAP");
-  await expect(netappAdvanced.getByLabel("NetApp workspace storage controls")).toContainText("Discover Console");
-  await expect(netappAdvanced.getByLabel("NetApp workspace storage controls")).toContainText("Preview iSCSI");
-  await page.locator("div[aria-label='Device workspace overlay']").getByRole("button", { name: "Close" }).click();
-
-  await topology.getByRole("button", { name: "Open vCenter VCSA workspace" }).click();
-  await expect(page.getByLabel("vCenter workspace virtualization controls")).not.toBeVisible();
-  await expect((await openWorkspaceAdvanced(page, "vCenter VCSA")).getByLabel("vCenter workspace virtualization controls")).toContainText("vCenter Live Check");
-  await page.locator("div[aria-label='Device workspace overlay']").getByRole("button", { name: "Close" }).click();
+  const topology = page.getByRole("region", { name: "Lab topology" });
+  for (const device of [
+    { button: /^Cisco Switch,/, heading: "Cisco Switch" },
+    { button: /^HPE DL360/, heading: /^HPE DL360/ },
+    { button: /^NetApp ONTAP,/, heading: "NetApp ONTAP" },
+    { button: /^vCenter,/, heading: "vCenter" }
+  ] as const) {
+    await topology.getByRole("button", { name: device.button }).click();
+    const drawer = page.locator("aside.map-drawer");
+    await expect(drawer).toBeVisible();
+    await expect(drawer.getByRole("heading", { name: device.heading })).toBeVisible();
+    await expect(drawer.locator("input").first()).toBeVisible();
+    await expect(drawer.getByRole("button", { name: "Save changes" })).toBeVisible();
+    await drawer.getByRole("button", { name: "Close device panel" }).click();
+    await expect(drawer).toHaveCount(0);
+  }
 
   for (const [path, runButtonName] of [
     ["/firmware-upgrades", "Check versions"],

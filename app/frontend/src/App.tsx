@@ -5,10 +5,8 @@ import {
   CheckCircle2,
   ClipboardList,
   Copy,
-  Database,
   FileText,
   Pencil,
-  Gauge,
   HardDrive,
   History,
   Layers,
@@ -1259,35 +1257,27 @@ function ShellTopNav({
 
   const profiles = [labProfileState?.runtime_profile, ...(labProfileState?.profiles ?? [])].filter(Boolean) as LabProfile[];
   return (
-    <>
-      <aside className="shell-sidebar" aria-label="Lab Builder navigation">
-        <Link className="sidebar-brand" to="/overview">
-          <span className="sidebar-brand-mark"><Server size={24} /></span>
-          <span><b>Lab Builder</b><small>Operator</small></span>
-        </Link>
-        <div className={`sidebar-runtime sidebar-runtime-${uiMode}`} aria-label="Lab provider mode">
+    <header className="shell-topbar" aria-label="Application header">
+      <Link className="shell-brand" to="/overview" aria-label="Lab Builder overview">
+        <span className="shell-brand-mark"><Server size={22} /></span>
+        <span className="shell-brand-copy"><b>Lab Builder</b><small>Operator</small></span>
+      </Link>
+      <nav className="top-nav" aria-label="Primary navigation">
+        <NavLink to="/overview" className={({ isActive }) => isActive ? "quick-tab active" : "quick-tab"}>Overview</NavLink>
+        <NavLink to="/setup/defaults" className={({ isActive }) => isActive ? "quick-tab active" : "quick-tab"}>Lab Defaults</NavLink>
+        <NavLink to="/firmware-upgrades" className={({ isActive }) => isActive ? "quick-tab active" : "quick-tab"}>Firmware</NavLink>
+        <NavLink to="/run" className={({ isActive }) => isActive ? "quick-tab active" : "quick-tab"}>Run Center</NavLink>
+        <NavLink to="/reports" className={({ isActive }) => isActive ? "quick-tab active" : "quick-tab"}>Reports</NavLink>
+      </nav>
+      <div className="shell-topbar-actions">
+        <div className={`topbar-runtime topbar-runtime-${uiMode}`} aria-label="Lab provider mode">
           <span className={`runtime-dot runtime-dot-${modeStatus}`} />
           <span>{displayModeLabel(providerMode)}</span>
           {uiMode === "advanced" && <>
             <span aria-hidden="true">-</span>
-            <span className="sidebar-runtime-subnet">{activeProfile ? displayAddress(activeProfile.address_plan.subnet) : "No subnet"}</span>
+            <span className="topbar-runtime-subnet">{activeProfile ? displayAddress(activeProfile.address_plan.subnet) : "No subnet"}</span>
           </>}
         </div>
-        <nav className="sidebar-nav" aria-label="Primary navigation">
-          <NavItem to="/overview" icon={<Gauge size={18} />} label="Overview" />
-          <p className="sidebar-section-label">Setup</p>
-          <NavItem to="/setup/defaults" icon={<Settings size={17} />} label="Lab Defaults" />
-          <NavItem to="/setup/ilo" icon={<Server size={17} />} label="Compute & iLO" />
-          <NavItem to="/setup/storage" icon={<Database size={17} />} label="Storage & NetApp" />
-          <NavItem to="/setup/esxi" icon={<Layers size={17} />} label="Virtualization" />
-          <NavItem to="/setup/firmware" icon={<ShieldCheck size={17} />} label="Firmware" />
-          <NavItem to="/setup/cisco" icon={<Route size={17} />} label="Cisco Switch" />
-          <p className="sidebar-section-label">Run</p>
-          <NavItem to="/run" icon={<Play size={17} />} label="Run Center" />
-          <NavItem to="/reports" icon={<FileText size={17} />} label="Reports" />
-        </nav>
-      </aside>
-      <header className="shell-topbar" aria-label="Application header">
         <div className="kit-picker-wrap">
           <label className="sr-only" htmlFor="active-kit-picker">Selected lab kit</label>
           <select
@@ -1304,17 +1294,10 @@ function ShellTopNav({
             <span>New kit</span>
           </Link>
         </div>
-        <div className="shell-topbar-actions">
-          <nav className="top-nav" aria-label="Quick navigation">
-            <NavLink to="/overview" className={({ isActive }) => isActive ? "quick-tab active" : "quick-tab"}>Overview</NavLink>
-            <NavLink to="/setup/defaults" className={({ isActive }) => isActive ? "quick-tab active" : "quick-tab"}>Lab Defaults</NavLink>
-            <NavLink to="/firmware-upgrades" className={({ isActive }) => isActive ? "quick-tab active" : "quick-tab"}>Firmware</NavLink>
-          </nav>
-          <ModeToggle />
-          {(labProfileError || healthError) && <span className="topbar-inline-error">{labProfileError ? "Kit unavailable" : "Status unavailable"}</span>}
-        </div>
-      </header>
-    </>
+        <ModeToggle />
+        {(labProfileError || healthError) && <span className="topbar-inline-error">{labProfileError ? "Kit unavailable" : "Status unavailable"}</span>}
+      </div>
+    </header>
   );
 }
 
@@ -1325,44 +1308,6 @@ function displayKitName(profile: LabProfile | null | undefined): string {
     return "Current Lab";
   }
   return name;
-}
-
-function NavItem({
-  to,
-  icon,
-  label,
-  subtitle,
-  issueBadge
-}: {
-  to: string;
-  icon: ReactNode;
-  label: string;
-  subtitle?: string;
-  issueBadge?: ReportPageBadge;
-}) {
-  return (
-    <NavLink to={to} className={({ isActive }) => (isActive ? "nav-item active" : "nav-item")}>
-      {icon}
-      <span className="nav-item-text">
-        <span className="nav-item-label">{label}</span>
-        {subtitle && <small>{subtitle}</small>}
-      </span>
-      <IssueNavBadge badge={issueBadge} />
-    </NavLink>
-  );
-}
-
-function IssueNavBadge({ badge }: { badge?: ReportPageBadge }) {
-  if (!badge) return null;
-  if (badge.status === "success" || badge.status === "warning") return null;
-  const className = `issue-nav-badge issue-tone-${badge.status}`;
-  const label =
-    badge.status === "critical"
-      ? `Blocked ${badge.critical || badge.count}`
-      : badge.status === "not_configured_yet"
-        ? "Not configured"
-        : badge.label;
-  return <span className={className}>{label}</span>;
 }
 
 function ActiveLabSelector({

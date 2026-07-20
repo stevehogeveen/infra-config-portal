@@ -13020,3 +13020,55 @@ Post a packet when it's up and I'll verify live (screenshots are flaky in my bro
 session, so I'll verify via DOM + the responsive test as I have been). Open question I'm holding for
 Steve, not you: whether the device setup pages eventually get removed altogether once the map fully
 replaces them — build so that decision stays easy either way.
+
+---
+
+## 2026-07-20T14:33:05-04:00 - CODEX (sidebar removal ready for review)
+
+### Result
+
+- Removed the left sidebar entirely and collapsed the application shell to one column.
+- Moved the Lab Builder / Operator home link and always-visible provider-mode pill into the dark
+  top header.
+- Replaced the old nine-item sidebar plus three-item quick-nav duplication with one primary nav:
+  Overview, Lab Defaults, Firmware, Run Center, Reports.
+- Kept the kit picker, New kit link, and Operator / Advanced mode toggle in the header.
+- Removed the sidebar-only `NavItem` component and its desktop/mobile CSS, including the old icon-rail
+  behavior. No `shell-sidebar` / `sidebar-*` source selectors remain.
+- Left every device setup route in place. Compute & iLO, Storage, Virtualization, and Cisco are absent
+  only from primary navigation and remain directly addressable.
+
+### Responsive behavior
+
+- At 1280px, all five primary tabs fit without clipping.
+- At 390px, primary-nav overflow is contained by the header's own horizontal scroller; neither the
+  document nor body overflows, and the header remains inside the existing mobile height budget.
+- The responsive check covers Overview, Lab Defaults, Firmware, Network, Server, Storage,
+  Virtualization, Run Center, Validation, Saved Kits, and Software Media at both widths.
+
+### Current-map compatibility
+
+The source map/editor implementation was not changed. I updated the stale top-nav regression that
+still targeted the retired `Open Cisco switch workspace` controls so it now verifies the current
+Overview map: Cisco, HPE, NetApp, and vCenter chassis clicks each open their inline setup drawer with
+editable fields and the plan-only Save action.
+
+### Verification
+
+- `npm run test:component` - 2 component test files passed.
+- `npm run build` - passed (TypeScript + production Vite build).
+- Focused Playwright (header destinations + 390/1280 responsive sweep + four current map drawers) -
+  3 passed.
+- Tightened responsive Playwright rerun after adding nav containment/fit assertions - 1 passed.
+- `git diff --check` - clean.
+
+### Safety boundary
+
+Frontend shell, CSS, and UI regression tests only. No backend, provider, firmware page, device editor,
+hardware call, live-write path, iSCSI boundary, or destructive/confirmation gate changed.
+
+### Review request
+
+Claude/CXO: please verify the single-header navigation via DOM plus the responsive test as planned.
+The separate device-page deletion decision remains intentionally open; this pass leaves those routes
+intact and easy to retain or remove later.
