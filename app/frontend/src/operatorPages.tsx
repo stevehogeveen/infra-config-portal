@@ -6177,6 +6177,7 @@ type TopologyLink = {
   labelX: number;
   labelY: number;
   path: string;
+  reachability: "reachable" | "unreachable";
   status: "ready" | "warning" | "created" | "unknown";
   to: string;
 };
@@ -6624,9 +6625,7 @@ function OverviewLabMap({
   const links = rawLinks.filter((link) => byId.has(link.from) && byId.has(link.to));
 
   function linkClass(status: TopologyNodeTone): string {
-    if (status === "ready" || status === "created") return "is-active";
-    if (status === "warning" || status === "offline") return "is-blocked";
-    return "is-idle";
+    return topologyToneReachability(status) === "reachable" ? "is-reachable" : "is-unreachable";
   }
 
   function nodeStatusClass(tone: TopologyNodeTone): string {
@@ -6666,6 +6665,7 @@ function OverviewLabMap({
               <path
                 className={`overview-link overview-link-offshoot ${linkClass(localStorageTone)}`}
                 d={`M ${MAP_NODE_LAYOUT.ilo.x} ${MAP_NODE_LAYOUT.ilo.y} L ${localStoragePosition.x} ${localStoragePosition.y}`}
+                aria-label={`Local storage path ${topologyToneReachabilityLabel(localStorageTone)}`}
               />
               {links.map((link) => {
                 const a = byId.get(link.from)!;
@@ -6675,6 +6675,7 @@ function OverviewLabMap({
                     key={`${link.from}-${link.to}`}
                     className={`overview-link ${linkClass(link.status)}`}
                     d={`M ${a.x} ${a.y} L ${b.x} ${b.y}`}
+                    aria-label={`${topologyMapLinkEndpointLabel(link.from)} to ${topologyMapLinkEndpointLabel(link.to)} ${topologyToneReachabilityLabel(link.status)}`}
                   />
                 );
               })}
@@ -6712,8 +6713,8 @@ function OverviewLabMap({
             </g>
           </svg>
           <div className="overview-map-legend" aria-label="Legend">
-            <span><i className="legend-ready" /> Ready</span>
-            <span><i className="legend-blocked" /> Blocked</span>
+            <span><i className="legend-ready" /> Reachable</span>
+            <span><i className="legend-blocked" /> Not reachable</span>
             <span><i className="legend-unknown" /> Not checked</span>
           </div>
         </div>
@@ -6981,8 +6982,13 @@ function LabTopologyMap({
           )}
           <svg className="lab-topology-links" viewBox="0 0 1000 620" role="img" aria-label="Current lab links">
             {links.map((link) => (
-              <g className={`topology-link topology-link-${link.status}`} key={link.id}>
+              <g
+                aria-label={`${link.label} ${topologyLinkReachabilityLabel(link.reachability)}`}
+                className={`topology-link topology-link-${link.status} topology-link-${link.reachability}`}
+                key={link.id}
+              >
                 <path d={link.path} id={link.id} />
+                <title>{link.label} {topologyLinkReachabilityLabel(link.reachability)}</title>
                 <text textAnchor="middle" x={link.labelX} y={link.labelY}>{link.label}</text>
               </g>
             ))}
@@ -7018,8 +7024,8 @@ function LabTopologyMap({
 
       <div className="lab-topology-footer">
         <div className="topology-legend" aria-label="Topology legend">
-          <span><i className="legend-dot legend-ready" /> Ready</span>
-          <span><i className="legend-dot legend-warning" /> Blocked</span>
+          <span><i className="legend-dot legend-ready" /> Reachable</span>
+          <span><i className="legend-dot legend-warning" /> Not reachable</span>
           <span><i className="legend-dot legend-offline" /> Not checked</span>
         </div>
       </div>
@@ -10275,6 +10281,7 @@ function topologyLinks({
       labelX: 330,
       labelY: 392,
       path: "M 500 322 C 420 358 332 396 220 448",
+      reachability: topologyLinkReachability(serverStatus),
       status: topologyLinkStatus(serverStatus),
       to: "server"
     },
@@ -10285,6 +10292,7 @@ function topologyLinks({
       labelX: 635,
       labelY: 218,
       path: "M 512 286 C 566 232 628 178 725 138",
+      reachability: topologyLinkReachability(iloStatus),
       status: topologyLinkStatus(iloStatus),
       to: "ilo"
     }
@@ -10297,6 +10305,7 @@ function topologyLinks({
       labelX: 360,
       labelY: 218,
       path: "M 488 286 C 430 230 365 174 275 138",
+      reachability: topologyLinkReachability(vmStatus),
       status: topologyLinkStatus(vmStatus, "created"),
       to: "cisco"
     });
@@ -10310,6 +10319,7 @@ function topologyLinks({
         labelX: 560,
         labelY: 508,
         path: "M 500 365 C 500 410 500 450 500 500",
+        reachability: topologyLinkReachability(netappStatus),
         status: topologyLinkStatus(netappStatus),
         to: "netapp"
       },
@@ -10320,6 +10330,7 @@ function topologyLinks({
         labelX: 670,
         labelY: 384,
         path: "M 524 325 C 610 362 695 402 785 448",
+        reachability: topologyLinkReachability(datastoreStatus),
         status: topologyLinkStatus(datastoreStatus, "warning"),
         to: "datastore"
       }
@@ -12822,6 +12833,35 @@ function topologyLinkStatus(status: string, readyStatus: TopologyLink["status"] 
   if (tone === "ready") return readyStatus;
   if (tone === "warning") return "warning";
   return "unknown";
+}
+
+function topologyLinkReachability(status: string): TopologyLink["reachability"] {
+  return topologyToneReachability(topologyTone(status));
+}
+
+function topologyToneReachability(tone: TopologyNodeTone): TopologyLink["reachability"] {
+  return tone === "ready" || tone === "created" ? "reachable" : "unreachable";
+}
+
+function topologyLinkReachabilityLabel(reachability: TopologyLink["reachability"]): string {
+  return reachability === "reachable" ? "reachable" : "not reachable";
+}
+
+function topologyToneReachabilityLabel(tone: TopologyNodeTone): string {
+  return topologyLinkReachabilityLabel(topologyToneReachability(tone));
+}
+
+function topologyMapLinkEndpointLabel(id: string): string {
+  const labels: Record<string, string> = {
+    cisco: "Cisco switch",
+    datastore: "Datastore",
+    esxi: "ESXi host",
+    ilo: "HPE iLO",
+    netapp: "NetApp ONTAP",
+    server: "HPE server",
+    vcenter: "vCenter"
+  };
+  return labels[id] ?? id;
 }
 
 function topologyNetappMeta(address: LabAddressPlan, storageProtocol: string): string {

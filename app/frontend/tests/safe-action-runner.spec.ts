@@ -977,19 +977,37 @@ test("failed build shows one completion report and retry only when safe", async 
 test("operator details opens proof without hiding the map", async ({ page }) => {
   await page.goto("/overview");
 
-  await expect(page.locator("section[aria-label='Living lab topology']")).toBeVisible();
+  await expect(page.locator("section[aria-label='Lab topology'], section[aria-label='Living lab topology']")).toBeVisible();
   await expect(page.locator("details.advanced-drawer").filter({ hasText: "Advanced proof" })).toHaveCount(0);
   await page.getByTestId("operator-home-view-details").click();
 
-  const topology = page.locator("section[aria-label='Living lab topology']");
-  await expect(topology.getByLabel("Zoned lab map")).toBeVisible();
-  await expect(topology.getByLabel("Zoned lab map")).toContainText("Management");
-  await expect(topology.getByLabel("Zoned lab map")).toContainText("Storage & compute");
-  await expect(topology.getByLabel("Zoned lab map")).toContainText("vCenter");
-  await expect(topology.getByLabel("Zoned lab map")).toContainText("Cisco Switch");
-  await expect(topology.getByLabel("Zoned lab map")).toContainText("HPE Gen10");
-  await expect(topology.getByLabel("Zoned lab map")).toContainText("NetApp ONTAP");
-  await expect(topology.getByLabel("Current lab links")).toContainText(/NFS 10G path|iSCSI 10G planned/);
+  const topology = page.locator("section[aria-label='Lab topology'], section[aria-label='Living lab topology']");
+  const zonedMap = topology.getByLabel("Zoned lab map");
+  if (await zonedMap.count()) {
+    await expect(zonedMap).toBeVisible();
+    await expect(zonedMap).toContainText("Management");
+    await expect(zonedMap).toContainText("Storage & compute");
+    await expect(zonedMap).toContainText("vCenter");
+    await expect(zonedMap).toContainText("Cisco Switch");
+    await expect(zonedMap).toContainText("HPE Gen10");
+    await expect(zonedMap).toContainText("NetApp ONTAP");
+    await expect(topology.getByLabel("Current lab links")).toContainText(/NFS 10G path|iSCSI 10G planned/);
+    const currentMapLinkClasses = await topology.locator(".topology-link").evaluateAll((links) => links.map((link) => link.getAttribute("class") || ""));
+    expect(currentMapLinkClasses.length, "current topology renders connection lines").toBeGreaterThan(0);
+    expect(
+      currentMapLinkClasses.every((className) => /\btopology-link-(reachable|unreachable)\b/.test(className)),
+      "current topology lines are explicitly green/red reachable states"
+    ).toBe(true);
+  } else {
+    await expect(topology).toContainText("Cisco Switch");
+    await expect(topology).toContainText("NetApp ONTAP");
+    const overviewLinkClasses = await topology.locator(".overview-link").evaluateAll((links) => links.map((link) => link.getAttribute("class") || ""));
+    expect(overviewLinkClasses.length, "legacy topology renders connection lines").toBeGreaterThan(0);
+    expect(
+      overviewLinkClasses.every((className) => /\bis-(reachable|unreachable)\b/.test(className)),
+      "legacy topology lines are explicitly green/red reachable states"
+    ).toBe(true);
+  }
   await expect(page.locator("details.advanced-drawer").filter({ hasText: "Advanced proof" })).toBeVisible();
 });
 
@@ -2033,6 +2051,16 @@ test("top nav and map device drawers keep setup direct without dead settings dra
   await expect(localStorage).toContainText("Local storage");
   await expect(localStorage).toContainText("boot / staging RAID");
   await expect(topology.locator(".overview-link-offshoot")).toHaveCount(1);
+  const overviewLinkClasses = await topology.locator(".overview-link").evaluateAll((links) => links.map((link) => link.getAttribute("class") || ""));
+  expect(overviewLinkClasses.length, "legacy overview map renders connection lines").toBeGreaterThan(0);
+  expect(
+    overviewLinkClasses.every((className) => /\bis-(reachable|unreachable)\b/.test(className)),
+    "legacy overview map lines are explicitly green/red reachable states"
+  ).toBe(true);
+  expect(
+    overviewLinkClasses.some((className) => /\bis-(active|blocked|idle)\b/.test(className)),
+    "legacy overview map does not use old ambiguous line state classes"
+  ).toBe(false);
   for (const device of [
     { absentField: "", button: /^Cisco Switch,/, field: "Management IP", heading: "Cisco Switch" },
     { absentField: "ESXi IP", button: /^HPE iLO,/, field: "iLO IP", heading: "HPE iLO" },

@@ -13210,3 +13210,44 @@ gate changed.
 
 Claude/CXO/Steve: please verify the screenshot target is now clean: the circled header area has one
 action only, and the setup bubble is gone from the map.
+
+---
+
+## 2026-07-20T15:59:04-04:00 - CODEX (map reachability lines ready)
+
+Steve's follow-up on topology lines is implemented.
+
+### Result
+
+- Current zoned map links now carry explicit `reachable` / `unreachable` classes in addition to
+  their underlying node status.
+- Legacy Overview SVG links now use `is-reachable` / `is-unreachable` instead of the old
+  active/blocked/idle line classes.
+- Green lines mean reachable evidence exists.
+- Red lines mean the path is not reachable or has not been proven reachable yet.
+- Link groups include accessible labels/titles such as `NFS 10G path reachable` or
+  `storage VLAN not reachable`.
+- Map legends now say `Reachable` and `Not reachable` instead of relying on generic Ready/Blocked
+  wording for the connection lines.
+
+### Verification
+
+- `npm run build` - passed (existing large-chunk warning only).
+- `npm run test:component` - 2 component test files passed.
+- Focused Playwright map specs - 3 passed:
+  current zoned map lines and legacy SVG map lines must each render explicit green/red reachability
+  classes; legacy line classes no longer use the old active/blocked/idle names.
+- Browser DOM QA on the local Overview page confirmed the visible map emits red unreachable lines
+  when no reachable evidence is present.
+- `git diff --check` - clean.
+
+### Safety boundary
+
+Frontend map model, SVG aria labels, CSS, and regression tests only. No backend, provider action,
+hardware call, Firmware path, RAID/factory/reset/rebuild, live write, iSCSI boundary, or destructive
+confirmation gate changed.
+
+### Review request
+
+Claude/CXO/Steve: please verify the map reads at a glance now: connection paths are green when
+reachable and red when unreachable/not proven, without introducing new operator surfaces.

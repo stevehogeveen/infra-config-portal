@@ -8431,20 +8431,20 @@ th.ui-compact-table-cell {
 /* links */
 .overview-link {
   fill: none;
-  stroke: var(--border-strong);
-  stroke-width: 1.7;
+  stroke: var(--red);
+  stroke-width: 2.4;
 }
 
-.overview-link.is-active {
-  stroke: var(--teal);
+.overview-link.is-reachable {
+  stroke: var(--green);
   stroke-dasharray: 5 7;
   animation: overview-flow 1.7s linear infinite;
 }
 
-.overview-link.is-blocked {
+.overview-link.is-unreachable {
   stroke: var(--red);
-  stroke-dasharray: 2 5;
-  opacity: 0.75;
+  stroke-dasharray: 7 5;
+  opacity: 0.9;
 }
 
 .overview-link-offshoot {
@@ -8802,7 +8802,7 @@ th.ui-compact-table-cell {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .overview-link.is-active { animation: none; }
+  .overview-link.is-reachable { animation: none; }
   .overview-node.is-live .overview-node-pulse { animation: none; }
   .map-drawer { animation: none; }
 }
@@ -13238,37 +13238,22 @@ button.design-ilo-port:hover {
   text-transform: uppercase;
 }
 
-.topology-link-ready path {
-  stroke: #94a3b8;
-}
-
-.topology-link-ready text {
-  fill: #64748b;
-}
-
-.topology-link-warning path {
-  stroke: #d97706;
-}
-
-.topology-link-warning text {
-  fill: #fbbf24;
-}
-
-.topology-link-created path {
-  stroke: #14b8a6;
+.topology-link-reachable path {
+  stroke: #16a34a;
   stroke-dasharray: none;
 }
 
-.topology-link-created text {
-  fill: #0f766e;
+.topology-link-reachable text {
+  fill: #15803d;
 }
 
-.topology-link-unknown path {
-  stroke: #64748b;
+.topology-link-unreachable path {
+  stroke: #dc2626;
+  stroke-dasharray: 8 6;
 }
 
-.topology-link-unknown text {
-  fill: #64748b;
+.topology-link-unreachable text {
+  fill: #b91c1c;
 }
 
 .topology-node {
@@ -20024,15 +20009,22 @@ button.design-ilo-port:hover {
   stroke-width: 2;
 }
 
-.lab-topology-canvas.zones-canvas .topology-link-ready path,
-.lab-topology-canvas.zones-canvas .topology-link-created path {
-  stroke: #0faaa1;
-  stroke-dasharray: 8 9;
+.lab-topology-canvas.zones-canvas .topology-link-reachable path {
+  stroke: #16a34a;
+  stroke-dasharray: none;
 }
 
-.lab-topology-canvas.zones-canvas .topology-link-ready text,
-.lab-topology-canvas.zones-canvas .topology-link-created text {
-  fill: #0f766e;
+.lab-topology-canvas.zones-canvas .topology-link-reachable text {
+  fill: #15803d;
+}
+
+.lab-topology-canvas.zones-canvas .topology-link-unreachable path {
+  stroke: #dc2626;
+  stroke-dasharray: 8 6;
+}
+
+.lab-topology-canvas.zones-canvas .topology-link-unreachable text {
+  fill: #b91c1c;
 }
 
 .lab-topology-canvas.zones-canvas .topology-link text {
@@ -21036,7 +21028,7 @@ button.design-ilo-port:hover {
 }
 
 .lab-topology-map .legend-dot.legend-warning {
-  background: #d97706;
+  background: #dc2626;
 }
 
 .map-first-canvas .lab-topology-links {
