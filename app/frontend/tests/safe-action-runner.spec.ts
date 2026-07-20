@@ -474,32 +474,38 @@ test("advanced mode can still inspect audit events and workflow run proof", asyn
   await expect(page.getByText("Plan Summary")).toBeVisible();
 });
 
-test("lab defaults keeps shared values simple and hides advanced policy by default", async ({ page }) => {
+test("lab defaults keeps every shared network service visible and repeatable", async ({ page }) => {
   await page.goto("/setup/defaults");
 
   await expect(page.getByRole("heading", { name: "Lab Defaults", exact: true })).toBeVisible();
   const network = page.getByLabel("Network defaults");
-  await expect(network.getByRole("heading", { name: "Network" })).toBeVisible();
+  await expect(network.getByRole("heading", { name: "Network & services" })).toBeVisible();
   await expect(network.getByRole("textbox", { name: "Subnet" })).toBeVisible();
   await expect(network.getByRole("textbox", { name: "Gateway" })).toBeVisible();
-  await expect(network.getByRole("textbox", { name: "DNS servers" })).toBeVisible();
   await expect(network.getByRole("textbox", { name: "Subnet" })).toHaveValue("192.168.1.0/24");
-  await expect(network.getByText("More network defaults")).toBeVisible();
-  await expect(network.getByLabel("Storage protocol")).toBeHidden();
-  await expect(network.getByLabel("Shared service defaults")).toBeHidden();
-  await expect(network.getByLabel("SNMP version")).toBeHidden();
-  await expect(network.getByRole("textbox", { name: "NTP servers" })).toBeHidden();
-  await expect(network.getByRole("textbox", { name: "VLAN" })).toBeHidden();
-  await expect(network.getByRole("textbox", { name: "MTU" })).toBeHidden();
-  await network.getByText("More network defaults").click();
   await expect(network.getByLabel("Storage protocol")).toBeVisible();
-  await expect(network.getByLabel("Shared service defaults")).toContainText("DNS");
-  await expect(network.getByLabel("Shared service defaults")).toContainText("NTP");
-  await expect(network.getByLabel("Shared service defaults")).toContainText("SNMP");
-  await expect(network.getByLabel("SNMP version")).toBeVisible();
-  await expect(network.getByRole("textbox", { name: "NTP servers" })).toBeVisible();
   await expect(network.getByRole("textbox", { name: "VLAN" })).toBeVisible();
   await expect(network.getByRole("textbox", { name: "MTU" })).toBeVisible();
+
+  const sharedServices = network.getByLabel("Shared service defaults");
+  await expect(sharedServices.getByLabel("DNS defaults")).toBeVisible();
+  await expect(sharedServices.getByLabel("NTP defaults")).toBeVisible();
+  await expect(sharedServices.getByLabel("SNMP defaults")).toBeVisible();
+  await expect(sharedServices.getByRole("checkbox", { name: "Enable DNS" })).toBeChecked();
+  await expect(sharedServices.getByRole("checkbox", { name: "Enable NTP" })).toBeChecked();
+  await expect(sharedServices.getByRole("checkbox", { name: "Enable SNMP" })).not.toBeChecked();
+  await expect(sharedServices.getByRole("textbox", { name: "DNS server 1", exact: true })).toHaveValue("192.168.1.1");
+  await expect(sharedServices.getByRole("textbox", { name: "NTP server 1", exact: true })).toHaveValue("192.168.1.1");
+  await expect(sharedServices.getByRole("textbox", { name: "SNMP manager 1", exact: true })).toHaveValue("");
+  await expect(sharedServices.getByLabel("SNMP version")).toBeVisible();
+  await expect(sharedServices.getByLabel("SNMP version").locator("option")).toHaveText(["v1 (legacy)", "v2c", "v3"]);
+
+  await sharedServices.getByRole("button", { name: "Add DNS server" }).click();
+  await sharedServices.getByRole("button", { name: "Add NTP server" }).click();
+  await sharedServices.getByRole("button", { name: "Add SNMP manager" }).click();
+  await expect(sharedServices.getByRole("textbox", { name: /^DNS server / })).toHaveCount(2);
+  await expect(sharedServices.getByRole("textbox", { name: /^NTP server / })).toHaveCount(2);
+  await expect(sharedServices.getByRole("textbox", { name: /^SNMP manager / })).toHaveCount(2);
 
   const signIn = page.getByLabel("Shared sign-in");
   await expect(signIn.getByRole("heading", { name: "Shared sign-in" })).toBeVisible();
@@ -519,22 +525,10 @@ test("lab defaults keeps shared values simple and hides advanced policy by defau
   await expect(page.getByRole("heading", { name: "Shared profile policy" })).toHaveCount(0);
   await expect(page.getByText("Setup name")).toHaveCount(0);
   await expect(page.getByText("Allow IPv6")).toHaveCount(0);
-
-  const devices = page.getByLabel("Expected devices");
-  await expect(devices.getByRole("switch")).toHaveCount(4);
-  const ciscoToggle = devices.getByRole("switch", { name: "Toggle Cisco Switch" });
-  await expect(ciscoToggle).toHaveAttribute("aria-checked", "true");
-  await ciscoToggle.click();
-  await expect(ciscoToggle).toHaveAttribute("aria-checked", "false");
-  await expect(devices.locator(".lab-defaults-device-row").filter({ hasText: "Cisco Switch" })).toContainText("Not included");
-
-  await page.locator(".lab-defaults-advanced summary").click();
-  await expect(page.getByLabel("Advanced lab default fields")).toBeVisible();
-  await expect(page.getByLabel("Lab default feature toggles")).toContainText("Allow IPv6");
-  await expect(page.getByLabel("Lab default feature toggles")).not.toContainText("DNS");
+  await expect(page.getByRole("heading", { name: "Expected devices" })).toHaveCount(0);
+  await expect(page.locator(".lab-defaults-advanced")).toHaveCount(0);
+  await expect(page.getByLabel("Advanced lab default fields")).toHaveCount(0);
   await expect(page.getByLabel("Global profile feature toggles")).toHaveCount(0);
-  await expect(page.locator(".lab-defaults-advanced .operator-primary-button")).toHaveCount(0);
-  await expect(page.locator(".lab-defaults-advanced .secondary-button")).toHaveCount(1);
 });
 
 test("lab defaults saves editable network and service defaults without secrets or workflows", async ({ page }) => {
@@ -549,14 +543,20 @@ test("lab defaults saves editable network and service defaults without secrets o
   const network = page.getByLabel("Network defaults");
   await network.getByRole("textbox", { name: "Subnet" }).fill("192.168.210.0/24");
   await network.getByRole("textbox", { name: "Gateway" }).fill("192.168.210.1");
-  await network.getByRole("textbox", { name: "DNS servers" }).fill("192.168.210.1, 1.1.1.1");
-  await network.getByText("More network defaults").click();
-  await network.getByRole("textbox", { name: "NTP servers" }).fill("192.168.210.1, 0.pool.ntp.org");
+  await network.getByRole("textbox", { name: "DNS server 1", exact: true }).fill("192.168.210.1");
+  await network.getByRole("button", { name: "Add DNS server" }).click();
+  await network.getByRole("textbox", { name: "DNS server 2", exact: true }).fill("1.1.1.1");
+  await network.getByRole("textbox", { name: "NTP server 1", exact: true }).fill("192.168.210.1");
+  await network.getByRole("button", { name: "Add NTP server" }).click();
+  await network.getByRole("textbox", { name: "NTP server 2", exact: true }).fill("192.168.210.2");
+  await network.getByRole("textbox", { name: "SNMP manager 1", exact: true }).fill("192.168.210.31");
+  await network.getByRole("button", { name: "Add SNMP manager" }).click();
+  await network.getByRole("textbox", { name: "SNMP manager 2", exact: true }).fill("192.168.210.32");
   await network.getByRole("textbox", { name: "VLAN" }).fill("120");
   await network.getByRole("textbox", { name: "MTU" }).fill("9000");
   await network.getByLabel("Storage protocol").selectOption("iscsi");
 
-  await network.getByRole("checkbox", { name: "SNMP" }).check();
+  await network.getByRole("checkbox", { name: "Enable SNMP" }).check();
   await network.getByLabel("SNMP version").selectOption("v3");
 
   const createProfileRequest = page.waitForRequest((request) => {
@@ -574,7 +574,8 @@ test("lab defaults saves editable network and service defaults without secrets o
   expect(payload.address_plan.netapp_cluster_mgmt).toBe("192.168.210.220");
   expect(payload.global_settings.gateway).toBe("192.168.210.1");
   expect(payload.global_settings.dns_servers).toEqual(["192.168.210.1", "1.1.1.1"]);
-  expect(payload.global_settings.ntp_servers).toEqual(["192.168.210.1", "0.pool.ntp.org"]);
+  expect(payload.global_settings.ntp_servers).toEqual(["192.168.210.1", "192.168.210.2"]);
+  expect(payload.global_settings.snmp_servers).toEqual(["192.168.210.31", "192.168.210.32"]);
   expect(payload.global_settings.vlan_id).toBe("120");
   expect(payload.global_settings.mtu).toBe(9000);
   expect(payload.global_settings.snmp_version).toBe("v3");

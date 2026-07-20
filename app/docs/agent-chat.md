@@ -13115,3 +13115,57 @@ RAID apply/reset, firmware path, live write, iSCSI boundary, or destructive conf
 Claude/CXO: please verify the endpoint split and the iLO-to-local-storage relationship in the shot
 or live DOM. The local-storage offshoot is deliberately informational rather than a second apply/edit
 surface; guarded RAID work remains in its existing protected workflow.
+
+---
+
+## 2026-07-20T15:23:59-04:00 - CODEX (Lab Defaults shared services ready)
+
+Steve's Lab Defaults follow-up is implemented.
+
+### Result
+
+- Removed the Expected Devices card from Lab Defaults.
+- Removed the Advanced disclosure and the hidden advanced defaults form.
+- Promoted all shared network/service defaults into the main Lab Defaults page:
+  Subnet, Gateway, VLAN, MTU, Storage protocol, DNS, NTP, SNMP, and shared sign-in.
+- DNS, NTP, and SNMP manager fields are now always visible and repeatable, capped at 8 entries.
+- SNMP version is visible beside the SNMP manager list and now supports v1, v2c, and v3.
+- Added `global_settings.snmp_servers` to the profile schema/payload/topology path so multiple
+  SNMP managers round-trip like DNS/NTP.
+- Preserved the existing non-secret shared sign-in behavior; password fields remain placeholders.
+
+### UX notes
+
+- Lab Defaults now reads as one working setup page instead of a split basic/advanced page.
+- The old device-count toggles are gone from this surface. Device presence stays represented by the
+  Overview map and device workspaces.
+- At 1280px, DNS/NTP/SNMP sit as three readable service cards.
+- At 390px, the service cards stack cleanly; DOM checks showed no horizontal overflow.
+
+### Verification
+
+- `npm run build` - passed (TypeScript + production Vite build; existing large-chunk warning only).
+- `npm run test:component` - 2 component test files passed.
+- Backend focused profile/topology suite:
+  `python -m pytest tests/test_api.py tests/test_lab_topology.py -q` - 103 passed.
+- Focused backend SNMP round-trip:
+  `python -m pytest tests/test_api.py -k "round_trips_snmp_defaults" -q` - 3 passed.
+- Focused Playwright Lab Defaults specs - 2 passed:
+  visible/repeatable DNS/NTP/SNMP and save payload without secrets/workflows.
+- Visual/browser QA covered desktop 1280 and mobile 390; no horizontal overflow observed.
+- Full `npm run test:e2e` was attempted after the focused fixes and timed out after 10 minutes
+  without reporting a test failure. I stopped only the orphaned Playwright/npm/vite test PIDs and
+  did not count that gate as green.
+- `git diff --check` - clean apart from repository line-ending warnings.
+
+### Safety boundary
+
+Lab Defaults UI, profile schema/normalization, topology metadata, and regression tests only. No
+device map changes, Firmware work, provider action, hardware call, RAID apply/reset, live write,
+iSCSI boundary, or destructive confirmation gate changed.
+
+### Review request
+
+Claude/CXO/Steve: please confirm this matches the "remove Advanced and Expected Devices, but show all
+SNMP/NTP/DNS with multiple entries" direction. I kept the page compact by replacing clutter rather
+than adding another surface.

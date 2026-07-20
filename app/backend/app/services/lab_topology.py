@@ -387,6 +387,7 @@ def _global_settings(
         "dom_dc": _clean_string(source.get("dom_dc")),
         "dns_servers": _clean_string_list(source.get("dns_servers") or source.get("dns")),
         "ntp_servers": _clean_string_list(source.get("ntp_servers") or source.get("ntp")),
+        "snmp_servers": _clean_string_list(source.get("snmp_servers")),
         "timezone": _clean_string(source.get("timezone")),
         "netapp_enabled": bool(features["netapp_enabled"]),
         "netapp_disabled_reason": features.get("netapp_disabled_reason"),
@@ -577,7 +578,7 @@ def _clean_string(value: Any) -> str | None:
 
 def _snmp_version(value: Any) -> str:
     version = (_clean_string(value) or "v2c").lower()
-    return version if version in {"v2c", "v3"} else "v2c"
+    return version if version in {"v1", "v2c", "v3"} else "v2c"
 
 
 def _clean_string_list(value: Any) -> list[str]:

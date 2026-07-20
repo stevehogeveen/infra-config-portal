@@ -471,13 +471,14 @@ export type LabGlobalSettings = {
   dom_dc?: string | null;
   dns_servers: string[];
   ntp_servers: string[];
+  snmp_servers?: string[];
   timezone: string | null;
   netapp_enabled: boolean;
   netapp_disabled_reason: string | null;
   vcenter_enabled: boolean;
   vlan_id: string | null;
   mtu: number | null;
-  snmp_version?: "v2c" | "v3" | null;
+  snmp_version?: "v1" | "v2c" | "v3" | null;
 };
 
 export type LabSubnetOption = {

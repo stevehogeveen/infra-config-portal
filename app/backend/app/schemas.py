@@ -350,13 +350,14 @@ class LabGlobalSettings(BaseModel):
     dom_dc: str | None = Field(default=None, max_length=80)
     dns_servers: list[str] = Field(default_factory=list, max_length=8)
     ntp_servers: list[str] = Field(default_factory=list, max_length=8)
+    snmp_servers: list[str] = Field(default_factory=list, max_length=8)
     timezone: str | None = Field(default=None, max_length=80)
     netapp_enabled: bool = True
     netapp_disabled_reason: str | None = Field(default=None, max_length=300)
     vcenter_enabled: bool = False
     vlan_id: str | None = Field(default=None, max_length=80)
     mtu: int | None = Field(default=None, ge=576, le=9216)
-    snmp_version: Literal["v2c", "v3"] = "v2c"
+    snmp_version: Literal["v1", "v2c", "v3"] = "v2c"
 
     @field_validator(
         "gateway",
@@ -375,7 +376,7 @@ class LabGlobalSettings(BaseModel):
         text = str(value).strip()
         return text or None
 
-    @field_validator("dns_servers", "ntp_servers", mode="before")
+    @field_validator("dns_servers", "ntp_servers", "snmp_servers", mode="before")
     @classmethod
     def split_server_list(cls, value: Any) -> list[str]:
         return _clean_unique_string_list(value)
@@ -390,7 +391,7 @@ class LabGlobalSettings(BaseModel):
                 raise ValueError("gateway must be an IPv4 or IPv6 address") from exc
         return value
 
-    @field_validator("dns_servers", "ntp_servers")
+    @field_validator("dns_servers", "ntp_servers", "snmp_servers")
     @classmethod
     def validate_server_list(cls, value: list[str]) -> list[str]:
         cleaned = _clean_unique_string_list(value)

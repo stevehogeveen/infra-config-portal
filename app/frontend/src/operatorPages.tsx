@@ -112,12 +112,17 @@ type SettingsProfileEditState = {
   mtu: string;
   name: string;
   ntpServers: string;
+  snmpServers: string;
   snmpVersion: string;
   storageProtocol: string;
   subnet: string;
   timezone: string;
   vlanId: string;
 };
+
+type LabDefaultsServiceKey = "dns" | "ntp" | "snmp";
+
+type LabDefaultsServiceLists = Record<LabDefaultsServiceKey, string[]>;
 
 type OperatorTabStateContextValue = {
   activeTab: OperatorTabId;
@@ -834,18 +839,15 @@ export function OperatorLabDefaultsPage({ labProfileState, onReloadLabProfile }:
   const address = activeAddressPlan(activeProfile);
   const profileKey = `${activeProfile?.id ?? "none"}:${activeProfile?.version ?? 0}:${activeProfile?.source ?? "missing"}`;
   const [edit, setEdit] = useState<SettingsProfileEditState>(() => settingsProfileEditStateFrom(activeProfile));
-  const [deviceToggles, setDeviceToggles] = useState<Record<string, boolean>>(() => labDefaultsDeviceToggles(activeProfile));
-  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [serviceLists, setServiceLists] = useState<LabDefaultsServiceLists>(() => labDefaultsServiceListsFrom(activeProfile));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
-  const expectedDevices = labDefaultsDeviceRows(activeProfile, deviceToggles);
   const sharedCredentialsSaved = false;
 
   useEffect(() => {
     setEdit(settingsProfileEditStateFrom(activeProfile));
-    setDeviceToggles(labDefaultsDeviceToggles(activeProfile));
-    setAdvancedOpen(false);
+    setServiceLists(labDefaultsServiceListsFrom(activeProfile));
     setError("");
     setMessage("");
   }, [profileKey, activeProfile]);
@@ -854,13 +856,27 @@ export function OperatorLabDefaultsPage({ labProfileState, onReloadLabProfile }:
     setEdit((current) => ({ ...current, [key]: value }));
   }
 
-  function toggleDevice(deviceId: string) {
-    setDeviceToggles((current) => {
-      const nextIncluded = !current[deviceId];
-      if (deviceId === "vcenter") {
-        setEdit((editCurrent) => ({ ...editCurrent, enableVcenter: nextIncluded }));
-      }
-      return { ...current, [deviceId]: nextIncluded };
+  function updateServiceServer(service: LabDefaultsServiceKey, index: number, value: string) {
+    setServiceLists((current) => ({
+      ...current,
+      [service]: current[service].map((server, serverIndex) => serverIndex === index ? value : server)
+    }));
+  }
+
+  function addServiceServer(service: LabDefaultsServiceKey) {
+    setServiceLists((current) => current[service].length >= 8 ? current : {
+      ...current,
+      [service]: [...current[service], ""]
+    });
+  }
+
+  function removeServiceServer(service: LabDefaultsServiceKey, index: number) {
+    setServiceLists((current) => {
+      const remaining = current[service].filter((_, serverIndex) => serverIndex !== index);
+      return {
+        ...current,
+        [service]: remaining.length > 0 ? remaining : [""]
+      };
     });
   }
 
@@ -874,7 +890,12 @@ export function OperatorLabDefaultsPage({ labProfileState, onReloadLabProfile }:
     setError("");
     setMessage("");
     try {
-      const payload = labDefaultsProfilePayload(activeProfile, edit, deviceToggles);
+      const payload = settingsProfilePayload(activeProfile, {
+        ...edit,
+        dnsServers: serviceLists.dns.join(", "),
+        ntpServers: serviceLists.ntp.join(", "),
+        snmpServers: serviceLists.snmp.join(", ")
+      });
       if (activeProfile.source === "saved") {
         await api.updateLabProfile(activeProfile.id, payload);
       } else {
@@ -895,15 +916,15 @@ export function OperatorLabDefaultsPage({ labProfileState, onReloadLabProfile }:
       <div className="operator-surface-heading">
         <p className="operator-kicker">Setup</p>
         <h1>Lab Defaults</h1>
-        <p>Shared values this kit reuses everywhere: the network, sign-ins, and which devices are expected.</p>
+        <p>Shared network and service values this kit reuses everywhere. Add every DNS, NTP, and SNMP endpoint here.</p>
       </div>
       <form className="lab-defaults-form" onSubmit={saveDefaults}>
         <div className="lab-defaults-grid">
           <Card aria-label="Network defaults" className="lab-defaults-network-card" hover={false}>
             <CardHeader>
               <div>
-                <h2>Network</h2>
-                <p className="muted">The address range every device in this kit lives on.</p>
+                <h2>Network &amp; services</h2>
+                <p className="muted">Addressing, storage path, and every shared service endpoint stay visible in one place.</p>
               </div>
             </CardHeader>
             <CardContent>
@@ -928,56 +949,28 @@ export function OperatorLabDefaultsPage({ labProfileState, onReloadLabProfile }:
                     value={edit.gateway}
                   />
                 </label>
-                <label className="lab-defaults-field lab-defaults-field-wide">
-                  <span>DNS servers</span>
+                <label className="lab-defaults-field">
+                  <span>VLAN</span>
                   <input
-                    aria-label="DNS servers"
+                    aria-label="VLAN"
                     disabled={busy || !activeProfile}
-                    onChange={(event) => update("dnsServers", event.target.value)}
-                    placeholder="192.168.1.1, 192.168.1.2"
-                    value={edit.dnsServers}
+                    onChange={(event) => update("vlanId", event.target.value)}
+                    placeholder="100"
+                    value={edit.vlanId}
                   />
                 </label>
-              </div>
-              <details className="lab-defaults-more">
-                <summary>
-                  <span>More network defaults</span>
-                  <small>Storage path, services, VLAN, and MTU</small>
-                </summary>
-                <div className="lab-defaults-input-grid lab-defaults-more-grid">
-                  <label className="lab-defaults-field lab-defaults-field-wide">
-                    <span>NTP servers</span>
-                    <input
-                      aria-label="NTP servers"
-                      disabled={busy || !activeProfile}
-                      onChange={(event) => update("ntpServers", event.target.value)}
-                      placeholder="192.168.1.1"
-                      value={edit.ntpServers}
-                    />
-                  </label>
-                  <label className="lab-defaults-field">
-                    <span>VLAN</span>
-                    <input
-                      aria-label="VLAN"
-                      disabled={busy || !activeProfile}
-                      onChange={(event) => update("vlanId", event.target.value)}
-                      placeholder="100"
-                      value={edit.vlanId}
-                    />
-                  </label>
-                  <label className="lab-defaults-field">
-                    <span>MTU</span>
-                    <input
-                      aria-label="MTU"
-                      disabled={busy || !activeProfile}
-                      inputMode="numeric"
-                      onChange={(event) => update("mtu", event.target.value)}
-                      placeholder="1500"
-                      value={edit.mtu}
-                    />
-                  </label>
-                </div>
-                <label className="lab-defaults-select-field">
+                <label className="lab-defaults-field">
+                  <span>MTU</span>
+                  <input
+                    aria-label="MTU"
+                    disabled={busy || !activeProfile}
+                    inputMode="numeric"
+                    onChange={(event) => update("mtu", event.target.value)}
+                    placeholder="1500"
+                    value={edit.mtu}
+                  />
+                </label>
+                <label className="lab-defaults-field lab-defaults-select-field lab-defaults-field-wide">
                   <span>Storage protocol</span>
                   <select
                     aria-label="Storage protocol"
@@ -990,33 +983,88 @@ export function OperatorLabDefaultsPage({ labProfileState, onReloadLabProfile }:
                     <option value="local">Local</option>
                   </select>
                 </label>
-                <div className="lab-defaults-service-row" aria-label="Shared service defaults">
-                  <label className="lab-defaults-service-toggle">
-                    <input checked={edit.enableDns} disabled={busy || !activeProfile} onChange={(event) => update("enableDns", event.target.checked)} type="checkbox" />
-                    <span>DNS</span>
+              </div>
+
+              <div className="lab-defaults-service-stack" aria-label="Shared service defaults">
+                <section aria-label="DNS defaults" className="lab-defaults-service-card">
+                  <div className="lab-defaults-service-heading">
+                    <div>
+                      <h3>DNS</h3>
+                      <p>Resolvers used across the lab.</p>
+                    </div>
+                    <label className="lab-defaults-service-toggle">
+                      <input checked={edit.enableDns} disabled={busy || !activeProfile} onChange={(event) => update("enableDns", event.target.checked)} type="checkbox" />
+                      <span>Enable DNS</span>
+                    </label>
+                  </div>
+                  <LabDefaultsServerList
+                    disabled={busy || !activeProfile}
+                    label="DNS server"
+                    onAdd={() => addServiceServer("dns")}
+                    onChange={(index, value) => updateServiceServer("dns", index, value)}
+                    onRemove={(index) => removeServiceServer("dns", index)}
+                    placeholder="192.168.1.1"
+                    values={serviceLists.dns}
+                  />
+                </section>
+
+                <section aria-label="NTP defaults" className="lab-defaults-service-card">
+                  <div className="lab-defaults-service-heading">
+                    <div>
+                      <h3>NTP</h3>
+                      <p>Time sources used across the lab.</p>
+                    </div>
+                    <label className="lab-defaults-service-toggle">
+                      <input checked={edit.enableNtp} disabled={busy || !activeProfile} onChange={(event) => update("enableNtp", event.target.checked)} type="checkbox" />
+                      <span>Enable NTP</span>
+                    </label>
+                  </div>
+                  <LabDefaultsServerList
+                    disabled={busy || !activeProfile}
+                    label="NTP server"
+                    onAdd={() => addServiceServer("ntp")}
+                    onChange={(index, value) => updateServiceServer("ntp", index, value)}
+                    onRemove={(index) => removeServiceServer("ntp", index)}
+                    placeholder="192.168.1.2"
+                    values={serviceLists.ntp}
+                  />
+                </section>
+
+                <section aria-label="SNMP defaults" className="lab-defaults-service-card">
+                  <div className="lab-defaults-service-heading">
+                    <div>
+                      <h3>SNMP</h3>
+                      <p>Managers that receive monitoring data.</p>
+                    </div>
+                    <label className="lab-defaults-service-toggle">
+                      <input checked={edit.enableSnmp} disabled={busy || !activeProfile} onChange={(event) => update("enableSnmp", event.target.checked)} type="checkbox" />
+                      <span>Enable SNMP</span>
+                    </label>
+                  </div>
+                  <label className="lab-defaults-service-version">
+                    <span>Version</span>
+                    <select
+                      aria-label="SNMP version"
+                      disabled={busy || !activeProfile}
+                      onChange={(event) => update("snmpVersion", event.target.value)}
+                      value={edit.snmpVersion}
+                    >
+                      <option value="v1">v1 (legacy)</option>
+                      <option value="v2c">v2c</option>
+                      <option value="v3">v3</option>
+                    </select>
                   </label>
-                  <label className="lab-defaults-service-toggle">
-                    <input checked={edit.enableNtp} disabled={busy || !activeProfile} onChange={(event) => update("enableNtp", event.target.checked)} type="checkbox" />
-                    <span>NTP</span>
-                  </label>
-                  <label className="lab-defaults-service-toggle">
-                    <input checked={edit.enableSnmp} disabled={busy || !activeProfile} onChange={(event) => update("enableSnmp", event.target.checked)} type="checkbox" />
-                    <span>SNMP</span>
-                  </label>
-                </div>
-                <label className="lab-defaults-select-field">
-                  <span>SNMP version</span>
-                  <select
-                    aria-label="SNMP version"
-                    disabled={busy || !activeProfile || !edit.enableSnmp}
-                    onChange={(event) => update("snmpVersion", event.target.value)}
-                    value={edit.snmpVersion}
-                  >
-                    <option value="v2c">v2c</option>
-                    <option value="v3">v3</option>
-                  </select>
-                </label>
-              </details>
+                  <LabDefaultsServerList
+                    disabled={busy || !activeProfile}
+                    label="SNMP manager"
+                    onAdd={() => addServiceServer("snmp")}
+                    onChange={(index, value) => updateServiceServer("snmp", index, value)}
+                    onRemove={(index) => removeServiceServer("snmp", index)}
+                    placeholder="192.168.1.3"
+                    values={serviceLists.snmp}
+                  />
+                </section>
+              </div>
             </CardContent>
           </Card>
           <Card aria-label="Shared sign-in" className="lab-defaults-signin-card" hover={false}>
@@ -1055,150 +1103,84 @@ export function OperatorLabDefaultsPage({ labProfileState, onReloadLabProfile }:
           </button>
         </div>
       </form>
-      <Card className="lab-defaults-devices-card" hover={false}>
-        <CardHeader><div><h2>Expected devices</h2><p className="muted">Turn a device off here and it disappears from the map and the build.</p></div></CardHeader>
-        <CardContent>
-          <div className="lab-defaults-device-list" aria-label="Expected devices">
-            {expectedDevices.map((device) => (
-              <div className="lab-defaults-device-row" key={device.id}>
-                <span className={`device-presence-dot ${device.enabled ? "on" : "off"}`} />
-                <div>
-                  <strong>{device.name}</strong>
-                  <small>{device.detail} - {device.target}</small>
-                </div>
-                <span className={`lab-defaults-device-state ${device.enabled ? "enabled" : "disabled"}`}>{device.enabled ? "Included" : "Not included"}</span>
-                <button
-                  aria-checked={device.enabled}
-                  aria-label={`Toggle ${device.name}`}
-                  className={`lab-defaults-device-toggle ${device.enabled ? "enabled" : "disabled"}`}
-                  onClick={() => toggleDevice(device.id)}
-                  role="switch"
-                  type="button"
-                >
-                  <span />
-                </button>
-              </div>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
-      <details className="lab-defaults-advanced" onToggle={(event) => setAdvancedOpen(event.currentTarget.open)} open={advancedOpen}>
-        <summary>Advanced</summary>
-        {advancedOpen && (
-          <form aria-label="Advanced lab default fields" className="lab-defaults-advanced-form" onSubmit={saveDefaults}>
-            <div className="lab-defaults-advanced-grid">
-              <Field label="Setup name">
-                <input disabled={busy || !activeProfile} onChange={(event) => update("name", event.target.value)} value={edit.name} />
-              </Field>
-              <Field label="Description">
-                <input disabled={busy || !activeProfile} onChange={(event) => update("description", event.target.value)} value={edit.description} />
-              </Field>
-              <Field label="Domain">
-                <input disabled={busy || !activeProfile} onChange={(event) => update("domainName", event.target.value)} value={edit.domainName} />
-              </Field>
-              <Field label="Timezone">
-                <input disabled={busy || !activeProfile} onChange={(event) => update("timezone", event.target.value)} value={edit.timezone} />
-              </Field>
-            </div>
-            <div className="network-config-toggles lab-defaults-feature-toggles" aria-label="Lab default feature toggles">
-              <label><input checked={!edit.disableIpv6} disabled={busy || !activeProfile} onChange={(event) => update("disableIpv6", !event.target.checked)} type="checkbox" /><span>Allow IPv6</span></label>
-              <label><input checked={edit.blockLegacyProtocols} disabled={busy || !activeProfile} onChange={(event) => update("blockLegacyProtocols", event.target.checked)} type="checkbox" /><span>Block legacy protocols</span></label>
-              <label><input checked={edit.enableVcenter} disabled={busy || !activeProfile} onChange={(event) => update("enableVcenter", event.target.checked)} type="checkbox" /><span>vCenter in scope</span></label>
-            </div>
-            <div className="lab-defaults-advanced-actions">
-              <button className="secondary-button" disabled={busy || !activeProfile} type="submit">
-                {busy ? "Saving" : "Save advanced defaults"}
-              </button>
-            </div>
-          </form>
-        )}
-      </details>
     </OperatorPage>
   );
+}
+
+function LabDefaultsServerList({
+  disabled,
+  label,
+  onAdd,
+  onChange,
+  onRemove,
+  placeholder,
+  values
+}: {
+  disabled: boolean;
+  label: string;
+  onAdd: () => void;
+  onChange: (index: number, value: string) => void;
+  onRemove: (index: number) => void;
+  placeholder: string;
+  values: string[];
+}) {
+  return (
+    <div className="lab-defaults-server-list">
+      {values.map((value, index) => (
+        <div className="lab-defaults-server-row" key={`${label}-${index}`}>
+          <label className="lab-defaults-server-field">
+            <span>{label} {index + 1}</span>
+            <input
+              aria-label={`${label} ${index + 1}`}
+              disabled={disabled}
+              onChange={(event) => onChange(index, event.target.value)}
+              placeholder={placeholder}
+              value={value}
+            />
+          </label>
+          {values.length > 1 && (
+            <button
+              aria-label={`Remove ${label} ${index + 1}`}
+              className="lab-defaults-server-remove"
+              disabled={disabled}
+              onClick={() => onRemove(index)}
+              type="button"
+            >
+              Remove
+            </button>
+          )}
+        </div>
+      ))}
+      <button
+        className="lab-defaults-server-add"
+        disabled={disabled || values.length >= 8}
+        onClick={onAdd}
+        type="button"
+      >
+        <span aria-hidden="true">+</span> Add {label}
+      </button>
+      <small>Up to 8 addresses.</small>
+    </div>
+  );
+}
+
+function labDefaultsServiceListsFrom(profile: LabProfile | null): LabDefaultsServiceLists {
+  const global = profile?.global_settings;
+  return {
+    dns: labDefaultsEditableServerList(global?.dns_servers ?? profile?.dns),
+    ntp: labDefaultsEditableServerList(global?.ntp_servers ?? profile?.ntp),
+    snmp: labDefaultsEditableServerList(global?.snmp_servers)
+  };
+}
+
+function labDefaultsEditableServerList(values: string[] | null | undefined): string[] {
+  const cleaned = (values ?? []).map((value) => value.trim()).filter(Boolean);
+  return cleaned.length > 0 ? cleaned.slice(0, 8) : [""];
 }
 
 function labDefaultsStorageProtocolValue(value: string): string {
   if (value === "none") return "local";
   return value || "nfs";
-}
-
-function labDefaultsDeviceToggles(profile: LabProfile | null): Record<string, boolean> {
-  const address = activeAddressPlan(profile);
-  return {
-    cisco: Boolean(profile && (profile.devices?.cisco ?? address.cisco_management)),
-    netapp: Boolean(profile?.features?.netapp_enabled ?? profile?.global_settings?.netapp_enabled),
-    server: Boolean(profile && (profile.devices?.ilo ?? profile.devices?.esxi ?? address.ilo ?? address.esxi_management)),
-    vcenter: Boolean(profile?.features?.vcenter_enabled ?? profile?.global_settings?.vcenter_enabled)
-  };
-}
-
-function labDefaultsDeviceRows(profile: LabProfile | null, toggles: Record<string, boolean>) {
-  const address = activeAddressPlan(profile);
-  return [
-    {
-      detail: "C9300 - L3 core",
-      enabled: Boolean(toggles.cisco),
-      id: "cisco",
-      name: "Cisco Switch",
-      target: displayAddress(address.cisco_management)
-    },
-    {
-      detail: "ESXi compute + iLO",
-      enabled: Boolean(toggles.server),
-      id: "server",
-      name: "HPE Gen10 compute + iLO",
-      target: displayAddress(address.ilo)
-    },
-    {
-      detail: "Storage - NetApp",
-      enabled: Boolean(toggles.netapp),
-      id: "netapp",
-      name: "NetApp ONTAP",
-      target: displayAddress(address.netapp_cluster_mgmt)
-    },
-    {
-      detail: "VM management",
-      enabled: Boolean(toggles.vcenter),
-      id: "vcenter",
-      name: "vCenter",
-      target: displayAddress(profile?.devices?.vcenter)
-    }
-  ];
-}
-
-function labDefaultsProfilePayload(profile: LabProfile, edit: SettingsProfileEditState, toggles: Record<string, boolean>): LabProfileWrite {
-  const payload = settingsProfilePayload(profile, edit);
-  const address = payload.address_plan;
-  const payloadDevices = payload.devices ?? {};
-  const netappEnabled = Boolean(toggles.netapp);
-  const vcenterEnabled = Boolean(toggles.vcenter);
-  const ciscoEnabled = Boolean(toggles.cisco);
-  const serverEnabled = Boolean(toggles.server);
-  return {
-    ...payload,
-    devices: {
-      ...payloadDevices,
-      cisco: ciscoEnabled ? payloadDevices.cisco ?? address.cisco_management : null,
-      esxi: serverEnabled ? payloadDevices.esxi ?? address.esxi_management : null,
-      ilo: serverEnabled ? payloadDevices.ilo ?? address.ilo : null,
-      netapp: netappEnabled ? payloadDevices.netapp ?? null : null,
-      vcenter: vcenterEnabled ? payloadDevices.vcenter ?? null : null
-    },
-    features: {
-      ...profile.features,
-      ...payload.features,
-      netapp_disabled_reason: netappEnabled ? null : "NetApp is disabled by Lab Defaults.",
-      netapp_enabled: netappEnabled,
-      vcenter_disabled_reason: vcenterEnabled ? null : "vCenter is disabled by Lab Defaults.",
-      vcenter_enabled: vcenterEnabled
-    },
-    global_settings: {
-      ...payload.global_settings,
-      netapp_disabled_reason: netappEnabled ? null : "NetApp is disabled by Lab Defaults.",
-      netapp_enabled: netappEnabled,
-      vcenter_enabled: vcenterEnabled
-    }
-  };
 }
 
 function OverviewResetRebuildLink() {
@@ -15242,7 +15224,8 @@ function settingsProfileEditStateFrom(activeProfile: LabProfile | null): Setting
     mtu: global?.mtu !== null && global?.mtu !== undefined ? String(global.mtu) : activeProfile?.mtu ? String(activeProfile.mtu) : "",
     name: activeProfile?.name ?? "",
     ntpServers: (global?.ntp_servers ?? activeProfile?.ntp ?? []).join(", "),
-    snmpVersion: global?.snmp_version === "v3" ? "v3" : "v2c",
+    snmpServers: (global?.snmp_servers ?? []).join(", "),
+    snmpVersion: global?.snmp_version === "v1" || global?.snmp_version === "v3" ? global.snmp_version : "v2c",
     storageProtocol: features?.storage_protocol ?? "nfs",
     subnet: address.subnet ?? activeProfile?.subnet_cidr ?? "",
     timezone: global?.timezone ?? "",
@@ -15259,10 +15242,12 @@ function settingsProfilePayload(profile: LabProfile, edit: SettingsProfileEditSt
   const mtu = parseNetworkMtu(edit.mtu);
   const dnsServers = splitNetworkList(edit.dnsServers);
   const ntpServers = splitNetworkList(edit.ntpServers);
+  const snmpServers = splitNetworkList(edit.snmpServers);
   const vlanId = cleanNetworkNullable(edit.vlanId);
   const addressPlan = topologyAddressPlanForSubnet(activeAddressPlan(profile), subnet);
   const netappDevice = profile.devices?.netapp && typeof profile.devices.netapp === "object" ? profile.devices.netapp : {};
-  const snmpVersion: NonNullable<LabProfile["global_settings"]["snmp_version"]> = edit.snmpVersion === "v3" ? "v3" : "v2c";
+  const snmpVersion: NonNullable<LabProfile["global_settings"]["snmp_version"]> =
+    edit.snmpVersion === "v1" || edit.snmpVersion === "v3" ? edit.snmpVersion : "v2c";
   const features: LabProfileFeatures = {
     ...profile.features,
     block_legacy_protocols: edit.blockLegacyProtocols,
@@ -15281,6 +15266,7 @@ function settingsProfilePayload(profile: LabProfile, edit: SettingsProfileEditSt
     gateway,
     mtu,
     ntp_servers: ntpServers,
+    snmp_servers: snmpServers,
     snmp_version: snmpVersion,
     subnet_prefix: subnetPrefix,
     timezone: cleanNetworkNullable(edit.timezone),

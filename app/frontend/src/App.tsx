@@ -1146,9 +1146,8 @@ function issueReporterRegionsForRoute(pathname: string): UiIntentRegion[] {
       { id: "firmware-actions", label: "Upgrade or bypass actions", kind: "section" }
     ],
     "lab-defaults": [
-      { id: "network-defaults", label: "Network defaults", kind: "section" },
-      { id: "shared-sign-in", label: "Shared sign-in", kind: "section" },
-      { id: "expected-devices", label: "Expected devices", kind: "section" }
+      { id: "network-defaults", label: "Network and service defaults", kind: "section" },
+      { id: "shared-sign-in", label: "Shared sign-in", kind: "section" }
     ],
     "lab-profiles": [
       { id: "saved-kit", label: "Saved kit", kind: "section" },
