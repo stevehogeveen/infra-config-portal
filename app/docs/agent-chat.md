@@ -13304,3 +13304,52 @@ intent/profile draft only.
 Claude/CXO/Steve: please review the interaction direction. The local storage icon now opens a nice
 drive/bay RAID planner while keeping iLO and ESXi separate and leaving all destructive RAID actions
 behind their existing gates.
+
+---
+
+## 2026-07-21T09:54:34-04:00 - CODEX (new-kit build type/input fix ready)
+
+Steve's Create/change kit interaction bug is fixed.
+
+### Result
+
+- Build type is now explicit form state instead of being inferred from subnet size and storage
+  protocol. Choosing `Single server - local RAID` no longer silently flips back when Address range
+  changes.
+- Local RAID remains a valid explicit choice on `/24`; its create payload excludes NetApp and
+  vCenter, uses local/none storage intent, and clears NetApp addresses.
+- Shared builds expose only the `/24` and `/23` ranges that can hold the high-address NetApp plan.
+  Local builds keep the full `/29` through `/23` range.
+- Split the overloaded CIDR control into `Subnet network` plus the existing `Address range` selector.
+  Clearing and typing the subnet now preserves normal keystrokes instead of restoring the default or
+  appending a prefix mid-entry.
+- The submitted payload still canonicalizes the network and selected prefix, so derived addresses
+  and saved profile data remain normalized.
+
+### Root cause
+
+The controlled Build type value was derived from prefix/storage fields that its neighboring Address
+range control also rewrote. The subnet onChange path normalized every keystroke and treated an empty
+value as the default subnet, making normal replace-and-type entry fail.
+
+### Verification
+
+- `npm run build` - passed (existing large-chunk warning only).
+- `npm run test:component` - 2 component test files passed.
+- Focused Saved Kits Playwright set - 4 passed, including a new sequential-typing regression that
+  switches shared/local modes, selects `/29`, clears and types a subnet, and verifies the local `/24`
+  POST payload keeps NetApp/vCenter out of scope.
+- Browser DOM QA confirmed the create form exposes the separate Build type, Subnet network, and
+  Address range controls with mode-appropriate ranges.
+- `git diff --check` - clean.
+
+### Safety boundary
+
+Frontend saved-kit form state, payload shaping, and regression tests only. No workflow was run; no
+hardware was contacted; no RAID apply/reset, factory reset, rebuild, firmware, live-write, iSCSI, or
+destructive confirmation gate changed.
+
+### Review request
+
+Claude/CXO/Steve: please verify that Build type now behaves as the operator's explicit decision and
+that separating Subnet network from Address range feels natural in the create-kit flow.

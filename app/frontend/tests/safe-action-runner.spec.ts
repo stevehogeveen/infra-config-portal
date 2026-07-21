@@ -609,7 +609,7 @@ test("saved kits only manages kit selection and subnet-derived creation", async 
   await expect(page.getByText("Save as lab setup")).toHaveCount(0);
 
   await createPanel.getByLabel("Kit name").fill("Rack 08 Edge Lab");
-  await createPanel.getByLabel("Subnet CIDR").fill("192.168.210.0/24");
+  await createPanel.getByLabel("Subnet network").fill("192.168.210.0");
   const preview = createPanel.getByLabel("Derived address preview");
   await expect(preview).toContainText("192.168.210.204");
   await expect(preview).toContainText("192.168.210.201");
@@ -645,6 +645,63 @@ test("saved kits only manages kit selection and subnet-derived creation", async 
   await changePanel.locator(":scope > summary").click();
   await expect(changePanel.getByLabel("Saved kit")).toHaveValue("visual-profile");
   await expect(changePanel.getByText("Lab Defaults")).toBeVisible();
+});
+
+test("new kit build type stays explicit while the subnet is entered normally", async ({ page }) => {
+  await page.goto("/lab-profiles#new");
+
+  const createPanel = page.locator("details[aria-label='Create a new kit']");
+  const kitName = createPanel.getByLabel("Kit name");
+  const buildType = createPanel.getByRole("combobox", { name: "Build type" });
+  const subnet = createPanel.getByLabel("Subnet network");
+  const addressRange = createPanel.getByRole("combobox", { name: "Address range" });
+
+  await kitName.fill("Local RAID Input Lab");
+  await buildType.selectOption("local");
+  await expect(buildType).toHaveValue("local");
+  await expect(addressRange).toHaveValue("24");
+
+  await addressRange.selectOption("29");
+  await expect(buildType).toHaveValue("local");
+  await expect(addressRange).toHaveValue("29");
+
+  await subnet.fill("");
+  await expect(subnet).toHaveValue("");
+  await subnet.pressSequentially("10.238.207.16");
+  await expect(subnet).toHaveValue("10.238.207.16");
+  await expect(kitName).toHaveValue("Local RAID Input Lab");
+
+  await buildType.selectOption("shared");
+  await expect(buildType).toHaveValue("shared");
+  await expect(addressRange).toHaveValue("24");
+  await expect(subnet).toHaveValue("10.238.207.0");
+
+  await buildType.selectOption("local");
+  await expect(buildType).toHaveValue("local");
+  await expect(addressRange).toHaveValue("24");
+  await expect(kitName).toHaveValue("Local RAID Input Lab");
+
+  const preview = createPanel.getByLabel("Derived address preview");
+  await expect(preview).toContainText("Local storage");
+  await expect(preview).toContainText("Server disks");
+
+  const createProfileRequest = page.waitForRequest((request) => {
+    const url = new URL(request.url());
+    return request.method() === "POST" && url.pathname === "/api/v1/lab/profiles";
+  });
+  await createPanel.getByRole("button", { name: "Create kit" }).click();
+  const request = await createProfileRequest;
+  const payload = request.postDataJSON() as Record<string, any>;
+
+  expect(payload.name).toBe("Local RAID Input Lab");
+  expect(payload.address_plan.subnet).toBe("10.238.207.0/24");
+  expect(payload.address_plan.netapp_cluster_mgmt).toBeNull();
+  expect(payload.devices.netapp).toBeNull();
+  expect(payload.features.netapp_enabled).toBe(false);
+  expect(payload.features.vcenter_enabled).toBe(false);
+  expect(payload.features.storage_protocol).toBe("none");
+  expect(payload.global_settings.netapp_enabled).toBe(false);
+  await expect(page).toHaveURL(/\/overview$/);
 });
 
 test("saved kits switch and history stay behind the selected-kit decision", async ({ page }) => {
