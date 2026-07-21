@@ -2143,12 +2143,14 @@ function ServerDriveMapPlan({
 }
 
 function LocalStorageRaidPlanner({
+  hideHead = false,
   initialDraft,
   netappInScope,
   onCommit,
   settings,
   storageProtocol = "local"
 }: {
+  hideHead?: boolean;
   initialDraft?: LocalRaidDraft;
   netappInScope: boolean;
   onCommit?: (settings: LocalRaidSettingsUpdate, draft: LocalRaidDraft) => string | void;
@@ -2213,13 +2215,15 @@ function LocalStorageRaidPlanner({
 
   return (
     <section className="local-raid-planner" aria-label="Local RAID planner">
-      <div className="local-raid-planner-head">
-        <div>
-          <p className="operator-kicker">Local storage</p>
-          <h4>Drive bay RAID plan</h4>
+      {!hideHead && (
+        <div className="local-raid-planner-head">
+          <div>
+            <p className="operator-kicker">Local storage</p>
+            <h4>Drive bay RAID plan</h4>
+          </div>
+          <StatusBadge label="Plan only" status="plan-only" />
         </div>
-        <StatusBadge label="Plan only" status="plan-only" />
-      </div>
+      )}
 
       <div className="local-raid-meta">
         <span>{storageModeLabel}</span>
@@ -2360,6 +2364,7 @@ function LocalRaidPlannerDrawer({
       </div>
       <div className="map-drawer-body">
         <LocalStorageRaidPlanner
+          hideHead
           initialDraft={initialDraft}
           netappInScope={netappInScope}
           onCommit={commitLocalPlan}
@@ -7452,6 +7457,7 @@ function LabTopologyMap({
               <button className="topology-workspace-close" type="button" onClick={() => setLocalRaidPlannerOpen(false)}>Close</button>
             </div>
             <LocalStorageRaidPlanner
+              hideHead
               initialDraft={localRaidInitialDraft}
               netappInScope={netappInScope}
               onCommit={(nextSettings, draft) => {
