@@ -557,7 +557,7 @@ button:disabled {
   display: grid;
   gap: 14px;
   margin: 0 auto;
-  max-width: 1480px;
+  max-width: clamp(1180px, 90vw, 1760px);
 }
 
 .page-intent-bar {
@@ -15685,7 +15685,7 @@ button.design-ilo-port:hover {
 
 .operator-surface-heading.network-workspace-heading {
   margin: 28px 0 16px;
-  max-width: 1180px;
+  max-width: clamp(960px, 74vw, 1440px);
   padding: 0 32px;
 }
 
@@ -15693,7 +15693,7 @@ button.design-ilo-port:hover {
   display: grid;
   gap: 16px;
   margin: 0 0 28px;
-  max-width: 1180px;
+  max-width: clamp(960px, 74vw, 1440px);
   padding: 0 32px;
 }
 
@@ -15784,7 +15784,7 @@ button.design-ilo-port:hover {
 
 .operator-surface-heading.server-workspace-heading {
   margin: 28px 0 16px;
-  max-width: 1180px;
+  max-width: clamp(960px, 74vw, 1440px);
   padding: 0 32px;
 }
 
@@ -15792,7 +15792,7 @@ button.design-ilo-port:hover {
   display: grid;
   gap: 16px;
   margin: 0 0 28px;
-  max-width: 1180px;
+  max-width: clamp(960px, 74vw, 1440px);
   padding: 0 32px;
 }
 
@@ -15884,7 +15884,7 @@ button.design-ilo-port:hover {
 
 .operator-surface-heading.storage-workspace-heading {
   margin: 28px 0 16px;
-  max-width: 1180px;
+  max-width: clamp(960px, 74vw, 1440px);
   padding: 0 32px;
 }
 
@@ -15892,7 +15892,7 @@ button.design-ilo-port:hover {
   display: grid;
   gap: 16px;
   margin: 0 0 28px;
-  max-width: 1180px;
+  max-width: clamp(960px, 74vw, 1440px);
   padding: 0 32px;
 }
 
@@ -15984,7 +15984,7 @@ button.design-ilo-port:hover {
 
 .operator-surface-heading.virtualization-workspace-heading {
   margin: 28px 0 16px;
-  max-width: 1180px;
+  max-width: clamp(960px, 74vw, 1440px);
   padding: 0 32px;
 }
 
@@ -15992,7 +15992,7 @@ button.design-ilo-port:hover {
   display: grid;
   gap: 16px;
   margin: 0 0 28px;
-  max-width: 1180px;
+  max-width: clamp(960px, 74vw, 1440px);
   padding: 0 32px;
 }
 
@@ -16117,7 +16117,7 @@ button.design-ilo-port:hover {
 .network-access-surface,
 .network-details {
   margin: 0 0 24px;
-  max-width: 1410px;
+  max-width: clamp(1120px, 86vw, 1680px);
   padding: 0 32px;
 }
 
@@ -16690,7 +16690,7 @@ button.design-ilo-port:hover {
 .validation-details,
 .validation-danger-zone {
   margin: 0 0 24px;
-  max-width: 1410px;
+  max-width: clamp(1120px, 86vw, 1680px);
   padding: 0 32px;
 }
 
@@ -16960,7 +16960,7 @@ button.design-ilo-port:hover {
 .storage-path-surface,
 .storage-path-details {
   margin: 0 0 24px;
-  max-width: 1410px;
+  max-width: clamp(1120px, 86vw, 1680px);
   padding: 0 32px;
 }
 
@@ -18959,10 +18959,10 @@ button.design-ilo-port:hover {
 .quick-tab.active { background: rgba(45, 212, 191, .18); border: 1px solid rgba(94, 234, 212, .3); box-shadow: none; color: #f0fdfa; font-weight: 850; }
 .content { background: #f4f6f8; grid-column: 1; grid-row: 2; min-width: 0; }
 
-.operator-surface-heading { margin: 28px 0 22px; max-width: 1410px; padding: 0 32px; }
+.operator-surface-heading { margin: 28px 0 22px; max-width: clamp(1120px, 86vw, 1680px); padding: 0 32px; }
 .operator-surface-heading h1 { color: #102238; font-size: clamp(30px, 3vw, 42px); letter-spacing: -.04em; margin: 5px 0 9px; }
 .operator-surface-heading > p:last-child { color: #5b6f86; font-size: 16px; line-height: 1.45; margin: 0; max-width: 670px; }
-.lab-defaults-form { margin: 0 0 40px; max-width: 1410px; padding: 0 32px; }
+.lab-defaults-form { margin: 0 0 40px; max-width: clamp(1120px, 86vw, 1680px); padding: 0 32px; }
 .lab-defaults-grid { display: grid; gap: 20px; grid-template-columns: minmax(0, 1fr); }
 .lab-defaults-network-card, .lab-defaults-signin-card { border-color: #d6e0e8; box-shadow: 0 8px 20px rgba(34, 58, 80, .05); }
 .lab-defaults-input-grid { display: grid; gap: 12px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
