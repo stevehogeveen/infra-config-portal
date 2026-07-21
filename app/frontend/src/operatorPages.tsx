@@ -47,6 +47,7 @@ import type {
   IloAccessSettings,
   HpeRaidPlanPreview,
   LabAddressPlan,
+  LabCredentials,
   LabProfile,
   LabProfileFeatures,
   LabProfileList,
@@ -2478,7 +2479,11 @@ function localRaidInventoryBays(discovery: HpeStorageDiscovery | null | undefine
   const seen = new Set<string>();
   return recordArray(discovery?.physical_drives)
     .map((drive, index) => {
-      const bay = asString(drive.bay_id) || asString(drive.Bay) || asString(drive.slot) || asString(drive.Id) || String(index + 1);
+      // Only trust a real bay/slot location here. drive.Id is a Redfish
+      // resource identifier (often a large, arbitrary integer), not a
+      // physical bay number — falling back to it renders nonsense like
+      // "Bay 64518" for drives with no known slot.
+      const bay = asString(drive.bay_id) || asString(drive.Bay) || asString(drive.slot) || String(index + 1);
       const cleanBay = bay.trim();
       if (!cleanBay || seen.has(cleanBay)) return null;
       seen.add(cleanBay);
@@ -7007,6 +7012,7 @@ function MapDeviceEditor({
         </button>
       </div>
       <div className="map-drawer-body">
+        <DeviceCredentialsPanel groupId={CREDENTIAL_GROUP_BY_DEVICE_KIND[node.kind]} />
         {node.kind === "ilo" && (
           <IloAccessSettingsPanel
             initialHost={edit.iloInitial}
@@ -7046,6 +7052,119 @@ function MapDeviceEditor({
         </div>
       </div>
     </aside>
+  );
+}
+
+const CREDENTIAL_GROUP_BY_DEVICE_KIND: Record<MapDeviceKind, string> = {
+  network: "cisco",
+  ilo: "ilo",
+  esxi: "esxi",
+  storage: "netapp",
+  virtualization: "vcenter"
+};
+
+const CREDENTIAL_FIELD_LABELS: Record<string, string> = {
+  ilo_username: "Username",
+  ilo_password: "Password",
+  esxi_username: "Username",
+  esxi_password: "Password",
+  cisco_username: "Username",
+  cisco_password: "Password",
+  cisco_enable_password: "Enable secret",
+  netapp_username: "Username",
+  netapp_password: "Password",
+  vcenter_username: "Username",
+  vcenter_password: "Password"
+};
+
+function DeviceCredentialsPanel({ groupId }: { groupId?: string }) {
+  const [credentials, setCredentials] = useState<LabCredentials | null>(null);
+  const [edit, setEdit] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let ignore = false;
+    setLoading(true);
+    safeApi(api.labCredentials, null).then((result) => {
+      if (ignore) return;
+      setCredentials(result as LabCredentials | null);
+      const group = (result as LabCredentials | null)?.groups.find((item) => item.id === groupId);
+      const next: Record<string, string> = {};
+      group?.fields.forEach((field) => {
+        if (!field.is_secret && field.value) next[field.field] = field.value;
+      });
+      setEdit(next);
+      setLoading(false);
+    });
+    return () => {
+      ignore = true;
+    };
+  }, [groupId]);
+
+  const group = credentials?.groups.find((item) => item.id === groupId);
+  if (!groupId || !group) return null;
+
+  function update(field: string, value: string) {
+    setEdit((current) => ({ ...current, [field]: value }));
+    setMessage("");
+  }
+
+  async function save() {
+    setBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      const payload = Object.fromEntries(Object.entries(edit).filter(([, value]) => value.trim() !== ""));
+      const result = await api.updateLabCredentials(payload);
+      setCredentials(result);
+      setMessage("Saved. Backend is restarting to apply — this takes a few seconds.");
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="map-field-group device-credentials-group">
+      <div className="map-field-group-head">
+        <h4>Sign-in</h4>
+        <small>{group.hint}</small>
+        <span className={`map-status-pill ${group.configured ? "ready" : "unknown"}`}>
+          {group.configured ? "Configured" : "Not set"}
+        </span>
+      </div>
+      {loading ? (
+        <p className="device-credentials-loading">Loading sign-in status…</p>
+      ) : (
+        <>
+          <div className="map-field-grid">
+            {group.fields.map((field) => (
+              <label key={field.field}>
+                <span>{CREDENTIAL_FIELD_LABELS[field.field] || field.field}</span>
+                <input
+                  autoComplete={field.is_secret ? "new-password" : "username"}
+                  onChange={(event) => update(field.field, event.target.value)}
+                  placeholder={field.is_secret && field.configured ? "•••••••• (saved)" : ""}
+                  type={field.is_secret ? "password" : "text"}
+                  value={edit[field.field] ?? ""}
+                />
+              </label>
+            ))}
+          </div>
+          <div className="device-credentials-actions">
+            {message && <span className="map-drawer-msg">{message}</span>}
+            {error && <span className="map-drawer-msg is-error">{error}</span>}
+            <button className="map-drawer-save" disabled={busy} onClick={() => void save()} type="button">
+              {busy ? "Saving…" : "Save sign-in"}
+            </button>
+          </div>
+        </>
+      )}
+    </div>
   );
 }
 

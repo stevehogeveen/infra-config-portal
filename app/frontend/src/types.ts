@@ -297,6 +297,49 @@ export type LabSafetySettings = {
   next_safe_action: string;
 };
 
+export type LabCredentialField = {
+  field: string;
+  env_var: string;
+  is_secret: boolean;
+  configured: boolean;
+  value: string | null;
+};
+
+export type LabCredentialGroup = {
+  id: string;
+  label: string;
+  hint: string;
+  fields: LabCredentialField[];
+  configured: boolean;
+};
+
+export type LabCredentials = {
+  groups: LabCredentialGroup[];
+  store_path: string;
+  restart_required: boolean;
+  next_safe_action: string;
+};
+
+export type LabCredentialsWrite = Partial<{
+  ilo_username: string;
+  ilo_password: string;
+  esxi_username: string;
+  esxi_password: string;
+  cisco_username: string;
+  cisco_password: string;
+  cisco_enable_password: string;
+  netapp_username: string;
+  netapp_password: string;
+  vcenter_username: string;
+  vcenter_password: string;
+  snmp_community: string;
+  snmp_v3_username: string;
+  snmp_v3_auth_protocol: string;
+  snmp_v3_auth_password: string;
+  snmp_v3_priv_protocol: string;
+  snmp_v3_priv_password: string;
+}>;
+
 export type LabSafetySettingsWrite = {
   lab_environment?: "isolated-real-lab" | null;
   lab_acknowledge_real_hardware?: boolean | null;

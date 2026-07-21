@@ -1418,6 +1418,51 @@ class LabSafetySettingsWrite(BaseModel):
     device_reconfiguration_confirmation_phrase: str | None = None
 
 
+class LabCredentialFieldRead(BaseModel):
+    field: str
+    env_var: str
+    is_secret: bool
+    configured: bool
+    value: str | None = None
+
+
+class LabCredentialGroupRead(BaseModel):
+    id: str
+    label: str
+    hint: str
+    fields: list[LabCredentialFieldRead]
+    configured: bool
+
+
+class LabCredentialsRead(BaseModel):
+    groups: list[LabCredentialGroupRead]
+    store_path: str
+    restart_required: bool
+    next_safe_action: str
+
+
+class LabCredentialsWrite(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    ilo_username: str | None = None
+    ilo_password: str | None = None
+    esxi_username: str | None = None
+    esxi_password: str | None = None
+    cisco_username: str | None = None
+    cisco_password: str | None = None
+    cisco_enable_password: str | None = None
+    netapp_username: str | None = None
+    netapp_password: str | None = None
+    vcenter_username: str | None = None
+    vcenter_password: str | None = None
+    snmp_community: str | None = None
+    snmp_v3_username: str | None = None
+    snmp_v3_auth_protocol: str | None = None
+    snmp_v3_auth_password: str | None = None
+    snmp_v3_priv_protocol: str | None = None
+    snmp_v3_priv_password: str | None = None
+
+
 class CiscoSetupReadinessRead(BaseModel):
     provider_id: str
     phase: str

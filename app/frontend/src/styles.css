@@ -8687,6 +8687,25 @@ th.ui-compact-table-cell {
 
 .map-field-group:last-child { border-bottom: none; }
 
+.device-credentials-group { background: var(--surface-tint); }
+
+.map-field-group-head .map-status-pill { margin-left: auto; }
+
+.device-credentials-loading {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  margin: 0;
+}
+
+.device-credentials-actions {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  margin-top: 10px;
+}
+
 .map-field-group-head {
   align-items: baseline;
   display: flex;

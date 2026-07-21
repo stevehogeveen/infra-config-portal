@@ -1950,7 +1950,11 @@ def _bay_id(drive: dict[str, Any]) -> str:
     location = drive.get("Location")
     if isinstance(location, str):
         return location
-    return str(drive.get("Id") or drive.get("Name") or "")
+    # No real bay/slot location is known for this drive. Do not fall back to
+    # Id/Name here: those are Redfish resource identifiers (often large,
+    # arbitrary integers), not physical bay numbers, and showing one as
+    # "Bay 64518" misleads the operator into thinking it's a slot position.
+    return ""
 
 
 def _minimum_drives(raid_level: str) -> int:

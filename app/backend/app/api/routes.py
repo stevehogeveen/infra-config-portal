@@ -61,6 +61,8 @@ from app.schemas import (
     IloSetupIntentWrite,
     IloSetupPlanPreviewRead,
     IloUpgradeReadinessRead,
+    LabCredentialsRead,
+    LabCredentialsWrite,
     LabSafetySettingsRead,
     LabSafetySettingsWrite,
     LabValidationSummaryRead,
@@ -177,6 +179,11 @@ from app.services.provider_mode_settings import (
     ProviderModeSettingsError,
     read_provider_mode_settings,
     update_provider_mode_settings,
+)
+from app.services.lab_credentials import (
+    LabCredentialsError,
+    read_lab_credentials_status,
+    update_lab_credentials,
 )
 from app.services.lab_safety_settings import (
     LabSafetySettingsError,
@@ -746,6 +753,33 @@ def update_lab_safety_settings_route(
         event_type="settings.lab_safety.updated",
         message="Lab safety runtime settings were updated.",
         data={"changed_fields": changed},
+    )
+    session.commit()
+    return result
+
+
+@router.get("/lab/credentials", response_model=LabCredentialsRead)
+def read_lab_credentials_route() -> LabCredentialsRead:
+    return read_lab_credentials_status()
+
+
+@router.post("/lab/credentials", response_model=LabCredentialsRead)
+def update_lab_credentials_route(
+    payload: LabCredentialsWrite,
+    fastapi_request: FastAPIRequest,
+    session: Session = Depends(get_session),
+) -> LabCredentialsRead:
+    update_payload = payload.model_dump(exclude_none=True)
+    try:
+        result = update_lab_credentials(update_payload)
+    except LabCredentialsError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    record_audit_event(
+        session,
+        actor=get_current_actor(fastapi_request),
+        event_type="lab.credentials.updated",
+        message="Lab device credentials were updated.",
+        data={"changed_fields": sorted(update_payload.keys())},
     )
     session.commit()
     return result

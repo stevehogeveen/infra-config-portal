@@ -29,6 +29,8 @@ import type {
   IloSetupIntentWrite,
   IloSetupPlanPreview,
   IloUpgradeReadiness,
+  LabCredentials,
+  LabCredentialsWrite,
   LabSafetySettings,
   LabSafetySettingsWrite,
   LabBuildPlan,
@@ -475,6 +477,12 @@ export const api = {
   updateLabSafetySettings: (payload: LabSafetySettingsWrite) =>
     apiRequest<LabSafetySettings>("/api/v1/settings/lab-safety", {
       method: "PUT",
+      body: payload
+    }),
+  labCredentials: () => apiRequest<LabCredentials>("/api/v1/lab/credentials"),
+  updateLabCredentials: (payload: LabCredentialsWrite) =>
+    apiRequest<LabCredentials>("/api/v1/lab/credentials", {
+      method: "POST",
       body: payload
     }),
   controlActions: () => apiRequest<ControlActionCatalog>("/api/v1/control/actions"),
