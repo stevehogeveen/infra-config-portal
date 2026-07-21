@@ -1096,6 +1096,13 @@ class IloAccessSettingsRead(BaseModel):
     verify_tls: bool = True
     env_path: str
     updated_at: str | None = None
+    last_probe_status: str = "not_checked"
+    last_probe_time: str | None = None
+    last_probe_message: str | None = None
+    last_probe_target_source: str | None = None
+    last_probe_target_matches_access_host: bool = False
+    last_probe_target_matches_configured_candidates: bool = False
+    last_probe_target_fingerprint_present: bool = False
     next_safe_action: str
 
 

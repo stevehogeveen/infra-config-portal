@@ -8795,6 +8795,104 @@ th.ui-compact-table-cell {
 
 .map-ilo-access-actions a:hover { text-decoration: underline; }
 
+.ilo-first-contact-proof {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  margin-top: 14px;
+  padding: 12px;
+}
+
+.ilo-first-contact-proof.is-ready {
+  background: rgba(22, 163, 74, 0.08);
+  border-color: rgba(22, 163, 74, 0.28);
+}
+
+.ilo-first-contact-proof.is-blocked {
+  background: rgba(220, 38, 38, 0.08);
+  border-color: rgba(220, 38, 38, 0.28);
+}
+
+.ilo-first-contact-proof.is-unknown {
+  background: rgba(100, 116, 139, 0.08);
+  border-color: rgba(100, 116, 139, 0.22);
+}
+
+.ilo-proof-route {
+  align-items: center;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: 1fr 18px 1fr 18px 1fr;
+}
+
+.ilo-proof-route span {
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 12px;
+  min-width: 0;
+  padding: 8px;
+}
+
+.ilo-proof-route small,
+.ilo-proof-facts span {
+  color: var(--muted);
+  display: block;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.ilo-proof-route strong,
+.ilo-proof-facts strong {
+  color: var(--ink);
+  display: block;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.ilo-proof-route i {
+  background: currentColor;
+  color: var(--muted);
+  height: 2px;
+  position: relative;
+}
+
+.ilo-proof-route i::after {
+  border-bottom: 4px solid transparent;
+  border-left: 5px solid currentColor;
+  border-top: 4px solid transparent;
+  content: "";
+  position: absolute;
+  right: -1px;
+  top: -3px;
+}
+
+.ilo-proof-facts {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-top: 10px;
+}
+
+.ilo-first-contact-proof p {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.4;
+  margin: 10px 0 0;
+}
+
+@media (max-width: 520px) {
+  .ilo-proof-route,
+  .ilo-proof-facts {
+    grid-template-columns: 1fr;
+  }
+
+  .ilo-proof-route i {
+    display: none;
+  }
+}
+
 .map-drawer-foot {
   align-items: center;
   border-top: 1px solid var(--border);

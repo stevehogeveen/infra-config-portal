@@ -107,8 +107,12 @@ def test_ilo_reachability_action_writes_live_artifacts(monkeypatch, tmp_path: Pa
     monkeypatch.setattr(workflow_action_runner, "CODEX_RUN_DIR", tmp_path)
     monkeypatch.setattr(workflow_action_runner, "ILO_REACHABILITY_REPORT", tmp_path / "ilo-real-run-report.md")
     monkeypatch.setattr(workflow_action_runner, "ILO_REACHABILITY_JSON", tmp_path / "ilo-real-run-redacted.json")
+    configs: list[object] = []
 
     class FakeIloRedfishAdapter:
+        def __init__(self, config=None) -> None:  # noqa: ANN001
+            configs.append(config)
+
         def probe(self) -> dict[str, object]:
             return {
                 "provider_id": "ilo-redfish",
@@ -126,9 +130,11 @@ def test_ilo_reachability_action_writes_live_artifacts(monkeypatch, tmp_path: Pa
 
     monkeypatch.setattr(workflow_action_runner, "IloRedfishAdapter", FakeIloRedfishAdapter)
 
-    result = run_workflow_action("ilo.reachability")
+    result = run_workflow_action("ilo.reachability", payload={"ilo_host": "10.10.8.110"})
 
     assert result["status"] == "completed"
+    assert configs[-1].host == "10.10.8.110"
+    assert configs[-1].host_source == "operator_first_contact"
     assert (tmp_path / "ilo-real-run-report.md").exists()
     assert (tmp_path / "ilo-real-run-redacted.json").exists()
     assert any(str(path).endswith("ilo-real-run-redacted.json") for path in result["report_artifacts"])

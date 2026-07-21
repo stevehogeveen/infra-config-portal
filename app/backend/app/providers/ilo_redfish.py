@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlparse
@@ -121,6 +122,19 @@ class IloRedfishAdapter:
     def health(self) -> ProviderStatus:
         last_result, last_time = get_probe_result(PROVIDER_ID)
         missing_fields = self.config.missing_fields
+        last_probe_status = _probe_status(last_result)
+        last_probe_target_matches_candidates = _probe_target_matches_candidates(
+            last_result,
+            self.config.target_candidates,
+        )
+        last_probe_target_matches_active_profile = _probe_target_matches_host(
+            last_result,
+            _active_saved_profile_ilo_host(),
+        )
+        last_probe_target_matches_runtime_host = _probe_target_matches_host(
+            last_result,
+            settings.ilo_test_host,
+        )
         policy = current_lab_action_policy(self.provider_mode)
         blockers = [
             f"Missing local iLO configuration: {', '.join(missing_fields)}."
@@ -137,11 +151,21 @@ class IloRedfishAdapter:
                 "local-lab-readwrite permits explicitly allowlisted real-lab workflow categories only."
             )
 
-        status = "missing-config" if missing_fields else "ready"
+        status = "missing-config" if missing_fields else "not_checked"
         if not missing_fields and self.provider_mode not in REAL_CONTACT_MODES:
             status = "configured"
-        if not missing_fields and self.provider_mode in REAL_CONTACT_MODES and blockers:
+        elif not missing_fields and self.provider_mode in REAL_CONTACT_MODES and blockers:
             status = "blocked"
+        elif not missing_fields and self.provider_mode in REAL_CONTACT_MODES:
+            status = _health_status_from_probe(last_result, last_probe_target_matches_candidates)
+
+        if status in {"blocked", "failed"} and isinstance(last_result, dict):
+            probe_blockers = [
+                str(item)
+                for item in last_result.get("blockers", [])
+                if isinstance(item, str) and item.strip()
+            ]
+            blockers.extend(item for item in probe_blockers if item not in blockers)
 
         probe_enabled = (
             self.provider_mode in REAL_CONTACT_MODES
@@ -165,10 +189,7 @@ class IloRedfishAdapter:
                 "redfish-system-summary",
                 "redfish-chassis-summary",
             ],
-            message=(
-                "Local iLO configuration is checked without contacting Redfish; "
-                "the probe button performs an explicit read-only Redfish inventory check."
-            ),
+            message=_health_message_from_probe(status, last_result),
             configuration={
                 "host_configured": bool(self.config.host),
                 "host_source": self.config.host_source,
@@ -183,6 +204,18 @@ class IloRedfishAdapter:
                 "timeout_seconds": self.config.timeout_seconds,
                 "missing_fields": missing_fields,
                 "lab_policy": policy.status_summary(),
+                "last_probe_status": last_probe_status or "not_checked",
+                "last_probe_target_source": (
+                    last_result.get("target_source")
+                    if isinstance(last_result, dict)
+                    else None
+                ),
+                "last_probe_target_fingerprint_present": bool(
+                    isinstance(last_result, dict) and last_result.get("target_fingerprint")
+                ),
+                "last_probe_target_matches_configured_candidates": last_probe_target_matches_candidates,
+                "last_probe_target_matches_active_profile": last_probe_target_matches_active_profile,
+                "last_probe_target_matches_runtime_host": last_probe_target_matches_runtime_host,
             },
             blockers=blockers,
             warnings=warnings,
@@ -277,6 +310,7 @@ class IloRedfishAdapter:
             "message": "Read-only Redfish probe completed.",
             "base_url": _redacted_base_url(base_url),
             "target_source": host_source,
+            "target_fingerprint": ilo_target_fingerprint(host),
             "candidate_index": candidate_index,
             "target_candidate_count": candidate_count,
             "tls_verify": self.config.verify_tls,
@@ -536,6 +570,7 @@ def _candidate_probe_summary(result: dict[str, Any]) -> dict[str, Any]:
     return {
         "candidate_index": result.get("candidate_index"),
         "target_source": result.get("target_source"),
+        "target_fingerprint": result.get("target_fingerprint"),
         "status": result.get("status"),
         "classification": _probe_classification(result),
         "request_count": len(requests) if isinstance(requests, list) else 0,
@@ -576,6 +611,73 @@ def _preserve_legacy_identity(
     )
     preserved["warnings"] = warnings
     return preserved
+
+
+def _probe_status(result: dict[str, Any] | None) -> str:
+    if not isinstance(result, dict):
+        return ""
+    return str(result.get("status") or "").strip().lower()
+
+
+def _health_status_from_probe(
+    result: dict[str, Any] | None,
+    target_matches_candidates: bool,
+) -> str:
+    status = _probe_status(result)
+    if not status:
+        return "not_checked"
+    if status == "ok":
+        return "ready" if target_matches_candidates else "target_mismatch"
+    if status in {"blocked", "failed"}:
+        return status
+    return status
+
+
+def _health_message_from_probe(status: str, result: dict[str, Any] | None) -> str:
+    result_message = str(result.get("message") or "").strip() if isinstance(result, dict) else ""
+    if status == "ready":
+        return result_message or "Last read-only iLO Redfish probe proved the current target."
+    if status == "target_mismatch":
+        return "Last iLO proof is not bound to the current target. Run Check this iLO IP again."
+    if status in {"blocked", "failed"}:
+        return f"Last iLO read-only check {status}: {result_message or 'review blockers.'}"
+    if status == "not_checked":
+        return "iLO access is configured, but no read-only Redfish probe has proved this target yet."
+    if status == "missing-config":
+        return "Enter iLO host, username, and password before running the read-only Redfish check."
+    if status == "configured":
+        return (
+            "Local iLO configuration is present without contacting Redfish; "
+            "run an explicit read-only check before trusting the map."
+        )
+    return result_message or "Run an explicit read-only iLO check before trusting the map."
+
+
+def _probe_target_matches_candidates(
+    result: dict[str, Any] | None,
+    candidates: list[dict[str, str]],
+) -> bool:
+    target_fingerprint = str(result.get("target_fingerprint") or "") if isinstance(result, dict) else ""
+    if not target_fingerprint:
+        return False
+    return target_fingerprint in {
+        fingerprint
+        for candidate in candidates
+        if (fingerprint := ilo_target_fingerprint(candidate.get("host")))
+    }
+
+
+def _probe_target_matches_host(result: dict[str, Any] | None, host: str | None) -> bool:
+    target_fingerprint = str(result.get("target_fingerprint") or "") if isinstance(result, dict) else ""
+    host_fingerprint = ilo_target_fingerprint(host)
+    return bool(target_fingerprint and host_fingerprint and target_fingerprint == host_fingerprint)
+
+
+def ilo_target_fingerprint(host: str | None) -> str | None:
+    clean_host = _clean_target_host(host)
+    if not clean_host:
+        return None
+    return hashlib.sha256(clean_host.casefold().encode("utf-8")).hexdigest()[:16]
 
 
 def _try_next_ilo_candidate(result: dict[str, Any]) -> bool:

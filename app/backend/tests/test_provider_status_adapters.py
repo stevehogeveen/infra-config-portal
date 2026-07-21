@@ -2481,6 +2481,7 @@ def test_hpe_raid_pending_blocks_reset_when_smartstorage_reads_are_unauthorized(
 
 
 def test_ilo_readonly_status_is_unchanged_by_management_flags(monkeypatch) -> None:
+    clear_probe_results()
     _allow_readonly_ilo_lab(monkeypatch)
     adapter = IloRedfishAdapter(
         provider_mode="local-readonly",
@@ -2495,13 +2496,77 @@ def test_ilo_readonly_status_is_unchanged_by_management_flags(monkeypatch) -> No
 
     status = adapter.health()
 
-    assert status.status == "ready"
+    assert status.status == "not_checked"
+    assert "no read-only Redfish probe has proved this target" in status.message
     assert status.safe_actions[0].enabled is True
     assert status.safe_actions[0].label == "Read-Only Redfish Inventory"
     assert (
         status.safe_actions[0].reason
         == "Run read-only endpoint detection, authentication, and Redfish inventory checks."
     )
+
+
+def test_ilo_health_uses_failed_cached_probe_status(monkeypatch) -> None:
+    clear_probe_results()
+    _allow_readonly_ilo_lab(monkeypatch)
+    record_probe_result(
+        "ilo-redfish",
+        {
+            "provider_id": "ilo-redfish",
+            "status": "failed",
+            "message": "iLO target is unreachable.",
+            "target_source": "operator_first_contact",
+            "target_fingerprint": ilo_redfish_module.ilo_target_fingerprint("192.0.2.202"),
+            "blockers": ["Check routing."],
+        },
+    )
+    adapter = IloRedfishAdapter(
+        provider_mode="local-readonly",
+        config=IloRedfishConfig(
+            host="192.0.2.202",
+            username="local-admin",
+            password="super-secret-password",
+            verify_tls=False,
+            timeout_seconds=1.0,
+        ),
+    )
+
+    status = adapter.health()
+
+    assert status.status == "failed"
+    assert "iLO target is unreachable" in status.message
+    assert "Check routing." in status.blockers
+    assert status.configuration["last_probe_target_matches_configured_candidates"] is True
+
+
+def test_ilo_health_rejects_successful_probe_without_current_target_fingerprint(monkeypatch) -> None:
+    clear_probe_results()
+    _allow_readonly_ilo_lab(monkeypatch)
+    record_probe_result(
+        "ilo-redfish",
+        {
+            "provider_id": "ilo-redfish",
+            "status": "ok",
+            "message": "Read-only Redfish probe completed.",
+            "target_source": "active_lab_profile",
+        },
+    )
+    adapter = IloRedfishAdapter(
+        provider_mode="local-readonly",
+        config=IloRedfishConfig(
+            host="192.0.2.202",
+            username="local-admin",
+            password="super-secret-password",
+            verify_tls=False,
+            timeout_seconds=1.0,
+        ),
+    )
+
+    status = adapter.health()
+
+    assert status.status == "target_mismatch"
+    assert status.configuration["last_probe_target_fingerprint_present"] is False
+    assert status.configuration["last_probe_target_matches_configured_candidates"] is False
 
 
 def test_ilo_config_prefers_active_lab_profile_host(monkeypatch) -> None:

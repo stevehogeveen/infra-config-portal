@@ -6,7 +6,8 @@ from pathlib import Path
 from typing import Any
 
 from app.core.config import settings
-from app.providers.ilo_redfish import IloRedfishConfig
+from app.providers.ilo_redfish import IloRedfishConfig, ilo_target_fingerprint
+from app.providers.probe_cache import get_probe_result
 from app.services.env_utils import bool_value
 from app.services.json_file_store import write_text_value
 from app.services.path_utils import display_path, path_exists
@@ -26,17 +27,20 @@ class IloAccessSettingsError(ValueError):
 
 def read_ilo_access_settings() -> dict[str, Any]:
     config = IloRedfishConfig.from_settings()
+    host, host_source = _access_host(config)
+    fallback_hosts = _fallback_hosts_for_access(config, host)
     return {
         "provider_id": "ilo-redfish",
-        "host": config.host,
-        "host_source": config.host_source,
-        "fallback_hosts": list(config.fallback_hosts),
+        "host": host,
+        "host_source": host_source,
+        "fallback_hosts": fallback_hosts,
         "username": config.username,
         "username_configured": bool(config.username),
         "password_configured": bool(config.password),
         "verify_tls": bool(config.verify_tls),
         "env_path": display_path(_env_path(), REPO_ROOT),
         "updated_at": None,
+        **_last_probe_summary(host, config),
         "next_safe_action": _next_safe_action(config),
     }
 
@@ -79,6 +83,60 @@ def _next_safe_action(config: IloRedfishConfig) -> str:
     if not config.username or not config.password:
         return "Enter the iLO username/UID and password, then save credentials locally."
     return "Review iLO access settings, then run iLO Inventory Read."
+
+
+def _access_host(config: IloRedfishConfig) -> tuple[str | None, str]:
+    runtime_host = _clean_optional(os.getenv(ENV_KEYS["host"]) or settings.ilo_test_host)
+    if runtime_host:
+        return runtime_host, "runtime_env"
+    return config.host, config.host_source
+
+
+def _fallback_hosts_for_access(config: IloRedfishConfig, host: str | None) -> list[str]:
+    seen = {host.casefold()} if host else set()
+    fallbacks: list[str] = []
+    for candidate in config.target_candidates:
+        candidate_host = _clean_optional(candidate.get("host"))
+        if not candidate_host or candidate_host.casefold() in seen:
+            continue
+        seen.add(candidate_host.casefold())
+        fallbacks.append(candidate_host)
+    return fallbacks
+
+
+def _last_probe_summary(host: str | None, config: IloRedfishConfig) -> dict[str, Any]:
+    result, checked_at = get_probe_result("ilo-redfish")
+    if not isinstance(result, dict):
+        return {
+            "last_probe_status": "not_checked",
+            "last_probe_time": None,
+            "last_probe_message": None,
+            "last_probe_target_source": None,
+            "last_probe_target_matches_access_host": False,
+            "last_probe_target_matches_configured_candidates": False,
+            "last_probe_target_fingerprint_present": False,
+        }
+    target_fingerprint = _clean_optional(result.get("target_fingerprint"))
+    candidate_fingerprints = {
+        fingerprint
+        for candidate in config.target_candidates
+        if (fingerprint := ilo_target_fingerprint(candidate.get("host")))
+    }
+    return {
+        "last_probe_status": _clean_optional(result.get("status")) or "unknown",
+        "last_probe_time": checked_at,
+        "last_probe_message": _clean_optional(result.get("message")),
+        "last_probe_target_source": _clean_optional(result.get("target_source")),
+        "last_probe_target_matches_access_host": bool(
+            target_fingerprint
+            and host
+            and target_fingerprint == ilo_target_fingerprint(host)
+        ),
+        "last_probe_target_matches_configured_candidates": bool(
+            target_fingerprint and target_fingerprint in candidate_fingerprints
+        ),
+        "last_probe_target_fingerprint_present": bool(target_fingerprint),
+    }
 
 
 def _clean_optional(value: Any) -> str | None:

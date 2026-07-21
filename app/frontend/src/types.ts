@@ -260,6 +260,13 @@ export type IloAccessSettings = {
   verify_tls: boolean;
   env_path: string;
   updated_at: string | null;
+  last_probe_status: string;
+  last_probe_time: string | null;
+  last_probe_message: string | null;
+  last_probe_target_source: string | null;
+  last_probe_target_matches_access_host: boolean;
+  last_probe_target_matches_configured_candidates: boolean;
+  last_probe_target_fingerprint_present: boolean;
   next_safe_action: string;
 };
 
@@ -1133,6 +1140,8 @@ export type WorkflowActionRunRequest = {
   cisco_commands?: string[];
   confirmation_phrase?: string;
   confirmed_gates?: string[];
+  host?: string;
+  ilo_host?: string;
 };
 
 export type LabBuildStepStatus =

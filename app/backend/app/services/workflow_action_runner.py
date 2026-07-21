@@ -5,7 +5,7 @@ import os
 import signal
 import subprocess
 import uuid
-from dataclasses import asdict, is_dataclass
+from dataclasses import asdict, is_dataclass, replace
 from datetime import UTC, datetime
 from pathlib import PureWindowsPath
 from typing import Any
@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.providers.cisco_console import CiscoConsoleAdapter
 from app.providers.esxi_readonly import EsxiReadonlyAdapter
-from app.providers.ilo_redfish import IloRedfishAdapter
+from app.providers.ilo_redfish import IloRedfishAdapter, IloRedfishConfig
 from app.providers.redaction import redact_sensitive
 from app.services.build_verification import get_lab_build_verification
 from app.services.firmware_compliance import get_firmware_compliance, get_firmware_inventory, write_waiver_report
@@ -311,7 +311,7 @@ def _api_action_payload(
     if action_id in {"cisco.firmware-inventory", "ilo.firmware-inventory"}:
         return get_firmware_inventory(refresh_live=False)
     if action_id == "ilo.reachability":
-        payload = IloRedfishAdapter().probe()
+        payload = IloRedfishAdapter(config=_ilo_config_for_payload(payload)).probe()
         return _write_ilo_reachability_artifacts(payload)
     if action_id == "ilo.auth":
         return get_ilo_baseline_readiness()
@@ -523,6 +523,32 @@ def _write_ilo_reachability_artifacts(payload: dict[str, Any]) -> dict[str, Any]
         ]
     )
     return sanitized
+
+
+def _ilo_config_for_payload(payload: dict[str, Any]) -> IloRedfishConfig:
+    config = IloRedfishConfig.from_settings()
+    requested_host = _string_or_none(payload.get("ilo_host") or payload.get("host"))
+    if not requested_host:
+        return config
+
+    fallback_hosts: list[str] = []
+    fallback_sources: list[str] = []
+    seen = {requested_host.casefold()}
+    for candidate in config.target_candidates:
+        host = _string_or_none(candidate.get("host"))
+        if not host or host.casefold() in seen:
+            continue
+        seen.add(host.casefold())
+        fallback_hosts.append(host)
+        fallback_sources.append(str(candidate.get("source") or "fallback"))
+
+    return replace(
+        config,
+        host=requested_host,
+        host_source="operator_first_contact",
+        fallback_hosts=tuple(fallback_hosts),
+        fallback_host_sources=tuple(fallback_sources),
+    )
 
 
 def _write_hpe_raid_discovery_artifact() -> dict[str, Any]:

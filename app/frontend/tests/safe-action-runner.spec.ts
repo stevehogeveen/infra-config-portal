@@ -1148,6 +1148,31 @@ test("overview map ignores stale positive iLO validation when provider access is
   await expect(iloLink).toHaveClass(/is-unreachable/);
 });
 
+test("overview map keeps iLO locked when provider proof target differs", async ({ page }) => {
+  const mismatchedProviders = providerStatuses().map((provider) =>
+    provider.id === "ilo-redfish"
+      ? {
+          ...provider,
+          configuration: {
+            ...provider.configuration,
+            last_probe_target_matches_active_profile: false,
+            last_probe_target_matches_configured_candidates: true,
+            last_probe_status: "ok"
+          },
+          status: "ready"
+        }
+      : provider
+  );
+  await page.route("**/api/v1/providers/status", (route) => json(route, mismatchedProviders));
+  await page.route("**/api/v1/lab/validation", (route) => json(route, labValidationNotChecked()));
+
+  await page.goto("/overview");
+
+  const topology = page.getByRole("region", { name: "Lab topology" });
+  await expect(topology.getByRole("button", { name: "HPE iLO, Not checked" })).toBeVisible();
+  await expect(topology.locator("[aria-label='Cisco switch to HPE iLO not reachable']")).toHaveClass(/is-unreachable/);
+});
+
 test("overview iLO drawer puts first contact before planned config and runs the standalone access check", async ({ page }) => {
   await page.goto("/overview");
 
@@ -1187,7 +1212,8 @@ test("overview iLO drawer puts first contact before planned config and runs the 
     username: "Administrator",
     verify_tls: false
   });
-  await accessCheck;
+  const accessCheckPayload = (await accessCheck).postDataJSON() as Record<string, unknown>;
+  expect(accessCheckPayload).toMatchObject({ ilo_host: "192.168.1.201" });
   await expect(firstContact).toContainText("iLO access check finished");
 });
 
@@ -5127,7 +5153,14 @@ function providerStatus(id: string, name: string, kind: string, status: string) 
     blockers: [],
     capabilities: [],
     checked_at: checkedAt,
-    configuration: {},
+    configuration: id === "ilo-redfish"
+      ? {
+          last_probe_status: "ok",
+          last_probe_target_fingerprint_present: true,
+          last_probe_target_matches_active_profile: true,
+          last_probe_target_matches_configured_candidates: true
+        }
+      : {},
     disabled_actions: [],
     discovery: null,
     evidence_artifacts: [],
@@ -5395,6 +5428,13 @@ function iloAccessSettings(overrides: Record<string, unknown> = {}) {
     fallback_hosts: ["192.168.1.201"],
     host: "192.168.1.201",
     host_source: "active_lab_profile",
+    last_probe_message: "Read-only Redfish probe completed.",
+    last_probe_status: "ok",
+    last_probe_target_fingerprint_present: true,
+    last_probe_target_matches_access_host: true,
+    last_probe_target_matches_configured_candidates: true,
+    last_probe_target_source: "active_lab_profile",
+    last_probe_time: checkedAt,
     next_safe_action: "Run iLO Inventory Read to refresh live iLO reachability and storage inventory.",
     password_configured: true,
     provider_id: "ilo-redfish",

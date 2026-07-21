@@ -7265,8 +7265,10 @@ function IloAccessSettingsPanel({
     try {
       const saved = await persistAccessSettings();
       if (!saved) return;
+      const targetHost = saved.host || host.trim() || fallbackHost;
       setMessage("Running read-only iLO access check...");
-      const run = await api.runWorkflowAction("ilo.reachability");
+      const run = await api.runWorkflowAction("ilo.reachability", { ilo_host: targetHost });
+      await loadAccessSettings();
       await onReload?.();
       setMessage(`${displayStatus(asString(run.status) || "completed")}: iLO access check finished. Map refreshed from live evidence.`);
     } catch (err) {
@@ -7277,6 +7279,17 @@ function IloAccessSettingsPanel({
   }
 
   const openHost = host.trim() || fallbackHost;
+  const proofStatus = asString(settingsState?.last_probe_status) || "not_checked";
+  const proofMatchesAccessHost = settingsState?.last_probe_target_matches_access_host === true;
+  const proofAllowsMap = statusIsAccessible(proofStatus) && proofMatchesAccessHost;
+  const proofTone = proofAllowsMap ? "ready" : proofStatus === "not_checked" ? "unknown" : "blocked";
+  const proofMessage = proofAllowsMap
+    ? "This exact iLO target has fresh proof, so the map may turn green."
+    : proofStatus === "not_checked"
+      ? "No iLO proof is bound to this target yet."
+      : proofMatchesAccessHost
+        ? "The last iLO check reached this target but did not complete successfully."
+        : "The last iLO proof is for a different or unknown target. The map stays locked.";
 
   return (
     <section className="map-field-group map-ilo-access" aria-label="iLO access credentials">
@@ -7335,6 +7348,30 @@ function IloAccessSettingsPanel({
         <button className="map-drawer-save" disabled={busy || checking || loading} onClick={() => void runIloAccessCheck()} type="button">
           {checking ? "Checking iLO..." : "Check this iLO IP"}
         </button>
+      </div>
+      <div className={`ilo-first-contact-proof is-${proofTone}`} aria-label="iLO first-contact proof">
+        <div className="ilo-proof-route" aria-label="iLO proof route">
+          <span>
+            <small>Target to check</small>
+            <strong>{openHost || "Not set"}</strong>
+          </span>
+          <i aria-hidden="true" />
+          <span>
+            <small>Last evidence</small>
+            <strong>{displayStatus(proofStatus)}</strong>
+          </span>
+          <i aria-hidden="true" />
+          <span>
+            <small>Map permission</small>
+            <strong>{proofAllowsMap ? "May go green" : "Map locked"}</strong>
+          </span>
+        </div>
+        <div className="ilo-proof-facts" aria-label="iLO proof facts">
+          <span>Planned final iLO: <strong>{plannedHost || "Not planned"}</strong></span>
+          <span>Proof target match: <strong>{proofMatchesAccessHost ? "yes" : "no"}</strong></span>
+          <span>Last checked: <strong>{settingsState?.last_probe_time ? formatDateTime(settingsState.last_probe_time) : "Not checked"}</strong></span>
+        </div>
+        <p>{proofMessage}</p>
       </div>
       <p className="map-drawer-safe">
         {settingsState?.next_safe_action || "Run this iLO check first. Local storage has its own iLO inventory read, and the main run starts at ESXi boot/install after access is proven."}
@@ -13785,7 +13822,7 @@ function topologyTone(status: string, readyTone: TopologyNodeTone = "ready"): To
   const normalized = status.toLowerCase();
   if (["ready", "ok", "passed", "completed", "current", "accessible"].includes(normalized)) return readyTone;
   if (["offline", "unreachable", "not_accessible", "not_checked", "not_setup", "not_configured_yet"].includes(normalized)) return "offline";
-  if (["warning", "warn", "needs_review", "needs_attention", "outdated", "partial", "pending", "blocked", "failed"].includes(normalized)) return "warning";
+  if (["warning", "warn", "needs_review", "needs_attention", "outdated", "partial", "pending", "blocked", "failed", "target_mismatch"].includes(normalized)) return "warning";
   return "unknown";
 }
 
@@ -17733,10 +17770,15 @@ function overviewAccessRows({
   validation: LabValidationSummary | null;
   vcenterNetapp: ProviderProbeResult | null;
 }): AccessRow[] {
-  const liveStatusFor = (tokens: string[], providerId: string, fallback = "not_checked") =>
-    liveProviderStatus(providers, providerId, tokens) || liveValidationProblemStatus(validation, tokens) || fallback;
+  const liveStatusFor = (
+    tokens: string[],
+    providerId: string,
+    fallback = "not_checked",
+    options?: { requireActiveProfileTarget?: boolean }
+  ) =>
+    liveProviderStatus(providers, providerId, tokens, options) || liveValidationProblemStatus(validation, tokens) || fallback;
   const ciscoStatus = liveStatusFor(["cisco"], "cisco-ansible");
-  const iloStatus = liveStatusFor(["ilo", "hpe"], "ilo-redfish");
+  const iloStatus = liveStatusFor(["ilo", "hpe"], "ilo-redfish", "not_checked", { requireActiveProfileTarget: true });
   const esxiStatus = liveStatusFor(["esxi"], "esxi-readonly");
   const netappStatus = liveStatusFor(["netapp", "storage"], "netapp-ontap");
   const vcenterStatus = isFreshLiveEvidence(vcenterNetapp)
@@ -17759,7 +17801,7 @@ function overviewAccessRows({
     accessRow({
       appSees: sourceLabelFromStatus(iloStatus),
       item: "iLO",
-      need: "Need credentials",
+      need: "Need successful iLO access check",
       status: iloStatus,
       target: address.ilo ? `https://${address.ilo}` : "Not set up yet"
     }),
@@ -17866,12 +17908,26 @@ function providerStatus(providers: ProviderStatus[], tokens: string[]): string {
   return provider?.status ?? "";
 }
 
-function liveProviderStatus(providers: ProviderStatus[], providerId: string, tokens: string[]): string {
+function liveProviderStatus(
+  providers: ProviderStatus[],
+  providerId: string,
+  tokens: string[],
+  options?: { requireActiveProfileTarget?: boolean }
+): string {
   const exact = providers.find((candidate) => candidate.id === providerId);
   const provider = exact ?? providers.find((candidate) =>
     textIncludes(`${candidate.id} ${candidate.name} ${candidate.kind}`.toLowerCase(), tokens)
   );
-  return provider && isFreshLiveEvidence(provider) ? provider.status : "";
+  if (!provider || !isFreshLiveEvidence(provider)) return "";
+  if (
+    options?.requireActiveProfileTarget &&
+    provider.id === "ilo-redfish" &&
+    statusIsAccessible(provider.status) &&
+    objectValue(provider.configuration).last_probe_target_matches_active_profile !== true
+  ) {
+    return "target_mismatch";
+  }
+  return provider.status;
 }
 
 function isFreshLiveEvidence(value: unknown): boolean {
