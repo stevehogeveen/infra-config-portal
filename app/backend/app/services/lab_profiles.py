@@ -830,6 +830,12 @@ def _profile_component_fields(components: dict[str, Any]) -> dict[str, Any]:
         "features": components["features"],
         "global_settings": components["global_settings"],
         "address_plan": components["address_plan"],
+        # Every read path (frontend activeAddressPlan, build verification,
+        # validation, etc.) prefers resolved_address_plan over address_plan
+        # when both are present. Without copying it here, a saved edit
+        # (e.g. a new iLO IP) updates address_plan but every screen keeps
+        # showing the stale resolved_address_plan value forever.
+        "resolved_address_plan": components["resolved_address_plan"],
     }
 
 

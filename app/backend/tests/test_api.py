@@ -962,6 +962,11 @@ def test_lab_profile_api_saves_selects_and_versions_profiles(
         "198.51.100.21",
         "198.51.100.22",
     ]
+    # Regression: every screen reads resolved_address_plan in preference to
+    # address_plan, so a saved edit must show up in both or the UI keeps
+    # displaying the pre-edit IP forever even though the save "succeeded".
+    assert updated.json()["address_plan"]["ilo"] == "198.51.100.10"
+    assert updated.json()["resolved_address_plan"]["ilo"] == "198.51.100.10"
 
     runtime = client.post("/api/v1/lab/profiles/runtime/activate")
     assert runtime.status_code == 200

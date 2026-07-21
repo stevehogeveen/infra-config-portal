@@ -13149,6 +13149,24 @@ function topologyDeviceInspectorRows(
   ];
 }
 
+function topologyEditedDeviceValue(
+  candidates: Array<string | undefined>,
+  savedValue: string
+): string | undefined {
+  const savedComparable = topologyComparableValue(displayAddress(savedValue));
+  // Prefer whichever bucket's value actually diverges from the saved value -
+  // i.e. the one the operator is actively editing right now. Multiple
+  // device-setting buckets can independently default to the same saved
+  // address (e.g. both the standalone "ilo" part and the "server-gen10"
+  // part default their management_ip to address.ilo), and a plain
+  // first-truthy-wins OR chain always picks the untouched default bucket,
+  // permanently masking a real edit made in a different bucket.
+  const edited = candidates.find(
+    (value) => value !== undefined && topologyComparableValue(displayAddress(value)) !== savedComparable
+  );
+  return edited ?? candidates.find(Boolean);
+}
+
 function topologyProfileSyncRows({
   activeProfile,
   address,
@@ -13176,7 +13194,15 @@ function topologyProfileSyncRows({
     topologySyncRow("switch-gateway", "Gateway", deviceSettings.switch?.gateway, gateway),
     topologySyncRow("switch-mgmt-vlan", "Mgmt VLAN", deviceSettings.switch?.mgmt_vlan, activeProfile?.global_settings?.vlan_id ?? activeProfile?.vlan_id ?? "100"),
     topologySyncRow("switch-storage-vlan", "Storage VLAN", deviceSettings.switch?.storage_vlan, "220"),
-    topologySyncRow("ilo-ip", "iLO IP", deviceSettings.ilo?.management_ip || deviceSettings["server-gen10"]?.management_ip || deviceSettings["server-gen10plus"]?.management_ip, displayAddress(address.ilo)),
+    topologySyncRow(
+      "ilo-ip",
+      "iLO IP",
+      topologyEditedDeviceValue(
+        [deviceSettings.ilo?.management_ip, deviceSettings["server-gen10"]?.management_ip, deviceSettings["server-gen10plus"]?.management_ip],
+        address.ilo ?? ""
+      ),
+      displayAddress(address.ilo)
+    ),
     topologySyncRow("esxi-ip", "ESXi IP", deviceSettings["server-gen10"]?.esxi_management || deviceSettings["server-gen10plus"]?.esxi_management, displayAddress(address.esxi_management)),
     topologySyncRow("storage-mode", "Storage mode", netappInScope ? storageProtocol.toUpperCase() : "LOCAL", activeProfile?.features?.storage_protocol?.toUpperCase() ?? "NFS"),
   ];
@@ -13239,7 +13265,13 @@ function topologyProfilePayloadFromDraft({
     ansible_control_host: vcenterInScope ? cleanNetworkNullable(vcenterSettings.management_ip) : null,
     cisco_management: cleanNetworkNullable(switchSettings.management_ip),
     esxi_management: cleanNetworkNullable(serverSettings.esxi_management) || cleanNetworkNullable(address.esxi_management),
-    ilo: cleanNetworkNullable(iloSettings.management_ip) || cleanNetworkNullable(serverSettings.management_ip),
+    // Same bucket-precedence bug as the drift check above: iloSettings is the
+    // untouched default bucket on this (server-gen10/gen10plus) workspace, so
+    // a plain OR here always saved the old address and silently discarded
+    // whatever the operator actually typed into Main settings' iLO IP field.
+    ilo: cleanNetworkNullable(
+      topologyEditedDeviceValue([iloSettings.management_ip, serverSettings.management_ip], address.ilo ?? "")
+    ),
     netapp_cluster_mgmt: netappInScope ? cleanNetworkNullable(netappSettings.management_ip) : null,
     netapp_iscsi_lifs: iscsiLifs,
     netapp_nfs_lifs: nfsLifs,
@@ -13304,7 +13336,12 @@ function topologyProfilePayloadFromDraft({
     mtu,
     name: activeProfile.source === "saved" ? activeProfile.name : "Visual lab setup",
     ntp: activeProfile.ntp,
-    profile_topology: draftScenario,
+    // draftScenario ("single_server_local_storage", "server_netapp_vcenter", ...)
+    // is which devices are in scope, a completely different axis from
+    // profile_topology (the backend's subnet-layout enum: high_address_lab /
+    // compact_edge_lab / custom). Sending draftScenario here always failed
+    // backend validation, silently blocking every commit through this path.
+    profile_topology: activeProfile.profile_topology,
     subnet_cidr: subnet,
     vlan_id: vlanId,
     // Keep the visualization intent attached to profile history through known profile fields.
