@@ -1109,6 +1109,88 @@ test("overview map does not mark configured providers reachable without live evi
   await expect(topology.locator(".overview-link.is-unreachable")).toHaveCount(linkCount);
 });
 
+test("overview map ignores stale positive iLO validation when provider access is not checked", async ({ page }) => {
+  const notCheckedProviders = providerStatuses().map((provider) => ({
+    ...provider,
+    checked_at: null,
+    freshness: "unknown",
+    is_current: false,
+    last_probe_time: null,
+    source_type: "not_checked",
+    status: "ready"
+  }));
+  const staleValidation = labValidation();
+  staleValidation.validation_items = staleValidation.validation_items.map((item) =>
+    item.id === "ilo"
+      ? {
+          ...item,
+          freshness: "current",
+          last_checked: "2026-07-18T13:23:38.251258+00:00",
+          source_type: "live_probe",
+          status: "ready"
+        }
+      : {
+          ...item,
+          freshness: "not_checked",
+          last_checked: null,
+          source_type: "not_checked",
+          status: "not_checked"
+        }
+  );
+  await page.route("**/api/v1/providers/status", (route) => json(route, notCheckedProviders));
+  await page.route("**/api/v1/lab/validation", (route) => json(route, staleValidation));
+
+  await page.goto("/overview");
+
+  const topology = page.getByRole("region", { name: "Lab topology" });
+  await expect(topology.getByRole("button", { name: "HPE iLO, Not checked" })).toBeVisible();
+  const iloLink = topology.locator("[aria-label='Cisco switch to HPE iLO not reachable']");
+  await expect(iloLink).toHaveClass(/is-unreachable/);
+});
+
+test("overview iLO drawer puts first contact before planned config and runs the standalone access check", async ({ page }) => {
+  await page.goto("/overview");
+
+  const topology = page.getByRole("region", { name: "Lab topology" });
+  await topology.getByRole("button", { name: /^HPE iLO,/ }).click();
+  const drawer = page.getByLabel("HPE iLO setup");
+  await expect(drawer).toBeVisible();
+  const firstContact = drawer.getByLabel("iLO access credentials");
+  await expect(firstContact).toBeVisible();
+  await expect(firstContact).toContainText("Sign in and first contact");
+  await expect(firstContact.getByLabel("iLO username / UID")).toBeVisible();
+  await expect(firstContact.getByLabel("iLO password")).toBeVisible();
+  await expect(firstContact.getByRole("button", { name: "Check this iLO IP" })).toBeVisible();
+  const drawerOrder = await drawer.locator(".map-drawer-body").evaluate((body) =>
+    Array.from(body.children).map((child) => child.getAttribute("aria-label") || child.textContent || "")
+  );
+  expect(drawerOrder.findIndex((item) => item.includes("iLO access credentials"))).toBeLessThan(
+    drawerOrder.findIndex((item) => item.includes("iLO config plan"))
+  );
+
+  await firstContact.getByLabel("iLO host or initial IP").fill("192.168.1.201");
+  await firstContact.getByLabel("iLO username / UID").fill("Administrator");
+  await firstContact.getByLabel("iLO password").fill("secret");
+  const accessSave = page.waitForRequest((request) =>
+    request.method() === "PUT" &&
+    new URL(request.url()).pathname === "/api/v1/providers/ilo-redfish/access-settings"
+  );
+  const accessCheck = page.waitForRequest((request) =>
+    request.method() === "POST" &&
+    actionIdFromRunPath(new URL(request.url()).pathname) === "ilo.reachability"
+  );
+  await firstContact.getByRole("button", { name: "Check this iLO IP" }).click();
+  const payload = (await accessSave).postDataJSON() as Record<string, unknown>;
+  expect(payload).toMatchObject({
+    host: "192.168.1.201",
+    password: "secret",
+    username: "Administrator",
+    verify_tls: false
+  });
+  await accessCheck;
+  await expect(firstContact).toContainText("iLO access check finished");
+});
+
 test("operator home shows actionable blockers once in plain language", async ({ page }) => {
   const blocked = labValidation();
   blocked.overall_status = "blocked";

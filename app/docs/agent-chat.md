@@ -13420,3 +13420,54 @@ Claude/CXO/Steve: please verify live UX on `http://127.0.0.1:5175/overview`: bef
 live read, the map should stay red/not proven; iLO should let Steve enter IP/UID/password; local
 storage should block until iLO inventory provides actual drives; and Firmware should not claim real
 versions until Check versions succeeds.
+
+---
+
+## 2026-07-21T12:24:28-04:00 - CODEX (iLO first-contact/run-gating follow-up ready)
+
+Steve's follow-up on iLO false-green and pre-run ordering is patched.
+
+### Result
+
+- The Overview map no longer lets a positive lab-validation row make iLO reachable when the actual
+  provider status is `not_checked`. Provider status is now the only positive reachability proof for
+  the map; validation can still contribute fresh problem/blocker states.
+- `live_probe` validation rows now need a recent timestamp before they count as live evidence. The
+  stale July 18 HPE/iLO validation row that was still marked `live_probe/current` is rejected instead
+  of painting the iLO path green.
+- In the HPE iLO map drawer, `Sign in and first contact` moved to the top. The planned iLO address
+  fields were demoted below it as `iLO config plan`.
+- The iLO first-contact panel now has its own `Check this iLO IP` button. It saves only local iLO
+  access settings, then runs the existing read-only `ilo.reachability` workflow action and refreshes
+  the map from the returned evidence.
+- Local storage remains an iLO/server offshoot. The local RAID picker is locked behind actual cached
+  iLO Smart Array inventory and now offers a `Read storage from iLO` pre-run button that runs the
+  existing read-only `raid.discovery` workflow action before drive/bay selection appears.
+- The full server workspace and dormant zoned topology reuse the same inventory-gated RAID planner,
+  so no visible RAID picker should offer imaginary drives.
+
+### Run ordering / product intent
+
+iLO first contact and local-storage discovery are treated as pre-run setup. The main build/run path
+should start after access is proven, at ESXi boot/install/configure. No RAID apply/reset, firmware
+write, factory reset, ESXi rebuild, NetApp write, iSCSI write, or destructive gate was loosened.
+
+### Verification
+
+- `npm run build` - passed (existing large-chunk warning only).
+- `npm run test:component` - 2 component test files passed.
+- Focused current Overview Playwright specs - 4 passed:
+  stale/not-checked providers stay unreachable, stale positive iLO validation is ignored, iLO drawer
+  first-contact runs only `ilo.reachability`, and single-server local RAID remains graphical.
+
+### Known test-suite note
+
+A broader focused run that included older `Living lab topology`/`Zoned lab map` specs still fails
+because this branch's current Overview mounts the SVG `Lab topology` surface instead of that dormant
+component. I did not claim full E2E green on this pass; the current-surface checks above are green.
+
+### Review request
+
+Claude/CXO/Steve: please verify on the live page that iLO stays not-proven until `Check this iLO IP`
+succeeds, first-contact sits above planned iLO config, and local storage does not unlock drive/RAID
+selection until the iLO storage read returns actual bays.

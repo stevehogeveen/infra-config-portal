@@ -2157,9 +2157,11 @@ function LocalStorageRaidPlanner({
   discoveryLoading = false,
   hideHead = false,
   initialDraft,
+  inventoryRunLabel = "Run iLO Inventory Read",
   netappInScope,
   onCommit,
   onReloadDiscovery,
+  onRunInventory,
   requiresInventory = false,
   settings,
   storageProtocol = "local"
@@ -2169,15 +2171,20 @@ function LocalStorageRaidPlanner({
   discoveryLoading?: boolean;
   hideHead?: boolean;
   initialDraft?: LocalRaidDraft;
+  inventoryRunLabel?: string;
   netappInScope: boolean;
   onCommit?: (settings: LocalRaidSettingsUpdate, draft: LocalRaidDraft) => string | void;
   onReloadDiscovery?: () => Promise<void> | void;
+  onRunInventory?: () => Promise<void> | void;
   requiresInventory?: boolean;
   settings?: Record<string, string>;
   storageProtocol?: string;
 }) {
   const [draft, setDraft] = useState<LocalRaidDraft>(() => initialDraft ?? localRaidDefaultDraft(settings, netappInScope));
   const [message, setMessage] = useState("");
+  const [inventoryRunning, setInventoryRunning] = useState(false);
+  const [inventoryRunMessage, setInventoryRunMessage] = useState("");
+  const [inventoryRunError, setInventoryRunError] = useState("");
   const inventoryBays = useMemo(() => localRaidInventoryBays(discovery), [discovery]);
   const inventoryBayIds = inventoryBays.map((bay) => bay.bay);
   const inventoryKey = inventoryBayIds.join("|");
@@ -2244,6 +2251,22 @@ function LocalStorageRaidPlanner({
     setMessage(commitMessage || "Visual RAID plan saved. Hardware untouched.");
   }
 
+  async function runInventoryRead() {
+    if (!onRunInventory) return;
+    setInventoryRunning(true);
+    setInventoryRunMessage("");
+    setInventoryRunError("");
+    setMessage("");
+    try {
+      await onRunInventory();
+      setInventoryRunMessage("iLO storage read finished. Cached drive inventory refreshed.");
+    } catch (err) {
+      setInventoryRunError(errorMessage(err));
+    } finally {
+      setInventoryRunning(false);
+    }
+  }
+
   if (requiresInventory && !inventoryReady) {
     const blockers = [
       discoveryError,
@@ -2274,11 +2297,20 @@ function LocalStorageRaidPlanner({
             </ul>
           )}
           <small>{discovery?.next_safe_action || "Run the HPE iLO GET-only probe and confirm storage inventory is returned."}</small>
-          {onReloadDiscovery && (
-            <button className="design-plan-secondary local-raid-save" onClick={() => void onReloadDiscovery()} type="button">
-              Reload cached iLO inventory
-            </button>
-          )}
+          <div className="map-ilo-access-actions">
+            {onRunInventory && (
+              <button className="map-drawer-save" disabled={inventoryRunning || discoveryLoading} onClick={() => void runInventoryRead()} type="button">
+                {inventoryRunning ? "Reading iLO storage..." : inventoryRunLabel}
+              </button>
+            )}
+            {onReloadDiscovery && (
+              <button className="design-plan-secondary local-raid-save" disabled={inventoryRunning || discoveryLoading} onClick={() => void onReloadDiscovery()} type="button">
+                Reload cached iLO inventory
+              </button>
+            )}
+          </div>
+          {inventoryRunMessage && <p className="operator-action-message success">{inventoryRunMessage}</p>}
+          {inventoryRunError && <p className="operator-action-message error">{inventoryRunError}</p>}
         </article>
       </section>
     );
@@ -2445,6 +2477,11 @@ function LocalRaidPlannerDrawer({
     void loadDiscovery();
   }, [draftKey]);
 
+  async function runStorageInventoryRead() {
+    await api.runWorkflowAction("raid.discovery");
+    await loadDiscovery();
+  }
+
   function commitLocalPlan(nextSettings: LocalRaidSettingsUpdate, draft: LocalRaidDraft) {
     localRaidWriteDraft(draftKey, draft);
     setSettings((current) => ({ ...current, ...nextSettings }));
@@ -2476,6 +2513,8 @@ function LocalRaidPlannerDrawer({
           netappInScope={netappInScope}
           onCommit={commitLocalPlan}
           onReloadDiscovery={loadDiscovery}
+          onRunInventory={runStorageInventoryRead}
+          inventoryRunLabel="Read storage from iLO"
           requiresInventory
           settings={settings}
           storageProtocol={storageProtocol}
@@ -6855,7 +6894,7 @@ function mapDeviceEditorConfig(kind: MapDeviceKind, storageProtocol: string): { 
   if (kind === "ilo") {
     return {
       groups: [
-        { title: "Access", hint: "Out-of-band server management", fields: [
+        { title: "iLO config plan", hint: "Saved target addresses after first contact is proven", fields: [
           { key: "ilo", label: "iLO IP", mono: true },
           { key: "iloInitial", label: "Initial iLO IP", mono: true }
         ] },
@@ -7080,6 +7119,13 @@ function MapDeviceEditor({
         </button>
       </div>
       <div className="map-drawer-body">
+        {node.kind === "ilo" && (
+          <IloAccessSettingsPanel
+            initialHost={edit.iloInitial}
+            plannedHost={edit.ilo}
+            onReload={onReload}
+          />
+        )}
         {config.groups.map((group) => (
           <div className="map-field-group" key={group.title}>
             <div className="map-field-group-head">
@@ -7100,12 +7146,6 @@ function MapDeviceEditor({
             </div>
           </div>
         ))}
-        {node.kind === "ilo" && (
-          <IloAccessSettingsPanel
-            initialHost={edit.iloInitial}
-            plannedHost={edit.ilo}
-          />
-        )}
       </div>
       <div className="map-drawer-foot">
         <span className="map-drawer-safe">Saves the plan only — hardware untouched.</span>
@@ -7123,9 +7163,11 @@ function MapDeviceEditor({
 
 function IloAccessSettingsPanel({
   initialHost,
+  onReload,
   plannedHost
 }: {
   initialHost: string;
+  onReload?: () => Promise<void> | void;
   plannedHost: string;
 }) {
   const [settingsState, setSettingsState] = useState<IloAccessSettings | null>(null);
@@ -7135,6 +7177,7 @@ function IloAccessSettingsPanel({
   const [verifyTls, setVerifyTls] = useState(false);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [checking, setChecking] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const fallbackHost = plannedHost || initialHost || "";
@@ -7160,39 +7203,76 @@ function IloAccessSettingsPanel({
     void loadAccessSettings();
   }, [fallbackHost]);
 
-  async function saveAccessSettings() {
+  function accessPayload(): { host: string; password: string | null; username: string | null; verify_tls: boolean } | null {
     const targetHost = host.trim() || fallbackHost;
     if (!targetHost) {
       setError("Enter the iLO IP or initial iLO IP before saving access.");
-      return;
+      return null;
     }
     if (!username.trim() && !settingsState?.username_configured) {
       setError("Enter the iLO username/UID before saving access.");
-      return;
+      return null;
     }
     if (!password.trim() && !settingsState?.password_configured) {
       setError("Enter the iLO password before saving access.");
+      return null;
+    }
+    return {
+      host: targetHost,
+      password: password.trim() || null,
+      username: username.trim() || null,
+      verify_tls: verifyTls
+    };
+  }
+
+  async function persistAccessSettings() {
+    const payload = accessPayload();
+    if (!payload) return null;
+    const next = await api.saveIloAccessSettings(payload);
+    setSettingsState(next);
+    setHost(next.host || payload.host);
+    setUsername(next.username || username);
+    setPassword("");
+    return next;
+  }
+
+  async function saveAccessSettings() {
+    const payload = accessPayload();
+    if (!payload) {
       return;
     }
     setBusy(true);
     setError("");
     setMessage("");
     try {
-      const next = await api.saveIloAccessSettings({
-        host: targetHost,
-        password: password.trim() || null,
-        username: username.trim() || null,
-        verify_tls: verifyTls
-      });
+      const next = await api.saveIloAccessSettings(payload);
       setSettingsState(next);
-      setHost(next.host || targetHost);
+      setHost(next.host || payload.host);
       setUsername(next.username || username);
       setPassword("");
-      setMessage("iLO access saved locally. Run iLO Inventory Read to prove reachability and load drives.");
+      setMessage("iLO access saved locally. Run the iLO access check here before trusting the map or starting ESXi install.");
     } catch (err) {
       setError(errorMessage(err));
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function runIloAccessCheck() {
+    setChecking(true);
+    setError("");
+    setMessage("");
+    try {
+      const saved = await persistAccessSettings();
+      if (!saved) return;
+      setMessage("Running read-only iLO access check...");
+      const run = await api.runWorkflowAction("ilo.reachability");
+      await onReload?.();
+      setMessage(`${displayStatus(asString(run.status) || "completed")}: iLO access check finished. Map refreshed from live evidence.`);
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setChecking(false);
     }
   }
 
@@ -7249,12 +7329,15 @@ function IloAccessSettingsPanel({
             Open iLO web UI
           </a>
         )}
-        <button className="map-drawer-save" disabled={busy || loading} onClick={() => void saveAccessSettings()} type="button">
+        <button className="design-plan-secondary" disabled={busy || checking || loading} onClick={() => void saveAccessSettings()} type="button">
           {busy ? "Saving..." : "Save iLO access"}
+        </button>
+        <button className="map-drawer-save" disabled={busy || checking || loading} onClick={() => void runIloAccessCheck()} type="button">
+          {checking ? "Checking iLO..." : "Check this iLO IP"}
         </button>
       </div>
       <p className="map-drawer-safe">
-        {settingsState?.next_safe_action || "Run iLO Inventory Read after saving so the map and local storage are based on live evidence."}
+        {settingsState?.next_safe_action || "Run this iLO check first. Local storage has its own iLO inventory read, and the main run starts at ESXi boot/install after access is proven."}
       </p>
       {message && <span className="map-drawer-msg">{message}</span>}
       {error && <span className="map-drawer-msg is-error">{error}</span>}
@@ -7514,6 +7597,9 @@ function LabTopologyMap({
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [workspaceOpen, setWorkspaceOpen] = useState(false);
   const [localRaidPlannerOpen, setLocalRaidPlannerOpen] = useState(false);
+  const [localRaidDiscovery, setLocalRaidDiscovery] = useState<HpeStorageDiscovery | null>(null);
+  const [localRaidDiscoveryLoading, setLocalRaidDiscoveryLoading] = useState(false);
+  const [localRaidDiscoveryError, setLocalRaidDiscoveryError] = useState("");
   const [mapFitEnabled, setMapFitEnabled] = useState(false);
   const [mapOverflowing, setMapOverflowing] = useState(false);
   const mapCanvasRef = useRef<HTMLDivElement | null>(null);
@@ -7651,10 +7737,30 @@ function LabTopologyMap({
     setSelectedNodeId(null);
   }
 
+  async function loadLocalRaidDiscovery() {
+    setLocalRaidDiscoveryLoading(true);
+    setLocalRaidDiscoveryError("");
+    try {
+      setLocalRaidDiscovery(await api.hpeStorageDiscovery());
+    } catch (err) {
+      setLocalRaidDiscovery(null);
+      setLocalRaidDiscoveryError(errorMessage(err));
+    } finally {
+      setLocalRaidDiscoveryLoading(false);
+    }
+  }
+
+  async function runLocalRaidInventoryRead() {
+    await api.runWorkflowAction("raid.discovery");
+    await loadLocalRaidDiscovery();
+    await onReload();
+  }
+
   function openLocalRaidPlanner() {
     setWorkspaceOpen(false);
     setSelectedNodeId(null);
     setLocalRaidPlannerOpen(true);
+    void loadLocalRaidDiscovery();
   }
 
   return (
@@ -7788,13 +7894,20 @@ function LabTopologyMap({
               <button className="topology-workspace-close" type="button" onClick={() => setLocalRaidPlannerOpen(false)}>Close</button>
             </div>
             <LocalStorageRaidPlanner
+              discovery={localRaidDiscovery}
+              discoveryError={localRaidDiscoveryError}
+              discoveryLoading={localRaidDiscoveryLoading}
               hideHead
               initialDraft={localRaidInitialDraft}
+              inventoryRunLabel="Read storage from iLO"
               netappInScope={netappInScope}
               onCommit={(nextSettings, draft) => {
                 localRaidWriteDraft(localRaidKey, draft);
                 return "Visual RAID plan saved to this browser draft. Hardware untouched.";
               }}
+              onReloadDiscovery={loadLocalRaidDiscovery}
+              onRunInventory={runLocalRaidInventoryRead}
+              requiresInventory
               settings={localRaidDefaultSettings}
               storageProtocol={storageProtocol}
             />
@@ -9264,6 +9377,9 @@ function LabDesignComposer({
   const [actionRunsById, setActionRunsById] = useState<Record<string, WorkflowActionRun[]>>({});
   const [diagnosis, setDiagnosis] = useState<WorkflowActionDiagnosis | null>(null);
   const [diagnosisLoading, setDiagnosisLoading] = useState(false);
+  const [workspaceStorageDiscovery, setWorkspaceStorageDiscovery] = useState<HpeStorageDiscovery | null>(null);
+  const [workspaceStorageDiscoveryLoading, setWorkspaceStorageDiscoveryLoading] = useState(false);
+  const [workspaceStorageDiscoveryError, setWorkspaceStorageDiscoveryError] = useState("");
   const parts = topologyDesignParts({ netappInScope, vcenterInScope });
   const placedIds = new Set(Object.values(placements).filter(Boolean) as DesignPartId[]);
   const shelfParts = parts.filter((part) => !placedIds.has(part.id));
@@ -9271,7 +9387,7 @@ function LabDesignComposer({
   const blueprintLinks = topologyDesignBlueprintLinks({ connectionSettings, netappInScope, vcenterInScope });
   const selectedPart = parts.find((part) => part.id === selectedDevice) ?? parts[0];
   const selectedSettings = selectedPart ? deviceSettings[selectedPart.id] ?? {} : {};
-  const selectedCredentialSpec = selectedPart ? topologyDeviceCredentialSpec(selectedPart.id) : null;
+  const selectedCredentialSpec = selectedPart && selectedPart.id !== "ilo" ? topologyDeviceCredentialSpec(selectedPart.id) : null;
   const selectedInspectorRows = selectedPart
     ? topologyDeviceInspectorRows(selectedPart.id, selectedSettings, storageProtocol)
     : [];
@@ -9333,6 +9449,7 @@ function LabDesignComposer({
   const selectedSafeActions = selectedPart
     ? topologyDeviceSafeActions(selectedPart.id, workflowActions, { netappInScope, storageProtocol, vcenterInScope })
     : [];
+  const selectedPartIsServer = selectedPart?.id === "server-gen10" || selectedPart?.id === "server-gen10plus";
   const selectedOverviewDetails = selectedPart
     ? topologyWorkspaceMapDetails(selectedPart.id, selectedSettings, draftScenario, storageProtocol)
     : [];
@@ -9500,6 +9617,11 @@ function LabDesignComposer({
   }, [selectedDevice, workspaceOnly]);
 
   useEffect(() => {
+    if (!selectedPartIsServer) return;
+    void loadWorkspaceStorageDiscovery();
+  }, [selectedPartIsServer, draftKey]);
+
+  useEffect(() => {
     if (blueprintLinks.some((link) => link.id === selectedConnection)) return;
     setSelectedConnection(blueprintLinks[0]?.id ?? "switch-server");
   }, [blueprintLinks, selectedConnection]);
@@ -9629,6 +9751,25 @@ function LabDesignComposer({
     setConnectionSettings(defaultConnectionSettings);
     setDraftDirty(true);
     setDropMessage(`${topologyScenarioLabel(draftScenario)} reset to profile-derived defaults. Draft saved locally.`);
+  }
+
+  async function loadWorkspaceStorageDiscovery() {
+    setWorkspaceStorageDiscoveryLoading(true);
+    setWorkspaceStorageDiscoveryError("");
+    try {
+      setWorkspaceStorageDiscovery(await api.hpeStorageDiscovery());
+    } catch (err) {
+      setWorkspaceStorageDiscovery(null);
+      setWorkspaceStorageDiscoveryError(errorMessage(err));
+    } finally {
+      setWorkspaceStorageDiscoveryLoading(false);
+    }
+  }
+
+  async function runWorkspaceStorageInventoryRead() {
+    await api.runWorkflowAction("raid.discovery");
+    await loadWorkspaceStorageDiscovery();
+    await onReload();
   }
 
   function rebaseDraftSubnet() {
@@ -10040,6 +10181,14 @@ function LabDesignComposer({
               />
             )}
 
+            {selectedPart.id === "ilo" && (
+              <IloAccessSettingsPanel
+                initialHost={asString(designAddress.ilo_initial)}
+                plannedHost={asString(selectedSettings.management_ip) || asString(designAddress.ilo)}
+                onReload={onReload}
+              />
+            )}
+
             {!workspaceOnly && selectedPart.id === "switch" && (
               <CiscoWorkspaceNetworkControls
                 activeProfile={activeProfile}
@@ -10242,8 +10391,15 @@ function LabDesignComposer({
                 )}
                 {(selectedPart.id === "server-gen10" || selectedPart.id === "server-gen10plus") && (
                   <LocalStorageRaidPlanner
+                    discovery={workspaceStorageDiscovery}
+                    discoveryError={workspaceStorageDiscoveryError}
+                    discoveryLoading={workspaceStorageDiscoveryLoading}
+                    inventoryRunLabel="Read storage from iLO"
                     netappInScope={netappInScope}
                     onCommit={updateSelectedServerRaidPlan}
+                    onReloadDiscovery={loadWorkspaceStorageDiscovery}
+                    onRunInventory={runWorkspaceStorageInventoryRead}
+                    requiresInventory
                     settings={selectedSettings}
                     storageProtocol={storageProtocol}
                   />
@@ -17578,14 +17734,14 @@ function overviewAccessRows({
   vcenterNetapp: ProviderProbeResult | null;
 }): AccessRow[] {
   const liveStatusFor = (tokens: string[], providerId: string, fallback = "not_checked") =>
-    liveValidationStatus(validation, tokens) || liveProviderStatus(providers, providerId, tokens) || fallback;
+    liveProviderStatus(providers, providerId, tokens) || liveValidationProblemStatus(validation, tokens) || fallback;
   const ciscoStatus = liveStatusFor(["cisco"], "cisco-ansible");
   const iloStatus = liveStatusFor(["ilo", "hpe"], "ilo-redfish");
   const esxiStatus = liveStatusFor(["esxi"], "esxi-readonly");
   const netappStatus = liveStatusFor(["netapp", "storage"], "netapp-ontap");
   const vcenterStatus = isFreshLiveEvidence(vcenterNetapp)
     ? asString(vcenterNetapp?.status) || "not_checked"
-    : liveValidationStatus(validation, ["vcenter"]) || "not_checked";
+    : liveValidationProblemStatus(validation, ["vcenter"]) || "not_checked";
   const checks = objectValue(vcenterNetapp?.checks);
   const vmInventory = objectValue(checks.vm_inventory_visible);
   const vmCount = asString(vmInventory.count);
@@ -17689,6 +17845,11 @@ function liveValidationStatus(validation: LabValidationSummary | null, tokens: s
   return item && isFreshLiveEvidence(item) ? item.status : "";
 }
 
+function liveValidationProblemStatus(validation: LabValidationSummary | null, tokens: string[]): string {
+  const status = liveValidationStatus(validation, tokens);
+  return status && !statusIsAccessible(status) ? status : "";
+}
+
 function sourceFromValidation(validation: LabValidationSummary | null, tokens: string[]): string {
   const item = validation?.validation_items.find((candidate) => textIncludes(candidateText(candidate), tokens));
   return sourceLabel(item ?? validation);
@@ -17717,11 +17878,24 @@ function isFreshLiveEvidence(value: unknown): boolean {
   const item = objectValue(value);
   const source = asString(item.source_type);
   const freshness = asString(item.freshness);
-  if (source === "live_probe") return true;
+  if (source === "live_probe") return isRecentLiveProbe(item);
   if (source === "live_cached" || source === "cached_live") {
     return item.is_current === true || freshness === "current" || freshness === "live";
   }
   return false;
+}
+
+function isRecentLiveProbe(item: Record<string, unknown>): boolean {
+  const timestamp = asString(item.checked_at) || asString(item.last_checked) || asString(item.last_probe_time) || asString(item.generated_at);
+  if (!timestamp) return false;
+  const parsed = Date.parse(timestamp);
+  if (!Number.isFinite(parsed)) return false;
+  const ageMs = Date.now() - parsed;
+  return ageMs >= 0 && ageMs <= 30 * 60 * 1000;
+}
+
+function statusIsAccessible(status: string): boolean {
+  return ["ready", "ok", "passed", "completed", "current", "accessible"].includes(status.toLowerCase());
 }
 
 function textIncludes(text: string, tokens: string[]): boolean {
