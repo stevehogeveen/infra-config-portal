@@ -137,15 +137,8 @@ button:disabled {
 
 .shell-topbar {
   align-items: center;
-  background: var(--rail);
   border-bottom: 1px solid var(--rail-border);
-  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.14);
-  color: #f7fafc;
-  display: grid;
-  gap: 14px;
-  grid-template-columns: minmax(260px, max-content) minmax(0, 1fr);
   min-width: 0;
-  padding: 12px 18px;
   position: sticky;
   top: 0;
   box-sizing: border-box;
@@ -8983,15 +8976,13 @@ th.ui-compact-table-cell {
 }
 
 .local-raid-level {
-  align-items: center;
   background: #ffffff;
   border: 1px solid #d8e5ed;
   border-radius: 12px;
-  display: flex;
-  gap: 10px;
-  justify-content: space-between;
+  display: grid;
+  gap: 8px;
   min-width: 0;
-  padding: 10px 12px;
+  padding: 12px;
 }
 
 .local-raid-level.is-boot { box-shadow: inset 4px 0 0 #3b82f6; }
@@ -8999,9 +8990,10 @@ th.ui-compact-table-cell {
 
 .local-raid-level > span {
   color: #102238;
-  font-size: 12px;
+  font-size: 12.5px;
   font-weight: 850;
   min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .local-raid-level select {
@@ -9009,11 +9001,11 @@ th.ui-compact-table-cell {
   border: 1px solid #cbdbe7;
   border-radius: 9px;
   color: #102238;
-  flex: 0 0 auto;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 850;
-  min-height: 34px;
+  min-height: 36px;
   padding: 0 9px;
+  width: 100%;
 }
 
 .local-raid-plan-footer {
@@ -18924,21 +18916,19 @@ button.design-ilo-port:hover {
 
 .shell-topbar {
   background: var(--rail);
-  border-bottom: 1px solid var(--rail-border);
   box-shadow: 0 10px 28px rgba(15, 23, 42, .16);
   color: #f8fafc;
-  display: grid;
-  gap: 16px;
+  display: flex;
+  gap: 32px;
   grid-column: 1;
   grid-row: 1;
-  grid-template-columns: auto minmax(360px, 1fr) auto;
   min-height: 72px;
   padding: 12px 24px;
   position: sticky;
 }
 
-.top-nav { background: rgba(255, 255, 255, .07); border: 1px solid rgba(203, 213, 225, .14); justify-content: center; overflow-x: auto; }
-.shell-topbar-actions { gap: 8px; justify-content: flex-end; }
+.top-nav { background: rgba(255, 255, 255, .07); border: 1px solid rgba(203, 213, 225, .14); flex: 0 0 auto; justify-content: flex-start; overflow-x: auto; }
+.shell-topbar-actions { gap: 8px; justify-content: flex-end; margin-left: auto; }
 .kit-manage-link {
   align-items: center;
   background: #f8fafc;
@@ -18954,7 +18944,7 @@ button.design-ilo-port:hover {
   white-space: nowrap;
 }
 .kit-manage-link:hover { background: #e5f2f2; color: #087f83; }
-.quick-tab { border-radius: 9px; color: #cbd5e1; flex: 0 0 auto; font-size: 13px; font-weight: 750; padding: 9px 11px; white-space: nowrap; }
+.quick-tab { border-radius: 9px; color: #cbd5e1; flex: 0 0 auto; font-size: 14px; font-weight: 750; padding: 11px 18px; white-space: nowrap; }
 .quick-tab:hover { background: rgba(255, 255, 255, .08); color: #fff; }
 .quick-tab.active { background: rgba(45, 212, 191, .18); border: 1px solid rgba(94, 234, 212, .3); box-shadow: none; color: #f0fdfa; font-weight: 850; }
 .content { background: #f4f6f8; grid-column: 1; grid-row: 2; min-width: 0; }
