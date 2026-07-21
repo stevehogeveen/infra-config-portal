@@ -1068,6 +1068,47 @@ test("operator details opens proof without hiding the map", async ({ page }) => 
   await expect(page.locator("details.advanced-drawer").filter({ hasText: "Advanced proof" })).toBeVisible();
 });
 
+test("overview map does not mark configured providers reachable without live evidence", async ({ page }) => {
+  const staleProviders = providerStatuses().map((provider) => ({
+    ...provider,
+    checked_at: null,
+    freshness: "not_checked",
+    is_current: false,
+    last_probe_time: null,
+    source_type: "not_checked",
+    status: "ready"
+  }));
+  const staleValidation = labValidation();
+  staleValidation.validation_items = staleValidation.validation_items.map((item) => ({
+    ...item,
+    freshness: "not_checked",
+    last_checked: null,
+    source_type: "not_checked",
+    status: "not_checked"
+  }));
+  const staleVcenter = {
+    ...vcenterNetappReadiness(),
+    checked_at: null,
+    checks: { vm_inventory_visible: { count: 0, visible: false } },
+    freshness: "not_checked",
+    is_current: false,
+    source_type: "not_checked",
+    status: "not_checked"
+  };
+  await page.route("**/api/v1/providers/status", (route) => json(route, staleProviders));
+  await page.route("**/api/v1/lab/validation", (route) => json(route, staleValidation));
+  await page.route("**/api/v1/lab/vcenter-netapp/readiness", (route) => json(route, staleVcenter));
+
+  await page.goto("/overview");
+  await openOperatorDetails(page);
+
+  const topology = page.getByRole("region", { name: "Lab topology" });
+  const linkCount = await topology.locator(".overview-link").count();
+  expect(linkCount, "overview map renders connection lines").toBeGreaterThan(0);
+  await expect(topology.locator(".overview-link.is-reachable")).toHaveCount(0);
+  await expect(topology.locator(".overview-link.is-unreachable")).toHaveCount(linkCount);
+});
+
 test("operator home shows actionable blockers once in plain language", async ({ page }) => {
   const blocked = labValidation();
   blocked.overall_status = "blocked";
@@ -3825,6 +3866,21 @@ async function installApiMocks(page: Page) {
     if (url.pathname === "/api/v1/providers/ilo-redfish/hpe-raid-plan-preview") {
       return json(route, hpeRaidPlanPreview());
     }
+    if (url.pathname === "/api/v1/providers/ilo-redfish/hpe-storage-discovery") {
+      return json(route, hpeStorageDiscovery());
+    }
+    if (url.pathname === "/api/v1/providers/ilo-redfish/access-settings") {
+      if (request.method() === "PUT") {
+        const payload = request.postDataJSON() as { host?: string; username?: string; password?: string; verify_tls?: boolean };
+        return json(route, iloAccessSettings({
+          host: payload.host || "192.168.1.201",
+          password_configured: Boolean(payload.password),
+          username: payload.username || "Administrator",
+          verify_tls: payload.verify_tls ?? false
+        }));
+      }
+      return json(route, iloAccessSettings());
+    }
     if (url.pathname === "/api/v1/providers/ilo-redfish/hpe-raid-pending") {
       return json(route, hpeRaidPending());
     }
@@ -5223,6 +5279,48 @@ function hpeRaidPlanPreview() {
     provider_id: "ilo-redfish",
     status: "ready",
     warnings: []
+  };
+}
+
+function hpeStorageDiscovery() {
+  return {
+    blockers: [],
+    controllers: [{ display_label: "Smart Array P408i-a", model: "HPE Smart Array P408i-a SR Gen10" }],
+    last_probe_time: checkedAt,
+    logical_drives: [],
+    next_safe_action: "Review discovered drives and save a plan-only RAID intent.",
+    physical_drives: Array.from({ length: 8 }, (_, index) => {
+      const bay = String(index + 1);
+      return {
+        bay_id: bay,
+        capacity_label: "1.92 TB",
+        display_label: `Bay ${bay}`,
+        health: "OK",
+        media_type: "SSD"
+      };
+    }),
+    provider_id: "ilo-redfish",
+    server: { model: "DL360 Gen10" },
+    source: "cached iLO Redfish probe",
+    storage_inventory_available: true,
+    warnings: []
+  };
+}
+
+function iloAccessSettings(overrides: Record<string, unknown> = {}) {
+  return {
+    env_path: ".env.local.real-lab",
+    fallback_hosts: ["192.168.1.201"],
+    host: "192.168.1.201",
+    host_source: "active_lab_profile",
+    next_safe_action: "Run iLO Inventory Read to refresh live iLO reachability and storage inventory.",
+    password_configured: true,
+    provider_id: "ilo-redfish",
+    updated_at: null,
+    username: "Administrator",
+    username_configured: true,
+    verify_tls: false,
+    ...overrides
   };
 }
 

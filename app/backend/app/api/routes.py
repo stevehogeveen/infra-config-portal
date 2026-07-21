@@ -48,6 +48,8 @@ from app.schemas import (
     HpeRaidIntentWrite,
     HpeRaidPlanPreviewRead,
     HpeStorageDiscoveryRead,
+    IloAccessSettingsRead,
+    IloAccessSettingsWrite,
     IloBaselinePreviewRead,
     IloBaselineReadinessRead,
     IloDestructiveRebuildPreviewRead,
@@ -152,6 +154,11 @@ from app.services.control_access import (
 from app.services.ilo_baseline import (
     get_ilo_baseline_preview,
     get_ilo_baseline_readiness,
+)
+from app.services.ilo_access_settings import (
+    IloAccessSettingsError,
+    read_ilo_access_settings,
+    update_ilo_access_settings,
 )
 from app.services.ilo_readiness import (
     get_ilo_destructive_rebuild_preview,
@@ -1147,6 +1154,25 @@ def apply_ilo_setup_route(
     session: Session = Depends(get_session),
 ) -> ProviderProbeResultRead:
     return apply_ilo_setup(session, payload)
+
+
+@router.get(
+    "/providers/ilo-redfish/access-settings",
+    response_model=IloAccessSettingsRead,
+)
+def read_ilo_access_settings_route() -> IloAccessSettingsRead:
+    return read_ilo_access_settings()
+
+
+@router.put(
+    "/providers/ilo-redfish/access-settings",
+    response_model=IloAccessSettingsRead,
+)
+def update_ilo_access_settings_route(payload: IloAccessSettingsWrite) -> IloAccessSettingsRead:
+    try:
+        return update_ilo_access_settings(payload.model_dump(exclude_unset=True))
+    except IloAccessSettingsError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
 
 @router.get(

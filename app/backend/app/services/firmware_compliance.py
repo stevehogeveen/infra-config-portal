@@ -231,12 +231,15 @@ def get_firmware_inventory(*, refresh_live: bool = False) -> dict[str, Any]:
         ansible_checked_at=cisco_checked_at,
         console_checked_at=cisco_console_checked_at,
     )
+    inventory_checked_at = _latest_probe_time([ilo_checked_at, cisco_checked_at, cisco_console_checked_at, netapp_checked_at])
+    generated_at = datetime.now(UTC).isoformat()
     inventory = {
         "provider_id": "firmware-compliance",
         "status": "completed",
         "message": "Firmware inventory collected from cached/live provider evidence and local media metadata.",
         "provider_mode": settings.provider_mode,
-        "checked_at": datetime.now(UTC).isoformat(),
+        "checked_at": inventory_checked_at,
+        "generated_at": generated_at,
         "live_inventory": {
             "ilo": _ilo_versions(ilo_probe if isinstance(ilo_probe, dict) else {}),
             "cisco": cisco_versions,
@@ -264,16 +267,27 @@ def get_firmware_inventory(*, refresh_live: bool = False) -> dict[str, Any]:
     netapp_runtime_state = get_netapp_runtime_state()
     if not netapp_runtime_state.get("configured"):
         inventory["warnings"].append("NetApp firmware inventory is waiting for live setup validation.")
-    source_type = "live_cached" if any(inventory["last_probe_times"].values()) else "not_checked"
+    source_type = "live_cached" if inventory_checked_at else "not_checked"
     return _sanitize(
         attach_status_source(
             inventory,
             source_type=source_type,
-            checked_at=inventory["checked_at"] if source_type == "live_cached" else None,
+            checked_at=inventory_checked_at if source_type == "live_cached" else None,
             recheck_command="make provider-lab-firmware-inventory",
             evidence_artifacts=[_rel(INVENTORY_REPORT)],
         )
     )
+
+
+def _latest_probe_time(values: list[str | None]) -> str | None:
+    parsed_values: list[tuple[datetime, str]] = []
+    for value in values:
+        parsed = _parse_datetime(value)
+        if parsed and value:
+            parsed_values.append((parsed, value))
+    if not parsed_values:
+        return None
+    return max(parsed_values, key=lambda item: item[0])[1]
 
 
 def get_firmware_media_inventory() -> dict[str, Any]:
@@ -300,7 +314,7 @@ def get_firmware_compliance(*, refresh_live: bool = False, scope: str = "full") 
     baseline = load_firmware_baseline()
     inventory = get_firmware_inventory(refresh_live=refresh_live)
     waiver = load_firmware_waiver()
-    checked_at = datetime.now(UTC).isoformat()
+    checked_at = inventory.get("checked_at") or datetime.now(UTC).isoformat()
     components = [
         _classify_component(component, inventory, waiver)
         for component in baseline.get("components", [])
@@ -365,7 +379,7 @@ def get_firmware_compliance(*, refresh_live: bool = False, scope: str = "full") 
         attach_status_source(
             result,
             source_type=source_type,
-            checked_at=result["checked_at"] if source_type == "live_cached" else None,
+            checked_at=inventory.get("checked_at") if source_type == "live_cached" else None,
             recheck_command="make provider-lab-firmware-compliance",
             evidence_artifacts=[
                 _rel(INVENTORY_REPORT),
@@ -1658,11 +1672,19 @@ def _path_source_info(
 ) -> dict[str, str | None]:
     report_versions = _firmware_inventory_report_versions()
     if component_id in {"hpe_ilo_firmware", "hpe_bios_version", "hpe_smart_array_firmware"} and report_versions.get("checked_at"):
+        device_id = "raid" if component_id == "hpe_smart_array_firmware" else "ilo"
+        live = _component_source_info(device_id, inventory)
+        if live["freshness"] == "live":
+            return {"source_type": live["source_type"], "freshness": live["freshness"], "last_checked": live["last_scanned"]}
         return {
             "source_type": "historical_evidence",
             "freshness": _freshness("historical_evidence", report_versions.get("checked_at")),
             "last_checked": report_versions.get("checked_at"),
         }
+    if component_id in {"hpe_ilo_firmware", "hpe_bios_version", "hpe_smart_array_firmware"}:
+        device_id = "raid" if component_id == "hpe_smart_array_firmware" else "ilo"
+        live = _component_source_info(device_id, inventory)
+        return {"source_type": live["source_type"], "freshness": live["freshness"], "last_checked": live["last_scanned"]}
     if component_id == "cisco_ios_xe_version" or component_id == "cisco_bootloader_rommon":
         cisco = _component_source_info("cisco", inventory)
         return {"source_type": cisco["source_type"], "freshness": cisco["freshness"], "last_checked": cisco["last_scanned"]}

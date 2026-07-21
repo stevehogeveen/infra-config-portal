@@ -599,10 +599,14 @@ def _probe_classification(result: dict[str, Any]) -> str:
 def _configured_ilo_targets() -> tuple[str | None, str, tuple[str, ...], tuple[str, ...]]:
     profile_host = _active_saved_profile_ilo_host()
     first_access_host = _saved_ilo_first_access_host()
+    initial_profile_host = _active_saved_profile_ilo_initial_host()
     if profile_host:
         fallback_hosts, fallback_sources = _fallback_ilo_targets(
             profile_host,
-            [(first_access_host, "control_access_original_dhcp_ip")],
+            [
+                (first_access_host, "control_access_original_dhcp_ip"),
+                (initial_profile_host, "active_lab_profile_initial_ilo"),
+            ],
         )
         return profile_host, "active_lab_profile", fallback_hosts, fallback_sources
 
@@ -610,12 +614,21 @@ def _configured_ilo_targets() -> tuple[str | None, str, tuple[str, ...], tuple[s
     if runtime_host:
         fallback_hosts, fallback_sources = _fallback_ilo_targets(
             runtime_host,
-            [(first_access_host, "control_access_original_dhcp_ip")],
+            [
+                (first_access_host, "control_access_original_dhcp_ip"),
+                (initial_profile_host, "active_lab_profile_initial_ilo"),
+            ],
         )
         return runtime_host, "runtime_env", fallback_hosts, fallback_sources
 
     if first_access_host:
-        return first_access_host, "control_access_original_dhcp_ip", (), ()
+        fallback_hosts, fallback_sources = _fallback_ilo_targets(
+            first_access_host,
+            [(initial_profile_host, "active_lab_profile_initial_ilo")],
+        )
+        return first_access_host, "control_access_original_dhcp_ip", fallback_hosts, fallback_sources
+    if initial_profile_host:
+        return initial_profile_host, "active_lab_profile_initial_ilo", (), ()
     return None, "runtime_env", (), ()
 
 
@@ -656,6 +669,23 @@ def _active_saved_profile_ilo_host() -> str | None:
     if not isinstance(plan, dict):
         return None
     return _clean_target_host(plan.get("ilo"))
+
+
+def _active_saved_profile_ilo_initial_host() -> str | None:
+    try:
+        from app.services.lab_profiles import active_lab_profile_context
+
+        context = active_lab_profile_context()
+    except Exception:
+        return None
+
+    active = context.get("active_profile") if isinstance(context, dict) else {}
+    if not isinstance(active, dict) or active.get("source") != "saved":
+        return None
+    plan = context.get("resolved_address_plan") if isinstance(context, dict) else {}
+    if not isinstance(plan, dict):
+        return None
+    return _clean_target_host(plan.get("ilo_initial"))
 
 
 def _saved_ilo_first_access_host() -> str | None:

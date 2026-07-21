@@ -13353,3 +13353,70 @@ destructive confirmation gate changed.
 
 Claude/CXO/Steve: please verify that Build type now behaves as the operator's explicit decision and
 that separating Subnet network from Address range feels natural in the create-kit flow.
+
+---
+
+## 2026-07-21T12:02:30-04:00 - CODEX (live-lab honesty fixes ready)
+
+Steve's live-lab first-look issues are patched.
+
+### Result
+
+- Overview map links/nodes no longer go green just because a device is configured or a provider
+  advertises readiness. The map now requires fresh live/current cached-live evidence before showing
+  reachable. A new regression covers stale/not-checked providers that still say `ready`.
+- HPE iLO and ESXi remain separate device workspaces. The HPE iLO map drawer now includes a local
+  access section for:
+  - iLO host / initial IP to use now
+  - iLO username / UID
+  - iLO password (write-only; never returned by the API)
+  - TLS verification toggle
+  - Open iLO web UI link
+- Added a backend iLO access-settings endpoint that updates only local `.env.local.real-lab` iLO
+  access keys and in-process settings. Saving access does not probe or change hardware.
+- iLO targeting now uses the active profile iLO IP first, then first-access/DHCP fallback, then the
+  saved initial iLO IP. This supports first-contact bootstrap when the planned final iLO IP does not
+  answer yet.
+- The Overview local-storage drawer is no longer an imaginary bay picker. It requires cached iLO
+  Smart Array storage discovery before showing drive tiles. Without iLO drive inventory it shows a
+  blocked state instructing the operator to save iLO access and run iLO Inventory Read.
+- When iLO storage inventory exists, the RAID planner uses only discovered physical bays and shows
+  bay label, capacity, media, and health. It remains plan-only; no RAID apply/reset/write path was
+  exposed.
+- Firmware `Check versions` now uses the workflow runner's live inventory refresh when the operator
+  presses the button, and button failures surface on the page instead of being swallowed.
+- Firmware inventory/compliance timestamps now use the actual latest provider probe time instead of
+  stamping cached data as "now". Firmware rows show `Not checked` unless the path has fresh live or
+  current cached-live evidence.
+- Restarted the updated app in `local-lab-readwrite` on alternate ports because Windows kept a
+  phantom listener on backend port 8001:
+  - Frontend: `http://127.0.0.1:5175/overview`
+  - Backend: `http://127.0.0.1:8002`
+
+### Safety boundary
+
+No hardware probes were run by Codex during this patch. No RAID apply, RAID reset, factory reset,
+firmware update, ESXi rebuild, NetApp apply, iSCSI write, or destructive confirmation gate was
+changed or invoked. The new iLO access save path only writes local runtime settings and returns no
+password.
+
+### Verification
+
+- `npm run build` - passed twice after frontend changes (existing large-chunk warning only).
+- `npm run test:component` - 2 component test files passed.
+- Focused Playwright map/local-storage/firmware specs - 5 passed:
+  stale ready providers stay red/unreachable, inventory-backed local RAID drawer, iLO/ESXi
+  separation, and firmware Check versions workflow runner.
+- Backend syntax check with `app/backend/.venv/Scripts/python.exe -m py_compile` - passed.
+- Backend focused tests - passed:
+  `tests/test_firmware_compliance.py`, `tests/test_workflow_action_runner.py`,
+  and storage-discovery API filter from `tests/test_upgrade_decision.py`.
+- Runtime mode check on the relaunched backend confirms `current_mode=local-lab-readwrite`,
+  `pending_restart=false`, and no dev/test banner.
+
+### Review request
+
+Claude/CXO/Steve: please verify live UX on `http://127.0.0.1:5175/overview`: before running any
+live read, the map should stay red/not proven; iLO should let Steve enter IP/UID/password; local
+storage should block until iLO inventory provides actual drives; and Firmware should not claim real
+versions until Check versions succeeds.

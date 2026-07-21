@@ -43,6 +43,8 @@ import type {
   FirmwareFileSelections,
   FirmwareSummary,
   FirmwareUpgradePath,
+  HpeStorageDiscovery,
+  IloAccessSettings,
   HpeRaidPlanPreview,
   LabAddressPlan,
   LabProfile,
@@ -2045,6 +2047,13 @@ type LocalRaidDraft = {
   updatedAt?: string;
 };
 
+type LocalRaidInventoryBay = {
+  bay: string;
+  label: string;
+  detail: string;
+  health: string;
+};
+
 type LocalRaidSettingsUpdate = {
   drive_bays: string;
   raid_boot: string;
@@ -2143,30 +2152,51 @@ function ServerDriveMapPlan({
 }
 
 function LocalStorageRaidPlanner({
+  discovery = null,
+  discoveryError = "",
+  discoveryLoading = false,
   hideHead = false,
   initialDraft,
   netappInScope,
   onCommit,
+  onReloadDiscovery,
+  requiresInventory = false,
   settings,
   storageProtocol = "local"
 }: {
+  discovery?: HpeStorageDiscovery | null;
+  discoveryError?: string;
+  discoveryLoading?: boolean;
   hideHead?: boolean;
   initialDraft?: LocalRaidDraft;
   netappInScope: boolean;
   onCommit?: (settings: LocalRaidSettingsUpdate, draft: LocalRaidDraft) => string | void;
+  onReloadDiscovery?: () => Promise<void> | void;
+  requiresInventory?: boolean;
   settings?: Record<string, string>;
   storageProtocol?: string;
 }) {
   const [draft, setDraft] = useState<LocalRaidDraft>(() => initialDraft ?? localRaidDefaultDraft(settings, netappInScope));
   const [message, setMessage] = useState("");
-  const selectedBay = draft.selectedBay || "1";
+  const inventoryBays = useMemo(() => localRaidInventoryBays(discovery), [discovery]);
+  const inventoryBayIds = inventoryBays.map((bay) => bay.bay);
+  const inventoryKey = inventoryBayIds.join("|");
+  const inventoryReady = !requiresInventory || (Boolean(discovery?.storage_inventory_available) && inventoryBays.length > 0);
+  const bayNumbers = requiresInventory && inventoryBays.length
+    ? inventoryBayIds
+    : Array.from({ length: draft.bayCount }, (_, index) => String(index + 1));
+  const selectedBay = bayNumbers.includes(draft.selectedBay) ? draft.selectedBay : bayNumbers[0] ?? "1";
   const selectedGroup = draft.assignments[selectedBay] ?? "unused";
-  const bayNumbers = Array.from({ length: draft.bayCount }, (_, index) => String(index + 1));
   const groupIds: LocalRaidGroupId[] = ["boot", "datastore", "spare", "unused"];
   const activeRaidGroups: Array<"boot" | "datastore"> = ["boot", "datastore"];
   const storageModeLabel = netappInScope
     ? `${storageProtocol.toUpperCase()} shared datastore; local disks are boot/staging`
     : "Server-local datastore";
+
+  useEffect(() => {
+    if (!requiresInventory || !inventoryBays.length) return;
+    setDraft((current) => localRaidDraftForBays(current, inventoryBayIds, settings, netappInScope));
+  }, [requiresInventory, inventoryKey, settings, netappInScope]);
 
   function updateSelectedBay(bay: string) {
     setDraft((current) => ({ ...current, selectedBay: bay }));
@@ -2176,7 +2206,8 @@ function LocalStorageRaidPlanner({
   function assignSelectedBay(groupId: LocalRaidGroupId) {
     setDraft((current) => ({
       ...current,
-      assignments: { ...current.assignments, [current.selectedBay || "1"]: groupId }
+      selectedBay,
+      assignments: { ...current.assignments, [selectedBay]: groupId }
     }));
     setMessage("");
   }
@@ -2213,8 +2244,49 @@ function LocalStorageRaidPlanner({
     setMessage(commitMessage || "Visual RAID plan saved. Hardware untouched.");
   }
 
+  if (requiresInventory && !inventoryReady) {
+    const blockers = [
+      discoveryError,
+      ...stringArray(discovery?.blockers),
+      ...stringArray(discovery?.warnings)
+    ].filter(Boolean);
+    return (
+      <section className="local-raid-planner" aria-label="Local RAID planner">
+        {hideHead && <h4 className="sr-only">Drive bay RAID planner</h4>}
+        {!hideHead && (
+          <div className="local-raid-planner-head">
+            <div>
+              <p className="operator-kicker">Local storage</p>
+              <h4>Drive bay RAID planner</h4>
+            </div>
+            <StatusBadge label="Needs iLO inventory" status="needs-attention" />
+          </div>
+        )}
+        <article className="operator-action-message warning local-raid-inventory-required" aria-label="Local RAID inventory required">
+          <strong>{discoveryLoading ? "Loading cached iLO storage inventory..." : "No iLO drive inventory yet."}</strong>
+          <span>
+            Save the iLO IP, username/UID, and password in the HPE iLO drawer, then run iLO Inventory Read.
+            The drive/RAID picker only unlocks after iLO reports the actual Smart Array bays.
+          </span>
+          {blockers.length > 0 && (
+            <ul>
+              {blockers.slice(0, 4).map((item, index) => <li key={`${item}-${index}`}>{item}</li>)}
+            </ul>
+          )}
+          <small>{discovery?.next_safe_action || "Run the HPE iLO GET-only probe and confirm storage inventory is returned."}</small>
+          {onReloadDiscovery && (
+            <button className="design-plan-secondary local-raid-save" onClick={() => void onReloadDiscovery()} type="button">
+              Reload cached iLO inventory
+            </button>
+          )}
+        </article>
+      </section>
+    );
+  }
+
   return (
     <section className="local-raid-planner" aria-label="Local RAID planner">
+      {hideHead && <h4 className="sr-only">Drive bay RAID planner</h4>}
       {!hideHead && (
         <div className="local-raid-planner-head">
           <div>
@@ -2225,45 +2297,50 @@ function LocalStorageRaidPlanner({
         </div>
       )}
 
-      <div className="local-raid-meta">
+      <div className="local-raid-meta" aria-label="Local RAID context">
         <span>{storageModeLabel}</span>
-        <label>
-          <span className="sr-only">Drive bay count</span>
-          <select
-            aria-label="Local RAID drive bay count"
-            onChange={(event) => updateBayCount(Number(event.target.value))}
-            value={String(draft.bayCount)}
-          >
-            {[4, 6, 8, 10, 12].map((count) => (
-              <option key={count} value={count}>{count} bays</option>
-            ))}
-          </select>
-        </label>
+        {requiresInventory ? (
+          <span>{inventoryBays.length} bays from iLO inventory{discovery?.last_probe_time ? ` · ${discovery.last_probe_time.slice(0, 19)}` : ""}</span>
+        ) : (
+          <label>
+            <span className="sr-only">Drive bay count</span>
+            <select
+              aria-label="Local RAID drive bay count"
+              onChange={(event) => updateBayCount(Number(event.target.value))}
+              value={String(draft.bayCount)}
+            >
+              {[4, 6, 8, 10, 12].map((count) => (
+                <option key={count} value={count}>{count} bays</option>
+              ))}
+            </select>
+          </label>
+        )}
       </div>
 
-      <div className="local-raid-bay-grid" aria-label="Drive bays — click a bay to select it">
+      <div className="local-raid-bay-grid" aria-label={requiresInventory ? "Selectable local RAID drive bays from iLO inventory" : "Selectable local RAID drive bays"}>
         {bayNumbers.map((bay) => {
           const groupId = draft.assignments[bay] ?? "unused";
           const meta = localRaidGroupMeta(groupId, netappInScope);
           const raid = localRaidBayRaidLabel(groupId, draft);
+          const inventory = inventoryBays.find((candidate) => candidate.bay === bay);
           return (
             <button
               aria-pressed={selectedBay === bay}
               className={`local-raid-bay is-${groupId}`}
               key={bay}
               onClick={() => updateSelectedBay(bay)}
-              title={`Bay ${bay}: ${meta.label}${raid ? `, ${raid}` : ""}`}
+              title={`${inventory?.label || `Bay ${bay}`}: ${meta.label}${raid ? `, ${raid}` : ""}`}
               type="button"
             >
-              <span>Bay {bay}</span>
+              <span>{inventory?.label || `Bay ${bay}`}</span>
               <strong>{meta.shortLabel}</strong>
-              <small>{raid || meta.detail}</small>
+              <small>{inventory ? `${inventory.detail} · ${inventory.health}` : (raid || meta.detail)}</small>
             </button>
           );
         })}
       </div>
 
-      <div className="local-raid-assign-row" aria-label={`Assign bay ${selectedBay}`}>
+      <div className="local-raid-assign-row" aria-label="Local RAID group connections">
         <span className="local-raid-assign-lead">Bay {selectedBay} is</span>
         {groupIds.map((groupId) => (
           <button
@@ -2276,6 +2353,13 @@ function LocalStorageRaidPlanner({
             {localRaidGroupMeta(groupId, netappInScope).label}
           </button>
         ))}
+        <div className="local-raid-group-bays">
+          {groupIds.map((groupId) => (
+            <small key={groupId}>
+              {localRaidGroupMeta(groupId, netappInScope).label}: Drive bays: {localRaidBaysForGroup(draft, groupId).join(", ") || "none"}
+            </small>
+          ))}
+        </div>
       </div>
 
       <div className="local-raid-levels" aria-label="RAID levels">
@@ -2305,7 +2389,7 @@ function LocalStorageRaidPlanner({
           <small>No hardware touched. Real RAID writes stay behind the guarded storage workflow.</small>
         </div>
         <button className="design-plan-secondary local-raid-save" onClick={savePlan} type="button">
-          Save RAID plan
+          Save visual RAID plan
         </button>
         {message && <p className="operator-action-message success">{message}</p>}
       </div>
@@ -2340,6 +2424,26 @@ function LocalRaidPlannerDrawer({
     ...defaultSettings,
     ...localRaidSettingsFromDraft(initialDraft, netappInScope)
   }));
+  const [discovery, setDiscovery] = useState<HpeStorageDiscovery | null>(null);
+  const [discoveryLoading, setDiscoveryLoading] = useState(true);
+  const [discoveryError, setDiscoveryError] = useState("");
+
+  async function loadDiscovery() {
+    setDiscoveryLoading(true);
+    setDiscoveryError("");
+    try {
+      setDiscovery(await api.hpeStorageDiscovery());
+    } catch (err) {
+      setDiscovery(null);
+      setDiscoveryError(errorMessage(err));
+    } finally {
+      setDiscoveryLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void loadDiscovery();
+  }, [draftKey]);
 
   function commitLocalPlan(nextSettings: LocalRaidSettingsUpdate, draft: LocalRaidDraft) {
     localRaidWriteDraft(draftKey, draft);
@@ -2364,10 +2468,15 @@ function LocalRaidPlannerDrawer({
       </div>
       <div className="map-drawer-body">
         <LocalStorageRaidPlanner
+          discovery={discovery}
+          discoveryError={discoveryError}
+          discoveryLoading={discoveryLoading}
           hideHead
           initialDraft={initialDraft}
           netappInScope={netappInScope}
           onCommit={commitLocalPlan}
+          onReloadDiscovery={loadDiscovery}
+          requiresInventory
           settings={settings}
           storageProtocol={storageProtocol}
         />
@@ -2391,6 +2500,78 @@ function localRaidDefaultDraft(settings: Record<string, string> | undefined, net
     },
     selectedBay: "1"
   };
+}
+
+function localRaidDraftForBays(
+  current: LocalRaidDraft,
+  bayIds: string[],
+  settings: Record<string, string> | undefined,
+  netappInScope: boolean
+): LocalRaidDraft {
+  const fallback = localRaidDefaultDraftForBayIds(settings, netappInScope, bayIds);
+  const assignments: Record<string, LocalRaidGroupId> = {};
+  bayIds.forEach((bay, index) => {
+    const currentValue = current.assignments[bay];
+    assignments[bay] = currentValue === "boot" || currentValue === "datastore" || currentValue === "spare" || currentValue === "unused"
+      ? currentValue
+      : fallback.assignments[bay] ?? localRaidDefaultGroup(index + 1, netappInScope);
+  });
+  return {
+    ...current,
+    assignments,
+    bayCount: bayIds.length,
+    raidLevels: {
+      boot: localRaidCleanLevel(current.raidLevels.boot) || fallback.raidLevels.boot,
+      datastore: localRaidCleanLevel(current.raidLevels.datastore) || fallback.raidLevels.datastore
+    },
+    selectedBay: bayIds.includes(current.selectedBay) ? current.selectedBay : bayIds[0] ?? "1"
+  };
+}
+
+function localRaidDefaultDraftForBayIds(
+  settings: Record<string, string> | undefined,
+  netappInScope: boolean,
+  bayIds: string[]
+): LocalRaidDraft {
+  const fallback = localRaidDefaultDraft(settings, netappInScope);
+  if (!bayIds.length) return fallback;
+  const assignments: Record<string, LocalRaidGroupId> = {};
+  bayIds.forEach((bay, index) => {
+    assignments[bay] = localRaidDefaultGroup(index + 1, netappInScope);
+  });
+  return {
+    ...fallback,
+    assignments,
+    bayCount: bayIds.length,
+    selectedBay: bayIds[0]
+  };
+}
+
+function localRaidInventoryBays(discovery: HpeStorageDiscovery | null | undefined): LocalRaidInventoryBay[] {
+  const seen = new Set<string>();
+  return recordArray(discovery?.physical_drives)
+    .map((drive, index) => {
+      const bay = asString(drive.bay_id) || asString(drive.Bay) || asString(drive.slot) || asString(drive.Id) || String(index + 1);
+      const cleanBay = bay.trim();
+      if (!cleanBay || seen.has(cleanBay)) return null;
+      seen.add(cleanBay);
+      const capacity = asString(drive.capacity_label) || asString(drive.capacity) || asString(drive.Capacity) || "capacity unknown";
+      const media = asString(drive.media_type) || asString(drive.MediaType) || asString(drive.InterfaceType) || "media unknown";
+      const health = asString(drive.health) || asString(drive.Health) || asString(drive.status) || "health unknown";
+      return {
+        bay: cleanBay,
+        detail: [capacity, media].filter(Boolean).join(" · "),
+        health: displayStatus(health),
+        label: asString(drive.display_label) || `Bay ${cleanBay}`
+      };
+    })
+    .filter((bay): bay is LocalRaidInventoryBay => Boolean(bay))
+    .sort((a, b) => localRaidBaySortValue(a.bay) - localRaidBaySortValue(b.bay));
+}
+
+function localRaidBaySortValue(bay: string): number {
+  const numeric = Number.parseInt(bay.match(/\d+/)?.[0] ?? "", 10);
+  return Number.isFinite(numeric) ? numeric : Number.MAX_SAFE_INTEGER;
 }
 
 function localRaidDefaultGroup(bay: number, netappInScope: boolean): LocalRaidGroupId {
@@ -2453,7 +2634,7 @@ function localRaidPlanHeadline(draft: LocalRaidDraft, netappInScope: boolean): s
   const bootCount = localRaidBaysForGroup(draft, "boot").length;
   const dataCount = localRaidBaysForGroup(draft, "datastore").length;
   const dataLabel = netappInScope ? "staging" : "datastore";
-  return `${bootCount} boot bay${bootCount === 1 ? "" : "s"} + ${dataCount} ${dataLabel} bay${dataCount === 1 ? "" : "s"}`;
+  return `${bootCount} boot bay${bootCount === 1 ? "" : "s"} (${draft.raidLevels.boot}) + ${dataCount} ${dataLabel} bay${dataCount === 1 ? "" : "s"} (${draft.raidLevels.datastore})`;
 }
 
 function localRaidSettingsFromDraft(draft: LocalRaidDraft, netappInScope: boolean): LocalRaidSettingsUpdate {
@@ -4741,7 +4922,7 @@ export function OperatorFirmwareUpgradesPage({ labProfileState }: OperatorPagePr
           <h1 id="firmware-simple-title">Keep every device on the expected version.</h1>
           <p>Check the current version, compare it with the target, then upgrade or leave it as-is.</p>
         </div>
-        <RunCheckButton actionIds={["firmware.inventory", "firmware.compliance-check"]} actions={actions} label="Check versions" onReload={load} />
+        <RunCheckButton actionIds={["firmware.inventory", "firmware.compliance-check"]} actions={actions} label="Check versions" onError={setError} onReload={load} />
       </section>
       <Feedback loading={false} error={error} />
       <Feedback loading={false} error={selectionError} />
@@ -4855,11 +5036,13 @@ function RunCheckButton({
   actionIds,
   actions,
   label,
+  onError,
   onReload
 }: {
   actionIds: string[];
   actions: WorkflowAction[];
   label: string;
+  onError?: (message: string) => void;
   onReload: () => Promise<void> | void;
 }) {
   const [running, setRunning] = useState(false);
@@ -4870,9 +5053,10 @@ function RunCheckButton({
     setRunning(true);
     try {
       await api.runWorkflowAction(action.action_id);
+      onError?.("");
       await onReload();
-    } catch {
-      // The page-level feedback owns API errors; keep the button usable when a check fails.
+    } catch (err) {
+      onError?.(errorMessage(err));
     } finally {
       setRunning(false);
     }
@@ -6916,6 +7100,12 @@ function MapDeviceEditor({
             </div>
           </div>
         ))}
+        {node.kind === "ilo" && (
+          <IloAccessSettingsPanel
+            initialHost={edit.iloInitial}
+            plannedHost={edit.ilo}
+          />
+        )}
       </div>
       <div className="map-drawer-foot">
         <span className="map-drawer-safe">Saves the plan only — hardware untouched.</span>
@@ -6928,6 +7118,147 @@ function MapDeviceEditor({
         </div>
       </div>
     </aside>
+  );
+}
+
+function IloAccessSettingsPanel({
+  initialHost,
+  plannedHost
+}: {
+  initialHost: string;
+  plannedHost: string;
+}) {
+  const [settingsState, setSettingsState] = useState<IloAccessSettings | null>(null);
+  const [host, setHost] = useState(plannedHost || initialHost || "");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [verifyTls, setVerifyTls] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+  const fallbackHost = plannedHost || initialHost || "";
+
+  async function loadAccessSettings() {
+    setLoading(true);
+    setError("");
+    try {
+      const next = await api.iloAccessSettings();
+      setSettingsState(next);
+      setHost(next.host || fallbackHost);
+      setUsername(next.username || "");
+      setVerifyTls(Boolean(next.verify_tls));
+    } catch (err) {
+      setError(errorMessage(err));
+      setHost((current) => current || fallbackHost);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void loadAccessSettings();
+  }, [fallbackHost]);
+
+  async function saveAccessSettings() {
+    const targetHost = host.trim() || fallbackHost;
+    if (!targetHost) {
+      setError("Enter the iLO IP or initial iLO IP before saving access.");
+      return;
+    }
+    if (!username.trim() && !settingsState?.username_configured) {
+      setError("Enter the iLO username/UID before saving access.");
+      return;
+    }
+    if (!password.trim() && !settingsState?.password_configured) {
+      setError("Enter the iLO password before saving access.");
+      return;
+    }
+    setBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      const next = await api.saveIloAccessSettings({
+        host: targetHost,
+        password: password.trim() || null,
+        username: username.trim() || null,
+        verify_tls: verifyTls
+      });
+      setSettingsState(next);
+      setHost(next.host || targetHost);
+      setUsername(next.username || username);
+      setPassword("");
+      setMessage("iLO access saved locally. Run iLO Inventory Read to prove reachability and load drives.");
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const openHost = host.trim() || fallbackHost;
+
+  return (
+    <section className="map-field-group map-ilo-access" aria-label="iLO access credentials">
+      <div className="map-field-group-head">
+        <h4>Sign in and first contact</h4>
+        <small>Saved locally only. Saving credentials does not probe or change hardware.</small>
+      </div>
+      <div className="map-field-grid">
+        <label className="wide">
+          <span>iLO host / initial IP to use now</span>
+          <input
+            aria-label="iLO host or initial IP"
+            className="is-mono"
+            onChange={(event) => { setHost(event.target.value); setMessage(""); }}
+            placeholder={initialHost || plannedHost || "192.168.1.201"}
+            value={host}
+          />
+        </label>
+        <label>
+          <span>iLO username / UID</span>
+          <input
+            autoComplete="username"
+            onChange={(event) => { setUsername(event.target.value); setMessage(""); }}
+            placeholder={settingsState?.username_configured ? "Saved username" : "Administrator"}
+            value={username}
+          />
+        </label>
+        <label>
+          <span>iLO password</span>
+          <input
+            autoComplete="current-password"
+            onChange={(event) => { setPassword(event.target.value); setMessage(""); }}
+            placeholder={settingsState?.password_configured ? "Saved - type to replace" : "Password"}
+            type="password"
+            value={password}
+          />
+        </label>
+        <label className="wide map-ilo-tls-toggle">
+          <input
+            checked={verifyTls}
+            onChange={(event) => { setVerifyTls(event.target.checked); setMessage(""); }}
+            type="checkbox"
+          />
+          <span>Verify iLO TLS certificate</span>
+        </label>
+      </div>
+      <div className="map-ilo-access-actions">
+        {openHost && (
+          <a href={`https://${openHost}`} rel="noreferrer" target="_blank">
+            Open iLO web UI
+          </a>
+        )}
+        <button className="map-drawer-save" disabled={busy || loading} onClick={() => void saveAccessSettings()} type="button">
+          {busy ? "Saving..." : "Save iLO access"}
+        </button>
+      </div>
+      <p className="map-drawer-safe">
+        {settingsState?.next_safe_action || "Run iLO Inventory Read after saving so the map and local storage are based on live evidence."}
+      </p>
+      {message && <span className="map-drawer-msg">{message}</span>}
+      {error && <span className="map-drawer-msg is-error">{error}</span>}
+    </section>
   );
 }
 
@@ -17246,59 +17577,69 @@ function overviewAccessRows({
   validation: LabValidationSummary | null;
   vcenterNetapp: ProviderProbeResult | null;
 }): AccessRow[] {
-  const statusFor = (tokens: string[], fallback = "not_checked") =>
-    validationStatus(validation, tokens) || providerStatus(providers, tokens) || fallback;
+  const liveStatusFor = (tokens: string[], providerId: string, fallback = "not_checked") =>
+    liveValidationStatus(validation, tokens) || liveProviderStatus(providers, providerId, tokens) || fallback;
+  const ciscoStatus = liveStatusFor(["cisco"], "cisco-ansible");
+  const iloStatus = liveStatusFor(["ilo", "hpe"], "ilo-redfish");
+  const esxiStatus = liveStatusFor(["esxi"], "esxi-readonly");
+  const netappStatus = liveStatusFor(["netapp", "storage"], "netapp-ontap");
+  const vcenterStatus = isFreshLiveEvidence(vcenterNetapp)
+    ? asString(vcenterNetapp?.status) || "not_checked"
+    : liveValidationStatus(validation, ["vcenter"]) || "not_checked";
   const checks = objectValue(vcenterNetapp?.checks);
   const vmInventory = objectValue(checks.vm_inventory_visible);
   const vmCount = asString(vmInventory.count);
+  const vcenterFresh = isFreshLiveEvidence(vcenterNetapp);
+  const datastoreStatus = vcenterFresh ? datastoreVisibleStatus(vcenterNetapp) : "not_checked";
+  const vmInventoryVisible = vcenterFresh && asBoolean(vmInventory.visible);
   return [
     accessRow({
-      appSees: sourceLabelFromStatus(statusFor(["cisco"])),
+      appSees: sourceLabelFromStatus(ciscoStatus),
       item: "Cisco",
       need: consolePathFromCisco(ciscoReadiness) === "Not set up yet" ? "Need console connection" : "Need credentials",
-      status: statusFor(["cisco"]),
+      status: ciscoStatus,
       target: displayAddress(address.cisco_management)
     }),
     accessRow({
-      appSees: sourceLabelFromStatus(statusFor(["ilo", "hpe"])),
+      appSees: sourceLabelFromStatus(iloStatus),
       item: "iLO",
       need: "Need credentials",
-      status: statusFor(["ilo", "hpe"]),
+      status: iloStatus,
       target: address.ilo ? `https://${address.ilo}` : "Not set up yet"
     }),
     accessRow({
-      appSees: sourceLabelFromStatus(statusFor(["esxi"])),
+      appSees: sourceLabelFromStatus(esxiStatus),
       item: "ESXi",
       need: "Need credentials",
-      status: statusFor(["esxi"]),
+      status: esxiStatus,
       target: displayAddress(address.esxi_management)
     }),
     accessRow({
-      appSees: sourceLabelFromStatus(statusFor(["netapp", "storage"], asString(vcenterNetapp?.status) || "not_checked")),
+      appSees: sourceLabelFromStatus(netappStatus),
       item: "NetApp",
       need: "Need NetApp API reachable",
-      status: statusFor(["netapp", "storage"], asString(vcenterNetapp?.status) || "not_checked"),
+      status: netappStatus,
       target: displayAddress(address.netapp_cluster_mgmt)
     }),
     accessRow({
-      appSees: sourceLabel(vcenterNetapp),
+      appSees: vcenterFresh ? sourceLabel(vcenterNetapp) : "Not checked",
       item: "vCenter",
       need: "Need vCenter attached",
-      status: asString(vcenterNetapp?.status) || validationStatus(validation, ["vcenter"]) || "not_checked",
+      status: vcenterStatus,
       target: vcenterTarget(vcenterNetapp, null)
     }),
     accessRow({
-      appSees: datastoreVisibleStatus(vcenterNetapp) === "ready" ? "Datastore visible" : "Not visible yet",
+      appSees: datastoreStatus === "ready" ? "Datastore visible" : "Not visible yet",
       item: "Datastore",
       need: "Need vCenter attached",
-      status: datastoreVisibleStatus(vcenterNetapp),
+      status: datastoreStatus,
       target: datastoreName(vcenterNetapp)
     }),
     accessRow({
-      appSees: asBoolean(vmInventory.visible) ? `${vmCount || "Some"} VMs visible` : "VM inventory not visible yet",
+      appSees: vmInventoryVisible ? `${vmCount || "Some"} VMs visible` : "VM inventory not visible yet",
       item: "VM inventory",
       need: "Need vCenter attached",
-      status: asBoolean(vmInventory.visible) ? "ready" : "not_checked",
+      status: vmInventoryVisible ? "ready" : "not_checked",
       target: "vCenter inventory"
     })
   ];
@@ -17343,6 +17684,11 @@ function validationStatus(validation: LabValidationSummary | null, tokens: strin
   return item?.status ?? "";
 }
 
+function liveValidationStatus(validation: LabValidationSummary | null, tokens: string[]): string {
+  const item = validation?.validation_items.find((candidate) => textIncludes(candidateText(candidate), tokens));
+  return item && isFreshLiveEvidence(item) ? item.status : "";
+}
+
 function sourceFromValidation(validation: LabValidationSummary | null, tokens: string[]): string {
   const item = validation?.validation_items.find((candidate) => textIncludes(candidateText(candidate), tokens));
   return sourceLabel(item ?? validation);
@@ -17357,6 +17703,25 @@ function providerStatus(providers: ProviderStatus[], tokens: string[]): string {
     textIncludes(`${candidate.id} ${candidate.name} ${candidate.kind}`.toLowerCase(), tokens)
   );
   return provider?.status ?? "";
+}
+
+function liveProviderStatus(providers: ProviderStatus[], providerId: string, tokens: string[]): string {
+  const exact = providers.find((candidate) => candidate.id === providerId);
+  const provider = exact ?? providers.find((candidate) =>
+    textIncludes(`${candidate.id} ${candidate.name} ${candidate.kind}`.toLowerCase(), tokens)
+  );
+  return provider && isFreshLiveEvidence(provider) ? provider.status : "";
+}
+
+function isFreshLiveEvidence(value: unknown): boolean {
+  const item = objectValue(value);
+  const source = asString(item.source_type);
+  const freshness = asString(item.freshness);
+  if (source === "live_probe") return true;
+  if (source === "live_cached" || source === "cached_live") {
+    return item.is_current === true || freshness === "current" || freshness === "live";
+  }
+  return false;
 }
 
 function textIncludes(text: string, tokens: string[]): boolean {
@@ -17505,6 +17870,7 @@ function firmwareRows(
     if (!entry) return [];
     if (isOptionalUndetectedFirmwareComponent(componentId, entry.path)) return [];
     const { path, summary } = entry;
+    const hasFreshEvidence = isFreshLiveEvidence(path) || isFreshLiveEvidence(summary);
     const candidateFiles = path.candidate_files ?? [];
     const selectedOverride = selectedFiles[path.component_id];
     const selectedFileName = selectedOverride ?? path.selected_file_name ?? path.package_name ?? "";
@@ -17514,12 +17880,12 @@ function firmwareRows(
       candidateFiles,
       component: firmwareComponentLabel(path),
       componentId: path.component_id,
-      current: displayValue(path.current_version),
-      disabledReason: path.disabled_reason ?? "",
+      current: hasFreshEvidence ? displayValue(path.current_version) : "Not checked",
+      disabledReason: hasFreshEvidence ? path.disabled_reason ?? "" : "Run Check versions to collect current live firmware evidence.",
       equipment: path.equipment_label || path.device_label || summary?.label || "Equipment",
       estimatedImpact: path.estimated_impact ?? "Review required",
       evidenceArtifacts: path.evidence_artifacts ?? [],
-      pathStatus: simpleFirmwareStatus(path, selectedFileName),
+      pathStatus: hasFreshEvidence ? simpleFirmwareStatus(path, selectedFileName) : "scan_needed",
       missingEvidence: path.missing_evidence ?? [],
       prechecksRequired: path.prechecks_required ?? [],
       rebootRequired: Boolean(path.reboot_required),

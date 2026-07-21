@@ -21,6 +21,8 @@ import type {
   HpeRaidIntentWrite,
   HpeRaidPlanPreview,
   HpeStorageDiscovery,
+  IloAccessSettings,
+  IloAccessSettingsWrite,
   IloBaselinePreview,
   IloBaselineReadiness,
   IloSetupIntent,
@@ -274,6 +276,13 @@ export const api = {
     apiRequest<IloSetupIntent>("/api/v1/providers/ilo-redfish/setup-intent"),
   saveIloSetupIntent: (payload: IloSetupIntentWrite) =>
     apiRequest<IloSetupIntent>("/api/v1/providers/ilo-redfish/setup-intent", {
+      method: "PUT",
+      body: payload
+    }),
+  iloAccessSettings: () =>
+    apiRequest<IloAccessSettings>("/api/v1/providers/ilo-redfish/access-settings"),
+  saveIloAccessSettings: (payload: IloAccessSettingsWrite) =>
+    apiRequest<IloAccessSettings>("/api/v1/providers/ilo-redfish/access-settings", {
       method: "PUT",
       body: payload
     }),

@@ -450,7 +450,7 @@ def _api_action_payload(
     if action_id == "vcenter.post-attach-validation":
         return validate_vcenter_post_attach(write_report=False)
     if action_id == "firmware.inventory":
-        return get_firmware_inventory(refresh_live=False)
+        return get_firmware_inventory(refresh_live=True)
     if action_id in {"firmware.compliance-check", "firmware.upgrade-plan"}:
         return get_firmware_compliance(refresh_live=False)
     if action_id == "firmware.package-inventory":

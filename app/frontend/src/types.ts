@@ -249,6 +249,27 @@ export type ProviderModeSettingsWrite = {
   desired_mode: ProviderModeOption["mode"];
 };
 
+export type IloAccessSettings = {
+  provider_id: string;
+  host: string | null;
+  host_source: string;
+  fallback_hosts: string[];
+  username: string | null;
+  username_configured: boolean;
+  password_configured: boolean;
+  verify_tls: boolean;
+  env_path: string;
+  updated_at: string | null;
+  next_safe_action: string;
+};
+
+export type IloAccessSettingsWrite = {
+  host?: string | null;
+  username?: string | null;
+  password?: string | null;
+  verify_tls?: boolean | null;
+};
+
 export type LabSafetyFlag = {
   name: string;
   label: string;

@@ -8757,6 +8757,44 @@ th.ui-compact-table-cell {
   outline: none;
 }
 
+.map-ilo-access {
+  background: linear-gradient(180deg, rgba(20, 184, 166, 0.08), rgba(255, 255, 255, 0));
+}
+
+.map-ilo-tls-toggle {
+  align-items: center;
+  background: var(--surface-soft);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  display: flex !important;
+  gap: 8px;
+  min-height: 36px;
+  padding: 0 10px;
+}
+
+.map-ilo-tls-toggle input {
+  height: 16px;
+  width: 16px;
+}
+
+.map-ilo-access-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: space-between;
+  margin-top: 12px;
+}
+
+.map-ilo-access-actions a {
+  color: var(--teal-dark);
+  font-size: 12px;
+  font-weight: 850;
+  text-decoration: none;
+}
+
+.map-ilo-access-actions a:hover { text-decoration: underline; }
+
 .map-drawer-foot {
   align-items: center;
   border-top: 1px solid var(--border);
@@ -8820,6 +8858,17 @@ th.ui-compact-table-cell {
   display: grid;
   gap: 14px;
   padding: 14px;
+}
+
+.local-raid-inventory-required {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.local-raid-inventory-required ul {
+  margin: 0;
+  padding-left: 18px;
 }
 
 .local-raid-planner-head {
@@ -8968,6 +9017,24 @@ th.ui-compact-table-cell {
 .local-raid-assign.is-datastore[aria-pressed="true"] { background: #dcfce7; border-color: #16a34a; color: #15803d; }
 .local-raid-assign.is-spare[aria-pressed="true"] { background: #fef3c7; border-color: #f59e0b; color: #b45309; }
 .local-raid-assign.is-unused[aria-pressed="true"] { background: #e2e8f0; border-color: #94a3b8; color: #475569; }
+
+.local-raid-group-bays {
+  display: grid;
+  flex-basis: 100%;
+  gap: 4px;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  margin-top: 4px;
+}
+
+.local-raid-group-bays small {
+  background: rgba(255, 255, 255, 0.74);
+  border: 1px solid #dbe7ef;
+  border-radius: 9px;
+  color: #475569;
+  font-size: 10.5px;
+  font-weight: 800;
+  padding: 6px 8px;
+}
 
 .local-raid-levels {
   display: grid;

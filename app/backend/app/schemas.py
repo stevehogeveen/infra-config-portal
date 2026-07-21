@@ -1078,6 +1078,27 @@ class IloSetupIntentRead(IloSetupIntentWrite):
     updated_at: datetime | None = None
 
 
+class IloAccessSettingsWrite(BaseModel):
+    host: str | None = Field(default=None, max_length=240)
+    username: str | None = Field(default=None, max_length=160)
+    password: str | None = Field(default=None, max_length=512)
+    verify_tls: bool | None = None
+
+
+class IloAccessSettingsRead(BaseModel):
+    provider_id: str
+    host: str | None = None
+    host_source: str
+    fallback_hosts: list[str] = Field(default_factory=list)
+    username: str | None = None
+    username_configured: bool = False
+    password_configured: bool = False
+    verify_tls: bool = True
+    env_path: str
+    updated_at: str | None = None
+    next_safe_action: str
+
+
 class HpeRaidVolumeIntent(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     purpose: str = Field(min_length=1, max_length=80)
