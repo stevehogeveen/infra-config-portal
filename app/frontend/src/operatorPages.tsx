@@ -2215,24 +2215,16 @@ function LocalStorageRaidPlanner({
     <section className="local-raid-planner" aria-label="Local RAID planner">
       <div className="local-raid-planner-head">
         <div>
-          <p className="operator-kicker">Local storage offshoot</p>
-          <h4>Drive bay RAID planner</h4>
-          <span>Choose a drive bay, connect it to a RAID group, and tune the RAID level before any guarded storage workflow exists.</span>
+          <p className="operator-kicker">Local storage</p>
+          <h4>Drive bay RAID plan</h4>
         </div>
         <StatusBadge label="Plan only" status="plan-only" />
       </div>
 
-      <div className="local-raid-context-strip" aria-label="Local RAID context">
-        <div>
-          <span>Mode</span>
-          <strong>{storageModeLabel}</strong>
-        </div>
-        <div>
-          <span>Controller</span>
-          <strong>{settings?.raid_controller || "Smart Array plan"}</strong>
-        </div>
+      <div className="local-raid-meta">
+        <span>{storageModeLabel}</span>
         <label>
-          <span>Drive bays</span>
+          <span className="sr-only">Drive bay count</span>
           <select
             aria-label="Local RAID drive bay count"
             onChange={(event) => updateBayCount(Number(event.target.value))}
@@ -2245,100 +2237,60 @@ function LocalStorageRaidPlanner({
         </label>
       </div>
 
-      <div className="local-raid-workbench">
-        <div className="local-raid-backplane" aria-label="Selectable local RAID drive bays">
-          <div className="local-raid-backplane-rail" aria-hidden="true">
-            <span>Smart Array backplane</span>
-            <i />
-          </div>
-          <div className="local-raid-bay-grid">
-            {bayNumbers.map((bay) => {
-              const groupId = draft.assignments[bay] ?? "unused";
-              const meta = localRaidGroupMeta(groupId, netappInScope);
-              const raid = localRaidBayRaidLabel(groupId, draft);
-              return (
-                <button
-                  aria-pressed={selectedBay === bay}
-                  className={`local-raid-bay is-${groupId}`}
-                  key={bay}
-                  onClick={() => updateSelectedBay(bay)}
-                  title={`Bay ${bay}: ${meta.label}${raid ? `, ${raid}` : ""}`}
-                  type="button"
-                >
-                  <span>Bay {bay}</span>
-                  <strong>{meta.shortLabel}</strong>
-                  <small>{raid || meta.detail}</small>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        <article className="local-raid-selected-card" aria-label="Selected local RAID drive">
-          <div>
-            <p className="operator-kicker">Selected drive</p>
-            <h5>Bay {selectedBay}</h5>
-            <span>{localRaidGroupMeta(selectedGroup, netappInScope).detail}</span>
-          </div>
-          <div className="local-raid-assignment-buttons" aria-label="Assign selected drive">
-            {groupIds.map((groupId) => {
-              const meta = localRaidGroupMeta(groupId, netappInScope);
-              return (
-                <button
-                  aria-pressed={selectedGroup === groupId}
-                  className={`local-raid-assign is-${groupId}`}
-                  key={groupId}
-                  onClick={() => assignSelectedBay(groupId)}
-                  type="button"
-                >
-                  <strong>{meta.label}</strong>
-                  <span>{meta.detail}</span>
-                </button>
-              );
-            })}
-          </div>
-        </article>
+      <div className="local-raid-bay-grid" aria-label="Drive bays — click a bay to select it">
+        {bayNumbers.map((bay) => {
+          const groupId = draft.assignments[bay] ?? "unused";
+          const meta = localRaidGroupMeta(groupId, netappInScope);
+          const raid = localRaidBayRaidLabel(groupId, draft);
+          return (
+            <button
+              aria-pressed={selectedBay === bay}
+              className={`local-raid-bay is-${groupId}`}
+              key={bay}
+              onClick={() => updateSelectedBay(bay)}
+              title={`Bay ${bay}: ${meta.label}${raid ? `, ${raid}` : ""}`}
+              type="button"
+            >
+              <span>Bay {bay}</span>
+              <strong>{meta.shortLabel}</strong>
+              <small>{raid || meta.detail}</small>
+            </button>
+          );
+        })}
       </div>
 
-      <div className="local-raid-group-board" aria-label="Local RAID group connections">
+      <div className="local-raid-assign-row" aria-label={`Assign bay ${selectedBay}`}>
+        <span className="local-raid-assign-lead">Bay {selectedBay} is</span>
+        {groupIds.map((groupId) => (
+          <button
+            aria-pressed={selectedGroup === groupId}
+            className={`local-raid-assign is-${groupId}`}
+            key={groupId}
+            onClick={() => assignSelectedBay(groupId)}
+            type="button"
+          >
+            {localRaidGroupMeta(groupId, netappInScope).label}
+          </button>
+        ))}
+      </div>
+
+      <div className="local-raid-levels" aria-label="RAID levels">
         {activeRaidGroups.map((groupId) => {
           const meta = localRaidGroupMeta(groupId, netappInScope);
           const bays = localRaidBaysForGroup(draft, groupId);
           return (
-            <article className={`local-raid-group-card is-${groupId}`} key={groupId}>
-              <div>
-                <span>{meta.label}</span>
-                <strong>{draft.raidLevels[groupId]}</strong>
-              </div>
-              <label>
-                <span>RAID level</span>
-                <select
-                  aria-label={`RAID level for ${meta.label}`}
-                  onChange={(event) => updateRaidLevel(groupId, event.target.value)}
-                  value={draft.raidLevels[groupId]}
-                >
-                  {localRaidLevelOptions(groupId).map((level) => (
-                    <option key={level} value={level}>{level}</option>
-                  ))}
-                </select>
-              </label>
-              <p>{meta.detail}</p>
-              <small>Connected drive bays: {bays.length ? bays.join(", ") : "none selected"}</small>
-            </article>
-          );
-        })}
-        {(["spare", "unused"] as const).map((groupId) => {
-          const meta = localRaidGroupMeta(groupId, netappInScope);
-          const bays = localRaidBaysForGroup(draft, groupId);
-          return (
-            <article className={`local-raid-group-card is-${groupId}`} key={groupId}>
-              <div>
-                <span>{meta.label}</span>
-                <strong>{bays.length || "0"}</strong>
-              </div>
-              <p>{meta.detail}</p>
-              <small>Drive bays: {bays.length ? bays.join(", ") : "none"}</small>
-            </article>
+            <label className={`local-raid-level is-${groupId}`} key={groupId}>
+              <span>{meta.label} · {bays.length} {bays.length === 1 ? "bay" : "bays"}</span>
+              <select
+                aria-label={`RAID level for ${meta.label}`}
+                onChange={(event) => updateRaidLevel(groupId, event.target.value)}
+                value={draft.raidLevels[groupId]}
+              >
+                {localRaidLevelOptions(groupId).map((level) => (
+                  <option key={level} value={level}>{level}</option>
+                ))}
+              </select>
+            </label>
           );
         })}
       </div>
@@ -2346,11 +2298,10 @@ function LocalStorageRaidPlanner({
       <div className="local-raid-plan-footer">
         <div className="local-raid-plan-summary" aria-label="Local RAID draft summary">
           <strong>{localRaidPlanHeadline(draft, netappInScope)}</strong>
-          <span>{localRaidPlanDetail(draft, netappInScope)}</span>
-          <small>No hardware touched. Real RAID writes remain behind the existing guarded storage workflow.</small>
+          <small>No hardware touched. Real RAID writes stay behind the guarded storage workflow.</small>
         </div>
         <button className="design-plan-secondary local-raid-save" onClick={savePlan} type="button">
-          Save visual RAID plan
+          Save RAID plan
         </button>
         {message && <p className="operator-action-message success">{message}</p>}
       </div>
@@ -2498,18 +2449,6 @@ function localRaidPlanHeadline(draft: LocalRaidDraft, netappInScope: boolean): s
   const dataCount = localRaidBaysForGroup(draft, "datastore").length;
   const dataLabel = netappInScope ? "staging" : "datastore";
   return `${bootCount} boot bay${bootCount === 1 ? "" : "s"} + ${dataCount} ${dataLabel} bay${dataCount === 1 ? "" : "s"}`;
-}
-
-function localRaidPlanDetail(draft: LocalRaidDraft, netappInScope: boolean): string {
-  const settings = localRaidSettingsFromDraft(draft, netappInScope);
-  const spareBays = localRaidBaysForGroup(draft, "spare");
-  const unusedBays = localRaidBaysForGroup(draft, "unused");
-  return [
-    settings.raid_boot,
-    settings.raid_data,
-    spareBays.length ? `spares ${spareBays.join(",")}` : "",
-    unusedBays.length ? `unused ${unusedBays.join(",")}` : ""
-  ].filter(Boolean).join(" / ");
 }
 
 function localRaidSettingsFromDraft(draft: LocalRaidDraft, netappInScope: boolean): LocalRaidSettingsUpdate {
